@@ -1,19 +1,12 @@
-use silex::dom::suspense::suspense;
-use silex::dom::view::{Children, IntoAnyView};
 use silex::dom::tag::*;
 use silex::prelude::*;
-use std::rc::Rc;
-
-// --- 组件重构：Props Builder Pattern ---
-
-// --- 组件重构：Props Builder Pattern (Automated by Macro) ---
 
 #[component]
 fn Card(
     #[prop(default = "Default Title".to_string(), into)] title: String,
     #[prop(default = 1)] elevation: u8,
     #[prop(default)] child: Children, // Defaults to empty AnyView
-    #[prop(default)] on_hover: Option<Rc<dyn Fn()>>,
+    #[prop(default, into)] on_hover: Callback,
 ) -> impl View {
     let style = format!(
         "border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px {}px rgba(0,0,0,0.1); transition: transform 0.2s;",
@@ -22,9 +15,7 @@ fn Card(
 
     let mut root = div().class("card").style(&style);
 
-    if let Some(cb) = on_hover {
-         root = root.on_click(move |_| cb());
-    }
+    root = root.on_click(move |_| on_hover.call(()));
 
     root.child((
         h1().style("margin-top: 0; font-size: 1.2rem; color: #333;")
@@ -32,8 +23,6 @@ fn Card(
         child,
     ))
 }
-
-// --- 子组件 ---
 
 #[component]
 fn CounterDisplay() -> SilexResult<impl View> {
@@ -138,11 +127,11 @@ fn HomeView() -> impl View {
             Card::new()
                 .title("Global Counter (Persists across Nav)")
                 .elevation(3)
-                .on_hover(Some(Rc::new(|| { let _ = web_sys::console::log_1(&"Card Hovered!".into()); })))
+                .on_hover(|_| { let _ = web_sys::console::log_1(&"Card Hovered!".into()); })
                 .child((
                     CounterControls::new(),
                     CounterDisplay::new(),
-                ).into_any()), // Explicit conversion to AnyView/Children
+                )),
 
             // Card 2: Input & Local State
             Card::new()
@@ -159,7 +148,7 @@ fn HomeView() -> impl View {
                         .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px; width: 100%;")
                         .value(name)
                         .on_input(move |val| { let _ = set_name.set(val); })
-                )).into_any()),
+                ))),
 
             // Card 3: Control Flow
             Card::new()
@@ -172,7 +161,6 @@ fn HomeView() -> impl View {
                         .otherwise(|| div()
                             .style("background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;")
                             .text("✓ System works normally."))
-                        .into_any()
                 ),
             
             // Card 4: Suspense
@@ -186,7 +174,6 @@ fn HomeView() -> impl View {
                                 .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
                                 .text(move || async_data.get().unwrap_or("Waiting...".to_string()))
                         })
-                        .into_any()
                 )
         ))
 }

@@ -35,7 +35,23 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         let ty = &fn_arg.ty;
         let attrs = &fn_arg.attrs;
 
-        let prop_attrs = parse_prop_attrs(attrs)?;
+        let mut prop_attrs = parse_prop_attrs(attrs)?;
+
+        // Auto-enable `into` for specific types to improve DX
+        if !prop_attrs.into_trait {
+            let type_str = quote::quote!(#ty).to_string();
+            // Clean up whitespace for comparison
+            let type_clean: String = type_str.chars().filter(|c| !c.is_whitespace()).collect();
+
+            if type_clean.ends_with("Children")
+                || type_clean.ends_with("AnyView")
+                || type_clean == "String"
+                || type_clean == "Box<dynFn()>"
+            // Potentially useful but tricky
+            {
+                prop_attrs.into_trait = true;
+            }
+        }
 
         let param_name = match pat.as_ref() {
             Pat::Ident(ident) => &ident.ident,
@@ -71,12 +87,25 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
 
         // 3. 构建器方法
         if prop_attrs.into_trait {
-            builder_methods.push(quote! {
-                pub fn #param_name(mut self, val: impl Into<#ty>) -> Self {
-                    self.#param_name = val.into();
-                    self
-                }
-            });
+            // Check for Children/AnyView special handling
+            let type_str = quote::quote!(#ty).to_string();
+            let type_clean: String = type_str.chars().filter(|c| !c.is_whitespace()).collect();
+
+            if type_clean.ends_with("Children") || type_clean.ends_with("AnyView") {
+                builder_methods.push(quote! {
+                    pub fn #param_name<V: ::silex::dom::view::IntoAnyView>(mut self, val: V) -> Self {
+                        self.#param_name = val.into_any();
+                        self
+                    }
+                });
+            } else {
+                builder_methods.push(quote! {
+                    pub fn #param_name(mut self, val: impl Into<#ty>) -> Self {
+                        self.#param_name = val.into();
+                        self
+                    }
+                });
+            }
         } else {
             builder_methods.push(quote! {
                 pub fn #param_name(mut self, val: #ty) -> Self {

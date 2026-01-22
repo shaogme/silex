@@ -1,6 +1,8 @@
+pub mod callback;
 pub mod components;
 pub mod core;
 
+pub use callback::*;
 pub use components::*;
 pub use core::*;
 use wasm_bindgen::JsCast;
