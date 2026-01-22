@@ -8,7 +8,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     let fn_generics = &input_fn.sig.generics;
     let fn_body = &input_fn.block;
 
-    let struct_name = fn_name; // 结构体使用函数名作为名称
+    let struct_name = quote::format_ident!("{}Component", fn_name); // Struct renamed to avoid collision
 
     let mut struct_fields = Vec::new();
     let mut builder_methods = Vec::new();
@@ -197,6 +197,12 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
                 let view_instance = #fn_body;
                 ::silex::dom::view::View::mount(view_instance, parent);
             }
+        }
+
+        // 生成同名构建函数
+        #[allow(non_snake_case)]
+        #fn_vis fn #fn_name #impl_generics() -> #struct_name #ty_generics #where_clause {
+            #struct_name::new()
         }
     };
 

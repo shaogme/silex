@@ -4,7 +4,7 @@ use silex_macros::component;
 
 pub fn main() {
     silex::dom::setup_global_error_handlers();
-    silex::dom::element::mount_to_body(App::new());
+    silex::dom::element::mount_to_body(App());
 }
 
 #[component]
@@ -29,7 +29,7 @@ fn App() -> impl View {
                 },
                 children: || {
                     // 无参数组件直接调用，不需要传递 Props
-                    RecoverableComponent::new()
+                    RecoverableComponent()
                 }
             }),
         )).style("margin-bottom: 20px; border: 1px solid #ccc; padding: 10px;"),
@@ -48,7 +48,7 @@ fn App() -> impl View {
                 },
                 children: || {
                     // 无参数组件直接调用
-                    PanicToggleComponent::new()
+                    PanicToggleComponent()
                 }
             }),
         )).style("margin-bottom: 20px; border: 1px solid #ccc; padding: 10px;"),
@@ -84,7 +84,7 @@ fn PanicToggleComponent() -> impl View {
              // We wrap the panicking component in a way that its construction is delayed until this closure runs
              // Because ErrorBoundary wraps this closure in create_effect and catch_unwind, it captures this panic.
              // 无参数组件直接调用
-             Some(ImmediatePanic::new())
+             Some(ImmediatePanic())
          } else {
              None
          }

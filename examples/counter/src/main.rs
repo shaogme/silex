@@ -128,17 +128,17 @@ fn HomeView() -> impl View {
         )).style("text-align: center; margin-bottom: 30px;"),
 
         // Card 1: Context-Aware Counter
-        Card::new()
+        Card()
             .title("Global Counter (Persists across Nav)")
             .elevation(3)
             .on_hover(|_| { let _ = web_sys::console::log_1(&"Card Hovered!".into()); })
             .child((
-                CounterControls::new(),
-                CounterDisplay::new(),
+                CounterControls(),
+                CounterDisplay(),
             )),
 
         // Card 2: Input & Local State
-        Card::new()
+        Card()
             .title("Local State (Resets on Nav)")
             .child(div(div((
                 div((
@@ -155,7 +155,7 @@ fn HomeView() -> impl View {
             )))),
 
         // Card 3: Control Flow
-        Card::new()
+        Card()
             .title("Control Flow")
             .child(
                 is_high
@@ -166,7 +166,7 @@ fn HomeView() -> impl View {
             ),
         
         // Card 4: Suspense
-        Card::new()
+        Card()
             .title("Suspense (Async Loading)")
             .child(
                     suspense()
@@ -223,13 +223,13 @@ fn main() -> () {
 
         // 构建应用壳 (App Shell)
         let app = div((
-            NavBar::new(),
+            NavBar(),
             Router::new()
                 .match_enum(|route: AppRoute| {
                     view_match!(route, {
-                        AppRoute::Home => HomeView::new(),
-                        AppRoute::About => AboutView::new(),
-                        AppRoute::NotFound => NotFound::new(),
+                        AppRoute::Home => HomeView(),
+                        AppRoute::About => AboutView(),
+                        AppRoute::NotFound => NotFound(),
                     })
                 })
         ))

@@ -51,8 +51,8 @@ mod basics {
     pub fn BasicsPage() -> impl View {
         div((
             h2("Basics"),
-            Greeting::new().name("Developer"),
-            Counter::new(),
+            Greeting().name("Developer"),
+            Counter(),
             // AttributeDemo omitted for brevity, logic is same as previous
         ))
     }
@@ -77,7 +77,7 @@ mod flow_control {
 
     #[component]
     pub fn FlowPage() -> impl View {
-        div((h2("Control Flow"), ListDemo::new()))
+        div((h2("Control Flow"), ListDemo()))
     }
 }
 
@@ -184,30 +184,30 @@ fn SelectDemo() -> impl View {
 
 #[derive(Route, Clone, PartialEq)]
 enum AdvancedRoute {
-    #[route("/", view = SelectDemo)]
+    #[route("/", view = SelectDemoComponent)]
     Index,
-    #[route("/css", view = advanced::CssDemo)]
+    #[route("/css", view = advanced::CssDemoComponent)]
     Css,
-    #[route("/store", view = advanced::StoreDemo)]
+    #[route("/store", view = advanced::StoreDemoComponent)]
     Store,
-    #[route("/*", view = NotFoundPage)]
+    #[route("/*", view = NotFoundPageComponent)]
     NotFound,
 }
 
 #[derive(Route, Clone, PartialEq)]
 enum AppRoute {
-    #[route("/", view = HomePage)]
+    #[route("/", view = HomePageComponent)]
     Home,
-    #[route("/basics", view = basics::BasicsPage)]
+    #[route("/basics", view = basics::BasicsPageComponent)]
     Basics,
-    #[route("/flow", view = flow_control::FlowPage)]
+    #[route("/flow", view = flow_control::FlowPageComponent)]
     Flow,
-    #[route("/advanced/*", view = AdvancedLayout)]
+    #[route("/advanced/*", view = AdvancedLayoutComponent)]
     Advanced {
         #[nested]
         route: AdvancedRoute,
     },
-    #[route("/*", view = NotFoundPage)]
+    #[route("/*", view = NotFoundPageComponent)]
     NotFound,
 }
 
@@ -292,7 +292,7 @@ fn main() {
 
         div((
             // Global Layout Shell
-            NavBar::new(),
+            NavBar(),
             // Root Router
             Router::new().match_route::<AppRoute>(),
         ))
