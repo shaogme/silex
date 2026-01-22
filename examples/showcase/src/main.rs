@@ -236,7 +236,7 @@ fn NavBar() -> impl View {
 }
 
 #[component]
-fn AdvancedLayout() -> impl View {
+fn AdvancedLayout(route: AdvancedRoute) -> impl View {
     div().child((
         h2().text("Advanced Features"),
         div()
@@ -245,15 +245,14 @@ fn AdvancedLayout() -> impl View {
                 link("/advanced/css").text("CSS Demo").class("tab"),
                 link("/advanced/store").text("Store Demo").class("tab"),
             )),
-        // Nested Router for Advanced section
-        Router::new()
-            .base("/advanced") // Important for nested routing base
-            .match_enum(|route: AdvancedRoute| match route {
-                AdvancedRoute::Index => div().text("Select a demo above.").into_any(),
-                AdvancedRoute::Css => advanced::CssDemo::new().into_any(),
-                AdvancedRoute::Store => advanced::StoreDemo::new().into_any(),
-                AdvancedRoute::NotFound => div().text("Advanced Demo Not Found").into_any(),
-            }),
+        // Direct match on the passed route enum
+        // This avoids re-parsing the URL via an internal Router
+        match route {
+            AdvancedRoute::Index => div().text("Select a demo above.").into_any(),
+            AdvancedRoute::Css => advanced::CssDemo::new().into_any(),
+            AdvancedRoute::Store => advanced::StoreDemo::new().into_any(),
+            AdvancedRoute::NotFound => div().text("Advanced Demo Not Found").into_any(),
+        },
     ))
 }
 
@@ -303,10 +302,9 @@ fn main() {
                     AppRoute::Basics => basics::BasicsPage::new().into_any(),
                     AppRoute::Flow => flow_control::FlowPage::new().into_any(),
 
-                    // Pass the nested enum to the sub-handler (which creates a sub-router)
-                    // Note: Alternatively, we could handle sub-routes here, but creating a sub-router is cleaner context-wise if needed.
-                    // Actually, since match_enum re-renders top-level on path change, we can just render the layout which contains the sub-router.
-                    AppRoute::Advanced(_) => AdvancedLayout::new().into_any(),
+                    // Pass the nested enum to the sub-handler
+                    // Now AdvancedLayout takes the route directly as a prop
+                    AppRoute::Advanced(inner) => AdvancedLayout::new(inner).into_any(),
 
                     AppRoute::NotFound => NotFoundPage::new().into_any(),
                 }
