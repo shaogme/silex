@@ -528,7 +528,7 @@ pub fn expect_context<T: Clone + 'static>() -> T {
                 "Expected context `{}` but none found. Did you forget to wrap your component in a Provider?",
                 type_name
             );
-            crate::logging::console_error(&msg);
+            crate::log::console_error(&msg);
             panic!("{}", msg);
         }
     }

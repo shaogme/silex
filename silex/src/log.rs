@@ -6,21 +6,21 @@ use wasm_bindgen::JsValue;
 /// 或通过 `println!()`（如果不在浏览器中）。
 #[macro_export]
 macro_rules! log {
-    ($($t:tt)*) => ($crate::logging::console_log(&format_args!($($t)*).to_string()))
+    ($($t:tt)*) => ($crate::log::console_log(&format_args!($($t)*).to_string()))
 }
 
 /// 使用 `println!()` 风格的格式化将警告记录到控制台（在浏览器中）
 /// 或通过 `eprintln!()`（如果不在浏览器中）。
 #[macro_export]
 macro_rules! warn {
-    ($($t:tt)*) => ($crate::logging::console_warn(&format_args!($($t)*).to_string()))
+    ($($t:tt)*) => ($crate::log::console_warn(&format_args!($($t)*).to_string()))
 }
 
 /// 使用 `println!()` 风格的格式化将错误记录到控制台（在浏览器中）
 /// 或通过 `eprintln!()`（如果不在浏览器中）。
 #[macro_export]
 macro_rules! error {
-    ($($t:tt)*) => ($crate::logging::console_error(&format_args!($($t)*).to_string()))
+    ($($t:tt)*) => ($crate::log::console_error(&format_args!($($t)*).to_string()))
 }
 
 /// 使用 `println!()` 风格的格式化将内容记录到控制台（在浏览器中）

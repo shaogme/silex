@@ -125,7 +125,7 @@ mod advanced {
             p("The button below is styled using the `css!` macro with scoped styles."),
             button("Scoped Style Button")
                 .class(btn_class)
-                .on_click(|_| silex::logging::console_log("Clicked!")),
+                .on_click(|_| console_log("Clicked!")),
         ))
     }
 

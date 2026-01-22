@@ -55,14 +55,14 @@ where
         let (error, set_error) = create_signal::<Option<SilexError>>(None);
 
         provide_context(ErrorContext(Rc::new(move |e| {
-            crate::logging::console_error(&format!("ErrorBoundary caught error: {}", e));
+            crate::log::console_error(&format!("ErrorBoundary caught error: {}", e));
             // Defer update to avoid render-induced updates
             wasm_bindgen_futures::spawn_local(async move {
                 set_error.set(Some(e));
             });
         })))
         .unwrap_or_else(|e| {
-            crate::logging::console_error(&format!("Error providing context: {}", e))
+            crate::log::console_error(&format!("Error providing context: {}", e))
         });
 
         // Create wrapper div
@@ -97,7 +97,7 @@ where
                     } else {
                         "Unknown Panic".to_string()
                     };
-                    crate::logging::console_error(&format!("ErrorBoundary caught panic: {}", msg));
+                    crate::log::console_error(&format!("ErrorBoundary caught panic: {}", msg));
 
                     let err = SilexError::Javascript(msg);
                     // Trigger re-run to show fallback
