@@ -19,7 +19,11 @@ pub struct Element {
 pub fn mount_to_body<V: View>(view: V) {
     let document = crate::dom::document();
     let body = document.body().expect("No body element");
-    view.mount(&body);
+
+    // Create a root reactive scope to ensure context and effects work correctly
+    crate::reactivity::create_scope(move || {
+        view.mount(&body);
+    });
 }
 
 impl Element {

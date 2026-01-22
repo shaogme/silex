@@ -81,31 +81,30 @@ where
             if let Some(e) = error.get() {
                 (props.fallback)(e).mount(&wrapper_dom);
             } else {
-                // Catch panic
-                let result =
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(&props.children));
-                match result {
-                    Ok(view) => view.mount(&wrapper_dom),
-                    Err(payload) => {
-                        let msg = if let Some(s) = payload.downcast_ref::<&str>() {
-                            format!("Panic: {}", s)
-                        } else if let Some(s) = payload.downcast_ref::<String>() {
-                            format!("Panic: {}", s)
-                        } else {
-                            "Unknown Panic".to_string()
-                        };
-                        crate::logging::console_error(&format!(
-                            "ErrorBoundary caught panic: {}",
-                            msg
-                        ));
+                // Catch panic during view creation AND mounting
+                let process = || {
+                    let view = (props.children)();
+                    view.mount(&wrapper_dom);
+                };
 
-                        let err = SilexError::Javascript(msg);
-                        // Trigger re-run to show fallback
-                        // Defer update to avoid render-induced updates
-                        wasm_bindgen_futures::spawn_local(async move {
-                            set_error.set(Some(err));
-                        });
-                    }
+                if let Err(payload) =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(process))
+                {
+                    let msg = if let Some(s) = payload.downcast_ref::<&str>() {
+                        format!("Panic: {}", s)
+                    } else if let Some(s) = payload.downcast_ref::<String>() {
+                        format!("Panic: {}", s)
+                    } else {
+                        "Unknown Panic".to_string()
+                    };
+                    crate::logging::console_error(&format!("ErrorBoundary caught panic: {}", msg));
+
+                    let err = SilexError::Javascript(msg);
+                    // Trigger re-run to show fallback
+                    // Defer update to avoid render-induced updates
+                    wasm_bindgen_futures::spawn_local(async move {
+                        set_error.set(Some(err));
+                    });
                 }
             }
         });
