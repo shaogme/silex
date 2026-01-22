@@ -284,3 +284,14 @@ pub fn derive_store(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+mod route;
+
+#[proc_macro_derive(Route, attributes(route, nested))]
+pub fn derive_route(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    match route::derive_route_impl(input) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}

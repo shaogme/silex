@@ -1,6 +1,6 @@
 use silex::prelude::*;
 use silex::dom::tag::*;
-use silex::router::{Router, Route, Outlet, link, use_navigate, use_params, use_query_map, use_location_path};
+use silex::router::{Router, link, use_navigate, use_query_map, use_location_path};
 
 // ==========================================
 // 辅助组件
@@ -85,7 +85,7 @@ fn SearchPage() -> impl View {
 // --- 用户模块 (嵌套路由测试) ---
 
 #[component]
-fn UsersLayout() -> impl View {
+fn UsersLayout(child: AnyView) -> impl View {
     div().child((
         h2().text("👥 Users Module"),
         div().style("border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;").child((
@@ -93,8 +93,8 @@ fn UsersLayout() -> impl View {
             span().text("|").style("margin: 0 10px; color: #ccc;"),
             nav_link("/users/new", "Create User (Static)"),
         )),
-        // 渲染子路由 (UserList 或 UserDetail)
-        Outlet()
+        // 渲染子路由
+        child
     ))
 }
 
@@ -123,19 +123,14 @@ fn UserList() -> impl View {
 }
 
 #[component]
-fn UserDetail() -> impl View {
-    // 测试路由参数 hooks
-    let params = use_params();
+fn UserDetail(id: u32) -> impl View {
+    // 使用传入的 id，不再依赖 use_params (更类型安全!)
     let navigator = use_navigate();
     let path = use_location_path();
 
-    let user_id = create_memo(move || {
-        params.get().get("id").cloned().unwrap_or_else(|| "Unknown".to_string())
-    });
-
     Card::new(div().child((
         div().style("display: flex; justify-content: space-between; align-items: center;").child((
-            h3().text(move || format!("User Profile: #{}", user_id.get())),
+            h3().text(format!("User Profile: #{}", id)),
             button()
                 .text("Go Back")
                 .on_click(move |_| navigator.push("/users"))
@@ -143,9 +138,8 @@ fn UserDetail() -> impl View {
         )),
         hr().style("border: 0; border-top: 1px solid #eee; margin: 15px 0;"),
         p().child((strong().text("Current Path: "), span().style("font-family: monospace;").text(path))),
-        p().child((strong().text("Raw Params: "), span().style("font-family: monospace; color: #666;").text(move || format!("{:?}", params.get())))),
         div().style("background: #f5f5f5; padding: 10px; border-radius: 4px; margin-top: 10px;").child(
-            p().text("This component is rendered because the route matched '/users/:id'")
+            p().text(format!("This component is rendered with strict prop id: {}", id))
         )
     )))
 }
@@ -164,7 +158,7 @@ fn NotFound() -> impl View {
 // --- 主布局 ---
 
 #[component]
-fn MainLayout() -> impl View {
+fn MainLayout(child: AnyView) -> impl View {
     div()
         .style("font-family: sans-serif; max-width: 800px; margin: 0 auto; color: #333;")
         .child((
@@ -181,10 +175,9 @@ fn MainLayout() -> impl View {
                     ))
                 )),
             
-            // Main Content Area (Renders matched child route)
-            // Explicitly call silex::dom::tag::main because fn main() shadows it
+            // Main Content Area
             silex::dom::tag::main().style("padding: 20px 0;").child(
-                Outlet()
+                child
             ),
 
             // Footer
@@ -192,6 +185,37 @@ fn MainLayout() -> impl View {
                 .style("margin-top: 50px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #999; font-size: 0.8rem;")
                 .child(p().text("Built with Silex & Rust"))
         ))
+}
+
+
+// 定义子路由枚举 (Users Module)
+#[derive(Route, Clone, PartialEq)]
+enum UsersRoute {
+    #[route("/")]
+    List,
+    #[route("/new")]
+    Create,
+    #[route("/:id")]
+    Detail { id: u32 },
+}
+
+// 定义应用顶级路由枚举
+#[derive(Route, Clone, PartialEq)]
+enum AppRoute {
+    #[route("/")]
+    Home,
+    #[route("/search")]
+    Search,
+    
+    // 递归嵌套：所有以 /users 开头的路径交给 UsersRoute 处理
+    #[route("/users")]
+    Users {
+        #[nested]
+        routes: UsersRoute 
+    },
+
+    #[route("/*")]
+    NotFound,
 }
 
 // ==========================================
@@ -209,49 +233,43 @@ fn main() {
     let style_el = document.create_element("style").unwrap();
     style_el.set_text_content(Some(".nav-active { background-color: #e3f2fd !important; color: #1976d2 !important; font-weight: bold; }"));
     
-    // Attempt to append to head, otherwise body (if head is missing in web-sys features)
     if let Ok(Some(head)) = document.query_selector("head") {
         let _ = head.append_child(&style_el);
     } else {
         let _ = body.append_child(&style_el);
     }
 
-    // 定义路由树
-    // / -> MainLayout
-    //    / -> Home
-    //    /search -> SearchPage
-    //    /users -> UsersLayout
-    //        / -> UserList
-    //        /:id -> UserDetail
-    //    /* -> NotFound
-    // Note: Passing StructName::new function pointers instead of struct types
+    // 创建一个渲染闭包，将路由映射到视图
+    // 采用“视图组合”模式：match 分发 + Layout 函数包裹
+    let render_route = |route: AppRoute| {
+        
+        let content = match route {
+            AppRoute::Home => Home::new().into_any(),
+            AppRoute::Search => SearchPage::new().into_any(),
+            
+            // 递归解包 Users 模块
+            AppRoute::Users { routes: sub_route } => {
+                let sub_view = match sub_route {
+                    UsersRoute::List => UserList::new().into_any(),
+                    UsersRoute::Create => Card::new(h3().text("🆕 Create New User Form")).into_any(),
+                    // 直接解构参数并传递给组件，实现 100% 类型安全
+                    UsersRoute::Detail { id } => UserDetail::new(id).into_any(),
+                };
+                
+                // 将子视图包裹在 UsersLayout 中
+                UsersLayout::new(sub_view).into_any()
+            },
+            
+            AppRoute::NotFound => NotFound::new().into_any(),
+        };
+
+        // 全局 Layout
+        MainLayout::new(content)
+    };
+
     let app_routes = Router::new()
-        .add(
-            Route::new("/", MainLayout::new) // 根布局，包含导航栏
-                .children(vec![
-                    Route::new("/", Home::new), // 默认子路由
-                    Route::new("/search", SearchPage::new),
-                    
-                    // 嵌套路由模块
-                    Route::new("/users", UsersLayout::new)
-                        .children(vec![
-                            Route::new("/", UserList::new),
-                            // 注意：静态路由 "/new" 需要放在动态参数 ":id" 之前，或者依赖路由器的匹配优先级逻辑
-                            // 这里 matcher.rs 的实现是顺序匹配或特定逻辑，
-                            // 通常建议把具体路径放在参数路径之前，或者使用更智能的匹配器。
-                            // 在当前 matcher.rs 中，:id 匹配单段，如果定义了 /users/new 且在 /users/:id 之前 add，应该能匹配。
-                            // 但在这里我们是在 children vec 中。
-                            // 让我们添加一个静态路由测试：
-                            Route::new("/new", || Card::new(h3().text("🆕 Create New User Form"))),
-                            Route::new("/:id", UserDetail::new),
-                        ]),
+        .match_enum(render_route);
 
-                    // 捕获所有其他路径 (在 Layout 内部显示 404，保留导航栏)
-                    Route::new("/*", NotFound::new),
-                ])
-        );
-
-    // 挂载应用
     create_scope(move || {
         app_routes.mount(&body);
     });

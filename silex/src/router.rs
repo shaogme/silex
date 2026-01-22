@@ -20,6 +20,18 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use web_sys::Event;
 
+/// 路由能力特征
+///
+/// 实现此特征的枚举可以作为类型安全路由使用。
+/// 通常通过 `#[derive(Route)]` 宏自动实现。
+pub trait Routable: Sized + Clone + PartialEq + 'static {
+    /// 尝试从路径字符串匹配并解析出实例
+    fn match_path(path: &str) -> Option<Self>;
+
+    /// 将实例转换为 URL 路径字符串
+    fn to_path(&self) -> String;
+}
+
 /// 路由器组件
 pub struct Router {
     routes: Vec<Route>,
@@ -74,6 +86,32 @@ impl Router {
         F: Fn() -> V + 'static,
     {
         self.fallback = Some(Rc::new(move || view_fn().into_any()));
+        self
+    }
+
+    /// 使用实现了 Routable 的 Enum 进行强类型路由匹配
+    ///
+    /// 这将添加一个这一层的通配符路由 "/*"，并将路径匹配委托给 Enum 的 `match_path` 实现。
+    /// 建议在使用此模式时，不要混合使用普通的 `add`。
+    pub fn match_enum<R, F, V>(mut self, render: F) -> Self
+    where
+        R: Routable,
+        F: Fn(R) -> V + 'static,
+        V: View + 'static,
+    {
+        let render = Rc::new(render);
+        self.routes.push(Route::new("/*", move || {
+            let path = crate::router::use_location_path().get();
+            if let Some(matched) = R::match_path(&path) {
+                render(matched).into_any()
+            } else {
+                // 如果 Enum 没有匹配（且没定义 Fallback 变体），可以在这里处理，
+                // 或者是渲染空，让 Router 的 fallback 机制处理？
+                // 由于我们已经捕获了 "/*"，Router 认为我们匹配成功了。
+                // 所以如果要显示 404，最好在 Enum 里定义 #[route("/*")] Not Found。
+                AnyView::new(())
+            }
+        }));
         self
     }
 }

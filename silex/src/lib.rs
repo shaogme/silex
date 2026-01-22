@@ -7,9 +7,10 @@ pub mod reactivity;
 pub mod router;
 
 pub use error::{SilexError, SilexResult};
-pub use silex_macros::{Store, component};
+pub use silex_macros::{Route, Store, component};
 
 pub mod prelude {
+    pub use crate::Route;
     pub use crate::Store;
     pub use crate::component;
     pub use crate::dom::*;

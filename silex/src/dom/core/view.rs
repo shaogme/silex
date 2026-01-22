@@ -79,31 +79,40 @@ where
     fn mount(self, parent: &Node) {
         let document = crate::dom::document();
 
-        // 1. 创建锚点 (Comment Node)
-        let marker = document.create_comment("dyn-view");
-        let marker_node: Node = marker.into();
+        // 1. 创建锚点 (Start & End Markers)
+        // 使用双锚点策略 (Range Cleaning)，确保清理时能够移除所有动态生成的兄弟节点
+        let start_marker = document.create_comment("dyn-start");
+        let start_node: Node = start_marker.into();
 
-        if let Err(e) = parent.append_child(&marker_node).map_err(SilexError::from) {
+        if let Err(e) = parent.append_child(&start_node).map_err(SilexError::from) {
             crate::error::handle_error(e);
             return;
         }
 
-        // 2. 状态追踪：用于记录上一次挂载产生的节点，以便清理
-        // 这里使用 Rc<RefCell> 是因为 create_effect 需要 Fn (不可变)，但我们需要修改状态
-        use std::cell::RefCell;
-        use std::rc::Rc;
-        let mounted_nodes = Rc::new(RefCell::new(Vec::<Node>::new()));
+        let end_marker = document.create_comment("dyn-end");
+        let end_node: Node = end_marker.into();
+
+        if let Err(e) = parent.append_child(&end_node).map_err(SilexError::from) {
+            crate::error::handle_error(e);
+            return;
+        }
 
         create_effect(move || {
             // 在产生副作用时捕获 Panic，防止整个应用崩溃，并允许 ErrorBoundary 捕获
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let view = self();
 
-                // A. 清理旧节点
-                let mut nodes = mounted_nodes.borrow_mut();
-                for node in nodes.drain(..) {
-                    if let Some(p) = node.parent_node() {
-                        let _ = p.remove_child(&node);
+                // A. 清理旧节点 (Range Clean)
+                // 删除 start_node 和 end_node 之间的所有节点
+                // 这比追踪 mounted_nodes 更健壮，特别是对于嵌套的动态 View 或 Fragment 逃逸情况
+                if let Some(parent) = start_node.parent_node() {
+                    while let Some(sibling) = start_node.next_sibling() {
+                        // 引用比较，到达结束锚点停止
+                        if sibling == end_node {
+                            break;
+                        }
+                        // 移除中间节点
+                        let _ = parent.remove_child(&sibling);
                     }
                 }
 
@@ -114,17 +123,9 @@ where
                 // 挂载到 Fragment
                 view.mount(&fragment_node);
 
-                // C. 收集新节点引用 (在插入到 DOM 前收集)
-                let child_nodes = fragment.child_nodes();
-                for i in 0..child_nodes.length() {
-                    if let Some(node) = child_nodes.item(i) {
-                        nodes.push(node);
-                    }
-                }
-
-                // D. 插入到 DOM (在锚点之前)
-                if let Some(parent) = marker_node.parent_node() {
-                    let _ = parent.insert_before(&fragment_node, Some(&marker_node));
+                // C. 插入到 DOM (在 end_marker 之前)
+                if let Some(parent) = end_node.parent_node() {
+                    let _ = parent.insert_before(&fragment_node, Some(&end_node));
                 }
             }));
 
