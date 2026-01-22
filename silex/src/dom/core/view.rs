@@ -24,6 +24,14 @@ impl View for Element {
     }
 }
 
+impl<T> View for crate::dom::element::TypedElement<T> {
+    fn mount(self, parent: &Node) {
+        if let Err(e) = parent.append_child(&self.element).map_err(SilexError::from) {
+            crate::error::handle_error(e);
+        }
+    }
+}
+
 // 2. 静态文本 (String, &str)
 impl View for String {
     fn mount(self, parent: &Node) {

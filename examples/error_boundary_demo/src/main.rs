@@ -61,7 +61,7 @@ fn RecoverableComponent() -> impl View {
     move || {
         if should_error.get() {
              // Return an Err, which triggers handle_error -> ErrorContext
-              Err::<silex::dom::Element, _>(SilexError::Javascript("User clicked the error button!".into()))
+              Err(SilexError::Javascript("User clicked the error button!".into()))
         } else {
              Ok(div().child((
                  p().text("Component is running normally."),

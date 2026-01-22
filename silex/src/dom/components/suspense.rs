@@ -66,7 +66,7 @@ where
                 }
             });
             content_wrapper.clone().mount(&parent_clone);
-            let content_root = content_wrapper.dom_element;
+            let content_root = content_wrapper.element;
 
             create_effect(move || {
                 let view = children_fn();
@@ -84,7 +84,7 @@ where
                 }
             });
             fallback_wrapper.clone().mount(&parent_clone);
-            let fallback_root = fallback_wrapper.dom_element;
+            let fallback_root = fallback_wrapper.element;
 
             create_effect(move || {
                 let view = fallback_fn();

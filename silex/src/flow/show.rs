@@ -43,7 +43,7 @@ where
         let container = div().style("display: contents");
 
         container.clone().mount(parent);
-        let root = container.dom_element;
+        let root = container.element;
 
         let cond = self.condition;
         let view_fn = self.view;

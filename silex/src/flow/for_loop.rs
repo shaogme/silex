@@ -46,7 +46,7 @@ where
     Item: 'static,
 {
     fn mount(self, parent: &Node) {
-        let container = div().style("display: contents");
+        let container = div().style("display: contents").into_untyped();
 
         container.clone().mount(parent);
         let root = container.dom_element;
@@ -79,7 +79,7 @@ where
                 let (wrapper, id) = if let Some(existing) = rows_map.get(&key) {
                     existing.clone()
                 } else {
-                    let wrapper = div().style("display: contents");
+                    let wrapper = div().style("display: contents").into_untyped();
 
                     let parent = wrapper.dom_element.clone();
                     // 这里克隆 map_fn 引用，因为需要在闭包中使用

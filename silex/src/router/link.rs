@@ -1,10 +1,12 @@
-use crate::dom::{Element, View, tag::a};
+use crate::dom::core::tags::A as TagA;
+use crate::dom::element::TypedElement;
+use crate::dom::{View, tag::a};
 use crate::router::context::use_router;
 
 /// `A` 组件结构体
 pub struct A {
     href: String,
-    inner: Element,
+    inner: TypedElement<TagA>,
 }
 
 /// 创建一个链接组件，用于在应用内导航

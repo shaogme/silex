@@ -63,9 +63,9 @@ fn SearchPage() -> impl View {
         h2().text("🔍 Search Query Test"),
         div().style("display: flex; gap: 10px; margin-bottom: 20px;").child((
             input()
-                .attr("type", "text")
-                .attr("placeholder", "Type search term...")
-                .attr("value", input_val)
+                .type_("text")
+                .placeholder("Type search term...")
+                .value(input_val)
                 .on_input(move |v| set_input_val.set(v))
                 .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px; flex: 1;"),
             button()

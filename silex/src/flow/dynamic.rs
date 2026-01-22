@@ -50,7 +50,7 @@ where
         // 这允许我们在内部完全替换内容而不破坏父节点的结构
         let container = div().style("display: contents");
         container.clone().mount(parent);
-        let root = container.dom_element;
+        let root = container.element;
 
         let view_fn = self.view_fn;
 

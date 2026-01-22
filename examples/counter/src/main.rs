@@ -154,10 +154,10 @@ fn HomeView() -> impl View {
                         span().text("!"),
                     )),
                     input()
-                        .attr("type", "text")
-                        .attr("placeholder", "Enter name")
+                        .type_("text")
+                        .placeholder("Enter name")
                         .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px; width: 100%;")
-                        .attr("value", name)
+                        .value(name)
                         .on_input(move |val| { let _ = set_name.set(val); })
                 )).into_any()),
 
