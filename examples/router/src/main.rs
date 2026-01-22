@@ -2,6 +2,7 @@ use silex::prelude::*;
 use silex_macros::{component, Route};
 use silex::dom::tag::*;
 use silex::router::{Router, link, use_navigate, use_query_map, use_location_path};
+use silex::view_match;
 
 // ==========================================
 // 辅助组件
@@ -244,25 +245,25 @@ fn main() {
     // 采用“视图组合”模式：match 分发 + Layout 函数包裹
     let render_route = |route: AppRoute| {
         
-        let content = match route {
-            AppRoute::Home => Home::new().into_any(),
-            AppRoute::Search => SearchPage::new().into_any(),
+        let content = view_match!(route, {
+            AppRoute::Home => Home::new(),
+            AppRoute::Search => SearchPage::new(),
             
             // 递归解包 Users 模块
             AppRoute::Users { routes: sub_route } => {
-                let sub_view = match sub_route {
-                    UsersRoute::List => UserList::new().into_any(),
-                    UsersRoute::Create => Card::new(h3().text("🆕 Create New User Form")).into_any(),
+                let sub_view = view_match!(sub_route, {
+                    UsersRoute::List => UserList::new(),
+                    UsersRoute::Create => Card::new(h3().text("🆕 Create New User Form")),
                     // 直接解构参数并传递给组件，实现 100% 类型安全
-                    UsersRoute::Detail { id } => UserDetail::new(id).into_any(),
-                };
+                    UsersRoute::Detail { id } => UserDetail::new(id),
+                });
                 
                 // 将子视图包裹在 UsersLayout 中
-                UsersLayout::new(sub_view).into_any()
+                UsersLayout::new(sub_view)
             },
             
-            AppRoute::NotFound => NotFound::new().into_any(),
-        };
+            AppRoute::NotFound => NotFound::new(),
+        });
 
         // 全局 Layout
         MainLayout::new(content)

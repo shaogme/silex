@@ -143,11 +143,11 @@ fn main() {
 
                 // 路由配置
                 Router::new()
-                    .match_enum(|route: AppRoute| match route {
-                        AppRoute::Home => HomeView().into_any(),
-                        AppRoute::About => AboutView().into_any(),
-                        AppRoute::NotFound => NotFound().into_any(),
-                    })
+                    .match_enum(|route: AppRoute| view_match!(route, {
+                        AppRoute::Home => HomeView(),
+                        AppRoute::About => AboutView(),
+                        AppRoute::NotFound => NotFound(),
+                    }))
             ))
             .mount(&document.body().unwrap());
     });

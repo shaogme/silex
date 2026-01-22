@@ -18,5 +18,6 @@ pub mod prelude {
         use_context,
     };
     pub use crate::router::*;
+    pub use crate::view_match;
     pub use crate::{SilexError, SilexResult};
 }

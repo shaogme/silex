@@ -1,6 +1,7 @@
 use silex::dom::tag::*;
 use silex::prelude::*;
 use silex_macros::{component, css, Route};
+use silex::view_match;
 
 #[component]
 fn Card(
@@ -238,11 +239,11 @@ fn main() -> () {
                 NavBar::new(),
                 Router::new()
                     .match_enum(|route: AppRoute| {
-                        match route {
-                            AppRoute::Home => HomeView::new().into_any(),
-                            AppRoute::About => AboutView::new().into_any(),
-                            AppRoute::NotFound => NotFound::new().into_any(),
-                        }
+                        view_match!(route, {
+                            AppRoute::Home => HomeView::new(),
+                            AppRoute::About => AboutView::new(),
+                            AppRoute::NotFound => NotFound::new(),
+                        })
                     })
             ));
 

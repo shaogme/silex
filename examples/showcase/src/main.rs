@@ -247,12 +247,12 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
             )),
         // Direct match on the passed route enum
         // This avoids re-parsing the URL via an internal Router
-        match route {
-            AdvancedRoute::Index => div().text("Select a demo above.").into_any(),
-            AdvancedRoute::Css => advanced::CssDemo::new().into_any(),
-            AdvancedRoute::Store => advanced::StoreDemo::new().into_any(),
-            AdvancedRoute::NotFound => div().text("Advanced Demo Not Found").into_any(),
-        },
+        view_match!(route, {
+            AdvancedRoute::Index => div().text("Select a demo above."),
+            AdvancedRoute::Css => advanced::CssDemo::new(),
+            AdvancedRoute::Store => advanced::StoreDemo::new(),
+            AdvancedRoute::NotFound => div().text("Advanced Demo Not Found"),
+        }),
     ))
 }
 
@@ -297,17 +297,17 @@ fn main() {
             NavBar::new(),
             // Root Router
             Router::new().match_enum(|route: AppRoute| {
-                match route {
-                    AppRoute::Home => HomePage::new().into_any(),
-                    AppRoute::Basics => basics::BasicsPage::new().into_any(),
-                    AppRoute::Flow => flow_control::FlowPage::new().into_any(),
+                view_match!(route, {
+                    AppRoute::Home => HomePage::new(),
+                    AppRoute::Basics => basics::BasicsPage::new(),
+                    AppRoute::Flow => flow_control::FlowPage::new(),
 
                     // Pass the nested enum to the sub-handler
                     // Now AdvancedLayout takes the route directly as a prop
-                    AppRoute::Advanced(inner) => AdvancedLayout::new(inner).into_any(),
+                    AppRoute::Advanced(inner) => AdvancedLayout::new(inner),
 
-                    AppRoute::NotFound => NotFoundPage::new().into_any(),
-                }
+                    AppRoute::NotFound => NotFoundPage::new(),
+                })
             }),
         ))
     });
