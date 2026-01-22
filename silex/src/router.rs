@@ -13,7 +13,7 @@ pub use route::*;
 use crate::dom::tag::div;
 use crate::dom::view::{AnyView, IntoAnyView, View};
 use crate::reactivity::{create_effect, create_signal, on_cleanup};
-use crate::router::context::provide_router_context;
+use crate::router::context::{RouterContextProps, provide_router_context};
 use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
@@ -196,15 +196,15 @@ impl View for Router {
         let (matches, set_matches) = create_signal(Vec::new());
 
         // 3. 提供 Context
-        provide_router_context(
-            base_path.clone(),
+        provide_router_context(RouterContextProps {
+            base_path: base_path.clone(),
             path,
             search,
             params,
             matches,
             set_path,
             set_search,
-        );
+        });
 
         // 4. 监听 popstate
         let set_path_clone = set_path;

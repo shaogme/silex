@@ -122,28 +122,31 @@ impl Navigator {
     }
 }
 
+/// 路由上下文所需的属性集合
+#[derive(Clone)]
+pub(crate) struct RouterContextProps {
+    pub base_path: String,
+    pub path: ReadSignal<String>,
+    pub search: ReadSignal<String>,
+    pub params: ReadSignal<HashMap<String, String>>,
+    pub matches: ReadSignal<Vec<MatchedRoute>>,
+    pub set_path: WriteSignal<String>,
+    pub set_search: WriteSignal<String>,
+}
+
 /// 提供路由上下文 (由 Router 组件调用)
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn provide_router_context(
-    base_path: String,
-    path: ReadSignal<String>,
-    search: ReadSignal<String>,
-    params: ReadSignal<HashMap<String, String>>,
-    matches: ReadSignal<Vec<MatchedRoute>>,
-    set_path: WriteSignal<String>,
-    set_search: WriteSignal<String>,
-) {
+pub(crate) fn provide_router_context(props: RouterContextProps) {
     let navigator = Navigator {
-        base_path: base_path.clone(),
-        set_path,
-        set_search,
+        base_path: props.base_path.clone(),
+        set_path: props.set_path,
+        set_search: props.set_search,
     };
     let ctx = RouterContext {
-        base_path,
-        path,
-        search,
-        params,
-        matches,
+        base_path: props.base_path,
+        path: props.path,
+        search: props.search,
+        params: props.params,
+        matches: props.matches,
         navigator,
     };
     // 忽略可能的错误（如重复 provide），Router 应该是根级的
