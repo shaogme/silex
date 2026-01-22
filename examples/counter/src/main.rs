@@ -1,4 +1,5 @@
 use silex::dom::suspense::suspense;
+use silex::dom::view::{Children, IntoAnyView};
 use silex::dom::tag::*;
 use silex::prelude::*;
 use std::rc::Rc;
@@ -6,25 +7,23 @@ use web_sys::Node;
 
 // --- 组件重构：Props Builder Pattern ---
 
-pub struct Card<V> {
+pub struct Card {
     title: String,
-    child: V,
+    child: Children,
     elevation: u8,
     on_hover: Option<Rc<dyn Fn()>>,
 }
 
-impl Card<()> {
+impl Card {
     pub fn new() -> Self {
         Self {
             title: "Default Title".to_string(),
-            child: (),
+            child: Children::default(),
             elevation: 1,
             on_hover: None,
         }
     }
-}
 
-impl<V> Card<V> {
     pub fn title(mut self, title: impl Into<String>) -> Self {
         self.title = title.into();
         self
@@ -35,13 +34,9 @@ impl<V> Card<V> {
         self
     }
 
-    pub fn child<NewV: View>(self, child: NewV) -> Card<NewV> {
-        Card {
-            title: self.title,
-            child,
-            elevation: self.elevation,
-            on_hover: self.on_hover,
-        }
+    pub fn child(mut self, child: impl IntoAnyView) -> Self {
+        self.child = child.into_any();
+        self
     }
 
     pub fn on_hover<F: Fn() + 'static>(mut self, f: F) -> Self {
@@ -50,7 +45,7 @@ impl<V> Card<V> {
     }
 }
 
-impl<V: View> View for Card<V> {
+impl View for Card {
     fn mount(self, parent: &Node) {
         let style = format!(
             "border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px {}px rgba(0,0,0,0.1); transition: transform 0.2s;",

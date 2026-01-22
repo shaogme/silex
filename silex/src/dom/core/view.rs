@@ -66,6 +66,10 @@ impl_view_for_primitive!(
     i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, f32, f64, bool, char
 );
 
+impl View for () {
+    fn mount(self, _parent: &Node) {}
+}
+
 // 4. 动态闭包支持 (Lazy View / Dynamic Text)
 impl<F, V> View for F
 where
@@ -260,5 +264,41 @@ pub trait IntoAnyView {
 impl<V: View + 'static> IntoAnyView for V {
     fn into_any(self) -> AnyView {
         AnyView::new(self)
+    }
+}
+
+// --- Children & Fragment ---
+
+/// 标准子组件类型，即类型擦除的 View
+/// 允许组件存储子元素而无需泛型
+pub type Children = AnyView;
+
+impl Default for AnyView {
+    fn default() -> Self {
+        AnyView::new(())
+    }
+}
+
+impl std::fmt::Debug for AnyView {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AnyView")
+    }
+}
+
+/// 片段，用于容纳多个不同类型的子组件
+#[derive(Default)]
+pub struct Fragment(Vec<AnyView>);
+
+impl Fragment {
+    pub fn new(children: Vec<AnyView>) -> Self {
+        Self(children)
+    }
+}
+
+impl View for Fragment {
+    fn mount(self, parent: &Node) {
+        for child in self.0 {
+            child.mount(parent);
+        }
     }
 }
