@@ -132,6 +132,8 @@ mod advanced {
     #[component]
     pub fn StoreDemo() -> impl View {
         // Access global store provided in main
+        // Note: `use_context::<T>()` is also available if you want to handle the Option manually.
+        // `expect_context` is a convenience wrapper that panics if the context is missing.
         let settings = expect_context::<UserSettingsStore>();
 
         div((
@@ -207,13 +209,32 @@ enum AppRoute {
 
 #[component]
 fn NavBar() -> impl View {
+    let nav_link = css!(
+        r#"
+        color: white;
+        text-decoration: none;
+        padding: 8px 12px;
+        border-radius: 4px;
+        transition: background-color 0.2s;
+
+        &:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+
+        &.active {
+            background-color: #007bff;
+            font-weight: bold;
+        }
+    "#
+    );
+
     div((
-        Link("/").text("Home").style("color: white; text-decoration: none;"),
-        Link("/basics").text("Basics").style("color: white; text-decoration: none;"),
-        Link("/flow").text("Flow").style("color: white; text-decoration: none;"),
-        Link("/advanced").text("Advanced").style("color: white; text-decoration: none;"),
+        Link("/").text("Home").class(&nav_link).active_class("active"),
+        Link("/basics").text("Basics").class(&nav_link).active_class("active"),
+        Link("/flow").text("Flow").class(&nav_link).active_class("active"),
+        Link("/advanced").text("Advanced").class(&nav_link).active_class("active"),
     ))
-    .style("background: #333; color: white; padding: 10px; margin-bottom: 20px; display: flex; gap: 15px;")
+    .style("background: #333; color: white; padding: 10px; margin-bottom: 20px; display: flex; gap: 15px; align-items: center;")
 }
 
 #[component]
