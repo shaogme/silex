@@ -1,11 +1,16 @@
 use proc_macro::TokenStream;
 use syn::{DeriveInput, ItemFn, parse_macro_input};
 
+#[cfg(feature = "component")]
 mod component;
+#[cfg(feature = "css")]
 mod css;
+#[cfg(feature = "route")]
 mod route;
+#[cfg(feature = "store")]
 mod store;
 
+#[cfg(feature = "css")]
 #[proc_macro]
 pub fn css(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as syn::LitStr);
@@ -43,6 +48,7 @@ pub fn css(input: TokenStream) -> TokenStream {
 /// - `#[prop(default)]`: 该属性将使用 `Default::default()` 作为默认值
 /// - `#[prop(into)]`: 该属性将使用 `Into<T>` 转换输入
 /// - `#[prop(default, into)]`: 可以组合使用
+#[cfg(feature = "component")]
 #[proc_macro_attribute]
 pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input_fn = parse_macro_input!(item as ItemFn);
@@ -53,6 +59,7 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 }
 
+#[cfg(feature = "store")]
 #[proc_macro_derive(Store)]
 pub fn derive_store(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -62,6 +69,7 @@ pub fn derive_store(input: TokenStream) -> TokenStream {
     }
 }
 
+#[cfg(feature = "route")]
 #[proc_macro_derive(Route, attributes(route, nested))]
 pub fn derive_route(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
