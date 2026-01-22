@@ -43,7 +43,8 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
 
             if type_clean.ends_with("Children")
                 || type_clean.ends_with("AnyView")
-                || type_clean == "String"
+                || type_clean.ends_with("String")
+                || type_clean.ends_with("PathBuf")
                 || type_clean.starts_with("Callback")
             {
                 prop_attrs.into_trait = true;

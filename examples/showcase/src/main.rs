@@ -12,8 +12,11 @@ mod basics {
 
     #[component]
     pub fn Greeting(
-        #[prop(default = "World", into)] name: String,
-        #[prop(default, into)] punctuation: String,
+        // Explicitly `into` is NOT needed for common types like String, PathBuf, Children, AnyView, and Callback.
+        // The macro enables it by default, allowing you to pass string literals directly (e.g., .name("...")) without .into().
+        // `default = "..."` specifies a fallback value if the prop is omitted.
+        #[prop(default = "World")] name: String,
+        #[prop(default)] punctuation: String,
     ) -> impl View {
         let full_punctuation = if punctuation.is_empty() {
             "!".to_string()
