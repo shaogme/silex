@@ -4,6 +4,7 @@ members = [
     "examples/counter",
     "examples/store_demo",
     "examples/error_boundary_demo",
+    "examples/router",
     "silex_macros"
 ]
 resolver = "3"

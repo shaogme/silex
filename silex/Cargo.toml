@@ -32,5 +32,7 @@ web-sys = { version = "0.3", features = [
 js-sys = "0.3"
 slotmap = "1.1.1"
 wasm-bindgen-futures = "0.4.56"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 silex_macros = { path = "../silex_macros" }

@@ -16,20 +16,42 @@ pub struct MatchResult {
 /// - 参数匹配: "/users/:id"
 /// - 通配符: "/docs/*" (匹配 /docs/a/b/c)
 ///
+/// # Arguments
+/// * `pattern` - 路由定义模式
+/// * `path` - 当前 URL 路径
+/// * `partial` - 是否允许部分匹配 (用于父级路由匹配)
+///
 /// # Returns
 /// 如果匹配成功，返回包含参数的 MatchResult，否则返回 None
-pub fn match_path(pattern: &str, path: &str) -> Option<MatchResult> {
-    let pattern_segments: Vec<&str> = pattern.trim_matches('/').split('/').collect();
-    let path_segments: Vec<&str> = path.trim_matches('/').split('/').collect();
+pub fn match_path(pattern: &str, path: &str, partial: bool) -> Option<MatchResult> {
+    let pattern_segments: Vec<&str> = pattern
+        .trim_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
+    let path_segments: Vec<&str> = path
+        .trim_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
 
     let mut params = HashMap::new();
 
-    // 如果 pattern 是空的或者 "/"，且 path 也是空的或者 "/"
-    if pattern_segments.len() == 1 && pattern_segments[0].is_empty() {
-        if path_segments.len() == 1 && path_segments[0].is_empty() {
+    // 根路径特殊处理: pattern "/" (segments empty) matches path "/" (segments empty)
+    if pattern_segments.is_empty() {
+        if path_segments.is_empty() {
             return Some(MatchResult {
                 params,
                 remaining_path: String::new(),
+            });
+        } else if partial {
+            // 如果是 partial 匹配，pattern 是 "" 或 "/"，它匹配任何路径的前缀（实际上不消耗任何路径）
+            // 但通常 "/" 路由作为父路由时，意为 wrapper。
+            // 这里约定: 如果 pattern 是空的，它不消耗 path，param 为空，remaining 为 whole path
+            let remaining = "/".to_string() + &path_segments.join("/");
+            return Some(MatchResult {
+                params,
+                remaining_path: remaining,
             });
         } else {
             return None;
@@ -41,7 +63,11 @@ pub fn match_path(pattern: &str, path: &str) -> Option<MatchResult> {
         // 处理通配符 *
         if *segment == "*" {
             // 通配符匹配剩余所有路径
-            let remaining = path_segments[i..].join("/");
+            let remaining = if i < path_segments.len() {
+                "/".to_string() + &path_segments[i..].join("/")
+            } else {
+                String::new()
+            };
             return Some(MatchResult {
                 params,
                 remaining_path: remaining,
@@ -65,11 +91,19 @@ pub fn match_path(pattern: &str, path: &str) -> Option<MatchResult> {
         }
     }
 
-    // 检查路径是否比模式长（且模式最后不是 *）
+    // 检查是否有剩余路径
     if path_segments.len() > pattern_segments.len() {
-        // 除非我们支持嵌套路由的前缀匹配，否则这里应该返回 None
-        // 目前实现完全匹配
-        return None;
+        if partial {
+            // 允许部分匹配，返回剩余路径
+            let remaining = "/".to_string() + &path_segments[pattern_segments.len()..].join("/");
+            return Some(MatchResult {
+                params,
+                remaining_path: remaining,
+            });
+        } else {
+            // 完全匹配模式下，路径不能比模式长
+            return None;
+        }
     }
 
     Some(MatchResult {
@@ -84,24 +118,35 @@ mod tests {
 
     #[test]
     fn test_static_match() {
-        assert!(match_path("/", "/").is_some());
-        assert!(match_path("/users", "/users").is_some());
-        assert!(match_path("/users", "/posts").is_none());
+        assert!(match_path("/", "/", false).is_some());
+        assert!(match_path("/users", "/users", false).is_some());
+        assert!(match_path("/users", "/posts", false).is_none());
     }
 
     #[test]
     fn test_param_match() {
-        let res = match_path("/users/:id", "/users/123").unwrap();
+        let res = match_path("/users/:id", "/users/123", false).unwrap();
         assert_eq!(res.params.get("id").unwrap(), "123");
 
-        let res = match_path("/users/:id/posts/:pid", "/users/1/posts/99").unwrap();
+        let res = match_path("/users/:id/posts/:pid", "/users/1/posts/99", false).unwrap();
         assert_eq!(res.params.get("id").unwrap(), "1");
         assert_eq!(res.params.get("pid").unwrap(), "99");
     }
 
     #[test]
     fn test_wildcard() {
-        assert!(match_path("/docs/*", "/docs/api/v1").is_some());
-        assert!(match_path("/*", "/any/thing").is_some());
+        assert!(match_path("/docs/*", "/docs/api/v1", false).is_some());
+        assert!(match_path("/*", "/any/thing", false).is_some());
+    }
+
+    #[test]
+    fn test_partial_match() {
+        let res = match_path("/users", "/users/123", true).unwrap();
+        assert_eq!(res.remaining_path, "/123");
+
+        // 根路径前缀
+        let res = match_path("/", "/users", true).unwrap();
+        // "/" pattern segments is empty.
+        assert_eq!(res.remaining_path, "/users");
     }
 }
