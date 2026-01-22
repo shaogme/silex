@@ -26,7 +26,7 @@ fn main() {
         });
 
         // 3. 构建 UI
-        App(AppProps { user }).mount(&app_container);
+        App::new(user).mount(&app_container);
     });
 }
 
@@ -40,13 +40,13 @@ fn App(user: UserStore) -> impl View {
             p().text("This example demonstrates fine-grained reactivity using the #[derive(Store)] macro."),
             
             // 显示区域
-            UserDisplay(UserDisplayProps { user: user.clone() }),
+            UserDisplay::new(user.clone()),
 
             // 编辑区域
-            UserEditor(UserEditorProps { user: user.clone() }),
+            UserEditor::new(user.clone()),
             
             // 调试信息：展示 Store 导出功能
-            DebugPanel(DebugPanelProps { user })
+            DebugPanel::new(user)
         ))
 }
 

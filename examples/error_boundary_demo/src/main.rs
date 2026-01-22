@@ -3,7 +3,7 @@ use silex::dom::tag::*;
 
 pub fn main() {
     silex::dom::setup_global_error_handlers();
-    silex::dom::element::mount_to_body(App);
+    silex::dom::element::mount_to_body(App::new());
 }
 
 #[component]
@@ -28,7 +28,7 @@ fn App() -> impl View {
                 },
                 children: || {
                     // 无参数组件直接调用，不需要传递 Props
-                    RecoverableComponent()
+                    RecoverableComponent::new()
                 }
             }),
         )),
@@ -47,7 +47,7 @@ fn App() -> impl View {
                 },
                 children: || {
                     // 无参数组件直接调用
-                    PanicToggleComponent()
+                    PanicToggleComponent::new()
                 }
             }),
         )),
@@ -83,7 +83,7 @@ fn PanicToggleComponent() -> impl View {
              // We wrap the panicking component in a way that its construction is delayed until this closure runs
              // Because ErrorBoundary wraps this closure in create_effect and catch_unwind, it captures this panic.
              // 无参数组件直接调用
-             Some(ImmediatePanic())
+             Some(ImmediatePanic::new())
          } else {
              None
          }

@@ -3,68 +3,34 @@ use silex::dom::view::{Children, IntoAnyView};
 use silex::dom::tag::*;
 use silex::prelude::*;
 use std::rc::Rc;
-use web_sys::Node;
 
 // --- 组件重构：Props Builder Pattern ---
 
-pub struct Card {
-    title: String,
-    child: Children,
-    elevation: u8,
-    on_hover: Option<Rc<dyn Fn()>>,
-}
+// --- 组件重构：Props Builder Pattern (Automated by Macro) ---
 
-impl Card {
-    pub fn new() -> Self {
-        Self {
-            title: "Default Title".to_string(),
-            child: Children::default(),
-            elevation: 1,
-            on_hover: None,
-        }
+#[component]
+fn Card(
+    #[prop(default = "Default Title".to_string(), into)] title: String,
+    #[prop(default = 1)] elevation: u8,
+    #[prop(default)] child: Children, // Defaults to empty AnyView
+    #[prop(default)] on_hover: Option<Rc<dyn Fn()>>,
+) -> impl View {
+    let style = format!(
+        "border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px {}px rgba(0,0,0,0.1); transition: transform 0.2s;",
+        elevation * 4
+    );
+
+    let mut root = div().class("card").style(&style);
+
+    if let Some(cb) = on_hover {
+         root = root.on_click(move |_| cb());
     }
 
-    pub fn title(mut self, title: impl Into<String>) -> Self {
-        self.title = title.into();
-        self
-    }
-
-    pub fn elevation(mut self, elevation: u8) -> Self {
-        self.elevation = elevation;
-        self
-    }
-
-    pub fn child(mut self, child: impl IntoAnyView) -> Self {
-        self.child = child.into_any();
-        self
-    }
-
-    pub fn on_hover<F: Fn() + 'static>(mut self, f: F) -> Self {
-        self.on_hover = Some(Rc::new(f));
-        self
-    }
-}
-
-impl View for Card {
-    fn mount(self, parent: &Node) {
-        let style = format!(
-            "border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px {}px rgba(0,0,0,0.1); transition: transform 0.2s;",
-            self.elevation * 4
-        );
-
-        let mut root = div().class("card").style(&style);
-
-        if let Some(cb) = self.on_hover {
-             root = root.on_click(move |_| cb());
-        }
-
-        root.child((
-            h1().style("margin-top: 0; font-size: 1.2rem; color: #333;")
-                .text(self.title),
-            self.child,
-        ))
-        .mount(parent)
-    }
+    root.child((
+        h1().style("margin-top: 0; font-size: 1.2rem; color: #333;")
+            .text(title),
+        child,
+    ))
 }
 
 // --- 子组件 ---
@@ -172,11 +138,11 @@ fn HomeView() -> impl View {
             Card::new()
                 .title("Global Counter (Persists across Nav)")
                 .elevation(3)
-                .on_hover(|| { let _ = web_sys::console::log_1(&"Card Hovered!".into()); })
+                .on_hover(Some(Rc::new(|| { let _ = web_sys::console::log_1(&"Card Hovered!".into()); })))
                 .child((
-                    CounterControls(),
-                    CounterDisplay(),
-                )),
+                    CounterControls::new(),
+                    CounterDisplay::new(),
+                ).into_any()), // Explicit conversion to AnyView/Children
 
             // Card 2: Input & Local State
             Card::new()
@@ -193,7 +159,7 @@ fn HomeView() -> impl View {
                         .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px; width: 100%;")
                         .attr("value", name)
                         .on_input(move |val| { let _ = set_name.set(val); })
-                ))),
+                )).into_any()),
 
             // Card 3: Control Flow
             Card::new()
@@ -206,6 +172,7 @@ fn HomeView() -> impl View {
                         .otherwise(|| div()
                             .style("background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;")
                             .text("✓ System works normally."))
+                        .into_any()
                 ),
             
             // Card 4: Suspense
@@ -219,6 +186,7 @@ fn HomeView() -> impl View {
                                 .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
                                 .text(move || async_data.get().unwrap_or("Waiting...".to_string()))
                         })
+                        .into_any()
                 )
         ))
 }
@@ -260,11 +228,11 @@ fn main() -> () {
             .class("app-container")
             .style("font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;")
             .child((
-                NavBar(),
+                NavBar::new(),
                 Router::new()
-                    .route("/", HomeView)
-                    .route("/about", AboutView)
-                    .fallback(NotFound)
+                    .route("/", HomeView::new)
+                    .route("/about", AboutView::new)
+                    .fallback(NotFound::new)
             ));
 
         app.mount(&app_container);

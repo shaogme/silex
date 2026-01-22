@@ -302,3 +302,73 @@ impl View for Fragment {
         }
     }
 }
+
+// --- From Implementations for AnyView (for Builder Pattern / Into Support) ---
+
+impl From<Element> for AnyView {
+    fn from(v: Element) -> Self {
+        AnyView::new(v)
+    }
+}
+
+impl From<String> for AnyView {
+    fn from(v: String) -> Self {
+        AnyView::new(v)
+    }
+}
+
+impl From<&str> for AnyView {
+    fn from(v: &str) -> Self {
+        AnyView::new(v.to_string())
+    }
+}
+
+impl From<()> for AnyView {
+    fn from(_: ()) -> Self {
+        AnyView::new(())
+    }
+}
+
+macro_rules! impl_from_primitive_for_anyview {
+    ($($t:ty),*) => {
+        $(
+            impl From<$t> for AnyView {
+                fn from(v: $t) -> Self {
+                    AnyView::new(v)
+                }
+            }
+        )*
+    };
+}
+impl_from_primitive_for_anyview!(
+    i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, f32, f64, bool, char
+);
+
+impl<V: View + 'static> From<Vec<V>> for AnyView {
+    fn from(v: Vec<V>) -> Self {
+        AnyView::new(v)
+    }
+}
+
+impl<V: View + 'static> From<Option<V>> for AnyView {
+    fn from(v: Option<V>) -> Self {
+        AnyView::new(v)
+    }
+}
+
+// Manually impl From for Tuples since we can't do generic V due to conflict with self-impl
+macro_rules! impl_from_tuple_for_anyview {
+    ($($name:ident),*) => {
+        impl<$($name: View + 'static),*> From<($($name,)*)> for AnyView {
+            fn from(v: ($($name,)*)) -> Self {
+                AnyView::new(v)
+            }
+        }
+    }
+}
+
+impl_from_tuple_for_anyview!(A);
+impl_from_tuple_for_anyview!(A, B);
+impl_from_tuple_for_anyview!(A, B, C);
+impl_from_tuple_for_anyview!(A, B, C, D);
+impl_from_tuple_for_anyview!(A, B, C, D, E);
