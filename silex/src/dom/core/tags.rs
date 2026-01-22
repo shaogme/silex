@@ -44,14 +44,14 @@ macro_rules! define_tags {
 // 1. Basic Structure Tags
 define_tags!(@basic
     Div, Span, H1, H2, H3, H4, H5, H6, P, Ul, Ol, Li,
-    Nav, Main, Footer, Aside, Header, Article, Section,
+    Nav, Main, Footer, Aside, Header, Article, Section, Address,
     Br, Hr, Table, Thead, Tbody, Tr, Td, Pre, Code,
     Em, Strong, S, Blockquote, Figure, Figcaption,
     Time
 );
 define_tags!(@impl TextTag for
     Div, Span, H1, H2, H3, H4, H5, H6, P, Ul, Ol, Li,
-    Nav, Main, Footer, Aside, Header, Article, Section,
+    Nav, Main, Footer, Aside, Header, Article, Section, Address,
     Table, Thead, Tbody, Tr, Td, Pre, Code,
     Em, Strong, S, Blockquote, Figure, Figcaption,
     Time

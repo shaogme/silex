@@ -4,7 +4,7 @@ use silex_macros::{component, css, Route};
 
 #[component]
 fn Card(
-    #[prop(default = "Default Title".to_string(), into)] title: String,
+    #[prop(default = "Default Title", into)] title: String,
     #[prop(default = 1)] elevation: u8,
     #[prop(default)] child: Children, // Defaults to empty AnyView
     #[prop(default, into)] on_hover: Callback,

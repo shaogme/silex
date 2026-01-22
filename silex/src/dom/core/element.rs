@@ -351,7 +351,7 @@ pub mod tag {
     define_container!(article, Article, "article");
     define_container!(aside, Aside, "aside");
     define_container!(nav, Nav, "nav");
-    // define_container!(address, Address, "address"); // Address tag not defined yet
+    define_container!(address, Address, "address");
 
     // Lists
     define_container!(ul, Ul, "ul");
@@ -393,6 +393,7 @@ pub mod tag {
     define_void!(img, Img, "img");
     define_void!(br, Br, "br");
     define_void!(hr, Hr, "hr");
+    define_void!(link, Link, "link");
 
     // --- SVG Containers ---
     define_svg_container!(svg, Svg, "svg");
