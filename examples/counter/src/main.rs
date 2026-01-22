@@ -197,11 +197,11 @@ fn NotFound() -> impl View {
 
 #[derive(Route, Clone, PartialEq)]
 enum AppRoute {
-    #[route("/")]
+    #[route("/", view = HomeViewComponent)]
     Home,
-    #[route("/about")]
+    #[route("/about", view = AboutViewComponent)]
     About,
-    #[route("/*")]
+    #[route("/*", view = NotFoundComponent)]
     NotFound,
 }
 
@@ -225,13 +225,7 @@ fn main() -> () {
         let app = div((
             NavBar(),
             Router::new()
-                .match_enum(|route: AppRoute| {
-                    view_match!(route, {
-                        AppRoute::Home => HomeView(),
-                        AppRoute::About => AboutView(),
-                        AppRoute::NotFound => NotFound(),
-                    })
-                })
+                .match_route::<AppRoute>()
         ))
         .class("app-container")
         .style("font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;");

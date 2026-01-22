@@ -83,7 +83,12 @@ fn SearchPage() -> impl View {
 // --- 用户模块 (嵌套路由测试) ---
 
 #[component]
-fn UsersLayout(child: AnyView) -> impl View {
+fn CreateUser() -> impl View {
+    Card().child(h3("🆕 Create New User Form"))
+}
+
+#[component]
+fn UsersLayout(route: UsersRoute) -> impl View {
     div((
         h2("👥 Users Module"),
         div((
@@ -92,7 +97,7 @@ fn UsersLayout(child: AnyView) -> impl View {
             nav_link("/users/new", "Create User (Static)"),
         )).style("border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;"),
         // 渲染子路由
-        child
+        route.render()
     ))
 }
 
@@ -183,32 +188,33 @@ fn MainLayout(child: AnyView) -> impl View {
 
 
 // 定义子路由枚举 (Users Module)
+// 定义子路由枚举 (Users Module)
 #[derive(Route, Clone, PartialEq)]
 enum UsersRoute {
-    #[route("/")]
+    #[route("/", view = UserListComponent)]
     List,
-    #[route("/new")]
+    #[route("/new", view = CreateUserComponent)]
     Create,
-    #[route("/:id")]
+    #[route("/:id", view = UserDetailComponent)]
     Detail { id: u32 },
 }
 
 // 定义应用顶级路由枚举
 #[derive(Route, Clone, PartialEq)]
 enum AppRoute {
-    #[route("/")]
+    #[route("/", view = HomeComponent)]
     Home,
-    #[route("/search")]
+    #[route("/search", view = SearchPageComponent)]
     Search,
     
     // 递归嵌套：所有以 /users 开头的路径交给 UsersRoute 处理
-    #[route("/users")]
+    #[route("/users/*", view = UsersLayoutComponent)]
     Users {
         #[nested]
-        routes: UsersRoute 
+        route: UsersRoute 
     },
 
-    #[route("/*")]
+    #[route("/*", view = NotFoundComponent)]
     NotFound,
 }
 
@@ -235,36 +241,12 @@ fn main() {
 
     // 创建一个渲染闭包，将路由映射到视图
     // 采用“视图组合”模式：match 分发 + Layout 函数包裹
-    let render_route = |route: AppRoute| {
-        
-        let content = view_match!(route, {
-            AppRoute::Home => Home(),
-            AppRoute::Search => SearchPage(),
-            
-            // 递归解包 Users 模块
-            AppRoute::Users { routes: sub_route } => {
-                let sub_view = view_match!(sub_route, {
-                    UsersRoute::List => UserList(),
-                    UsersRoute::Create => Card().child(h3("🆕 Create New User Form")),
-                    // 直接解构参数并传递给组件，实现 100% 类型安全
-                    UsersRoute::Detail { id } => UserDetail().id(id),
-                });
-                
-                // 将子视图包裹在 UsersLayout 中
-                UsersLayout().child(sub_view)
-            },
-            
-            AppRoute::NotFound => NotFound(),
-        });
-
-        // 全局 Layout
-        MainLayout().child(content)
-    };
-
-    let app_routes = Router::new()
-        .match_enum(render_route);
-
+    
     create_scope(move || {
-        app_routes.mount(&body);
+        let app = MainLayout().child(
+            Router::new()
+                .match_route::<AppRoute>()
+        );
+        app.mount(&body);
     });
 }
