@@ -175,14 +175,26 @@ fn HomeView() -> impl View {
 }
 ```
 
-## 🛠️ 当前状态
+## 🛠️ 当前状态与未来目标 (Status & Roadmap)
 
-Silex 目前处于 **Alpha** 阶段。
-- ✅ 核心响应式系统 (Signal, Effect, Memo, Scope)
-- ✅ 基础 DOM 绑定 (Attr, Event, Style)
-- ✅ 核心控制流 (Show, For, Dynamic)
-- ✅ 客户端路由 (Router) 与参数匹配
-- ✅ 异步资源与 Suspense
-- ✅ Context API
-- ❌ SSR (服务端渲染) - 不予支持 (本框架仅支持 CSR)
-- ❌ Hydration (水合) - 不予支持
+Silex 目前已达到 **Core Feature Complete** 状态，核心架构稳定，可以用于构建中小型 CSR 应用。
+
+### ✅ 已完成特性 (Completed)
+- **核心架构**: 细粒度响应式系统 (Signals/Effects), Scope 内存管理, Auto-Tracking.
+- **视图层**: **Fully Typed DOM**, 泛型 View 系统, Range Cleaning Fragment.
+- **开发体验**: 完整的宏支持 (`css!`, `#[component]`, `Routable`, `Store`)，Builder API.
+- **功能组件**: `Router` (Type-safe), `Suspense` (Async), `ErrorBoundary`, `Show`, `For` (Keyed Diffing).
+- **样式**: First-party Scoped CSS (CSS-in-Rust).
+
+### 🚧 下一步目标 (Roadmap)
+- **1. 工具链与生态 (Ecosystem)**:
+    - 开发 CLI 工具 (`silex-cli`) 以支持快速脚手架和构建。
+    - 提供更多开箱即用的 UI 组件 (headless components)。
+- **2. 服务端渲染 (SSR & Hydration)**:
+    - *Long-term Goal*: 尽管目前仅支持 CSR，但在架构上已预留了 SSR 的可能性 (e.g. `mount` 抽象)。未来将探索无 VDOM 的流式 SSR 和部分水合 (Partial Hydration) 方案。
+- **3. 性能优化 (Performance)**:
+    - 进一步优化 `For` 循环的 reconcile 算法。
+    - 引入编译时优化 (Compiler Optimizations)，预编译静态模板。
+- **4. 测试与文档**:
+    - 增加单元测试覆盖率，特别是针对边缘情况。
+    - 完善英文文档和示例库。
