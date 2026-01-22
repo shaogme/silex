@@ -1,7 +1,6 @@
 use silex::dom::tag::*;
 use silex::prelude::*;
 use silex_macros::{component, css, Route};
-use silex::view_match;
 
 #[component]
 fn Card(
@@ -97,8 +96,8 @@ fn CounterControls() -> SilexResult<impl View> {
 #[component]
 fn NavBar() -> impl View {
     div((
-        link("/").text("Home").style("margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold;"),
-        link("/about").text("About").style("text-decoration: none; color: #007bff; font-weight: bold;")
+        Link("/").text("Home").style("margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold;"),
+        Link("/about").text("About").style("text-decoration: none; color: #007bff; font-weight: bold;")
     )).style("margin-bottom: 20px; padding: 10px; border-bottom: 1px solid #eee")
 }
 

@@ -208,10 +208,10 @@ enum AppRoute {
 #[component]
 fn NavBar() -> impl View {
     div((
-        link("/").text("Home").style("color: white; text-decoration: none;"),
-        link("/basics").text("Basics").style("color: white; text-decoration: none;"),
-        link("/flow").text("Flow").style("color: white; text-decoration: none;"),
-        link("/advanced").text("Advanced").style("color: white; text-decoration: none;"),
+        Link("/").text("Home").style("color: white; text-decoration: none;"),
+        Link("/basics").text("Basics").style("color: white; text-decoration: none;"),
+        Link("/flow").text("Flow").style("color: white; text-decoration: none;"),
+        Link("/advanced").text("Advanced").style("color: white; text-decoration: none;"),
     ))
     .style("background: #333; color: white; padding: 10px; margin-bottom: 20px; display: flex; gap: 15px;")
 }
@@ -221,8 +221,8 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
     div((
         h2("Advanced Features"),
         div((
-            link("/advanced/css").text("CSS Demo").class("tab"),
-            link("/advanced/store").text("Store Demo").class("tab"),
+            Link("/advanced/css").text("CSS Demo").class("tab"),
+            Link("/advanced/store").text("Store Demo").class("tab"),
         ))
         .style("display: flex; gap: 10px; margin-bottom: 20px;"),
         // Direct match on the passed route enum
@@ -247,9 +247,9 @@ fn HomePage() -> impl View {
         h1("Welcome to Silex Showcase"),
         p("This example application demonstrates the core features of the Silex framework."),
         ul((
-            li(link("/basics").text("Basics: Components, Props, Signals")),
-            li(link("/flow").text("Flow Control: Loops, Conditions")),
-            li(link("/advanced").text("Advanced: Router to Store & CSS")),
+            li(Link("/basics").text("Basics: Components, Props, Signals")),
+            li(Link("/flow").text("Flow Control: Loops, Conditions")),
+            li(Link("/advanced").text("Advanced: Router to Store & CSS")),
         )),
     ))
 }

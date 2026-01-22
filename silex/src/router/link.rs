@@ -13,7 +13,8 @@ pub struct A {
 /// 创建一个链接组件，用于在应用内导航
 ///
 /// 类似于 HTML 的 `<a>` 标签，但会拦截点击事件并使用 Router 导航，而不是刷新页面。
-pub fn link(href: &str) -> A {
+#[allow(non_snake_case)]
+pub fn Link(href: &str) -> A {
     let element = a(()).attr("href", href);
     A {
         href: href.to_string(),
