@@ -70,10 +70,25 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
 
         // 2. new 方法初始化器
         if let Some(default_expr) = prop_attrs.default_value {
-            // 有显式默认值或 #[prop(default)]
-            new_initializers.push(quote! {
-                #param_name: #default_expr
-            });
+            // Check if we need to wrap the default value with .into()
+            if prop_attrs.into_trait {
+                let type_str = quote::quote!(#ty).to_string();
+                let type_clean: String = type_str.chars().filter(|c| !c.is_whitespace()).collect();
+
+                if type_clean.ends_with("Children") || type_clean.ends_with("AnyView") {
+                    new_initializers.push(quote! {
+                        #param_name: ::silex::dom::view::IntoAnyView::into_any(#default_expr)
+                    });
+                } else {
+                    new_initializers.push(quote! {
+                        #param_name: (#default_expr).into()
+                    });
+                }
+            } else {
+                new_initializers.push(quote! {
+                    #param_name: #default_expr
+                });
+            }
         } else if prop_attrs.default {
             // #[prop(default)] 无值 (使用 Default trait)
             new_initializers.push(quote! {
@@ -170,23 +185,12 @@ fn parse_prop_attrs(attrs: &[Attribute]) -> syn::Result<PropAttrs> {
             attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("default") {
                     result.default = true;
-                    // 如果指定了具体的值： #[prop(default = "some_expr")] 或 #[prop(default = 100)]
+                    // Support standard expression parsing for default values
+                    // This allows `default = "foo"` (Literal) and `default = 1 + 2` (Expression)
                     if meta.input.peek(syn::Token![=]) {
-                        let value = meta.value()?;
-                        let expr: syn::Expr = value.parse()?;
-
-                        if let syn::Expr::Lit(syn::ExprLit {
-                            lit: syn::Lit::Str(lit_str),
-                            ..
-                        }) = &expr
-                        {
-                            // 如果是字符串字面量，解析其中的代码
-                            let valid_expr: syn::Expr = lit_str.parse()?;
-                            result.default_value = Some(quote! { #valid_expr });
-                        } else {
-                            // 如果是其他表达式（如数字、布尔值），直接使用
-                            result.default_value = Some(quote! { #expr });
-                        }
+                        meta.input.parse::<syn::Token![=]>()?;
+                        let expr: syn::Expr = meta.input.parse()?;
+                        result.default_value = Some(quote! { #expr });
                     }
                     Ok(())
                 } else if meta.path.is_ident("into") {

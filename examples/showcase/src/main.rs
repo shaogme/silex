@@ -11,7 +11,7 @@ mod basics {
 
     #[component]
     pub fn Greeting(
-        #[prop(default = "World".to_string(), into)] name: String,
+        #[prop(default = "World", into)] name: String,
         #[prop(default, into)] punctuation: String,
     ) -> impl View {
         let full_punctuation = if punctuation.is_empty() {
@@ -137,8 +137,8 @@ mod advanced {
         div((
             h3("Global Store Demo"),
             div((
-                p((strong("Username: "), settings.username.read_signal())),
-                p((strong("Theme: "), settings.theme.read_signal())),
+                p((strong("Username: "), settings.username)),
+                p((strong("Theme: "), settings.theme)),
                 p((
                     strong("Notifications: "),
                     text(move || {
@@ -165,7 +165,7 @@ mod advanced {
                 button("Toggle Notifications")
                     .on_click(move |_| settings.notifications.update(|n| *n = !*n)),
                 input()
-                    .value(settings.username.read_signal())
+                    .value(settings.username)
                     .on_input(move |val| settings.username.set(val))
                     .placeholder("Change username..."),
             ))
