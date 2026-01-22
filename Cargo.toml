@@ -1,0 +1,15 @@
+[workspace]
+members = [
+    "silex",
+    "examples/counter",
+    "examples/store_demo",
+    "examples/error_boundary_demo",
+    "silex_macros"
+]
+resolver = "3"
+
+[profile.dev]
+panic = "unwind"
+
+[profile.release]
+panic = "unwind"

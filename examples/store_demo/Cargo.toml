@@ -1,0 +1,10 @@
+[package]
+name = "store_demo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+silex = { path = "../../silex" }
+wasm-bindgen = "0.2"
+console_error_panic_hook = "0.1"
+web-sys = "0.3"
