@@ -177,30 +177,37 @@ mod advanced {
 
 // --- Routing Definition ---
 
+#[component]
+fn SelectDemo() -> impl View {
+    div("Select a demo above.")
+}
+
 #[derive(Route, Clone, PartialEq)]
 enum AdvancedRoute {
-    #[route("/")]
+    #[route("/", view = SelectDemo)]
     Index,
-    #[route("/css")]
+    #[route("/css", view = advanced::CssDemo)]
     Css,
-    #[route("/store")]
+    #[route("/store", view = advanced::StoreDemo)]
     Store,
-    #[route("/*")]
+    #[route("/*", view = NotFoundPage)]
     NotFound,
 }
 
 #[derive(Route, Clone, PartialEq)]
 enum AppRoute {
-    #[route("/")]
+    #[route("/", view = HomePage)]
     Home,
-    #[route("/basics")]
+    #[route("/basics", view = basics::BasicsPage)]
     Basics,
-    #[route("/flow")]
+    #[route("/flow", view = flow_control::FlowPage)]
     Flow,
-    #[route("/advanced/*")]
-    #[nested]
-    Advanced(AdvancedRoute),
-    #[route("/*")]
+    #[route("/advanced/*", view = AdvancedLayout)]
+    Advanced {
+        #[nested]
+        route: AdvancedRoute,
+    },
+    #[route("/*", view = NotFoundPage)]
     NotFound,
 }
 
@@ -245,14 +252,8 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
             Link("/advanced/store").text("Store Demo").class("tab"),
         ))
         .style("display: flex; gap: 10px; margin-bottom: 20px;"),
-        // Direct match on the passed route enum
-        // This avoids re-parsing the URL via an internal Router
-        view_match!(route, {
-            AdvancedRoute::Index => div("Select a demo above."),
-            AdvancedRoute::Css => advanced::CssDemo::new(),
-            AdvancedRoute::Store => advanced::StoreDemo::new(),
-            AdvancedRoute::NotFound => div("Advanced Demo Not Found"),
-        }),
+        // Delegate rendering to the route itself via RouteView
+        route.render(),
     ))
 }
 
@@ -293,19 +294,7 @@ fn main() {
             // Global Layout Shell
             NavBar::new(),
             // Root Router
-            Router::new().match_enum(|route: AppRoute| {
-                view_match!(route, {
-                    AppRoute::Home => HomePage::new(),
-                    AppRoute::Basics => basics::BasicsPage::new(),
-                    AppRoute::Flow => flow_control::FlowPage::new(),
-
-                    // Pass the nested enum to the sub-handler
-                    // Now AdvancedLayout takes the route directly as a prop
-                    AppRoute::Advanced(inner) => AdvancedLayout::new(inner),
-
-                    AppRoute::NotFound => NotFoundPage::new(),
-                })
-            }),
+            Router::new().match_route::<AppRoute>(),
         ))
     });
 }

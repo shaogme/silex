@@ -9,6 +9,7 @@ struct RouteDef {
     is_wildcard: bool,
     // 如果存在嵌套路由字段，存储其成员标识符 (字段名或索引)
     nested_field: Option<Member>,
+    view: Option<syn::Path>,
 }
 
 enum Segment {
@@ -37,7 +38,7 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
             .iter()
             .find(|attr| attr.path().is_ident("route"));
 
-        let route_path = if let Some(attr) = route_attr {
+        let (route_path, view_component) = if let Some(attr) = route_attr {
             parse_route_attr(attr)?
         } else {
             return Err(Error::new_spanned(
@@ -57,11 +58,13 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
             path_segments: segments,
             is_wildcard,
             nested_field,
+            view: view_component,
         });
     }
 
     let match_arms = generate_match_arms(name, &route_defs)?;
     let to_path_arms = generate_to_path_arms(name, &route_defs)?;
+    let render_arms = generate_render_arms(name, &route_defs)?;
 
     let expanded = quote! {
         impl ::silex::router::Routable for #name {
@@ -87,19 +90,39 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
                 }
             }
         }
+
+        impl ::silex::router::RouteView for #name {
+            fn render(&self) -> ::silex::dom::view::AnyView {
+                use ::silex::dom::view::IntoAnyView;
+                match self {
+                    #render_arms
+                }
+            }
+        }
     };
 
     Ok(expanded)
 }
 
-fn parse_route_attr(attr: &Attribute) -> syn::Result<String> {
-    attr.parse_nested_meta(|meta| Err(meta.error("We use parse_args manually")))
-        .unwrap_or(());
+fn parse_route_attr(attr: &Attribute) -> syn::Result<(String, Option<syn::Path>)> {
+    attr.parse_args_with(|input: syn::parse::ParseStream| {
+        let lit: syn::LitStr = input.parse()?;
+        let path = lit.value();
 
-    let lit: syn::LitStr = attr
-        .parse_args()
-        .map_err(|_| Error::new_spanned(attr, "Expected string literal in #[route(...)]"))?;
-    Ok(lit.value())
+        let mut view = None;
+        if input.peek(syn::Token![,]) {
+            input.parse::<syn::Token![,]>()?;
+            let key: syn::Ident = input.parse()?;
+            if key == "view" {
+                input.parse::<syn::Token![=]>()?;
+                view = Some(input.parse()?);
+            } else {
+                return Err(Error::new(key.span(), "Expected 'view' parameter"));
+            }
+        }
+
+        Ok((path, view))
+    })
 }
 
 fn parse_path_segments(path: &str) -> (Vec<Segment>, bool) {
@@ -536,4 +559,78 @@ fn find_field_type<'a>(fields: &'a Fields, name: &str) -> Option<&'a syn::Type> 
         }
         _ => None,
     }
+}
+
+fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Result<TokenStream> {
+    let mut arms = Vec::new();
+
+    for def in defs {
+        let variant_ident = &def.variant_ident;
+
+        if let Some(view_component) = &def.view {
+            // 如果指定了 view，我们需要构建组件
+            // 策略：所有字段必须是 Named Field (除了可能的 unique nested field in tuple?)
+            // 我们通过字段名将 variant 的字段传给 Component::new().field(val)
+
+            match &def.fields {
+                Fields::Named(named) => {
+                    let mut props_setters = Vec::new();
+                    let mut field_bindings = Vec::new();
+
+                    for field in &named.named {
+                        let fname = field.ident.as_ref().unwrap();
+                        field_bindings.push(fname.clone());
+                        // Component::new().prop(prop)
+                        props_setters.push(quote! { .#fname(#fname.clone()) });
+                    }
+
+                    arms.push(quote! {
+                        #enum_name::#variant_ident { #(#field_bindings),* } => {
+                            #view_component::new()
+                                #(#props_setters)*
+                                .into_any()
+                        }
+                    });
+                }
+                Fields::Unit => {
+                    arms.push(quote! {
+                        #enum_name::#variant_ident => #view_component::new().into_any()
+                    });
+                }
+                Fields::Unnamed(unnamed) => {
+                    // 对于 Tuple Variant，我们只允许一种情况：
+                    // 只有一个字段，且它是 nested route。
+                    // 并且我们需要猜测 prop 名字？
+                    // 为了安全起见，我们暂不支持 Tuple Variant 的自动绑定，要求用户改用 Named Variant
+                    // 除非... 没有任何字段（那匹配 Unit）
+                    if unnamed.unnamed.is_empty() {
+                        arms.push(quote! {
+                            #enum_name::#variant_ident() => #view_component::new().into_any()
+                        });
+                    } else {
+                        return Err(Error::new_spanned(
+                            &def.fields,
+                            "Route view binding currently only supports Named Fields (e.g., Variant { id: String }) to map parameters to component props. Please convert your Tuple Variant to a Struct Variant.",
+                        ));
+                    }
+                }
+            }
+        } else {
+            // 如果没有指定 view，返回 Empty
+            // 根据字段类型生成正确的匹配模式
+            let pattern = match &def.fields {
+                Fields::Named(_) => quote! { #enum_name::#variant_ident { .. } },
+                Fields::Unnamed(_) => quote! { #enum_name::#variant_ident(..) },
+                Fields::Unit => quote! { #enum_name::#variant_ident },
+            };
+
+            arms.push(quote! {
+                #pattern => ::silex::dom::view::AnyView::new(())
+            });
+        }
+    }
+
+    Ok(quote! {
+        #(#arms),*
+    })
 }

@@ -86,6 +86,31 @@ impl Router {
         }));
         self
     }
+
+    /// 自动匹配并渲染实现了 RouteView 的路由枚举
+    pub fn match_route<R>(mut self) -> Self
+    where
+        R: RouteView,
+    {
+        self.child = Some(Rc::new(move || {
+            let path_signal = crate::router::use_location_path();
+            let path = path_signal.get();
+
+            if let Some(matched) = R::match_path(&path) {
+                matched.render()
+            } else {
+                AnyView::new(())
+            }
+        }));
+        self
+    }
+}
+
+/// 路由视图特征
+///
+/// 扩展 Routable，定义了路由如何渲染为视图。
+pub trait RouteView: Routable {
+    fn render(&self) -> AnyView;
 }
 
 impl View for Router {

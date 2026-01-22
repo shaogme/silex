@@ -26,7 +26,7 @@ fn main() {
         });
 
         // 3. 构建 UI
-        App::new(user).mount(&app_container);
+        App::new().user(user).mount(&app_container);
     });
 }
 
@@ -38,13 +38,13 @@ fn App(user: UserStore) -> impl View {
         p("This example demonstrates fine-grained reactivity using the #[derive(Store)] macro."),
         
         // 显示区域
-        UserDisplay::new(user.clone()),
+        UserDisplay::new().user(user.clone()),
 
         // 编辑区域
-        UserEditor::new(user.clone()),
+        UserEditor::new().user(user.clone()),
         
         // 调试信息：展示 Store 导出功能
-        DebugPanel::new(user)
+        DebugPanel::new().user(user)
     ))
     .style("padding: 20px; font-family: sans-serif; max-width: 500px; margin: 0 auto; border: 1px solid #ccc; border-radius: 8px;")
 }

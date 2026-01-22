@@ -58,7 +58,7 @@ fn SearchPage() -> impl View {
         }
     };
 
-    Card::new(div((
+    Card::new().child(div((
         h2("🔍 Search Query Test"),
         div((
             input()
@@ -126,7 +126,7 @@ fn UserDetail(id: u32) -> impl View {
     let navigator = use_navigate();
     let path = use_location_path();
 
-    Card::new(div((
+    Card::new().child(div((
         div((
             h3(format!("User Profile: #{}", id)),
             button("Go Back")
@@ -245,20 +245,20 @@ fn main() {
             AppRoute::Users { routes: sub_route } => {
                 let sub_view = view_match!(sub_route, {
                     UsersRoute::List => UserList::new(),
-                    UsersRoute::Create => Card::new(h3("🆕 Create New User Form")),
+                    UsersRoute::Create => Card::new().child(h3("🆕 Create New User Form")),
                     // 直接解构参数并传递给组件，实现 100% 类型安全
-                    UsersRoute::Detail { id } => UserDetail::new(id),
+                    UsersRoute::Detail { id } => UserDetail::new().id(id),
                 });
                 
                 // 将子视图包裹在 UsersLayout 中
-                UsersLayout::new(sub_view)
+                UsersLayout::new().child(sub_view)
             },
             
             AppRoute::NotFound => NotFound::new(),
         });
 
         // 全局 Layout
-        MainLayout::new(content)
+        MainLayout::new().child(content)
     };
 
     let app_routes = Router::new()
