@@ -78,7 +78,7 @@ where
             // Clear previous content
             wrapper_dom.set_inner_html("");
 
-            if let Some(e) = error.get().flatten() {
+            if let Some(e) = error.get() {
                 (props.fallback)(e).mount(&wrapper_dom);
             } else {
                 // Catch panic

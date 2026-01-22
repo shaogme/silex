@@ -59,7 +59,7 @@ fn RecoverableComponent() -> impl View {
     let (should_error, set_should_error) = create_signal(false);
     
     move || {
-        if should_error.get().unwrap_or(false) {
+        if should_error.get() {
              // Return an Err, which triggers handle_error -> ErrorContext
               Err::<silex::dom::Element, _>(SilexError::Javascript("User clicked the error button!".into()))
         } else {
@@ -79,7 +79,7 @@ fn PanicToggleComponent() -> impl View {
      let (show_panic, _set_show_panic) = create_signal(false);
      
      move || {
-         if show_panic.get().unwrap_or(false) {
+         if show_panic.get() {
              // We wrap the panicking component in a way that its construction is delayed until this closure runs
              // Because ErrorBoundary wraps this closure in create_effect and catch_unwind, it captures this panic.
              // 无参数组件直接调用
@@ -103,7 +103,7 @@ fn ImmediatePanic() -> impl View {
          // Silex View wrapper now implements catch_unwind within the reactive effect,
          // so this panic SHOULD be caught by the ErrorBoundary.
          move || {
-             if active.get().unwrap_or(false) {
+             if active.get() {
                  panic!("KA-BOOM! Panic in render function.");
              }
              "Safe"

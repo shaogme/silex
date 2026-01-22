@@ -15,7 +15,7 @@ pub struct Show<Cond, ViewFn, FalsyViewFn, V1, V2> {
 
 impl<Cond, ViewFn, FalsyViewFn, V1, V2> Show<Cond, ViewFn, FalsyViewFn, V1, V2>
 where
-    Cond: Fn() -> Option<bool> + 'static,
+    Cond: Fn() -> bool + 'static,
     ViewFn: Fn() -> V1 + 'static,
     FalsyViewFn: Fn() -> V2 + 'static,
     V1: View,
@@ -33,7 +33,7 @@ where
 
 impl<Cond, ViewFn, FalsyViewFn, V1, V2> View for Show<Cond, ViewFn, FalsyViewFn, V1, V2>
 where
-    Cond: Fn() -> Option<bool> + 'static,
+    Cond: Fn() -> bool + 'static,
     ViewFn: Fn() -> V1 + 'static,
     FalsyViewFn: Fn() -> V2 + 'static,
     V1: View,
@@ -53,7 +53,7 @@ where
 
         create_effect(move || {
             // Check condition, might fail if signal dropped
-            let val = (cond)().unwrap_or(false);
+            let val = (cond)();
             let mut state = prev_state.borrow_mut();
 
             if *state == Some(val) {
@@ -84,7 +84,7 @@ pub struct ShowBuilder<Cond, ViewFn, V1> {
 
 impl<Cond, ViewFn, V1> ShowBuilder<Cond, ViewFn, V1>
 where
-    Cond: Fn() -> Option<bool> + 'static,
+    Cond: Fn() -> bool + 'static,
     ViewFn: Fn() -> V1 + 'static,
     V1: View,
 {
@@ -104,7 +104,7 @@ where
 // 让 ShowBuilder 本身也是 View (默认没有 fallback)
 impl<Cond, ViewFn, V1> View for ShowBuilder<Cond, ViewFn, V1>
 where
-    Cond: Fn() -> Option<bool> + 'static,
+    Cond: Fn() -> bool + 'static,
     ViewFn: Fn() -> V1 + 'static,
     V1: View,
 {
@@ -119,7 +119,7 @@ where
 /// Signal 扩展特质，提供 .when() 语法糖
 pub trait SignalShowExt {
     // 使用 Box<dyn> 简化返回类型签名，避免复杂的泛型嵌套
-    type Cond: Fn() -> Option<bool> + 'static;
+    type Cond: Fn() -> bool + 'static;
 
     fn when<V, F>(self, view: F) -> ShowBuilder<Self::Cond, F, V>
     where
@@ -129,7 +129,7 @@ pub trait SignalShowExt {
 
 // 为 ReadSignal<bool> 实现扩展
 impl SignalShowExt for ReadSignal<bool> {
-    type Cond = Box<dyn Fn() -> Option<bool>>;
+    type Cond = Box<dyn Fn() -> bool>;
 
     fn when<V, F>(self, view: F) -> ShowBuilder<Self::Cond, F, V>
     where

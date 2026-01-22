@@ -59,7 +59,7 @@ where
             // 1. 内容包装器（加载时隐藏）
             let content_wrapper = div().class("suspense-content");
             let _ = content_wrapper.clone().style(move || {
-                if count.get().unwrap_or(0) > 0 {
+                if count.get() > 0 {
                     "display: none"
                 } else {
                     "display: block"
@@ -77,7 +77,7 @@ where
             // 2. 后备包装器（加载时可见）
             let fallback_wrapper = div().class("suspense-fallback");
             let _ = fallback_wrapper.clone().style(move || {
-                if count.get().unwrap_or(0) > 0 {
+                if count.get() > 0 {
                     "display: block"
                 } else {
                     "display: none"

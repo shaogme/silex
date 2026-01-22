@@ -62,7 +62,7 @@ fn UserDisplay(user: UserStore) -> impl View {
         )),
         div().child((
             span().style("font-weight: bold;").text("Age: "),
-            span().text(move || user.age.get().unwrap().to_string())
+            span().text(move || user.age.get().to_string())
         )),
         div().child((
             span().style("font-weight: bold;").text("Email: "),

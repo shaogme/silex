@@ -76,8 +76,7 @@ impl<V: View> View for Card<V> {
 
 #[component]
 fn CounterDisplay() -> SilexResult<impl View> {
-    let count = use_context::<ReadSignal<i32>>()
-        .ok_or_else(|| silex::SilexError::Reactivity("Context 'count' not found!".into()))?;
+    let count = expect_context::<ReadSignal<i32>>();
 
     Ok(div()
         .style("margin-top: 10px; color: #888; font-size: 0.9rem;")
@@ -91,11 +90,8 @@ fn CounterDisplay() -> SilexResult<impl View> {
 
 #[component]
 fn CounterControls() -> SilexResult<impl View> {
-    let set_count = use_context::<WriteSignal<i32>>().ok_or_else(|| {
-        silex::SilexError::Reactivity("Context 'set_count' not found!".into())
-    })?;
-    let count = use_context::<ReadSignal<i32>>()
-        .ok_or_else(|| silex::SilexError::Reactivity("Context count not found".into()))?;
+    let set_count = expect_context::<WriteSignal<i32>>();
+    let count = expect_context::<ReadSignal<i32>>();
 
     Ok(div().style("display: flex; align-items: center; gap: 15px;").child((
         button()
@@ -128,12 +124,9 @@ fn HomeView() -> impl View {
     let (name, set_name) = create_signal("Rustacean".to_string());
     
     // 全局状态通过 Context 获取
-    let count = use_context::<ReadSignal<i32>>().expect("Count context missing");
+    let count = expect_context::<ReadSignal<i32>>();
     
-    let is_high = create_memo(move || match count.get() {
-        Some(c) => c > 5,
-        None => false,
-    });
+    let is_high = create_memo(move || count.get() > 5);
 
     // Async Resource
     let async_data: Resource<String, silex::SilexError> = create_resource(

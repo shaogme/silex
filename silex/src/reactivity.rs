@@ -139,7 +139,7 @@ where
         // 5. 构造真正的计算闭包，用于后续更新
         let computation = move || {
             let new_value = f();
-            if let Some(old_value) = read.get_untracked()
+            if let Some(old_value) = read.try_get_untracked()
                 && new_value != old_value
             {
                 write.set(new_value);
@@ -162,20 +162,35 @@ where
 impl<T: 'static + Clone> ReadSignal<T> {
     /// 获取 Signal 的当前值，并追踪依赖。
     /// 如果在 Effect 上下文中调用，该 Effect 会被注册为依赖。
-    pub fn get(&self) -> Option<T> {
+    /// 如果 Signal 已被销毁，此方法会 Panic。
+    pub fn get(&self) -> T {
+        self.try_get().expect("ReadSignal: value has been dropped")
+    }
+
+    /// 获取 Signal 的当前值，并追踪依赖。
+    /// 返回 Option，如果 Signal 已被销毁则返回 None。
+    pub fn try_get(&self) -> Option<T> {
         RUNTIME.with(|rt| {
             rt.track_dependency(self.id);
-            self.get_untracked_internal(rt)
+            self.try_get_untracked_internal(rt)
         })
     }
 
     /// 获取 Signal 的当前值，但不追踪依赖。
-    pub fn get_untracked(&self) -> Option<T> {
-        RUNTIME.with(|rt| self.get_untracked_internal(rt))
+    /// 如果 Signal 已被销毁，此方法会 Panic。
+    pub fn get_untracked(&self) -> T {
+        self.try_get_untracked()
+            .expect("ReadSignal: value has been dropped")
+    }
+
+    /// 获取 Signal 的当前值，但不追踪依赖。
+    /// 返回 Option，如果 Signal 已被销毁则返回 None。
+    pub fn try_get_untracked(&self) -> Option<T> {
+        RUNTIME.with(|rt| self.try_get_untracked_internal(rt))
     }
 
     /// 内部使用的获取值方法，不涉及依赖追踪逻辑。
-    fn get_untracked_internal(&self, rt: &crate::reactivity::runtime::Runtime) -> Option<T> {
+    fn try_get_untracked_internal(&self, rt: &crate::reactivity::runtime::Runtime) -> Option<T> {
         let signals = rt.signals.borrow();
         if let Some(signal) = signals.get(self.id) {
             let any_val = &signal.value;
@@ -186,7 +201,7 @@ impl<T: 'static + Clone> ReadSignal<T> {
                 return None;
             }
         }
-        crate::error!("ReadSignal refers to dropped value");
+        // crate::error!("ReadSignal refers to dropped value");
         None
     }
 }
@@ -218,13 +233,23 @@ impl<T: Clone + 'static> RwSignal<T> {
     }
 
     /// 获取值并追踪依赖 (同 `ReadSignal::get`)。
-    pub fn get(&self) -> Option<T> {
+    pub fn get(&self) -> T {
         self.read.get()
     }
 
+    /// 尝试获取值并追踪依赖 (同 `ReadSignal::try_get`)。
+    pub fn try_get(&self) -> Option<T> {
+        self.read.try_get()
+    }
+
     /// 获取值但不追踪依赖 (同 `ReadSignal::get_untracked`)。
-    pub fn get_untracked(&self) -> Option<T> {
+    pub fn get_untracked(&self) -> T {
         self.read.get_untracked()
+    }
+
+    /// 尝试获取值但不追踪依赖 (同 `ReadSignal::try_get_untracked`)。
+    pub fn try_get_untracked(&self) -> Option<T> {
+        self.read.try_get_untracked()
     }
 
     /// 设置新值 (同 `WriteSignal::set`)。
@@ -417,18 +442,18 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
     /// 获取资源数据。如果是 `None` 则表示尚未加载完成或初始状态。
     /// 如果有错误，会尝试上报到 ErrorBoundary。
     pub fn get(&self) -> Option<T> {
-        if let Some(e) = self.error.get().flatten() {
+        if let Some(e) = self.error.get() {
             if let Some(ctx) = use_context::<crate::error::ErrorContext>() {
                 let err_msg = format!("{:?}", e);
                 (ctx.0)(crate::error::SilexError::Javascript(err_msg));
             }
         }
-        self.data.get().flatten()
+        self.data.get()
     }
 
     /// 检查资源是否正在加载。
     pub fn loading(&self) -> bool {
-        self.loading.get().unwrap_or(false)
+        self.loading.get()
     }
 
     /// 手动触发重新获取数据。
@@ -490,6 +515,23 @@ pub fn use_context<T: Clone + 'static>() -> Option<T> {
         }
         None
     })
+}
+
+/// 获取上下文值，如果未找到则 Panic。
+/// 适用于那些必须存在的上下文（如 Router, Theme）。
+pub fn expect_context<T: Clone + 'static>() -> T {
+    match use_context::<T>() {
+        Some(v) => v,
+        None => {
+            let type_name = std::any::type_name::<T>();
+            let msg = format!(
+                "Expected context `{}` but none found. Did you forget to wrap your component in a Provider?",
+                type_name
+            );
+            crate::logging::console_error(&msg);
+            panic!("{}", msg);
+        }
+    }
 }
 
 // --- Effect 副作用 API ---

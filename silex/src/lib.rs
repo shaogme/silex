@@ -17,7 +17,8 @@ pub mod prelude {
     pub use crate::flow::*;
     pub use crate::reactivity::{
         ReadSignal, Resource, RwSignal, WriteSignal, create_effect, create_memo, create_resource,
-        create_rw_signal, create_scope, create_signal, on_cleanup, provide_context, use_context,
+        create_rw_signal, create_scope, create_signal, expect_context, on_cleanup, provide_context,
+        use_context,
     };
     pub use crate::router::*;
 }

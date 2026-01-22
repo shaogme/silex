@@ -157,9 +157,8 @@ where
         // 2. 创建副作用
         let signal = self;
         create_effect(move || {
-            if let Some(value) = signal.get() {
-                node.set_node_value(Some(&value.to_string()));
-            }
+            let value = signal.get();
+            node.set_node_value(Some(&value.to_string()));
         });
     }
 }

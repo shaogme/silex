@@ -148,7 +148,7 @@ impl View for Router {
         let fallback = self.fallback;
 
         create_effect(move || {
-            let current_path = path.get().unwrap_or_default();
+            let current_path = path.get();
 
             // 简单的 O(N) 匹配
             // 未来可以优化为 Radix Tree

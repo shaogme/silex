@@ -80,13 +80,12 @@ where
         // Signal 是 Copy 的，直接移动进去
         let signal = self;
         create_effect(move || {
-            if let Some(v) = signal.get() {
-                if let Err(e) = el
-                    .set_attribute(&name, v.as_ref())
-                    .map_err(SilexError::from)
-                {
-                    crate::error::handle_error(e);
-                }
+            let v = signal.get();
+            if let Err(e) = el
+                .set_attribute(&name, v.as_ref())
+                .map_err(SilexError::from)
+            {
+                crate::error::handle_error(e);
             }
         });
     }

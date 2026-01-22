@@ -245,7 +245,7 @@ pub fn derive_store(input: TokenStream) -> TokenStream {
     let get_fields = fields.iter().map(|f| {
         let name = &f.ident;
         quote! {
-            #name: self.#name.get().expect("Store element missing")
+            #name: self.#name.get()
         }
     });
 
