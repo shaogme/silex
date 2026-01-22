@@ -167,8 +167,7 @@ mod advanced {
                 button("Toggle Notifications")
                     .on_click(move |_| settings.notifications.update(|n| *n = !*n)),
                 input()
-                    .value(settings.username)
-                    .on_input(move |val| settings.username.set(val))
+                    .bind_value(settings.username)
                     .placeholder("Change username..."),
             ))
             .style("display: flex; gap: 10px;"),
@@ -277,7 +276,6 @@ fn HomePage() -> impl View {
 
 fn main() {
     silex::dom::setup_global_error_handlers();
-    console_error_panic_hook::set_once();
 
     // Global State Initialization
     let store = UserSettingsStore::new(UserSettings {

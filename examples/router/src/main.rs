@@ -217,7 +217,7 @@ enum AppRoute {
 // ==========================================
 
 fn main() {
-    console_error_panic_hook::set_once();
+    silex::dom::setup_global_error_handlers();
     
     let window = web_sys::window().unwrap();
     let document = window.document().unwrap();

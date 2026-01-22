@@ -7,6 +7,5 @@ edition = "2021"
 # 假设 silex 就在上级目录，根据你的实际结构调整 path
 silex = { path = "../../silex" } 
 wasm-bindgen = "0.2"
-console_error_panic_hook = "0.1"
 web-sys = "0.3"
 silex_macros = { path = "../../silex_macros" }

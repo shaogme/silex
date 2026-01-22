@@ -2,7 +2,7 @@ use crate::SilexError;
 use crate::dom::attribute::AttributeValue;
 use crate::dom::tags::Tag;
 use crate::dom::view::View;
-use crate::reactivity::on_cleanup;
+use crate::reactivity::{RwSignal, create_effect, on_cleanup};
 
 use super::tags;
 use std::marker::PhantomData;
@@ -134,6 +134,35 @@ impl Element {
         });
 
         self
+    }
+
+    pub fn bind_value(self, signal: RwSignal<String>) -> Self {
+        let this = self.on_input(move |value| {
+            signal.set(value);
+        });
+
+        let dom_element = this.dom_element.clone();
+
+        create_effect(move || {
+            let value = signal.get();
+            if let Some(input) = dom_element.dyn_ref::<web_sys::HtmlInputElement>() {
+                if input.value() != value {
+                    input.set_value(&value);
+                }
+            } else if let Some(area) = dom_element.dyn_ref::<web_sys::HtmlTextAreaElement>() {
+                if area.value() != value {
+                    area.set_value(&value);
+                }
+            } else if let Some(select) = dom_element.dyn_ref::<web_sys::HtmlSelectElement>() {
+                if select.value() != value {
+                    select.set_value(&value);
+                }
+            } else {
+                let _ = dom_element.set_attribute("value", &value);
+            }
+        });
+
+        this
     }
 
     // --- 统一的子节点/文本 API ---
@@ -269,6 +298,35 @@ impl<T> TypedElement<T> {
         });
 
         self
+    }
+
+    pub fn bind_value(self, signal: RwSignal<String>) -> Self {
+        let this = self.on_input(move |value| {
+            signal.set(value);
+        });
+
+        let dom_element = this.element.dom_element.clone();
+
+        create_effect(move || {
+            let value = signal.get();
+            if let Some(input) = dom_element.dyn_ref::<web_sys::HtmlInputElement>() {
+                if input.value() != value {
+                    input.set_value(&value);
+                }
+            } else if let Some(area) = dom_element.dyn_ref::<web_sys::HtmlTextAreaElement>() {
+                if area.value() != value {
+                    area.set_value(&value);
+                }
+            } else if let Some(select) = dom_element.dyn_ref::<web_sys::HtmlSelectElement>() {
+                if select.value() != value {
+                    select.set_value(&value);
+                }
+            } else {
+                let _ = dom_element.set_attribute("value", &value);
+            }
+        });
+
+        this
     }
 
     // --- Children API ---
