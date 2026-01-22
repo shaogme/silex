@@ -1,5 +1,4 @@
 use crate::dom::View;
-use crate::dom::tag::div;
 use crate::reactivity::{ReadSignal, create_effect};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -40,19 +39,37 @@ where
     V2: View,
 {
     fn mount(self, parent: &Node) {
-        let container = div().style("display: contents");
+        let document = crate::dom::document();
 
-        container.clone().mount(parent);
-        let root = container.element;
+        // 1. Create Anchors (Start & End Markers)
+        let start_marker = document.create_comment("show-start");
+        let start_node: Node = start_marker.into();
+
+        if let Err(e) = parent
+            .append_child(&start_node)
+            .map_err(crate::SilexError::from)
+        {
+            crate::error::handle_error(e);
+            return;
+        }
+
+        let end_marker = document.create_comment("show-end");
+        let end_node: Node = end_marker.into();
+
+        if let Err(e) = parent
+            .append_child(&end_node)
+            .map_err(crate::SilexError::from)
+        {
+            crate::error::handle_error(e);
+            return;
+        }
 
         let cond = self.condition;
         let view_fn = self.view;
         let fallback_fn = self.fallback;
-
         let prev_state = Rc::new(RefCell::new(None::<bool>));
 
         create_effect(move || {
-            // Check condition, might fail if signal dropped
             let val = (cond)();
             let mut state = prev_state.borrow_mut();
 
@@ -60,12 +77,29 @@ where
                 return;
             }
 
-            root.set_inner_html("");
+            // 清理旧内容 (Clean up between markers)
+            if let Some(parent) = start_node.parent_node() {
+                while let Some(sibling) = start_node.next_sibling() {
+                    if sibling == end_node {
+                        break;
+                    }
+                    let _ = parent.remove_child(&sibling);
+                }
+            }
+
+            // 准备新内容 (Prepare new content)
+            let fragment = document.create_document_fragment();
+            let fragment_node: Node = fragment.clone().into();
 
             if val {
-                (view_fn)().mount(&root);
+                (view_fn)().mount(&fragment_node);
             } else if let Some(fb) = fallback_fn.as_ref() {
-                (fb)().mount(&root);
+                (fb)().mount(&fragment_node);
+            }
+
+            // 插入新内容 (Insert new content)
+            if let Some(parent) = end_node.parent_node() {
+                let _ = parent.insert_before(&fragment_node, Some(&end_node));
             }
 
             *state = Some(val);

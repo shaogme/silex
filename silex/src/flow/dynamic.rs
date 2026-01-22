@@ -1,5 +1,4 @@
 use crate::dom::View;
-use crate::dom::tag::div;
 use crate::reactivity::create_effect;
 use web_sys::Node;
 
@@ -46,23 +45,55 @@ where
     F: Fn() -> V + 'static,
 {
     fn mount(self, parent: &Node) {
-        // 使用 display: contents 的 div 作为挂载锚点
-        // 这允许我们在内部完全替换内容而不破坏父节点的结构
-        let container = div().style("display: contents");
-        container.clone().mount(parent);
-        let root = container.element;
+        let document = crate::dom::document();
+
+        // 1. Create Anchors
+        let start_marker = document.create_comment("dyn-start");
+        let start_node: Node = start_marker.into();
+
+        if let Err(e) = parent
+            .append_child(&start_node)
+            .map_err(crate::SilexError::from)
+        {
+            crate::error::handle_error(e);
+            return;
+        }
+
+        let end_marker = document.create_comment("dyn-end");
+        let end_node: Node = end_marker.into();
+
+        if let Err(e) = parent
+            .append_child(&end_node)
+            .map_err(crate::SilexError::from)
+        {
+            crate::error::handle_error(e);
+            return;
+        }
 
         let view_fn = self.view_fn;
 
         create_effect(move || {
-            // view_fn 应该包含它需要的响应式依赖
             let new_view = view_fn();
 
-            // 清空旧内容
-            root.set_inner_html("");
+            // 清理旧内容
+            if let Some(parent) = start_node.parent_node() {
+                while let Some(sibling) = start_node.next_sibling() {
+                    if sibling == end_node {
+                        break;
+                    }
+                    let _ = parent.remove_child(&sibling);
+                }
+            }
 
-            // 挂载新内容
-            new_view.mount(&root);
+            // 准备新内容
+            let fragment = document.create_document_fragment();
+            let fragment_node: Node = fragment.clone().into();
+            new_view.mount(&fragment_node);
+
+            // 插入新内容
+            if let Some(parent) = end_node.parent_node() {
+                let _ = parent.insert_before(&fragment_node, Some(&end_node));
+            }
         });
     }
 }
