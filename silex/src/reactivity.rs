@@ -12,6 +12,38 @@ use std::rc::Rc;
 use crate::reactivity::runtime::{RUNTIME, run_effect};
 use crate::{SilexError, SilexResult};
 
+// --- Accessor Trait ---
+
+/// A trait that provides a uniform way to access a value,
+/// abstracting over Signals, Memos, and closures.
+pub trait Accessor<T> {
+    fn value(&self) -> T;
+}
+
+// 1. Implementation for Closures
+impl<F, T> Accessor<T> for F
+where
+    F: Fn() -> T,
+{
+    fn value(&self) -> T {
+        self()
+    }
+}
+
+// 2. Implementation for ReadSignal
+impl<T: Clone + 'static> Accessor<T> for ReadSignal<T> {
+    fn value(&self) -> T {
+        self.get()
+    }
+}
+
+// 3. Implementation for RwSignal
+impl<T: Clone + 'static> Accessor<T> for RwSignal<T> {
+    fn value(&self) -> T {
+        self.get()
+    }
+}
+
 // --- Signal 信号 API ---
 
 /// `ReadSignal` 是一个用于读取响应式数据的句柄。

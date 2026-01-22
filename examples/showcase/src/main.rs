@@ -67,17 +67,73 @@ mod flow_control {
 
     #[component]
     pub fn ListDemo() -> impl View {
-        let (list, _set_list) = create_signal(vec!["Apple", "Banana", "Cherry"]);
+        let (list, set_list) = create_signal(vec!["Apple", "Banana", "Cherry"]);
 
         div![
-            h3("List Rendering"),
-            ul(For::new(move || list.get(), |item| *item, |item| li(item))),
+            h3("List Rendering with Signal Ergonomics"),
+            p("Demonstrates passing a Signal directly to For::new without closure wrapper."),
+            // BEFORE: For::new(move || list.get(), ...)
+            // AFTER:  For::new(list, ...) - Accessor trait enables this!
+            ul(For::new(list, |item| *item, |item| li(item))),
+            button("Add Item").on_click(move |_| {
+                set_list.update(|l| l.push("New Item"));
+            }),
+        ]
+    }
+
+    #[component]
+    pub fn ShowDemo() -> impl View {
+        let (visible, set_visible) = create_signal(true);
+
+        div![
+            h3("Conditional Rendering with Show"),
+            p("Demonstrates passing a Signal directly to Show::new as condition."),
+            button("Toggle Visibility").on_click(move |_| {
+                set_visible.update(|v| *v = !*v);
+            }),
+            // BEFORE: Show::new(move || visible.get(), ...)
+            // AFTER:  Show::new(visible, ...) - Accessor trait enables this!
+            Show::new(
+                visible,
+                || div("✅ Content is visible!")
+                    .style("color: green; padding: 10px; background: #e8f5e9;"),
+                Some(|| div("❌ Content is hidden")
+                    .style("color: red; padding: 10px; background: #ffebee;")),
+            ),
+        ]
+    }
+
+    #[component]
+    pub fn DynamicDemo() -> impl View {
+        let (mode, set_mode) = create_signal("A");
+
+        div![
+            h3("Dynamic Component Switching"),
+            p("Demonstrates Dynamic component with closure accessor."),
+            div![
+                button("Show A").on_click(move |_| set_mode.set("A")),
+                button("Show B").on_click(move |_| set_mode.set("B")),
+                button("Show C").on_click(move |_| set_mode.set("C")),
+            ]
+            .style("display: flex; gap: 10px; margin-bottom: 10px;"),
+            // Dynamic uses Accessor, so closures work seamlessly
+            Dynamic::new(move || {
+                view_match!(mode.get(), {
+                    "A" => div("🅰️ Component A")
+                        .style("padding: 20px; background: #e3f2fd;"),
+                    "B" => div("🅱️ Component B")
+                        .style("padding: 20px; background: #fff3e0;"),
+                    _ => div("©️ Component C")
+                        .style("padding: 20px; background: #f3e5f5;"),
+                })
+            }),
         ]
     }
 
     #[component]
     pub fn FlowPage() -> impl View {
-        div![h2("Control Flow"), ListDemo()]
+        div![h2("Control Flow"), ListDemo(), ShowDemo(), DynamicDemo(),]
+            .style("display: flex; flex-direction: column; gap: 20px;")
     }
 }
 

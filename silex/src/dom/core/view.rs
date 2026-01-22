@@ -389,3 +389,28 @@ impl_from_tuple_for_anyview!(A, B);
 impl_from_tuple_for_anyview!(A, B, C);
 impl_from_tuple_for_anyview!(A, B, C, D);
 impl_from_tuple_for_anyview!(A, B, C, D, E);
+
+/// 一个辅助宏，用于简化从 `match` 表达式返回 `AnyView` 的操作。
+///
+/// 它会自动对每个分支的结果调用 `.into_any()`，从而允许不同类型的 View 在同一个 `match` 块中返回。
+///
+/// # 示例
+///
+/// ```rust,ignore
+/// view_match!(route, {
+///     AppRoute::Home => HomePage::new(),
+///     AppRoute::Basics => "Basics Page",
+///     AppRoute::NotFound => (),
+/// })
+/// ```
+#[macro_export]
+macro_rules! view_match {
+    // 匹配分支中可以包含 guard (if condition)
+    ($target:expr, { $($pat:pat $(if $guard:expr)? => $val:expr),* $(,)? }) => {
+        match $target {
+            $(
+                $pat $(if $guard)? => $crate::dom::view::IntoAnyView::into_any($val),
+            )*
+        }
+    };
+}

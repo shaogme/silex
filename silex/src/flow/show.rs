@@ -1,5 +1,5 @@
 use crate::dom::View;
-use crate::reactivity::{ReadSignal, create_effect};
+use crate::reactivity::{Accessor, ReadSignal, create_effect};
 use std::cell::RefCell;
 use std::rc::Rc;
 use web_sys::Node;
@@ -14,7 +14,7 @@ pub struct Show<Cond, ViewFn, FalsyViewFn, V1, V2> {
 
 impl<Cond, ViewFn, FalsyViewFn, V1, V2> Show<Cond, ViewFn, FalsyViewFn, V1, V2>
 where
-    Cond: Fn() -> bool + 'static,
+    Cond: Accessor<bool> + 'static,
     ViewFn: Fn() -> V1 + 'static,
     FalsyViewFn: Fn() -> V2 + 'static,
     V1: View,
@@ -32,7 +32,7 @@ where
 
 impl<Cond, ViewFn, FalsyViewFn, V1, V2> View for Show<Cond, ViewFn, FalsyViewFn, V1, V2>
 where
-    Cond: Fn() -> bool + 'static,
+    Cond: Accessor<bool> + 'static,
     ViewFn: Fn() -> V1 + 'static,
     FalsyViewFn: Fn() -> V2 + 'static,
     V1: View,
@@ -70,7 +70,8 @@ where
         let prev_state = Rc::new(RefCell::new(None::<bool>));
 
         create_effect(move || {
-            let val = (cond)();
+            let val = cond.value();
+
             let mut state = prev_state.borrow_mut();
 
             if *state == Some(val) {

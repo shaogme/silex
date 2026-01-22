@@ -1,5 +1,5 @@
 use crate::dom::View;
-use crate::reactivity::{NodeId, create_effect, create_scope, dispose};
+use crate::reactivity::{Accessor, NodeId, create_effect, create_scope, dispose};
 use crate::{SilexError, SilexResult};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -58,7 +58,7 @@ pub struct For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> {
 impl<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V>
 where
     // ItemsFn returns the Source directly (e.g. Vec or Result<Vec>)
-    ItemsFn: Fn() -> Items + 'static,
+    ItemsFn: Accessor<Items> + 'static,
     Items: IntoForLoopResult<Item = Item>,
     KeyFn: Fn(&Item) -> Key + 'static,
     MapFn: Fn(Item) -> V + 'static,
@@ -78,7 +78,7 @@ where
 impl<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> View
     for For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V>
 where
-    ItemsFn: Fn() -> Items + 'static,
+    ItemsFn: Accessor<Items> + 'static,
     Items: IntoForLoopResult<Item = Item> + 'static,
     // We need the Iterator produced by the result to be iterable
     <Items as IntoForLoopResult>::Iter: IntoIterator<Item = Item>,
@@ -119,7 +119,7 @@ where
             let mut rows_map = active_rows.borrow_mut();
 
             // Use the trait to convert whatever Items is into SilexResult<Iterator>
-            let result = (items_fn)().into_result();
+            let result = items_fn.value().into_result();
 
             let items_iter = match result {
                 Ok(iter) => iter,

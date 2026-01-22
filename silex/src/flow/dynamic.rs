@@ -1,5 +1,5 @@
 use crate::dom::View;
-use crate::reactivity::create_effect;
+use crate::reactivity::{Accessor, create_effect};
 use web_sys::Node;
 
 /// Dynamic 组件：用于渲染动态内容，类似于 SolidJS 的 <Dynamic>
@@ -24,25 +24,29 @@ use web_sys::Node;
 pub struct Dynamic<V, F>
 where
     V: View,
-    F: Fn() -> V + 'static,
+    F: Accessor<V> + 'static,
 {
     view_fn: F,
+    _marker: std::marker::PhantomData<V>,
 }
 
 impl<V, F> Dynamic<V, F>
 where
     V: View,
-    F: Fn() -> V + 'static,
+    F: Accessor<V> + 'static,
 {
     pub fn new(f: F) -> Self {
-        Self { view_fn: f }
+        Self {
+            view_fn: f,
+            _marker: std::marker::PhantomData,
+        }
     }
 }
 
 impl<V, F> View for Dynamic<V, F>
 where
     V: View,
-    F: Fn() -> V + 'static,
+    F: Accessor<V> + 'static,
 {
     fn mount(self, parent: &Node) {
         let document = crate::dom::document();
@@ -73,7 +77,7 @@ where
         let view_fn = self.view_fn;
 
         create_effect(move || {
-            let new_view = view_fn();
+            let new_view = view_fn.value();
 
             // 清理旧内容
             if let Some(parent) = start_node.parent_node() {

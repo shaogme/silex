@@ -73,7 +73,7 @@ where
 // 3. 直接 Signal 支持
 impl<T> AttributeValue for ReadSignal<T>
 where
-    T: AsRef<str> + Clone + 'static,
+    T: std::fmt::Display + Clone + 'static,
 {
     fn apply(self, el: &WebElem, name: &str) {
         let el = el.clone();
@@ -83,7 +83,7 @@ where
         create_effect(move || {
             let v = signal.get();
             if let Err(e) = el
-                .set_attribute(&name, v.as_ref())
+                .set_attribute(&name, &v.to_string())
                 .map_err(SilexError::from)
             {
                 crate::error::handle_error(e);
@@ -94,7 +94,7 @@ where
 
 impl<T> AttributeValue for RwSignal<T>
 where
-    T: AsRef<str> + Clone + 'static,
+    T: std::fmt::Display + Clone + 'static,
 {
     fn apply(self, el: &WebElem, name: &str) {
         self.read_signal().apply(el, name);
