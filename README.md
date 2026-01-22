@@ -29,10 +29,19 @@ div()
     )
 ```
 
-### 3. 多态属性与视图 (Polymorphic Attributes & Views)
-Silex 充分利用 Rust 的 Trait 系统，使得 API 极具灵活性：
-- **属性多态**：`attr`、`id` 等方法不仅接受静态字符串，还接受 `Signal`、闭包等。如果是响应式数据，框架会自动建立绑定。
-- **视图多态**：`View` 特征实现了对基础类型（数字、布尔）、字符串、元组（用于片段）、`Option`、`Vec` 等的广泛支持，使得 UI 结构定义非常自然。
+### 3. 类型安全与多态视图 (Type-Safe Attributes & Polymorphic Views)
+Silex 充分利用 Rust 的类型系统，实现了编译时的 HTML 属性检查：
+- **类型安全 (Type-Safe)**：DOM 元素被强类型化（如 `TypedElement<Div>` vs `TypedElement<Input>`）。只有合法的 HTML 属性才能被调用。
+- **属性多态**：所有属性方法（如 `.id()`, `.value()`）都支持多态参数，不仅接受静态值，还接受 `Signal`、闭包等。
+- **视图多态**：`View` 特征广泛支持各种 Rust 类型，UI 结构定义自然。
+
+## 🧩 宏系统 (Macros System)
+Silex 提供了强大的过程宏来提升开发体验 (DX)：
+
+- **`#[component]`**：自动为组件结构体生成构建者模式 (Builder Pattern) 方法，并支持对 `Children`, `AnyView`, `String` 等类型的自动 `into` 转换，消除样板代码。
+- **`css!`**：支持 CSS-in-Rust。编写标准的 CSS 语法，宏会在编译时进行解析、验证、压缩，并生成唯一的哈希类名 (e.g., `slx-1a2b3c`)，实现局部作用域样式。
+- **`#[derive(Routable)]`**：声明式路由核心。通过在 Enum 上标注 `#[route("/path/:param")]`，自动生成路径匹配与生成逻辑，实现完全的类型安全路由。
+- **`#[derive(Store)]`**：为结构体自动生成细粒度的响应式 Store，将每个字段转换为 `RwSignal`，方便深层状态管理。
 
 ## 🏗️ 设计架构与实现 (Architecture & Implementation)
 
@@ -67,16 +76,16 @@ Silex 的架构主要由三个核心模块组成：**Reactivity (响应式核心
 ### 2. DOM 抽象层 (`src/dom`)
 这一层连接响应式系统与浏览器的 `web-sys` API。
 
-- **Element (`dom/element.rs`)**：
-    - 对 `web_sys::Element` 的轻量级包装。
-    - 提供了 `.attr()`, `.style()`, `.on_click()` 等链式方法。
-    - **智能绑定**：例如 `attr` 方法接收 `impl AttributeValue`。如果传入的是 `ReadSignal`，它会自动创建一个内部 Effect 来保持 DOM 属性与 Signal 同步；如果传入的是静态值，则只设置一次。
-- **View Trait (`dom/view.rs`)**：
+- **Typed Element System (`dom/core/*`)**：
+    - **TypedElement<T>**：对 `web_sys::Element` 的类型安全包装，其中 `T` 是标签标记（如 `Div`, `Input`）。
+    - **Trait-Based Props**：属性方法通过 `GlobalAttributes`, `FormAttributes` 等特征按需实现。
+    - **智能绑定**：属性方法接收 `impl AttributeValue`。如果传入 `ReadSignal` 或闭包，会自动创建 Effect 保持同步；静态值则只设置一次。
+- **View Trait (`dom/core/view.rs`)**：
     - 定义了 `mount(self, parent: &Node)` 方法。
-    - 实现了对 Rust 原生类型、集合类型和闭包的渲染支持。
-    - 闭包作为 View 时（`Fn() -> impl View`），被视为"惰性视图"，结合 `create_effect` 可实现动态文本更新。
-- **Suspense (`dom/suspense.rs`)**：
-    - 结合 `SuspenseContext`，通过监控异步任务计数器，在数据加载时自动切换显示 `fallback` 视图和实际 `children` 视图。
+    - **Range Cleaning**：闭包作为 View 时（`Fn() -> impl View`），实现了基于锚点（Marker）的区域清理策略 ("Virtual Fragment")，无需额外的包裹节点即可实现细粒度的动态更新。
+    - 广泛类型支持：包括 `Option`, `Result`, `Vec`, Tuple (Fragment) 等。
+- **Suspense (`dom/components/suspense.rs`)**：
+    - 结合 `SuspenseContext`，通过监控异步任务计数器，在数据加载时自动切换显示（通过 CSS display）`fallback` 视图和实际 `children` 视图。
 
 ### 3. 控制流组件 (`src/flow`)
 Silex 不使用编译器魔法处理 `if` 或 `for`，而是提供高效的组件。
@@ -92,21 +101,23 @@ Silex 不使用编译器魔法处理 `if` 或 `for`，而是提供高效的组�
     - 通用动态组件，根据闭包返回的 View 类型动态切换内容。
 
 ### 4. 路由系统 (`src/router`)
-`Router` 组件提供了客户端导航能力，无需页面刷新。
-- **声明式配置**：通过链式 API 定义路由规则。
-- **无 VDOM**：路由切换时直接挂载/卸载 DOM 节点，不依赖 VDOM Diff。
-- **RouterContext**：提供 `use_navigate`, `use_params` 等 Hooks 方便在任何组件中获取路由状态。
+`Router` 组件提供了类型安全的客户端导航能力，无需页面刷新。
+- **Typed Routing**：通过 `#[derive(Routable)]` 定义 Enum 路由，编译器保证路由定义的正确性。支持参数匹配 (`:id`) 和通配符 (`*`)。
+- **Match Enum**：`Router::new().match_enum(...)` 模式，将路由匹配逻辑与视图渲染解耦。
+- **RouterContext**：提供 `use_navigate`, `use_location_path` 等 Hooks 方便在任何组件中获取路由状态。
 
 ## 📝 核心模块概览
 
 | 模块 | 路径 | 描述 |
 |------|------|------|
-| **Dom** | `dom/element.rs`, `dom/attribute.rs` | DOM 元素封装、属性绑定逻辑、SVG支持。 |
-| **View** | `dom/view.rs` | `View` 特征定义及针对各类 Rust 类型的实现。 |
+| **Dom** | `dom/core/*` | 类型安全的 DOM 封装、属性 Trait 系统、SVG支持。 |
+| **View** | `dom/core/view.rs` | `View` 特征定义、动态视图更新策略 (Range Cleaning)。 |
 | **Reactivity** | `reactivity.rs`, `reactivity/runtime.rs` | 信号、副作用、Scope 管理、运行时状态。 |
-| **Flow** | `flow/show.rs`, `flow/for_loop.rs` | `Show` (if), `For` (loop) 等控制流的高效实现。 |
-| **Router** | `router.rs`, `router/matcher.rs` | 客户端路由，支持参数匹配和 History API 集成。 |
-| **Suspense** | `dom/suspense.rs` | 异步边界处理，支持 Loading 状态回退。 |
+| **Flow** | `flow/*.rs` | `Show`, `For` 等控制流组件。 |
+| **Router** | `router.rs`, `router/context.rs` | 类型安全路由、History API 集成。 |
+| **Macros** | `silex_macros/src/*` | `css!`, `component`, `Routable`, `Store` 等宏实现。 |
+| **Suspense** | `dom/components/suspense.rs` | 异步边界处理，支持 Loading 状态回退。 |
+| **ErrorBoundary** | `dom/components/error_boundary.rs` | 错误边界，捕获子组件 Panic 和 Result::Err。 |
 
 ## 🚀 示例代码
 
@@ -126,18 +137,31 @@ fn main() {
             .child((
                 // 导航栏
                 nav().child((
-                    link("/").text("Home"),
-                    link("/about").text("About"),
+                    link(AppRoute::Home.to_path().as_str()).text("Home"),
+                    link(AppRoute::About.to_path().as_str()).text("About"),
                 )),
 
                 // 路由配置
                 Router::new()
-                    .route("/", || HomeView())
-                    .route("/about", || AboutView())
-                    .fallback(|| NotFound())
+                    .match_enum(|route: AppRoute| match route {
+                        AppRoute::Home => HomeView().into_any(),
+                        AppRoute::About => AboutView().into_any(),
+                        AppRoute::NotFound => NotFound().into_any(),
+                    })
             ))
             .mount(&document.body().unwrap());
     });
+}
+
+// 定义路由 Enum
+#[derive(Clone, PartialEq, Routable)]
+enum AppRoute {
+    #[route("/")]
+    Home,
+    #[route("/about")]
+    About,
+    #[route("/*")]
+    NotFound,
 }
 
 fn HomeView() -> impl View {
