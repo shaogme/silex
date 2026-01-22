@@ -857,6 +857,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "silex_showcase"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "gloo-timers",
+ "silex",
+ "silex_macros",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "simd-abstraction"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
