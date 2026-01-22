@@ -10,6 +10,12 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::Element as WebElem;
 
+/// Identity function to wrap text content as a View.
+/// This matches the API expected by the showcase example and provides a explicit way to denote text nodes.
+pub fn text<V: View>(content: V) -> V {
+    content
+}
+
 /// 基础 DOM 元素包装器
 #[derive(Clone)]
 pub struct Element {
@@ -135,10 +141,6 @@ impl Element {
     pub fn child<V: View>(self, view: V) -> Self {
         view.mount(&self.dom_element);
         self
-    }
-
-    pub fn text<V: View>(self, content: V) -> Self {
-        self.child(content)
     }
 }
 
@@ -274,10 +276,6 @@ impl<T> TypedElement<T> {
     pub fn child<V: View>(self, view: V) -> Self {
         view.mount(&self.element);
         self
-    }
-
-    pub fn text<V: View>(self, content: V) -> Self {
-        self.child(content)
     }
 }
 

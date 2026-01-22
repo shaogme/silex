@@ -2,6 +2,7 @@ use crate::dom::Element;
 use crate::dom::attribute::AttributeValue;
 use crate::dom::core::tags::*;
 use crate::dom::element::TypedElement;
+use crate::dom::view::View;
 
 /// 任何可以设置属性的类型都需要实现此 Trait。
 pub trait AttributeManager: Sized {
@@ -20,6 +21,25 @@ impl AttributeManager for Element {
 impl<T> AttributeManager for TypedElement<T> {
     fn attr_any(self, name: &str, value: impl AttributeValue) -> Self {
         self.attr(name, value)
+    }
+}
+
+// --- Content Traits ---
+
+/// Trait for elements that can contain text (non-void elements).
+pub trait WithText: Sized {
+    fn text<V: View>(self, content: V) -> Self;
+}
+
+impl WithText for Element {
+    fn text<V: View>(self, content: V) -> Self {
+        self.child(content)
+    }
+}
+
+impl<T: TextTag> WithText for TypedElement<T> {
+    fn text<V: View>(self, content: V) -> Self {
+        self.child(content)
     }
 }
 

@@ -1,3 +1,4 @@
+use crate::dom::WithText;
 use crate::dom::core::tags::A as TagA;
 use crate::dom::element::TypedElement;
 use crate::dom::{View, tag::a};

@@ -18,6 +18,9 @@ pub trait AnchorTag: Tag {}
 /// Tags that support media attributes (src, alt, width, height)
 pub trait MediaTag: Tag {}
 
+/// Tags that can contain text content
+pub trait TextTag: Tag {}
+
 // --- Tag Markers ---
 
 macro_rules! define_tags {
@@ -46,22 +49,33 @@ define_tags!(@basic
     Em, Strong, S, Blockquote, Figure, Figcaption,
     Time
 );
+define_tags!(@impl TextTag for
+    Div, Span, H1, H2, H3, H4, H5, H6, P, Ul, Ol, Li,
+    Nav, Main, Footer, Aside, Header, Article, Section,
+    Table, Thead, Tbody, Tr, Td, Pre, Code,
+    Em, Strong, S, Blockquote, Figure, Figcaption,
+    Time
+);
 
 // 2. Form Tags
 define_tags!(@basic Input, Button, Form, Select, Textarea, OptionTag); // Option is a keyword, use OptionTag
 define_tags!(@impl FormTag for Input, Button, Form, Select, Textarea, OptionTag);
+define_tags!(@impl TextTag for Button, Form, Select, Textarea, OptionTag);
 
 // 3. Label Tag
 define_tags!(@basic Label);
 define_tags!(@impl LabelTag for Label);
+define_tags!(@impl TextTag for Label);
 
 // 4. Anchor Tags
 define_tags!(@basic A, Area, Link);
 define_tags!(@impl AnchorTag for A, Area, Link);
+define_tags!(@impl TextTag for A);
 
 // 5. Media Tags
 define_tags!(@basic Img, Video, Audio, Source, Iframe);
 define_tags!(@impl MediaTag for Img, Video, Audio, Source, Iframe);
+define_tags!(@impl TextTag for Video, Audio, Iframe);
 
 // 6. SVG Tags (Just treating them as generic tags for now, or we can add SvgTag marker)
 pub trait SvgTag: Tag {}
@@ -71,6 +85,11 @@ define_tags!(@basic
     FeGaussianBlur, FeSpecularLighting, FePointLight, FeComposite, FeDisplacementMap
 );
 define_tags!(@impl SvgTag for
+    Svg, Path, Defs, Filter, G, Rect, Circle, Line, Polyline, Polygon,
+    FeTurbulence, FeComponentTransfer, FeFuncR, FeFuncG, FeFuncB,
+    FeGaussianBlur, FeSpecularLighting, FePointLight, FeComposite, FeDisplacementMap
+);
+define_tags!(@impl TextTag for
     Svg, Path, Defs, Filter, G, Rect, Circle, Line, Polyline, Polygon,
     FeTurbulence, FeComponentTransfer, FeFuncR, FeFuncG, FeFuncB,
     FeGaussianBlur, FeSpecularLighting, FePointLight, FeComposite, FeDisplacementMap
