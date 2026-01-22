@@ -1,14 +1,8 @@
-pub mod attribute;
-pub mod element;
-pub mod error_boundary;
-pub mod suspense;
-pub mod view;
+pub mod components;
+pub mod core;
 
-pub use attribute::*;
-pub use element::*;
-pub use error_boundary::*;
-pub use suspense::*;
-pub use view::*;
+pub use components::*;
+pub use core::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::Document;

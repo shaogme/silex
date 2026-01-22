@@ -160,5 +160,5 @@ Silex 目前处于 **Alpha** 阶段。
 - ✅ 客户端路由 (Router) 与参数匹配
 - ✅ 异步资源与 Suspense
 - ✅ Context API
-- 🚧 SSR (服务端渲染) - 尚未实现
-- 🚧 Hydration - 尚未实现
+- ❌ SSR (服务端渲染) - 不予支持 (本框架仅支持 CSR)
+- ❌ Hydration (水合) - 不予支持
