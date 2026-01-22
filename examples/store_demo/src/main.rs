@@ -1,6 +1,6 @@
 use silex::prelude::*;
 use silex::dom::tag::*;
-use silex::Store;
+use silex_macros::{component, Store};
 
 // 1. 定义数据模型
 #[derive(Clone, Debug, Store)]

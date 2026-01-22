@@ -1,5 +1,6 @@
 use silex::prelude::*;
 use silex::dom::tag::*;
+use silex_macros::component;
 
 pub fn main() {
     silex::dom::setup_global_error_handlers();

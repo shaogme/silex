@@ -8,3 +8,4 @@ silex = { path = "../../silex" }
 wasm-bindgen = "0.2"
 console_error_panic_hook = "0.1"
 web-sys = "0.3"
+silex_macros = { path = "../../silex_macros" }

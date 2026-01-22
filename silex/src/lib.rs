@@ -8,13 +8,8 @@ pub mod css;
 pub mod router;
 
 pub use error::{SilexError, SilexResult};
-pub use silex_macros::{Route, Store, component, css};
 
 pub mod prelude {
-    pub use crate::Route;
-    pub use crate::Store;
-    pub use crate::component;
-    pub use crate::css;
     pub use crate::dom::*;
     pub use crate::flow::*;
     pub use crate::reactivity::{

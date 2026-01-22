@@ -35,4 +35,4 @@ js-sys = "0.3"
 slotmap = "1.1.1"
 wasm-bindgen-futures = "0.4.56"
 
-silex_macros = { path = "../silex_macros" }
+

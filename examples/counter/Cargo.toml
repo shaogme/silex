@@ -10,3 +10,4 @@ console_error_panic_hook = "0.1"
 web-sys = "0.3"
 wasm-bindgen-futures = "0.4"
 gloo-timers = { version = "0.3", features = ["futures"] }
+silex_macros = { path = "../../silex_macros" }

@@ -1,4 +1,5 @@
 use silex::prelude::*;
+use silex_macros::{component, Route};
 use silex::dom::tag::*;
 use silex::router::{Router, link, use_navigate, use_query_map, use_location_path};
 
