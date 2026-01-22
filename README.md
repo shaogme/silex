@@ -1,8 +1,8 @@
 # Silex
 
-Silex 是一个用于构建 Web 应用程序的下一代 Rust 库。它深受 **SolidJS** 的细粒度响应式设计启发，但专为 Rust 语言特性进行了优化。它摒弃了虚拟 DOM (VDOM)，通过信号 (Signal) 和副作用 (Effect) 直接驱动真实 DOM 的更新，从而实现极致的性能。
+Silex 是一个用于构建 Web 应用程序的下一代 Rust 库。它结合了 **SolidJS** 的细粒度响应式性能与 **SwiftUI** 的 **流式声明式 API** 设计。它摒弃了虚拟 DOM (VDOM)，通过信号 (Signal) 和副作用 (Effect) 直接驱动真实 DOM 的更新，从而实现极致的性能。
 
-Silex 的核心设计理念是 **"Rusty & Fluent"** —— 提供一套符合 Rust 编程习惯的、类型安全的、基于构建者模式 (Builder Pattern) 的 API，而不是过度依赖宏或为了模仿 JSX 而牺牲 Rust 的强类型优势。
+Silex 的核心设计理念是 **"Rusty & Fluent"** —— 提供一套符合 Rust 编程习惯的、类型安全的构建者 API，采用 **Children-First** 的设计模式，让你像编写 SwiftUI 一样用 Rust 构建 Web 应用，而不是过度依赖宏模仿 JSX。
 
 ## 🌟 核心设计思路 (Design Philosophy)
 
@@ -11,22 +11,21 @@ Silex 不使用虚拟 DOM Diff 算法。相反，它采用细粒度的响应式�
 - **即时更新**：当状态 (Signal) 发生变化时，只有依赖该状态的具体 DOM 属性或文本节点会更新，不会有组件级的重渲染开销。
 - **精确依赖追踪**：系统自动收集依赖关系，开发者无需手动声明依赖数组。
 
-### 2. 流式构建者 API (Fluent Builder API)
-Silex 提倡使用**构建者模式**来组装 UI，而不是使用类似 JSX 的宏。
+### 2. SwiftUI 风格的流式 API (SwiftUI-like Fluent API)
+Silex 采用了受 **SwiftUI** 启发的 **Children-First** 构建者模式。容器组件（如 `div`, `ul`）在构造时即接收子元素，属性通过链式调用附加。
+- **结构清晰**：层级关系一目了然，代码结构即 UI 结构。
 - **类型安全**：所有属性、样式和事件绑定都是类型检查的。
 - **IDE 友好**：利用 Rust 强大的类型系统，提供优秀的代码补全和重构体验。
 - **组合优于继承**：组件仅仅是实现了 `View` 特征的结构体或函数，易于组合。
 
 ```rust
 // 示例：流式 API
-div()
-    .class("container")
-    .style("display: flex")
-    .child(
-        button()
-            .on_click(|| println!("Clicked!"))
-            .text("Click Me")
-    )
+div(
+    button("Click Me")
+        .on_click(|| println!("Clicked!"))
+)
+.class("container")
+.style("display: flex")
 ```
 
 ### 3. 类型安全与多态视图 (Type-Safe Attributes & Polymorphic Views)
@@ -132,24 +131,23 @@ fn main() {
         // 全局状态注入
         provide_context(count); 
 
-        div()
-            .class("app")
-            .child((
-                // 导航栏
-                nav().child((
-                    link(AppRoute::Home.to_path().as_str()).text("Home"),
-                    link(AppRoute::About.to_path().as_str()).text("About"),
-                )),
+        div(
+            // 导航栏
+            nav((
+                link(AppRoute::Home.to_path().as_str()).text("Home"),
+                link(AppRoute::About.to_path().as_str()).text("About"),
+            )),
 
-                // 路由配置
-                Router::new()
-                    .match_enum(|route: AppRoute| view_match!(route, {
-                        AppRoute::Home => HomeView(),
-                        AppRoute::About => AboutView(),
-                        AppRoute::NotFound => NotFound(),
-                    }))
-            ))
-            .mount(&document.body().unwrap());
+            // 路由配置
+            Router::new()
+                .match_enum(|route: AppRoute| view_match!(route, {
+                    AppRoute::Home => HomeView(),
+                    AppRoute::About => AboutView(),
+                    AppRoute::NotFound => NotFound(),
+                }))
+        )
+        .class("app")
+        .mount(&document.body().unwrap());
     });
 }
 
@@ -168,9 +166,9 @@ fn HomeView() -> impl View {
     // 使用 Context
     let count = use_context::<ReadSignal<i32>>().unwrap();
 
-    div().child((
-        h1().text("Home"),
-        p().text(move || format!("Global Count: {}", count.get().unwrap()))
+    div((
+        h1("Home"),
+        p(move || format!("Global Count: {}", count.get().unwrap()))
     ))
 }
 ```
