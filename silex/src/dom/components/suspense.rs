@@ -57,7 +57,7 @@ where
             let count = ctx.count;
 
             // 1. 内容包装器（加载时隐藏）
-            let content_wrapper = div().class("suspense-content");
+            let content_wrapper = div(()).class("suspense-content");
             let _ = content_wrapper.clone().style(move || {
                 if count.get() > 0 {
                     "display: none"
@@ -75,7 +75,7 @@ where
             });
 
             // 2. 后备包装器（加载时可见）
-            let fallback_wrapper = div().class("suspense-fallback");
+            let fallback_wrapper = div(()).class("suspense-fallback");
             let _ = fallback_wrapper.clone().style(move || {
                 if count.get() > 0 {
                     "display: block"

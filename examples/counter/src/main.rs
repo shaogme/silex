@@ -15,15 +15,16 @@ fn Card(
         elevation * 4
     );
 
-    let mut root = div().class("card").style(&style);
+    let mut root = div((
+        h1(title).style("margin-top: 0; font-size: 1.2rem; color: #333;"),
+        child,
+    ))
+    .class("card")
+    .style(&style);
 
     root = root.on_click(move |_| on_hover.call(()));
 
-    root.child((
-        h1().style("margin-top: 0; font-size: 1.2rem; color: #333;")
-            .text(title),
-        child,
-    ))
+    root
 }
 
 #[component]
@@ -51,20 +52,17 @@ fn CounterDisplay() -> SilexResult<impl View> {
         }
     "#);
 
-    Ok(div()
-        .class(container_class)
-        .class(("even-number", is_even)) // Adds class "even-number" when count is even
-        .child((
-            span().text("Global Context Status: "),
-            span()
-                .style(("font-weight", "bold")) // Single tuple style
-                .style(("color", "#6200ea"))
-                .text(count),
-            div()
-                .style(("margin-top", "5px"))
-                .style(move || format!("opacity: {}; transition: opacity 0.3s", if is_even.get() { 1.0 } else { 0.0 }))
-                .text(" (Even Number - Dynamic Class Active)"),
-        )))
+    Ok(div((
+        span("Global Context Status: "),
+        span(count)
+            .style(("font-weight", "bold")) // Single tuple style
+            .style(("color", "#6200ea")),
+        div(" (Even Number - Dynamic Class Active)")
+            .style(("margin-top", "5px"))
+            .style(move || format!("opacity: {}; transition: opacity 0.3s", if is_even.get() { 1.0 } else { 0.0 })),
+    ))
+    .class(container_class)
+    .class(("even-number", is_even))) // Adds class "even-number" when count is even
 }
 
 #[component]
@@ -82,29 +80,26 @@ fn CounterControls() -> SilexResult<impl View> {
         ("transition", "background-color 0.2s"),
     ];
 
-    Ok(div().style("display: flex; align-items: center; gap: 15px;").child((
-        button()
+    Ok(div((
+        button("-")
             .style(btn_style) // Apply array of styles
-            .text("-")
             .on_click(move |_| { let _ = set_count.update(|n| *n -= 1); }),
-        span()
-            .style("font-size: 1.5rem; font-weight: bold; min-width: 30px; text-align: center;")
-            .text(count),
-        button()
+        span(count)
+            .style("font-size: 1.5rem; font-weight: bold; min-width: 30px; text-align: center;"),
+        button("+")
             .style(btn_style)
-            .text("+")
             .on_click(move |_| { let _ = set_count.update(|n| *n += 1); }),
-    )))
+    )).style("display: flex; align-items: center; gap: 15px;"))
 }
 
 // --- Views ---
 
 #[component]
 fn NavBar() -> impl View {
-    div().style("margin-bottom: 20px; padding: 10px; border-bottom: 1px solid #eee").child((
+    div((
         link("/").text("Home").style("margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold;"),
         link("/about").text("About").style("text-decoration: none; color: #007bff; font-weight: bold;")
-    ))
+    )).style("margin-bottom: 20px; padding: 10px; border-bottom: 1px solid #eee")
 }
 
 #[component]
@@ -126,83 +121,79 @@ fn HomeView() -> impl View {
         }
     ).expect("Failed to create resource");
 
-    div()
-        .child((
-            // Header
-            div().style("text-align: center; margin-bottom: 30px;").child((
-                h1().text("Silex: Next Gen"),
-                p().style("color: #666").text("Builder Pattern + Router + Context + Suspense"),
+    div((
+        // Header
+        div((
+            h1("Silex: Next Gen"),
+            p("Builder Pattern + Router + Context + Suspense").style("color: #666"),
+        )).style("text-align: center; margin-bottom: 30px;"),
+
+        // Card 1: Context-Aware Counter
+        Card::new()
+            .title("Global Counter (Persists across Nav)")
+            .elevation(3)
+            .on_hover(|_| { let _ = web_sys::console::log_1(&"Card Hovered!".into()); })
+            .child((
+                CounterControls::new(),
+                CounterDisplay::new(),
             )),
 
-            // Card 1: Context-Aware Counter
-            Card::new()
-                .title("Global Counter (Persists across Nav)")
-                .elevation(3)
-                .on_hover(|_| { let _ = web_sys::console::log_1(&"Card Hovered!".into()); })
-                .child((
-                    CounterControls::new(),
-                    CounterDisplay::new(),
-                )),
+        // Card 2: Input & Local State
+        Card::new()
+            .title("Local State (Resets on Nav)")
+            .child(div(div((
+                div((
+                    span("Hello, "),
+                    span(name).style("color: #007bff; font-weight: bold;"),
+                    span("!"),
+                )).style("margin-bottom: 10px"),
+                input()
+                    .type_("text")
+                    .placeholder("Enter name")
+                    .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px; width: 100%;")
+                    .value(name)
+                    .on_input(move |val| { let _ = set_name.set(val); })
+            )))),
 
-            // Card 2: Input & Local State
-            Card::new()
-                .title("Local State (Resets on Nav)")
-                .child(div().child((
-                    div().style("margin-bottom: 10px").child((
-                        span().text("Hello, "),
-                        span().style("color: #007bff; font-weight: bold;").text(name),
-                        span().text("!"),
-                    )),
-                    input()
-                        .type_("text")
-                        .placeholder("Enter name")
-                        .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px; width: 100%;")
-                        .value(name)
-                        .on_input(move |val| { let _ = set_name.set(val); })
-                ))),
-
-            // Card 3: Control Flow
-            Card::new()
-                .title("Control Flow")
-                .child(
-                    is_high
-                        .when(|| div()
-                            .style("background: #ffebee; color: #c62828; padding: 10px; border-radius: 4px;")
-                            .text("⚠️ Warning: Count is getting high!"))
-                        .otherwise(|| div()
-                            .style("background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;")
-                            .text("✓ System works normally."))
-                ),
-            
-            // Card 4: Suspense
-            Card::new()
-                .title("Suspense (Async Loading)")
-                .child(
-                        suspense()
-                        .fallback(|| div().style("color: orange; font-style: italic;").text("Loading data (approx 2s)..."))
-                        .children(move || {
-                            div()
-                                .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
-                                .text(move || async_data.get().unwrap_or("Waiting...".to_string()))
-                        })
-                )
-        ))
-}
-
-#[component]
-fn AboutView() -> impl View {
-    div().style("padding: 20px; text-align: center;").child((
-        h1().text("About"),
-        p().text("This is the About Page to demonstrate Silex Router."),
-        p().text("Try going back to Home, and notice the Global Counter is preserved (Context), while the Name input is reset (Local State)."),
+        // Card 3: Control Flow
+        Card::new()
+            .title("Control Flow")
+            .child(
+                is_high
+                    .when(|| div("⚠️ Warning: Count is getting high!")
+                        .style("background: #ffebee; color: #c62828; padding: 10px; border-radius: 4px;"))
+                    .otherwise(|| div("✓ System works normally.")
+                        .style("background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;"))
+            ),
+        
+        // Card 4: Suspense
+        Card::new()
+            .title("Suspense (Async Loading)")
+            .child(
+                    suspense()
+                    .fallback(|| div("Loading data (approx 2s)...").style("color: orange; font-style: italic;"))
+                    .children(move || {
+                        div(move || async_data.get().unwrap_or("Waiting...".to_string()))
+                            .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
+                    })
+            )
     ))
 }
 
 #[component]
+fn AboutView() -> impl View {
+    div((
+        h1("About"),
+        p("This is the About Page to demonstrate Silex Router."),
+        p("Try going back to Home, and notice the Global Counter is preserved (Context), while the Name input is reset (Local State)."),
+    )).style("padding: 20px; text-align: center;")
+}
+
+#[component]
 fn NotFound() -> impl View {
-    div().style("color: red; padding: 20px;").child(
-        h1().text("404 - Page Not Found")
-    )
+    div(
+        h1("404 - Page Not Found")
+    ).style("color: red; padding: 20px;")
 }
 
 #[derive(Route, Clone, PartialEq)]
@@ -232,20 +223,19 @@ fn main() -> () {
         provide_context(set_count).expect("provide set_count failed");
 
         // 构建应用壳 (App Shell)
-        let app = div()
-            .class("app-container")
-            .style("font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;")
-            .child((
-                NavBar::new(),
-                Router::new()
-                    .match_enum(|route: AppRoute| {
-                        view_match!(route, {
-                            AppRoute::Home => HomeView::new(),
-                            AppRoute::About => AboutView::new(),
-                            AppRoute::NotFound => NotFound::new(),
-                        })
+        let app = div((
+            NavBar::new(),
+            Router::new()
+                .match_enum(|route: AppRoute| {
+                    view_match!(route, {
+                        AppRoute::Home => HomeView::new(),
+                        AppRoute::About => AboutView::new(),
+                        AppRoute::NotFound => NotFound::new(),
                     })
-            ));
+                })
+        ))
+        .class("app-container")
+        .style("font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;");
 
         app.mount(&app_container);
     });

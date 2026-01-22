@@ -295,188 +295,137 @@ impl<T: Tag> std::ops::Deref for TypedElement<T> {
 pub mod tag {
     use super::tags::*;
     use super::*;
+    use crate::dom::view::View;
 
-    // --- HTML Tags ---
-    pub fn div() -> TypedElement<Div> {
-        TypedElement::new("div")
-    }
-    pub fn span() -> TypedElement<Span> {
-        TypedElement::new("span")
-    }
-    pub fn h1() -> TypedElement<H1> {
-        TypedElement::new("h1")
-    }
-    pub fn h2() -> TypedElement<H2> {
-        TypedElement::new("h2")
-    }
-    pub fn h3() -> TypedElement<H3> {
-        TypedElement::new("h3")
-    }
-    pub fn h4() -> TypedElement<H4> {
-        TypedElement::new("h4")
-    }
-    pub fn h5() -> TypedElement<H5> {
-        TypedElement::new("h5")
-    }
-    pub fn h6() -> TypedElement<H6> {
-        TypedElement::new("h6")
-    }
-    pub fn p() -> TypedElement<P> {
-        TypedElement::new("p")
-    }
-    pub fn a() -> TypedElement<A> {
-        TypedElement::new("a")
-    }
-    pub fn button() -> TypedElement<Button> {
-        TypedElement::new("button")
-    }
-    pub fn img() -> TypedElement<Img> {
-        TypedElement::new("img")
-    }
-    pub fn input() -> TypedElement<Input> {
-        TypedElement::new("input")
-    }
-    pub fn ul() -> TypedElement<Ul> {
-        TypedElement::new("ul")
-    }
-    pub fn ol() -> TypedElement<Ol> {
-        TypedElement::new("ol")
-    }
-    pub fn li() -> TypedElement<Li> {
-        TypedElement::new("li")
-    }
-    pub fn nav() -> TypedElement<Nav> {
-        TypedElement::new("nav")
-    }
-    pub fn main() -> TypedElement<Main> {
-        TypedElement::new("main")
-    }
-    pub fn footer() -> TypedElement<Footer> {
-        TypedElement::new("footer")
-    }
-    pub fn aside() -> TypedElement<Aside> {
-        TypedElement::new("aside")
-    }
-    pub fn br() -> TypedElement<Br> {
-        TypedElement::new("br")
-    }
-    pub fn hr() -> TypedElement<Hr> {
-        TypedElement::new("hr")
-    }
-    pub fn article() -> TypedElement<Article> {
-        TypedElement::new("article")
-    }
-    pub fn header() -> TypedElement<Header> {
-        TypedElement::new("header")
-    }
-    pub fn time() -> TypedElement<Time> {
-        TypedElement::new("time")
-    }
-    pub fn figure() -> TypedElement<Figure> {
-        TypedElement::new("figure")
-    }
-    pub fn figcaption() -> TypedElement<Figcaption> {
-        TypedElement::new("figcaption")
-    }
-    pub fn blockquote() -> TypedElement<Blockquote> {
-        TypedElement::new("blockquote")
-    }
-    pub fn pre() -> TypedElement<Pre> {
-        TypedElement::new("pre")
-    }
-    pub fn code() -> TypedElement<Code> {
-        TypedElement::new("code")
-    }
-    pub fn em() -> TypedElement<Em> {
-        TypedElement::new("em")
-    }
-    pub fn strong() -> TypedElement<Strong> {
-        TypedElement::new("strong")
-    }
-    pub fn s() -> TypedElement<S> {
-        TypedElement::new("s")
-    }
-    pub fn table() -> TypedElement<Table> {
-        TypedElement::new("table")
-    }
-    pub fn thead() -> TypedElement<Thead> {
-        TypedElement::new("thead")
-    }
-    pub fn tbody() -> TypedElement<Tbody> {
-        TypedElement::new("tbody")
-    }
-    pub fn tr() -> TypedElement<Tr> {
-        TypedElement::new("tr")
-    }
-    pub fn td() -> TypedElement<Td> {
-        TypedElement::new("td")
-    }
-    pub fn label() -> TypedElement<Label> {
-        TypedElement::new("label")
-    }
-    pub fn section() -> TypedElement<Section> {
-        TypedElement::new("section")
+    // --- Macros for boiler-plate reduction ---
+
+    macro_rules! define_container {
+        ($fn_name:ident, $tag_type:ident, $tag_str:expr) => {
+            pub fn $fn_name<V: View>(child: V) -> TypedElement<$tag_type> {
+                TypedElement::new($tag_str).child(child)
+            }
+        };
     }
 
-    // --- SVG Tags ---
-    pub fn svg() -> TypedElement<Svg> {
-        TypedElement::new_svg("svg")
+    macro_rules! define_void {
+        ($fn_name:ident, $tag_type:ident, $tag_str:expr) => {
+            pub fn $fn_name() -> TypedElement<$tag_type> {
+                TypedElement::new($tag_str)
+            }
+        };
     }
-    pub fn path() -> TypedElement<Path> {
-        TypedElement::new_svg("path")
+
+    macro_rules! define_svg_container {
+        ($fn_name:ident, $tag_type:ident, $tag_str:expr) => {
+            pub fn $fn_name<V: View>(child: V) -> TypedElement<$tag_type> {
+                TypedElement::new_svg($tag_str).child(child)
+            }
+        };
     }
-    pub fn defs() -> TypedElement<Defs> {
-        TypedElement::new_svg("defs")
+
+    macro_rules! define_svg_void {
+        ($fn_name:ident, $tag_type:ident, $tag_str:expr) => {
+            pub fn $fn_name() -> TypedElement<$tag_type> {
+                TypedElement::new_svg($tag_str)
+            }
+        };
     }
-    pub fn filter() -> TypedElement<Filter> {
-        TypedElement::new_svg("filter")
+
+    // --- HTML Containers ---
+    // Structure & Text
+    define_container!(div, Div, "div");
+    define_container!(span, Span, "span");
+    define_container!(p, P, "p");
+    define_container!(h1, H1, "h1");
+    define_container!(h2, H2, "h2");
+    define_container!(h3, H3, "h3");
+    define_container!(h4, H4, "h4");
+    define_container!(h5, H5, "h5");
+    define_container!(h6, H6, "h6");
+
+    // Layout & Semantics
+    define_container!(header, Header, "header");
+    define_container!(footer, Footer, "footer");
+    define_container!(main, Main, "main");
+    define_container!(section, Section, "section");
+    define_container!(article, Article, "article");
+    define_container!(aside, Aside, "aside");
+    define_container!(nav, Nav, "nav");
+    // define_container!(address, Address, "address"); // Address tag not defined yet
+
+    // Lists
+    define_container!(ul, Ul, "ul");
+    define_container!(ol, Ol, "ol");
+    define_container!(li, Li, "li");
+
+    // Inline & Formatting
+    define_container!(a, A, "a");
+    define_container!(button, Button, "button");
+    define_container!(label, Label, "label");
+    define_container!(pre, Pre, "pre");
+    define_container!(code, Code, "code");
+    define_container!(blockquote, Blockquote, "blockquote");
+    define_container!(em, Em, "em");
+    define_container!(strong, Strong, "strong");
+    define_container!(s, S, "s");
+    define_container!(time, Time, "time");
+    define_container!(figure, Figure, "figure");
+    define_container!(figcaption, Figcaption, "figcaption");
+
+    // Forms
+    define_container!(form, Form, "form");
+    define_container!(select, Select, "select");
+    define_container!(textarea, Textarea, "textarea");
+
+    pub fn option<V: View>(child: V) -> TypedElement<OptionTag> {
+        TypedElement::new("option").child(child)
     }
-    pub fn fe_turbulence() -> TypedElement<FeTurbulence> {
-        TypedElement::new_svg("feTurbulence")
-    }
-    pub fn fe_component_transfer() -> TypedElement<FeComponentTransfer> {
-        TypedElement::new_svg("feComponentTransfer")
-    }
-    pub fn fe_func_r() -> TypedElement<FeFuncR> {
-        TypedElement::new_svg("feFuncR")
-    }
-    pub fn fe_func_g() -> TypedElement<FeFuncG> {
-        TypedElement::new_svg("feFuncG")
-    }
-    pub fn fe_func_b() -> TypedElement<FeFuncB> {
-        TypedElement::new_svg("feFuncB")
-    }
-    pub fn fe_gaussian_blur() -> TypedElement<FeGaussianBlur> {
-        TypedElement::new_svg("feGaussianBlur")
-    }
-    pub fn fe_specular_lighting() -> TypedElement<FeSpecularLighting> {
-        TypedElement::new_svg("feSpecularLighting")
-    }
-    pub fn fe_point_light() -> TypedElement<FePointLight> {
-        TypedElement::new_svg("fePointLight")
-    }
-    pub fn fe_composite() -> TypedElement<FeComposite> {
-        TypedElement::new_svg("feComposite")
-    }
-    pub fn fe_displacement_map() -> TypedElement<FeDisplacementMap> {
-        TypedElement::new_svg("feDisplacementMap")
-    }
-    pub fn g() -> TypedElement<G> {
-        TypedElement::new_svg("g")
-    }
-    pub fn rect() -> TypedElement<Rect> {
-        TypedElement::new_svg("rect")
-    }
-    pub fn circle() -> TypedElement<Circle> {
-        TypedElement::new_svg("circle")
-    }
-    pub fn line() -> TypedElement<Line> {
-        TypedElement::new_svg("line")
-    }
-    pub fn polyline() -> TypedElement<Polyline> {
-        TypedElement::new_svg("polyline")
-    }
-    pub fn polygon() -> TypedElement<Polygon> {
-        TypedElement::new_svg("polygon")
-    }
+
+    // Table
+    define_container!(table, Table, "table");
+    define_container!(thead, Thead, "thead");
+    define_container!(tbody, Tbody, "tbody");
+    define_container!(tr, Tr, "tr");
+    define_container!(td, Td, "td");
+
+    // --- HTML Void Elements (No Children) ---
+    define_void!(input, Input, "input");
+    define_void!(img, Img, "img");
+    define_void!(br, Br, "br");
+    define_void!(hr, Hr, "hr");
+
+    // --- SVG Containers ---
+    define_svg_container!(svg, Svg, "svg");
+    define_svg_container!(g, G, "g");
+    define_svg_container!(defs, Defs, "defs");
+    define_svg_container!(filter, Filter, "filter");
+
+    // --- SVG Voids (Shapes & Primitives) ---
+    // Treating shapes as void for cleaner API (use attributes for definition)
+    define_svg_void!(path, Path, "path");
+    define_svg_void!(rect, Rect, "rect");
+    define_svg_void!(circle, Circle, "circle");
+    define_svg_void!(line, Line, "line");
+    define_svg_void!(polyline, Polyline, "polyline");
+    define_svg_void!(polygon, Polygon, "polygon");
+
+    // Filter Primitives
+    define_svg_void!(fe_turbulence, FeTurbulence, "feTurbulence");
+    define_svg_void!(
+        fe_component_transfer,
+        FeComponentTransfer,
+        "feComponentTransfer"
+    );
+    define_svg_void!(fe_func_r, FeFuncR, "feFuncR");
+    define_svg_void!(fe_func_g, FeFuncG, "feFuncG");
+    define_svg_void!(fe_func_b, FeFuncB, "feFuncB");
+    define_svg_void!(fe_gaussian_blur, FeGaussianBlur, "feGaussianBlur");
+    define_svg_void!(
+        fe_specular_lighting,
+        FeSpecularLighting,
+        "feSpecularLighting"
+    );
+    define_svg_void!(fe_point_light, FePointLight, "fePointLight");
+    define_svg_void!(fe_composite, FeComposite, "feComposite");
+    define_svg_void!(fe_displacement_map, FeDisplacementMap, "feDisplacementMap");
 }

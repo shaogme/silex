@@ -160,7 +160,7 @@ impl View for Router {
             .unwrap();
 
         // 5. 挂载容器
-        let container = div();
+        let container = div(());
         let container_node = container.dom_element.clone();
         container.mount(parent);
 

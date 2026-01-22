@@ -67,7 +67,7 @@ where
 
         // Create wrapper div
         // We use "display: contents" so it doesn't affect layout if supported
-        let wrapper = div().style("display: contents");
+        let wrapper = div(()).style("display: contents");
 
         let wrapper_dom = wrapper.dom_element.clone();
         wrapper.mount(parent);

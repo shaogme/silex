@@ -11,9 +11,8 @@ use silex::view_match;
 /// 一个简单的卡片容器
 #[component]
 fn Card<V: View + 'static>(child: V) -> impl View {
-    div()
+    div(child)
         .style("border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 10px 0; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05);")
-        .child(child)
 }
 
 /// 导航链接样式封装
@@ -30,10 +29,10 @@ fn nav_link(to: &str, label: &str) -> impl View {
 
 #[component]
 fn Home() -> impl View {
-    div().child((
-        h2().text("🏠 Home Page"),
-        p().text("Welcome to the Router Test Suite."),
-        p().text("Use the navigation bar above to test different routing features."),
+    div((
+        h2("🏠 Home Page"),
+        p("Welcome to the Router Test Suite."),
+        p("Use the navigation bar above to test different routing features."),
     ))
 }
 
@@ -61,25 +60,24 @@ fn SearchPage() -> impl View {
         }
     };
 
-    Card::new(div().child((
-        h2().text("🔍 Search Query Test"),
-        div().style("display: flex; gap: 10px; margin-bottom: 20px;").child((
+    Card::new(div((
+        h2("🔍 Search Query Test"),
+        div((
             input()
                 .type_("text")
                 .placeholder("Type search term...")
                 .value(input_val)
                 .on_input(move |v| set_input_val.set(v))
                 .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px; flex: 1;"),
-            button()
-                .text("Search")
+            button("Search")
                 .on_click(on_search)
                 .style("padding: 8px 16px; background: #2196f3; color: white; border: none; border-radius: 4px; cursor: pointer;"),
-        )),
-        div().child((
-            strong().text("Current Query Parameter (q): "),
-            span().style("color: #e91e63; font-family: monospace;").text(move || {
+        )).style("display: flex; gap: 10px; margin-bottom: 20px;"),
+        div((
+            strong("Current Query Parameter (q): "),
+            span(move || {
                 query.get().get("q").cloned().unwrap_or_else(|| "None".to_string())
-            })
+            }).style("color: #e91e63; font-family: monospace;")
         ))
     )))
 }
@@ -88,13 +86,13 @@ fn SearchPage() -> impl View {
 
 #[component]
 fn UsersLayout(child: AnyView) -> impl View {
-    div().child((
-        h2().text("👥 Users Module"),
-        div().style("border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;").child((
+    div((
+        h2("👥 Users Module"),
+        div((
             nav_link("/users", "User List"),
-            span().text("|").style("margin: 0 10px; color: #ccc;"),
+            span("|").style("margin: 0 10px; color: #ccc;"),
             nav_link("/users/new", "Create User (Static)"),
-        )),
+        )).style("border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;"),
         // 渲染子路由
         child
     ))
@@ -109,18 +107,18 @@ fn UserList() -> impl View {
         (42, "Silex Expert"),
     ];
 
-    div().child((
-        h3().text("Select a User:"),
-        ul().style("list-style: none; padding: 0;").child(
+    div((
+        h3("Select a User:"),
+        ul(
             users.into_iter().map(|(id, name)| {
-                li().style("margin: 5px 0;").child(
+                li(
                     link(&format!("/users/{}", id))
                         .text(&format!("👤 {} (ID: {})", name, id))
                         .style("text-decoration: none; color: #2196f3;")
                         .active_class("active-user")
-                )
+                ).style("margin: 5px 0;")
             }).collect::<Vec<_>>()
-        )
+        ).style("list-style: none; padding: 0;")
     ))
 }
 
@@ -130,63 +128,59 @@ fn UserDetail(id: u32) -> impl View {
     let navigator = use_navigate();
     let path = use_location_path();
 
-    Card::new(div().child((
-        div().style("display: flex; justify-content: space-between; align-items: center;").child((
-            h3().text(format!("User Profile: #{}", id)),
-            button()
-                .text("Go Back")
+    Card::new(div((
+        div((
+            h3(format!("User Profile: #{}", id)),
+            button("Go Back")
                 .on_click(move |_| navigator.push("/users"))
                 .style("font-size: 0.8rem; padding: 5px 10px; cursor: pointer;")
-        )),
+        )).style("display: flex; justify-content: space-between; align-items: center;"),
         hr().style("border: 0; border-top: 1px solid #eee; margin: 15px 0;"),
-        p().child((strong().text("Current Path: "), span().style("font-family: monospace;").text(path))),
-        div().style("background: #f5f5f5; padding: 10px; border-radius: 4px; margin-top: 10px;").child(
-            p().text(format!("This component is rendered with strict prop id: {}", id))
-        )
+        p((strong("Current Path: "), span(path).style("font-family: monospace;"))),
+        div(
+            p(format!("This component is rendered with strict prop id: {}", id))
+        ).style("background: #f5f5f5; padding: 10px; border-radius: 4px; margin-top: 10px;")
     )))
 }
 
 #[component]
 fn NotFound() -> impl View {
-    div()
-        .style("text-align: center; padding: 50px; color: #d32f2f;")
-        .child((
-            h1().text("404"),
-            p().text("Page not found."),
-            link("/").text("Return Home").style("color: #2196f3; text-decoration: underline;")
-        ))
+    div((
+        h1("404"),
+        p("Page not found."),
+        link("/").text("Return Home").style("color: #2196f3; text-decoration: underline;")
+    ))
+    .style("text-align: center; padding: 50px; color: #d32f2f;")
 }
 
 // --- 主布局 ---
 
 #[component]
 fn MainLayout(child: AnyView) -> impl View {
-    div()
-        .style("font-family: sans-serif; max-width: 800px; margin: 0 auto; color: #333;")
-        .child((
-            // Header
-            header()
-                .style("display: flex; align-items: center; justify-content: space-between; padding: 20px 0; border-bottom: 1px solid #eee;")
-                .child((
-                    h1().text("🚀 Silex Router").style("margin: 0; font-size: 1.5rem; color: #2c3e50;"),
-                    nav().child((
-                        nav_link("/", "Home"),
-                        nav_link("/users", "Users"),
-                        nav_link("/search", "Search"),
-                        nav_link("/nowhere", "404 Test"),
-                    ))
-                )),
-            
-            // Main Content Area
-            silex::dom::tag::main().style("padding: 20px 0;").child(
-                child
-            ),
-
-            // Footer
-            footer()
-                .style("margin-top: 50px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #999; font-size: 0.8rem;")
-                .child(p().text("Built with Silex & Rust"))
+    div((
+        // Header
+        header((
+            h1("🚀 Silex Router").style("margin: 0; font-size: 1.5rem; color: #2c3e50;"),
+            nav((
+                nav_link("/", "Home"),
+                nav_link("/users", "Users"),
+                nav_link("/search", "Search"),
+                nav_link("/nowhere", "404 Test"),
+            ))
         ))
+        .style("display: flex; align-items: center; justify-content: space-between; padding: 20px 0; border-bottom: 1px solid #eee;"),
+        
+        // Main Content Area
+        silex::dom::tag::main(
+            child
+        ).style("padding: 20px 0;"),
+
+        // Footer
+        footer(
+            p("Built with Silex & Rust")
+        ).style("margin-top: 50px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #999; font-size: 0.8rem;")
+    ))
+    .style("font-family: sans-serif; max-width: 800px; margin: 0 auto; color: #333;")
 }
 
 
@@ -252,10 +246,10 @@ fn main() {
             // 递归解包 Users 模块
             AppRoute::Users { routes: sub_route } => {
                 let sub_view = view_match!(sub_route, {
-                    UsersRoute::List => UserList::new(),
-                    UsersRoute::Create => Card::new(h3().text("🆕 Create New User Form")),
+                    UsersRoute::List => UserList::new().into_any(),
+                    UsersRoute::Create => Card::new(h3("🆕 Create New User Form")).into_any(),
                     // 直接解构参数并传递给组件，实现 100% 类型安全
-                    UsersRoute::Detail { id } => UserDetail::new(id),
+                    UsersRoute::Detail { id } => UserDetail::new(id).into_any(),
                 });
                 
                 // 将子视图包裹在 UsersLayout 中

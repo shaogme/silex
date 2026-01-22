@@ -20,16 +20,13 @@ mod basics {
             punctuation
         };
 
-        div()
-            .class("greeting-card")
-            .style(
-                "padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 10px;",
-            )
-            .child((
-                span().text("Hello, "),
-                strong().style("color: #007bff").text(name),
-                span().text(full_punctuation),
-            ))
+        div((
+            span("Hello, "),
+            strong(name).style("color: #007bff"),
+            span(full_punctuation),
+        ))
+        .class("greeting-card")
+        .style("padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 10px;")
     }
 
     #[component]
@@ -37,29 +34,23 @@ mod basics {
         let (count, set_count) = create_signal(0);
         let double_count = create_memo(move || count.get() * 2);
 
-        div().child((
-            h3().text("Interactive Counter"),
-            div()
-                .style("display: flex; gap: 10px; align-items: center;")
-                .child((
-                    button()
-                        .text("-")
-                        .on_click(move |_| set_count.update(|n| *n -= 1)),
-                    strong().text(count),
-                    button()
-                        .text("+")
-                        .on_click(move |_| set_count.update(|n| *n += 1)),
-                )),
-            div()
-                .style("margin-top: 5px; color: #666; font-size: 0.9em;")
-                .child((text("Double: "), text(double_count))),
+        div((
+            h3("Interactive Counter"),
+            div((
+                button("-").on_click(move |_| set_count.update(|n| *n -= 1)),
+                strong(count),
+                button("+").on_click(move |_| set_count.update(|n| *n += 1)),
+            ))
+            .style("display: flex; gap: 10px; align-items: center;"),
+            div((text("Double: "), text(double_count)))
+                .style("margin-top: 5px; color: #666; font-size: 0.9em;"),
         ))
     }
 
     #[component]
     pub fn BasicsPage() -> impl View {
-        div().child((
-            h2().text("Basics"),
+        div((
+            h2("Basics"),
             Greeting::new().name("Developer"),
             Counter::new(),
             // AttributeDemo omitted for brevity, logic is same as previous
@@ -78,19 +69,15 @@ mod flow_control {
     pub fn ListDemo() -> impl View {
         let (list, _set_list) = create_signal(vec!["Apple", "Banana", "Cherry"]);
 
-        div().child((
-            h3().text("List Rendering"),
-            ul().child(For::new(
-                move || list.get(),
-                |item| *item,
-                |item| li().text(item),
-            )),
+        div((
+            h3("List Rendering"),
+            ul(For::new(move || list.get(), |item| *item, |item| li(item))),
         ))
     }
 
     #[component]
     pub fn FlowPage() -> impl View {
-        div().child((h2().text("Control Flow"), ListDemo::new()))
+        div((h2("Control Flow"), ListDemo::new()))
     }
 }
 
@@ -133,12 +120,11 @@ mod advanced {
         "#
         );
 
-        div().child((
-            h3().text("CSS-in-Rust Demo"),
-            p().text("The button below is styled using the `css!` macro with scoped styles."),
-            button()
+        div((
+            h3("CSS-in-Rust Demo"),
+            p("The button below is styled using the `css!` macro with scoped styles."),
+            button("Scoped Style Button")
                 .class(btn_class)
-                .text("Scoped Style Button")
                 .on_click(|_| silex::logging::console_log("Clicked!")),
         ))
     }
@@ -148,30 +134,26 @@ mod advanced {
         // Access global store provided in main
         let settings = expect_context::<UserSettingsStore>();
 
-        div().child((
-            h3().text("Global Store Demo"),
-            div()
-                .style("border: 1px solid #ccc; padding: 10px; margin-bottom: 10px;")
-                .child((
-                    p().child((
-                        strong().text("Username: "),
-                        text(settings.username.read_signal()),
-                    )),
-                    p().child((strong().text("Theme: "), text(settings.theme.read_signal()))),
-                    p().child((
-                        strong().text("Notifications: "),
-                        text(move || {
-                            if settings.notifications.get() {
-                                "On"
-                            } else {
-                                "Off"
-                            }
-                        }),
-                    )),
+        div((
+            h3("Global Store Demo"),
+            div((
+                p((strong("Username: "), text(settings.username.read_signal()))),
+                p((strong("Theme: "), text(settings.theme.read_signal()))),
+                p((
+                    strong("Notifications: "),
+                    text(move || {
+                        if settings.notifications.get() {
+                            "On"
+                        } else {
+                            "Off"
+                        }
+                    }),
                 )),
-            h4().text("Update Settings"),
-            div().style("display: flex; gap: 10px;").child((
-                button().text("Toggle Theme").on_click(move |_| {
+            ))
+            .style("border: 1px solid #ccc; padding: 10px; margin-bottom: 10px;"),
+            h4("Update Settings"),
+            div((
+                button("Toggle Theme").on_click(move |_| {
                     settings.theme.update(|t| {
                         *t = if t == "Light" {
                             "Dark".to_string()
@@ -180,14 +162,14 @@ mod advanced {
                         }
                     })
                 }),
-                button()
-                    .text("Toggle Notifications")
+                button("Toggle Notifications")
                     .on_click(move |_| settings.notifications.update(|n| *n = !*n)),
                 input()
                     .value(settings.username.read_signal())
                     .on_input(move |val| settings.username.set(val))
                     .placeholder("Change username..."),
-            )),
+            ))
+            .style("display: flex; gap: 10px;"),
         ))
     }
 }
@@ -225,53 +207,49 @@ enum AppRoute {
 
 #[component]
 fn NavBar() -> impl View {
-    div()
-        .style("background: #333; color: white; padding: 10px; margin-bottom: 20px; display: flex; gap: 15px;")
-        .child((
-            link("/").text("Home").style("color: white; text-decoration: none;"),
-            link("/basics").text("Basics").style("color: white; text-decoration: none;"),
-            link("/flow").text("Flow").style("color: white; text-decoration: none;"),
-            link("/advanced").text("Advanced").style("color: white; text-decoration: none;"),
-        ))
+    div((
+        link("/").text("Home").style("color: white; text-decoration: none;"),
+        link("/basics").text("Basics").style("color: white; text-decoration: none;"),
+        link("/flow").text("Flow").style("color: white; text-decoration: none;"),
+        link("/advanced").text("Advanced").style("color: white; text-decoration: none;"),
+    ))
+    .style("background: #333; color: white; padding: 10px; margin-bottom: 20px; display: flex; gap: 15px;")
 }
 
 #[component]
 fn AdvancedLayout(route: AdvancedRoute) -> impl View {
-    div().child((
-        h2().text("Advanced Features"),
-        div()
-            .style("display: flex; gap: 10px; margin-bottom: 20px;")
-            .child((
-                link("/advanced/css").text("CSS Demo").class("tab"),
-                link("/advanced/store").text("Store Demo").class("tab"),
-            )),
+    div((
+        h2("Advanced Features"),
+        div((
+            link("/advanced/css").text("CSS Demo").class("tab"),
+            link("/advanced/store").text("Store Demo").class("tab"),
+        ))
+        .style("display: flex; gap: 10px; margin-bottom: 20px;"),
         // Direct match on the passed route enum
         // This avoids re-parsing the URL via an internal Router
         view_match!(route, {
-            AdvancedRoute::Index => div().text("Select a demo above."),
-            AdvancedRoute::Css => advanced::CssDemo::new(),
-            AdvancedRoute::Store => advanced::StoreDemo::new(),
-            AdvancedRoute::NotFound => div().text("Advanced Demo Not Found"),
+            AdvancedRoute::Index => div("Select a demo above.").into_any(),
+            AdvancedRoute::Css => advanced::CssDemo::new().into_any(),
+            AdvancedRoute::Store => advanced::StoreDemo::new().into_any(),
+            AdvancedRoute::NotFound => div("Advanced Demo Not Found").into_any(),
         }),
     ))
 }
 
 #[component]
 fn NotFoundPage() -> impl View {
-    div()
-        .style("color: red; padding: 20px;")
-        .text("404 - Page Not Found")
+    div("404 - Page Not Found").style("color: red; padding: 20px;")
 }
 
 #[component]
 fn HomePage() -> impl View {
-    div().child((
-        h1().text("Welcome to Silex Showcase"),
-        p().text("This example application demonstrates the core features of the Silex framework."),
-        ul().child((
-            li().child(link("/basics").text("Basics: Components, Props, Signals")),
-            li().child(link("/flow").text("Flow Control: Loops, Conditions")),
-            li().child(link("/advanced").text("Advanced: Router to Store & CSS")),
+    div((
+        h1("Welcome to Silex Showcase"),
+        p("This example application demonstrates the core features of the Silex framework."),
+        ul((
+            li(link("/basics").text("Basics: Components, Props, Signals")),
+            li(link("/flow").text("Flow Control: Loops, Conditions")),
+            li(link("/advanced").text("Advanced: Router to Store & CSS")),
         )),
     ))
 }
@@ -292,7 +270,7 @@ fn main() {
         // Provide Global Store to the entire app tree
         provide_context(store).unwrap();
 
-        div().child((
+        div((
             // Global Layout Shell
             NavBar::new(),
             // Root Router
