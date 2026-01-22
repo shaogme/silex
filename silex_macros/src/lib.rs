@@ -2,8 +2,18 @@ use proc_macro::TokenStream;
 use syn::{DeriveInput, ItemFn, parse_macro_input};
 
 mod component;
+mod css;
 mod route;
 mod store;
+
+#[proc_macro]
+pub fn css(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as syn::LitStr);
+    match css::css_impl(input) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
 
 /// `#[component]` 属性宏
 ///

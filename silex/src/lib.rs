@@ -4,17 +4,18 @@ pub mod flow;
 pub mod logging;
 pub mod reactivity;
 
+pub mod css;
 pub mod router;
 
 pub use error::{SilexError, SilexResult};
-pub use silex_macros::{Route, Store, component};
+pub use silex_macros::{Route, Store, component, css};
 
 pub mod prelude {
     pub use crate::Route;
     pub use crate::Store;
     pub use crate::component;
+    pub use crate::css;
     pub use crate::dom::*;
-    pub use crate::error::{SilexError, SilexResult};
     pub use crate::flow::*;
     pub use crate::reactivity::{
         ReadSignal, Resource, RwSignal, WriteSignal, create_effect, create_memo, create_resource,
@@ -22,4 +23,5 @@ pub mod prelude {
         use_context,
     };
     pub use crate::router::*;
+    pub use crate::{SilexError, SilexResult};
 }

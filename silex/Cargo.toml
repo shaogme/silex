@@ -28,6 +28,8 @@ web-sys = { version = "0.3", features = [
     "NodeList",
     "CssStyleDeclaration",
     "SvgElement",
+    "HtmlStyleElement",
+    "HtmlHeadElement",
 ] }
 js-sys = "0.3"
 slotmap = "1.1.1"

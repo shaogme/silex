@@ -31,17 +31,26 @@ fn CounterDisplay() -> SilexResult<impl View> {
     // Demo: Style Map (Vec) and Dynamic Class (Signal)
     let is_even = create_memo(move || count.get() % 2 == 0);
 
-    let container_styles = vec![
-        ("margin-top", "10px"),
-        ("color", "#555"),
-        ("font-size", "0.9rem"),
-        ("padding", "15px"),
-        ("border", "1px dashed #bbb"),
-        ("background-color", "#fafafa"),
-    ];
+    // Demo: CSS-in-Rust (Scoped CSS)
+    let container_class = css!(r#"
+        margin-top: 10px;
+        color: #555;
+        font-size: 0.9rem;
+        padding: 15px;
+        border: 1px dashed #bbb;
+        background-color: #fafafa;
+        transition: all 0.2s ease-in-out;
+
+        &:hover {
+            background-color: #f0f0f0;
+            border-color: #999;
+            transform: scale(1.01);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+    "#);
 
     Ok(div()
-        .style(container_styles)
+        .class(container_class)
         .class(("even-number", is_even)) // Adds class "even-number" when count is even
         .child((
             span().text("Global Context Status: "),
