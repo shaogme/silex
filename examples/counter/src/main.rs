@@ -78,13 +78,31 @@ impl<V: View> View for Card<V> {
 fn CounterDisplay() -> SilexResult<impl View> {
     let count = expect_context::<ReadSignal<i32>>();
 
+    // Demo: Style Map (Vec) and Dynamic Class (Signal)
+    let is_even = create_memo(move || count.get() % 2 == 0);
+
+    let container_styles = vec![
+        ("margin-top", "10px"),
+        ("color", "#555"),
+        ("font-size", "0.9rem"),
+        ("padding", "15px"),
+        ("border", "1px dashed #bbb"),
+        ("background-color", "#fafafa"),
+    ];
+
     Ok(div()
-        .style("margin-top: 10px; color: #888; font-size: 0.9rem;")
+        .style(container_styles)
+        .class(("even-number", is_even)) // Adds class "even-number" when count is even
         .child((
             span().text("Global Context Status: "),
             span()
-                .style("font-weight: bold; color: #6200ea;")
+                .style(("font-weight", "bold")) // Single tuple style
+                .style(("color", "#6200ea"))
                 .text(count),
+            div()
+                .style(("margin-top", "5px"))
+                .style(move || format!("opacity: {}; transition: opacity 0.3s", if is_even.get() { 1.0 } else { 0.0 }))
+                .text(" (Even Number - Dynamic Class Active)"),
         )))
 }
 
@@ -93,16 +111,26 @@ fn CounterControls() -> SilexResult<impl View> {
     let set_count = expect_context::<WriteSignal<i32>>();
     let count = expect_context::<ReadSignal<i32>>();
 
+    // Demo: Style Array
+    let btn_style = [
+        ("padding", "8px 16px"),
+        ("border-radius", "4px"),
+        ("border", "1px solid #ccc"),
+        ("cursor", "pointer"),
+        ("background-color", "white"),
+        ("transition", "background-color 0.2s"),
+    ];
+
     Ok(div().style("display: flex; align-items: center; gap: 15px;").child((
         button()
-            .style("padding: 8px 16px; border-radius: 4px; border: 1px solid #ccc; cursor: pointer;")
+            .style(btn_style) // Apply array of styles
             .text("-")
             .on_click(move |_| { let _ = set_count.update(|n| *n -= 1); }),
         span()
             .style("font-size: 1.5rem; font-weight: bold; min-width: 30px; text-align: center;")
             .text(count),
         button()
-            .style("padding: 8px 16px; border-radius: 4px; border: 1px solid #ccc; cursor: pointer;")
+            .style(btn_style)
             .text("+")
             .on_click(move |_| { let _ = set_count.update(|n| *n += 1); }),
     )))

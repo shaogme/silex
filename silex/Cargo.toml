@@ -26,6 +26,8 @@ web-sys = { version = "0.3", features = [
     "DocumentFragment",
     "PromiseRejectionEvent",
     "NodeList",
+    "CssStyleDeclaration",
+    "SvgElement",
 ] }
 js-sys = "0.3"
 slotmap = "1.1.1"
