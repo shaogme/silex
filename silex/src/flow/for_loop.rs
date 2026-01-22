@@ -6,7 +6,48 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use web_sys::Node;
 
-// For 组件保持不变
+/// Trait to unify different types of data sources that can be used in a `For` loop.
+/// This allows `step` to return `Vec<T>`, `Result<Vec<T>>`, etc.
+pub trait IntoForLoopResult {
+    type Item;
+    type Iter: IntoIterator<Item = Self::Item>;
+
+    fn into_result(self) -> SilexResult<Self::Iter>;
+}
+
+// Impl for Vec<T>
+impl<T> IntoForLoopResult for Vec<T> {
+    type Item = T;
+    type Iter = std::vec::IntoIter<T>;
+
+    fn into_result(self) -> SilexResult<Self::Iter> {
+        Ok(self.into_iter())
+    }
+}
+
+// Impl for Option<Vec<T>>
+impl<T> IntoForLoopResult for Option<Vec<T>> {
+    type Item = T;
+    type Iter = std::vec::IntoIter<T>;
+
+    fn into_result(self) -> SilexResult<Self::Iter> {
+        Ok(self.unwrap_or_default().into_iter())
+    }
+}
+
+// Impl for SilexResult<Vec<T>>
+impl<T> IntoForLoopResult for SilexResult<Vec<T>> {
+    type Item = T;
+    type Iter = std::vec::IntoIter<T>;
+
+    fn into_result(self) -> SilexResult<Self::Iter> {
+        self.map(|v| v.into_iter())
+    }
+}
+
+// Ensure SilexResult is available if it's generic, but here we cover `SilexResult<Vec<T>>` explicitly.
+// We could add more impls as needed (e.g. for &[T] or other collections), but Vec is 99% of use cases.
+
 pub struct For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> {
     items: Rc<ItemsFn>,
     key: Rc<KeyFn>,
@@ -16,8 +57,9 @@ pub struct For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> {
 
 impl<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V>
 where
-    ItemsFn: Fn() -> SilexResult<Items> + 'static,
-    Items: IntoIterator<Item = Item>,
+    // ItemsFn returns the Source directly (e.g. Vec or Result<Vec>)
+    ItemsFn: Fn() -> Items + 'static,
+    Items: IntoForLoopResult<Item = Item>,
     KeyFn: Fn(&Item) -> Key + 'static,
     MapFn: Fn(Item) -> V + 'static,
     V: View,
@@ -36,8 +78,10 @@ where
 impl<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> View
     for For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V>
 where
-    ItemsFn: Fn() -> SilexResult<Items> + 'static,
-    Items: IntoIterator<Item = Item>,
+    ItemsFn: Fn() -> Items + 'static,
+    Items: IntoForLoopResult<Item = Item> + 'static,
+    // We need the Iterator produced by the result to be iterable
+    <Items as IntoForLoopResult>::Iter: IntoIterator<Item = Item>,
     KeyFn: Fn(&Item) -> Key + 'static,
     Key: std::hash::Hash + Eq + Clone + 'static,
     MapFn: Fn(Item) -> V + 'static,
@@ -74,8 +118,11 @@ where
         create_effect(move || {
             let mut rows_map = active_rows.borrow_mut();
 
-            let items = match (items_fn)() {
-                Ok(items) => items,
+            // Use the trait to convert whatever Items is into SilexResult<Iterator>
+            let result = (items_fn)().into_result();
+
+            let items_iter = match result {
+                Ok(iter) => iter,
                 Err(e) => {
                     crate::error::handle_error(e);
                     return;
@@ -86,7 +133,7 @@ where
             // (Key, Nodes, ScopeId, Optional Fragment for initial insert)
             let mut new_rows_order = Vec::new();
 
-            for item in items {
+            for item in items_iter {
                 let key = (key_fn)(&item);
                 new_keys.insert(key.clone());
 

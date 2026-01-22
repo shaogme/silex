@@ -81,7 +81,7 @@ mod flow_control {
         div().child((
             h3().text("List Rendering"),
             ul().child(For::new(
-                move || Ok(list.get()),
+                move || list.get(),
                 |item| *item,
                 |item| li().text(item),
             )),
