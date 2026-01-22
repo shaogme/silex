@@ -202,6 +202,14 @@ impl<V: View> View for Vec<V> {
     }
 }
 
+impl<V: View, const N: usize> View for [V; N] {
+    fn mount(self, parent: &Node) {
+        for v in self {
+            v.mount(parent);
+        }
+    }
+}
+
 // 7. 元组支持
 macro_rules! impl_view_for_tuple {
     ($($name:ident),*) => {

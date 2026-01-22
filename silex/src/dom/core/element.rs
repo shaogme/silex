@@ -488,3 +488,37 @@ pub mod tag {
     define_svg_void!(fe_composite, FeComposite, "feComposite");
     define_svg_void!(fe_displacement_map, FeDisplacementMap, "feDisplacementMap");
 }
+
+// --- Macros for Tag DSL ---
+
+/// Internal macro to generate public macros for tags.
+/// We use $d to pass dollar signs to the inner macro.
+#[macro_export]
+macro_rules! define_tag_macros {
+    ($($name:ident),+; $d:tt) => {
+        $(
+            #[macro_export]
+            macro_rules! $name {
+                () => {
+                    $crate::dom::element::tag::$name(())
+                };
+                ($d($d child:expr),+ $d(,)?) => {
+                    $crate::dom::element::tag::$name(($d($d child),+))
+                };
+            }
+        )*
+    };
+}
+
+// Generate macros for all container tags
+define_tag_macros!(
+    div, span, p, h1, h2, h3, h4, h5, h6,
+    header, footer, main, section, article, aside, nav, address,
+    ul, ol, li,
+    a, button, label, pre, code, blockquote, em, strong, s, time, figure, figcaption,
+    form, select, textarea, option,
+    table, thead, tbody, tr, td,
+    // SVG Containers
+    svg, g, defs, filter
+    ; $
+);

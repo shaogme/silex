@@ -1,5 +1,6 @@
 use silex::dom::tag::*;
 use silex::prelude::*;
+use silex::{div, p, ul};
 use silex_macros::{Route, Store, component, css};
 
 // ==================================================================================
@@ -20,11 +21,11 @@ mod basics {
             punctuation
         };
 
-        div((
+        div![
             span("Hello, "),
             strong(name).style("color: #007bff"),
             span(full_punctuation),
-        ))
+        ]
         .class("greeting-card")
         .style("padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 10px;")
     }
@@ -34,27 +35,26 @@ mod basics {
         let (count, set_count) = create_signal(0);
         let double_count = create_memo(move || count.get() * 2);
 
-        div((
+        div![
             h3("Interactive Counter"),
-            div((
+            div![
                 button("-").on_click(move |_| set_count.update(|n| *n -= 1)),
                 strong(count),
                 button("+").on_click(move |_| set_count.update(|n| *n += 1)),
-            ))
+            ]
             .style("display: flex; gap: 10px; align-items: center;"),
-            div(("Double: ", double_count))
-                .style("margin-top: 5px; color: #666; font-size: 0.9em;"),
-        ))
+            div!["Double: ", double_count].style("margin-top: 5px; color: #666; font-size: 0.9em;"),
+        ]
     }
 
     #[component]
     pub fn BasicsPage() -> impl View {
-        div((
+        div![
             h2("Basics"),
             Greeting().name("Developer"),
             Counter(),
             // AttributeDemo omitted for brevity, logic is same as previous
-        ))
+        ]
     }
 }
 
@@ -69,15 +69,15 @@ mod flow_control {
     pub fn ListDemo() -> impl View {
         let (list, _set_list) = create_signal(vec!["Apple", "Banana", "Cherry"]);
 
-        div((
+        div![
             h3("List Rendering"),
             ul(For::new(move || list.get(), |item| *item, |item| li(item))),
-        ))
+        ]
     }
 
     #[component]
     pub fn FlowPage() -> impl View {
-        div((h2("Control Flow"), ListDemo()))
+        div![h2("Control Flow"), ListDemo()]
     }
 }
 
@@ -120,13 +120,13 @@ mod advanced {
         "#
         );
 
-        div((
+        div![
             h3("CSS-in-Rust Demo"),
             p("The button below is styled using the `css!` macro with scoped styles."),
             button("Scoped Style Button")
                 .class(btn_class)
                 .on_click(|_| console_log("Clicked!")),
-        ))
+        ]
     }
 
     #[component]
@@ -136,12 +136,12 @@ mod advanced {
         // `expect_context` is a convenience wrapper that panics if the context is missing.
         let settings = expect_context::<UserSettingsStore>();
 
-        div((
+        div![
             h3("Global Store Demo"),
-            div((
-                p((strong("Username: "), settings.username)),
-                p((strong("Theme: "), settings.theme)),
-                p((
+            div![
+                p![strong("Username: "), settings.username],
+                p![strong("Theme: "), settings.theme],
+                p![
                     strong("Notifications: "),
                     text(move || {
                         if settings.notifications.get() {
@@ -150,11 +150,11 @@ mod advanced {
                             "Off"
                         }
                     }),
-                )),
-            ))
+                ],
+            ]
             .style("border: 1px solid #ccc; padding: 10px; margin-bottom: 10px;"),
             h4("Update Settings"),
-            div((
+            div![
                 button("Toggle Theme").on_click(move |_| {
                     settings.theme.update(|t| {
                         *t = if t == "Light" {
@@ -169,9 +169,9 @@ mod advanced {
                 input()
                     .bind_value(settings.username)
                     .placeholder("Change username..."),
-            ))
+            ]
             .style("display: flex; gap: 10px;"),
-        ))
+        ]
     }
 }
 
@@ -234,27 +234,27 @@ fn NavBar() -> impl View {
     "#
     );
 
-    div((
+    div![
         Link("/").text("Home").class(&nav_link).active_class("active"),
         Link("/basics").text("Basics").class(&nav_link).active_class("active"),
         Link("/flow").text("Flow").class(&nav_link).active_class("active"),
         Link("/advanced").text("Advanced").class(&nav_link).active_class("active"),
-    ))
+    ]
     .style("background: #333; color: white; padding: 10px; margin-bottom: 20px; display: flex; gap: 15px; align-items: center;")
 }
 
 #[component]
 fn AdvancedLayout(route: AdvancedRoute) -> impl View {
-    div((
+    div![
         h2("Advanced Features"),
-        div((
+        div![
             Link("/advanced/css").text("CSS Demo").class("tab"),
             Link("/advanced/store").text("Store Demo").class("tab"),
-        ))
+        ]
         .style("display: flex; gap: 10px; margin-bottom: 20px;"),
         // Delegate rendering to the route itself via RouteView
         route.render(),
-    ))
+    ]
 }
 
 #[component]
@@ -264,15 +264,15 @@ fn NotFoundPage() -> impl View {
 
 #[component]
 fn HomePage() -> impl View {
-    div((
+    div![
         h1("Welcome to Silex Showcase"),
         p("This example application demonstrates the core features of the Silex framework."),
-        ul((
+        ul![
             li(Link("/basics").text("Basics: Components, Props, Signals")),
             li(Link("/flow").text("Flow Control: Loops, Conditions")),
             li(Link("/advanced").text("Advanced: Router to Store & CSS")),
-        )),
-    ))
+        ],
+    ]
 }
 
 fn main() {
@@ -290,11 +290,11 @@ fn main() {
         // Provide Global Store to the entire app tree
         provide_context(store).unwrap();
 
-        div((
+        div![
             // Global Layout Shell
             NavBar(),
             // Root Router
             Router::new().match_route::<AppRoute>(),
-        ))
+        ]
     });
 }
