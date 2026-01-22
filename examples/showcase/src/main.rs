@@ -42,7 +42,7 @@ mod basics {
                 button("+").on_click(move |_| set_count.update(|n| *n += 1)),
             ))
             .style("display: flex; gap: 10px; align-items: center;"),
-            div((text("Double: "), text(double_count)))
+            div(("Double: ", double_count))
                 .style("margin-top: 5px; color: #666; font-size: 0.9em;"),
         ))
     }
@@ -137,8 +137,8 @@ mod advanced {
         div((
             h3("Global Store Demo"),
             div((
-                p((strong("Username: "), text(settings.username.read_signal()))),
-                p((strong("Theme: "), text(settings.theme.read_signal()))),
+                p((strong("Username: "), settings.username.read_signal())),
+                p((strong("Theme: "), settings.theme.read_signal())),
                 p((
                     strong("Notifications: "),
                     text(move || {
@@ -228,10 +228,10 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
         // Direct match on the passed route enum
         // This avoids re-parsing the URL via an internal Router
         view_match!(route, {
-            AdvancedRoute::Index => div("Select a demo above.").into_any(),
-            AdvancedRoute::Css => advanced::CssDemo::new().into_any(),
-            AdvancedRoute::Store => advanced::StoreDemo::new().into_any(),
-            AdvancedRoute::NotFound => div("Advanced Demo Not Found").into_any(),
+            AdvancedRoute::Index => div("Select a demo above."),
+            AdvancedRoute::Css => advanced::CssDemo::new(),
+            AdvancedRoute::Store => advanced::StoreDemo::new(),
+            AdvancedRoute::NotFound => div("Advanced Demo Not Found"),
         }),
     ))
 }

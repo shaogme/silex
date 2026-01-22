@@ -246,10 +246,10 @@ fn main() {
             // 递归解包 Users 模块
             AppRoute::Users { routes: sub_route } => {
                 let sub_view = view_match!(sub_route, {
-                    UsersRoute::List => UserList::new().into_any(),
-                    UsersRoute::Create => Card::new(h3("🆕 Create New User Form")).into_any(),
+                    UsersRoute::List => UserList::new(),
+                    UsersRoute::Create => Card::new(h3("🆕 Create New User Form")),
                     // 直接解构参数并传递给组件，实现 100% 类型安全
-                    UsersRoute::Detail { id } => UserDetail::new(id).into_any(),
+                    UsersRoute::Detail { id } => UserDetail::new(id),
                 });
                 
                 // 将子视图包裹在 UsersLayout 中
