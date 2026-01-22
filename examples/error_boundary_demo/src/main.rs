@@ -6,7 +6,7 @@ pub fn main() {
     silex::dom::element::mount_to_body(App);
 }
 
-#[allow(non_snake_case)]
+#[component]
 fn App() -> impl View {
     div().style("padding: 20px; font-family: sans-serif;").child((
         h1().text("Error Boundary Demo"),
@@ -27,6 +27,7 @@ fn App() -> impl View {
                         ))
                 },
                 children: || {
+                    // 无参数组件直接调用，不需要传递 Props
                     RecoverableComponent()
                 }
             }),
@@ -45,6 +46,7 @@ fn App() -> impl View {
                         ))
                 },
                 children: || {
+                    // 无参数组件直接调用
                     PanicToggleComponent()
                 }
             }),
@@ -52,7 +54,7 @@ fn App() -> impl View {
     ))
 }
 
-#[allow(non_snake_case)]
+#[component]
 fn RecoverableComponent() -> impl View {
     let (should_error, set_should_error) = create_signal(false);
     
@@ -72,7 +74,7 @@ fn RecoverableComponent() -> impl View {
 }
 
 // A component that conditionally renders a child that panics immediately during construction
-#[allow(non_snake_case)]
+#[component]
 fn PanicToggleComponent() -> impl View {
      let (show_panic, _set_show_panic) = create_signal(false);
      
@@ -80,6 +82,7 @@ fn PanicToggleComponent() -> impl View {
          if show_panic.get().unwrap_or(false) {
              // We wrap the panicking component in a way that its construction is delayed until this closure runs
              // Because ErrorBoundary wraps this closure in create_effect and catch_unwind, it captures this panic.
+             // 无参数组件直接调用
              Some(ImmediatePanic())
          } else {
              None
@@ -87,7 +90,7 @@ fn PanicToggleComponent() -> impl View {
      }
 }
 
-#[allow(non_snake_case)]
+#[component]
 fn ImmediatePanic() -> impl View {
     let (active, set_active) = create_signal(false);
     

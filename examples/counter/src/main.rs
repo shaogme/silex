@@ -74,7 +74,8 @@ impl<V: View> View for Card<V> {
 
 // --- 子组件 ---
 
-fn counter_display() -> SilexResult<impl View> {
+#[component]
+fn CounterDisplay() -> SilexResult<impl View> {
     let count = use_context::<ReadSignal<i32>>()
         .ok_or_else(|| silex::SilexError::Reactivity("Context 'count' not found!".into()))?;
 
@@ -88,7 +89,8 @@ fn counter_display() -> SilexResult<impl View> {
         )))
 }
 
-fn counter_controls() -> SilexResult<impl View> {
+#[component]
+fn CounterControls() -> SilexResult<impl View> {
     let set_count = use_context::<WriteSignal<i32>>().ok_or_else(|| {
         silex::SilexError::Reactivity("Context 'set_count' not found!".into())
     })?;
@@ -112,14 +114,16 @@ fn counter_controls() -> SilexResult<impl View> {
 
 // --- Views ---
 
-fn nav_bar() -> impl View {
+#[component]
+fn NavBar() -> impl View {
     div().style("margin-bottom: 20px; padding: 10px; border-bottom: 1px solid #eee").child((
         link("/").text("Home").style("margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold;"),
         link("/about").text("About").style("text-decoration: none; color: #007bff; font-weight: bold;")
     ))
 }
 
-fn home_view() -> impl View {
+#[component]
+fn HomeView() -> impl View {
     // 页面级状态
     let (name, set_name) = create_signal("Rustacean".to_string());
     
@@ -154,8 +158,8 @@ fn home_view() -> impl View {
                 .elevation(3)
                 .on_hover(|| { let _ = web_sys::console::log_1(&"Card Hovered!".into()); })
                 .child((
-                    counter_controls(),
-                    counter_display(),
+                    CounterControls(),
+                    CounterDisplay(),
                 )),
 
             // Card 2: Input & Local State
@@ -203,7 +207,8 @@ fn home_view() -> impl View {
         ))
 }
 
-fn about_view() -> impl View {
+#[component]
+fn AboutView() -> impl View {
     div().style("padding: 20px; text-align: center;").child((
         h1().text("About"),
         p().text("This is the About Page to demonstrate Silex Router."),
@@ -211,7 +216,8 @@ fn about_view() -> impl View {
     ))
 }
 
-fn not_found() -> impl View {
+#[component]
+fn NotFound() -> impl View {
     div().style("color: red; padding: 20px;").child(
         h1().text("404 - Page Not Found")
     )
@@ -238,11 +244,11 @@ fn main() -> () {
             .class("app-container")
             .style("font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;")
             .child((
-                nav_bar(),
+                NavBar(),
                 Router::new()
-                    .route("/", home_view)
-                    .route("/about", about_view)
-                    .fallback(not_found)
+                    .route("/", HomeView)
+                    .route("/about", AboutView)
+                    .fallback(NotFound)
             ));
 
         app.mount(&app_container);
