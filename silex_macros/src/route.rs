@@ -483,14 +483,6 @@ fn generate_to_path_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resu
         // 生成最终的 format 调用
         // 对于嵌套情况，我们需要特殊的拼接逻辑以避免 //
         if def.nested_field.is_some() {
-            // 针对嵌套，我们已经把 prefix 部分放在 format_string 里了，最后一个 arg 是 sub path
-            // 我们需要把 prefix 的一部分生成出来，然后跟 sub path 拼
-            // 这里的 clean up 比较复杂。
-            // 让我们生成代码来做：
-            // format!("{}{}", prefix_fmt.trim_end_matches('/'), sub_path)
-            // 但 format_string 包含 {} 占位符。
-            // 所以：let base = format!(...); let child = ...;
-
             // 分离 args
             let child_arg = format_args.pop().unwrap(); // last one is child path
             let base_args = format_args;

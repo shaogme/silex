@@ -1,9 +1,7 @@
 use crate::dom::view::{AnyView, View};
 use crate::reactivity::{ReadSignal, WriteSignal, create_memo, provide_context, use_context};
-use serde::de::DeserializeOwned;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::str::FromStr;
 use web_sys::Node;
 
 /// View 工厂包装器，必须实现 PartialEq 以便在 Signal/Memo 中使用
@@ -26,15 +24,6 @@ impl View for ViewFactory {
     }
 }
 
-/// 匹配到的路由节点 (用于运行时渲染)
-#[derive(Clone, PartialEq)]
-pub struct MatchedRoute {
-    /// 该层级匹配到的参数
-    pub params: HashMap<String, String>,
-    /// 该层级的视图工厂
-    pub view_factory: ViewFactory,
-}
-
 /// 路由上下文，存储当前的路由状态
 #[derive(Clone)]
 pub struct RouterContext {
@@ -44,10 +33,6 @@ pub struct RouterContext {
     pub path: ReadSignal<String>,
     /// 当前查询参数 (search string)
     pub search: ReadSignal<String>,
-    /// 聚合后的所有路径参数 (flattened params from all levels)
-    pub params: ReadSignal<HashMap<String, String>>,
-    /// 匹配到的路由链 (Root -> Child -> GrandChild)
-    pub matches: ReadSignal<Vec<MatchedRoute>>,
     /// 导航控制器
     pub navigator: Navigator,
 }
@@ -128,8 +113,6 @@ pub(crate) struct RouterContextProps {
     pub base_path: String,
     pub path: ReadSignal<String>,
     pub search: ReadSignal<String>,
-    pub params: ReadSignal<HashMap<String, String>>,
-    pub matches: ReadSignal<Vec<MatchedRoute>>,
     pub set_path: WriteSignal<String>,
     pub set_search: WriteSignal<String>,
 }
@@ -145,8 +128,6 @@ pub(crate) fn provide_router_context(props: RouterContextProps) {
         base_path: props.base_path,
         path: props.path,
         search: props.search,
-        params: props.params,
-        matches: props.matches,
         navigator,
     };
     // 忽略可能的错误（如重复 provide），Router 应该是根级的
@@ -163,13 +144,6 @@ pub fn use_navigate() -> Navigator {
     use_router()
         .expect("use_navigate called outside of <Router>")
         .navigator
-}
-
-/// Hook: 获取当前路径参数
-pub fn use_params() -> ReadSignal<HashMap<String, String>> {
-    use_router()
-        .map(|ctx| ctx.params)
-        .expect("use_params called outside of <Router>")
 }
 
 /// Hook: 获取当前路径 (逻辑路径，不含 Base Path)
@@ -211,59 +185,5 @@ pub fn use_query_map() -> ReadSignal<HashMap<String, String>> {
             }
         }
         map
-    })
-}
-
-/// Hook: 获取单个强类型参数 (Scheme 3)
-///
-/// 适用于简单的单参数场景，无需定义结构体。
-///
-/// # Example
-/// ```rust
-/// let user_id = use_param::<i32>("id");
-/// ```
-pub fn use_param<T>(key: &str) -> ReadSignal<Result<T, String>>
-where
-    T: FromStr + Clone + PartialEq + 'static,
-    T::Err: std::fmt::Display,
-{
-    let params = use_params();
-    let key = key.to_string();
-    create_memo(move || {
-        let p = params.get();
-        match p.get(&key) {
-            Some(val_str) => val_str.parse::<T>().map_err(|e| e.to_string()),
-            None => Err(format!("Parameter '{}' not found", key)),
-        }
-    })
-}
-
-/// Hook: 将所有参数解析为结构体 (Scheme 1)
-///
-/// 基于 Serde，将 HashMap 参数反序列化为强类型结构体。
-///
-/// # Example
-/// ```rust
-/// #[derive(serde::Deserialize)]
-/// struct Params {
-///     id: i32,
-///     name: String
-/// }
-/// let params = use_typed_params::<Params>();
-/// ```
-pub fn use_typed_params<T>() -> ReadSignal<Result<T, String>>
-where
-    T: DeserializeOwned + Clone + PartialEq + 'static,
-{
-    let params = use_params();
-    create_memo(move || {
-        let p = params.get();
-        // 利用 serde_json 作为中间层进行转换: HashMap -> Value -> Struct
-        // 这种方式虽然有一定开销，但对于路由参数这种小数据量场景非常简便且健壮
-        let value = match serde_json::to_value(&p) {
-            Ok(v) => v,
-            Err(e) => return Err(format!("Serialization error: {}", e)),
-        };
-        serde_json::from_value(value).map_err(|e| e.to_string())
     })
 }

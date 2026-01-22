@@ -207,6 +207,16 @@ fn NotFound() -> impl View {
     )
 }
 
+#[derive(Route, Clone, PartialEq)]
+enum AppRoute {
+    #[route("/")]
+    Home,
+    #[route("/about")]
+    About,
+    #[route("/*")]
+    NotFound,
+}
+
 // --- Main ---
 
 fn main() -> () {
@@ -230,9 +240,13 @@ fn main() -> () {
             .child((
                 NavBar::new(),
                 Router::new()
-                    .route("/", HomeView::new)
-                    .route("/about", AboutView::new)
-                    .fallback(NotFound::new)
+                    .match_enum(|route: AppRoute| {
+                        match route {
+                            AppRoute::Home => HomeView::new().into_any(),
+                            AppRoute::About => AboutView::new().into_any(),
+                            AppRoute::NotFound => NotFound::new().into_any(),
+                        }
+                    })
             ));
 
         app.mount(&app_container);
