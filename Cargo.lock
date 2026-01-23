@@ -818,7 +818,6 @@ dependencies = [
 name = "silex_core"
 version = "0.1.0"
 dependencies = [
- "js-sys",
  "slotmap",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -842,7 +841,6 @@ dependencies = [
  "silex_core",
  "slotmap",
  "wasm-bindgen",
- "wasm-bindgen-futures",
  "web-sys",
 ]
 

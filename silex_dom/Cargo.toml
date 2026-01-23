@@ -9,4 +9,3 @@ wasm-bindgen = { workspace = true }
 web-sys = { workspace = true }
 js-sys = { workspace = true }
 slotmap = { workspace = true }
-wasm-bindgen-futures = { workspace = true }
