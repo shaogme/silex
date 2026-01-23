@@ -1,6 +1,5 @@
 use silex::prelude::*;
 use silex::reexports::*;
-use silex_macros::{component, Store};
 
 // 1. 定义数据模型
 #[derive(Clone, Debug, Store)]

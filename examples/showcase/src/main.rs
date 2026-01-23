@@ -1,5 +1,4 @@
 use silex::prelude::*;
-use silex_macros::{Route, Store, classes, component, css, style};
 
 // ==================================================================================
 // Phase 1: Basics - Components, Reactivity, Props, and Attributes
@@ -246,7 +245,7 @@ mod advanced {
             .style("display: flex; gap: 10px; margin: 10px 0; align-items: center;"),
             p![
                 strong("Current Value: "),
-                val.clone() // Signals implement Display
+                val // Signals implement Display
             ]
             .style("background: #f5f5f5; padding: 10px; border-radius: 4px;")
         ]

@@ -1,6 +1,5 @@
 use silex::prelude::*;
 use silex::reexports::*;
-use silex_macros::component;
 
 pub fn main() {
     setup_global_error_handlers();

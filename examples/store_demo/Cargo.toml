@@ -5,4 +5,3 @@ edition = "2021"
 
 [dependencies]
 silex = { path = "../../silex" }
-silex_macros = { path = "../../silex_macros" }

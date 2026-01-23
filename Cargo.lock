@@ -720,7 +720,6 @@ name = "router_example"
 version = "0.1.0"
 dependencies = [
  "silex",
- "silex_macros",
  "wasm-bindgen",
  "web-sys",
 ]
@@ -808,6 +807,7 @@ dependencies = [
  "js-sys",
  "silex_core",
  "silex_html",
+ "silex_macros",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -914,7 +914,6 @@ name = "store_demo"
 version = "0.1.0"
 dependencies = [
  "silex",
- "silex_macros",
 ]
 
 [[package]]

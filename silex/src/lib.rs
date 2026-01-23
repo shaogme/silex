@@ -21,6 +21,11 @@ pub mod html {
     pub use silex_html::*;
 }
 
+#[cfg(feature = "macros")]
+pub mod macros {
+    pub use silex_macros::*;
+}
+
 pub mod prelude {
     pub use crate::components::*;
     pub use crate::core::prelude::*;
@@ -31,4 +36,6 @@ pub mod prelude {
     pub use crate::{SilexError, SilexResult};
     pub use silex_core::rx;
     pub use silex_html::*;
+    #[cfg(feature = "macros")]
+    pub use silex_macros::*;
 }

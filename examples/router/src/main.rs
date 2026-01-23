@@ -1,5 +1,4 @@
 use silex::prelude::*;
-use silex_macros::{component, Route};
 
 // ==========================================
 // 辅助组件
