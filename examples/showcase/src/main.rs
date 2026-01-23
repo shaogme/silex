@@ -1,5 +1,5 @@
 use silex::prelude::*;
-use silex_macros::{Route, Store, classes, component, css, style};
+use silex_macros::{Route, Store, classes, component, css, rx, style};
 
 // ==================================================================================
 // Phase 1: Basics - Components, Reactivity, Props, and Attributes
@@ -39,7 +39,7 @@ mod basics {
     #[component]
     pub fn Counter() -> impl View {
         let (count, set_count) = create_signal(0);
-        let double_count = create_memo(move || count.get() * 2);
+        let double_count = create_memo(rx!(count.get() * 2));
 
         div![
             h3("Interactive Counter"),
@@ -54,7 +54,7 @@ mod basics {
             ]
             .style("display: flex; gap: 10px; align-items: center;"),
             div!["Double: ", double_count]
-                .classes(move || if count.get() % 2 == 0 { "even" } else { "odd" })
+                .classes(rx!(if count.get() % 2 == 0 { "even" } else { "odd" }))
                 .style("margin-top: 5px; color: #666; font-size: 0.9em;"),
         ]
     }
@@ -121,9 +121,8 @@ mod flow_control {
                 button("Show C").on_click(move |_| set_mode.set("C")),
             ]
             .style("display: flex; gap: 10px; margin-bottom: 10px;"),
-            // Dynamic uses Accessor, so closures work seamlessly
-            // Now using Fluent API .map() instead of explicit closure with .get()
-            Dynamic::new(mode.map(|m| {
+            // You can also use Dynamic::new(mode.map(|m| { view_match!(m, { ... }) })).
+            Dynamic::bind(mode, |m| {
                 view_match!(m, {
                     "A" => div("🅰️ Component A")
                         .style("padding: 20px; background: #e3f2fd;"),
@@ -132,7 +131,7 @@ mod flow_control {
                     _ => div("©️ Component C")
                         .style("padding: 20px; background: #f3e5f5;"),
                 })
-            })),
+            }),
         ]
     }
 

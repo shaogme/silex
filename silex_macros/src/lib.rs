@@ -40,6 +40,22 @@ pub fn classes(input: TokenStream) -> TokenStream {
         Err(e) => e.to_compile_error().into(),
     }
 }
+/// `rx!` 宏：简化创建响应式闭包的语法。
+///
+/// 等同于 `move || { ... }`。
+///
+/// # 示例
+/// ```rust
+/// let double = rx!(count.get() * 2);
+/// ```
+#[proc_macro]
+pub fn rx(input: TokenStream) -> TokenStream {
+    let input = proc_macro2::TokenStream::from(input);
+    let expanded = quote::quote! {
+        move || { #input }
+    };
+    expanded.into()
+}
 
 /// `#[component]` 属性宏
 ///

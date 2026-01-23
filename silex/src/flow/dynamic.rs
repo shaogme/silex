@@ -22,11 +22,7 @@ use web_sys::Node;
 /// })
 /// ```
 #[derive(Clone)]
-pub struct Dynamic<V, F>
-where
-    V: View,
-    F: Accessor<V> + 'static,
-{
+pub struct Dynamic<V, F> {
     view_fn: F,
     _marker: std::marker::PhantomData<V>,
 }
@@ -41,6 +37,28 @@ where
             view_fn: f,
             _marker: std::marker::PhantomData,
         }
+    }
+}
+
+impl<V> Dynamic<V, ()>
+where
+    V: View + 'static,
+{
+    /// 创建一个 Dynamic 组件，该组件绑定到一个数据源 (Source)，
+    /// 并使用映射函数将数据转换为视图。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// Dynamic::bind(mode, |m| view_match!(m, { ... }))
+    /// ```
+    pub fn bind<S, T, Map>(source: S, map_fn: Map) -> Dynamic<V, impl Fn() -> V>
+    where
+        S: Accessor<T> + 'static,
+        Map: Fn(T) -> V + 'static,
+        T: 'static,
+    {
+        let combined_accessor = move || map_fn(source.value());
+        Dynamic::new(combined_accessor)
     }
 }
 
