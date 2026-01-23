@@ -108,13 +108,13 @@ Silex 采用模块化设计，核心功能拆分为多个 Crate 以保持架构�
 ```rust
 #[derive(Route, Clone, PartialEq)]
 enum AppRoute {
-    #[route("/")]
+    #[route("/", view = Home)]
     Home,
-    #[route("/about")]
+    #[route("/about", view = About)]
     About,
-    #[route("/users/:id")]
+    #[route("/users/:id", view = User)]
     User { id: u32 }, // 自动解析 URL 参数
-    #[route("/*")]
+    #[route("/*", view = NotFound)]
     NotFound,
 }
 

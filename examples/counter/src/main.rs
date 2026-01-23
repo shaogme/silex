@@ -196,11 +196,11 @@ fn NotFound() -> impl View {
 
 #[derive(Route, Clone, PartialEq)]
 enum AppRoute {
-    #[route("/", view = HomeViewComponent)]
+    #[route("/", view = HomeView)]
     Home,
-    #[route("/about", view = AboutViewComponent)]
+    #[route("/about", view = AboutView)]
     About,
-    #[route("/*", view = NotFoundComponent)]
+    #[route("/*", view = NotFound)]
     NotFound,
 }
 

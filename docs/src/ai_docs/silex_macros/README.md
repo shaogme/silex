@@ -70,7 +70,7 @@ fn MyComponent(props...) -> impl View
 *   自动处理嵌套路由的路径拼接 (`/base/child`).
 
 #### `fn render(&self) -> AnyView`
-需要 `#[route(..., view = Component)]`。
+需要 `#[route(..., view = ComponentFunction)]`。
 *   **Binding**: 将 Enum Variant 的字段映射为 Component 的 props。
     *   要求 Variant 字段名与 Component Prop 名一致。
     *   自动调用 `.clone()`。
