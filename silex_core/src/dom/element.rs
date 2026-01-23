@@ -1,5 +1,5 @@
 use crate::SilexError;
-use crate::dom::attribute::AttributeValue;
+use crate::dom::attribute::{ApplyTarget, ApplyToDom};
 use crate::dom::tags::Tag;
 use crate::dom::view::View;
 use crate::reactivity::{RwSignal, create_effect, on_cleanup};
@@ -8,6 +8,151 @@ use std::marker::PhantomData;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::Element as WebElem;
+
+// --- Macros for Deduplication ---
+
+macro_rules! impl_element_common {
+    () => {
+        pub fn attr(self, name: &str, value: impl ApplyToDom) -> Self {
+            value.apply(&self.as_web_element(), ApplyTarget::Attr(name));
+            self
+        }
+
+        pub fn id(self, value: impl ApplyToDom) -> Self {
+            self.attr("id", value)
+        }
+
+        pub fn class(self, value: impl ApplyToDom) -> Self {
+            value.apply(&self.as_web_element(), ApplyTarget::Class);
+            self
+        }
+
+        pub fn style(self, value: impl ApplyToDom) -> Self {
+            value.apply(&self.as_web_element(), ApplyTarget::Style);
+            self
+        }
+
+        pub fn class_toggle<C>(self, name: &str, condition: C) -> Self
+        where
+            (String, C): ApplyToDom,
+        {
+            (name.to_string(), condition).apply(&self.as_web_element(), ApplyTarget::Class);
+            self
+        }
+
+        pub fn classes<V>(self, value: V) -> Self
+        where
+            V: ApplyToDom,
+        {
+            value.apply(&self.as_web_element(), ApplyTarget::Class);
+            self
+        }
+
+        pub fn child<V: View>(self, view: V) -> Self {
+            view.mount(&self.as_web_element());
+            self
+        }
+
+        // --- Event API ---
+
+        pub fn on_click<F, M>(self, callback: F) -> Self
+        where
+            F: EventHandler<web_sys::MouseEvent, M>,
+        {
+            let mut handler = callback.into_handler();
+            let closure = Closure::wrap(Box::new(move |e: web_sys::MouseEvent| {
+                handler(e);
+            }) as Box<dyn FnMut(_)>);
+
+            let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
+            let dom_element = self.as_web_element();
+
+            if let Err(e) = dom_element
+                .add_event_listener_with_callback("click", js_value)
+                .map_err(SilexError::from)
+            {
+                crate::error::handle_error(e);
+                return self;
+            }
+
+            let target = dom_element.clone();
+            let js_fn = js_value.clone();
+
+            on_cleanup(move || {
+                let _ = target.remove_event_listener_with_callback("click", &js_fn);
+                drop(closure);
+            });
+
+            self
+        }
+
+        pub fn on_input<F, M>(self, callback: F) -> Self
+        where
+            F: EventHandler<String, M>,
+        {
+            let mut handler = callback.into_handler();
+            let closure = Closure::wrap(Box::new(move |e: web_sys::InputEvent| {
+                if let Some(target) = e.target() {
+                    let input = target.unchecked_into::<web_sys::HtmlInputElement>();
+                    handler(input.value());
+                } else {
+                    let err = SilexError::Dom("Input event has no target".into());
+                    crate::error::handle_error(err);
+                }
+            }) as Box<dyn FnMut(_)>);
+
+            let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
+            let dom_element = self.as_web_element();
+
+            if let Err(e) = dom_element
+                .add_event_listener_with_callback("input", js_value)
+                .map_err(SilexError::from)
+            {
+                crate::error::handle_error(e);
+                return self;
+            }
+
+            let target = dom_element.clone();
+            let js_fn = js_value.clone();
+
+            on_cleanup(move || {
+                let _ = target.remove_event_listener_with_callback("input", &js_fn);
+                drop(closure);
+            });
+
+            self
+        }
+
+        pub fn bind_value(self, signal: RwSignal<String>) -> Self {
+            let this = self.on_input(move |value| {
+                signal.set(value);
+            });
+
+            let dom_element = this.as_web_element();
+
+            create_effect(move || {
+                let value = signal.get();
+                if let Some(input) = dom_element.dyn_ref::<web_sys::HtmlInputElement>() {
+                    if input.value() != value {
+                        input.set_value(&value);
+                    }
+                } else if let Some(area) = dom_element.dyn_ref::<web_sys::HtmlTextAreaElement>() {
+                    if area.value() != value {
+                        area.set_value(&value);
+                    }
+                } else if let Some(select) = dom_element.dyn_ref::<web_sys::HtmlSelectElement>() {
+                    if select.value() != value {
+                        select.set_value(&value);
+                    }
+                } else {
+                    let _ = dom_element.set_attribute("value", &value);
+                }
+            });
+
+            this
+        }
+    };
+}
 
 // --- Event Handling Traits ---
 
@@ -76,148 +221,12 @@ impl Element {
         Self { dom_element }
     }
 
-    // --- 统一的属性 API ---
-
-    pub fn attr(self, name: &str, value: impl AttributeValue) -> Self {
-        value.apply(&self.dom_element, name);
-        self
+    fn as_web_element(&self) -> WebElem {
+        self.dom_element.clone()
     }
 
-    pub fn id(self, value: impl AttributeValue) -> Self {
-        self.attr("id", value)
-    }
-
-    pub fn class(self, value: impl AttributeValue) -> Self {
-        self.attr("class", value)
-    }
-
-    pub fn style(self, value: impl AttributeValue) -> Self {
-        self.attr("style", value)
-    }
-
-    // --- 事件 API ---
-
-    pub fn on_click<F, M>(self, callback: F) -> Self
-    where
-        F: EventHandler<web_sys::MouseEvent, M>,
-    {
-        let mut handler = callback.into_handler();
-        let closure = Closure::wrap(Box::new(move |e: web_sys::MouseEvent| {
-            handler(e);
-        }) as Box<dyn FnMut(_)>);
-
-        let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
-        if let Err(e) = self
-            .dom_element
-            .add_event_listener_with_callback("click", js_value)
-            .map_err(SilexError::from)
-        {
-            crate::error::handle_error(e);
-            return self;
-        }
-
-        let target = self.dom_element.clone();
-        let js_fn = js_value.clone();
-
-        // 注册清理回调
-        on_cleanup(move || {
-            let _ = target.remove_event_listener_with_callback("click", &js_fn);
-            drop(closure);
-        });
-
-        self
-    }
-
-    pub fn on_input<F, M>(self, callback: F) -> Self
-    where
-        F: EventHandler<String, M>,
-    {
-        let mut handler = callback.into_handler();
-        let closure = Closure::wrap(Box::new(move |e: web_sys::InputEvent| {
-            if let Some(target) = e.target() {
-                let input = target.unchecked_into::<web_sys::HtmlInputElement>();
-                handler(input.value());
-            } else {
-                let err = SilexError::Dom("Input event has no target".into());
-                crate::error::handle_error(err);
-            }
-        }) as Box<dyn FnMut(_)>);
-
-        let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
-        if let Err(e) = self
-            .dom_element
-            .add_event_listener_with_callback("input", js_value)
-            .map_err(SilexError::from)
-        {
-            crate::error::handle_error(e);
-            return self;
-        }
-
-        let target = self.dom_element.clone();
-        let js_fn = js_value.clone();
-
-        // 注册清理回调
-        on_cleanup(move || {
-            let _ = target.remove_event_listener_with_callback("input", &js_fn);
-            drop(closure);
-        });
-
-        self
-    }
-
-    pub fn bind_value(self, signal: RwSignal<String>) -> Self {
-        let this = self.on_input(move |value| {
-            signal.set(value);
-        });
-
-        let dom_element = this.dom_element.clone();
-
-        create_effect(move || {
-            let value = signal.get();
-            if let Some(input) = dom_element.dyn_ref::<web_sys::HtmlInputElement>() {
-                if input.value() != value {
-                    input.set_value(&value);
-                }
-            } else if let Some(area) = dom_element.dyn_ref::<web_sys::HtmlTextAreaElement>() {
-                if area.value() != value {
-                    area.set_value(&value);
-                }
-            } else if let Some(select) = dom_element.dyn_ref::<web_sys::HtmlSelectElement>() {
-                if select.value() != value {
-                    select.set_value(&value);
-                }
-            } else {
-                let _ = dom_element.set_attribute("value", &value);
-            }
-        });
-
-        this
-    }
-
-    // --- Advanced Class Helpers ---
-
-    pub fn class_toggle<C>(self, name: &str, condition: C) -> Self
-    where
-        (String, C): AttributeValue,
-    {
-        // Construct a tuple (String, C) which implements AttributeValue
-        self.attr("class", (name.to_string(), condition))
-    }
-
-    pub fn classes<V>(self, value: V) -> Self
-    where
-        V: AttributeValue,
-    {
-        // Alias for class(), emphasizing multiple classes or complex logic
-        self.attr("class", value)
-    }
-
-    // --- 统一的子节点/文本 API ---
-
-    pub fn child<V: View>(self, view: V) -> Self {
-        view.mount(&self.dom_element);
-        self
-    }
+    // --- 统一的属性/事件 API (Generated) ---
+    impl_element_common!();
 }
 
 impl std::ops::Deref for Element {
@@ -262,74 +271,12 @@ impl<T> TypedElement<T> {
         self.element
     }
 
-    // --- Unified Attribute API ---
-
-    pub fn attr(self, name: &str, value: impl AttributeValue) -> Self {
-        value.apply(&self.element, name);
-        self
+    fn as_web_element(&self) -> WebElem {
+        self.element.dom_element.clone()
     }
 
-    pub fn id(self, value: impl AttributeValue) -> Self {
-        self.attr("id", value)
-    }
-
-    pub fn class(self, value: impl AttributeValue) -> Self {
-        self.attr("class", value)
-    }
-
-    pub fn class_toggle<C>(self, name: &str, condition: C) -> Self
-    where
-        (String, C): AttributeValue,
-    {
-        self.attr("class", (name.to_string(), condition))
-    }
-
-    pub fn classes<V>(self, value: V) -> Self
-    where
-        V: AttributeValue,
-    {
-        self.attr("class", value)
-    }
-
-    pub fn style(self, value: impl AttributeValue) -> Self {
-        self.attr("style", value)
-    }
-
-    // --- Event API (Duplicated from Element) ---
-
-    pub fn on_click<F, M>(self, callback: F) -> Self
-    where
-        F: EventHandler<web_sys::MouseEvent, M>,
-    {
-        Self {
-            element: self.element.on_click(callback),
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn on_input<F, M>(self, callback: F) -> Self
-    where
-        F: EventHandler<String, M>,
-    {
-        Self {
-            element: self.element.on_input(callback),
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn bind_value(self, signal: RwSignal<String>) -> Self {
-        Self {
-            element: self.element.bind_value(signal),
-            _marker: PhantomData,
-        }
-    }
-
-    // --- Children API ---
-
-    pub fn child<V: View>(self, view: V) -> Self {
-        view.mount(&self.element);
-        self
-    }
+    // --- Unified Attribute API (Generated) ---
+    impl_element_common!();
 }
 
 impl<T: Tag> Into<Element> for TypedElement<T> {
