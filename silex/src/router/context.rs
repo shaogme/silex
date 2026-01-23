@@ -97,13 +97,13 @@ impl Navigator {
     }
 
     /// 导航到指定路径
-    pub fn push(&self, url: &str) {
-        self.handle_navigation(url, false);
+    pub fn push<T: crate::router::ToRoute>(&self, to: T) {
+        self.handle_navigation(&to.to_route(), false);
     }
 
     /// 替换当前路径
-    pub fn replace(&self, url: &str) {
-        self.handle_navigation(url, true);
+    pub fn replace<T: crate::router::ToRoute>(&self, to: T) {
+        self.handle_navigation(&to.to_route(), true);
     }
 }
 

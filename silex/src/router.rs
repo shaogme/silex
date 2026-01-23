@@ -25,6 +25,37 @@ pub trait Routable: Sized + Clone + PartialEq + 'static {
     fn to_path(&self) -> String;
 }
 
+/// 能够转换为路由路径的类型
+///
+/// 用于 `Link` 和 `navigator.push` 等 API，使其同时支持字符串路径和类型安全路由枚举。
+pub trait ToRoute {
+    fn to_route(&self) -> String;
+}
+
+impl ToRoute for &str {
+    fn to_route(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl ToRoute for String {
+    fn to_route(&self) -> String {
+        self.clone()
+    }
+}
+
+impl ToRoute for &String {
+    fn to_route(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl<R: Routable> ToRoute for R {
+    fn to_route(&self) -> String {
+        self.to_path()
+    }
+}
+
 /// 路由器组件
 pub struct Router {
     base_path: String,

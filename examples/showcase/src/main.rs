@@ -292,10 +292,15 @@ fn NavBar() -> impl View {
     );
 
     div![
-        Link("/").text("Home").class(&nav_link).active_class("active"),
-        Link("/basics").text("Basics").class(&nav_link).active_class("active"),
-        Link("/flow").text("Flow").class(&nav_link).active_class("active"),
-        Link("/advanced").text("Advanced").class(&nav_link).active_class("active"),
+        Link(AppRoute::Home).text("Home").class(&nav_link).active_class("active"),
+        Link(AppRoute::Basics).text("Basics").class(&nav_link).active_class("active"),
+        Link(AppRoute::Flow).text("Flow").class(&nav_link).active_class("active"),
+        Link(AppRoute::Advanced {
+            route: AdvancedRoute::Index,
+        })
+        .text("Advanced")
+        .class(&nav_link)
+        .active_class("active"),
     ]
     .style("background: #333; color: white; padding: 10px; margin-bottom: 20px; display: flex; gap: 15px; align-items: center;")
 }
@@ -305,8 +310,12 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
     div![
         h2("Advanced Features"),
         div![
-            Link("/advanced/css").text("CSS Demo").class("tab"),
-            Link("/advanced/store").text("Store Demo").class("tab"),
+            Link("/advanced/css").text("CSS Demo").class("tab"), // Support string literal
+            Link(AppRoute::Advanced {
+                route: AdvancedRoute::Store,
+            })
+            .text("Store Demo")
+            .class("tab"),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 20px;"),
         // Delegate rendering to the route itself via RouteView
@@ -325,9 +334,12 @@ fn HomePage() -> impl View {
         h1("Welcome to Silex Showcase"),
         p("This example application demonstrates the core features of the Silex framework."),
         ul![
-            li(Link("/basics").text("Basics: Components, Props, Signals")),
-            li(Link("/flow").text("Flow Control: Loops, Conditions")),
-            li(Link("/advanced").text("Advanced: Router to Store & CSS")),
+            li(Link(AppRoute::Basics).text("Basics: Components, Props, Signals")),
+            li(Link(AppRoute::Flow).text("Flow Control: Loops, Conditions")),
+            li(Link(AppRoute::Advanced {
+                route: AdvancedRoute::Index,
+            })
+            .text("Advanced: Router to Store & CSS")),
         ],
     ]
 }

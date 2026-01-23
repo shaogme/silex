@@ -523,12 +523,21 @@ fn generate_to_path_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resu
                 #enum_name::#variant_ident #destruct => {
                     let base = format!(#base_fmt, #(#base_args),*);
                     let child = #child_arg;
-                    if base == "/" {
-                        child
-                    } else if child.starts_with('/') {
-                         format!("{}{}", base, child)
+
+                    // 智能路径拼接，避免双重斜杠或从缺斜杠
+                    let base_clean = base.trim_end_matches('/');
+                    // 子路径通常由 Routable::to_path 生成，以 / 开头
+                    // 但我们也处理不以 / 开头的情况
+                    let child_clean = if child.starts_with('/') {
+                        &child[1..]
                     } else {
-                         format!("{}{}", base, child)
+                        &child
+                    };
+
+                    if base_clean.is_empty() {
+                         format!("/{}", child_clean)
+                    } else {
+                         format!("{}/{}", base_clean, child_clean)
                     }
                 }
             });

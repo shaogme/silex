@@ -13,7 +13,7 @@ fn Card<V: View + 'static>(child: V) -> impl View {
 }
 
 /// 导航链接样式封装
-fn nav_link(to: &str, label: &str) -> impl View {
+fn nav_link<T: ToRoute>(to: T, label: &str) -> impl View {
     Link(to)
         .text(label)
         .style("margin-right: 15px; text-decoration: none; color: #666; padding: 5px 10px; border-radius: 4px; transition: all 0.2s;")
@@ -114,7 +114,7 @@ fn UserList() -> impl View {
         ul(
             users.into_iter().map(|(id, name)| {
                 li(
-                    Link(&format!("/users/{}", id))
+                    Link(UsersRoute::Detail { id })
                         .text(&format!("👤 {} (ID: {})", name, id))
                         .style("text-decoration: none; color: #2196f3;")
                         .active_class("active-user")
@@ -134,7 +134,7 @@ fn UserDetail(id: u32) -> impl View {
         div((
             h3(format!("User Profile: #{}", id)),
             button("Go Back")
-                .on_click(move |_| navigator.push("/users"))
+                .on_click(move |_| navigator.push(AppRoute::Users { route: UsersRoute::List }))
                 .style("font-size: 0.8rem; padding: 5px 10px; cursor: pointer;")
         )).style("display: flex; justify-content: space-between; align-items: center;"),
         hr().style("border: 0; border-top: 1px solid #eee; margin: 15px 0;"),
@@ -164,9 +164,9 @@ fn MainLayout(child: AnyView) -> impl View {
         header((
             h1("🚀 Silex Router").style("margin: 0; font-size: 1.5rem; color: #2c3e50;"),
             nav((
-                nav_link("/", "Home"),
-                nav_link("/users", "Users"),
-                nav_link("/search", "Search"),
+                nav_link(AppRoute::Home, "Home"),
+                nav_link("/users", "Users"), // 混合使用：字符串仍然有效
+                nav_link(AppRoute::Search, "Search"),
                 nav_link("/nowhere", "404 Test"),
             ))
         ))

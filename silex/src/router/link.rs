@@ -12,13 +12,17 @@ pub struct Link {
 }
 
 /// 创建一个链接组件，用于在应用内导航
+use crate::router::ToRoute;
+
+/// 创建一个链接组件，用于在应用内导航
 ///
 /// 类似于 HTML 的 `<a>` 标签，但会拦截点击事件并使用 Router 导航，而不是刷新页面。
 #[allow(non_snake_case)]
-pub fn Link(href: &str) -> Link {
-    let element = a(()).attr("href", href);
+pub fn Link<T: ToRoute>(to: T) -> Link {
+    let href = to.to_route();
+    let element = a(()).attr("href", &href);
     Link {
-        href: href.to_string(),
+        href,
         inner: element,
     }
 }
@@ -114,7 +118,7 @@ impl View for Link {
             // 使用 router 导航
             if let Some(ctx) = use_router() {
                 // 注意：这里仍然传递逻辑路径 (href)，Navigator 会自动处理 base_path
-                ctx.navigator.push(&href);
+                ctx.navigator.push(href.as_str());
             } else {
                 // 如果没有 router，回退到普通跳转（或者是警告）
                 let window = web_sys::window().unwrap();
