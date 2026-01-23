@@ -26,14 +26,14 @@ macro_rules! define_tags {
 define_tags!(@basic
     Div, Span, H1, H2, H3, H4, H5, H6, P, Ul, Ol, Li,
     Nav, Main, Footer, Aside, Header, Article, Section, Address,
-    Br, Hr, Table, Thead, Tbody, Tr, Td, Pre, Code,
+    Br, Hr, Table, Thead, Tbody, Tr, Td, Th, Pre, Code,
     Em, Strong, S, Blockquote, Figure, Figcaption,
     Time
 );
 define_tags!(@impl TextTag for
     Div, Span, H1, H2, H3, H4, H5, H6, P, Ul, Ol, Li,
     Nav, Main, Footer, Aside, Header, Article, Section, Address,
-    Table, Thead, Tbody, Tr, Td, Pre, Code,
+    Table, Thead, Tbody, Tr, Td, Th, Pre, Code,
     Em, Strong, S, Blockquote, Figure, Figcaption,
     Time
 );
@@ -74,6 +74,15 @@ define_tags!(@impl TextTag for
     FeTurbulence, FeComponentTransfer, FeFuncR, FeFuncG, FeFuncB,
     FeGaussianBlur, FeSpecularLighting, FePointLight, FeComposite, FeDisplacementMap
 );
+
+// 7. Interactive Tags
+define_tags!(@basic Dialog, Details, Summary);
+define_tags!(@impl OpenTag for Dialog, Details);
+define_tags!(@impl TextTag for Dialog, Details, Summary);
+
+// --- Additional Trait Impls ---
+define_tags!(@impl TableCellTag for Td, Th);
+define_tags!(@impl TableHeaderTag for Th);
 
 // --- Functions ---
 
@@ -146,6 +155,10 @@ define_container!(time, Time, "time");
 define_container!(figure, Figure, "figure");
 define_container!(figcaption, Figcaption, "figcaption");
 
+define_container!(dialog, Dialog, "dialog");
+define_container!(details, Details, "details");
+define_container!(summary, Summary, "summary");
+
 define_container!(form, Form, "form");
 define_container!(select, Select, "select");
 define_container!(textarea, Textarea, "textarea");
@@ -159,6 +172,7 @@ define_container!(thead, Thead, "thead");
 define_container!(tbody, Tbody, "tbody");
 define_container!(tr, Tr, "tr");
 define_container!(td, Td, "td");
+define_container!(th, Th, "th");
 
 // HTML Voids
 define_void!(input, Input, "input");
@@ -224,8 +238,9 @@ define_tag_macros!(
     header, footer, main, section, article, aside, nav, address,
     ul, ol, li,
     a, button, label, pre, code, blockquote, em, strong, s, time, figure, figcaption,
+    dialog, details, summary,
     form, select, textarea, option,
-    table, thead, tbody, tr, td,
+    table, thead, tbody, tr, td, th,
     svg, g, defs, filter
     ; $
 );

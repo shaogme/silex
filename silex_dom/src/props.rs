@@ -227,6 +227,45 @@ pub trait MediaAttributes: AttributeManager {
 
 impl<T: MediaTag> MediaAttributes for TypedElement<T> {}
 
+/// 交互属性：主要用于 dialog, details
+pub trait OpenAttributes: AttributeManager {
+    fn open(self, value: impl ApplyToDom) -> Self {
+        self.attr_any("open", value)
+    }
+}
+
+impl<T: OpenTag> OpenAttributes for TypedElement<T> {}
+
+/// 表格单元格属性：主要用于 td, th
+pub trait TableCellAttributes: AttributeManager {
+    fn colspan(self, value: impl ApplyToDom) -> Self {
+        self.attr_any("colspan", value)
+    }
+
+    fn rowspan(self, value: impl ApplyToDom) -> Self {
+        self.attr_any("rowspan", value)
+    }
+
+    fn headers(self, value: impl ApplyToDom) -> Self {
+        self.attr_any("headers", value)
+    }
+}
+
+impl<T: TableCellTag> TableCellAttributes for TypedElement<T> {}
+
+/// 表头属性：主要用于 th
+pub trait TableHeaderAttributes: AttributeManager {
+    fn scope(self, value: impl ApplyToDom) -> Self {
+        self.attr_any("scope", value)
+    }
+
+    fn abbr(self, value: impl ApplyToDom) -> Self {
+        self.attr_any("abbr", value)
+    }
+}
+
+impl<T: TableHeaderTag> TableHeaderAttributes for TypedElement<T> {}
+
 /// ARIA 无障碍属性：提供给所有元素使用
 pub trait AriaAttributes: AttributeManager {
     fn role(self, value: impl ApplyToDom) -> Self {

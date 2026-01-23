@@ -21,6 +21,15 @@ pub trait MediaTag: Tag {}
 /// Tags that can contain text content
 pub trait TextTag: Tag {}
 
+/// Tags that support the 'open' attribute (dialog, details)
+pub trait OpenTag: Tag {}
+
+/// Tags that are table cells (td, th) supporting colspan, rowspan
+pub trait TableCellTag: Tag {}
+
+/// Tags that are table headers (th) supporting scope, abbr
+pub trait TableHeaderTag: Tag {}
+
 // --- Tag Markers ---
 
 // --- Tag Markers (Empty in Core) ---
