@@ -247,3 +247,38 @@ impl<V: AttributeValue, const N: usize> AttributeValue for [V; N] {
         }
     }
 }
+
+// --- Attribute Grouping ---
+
+/// Wrapper to treat a tuple of attributes as a single group of attributes to be applied sequentially.
+pub struct AttributeGroup<T>(pub T);
+
+/// Helper to create an AttributeGroup
+pub fn group<T>(t: T) -> AttributeGroup<T> {
+    AttributeGroup(t)
+}
+
+macro_rules! impl_attribute_for_tuple {
+    ($($name:ident)+) => {
+        impl<$($name: AttributeValue),+> AttributeValue for AttributeGroup<($($name,)+)> {
+            fn apply(self, el: &WebElem, name: &str) {
+                #[allow(non_snake_case)]
+                let ($($name,)+) = self.0;
+                $($name.apply(el, name);)+
+            }
+        }
+    };
+}
+
+impl_attribute_for_tuple!(T1);
+impl_attribute_for_tuple!(T1 T2);
+impl_attribute_for_tuple!(T1 T2 T3);
+impl_attribute_for_tuple!(T1 T2 T3 T4);
+impl_attribute_for_tuple!(T1 T2 T3 T4 T5);
+impl_attribute_for_tuple!(T1 T2 T3 T4 T5 T6);
+impl_attribute_for_tuple!(T1 T2 T3 T4 T5 T6 T7);
+impl_attribute_for_tuple!(T1 T2 T3 T4 T5 T6 T7 T8);
+impl_attribute_for_tuple!(T1 T2 T3 T4 T5 T6 T7 T8 T9);
+impl_attribute_for_tuple!(T1 T2 T3 T4 T5 T6 T7 T8 T9 T10);
+impl_attribute_for_tuple!(T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11);
+impl_attribute_for_tuple!(T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12);

@@ -1,5 +1,5 @@
 use silex::prelude::*;
-use silex_macros::{Route, Store, component, css};
+use silex_macros::{Route, Store, classes, component, css, style};
 
 // ==================================================================================
 // Phase 1: Basics - Components, Reactivity, Props, and Attributes
@@ -28,7 +28,12 @@ mod basics {
             span(full_punctuation),
         ]
         .class("greeting-card")
-        .style("padding: 10px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 10px;")
+        .style(style! {
+            padding: "10px",
+            border: "1px solid #ddd",
+            "border-radius": "4px",
+            "margin-bottom": "10px"
+        })
     }
 
     #[component]
@@ -40,10 +45,11 @@ mod basics {
             h3("Interactive Counter"),
             div![
                 button("-").on_click(move |_| set_count.update(|n| *n -= 1)),
-                strong(count)
-                    .class("counter-val")
-                    .class_toggle("positive", move || count.get() > 0)
-                    .class_toggle("negative", move || count.get() < 0),
+                strong(count).classes(classes![
+                    "counter-val",
+                    "positive" => move || count.get() > 0,
+                    "negative" => move || count.get() < 0
+                ]),
                 button("+").on_click(move |_| set_count.update(|n| *n += 1)),
             ]
             .style("display: flex; gap: 10px; align-items: center;"),
@@ -78,8 +84,6 @@ mod flow_control {
         div![
             h3("List Rendering with Signal Ergonomics"),
             p("Demonstrates passing a Signal directly to For::new without closure wrapper."),
-            // BEFORE: For::new(move || list.get(), ...)
-            // AFTER:  For::new(list, ...) - Accessor trait enables this!
             ul(For::new(list, |item| *item, |item| li(item))),
             button("Add Item").on_click(move |_| {
                 set_list.update(|l| l.push("New Item"));
@@ -97,8 +101,6 @@ mod flow_control {
             button("Toggle Visibility").on_click(move |_| {
                 set_visible.update(|v| *v = !*v);
             }),
-            // BEFORE: Show::new(move || visible.get(), ...)
-            // AFTER:  Show::new(visible, ...) - Accessor trait enables this!
             Show::new(visible, || div("✅ Content is visible!")
                 .style("color: green; padding: 10px; background: #e8f5e9;"),)
             .fallback(|| div("❌ Content is hidden")

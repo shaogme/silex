@@ -20,6 +20,27 @@ pub fn css(input: TokenStream) -> TokenStream {
     }
 }
 
+#[cfg(feature = "css")]
+mod style;
+
+#[cfg(feature = "css")]
+#[proc_macro]
+pub fn style(input: TokenStream) -> TokenStream {
+    match style::style_impl(input.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+#[cfg(feature = "css")]
+#[proc_macro]
+pub fn classes(input: TokenStream) -> TokenStream {
+    match style::classes_impl(input.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
 /// `#[component]` 属性宏
 ///
 /// 将一个函数转换为 Silex 组件，自动生成 Props 结构体并简化组件定义。
