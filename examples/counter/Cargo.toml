@@ -1,9 +1,9 @@
 [package]
 name = "silex_counter"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
-silex = { path = "../../silex" }
+silex.workspace = true
+silex_macros.workspace = true
 gloo-timers = { version = "0.3", features = ["futures"] }
-silex_macros = { path = "../../silex_macros" }

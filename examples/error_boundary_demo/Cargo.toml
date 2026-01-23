@@ -1,8 +1,8 @@
 [package]
 name = "silex_error_demo"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
-silex = { path = "../../silex" }
-silex_macros = { path = "../../silex_macros" }
+silex.workspace = true
+silex_macros.workspace = true

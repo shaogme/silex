@@ -1,10 +1,18 @@
 [package]
 name = "silex_core"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 
 [dependencies]
-wasm-bindgen = { workspace = true }
-web-sys = { workspace = true }
-wasm-bindgen-futures = { workspace = true }
-silex_reactivity = { path = "../silex_reactivity" }
+silex_reactivity.workspace = true
+wasm-bindgen.workspace = true
+web-sys.workspace = true
+wasm-bindgen-futures.workspace = true

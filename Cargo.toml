@@ -1,20 +1,43 @@
 [workspace]
 members = [
     "silex",
+    "silex_macros",
+    "silex_core",
+    "silex_html",
+    "silex_dom", 
+    "silex_reactivity",
     "examples/counter",
     "examples/store_demo",
     "examples/error_boundary_demo",
     "examples/router",
     "examples/showcase",
-    "silex_macros",
-    "silex_core",
-    "silex_html",
-    "silex_dom", 
-    "silex_reactivity"
 ]
 resolver = "3"
 
+[workspace.package]
+version = "0.1.0-alpha1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["Shao G. <shaog.me@gmail.com>"]
+repository = "https://github.com/shaogme/silex"
+description = "Next Generation High-Performance Rust Web Framework based on fine-grained reactivity and no-virtual-DOM architecture."
+readme = "README.md"
+homepage = "https://github.com/shaogme/silex"
+documentation = "https://docs.rs/silex"
+keywords = ["web", "framework", "wasm", "reactive", "gui"]
+categories = ["web-programming", "wasm", "gui"]
+
 [workspace.dependencies]
+
+# Internal Crates
+silex = { path = "silex", version = "0.1.0-alpha1" }
+silex_core = { path = "silex_core", version = "0.1.0-alpha1" }
+silex_dom = { path = "silex_dom", version = "0.1.0-alpha1" }
+silex_html = { path = "silex_html", version = "0.1.0-alpha1" }
+silex_macros = { path = "silex_macros", version = "0.1.0-alpha1" }
+silex_reactivity = { path = "silex_reactivity", version = "0.1.0-alpha1" }
+
+# External Crates
 wasm-bindgen = "0.2"
 web-sys = { version = "0.3", features = [
     "Document",
@@ -47,6 +70,7 @@ web-sys = { version = "0.3", features = [
 ] }
 js-sys = "0.3"
 wasm-bindgen-futures = "0.4.56"
+
 
 [profile.dev]
 panic = "unwind"
