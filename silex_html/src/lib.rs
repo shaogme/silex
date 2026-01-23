@@ -89,7 +89,9 @@ define_tags!(@impl TableHeaderTag for Th);
 macro_rules! define_container {
     ($fn_name:ident, $tag_type:ident, $tag_str:expr) => {
         pub fn $fn_name<V: View>(child: V) -> TypedElement<$tag_type> {
-            TypedElement::new($tag_str).child(child)
+            let el = TypedElement::new($tag_str);
+            child.mount(&el.element.dom_element);
+            el
         }
     };
 }
@@ -105,7 +107,9 @@ macro_rules! define_void {
 macro_rules! define_svg_container {
     ($fn_name:ident, $tag_type:ident, $tag_str:expr) => {
         pub fn $fn_name<V: View>(child: V) -> TypedElement<$tag_type> {
-            TypedElement::new_svg($tag_str).child(child)
+            let el = TypedElement::new_svg($tag_str);
+            child.mount(&el.element.dom_element);
+            el
         }
     };
 }
@@ -164,7 +168,9 @@ define_container!(select, Select, "select");
 define_container!(textarea, Textarea, "textarea");
 
 pub fn option<V: View>(child: V) -> TypedElement<OptionTag> {
-    TypedElement::new("option").child(child)
+    let el = TypedElement::new("option");
+    child.mount(&el.element.dom_element);
+    el
 }
 
 define_container!(table, Table, "table");

@@ -1,6 +1,6 @@
 use crate::router::context::use_router;
 use silex_dom::View;
-use silex_dom::WithText;
+
 use silex_dom::element::TypedElement;
 use silex_html::A as TagA;
 use silex_html::a;
@@ -18,9 +18,9 @@ use crate::router::ToRoute;
 ///
 /// 类似于 HTML 的 `<a>` 标签，但会拦截点击事件并使用 Router 导航，而不是刷新页面。
 #[allow(non_snake_case)]
-pub fn Link<T: ToRoute>(to: T) -> Link {
+pub fn Link<T: ToRoute, V: View>(to: T, child: V) -> Link {
     let href = to.to_route();
-    let element = a(()).attr("href", &href);
+    let element = a(child).attr("href", &href);
     Link {
         href,
         inner: element,
@@ -28,14 +28,6 @@ pub fn Link<T: ToRoute>(to: T) -> Link {
 }
 
 impl Link {
-    /// 设置链接文本
-    pub fn text(self, content: &str) -> Self {
-        Self {
-            inner: self.inner.text(content),
-            ..self
-        }
-    }
-
     /// 设置 CSS 类
     pub fn class(self, name: &str) -> Self {
         Self {
@@ -84,14 +76,6 @@ impl Link {
             }
         } else {
             self
-        }
-    }
-
-    /// 添加子组件
-    pub fn child<V: View>(self, view: V) -> Self {
-        Self {
-            inner: self.inner.child(view),
-            ..self
         }
     }
 }

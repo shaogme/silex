@@ -49,6 +49,7 @@
 
 ### component: Link
 `silex/src/router/link.rs` -> `struct Link`
+*   **Signature**: `Link(to: ToRoute, child: impl View)`
 *   **Wrapper**: 封装 `<a>` 标签。
 *   **Behavior**: `click` 事件中调用 `e.prevent_default()`，然后使用 `Navigator::push`。
 *   **Enhancement**: `active_class` 根据当前 `path` 信号自动切换 CSS 类。

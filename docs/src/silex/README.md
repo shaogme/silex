@@ -34,8 +34,8 @@ fn App() -> impl View {
             
             div((
                 nav((
-                    Link("/").text("首页"),
-                    Link("/about").text("关于"),
+                    Link("/", "首页"),
+                    Link("/about", "关于"),
                 )),
                 main((
                     Dynamic::new(move || {
@@ -84,7 +84,7 @@ Router::new().match_route::<MyRoutes>()
 
 *   **HTML**: 使用 `<Link>` 组件代替 `<a>` 标签。
     ```rust
-    Link(MyRoutes::Home).text("Go Home")
+    Link(MyRoutes::Home, "Go Home")
     ```
 *   **Code**: 使用 `use_navigate` hook。
     ```rust
@@ -200,6 +200,6 @@ div("Hello").class(cls)
 
 ### 属性助手 (`style!`, `classes!`)
 *   `style!`: `div(()).style(style! { "color": "red", "margin": "10px" })`
-*   `classes!`: `div(()).attr("class", classes!["btn", "active" => is_active])`
+*   `classes!`: `div(()).class(classes!["btn", "active" => is_active])`
 
 详细文档请参阅 [silex_macros 文档](../silex_macros/README.md)。

@@ -13,8 +13,7 @@ fn Card<V: View + 'static>(child: V) -> impl View {
 
 /// 导航链接样式封装
 fn nav_link<T: ToRoute>(to: T, label: &str) -> impl View {
-    Link(to)
-        .text(label)
+    Link(to, label)
         .style("margin-right: 15px; text-decoration: none; color: #666; padding: 5px 10px; border-radius: 4px; transition: all 0.2s;")
         .active_class("nav-active") // 需要在全局 CSS 中定义 .nav-active { background: #e3f2fd; color: #1976d2; font-weight: bold; }
 }
@@ -97,8 +96,7 @@ fn UserList() -> impl View {
         ul(
             users.into_iter().map(|(id, name)| {
                 li(
-                    Link(UsersRoute::Detail { id })
-                        .text(&format!("👤 {} (ID: {})", name, id))
+                    Link(UsersRoute::Detail { id }, format!("👤 {} (ID: {})", name, id))
                         .style("text-decoration: none; color: #2196f3;")
                         .active_class("active-user")
                 ).style("margin: 5px 0;")
@@ -133,7 +131,7 @@ fn NotFound() -> impl View {
     div((
         h1("404"),
         p("Page not found."),
-        Link("/").text("Return Home").style("color: #2196f3; text-decoration: underline;")
+        Link("/", "Return Home").style("color: #2196f3; text-decoration: underline;")
     ))
     .style("text-align: center; padding: 50px; color: #d32f2f;")
 }

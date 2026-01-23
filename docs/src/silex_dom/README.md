@@ -25,7 +25,7 @@ Silex 提供了一套统一且强大的属性设置 API。
 
 #### 静态设置
 ```rust
-div.attr("id", "app")
+div.id("app")
    .class("container text-center")
    .style("color: red;")
 ```

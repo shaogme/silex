@@ -487,19 +487,17 @@ fn NavBar() -> impl View {
     );
 
     div![
-        Link(AppRoute::Home).text("Home").class(&nav_link).active_class("active"),
-        Link(AppRoute::Basics).text("Basics").class(&nav_link).active_class("active"),
-        Link(AppRoute::Flow).text("Flow").class(&nav_link).active_class("active"),
+        Link(AppRoute::Home, "Home").class(&nav_link).active_class("active"),
+        Link(AppRoute::Basics, "Basics").class(&nav_link).active_class("active"),
+        Link(AppRoute::Flow, "Flow").class(&nav_link).active_class("active"),
         Link(AppRoute::Advanced {
             route: AdvancedRoute::Index,
-        })
-        .text("Advanced")
+        }, "Advanced")
         .class(&nav_link)
         .active_class("active"),
         Link(AppRoute::Styles {
             route: StylesRoute::Index,
-        })
-        .text("Styles")
+        }, "Styles")
         .class(&nav_link)
         .active_class("active"),
     ]
@@ -511,16 +509,14 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
     div![
         h2("Advanced Features"),
         div![
-            Link("/advanced/css").text("CSS Demo").class("tab"), // Support string literal
+            Link("/advanced/css", "CSS Demo").class("tab"), // Support string literal
             Link(AppRoute::Advanced {
                 route: AdvancedRoute::Store,
-            })
-            .text("Store Demo")
+            }, "Store Demo")
             .class("tab"),
             Link(AppRoute::Advanced {
                 route: AdvancedRoute::Query,
-            })
-            .text("Query Param")
+            }, "Query Param")
             .class("tab"),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 20px;"),
@@ -536,9 +532,9 @@ fn StylesLayout(route: StylesRoute) -> impl View {
         h2("Coding Style Comparison"),
         p("Silex supports multiple coding styles. Choose one below to see the difference."),
         div![
-            Link("/styles/builder").text("Builder Style").class("tab"),
-            Link("/styles/macro").text("Macro Style").class("tab"),
-            Link("/styles/hybrid").text("Hybrid Style").class("tab"),
+            Link("/styles/builder", "Builder Style").class("tab"),
+            Link("/styles/macro", "Macro Style").class("tab"),
+            Link("/styles/hybrid", "Hybrid Style").class("tab"),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 20px;"),
         route.render(),
@@ -557,16 +553,14 @@ fn HomePage() -> impl View {
         h1("Welcome to Silex Showcase"),
         p("This example application demonstrates the core features of the Silex framework."),
         ul![
-            li(Link(AppRoute::Basics).text("Basics: Components, Props, Signals")),
-            li(Link(AppRoute::Flow).text("Flow Control: Loops, Conditions")),
+            li(Link(AppRoute::Basics, "Basics: Components, Props, Signals")),
+            li(Link(AppRoute::Flow, "Flow Control: Loops, Conditions")),
             li(Link(AppRoute::Advanced {
                 route: AdvancedRoute::Index,
-            })
-            .text("Advanced: Router to Store & CSS")),
+            }, "Advanced: Router to Store & CSS")),
             li(Link(AppRoute::Styles {
                 route: StylesRoute::Index,
-            })
-            .text("Styles: Comparison of Builder vs Macro vs Hybrid")),
+            }, "Styles: Comparison of Builder vs Macro vs Hybrid")),
         ],
     ]
 }

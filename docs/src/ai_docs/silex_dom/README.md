@@ -32,7 +32,7 @@
 *   `class(self, value: impl ApplyToDom)`: 添加 class (支持多类名字符串).
 *   `classes(self, value: impl ApplyToDom)`: 同 `class`.
 *   `style(self, value: impl ApplyToDom)`: 设置内联样式.
-*   `child<V: View>(self, view: V)`: 挂载子节点。
+
 
 #### Events
 *   `on_click<F, M>(self, callback: F)`: 绑定点击事件。

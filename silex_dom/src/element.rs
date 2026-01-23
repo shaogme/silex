@@ -53,11 +53,6 @@ macro_rules! impl_element_common {
             self
         }
 
-        pub fn child<V: View>(self, view: V) -> Self {
-            view.mount(&self.as_web_element());
-            self
-        }
-
         // --- Event API ---
 
         pub fn on_click<F, M>(self, callback: F) -> Self

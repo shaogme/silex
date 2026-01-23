@@ -95,8 +95,8 @@ fn CounterControls() -> SilexResult<impl View> {
 #[component]
 fn NavBar() -> impl View {
     div((
-        Link("/").text("Home").style("margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold;"),
-        Link("/about").text("About").style("text-decoration: none; color: #007bff; font-weight: bold;")
+        Link("/", "Home").style("margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold;"),
+        Link("/about", "About").style("text-decoration: none; color: #007bff; font-weight: bold;")
     )).style("margin-bottom: 20px; padding: 10px; border-bottom: 1px solid #eee")
 }
 
