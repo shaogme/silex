@@ -808,7 +808,6 @@ dependencies = [
  "js-sys",
  "silex_core",
  "silex_html",
- "slotmap",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
