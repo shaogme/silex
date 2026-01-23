@@ -1,4 +1,3 @@
-use silex::core::dom::tag::*;
 use silex::prelude::*;
 use silex_macros::{Route, Store, component, css};
 

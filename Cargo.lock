@@ -807,6 +807,7 @@ version = "0.1.0"
 dependencies = [
  "js-sys",
  "silex_core",
+ "silex_html",
  "slotmap",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -844,6 +845,13 @@ dependencies = [
  "silex_macros",
  "wasm-bindgen",
  "web-sys",
+]
+
+[[package]]
+name = "silex_html"
+version = "0.1.0"
+dependencies = [
+ "silex_core",
 ]
 
 [[package]]

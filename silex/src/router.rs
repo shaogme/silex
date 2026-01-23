@@ -5,9 +5,9 @@ pub use context::*;
 pub use link::*;
 
 use crate::router::context::{RouterContextProps, provide_router_context};
-use silex_core::dom::tag::div;
 use silex_core::dom::view::{AnyView, IntoAnyView, View};
 use silex_core::reactivity::{create_effect, create_signal, on_cleanup};
+use silex_html::div;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;

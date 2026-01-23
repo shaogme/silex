@@ -10,11 +10,17 @@ pub mod core {
     pub use silex_core::*;
 }
 
+pub mod html {
+    pub use silex_html::*;
+}
+
 pub mod prelude {
     pub use crate::components::*;
     pub use crate::core::prelude::*;
     pub use crate::core::*;
     pub use crate::flow::*;
+    pub use crate::router::Link;
     pub use crate::router::*;
     pub use crate::{SilexError, SilexResult};
+    pub use silex_html::*;
 }

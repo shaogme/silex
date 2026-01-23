@@ -1,11 +1,12 @@
 use crate::router::context::use_router;
+use silex_core::dom::View;
 use silex_core::dom::WithText;
 use silex_core::dom::element::TypedElement;
-use silex_core::dom::tags::A as TagA;
-use silex_core::dom::{View, tag::a};
+use silex_html::A as TagA;
+use silex_html::a;
 
-/// `A` 组件结构体
-pub struct A {
+/// `Link` 组件结构体
+pub struct Link {
     href: String,
     inner: TypedElement<TagA>,
 }
@@ -14,15 +15,15 @@ pub struct A {
 ///
 /// 类似于 HTML 的 `<a>` 标签，但会拦截点击事件并使用 Router 导航，而不是刷新页面。
 #[allow(non_snake_case)]
-pub fn Link(href: &str) -> A {
+pub fn Link(href: &str) -> Link {
     let element = a(()).attr("href", href);
-    A {
+    Link {
         href: href.to_string(),
         inner: element,
     }
 }
 
-impl A {
+impl Link {
     /// 设置链接文本
     pub fn text(self, content: &str) -> Self {
         Self {
@@ -91,7 +92,7 @@ impl A {
     }
 }
 
-impl View for A {
+impl View for Link {
     fn mount(self, parent: &web_sys::Node) {
         let href = self.href.clone();
 

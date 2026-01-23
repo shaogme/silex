@@ -1,4 +1,4 @@
-use silex_core::dom::element::tag::div;
+use silex_html::div;
 use silex_core::dom::view::View;
 use silex_core::reactivity::SuspenseContext;
 use silex_core::reactivity::{create_effect, create_scope, provide_context};

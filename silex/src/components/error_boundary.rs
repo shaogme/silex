@@ -1,7 +1,7 @@
-use silex_core::dom::element::tag::div;
 use silex_core::dom::view::View;
 use silex_core::error::{ErrorContext, SilexError};
 use silex_core::reactivity::{create_effect, create_signal, provide_context};
+use silex_html::div;
 use std::rc::Rc;
 use web_sys::Node;
 

@@ -7,7 +7,8 @@ members = [
     "examples/router",
     "examples/showcase",
     "silex_macros",
-    "silex_core"
+    "silex_core",
+    "silex_html"
 ]
 resolver = "3"
 

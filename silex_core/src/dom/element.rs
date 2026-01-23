@@ -4,7 +4,6 @@ use crate::dom::tags::Tag;
 use crate::dom::view::View;
 use crate::reactivity::{RwSignal, create_effect, on_cleanup};
 
-use super::tags;
 use std::marker::PhantomData;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
@@ -189,7 +188,7 @@ pub struct TypedElement<T> {
 }
 
 impl<T> TypedElement<T> {
-    pub(crate) fn new(tag: &str) -> Self {
+    pub fn new(tag: &str) -> Self {
         let document = crate::dom::document();
         let dom_element = document
             .create_element(tag)
@@ -200,7 +199,7 @@ impl<T> TypedElement<T> {
         }
     }
 
-    pub(crate) fn new_svg(tag: &str) -> Self {
+    pub fn new_svg(tag: &str) -> Self {
         let document = crate::dom::document();
         let dom_element = document
             .create_element_ns(Some("http://www.w3.org/2000/svg"), tag)
@@ -350,177 +349,4 @@ impl<T: Tag> std::ops::Deref for TypedElement<T> {
     }
 }
 
-pub mod tag {
-    use super::tags::*;
-    use super::*;
-    use crate::dom::view::View;
-
-    // --- Macros for boiler-plate reduction ---
-
-    macro_rules! define_container {
-        ($fn_name:ident, $tag_type:ident, $tag_str:expr) => {
-            pub fn $fn_name<V: View>(child: V) -> TypedElement<$tag_type> {
-                TypedElement::new($tag_str).child(child)
-            }
-        };
-    }
-
-    macro_rules! define_void {
-        ($fn_name:ident, $tag_type:ident, $tag_str:expr) => {
-            pub fn $fn_name() -> TypedElement<$tag_type> {
-                TypedElement::new($tag_str)
-            }
-        };
-    }
-
-    macro_rules! define_svg_container {
-        ($fn_name:ident, $tag_type:ident, $tag_str:expr) => {
-            pub fn $fn_name<V: View>(child: V) -> TypedElement<$tag_type> {
-                TypedElement::new_svg($tag_str).child(child)
-            }
-        };
-    }
-
-    macro_rules! define_svg_void {
-        ($fn_name:ident, $tag_type:ident, $tag_str:expr) => {
-            pub fn $fn_name() -> TypedElement<$tag_type> {
-                TypedElement::new_svg($tag_str)
-            }
-        };
-    }
-
-    // --- HTML Containers ---
-    // Structure & Text
-    define_container!(div, Div, "div");
-    define_container!(span, Span, "span");
-    define_container!(p, P, "p");
-    define_container!(h1, H1, "h1");
-    define_container!(h2, H2, "h2");
-    define_container!(h3, H3, "h3");
-    define_container!(h4, H4, "h4");
-    define_container!(h5, H5, "h5");
-    define_container!(h6, H6, "h6");
-
-    // Layout & Semantics
-    define_container!(header, Header, "header");
-    define_container!(footer, Footer, "footer");
-    define_container!(main, Main, "main");
-    define_container!(section, Section, "section");
-    define_container!(article, Article, "article");
-    define_container!(aside, Aside, "aside");
-    define_container!(nav, Nav, "nav");
-    define_container!(address, Address, "address");
-
-    // Lists
-    define_container!(ul, Ul, "ul");
-    define_container!(ol, Ol, "ol");
-    define_container!(li, Li, "li");
-
-    // Inline & Formatting
-    define_container!(a, A, "a");
-    define_container!(button, Button, "button");
-    define_container!(label, Label, "label");
-    define_container!(pre, Pre, "pre");
-    define_container!(code, Code, "code");
-    define_container!(blockquote, Blockquote, "blockquote");
-    define_container!(em, Em, "em");
-    define_container!(strong, Strong, "strong");
-    define_container!(s, S, "s");
-    define_container!(time, Time, "time");
-    define_container!(figure, Figure, "figure");
-    define_container!(figcaption, Figcaption, "figcaption");
-
-    // Forms
-    define_container!(form, Form, "form");
-    define_container!(select, Select, "select");
-    define_container!(textarea, Textarea, "textarea");
-
-    pub fn option<V: View>(child: V) -> TypedElement<OptionTag> {
-        TypedElement::new("option").child(child)
-    }
-
-    // Table
-    define_container!(table, Table, "table");
-    define_container!(thead, Thead, "thead");
-    define_container!(tbody, Tbody, "tbody");
-    define_container!(tr, Tr, "tr");
-    define_container!(td, Td, "td");
-
-    // --- HTML Void Elements (No Children) ---
-    define_void!(input, Input, "input");
-    define_void!(img, Img, "img");
-    define_void!(br, Br, "br");
-    define_void!(hr, Hr, "hr");
-    define_void!(link, Link, "link");
-
-    // --- SVG Containers ---
-    define_svg_container!(svg, Svg, "svg");
-    define_svg_container!(g, G, "g");
-    define_svg_container!(defs, Defs, "defs");
-    define_svg_container!(filter, Filter, "filter");
-
-    // --- SVG Voids (Shapes & Primitives) ---
-    // Treating shapes as void for cleaner API (use attributes for definition)
-    define_svg_void!(path, Path, "path");
-    define_svg_void!(rect, Rect, "rect");
-    define_svg_void!(circle, Circle, "circle");
-    define_svg_void!(line, Line, "line");
-    define_svg_void!(polyline, Polyline, "polyline");
-    define_svg_void!(polygon, Polygon, "polygon");
-
-    // Filter Primitives
-    define_svg_void!(fe_turbulence, FeTurbulence, "feTurbulence");
-    define_svg_void!(
-        fe_component_transfer,
-        FeComponentTransfer,
-        "feComponentTransfer"
-    );
-    define_svg_void!(fe_func_r, FeFuncR, "feFuncR");
-    define_svg_void!(fe_func_g, FeFuncG, "feFuncG");
-    define_svg_void!(fe_func_b, FeFuncB, "feFuncB");
-    define_svg_void!(fe_gaussian_blur, FeGaussianBlur, "feGaussianBlur");
-    define_svg_void!(
-        fe_specular_lighting,
-        FeSpecularLighting,
-        "feSpecularLighting"
-    );
-    define_svg_void!(fe_point_light, FePointLight, "fePointLight");
-    define_svg_void!(fe_composite, FeComposite, "feComposite");
-    define_svg_void!(fe_displacement_map, FeDisplacementMap, "feDisplacementMap");
-}
-
-pub use tag::*;
-
-// --- Macros for Tag DSL ---
-
-/// Internal macro to generate public macros for tags.
-/// We use $d to pass dollar signs to the inner macro.
-#[macro_export]
-macro_rules! define_tag_macros {
-    ($($name:ident),+; $d:tt) => {
-        $(
-            #[macro_export]
-            macro_rules! $name {
-                () => {
-                    $crate::dom::element::tag::$name(())
-                };
-                ($d($d child:expr),+ $d(,)?) => {
-                    $crate::dom::element::tag::$name(($d($d child),+))
-                };
-            }
-        )*
-    };
-}
-
-// Generate macros for all container tags
-define_tag_macros!(
-    div, span, p, h1, h2, h3, h4, h5, h6,
-    header, footer, main, section, article, aside, nav, address,
-    ul, ol, li,
-    a, button, label, pre, code, blockquote, em, strong, s, time, figure, figcaption,
-    form, select, textarea, option,
-    table, thead, tbody, tr, td,
-    // SVG Containers
-    svg, g, defs, filter
-    ; $
-);
+// End of core element logic

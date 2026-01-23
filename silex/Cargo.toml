@@ -10,3 +10,4 @@ js-sys = { workspace = true }
 slotmap = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 silex_core = { path = "../silex_core", version = "0.1.0" }
+silex_html = { version = "0.1.0", path = "../silex_html" }

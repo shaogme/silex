@@ -12,6 +12,7 @@ pub mod props;
 pub use props::*;
 
 pub mod tags;
+pub use tags::*;
 
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;

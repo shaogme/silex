@@ -173,7 +173,7 @@ fn MainLayout(child: AnyView) -> impl View {
         .style("display: flex; align-items: center; justify-content: space-between; padding: 20px 0; border-bottom: 1px solid #eee;"),
         
         // Main Content Area
-        silex::core::dom::tag::main(
+        silex::prelude::main(
             child
         ).style("padding: 20px 0;"),
 
