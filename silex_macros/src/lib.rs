@@ -47,7 +47,7 @@ pub fn classes(input: TokenStream) -> TokenStream {
 ///
 /// # 用法
 ///
-/// ```rust
+/// ```rust, ignore
 /// use silex::prelude::*;
 ///
 /// #[component]

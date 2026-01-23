@@ -865,7 +865,6 @@ dependencies = [
  "lightningcss",
  "proc-macro2",
  "quote",
- "silex",
  "syn 2.0.114",
 ]
 
