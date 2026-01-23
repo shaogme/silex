@@ -15,7 +15,7 @@
     *   `new(tag: &str) -> Self`: 创建 HTML 元素 (`document.createElement`).
     *   `new_svg(tag: &str) -> Self`: 创建 SVG 元素 (`document.createElementNS`).
     *   `as_web_element(&self) -> web_sys::Element`: 获取底层 raw element。
-    *   **Builder Methods**: `attr`, `id`, `class`, `style`, `prop`, `on_click`, `on_input`.
+    *   **Builder Methods**: `attr`, `id`, `class`, `style`, `prop`, `on`, `on_click`, `on_input`.
 
 ### `TypedElement<T>`
 *   **Struct**: `pub struct TypedElement<T> { pub element: Element, _marker: PhantomData<T> }`
@@ -33,8 +33,12 @@
 *   `classes(self, value: impl ApplyToDom)`: 同 `class`.
 *   `style(self, value: impl ApplyToDom)`: 设置内联样式.
 
+> **注意**: 布尔属性（如 `required`, `checked`）需要显式传递值。
+> *   静态: `.required(true)`
+> *   动态: `.required(signal)`
 
 #### Events
+*   `on<E, F>(self, event_type: &str, callback: F)`: 通用事件监听器，支持自动清理。`E` 必须实现 `FromWasmAbi` (例如 `web_sys::Event`).
 *   `on_click<F, M>(self, callback: F)`: 绑定点击事件。
 *   `on_input<F, M>(self, callback: F)`: 绑定输入事件。
 *   `bind_value(self, signal: RwSignal<String>)`: 双向绑定 `value` 属性。

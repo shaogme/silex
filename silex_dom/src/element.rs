@@ -151,6 +151,38 @@ macro_rules! impl_element_common {
 
             this
         }
+
+        pub fn on<E, F>(self, event_type: &str, mut callback: F) -> Self
+        where
+            E: wasm_bindgen::convert::FromWasmAbi + 'static,
+            F: FnMut(E) + 'static,
+        {
+            let closure = Closure::wrap(Box::new(move |e: E| {
+                callback(e);
+            }) as Box<dyn FnMut(E)>);
+
+            let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
+            let dom_element = self.as_web_element();
+
+            if let Err(e) = dom_element
+                .add_event_listener_with_callback(event_type, js_value)
+                .map_err(SilexError::from)
+            {
+                silex_core::error::handle_error(e);
+                return self;
+            }
+
+            let target = dom_element.clone();
+            let js_fn = js_value.clone();
+            let type_clone = event_type.to_string();
+
+            on_cleanup(move || {
+                let _ = target.remove_event_listener_with_callback(&type_clone, &js_fn);
+                drop(closure);
+            });
+
+            self
+        }
     };
 }
 
