@@ -40,11 +40,16 @@ mod basics {
             h3("Interactive Counter"),
             div![
                 button("-").on_click(move |_| set_count.update(|n| *n -= 1)),
-                strong(count),
+                strong(count)
+                    .class("counter-val")
+                    .class_toggle("positive", move || count.get() > 0)
+                    .class_toggle("negative", move || count.get() < 0),
                 button("+").on_click(move |_| set_count.update(|n| *n += 1)),
             ]
             .style("display: flex; gap: 10px; align-items: center;"),
-            div!["Double: ", double_count].style("margin-top: 5px; color: #666; font-size: 0.9em;"),
+            div!["Double: ", double_count]
+                .classes(move || if count.get() % 2 == 0 { "even" } else { "odd" })
+                .style("margin-top: 5px; color: #666; font-size: 0.9em;"),
         ]
     }
 

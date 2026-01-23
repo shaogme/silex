@@ -164,6 +164,24 @@ impl Element {
         this
     }
 
+    // --- Advanced Class Helpers ---
+
+    pub fn class_toggle<C>(self, name: &str, condition: C) -> Self
+    where
+        (String, C): AttributeValue,
+    {
+        // Construct a tuple (String, C) which implements AttributeValue
+        self.attr("class", (name.to_string(), condition))
+    }
+
+    pub fn classes<V>(self, value: V) -> Self
+    where
+        V: AttributeValue,
+    {
+        // Alias for class(), emphasizing multiple classes or complex logic
+        self.attr("class", value)
+    }
+
     // --- 统一的子节点/文本 API ---
 
     pub fn child<V: View>(self, view: V) -> Self {
@@ -226,6 +244,20 @@ impl<T> TypedElement<T> {
     }
 
     pub fn class(self, value: impl AttributeValue) -> Self {
+        self.attr("class", value)
+    }
+
+    pub fn class_toggle<C>(self, name: &str, condition: C) -> Self
+    where
+        (String, C): AttributeValue,
+    {
+        self.attr("class", (name.to_string(), condition))
+    }
+
+    pub fn classes<V>(self, value: V) -> Self
+    where
+        V: AttributeValue,
+    {
         self.attr("class", value)
     }
 

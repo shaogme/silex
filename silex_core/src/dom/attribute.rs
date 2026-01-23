@@ -1,5 +1,8 @@
 use crate::SilexError;
 use crate::reactivity::{ReadSignal, RwSignal, create_effect};
+use std::cell::RefCell;
+use std::collections::HashSet;
+use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::Element as WebElem;
 
@@ -13,30 +16,37 @@ pub trait AttributeValue {
 // 1. 静态字符串支持
 impl AttributeValue for &str {
     fn apply(self, el: &WebElem, name: &str) {
-        if let Err(e) = el.set_attribute(name, self).map_err(SilexError::from) {
-            crate::error::handle_error(e);
+        if name == "class" {
+            let list = el.class_list();
+            for c in self.split_whitespace() {
+                if let Err(e) = list.add_1(c).map_err(SilexError::from) {
+                    crate::error::handle_error(e);
+                }
+            }
+        } else {
+            if let Err(e) = el.set_attribute(name, self).map_err(SilexError::from) {
+                crate::error::handle_error(e);
+            }
         }
     }
 }
 
 impl AttributeValue for String {
     fn apply(self, el: &WebElem, name: &str) {
-        if let Err(e) = el.set_attribute(name, &self).map_err(SilexError::from) {
-            crate::error::handle_error(e);
-        }
+        self.as_str().apply(el, name)
     }
 }
 
 impl AttributeValue for &String {
     fn apply(self, el: &WebElem, name: &str) {
-        if let Err(e) = el.set_attribute(name, &self).map_err(SilexError::from) {
-            crate::error::handle_error(e);
-        }
+        self.as_str().apply(el, name)
     }
 }
 
 impl AttributeValue for bool {
     fn apply(self, el: &WebElem, name: &str) {
+        // Boolean attributes (e.g. checked, disabled)
+        // Note: Generally irrelevant for "class", but we keep standard behavior.
         let res = if self {
             el.set_attribute(name, "").map_err(SilexError::from)
         } else {
@@ -57,16 +67,46 @@ where
     fn apply(self, el: &WebElem, name: &str) {
         let el = el.clone();
         let name = name.to_string();
-        // 自动创建副作用
-        create_effect(move || {
-            let value = self();
-            if let Err(e) = el
-                .set_attribute(&name, value.as_ref())
-                .map_err(SilexError::from)
-            {
-                crate::error::handle_error(e);
-            }
-        });
+
+        if name == "class" {
+            // Class specific logic: Diffing updates
+            let prev_classes = Rc::new(RefCell::new(HashSet::new()));
+
+            create_effect(move || {
+                let value = self();
+                let new_classes: HashSet<String> = value
+                    .as_ref()
+                    .split_whitespace()
+                    .map(|s| s.to_string())
+                    .collect();
+
+                let mut prev = prev_classes.borrow_mut();
+                let list = el.class_list();
+
+                // Remove stale classes
+                for c in prev.difference(&new_classes) {
+                    let _ = list.remove_1(c);
+                }
+
+                // Add new classes
+                for c in new_classes.difference(&prev) {
+                    let _ = list.add_1(c);
+                }
+
+                *prev = new_classes;
+            });
+        } else {
+            // Standard attribute: set_attribute replacement
+            create_effect(move || {
+                let value = self();
+                if let Err(e) = el
+                    .set_attribute(&name, value.as_ref())
+                    .map_err(SilexError::from)
+                {
+                    crate::error::handle_error(e);
+                }
+            });
+        }
     }
 }
 
@@ -76,19 +116,8 @@ where
     T: std::fmt::Display + Clone + 'static,
 {
     fn apply(self, el: &WebElem, name: &str) {
-        let el = el.clone();
-        let name = name.to_string();
-        // Signal 是 Copy 的，直接移动进去
-        let signal = self;
-        create_effect(move || {
-            let v = signal.get();
-            if let Err(e) = el
-                .set_attribute(&name, &v.to_string())
-                .map_err(SilexError::from)
-            {
-                crate::error::handle_error(e);
-            }
-        });
+        // Delegate to closure implementation
+        (move || self.get().to_string()).apply(el, name);
     }
 }
 
@@ -97,12 +126,11 @@ where
     T: std::fmt::Display + Clone + 'static,
 {
     fn apply(self, el: &WebElem, name: &str) {
-        self.read_signal().apply(el, name);
+        (move || self.get().to_string()).apply(el, name);
     }
 }
 
 // 4. 样式对象/Map 支持: .style(("color", "red"))
-// 使用具体的 String/&str 实现以避免与 (K, bool) 和 (K, F) 冲突
 
 // Case 4.1: (K, &str)
 impl<K> AttributeValue for (K, &str)
@@ -144,13 +172,15 @@ where
 {
     fn apply(self, el: &WebElem, name: &str) {
         if name == "class" {
-            let class_name = self.0.as_ref();
+            let class_names = self.0.as_ref();
             let is_active = self.1;
             let list = el.class_list();
-            if is_active {
-                let _ = list.add_1(class_name);
-            } else {
-                let _ = list.remove_1(class_name);
+            for c in class_names.split_whitespace() {
+                if is_active {
+                    let _ = list.add_1(c);
+                } else {
+                    let _ = list.remove_1(c);
+                }
             }
         }
     }
@@ -165,14 +195,16 @@ where
     fn apply(self, el: &WebElem, name: &str) {
         if name == "class" {
             let el = el.clone();
-            let class_name = self.0.as_ref().to_string();
+            let raw_class_names = self.0.as_ref().to_string();
             create_effect(move || {
                 let is_active = self.1();
                 let list = el.class_list();
-                if is_active {
-                    let _ = list.add_1(&class_name);
-                } else {
-                    let _ = list.remove_1(&class_name);
+                for c in raw_class_names.split_whitespace() {
+                    if is_active {
+                        let _ = list.add_1(c);
+                    } else {
+                        let _ = list.remove_1(c);
+                    }
                 }
             });
         }
