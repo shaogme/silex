@@ -6,7 +6,7 @@ use std::rc::Rc;
 pub use silex_reactivity::NodeId;
 pub use silex_reactivity::{create_scope, dispose, on_cleanup, provide_context, use_context};
 
-use crate::{SilexError, SilexResult};
+use crate::SilexError;
 
 // --- Accessor Trait ---
 
@@ -427,92 +427,87 @@ where
     }
 }
 
-/// 创建一个资源 (`Resource`)，用于管理异步数据获取。
-///
-/// # 参数
-/// * `source` - 一个闭包，返回用于获取数据的参数（如 ID 或 URL）。它是响应式的，当返回值变化时会自动重新获取数据。
-/// * `fetcher` - 数据获取器，可以是闭包 `|s| async { ... }` 或实现了 `ResourceFetcher` 的类型。
-pub fn resource<S, Fetcher>(
-    source: impl Fn() -> S + 'static,
-    fetcher: Fetcher,
-) -> SilexResult<Resource<Fetcher::Data, Fetcher::Error>>
-where
-    S: PartialEq + Clone + 'static,
-    Fetcher: ResourceFetcher<S> + 'static,
-    Fetcher::Data: Clone + 'static,
-    Fetcher::Error: Clone + 'static + std::fmt::Debug,
-{
-    let (data, set_data) = signal(None);
-    let (error, set_error) = signal(None);
-    let (loading, set_loading) = signal(false);
-    let (trigger, set_trigger) = signal(0);
-
-    // 追踪资源所有者（通常是组件调用点）的生命周期。
-    // 如果组件被卸载，我们不应该再更新状态。
-    let alive = Rc::new(Cell::new(true));
-    let alive_clone = alive.clone();
-    on_cleanup(move || alive_clone.set(false));
-
-    // 用于解决竞态条件：追踪最新的请求 ID
-    let request_id = Rc::new(Cell::new(0usize));
-
-    Effect::new(move |_| {
-        let source_val = source();
-        // 追踪 trigger 以允许手动重新获取
-        let _ = trigger.get();
-
-        let suspense_ctx = use_suspense_context();
-        if let Some(ctx) = &suspense_ctx {
-            ctx.increment();
-        }
-        let _ = set_loading.set(true);
-
-        // 每次发起请求前递增 ID
-        let current_id = request_id.get().wrapping_add(1);
-        request_id.set(current_id);
-
-        // 启动异步任务
-        let fut = fetcher.fetch(source_val);
-        let suspense_ctx = suspense_ctx.clone();
-
-        let alive = alive.clone();
-        let request_id = request_id.clone();
-
-        wasm_bindgen_futures::spawn_local(async move {
-            let res = fut.await;
-
-            // 仅当组件仍然存活 且 这是最新的请求时 更新状态
-            if alive.get() && request_id.get() == current_id {
-                match res {
-                    Ok(val) => {
-                        let _ = set_data.set(Some(val));
-                        let _ = set_error.set(None);
-                    }
-                    Err(e) => {
-                        // 出错时，是否清除旧数据取决于策略，这里暂时保留旧数据或清理
-                        // let _ = set_data.set(None); // Uncomment to clear data on error
-                        let _ = set_error.set(Some(e));
-                    }
-                }
-                let _ = set_loading.set(false);
-            }
-
-            // 指示加载完成
-            if let Some(ctx) = &suspense_ctx {
-                ctx.decrement();
-            }
-        });
-    });
-
-    Ok(Resource {
-        data,
-        error,
-        loading,
-        trigger: set_trigger,
-    })
-}
-
 impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
+    /// 创建一个资源 (`Resource`)，用于管理异步数据获取。
+    ///
+    /// # 参数
+    /// * `source` - 一个闭包，返回用于获取数据的参数（如 ID 或 URL）。它是响应式的，当返回值变化时会自动重新获取数据。
+    /// * `fetcher` - 数据获取器，可以是闭包 `|s| async { ... }` 或实现了 `ResourceFetcher` 的类型。
+    pub fn new<S, Fetcher>(source: impl Fn() -> S + 'static, fetcher: Fetcher) -> Self
+    where
+        S: PartialEq + Clone + 'static,
+        Fetcher: ResourceFetcher<S, Data = T, Error = E> + 'static,
+    {
+        let (data, set_data) = signal(None);
+        let (error, set_error) = signal(None);
+        let (loading, set_loading) = signal(false);
+        let (trigger, set_trigger) = signal(0);
+
+        // 追踪资源所有者（通常是组件调用点）的生命周期。
+        // 如果组件被卸载，我们不应该再更新状态。
+        let alive = Rc::new(Cell::new(true));
+        let alive_clone = alive.clone();
+        on_cleanup(move || alive_clone.set(false));
+
+        // 用于解决竞态条件：追踪最新的请求 ID
+        let request_id = Rc::new(Cell::new(0usize));
+
+        Effect::new(move |_| {
+            let source_val = source();
+            // 追踪 trigger 以允许手动重新获取
+            let _ = trigger.get();
+
+            let suspense_ctx = use_suspense_context();
+            if let Some(ctx) = &suspense_ctx {
+                ctx.increment();
+            }
+            let _ = set_loading.set(true);
+
+            // 每次发起请求前递增 ID
+            let current_id = request_id.get().wrapping_add(1);
+            request_id.set(current_id);
+
+            // 启动异步任务
+            let fut = fetcher.fetch(source_val);
+            let suspense_ctx = suspense_ctx.clone();
+
+            let alive = alive.clone();
+            let request_id = request_id.clone();
+
+            wasm_bindgen_futures::spawn_local(async move {
+                let res = fut.await;
+
+                // 仅当组件仍然存活 且 这是最新的请求时 更新状态
+                if alive.get() && request_id.get() == current_id {
+                    match res {
+                        Ok(val) => {
+                            let _ = set_data.set(Some(val));
+                            let _ = set_error.set(None);
+                        }
+                        Err(e) => {
+                            // 出错时，是否清除旧数据取决于策略，这里暂时保留旧数据或清理
+                            // let _ = set_data.set(None); // Uncomment to clear data on error
+                            let _ = set_error.set(Some(e));
+                        }
+                    }
+                    let _ = set_loading.set(false);
+                }
+
+                // 指示加载完成
+                if let Some(ctx) = &suspense_ctx {
+                    ctx.decrement();
+                }
+            });
+        });
+
+        Resource {
+            data,
+            error,
+            loading,
+            trigger: set_trigger,
+        }
+    }
+
     /// 获取资源数据。如果是 `None` 则表示尚未加载完成或初始状态。
     /// 如果有错误，会尝试上报到 ErrorBoundary。
     pub fn get(&self) -> Option<T> {

@@ -111,13 +111,13 @@ fn HomeView() -> impl View {
     let is_high = Memo::new(move |_| count.get() > 5);
 
     // Async Resource
-    let async_data: Resource<String, silex::SilexError> = resource(
+    let async_data: Resource<String, silex::SilexError> = Resource::new(
         || (),
         |_| async {
             gloo_timers::future::TimeoutFuture::new(2_000).await;
             Ok("Loaded Data from Server!".to_string())
         }
-    ).expect("Failed to create resource");
+    );
 
     div((
         // Header

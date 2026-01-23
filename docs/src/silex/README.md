@@ -175,7 +175,7 @@ ErrorBoundary(ErrorBoundaryProps {
 Suspense::suspense()
     .fallback(|| div("Loading..."))
     .children(|| {
-        let data = use_resource(...); // 异步资源
+        let data = Resource::new(...); // 异步资源
         div(move || data.get().unwrap_or_default())
     })
 ```

@@ -56,13 +56,13 @@
     *   `loading() -> bool`: 获取加载状态。
     *   `refetch()`: 手动重新触发 `source` 变更，强制刷新。
 
-#### `resource<S, Fetcher>`
+#### `Resource::new<S, Fetcher>`
 *   **Signature**:
     ```rust
-    pub fn resource<S, Fetcher>(
+    pub fn new<S, Fetcher>(
         source: impl Fn() -> S + 'static,
         fetcher: Fetcher,
-    ) -> SilexResult<Resource<Fetcher::Data, Fetcher::Error>>
+    ) -> Self
     ```
 *   **Semantics**:
     1.  监听 `source` 闭包的变化。
