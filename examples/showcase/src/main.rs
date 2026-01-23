@@ -38,7 +38,7 @@ mod basics {
     #[component]
     pub fn Counter() -> impl View {
         let (count, set_count) = create_signal(0);
-        let double_count = create_memo(rx!(count.get() * 2));
+        let double_count = create_memo(rx!(count.get() * 2)); // rx!(count.get() * 2) is move || count.get() * 2
 
         div![
             h3("Interactive Counter"),
@@ -205,7 +205,7 @@ mod advanced {
             .style("border: 1px solid #ccc; padding: 10px; margin-bottom: 10px;"),
             h4("Update Settings"),
             div![
-                button("Toggle Theme").on_click(move || {
+                button("Toggle Theme").on_click(rx! {
                     settings.theme.update(|t| {
                         *t = if t == "Light" {
                             "Dark".to_string()
@@ -312,19 +312,19 @@ mod styles {
             
             // "Toggle" Logic
             div![
-                span(if is_active.get() { "State: Active" } else { "State: Inactive" })
+                span(is_active.map(|v| if v { "State: Active" } else { "State: Inactive" }))
                     .style("margin-right: 15px;"),
                 
-                button(if is_active.get() { "Deactivate" } else { "Activate" })
+                button(is_active.map(|v| if v { "Deactivate" } else { "Activate" }))
                     .on_click(move |_| set_active.update(|v| *v = !*v))
                     // Dynamic styling with builder pattern
-                    .style(move || {
-                        if is_active.get() {
+                    .style(is_active.map(|v| {
+                        if v {
                             "background-color: #ef5350; color: white;"
                         } else {
                             "background-color: #66bb6a; color: white;"
                         }
-                    })
+                    }))
                     .style("padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.2s;")
             ]
         ]
@@ -509,7 +509,7 @@ fn main() {
     });
 
     // Mount App
-    mount_to_body(move || {
+    mount_to_body(rx! {
         // Provide Global Store to the entire app tree
         provide_context(store);
 
