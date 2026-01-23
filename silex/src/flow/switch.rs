@@ -9,11 +9,12 @@ use web_sys::Node;
 ///
 /// # Example
 /// ```rust
+/// use silex::prelude::*;
 /// let (count, set_count) = create_signal(0);
 ///
 /// Switch::new(count, || "Default View")
 ///     .case(0, || "Zero")
-///     .case(1, || "One")
+///     .case(1, || "One");
 /// ```
 #[derive(Clone)]
 pub struct Switch<Source, T, V> {
