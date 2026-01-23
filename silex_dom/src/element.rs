@@ -1,4 +1,5 @@
 use crate::attribute::{ApplyTarget, ApplyToDom};
+use crate::node_ref::NodeRef;
 use crate::tags::Tag;
 use crate::view::View;
 use silex_core::SilexError;
@@ -50,6 +51,19 @@ macro_rules! impl_element_common {
             V: ApplyToDom,
         {
             value.apply(&self.as_web_element(), ApplyTarget::Class);
+            self
+        }
+
+        pub fn node_ref<N>(self, node_ref: NodeRef<N>) -> Self
+        where
+            N: JsCast + Clone + 'static,
+        {
+            let el = self.as_web_element();
+            if let Ok(typed) = el.dyn_into::<N>() {
+                node_ref.load(typed);
+            } else {
+                silex_core::log::console_error("NodeRef type mismatch: failed to cast element");
+            }
             self
         }
 

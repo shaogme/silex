@@ -66,6 +66,39 @@ button.on_click(|e| {
 input.bind_value(rw_signal)
 ```
 
+## 直接 DOM 访问
+
+虽然声明式 API 可以覆盖绝大多数需求，但有时你必须访问底层的 HTML 元素（例如调用 `.focus()`, `.scrollIntoView()`, `.showModal()`，或集成第三方非 Rust 库）。
+
+Silex 提供了 `NodeRef` 类型来实现这一需求。
+
+### 使用 `NodeRef`
+
+1.  创建一个 `NodeRef`。
+2.  通过 `.node_ref()` 方法将其绑定到元素。
+3.  在组件挂载后（例如在 `on_click` 或 `Effect` 中），通过 `.get()` 获取原生 DOM 节点。
+
+```rust
+use web_sys::HtmlInputElement;
+
+// 1. 创建引用 (强类型)
+let input_ref = NodeRef::<HtmlInputElement>::new();
+
+div![
+    input()
+        // 2. 绑定引用
+        .node_ref(input_ref.clone()) 
+        .placeholder("Wait for focus..."),
+        
+    button("Focus").on_click(move |_| {
+        // 3. 安全获取并调用原生 API
+        if let Some(el) = input_ref.get() {
+            let _ = el.focus();
+        }
+    })
+]
+```
+
 ## 扩展：自定义 View
 你可以为自己的结构体实现 `View` trait，使其可以直接嵌入到组件树中。
 

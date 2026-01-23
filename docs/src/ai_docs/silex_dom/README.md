@@ -15,7 +15,16 @@
     *   `new(tag: &str) -> Self`: 创建 HTML 元素 (`document.createElement`).
     *   `new_svg(tag: &str) -> Self`: 创建 SVG 元素 (`document.createElementNS`).
     *   `as_web_element(&self) -> web_sys::Element`: 获取底层 raw element。
-    *   **Builder Methods**: `attr`, `id`, `class`, `style`, `prop`, `on`, `on_click`, `on_input`.
+    *   **Builder Methods**: `attr`, `id`, `class`, `style`, `prop`, `on`, `on_click`, `on_input`, `node_ref`.
+
+### `NodeRef<T>`
+*   **Struct**: `pub struct NodeRef<T = web_sys::Element>(Rc<RefCell<Option<T>>>)`
+*   **Semantics**: 对底层 DOM 节点的引用句柄，用于命令式操作（如 focus, scroll, canvas 绘图）。
+*   **Methods**:
+    *   `new() -> Self`: 创建空引用。
+    *   `get(&self) -> Option<T>`: 获取节点。如果未挂载或类型不匹配，返回 None。
+    *   `load(&self, node: T)`: 内部使用，加载节点。
+*   **Usage**: 传递给 `Element::node_ref(ref)`。
 
 ### `TypedElement<T>`
 *   **Struct**: `pub struct TypedElement<T> { pub element: Element, _marker: PhantomData<T> }`
@@ -32,6 +41,7 @@
 *   `class(self, value: impl ApplyToDom)`: 添加 class (支持多类名字符串).
 *   `classes(self, value: impl ApplyToDom)`: 同 `class`.
 *   `style(self, value: impl ApplyToDom)`: 设置内联样式.
+*   `node_ref<N>(self, node_ref: NodeRef<N>)`: 绑定 DOM 引用。`N` 必须实现 `JsCast`.
 
 > **注意**: 布尔属性（如 `required`, `checked`）需要显式传递值。
 > *   静态: `.required(true)`

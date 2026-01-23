@@ -59,11 +59,33 @@ mod basics {
     }
 
     #[component]
+    pub fn NodeRefDemo() -> impl View {
+        use silex::reexports::web_sys::HtmlInputElement;
+        let input_ref = NodeRef::<HtmlInputElement>::new();
+
+        div![
+            h3("NodeRef Demo"),
+            p("Click the button to focus the input field using direct DOM access."),
+            input()
+                .placeholder("I will be focused...")
+                .node_ref(input_ref.clone())
+                .style("margin-right: 10px; padding: 5px;"),
+            button("Focus Input").on_click(move |_| {
+                if let Some(el) = input_ref.get() {
+                    let _ = el.focus();
+                }
+            })
+        ]
+        .style("padding: 20px; border: 1px dashed #999; margin-top: 20px;")
+    }
+
+    #[component]
     pub fn BasicsPage() -> impl View {
         div![
             h2("Basics"),
             Greeting().name("Developer"),
             Counter(),
+            NodeRefDemo(),
             // AttributeDemo omitted for brevity, logic is same as previous
         ]
     }

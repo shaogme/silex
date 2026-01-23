@@ -12,6 +12,9 @@ pub use props::*;
 pub mod tags;
 pub use tags::*;
 
+pub mod node_ref;
+pub use node_ref::*;
+
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::Document;
