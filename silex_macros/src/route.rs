@@ -595,7 +595,7 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
 
                     arms.push(quote! {
                         #enum_name::#variant_ident { #(#field_bindings),* } => {
-                            #view_component::new()
+                            #view_component()
                                 #(#props_setters)*
                                 .into_any()
                         }
@@ -603,7 +603,7 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
                 }
                 Fields::Unit => {
                     arms.push(quote! {
-                        #enum_name::#variant_ident => #view_component::new().into_any()
+                        #enum_name::#variant_ident => #view_component().into_any()
                     });
                 }
                 Fields::Unnamed(unnamed) => {
@@ -614,7 +614,7 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
                     // 除非... 没有任何字段（那匹配 Unit）
                     if unnamed.unnamed.is_empty() {
                         arms.push(quote! {
-                            #enum_name::#variant_ident() => #view_component::new().into_any()
+                            #enum_name::#variant_ident() => #view_component().into_any()
                         });
                     } else {
                         return Err(Error::new_spanned(

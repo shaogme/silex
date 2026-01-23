@@ -172,30 +172,30 @@ fn MainLayout(child: AnyView) -> impl View {
 // 定义子路由枚举 (Users Module)
 #[derive(Route, Clone, PartialEq)]
 enum UsersRoute {
-    #[route("/", view = UserListComponent)]
+    #[route("/", view = UserList)]
     List,
-    #[route("/new", view = CreateUserComponent)]
+    #[route("/new", view = CreateUser)]
     Create,
-    #[route("/:id", view = UserDetailComponent)]
+    #[route("/:id", view = UserDetail)]
     Detail { id: u32 },
 }
 
 // 定义应用顶级路由枚举
 #[derive(Route, Clone, PartialEq)]
 enum AppRoute {
-    #[route("/", view = HomeComponent)]
+    #[route("/", view = Home)]
     Home,
-    #[route("/search", view = SearchPageComponent)]
+    #[route("/search", view = SearchPage)]
     Search,
     
     // 递归嵌套：所有以 /users 开头的路径交给 UsersRoute 处理
-    #[route("/users/*", view = UsersLayoutComponent)]
+    #[route("/users/*", view = UsersLayout)]
     Users {
         #[nested]
         route: UsersRoute 
     },
 
-    #[route("/*", view = NotFoundComponent)]
+    #[route("/*", view = NotFound)]
     NotFound,
 }
 

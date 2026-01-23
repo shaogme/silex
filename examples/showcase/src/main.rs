@@ -342,51 +342,51 @@ fn SelectDemo() -> impl View {
 
 #[derive(Route, Clone, PartialEq)]
 enum AdvancedRoute {
-    #[route("/", view = SelectDemoComponent)]
+    #[route("/", view = SelectDemo)]
     Index,
-    #[route("/css", view = advanced::CssDemoComponent)]
+    #[route("/css", view = advanced::CssDemo)]
     Css,
-    #[route("/store", view = advanced::StoreDemoComponent)]
+    #[route("/store", view = advanced::StoreDemo)]
     Store,
-    #[route("/query", view = advanced::QueryDemoComponent)]
+    #[route("/query", view = advanced::QueryDemo)]
     Query,
-    #[route("/*", view = NotFoundPageComponent)]
+    #[route("/*", view = NotFoundPage)]
     NotFound,
 }
 
 #[derive(Route, Clone, PartialEq)]
 enum StylesRoute {
-    #[route("/", view = styles::SelectStyleDemoComponent)]
+    #[route("/", view = styles::SelectStyleDemo)]
     Index,
-    #[route("/builder", view = styles::BuilderDemoComponent)]
+    #[route("/builder", view = styles::BuilderDemo)]
     Builder,
-    #[route("/macro", view = styles::MacroDemoComponent)]
+    #[route("/macro", view = styles::MacroDemo)]
     Macro,
-    #[route("/hybrid", view = styles::HybridDemoComponent)]
+    #[route("/hybrid", view = styles::HybridDemo)]
     Hybrid,
-    #[route("/*", view = NotFoundPageComponent)]
+    #[route("/*", view = NotFoundPage)]
     NotFound,
 }
 
 #[derive(Route, Clone, PartialEq)]
 enum AppRoute {
-    #[route("/", view = HomePageComponent)]
+    #[route("/", view = HomePage)]
     Home,
-    #[route("/basics", view = basics::BasicsPageComponent)]
+    #[route("/basics", view = basics::BasicsPage)]
     Basics,
-    #[route("/flow", view = flow_control::FlowPageComponent)]
+    #[route("/flow", view = flow_control::FlowPage)]
     Flow,
-    #[route("/advanced/*", view = AdvancedLayoutComponent)]
+    #[route("/advanced/*", view = AdvancedLayout)]
     Advanced {
         #[nested]
         route: AdvancedRoute,
     },
-    #[route("/styles/*", view = StylesLayoutComponent)]
+    #[route("/styles/*", view = StylesLayout)]
     Styles {
         #[nested]
         route: StylesRoute,
     },
-    #[route("/*", view = NotFoundPageComponent)]
+    #[route("/*", view = NotFoundPage)]
     NotFound,
 }
 
