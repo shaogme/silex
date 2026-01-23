@@ -1,4 +1,4 @@
-use silex_core::reactivity::{Accessor, effect};
+use silex_core::reactivity::{Accessor, Effect};
 use silex_dom::View;
 use web_sys::Node;
 
@@ -97,7 +97,7 @@ where
 
         let view_fn = self.view_fn;
 
-        effect(move || {
+        Effect::new(move |_| {
             let new_view = view_fn.value();
 
             // 清理旧内容

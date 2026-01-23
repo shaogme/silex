@@ -15,7 +15,7 @@
     *   使用 `signal` 创建，利用 `PhantomData<T>` 保留类型信息，并在运行时通过 `downcast` 安全转换 `Any` 数据。
 
 *   **Effect (副作用)**:
-    *   `effect`: 创建自动追踪依赖的副作用。
+    *   `Effect`: 创建自动追踪依赖的副作用，使用 `Effect::new`。
 
 *   **Resource (异步资源)**:
     *   `resource`: 用于处理异步数据加载（如 API 请求）。

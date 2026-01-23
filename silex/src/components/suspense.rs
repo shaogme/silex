@@ -1,5 +1,5 @@
 use silex_core::reactivity::SuspenseContext;
-use silex_core::reactivity::{create_scope, effect, provide_context};
+use silex_core::reactivity::{Effect, create_scope, provide_context};
 use silex_dom::view::View;
 use silex_html::div;
 use web_sys::Node;
@@ -66,7 +66,7 @@ where
             content_wrapper.clone().mount(&parent_clone);
             let content_root = content_wrapper.element;
 
-            effect(move || {
+            Effect::new(move |_| {
                 let view = children_fn();
                 content_root.set_inner_html("");
                 view.mount(&content_root);
@@ -84,7 +84,7 @@ where
             fallback_wrapper.clone().mount(&parent_clone);
             let fallback_root = fallback_wrapper.element;
 
-            effect(move || {
+            Effect::new(move |_| {
                 let view = fallback_fn();
                 fallback_root.set_inner_html("");
                 view.mount(&fallback_root);

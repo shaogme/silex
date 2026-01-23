@@ -38,7 +38,7 @@ mod basics {
     #[component]
     pub fn Counter() -> impl View {
         let (count, set_count) = signal(0);
-        let double_count = memo(rx!(count.get() * 2)); // rx!(count.get() * 2) is move || count.get() * 2
+        let double_count = Memo::new(move |_| count.get() * 2); // rx!(count.get() * 2) is move || count.get() * 2
 
         div![
             h3("Interactive Counter"),

@@ -2,7 +2,7 @@ use crate::attribute::{ApplyTarget, ApplyToDom};
 use crate::tags::Tag;
 use crate::view::View;
 use silex_core::SilexError;
-use silex_core::reactivity::{RwSignal, effect, on_cleanup};
+use silex_core::reactivity::{Effect, RwSignal, on_cleanup};
 
 use std::marker::PhantomData;
 use wasm_bindgen::JsCast;
@@ -130,7 +130,7 @@ macro_rules! impl_element_common {
 
             let dom_element = this.as_web_element();
 
-            effect(move || {
+            Effect::new(move |_| {
                 let value = signal.get();
                 if let Some(input) = dom_element.dyn_ref::<web_sys::HtmlInputElement>() {
                     if input.value() != value {

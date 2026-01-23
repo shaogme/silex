@@ -344,9 +344,10 @@ pub fn update_signal<T: 'static>(id: NodeId, f: impl FnOnce(&mut T)) {
     })
 }
 
-pub fn effect<F: Fn() + 'static>(f: F) {
+pub fn effect<F: Fn() + 'static>(f: F) -> NodeId {
     let id = RUNTIME.with(|rt| rt.register_effect_internal(f));
     run_effect_internal(id);
+    id
 }
 
 pub fn create_scope<F>(f: F) -> NodeId
@@ -392,7 +393,7 @@ pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
 pub fn memo<T, F>(f: F) -> NodeId
 where
     T: Clone + PartialEq + 'static,
-    F: Fn() -> T + 'static,
+    F: Fn(Option<&T>) -> T + 'static,
 {
     RUNTIME.with(|rt| {
         let effect_id = rt.register_node();
@@ -411,7 +412,7 @@ where
         let value = {
             let prev_owner = *rt.current_owner.borrow();
             *rt.current_owner.borrow_mut() = Some(effect_id);
-            let v = f();
+            let v = f(None);
             *rt.current_owner.borrow_mut() = prev_owner;
             v
         };
@@ -421,9 +422,6 @@ where
 
         // Computation
         let computation = move || {
-            let new_value = f();
-            let mut changed = false;
-
             // Check old value
             let old_value = RUNTIME.with(|rt| {
                 let signals = rt.signals.borrow();
@@ -438,10 +436,16 @@ where
                 }
             });
 
-            if let Some(old) = old_value {
-                if new_value != old {
+            let new_value = f(old_value.as_ref());
+            let mut changed = false;
+
+            if let Some(old) = &old_value {
+                if new_value != *old {
                     changed = true;
                 }
+            } else {
+                // Should technically not happen if initialized, but ...
+                changed = true;
             }
 
             if changed {

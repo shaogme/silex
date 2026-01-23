@@ -50,7 +50,7 @@ fn Counter() -> impl View {
     let (count, set_count) = signal(0);
     
     // 派生状态 (Memo)
-    let double_count = memo(move || count.get() * 2);
+    let double_count = Memo::new(move |_| count.get() * 2);
 
     div![
         h1("Silex Counter Demo"),

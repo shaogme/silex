@@ -5,7 +5,7 @@ pub use context::*;
 pub use link::*;
 
 use crate::router::context::{RouterContextProps, provide_router_context};
-use silex_core::reactivity::{effect, on_cleanup, signal};
+use silex_core::reactivity::{Effect, on_cleanup, signal};
 use silex_dom::view::{AnyView, IntoAnyView, View};
 use silex_html::div;
 use std::rc::Rc;
@@ -235,7 +235,7 @@ impl View for Router {
             let parent = container_node.clone();
             let factory = child_factory.clone();
 
-            effect(move || {
+            Effect::new(move |_| {
                 // 清空容器，准备渲染新的视图
                 parent.set_text_content(Some(""));
 

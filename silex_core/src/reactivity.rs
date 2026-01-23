@@ -1,12 +1,10 @@
-pub use silex_reactivity::NodeId;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::future::Future;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-pub use silex_reactivity::{
-    create_scope, dispose, effect, on_cleanup, provide_context, use_context,
-};
+pub use silex_reactivity::NodeId;
+pub use silex_reactivity::{create_scope, dispose, on_cleanup, provide_context, use_context};
 
 use crate::{SilexError, SilexResult};
 
@@ -37,7 +35,7 @@ impl<T: Clone + 'static> Accessor<T> for RwSignal<T> {
     }
 }
 
-impl<T: Clone + 'static> Accessor<T> for Memo<T> {
+impl<T: Clone + PartialEq + 'static> Accessor<T> for Memo<T> {
     fn value(&self) -> T {
         self.get()
     }
@@ -99,6 +97,59 @@ pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
     silex_reactivity::untrack(f)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Effect {
+    pub(crate) id: NodeId,
+}
+
+impl Effect {
+    pub fn new<T, F>(f: F) -> Self
+    where
+        T: 'static,
+        F: Fn(Option<T>) -> T + 'static,
+    {
+        let val = Rc::new(RefCell::new(None::<T>));
+        let val_clone = val.clone();
+
+        let id = silex_reactivity::effect(move || {
+            let old = val_clone.borrow_mut().take();
+            let new = f(old);
+            *val_clone.borrow_mut() = Some(new);
+        });
+        Effect { id }
+    }
+
+    pub fn watch<W, T, C>(deps: W, callback: C, immediate: bool) -> Self
+    where
+        W: Fn() -> T + 'static,
+        T: Clone + PartialEq + 'static,
+        C: Fn(&T, Option<&T>, Option<()>) + 'static,
+    {
+        let first_run = Rc::new(Cell::new(true));
+        let prev_deps = Rc::new(RefCell::new(None::<T>));
+
+        Effect::new(move |_| {
+            let new_val = deps();
+            let mut p_borrow = prev_deps.borrow_mut();
+            let old_val = p_borrow.clone();
+
+            let is_first = first_run.get();
+            if is_first {
+                first_run.set(false);
+                *p_borrow = Some(new_val.clone());
+                if immediate {
+                    callback(&new_val, old_val.as_ref(), None);
+                }
+            } else {
+                if old_val.as_ref() != Some(&new_val) {
+                    callback(&new_val, old_val.as_ref(), None);
+                    *p_borrow = Some(new_val);
+                }
+            }
+        })
+    }
+}
+
 pub struct Memo<T> {
     pub(crate) id: NodeId,
     pub(crate) marker: PhantomData<T>,
@@ -117,19 +168,18 @@ impl<T> Clone for Memo<T> {
 }
 impl<T> Copy for Memo<T> {}
 
-pub fn memo<T, F>(f: F) -> Memo<T>
-where
-    T: Clone + PartialEq + 'static,
-    F: Fn() -> T + 'static,
-{
-    let id = silex_reactivity::memo(f);
-    Memo {
-        id,
-        marker: PhantomData,
+impl<T: Clone + PartialEq + 'static> Memo<T> {
+    pub fn new<F>(f: F) -> Self
+    where
+        F: Fn(Option<&T>) -> T + 'static,
+    {
+        let id = silex_reactivity::memo(f);
+        Memo {
+            id,
+            marker: PhantomData,
+        }
     }
-}
 
-impl<T: 'static + Clone> Memo<T> {
     pub fn get(&self) -> T {
         self.try_get().expect("Memo: value has been dropped")
     }
@@ -171,7 +221,7 @@ impl<T: 'static + Clone> ReadSignal<T> {
         F: Fn(T) -> U + 'static,
         U: Clone + PartialEq + 'static,
     {
-        memo(move || f(self.get()))
+        Memo::new(move |_| f(self.get()))
     }
 }
 
@@ -184,7 +234,7 @@ impl<T: Clone + 'static + PartialEq> ReadSignal<T> {
     {
         let other = other.into();
         let this = *self;
-        memo(move || this.get() == other)
+        Memo::new(move |_| this.get() == other)
     }
 
     pub fn ne<O>(&self, other: O) -> Memo<bool>
@@ -193,7 +243,7 @@ impl<T: Clone + 'static + PartialEq> ReadSignal<T> {
     {
         let other = other.into();
         let this = *self;
-        memo(move || this.get() != other)
+        Memo::new(move |_| this.get() != other)
     }
 }
 
@@ -204,7 +254,7 @@ impl<T: Clone + 'static + PartialOrd> ReadSignal<T> {
     {
         let other = other.into();
         let this = *self;
-        memo(move || this.get() > other)
+        Memo::new(move |_| this.get() > other)
     }
 
     pub fn lt<O>(&self, other: O) -> Memo<bool>
@@ -213,7 +263,7 @@ impl<T: Clone + 'static + PartialOrd> ReadSignal<T> {
     {
         let other = other.into();
         let this = *self;
-        memo(move || this.get() < other)
+        Memo::new(move |_| this.get() < other)
     }
 
     pub fn ge<O>(&self, other: O) -> Memo<bool>
@@ -222,7 +272,7 @@ impl<T: Clone + 'static + PartialOrd> ReadSignal<T> {
     {
         let other = other.into();
         let this = *self;
-        memo(move || this.get() >= other)
+        Memo::new(move |_| this.get() >= other)
     }
 
     pub fn le<O>(&self, other: O) -> Memo<bool>
@@ -231,7 +281,7 @@ impl<T: Clone + 'static + PartialOrd> ReadSignal<T> {
     {
         let other = other.into();
         let this = *self;
-        memo(move || this.get() <= other)
+        Memo::new(move |_| this.get() <= other)
     }
 }
 
@@ -406,7 +456,7 @@ where
     // 用于解决竞态条件：追踪最新的请求 ID
     let request_id = Rc::new(Cell::new(0usize));
 
-    effect(move || {
+    Effect::new(move |_| {
         let source_val = source();
         // 追踪 trigger 以允许手动重新获取
         let _ = trigger.get();

@@ -56,7 +56,7 @@
 *   **Definition**: `pub trait ApplyToDom { fn apply(self, el: &WebElem, target: ApplyTarget); }`
 *   **Implementors**:
     *   **Static**: `&str`, `String`, `bool` (Boolean Attribute toggle), `Option<T>`.
-    *   **Reactive**: `impl Fn() -> T` (自动创建 `effect` 进行细粒度更新).
+    *   **Reactive**: `impl Fn() -> T` (自动创建 `Effect` 进行细粒度更新).
     *   **Signals**: `ReadSignal<T>`, `RwSignal<T>`, `Memo<T>`.
     *   **Collections**: `Vec<V>`, `[V; N]`.
     *   **Tuples**:

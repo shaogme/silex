@@ -1,5 +1,5 @@
 use crate::element::Element;
-use silex_core::reactivity::{Memo, ReadSignal, RwSignal, effect};
+use silex_core::reactivity::{Effect, Memo, ReadSignal, RwSignal};
 use silex_core::{SilexError, SilexResult};
 use std::fmt::Display;
 use web_sys::Node;
@@ -105,7 +105,7 @@ where
             return;
         }
 
-        effect(move || {
+        Effect::new(move |_| {
             // 在产生副作用时捕获 Panic，防止整个应用崩溃，并允许 ErrorBoundary 捕获
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let view = self();
@@ -169,7 +169,7 @@ where
 
         // 2. 创建副作用
         let signal = self;
-        effect(move || {
+        Effect::new(move |_| {
             let value = signal.get();
             node.set_node_value(Some(&value.to_string()));
         });
@@ -178,7 +178,7 @@ where
 
 impl<T> View for Memo<T>
 where
-    T: Display + Clone + 'static,
+    T: Display + Clone + PartialEq + 'static,
 {
     fn mount(self, parent: &Node) {
         let document = crate::document();
@@ -191,7 +191,7 @@ where
 
         // 2. 创建副作用
         let signal = self;
-        effect(move || {
+        Effect::new(move |_| {
             let value = signal.get();
             node.set_node_value(Some(&value.to_string()));
         });

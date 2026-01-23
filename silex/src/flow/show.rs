@@ -1,4 +1,4 @@
-use silex_core::reactivity::{Accessor, ReadSignal, effect};
+use silex_core::reactivity::{Accessor, Effect, ReadSignal};
 use silex_dom::View;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -108,7 +108,7 @@ where
         let fallback_fn = self.fallback;
         let prev_state = Rc::new(RefCell::new(None::<bool>));
 
-        effect(move || {
+        Effect::new(move |_| {
             let val = cond.value();
 
             let mut state = prev_state.borrow_mut();

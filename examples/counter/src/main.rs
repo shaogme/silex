@@ -30,7 +30,7 @@ fn CounterDisplay() -> SilexResult<impl View> {
     let count = expect_context::<ReadSignal<i32>>();
 
     // Demo: Style Map (Vec) and Dynamic Class (Signal)
-    let is_even = memo(move || count.get() % 2 == 0);
+    let is_even = Memo::new(move |_| count.get() % 2 == 0);
 
     // Demo: CSS-in-Rust (Scoped CSS)
     let container_class = css!(r#"
@@ -108,7 +108,7 @@ fn HomeView() -> impl View {
     // 全局状态通过 Context 获取
     let count = expect_context::<ReadSignal<i32>>();
     
-    let is_high = memo(move || count.get() > 5);
+    let is_high = Memo::new(move |_| count.get() > 5);
 
     // Async Resource
     let async_data: Resource<String, silex::SilexError> = resource(

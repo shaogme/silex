@@ -1,4 +1,4 @@
-use silex_core::reactivity::{ReadSignal, WriteSignal, memo, provide_context, use_context};
+use silex_core::reactivity::{Memo, ReadSignal, WriteSignal, provide_context, use_context};
 use silex_dom::view::{AnyView, View};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -175,7 +175,7 @@ pub fn use_location_search() -> ReadSignal<String> {
 /// Hook: 获取并解析查询参数为 Map
 pub fn use_query_map() -> silex_core::reactivity::Memo<HashMap<String, String>> {
     let search_signal = use_location_search();
-    memo(move || {
+    Memo::new(move |_| {
         let s = search_signal.get();
         let mut map = HashMap::new();
         let clean = s.trim_start_matches('?');
@@ -211,7 +211,7 @@ pub fn use_query_map() -> silex_core::reactivity::Memo<HashMap<String, String>> 
 /// # 返回
 /// 一个 RwSignal，读写它会自动同步到 URL
 pub fn use_query_signal(key: impl Into<String>) -> silex_core::reactivity::RwSignal<String> {
-    use silex_core::reactivity::{RwSignal, effect};
+    use silex_core::reactivity::{Effect, RwSignal};
 
     let key = key.into();
     let query_map = use_query_map();
@@ -228,10 +228,10 @@ pub fn use_query_signal(key: impl Into<String>) -> silex_core::reactivity::RwSig
 
     // 监听 URL 变化 -> 更新 Signal
     // 我们需要避免回环，所以只有当值真正改变时才 set
-    effect({
+    Effect::new({
         let key = key.clone();
         let signal = signal;
-        move || {
+        move |_| {
             let map = query_map.get();
             let url_val = map.get(&key).map(|s| s.as_str()).unwrap_or("");
             if signal.get_untracked() != url_val {
@@ -241,7 +241,7 @@ pub fn use_query_signal(key: impl Into<String>) -> silex_core::reactivity::RwSig
     });
 
     // 监听 Signal 变化 -> 更新 URL
-    effect(move || {
+    Effect::new(move |_| {
         let val = signal.get();
         let current_map = query_map.get_untracked();
         let current_url_val = current_map.get(&key).map(|s| s.as_str()).unwrap_or("");

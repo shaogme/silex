@@ -1,7 +1,7 @@
 use crate::SilexError;
 use crate::flow::for_loop::IntoForLoopResult;
 use silex_core::reactivity::{
-    Accessor, NodeId, ReadSignal, WriteSignal, create_scope, dispose, effect, signal,
+    Accessor, Effect, NodeId, ReadSignal, WriteSignal, create_scope, dispose, signal,
 };
 use silex_dom::View;
 use std::cell::RefCell;
@@ -76,7 +76,7 @@ where
         let items_fn = self.items;
         let map_fn = self.map;
 
-        effect(move || {
+        Effect::new(move |_| {
             let result = items_fn.value().into_result();
             let items_iter = match result {
                 Ok(iter) => iter,

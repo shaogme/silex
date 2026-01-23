@@ -1,5 +1,5 @@
 use silex_core::error::{ErrorContext, SilexError};
-use silex_core::reactivity::{effect, provide_context, signal};
+use silex_core::reactivity::{Effect, provide_context, signal};
 use silex_dom::view::View;
 use silex_html::div;
 use std::rc::Rc;
@@ -71,7 +71,7 @@ where
 
         let props = self.props;
 
-        effect(move || {
+        Effect::new(move |_| {
             // Clear previous content
             wrapper_dom.set_inner_html("");
 

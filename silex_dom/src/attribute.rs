@@ -1,5 +1,5 @@
 use silex_core::SilexError;
-use silex_core::reactivity::{Memo, ReadSignal, RwSignal, effect};
+use silex_core::reactivity::{Effect, Memo, ReadSignal, RwSignal};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -87,7 +87,7 @@ where
     // Diffing updates
     let prev_classes = Rc::new(RefCell::new(HashSet::new()));
 
-    effect(move || {
+    Effect::new(move |_| {
         let value = f();
         let new_classes: HashSet<String> = value
             .as_ref()
@@ -119,7 +119,7 @@ where
 {
     let prev_keys = Rc::new(RefCell::new(HashSet::<String>::new()));
 
-    effect(move || {
+    Effect::new(move |_| {
         let value = f();
         let new_style_str = value.as_ref();
 
@@ -243,14 +243,14 @@ impl ReactiveApply for String {
                 } else if name == "style" {
                     create_style_effect(el, f);
                 } else {
-                    effect(move || {
+                    Effect::new(move |_| {
                         let value = f();
                         handle_err(el.set_attribute(&name, &value).map_err(SilexError::from));
                     });
                 }
             }
             OwnedApplyTarget::Prop(name) => {
-                effect(move || {
+                Effect::new(move |_| {
                     let value = f();
                     let _ = js_sys::Reflect::set(
                         &el,
@@ -275,14 +275,14 @@ impl<'a> ReactiveApply for &'a str {
                 } else if name == "style" {
                     create_style_effect(el, f);
                 } else {
-                    effect(move || {
+                    Effect::new(move |_| {
                         let value = f();
                         handle_err(el.set_attribute(&name, value).map_err(SilexError::from));
                     });
                 }
             }
             OwnedApplyTarget::Prop(name) => {
-                effect(move || {
+                Effect::new(move |_| {
                     let value = f();
                     let _ = js_sys::Reflect::set(
                         &el,
@@ -300,7 +300,7 @@ impl ReactiveApply for bool {
     fn apply_to_dom(f: impl Fn() -> Self + 'static, el: WebElem, target: OwnedApplyTarget) {
         match target {
             OwnedApplyTarget::Attr(name) => {
-                effect(move || {
+                Effect::new(move |_| {
                     let val = f();
                     if val {
                         let _ = el.set_attribute(&name, "");
@@ -310,7 +310,7 @@ impl ReactiveApply for bool {
                 });
             }
             OwnedApplyTarget::Prop(name) => {
-                effect(move || {
+                Effect::new(move |_| {
                     let val = f();
                     let _ = js_sys::Reflect::set(
                         &el,
@@ -358,7 +358,7 @@ where
 
 impl<T> ApplyToDom for Memo<T>
 where
-    T: std::fmt::Display + Clone + 'static,
+    T: std::fmt::Display + Clone + PartialEq + 'static,
 {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
         (move || self.get().to_string()).apply(el, target);
@@ -446,7 +446,7 @@ where
         if is_class {
             let el = el.clone();
             let raw_class_names = self.0.as_ref().to_string();
-            effect(move || {
+            Effect::new(move |_| {
                 let is_active = self.1();
                 let list = el.class_list();
                 for c in raw_class_names.split_whitespace() {
