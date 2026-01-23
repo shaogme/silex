@@ -252,7 +252,88 @@ mod advanced {
     }
 }
 
+
+mod styles {
+    use super::*;
+
+    #[component]
+    pub fn SelectStyleDemo() -> impl View {
+        div("Select a style above to see the comparison.")
+    }
+
+    #[component]
+    pub fn BuilderDemo() -> impl View {
+        // Nested structure using purely function calls
+        div(
+            div(
+                // Use a tuple for multiple children if not using macros
+                (
+                    h3("Builder Style"),
+                    p("This component is built using only function calls and method chaining."),
+                    button("Click Me (Builder)")
+                        .class("btn-builder")
+                        .style("background-color: #e0f7fa; color: #006064; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;")
+                        .on_click(|_| console_log("Builder button clicked!")),
+                )
+            )
+            .style("padding: 20px; border: 1px solid #b2ebf2; border-radius: 8px; margin-bottom: 20px;")
+        )
+    }
+
+    #[component]
+    pub fn MacroDemo() -> impl View {
+        let (count, set_count) = create_signal(0);
+
+        // Note how clean the children list is: plain comma-separated values
+        div![
+            h3![ "Macro Style" ],
+            p![ "This component uses macros for a more declarative, HTML-like feel." ],
+            div![
+                button![ "-" ]
+                    .class("btn-macro")
+                    .on_click(set_count.updater(|n| *n -= 1)),
+                span![ " Count: ", count, " " ].style("margin: 0 10px; font-weight: bold;"),
+                button![ "+" ]
+                    .class("btn-macro")
+                    .on_click(set_count.updater(|n| *n += 1)),
+            ]
+            .style("display: flex; align-items: center; margin-top: 10px;")
+        ]
+        .style("padding: 20px; border: 1px solid #ffccbc; background-color: #fffbe6; border-radius: 8px; margin-bottom: 20px;")
+    }
+
+    #[component]
+    pub fn HybridDemo() -> impl View {
+        let (is_active, set_active) = create_signal(false);
+
+        div![
+            h3("Hybrid Style (Recommended)"), // Function call for single child is fine too!
+            p("Mix macros for structure and builder methods for attributes."),
+            
+            // "Toggle" Logic
+            div![
+                span(if is_active.get() { "State: Active" } else { "State: Inactive" })
+                    .style("margin-right: 15px;"),
+                
+                button(if is_active.get() { "Deactivate" } else { "Activate" })
+                    .on_click(move |_| set_active.update(|v| *v = !*v))
+                    // Dynamic styling with builder pattern
+                    .style(move || {
+                        if is_active.get() {
+                            "background-color: #ef5350; color: white;"
+                        } else {
+                            "background-color: #66bb6a; color: white;"
+                        }
+                    })
+                    .style("padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.2s;")
+            ]
+        ]
+        .style("padding: 20px; border: 1px solid #d1c4e9; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);")
+    }
+}
+
 // --- Routing Definition ---
+
 
 #[component]
 fn SelectDemo() -> impl View {
@@ -274,6 +355,20 @@ enum AdvancedRoute {
 }
 
 #[derive(Route, Clone, PartialEq)]
+enum StylesRoute {
+    #[route("/", view = styles::SelectStyleDemoComponent)]
+    Index,
+    #[route("/builder", view = styles::BuilderDemoComponent)]
+    Builder,
+    #[route("/macro", view = styles::MacroDemoComponent)]
+    Macro,
+    #[route("/hybrid", view = styles::HybridDemoComponent)]
+    Hybrid,
+    #[route("/*", view = NotFoundPageComponent)]
+    NotFound,
+}
+
+#[derive(Route, Clone, PartialEq)]
 enum AppRoute {
     #[route("/", view = HomePageComponent)]
     Home,
@@ -285,6 +380,11 @@ enum AppRoute {
     Advanced {
         #[nested]
         route: AdvancedRoute,
+    },
+    #[route("/styles/*", view = StylesLayoutComponent)]
+    Styles {
+        #[nested]
+        route: StylesRoute,
     },
     #[route("/*", view = NotFoundPageComponent)]
     NotFound,
@@ -323,6 +423,12 @@ fn NavBar() -> impl View {
         .text("Advanced")
         .class(&nav_link)
         .active_class("active"),
+        Link(AppRoute::Styles {
+            route: StylesRoute::Index,
+        })
+        .text("Styles")
+        .class(&nav_link)
+        .active_class("active"),
     ]
     .style("background: #333; color: white; padding: 10px; margin-bottom: 20px; display: flex; gap: 15px; align-items: center;")
 }
@@ -350,10 +456,27 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
     ]
 }
 
+
+#[component]
+fn StylesLayout(route: StylesRoute) -> impl View {
+    div![
+        h2("Coding Style Comparison"),
+        p("Silex supports multiple coding styles. Choose one below to see the difference."),
+        div![
+            Link("/styles/builder").text("Builder Style").class("tab"),
+            Link("/styles/macro").text("Macro Style").class("tab"),
+            Link("/styles/hybrid").text("Hybrid Style").class("tab"),
+        ]
+        .style("display: flex; gap: 10px; margin-bottom: 20px;"),
+        route.render(),
+    ]
+}
+
 #[component]
 fn NotFoundPage() -> impl View {
     div("404 - Page Not Found").style("color: red; padding: 20px;")
 }
+
 
 #[component]
 fn HomePage() -> impl View {
@@ -367,6 +490,10 @@ fn HomePage() -> impl View {
                 route: AdvancedRoute::Index,
             })
             .text("Advanced: Router to Store & CSS")),
+            li(Link(AppRoute::Styles {
+                route: StylesRoute::Index,
+            })
+            .text("Styles: Comparison of Builder vs Macro vs Hybrid")),
         ],
     ]
 }
