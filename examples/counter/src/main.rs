@@ -161,7 +161,7 @@ fn HomeView() -> impl View {
                 is_high
                     .when(|| div("⚠️ Warning: Count is getting high!")
                         .style("background: #ffebee; color: #c62828; padding: 10px; border-radius: 4px;"))
-                    .otherwise(|| div("✓ System works normally.")
+                    .fallback(|| div("✓ System works normally.")
                         .style("background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;"))
             ),
         

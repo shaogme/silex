@@ -94,13 +94,10 @@ mod flow_control {
             }),
             // BEFORE: Show::new(move || visible.get(), ...)
             // AFTER:  Show::new(visible, ...) - Accessor trait enables this!
-            Show::new(
-                visible,
-                || div("✅ Content is visible!")
-                    .style("color: green; padding: 10px; background: #e8f5e9;"),
-                Some(|| div("❌ Content is hidden")
-                    .style("color: red; padding: 10px; background: #ffebee;")),
-            ),
+            Show::new(visible, || div("✅ Content is visible!")
+                .style("color: green; padding: 10px; background: #e8f5e9;"),)
+            .fallback(|| div("❌ Content is hidden")
+                .style("color: red; padding: 10px; background: #ffebee;")),
         ]
     }
 
