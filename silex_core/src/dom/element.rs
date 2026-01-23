@@ -32,6 +32,11 @@ macro_rules! impl_element_common {
             self
         }
 
+        pub fn prop(self, name: &str, value: impl ApplyToDom) -> Self {
+            value.apply(&self.as_web_element(), ApplyTarget::Prop(name));
+            self
+        }
+
         pub fn class_toggle<C>(self, name: &str, condition: C) -> Self
         where
             (String, C): ApplyToDom,

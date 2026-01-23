@@ -12,6 +12,8 @@ use web_sys::Element as WebElem;
 pub enum ApplyTarget<'a> {
     /// 标准属性，如 `id`, `href`, `src`。也包含作为属性调用的 `class` 和 `style`。
     Attr(&'a str),
+    /// 直接设置 DOM Property (JS 对象属性)，用于 `value`, `checked`, `muted` 等
+    Prop(&'a str),
     /// 专门的 `.class(...)` 调用
     Class,
     /// 专门的 `.style(...)` 调用
@@ -158,6 +160,13 @@ impl ApplyToDom for &str {
                     handle_err(el.set_attribute(name, self).map_err(SilexError::from));
                 }
             }
+            ApplyTarget::Prop(name) => {
+                let _ = js_sys::Reflect::set(
+                    el,
+                    &wasm_bindgen::JsValue::from_str(name),
+                    &wasm_bindgen::JsValue::from_str(self),
+                );
+            }
         }
     }
 }
@@ -177,14 +186,24 @@ impl ApplyToDom for &String {
 // 2. Bool (Attributes Only)
 impl ApplyToDom for bool {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
-        if let ApplyTarget::Attr(name) = target {
-            // Boolean attributes (e.g. checked, disabled)
-            let res = if self {
-                el.set_attribute(name, "").map_err(SilexError::from)
-            } else {
-                el.remove_attribute(name).map_err(SilexError::from)
-            };
-            handle_err(res);
+        match target {
+            ApplyTarget::Attr(name) => {
+                // Boolean attributes (e.g. checked, disabled)
+                let res = if self {
+                    el.set_attribute(name, "").map_err(SilexError::from)
+                } else {
+                    el.remove_attribute(name).map_err(SilexError::from)
+                };
+                handle_err(res);
+            }
+            ApplyTarget::Prop(name) => {
+                let _ = js_sys::Reflect::set(
+                    el,
+                    &wasm_bindgen::JsValue::from_str(name),
+                    &wasm_bindgen::JsValue::from_bool(self),
+                );
+            }
+            _ => {}
         }
     }
 }
@@ -198,36 +217,132 @@ impl<T: ApplyToDom> ApplyToDom for Option<T> {
     }
 }
 
-// 4. Reactive Closures
-impl<F, S> ApplyToDom for F
-where
-    F: Fn() -> S + 'static,
-    S: AsRef<str>,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        let el = el.clone();
+// 4. Reactive Closures (Unified via Helper Trait)
 
+#[derive(Clone)]
+pub enum OwnedApplyTarget {
+    Attr(String),
+    Prop(String),
+    Class,
+    Style,
+}
+
+pub trait ReactiveApply {
+    fn apply_to_dom(f: impl Fn() -> Self + 'static, el: WebElem, target: OwnedApplyTarget);
+}
+
+// 4.1 String Implementation (Reuses diffing logic for Class/Style)
+impl ReactiveApply for String {
+    fn apply_to_dom(f: impl Fn() -> Self + 'static, el: WebElem, target: OwnedApplyTarget) {
         match target {
-            ApplyTarget::Class => create_class_effect(el, self),
-            ApplyTarget::Style => create_style_effect(el, self),
-            ApplyTarget::Attr(name) => {
-                let name = name.to_string(); // Capture for 'static closure
-
+            OwnedApplyTarget::Class => create_class_effect(el, f),
+            OwnedApplyTarget::Style => create_style_effect(el, f),
+            OwnedApplyTarget::Attr(name) => {
                 if name == "class" {
-                    create_class_effect(el, self);
+                    create_class_effect(el, f);
                 } else if name == "style" {
-                    create_style_effect(el, self);
+                    create_style_effect(el, f);
                 } else {
                     create_effect(move || {
-                        let value = self();
-                        handle_err(
-                            el.set_attribute(&name, value.as_ref())
-                                .map_err(SilexError::from),
-                        );
+                        let value = f();
+                        handle_err(el.set_attribute(&name, &value).map_err(SilexError::from));
                     });
                 }
             }
+            OwnedApplyTarget::Prop(name) => {
+                create_effect(move || {
+                    let value = f();
+                    let _ = js_sys::Reflect::set(
+                        &el,
+                        &wasm_bindgen::JsValue::from_str(&name),
+                        &wasm_bindgen::JsValue::from_str(&value),
+                    );
+                });
+            }
         }
+    }
+}
+
+// 4.1b &str Implementation
+impl<'a> ReactiveApply for &'a str {
+    fn apply_to_dom(f: impl Fn() -> Self + 'static, el: WebElem, target: OwnedApplyTarget) {
+        match target {
+            OwnedApplyTarget::Class => create_class_effect(el, f),
+            OwnedApplyTarget::Style => create_style_effect(el, f),
+            OwnedApplyTarget::Attr(name) => {
+                if name == "class" {
+                    create_class_effect(el, f);
+                } else if name == "style" {
+                    create_style_effect(el, f);
+                } else {
+                    create_effect(move || {
+                        let value = f();
+                        handle_err(el.set_attribute(&name, value).map_err(SilexError::from));
+                    });
+                }
+            }
+            OwnedApplyTarget::Prop(name) => {
+                create_effect(move || {
+                    let value = f();
+                    let _ = js_sys::Reflect::set(
+                        &el,
+                        &wasm_bindgen::JsValue::from_str(&name),
+                        &wasm_bindgen::JsValue::from_str(value),
+                    );
+                });
+            }
+        }
+    }
+}
+
+// 4.2 Boolean Implementation
+impl ReactiveApply for bool {
+    fn apply_to_dom(f: impl Fn() -> Self + 'static, el: WebElem, target: OwnedApplyTarget) {
+        match target {
+            OwnedApplyTarget::Attr(name) => {
+                create_effect(move || {
+                    let val = f();
+                    if val {
+                        let _ = el.set_attribute(&name, "");
+                    } else {
+                        let _ = el.remove_attribute(&name);
+                    }
+                });
+            }
+            OwnedApplyTarget::Prop(name) => {
+                create_effect(move || {
+                    let val = f();
+                    let _ = js_sys::Reflect::set(
+                        &el,
+                        &wasm_bindgen::JsValue::from_str(&name),
+                        &wasm_bindgen::JsValue::from_bool(val),
+                    );
+                });
+            }
+            _ => {
+                // Class/Style toggling not supported via single bool closure.
+                // Use (key, bool) or string return instead.
+            }
+        }
+    }
+}
+
+// 4.3 Blanket Implementation
+impl<F, T> ApplyToDom for F
+where
+    F: Fn() -> T + 'static,
+    T: ReactiveApply + 'static,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        let el = el.clone();
+        let owned_target = match target {
+            ApplyTarget::Attr(n) => OwnedApplyTarget::Attr(n.to_string()),
+            ApplyTarget::Prop(n) => OwnedApplyTarget::Prop(n.to_string()),
+            ApplyTarget::Class => OwnedApplyTarget::Class,
+            ApplyTarget::Style => OwnedApplyTarget::Style,
+        };
+
+        T::apply_to_dom(self, el, owned_target);
     }
 }
 
