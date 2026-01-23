@@ -56,7 +56,7 @@ pub fn classes(input: TokenStream) -> TokenStream {
 ///     #[prop(default)] age: u32,
 ///     #[prop(into)] message: String,
 /// ) -> impl View {
-///     div().text(format!("{} ({}): {}", name, age, message))
+///     div(()).text(format!("{} ({}): {}", name, age, message))
 /// }
 ///
 /// // 生成的代码等效于:

@@ -415,7 +415,7 @@ impl_from_tuple_for_anyview!(A, B, C, D, E);
 ///
 /// # 示例
 ///
-/// ```rust,ignore
+/// ```rust, ignore
 /// view_match!(route, {
 ///     AppRoute::Home => HomePage::new(),
 ///     AppRoute::Basics => "Basics Page",

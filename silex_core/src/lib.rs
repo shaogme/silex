@@ -12,6 +12,10 @@ pub use error::{SilexError, SilexResult};
 ///
 /// # 示例
 /// ```rust
+/// use silex_core::rx;
+/// use silex_core::prelude::*;
+///
+/// let (count, set_count) = create_signal(0);
 /// let double = rx!(count.get() * 2);
 /// ```
 #[macro_export]

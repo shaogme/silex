@@ -1,5 +1,5 @@
-use silex_dom::View;
 use silex_core::reactivity::{Accessor, ReadSignal, create_effect};
+use silex_dom::View;
 use std::cell::RefCell;
 use std::rc::Rc;
 use web_sys::Node;
@@ -8,8 +8,14 @@ use web_sys::Node;
 ///
 /// 使用 Builder 模式构建：
 /// ```rust
-/// Show::new(condition, || view)
-///     .fallback(|| fallback_view)
+/// use silex::prelude::*;
+///
+/// let (condition, set_condition) = create_signal(true);
+/// let view = "Content";
+/// let fallback_view = "Fallback";
+///
+/// Show::new(condition, move || view)
+///     .fallback(move || fallback_view);
 /// ```
 #[derive(Clone)]
 pub struct Show<Cond, ViewFn, FalsyViewFn, V1, V2> {

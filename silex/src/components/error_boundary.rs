@@ -1,6 +1,6 @@
-use silex_dom::view::View;
 use silex_core::error::{ErrorContext, SilexError};
 use silex_core::reactivity::{create_effect, create_signal, provide_context};
+use silex_dom::view::View;
 use silex_html::div;
 use std::rc::Rc;
 use web_sys::Node;
@@ -31,7 +31,7 @@ pub struct ErrorBoundaryView<F, C> {
 ///         // ... component that might fail ...
 ///         "Everything is fine"
 ///     }
-/// })
+/// });
 /// ```
 #[allow(non_snake_case)]
 pub fn ErrorBoundary<F, C, V1, V2>(props: ErrorBoundaryProps<F, C>) -> ErrorBoundaryView<F, C>

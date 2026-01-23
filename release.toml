@@ -1,0 +1,21 @@
+# release.toml configuration
+allow-branch = ["main", "HEAD"]
+sign-commit = false
+sign-tag = false
+push-options = []
+publish = true
+
+# Commit message template
+pre-release-commit-message = "chore: release {{version}}"
+tag-message = "chore: tag {{version}}"
+
+# Ensure we replace version in README
+[[pre-release-replacements]]
+file = "README.md"
+search = "silex = \"{{prev_version}}\""
+replace = "silex = \"{{version}}\""
+
+[[pre-release-replacements]]
+file = "docs/src/silex/README.md"
+search = "silex = \\{ path = \"../../silex\", version = \"{{prev_version}}\" \\}"
+replace = "silex = { path = \"../../silex\", version = \"{{version}}\" }"

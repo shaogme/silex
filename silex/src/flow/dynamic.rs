@@ -9,17 +9,19 @@ use web_sys::Node;
 ///
 /// # 示例
 ///
-/// ```rust,no_run
+/// ```rust
+/// use silex::prelude::*;
+///
 /// let (component_name, set_component_name) = create_signal("A");
 ///
 /// Dynamic::new(move || {
 ///     let name = component_name.get();
 ///     if name == "A" {
-///         ComponentA().into_any()
+///         "Component A"
 ///     } else {
-///         ComponentB().into_any()
+///         "Component B"
 ///     }
-/// })
+/// });
 /// ```
 #[derive(Clone)]
 pub struct Dynamic<V, F> {
