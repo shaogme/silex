@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-slotmap = { workspace = true }
+slotmap = "1.1.1"

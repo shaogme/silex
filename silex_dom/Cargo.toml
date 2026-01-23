@@ -8,4 +8,3 @@ silex_core = { path = "../silex_core", version = "0.1.0" }
 wasm-bindgen = { workspace = true }
 web-sys = { workspace = true }
 js-sys = { workspace = true }
-slotmap = { workspace = true }
