@@ -5,6 +5,21 @@ pub mod reactivity;
 
 pub use error::{SilexError, SilexResult};
 
+/// `rx!` 宏：简化创建响应式闭包的语法。
+///
+/// 等同于 `move || { ... }`。
+///
+/// # 示例
+/// ```rust
+/// let double = rx!(count.get() * 2);
+/// ```
+#[macro_export]
+macro_rules! rx {
+    ($($expr:tt)*) => {
+        move || { $($expr)* }
+    };
+}
+
 pub mod prelude {
     pub use crate::dom::*;
     pub use crate::log::*;

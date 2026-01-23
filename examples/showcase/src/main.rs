@@ -1,5 +1,5 @@
 use silex::prelude::*;
-use silex_macros::{Route, Store, classes, component, css, rx, style};
+use silex_macros::{Route, Store, classes, component, css, style};
 
 // ==================================================================================
 // Phase 1: Basics - Components, Reactivity, Props, and Attributes

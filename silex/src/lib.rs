@@ -29,5 +29,6 @@ pub mod prelude {
     pub use crate::router::Link;
     pub use crate::router::*;
     pub use crate::{SilexError, SilexResult};
+    pub use silex_core::rx;
     pub use silex_html::*;
 }
