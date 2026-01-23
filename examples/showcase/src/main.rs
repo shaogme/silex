@@ -44,13 +44,13 @@ mod basics {
         div![
             h3("Interactive Counter"),
             div![
-                button("-").on_click(move |_| set_count.update(|n| *n -= 1)),
+                button("-").on_click(set_count.updater(|n| *n -= 1)),
                 strong(count).classes(classes![
                     "counter-val",
                     "positive" => count.gt(0),
                     "negative" => count.lt(0)
                 ]),
-                button("+").on_click(move |_| set_count.update(|n| *n += 1)),
+                button("+").on_click(set_count.updater(|n| *n += 1)),
             ]
             .style("display: flex; gap: 10px; align-items: center;"),
             div!["Double: ", double_count]
@@ -85,9 +85,7 @@ mod flow_control {
             h3("List Rendering with Signal Ergonomics"),
             p("Demonstrates passing a Signal directly to For::new without closure wrapper."),
             ul(For::new(list, |item| *item, |item| li(item))),
-            button("Add Item").on_click(move |_| {
-                set_list.update(|l| l.push("New Item"));
-            }),
+            button("Add Item").on_click(set_list.updater(|l| l.push("New Item"))),
         ]
     }
 
@@ -98,9 +96,7 @@ mod flow_control {
         div![
             h3("Conditional Rendering with Show"),
             p("Demonstrates passing a Signal directly to Show::new as condition."),
-            button("Toggle Visibility").on_click(move |_| {
-                set_visible.update(|v| *v = !*v);
-            }),
+            button("Toggle Visibility").on_click(set_visible.updater(|v| *v = !*v)),
             Show::new(visible, || div("✅ Content is visible!")
                 .style("color: green; padding: 10px; background: #e8f5e9;"),)
             .fallback(|| div("❌ Content is hidden")
@@ -116,9 +112,9 @@ mod flow_control {
             h3("Dynamic Component Switching"),
             p("Demonstrates Dynamic component with closure accessor."),
             div![
-                button("Show A").on_click(move |_| set_mode.set("A")),
-                button("Show B").on_click(move |_| set_mode.set("B")),
-                button("Show C").on_click(move |_| set_mode.set("C")),
+                button("Show A").on_click(set_mode.setter("A")),
+                button("Show B").on_click(set_mode.setter("B")),
+                button("Show C").on_click(set_mode.setter("C")),
             ]
             .style("display: flex; gap: 10px; margin-bottom: 10px;"),
             // You can also use Dynamic::new(mode.map(|m| { view_match!(m, { ... }) })).
@@ -186,7 +182,7 @@ mod advanced {
             p("The button below is styled using the `css!` macro with scoped styles."),
             button("Scoped Style Button")
                 .class(btn_class)
-                .on_click(|_| console_log("Clicked!")),
+                .on_click(|| console_log("Clicked!")),
         ]
     }
 
@@ -210,7 +206,7 @@ mod advanced {
             .style("border: 1px solid #ccc; padding: 10px; margin-bottom: 10px;"),
             h4("Update Settings"),
             div![
-                button("Toggle Theme").on_click(move |_| {
+                button("Toggle Theme").on_click(move || {
                     settings.theme.update(|t| {
                         *t = if t == "Light" {
                             "Dark".to_string()
@@ -220,7 +216,7 @@ mod advanced {
                     })
                 }),
                 button("Toggle Notifications")
-                    .on_click(move |_| settings.notifications.update(|n| *n = !*n)),
+                    .on_click(settings.notifications.updater(|n| *n = !*n)),
                 input()
                     .bind_value(settings.username)
                     .placeholder("Change username..."),
@@ -244,7 +240,7 @@ mod advanced {
                     .placeholder("Type here...")
                     .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px;"),
                 button("Reset")
-                    .on_click(move |_| val.set(String::new()))
+                    .on_click(val.setter(String::new()))
                     .style("padding: 8px 16px; cursor: pointer;")
             ]
             .style("display: flex; gap: 10px; margin: 10px 0; align-items: center;"),

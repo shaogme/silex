@@ -9,6 +9,34 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::Element as WebElem;
 
+// --- Event Handling Traits ---
+
+pub struct WithEventArg;
+pub struct WithoutEventArg;
+
+pub trait EventHandler<E, M> {
+    fn into_handler(self) -> Box<dyn FnMut(E)>;
+}
+
+impl<F, E> EventHandler<E, WithEventArg> for F
+where
+    F: FnMut(E) + 'static,
+{
+    fn into_handler(self) -> Box<dyn FnMut(E)> {
+        Box::new(self)
+    }
+}
+
+impl<F, E> EventHandler<E, WithoutEventArg> for F
+where
+    F: FnMut() + 'static,
+    E: 'static,
+{
+    fn into_handler(mut self) -> Box<dyn FnMut(E)> {
+        Box::new(move |_| self())
+    }
+}
+
 /// Identity function to wrap text content as a View.
 /// This matches the API expected by the showcase example and provides a explicit way to denote text nodes.
 pub fn text<V: View>(content: V) -> V {
@@ -69,12 +97,13 @@ impl Element {
 
     // --- 事件 API ---
 
-    pub fn on_click<F>(self, callback: F) -> Self
+    pub fn on_click<F, M>(self, callback: F) -> Self
     where
-        F: Fn(web_sys::MouseEvent) + 'static,
+        F: EventHandler<web_sys::MouseEvent, M>,
     {
+        let mut handler = callback.into_handler();
         let closure = Closure::wrap(Box::new(move |e: web_sys::MouseEvent| {
-            callback(e);
+            handler(e);
         }) as Box<dyn FnMut(_)>);
 
         let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
@@ -99,14 +128,15 @@ impl Element {
         self
     }
 
-    pub fn on_input<F>(self, mut callback: F) -> Self
+    pub fn on_input<F, M>(self, callback: F) -> Self
     where
-        F: FnMut(String) + 'static,
+        F: EventHandler<String, M>,
     {
+        let mut handler = callback.into_handler();
         let closure = Closure::wrap(Box::new(move |e: web_sys::InputEvent| {
             if let Some(target) = e.target() {
                 let input = target.unchecked_into::<web_sys::HtmlInputElement>();
-                callback(input.value());
+                handler(input.value());
             } else {
                 let err = SilexError::Dom("Input event has no target".into());
                 crate::error::handle_error(err);
@@ -267,97 +297,31 @@ impl<T> TypedElement<T> {
 
     // --- Event API (Duplicated from Element) ---
 
-    pub fn on_click<F>(self, callback: F) -> Self
+    pub fn on_click<F, M>(self, callback: F) -> Self
     where
-        F: Fn(web_sys::MouseEvent) + 'static,
+        F: EventHandler<web_sys::MouseEvent, M>,
     {
-        let closure = Closure::wrap(Box::new(move |e: web_sys::MouseEvent| {
-            callback(e);
-        }) as Box<dyn FnMut(_)>);
-
-        let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
-        if let Err(e) = self
-            .element
-            .add_event_listener_with_callback("click", js_value)
-            .map_err(SilexError::from)
-        {
-            crate::error::handle_error(e);
-            return self;
+        Self {
+            element: self.element.on_click(callback),
+            _marker: PhantomData,
         }
-
-        let target = self.element.clone();
-        let js_fn = js_value.clone();
-
-        on_cleanup(move || {
-            let _ = target.remove_event_listener_with_callback("click", &js_fn);
-            drop(closure);
-        });
-
-        self
     }
 
-    pub fn on_input<F>(self, mut callback: F) -> Self
+    pub fn on_input<F, M>(self, callback: F) -> Self
     where
-        F: FnMut(String) + 'static,
+        F: EventHandler<String, M>,
     {
-        let closure = Closure::wrap(Box::new(move |e: web_sys::InputEvent| {
-            if let Some(target) = e.target() {
-                let input = target.unchecked_into::<web_sys::HtmlInputElement>();
-                callback(input.value());
-            } else {
-                let err = SilexError::Dom("Input event has no target".into());
-                crate::error::handle_error(err);
-            }
-        }) as Box<dyn FnMut(_)>);
-
-        let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
-        if let Err(e) = self
-            .element
-            .add_event_listener_with_callback("input", js_value)
-            .map_err(SilexError::from)
-        {
-            crate::error::handle_error(e);
-            return self;
+        Self {
+            element: self.element.on_input(callback),
+            _marker: PhantomData,
         }
-
-        let target = self.element.clone();
-        let js_fn = js_value.clone();
-
-        on_cleanup(move || {
-            let _ = target.remove_event_listener_with_callback("input", &js_fn);
-            drop(closure);
-        });
-
-        self
     }
 
     pub fn bind_value(self, signal: RwSignal<String>) -> Self {
-        let this = self.on_input(move |value| {
-            signal.set(value);
-        });
-
-        let dom_element = this.element.dom_element.clone();
-
-        create_effect(move || {
-            let value = signal.get();
-            if let Some(input) = dom_element.dyn_ref::<web_sys::HtmlInputElement>() {
-                if input.value() != value {
-                    input.set_value(&value);
-                }
-            } else if let Some(area) = dom_element.dyn_ref::<web_sys::HtmlTextAreaElement>() {
-                if area.value() != value {
-                    area.set_value(&value);
-                }
-            } else if let Some(select) = dom_element.dyn_ref::<web_sys::HtmlSelectElement>() {
-                if select.value() != value {
-                    select.set_value(&value);
-                }
-            } else {
-                let _ = dom_element.set_attribute("value", &value);
-            }
-        });
-
-        this
+        Self {
+            element: self.element.bind_value(signal),
+            _marker: PhantomData,
+        }
     }
 
     // --- Children API ---

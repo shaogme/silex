@@ -393,6 +393,32 @@ impl<T: Clone + 'static> RwSignal<T> {
     {
         self.read.map(f)
     }
+
+    /// 生成一个设置值的闭包。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// button("Reset").on_click(count.setter(0));
+    /// ```
+    pub fn setter(self, value: T) -> impl Fn()
+    where
+        T: Clone,
+    {
+        move || self.set(value.clone())
+    }
+
+    /// 生成一个更新值的闭包。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// button("Inc").on_click(count.updater(|n| *n += 1));
+    /// ```
+    pub fn updater<F>(self, f: F) -> impl Fn()
+    where
+        F: Fn(&mut T) + Clone + 'static,
+    {
+        move || self.update(f.clone())
+    }
 }
 
 impl<T: 'static> WriteSignal<T> {
@@ -429,6 +455,22 @@ impl<T: 'static> WriteSignal<T> {
             // 3. 尝试运行队列
             rt.run_queue();
         })
+    }
+
+    /// 生成一个设置值的闭包。
+    pub fn setter(self, value: T) -> impl Fn()
+    where
+        T: Clone,
+    {
+        move || self.set(value.clone())
+    }
+
+    /// 生成一个更新值的闭包。
+    pub fn updater<F>(self, f: F) -> impl Fn()
+    where
+        F: Fn(&mut T) + Clone + 'static,
+    {
+        move || self.update(f.clone())
     }
 }
 
