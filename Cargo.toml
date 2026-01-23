@@ -9,7 +9,8 @@ members = [
     "silex_macros",
     "silex_core",
     "silex_html",
-    "silex_dom"
+    "silex_dom", 
+    "silex_reactivity"
 ]
 resolver = "3"
 

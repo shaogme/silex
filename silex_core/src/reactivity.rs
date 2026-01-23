@@ -1,17 +1,297 @@
-pub mod runtime;
-pub mod signal;
-
-pub use runtime::NodeId;
-pub use signal::*;
-
-use std::any::TypeId;
+pub use silex_reactivity::NodeId;
 use std::cell::Cell;
-use std::collections::HashMap;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::rc::Rc;
 
-use crate::reactivity::runtime::{RUNTIME, run_effect};
+pub use silex_reactivity::{
+    create_effect, create_scope, dispose, on_cleanup, provide_context, use_context,
+};
+
 use crate::{SilexError, SilexResult};
+
+// --- Accessor Trait ---
+
+pub trait Accessor<T> {
+    fn value(&self) -> T;
+}
+
+impl<F, T> Accessor<T> for F
+where
+    F: Fn() -> T,
+{
+    fn value(&self) -> T {
+        self()
+    }
+}
+
+impl<T: Clone + 'static> Accessor<T> for ReadSignal<T> {
+    fn value(&self) -> T {
+        self.get()
+    }
+}
+
+impl<T: Clone + 'static> Accessor<T> for RwSignal<T> {
+    fn value(&self) -> T {
+        self.get()
+    }
+}
+
+// --- Signal 信号 API ---
+
+pub struct ReadSignal<T> {
+    pub(crate) id: NodeId,
+    pub(crate) marker: PhantomData<T>,
+}
+
+impl<T> std::fmt::Debug for ReadSignal<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ReadSignal({:?})", self.id)
+    }
+}
+
+impl<T> Clone for ReadSignal<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T> Copy for ReadSignal<T> {}
+
+pub struct WriteSignal<T> {
+    pub(crate) id: NodeId,
+    pub(crate) marker: PhantomData<T>,
+}
+
+impl<T> std::fmt::Debug for WriteSignal<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "WriteSignal({:?})", self.id)
+    }
+}
+
+impl<T> Clone for WriteSignal<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T> Copy for WriteSignal<T> {}
+
+pub fn create_signal<T: 'static>(value: T) -> (ReadSignal<T>, WriteSignal<T>) {
+    let id = silex_reactivity::create_signal(value);
+    (
+        ReadSignal {
+            id,
+            marker: PhantomData,
+        },
+        WriteSignal {
+            id,
+            marker: PhantomData,
+        },
+    )
+}
+
+pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
+    silex_reactivity::untrack(f)
+}
+
+pub fn create_memo<T, F>(f: F) -> ReadSignal<T>
+where
+    T: Clone + PartialEq + 'static,
+    F: Fn() -> T + 'static,
+{
+    let id = silex_reactivity::create_memo(f);
+    ReadSignal {
+        id,
+        marker: PhantomData,
+    }
+}
+
+impl<T: 'static + Clone> ReadSignal<T> {
+    pub fn get(&self) -> T {
+        self.try_get().expect("ReadSignal: value has been dropped")
+    }
+
+    pub fn try_get(&self) -> Option<T> {
+        silex_reactivity::try_get_signal(self.id)
+    }
+
+    pub fn get_untracked(&self) -> T {
+        self.try_get_untracked()
+            .expect("ReadSignal: value has been dropped")
+    }
+
+    pub fn try_get_untracked(&self) -> Option<T> {
+        silex_reactivity::try_get_signal_untracked(self.id)
+    }
+
+    pub fn map<U, F>(self, f: F) -> ReadSignal<U>
+    where
+        F: Fn(T) -> U + 'static,
+        U: Clone + PartialEq + 'static,
+    {
+        create_memo(move || f(self.get()))
+    }
+}
+
+// --- Fluent API Extensions for ReadSignal ---
+
+impl<T: Clone + 'static + PartialEq> ReadSignal<T> {
+    pub fn eq<O>(&self, other: O) -> ReadSignal<bool>
+    where
+        O: Into<T> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = *self;
+        create_memo(move || this.get() == other)
+    }
+
+    pub fn ne<O>(&self, other: O) -> ReadSignal<bool>
+    where
+        O: Into<T> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = *self;
+        create_memo(move || this.get() != other)
+    }
+}
+
+impl<T: Clone + 'static + PartialOrd> ReadSignal<T> {
+    pub fn gt<O>(&self, other: O) -> ReadSignal<bool>
+    where
+        O: Into<T> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = *self;
+        create_memo(move || this.get() > other)
+    }
+
+    pub fn lt<O>(&self, other: O) -> ReadSignal<bool>
+    where
+        O: Into<T> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = *self;
+        create_memo(move || this.get() < other)
+    }
+
+    pub fn ge<O>(&self, other: O) -> ReadSignal<bool>
+    where
+        O: Into<T> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = *self;
+        create_memo(move || this.get() >= other)
+    }
+
+    pub fn le<O>(&self, other: O) -> ReadSignal<bool>
+    where
+        O: Into<T> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = *self;
+        create_memo(move || this.get() <= other)
+    }
+}
+
+pub struct RwSignal<T: 'static> {
+    pub read: ReadSignal<T>,
+    pub write: WriteSignal<T>,
+}
+
+impl<T> Clone for RwSignal<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T> Copy for RwSignal<T> {}
+
+pub fn create_rw_signal<T: 'static>(value: T) -> RwSignal<T> {
+    let (read, write) = create_signal(value);
+    RwSignal { read, write }
+}
+
+impl<T: Clone + 'static> RwSignal<T> {
+    pub fn new(value: T) -> Self {
+        create_rw_signal(value)
+    }
+
+    pub fn get(&self) -> T {
+        self.read.get()
+    }
+
+    pub fn try_get(&self) -> Option<T> {
+        self.read.try_get()
+    }
+
+    pub fn get_untracked(&self) -> T {
+        self.read.get_untracked()
+    }
+
+    pub fn try_get_untracked(&self) -> Option<T> {
+        self.read.try_get_untracked()
+    }
+
+    pub fn set(&self, value: T) -> () {
+        self.write.set(value)
+    }
+
+    pub fn update(&self, f: impl FnOnce(&mut T)) -> () {
+        self.write.update(f)
+    }
+
+    pub fn read_signal(&self) -> ReadSignal<T> {
+        self.read
+    }
+
+    pub fn write_signal(&self) -> WriteSignal<T> {
+        self.write
+    }
+
+    pub fn map<U, F>(self, f: F) -> ReadSignal<U>
+    where
+        F: Fn(T) -> U + 'static,
+        U: Clone + PartialEq + 'static,
+    {
+        self.read.map(f)
+    }
+
+    pub fn setter(self, value: T) -> impl Fn()
+    where
+        T: Clone,
+    {
+        move || self.set(value.clone())
+    }
+
+    pub fn updater<F>(self, f: F) -> impl Fn()
+    where
+        F: Fn(&mut T) + Clone + 'static,
+    {
+        move || self.update(f.clone())
+    }
+}
+
+impl<T: 'static> WriteSignal<T> {
+    pub fn set(&self, new_value: T) -> () {
+        self.update(|v| *v = new_value)
+    }
+
+    pub fn update(&self, f: impl FnOnce(&mut T)) {
+        silex_reactivity::update_signal(self.id, f)
+    }
+
+    pub fn setter(self, value: T) -> impl Fn()
+    where
+        T: Clone,
+    {
+        move || self.set(value.clone())
+    }
+
+    pub fn updater<F>(self, f: F) -> impl Fn()
+    where
+        F: Fn(&mut T) + Clone + 'static,
+    {
+        move || self.update(f.clone())
+    }
+}
 
 // --- Resource 资源 API ---
 
@@ -169,54 +449,6 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
 
 // --- Context 上下文 API ---
 
-/// 提供一个上下文值给当前组件树及其子孙组件。
-/// 上下文基于类型 (`T`) 进行键控。
-pub fn provide_context<T: 'static>(value: T) {
-    RUNTIME.with(|rt| {
-        if let Some(owner) = *rt.current_owner.borrow() {
-            let mut nodes = rt.nodes.borrow_mut();
-            if let Some(node) = nodes.get_mut(owner) {
-                if node.context.is_none() {
-                    node.context = Some(HashMap::new());
-                }
-                // unwrap exists now because we just checked/created it
-                if let Some(ctx) = &mut node.context {
-                    ctx.insert(TypeId::of::<T>(), Box::new(value));
-                }
-            } else {
-                panic!("provide_context: owner not found (internal error)");
-            }
-        } else {
-            panic!("provide_context: called without an owner scope (make sure you are inside a component or mount closure)");
-        }
-    })
-}
-
-/// 获取上下文值。
-/// 会向上遍历组件树，直到找到对应类型的上下文。
-pub fn use_context<T: Clone + 'static>() -> Option<T> {
-    RUNTIME.with(|rt| {
-        let nodes = rt.nodes.borrow();
-        let mut current_opt = *rt.current_owner.borrow();
-
-        // 向上遍历树
-        while let Some(current) = current_opt {
-            if let Some(node) = nodes.get(current) {
-                if let Some(ctx) = &node.context {
-                    if let Some(val) = ctx.get(&TypeId::of::<T>()) {
-                        return val.downcast_ref::<T>().cloned();
-                    }
-                }
-                // 移动到父节点
-                current_opt = node.parent;
-            } else {
-                current_opt = None;
-            }
-        }
-        None
-    })
-}
-
 /// 获取上下文值，如果未找到则 Panic。
 /// 适用于那些必须存在的上下文（如 Router, Theme）。
 pub fn expect_context<T: Clone + 'static>() -> T {
@@ -232,61 +464,6 @@ pub fn expect_context<T: Clone + 'static>() -> T {
             panic!("{}", msg);
         }
     }
-}
-
-// --- Effect 副作用 API ---
-
-/// 创建一个副作用 (Effect)。
-/// 副作用是一个并在依赖发生变化时自动重新运行的闭包。
-/// `f` 闭包会被立即执行一次以进行依赖收集。
-pub fn create_effect<F>(f: F)
-where
-    F: Fn() + 'static,
-{
-    let id = RUNTIME.with(|rt| rt.register_effect(f));
-    run_effect(id);
-}
-
-// --- Scope 作用域 API ---
-
-/// 创建一个新的响应式作用域 (Score)。
-/// 作用域用于管理资源的生命周期（如 Effect、Signal 等）。
-/// 当作用域被销毁时，其下的所有资源也会被清理。
-pub fn create_scope<F>(f: F) -> NodeId
-where
-    F: FnOnce(),
-{
-    RUNTIME.with(|rt| {
-        let id = rt.register_node();
-
-        let prev_owner = *rt.current_owner.borrow();
-        *rt.current_owner.borrow_mut() = Some(id);
-        let _ = f();
-        *rt.current_owner.borrow_mut() = prev_owner;
-
-        id
-    })
-}
-
-/// 销毁指定的作用域或节点。
-/// 这会清理该节点下的所有资源和子节点。
-pub fn dispose(id: NodeId) {
-    RUNTIME.with(|rt| {
-        rt.dispose_node(id, true);
-    });
-}
-
-/// 注册一个在当前作用域被清理时执行的回调函数。
-/// 这对于释放非内存资源（如定时器、DOM 事件监听器等）非常有用。
-pub fn on_cleanup(f: impl FnOnce() + 'static) {
-    RUNTIME.with(|rt| {
-        if let Some(owner) = *rt.current_owner.borrow() {
-            let mut nodes = rt.nodes.borrow_mut();
-            if let Some(node) = nodes.get_mut(owner) {
-                node.cleanups.push(Box::new(f));
-            }
-        }
-    });
 }
 
 // --- Suspense 悬念/异步等待 API ---

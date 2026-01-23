@@ -818,6 +818,7 @@ dependencies = [
 name = "silex_core"
 version = "0.1.0"
 dependencies = [
+ "silex_reactivity",
  "slotmap",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -868,6 +869,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.114",
+]
+
+[[package]]
+name = "silex_reactivity"
+version = "0.1.0"
+dependencies = [
+ "slotmap",
 ]
 
 [[package]]

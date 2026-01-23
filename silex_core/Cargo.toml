@@ -8,3 +8,4 @@ wasm-bindgen = { workspace = true }
 web-sys = { workspace = true }
 slotmap = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
+silex_reactivity = { path = "../silex_reactivity" }
