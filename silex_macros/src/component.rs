@@ -191,7 +191,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         }
 
         impl #impl_generics ::silex::core::dom::view::View for #struct_name #ty_generics #where_clause {
-            fn mount(self, parent: &::web_sys::Node) {
+            fn mount(self, parent: &::silex::reexports::web_sys::Node) {
                 // Runtime checks and bindings
                 #(#mount_checks)*
 

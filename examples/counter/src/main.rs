@@ -1,4 +1,5 @@
 use silex::prelude::*;
+use silex::reexports::*;
 use silex_macros::{component, css, Route};
 
 #[component]

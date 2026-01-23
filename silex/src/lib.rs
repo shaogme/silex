@@ -6,6 +6,13 @@ pub mod router;
 pub use components::*;
 pub use silex_core::error::{SilexError, SilexResult};
 
+pub mod reexports {
+    pub use js_sys;
+    pub use wasm_bindgen;
+    pub use wasm_bindgen_futures;
+    pub use web_sys;
+}
+
 pub mod core {
     pub use silex_core::*;
 }

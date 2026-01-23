@@ -831,9 +831,6 @@ dependencies = [
  "gloo-timers",
  "silex",
  "silex_macros",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
 ]
 
 [[package]]
@@ -842,8 +839,6 @@ version = "0.1.0"
 dependencies = [
  "silex",
  "silex_macros",
- "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]
@@ -870,9 +865,6 @@ dependencies = [
  "gloo-timers",
  "silex",
  "silex_macros",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
 ]
 
 [[package]]
@@ -923,8 +915,6 @@ version = "0.1.0"
 dependencies = [
  "silex",
  "silex_macros",
- "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]

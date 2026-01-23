@@ -5,6 +5,4 @@ edition = "2024"
 
 [dependencies]
 silex = { path = "../../silex" }
-wasm-bindgen = "0.2"
-web-sys = "0.3"
 silex_macros = { path = "../../silex_macros" }
