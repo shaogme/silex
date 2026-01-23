@@ -217,8 +217,8 @@ fn main() -> () {
         let (count, set_count) = create_signal(0);
         
         // 注入全局 Context
-        provide_context(count).expect("provide count failed");
-        provide_context(set_count).expect("provide set_count failed");
+        provide_context(count);
+        provide_context(set_count);
 
         // 构建应用壳 (App Shell)
         let app = div((

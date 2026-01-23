@@ -60,10 +60,7 @@ where
             wasm_bindgen_futures::spawn_local(async move {
                 set_error.set(Some(e));
             });
-        })))
-        .unwrap_or_else(|e| {
-            silex_core::log::console_error(&format!("Error providing context: {}", e))
-        });
+        })));
 
         // Create wrapper div
         // We use "display: contents" so it doesn't affect layout if supported

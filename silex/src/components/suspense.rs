@@ -50,10 +50,7 @@ where
         // 包裹在作用域中以管理上下文和生命周期
         create_scope(move || {
             let ctx = SuspenseContext::new();
-            if let Err(e) = provide_context(ctx) {
-                silex_core::error::handle_error(e);
-                return;
-            }
+            provide_context(ctx);
 
             let count = ctx.count;
 

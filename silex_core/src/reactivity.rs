@@ -171,7 +171,7 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
 
 /// 提供一个上下文值给当前组件树及其子孙组件。
 /// 上下文基于类型 (`T`) 进行键控。
-pub fn provide_context<T: 'static>(value: T) -> SilexResult<()> {
+pub fn provide_context<T: 'static>(value: T) {
     RUNTIME.with(|rt| {
         if let Some(owner) = *rt.current_owner.borrow() {
             let mut nodes = rt.nodes.borrow_mut();
@@ -183,16 +183,11 @@ pub fn provide_context<T: 'static>(value: T) -> SilexResult<()> {
                 if let Some(ctx) = &mut node.context {
                     ctx.insert(TypeId::of::<T>(), Box::new(value));
                 }
-                Ok(())
             } else {
-                Err(SilexError::Reactivity(
-                    "provide_context owner not found".into(),
-                ))
+                panic!("provide_context: owner not found (internal error)");
             }
         } else {
-            Err(SilexError::Reactivity(
-                "provide_context 被调用时没有 owner 作用域".into(),
-            ))
+            panic!("provide_context: called without an owner scope (make sure you are inside a component or mount closure)");
         }
     })
 }

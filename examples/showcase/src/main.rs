@@ -511,7 +511,7 @@ fn main() {
     // Mount App
     mount_to_body(move || {
         // Provide Global Store to the entire app tree
-        provide_context(store).unwrap();
+        provide_context(store);
 
         div![
             // Global Layout Shell
