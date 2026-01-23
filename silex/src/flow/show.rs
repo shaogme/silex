@@ -10,7 +10,7 @@ use web_sys::Node;
 /// ```rust
 /// use silex::prelude::*;
 ///
-/// let (condition, set_condition) = create_signal(true);
+/// let (condition, set_condition) = signal(true);
 /// let view = "Content";
 /// let fallback_view = "Fallback";
 ///

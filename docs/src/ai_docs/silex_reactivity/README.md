@@ -79,8 +79,8 @@
 
 ### Signal API
 
-#### `create_signal<T>`
-*   **Signature**: `pub fn create_signal<T: 'static>(value: T) -> NodeId`
+#### `signal<T>`
+*   **Signature**: `pub fn signal<T: 'static>(value: T) -> NodeId`
 *   **Semantics**: 注册一个新的 Signal 节点。
 *   **Return**: 节点的 `id`。
 
@@ -103,13 +103,13 @@
 
 ### Effect / Computation API
 
-#### `create_effect`
-*   **Signature**: `pub fn create_effect<F: Fn() + 'static>(f: F)`
+#### `effect`
+*   **Signature**: `pub fn effect<F: Fn() + 'static>(f: F)`
 *   **Semantics**: 注册并**立即执行**一次副作用。
 *   **Auto-Cleanup**: 每次执行前会自动清理旧的依赖和子节点。
 
-#### `create_memo<T>`
-*   **Signature**: `pub fn create_memo<T, F>(f: F) -> NodeId where T: PartialEq...`
+#### `memo<T>`
+*   **Signature**: `pub fn memo<T, F>(f: F) -> NodeId where T: PartialEq...`
 *   **Semantics**:
     1.  创建一个计算节点。
     2.  内部包含一个 `Signal` (存储计算结果) 和一个 `Effect` (监听依赖更新信号)。

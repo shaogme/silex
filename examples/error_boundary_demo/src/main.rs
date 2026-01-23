@@ -81,7 +81,7 @@ fn PanicToggleComponent() -> impl View {
      move || {
          if show_panic.get() {
              // We wrap the panicking component in a way that its construction is delayed until this closure runs
-             // Because ErrorBoundary wraps this closure in create_effect and catch_unwind, it captures this panic.
+             // Because ErrorBoundary wraps this closure in effect and catch_unwind, it captures this panic.
              // 无参数组件直接调用
              Some(ImmediatePanic())
          } else {

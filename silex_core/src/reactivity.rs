@@ -354,7 +354,7 @@ impl<T, E> Clone for Resource<T, E> {
 impl<T, E> Copy for Resource<T, E> {}
 
 /// `ResourceFetcher` trait 抽象了数据获取逻辑。
-/// 这允许 create_resource 接受普通的闭包，或者自定义的实现了此 trait 的结构体（用于更复杂的类型推导场景）。
+/// 这允许 resource 接受普通的闭包，或者自定义的实现了此 trait 的结构体（用于更复杂的类型推导场景）。
 pub trait ResourceFetcher<S> {
     type Data;
     type Error;

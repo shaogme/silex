@@ -10,7 +10,7 @@ use web_sys::Node;
 /// # Example
 /// ```rust
 /// use silex::prelude::*;
-/// let (count, set_count) = create_signal(0);
+/// let (count, set_count) = signal(0);
 ///
 /// Switch::new(count, || "Default View")
 ///     .case(0, || "Zero")

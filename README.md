@@ -47,10 +47,10 @@ use silex::prelude::*;
 #[component]
 fn Counter() -> impl View {
     // 创建响应式信号
-    let (count, set_count) = create_signal(0);
+    let (count, set_count) = signal(0);
     
     // 派生状态 (Memo)
-    let double_count = create_memo(move || count.get() * 2);
+    let double_count = memo(move || count.get() * 2);
 
     div![
         h1("Silex Counter Demo"),
