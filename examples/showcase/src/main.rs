@@ -131,8 +131,81 @@ mod flow_control {
     }
 
     #[component]
+    pub fn SwitchDemo() -> impl View {
+        let (tab, set_tab) = create_signal(0);
+
+        div![
+            h3("Switch (Match) Demo"),
+            div![
+                button("Tab 1").on_click(set_tab.setter(0)),
+                button("Tab 2").on_click(set_tab.setter(1)),
+                button("Tab 3").on_click(set_tab.setter(2)),
+            ]
+            .style("display: flex; gap: 10px; margin-bottom: 10px;"),
+            
+            Switch::new(tab, || div("Fallback (Should not happen)"))
+                .case(0, || div("Content for Tab 1").style("padding: 10px; background: #eee;"))
+                .case(1, || div("Content for Tab 2").style("padding: 10px; background: #ddd;"))
+                .case(2, || div("Content for Tab 3").style("padding: 10px; background: #ccc;"))
+        ]
+    }
+
+    #[component]
+    pub fn IndexDemo() -> impl View {
+        let (items, set_items) = create_signal(vec!["Item A", "Item B", "Item C"]);
+
+        div![
+            h3("Index For Loop Demo"),
+            p("Optimized for list updates by index."),
+            Index::new(items, |item, idx| {
+                div![
+                    strong(format!("{}: ", idx)),
+                    // item is a ReadSignal<String> here
+                    item
+                ]
+            }),
+            button("Append Item").on_click(move |_| {
+                set_items.update(|list| list.push("New Item"));
+            })
+            .style("margin-top: 10px;")
+        ]
+    }
+
+    #[component]
+    pub fn PortalDemo() -> impl View {
+        let (show_modal, set_show_modal) = create_signal(false);
+
+        div![
+            h3("Portal Demo"),
+            button("Toggle Modal").on_click(set_show_modal.updater(|v| *v = !*v)),
+            
+            Show::new(show_modal, move || {
+                Portal::new(
+                    div![
+                        div![
+                            h4("I am a Modal!"),
+                            p("I am rendered via Portal directly into the body, but I share context!"),
+                            button("Close").on_click(set_show_modal.setter(false))
+                        ]
+                        .style("background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); min-width: 300px;")
+                    ]
+                    .style("position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 9999;")
+                )
+            })
+        ]
+    }
+
+    #[component]
     pub fn FlowPage() -> impl View {
-        div![h2("Control Flow"), ListDemo(), ShowDemo(), DynamicDemo(),]
+        div![
+            h2("Control Flow"),
+            ListDemo(),
+            ShowDemo(),
+            DynamicDemo(),
+            SwitchDemo(),
+            IndexDemo(),
+            PortalDemo(),
+        ]
             .style("display: flex; flex-direction: column; gap: 20px;")
     }
 }

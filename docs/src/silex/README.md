@@ -108,6 +108,23 @@ Show::new(is_logged_in, || UserDashboard())
 is_logged_in.when(|| UserDashboard())
 ```
 
+### Switch (多路分支)
+类似于 `match` 语句，根据值选择渲染的内容。
+```rust
+let (tab, set_tab) = create_signal(0);
+
+Switch::new(tab, || div("Fallback"))
+    .case(0, || TabA())
+    .case(1, || TabB())
+```
+
+### Portal (传送门)
+将组件渲染到 DOM 树的其他位置（如 `body`），常用于模态框（Modals）、Tooltips。
+```rust
+Portal::new(div("I am a modal"))
+    .mount_to(document.body().unwrap()) // 默认也是 body
+```
+
 ### For (列表渲染)
 高效渲染列表数据，支持 Keyed Diff 算法。
 
@@ -122,6 +139,18 @@ For::new(
     |u| u.id,        // Key 提取函数 (必须唯一且稳定)
     |u| div(u.name)  // 渲染函数
 )
+```
+
+### Index (索引列表渲染)
+当列表项没有唯一 ID，或者列表项是基础类型（如 `Vec<String>`），或者列表长度固定仅内容变化时，使用 `Index` 比 `For` 更高效。它**复用** DOM 节点，仅更新 Signal。
+
+```rust
+let (logs, set_logs) = create_signal(vec!["Log 1", "Log 2"]);
+
+Index::new(logs, |item, index| {
+    // item 是 ReadSignal<T>，内容变化时直接更新文本节点
+    div((index, ": ", item))
+})
 ```
 
 ## 3. 错误处理 (Warning & Error)

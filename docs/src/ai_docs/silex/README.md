@@ -80,6 +80,35 @@
 *   **Logic**: 任意 `Fn() -> View` 的动态挂载点。
 *   **Implementation**: 使用 Marker Comments (`dyn-start`, `dyn-end`) 定位，每次 Effect 运行时清空区间并挂载新 View。
 
+### Switch (silex::flow::Switch)
+`silex/src/flow/switch.rs`
+*   **Logic**: 多路分支选择 (`switch-case`).
+*   **Mechanism**: 
+    1. 接受一个 `Accessor<T>` 和一系列 `(value, view_fn)` case。
+    2. 当 Accessor 值变化时，查找匹配的 case。
+    3. 如果匹配索引改变，清理旧 View 并挂载新 View。
+    4. 具有 `fallback` 机制。
+
+### Index (silex::flow::Index)
+`silex/src/flow/index.rs`
+*   **Logic**: 基于索引的列表渲染。
+*   **Difference with For**: `For` 基于 Key 移动 DOM；`Index` 原地复用 DOM，只更新数据 Signal。
+*   **Mechanism**:
+    1. 比较新旧列表长度。
+    2. 对公共长度部分：更新对应 Item 的 Signal 值 (不触碰 DOM)。
+    3. 对新增部分：创建新 Row (Signal + View) 并挂载。
+    4. 对移除部分：销毁 Scope 并移除 DOM。
+*   **Use Case**: 基础类型列表，或者无 ID 列表，或者列表项内容频繁变动但顺序/数量较稳定的场景。
+
+### Portal (silex::components::Portal)
+`silex/src/components/portal.rs`
+*   **Logic**: 跨 DOM 层级渲染。
+*   **Mechanism**:
+    1. 在目标位置 (默认 body) 创建一个容器 (`div` 或 Fragment)。
+    2. 将 `child` 挂载到该容器中。
+    3. **Context Preservation**: 由于是在当前 `mount` 方法中执行挂载逻辑，Reactive Context (Signals, Providers) 会自动保留并传递给子组件。
+    4. **Cleanup**: 注册 `on_cleanup` 回调，在当前组件销毁时从目标位置移除容器。
+
 ## 4. UI 组件 (silex::components)
 
 ### ErrorBoundary
