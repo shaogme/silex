@@ -855,7 +855,6 @@ dependencies = [
 name = "silex_html"
 version = "0.1.0"
 dependencies = [
- "silex_core",
  "silex_dom",
 ]
 

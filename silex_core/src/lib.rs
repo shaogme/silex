@@ -1,7 +1,9 @@
+pub mod callback;
 pub mod error;
 pub mod log;
 pub mod reactivity;
 
+pub use callback::Callback;
 pub use error::{SilexError, SilexResult};
 
 /// `rx!` 宏：简化创建响应式闭包的语法。

@@ -1,10 +1,8 @@
 pub mod attribute;
-pub mod callback;
 pub mod element;
 pub mod view;
 
 pub use attribute::*;
-pub use callback::*;
 pub use element::*;
 pub use view::*;
 
