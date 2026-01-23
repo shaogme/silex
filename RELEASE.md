@@ -60,10 +60,10 @@ cargo test --workspace
     该工具会自动计算拓扑顺序，并递归发布所有成员。
     ```bash
     # 预览
-    cargo release publish --workspace --dry-run --allow-branch HEAD
+    cargo release publish --workspace
 
     # 执行
-    cargo release publish --workspace --execute --allow-branch HEAD
+    cargo release publish --workspace --execute
     ```
 
 #### 方法 B：手动发布 (不推荐)

@@ -2,6 +2,7 @@
 name = "store_demo"
 version.workspace = true
 edition.workspace = true
+publish = false
 
 [dependencies]
 silex.workspace = true

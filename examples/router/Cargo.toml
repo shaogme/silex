@@ -2,6 +2,7 @@
 name = "router_example"
 version.workspace = true
 edition.workspace = true
+publish = false
 
 [dependencies]
 silex.workspace = true
