@@ -41,6 +41,8 @@ pub struct RouterContext {
 #[derive(Clone)]
 pub struct Navigator {
     pub(crate) base_path: String,
+    pub(crate) path: ReadSignal<String>,
+    pub(crate) search: ReadSignal<String>,
     pub(crate) set_path: WriteSignal<String>,
     pub(crate) set_search: WriteSignal<String>,
 }
@@ -91,9 +93,17 @@ impl Navigator {
 
         let search = location.search().unwrap_or_default();
 
-        // 更新信号
-        self.set_path.set(logical_path.to_string());
-        self.set_search.set(search);
+        // 更新信号 (带去重，避免不必要的副作用)
+        // 核心修复：Silex 的 WriteSignal.set 默认不检查 Equality，
+        // 导致只要调用 set 就会触发 Router 重渲染，Input 失去焦点。
+        // 这里我们手动检查相等性。
+        if self.path.get_untracked() != logical_path {
+            self.set_path.set(logical_path.to_string());
+        }
+
+        if self.search.get_untracked() != search {
+            self.set_search.set(search);
+        }
     }
 
     /// 导航到指定路径
@@ -121,6 +131,8 @@ pub(crate) struct RouterContextProps {
 pub(crate) fn provide_router_context(props: RouterContextProps) {
     let navigator = Navigator {
         base_path: props.base_path.clone(),
+        path: props.path,
+        search: props.search,
         set_path: props.set_path,
         set_search: props.set_search,
     };
@@ -186,4 +198,81 @@ pub fn use_query_map() -> ReadSignal<HashMap<String, String>> {
         }
         map
     })
+}
+
+/// Hook: 双向绑定 Signal 和 URL 查询参数
+///
+/// 当 Signal 变化时，自动更新 URL 查询参数。
+/// 当 URL 查询参数变化时，自动更新 Signal。
+///
+/// # 参数
+/// * `key` - 查询参数的键名
+///
+/// # 返回
+/// 一个 RwSignal，读写它会自动同步到 URL
+pub fn use_query_signal(key: impl Into<String>) -> silex_core::reactivity::RwSignal<String> {
+    use silex_core::reactivity::{create_effect, create_rw_signal};
+
+    let key = key.into();
+    let query_map = use_query_map();
+    let navigator = use_navigate();
+
+    // 初始化：从 URL 获取初始值，如果是空则为空字符串
+    let initial_value = query_map
+        .get_untracked()
+        .get(&key)
+        .cloned()
+        .unwrap_or_default();
+
+    let signal = create_rw_signal(initial_value);
+
+    // 监听 URL 变化 -> 更新 Signal
+    // 我们需要避免回环，所以只有当值真正改变时才 set
+    create_effect({
+        let key = key.clone();
+        let signal = signal;
+        move || {
+            let map = query_map.get();
+            let url_val = map.get(&key).map(|s| s.as_str()).unwrap_or("");
+            if signal.get_untracked() != url_val {
+                signal.set(url_val.to_string());
+            }
+        }
+    });
+
+    // 监听 Signal 变化 -> 更新 URL
+    create_effect(move || {
+        let val = signal.get();
+        let current_map = query_map.get_untracked();
+        let current_url_val = current_map.get(&key).map(|s| s.as_str()).unwrap_or("");
+
+        // 只有当 Signal 的值与 URL 不一致时，才推入新历史记录
+        if val != current_url_val {
+            let window = web_sys::window().unwrap();
+            let location = window.location();
+            let pathname = location.pathname().unwrap_or_else(|_| "/".into());
+            let search = location.search().unwrap_or_default(); // 包含 '?'
+
+            // 使用 URLSearchParams API 会更稳健，但为了减少依赖，我们手动处理或使用 web_sys
+            // 这里我们使用 web_sys::UrlSearchParams
+            if let Ok(params) = web_sys::UrlSearchParams::new_with_str(&search) {
+                if val.is_empty() {
+                    params.delete(&key);
+                } else {
+                    params.set(&key, &val);
+                }
+
+                let new_search = params.to_string().as_string().unwrap_or_default();
+                let new_url = if new_search.is_empty() {
+                    pathname
+                } else {
+                    format!("{}?{}", pathname, new_search)
+                };
+
+                navigator.push(&new_url);
+            }
+        }
+    });
+
+    signal
 }

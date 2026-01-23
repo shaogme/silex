@@ -35,45 +35,29 @@ fn Home() -> impl View {
 
 #[component]
 fn SearchPage() -> impl View {
-    // 测试查询参数 hooks
-    let query = use_query_map();
-    let navigator = use_navigate();
-    let (input_val, set_input_val) = create_signal(String::new());
-
-    // 当 URL 变化时，同步 input 的值
-    create_effect(move || {
-        if let Some(q) = query.get().get("q") {
-            set_input_val.set(q.clone());
-        }
-    });
-
-    let on_search = move |_| {
-        let val = input_val.get();
-        if !val.is_empty() {
-            // 编程式导航：推入带查询参数的 URL
-            navigator.push(&format!("/search?q={}", val));
-        } else {
-            navigator.push("/search");
-        }
-    };
+    // 测试查询参数 hooks：使用 use_query_signal 实现双向绑定
+    // 只要改变 search_term，URL 就会更新；URL 变了，search_term 也会更新
+    let search_term = use_query_signal("q");
+    let display_term = search_term.clone(); // 用于展示
 
     Card().child(div((
         h2("🔍 Search Query Test"),
+        p("Type in the input below. The URL query parameter 'q' will update automatically!"),
         div((
             input()
                 .type_("text")
                 .placeholder("Type search term...")
-                .value(input_val)
-                .on_input(move |v| set_input_val.set(v))
+                .bind_value(search_term) // 双向绑定到 RwSignal
                 .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px; flex: 1;"),
-            button("Search")
-                .on_click(on_search)
-                .style("padding: 8px 16px; background: #2196f3; color: white; border: none; border-radius: 4px; cursor: pointer;"),
+            button("Clear")
+                .on_click(move |_| search_term.set(String::new()))
+                .style("padding: 8px 16px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer;"),
         )).style("display: flex; gap: 10px; margin-bottom: 20px;"),
         div((
             strong("Current Query Parameter (q): "),
             span(move || {
-                query.get().get("q").cloned().unwrap_or_else(|| "None".to_string())
+                let v = display_term.get();
+                if v.is_empty() { "None".to_string() } else { v }
             }).style("color: #e91e63; font-family: monospace;")
         ))
     )))

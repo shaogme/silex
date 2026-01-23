@@ -230,6 +230,33 @@ mod advanced {
             .style("display: flex; gap: 10px;"),
         ]
     }
+
+    #[component]
+    pub fn QueryDemo() -> impl View {
+        let val = use_query_signal("demo_val");
+
+        div![
+            h3("Query Signal Demo"),
+            p(
+                "This input is synced with the URL query parameter 'demo_val' using `use_query_signal`."
+            ),
+            div![
+                input()
+                    .bind_value(val) // Automatic two-way binding
+                    .placeholder("Type here...")
+                    .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px;"),
+                button("Reset")
+                    .on_click(move |_| val.set(String::new()))
+                    .style("padding: 8px 16px; cursor: pointer;")
+            ]
+            .style("display: flex; gap: 10px; margin: 10px 0; align-items: center;"),
+            p![
+                strong("Current Value: "),
+                val.clone() // Signals implement Display
+            ]
+            .style("background: #f5f5f5; padding: 10px; border-radius: 4px;")
+        ]
+    }
 }
 
 // --- Routing Definition ---
@@ -247,6 +274,8 @@ enum AdvancedRoute {
     Css,
     #[route("/store", view = advanced::StoreDemoComponent)]
     Store,
+    #[route("/query", view = advanced::QueryDemoComponent)]
+    Query,
     #[route("/*", view = NotFoundPageComponent)]
     NotFound,
 }
@@ -315,6 +344,11 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
                 route: AdvancedRoute::Store,
             })
             .text("Store Demo")
+            .class("tab"),
+            Link(AppRoute::Advanced {
+                route: AdvancedRoute::Query,
+            })
+            .text("Query Param")
             .class("tab"),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 20px;"),
