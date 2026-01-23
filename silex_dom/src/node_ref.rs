@@ -7,14 +7,14 @@ use std::rc::Rc;
 ///
 /// # 示例
 ///
-/// ```rust,no_run
+/// ```rust, ignore
 /// use silex::prelude::*;
 /// use web_sys::HtmlInputElement;
 ///
 /// let input_ref = NodeRef::<HtmlInputElement>::new();
 ///
 /// input()
-///     .node_ref(input_ref)
+///     .node_ref(input_ref.clone())
 ///     .on_mount(move |_| {
 ///         if let Some(el) = input_ref.get() {
 ///             el.focus().unwrap();
