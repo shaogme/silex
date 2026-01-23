@@ -1,6 +1,6 @@
 use crate::{SilexError, SilexResult};
+use silex_core::reactivity::{Accessor, NodeId, create_scope, dispose, effect};
 use silex_dom::View;
-use silex_core::reactivity::{Accessor, NodeId, create_effect, create_scope, dispose};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -128,7 +128,7 @@ where
         // Store: (Nodes, ScopeId)
         let active_rows = Rc::new(RefCell::new(HashMap::<Key, (Vec<Node>, NodeId)>::new()));
 
-        create_effect(move || {
+        effect(move || {
             let mut rows_map = active_rows.borrow_mut();
 
             // Use the trait to convert whatever Items is into SilexResult<Iterator>

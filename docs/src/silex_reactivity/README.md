@@ -53,7 +53,7 @@ pub struct Runtime {
 
 ```rust
 // 伪代码流程
-create_effect(|| {
+effect(|| {
     // try_get_signal 内部调用 track_dependency
     let value = try_get_signal(id).unwrap(); 
     println!("Value: {}", value);

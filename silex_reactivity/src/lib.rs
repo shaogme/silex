@@ -289,7 +289,7 @@ fn run_effect_internal(effect_id: NodeId) {
 
 // --- Public High-Level API ---
 
-pub fn create_signal<T: 'static>(value: T) -> NodeId {
+pub fn signal<T: 'static>(value: T) -> NodeId {
     RUNTIME.with(|rt| rt.register_signal_internal(value))
 }
 
@@ -344,7 +344,7 @@ pub fn update_signal<T: 'static>(id: NodeId, f: impl FnOnce(&mut T)) {
     })
 }
 
-pub fn create_effect<F: Fn() + 'static>(f: F) {
+pub fn effect<F: Fn() + 'static>(f: F) {
     let id = RUNTIME.with(|rt| rt.register_effect_internal(f));
     run_effect_internal(id);
 }
@@ -389,7 +389,7 @@ pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
 }
 
 // Provide generic memo creation
-pub fn create_memo<T, F>(f: F) -> NodeId
+pub fn memo<T, F>(f: F) -> NodeId
 where
     T: Clone + PartialEq + 'static,
     F: Fn() -> T + 'static,

@@ -1,5 +1,5 @@
 use silex_core::error::{ErrorContext, SilexError};
-use silex_core::reactivity::{create_effect, create_signal, provide_context};
+use silex_core::reactivity::{effect, provide_context, signal};
 use silex_dom::view::View;
 use silex_html::div;
 use std::rc::Rc;
@@ -52,7 +52,7 @@ where
     V2: View + 'static,
 {
     fn mount(self, parent: &Node) {
-        let (error, set_error) = create_signal::<Option<SilexError>>(None);
+        let (error, set_error) = signal::<Option<SilexError>>(None);
 
         provide_context(ErrorContext(Rc::new(move |e| {
             silex_core::log::console_error(&format!("ErrorBoundary caught error: {}", e));
@@ -71,7 +71,7 @@ where
 
         let props = self.props;
 
-        create_effect(move || {
+        effect(move || {
             // Clear previous content
             wrapper_dom.set_inner_html("");
 

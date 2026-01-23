@@ -37,8 +37,8 @@ mod basics {
 
     #[component]
     pub fn Counter() -> impl View {
-        let (count, set_count) = create_signal(0);
-        let double_count = create_memo(rx!(count.get() * 2)); // rx!(count.get() * 2) is move || count.get() * 2
+        let (count, set_count) = signal(0);
+        let double_count = memo(rx!(count.get() * 2)); // rx!(count.get() * 2) is move || count.get() * 2
 
         div![
             h3("Interactive Counter"),
@@ -78,7 +78,7 @@ mod flow_control {
 
     #[component]
     pub fn ListDemo() -> impl View {
-        let (list, set_list) = create_signal(vec!["Apple", "Banana", "Cherry"]);
+        let (list, set_list) = signal(vec!["Apple", "Banana", "Cherry"]);
 
         div![
             h3("List Rendering with Signal Ergonomics"),
@@ -90,7 +90,7 @@ mod flow_control {
 
     #[component]
     pub fn ShowDemo() -> impl View {
-        let (visible, set_visible) = create_signal(true);
+        let (visible, set_visible) = signal(true);
 
         div![
             h3("Conditional Rendering with Show"),
@@ -105,7 +105,7 @@ mod flow_control {
 
     #[component]
     pub fn DynamicDemo() -> impl View {
-        let (mode, set_mode) = create_signal("A");
+        let (mode, set_mode) = signal("A");
 
         div![
             h3("Dynamic Component Switching"),
@@ -132,7 +132,7 @@ mod flow_control {
 
     #[component]
     pub fn SwitchDemo() -> impl View {
-        let (tab, set_tab) = create_signal(0);
+        let (tab, set_tab) = signal(0);
 
         div![
             h3("Switch (Match) Demo"),
@@ -152,7 +152,7 @@ mod flow_control {
 
     #[component]
     pub fn IndexDemo() -> impl View {
-        let (items, set_items) = create_signal(vec!["Item A", "Item B", "Item C"]);
+        let (items, set_items) = signal(vec!["Item A", "Item B", "Item C"]);
 
         div![
             h3("Index For Loop Demo"),
@@ -173,7 +173,7 @@ mod flow_control {
 
     #[component]
     pub fn PortalDemo() -> impl View {
-        let (show_modal, set_show_modal) = create_signal(false);
+        let (show_modal, set_show_modal) = signal(false);
 
         div![
             h3("Portal Demo"),
@@ -355,7 +355,7 @@ mod styles {
 
     #[component]
     pub fn MacroDemo() -> impl View {
-        let (count, set_count) = create_signal(0);
+        let (count, set_count) = signal(0);
 
         // Note how clean the children list is: plain comma-separated values
         div![
@@ -377,7 +377,7 @@ mod styles {
 
     #[component]
     pub fn HybridDemo() -> impl View {
-        let (is_active, set_active) = create_signal(false);
+        let (is_active, set_active) = signal(false);
 
         div![
             h3("Hybrid Style (Recommended)"), // Function call for single child is fine too!

@@ -56,7 +56,7 @@ fn App() -> impl View {
 
 #[component]
 fn RecoverableComponent() -> impl View {
-    let (should_error, set_should_error) = create_signal(false);
+    let (should_error, set_should_error) = signal(false);
     
     move || {
         if should_error.get() {
@@ -76,7 +76,7 @@ fn RecoverableComponent() -> impl View {
 // A component that conditionally renders a child that panics immediately during construction
 #[component]
 fn PanicToggleComponent() -> impl View {
-     let (show_panic, _set_show_panic) = create_signal(false);
+     let (show_panic, _set_show_panic) = signal(false);
      
      move || {
          if show_panic.get() {
@@ -92,7 +92,7 @@ fn PanicToggleComponent() -> impl View {
 
 #[component]
 fn ImmediatePanic() -> impl View {
-    let (active, set_active) = create_signal(false);
+    let (active, set_active) = signal(false);
     
     div((
          p("Ready to panic?"),

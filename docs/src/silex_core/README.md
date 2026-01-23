@@ -12,13 +12,13 @@
     *   `ReadSignal<T>`: 只读信号句柄。
     *   `WriteSignal<T>`: 可写信号句柄。
     *   `RwSignal<T>`: 读写一体的信号句柄，常用于组件 `Props`。
-    *   使用 `create_signal` 创建，利用 `PhantomData<T>` 保留类型信息，并在运行时通过 `downcast` 安全转换 `Any` 数据。
+    *   使用 `signal` 创建，利用 `PhantomData<T>` 保留类型信息，并在运行时通过 `downcast` 安全转换 `Any` 数据。
 
 *   **Effect (副作用)**:
-    *   `create_effect`: 创建自动追踪依赖的副作用。
+    *   `effect`: 创建自动追踪依赖的副作用。
 
 *   **Resource (异步资源)**:
-    *   `create_resource`: 用于处理异步数据加载（如 API 请求）。
+    *   `resource`: 用于处理异步数据加载（如 API 请求）。
     *   集成 `Suspense` 支持，自动管理 `loading`、`data` 和 `error` 状态。
     *   支持 `refetch` 手动刷新。
 
@@ -51,11 +51,11 @@
 推荐使用 `(ReadSignal, WriteSignal)` 的元组解构形式创建信号，以明确读写权限。
 
 ```rust
-let (count, set_count) = create_signal(0);
+let (count, set_count) = signal(0);
 ```
 
 ### 避免 `Copy` 陷阱
 Silex 的信号句柄 (`ReadSignal`, `RwSignal`) 都实现了 `Copy`。这意味着它们只是指向底层数据的“指针”，复制它们非常廉价。
 
 ### 异步数据获取
-使用 `create_resource` 而不是在 `create_effect` 中手动 spawn 异步任务，以便更好地与 `Suspense` 集成和处理竞态条件。
+使用 `resource` 而不是在 `effect` 中手动 spawn 异步任务，以便更好地与 `Suspense` 集成和处理竞态条件。

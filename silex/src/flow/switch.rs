@@ -1,5 +1,5 @@
 use crate::SilexError;
-use silex_core::reactivity::{Accessor, create_effect};
+use silex_core::reactivity::{Accessor, effect};
 use silex_dom::View;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -73,7 +73,7 @@ where
 
         let prev_index = Rc::new(RefCell::new(None::<isize>));
 
-        create_effect(move || {
+        effect(move || {
             let val = source.value();
             let mut found_idx = -1;
             let mut view_fn = fallback.clone();

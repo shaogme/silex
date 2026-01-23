@@ -5,7 +5,7 @@ pub use context::*;
 pub use link::*;
 
 use crate::router::context::{RouterContextProps, provide_router_context};
-use silex_core::reactivity::{create_effect, create_signal, on_cleanup};
+use silex_core::reactivity::{effect, on_cleanup, signal};
 use silex_dom::view::{AnyView, IntoAnyView, View};
 use silex_html::div;
 use std::rc::Rc;
@@ -168,8 +168,8 @@ impl View for Router {
             };
 
         // 2. 初始化信号
-        let (path, set_path) = create_signal(initial_path);
-        let (search, set_search) = create_signal(initial_search);
+        let (path, set_path) = signal(initial_path);
+        let (search, set_search) = signal(initial_search);
 
         // 3. 提供 Context
         provide_router_context(RouterContextProps {
@@ -235,7 +235,7 @@ impl View for Router {
             let parent = container_node.clone();
             let factory = child_factory.clone();
 
-            create_effect(move || {
+            effect(move || {
                 // 清空容器，准备渲染新的视图
                 parent.set_text_content(Some(""));
 

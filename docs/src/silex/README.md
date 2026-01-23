@@ -98,7 +98,7 @@ Silex 提供了一组组件来处理常见的逻辑控制，这比手动编写 `
 
 ### Show (条件渲染)
 ```rust
-let (is_logged_in, set_log) = create_signal(false);
+let (is_logged_in, set_log) = signal(false);
 
 Show::new(is_logged_in, || UserDashboard())
     .fallback(|| LoginButton())
@@ -111,7 +111,7 @@ is_logged_in.when(|| UserDashboard())
 ### Switch (多路分支)
 类似于 `match` 语句，根据值选择渲染的内容。
 ```rust
-let (tab, set_tab) = create_signal(0);
+let (tab, set_tab) = signal(0);
 
 Switch::new(tab, || div("Fallback"))
     .case(0, || TabA())
@@ -129,7 +129,7 @@ Portal::new(div("I am a modal"))
 高效渲染列表数据，支持 Keyed Diff 算法。
 
 ```rust
-let (users, set_users) = create_signal(vec![
+let (users, set_users) = signal(vec![
     User { id: 1, name: "Alice" },
     User { id: 2, name: "Bob" },
 ]);
@@ -145,7 +145,7 @@ For::new(
 当列表项没有唯一 ID，或者列表项是基础类型（如 `Vec<String>`），或者列表长度固定仅内容变化时，使用 `Index` 比 `For` 更高效。它**复用** DOM 节点，仅更新 Signal。
 
 ```rust
-let (logs, set_logs) = create_signal(vec!["Log 1", "Log 2"]);
+let (logs, set_logs) = signal(vec!["Log 1", "Log 2"]);
 
 Index::new(logs, |item, index| {
     // item 是 ReadSignal<T>，内容变化时直接更新文本节点

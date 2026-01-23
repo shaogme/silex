@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 pub use silex_reactivity::{
-    create_effect, create_scope, dispose, on_cleanup, provide_context, use_context,
+    create_scope, dispose, effect, on_cleanup, provide_context, use_context,
 };
 
 use crate::{SilexError, SilexResult};
@@ -32,6 +32,12 @@ impl<T: Clone + 'static> Accessor<T> for ReadSignal<T> {
 }
 
 impl<T: Clone + 'static> Accessor<T> for RwSignal<T> {
+    fn value(&self) -> T {
+        self.get()
+    }
+}
+
+impl<T: Clone + 'static> Accessor<T> for Memo<T> {
     fn value(&self) -> T {
         self.get()
     }
@@ -75,8 +81,8 @@ impl<T> Clone for WriteSignal<T> {
 }
 impl<T> Copy for WriteSignal<T> {}
 
-pub fn create_signal<T: 'static>(value: T) -> (ReadSignal<T>, WriteSignal<T>) {
-    let id = silex_reactivity::create_signal(value);
+pub fn signal<T: 'static>(value: T) -> (ReadSignal<T>, WriteSignal<T>) {
+    let id = silex_reactivity::signal(value);
     (
         ReadSignal {
             id,
@@ -93,15 +99,52 @@ pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
     silex_reactivity::untrack(f)
 }
 
-pub fn create_memo<T, F>(f: F) -> ReadSignal<T>
+pub struct Memo<T> {
+    pub(crate) id: NodeId,
+    pub(crate) marker: PhantomData<T>,
+}
+
+impl<T> std::fmt::Debug for Memo<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Memo({:?})", self.id)
+    }
+}
+
+impl<T> Clone for Memo<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T> Copy for Memo<T> {}
+
+pub fn memo<T, F>(f: F) -> Memo<T>
 where
     T: Clone + PartialEq + 'static,
     F: Fn() -> T + 'static,
 {
-    let id = silex_reactivity::create_memo(f);
-    ReadSignal {
+    let id = silex_reactivity::memo(f);
+    Memo {
         id,
         marker: PhantomData,
+    }
+}
+
+impl<T: 'static + Clone> Memo<T> {
+    pub fn get(&self) -> T {
+        self.try_get().expect("Memo: value has been dropped")
+    }
+
+    pub fn try_get(&self) -> Option<T> {
+        silex_reactivity::try_get_signal(self.id)
+    }
+
+    pub fn get_untracked(&self) -> T {
+        self.try_get_untracked()
+            .expect("Memo: value has been dropped")
+    }
+
+    pub fn try_get_untracked(&self) -> Option<T> {
+        silex_reactivity::try_get_signal_untracked(self.id)
     }
 }
 
@@ -123,72 +166,72 @@ impl<T: 'static + Clone> ReadSignal<T> {
         silex_reactivity::try_get_signal_untracked(self.id)
     }
 
-    pub fn map<U, F>(self, f: F) -> ReadSignal<U>
+    pub fn map<U, F>(self, f: F) -> Memo<U>
     where
         F: Fn(T) -> U + 'static,
         U: Clone + PartialEq + 'static,
     {
-        create_memo(move || f(self.get()))
+        memo(move || f(self.get()))
     }
 }
 
 // --- Fluent API Extensions for ReadSignal ---
 
 impl<T: Clone + 'static + PartialEq> ReadSignal<T> {
-    pub fn eq<O>(&self, other: O) -> ReadSignal<bool>
+    pub fn eq<O>(&self, other: O) -> Memo<bool>
     where
         O: Into<T> + Clone + 'static,
     {
         let other = other.into();
         let this = *self;
-        create_memo(move || this.get() == other)
+        memo(move || this.get() == other)
     }
 
-    pub fn ne<O>(&self, other: O) -> ReadSignal<bool>
+    pub fn ne<O>(&self, other: O) -> Memo<bool>
     where
         O: Into<T> + Clone + 'static,
     {
         let other = other.into();
         let this = *self;
-        create_memo(move || this.get() != other)
+        memo(move || this.get() != other)
     }
 }
 
 impl<T: Clone + 'static + PartialOrd> ReadSignal<T> {
-    pub fn gt<O>(&self, other: O) -> ReadSignal<bool>
+    pub fn gt<O>(&self, other: O) -> Memo<bool>
     where
         O: Into<T> + Clone + 'static,
     {
         let other = other.into();
         let this = *self;
-        create_memo(move || this.get() > other)
+        memo(move || this.get() > other)
     }
 
-    pub fn lt<O>(&self, other: O) -> ReadSignal<bool>
+    pub fn lt<O>(&self, other: O) -> Memo<bool>
     where
         O: Into<T> + Clone + 'static,
     {
         let other = other.into();
         let this = *self;
-        create_memo(move || this.get() < other)
+        memo(move || this.get() < other)
     }
 
-    pub fn ge<O>(&self, other: O) -> ReadSignal<bool>
+    pub fn ge<O>(&self, other: O) -> Memo<bool>
     where
         O: Into<T> + Clone + 'static,
     {
         let other = other.into();
         let this = *self;
-        create_memo(move || this.get() >= other)
+        memo(move || this.get() >= other)
     }
 
-    pub fn le<O>(&self, other: O) -> ReadSignal<bool>
+    pub fn le<O>(&self, other: O) -> Memo<bool>
     where
         O: Into<T> + Clone + 'static,
     {
         let other = other.into();
         let this = *self;
-        create_memo(move || this.get() <= other)
+        memo(move || this.get() <= other)
     }
 }
 
@@ -204,14 +247,10 @@ impl<T> Clone for RwSignal<T> {
 }
 impl<T> Copy for RwSignal<T> {}
 
-pub fn create_rw_signal<T: 'static>(value: T) -> RwSignal<T> {
-    let (read, write) = create_signal(value);
-    RwSignal { read, write }
-}
-
 impl<T: Clone + 'static> RwSignal<T> {
     pub fn new(value: T) -> Self {
-        create_rw_signal(value)
+        let (read, write) = signal(value);
+        RwSignal { read, write }
     }
 
     pub fn get(&self) -> T {
@@ -246,7 +285,7 @@ impl<T: Clone + 'static> RwSignal<T> {
         self.write
     }
 
-    pub fn map<U, F>(self, f: F) -> ReadSignal<U>
+    pub fn map<U, F>(self, f: F) -> Memo<U>
     where
         F: Fn(T) -> U + 'static,
         U: Clone + PartialEq + 'static,
@@ -343,7 +382,7 @@ where
 /// # 参数
 /// * `source` - 一个闭包，返回用于获取数据的参数（如 ID 或 URL）。它是响应式的，当返回值变化时会自动重新获取数据。
 /// * `fetcher` - 数据获取器，可以是闭包 `|s| async { ... }` 或实现了 `ResourceFetcher` 的类型。
-pub fn create_resource<S, Fetcher>(
+pub fn resource<S, Fetcher>(
     source: impl Fn() -> S + 'static,
     fetcher: Fetcher,
 ) -> SilexResult<Resource<Fetcher::Data, Fetcher::Error>>
@@ -353,10 +392,10 @@ where
     Fetcher::Data: Clone + 'static,
     Fetcher::Error: Clone + 'static + std::fmt::Debug,
 {
-    let (data, set_data) = create_signal(None);
-    let (error, set_error) = create_signal(None);
-    let (loading, set_loading) = create_signal(false);
-    let (trigger, set_trigger) = create_signal(0);
+    let (data, set_data) = signal(None);
+    let (error, set_error) = signal(None);
+    let (loading, set_loading) = signal(false);
+    let (trigger, set_trigger) = signal(0);
 
     // 追踪资源所有者（通常是组件调用点）的生命周期。
     // 如果组件被卸载，我们不应该再更新状态。
@@ -367,7 +406,7 @@ where
     // 用于解决竞态条件：追踪最新的请求 ID
     let request_id = Rc::new(Cell::new(0usize));
 
-    create_effect(move || {
+    effect(move || {
         let source_val = source();
         // 追踪 trigger 以允许手动重新获取
         let _ = trigger.get();
@@ -478,7 +517,7 @@ pub struct SuspenseContext {
 
 impl SuspenseContext {
     pub fn new() -> Self {
-        let (count, set_count) = create_signal(0);
+        let (count, set_count) = signal(0);
         Self { count, set_count }
     }
 

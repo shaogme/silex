@@ -35,7 +35,7 @@ pub fn derive_store_impl(input: DeriveInput) -> syn::Result<TokenStream2> {
     let new_fields = fields.iter().map(|f| {
         let name = &f.ident;
         quote! {
-            #name: ::silex::core::reactivity::create_rw_signal(source.#name)
+            #name: ::silex::core::reactivity::RwSignal::new(source.#name)
         }
     });
 

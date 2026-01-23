@@ -30,7 +30,7 @@ fn CounterDisplay() -> SilexResult<impl View> {
     let count = expect_context::<ReadSignal<i32>>();
 
     // Demo: Style Map (Vec) and Dynamic Class (Signal)
-    let is_even = create_memo(move || count.get() % 2 == 0);
+    let is_even = memo(move || count.get() % 2 == 0);
 
     // Demo: CSS-in-Rust (Scoped CSS)
     let container_class = css!(r#"
@@ -103,15 +103,15 @@ fn NavBar() -> impl View {
 #[component]
 fn HomeView() -> impl View {
     // 页面级状态
-    let (name, set_name) = create_signal("Rustacean".to_string());
+    let (name, set_name) = signal("Rustacean".to_string());
     
     // 全局状态通过 Context 获取
     let count = expect_context::<ReadSignal<i32>>();
     
-    let is_high = create_memo(move || count.get() > 5);
+    let is_high = memo(move || count.get() > 5);
 
     // Async Resource
-    let async_data: Resource<String, silex::SilexError> = create_resource(
+    let async_data: Resource<String, silex::SilexError> = resource(
         || (),
         |_| async {
             gloo_timers::future::TimeoutFuture::new(2_000).await;
@@ -214,7 +214,7 @@ fn main() -> () {
 
     create_scope(move || {
         // 全局状态 (App Store)
-        let (count, set_count) = create_signal(0);
+        let (count, set_count) = signal(0);
         
         // 注入全局 Context
         provide_context(count);

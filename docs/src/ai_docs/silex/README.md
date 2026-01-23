@@ -45,7 +45,7 @@
     2. 创建 `path`, `search` 信号。
     3. `provide_context(RouterContext)`.
     4. 挂载子视图容器 `div`。
-    5. `create_effect` 监听路由变化并重新执行 `child` 工厂函数。
+    5. `effect` 监听路由变化并重新执行 `child` 工厂函数。
 
 ### component: Link
 `silex/src/router/link.rs` -> `struct Link`
@@ -127,7 +127,7 @@
 *   **Mechanism**:
     1. `provide_context(SuspenseContext)`: 计数器 (`pending_count`)。
     2. 子组件 (Resource) 加载时 `count.inc()`，完成时 `count.dec()`。
-    3. `create_effect`: 监控 `count`。
+    3. `effect`: 监控 `count`。
         *   `count > 0`: 显示 `fallback` (display: block), 隐藏 `children` (display: none)。
         *   `count == 0`: 显示 `children`, 隐藏 `fallback`。
 *   **Note**: 目前使用 CSS `display` 切换，而非 DOM 卸载，保留子组件状态。

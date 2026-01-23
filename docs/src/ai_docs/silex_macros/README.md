@@ -96,7 +96,7 @@ struct UserStore {
 ```
 
 ### 方法
-*   `new(source: User) -> UserStore`: 使用 `create_rw_signal` 初始化每个字段。
+*   `new(source: User) -> UserStore`: 使用 `RwSignal::new` 初始化每个字段。
 *   `get(&self) -> User`: 读取所有 Signal 的当前值并重组为原始 Struct (Snapshot)。
 
 ---

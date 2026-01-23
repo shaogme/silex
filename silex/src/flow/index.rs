@@ -1,7 +1,7 @@
 use crate::SilexError;
 use crate::flow::for_loop::IntoForLoopResult;
 use silex_core::reactivity::{
-    Accessor, NodeId, ReadSignal, WriteSignal, create_effect, create_scope, create_signal, dispose,
+    Accessor, NodeId, ReadSignal, WriteSignal, create_scope, dispose, effect, signal,
 };
 use silex_dom::View;
 use std::cell::RefCell;
@@ -76,7 +76,7 @@ where
         let items_fn = self.items;
         let map_fn = self.map;
 
-        create_effect(move || {
+        effect(move || {
             let result = items_fn.value().into_result();
             let items_iter = match result {
                 Ok(iter) => iter,
@@ -102,7 +102,7 @@ where
             if new_len > old_len {
                 for (i, item) in items_vec.into_iter().skip(common_len).enumerate() {
                     let real_index = common_len + i;
-                    let (get, set) = create_signal(item);
+                    let (get, set) = signal(item);
 
                     let fragment = document.create_document_fragment();
                     let fragment_node: Node = fragment.clone().into();

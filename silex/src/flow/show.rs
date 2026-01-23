@@ -1,4 +1,4 @@
-use silex_core::reactivity::{Accessor, ReadSignal, create_effect};
+use silex_core::reactivity::{Accessor, ReadSignal, effect};
 use silex_dom::View;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -108,7 +108,7 @@ where
         let fallback_fn = self.fallback;
         let prev_state = Rc::new(RefCell::new(None::<bool>));
 
-        create_effect(move || {
+        effect(move || {
             let val = cond.value();
 
             let mut state = prev_state.borrow_mut();
@@ -162,6 +162,19 @@ pub trait SignalShowExt {
 
 // 为 ReadSignal<bool> 实现扩展
 impl SignalShowExt for ReadSignal<bool> {
+    type Cond = Self;
+
+    fn when<V, F>(self, view: F) -> Show<Self::Cond, F, fn() -> (), V, ()>
+    where
+        V: View,
+        F: Fn() -> V + 'static,
+    {
+        Show::new(self, view)
+    }
+}
+
+// 为 Memo<bool> 实现扩展
+impl SignalShowExt for silex_core::reactivity::Memo<bool> {
     type Cond = Self;
 
     fn when<V, F>(self, view: F) -> Show<Self::Cond, F, fn() -> (), V, ()>

@@ -34,13 +34,10 @@
 *   **Semantics**: 读写合一的信号句柄，常用于组件 Props。
 *   **Methods**: 代理了 `ReadSignal` 和 `WriteSignal` 的所有方法 (`get`, `set`, `update`, etc.)。
 
-#### `create_signal<T>`
-*   **Signature**: `pub fn create_signal<T: 'static>(value: T) -> (ReadSignal<T>, WriteSignal<T>)`
-*   **Usage**: `let (count, set_count) = create_signal(0);`
+#### `signal<T>`
+*   **Signature**: `pub fn signal<T: 'static>(value: T) -> (ReadSignal<T>, WriteSignal<T>)`
+*   **Usage**: `let (count, set_count) = signal(0);`
 
-#### `create_rw_signal<T>`
-*   **Signature**: `pub fn create_rw_signal<T: 'static>(value: T) -> RwSignal<T>`
-*   **Usage**: `let count = create_rw_signal(0);`
 
 ### 2. Async Resources (异步资源)
 
@@ -59,10 +56,10 @@
     *   `loading() -> bool`: 获取加载状态。
     *   `refetch()`: 手动重新触发 `source` 变更，强制刷新。
 
-#### `create_resource<S, Fetcher>`
+#### `resource<S, Fetcher>`
 *   **Signature**:
     ```rust
-    pub fn create_resource<S, Fetcher>(
+    pub fn resource<S, Fetcher>(
         source: impl Fn() -> S + 'static,
         fetcher: Fetcher,
     ) -> SilexResult<Resource<Fetcher::Data, Fetcher::Error>>
