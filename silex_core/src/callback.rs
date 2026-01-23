@@ -1,35 +1,75 @@
-use std::rc::Rc;
+use std::any::Any;
+use std::marker::PhantomData;
 
-/// A wrapper around a reference-counted closure.
-/// This is used to pass event handlers and callbacks to components.
-#[derive(Clone)]
+pub use silex_reactivity::NodeId;
+
+/// A `Copy`-able wrapper for callbacks/event handlers.
+///
+/// This type uses a `NodeId` handle to reference a callback stored in the
+/// reactive runtime, enabling `Copy` semantics similar to `Signal` and `Memo`.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let cb = Callback::new(|x: i32| println!("Got: {}", x));
+/// cb.call(42);
+///
+/// // Callback is Copy, so no need to clone
+/// let cb2 = cb;
+/// cb2.call(100);
+/// ```
+#[derive(Debug)]
 pub struct Callback<T = ()> {
-    f: Rc<dyn Fn(T)>,
+    id: NodeId,
+    marker: PhantomData<T>,
 }
 
-impl<T> Callback<T> {
+impl<T> Clone for Callback<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for Callback<T> {}
+
+impl<T: 'static> Callback<T> {
     /// Create a new callback from a closure.
     pub fn new<F>(f: F) -> Self
     where
         F: Fn(T) + 'static,
     {
-        Self { f: Rc::new(f) }
+        let id = silex_reactivity::register_callback(move |any: Box<dyn Any>| {
+            if let Ok(arg) = any.downcast::<T>() {
+                f(*arg);
+            } else {
+                #[cfg(debug_assertions)]
+                {
+                    let type_name = std::any::type_name::<T>();
+                    crate::log::console_error(
+                        format!("Callback: type mismatch, expected {}", type_name).as_str(),
+                    );
+                }
+            }
+        });
+        Self {
+            id,
+            marker: PhantomData,
+        }
     }
 
-    /// Call the callback.
+    /// Call the callback with the given argument.
     pub fn call(&self, arg: T) {
-        (self.f)(arg);
+        silex_reactivity::invoke_callback(self.id, Box::new(arg));
     }
-}
 
-impl<T> std::fmt::Debug for Callback<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Callback")
+    /// Returns the underlying `NodeId` for this callback.
+    pub fn id(&self) -> NodeId {
+        self.id
     }
 }
 
 // Allow passing a closure directly where a Callback is expected (if Into is used)
-impl<T, F> From<F> for Callback<T>
+impl<T: 'static, F> From<F> for Callback<T>
 where
     F: Fn(T) + 'static,
 {
@@ -43,8 +83,3 @@ impl<T: 'static> Default for Callback<T> {
         Self::new(|_| {})
     }
 }
-
-// Note: `Fn` traits are unstable to implement manually outside of nightly with features.
-// So we probably shouldn't implement Fn directly if we want stable Rust.
-// Silex seems to be using standard Rust, so skip Fn impl for now, unless the user uses nightly.
-// The user is on Windows, environment unknown. Safer to stick to `impl From<F>`.

@@ -1,8 +1,8 @@
 use crate::attribute::{ApplyTarget, ApplyToDom};
-use crate::node_ref::NodeRef;
 use crate::tags::Tag;
 use crate::view::View;
 use silex_core::SilexError;
+use silex_core::node_ref::NodeRef;
 use silex_core::reactivity::{Effect, RwSignal, on_cleanup};
 
 use std::marker::PhantomData;

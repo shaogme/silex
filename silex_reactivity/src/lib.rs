@@ -42,12 +42,26 @@ pub(crate) struct EffectData {
     pub(crate) effect_version: u64,
 }
 
+/// Callback 数据存储（类型擦除）
+pub(crate) struct CallbackData {
+    /// 类型擦除的回调函数，接收 Box<dyn Any> 参数
+    pub(crate) f: Rc<dyn Fn(Box<dyn Any>)>,
+}
+
+/// NodeRef 数据存储（类型擦除）
+pub(crate) struct NodeRefData {
+    /// 类型擦除的 DOM 节点引用
+    pub(crate) element: Option<Box<dyn Any>>,
+}
+
 // --- 响应式系统运行时 ---
 
 pub struct Runtime {
     pub(crate) nodes: RefCell<SlotMap<NodeId, Node>>,
     pub(crate) signals: RefCell<SecondaryMap<NodeId, SignalData>>,
     pub(crate) effects: RefCell<SecondaryMap<NodeId, EffectData>>,
+    pub(crate) callbacks: RefCell<SecondaryMap<NodeId, CallbackData>>,
+    pub(crate) node_refs: RefCell<SecondaryMap<NodeId, NodeRefData>>,
     pub(crate) current_owner: RefCell<Option<NodeId>>,
     pub(crate) observer_queue: RefCell<VecDeque<NodeId>>,
     pub(crate) queued_observers: RefCell<SecondaryMap<NodeId, ()>>,
@@ -64,6 +78,8 @@ impl Runtime {
             nodes: RefCell::new(SlotMap::with_key()),
             signals: RefCell::new(SecondaryMap::new()),
             effects: RefCell::new(SecondaryMap::new()),
+            callbacks: RefCell::new(SecondaryMap::new()),
+            node_refs: RefCell::new(SecondaryMap::new()),
             current_owner: RefCell::new(None),
             observer_queue: RefCell::new(VecDeque::new()),
             queued_observers: RefCell::new(SecondaryMap::new()),
@@ -503,4 +519,83 @@ pub fn use_context<T: Clone + 'static>() -> Option<T> {
         }
         None
     })
+}
+
+// --- Callback API ---
+
+/// 注册一个回调函数，返回其 NodeId。
+/// 回调函数接收类型擦除的参数 `Box<dyn Any>`。
+pub fn register_callback<F>(f: F) -> NodeId
+where
+    F: Fn(Box<dyn Any>) + 'static,
+{
+    RUNTIME.with(|rt| {
+        let id = rt.register_node();
+        rt.callbacks
+            .borrow_mut()
+            .insert(id, CallbackData { f: Rc::new(f) });
+        id
+    })
+}
+
+/// 调用指定 ID 的回调函数。
+/// 如果回调不存在，则静默忽略。
+pub fn invoke_callback(id: NodeId, arg: Box<dyn Any>) {
+    RUNTIME.with(|rt| {
+        let callback = {
+            let callbacks = rt.callbacks.borrow();
+            callbacks.get(id).map(|data| data.f.clone())
+        };
+        if let Some(f) = callback {
+            f(arg);
+        }
+    })
+}
+
+/// 检查指定 ID 是否为有效的 Callback
+pub fn is_callback_valid(id: NodeId) -> bool {
+    RUNTIME.with(|rt| rt.callbacks.borrow().contains_key(id))
+}
+
+// --- NodeRef API ---
+
+/// 注册一个 NodeRef，返回其 NodeId。
+/// 初始状态为空（None）。
+pub fn register_node_ref() -> NodeId {
+    RUNTIME.with(|rt| {
+        let id = rt.register_node();
+        rt.node_refs
+            .borrow_mut()
+            .insert(id, NodeRefData { element: None });
+        id
+    })
+}
+
+/// 获取 NodeRef 中存储的元素引用。
+/// 需要调用者指定正确的类型 T 进行 downcast。
+pub fn get_node_ref<T: Clone + 'static>(id: NodeId) -> Option<T> {
+    RUNTIME.with(|rt| {
+        let node_refs = rt.node_refs.borrow();
+        if let Some(data) = node_refs.get(id) {
+            if let Some(ref element) = data.element {
+                return element.downcast_ref::<T>().cloned();
+            }
+        }
+        None
+    })
+}
+
+/// 设置 NodeRef 中存储的元素引用。
+pub fn set_node_ref<T: 'static>(id: NodeId, element: T) {
+    RUNTIME.with(|rt| {
+        let mut node_refs = rt.node_refs.borrow_mut();
+        if let Some(data) = node_refs.get_mut(id) {
+            data.element = Some(Box::new(element));
+        }
+    })
+}
+
+/// 检查指定 ID 是否为有效的 NodeRef
+pub fn is_node_ref_valid(id: NodeId) -> bool {
+    RUNTIME.with(|rt| rt.node_refs.borrow().contains_key(id))
 }
