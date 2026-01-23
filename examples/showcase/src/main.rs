@@ -47,8 +47,8 @@ mod basics {
                 button("-").on_click(move |_| set_count.update(|n| *n -= 1)),
                 strong(count).classes(classes![
                     "counter-val",
-                    "positive" => move || count.get() > 0,
-                    "negative" => move || count.get() < 0
+                    "positive" => count.gt(0),
+                    "negative" => count.lt(0)
                 ]),
                 button("+").on_click(move |_| set_count.update(|n| *n += 1)),
             ]
@@ -122,8 +122,9 @@ mod flow_control {
             ]
             .style("display: flex; gap: 10px; margin-bottom: 10px;"),
             // Dynamic uses Accessor, so closures work seamlessly
-            Dynamic::new(move || {
-                view_match!(mode.get(), {
+            // Now using Fluent API .map() instead of explicit closure with .get()
+            Dynamic::new(mode.map(|m| {
+                view_match!(m, {
                     "A" => div("🅰️ Component A")
                         .style("padding: 20px; background: #e3f2fd;"),
                     "B" => div("🅱️ Component B")
@@ -131,7 +132,7 @@ mod flow_control {
                     _ => div("©️ Component C")
                         .style("padding: 20px; background: #f3e5f5;"),
                 })
-            }),
+            })),
         ]
     }
 
@@ -204,13 +205,7 @@ mod advanced {
                 p![strong("Theme: "), settings.theme],
                 p![
                     strong("Notifications: "),
-                    text(move || {
-                        if settings.notifications.get() {
-                            "On"
-                        } else {
-                            "Off"
-                        }
-                    }),
+                    text(settings.notifications.map(|n| if n { "On" } else { "Off" })),
                 ],
             ]
             .style("border: 1px solid #ccc; padding: 10px; margin-bottom: 10px;"),

@@ -11,6 +11,7 @@ use web_sys::Node;
 /// Show::new(condition, || view)
 ///     .fallback(|| fallback_view)
 /// ```
+#[derive(Clone)]
 pub struct Show<Cond, ViewFn, FalsyViewFn, V1, V2> {
     condition: Cond,
     view: ViewFn,

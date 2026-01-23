@@ -55,6 +55,19 @@ pub struct For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> {
     _marker: std::marker::PhantomData<(Item, Items, Key, V)>,
 }
 
+impl<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> Clone
+    for For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V>
+{
+    fn clone(&self) -> Self {
+        Self {
+            items: self.items.clone(),
+            key: self.key.clone(),
+            map: self.map.clone(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V>
 where
     // ItemsFn returns the Source directly (e.g. Vec or Result<Vec>)

@@ -1,9 +1,10 @@
-use silex_html::div;
 use silex_core::dom::view::View;
 use silex_core::reactivity::SuspenseContext;
 use silex_core::reactivity::{create_effect, create_scope, provide_context};
+use silex_html::div;
 use web_sys::Node;
 
+#[derive(Clone)]
 pub struct Suspense<V, F> {
     children: V,
     fallback: F,

@@ -175,6 +175,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
 
     let expanded = quote! {
         // 生成结构体
+        #[derive(Clone)]
         #fn_vis struct #struct_name #impl_generics #where_clause {
             #(#struct_fields),*
         }

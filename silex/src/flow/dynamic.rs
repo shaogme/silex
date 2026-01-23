@@ -21,6 +21,7 @@ use web_sys::Node;
 ///     }
 /// })
 /// ```
+#[derive(Clone)]
 pub struct Dynamic<V, F>
 where
     V: View,

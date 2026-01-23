@@ -236,6 +236,87 @@ impl<T: 'static + Clone> ReadSignal<T> {
         // crate::error!("ReadSignal refers to dropped value");
         None
     }
+
+    /// 创建一个新的派生信号 (Memo)，通过映射函数转换当前信号的值。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let count = create_signal(1).0;
+    /// let double = count.map(|n| n * 2);
+    /// ```
+    pub fn map<U, F>(self, f: F) -> ReadSignal<U>
+    where
+        F: Fn(T) -> U + 'static,
+        U: Clone + PartialEq + 'static,
+    {
+        create_memo(move || f(self.get()))
+    }
+}
+
+// --- Fluent API Extensions for ReadSignal ---
+
+impl<T: Clone + 'static + PartialEq> ReadSignal<T> {
+    /// 创建一个布尔信号，当当前信号的值等于给定值时为 true。
+    pub fn eq<O>(&self, other: O) -> ReadSignal<bool>
+    where
+        O: Into<T> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = *self;
+        create_memo(move || this.get() == other)
+    }
+
+    /// 创建一个布尔信号，当当前信号的值不等于给定值时为 true。
+    pub fn ne<O>(&self, other: O) -> ReadSignal<bool>
+    where
+        O: Into<T> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = *self;
+        create_memo(move || this.get() != other)
+    }
+}
+
+impl<T: Clone + 'static + PartialOrd> ReadSignal<T> {
+    /// 创建一个布尔信号，当当前信号的值大于给定值时为 true。
+    pub fn gt<O>(&self, other: O) -> ReadSignal<bool>
+    where
+        O: Into<T> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = *self;
+        create_memo(move || this.get() > other)
+    }
+
+    /// 创建一个布尔信号，当当前信号的值小于给定值时为 true。
+    pub fn lt<O>(&self, other: O) -> ReadSignal<bool>
+    where
+        O: Into<T> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = *self;
+        create_memo(move || this.get() < other)
+    }
+
+    /// 创建一个布尔信号，当当前信号的值大于等于给定值时为 true。
+    pub fn ge<O>(&self, other: O) -> ReadSignal<bool>
+    where
+        O: Into<T> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = *self;
+        create_memo(move || this.get() >= other)
+    }
+
+    /// 创建一个布尔信号，当当前信号的值小于等于给定值时为 true。
+    pub fn le<O>(&self, other: O) -> ReadSignal<bool>
+    where
+        O: Into<T> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = *self;
+        create_memo(move || this.get() <= other)
+    }
 }
 
 /// `RwSignal` 是一个读写信号，同时包含了读取和写入的功能。
@@ -302,6 +383,15 @@ impl<T: Clone + 'static> RwSignal<T> {
     /// 获取底层的 `WriteSignal`。
     pub fn write_signal(&self) -> WriteSignal<T> {
         self.write
+    }
+
+    /// 创建一个新的派生信号 (Memo)，通过映射函数转换当前信号的值。
+    pub fn map<U, F>(self, f: F) -> ReadSignal<U>
+    where
+        F: Fn(T) -> U + 'static,
+        U: Clone + PartialEq + 'static,
+    {
+        self.read.map(f)
     }
 }
 

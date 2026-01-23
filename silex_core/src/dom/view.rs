@@ -250,11 +250,15 @@ impl<V: View> View for SilexResult<V> {
 /// 辅助特征，用于支持 Box<dyn View> 的移动语义挂载
 pub trait Render {
     fn mount_boxed(self: Box<Self>, parent: &Node);
+    fn clone_boxed(&self) -> Box<dyn Render>;
 }
 
-impl<V: View + 'static> Render for V {
+impl<V: View + Clone + 'static> Render for V {
     fn mount_boxed(self: Box<Self>, parent: &Node) {
         (*self).mount(parent)
+    }
+    fn clone_boxed(&self) -> Box<dyn Render> {
+        Box::new(self.clone())
     }
 }
 
@@ -263,7 +267,7 @@ impl<V: View + 'static> Render for V {
 pub struct AnyView(Box<dyn Render>);
 
 impl AnyView {
-    pub fn new<V: View + 'static>(view: V) -> Self {
+    pub fn new<V: View + Clone + 'static>(view: V) -> Self {
         Self(Box::new(view))
     }
 }
@@ -274,11 +278,26 @@ impl View for AnyView {
     }
 }
 
+impl Clone for AnyView {
+    fn clone(&self) -> Self {
+        Self(self.0.clone_boxed())
+    }
+}
+
+impl PartialEq for AnyView {
+    fn eq(&self, _other: &Self) -> bool {
+        // 对于类型擦除的 View，默认假设它们总是不同的，
+        // 这样可以确保响应式系统总是重新渲染它们。
+        // 这对于 Dynamic 组件来说是合理的行为。
+        false
+    }
+}
+
 pub trait IntoAnyView {
     fn into_any(self) -> AnyView;
 }
 
-impl<V: View + 'static> IntoAnyView for V {
+impl<V: View + Clone + 'static> IntoAnyView for V {
     fn into_any(self) -> AnyView {
         AnyView::new(self)
     }
@@ -303,7 +322,7 @@ impl std::fmt::Debug for AnyView {
 }
 
 /// 片段，用于容纳多个不同类型的子组件
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Fragment(Vec<AnyView>);
 
 impl Fragment {
@@ -361,13 +380,13 @@ impl_from_primitive_for_anyview!(
     i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, f32, f64, bool, char
 );
 
-impl<V: View + 'static> From<Vec<V>> for AnyView {
+impl<V: View + Clone + 'static> From<Vec<V>> for AnyView {
     fn from(v: Vec<V>) -> Self {
         AnyView::new(v)
     }
 }
 
-impl<V: View + 'static> From<Option<V>> for AnyView {
+impl<V: View + Clone + 'static> From<Option<V>> for AnyView {
     fn from(v: Option<V>) -> Self {
         AnyView::new(v)
     }
@@ -376,7 +395,7 @@ impl<V: View + 'static> From<Option<V>> for AnyView {
 // Manually impl From for Tuples since we can't do generic V due to conflict with self-impl
 macro_rules! impl_from_tuple_for_anyview {
     ($($name:ident),*) => {
-        impl<$($name: View + 'static),*> From<($($name,)*)> for AnyView {
+        impl<$($name: View + Clone + 'static),*> From<($($name,)*)> for AnyView {
             fn from(v: ($($name,)*)) -> Self {
                 AnyView::new(v)
             }
