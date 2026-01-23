@@ -17,14 +17,16 @@
     *   `as_web_element(&self) -> web_sys::Element`: 获取底层 raw element。
     *   **Builder Methods**: `attr`, `id`, `class`, `style`, `prop`, `on`, `on_click`, `on_input`, `node_ref`.
 
-### `NodeRef<T>`
-*   **Struct**: `pub struct NodeRef<T = web_sys::Element>(Rc<RefCell<Option<T>>>)`
-*   **Semantics**: 对底层 DOM 节点的引用句柄，用于命令式操作（如 focus, scroll, canvas 绘图）。
-*   **Methods**:
-    *   `new() -> Self`: 创建空引用。
-    *   `get(&self) -> Option<T>`: 获取节点。如果未挂载或类型不匹配，返回 None。
-    *   `load(&self, node: T)`: 内部使用，加载节点。
-*   **Usage**: 传递给 `Element::node_ref(ref)`。
+### `NodeRef<T>` (已移至 `silex_core`)
+
+> **注意**: `NodeRef` 已从 `silex_dom` 移动到 `silex_core::node_ref`。此处保留重导出以保持向后兼容。
+>
+> 详见 [`silex_core` 文档](../silex_core/README.md)。
+
+*   **Struct**: `pub struct NodeRef<T = ()> { id: NodeId, marker: PhantomData<T> }`
+*   **Traits**: **`Copy`**, `Clone`, `Debug`, `Default`.
+*   **Semantics**: 使用 `NodeId` 句柄的轻量级 DOM 引用，数据存储在响应式运行时。
+*   **Usage**: 传递给 `Element::node_ref(ref)`。无需 `.clone()`，直接复制即可。
 
 ### `TypedElement<T>`
 *   **Struct**: `pub struct TypedElement<T> { pub element: Element, _marker: PhantomData<T> }`
@@ -41,7 +43,7 @@
 *   `class(self, value: impl ApplyToDom)`: 添加 class (支持多类名字符串).
 *   `classes(self, value: impl ApplyToDom)`: 同 `class`.
 *   `style(self, value: impl ApplyToDom)`: 设置内联样式.
-*   `node_ref<N>(self, node_ref: NodeRef<N>)`: 绑定 DOM 引用。`N` 必须实现 `JsCast`.
+*   `node_ref<N>(self, node_ref: NodeRef<N>)`: 绑定 DOM 引用。`N` 必须实现 `JsCast`。**`NodeRef` 是 `Copy` 的，无需 clone**。
 
 > **注意**: 布尔属性（如 `required`, `checked`）需要显式传递值。
 > *   静态: `.required(true)`

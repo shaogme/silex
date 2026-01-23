@@ -68,7 +68,7 @@ mod basics {
             p("Click the button to focus the input field using direct DOM access."),
             input()
                 .placeholder("I will be focused...")
-                .node_ref(input_ref.clone())
+                .node_ref(input_ref) // NodeRef 是 Copy 的，无需 clone
                 .style("margin-right: 10px; padding: 5px;"),
             button("Focus Input").on_click(move |_| {
                 if let Some(el) = input_ref.get() {

@@ -90,11 +90,35 @@
 源码路径: `silex_core/src/callback.rs`
 
 ### `Callback<T>`
-*   **Struct**: `pub struct Callback<T = ()> { f: Rc<dyn Fn(T)> }`
-*   **Semantics**: 一个可克隆的闭包包装器，用于组件间传递事件回调。
+*   **Struct**: `pub struct Callback<T = ()> { id: NodeId, marker: PhantomData<T> }`
+*   **Traits**: **`Copy`**, `Clone`, `Debug`, `Default`.
+*   **Semantics**: 使用 `NodeId` 句柄的轻量级回调包装器，闭包存储在响应式运行时。与 `Signal` 风格一致。
 *   **Methods**:
+    *   `new<F>(f: F) -> Self`: 创建回调。
     *   `call(&self, arg: T)`: 执行回调。
+    *   `id(&self) -> NodeId`: 获取底层 ID。
     *   `impl From<F>`: 允许直接传入闭包转换。
+
+---
+
+## 模块: `node_ref`
+
+源码路径: `silex_core/src/node_ref.rs`
+
+### `NodeRef<T>`
+*   **Struct**: `pub struct NodeRef<T = ()> { id: NodeId, marker: PhantomData<T> }`
+*   **Traits**: **`Copy`**, `Clone`, `Debug`, `Default`.
+*   **Semantics**: 使用 `NodeId` 句柄的轻量级 DOM 节点引用，元素存储在响应式运行时。
+*   **Methods**:
+    *   `new() -> Self`: 创建空引用。
+    *   `get(&self) -> Option<T>`: 获取节点。如果未挂载或类型不匹配，返回 None。
+    *   `load(&self, node: T)`: 内部使用，加载节点（由框架自动调用）。
+    *   `id(&self) -> NodeId`: 获取底层 ID。
+*   **Usage**:
+    ```rust
+    let input_ref = NodeRef::<HtmlInputElement>::new();
+    input().node_ref(input_ref)  // 无需 .clone()，NodeRef 是 Copy 的
+    ```
 
 ---
 

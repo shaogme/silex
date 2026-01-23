@@ -28,15 +28,36 @@
 
 ### 2. Callback (回调)
 
-*   **Callback<T>**: 一个简单的 `Rc<dyn Fn(T)>` 包装器。
-*   用于在组件间传递事件处理函数，实现了 `Clone` 和 `PartialEq`（基于指针，待定），方便作为 Props 传递。
+*   **Callback<T>**: 一个轻量级的回调句柄，**实现了 `Copy`**。
+*   闭包存储在响应式运行时中，`Callback` 只持有一个 `NodeId`。
+*   用于在组件间传递事件处理函数，可以像 `Signal` 一样直接复制。
 
-### 3. Error Handling (错误处理)
+### 3. NodeRef (DOM 引用)
+
+*   **NodeRef<T>**: 用于获取底层 DOM 节点的引用句柄，**实现了 `Copy`**。
+*   当需要调用命令式 DOM API（如 `.focus()`, `.showModal()`, Canvas 绘图）时使用。
+*   节点引用存储在响应式运行时中，`NodeRef` 只持有一个 `NodeId`。
+
+```rust
+use web_sys::HtmlInputElement;
+
+let input_ref = NodeRef::<HtmlInputElement>::new();
+
+input()
+    .node_ref(input_ref)  // 无需 .clone()，NodeRef 是 Copy 的
+    .on_click(move |_| {
+        if let Some(el) = input_ref.get() {
+            let _ = el.focus();
+        }
+    })
+```
+
+### 4. Error Handling (错误处理)
 
 *   **SilexError**: 统一的错误枚举，包含 `Dom`, `Reactivity`, `Javascript` 等变体。
 *   **ErrorBoundary**: 提供了错误捕获机制，通过 `ErrorContext` 向上传递错误。
 
-### 4. Logging (日志)
+### 5. Logging (日志)
 
 提供了同构的日志宏，自动适配浏览器控制台 (`console.log`) 和终端标准输出 (`println!`)。
 
@@ -54,8 +75,17 @@
 let (count, set_count) = signal(0);
 ```
 
-### 避免 `Copy` 陷阱
-Silex 的信号句柄 (`ReadSignal`, `RwSignal`) 都实现了 `Copy`。这意味着它们只是指向底层数据的“指针”，复制它们非常廉价。
+### 句柄类型的 `Copy` 特性
+Silex 的信号句柄 (`ReadSignal`, `RwSignal`)、回调 (`Callback`) 和 DOM 引用 (`NodeRef`) 都实现了 `Copy`。这意味着它们只是指向底层数据的“指针”，复制它们非常廉价。
+
+```rust
+let input_ref = NodeRef::<HtmlInputElement>::new();
+let cb = Callback::new(|x: i32| log!("{}", x));
+
+// 直接复制，无需 .clone()
+let ref2 = input_ref;
+let cb2 = cb;
+```
 
 ### 异步数据获取
-使用 `resource` 而不是在 `effect` 中手动 spawn 异步任务，以便更好地与 `Suspense` 集成和处理竞态条件。
+使用 `Resource` 而不是在 `Effect` 中手动 spawn 异步任务，以便更好地与 `Suspense` 集成和处理竞态条件。

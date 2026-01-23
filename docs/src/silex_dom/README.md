@@ -78,6 +78,8 @@ Silex 提供了 `NodeRef` 类型来实现这一需求。
 2.  通过 `.node_ref()` 方法将其绑定到元素。
 3.  在组件挂载后（例如在 `on_click` 或 `Effect` 中），通过 `.get()` 获取原生 DOM 节点。
 
+> **提示**: `NodeRef` 实现了 `Copy`，可以直接复制，无需调用 `.clone()`。
+
 ```rust
 use web_sys::HtmlInputElement;
 
@@ -86,8 +88,8 @@ let input_ref = NodeRef::<HtmlInputElement>::new();
 
 div![
     input()
-        // 2. 绑定引用
-        .node_ref(input_ref.clone()) 
+        // 2. 绑定引用 (NodeRef 是 Copy 的，无需 clone)
+        .node_ref(input_ref) 
         .placeholder("Wait for focus..."),
         
     button("Focus").on_click(move |_| {
