@@ -8,7 +8,8 @@ members = [
     "examples/showcase",
     "silex_macros",
     "silex_core",
-    "silex_html"
+    "silex_html",
+    "silex_dom"
 ]
 resolver = "3"
 

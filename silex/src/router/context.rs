@@ -1,4 +1,4 @@
-use silex_core::dom::view::{AnyView, View};
+use silex_dom::view::{AnyView, View};
 use silex_core::reactivity::{ReadSignal, WriteSignal, create_memo, provide_context, use_context};
 use std::collections::HashMap;
 use std::rc::Rc;

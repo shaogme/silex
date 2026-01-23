@@ -9,6 +9,7 @@ web-sys = { workspace = true }
 js-sys = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 silex_core = { path = "../silex_core", version = "0.1.0" }
+silex_dom = { path = "../silex_dom", version = "0.1.0" }
 silex_html = { path = "../silex_html", version = "0.1.0" }
 silex_macros = { path = "../silex_macros", version = "0.1.0", optional = true }
 

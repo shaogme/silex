@@ -1,6 +1,6 @@
-use crate::dom::element::Element;
-use crate::reactivity::{ReadSignal, RwSignal, create_effect};
-use crate::{SilexError, SilexResult};
+use crate::element::Element;
+use silex_core::reactivity::{ReadSignal, RwSignal, create_effect};
+use silex_core::{SilexError, SilexResult};
 use std::fmt::Display;
 use web_sys::Node;
 
@@ -19,15 +19,15 @@ impl View for Element {
             .append_child(&self.dom_element)
             .map_err(SilexError::from)
         {
-            crate::error::handle_error(e);
+            silex_core::error::handle_error(e);
         }
     }
 }
 
-impl<T> View for crate::dom::element::TypedElement<T> {
+impl<T> View for crate::element::TypedElement<T> {
     fn mount(self, parent: &Node) {
         if let Err(e) = parent.append_child(&self.element).map_err(SilexError::from) {
-            crate::error::handle_error(e);
+            silex_core::error::handle_error(e);
         }
     }
 }
@@ -35,20 +35,20 @@ impl<T> View for crate::dom::element::TypedElement<T> {
 // 2. 静态文本 (String, &str)
 impl View for String {
     fn mount(self, parent: &Node) {
-        let document = crate::dom::document();
+        let document = crate::document();
         let node = document.create_text_node(&self);
         if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-            crate::error::handle_error(e);
+            silex_core::error::handle_error(e);
         }
     }
 }
 
 impl View for &str {
     fn mount(self, parent: &Node) {
-        let document = crate::dom::document();
+        let document = crate::document();
         let node = document.create_text_node(self);
         if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-            crate::error::handle_error(e);
+            silex_core::error::handle_error(e);
         }
     }
 }
@@ -59,10 +59,10 @@ macro_rules! impl_view_for_primitive {
         $(
             impl View for $t {
                 fn mount(self, parent: &Node) {
-                    let document = crate::dom::document();
+                    let document = crate::document();
                     let node = document.create_text_node(&self.to_string());
                     if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-                        crate::error::handle_error(e);
+                        silex_core::error::handle_error(e);
                     }
                 }
             }
@@ -85,7 +85,7 @@ where
     V: View + 'static,
 {
     fn mount(self, parent: &Node) {
-        let document = crate::dom::document();
+        let document = crate::document();
 
         // 1. 创建锚点 (Start & End Markers)
         // 使用双锚点策略 (Range Cleaning)，确保清理时能够移除所有动态生成的兄弟节点
@@ -93,7 +93,7 @@ where
         let start_node: Node = start_marker.into();
 
         if let Err(e) = parent.append_child(&start_node).map_err(SilexError::from) {
-            crate::error::handle_error(e);
+            silex_core::error::handle_error(e);
             return;
         }
 
@@ -101,7 +101,7 @@ where
         let end_node: Node = end_marker.into();
 
         if let Err(e) = parent.append_child(&end_node).map_err(SilexError::from) {
-            crate::error::handle_error(e);
+            silex_core::error::handle_error(e);
             return;
         }
 
@@ -147,7 +147,7 @@ where
                     "Unknown Panic in View".to_string()
                 };
 
-                crate::error::handle_error(SilexError::Javascript(msg));
+                silex_core::error::handle_error(SilexError::Javascript(msg));
             }
         });
     }
@@ -159,11 +159,11 @@ where
     T: Display + Clone + 'static,
 {
     fn mount(self, parent: &Node) {
-        let document = crate::dom::document();
+        let document = crate::document();
         // 1. 创建占位符
         let node = document.create_text_node("");
         if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-            crate::error::handle_error(e);
+            silex_core::error::handle_error(e);
             return;
         }
 
@@ -240,7 +240,7 @@ impl<V: View> View for SilexResult<V> {
     fn mount(self, parent: &Node) {
         match self {
             Ok(v) => v.mount(parent),
-            Err(e) => crate::error::handle_error(e),
+            Err(e) => silex_core::error::handle_error(e),
         }
     }
 }
@@ -428,7 +428,7 @@ macro_rules! view_match {
     ($target:expr, { $($pat:pat $(if $guard:expr)? => $val:expr),* $(,)? }) => {
         match $target {
             $(
-                $pat $(if $guard)? => $crate::dom::view::IntoAnyView::into_any($val),
+                $pat $(if $guard)? => $crate::view::IntoAnyView::into_any($val),
             )*
         }
     };

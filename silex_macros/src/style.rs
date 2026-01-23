@@ -51,7 +51,7 @@ pub fn style_impl(input: TokenStream) -> Result<TokenStream> {
 
     // Wrap in group
     Ok(quote! {
-        silex::core::dom::attribute::group( #tuple_body )
+        silex::dom::attribute::group( #tuple_body )
     })
 }
 
@@ -101,6 +101,6 @@ pub fn classes_impl(input: TokenStream) -> Result<TokenStream> {
     let tuple_body = quote! { ( #(#expanded_items),* ) };
 
     Ok(quote! {
-        silex::core::dom::attribute::group( #tuple_body )
+        silex::dom::attribute::group( #tuple_body )
     })
 }

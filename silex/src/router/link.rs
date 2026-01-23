@@ -1,7 +1,7 @@
 use crate::router::context::use_router;
-use silex_core::dom::View;
-use silex_core::dom::WithText;
-use silex_core::dom::element::TypedElement;
+use silex_dom::View;
+use silex_dom::WithText;
+use silex_dom::element::TypedElement;
 use silex_html::A as TagA;
 use silex_html::a;
 

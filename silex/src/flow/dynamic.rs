@@ -1,5 +1,5 @@
-use silex_core::dom::View;
 use silex_core::reactivity::{Accessor, create_effect};
+use silex_dom::View;
 use web_sys::Node;
 
 /// Dynamic 组件：用于渲染动态内容，类似于 SolidJS 的 <Dynamic>
@@ -68,7 +68,7 @@ where
     F: Accessor<V> + 'static,
 {
     fn mount(self, parent: &Node) {
-        let document = silex_core::dom::document();
+        let document = silex_dom::document();
 
         // 1. Create Anchors
         let start_marker = document.create_comment("dyn-start");

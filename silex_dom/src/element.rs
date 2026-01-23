@@ -1,8 +1,8 @@
-use crate::SilexError;
-use crate::dom::attribute::{ApplyTarget, ApplyToDom};
-use crate::dom::tags::Tag;
-use crate::dom::view::View;
-use crate::reactivity::{RwSignal, create_effect, on_cleanup};
+use crate::attribute::{ApplyTarget, ApplyToDom};
+use crate::tags::Tag;
+use crate::view::View;
+use silex_core::SilexError;
+use silex_core::reactivity::{RwSignal, create_effect, on_cleanup};
 
 use std::marker::PhantomData;
 use wasm_bindgen::JsCast;
@@ -76,7 +76,7 @@ macro_rules! impl_element_common {
                 .add_event_listener_with_callback("click", js_value)
                 .map_err(SilexError::from)
             {
-                crate::error::handle_error(e);
+                silex_core::error::handle_error(e);
                 return self;
             }
 
@@ -102,7 +102,7 @@ macro_rules! impl_element_common {
                     handler(input.value());
                 } else {
                     let err = SilexError::Dom("Input event has no target".into());
-                    crate::error::handle_error(err);
+                    silex_core::error::handle_error(err);
                 }
             }) as Box<dyn FnMut(_)>);
 
@@ -113,7 +113,7 @@ macro_rules! impl_element_common {
                 .add_event_listener_with_callback("input", js_value)
                 .map_err(SilexError::from)
             {
-                crate::error::handle_error(e);
+                silex_core::error::handle_error(e);
                 return self;
             }
 
@@ -200,18 +200,18 @@ pub struct Element {
 }
 
 pub fn mount_to_body<V: View>(view: V) {
-    let document = crate::dom::document();
+    let document = crate::document();
     let body = document.body().expect("No body element");
 
     // Create a root reactive scope to ensure context and effects work correctly
-    crate::reactivity::create_scope(move || {
+    silex_core::reactivity::create_scope(move || {
         view.mount(&body);
     });
 }
 
 impl Element {
     pub fn new(tag: &str) -> Self {
-        let document = crate::dom::document();
+        let document = crate::document();
         let dom_element = document
             .create_element(tag)
             .expect("Failed to create element");
@@ -219,7 +219,7 @@ impl Element {
     }
 
     pub fn new_svg(tag: &str) -> Self {
-        let document = crate::dom::document();
+        let document = crate::document();
         let dom_element = document
             .create_element_ns(Some("http://www.w3.org/2000/svg"), tag)
             .expect("Failed to create SVG element");
@@ -251,7 +251,7 @@ pub struct TypedElement<T> {
 
 impl<T> TypedElement<T> {
     pub fn new(tag: &str) -> Self {
-        let document = crate::dom::document();
+        let document = crate::document();
         let dom_element = document
             .create_element(tag)
             .expect("Failed to create element");
@@ -262,7 +262,7 @@ impl<T> TypedElement<T> {
     }
 
     pub fn new_svg(tag: &str) -> Self {
-        let document = crate::dom::document();
+        let document = crate::document();
         let dom_element = document
             .create_element_ns(Some("http://www.w3.org/2000/svg"), tag)
             .expect("Failed to create SVG element");

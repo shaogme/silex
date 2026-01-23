@@ -1,5 +1,5 @@
-use crate::SilexError;
-use crate::reactivity::{ReadSignal, RwSignal, create_effect};
+use silex_core::SilexError;
+use silex_core::reactivity::{ReadSignal, RwSignal, create_effect};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -30,7 +30,7 @@ pub trait ApplyToDom {
 
 fn handle_err(res: Result<(), SilexError>) {
     if let Err(e) = res {
-        crate::error::handle_error(e);
+        silex_core::error::handle_error(e);
     }
 }
 

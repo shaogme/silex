@@ -92,8 +92,8 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
         }
 
         impl ::silex::router::RouteView for #name {
-            fn render(&self) -> ::silex::core::dom::view::AnyView {
-                use ::silex::core::dom::view::IntoAnyView;
+            fn render(&self) -> ::silex::dom::view::AnyView {
+                use ::silex::dom::view::IntoAnyView;
                 match self {
                     #render_arms
                 }
@@ -634,7 +634,7 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
             };
 
             arms.push(quote! {
-                #pattern => ::silex::core::dom::view::AnyView::new(())
+                #pattern => ::silex::dom::view::AnyView::new(())
             });
         }
     }

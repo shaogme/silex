@@ -1,4 +1,4 @@
-use silex_core::dom::View;
+use silex_dom::View;
 use silex_core::reactivity::{Accessor, ReadSignal, create_effect};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -72,7 +72,7 @@ where
     V2: View,
 {
     fn mount(self, parent: &Node) {
-        let document = silex_core::dom::document();
+        let document = silex_dom::document();
 
         // 1. Create Anchors (Start & End Markers)
         let start_marker = document.create_comment("show-start");

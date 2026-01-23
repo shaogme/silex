@@ -1,6 +1,6 @@
-use silex_core::dom::tags::*;
-use silex_core::dom::view::View;
-use silex_core::dom::{Tag, TypedElement};
+use silex_dom::tags::*;
+use silex_dom::view::View;
+use silex_dom::{Tag, TypedElement};
 
 // --- Tag Definitions (Structs) ---
 

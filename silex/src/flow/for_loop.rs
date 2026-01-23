@@ -1,5 +1,5 @@
 use crate::{SilexError, SilexResult};
-use silex_core::dom::View;
+use silex_dom::View;
 use silex_core::reactivity::{Accessor, NodeId, create_effect, create_scope, dispose};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -102,7 +102,7 @@ where
     Item: 'static,
 {
     fn mount(self, parent: &Node) {
-        let document = silex_core::dom::document();
+        let document = silex_dom::document();
 
         // 1. Create Anchors
         let start_marker = document.create_comment("for-start");

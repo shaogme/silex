@@ -97,7 +97,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
                         type_str.chars().filter(|c| !c.is_whitespace()).collect();
 
                     if type_clean.ends_with("Children") || type_clean.ends_with("AnyView") {
-                        new_initializers.push(quote! { #param_name: ::silex::core::dom::view::IntoAnyView::into_any(#default_expr) });
+                        new_initializers.push(quote! { #param_name: ::silex::dom::view::IntoAnyView::into_any(#default_expr) });
                     } else {
                         new_initializers.push(quote! { #param_name: (#default_expr).into() });
                     }
@@ -124,14 +124,14 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
             if type_clean.ends_with("Children") || type_clean.ends_with("AnyView") {
                 if is_required {
                     builder_methods.push(quote! {
-                        pub fn #param_name<V: ::silex::core::dom::view::IntoAnyView>(mut self, val: V) -> Self {
+                        pub fn #param_name<V: ::silex::dom::view::IntoAnyView>(mut self, val: V) -> Self {
                             self.#param_name = Some(val.into_any());
                             self
                         }
                     });
                 } else {
                     builder_methods.push(quote! {
-                        pub fn #param_name<V: ::silex::core::dom::view::IntoAnyView>(mut self, val: V) -> Self {
+                        pub fn #param_name<V: ::silex::dom::view::IntoAnyView>(mut self, val: V) -> Self {
                             self.#param_name = val.into_any();
                             self
                         }
@@ -191,13 +191,13 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
             #(#builder_methods)*
         }
 
-        impl #impl_generics ::silex::core::dom::view::View for #struct_name #ty_generics #where_clause {
+        impl #impl_generics ::silex::dom::view::View for #struct_name #ty_generics #where_clause {
             fn mount(self, parent: &::silex::reexports::web_sys::Node) {
                 // Runtime checks and bindings
                 #(#mount_checks)*
 
                 let view_instance = #fn_body;
-                ::silex::core::dom::view::View::mount(view_instance, parent);
+                ::silex::dom::view::View::mount(view_instance, parent);
             }
         }
 

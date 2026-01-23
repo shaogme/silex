@@ -74,7 +74,7 @@ pub fn setup_global_error_handlers() {
 
     // 2. Window "error" event
     let closure = Closure::wrap(Box::new(move |event: web_sys::ErrorEvent| {
-        crate::log::console_error(&format!("Global Error: {:?}", event.message()));
+        silex_core::log::console_error(&format!("Global Error: {:?}", event.message()));
     }) as Box<dyn FnMut(_)>);
 
     window
@@ -84,7 +84,7 @@ pub fn setup_global_error_handlers() {
 
     // 3. Promise Rejection
     let closure_rej = Closure::wrap(Box::new(move |event: web_sys::PromiseRejectionEvent| {
-        crate::log::console_error(&format!("Unhandled Rejection: {:?}", event.reason()));
+        silex_core::log::console_error(&format!("Unhandled Rejection: {:?}", event.reason()));
     }) as Box<dyn FnMut(_)>);
 
     window
