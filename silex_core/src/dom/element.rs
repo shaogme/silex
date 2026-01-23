@@ -489,6 +489,8 @@ pub mod tag {
     define_svg_void!(fe_displacement_map, FeDisplacementMap, "feDisplacementMap");
 }
 
+pub use tag::*;
+
 // --- Macros for Tag DSL ---
 
 /// Internal macro to generate public macros for tags.

@@ -1,6 +1,6 @@
-use crate::dom::View;
-use crate::reactivity::{Accessor, NodeId, create_effect, create_scope, dispose};
 use crate::{SilexError, SilexResult};
+use silex_core::dom::View;
+use silex_core::reactivity::{Accessor, NodeId, create_effect, create_scope, dispose};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -89,14 +89,14 @@ where
     Item: 'static,
 {
     fn mount(self, parent: &Node) {
-        let document = crate::dom::document();
+        let document = silex_core::dom::document();
 
         // 1. Create Anchors
         let start_marker = document.create_comment("for-start");
         let start_node: Node = start_marker.into();
 
         if let Err(e) = parent.append_child(&start_node).map_err(SilexError::from) {
-            crate::error::handle_error(e);
+            silex_core::error::handle_error(e);
             return;
         }
 
@@ -104,7 +104,7 @@ where
         let end_node: Node = end_marker.into();
 
         if let Err(e) = parent.append_child(&end_node).map_err(SilexError::from) {
-            crate::error::handle_error(e);
+            silex_core::error::handle_error(e);
             return;
         }
 
@@ -124,7 +124,7 @@ where
             let items_iter = match result {
                 Ok(iter) => iter,
                 Err(e) => {
-                    crate::error::handle_error(e);
+                    silex_core::error::handle_error(e);
                     return;
                 }
             };

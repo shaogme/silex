@@ -1,5 +1,5 @@
-use crate::dom::view::{AnyView, View};
-use crate::reactivity::{ReadSignal, WriteSignal, create_memo, provide_context, use_context};
+use silex_core::dom::view::{AnyView, View};
+use silex_core::reactivity::{ReadSignal, WriteSignal, create_memo, provide_context, use_context};
 use std::collections::HashMap;
 use std::rc::Rc;
 use web_sys::Node;

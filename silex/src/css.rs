@@ -1,4 +1,4 @@
-use crate::dom::document;
+use silex_core::dom::document;
 use wasm_bindgen::JsCast;
 
 /// Injects a CSS string into the document head with a unique ID.

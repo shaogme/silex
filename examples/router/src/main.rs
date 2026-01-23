@@ -1,6 +1,5 @@
 use silex::prelude::*;
 use silex_macros::{component, Route};
-use silex::dom::tag::*;
 
 // ==========================================
 // 辅助组件
@@ -174,7 +173,7 @@ fn MainLayout(child: AnyView) -> impl View {
         .style("display: flex; align-items: center; justify-content: space-between; padding: 20px 0; border-bottom: 1px solid #eee;"),
         
         // Main Content Area
-        silex::dom::tag::main(
+        silex::core::dom::tag::main(
             child
         ).style("padding: 20px 0;"),
 
@@ -223,7 +222,7 @@ enum AppRoute {
 // ==========================================
 
 fn main() {
-    silex::dom::setup_global_error_handlers();
+    setup_global_error_handlers();
     
     let window = web_sys::window().unwrap();
     let document = window.document().unwrap();

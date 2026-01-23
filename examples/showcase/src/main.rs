@@ -1,6 +1,5 @@
-use silex::dom::tag::*;
+use silex::core::dom::tag::*;
 use silex::prelude::*;
-use silex::{div, p, ul};
 use silex_macros::{Route, Store, component, css};
 
 // ==================================================================================
@@ -335,7 +334,7 @@ fn HomePage() -> impl View {
 }
 
 fn main() {
-    silex::dom::setup_global_error_handlers();
+    setup_global_error_handlers();
 
     // Global State Initialization
     let store = UserSettingsStore::new(UserSettings {
@@ -345,7 +344,7 @@ fn main() {
     });
 
     // Mount App
-    silex::dom::mount_to_body(move || {
+    mount_to_body(move || {
         // Provide Global Store to the entire app tree
         provide_context(store).unwrap();
 

@@ -1,5 +1,5 @@
-use crate::dom::View;
-use crate::reactivity::{Accessor, ReadSignal, create_effect};
+use silex_core::dom::View;
+use silex_core::reactivity::{Accessor, ReadSignal, create_effect};
 use std::cell::RefCell;
 use std::rc::Rc;
 use web_sys::Node;
@@ -39,7 +39,7 @@ where
     V2: View,
 {
     fn mount(self, parent: &Node) {
-        let document = crate::dom::document();
+        let document = silex_core::dom::document();
 
         // 1. Create Anchors (Start & End Markers)
         let start_marker = document.create_comment("show-start");
@@ -49,7 +49,7 @@ where
             .append_child(&start_node)
             .map_err(crate::SilexError::from)
         {
-            crate::error::handle_error(e);
+            silex_core::error::handle_error(e);
             return;
         }
 
@@ -60,7 +60,7 @@ where
             .append_child(&end_node)
             .map_err(crate::SilexError::from)
         {
-            crate::error::handle_error(e);
+            silex_core::error::handle_error(e);
             return;
         }
 

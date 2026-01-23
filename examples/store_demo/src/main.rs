@@ -1,5 +1,4 @@
 use silex::prelude::*;
-use silex::dom::tag::*;
 use silex_macros::{component, Store};
 
 // 1. 定义数据模型
@@ -11,7 +10,7 @@ struct User {
 }
 
 fn main() {
-    silex::dom::setup_global_error_handlers();
+    setup_global_error_handlers();
     let window = web_sys::window().expect("No Window");
     let document = window.document().expect("No Document");
     let app_container = document.get_element_by_id("app").expect("No App Element");

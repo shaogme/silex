@@ -1,7 +1,7 @@
-use crate::dom::element::tag::div;
-use crate::dom::view::View;
-use crate::reactivity::SuspenseContext;
-use crate::reactivity::{create_effect, create_scope, provide_context};
+use silex_core::dom::element::tag::div;
+use silex_core::dom::view::View;
+use silex_core::reactivity::SuspenseContext;
+use silex_core::reactivity::{create_effect, create_scope, provide_context};
 use web_sys::Node;
 
 pub struct Suspense<V, F> {
@@ -50,7 +50,7 @@ where
         create_scope(move || {
             let ctx = SuspenseContext::new();
             if let Err(e) = provide_context(ctx) {
-                crate::error::handle_error(e);
+                silex_core::error::handle_error(e);
                 return;
             }
 

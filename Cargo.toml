@@ -6,9 +6,44 @@ members = [
     "examples/error_boundary_demo",
     "examples/router",
     "examples/showcase",
-    "silex_macros"
+    "silex_macros",
+    "silex_core"
 ]
 resolver = "3"
+
+[workspace.dependencies]
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Element",
+    "HtmlElement",
+    "Node",
+    "Text",
+    "Window",
+    "DomTokenList",
+    "Event",
+    "EventTarget",
+    "History",
+    "Location",
+    "console",
+    "InputEvent",
+    "HtmlInputElement",
+    "MouseEvent",
+    "ErrorEvent",
+    "Comment",
+    "DocumentFragment",
+    "PromiseRejectionEvent",
+    "NodeList",
+    "CssStyleDeclaration",
+    "SvgElement",
+    "HtmlStyleElement",
+    "HtmlHeadElement",
+    "HtmlTextAreaElement",
+    "HtmlSelectElement",
+] }
+js-sys = "0.3"
+slotmap = "1.1.1"
+wasm-bindgen-futures = "0.4.56"
 
 [profile.dev]
 panic = "unwind"

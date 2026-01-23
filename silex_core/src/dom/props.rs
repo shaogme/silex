@@ -1,7 +1,7 @@
 use crate::dom::Element;
 use crate::dom::attribute::AttributeValue;
-use crate::dom::core::tags::*;
 use crate::dom::element::TypedElement;
+use crate::dom::tags::*;
 use crate::dom::view::View;
 
 /// 任何可以设置属性的类型都需要实现此 Trait。

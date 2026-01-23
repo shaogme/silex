@@ -1,8 +1,8 @@
-use crate::dom::WithText;
-use crate::dom::core::tags::A as TagA;
-use crate::dom::element::TypedElement;
-use crate::dom::{View, tag::a};
 use crate::router::context::use_router;
+use silex_core::dom::WithText;
+use silex_core::dom::element::TypedElement;
+use silex_core::dom::tags::A as TagA;
+use silex_core::dom::{View, tag::a};
 
 /// `A` 组件结构体
 pub struct A {

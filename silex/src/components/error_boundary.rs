@@ -1,7 +1,7 @@
-use crate::dom::element::tag::div;
-use crate::dom::view::View;
-use crate::error::{ErrorContext, SilexError};
-use crate::reactivity::{create_effect, create_signal, provide_context};
+use silex_core::dom::element::tag::div;
+use silex_core::dom::view::View;
+use silex_core::error::{ErrorContext, SilexError};
+use silex_core::reactivity::{create_effect, create_signal, provide_context};
 use std::rc::Rc;
 use web_sys::Node;
 
@@ -55,14 +55,14 @@ where
         let (error, set_error) = create_signal::<Option<SilexError>>(None);
 
         provide_context(ErrorContext(Rc::new(move |e| {
-            crate::log::console_error(&format!("ErrorBoundary caught error: {}", e));
+            silex_core::log::console_error(&format!("ErrorBoundary caught error: {}", e));
             // Defer update to avoid render-induced updates
             wasm_bindgen_futures::spawn_local(async move {
                 set_error.set(Some(e));
             });
         })))
         .unwrap_or_else(|e| {
-            crate::log::console_error(&format!("Error providing context: {}", e))
+            silex_core::log::console_error(&format!("Error providing context: {}", e))
         });
 
         // Create wrapper div
@@ -97,7 +97,7 @@ where
                     } else {
                         "Unknown Panic".to_string()
                     };
-                    crate::log::console_error(&format!("ErrorBoundary caught panic: {}", msg));
+                    silex_core::log::console_error(&format!("ErrorBoundary caught panic: {}", msg));
 
                     let err = SilexError::Javascript(msg);
                     // Trigger re-run to show fallback

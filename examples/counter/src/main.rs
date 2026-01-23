@@ -1,4 +1,4 @@
-use silex::dom::tag::*;
+use silex::core::dom::tag::*;
 use silex::prelude::*;
 use silex_macros::{component, css, Route};
 
@@ -208,7 +208,7 @@ enum AppRoute {
 // --- Main ---
 
 fn main() -> () {
-    silex::dom::setup_global_error_handlers();
+    setup_global_error_handlers();
     let window = web_sys::window().expect("No Window");
     let document = window.document().expect("No Document");
     let app_container = document.get_element_by_id("app").expect("No App Element");

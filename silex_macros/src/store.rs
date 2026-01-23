@@ -28,14 +28,14 @@ pub fn derive_store_impl(input: DeriveInput) -> syn::Result<TokenStream2> {
         let name = &f.ident;
         let ty = &f.ty;
         quote! {
-            pub #name: ::silex::reactivity::RwSignal<#ty>
+            pub #name: ::silex::core::reactivity::RwSignal<#ty>
         }
     });
 
     let new_fields = fields.iter().map(|f| {
         let name = &f.ident;
         quote! {
-            #name: ::silex::reactivity::create_rw_signal(source.#name)
+            #name: ::silex::core::reactivity::create_rw_signal(source.#name)
         }
     });
 

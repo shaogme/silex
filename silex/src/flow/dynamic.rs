@@ -1,5 +1,5 @@
-use crate::dom::View;
-use crate::reactivity::{Accessor, create_effect};
+use silex_core::dom::View;
+use silex_core::reactivity::{Accessor, create_effect};
 use web_sys::Node;
 
 /// Dynamic 组件：用于渲染动态内容，类似于 SolidJS 的 <Dynamic>
@@ -49,7 +49,7 @@ where
     F: Accessor<V> + 'static,
 {
     fn mount(self, parent: &Node) {
-        let document = crate::dom::document();
+        let document = silex_core::dom::document();
 
         // 1. Create Anchors
         let start_marker = document.create_comment("dyn-start");
@@ -59,7 +59,7 @@ where
             .append_child(&start_node)
             .map_err(crate::SilexError::from)
         {
-            crate::error::handle_error(e);
+            silex_core::error::handle_error(e);
             return;
         }
 
@@ -70,7 +70,7 @@ where
             .append_child(&end_node)
             .map_err(crate::SilexError::from)
         {
-            crate::error::handle_error(e);
+            silex_core::error::handle_error(e);
             return;
         }
 

@@ -1,10 +1,18 @@
+pub mod attribute;
 pub mod callback;
-pub mod components;
-pub mod core;
+pub mod element;
+pub mod view;
 
+pub use attribute::*;
 pub use callback::*;
-pub use components::*;
-pub use core::*;
+pub use element::*;
+pub use view::*;
+
+pub mod props;
+pub use props::*;
+
+pub mod tags;
+
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::Document;
@@ -94,6 +102,6 @@ thread_local! {
     };
 }
 
-pub(crate) fn document() -> Document {
+pub fn document() -> Document {
     DOCUMENT.with(|d| d.clone())
 }
