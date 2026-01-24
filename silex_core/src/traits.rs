@@ -45,6 +45,21 @@
 
 // pub use crate::trait_options::*;
 
+// --- Accessor Trait ---
+
+pub trait Accessor<T> {
+    fn value(&self) -> T;
+}
+
+impl<F, T> Accessor<T> for F
+where
+    F: Fn() -> T,
+{
+    fn value(&self) -> T {
+        self()
+    }
+}
+
 // use any_spawner::Executor;
 // use futures::{Stream, StreamExt};
 use std::panic::Location;

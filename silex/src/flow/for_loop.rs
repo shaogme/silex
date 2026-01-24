@@ -1,5 +1,6 @@
 use crate::{SilexError, SilexResult};
-use silex_core::reactivity::{Accessor, Effect, NodeId, create_scope, dispose};
+use silex_core::reactivity::{Effect, NodeId, create_scope, dispose};
+use silex_core::traits::Accessor;
 use silex_dom::View;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};

@@ -1,4 +1,4 @@
-use silex_core::reactivity::{Accessor, Effect};
+use silex_core::{reactivity::Effect, traits::Accessor};
 use silex_dom::View;
 use web_sys::Node;
 

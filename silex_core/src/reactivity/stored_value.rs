@@ -1,0 +1,93 @@
+use std::cell::Cell;
+use std::marker::PhantomData;
+use std::panic::Location;
+use std::rc::Rc;
+
+use silex_reactivity::NodeId;
+
+use crate::traits::*;
+
+// --- StoredValue ---
+
+pub struct StoredValue<T> {
+    pub(crate) id: NodeId,
+    pub(crate) marker: PhantomData<T>,
+}
+
+impl<T> std::fmt::Debug for StoredValue<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "StoredValue({:?})", self.id)
+    }
+}
+
+impl<T> Clone for StoredValue<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T> Copy for StoredValue<T> {}
+
+impl<T: 'static> StoredValue<T> {
+    pub fn new(value: T) -> Self {
+        let id = silex_reactivity::store_value(value);
+        Self {
+            id,
+            marker: PhantomData,
+        }
+    }
+
+    // Kept for backward compat or ease of use
+    pub fn set_value(&self, value: T) {
+        SetValue::set_value(self, value)
+    }
+
+    pub fn get_value(&self) -> T
+    where
+        T: Clone,
+    {
+        GetValue::get_value(self)
+    }
+}
+
+impl<T> DefinedAt for StoredValue<T> {
+    fn defined_at(&self) -> Option<&'static Location<'static>> {
+        None
+    }
+}
+
+impl<T: 'static> WithValue for StoredValue<T> {
+    type Value = T;
+
+    fn try_with_value<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        silex_reactivity::try_with_stored_value(self.id, fun)
+    }
+}
+
+impl<T: 'static> UpdateValue for StoredValue<T> {
+    type Value = T;
+
+    fn try_update_value<U>(&self, fun: impl FnOnce(&mut Self::Value) -> U) -> Option<U> {
+        silex_reactivity::try_update_stored_value(self.id, fun)
+    }
+}
+
+impl<T: 'static> SetValue for StoredValue<T> {
+    type Value = T;
+
+    fn try_set_value(&self, value: Self::Value) -> Option<Self::Value> {
+        let value_wrapper = Rc::new(Cell::new(Some(value)));
+        let value_in_closure = value_wrapper.clone();
+
+        let res = self.try_update_value(move |v| {
+            if let Some(new_val) = value_in_closure.take() {
+                *v = new_val;
+            }
+        });
+
+        if res.is_some() {
+            None
+        } else {
+            value_wrapper.take()
+        }
+    }
+}

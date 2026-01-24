@@ -1,4 +1,5 @@
-use silex_core::reactivity::{Accessor, Effect, ReadSignal, Signal};
+use silex_core::reactivity::{Effect, ReadSignal, Signal};
+use silex_core::traits::Accessor;
 use silex_dom::View;
 use std::cell::RefCell;
 use std::rc::Rc;

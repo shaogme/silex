@@ -1,5 +1,6 @@
 use crate::SilexError;
-use silex_core::reactivity::{Accessor, Effect};
+use silex_core::reactivity::Effect;
+use silex_core::traits::Accessor;
 use silex_dom::View;
 use std::cell::RefCell;
 use std::rc::Rc;
