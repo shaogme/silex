@@ -303,3 +303,44 @@ pub fn debounce<T: 'static>(delay: Duration, cb: impl FnMut(T) + 'static) -> imp
         }
     }
 }
+
+// --- Auto-cleanup Hooks ---
+
+/// 类似于 `set_interval`，但在当前响应式作用域被清理时自动取消定时器。
+///
+/// 参数顺序设计为支持尾随闭包语法：
+/// ```ignore
+/// use_interval(Duration::from_millis(100), || {
+///     /* 每 100ms 执行一次 */
+/// });
+/// ```
+///
+/// 返回 `Result<IntervalHandle, JsValue>`，允许在必要时手动提前清除。
+pub fn use_interval(
+    duration: Duration,
+    cb: impl Fn() + 'static,
+) -> Result<IntervalHandle, JsValue> {
+    let handle = set_interval_with_handle(cb, duration)?;
+    // IntervalHandle 实现了 Copy，可以直接 move 进闭包
+    let cleanup_handle = handle;
+    on_cleanup(move || cleanup_handle.clear());
+    Ok(handle)
+}
+
+/// 类似于 `set_timeout`，但在当前响应式作用域被清理时自动取消定时器（如果尚未执行）。
+///
+/// 参数顺序设计为支持尾随闭包语法：
+/// ```ignore
+/// use_timeout(Duration::from_secs(1), || {
+///     /* 1秒后执行一次 */
+/// });
+/// ```
+pub fn use_timeout(
+    duration: Duration,
+    cb: impl FnOnce() + 'static,
+) -> Result<TimeoutHandle, JsValue> {
+    let handle = set_timeout_with_handle(cb, duration)?;
+    let cleanup_handle = handle;
+    on_cleanup(move || cleanup_handle.clear());
+    Ok(handle)
+}

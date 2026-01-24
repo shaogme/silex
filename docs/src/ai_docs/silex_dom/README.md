@@ -240,6 +240,7 @@
 *   `request_idle_callback(cb)` / `request_idle_callback_with_handle(cb)`
 *   `set_timeout(cb, duration)` / `set_timeout_with_handle(cb, duration)`
 *   `set_interval(cb, duration)` / `set_interval_with_handle(cb, duration)`
+*   **Hooks**: `use_interval(duration, cb)` / `use_timeout(duration, cb)` (自动注册 `on_cleanup`)
 *   `queue_microtask(cb)`
 
 ### Utilities

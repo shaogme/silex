@@ -198,10 +198,26 @@ let content = view_match!(current_route.get(), {
 *   **属性操作**:
     *   `set_property(el, "prop_name", &value)`: 直接设置 DOM 属性 (Property) 而不是 Attribute。
     *   `get_property(el, "prop_name")`: 获取 DOM 属性值。
-*   **定时器**: `set_timeout`, `set_interval`, `request_animation_frame`, `request_idle_callback` (包含自动清理机制)
+*   **定时器**: 
+    *   **基础**: `set_timeout`, `set_interval`, `request_animation_frame`, `request_idle_callback`
+    *   **自动管理 (Hooks)**: `use_interval(duration, cb)`, `use_timeout(duration, cb)` (组件销毁时自动清理)
 *   **事件辅助**:
     *   `event_target_value(&event)`: 便捷获取 input 值
     *   `event_target_checked(&event)`: 便捷获取 checkbox 状态
     *   `window_event_listener(event::resize, |e| ...)`: **强类型**全局事件监听，自动推导事件参数类型。
     *   `window_event_listener_untyped("resize", ...)`: 字符串类型的全局事件监听。
 *   **其他**: `debounce` (防抖), `queue_microtask`
+
+### Auto-cleanup Timers
+
+使用 `use_interval` 或 `use_timeout` 可以避免手动管理定时器句柄。当所在的响应式作用域（组件）销毁时，定时器会自动清除。
+
+```rust
+use std::time::Duration;
+use silex_dom::helpers::use_interval;
+
+// 每秒执行一次，无需手动 on_cleanup
+use_interval(Duration::from_secs(1), || {
+    console_log("Tick!");
+});
+```
