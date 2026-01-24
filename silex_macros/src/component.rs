@@ -46,6 +46,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
                 || type_clean.ends_with("String")
                 || type_clean.ends_with("PathBuf")
                 || type_clean.starts_with("Callback")
+                || type_clean.starts_with("Signal")
             {
                 prop_attrs.into_trait = true;
             }

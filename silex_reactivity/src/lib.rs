@@ -59,6 +59,11 @@ pub(crate) struct StoredValueData {
     pub(crate) value: Box<dyn Any>,
 }
 
+/// Derived 数据存储（类型擦除）
+pub(crate) struct DerivedData {
+    pub(crate) f: Rc<dyn Fn() -> Box<dyn Any>>,
+}
+
 // --- 响应式系统运行时 ---
 
 pub struct Runtime {
@@ -68,6 +73,7 @@ pub struct Runtime {
     pub(crate) callbacks: RefCell<SecondaryMap<NodeId, CallbackData>>,
     pub(crate) node_refs: RefCell<SecondaryMap<NodeId, NodeRefData>>,
     pub(crate) stored_values: RefCell<SecondaryMap<NodeId, StoredValueData>>,
+    pub(crate) deriveds: RefCell<SecondaryMap<NodeId, DerivedData>>,
     pub(crate) current_owner: RefCell<Option<NodeId>>,
     pub(crate) observer_queue: RefCell<VecDeque<NodeId>>,
     pub(crate) queued_observers: RefCell<SecondaryMap<NodeId, ()>>,
@@ -87,6 +93,7 @@ impl Runtime {
             callbacks: RefCell::new(SecondaryMap::new()),
             node_refs: RefCell::new(SecondaryMap::new()),
             stored_values: RefCell::new(SecondaryMap::new()),
+            deriveds: RefCell::new(SecondaryMap::new()),
             current_owner: RefCell::new(None),
             observer_queue: RefCell::new(VecDeque::new()),
             queued_observers: RefCell::new(SecondaryMap::new()),
@@ -267,6 +274,7 @@ impl Runtime {
         self.signals.borrow_mut().remove(id);
         self.effects.borrow_mut().remove(id);
         self.stored_values.borrow_mut().remove(id);
+        self.deriveds.borrow_mut().remove(id);
         if self.queued_observers.borrow().contains_key(id) {
             self.queued_observers.borrow_mut().remove(id);
         }
@@ -644,6 +652,34 @@ pub fn try_update_stored_value<T: 'static, R>(
         if let Some(data) = stored.get_mut(id) {
             if let Some(val) = data.value.downcast_mut::<T>() {
                 return Some(f(val));
+            }
+        }
+        None
+    })
+}
+
+// --- Derived API ---
+
+pub fn register_derived<F>(f: F) -> NodeId
+where
+    F: Fn() -> Box<dyn Any> + 'static,
+{
+    RUNTIME.with(|rt| {
+        let id = rt.register_node();
+        rt.deriveds
+            .borrow_mut()
+            .insert(id, DerivedData { f: Rc::new(f) });
+        id
+    })
+}
+
+pub fn run_derived<T: 'static>(id: NodeId) -> Option<T> {
+    RUNTIME.with(|rt| {
+        let deriveds = rt.deriveds.borrow();
+        if let Some(data) = deriveds.get(id) {
+            let res_box = (data.f)();
+            if let Ok(val) = res_box.downcast::<T>() {
+                return Some(*val);
             }
         }
         None

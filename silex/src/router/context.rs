@@ -1,4 +1,4 @@
-use silex_core::reactivity::{Memo, ReadSignal, WriteSignal, provide_context, use_context};
+use silex_core::reactivity::{Memo, ReadSignal, Signal, WriteSignal, provide_context, use_context};
 use silex_dom::view::{AnyView, View};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -159,16 +159,16 @@ pub fn use_navigate() -> Navigator {
 }
 
 /// Hook: 获取当前路径 (逻辑路径，不含 Base Path)
-pub fn use_location_path() -> ReadSignal<String> {
+pub fn use_location_path() -> Signal<String> {
     use_router()
-        .map(|ctx| ctx.path)
+        .map(|ctx| ctx.path.into())
         .expect("use_location_path called outside of <Router>")
 }
 
 /// Hook: 获取查询参数字符串
-pub fn use_location_search() -> ReadSignal<String> {
+pub fn use_location_search() -> Signal<String> {
     use_router()
-        .map(|ctx| ctx.search)
+        .map(|ctx| ctx.search.into())
         .expect("use_location called outside of <Router>")
 }
 

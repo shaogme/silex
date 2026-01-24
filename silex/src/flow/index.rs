@@ -1,7 +1,7 @@
 use crate::SilexError;
 use crate::flow::for_loop::IntoForLoopResult;
 use silex_core::reactivity::{
-    Accessor, Effect, NodeId, ReadSignal, WriteSignal, create_scope, dispose, signal,
+    Accessor, Effect, NodeId, Signal, WriteSignal, create_scope, dispose, signal,
 };
 use silex_dom::View;
 use std::cell::RefCell;
@@ -23,7 +23,7 @@ impl<ItemsFn, Item, Items, MapFn, V> Index<ItemsFn, Item, Items, MapFn, V>
 where
     ItemsFn: Accessor<Items> + 'static,
     Items: IntoForLoopResult<Item = Item>,
-    MapFn: Fn(ReadSignal<Item>, usize) -> V + 'static,
+    MapFn: Fn(Signal<Item>, usize) -> V + 'static,
     V: View,
     Item: 'static,
 {
@@ -50,7 +50,7 @@ where
     ItemsFn: Accessor<Items> + 'static,
     Items: IntoForLoopResult<Item = Item> + 'static,
     <Items as IntoForLoopResult>::Iter: IntoIterator<Item = Item>,
-    MapFn: Fn(ReadSignal<Item>, usize) -> V + 'static,
+    MapFn: Fn(Signal<Item>, usize) -> V + 'static,
     V: View,
     Item: Clone + 'static, // Item needs clone for Signal updates
 {
@@ -110,7 +110,7 @@ where
                     let map = map_fn.clone();
 
                     let scope_id = create_scope(move || {
-                        map(get, real_index).mount(&fragment_node_clone);
+                        map(get.into(), real_index).mount(&fragment_node_clone);
                     });
 
                     let nodes_list = fragment.child_nodes();

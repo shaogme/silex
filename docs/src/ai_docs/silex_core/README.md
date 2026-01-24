@@ -10,6 +10,21 @@
 
 ### 1. Signal Wrappers (信号包装器)
 
+#### `Signal<T>`
+*   **Enum**:
+    *   `Read(ReadSignal<T>)`
+    *   `Derived(NodeId, PhantomData<T>)`
+*   **Traits**: `Copy`, `Clone`, `Debug`, `Accessor<T>`, `From<T>`, `From<ReadSignal<T>>`, `From<RwSignal<T>>`, `From<Memo<T>>`.
+*   **Semantics**:
+    *   作为通用的信号接口，统一了所有读取源：原生信号、Memo、派生闭包、甚至普通值（自动提升为 Signal）。
+    *   `Derived` 变体持有一个在 Runtime 中注册的闭包，每次 `get()` 时重新执行闭包（无缓存）。
+*   **Methods**:
+    *   `derive(f: impl Fn() -> T)`: 创建一个派生信号。闭包会注册到 Runtime 并返回 ID。
+    *   `get() -> T`: 统一获取值。
+    *   `try_get() -> Option<T>`: 尝试获取值。
+    *   `get_untracked() -> T`: 不追踪获取。
+    *   `with<O>(f: impl FnOnce(&T) -> O) -> O`: 值的引用访问。
+
 #### `ReadSignal<T>`
 *   **Struct**: `pub struct ReadSignal<T> { id: NodeId, marker: PhantomData<T> }`
 *   **Traits**: `Copy`, `Clone`, `Debug`, `Accessor<T>`.

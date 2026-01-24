@@ -13,7 +13,7 @@ mod basics {
         // Explicitly `into` is NOT needed for common types like String, PathBuf, Children, AnyView, and Callback.
         // The macro enables it by default, allowing you to pass string literals directly (e.g., .name("...")) without .into().
         // `default = "..."` specifies a fallback value if the prop is omitted.
-        #[prop(default = "World")] name: String,
+        #[prop(default = "World")] name: Signal<String>,
         #[prop(default)] punctuation: String,
     ) -> impl View {
         let full_punctuation = if punctuation.is_empty() {
@@ -41,8 +41,10 @@ mod basics {
         let (count, set_count) = signal(0);
         let double_count = Memo::new(move |_| count.get() * 2); // rx!(count.get() * 2) is move || count.get() * 2
         
-        // Timer Handle for Auto Increment
-        let (timer, set_timer) = signal(None::<IntervalHandle>);
+        // Timer Handle for Auto Increment (StoredValue: doesn't trigger UI updates itself)
+        let timer = StoredValue::new(None::<IntervalHandle>);
+        // UI State for the timer
+        let (is_running, set_is_running) = signal(false);
 
         div![
             h3("Interactive Counter"),
@@ -57,18 +59,22 @@ mod basics {
             ]
             .style("display: flex; gap: 10px; align-items: center;"),
             
-            // Auto Increment Demo using set_interval
+            // Auto Increment Demo using set_interval and StoredValue
             div![
-                button(move || if timer.get().is_some() { "Stop Auto Inc" } else { "Start Auto Inc" })
+                button(move || if is_running.get() { "Stop Auto Inc" } else { "Start Auto Inc" })
                     .on(event::click, move |_| {
-                        if let Some(handle) = timer.get() {
-                            handle.clear();
-                            set_timer.set(None);
+                        if is_running.get() {
+                            if let Some(handle) = timer.get_value() {
+                                handle.clear();
+                            }
+                            timer.set_value(None);
+                            set_is_running.set(false);
                         } else {
                             if let Ok(handle) = set_interval_with_handle(move || {
                                 set_count.update(|n| *n += 1);
                             }, Duration::from_millis(1000)) {
-                                set_timer.set(Some(handle));
+                                timer.set_value(Some(handle));
+                                set_is_running.set(true);
                             }
                         }
                     })
@@ -116,9 +122,16 @@ mod basics {
 
     #[component]
     pub fn BasicsPage() -> impl View {
+        let name_signal = RwSignal::new("Developer".to_string());
+
         div![
             h2("Basics"),
-            Greeting().name("Developer"),
+            div![
+                "Reactive Greeting Name: ",
+                input().bind_value(name_signal)
+            ].style("margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px;"),
+            
+            Greeting().name(name_signal),
             Counter(),
             NodeRefDemo(),
             // AttributeDemo omitted for brevity, logic is same as previous

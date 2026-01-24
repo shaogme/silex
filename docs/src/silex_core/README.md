@@ -8,7 +8,12 @@
 
 该模块在 `silex_reactivity` 的基础上提供了类型安全的包装器。
 
-*   **Signal (信号)**: 
+*   **SignalWrapper (通用信号)**:
+    *   `Signal<T>`: 统一的信号包装器，**实现了 `Copy`**。
+    *   它可以包装 `ReadSignal`, `RwSignal`, `Memo`，或者是一个派生闭包 (`Signal::derive`)。
+    *   作为组件 Props 的首选类型，因为它能接受任何类型的响应式数据源。
+
+*   **Primitive Signals (基础信号)**: 
     *   `ReadSignal<T>`: 只读信号句柄。
     *   `WriteSignal<T>`: 可写信号句柄。
     *   `RwSignal<T>`: 读写一体的信号句柄，常用于组件 `Props`。

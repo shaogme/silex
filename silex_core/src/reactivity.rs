@@ -42,6 +42,102 @@ impl<T: Clone + PartialEq + 'static> Accessor<T> for Memo<T> {
 }
 
 // --- Signal 信号 API ---
+#[derive(Debug)]
+pub enum Signal<T: 'static> {
+    Read(ReadSignal<T>),
+    Derived(NodeId, PhantomData<T>),
+}
+
+impl<T> Clone for Signal<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T> Copy for Signal<T> {}
+
+impl<T: Clone + 'static> Signal<T> {
+    pub fn derive(f: impl Fn() -> T + 'static) -> Self {
+        let id = silex_reactivity::register_derived(move || Box::new(f()));
+        Signal::Derived(id, PhantomData)
+    }
+
+    pub fn get(&self) -> T {
+        match self {
+            Signal::Read(s) => s.get(),
+            Signal::Derived(id, _) => {
+                silex_reactivity::run_derived(*id).expect("Derived signal missing")
+            }
+        }
+    }
+
+    pub fn try_get(&self) -> Option<T> {
+        match self {
+            Signal::Read(s) => s.try_get(),
+            Signal::Derived(id, _) => silex_reactivity::run_derived(*id),
+        }
+    }
+
+    pub fn get_untracked(&self) -> T {
+        match self {
+            Signal::Read(s) => s.get_untracked(),
+            Signal::Derived(id, _) => {
+                untrack(|| silex_reactivity::run_derived(*id).expect("Derived signal missing"))
+            }
+        }
+    }
+
+    pub fn try_get_untracked(&self) -> Option<T> {
+        match self {
+            Signal::Read(s) => s.try_get_untracked(),
+            Signal::Derived(id, _) => untrack(|| silex_reactivity::run_derived(*id)),
+        }
+    }
+
+    pub fn with<O>(&self, f: impl FnOnce(&T) -> O) -> O {
+        let val = self.get();
+        f(&val)
+    }
+}
+
+impl<T: Clone + 'static> Accessor<T> for Signal<T> {
+    fn value(&self) -> T {
+        self.get()
+    }
+}
+
+impl<T: Clone + 'static> From<T> for Signal<T> {
+    fn from(value: T) -> Self {
+        let (read, _) = signal(value);
+        Signal::Read(read)
+    }
+}
+
+impl From<&str> for Signal<String> {
+    fn from(s: &str) -> Self {
+        s.to_string().into()
+    }
+}
+
+impl<T: 'static> From<ReadSignal<T>> for Signal<T> {
+    fn from(s: ReadSignal<T>) -> Self {
+        Signal::Read(s)
+    }
+}
+
+impl<T: 'static> From<RwSignal<T>> for Signal<T> {
+    fn from(s: RwSignal<T>) -> Self {
+        Signal::Read(s.read)
+    }
+}
+
+impl<T: 'static> From<Memo<T>> for Signal<T> {
+    fn from(m: Memo<T>) -> Self {
+        Signal::Read(ReadSignal {
+            id: m.id,
+            marker: PhantomData,
+        })
+    }
+}
 
 pub struct ReadSignal<T> {
     pub(crate) id: NodeId,

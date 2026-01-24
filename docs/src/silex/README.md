@@ -148,7 +148,7 @@ For::new(
 let (logs, set_logs) = signal(vec!["Log 1", "Log 2"]);
 
 Index::new(logs, |item, index| {
-    // item 是 ReadSignal<T>，内容变化时直接更新文本节点
+    // item 是 Signal<T>，内容变化时直接更新文本节点
     div((index, ": ", item))
 })
 ```

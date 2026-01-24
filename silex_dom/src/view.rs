@@ -1,5 +1,5 @@
 use crate::element::Element;
-use silex_core::reactivity::{Effect, Memo, ReadSignal, RwSignal};
+use silex_core::reactivity::{Effect, Memo, ReadSignal, RwSignal, Signal};
 use silex_core::{SilexError, SilexResult};
 use std::fmt::Display;
 use web_sys::Node;
@@ -204,6 +204,28 @@ where
 {
     fn mount(self, parent: &Node) {
         self.read_signal().mount(parent);
+    }
+}
+
+impl<T> View for Signal<T>
+where
+    T: Display + Clone + 'static,
+{
+    fn mount(self, parent: &Node) {
+        let document = crate::document();
+        // 1. 创建占位符
+        let node = document.create_text_node("");
+        if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
+            silex_core::error::handle_error(e);
+            return;
+        }
+
+        // 2. 创建副作用
+        let signal = self;
+        Effect::new(move |_| {
+            let value = signal.get();
+            node.set_node_value(Some(&value.to_string()));
+        });
     }
 }
 

@@ -1,5 +1,5 @@
 use silex_core::SilexError;
-use silex_core::reactivity::{Effect, Memo, ReadSignal, RwSignal};
+use silex_core::reactivity::{Effect, Memo, ReadSignal, RwSignal, Signal};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -374,6 +374,15 @@ where
     }
 }
 
+impl<T> ApplyToDom for Signal<T>
+where
+    T: std::fmt::Display + Clone + 'static,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        (move || self.get().to_string()).apply(el, target);
+    }
+}
+
 // 6. Tuples
 
 // Helper macro to avoid creating overlapping implementations
@@ -481,6 +490,15 @@ where
 }
 
 impl<K> ApplyToDom for (K, Memo<bool>)
+where
+    K: AsRef<str>,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        (self.0, move || self.1.get()).apply(el, target);
+    }
+}
+
+impl<K> ApplyToDom for (K, Signal<bool>)
 where
     K: AsRef<str>,
 {

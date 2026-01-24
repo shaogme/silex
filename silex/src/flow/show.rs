@@ -1,4 +1,4 @@
-use silex_core::reactivity::{Accessor, Effect, ReadSignal};
+use silex_core::reactivity::{Accessor, Effect, ReadSignal, Signal};
 use silex_dom::View;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -175,6 +175,19 @@ impl SignalShowExt for ReadSignal<bool> {
 
 // 为 Memo<bool> 实现扩展
 impl SignalShowExt for silex_core::reactivity::Memo<bool> {
+    type Cond = Self;
+
+    fn when<V, F>(self, view: F) -> Show<Self::Cond, F, fn() -> (), V, ()>
+    where
+        V: View,
+        F: Fn() -> V + 'static,
+    {
+        Show::new(self, view)
+    }
+}
+
+// 为 Signal<bool> 实现扩展
+impl SignalShowExt for Signal<bool> {
     type Cond = Self;
 
     fn when<V, F>(self, view: F) -> Show<Self::Cond, F, fn() -> (), V, ()>

@@ -78,7 +78,7 @@
 *   **Implementors**:
     *   **Static**: `&str`, `String`, `bool` (Boolean Attribute toggle), `Option<T>`.
     *   **Reactive**: `impl Fn() -> T` (自动创建 `Effect` 进行细粒度更新).
-    *   **Signals**: `ReadSignal<T>`, `RwSignal<T>`, `Memo<T>`.
+    *   **Signals**: `Signal<T>`, `ReadSignal<T>`, `RwSignal<T>`, `Memo<T>`.
     *   **Collections**: `Vec<V>`, `[V; N]`.
     *   **Tuples**:
         *   `(Key, Value)`: 用于 Style (e.g., `("color", "red")`).
