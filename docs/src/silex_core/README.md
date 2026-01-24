@@ -13,14 +13,32 @@
     *   它可以包装 `ReadSignal`, `RwSignal`, `Memo`，或者是一个派生闭包 (`Signal::derive`)。
     *   作为组件 Props 的首选类型，因为它能接受任何类型的响应式数据源。
 
+*   **Trait System (特征系统)**:
+    *   Silex 采用细粒度的特征系统来定义响应式行为。
+    *   **读**: `Get` (clone并追踪), `With` (引用并追踪), `Accessor` (统一读取)。
+    *   **写**: `Set` (设置并通知), `Update` (修改并通知)。
+    *   这种设计使得你可以灵活组合不同的行为，例如 `StoredValue` 实现了 `GetValue`/`SetValue` 但不实现 `Track`/`Notify`。
+
 *   **Primitive Signals (基础信号)**: 
-    *   `ReadSignal<T>`: 只读信号句柄。
-    *   `WriteSignal<T>`: 可写信号句柄。
+    *   `ReadSignal<T>`: 只读信号句柄，实现了 `Get`, `With` 等读取特征。
+    *   `WriteSignal<T>`: 可写信号句柄，实现了 `Set`, `Update` 等写入特征。
     *   `RwSignal<T>`: 读写一体的信号句柄，常用于组件 `Props`。
     *   使用 `signal` 创建，利用 `PhantomData<T>` 保留类型信息，并在运行时通过 `downcast` 安全转换 `Any` 数据。
 
 *   **Effect (副作用)**:
     *   `Effect`: 创建自动追踪依赖的副作用，使用 `Effect::new`。
+
+*   **Batching (批量更新)**:
+    *   `batch`: 一个性能优化工具。在 `batch` 闭包内的所有信号更新，直到闭包执行完毕后才会触发 Effect。
+    *   适用于一次性修改多个状态，避免中间态导致的无效渲染。
+
+    ```rust
+    // 假设 count 和 double 是相关联的信号
+    batch(|| {
+        set_count.update(|n| *n += 1);
+        set_double.update(|n| *n = (*n) * 2);
+    }); // 此时才会触发 Effect
+    ```
 
 *   **Resource (异步资源)**:
     *   `resource`: 用于处理异步数据加载（如 API 请求）。

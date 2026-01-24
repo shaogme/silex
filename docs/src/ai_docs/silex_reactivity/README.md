@@ -14,6 +14,7 @@
     *   `effects: SecondaryMap<NodeId, EffectData>`: 存储副作用计算及依赖。
     *   `observer_queue: VecDeque<NodeId>`: 待执行的副作用队列（BFS 调度）。
     *   `current_owner: Option<NodeId>`: 当前正在执行的副作用/包括 Scope，用于依赖收集和 Cleanup 注册。
+    *   `batch_depth: Cell<usize>`: 当前批量更新的嵌套深度。
 
 ### 2. `NodeId`
 *   **Type**: `slotmap::new_key_type!`
@@ -99,7 +100,19 @@
 *   **Signature**: `pub fn update_signal<T: 'static>(id: NodeId, f: impl FnOnce(&mut T))`
 *   **Semantics**:
     1.  **Write**: Downcast `value` 为 `&mut T` 并执行 `f`。
-    2.  **Notify**: 调用 `queue_dependents(id)` 和 `run_queue()`。
+    2.  **Queue**: 调用 `queue_dependents(id)`。
+    3.  **Run**: **仅当** `batch_depth == 0` 时，调用 `run_queue()` 立即执行副作用；否则推迟执行。
+
+### Batch API
+
+#### `batch`
+*   **Signature**: `pub fn batch<R>(f: impl FnOnce() -> R) -> R`
+*   **Semantics**:
+    1.  递增 `batch_depth`。
+    2.  执行闭包 `f`。
+    3.  递减 `batch_depth`。
+    4.  若 `batch_depth` 归零，调用 `run_queue()` 执行所有挂起的副作用。
+*   **Use Case**: 在一次操作中修改多个信号，避免触发中间状态的副作用，提高性能。
 
 ### Effect / Computation API
 

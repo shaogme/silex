@@ -61,8 +61,9 @@ effect(|| {
 ```
 
 ### 观察者队列与批量更新
-
-当信号更新时，它不会立即执行依赖它的副作用，而是将它们加入 `observer_queue`。`update_signal` 结束后会调用 `run_queue` 依次执行所有待处理的副作用。
+    *   **Observer Queue**: 当信号更新时，它不会立即执行依赖它的副作用，而是将它们加入 `observer_queue`。
+    *   **Implicit Batching**: 单个 `update_signal` 调用结束时会自动刷新队列。
+    *   **Explicit Batching**: 使用 `batch(|| ...)` API 可以推迟队列刷新，直到闭包内的所有操作完成。这对于一次性更新多个相关联的信号非常有用，可以防止 Effect 被多次无效触发。
 
 ### 内存管理与清理
 
