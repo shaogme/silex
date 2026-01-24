@@ -43,6 +43,7 @@
 *   `class(self, value: impl ApplyToDom)`: 添加 class (支持多类名字符串).
 *   `classes(self, value: impl ApplyToDom)`: 同 `class`.
 *   `style(self, value: impl ApplyToDom)`: 设置内联样式.
+*   `class_toggle<C>(self, name: &str, condition: C)`: 根据 `condition` (bool 或 signal) 切换 class.
 *   `node_ref<N>(self, node_ref: NodeRef<N>)`: 绑定 DOM 引用。`N` 必须实现 `JsCast`。**`NodeRef` 是 `Copy` 的，无需 clone**。
 
 > **注意**: 布尔属性（如 `required`, `checked`）需要显式传递值。
@@ -69,7 +70,7 @@
 ### `IntoStorable` Trait
 *   **Definition**: `pub trait IntoStorable { type Stored: ApplyToDom + 'static; fn into_storable(self) -> Self::Stored; }`
 *   **Semantics**: 转换 Trait，允许用户传入非 `'static` 的引用类型（如 `&str`, `&String`），并在内部自动转换为 owned 或 `'static` 的 `Stored` 类型。
-*   **Implementors**: `&str`, `&String` -> `String`; `bool`, `Signals`, `Closures`, `Tuples` -> Self (or owned variant).
+*   **Implementors**: `&str`, `&String` -> `String`; `bool`, `Signals`, `Closures`, `Tuples`, `Vec<V>`, `[V; N]` -> Self (or owned variant).
 
 ### `ApplyTarget`
 *   **Enum**: 指定值应用的目标位置。
@@ -132,6 +133,10 @@
 *   **Semantics**: 动态分发的 View 容器，用于异构列表或条件渲染分支。
 *   **Usage**: `match ... { A => a.into_any(), B => b.into_any() }`.
 
+### `view_match!` Macro
+*   **Usage**: `view_match!(expression, { Pattern => View, ... })`
+*   **Semantics**: 简化 `match` 表达式中返回不同类型 View 的写法，自动对每个分支调用 `.into_any()`。
+
 ---
 
 ## 模块: `props` (属性特征)
@@ -146,6 +151,9 @@
 *   `LabelAttributes`: `for_`.
 *   `AnchorAttributes`: `href`, `target`.
 *   `MediaAttributes`: `src`, `alt`, `width`, `height`.
+*   `OpenAttributes`: `open` (for `dialog`, `details`).
+*   `TableCellAttributes`: `colspan`, `rowspan`, `headers`.
+*   `TableHeaderAttributes`: `scope`, `abbr`.
 *   `AriaAttributes`: `role`, `aria-*`.
 
 ---

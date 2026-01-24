@@ -54,6 +54,14 @@ input.prop("value", signal) // 绑定实时值
      .prop("checked", true)
 ```
 
+#### Class Toggle
+对于单个 class 的条件开关，可以使用 `class_toggle`：
+
+```rust
+// 当 active_sig 为 true 时，添加 "active" 类
+div.class_toggle("active", active_sig)
+```
+
 ### 4. Fragment & Attribute Forwarding (属性透传)
 
 Silex 支持多根节点组件（Fragment），通常通过返回元组 `(A, B)` 或 `Fragment` 结构体实现。
@@ -154,6 +162,19 @@ impl View for MyComponent {
         parent.append_child(&el).unwrap();
     }
 }
+```
+
+### `view_match!` 宏
+用于简化从 `match` 表达式返回不同类型 View 的操作（自动应用 Type Erasure）：
+
+```rust
+use silex_dom::view_match;
+
+let content = view_match!(current_route.get(), {
+    Route::Home => HomeView(),
+    Route::Login => LoginView(),
+    _ => "Not Found",
+});
 ```
 
 ## 类型化事件 (Typed Events)

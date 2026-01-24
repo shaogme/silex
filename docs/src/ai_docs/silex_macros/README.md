@@ -14,7 +14,7 @@ fn MyComponent(props...) -> impl View
 
 ### 转换逻辑
 1.  **Parsing**: 解析函数签名，提取参数。
-2.  **Struct Generation**: 生成 `MyComponentProps` 结构体。
+2.  **Struct Generation**: 生成 `MyComponentComponent` 结构体 (命名规则为 `{FnName}Component`)。
     *   **Fields**: 每个函数参数映射为一个结构体字段。
         *   REQUIRED: `Option<T>` (初始化为 None)。
         *   OPTIONAL (`#[prop(default)]`): `T` (初始化为 `Default::default()`).
@@ -31,13 +31,13 @@ fn MyComponent(props...) -> impl View
         3.  调用原始函数体获取 View 实例。
         4.  **Attribute Forwarding**: 调用 `view_instance.apply_attributes(_pending_attrs)`，将属性传递给内部视图。
         5.  挂载 View 实例。
-5.  **Constructor**: 生成同名函数 `fn MyComponent() -> MyComponentProps` 作为入口。
+5.  **Constructor**: 生成同名函数 `fn MyComponent() -> MyComponentComponent` 作为入口。
 
 ### 属性支持
 *   `#[prop(default)]`: 使用 `Default::default()` 填充默认值。
 *   `#[prop(default = expr)]`: 使用指定表达式填充默认值。
 *   `#[prop(into)]`: 自动调用 `.into()`，支持 `impl Into<T>`。
-    *   **自动推导**: 如果类型是 `Children`, `AnyView`, `String`, `PathBuf` 或 `Callback`，宏会自动开启 `into` 行为。
+    *   **自动推导**: 如果类型是 `Children`, `AnyView`, `String`, `PathBuf`, `Callback`, `Signal`，宏会自动开启 `into` 行为。
 
 ---
 
