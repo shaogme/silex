@@ -66,6 +66,11 @@
 
 源码路径: `silex_dom/src/attribute.rs`
 
+### `IntoStorable` Trait
+*   **Definition**: `pub trait IntoStorable { type Stored: ApplyToDom + 'static; fn into_storable(self) -> Self::Stored; }`
+*   **Semantics**: 转换 Trait，允许用户传入非 `'static` 的引用类型（如 `&str`, `&String`），并在内部自动转换为 owned 或 `'static` 的 `Stored` 类型。
+*   **Implementors**: `&str`, `&String` -> `String`; `bool`, `Signals`, `Closures`, `Tuples` -> Self (or owned variant).
+
 ### `ApplyTarget`
 *   **Enum**: 指定值应用的目标位置。
     *   `Attr(&'a str)`: `setAttribute`.
@@ -97,7 +102,13 @@
 源码路径: `silex_dom/src/view.rs`
 
 ### `View` Trait
-*   **Definition**: `pub trait View { fn mount(self, parent: &web_sys::Node); }`
+*   **Definition**:
+    ```rust
+    pub trait View {
+        fn mount(self, parent: &web_sys::Node);
+        fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
+    }
+    ```
 *   **Semantics**: 定义对象如何挂载到 DOM 树中。
 *   **Implementors**:
     *   **DOM**: `Element`, `TypedElement`.
@@ -106,6 +117,15 @@
     *   **Signals**: `ReadSignal<T>`, `RwSignal<T>` (文本节点更新).
     *   **Collections**: `Vec<V>`, `[V; N]`, `Option<V>`, `Result<V, E>`.
     *   **Fragments**: `(A, B, C...)` 元组。
+
+### Attribute Forwarding (属性透传)
+`View` trait 定义了 `apply_attributes` 方法。
+*   **Default**: 对于大多数基础类型（Text, Primitives），默认为空操作。
+*   **Elements**: 将属性应用到自身 (`pending_attrs.apply(self.dom_element)`).
+*   **Containers (Fragment, Tuple, Option, Vec)**:
+    *   实现了属性透传逻辑：**First-Match Strategy**。
+    *   将 `PendingAttribute`（具有一次性消费语义）传递给所有子节点。
+    *   第一个能够消费该属性的子节点会应用它，后续节点只会收到已被消费的空属性。
 
 ### `AnyView` (Type Erasure)
 *   **Struct**: `pub struct AnyView(Box<dyn Render>);`

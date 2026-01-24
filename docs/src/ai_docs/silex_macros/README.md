@@ -18,14 +18,20 @@ fn MyComponent(props...) -> impl View
     *   **Fields**: 每个函数参数映射为一个结构体字段。
         *   REQUIRED: `Option<T>` (初始化为 None)。
         *   OPTIONAL (`#[prop(default)]`): `T` (初始化为 `Default::default()`).
+    *   **Internal Fields**: `_pending_attrs: Vec<PendingAttribute>` 用于存储链式调用的各个属性。
     *   **Builder Methods**: 为每个字段生成链式调用方法 `fn prop_name(self, val: T) -> Self`。
-3.  **Impl View**: 实现 `View` trait。
+3.  **Impl AttributeBuilder**:
+    *   为组件结构体实现 `AttributeBuilder` Trait。
+    *   允许组件直接调用 `.class()`, `.id()`, `.on_click()` 等方法。
+    *   这些调用生成的属性被存储在 `_pending_attrs` 中。
+4.  **Impl View**: 实现 `View` trait。
     *   **Mount**:
         1.  运行时检查 REQUIRED 字段是否为 `Some`，否则 Panic。
         2.  解构 Props。
         3.  调用原始函数体获取 View 实例。
-        4.  挂载 View 实例。
-4.  **Constructor**: 生成同名函数 `fn MyComponent() -> MyComponentProps` 作为入口。
+        4.  **Attribute Forwarding**: 调用 `view_instance.apply_attributes(_pending_attrs)`，将属性传递给内部视图。
+        5.  挂载 View 实例。
+5.  **Constructor**: 生成同名函数 `fn MyComponent() -> MyComponentProps` 作为入口。
 
 ### 属性支持
 *   `#[prop(default)]`: 使用 `Default::default()` 填充默认值。

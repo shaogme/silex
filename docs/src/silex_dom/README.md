@@ -21,7 +21,11 @@ Silex 的视图系统非常灵活，支持多种类型直接作为视图：
 *   **集合**: `Vec<V>`, Slice `[V]`, 元组 `(A, B)` 都会按顺序渲染其内容。
 
 ### 3. Attributes (属性)
-Silex 提供了一套统一且强大的属性设置 API。
+Silex 提供了一套统一且强大的属性设置 API。所有设置属性的方法（`.attr()`, `.prop()`, `.class()`, `.style()` 等）都支持泛型 `V: IntoStorable`，这意味着你可以传入：
+
+*   **静态值**: `&str`, `String`, `bool`.
+*   **信号**: `Signal<T>`, `ReadSignal<T>`, `Memo<T>` 等。
+*   **闭包**: `Fn() -> T` (自动创建 Effect)。
 
 #### 静态设置
 ```rust
@@ -31,7 +35,7 @@ div.id("app")
 ```
 
 #### 响应式设置
-任何接受属性值的地方，都可以传入一个闭包！Silex 会自动将其转化为副作用。
+任何接受属性值的地方，都可以传入一个闭包或信号！Silex 会自动将其转化为副作用。
 
 ```rust
 let (count, set_count) = signal(0);
@@ -49,6 +53,18 @@ HTML Attribute 和 DOM Property 是不同的。例如 `input.value` 是 Property
 input.prop("value", signal) // 绑定实时值
      .prop("checked", true)
 ```
+
+### 4. Fragment & Attribute Forwarding (属性透传)
+
+Silex 支持多根节点组件（Fragment），通常通过返回元组 `(A, B)` 或 `Fragment` 结构体实现。
+
+当你在一个返回 Fragment 的组件（或容器类型如 `Option`, `Vec`）上设置属性（如 `.class("foo")`）时，Silex 采用**首个匹配 (First-Match)** 策略：
+
+*   属性会被向下传递给容器的所有子节点。
+*   **第一个**能够实际消费属性的节点（通常是 `Element` 或另一个转发属性的组件）会应用这些属性。
+*   后续的节点收到的属性包是空的（属性已被第一个节点“取走”）。
+
+这确保了在组件外部设置的 `class` 或 `id` 能够符合直觉地应用到组件的“主”元素上，而无需组件作者编写额外的透传代码。
 
 ## 事件处理
 

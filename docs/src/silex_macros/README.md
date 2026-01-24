@@ -23,11 +23,28 @@ fn Button(
         .text(label)
 }
 
+```rust
 // 使用
 Button()
     .label("Click me") // 必须
     .opacity(0.8)      // 可选
 ```
+
+### 属性透传 (Attribute Forwarding)
+
+生成的组件结构体实现了 `AttributeBuilder` Trait，这意味着你可以像操作普通 DOM 元素一样操作组件！
+
+所有标准的 DOM 方法（如 `.class()`, `.id()`, `.style()`, `.on_click()`）都可以直接链式调用：
+
+```rust
+Button()
+    .label("Submit")
+    .class("my-btn")       // 透传给 Button 内部的根元素
+    .on_click(|_| { ... }) // 透传点击事件
+```
+
+**多根节点 (Fragments) 支持：**
+如果组件返回多个根节点（例如返回元组或 `Fragment`），属性会采用**首个匹配策略**：属性会被转发给第一个能消费属性的子节点（通常是第一个 DOM 元素），后续节点不受影响。
 
 ## 2. 编写 CSS (`css!`)
 
