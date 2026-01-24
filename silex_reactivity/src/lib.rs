@@ -64,10 +64,50 @@ pub(crate) struct DerivedData {
     pub(crate) f: Rc<dyn Fn() -> Box<dyn Any>>,
 }
 
+// --- 图结构 (Graph) ---
+
+pub(crate) struct Graph {
+    pub(crate) nodes: SlotMap<NodeId, Node>,
+}
+
+impl Graph {
+    pub(crate) fn new() -> Self {
+        Self {
+            nodes: SlotMap::with_key(),
+        }
+    }
+
+    pub(crate) fn register(&mut self, parent: Option<NodeId>) -> NodeId {
+        let mut node = Node::new();
+        node.parent = parent;
+        let id = self.nodes.insert(node);
+
+        if let Some(parent_id) = parent {
+            if let Some(parent_node) = self.nodes.get_mut(parent_id) {
+                parent_node.children.push(id);
+            }
+        }
+        id
+    }
+
+    pub(crate) fn remove(&mut self, id: NodeId, remove_from_parent: bool) {
+        if remove_from_parent {
+            if let Some(parent_id) = self.nodes.get(id).and_then(|n| n.parent) {
+                if let Some(parent_node) = self.nodes.get_mut(parent_id) {
+                    if let Some(idx) = parent_node.children.iter().position(|&x| x == id) {
+                        parent_node.children.swap_remove(idx);
+                    }
+                }
+            }
+        }
+        self.nodes.remove(id);
+    }
+}
+
 // --- 响应式系统运行时 ---
 
 pub struct Runtime {
-    pub(crate) nodes: RefCell<SlotMap<NodeId, Node>>,
+    pub(crate) graph: RefCell<Graph>,
     pub(crate) signals: RefCell<SecondaryMap<NodeId, SignalData>>,
     pub(crate) effects: RefCell<SecondaryMap<NodeId, EffectData>>,
     pub(crate) callbacks: RefCell<SecondaryMap<NodeId, CallbackData>>,
@@ -88,7 +128,7 @@ thread_local! {
 impl Runtime {
     fn new() -> Self {
         Self {
-            nodes: RefCell::new(SlotMap::with_key()),
+            graph: RefCell::new(Graph::new()),
             signals: RefCell::new(SecondaryMap::new()),
             effects: RefCell::new(SecondaryMap::new()),
             callbacks: RefCell::new(SecondaryMap::new()),
@@ -104,19 +144,8 @@ impl Runtime {
     }
 
     pub(crate) fn register_node(&self) -> NodeId {
-        let mut nodes = self.nodes.borrow_mut();
         let parent = *self.current_owner.borrow();
-        let mut node = Node::new();
-        node.parent = parent;
-
-        let id = nodes.insert(node);
-
-        if let Some(parent_id) = parent {
-            if let Some(parent_node) = nodes.get_mut(parent_id) {
-                parent_node.children.push(id);
-            }
-        }
-        id
+        self.graph.borrow_mut().register(parent)
     }
 
     pub(crate) fn register_signal_internal<T: 'static>(&self, value: T) -> NodeId {
@@ -210,8 +239,8 @@ impl Runtime {
 
     fn clean_node(&self, id: NodeId) {
         let (children, cleanups) = {
-            let mut nodes = self.nodes.borrow_mut();
-            if let Some(node) = nodes.get_mut(id) {
+            let mut graph = self.graph.borrow_mut();
+            if let Some(node) = graph.nodes.get_mut(id) {
                 (
                     std::mem::take(&mut node.children),
                     std::mem::take(&mut node.cleanups),
@@ -260,19 +289,7 @@ impl Runtime {
 
     pub(crate) fn dispose_node_internal(&self, id: NodeId, remove_from_parent: bool) {
         self.clean_node(id);
-
-        let mut nodes = self.nodes.borrow_mut();
-        if remove_from_parent {
-            let parent_id = nodes.get(id).and_then(|n| n.parent);
-            if let Some(parent) = parent_id {
-                if let Some(parent_node) = nodes.get_mut(parent) {
-                    if let Some(idx) = parent_node.children.iter().position(|&x| x == id) {
-                        parent_node.children.swap_remove(idx);
-                    }
-                }
-            }
-        }
-        nodes.remove(id);
+        self.graph.borrow_mut().remove(id, remove_from_parent);
         self.signals.borrow_mut().remove(id);
         self.effects.borrow_mut().remove(id);
         self.stored_values.borrow_mut().remove(id);
@@ -286,8 +303,8 @@ impl Runtime {
 fn run_effect_internal(effect_id: NodeId) {
     RUNTIME.with(|rt| {
         let (children, cleanups) = {
-            let mut nodes = rt.nodes.borrow_mut();
-            if let Some(node) = nodes.get_mut(effect_id) {
+            let mut graph = rt.graph.borrow_mut();
+            if let Some(node) = graph.nodes.get_mut(effect_id) {
                 (
                     std::mem::take(&mut node.children),
                     std::mem::take(&mut node.cleanups),
@@ -424,8 +441,8 @@ pub fn dispose(id: NodeId) {
 pub fn on_cleanup(f: impl FnOnce() + 'static) {
     RUNTIME.with(|rt| {
         if let Some(owner) = *rt.current_owner.borrow() {
-            let mut nodes = rt.nodes.borrow_mut();
-            if let Some(node) = nodes.get_mut(owner) {
+            let mut graph = rt.graph.borrow_mut();
+            if let Some(node) = graph.nodes.get_mut(owner) {
                 node.cleanups.push(Box::new(f));
             }
         }
@@ -519,8 +536,8 @@ where
 pub fn provide_context_any(key: TypeId, value: Box<dyn Any>) {
     RUNTIME.with(|rt| {
         if let Some(owner) = *rt.current_owner.borrow() {
-            let mut nodes = rt.nodes.borrow_mut();
-            if let Some(node) = nodes.get_mut(owner) {
+            let mut graph = rt.graph.borrow_mut();
+            if let Some(node) = graph.nodes.get_mut(owner) {
                 if node.context.is_none() {
                     node.context = Some(HashMap::new());
                 }
@@ -539,11 +556,11 @@ pub fn provide_context<T: 'static>(value: T) {
 
 pub fn use_context<T: Clone + 'static>() -> Option<T> {
     RUNTIME.with(|rt| {
-        let nodes = rt.nodes.borrow();
+        let graph = rt.graph.borrow();
         let mut current_opt = *rt.current_owner.borrow();
 
         while let Some(current) = current_opt {
-            if let Some(node) = nodes.get(current) {
+            if let Some(node) = graph.nodes.get(current) {
                 if let Some(ctx) = &node.context {
                     if let Some(val) = ctx.get(&TypeId::of::<T>()) {
                         return val.downcast_ref::<T>().cloned();

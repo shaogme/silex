@@ -9,31 +9,39 @@
 ### 1. `Runtime` (运行时)
 *   **Thread Local**: `thread_local! { pub static RUNTIME: Runtime ... }`
 *   **Components**:
-    *   `nodes: SlotMap<NodeId, Node>`: 存储所有响应式节点（Metadata）。
+    *   `graph: Graph`: 负责管理节点拓扑结构（Nodes, Parent-Child Relationships）。
     *   `signals: SecondaryMap<NodeId, SignalData>`: 存储信号值及订阅者。
     *   `effects: SecondaryMap<NodeId, EffectData>`: 存储副作用计算及依赖。
     *   `observer_queue: VecDeque<NodeId>`: 待执行的副作用队列（BFS 调度）。
     *   `current_owner: Option<NodeId>`: 当前正在执行的副作用/包括 Scope，用于依赖收集和 Cleanup 注册。
     *   `batch_depth: Cell<usize>`: 当前批量更新的嵌套深度。
 
-### 2. `NodeId`
+### 2. `Graph` (Topology)
+*   **Components**:
+    *   `nodes: SlotMap<NodeId, Node>`: 存储所有响应式节点（Metadata）。
+*   **Responsibility**: 
+    *   节点的注册 (`register`)。
+    *   节点父子关系的维护（挂载与卸载）。
+    *   节点的移除 (`remove`)。
+
+### 3. `NodeId`
 *   **Type**: `slotmap::new_key_type!`
 *   **Semantics**: 响应式图谱中的唯一句柄，实现了 `Copy`, `Clone`, `Eq`, `Hash`.
 
-### 3. `Node` (Graph Metadata)
+### 4. `Node` (Graph Metadata)
 *   **Fields**:
     *   `children: Vec<NodeId>`: 子节点（用于级联销毁）。
     *   `parent: Option<NodeId>`: 父节点（Owner）。
     *   `cleanups: Vec<Box<dyn FnOnce()>>`: `on_cleanup` 注册的回调。
     *   `context: Option<HashMap<TypeId, Box<dyn Any>>>`: 依赖注入容器。
 
-### 4. `SignalData` (Source)
+### 5. `SignalData` (Source)
 *   **Fields**:
     *   `value: Box<dyn Any>`: 存储信号的实际值（类型擦除）。
     *   `subscribers: Vec<NodeId>`: 依赖此信号的副作用列表。
     *   `last_tracked_by: Option<(NodeId, u64)>`: 简单的缓存，防止重复追踪。
 
-### 5. `EffectData` (Observer)
+### 6. `EffectData` (Observer)
 *   **Fields**:
     *   `computation: Option<Rc<dyn Fn()>>`:副作用逻辑闭包。
     *   `dependencies: Vec<NodeId>`: 此副作用依赖的信号（用于重新执行前清理依赖）。
@@ -47,7 +55,7 @@
 
 ### `register_node`
 *   **Signature**: `fn register_node(&self) -> NodeId`
-*   **Logic**: 创建新 `Node`，自动连接 `current_owner` 作为父节点。
+*   **Logic**: 委托给 `self.graph.register`。创建新 `Node`，自动连接 `current_owner` 作为父节点。
 
 ### `track_dependency`
 *   **Signature**: `fn track_dependency(&self, signal_id: NodeId)`
@@ -68,7 +76,7 @@
 ### `clean_node`
 *   **Signature**: `fn clean_node(&self, id: NodeId)`
 *   **Logic**:
-    1.  移除并销毁所有 `children` (递归)。
+    1.  从 `graph` 中获取并移除所有 `children` (递归)。
     2.  执行所有 `cleanups`。
     3.  从所有 `dependencies` 的 `subscribers` 列表中移除自身 (断开反向引用)。
 

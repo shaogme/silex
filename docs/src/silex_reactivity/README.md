@@ -18,7 +18,7 @@
 
 ```rust
 pub struct Runtime {
-    pub(crate) nodes: RefCell<SlotMap<NodeId, Node>>,
+    pub(crate) graph: RefCell<Graph>,
     pub(crate) signals: RefCell<SecondaryMap<NodeId, SignalData>>,
     pub(crate) effects: RefCell<SecondaryMap<NodeId, EffectData>>,
     pub(crate) observer_queue: RefCell<VecDeque<NodeId>>,
@@ -26,19 +26,23 @@ pub struct Runtime {
 }
 ```
 
-### 2. NodeId 与 Node
+### 2. Graph (图谱结构)
+
+`Graph` 负责管理所有响应式节点的拓扑结构和生命周期。它封装了底层的 `SlotMap`，并处理节点间的父子关系连接与断开。
+
+### 3. NodeId 与 Node
 
 *   **NodeId**: 一个轻量级的句柄（newtype around valid key），用于引用图中的任何节点（信号、副作用、计算属性等）。
 *   **Node**: 存储通用的图谱信息，如父子关系 (`parent`, `children`)、清理回调 (`cleanups`) 和上下文 (`context`)。
 
-### 3. SignalData (信号数据)
+### 4. SignalData (信号数据)
 
 信号是响应式图谱中的数据源。
 
 *   **Value**: 使用 `Box<dyn Any>` 存储任意类型的值。
 *   **Subscribers**: 订阅了该信号变更的副作用节点列表。
 
-### 4. EffectData (副作用数据)
+### 5. EffectData (副作用数据)
 
 副作用是响应式图谱中的观察者。
 
