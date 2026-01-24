@@ -223,6 +223,12 @@ impl<V: View> View for Option<V> {
             v.mount(parent);
         }
     }
+
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
+        if let Some(v) = self {
+            v.apply_attributes(attrs);
+        }
+    }
 }
 
 impl<V: View> View for Vec<V> {
@@ -231,12 +237,24 @@ impl<V: View> View for Vec<V> {
             v.mount(parent);
         }
     }
+
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
+        for v in self {
+            v.apply_attributes(attrs.clone());
+        }
+    }
 }
 
 impl<V: View, const N: usize> View for [V; N] {
     fn mount(self, parent: &Node) {
         for v in self {
             v.mount(parent);
+        }
+    }
+
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
+        for v in self {
+            v.apply_attributes(attrs.clone());
         }
     }
 }
@@ -249,6 +267,12 @@ macro_rules! impl_view_for_tuple {
             fn mount(self, parent: &Node) {
                 let ($($name,)*) = self;
                 $($name.mount(parent);)*
+            }
+
+            #[allow(non_snake_case)]
+            fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
+                let ($($name,)*) = self;
+                $($name.apply_attributes(attrs.clone());)*
             }
         }
     }
@@ -374,6 +398,12 @@ impl View for Fragment {
     fn mount(self, parent: &Node) {
         for child in self.0 {
             child.mount(parent);
+        }
+    }
+
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
+        for child in &mut self.0 {
+            child.apply_attributes(attrs.clone());
         }
     }
 }
