@@ -35,7 +35,7 @@ pub mod prelude {
     pub use crate::log::*;
     pub use crate::node_ref::NodeRef;
     pub use crate::reactivity::{
-        Effect, Memo, ReadSignal, Resource, RwSignal, Signal, StoredValue, WriteSignal,
+        Effect, Memo, ReadSignal, Resource, RwSignal, Signal, StoredValue, WriteSignal, batch,
         create_scope, expect_context, on_cleanup, provide_context, signal, use_context,
     };
     pub use crate::traits::*;

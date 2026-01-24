@@ -1,6 +1,8 @@
 use crate::SilexError;
 use crate::flow::for_loop::IntoForLoopResult;
-use silex_core::reactivity::{Effect, NodeId, Signal, WriteSignal, create_scope, dispose, signal};
+use silex_core::reactivity::{
+    Effect, NodeId, Signal, WriteSignal, batch, create_scope, dispose, signal,
+};
 use silex_core::traits::{Accessor, Set};
 use silex_dom::View;
 use std::cell::RefCell;
@@ -88,62 +90,64 @@ where
             let items_vec: Vec<Item> = items_iter.into_iter().collect();
             let mut rows_lock = rows.borrow_mut();
 
-            let new_len = items_vec.len();
-            let old_len = rows_lock.len();
-            let common_len = std::cmp::min(new_len, old_len);
+            batch(|| {
+                let new_len = items_vec.len();
+                let old_len = rows_lock.len();
+                let common_len = std::cmp::min(new_len, old_len);
 
-            // 1. Update existing rows
-            for (i, item) in items_vec.iter().take(common_len).enumerate() {
-                rows_lock[i].setter.set(item.clone());
-            }
-
-            // 2. Add new rows
-            if new_len > old_len {
-                for (i, item) in items_vec.into_iter().skip(common_len).enumerate() {
-                    let real_index = common_len + i;
-                    let (get, set) = signal(item);
-
-                    let fragment = document.create_document_fragment();
-                    let fragment_node: Node = fragment.clone().into();
-                    let fragment_node_clone = fragment_node.clone();
-                    let map = map_fn.clone();
-
-                    let scope_id = create_scope(move || {
-                        map(get.into(), real_index).mount(&fragment_node_clone);
-                    });
-
-                    let nodes_list = fragment.child_nodes();
-                    let mut nodes = Vec::new();
-                    for j in 0..nodes_list.length() {
-                        if let Some(n) = nodes_list.item(j) {
-                            nodes.push(n);
-                        }
-                    }
-
-                    if let Some(p) = end_node.parent_node() {
-                        let _ = p.insert_before(&fragment_node, Some(&end_node));
-                    }
-
-                    rows_lock.push(IndexRow {
-                        setter: set,
-                        scope_id,
-                        nodes,
-                    });
+                // 1. Update existing rows
+                for (i, item) in items_vec.iter().take(common_len).enumerate() {
+                    rows_lock[i].setter.set(item.clone());
                 }
-            }
 
-            // 3. Remove extra rows
-            if old_len > new_len {
-                let to_remove = rows_lock.split_off(new_len);
-                for row in to_remove {
-                    dispose(row.scope_id);
-                    for node in row.nodes {
-                        if let Some(p) = node.parent_node() {
-                            let _ = p.remove_child(&node);
+                // 2. Add new rows
+                if new_len > old_len {
+                    for (i, item) in items_vec.into_iter().skip(common_len).enumerate() {
+                        let real_index = common_len + i;
+                        let (get, set) = signal(item);
+
+                        let fragment = document.create_document_fragment();
+                        let fragment_node: Node = fragment.clone().into();
+                        let fragment_node_clone = fragment_node.clone();
+                        let map = map_fn.clone();
+
+                        let scope_id = create_scope(move || {
+                            map(get.into(), real_index).mount(&fragment_node_clone);
+                        });
+
+                        let nodes_list = fragment.child_nodes();
+                        let mut nodes = Vec::new();
+                        for j in 0..nodes_list.length() {
+                            if let Some(n) = nodes_list.item(j) {
+                                nodes.push(n);
+                            }
                         }
+
+                        if let Some(p) = end_node.parent_node() {
+                            let _ = p.insert_before(&fragment_node, Some(&end_node));
+                        }
+
+                        rows_lock.push(IndexRow {
+                            setter: set,
+                            scope_id,
+                            nodes,
+                        });
                     }
                 }
-            }
+
+                // 3. Remove extra rows
+                if old_len > new_len {
+                    let to_remove = rows_lock.split_off(new_len);
+                    for row in to_remove {
+                        dispose(row.scope_id);
+                        for node in row.nodes {
+                            if let Some(p) = node.parent_node() {
+                                let _ = p.remove_child(&node);
+                            }
+                        }
+                    }
+                }
+            });
         });
     }
 }

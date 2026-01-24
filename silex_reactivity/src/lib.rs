@@ -78,6 +78,7 @@ pub struct Runtime {
     pub(crate) observer_queue: RefCell<VecDeque<NodeId>>,
     pub(crate) queued_observers: RefCell<SecondaryMap<NodeId, ()>>,
     pub(crate) running_queue: Cell<bool>,
+    pub(crate) batch_depth: Cell<usize>,
 }
 
 thread_local! {
@@ -98,6 +99,7 @@ impl Runtime {
             observer_queue: RefCell::new(VecDeque::new()),
             queued_observers: RefCell::new(SecondaryMap::new()),
             running_queue: Cell::new(false),
+            batch_depth: Cell::new(0),
         }
     }
 
@@ -372,7 +374,26 @@ pub fn update_signal<T: 'static>(id: NodeId, f: impl FnOnce(&mut T)) {
             }
         }
         rt.queue_dependents(id);
-        rt.run_queue();
+        if rt.batch_depth.get() == 0 {
+            rt.run_queue();
+        }
+    })
+}
+
+pub fn batch<R>(f: impl FnOnce() -> R) -> R {
+    RUNTIME.with(|rt| {
+        let depth = rt.batch_depth.get();
+        rt.batch_depth.set(depth + 1);
+
+        let result = f();
+
+        rt.batch_depth.set(depth);
+
+        if depth == 0 && !rt.running_queue.get() {
+            rt.run_queue();
+        }
+
+        result
     })
 }
 
@@ -625,7 +646,9 @@ pub fn track_signal(id: NodeId) {
 pub fn notify_signal(id: NodeId) {
     RUNTIME.with(|rt| {
         rt.queue_dependents(id);
-        rt.run_queue();
+        if rt.batch_depth.get() == 0 {
+            rt.run_queue();
+        }
     })
 }
 

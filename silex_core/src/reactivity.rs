@@ -1,5 +1,7 @@
 pub use silex_reactivity::NodeId;
-pub use silex_reactivity::{create_scope, dispose, on_cleanup, provide_context, use_context};
+pub use silex_reactivity::{
+    batch, create_scope, dispose, on_cleanup, provide_context, use_context,
+};
 
 pub mod effect;
 pub mod memo;
