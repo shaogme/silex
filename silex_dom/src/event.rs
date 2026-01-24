@@ -22,3 +22,31 @@ pub trait EventDescriptor: Copy + Clone + 'static {
 
 pub mod types;
 pub use types::*;
+
+// --- Event Handling Traits ---
+
+pub struct WithEventArg;
+pub struct WithoutEventArg;
+
+pub trait EventHandler<E, M> {
+    fn into_handler(self) -> Box<dyn FnMut(E)>;
+}
+
+impl<F, E> EventHandler<E, WithEventArg> for F
+where
+    F: FnMut(E) + 'static,
+{
+    fn into_handler(self) -> Box<dyn FnMut(E)> {
+        Box::new(self)
+    }
+}
+
+impl<F, E> EventHandler<E, WithoutEventArg> for F
+where
+    F: FnMut() + 'static,
+    E: 'static,
+{
+    fn into_handler(mut self) -> Box<dyn FnMut(E)> {
+        Box::new(move |_| self())
+    }
+}

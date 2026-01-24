@@ -1,3 +1,4 @@
+use crate::attribute::PendingAttribute;
 use crate::element::Element;
 use silex_core::reactivity::{Effect, Memo, ReadSignal, RwSignal, Signal};
 use silex_core::traits::Get;
@@ -9,31 +10,16 @@ use web_sys::Node;
 /// 核心特征：定义了如何将一个东西挂载到 DOM 上。
 pub trait View {
     fn mount(self, parent: &Node);
+
+    /// Apply forwarded attributes to this view.
+    /// Default implementation does nothing (for Text, Fragment, etc.).
+    /// Elements override this to actually apply attributes.
+    fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
 }
 
 // --- View Trait Implementations ---
 
-// 1. Element 本身就是 View
-impl View for Element {
-    fn mount(self, parent: &Node) {
-        if let Err(e) = parent
-            .append_child(&self.dom_element)
-            .map_err(SilexError::from)
-        {
-            silex_core::error::handle_error(e);
-        }
-    }
-}
-
-impl<T> View for crate::element::TypedElement<T> {
-    fn mount(self, parent: &Node) {
-        if let Err(e) = parent.append_child(&self.element).map_err(SilexError::from) {
-            silex_core::error::handle_error(e);
-        }
-    }
-}
-
-// 2. 静态文本 (String, &str)
+// 1. 静态文本 (String, &str)
 impl View for String {
     fn mount(self, parent: &Node) {
         let document = crate::document();
@@ -54,7 +40,7 @@ impl View for &str {
     }
 }
 
-// 3. 基础类型支持
+// 2. 基础类型支持
 macro_rules! impl_view_for_primitive {
     ($($t:ty),*) => {
         $(
@@ -79,7 +65,7 @@ impl View for () {
     fn mount(self, _parent: &Node) {}
 }
 
-// 4. 动态闭包支持 (Lazy View / Dynamic Text)
+// 3. 动态闭包支持 (Lazy View / Dynamic Text)
 impl<F, V> View for F
 where
     F: Fn() -> V + 'static,
@@ -154,7 +140,7 @@ where
     }
 }
 
-// 5. 直接 Signal 支持
+// 4. 直接 Signal 支持
 impl<T> View for ReadSignal<T>
 where
     T: Display + Clone + 'static,
@@ -230,7 +216,7 @@ where
     }
 }
 
-// 6. 容器类型支持
+// 5. 容器类型支持
 impl<V: View> View for Option<V> {
     fn mount(self, parent: &Node) {
         if let Some(v) = self {
@@ -255,7 +241,7 @@ impl<V: View, const N: usize> View for [V; N] {
     }
 }
 
-// 7. 元组支持
+// 6. 元组支持
 macro_rules! impl_view_for_tuple {
     ($($name:ident),*) => {
         impl<$($name: View),*> View for ($($name,)*) {
@@ -280,7 +266,7 @@ impl_view_for_tuple!(A, B, C, D, E, F, G, H, I, J);
 impl_view_for_tuple!(A, B, C, D, E, F, G, H, I, J, K);
 impl_view_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
 
-// 8. Result 支持
+// 7. Result 支持
 impl<V: View> View for SilexResult<V> {
     fn mount(self, parent: &Node) {
         match self {
@@ -296,6 +282,7 @@ impl<V: View> View for SilexResult<V> {
 pub trait Render {
     fn mount_boxed(self: Box<Self>, parent: &Node);
     fn clone_boxed(&self) -> Box<dyn Render>;
+    fn apply_attributes_boxed(&mut self, attrs: Vec<PendingAttribute>);
 }
 
 impl<V: View + Clone + 'static> Render for V {
@@ -304,6 +291,9 @@ impl<V: View + Clone + 'static> Render for V {
     }
     fn clone_boxed(&self) -> Box<dyn Render> {
         Box::new(self.clone())
+    }
+    fn apply_attributes_boxed(&mut self, attrs: Vec<PendingAttribute>) {
+        self.apply_attributes(attrs);
     }
 }
 
@@ -320,6 +310,10 @@ impl AnyView {
 impl View for AnyView {
     fn mount(self, parent: &Node) {
         self.0.mount_boxed(parent)
+    }
+
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
+        self.0.apply_attributes_boxed(attrs);
     }
 }
 

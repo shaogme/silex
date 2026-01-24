@@ -1,6 +1,7 @@
 use silex_core::reactivity::SuspenseContext;
 use silex_core::reactivity::{Effect, create_scope, provide_context};
 use silex_core::traits::Get;
+use silex_dom::attribute::GlobalAttributes;
 use silex_dom::view::View;
 use silex_html::div;
 use web_sys::Node;

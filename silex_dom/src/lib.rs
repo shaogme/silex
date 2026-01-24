@@ -10,7 +10,7 @@ pub mod helpers;
 pub use helpers::*;
 
 pub mod event;
-pub use event::EventDescriptor;
+pub use event::{EventDescriptor, EventHandler, WithEventArg, WithoutEventArg};
 
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;

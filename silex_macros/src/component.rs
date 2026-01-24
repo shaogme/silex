@@ -14,6 +14,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     let mut builder_methods = Vec::new();
     let mut new_initializers = Vec::new();
     let mut mount_checks = Vec::new(); // Runtime checks for required props
+    let mut used_prop_names = std::collections::HashSet::new();
 
     // 处理结构体定义的泛型
     let (impl_generics, ty_generics, where_clause) = fn_generics.split_for_impl();
@@ -63,6 +64,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         };
 
         let param_name_str = param_name.to_string();
+        used_prop_names.insert(param_name_str.clone());
 
         // 策略:
         // 1. 如果有 default 值，字段类型为 T，初始化为 default。
@@ -125,14 +127,14 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
             if type_clean.ends_with("Children") || type_clean.ends_with("AnyView") {
                 if is_required {
                     builder_methods.push(quote! {
-                        pub fn #param_name<V: ::silex::dom::view::IntoAnyView>(mut self, val: V) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::IntoAnyView>(mut self, val: __SilexValue) -> Self {
                             self.#param_name = Some(val.into_any());
                             self
                         }
                     });
                 } else {
                     builder_methods.push(quote! {
-                        pub fn #param_name<V: ::silex::dom::view::IntoAnyView>(mut self, val: V) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::IntoAnyView>(mut self, val: __SilexValue) -> Self {
                             self.#param_name = val.into_any();
                             self
                         }
@@ -174,30 +176,78 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         }
     }
 
+    // Forwarding methods are now handled by AttributeBuilder trait implementation
+
     let expanded = quote! {
         // 生成结构体
         #[derive(Clone)]
         #fn_vis struct #struct_name #impl_generics #where_clause {
-            #(#struct_fields),*
+            #(#struct_fields,)*
+            // Internal storage for forwarded attributes
+            _pending_attrs: Vec<::silex::dom::attribute::PendingAttribute>,
         }
 
         impl #impl_generics #struct_name #ty_generics #where_clause {
             // New is always parameter-less
             pub fn new() -> Self {
                 Self {
-                    #(#new_initializers),*
+                    #(#new_initializers,)*
+                    _pending_attrs: Vec::new(),
                 }
             }
 
             #(#builder_methods)*
         }
 
+        impl #impl_generics ::silex::dom::attribute::AttributeBuilder for #struct_name #ty_generics #where_clause {
+            fn build_attribute<__SilexValue>(mut self, target: ::silex::dom::attribute::ApplyTarget, value: __SilexValue) -> Self
+            where __SilexValue: ::silex::dom::attribute::IntoStorable
+            {
+                let owned_target = match target {
+                    ::silex::dom::attribute::ApplyTarget::Attr(n) => ::silex::dom::attribute::OwnedApplyTarget::Attr(n.to_string()),
+                    ::silex::dom::attribute::ApplyTarget::Prop(n) => ::silex::dom::attribute::OwnedApplyTarget::Prop(n.to_string()),
+                    ::silex::dom::attribute::ApplyTarget::Class => ::silex::dom::attribute::OwnedApplyTarget::Class,
+                    ::silex::dom::attribute::ApplyTarget::Style => ::silex::dom::attribute::OwnedApplyTarget::Style,
+                };
+                // Convert to storable type before storing
+                self._pending_attrs.push(
+                    ::silex::dom::attribute::PendingAttribute::build(value.into_storable(), owned_target)
+                );
+                self
+            }
+
+            fn build_event<E, F, M>(mut self, event: E, callback: F) -> Self
+            where
+                E: ::silex::dom::event::EventDescriptor + 'static,
+                F: ::silex::dom::event::EventHandler<E::EventType, M> + Clone + 'static,
+            {
+                 // We specifically need Clone events to capture them in the pending closure
+                 // EventDescriptor is Copy/Clone, so it's fine.
+                 // Handler F accepts Clone bound.
+                 let event = event.clone(); // In case E is not Copy? EventDescriptor implies Copy+Clone.
+
+                 self._pending_attrs.push(
+                    ::silex::dom::attribute::PendingAttribute::new_listener(move |el| {
+                        ::silex::dom::element::bind_event(el, event, callback.clone());
+                    })
+                );
+                self
+            }
+        }
+
+
         impl #impl_generics ::silex::dom::view::View for #struct_name #ty_generics #where_clause {
             fn mount(self, parent: &::silex::reexports::web_sys::Node) {
                 // Runtime checks and bindings
                 #(#mount_checks)*
 
-                let view_instance = #fn_body;
+                let mut view_instance = #fn_body;
+
+                // Forward attributes
+                if !self._pending_attrs.is_empty() {
+                    view_instance.apply_attributes(self._pending_attrs);
+                }
+
                 ::silex::dom::view::View::mount(view_instance, parent);
             }
         }

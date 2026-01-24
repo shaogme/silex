@@ -268,14 +268,14 @@ impl<T: 'static> UpdateUntracked for WriteSignal<T> {
 }
 
 impl<T: 'static> WriteSignal<T> {
-    pub fn setter(self, value: T) -> impl Fn()
+    pub fn setter(self, value: T) -> impl Fn() + Clone
     where
         T: Clone,
     {
         move || self.set(value.clone())
     }
 
-    pub fn updater<F>(self, f: F) -> impl Fn()
+    pub fn updater<F>(self, f: F) -> impl Fn() + Clone
     where
         F: Fn(&mut T) + Clone + 'static,
     {
@@ -340,14 +340,14 @@ impl<T: 'static> RwSignal<T> {
         self.read.map(f)
     }
 
-    pub fn setter(self, value: T) -> impl Fn()
+    pub fn setter(self, value: T) -> impl Fn() + Clone
     where
         T: Clone,
     {
         move || self.set(value.clone())
     }
 
-    pub fn updater<F>(self, f: F) -> impl Fn()
+    pub fn updater<F>(self, f: F) -> impl Fn() + Clone
     where
         F: Fn(&mut T) + Clone + 'static,
     {

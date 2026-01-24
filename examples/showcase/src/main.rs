@@ -119,6 +119,41 @@ mod basics {
         ]
         .style("padding: 20px; border: 1px dashed #999; margin-top: 20px;")
     }
+    #[component]
+    pub fn SvgIconDemo() -> impl View {
+        #[component]
+        fn ShieldCheck() -> Element {
+            svg(
+                path()
+                    .attr("stroke-linecap", "round")
+                    .attr("stroke-linejoin", "round")
+                    .attr("stroke-width", "2")
+                    .attr("d", "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"),
+            )
+            .attr("viewBox", "0 0 24 24")
+            .attr("fill", "none")
+            .attr("stroke", "currentColor")
+            .attr("width", "24")
+            .attr("height", "24")
+        }
+
+        div![
+            h3("SVG Icon forwarding"),
+            p("SVG icons with attribute forwarding."),
+            div![
+                ShieldCheck().style("width: 32px; height: 32px; color: green;"),
+                ShieldCheck()
+                    .style("width: 48px; height: 48px; color: blue; margin-left: 10px; cursor: pointer;")
+                    .on(event::click, |_| console_log("Icon Clicked!")),
+                ShieldCheck()
+                    .attr("width", "50")
+                    .attr("height", "50")
+                    .style("color: red; margin-left: 10px;"),
+            ]
+            .style("display: flex; align-items: center; padding: 10px; background: white; border: 1px solid #ddd;")
+        ]
+        .style("margin-top: 20px;")
+    }
 
     #[component]
     pub fn BasicsPage() -> impl View {
@@ -134,6 +169,7 @@ mod basics {
             Greeting().name(name_signal),
             Counter(),
             NodeRefDemo(),
+            SvgIconDemo(),
             // AttributeDemo omitted for brevity, logic is same as previous
         ]
     }

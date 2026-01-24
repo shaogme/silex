@@ -1,4 +1,4 @@
-use crate::attribute::{ApplyTarget, ApplyToDom};
+use crate::attribute::{ApplyTarget, ApplyToDom, IntoStorable, PendingAttribute};
 use crate::view::View;
 use silex_core::SilexError;
 use silex_core::node_ref::NodeRef;
@@ -11,36 +11,13 @@ use wasm_bindgen::prelude::*;
 use web_sys::Element as WebElem;
 
 pub mod tags;
+use crate::event::{EventDescriptor, EventHandler};
 pub use tags::*;
 
 // --- Macros for Deduplication ---
 
 macro_rules! impl_element_common {
     () => {
-        pub fn attr(self, name: &str, value: impl ApplyToDom) -> Self {
-            value.apply(&self.as_web_element(), ApplyTarget::Attr(name));
-            self
-        }
-
-        pub fn id(self, value: impl ApplyToDom) -> Self {
-            self.attr("id", value)
-        }
-
-        pub fn class(self, value: impl ApplyToDom) -> Self {
-            value.apply(&self.as_web_element(), ApplyTarget::Class);
-            self
-        }
-
-        pub fn style(self, value: impl ApplyToDom) -> Self {
-            value.apply(&self.as_web_element(), ApplyTarget::Style);
-            self
-        }
-
-        pub fn prop(self, name: &str, value: impl ApplyToDom) -> Self {
-            value.apply(&self.as_web_element(), ApplyTarget::Prop(name));
-            self
-        }
-
         pub fn class_toggle<C>(self, name: &str, condition: C) -> Self
         where
             (String, C): ApplyToDom,
@@ -169,44 +146,6 @@ macro_rules! impl_element_common {
             this
         }
 
-        pub fn on<E, F, M>(self, event: E, callback: F) -> Self
-        where
-            E: crate::event::EventDescriptor + 'static,
-            F: EventHandler<E::EventType, M>,
-        {
-            let mut handler = callback.into_handler();
-            let type_str = event.name();
-
-            let closure = Closure::wrap(Box::new(move |e: E::EventType| {
-                handler(e);
-            }) as Box<dyn FnMut(E::EventType)>);
-
-            let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
-            let dom_element = self.as_web_element();
-
-            // Note: event.name() returns generic string, we need to pass str reference
-            let type_str_ref: &str = &type_str;
-            if let Err(e) = dom_element
-                .add_event_listener_with_callback(type_str_ref, js_value)
-                .map_err(SilexError::from)
-            {
-                silex_core::error::handle_error(e);
-                return self;
-            }
-
-            let target = dom_element.clone();
-            let js_fn = js_value.clone();
-            // We need to own the string for the cleanup closure
-            let type_clone = type_str.to_string();
-
-            on_cleanup(move || {
-                let _ = target.remove_event_listener_with_callback(&type_clone, &js_fn);
-                drop(closure);
-            });
-
-            self
-        }
-
         pub fn on_untyped<E, F>(self, event_type: &str, mut callback: F) -> Self
         where
             E: wasm_bindgen::convert::FromWasmAbi + 'static,
@@ -239,34 +178,6 @@ macro_rules! impl_element_common {
             self
         }
     };
-}
-
-// --- Event Handling Traits ---
-
-pub struct WithEventArg;
-pub struct WithoutEventArg;
-
-pub trait EventHandler<E, M> {
-    fn into_handler(self) -> Box<dyn FnMut(E)>;
-}
-
-impl<F, E> EventHandler<E, WithEventArg> for F
-where
-    F: FnMut(E) + 'static,
-{
-    fn into_handler(self) -> Box<dyn FnMut(E)> {
-        Box::new(self)
-    }
-}
-
-impl<F, E> EventHandler<E, WithoutEventArg> for F
-where
-    F: FnMut() + 'static,
-    E: 'static,
-{
-    fn into_handler(mut self) -> Box<dyn FnMut(E)> {
-        Box::new(move |_| self())
-    }
 }
 
 /// Identity function to wrap text content as a View.
@@ -314,6 +225,47 @@ impl Element {
 
     // --- 统一的属性/事件 API (Generated) ---
     impl_element_common!();
+}
+
+// --- AttributeBuilder Implementation ---
+
+use crate::attribute::AttributeBuilder;
+
+impl AttributeBuilder for Element {
+    fn build_attribute<V>(self, target: ApplyTarget, value: V) -> Self
+    where
+        V: IntoStorable,
+    {
+        // Convert to storable type, then apply to DOM
+        value.into_storable().apply(&self.dom_element, target);
+        self
+    }
+
+    fn build_event<E, F, M>(self, event: E, callback: F) -> Self
+    where
+        E: EventDescriptor + 'static,
+        F: EventHandler<E::EventType, M> + Clone + 'static,
+    {
+        bind_event(&self.dom_element, event, callback);
+        self
+    }
+}
+
+impl View for Element {
+    fn mount(self, parent: &::web_sys::Node) {
+        if let Err(e) = parent
+            .append_child(&self.dom_element)
+            .map_err(SilexError::from)
+        {
+            silex_core::error::handle_error(e);
+        }
+    }
+
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
+        for attr in attrs {
+            attr.apply(&self.dom_element);
+        }
+    }
 }
 
 impl std::ops::Deref for Element {
@@ -366,6 +318,40 @@ impl<T> TypedElement<T> {
     impl_element_common!();
 }
 
+impl<T> AttributeBuilder for TypedElement<T> {
+    fn build_attribute<V>(self, target: ApplyTarget, value: V) -> Self
+    where
+        V: IntoStorable,
+    {
+        // Convert to storable type, then apply to DOM
+        value
+            .into_storable()
+            .apply(&self.element.dom_element, target);
+        self
+    }
+
+    fn build_event<E, F, M>(self, event: E, callback: F) -> Self
+    where
+        E: EventDescriptor + 'static,
+        F: EventHandler<E::EventType, M> + Clone + 'static,
+    {
+        bind_event(&self.element.dom_element, event, callback);
+        self
+    }
+}
+
+impl<T> View for TypedElement<T> {
+    fn mount(self, parent: &::web_sys::Node) {
+        if let Err(e) = parent.append_child(&self.element).map_err(SilexError::from) {
+            silex_core::error::handle_error(e);
+        }
+    }
+
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
+        self.element.apply_attributes(attrs);
+    }
+}
+
 impl<T: Tag> Into<Element> for TypedElement<T> {
     fn into(self) -> Element {
         self.into_untyped()
@@ -380,3 +366,40 @@ impl<T: Tag> std::ops::Deref for TypedElement<T> {
 }
 
 // End of core element logic
+
+/// Helper function to bind an event to a DOM element.
+/// Used by Element's `.on()` and Component's forwarded `.on()`.
+pub fn bind_event<E, F, M>(dom_element: &WebElem, event: E, callback: F)
+where
+    E: crate::event::EventDescriptor + 'static,
+    F: EventHandler<E::EventType, M>,
+{
+    let mut handler = callback.into_handler();
+    let type_str = event.name();
+
+    let closure = Closure::wrap(Box::new(move |e: E::EventType| {
+        handler(e);
+    }) as Box<dyn FnMut(E::EventType)>);
+
+    let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
+
+    // Note: event.name() returns generic string, we need to pass str reference
+    let type_str_ref: &str = &type_str;
+    if let Err(e) = dom_element
+        .add_event_listener_with_callback(type_str_ref, js_value)
+        .map_err(SilexError::from)
+    {
+        silex_core::error::handle_error(e);
+        return;
+    }
+
+    let target = dom_element.clone();
+    let js_fn = js_value.clone();
+    // We need to own the string for the cleanup closure
+    let type_clone = type_str.to_string();
+
+    on_cleanup(move || {
+        let _ = target.remove_event_listener_with_callback(&type_clone, &js_fn);
+        drop(closure);
+    });
+}
