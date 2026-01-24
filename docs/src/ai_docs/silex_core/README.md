@@ -23,12 +23,15 @@
 *   `GetUntracked`: `fn try_get_untracked(&self) -> Option<Self::Value>`。不追踪，Clone 并返回值 (Requires `T: Clone`)。
 *   `Get`: `fn try_get(&self) -> Option<Self::Value>`。自动追踪，Clone 并返回值 (Requires `T: Clone`)。
 *   **Accessor<T>**: 统一的读取接口，包含 `value(&self) -> T`。所有 Signal 类型及闭包 `Fn() -> T` 均实现了此 Trait。
+*   `Map`: `fn map<U, F>(self, f: F) -> Memo<U>`。从当前信号创建派生计算信号 `Memo`。
 
 #### Update Traits (写更新)
 *   `Notify`: `fn notify(&self)`。显式通知。触发 subscribers 更新。
 *   `UpdateUntracked`: `fn try_update_untracked<U>(&self, fun: impl FnOnce(&mut Self::Value) -> U) -> Option<U>`。不通知，通过可变引用修改值。
 *   `Update`: `fn try_update<U>(&self, fun: impl FnOnce(&mut Self::Value) -> U) -> Option<U>`。修改值并自动通知。
 *   `Set`: `fn try_set(&self, value: Self::Value) -> Option<Self::Value>`。直接替换值并自动通知。
+*   `SignalSetter`: `fn setter(self, value: Self::Value) -> impl Fn() + Clone`。创建设置值的闭包。
+*   `SignalUpdater`: `fn updater<F>(self, f: F) -> impl Fn() + Clone`。创建更新值的闭包。
 
 ---
 
@@ -38,7 +41,7 @@
 *   **Enum**:
     *   `Read(ReadSignal<T>)`
     *   `Derived(NodeId, PhantomData<T>)`
-*   **Traits**: `Copy`, `Clone`, `Debug`, `Accessor<T>`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`.
+*   **Traits**: `Copy`, `Clone`, `Debug`, `Accessor<T>`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `Map`.
 *   **Semantics**:
     *   通用的信号接口，统一了 `ReadSignal` 和派生计算。
     *   `Derived` 变体持有一个在 Runtime 中注册的闭包，每次 `get()` 时重新执行闭包（无缓存）。
@@ -48,22 +51,32 @@
 
 #### `ReadSignal<T>`
 *   **Struct**: `pub struct ReadSignal<T> { id: NodeId, marker: PhantomData<T> }`
-*   **Traits**: `Copy`, `Clone`, `Debug`, `Accessor<T>`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`.
+*   **Traits**: `Copy`, `Clone`, `Debug`, `Accessor<T>`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
 *   **Fluent API**: 实现了 `eq`, `ne`, `gt`, `lt`, `ge`, `le`，返回 `Memo<bool>`。
 
 #### `WriteSignal<T>`
 *   **Struct**: `pub struct WriteSignal<T> { id: NodeId, marker: PhantomData<T> }`
-*   **Traits**: `Copy`, `Clone`, `Debug`, `DefinedAt`, `IsDisposed`, `Notify`, `UpdateUntracked`, `Update`, `Set`.
+*   **Traits**: `Copy`, `Clone`, `Debug`, `DefinedAt`, `IsDisposed`, `Notify`, `UpdateUntracked`, `Update`, `Set`, `SignalSetter`, `SignalUpdater`.
 *   **Methods**:
     *   `set(new_value: T)`: (via `Set` trait).
     *   `update(f: impl FnOnce(&mut T))`: (via `Update` trait).
-    *   `setter(value: T) -> impl Fn()`: 返回一个设置值的闭包。
-    *   `updater(f: F) -> impl Fn()`: 返回一个更新值的闭包。
+    *   `set(new_value: T)`: (via `Set` trait).
+    *   `update(f: impl FnOnce(&mut T))`: (via `Update` trait).
+    *   `setter(value: T) -> impl Fn()`: (via `SignalSetter` trait).
+    *   `updater(f: F) -> impl Fn()`: (via `SignalUpdater` trait).
 
 #### `RwSignal<T>`
 *   **Struct**: `pub struct RwSignal<T> { read: ReadSignal<T>, write: WriteSignal<T> }`
 *   **Traits**: Implements all traits of `ReadSignal` and `WriteSignal`.
 *   **Semantics**: 读写合一的信号句柄，常用于组件 Props。
+    *   **Implements**: `SignalSetter`, `SignalUpdater`.
+
+#### `Memo<T>`
+*   **Struct**: `pub struct Memo<T> { id: NodeId, marker: PhantomData<T> }`
+*   **Traits**: `Copy`, `Clone`, `Debug`, `Accessor<T>`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `Map`.
+*   **Semantics**: 派生计算信号。值被缓存，仅在依赖变更时无效。
+*   **Methods**:
+    *   `new(f: impl Fn(Option<&T>) -> T)`: 创建 Memo。
 
 #### `signal<T>`
 *   **Signature**: `pub fn signal<T: 'static>(value: T) -> (ReadSignal<T>, WriteSignal<T>)`
@@ -89,7 +102,7 @@
 *   **Semantics**: 延迟 Effect 的执行，直到闭包 `f` 结束。用于优化多次连续更新。
 
 
-### 2. Async Resources (异步资源)
+### 4. Async Resources (异步资源)
 
 #### `Resource<T, E>`
 *   **Struct**:
@@ -120,7 +133,7 @@
     3.  集成了 `SuspenseContext`：请求开始时 `increment`，结束时 `decrement`。
     4.  处理竞态条件：丢弃旧 ID 的返回结果。
 
-### 3. Context & Suspense
+### 5. Context & Suspense
 
 #### `provide_context`, `use_context`
 *   直接重导出自 `silex_reactivity`，增加了 `SilexError` 相关的默认 Context 支持。
