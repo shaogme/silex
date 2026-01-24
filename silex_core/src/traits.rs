@@ -79,7 +79,11 @@ macro_rules! unwrap_signal {
             {
                 panic!(
                     "{}",
-                    $crate::traits::panic_getting_disposed_signal($signal.defined_at(), location)
+                    $crate::traits::panic_getting_disposed_signal(
+                        $signal.defined_at(),
+                        $signal.debug_name(),
+                        location
+                    )
                 );
             }
             #[cfg(not(debug_assertions))]
@@ -376,23 +380,43 @@ pub trait DefinedAt {
     /// Returns the location at which the signal was defined. This is usually simply `None` in
     /// release mode.
     fn defined_at(&self) -> Option<&'static Location<'static>>;
+
+    /// Returns the debug name of the signal, if any.
+    fn debug_name(&self) -> Option<String> {
+        None
+    }
 }
 
 #[doc(hidden)]
 pub fn panic_getting_disposed_signal(
     defined_at: Option<&'static Location<'static>>,
+    debug_name: Option<String>,
     location: &'static Location<'static>,
 ) -> String {
-    if let Some(defined_at) = defined_at {
-        format!(
-            "At {location}, you tried to access a reactive value which was \
-             defined at {defined_at}, but it has already been disposed."
-        )
+    if let Some(name) = debug_name {
+        if let Some(defined_at) = defined_at {
+            format!(
+                "At {location}, you tried to access a reactive value \"{name}\" which was \
+                 defined at {defined_at}, but it has already been disposed."
+            )
+        } else {
+            format!(
+                "At {location}, you tried to access a reactive value \"{name}\", but it has \
+                 already been disposed."
+            )
+        }
     } else {
-        format!(
-            "At {location}, you tried to access a reactive value, but it has \
-             already been disposed."
-        )
+        if let Some(defined_at) = defined_at {
+            format!(
+                "At {location}, you tried to access a reactive value which was \
+                 defined at {defined_at}, but it has already been disposed."
+            )
+        } else {
+            format!(
+                "At {location}, you tried to access a reactive value, but it has \
+                 already been disposed."
+            )
+        }
     }
 }
 

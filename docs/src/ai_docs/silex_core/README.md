@@ -14,6 +14,7 @@
 
 #### Metadata Traits
 *   `DefinedAt`: `fn defined_at(&self) -> Option<&'static Location<'static>>`。调试辅助，提供信号定义的位置信息。
+*   `debug_name(&self) -> Option<String>`。调试辅助，提供信号的语义化名称。
 *   `IsDisposed`: `fn is_disposed(&self) -> bool`。检查信号是否已被销毁。
 
 #### Access Traits (读访问)
@@ -145,6 +146,18 @@
 #### `SuspenseContext`
 *   **Struct**: `{ count: ReadSignal<usize>, set_count: WriteSignal<usize> }`
 *   **Usage**: 用于追踪全局或局部的异步任务数量。
+
+### 6. Lifecycle & Safety (生命周期与安全)
+
+#### Safer Cleanup (更安全的清理)
+*   `on_cleanup` 回调现在保证在 **子节点销毁之前** 执行。
+*   这意味着在清理函数中，依然可以安全地访问当前作用域内创建的 `Signal`、`StoredValue` 或其他响应式状态。
+*   此前（旧版本）清理执行顺序在子节点销毁之后，导致访问已销毁状态时 Panic。
+
+#### Debugging Support (调试支持)
+*   **Debug Labels**: 所有的 `Signal`, `Memo`, `StoredValue` 现在都支持 `.with_name("label")` 方法。
+*   **Panic Messages**: 当尝试访问已销毁的信号时，Panic 信息会包含该信号的名称（如果有），极大地辅助定位问题。
+    > "At locations..., you tried to access a reactive value 'DashboardTimer' which was defined at ..., but it has already been disposed."
 
 ---
 

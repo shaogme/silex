@@ -38,9 +38,20 @@ impl<T: Clone + PartialEq + 'static> Memo<T> {
     }
 }
 
+impl<T> Memo<T> {
+    pub fn with_name(self, name: impl Into<String>) -> Self {
+        silex_reactivity::set_debug_label(self.id, name);
+        self
+    }
+}
+
 impl<T> DefinedAt for Memo<T> {
     fn defined_at(&self) -> Option<&'static Location<'static>> {
         None
+    }
+
+    fn debug_name(&self) -> Option<String> {
+        silex_reactivity::get_debug_label(self.id)
     }
 }
 

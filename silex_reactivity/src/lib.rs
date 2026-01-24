@@ -17,6 +17,8 @@ pub(crate) struct Node {
     pub(crate) parent: Option<NodeId>,
     pub(crate) cleanups: Vec<Box<dyn FnOnce()>>,
     pub(crate) context: Option<HashMap<TypeId, Box<dyn Any>>>,
+    #[cfg(debug_assertions)]
+    pub(crate) debug_label: Option<String>,
 }
 
 impl Node {
@@ -26,6 +28,8 @@ impl Node {
             parent: None,
             cleanups: Vec::new(),
             context: None,
+            #[cfg(debug_assertions)]
+            debug_label: None,
         }
     }
 }
@@ -119,6 +123,8 @@ pub struct Runtime {
     pub(crate) queued_observers: RefCell<SecondaryMap<NodeId, ()>>,
     pub(crate) running_queue: Cell<bool>,
     pub(crate) batch_depth: Cell<usize>,
+    #[cfg(debug_assertions)]
+    pub(crate) dead_node_labels: RefCell<SecondaryMap<NodeId, String>>,
 }
 
 thread_local! {
@@ -140,6 +146,8 @@ impl Runtime {
             queued_observers: RefCell::new(SecondaryMap::new()),
             running_queue: Cell::new(false),
             batch_depth: Cell::new(0),
+            #[cfg(debug_assertions)]
+            dead_node_labels: RefCell::new(SecondaryMap::new()),
         }
     }
 
@@ -289,6 +297,15 @@ impl Runtime {
 
     pub(crate) fn dispose_node_internal(&self, id: NodeId, remove_from_parent: bool) {
         self.clean_node(id);
+        #[cfg(debug_assertions)]
+        {
+            let mut graph = self.graph.borrow_mut();
+            if let Some(node) = graph.nodes.get_mut(id) {
+                if let Some(label) = node.debug_label.take() {
+                    self.dead_node_labels.borrow_mut().insert(id, label);
+                }
+            }
+        }
         self.graph.borrow_mut().remove(id, remove_from_parent);
         self.signals.borrow_mut().remove(id);
         self.effects.borrow_mut().remove(id);
@@ -783,4 +800,39 @@ pub fn try_update_signal_silent<T: 'static, R>(
 
 pub fn is_signal_valid(id: NodeId) -> bool {
     RUNTIME.with(|rt| rt.signals.borrow().contains_key(id))
+}
+
+// --- Debugging API ---
+
+pub fn set_debug_label(id: NodeId, label: impl Into<String>) {
+    #[cfg(debug_assertions)]
+    {
+        let label = label.into();
+        RUNTIME.with(|rt| {
+            let mut graph = rt.graph.borrow_mut();
+            if let Some(node) = graph.nodes.get_mut(id) {
+                node.debug_label = Some(label);
+            }
+        })
+    }
+}
+
+pub fn get_debug_label(id: NodeId) -> Option<String> {
+    #[cfg(debug_assertions)]
+    {
+        return RUNTIME.with(|rt| {
+            let graph = rt.graph.borrow();
+            if let Some(node) = graph.nodes.get(id) {
+                if let Some(label) = &node.debug_label {
+                    return Some(label.clone());
+                }
+            }
+            // Check dead labels
+            rt.dead_node_labels.borrow().get(id).cloned()
+        });
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        return None;
+    }
 }

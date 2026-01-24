@@ -47,11 +47,20 @@ impl<T: 'static> StoredValue<T> {
     {
         GetValue::get_value(self)
     }
+
+    pub fn with_name(self, name: impl Into<String>) -> Self {
+        silex_reactivity::set_debug_label(self.id, name);
+        self
+    }
 }
 
 impl<T> DefinedAt for StoredValue<T> {
     fn defined_at(&self) -> Option<&'static Location<'static>> {
         None
+    }
+
+    fn debug_name(&self) -> Option<String> {
+        silex_reactivity::get_debug_label(self.id)
     }
 }
 

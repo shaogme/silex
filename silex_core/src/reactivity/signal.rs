@@ -26,11 +26,28 @@ impl<T: Clone + 'static> Signal<T> {
         let id = silex_reactivity::register_derived(move || Box::new(f()));
         Signal::Derived(id, PhantomData)
     }
+
+    pub fn with_name(self, name: impl Into<String>) -> Self {
+        match self {
+            Signal::Read(s) => {
+                s.with_name(name);
+            }
+            Signal::Derived(id, _) => silex_reactivity::set_debug_label(id, name),
+        }
+        self
+    }
 }
 
 impl<T> DefinedAt for Signal<T> {
     fn defined_at(&self) -> Option<&'static Location<'static>> {
         None
+    }
+
+    fn debug_name(&self) -> Option<String> {
+        match self {
+            Signal::Read(s) => s.debug_name(),
+            Signal::Derived(id, _) => silex_reactivity::get_debug_label(*id),
+        }
     }
 }
 
@@ -119,6 +136,13 @@ pub struct ReadSignal<T> {
     pub(crate) marker: PhantomData<T>,
 }
 
+impl<T> ReadSignal<T> {
+    pub fn with_name(self, name: impl Into<String>) -> Self {
+        silex_reactivity::set_debug_label(self.id, name);
+        self
+    }
+}
+
 impl<T> std::fmt::Debug for ReadSignal<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "ReadSignal({:?})", self.id)
@@ -135,6 +159,10 @@ impl<T> Copy for ReadSignal<T> {}
 impl<T> DefinedAt for ReadSignal<T> {
     fn defined_at(&self) -> Option<&'static Location<'static>> {
         None
+    }
+
+    fn debug_name(&self) -> Option<String> {
+        silex_reactivity::get_debug_label(self.id)
     }
 }
 
@@ -242,6 +270,13 @@ pub struct WriteSignal<T> {
     pub(crate) marker: PhantomData<T>,
 }
 
+impl<T> WriteSignal<T> {
+    pub fn with_name(self, name: impl Into<String>) -> Self {
+        silex_reactivity::set_debug_label(self.id, name);
+        self
+    }
+}
+
 impl<T> std::fmt::Debug for WriteSignal<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "WriteSignal({:?})", self.id)
@@ -258,6 +293,10 @@ impl<T> Copy for WriteSignal<T> {}
 impl<T> DefinedAt for WriteSignal<T> {
     fn defined_at(&self) -> Option<&'static Location<'static>> {
         None
+    }
+
+    fn debug_name(&self) -> Option<String> {
+        silex_reactivity::get_debug_label(self.id)
     }
 }
 
@@ -347,11 +386,20 @@ impl<T: 'static> RwSignal<T> {
     pub fn from_parts(read: ReadSignal<T>, write: WriteSignal<T>) -> Self {
         Self { read, write }
     }
+
+    pub fn with_name(self, name: impl Into<String>) -> Self {
+        self.read.with_name(name);
+        self
+    }
 }
 
 impl<T: 'static> DefinedAt for RwSignal<T> {
     fn defined_at(&self) -> Option<&'static Location<'static>> {
         None
+    }
+
+    fn debug_name(&self) -> Option<String> {
+        self.read.debug_name()
     }
 }
 

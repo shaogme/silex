@@ -96,6 +96,24 @@ input()
 *   `error!(...)`
 *   以及对应的 `debug_*` 变体。
 
+### 6. Debugging (调试增强)
+
+Silex 提供了强大的工具来帮助排查和避免响应式问题。
+
+*   **Named Signals (命名信号)**:
+    所有的 `Signal`, `Memo`, `StoredValue` 句柄都支持 `.with_name("MyLabel")`。
+    
+    ```rust
+    let (count, set_count) = signal(0);
+    count.with_name("Counter"); 
+    ```
+
+    当 Debug 模式下 Panic 时，报错会指出信号名称：
+    > "Tried to access a reactive value **'Counter'** but it has already been disposed."
+
+*   **Safe Cleanup (安全清理)**:
+    `on_cleanup` 回调保证在作用域销毁**开始时**就执行。即使作用域即将结束，您依然可以在清理函数中读取 Signal 的最后状态。
+
 ## 最佳实践
 
 ### 信号读写分离
