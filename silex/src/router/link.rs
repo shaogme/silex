@@ -86,9 +86,14 @@ impl View for Link {
     fn mount(self, parent: &web_sys::Node) {
         let href = self.href.clone();
 
+        // 尝试获取 Router，用于：
+        // 1. base_path处理
+        // 2. 导航 (避免在 on_click 中丢失 scope)
+        let router_ctx = use_router();
+
         // 在绑定事件前，根据 Router 的 base_path 更新 DOM 元素的 href 属性
         // 这样可以保证原生行为（如右键打开新标签页）指向正确的物理路径
-        if let Some(ctx) = use_router() {
+        if let Some(ctx) = &router_ctx {
             if !ctx.base_path.is_empty() && ctx.base_path != "/" && href.starts_with('/') {
                 let base = ctx.base_path.trim_end_matches('/');
                 let full_href = format!("{}{}", base, href);
@@ -97,18 +102,25 @@ impl View for Link {
         }
 
         // 绑定点击事件
+        // 我们必须将 router_ctx 移动到闭包中，因为在事件回调运行时，可能无法通过 use_context 获取到（Scope 问题）
         let element = self.inner.on_click(move |e: web_sys::MouseEvent| {
             // 阻止默认跳转行为
             e.prevent_default();
 
             // 使用 router 导航
-            if let Some(ctx) = use_router() {
+            if let Some(ctx) = &router_ctx {
                 // 注意：这里仍然传递逻辑路径 (href)，Navigator 会自动处理 base_path
                 ctx.navigator.push(href.as_str());
             } else {
-                // 如果没有 router，回退到普通跳转（或者是警告）
-                let window = web_sys::window().unwrap();
-                let _ = window.location().set_href(&href);
+                // 如果没有 router，尝试再次获取（以防万一），或者回退
+                // 注意：通常在事件处理程序中 use_router 会失败，所以主要依赖捕获的 ctx
+                if let Some(ctx) = use_router() {
+                    ctx.navigator.push(href.as_str());
+                } else {
+                    // 如果确实没有 router，回退到普通跳转
+                    let window = web_sys::window().unwrap();
+                    let _ = window.location().set_href(&href);
+                }
             }
         });
 

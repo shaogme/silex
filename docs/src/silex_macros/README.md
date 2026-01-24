@@ -93,6 +93,47 @@ enum AppRoute {
 }
 ```
 
+### 路由守卫 (Route Guards)
+
+你可以为路由添加 `guard` 参数来拦截或包装路由渲染。Guard 本质上是一个接收 `children` 的组件（Middleware）。
+
+```rust
+#[derive(Route, Clone, PartialEq)]
+enum AppRoute {
+    #[route("/dashboard", view = Dashboard, guard = AuthGuard)]
+    Dashboard,
+
+    // 支持多个 Guard，执行顺序由外向内: LogGuard -> AuthGuard -> View
+    #[route("/admin", view = AdminPanel, guard = [LogGuard, AuthGuard])]
+    Admin,
+}
+```
+
+**Guard 组件示例：**
+
+```rust
+#[component]
+pub fn AuthGuard(children: Children) -> impl View {
+    // 假设我们有一个全局用户状态
+    let user_name = use_context::<ReadSignal<String>>()
+        .unwrap_or(signal("Guest".to_string()).0);
+    
+    move || {
+         if user_name.get() != "Guest" {
+             // 验证通过，渲染子视图
+             children.clone()
+         } else {
+             // 验证失败，显示提示或重定向
+             div![
+                 h3("🔒 Restricted Access"),
+                 p("Please login to view this content."),
+             ].style("color: red; border: 1px solid red; padding: 10px;")
+             .into_any()
+         }
+    }
+}
+```
+
 ## 4. 全局状态 Store (`#[derive(Store)]`)
 
 快速创建深层响应式的数据结构。

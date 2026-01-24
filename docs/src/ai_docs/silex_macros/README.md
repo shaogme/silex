@@ -77,6 +77,13 @@ fn MyComponent(props...) -> impl View
 
 #### `fn render(&self) -> AnyView`
 需要 `#[route(..., view = ComponentFunction)]`。
+可选 `#[route(..., guard = GuardComponent)]` 或 `#[route(..., guard = [OuterGuard, InnerGuard])]`。
+
+*   **Guard Wrapping**:
+    *   宏会读取 `guard` 参数（单个 Path 或 Path 列表）。
+    *   在生成渲染代码时，View 表达式会被 Guard 组件层层包裹。
+    *   包裹顺序：列表定义的顺序即为执行/嵌套顺序。`guard = [A, B]` -> `A(children=B(children=View))`.
+    *   代码生成逻辑中使用 `.rev()` 迭代 guards，通过 `quote!` 不断包裹 `view_expr`。
 *   **Binding**: 将 Enum Variant 的字段映射为 Component 的 props。
     *   要求 Variant 字段名与 Component Prop 名一致。
     *   自动调用 `.clone()`。

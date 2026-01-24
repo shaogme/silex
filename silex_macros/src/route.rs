@@ -1,6 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Attribute, Data, DeriveInput, Error, Fields, Member};
+use syn::parse::Parse;
+use syn::{Attribute, Data, DeriveInput, Error, Fields, Member, Token};
 
 struct RouteDef {
     variant_ident: syn::Ident,
@@ -10,6 +11,7 @@ struct RouteDef {
     // 如果存在嵌套路由字段，存储其成员标识符 (字段名或索引)
     nested_field: Option<Member>,
     view: Option<syn::Path>,
+    guards: Vec<syn::Path>,
 }
 
 enum Segment {
@@ -38,7 +40,7 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
             .iter()
             .find(|attr| attr.path().is_ident("route"));
 
-        let (route_path, view_component) = if let Some(attr) = route_attr {
+        let (route_path, view_component, guards) = if let Some(attr) = route_attr {
             parse_route_attr(attr)?
         } else {
             return Err(Error::new_spanned(
@@ -59,6 +61,7 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
             is_wildcard,
             nested_field,
             view: view_component,
+            guards,
         });
     }
 
@@ -104,24 +107,43 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
     Ok(expanded)
 }
 
-fn parse_route_attr(attr: &Attribute) -> syn::Result<(String, Option<syn::Path>)> {
+fn parse_route_attr(attr: &Attribute) -> syn::Result<(String, Option<syn::Path>, Vec<syn::Path>)> {
     attr.parse_args_with(|input: syn::parse::ParseStream| {
         let lit: syn::LitStr = input.parse()?;
         let path = lit.value();
 
         let mut view = None;
-        if input.peek(syn::Token![,]) {
-            input.parse::<syn::Token![,]>()?;
+        let mut guards = Vec::new();
+
+        while input.peek(Token![,]) {
+            input.parse::<Token![,]>()?;
+            if input.is_empty() {
+                break;
+            }
+
             let key: syn::Ident = input.parse()?;
+            input.parse::<Token![=]>()?;
+
             if key == "view" {
-                input.parse::<syn::Token![=]>()?;
                 view = Some(input.parse()?);
+            } else if key == "guard" {
+                if input.peek(syn::token::Bracket) {
+                    let content;
+                    syn::bracketed!(content in input);
+                    let list = content.parse_terminated(syn::Path::parse, Token![,])?;
+                    guards.extend(list);
+                } else {
+                    guards.push(input.parse()?);
+                }
             } else {
-                return Err(Error::new(key.span(), "Expected 'view' parameter"));
+                return Err(Error::new(
+                    key.span(),
+                    "Expected 'view' or 'guard' parameter",
+                ));
             }
         }
 
-        Ok((path, view))
+        Ok((path, view, guards))
     })
 }
 
@@ -593,17 +615,43 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
                         props_setters.push(quote! { .#fname(#fname.clone()) });
                     }
 
+                    let mut view_expr = quote! {
+                        #view_component()
+                            #(#props_setters)*
+                            .into_any()
+                    };
+
+                    // 应用 Guard (从内向外包裹)
+                    // Guard(children) -> Guard().children(move || view)
+                    for guard in def.guards.iter().rev() {
+                        view_expr = quote! {
+                            #guard()
+                                .children(move || #view_expr)
+                                .into_any()
+                        };
+                    }
+
                     arms.push(quote! {
                         #enum_name::#variant_ident { #(#field_bindings),* } => {
-                            #view_component()
-                                #(#props_setters)*
-                                .into_any()
+                            #view_expr
                         }
                     });
                 }
                 Fields::Unit => {
+                    let mut view_expr = quote! {
+                        #view_component().into_any()
+                    };
+
+                    for guard in def.guards.iter().rev() {
+                        view_expr = quote! {
+                            #guard()
+                                .children(move || #view_expr)
+                                .into_any()
+                        };
+                    }
+
                     arms.push(quote! {
-                        #enum_name::#variant_ident => #view_component().into_any()
+                        #enum_name::#variant_ident => #view_expr
                     });
                 }
                 Fields::Unnamed(unnamed) => {
@@ -613,8 +661,20 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
                     // 为了安全起见，我们暂不支持 Tuple Variant 的自动绑定，要求用户改用 Named Variant
                     // 除非... 没有任何字段（那匹配 Unit）
                     if unnamed.unnamed.is_empty() {
+                        let mut view_expr = quote! {
+                            #view_component().into_any()
+                        };
+
+                        for guard in def.guards.iter().rev() {
+                            view_expr = quote! {
+                                #guard()
+                                    .children(move || #view_expr)
+                                    .into_any()
+                            };
+                        }
+
                         arms.push(quote! {
-                            #enum_name::#variant_ident() => #view_component().into_any()
+                            #enum_name::#variant_ident() => #view_expr
                         });
                     } else {
                         return Err(Error::new_spanned(

@@ -435,6 +435,23 @@ mod advanced {
             .style("background: #f5f5f5; padding: 10px; border-radius: 4px;")
         ]
     }
+
+    #[component]
+    pub fn AuthGuard(children: Children) -> impl View {
+        let settings = expect_context::<UserSettingsStore>();
+        
+        move || {
+             if settings.username.get() != "Guest" {
+                 children.clone()
+             } else {
+                 div![
+                     h3("🔒 Restricted Access"),
+                     p("This content is protected. Please go to 'Store Demo' and change your username to something other than 'Guest'."),
+                 ].style("padding: 20px; background: #fff0f0; border: 1px solid #ffcccc; color: #cc0000;")
+                 .into_any()
+             }
+        }
+    }
 }
 
 
@@ -533,7 +550,7 @@ enum AdvancedRoute {
     Css,
     #[route("/store", view = advanced::StoreDemo)]
     Store,
-    #[route("/query", view = advanced::QueryDemo)]
+    #[route("/query", view = advanced::QueryDemo, guard = advanced::AuthGuard)]
     Query,
     #[route("/*", view = NotFoundPage)]
     NotFound,
