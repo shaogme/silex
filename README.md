@@ -36,7 +36,7 @@ Silex 不仅仅是一个视图库，它提供了构建现代 Web 应用所需的
 
 ```toml
 [dependencies]
-silex = "0.1.0-alpha.5" # 请使用最新版本
+silex = "0.1.0-alpha.6" # 请使用最新版本
 ```
 
 ### 2. 编写你的第一个应用
