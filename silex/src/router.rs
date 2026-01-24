@@ -6,6 +6,7 @@ pub use link::*;
 
 use crate::router::context::{RouterContextProps, provide_router_context};
 use silex_core::reactivity::{Effect, on_cleanup, signal};
+use silex_core::traits::{Get, Set};
 use silex_dom::view::{AnyView, IntoAnyView, View};
 use silex_html::div;
 use std::rc::Rc;

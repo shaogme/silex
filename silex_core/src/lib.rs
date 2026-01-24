@@ -4,6 +4,8 @@ pub mod log;
 pub mod node_ref;
 pub mod reactivity;
 
+pub mod traits;
+
 pub use callback::Callback;
 pub use error::{SilexError, SilexResult};
 pub use node_ref::NodeRef;
@@ -33,8 +35,9 @@ pub mod prelude {
     pub use crate::log::*;
     pub use crate::node_ref::NodeRef;
     pub use crate::reactivity::{
-        Accessor, Effect, Memo, ReadSignal, Resource, RwSignal, Signal, StoredValue, WriteSignal,
+        Effect, Memo, ReadSignal, Resource, RwSignal, Signal, StoredValue, WriteSignal,
         create_scope, expect_context, on_cleanup, provide_context, signal, use_context,
     };
+    pub use crate::traits::*;
     pub use crate::{SilexError, SilexResult};
 }

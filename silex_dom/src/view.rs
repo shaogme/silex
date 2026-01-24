@@ -1,5 +1,6 @@
 use crate::element::Element;
 use silex_core::reactivity::{Effect, Memo, ReadSignal, RwSignal, Signal};
+use silex_core::traits::Get;
 use silex_core::{SilexError, SilexResult};
 use std::fmt::Display;
 use web_sys::Node;

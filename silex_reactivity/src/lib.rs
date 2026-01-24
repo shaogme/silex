@@ -81,7 +81,7 @@ pub struct Runtime {
 }
 
 thread_local! {
-    pub static RUNTIME: Runtime = Runtime::new();
+    static RUNTIME: Runtime = Runtime::new();
 }
 
 impl Runtime {
@@ -616,6 +616,19 @@ pub fn is_node_ref_valid(id: NodeId) -> bool {
     RUNTIME.with(|rt| rt.node_refs.borrow().contains_key(id))
 }
 
+/// Track signal manually
+pub fn track_signal(id: NodeId) {
+    RUNTIME.with(|rt| rt.track_dependency(id))
+}
+
+/// Notify dependent effects
+pub fn notify_signal(id: NodeId) {
+    RUNTIME.with(|rt| {
+        rt.queue_dependents(id);
+        rt.run_queue();
+    })
+}
+
 // --- StoredValue API ---
 
 pub fn store_value<T: 'static>(value: T) -> NodeId {
@@ -684,4 +697,50 @@ pub fn run_derived<T: 'static>(id: NodeId) -> Option<T> {
         }
         None
     })
+}
+
+pub fn try_with_signal<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
+    RUNTIME.with(|rt| {
+        // Track
+        rt.track_dependency(id);
+
+        let signals = rt.signals.borrow();
+        if let Some(signal) = signals.get(id) {
+            if let Some(val) = signal.value.downcast_ref::<T>() {
+                return Some(f(val));
+            }
+        }
+        None
+    })
+}
+
+pub fn try_with_signal_untracked<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
+    RUNTIME.with(|rt| {
+        let signals = rt.signals.borrow();
+        if let Some(signal) = signals.get(id) {
+            if let Some(val) = signal.value.downcast_ref::<T>() {
+                return Some(f(val));
+            }
+        }
+        None
+    })
+}
+
+pub fn try_update_signal_silent<T: 'static, R>(
+    id: NodeId,
+    f: impl FnOnce(&mut T) -> R,
+) -> Option<R> {
+    RUNTIME.with(|rt| {
+        let mut signals = rt.signals.borrow_mut();
+        if let Some(signal) = signals.get_mut(id) {
+            if let Some(val) = signal.value.downcast_mut::<T>() {
+                return Some(f(val));
+            }
+        }
+        None
+    })
+}
+
+pub fn is_signal_valid(id: NodeId) -> bool {
+    RUNTIME.with(|rt| rt.signals.borrow().contains_key(id))
 }

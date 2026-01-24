@@ -3,6 +3,7 @@ use crate::view::View;
 use silex_core::SilexError;
 use silex_core::node_ref::NodeRef;
 use silex_core::reactivity::{Effect, RwSignal, on_cleanup};
+use silex_core::traits::{Get, Set};
 
 use std::marker::PhantomData;
 use wasm_bindgen::JsCast;
