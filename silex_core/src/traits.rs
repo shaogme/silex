@@ -27,12 +27,15 @@
 //! | [`With`]          | `fn(&T) -> U` | [`WithUntracked`] + [`Track`]      | Applies closure to the current value of the signal and returns result, with reactive tracking.
 //! | [`GetUntracked`]  | `T`           | [`WithUntracked`] + [`Clone`]      | Clones the current value of the signal.
 //! | [`Get`]           | `T`           | [`With`] + [`Clone`]               | Clones the current value of the signal, with reactive tracking.
+//! | [`Map`]           | `Memo<U>`     | [`Get`]                            | Creates a derived signal from this signal.
 //!
 //! ### Update
 //! | Trait               | Mode          | Composition                        | Description
 //! |---------------------|---------------|------------------------------------|------------
 //! | [`Update`]          | `fn(&mut T)`  | [`UpdateUntracked`] + [`Notify`]   | Applies closure to the current value to update it, and notifies subscribers.
 //! | [`Set`]             | `T`           | [`Update`]                         | Sets the value to a new value, and notifies subscribers.
+//! | [`SignalSetter`]    | `Fn`          | [`Set`]                            | Creates a closure that sets the signal to a specific value.
+//! | [`SignalUpdater`]   | `Fn`          | [`Update`]                         | Creates a closure that updates the signal using a specific function.
 //!
 //! ## Using the Traits
 //!
@@ -229,6 +232,18 @@ where
     }
 }
 
+/// Allows creating a derived signal from this signal.
+pub trait Map: Sized {
+    /// The type of the value contained in the signal.
+    type Value;
+
+    /// Creates a derived signal from this signal.
+    fn map<U, F>(self, f: F) -> crate::reactivity::Memo<U>
+    where
+        F: Fn(Self::Value) -> U + 'static,
+        U: Clone + PartialEq + 'static;
+}
+
 /// Notifies subscribers of a change in this signal.
 pub trait Notify {
     /// Notifies subscribers of a change in this signal.
@@ -331,80 +346,23 @@ where
     }
 }
 
-/*
-/// Allows converting a signal into an async [`Stream`].
-pub trait ToStream<T> {
-    /// Generates a [`Stream`] that emits the new value of the signal
-    /// whenever it changes.
-    ///
-    /// # Panics
-    /// Panics if you try to access a signal that is owned by a reactive node that has been disposed.
-    #[track_caller]
-    fn to_stream(&self) -> impl Stream<Item = T> + Send;
+/// Allows creating a setter closure from this signal.
+pub trait SignalSetter: Sized {
+    type Value;
+
+    /// Creates a closure that sets the signal to the given value.
+    fn setter(self, value: Self::Value) -> impl Fn() + Clone + 'static;
 }
 
-impl<S> ToStream<S::Value> for S
-where
-    S: Clone + Get + Send + Sync + 'static,
-    S::Value: Send + 'static,
-{
-    fn to_stream(&self) -> impl Stream<Item = S::Value> + Send {
-        let (tx, rx) = futures::channel::mpsc::unbounded();
+/// Allows creating an updater closure from this signal.
+pub trait SignalUpdater: Sized {
+    type Value;
 
-        let close_channel = tx.clone();
-
-        Owner::on_cleanup(move || close_channel.close_channel());
-
-        Effect::new_isomorphic({
-            let this = self.clone();
-            move |_| {
-                let _ = tx.unbounded_send(this.get());
-            }
-        });
-
-        rx
-    }
+    /// Creates a closure that updates the signal using the given function.
+    fn updater<F>(self, f: F) -> impl Fn() + Clone + 'static
+    where
+        F: Fn(&mut Self::Value) + Clone + 'static;
 }
-
-/// Allows creating a signal from an async [`Stream`].
-pub trait FromStream<T> {
-    /// Creates a signal that contains the latest value of the stream.
-    #[track_caller]
-    fn from_stream(stream: impl Stream<Item = T> + Send + 'static) -> Self;
-
-    /// Creates a signal that contains the latest value of the stream.
-    #[track_caller]
-    fn from_stream_unsync(stream: impl Stream<Item = T> + 'static) -> Self;
-}
-
-impl<S, T> FromStream<T> for S
-where
-    S: From<ArcReadSignal<Option<T>>> + Send + Sync,
-    T: Send + Sync + 'static,
-{
-    fn from_stream(stream: impl Stream<Item = T> + Send + 'static) -> Self {
-        let (read, write) = arc_signal(None);
-        let mut stream = Box::pin(stream);
-        crate::spawn(async move {
-            while let Some(value) = stream.next().await {
-                write.set(Some(value));
-            }
-        });
-        read.into()
-    }
-
-    fn from_stream_unsync(stream: impl Stream<Item = T> + 'static) -> Self {
-        let (read, write) = arc_signal(None);
-        let mut stream = Box::pin(stream);
-        Executor::spawn_local(async move {
-            while let Some(value) = stream.next().await {
-                write.set(Some(value));
-            }
-        });
-        read.into()
-    }
-}
-*/
 
 /// Checks whether a signal has already been disposed.
 pub trait IsDisposed {

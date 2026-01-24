@@ -75,6 +75,18 @@ impl<T: Clone + 'static> Accessor<T> for Signal<T> {
     }
 }
 
+impl<T: Clone + 'static> Map for Signal<T> {
+    type Value = T;
+
+    fn map<U, F>(self, f: F) -> Memo<U>
+    where
+        F: Fn(Self::Value) -> U + 'static,
+        U: Clone + PartialEq + 'static,
+    {
+        Memo::new(move |_| f(self.get()))
+    }
+}
+
 impl<T: Clone + 'static> From<T> for Signal<T> {
     fn from(value: T) -> Self {
         let (read, _) = signal(value);
@@ -152,10 +164,12 @@ impl<T: Clone + 'static> Accessor<T> for ReadSignal<T> {
     }
 }
 
-impl<T: 'static + Clone> ReadSignal<T> {
-    pub fn map<U, F>(self, f: F) -> Memo<U>
+impl<T: Clone + 'static> Map for ReadSignal<T> {
+    type Value = T;
+
+    fn map<U, F>(self, f: F) -> Memo<U>
     where
-        F: Fn(T) -> U + 'static,
+        F: Fn(Self::Value) -> U + 'static,
         U: Clone + PartialEq + 'static,
     {
         Memo::new(move |_| f(self.get()))
@@ -267,17 +281,20 @@ impl<T: 'static> UpdateUntracked for WriteSignal<T> {
     }
 }
 
-impl<T: 'static> WriteSignal<T> {
-    pub fn setter(self, value: T) -> impl Fn() + Clone
-    where
-        T: Clone,
-    {
+impl<T: Clone + 'static> SignalSetter for WriteSignal<T> {
+    type Value = T;
+
+    fn setter(self, value: Self::Value) -> impl Fn() + Clone + 'static {
         move || self.set(value.clone())
     }
+}
 
-    pub fn updater<F>(self, f: F) -> impl Fn() + Clone
+impl<T: 'static> SignalUpdater for WriteSignal<T> {
+    type Value = T;
+
+    fn updater<F>(self, f: F) -> impl Fn() + Clone + 'static
     where
-        F: Fn(&mut T) + Clone + 'static,
+        F: Fn(&mut Self::Value) + Clone + 'static,
     {
         move || self.update(f.clone())
     }
@@ -329,29 +346,6 @@ impl<T: 'static> RwSignal<T> {
 
     pub fn from_parts(read: ReadSignal<T>, write: WriteSignal<T>) -> Self {
         Self { read, write }
-    }
-
-    pub fn map<U, F>(self, f: F) -> Memo<U>
-    where
-        F: Fn(T) -> U + 'static,
-        U: Clone + PartialEq + 'static,
-        T: Clone,
-    {
-        self.read.map(f)
-    }
-
-    pub fn setter(self, value: T) -> impl Fn() + Clone
-    where
-        T: Clone,
-    {
-        move || self.set(value.clone())
-    }
-
-    pub fn updater<F>(self, f: F) -> impl Fn() + Clone
-    where
-        F: Fn(&mut T) + Clone + 'static,
-    {
-        move || self.update(f.clone())
     }
 }
 
@@ -406,6 +400,37 @@ impl<T: 'static> Update for RwSignal<T> {
 impl<T: Clone + 'static> Accessor<T> for RwSignal<T> {
     fn value(&self) -> T {
         self.get()
+    }
+}
+
+impl<T: Clone + 'static> Map for RwSignal<T> {
+    type Value = T;
+
+    fn map<U, F>(self, f: F) -> Memo<U>
+    where
+        F: Fn(Self::Value) -> U + 'static,
+        U: Clone + PartialEq + 'static,
+    {
+        self.read.map(f)
+    }
+}
+
+impl<T: Clone + 'static> SignalSetter for RwSignal<T> {
+    type Value = T;
+
+    fn setter(self, value: Self::Value) -> impl Fn() + Clone + 'static {
+        move || self.set(value.clone())
+    }
+}
+
+impl<T: 'static> SignalUpdater for RwSignal<T> {
+    type Value = T;
+
+    fn updater<F>(self, f: F) -> impl Fn() + Clone + 'static
+    where
+        F: Fn(&mut Self::Value) + Clone + 'static,
+    {
+        move || self.update(f.clone())
     }
 }
 
