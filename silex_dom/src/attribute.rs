@@ -537,3 +537,6 @@ impl_apply_to_dom_for_group!(T1 T2 T3 T4 T5 T6 T7 T8 T9);
 impl_apply_to_dom_for_group!(T1 T2 T3 T4 T5 T6 T7 T8 T9 T10);
 impl_apply_to_dom_for_group!(T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11);
 impl_apply_to_dom_for_group!(T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12);
+
+pub mod props;
+pub use props::*;

@@ -6,11 +6,11 @@ pub use attribute::*;
 pub use element::*;
 pub use view::*;
 
-pub mod props;
-pub use props::*;
+pub mod helpers;
+pub use helpers::*;
 
-pub mod tags;
-pub use tags::*;
+pub mod event;
+pub use event::EventDescriptor;
 
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;

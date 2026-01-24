@@ -1,7 +1,7 @@
-use crate::attribute::ApplyToDom;
+use super::ApplyToDom;
 use crate::element::Element;
 use crate::element::TypedElement;
-use crate::tags::*;
+use crate::element::tags::*;
 
 /// 任何可以设置属性的类型都需要实现此 Trait。
 pub trait AttributeManager: Sized {

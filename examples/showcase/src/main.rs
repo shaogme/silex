@@ -1,4 +1,5 @@
 use silex::prelude::*;
+use std::time::Duration;
 
 // ==================================================================================
 // Phase 1: Basics - Components, Reactivity, Props, and Attributes
@@ -39,19 +40,53 @@ mod basics {
     pub fn Counter() -> impl View {
         let (count, set_count) = signal(0);
         let double_count = Memo::new(move |_| count.get() * 2); // rx!(count.get() * 2) is move || count.get() * 2
+        
+        // Timer Handle for Auto Increment
+        let (timer, set_timer) = signal(None::<IntervalHandle>);
 
         div![
             h3("Interactive Counter"),
             div![
-                button("-").on_click(set_count.updater(|n| *n -= 1)),
+                button("-").on(event::click, set_count.updater(|n| *n -= 1)),
                 strong(count).classes(classes![
                     "counter-val",
                     "positive" => count.gt(0),
                     "negative" => count.lt(0)
                 ]),
-                button("+").on_click(set_count.updater(|n| *n += 1)),
+                button("+").on(event::click, set_count.updater(|n| *n += 1)),
             ]
             .style("display: flex; gap: 10px; align-items: center;"),
+            
+            // Auto Increment Demo using set_interval
+            div![
+                button(move || if timer.get().is_some() { "Stop Auto Inc" } else { "Start Auto Inc" })
+                    .on(event::click, move |_| {
+                        if let Some(handle) = timer.get() {
+                            handle.clear();
+                            set_timer.set(None);
+                        } else {
+                            if let Ok(handle) = set_interval_with_handle(move || {
+                                set_count.update(|n| *n += 1);
+                            }, Duration::from_millis(1000)) {
+                                set_timer.set(Some(handle));
+                            }
+                        }
+                    })
+            ].style("margin: 10px 0;"),
+
+            // Manual Input Demo using event_target_value
+            div![
+                span("Set Value: "),
+                input()
+                    .prop("value", count) // One-way binding from signal to DOM
+                    .on(event::input, move |e| {
+                        let val_str = event_target_value(&e);
+                        if let Ok(n) = val_str.parse::<i32>() {
+                            set_count.set(n);
+                        }
+                    })
+            ].style("margin-bottom: 10px;"),
+
             div!["Double: ", double_count]
                 .classes(rx!(if count.get() % 2 == 0 { "even" } else { "odd" }))
                 .style("margin-top: 5px; color: #666; font-size: 0.9em;"),
@@ -70,7 +105,7 @@ mod basics {
                 .placeholder("I will be focused...")
                 .node_ref(input_ref) // NodeRef 是 Copy 的，无需 clone
                 .style("margin-right: 10px; padding: 5px;"),
-            button("Focus Input").on_click(move |_| {
+            button("Focus Input").on(event::click, move |_| {
                 if let Some(el) = input_ref.get() {
                     let _ = el.focus();
                 }
@@ -106,7 +141,7 @@ mod flow_control {
             h3("List Rendering with Signal Ergonomics"),
             p("Demonstrates passing a Signal directly to For::new without closure wrapper."),
             ul(For::new(list, |item| *item, |item| li(item))),
-            button("Add Item").on_click(set_list.updater(|l| l.push("New Item"))),
+            button("Add Item").on(event::click, set_list.updater(|l| l.push("New Item"))),
         ]
     }
 
@@ -117,7 +152,7 @@ mod flow_control {
         div![
             h3("Conditional Rendering with Show"),
             p("Demonstrates passing a Signal directly to Show::new as condition."),
-            button("Toggle Visibility").on_click(set_visible.updater(|v| *v = !*v)),
+            button("Toggle Visibility").on(event::click, set_visible.updater(|v| *v = !*v)),
             Show::new(visible, || div("✅ Content is visible!")
                 .style("color: green; padding: 10px; background: #e8f5e9;"),)
             .fallback(|| div("❌ Content is hidden")
@@ -133,9 +168,9 @@ mod flow_control {
             h3("Dynamic Component Switching"),
             p("Demonstrates Dynamic component with closure accessor."),
             div![
-                button("Show A").on_click(set_mode.setter("A")),
-                button("Show B").on_click(set_mode.setter("B")),
-                button("Show C").on_click(set_mode.setter("C")),
+                button("Show A").on(event::click, set_mode.setter("A")),
+                button("Show B").on(event::click, set_mode.setter("B")),
+                button("Show C").on(event::click, set_mode.setter("C")),
             ]
             .style("display: flex; gap: 10px; margin-bottom: 10px;"),
             // You can also use Dynamic::new(mode.map(|m| { view_match!(m, { ... }) })).
@@ -159,9 +194,9 @@ mod flow_control {
         div![
             h3("Switch (Match) Demo"),
             div![
-                button("Tab 1").on_click(set_tab.setter(0)),
-                button("Tab 2").on_click(set_tab.setter(1)),
-                button("Tab 3").on_click(set_tab.setter(2)),
+                button("Tab 1").on(event::click, set_tab.setter(0)),
+                button("Tab 2").on(event::click, set_tab.setter(1)),
+                button("Tab 3").on(event::click, set_tab.setter(2)),
             ]
             .style("display: flex; gap: 10px; margin-bottom: 10px;"),
             
@@ -186,7 +221,7 @@ mod flow_control {
                     item
                 ]
             }),
-            button("Append Item").on_click(move |_| {
+            button("Append Item").on(event::click, move |_| {
                 set_items.update(|list| list.push("New Item"));
             })
             .style("margin-top: 10px;")
@@ -199,7 +234,7 @@ mod flow_control {
 
         div![
             h3("Portal Demo"),
-            button("Toggle Modal").on_click(set_show_modal.updater(|v| *v = !*v)),
+            button("Toggle Modal").on(event::click, set_show_modal.updater(|v| *v = !*v)),
             
             Show::new(show_modal, move || {
                 Portal::new(
@@ -207,7 +242,7 @@ mod flow_control {
                         div![
                             h4("I am a Modal!"),
                             p("I am rendered via Portal directly into the body, but I share context!"),
-                            button("Close").on_click(set_show_modal.setter(false))
+                            button("Close").on(event::click, set_show_modal.setter(false))
                         ]
                         .style("background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); min-width: 300px;")
                     ]
@@ -276,7 +311,7 @@ mod advanced {
             p("The button below is styled using the `css!` macro with scoped styles."),
             button("Scoped Style Button")
                 .class(btn_class)
-                .on_click(|| console_log("Clicked!")),
+                .on(event::click, || console_log("Clicked!")),
         ]
     }
 
@@ -300,7 +335,7 @@ mod advanced {
             .style("border: 1px solid #ccc; padding: 10px; margin-bottom: 10px;"),
             h4("Update Settings"),
             div![
-                button("Toggle Theme").on_click(rx! {
+                button("Toggle Theme").on(event::click, rx! {
                     settings.theme.update(|t| {
                         *t = if t == "Light" {
                             "Dark".to_string()
@@ -310,7 +345,7 @@ mod advanced {
                     })
                 }),
                 button("Toggle Notifications")
-                    .on_click(settings.notifications.updater(|n| *n = !*n)),
+                    .on(event::click, settings.notifications.updater(|n| *n = !*n)),
                 input()
                     .bind_value(settings.username)
                     .placeholder("Change username..."),
@@ -334,7 +369,7 @@ mod advanced {
                     .placeholder("Type here...")
                     .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px;"),
                 button("Reset")
-                    .on_click(val.setter(String::new()))
+                    .on(event::click, val.setter(String::new()))
                     .style("padding: 8px 16px; cursor: pointer;")
             ]
             .style("display: flex; gap: 10px; margin: 10px 0; align-items: center;"),
@@ -368,7 +403,7 @@ mod styles {
                     button("Click Me (Builder)")
                         .class("btn-builder")
                         .style("background-color: #e0f7fa; color: #006064; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;")
-                        .on_click(|_| console_log("Builder button clicked!")),
+                        .on(event::click, |_| console_log("Builder button clicked!")),
                 )
             )
             .style("padding: 20px; border: 1px solid #b2ebf2; border-radius: 8px; margin-bottom: 20px;")
@@ -386,11 +421,11 @@ mod styles {
             div![
                 button![ "-" ]
                     .class("btn-macro")
-                    .on_click(set_count.updater(|n| *n -= 1)),
+                    .on(event::click, set_count.updater(|n| *n -= 1)),
                 span![ " Count: ", count, " " ].style("margin: 0 10px; font-weight: bold;"),
                 button![ "+" ]
                     .class("btn-macro")
-                    .on_click(set_count.updater(|n| *n += 1)),
+                    .on(event::click, set_count.updater(|n| *n += 1)),
             ]
             .style("display: flex; align-items: center; margin-top: 10px;")
         ]
@@ -411,7 +446,7 @@ mod styles {
                     .style("margin-right: 15px;"),
                 
                 button(is_active.map(|v| if v { "Deactivate" } else { "Activate" }))
-                    .on_click(move |_| set_active.update(|v| *v = !*v))
+                    .on(event::click, move |_| set_active.update(|v| *v = !*v))
                     // Dynamic styling with builder pattern
                     .style(is_active.map(|v| {
                         if v {

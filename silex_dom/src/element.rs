@@ -1,5 +1,4 @@
 use crate::attribute::{ApplyTarget, ApplyToDom};
-use crate::tags::Tag;
 use crate::view::View;
 use silex_core::SilexError;
 use silex_core::node_ref::NodeRef;
@@ -9,6 +8,9 @@ use std::marker::PhantomData;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::Element as WebElem;
+
+pub mod tags;
+pub use tags::*;
 
 // --- Macros for Deduplication ---
 
@@ -166,7 +168,45 @@ macro_rules! impl_element_common {
             this
         }
 
-        pub fn on<E, F>(self, event_type: &str, mut callback: F) -> Self
+        pub fn on<E, F, M>(self, event: E, callback: F) -> Self
+        where
+            E: crate::event::EventDescriptor + 'static,
+            F: EventHandler<E::EventType, M>,
+        {
+            let mut handler = callback.into_handler();
+            let type_str = event.name();
+
+            let closure = Closure::wrap(Box::new(move |e: E::EventType| {
+                handler(e);
+            }) as Box<dyn FnMut(E::EventType)>);
+
+            let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
+            let dom_element = self.as_web_element();
+
+            // Note: event.name() returns generic string, we need to pass str reference
+            let type_str_ref: &str = &type_str;
+            if let Err(e) = dom_element
+                .add_event_listener_with_callback(type_str_ref, js_value)
+                .map_err(SilexError::from)
+            {
+                silex_core::error::handle_error(e);
+                return self;
+            }
+
+            let target = dom_element.clone();
+            let js_fn = js_value.clone();
+            // We need to own the string for the cleanup closure
+            let type_clone = type_str.to_string();
+
+            on_cleanup(move || {
+                let _ = target.remove_event_listener_with_callback(&type_clone, &js_fn);
+                drop(closure);
+            });
+
+            self
+        }
+
+        pub fn on_untyped<E, F>(self, event_type: &str, mut callback: F) -> Self
         where
             E: wasm_bindgen::convert::FromWasmAbi + 'static,
             F: FnMut(E) + 'static,

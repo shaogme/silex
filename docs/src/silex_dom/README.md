@@ -52,11 +52,35 @@ input.prop("value", signal) // 绑定实时值
 
 ## 事件处理
 
-使用 `.on_event` 系列方法绑定事件。
+Silex 提供了多种方式来绑定事件。
+
+### 1. 强类型事件 (推荐)
+使用 `.on()` 方法配合 `silex_dom::event` 模块中预定义的事件类型。这能保证回调函数的参数类型被自动正确推断，且无需手动指定泛型。
 
 ```rust
-button.on_click(|e| {
-    console_log(&format!("Clicked: {:?}", e));
+use silex_dom::event;
+
+button.on(event::click, |e| {
+    // e 被自动推断为 web_sys::MouseEvent
+    console_log(&format!("Clicked at: {}, {}", e.client_x(), e.client_y()));
+})
+```
+
+### 2. 快捷方法
+对于常用事件（如 `click`, `input`），可以直接使用快捷方法：
+
+```rust
+button.on_click(|e| { ... })
+      .on_input(|e| { ... })
+```
+
+### 3. 弱类型/自定义事件 (Untyped)
+如果你需要监听自定义事件，或者不想引入 `ev` 模块，可以使用 `.on_untyped`。需要手动指定事件类型泛型。
+
+```rust
+// 必须显式指定事件类型泛型，例如 <web_sys::CustomEvent, _>
+div.on_untyped::<web_sys::CustomEvent, _>("my-custom-event", |e| {
+    console_log(&format!("Custom detail: {:?}", e.detail()));
 })
 ```
 
@@ -115,3 +139,30 @@ impl View for MyComponent {
     }
 }
 ```
+
+## 类型化事件 (Typed Events)
+
+`silex_dom::event` 模块定义了一系列实现了 `EventDescriptor` 的空结构体，用于提供类型安全的事件名称和类型映射。
+
+例如：
+*   `event::click`: 对应 `web_sys::MouseEvent`，名称 "click"。
+*   `event::input`: 对应 `web_sys::InputEvent`，名称 "input"。
+*   `event::keydown`: 对应 `web_sys::KeyboardEvent`，名称 "keydown"。
+
+这些类型主要配合 `window_event_listener` 等强类型 API 使用。
+
+## 实用工具 (Helpers)
+
+`silex_dom::helpers` 模块提供了一系列常用的 DOM 操作辅助函数：
+
+*   **Window/Document**: `window()`, `document()` (线程局部缓存，无需反复 unwrap)
+*   **属性操作**:
+    *   `set_property(el, "prop_name", &value)`: 直接设置 DOM 属性 (Property) 而不是 Attribute。
+    *   `get_property(el, "prop_name")`: 获取 DOM 属性值。
+*   **定时器**: `set_timeout`, `set_interval`, `request_animation_frame`, `request_idle_callback` (包含自动清理机制)
+*   **事件辅助**:
+    *   `event_target_value(&event)`: 便捷获取 input 值
+    *   `event_target_checked(&event)`: 便捷获取 checkbox 状态
+    *   `window_event_listener(event::resize, |e| ...)`: **强类型**全局事件监听，自动推导事件参数类型。
+    *   `window_event_listener_untyped("resize", ...)`: 字符串类型的全局事件监听。
+*   **其他**: `debounce` (防抖), `queue_microtask`

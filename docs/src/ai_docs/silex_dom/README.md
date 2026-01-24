@@ -50,8 +50,13 @@
 > *   动态: `.required(signal)`
 
 #### Events
-*   `on<E, F>(self, event_type: &str, callback: F)`: 通用事件监听器，支持自动清理。`E` 必须实现 `FromWasmAbi` (例如 `web_sys::Event`).
-*   `on_click<F, M>(self, callback: F)`: 绑定点击事件。
+*   `on<E, F, M>(self, event: E, callback: F)`: **强类型事件监听** (推荐)。
+    *   `E`: 实现 `EventDescriptor` (例如 `silex_dom::event::click`).
+    *   `F`: `EventHandler` (接受 `E::EventType`).
+*   `on_untyped<E, F>(self, event_type: &str, callback: F)`: **字符串健名事件监听**。
+    *   `E`: 实现 `FromWasmAbi` (例如 `web_sys::Event`), 通常需要显式指定 (Turbofish).
+    *   `event_type`: 事件名称字符串.
+*   `on_click<F, M>(self, callback: F)`: 绑定点击事件 (基于 `on(event::click, ...)`).
 *   `on_input<F, M>(self, callback: F)`: 绑定输入事件。
 *   `bind_value(self, signal: RwSignal<String>)`: 双向绑定 `value` 属性。
 
@@ -111,7 +116,7 @@
 
 ## 模块: `props` (属性特征)
 
-源码路径: `silex_dom/src/props.rs`
+源码路径: `silex_dom/src/attribute/props.rs`
 
 利用 Rust 的 Trait 系统实现 HTML 属性的类型约束。
 
@@ -127,8 +132,85 @@
 
 ## 模块: `tags` (标签标记)
 
-源码路径: `silex_dom/src/tags.rs`
+源码路径: `silex_dom/src/element/tags.rs`
 
 *   **Traits**: Empty marker traits usually used to bound `TypedElement<T>`.
     *   `Tag`: Base trait.
     *   `FormTag`, `LabelTag`, `AnchorTag`, `MediaTag`, `TextTag`, `SvgTag`.
+
+---
+
+## 模块: `event` (事件描述符)
+
+源码路径: `silex_dom/src/event.rs`
+
+### `EventDescriptor` Trait
+*   **Definition**:
+    ```rust
+    pub trait EventDescriptor: Copy + Clone + 'static {
+        type EventType: FromWasmAbi + JsCast + 'static;
+        fn name(&self) -> Cow<'static, str>;
+        fn bubbles(&self) -> bool { true }
+    }
+    ```
+*   **Semantics**: 定义 DOM 事件的元数据，将事件名称 (String) 与 `web_sys` 事件类型 (Type) 关联起来。
+
+---
+
+## 模块: `ev` (预定义事件)
+
+源码路径: `silex_dom/src/event/types.rs`
+
+此模块包含了一系列实现了 `EventDescriptor` 的空结构体，用于类型安全的事件绑定。使用宏 `generate_events!` 生成。
+
+### Supported Events
+*   **Mouse**: `click`, `dblclick`, `mousedown`, `mouseup`, `mousemove`, `mouseover`, `mouseout`, `mouseenter`, `mouseleave`, `contextmenu` (`web_sys::MouseEvent`)
+*   **Keyboard**: `keydown`, `keypress`, `keyup` (`web_sys::KeyboardEvent`)
+*   **Form**:
+    *   `change`, `reset`, `invalid` (`web_sys::Event`)
+    *   `input` (`web_sys::InputEvent`)
+    *   `submit` (`web_sys::SubmitEvent`)
+*   **Focus**: `focus`, `blur`, `focusin`, `focusout` (`web_sys::FocusEvent`)
+*   **UI**: `scroll`, `load`, `unload`, `select` (`web_sys::Event`); `resize`, `abort` (`web_sys::UiEvent`); `error` (`web_sys::ErrorEvent`)
+*   **Pointer**: `pointerdown`, `pointermove`, `pointerup`, `pointercancel`, `pointerenter`, `pointerleave`, `pointerover`, `pointerout`, `gotpointercapture`, `lostpointercapture` (`web_sys::PointerEvent`)
+*   **Drag**: `drag`, `dragend`, `dragenter`, `dragexit`, `dragleave`, `dragover`, `dragstart`, `drop` (`web_sys::DragEvent`)
+*   **Touch**: `touchstart`, `touchend`, `touchmove`, `touchcancel` (`web_sys::TouchEvent`)
+*   **Wheel**: `wheel` (`web_sys::WheelEvent`)
+*   **Animation**: `animationstart`, `animationend`, `animationiteration` (`web_sys::AnimationEvent`); `transitionend` (`web_sys::TransitionEvent`)
+*   **Composition**: `compositionstart`, `compositionupdate`, `compositionend` (`web_sys::CompositionEvent`)
+
+---
+
+## 模块: `helpers` (工具函数)
+
+源码路径: `silex_dom/src/helpers.rs`
+
+提供了一系列用于 DOM 操作、事件处理和定时器的辅助函数。**注意：本模块假定运行在纯 CSR（客户端渲染）且单线程的 WASM 环境中。**
+
+### Window & Document
+*   `window() -> Window`: 获取线程局部缓存的 `window` 对象。
+*   `document() -> Document`: 获取线程局部缓存的 `document` 对象。
+*   `location()`, `location_hash()`, `location_pathname()`: 简化的 URL/Location 获取。
+
+### Property Helpers
+*   `set_property(el, prop_name, value)`: 使用 `js_sys::Reflect::set` 设置属性。
+*   `get_property(el, prop_name)`: 使用 `js_sys::Reflect::get` 获取属性。
+
+### Event Helpers
+*   `event_target<T>(event)`: 泛型获取事件目标。
+*   `event_target_value(event)`:以此获取 Input/Textarea/Select 的值。
+*   `event_target_checked(event)`: 获取 Checkbox 的选中状态。
+*   `window_event_listener(event_descriptor, cb) -> Handle`: **强类型**监听 Window 事件。
+*   `window_event_listener_untyped(name, cb) -> Handle`: 字符串类型监听 Window 事件。
+
+### Timers & Scheduler
+所有定时器函数均提供返回 `Handle` 的版本和直接调用的版本，并会自动处理清理逻辑（如果使用了 `on_cleanup`）。
+
+*   `request_animation_frame(cb)` / `request_animation_frame_with_handle(cb)`
+*   `request_idle_callback(cb)` / `request_idle_callback_with_handle(cb)`
+*   `set_timeout(cb, duration)` / `set_timeout_with_handle(cb, duration)`
+*   `set_interval(cb, duration)` / `set_interval_with_handle(cb, duration)`
+*   `queue_microtask(cb)`
+
+### Utilities
+*   `debounce(duration, cb)`: 防抖函数，自动绑定到当前组件的生命周期（组件卸载时自动清理 Timer）。

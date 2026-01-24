@@ -72,6 +72,17 @@ web-sys = { version = "0.3", features = [
     "HtmlTextAreaElement",
     "HtmlSelectElement",
     "UrlSearchParams",
+    "KeyboardEvent",
+    "FocusEvent",
+    "SubmitEvent",
+    "UiEvent",
+    "WheelEvent",
+    "PointerEvent",
+    "DragEvent",
+    "TouchEvent",
+    "CompositionEvent",
+    "AnimationEvent",
+    "TransitionEvent",
 ] }
 js-sys = "0.3"
 wasm-bindgen-futures = "0.4.56"
