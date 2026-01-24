@@ -50,9 +50,7 @@ pub trait GlobalAttributes: AttributeBuilder {
 impl<T: AttributeBuilder> GlobalAttributes for T {}
 
 /// 表单与输入属性：主要用于 input, select, textarea, button, form
-/// 表单与输入属性：主要用于 input, select, textarea, button, form
 pub trait FormAttributes: AttributeBuilder {
-    // ...
     /// 设置 input 的 type 属性 (注意：使用 type_ 以避免关键字冲突)
     fn type_(self, value: impl IntoStorable) -> Self {
         self.attr("type", value)
@@ -142,7 +140,6 @@ pub trait FormAttributes: AttributeBuilder {
 impl<T: FormTag> FormAttributes for TypedElement<T> {}
 
 /// 标签属性：主要用于 label
-/// 标签属性：主要用于 label
 pub trait LabelAttributes: AttributeBuilder {
     /// label 的 for 属性 (使用 for_)
     fn for_(self, value: impl IntoStorable) -> Self {
@@ -152,7 +149,6 @@ pub trait LabelAttributes: AttributeBuilder {
 
 impl<T: LabelTag> LabelAttributes for TypedElement<T> {}
 
-/// 链接属性：主要用于 a, link, area
 /// 链接属性：主要用于 a, link, area
 pub trait AnchorAttributes: AttributeBuilder {
     fn href(self, value: impl IntoStorable) -> Self {
@@ -170,7 +166,6 @@ pub trait AnchorAttributes: AttributeBuilder {
 
 impl<T: AnchorTag> AnchorAttributes for TypedElement<T> {}
 
-/// 媒体属性：主要用于 img, video, audio, source, iframe
 /// 媒体属性：主要用于 img, video, audio, source, iframe
 pub trait MediaAttributes: AttributeBuilder {
     fn src(self, value: impl IntoStorable) -> Self {
@@ -193,7 +188,6 @@ pub trait MediaAttributes: AttributeBuilder {
 impl<T: MediaTag> MediaAttributes for TypedElement<T> {}
 
 /// 交互属性：主要用于 dialog, details
-/// 交互属性：主要用于 dialog, details
 pub trait OpenAttributes: AttributeBuilder {
     fn open(self, value: impl IntoStorable) -> Self {
         self.attr("open", value)
@@ -202,7 +196,6 @@ pub trait OpenAttributes: AttributeBuilder {
 
 impl<T: OpenTag> OpenAttributes for TypedElement<T> {}
 
-/// 表格单元格属性：主要用于 td, th
 /// 表格单元格属性：主要用于 td, th
 pub trait TableCellAttributes: AttributeBuilder {
     fn colspan(self, value: impl IntoStorable) -> Self {
@@ -221,7 +214,6 @@ pub trait TableCellAttributes: AttributeBuilder {
 impl<T: TableCellTag> TableCellAttributes for TypedElement<T> {}
 
 /// 表头属性：主要用于 th
-/// 表头属性：主要用于 th
 pub trait TableHeaderAttributes: AttributeBuilder {
     fn scope(self, value: impl IntoStorable) -> Self {
         self.attr("scope", value)
@@ -234,7 +226,6 @@ pub trait TableHeaderAttributes: AttributeBuilder {
 
 impl<T: TableHeaderTag> TableHeaderAttributes for TypedElement<T> {}
 
-/// ARIA 无障碍属性：提供给所有元素使用
 /// ARIA 无障碍属性：提供给所有元素使用
 pub trait AriaAttributes: AttributeBuilder {
     fn role(self, value: impl IntoStorable) -> Self {
