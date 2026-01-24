@@ -269,11 +269,11 @@ impl Runtime {
         cleanups: Vec<Box<dyn FnOnce()>>,
         dependencies: Vec<NodeId>,
     ) {
-        for child in children {
-            self.dispose_node_internal(child, false);
-        }
         for cleanup in cleanups {
             cleanup();
+        }
+        for child in children {
+            self.dispose_node_internal(child, false);
         }
         if !dependencies.is_empty() {
             let mut signals = self.signals.borrow_mut();
