@@ -33,8 +33,8 @@ pub mod prelude {
     pub use crate::log::*;
     pub use crate::node_ref::NodeRef;
     pub use crate::reactivity::{
-        Accessor, Effect, Memo, ReadSignal, Resource, RwSignal, WriteSignal, create_scope,
-        expect_context, on_cleanup, provide_context, signal, use_context,
+        Accessor, Effect, Memo, ReadSignal, Resource, RwSignal, StoredValue, WriteSignal,
+        create_scope, expect_context, on_cleanup, provide_context, signal, use_context,
     };
     pub use crate::{SilexError, SilexResult};
 }

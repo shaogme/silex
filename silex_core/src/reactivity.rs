@@ -587,3 +587,80 @@ impl SuspenseContext {
 pub fn use_suspense_context() -> Option<SuspenseContext> {
     use_context::<SuspenseContext>()
 }
+
+// --- StoredValue 存储值 API ---
+
+/// `StoredValue` 是一种非响应式的数据存储容器。
+/// 它的数据存储在响应式系统中，随 Owner (Scope/Effect) 一起自动释放，
+/// 但其读写操作**不会**触发任何响应式更新。
+///
+/// 适用于存储定时器句柄、不需要驱动 UI 的大型数据结构等。
+pub struct StoredValue<T> {
+    pub(crate) id: NodeId,
+    pub(crate) marker: PhantomData<T>,
+}
+
+impl<T> std::fmt::Debug for StoredValue<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "StoredValue({:?})", self.id)
+    }
+}
+
+impl<T> Clone for StoredValue<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T> Copy for StoredValue<T> {}
+
+impl<T: 'static> StoredValue<T> {
+    /// 创建一个新的 `StoredValue`。
+    pub fn new(value: T) -> Self {
+        let id = silex_reactivity::store_value(value);
+        Self {
+            id,
+            marker: PhantomData,
+        }
+    }
+
+    /// 设置新值。
+    pub fn set_value(&self, value: T) {
+        self.update_value(|v| *v = value);
+    }
+
+    /// 原地修改值。
+    /// 注意：这**不会**通知任何订阅者，因为 StoredValue 是非响应式的。
+    pub fn update_value(&self, f: impl FnOnce(&mut T)) {
+        silex_reactivity::try_update_stored_value(self.id, f);
+    }
+
+    /// 以不可变借用的方式访问值。
+    /// 如果值已被释放，则 Panic。
+    pub fn with_value<U>(&self, f: impl FnOnce(&T) -> U) -> U {
+        self.try_with_value(f)
+            .expect("StoredValue: value has been dropped")
+    }
+
+    /// 尝试以不可变借用的方式访问值。
+    pub fn try_with_value<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
+        silex_reactivity::try_with_stored_value(self.id, f)
+    }
+}
+
+impl<T: Clone + 'static> StoredValue<T> {
+    /// 获取值的克隆。
+    pub fn get_value(&self) -> T {
+        self.with_value(|v| v.clone())
+    }
+
+    /// 尝试获取值的克隆。
+    pub fn try_get_value(&self) -> Option<T> {
+        self.try_with_value(|v| v.clone())
+    }
+}
+
+impl<T: Clone + 'static> Accessor<T> for StoredValue<T> {
+    fn value(&self) -> T {
+        self.get_value()
+    }
+}

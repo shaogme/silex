@@ -38,6 +38,19 @@
 *   **Signature**: `pub fn signal<T: 'static>(value: T) -> (ReadSignal<T>, WriteSignal<T>)`
 *   **Usage**: `let (count, set_count) = signal(0);`
 
+#### `StoredValue<T>`
+
+*   **Struct**: `pub struct StoredValue<T> { id: NodeId, marker: PhantomData<T> }`
+*   **Traits**: **`Copy`**, `Clone`, `Debug`, `Accessor<T>`.
+*   **Semantics**: 非响应式的数据存储容器。数据均存储在响应式运行时中，随宿主 Scope/Effect 自动释放。
+*   **Use Case**: 存储不需要驱动 UI 更新的数据（如定时器句柄、大数据缓存），或在事件处理中进行无感知的状态修改。
+*   **Methods**:
+    *   `new(value: T) -> Self`: 创建存储值。
+    *   `set_value(value: T)`: 更新值（不通知订阅者）。
+    *   `update_value(f: impl FnOnce(&mut T))`: 原地修改值（不通知订阅者）。
+    *   `with_value<U>(f: impl FnOnce(&T) -> U) -> U`: 以**引用**方式访问值（Signal 做不到这一点）。
+    *   `get_value() -> T`: 获取值的克隆 (需 `T: Clone`).
+
 
 ### 2. Async Resources (异步资源)
 

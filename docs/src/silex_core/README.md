@@ -26,6 +26,12 @@
     *   `provide_context` / `use_context`: 基于类型 ID 的依赖注入机制，支持跨组件数据传递。
     *   `expect_context`: 严格版 `use_context`，未找到时会 Panic。
 
+*   **StoredValue (存储值)**:
+    *   `StoredValue<T>`: 非响应式数据容器。
+    *   数据存储在运行时中，句柄实现 `Copy`。
+    *   **特点**: 读写**不触发**任何 UI 更新。
+    *   **优势**: 支持 `with_value` 以**引用**方式访问数据，适合存储复杂结构或不需渲染的内部状态。
+
 ### 2. Callback (回调)
 
 *   **Callback<T>**: 一个轻量级的回调句柄，**实现了 `Copy`**。

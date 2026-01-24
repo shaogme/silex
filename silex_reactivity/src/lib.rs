@@ -54,6 +54,11 @@ pub(crate) struct NodeRefData {
     pub(crate) element: Option<Box<dyn Any>>,
 }
 
+/// StoredValue 数据存储（类型擦除）
+pub(crate) struct StoredValueData {
+    pub(crate) value: Box<dyn Any>,
+}
+
 // --- 响应式系统运行时 ---
 
 pub struct Runtime {
@@ -62,6 +67,7 @@ pub struct Runtime {
     pub(crate) effects: RefCell<SecondaryMap<NodeId, EffectData>>,
     pub(crate) callbacks: RefCell<SecondaryMap<NodeId, CallbackData>>,
     pub(crate) node_refs: RefCell<SecondaryMap<NodeId, NodeRefData>>,
+    pub(crate) stored_values: RefCell<SecondaryMap<NodeId, StoredValueData>>,
     pub(crate) current_owner: RefCell<Option<NodeId>>,
     pub(crate) observer_queue: RefCell<VecDeque<NodeId>>,
     pub(crate) queued_observers: RefCell<SecondaryMap<NodeId, ()>>,
@@ -80,6 +86,7 @@ impl Runtime {
             effects: RefCell::new(SecondaryMap::new()),
             callbacks: RefCell::new(SecondaryMap::new()),
             node_refs: RefCell::new(SecondaryMap::new()),
+            stored_values: RefCell::new(SecondaryMap::new()),
             current_owner: RefCell::new(None),
             observer_queue: RefCell::new(VecDeque::new()),
             queued_observers: RefCell::new(SecondaryMap::new()),
@@ -259,6 +266,7 @@ impl Runtime {
         nodes.remove(id);
         self.signals.borrow_mut().remove(id);
         self.effects.borrow_mut().remove(id);
+        self.stored_values.borrow_mut().remove(id);
         if self.queued_observers.borrow().contains_key(id) {
             self.queued_observers.borrow_mut().remove(id);
         }
@@ -595,7 +603,49 @@ pub fn set_node_ref<T: 'static>(id: NodeId, element: T) {
     })
 }
 
-/// 检查指定 ID 是否为有效的 NodeRef
+/// Check if the specified ID is a valid NodeRef
 pub fn is_node_ref_valid(id: NodeId) -> bool {
     RUNTIME.with(|rt| rt.node_refs.borrow().contains_key(id))
+}
+
+// --- StoredValue API ---
+
+pub fn store_value<T: 'static>(value: T) -> NodeId {
+    RUNTIME.with(|rt| {
+        let id = rt.register_node();
+        rt.stored_values.borrow_mut().insert(
+            id,
+            StoredValueData {
+                value: Box::new(value),
+            },
+        );
+        id
+    })
+}
+
+pub fn try_with_stored_value<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
+    RUNTIME.with(|rt| {
+        let stored = rt.stored_values.borrow();
+        if let Some(data) = stored.get(id) {
+            if let Some(val) = data.value.downcast_ref::<T>() {
+                return Some(f(val));
+            }
+        }
+        None
+    })
+}
+
+pub fn try_update_stored_value<T: 'static, R>(
+    id: NodeId,
+    f: impl FnOnce(&mut T) -> R,
+) -> Option<R> {
+    RUNTIME.with(|rt| {
+        let mut stored = rt.stored_values.borrow_mut();
+        if let Some(data) = stored.get_mut(id) {
+            if let Some(val) = data.value.downcast_mut::<T>() {
+                return Some(f(val));
+            }
+        }
+        None
+    })
 }
