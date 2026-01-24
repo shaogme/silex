@@ -25,6 +25,8 @@ Silex 提供了一套统一且强大的属性设置 API。所有设置属性的�
 
 *   **静态值**: `&str`, `String`, `bool`.
 *   **信号**: `Signal<T>`, `ReadSignal<T>`, `Memo<T>` 等。
+    *   `Signal<bool>`: 自动切换布尔属性（例如 `disabled`）。
+    *   `Signal<i32>`, `Signal<String>`: 自动转为字符串并设置属性值。
 *   **闭包**: `Fn() -> T` (自动创建 Effect)。
 
 #### 静态设置

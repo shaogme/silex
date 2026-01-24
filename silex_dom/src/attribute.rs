@@ -274,6 +274,17 @@ pub enum OwnedApplyTarget {
     Style,
 }
 
+impl<'a> From<ApplyTarget<'a>> for OwnedApplyTarget {
+    fn from(target: ApplyTarget<'a>) -> Self {
+        match target {
+            ApplyTarget::Attr(n) => OwnedApplyTarget::Attr(n.to_string()),
+            ApplyTarget::Prop(n) => OwnedApplyTarget::Prop(n.to_string()),
+            ApplyTarget::Class => OwnedApplyTarget::Class,
+            ApplyTarget::Style => OwnedApplyTarget::Style,
+        }
+    }
+}
+
 pub trait ReactiveApply {
     fn apply_to_dom(f: impl Fn() -> Self + 'static, el: WebElem, target: OwnedApplyTarget);
 }
@@ -374,6 +385,22 @@ impl ReactiveApply for bool {
     }
 }
 
+macro_rules! impl_reactive_apply_primitive {
+    ($($t:ty),*) => {
+        $(
+            impl ReactiveApply for $t {
+                fn apply_to_dom(f: impl Fn() -> Self + 'static, el: WebElem, target: OwnedApplyTarget) {
+                    String::apply_to_dom(move || f().to_string(), el, target);
+                }
+            }
+        )*
+    };
+}
+
+impl_reactive_apply_primitive!(
+    u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, char
+);
+
 // 4.3 Blanket Implementation
 impl<F, T> ApplyToDom for F
 where
@@ -396,37 +423,45 @@ where
 // 5. Signals
 impl<T> ApplyToDom for ReadSignal<T>
 where
-    T: std::fmt::Display + Clone + 'static,
+    T: ReactiveApply + Clone + 'static,
 {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
-        (move || self.get().to_string()).apply(el, target);
+        let el = el.clone();
+        let target = target.into();
+        T::apply_to_dom(move || self.get(), el, target);
     }
 }
 
 impl<T> ApplyToDom for Memo<T>
 where
-    T: std::fmt::Display + Clone + PartialEq + 'static,
+    T: ReactiveApply + Clone + PartialEq + 'static,
 {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
-        (move || self.get().to_string()).apply(el, target);
+        let el = el.clone();
+        let target = target.into();
+        T::apply_to_dom(move || self.get(), el, target);
     }
 }
 
 impl<T> ApplyToDom for RwSignal<T>
 where
-    T: std::fmt::Display + Clone + 'static,
+    T: ReactiveApply + Clone + 'static,
 {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
-        (move || self.get().to_string()).apply(el, target);
+        let el = el.clone();
+        let target = target.into();
+        T::apply_to_dom(move || self.get(), el, target);
     }
 }
 
 impl<T> ApplyToDom for Signal<T>
 where
-    T: std::fmt::Display + Clone + 'static,
+    T: ReactiveApply + Clone + 'static,
 {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
-        (move || self.get().to_string()).apply(el, target);
+        let el = el.clone();
+        let target = target.into();
+        T::apply_to_dom(move || self.get(), el, target);
     }
 }
 

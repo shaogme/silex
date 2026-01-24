@@ -52,7 +52,7 @@ impl IntoStorable for bool {
 
 impl<T> IntoStorable for ReadSignal<T>
 where
-    T: std::fmt::Display + Clone + 'static,
+    T: ReactiveApply + Clone + 'static,
 {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {
@@ -62,7 +62,7 @@ where
 
 impl<T> IntoStorable for Memo<T>
 where
-    T: std::fmt::Display + Clone + PartialEq + 'static,
+    T: ReactiveApply + Clone + PartialEq + 'static,
 {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {
@@ -72,7 +72,7 @@ where
 
 impl<T> IntoStorable for RwSignal<T>
 where
-    T: std::fmt::Display + Clone + 'static,
+    T: ReactiveApply + Clone + 'static,
 {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {
@@ -82,7 +82,7 @@ where
 
 impl<T> IntoStorable for Signal<T>
 where
-    T: std::fmt::Display + Clone + 'static,
+    T: ReactiveApply + Clone + 'static,
 {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {

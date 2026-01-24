@@ -49,7 +49,9 @@ mod basics {
         div![
             h3("Interactive Counter"),
             div![
-                button("-").on(event::click, set_count.updater(|n| *n -= 1)),
+                button("-")
+                    .attr("disabled", count.le(0)) // New: Directly pass Signal<bool> to attribute
+                    .on(event::click, set_count.updater(|n| *n -= 1)),
                 strong(count).classes(classes![
                     "counter-val",
                     "positive" => count.gt(0),
@@ -163,7 +165,11 @@ mod basics {
             h2("Basics"),
             div![
                 "Reactive Greeting Name: ",
-                input().bind_value(name_signal)
+                "Reactive Greeting Name: ",
+                input().bind_value(name_signal),
+                button("Submit")
+                    .attr("disabled", name_signal.read_signal().eq(""))
+                    .style("margin-left: 10px;")
             ].style("margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px;"),
             
             Greeting().name(name_signal),

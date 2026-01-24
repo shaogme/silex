@@ -46,9 +46,9 @@
 *   `class_toggle<C>(self, name: &str, condition: C)`: 根据 `condition` (bool 或 signal) 切换 class.
 *   `node_ref<N>(self, node_ref: NodeRef<N>)`: 绑定 DOM 引用。`N` 必须实现 `JsCast`。**`NodeRef` 是 `Copy` 的，无需 clone**。
 
-> **注意**: 布尔属性（如 `required`, `checked`）需要显式传递值。
+> **注意**: 布尔属性（如 `required`, `checked`）现在支持直接传入 `Signal<bool>`。
 > *   静态: `.required(true)`
-> *   动态: `.required(signal)`
+> *   动态: `.required(bool_signal)` (自动响应式切换，等同于 `move || bool_signal.get()`)
 
 #### Events
 *   `on<E, F, M>(self, event: E, callback: F)`: **强类型事件监听** (推荐)。
@@ -85,6 +85,8 @@
     *   **Static**: `&str`, `String`, `bool` (Boolean Attribute toggle), `Option<T>`.
     *   **Reactive**: `impl Fn() -> T` (自动创建 `Effect` 进行细粒度更新).
     *   **Signals**: `Signal<T>`, `ReadSignal<T>`, `RwSignal<T>`, `Memo<T>`.
+        *   若 `T` 为 `bool`，自动表现为布尔属性切换。
+        *   若 `T` 为其他基础类型，自动转为字符串。
     *   **Collections**: `Vec<V>`, `[V; N]`.
     *   **Tuples**:
         *   `(Key, Value)`: 用于 Style (e.g., `("color", "red")`).
