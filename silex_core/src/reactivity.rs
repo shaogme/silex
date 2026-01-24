@@ -323,6 +323,18 @@ impl<T: 'static> WriteSignal<T> {
     }
 }
 
+impl<T: 'static> Update for WriteSignal<T> {
+    type Value = T;
+
+    fn try_maybe_update<U>(&self, fun: impl FnOnce(&mut Self::Value) -> (bool, U)) -> Option<U> {
+        let (did_update, val) = self.try_update_untracked(fun)?;
+        if did_update {
+            self.notify();
+        }
+        Some(val)
+    }
+}
+
 // --- RwSignal ---
 
 pub struct RwSignal<T: 'static> {
@@ -420,6 +432,14 @@ impl<T: 'static> UpdateUntracked for RwSignal<T> {
 
     fn try_update_untracked<U>(&self, fun: impl FnOnce(&mut Self::Value) -> U) -> Option<U> {
         self.write.try_update_untracked(fun)
+    }
+}
+
+impl<T: 'static> Update for RwSignal<T> {
+    type Value = T;
+
+    fn try_maybe_update<U>(&self, fun: impl FnOnce(&mut Self::Value) -> (bool, U)) -> Option<U> {
+        self.write.try_maybe_update(fun)
     }
 }
 
