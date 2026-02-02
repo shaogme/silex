@@ -65,7 +65,7 @@ pub(crate) struct StoredValueData {
 
 /// Derived 数据存储（类型擦除）
 pub(crate) struct DerivedData {
-    pub(crate) f: Rc<dyn Fn() -> Box<dyn Any>>,
+    pub(crate) f: Box<dyn Any>,
 }
 
 // --- 图结构 (Graph) ---
@@ -730,15 +730,13 @@ pub fn try_update_stored_value<T: 'static, R>(
 
 // --- Derived API ---
 
-pub fn register_derived<F>(f: F) -> NodeId
-where
-    F: Fn() -> Box<dyn Any> + 'static,
-{
+pub fn register_derived<T: 'static>(f: impl Fn() -> T + 'static) -> NodeId {
     RUNTIME.with(|rt| {
         let id = rt.register_node();
+        let f_rc: Rc<dyn Fn() -> T> = Rc::new(f);
         rt.deriveds
             .borrow_mut()
-            .insert(id, DerivedData { f: Rc::new(f) });
+            .insert(id, DerivedData { f: Box::new(f_rc) });
         id
     })
 }
@@ -747,9 +745,8 @@ pub fn run_derived<T: 'static>(id: NodeId) -> Option<T> {
     RUNTIME.with(|rt| {
         let deriveds = rt.deriveds.borrow();
         if let Some(data) = deriveds.get(id) {
-            let res_box = (data.f)();
-            if let Ok(val) = res_box.downcast::<T>() {
-                return Some(*val);
+            if let Some(f) = data.f.downcast_ref::<Rc<dyn Fn() -> T>>() {
+                return Some(f());
             }
         }
         None

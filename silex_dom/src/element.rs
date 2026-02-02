@@ -187,7 +187,7 @@ pub fn text<V: View>(content: V) -> V {
 }
 
 /// 基础 DOM 元素包装器
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Element {
     pub dom_element: WebElem,
 }
@@ -277,7 +277,7 @@ impl std::ops::Deref for Element {
 }
 
 /// Type-safe wrapper for DOM elements
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct TypedElement<T> {
     pub element: Element,
     _marker: PhantomData<T>,

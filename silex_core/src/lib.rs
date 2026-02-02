@@ -19,8 +19,6 @@ pub use node_ref::NodeRef;
 /// use silex_core::rx;
 /// use silex_core::prelude::*;
 ///
-/// use silex_core::prelude::*;
-///
 /// let (count, set_count) = signal(0);
 /// let double = rx!(count.get() * 2);
 /// ```
@@ -34,11 +32,7 @@ macro_rules! rx {
 pub mod prelude {
     pub use crate::log::*;
     pub use crate::node_ref::NodeRef;
-    pub use crate::reactivity::{
-        Effect, Memo, Mutation, MutationState, ReadSignal, Resource, ResourceState, RwSignal,
-        Signal, StoredValue, WriteSignal, batch, create_scope, expect_context, on_cleanup,
-        provide_context, signal, use_context,
-    };
+    pub use crate::reactivity::*;
     pub use crate::traits::*;
     pub use crate::{SilexError, SilexResult};
 }

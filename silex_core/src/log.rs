@@ -71,40 +71,40 @@ const fn log_to_stdout() -> bool {
 
 /// 将字符串记录到控制台（在浏览器中）
 /// 或通过 `println!()`（如果不在浏览器中）。
-pub fn console_log(s: &str) {
+pub fn console_log<S: AsRef<str>>(s: S) {
     #[allow(clippy::print_stdout)]
     if log_to_stdout() {
-        println!("{s}");
+        println!("{}", s.as_ref());
     } else {
-        web_sys::console::log_1(&JsValue::from_str(s));
+        web_sys::console::log_1(&JsValue::from_str(s.as_ref()));
     }
 }
 
 /// 将警告记录到控制台（在浏览器中）
 /// 或通过 `eprintln!()`（如果不在浏览器中）。
-pub fn console_warn(s: &str) {
+pub fn console_warn<S: AsRef<str>>(s: S) {
     if log_to_stdout() {
-        eprintln!("{s}");
+        eprintln!("{}", s.as_ref());
     } else {
-        web_sys::console::warn_1(&JsValue::from_str(s));
+        web_sys::console::warn_1(&JsValue::from_str(s.as_ref()));
     }
 }
 
 /// 将错误记录到控制台（在浏览器中）
 /// 或通过 `eprintln!()`（如果不在浏览器中）。
 #[inline(always)]
-pub fn console_error(s: &str) {
+pub fn console_error<S: AsRef<str>>(s: S) {
     if log_to_stdout() {
-        eprintln!("{s}");
+        eprintln!("{}", s.as_ref());
     } else {
-        web_sys::console::error_1(&JsValue::from_str(s));
+        web_sys::console::error_1(&JsValue::from_str(s.as_ref()));
     }
 }
 
 /// 将字符串记录到控制台（在浏览器中）
 /// 或通过 `println!()`（如果不在浏览器中），但仅在调试构建中。
 #[inline(always)]
-pub fn console_debug_log(s: &str) {
+pub fn console_debug_log<S: AsRef<str>>(s: S) {
     if cfg!(debug_assertions) {
         console_log(s)
     }
@@ -113,7 +113,7 @@ pub fn console_debug_log(s: &str) {
 /// 将警告记录到控制台（在浏览器中）
 /// 或通过 `eprintln!()`（如果不在浏览器中），但仅在调试构建中。
 #[inline(always)]
-pub fn console_debug_warn(s: &str) {
+pub fn console_debug_warn<S: AsRef<str>>(s: S) {
     if cfg!(debug_assertions) {
         console_warn(s)
     }
@@ -122,7 +122,7 @@ pub fn console_debug_warn(s: &str) {
 /// 将错误记录到控制台（在浏览器中）
 /// 或通过 `eprintln!()`（如果不在浏览器中），但仅在调试构建中。
 #[inline(always)]
-pub fn console_debug_error(s: &str) {
+pub fn console_debug_error<S: AsRef<str>>(s: S) {
     if cfg!(debug_assertions) {
         console_error(s)
     }

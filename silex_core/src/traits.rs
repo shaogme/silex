@@ -48,19 +48,211 @@
 
 // pub use crate::trait_options::*;
 
-// --- Accessor Trait ---
+#[macro_export]
+macro_rules! impl_reactive_ops {
+    ($target:ident) => {
+        $crate::impl_reactive_op!($target, Add, add);
+        $crate::impl_reactive_op!($target, Sub, sub);
+        $crate::impl_reactive_op!($target, Mul, mul);
+        $crate::impl_reactive_op!($target, Div, div);
+        $crate::impl_reactive_op!($target, Rem, rem);
+        $crate::impl_reactive_op!($target, BitAnd, bitand);
+        $crate::impl_reactive_op!($target, BitOr, bitor);
+        $crate::impl_reactive_op!($target, BitXor, bitxor);
+        $crate::impl_reactive_op!($target, Shl, shl);
+        $crate::impl_reactive_op!($target, Shr, shr);
 
-pub trait Accessor<T> {
-    fn value(&self) -> T;
+        $crate::impl_reactive_unary_op!($target, Neg, neg);
+        $crate::impl_reactive_unary_op!($target, Not, not);
+    };
 }
 
-impl<F, T> Accessor<T> for F
+#[macro_export]
+macro_rules! impl_reactive_op {
+    ($target:ident, $trait:ident, $method:ident) => {
+        // Op with T (Value)
+        impl<T> std::ops::$trait<T> for $target<T>
+        where
+            T: std::ops::$trait<T, Output = T> + Clone + 'static,
+            T: PartialEq + 'static,
+        {
+            type Output = $crate::reactivity::Memo<T>;
+
+            fn $method(self, rhs: T) -> Self::Output {
+                let lhs = self.clone();
+                $crate::reactivity::Memo::new(move |_| {
+                    use $crate::traits::Accessor;
+                    lhs.value().$method(rhs.clone())
+                })
+            }
+        }
+
+        // Op with Reactives
+        $crate::impl_reactive_op_rhs!($target, $trait, $method, $crate::reactivity::Signal<T>);
+        $crate::impl_reactive_op_rhs!($target, $trait, $method, $crate::reactivity::ReadSignal<T>);
+        $crate::impl_reactive_op_rhs!($target, $trait, $method, $crate::reactivity::Memo<T>);
+        $crate::impl_reactive_op_rhs!($target, $trait, $method, $crate::reactivity::RwSignal<T>);
+    };
+}
+
+#[macro_export]
+macro_rules! impl_reactive_op_rhs {
+    ($target:ident, $trait:ident, $method:ident, $rhs:ty) => {
+        impl<T> std::ops::$trait<$rhs> for $target<T>
+        where
+            T: std::ops::$trait<T, Output = T> + Clone + 'static,
+            T: PartialEq + 'static,
+        {
+            type Output = $crate::reactivity::Memo<T>;
+
+            fn $method(self, rhs: $rhs) -> Self::Output {
+                let lhs = self.clone();
+                $crate::reactivity::Memo::new(move |_| {
+                    use $crate::traits::Accessor;
+                    lhs.value().$method(rhs.value())
+                })
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! impl_reactive_unary_op {
+    ($target:ident, $trait:ident, $method:ident) => {
+        impl<T> std::ops::$trait for $target<T>
+        where
+            T: std::ops::$trait<Output = T> + Clone + 'static,
+            T: PartialEq + 'static,
+        {
+            type Output = $crate::reactivity::Memo<T>;
+
+            fn $method(self) -> Self::Output {
+                let lhs = self.clone();
+                $crate::reactivity::Memo::new(move |_| {
+                    use $crate::traits::Accessor;
+                    lhs.value().$method()
+                })
+            }
+        }
+    };
+}
+
+// --- Accessor Trait ---
+
+pub trait Accessor {
+    type Value;
+    fn value(&self) -> Self::Value;
+}
+
+impl<F, T> Accessor for F
 where
     F: Fn() -> T,
 {
+    type Value = T;
     fn value(&self) -> T {
         self()
     }
+}
+
+macro_rules! host_accessor_tuple {
+    ($($T:ident),*) => {
+        impl<$($T),*> Accessor for ($($T,)*)
+        where
+            $($T: Accessor),*
+        {
+            type Value = ($($T::Value,)*);
+
+            fn value(&self) -> Self::Value {
+                #[allow(non_snake_case)]
+                let ($($T,)*) = self;
+                ($($T.value(),)*)
+            }
+        }
+    };
+}
+
+host_accessor_tuple!(A, B);
+host_accessor_tuple!(A, B, C);
+host_accessor_tuple!(A, B, C, D);
+
+/// Provides a fluent API for checking equality on reactive values.
+pub trait ReactivePartialEq: Accessor + Clone + 'static
+where
+    Self::Value: PartialEq + 'static,
+{
+    fn eq<O>(&self, other: O) -> crate::reactivity::Memo<bool>
+    where
+        O: Into<Self::Value> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = self.clone();
+        crate::reactivity::Memo::new(move |_| this.value() == other)
+    }
+
+    fn ne<O>(&self, other: O) -> crate::reactivity::Memo<bool>
+    where
+        O: Into<Self::Value> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = self.clone();
+        crate::reactivity::Memo::new(move |_| this.value() != other)
+    }
+}
+
+impl<S> ReactivePartialEq for S
+where
+    S: Accessor + Clone + 'static,
+    S::Value: PartialEq + 'static,
+{
+}
+
+/// Provides a fluent API for checking ordering on reactive values.
+pub trait ReactivePartialOrd: Accessor + Clone + 'static
+where
+    Self::Value: PartialOrd + 'static,
+{
+    fn gt<O>(&self, other: O) -> crate::reactivity::Memo<bool>
+    where
+        O: Into<Self::Value> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = self.clone();
+        crate::reactivity::Memo::new(move |_| this.value() > other)
+    }
+
+    fn lt<O>(&self, other: O) -> crate::reactivity::Memo<bool>
+    where
+        O: Into<Self::Value> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = self.clone();
+        crate::reactivity::Memo::new(move |_| this.value() < other)
+    }
+
+    fn ge<O>(&self, other: O) -> crate::reactivity::Memo<bool>
+    where
+        O: Into<Self::Value> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = self.clone();
+        crate::reactivity::Memo::new(move |_| this.value() >= other)
+    }
+
+    fn le<O>(&self, other: O) -> crate::reactivity::Memo<bool>
+    where
+        O: Into<Self::Value> + Clone + 'static,
+    {
+        let other = other.into();
+        let this = self.clone();
+        crate::reactivity::Memo::new(move |_| this.value() <= other)
+    }
+}
+
+impl<S> ReactivePartialOrd for S
+where
+    S: Accessor + Clone + 'static,
+    S::Value: PartialOrd + 'static,
+{
 }
 
 // use any_spawner::Executor;

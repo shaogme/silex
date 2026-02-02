@@ -75,7 +75,9 @@ impl<T: 'static> WithUntracked for Memo<T> {
     }
 }
 
-impl<T: Clone + PartialEq + 'static> Accessor<T> for Memo<T> {
+impl<T: Clone + PartialEq + 'static> Accessor for Memo<T> {
+    type Value = T;
+
     fn value(&self) -> T {
         self.get()
     }
@@ -101,3 +103,6 @@ impl<T: 'static> From<Memo<T>> for crate::reactivity::Signal<T> {
         })
     }
 }
+
+use crate::impl_reactive_ops;
+impl_reactive_ops!(Memo);

@@ -84,7 +84,7 @@ where
 }
 
 impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
-    pub fn new<S, Fetcher>(source: impl Fn() -> S + 'static, fetcher: Fetcher) -> Self
+    pub fn new<S, Fetcher>(source: impl Accessor<Value = S> + 'static, fetcher: Fetcher) -> Self
     where
         S: PartialEq + Clone + 'static,
         Fetcher: ResourceFetcher<S, Data = T, Error = E> + 'static,
@@ -100,7 +100,7 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
         let request_id = Rc::new(Cell::new(0usize));
 
         Effect::new(move |_| {
-            let source_val = source();
+            let source_val = source.value();
             let _ = trigger.get();
 
             let suspense_ctx = use_suspense_context();

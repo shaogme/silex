@@ -39,7 +39,7 @@ mod basics {
     #[component]
     pub fn Counter() -> impl View {
         let (count, set_count) = signal(0);
-        let double_count = Memo::new(move |_| count.get() * 2); // rx!(count.get() * 2) is move || count.get() * 2
+        let double_count = count * 2; // Operator overloading creates a Memo automatically
         
         // Timer Handle for Auto Increment (StoredValue: doesn't trigger UI updates itself)
         let timer = StoredValue::new(None::<IntervalHandle>);
@@ -63,7 +63,7 @@ mod basics {
             
             // Auto Increment Demo using set_interval and StoredValue
             div![
-                button(move || if is_running.get() { "Stop Auto Inc" } else { "Start Auto Inc" })
+                button(is_running.map(|r| if r { "Stop Auto Inc" } else { "Start Auto Inc" }))
                     .on(event::click, move |_| {
                         if is_running.get() {
                             if let Some(handle) = timer.get_value() {
@@ -96,7 +96,7 @@ mod basics {
             ].style("margin-bottom: 10px;"),
 
             div!["Double: ", double_count]
-                .classes(rx!(if count.get() % 2 == 0 { "even" } else { "odd" }))
+                .classes((count % 2).eq(0).map(|is_even| if is_even { "even" } else { "odd" }))
                 .style("margin-top: 5px; color: #666; font-size: 0.9em;"),
         ]
     }
@@ -189,8 +189,8 @@ mod basics {
             h3("Clone Macro Demo"),
             p("1. Standard Clone: Captures external variables for use in closure."),
             div![
-                p(move || format!("Current Name: {}", name.get())),
-                p(move || format!("Current Count: {}", count.get())),
+                p(name.map(|n| format!("Current Name: {}", n))),
+                p(count.map(|c| format!("Current Count: {}", c))),
             ].style("margin-bottom: 10px; font-family: monospace;"),
             
             button("Log & Update (Standard)")
@@ -536,7 +536,7 @@ mod advanced {
         let (user_id, set_user_id) = signal(1);
         
         // Create Resource: triggers when user_id changes
-        let user_resource = Resource::new(move || user_id.get(), mock_fetch_user);
+        let user_resource = Resource::new(user_id, mock_fetch_user);
 
         div![
             h3("Resource & Optimistic UI"),

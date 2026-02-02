@@ -22,7 +22,7 @@ pub struct Index<ItemsFn, Item, Items, MapFn, V> {
 
 impl<ItemsFn, Item, Items, MapFn, V> Index<ItemsFn, Item, Items, MapFn, V>
 where
-    ItemsFn: Accessor<Items> + 'static,
+    ItemsFn: Accessor<Value = Items> + 'static,
     Items: IntoForLoopResult<Item = Item>,
     MapFn: Fn(Signal<Item>, usize) -> V + 'static,
     V: View,
@@ -48,7 +48,7 @@ struct IndexRow<Item> {
 
 impl<ItemsFn, Item, Items, MapFn, V> View for Index<ItemsFn, Item, Items, MapFn, V>
 where
-    ItemsFn: Accessor<Items> + 'static,
+    ItemsFn: Accessor<Value = Items> + 'static,
     Items: IntoForLoopResult<Item = Item> + 'static,
     <Items as IntoForLoopResult>::Iter: IntoIterator<Item = Item>,
     MapFn: Fn(Signal<Item>, usize) -> V + 'static,

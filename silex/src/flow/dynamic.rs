@@ -32,7 +32,7 @@ pub struct Dynamic<V, F> {
 impl<V, F> Dynamic<V, F>
 where
     V: View,
-    F: Accessor<V> + 'static,
+    F: Accessor<Value = V> + 'static,
 {
     pub fn new(f: F) -> Self {
         Self {
@@ -55,7 +55,7 @@ where
     /// ```
     pub fn bind<S, T, Map>(source: S, map_fn: Map) -> Dynamic<V, impl Fn() -> V>
     where
-        S: Accessor<T> + 'static,
+        S: Accessor<Value = T> + 'static,
         Map: Fn(T) -> V + 'static,
         T: 'static,
     {
@@ -67,7 +67,7 @@ where
 impl<V, F> View for Dynamic<V, F>
 where
     V: View,
-    F: Accessor<V> + 'static,
+    F: Accessor<Value = V> + 'static,
 {
     fn mount(self, parent: &Node) {
         let document = silex_dom::document();

@@ -42,18 +42,29 @@
 *   **Enum**:
     *   `Read(ReadSignal<T>)`
     *   `Derived(NodeId, PhantomData<T>)`
-*   **Traits**: `Copy`, `Clone`, `Debug`, `Accessor<T>`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `Map`.
+    *   `Constant(NodeId, PhantomData<T>)`
+*   **Traits**: `Copy`, `Clone`, `Debug`, `Accessor<T>`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
 *   **Semantics**:
-    *   通用的信号接口，统一了 `ReadSignal` 和派生计算。
+    *   通用的信号接口，统一了 `ReadSignal`、派生计算和常量。
     *   `Derived` 变体持有一个在 Runtime 中注册的闭包，每次 `get()` 时重新执行闭包（无缓存）。
+    *   `Constant` 变体持有一个存储在 Runtime 中的常量值。
 *   **Methods**:
     *   `derive(f: impl Fn() -> T)`: 创建一个派生信号。
     *   `get() -> T`: (via `Accessor` or `Get` trait).
+*   **Conversions**:
+    *   `From<T>`: 将普通值转换为 `Signal::Constant`。
+    *   `From<&str>`: 将字符串切片转换为 `Signal<String>` (Constant)。
+    *   `From<ReadSignal<T>>`, `From<RwSignal<T>>`, `From<Memo<T>>`: 转换为 `Signal::Read`。
+*   **Operator Overloads**:
+    *   实现了 `Add`, `Sub`, `Mul`, `Div`, `Rem`, `BitAnd`, `BitOr`, `BitXor`, `Shl`, `Shr`, `Neg`, `Not`。
+    *   支持 `Signal op Signal` 以及 `Signal op T`。
+    *   所有运算均返回 `Memo<T>`，自动创建派生计算。
 
 #### `ReadSignal<T>`
 *   **Struct**: `pub struct ReadSignal<T> { id: NodeId, marker: PhantomData<T> }`
 *   **Traits**: `Copy`, `Clone`, `Debug`, `Accessor<T>`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
 *   **Fluent API**: 实现了 `eq`, `ne`, `gt`, `lt`, `ge`, `le`，返回 `Memo<bool>`。
+*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符，返回 `Memo<T>`。
 
 #### `WriteSignal<T>`
 *   **Struct**: `pub struct WriteSignal<T> { id: NodeId, marker: PhantomData<T> }`
@@ -71,13 +82,15 @@
 *   **Traits**: Implements all traits of `ReadSignal` and `WriteSignal`.
 *   **Semantics**: 读写合一的信号句柄，常用于组件 Props。
     *   **Implements**: `SignalSetter`, `SignalUpdater`.
+*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符 (针对 Read 部分)，返回 `Memo<T>`。
 
 #### `Memo<T>`
 *   **Struct**: `pub struct Memo<T> { id: NodeId, marker: PhantomData<T> }`
-*   **Traits**: `Copy`, `Clone`, `Debug`, `Accessor<T>`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `Map`.
+*   **Traits**: `Copy`, `Clone`, `Debug`, `Accessor<T>`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
 *   **Semantics**: 派生计算信号。值被缓存，仅在依赖变更时无效。
 *   **Methods**:
     *   `new(f: impl Fn(Option<&T>) -> T)`: 创建 Memo。
+*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符，返回 `Memo<T>`。
 
 #### `signal<T>`
 *   **Signature**: `pub fn signal<T: 'static>(value: T) -> (ReadSignal<T>, WriteSignal<T>)`

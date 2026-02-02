@@ -27,7 +27,7 @@ pub struct Switch<Source, T, V> {
 
 impl<Source, T, V> Switch<Source, T, V>
 where
-    Source: Accessor<T> + 'static,
+    Source: Accessor<Value = T> + 'static,
     T: PartialEq + Clone + 'static,
     V: View + 'static,
 {
@@ -48,7 +48,7 @@ where
 
 impl<Source, T, V> View for Switch<Source, T, V>
 where
-    Source: Accessor<T> + 'static,
+    Source: Accessor<Value = T> + 'static,
     T: PartialEq + Clone + 'static,
     V: View + 'static,
 {

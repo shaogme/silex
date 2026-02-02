@@ -10,8 +10,8 @@
 
 *   **SignalWrapper (通用信号)**:
     *   `Signal<T>`: 统一的信号包装器，**实现了 `Copy`**。
-    *   它可以包装 `ReadSignal`, `RwSignal`, `Memo`，或者是一个派生闭包 (`Signal::derive`)。
-    *   作为组件 Props 的首选类型，因为它能接受任何类型的响应式数据源。
+    *   它可以包装 `ReadSignal`, `RwSignal`, `Memo`，`Derived` (派生闭包) 或 `Constant` (常量)。
+    *   作为组件 Props 的首选类型，因为它能接受任何类型的响应式数据源（包括普通值，会自动转换为常量信号）。
 
 *   **Trait System (特征系统)**:
     *   Silex 采用细粒度的特征系统来定义响应式行为。

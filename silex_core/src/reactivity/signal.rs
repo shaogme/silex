@@ -12,6 +12,7 @@ use crate::traits::*;
 pub enum Signal<T: 'static> {
     Read(ReadSignal<T>),
     Derived(NodeId, PhantomData<T>),
+    Constant(NodeId, PhantomData<T>),
 }
 
 impl<T> Clone for Signal<T> {
@@ -23,7 +24,7 @@ impl<T> Copy for Signal<T> {}
 
 impl<T: Clone + 'static> Signal<T> {
     pub fn derive(f: impl Fn() -> T + 'static) -> Self {
-        let id = silex_reactivity::register_derived(move || Box::new(f()));
+        let id = silex_reactivity::register_derived(move || f());
         Signal::Derived(id, PhantomData)
     }
 
@@ -33,6 +34,7 @@ impl<T: Clone + 'static> Signal<T> {
                 s.with_name(name);
             }
             Signal::Derived(id, _) => silex_reactivity::set_debug_label(id, name),
+            Signal::Constant(_, _) => {} // Constants usually don't need debug labels in the graph
         }
         self
     }
@@ -47,6 +49,7 @@ impl<T> DefinedAt for Signal<T> {
         match self {
             Signal::Read(s) => s.debug_name(),
             Signal::Derived(id, _) => silex_reactivity::get_debug_label(*id),
+            Signal::Constant(_, _) => Some("Constant".to_string()),
         }
     }
 }
@@ -56,6 +59,7 @@ impl<T> IsDisposed for Signal<T> {
         match self {
             Signal::Read(s) => s.is_disposed(),
             Signal::Derived(id, _) => !silex_reactivity::is_signal_valid(*id),
+            Signal::Constant(_, _) => false,
         }
     }
 }
@@ -68,6 +72,7 @@ impl<T: 'static> Track for Signal<T> {
                 // Run the derived function to track its dependencies
                 let _ = silex_reactivity::run_derived::<T>(*id);
             }
+            Signal::Constant(_, _) => {}
         }
     }
 }
@@ -82,11 +87,14 @@ impl<T: 'static> WithUntracked for Signal<T> {
                 let val = untrack(|| silex_reactivity::run_derived::<T>(*id))?;
                 Some(fun(&val))
             }
+            Signal::Constant(id, _) => silex_reactivity::try_with_stored_value(*id, fun),
         }
     }
 }
 
-impl<T: Clone + 'static> Accessor<T> for Signal<T> {
+impl<T: Clone + 'static> Accessor for Signal<T> {
+    type Value = T;
+
     fn value(&self) -> T {
         self.get()
     }
@@ -106,8 +114,8 @@ impl<T: Clone + 'static> Map for Signal<T> {
 
 impl<T: Clone + 'static> From<T> for Signal<T> {
     fn from(value: T) -> Self {
-        let (read, _) = signal(value);
-        Signal::Read(read)
+        let id = silex_reactivity::store_value(value);
+        Signal::Constant(id, PhantomData)
     }
 }
 
@@ -126,6 +134,16 @@ impl<T: 'static> From<ReadSignal<T>> for Signal<T> {
 impl<T: 'static> From<RwSignal<T>> for Signal<T> {
     fn from(s: RwSignal<T>) -> Self {
         Signal::Read(s.read)
+    }
+}
+
+pub trait IntoSignal<T> {
+    fn into_signal(self) -> Signal<T>;
+}
+
+impl<T: 'static, U: Into<Signal<T>>> IntoSignal<T> for U {
+    fn into_signal(self) -> Signal<T> {
+        self.into()
     }
 }
 
@@ -186,7 +204,9 @@ impl<T: 'static> WithUntracked for ReadSignal<T> {
     }
 }
 
-impl<T: Clone + 'static> Accessor<T> for ReadSignal<T> {
+impl<T: Clone + 'static> Accessor for ReadSignal<T> {
+    type Value = T;
+
     fn value(&self) -> T {
         self.get()
     }
@@ -201,65 +221,6 @@ impl<T: Clone + 'static> Map for ReadSignal<T> {
         U: Clone + PartialEq + 'static,
     {
         Memo::new(move |_| f(self.get()))
-    }
-}
-
-// Fluent API Extensions for ReadSignal
-impl<T: Clone + 'static + PartialEq> ReadSignal<T> {
-    pub fn eq<O>(&self, other: O) -> Memo<bool>
-    where
-        O: Into<T> + Clone + 'static,
-    {
-        let other = other.into();
-        let this = *self;
-        Memo::new(move |_| this.get() == other)
-    }
-
-    pub fn ne<O>(&self, other: O) -> Memo<bool>
-    where
-        O: Into<T> + Clone + 'static,
-    {
-        let other = other.into();
-        let this = *self;
-        Memo::new(move |_| this.get() != other)
-    }
-}
-
-impl<T: Clone + 'static + PartialOrd> ReadSignal<T> {
-    pub fn gt<O>(&self, other: O) -> Memo<bool>
-    where
-        O: Into<T> + Clone + 'static,
-    {
-        let other = other.into();
-        let this = *self;
-        Memo::new(move |_| this.get() > other)
-    }
-
-    pub fn lt<O>(&self, other: O) -> Memo<bool>
-    where
-        O: Into<T> + Clone + 'static,
-    {
-        let other = other.into();
-        let this = *self;
-        Memo::new(move |_| this.get() < other)
-    }
-
-    pub fn ge<O>(&self, other: O) -> Memo<bool>
-    where
-        O: Into<T> + Clone + 'static,
-    {
-        let other = other.into();
-        let this = *self;
-        Memo::new(move |_| this.get() >= other)
-    }
-
-    pub fn le<O>(&self, other: O) -> Memo<bool>
-    where
-        O: Into<T> + Clone + 'static,
-    {
-        let other = other.into();
-        let this = *self;
-        Memo::new(move |_| this.get() <= other)
     }
 }
 
@@ -445,7 +406,9 @@ impl<T: 'static> Update for RwSignal<T> {
     }
 }
 
-impl<T: Clone + 'static> Accessor<T> for RwSignal<T> {
+impl<T: Clone + 'static> Accessor for RwSignal<T> {
+    type Value = T;
+
     fn value(&self) -> T {
         self.get()
     }
@@ -501,3 +464,8 @@ pub fn signal<T: 'static>(value: T) -> (ReadSignal<T>, WriteSignal<T>) {
 pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
     silex_reactivity::untrack(f)
 }
+
+use crate::impl_reactive_ops;
+impl_reactive_ops!(Signal);
+impl_reactive_ops!(ReadSignal);
+impl_reactive_ops!(RwSignal);

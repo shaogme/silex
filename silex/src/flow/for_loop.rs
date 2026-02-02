@@ -72,7 +72,7 @@ impl<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> Clone
 impl<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V>
 where
     // ItemsFn returns the Source directly (e.g. Vec or Result<Vec>)
-    ItemsFn: Accessor<Items> + 'static,
+    ItemsFn: Accessor<Value = Items> + 'static,
     Items: IntoForLoopResult<Item = Item>,
     KeyFn: Fn(&Item) -> Key + 'static,
     MapFn: Fn(Item) -> V + 'static,
@@ -92,7 +92,7 @@ where
 impl<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> View
     for For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V>
 where
-    ItemsFn: Accessor<Items> + 'static,
+    ItemsFn: Accessor<Value = Items> + 'static,
     Items: IntoForLoopResult<Item = Item> + 'static,
     // We need the Iterator produced by the result to be iterable
     <Items as IntoForLoopResult>::Iter: IntoIterator<Item = Item>,
