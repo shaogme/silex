@@ -174,3 +174,25 @@ div(())
         "is-active" => is_active_signal.get() // 仅当 true 时添加
     ])
 ```
+
+## 6. 简化变量克隆 (`clone!`)
+
+在编写回调函数（Callback）或副作用（Effect）时，经常需要将外部变量的所有权移动到闭包中，但又希望保留外部变量的引用以供他用。传统的做法是手动克隆：
+
+```rust
+let name = name_signal.clone();
+let age = age_signal.clone();
+let callback = move || {
+    println!("Name: {}, Age: {}", name.get(), age.get());
+};
+```
+
+使用 `clone!` 宏可以大大简化这一过程：
+
+```rust
+let callback = clone!(name_signal, age_signal => move || {
+    println!("Name: {}, Age: {}", name_signal.get(), age_signal.get());
+});
+```
+
+宏会自动生成 `let variable = variable.clone();` 语句，并将其包裹在一个新的作用域中，使得闭包捕获的是克隆后的变量。

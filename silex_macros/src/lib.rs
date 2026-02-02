@@ -1,6 +1,8 @@
 use proc_macro::TokenStream;
 use syn::{DeriveInput, ItemFn, parse_macro_input};
 
+#[cfg(feature = "clone")]
+mod clone;
 #[cfg(feature = "component")]
 mod component;
 #[cfg(feature = "css")]
@@ -9,6 +11,27 @@ mod css;
 mod route;
 #[cfg(feature = "store")]
 mod store;
+
+/// `clone!` 宏
+///
+/// 简化闭包中的变量克隆。
+///
+/// # 用法
+///
+/// ```rust, ignore
+/// let data = vec![1, 2, 3];
+/// let callback = clone!(data => move || {
+///     println!("{:?}", data);
+/// });
+/// ```
+#[cfg(feature = "clone")]
+#[proc_macro]
+pub fn clone(input: TokenStream) -> TokenStream {
+    match clone::clone_impl(input.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
 
 #[cfg(feature = "css")]
 #[proc_macro]

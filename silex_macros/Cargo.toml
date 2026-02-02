@@ -24,8 +24,9 @@ lightningcss = { version = "1.0.0-alpha.70", optional = true }
 # silex.workspace = true
 
 [features]
-default = ["component", "css", "store", "route"]
+default = ["component", "css", "store", "route", "clone"]
 component = []
 css = ["dep:lightningcss"]
 store = []
 route = []
+clone = []

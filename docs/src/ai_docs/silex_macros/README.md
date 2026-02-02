@@ -123,3 +123,24 @@ struct UserStore {
 ### `classes!`
 *   语法: `classes![ "btn", "active" => is_active ]`
 *   输出: `silex::dom::attribute::group("btn", ("active", is_active))`
+
+---
+
+## 6. Clone 宏 `clone!`
+
+简化闭包场景下的变量克隆。
+
+### 用法
+```rust
+let data = vec![1, 2, 3];
+let callback = clone!(data => move || {
+    println!("{:?}", data);
+});
+```
+
+### 转换逻辑
+1.  **Input**: 变量列表 + `=>` + 表达式（通常是闭包）。
+2.  **Expansion**:
+    *   对列表中的每个变量生成 `let var = var.clone();`。
+    *   将这些克隆语句置于新的块中，后跟原始表达式。
+    *   注意：生成的变量会 shadow 外部变量，这在 `move` 闭包前非常有用。

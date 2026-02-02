@@ -158,6 +158,36 @@ mod basics {
     }
 
     #[component]
+    pub fn CloneDemo() -> impl View {
+        let (name, set_name) = signal("Silex".to_string());
+        let (count, set_count) = signal(0);
+
+        // Without clone!, we would need:
+        // let name_clone = name.clone();
+        // let count_clone = count.clone();
+        // move || ...
+
+        let on_click = clone!(name, count => move |_| {
+            console_log(&format!("Clicked! Name: {}, Count: {}", name.get(), count.get()));
+            set_count.update(|n| *n += 1);
+            set_name.update(|n| *n = format!("Silex {}", count.get() + 1));
+        });
+
+        div![
+            h3("Clone Macro Demo"),
+            p("Click the button to log state and update via a closure that captures cloned signals."),
+            div![
+                p(move || format!("Current Name: {}", name.get())),
+                p(move || format!("Current Count: {}", count.get())),
+            ].style("margin-bottom: 10px; font-family: monospace;"),
+            
+            button("Log & Update (cloned)")
+                .on(event::click, on_click)
+        ]
+        .style("padding: 20px; border: 1px dashed #4caf50; margin-top: 20px;")
+    }
+
+    #[component]
     pub fn BasicsPage() -> impl View {
         let name_signal = RwSignal::new("Developer".to_string());
 
@@ -174,6 +204,7 @@ mod basics {
             
             Greeting().name(name_signal),
             Counter(),
+            CloneDemo(),
             NodeRefDemo(),
             SvgIconDemo(),
             // AttributeDemo omitted for brevity, logic is same as previous
