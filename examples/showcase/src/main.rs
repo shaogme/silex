@@ -452,6 +452,97 @@ mod advanced {
              }
         }
     }
+
+    #[derive(Clone, Debug, PartialEq)]
+    struct UserProfile {
+        id: i32,
+        name: String,
+        role: String,
+    }
+
+    async fn mock_fetch_user(id: i32) -> Result<UserProfile, String> {
+        // Simulate network delay
+        gloo_timers::future::TimeoutFuture::new(1000).await;
+        
+        if id < 0 {
+            return Err("Invalid User ID".to_string());
+        }
+
+        Ok(UserProfile {
+            id,
+            name: format!("User {}", id),
+            role: if id == 1 { "Admin".to_string() } else { "Member".to_string() },
+        })
+    }
+
+    #[component]
+    pub fn ResourceDemo() -> impl View {
+        let (user_id, set_user_id) = signal(1);
+        
+        // Create Resource: triggers when user_id changes
+        let user_resource = Resource::new(move || user_id.get(), mock_fetch_user);
+
+        div![
+            h3("Resource & Optimistic UI"),
+            p("Fetches user data with a 1s delay. You can optimistically update the name before the server responds."),
+            
+            div![
+                button("User 1").on(event::click, set_user_id.setter(1)),
+                button("User 2").on(event::click, set_user_id.setter(2)),
+                button("Invalid User").on(event::click, set_user_id.setter(-1)),
+                button("Refetch").on(event::click, move |_| user_resource.refetch()),
+            ].style("display: flex; gap: 10px; margin-bottom: 15px;"),
+
+            div![
+                "Status: ",
+                // Show loading state
+                move || if user_resource.loading.get() { 
+                    span("Loading...").style("color: orange;") 
+                } else { 
+                    span("Idle").style("color: green;") 
+                }
+            ].style("margin-bottom: 10px; font-weight: bold;"),
+
+            // Display Data
+            move || {
+                match user_resource.get() {
+                    Some(user) => div![
+                        div(format!("ID: {}", user.id)),
+                        div(format!("Name: {}", user.name)),
+                        div(format!("Role: {}", user.role)),
+                        
+                        // Optimistic Update Controls
+                        div![
+                            h4("Optimistic Updates (Local Cache)"),
+                            button("Rename to 'Modified' (Optimistic)")
+                                .on(event::click, move |_| {
+                                    // Manually update the local resource data
+                                    user_resource.update(|data| {
+                                        if let Some(u) = data {
+                                            u.name = "Modified Name".to_string();
+                                        }
+                                    });
+                                }),
+                            button("Clear Data")
+                                .on(event::click, move |_| user_resource.set(None))
+                                .style("margin-left: 10px; color: red;"),
+                        ].style("margin-top: 15px; border-top: 1px solid #eee; padding-top: 10px;")
+                    ].into_any(),
+                    None => div("No Data").into_any(),
+                }
+            },
+            
+            // Error Handling
+            move || {
+                if let Some(err) = user_resource.error.get() {
+                    div(format!("Error: {}", err)).style("color: red; margin-top: 10px;").into_any()
+                } else {
+                    "".into_any()
+                }
+            }
+        ]
+        .style("padding: 20px; border: 1px solid #ccc; border-radius: 8px;")
+    }
 }
 
 
@@ -552,6 +643,8 @@ enum AdvancedRoute {
     Store,
     #[route("/query", view = advanced::QueryDemo, guard = advanced::AuthGuard)]
     Query,
+    #[route("/resource", view = advanced::ResourceDemo)]
+    Resource,
     #[route("/*", view = NotFoundPage)]
     NotFound,
 }
@@ -646,6 +739,10 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
             Link(AppRoute::Advanced {
                 route: AdvancedRoute::Query,
             }, "Query Param")
+            .class("tab"),
+            Link(AppRoute::Advanced {
+                route: AdvancedRoute::Resource,
+            }, "Resource")
             .class("tab"),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 20px;"),

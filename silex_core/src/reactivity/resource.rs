@@ -15,6 +15,7 @@ use super::signal::{ReadSignal, WriteSignal, signal};
 
 pub struct Resource<T: 'static, E: 'static = SilexError> {
     pub data: ReadSignal<Option<T>>,
+    set_data: WriteSignal<Option<T>>,
     pub error: ReadSignal<Option<E>>,
     pub loading: ReadSignal<bool>,
     trigger: WriteSignal<usize>,
@@ -109,6 +110,7 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
 
         Resource {
             data,
+            set_data,
             error,
             loading,
             trigger: set_trigger,
@@ -117,6 +119,17 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
 
     pub fn refetch(&self) {
         self.trigger.update(|n| *n = n.wrapping_add(1));
+    }
+
+    /// Mutate the resource's data directly.
+    /// Useful for optimistic UI updates.
+    pub fn update(&self, f: impl FnOnce(&mut Option<T>)) {
+        self.set_data.update(f);
+    }
+
+    /// Set the resource's data directly.
+    pub fn set(&self, value: Option<T>) {
+        self.set_data.set(value);
     }
 }
 

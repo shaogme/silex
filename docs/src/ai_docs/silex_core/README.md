@@ -119,6 +119,8 @@
     *   `get() -> Option<T>`: 获取数据。如果存在 Error，会自动上报到最近的 `ErrorContext`。
     *   `loading() -> bool`: 获取加载状态。
     *   `refetch()`: 手动重新触发 `source` 变更，强制刷新。
+    *   `update(f: impl FnOnce(&mut Option<T>))`: 手动修改本地缓存数据 (Optimistic UI)。
+    *   `set(value: Option<T>)`: 直接设置本地缓存数据。
 
 #### `Resource::new<S, Fetcher>`
 *   **Signature**:

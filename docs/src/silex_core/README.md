@@ -45,6 +45,7 @@
     *   `resource`: 用于处理异步数据加载（如 API 请求）。
     *   集成 `Suspense` 支持，自动管理 `loading`、`data` 和 `error` 状态。
     *   支持 `refetch` 手动刷新。
+    *   支持 `update` / `set` 手动修改本地数据（Optimistic UI）。
 
 *   **Context (上下文)**:
     *   `provide_context` / `use_context`: 基于类型 ID 的依赖注入机制，支持跨组件数据传递。
