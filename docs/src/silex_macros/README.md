@@ -226,3 +226,17 @@ let callback = clone!(name_signal, age_signal => move || {
 ```
 
 宏会自动生成 `let variable = variable.clone();` 语句，并将其包裹在一个新的作用域中，使得闭包捕获的是克隆后的变量。
+
+### 内部克隆 (Inner Clone)
+
+如果闭包是 `FnMut` 且你在闭包内部 `move`（消耗）了变量的所有权（例如传给 `async move` 块），你需要确保每次执行闭包时都拥有该变量的独立副本。
+
+使用 `@` 前缀可以指示宏除了在闭包外部克隆一次（用于捕获），还在闭包内部的最前端再次注入克隆语句。
+
+```rust
+// id 需要被消费（传递给 add_project），但闭包本身会被多次调用
+let callback = clone!(store, @id => move |_| {
+    // 宏会自动在此处生成: let id = id.clone();
+    store.add_project(id); 
+});
+```

@@ -6,14 +6,37 @@ use syn::{
     punctuated::Punctuated,
 };
 
+struct CloneItem {
+    should_inner_clone: bool,
+    ident: Ident,
+}
+
+impl Parse for CloneItem {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let should_inner_clone = if input.peek(Token![@]) {
+            let _: Token![@] = input.parse()?;
+            true
+        } else {
+            false
+        };
+
+        let ident: Ident = input.parse()?;
+
+        Ok(CloneItem {
+            should_inner_clone,
+            ident,
+        })
+    }
+}
+
 struct CloneInput {
-    idents: Punctuated<Ident, Token![,]>,
+    items: Punctuated<CloneItem, Token![,]>,
     body: Option<Expr>,
 }
 
 impl Parse for CloneInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut idents = Punctuated::new();
+        let mut items = Punctuated::new();
 
         loop {
             if input.is_empty() {
@@ -23,11 +46,10 @@ impl Parse for CloneInput {
                 break;
             }
 
-            let ident: Ident = input.parse()?;
-            idents.push_value(ident);
+            items.push_value(input.parse()?);
 
             if input.peek(Token![,]) {
-                idents.push_punct(input.parse()?);
+                items.push_punct(input.parse()?);
             } else {
                 break;
             }
@@ -40,30 +62,62 @@ impl Parse for CloneInput {
             None
         };
 
-        Ok(CloneInput { idents, body })
+        Ok(CloneInput { items, body })
     }
 }
 
 pub fn clone_impl(input: TokenStream) -> syn::Result<TokenStream> {
-    let input: CloneInput = syn::parse2(input)?;
+    let mut input: CloneInput = syn::parse2(input)?;
 
-    let idents = input.idents.iter();
-    let clones = idents.map(|ident| {
+    let outer_clones = input.items.iter().map(|item| {
+        let ident = &item.ident;
         quote! {
             let #ident = #ident.clone();
         }
     });
 
-    if let Some(body) = input.body {
+    if let Some(ref mut body) = input.body {
+        let inner_clones: Vec<_> = input
+            .items
+            .iter()
+            .filter(|item| item.should_inner_clone)
+            .map(|item| {
+                let ident = &item.ident;
+                quote! {
+                    let #ident = #ident.clone();
+                }
+            })
+            .collect();
+
+        if !inner_clones.is_empty() {
+            if let Expr::Closure(closure) = body {
+                let old_body = &closure.body;
+                let new_body_tokens = quote! {
+                    {
+                        #(#inner_clones)*
+                        #old_body
+                    }
+                };
+
+                // Parse the new body back into an Expr to properly insert it into the closure
+                match syn::parse2::<Expr>(new_body_tokens) {
+                    Ok(new_expr) => {
+                        closure.body = Box::new(new_expr);
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+        }
+
         Ok(quote! {
             {
-                #(#clones)*
+                #(#outer_clones)*
                 #body
             }
         })
     } else {
         Ok(quote! {
-            #(#clones)*
+            #(#outer_clones)*
         })
     }
 }

@@ -172,3 +172,13 @@ let callback = clone!(data => move || {
     *   对列表中的每个变量生成 `let var = var.clone();`。
     *   将这些克隆语句置于新的块中，后跟原始表达式。
     *   注意：生成的变量会 shadow 外部变量，这在 `move` 闭包前非常有用。
+
+### 内部克隆 (Inner Clone)
+
+*   **Syntax**: `clone!(ident, @inner_ident => ...)`
+*   **Behavior**:
+    *   `ident`: 仅生成外部 `let ident = ident.clone();`。
+    *   `@inner_ident`:
+        1.  生成外部 `let inner_ident = inner_ident.clone();` (用于捕获)。
+        2.  这是关键：如果 `=>` 后是闭包，宏会解析闭包体，并在其开头注入 `let inner_ident = inner_ident.clone();`。
+*   **Use Case**: 适用于 `FnMut` 闭包中需要消费（consume/move）捕获变量的场景，确保每次闭包调用都有新的克隆副本可用，避免 `use of moved value` 错误。

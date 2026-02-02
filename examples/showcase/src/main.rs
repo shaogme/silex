@@ -161,28 +161,50 @@ mod basics {
     pub fn CloneDemo() -> impl View {
         let (name, set_name) = signal("Silex".to_string());
         let (count, set_count) = signal(0);
+        
+        let (logs, set_logs) = signal(Vec::<String>::new());
+        let payload = "DataPayload".to_string();
 
-        // Without clone!, we would need:
-        // let name_clone = name.clone();
-        // let count_clone = count.clone();
-        // move || ...
-
+        // 1. Standard clone!
         let on_click = clone!(name, count => move |_| {
             console_log(&format!("Clicked! Name: {}, Count: {}", name.get(), count.get()));
             set_count.update(|n| *n += 1);
             set_name.update(|n| *n = format!("Silex {}", count.get() + 1));
         });
 
+        // 2. Inner clone! (@ syntax)
+        // Useful when the closure is FnMut (multiple calls) but you need ownership of data inside (e.g., async move)
+        let on_click_inner = clone!(set_logs, @payload => move |_| {
+            // 'payload' is automatically cloned at the start of this block
+            // so we can move it (consume it) without "use of moved value" errors
+            let owned_data = payload; 
+            
+            set_logs.update(|l| {
+                if l.len() >= 5 { l.remove(0); }
+                l.push(format!("Consumed: {}", owned_data));
+            });
+        });
+
         div![
             h3("Clone Macro Demo"),
-            p("Click the button to log state and update via a closure that captures cloned signals."),
+            p("1. Standard Clone: Captures external variables for use in closure."),
             div![
                 p(move || format!("Current Name: {}", name.get())),
                 p(move || format!("Current Count: {}", count.get())),
             ].style("margin-bottom: 10px; font-family: monospace;"),
             
-            button("Log & Update (cloned)")
+            button("Log & Update (Standard)")
                 .on(event::click, on_click)
+                .style("margin-right: 10px;"),
+
+            div![].style("height: 1px; background: #ccc; margin: 15px 0;"),
+
+            p("2. Inner Clone (@): Clones variable INSIDE closure to allow moving/consuming it."),
+            button("Consume Payload (Inner Clone)")
+                .on(event::click, on_click_inner),
+            
+            ul(For::new(logs, |l| l.clone(), |l| li(l).style("font-size: 0.8em;")))
+                .style("margin-top: 10px; background: #eee; padding: 10px; border-radius: 4px;")
         ]
         .style("padding: 20px; border: 1px dashed #4caf50; margin-top: 20px;")
     }
