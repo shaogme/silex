@@ -6,6 +6,7 @@ use std::rc::Rc;
 use silex_reactivity::{on_cleanup, use_context};
 
 use crate::SilexError;
+use crate::reactivity::Memo;
 use crate::traits::*;
 
 use super::effect::Effect;
@@ -13,11 +14,43 @@ use super::signal::{ReadSignal, WriteSignal, signal};
 
 // --- Resource ---
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum ResourceState<T, E> {
+    /// Initial state, no data fetch has started yet.
+    Idle,
+    /// Loading initial data.
+    Loading,
+    /// Has data successfully.
+    Ready(T),
+    /// Has data, but is refreshing (Stale-While-Revalidate).
+    Reloading(T),
+    /// Failed to load data. Use `Resource::refetch` to retry.
+    Error(E),
+}
+
+impl<T, E> ResourceState<T, E> {
+    pub fn as_option(&self) -> Option<&T> {
+        match self {
+            Self::Ready(data) | Self::Reloading(data) => Some(data),
+            _ => None,
+        }
+    }
+
+    pub fn unwrap(self) -> T {
+        match self {
+            Self::Ready(data) | Self::Reloading(data) => data,
+            _ => panic!("ResourceState::unwrap called on non-Ready/Reloading state"),
+        }
+    }
+
+    pub fn is_loading(&self) -> bool {
+        matches!(self, Self::Loading | Self::Reloading(_))
+    }
+}
+
 pub struct Resource<T: 'static, E: 'static = SilexError> {
-    pub data: ReadSignal<Option<T>>,
-    set_data: WriteSignal<Option<T>>,
-    pub error: ReadSignal<Option<E>>,
-    pub loading: ReadSignal<bool>,
+    pub state: ReadSignal<ResourceState<T, E>>,
+    set_state: WriteSignal<ResourceState<T, E>>,
     trigger: WriteSignal<usize>,
 }
 
@@ -56,9 +89,8 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
         S: PartialEq + Clone + 'static,
         Fetcher: ResourceFetcher<S, Data = T, Error = E> + 'static,
     {
-        let (data, set_data) = signal(None);
-        let (error, set_error) = signal(None);
-        let (loading, set_loading) = signal(false);
+        // 默认状态为 Idle，直到第一次 Effect 执行变为 Loading
+        let (state, set_state) = signal::<ResourceState<T, E>>(ResourceState::Idle);
         let (trigger, set_trigger) = signal(0);
 
         let alive = Rc::new(Cell::new(true));
@@ -75,7 +107,18 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
             if let Some(ctx) = &suspense_ctx {
                 ctx.increment();
             }
-            set_loading.set(true);
+
+            // State transition logic:
+            set_state.update(|s| {
+                *s = match &*s {
+                    // If we already have data (Ready or Reloading), switch to Reloading to preserve data
+                    ResourceState::Ready(data) | ResourceState::Reloading(data) => {
+                        ResourceState::Reloading(data.clone())
+                    }
+                    // Otherwise (Idle, Loading, Error), switch to Loading
+                    _ => ResourceState::Loading,
+                };
+            });
 
             let current_id = request_id.get().wrapping_add(1);
             request_id.set(current_id);
@@ -90,16 +133,12 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
                 let res = fut.await;
 
                 if alive.get() && request_id.get() == current_id {
-                    match res {
-                        Ok(val) => {
-                            set_data.set(Some(val));
-                            set_error.set(None);
-                        }
-                        Err(e) => {
-                            set_error.set(Some(e));
-                        }
-                    }
-                    set_loading.set(false);
+                    set_state.update(|s| {
+                        *s = match res {
+                            Ok(val) => ResourceState::Ready(val),
+                            Err(e) => ResourceState::Error(e),
+                        };
+                    });
                 }
 
                 if let Some(ctx) = &suspense_ctx {
@@ -109,10 +148,8 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
         });
 
         Resource {
-            data,
-            set_data,
-            error,
-            loading,
+            state,
+            set_state,
             trigger: set_trigger,
         }
     }
@@ -121,15 +158,46 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
         self.trigger.update(|n| *n = n.wrapping_add(1));
     }
 
-    /// Mutate the resource's data directly.
+    /// Mutate the resource's data directly if available.
     /// Useful for optimistic UI updates.
-    pub fn update(&self, f: impl FnOnce(&mut Option<T>)) {
-        self.set_data.update(f);
+    /// This will transition state to `Ready(new_data)`.
+    pub fn update(&self, f: impl FnOnce(&mut T)) {
+        self.set_state.update(|s| {
+            let mut new_state = None;
+            match s {
+                ResourceState::Ready(data) => {
+                    f(data);
+                }
+                ResourceState::Reloading(data) => {
+                    f(data);
+                    new_state = Some(ResourceState::Ready(data.clone()));
+                }
+                _ => {}
+            }
+
+            if let Some(ns) = new_state {
+                *s = ns;
+            }
+        });
     }
 
     /// Set the resource's data directly.
-    pub fn set(&self, value: Option<T>) {
-        self.set_data.set(value);
+    /// This transitions the state to `Ready(value)`.
+    pub fn set(&self, value: T) {
+        self.set_state.set(ResourceState::Ready(value));
+    }
+
+    /// Helper to get data if available (Ready or Reloading)
+    pub fn get_data(&self) -> Option<T> {
+        self.state.with(|s| s.as_option().cloned())
+    }
+
+    pub fn map<U: Clone + PartialEq + 'static>(
+        &self,
+        f: impl Fn(Option<&T>) -> U + 'static,
+    ) -> Memo<U> {
+        let state = self.state;
+        Memo::new(move |_| state.with(|s| f(s.as_option())))
     }
 }
 
@@ -139,18 +207,22 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> DefinedAt for Res
     }
 }
 
-// Resource implements Get to return Option<T>
+// Resource implements Get to return Option<T> for convenience compatibility
+// It returns Some(data) if Ready or Reloading.
+// It tracks the state signal.
 impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Get for Resource<T, E> {
     type Value = Option<T>;
 
     fn try_get(&self) -> Option<Self::Value> {
-        if let Some(e) = self.error.get() {
-            if let Some(ctx) = use_context::<crate::error::ErrorContext>() {
-                let err_msg = format!("{:?}", e);
-                (ctx.0)(crate::error::SilexError::Javascript(err_msg));
+        self.state.try_with(|s| {
+            if let ResourceState::Error(e) = s {
+                if let Some(ctx) = use_context::<crate::error::ErrorContext>() {
+                    let err_msg = format!("{:?}", e);
+                    (ctx.0)(crate::error::SilexError::Javascript(err_msg));
+                }
             }
-        }
-        self.data.try_get()
+            s.as_option().cloned()
+        })
     }
 }
 
@@ -158,7 +230,7 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> GetUntracked for 
     type Value = Option<T>;
 
     fn try_get_untracked(&self) -> Option<Self::Value> {
-        self.data.try_get_untracked()
+        self.state.try_with_untracked(|s| s.as_option().cloned())
     }
 }
 

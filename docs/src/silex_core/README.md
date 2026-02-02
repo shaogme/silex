@@ -43,7 +43,9 @@
 
 *   **Resource (异步资源)**:
     *   `resource`: 用于处理异步数据加载（如 API 请求）。
-    *   集成 `Suspense` 支持，自动管理 `loading`、`data` 和 `error` 状态。
+    *   **State-based**: 采用单一来源的 `state` 枚举 (`Idle`, `Loading`, `Ready(T)`, `Reloading(T)`, `Error(E)`)。
+    *   **Stale-While-Revalidate**: 当 `refetch` 时，状态会变为 `Reloading(old_data)`，UI 可据此决定是显示 Skeleton 还是仅显示顶部进度条。
+    *   集成 `Suspense` 支持。
     *   支持 `refetch` 手动刷新。
     *   支持 `update` / `set` 手动修改本地数据（Optimistic UI）。
 
@@ -138,3 +140,4 @@ let cb2 = cb;
 
 ### 异步数据获取
 使用 `Resource` 而不是在 `Effect` 中手动 spawn 异步任务，以便更好地与 `Suspense` 集成和处理竞态条件。
+请利用 `ResourceState` 枚举来处理不同的 UI 状态（如 `Reloading` vs `Loading`）。

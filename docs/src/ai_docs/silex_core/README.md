@@ -108,19 +108,26 @@
 #### `Resource<T, E>`
 *   **Struct**:
     ```rust
+    pub enum ResourceState<T, E> {
+        Idle,
+        Loading,
+        Ready(T),
+        Reloading(T), // Stale-While-Revalidate
+        Error(E),
+    }
+
     pub struct Resource<T: 'static, E: 'static = SilexError> {
-        pub data: ReadSignal<Option<T>>,
-        pub error: ReadSignal<Option<E>>,
-        pub loading: ReadSignal<bool>,
-        trigger: WriteSignal<usize>, // Internal
+        pub state: ReadSignal<ResourceState<T, E>>,
+        // internal: set_state, trigger
     }
     ```
 *   **Methods**:
-    *   `get() -> Option<T>`: 获取数据。如果存在 Error，会自动上报到最近的 `ErrorContext`。
-    *   `loading() -> bool`: 获取加载状态。
+    *   `state.get()`: 获取当前完整的资源状态。
+    *   `get_data() -> Option<T>`: 便捷方法，获取数据（无论是 `Ready` 还是 `Reloading`）。
     *   `refetch()`: 手动重新触发 `source` 变更，强制刷新。
-    *   `update(f: impl FnOnce(&mut Option<T>))`: 手动修改本地缓存数据 (Optimistic UI)。
-    *   `set(value: Option<T>)`: 直接设置本地缓存数据。
+    *   `update(f: impl FnOnce(&mut T))`: 手动修改本地缓存数据 (Optimistic UI)。
+    *   `set(value: T)`: 直接设置本地缓存数据。
+    *   `Resource` 依然实现 `Get<Value=Option<T>>` 特征，以便于与现有代码兼容。
 
 #### `Resource::new<S, Fetcher>`
 *   **Signature**:

@@ -495,17 +495,20 @@ mod advanced {
 
             div![
                 "Status: ",
-                // Show loading state
-                move || if user_resource.loading.get() { 
-                    span("Loading...").style("color: orange;") 
-                } else { 
-                    span("Idle").style("color: green;") 
+                // Show loading state using the new state enum helper
+                move || {
+                    let state = user_resource.state.get();
+                    if state.is_loading() { 
+                        span(if let ResourceState::Reloading(_) = state { "Reloading..." } else { "Loading..." }).style("color: orange;") 
+                    } else { 
+                        span("Idle").style("color: green;") 
+                    }
                 }
             ].style("margin-bottom: 10px; font-weight: bold;"),
 
-            // Display Data
+            // Display Data using get_data() which covers both Ready and Reloading
             move || {
-                match user_resource.get() {
+                match user_resource.get_data() {
                     Some(user) => div![
                         div(format!("ID: {}", user.id)),
                         div(format!("Name: {}", user.name)),
@@ -517,24 +520,19 @@ mod advanced {
                             button("Rename to 'Modified' (Optimistic)")
                                 .on(event::click, move |_| {
                                     // Manually update the local resource data
-                                    user_resource.update(|data| {
-                                        if let Some(u) = data {
-                                            u.name = "Modified Name".to_string();
-                                        }
+                                    user_resource.update(|u| {
+                                        u.name = "Modified Name".to_string();
                                     });
                                 }),
-                            button("Clear Data")
-                                .on(event::click, move |_| user_resource.set(None))
-                                .style("margin-left: 10px; color: red;"),
                         ].style("margin-top: 15px; border-top: 1px solid #eee; padding-top: 10px;")
                     ].into_any(),
-                    None => div("No Data").into_any(),
+                    None => div("No Data (or Loading...)").into_any(),
                 }
             },
             
-            // Error Handling
+            // Error Handling via state matching
             move || {
-                if let Some(err) = user_resource.error.get() {
+                if let ResourceState::Error(err) = user_resource.state.get() {
                     div(format!("Error: {}", err)).style("color: red; margin-top: 10px;").into_any()
                 } else {
                     "".into_any()
