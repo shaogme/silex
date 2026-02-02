@@ -49,6 +49,12 @@
     *   支持 `refetch` 手动刷新。
     *   支持 `update` / `set` 手动修改本地数据（Optimistic UI）。
 
+*   **Mutation (异步写入)**:
+    *   `Mutation<Arg, T, E>`: 用于处理数据变更请求（如 POST/PUT）。
+    *   **Manual Trigger**: 不同于 Resource，它不追踪依赖，必须通过 `.mutate(arg)` 手动触发。
+    *   **Race Handling**: 自动处理并发，只保留最后一次请求的结果 (Latest Wins)。
+    *   实现了 `Copy`，轻量级句柄。
+
 *   **Context (上下文)**:
     *   `provide_context` / `use_context`: 基于类型 ID 的依赖注入机制，支持跨组件数据传递。
     *   `expect_context`: 严格版 `use_context`，未找到时会 Panic。

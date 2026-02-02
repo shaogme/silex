@@ -335,6 +335,8 @@ pub struct UserSettings {
 }
 
 mod advanced {
+    use silex::reexports::web_sys;
+
     use super::*;
 
     #[component]
@@ -541,6 +543,71 @@ mod advanced {
         ]
         .style("padding: 20px; border: 1px solid #ccc; border-radius: 8px;")
     }
+
+    #[component]
+    pub fn MutationDemo() -> impl View {
+        // Simulate a login mutation
+        // Takes (username, password) and returns a Result<String, String> token
+        let login_mutation = Mutation::new(|(user, pass): (String, String)| async move {
+            crate::console_log(&format!("Logging in as {}...", user));
+            gloo_timers::future::TimeoutFuture::new(1500).await;
+            
+            if user == "admin" && pass == "password" {
+                Ok("fake_jwt_token_12345".to_string())
+            } else {
+                Err("Invalid credentials".to_string())
+            }
+        });
+
+        let username = RwSignal::new("".to_string());
+        let password = RwSignal::new("".to_string());
+
+        div![
+            h3("Mutation Demo (Async Write)"),
+            p("Enter 'admin' / 'password' to succeed, others to fail."),
+            
+            div![
+                input()
+                    .bind_value(username)
+                    .placeholder("Username")
+                    .style("margin-right: 10px; padding: 5px;"),
+                input()
+                    .bind_value(password)
+                    .attr("type", "password")
+                    .placeholder("Password")
+                    .style("margin-right: 10px; padding: 5px;"),
+                button("Login")
+                    .attr("type", "button") // Prevent accidental form submission
+                    .on(event::click, move |e: web_sys::MouseEvent| {
+                        e.prevent_default();
+                        login_mutation.mutate((username.get(), password.get()));
+                    })
+                    .attr("disabled", move || login_mutation.loading()) // Make reactive
+                    .style("padding: 5px 10px;"),
+            ].style("margin-bottom: 10px;"),
+
+            // Loading State
+            move || if login_mutation.loading() {
+                div("Logging in...").style("color: blue;").into_any()
+            } else {
+                "".into_any()
+            },
+
+            // Error State
+            move || login_mutation.error().map(|err| {
+                div(format!("Error: {}", err)).style("color: red;")
+            }),
+
+            // Success State
+            move || login_mutation.value().map(|token| {
+                div![
+                    div("Login Successful!").style("color: green; font-weight: bold;"),
+                    div(format!("Token: {}", token)).style("font-family: monospace; background: #eee; padding: 5px;")
+                ]
+            })
+
+        ].style("padding: 20px; border: 1px solid #ccc; border-radius: 8px;")
+    }
 }
 
 
@@ -643,6 +710,8 @@ enum AdvancedRoute {
     Query,
     #[route("/resource", view = advanced::ResourceDemo)]
     Resource,
+    #[route("/mutation", view = advanced::MutationDemo)]
+    Mutation,
     #[route("/*", view = NotFoundPage)]
     NotFound,
 }
@@ -741,6 +810,10 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
             Link(AppRoute::Advanced {
                 route: AdvancedRoute::Resource,
             }, "Resource")
+            .class("tab"),
+            Link(AppRoute::Advanced {
+                route: AdvancedRoute::Mutation,
+            }, "Mutation")
             .class("tab"),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 20px;"),

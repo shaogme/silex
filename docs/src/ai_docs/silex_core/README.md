@@ -143,7 +143,61 @@
     3.  集成了 `SuspenseContext`：请求开始时 `increment`，结束时 `decrement`。
     4.  处理竞态条件：丢弃旧 ID 的返回结果。
 
-### 5. Context & Suspense
+### 5. Mutation (异步写入)
+
+#### `Mutation<Arg, T, E>`
+
+*   **Struct**:
+    ```rust
+    pub struct Mutation<Arg, T, E = SilexError> {
+        pub state: ReadSignal<MutationState<T, E>>,
+        // ...
+    }
+    
+    pub enum MutationState<T, E> {
+        /// Initial state
+        Idle,
+        /// Triggered and pending
+        Pending,
+        /// Last mutation successful
+        Success(T),
+        /// Last mutation failed
+        Error(E),
+    }
+    ```
+*   **Traits**: **`Copy`**, `Clone`.
+    *   Mutation 本身是一个轻量级的句柄，内部通过 `StoredValue` 引用执行逻辑，因此可以像 Signal 一样廉价复制。
+*   **Semantics**:
+    *   用于执行写操作（如 POST/PUT 请求）。
+    *   **手动触发**: 与 Resource 自动追踪依赖不同，Mutation 需要调用 `.mutate(arg)` 显式触发。
+    *   **竞态处理**: 自动处理并发请求，采用 "Latest Wins" 策略（最后一次触发的请求结果生效，旧请求的返回被忽略）。
+*   **Methods**:
+    *   `new<F, Fut>(f: F)`: 创建 Mutation。
+    *   `mutate(arg: Arg)`: 触发 Mutation。
+    *   `loading() -> bool`: 快捷检查是否为 `Pending`。
+    *   `value() -> Option<T>`: 获取最后一次成功的返回值。
+    *   `error() -> Option<E>`: 获取最后一次失败的错误。
+
+#### Usage Example
+
+```rust
+let login = Mutation::new(|(username, password)| async move {
+    my_api::login(username, password).await
+});
+
+let on_submit = move |_| {
+    login.mutate(("user".into(), "pass".into()));
+};
+
+view! {
+    <button on:click=on_submit disabled=login.loading()>
+        {move || if login.loading() { "Logging in..." } else { "Login" }}
+    </button>
+    {move || login.error().map(|e| view! { <div class="error">{format!("{:?}", e)}</div> })}
+}
+```
+
+### 6. Context & Suspense
 
 #### `provide_context`, `use_context`
 *   直接重导出自 `silex_reactivity`，增加了 `SilexError` 相关的默认 Context 支持。
@@ -156,7 +210,7 @@
 *   **Struct**: `{ count: ReadSignal<usize>, set_count: WriteSignal<usize> }`
 *   **Usage**: 用于追踪全局或局部的异步任务数量。
 
-### 6. Lifecycle & Safety (生命周期与安全)
+### 7. Lifecycle & Safety (生命周期与安全)
 
 #### Safer Cleanup (更安全的清理)
 *   `on_cleanup` 回调现在保证在 **子节点销毁之前** 执行。

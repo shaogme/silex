@@ -5,12 +5,14 @@ pub use silex_reactivity::{
 
 pub mod effect;
 pub mod memo;
+pub mod mutation;
 pub mod resource;
 pub mod signal;
 pub mod stored_value;
 
 pub use effect::*;
 pub use memo::*;
+pub use mutation::*;
 pub use resource::*;
 pub use signal::*;
 pub use stored_value::*;
