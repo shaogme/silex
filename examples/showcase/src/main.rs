@@ -358,7 +358,8 @@ mod flow_control {
 // ==================================================================================
 
 // --- Store Definition ---
-#[derive(Clone, Default, Store)] // Macro generates UserSettingsStore
+#[derive(Clone, Default, Store)]
+#[store(name = "use_user_settings")]
 pub struct UserSettings {
     pub theme: String,
     pub notifications: bool,
@@ -406,9 +407,9 @@ mod advanced {
     #[component]
     pub fn StoreDemo() -> impl View {
         // Access global store provided in main
-        // Note: `use_context::<T>()` is also available if you want to handle the Option manually.
-        // `expect_context` is a convenience wrapper that panics if the context is missing.
-        let settings = expect_context::<UserSettingsStore>();
+        // Note: `use_context::<T>() -> Option<T>` and `expect_context::<T>() -> T` are also available.
+        // Access global store using the generated helper
+        let settings = use_user_settings();
 
         div![
             h3("Global Store Demo"),
@@ -471,7 +472,7 @@ mod advanced {
 
     #[component]
     pub fn AuthGuard(children: Children) -> impl View {
-        let settings = expect_context::<UserSettingsStore>();
+        let settings = use_user_settings();
         
         move || {
              if settings.username.get() != "Guest" {
@@ -897,6 +898,7 @@ fn main() {
     setup_global_error_handlers();
 
     // Global State Initialization
+    // Convert plain data to Reactive Store
     let store = UserSettingsStore::new(UserSettings {
         theme: "Light".to_string(),
         notifications: true,
@@ -906,7 +908,7 @@ fn main() {
     // Mount App
     mount_to_body(rx! {
         // Provide Global Store to the entire app tree
-        provide_context(store);
+        store.provide();
 
         div![
             // Global Layout Shell

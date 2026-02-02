@@ -2,6 +2,7 @@ pub mod components;
 pub mod css;
 pub mod flow;
 pub mod router;
+pub mod store;
 
 pub use components::*;
 pub use silex_core::error::{SilexError, SilexResult};
@@ -37,6 +38,7 @@ pub mod prelude {
     pub use crate::flow::*;
     pub use crate::router::Link;
     pub use crate::router::*;
+    pub use crate::store::*;
     pub use crate::{SilexError, SilexResult};
     pub use silex_core::rx;
     pub use silex_dom::*;

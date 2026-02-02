@@ -136,7 +136,7 @@ pub fn AuthGuard(children: Children) -> impl View {
 
 ## 4. 全局状态 Store (`#[derive(Store)]`)
 
-快速创建深层响应式的数据结构。
+快速创建深层响应式的数据结构，并自动生成 Context 访问钩子。
 
 ```rust
 #[derive(Clone, Default)]
@@ -146,11 +146,41 @@ struct UserConfig {
 }
 
 #[derive(Store, Clone, Copy)]
+#[store(name = "use_config", err_msg = "Config not found")]
 struct GlobalStore {
-    config: UserConfig, // 注意：derive(Store) 目前只展开一层 Struct
-                        // 若需嵌套，建议扁平化或手动组合
+    pub config: UserConfig, // 注意：derive(Store) 目前只展开一层 Struct
+                            // 若需嵌套，建议扁平化或手动组合
 }
 ```
+
+### 自动生成的代码
+
+宏会自动生成以下内容：
+
+1.  **响应式结构体** `GlobalStoreStore`：所有字段被包装在 `RwSignal` 中。
+2.  **构造方法** `GlobalStoreStore::new(source: GlobalStore)`。
+3.  **快照方法** `GlobalStoreStore::get(&self) -> GlobalStore`。
+4.  **Store Trait 实现**：实现 `silex::store::Store`，提供 `provide()` 等方法。
+5.  **全局 Hook**：`use_config()` (根据 `name` 属性或默认生成 `use_global_store`)。
+
+### 使用示例
+
+```rust
+// 1. 在根组件提供 Store
+let config = UserConfig::default();
+let store = GlobalStoreStore::new(GlobalStore { config });
+store.provide(); // 注入 Context
+
+// 2. 在子组件使用生成的 Hook 获取
+let store = use_config();
+let theme_signal = store.config; // RwSignal<UserConfig>
+```
+
+### 属性参数 (`#[store(...)]`)
+
+*   `name`: 自定义生成的 Hook 函数名（默认为 `use_{snake_case_struct_name}`）。
+*   `err_msg`: 自定义 Context 缺失时的 Panic 信息。
+
 *注意：目前的 implementation 只是简单的字段 Signal 化，对于嵌套结构需要组合使用。*
 
 ## 5. 样式与类名助手

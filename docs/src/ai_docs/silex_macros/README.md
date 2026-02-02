@@ -93,24 +93,52 @@ fn MyComponent(props...) -> impl View
 
 ## 4. 状态宏 `#[derive(Store)]`
 
-将普通 Struct 转换为细粒度响应式 Store。
+将普通 Struct 转换为细粒度响应式 Store，并生成 Context 管理代码。
+
+### 属性支持 (`#[store(...)]`)
+*   `name = "fn_name"`: 指定生成的 Hook 函数名称（默认为 `use_{snake_case_struct_name}`）。
+*   `err_msg = "message"`: 指定 Context 缺失时的 Panic 消息。
 
 ### 转换逻辑
 输入 Struct:
 ```rust
+#[derive(Store)]
+#[store(name = "use_user")]
 struct User { name: String, age: i32 }
 ```
-输出 Store Struct:
+输出 Store Struct 及辅助代码:
 ```rust
+// 1. 生成 Store 结构体 (字段为 RwSignal)
+#[derive(Clone, Copy)]
 struct UserStore {
     pub name: RwSignal<String>,
     pub age: RwSignal<i32>,
 }
+
+impl UserStore {
+    // 初始化
+    pub fn new(source: User) -> Self { ... }
+    // 获取快照
+    pub fn get(&self) -> User { ... }
+}
+
+// 2. 实现 Store Trait
+impl ::silex::store::Store for UserStore {
+    fn get() -> Self {
+        use_context::<Self>().expect("Context for UserStore not found")
+    }
+}
+
+// 3. 生成 Hook 函数
+fn use_user() -> UserStore {
+    <UserStore as ::silex::store::Store>::get()
+}
 ```
 
-### 方法
-*   `new(source: User) -> UserStore`: 使用 `RwSignal::new` 初始化每个字段。
-*   `get(&self) -> User`: 读取所有 Signal 的当前值并重组为原始 Struct (Snapshot)。
+### 核心机制
+*   **Struct Wrapping**: 原始结构体的每个字段 `T` 被映射为 `RwSignal<T>`。
+*   **Context Integration**: 通过实现 `Store` trait，获得 `provide()` 能力。
+*   **Ergonomic Hook**: 自动生成全局函数（如 `use_user`），封装了 `use_context` 和错误处理逻辑，提供类似 React Hooks 的体验。
 
 ---
 

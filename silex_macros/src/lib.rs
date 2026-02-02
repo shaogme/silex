@@ -104,7 +104,7 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[cfg(feature = "store")]
-#[proc_macro_derive(Store)]
+#[proc_macro_derive(Store, attributes(store))]
 pub fn derive_store(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     match store::derive_store_impl(input) {
