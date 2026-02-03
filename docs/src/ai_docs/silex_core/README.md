@@ -53,7 +53,7 @@
     *   `Read(ReadSignal<T>)`
     *   `Derived(NodeId, PhantomData<T>)`
     *   `StoredConstant(NodeId, PhantomData<T>)`
-*   **Traits**: `Copy`, `Clone`, `Debug`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
+*   **Traits**: `Copy`, `Clone`, `Debug`, `PartialEq`, `Eq`, `Hash`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
 *   **Semantics**:
     *   通用的信号接口，统一了 `ReadSignal`、派生计算和常量。
     *   `Derived` 变体持有一个在 Runtime 中注册的闭包，每次 `get()` 时重新执行闭包（无缓存）。
@@ -72,20 +72,20 @@
     *   所有运算均返回 `ReactiveBinary` (二元) 或 `Derived` (一元)，自动创建惰性派生计算，无额外缓存开销。
     *   **Lazy Evaluation (惰性求值)**:
         *   `ReactiveBinary` 和 `Derived` (用于 `Map`) 都是**无状态的 (Stateless)**。它们不缓存结果，每次被访问 (`try_with`) 时都会**重新执行**计算闭包。
-        *   这对于轻量级操作（如比较 `eq`、简单算术 `add`）非常高效（Zero-Copy）。
+        *   这对于轻量级操作（如比较 `equals`、简单算术 `add`）非常高效（Zero-Copy）。
         *   **Performance Trap (性能陷阱)**: 如果派生计算非常昂贵，这种惰性重算可能导致性能问题。对于昂贵的计算，请使用 `memo()` 或 `Signal::derive` 显式创建有状态的缓存节点。
 
 #### `ReadSignal<T>`
 *   **Struct**: `pub struct ReadSignal<T> { id: NodeId, marker: PhantomData<T> }`
-*   **Traits**: `Copy`, `Clone`, `Debug`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
+*   **Traits**: `Copy`, `Clone`, `Debug`, `PartialEq`, `Eq`, `Hash`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
 *   **Methods**:
     *   `slice(getter: impl Fn(&T) -> &O)`: 创建一个指向内部字段的切片信号 `SignalSlice`，实现零拷贝访问。
-*   **Fluent API**: 实现了 `eq`, `ne`, `gt`, `lt`, `ge`, `le`，返回 `ReactiveBinary<Self, O::Signal, ...>`。
+*   **Fluent API**: 实现了 `equals`, `not_equals`, `greater_than`, `less_than`, `greater_than_or_equals`, `less_than_or_equals`，返回 `ReactiveBinary<Self, O::Signal, ...>`。这些方法被重命名以避免与标准库 `PartialEq`/`PartialOrd` 冲突。
 *   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符，返回 `ReactiveBinary<...>` 或 `Derived<...>`。
 
 #### `WriteSignal<T>`
 *   **Struct**: `pub struct WriteSignal<T> { id: NodeId, marker: PhantomData<T> }`
-*   **Traits**: `Copy`, `Clone`, `Debug`, `DefinedAt`, `IsDisposed`, `Notify`, `UpdateUntracked`, `Update`, `Set`, `SignalSetter`, `SignalUpdater`.
+*   **Traits**: `Copy`, `Clone`, `Debug`, `PartialEq`, `Eq`, `Hash`, `DefinedAt`, `IsDisposed`, `Notify`, `UpdateUntracked`, `Update`, `Set`, `SignalSetter`, `SignalUpdater`.
 *   **Methods**:
     *   `set(new_value: T)`: (via `Set` trait).
     *   `update(f: impl FnOnce(&mut T))`: (via `Update` trait).

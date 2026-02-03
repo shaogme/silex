@@ -50,12 +50,12 @@ mod basics {
             h3("Interactive Counter"),
             div![
                 button("-")
-                    .attr("disabled", count.le(0)) // New: Directly pass Signal<bool> to attribute
+                    .attr("disabled", count.less_than_or_equals(0)) // New: Directly pass Signal<bool> to attribute
                     .on(event::click, set_count.updater(|n| *n -= 1)),
                 strong(count).classes(classes![
                     "counter-val",
-                    "positive" => count.gt(0),
-                    "negative" => count.lt(0)
+                    "positive" => count.greater_than(0),
+                    "negative" => count.less_than(0)
                 ]),
                 button("+").on(event::click, set_count.updater(|n| *n += 1)),
             ]
@@ -96,7 +96,7 @@ mod basics {
             ].style("margin-bottom: 10px;"),
 
             div!["Double: ", double_count]
-                .classes((count % 2).eq(0).map(|is_even| if *is_even { "even" } else { "odd" }))
+                .classes((count % 2).equals(0).map(|is_even| if *is_even { "even" } else { "odd" }))
                 .style("margin-top: 5px; color: #666; font-size: 0.9em;"),
         ]
     }
@@ -220,7 +220,7 @@ mod basics {
                 "Reactive Greeting Name: ",
                 input().bind_value(name_signal),
                 button("Submit")
-                    .attr("disabled", name_signal.read_signal().eq(""))
+                    .attr("disabled", name_signal.read_signal().equals(""))
                     .style("margin-left: 10px;")
             ].style("margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px;"),
             

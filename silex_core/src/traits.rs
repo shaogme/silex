@@ -260,7 +260,7 @@ pub trait ReactivePartialEq: With + Clone + 'static
 where
     Self::Value: PartialEq + Clone + Sized + 'static,
 {
-    fn eq<O>(
+    fn equals<O>(
         &self,
         other: O,
     ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>
@@ -270,7 +270,7 @@ where
         ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs == rhs)
     }
 
-    fn ne<O>(
+    fn not_equals<O>(
         &self,
         other: O,
     ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>
@@ -293,7 +293,7 @@ pub trait ReactivePartialOrd: With + Clone + 'static
 where
     Self::Value: PartialOrd + Clone + Sized + 'static,
 {
-    fn gt<O>(
+    fn greater_than<O>(
         &self,
         other: O,
     ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>
@@ -303,7 +303,7 @@ where
         ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs > rhs)
     }
 
-    fn lt<O>(
+    fn less_than<O>(
         &self,
         other: O,
     ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>
@@ -313,7 +313,7 @@ where
         ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs < rhs)
     }
 
-    fn ge<O>(
+    fn greater_than_or_equals<O>(
         &self,
         other: O,
     ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>
@@ -323,7 +323,7 @@ where
         ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs >= rhs)
     }
 
-    fn le<O>(
+    fn less_than_or_equals<O>(
         &self,
         other: O,
     ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>

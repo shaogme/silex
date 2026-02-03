@@ -48,10 +48,19 @@ impl<T> WithUntracked for Constant<T> {
 
 // --- Derived ---
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct Derived<S, F> {
     pub(crate) source: S,
     pub(crate) f: F,
+}
+
+impl<S: std::fmt::Debug, F> std::fmt::Debug for Derived<S, F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Derived")
+            .field("source", &self.source)
+            .field("f", &"Fn(...)")
+            .finish()
+    }
 }
 
 impl<S, F> Derived<S, F> {
@@ -111,11 +120,21 @@ where
 
 // --- ReactiveBinary ---
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct ReactiveBinary<L, R, F> {
     pub(crate) lhs: L,
     pub(crate) rhs: R,
     pub(crate) f: F,
+}
+
+impl<L: std::fmt::Debug, R: std::fmt::Debug, F> std::fmt::Debug for ReactiveBinary<L, R, F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReactiveBinary")
+            .field("lhs", &self.lhs)
+            .field("rhs", &self.rhs)
+            .field("f", &"Fn(...)")
+            .finish()
+    }
 }
 
 impl<L, R, F> ReactiveBinary<L, R, F> {
@@ -207,6 +226,30 @@ impl<T> Clone for Signal<T> {
     }
 }
 impl<T> Copy for Signal<T> {}
+
+impl<T> PartialEq for Signal<T> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Read(l), Self::Read(r)) => l == r,
+            (Self::Derived(l, _), Self::Derived(r, _)) => l == r,
+            (Self::StoredConstant(l, _), Self::StoredConstant(r, _)) => l == r,
+            _ => false,
+        }
+    }
+}
+
+impl<T> Eq for Signal<T> {}
+
+impl<T> std::hash::Hash for Signal<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
+        match self {
+            Self::Read(s) => s.hash(state),
+            Self::Derived(id, _) => id.hash(state),
+            Self::StoredConstant(id, _) => id.hash(state),
+        }
+    }
+}
 
 impl<T: Clone + 'static> Signal<T> {
     #[track_caller]
@@ -356,6 +399,20 @@ impl<T> Clone for ReadSignal<T> {
 }
 impl<T> Copy for ReadSignal<T> {}
 
+impl<T> PartialEq for ReadSignal<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl<T> Eq for ReadSignal<T> {}
+
+impl<T> std::hash::Hash for ReadSignal<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
 impl<T> DefinedAt for ReadSignal<T> {
     fn defined_at(&self) -> Option<&'static Location<'static>> {
         get_node_defined_at(self.id)
@@ -414,6 +471,20 @@ impl<T> Clone for WriteSignal<T> {
     }
 }
 impl<T> Copy for WriteSignal<T> {}
+
+impl<T> PartialEq for WriteSignal<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl<T> Eq for WriteSignal<T> {}
+
+impl<T> std::hash::Hash for WriteSignal<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
 
 impl<T> DefinedAt for WriteSignal<T> {
     fn defined_at(&self) -> Option<&'static Location<'static>> {
@@ -489,6 +560,21 @@ impl<T> Clone for RwSignal<T> {
     }
 }
 impl<T> Copy for RwSignal<T> {}
+
+impl<T> PartialEq for RwSignal<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.read == other.read && self.write == other.write
+    }
+}
+
+impl<T> Eq for RwSignal<T> {}
+
+impl<T> std::hash::Hash for RwSignal<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.read.hash(state);
+        self.write.hash(state);
+    }
+}
 
 impl<T: 'static> RwSignal<T> {
     #[track_caller]

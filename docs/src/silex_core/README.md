@@ -9,7 +9,7 @@
 该模块在 `silex_reactivity` 的基础上提供了类型安全的包装器。
 
 *   **SignalWrapper (通用信号)**:
-    *   `Signal<T>`: 统一的信号包装器，**实现了 `Copy`**。
+    *   `Signal<T>`: 统一的信号包装器，**实现了 `Copy`, `PartialEq`, `Eq`, `Hash`**。
     *   它可以包装 `ReadSignal`, `RwSignal`, `Memo`，`Derived` (派生闭包) 或 `Constant` (常量)。
     *   作为组件 Props 的首选类型，因为它能接受任何类型的响应式数据源（包括普通值，会自动转换为常量信号）。
 
@@ -31,9 +31,9 @@
     *   这种设计使得你可以灵活组合不同的行为，例如 `StoredValue` 实现了 `GetUntracked`/`SetUntracked` 但不实现 `Track`/`Notify`。
 
 *   **Primitive Signals (基础信号)**: 
-    *   `ReadSignal<T>`: 只读信号句柄，实现了 `Get`, `GetUntracked` 等读取特征。
-    *   `WriteSignal<T>`: 可写信号句柄，实现了 `Set`, `Update`, `SignalSetter`, `SignalUpdater` 等写入特征。
-    *   `RwSignal<T>`: 读写一体的信号句柄，常用于组件 `Props`。
+    *   `ReadSignal<T>`: 只读信号句柄，实现了 `Get`, `GetUntracked` 等读取特征。实现了 `PartialEq`, `Eq`, `Hash`。
+    *   `WriteSignal<T>`: 可写信号句柄，实现了 `Set`, `Update`, `SignalSetter`, `SignalUpdater` 等写入特征。实现了 `PartialEq`, `Eq`, `Hash`。
+    *   `RwSignal<T>`: 读写一体的信号句柄，常用于组件 `Props`。实现了 `PartialEq`, `Eq`, `Hash`。
     *   `Memo<T>`: 派生计算缓存，实现了 `Map` 等读取特征。
     *   `Constant<T>`: 常量包装器，直接持有值。实现了 `Get` 等特征但无开销。是 `IntoSignal` 对字面量的默认转换结果。
 
@@ -42,7 +42,7 @@
         *   返回一个 `SignalSlice`，它持有源信号和投影函数。
         *   允许以**引用方式**访问大结构体的字段，实现**零拷贝**读取，极大优化了 `Vec` 或复杂 Struct 的访问性能。
     *   **Lazy Evaluation (惰性求值)**:
-        *   `Map`, 比较操作 (`eq`, `gt`...), 算术运算 (`add`, `sub`...) 均返回 `Derived` 或 `ReactiveBinary`。
+        *   `Map`, 比较操作 (`equals`, `greater_than`...), 算术运算 (`add`, `sub`...) 均返回 `Derived` 或 `ReactiveBinary`。
         *   这些结构体是零开销的 **无状态 (Stateless)** 计算单元。每次被访问时都会重新执行闭包，**不** 缓存结果。
         *   对于昂贵的计算，请务必使用 `.memo()` 或 `Signal::derive` 来创建有状态的缓存节点，以免影响性能。
 
