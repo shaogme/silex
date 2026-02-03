@@ -1,7 +1,7 @@
 use crate::SilexError;
 use crate::flow::for_loop::IntoForLoopResult;
 use silex_core::reactivity::{
-    Effect, NodeId, Signal, WriteSignal, batch, create_scope, dispose, signal,
+    Effect, IntoSignal, NodeId, ReadSignal, WriteSignal, batch, create_scope, dispose, signal,
 };
 use silex_core::traits::{Get, Set};
 use silex_dom::View;
@@ -24,13 +24,13 @@ impl<ItemsFn, Item, Items, MapFn, V> Index<ItemsFn, Item, Items, MapFn, V>
 where
     ItemsFn: Get<Value = Items> + 'static,
     Items: IntoForLoopResult<Item = Item>,
-    MapFn: Fn(Signal<Item>, usize) -> V + 'static,
+    MapFn: Fn(ReadSignal<Item>, usize) -> V + 'static,
     V: View,
     Item: 'static,
 {
-    pub fn new(items: ItemsFn, map: MapFn) -> Self {
+    pub fn new(items: impl IntoSignal<Value = Items, Signal = ItemsFn>, map: MapFn) -> Self {
         Self {
-            items: Rc::new(items),
+            items: Rc::new(items.into_signal()),
             map: Rc::new(map),
             _marker: std::marker::PhantomData,
         }
@@ -51,7 +51,7 @@ where
     ItemsFn: Get<Value = Items> + 'static,
     Items: IntoForLoopResult<Item = Item> + 'static,
     <Items as IntoForLoopResult>::Iter: IntoIterator<Item = Item>,
-    MapFn: Fn(Signal<Item>, usize) -> V + 'static,
+    MapFn: Fn(ReadSignal<Item>, usize) -> V + 'static,
     V: View,
     Item: Clone + 'static, // Item needs clone for Signal updates
 {
@@ -112,7 +112,7 @@ where
                         let map = map_fn.clone();
 
                         let scope_id = create_scope(move || {
-                            map(get.into(), real_index).mount(&fragment_node_clone);
+                            map(get, real_index).mount(&fragment_node_clone);
                         });
 
                         let nodes_list = fragment.child_nodes();

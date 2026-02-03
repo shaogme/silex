@@ -1,4 +1,4 @@
-use silex_core::reactivity::{Effect, ReadSignal, Signal};
+use silex_core::reactivity::Effect;
 use silex_core::traits::Get;
 use silex_dom::View;
 use std::cell::RefCell;
@@ -150,9 +150,10 @@ where
 
 // --- Signal 扩展 ---
 
+use silex_core::reactivity::IntoSignal;
+
 /// Signal 扩展特质，提供 .when() 语法糖
 pub trait SignalShowExt {
-    // 使用 Box<dyn> 简化返回类型签名
     type Cond: Get<Value = bool> + 'static;
 
     fn when<V, F>(self, view: F) -> Show<Self::Cond, F, fn() -> (), V, ()>
@@ -161,41 +162,19 @@ pub trait SignalShowExt {
         F: Fn() -> V + 'static;
 }
 
-// 为 ReadSignal<bool> 实现扩展
-impl SignalShowExt for ReadSignal<bool> {
-    type Cond = Self;
+// 为所有 IntoSignal<Value = bool> 的类型实现扩展
+impl<S> SignalShowExt for S
+where
+    S: IntoSignal<Value = bool>,
+    S::Signal: Clone + 'static,
+{
+    type Cond = S::Signal;
 
     fn when<V, F>(self, view: F) -> Show<Self::Cond, F, fn() -> (), V, ()>
     where
         V: View,
         F: Fn() -> V + 'static,
     {
-        Show::new(self, view)
-    }
-}
-
-// 为 Memo<bool> 实现扩展
-impl SignalShowExt for silex_core::reactivity::Memo<bool> {
-    type Cond = Self;
-
-    fn when<V, F>(self, view: F) -> Show<Self::Cond, F, fn() -> (), V, ()>
-    where
-        V: View,
-        F: Fn() -> V + 'static,
-    {
-        Show::new(self, view)
-    }
-}
-
-// 为 Signal<bool> 实现扩展
-impl SignalShowExt for Signal<bool> {
-    type Cond = Self;
-
-    fn when<V, F>(self, view: F) -> Show<Self::Cond, F, fn() -> (), V, ()>
-    where
-        V: View,
-        F: Fn() -> V + 'static,
-    {
-        Show::new(self, view)
+        Show::new(self.into_signal(), view)
     }
 }

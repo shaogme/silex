@@ -1,12 +1,11 @@
 use super::{ApplyToDom, AttributeGroup, ReactiveApply};
-use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal};
+use silex_core::reactivity::{Constant, Memo, ReadSignal, RwSignal, Signal};
 
 // --- IntoStorable: 允许非 'static 类型转换为可存储类型 ---
 
 /// 将值转换为可存储的类型。
 /// 对于引用类型（如 &str, &String），转换为 owned 类型（String）。
 /// 对于已经是 'static 的类型，直接返回自身。
-/// 这允许用户传入 &str 和 &String 而不需要 'static 约束。
 pub trait IntoStorable {
     /// 转换后的可存储类型，必须满足 ApplyToDom + 'static
     type Stored: ApplyToDom + 'static;
@@ -15,7 +14,7 @@ pub trait IntoStorable {
     fn into_storable(self) -> Self::Stored;
 }
 
-// --- IntoStorable 实现：字符串类型 ---
+// --- 1. 基础类型 ---
 
 impl IntoStorable for &str {
     type Stored = String;
@@ -38,8 +37,6 @@ impl IntoStorable for String {
     }
 }
 
-// --- IntoStorable 实现：bool ---
-
 impl IntoStorable for bool {
     type Stored = bool;
     fn into_storable(self) -> Self::Stored {
@@ -47,18 +44,25 @@ impl IntoStorable for bool {
     }
 }
 
-// --- IntoStorable 实现：响应式类型 ---
-// 这些类型本身已经是 'static，所以直接返回自身
+// --- 2. 响应式类型 (使用宏避免泛型冲突) ---
 
-impl<T> IntoStorable for ReadSignal<T>
-where
-    T: ReactiveApply + Clone + 'static,
-{
-    type Stored = Self;
-    fn into_storable(self) -> Self::Stored {
-        self
-    }
+macro_rules! impl_into_storable_signal {
+    ($($ty:ident),*) => {
+        $(
+            impl<T> IntoStorable for $ty<T>
+            where
+                T: ReactiveApply + Clone + 'static,
+            {
+                type Stored = Self;
+                fn into_storable(self) -> Self::Stored {
+                    self
+                }
+            }
+        )*
+    };
 }
+
+impl_into_storable_signal!(ReadSignal, RwSignal, Signal, Constant);
 
 impl<T> IntoStorable for Memo<T>
 where
@@ -70,28 +74,7 @@ where
     }
 }
 
-impl<T> IntoStorable for RwSignal<T>
-where
-    T: ReactiveApply + Clone + 'static,
-{
-    type Stored = Self;
-    fn into_storable(self) -> Self::Stored {
-        self
-    }
-}
-
-impl<T> IntoStorable for Signal<T>
-where
-    T: ReactiveApply + Clone + 'static,
-{
-    type Stored = Self;
-    fn into_storable(self) -> Self::Stored {
-        self
-    }
-}
-
-// --- IntoStorable 实现：闭包类型 ---
-// 闭包返回值需要实现 ReactiveApply + 'static
+// --- 3. 闭包类型 ---
 
 impl<F, T> IntoStorable for F
 where
@@ -104,106 +87,55 @@ where
     }
 }
 
-// --- IntoStorable 实现：元组类型（用于条件类等） ---
+// --- 4. Tuple 实现 ---
 
-// (String, bool) 用于静态条件类
-impl IntoStorable for (String, bool) {
-    type Stored = Self;
-    fn into_storable(self) -> Self::Stored {
-        self
-    }
-}
-
-// (&str, bool) 用于静态条件类 - 转换为 (String, bool)
-impl IntoStorable for (&str, bool) {
+// 4.1 静态条件类 (Key, bool)
+impl<K: IntoStorable<Stored = String>> IntoStorable for (K, bool) {
     type Stored = (String, bool);
     fn into_storable(self) -> Self::Stored {
-        (self.0.to_string(), self.1)
+        (self.0.into_storable(), self.1)
     }
 }
 
-// (String, F) 用于响应式条件类
-impl<F> IntoStorable for (String, F)
+// 4.2 响应式条件类 (Key, Fn -> bool)
+impl<K, F> IntoStorable for (K, F)
 where
-    F: Fn() -> bool + 'static,
-{
-    type Stored = Self;
-    fn into_storable(self) -> Self::Stored {
-        self
-    }
-}
-
-// (&str, F) 用于响应式条件类 - 转换为 (String, F)
-impl<F> IntoStorable for (&str, F)
-where
+    K: IntoStorable<Stored = String>,
     F: Fn() -> bool + 'static,
 {
     type Stored = (String, F);
     fn into_storable(self) -> Self::Stored {
-        (self.0.to_string(), self.1)
+        (self.0.into_storable(), self.1)
     }
 }
 
-// (String, ReadSignal<bool>) 用于 Signal 条件类
-impl IntoStorable for (String, ReadSignal<bool>) {
-    type Stored = Self;
-    fn into_storable(self) -> Self::Stored {
-        self
-    }
+// 4.3 Signal 条件类 (Key, Signal<bool>)
+// 仅针对 bool 实现，因为 ApplyToDom 只实现了 (Key, Signal<bool>)
+
+macro_rules! impl_tuple_signal {
+    ($($ty:ident),*) => {
+        $(
+            impl<K> IntoStorable for (K, $ty<bool>)
+            where
+                K: IntoStorable<Stored = String>,
+            {
+                type Stored = (String, $ty<bool>);
+                fn into_storable(self) -> Self::Stored {
+                    (self.0.into_storable(), self.1)
+                }
+            }
+        )*
+    };
 }
 
-impl IntoStorable for (&str, ReadSignal<bool>) {
-    type Stored = (String, ReadSignal<bool>);
-    fn into_storable(self) -> Self::Stored {
-        (self.0.to_string(), self.1)
-    }
-}
+impl_tuple_signal!(ReadSignal, RwSignal, Signal, Memo, Constant);
 
-impl IntoStorable for (String, RwSignal<bool>) {
-    type Stored = Self;
-    fn into_storable(self) -> Self::Stored {
-        self
-    }
-}
+// 4.4 Style 键值对 (Key, String-like)
+// 需要小心区分 (K, V) 和下面的 (K, Signal)
 
-impl IntoStorable for (&str, RwSignal<bool>) {
-    type Stored = (String, RwSignal<bool>);
-    fn into_storable(self) -> Self::Stored {
-        (self.0.to_string(), self.1)
-    }
-}
+// 显式实现常见组合，避免与上面的泛型冲突
+// 这里主要处理 Value 是字符串的情况
 
-impl IntoStorable for (String, Signal<bool>) {
-    type Stored = Self;
-    fn into_storable(self) -> Self::Stored {
-        self
-    }
-}
-
-impl IntoStorable for (&str, Signal<bool>) {
-    type Stored = (String, Signal<bool>);
-    fn into_storable(self) -> Self::Stored {
-        (self.0.to_string(), self.1)
-    }
-}
-
-impl IntoStorable for (String, Memo<bool>) {
-    type Stored = Self;
-    fn into_storable(self) -> Self::Stored {
-        self
-    }
-}
-
-impl IntoStorable for (&str, Memo<bool>) {
-    type Stored = (String, Memo<bool>);
-    fn into_storable(self) -> Self::Stored {
-        (self.0.to_string(), self.1)
-    }
-}
-
-// --- IntoStorable 实现：Style 键值对元组 ---
-
-// (&str, &str) 用于 Style 键值对
 impl IntoStorable for (&str, &str) {
     type Stored = (String, String);
     fn into_storable(self) -> Self::Stored {
@@ -211,17 +143,17 @@ impl IntoStorable for (&str, &str) {
     }
 }
 
-impl IntoStorable for (&str, String) {
-    type Stored = (String, String);
-    fn into_storable(self) -> Self::Stored {
-        (self.0.to_string(), self.1)
-    }
-}
-
 impl IntoStorable for (String, &str) {
     type Stored = (String, String);
     fn into_storable(self) -> Self::Stored {
         (self.0, self.1.to_string())
+    }
+}
+
+impl IntoStorable for (&str, String) {
+    type Stored = (String, String);
+    fn into_storable(self) -> Self::Stored {
+        (self.0.to_string(), self.1)
     }
 }
 

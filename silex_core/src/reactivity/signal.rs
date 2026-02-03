@@ -7,6 +7,55 @@ use crate::reactivity::Memo;
 use crate::reactivity::SignalSlice;
 use crate::traits::*;
 
+// --- Constant ---
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Constant<T>(pub T);
+
+impl<T> DefinedAt for Constant<T> {
+    fn defined_at(&self) -> Option<&'static Location<'static>> {
+        None
+    }
+
+    fn debug_name(&self) -> Option<String> {
+        Some("Constant".to_string())
+    }
+}
+
+impl<T> IsDisposed for Constant<T> {
+    fn is_disposed(&self) -> bool {
+        false
+    }
+}
+
+impl<T> Track for Constant<T> {
+    fn track(&self) {}
+}
+
+impl<T> WithUntracked for Constant<T> {
+    type Value = T;
+
+    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        Some(fun(&self.0))
+    }
+}
+
+impl<T: Clone> GetUntracked for Constant<T> {
+    type Value = T;
+
+    fn try_get_untracked(&self) -> Option<T> {
+        Some(self.0.clone())
+    }
+}
+
+impl<T: Clone> Get for Constant<T> {
+    type Value = T;
+
+    fn try_get(&self) -> Option<T> {
+        Some(self.0.clone())
+    }
+}
+
 // --- Signal 信号 Enum ---
 
 #[derive(Debug)]
@@ -152,13 +201,92 @@ impl<T: 'static> From<RwSignal<T>> for Signal<T> {
     }
 }
 
-pub trait IntoSignal<T> {
-    fn into_signal(self) -> Signal<T>;
+pub trait IntoSignal {
+    type Value;
+    type Signal: Get<Value = Self::Value>;
+
+    fn into_signal(self) -> Self::Signal;
 }
 
-impl<T: 'static, U: Into<Signal<T>>> IntoSignal<T> for U {
-    fn into_signal(self) -> Signal<T> {
-        self.into()
+macro_rules! impl_into_signal_primitive {
+    ($($t:ty),*) => {
+        $(
+            impl IntoSignal for $t {
+                type Value = $t; // Self
+                type Signal = Constant<$t>;
+
+                fn into_signal(self) -> Self::Signal {
+                    Constant(self)
+                }
+            }
+        )*
+    };
+}
+
+impl_into_signal_primitive!(
+    bool, char, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64
+);
+
+impl IntoSignal for String {
+    type Value = String;
+    type Signal = Constant<String>;
+
+    fn into_signal(self) -> Self::Signal {
+        Constant(self)
+    }
+}
+
+impl IntoSignal for &str {
+    type Value = String;
+    type Signal = Constant<String>;
+
+    fn into_signal(self) -> Self::Signal {
+        Constant(self.to_string())
+    }
+}
+
+impl<T: Clone + 'static> IntoSignal for Signal<T> {
+    type Value = T;
+    type Signal = Signal<T>;
+
+    fn into_signal(self) -> Self::Signal {
+        self
+    }
+}
+
+impl<T: Clone + 'static> IntoSignal for ReadSignal<T> {
+    type Value = T;
+    type Signal = ReadSignal<T>;
+
+    fn into_signal(self) -> Self::Signal {
+        self
+    }
+}
+
+impl<T: Clone + 'static> IntoSignal for RwSignal<T> {
+    type Value = T;
+    type Signal = RwSignal<T>;
+
+    fn into_signal(self) -> Self::Signal {
+        self
+    }
+}
+
+impl<T: Clone + PartialEq + 'static> IntoSignal for Memo<T> {
+    type Value = T;
+    type Signal = Memo<T>;
+
+    fn into_signal(self) -> Self::Signal {
+        self
+    }
+}
+
+impl<T: Clone + 'static> IntoSignal for Constant<T> {
+    type Value = T;
+    type Signal = Constant<T>;
+
+    fn into_signal(self) -> Self::Signal {
+        self
     }
 }
 
@@ -513,3 +641,4 @@ use crate::impl_reactive_ops;
 impl_reactive_ops!(Signal);
 impl_reactive_ops!(ReadSignal);
 impl_reactive_ops!(RwSignal);
+impl_reactive_ops!(Constant);

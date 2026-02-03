@@ -23,7 +23,10 @@
 *   `With`: `fn try_with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>`。自动追踪，通过引用访问值。
 *   `GetUntracked`: `fn try_get_untracked(&self) -> Option<Self::Value>`。不追踪，Clone 并返回值 (Requires `T: Clone`)。
 *   `Get`: `fn try_get(&self) -> Option<Self::Value>`。自动追踪，Clone 并返回值 (Requires `T: Clone`)。
-*   `Map`: `fn map<U, F>(self, f: F) -> Memo<U>`。从当前信号创建派生计算信号 `Memo`。闭包接受引用 `&T`，减少 `Clone` 开销。
+    *   `Map`: `fn map<U, F>(self, f: F) -> Memo<U>`。从当前信号创建派生计算信号 `Memo`。闭包接受引用 `&T`，减少 `Clone` 开销。
+
+*   **Conversion Traits**:
+    *   `IntoSignal`: `fn into_signal(self) -> Self::Signal`。用于将普通值或信号统一转换为特定的信号类型。常用于组件参数，使其既能接受 `T` (自动转为 `Constant<T>`) 也能接受 `ReadSignal<T>` / `Memo<T>` 等。
 
 #### Update Traits (写更新)
 *   `Notify`: `fn notify(&self)`。显式通知。触发 subscribers 更新。
@@ -99,6 +102,23 @@
 #### `signal<T>`
 *   **Signature**: `pub fn signal<T: 'static>(value: T) -> (ReadSignal<T>, WriteSignal<T>)`
 *   **Usage**: `let (count, set_count) = signal(0);`
+
+#### `Constant<T>`
+*   **Struct**: `pub struct Constant<T>(pub T)`
+*   **Traits**: `Copy`, `Clone`, `Debug`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`.
+*   **Semantics**:
+    *   一个极轻量级的包装器，直接持有值 `T`。
+    *   实现了所有读取相关的 Signal Traits，但 `track` 它是空操作，永远不会导致重新渲染。
+    *   它是 `IntoSignal` 对基本类型 (如 `bool`, `i32`, `String`) 的默认转换目标。
+    *   **Use Case**: 当你需要一个满足 `Get<Value=T>` 接口但实际上永远不会改变的值时使用。
+
+#### `IntoSignal` Trait
+*   **Trait**: `pub trait IntoSignal { type Value; type Signal: Get<Value = Self::Value>; fn into_signal(self) -> Self::Signal; }`
+*   **Semantics**:
+    *   这是一个辅助 Trait，用于编写灵活的 API。
+    *   为所有基本类型 (`u8`..`u128`, `i8`..`i128`, `f32`, `f64`, `bool`, `char`, `String`, `&str`) 实现了该 Trait，转换为 `Constant<T>`。
+    *   为所有信号类型 (`Signal`, `ReadSignal`, `RwSignal`, `Memo`, `Constant`) 实现了该 Trait，转换为它们自己。
+    *   这允许组件接受 `impl IntoSignal<Value=T>`，从而既支持直接传值，也支持传信号。
 
 #### `StoredValue<T>`
 

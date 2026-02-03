@@ -1,5 +1,5 @@
 use silex_core::SilexError;
-use silex_core::reactivity::{Effect, Memo, ReadSignal, RwSignal, Signal};
+use silex_core::reactivity::{Constant, Effect, IntoSignal, Memo, ReadSignal, RwSignal, Signal};
 use silex_core::traits::Get;
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -81,13 +81,6 @@ fn handle_err(res: Result<(), SilexError>) {
     }
 }
 
-fn apply_class_static(el: &WebElem, val: &str) {
-    let list = el.class_list();
-    for c in val.split_whitespace() {
-        handle_err(list.add_1(c).map_err(SilexError::from));
-    }
-}
-
 fn get_style_decl(el: &WebElem) -> Option<web_sys::CssStyleDeclaration> {
     if let Some(e) = el.dyn_ref::<web_sys::HtmlElement>() {
         Some(e.style())
@@ -112,13 +105,7 @@ fn parse_style_str(s: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-fn apply_style_static(el: &WebElem, val: &str) {
-    if let Some(style) = get_style_decl(el) {
-        for (k, v) in parse_style_str(val) {
-            let _ = style.set_property(&k, &v);
-        }
-    }
-}
+// apply_style_static removed
 
 fn apply_style_kv(el: &WebElem, k: &str, v: &str) {
     if let Some(style) = get_style_decl(el) {
@@ -190,68 +177,55 @@ where
     });
 }
 
+fn apply_via_signal<S>(source: S, el: &WebElem, target: ApplyTarget)
+where
+    S: IntoSignal,
+    S::Value: ReactiveApply + Clone + 'static,
+    S::Signal: Clone + 'static,
+{
+    let signal = source.into_signal();
+    let owned_target = OwnedApplyTarget::from(target);
+    let el = el.clone();
+
+    S::Value::apply_to_dom(move || signal.get(), el, owned_target);
+}
+
+fn apply_kv_signal<K, S>(pair: (K, S), el: &WebElem, target: ApplyTarget)
+where
+    K: AsRef<str>,
+    S: IntoSignal<Value = bool>,
+    S::Signal: Clone + 'static,
+{
+    let (key, source) = pair;
+    let signal = source.into_signal();
+    (key, move || signal.get()).apply(el, target);
+}
+
 // --- Implementations ---
 
 // 1. Static Strings (&str, String, &String)
 impl ApplyToDom for &str {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
-        match target {
-            ApplyTarget::Class => apply_class_static(el, self),
-            ApplyTarget::Style => apply_style_static(el, self),
-            ApplyTarget::Attr(name) => {
-                if name == "class" {
-                    apply_class_static(el, self);
-                } else if name == "style" {
-                    apply_style_static(el, self);
-                } else {
-                    handle_err(el.set_attribute(name, self).map_err(SilexError::from));
-                }
-            }
-            ApplyTarget::Prop(name) => {
-                let _ = js_sys::Reflect::set(
-                    el,
-                    &wasm_bindgen::JsValue::from_str(name),
-                    &wasm_bindgen::JsValue::from_str(self),
-                );
-            }
-        }
+        apply_via_signal::<&str>(self, el, target);
     }
 }
 
 impl ApplyToDom for String {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
-        self.as_str().apply(el, target)
+        apply_via_signal::<String>(self, el, target);
     }
 }
 
 impl ApplyToDom for &String {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
-        self.as_str().apply(el, target)
+        apply_via_signal::<&str>(self.as_str(), el, target);
     }
 }
 
 // 2. Bool (Attributes Only)
 impl ApplyToDom for bool {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
-        match target {
-            ApplyTarget::Attr(name) => {
-                // Boolean attributes (e.g. checked, disabled)
-                let res = if self {
-                    el.set_attribute(name, "").map_err(SilexError::from)
-                } else {
-                    el.remove_attribute(name).map_err(SilexError::from)
-                };
-                handle_err(res);
-            }
-            ApplyTarget::Prop(name) => {
-                let _ = js_sys::Reflect::set(
-                    el,
-                    &wasm_bindgen::JsValue::from_str(name),
-                    &wasm_bindgen::JsValue::from_bool(self),
-                );
-            }
-            _ => {}
-        }
+        apply_via_signal::<bool>(self, el, target);
     }
 }
 
@@ -421,47 +395,30 @@ where
 }
 
 // 5. Signals
-impl<T> ApplyToDom for ReadSignal<T>
-where
-    T: ReactiveApply + Clone + 'static,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        let el = el.clone();
-        let target = target.into();
-        T::apply_to_dom(move || self.get(), el, target);
+
+macro_rules! impl_apply_basic_signal {
+    ($($ty:ident),*) => {
+        $(
+            impl<T> ApplyToDom for $ty<T>
+            where
+                T: ReactiveApply + Clone + 'static,
+            {
+                fn apply(self, el: &WebElem, target: ApplyTarget) {
+                    apply_via_signal::<Self>(self, el, target);
+                }
+            }
+        )*
     }
 }
+
+impl_apply_basic_signal!(ReadSignal, RwSignal, Signal, Constant);
 
 impl<T> ApplyToDom for Memo<T>
 where
     T: ReactiveApply + Clone + PartialEq + 'static,
 {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
-        let el = el.clone();
-        let target = target.into();
-        T::apply_to_dom(move || self.get(), el, target);
-    }
-}
-
-impl<T> ApplyToDom for RwSignal<T>
-where
-    T: ReactiveApply + Clone + 'static,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        let el = el.clone();
-        let target = target.into();
-        T::apply_to_dom(move || self.get(), el, target);
-    }
-}
-
-impl<T> ApplyToDom for Signal<T>
-where
-    T: ReactiveApply + Clone + 'static,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        let el = el.clone();
-        let target = target.into();
-        T::apply_to_dom(move || self.get(), el, target);
+        apply_via_signal::<Self>(self, el, target);
     }
 }
 
@@ -550,41 +507,22 @@ where
 }
 
 // 6.4 (Key, Signal<bool>) -> Delegate to Closure
-impl<K> ApplyToDom for (K, ReadSignal<bool>)
-where
-    K: AsRef<str>,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        (self.0, move || self.1.get()).apply(el, target);
-    }
+macro_rules! impl_apply_tuple_signal {
+    ($($ty:ident),*) => {
+        $(
+            impl<K> ApplyToDom for (K, $ty<bool>)
+            where
+                K: AsRef<str>,
+            {
+                fn apply(self, el: &WebElem, target: ApplyTarget) {
+                    apply_kv_signal(self, el, target);
+                }
+            }
+        )*
+    };
 }
 
-impl<K> ApplyToDom for (K, RwSignal<bool>)
-where
-    K: AsRef<str>,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        (self.0, move || self.1.get()).apply(el, target);
-    }
-}
-
-impl<K> ApplyToDom for (K, Memo<bool>)
-where
-    K: AsRef<str>,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        (self.0, move || self.1.get()).apply(el, target);
-    }
-}
-
-impl<K> ApplyToDom for (K, Signal<bool>)
-where
-    K: AsRef<str>,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        (self.0, move || self.1.get()).apply(el, target);
-    }
-}
+impl_apply_tuple_signal!(ReadSignal, RwSignal, Memo, Signal, Constant);
 
 // 7. Collections
 impl<V: ApplyToDom> ApplyToDom for Vec<V> {
