@@ -7,7 +7,6 @@ use silex_reactivity::{
     try_with_signal_untracked, try_with_stored_value, untrack as untrack_scoped,
 };
 
-use crate::reactivity::Memo;
 use crate::reactivity::SignalSlice;
 use crate::traits::*;
 
@@ -310,95 +309,6 @@ impl<T: 'static> From<ReadSignal<T>> for Signal<T> {
 impl<T: 'static> From<RwSignal<T>> for Signal<T> {
     fn from(s: RwSignal<T>) -> Self {
         Signal::Read(s.read)
-    }
-}
-
-pub trait IntoSignal {
-    type Value;
-    type Signal: With<Value = Self::Value>;
-
-    fn into_signal(self) -> Self::Signal;
-}
-
-macro_rules! impl_into_signal_primitive {
-    ($($t:ty),*) => {
-        $(
-            impl IntoSignal for $t {
-                type Value = $t; // Self
-                type Signal = Constant<$t>;
-
-                fn into_signal(self) -> Self::Signal {
-                    Constant(self)
-                }
-            }
-        )*
-    };
-}
-
-impl_into_signal_primitive!(
-    bool, char, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64
-);
-
-impl IntoSignal for String {
-    type Value = String;
-    type Signal = Constant<String>;
-
-    fn into_signal(self) -> Self::Signal {
-        Constant(self)
-    }
-}
-
-impl IntoSignal for &str {
-    type Value = String;
-    type Signal = Constant<String>;
-
-    fn into_signal(self) -> Self::Signal {
-        Constant(self.to_string())
-    }
-}
-
-impl<T: Clone + 'static> IntoSignal for Signal<T> {
-    type Value = T;
-    type Signal = Signal<T>;
-
-    fn into_signal(self) -> Self::Signal {
-        self
-    }
-}
-
-impl<T: Clone + 'static> IntoSignal for ReadSignal<T> {
-    type Value = T;
-    type Signal = ReadSignal<T>;
-
-    fn into_signal(self) -> Self::Signal {
-        self
-    }
-}
-
-impl<T: Clone + 'static> IntoSignal for RwSignal<T> {
-    type Value = T;
-    type Signal = RwSignal<T>;
-
-    fn into_signal(self) -> Self::Signal {
-        self
-    }
-}
-
-impl<T: Clone + PartialEq + 'static> IntoSignal for Memo<T> {
-    type Value = T;
-    type Signal = Memo<T>;
-
-    fn into_signal(self) -> Self::Signal {
-        self
-    }
-}
-
-impl<T: Clone + 'static> IntoSignal for Constant<T> {
-    type Value = T;
-    type Signal = Constant<T>;
-
-    fn into_signal(self) -> Self::Signal {
-        self
     }
 }
 

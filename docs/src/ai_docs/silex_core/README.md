@@ -70,6 +70,10 @@
     *   实现了 `Add`, `Sub`, `Mul`, `Div`, `Rem`, `BitAnd`, `BitOr`, `BitXor`, `Shl`, `Shr`, `Neg`, `Not`。
     *   支持 `Signal op Signal` 以及 `Signal op T`。
     *   所有运算均返回 `ReactiveBinary` (二元) 或 `Derived` (一元)，自动创建惰性派生计算，无额外缓存开销。
+    *   **Lazy Evaluation (惰性求值)**:
+        *   `ReactiveBinary` 和 `Derived` (用于 `Map`) 都是**无状态的 (Stateless)**。它们不缓存结果，每次被访问 (`try_with`) 时都会**重新执行**计算闭包。
+        *   这对于轻量级操作（如比较 `eq`、简单算术 `add`）非常高效（Zero-Copy）。
+        *   **Performance Trap (性能陷阱)**: 如果派生计算非常昂贵，这种惰性重算可能导致性能问题。对于昂贵的计算，请使用 `memo()` 或 `Signal::derive` 显式创建有状态的缓存节点。
 
 #### `ReadSignal<T>`
 *   **Struct**: `pub struct ReadSignal<T> { id: NodeId, marker: PhantomData<T> }`
@@ -126,7 +130,12 @@
     *   这是一个辅助 Trait，用于编写灵活的 API。
     *   为所有基本类型 (`u8`..`u128`, `i8`..`i128`, `f32`, `f64`, `bool`, `char`, `String`, `&str`) 实现了该 Trait，转换为 `Constant<T>`。
     *   为所有信号类型 (`Signal`, `ReadSignal`, `RwSignal`, `Memo`, `Constant`) 实现了该 Trait，转换为它们自己。
+    *   **Tuples (元组)**: 为 2-4 个元素的元组（如 `(Signal<A>, Signal<B>)`）实现了该 Trait。它们会被转换为一个通过 `Signal::derive` 创建的 `Signal<(A, B)>`，从而将多个信号合并为一个组合信号。
     *   这允许组件接受 `impl IntoSignal<Value=T>`，从而既支持直接传值，也支持传信号。
+*   **Performance Advice (性能建议)**:
+    *   `Signal::from(value)` 会调用 `store_value(value)`，在响应式运行时中分配内存。这意味着即使是 `Signal::from(42)` 也会产生 Arena 分配开销。
+    *   当组件参数接受 `impl IntoSignal` 时，如果传递的是静态值，**请直接传递该值**（例如 `42` 或 `Constant(42)`）。它是零分配的（Zero-Allocation）。
+    *   仅在需要类型擦除（Type Erasure）时才使用 `Signal::from(value)`。
 
 #### `StoredValue<T>`
 

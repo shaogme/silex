@@ -150,7 +150,7 @@ where
 
 // --- Signal 扩展 ---
 
-use silex_core::reactivity::IntoSignal;
+use silex_core::traits::IntoSignal;
 
 /// Signal 扩展特质，提供 .when() 语法糖
 pub trait SignalShowExt {

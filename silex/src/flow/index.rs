@@ -1,9 +1,9 @@
 use crate::SilexError;
 use crate::flow::for_loop::IntoForLoopResult;
 use silex_core::reactivity::{
-    Effect, IntoSignal, NodeId, ReadSignal, WriteSignal, batch, create_scope, dispose, signal,
+    Effect, NodeId, ReadSignal, WriteSignal, batch, create_scope, dispose, signal,
 };
-use silex_core::traits::{Set, With};
+use silex_core::traits::{IntoSignal, Set, With};
 use silex_dom::View;
 use std::cell::RefCell;
 use std::rc::Rc;

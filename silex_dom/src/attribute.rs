@@ -1,8 +1,8 @@
 use silex_core::SilexError;
 use silex_core::reactivity::{
-    Constant, Derived, Effect, IntoSignal, Memo, ReactiveBinary, ReadSignal, RwSignal, Signal,
+    Constant, Derived, Effect, Memo, ReactiveBinary, ReadSignal, RwSignal, Signal,
 };
-use silex_core::traits::{Get, Track, WithUntracked};
+use silex_core::traits::{Get, IntoSignal, Track, WithUntracked};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
