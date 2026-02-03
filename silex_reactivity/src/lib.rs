@@ -19,6 +19,8 @@ pub(crate) struct Node {
     pub(crate) context: Option<HashMap<TypeId, Box<dyn Any>>>,
     #[cfg(debug_assertions)]
     pub(crate) debug_label: Option<String>,
+    #[cfg(debug_assertions)]
+    pub(crate) defined_at: Option<&'static std::panic::Location<'static>>,
 }
 
 impl Node {
@@ -30,6 +32,8 @@ impl Node {
             context: None,
             #[cfg(debug_assertions)]
             debug_label: None,
+            #[cfg(debug_assertions)]
+            defined_at: None,
         }
     }
 }
@@ -151,11 +155,20 @@ impl Runtime {
         }
     }
 
+    #[track_caller]
     pub(crate) fn register_node(&self) -> NodeId {
         let parent = *self.current_owner.borrow();
-        self.graph.borrow_mut().register(parent)
+        let id = self.graph.borrow_mut().register(parent);
+        #[cfg(debug_assertions)]
+        {
+            if let Some(node) = self.graph.borrow_mut().nodes.get_mut(id) {
+                node.defined_at = Some(std::panic::Location::caller());
+            }
+        }
+        id
     }
 
+    #[track_caller]
     pub(crate) fn register_signal_internal<T: 'static>(&self, value: T) -> NodeId {
         let id = self.register_node();
         self.signals.borrow_mut().insert(
@@ -169,6 +182,7 @@ impl Runtime {
         id
     }
 
+    #[track_caller]
     pub(crate) fn register_effect_internal<F: Fn() + 'static>(&self, f: F) -> NodeId {
         let id = self.register_node();
         self.effects.borrow_mut().insert(
@@ -357,6 +371,7 @@ fn run_effect_internal(effect_id: NodeId) {
 
 // --- Public High-Level API ---
 
+#[track_caller]
 pub fn signal<T: 'static>(value: T) -> NodeId {
     RUNTIME.with(|rt| rt.register_signal_internal(value))
 }
@@ -431,12 +446,14 @@ pub fn batch<R>(f: impl FnOnce() -> R) -> R {
     })
 }
 
+#[track_caller]
 pub fn effect<F: Fn() + 'static>(f: F) -> NodeId {
     let id = RUNTIME.with(|rt| rt.register_effect_internal(f));
     run_effect_internal(id);
     id
 }
 
+#[track_caller]
 pub fn create_scope<F>(f: F) -> NodeId
 where
     F: FnOnce(),
@@ -477,6 +494,7 @@ pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
 }
 
 // Provide generic memo creation
+#[track_caller]
 pub fn memo<T, F>(f: F) -> NodeId
 where
     T: Clone + PartialEq + 'static,
@@ -596,6 +614,7 @@ pub fn use_context<T: Clone + 'static>() -> Option<T> {
 
 /// 注册一个回调函数，返回其 NodeId。
 /// 回调函数接收类型擦除的参数 `Box<dyn Any>`。
+#[track_caller]
 pub fn register_callback<F>(f: F) -> NodeId
 where
     F: Fn(Box<dyn Any>) + 'static,
@@ -632,6 +651,7 @@ pub fn is_callback_valid(id: NodeId) -> bool {
 
 /// 注册一个 NodeRef，返回其 NodeId。
 /// 初始状态为空（None）。
+#[track_caller]
 pub fn register_node_ref() -> NodeId {
     RUNTIME.with(|rt| {
         let id = rt.register_node();
@@ -688,6 +708,7 @@ pub fn notify_signal(id: NodeId) {
 
 // --- StoredValue API ---
 
+#[track_caller]
 pub fn store_value<T: 'static>(value: T) -> NodeId {
     RUNTIME.with(|rt| {
         let id = rt.register_node();
@@ -730,6 +751,7 @@ pub fn try_update_stored_value<T: 'static, R>(
 
 // --- Derived API ---
 
+#[track_caller]
 pub fn register_derived<T: 'static>(f: impl Fn() -> T + 'static) -> NodeId {
     RUNTIME.with(|rt| {
         let id = rt.register_node();
@@ -797,6 +819,23 @@ pub fn try_update_signal_silent<T: 'static, R>(
 
 pub fn is_signal_valid(id: NodeId) -> bool {
     RUNTIME.with(|rt| rt.signals.borrow().contains_key(id))
+}
+
+pub fn get_node_defined_at(id: NodeId) -> Option<&'static std::panic::Location<'static>> {
+    #[cfg(debug_assertions)]
+    {
+        RUNTIME.with(|rt| {
+            let graph = rt.graph.borrow();
+            if let Some(node) = graph.nodes.get(id) {
+                return node.defined_at;
+            }
+            None
+        })
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        None
+    }
 }
 
 // --- Debugging API ---

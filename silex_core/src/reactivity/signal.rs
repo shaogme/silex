@@ -2,9 +2,10 @@ use std::marker::PhantomData;
 use std::panic::Location;
 
 use silex_reactivity::{
-    NodeId, get_debug_label, is_signal_valid, notify_signal, register_derived, run_derived,
-    set_debug_label, signal as create_signal, store_value, track_signal, try_update_signal_silent,
-    try_with_signal_untracked, try_with_stored_value, untrack as untrack_scoped,
+    NodeId, get_debug_label, get_node_defined_at, is_signal_valid, notify_signal, register_derived,
+    run_derived, set_debug_label, signal as create_signal, store_value, track_signal,
+    try_update_signal_silent, try_with_signal_untracked, try_with_stored_value,
+    untrack as untrack_scoped,
 };
 
 use crate::reactivity::SignalSlice;
@@ -208,6 +209,7 @@ impl<T> Clone for Signal<T> {
 impl<T> Copy for Signal<T> {}
 
 impl<T: Clone + 'static> Signal<T> {
+    #[track_caller]
     pub fn derive(f: impl Fn() -> T + 'static) -> Self {
         let id = register_derived(move || f());
         Signal::Derived(id, PhantomData)
@@ -235,7 +237,11 @@ impl<T: Clone + 'static> Signal<T> {
 
 impl<T> DefinedAt for Signal<T> {
     fn defined_at(&self) -> Option<&'static Location<'static>> {
-        None
+        match self {
+            Signal::Read(s) => s.defined_at(),
+            Signal::Derived(id, _) => get_node_defined_at(*id),
+            Signal::StoredConstant(id, _) => get_node_defined_at(*id),
+        }
     }
 
     fn debug_name(&self) -> Option<String> {
@@ -288,6 +294,7 @@ impl<T: 'static> WithUntracked for Signal<T> {
 // Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
 
 impl<T: Clone + 'static> From<T> for Signal<T> {
+    #[track_caller]
     fn from(value: T) -> Self {
         let id = store_value(value);
         Signal::StoredConstant(id, PhantomData)
@@ -295,6 +302,7 @@ impl<T: Clone + 'static> From<T> for Signal<T> {
 }
 
 impl From<&str> for Signal<String> {
+    #[track_caller]
     fn from(s: &str) -> Self {
         s.to_string().into()
     }
@@ -350,7 +358,7 @@ impl<T> Copy for ReadSignal<T> {}
 
 impl<T> DefinedAt for ReadSignal<T> {
     fn defined_at(&self) -> Option<&'static Location<'static>> {
-        None
+        get_node_defined_at(self.id)
     }
 
     fn debug_name(&self) -> Option<String> {
@@ -409,7 +417,7 @@ impl<T> Copy for WriteSignal<T> {}
 
 impl<T> DefinedAt for WriteSignal<T> {
     fn defined_at(&self) -> Option<&'static Location<'static>> {
-        None
+        get_node_defined_at(self.id)
     }
 
     fn debug_name(&self) -> Option<String> {
@@ -483,6 +491,7 @@ impl<T> Clone for RwSignal<T> {
 impl<T> Copy for RwSignal<T> {}
 
 impl<T: 'static> RwSignal<T> {
+    #[track_caller]
     pub fn new(value: T) -> Self {
         let (read, write) = signal(value);
         RwSignal { read, write }
@@ -520,7 +529,7 @@ impl<T: 'static> RwSignal<T> {
 
 impl<T: 'static> DefinedAt for RwSignal<T> {
     fn defined_at(&self) -> Option<&'static Location<'static>> {
-        None
+        self.read.defined_at()
     }
 
     fn debug_name(&self) -> Option<String> {
@@ -593,6 +602,7 @@ impl<T: 'static> SignalUpdater for RwSignal<T> {
 
 // --- Global Functions ---
 
+#[track_caller]
 pub fn signal<T: 'static>(value: T) -> (ReadSignal<T>, WriteSignal<T>) {
     let id = create_signal(value);
     (
