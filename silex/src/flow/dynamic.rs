@@ -1,4 +1,4 @@
-use silex_core::{reactivity::Effect, traits::Get};
+use silex_core::{reactivity::Effect, traits::With};
 use silex_dom::View;
 use web_sys::Node;
 
@@ -31,8 +31,8 @@ pub struct Dynamic<V, F> {
 
 impl<V, F> Dynamic<V, F>
 where
-    V: View,
-    F: Get<Value = V> + 'static,
+    V: View + Clone,
+    F: With<Value = V> + 'static,
 {
     pub fn new(f: F) -> Self {
         Self {
@@ -55,20 +55,20 @@ where
     /// ```
     pub fn bind<S, T, Map>(source: S, map_fn: Map) -> Dynamic<V, impl Fn() -> V>
     where
-        S: Get<Value = T> + 'static,
+        S: With<Value = T> + 'static,
         Map: Fn(T) -> V + 'static,
-        T: 'static,
+        T: Clone + 'static,
         V: Clone,
     {
-        let combined_accessor = move || map_fn(source.get());
+        let combined_accessor = move || source.with(|val| map_fn(val.clone()));
         Dynamic::new(combined_accessor)
     }
 }
 
 impl<V, F> View for Dynamic<V, F>
 where
-    V: View,
-    F: Get<Value = V> + 'static,
+    V: View + Clone,
+    F: With<Value = V> + 'static,
 {
     fn mount(self, parent: &Node) {
         let document = silex_dom::document();
@@ -99,7 +99,7 @@ where
         let view_fn = self.view_fn;
 
         Effect::new(move |_| {
-            let new_view = view_fn.get();
+            let new_view = view_fn.with(Clone::clone);
 
             // 清理旧内容
             if let Some(parent) = start_node.parent_node() {

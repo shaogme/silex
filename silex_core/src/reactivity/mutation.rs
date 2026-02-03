@@ -150,9 +150,10 @@ impl<Arg: 'static, T: Clone + 'static, E: Clone + 'static> Mutation<Arg, T, E> {
 
     pub fn mutate_with<A>(&self, arg_accessor: A)
     where
-        A: Get<Value = Arg>,
+        A: With<Value = Arg>,
+        Arg: Clone,
     {
-        self.mutate(arg_accessor.get());
+        self.mutate(arg_accessor.with(Clone::clone));
     }
 
     /// Helper to check if the mutation is currently `Pending`.

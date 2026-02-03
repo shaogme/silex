@@ -635,8 +635,11 @@ mod advanced {
                     .on(event::click, move |e: web_sys::MouseEvent| {
                         e.prevent_default();
 
-                        // Note: "login_mutation.mutate((username.get(), password.get()));" is the same as "login_mutation.mutate_with((username, password));"
-                        login_mutation.mutate_with((username, password));
+                        // Use batch_read! macro for zero-copy multi-signal access
+                        // (Tuples no longer implement With trait to avoid implicit cloning)
+                        batch_read!(username, password => |u: &String, p: &String| {
+                            login_mutation.mutate((u.clone(), p.clone()));
+                        });
                     })
                     .attr("disabled", move || login_mutation.loading()) // Make reactive
                     .style("padding: 5px 10px;"),

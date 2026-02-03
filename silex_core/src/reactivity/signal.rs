@@ -44,21 +44,7 @@ impl<T> WithUntracked for Constant<T> {
     }
 }
 
-impl<T: Clone> GetUntracked for Constant<T> {
-    type Value = T;
-
-    fn try_get_untracked(&self) -> Option<T> {
-        Some(self.0.clone())
-    }
-}
-
-impl<T: Clone> Get for Constant<T> {
-    type Value = T;
-
-    fn try_get(&self) -> Option<T> {
-        Some(self.0.clone())
-    }
-}
+// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
 
 // --- Derived ---
 
@@ -107,31 +93,7 @@ where
     }
 }
 
-impl<S, F, U> GetUntracked for Derived<S, F>
-where
-    S: WithUntracked,
-    F: Fn(&S::Value) -> U,
-    U: Clone,
-{
-    type Value = U;
-
-    fn try_get_untracked(&self) -> Option<Self::Value> {
-        self.try_with_untracked(Clone::clone)
-    }
-}
-
-impl<S, F, U> Get for Derived<S, F>
-where
-    S: WithUntracked + Track,
-    F: Fn(&S::Value) -> U,
-    U: Clone,
-{
-    type Value = U;
-
-    fn try_get(&self) -> Option<Self::Value> {
-        self.try_with(Clone::clone)
-    }
-}
+// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
 
 impl<S, F, U> IntoSignal for Derived<S, F>
 where
@@ -213,33 +175,7 @@ where
     }
 }
 
-impl<L, R, F, U> GetUntracked for ReactiveBinary<L, R, F>
-where
-    L: WithUntracked,
-    R: WithUntracked,
-    F: Fn(&L::Value, &R::Value) -> U,
-    U: Clone,
-{
-    type Value = U;
-
-    fn try_get_untracked(&self) -> Option<Self::Value> {
-        self.try_with_untracked(Clone::clone)
-    }
-}
-
-impl<L, R, F, U> Get for ReactiveBinary<L, R, F>
-where
-    L: WithUntracked + Track,
-    R: WithUntracked + Track,
-    F: Fn(&L::Value, &R::Value) -> U,
-    U: Clone,
-{
-    type Value = U;
-
-    fn try_get(&self) -> Option<Self::Value> {
-        self.try_with(Clone::clone)
-    }
-}
+// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
 
 impl<L, R, F, U> IntoSignal for ReactiveBinary<L, R, F>
 where
@@ -350,19 +286,7 @@ impl<T: 'static> WithUntracked for Signal<T> {
     }
 }
 
-impl<T: Clone + 'static> GetUntracked for Signal<T> {
-    type Value = T;
-    fn try_get_untracked(&self) -> Option<T> {
-        self.try_with_untracked(Clone::clone)
-    }
-}
-
-impl<T: Clone + 'static> Get for Signal<T> {
-    type Value = T;
-    fn try_get(&self) -> Option<T> {
-        self.try_with(Clone::clone)
-    }
-}
+// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
 
 impl<T: Clone + 'static> From<T> for Signal<T> {
     fn from(value: T) -> Self {
@@ -391,7 +315,7 @@ impl<T: 'static> From<RwSignal<T>> for Signal<T> {
 
 pub trait IntoSignal {
     type Value;
-    type Signal: Get<Value = Self::Value>;
+    type Signal: With<Value = Self::Value>;
 
     fn into_signal(self) -> Self::Signal;
 }
@@ -544,19 +468,7 @@ impl<T: 'static> WithUntracked for ReadSignal<T> {
     }
 }
 
-impl<T: Clone + 'static> GetUntracked for ReadSignal<T> {
-    type Value = T;
-    fn try_get_untracked(&self) -> Option<T> {
-        self.try_with_untracked(Clone::clone)
-    }
-}
-
-impl<T: Clone + 'static> Get for ReadSignal<T> {
-    type Value = T;
-    fn try_get(&self) -> Option<T> {
-        self.try_with(Clone::clone)
-    }
-}
+// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
 
 // --- WriteSignal ---
 
@@ -748,19 +660,7 @@ impl<T: 'static> Update for RwSignal<T> {
     }
 }
 
-impl<T: Clone + 'static> GetUntracked for RwSignal<T> {
-    type Value = T;
-    fn try_get_untracked(&self) -> Option<T> {
-        self.try_with_untracked(Clone::clone)
-    }
-}
-
-impl<T: Clone + 'static> Get for RwSignal<T> {
-    type Value = T;
-    fn try_get(&self) -> Option<T> {
-        self.try_with(Clone::clone)
-    }
-}
+// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
 
 impl<T: Clone + 'static> SignalSetter for RwSignal<T> {
     type Value = T;

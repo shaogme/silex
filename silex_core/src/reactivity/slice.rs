@@ -62,18 +62,6 @@ where
     }
 }
 
-impl<S, F, O> GetUntracked for SignalSlice<S, F, O>
-where
-    S: WithUntracked + Clone + 'static,
-    F: Fn(&S::Value) -> &O + Clone + 'static,
-    O: Clone + 'static,
-{
-    type Value = O;
-    fn try_get_untracked(&self) -> Option<O> {
-        self.try_with_untracked(|v| v.clone())
-    }
-}
-
 impl<S, F, O> IsDisposed for SignalSlice<S, F, O>
 where
     S: IsDisposed,
@@ -84,15 +72,5 @@ where
     }
 }
 
-impl<S, F, O> Get for SignalSlice<S, F, O>
-where
-    S: WithUntracked + Track + Clone + 'static,
-    F: Fn(&S::Value) -> &O + Clone + 'static,
-    O: Clone + 'static,
-{
-    type Value = O;
-
-    fn try_get(&self) -> Option<Self::Value> {
-        self.try_with(Clone::clone)
-    }
-}
+// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
+// They only apply when O: Clone + Sized

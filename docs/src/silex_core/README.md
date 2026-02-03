@@ -13,9 +13,18 @@
     *   它可以包装 `ReadSignal`, `RwSignal`, `Memo`，`Derived` (派生闭包) 或 `Constant` (常量)。
     *   作为组件 Props 的首选类型，因为它能接受任何类型的响应式数据源（包括普通值，会自动转换为常量信号）。
 
-*   **Trait System (特征系统)**:
-    *   Silex 采用细粒度的特征系统来定义响应式行为。
-    *   **读**: `Get` (clone并追踪), `GetUntracked` (clone不追踪), `With` (引用并追踪), `WithUntracked` (引用不追踪), `Map` (引用派生，生成零开销 `Derived` 信号)。
+*   **Trait System (特征系统) - Zero-Copy First**:
+    *   Silex 的特征系统设计以 **`With` (闭包访问)** 为绝对核心，旨在避免不必要的内存克隆。
+    *   **核心 (Core)**: 
+        *   `With`: `fn with(|v| ...)`。通过引用访问值并追踪。这是最基础的原语。
+        *   `WithUntracked`: `fn with_untracked(|v| ...)`。通过引用访问值但不追踪。
+    *   **便利 (Convenience)**:
+        *   `Get`: `fn get()`。`With` + `Clone` 的语法糖。仅对 `Clone` 类型可用。应避免对大对象使用。
+        *   `GetUntracked`: `fn get_untracked()`。`WithUntracked` + `Clone` 的语法糖。
+    *   **派生**: `Map` (基于 `With` 的引用映射，零开销)。
+    *   **多信号访问**: 
+        *   `batch_read!(s1, s2 => |v1, v2| ...)`: 同时访问多个信号并追踪，零 Clone。
+        *   `batch_read_untracked!(s1, s2 => |v1, v2| ...)`: 同时访问多个信号不追踪，零 Clone。
     *   **写**: `Set` (设置并通知), `SetUntracked` (设置不通知), `Update` (修改并通知), `SignalSetter` (生成 setter), `SignalUpdater` (生成 updater)。
     *   **转换**: `IntoSignal` (值转信号)。允许组件 Props 接受 `impl IntoSignal`，从而同时支持静态值（自动转为 `Constant`）和动态信号。
     *   这种设计使得你可以灵活组合不同的行为，例如 `StoredValue` 实现了 `GetUntracked`/`SetUntracked` 但不实现 `Track`/`Notify`。
@@ -26,7 +35,7 @@
     *   `RwSignal<T>`: 读写一体的信号句柄，常用于组件 `Props`。
     *   `Memo<T>`: 派生计算缓存，实现了 `Map` 等读取特征。
     *   `Constant<T>`: 常量包装器，直接持有值。实现了 `Get` 等特征但无开销。是 `IntoSignal` 对字面量的默认转换结果。
-    *   使用 `signal` 创建，利用 `PhantomData<T>` 保留类型信息，并在运行时通过 `downcast` 安全转换 `Any` 数据。
+
     *   **Slice (切片)**:
         *   所有信号都支持 `.slice(|v| &v.field)` 方法。
         *   返回一个 `SignalSlice`，它持有源信号和投影函数。

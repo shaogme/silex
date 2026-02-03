@@ -1,33 +1,54 @@
 //! A series of traits to implement the behavior of reactive primitive, especially signals.
 //!
+//! ## Design Philosophy: Zero-Copy First
+//!
+//! The core insight of this trait system is that [`With`] (closure-based access) is the fundamental
+//! primitive for accessing reactive values. This is because:
+//!
+//! 1. **Memory Layout**: Signal values are stored in an arena (Map/Vec). To access them, we need to
+//!    hold a lock on the storage and provide a reference.
+//! 2. **Zero-Copy**: Using closures allows us to work with `&T` directly without cloning.
+//! 3. **?Sized Support**: Closures can work with dynamically-sized types like `str` or `[T]`.
+//!
+//! The [`Get`] trait (which clones the value) is deliberately NOT the core primitive. It's only
+//! available as a convenience method when `T: Clone + Sized`, and should be avoided on hot paths
+//! where cloning is expensive.
+//!
+//! ## Important: Tuples Are NOT Signals
+//!
+//! Tuples of signals `(Signal<A>, Signal<B>)` cannot implement zero-copy access for `&(A, B)`
+//! because A and B are stored in different memory locations. Instead of silently cloning,
+//! we provide the [`batch_read!`] macro for explicit zero-copy multi-signal access.
+//!
 //! ## Principles
 //! 1. **Composition**: Most of the traits are implemented as combinations of more primitive base traits,
 //!    and blanket implemented for all types that implement those traits.
 //! 2. **Fallibility**: Most traits includes a `try_` variant, which returns `None` if the method
 //!    fails (e.g., if signals are arena allocated and this can't be found).
+//! 3. **Zero-Copy**: Prefer [`With`]/[`WithUntracked`] over [`Get`]/[`GetUntracked`] to avoid cloning.
 //!
 //! ## Metadata Traits
 //! - [`DefinedAt`] is used for debugging in the case of errors and should be implemented for all
 //!   signal types.
 //! - [`IsDisposed`] checks whether a signal is currently accessible.
 //!
-//! ## Base Traits
+//! ## Base Traits (Core - Implement These)
 //! | Trait               | Mode    | Description                                                                           |
 //! |---------------------|---------|---------------------------------------------------------------------------------------|
 //! | [`Track`]           | —       | Tracks changes to this value, adding it as a source of the current reactive observer. |
 //! | [`Notify`]          | —       | Notifies subscribers that this value has changed.                                     |
-//! | [`WithUntracked`]   | Closure | Gives immutable access to the value of this signal without tracking.                  |
+//! | [`WithUntracked`]   | Closure | **Core**: Gives immutable access to the value of this signal without tracking.        |
 //! | [`UpdateUntracked`] | Closure | Gives mutable access to update the value of this signal without notifying.            |
 //!
-//! ## Derived Traits
+//! ## Derived Traits (Blanket Implemented)
 //!
 //! ### Access
 //! | Trait             | Mode          | Composition                        | Description
 //! |-------------------|---------------|------------------------------------|------------
-//! | [`With`]          | `fn(&T) -> U` | [`WithUntracked`] + [`Track`]      | Applies closure to the current value of the signal and returns result, with reactive tracking.
-//! | [`GetUntracked`]  | `T`           | [`WithUntracked`] + [`Clone`]      | Clones the current value of the signal.
-//! | [`Get`]           | `T`           | [`With`] + [`Clone`]               | Clones the current value of the signal, with reactive tracking.
-//! | [`Map`]           | `Memo<U>`     | [`Get`]                            | Creates a derived signal from this signal.
+//! | [`With`]          | `fn(&T) -> U` | [`WithUntracked`] + [`Track`]      | **Core**: Applies closure to the current value with reactive tracking.
+//! | [`GetUntracked`]  | `T`           | [`WithUntracked`] + [`Clone`]      | Extension: Clones the current value (requires `T: Clone + Sized`).
+//! | [`Get`]           | `T`           | [`With`] + [`Clone`]               | Extension: Clones with reactive tracking (requires `T: Clone + Sized`).
+//! | [`Map`]           | `Derived<S,F>`| [`With`]                           | Creates a derived signal from this signal.
 //!
 //! ### Update
 //! | Trait               | Mode          | Composition                        | Description
@@ -44,7 +65,20 @@
 //!
 //! For example, if you have a struct for which you can implement [`WithUntracked`] and [`Track`], then
 //! [`With`] will be implemented automatically (as will [`GetUntracked`] and
-//! [`Get`] for `Clone` types).
+//! [`Get`] for `Clone + Sized` types).
+//!
+//! ## Multi-Signal Access
+//!
+//! For accessing multiple signals without cloning, use the [`batch_read!`] macro:
+//!
+//! ```rust,ignore
+//! let (name_signal, age_signal) = (signal("Alice".to_string()), signal(42));
+//!
+//! // Zero-copy multi-signal access:
+//! batch_read!(name_signal, age_signal => |name: &String, age: &i32| {
+//!     println!("{} is {} years old", name, age);
+//! });
+//! ```
 
 // pub use crate::trait_options::*;
 
@@ -144,27 +178,102 @@ where
     }
 }
 
-impl<F, T> GetUntracked for F
+impl<F, T> IsDisposed for F
 where
     F: Fn() -> T,
 {
-    type Value = T;
-
-    fn try_get_untracked(&self) -> Option<Self::Value> {
-        Some(self())
+    fn is_disposed(&self) -> bool {
+        false // Closures are never disposed
     }
 }
 
-impl<F, T> Get for F
+impl<F, T> Track for F
 where
     F: Fn() -> T,
-    T: Clone,
+{
+    fn track(&self) {
+        // Closures don't have built-in tracking - tracking happens when
+        // the closure accesses signals internally
+    }
+}
+
+impl<F, T> WithUntracked for F
+where
+    F: Fn() -> T,
 {
     type Value = T;
 
-    fn try_get(&self) -> Option<Self::Value> {
-        Some(self())
+    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        let val = self();
+        Some(fun(&val))
     }
+}
+
+/// Multi-signal batch read macro for zero-copy access to multiple signals.
+///
+/// This macro provides a way to access multiple signals without cloning, by nesting
+/// the closures internally. All signals will be tracked for reactive updates.
+///
+/// # Example
+/// ```rust,ignore
+/// let name = signal("Alice".to_string());
+/// let age = signal(42);
+///
+/// // Zero-copy access - no cloning!
+/// batch_read!(name, age => |n: &String, a: &i32| {
+///     println!("{} is {} years old", n, a);
+/// });
+///
+/// // Returns a value
+/// let greeting = batch_read!(name, age => |n: &String, a: &i32| {
+///     format!("Hello, {} (age {})", n, a)
+/// });
+/// ```
+#[macro_export]
+macro_rules! batch_read {
+    // Two signals
+    ($s1:expr, $s2:expr => |$p1:ident: $t1:ty, $p2:ident: $t2:ty| $body:expr) => {{
+        use $crate::traits::With;
+        ($s1).with(|$p1: $t1| ($s2).with(|$p2: $t2| $body))
+    }};
+    // Three signals
+    ($s1:expr, $s2:expr, $s3:expr => |$p1:ident: $t1:ty, $p2:ident: $t2:ty, $p3:ident: $t3:ty| $body:expr) => {{
+        use $crate::traits::With;
+        ($s1).with(|$p1: $t1| ($s2).with(|$p2: $t2| ($s3).with(|$p3: $t3| $body)))
+    }};
+    // Four signals
+    ($s1:expr, $s2:expr, $s3:expr, $s4:expr => |$p1:ident: $t1:ty, $p2:ident: $t2:ty, $p3:ident: $t3:ty, $p4:ident: $t4:ty| $body:expr) => {{
+        use $crate::traits::With;
+        ($s1).with(|$p1: $t1| {
+            ($s2).with(|$p2: $t2| ($s3).with(|$p3: $t3| ($s4).with(|$p4: $t4| $body)))
+        })
+    }};
+}
+
+/// Untracked version of batch_read - does not subscribe to signal changes.
+#[macro_export]
+macro_rules! batch_read_untracked {
+    // Two signals
+    ($s1:expr, $s2:expr => |$p1:ident: $t1:ty, $p2:ident: $t2:ty| $body:expr) => {{
+        use $crate::traits::WithUntracked;
+        ($s1).with_untracked(|$p1: $t1| ($s2).with_untracked(|$p2: $t2| $body))
+    }};
+    // Three signals
+    ($s1:expr, $s2:expr, $s3:expr => |$p1:ident: $t1:ty, $p2:ident: $t2:ty, $p3:ident: $t3:ty| $body:expr) => {{
+        use $crate::traits::WithUntracked;
+        ($s1).with_untracked(|$p1: $t1| {
+            ($s2).with_untracked(|$p2: $t2| ($s3).with_untracked(|$p3: $t3| $body))
+        })
+    }};
+    // Four signals
+    ($s1:expr, $s2:expr, $s3:expr, $s4:expr => |$p1:ident: $t1:ty, $p2:ident: $t2:ty, $p3:ident: $t3:ty, $p4:ident: $t4:ty| $body:expr) => {{
+        use $crate::traits::WithUntracked;
+        ($s1).with_untracked(|$p1: $t1| {
+            ($s2).with_untracked(|$p2: $t2| {
+                ($s3).with_untracked(|$p3: $t3| ($s4).with_untracked(|$p4: $t4| $body))
+            })
+        })
+    }};
 }
 
 macro_rules! impl_tuple_traits {
@@ -178,42 +287,45 @@ macro_rules! impl_tuple_traits {
             }
         }
 
-        impl<$($T),*> GetUntracked for ($($T,)*)
+        impl<$($T),*> IsDisposed for ($($T,)*)
         where
-            $($T: GetUntracked),*
+            $($T: IsDisposed),*
         {
-            type Value = ($($T::Value,)*);
-
-            fn try_get_untracked(&self) -> Option<Self::Value> {
-                #[allow(non_snake_case)]
+            #[allow(non_snake_case)]
+            fn is_disposed(&self) -> bool {
                 let ($($T,)*) = self;
-                Some(($($T.try_get_untracked()?,)*))
+                // A tuple is disposed if any of its components is disposed
+                $($T.is_disposed() ||)* false
             }
         }
 
-        impl<$($T),*> Get for ($($T,)*)
+        impl<$($T),*> Track for ($($T,)*)
         where
-            $($T: Get),*
+            $($T: Track),*
         {
-            type Value = ($($T::Value,)*);
-
-            fn try_get(&self) -> Option<Self::Value> {
-                #[allow(non_snake_case)]
+            #[allow(non_snake_case)]
+            fn track(&self) {
                 let ($($T,)*) = self;
-                Some(($($T.try_get()?,)*))
+                $($T.track();)*
             }
         }
+
+        // NOTE: We intentionally DO NOT implement WithUntracked/With/GetUntracked/Get
+        // for tuples. See the comment block above for the rationale.
+        // Use `batch_read!` macro instead for zero-copy multi-signal access.
     };
 }
 
 impl_tuple_traits!(A, B);
 impl_tuple_traits!(A, B, C);
 impl_tuple_traits!(A, B, C, D);
+impl_tuple_traits!(A, B, C, D, E);
+impl_tuple_traits!(A, B, C, D, E, F);
 
 /// Provides a fluent API for checking equality on reactive values.
-pub trait ReactivePartialEq: Get + Clone + 'static
+pub trait ReactivePartialEq: With + Clone + 'static
 where
-    Self::Value: PartialEq + 'static,
+    Self::Value: PartialEq + Clone + Sized + 'static,
 {
     fn eq<O>(
         &self,
@@ -238,15 +350,15 @@ where
 
 impl<S> ReactivePartialEq for S
 where
-    S: Get + Clone + 'static,
-    S::Value: PartialEq + 'static,
+    S: With + Clone + 'static,
+    S::Value: PartialEq + Clone + Sized + 'static,
 {
 }
 
 /// Provides a fluent API for checking ordering on reactive values.
-pub trait ReactivePartialOrd: Get + Clone + 'static
+pub trait ReactivePartialOrd: With + Clone + 'static
 where
-    Self::Value: PartialOrd + 'static,
+    Self::Value: PartialOrd + Clone + Sized + 'static,
 {
     fn gt<O>(
         &self,
@@ -291,8 +403,8 @@ where
 
 impl<S> ReactivePartialOrd for S
 where
-    S: Get + Clone + 'static,
-    S::Value: PartialOrd + 'static,
+    S: With + Clone + 'static,
+    S::Value: PartialOrd + Clone + Sized + 'static,
 {
 }
 
@@ -403,17 +515,26 @@ where
     }
 }
 
-/// Clones the value of the signal, without tracking the value reactively.
-pub trait GetUntracked: DefinedAt {
-    /// The type of the value contained in the signal.
-    type Value;
-
+/// Extension trait: Clones the value of the signal, without tracking.
+///
+/// This is a **convenience trait** built on top of [`WithUntracked`]. It requires `T: Clone + Sized`.
+/// For zero-copy access, prefer using [`WithUntracked::with_untracked`] directly.
+///
+/// # Performance Note
+/// This trait performs a clone operation. On hot paths or with expensive-to-clone types,
+/// prefer using [`WithUntracked::with_untracked`] instead.
+pub trait GetUntracked: WithUntracked
+where
+    Self::Value: Clone + Sized,
+{
     /// Clones and returns the value of the signal,
     /// or `None` if the signal has already been disposed.
     #[track_caller]
-    fn try_get_untracked(&self) -> Option<Self::Value>;
+    fn try_get_untracked(&self) -> Option<Self::Value> {
+        self.try_with_untracked(Clone::clone)
+    }
 
-    /// Clones and returns the value of the signal,
+    /// Clones and returns the value of the signal.
     ///
     /// # Panics
     /// Panics if you try to access a signal that has been disposed.
@@ -424,16 +545,32 @@ pub trait GetUntracked: DefinedAt {
     }
 }
 
-/// Clones the value of the signal, without tracking the value reactively.
-/// and subscribes the active reactive observer (an effect or computed) to changes in its value.
-pub trait Get: DefinedAt {
-    /// The type of the value contained in the signal.
-    type Value: Clone;
+// Blanket implementation: any type with WithUntracked where Value: Clone + Sized gets GetUntracked
+impl<T> GetUntracked for T
+where
+    T: WithUntracked,
+    T::Value: Clone + Sized,
+{
+}
 
+/// Extension trait: Clones the value of the signal, with reactive tracking.
+///
+/// This is a **convenience trait** built on top of [`With`]. It requires `T: Clone + Sized`.
+/// For zero-copy access, prefer using [`With::with`] directly.
+///
+/// # Performance Note
+/// This trait performs a clone operation. On hot paths or with expensive-to-clone types,
+/// prefer using [`With::with`] instead.
+pub trait Get: With
+where
+    Self::Value: Clone + Sized,
+{
     /// Subscribes to the signal, then clones and returns the value of the signal,
     /// or `None` if the signal has already been disposed.
     #[track_caller]
-    fn try_get(&self) -> Option<Self::Value>;
+    fn try_get(&self) -> Option<Self::Value> {
+        self.try_with(Clone::clone)
+    }
 
     /// Subscribes to the signal, then clones and returns the value of the signal.
     ///
@@ -445,8 +582,18 @@ pub trait Get: DefinedAt {
     }
 }
 
+// Blanket implementation: any type with With where Value: Clone + Sized gets Get
+impl<T> Get for T
+where
+    T: With,
+    T::Value: Clone + Sized,
+{
+}
+
 /// Allows creating a derived signal from this signal.
-/// Allows creating a derived signal from this signal.
+///
+/// Unlike [`Get`], this trait uses [`WithUntracked`] as its basis, meaning it works
+/// with the zero-copy closure-based access pattern.
 pub trait Map: Sized {
     /// The type of the value contained in the signal.
     type Value: ?Sized;
@@ -457,9 +604,10 @@ pub trait Map: Sized {
         F: Fn(&Self::Value) -> U;
 }
 
+// Map is based on WithUntracked, not Get - this is intentional for zero-copy support
 impl<S> Map for S
 where
-    S: Get,
+    S: WithUntracked + Track,
 {
     type Value = S::Value;
 
@@ -472,7 +620,12 @@ where
 }
 
 /// Allows converting a signal into a memoized signal.
-pub trait Memoize: Get {
+///
+/// Requires `Value: Clone + Sized` since memoization needs to clone and store values.
+pub trait Memoize: With
+where
+    Self::Value: Clone + Sized,
+{
     /// Creates a memoized signal from this signal.
     fn memo(self) -> Memo<Self::Value>
     where
@@ -481,14 +634,15 @@ pub trait Memoize: Get {
 
 impl<T> Memoize for T
 where
-    T: Get + Clone + 'static,
+    T: With + Clone + 'static,
+    T::Value: Clone + Sized,
 {
     fn memo(self) -> Memo<Self::Value>
     where
         Self::Value: PartialEq + 'static,
     {
         let this = self.clone();
-        Memo::new(move |_| this.get())
+        Memo::new(move |_| this.with(Clone::clone))
     }
 }
 

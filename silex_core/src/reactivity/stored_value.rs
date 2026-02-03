@@ -1,7 +1,5 @@
-use std::cell::Cell;
 use std::marker::PhantomData;
 use std::panic::Location;
-use std::rc::Rc;
 
 use silex_reactivity::NodeId;
 
@@ -73,39 +71,25 @@ impl<T: 'static> WithUntracked for StoredValue<T> {
     }
 }
 
-impl<T: Clone + 'static> GetUntracked for StoredValue<T> {
-    type Value = T;
-
-    fn try_get_untracked(&self) -> Option<Self::Value> {
-        self.try_with_untracked(T::clone)
+impl<T: 'static> IsDisposed for StoredValue<T> {
+    fn is_disposed(&self) -> bool {
+        !silex_reactivity::is_signal_valid(self.id)
     }
 }
+
+// StoredValue doesn't track reactively by design - it's a non-reactive storage
+impl<T: 'static> Track for StoredValue<T> {
+    fn track(&self) {
+        // StoredValue is non-reactive, so tracking is a no-op
+    }
+}
+
+// Note: GetUntracked is now blanket-implemented via WithUntracked when T: Clone
 
 impl<T: 'static> UpdateUntracked for StoredValue<T> {
     type Value = T;
 
     fn try_update_untracked<U>(&self, fun: impl FnOnce(&mut Self::Value) -> U) -> Option<U> {
         silex_reactivity::try_update_stored_value(self.id, fun)
-    }
-}
-
-impl<T: 'static> SetUntracked for StoredValue<T> {
-    type Value = T;
-
-    fn try_set_untracked(&self, value: Self::Value) -> Option<Self::Value> {
-        let value_wrapper = Rc::new(Cell::new(Some(value)));
-        let value_in_closure = value_wrapper.clone();
-
-        let res = self.try_update_untracked(move |v| {
-            if let Some(new_val) = value_in_closure.take() {
-                *v = new_val;
-            }
-        });
-
-        if res.is_some() {
-            None
-        } else {
-            value_wrapper.take()
-        }
     }
 }

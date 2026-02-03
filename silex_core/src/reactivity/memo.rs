@@ -75,20 +75,6 @@ impl<T: 'static> WithUntracked for Memo<T> {
     }
 }
 
-impl<T: Clone + PartialEq + 'static> GetUntracked for Memo<T> {
-    type Value = T;
-    fn try_get_untracked(&self) -> Option<T> {
-        self.try_with_untracked(Clone::clone)
-    }
-}
-
-impl<T: Clone + PartialEq + 'static> Get for Memo<T> {
-    type Value = T;
-    fn try_get(&self) -> Option<T> {
-        self.try_with(Clone::clone)
-    }
-}
-
 impl<T: 'static> From<Memo<T>> for crate::reactivity::Signal<T> {
     fn from(m: Memo<T>) -> Self {
         crate::reactivity::Signal::Read(crate::reactivity::ReadSignal {

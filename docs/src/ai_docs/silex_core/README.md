@@ -17,13 +17,20 @@
 *   `debug_name(&self) -> Option<String>`。调试辅助，提供信号的语义化名称。
 *   `IsDisposed`: `fn is_disposed(&self) -> bool`。检查信号是否已被销毁。
 
-#### Access Traits (读访问)
-*   `Track`: `fn track(&self)`。显式追踪。将当前信号添加为 dependencies。
-*   `WithUntracked`: `fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>`。不追踪，通过引用访问值。
-*   `With`: `fn try_with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>`。自动追踪，通过引用访问值。
-*   `GetUntracked`: `fn try_get_untracked(&self) -> Option<Self::Value>`。不追踪，Clone 并返回值 (Requires `T: Clone`)。
-*   `Get`: `fn try_get(&self) -> Option<Self::Value>`。自动追踪，Clone 并返回值 (Requires `T: Clone`)。
-    *   `Map`: `fn map<U, F>(self, f: F) -> Derived<Self, F>`。从当前信号创建派生计算信号 `Derived`。闭包接受引用 `&T`，减少 `Clone` 开销。这是一个轻量级的惰性求值信号，不涉及 Memo 缓存开销。
+#### Access Traits (读访问) - **以 Zero-Copy 为核心**
+*   **Core Primitives (核心原语)**:
+    *   `WithUntracked`: `fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>`。**基础特征**。不追踪，通过闭包以**引用 (`&T`)** 方式访问值。这是实现零拷贝访问的基石。
+    *   `Track`: `fn track(&self)`。显式追踪。将当前信号添加为依赖。
+    *   `With`: `fn try_with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>`。**核心特征** (`WithUntracked` + `Track`)。自动追踪，通过闭包以**引用 (`&T`)** 方式访问值。
+*   **Convenience Extensions (便利扩展 - 基于 Clone)**:
+    *   `GetUntracked`: `fn try_get_untracked(&self) -> Option<Self::Value>`。(`WithUntracked` + `Clone`)。不追踪，直接 Clone 并返回值。仅当 `T: Clone` 时可用。**注意：避免在热路径上对大对象使用。**
+    *   `Get`: `fn try_get(&self) -> Option<Self::Value>`。(`With` + `Clone`)。自动追踪，直接 Clone 并返回值。仅当 `T: Clone` 时可用。
+*   **Derived**:
+    *   `Map`: `fn map<U, F>(self, f: F) -> Derived<Self, F>`。基于 `With` 实现。从当前信号创建派生计算信号 `Derived`。闭包接受引用 `&T`，减少 `Clone` 开销。这是一个轻量级的惰性求值信号，不涉及 Memo 缓存开销。
+    *   `Memoize`: `fn memo(self) -> Memo<Self::Value>`。将任意信号转换为 `Memo` 缓存信号。要求 `T: Clone + PartialEq`。
+*   **Multi-Signal Access (多信号访问)**:
+    *   `batch_read!(s1, s2 => |v1, v2| ...)`: 宏。允许同时以引用方式访问多个信号，实现零拷贝。
+    *   `batch_read_untracked!(s1, s2 => |v1, v2| ...)`: 宏。同上，但不追踪依赖。
 
 *   **Conversion Traits**:
     *   `IntoSignal`: `fn into_signal(self) -> Self::Signal`。用于将普通值或信号统一转换为特定的信号类型。常用于组件参数，使其既能接受 `T` (自动转为 `Constant<T>`) 也能接受 `ReadSignal<T>` / `Memo<T>` 等。

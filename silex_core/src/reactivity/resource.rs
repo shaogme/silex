@@ -207,32 +207,38 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> DefinedAt for Res
     }
 }
 
-// Resource implements Get to return Option<T> for convenience compatibility
+impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> IsDisposed for Resource<T, E> {
+    fn is_disposed(&self) -> bool {
+        self.state.is_disposed()
+    }
+}
+
+impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Track for Resource<T, E> {
+    fn track(&self) {
+        self.state.track();
+    }
+}
+
+// Resource implements WithUntracked to return Option<T> for convenience compatibility
 // It returns Some(data) if Ready or Reloading.
-// It tracks the state signal.
-impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Get for Resource<T, E> {
+impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> WithUntracked for Resource<T, E> {
     type Value = Option<T>;
 
-    fn try_get(&self) -> Option<Self::Value> {
-        self.state.try_with(|s| {
+    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.state.try_with_untracked(|s| {
             if let ResourceState::Error(e) = s {
                 if let Some(ctx) = use_context::<crate::error::ErrorContext>() {
                     let err_msg = format!("{:?}", e);
                     (ctx.0)(crate::error::SilexError::Javascript(err_msg));
                 }
             }
-            s.as_option().cloned()
+            let data = s.as_option().cloned();
+            fun(&data)
         })
     }
 }
 
-impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> GetUntracked for Resource<T, E> {
-    type Value = Option<T>;
-
-    fn try_get_untracked(&self) -> Option<Self::Value> {
-        self.state.try_with_untracked(|s| s.as_option().cloned())
-    }
-}
+// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
 
 // --- Suspense ---
 

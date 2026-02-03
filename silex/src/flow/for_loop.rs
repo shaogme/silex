@@ -1,6 +1,6 @@
 use crate::{SilexError, SilexResult};
 use silex_core::reactivity::{Effect, NodeId, batch, create_scope, dispose};
-use silex_core::traits::Get;
+use silex_core::traits::With;
 use silex_dom::View;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -72,8 +72,8 @@ impl<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> Clone
 impl<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V>
 where
     // ItemsFn returns the Source directly (e.g. Vec or Result<Vec>)
-    ItemsFn: Get<Value = Items> + 'static,
-    Items: IntoForLoopResult<Item = Item>,
+    ItemsFn: With<Value = Items> + 'static,
+    Items: IntoForLoopResult<Item = Item> + Clone,
     KeyFn: Fn(&Item) -> Key + 'static,
     MapFn: Fn(Item) -> V + 'static,
     V: View,
@@ -92,8 +92,8 @@ where
 impl<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> View
     for For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V>
 where
-    ItemsFn: Get<Value = Items> + 'static,
-    Items: IntoForLoopResult<Item = Item> + 'static,
+    ItemsFn: With<Value = Items> + 'static,
+    Items: IntoForLoopResult<Item = Item> + Clone + 'static,
     // We need the Iterator produced by the result to be iterable
     <Items as IntoForLoopResult>::Iter: IntoIterator<Item = Item>,
     KeyFn: Fn(&Item) -> Key + 'static,
@@ -132,8 +132,8 @@ where
         Effect::new(move |_| {
             let mut rows_map = active_rows.borrow_mut();
 
-            // Use the trait to convert whatever Items is into SilexResult<Iterator>
-            let result = items_fn.get().into_result();
+            // Use with() closure pattern - clone Items to satisfy into_result's self consumption
+            let result = items_fn.with(|items| items.clone().into_result());
 
             let items_iter = match result {
                 Ok(iter) => iter,
