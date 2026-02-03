@@ -107,14 +107,6 @@ fn parse_style_str(s: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-// apply_style_static removed
-
-fn apply_style_kv(el: &WebElem, k: &str, v: &str) {
-    if let Some(style) = get_style_decl(el) {
-        let _ = style.set_property(k, v);
-    }
-}
-
 fn create_class_effect<F, S>(el: WebElem, f: F)
 where
     F: Fn() -> S + 'static,
@@ -192,17 +184,6 @@ where
     S::Value::apply_to_dom(move || signal.get(), el, owned_target);
 }
 
-fn apply_kv_signal<K, S>(pair: (K, S), el: &WebElem, target: ApplyTarget)
-where
-    K: AsRef<str>,
-    S: IntoSignal<Value = bool>,
-    S::Signal: Clone + 'static,
-{
-    let (key, source) = pair;
-    let signal = source.into_signal();
-    (key, move || signal.get()).apply(el, target);
-}
-
 // --- Implementations ---
 
 // 1. Static Strings (&str, String, &String)
@@ -263,6 +244,17 @@ impl<'a> From<ApplyTarget<'a>> for OwnedApplyTarget {
 
 pub trait ReactiveApply {
     fn apply_to_dom(f: impl Fn() -> Self + 'static, el: WebElem, target: OwnedApplyTarget);
+
+    // New method to handle (Key, Value) pair application
+    fn apply_pair(
+        f: impl Fn() -> Self + 'static,
+        key: String,
+        el: WebElem,
+        target: OwnedApplyTarget,
+    ) {
+        // Default implementation does nothing
+        let _ = (f, key, el, target);
+    }
 }
 
 // 4.1 String Implementation (Reuses diffing logic for Class/Style)
@@ -295,37 +287,40 @@ impl ReactiveApply for String {
             }
         }
     }
+
+    fn apply_pair(
+        f: impl Fn() -> Self + 'static,
+        key: String,
+        el: WebElem,
+        target: OwnedApplyTarget,
+    ) {
+        let is_style = matches!(target, OwnedApplyTarget::Style)
+            || matches!(target, OwnedApplyTarget::Attr(ref n) if n == "style");
+
+        if is_style {
+            if let Some(style) = get_style_decl(&el) {
+                Effect::new(move |_| {
+                    let v = f();
+                    let _ = style.set_property(&key, &v);
+                });
+            }
+        }
+    }
 }
 
 // 4.1b &str Implementation
 impl<'a> ReactiveApply for &'a str {
     fn apply_to_dom(f: impl Fn() -> Self + 'static, el: WebElem, target: OwnedApplyTarget) {
-        match target {
-            OwnedApplyTarget::Class => create_class_effect(el, f),
-            OwnedApplyTarget::Style => create_style_effect(el, f),
-            OwnedApplyTarget::Attr(name) => {
-                if name == "class" {
-                    create_class_effect(el, f);
-                } else if name == "style" {
-                    create_style_effect(el, f);
-                } else {
-                    Effect::new(move |_| {
-                        let value = f();
-                        handle_err(el.set_attribute(&name, value).map_err(SilexError::from));
-                    });
-                }
-            }
-            OwnedApplyTarget::Prop(name) => {
-                Effect::new(move |_| {
-                    let value = f();
-                    let _ = js_sys::Reflect::set(
-                        &el,
-                        &JsValue::from_str(&name),
-                        &JsValue::from_str(value),
-                    );
-                });
-            }
-        }
+        String::apply_to_dom(move || f().to_string(), el, target)
+    }
+
+    fn apply_pair(
+        f: impl Fn() -> Self + 'static,
+        key: String,
+        el: WebElem,
+        target: OwnedApplyTarget,
+    ) {
+        String::apply_pair(move || f().to_string(), key, el, target)
     }
 }
 
@@ -353,10 +348,28 @@ impl ReactiveApply for bool {
                     );
                 });
             }
-            _ => {
-                // Class/Style toggling not supported via single bool closure.
-                // Use (key, bool) or string return instead.
-            }
+            _ => {}
+        }
+    }
+
+    fn apply_pair(
+        f: impl Fn() -> Self + 'static,
+        key: String,
+        el: WebElem,
+        target: OwnedApplyTarget,
+    ) {
+        let is_class = matches!(target, OwnedApplyTarget::Class)
+            || matches!(target, OwnedApplyTarget::Attr(ref n) if n == "class");
+
+        if is_class {
+            let list = el.class_list();
+            Effect::new(move |_| {
+                if f() {
+                    let _ = list.add_1(&key);
+                } else {
+                    let _ = list.remove_1(&key);
+                }
+            });
         }
     }
 }
@@ -367,6 +380,9 @@ macro_rules! impl_reactive_apply_primitive {
             impl ReactiveApply for $t {
                 fn apply_to_dom(f: impl Fn() -> Self + 'static, el: WebElem, target: OwnedApplyTarget) {
                     String::apply_to_dom(move || f().to_string(), el, target);
+                }
+                fn apply_pair(f: impl Fn() -> Self + 'static, key: String, el: WebElem, target: OwnedApplyTarget) {
+                    String::apply_pair(move || f().to_string(), key, el, target);
                 }
             }
         )*
@@ -447,128 +463,22 @@ where
     }
 }
 
-macro_rules! impl_tuple_kv_str {
-    ($key:ty, $val:ty) => {
-        impl ApplyToDom for ($key, $val) {
-            fn apply(self, el: &WebElem, target: ApplyTarget) {
-                // Key-Value Style pair
-                let is_style = match target {
-                    ApplyTarget::Style => true,
-                    ApplyTarget::Attr(n) if n == "style" => true,
-                    _ => false,
-                };
-                if is_style {
-                    apply_style_kv(el, self.0.as_ref(), self.1.as_ref());
-                }
-            }
-        }
-    };
-}
-
-// Distinct implementations for common string types to avoid overlap with bool
-impl_tuple_kv_str!(&str, &str);
-impl_tuple_kv_str!(&str, String);
-impl_tuple_kv_str!(&str, &String);
-impl_tuple_kv_str!(String, &str);
-impl_tuple_kv_str!(String, String);
-impl_tuple_kv_str!(String, &String);
-
-// 6.2 (Key, bool) for Conditional Class
-impl<K> ApplyToDom for (K, bool)
+// 6 Generic Tuple Implementation ((Key, Value))
+impl<K, S> ApplyToDom for (K, S)
 where
     K: AsRef<str>,
+    S: IntoSignal,
+    S::Value: ReactiveApply + Clone + 'static,
+    S::Signal: Clone + 'static,
 {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
-        let is_class = match target {
-            ApplyTarget::Class => true,
-            ApplyTarget::Attr(n) if n == "class" => true,
-            _ => false,
-        };
+        let (key, source) = self;
+        let signal = source.into_signal();
+        let el = el.clone();
+        let owned_target = OwnedApplyTarget::from(target);
+        let key_str = key.as_ref().to_string();
 
-        if is_class {
-            let class_names = self.0.as_ref();
-            let is_active = self.1;
-            let list = el.class_list();
-            for c in class_names.split_whitespace() {
-                if is_active {
-                    let _ = list.add_1(c);
-                } else {
-                    let _ = list.remove_1(c);
-                }
-            }
-        }
-    }
-}
-
-// 6.3 (Key, Fn -> bool) for Reactive Conditional Class
-impl<K, F> ApplyToDom for (K, F)
-where
-    K: AsRef<str>,
-    F: Fn() -> bool + 'static,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        let is_class = match target {
-            ApplyTarget::Class => true,
-            ApplyTarget::Attr(n) if n == "class" => true,
-            _ => false,
-        };
-
-        if is_class {
-            let el = el.clone();
-            let raw_class_names = self.0.as_ref().to_string();
-            Effect::new(move |_| {
-                let is_active = self.1();
-                let list = el.class_list();
-                for c in raw_class_names.split_whitespace() {
-                    if is_active {
-                        let _ = list.add_1(c);
-                    } else {
-                        let _ = list.remove_1(c);
-                    }
-                }
-            });
-        }
-    }
-}
-
-// 6.4 (Key, Signal<bool>) -> Delegate to Closure
-macro_rules! impl_apply_tuple_signal {
-    ($($ty:ident),*) => {
-        $(
-            impl<K> ApplyToDom for (K, $ty<bool>)
-            where
-                K: AsRef<str>,
-            {
-                fn apply(self, el: &WebElem, target: ApplyTarget) {
-                    apply_kv_signal(self, el, target);
-                }
-            }
-        )*
-    };
-}
-
-impl_apply_tuple_signal!(ReadSignal, RwSignal, Memo, Signal, Constant);
-
-impl<K, S, F> ApplyToDom for (K, Derived<S, F>)
-where
-    K: AsRef<str>,
-    S: WithUntracked + Track + Clone + 'static,
-    F: Fn(&S::Value) -> bool + Clone + 'static,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        apply_kv_signal(self, el, target);
-    }
-}
-
-impl<K, L, R, F> ApplyToDom for (K, ReactiveBinary<L, R, F>)
-where
-    K: AsRef<str>,
-    L: WithUntracked + Track + Clone + 'static,
-    R: WithUntracked + Track + Clone + 'static,
-    F: Fn(&L::Value, &R::Value) -> bool + Clone + 'static,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        apply_kv_signal(self, el, target);
+        S::Value::apply_pair(move || signal.get(), key_str, el, owned_target);
     }
 }
 

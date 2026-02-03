@@ -2,7 +2,7 @@ use super::{ApplyToDom, AttributeGroup, ReactiveApply};
 use silex_core::reactivity::{
     Constant, Derived, Memo, ReactiveBinary, ReadSignal, RwSignal, Signal,
 };
-use silex_core::traits::{Track, WithUntracked};
+use silex_core::traits::{IntoSignal, Track, WithUntracked};
 
 // --- IntoStorable: 允许非 'static 类型转换为可存储类型 ---
 
@@ -117,128 +117,20 @@ where
 
 // --- 4. Tuple 实现 ---
 
-// 4.1 静态条件类 (Key, bool)
-impl<K: IntoStorable<Stored = String>> IntoStorable for (K, bool) {
-    type Stored = (String, bool);
-    fn into_storable(self) -> Self::Stored {
-        (self.0.into_storable(), self.1)
-    }
-}
-
-// 4.2 响应式条件类 (Key, Fn -> bool)
-impl<K, F> IntoStorable for (K, F)
+// 统一泛型实现：(Key, Value)
+// 适用于 (String, String) [Style], (String, bool) [Class], (String, Signal) 等所有情况
+// 通过 ApplyToDom 的 generic impl 和 ReactiveApply::apply_pair 分发逻辑
+impl<K, V> IntoStorable for (K, V)
 where
     K: IntoStorable<Stored = String>,
-    F: Fn() -> bool + 'static,
+    V: IntoSignal,
+    V::Signal: 'static,
+    (String, V::Signal): ApplyToDom,
 {
-    type Stored = (String, F);
+    type Stored = (String, V::Signal);
+
     fn into_storable(self) -> Self::Stored {
-        (self.0.into_storable(), self.1)
-    }
-}
-
-// 4.3 Signal 条件类 (Key, Signal<bool>)
-// 仅针对 bool 实现，因为 ApplyToDom 只实现了 (Key, Signal<bool>)
-
-macro_rules! impl_tuple_signal {
-    ($($ty:ident),*) => {
-        $(
-            impl<K> IntoStorable for (K, $ty<bool>)
-            where
-                K: IntoStorable<Stored = String>,
-            {
-                type Stored = (String, $ty<bool>);
-                fn into_storable(self) -> Self::Stored {
-                    (self.0.into_storable(), self.1)
-                }
-            }
-        )*
-    };
-}
-
-impl_tuple_signal!(ReadSignal, RwSignal, Signal, Memo, Constant);
-
-impl<K, S, F> IntoStorable for (K, Derived<S, F>)
-where
-    K: IntoStorable<Stored = String>,
-    S: WithUntracked + Track + Clone + 'static,
-    F: Fn(&S::Value) -> bool + Clone + 'static,
-{
-    type Stored = (String, Derived<S, F>);
-    fn into_storable(self) -> Self::Stored {
-        (self.0.into_storable(), self.1)
-    }
-}
-
-impl<L, R, F> IntoStorable for (String, ReactiveBinary<L, R, F>)
-where
-    L: WithUntracked + Track + Clone + 'static,
-    R: WithUntracked + Track + Clone + 'static,
-    F: Fn(&L::Value, &R::Value) -> bool + Clone + 'static,
-{
-    type Stored = (String, ReactiveBinary<L, R, F>);
-    fn into_storable(self) -> Self::Stored {
-        self
-    }
-}
-
-impl<L, R, F> IntoStorable for (&str, ReactiveBinary<L, R, F>)
-where
-    L: WithUntracked + Track + Clone + 'static,
-    R: WithUntracked + Track + Clone + 'static,
-    F: Fn(&L::Value, &R::Value) -> bool + Clone + 'static,
-{
-    type Stored = (String, ReactiveBinary<L, R, F>);
-    fn into_storable(self) -> Self::Stored {
-        (self.0.to_string(), self.1)
-    }
-}
-
-// 4.4 Style 键值对 (Key, String-like)
-// 需要小心区分 (K, V) 和下面的 (K, Signal)
-
-// 显式实现常见组合，避免与上面的泛型冲突
-// 这里主要处理 Value 是字符串的情况
-
-impl IntoStorable for (&str, &str) {
-    type Stored = (String, String);
-    fn into_storable(self) -> Self::Stored {
-        (self.0.to_string(), self.1.to_string())
-    }
-}
-
-impl IntoStorable for (String, &str) {
-    type Stored = (String, String);
-    fn into_storable(self) -> Self::Stored {
-        (self.0, self.1.to_string())
-    }
-}
-
-impl IntoStorable for (&str, String) {
-    type Stored = (String, String);
-    fn into_storable(self) -> Self::Stored {
-        (self.0.to_string(), self.1)
-    }
-}
-
-impl IntoStorable for (String, String) {
-    type Stored = (String, String);
-    fn into_storable(self) -> Self::Stored {
-        self
-    }
-}
-
-impl IntoStorable for (&str, &String) {
-    type Stored = (String, String);
-    fn into_storable(self) -> Self::Stored {
-        (self.0.to_string(), self.1.clone())
-    }
-}
-
-impl IntoStorable for (String, &String) {
-    type Stored = (String, String);
-    fn into_storable(self) -> Self::Stored {
-        (self.0, self.1.clone())
+        (self.0.into_storable(), self.1.into_signal())
     }
 }
 

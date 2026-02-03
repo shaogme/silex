@@ -13,7 +13,7 @@ use crate::traits::*;
 
 // --- Constant ---
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Constant<T>(pub T);
 
 impl<T> DefinedAt for Constant<T> {
