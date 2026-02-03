@@ -70,7 +70,7 @@
 ### `IntoStorable` Trait
 *   **Definition**: `pub trait IntoStorable { type Stored: ApplyToDom + 'static; fn into_storable(self) -> Self::Stored; }`
 *   **Semantics**: 转换 Trait，允许用户传入非 `'static` 的引用类型（如 `&str`, `&String`），并在内部自动转换为 owned 或 `'static` 的 `Stored` 类型。
-*   **Implementors**: `&str`, `&String` -> `String`; `bool`, `Signals`, `Closures`, `Tuples`, `Vec<V>`, `[V; N]` -> Self (or owned variant).
+*   **Implementors**: `&str`, `&String` -> `String`; `bool`, `Signals` (including `Derived`/`ReactiveBinary`), `Closures`, `Tuples`, `Vec<V>`, `[V; N]` -> Self (or owned variant).
 
 ### `ApplyTarget`
 *   **Enum**: 指定值应用的目标位置。
@@ -84,7 +84,7 @@
 *   **Implementors**:
     *   **Static**: `&str`, `String`, `bool` (Boolean Attribute toggle), `Option<T>`.
     *   **Reactive**: `impl Fn() -> T` (自动创建 `Effect` 进行细粒度更新).
-    *   **Signals**: `Signal<T>`, `ReadSignal<T>`, `RwSignal<T>`, `Memo<T>`.
+    *   **Signals**: `Signal<T>`, `ReadSignal<T>`, `RwSignal<T>`, `Memo<T>`, `Derived<T>`, `ReactiveBinary<T>`.
         *   若 `T` 为 `bool`，自动表现为布尔属性切换。
         *   若 `T` 为其他基础类型，自动转为字符串。
     *   **Collections**: `Vec<V>`, `[V; N]`.
@@ -117,7 +117,7 @@
     *   **DOM**: `Element`, `TypedElement`.
     *   **Text**: `&str`, `String`, Primitives (`i32`, `bool`, etc.).
     *   **Reactive**: `Fn() -> V` (细粒度更新，使用 Comment 节点作为锚点进行 Range Cleaning).
-    *   **Signals**: `ReadSignal<T>`, `RwSignal<T>` (文本节点更新).
+    *   **Signals**: `ReadSignal<T>`, `RwSignal<T>`, `Signal<T>`, `Memo<T>`, `Derived`, `ReactiveBinary` (文本节点更新).
     *   **Collections**: `Vec<V>`, `[V; N]`, `Option<V>`, `Result<V, E>`.
     *   **Fragments**: `(A, B, C...)` 元组。
 

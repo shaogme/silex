@@ -15,7 +15,7 @@
 
 *   **Trait System (特征系统)**:
     *   Silex 采用细粒度的特征系统来定义响应式行为。
-    *   **读**: `Get` (clone并追踪), `GetUntracked` (clone不追踪), `With` (引用并追踪), `WithUntracked` (引用不追踪), `Map` (引用派生)。
+    *   **读**: `Get` (clone并追踪), `GetUntracked` (clone不追踪), `With` (引用并追踪), `WithUntracked` (引用不追踪), `Map` (引用派生，生成零开销 `Derived` 信号)。
     *   **写**: `Set` (设置并通知), `SetUntracked` (设置不通知), `Update` (修改并通知), `SignalSetter` (生成 setter), `SignalUpdater` (生成 updater)。
     *   **转换**: `IntoSignal` (值转信号)。允许组件 Props 接受 `impl IntoSignal`，从而同时支持静态值（自动转为 `Constant`）和动态信号。
     *   这种设计使得你可以灵活组合不同的行为，例如 `StoredValue` 实现了 `GetUntracked`/`SetUntracked` 但不实现 `Track`/`Notify`。
@@ -31,6 +31,9 @@
         *   所有信号都支持 `.slice(|v| &v.field)` 方法。
         *   返回一个 `SignalSlice`，它持有源信号和投影函数。
         *   允许以**引用方式**访问大结构体的字段，实现**零拷贝**读取，极大优化了 `Vec` 或复杂 Struct 的访问性能。
+    *   **Lazy Evaluation (惰性求值)**:
+        *   `Map`, 比较操作 (`eq`, `gt`...), 算术运算 (`add`, `sub`...) 均返回 `Derived` 或 `ReactiveBinary`。
+        *   这些结构体是零开销的惰性计算单元，仅在被追踪或读取时计算，避免了 `Memo` 的额外内存分配和缓存开销。
 
 *   **Effect (副作用)**:
     *   `Effect`: 创建自动追踪依赖的副作用，使用 `Effect::new`。

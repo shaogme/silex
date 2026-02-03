@@ -84,19 +84,15 @@ where
     }
 }
 
-impl<S, F, O> Map for SignalSlice<S, F, O>
+impl<S, F, O> Get for SignalSlice<S, F, O>
 where
     S: WithUntracked + Track + Clone + 'static,
     F: Fn(&S::Value) -> &O + Clone + 'static,
-    O: ?Sized + 'static,
+    O: Clone + 'static,
 {
     type Value = O;
 
-    fn map<U, G>(self, g: G) -> crate::reactivity::Memo<U>
-    where
-        G: Fn(&Self::Value) -> U + 'static,
-        U: Clone + PartialEq + 'static,
-    {
-        crate::reactivity::Memo::new(move |_| self.with(|val| g(val)))
+    fn try_get(&self) -> Option<Self::Value> {
+        self.try_with(Clone::clone)
     }
 }

@@ -23,7 +23,7 @@
 *   `With`: `fn try_with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>`。自动追踪，通过引用访问值。
 *   `GetUntracked`: `fn try_get_untracked(&self) -> Option<Self::Value>`。不追踪，Clone 并返回值 (Requires `T: Clone`)。
 *   `Get`: `fn try_get(&self) -> Option<Self::Value>`。自动追踪，Clone 并返回值 (Requires `T: Clone`)。
-    *   `Map`: `fn map<U, F>(self, f: F) -> Memo<U>`。从当前信号创建派生计算信号 `Memo`。闭包接受引用 `&T`，减少 `Clone` 开销。
+    *   `Map`: `fn map<U, F>(self, f: F) -> Derived<Self, F>`。从当前信号创建派生计算信号 `Derived`。闭包接受引用 `&T`，减少 `Clone` 开销。这是一个轻量级的惰性求值信号，不涉及 Memo 缓存开销。
 
 *   **Conversion Traits**:
     *   `IntoSignal`: `fn into_signal(self) -> Self::Signal`。用于将普通值或信号统一转换为特定的信号类型。常用于组件参数，使其既能接受 `T` (自动转为 `Constant<T>`) 也能接受 `ReadSignal<T>` / `Memo<T>` 等。
@@ -62,15 +62,15 @@
 *   **Operator Overloads**:
     *   实现了 `Add`, `Sub`, `Mul`, `Div`, `Rem`, `BitAnd`, `BitOr`, `BitXor`, `Shl`, `Shr`, `Neg`, `Not`。
     *   支持 `Signal op Signal` 以及 `Signal op T`。
-    *   所有运算均返回 `Memo<T>`，自动创建派生计算。
+    *   所有运算均返回 `ReactiveBinary` (二元) 或 `Derived` (一元)，自动创建惰性派生计算，无额外缓存开销。
 
 #### `ReadSignal<T>`
 *   **Struct**: `pub struct ReadSignal<T> { id: NodeId, marker: PhantomData<T> }`
 *   **Traits**: `Copy`, `Clone`, `Debug`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
 *   **Methods**:
     *   `slice(getter: impl Fn(&T) -> &O)`: 创建一个指向内部字段的切片信号 `SignalSlice`，实现零拷贝访问。
-*   **Fluent API**: 实现了 `eq`, `ne`, `gt`, `lt`, `ge`, `le`，返回 `Memo<bool>`。
-*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符，返回 `Memo<T>`。
+*   **Fluent API**: 实现了 `eq`, `ne`, `gt`, `lt`, `ge`, `le`，返回 `ReactiveBinary<Self, O::Signal, ...>`。
+*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符，返回 `ReactiveBinary<...>` 或 `Derived<...>`。
 
 #### `WriteSignal<T>`
 *   **Struct**: `pub struct WriteSignal<T> { id: NodeId, marker: PhantomData<T> }`
@@ -90,7 +90,7 @@
     *   **Implements**: `SignalSetter`, `SignalUpdater`.
     *   **Methods**:
         *   `slice`: (继承自 `ReadSignal` 部分)。
-*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符 (针对 Read 部分)，返回 `Memo<T>`。
+*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符 (针对 Read 部分)，返回 `ReactiveBinary` / `Derived`。
 
 #### `Memo<T>`
 *   **Struct**: `pub struct Memo<T> { id: NodeId, marker: PhantomData<T> }`
@@ -98,7 +98,7 @@
 *   **Semantics**: 派生计算信号。值被缓存，仅在依赖变更时无效。
 *   **Methods**:
     *   `new(f: impl Fn(Option<&T>) -> T)`: 创建 Memo。
-*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符，返回 `Memo<T>`。
+*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符，返回 `ReactiveBinary` / `Derived`。
 
 #### `signal<T>`
 *   **Signature**: `pub fn signal<T: 'static>(value: T) -> (ReadSignal<T>, WriteSignal<T>)`

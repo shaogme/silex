@@ -1,9 +1,11 @@
 use crate::attribute::PendingAttribute;
 use crate::element::Element;
-use silex_core::reactivity::{Effect, Memo, ReadSignal, RwSignal, Signal};
-use silex_core::traits::Get;
+use silex_core::error::handle_error;
+use silex_core::reactivity::{Derived, Effect, Memo, ReactiveBinary, ReadSignal, RwSignal, Signal};
+use silex_core::traits::{Get, Track, WithUntracked};
 use silex_core::{SilexError, SilexResult};
 use std::fmt::Display;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use web_sys::Node;
 
 /// 视图特征 (View Trait)
@@ -25,7 +27,7 @@ impl View for String {
         let document = crate::document();
         let node = document.create_text_node(&self);
         if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-            silex_core::error::handle_error(e);
+            handle_error(e);
         }
     }
 }
@@ -35,7 +37,7 @@ impl View for &str {
         let document = crate::document();
         let node = document.create_text_node(self);
         if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-            silex_core::error::handle_error(e);
+            handle_error(e);
         }
     }
 }
@@ -49,7 +51,7 @@ macro_rules! impl_view_for_primitive {
                     let document = crate::document();
                     let node = document.create_text_node(&self.to_string());
                     if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-                        silex_core::error::handle_error(e);
+                        handle_error(e);
                     }
                 }
             }
@@ -80,7 +82,7 @@ where
         let start_node: Node = start_marker.into();
 
         if let Err(e) = parent.append_child(&start_node).map_err(SilexError::from) {
-            silex_core::error::handle_error(e);
+            handle_error(e);
             return;
         }
 
@@ -88,13 +90,13 @@ where
         let end_node: Node = end_marker.into();
 
         if let Err(e) = parent.append_child(&end_node).map_err(SilexError::from) {
-            silex_core::error::handle_error(e);
+            handle_error(e);
             return;
         }
 
         Effect::new(move |_| {
             // 在产生副作用时捕获 Panic，防止整个应用崩溃，并允许 ErrorBoundary 捕获
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let result = catch_unwind(AssertUnwindSafe(|| {
                 let view = self();
 
                 // A. 清理旧节点 (Range Clean)
@@ -134,7 +136,7 @@ where
                     "Unknown Panic in View".to_string()
                 };
 
-                silex_core::error::handle_error(SilexError::Javascript(msg));
+                handle_error(SilexError::Javascript(msg));
             }
         });
     }
@@ -150,7 +152,7 @@ where
         // 1. 创建占位符
         let node = document.create_text_node("");
         if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-            silex_core::error::handle_error(e);
+            handle_error(e);
             return;
         }
 
@@ -172,7 +174,7 @@ where
         // 1. 创建占位符
         let node = document.create_text_node("");
         if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-            silex_core::error::handle_error(e);
+            handle_error(e);
             return;
         }
 
@@ -203,7 +205,56 @@ where
         // 1. 创建占位符
         let node = document.create_text_node("");
         if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-            silex_core::error::handle_error(e);
+            handle_error(e);
+            return;
+        }
+
+        // 2. 创建副作用
+        let signal = self;
+        Effect::new(move |_| {
+            let value = signal.get();
+            node.set_node_value(Some(&value.to_string()));
+        });
+    }
+}
+
+impl<S, F, U> View for Derived<S, F>
+where
+    S: WithUntracked + Track + Clone + 'static,
+    F: Fn(&S::Value) -> U + Clone + 'static,
+    U: Display + Clone + 'static,
+{
+    fn mount(self, parent: &Node) {
+        let document = crate::document();
+        // 1. 创建占位符
+        let node = document.create_text_node("");
+        if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
+            handle_error(e);
+            return;
+        }
+
+        // 2. 创建副作用
+        let signal = self;
+        Effect::new(move |_| {
+            let value = signal.get();
+            node.set_node_value(Some(&value.to_string()));
+        });
+    }
+}
+
+impl<L, R, F, U> View for ReactiveBinary<L, R, F>
+where
+    L: WithUntracked + Track + Clone + 'static,
+    R: WithUntracked + Track + Clone + 'static,
+    F: Fn(&L::Value, &R::Value) -> U + Clone + 'static,
+    U: Display + Clone + 'static,
+{
+    fn mount(self, parent: &Node) {
+        let document = crate::document();
+        // 1. 创建占位符
+        let node = document.create_text_node("");
+        if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
+            handle_error(e);
             return;
         }
 
@@ -295,7 +346,7 @@ impl<V: View> View for SilexResult<V> {
     fn mount(self, parent: &Node) {
         match self {
             Ok(v) => v.mount(parent),
-            Err(e) => silex_core::error::handle_error(e),
+            Err(e) => handle_error(e),
         }
     }
 }

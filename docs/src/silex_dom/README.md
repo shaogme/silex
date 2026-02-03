@@ -16,7 +16,7 @@ let div = Element::new("div");
 Silex 的视图系统非常灵活，支持多种类型直接作为视图：
 
 *   **基本类型**: 数字、字符串、布尔值直接渲染为文本节点。
-*   **信号 (Signals)**: `Signal<T>` 会创建一个响应式的文本节点，当信号更新时仅更新该文本内容。
+*   **信号 (Signals)**: `Signal<T>`, `ReadSignal<T>`, `Memo<T>`, `Derived`, `ReactiveBinary` 等所有实现了 `Get` 的响应式类型。它们会创建一个响应式的文本节点，当信号更新时仅更新该文本内容。
 *   **闭包 (Closures)**: `move || { ... }` 形式的闭包被视为动态视图。Silex 会自动建立副作用 (`Effect`)，并在数据变化时智能比对并更新 DOM 范围。
 *   **集合**: `Vec<V>`, Slice `[V]`, 元组 `(A, B)` 都会按顺序渲染其内容。
 
@@ -24,7 +24,7 @@ Silex 的视图系统非常灵活，支持多种类型直接作为视图：
 Silex 提供了一套统一且强大的属性设置 API。所有设置属性的方法（`.attr()`, `.prop()`, `.class()`, `.style()` 等）都支持泛型 `V: IntoStorable`，这意味着你可以传入：
 
 *   **静态值**: `&str`, `String`, `bool`.
-*   **信号**: `Signal<T>`, `ReadSignal<T>`, `Memo<T>` 等。
+*   **信号**: `Signal<T>`, `ReadSignal<T>`, `Memo<T>`, `Derived`, `ReactiveBinary`.
     *   `Signal<bool>`: 自动切换布尔属性（例如 `disabled`）。
     *   `Signal<i32>`, `Signal<String>`: 自动转为字符串并设置属性值。
 *   **闭包**: `Fn() -> T` (自动创建 Effect)。

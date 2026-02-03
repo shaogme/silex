@@ -76,14 +76,18 @@ macro_rules! impl_reactive_op {
             T: std::ops::$trait<T, Output = T> + Clone + 'static,
             T: PartialEq + 'static,
         {
-            type Output = $crate::reactivity::Memo<T>;
+            type Output = $crate::reactivity::ReactiveBinary<
+                $target<T>,
+                $crate::reactivity::Constant<T>,
+                fn(&T, &T) -> T,
+            >;
 
             fn $method(self, rhs: T) -> Self::Output {
-                let lhs = self.clone();
-                $crate::reactivity::Memo::new(move |_| {
-                    use $crate::traits::Get;
-                    lhs.get().$method(rhs.clone())
-                })
+                $crate::reactivity::ReactiveBinary::new(
+                    self,
+                    $crate::reactivity::Constant(rhs),
+                    |lhs, rhs| lhs.clone().$method(rhs.clone()),
+                )
             }
         }
 
@@ -103,13 +107,11 @@ macro_rules! impl_reactive_op_rhs {
             T: std::ops::$trait<T, Output = T> + Clone + 'static,
             T: PartialEq + 'static,
         {
-            type Output = $crate::reactivity::Memo<T>;
+            type Output = $crate::reactivity::ReactiveBinary<$target<T>, $rhs, fn(&T, &T) -> T>;
 
             fn $method(self, rhs: $rhs) -> Self::Output {
-                let lhs = self.clone();
-                $crate::reactivity::Memo::new(move |_| {
-                    use $crate::traits::Get;
-                    lhs.get().$method(rhs.get())
+                $crate::reactivity::ReactiveBinary::new(self, rhs, |lhs, rhs| {
+                    lhs.clone().$method(rhs.clone())
                 })
             }
         }
@@ -124,14 +126,10 @@ macro_rules! impl_reactive_unary_op {
             T: std::ops::$trait<Output = T> + Clone + 'static,
             T: PartialEq + 'static,
         {
-            type Output = $crate::reactivity::Memo<T>;
+            type Output = $crate::reactivity::Derived<$target<T>, fn(&T) -> T>;
 
             fn $method(self) -> Self::Output {
-                let lhs = self.clone();
-                $crate::reactivity::Memo::new(move |_| {
-                    use $crate::traits::Get;
-                    lhs.get().$method()
-                })
+                $crate::reactivity::Derived::new(self, |val| val.clone().$method())
             }
         }
     };
@@ -217,22 +215,24 @@ pub trait ReactivePartialEq: Get + Clone + 'static
 where
     Self::Value: PartialEq + 'static,
 {
-    fn eq<O>(&self, other: O) -> crate::reactivity::Memo<bool>
+    fn eq<O>(
+        &self,
+        other: O,
+    ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>
     where
-        O: Into<Self::Value> + Clone + 'static,
+        O: IntoSignal<Value = Self::Value> + Clone + 'static,
     {
-        let other = other.into();
-        let this = self.clone();
-        crate::reactivity::Memo::new(move |_| this.get() == other)
+        ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs == rhs)
     }
 
-    fn ne<O>(&self, other: O) -> crate::reactivity::Memo<bool>
+    fn ne<O>(
+        &self,
+        other: O,
+    ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>
     where
-        O: Into<Self::Value> + Clone + 'static,
+        O: IntoSignal<Value = Self::Value> + Clone + 'static,
     {
-        let other = other.into();
-        let this = self.clone();
-        crate::reactivity::Memo::new(move |_| this.get() != other)
+        ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs != rhs)
     }
 }
 
@@ -248,40 +248,44 @@ pub trait ReactivePartialOrd: Get + Clone + 'static
 where
     Self::Value: PartialOrd + 'static,
 {
-    fn gt<O>(&self, other: O) -> crate::reactivity::Memo<bool>
+    fn gt<O>(
+        &self,
+        other: O,
+    ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>
     where
-        O: Into<Self::Value> + Clone + 'static,
+        O: IntoSignal<Value = Self::Value> + Clone + 'static,
     {
-        let other = other.into();
-        let this = self.clone();
-        crate::reactivity::Memo::new(move |_| this.get() > other)
+        ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs > rhs)
     }
 
-    fn lt<O>(&self, other: O) -> crate::reactivity::Memo<bool>
+    fn lt<O>(
+        &self,
+        other: O,
+    ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>
     where
-        O: Into<Self::Value> + Clone + 'static,
+        O: IntoSignal<Value = Self::Value> + Clone + 'static,
     {
-        let other = other.into();
-        let this = self.clone();
-        crate::reactivity::Memo::new(move |_| this.get() < other)
+        ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs < rhs)
     }
 
-    fn ge<O>(&self, other: O) -> crate::reactivity::Memo<bool>
+    fn ge<O>(
+        &self,
+        other: O,
+    ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>
     where
-        O: Into<Self::Value> + Clone + 'static,
+        O: IntoSignal<Value = Self::Value> + Clone + 'static,
     {
-        let other = other.into();
-        let this = self.clone();
-        crate::reactivity::Memo::new(move |_| this.get() >= other)
+        ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs >= rhs)
     }
 
-    fn le<O>(&self, other: O) -> crate::reactivity::Memo<bool>
+    fn le<O>(
+        &self,
+        other: O,
+    ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>
     where
-        O: Into<Self::Value> + Clone + 'static,
+        O: IntoSignal<Value = Self::Value> + Clone + 'static,
     {
-        let other = other.into();
-        let this = self.clone();
-        crate::reactivity::Memo::new(move |_| this.get() <= other)
+        ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs <= rhs)
     }
 }
 
@@ -294,6 +298,7 @@ where
 
 // use any_spawner::Executor;
 // use futures::{Stream, StreamExt};
+use crate::reactivity::{Derived, IntoSignal, Memo, ReactiveBinary};
 use std::panic::Location;
 
 #[doc(hidden)]
@@ -441,15 +446,50 @@ pub trait Get: DefinedAt {
 }
 
 /// Allows creating a derived signal from this signal.
+/// Allows creating a derived signal from this signal.
 pub trait Map: Sized {
     /// The type of the value contained in the signal.
     type Value: ?Sized;
 
     /// Creates a derived signal from this signal.
-    fn map<U, F>(self, f: F) -> crate::reactivity::Memo<U>
+    fn map<U, F>(self, f: F) -> Derived<Self, F>
     where
-        F: Fn(&Self::Value) -> U + 'static,
-        U: Clone + PartialEq + 'static;
+        F: Fn(&Self::Value) -> U;
+}
+
+impl<S> Map for S
+where
+    S: Get,
+{
+    type Value = S::Value;
+
+    fn map<U, F>(self, f: F) -> Derived<Self, F>
+    where
+        F: Fn(&Self::Value) -> U,
+    {
+        Derived::new(self, f)
+    }
+}
+
+/// Allows converting a signal into a memoized signal.
+pub trait Memoize: Get {
+    /// Creates a memoized signal from this signal.
+    fn memo(self) -> Memo<Self::Value>
+    where
+        Self::Value: PartialEq + 'static;
+}
+
+impl<T> Memoize for T
+where
+    T: Get + Clone + 'static,
+{
+    fn memo(self) -> Memo<Self::Value>
+    where
+        Self::Value: PartialEq + 'static,
+    {
+        let this = self.clone();
+        Memo::new(move |_| this.get())
+    }
 }
 
 /// Notifies subscribers of a change in this signal.

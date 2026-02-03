@@ -89,18 +89,6 @@ impl<T: Clone + PartialEq + 'static> Get for Memo<T> {
     }
 }
 
-impl<T: Clone + PartialEq + 'static> Map for Memo<T> {
-    type Value = T;
-
-    fn map<U, F>(self, f: F) -> Memo<U>
-    where
-        F: Fn(&Self::Value) -> U + 'static,
-        U: Clone + PartialEq + 'static,
-    {
-        Memo::new(move |_| self.with(|val| f(val)))
-    }
-}
-
 impl<T: 'static> From<Memo<T>> for crate::reactivity::Signal<T> {
     fn from(m: Memo<T>) -> Self {
         crate::reactivity::Signal::Read(crate::reactivity::ReadSignal {

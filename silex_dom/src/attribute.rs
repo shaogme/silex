@@ -1,11 +1,13 @@
 use silex_core::SilexError;
-use silex_core::reactivity::{Constant, Effect, IntoSignal, Memo, ReadSignal, RwSignal, Signal};
-use silex_core::traits::Get;
+use silex_core::reactivity::{
+    Constant, Derived, Effect, IntoSignal, Memo, ReactiveBinary, ReadSignal, RwSignal, Signal,
+};
+use silex_core::traits::{Get, Track, WithUntracked};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
-use wasm_bindgen::JsCast;
-use web_sys::Element as WebElem;
+use wasm_bindgen::{JsCast, JsValue};
+use web_sys::{CssStyleDeclaration, Element as WebElem, HtmlElement, SvgElement};
 
 use crate::event::{EventDescriptor, EventHandler};
 
@@ -81,10 +83,10 @@ fn handle_err(res: Result<(), SilexError>) {
     }
 }
 
-fn get_style_decl(el: &WebElem) -> Option<web_sys::CssStyleDeclaration> {
-    if let Some(e) = el.dyn_ref::<web_sys::HtmlElement>() {
+fn get_style_decl(el: &WebElem) -> Option<CssStyleDeclaration> {
+    if let Some(e) = el.dyn_ref::<HtmlElement>() {
         Some(e.style())
-    } else if let Some(e) = el.dyn_ref::<web_sys::SvgElement>() {
+    } else if let Some(e) = el.dyn_ref::<SvgElement>() {
         Some(e.style())
     } else {
         None
@@ -286,8 +288,8 @@ impl ReactiveApply for String {
                     let value = f();
                     let _ = js_sys::Reflect::set(
                         &el,
-                        &wasm_bindgen::JsValue::from_str(&name),
-                        &wasm_bindgen::JsValue::from_str(&value),
+                        &JsValue::from_str(&name),
+                        &JsValue::from_str(&value),
                     );
                 });
             }
@@ -318,8 +320,8 @@ impl<'a> ReactiveApply for &'a str {
                     let value = f();
                     let _ = js_sys::Reflect::set(
                         &el,
-                        &wasm_bindgen::JsValue::from_str(&name),
-                        &wasm_bindgen::JsValue::from_str(value),
+                        &JsValue::from_str(&name),
+                        &JsValue::from_str(value),
                     );
                 });
             }
@@ -346,8 +348,8 @@ impl ReactiveApply for bool {
                     let val = f();
                     let _ = js_sys::Reflect::set(
                         &el,
-                        &wasm_bindgen::JsValue::from_str(&name),
-                        &wasm_bindgen::JsValue::from_bool(val),
+                        &JsValue::from_str(&name),
+                        &JsValue::from_bool(val),
                     );
                 });
             }
@@ -416,6 +418,29 @@ impl_apply_basic_signal!(ReadSignal, RwSignal, Signal, Constant);
 impl<T> ApplyToDom for Memo<T>
 where
     T: ReactiveApply + Clone + PartialEq + 'static,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        apply_via_signal::<Self>(self, el, target);
+    }
+}
+
+impl<S, F, U> ApplyToDom for Derived<S, F>
+where
+    S: WithUntracked + Track + Clone + 'static,
+    F: Fn(&S::Value) -> U + Clone + 'static,
+    U: ReactiveApply + Clone + 'static,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        apply_via_signal::<Self>(self, el, target);
+    }
+}
+
+impl<L, R, F, U> ApplyToDom for ReactiveBinary<L, R, F>
+where
+    L: WithUntracked + Track + Clone + 'static,
+    R: WithUntracked + Track + Clone + 'static,
+    F: Fn(&L::Value, &R::Value) -> U + Clone + 'static,
+    U: ReactiveApply + Clone + 'static,
 {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
         apply_via_signal::<Self>(self, el, target);
@@ -523,6 +548,29 @@ macro_rules! impl_apply_tuple_signal {
 }
 
 impl_apply_tuple_signal!(ReadSignal, RwSignal, Memo, Signal, Constant);
+
+impl<K, S, F> ApplyToDom for (K, Derived<S, F>)
+where
+    K: AsRef<str>,
+    S: WithUntracked + Track + Clone + 'static,
+    F: Fn(&S::Value) -> bool + Clone + 'static,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        apply_kv_signal(self, el, target);
+    }
+}
+
+impl<K, L, R, F> ApplyToDom for (K, ReactiveBinary<L, R, F>)
+where
+    K: AsRef<str>,
+    L: WithUntracked + Track + Clone + 'static,
+    R: WithUntracked + Track + Clone + 'static,
+    F: Fn(&L::Value, &R::Value) -> bool + Clone + 'static,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        apply_kv_signal(self, el, target);
+    }
+}
 
 // 7. Collections
 impl<V: ApplyToDom> ApplyToDom for Vec<V> {

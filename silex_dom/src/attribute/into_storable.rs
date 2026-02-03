@@ -1,5 +1,8 @@
 use super::{ApplyToDom, AttributeGroup, ReactiveApply};
-use silex_core::reactivity::{Constant, Memo, ReadSignal, RwSignal, Signal};
+use silex_core::reactivity::{
+    Constant, Derived, Memo, ReactiveBinary, ReadSignal, RwSignal, Signal,
+};
+use silex_core::traits::{Track, WithUntracked};
 
 // --- IntoStorable: 允许非 'static 类型转换为可存储类型 ---
 
@@ -74,6 +77,31 @@ where
     }
 }
 
+impl<S, F, U> IntoStorable for Derived<S, F>
+where
+    S: WithUntracked + Track + Clone + 'static,
+    F: Fn(&S::Value) -> U + Clone + 'static,
+    U: ReactiveApply + Clone + 'static,
+{
+    type Stored = Self;
+    fn into_storable(self) -> Self::Stored {
+        self
+    }
+}
+
+impl<L, R, F, U> IntoStorable for ReactiveBinary<L, R, F>
+where
+    L: WithUntracked + Track + Clone + 'static,
+    R: WithUntracked + Track + Clone + 'static,
+    F: Fn(&L::Value, &R::Value) -> U + Clone + 'static,
+    U: ReactiveApply + Clone + 'static,
+{
+    type Stored = Self;
+    fn into_storable(self) -> Self::Stored {
+        self
+    }
+}
+
 // --- 3. 闭包类型 ---
 
 impl<F, T> IntoStorable for F
@@ -129,6 +157,42 @@ macro_rules! impl_tuple_signal {
 }
 
 impl_tuple_signal!(ReadSignal, RwSignal, Signal, Memo, Constant);
+
+impl<K, S, F> IntoStorable for (K, Derived<S, F>)
+where
+    K: IntoStorable<Stored = String>,
+    S: WithUntracked + Track + Clone + 'static,
+    F: Fn(&S::Value) -> bool + Clone + 'static,
+{
+    type Stored = (String, Derived<S, F>);
+    fn into_storable(self) -> Self::Stored {
+        (self.0.into_storable(), self.1)
+    }
+}
+
+impl<L, R, F> IntoStorable for (String, ReactiveBinary<L, R, F>)
+where
+    L: WithUntracked + Track + Clone + 'static,
+    R: WithUntracked + Track + Clone + 'static,
+    F: Fn(&L::Value, &R::Value) -> bool + Clone + 'static,
+{
+    type Stored = (String, ReactiveBinary<L, R, F>);
+    fn into_storable(self) -> Self::Stored {
+        self
+    }
+}
+
+impl<L, R, F> IntoStorable for (&str, ReactiveBinary<L, R, F>)
+where
+    L: WithUntracked + Track + Clone + 'static,
+    R: WithUntracked + Track + Clone + 'static,
+    F: Fn(&L::Value, &R::Value) -> bool + Clone + 'static,
+{
+    type Stored = (String, ReactiveBinary<L, R, F>);
+    fn into_storable(self) -> Self::Stored {
+        (self.0.to_string(), self.1)
+    }
+}
 
 // 4.4 Style 键值对 (Key, String-like)
 // 需要小心区分 (K, V) 和下面的 (K, Signal)
