@@ -23,7 +23,6 @@
 *   `With`: `fn try_with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>`。自动追踪，通过引用访问值。
 *   `GetUntracked`: `fn try_get_untracked(&self) -> Option<Self::Value>`。不追踪，Clone 并返回值 (Requires `T: Clone`)。
 *   `Get`: `fn try_get(&self) -> Option<Self::Value>`。自动追踪，Clone 并返回值 (Requires `T: Clone`)。
-*   **Accessor<T>**: 统一的读取接口，包含 `value(&self) -> T`。所有 Signal 类型及闭包 `Fn() -> T` 均实现了此 Trait。
 *   `Map`: `fn map<U, F>(self, f: F) -> Memo<U>`。从当前信号创建派生计算信号 `Memo`。
 
 #### Update Traits (写更新)
@@ -43,14 +42,14 @@
     *   `Read(ReadSignal<T>)`
     *   `Derived(NodeId, PhantomData<T>)`
     *   `Constant(NodeId, PhantomData<T>)`
-*   **Traits**: `Copy`, `Clone`, `Debug`, `Accessor<T>`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
+*   **Traits**: `Copy`, `Clone`, `Debug`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
 *   **Semantics**:
     *   通用的信号接口，统一了 `ReadSignal`、派生计算和常量。
     *   `Derived` 变体持有一个在 Runtime 中注册的闭包，每次 `get()` 时重新执行闭包（无缓存）。
     *   `Constant` 变体持有一个存储在 Runtime 中的常量值。
 *   **Methods**:
     *   `derive(f: impl Fn() -> T)`: 创建一个派生信号。
-    *   `get() -> T`: (via `Accessor` or `Get` trait).
+    *   `get() -> T`: (via `Get` trait).
 *   **Conversions**:
     *   `From<T>`: 将普通值转换为 `Signal::Constant`。
     *   `From<&str>`: 将字符串切片转换为 `Signal<String>` (Constant)。
@@ -62,7 +61,7 @@
 
 #### `ReadSignal<T>`
 *   **Struct**: `pub struct ReadSignal<T> { id: NodeId, marker: PhantomData<T> }`
-*   **Traits**: `Copy`, `Clone`, `Debug`, `Accessor<T>`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
+*   **Traits**: `Copy`, `Clone`, `Debug`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
 *   **Fluent API**: 实现了 `eq`, `ne`, `gt`, `lt`, `ge`, `le`，返回 `Memo<bool>`。
 *   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符，返回 `Memo<T>`。
 
@@ -86,7 +85,7 @@
 
 #### `Memo<T>`
 *   **Struct**: `pub struct Memo<T> { id: NodeId, marker: PhantomData<T> }`
-*   **Traits**: `Copy`, `Clone`, `Debug`, `Accessor<T>`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
+*   **Traits**: `Copy`, `Clone`, `Debug`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
 *   **Semantics**: 派生计算信号。值被缓存，仅在依赖变更时无效。
 *   **Methods**:
     *   `new(f: impl Fn(Option<&T>) -> T)`: 创建 Memo。
@@ -99,7 +98,7 @@
 #### `StoredValue<T>`
 
 *   **Struct**: `pub struct StoredValue<T> { id: NodeId, marker: PhantomData<T> }`
-*   **Traits**: `Copy`, `Clone`, `Debug`, `Accessor<T>`, `DefinedAt`, `WithValue`, `GetValue`, `UpdateValue`, `SetValue`.
+*   **Traits**: `Copy`, `Clone`, `Debug`, `DefinedAt`, `WithValue`, `GetValue`, `UpdateValue`, `SetValue`.
 *   **Semantics**: 非响应式的数据存储容器。数据均存储在响应式运行时中，随宿主 Scope/Effect 自动释放。
 *   **Use Case**: 存储不需要驱动 UI 更新的数据（如定时器句柄、大数据缓存），或在事件处理中进行无感知的状态修改。
 *   **Methods**:

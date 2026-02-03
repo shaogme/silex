@@ -1,5 +1,5 @@
 use silex_core::reactivity::{Effect, ReadSignal, Signal};
-use silex_core::traits::Accessor;
+use silex_core::traits::Get;
 use silex_dom::View;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -29,7 +29,7 @@ pub struct Show<Cond, ViewFn, FalsyViewFn, V1, V2> {
 // 默认无 fallback 的构造函数
 impl<Cond, ViewFn, V1> Show<Cond, ViewFn, fn() -> (), V1, ()>
 where
-    Cond: Accessor<Value = bool> + 'static,
+    Cond: Get<Value = bool> + 'static,
     ViewFn: Fn() -> V1 + 'static,
     V1: View,
 {
@@ -46,7 +46,7 @@ where
 // Builder 方法
 impl<Cond, ViewFn, FalsyViewFn, V1, V2> Show<Cond, ViewFn, FalsyViewFn, V1, V2>
 where
-    Cond: Accessor<Value = bool> + 'static,
+    Cond: Get<Value = bool> + 'static,
     ViewFn: Fn() -> V1 + 'static,
     FalsyViewFn: Fn() -> V2 + 'static,
     V1: View,
@@ -72,7 +72,7 @@ where
 
 impl<Cond, ViewFn, FalsyViewFn, V1, V2> View for Show<Cond, ViewFn, FalsyViewFn, V1, V2>
 where
-    Cond: Accessor<Value = bool> + 'static,
+    Cond: Get<Value = bool> + 'static,
     ViewFn: Fn() -> V1 + 'static,
     FalsyViewFn: Fn() -> V2 + 'static,
     V1: View,
@@ -110,7 +110,7 @@ where
         let prev_state = Rc::new(RefCell::new(None::<bool>));
 
         Effect::new(move |_| {
-            let val = cond.value();
+            let val = cond.get();
 
             let mut state = prev_state.borrow_mut();
 
@@ -153,7 +153,7 @@ where
 /// Signal 扩展特质，提供 .when() 语法糖
 pub trait SignalShowExt {
     // 使用 Box<dyn> 简化返回类型签名
-    type Cond: Accessor<Value = bool> + 'static;
+    type Cond: Get<Value = bool> + 'static;
 
     fn when<V, F>(self, view: F) -> Show<Self::Cond, F, fn() -> (), V, ()>
     where

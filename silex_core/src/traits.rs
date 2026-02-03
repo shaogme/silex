@@ -81,8 +81,8 @@ macro_rules! impl_reactive_op {
             fn $method(self, rhs: T) -> Self::Output {
                 let lhs = self.clone();
                 $crate::reactivity::Memo::new(move |_| {
-                    use $crate::traits::Accessor;
-                    lhs.value().$method(rhs.clone())
+                    use $crate::traits::Get;
+                    lhs.get().$method(rhs.clone())
                 })
             }
         }
@@ -108,8 +108,8 @@ macro_rules! impl_reactive_op_rhs {
             fn $method(self, rhs: $rhs) -> Self::Output {
                 let lhs = self.clone();
                 $crate::reactivity::Memo::new(move |_| {
-                    use $crate::traits::Accessor;
-                    lhs.value().$method(rhs.value())
+                    use $crate::traits::Get;
+                    lhs.get().$method(rhs.get())
                 })
             }
         }
@@ -129,46 +129,48 @@ macro_rules! impl_reactive_unary_op {
             fn $method(self) -> Self::Output {
                 let lhs = self.clone();
                 $crate::reactivity::Memo::new(move |_| {
-                    use $crate::traits::Accessor;
-                    lhs.value().$method()
+                    use $crate::traits::Get;
+                    lhs.get().$method()
                 })
             }
         }
     };
 }
 
-// --- Accessor Trait ---
-
-pub trait Accessor {
-    type Value;
-    fn value(&self) -> Self::Value;
+impl<F, T> DefinedAt for F
+where
+    F: Fn() -> T,
+{
+    fn defined_at(&self) -> Option<&'static Location<'static>> {
+        None
+    }
 }
 
-impl<F, T> Accessor for F
+impl<F, T> GetUntracked for F
 where
     F: Fn() -> T,
 {
     type Value = T;
-    fn value(&self) -> T {
-        self()
+
+    fn try_get_untracked(&self) -> Option<Self::Value> {
+        Some(self())
+    }
+}
+
+impl<F, T> Get for F
+where
+    F: Fn() -> T,
+    T: Clone,
+{
+    type Value = T;
+
+    fn try_get(&self) -> Option<Self::Value> {
+        Some(self())
     }
 }
 
 macro_rules! impl_tuple_traits {
     ($($T:ident),*) => {
-        impl<$($T),*> Accessor for ($($T,)*)
-        where
-            $($T: Accessor),*
-        {
-            type Value = ($($T::Value,)*);
-
-            fn value(&self) -> Self::Value {
-                #[allow(non_snake_case)]
-                let ($($T,)*) = self;
-                ($($T.value(),)*)
-            }
-        }
-
         impl<$($T),*> DefinedAt for ($($T,)*)
         where
             $($T: DefinedAt),*
@@ -211,7 +213,7 @@ impl_tuple_traits!(A, B, C);
 impl_tuple_traits!(A, B, C, D);
 
 /// Provides a fluent API for checking equality on reactive values.
-pub trait ReactivePartialEq: Accessor + Clone + 'static
+pub trait ReactivePartialEq: Get + Clone + 'static
 where
     Self::Value: PartialEq + 'static,
 {
@@ -221,7 +223,7 @@ where
     {
         let other = other.into();
         let this = self.clone();
-        crate::reactivity::Memo::new(move |_| this.value() == other)
+        crate::reactivity::Memo::new(move |_| this.get() == other)
     }
 
     fn ne<O>(&self, other: O) -> crate::reactivity::Memo<bool>
@@ -230,19 +232,19 @@ where
     {
         let other = other.into();
         let this = self.clone();
-        crate::reactivity::Memo::new(move |_| this.value() != other)
+        crate::reactivity::Memo::new(move |_| this.get() != other)
     }
 }
 
 impl<S> ReactivePartialEq for S
 where
-    S: Accessor + Clone + 'static,
+    S: Get + Clone + 'static,
     S::Value: PartialEq + 'static,
 {
 }
 
 /// Provides a fluent API for checking ordering on reactive values.
-pub trait ReactivePartialOrd: Accessor + Clone + 'static
+pub trait ReactivePartialOrd: Get + Clone + 'static
 where
     Self::Value: PartialOrd + 'static,
 {
@@ -252,7 +254,7 @@ where
     {
         let other = other.into();
         let this = self.clone();
-        crate::reactivity::Memo::new(move |_| this.value() > other)
+        crate::reactivity::Memo::new(move |_| this.get() > other)
     }
 
     fn lt<O>(&self, other: O) -> crate::reactivity::Memo<bool>
@@ -261,7 +263,7 @@ where
     {
         let other = other.into();
         let this = self.clone();
-        crate::reactivity::Memo::new(move |_| this.value() < other)
+        crate::reactivity::Memo::new(move |_| this.get() < other)
     }
 
     fn ge<O>(&self, other: O) -> crate::reactivity::Memo<bool>
@@ -270,7 +272,7 @@ where
     {
         let other = other.into();
         let this = self.clone();
-        crate::reactivity::Memo::new(move |_| this.value() >= other)
+        crate::reactivity::Memo::new(move |_| this.get() >= other)
     }
 
     fn le<O>(&self, other: O) -> crate::reactivity::Memo<bool>
@@ -279,13 +281,13 @@ where
     {
         let other = other.into();
         let this = self.clone();
-        crate::reactivity::Memo::new(move |_| this.value() <= other)
+        crate::reactivity::Memo::new(move |_| this.get() <= other)
     }
 }
 
 impl<S> ReactivePartialOrd for S
 where
-    S: Accessor + Clone + 'static,
+    S: Get + Clone + 'static,
     S::Value: PartialOrd + 'static,
 {
 }
@@ -417,18 +419,6 @@ pub trait GetUntracked: DefinedAt {
     }
 }
 
-impl<T> GetUntracked for T
-where
-    T: WithUntracked,
-    T::Value: Clone,
-{
-    type Value = <Self as WithUntracked>::Value;
-
-    fn try_get_untracked(&self) -> Option<Self::Value> {
-        self.try_with_untracked(Self::Value::clone)
-    }
-}
-
 /// Clones the value of the signal, without tracking the value reactively.
 /// and subscribes the active reactive observer (an effect or computed) to changes in its value.
 pub trait Get: DefinedAt {
@@ -447,19 +437,6 @@ pub trait Get: DefinedAt {
     #[track_caller]
     fn get(&self) -> Self::Value {
         self.try_get().unwrap_or_else(unwrap_signal!(self))
-    }
-}
-
-impl<T> Get for T
-where
-    T: With,
-    T::Value: Clone,
-{
-    type Value = <T as With>::Value;
-
-    #[track_caller]
-    fn try_get(&self) -> Option<Self::Value> {
-        self.try_with(Self::Value::clone)
     }
 }
 

@@ -15,12 +15,12 @@
 
 *   **Trait System (特征系统)**:
     *   Silex 采用细粒度的特征系统来定义响应式行为。
-    *   **读**: `Get` (clone并追踪), `With` (引用并追踪), `Accessor` (统一读取), `Map` (派生)。
+    *   **读**: `Get` (clone并追踪), `GetUntracked` (clone不追踪), `With` (引用并追踪), `WithUntracked` (引用不追踪), `Map` (派生)。
     *   **写**: `Set` (设置并通知), `Update` (修改并通知), `SignalSetter` (生成 setter), `SignalUpdater` (生成 updater)。
     *   这种设计使得你可以灵活组合不同的行为，例如 `StoredValue` 实现了 `GetValue`/`SetValue` 但不实现 `Track`/`Notify`。
 
 *   **Primitive Signals (基础信号)**: 
-    *   `ReadSignal<T>`: 只读信号句柄，实现了 `Get`, `With`, `Map` 等读取特征。
+    *   `ReadSignal<T>`: 只读信号句柄，实现了 `Get`, `GetUntracked` 等读取特征。
     *   `WriteSignal<T>`: 可写信号句柄，实现了 `Set`, `Update`, `SignalSetter`, `SignalUpdater` 等写入特征。
     *   `RwSignal<T>`: 读写一体的信号句柄，常用于组件 `Props`。
     *   `Memo<T>`: 派生计算缓存，实现了 `Map` 等读取特征。

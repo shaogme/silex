@@ -75,11 +75,17 @@ impl<T: 'static> WithUntracked for Memo<T> {
     }
 }
 
-impl<T: Clone + PartialEq + 'static> Accessor for Memo<T> {
+impl<T: Clone + PartialEq + 'static> GetUntracked for Memo<T> {
     type Value = T;
+    fn try_get_untracked(&self) -> Option<T> {
+        self.try_with_untracked(Clone::clone)
+    }
+}
 
-    fn value(&self) -> T {
-        self.get()
+impl<T: Clone + PartialEq + 'static> Get for Memo<T> {
+    type Value = T;
+    fn try_get(&self) -> Option<T> {
+        self.try_with(Clone::clone)
     }
 }
 

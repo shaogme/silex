@@ -92,11 +92,17 @@ impl<T: 'static> WithUntracked for Signal<T> {
     }
 }
 
-impl<T: Clone + 'static> Accessor for Signal<T> {
+impl<T: Clone + 'static> GetUntracked for Signal<T> {
     type Value = T;
+    fn try_get_untracked(&self) -> Option<T> {
+        self.try_with_untracked(Clone::clone)
+    }
+}
 
-    fn value(&self) -> T {
-        self.get()
+impl<T: Clone + 'static> Get for Signal<T> {
+    type Value = T;
+    fn try_get(&self) -> Option<T> {
+        self.try_with(Clone::clone)
     }
 }
 
@@ -204,11 +210,17 @@ impl<T: 'static> WithUntracked for ReadSignal<T> {
     }
 }
 
-impl<T: Clone + 'static> Accessor for ReadSignal<T> {
+impl<T: Clone + 'static> GetUntracked for ReadSignal<T> {
     type Value = T;
+    fn try_get_untracked(&self) -> Option<T> {
+        self.try_with_untracked(Clone::clone)
+    }
+}
 
-    fn value(&self) -> T {
-        self.get()
+impl<T: Clone + 'static> Get for ReadSignal<T> {
+    type Value = T;
+    fn try_get(&self) -> Option<T> {
+        self.try_with(Clone::clone)
     }
 }
 
@@ -406,11 +418,17 @@ impl<T: 'static> Update for RwSignal<T> {
     }
 }
 
-impl<T: Clone + 'static> Accessor for RwSignal<T> {
+impl<T: Clone + 'static> GetUntracked for RwSignal<T> {
     type Value = T;
+    fn try_get_untracked(&self) -> Option<T> {
+        self.try_with_untracked(Clone::clone)
+    }
+}
 
-    fn value(&self) -> T {
-        self.get()
+impl<T: Clone + 'static> Get for RwSignal<T> {
+    type Value = T;
+    fn try_get(&self) -> Option<T> {
+        self.try_with(Clone::clone)
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::SilexError;
 use silex_core::reactivity::Effect;
-use silex_core::traits::Accessor;
+use silex_core::traits::Get;
 use silex_dom::View;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -27,7 +27,7 @@ pub struct Switch<Source, T, V> {
 
 impl<Source, T, V> Switch<Source, T, V>
 where
-    Source: Accessor<Value = T> + 'static,
+    Source: Get<Value = T> + 'static,
     T: PartialEq + Clone + 'static,
     V: View + 'static,
 {
@@ -48,7 +48,7 @@ where
 
 impl<Source, T, V> View for Switch<Source, T, V>
 where
-    Source: Accessor<Value = T> + 'static,
+    Source: Get<Value = T> + 'static,
     T: PartialEq + Clone + 'static,
     V: View + 'static,
 {
@@ -75,7 +75,7 @@ where
         let prev_index = Rc::new(RefCell::new(None::<isize>));
 
         Effect::new(move |_| {
-            let val = source.value();
+            let val = source.get();
             let mut found_idx = -1;
             let mut view_fn = fallback.clone();
 

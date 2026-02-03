@@ -3,7 +3,7 @@ use crate::flow::for_loop::IntoForLoopResult;
 use silex_core::reactivity::{
     Effect, NodeId, Signal, WriteSignal, batch, create_scope, dispose, signal,
 };
-use silex_core::traits::{Accessor, Set};
+use silex_core::traits::{Get, Set};
 use silex_dom::View;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -22,7 +22,7 @@ pub struct Index<ItemsFn, Item, Items, MapFn, V> {
 
 impl<ItemsFn, Item, Items, MapFn, V> Index<ItemsFn, Item, Items, MapFn, V>
 where
-    ItemsFn: Accessor<Value = Items> + 'static,
+    ItemsFn: Get<Value = Items> + 'static,
     Items: IntoForLoopResult<Item = Item>,
     MapFn: Fn(Signal<Item>, usize) -> V + 'static,
     V: View,
@@ -48,7 +48,7 @@ struct IndexRow<Item> {
 
 impl<ItemsFn, Item, Items, MapFn, V> View for Index<ItemsFn, Item, Items, MapFn, V>
 where
-    ItemsFn: Accessor<Value = Items> + 'static,
+    ItemsFn: Get<Value = Items> + 'static,
     Items: IntoForLoopResult<Item = Item> + 'static,
     <Items as IntoForLoopResult>::Iter: IntoIterator<Item = Item>,
     MapFn: Fn(Signal<Item>, usize) -> V + 'static,
@@ -78,7 +78,7 @@ where
         let map_fn = self.map;
 
         Effect::new(move |_| {
-            let result = items_fn.value().into_result();
+            let result = items_fn.get().into_result();
             let items_iter = match result {
                 Ok(iter) => iter,
                 Err(e) => {
