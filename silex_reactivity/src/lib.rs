@@ -1,15 +1,12 @@
-use slotmap::{SecondaryMap, SlotMap, new_key_type};
 use std::any::{Any, TypeId};
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 
-// --- 基础类型定义 ---
+mod arena;
+pub use arena::{Arena, Index as NodeId, SparseSecondaryMap};
 
-new_key_type! {
-    /// 响应式节点的唯一标识符。
-    pub struct NodeId;
-}
+// --- 基础类型定义 ---
 
 /// 响应式节点通用结构体 (Metadata)。
 pub(crate) struct Node {
@@ -72,63 +69,26 @@ pub(crate) struct DerivedData {
     pub(crate) f: Box<dyn Any>,
 }
 
-// --- 图结构 (Graph) ---
-
-pub(crate) struct Graph {
-    pub(crate) nodes: SlotMap<NodeId, Node>,
-}
-
-impl Graph {
-    pub(crate) fn new() -> Self {
-        Self {
-            nodes: SlotMap::with_key(),
-        }
-    }
-
-    pub(crate) fn register(&mut self, parent: Option<NodeId>) -> NodeId {
-        let mut node = Node::new();
-        node.parent = parent;
-        let id = self.nodes.insert(node);
-
-        if let Some(parent_id) = parent {
-            if let Some(parent_node) = self.nodes.get_mut(parent_id) {
-                parent_node.children.push(id);
-            }
-        }
-        id
-    }
-
-    pub(crate) fn remove(&mut self, id: NodeId, remove_from_parent: bool) {
-        if remove_from_parent {
-            if let Some(parent_id) = self.nodes.get(id).and_then(|n| n.parent) {
-                if let Some(parent_node) = self.nodes.get_mut(parent_id) {
-                    if let Some(idx) = parent_node.children.iter().position(|&x| x == id) {
-                        parent_node.children.swap_remove(idx);
-                    }
-                }
-            }
-        }
-        self.nodes.remove(id);
-    }
-}
-
 // --- 响应式系统运行时 ---
 
 pub struct Runtime {
-    pub(crate) graph: RefCell<Graph>,
-    pub(crate) signals: RefCell<SecondaryMap<NodeId, SignalData>>,
-    pub(crate) effects: RefCell<SecondaryMap<NodeId, EffectData>>,
-    pub(crate) callbacks: RefCell<SecondaryMap<NodeId, CallbackData>>,
-    pub(crate) node_refs: RefCell<SecondaryMap<NodeId, NodeRefData>>,
-    pub(crate) stored_values: RefCell<SecondaryMap<NodeId, StoredValueData>>,
-    pub(crate) deriveds: RefCell<SecondaryMap<NodeId, DerivedData>>,
-    pub(crate) current_owner: RefCell<Option<NodeId>>,
+    pub(crate) graph: Arena<Node>,
+    pub(crate) signals: SparseSecondaryMap<SignalData>,
+    pub(crate) effects: SparseSecondaryMap<EffectData>,
+    pub(crate) callbacks: SparseSecondaryMap<CallbackData>,
+    pub(crate) node_refs: SparseSecondaryMap<NodeRefData>,
+    pub(crate) stored_values: SparseSecondaryMap<StoredValueData>,
+    pub(crate) deriveds: SparseSecondaryMap<DerivedData>,
+
+    // Global state
+    pub(crate) current_owner: Cell<Option<NodeId>>,
     pub(crate) observer_queue: RefCell<VecDeque<NodeId>>,
-    pub(crate) queued_observers: RefCell<SecondaryMap<NodeId, ()>>,
+    pub(crate) queued_observers: SparseSecondaryMap<()>, // Set of queued observers
     pub(crate) running_queue: Cell<bool>,
     pub(crate) batch_depth: Cell<usize>,
+
     #[cfg(debug_assertions)]
-    pub(crate) dead_node_labels: RefCell<SecondaryMap<NodeId, String>>,
+    pub(crate) dead_node_labels: SparseSecondaryMap<String>,
 }
 
 thread_local! {
@@ -138,31 +98,39 @@ thread_local! {
 impl Runtime {
     fn new() -> Self {
         Self {
-            graph: RefCell::new(Graph::new()),
-            signals: RefCell::new(SecondaryMap::new()),
-            effects: RefCell::new(SecondaryMap::new()),
-            callbacks: RefCell::new(SecondaryMap::new()),
-            node_refs: RefCell::new(SecondaryMap::new()),
-            stored_values: RefCell::new(SecondaryMap::new()),
-            deriveds: RefCell::new(SecondaryMap::new()),
-            current_owner: RefCell::new(None),
+            graph: Arena::new(),
+            signals: SparseSecondaryMap::new(),
+            effects: SparseSecondaryMap::new(),
+            callbacks: SparseSecondaryMap::new(),
+            node_refs: SparseSecondaryMap::new(),
+            stored_values: SparseSecondaryMap::new(),
+            deriveds: SparseSecondaryMap::new(),
+            current_owner: Cell::new(None),
             observer_queue: RefCell::new(VecDeque::new()),
-            queued_observers: RefCell::new(SecondaryMap::new()),
+            queued_observers: SparseSecondaryMap::new(),
             running_queue: Cell::new(false),
             batch_depth: Cell::new(0),
             #[cfg(debug_assertions)]
-            dead_node_labels: RefCell::new(SecondaryMap::new()),
+            dead_node_labels: SparseSecondaryMap::new(),
         }
     }
 
     #[track_caller]
     pub(crate) fn register_node(&self) -> NodeId {
-        let parent = *self.current_owner.borrow();
-        let id = self.graph.borrow_mut().register(parent);
+        let parent = self.current_owner.get();
+        let mut node = Node::new();
+        node.parent = parent;
+
         #[cfg(debug_assertions)]
         {
-            if let Some(node) = self.graph.borrow_mut().nodes.get_mut(id) {
-                node.defined_at = Some(std::panic::Location::caller());
+            node.defined_at = Some(std::panic::Location::caller());
+        }
+
+        let id = self.graph.insert(node);
+
+        if let Some(parent_id) = parent {
+            if let Some(parent_node) = self.graph.get_mut(parent_id) {
+                parent_node.children.push(id);
             }
         }
         id
@@ -171,7 +139,7 @@ impl Runtime {
     #[track_caller]
     pub(crate) fn register_signal_internal<T: 'static>(&self, value: T) -> NodeId {
         let id = self.register_node();
-        self.signals.borrow_mut().insert(
+        self.signals.insert(
             id,
             SignalData {
                 value: Box::new(value),
@@ -185,7 +153,7 @@ impl Runtime {
     #[track_caller]
     pub(crate) fn register_effect_internal<F: Fn() + 'static>(&self, f: F) -> NodeId {
         let id = self.register_node();
-        self.effects.borrow_mut().insert(
+        self.effects.insert(
             id,
             EffectData {
                 computation: Some(Rc::new(f)),
@@ -197,15 +165,13 @@ impl Runtime {
     }
 
     pub(crate) fn track_dependency(&self, signal_id: NodeId) {
-        if let Some(owner) = *self.current_owner.borrow() {
+        if let Some(owner) = self.current_owner.get() {
             if owner == signal_id {
                 return;
             }
 
-            let mut effects = self.effects.borrow_mut();
-            if let Some(effect_data) = effects.get_mut(owner) {
-                let mut signals = self.signals.borrow_mut();
-                if let Some(signal_data) = signals.get_mut(signal_id) {
+            if let Some(effect_data) = self.effects.get_mut(owner) {
+                if let Some(signal_data) = self.signals.get_mut(signal_id) {
                     let current_version = effect_data.effect_version;
                     if let Some((last_owner, last_version)) = signal_data.last_tracked_by {
                         if last_owner == owner && last_version == current_version {
@@ -221,20 +187,19 @@ impl Runtime {
     }
 
     pub(crate) fn queue_dependents(&self, signal_id: NodeId) {
-        let signals = self.signals.borrow();
-        let subscribers = if let Some(data) = signals.get(signal_id) {
+        // Clone subscribers to avoid holding borrow during iteration
+        let subscribers = if let Some(data) = self.signals.get(signal_id) {
             data.subscribers.clone()
         } else {
             Vec::new()
         };
-        drop(signals);
 
         let mut queue = self.observer_queue.borrow_mut();
-        let mut queued = self.queued_observers.borrow_mut();
 
         for id in subscribers {
-            if !queued.contains_key(id) {
-                queued.insert(id, ());
+            // Check if already queued
+            if self.queued_observers.get(id).is_none() {
+                self.queued_observers.insert(id, ());
                 queue.push_back(id);
             }
         }
@@ -247,10 +212,11 @@ impl Runtime {
         self.running_queue.set(true);
 
         loop {
+            // Take one from queue
             let next_to_run = self.observer_queue.borrow_mut().pop_front();
             match next_to_run {
                 Some(id) => {
-                    self.queued_observers.borrow_mut().remove(id);
+                    self.queued_observers.remove(id);
                     run_effect_internal(id);
                 }
                 None => break,
@@ -261,8 +227,7 @@ impl Runtime {
 
     fn clean_node(&self, id: NodeId) {
         let (children, cleanups) = {
-            let mut graph = self.graph.borrow_mut();
-            if let Some(node) = graph.nodes.get_mut(id) {
+            if let Some(node) = self.graph.get_mut(id) {
                 (
                     std::mem::take(&mut node.children),
                     std::mem::take(&mut node.cleanups),
@@ -273,8 +238,7 @@ impl Runtime {
         };
 
         let dependencies = {
-            let mut effects = self.effects.borrow_mut();
-            if let Some(effect_data) = effects.get_mut(id) {
+            if let Some(effect_data) = self.effects.get_mut(id) {
                 std::mem::take(&mut effect_data.dependencies)
             } else {
                 Vec::new()
@@ -298,9 +262,8 @@ impl Runtime {
             self.dispose_node_internal(child, false);
         }
         if !dependencies.is_empty() {
-            let mut signals = self.signals.borrow_mut();
             for signal_id in dependencies {
-                if let Some(signal_data) = signals.get_mut(signal_id) {
+                if let Some(signal_data) = self.signals.get_mut(signal_id) {
                     if let Some(idx) = signal_data.subscribers.iter().position(|&x| x == self_id) {
                         signal_data.subscribers.swap_remove(idx);
                     }
@@ -311,31 +274,43 @@ impl Runtime {
 
     pub(crate) fn dispose_node_internal(&self, id: NodeId, remove_from_parent: bool) {
         self.clean_node(id);
+
         #[cfg(debug_assertions)]
         {
-            let mut graph = self.graph.borrow_mut();
-            if let Some(node) = graph.nodes.get_mut(id) {
+            if let Some(node) = self.graph.get_mut(id) {
                 if let Some(label) = node.debug_label.take() {
-                    self.dead_node_labels.borrow_mut().insert(id, label);
+                    self.dead_node_labels.insert(id, label);
                 }
             }
         }
-        self.graph.borrow_mut().remove(id, remove_from_parent);
-        self.signals.borrow_mut().remove(id);
-        self.effects.borrow_mut().remove(id);
-        self.stored_values.borrow_mut().remove(id);
-        self.deriveds.borrow_mut().remove(id);
-        if self.queued_observers.borrow().contains_key(id) {
-            self.queued_observers.borrow_mut().remove(id);
+
+        if remove_from_parent {
+            if let Some(parent_id) = self.graph.get(id).and_then(|n| n.parent) {
+                if let Some(parent_node) = self.graph.get_mut(parent_id) {
+                    if let Some(idx) = parent_node.children.iter().position(|&x| x == id) {
+                        parent_node.children.swap_remove(idx);
+                    }
+                }
+            }
         }
+
+        self.graph.remove(id);
+        self.signals.remove(id);
+        self.effects.remove(id);
+        self.stored_values.remove(id);
+        self.deriveds.remove(id);
+        self.queued_observers.remove(id);
+        // Note: Can't easily remove from VecDeque efficiently without traversal,
+        // but `run_queue` handles spurious IDs gracefully if effect logic checks existence.
+        // Actually, our `run_queue` iterates and calls `run_effect_internal`.
+        // If node is removed, `run_effect_internal` should check existence.
     }
 }
 
 fn run_effect_internal(effect_id: NodeId) {
     RUNTIME.with(|rt| {
         let (children, cleanups) = {
-            let mut graph = rt.graph.borrow_mut();
-            if let Some(node) = graph.nodes.get_mut(effect_id) {
+            if let Some(node) = rt.graph.get_mut(effect_id) {
                 (
                     std::mem::take(&mut node.children),
                     std::mem::take(&mut node.cleanups),
@@ -346,8 +321,7 @@ fn run_effect_internal(effect_id: NodeId) {
         };
 
         let (computation_fn, dependencies) = {
-            let mut effects = rt.effects.borrow_mut();
-            if let Some(effect_data) = effects.get_mut(effect_id) {
+            if let Some(effect_data) = rt.effects.get_mut(effect_id) {
                 effect_data.effect_version = effect_data.effect_version.wrapping_add(1);
                 (
                     effect_data.computation.clone(),
@@ -361,10 +335,10 @@ fn run_effect_internal(effect_id: NodeId) {
         rt.run_cleanups(effect_id, children, cleanups, dependencies);
 
         if let Some(f) = computation_fn {
-            let prev_owner = *rt.current_owner.borrow();
-            *rt.current_owner.borrow_mut() = Some(effect_id);
+            let prev_owner = rt.current_owner.get();
+            rt.current_owner.set(Some(effect_id));
             f();
-            *rt.current_owner.borrow_mut() = prev_owner;
+            rt.current_owner.set(prev_owner);
         }
     })
 }
@@ -381,8 +355,7 @@ pub fn try_get_signal<T: Clone + 'static>(id: NodeId) -> Option<T> {
         // Track
         rt.track_dependency(id);
 
-        let signals = rt.signals.borrow();
-        if let Some(signal) = signals.get(id) {
+        if let Some(signal) = rt.signals.get(id) {
             if let Some(val) = signal.value.downcast_ref::<T>() {
                 return Some(val.clone());
             } else {
@@ -395,8 +368,7 @@ pub fn try_get_signal<T: Clone + 'static>(id: NodeId) -> Option<T> {
 
 pub fn try_get_signal_untracked<T: Clone + 'static>(id: NodeId) -> Option<T> {
     RUNTIME.with(|rt| {
-        let signals = rt.signals.borrow();
-        if let Some(signal) = signals.get(id) {
+        if let Some(signal) = rt.signals.get(id) {
             if let Some(val) = signal.value.downcast_ref::<T>() {
                 return Some(val.clone());
             } else {
@@ -410,8 +382,7 @@ pub fn try_get_signal_untracked<T: Clone + 'static>(id: NodeId) -> Option<T> {
 pub fn update_signal<T: 'static>(id: NodeId, f: impl FnOnce(&mut T)) {
     RUNTIME.with(|rt| {
         {
-            let mut signals = rt.signals.borrow_mut();
-            if let Some(signal) = signals.get_mut(id) {
+            if let Some(signal) = rt.signals.get_mut(id) {
                 if let Some(val) = signal.value.downcast_mut::<T>() {
                     f(val);
                 } else {
@@ -460,10 +431,10 @@ where
 {
     RUNTIME.with(|rt| {
         let id = rt.register_node();
-        let prev_owner = *rt.current_owner.borrow();
-        *rt.current_owner.borrow_mut() = Some(id);
+        let prev_owner = rt.current_owner.get();
+        rt.current_owner.set(Some(id));
         f();
-        *rt.current_owner.borrow_mut() = prev_owner;
+        rt.current_owner.set(prev_owner);
         id
     })
 }
@@ -474,9 +445,8 @@ pub fn dispose(id: NodeId) {
 
 pub fn on_cleanup(f: impl FnOnce() + 'static) {
     RUNTIME.with(|rt| {
-        if let Some(owner) = *rt.current_owner.borrow() {
-            let mut graph = rt.graph.borrow_mut();
-            if let Some(node) = graph.nodes.get_mut(owner) {
+        if let Some(owner) = rt.current_owner.get() {
+            if let Some(node) = rt.graph.get_mut(owner) {
                 node.cleanups.push(Box::new(f));
             }
         }
@@ -485,10 +455,10 @@ pub fn on_cleanup(f: impl FnOnce() + 'static) {
 
 pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
     RUNTIME.with(|rt| {
-        let prev_owner = *rt.current_owner.borrow();
-        *rt.current_owner.borrow_mut() = None;
+        let prev_owner = rt.current_owner.get();
+        rt.current_owner.set(None);
         let t = f();
-        *rt.current_owner.borrow_mut() = prev_owner;
+        rt.current_owner.set(prev_owner);
         t
     })
 }
@@ -504,7 +474,7 @@ where
         let effect_id = rt.register_node();
 
         // Placeholder effect data
-        rt.effects.borrow_mut().insert(
+        rt.effects.insert(
             effect_id,
             EffectData {
                 computation: None,
@@ -515,10 +485,10 @@ where
 
         // Run once
         let value = {
-            let prev_owner = *rt.current_owner.borrow();
-            *rt.current_owner.borrow_mut() = Some(effect_id);
+            let prev_owner = rt.current_owner.get();
+            rt.current_owner.set(Some(effect_id));
             let v = f(None);
-            *rt.current_owner.borrow_mut() = prev_owner;
+            rt.current_owner.set(prev_owner);
             v
         };
 
@@ -529,8 +499,7 @@ where
         let computation = move || {
             // Check old value
             let old_value = RUNTIME.with(|rt| {
-                let signals = rt.signals.borrow();
-                if let Some(signal) = signals.get(signal_id) {
+                if let Some(signal) = rt.signals.get(signal_id) {
                     if let Some(val) = signal.value.downcast_ref::<T>() {
                         Some(val.clone())
                     } else {
@@ -549,7 +518,6 @@ where
                     changed = true;
                 }
             } else {
-                // Should technically not happen if initialized, but ...
                 changed = true;
             }
 
@@ -559,7 +527,7 @@ where
             }
         };
 
-        if let Some(effect_data) = rt.effects.borrow_mut().get_mut(effect_id) {
+        if let Some(effect_data) = rt.effects.get_mut(effect_id) {
             effect_data.computation = Some(Rc::new(computation));
         }
 
@@ -570,9 +538,8 @@ where
 // Context API exposed
 pub fn provide_context_any(key: TypeId, value: Box<dyn Any>) {
     RUNTIME.with(|rt| {
-        if let Some(owner) = *rt.current_owner.borrow() {
-            let mut graph = rt.graph.borrow_mut();
-            if let Some(node) = graph.nodes.get_mut(owner) {
+        if let Some(owner) = rt.current_owner.get() {
+            if let Some(node) = rt.graph.get_mut(owner) {
                 if node.context.is_none() {
                     node.context = Some(HashMap::new());
                 }
@@ -591,11 +558,13 @@ pub fn provide_context<T: 'static>(value: T) {
 
 pub fn use_context<T: Clone + 'static>() -> Option<T> {
     RUNTIME.with(|rt| {
-        let graph = rt.graph.borrow();
-        let mut current_opt = *rt.current_owner.borrow();
+        // Since graph traversal is needed, we need to be careful with references.
+        // Arena supports multiple immutable references.
+
+        let mut current_opt = rt.current_owner.get();
 
         while let Some(current) = current_opt {
-            if let Some(node) = graph.nodes.get(current) {
+            if let Some(node) = rt.graph.get(current) {
                 if let Some(ctx) = &node.context {
                     if let Some(val) = ctx.get(&TypeId::of::<T>()) {
                         return val.downcast_ref::<T>().cloned();
@@ -612,8 +581,6 @@ pub fn use_context<T: Clone + 'static>() -> Option<T> {
 
 // --- Callback API ---
 
-/// 注册一个回调函数，返回其 NodeId。
-/// 回调函数接收类型擦除的参数 `Box<dyn Any>`。
 #[track_caller]
 pub fn register_callback<F>(f: F) -> NodeId
 where
@@ -621,53 +588,38 @@ where
 {
     RUNTIME.with(|rt| {
         let id = rt.register_node();
-        rt.callbacks
-            .borrow_mut()
-            .insert(id, CallbackData { f: Rc::new(f) });
+        rt.callbacks.insert(id, CallbackData { f: Rc::new(f) });
         id
     })
 }
 
-/// 调用指定 ID 的回调函数。
-/// 如果回调不存在，则静默忽略。
 pub fn invoke_callback(id: NodeId, arg: Box<dyn Any>) {
     RUNTIME.with(|rt| {
-        let callback = {
-            let callbacks = rt.callbacks.borrow();
-            callbacks.get(id).map(|data| data.f.clone())
-        };
+        let callback = rt.callbacks.get(id).map(|data| data.f.clone());
         if let Some(f) = callback {
             f(arg);
         }
     })
 }
 
-/// 检查指定 ID 是否为有效的 Callback
 pub fn is_callback_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| rt.callbacks.borrow().contains_key(id))
+    RUNTIME.with(|rt| rt.callbacks.get(id).is_some())
 }
 
 // --- NodeRef API ---
 
-/// 注册一个 NodeRef，返回其 NodeId。
-/// 初始状态为空（None）。
 #[track_caller]
 pub fn register_node_ref() -> NodeId {
     RUNTIME.with(|rt| {
         let id = rt.register_node();
-        rt.node_refs
-            .borrow_mut()
-            .insert(id, NodeRefData { element: None });
+        rt.node_refs.insert(id, NodeRefData { element: None });
         id
     })
 }
 
-/// 获取 NodeRef 中存储的元素引用。
-/// 需要调用者指定正确的类型 T 进行 downcast。
 pub fn get_node_ref<T: Clone + 'static>(id: NodeId) -> Option<T> {
     RUNTIME.with(|rt| {
-        let node_refs = rt.node_refs.borrow();
-        if let Some(data) = node_refs.get(id) {
+        if let Some(data) = rt.node_refs.get(id) {
             if let Some(ref element) = data.element {
                 return element.downcast_ref::<T>().cloned();
             }
@@ -676,27 +628,22 @@ pub fn get_node_ref<T: Clone + 'static>(id: NodeId) -> Option<T> {
     })
 }
 
-/// 设置 NodeRef 中存储的元素引用。
 pub fn set_node_ref<T: 'static>(id: NodeId, element: T) {
     RUNTIME.with(|rt| {
-        let mut node_refs = rt.node_refs.borrow_mut();
-        if let Some(data) = node_refs.get_mut(id) {
+        if let Some(data) = rt.node_refs.get_mut(id) {
             data.element = Some(Box::new(element));
         }
     })
 }
 
-/// Check if the specified ID is a valid NodeRef
 pub fn is_node_ref_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| rt.node_refs.borrow().contains_key(id))
+    RUNTIME.with(|rt| rt.node_refs.get(id).is_some())
 }
 
-/// Track signal manually
 pub fn track_signal(id: NodeId) {
     RUNTIME.with(|rt| rt.track_dependency(id))
 }
 
-/// Notify dependent effects
 pub fn notify_signal(id: NodeId) {
     RUNTIME.with(|rt| {
         rt.queue_dependents(id);
@@ -712,7 +659,7 @@ pub fn notify_signal(id: NodeId) {
 pub fn store_value<T: 'static>(value: T) -> NodeId {
     RUNTIME.with(|rt| {
         let id = rt.register_node();
-        rt.stored_values.borrow_mut().insert(
+        rt.stored_values.insert(
             id,
             StoredValueData {
                 value: Box::new(value),
@@ -724,8 +671,7 @@ pub fn store_value<T: 'static>(value: T) -> NodeId {
 
 pub fn try_with_stored_value<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
     RUNTIME.with(|rt| {
-        let stored = rt.stored_values.borrow();
-        if let Some(data) = stored.get(id) {
+        if let Some(data) = rt.stored_values.get(id) {
             if let Some(val) = data.value.downcast_ref::<T>() {
                 return Some(f(val));
             }
@@ -739,8 +685,7 @@ pub fn try_update_stored_value<T: 'static, R>(
     f: impl FnOnce(&mut T) -> R,
 ) -> Option<R> {
     RUNTIME.with(|rt| {
-        let mut stored = rt.stored_values.borrow_mut();
-        if let Some(data) = stored.get_mut(id) {
+        if let Some(data) = rt.stored_values.get_mut(id) {
             if let Some(val) = data.value.downcast_mut::<T>() {
                 return Some(f(val));
             }
@@ -756,17 +701,14 @@ pub fn register_derived<T: 'static>(f: impl Fn() -> T + 'static) -> NodeId {
     RUNTIME.with(|rt| {
         let id = rt.register_node();
         let f_rc: Rc<dyn Fn() -> T> = Rc::new(f);
-        rt.deriveds
-            .borrow_mut()
-            .insert(id, DerivedData { f: Box::new(f_rc) });
+        rt.deriveds.insert(id, DerivedData { f: Box::new(f_rc) });
         id
     })
 }
 
 pub fn run_derived<T: 'static>(id: NodeId) -> Option<T> {
     RUNTIME.with(|rt| {
-        let deriveds = rt.deriveds.borrow();
-        if let Some(data) = deriveds.get(id) {
+        if let Some(data) = rt.deriveds.get(id) {
             if let Some(f) = data.f.downcast_ref::<Rc<dyn Fn() -> T>>() {
                 return Some(f());
             }
@@ -780,8 +722,7 @@ pub fn try_with_signal<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Op
         // Track
         rt.track_dependency(id);
 
-        let signals = rt.signals.borrow();
-        if let Some(signal) = signals.get(id) {
+        if let Some(signal) = rt.signals.get(id) {
             if let Some(val) = signal.value.downcast_ref::<T>() {
                 return Some(f(val));
             }
@@ -792,8 +733,7 @@ pub fn try_with_signal<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Op
 
 pub fn try_with_signal_untracked<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
     RUNTIME.with(|rt| {
-        let signals = rt.signals.borrow();
-        if let Some(signal) = signals.get(id) {
+        if let Some(signal) = rt.signals.get(id) {
             if let Some(val) = signal.value.downcast_ref::<T>() {
                 return Some(f(val));
             }
@@ -807,8 +747,7 @@ pub fn try_update_signal_silent<T: 'static, R>(
     f: impl FnOnce(&mut T) -> R,
 ) -> Option<R> {
     RUNTIME.with(|rt| {
-        let mut signals = rt.signals.borrow_mut();
-        if let Some(signal) = signals.get_mut(id) {
+        if let Some(signal) = rt.signals.get_mut(id) {
             if let Some(val) = signal.value.downcast_mut::<T>() {
                 return Some(f(val));
             }
@@ -818,15 +757,14 @@ pub fn try_update_signal_silent<T: 'static, R>(
 }
 
 pub fn is_signal_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| rt.signals.borrow().contains_key(id))
+    RUNTIME.with(|rt| rt.signals.get(id).is_some())
 }
 
 pub fn get_node_defined_at(_id: NodeId) -> Option<&'static std::panic::Location<'static>> {
     #[cfg(debug_assertions)]
     {
         RUNTIME.with(|rt| {
-            let graph = rt.graph.borrow();
-            if let Some(node) = graph.nodes.get(_id) {
+            if let Some(node) = rt.graph.get(_id) {
                 return node.defined_at;
             }
             None
@@ -845,8 +783,7 @@ pub fn set_debug_label(_id: NodeId, _label: impl Into<String>) {
     {
         let label = _label.into();
         RUNTIME.with(|rt| {
-            let mut graph = rt.graph.borrow_mut();
-            if let Some(node) = graph.nodes.get_mut(_id) {
+            if let Some(node) = rt.graph.get_mut(_id) {
                 node.debug_label = Some(label);
             }
         })
@@ -857,14 +794,13 @@ pub fn get_debug_label(_id: NodeId) -> Option<String> {
     #[cfg(debug_assertions)]
     {
         return RUNTIME.with(|rt| {
-            let graph = rt.graph.borrow();
-            if let Some(node) = graph.nodes.get(_id) {
+            if let Some(node) = rt.graph.get(_id) {
                 if let Some(label) = &node.debug_label {
                     return Some(label.clone());
                 }
             }
             // Check dead labels
-            rt.dead_node_labels.borrow().get(_id).cloned()
+            rt.dead_node_labels.get(_id).cloned()
         });
     }
     #[cfg(not(debug_assertions))]

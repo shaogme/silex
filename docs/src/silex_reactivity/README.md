@@ -8,7 +8,7 @@
 
 *   **Runtime (运行时)**：负责管理节点图谱、依赖收集、副作用调度和内存管理。
 *   **Type Erasure (类型擦除)**：所有的信号值都以 `Box<dyn Any>` 的形式存储。这使得运行时可以统一管理不同类型的信号，而不需要泛型参数污染运行时结构。
-*   **SlotMap 存储**：使用 `SlotMap` 和 `SecondaryMap` 存储节点数据，提供稳定的 `NodeId` 引用和高效的内存访问。
+*   **Arena 存储**：使用定制的 `Arena` 和 `SparseSecondaryMap` 存储节点数据，提供稳定的 `NodeId` 引用和高效的内存访问（通过分块和代际索引）。
 
 ## 核心架构
 
@@ -18,21 +18,25 @@
 
 ```rust
 pub struct Runtime {
-    pub(crate) graph: RefCell<Graph>,
-    pub(crate) signals: RefCell<SecondaryMap<NodeId, SignalData>>,
-    pub(crate) effects: RefCell<SecondaryMap<NodeId, EffectData>>,
+    pub(crate) graph: Arena<Node>,
+    pub(crate) signals: SparseSecondaryMap<SignalData>,
+    pub(crate) effects: SparseSecondaryMap<EffectData>,
     pub(crate) observer_queue: RefCell<VecDeque<NodeId>>,
+    pub(crate) queued_observers: SparseSecondaryMap<()>,
     // ...
 }
 ```
 
-### 2. Graph (图谱结构)
+### 2. Arena & SparseSecondaryMap (内存管理)
 
-`Graph` 负责管理所有响应式节点的拓扑结构和生命周期。它封装了底层的 `SlotMap`，并处理节点间的父子关系连接与断开。
+`silex_reactivity` 不再依赖外部的 ECS 或 Arena 库，而是实现了定制的内存分配策略：
+
+*   **Arena**: 采用分块 (`Chunk`) 存储和代际索引 (`Generational Index`)。它使用 `UnsafeCell` 提供了内部可变性，允许在不违反 Rust 借用规则的前提下高效地构建自引用的响应式图谱。
+*   **SparseSecondaryMap**: 配合 `Arena` 使用的辅助存储，用于映射 `NodeId` 到特定的组件数据（如 `SignalData`, `EffectData`）。
 
 ### 3. NodeId 与 Node
 
-*   **NodeId**: 一个轻量级的句柄（newtype around valid key），用于引用图中的任何节点（信号、副作用、计算属性等）。
+*   **NodeId**: `arena::Index` 的别名。包含 `index` (u32) 和 `generation` (u32)，用于安全地引用 Arena 中的槽位。
 *   **Node**: 存储通用的图谱信息，如父子关系 (`parent`, `children`)、清理回调 (`cleanups`) 和上下文 (`context`)。
 
 ### 4. SignalData (信号数据)

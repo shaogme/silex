@@ -9,39 +9,49 @@
 ### 1. `Runtime` (运行时)
 *   **Thread Local**: `thread_local! { pub static RUNTIME: Runtime ... }`
 *   **Components**:
-    *   `graph: Graph`: 负责管理节点拓扑结构（Nodes, Parent-Child Relationships）。
-    *   `signals: SecondaryMap<NodeId, SignalData>`: 存储信号值及订阅者。
-    *   `effects: SecondaryMap<NodeId, EffectData>`: 存储副作用计算及依赖。
-    *   `observer_queue: VecDeque<NodeId>`: 待执行的副作用队列（BFS 调度）。
-    *   `current_owner: Option<NodeId>`: 当前正在执行的副作用/包括 Scope，用于依赖收集和 Cleanup 注册。
+    *   `graph: Arena<Node>`: 负责管理节点拓扑结构（Nodes, Parent-Child Relationships）。内部使用 `UnsafeCell` 实现内部可变性。
+    *   `signals: SparseSecondaryMap<SignalData>`: 存储信号值及订阅者。
+    *   `effects: SparseSecondaryMap<EffectData>`: 存储副作用计算及依赖。
+    *   `callbacks: SparseSecondaryMap<CallbackData>`: 存储回调函数。
+    *   `node_refs: SparseSecondaryMap<NodeRefData>`: 存储 DOM 节点引用。
+    *   `stored_values: SparseSecondaryMap<StoredValueData>`: 存储通用值。
+    *   `deriveds: SparseSecondaryMap<DerivedData>`: 存储派生计算。
+    *   `observer_queue: RefCell<VecDeque<NodeId>>`: 待执行的副作用队列（BFS 调度）。
+    *   `queued_observers: SparseSecondaryMap<()>`: 已入队副作用的集合（用于去重）。
+    *   `current_owner: Cell<Option<NodeId>>`: 当前正在执行的副作用/包括 Scope，用于依赖收集和 Cleanup 注册。
     *   `batch_depth: Cell<usize>`: 当前批量更新的嵌套深度。
 
-### 2. `Graph` (Topology)
-*   **Components**:
-    *   `nodes: SlotMap<NodeId, Node>`: 存储所有响应式节点（Metadata）。
-*   **Responsibility**: 
-    *   节点的注册 (`register`)。
-    *   节点父子关系的维护（挂载与卸载）。
-    *   节点的移除 (`remove`)。
+### 2. `Arena<T>` (Memory Management)
+*   **Structure**: 分块内存池 (`UnsafeCell<Vec<Chunk<T>>>`)。
+*   **Features**:
+    *   **Generational Indices**: 使用 `Index` (u32 index + u32 generation) 解决 ABA 问题。
+    *   **Interior Mutability**: 通过 `UnsafeCell` 提供类似 `RefCell` 的能力，但针对细粒度响应式系统进行了优化，避免了运行时的 borrow 检查开销（Caller 需保证安全性）。
+    *   **Cache Locality**: 数据按块 (`Chunk`) 连续存储。
 
-### 3. `NodeId`
-*   **Type**: `slotmap::new_key_type!`
-*   **Semantics**: 响应式图谱中的唯一句柄，实现了 `Copy`, `Clone`, `Eq`, `Hash`.
+### 3. `SparseSecondaryMap<T>` (Auxiliary Storage)
+*   **Structure**: 稀疏的分块存储 (`UnsafeCell<Vec<Option<Box<[UnsafeCell<Option<T>>]>>>>`)。
+*   **Usage**: 类似于 `SecondaryMap`，使用 `NodeId` 作为键。如果 `NodeId` 在主 `Arena` 中有效，则认为其在此 Map 中也有效（无需重复 Generation 检查）。
 
-### 4. `Node` (Graph Metadata)
+### 4. `NodeId`
+*   **Type**: `arena::Index`
+*   **Semantics**: 响应式图谱中的唯一句柄，包含 `index` 和 `generation`，实现了 `Copy`, `Clone`, `Eq`, `Hash`.
+
+### 5. `Node` (Graph Metadata)
 *   **Fields**:
     *   `children: Vec<NodeId>`: 子节点（用于级联销毁）。
     *   `parent: Option<NodeId>`: 父节点（Owner）。
     *   `cleanups: Vec<Box<dyn FnOnce()>>`: `on_cleanup` 注册的回调。
     *   `context: Option<HashMap<TypeId, Box<dyn Any>>>`: 依赖注入容器。
+    *   `debug_label: Option<String>`: 调试标签 (Debug build only)。
+    *   `defined_at: Option<&'static std::panic::Location>`: 定义位置 (Debug build only)。
 
-### 5. `SignalData` (Source)
+### 6. `SignalData` (Source)
 *   **Fields**:
     *   `value: Box<dyn Any>`: 存储信号的实际值（类型擦除）。
     *   `subscribers: Vec<NodeId>`: 依赖此信号的副作用列表。
     *   `last_tracked_by: Option<(NodeId, u64)>`: 简单的缓存，防止重复追踪。
 
-### 6. `EffectData` (Observer)
+### 7. `EffectData` (Observer)
 *   **Fields**:
     *   `computation: Option<Rc<dyn Fn()>>`:副作用逻辑闭包。
     *   `dependencies: Vec<NodeId>`: 此副作用依赖的信号（用于重新执行前清理依赖）。
