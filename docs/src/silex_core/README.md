@@ -27,7 +27,7 @@
         *   `batch_read_untracked!(s1, s2 => |v1, v2| ...)`: 同时访问多个信号不追踪，零 Clone。
     *   **写**: `Set` (设置并通知), `SetUntracked` (设置不通知), `Update` (修改并通知), `SignalSetter` (生成 setter), `SignalUpdater` (生成 updater)。
     *   **转换**: `IntoSignal` (值转信号)。允许组件 Props 接受 `impl IntoSignal`，从而同时支持静态值（自动转为 `Constant`，零分配）和动态信号。也支持将元组 `(Signal<A>, Signal<B>)` 转换为组合信号 `Signal<(A, B)>`。
-    *   **性能建议**: `Signal::from(val)` 会在运行时分配内存。若传递静态值，请直接使用 `val` 或 `Constant(val)` 以避免不必要的开销。仅在需要特定类型 `Signal<T>` 时才使用 `Signal::from`。
+    *   **性能建议**: `Signal::from(val)` 会在运行时分配内存。若传递静态值，请直接使用 `val` 或 `StoredConstant(val)` 以避免不必要的开销。仅在需要特定类型 `Signal<T>` 时才使用 `Signal::from`。
     *   这种设计使得你可以灵活组合不同的行为，例如 `StoredValue` 实现了 `GetUntracked`/`SetUntracked` 但不实现 `Track`/`Notify`。
 
 *   **Primitive Signals (基础信号)**: 

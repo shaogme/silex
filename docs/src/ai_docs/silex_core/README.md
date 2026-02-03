@@ -52,19 +52,19 @@
 *   **Enum**:
     *   `Read(ReadSignal<T>)`
     *   `Derived(NodeId, PhantomData<T>)`
-    *   `Constant(NodeId, PhantomData<T>)`
+    *   `StoredConstant(NodeId, PhantomData<T>)`
 *   **Traits**: `Copy`, `Clone`, `Debug`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
 *   **Semantics**:
     *   通用的信号接口，统一了 `ReadSignal`、派生计算和常量。
     *   `Derived` 变体持有一个在 Runtime 中注册的闭包，每次 `get()` 时重新执行闭包（无缓存）。
-    *   `Constant` 变体持有一个存储在 Runtime 中的常量值。
+    *   `StoredConstant` 变体持有一个存储在 Runtime 中的常量值。
 *   **Methods**:
     *   `derive(f: impl Fn() -> T)`: 创建一个派生信号。
     *   `get() -> T`: (via `Get` trait).
     *   `slice(getter: impl Fn(&T) -> &O)`: 创建一个指向内部字段的切片信号 `SignalSlice`，实现零拷贝访问。
 *   **Conversions**:
-    *   `From<T>`: 将普通值转换为 `Signal::Constant`。
-    *   `From<&str>`: 将字符串切片转换为 `Signal<String>` (Constant)。
+    *   `From<T>`: 将普通值转换为 `Signal::StoredConstant`。
+    *   `From<&str>`: 将字符串切片转换为 `Signal<String>` (StoredConstant)。
     *   `From<ReadSignal<T>>`, `From<RwSignal<T>>`, `From<Memo<T>>`: 转换为 `Signal::Read`。
 *   **Operator Overloads**:
     *   实现了 `Add`, `Sub`, `Mul`, `Div`, `Rem`, `BitAnd`, `BitOr`, `BitXor`, `Shl`, `Shr`, `Neg`, `Not`。

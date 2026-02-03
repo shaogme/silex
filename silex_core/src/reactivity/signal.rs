@@ -197,7 +197,7 @@ where
 pub enum Signal<T: 'static> {
     Read(ReadSignal<T>),
     Derived(NodeId, PhantomData<T>),
-    Constant(NodeId, PhantomData<T>),
+    StoredConstant(NodeId, PhantomData<T>),
 }
 
 impl<T> Clone for Signal<T> {
@@ -219,7 +219,7 @@ impl<T: Clone + 'static> Signal<T> {
                 s.with_name(name);
             }
             Signal::Derived(id, _) => set_debug_label(id, name),
-            Signal::Constant(_, _) => {} // Constants usually don't need debug labels in the graph
+            Signal::StoredConstant(_, _) => {} // Constants usually don't need debug labels in the graph
         }
         self
     }
@@ -242,7 +242,7 @@ impl<T> DefinedAt for Signal<T> {
         match self {
             Signal::Read(s) => s.debug_name(),
             Signal::Derived(id, _) => get_debug_label(*id),
-            Signal::Constant(_, _) => Some("Constant".to_string()),
+            Signal::StoredConstant(_, _) => Some("Constant".to_string()),
         }
     }
 }
@@ -252,7 +252,7 @@ impl<T> IsDisposed for Signal<T> {
         match self {
             Signal::Read(s) => s.is_disposed(),
             Signal::Derived(id, _) => !is_signal_valid(*id),
-            Signal::Constant(_, _) => false,
+            Signal::StoredConstant(_, _) => false,
         }
     }
 }
@@ -265,7 +265,7 @@ impl<T: 'static> Track for Signal<T> {
                 // Run the derived function to track its dependencies
                 let _ = run_derived::<T>(*id);
             }
-            Signal::Constant(_, _) => {}
+            Signal::StoredConstant(_, _) => {}
         }
     }
 }
@@ -280,7 +280,7 @@ impl<T: 'static> WithUntracked for Signal<T> {
                 let val = untrack(|| run_derived::<T>(*id))?;
                 Some(fun(&val))
             }
-            Signal::Constant(id, _) => try_with_stored_value(*id, fun),
+            Signal::StoredConstant(id, _) => try_with_stored_value(*id, fun),
         }
     }
 }
@@ -290,7 +290,7 @@ impl<T: 'static> WithUntracked for Signal<T> {
 impl<T: Clone + 'static> From<T> for Signal<T> {
     fn from(value: T) -> Self {
         let id = store_value(value);
-        Signal::Constant(id, PhantomData)
+        Signal::StoredConstant(id, PhantomData)
     }
 }
 
