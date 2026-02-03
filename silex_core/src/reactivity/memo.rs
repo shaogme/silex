@@ -94,10 +94,10 @@ impl<T: Clone + PartialEq + 'static> Map for Memo<T> {
 
     fn map<U, F>(self, f: F) -> Memo<U>
     where
-        F: Fn(Self::Value) -> U + 'static,
+        F: Fn(&Self::Value) -> U + 'static,
         U: Clone + PartialEq + 'static,
     {
-        Memo::new(move |_| f(self.get()))
+        Memo::new(move |_| self.with(|val| f(val)))
     }
 }
 

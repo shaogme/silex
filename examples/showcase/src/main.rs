@@ -63,7 +63,7 @@ mod basics {
             
             // Auto Increment Demo using set_interval and StoredValue
             div![
-                button(is_running.map(|r| if r { "Stop Auto Inc" } else { "Start Auto Inc" }))
+                button(is_running.map(|r| if *r { "Stop Auto Inc" } else { "Start Auto Inc" }))
                     .on(event::click, move |_| {
                         if is_running.get() {
                             if let Some(handle) = timer.get_value() {
@@ -96,7 +96,7 @@ mod basics {
             ].style("margin-bottom: 10px;"),
 
             div!["Double: ", double_count]
-                .classes((count % 2).eq(0).map(|is_even| if is_even { "even" } else { "odd" }))
+                .classes((count % 2).eq(0).map(|is_even| if *is_even { "even" } else { "odd" }))
                 .style("margin-top: 5px; color: #666; font-size: 0.9em;"),
         ]
     }
@@ -440,7 +440,7 @@ mod advanced {
                 p![strong("Theme: "), settings.theme],
                 p![
                     strong("Notifications: "),
-                    text(settings.notifications.map(|n| if n { "On" } else { "Off" })),
+                    text(settings.notifications.map(|n| if *n { "On" } else { "Off" })),
                 ],
             ]
             .style("border: 1px solid #ccc; padding: 10px; margin-bottom: 10px;"),
@@ -726,14 +726,14 @@ mod styles {
             
             // "Toggle" Logic
             div![
-                span(is_active.map(|v| if v { "State: Active" } else { "State: Inactive" }))
+                span(is_active.map(|v| if *v { "State: Active" } else { "State: Inactive" }))
                     .style("margin-right: 15px;"),
                 
-                button(is_active.map(|v| if v { "Deactivate" } else { "Activate" }))
+                button(is_active.map(|v| if *v { "Deactivate" } else { "Activate" }))
                     .on(event::click, move |_| set_active.update(|v| *v = !*v))
                     // Dynamic styling with builder pattern
                     .style(is_active.map(|v| {
-                        if v {
+                        if *v {
                             "background-color: #ef5350; color: white;"
                         } else {
                             "background-color: #66bb6a; color: white;"

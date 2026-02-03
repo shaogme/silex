@@ -3,18 +3,20 @@ pub use silex_reactivity::{
     batch, create_scope, dispose, on_cleanup, provide_context, use_context,
 };
 
-pub mod effect;
-pub mod memo;
-pub mod mutation;
-pub mod resource;
-pub mod signal;
-pub mod stored_value;
+mod effect;
+mod memo;
+mod mutation;
+mod resource;
+mod signal;
+mod slice;
+mod stored_value;
 
 pub use effect::*;
 pub use memo::*;
 pub use mutation::*;
 pub use resource::*;
 pub use signal::*;
+pub use slice::*;
 pub use stored_value::*;
 
 // --- Context ---

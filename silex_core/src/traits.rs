@@ -443,12 +443,12 @@ pub trait Get: DefinedAt {
 /// Allows creating a derived signal from this signal.
 pub trait Map: Sized {
     /// The type of the value contained in the signal.
-    type Value;
+    type Value: ?Sized;
 
     /// Creates a derived signal from this signal.
     fn map<U, F>(self, f: F) -> crate::reactivity::Memo<U>
     where
-        F: Fn(Self::Value) -> U + 'static,
+        F: Fn(&Self::Value) -> U + 'static,
         U: Clone + PartialEq + 'static;
 }
 

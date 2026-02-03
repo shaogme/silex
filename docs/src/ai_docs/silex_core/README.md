@@ -23,7 +23,7 @@
 *   `With`: `fn try_with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>`。自动追踪，通过引用访问值。
 *   `GetUntracked`: `fn try_get_untracked(&self) -> Option<Self::Value>`。不追踪，Clone 并返回值 (Requires `T: Clone`)。
 *   `Get`: `fn try_get(&self) -> Option<Self::Value>`。自动追踪，Clone 并返回值 (Requires `T: Clone`)。
-*   `Map`: `fn map<U, F>(self, f: F) -> Memo<U>`。从当前信号创建派生计算信号 `Memo`。
+*   `Map`: `fn map<U, F>(self, f: F) -> Memo<U>`。从当前信号创建派生计算信号 `Memo`。闭包接受引用 `&T`，减少 `Clone` 开销。
 
 #### Update Traits (写更新)
 *   `Notify`: `fn notify(&self)`。显式通知。触发 subscribers 更新。
@@ -50,6 +50,7 @@
 *   **Methods**:
     *   `derive(f: impl Fn() -> T)`: 创建一个派生信号。
     *   `get() -> T`: (via `Get` trait).
+    *   `slice(getter: impl Fn(&T) -> &O)`: 创建一个指向内部字段的切片信号 `SignalSlice`，实现零拷贝访问。
 *   **Conversions**:
     *   `From<T>`: 将普通值转换为 `Signal::Constant`。
     *   `From<&str>`: 将字符串切片转换为 `Signal<String>` (Constant)。
@@ -62,6 +63,8 @@
 #### `ReadSignal<T>`
 *   **Struct**: `pub struct ReadSignal<T> { id: NodeId, marker: PhantomData<T> }`
 *   **Traits**: `Copy`, `Clone`, `Debug`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
+*   **Methods**:
+    *   `slice(getter: impl Fn(&T) -> &O)`: 创建一个指向内部字段的切片信号 `SignalSlice`，实现零拷贝访问。
 *   **Fluent API**: 实现了 `eq`, `ne`, `gt`, `lt`, `ge`, `le`，返回 `Memo<bool>`。
 *   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符，返回 `Memo<T>`。
 
@@ -81,6 +84,8 @@
 *   **Traits**: Implements all traits of `ReadSignal` and `WriteSignal`.
 *   **Semantics**: 读写合一的信号句柄，常用于组件 Props。
     *   **Implements**: `SignalSetter`, `SignalUpdater`.
+    *   **Methods**:
+        *   `slice`: (继承自 `ReadSignal` 部分)。
 *   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符 (针对 Read 部分)，返回 `Memo<T>`。
 
 #### `Memo<T>`

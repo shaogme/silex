@@ -4,6 +4,7 @@ use std::panic::Location;
 use silex_reactivity::NodeId;
 
 use crate::reactivity::Memo;
+use crate::reactivity::SignalSlice;
 use crate::traits::*;
 
 // --- Signal 信号 Enum ---
@@ -37,6 +38,14 @@ impl<T: Clone + 'static> Signal<T> {
             Signal::Constant(_, _) => {} // Constants usually don't need debug labels in the graph
         }
         self
+    }
+
+    pub fn slice<O, F>(self, getter: F) -> SignalSlice<Self, F, O>
+    where
+        F: Fn(&T) -> &O + Clone + 'static,
+        O: ?Sized + 'static,
+    {
+        SignalSlice::new(self, getter)
     }
 }
 
@@ -111,10 +120,10 @@ impl<T: Clone + 'static> Map for Signal<T> {
 
     fn map<U, F>(self, f: F) -> Memo<U>
     where
-        F: Fn(Self::Value) -> U + 'static,
+        F: Fn(&Self::Value) -> U + 'static,
         U: Clone + PartialEq + 'static,
     {
-        Memo::new(move |_| f(self.get()))
+        Memo::new(move |_| self.with(|val| f(val)))
     }
 }
 
@@ -164,6 +173,15 @@ impl<T> ReadSignal<T> {
     pub fn with_name(self, name: impl Into<String>) -> Self {
         silex_reactivity::set_debug_label(self.id, name);
         self
+    }
+
+    pub fn slice<O, F>(self, getter: F) -> SignalSlice<Self, F, O>
+    where
+        F: Fn(&T) -> &O + Clone + 'static,
+        O: ?Sized + 'static, // O can be unsized (e.g. str)
+        T: 'static,
+    {
+        SignalSlice::new(self, getter)
     }
 }
 
@@ -229,10 +247,10 @@ impl<T: Clone + 'static> Map for ReadSignal<T> {
 
     fn map<U, F>(self, f: F) -> Memo<U>
     where
-        F: Fn(Self::Value) -> U + 'static,
+        F: Fn(&Self::Value) -> U + 'static,
         U: Clone + PartialEq + 'static,
     {
-        Memo::new(move |_| f(self.get()))
+        Memo::new(move |_| self.with(|val| f(val)))
     }
 }
 
@@ -364,6 +382,14 @@ impl<T: 'static> RwSignal<T> {
         self.read.with_name(name);
         self
     }
+
+    pub fn slice<O, F>(self, getter: F) -> SignalSlice<Self, F, O>
+    where
+        F: Fn(&T) -> &O + Clone + 'static,
+        O: ?Sized + 'static, // O can be unsized (e.g. str)
+    {
+        SignalSlice::new(self, getter)
+    }
 }
 
 impl<T: 'static> DefinedAt for RwSignal<T> {
@@ -437,7 +463,7 @@ impl<T: Clone + 'static> Map for RwSignal<T> {
 
     fn map<U, F>(self, f: F) -> Memo<U>
     where
-        F: Fn(Self::Value) -> U + 'static,
+        F: Fn(&Self::Value) -> U + 'static,
         U: Clone + PartialEq + 'static,
     {
         self.read.map(f)

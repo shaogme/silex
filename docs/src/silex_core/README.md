@@ -15,7 +15,7 @@
 
 *   **Trait System (特征系统)**:
     *   Silex 采用细粒度的特征系统来定义响应式行为。
-    *   **读**: `Get` (clone并追踪), `GetUntracked` (clone不追踪), `With` (引用并追踪), `WithUntracked` (引用不追踪), `Map` (派生)。
+    *   **读**: `Get` (clone并追踪), `GetUntracked` (clone不追踪), `With` (引用并追踪), `WithUntracked` (引用不追踪), `Map` (引用派生)。
     *   **写**: `Set` (设置并通知), `Update` (修改并通知), `SignalSetter` (生成 setter), `SignalUpdater` (生成 updater)。
     *   这种设计使得你可以灵活组合不同的行为，例如 `StoredValue` 实现了 `GetValue`/`SetValue` 但不实现 `Track`/`Notify`。
 
@@ -25,6 +25,10 @@
     *   `RwSignal<T>`: 读写一体的信号句柄，常用于组件 `Props`。
     *   `Memo<T>`: 派生计算缓存，实现了 `Map` 等读取特征。
     *   使用 `signal` 创建，利用 `PhantomData<T>` 保留类型信息，并在运行时通过 `downcast` 安全转换 `Any` 数据。
+    *   **Slice (切片)**:
+        *   所有信号都支持 `.slice(|v| &v.field)` 方法。
+        *   返回一个 `SignalSlice`，它持有源信号和投影函数。
+        *   允许以**引用方式**访问大结构体的字段，实现**零拷贝**读取，极大优化了 `Vec` 或复杂 Struct 的访问性能。
 
 *   **Effect (副作用)**:
     *   `Effect`: 创建自动追踪依赖的副作用，使用 `Effect::new`。
