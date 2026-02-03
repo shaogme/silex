@@ -1,5 +1,5 @@
 use crate::SilexError;
-use crate::flow::for_loop::IntoForLoopResult;
+use crate::flow::for_loop::ForLoopSource;
 use silex_core::reactivity::{
     Effect, NodeId, ReadSignal, WriteSignal, batch, create_scope, dispose, signal,
 };
@@ -23,7 +23,7 @@ pub struct Index<ItemsFn, Item, Items, MapFn, V> {
 impl<ItemsFn, Item, Items, MapFn, V> Index<ItemsFn, Item, Items, MapFn, V>
 where
     ItemsFn: With<Value = Items> + 'static,
-    Items: IntoForLoopResult<Item = Item> + Clone,
+    Items: ForLoopSource<Item = Item> + 'static,
     MapFn: Fn(ReadSignal<Item>, usize) -> V + 'static,
     V: View,
     Item: 'static,
@@ -49,8 +49,7 @@ struct IndexRow<Item> {
 impl<ItemsFn, Item, Items, MapFn, V> View for Index<ItemsFn, Item, Items, MapFn, V>
 where
     ItemsFn: With<Value = Items> + 'static,
-    Items: IntoForLoopResult<Item = Item> + Clone + 'static,
-    <Items as IntoForLoopResult>::Iter: IntoIterator<Item = Item>,
+    Items: ForLoopSource<Item = Item> + 'static,
     MapFn: Fn(ReadSignal<Item>, usize) -> V + 'static,
     V: View,
     Item: Clone + 'static, // Item needs clone for Signal updates
@@ -78,75 +77,85 @@ where
         let map_fn = self.map;
 
         Effect::new(move |_| {
-            let result = items_fn.with(|items| items.clone().into_result());
-            let items_iter = match result {
-                Ok(iter) => iter,
-                Err(e) => {
-                    silex_core::error::handle_error(e);
-                    return;
-                }
-            };
-
-            let items_vec: Vec<Item> = items_iter.into_iter().collect();
-            let mut rows_lock = rows.borrow_mut();
-
-            batch(|| {
-                let new_len = items_vec.len();
-                let old_len = rows_lock.len();
-                let common_len = std::cmp::min(new_len, old_len);
-
-                // 1. Update existing rows
-                for (i, item) in items_vec.iter().take(common_len).enumerate() {
-                    rows_lock[i].setter.set(item.clone());
-                }
-
-                // 2. Add new rows
-                if new_len > old_len {
-                    for (i, item) in items_vec.into_iter().skip(common_len).enumerate() {
-                        let real_index = common_len + i;
-                        let (get, set) = signal(item);
-
-                        let fragment = document.create_document_fragment();
-                        let fragment_node: Node = fragment.clone().into();
-                        let fragment_node_clone = fragment_node.clone();
-                        let map = map_fn.clone();
-
-                        let scope_id = create_scope(move || {
-                            map(get, real_index).mount(&fragment_node_clone);
-                        });
-
-                        let nodes_list = fragment.child_nodes();
-                        let mut nodes = Vec::new();
-                        for j in 0..nodes_list.length() {
-                            if let Some(n) = nodes_list.item(j) {
-                                nodes.push(n);
-                            }
-                        }
-
-                        if let Some(p) = end_node.parent_node() {
-                            let _ = p.insert_before(&fragment_node, Some(&end_node));
-                        }
-
-                        rows_lock.push(IndexRow {
-                            setter: set,
-                            scope_id,
-                            nodes,
-                        });
+            items_fn.with(|items| {
+                let items_slice = match items.as_slice() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        silex_core::error::handle_error(e);
+                        return;
                     }
-                }
+                };
 
-                // 3. Remove extra rows
-                if old_len > new_len {
-                    let to_remove = rows_lock.split_off(new_len);
-                    for row in to_remove {
-                        dispose(row.scope_id);
-                        for node in row.nodes {
-                            if let Some(p) = node.parent_node() {
-                                let _ = p.remove_child(&node);
+                let mut rows_lock = rows.borrow_mut();
+
+                batch(|| {
+                    let new_len = items_slice.len();
+                    let old_len = rows_lock.len();
+                    let common_len = std::cmp::min(new_len, old_len);
+
+                    // 1. Update existing rows
+                    for (i, item) in items_slice.iter().take(common_len).enumerate() {
+                        rows_lock[i].setter.set(item.clone());
+                    }
+
+                    // 2. Add new rows
+                    if new_len > old_len {
+                        // We need access to map_fn inside the loop.
+                        // map_fn is Rc, so cheap to clone.
+                        // But strictly speaking we only need it inside create_scope.
+
+                        // Optimization: Pre-clone common variables if possible, or just clone map_fn inside loop.
+                        // `map` is Rc<MapFn>.
+
+                        for (i, item) in items_slice[common_len..].iter().enumerate() {
+                            let real_index = common_len + i;
+                            // Create signal for the row
+                            let (get, set) = signal(item.clone());
+
+                            let fragment = document.create_document_fragment();
+                            let fragment_node: Node = fragment.clone().into();
+                            let fragment_node_clone = fragment_node.clone();
+
+                            let map_fn = map_fn.clone();
+
+                            let scope_id = create_scope(move || {
+                                (map_fn)(get, real_index).mount(&fragment_node_clone);
+                            });
+
+                            let nodes_list = fragment.child_nodes();
+                            let len = nodes_list.length();
+                            let mut nodes = Vec::with_capacity(len as usize);
+                            for j in 0..len {
+                                if let Some(n) = nodes_list.item(j) {
+                                    nodes.push(n);
+                                }
                             }
+
+                            if let Some(p) = end_node.parent_node() {
+                                let _ = p.insert_before(&fragment_node, Some(&end_node)); // Pass fragment itself
+                            }
+
+                            rows_lock.push(IndexRow {
+                                setter: set,
+                                scope_id,
+                                nodes,
+                            });
                         }
                     }
-                }
+
+                    // 3. Remove extra rows
+                    if old_len > new_len {
+                        let to_remove = rows_lock.split_off(new_len);
+                        for row in to_remove {
+                            dispose(row.scope_id);
+                            for node in row.nodes {
+                                if let Some(p) = node.parent_node() {
+                                    let _ = p.remove_child(&node);
+                                }
+                            }
+                        }
+                    }
+                });
             });
         });
     }
