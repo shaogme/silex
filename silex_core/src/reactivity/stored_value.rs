@@ -37,15 +37,16 @@ impl<T: 'static> StoredValue<T> {
     }
 
     // Kept for backward compat or ease of use
-    pub fn set_value(&self, value: T) {
-        SetValue::set_value(self, value)
+    // Kept for backward compat or ease of use
+    pub fn set_untracked(&self, value: T) {
+        SetUntracked::set_untracked(self, value)
     }
 
-    pub fn get_value(&self) -> T
+    pub fn get_untracked(&self) -> T
     where
         T: Clone,
     {
-        GetValue::get_value(self)
+        GetUntracked::get_untracked(self)
     }
 
     pub fn with_name(self, name: impl Into<String>) -> Self {
@@ -64,30 +65,38 @@ impl<T> DefinedAt for StoredValue<T> {
     }
 }
 
-impl<T: 'static> WithValue for StoredValue<T> {
+impl<T: 'static> WithUntracked for StoredValue<T> {
     type Value = T;
 
-    fn try_with_value<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         silex_reactivity::try_with_stored_value(self.id, fun)
     }
 }
 
-impl<T: 'static> UpdateValue for StoredValue<T> {
+impl<T: Clone + 'static> GetUntracked for StoredValue<T> {
     type Value = T;
 
-    fn try_update_value<U>(&self, fun: impl FnOnce(&mut Self::Value) -> U) -> Option<U> {
+    fn try_get_untracked(&self) -> Option<Self::Value> {
+        self.try_with_untracked(T::clone)
+    }
+}
+
+impl<T: 'static> UpdateUntracked for StoredValue<T> {
+    type Value = T;
+
+    fn try_update_untracked<U>(&self, fun: impl FnOnce(&mut Self::Value) -> U) -> Option<U> {
         silex_reactivity::try_update_stored_value(self.id, fun)
     }
 }
 
-impl<T: 'static> SetValue for StoredValue<T> {
+impl<T: 'static> SetUntracked for StoredValue<T> {
     type Value = T;
 
-    fn try_set_value(&self, value: Self::Value) -> Option<Self::Value> {
+    fn try_set_untracked(&self, value: Self::Value) -> Option<Self::Value> {
         let value_wrapper = Rc::new(Cell::new(Some(value)));
         let value_in_closure = value_wrapper.clone();
 
-        let res = self.try_update_value(move |v| {
+        let res = self.try_update_untracked(move |v| {
             if let Some(new_val) = value_in_closure.take() {
                 *v = new_val;
             }

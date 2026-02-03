@@ -16,9 +16,9 @@
 *   **Trait System (特征系统)**:
     *   Silex 采用细粒度的特征系统来定义响应式行为。
     *   **读**: `Get` (clone并追踪), `GetUntracked` (clone不追踪), `With` (引用并追踪), `WithUntracked` (引用不追踪), `Map` (引用派生)。
-    *   **写**: `Set` (设置并通知), `Update` (修改并通知), `SignalSetter` (生成 setter), `SignalUpdater` (生成 updater)。
+    *   **写**: `Set` (设置并通知), `SetUntracked` (设置不通知), `Update` (修改并通知), `SignalSetter` (生成 setter), `SignalUpdater` (生成 updater)。
     *   **转换**: `IntoSignal` (值转信号)。允许组件 Props 接受 `impl IntoSignal`，从而同时支持静态值（自动转为 `Constant`）和动态信号。
-    *   这种设计使得你可以灵活组合不同的行为，例如 `StoredValue` 实现了 `GetValue`/`SetValue` 但不实现 `Track`/`Notify`。
+    *   这种设计使得你可以灵活组合不同的行为，例如 `StoredValue` 实现了 `GetUntracked`/`SetUntracked` 但不实现 `Track`/`Notify`。
 
 *   **Primitive Signals (基础信号)**: 
     *   `ReadSignal<T>`: 只读信号句柄，实现了 `Get`, `GetUntracked` 等读取特征。
@@ -69,7 +69,7 @@
     *   `StoredValue<T>`: 非响应式数据容器。
     *   数据存储在运行时中，句柄实现 `Copy`。
     *   **特点**: 读写**不触发**任何 UI 更新。
-    *   **优势**: 支持 `with_value` 以**引用**方式访问数据，适合存储复杂结构或不需渲染的内部状态。
+    *   **优势**: 支持 `with_untracked` 以**引用**方式访问数据，适合存储复杂结构或不需渲染的内部状态。
 
 ### 2. Callback (回调)
 

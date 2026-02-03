@@ -107,7 +107,7 @@ impl<Arg: 'static, T: Clone + 'static, E: Clone + 'static> Mutation<Arg, T, E> {
     /// result will be ignored (last-one-wins).
     pub fn mutate(&self, arg: Arg) {
         // Increment ID and set pending state
-        let (current_id, action) = match self.inner.try_with_value(|inner| {
+        let (current_id, action) = match self.inner.try_with_untracked(|inner| {
             let next_id = inner.last_id.get().wrapping_add(1);
             inner.last_id.set(next_id);
             (next_id, inner.action.clone())
@@ -134,7 +134,7 @@ impl<Arg: 'static, T: Clone + 'static, E: Clone + 'static> Mutation<Arg, T, E> {
 
             // Check ID
             let is_latest = inner_handle
-                .try_with_value(|inner| inner.last_id.get() == current_id)
+                .try_with_untracked(|inner| inner.last_id.get() == current_id)
                 .unwrap_or(false);
 
             if is_latest {

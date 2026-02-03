@@ -624,95 +624,49 @@ pub fn panic_getting_disposed_signal(
     }
 }
 
-/// A variation of the [`With`] trait that provides a signposted "always-non-reactive" API.
-/// E.g. for [`StoredValue`](`crate::owner::StoredValue`).
-pub trait WithValue: DefinedAt {
-    /// The type of the value contained in the value.
-    type Value: ?Sized;
-
-    /// Applies the closure to the value, non-reactively, and returns the result,
-    /// or `None` if the value has already been disposed.
-    #[track_caller]
-    fn try_with_value<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>;
-
-    /// Applies the closure to the value, non-reactively, and returns the result.
-    ///
-    /// # Panics
-    /// Panics if you try to access a value that has been disposed.
-    #[track_caller]
-    fn with_value<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> U {
-        self.try_with_value(fun)
-            .unwrap_or_else(unwrap_signal!(self))
-    }
-}
-
-/// A variation of the [`Get`] trait that provides a signposted "always-non-reactive" API.
-/// E.g. for [`StoredValue`](`crate::owner::StoredValue`).
-pub trait GetValue: DefinedAt {
-    /// The type of the value contained in the value.
-    type Value: Clone;
-
-    /// Clones and returns the value of the value, non-reactively,
-    /// or `None` if the value has already been disposed.
-    #[track_caller]
-    fn try_get_value(&self) -> Option<Self::Value>;
-
-    /// Clones and returns the value of the value, non-reactively.
-    ///
-    /// # Panics
-    /// Panics if you try to access a value that has been disposed.
-    #[track_caller]
-    fn get_value(&self) -> Self::Value {
-        self.try_get_value().unwrap_or_else(unwrap_signal!(self))
-    }
-}
-
-impl<T> GetValue for T
-where
-    T: WithValue,
-    T::Value: Clone,
-{
-    type Value = <Self as WithValue>::Value;
-
-    fn try_get_value(&self) -> Option<Self::Value> {
-        self.try_with_value(Self::Value::clone)
-    }
-}
-
-/// A variation of the [`Update`] trait that provides a signposted "always-non-reactive" API.
-/// E.g. for [`StoredValue`](`crate::owner::StoredValue`).
-pub trait UpdateValue: DefinedAt {
-    /// The type of the value contained in the value.
-    type Value;
-
-    /// Updates the value, returning the value that is
-    /// returned by the update function, or `None` if the value has already been disposed.
-    #[track_caller]
-    fn try_update_value<U>(&self, fun: impl FnOnce(&mut Self::Value) -> U) -> Option<U>;
-
-    /// Updates the value.
-    #[track_caller]
-    fn update_value(&self, fun: impl FnOnce(&mut Self::Value)) {
-        self.try_update_value(fun);
-    }
-}
-
-/// A variation of the [`Set`] trait that provides a signposted "always-non-reactive" API.
-/// E.g. for [`StoredValue`](`crate::owner::StoredValue`).
-pub trait SetValue: DefinedAt {
-    /// The type of the value contained in the value.
+/// Updates the value of the signal by replacing it, without notifying subscribers.
+pub trait SetUntracked: DefinedAt {
+    /// The type of the value contained in the signal.
     type Value;
 
     /// Updates the value by replacing it, non-reactively.
     ///
-    /// If the value has already been disposed, returns `Some(value)` with the value that was
+    /// If the signal has already been disposed, returns `Some(value)` with the value that was
     /// passed in. Otherwise, returns `None`.
-    #[track_caller]
-    fn try_set_value(&self, value: Self::Value) -> Option<Self::Value>;
+    fn try_set_untracked(&self, value: Self::Value) -> Option<Self::Value>;
 
     /// Updates the value by replacing it, non-reactively.
+    ///
+    /// # Panics
+    /// Panics if you try to set a signal that has been disposed.
     #[track_caller]
-    fn set_value(&self, value: Self::Value) {
-        self.try_set_value(value);
+    fn set_untracked(&self, value: Self::Value) {
+        if let Some(_) = self.try_set_untracked(value) {
+            panic!(
+                "{}",
+                crate::traits::panic_getting_disposed_signal(
+                    self.defined_at(),
+                    self.debug_name(),
+                    std::panic::Location::caller()
+                )
+            );
+        }
+    }
+}
+
+impl<T> SetUntracked for T
+where
+    T: UpdateUntracked + IsDisposed,
+{
+    type Value = <Self as UpdateUntracked>::Value;
+
+    #[track_caller]
+    fn try_set_untracked(&self, value: Self::Value) -> Option<Self::Value> {
+        if self.is_disposed() {
+            Some(value)
+        } else {
+            self.update_untracked(|n| *n = value);
+            None
+        }
     }
 }

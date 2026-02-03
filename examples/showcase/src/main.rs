@@ -66,16 +66,16 @@ mod basics {
                 button(is_running.map(|r| if *r { "Stop Auto Inc" } else { "Start Auto Inc" }))
                     .on(event::click, move |_| {
                         if is_running.get() {
-                            if let Some(handle) = timer.get_value() {
+                            if let Some(handle) = timer.get_untracked() {
                                 handle.clear();
                             }
-                            timer.set_value(None);
+                            timer.set_untracked(None);
                             set_is_running.set(false);
                         } else {
                             if let Ok(handle) = set_interval_with_handle(move || {
                                 set_count.update(|n| *n += 1);
                             }, Duration::from_millis(1000)) {
-                                timer.set_value(Some(handle));
+                                timer.set_untracked(Some(handle));
                                 set_is_running.set(true);
                             }
                         }
