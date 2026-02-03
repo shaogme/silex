@@ -821,12 +821,12 @@ pub fn is_signal_valid(id: NodeId) -> bool {
     RUNTIME.with(|rt| rt.signals.borrow().contains_key(id))
 }
 
-pub fn get_node_defined_at(id: NodeId) -> Option<&'static std::panic::Location<'static>> {
+pub fn get_node_defined_at(_id: NodeId) -> Option<&'static std::panic::Location<'static>> {
     #[cfg(debug_assertions)]
     {
         RUNTIME.with(|rt| {
             let graph = rt.graph.borrow();
-            if let Some(node) = graph.nodes.get(id) {
+            if let Some(node) = graph.nodes.get(_id) {
                 return node.defined_at;
             }
             None
@@ -840,31 +840,31 @@ pub fn get_node_defined_at(id: NodeId) -> Option<&'static std::panic::Location<'
 
 // --- Debugging API ---
 
-pub fn set_debug_label(id: NodeId, label: impl Into<String>) {
+pub fn set_debug_label(_id: NodeId, _label: impl Into<String>) {
     #[cfg(debug_assertions)]
     {
-        let label = label.into();
+        let label = _label.into();
         RUNTIME.with(|rt| {
             let mut graph = rt.graph.borrow_mut();
-            if let Some(node) = graph.nodes.get_mut(id) {
+            if let Some(node) = graph.nodes.get_mut(_id) {
                 node.debug_label = Some(label);
             }
         })
     }
 }
 
-pub fn get_debug_label(id: NodeId) -> Option<String> {
+pub fn get_debug_label(_id: NodeId) -> Option<String> {
     #[cfg(debug_assertions)]
     {
         return RUNTIME.with(|rt| {
             let graph = rt.graph.borrow();
-            if let Some(node) = graph.nodes.get(id) {
+            if let Some(node) = graph.nodes.get(_id) {
                 if let Some(label) = &node.debug_label {
                     return Some(label.clone());
                 }
             }
             // Check dead labels
-            rt.dead_node_labels.borrow().get(id).cloned()
+            rt.dead_node_labels.borrow().get(_id).cloned()
         });
     }
     #[cfg(not(debug_assertions))]

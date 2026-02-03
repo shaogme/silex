@@ -80,7 +80,67 @@
 //! });
 //! ```
 
-// pub use crate::trait_options::*;
+/// A module containing static helper functions for reactive operations.
+/// usage of these avoids generating unique closures for every operator implementation.
+#[doc(hidden)]
+pub mod ops_impl {
+    use std::ops::*;
+
+    #[inline]
+    pub fn add<T: Add<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
+        lhs.clone().add(rhs.clone())
+    }
+    #[inline]
+    pub fn sub<T: Sub<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
+        lhs.clone().sub(rhs.clone())
+    }
+    #[inline]
+    pub fn mul<T: Mul<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
+        lhs.clone().mul(rhs.clone())
+    }
+    #[inline]
+    pub fn div<T: Div<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
+        lhs.clone().div(rhs.clone())
+    }
+    #[inline]
+    pub fn rem<T: Rem<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
+        lhs.clone().rem(rhs.clone())
+    }
+    #[inline]
+    pub fn bitand<T: BitAnd<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
+        lhs.clone().bitand(rhs.clone())
+    }
+    #[inline]
+    pub fn bitor<T: BitOr<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
+        lhs.clone().bitor(rhs.clone())
+    }
+    #[inline]
+    pub fn bitxor<T: BitXor<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
+        lhs.clone().bitxor(rhs.clone())
+    }
+    #[inline]
+    pub fn shl<T: Shl<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
+        lhs.clone().shl(rhs.clone())
+    }
+    #[inline]
+    pub fn shr<T: Shr<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
+        lhs.clone().shr(rhs.clone())
+    }
+    #[inline]
+    pub fn neg<T: Neg<Output = T> + Clone>(val: &T) -> T {
+        val.clone().neg()
+    }
+    #[inline]
+    pub fn not<T: Not<Output = T> + Clone>(val: &T) -> T {
+        val.clone().not()
+    }
+}
+
+///   compiled code size.
+///
+/// *Note*: This requires the right-hand side operand to implement `IntoSignal`. Primitives (i32, f64, etc.)
+/// and Signals already implement this. Custom types used in reactive math operations will need to implement
+/// `IntoSignal` manually (mapping to `Constant<T>`).
 
 #[macro_export]
 macro_rules! impl_reactive_ops {
@@ -104,49 +164,23 @@ macro_rules! impl_reactive_ops {
 #[macro_export]
 macro_rules! impl_reactive_op {
     ($target:ident, $trait:ident, $method:ident) => {
-        // Op with T (Value)
-        impl<T> std::ops::$trait<T> for $target<T>
+        // Op with anything convertible to a Signal (Primitives + Signals)
+        impl<T, R> std::ops::$trait<R> for $target<T>
         where
             T: std::ops::$trait<T, Output = T> + Clone + 'static,
             T: PartialEq + 'static,
+            R: $crate::traits::IntoSignal<Value = T>,
+            R::Signal: 'static,
         {
-            type Output = $crate::reactivity::ReactiveBinary<
-                $target<T>,
-                $crate::reactivity::Constant<T>,
-                fn(&T, &T) -> T,
-            >;
+            type Output =
+                $crate::reactivity::ReactiveBinary<$target<T>, R::Signal, fn(&T, &T) -> T>;
 
-            fn $method(self, rhs: T) -> Self::Output {
+            fn $method(self, rhs: R) -> Self::Output {
                 $crate::reactivity::ReactiveBinary::new(
                     self,
-                    $crate::reactivity::Constant(rhs),
-                    |lhs, rhs| lhs.clone().$method(rhs.clone()),
+                    rhs.into_signal(),
+                    $crate::traits::ops_impl::$method,
                 )
-            }
-        }
-
-        // Op with Reactives
-        $crate::impl_reactive_op_rhs!($target, $trait, $method, $crate::reactivity::Signal<T>);
-        $crate::impl_reactive_op_rhs!($target, $trait, $method, $crate::reactivity::ReadSignal<T>);
-        $crate::impl_reactive_op_rhs!($target, $trait, $method, $crate::reactivity::Memo<T>);
-        $crate::impl_reactive_op_rhs!($target, $trait, $method, $crate::reactivity::RwSignal<T>);
-    };
-}
-
-#[macro_export]
-macro_rules! impl_reactive_op_rhs {
-    ($target:ident, $trait:ident, $method:ident, $rhs:ty) => {
-        impl<T> std::ops::$trait<$rhs> for $target<T>
-        where
-            T: std::ops::$trait<T, Output = T> + Clone + 'static,
-            T: PartialEq + 'static,
-        {
-            type Output = $crate::reactivity::ReactiveBinary<$target<T>, $rhs, fn(&T, &T) -> T>;
-
-            fn $method(self, rhs: $rhs) -> Self::Output {
-                $crate::reactivity::ReactiveBinary::new(self, rhs, |lhs, rhs| {
-                    lhs.clone().$method(rhs.clone())
-                })
             }
         }
     };
@@ -163,7 +197,7 @@ macro_rules! impl_reactive_unary_op {
             type Output = $crate::reactivity::Derived<$target<T>, fn(&T) -> T>;
 
             fn $method(self) -> Self::Output {
-                $crate::reactivity::Derived::new(self, |val| val.clone().$method())
+                $crate::reactivity::Derived::new(self, $crate::traits::ops_impl::$method)
             }
         }
     };
@@ -433,6 +467,21 @@ impl<T: Clone + 'static> IntoSignal for Constant<T> {
 
     fn into_signal(self) -> Self::Signal {
         self
+    }
+}
+
+// Allows closures to be treated as derived signals automatically.
+// E.g. `signal + (|| 5)`
+impl<F, T> IntoSignal for F
+where
+    F: Fn() -> T + 'static,
+    T: Clone + 'static,
+{
+    type Value = T;
+    type Signal = Signal<T>;
+
+    fn into_signal(self) -> Self::Signal {
+        Signal::derive(self)
     }
 }
 
