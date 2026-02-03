@@ -154,7 +154,7 @@ where
     }
 }
 
-macro_rules! host_accessor_tuple {
+macro_rules! impl_tuple_traits {
     ($($T:ident),*) => {
         impl<$($T),*> Accessor for ($($T,)*)
         where
@@ -168,12 +168,47 @@ macro_rules! host_accessor_tuple {
                 ($($T.value(),)*)
             }
         }
+
+        impl<$($T),*> DefinedAt for ($($T,)*)
+        where
+            $($T: DefinedAt),*
+        {
+            fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
+                None
+            }
+        }
+
+        impl<$($T),*> GetUntracked for ($($T,)*)
+        where
+            $($T: GetUntracked),*
+        {
+            type Value = ($($T::Value,)*);
+
+            fn try_get_untracked(&self) -> Option<Self::Value> {
+                #[allow(non_snake_case)]
+                let ($($T,)*) = self;
+                Some(($($T.try_get_untracked()?,)*))
+            }
+        }
+
+        impl<$($T),*> Get for ($($T,)*)
+        where
+            $($T: Get),*
+        {
+            type Value = ($($T::Value,)*);
+
+            fn try_get(&self) -> Option<Self::Value> {
+                #[allow(non_snake_case)]
+                let ($($T,)*) = self;
+                Some(($($T.try_get()?,)*))
+            }
+        }
     };
 }
 
-host_accessor_tuple!(A, B);
-host_accessor_tuple!(A, B, C);
-host_accessor_tuple!(A, B, C, D);
+impl_tuple_traits!(A, B);
+impl_tuple_traits!(A, B, C);
+impl_tuple_traits!(A, B, C, D);
 
 /// Provides a fluent API for checking equality on reactive values.
 pub trait ReactivePartialEq: Accessor + Clone + 'static

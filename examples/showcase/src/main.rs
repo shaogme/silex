@@ -634,7 +634,9 @@ mod advanced {
                     .attr("type", "button") // Prevent accidental form submission
                     .on(event::click, move |e: web_sys::MouseEvent| {
                         e.prevent_default();
-                        login_mutation.mutate((username.get(), password.get()));
+
+                        // Note: "login_mutation.mutate((username.get(), password.get()));" is the same as "login_mutation.mutate_with((username, password));"
+                        login_mutation.mutate_with((username, password));
                     })
                     .attr("disabled", move || login_mutation.loading()) // Make reactive
                     .style("padding: 5px 10px;"),

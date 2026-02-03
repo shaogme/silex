@@ -148,6 +148,13 @@ impl<Arg: 'static, T: Clone + 'static, E: Clone + 'static> Mutation<Arg, T, E> {
         });
     }
 
+    pub fn mutate_with<A>(&self, arg_accessor: A)
+    where
+        A: Accessor<Value = Arg>,
+    {
+        self.mutate(arg_accessor.value());
+    }
+
     /// Helper to check if the mutation is currently `Pending`.
     pub fn loading(&self) -> bool {
         self.state.with(|s| s.is_loading())
