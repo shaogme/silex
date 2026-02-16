@@ -1,8 +1,8 @@
-pub mod dynamic;
-pub mod for_loop;
-pub mod index;
-pub mod show;
-pub mod switch;
+mod dynamic;
+mod for_loop;
+mod index;
+mod show;
+mod switch;
 
 pub use dynamic::*;
 pub use for_loop::*;
