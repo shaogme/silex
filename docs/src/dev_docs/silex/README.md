@@ -109,5 +109,4 @@ Silex 的路由系统基于浏览器 History API，实现了单页应用 (SPA) �
 
 1.  **Router Query Params**: 目前 `Navigator` 在更新 Query 参数时，虽然做了去重检查，但 `web_sys::UrlSearchParams` 的互操作性还有优化空间。`use_query_signal` 的双向绑定逻辑较为复杂，存在潜在的循环更新风险（通过值比对已缓解，但仍需留意）。
 2.  **Suspense 内存占用**: 当前 `Suspense` 加载时同时保留了 Fallback 和 Hidden Content 的 DOM 节点。对于极其庞大的子树，这可能带来内存压力。未来可考虑支持“卸载模式”。
-3.  **SSR 支持**: 目前 `silex` Crate 主要关注 CSR (Client-Side Rendering)。虽然底层 `silex_html` 有 SSR 迹象，但 `Router` 和 `Portal` 等组件高度依赖 `web_sys` 和浏览器环境，尚不支持同构渲染。
-4.  **Flow 组件的类型复杂性**: `For` 和 `Show` 为了极致性能和灵活性，泛型参数非常多。虽然有构造函数简化，但生成的类型签名依然很长，可能影响错误信息的阅读。
+3.  **Flow 组件的类型复杂性**: `For` 和 `Show` 为了极致性能和灵活性，泛型参数非常多。虽然有构造函数简化，但生成的类型签名依然很长，可能影响错误信息的阅读。
