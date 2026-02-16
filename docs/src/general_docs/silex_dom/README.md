@@ -167,7 +167,8 @@ impl View for MyComponent {
 ```
 
 ### `view_match!` 宏
-用于简化从 `match` 表达式返回不同类型 View 的操作（自动应用 Type Erasure）：
+用于简化从 `match` 表达式返回不同类型 View 的操作（自动处理类型擦除）。
+`AnyView` 已对底层实现进行了深度优化，常见类型（如 `Element`, `String`）的转换是**零成本 (Zero-cost)** 的，不会产生不必要的堆分配。
 
 ```rust
 use silex_dom::view_match;

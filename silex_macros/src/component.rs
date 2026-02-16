@@ -100,7 +100,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
                         type_str.chars().filter(|c| !c.is_whitespace()).collect();
 
                     if type_clean.ends_with("Children") || type_clean.ends_with("AnyView") {
-                        new_initializers.push(quote! { #param_name: ::silex::dom::view::IntoAnyView::into_any(#default_expr) });
+                        new_initializers.push(quote! { #param_name: ::silex::dom::view::View::into_any(#default_expr) });
                     } else {
                         new_initializers.push(quote! { #param_name: (#default_expr).into() });
                     }
@@ -127,14 +127,14 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
             if type_clean.ends_with("Children") || type_clean.ends_with("AnyView") {
                 if is_required {
                     builder_methods.push(quote! {
-                        pub fn #param_name<__SilexValue: ::silex::dom::view::IntoAnyView>(mut self, val: __SilexValue) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::View + Clone + 'static>(mut self, val: __SilexValue) -> Self {
                             self.#param_name = Some(val.into_any());
                             self
                         }
                     });
                 } else {
                     builder_methods.push(quote! {
-                        pub fn #param_name<__SilexValue: ::silex::dom::view::IntoAnyView>(mut self, val: __SilexValue) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::View + Clone + 'static>(mut self, val: __SilexValue) -> Self {
                             self.#param_name = val.into_any();
                             self
                         }

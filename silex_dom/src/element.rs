@@ -266,6 +266,10 @@ impl View for Element {
             attr.apply(&self.dom_element);
         }
     }
+
+    fn into_any(self) -> crate::view::AnyView {
+        crate::view::AnyView::Element(self)
+    }
 }
 
 impl std::ops::Deref for Element {
@@ -349,6 +353,10 @@ impl<T> View for TypedElement<T> {
 
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
         self.element.apply_attributes(attrs);
+    }
+
+    fn into_any(self) -> crate::view::AnyView {
+        crate::view::AnyView::Element(self.element)
     }
 }
 

@@ -110,6 +110,7 @@
     pub trait View {
         fn mount(self, parent: &web_sys::Node);
         fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
+        fn into_any(self) -> AnyView;
     }
     ```
 *   **Semantics**: 定义对象如何挂载到 DOM 树中。
@@ -130,9 +131,9 @@
     *   将 `PendingAttribute`（具有一次性消费语义）传递给所有子节点。
     *   第一个能够消费该属性的子节点会应用它，后续节点只会收到已被消费的空属性。
 
-### `AnyView` (Type Erasure)
-*   **Struct**: `pub struct AnyView(Box<dyn Render>);`
-*   **Semantics**: 动态分发的 View 容器，用于异构列表或条件渲染分支。
+### `AnyView` (Type Erasure Optimization)
+*   **Enum**: `pub enum AnyView { Empty, Text, Element, List, Boxed }`
+*   **Semantics**: 优化的动态分发容器。常见类型（Element, Text, Fragment）直接内联存储，以此实现零成本抽象；无法识别的类型回退到 Box。
 *   **Usage**: `match ... { A => a.into_any(), B => b.into_any() }`.
 
 ### `view_match!` Macro

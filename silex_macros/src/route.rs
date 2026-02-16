@@ -96,7 +96,7 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
 
         impl ::silex::router::RouteView for #name {
             fn render(&self) -> ::silex::dom::view::AnyView {
-                use ::silex::dom::view::IntoAnyView;
+                use ::silex::dom::view::View;
                 match self {
                     #render_arms
                 }

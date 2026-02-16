@@ -17,6 +17,19 @@ pub trait View {
     /// Default implementation does nothing (for Text, Fragment, etc.).
     /// Elements override this to actually apply attributes.
     fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
+
+    /// Convert this view into an AnyView (Type Erasure).
+    ///
+    /// By default, this wraps the view in a `Box<dyn Render>` (AnyView::Boxed).
+    /// Specific types (Element, String, Fragment) override this to return
+    /// their optimized Enum variant (AnyView::Element, AnyView::Text, etc.),
+    /// avoiding heap allocation.
+    fn into_any(self) -> AnyView
+    where
+        Self: Sized + Clone + 'static,
+    {
+        AnyView::Boxed(Box::new(self))
+    }
 }
 
 // --- View Trait Implementations ---
@@ -30,6 +43,10 @@ impl View for String {
             handle_error(e);
         }
     }
+
+    fn into_any(self) -> AnyView {
+        AnyView::Text(self)
+    }
 }
 
 impl View for &str {
@@ -39,6 +56,10 @@ impl View for &str {
         if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
             handle_error(e);
         }
+    }
+
+    fn into_any(self) -> AnyView {
+        AnyView::Text(self.to_string())
     }
 }
 
@@ -54,6 +75,10 @@ macro_rules! impl_view_for_primitive {
                         handle_error(e);
                     }
                 }
+
+                fn into_any(self) -> AnyView {
+                    AnyView::Text(self.to_string())
+                }
             }
         )*
     };
@@ -65,6 +90,10 @@ impl_view_for_primitive!(
 
 impl View for () {
     fn mount(self, _parent: &Node) {}
+
+    fn into_any(self) -> AnyView {
+        AnyView::Empty
+    }
 }
 
 // 3. 动态闭包支持 (Lazy View / Dynamic Text)
@@ -351,7 +380,7 @@ impl<V: View> View for SilexResult<V> {
     }
 }
 
-// --- AnyView (Type Erasure) ---
+// --- AnyView (Enum Optimization) ---
 
 /// 辅助特征，用于支持 Box<dyn View> 的移动语义挂载
 pub trait Render {
@@ -372,48 +401,75 @@ impl<V: View + Clone + 'static> Render for V {
     }
 }
 
-/// 类型擦除的 View，可以持有任何 View 的实现。
-/// 用于从同一个函数返回不同类型的 View（例如：主题）。
-pub struct AnyView(Box<dyn Render>);
+/// 优化的 AnyView，使用 Enum 分发常见类型，减少 Box 开销。
+pub enum AnyView {
+    Empty,
+    Text(String),
+    Element(crate::element::Element),
+    List(Vec<AnyView>),
+    Boxed(Box<dyn Render>),
+}
 
 impl AnyView {
     pub fn new<V: View + Clone + 'static>(view: V) -> Self {
-        Self(Box::new(view))
+        view.into_any()
     }
 }
 
 impl View for AnyView {
     fn mount(self, parent: &Node) {
-        self.0.mount_boxed(parent)
+        match self {
+            AnyView::Empty => {}
+            AnyView::Text(s) => s.mount(parent),
+            AnyView::Element(el) => el.mount(parent),
+            AnyView::List(list) => {
+                for child in list {
+                    child.mount(parent);
+                }
+            }
+            AnyView::Boxed(b) => b.mount_boxed(parent),
+        }
     }
 
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
-        self.0.apply_attributes_boxed(attrs);
+        match self {
+            AnyView::Empty => {}   // Cannot apply attributes to empty
+            AnyView::Text(_) => {} // Typically cannot apply to text, unless wrapped (but Text impl View ignores it)
+            AnyView::Element(el) => el.apply_attributes(attrs),
+            AnyView::List(list) => {
+                // Forwarding strategy: First Match
+                for child in list {
+                    child.apply_attributes(attrs.clone());
+                }
+            }
+            AnyView::Boxed(b) => b.apply_attributes_boxed(attrs),
+        }
     }
 }
 
 impl Clone for AnyView {
     fn clone(&self) -> Self {
-        Self(self.0.clone_boxed())
+        match self {
+            AnyView::Empty => AnyView::Empty,
+            AnyView::Text(s) => AnyView::Text(s.clone()),
+            AnyView::Element(el) => AnyView::Element(el.clone()),
+            AnyView::List(list) => AnyView::List(list.clone()),
+            AnyView::Boxed(b) => AnyView::Boxed(b.clone_boxed()),
+        }
     }
 }
 
 impl PartialEq for AnyView {
-    fn eq(&self, _other: &Self) -> bool {
-        // 对于类型擦除的 View，默认假设它们总是不同的，
-        // 这样可以确保响应式系统总是重新渲染它们。
-        // 这对于 Dynamic 组件来说是合理的行为。
-        false
-    }
-}
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (AnyView::Empty, AnyView::Empty) => true,
+            (AnyView::Text(a), AnyView::Text(b)) => a == b,
+            (AnyView::Element(a), AnyView::Element(b)) => a == b,
+            (AnyView::List(a), AnyView::List(b)) => a == b,
 
-pub trait IntoAnyView {
-    fn into_any(self) -> AnyView;
-}
-
-impl<V: View + Clone + 'static> IntoAnyView for V {
-    fn into_any(self) -> AnyView {
-        AnyView::new(self)
+            // Boxed is hard to compare partially.
+            _ => false,
+        }
     }
 }
 
@@ -425,19 +481,25 @@ pub type Children = AnyView;
 
 impl Default for AnyView {
     fn default() -> Self {
-        AnyView::new(())
+        AnyView::Empty
     }
 }
 
 impl std::fmt::Debug for AnyView {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "AnyView")
+        match self {
+            Self::Empty => write!(f, "AnyView(Empty)"),
+            Self::Text(arg0) => f.debug_tuple("AnyView(Text)").field(arg0).finish(),
+            Self::Element(_) => write!(f, "AnyView(Element)"),
+            Self::List(l) => f.debug_tuple("AnyView(List)").field(&l.len()).finish(),
+            Self::Boxed(_) => write!(f, "AnyView(Boxed)"),
+        }
     }
 }
 
 /// 片段，用于容纳多个不同类型的子组件
 #[derive(Default, Clone)]
-pub struct Fragment(Vec<AnyView>);
+pub struct Fragment(pub Vec<AnyView>);
 
 impl Fragment {
     pub fn new(children: Vec<AnyView>) -> Self {
@@ -447,15 +509,15 @@ impl Fragment {
 
 impl View for Fragment {
     fn mount(self, parent: &Node) {
-        for child in self.0 {
-            child.mount(parent);
-        }
+        self.0.mount(parent);
     }
 
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
-        for child in &mut self.0 {
-            child.apply_attributes(attrs.clone());
-        }
+        self.0.apply_attributes(attrs);
+    }
+
+    fn into_any(self) -> AnyView {
+        AnyView::List(self.0)
     }
 }
 
@@ -463,25 +525,25 @@ impl View for Fragment {
 
 impl From<Element> for AnyView {
     fn from(v: Element) -> Self {
-        AnyView::new(v)
+        AnyView::Element(v)
     }
 }
 
 impl From<String> for AnyView {
     fn from(v: String) -> Self {
-        AnyView::new(v)
+        AnyView::Text(v)
     }
 }
 
 impl From<&str> for AnyView {
     fn from(v: &str) -> Self {
-        AnyView::new(v.to_string())
+        AnyView::Text(v.to_string())
     }
 }
 
 impl From<()> for AnyView {
     fn from(_: ()) -> Self {
-        AnyView::new(())
+        AnyView::Empty
     }
 }
 
@@ -490,7 +552,7 @@ macro_rules! impl_from_primitive_for_anyview {
         $(
             impl From<$t> for AnyView {
                 fn from(v: $t) -> Self {
-                    AnyView::new(v)
+                    AnyView::Text(v.to_string())
                 }
             }
         )*
@@ -508,7 +570,10 @@ impl<V: View + Clone + 'static> From<Vec<V>> for AnyView {
 
 impl<V: View + Clone + 'static> From<Option<V>> for AnyView {
     fn from(v: Option<V>) -> Self {
-        AnyView::new(v)
+        match v {
+            Some(val) => AnyView::new(val),
+            None => AnyView::Empty,
+        }
     }
 }
 
@@ -548,7 +613,7 @@ macro_rules! view_match {
     ($target:expr, { $($pat:pat $(if $guard:expr)? => $val:expr),* $(,)? }) => {
         match $target {
             $(
-                $pat $(if $guard)? => $crate::view::IntoAnyView::into_any($val),
+                $pat $(if $guard)? => $crate::view::View::into_any($val),
             )*
         }
     };

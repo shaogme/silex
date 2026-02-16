@@ -58,6 +58,13 @@ pub trait View {
 }
 ```
 
+#### AnyView 优化 (Enum Dispatch)
+`AnyView` 是 Silex 中用于处理动态类型的核心结构（如 `if/else` 分支返回不同类型的 View）。
+为了极致性能，`AnyView` 已从传统的 `Box<dyn View>` 重构为 **枚举分发 (Enum Dispatch)**：
+*   **常见类型内联**：`Element`, `Text`, `Fragment` 直接内联在 Enum 变体中，**零堆分配**。
+*   **静态分发**：`mount` 和 `apply_attributes` 操作通过 `match` 语句进行静态分发，对分支预测更友好。
+*   **零成本构造**：利用 `View::into_any(self)` 方法，在 `AnyView::new(v)` 或 `view_match!` 中直接将对应的类型（如 `Element`）移动到 Enum 变体中，避免了 `Box` 分配。
+
 #### 动态视图与范围清理 (Range Cleaning)
 对于动态内容（如 `move || signal.get()`），Silex 使用闭包 `F: Fn() -> V` 来实现。为了在不使用 VDOM 的情况下安全地替换 DOM 内容，`silex_dom` 采用了 **双锚点策略 (Double-Anchor Strategy)**：
 
@@ -116,7 +123,6 @@ Silex 利用 Rust 的 Trait Bound 实现了编译时的 HTML 规范检查。
 
 *   **CSR 强耦合**：目前的实现大量使用了 `web_sys::window()` 和 `document()`，这导致代码很难在非浏览器环境（如 SSR 服务器端渲染）中运行。
     *   **重构计划**：引入 `DomRenderer` Trait 抽象，将具体的 DOM 操作隔离，以便实现 SSR 后端。
-*   **AnyView 的开销**：`AnyView`使用了 `Box<dyn Render>`，在极为敏感的性能场景下，这种动态分发和堆分配可能产生微小的开销。
 *   **事件委托 (Event Delegation)**：目前的事件绑定是直接在每个节点上 `addEventListener`。对于拥有成千上万行的列表，这可能会占用较多内存。
     *   **TODO**：研究实现基于根节点的事件委托机制。
 *   **Hydration 支持**：目前缺乏从服务器端 HTML "注水" (Hydrate) 成为交互式应用的逻辑。
