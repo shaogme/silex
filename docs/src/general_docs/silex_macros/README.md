@@ -51,9 +51,13 @@ Button()
 使用 `css!` 宏可以在 Rust 代码中直接编写 CSS，并享受自动哈希（Scoped CSS）和压缩功能。
 
 ```rust
+let (color, _) = signal("white".to_string());
+let scale = signal(1.0).0;
+
 let btn_class = css!(r#"
     background-color: blue;
-    color: white;
+    color: $(color); /* 支持动态 Signal 插值 */
+    transform: scale($(scale)); /* 自动处理任何实现了 IntoSignal 的类型 */
     padding: 10px;
 
     &:hover {

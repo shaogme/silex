@@ -64,10 +64,15 @@ src/
 实现了 CSS-in-Rust 的核心逻辑。
 
 **核心流程**：
-1.  **哈希计算**：对输入的 CSS 字符串计算 Hash，生成唯一类名 `slx-{hash}`。
-2.  **作用域封装**：将 CSS 内容包裹在 `.slx-{hash} { ... }` 选择器中，实现样式隔离。
-3.  **处理与压缩**：调用 `lightningcss` 库对 CSS 进行解析、验证语法并压缩（Minify）。
-4.  **代码注入**：生成调用 `silex::css::inject_style(id, css_content)` 的代码，并在 UI 中返回对应的类名。
+1.  **动态值解析**：扫描 CSS 字符串中的 `$(expr)` 插值语法。
+    *   提取表达式并转换为 Signal（自动处理解包）。
+    *   生成唯一的 CSS 变量名（如 `--slx-{hash}-{index}`）替换原插值位置。
+2.  **哈希计算**：对处理后的 CSS 字符串计算 Hash，生成唯一类名 `slx-{hash}`。
+3.  **作用域封装**：将 CSS 内容包裹在 `.slx-{hash} { ... }` 选择器中，实现样式隔离。
+4.  **处理与压缩**：调用 `lightningcss` 库对 CSS 进行解析、验证语法并压缩（Minify）。
+5.  **代码注入与运行时绑定**：
+    *   生成调用 `silex::css::inject_style` 的代码注入静态 CSS。
+    *   返回 `silex::css::DynamicCss` 结构体，该结构体实现了 `ApplyToDom`，能够自动将动态值绑定到元素的内联样式（`style="..."`）中，实现高性能的细粒度更新。
 
 ### 4.3 路由宏 `#[derive(Route)]` (`route.rs`)
 
@@ -109,5 +114,5 @@ src/
 *   **错误提示**：当宏展开失败时，生成的编译器错误信息有时不够直观，难以定位到具体的宏参数问题。
 
 ### 待办事项 (TODOs)
-*   [ ] **增强 CSS 支持**：支持在 `css!` 中使用动态值（类似于 styled-components 的 props 插值）。
+*   [x] **增强 CSS 支持**：支持在 `css!` 中使用动态值（类似于 styled-components 的 props 插值），支持 `$(expr)` 语法与 Signal 自动解包。
 *   [x] **优化路由匹配算法**：已实现基于 Radix Tree 的匹配结构生成，解决了路由数量巨大时的性能瓶颈。

@@ -46,13 +46,17 @@ fn MyComponent(props...) -> impl View
 编译时 CSS 处理与注入。
 
 ### 工作流
-1.  **Input**: CSS 字符串字面量。
-2.  **Hashing**: 计算内容 Hash，生成唯一类名 `slx-{hash}`。
-3.  **Scoping**: 将 CSS 内容包裹在 `.slx-{hash} { ... }` 中。
-4.  **Validation & Minification**: 使用 `lightningcss` 解析、验证并压缩 CSS。
-5.  **Codegen**:
-    *   生成 `silex::css::inject_style("style-slx-{hash}", "{css_content}")` 调用。
-    *   返回类名字符串 `"slx-{hash}"`。
+1.  **Input**: CSS 字符串字面量，支持 `$(expr)` 动态值插值。
+2.  **Interpolation**:
+    *   解析 `$(expr)` 并利用 `IntoSignal` trait 转换为响应式信号。
+    *   在 CSS 中替换为变量 `--slx-{hash}-{index}`。
+3.  **Hashing**: 计算处理后的 CSS 内容 Hash，生成唯一类名 `slx-{hash}`。
+4.  **Scoping**: 将 CSS 内容包裹在 `.slx-{hash} { ... }` 中。
+5.  **Validation & Minification**: 使用 `lightningcss` 解析、验证并压缩 CSS。
+6.  **Codegen**:
+    *   生成 `silex::css::inject_style` 调用。
+    *   若**无动态值**：返回静态类名字符串 `"slx-{hash}"`。
+    *   若**有动态值**：返回 `DynamicCss` 结构体，包含类名和变量更新闭包列表 (Updaters)。
 
 ---
 

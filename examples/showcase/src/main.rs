@@ -395,34 +395,37 @@ mod advanced {
 
     #[component]
     pub fn CssDemo() -> impl View {
-        // Scoped CSS using css! macro
+        let (color, set_color) = signal("white".to_string());
+        let (scale, set_scale) = signal(1.0);
+
+        // Scoped CSS using css! macro with dynamic interpolation
         let btn_class = css!(
             r#"
             background-color: #6200ea;
-            color: white;
+            color: $(color);
             padding: 8px 16px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            transition: transform 0.1s;
+            transition: transform 0.1s, color 0.2s;
+            transform: scale($(scale));
 
             &:hover {
                 background-color: #3700b3;
-                transform: scale(1.05);
-            }
-
-            &:active {
-                transform: scale(0.95);
             }
         "#
         );
 
         div![
             h3("CSS-in-Rust Demo"),
-            p("The button below is styled using the `css!` macro with scoped styles."),
+            p("The button below is styled using the `css!` macro with scoped styles and dynamic values (color, scale)."),
             button("Scoped Style Button")
                 .class(btn_class)
-                .on(event::click, || console_log("Clicked!")),
+                .on(event::click, move |_| {
+                    set_color.update(|c| *c = if *c == "white" { "#ffd700".to_string() } else { "white".to_string() });
+                    set_scale.update(|s| *s = if *s == 1.0 { 1.2 } else { 1.0 });
+                    console_log("Clicked! Toggled styles.");
+                }),
         ]
     }
 
