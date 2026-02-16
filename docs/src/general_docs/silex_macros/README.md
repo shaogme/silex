@@ -68,7 +68,7 @@ button(()).class(btn_class).text("Styled Button")
 
 ## 3. 类型安全路由 (`#[derive(Route)]`)
 
-通过宏自动从 Enum 生成路由匹配和渲染逻辑。
+通过宏自动从 Enum 生成**基于 Radix Tree 的高性能**路由匹配和渲染逻辑。
 
 ```rust
 #[derive(Route, Clone, PartialEq)]

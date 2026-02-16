@@ -63,13 +63,12 @@ fn MyComponent(props...) -> impl View
 ### 核心机制
 
 #### `fn match_path(path: &str) -> Option<Self>`
-*   **Segment Matching**: 将路径按 `/` 分割。
-*   **Static Segment**: 字符串精确匹配。
-*   **Param Segment (`:id`)**: 尝试解析为目标字段类型 (`ident.parse()`)。
-*   **Wildcard (`*`)**: 匹配剩余所有内容。
-*   **Nested Route**:
-    *   识别 `#[nested]` 标记的字段。
-    *   递归调用子路由的 `match_path`，传入剩余路径段。
+*   **Radix Tree Generation**: 宏在编译时构建路由的前缀树 (Trie)，将所有路由规则合并为一个高效的查找结构。
+*   **Tree Traversal**:
+    *   **Static Matches**: 优先匹配静态路径段 (HashMap/Match)。
+    *   **Param Segment**: 若无静态匹配，尝试匹配并解析参数节点。
+    *   **Wildcard/Nested**: 作为后备选项 (Fallback)，匹配剩余路径。
+*   **Performance**: 查找复杂度由 O(Routes) 降低为 O(Depth)，极大提升了大量路由下的匹配性能。
 
 #### `fn to_path(&self) -> String`
 *   根据 Enum Variant 的字段值反向构建 URL 字符串。

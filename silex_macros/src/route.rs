@@ -1,5 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+use std::collections::BTreeMap;
 use syn::parse::Parse;
 use syn::{Attribute, Data, DeriveInput, Error, Fields, Member, Token};
 
@@ -267,174 +268,260 @@ fn detect_nested_field(fields: &Fields, segments: &[Segment]) -> syn::Result<Opt
     Ok(nested)
 }
 
+/// Trie Node for route matching
+#[derive(Default)]
+struct Node {
+    static_children: BTreeMap<String, Node>,
+    param_child: Option<Box<Node>>,
+
+    // Indices in `route_defs` that match at this node
+    exact_matches: Vec<usize>,
+    wildcard_matches: Vec<usize>,
+    nested_matches: Vec<usize>,
+}
+
+impl Node {
+    fn insert(
+        &mut self,
+        segments: &[Segment],
+        route_idx: usize,
+        is_wildcard: bool,
+        is_nested: bool,
+    ) {
+        if segments.is_empty() {
+            if is_wildcard {
+                self.wildcard_matches.push(route_idx);
+            } else if is_nested {
+                self.nested_matches.push(route_idx);
+            } else {
+                self.exact_matches.push(route_idx);
+            }
+            return;
+        }
+
+        match &segments[0] {
+            Segment::Static(s) => {
+                self.static_children.entry(s.clone()).or_default().insert(
+                    &segments[1..],
+                    route_idx,
+                    is_wildcard,
+                    is_nested,
+                );
+            }
+            Segment::Param(_) => {
+                if self.param_child.is_none() {
+                    self.param_child = Some(Box::new(Node::default()));
+                }
+                self.param_child.as_mut().unwrap().insert(
+                    &segments[1..],
+                    route_idx,
+                    is_wildcard,
+                    is_nested,
+                );
+            }
+        }
+    }
+}
+
 fn generate_match_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Result<TokenStream> {
-    let mut arms = Vec::new();
+    let mut root = Node::default();
 
-    for def in defs {
-        let variant_ident = &def.variant_ident;
-        let expected_len = def.path_segments.len();
-        let is_wildcard = def.is_wildcard;
-        let is_nested = def.nested_field.is_some();
+    for (i, def) in defs.iter().enumerate() {
+        root.insert(
+            &def.path_segments,
+            i,
+            def.is_wildcard,
+            def.nested_field.is_some(),
+        );
+    }
 
-        let mut checks = Vec::new();
-        let mut param_parsing = Vec::new();
+    let match_logic = generate_node_logic(&root, 0, defs, enum_name)?;
 
-        // 1. 基本长度检查
-        if is_wildcard {
-            // 通配符：只要长度够就行
-            checks.push(quote! {
-                if segments.len() < #expected_len { return None; }
-            });
-        } else if is_nested {
-            // 嵌套路由：这是前缀匹配，segments 长度至少要覆盖当前层的定义的段
-            checks.push(quote! {
-                if segments.len() < #expected_len { return None; }
-            });
-        } else {
-            // 叶子路由：必须精确匹配
-            checks.push(quote! {
-                if segments.len() != #expected_len { return None; }
-            });
+    Ok(match_logic)
+}
+
+fn generate_node_logic(
+    node: &Node,
+    depth: usize,
+    defs: &[RouteDef],
+    enum_name: &syn::Ident,
+) -> syn::Result<TokenStream> {
+    // 1. 处理路径结束的情况 (segments.len() == depth)
+    let check_end_logic = {
+        let mut attempts = Vec::new();
+        // Exact matches
+        for &idx in &node.exact_matches {
+            attempts.push(generate_route_handler(&defs[idx], enum_name)?);
+        }
+        // Wildcard / Nested can also match empty remainder
+        for &idx in &node.wildcard_matches {
+            attempts.push(generate_route_handler(&defs[idx], enum_name)?);
+        }
+        for &idx in &node.nested_matches {
+            attempts.push(generate_route_handler(&defs[idx], enum_name)?);
         }
 
-        // 2. 段匹配逻辑
-        for (idx, seg) in def.path_segments.iter().enumerate() {
-            match seg {
-                Segment::Static(s) => {
-                    checks.push(quote! {
-                        if segments[#idx] != #s { return None; }
-                    });
-                }
-                Segment::Param(name) => {
-                    let ident = format_ident!("{}", name);
-                    // 查找字段类型
-                    let field_ty = find_field_type(&def.fields, name).ok_or_else(|| {
-                        Error::new_spanned(
-                            variant_ident,
-                            format!("Route param '{}' not found in variant fields", name),
-                        )
-                    })?;
-
-                    param_parsing.push(quote! {
-                        let #ident = segments[#idx].parse::<#field_ty>().ok()?;
-                    });
-                }
+        quote! {
+            if segments.len() == #depth {
+                #(#attempts)*
+                return None;
             }
         }
+    };
 
-        // 3. 构造变体
-        let construct_variant = match &def.fields {
-            Fields::Named(_) => {
-                let mut inits = Vec::new();
-                // 添加参数字段
-                for s in &def.path_segments {
-                    if let Segment::Param(name) = s {
-                        let ident = format_ident!("{}", name);
-                        inits.push(quote! { #ident: #ident });
-                    }
+    // 2. Static Children Matching
+    let match_static = if !node.static_children.is_empty() {
+        let mut static_arms = Vec::new();
+        for (key, child) in &node.static_children {
+            let child_logic = generate_node_logic(child, depth + 1, defs, enum_name)?;
+            static_arms.push(quote! {
+                #key => {
+                    #child_logic
                 }
-
-                // 处理嵌套字段
-                if let Some(Member::Named(nested_name)) = &def.nested_field {
-                    inits.push(quote! { #nested_name: sub_route });
-                }
-
-                quote! {
-                    Some(#enum_name::#variant_ident { #(#inits),* })
-                }
+            });
+        }
+        quote! {
+            match segments[#depth] {
+                #(#static_arms),*
+                _ => {}
             }
-            Fields::Unnamed(_) => {
-                // 如果是 Unnamed，我们之前禁止了 Param，所以只能是 Nested
-                if def.nested_field.is_some() {
-                    quote! {
-                        Some(#enum_name::#variant_ident(sub_route))
-                    }
-                } else {
-                    // 既无 Param 也无 Nested，可能是空元组
-                    quote! {
-                        Some(#enum_name::#variant_ident)
-                    }
-                }
+        }
+    } else {
+        quote! {}
+    };
+
+    // 3. Param Child Matching
+    let match_param = if let Some(child) = &node.param_child {
+        let child_logic = generate_node_logic(child, depth + 1, defs, enum_name)?;
+        quote! {
+            {
+                #child_logic
             }
-            Fields::Unit => quote! {
-                Some(#enum_name::#variant_ident)
-            },
-        };
+        }
+    } else {
+        quote! {}
+    };
 
-        // 4. 嵌套路由递归逻辑
-        let final_logic = if let Some(nested_member) = &def.nested_field {
-            // 获取嵌套字段的类型
-            let nested_ty = match &def.fields {
-                Fields::Named(f) => {
-                    let target_ident = match nested_member {
-                        Member::Named(n) => n,
-                        _ => {
-                            return Err(Error::new_spanned(
-                                variant_ident,
-                                "Internal error: Mismatched field type",
-                            ));
-                        }
-                    };
+    // 4. Wildcard / Nested (consuming remaining segments)
+    // Runs if we have segments left but failed to match static/param structure fully down the tree,
+    // OR if we are at this node and static/param didn't match current segment.
+    // Note: If `match_static` or `match_param` matched, they would have executed `check_end_logic` deeper in logical tree
+    // or returned Some. If checks failed (e.g. param parsing types), they return None and fall through.
 
-                    let field = f
-                        .named
-                        .iter()
-                        .find(|field| field.ident.as_ref() == Some(target_ident))
-                        .ok_or_else(|| {
-                            Error::new_spanned(variant_ident, "Nested field not found")
-                        })?;
-
-                    field.ty.clone()
-                }
-                Fields::Unnamed(f) => {
-                    // Unnamed 仅允许一个字段作为 nested
-                    f.unnamed
-                        .first()
-                        .ok_or_else(|| {
-                            Error::new_spanned(variant_ident, "Tuple variant missing field")
-                        })?
-                        .ty
-                        .clone()
-                }
-                Fields::Unit => {
-                    return Err(Error::new_spanned(
-                        variant_ident,
-                        "Unit struct cannot have nested field",
-                    ));
-                }
-            };
-
-            quote! {
-                // 提取剩余路径
-                // 如果当前层消耗了 expected_len 个段，剩余的从 expected_len 开始
-                let remaining_segments = &segments[#expected_len..];
-                let remaining_path = remaining_segments.join("/");
-
-                // 递归匹配
-                if let Some(sub_route) = <#nested_ty as ::silex::router::Routable>::match_path(&remaining_path) {
-                    #construct_variant
-                } else {
-                    None
-                }
-            }
-        } else {
-            // 非嵌套，直接返回
-            construct_variant
-        };
-
-        arms.push(quote! {
-            if let Some(res) = (|| {
-                #(#checks)*
-                #(#param_parsing)*
-                #final_logic
-            })() {
-                return Some(res);
-            }
-        });
+    let mut fallback_attempts = Vec::new();
+    for &idx in &node.wildcard_matches {
+        fallback_attempts.push(generate_route_handler(&defs[idx], enum_name)?);
+    }
+    for &idx in &node.nested_matches {
+        fallback_attempts.push(generate_route_handler(&defs[idx], enum_name)?);
     }
 
     Ok(quote! {
-        #(#arms)*
+        // Check if we ran out of segments physically at this node
+        #check_end_logic
+
+        // We have segment at `depth`. Try specific children.
+        #match_static
+        #match_param
+
+        // Fallback to wildcard/nested at this level
+        #(#fallback_attempts)*
+    })
+}
+
+fn generate_route_handler(def: &RouteDef, enum_name: &syn::Ident) -> syn::Result<TokenStream> {
+    let variant_ident = &def.variant_ident;
+    let expected_len = def.path_segments.len();
+
+    let mut param_parsing = Vec::new();
+
+    // Param Parsing
+    // We trust the tree structure, so we just grab params by their known indices.
+    for (idx, seg) in def.path_segments.iter().enumerate() {
+        if let Segment::Param(name) = seg {
+            let ident = format_ident!("{}", name);
+            let field_ty = find_field_type(&def.fields, name).ok_or_else(|| {
+                Error::new_spanned(
+                    variant_ident,
+                    format!("Route param '{}' not found in variant fields", name),
+                )
+            })?;
+
+            param_parsing.push(quote! {
+                let #ident = segments[#idx].parse::<#field_ty>().ok()?;
+            });
+        }
+    }
+
+    // Construct Variant
+    let construct_variant = match &def.fields {
+        Fields::Named(_) => {
+            let mut inits = Vec::new();
+            for s in &def.path_segments {
+                if let Segment::Param(name) = s {
+                    let ident = format_ident!("{}", name);
+                    inits.push(quote! { #ident: #ident });
+                }
+            }
+            if let Some(Member::Named(nested_name)) = &def.nested_field {
+                inits.push(quote! { #nested_name: sub_route });
+            }
+            quote! { Some(#enum_name::#variant_ident { #(#inits),* }) }
+        }
+        Fields::Unnamed(_) => {
+            if def.nested_field.is_some() {
+                quote! { Some(#enum_name::#variant_ident(sub_route)) }
+            } else {
+                quote! { Some(#enum_name::#variant_ident) }
+            }
+        }
+        Fields::Unit => quote! { Some(#enum_name::#variant_ident) },
+    };
+
+    // Final Logic (Nested vs Regular)
+    let final_logic = if let Some(nested_member) = &def.nested_field {
+        let nested_ty = match &def.fields {
+            Fields::Named(f) => {
+                let target_ident = match nested_member {
+                    Member::Named(n) => n,
+                    _ => return Err(Error::new_spanned(variant_ident, "Internal error")),
+                };
+                f.named
+                    .iter()
+                    .find(|field| field.ident.as_ref() == Some(target_ident))
+                    .unwrap()
+                    .ty
+                    .clone()
+            }
+            Fields::Unnamed(f) => f.unnamed.first().unwrap().ty.clone(),
+            _ => {
+                return Err(Error::new_spanned(
+                    variant_ident,
+                    "Unit struct nested error",
+                ));
+            }
+        };
+
+        quote! {
+            let remaining_segments = &segments[#expected_len..];
+            let remaining_path = remaining_segments.join("/");
+            if let Some(sub_route) = <#nested_ty as ::silex::router::Routable>::match_path(&remaining_path) {
+                #construct_variant
+            } else {
+                None
+            }
+        }
+    } else {
+        construct_variant
+    };
+
+    Ok(quote! {
+        if let Some(res) = (|| {
+            #(#param_parsing)*
+            #final_logic
+        })() {
+            return Some(res);
+        }
     })
 }
 
