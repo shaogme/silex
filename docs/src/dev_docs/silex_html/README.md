@@ -115,5 +115,5 @@ macro_rules! div {
 
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 
-*   **标签覆盖率**：目前的标签列表手动维护在 `lib.rs` 中，虽然覆盖了常用标签，但可能遗漏了一些不常用的 HTML5 标签或 SVG 标签。
-*   **属性绑定**：当前的 crate 仅负责 **创建** 元素。属性的类型安全绑定（Attributes）主要由 generic trait 在 `silex_dom` 中定义，但在 `silex_html` 中通过 Tag Structs 关联。未来可能需要更紧密的结合，或者通过代码生成（codegen）完全覆盖 MDN 规范。
+*   **标签覆盖率**：目前的标签列表手动维护在 `lib.rs` 中。计划引入自动生成机制（codegen），基于 MDN 或 HTML 规范自动生成所有标准 HTML5 和 SVG 标签。
+*   **属性绑定增强**：当前的属性绑定主要依赖 `silex_dom` 的泛型 Trait。计划加强 `silex_html` 与 DOM 属性系统的结合，提供更严格的编译时属性检查。

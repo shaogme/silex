@@ -111,8 +111,7 @@ src/
 ### 已知限制 (Limitations)
 *   **`#[component]` 泛型支持**：目前组件宏对泛型参数的处理较为基础，对于复杂的生命周期或常量泛型支持可能不完善。
 *   **Tuple Variants in Route**：`derive(Route)` 目前对 Tuple Variants 的支持有限，建议用户主要通过 Struct Variants 来进行路由参数绑定。
-*   **错误提示**：当宏展开失败时，生成的编译器错误信息有时不够直观，难以定位到具体的宏参数问题。
+*   **错误提示优化**：当宏展开失败时，生成的编译器错误信息有时不够直观，需要进一步优化 `syn::Error` 的生成位置。
 
 ### 待办事项 (TODOs)
-*   [x] **增强 CSS 支持**：支持在 `css!` 中使用动态值（类似于 styled-components 的 props 插值），支持 `$(expr)` 语法与 Signal 自动解包。
-*   [x] **优化路由匹配算法**：已实现基于 Radix Tree 的匹配结构生成，解决了路由数量巨大时的性能瓶颈。
+*   **更强大的 CSS 支持**：虽然已支持基础插值，但类似 styled-components 的高级 props 插值和更复杂的动态选择器仍需完善。

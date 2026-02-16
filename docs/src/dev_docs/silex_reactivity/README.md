@@ -138,9 +138,9 @@ Silex 极其重视资源回收，特别是在复杂的响应式图中：
 
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 
-*   **线程安全性**：目前的 Runtime 是基于 `thread_local!` 的，完全不支持跨线程操作。未来可能需要考虑 Send/Sync 的支持（或者明确将 Silex 定位为单线程/的主线程框架）。
-*   **性能瓶颈**：
-    *   `Box<dyn Any>` 的频繁分配和解引用可能有性能损耗。可以考虑对小数据类型（如 `bool`, `i32`）进行优化（例如 Small Object Optimization）。
-    *   `SparseSecondaryMap` 目前是基于 `Chunk` 的实现，虽然比 `HashMap` 快，但对于非常稀疏的数据集，可能会有一定的内存浪费。
-*   **API 易用性**：目前许多 API（如 `try_get_signal`）需要显式调用，未来可以结合宏（macros）来提供更符合直觉的 `Copy` 语义或自动解构。
-*   **调试体验**：虽然有 `debug_label`，但在复杂的依赖图中定位循环依赖或死锁仍然困难。需要开发专门的 DevTools 或可视化工具接口。
+*   **线程安全性 (Thread Safety)**：目前的 Runtime 基于 `thread_local!`，仅支持单线程运行。虽然这对 CSR 足够，但未来可探索 Send/Sync 支持以适应 Web Workers 等多线程场景。
+*   **性能微调**:
+    *   优化 `Box<dyn Any>` 的分配，探索对小数据类型（如 `bool`, `i32`）的内联存储 (Small Object Optimization)。
+    *   优化 `SparseSecondaryMap` 在稀疏数据集下的内存占用。
+*   **API 易用性 (Ergonomics)**：计划结合更多的宏（macros）来提供自动解构、自动 Copy 等语法糖，减少样板代码。
+*   **调试工具 (DevTools)**：开发可视化的依赖图调试工具，帮助开发者定位循环依赖或无效更新。

@@ -121,8 +121,7 @@ Silex 利用 Rust 的 Trait Bound 实现了编译时的 HTML 规范检查。
 
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 
-*   **CSR 强耦合**：目前的实现大量使用了 `web_sys::window()` 和 `document()`，这导致代码很难在非浏览器环境（如 SSR 服务器端渲染）中运行。
-    *   **重构计划**：引入 `DomRenderer` Trait 抽象，将具体的 DOM 操作隔离，以便实现 SSR 后端。
 *   **事件委托 (Event Delegation)**：目前的事件绑定是直接在每个节点上 `addEventListener`。对于拥有成千上万行的列表，这可能会占用较多内存。
-    *   **TODO**：研究实现基于根节点的事件委托机制。
-*   **Hydration 支持**：目前缺乏从服务器端 HTML "注水" (Hydrate) 成为交互式应用的逻辑。
+    *   **TODO**：实现基于根节点（或父容器）的事件委托机制，以提升大数据量列表的性能。
+*   **纯客户端渲染 (CSR) 专注**:
+    *   本框架明确放弃 SSR (Server-Side Rendering) 和 Hydration 支持，专注于极致的 CSR 体验。因此，后续优化将完全集中在浏览器运行时的 DOM 操作性能和内存占用上。

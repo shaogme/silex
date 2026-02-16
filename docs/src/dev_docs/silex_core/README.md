@@ -114,10 +114,9 @@ pub enum Signal<T: 'static> {
 
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 
-*   **`IntoSignal` 的分配开销**：
-    *   尽管 `Constant<T>` 已经是轻量级的，但 `IntoSignal` 对基本类型（如 `i32`）的转换目前通过 `store_value` 将值放入响应式运行时的 Arena 中。这意味着即使是 `Constant(1)` 也会占用一个 Slot。
-    *   **优化思路**：能够让 `Constant` 直接内联存储 `T` 而非 `NodeId`？（但这会破坏 `Copy` 语义，因为 `T` 未必是 `Copy`，且 `Signal` 枚举大小会膨胀）。这是一个需要权衡的设计点。
-*   **Type Erasure 的代价**：
-    *   `Signal<T>` 枚举在运行时会有一次 match 分发开销。虽然可以忽略不计，但在极端性能敏感场景下，直接使用具体类型（`ReadSignal<T>`）依然是首选。
-*   **Panic 信息优化**：
-    *   `expect_context` 目前直接 panic。未来可以考虑提供更友好的错误恢复机制或错误边界集成。
+*   **`IntoSignal` 内存优化**:
+    *   目前 `IntoSignal` 对基本类型（如 `i32`）的转换会占用 Arena 槽位。计划优化 `Constant` 的存储方式，尝试直接内联存储小数据，减少内存分配。
+*   **Type Erasure 开销优化**:
+    *   虽然后端 `Signal<T>` 枚举分发开销很小，但在极端性能敏感场景下，仍需探索减少 match 分发的途径。
+*   **错误处理机制改进**:
+    *   `expect_context` 目前直接 panic。未来计划提供更友好的错误恢复机制或错误边界集成，提供更详细的调试信息。
