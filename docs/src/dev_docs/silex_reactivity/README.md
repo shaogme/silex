@@ -25,8 +25,10 @@
 
 ```text
 src/
+├── algorithm.rs    // 核心图算法 (ReactiveGraph Trait, Propagate, Evaluate)
 ├── arena.rs        // 定制的 Generational Arena 和稀疏二级映射表
 ├── lib.rs          // 核心 Runtime 实现，包含 Signal, Effect, Memo 等逻辑
+├── list.rs         // ThinVec 和 List 枚举实现 (无堆分配/紧凑布局优化)
 ├── runtime.rs      // Runtime 结构体及核心数据结构 (Node, NodeAux, SignalData 等) 定义
 └── value.rs        // AnyValue 实现，提供小对象优化 (SOO)
 ```
@@ -40,9 +42,13 @@ classDiagram
         +node_aux: SparseSecondaryMap<NodeAux>
         +signals: SparseSecondaryMap<SignalData>
         +effects: SparseSecondaryMap<EffectData>
-        +deriveds: SparseSecondaryMap<DerivedData>
+        +states: SparseSecondaryMap<NodeState>
+        +node_refs: SparseSecondaryMap<NodeRefData>
+        +callbacks: SparseSecondaryMap<CallbackData>
+        +stored_values: SparseSecondaryMap<StoredValueData>
         +observer_queue: VecDeque<NodeId>
         +current_owner: Cell<Option<NodeId>>
+        +workspace: RefCell<WorkSpace>
     }
 
     class NodeId {
@@ -62,48 +68,49 @@ classDiagram
         +debug_label: Option<String>
     }
 
+    class NodeState {
+        <<enumeration>>
+        Clean
+        Check
+        Dirty
+    }
+
     class SignalData {
         +value: AnyValue
         +subscribers: NodeList
+        +last_tracked_by: Option<(NodeId, u32)>
+        +version: u32
     }
 
     class EffectData {
         +computation: Option<Box<dyn Fn()>>
-        +dependencies: NodeList
+        +dependencies: DependencyList
+        +effect_version: u32
     }
 
-    class DerivedData {
-        +value: AnyValue
-        +subscribers: NodeList
-        +computation: Option<Box<dyn Fn()>>
-        +dependencies: NodeList
+    class DependencyList {
+       <<enumeration>>
+       Empty
+       Single((NodeId, u32))
+       Many(ThinVec<(NodeId, u32)>)
     }
 
     class NodeList {
         <<enumeration>>
         Empty
         Single(NodeId)
-        Many(Vec<NodeId>)
-    }
-
-    class CleanupList {
-        <<enumeration>>
-        Empty
-        Single(Box<dyn FnOnce()>)
-        Many(Vec<Box<dyn FnOnce()>>)
+        Many(ThinVec<NodeId>)
     }
 
     Runtime "1" *-- "1" Node : Hot Data (Topology)
     Runtime "1" *-- "1" NodeAux : Cold Data
     Runtime "1" *-- "1" SignalData : Stores Data
     Runtime "1" *-- "1" EffectData : Stores Logic
-    Runtime "1" *-- "1" DerivedData : Stores Memo Logic
+    Runtime "1" *-- "1" NodeState : Status
     Node "1" --> "*" Node : Parent (via ID)
     NodeAux "1" --> "*" NodeId : Children
     SignalData "1" --> "1" NodeList : Subscribers
-    EffectData "1" --> "1" NodeList : Dependencies
-    DerivedData "1" --> "1" NodeList : Subscribers
-    DerivedData "1" --> "1" NodeList : Dependencies
+    EffectData "1" --> "1" DependencyList : Dependencies
 ```
 
 *   **Runtime**：线程局部的单例 (Thread-Local Singleton)，拥有所有状态。
@@ -118,87 +125,62 @@ classDiagram
 `Arena<T>` 是整个系统的基石。为了支持稳定的索引和高效的增删，我们实现了一个基于分块 (`Chunk`) 的代际索引 Arena。
 
 *   **Index (NodeId)**：包含 `index` (u32) 和 `generation` (u32)。`generation` 用于解决 ABA 问题——当一个槽位被释放并重新分配时，旧的 ID 会因为代数不匹配而失效。
-*   **Slot<T>**：
-    ```rust
-    union SlotUnion<T> {
-        value: ManuallyDrop<T>,
-        next_free: u32,
-    }
-    struct Slot<T> {
-        u: SlotUnion<T>,
-        generation: u32, // 偶数表示空闲，奇数表示占用
-    }
-    ```
-    这里使用了 `union` 来复用内存：当槽位空闲时，存储下一个空闲槽位的索引（Free List）；当槽位占用时，存储实际数据。
-*   **Interior Mutability**：`Arena::insert` 和 `get_mut` 等方法接收 `&self`，内部使用 `UnsafeCell`。这是为了配合 Runtime 的设计，使得我们可以在持有 Runtime 引用（通常是 `thread_local` 的借用）的同时，修改特定的节点数据。这也意味着调用者（Runtime）必须确保不会同时对同一个 ID 获取两个 `&mut T`。
+*   **Slot<T>**：使用 `union` 复用内存（Value vs NextFree），并包含 `generation` 字段。
+*   **SparseSecondaryMap**：配合 `Arena` 使用，支持自定义 `Block Size` (const N: usize) 以适应不同密度组件的数据存储需求。
 
-### 4.2 运行时核心循环 (runtime.rs)
+### 4.2 Runtime 与算法层 (runtime.rs & algorithm.rs)
 
-`Runtime` 结构体维护了全局状态，包括依赖图谱 (`graph`) 和待执行队列 (`observer_queue`)。
+我们将核心的图算法从 Runtime 中剥离出来，放入 `algorithm.rs`，二者通过 `ReactiveGraph` trait 进行交互。
 
-#### 数据结构优化
+#### 核心算法 (Algorithm)
 
-*   **Node 拆分 (Hot/Cold Split)**：我们将 `Node` 拆分为 `Node` 和 `NodeAux`。`Node` 只包含 `parent` 等参与频繁遍历的字段，使其体积非常小，能放入缓存行。`NodeAux` 包含 `children`、`cleanups` 等仅在销毁或特定操作时访问的字段。
-*   **Effect 计算权 (Ownership)**：`EffectData` 中的 `computation` 使用 `Option<Box<dyn Fn()>>` 代替 `Rc<dyn Fn()>`。在 Effect 执行期间，我们使用 `Option::take` 将闭包所有权暂时取出执行，执行完毕后再放回。这避免了引用计数开销，因为计算闭包通常是被 Effect 独占的。
-*   **NodeList / CleanupList**：使用 Enum (`Empty`, `Single`, `Many`) 优化订阅者列表和清理回调列表。这显著减少了 `Vec` 带来的堆分配，特别是在大多数节点只有 0 或 1 个订阅者/清理回调的情况下。
+*   **NodeState**：引入了所有的节点状态：
+    *   `Clean`: 节点数据有效且最新。
+    *   `Check`: 节点的依赖可能发生了变化，需要进行检查（Pull-based 验证）。
+    *   `Dirty`: 节点数据已过期，必须重新计算。
+*   **Propagate (BFS)**: `algorithm::propagate`。当 Signal 更新时，从起点开始进行广度优先搜索。
+    *   直接订阅者 -> `Dirty`。
+    *   间接订阅者 -> `Check`。
+    *   将纯 Effect 加入 `queue`。
+*   **Evaluate (Iterative DFS)**: `algorithm::evaluate`。当需要读取一个节点（如 Memo）的值时调用。
+    *   使用 **Trampoline (蹦床)** 技术将递归 DFS 转换为迭代循环，防止深层依赖链导致栈溢出。
+    *   **Early Cutoff**: 如果节点状态是 `Check`，会先检查其所有依赖的 `version` 是否发生变化。如果没有变化，直接切回 `Clean` 状态，跳过计算。
 
-#### 依赖收集 (Dependency Tracking)
+#### 工作区 (WorkSpace)
 
-当访问一个 Signal 或 Derived 时（例如调用 `try_get_signal`），会触发 `track_dependency`：
+为了实现**零分配 (Zero-Allocation)** 的算法执行，`Runtime` 维护了一个 `WorkSpace`：
+*   **Object Pooling**: 内部包含 `vec_pool` 和 `deque_pool`。
+*   **Borrow & Return**: `algorithm::propagate` 和 `evaluate` 需要 `Vec` 或 `VecDeque` 作为临时栈/队列。它们从 `WorkSpace` 中借用，使用完毕后清空并归还。这使得高频的图遍历操作不会产生任何堆内存分配和释放的开销。
 
-1.  检查 `current_owner`（当前正在运行的 Effect ID）。
-2.  如果存在 `current_owner`，则建立双向链接：
-    *   Target (Signal/Derived) 将 Effect ID 加入 `subscribers` (NodeList)。
-    *   Effect 将 Target ID 加入 `dependencies` (NodeList)。
-3.  **版本检查**：为了减少重复注册，会检查 `last_tracked_by`。如果同一个 Effect 在同一轮执行中多次读取同一个节点，只有第一次会触发注册。
+### 4.3 列表优化 (list.rs)
 
-#### 变更通知与批处理 (Notification & Batching)
+在响应式图中，绝大多数 Signal 只有 0 或 1 个订阅者。标准 `Vec` 即使为空也会占用空间（或者 allocation overhead）。我们实现了 `List<T>` 和 `ThinVec<T>`：
 
-当 Signal 更新时（`update_signal`）：
+*   **ThinVec<T>**：
+    *   一种手动管理内存布局的 Vector。
+    *   **Layout**: `[Header { len, cap }][Data...]`。
+    *   **Stack Size**: 仅占用 1 个机器字长 (Pointer)，相比标准 `Vec` 的 3 个字长 (Ptr, Len, Cap) 极大地节省了 `SignalData` 和 `EffectData` 的结构体体积。
+*   **List<T>**：
+    *   `Empty`: 零开销。
+    *   `Single`: 内联存储一个元素，避免堆分配。
+    *   `Many`: 使用 `ThinVec<T>` 存储多个元素。
 
-1.  找到所有订阅者 (`subscribers`)。
-2.  将订阅者加入 `observer_queue`。
-3.  **批处理 (Batching)**：
-    *   如果 `batch_depth == 0`，立即调用 `run_queue` 处理队列。
-    *   否则（例如在 `batch(|| ...)` 闭包中），只入队，推迟执行。
+### 4.4 核心数据结构细节
 
-#### 清理机制 (Cleanup)
+*   **SignalData**:
+    *   `last_tracked_by`: 缓存最近一次追踪此 Signal 的 `(NodeId, Version)`。如果同一个 Effect 在同一轮计算中多次读取此 Signal，可以直接跳过后续的依赖注册过程。
+*   **EffectData**:
+    *   `effect_version`: 每次计算时递增。用于配合 `DependencyList` 中的版本号进行依赖变更检测。
+    *   `dependencies`: 类型为 `List<(NodeId, u32)>`，存储依赖节点的 ID 及其当时的版本号。
 
-Silex 极其重视资源回收，特别是在复杂的响应式图中：
-
-*   **Effect 重运行前**：必须清理上一轮的依赖关系。这是因为条件分支可能导致依赖改变。如果不清理，Effect update 后可能会继续监听不再需要的 Signal。
-*   **节点销毁 (Dispose)**：递归清理 `children` (在 NodeAux 中)，执行 `cleanups` (CleanupList) 回调，并从父节点的子列表中移除自己，最后释放 Arena 槽位。
-
-### 4.3 高级原语实现
+### 4.5 高级原语实现
 
 *   **Memo (计算属性)**：
-    *   在早期版本中，Memo 可能是 Signal 和 Effect 的组合。
-    *   **现在的优化**：我们引入了原生的 `DerivedData` 类型。
-    *   `DerivedData` 结构体同时包含 `value` (像 Signal) 和 `computation`/`dependencies` (像 Effect)。
-    *   这减少了节点数量（1 个 Derived 节点 vs 1 Signal + 1 Effect 节点），降低了图谱遍历深度和内存占用。
-    *   **优化**：只有当新计算的值与旧值不等 (`PartialEq`) 时，才会通知下游。
-
-*   **NodeRef**：一种特殊的节点，存储弱类型的 DOM 引用或其他外部资源，同样利用 Arena 的生命周期管理机制。
-
-### 4.4 值存储与优化 (value.rs)
-
-为了缓解完全类型擦除带来的堆分配压力（`Box<dyn Any>`），我们引入了 `AnyValue` 结构体实现了**小对象优化 (Small Object Optimization, SOO)**。
-
-*   **原理**：`AnyValue` 内部包含一个固定大小的缓冲区（目前为 3 个 `usize`，即 24 字节 + 8 字节 vtable = 32 字节）。
-*   **策略**：
-    *   **Inline**：如果类型 `T` 的大小小于等于缓冲区大小且对齐满足要求，直接存储在缓冲区内。
-    *   **Boxed**：否则，分配 `Box<T>` 并将指针存储在缓冲区内。
-*   **VTable**：手动维护 `vtable` (`type_id`, `drop`, `as_ptr`, `as_mut_ptr`) 来实现动态分发，避免了 Rust 原生 trait object 的双重引用问题，并允许对 Inline 数据进行正确操作。
-
-这意味着像 `bool`, `i32`, `f64`, `usize` 甚至小的结构体现在都**不需要堆内存分配**。
+    *   **架构**: Memo 节点是同时挂载了 `SignalData` 和 `EffectData` 组件的 Node。
+    *   **Lazy Evaluation**: `Runtime` 能够识别这种双重身份。当作为 Signal 被读取时，触发 `update_if_necessary` (Evaluate)；当作为 Effect 被通知时，仅标记状态而不立即执行。
 
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 
-*   **线程安全性 (Thread Safety)**：目前的 Runtime 基于 `thread_local!`，仅支持单线程运行。虽然这对 CSR 足够，但未来可探索 Send/Sync 支持以适应 Web Workers 等多线程场景。
-*   **性能优化 (Performance)**:
-    *   [x] **SOO**: 优化 `Box<dyn Any>` 的分配，已实现对小数据类型（如 `bool`, `i32`）的内联存储 (Small Object Optimization)。
-    *   [x] **Node Split**: 将 Node 拆分为 Hot/Cold 部分，提高缓存局部性。
-    *   [x] **Effect Ownership**: 避免 `Rc` 开销，Effect 独占计算闭包。
-    *   [x] **Sparse Map**: `SparseSecondaryMap` 采用分块 (Chunked) 存储策略，仅为有数据的区域分配内存，极大降低了稀疏数据（如 `NodeRef`）的内存占用。
+*   **线程安全性 (Thread Safety)**：目前的 Runtime 基于 `thread_local!`，仅支持单线程运行。
 *   **API 易用性 (Ergonomics)**：计划结合更多的宏（macros）来提供自动解构、自动 Copy 等语法糖，减少样板代码。
-*   **调试工具 (DevTools)**：开发可视化的依赖图调试工具，帮助开发者定位循环依赖或无效更新。
+*   **调试工具 (DevTools)**：开发可视化的依赖图调试工具，利用 NodeAux 中的 `debug_label`。

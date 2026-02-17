@@ -11,70 +11,76 @@
 *   **Components**:
     *   `graph: Arena<Node>`: 负责管理节点拓扑结构（Nodes, Parent-Child Relationships）。内部使用 `UnsafeCell` 实现内部可变性。
     *   `node_aux: SparseSecondaryMap<NodeAux>`: 存储节点的“冷数据”（Children, Cleanups, Context）。
-    *   `signals: SparseSecondaryMap<SignalData>`: 存储信号值及订阅者。
-    *   `effects: SparseSecondaryMap<EffectData>`: 存储副作用计算及依赖。
-    *   `deriveds: SparseSecondaryMap<DerivedData>`: 存储派生计算（Memo）。
+    *   `signals: SparseSecondaryMap<SignalData, 64>`: 存储信号值及订阅者。
+    *   `effects: SparseSecondaryMap<EffectData, 64>`: 存储副作用计算及依赖。
+    *   `states: SparseSecondaryMap<NodeState, 64>`: 存储节点状态 (Clean/Check/Dirty)。
     *   `callbacks: SparseSecondaryMap<CallbackData>`: 存储回调函数。
     *   `node_refs: SparseSecondaryMap<NodeRefData>`: 存储 DOM 节点引用。
     *   `stored_values: SparseSecondaryMap<StoredValueData>`: 存储通用值。
-    *   `observer_queue: RefCell<VecDeque<NodeId>>`: 待执行的副作用队列（BFS 调度）。
+    *   `observer_queue: RefCell<VecDeque<NodeId>>`: 待执行的副作用队列。
     *   `queued_observers: SparseSecondaryMap<()>`: 已入队副作用的集合（用于去重）。
     *   `current_owner: Cell<Option<NodeId>>`: 当前正在执行的副作用/包括 Scope，用于依赖收集和 Cleanup 注册。
-    *   `batch_depth: Cell<usize>`: 当前批量更新的嵌套深度。
+    *   `workspace: RefCell<WorkSpace>`: 对象池，用于算法层的零分配执行。
 
-### 2. `Arena<T>` (Memory Management)
+### 2. `Algorithm`
+*   **Modules**: `algorithm.rs`.
+*   **ReactiveGraph Trait**: 解耦算法与 Runtime 数据结构。
+*   **Logic**:
+    *   **Propagate (BFS)**: 
+        *   从更新源开始。
+        *   标记直接订阅者 `Dirty`。
+        *   标记更深层订阅者 `Check`。
+        *   将 Pure Effects 加入 `observer_queue`。
+    *   **Evaluate (Iterative DFS)**:
+        *   Lazy 求值策略。
+        *   如果状态是 `Clean` -> 返回。
+        *   如果状态是 `Check` -> 检查所有依赖的 `version` 是否变更。若无变更，转为 `Clean` 并返回。
+        *   如果状态是 `Dirty` 或依赖已变更 -> 执行计算 -> 更新状态为 `Clean`。
+        *   **Trampoline**: 避免深层递归导致的 Stack Overflow。
+
+### 3. `Arena<T>` (Memory Management)
 *   **Structure**: 分块内存池 (`UnsafeCell<Vec<Chunk<T>>>`)。
 *   **Features**:
     *   **Generational Indices**: 使用 `Index` (u32 index + u32 generation) 解决 ABA 问题。
-    *   **Interior Mutability**: 通过 `UnsafeCell` 提供类似 `RefCell` 的能力，但针对细粒度响应式系统进行了优化，避免了运行时的 borrow 检查开销（Caller 需保证安全性）。
+    *   **Interior Mutability**: 通过 `UnsafeCell` 提供类似 `RefCell` 的能力，但针对细粒度响应式系统进行了优化。
     *   **Cache Locality**: 数据按块 (`Chunk`) 连续存储。
 
-### 3. `SparseSecondaryMap<T>` (Auxiliary Storage)
+### 4. `SparseSecondaryMap<T>` (Auxiliary Storage)
 *   **Structure**: 稀疏的分块存储 (`UnsafeCell<Vec<Option<Box<[UnsafeCell<Option<T>>]>>>>`)。
-*   **Usage**: 类似于 `SecondaryMap`，使用 `NodeId` 作为键。如果 `NodeId` 在主 `Arena` 中有效，则认为其在此 Map 中也有效（无需重复 Generation 检查）。
+*   **Optimization**: 支持泛型 `N` 指定 Chunk Size (例如 `signals` 使用 64, `node_refs` 使用 16)。
 
-### 4. `NodeId`
+### 5. `NodeId`
 *   **Type**: `arena::Index`
-*   **Semantics**: 响应式图谱中的唯一句柄，包含 `index` 和 `generation`，实现了 `Copy`, `Clone`, `Eq`, `Hash`.
+*   **Semantics**: 响应式图谱中的唯一句柄，包含 `index` 和 `generation`。
 
-### 5. `AnyValue` (Optimized Storage)
+### 6. `AnyValue` (Optimized Storage)
 *   **Purpose**: 替代 `Box<dyn Any>` 以减少堆分配。
 *   **Mechanism**: **Small Object Optimization (SOO)**.
     *   如果 `size_of::<T>() <= 24` bytes (3 words) 且对齐合适，直接存储在结构体内 (Inline)。
     *   否则，存储 `Box<T>` (Boxed)。
-*   **VTable**: 手动维护 VTable (`type_id`, `drop`, `as_ptr`) 实现动态分发。
 
-### 6. `Node` & `NodeAux` (Graph Metadata)
+### 7. `Node` & `NodeAux` (Graph Metadata)
 *   **Optimization**: 采用 "Hot/Cold Splitting" 策略优化缓存命中率。
-*   **Node (Hot)**:
-    *   `parent: Option<NodeId>`: 父节点（Owner）。
-    *   `defined_at: Option<&'static std::panic::Location>`: (Debug only).
-*   **NodeAux (Cold)**:
-    *   `children: Vec<NodeId>`: 子节点（用于级联销毁）。
-    *   `cleanups: CleanupList`: `on_cleanup` 注册的回调。使用 Enum (`Empty`, `Single`, `Many`)。
-    *   `context: Option<HashMap<TypeId, Box<dyn Any>>>`: 依赖注入容器。
-    *   `debug_label: Option<String>`: (Debug only).
+*   **Node (Hot)**: `parent: Option<NodeId>`, `defined_at`.
+*   **NodeAux (Cold)**: `children`, `cleanups`, `context`, `debug_label`.
 
-### 7. `SignalData` (Source)
+### 8. `SignalData` (Source)
 *   **Fields**:
-    *   `value: AnyValue`: 存储信号的实际值（支持 SOO）。
-    *   `subscribers: NodeList`: 依赖此信号的副作用列表。使用 Enum (`Empty`, `Single`, `Many`) 优化内存。
-    *   `last_tracked_by: Option<(NodeId, u64)>`: 简单的缓存，防止重复追踪。
+    *   `value: AnyValue`: 存储信号的实际值。
+    *   `subscribers: NodeList`: 优化过的订阅者列表 (`Empty` / `Single` / `Many(ThinVec)`).
+    *   `last_tracked_by: Option<(NodeId, u32)>`: 缓存，避免同一次计算中重复注册依赖。
+    *   `version: u32`: 信号版本号，每次变更自增。
 
-### 8. `EffectData` (Observer)
+### 9. `EffectData` (Observer)
 *   **Fields**:
-    *   `computation: Option<Box<dyn Fn()>>`: 副作用逻辑闭包。`Box` 替代 `Rc` 以消除引用计数，执行时通过 `Option::take` 获取所有权。
-    *   `dependencies: NodeList`: 此副作用依赖的节点列表（用于重新执行前清理依赖）。使用了 `NodeList` 枚举。
-    *   `effect_version: u64`: 用于版本检查（防止旧的依赖关系污染）。
+    *   `computation: Option<Box<dyn Fn()>>`: 副作用逻辑闭包。`Box` 替代 `Rc`.
+    *   `dependencies: DependencyList`: 依赖列表，类型为 `List<(NodeId, u32)>` (存储依赖 ID 和当时的版本号)。
+    *   `effect_version: u32`: 副作用自身的版本号。
 
-### 9. `DerivedData` (Memo)
-*   **Fields**:
-    *   `value`: Signal-like 值存储。
-    *   `subscribers`: Signal-like 订阅者列表 (`NodeList`)。
-    *   `last_tracked_by`: Signal-like 追踪缓存。
-    *   `computation`: Effect-like 计算闭包 (`Option<Box<dyn Fn()>>`)。
-    *   `dependencies`: Effect-like 依赖列表 (`NodeList`)。
-    *   `derived_version`: Effect-like 版本控制。
+### 10. `Memo` (Derived Implementation)
+*   **Structure**: Memo 节点是同时拥有 `SignalData` 和 `EffectData` 组件的 `Node`。
+*   **ECS Style**: 通过组合数据组件而非独立结构体实现。
+*   **State**: 利用 `states` Map 存储 `Clean`/`Check`/`Dirty` 状态参与算法调度。
 
 ---
 
@@ -89,18 +95,29 @@
 ### `track_dependency`
 *   **Signature**: `fn track_dependency(&self, target_id: NodeId)`
 *   **Logic**:
-    1.  检查 `current_owner`。
-    2.  若存在 Owner (Component/Effect/Derived)，将 Owner 加入 `target.subscribers`。
-    3.  将 `target_id` (Signal/Derived) 加入 `owner.dependencies`。
-*   **Side Effects**: 修改图谱连接关系。
+    1.  获取 `current_owner`。
+    2.  检查 `SignalData.last_tracked_by` 缓存。
+    3.  若未追踪 -> 互相注册 (`subscribers` push owner, `dependencies` push target)。
+    4.  更新缓存。
 
 ### `queue_dependents`
 *   **Signature**: `fn queue_dependents(&self, target_id: NodeId)`
-*   **Logic**: 遍历 `target.subscribers`，将其加入 `observer_queue` (去重)。
+*   **Logic**:
+    1.  从 `workspace` 借用 `queue` 和 `subs` buffer。
+    2.  调用 `algorithm::propagate` 执行 BFS 状态标记和入队。
+    3.  归还 buffer。
 
 ### `run_queue`
 *   **Signature**: `fn run_queue(&self)`
-*   **Logic**: 循环消耗 `observer_queue`，根据节点类型调用 `run_effect_internal` 或 `run_derived_internal`。
+*   **Logic**: 循环消耗 `observer_queue`。
+    *   若节点既有 `EffectData` 又有 `SignalData` (Memo) -> 调用 `update_if_necessary`。
+    *   若仅有 `EffectData` (Pure Effect) -> 调用 `run_effect_internal`。
+
+### `update_if_necessary`
+*   **Logic**:
+    1.  从 `workspace` 借用 buffer。
+    2.  调用 `algorithm::evaluate` 执行迭代式 DFS 求值。
+    3.  归还 buffer。
 
 ### `clean_node`
 *   **Signature**: `fn clean_node(&self, id: NodeId)`
@@ -161,9 +178,10 @@
 #### `memo<T>`
 *   **Signature**: `pub fn memo<T, F>(f: F) -> NodeId where T: PartialEq...`
 *   **Semantics**:
-    1.  创建一个原生 `Derived` 节点。
+    1.  创建一个同时注册了 `SignalData` 和 `EffectData` 的节点。
     2.  初始执行 `f` 计算并存储结果。
-    3.  当依赖更新时，标记为 dirty 并更新 `value`，仅当 `!=` 时通知下游。
+    3.  当依赖更新时，标记为 Dirty/Check。
+    4.  **Lazy Evaluation**: 下游访问时触发 `evaluate`，重新计算并更新 `value`，仅当 `!=` 时通知下游。
 
 ### Lifecycle API
 
