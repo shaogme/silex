@@ -22,7 +22,7 @@ pub(crate) struct AnyValue {
 }
 
 struct AnyValueVTable {
-    type_id: fn() -> TypeId,
+    type_id: TypeId,
     /// Get an immutable reference to the data.
     /// The argument is a pointer to the start of the data buffer.
     as_ptr: unsafe fn(*const usize) -> *const (),
@@ -75,7 +75,7 @@ impl AnyValue {
     }
 
     pub(crate) fn downcast_ref<T: 'static>(&self) -> Option<&T> {
-        if (self.vtable.type_id)() == TypeId::of::<T>() {
+        if self.vtable.type_id == TypeId::of::<T>() {
             unsafe {
                 let val_ptr = (self.vtable.as_ptr)(self.data.as_ptr() as *const usize);
                 Some(&*(val_ptr as *const T))
@@ -86,7 +86,7 @@ impl AnyValue {
     }
 
     pub(crate) fn downcast_mut<T: 'static>(&mut self) -> Option<&mut T> {
-        if (self.vtable.type_id)() == TypeId::of::<T>() {
+        if self.vtable.type_id == TypeId::of::<T>() {
             unsafe {
                 let val_ptr = (self.vtable.as_mut_ptr)(self.data.as_mut_ptr() as *mut usize);
                 Some(&mut *(val_ptr as *mut T))
@@ -116,7 +116,7 @@ struct InlineVTable<T>(std::marker::PhantomData<T>);
 
 impl<T: 'static> VTableGen<T> for InlineVTable<T> {
     const VTABLE: AnyValueVTable = AnyValueVTable {
-        type_id: || TypeId::of::<T>(),
+        type_id: TypeId::of::<T>(),
         as_ptr: |ptr| {
             // The buffer IS the value.
             ptr as *const T as *const ()
@@ -131,7 +131,7 @@ struct BoxedVTable<T>(std::marker::PhantomData<T>);
 
 impl<T: 'static> VTableGen<T> for BoxedVTable<T> {
     const VTABLE: AnyValueVTable = AnyValueVTable {
-        type_id: || TypeId::of::<T>(),
+        type_id: TypeId::of::<T>(),
         as_ptr: |ptr| unsafe {
             // The buffer contains a Box<T>.
             // 1. Cast buffer ptr to Box<T> ptr

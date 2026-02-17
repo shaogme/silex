@@ -279,6 +279,10 @@ impl<T> Default for Arena<T> {
 
 // --- Chunked Sparse Map ---
 
+// Use a smaller chunk size for secondary maps to reduce memory usage in sparse scenarios.
+// 16 * 8 bytes (Option<Box<T>>) ≈ 128 bytes overhead per chunk, vs 1KB for 128 slots.
+const SPARSE_CHUNK_SIZE: usize = 16;
+
 // For SecondaryMap equivalent, we can use a simpler structure since keys are stable.
 // We don't need generation checks here if we assume the caller (Reactivity Runtime)
 // manages validity via the main Arena. If main Arena says Id is valid, this map
@@ -306,8 +310,9 @@ impl<T> SparseSecondaryMap<T> {
             if chunks[chunk_idx].is_none() {
                 // Initialize chunk entries to None
                 // We construct a specific layout matching Box<[UnsafeCell<Option<T>>]>
-                let vec_chunk: Vec<UnsafeCell<Option<T>>> =
-                    (0..CHUNK_SIZE).map(|_| UnsafeCell::new(None)).collect();
+                let vec_chunk: Vec<UnsafeCell<Option<T>>> = (0..SPARSE_CHUNK_SIZE)
+                    .map(|_| UnsafeCell::new(None))
+                    .collect();
                 chunks[chunk_idx] = Some(vec_chunk.into_boxed_slice());
             }
 
@@ -369,7 +374,7 @@ impl<T> SparseSecondaryMap<T> {
     /// Remove logic if ID is just u32 (for direct internal usage if needed)
     fn get_chunk_offset(&self, index: u32) -> (usize, usize) {
         let idx = index as usize;
-        (idx / CHUNK_SIZE, idx % CHUNK_SIZE)
+        (idx / SPARSE_CHUNK_SIZE, idx % SPARSE_CHUNK_SIZE)
     }
 }
 
