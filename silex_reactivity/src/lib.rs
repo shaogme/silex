@@ -6,6 +6,9 @@ use std::rc::Rc;
 mod arena;
 pub use arena::{Arena, Index as NodeId, SparseSecondaryMap};
 
+mod value;
+use value::AnyValue;
+
 // --- 基础类型定义 ---
 
 /// 响应式节点通用结构体 (Metadata)。
@@ -36,7 +39,7 @@ impl Node {
 }
 
 pub(crate) struct SignalData {
-    pub(crate) value: Box<dyn Any>,
+    pub(crate) value: AnyValue,
     pub(crate) subscribers: Vec<NodeId>,
     pub(crate) last_tracked_by: Option<(NodeId, u64)>,
 }
@@ -61,7 +64,7 @@ pub(crate) struct NodeRefData {
 
 /// StoredValue 数据存储（类型擦除）
 pub(crate) struct StoredValueData {
-    pub(crate) value: Box<dyn Any>,
+    pub(crate) value: AnyValue,
 }
 
 /// Derived 数据存储（类型擦除）
@@ -142,7 +145,7 @@ impl Runtime {
         self.signals.insert(
             id,
             SignalData {
-                value: Box::new(value),
+                value: AnyValue::new(value),
                 subscribers: Vec::new(),
                 last_tracked_by: None,
             },
@@ -662,7 +665,7 @@ pub fn store_value<T: 'static>(value: T) -> NodeId {
         rt.stored_values.insert(
             id,
             StoredValueData {
-                value: Box::new(value),
+                value: AnyValue::new(value),
             },
         );
         id

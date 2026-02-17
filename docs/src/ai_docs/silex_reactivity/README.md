@@ -2,7 +2,7 @@
 
 **Low-level, untyped, fine-grained reactivity engine for Silex.**
 
-此 Crate 实现了响应式图谱的核心逻辑。它不通过泛型暴露类型，而是使用 `Box<dyn Any>` 进行**类型擦除**，以便在运行时统一管理依赖关系。上层 `silex_core` 负责提供类型安全。
+此 Crate 实现了响应式图谱的核心逻辑。它不通过泛型暴露类型，而是使用 `AnyValue` (带有 Small Object Optimization 的类型擦除容器) 进行统一管理。上层 `silex_core` 负责提供类型安全。
 
 ## 核心架构 (Architecture)
 
@@ -36,7 +36,14 @@
 *   **Type**: `arena::Index`
 *   **Semantics**: 响应式图谱中的唯一句柄，包含 `index` 和 `generation`，实现了 `Copy`, `Clone`, `Eq`, `Hash`.
 
-### 5. `Node` (Graph Metadata)
+### 5. `AnyValue` (Optimized Storage)
+*   **Purpose**: 替代 `Box<dyn Any>` 以减少堆分配。
+*   **Mechanism**: **Small Object Optimization (SOO)**.
+    *   如果 `size_of::<T>() <= 24` bytes (3 words) 且对齐合适，直接存储在结构体内 (Inline)。
+    *   否则，存储 `Box<T>` (Boxed)。
+*   **VTable**: 手动维护 VTable (`type_id`, `drop`, `as_ptr`) 实现动态分发。
+
+### 6. `Node` (Graph Metadata)
 *   **Fields**:
     *   `children: Vec<NodeId>`: 子节点（用于级联销毁）。
     *   `parent: Option<NodeId>`: 父节点（Owner）。
@@ -45,13 +52,13 @@
     *   `debug_label: Option<String>`: 调试标签 (Debug build only)。
     *   `defined_at: Option<&'static std::panic::Location>`: 定义位置 (Debug build only)。
 
-### 6. `SignalData` (Source)
+### 7. `SignalData` (Source)
 *   **Fields**:
-    *   `value: Box<dyn Any>`: 存储信号的实际值（类型擦除）。
+    *   `value: AnyValue`: 存储信号的实际值（支持 SOO）。
     *   `subscribers: Vec<NodeId>`: 依赖此信号的副作用列表。
     *   `last_tracked_by: Option<(NodeId, u64)>`: 简单的缓存，防止重复追踪。
 
-### 7. `EffectData` (Observer)
+### 8. `EffectData` (Observer)
 *   **Fields**:
     *   `computation: Option<Rc<dyn Fn()>>`:副作用逻辑闭包。
     *   `dependencies: Vec<NodeId>`: 此副作用依赖的信号（用于重新执行前清理依赖）。

@@ -12,11 +12,11 @@
 
 *   **设计背景**：早期的 Silex 原型可能依赖于复杂的泛型参数来传递信号类型，导致类型签名极度膨胀。为了简化 API 并支持动态的依赖图谱构建，我们需要一种能够统一管理异构数据的方案。
 *   **核心思想**：
-    *   **类型擦除 (Type Erasure)**：所有的信号值和闭包状态都通过 `Box<dyn Any>` 存储。这使得 Runtime 可以统一管理所有节点，而无需关心具体的泛型类型。
+    *   **类型擦除 (Type Erasure)**：所有的信号值通过 `AnyValue` 存储（一种支持小对象优化的动态容器）。这使得 Runtime 可以统一管理所有节点，而无需关心具体的泛型类型。
     *   **Arena 内存管理**：使用强类型的 `Index` (即 `NodeId`) 代替引用。这解决了 Rust 中自引用结构体的生命周期难题，并提供了缓存友好的内存布局。
     *   **细粒度更新**：只更新订阅了变化信号的 Effect，而不是重新渲染整个组件树。
 *   **方案取舍 (Trade-offs)**：
-    *   **运行时开销 vs 编译时复杂性**：为了用户体验，我们选择了 `Box<dyn Any>` 带来的运行时开销（动态分发和堆分配），以换取极其简洁的 API 和无泛型污染的类型签名。
+    *   **运行时开销 vs 编译时复杂性**：为了用户体验，我们选择了动态分发带来的少量运行时开销，以换取极其简洁的 API 和无泛型污染的类型签名。同时，通过 **Small Object Optimization (SOO)** 显著减少了堆分配。
     *   **Unsafe vs RefCell**：为了最大限度地提高性能并绕过 `RefCell` 的运行时借用检查开销（在已知安全的情况下），内部大量使用了 `UnsafeCell` 和裸指针操作。这要求我们必须非常小心地维护不变量。
 
 ## 3. 模块内结构 (Internal Structure)
@@ -26,7 +26,8 @@
 ```text
 src/
 ├── arena.rs        // 定制的 Generational Arena 和稀疏二级映射表
-└── lib.rs          // 核心 Runtime 实现，包含 Signal, Effect, Memo 等逻辑
+├── lib.rs          // 核心 Runtime 实现，包含 Signal, Effect, Memo 等逻辑
+└── value.rs        // AnyValue 实现，提供小对象优化 (SOO)
 ```
 
 ### 核心组件关系
@@ -53,7 +54,7 @@ classDiagram
     }
 
     class SignalData {
-        +value: Box<dyn Any>
+        +value: AnyValue
         +subscribers: Vec<NodeId>
     }
 
@@ -136,11 +137,23 @@ Silex 极其重视资源回收，特别是在复杂的响应式图中：
 
 *   **NodeRef**：一种特殊的节点，存储弱类型的 DOM 引用或其他外部资源，同样利用 Arena 的生命周期管理机制。
 
+### 4.4 值存储与优化 (value.rs)
+
+为了缓解完全类型擦除带来的堆分配压力（`Box<dyn Any>`），我们引入了 `AnyValue` 结构体实现了**小对象优化 (Small Object Optimization, SOO)**。
+
+*   **原理**：`AnyValue` 内部包含一个固定大小的缓冲区（目前为 3 个 `usize`，即 24 字节 + 8 字节 vtable = 32 字节）。
+*   **策略**：
+    *   **Inline**：如果类型 `T` 的大小小于等于缓冲区大小且对齐满足要求，直接存储在缓冲区内。
+    *   **Boxed**：否则，分配 `Box<T>` 并将指针存储在缓冲区内。
+*   **VTable**：手动维护 `vtable` (`type_id`, `drop`, `as_ptr`, `as_mut_ptr`) 来实现动态分发，避免了 Rust 原生 trait object 的双重引用问题，并允许对 Inline 数据进行正确操作。
+
+这意味着像 `bool`, `i32`, `f64`, `usize` 甚至小的结构体现在都**不需要堆内存分配**。
+
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 
 *   **线程安全性 (Thread Safety)**：目前的 Runtime 基于 `thread_local!`，仅支持单线程运行。虽然这对 CSR 足够，但未来可探索 Send/Sync 支持以适应 Web Workers 等多线程场景。
 *   **性能微调**:
-    *   优化 `Box<dyn Any>` 的分配，探索对小数据类型（如 `bool`, `i32`）的内联存储 (Small Object Optimization)。
+    *   [x] 优化 `Box<dyn Any>` 的分配，已实现对小数据类型（如 `bool`, `i32`）的内联存储 (Small Object Optimization)。
     *   优化 `SparseSecondaryMap` 在稀疏数据集下的内存占用。
 *   **API 易用性 (Ergonomics)**：计划结合更多的宏（macros）来提供自动解构、自动 Copy 等语法糖，减少样板代码。
 *   **调试工具 (DevTools)**：开发可视化的依赖图调试工具，帮助开发者定位循环依赖或无效更新。
