@@ -5,6 +5,9 @@ use std::rc::Rc;
 mod arena;
 pub use arena::{Arena, Index as NodeId, SparseSecondaryMap};
 
+pub mod algorithm;
+use algorithm::NodeState;
+
 mod value;
 use value::AnyValue;
 
@@ -68,6 +71,7 @@ pub fn update_signal<T: 'static>(id: NodeId, f: impl FnOnce(&mut T)) {
     RUNTIME.with(|rt| {
         {
             if let Some(signal) = rt.signals.get_mut(id) {
+                signal.version = signal.version.wrapping_add(1);
                 if let Some(val) = signal.value.downcast_mut::<T>() {
                     f(val);
                 } else {
@@ -166,13 +170,15 @@ where
                     value: AnyValue::new(()), // Temporary dummy
                     subscribers: NodeList::Empty,
                     last_tracked_by: None,
+                    version: 0,
                 },
                 effect: runtime::EffectData {
                     computation: None,
                     dependencies: NodeList::Empty,
+                    dependency_versions: Vec::new(),
                     effect_version: 0,
                 },
-                state: runtime::NodeState::Clean,
+                state: NodeState::Clean,
             },
         );
 
@@ -214,6 +220,7 @@ where
                 RUNTIME.with(|rt| {
                     if let Some(derived) = rt.deriveds.get_mut(id) {
                         derived.signal.value = AnyValue::new(new_value);
+                        derived.signal.version = derived.signal.version.wrapping_add(1);
                     }
                     rt.queue_dependents(id);
                 });
@@ -404,13 +411,15 @@ pub fn register_derived<T: 'static>(f: impl Fn() -> T + 'static) -> NodeId {
                     value: AnyValue::new(()),
                     subscribers: NodeList::Empty,
                     last_tracked_by: None,
+                    version: 0,
                 },
                 effect: runtime::EffectData {
                     computation: None,
                     dependencies: NodeList::Empty,
+                    dependency_versions: Vec::new(),
                     effect_version: 0,
                 },
-                state: runtime::NodeState::Clean,
+                state: NodeState::Clean,
             },
         );
 
@@ -427,6 +436,7 @@ pub fn register_derived<T: 'static>(f: impl Fn() -> T + 'static) -> NodeId {
             RUNTIME.with(|rt| {
                 if let Some(derived) = rt.deriveds.get_mut(id) {
                     derived.signal.value = AnyValue::new(new_value);
+                    derived.signal.version = derived.signal.version.wrapping_add(1);
                 }
                 rt.queue_dependents(id);
             });

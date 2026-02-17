@@ -3,19 +3,12 @@ use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 
+use crate::algorithm::{self, NodeState, ReactiveGraph};
 use crate::arena::{Arena, Index as NodeId, SparseSecondaryMap};
 use crate::node_list::NodeList;
 use crate::value::AnyValue;
 
 // --- 基础类型定义 ---
-
-/// 响应式节点状态
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum NodeState {
-    Clean,
-    Check,
-    Dirty,
-}
 
 /// 辅助数据结构，存储“冷数据” (Cold Data)
 pub(crate) struct NodeAux {
@@ -118,11 +111,13 @@ pub(crate) struct SignalData {
     pub(crate) value: AnyValue,
     pub(crate) subscribers: NodeList,
     pub(crate) last_tracked_by: Option<(NodeId, u32)>,
+    pub(crate) version: u32,
 }
 
 pub(crate) struct EffectData {
     pub(crate) computation: Option<Box<dyn Fn()>>,
     pub(crate) dependencies: NodeList,
+    pub(crate) dependency_versions: Vec<u32>, // Parallel to dependencies for version check
     pub(crate) effect_version: u32,
 }
 
@@ -166,7 +161,7 @@ pub struct Runtime {
     // Global state
     pub(crate) current_owner: Cell<Option<NodeId>>,
     pub(crate) observer_queue: RefCell<VecDeque<NodeId>>,
-    pub(crate) queued_observers: SparseSecondaryMap<()>, // Set of queued observers, default 16 is fine
+    pub(crate) queued_observers: SparseSecondaryMap<()>, // Set of queued observers
     pub(crate) running_queue: Cell<bool>,
     pub(crate) batch_depth: Cell<usize>,
 
@@ -234,6 +229,7 @@ impl Runtime {
                 value: AnyValue::new(value),
                 subscribers: NodeList::Empty,
                 last_tracked_by: None,
+                version: 0,
             },
         );
         id
@@ -247,6 +243,7 @@ impl Runtime {
             EffectData {
                 computation: Some(Box::new(f)),
                 dependencies: NodeList::Empty,
+                dependency_versions: Vec::new(),
                 effect_version: 0,
             },
         );
@@ -259,8 +256,7 @@ impl Runtime {
                 return;
             }
 
-            // 1. Identify Owner Type (Effect or Derived) and get its metadata
-            //    We need to update owner's dependencies list.
+            // 1. Identify Owner Type and get metadata
             let (owner_version, is_owner_valid) = if let Some(eff) = self.effects.get_mut(owner) {
                 (eff.effect_version, true)
             } else if let Some(der) = self.deriveds.get_mut(owner) {
@@ -275,6 +271,7 @@ impl Runtime {
 
             // 2. Identify Target Type (Signal or Derived) and register subscription
             let mut registered = false;
+            let mut target_version = 0;
 
             // Check Signal
             if let Some(signal_data) = self.signals.get_mut(target_id) {
@@ -286,6 +283,7 @@ impl Runtime {
                 signal_data.subscribers.push(owner);
                 signal_data.last_tracked_by = Some((owner, owner_version));
                 registered = true;
+                target_version = signal_data.version;
             }
             // Check Derived (if not Signal)
             else if let Some(derived_data) = self.deriveds.get_mut(target_id) {
@@ -297,142 +295,32 @@ impl Runtime {
                 derived_data.signal.subscribers.push(owner);
                 derived_data.signal.last_tracked_by = Some((owner, owner_version));
                 registered = true;
+                target_version = derived_data.signal.version;
             }
 
             if registered {
                 // Add to owner's dependency list
                 if let Some(eff) = self.effects.get_mut(owner) {
                     eff.dependencies.push(target_id);
+                    eff.dependency_versions.push(target_version);
                 } else if let Some(der) = self.deriveds.get_mut(owner) {
                     der.effect.dependencies.push(target_id);
+                    der.effect.dependency_versions.push(target_version);
                 }
             }
         }
     }
 
-    /// BFS Propagation: Mark direct subscribers of the source as Dirty, and downstream as Check.
+    /// Use BFS Propagation via algorithm module
     pub(crate) fn queue_dependents(&self, source_id: NodeId) {
-        let mut queue = VecDeque::new();
-        let mut effects_to_run = Vec::new();
-
-        // 1. Mark direct subscribers as DIRTY
-        let direct_subs = if let Some(data) = self.signals.get(source_id) {
-            data.subscribers.clone()
-        } else if let Some(data) = self.deriveds.get(source_id) {
-            data.signal.subscribers.clone()
-        } else {
-            NodeList::Empty
-        };
-
-        for sub_id in direct_subs {
-            if let Some(derived) = self.deriveds.get_mut(sub_id) {
-                if derived.state != NodeState::Dirty {
-                    derived.state = NodeState::Dirty;
-                    queue.push_back(sub_id);
-                }
-            } else if self.effects.get(sub_id).is_some() {
-                if self.queued_observers.get(sub_id).is_none() {
-                    self.queued_observers.insert(sub_id, ());
-                    effects_to_run.push(sub_id);
-                }
-            }
-        }
-
-        // 2. Propagate CHECK to downstream
-        while let Some(current_id) = queue.pop_front() {
-            let subs = if let Some(data) = self.deriveds.get(current_id) {
-                data.signal.subscribers.clone()
-            } else {
-                NodeList::Empty
-            };
-
-            for sub_id in subs {
-                if let Some(derived) = self.deriveds.get_mut(sub_id) {
-                    // Only propagate if state changes from Clean -> Check
-                    if derived.state == NodeState::Clean {
-                        derived.state = NodeState::Check;
-                        queue.push_back(sub_id);
-                    }
-                    // If already Check or Dirty, no need to push (already queued or visited)
-                } else if self.effects.get(sub_id).is_some() {
-                    // Effects depending on Check/Dirty nodes must run
-                    if self.queued_observers.get(sub_id).is_none() {
-                        self.queued_observers.insert(sub_id, ());
-                        effects_to_run.push(sub_id);
-                    }
-                }
-            }
-        }
-
-        // 3. Schedule effects
-        let mut global_queue = self.observer_queue.borrow_mut();
-        for eff_id in effects_to_run {
-            global_queue.push_back(eff_id);
-        }
+        let mut adapter = RuntimeAdapter(self);
+        algorithm::propagate(&mut adapter, source_id);
     }
 
-    /// Iterative DFS (Trampoline) to validate and update derived nodes.
-    /// Prevents stack overflow for deep dependency chains.
+    /// Use Iterative DFS (Trampoline) via algorithm module
     pub(crate) fn update_if_necessary(&self, node_id: NodeId) {
-        // Quick check
-        if let Some(d) = self.deriveds.get(node_id) {
-            if d.state == NodeState::Clean {
-                return;
-            }
-        } else {
-            return;
-        }
-
-        let mut stack = Vec::with_capacity(16);
-        stack.push(node_id);
-
-        while let Some(current) = stack.last().copied() {
-            // Peek current node state
-            let (state, dependencies) = if let Some(d) = self.deriveds.get(current) {
-                // If Clean, we are done with this node, pop it.
-                if d.state == NodeState::Clean {
-                    stack.pop();
-                    continue;
-                }
-                (d.state, d.effect.dependencies.clone())
-            } else {
-                // Not a derived node (Signal?), treat as Clean/Done
-                stack.pop();
-                continue;
-            };
-
-            // Step A: Check dependencies for non-Clean states
-            let mut found_non_clean_dep = false;
-            for dep_id in dependencies {
-                if let Some(dep_derived) = self.deriveds.get(dep_id) {
-                    if dep_derived.state != NodeState::Clean {
-                        stack.push(dep_id);
-                        found_non_clean_dep = true;
-                        break; // Process dependency first (DFS)
-                    }
-                }
-                // Signals are always "Clean" (sources)
-            }
-
-            if found_non_clean_dep {
-                continue; // Loop again to process the pushed dependency
-            }
-
-            // Step B: All dependencies are Clean. Now we can update `current`.
-            if state == NodeState::Check {
-                // Optimization: Currently treating Check as Dirty because we lack fine-grained versioning for Signals/Deriveds
-                // to robustly skip computation.
-                // In a full implementation, we would compare `dep.ptr` or `dep.version`.
-                run_derived_internal(self, current);
-            } else if state == NodeState::Dirty {
-                run_derived_internal(self, current);
-            } else {
-                // Should be unreachable if logic is correct (Clean handled above)
-            }
-            // run_derived_internal sets state to Clean.
-
-            // Loop continues, will peek `current` again, find it Clean, and pop.
-        }
+        let mut adapter = RuntimeAdapter(self);
+        algorithm::evaluate(&mut adapter, node_id);
     }
 
     pub(crate) fn run_queue(&self) {
@@ -451,7 +339,7 @@ impl Runtime {
                     if self.effects.get(id).is_some() {
                         run_effect_internal(self, id);
                     } else if self.deriveds.get(id).is_some() {
-                        // Should primarily use Lazy, but if queued explicitly (e.g. initial setup)
+                        // Should primarily use Lazy, but if queued explicitly
                         self.update_if_necessary(id);
                     }
                 }
@@ -475,8 +363,12 @@ impl Runtime {
 
         let dependencies = {
             if let Some(effect_data) = self.effects.get_mut(id) {
+                // Also clear versions
+                effect_data.dependency_versions.clear();
                 std::mem::take(&mut effect_data.dependencies)
             } else if let Some(derived_data) = self.deriveds.get_mut(id) {
+                // Also clear versions
+                derived_data.effect.dependency_versions.clear();
                 std::mem::take(&mut derived_data.effect.dependencies)
             } else {
                 NodeList::default()
@@ -500,7 +392,6 @@ impl Runtime {
             self.dispose_node_internal(child, false);
         }
         // Iterate dependencies (NodeList)
-        // Since we consumed dependencies into the iterator, check if it has items by iterating
         for dep_id in dependencies {
             if let Some(signal_data) = self.signals.get_mut(dep_id) {
                 signal_data.subscribers.remove(self_id);
@@ -557,6 +448,7 @@ pub(crate) fn run_effect_internal(rt: &Runtime, effect_id: NodeId) {
     let (computation_fn, dependencies) = {
         if let Some(effect_data) = rt.effects.get_mut(effect_id) {
             effect_data.effect_version = effect_data.effect_version.wrapping_add(1);
+            effect_data.dependency_versions.clear(); // Clear versions too
             (
                 effect_data.computation.take(),
                 std::mem::take(&mut effect_data.dependencies),
@@ -581,7 +473,7 @@ pub(crate) fn run_effect_internal(rt: &Runtime, effect_id: NodeId) {
     }
 }
 
-pub(crate) fn run_derived_internal(rt: &Runtime, derived_id: NodeId) {
+pub(crate) fn run_derived_internal(rt: &Runtime, derived_id: NodeId) -> bool {
     let (children, cleanups) = {
         if let Some(aux) = rt.node_aux.get_mut(derived_id) {
             (
@@ -596,17 +488,23 @@ pub(crate) fn run_derived_internal(rt: &Runtime, derived_id: NodeId) {
     let (computation_fn, dependencies) = {
         if let Some(data) = rt.deriveds.get_mut(derived_id) {
             data.effect.effect_version = data.effect.effect_version.wrapping_add(1);
+            data.effect.dependency_versions.clear();
             (
                 data.effect.computation.take(),
                 std::mem::take(&mut data.effect.dependencies),
             )
         } else {
-            return;
+            return false;
         }
     };
 
     rt.run_cleanups(derived_id, children, cleanups, dependencies);
 
+    // The computation closure (constructed by `memo`) is responsible for:
+    // 1. Determining if the new value differs from the old value.
+    // 2. Updating the signal value if changed.
+    // 3. Queueing dependents if changed.
+    // 4. Returning true to indicate a change occurred.
     if let Some(f) = computation_fn {
         let prev_owner = rt.current_owner.get();
         rt.current_owner.set(Some(derived_id));
@@ -617,6 +515,111 @@ pub(crate) fn run_derived_internal(rt: &Runtime, derived_id: NodeId) {
         if let Some(data) = rt.deriveds.get_mut(derived_id) {
             data.effect.computation = Some(f);
             data.state = NodeState::Clean;
+        }
+        return true;
+    }
+    false
+}
+
+// --- RuntimeAdapter for Algorithm ---
+
+struct RuntimeAdapter<'a>(&'a Runtime);
+
+impl<'a> ReactiveGraph for RuntimeAdapter<'a> {
+    fn get_state(&self, id: NodeId) -> NodeState {
+        if let Some(d) = self.0.deriveds.get(id) {
+            d.state
+        } else {
+            NodeState::Clean
+        }
+    }
+
+    fn set_state(&mut self, id: NodeId, state: NodeState) {
+        if let Some(d) = self.0.deriveds.get_mut(id) {
+            d.state = state;
+        }
+    }
+
+    fn get_subscribers(&self, id: NodeId) -> impl Iterator<Item = NodeId> {
+        if let Some(signal) = self.0.signals.get(id) {
+            signal.subscribers.clone().into_iter()
+        } else if let Some(derived) = self.0.deriveds.get(id) {
+            derived.signal.subscribers.clone().into_iter()
+        } else {
+            NodeList::Empty.into_iter()
+        }
+    }
+
+    fn get_dependencies(&self, id: NodeId) -> impl Iterator<Item = NodeId> {
+        if let Some(eff) = self.0.effects.get(id) {
+            eff.dependencies.clone().into_iter()
+        } else if let Some(der) = self.0.deriveds.get(id) {
+            der.effect.dependencies.clone().into_iter()
+        } else {
+            NodeList::Empty.into_iter()
+        }
+    }
+
+    fn is_effect(&self, id: NodeId) -> bool {
+        self.0.effects.get(id).is_some()
+    }
+
+    fn queue_effect(&mut self, id: NodeId) {
+        if self.0.queued_observers.get(id).is_none() {
+            self.0.queued_observers.insert(id, ());
+            self.0.observer_queue.borrow_mut().push_back(id);
+        }
+    }
+
+    fn run_computation(&mut self, id: NodeId) -> bool {
+        run_derived_internal(self.0, id)
+    }
+
+    fn check_dependencies_changed(&mut self, id: NodeId) -> bool {
+        // Collect dependencies and their expected versions
+        let (deps, expected_versions) = if let Some(eff) = self.0.effects.get(id) {
+            (eff.dependencies.clone(), eff.dependency_versions.clone())
+        } else if let Some(der) = self.0.deriveds.get(id) {
+            (
+                der.effect.dependencies.clone(),
+                der.effect.dependency_versions.clone(),
+            )
+        } else {
+            return false;
+        };
+
+        let mut dep_iter = deps.into_iter();
+        let mut ver_iter = expected_versions.into_iter();
+
+        // Strict synchronization check
+        loop {
+            match (dep_iter.next(), ver_iter.next()) {
+                (Some(dep_id), Some(expected_ver)) => {
+                    let current_ver = if let Some(s) = self.0.signals.get(dep_id) {
+                        s.version
+                    } else if let Some(d) = self.0.deriveds.get(dep_id) {
+                        d.signal.version
+                    } else {
+                        // Dependency logic error or disposed? Treat as changed.
+                        return true;
+                    };
+
+                    if current_ver != expected_ver {
+                        return true;
+                    }
+                }
+                (None, None) => return false, // All synced, no changes
+                _ => {
+                    // Mismatch in count!
+                    #[cfg(debug_assertions)]
+                    panic!(
+                        "Reactive Graph Logic Error: Dependency list and version list desynchronized for node {:?}",
+                        id
+                    );
+                    #[cfg(not(debug_assertions))]
+                    return true;
+                }
+            }
         }
     }
 }

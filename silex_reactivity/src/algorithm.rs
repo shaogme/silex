@@ -1,0 +1,145 @@
+use crate::arena::Index as NodeId;
+use std::collections::VecDeque;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum NodeState {
+    Clean,
+    Check,
+    Dirty,
+}
+
+/// Abstraction over the reactive graph to decouple algorithms from the runtime.
+pub trait ReactiveGraph {
+    /// Get the current state of a node.
+    fn get_state(&self, id: NodeId) -> NodeState;
+
+    /// Set the state of a node.
+    fn set_state(&mut self, id: NodeId, state: NodeState);
+
+    /// Get direct subscribers of a node.
+    /// Used in Propagation phase.
+    /// We return a generic Iterator, but efficient implementations should avoid allocation if possible.
+    /// However, for the algorithm to work with mutable graph, we often need to collect.
+    fn get_subscribers(&self, id: NodeId) -> impl Iterator<Item = NodeId>;
+
+    /// Get dependencies of a node.
+    /// Used in Evaluation phase.
+    fn get_dependencies(&self, id: NodeId) -> impl Iterator<Item = NodeId>;
+
+    /// Check if a node is an effect (observer) that should be queued for execution.
+    fn is_effect(&self, id: NodeId) -> bool;
+
+    /// Queue a specific effect for later execution.
+    fn queue_effect(&mut self, id: NodeId);
+
+    /// Run the computation for the node.
+    /// Should update the node's value and return true if it changed.
+    fn run_computation(&mut self, id: NodeId) -> bool;
+
+    /// Check if dependencies have changed versions relative to the last run.
+    /// Optimizes Check -> Clean transition.
+    fn check_dependencies_changed(&mut self, id: NodeId) -> bool;
+}
+
+/// Phase 1: Propagation (BFS)
+/// Marks downstream nodes as Dirty/Check and queues effects.
+pub fn propagate(graph: &mut impl ReactiveGraph, start_node: NodeId) {
+    let mut queue = VecDeque::new();
+
+    // Initial: Mark start node's subscribers as Dirty
+    // We must collect to avoid holding an immutable borrow while mutating
+    let direct_subs: Vec<_> = graph.get_subscribers(start_node).collect();
+
+    for sub_id in direct_subs {
+        if graph.is_effect(sub_id) {
+            graph.queue_effect(sub_id);
+        } else {
+            let state = graph.get_state(sub_id);
+            if state != NodeState::Dirty {
+                graph.set_state(sub_id, NodeState::Dirty);
+                queue.push_back(sub_id);
+            }
+        }
+    }
+
+    // BFS for downstream
+    while let Some(current_id) = queue.pop_front() {
+        // Collect subscribers of current node
+        let subs: Vec<_> = graph.get_subscribers(current_id).collect();
+
+        for sub_id in subs {
+            if graph.is_effect(sub_id) {
+                graph.queue_effect(sub_id);
+            } else {
+                let state = graph.get_state(sub_id);
+                // Optimization: Only propagate if Clean -> Check
+                if state == NodeState::Clean {
+                    graph.set_state(sub_id, NodeState::Check);
+                    queue.push_back(sub_id);
+                }
+            }
+        }
+    }
+}
+
+/// Phase 2: Evaluation (Iterative DFS)
+/// Updates the node if necessary by checking dependencies recursively.
+pub fn evaluate(graph: &mut impl ReactiveGraph, target_node: NodeId) {
+    if graph.get_state(target_node) == NodeState::Clean {
+        return;
+    }
+
+    let mut stack = Vec::with_capacity(16);
+    stack.push(target_node);
+
+    while let Some(&current) = stack.last() {
+        // Peek state
+        let state = graph.get_state(current);
+
+        if state == NodeState::Clean {
+            stack.pop();
+            continue;
+        }
+
+        // Step A: Check dependencies
+        let deps: Vec<_> = graph.get_dependencies(current).collect();
+        let mut found_non_clean = false;
+
+        for dep_id in deps {
+            if graph.get_state(dep_id) != NodeState::Clean {
+                stack.push(dep_id);
+                found_non_clean = true;
+                break; // DFS: Process dependency first
+            }
+        }
+
+        if found_non_clean {
+            continue; // Loop again to process the pushed dependency
+        }
+
+        // Step B: All dependencies are Clean (or we are at a leaf/signal).
+        // Try to update current node.
+
+        let mut needs_computation = true;
+
+        if state == NodeState::Check {
+            // Optimization: check versions
+            if !graph.check_dependencies_changed(current) {
+                needs_computation = false;
+                graph.set_state(current, NodeState::Clean);
+            }
+        }
+
+        if needs_computation {
+            // If Dirty or (Check and changed), we run computation.
+            // run_computation should update value and return if changed.
+            let _changed = graph.run_computation(current);
+
+            // After computation, strictly set to Clean
+            graph.set_state(current, NodeState::Clean);
+        }
+
+        // Don't pop yet, let the next loop iteration see it's Clean and pop it.
+        // This maintains the invariant that we only pop Clean nodes.
+    }
+}
