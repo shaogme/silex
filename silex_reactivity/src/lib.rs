@@ -197,7 +197,7 @@ where
         };
 
         if let Some(effect_data) = rt.effects.get_mut(effect_id) {
-            effect_data.computation = Some(Rc::new(computation));
+            effect_data.computation = Some(Box::new(computation));
         }
 
         signal_id

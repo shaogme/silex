@@ -47,14 +47,85 @@ impl Node {
     }
 }
 
+#[derive(Clone)]
+pub(crate) enum SubscriberList {
+    Empty,
+    Single(NodeId),
+    Many(Vec<NodeId>),
+}
+
+impl SubscriberList {
+    pub(crate) fn push(&mut self, id: NodeId) {
+        match self {
+            Self::Empty => *self = Self::Single(id),
+            Self::Single(existing) => {
+                *self = Self::Many(vec![*existing, id]);
+            }
+            Self::Many(vec) => vec.push(id),
+        }
+    }
+
+    pub(crate) fn remove(&mut self, id: NodeId) {
+        match self {
+            Self::Empty => {}
+            Self::Single(existing) => {
+                if *existing == id {
+                    *self = Self::Empty;
+                }
+            }
+            Self::Many(vec) => {
+                if let Some(idx) = vec.iter().position(|&x| x == id) {
+                    vec.swap_remove(idx);
+                    if vec.len() == 1 {
+                        *self = Self::Single(vec[0]);
+                    } else if vec.is_empty() {
+                        *self = Self::Empty;
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl IntoIterator for SubscriberList {
+    type Item = NodeId;
+    type IntoIter = SubscriberListIntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            SubscriberList::Empty => SubscriberListIntoIter::Empty,
+            SubscriberList::Single(id) => SubscriberListIntoIter::Single(Some(id)),
+            SubscriberList::Many(vec) => SubscriberListIntoIter::Many(vec.into_iter()),
+        }
+    }
+}
+
+pub(crate) enum SubscriberListIntoIter {
+    Empty,
+    Single(Option<NodeId>),
+    Many(std::vec::IntoIter<NodeId>),
+}
+
+impl Iterator for SubscriberListIntoIter {
+    type Item = NodeId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Single(opt) => opt.take(),
+            Self::Many(iter) => iter.next(),
+        }
+    }
+}
+
 pub(crate) struct SignalData {
     pub(crate) value: AnyValue,
-    pub(crate) subscribers: Vec<NodeId>,
+    pub(crate) subscribers: SubscriberList,
     pub(crate) last_tracked_by: Option<(NodeId, u64)>,
 }
 
 pub(crate) struct EffectData {
-    pub(crate) computation: Option<Rc<dyn Fn() -> ()>>,
+    pub(crate) computation: Option<Box<dyn Fn()>>,
     pub(crate) dependencies: Vec<NodeId>,
     pub(crate) effect_version: u64,
 }
@@ -162,7 +233,7 @@ impl Runtime {
             id,
             SignalData {
                 value: AnyValue::new(value),
-                subscribers: Vec::new(),
+                subscribers: SubscriberList::Empty,
                 last_tracked_by: None,
             },
         );
@@ -175,7 +246,7 @@ impl Runtime {
         self.effects.insert(
             id,
             EffectData {
-                computation: Some(Rc::new(f)),
+                computation: Some(Box::new(f)),
                 dependencies: Vec::new(),
                 effect_version: 0,
             },
@@ -210,7 +281,7 @@ impl Runtime {
         let subscribers = if let Some(data) = self.signals.get(signal_id) {
             data.subscribers.clone()
         } else {
-            Vec::new()
+            SubscriberList::Empty
         };
 
         let mut queue = self.observer_queue.borrow_mut();
@@ -283,9 +354,7 @@ impl Runtime {
         if !dependencies.is_empty() {
             for signal_id in dependencies {
                 if let Some(signal_data) = self.signals.get_mut(signal_id) {
-                    if let Some(idx) = signal_data.subscribers.iter().position(|&x| x == self_id) {
-                        signal_data.subscribers.swap_remove(idx);
-                    }
+                    signal_data.subscribers.remove(self_id);
                 }
             }
         }
@@ -340,7 +409,7 @@ pub(crate) fn run_effect_internal(effect_id: NodeId) {
             if let Some(effect_data) = rt.effects.get_mut(effect_id) {
                 effect_data.effect_version = effect_data.effect_version.wrapping_add(1);
                 (
-                    effect_data.computation.clone(),
+                    effect_data.computation.take(),
                     std::mem::take(&mut effect_data.dependencies),
                 )
             } else {
@@ -355,6 +424,11 @@ pub(crate) fn run_effect_internal(effect_id: NodeId) {
             rt.current_owner.set(Some(effect_id));
             f();
             rt.current_owner.set(prev_owner);
+
+            // Put computation back
+            if let Some(effect_data) = rt.effects.get_mut(effect_id) {
+                effect_data.computation = Some(f);
+            }
         }
     })
 }
