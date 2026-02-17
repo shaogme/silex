@@ -10,6 +10,7 @@
 *   **Thread Local**: `thread_local! { pub static RUNTIME: Runtime ... }`
 *   **Components**:
     *   `graph: Arena<Node>`: 负责管理节点拓扑结构（Nodes, Parent-Child Relationships）。内部使用 `UnsafeCell` 实现内部可变性。
+    *   `node_aux: SparseSecondaryMap<NodeAux>`: 存储节点的“冷数据”（Children, Cleanups, Context）。
     *   `signals: SparseSecondaryMap<SignalData>`: 存储信号值及订阅者。
     *   `effects: SparseSecondaryMap<EffectData>`: 存储副作用计算及依赖。
     *   `callbacks: SparseSecondaryMap<CallbackData>`: 存储回调函数。
@@ -43,24 +44,26 @@
     *   否则，存储 `Box<T>` (Boxed)。
 *   **VTable**: 手动维护 VTable (`type_id`, `drop`, `as_ptr`) 实现动态分发。
 
-### 6. `Node` (Graph Metadata)
-*   **Fields**:
-    *   `children: Vec<NodeId>`: 子节点（用于级联销毁）。
+### 6. `Node` & `NodeAux` (Graph Metadata)
+*   **Optimization**: 采用 "Hot/Cold Splitting" 策略优化缓存命中率。
+*   **Node (Hot)**:
     *   `parent: Option<NodeId>`: 父节点（Owner）。
+    *   `defined_at: Option<&'static std::panic::Location>`: (Debug only).
+*   **NodeAux (Cold)**:
+    *   `children: Vec<NodeId>`: 子节点（用于级联销毁）。
     *   `cleanups: Vec<Box<dyn FnOnce()>>`: `on_cleanup` 注册的回调。
     *   `context: Option<HashMap<TypeId, Box<dyn Any>>>`: 依赖注入容器。
-    *   `debug_label: Option<String>`: 调试标签 (Debug build only)。
-    *   `defined_at: Option<&'static std::panic::Location>`: 定义位置 (Debug build only)。
+    *   `debug_label: Option<String>`: (Debug only).
 
 ### 7. `SignalData` (Source)
 *   **Fields**:
     *   `value: AnyValue`: 存储信号的实际值（支持 SOO）。
-    *   `subscribers: Vec<NodeId>`: 依赖此信号的副作用列表。
+    *   `subscribers: SubscriberList`: 依赖此信号的副作用列表。使用 Enum (`Empty`, `Single`, `Many`) 优化内存。
     *   `last_tracked_by: Option<(NodeId, u64)>`: 简单的缓存，防止重复追踪。
 
 ### 8. `EffectData` (Observer)
 *   **Fields**:
-    *   `computation: Option<Rc<dyn Fn()>>`:副作用逻辑闭包。
+    *   `computation: Option<Box<dyn Fn()>>`: 副作用逻辑闭包。`Box` 替代 `Rc` 以消除引用计数，执行时通过 `Option::take` 获取所有权。
     *   `dependencies: Vec<NodeId>`: 此副作用依赖的信号（用于重新执行前清理依赖）。
     *   `effect_version: u64`: 用于版本检查（防止旧的依赖关系污染）。
 

@@ -27,6 +27,7 @@
 src/
 ├── arena.rs        // 定制的 Generational Arena 和稀疏二级映射表
 ├── lib.rs          // 核心 Runtime 实现，包含 Signal, Effect, Memo 等逻辑
+├── runtime.rs      // Runtime 结构体及核心数据结构 (Node, NodeAux, SignalData 等) 定义
 └── value.rs        // AnyValue 实现，提供小对象优化 (SOO)
 ```
 
@@ -36,6 +37,7 @@ src/
 classDiagram
     class Runtime {
         +graph: Arena<Node>
+        +node_aux: SparseSecondaryMap<NodeAux>
         +signals: SparseSecondaryMap<SignalData>
         +effects: SparseSecondaryMap<EffectData>
         +observer_queue: VecDeque<NodeId>
@@ -48,31 +50,40 @@ classDiagram
     }
 
     class Node {
-        +children: Vec<NodeId>
         +parent: Option<NodeId>
+        +defined_at: Option<Location>
+    }
+
+    class NodeAux {
+        +children: Vec<NodeId>
         +cleanups: Vec<Box<dyn FnOnce()>>
+        +context: HashMap<TypeId, Box<dyn Any>>
+        +debug_label: Option<String>
     }
 
     class SignalData {
         +value: AnyValue
-        +subscribers: Vec<NodeId>
+        +subscribers: SubscriberList
     }
 
     class EffectData {
-        +computation: Rc<dyn Fn()>
+        +computation: Option<Box<dyn Fn()>>
         +dependencies: Vec<NodeId>
     }
 
-    Runtime "1" *-- "1" Node : Manages Topology
+    Runtime "1" *-- "1" Node : Hot Data (Topology)
+    Runtime "1" *-- "1" NodeAux : Cold Data
     Runtime "1" *-- "1" SignalData : Stores Data
     Runtime "1" *-- "1" EffectData : Stores Logic
-    Node "1" --> "*" Node : Parent/Children
+    Node "1" --> "*" Node : Parent (via ID)
+    NodeAux "1" --> "*" NodeId : Children
     SignalData "1" --> "*" NodeId : Subscribers
     EffectData "1" --> "*" NodeId : Dependencies
 ```
 
 *   **Runtime**：线程局部的单例 (Thread-Local Singleton)，拥有所有状态。
-*   **Node**：表示依赖图中的一个拓扑节点，负责层级关系（Parent-Child）和生命周期（Cleanup）。
+*   **Node**：仅包含最核心的热数据（如 `parent`），用于高频访问的图谱遍历。
+*   **NodeAux**：存储相对“冷”的数据（如 `children`, `cleanups`），通过 `SparseSecondaryMap` 存储，以提高 `Node` 的缓存局部性。
 *   **SignalData/EffectData**：通过 `SparseSecondaryMap` 与 `Node` 关联的附加数据。这种设计类似于 ECS 中的组件（Component）。
 
 ## 4. 代码详细分析 (Detailed Analysis)
@@ -96,9 +107,15 @@ classDiagram
     这里使用了 `union` 来复用内存：当槽位空闲时，存储下一个空闲槽位的索引（Free List）；当槽位占用时，存储实际数据。
 *   **Interior Mutability**：`Arena::insert` 和 `get_mut` 等方法接收 `&self`，内部使用 `UnsafeCell`。这是为了配合 Runtime 的设计，使得我们可以在持有 Runtime 引用（通常是 `thread_local` 的借用）的同时，修改特定的节点数据。这也意味着调用者（Runtime）必须确保不会同时对同一个 ID 获取两个 `&mut T`。
 
-### 4.2 运行时核心循环 (lib.rs)
+### 4.2 运行时核心循环 (runtime.rs)
 
 `Runtime` 结构体维护了全局状态，包括依赖图谱 (`graph`) 和待执行队列 (`observer_queue`)。
+
+#### 数据结构优化
+
+*   **Node 拆分 (Hot/Cold Split)**：我们将 `Node` 拆分为 `Node` 和 `NodeAux`。`Node` 只包含 `parent` 等参与频繁遍历的字段，使其体积非常小，能放入缓存行。`NodeAux` 包含 `children`、`cleanups` 等仅在销毁或特定操作时访问的字段。
+*   **Effect 计算权 (Ownership)**：`EffectData` 中的 `computation` 使用 `Option<Box<dyn Fn()>>` 代替 `Rc<dyn Fn()>`。在 Effect 执行期间，我们使用 `Option::take` 将闭包所有权暂时取出执行，执行完毕后再放回。这避免了引用计数开销，因为计算闭包通常是被 Effect 独占的。
+*   **SubscriberList**：使用 Enum (`Empty`, `Single`, `Many`) 优化订阅者列表，优化了单订阅者这一常见情况的内存占用。
 
 #### 依赖收集 (Dependency Tracking)
 
@@ -125,7 +142,7 @@ classDiagram
 Silex 极其重视资源回收，特别是在复杂的响应式图中：
 
 *   **Effect 重运行前**：必须清理上一轮的依赖关系。这是因为条件分支可能导致依赖改变。如果不清理，Effect update 后可能会继续监听不再需要的 Signal。
-*   **节点销毁 (Dispose)**：递归清理 `children`，执行 `cleanups` 回调，并从父节点的子列表中移除自己，最后释放 Arena 槽位。
+*   **节点销毁 (Dispose)**：递归清理 `children` (在 NodeAux 中)，执行 `cleanups` 回调，并从父节点的子列表中移除自己，最后释放 Arena 槽位。
 
 ### 4.3 高级原语实现
 
@@ -152,8 +169,10 @@ Silex 极其重视资源回收，特别是在复杂的响应式图中：
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 
 *   **线程安全性 (Thread Safety)**：目前的 Runtime 基于 `thread_local!`，仅支持单线程运行。虽然这对 CSR 足够，但未来可探索 Send/Sync 支持以适应 Web Workers 等多线程场景。
-*   **性能微调**:
-    *   [x] 优化 `Box<dyn Any>` 的分配，已实现对小数据类型（如 `bool`, `i32`）的内联存储 (Small Object Optimization)。
+*   **性能优化 (Performance)**:
+    *   [x] **SOO**: 优化 `Box<dyn Any>` 的分配，已实现对小数据类型（如 `bool`, `i32`）的内联存储 (Small Object Optimization)。
+    *   [x] **Node Split**: 将 Node 拆分为 Hot/Cold 部分，提高缓存局部性。
+    *   [x] **Effect Ownership**: 避免 `Rc` 开销，Effect 独占计算闭包。
     *   优化 `SparseSecondaryMap` 在稀疏数据集下的内存占用。
 *   **API 易用性 (Ergonomics)**：计划结合更多的宏（macros）来提供自动解构、自动 Copy 等语法糖，减少样板代码。
 *   **调试工具 (DevTools)**：开发可视化的依赖图调试工具，帮助开发者定位循环依赖或无效更新。

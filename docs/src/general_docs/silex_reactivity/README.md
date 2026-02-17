@@ -19,6 +19,7 @@
 ```rust
 pub struct Runtime {
     pub(crate) graph: Arena<Node>,
+    pub(crate) node_aux: SparseSecondaryMap<NodeAux>, // 冷数据存储
     pub(crate) signals: SparseSecondaryMap<SignalData>,
     pub(crate) effects: SparseSecondaryMap<EffectData>,
     pub(crate) observer_queue: RefCell<VecDeque<NodeId>>,
@@ -32,25 +33,26 @@ pub struct Runtime {
 `silex_reactivity` 不再依赖外部的 ECS 或 Arena 库，而是实现了定制的内存分配策略：
 
 *   **Arena**: 采用分块 (`Chunk`) 存储和代际索引 (`Generational Index`)。它使用 `UnsafeCell` 提供了内部可变性，允许在不违反 Rust 借用规则的前提下高效地构建自引用的响应式图谱。
-*   **SparseSecondaryMap**: 配合 `Arena` 使用的辅助存储，用于映射 `NodeId` 到特定的组件数据（如 `SignalData`, `EffectData`）。
+*   **SparseSecondaryMap**: 配合 `Arena` 使用的辅助存储，用于映射 `NodeId` 到特定的组件数据（如 `SignalData`, `EffectData`, `NodeAux`）。
 
-### 3. NodeId 与 Node
+### 3. NodeId 与 Node (拓扑结构)
 
 *   **NodeId**: `arena::Index` 的别名。包含 `index` (u32) 和 `generation` (u32)，用于安全地引用 Arena 中的槽位。
-*   **Node**: 存储通用的图谱信息，如父子关系 (`parent`, `children`)、清理回调 (`cleanups`) 和上下文 (`context`)。
+*   **Node**: 仅存储最核心的图谱信息（如 `parent`），以保持轻量级，利于 CPU 缓存。
+*   **NodeAux**: 存储辅助性或“冷”数据，如子节点列表 (`children`)、清理回调 (`cleanups`) 和上下文 (`context`)。这些数据不常被访问，因此从 `Node` 中分离出来。
 
 ### 4. SignalData (信号数据)
 
 信号是响应式图谱中的数据源。
 
 *   **Value**: 使用 `AnyValue` 存储。如果数据较小（如 `i32`, `bool`, `f64`），直接内联存储；否则才使用堆分配 (`Box`)。
-*   **Subscribers**: 订阅了该信号变更的副作用节点列表。
+*   **Subscribers**: 订阅了该信号变更的副作用节点列表。内部使用了优化过的枚举结构 (`Empty`/`Single`/`Many`) 来减少常见单订阅场景的内存占用。
 
 ### 5. EffectData (副作用数据)
 
 副作用是响应式图谱中的观察者。
 
-*   **Computation**: 实际执行的闭包逻辑。
+*   **Computation**: 实际执行的闭包逻辑。为了性能，以 `Option<Box<dyn Fn()>>` 形式存储（执行时取出所有权，避免引用计数开销）。
 *   **Dependencies**: 该副作用依赖的信号列表（用于自动清理依赖关系）。
 
 ## 关键机制
