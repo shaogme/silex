@@ -148,8 +148,17 @@ pub(crate) struct StoredValueData {
 }
 
 /// Derived 数据存储（类型擦除）
+/// Combined Signal (Value + Subscribers) and Effect (Computation + Dependencies)
 pub(crate) struct DerivedData {
-    pub(crate) f: Box<dyn Any>,
+    // Signal-like part
+    pub(crate) value: AnyValue,
+    pub(crate) subscribers: SubscriberList,
+    pub(crate) last_tracked_by: Option<(NodeId, u64)>,
+
+    // Effect-like part
+    pub(crate) computation: Option<Box<dyn Fn()>>,
+    pub(crate) dependencies: Vec<NodeId>,
+    pub(crate) derived_version: u64,
 }
 
 // --- 响应式系统运行时 ---
@@ -254,31 +263,68 @@ impl Runtime {
         id
     }
 
-    pub(crate) fn track_dependency(&self, signal_id: NodeId) {
+    pub(crate) fn track_dependency(&self, target_id: NodeId) {
         if let Some(owner) = self.current_owner.get() {
-            if owner == signal_id {
+            if owner == target_id {
                 return;
             }
 
-            if let Some(effect_data) = self.effects.get_mut(owner) {
-                if let Some(signal_data) = self.signals.get_mut(signal_id) {
-                    let current_version = effect_data.effect_version;
-                    if let Some((last_owner, last_version)) = signal_data.last_tracked_by {
-                        if last_owner == owner && last_version == current_version {
-                            return;
-                        }
+            // 1. Identify Owner Type (Effect or Derived) and get its metadata
+            //    We need to update owner's dependencies list.
+            let (owner_version, is_owner_valid) = if let Some(eff) = self.effects.get_mut(owner) {
+                (eff.effect_version, true)
+            } else if let Some(der) = self.deriveds.get_mut(owner) {
+                (der.derived_version, true)
+            } else {
+                (0, false)
+            };
+
+            if !is_owner_valid {
+                return;
+            }
+
+            // 2. Identify Target Type (Signal or Derived) and register subscription
+            let mut registered = false;
+
+            // Check Signal
+            if let Some(signal_data) = self.signals.get_mut(target_id) {
+                if let Some((last_owner, last_version)) = signal_data.last_tracked_by {
+                    if last_owner == owner && last_version == owner_version {
+                        return; // Already tracked in this version
                     }
-                    effect_data.dependencies.push(signal_id);
-                    signal_data.subscribers.push(owner);
-                    signal_data.last_tracked_by = Some((owner, current_version));
+                }
+                signal_data.subscribers.push(owner);
+                signal_data.last_tracked_by = Some((owner, owner_version));
+                registered = true;
+            }
+            // Check Derived (if not Signal)
+            else if let Some(derived_data) = self.deriveds.get_mut(target_id) {
+                if let Some((last_owner, last_version)) = derived_data.last_tracked_by {
+                    if last_owner == owner && last_version == owner_version {
+                        return; // Already tracked in this version
+                    }
+                }
+                derived_data.subscribers.push(owner);
+                derived_data.last_tracked_by = Some((owner, owner_version));
+                registered = true;
+            }
+
+            if registered {
+                // Add to owner's dependency list
+                if let Some(eff) = self.effects.get_mut(owner) {
+                    eff.dependencies.push(target_id);
+                } else if let Some(der) = self.deriveds.get_mut(owner) {
+                    der.dependencies.push(target_id);
                 }
             }
         }
     }
 
-    pub(crate) fn queue_dependents(&self, signal_id: NodeId) {
+    pub(crate) fn queue_dependents(&self, target_id: NodeId) {
         // Clone subscribers to avoid holding borrow during iteration
-        let subscribers = if let Some(data) = self.signals.get(signal_id) {
+        let subscribers = if let Some(data) = self.signals.get(target_id) {
+            data.subscribers.clone()
+        } else if let Some(data) = self.deriveds.get(target_id) {
             data.subscribers.clone()
         } else {
             SubscriberList::Empty
@@ -307,7 +353,12 @@ impl Runtime {
             match next_to_run {
                 Some(id) => {
                     self.queued_observers.remove(id);
-                    run_effect_internal(id);
+                    // Determine if it is Effect or Derived
+                    if self.effects.get(id).is_some() {
+                        run_effect_internal(id);
+                    } else if self.deriveds.get(id).is_some() {
+                        run_derived_internal(id);
+                    }
                 }
                 None => break,
             }
@@ -330,6 +381,8 @@ impl Runtime {
         let dependencies = {
             if let Some(effect_data) = self.effects.get_mut(id) {
                 std::mem::take(&mut effect_data.dependencies)
+            } else if let Some(derived_data) = self.deriveds.get_mut(id) {
+                std::mem::take(&mut derived_data.dependencies)
             } else {
                 Vec::new()
             }
@@ -352,9 +405,11 @@ impl Runtime {
             self.dispose_node_internal(child, false);
         }
         if !dependencies.is_empty() {
-            for signal_id in dependencies {
-                if let Some(signal_data) = self.signals.get_mut(signal_id) {
+            for dep_id in dependencies {
+                if let Some(signal_data) = self.signals.get_mut(dep_id) {
                     signal_data.subscribers.remove(self_id);
+                } else if let Some(derived_data) = self.deriveds.get_mut(dep_id) {
+                    derived_data.subscribers.remove(self_id);
                 }
             }
         }
@@ -428,6 +483,47 @@ pub(crate) fn run_effect_internal(effect_id: NodeId) {
             // Put computation back
             if let Some(effect_data) = rt.effects.get_mut(effect_id) {
                 effect_data.computation = Some(f);
+            }
+        }
+    })
+}
+
+pub(crate) fn run_derived_internal(derived_id: NodeId) {
+    RUNTIME.with(|rt| {
+        let (children, cleanups) = {
+            if let Some(aux) = rt.node_aux.get_mut(derived_id) {
+                (
+                    std::mem::take(&mut aux.children),
+                    std::mem::take(&mut aux.cleanups),
+                )
+            } else {
+                (Vec::new(), Vec::new())
+            }
+        };
+
+        let (computation_fn, dependencies) = {
+            if let Some(data) = rt.deriveds.get_mut(derived_id) {
+                data.derived_version = data.derived_version.wrapping_add(1);
+                (
+                    data.computation.take(),
+                    std::mem::take(&mut data.dependencies),
+                )
+            } else {
+                return;
+            }
+        };
+
+        rt.run_cleanups(derived_id, children, cleanups, dependencies);
+
+        if let Some(f) = computation_fn {
+            let prev_owner = rt.current_owner.get();
+            rt.current_owner.set(Some(derived_id));
+            f();
+            rt.current_owner.set(prev_owner);
+
+            // Put computation back
+            if let Some(data) = rt.deriveds.get_mut(derived_id) {
+                data.computation = Some(f);
             }
         }
     })

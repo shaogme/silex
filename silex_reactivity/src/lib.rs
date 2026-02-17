@@ -9,10 +9,7 @@ mod value;
 use value::AnyValue;
 
 mod runtime;
-use runtime::{
-    CallbackData, DerivedData, EffectData, NodeRefData, RUNTIME, StoredValueData,
-    run_effect_internal,
-};
+use runtime::{CallbackData, NodeRefData, RUNTIME, StoredValueData, run_effect_internal};
 
 // --- Public High-Level API ---
 
@@ -30,7 +27,13 @@ pub fn try_get_signal<T: Clone + 'static>(id: NodeId) -> Option<T> {
             if let Some(val) = signal.value.downcast_ref::<T>() {
                 return Some(val.clone());
             } else {
-                eprintln!("Type mismatch in try_get_signal");
+                eprintln!("Type mismatch in try_get_signal (Signal)");
+            }
+        } else if let Some(derived) = rt.deriveds.get(id) {
+            if let Some(val) = derived.value.downcast_ref::<T>() {
+                return Some(val.clone());
+            } else {
+                eprintln!("Type mismatch in try_get_signal (Derived)");
             }
         }
         None
@@ -43,7 +46,13 @@ pub fn try_get_signal_untracked<T: Clone + 'static>(id: NodeId) -> Option<T> {
             if let Some(val) = signal.value.downcast_ref::<T>() {
                 return Some(val.clone());
             } else {
-                eprintln!("Type mismatch in try_get_signal_untracked");
+                eprintln!("Type mismatch in try_get_signal_untracked (Signal)");
+            }
+        } else if let Some(derived) = rt.deriveds.get(id) {
+            if let Some(val) = derived.value.downcast_ref::<T>() {
+                return Some(val.clone());
+            } else {
+                eprintln!("Type mismatch in try_get_signal_untracked (Derived)");
             }
         }
         None
@@ -140,39 +149,38 @@ where
     F: Fn(Option<&T>) -> T + 'static,
 {
     RUNTIME.with(|rt| {
-        let effect_id = rt.register_node();
+        let id = rt.register_node();
 
-        // Placeholder effect data
-        rt.effects.insert(
-            effect_id,
-            EffectData {
+        // Placeholder data to allow tracking during initial run
+        rt.deriveds.insert(
+            id,
+            runtime::DerivedData {
+                value: AnyValue::new(()), // Temporary dummy
+                subscribers: runtime::SubscriberList::Empty,
+                last_tracked_by: None,
                 computation: None,
                 dependencies: Vec::new(),
-                effect_version: 0,
+                derived_version: 0,
             },
         );
 
-        // Run once
-        let value = {
+        let initial_value = {
             let prev_owner = rt.current_owner.get();
-            rt.current_owner.set(Some(effect_id));
+            rt.current_owner.set(Some(id));
             let v = f(None);
             rt.current_owner.set(prev_owner);
             v
         };
 
-        // Create inner signal
-        let signal_id = rt.register_signal_internal(value);
-
-        // Computation
+        // Construct the computation closure
         let computation = move || {
-            // Check old value
+            // Access old value
             let old_value = RUNTIME.with(|rt| {
-                if let Some(signal) = rt.signals.get(signal_id) {
-                    if let Some(val) = signal.value.downcast_ref::<T>() {
+                if let Some(derived) = rt.deriveds.get(id) {
+                    if let Some(val) = derived.value.downcast_ref::<T>() {
                         Some(val.clone())
                     } else {
-                        None
+                        None // Should not happen if types match
                     }
                 } else {
                     None
@@ -180,8 +188,8 @@ where
             });
 
             let new_value = f(old_value.as_ref());
-            let mut changed = false;
 
+            let mut changed = false;
             if let Some(old) = &old_value {
                 if new_value != *old {
                     changed = true;
@@ -191,16 +199,22 @@ where
             }
 
             if changed {
-                // Update signal
-                update_signal::<T>(signal_id, |v| *v = new_value);
+                RUNTIME.with(|rt| {
+                    if let Some(derived) = rt.deriveds.get_mut(id) {
+                        derived.value = AnyValue::new(new_value);
+                    }
+                    rt.queue_dependents(id);
+                });
             }
         };
 
-        if let Some(effect_data) = rt.effects.get_mut(effect_id) {
-            effect_data.computation = Some(Box::new(computation));
+        // Update the node with real data
+        if let Some(data) = rt.deriveds.get_mut(id) {
+            data.value = AnyValue::new(initial_value);
+            data.computation = Some(Box::new(computation));
         }
 
-        signal_id
+        id
     })
 }
 
@@ -371,21 +385,46 @@ pub fn try_update_stored_value<T: 'static, R>(
 pub fn register_derived<T: 'static>(f: impl Fn() -> T + 'static) -> NodeId {
     RUNTIME.with(|rt| {
         let id = rt.register_node();
-        let f_rc: Rc<dyn Fn() -> T> = Rc::new(f);
-        rt.deriveds.insert(id, DerivedData { f: Box::new(f_rc) });
+        rt.deriveds.insert(
+            id,
+            runtime::DerivedData {
+                value: AnyValue::new(()),
+                subscribers: runtime::SubscriberList::Empty,
+                last_tracked_by: None,
+                computation: None,
+                dependencies: Vec::new(),
+                derived_version: 0,
+            },
+        );
+
+        let initial_value = {
+            let prev_owner = rt.current_owner.get();
+            rt.current_owner.set(Some(id));
+            let v = f();
+            rt.current_owner.set(prev_owner);
+            v
+        };
+
+        let computation = move || {
+            let new_value = f();
+            RUNTIME.with(|rt| {
+                if let Some(derived) = rt.deriveds.get_mut(id) {
+                    derived.value = AnyValue::new(new_value);
+                }
+                rt.queue_dependents(id);
+            });
+        };
+
+        if let Some(data) = rt.deriveds.get_mut(id) {
+            data.value = AnyValue::new(initial_value);
+            data.computation = Some(Box::new(computation));
+        }
         id
     })
 }
 
-pub fn run_derived<T: 'static>(id: NodeId) -> Option<T> {
-    RUNTIME.with(|rt| {
-        if let Some(data) = rt.deriveds.get(id) {
-            if let Some(f) = data.f.downcast_ref::<Rc<dyn Fn() -> T>>() {
-                return Some(f());
-            }
-        }
-        None
-    })
+pub fn run_derived<T: Clone + 'static>(id: NodeId) -> Option<T> {
+    try_get_signal(id)
 }
 
 pub fn try_with_signal<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
@@ -397,6 +436,10 @@ pub fn try_with_signal<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Op
             if let Some(val) = signal.value.downcast_ref::<T>() {
                 return Some(f(val));
             }
+        } else if let Some(derived) = rt.deriveds.get(id) {
+            if let Some(val) = derived.value.downcast_ref::<T>() {
+                return Some(f(val));
+            }
         }
         None
     })
@@ -406,6 +449,10 @@ pub fn try_with_signal_untracked<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -
     RUNTIME.with(|rt| {
         if let Some(signal) = rt.signals.get(id) {
             if let Some(val) = signal.value.downcast_ref::<T>() {
+                return Some(f(val));
+            }
+        } else if let Some(derived) = rt.deriveds.get(id) {
+            if let Some(val) = derived.value.downcast_ref::<T>() {
                 return Some(f(val));
             }
         }
@@ -428,7 +475,7 @@ pub fn try_update_signal_silent<T: 'static, R>(
 }
 
 pub fn is_signal_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| rt.signals.get(id).is_some())
+    RUNTIME.with(|rt| rt.signals.get(id).is_some() || rt.deriveds.get(id).is_some())
 }
 
 pub fn get_node_defined_at(_id: NodeId) -> Option<&'static std::panic::Location<'static>> {

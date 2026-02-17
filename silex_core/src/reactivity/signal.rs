@@ -5,9 +5,8 @@ use std::ptr;
 
 use silex_reactivity::{
     NodeId, get_debug_label, get_node_defined_at, is_signal_valid, notify_signal, register_derived,
-    run_derived, set_debug_label, signal as create_signal, store_value, track_signal,
-    try_update_signal_silent, try_with_signal_untracked, try_with_stored_value,
-    untrack as untrack_scoped,
+    set_debug_label, signal as create_signal, store_value, track_signal, try_update_signal_silent,
+    try_with_signal_untracked, try_with_stored_value, untrack as untrack_scoped,
 };
 
 use crate::reactivity::SignalSlice;
@@ -260,6 +259,12 @@ impl<T> std::hash::Hash for Signal<T> {
 // --- Generic Impl Block ---
 
 impl<T: 'static> Signal<T> {
+    #[track_caller]
+    pub fn derive(f: impl Fn() -> T + 'static) -> Self {
+        let id = register_derived(move || f());
+        Signal::Derived(id, PhantomData)
+    }
+
     /// Internal helper to try inlining a value
     fn try_inline(value: T) -> Option<Self> {
         // Can only inline if it fits in u64 and doesn't implement Drop
@@ -292,11 +297,7 @@ impl<T: 'static> Signal<T> {
 }
 
 impl<T: Clone + 'static> Signal<T> {
-    #[track_caller]
-    pub fn derive(f: impl Fn() -> T + 'static) -> Self {
-        let id = register_derived(move || f());
-        Signal::Derived(id, PhantomData)
-    }
+    // derive moved to T: 'static block
 
     pub fn with_name(self, name: impl Into<String>) -> Self {
         match self {
@@ -354,8 +355,7 @@ impl<T: 'static> Track for Signal<T> {
         match self {
             Signal::Read(s) => s.track(),
             Signal::Derived(id, _) => {
-                // Run the derived function to track its dependencies
-                let _ = run_derived::<T>(*id);
+                track_signal(*id);
             }
             Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _) => {}
         }
@@ -368,10 +368,7 @@ impl<T: 'static> WithUntracked for Signal<T> {
     fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         match self {
             Signal::Read(s) => s.try_with_untracked(fun),
-            Signal::Derived(id, _) => {
-                let val = untrack(|| run_derived::<T>(*id))?;
-                Some(fun(&val))
-            }
+            Signal::Derived(id, _) => try_with_signal_untracked(*id, fun),
             Signal::StoredConstant(id, _) => try_with_stored_value(*id, fun),
             Signal::InlineConstant(val, _) => {
                 // Unsafe: we verified safety conditions on creation
