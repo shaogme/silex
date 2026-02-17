@@ -11,8 +11,11 @@ use algorithm::NodeState;
 mod value;
 use value::AnyValue;
 
-mod node_list;
-use node_list::NodeList;
+mod list;
+pub(crate) use list::List;
+
+pub(crate) type NodeList = List<NodeId>;
+pub(crate) type DependencyList = List<(NodeId, u32)>;
 
 mod runtime;
 use runtime::{CallbackData, NodeRefData, RUNTIME, StoredValueData, run_effect_internal};
@@ -174,8 +177,7 @@ where
                 },
                 effect: runtime::EffectData {
                     computation: None,
-                    dependencies: NodeList::Empty,
-                    dependency_versions: Vec::new(),
+                    dependencies: DependencyList::default(),
                     effect_version: 0,
                 },
                 state: NodeState::Clean,
@@ -415,8 +417,7 @@ pub fn register_derived<T: 'static>(f: impl Fn() -> T + 'static) -> NodeId {
                 },
                 effect: runtime::EffectData {
                     computation: None,
-                    dependencies: NodeList::Empty,
-                    dependency_versions: Vec::new(),
+                    dependencies: DependencyList::default(),
                     effect_version: 0,
                 },
                 state: NodeState::Clean,

@@ -3,9 +3,10 @@ use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 
+use crate::DependencyList;
+use crate::NodeList;
 use crate::algorithm::{self, NodeState, ReactiveGraph};
 use crate::arena::{Arena, Index as NodeId, SparseSecondaryMap};
-use crate::node_list::NodeList;
 use crate::value::AnyValue;
 
 // --- 基础类型定义 ---
@@ -116,8 +117,7 @@ pub(crate) struct SignalData {
 
 pub(crate) struct EffectData {
     pub(crate) computation: Option<Box<dyn Fn()>>,
-    pub(crate) dependencies: NodeList,
-    pub(crate) dependency_versions: Vec<u32>, // Parallel to dependencies for version check
+    pub(crate) dependencies: DependencyList,
     pub(crate) effect_version: u32,
 }
 
@@ -242,8 +242,7 @@ impl Runtime {
             id,
             EffectData {
                 computation: Some(Box::new(f)),
-                dependencies: NodeList::Empty,
-                dependency_versions: Vec::new(),
+                dependencies: DependencyList::default(),
                 effect_version: 0,
             },
         );
@@ -301,11 +300,9 @@ impl Runtime {
             if registered {
                 // Add to owner's dependency list
                 if let Some(eff) = self.effects.get_mut(owner) {
-                    eff.dependencies.push(target_id);
-                    eff.dependency_versions.push(target_version);
+                    eff.dependencies.push((target_id, target_version));
                 } else if let Some(der) = self.deriveds.get_mut(owner) {
-                    der.effect.dependencies.push(target_id);
-                    der.effect.dependency_versions.push(target_version);
+                    der.effect.dependencies.push((target_id, target_version));
                 }
             }
         }
@@ -363,15 +360,15 @@ impl Runtime {
 
         let dependencies = {
             if let Some(effect_data) = self.effects.get_mut(id) {
-                // Also clear versions
-                effect_data.dependency_versions.clear();
-                std::mem::take(&mut effect_data.dependencies)
+                let mut deps = DependencyList::default();
+                std::mem::swap(&mut effect_data.dependencies, &mut deps);
+                deps
             } else if let Some(derived_data) = self.deriveds.get_mut(id) {
-                // Also clear versions
-                derived_data.effect.dependency_versions.clear();
-                std::mem::take(&mut derived_data.effect.dependencies)
+                let mut deps = DependencyList::default();
+                std::mem::swap(&mut derived_data.effect.dependencies, &mut deps);
+                deps
             } else {
-                NodeList::default()
+                DependencyList::default()
             }
         };
 
@@ -383,7 +380,7 @@ impl Runtime {
         self_id: NodeId,
         children: Vec<NodeId>,
         cleanups: CleanupList,
-        dependencies: NodeList,
+        dependencies: DependencyList,
     ) {
         for cleanup in cleanups {
             cleanup();
@@ -391,12 +388,12 @@ impl Runtime {
         for child in children {
             self.dispose_node_internal(child, false);
         }
-        // Iterate dependencies (NodeList)
-        for dep_id in dependencies {
+        // Iterate dependencies
+        for (dep_id, _) in dependencies {
             if let Some(signal_data) = self.signals.get_mut(dep_id) {
-                signal_data.subscribers.remove(self_id);
+                signal_data.subscribers.remove(&self_id);
             } else if let Some(derived_data) = self.deriveds.get_mut(dep_id) {
-                derived_data.signal.subscribers.remove(self_id);
+                derived_data.signal.subscribers.remove(&self_id);
             }
         }
     }
@@ -448,11 +445,9 @@ pub(crate) fn run_effect_internal(rt: &Runtime, effect_id: NodeId) {
     let (computation_fn, dependencies) = {
         if let Some(effect_data) = rt.effects.get_mut(effect_id) {
             effect_data.effect_version = effect_data.effect_version.wrapping_add(1);
-            effect_data.dependency_versions.clear(); // Clear versions too
-            (
-                effect_data.computation.take(),
-                std::mem::take(&mut effect_data.dependencies),
-            )
+            let mut deps = DependencyList::default();
+            std::mem::swap(&mut effect_data.dependencies, &mut deps);
+            (effect_data.computation.take(), deps)
         } else {
             return;
         }
@@ -488,11 +483,9 @@ pub(crate) fn run_derived_internal(rt: &Runtime, derived_id: NodeId) -> bool {
     let (computation_fn, dependencies) = {
         if let Some(data) = rt.deriveds.get_mut(derived_id) {
             data.effect.effect_version = data.effect.effect_version.wrapping_add(1);
-            data.effect.dependency_versions.clear();
-            (
-                data.effect.computation.take(),
-                std::mem::take(&mut data.effect.dependencies),
-            )
+            let mut deps = DependencyList::default();
+            std::mem::swap(&mut data.effect.dependencies, &mut deps);
+            (data.effect.computation.take(), deps)
         } else {
             return false;
         }
@@ -519,6 +512,17 @@ pub(crate) fn run_derived_internal(rt: &Runtime, derived_id: NodeId) -> bool {
         return true;
     }
     false
+}
+
+use crate::list::ListIntoIter;
+
+struct DependencyIter(ListIntoIter<(NodeId, u32)>);
+
+impl Iterator for DependencyIter {
+    type Item = NodeId;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(id, _)| id)
+    }
 }
 
 // --- RuntimeAdapter for Algorithm ---
@@ -552,11 +556,11 @@ impl<'a> ReactiveGraph for RuntimeAdapter<'a> {
 
     fn get_dependencies(&self, id: NodeId) -> impl Iterator<Item = NodeId> {
         if let Some(eff) = self.0.effects.get(id) {
-            eff.dependencies.clone().into_iter()
+            DependencyIter(eff.dependencies.clone().into_iter())
         } else if let Some(der) = self.0.deriveds.get(id) {
-            der.effect.dependencies.clone().into_iter()
+            DependencyIter(der.effect.dependencies.clone().into_iter())
         } else {
-            NodeList::Empty.into_iter()
+            DependencyIter(DependencyList::default().into_iter())
         }
     }
 
@@ -577,49 +581,28 @@ impl<'a> ReactiveGraph for RuntimeAdapter<'a> {
 
     fn check_dependencies_changed(&mut self, id: NodeId) -> bool {
         // Collect dependencies and their expected versions
-        let (deps, expected_versions) = if let Some(eff) = self.0.effects.get(id) {
-            (eff.dependencies.clone(), eff.dependency_versions.clone())
+        let deps = if let Some(eff) = self.0.effects.get(id) {
+            eff.dependencies.clone()
         } else if let Some(der) = self.0.deriveds.get(id) {
-            (
-                der.effect.dependencies.clone(),
-                der.effect.dependency_versions.clone(),
-            )
+            der.effect.dependencies.clone()
         } else {
             return false;
         };
 
-        let mut dep_iter = deps.into_iter();
-        let mut ver_iter = expected_versions.into_iter();
+        for (dep_id, expected_ver) in deps {
+            let current_ver = if let Some(s) = self.0.signals.get(dep_id) {
+                s.version
+            } else if let Some(d) = self.0.deriveds.get(dep_id) {
+                d.signal.version
+            } else {
+                // Dependency logic error or disposed? Treat as changed.
+                return true;
+            };
 
-        // Strict synchronization check
-        loop {
-            match (dep_iter.next(), ver_iter.next()) {
-                (Some(dep_id), Some(expected_ver)) => {
-                    let current_ver = if let Some(s) = self.0.signals.get(dep_id) {
-                        s.version
-                    } else if let Some(d) = self.0.deriveds.get(dep_id) {
-                        d.signal.version
-                    } else {
-                        // Dependency logic error or disposed? Treat as changed.
-                        return true;
-                    };
-
-                    if current_ver != expected_ver {
-                        return true;
-                    }
-                }
-                (None, None) => return false, // All synced, no changes
-                _ => {
-                    // Mismatch in count!
-                    #[cfg(debug_assertions)]
-                    panic!(
-                        "Reactive Graph Logic Error: Dependency list and version list desynchronized for node {:?}",
-                        id
-                    );
-                    #[cfg(not(debug_assertions))]
-                    return true;
-                }
+            if current_ver != expected_ver {
+                return true;
             }
         }
+        false
     }
 }
