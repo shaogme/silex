@@ -8,6 +8,9 @@ pub use arena::{Arena, Index as NodeId, SparseSecondaryMap};
 mod value;
 use value::AnyValue;
 
+mod node_list;
+use node_list::NodeList;
+
 mod runtime;
 use runtime::{CallbackData, NodeRefData, RUNTIME, StoredValueData, run_effect_internal};
 
@@ -156,10 +159,10 @@ where
             id,
             runtime::DerivedData {
                 value: AnyValue::new(()), // Temporary dummy
-                subscribers: runtime::NodeList::Empty,
+                subscribers: NodeList::Empty,
                 last_tracked_by: None,
                 computation: None,
-                dependencies: runtime::NodeList::Empty,
+                dependencies: NodeList::Empty,
                 derived_version: 0,
             },
         );
@@ -389,10 +392,10 @@ pub fn register_derived<T: 'static>(f: impl Fn() -> T + 'static) -> NodeId {
             id,
             runtime::DerivedData {
                 value: AnyValue::new(()),
-                subscribers: runtime::NodeList::Empty,
+                subscribers: NodeList::Empty,
                 last_tracked_by: None,
                 computation: None,
-                dependencies: runtime::NodeList::Empty,
+                dependencies: NodeList::Empty,
                 derived_version: 0,
             },
         );

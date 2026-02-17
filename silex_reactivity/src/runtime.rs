@@ -4,6 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 
 use crate::arena::{Arena, Index as NodeId, SparseSecondaryMap};
+use crate::node_list::NodeList;
 use crate::value::AnyValue;
 
 // --- 基础类型定义 ---
@@ -43,82 +44,6 @@ impl Node {
             parent: None,
             #[cfg(debug_assertions)]
             defined_at: None,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub(crate) enum NodeList {
-    Empty,
-    Single(NodeId),
-    Many(Vec<NodeId>),
-}
-
-impl Default for NodeList {
-    fn default() -> Self {
-        Self::Empty
-    }
-}
-
-impl NodeList {
-    pub(crate) fn push(&mut self, id: NodeId) {
-        match self {
-            Self::Empty => *self = Self::Single(id),
-            Self::Single(existing) => {
-                *self = Self::Many(vec![*existing, id]);
-            }
-            Self::Many(vec) => vec.push(id),
-        }
-    }
-
-    pub(crate) fn remove(&mut self, id: NodeId) {
-        match self {
-            Self::Empty => {}
-            Self::Single(existing) => {
-                if *existing == id {
-                    *self = Self::Empty;
-                }
-            }
-            Self::Many(vec) => {
-                if let Some(idx) = vec.iter().position(|&x| x == id) {
-                    vec.swap_remove(idx);
-                    if vec.len() == 1 {
-                        *self = Self::Single(vec[0]);
-                    } else if vec.is_empty() {
-                        *self = Self::Empty;
-                    }
-                }
-            }
-        }
-    }
-}
-
-impl IntoIterator for NodeList {
-    type Item = NodeId;
-    type IntoIter = NodeListIntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        match self {
-            NodeList::Empty => NodeListIntoIter::Empty,
-            NodeList::Single(id) => NodeListIntoIter::Single(Some(id)),
-            NodeList::Many(vec) => NodeListIntoIter::Many(vec.into_iter()),
-        }
-    }
-}
-
-pub(crate) enum NodeListIntoIter {
-    Empty,
-    Single(Option<NodeId>),
-    Many(std::vec::IntoIter<NodeId>),
-}
-
-impl Iterator for NodeListIntoIter {
-    type Item = NodeId;
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Empty => None,
-            Self::Single(opt) => opt.take(),
-            Self::Many(iter) => iter.next(),
         }
     }
 }
