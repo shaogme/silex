@@ -11,7 +11,8 @@
 *   **SignalWrapper (通用信号)**:
     *   `Signal<T>`: 统一的信号包装器，**实现了 `Copy`, `PartialEq`, `Eq`, `Hash`**。
     *   它可以包装 `ReadSignal`, `RwSignal`, `Memo`，`Derived` (派生闭包) 或 `Constant` (常量)。
-    *   作为组件 Props 的首选类型，因为它能接受任何类型的响应式数据源（包括普通值，会自动转换为常量信号）。
+    *   **内存优化**: 对于 `i32`, `f64`, `bool` 等小型 `Copy` 类型，`Signal<T>` 会将值直接内联存储在枚举中（`InlineConstant`），从而**完全消除 Arena 分配**。这意味着 `Signal::from(42)` 现在是**零分配**的。
+    *   作为组件 Props 的首选类型，因为它能接受任何类型的响应式数据源。
 
 *   **Trait System (特征系统) - Zero-Copy First**:
     *   Silex 的特征系统设计以 **`With` (闭包访问)** 为绝对核心，旨在避免不必要的内存克隆。
@@ -27,8 +28,10 @@
         *   `batch_read_untracked!(s1, s2 => |v1, v2| ...)`: 同时访问多个信号不追踪，零 Clone。
     *   **写**: `Set` (设置并通知), `SetUntracked` (设置不通知), `Update` (修改并通知), `SignalSetter` (生成 setter), `SignalUpdater` (生成 updater)。
     *   **转换**: `IntoSignal` (值转信号)。允许组件 Props 接受 `impl IntoSignal`，从而同时支持静态值（自动转为 `Constant`，零分配）和动态信号。也支持将元组 `(Signal<A>, Signal<B>)` 转换为组合信号 `Signal<(A, B)>`。
-    *   **性能建议**: `Signal::from(val)` 会在运行时分配内存。若传递静态值，请直接使用 `val` 或 `StoredConstant(val)` 以避免不必要的开销。仅在需要特定类型 `Signal<T>` 时才使用 `Signal::from`。
-    *   这种设计使得你可以灵活组合不同的行为，例如 `StoredValue` 实现了 `GetUntracked`/`SetUntracked` 但不实现 `Track`/`Notify`。
+    *   **性能建议**: 
+        *   对于小型 `Copy` 类型（如 `i32`），`Signal::from(val)` 是零分配的，非常高效。
+        *   对于大型对象（如 `String`），`Signal::from(val)` 仍会在运行时分配 Arena 内存。若传递大型静态值，建议直接使用引用或 `StoredValue`。
+    *   这种设计使得你可以灵活组合不同的行为。
 
 *   **Primitive Signals (基础信号)**: 
     *   `ReadSignal<T>`: 只读信号句柄，实现了 `Get`, `GetUntracked` 等读取特征。实现了 `PartialEq`, `Eq`, `Hash`。

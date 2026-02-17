@@ -90,12 +90,14 @@ silex_core/src/
 pub enum Signal<T: 'static> {
     Read(ReadSignal<T>),                    // 普通读信号
     Derived(NodeId, PhantomData<T>),        // 派生信号（闭包）
-    StoredConstant(NodeId, PhantomData<T>), // 存储的常量
+    StoredConstant(NodeId, PhantomData<T>), // 存储的常量 (Arena)
+    InlineConstant(u64, PhantomData<T>),    // 内联常量 (Small Copy Types)
 }
 ```
 
 *   **Derived 变体**：这是一个无缓存的计算属性。当你写 `signal_a + signal_b` 时，返回的就是一个 `Signal::Derived`。它没有专门的存储空间，每次访问都重新运行底层的闭包。
-*   **StoredConstant**：这是一个优化。对于 `signal(42)` 或者常量配置，我们不需要追踪机制，但为了接口统一，我们把它包装起来。
+*   **StoredConstant**: 这是一个优化。对于 `signal(42)` 或者常量配置（大对象），我们不需要追踪机制，但为了接口统一，我们把它包装起来。
+*   **InlineConstant**: 这是一个**极致优化**。对于 `i32`, `f64`, `bool` 等小型的 `Copy` 类型，我们将值直接**内联存储**在 `Signal` 枚举的变体中（通过 unsafe 位压缩），从而**完全消除了 Arena 内存分配**。这意味着 `Signal::from(42)` 现在是零分配的。
 
 ### 4.3. 宏魔法 (`macros`)
 
@@ -114,8 +116,8 @@ pub enum Signal<T: 'static> {
 
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 
-*   **`IntoSignal` 内存优化**:
-    *   目前 `IntoSignal` 对基本类型（如 `i32`）的转换会占用 Arena 槽位。计划优化 `Constant` 的存储方式，尝试直接内联存储小数据，减少内存分配。
+*   **`IntoSignal` 内存优化** (已完成):
+    *   `IntoSignal` 对基本类型（如 `i32`）的转换现在使用 `InlineConstant`，直接内联存储小数据，消除了内存分配。
 *   **Type Erasure 开销优化**:
     *   虽然后端 `Signal<T>` 枚举分发开销很小，但在极端性能敏感场景下，仍需探索减少 match 分发的途径。
 *   **错误处理机制改进**:

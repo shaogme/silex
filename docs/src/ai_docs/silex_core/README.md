@@ -53,11 +53,13 @@
     *   `Read(ReadSignal<T>)`
     *   `Derived(NodeId, PhantomData<T>)`
     *   `StoredConstant(NodeId, PhantomData<T>)`
+    *   `InlineConstant(u64, PhantomData<T>)` (Internal optimization: zero-allocation for small Copy types)
 *   **Traits**: `Copy`, `Clone`, `Debug`, `PartialEq`, `Eq`, `Hash`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
 *   **Semantics**:
     *   通用的信号接口，统一了 `ReadSignal`、派生计算和常量。
     *   `Derived` 变体持有一个在 Runtime 中注册的闭包，每次 `get()` 时重新执行闭包（无缓存）。
     *   `StoredConstant` 变体持有一个存储在 Runtime 中的常量值。
+    *   `InlineConstant` 变体将小数据（如 `i32`）直接内联存储在 `Signal` 内部，避免 Arena 分配。
 *   **Methods**:
     *   `derive(f: impl Fn() -> T)`: 创建一个派生信号。
     *   `get() -> T`: (via `Get` trait).
@@ -133,9 +135,10 @@
     *   **Tuples (元组)**: 为 2-4 个元素的元组（如 `(Signal<A>, Signal<B>)`）实现了该 Trait。它们会被转换为一个通过 `Signal::derive` 创建的 `Signal<(A, B)>`，从而将多个信号合并为一个组合信号。
     *   这允许组件接受 `impl IntoSignal<Value=T>`，从而既支持直接传值，也支持传信号。
 *   **Performance Advice (性能建议)**:
-    *   `Signal::from(value)` 会调用 `store_value(value)`，在响应式运行时中分配内存。这意味着即使是 `Signal::from(42)` 也会产生 Arena 分配开销。
-    *   当组件参数接受 `impl IntoSignal` 时，如果传递的是静态值，**请直接传递该值**（例如 `42` 或 `Constant(42)`）。它是零分配的（Zero-Allocation）。
-    *   仅在需要类型擦除（Type Erasure）时才使用 `Signal::from(value)`。
+    *   `Signal::from(value)` 现在进行了**智能优化**。
+    *   **Small Copy Types (e.g., i32, bool)**: 转换为 `InlineConstant`。这是**零分配 (Zero-Allocation)** 的，速度极快。
+    *   **Large Types (e.g., String)**: 仍会调用 `store_value(value)`，在响应式运行时中分配内存。
+    *   当组件参数接受 `impl IntoSignal` 时，对于小类型可以直接传值，无需担心开销。对于大对象，如果是静态常量，建议传递引用或结构体内部管理，避免不必要的 Arena 存储。
 
 #### `StoredValue<T>`
 

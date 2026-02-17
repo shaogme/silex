@@ -1,5 +1,7 @@
 use std::marker::PhantomData;
+use std::mem;
 use std::panic::Location;
+use std::ptr;
 
 use silex_reactivity::{
     NodeId, get_debug_label, get_node_defined_at, is_signal_valid, notify_signal, register_derived,
@@ -218,6 +220,8 @@ pub enum Signal<T: 'static> {
     Read(ReadSignal<T>),
     Derived(NodeId, PhantomData<T>),
     StoredConstant(NodeId, PhantomData<T>),
+    #[allow(missing_docs)] // Internal optimization detail
+    InlineConstant(u64, PhantomData<T>),
 }
 
 impl<T> Clone for Signal<T> {
@@ -233,6 +237,7 @@ impl<T> PartialEq for Signal<T> {
             (Self::Read(l), Self::Read(r)) => l == r,
             (Self::Derived(l, _), Self::Derived(r, _)) => l == r,
             (Self::StoredConstant(l, _), Self::StoredConstant(r, _)) => l == r,
+            (Self::InlineConstant(l, _), Self::InlineConstant(r, _)) => l == r,
             _ => false,
         }
     }
@@ -247,6 +252,41 @@ impl<T> std::hash::Hash for Signal<T> {
             Self::Read(s) => s.hash(state),
             Self::Derived(id, _) => id.hash(state),
             Self::StoredConstant(id, _) => id.hash(state),
+            Self::InlineConstant(val, _) => val.hash(state),
+        }
+    }
+}
+
+// --- Generic Impl Block ---
+
+impl<T: 'static> Signal<T> {
+    /// Internal helper to try inlining a value
+    fn try_inline(value: T) -> Option<Self> {
+        // Can only inline if it fits in u64 and doesn't implement Drop
+        #[allow(clippy::manual_is_variant_and)] // we want explicit check
+        if mem::size_of::<T>() <= mem::size_of::<u64>() && !mem::needs_drop::<T>() {
+            unsafe {
+                let mut storage = 0u64;
+                let src_ptr = &value as *const T as *const u8;
+                let dst_ptr = &mut storage as *mut u64 as *mut u8;
+                ptr::copy_nonoverlapping(src_ptr, dst_ptr, mem::size_of::<T>());
+                // Value is not dropped because we checked !needs_drop, so we can just forget it
+                mem::forget(value);
+                Some(Signal::InlineConstant(storage, PhantomData))
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Internal helper to unpack an inlined value
+    unsafe fn unpack_inline(storage: u64) -> T {
+        unsafe {
+            let mut value = mem::MaybeUninit::<T>::uninit();
+            let src_ptr = &storage as *const u64 as *const u8;
+            let dst_ptr = value.as_mut_ptr() as *mut u8;
+            ptr::copy_nonoverlapping(src_ptr, dst_ptr, mem::size_of::<T>());
+            value.assume_init()
         }
     }
 }
@@ -264,7 +304,7 @@ impl<T: Clone + 'static> Signal<T> {
                 s.with_name(name);
             }
             Signal::Derived(id, _) => set_debug_label(id, name),
-            Signal::StoredConstant(_, _) => {} // Constants usually don't need debug labels in the graph
+            Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _) => {} // Constants usually don't need debug labels in the graph
         }
         self
     }
@@ -284,6 +324,7 @@ impl<T> DefinedAt for Signal<T> {
             Signal::Read(s) => s.defined_at(),
             Signal::Derived(id, _) => get_node_defined_at(*id),
             Signal::StoredConstant(id, _) => get_node_defined_at(*id),
+            Signal::InlineConstant(_, _) => None,
         }
     }
 
@@ -291,7 +332,9 @@ impl<T> DefinedAt for Signal<T> {
         match self {
             Signal::Read(s) => s.debug_name(),
             Signal::Derived(id, _) => get_debug_label(*id),
-            Signal::StoredConstant(_, _) => Some("Constant".to_string()),
+            Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _) => {
+                Some("Constant".to_string())
+            }
         }
     }
 }
@@ -301,7 +344,7 @@ impl<T> IsDisposed for Signal<T> {
         match self {
             Signal::Read(s) => s.is_disposed(),
             Signal::Derived(id, _) => !is_signal_valid(*id),
-            Signal::StoredConstant(_, _) => false,
+            Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _) => false,
         }
     }
 }
@@ -314,7 +357,7 @@ impl<T: 'static> Track for Signal<T> {
                 // Run the derived function to track its dependencies
                 let _ = run_derived::<T>(*id);
             }
-            Signal::StoredConstant(_, _) => {}
+            Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _) => {}
         }
     }
 }
@@ -330,6 +373,11 @@ impl<T: 'static> WithUntracked for Signal<T> {
                 Some(fun(&val))
             }
             Signal::StoredConstant(id, _) => try_with_stored_value(*id, fun),
+            Signal::InlineConstant(val, _) => {
+                // Unsafe: we verified safety conditions on creation
+                let val = unsafe { Self::unpack_inline(*val) };
+                Some(fun(&val))
+            }
         }
     }
 }
@@ -339,6 +387,9 @@ impl<T: 'static> WithUntracked for Signal<T> {
 impl<T: Clone + 'static> From<T> for Signal<T> {
     #[track_caller]
     fn from(value: T) -> Self {
+        if let Some(inline) = Self::try_inline(value.clone()) {
+            return inline;
+        }
         let id = store_value(value);
         Signal::StoredConstant(id, PhantomData)
     }
