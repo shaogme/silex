@@ -13,10 +13,10 @@
     *   `node_aux: SparseSecondaryMap<NodeAux>`: 存储节点的“冷数据”（Children, Cleanups, Context）。
     *   `signals: SparseSecondaryMap<SignalData>`: 存储信号值及订阅者。
     *   `effects: SparseSecondaryMap<EffectData>`: 存储副作用计算及依赖。
+    *   `deriveds: SparseSecondaryMap<DerivedData>`: 存储派生计算（Memo）。
     *   `callbacks: SparseSecondaryMap<CallbackData>`: 存储回调函数。
     *   `node_refs: SparseSecondaryMap<NodeRefData>`: 存储 DOM 节点引用。
     *   `stored_values: SparseSecondaryMap<StoredValueData>`: 存储通用值。
-    *   `deriveds: SparseSecondaryMap<DerivedData>`: 存储派生计算。
     *   `observer_queue: RefCell<VecDeque<NodeId>>`: 待执行的副作用队列（BFS 调度）。
     *   `queued_observers: SparseSecondaryMap<()>`: 已入队副作用的集合（用于去重）。
     *   `current_owner: Cell<Option<NodeId>>`: 当前正在执行的副作用/包括 Scope，用于依赖收集和 Cleanup 注册。
@@ -51,21 +51,30 @@
     *   `defined_at: Option<&'static std::panic::Location>`: (Debug only).
 *   **NodeAux (Cold)**:
     *   `children: Vec<NodeId>`: 子节点（用于级联销毁）。
-    *   `cleanups: Vec<Box<dyn FnOnce()>>`: `on_cleanup` 注册的回调。
+    *   `cleanups: CleanupList`: `on_cleanup` 注册的回调。使用 Enum (`Empty`, `Single`, `Many`)。
     *   `context: Option<HashMap<TypeId, Box<dyn Any>>>`: 依赖注入容器。
     *   `debug_label: Option<String>`: (Debug only).
 
 ### 7. `SignalData` (Source)
 *   **Fields**:
     *   `value: AnyValue`: 存储信号的实际值（支持 SOO）。
-    *   `subscribers: SubscriberList`: 依赖此信号的副作用列表。使用 Enum (`Empty`, `Single`, `Many`) 优化内存。
+    *   `subscribers: NodeList`: 依赖此信号的副作用列表。使用 Enum (`Empty`, `Single`, `Many`) 优化内存。
     *   `last_tracked_by: Option<(NodeId, u64)>`: 简单的缓存，防止重复追踪。
 
 ### 8. `EffectData` (Observer)
 *   **Fields**:
     *   `computation: Option<Box<dyn Fn()>>`: 副作用逻辑闭包。`Box` 替代 `Rc` 以消除引用计数，执行时通过 `Option::take` 获取所有权。
-    *   `dependencies: Vec<NodeId>`: 此副作用依赖的信号（用于重新执行前清理依赖）。
+    *   `dependencies: NodeList`: 此副作用依赖的节点列表（用于重新执行前清理依赖）。使用了 `NodeList` 枚举。
     *   `effect_version: u64`: 用于版本检查（防止旧的依赖关系污染）。
+
+### 9. `DerivedData` (Memo)
+*   **Fields**:
+    *   `value`: Signal-like 值存储。
+    *   `subscribers`: Signal-like 订阅者列表 (`NodeList`)。
+    *   `last_tracked_by`: Signal-like 追踪缓存。
+    *   `computation`: Effect-like 计算闭包 (`Option<Box<dyn Fn()>>`)。
+    *   `dependencies`: Effect-like 依赖列表 (`NodeList`)。
+    *   `derived_version`: Effect-like 版本控制。
 
 ---
 
@@ -78,20 +87,20 @@
 *   **Logic**: 委托给 `self.graph.register`。创建新 `Node`，自动连接 `current_owner` 作为父节点。
 
 ### `track_dependency`
-*   **Signature**: `fn track_dependency(&self, signal_id: NodeId)`
+*   **Signature**: `fn track_dependency(&self, target_id: NodeId)`
 *   **Logic**:
     1.  检查 `current_owner`。
-    2.  若存在 Owner，将 Owner 加入 `signal.subscribers`。
-    3.  将 `signal_id` 加入 `owner.dependencies`。
+    2.  若存在 Owner (Component/Effect/Derived)，将 Owner 加入 `target.subscribers`。
+    3.  将 `target_id` (Signal/Derived) 加入 `owner.dependencies`。
 *   **Side Effects**: 修改图谱连接关系。
 
 ### `queue_dependents`
-*   **Signature**: `fn queue_dependents(&self, signal_id: NodeId)`
-*   **Logic**: 遍历 `signal.subscribers`，将其加入 `observer_queue` (去重)。
+*   **Signature**: `fn queue_dependents(&self, target_id: NodeId)`
+*   **Logic**: 遍历 `target.subscribers`，将其加入 `observer_queue` (去重)。
 
 ### `run_queue`
 *   **Signature**: `fn run_queue(&self)`
-*   **Logic**: 循环消耗 `observer_queue`，调用 `run_effect_internal`。确保队列处理期间 `running_queue` 锁住以防重入。
+*   **Logic**: 循环消耗 `observer_queue`，根据节点类型调用 `run_effect_internal` 或 `run_derived_internal`。
 
 ### `clean_node`
 *   **Signature**: `fn clean_node(&self, id: NodeId)`
@@ -117,7 +126,7 @@
 *   **Signature**: `pub fn try_get_signal<T: Clone + 'static>(id: NodeId) -> Option<T>`
 *   **Semantics**:
     1.  **Track**: 调用 `track_dependency(id)`。
-    2.  **Read**: 尝试将 `value` downcast 为 `T` 并 Clone 返回。
+    2.  **Read**: 尝试从 Signal 或 Derived 中获取 `value` 并这种 downcast 为 `T`。
 *   **Return**: `Some(T)` if type matches and exists, else `None`.
 
 #### `try_get_signal_untracked<T>`
@@ -152,9 +161,9 @@
 #### `memo<T>`
 *   **Signature**: `pub fn memo<T, F>(f: F) -> NodeId where T: PartialEq...`
 *   **Semantics**:
-    1.  创建一个计算节点。
-    2.  内部包含一个 `Signal` (存储计算结果) 和一个 `Effect` (监听依赖更新信号)。
-    3.  仅当计算结果发生变化 (`!=`) 时，才会触发下游更新。
+    1.  创建一个原生 `Derived` 节点。
+    2.  初始执行 `f` 计算并存储结果。
+    3.  当依赖更新时，标记为 dirty 并更新 `value`，仅当 `!=` 时通知下游。
 
 ### Lifecycle API
 

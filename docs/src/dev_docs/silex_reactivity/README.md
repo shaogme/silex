@@ -40,6 +40,7 @@ classDiagram
         +node_aux: SparseSecondaryMap<NodeAux>
         +signals: SparseSecondaryMap<SignalData>
         +effects: SparseSecondaryMap<EffectData>
+        +deriveds: SparseSecondaryMap<DerivedData>
         +observer_queue: VecDeque<NodeId>
         +current_owner: Cell<Option<NodeId>>
     }
@@ -56,29 +57,53 @@ classDiagram
 
     class NodeAux {
         +children: Vec<NodeId>
-        +cleanups: Vec<Box<dyn FnOnce()>>
+        +cleanups: CleanupList
         +context: HashMap<TypeId, Box<dyn Any>>
         +debug_label: Option<String>
     }
 
     class SignalData {
         +value: AnyValue
-        +subscribers: SubscriberList
+        +subscribers: NodeList
     }
 
     class EffectData {
         +computation: Option<Box<dyn Fn()>>
-        +dependencies: Vec<NodeId>
+        +dependencies: NodeList
+    }
+
+    class DerivedData {
+        +value: AnyValue
+        +subscribers: NodeList
+        +computation: Option<Box<dyn Fn()>>
+        +dependencies: NodeList
+    }
+
+    class NodeList {
+        <<enumeration>>
+        Empty
+        Single(NodeId)
+        Many(Vec<NodeId>)
+    }
+
+    class CleanupList {
+        <<enumeration>>
+        Empty
+        Single(Box<dyn FnOnce()>)
+        Many(Vec<Box<dyn FnOnce()>>)
     }
 
     Runtime "1" *-- "1" Node : Hot Data (Topology)
     Runtime "1" *-- "1" NodeAux : Cold Data
     Runtime "1" *-- "1" SignalData : Stores Data
     Runtime "1" *-- "1" EffectData : Stores Logic
+    Runtime "1" *-- "1" DerivedData : Stores Memo Logic
     Node "1" --> "*" Node : Parent (via ID)
     NodeAux "1" --> "*" NodeId : Children
-    SignalData "1" --> "*" NodeId : Subscribers
-    EffectData "1" --> "*" NodeId : Dependencies
+    SignalData "1" --> "1" NodeList : Subscribers
+    EffectData "1" --> "1" NodeList : Dependencies
+    DerivedData "1" --> "1" NodeList : Subscribers
+    DerivedData "1" --> "1" NodeList : Dependencies
 ```
 
 *   **Runtime**：线程局部的单例 (Thread-Local Singleton)，拥有所有状态。
@@ -115,17 +140,17 @@ classDiagram
 
 *   **Node 拆分 (Hot/Cold Split)**：我们将 `Node` 拆分为 `Node` 和 `NodeAux`。`Node` 只包含 `parent` 等参与频繁遍历的字段，使其体积非常小，能放入缓存行。`NodeAux` 包含 `children`、`cleanups` 等仅在销毁或特定操作时访问的字段。
 *   **Effect 计算权 (Ownership)**：`EffectData` 中的 `computation` 使用 `Option<Box<dyn Fn()>>` 代替 `Rc<dyn Fn()>`。在 Effect 执行期间，我们使用 `Option::take` 将闭包所有权暂时取出执行，执行完毕后再放回。这避免了引用计数开销，因为计算闭包通常是被 Effect 独占的。
-*   **SubscriberList**：使用 Enum (`Empty`, `Single`, `Many`) 优化订阅者列表，优化了单订阅者这一常见情况的内存占用。
+*   **NodeList / CleanupList**：使用 Enum (`Empty`, `Single`, `Many`) 优化订阅者列表和清理回调列表。这显著减少了 `Vec` 带来的堆分配，特别是在大多数节点只有 0 或 1 个订阅者/清理回调的情况下。
 
 #### 依赖收集 (Dependency Tracking)
 
-当访问一个 Signal 时（例如调用 `try_get_signal`），会触发 `track_dependency`：
+当访问一个 Signal 或 Derived 时（例如调用 `try_get_signal`），会触发 `track_dependency`：
 
 1.  检查 `current_owner`（当前正在运行的 Effect ID）。
 2.  如果存在 `current_owner`，则建立双向链接：
-    *   Signal 将 Effect ID 加入 `subscribers`。
-    *   Effect 将 Signal ID 加入 `dependencies`。
-3.  **版本检查**：为了减少重复注册，会检查 `last_tracked_by`。如果同一个 Effect 在同一轮执行中多次读取同一个 Signal，只有第一次会触发注册。
+    *   Target (Signal/Derived) 将 Effect ID 加入 `subscribers` (NodeList)。
+    *   Effect 将 Target ID 加入 `dependencies` (NodeList)。
+3.  **版本检查**：为了减少重复注册，会检查 `last_tracked_by`。如果同一个 Effect 在同一轮执行中多次读取同一个节点，只有第一次会触发注册。
 
 #### 变更通知与批处理 (Notification & Batching)
 
@@ -142,15 +167,16 @@ classDiagram
 Silex 极其重视资源回收，特别是在复杂的响应式图中：
 
 *   **Effect 重运行前**：必须清理上一轮的依赖关系。这是因为条件分支可能导致依赖改变。如果不清理，Effect update 后可能会继续监听不再需要的 Signal。
-*   **节点销毁 (Dispose)**：递归清理 `children` (在 NodeAux 中)，执行 `cleanups` 回调，并从父节点的子列表中移除自己，最后释放 Arena 槽位。
+*   **节点销毁 (Dispose)**：递归清理 `children` (在 NodeAux 中)，执行 `cleanups` (CleanupList) 回调，并从父节点的子列表中移除自己，最后释放 Arena 槽位。
 
 ### 4.3 高级原语实现
 
-*   **Memo (计算属性)**：Memo 本质上是一个“既是 Signal 又是 Effect”的混合体。
-    *   它创建一个 Effect 来监听依赖变化。
-    *   Effect 的回调函数内部会计算新值，并更新一个内部 Signal。
-    *   下游 Effect 监听这个内部 Signal。
-    *   **优化**：只有当新计算的值与旧值不等 (`PartialEq`) 时，才会通知下游，从而阻断不必要的更新传播。
+*   **Memo (计算属性)**：
+    *   在早期版本中，Memo 可能是 Signal 和 Effect 的组合。
+    *   **现在的优化**：我们引入了原生的 `DerivedData` 类型。
+    *   `DerivedData` 结构体同时包含 `value` (像 Signal) 和 `computation`/`dependencies` (像 Effect)。
+    *   这减少了节点数量（1 个 Derived 节点 vs 1 Signal + 1 Effect 节点），降低了图谱遍历深度和内存占用。
+    *   **优化**：只有当新计算的值与旧值不等 (`PartialEq`) 时，才会通知下游。
 
 *   **NodeRef**：一种特殊的节点，存储弱类型的 DOM 引用或其他外部资源，同样利用 Arena 的生命周期管理机制。
 
@@ -173,6 +199,6 @@ Silex 极其重视资源回收，特别是在复杂的响应式图中：
     *   [x] **SOO**: 优化 `Box<dyn Any>` 的分配，已实现对小数据类型（如 `bool`, `i32`）的内联存储 (Small Object Optimization)。
     *   [x] **Node Split**: 将 Node 拆分为 Hot/Cold 部分，提高缓存局部性。
     *   [x] **Effect Ownership**: 避免 `Rc` 开销，Effect 独占计算闭包。
-    *   优化 `SparseSecondaryMap` 在稀疏数据集下的内存占用。
+    *   [x] **Sparse Map**: `SparseSecondaryMap` 采用分块 (Chunked) 存储策略，仅为有数据的区域分配内存，极大降低了稀疏数据（如 `NodeRef`）的内存占用。
 *   **API 易用性 (Ergonomics)**：计划结合更多的宏（macros）来提供自动解构、自动 Copy 等语法糖，减少样板代码。
 *   **调试工具 (DevTools)**：开发可视化的依赖图调试工具，帮助开发者定位循环依赖或无效更新。

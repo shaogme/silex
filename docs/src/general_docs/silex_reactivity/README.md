@@ -46,14 +46,21 @@ pub struct Runtime {
 信号是响应式图谱中的数据源。
 
 *   **Value**: 使用 `AnyValue` 存储。如果数据较小（如 `i32`, `bool`, `f64`），直接内联存储；否则才使用堆分配 (`Box`)。
-*   **Subscribers**: 订阅了该信号变更的副作用节点列表。内部使用了优化过的枚举结构 (`Empty`/`Single`/`Many`) 来减少常见单订阅场景的内存占用。
+*   **Subscribers**: 订阅了该信号变更的副作用节点列表。内部使用了优化过的枚举结构 `NodeList` (`Empty`/`Single`/`Many`) 来减少常见单订阅场景的内存占用。
 
 ### 5. EffectData (副作用数据)
 
 副作用是响应式图谱中的观察者。
 
 *   **Computation**: 实际执行的闭包逻辑。为了性能，以 `Option<Box<dyn Fn()>>` 形式存储（执行时取出所有权，避免引用计数开销）。
-*   **Dependencies**: 该副作用依赖的信号列表（用于自动清理依赖关系）。
+*   **Dependencies**: 该副作用依赖的信号列表。同样使用 `NodeList` 枚举优化存储。
+
+### 6. DerivedData (派生数据/Memo)
+
+派生数据（Memo）是信号和副作用的混合体，用于缓存计算结果。
+
+*   **Hybrid Structure**: 同时包含 Signal 的特性（`value`, `subscribers`）和 Effect 的特性（`computation`, `dependencies`）。
+*   **Native Optimization**: 运行时原生支持 `Derived` 节点类型，相比于简单的 "Signal + Effect" 组合，拥有更少的节点开销和更优的更新传播逻辑。
 
 ## 关键机制
 

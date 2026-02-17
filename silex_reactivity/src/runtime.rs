@@ -228,18 +228,18 @@ pub(crate) struct DerivedData {
 
 pub struct Runtime {
     pub(crate) graph: Arena<Node>,
-    pub(crate) node_aux: SparseSecondaryMap<NodeAux>,
-    pub(crate) signals: SparseSecondaryMap<SignalData>,
-    pub(crate) effects: SparseSecondaryMap<EffectData>,
-    pub(crate) callbacks: SparseSecondaryMap<CallbackData>,
-    pub(crate) node_refs: SparseSecondaryMap<NodeRefData>,
-    pub(crate) stored_values: SparseSecondaryMap<StoredValueData>,
-    pub(crate) deriveds: SparseSecondaryMap<DerivedData>,
+    pub(crate) node_aux: SparseSecondaryMap<NodeAux, 32>,
+    pub(crate) signals: SparseSecondaryMap<SignalData, 64>,
+    pub(crate) effects: SparseSecondaryMap<EffectData, 64>,
+    pub(crate) callbacks: SparseSecondaryMap<CallbackData>, // default 16
+    pub(crate) node_refs: SparseSecondaryMap<NodeRefData>,  // default 16
+    pub(crate) stored_values: SparseSecondaryMap<StoredValueData>, // default 16
+    pub(crate) deriveds: SparseSecondaryMap<DerivedData, 64>,
 
     // Global state
     pub(crate) current_owner: Cell<Option<NodeId>>,
     pub(crate) observer_queue: RefCell<VecDeque<NodeId>>,
-    pub(crate) queued_observers: SparseSecondaryMap<()>, // Set of queued observers
+    pub(crate) queued_observers: SparseSecondaryMap<()>, // Set of queued observers, default 16 is fine
     pub(crate) running_queue: Cell<bool>,
     pub(crate) batch_depth: Cell<usize>,
 
