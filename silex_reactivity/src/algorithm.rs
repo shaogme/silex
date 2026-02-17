@@ -16,15 +16,11 @@ pub trait ReactiveGraph {
     /// Set the state of a node.
     fn set_state(&mut self, id: NodeId, state: NodeState);
 
-    /// Get direct subscribers of a node.
-    /// Used in Propagation phase.
-    /// We return a generic Iterator, but efficient implementations should avoid allocation if possible.
-    /// However, for the algorithm to work with mutable graph, we often need to collect.
-    fn get_subscribers(&self, id: NodeId) -> impl Iterator<Item = NodeId>;
+    /// Fill the destination buffer with direct subscribers of a node.
+    fn fill_subscribers(&self, id: NodeId, dest: &mut Vec<NodeId>);
 
-    /// Get dependencies of a node.
-    /// Used in Evaluation phase.
-    fn get_dependencies(&self, id: NodeId) -> impl Iterator<Item = NodeId>;
+    /// Fill the destination buffer with dependencies of a node.
+    fn fill_dependencies(&self, id: NodeId, dest: &mut Vec<NodeId>);
 
     /// Check if a node is an effect (observer) that should be queued for execution.
     fn is_effect(&self, id: NodeId) -> bool;
@@ -43,14 +39,19 @@ pub trait ReactiveGraph {
 
 /// Phase 1: Propagation (BFS)
 /// Marks downstream nodes as Dirty/Check and queues effects.
-pub fn propagate(graph: &mut impl ReactiveGraph, start_node: NodeId) {
-    let mut queue = VecDeque::new();
+pub fn propagate(
+    graph: &mut impl ReactiveGraph,
+    start_node: NodeId,
+    queue: &mut VecDeque<NodeId>,
+    temp_subs: &mut Vec<NodeId>,
+) {
+    queue.clear();
+    temp_subs.clear();
 
     // Initial: Mark start node's subscribers as Dirty
-    // We must collect to avoid holding an immutable borrow while mutating
-    let direct_subs: Vec<_> = graph.get_subscribers(start_node).collect();
+    graph.fill_subscribers(start_node, temp_subs);
 
-    for sub_id in direct_subs {
+    for &sub_id in temp_subs.iter() {
         if graph.is_effect(sub_id) {
             graph.queue_effect(sub_id);
         } else {
@@ -64,10 +65,10 @@ pub fn propagate(graph: &mut impl ReactiveGraph, start_node: NodeId) {
 
     // BFS for downstream
     while let Some(current_id) = queue.pop_front() {
-        // Collect subscribers of current node
-        let subs: Vec<_> = graph.get_subscribers(current_id).collect();
+        temp_subs.clear();
+        graph.fill_subscribers(current_id, temp_subs);
 
-        for sub_id in subs {
+        for &sub_id in temp_subs.iter() {
             if graph.is_effect(sub_id) {
                 graph.queue_effect(sub_id);
             } else {
@@ -84,12 +85,17 @@ pub fn propagate(graph: &mut impl ReactiveGraph, start_node: NodeId) {
 
 /// Phase 2: Evaluation (Iterative DFS)
 /// Updates the node if necessary by checking dependencies recursively.
-pub fn evaluate(graph: &mut impl ReactiveGraph, target_node: NodeId) {
+pub fn evaluate(
+    graph: &mut impl ReactiveGraph,
+    target_node: NodeId,
+    stack: &mut Vec<NodeId>,
+    temp_deps: &mut Vec<NodeId>,
+) {
     if graph.get_state(target_node) == NodeState::Clean {
         return;
     }
 
-    let mut stack = Vec::with_capacity(16);
+    stack.clear();
     stack.push(target_node);
 
     while let Some(&current) = stack.last() {
@@ -102,10 +108,11 @@ pub fn evaluate(graph: &mut impl ReactiveGraph, target_node: NodeId) {
         }
 
         // Step A: Check dependencies
-        let deps: Vec<_> = graph.get_dependencies(current).collect();
+        temp_deps.clear();
+        graph.fill_dependencies(current, temp_deps);
         let mut found_non_clean = false;
 
-        for dep_id in deps {
+        for &dep_id in temp_deps.iter() {
             if graph.get_state(dep_id) != NodeState::Clean {
                 stack.push(dep_id);
                 found_non_clean = true;

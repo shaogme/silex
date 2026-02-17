@@ -146,6 +146,42 @@ pub(crate) struct DerivedData {
     pub(crate) state: NodeState,
 }
 
+pub(crate) struct WorkSpace {
+    pub(crate) vec_pool: Vec<Vec<NodeId>>,
+    pub(crate) deque_pool: Vec<VecDeque<NodeId>>,
+}
+
+impl WorkSpace {
+    fn new() -> Self {
+        Self {
+            vec_pool: Vec::new(),
+            deque_pool: Vec::new(),
+        }
+    }
+
+    fn borrow_vec(&mut self) -> Vec<NodeId> {
+        self.vec_pool.pop().unwrap_or_default()
+    }
+
+    fn return_vec(&mut self, mut v: Vec<NodeId>) {
+        v.clear();
+        if self.vec_pool.len() < 32 {
+            self.vec_pool.push(v);
+        }
+    }
+
+    fn borrow_deque(&mut self) -> VecDeque<NodeId> {
+        self.deque_pool.pop().unwrap_or_default()
+    }
+
+    fn return_deque(&mut self, mut d: VecDeque<NodeId>) {
+        d.clear();
+        if self.deque_pool.len() < 32 {
+            self.deque_pool.push(d);
+        }
+    }
+}
+
 // --- 响应式系统运行时 ---
 
 pub struct Runtime {
@@ -157,6 +193,9 @@ pub struct Runtime {
     pub(crate) node_refs: SparseSecondaryMap<NodeRefData>,  // default 16
     pub(crate) stored_values: SparseSecondaryMap<StoredValueData>, // default 16
     pub(crate) deriveds: SparseSecondaryMap<DerivedData, 64>,
+
+    // WorkSpace for reuse
+    pub(crate) workspace: RefCell<WorkSpace>,
 
     // Global state
     pub(crate) current_owner: Cell<Option<NodeId>>,
@@ -184,6 +223,7 @@ impl Runtime {
             node_refs: SparseSecondaryMap::new(),
             stored_values: SparseSecondaryMap::new(),
             deriveds: SparseSecondaryMap::new(),
+            workspace: RefCell::new(WorkSpace::new()),
             current_owner: Cell::new(None),
             observer_queue: RefCell::new(VecDeque::new()),
             queued_observers: SparseSecondaryMap::new(),
@@ -310,14 +350,32 @@ impl Runtime {
 
     /// Use BFS Propagation via algorithm module
     pub(crate) fn queue_dependents(&self, source_id: NodeId) {
+        let (mut queue, mut subs) = {
+            let mut ws = self.workspace.borrow_mut();
+            (ws.borrow_deque(), ws.borrow_vec())
+        };
+
         let mut adapter = RuntimeAdapter(self);
-        algorithm::propagate(&mut adapter, source_id);
+        algorithm::propagate(&mut adapter, source_id, &mut queue, &mut subs);
+
+        let mut ws = self.workspace.borrow_mut();
+        ws.return_deque(queue);
+        ws.return_vec(subs);
     }
 
     /// Use Iterative DFS (Trampoline) via algorithm module
     pub(crate) fn update_if_necessary(&self, node_id: NodeId) {
+        let (mut stack, mut deps) = {
+            let mut ws = self.workspace.borrow_mut();
+            (ws.borrow_vec(), ws.borrow_vec())
+        };
+
         let mut adapter = RuntimeAdapter(self);
-        algorithm::evaluate(&mut adapter, node_id);
+        algorithm::evaluate(&mut adapter, node_id, &mut stack, &mut deps);
+
+        let mut ws = self.workspace.borrow_mut();
+        ws.return_vec(stack);
+        ws.return_vec(deps);
     }
 
     pub(crate) fn run_queue(&self) {
@@ -514,17 +572,6 @@ pub(crate) fn run_derived_internal(rt: &Runtime, derived_id: NodeId) -> bool {
     false
 }
 
-use crate::list::ListIntoIter;
-
-struct DependencyIter(ListIntoIter<(NodeId, u32)>);
-
-impl Iterator for DependencyIter {
-    type Item = NodeId;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next().map(|(id, _)| id)
-    }
-}
-
 // --- RuntimeAdapter for Algorithm ---
 
 struct RuntimeAdapter<'a>(&'a Runtime);
@@ -544,23 +591,21 @@ impl<'a> ReactiveGraph for RuntimeAdapter<'a> {
         }
     }
 
-    fn get_subscribers(&self, id: NodeId) -> impl Iterator<Item = NodeId> {
+    fn fill_subscribers(&self, id: NodeId, dest: &mut Vec<NodeId>) {
         if let Some(signal) = self.0.signals.get(id) {
-            signal.subscribers.clone().into_iter()
+            signal.subscribers.for_each(|&n| dest.push(n));
         } else if let Some(derived) = self.0.deriveds.get(id) {
-            derived.signal.subscribers.clone().into_iter()
-        } else {
-            NodeList::Empty.into_iter()
+            derived.signal.subscribers.for_each(|&n| dest.push(n));
         }
     }
 
-    fn get_dependencies(&self, id: NodeId) -> impl Iterator<Item = NodeId> {
+    fn fill_dependencies(&self, id: NodeId, dest: &mut Vec<NodeId>) {
+        let pusher = |(n, _): &(NodeId, u32)| dest.push(*n);
+
         if let Some(eff) = self.0.effects.get(id) {
-            DependencyIter(eff.dependencies.clone().into_iter())
+            eff.dependencies.for_each(pusher);
         } else if let Some(der) = self.0.deriveds.get(id) {
-            DependencyIter(der.effect.dependencies.clone().into_iter())
-        } else {
-            DependencyIter(DependencyList::default().into_iter())
+            der.effect.dependencies.for_each(pusher);
         }
     }
 
@@ -580,29 +625,38 @@ impl<'a> ReactiveGraph for RuntimeAdapter<'a> {
     }
 
     fn check_dependencies_changed(&mut self, id: NodeId) -> bool {
-        // Collect dependencies and their expected versions
-        let deps = if let Some(eff) = self.0.effects.get(id) {
-            eff.dependencies.clone()
-        } else if let Some(der) = self.0.deriveds.get(id) {
-            der.effect.dependencies.clone()
-        } else {
-            return false;
+        let mut changed = false;
+
+        let check_fn = |deps: &DependencyList| {
+            let mut found_change = false;
+            deps.for_each(|(dep_id, expected_ver)| {
+                if found_change {
+                    return;
+                }
+
+                let current_ver = if let Some(s) = self.0.signals.get(*dep_id) {
+                    s.version
+                } else if let Some(d) = self.0.deriveds.get(*dep_id) {
+                    d.signal.version
+                } else {
+                    // Dependency likely disposed
+                    found_change = true;
+                    return;
+                };
+
+                if current_ver != *expected_ver {
+                    found_change = true;
+                }
+            });
+            found_change
         };
 
-        for (dep_id, expected_ver) in deps {
-            let current_ver = if let Some(s) = self.0.signals.get(dep_id) {
-                s.version
-            } else if let Some(d) = self.0.deriveds.get(dep_id) {
-                d.signal.version
-            } else {
-                // Dependency logic error or disposed? Treat as changed.
-                return true;
-            };
-
-            if current_ver != expected_ver {
-                return true;
-            }
+        if let Some(eff) = self.0.effects.get(id) {
+            changed = check_fn(&eff.dependencies);
+        } else if let Some(der) = self.0.deriveds.get(id) {
+            changed = check_fn(&der.effect.dependencies);
         }
-        false
+
+        changed
     }
 }

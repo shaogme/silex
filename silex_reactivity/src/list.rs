@@ -128,6 +128,17 @@ impl<T> ThinVec<T> {
             self.ptr = Some(NonNull::new_unchecked(new_ptr));
         }
     }
+
+    fn as_slice(&self) -> &[T] {
+        if let Some(ptr) = self.ptr {
+            unsafe {
+                let header = ptr.cast::<Header>().as_ref();
+                slice::from_raw_parts(header.data_ptr(), header.len)
+            }
+        } else {
+            &[]
+        }
+    }
 }
 
 impl<T: PartialEq> ThinVec<T> {
@@ -276,6 +287,21 @@ impl<T: Clone> List<T> {
             Self::Many(mut vec) => {
                 vec.push(elem);
                 *self = Self::Many(vec);
+            }
+        }
+    }
+
+    pub fn for_each<F>(&self, mut f: F)
+    where
+        F: FnMut(&T),
+    {
+        match self {
+            Self::Empty => {}
+            Self::Single(val) => f(val),
+            Self::Many(vec) => {
+                for item in vec.as_slice() {
+                    f(item);
+                }
             }
         }
     }
