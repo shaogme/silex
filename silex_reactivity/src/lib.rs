@@ -102,9 +102,11 @@ pub fn batch<R>(f: impl FnOnce() -> R) -> R {
 
 #[track_caller]
 pub fn effect<F: Fn() + 'static>(f: F) -> NodeId {
-    let id = RUNTIME.with(|rt| rt.register_effect_internal(f));
-    run_effect_internal(id);
-    id
+    RUNTIME.with(|rt| {
+        let id = rt.register_effect_internal(f);
+        run_effect_internal(rt, id);
+        id
+    })
 }
 
 #[track_caller]

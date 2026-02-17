@@ -109,13 +109,13 @@ impl Iterator for CleanupListIntoIter {
 pub(crate) struct SignalData {
     pub(crate) value: AnyValue,
     pub(crate) subscribers: NodeList,
-    pub(crate) last_tracked_by: Option<(NodeId, u64)>,
+    pub(crate) last_tracked_by: Option<(NodeId, u32)>,
 }
 
 pub(crate) struct EffectData {
     pub(crate) computation: Option<Box<dyn Fn()>>,
     pub(crate) dependencies: NodeList,
-    pub(crate) effect_version: u64,
+    pub(crate) effect_version: u32,
 }
 
 /// Callback 数据存储（类型擦除）
@@ -336,9 +336,9 @@ impl Runtime {
                     self.queued_observers.remove(id);
                     // Determine if it is Effect or Derived
                     if self.effects.get(id).is_some() {
-                        run_effect_internal(id);
+                        run_effect_internal(self, id);
                     } else if self.deriveds.get(id).is_some() {
-                        run_derived_internal(id);
+                        run_derived_internal(self, id);
                     }
                 }
                 None => break,
@@ -428,84 +428,80 @@ impl Runtime {
     }
 }
 
-pub(crate) fn run_effect_internal(effect_id: NodeId) {
-    RUNTIME.with(|rt| {
-        let (children, cleanups) = {
-            if let Some(aux) = rt.node_aux.get_mut(effect_id) {
-                (
-                    std::mem::take(&mut aux.children),
-                    std::mem::take(&mut aux.cleanups),
-                )
-            } else {
-                (Vec::new(), CleanupList::default())
-            }
-        };
-
-        let (computation_fn, dependencies) = {
-            if let Some(effect_data) = rt.effects.get_mut(effect_id) {
-                effect_data.effect_version = effect_data.effect_version.wrapping_add(1);
-                (
-                    effect_data.computation.take(),
-                    std::mem::take(&mut effect_data.dependencies),
-                )
-            } else {
-                return;
-            }
-        };
-
-        rt.run_cleanups(effect_id, children, cleanups, dependencies);
-
-        if let Some(f) = computation_fn {
-            let prev_owner = rt.current_owner.get();
-            rt.current_owner.set(Some(effect_id));
-            f();
-            rt.current_owner.set(prev_owner);
-
-            // Put computation back
-            if let Some(effect_data) = rt.effects.get_mut(effect_id) {
-                effect_data.computation = Some(f);
-            }
+pub(crate) fn run_effect_internal(rt: &Runtime, effect_id: NodeId) {
+    let (children, cleanups) = {
+        if let Some(aux) = rt.node_aux.get_mut(effect_id) {
+            (
+                std::mem::take(&mut aux.children),
+                std::mem::take(&mut aux.cleanups),
+            )
+        } else {
+            (Vec::new(), CleanupList::default())
         }
-    })
+    };
+
+    let (computation_fn, dependencies) = {
+        if let Some(effect_data) = rt.effects.get_mut(effect_id) {
+            effect_data.effect_version = effect_data.effect_version.wrapping_add(1);
+            (
+                effect_data.computation.take(),
+                std::mem::take(&mut effect_data.dependencies),
+            )
+        } else {
+            return;
+        }
+    };
+
+    rt.run_cleanups(effect_id, children, cleanups, dependencies);
+
+    if let Some(f) = computation_fn {
+        let prev_owner = rt.current_owner.get();
+        rt.current_owner.set(Some(effect_id));
+        f();
+        rt.current_owner.set(prev_owner);
+
+        // Put computation back
+        if let Some(effect_data) = rt.effects.get_mut(effect_id) {
+            effect_data.computation = Some(f);
+        }
+    }
 }
 
-pub(crate) fn run_derived_internal(derived_id: NodeId) {
-    RUNTIME.with(|rt| {
-        let (children, cleanups) = {
-            if let Some(aux) = rt.node_aux.get_mut(derived_id) {
-                (
-                    std::mem::take(&mut aux.children),
-                    std::mem::take(&mut aux.cleanups),
-                )
-            } else {
-                (Vec::new(), CleanupList::default())
-            }
-        };
-
-        let (computation_fn, dependencies) = {
-            if let Some(data) = rt.deriveds.get_mut(derived_id) {
-                data.effect.effect_version = data.effect.effect_version.wrapping_add(1);
-                (
-                    data.effect.computation.take(),
-                    std::mem::take(&mut data.effect.dependencies),
-                )
-            } else {
-                return;
-            }
-        };
-
-        rt.run_cleanups(derived_id, children, cleanups, dependencies);
-
-        if let Some(f) = computation_fn {
-            let prev_owner = rt.current_owner.get();
-            rt.current_owner.set(Some(derived_id));
-            f();
-            rt.current_owner.set(prev_owner);
-
-            // Put computation back
-            if let Some(data) = rt.deriveds.get_mut(derived_id) {
-                data.effect.computation = Some(f);
-            }
+pub(crate) fn run_derived_internal(rt: &Runtime, derived_id: NodeId) {
+    let (children, cleanups) = {
+        if let Some(aux) = rt.node_aux.get_mut(derived_id) {
+            (
+                std::mem::take(&mut aux.children),
+                std::mem::take(&mut aux.cleanups),
+            )
+        } else {
+            (Vec::new(), CleanupList::default())
         }
-    })
+    };
+
+    let (computation_fn, dependencies) = {
+        if let Some(data) = rt.deriveds.get_mut(derived_id) {
+            data.effect.effect_version = data.effect.effect_version.wrapping_add(1);
+            (
+                data.effect.computation.take(),
+                std::mem::take(&mut data.effect.dependencies),
+            )
+        } else {
+            return;
+        }
+    };
+
+    rt.run_cleanups(derived_id, children, cleanups, dependencies);
+
+    if let Some(f) = computation_fn {
+        let prev_owner = rt.current_owner.get();
+        rt.current_owner.set(Some(derived_id));
+        f();
+        rt.current_owner.set(prev_owner);
+
+        // Put computation back
+        if let Some(data) = rt.deriveds.get_mut(derived_id) {
+            data.effect.computation = Some(f);
+        }
+    }
 }
