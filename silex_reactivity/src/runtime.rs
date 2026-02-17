@@ -138,15 +138,8 @@ pub(crate) struct StoredValueData {
 /// Derived 数据存储（类型擦除）
 /// Combined Signal (Value + Subscribers) and Effect (Computation + Dependencies)
 pub(crate) struct DerivedData {
-    // Signal-like part
-    pub(crate) value: AnyValue,
-    pub(crate) subscribers: NodeList,
-    pub(crate) last_tracked_by: Option<(NodeId, u64)>,
-
-    // Effect-like part
-    pub(crate) computation: Option<Box<dyn Fn()>>,
-    pub(crate) dependencies: NodeList,
-    pub(crate) derived_version: u64,
+    pub(crate) signal: SignalData,
+    pub(crate) effect: EffectData,
 }
 
 // --- 响应式系统运行时 ---
@@ -262,7 +255,7 @@ impl Runtime {
             let (owner_version, is_owner_valid) = if let Some(eff) = self.effects.get_mut(owner) {
                 (eff.effect_version, true)
             } else if let Some(der) = self.deriveds.get_mut(owner) {
-                (der.derived_version, true)
+                (der.effect.effect_version, true)
             } else {
                 (0, false)
             };
@@ -287,13 +280,13 @@ impl Runtime {
             }
             // Check Derived (if not Signal)
             else if let Some(derived_data) = self.deriveds.get_mut(target_id) {
-                if let Some((last_owner, last_version)) = derived_data.last_tracked_by {
+                if let Some((last_owner, last_version)) = derived_data.signal.last_tracked_by {
                     if last_owner == owner && last_version == owner_version {
                         return; // Already tracked in this version
                     }
                 }
-                derived_data.subscribers.push(owner);
-                derived_data.last_tracked_by = Some((owner, owner_version));
+                derived_data.signal.subscribers.push(owner);
+                derived_data.signal.last_tracked_by = Some((owner, owner_version));
                 registered = true;
             }
 
@@ -302,7 +295,7 @@ impl Runtime {
                 if let Some(eff) = self.effects.get_mut(owner) {
                     eff.dependencies.push(target_id);
                 } else if let Some(der) = self.deriveds.get_mut(owner) {
-                    der.dependencies.push(target_id);
+                    der.effect.dependencies.push(target_id);
                 }
             }
         }
@@ -313,7 +306,7 @@ impl Runtime {
         let subscribers = if let Some(data) = self.signals.get(target_id) {
             data.subscribers.clone()
         } else if let Some(data) = self.deriveds.get(target_id) {
-            data.subscribers.clone()
+            data.signal.subscribers.clone()
         } else {
             NodeList::Empty
         };
@@ -370,7 +363,7 @@ impl Runtime {
             if let Some(effect_data) = self.effects.get_mut(id) {
                 std::mem::take(&mut effect_data.dependencies)
             } else if let Some(derived_data) = self.deriveds.get_mut(id) {
-                std::mem::take(&mut derived_data.dependencies)
+                std::mem::take(&mut derived_data.effect.dependencies)
             } else {
                 NodeList::default()
             }
@@ -398,7 +391,7 @@ impl Runtime {
             if let Some(signal_data) = self.signals.get_mut(dep_id) {
                 signal_data.subscribers.remove(self_id);
             } else if let Some(derived_data) = self.deriveds.get_mut(dep_id) {
-                derived_data.subscribers.remove(self_id);
+                derived_data.signal.subscribers.remove(self_id);
             }
         }
     }
@@ -491,10 +484,10 @@ pub(crate) fn run_derived_internal(derived_id: NodeId) {
 
         let (computation_fn, dependencies) = {
             if let Some(data) = rt.deriveds.get_mut(derived_id) {
-                data.derived_version = data.derived_version.wrapping_add(1);
+                data.effect.effect_version = data.effect.effect_version.wrapping_add(1);
                 (
-                    data.computation.take(),
-                    std::mem::take(&mut data.dependencies),
+                    data.effect.computation.take(),
+                    std::mem::take(&mut data.effect.dependencies),
                 )
             } else {
                 return;
@@ -511,7 +504,7 @@ pub(crate) fn run_derived_internal(derived_id: NodeId) {
 
             // Put computation back
             if let Some(data) = rt.deriveds.get_mut(derived_id) {
-                data.computation = Some(f);
+                data.effect.computation = Some(f);
             }
         }
     })
