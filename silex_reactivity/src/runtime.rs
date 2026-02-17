@@ -138,14 +138,6 @@ pub(crate) struct StoredValueData {
     pub(crate) value: AnyValue,
 }
 
-/// Derived 数据存储（类型擦除）
-/// Combined Signal (Value + Subscribers) and Effect (Computation + Dependencies)
-pub(crate) struct DerivedData {
-    pub(crate) signal: SignalData,
-    pub(crate) effect: EffectData,
-    pub(crate) state: NodeState,
-}
-
 pub(crate) struct WorkSpace {
     pub(crate) vec_pool: Vec<Vec<NodeId>>,
     pub(crate) deque_pool: Vec<VecDeque<NodeId>>,
@@ -189,10 +181,10 @@ pub struct Runtime {
     pub(crate) node_aux: SparseSecondaryMap<NodeAux, 32>,
     pub(crate) signals: SparseSecondaryMap<SignalData, 64>,
     pub(crate) effects: SparseSecondaryMap<EffectData, 64>,
+    pub(crate) states: SparseSecondaryMap<NodeState, 64>,
     pub(crate) callbacks: SparseSecondaryMap<CallbackData>, // default 16
     pub(crate) node_refs: SparseSecondaryMap<NodeRefData>,  // default 16
     pub(crate) stored_values: SparseSecondaryMap<StoredValueData>, // default 16
-    pub(crate) deriveds: SparseSecondaryMap<DerivedData, 64>,
 
     // WorkSpace for reuse
     pub(crate) workspace: RefCell<WorkSpace>,
@@ -219,10 +211,10 @@ impl Runtime {
             node_aux: SparseSecondaryMap::new(),
             signals: SparseSecondaryMap::new(),
             effects: SparseSecondaryMap::new(),
+            states: SparseSecondaryMap::new(),
             callbacks: SparseSecondaryMap::new(),
             node_refs: SparseSecondaryMap::new(),
             stored_values: SparseSecondaryMap::new(),
-            deriveds: SparseSecondaryMap::new(),
             workspace: RefCell::new(WorkSpace::new()),
             current_owner: Cell::new(None),
             observer_queue: RefCell::new(VecDeque::new()),
@@ -296,10 +288,9 @@ impl Runtime {
             }
 
             // 1. Identify Owner Type and get metadata
+            // Only nodes with EffectData can be owners (dependencies)
             let (owner_version, is_owner_valid) = if let Some(eff) = self.effects.get_mut(owner) {
                 (eff.effect_version, true)
-            } else if let Some(der) = self.deriveds.get_mut(owner) {
-                (der.effect.effect_version, true)
             } else {
                 (0, false)
             };
@@ -308,11 +299,10 @@ impl Runtime {
                 return;
             }
 
-            // 2. Identify Target Type (Signal or Derived) and register subscription
+            // 2. Identify Target Type (SignalData) and register subscription
             let mut registered = false;
             let mut target_version = 0;
 
-            // Check Signal
             if let Some(signal_data) = self.signals.get_mut(target_id) {
                 if let Some((last_owner, last_version)) = signal_data.last_tracked_by {
                     if last_owner == owner && last_version == owner_version {
@@ -324,25 +314,11 @@ impl Runtime {
                 registered = true;
                 target_version = signal_data.version;
             }
-            // Check Derived (if not Signal)
-            else if let Some(derived_data) = self.deriveds.get_mut(target_id) {
-                if let Some((last_owner, last_version)) = derived_data.signal.last_tracked_by {
-                    if last_owner == owner && last_version == owner_version {
-                        return; // Already tracked in this version
-                    }
-                }
-                derived_data.signal.subscribers.push(owner);
-                derived_data.signal.last_tracked_by = Some((owner, owner_version));
-                registered = true;
-                target_version = derived_data.signal.version;
-            }
 
             if registered {
                 // Add to owner's dependency list
                 if let Some(eff) = self.effects.get_mut(owner) {
                     eff.dependencies.push((target_id, target_version));
-                } else if let Some(der) = self.deriveds.get_mut(owner) {
-                    der.effect.dependencies.push((target_id, target_version));
                 }
             }
         }
@@ -390,12 +366,16 @@ impl Runtime {
             match next_to_run {
                 Some(id) => {
                     self.queued_observers.remove(id);
-                    // Determine if it is Effect or Derived
-                    if self.effects.get(id).is_some() {
-                        run_effect_internal(self, id);
-                    } else if self.deriveds.get(id).is_some() {
-                        // Should primarily use Lazy, but if queued explicitly
-                        self.update_if_necessary(id);
+                    // Determine if it is pure Effect or Derived
+                    if self.effects.contains_key(id) {
+                        if self.signals.contains_key(id) {
+                            // It has SignalData -> It's a Derived (or similar)
+                            // Deriveds in queue should usually be force-updated or lazily updated
+                            self.update_if_necessary(id);
+                        } else {
+                            // It has ONLY EffectData -> It's a pure Effect
+                            run_effect_internal(self, id);
+                        }
                     }
                 }
                 None => break,
@@ -421,10 +401,6 @@ impl Runtime {
                 let mut deps = DependencyList::default();
                 std::mem::swap(&mut effect_data.dependencies, &mut deps);
                 deps
-            } else if let Some(derived_data) = self.deriveds.get_mut(id) {
-                let mut deps = DependencyList::default();
-                std::mem::swap(&mut derived_data.effect.dependencies, &mut deps);
-                deps
             } else {
                 DependencyList::default()
             }
@@ -448,10 +424,9 @@ impl Runtime {
         }
         // Iterate dependencies
         for (dep_id, _) in dependencies {
+            // Only need to remove subscriber from SignalData
             if let Some(signal_data) = self.signals.get_mut(dep_id) {
                 signal_data.subscribers.remove(&self_id);
-            } else if let Some(derived_data) = self.deriveds.get_mut(dep_id) {
-                derived_data.signal.subscribers.remove(&self_id);
             }
         }
     }
@@ -483,7 +458,7 @@ impl Runtime {
         self.signals.remove(id);
         self.effects.remove(id);
         self.stored_values.remove(id);
-        self.deriveds.remove(id);
+        self.states.remove(id);
         self.queued_observers.remove(id);
     }
 }
@@ -539,11 +514,11 @@ pub(crate) fn run_derived_internal(rt: &Runtime, derived_id: NodeId) -> bool {
     };
 
     let (computation_fn, dependencies) = {
-        if let Some(data) = rt.deriveds.get_mut(derived_id) {
-            data.effect.effect_version = data.effect.effect_version.wrapping_add(1);
+        if let Some(data) = rt.effects.get_mut(derived_id) {
+            data.effect_version = data.effect_version.wrapping_add(1);
             let mut deps = DependencyList::default();
-            std::mem::swap(&mut data.effect.dependencies, &mut deps);
-            (data.effect.computation.take(), deps)
+            std::mem::swap(&mut data.dependencies, &mut deps);
+            (data.computation.take(), deps)
         } else {
             return false;
         }
@@ -563,9 +538,11 @@ pub(crate) fn run_derived_internal(rt: &Runtime, derived_id: NodeId) -> bool {
         rt.current_owner.set(prev_owner);
 
         // Put computation back and mark Clean
-        if let Some(data) = rt.deriveds.get_mut(derived_id) {
-            data.effect.computation = Some(f);
-            data.state = NodeState::Clean;
+        if let Some(data) = rt.effects.get_mut(derived_id) {
+            data.computation = Some(f);
+        }
+        if let Some(state) = rt.states.get_mut(derived_id) {
+            *state = NodeState::Clean;
         }
         return true;
     }
@@ -578,39 +555,33 @@ struct RuntimeAdapter<'a>(&'a Runtime);
 
 impl<'a> ReactiveGraph for RuntimeAdapter<'a> {
     fn get_state(&self, id: NodeId) -> NodeState {
-        if let Some(d) = self.0.deriveds.get(id) {
-            d.state
-        } else {
-            NodeState::Clean
-        }
+        self.0.states.get(id).copied().unwrap_or(NodeState::Clean)
     }
 
     fn set_state(&mut self, id: NodeId, state: NodeState) {
-        if let Some(d) = self.0.deriveds.get_mut(id) {
-            d.state = state;
+        if let Some(s) = self.0.states.get_mut(id) {
+            *s = state;
         }
     }
 
     fn fill_subscribers(&self, id: NodeId, dest: &mut Vec<NodeId>) {
         if let Some(signal) = self.0.signals.get(id) {
             signal.subscribers.for_each(|&n| dest.push(n));
-        } else if let Some(derived) = self.0.deriveds.get(id) {
-            derived.signal.subscribers.for_each(|&n| dest.push(n));
         }
     }
 
     fn fill_dependencies(&self, id: NodeId, dest: &mut Vec<NodeId>) {
         let pusher = |(n, _): &(NodeId, u32)| dest.push(*n);
-
         if let Some(eff) = self.0.effects.get(id) {
             eff.dependencies.for_each(pusher);
-        } else if let Some(der) = self.0.deriveds.get(id) {
-            der.effect.dependencies.for_each(pusher);
         }
     }
 
     fn is_effect(&self, id: NodeId) -> bool {
-        self.0.effects.get(id).is_some()
+        // Defines if a node is a "pure effect" (observer) that should be queued when dependencies change,
+        // rather than just being marked Dirty/Check (like a Derived).
+        // Pure effects have EffectData, but are NOT Signals (no subscribers).
+        self.0.effects.contains_key(id) && !self.0.signals.contains_key(id)
     }
 
     fn queue_effect(&mut self, id: NodeId) {
@@ -634,12 +605,11 @@ impl<'a> ReactiveGraph for RuntimeAdapter<'a> {
                     return;
                 }
 
+                // Check dependencies (SignalData)
                 let current_ver = if let Some(s) = self.0.signals.get(*dep_id) {
                     s.version
-                } else if let Some(d) = self.0.deriveds.get(*dep_id) {
-                    d.signal.version
                 } else {
-                    // Dependency likely disposed
+                    // Dependency likely disposed or not a signal (shouldn't happen for valid dep)
                     found_change = true;
                     return;
                 };
@@ -653,8 +623,6 @@ impl<'a> ReactiveGraph for RuntimeAdapter<'a> {
 
         if let Some(eff) = self.0.effects.get(id) {
             changed = check_fn(&eff.dependencies);
-        } else if let Some(der) = self.0.deriveds.get(id) {
-            changed = check_fn(&der.effect.dependencies);
         }
 
         changed

@@ -366,6 +366,10 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
         }
     }
 
+    pub fn contains_key(&self, key: Index) -> bool {
+        self.get(key).is_some()
+    }
+
     /// Remove logic if ID is just u32 (for direct internal usage if needed)
     fn get_chunk_offset(&self, index: u32) -> (usize, usize) {
         let idx = index as usize;
