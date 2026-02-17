@@ -156,10 +156,10 @@ where
             id,
             runtime::DerivedData {
                 value: AnyValue::new(()), // Temporary dummy
-                subscribers: runtime::SubscriberList::Empty,
+                subscribers: runtime::NodeList::Empty,
                 last_tracked_by: None,
                 computation: None,
-                dependencies: Vec::new(),
+                dependencies: runtime::NodeList::Empty,
                 derived_version: 0,
             },
         );
@@ -389,10 +389,10 @@ pub fn register_derived<T: 'static>(f: impl Fn() -> T + 'static) -> NodeId {
             id,
             runtime::DerivedData {
                 value: AnyValue::new(()),
-                subscribers: runtime::SubscriberList::Empty,
+                subscribers: runtime::NodeList::Empty,
                 last_tracked_by: None,
                 computation: None,
-                dependencies: Vec::new(),
+                dependencies: runtime::NodeList::Empty,
                 derived_version: 0,
             },
         );

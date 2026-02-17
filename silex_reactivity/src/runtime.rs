@@ -11,7 +11,7 @@ use crate::value::AnyValue;
 /// 辅助数据结构，存储“冷数据” (Cold Data)
 pub(crate) struct NodeAux {
     pub(crate) children: Vec<NodeId>,
-    pub(crate) cleanups: Vec<Box<dyn FnOnce()>>,
+    pub(crate) cleanups: CleanupList,
     pub(crate) context: Option<HashMap<TypeId, Box<dyn Any>>>,
     #[cfg(debug_assertions)]
     pub(crate) debug_label: Option<String>,
@@ -21,7 +21,7 @@ impl Default for NodeAux {
     fn default() -> Self {
         Self {
             children: Vec::new(),
-            cleanups: Vec::new(),
+            cleanups: CleanupList::default(),
             context: None,
             #[cfg(debug_assertions)]
             debug_label: None,
@@ -48,13 +48,19 @@ impl Node {
 }
 
 #[derive(Clone)]
-pub(crate) enum SubscriberList {
+pub(crate) enum NodeList {
     Empty,
     Single(NodeId),
     Many(Vec<NodeId>),
 }
 
-impl SubscriberList {
+impl Default for NodeList {
+    fn default() -> Self {
+        Self::Empty
+    }
+}
+
+impl NodeList {
     pub(crate) fn push(&mut self, id: NodeId) {
         match self {
             Self::Empty => *self = Self::Single(id),
@@ -87,28 +93,85 @@ impl SubscriberList {
     }
 }
 
-impl IntoIterator for SubscriberList {
+impl IntoIterator for NodeList {
     type Item = NodeId;
-    type IntoIter = SubscriberListIntoIter;
+    type IntoIter = NodeListIntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         match self {
-            SubscriberList::Empty => SubscriberListIntoIter::Empty,
-            SubscriberList::Single(id) => SubscriberListIntoIter::Single(Some(id)),
-            SubscriberList::Many(vec) => SubscriberListIntoIter::Many(vec.into_iter()),
+            NodeList::Empty => NodeListIntoIter::Empty,
+            NodeList::Single(id) => NodeListIntoIter::Single(Some(id)),
+            NodeList::Many(vec) => NodeListIntoIter::Many(vec.into_iter()),
         }
     }
 }
 
-pub(crate) enum SubscriberListIntoIter {
+pub(crate) enum NodeListIntoIter {
     Empty,
     Single(Option<NodeId>),
     Many(std::vec::IntoIter<NodeId>),
 }
 
-impl Iterator for SubscriberListIntoIter {
+impl Iterator for NodeListIntoIter {
     type Item = NodeId;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Single(opt) => opt.take(),
+            Self::Many(iter) => iter.next(),
+        }
+    }
+}
 
+pub(crate) enum CleanupList {
+    Empty,
+    Single(Box<dyn FnOnce()>),
+    Many(Vec<Box<dyn FnOnce()>>),
+}
+
+impl Default for CleanupList {
+    fn default() -> Self {
+        Self::Empty
+    }
+}
+
+impl CleanupList {
+    pub(crate) fn push(&mut self, f: Box<dyn FnOnce()>) {
+        if let Self::Many(vec) = self {
+            vec.push(f);
+            return;
+        }
+
+        let old = std::mem::take(self);
+        match old {
+            Self::Empty => *self = Self::Single(f),
+            Self::Single(prev) => *self = Self::Many(vec![prev, f]),
+            Self::Many(_) => unreachable!(),
+        }
+    }
+}
+
+impl IntoIterator for CleanupList {
+    type Item = Box<dyn FnOnce()>;
+    type IntoIter = CleanupListIntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            CleanupList::Empty => CleanupListIntoIter::Empty,
+            CleanupList::Single(f) => CleanupListIntoIter::Single(Some(f)),
+            CleanupList::Many(vec) => CleanupListIntoIter::Many(vec.into_iter()),
+        }
+    }
+}
+
+pub(crate) enum CleanupListIntoIter {
+    Empty,
+    Single(Option<Box<dyn FnOnce()>>),
+    Many(std::vec::IntoIter<Box<dyn FnOnce()>>),
+}
+
+impl Iterator for CleanupListIntoIter {
+    type Item = Box<dyn FnOnce()>;
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Self::Empty => None,
@@ -120,13 +183,13 @@ impl Iterator for SubscriberListIntoIter {
 
 pub(crate) struct SignalData {
     pub(crate) value: AnyValue,
-    pub(crate) subscribers: SubscriberList,
+    pub(crate) subscribers: NodeList,
     pub(crate) last_tracked_by: Option<(NodeId, u64)>,
 }
 
 pub(crate) struct EffectData {
     pub(crate) computation: Option<Box<dyn Fn()>>,
-    pub(crate) dependencies: Vec<NodeId>,
+    pub(crate) dependencies: NodeList,
     pub(crate) effect_version: u64,
 }
 
@@ -152,12 +215,12 @@ pub(crate) struct StoredValueData {
 pub(crate) struct DerivedData {
     // Signal-like part
     pub(crate) value: AnyValue,
-    pub(crate) subscribers: SubscriberList,
+    pub(crate) subscribers: NodeList,
     pub(crate) last_tracked_by: Option<(NodeId, u64)>,
 
     // Effect-like part
     pub(crate) computation: Option<Box<dyn Fn()>>,
-    pub(crate) dependencies: Vec<NodeId>,
+    pub(crate) dependencies: NodeList,
     pub(crate) derived_version: u64,
 }
 
@@ -242,7 +305,7 @@ impl Runtime {
             id,
             SignalData {
                 value: AnyValue::new(value),
-                subscribers: SubscriberList::Empty,
+                subscribers: NodeList::Empty,
                 last_tracked_by: None,
             },
         );
@@ -256,7 +319,7 @@ impl Runtime {
             id,
             EffectData {
                 computation: Some(Box::new(f)),
-                dependencies: Vec::new(),
+                dependencies: NodeList::Empty,
                 effect_version: 0,
             },
         );
@@ -327,7 +390,7 @@ impl Runtime {
         } else if let Some(data) = self.deriveds.get(target_id) {
             data.subscribers.clone()
         } else {
-            SubscriberList::Empty
+            NodeList::Empty
         };
 
         let mut queue = self.observer_queue.borrow_mut();
@@ -374,7 +437,7 @@ impl Runtime {
                     std::mem::take(&mut aux.cleanups),
                 )
             } else {
-                (Vec::new(), Vec::new())
+                (Vec::new(), CleanupList::default())
             }
         };
 
@@ -384,7 +447,7 @@ impl Runtime {
             } else if let Some(derived_data) = self.deriveds.get_mut(id) {
                 std::mem::take(&mut derived_data.dependencies)
             } else {
-                Vec::new()
+                NodeList::default()
             }
         };
 
@@ -395,8 +458,8 @@ impl Runtime {
         &self,
         self_id: NodeId,
         children: Vec<NodeId>,
-        cleanups: Vec<Box<dyn FnOnce()>>,
-        dependencies: Vec<NodeId>,
+        cleanups: CleanupList,
+        dependencies: NodeList,
     ) {
         for cleanup in cleanups {
             cleanup();
@@ -404,13 +467,13 @@ impl Runtime {
         for child in children {
             self.dispose_node_internal(child, false);
         }
-        if !dependencies.is_empty() {
-            for dep_id in dependencies {
-                if let Some(signal_data) = self.signals.get_mut(dep_id) {
-                    signal_data.subscribers.remove(self_id);
-                } else if let Some(derived_data) = self.deriveds.get_mut(dep_id) {
-                    derived_data.subscribers.remove(self_id);
-                }
+        // Iterate dependencies (NodeList)
+        // Since we consumed dependencies into the iterator, check if it has items by iterating
+        for dep_id in dependencies {
+            if let Some(signal_data) = self.signals.get_mut(dep_id) {
+                signal_data.subscribers.remove(self_id);
+            } else if let Some(derived_data) = self.deriveds.get_mut(dep_id) {
+                derived_data.subscribers.remove(self_id);
             }
         }
     }
@@ -456,7 +519,7 @@ pub(crate) fn run_effect_internal(effect_id: NodeId) {
                     std::mem::take(&mut aux.cleanups),
                 )
             } else {
-                (Vec::new(), Vec::new())
+                (Vec::new(), CleanupList::default())
             }
         };
 
@@ -497,7 +560,7 @@ pub(crate) fn run_derived_internal(derived_id: NodeId) {
                     std::mem::take(&mut aux.cleanups),
                 )
             } else {
-                (Vec::new(), Vec::new())
+                (Vec::new(), CleanupList::default())
             }
         };
 
