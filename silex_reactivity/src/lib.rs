@@ -25,6 +25,7 @@ pub fn try_get_signal<T: Clone + 'static>(id: NodeId) -> Option<T> {
     RUNTIME.with(|rt| {
         // Track
         rt.track_dependency(id);
+        rt.update_if_necessary(id);
 
         if let Some(signal) = rt.signals.get(id) {
             if let Some(val) = signal.value.downcast_ref::<T>() {
@@ -45,6 +46,7 @@ pub fn try_get_signal<T: Clone + 'static>(id: NodeId) -> Option<T> {
 
 pub fn try_get_signal_untracked<T: Clone + 'static>(id: NodeId) -> Option<T> {
     RUNTIME.with(|rt| {
+        rt.update_if_necessary(id);
         if let Some(signal) = rt.signals.get(id) {
             if let Some(val) = signal.value.downcast_ref::<T>() {
                 return Some(val.clone());
@@ -170,6 +172,7 @@ where
                     dependencies: NodeList::Empty,
                     effect_version: 0,
                 },
+                state: runtime::NodeState::Clean,
             },
         );
 
@@ -407,6 +410,7 @@ pub fn register_derived<T: 'static>(f: impl Fn() -> T + 'static) -> NodeId {
                     dependencies: NodeList::Empty,
                     effect_version: 0,
                 },
+                state: runtime::NodeState::Clean,
             },
         );
 
@@ -444,6 +448,7 @@ pub fn try_with_signal<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Op
     RUNTIME.with(|rt| {
         // Track
         rt.track_dependency(id);
+        rt.update_if_necessary(id);
 
         if let Some(signal) = rt.signals.get(id) {
             if let Some(val) = signal.value.downcast_ref::<T>() {
@@ -460,6 +465,7 @@ pub fn try_with_signal<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Op
 
 pub fn try_with_signal_untracked<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
     RUNTIME.with(|rt| {
+        rt.update_if_necessary(id);
         if let Some(signal) = rt.signals.get(id) {
             if let Some(val) = signal.value.downcast_ref::<T>() {
                 return Some(f(val));
