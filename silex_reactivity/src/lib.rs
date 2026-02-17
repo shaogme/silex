@@ -1,6 +1,5 @@
 use std::any::{Any, TypeId};
-use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 mod arena;
@@ -9,342 +8,11 @@ pub use arena::{Arena, Index as NodeId, SparseSecondaryMap};
 mod value;
 use value::AnyValue;
 
-// --- 基础类型定义 ---
-
-/// 响应式节点通用结构体 (Metadata)。
-pub(crate) struct Node {
-    pub(crate) children: Vec<NodeId>,
-    pub(crate) parent: Option<NodeId>,
-    pub(crate) cleanups: Vec<Box<dyn FnOnce()>>,
-    pub(crate) context: Option<HashMap<TypeId, Box<dyn Any>>>,
-    #[cfg(debug_assertions)]
-    pub(crate) debug_label: Option<String>,
-    #[cfg(debug_assertions)]
-    pub(crate) defined_at: Option<&'static std::panic::Location<'static>>,
-}
-
-impl Node {
-    fn new() -> Self {
-        Self {
-            children: Vec::new(),
-            parent: None,
-            cleanups: Vec::new(),
-            context: None,
-            #[cfg(debug_assertions)]
-            debug_label: None,
-            #[cfg(debug_assertions)]
-            defined_at: None,
-        }
-    }
-}
-
-pub(crate) struct SignalData {
-    pub(crate) value: AnyValue,
-    pub(crate) subscribers: Vec<NodeId>,
-    pub(crate) last_tracked_by: Option<(NodeId, u64)>,
-}
-
-pub(crate) struct EffectData {
-    pub(crate) computation: Option<Rc<dyn Fn() -> ()>>,
-    pub(crate) dependencies: Vec<NodeId>,
-    pub(crate) effect_version: u64,
-}
-
-/// Callback 数据存储（类型擦除）
-pub(crate) struct CallbackData {
-    /// 类型擦除的回调函数，接收 Box<dyn Any> 参数
-    pub(crate) f: Rc<dyn Fn(Box<dyn Any>)>,
-}
-
-/// NodeRef 数据存储（类型擦除）
-pub(crate) struct NodeRefData {
-    /// 类型擦除的 DOM 节点引用
-    pub(crate) element: Option<Box<dyn Any>>,
-}
-
-/// StoredValue 数据存储（类型擦除）
-pub(crate) struct StoredValueData {
-    pub(crate) value: AnyValue,
-}
-
-/// Derived 数据存储（类型擦除）
-pub(crate) struct DerivedData {
-    pub(crate) f: Box<dyn Any>,
-}
-
-// --- 响应式系统运行时 ---
-
-pub struct Runtime {
-    pub(crate) graph: Arena<Node>,
-    pub(crate) signals: SparseSecondaryMap<SignalData>,
-    pub(crate) effects: SparseSecondaryMap<EffectData>,
-    pub(crate) callbacks: SparseSecondaryMap<CallbackData>,
-    pub(crate) node_refs: SparseSecondaryMap<NodeRefData>,
-    pub(crate) stored_values: SparseSecondaryMap<StoredValueData>,
-    pub(crate) deriveds: SparseSecondaryMap<DerivedData>,
-
-    // Global state
-    pub(crate) current_owner: Cell<Option<NodeId>>,
-    pub(crate) observer_queue: RefCell<VecDeque<NodeId>>,
-    pub(crate) queued_observers: SparseSecondaryMap<()>, // Set of queued observers
-    pub(crate) running_queue: Cell<bool>,
-    pub(crate) batch_depth: Cell<usize>,
-
-    #[cfg(debug_assertions)]
-    pub(crate) dead_node_labels: SparseSecondaryMap<String>,
-}
-
-thread_local! {
-    static RUNTIME: Runtime = Runtime::new();
-}
-
-impl Runtime {
-    fn new() -> Self {
-        Self {
-            graph: Arena::new(),
-            signals: SparseSecondaryMap::new(),
-            effects: SparseSecondaryMap::new(),
-            callbacks: SparseSecondaryMap::new(),
-            node_refs: SparseSecondaryMap::new(),
-            stored_values: SparseSecondaryMap::new(),
-            deriveds: SparseSecondaryMap::new(),
-            current_owner: Cell::new(None),
-            observer_queue: RefCell::new(VecDeque::new()),
-            queued_observers: SparseSecondaryMap::new(),
-            running_queue: Cell::new(false),
-            batch_depth: Cell::new(0),
-            #[cfg(debug_assertions)]
-            dead_node_labels: SparseSecondaryMap::new(),
-        }
-    }
-
-    #[track_caller]
-    pub(crate) fn register_node(&self) -> NodeId {
-        let parent = self.current_owner.get();
-        let mut node = Node::new();
-        node.parent = parent;
-
-        #[cfg(debug_assertions)]
-        {
-            node.defined_at = Some(std::panic::Location::caller());
-        }
-
-        let id = self.graph.insert(node);
-
-        if let Some(parent_id) = parent {
-            if let Some(parent_node) = self.graph.get_mut(parent_id) {
-                parent_node.children.push(id);
-            }
-        }
-        id
-    }
-
-    #[track_caller]
-    pub(crate) fn register_signal_internal<T: 'static>(&self, value: T) -> NodeId {
-        let id = self.register_node();
-        self.signals.insert(
-            id,
-            SignalData {
-                value: AnyValue::new(value),
-                subscribers: Vec::new(),
-                last_tracked_by: None,
-            },
-        );
-        id
-    }
-
-    #[track_caller]
-    pub(crate) fn register_effect_internal<F: Fn() + 'static>(&self, f: F) -> NodeId {
-        let id = self.register_node();
-        self.effects.insert(
-            id,
-            EffectData {
-                computation: Some(Rc::new(f)),
-                dependencies: Vec::new(),
-                effect_version: 0,
-            },
-        );
-        id
-    }
-
-    pub(crate) fn track_dependency(&self, signal_id: NodeId) {
-        if let Some(owner) = self.current_owner.get() {
-            if owner == signal_id {
-                return;
-            }
-
-            if let Some(effect_data) = self.effects.get_mut(owner) {
-                if let Some(signal_data) = self.signals.get_mut(signal_id) {
-                    let current_version = effect_data.effect_version;
-                    if let Some((last_owner, last_version)) = signal_data.last_tracked_by {
-                        if last_owner == owner && last_version == current_version {
-                            return;
-                        }
-                    }
-                    effect_data.dependencies.push(signal_id);
-                    signal_data.subscribers.push(owner);
-                    signal_data.last_tracked_by = Some((owner, current_version));
-                }
-            }
-        }
-    }
-
-    pub(crate) fn queue_dependents(&self, signal_id: NodeId) {
-        // Clone subscribers to avoid holding borrow during iteration
-        let subscribers = if let Some(data) = self.signals.get(signal_id) {
-            data.subscribers.clone()
-        } else {
-            Vec::new()
-        };
-
-        let mut queue = self.observer_queue.borrow_mut();
-
-        for id in subscribers {
-            // Check if already queued
-            if self.queued_observers.get(id).is_none() {
-                self.queued_observers.insert(id, ());
-                queue.push_back(id);
-            }
-        }
-    }
-
-    pub(crate) fn run_queue(&self) {
-        if self.running_queue.get() {
-            return;
-        }
-        self.running_queue.set(true);
-
-        loop {
-            // Take one from queue
-            let next_to_run = self.observer_queue.borrow_mut().pop_front();
-            match next_to_run {
-                Some(id) => {
-                    self.queued_observers.remove(id);
-                    run_effect_internal(id);
-                }
-                None => break,
-            }
-        }
-        self.running_queue.set(false);
-    }
-
-    fn clean_node(&self, id: NodeId) {
-        let (children, cleanups) = {
-            if let Some(node) = self.graph.get_mut(id) {
-                (
-                    std::mem::take(&mut node.children),
-                    std::mem::take(&mut node.cleanups),
-                )
-            } else {
-                return;
-            }
-        };
-
-        let dependencies = {
-            if let Some(effect_data) = self.effects.get_mut(id) {
-                std::mem::take(&mut effect_data.dependencies)
-            } else {
-                Vec::new()
-            }
-        };
-
-        self.run_cleanups(id, children, cleanups, dependencies);
-    }
-
-    fn run_cleanups(
-        &self,
-        self_id: NodeId,
-        children: Vec<NodeId>,
-        cleanups: Vec<Box<dyn FnOnce()>>,
-        dependencies: Vec<NodeId>,
-    ) {
-        for cleanup in cleanups {
-            cleanup();
-        }
-        for child in children {
-            self.dispose_node_internal(child, false);
-        }
-        if !dependencies.is_empty() {
-            for signal_id in dependencies {
-                if let Some(signal_data) = self.signals.get_mut(signal_id) {
-                    if let Some(idx) = signal_data.subscribers.iter().position(|&x| x == self_id) {
-                        signal_data.subscribers.swap_remove(idx);
-                    }
-                }
-            }
-        }
-    }
-
-    pub(crate) fn dispose_node_internal(&self, id: NodeId, remove_from_parent: bool) {
-        self.clean_node(id);
-
-        #[cfg(debug_assertions)]
-        {
-            if let Some(node) = self.graph.get_mut(id) {
-                if let Some(label) = node.debug_label.take() {
-                    self.dead_node_labels.insert(id, label);
-                }
-            }
-        }
-
-        if remove_from_parent {
-            if let Some(parent_id) = self.graph.get(id).and_then(|n| n.parent) {
-                if let Some(parent_node) = self.graph.get_mut(parent_id) {
-                    if let Some(idx) = parent_node.children.iter().position(|&x| x == id) {
-                        parent_node.children.swap_remove(idx);
-                    }
-                }
-            }
-        }
-
-        self.graph.remove(id);
-        self.signals.remove(id);
-        self.effects.remove(id);
-        self.stored_values.remove(id);
-        self.deriveds.remove(id);
-        self.queued_observers.remove(id);
-        // Note: Can't easily remove from VecDeque efficiently without traversal,
-        // but `run_queue` handles spurious IDs gracefully if effect logic checks existence.
-        // Actually, our `run_queue` iterates and calls `run_effect_internal`.
-        // If node is removed, `run_effect_internal` should check existence.
-    }
-}
-
-fn run_effect_internal(effect_id: NodeId) {
-    RUNTIME.with(|rt| {
-        let (children, cleanups) = {
-            if let Some(node) = rt.graph.get_mut(effect_id) {
-                (
-                    std::mem::take(&mut node.children),
-                    std::mem::take(&mut node.cleanups),
-                )
-            } else {
-                return;
-            }
-        };
-
-        let (computation_fn, dependencies) = {
-            if let Some(effect_data) = rt.effects.get_mut(effect_id) {
-                effect_data.effect_version = effect_data.effect_version.wrapping_add(1);
-                (
-                    effect_data.computation.clone(),
-                    std::mem::take(&mut effect_data.dependencies),
-                )
-            } else {
-                return;
-            }
-        };
-
-        rt.run_cleanups(effect_id, children, cleanups, dependencies);
-
-        if let Some(f) = computation_fn {
-            let prev_owner = rt.current_owner.get();
-            rt.current_owner.set(Some(effect_id));
-            f();
-            rt.current_owner.set(prev_owner);
-        }
-    })
-}
+mod runtime;
+use runtime::{
+    CallbackData, DerivedData, EffectData, NodeRefData, RUNTIME, StoredValueData,
+    run_effect_internal,
+};
 
 // --- Public High-Level API ---
 
@@ -449,9 +117,7 @@ pub fn dispose(id: NodeId) {
 pub fn on_cleanup(f: impl FnOnce() + 'static) {
     RUNTIME.with(|rt| {
         if let Some(owner) = rt.current_owner.get() {
-            if let Some(node) = rt.graph.get_mut(owner) {
-                node.cleanups.push(Box::new(f));
-            }
+            rt.aux_mut(owner).cleanups.push(Box::new(f));
         }
     });
 }
@@ -542,13 +208,12 @@ where
 pub fn provide_context_any(key: TypeId, value: Box<dyn Any>) {
     RUNTIME.with(|rt| {
         if let Some(owner) = rt.current_owner.get() {
-            if let Some(node) = rt.graph.get_mut(owner) {
-                if node.context.is_none() {
-                    node.context = Some(HashMap::new());
-                }
-                if let Some(ctx) = &mut node.context {
-                    ctx.insert(key, value);
-                }
+            let aux = rt.aux_mut(owner);
+            if aux.context.is_none() {
+                aux.context = Some(HashMap::new());
+            }
+            if let Some(ctx) = &mut aux.context {
+                ctx.insert(key, value);
             }
         }
     })
@@ -567,12 +232,15 @@ pub fn use_context<T: Clone + 'static>() -> Option<T> {
         let mut current_opt = rt.current_owner.get();
 
         while let Some(current) = current_opt {
-            if let Some(node) = rt.graph.get(current) {
-                if let Some(ctx) = &node.context {
+            if let Some(aux) = rt.node_aux.get(current) {
+                if let Some(ctx) = &aux.context {
                     if let Some(val) = ctx.get(&TypeId::of::<T>()) {
                         return val.downcast_ref::<T>().cloned();
                     }
                 }
+            }
+
+            if let Some(node) = rt.graph.get(current) {
                 current_opt = node.parent;
             } else {
                 current_opt = None;
@@ -786,9 +454,7 @@ pub fn set_debug_label(_id: NodeId, _label: impl Into<String>) {
     {
         let label = _label.into();
         RUNTIME.with(|rt| {
-            if let Some(node) = rt.graph.get_mut(_id) {
-                node.debug_label = Some(label);
-            }
+            rt.aux_mut(_id).debug_label = Some(label);
         })
     }
 }
@@ -797,8 +463,8 @@ pub fn get_debug_label(_id: NodeId) -> Option<String> {
     #[cfg(debug_assertions)]
     {
         return RUNTIME.with(|rt| {
-            if let Some(node) = rt.graph.get(_id) {
-                if let Some(label) = &node.debug_label {
+            if let Some(aux) = rt.node_aux.get(_id) {
+                if let Some(label) = &aux.debug_label {
                     return Some(label.clone());
                 }
             }
