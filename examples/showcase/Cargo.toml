@@ -7,4 +7,4 @@ publish = false
 [dependencies]
 silex.workspace = true
 silex_macros.workspace = true
-gloo-timers = "0.3"
+gloo-timers = { version = "0.3", features = ["futures"] }

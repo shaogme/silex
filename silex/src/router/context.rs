@@ -3,6 +3,7 @@ use silex_core::traits::{Get, GetUntracked, Set};
 use silex_dom::view::{AnyView, View};
 use std::collections::HashMap;
 use std::rc::Rc;
+use wasm_bindgen::JsCast;
 use web_sys::Node;
 
 /// View 工厂包装器，必须实现 PartialEq 以便在 Signal/Memo 中使用
@@ -116,6 +117,39 @@ impl Navigator {
     pub fn replace<T: crate::router::ToRoute>(&self, to: T) {
         self.handle_navigation(&to.to_route(), true);
     }
+
+    /// 设置或更新查询参数
+    ///
+    /// * `key`: 参数名
+    /// * `value`: 参数值。如果为 `None`，则删除该参数。
+    pub fn set_query(&self, key: &str, value: Option<&str>) {
+        let current_search = self.search.get_untracked();
+
+        if let Ok(params) = web_sys::UrlSearchParams::new_with_str(&current_search) {
+            match value {
+                Some(v) => params.set(key, v),
+                None => params.delete(key),
+            }
+
+            let new_search = params.to_string().as_string().unwrap_or_default();
+
+            // 如果 search 没变，无需导航
+            // 注意：UrlSearchParams.to_string() 会标准化编码，所以即使逻辑没变，字符串也可能变化（例如顺序）
+            // 但这里我们主要关心键值对的变更。
+            // 既然是 set_query 显式调用，通常意味着意图变更。
+
+            let pathname = self.path.get_untracked();
+            // path signal 是逻辑路径 (不含 base)，Navigator.push 会自动处理 base_path
+            // 但我们需要构造完整的 URL (path + search) 传给 push
+            let new_url = if new_search.is_empty() {
+                pathname
+            } else {
+                format!("{}?{}", pathname, new_search)
+            };
+
+            self.push(&new_url);
+        }
+    }
 }
 
 /// 路由上下文所需的属性集合
@@ -174,27 +208,26 @@ pub fn use_location_search() -> Signal<String> {
 }
 
 /// Hook: 获取并解析查询参数为 Map
+///
+/// 使用 `web_sys::UrlSearchParams` 进行标准化的解析，确保与浏览器的行为一致。
 pub fn use_query_map() -> silex_core::reactivity::Memo<HashMap<String, String>> {
     let search_signal = use_location_search();
     Memo::new(move |_| {
         let s = search_signal.get();
         let mut map = HashMap::new();
-        let clean = s.trim_start_matches('?');
-        if clean.is_empty() {
-            return map;
-        }
 
-        for pair in clean.split('&') {
-            if let Some((key, value)) = pair.split_once('=') {
-                let k = js_sys::decode_uri_component(key)
-                    .ok()
-                    .and_then(|x| x.as_string())
-                    .unwrap_or(key.to_string());
-                let v = js_sys::decode_uri_component(value)
-                    .ok()
-                    .and_then(|x| x.as_string())
-                    .unwrap_or(value.to_string());
-                map.insert(k, v);
+        if let Ok(params) = web_sys::UrlSearchParams::new_with_str(&s) {
+            // UrlSearchParams 是 Iterable，可以使用 js_sys::try_iter
+            if let Ok(Some(iter)) = js_sys::try_iter(&params) {
+                for item in iter {
+                    if let Ok(val) = item {
+                        // 迭代出的每一项都是 [key, value] 数组
+                        let pair: js_sys::Array = val.unchecked_into();
+                        let k = pair.get(0).as_string().unwrap_or_default();
+                        let v = pair.get(1).as_string().unwrap_or_default();
+                        map.insert(k, v);
+                    }
+                }
             }
         }
         map
@@ -212,66 +245,70 @@ pub fn use_query_map() -> silex_core::reactivity::Memo<HashMap<String, String>> 
 /// # 返回
 /// 一个 RwSignal，读写它会自动同步到 URL
 pub fn use_query_signal(key: impl Into<String>) -> silex_core::reactivity::RwSignal<String> {
-    use silex_core::reactivity::{Effect, RwSignal};
+    use silex_core::reactivity::{Effect, RwSignal, StoredValue};
+    use silex_core::traits::{GetUntracked, SetUntracked};
 
     let key = key.into();
     let query_map = use_query_map();
     let navigator = use_navigate();
 
-    // 初始化：从 URL 获取初始值，如果是空则为空字符串
+    // 初始化：从 Map 获取 (此时 Map 已经是 decode 过的了)
     let initial_value = query_map
         .get_untracked()
         .get(&key)
         .cloned()
         .unwrap_or_default();
 
-    let signal = RwSignal::new(initial_value);
+    let signal = RwSignal::new(initial_value.clone());
 
-    // 监听 URL 变化 -> 更新 Signal
-    // 我们需要避免回环，所以只有当值真正改变时才 set
+    // 用于打破循环引用的缓存：存储上一次我们因 "Signal 改变" 而推送到 URL 的值。
+    // 如果 URL 变回这个值，我们知道这是我们自己触发的变更回响，无需再次更新 Signal。
+    let last_synced_value = StoredValue::<String>::new(initial_value);
+
+    // URL -> Signal
+    // 监听 Query Map 的变化并同步到 Signal
     Effect::new({
         let key = key.clone();
         let signal = signal;
         move |_| {
             let map = query_map.get();
             let url_val = map.get(&key).map(|s| s.as_str()).unwrap_or("");
-            if signal.get_untracked() != url_val {
-                signal.set(url_val.to_string());
+
+            // 只有当 URL 的值与 Signal 当前值不一致，且与我们刚写入的值也不一致时，才更新 Signal
+            // 这样可以防止：Signal 设置 "A" -> URL 变 "A" -> Effect 读 "A" -> Signal 再设一遍 "A" (虽然 Signal 内部有 check，但减少一次 set 调用总是好的)
+            let current_signal_val = signal.get_untracked();
+
+            // 使用 try_get_untracked 避免 panic (虽然在此上下文通常不会 disposed)
+            if let Some(last_val) = last_synced_value.try_get_untracked() {
+                if current_signal_val != url_val && last_val != url_val {
+                    signal.set(url_val.to_string());
+                    // 更新 last_synced_value，表示这个值是来自 URL 的最新状态
+                    // 使用 try_set_untracked 避免 panic
+                    let _ = last_synced_value.try_set_untracked(url_val.to_string());
+                }
             }
         }
     });
 
-    // 监听 Signal 变化 -> 更新 URL
+    // Signal -> URL
+    // 监听 Signal 的变化并使用 Navigator 更新 URL
     Effect::new(move |_| {
         let val = signal.get();
         let current_map = query_map.get_untracked();
         let current_url_val = current_map.get(&key).map(|s| s.as_str()).unwrap_or("");
 
-        // 只有当 Signal 的值与 URL 不一致时，才推入新历史记录
+        // 只有当 Signal 的值与 URL 当前值不一致时，才发起导航
         if val != current_url_val {
-            let window = web_sys::window().unwrap();
-            let location = window.location();
-            let pathname = location.pathname().unwrap_or_else(|_| "/".into());
-            let search = location.search().unwrap_or_default(); // 包含 '?'
+            // 更新缓存，标记这次变更是由 Signal 发起的
+            // 使用 try_set_untracked 避免 panic，如果已 disposed 则无需更新缓存
+            let _ = last_synced_value.try_set_untracked(val.clone());
 
-            // 使用 URLSearchParams API 会更稳健，但为了减少依赖，我们手动处理或使用 web_sys
-            // 这里我们使用 web_sys::UrlSearchParams
-            if let Ok(params) = web_sys::UrlSearchParams::new_with_str(&search) {
-                if val.is_empty() {
-                    params.delete(&key);
-                } else {
-                    params.set(&key, &val);
-                }
-
-                let new_search = params.to_string().as_string().unwrap_or_default();
-                let new_url = if new_search.is_empty() {
-                    pathname
-                } else {
-                    format!("{}?{}", pathname, new_search)
-                };
-
-                navigator.push(&new_url);
-            }
+            let val_to_set = if val.is_empty() {
+                None
+            } else {
+                Some(val.as_str())
+            };
+            navigator.set_query(&key, val_to_set);
         }
     });
 
