@@ -1532,6 +1532,8 @@ name = "silex_html"
 version = "0.1.0-alpha.8"
 dependencies = [
  "silex_dom",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

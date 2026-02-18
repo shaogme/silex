@@ -47,6 +47,22 @@ impl IntoStorable for bool {
     }
 }
 
+macro_rules! impl_into_storable_primitive {
+    ($($t:ty),*) => {
+        $(
+            impl IntoStorable for $t {
+                type Stored = $t;
+                fn into_storable(self) -> Self::Stored {
+                    self
+                }
+            }
+        )*
+    };
+}
+impl_into_storable_primitive!(
+    u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, char
+);
+
 // --- 2. 响应式类型 (使用宏避免泛型冲突) ---
 
 macro_rules! impl_into_storable_signal {
