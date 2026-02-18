@@ -35,6 +35,7 @@
 `silex/src/router/context.rs` -> `struct Navigator`
 *   **push(url)**: 调用 `history.pushState` 并更新 Context 信号。
 *   **replace(url)**: 调用 `history.replaceState` 并更新 Context 信号。
+*   **set_query(key, value)**: 原子化更新查询参数。读取 -> 解析 -> 修改 -> Push。
 *   **Side Effects**: 直接操作 DOM History API，触发 `popstate` (模拟)。
 
 ### Component: Router

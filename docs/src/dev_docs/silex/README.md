@@ -60,6 +60,11 @@ Silex 的路由系统基于浏览器 History API，实现了单页应用 (SPA) �
     *   **拦截点击**：它会拦截 `click` 事件，调用 `event.prevent_default()`，然后使用 `Navigator::push` 进行无刷新跳转。
     *   **Active State**：通过读取 Router Context 中的当前路径，自动计算并更新 `active` CSS 类，通过 `active_class` 方法配置。
 
+*   **Query Params 优化**:
+    *   **标准化解析**: `use_query_map` 内部统一使用 `web_sys::UrlSearchParams`，确保与浏览器行为一致。
+    *   **原子更新**: `Navigator::set_query` 提供了基于当前 URL 的增量更新能力。
+    *   **循环检测**: `use_query_signal` 利用 `StoredValue` 缓存上一次同步值，只有在真正需要时才回写 URL，避免了双向绑定的无限循环和不必要的 History Push。
+
 ### 4.2 流程控制 (Flow Control)
 
 这些组件是 Silex 性能优化的核心。它们避免了全量 DOM Diff，直接针对特定逻辑进行更新。
@@ -107,6 +112,5 @@ Silex 的路由系统基于浏览器 History API，实现了单页应用 (SPA) �
 
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 
-1.  **Router Query Params 优化**: 目前 `Navigator` 在更新 Query 参数时，虽然做了去重检查，但 `web_sys::UrlSearchParams` 的互操作性还有优化空间。`use_query_signal` 的双向绑定逻辑较为复杂，需要进一步简化以避免潜在的循环更新风险。
-2.  **Suspense 内存优化**: 当前 `Suspense` 加载时同时保留了 Fallback 和 Hidden Content 的 DOM 节点。对于极其庞大的子树，这可能带来内存压力。未来计划支持“卸载模式”，在显示 Fallback 时暂时卸载子树。
-3.  **Flow 组件类型简化**: `For` 和 `Show` 的泛型参数非常多，生成的类型签名过长，影响错误信息的阅读。需要探索简化类型签名的方法。
+1.  **Suspense 内存优化**: 当前 `Suspense` 加载时同时保留了 Fallback 和 Hidden Content 的 DOM 节点。对于极其庞大的子树，这可能带来内存压力。未来计划支持“卸载模式”，在显示 Fallback 时暂时卸载子树。
+2.  **Flow 组件类型简化**: `For` 和 `Show` 的泛型参数非常多，生成的类型签名过长，影响错误信息的阅读。需要探索简化类型签名的方法。

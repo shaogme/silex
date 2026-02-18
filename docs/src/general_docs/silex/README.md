@@ -92,6 +92,30 @@ Router::new().match_route::<MyRoutes>()
     nav.push("/new-path");
     ```
 
+### 查询参数 (Query Parameters)
+
+Silex 提供了方便的 Hooks 来处理 URL 查询参数：
+
+*   **`use_query_map()`**:
+    *   返回 `Memo<HashMap<String, String>>`。
+    *   使用 `web_sys::UrlSearchParams` 标准解析，自动处理 URI 编码。
+    *   响应式：当 URL 变化时自动更新。
+
+*   **`use_query_signal(key)`**:
+    *   实现了 **双向绑定**。
+    *   返回 `RwSignal<String>`。
+    *   **读**: 读取 URL 中的参数值。
+    *   **写**: 修改 Signal 会自动更新 URL (pushState) 并触发导航。
+    *   **防抖/防循环**: 内部实现了智能的循环检测，只有当值真正变化时才同步，避免无限循环和重复导航。
+
+    ```rust
+    // 示例：将输入框绑定到 ?q=...
+    let search = use_query_signal("q");
+    
+    input(())
+        .bind_value(search) // 双向绑定到 input value
+    ```
+
 ## 2. 流程控制 (Flow Control)
 
 Silex 提供了一组组件来处理常见的逻辑控制，这比手动编写 `move ||` 闭包更具可读性且性能更好。
