@@ -1,5 +1,5 @@
 [package]
-name = "router_example"
+name = "silex_router_example"
 version.workspace = true
 edition.workspace = true
 publish = false

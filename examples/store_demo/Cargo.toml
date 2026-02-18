@@ -1,5 +1,5 @@
 [package]
-name = "store_demo"
+name = "silex_store_demo"
 version.workspace = true
 edition.workspace = true
 publish = false

@@ -758,15 +758,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "router_example"
-version = "0.1.0-beta.1"
-dependencies = [
- "silex",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
 name = "rustc-hash"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -923,12 +914,28 @@ name = "silex_reactivity"
 version = "0.1.0-beta.1"
 
 [[package]]
+name = "silex_router_example"
+version = "0.1.0-beta.1"
+dependencies = [
+ "silex",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "silex_showcase"
 version = "0.1.0-beta.1"
 dependencies = [
  "gloo-timers",
  "silex",
  "silex_macros",
+]
+
+[[package]]
+name = "silex_store_demo"
+version = "0.1.0-beta.1"
+dependencies = [
+ "silex",
 ]
 
 [[package]]
@@ -964,13 +971,6 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
-
-[[package]]
-name = "store_demo"
-version = "0.1.0-beta.1"
-dependencies = [
- "silex",
-]
 
 [[package]]
 name = "syn"
