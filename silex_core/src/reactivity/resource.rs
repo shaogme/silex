@@ -265,6 +265,16 @@ impl SuspenseContext {
             }
         });
     }
+
+    pub fn provide<T>(f: impl FnOnce() -> T) -> T {
+        let mut result = None;
+        crate::reactivity::create_scope(|| {
+            let ctx = Self::new();
+            crate::reactivity::provide_context(ctx);
+            result = Some(f());
+        });
+        result.unwrap()
+    }
 }
 
 pub fn use_suspense_context() -> Option<SuspenseContext> {

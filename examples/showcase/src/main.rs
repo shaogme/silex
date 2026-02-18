@@ -667,6 +667,89 @@ mod advanced {
 
         ].style("padding: 20px; border: 1px solid #ccc; border-radius: 8px;")
     }
+
+    #[component]
+    pub fn SuspenseDemo() -> impl View {
+        use silex::components::{SuspenseBoundary, SuspenseMode};
+
+        let (show_content, set_show_content) = signal(false);
+        let (mode, set_mode) = signal(SuspenseMode::KeepAlive);
+        
+        // Trigger for reloading the resource
+        let (trigger, set_trigger) = signal(0);
+
+        // Mock heavy resource
+        async fn heavy_work(id: i32) -> Result<String, String> {
+            gloo_timers::future::TimeoutFuture::new(2000).await;
+            Ok(format!("Content Loaded! (Req ID: {})", id))
+        }
+
+        div![
+            h3("Suspense Modes Demo"),
+            p("Compare KeepAlive (Data persists) vs Unmount mode (Data resets)."),
+            
+            // Mode Selection
+            div![
+                label![
+                    input()
+                        .attr("type", "radio")
+                        .attr("name", "suspense_mode")
+                        .attr("checked", move || mode.get() == SuspenseMode::KeepAlive)
+                        .on(event::change, set_mode.setter(SuspenseMode::KeepAlive)),
+                    " KeepAlive (CSS Hide)"
+                ].style("margin-right: 15px;"),
+                label![
+                    input()
+                        .attr("type", "radio")
+                        .attr("name", "suspense_mode")
+                        .attr("checked", move || mode.get() == SuspenseMode::Unmount)
+                        .on(event::change, set_mode.setter(SuspenseMode::Unmount)),
+                    " Unmount (DOM Remove)"
+                ]
+            ].style("margin-bottom: 15px;"),
+
+            div![
+                button(show_content.map(|s| if *s { "Destroy Component" } else { "Create Component" }))
+                    .on(event::click, set_show_content.updater(|s| *s = !*s))
+                    .style("margin-right: 10px;"),
+                
+                button("Reload Resource")
+                    .on(event::click, set_trigger.updater(|n| *n += 1))
+            ].style("margin-bottom: 15px;"),
+
+            div![
+                Show::new(show_content, move || {
+                    SuspenseContext::provide(move || {
+                        let mode_val = mode.get();
+                        
+                        // Move Resource creation HERE so it picks up the SuspenseContext
+                        // Trigger is captured. Resource is created once when this closure runs (initially).
+                        let resource = Resource::new(trigger, heavy_work);
+                        
+                        SuspenseBoundary::new()
+                            .mode(mode_val)
+                            .fallback(|| div("Loading... (2s)").style("color: blue; font-weight: bold;"))
+                            .children(move || {
+                                // Crucial: We do NOT read resource.get() here.
+                                div![
+                                    div![
+                                        "Resource Data: ",
+                                        // Fine-grained reading: Only this text node updates
+                                        move || resource.get().unwrap_or_else(|| "Waiting...".to_string())
+                                    ],
+                                    div("1. Type something below."),
+                                    div("2. Click 'Reload Resource'."),
+                                    div("3. KeepAlive: Text stays. Unmount: Text gone."),
+                                    input().placeholder("Type here test persistence...")
+                                        .style("margin-top: 5px; padding: 5px; width: 250px;")
+                                ].style("border: 1px solid green; padding: 10px; background: #e8f5e9;")
+                            })
+                    })
+                })
+            ].style("min-height: 150px; border: 1px dashed #ccc; padding: 10px;")
+        ]
+        .style("padding: 20px; border: 1px solid #ccc; border-radius: 8px; margin-top: 20px;")
+    }
 }
 
 
@@ -771,6 +854,8 @@ enum AdvancedRoute {
     Resource,
     #[route("/mutation", view = advanced::MutationDemo)]
     Mutation,
+    #[route("/suspense", view = advanced::SuspenseDemo)]
+    Suspense,
     #[route("/*", view = NotFoundPage)]
     NotFound,
 }
@@ -864,7 +949,7 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
             .class("tab"),
             Link(AppRoute::Advanced {
                 route: AdvancedRoute::Query,
-            }, "Query Param")
+            }, "Query Param")  
             .class("tab"),
             Link(AppRoute::Advanced {
                 route: AdvancedRoute::Resource,
@@ -873,6 +958,10 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
             Link(AppRoute::Advanced {
                 route: AdvancedRoute::Mutation,
             }, "Mutation")
+            .class("tab"),
+            Link(AppRoute::Advanced {
+                route: AdvancedRoute::Suspense,
+            }, "Suspense")
             .class("tab"),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 20px;"),

@@ -110,15 +110,6 @@ fn HomeView() -> impl View {
     
     let is_high = Memo::new(move |_| count.get() > 5);
 
-    // Async Resource
-    let async_data: Resource<String, silex::SilexError> = Resource::new(
-        || (),
-        |_| async {
-            gloo_timers::future::TimeoutFuture::new(2_000).await;
-            Ok("Loaded Data from Server!".to_string())
-        }
-    );
-
     div((
         // Header
         div((
@@ -164,17 +155,29 @@ fn HomeView() -> impl View {
                         .style("background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;"))
             ),
         
-        // Card 4: Suspense
-        Card()
-            .title("Suspense (Async Loading)")
-            .child(
-                    suspense()
-                    .fallback(|| div("Loading data (approx 2s)...").style("color: orange; font-style: italic;"))
-                    .children(move || {
-                        div(move || async_data.get().unwrap_or("Waiting...".to_string()))
-                            .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
-                    })
-            )
+                // Card 4: Suspense (Context Layout Pattern)
+                Card()
+                    .title("Suspense (Async Loading)")
+                    .child(
+                        SuspenseContext::provide(|| {
+                            // 1. Resource must be created inside provide closure
+                            let async_data_local: Resource<_, SilexError>  = Resource::new(
+                                || (),
+                                |_| async {
+                                    gloo_timers::future::TimeoutFuture::new(2_000).await;
+                                    Ok("Loaded Data from Server!".to_string())
+                                }
+                            );
+
+                            // 2. SuspenseBoundary captures the context
+                            SuspenseBoundary::new()
+                                .fallback(|| div("Loading data (approx 2s)...").style("color: orange; font-style: italic;"))
+                                .children(move || {
+                                    div(move || async_data_local.get().unwrap_or("Waiting...".to_string()))
+                                        .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
+                                })
+                        })
+                    )
     ))
 }
 

@@ -99,12 +99,13 @@ Silex 的路由系统基于浏览器 History API，实现了单页应用 (SPA) �
     2.  **逻辑/异步错误**：通过 `provide_context(ErrorContext)` 注入错误处理句柄。子组件可以通过 `SilexError` 向上抛出错误。
 *   **Fallback**：一旦捕获错误，立即卸载子树并渲染 `fallback` 提供的 UI。
 
-#### `Suspense`
+#### `SuspenseBoundary`
 位于 `silex/src/components/suspense.rs`。
-*   **异步协调**：基于 `SuspenseContext` 中的引用计数。
-*   **实现策略**：目前的实现采用了 **CSS 切换** 策略 (`display: none` vs `block`)。
-    *   **优点**：保留了正在加载的子组件的状态（如果它已经被部分渲染）。
-    *   **流程**：初始化时提供 Context -> 子资源加载 (`inc`) -> 显示 Fallback -> 子资源完成 (`dec`) -> 显示内容。
+*   **架构变更**：采用了“上下文穿透 (Context Layout)”模式，将 Context 的提供者 (`SuspenseContext::provide`) 与 UI 边界 (`SuspenseBoundary`) 分离。
+*   **实现策略**：支持两种模式 (`SuspenseMode`)：
+    *   **KeepAlive (默认)**：使用 CSS `display: none` 隐藏内容。虽然保留了 DOM，但通过分离 Resource 定义，避免了 Resource 重新初始化。
+    *   **Unmount**：物理卸载（Remove）子树 DOM。极大降低内存占用。
+*   **Context 捕获**：`SuspenseBoundary::new()` 必须在 `SuspenseContext::provide` 的闭包内调用，它会自动捕获当前的 `SuspenseContext`。
 
 #### `Portal`
 位于 `silex/src/components/portal.rs`。
@@ -112,5 +113,4 @@ Silex 的路由系统基于浏览器 History API，实现了单页应用 (SPA) �
 
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 
-1.  **Suspense 内存优化**: 当前 `Suspense` 加载时同时保留了 Fallback 和 Hidden Content 的 DOM 节点。对于极其庞大的子树，这可能带来内存压力。未来计划支持“卸载模式”，在显示 Fallback 时暂时卸载子树。
-2.  **Flow 组件类型简化**: `For` 和 `Show` 的泛型参数非常多，生成的类型签名过长，影响错误信息的阅读。需要探索简化类型签名的方法。
+1.  **Flow 组件类型简化**: `For` 和 `Show` 的泛型参数非常多，生成的类型签名过长，影响错误信息的阅读。需要探索简化类型签名的方法。

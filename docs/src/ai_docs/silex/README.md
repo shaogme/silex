@@ -122,16 +122,17 @@
     3. `SilexError`: 通过上下文捕获异步或逻辑错误。
     4. **Fallback**: 出错时替换正常子树为 `fallback` 视图。
 
-### Suspense
+### SuspenseBoundary
 `silex/src/components/suspense.rs`
-*   **Purpose**: 处理异步资源加载状态 (Async/Await coordination)。
+*   **Breaking Change**: 重构为 Context Layout 模式。旧的 `<Suspense>` 组件已被移除。
+*   **New Flow**:
+    1.  `SuspenseContext::provide(closure)`: 创建 Scope 并注入 `SuspenseContext`。
+    2.  `Resource::new(...)`: 在 `provide` 闭包内创建，获取 Context 并管理计数。
+    3.  `SuspenseBoundary::new()`: 捕获当前 Context，仅负责 UI 切换逻辑。
 *   **Mechanism**:
-    1. `provide_context(SuspenseContext)`: 计数器 (`pending_count`)。
-    2. 子组件 (Resource) 加载时 `count.inc()`，完成时 `count.dec()`。
-    3. `Effect`: 监控 `count`。
-        *   `count > 0`: 显示 `fallback` (display: block), 隐藏 `children` (display: none)。
-        *   `count == 0`: 显示 `children`, 隐藏 `fallback`。
-*   **Note**: 目前使用 CSS `display` 切换，而非 DOM 卸载，保留子组件状态。
+    *   **Decoupling**: 彻底解耦了 "Context Provider" 和 "View Boundary"。
+    *   **Context Capture**: `SuspenseBoundary` 内部通过 `use_context` 获取计数器信号。
+    *   **Modes**: 依然支持 `KeepAlive` (CSS Toggle) 和 `Unmount` (Physical DOM removal) 两种策略。
 
 ## 5. CSS 工具 (silex::css)
 `silex/src/css.rs`
