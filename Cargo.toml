@@ -11,6 +11,7 @@ members = [
     "examples/error_boundary_demo",
     "examples/router",
     "examples/showcase",
+    "tools/silex_codegen"
 ]
 exclude = [
     "docs",

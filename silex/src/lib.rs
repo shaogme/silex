@@ -36,7 +36,6 @@ pub mod prelude {
     pub use crate::core::prelude::*;
     pub use crate::core::*;
     pub use crate::flow::*;
-    pub use crate::router::Link;
     pub use crate::router::*;
     pub use crate::store::*;
     pub use crate::{SilexError, SilexResult};
@@ -45,4 +44,12 @@ pub mod prelude {
     pub use silex_html::*;
     #[cfg(feature = "macros")]
     pub use silex_macros::*;
+
+    // Resolve ambiguous glob re-exports
+    pub use crate::core::prelude::{Map, Set, Track};
+    pub use crate::flow::Switch;
+    pub use crate::router::Link;
+    pub use silex_dom::text;
+    #[cfg(feature = "macros")]
+    pub use silex_macros::style;
 }

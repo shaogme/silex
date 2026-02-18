@@ -3,6 +3,7 @@ pub mod element;
 pub mod view;
 
 pub use attribute::*;
+pub use element::tags;
 pub use element::*;
 pub use view::*;
 

@@ -1,0 +1,1771 @@
+{
+  "html": [
+    {
+      "struct_name": "A",
+      "tag_name": "a",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Abbr",
+      "tag_name": "abbr",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Acronym",
+      "tag_name": "acronym",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Address",
+      "tag_name": "address",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Area",
+      "tag_name": "area",
+      "func_name": null,
+      "is_void": true,
+      "traits": []
+    },
+    {
+      "struct_name": "Article",
+      "tag_name": "article",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Aside",
+      "tag_name": "aside",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Audio",
+      "tag_name": "audio",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "B",
+      "tag_name": "b",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Base",
+      "tag_name": "base",
+      "func_name": null,
+      "is_void": true,
+      "traits": []
+    },
+    {
+      "struct_name": "Bdi",
+      "tag_name": "bdi",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Bdo",
+      "tag_name": "bdo",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Big",
+      "tag_name": "big",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Blockquote",
+      "tag_name": "blockquote",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Body",
+      "tag_name": "body",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Br",
+      "tag_name": "br",
+      "func_name": null,
+      "is_void": true,
+      "traits": []
+    },
+    {
+      "struct_name": "Button",
+      "tag_name": "button",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Canvas",
+      "tag_name": "canvas",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Caption",
+      "tag_name": "caption",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Center",
+      "tag_name": "center",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Cite",
+      "tag_name": "cite",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Code",
+      "tag_name": "code",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Col",
+      "tag_name": "col",
+      "func_name": null,
+      "is_void": true,
+      "traits": []
+    },
+    {
+      "struct_name": "Colgroup",
+      "tag_name": "colgroup",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "DataTag",
+      "tag_name": "data",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Datalist",
+      "tag_name": "datalist",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Dd",
+      "tag_name": "dd",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Del",
+      "tag_name": "del",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Details",
+      "tag_name": "details",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Dfn",
+      "tag_name": "dfn",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Dialog",
+      "tag_name": "dialog",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Dir",
+      "tag_name": "dir",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Div",
+      "tag_name": "div",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Dl",
+      "tag_name": "dl",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Dt",
+      "tag_name": "dt",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Em",
+      "tag_name": "em",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Embed",
+      "tag_name": "embed",
+      "func_name": null,
+      "is_void": true,
+      "traits": []
+    },
+    {
+      "struct_name": "Fencedframe",
+      "tag_name": "fencedframe",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Fieldset",
+      "tag_name": "fieldset",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Figcaption",
+      "tag_name": "figcaption",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Figure",
+      "tag_name": "figure",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Font",
+      "tag_name": "font",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Footer",
+      "tag_name": "footer",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Form",
+      "tag_name": "form",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Frame",
+      "tag_name": "frame",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Frameset",
+      "tag_name": "frameset",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Geolocation",
+      "tag_name": "geolocation",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "H1",
+      "tag_name": "h1",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "H2",
+      "tag_name": "h2",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "H3",
+      "tag_name": "h3",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "H4",
+      "tag_name": "h4",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "H5",
+      "tag_name": "h5",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "H6",
+      "tag_name": "h6",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Head",
+      "tag_name": "head",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Header",
+      "tag_name": "header",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Hgroup",
+      "tag_name": "hgroup",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Hr",
+      "tag_name": "hr",
+      "func_name": null,
+      "is_void": true,
+      "traits": []
+    },
+    {
+      "struct_name": "Html",
+      "tag_name": "html",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "I",
+      "tag_name": "i",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Iframe",
+      "tag_name": "iframe",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Img",
+      "tag_name": "img",
+      "func_name": null,
+      "is_void": true,
+      "traits": []
+    },
+    {
+      "struct_name": "Input",
+      "tag_name": "input",
+      "func_name": null,
+      "is_void": true,
+      "traits": []
+    },
+    {
+      "struct_name": "Ins",
+      "tag_name": "ins",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Kbd",
+      "tag_name": "kbd",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Label",
+      "tag_name": "label",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Legend",
+      "tag_name": "legend",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Li",
+      "tag_name": "li",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Link",
+      "tag_name": "link",
+      "func_name": null,
+      "is_void": true,
+      "traits": []
+    },
+    {
+      "struct_name": "Main",
+      "tag_name": "main",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Map",
+      "tag_name": "map",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Mark",
+      "tag_name": "mark",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Marquee",
+      "tag_name": "marquee",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Menu",
+      "tag_name": "menu",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Meta",
+      "tag_name": "meta",
+      "func_name": null,
+      "is_void": true,
+      "traits": []
+    },
+    {
+      "struct_name": "Meter",
+      "tag_name": "meter",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Nav",
+      "tag_name": "nav",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Nobr",
+      "tag_name": "nobr",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Noembed",
+      "tag_name": "noembed",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Noframes",
+      "tag_name": "noframes",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Noscript",
+      "tag_name": "noscript",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Object",
+      "tag_name": "object",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Ol",
+      "tag_name": "ol",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Optgroup",
+      "tag_name": "optgroup",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "OptionTag",
+      "tag_name": "option",
+      "func_name": "option",
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Output",
+      "tag_name": "output",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "P",
+      "tag_name": "p",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Param",
+      "tag_name": "param",
+      "func_name": null,
+      "is_void": true,
+      "traits": []
+    },
+    {
+      "struct_name": "Picture",
+      "tag_name": "picture",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Plaintext",
+      "tag_name": "plaintext",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Pre",
+      "tag_name": "pre",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Progress",
+      "tag_name": "progress",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Q",
+      "tag_name": "q",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Rb",
+      "tag_name": "rb",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Rp",
+      "tag_name": "rp",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Rt",
+      "tag_name": "rt",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Rtc",
+      "tag_name": "rtc",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Ruby",
+      "tag_name": "ruby",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "S",
+      "tag_name": "s",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Samp",
+      "tag_name": "samp",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Script",
+      "tag_name": "script",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Search",
+      "tag_name": "search",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Section",
+      "tag_name": "section",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Select",
+      "tag_name": "select",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Selectedcontent",
+      "tag_name": "selectedcontent",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Slot",
+      "tag_name": "slot",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Small",
+      "tag_name": "small",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Source",
+      "tag_name": "source",
+      "func_name": null,
+      "is_void": true,
+      "traits": []
+    },
+    {
+      "struct_name": "Span",
+      "tag_name": "span",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Strike",
+      "tag_name": "strike",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Strong",
+      "tag_name": "strong",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Style",
+      "tag_name": "style",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Sub",
+      "tag_name": "sub",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Summary",
+      "tag_name": "summary",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Sup",
+      "tag_name": "sup",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Table",
+      "tag_name": "table",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Tbody",
+      "tag_name": "tbody",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Td",
+      "tag_name": "td",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Template",
+      "tag_name": "template",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Textarea",
+      "tag_name": "textarea",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Tfoot",
+      "tag_name": "tfoot",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Th",
+      "tag_name": "th",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Thead",
+      "tag_name": "thead",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Time",
+      "tag_name": "time",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Title",
+      "tag_name": "title",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Tr",
+      "tag_name": "tr",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Track",
+      "tag_name": "track",
+      "func_name": null,
+      "is_void": true,
+      "traits": []
+    },
+    {
+      "struct_name": "Tt",
+      "tag_name": "tt",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "U",
+      "tag_name": "u",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Ul",
+      "tag_name": "ul",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Var",
+      "tag_name": "var",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Video",
+      "tag_name": "video",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Wbr",
+      "tag_name": "wbr",
+      "func_name": null,
+      "is_void": true,
+      "traits": []
+    },
+    {
+      "struct_name": "Xmp",
+      "tag_name": "xmp",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "TextTag"
+      ]
+    }
+  ],
+  "svg": [
+    {
+      "struct_name": "SvgA",
+      "tag_name": "a",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Animate",
+      "tag_name": "animate",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "AnimateMotion",
+      "tag_name": "animateMotion",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "AnimateTransform",
+      "tag_name": "animateTransform",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Circle",
+      "tag_name": "circle",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "ClipPath",
+      "tag_name": "clipPath",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Defs",
+      "tag_name": "defs",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Desc",
+      "tag_name": "desc",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Ellipse",
+      "tag_name": "ellipse",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeBlend",
+      "tag_name": "feBlend",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeColorMatrix",
+      "tag_name": "feColorMatrix",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeComponentTransfer",
+      "tag_name": "feComponentTransfer",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeComposite",
+      "tag_name": "feComposite",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeConvolveMatrix",
+      "tag_name": "feConvolveMatrix",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeDiffuseLighting",
+      "tag_name": "feDiffuseLighting",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeDisplacementMap",
+      "tag_name": "feDisplacementMap",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeDistantLight",
+      "tag_name": "feDistantLight",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeDropShadow",
+      "tag_name": "feDropShadow",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeFlood",
+      "tag_name": "feFlood",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeFuncA",
+      "tag_name": "feFuncA",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeFuncB",
+      "tag_name": "feFuncB",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeFuncG",
+      "tag_name": "feFuncG",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeFuncR",
+      "tag_name": "feFuncR",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeGaussianBlur",
+      "tag_name": "feGaussianBlur",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeImage",
+      "tag_name": "feImage",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeMerge",
+      "tag_name": "feMerge",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeMergeNode",
+      "tag_name": "feMergeNode",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeMorphology",
+      "tag_name": "feMorphology",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeOffset",
+      "tag_name": "feOffset",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FePointLight",
+      "tag_name": "fePointLight",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeSpecularLighting",
+      "tag_name": "feSpecularLighting",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeSpotLight",
+      "tag_name": "feSpotLight",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeTile",
+      "tag_name": "feTile",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "FeTurbulence",
+      "tag_name": "feTurbulence",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "Filter",
+      "tag_name": "filter",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "ForeignObject",
+      "tag_name": "foreignObject",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "G",
+      "tag_name": "g",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Image",
+      "tag_name": "image",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Line",
+      "tag_name": "line",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "LinearGradient",
+      "tag_name": "linearGradient",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Marker",
+      "tag_name": "marker",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Mask",
+      "tag_name": "mask",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Metadata",
+      "tag_name": "metadata",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Mpath",
+      "tag_name": "mpath",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Path",
+      "tag_name": "path",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "Pattern",
+      "tag_name": "pattern",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Polygon",
+      "tag_name": "polygon",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "Polyline",
+      "tag_name": "polyline",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "RadialGradient",
+      "tag_name": "radialGradient",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Rect",
+      "tag_name": "rect",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "SvgScript",
+      "tag_name": "script",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Set",
+      "tag_name": "set",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Stop",
+      "tag_name": "stop",
+      "func_name": null,
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "SvgStyle",
+      "tag_name": "style",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Svg",
+      "tag_name": "svg",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Switch",
+      "tag_name": "switch",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Symbol",
+      "tag_name": "symbol",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Text",
+      "tag_name": "text",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "TextPath",
+      "tag_name": "textPath",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "SvgTitle",
+      "tag_name": "title",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Tspan",
+      "tag_name": "tspan",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    },
+    {
+      "struct_name": "Use",
+      "tag_name": "use",
+      "func_name": "use_tag",
+      "is_void": true,
+      "traits": [
+        "SvgTag"
+      ]
+    },
+    {
+      "struct_name": "ViewTag",
+      "tag_name": "view",
+      "func_name": null,
+      "is_void": false,
+      "traits": [
+        "SvgTag",
+        "TextTag"
+      ]
+    }
+  ]
+}

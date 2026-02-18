@@ -19,101 +19,85 @@
 
 ## 3. 模块内结构 (Internal Structure)
 
-该 crate 的结构非常扁平，大部分逻辑通过宏生成。
+该 crate 的核心代码大部分由工具自动生成，目录结构清晰：
 
 ```text
 silex_html/
-└── src/
-    └── lib.rs       // 包含所有标签定义、构造函数宏和辅助特质
+├── src/
+│   ├── lib.rs           // 模块导出入口
+│   └── tags/            // 存放生成的标签定义
+│       ├── html.rs      // 所有 HTML 标签
+│       └── svg.rs       // 所有 SVG 标签
 ```
 
 *   **核心组件关系**：
-    *   **Tag Structs**：`pub struct Div;`, `pub struct Span;` 等。这些结构体实现了 `silex_dom::Tag` 以及其他标记 trait（如 `TextTag`, `FormTag`）。
-    *   **Constructors**：`pub fn div(...) -> TypedElement<Div>`。这些是用户实际调用的函数。
-    *   **Macros**：`div!(...)`。这是对 constructor 的简单封装，用于简化多子节点的语法。
+    *   **Codegen Tool**: `tools/silex_codegen` 读取 `tags.json` (来源于 MDN 数据)，生成 `tags/*.rs` 文件。
+    *   **Macro Definition**: `silex_dom::define_tag!` 宏定义在底层 crate 中，被生成的代码调用。
+    *   **Public API**: 用户通过 `silex_html::div` (函数) 或 `silex_html::div!` (宏) 访问这些生成的代码。
 
 ## 4. 代码详细分析 (Detailed Analysis)
 
-### 4.1 标签定义宏 (`define_tags!`)
+### 4.1 代码生成机制 (Code Generation)
 
-为了避免手动编写数百个几乎相同的结构体，我们使用 `define_tags!` 宏批量生成标签定义。
+手动维护数百个 HTML/SVG 标签极易出错且难以同步标准。因此，我们引入了 `silex_codegen` 工具。
 
-```rust
-macro_rules! define_tags {
-    // 基础定义，生成 ZST 结构体并实现 Tag trait
-    (@basic $($tag:ident),*) => {
-        $(
-            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-            pub struct $tag;
-            impl Tag for $tag {}
-        )*
-    };
-    // 为标签实现特定标记 trait (Marker Traits)
-    (@impl $trait:ident for $($tag:ident),*) => { ... };
-}
-```
+1.  **数据源**: `tags.json` 包含了从 MDN 或 HTML 规范中提取的标签元数据（标签名、是否是 void 元素、所属类别等）。
+2.  **生成过程**:
+    *   读取 JSON 数据。
+    *   根据分类（HTML vs SVG）分别生成 Rust 代码。
+    *   为每个标签调用 `silex_dom::define_tag!` 宏。
 
-这些结构体自身不包含数据，它们存在的唯一目的是作为泛型参数 `T` 传递给 `TypedElement<T>`，从而携带类型信息。
+### 4.2 统一宏 `define_tag!`
 
-### 4.2 元素构造器 (`define_container!` & `define_void!`)
-
-HTML 元素可以分为两类：
-1.  **Container Elements**：可以包含子节点的元素（如 `<div>`, `<p>`）。
-2.  **Void Elements**：不能包含子节点的元素（如 `<input>`, `<br>`）。
-
-我们分别使用宏来生成对应的构造函数：
+在 `silex_dom` 中定义的 `define_tag!` 宏是核心抽象。它同时完成了以下三件事：
 
 ```rust
-// 生成容器元素构造函数
-macro_rules! define_container {
-    ($fn_name:ident, $tag_type:ident, $tag_str:expr) => {
-        // V: View 约束允许传入任何实现了 View 的类型（如 String, 其他 Element, Component 等）
-        pub fn $fn_name<V: View>(child: V) -> TypedElement<$tag_type> {
-            let el = TypedElement::new($tag_str);
-            child.mount(&el.element.dom_element); // 立即挂载子节点
+// 伪代码展示宏展开逻辑
+macro_rules! define_tag {
+    ($StructName:ident, $tag_str:literal, $fn_name:ident, $new_method:ident, $void_kind:ident, [$($traits:ident),*]) => {
+        // 1. 定义 ZST 结构体和 Marker Traits
+        pub struct $StructName;
+        impl Tag for $StructName {}
+        $( impl $traits for $StructName {} )*
+
+        // 2. 定义构造函数 (Constructor)
+        pub fn $fn_name<V: View>(child: V) -> TypedElement<$StructName> {
+            // $new_method 是 `new` (HTML) 或 `new_svg` (SVG)
+            let el = TypedElement::$new_method($tag_str);
+            // $void_kind 决定是否挂载子节点 (void 元素不挂载)
+            child.mount(&el.element.dom_element);
             el
         }
-    };
-}
 
-// 生成空元素构造函数
-macro_rules! define_void {
-    ($fn_name:ident, $tag_type:ident, $tag_str:expr) => {
-        pub fn $fn_name() -> TypedElement<$tag_type> {
-            TypedElement::new($tag_str)
+        // 3. 定义语法糖宏 (Shortcut Macro)
+        #[macro_export]
+        macro_rules! $fn_name {
+            // 无参数 -> 调用函数传入 ()
+            () => { $crate::tags::$module::$fn_name(()) };
+            // 有参数 -> 包装为 tuple 传入
+            ($($child:expr),+ $(,)?) => {
+                $crate::tags::$module::$fn_name(($($child),+))
+            };
         }
     };
 }
 ```
 
-**逻辑解析**：
-*   `TypedElement::new("div")` 创建底层的 DOM 节点。
-*   `child.mount(...)` 是 `silex_dom::view::View` trait 的核心方法，负责将子节点（无论它是文本、另一个元素还是组件）追加到父节点中。
+这种设计确保了函数 API 和宏 API 的行为绝对一致。
 
-### 4.3 SVG 支持
+### 4.3 SVG 特殊处理
 
-SVG 元素需要特殊的命名空间 (`http://www.w3.org/2000/svg`)。因此我们有专门的 `define_svg_container!` 和 `define_svg_void!` 宏。
-
-它们内部调用的是 `TypedElement::new_svg($tag_str)` 而不是 `TypedElement::new`。这确保了 `document.createElementNS` 被正确调用，否则 SVG 将无法在浏览器中正确渲染。
-
-### 4.4 语法糖宏 (`define_tag_macros!`)
-
-为了支持类似 `div!( child1, child2 )` 的语法，我们导出了一系列与函数同名的宏。
+SVG 元素必须在 `http://www.w3.org/2000/svg` 命名空间下创建。
+因此，在生成的 `svg.rs` 中，所有标签都使用 `new_svg` 作为构造方法参数传递给宏，而 HTML 标签使用 `new`。
 
 ```rust
-macro_rules! div {
-    // 无子节点
-    () => { silex_html::div(()) };
-    // 有子节点，自动包装为 tuple
-    ($($child:expr),+ $(,)?) => {
-        silex_html::div(($($child),+))
-    };
-}
+// HTML
+silex_dom::define_tag!(Div, "div", div, new, non_void, ...);
+// SVG
+silex_dom::define_tag!(Circle, "circle", circle, new_svg, void, ...);
 ```
-
-这利用了 `silex_dom` 中 `impl View for (A, B, ...)` 的实现，使得 tuple 也可以作为一个整体的 `View` 被挂载。
 
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 
-*   **标签覆盖率**：目前的标签列表手动维护在 `lib.rs` 中。计划引入自动生成机制（codegen），基于 MDN 或 HTML 规范自动生成所有标准 HTML5 和 SVG 标签。
-*   **属性绑定增强**：当前的属性绑定主要依赖 `silex_dom` 的泛型 Trait。计划加强 `silex_html` 与 DOM 属性系统的结合，提供更严格的编译时属性检查。
+*   **文档注释**: 目前自动生成的代码没有包含详细的文档注释（如 MDN 链接、标签描述）。未来可以在 `tags.json` 中丰富元数据，并在 codegen 阶段生成 `///` 注释。
+*   **属性绑定增强**: 虽然标签本身是强类型的，但属性绑定目前仍主要依赖 `web_sys` 的反射或通用的 builder pattern。未来可以利用 `TypedElement<T>` 中的 T 来进一步约束可以调用的属性方法（例如，只为 `TypedElement<Input>` 实现 `value()` 方法）。

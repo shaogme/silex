@@ -57,23 +57,23 @@ pub trait FormAttributes: AttributeBuilder {
     }
 
     fn value(self, value: impl IntoStorable) -> Self {
-        self.attr("value", value)
+        self.prop("value", value)
     }
 
     fn checked(self, value: impl IntoStorable) -> Self {
-        self.attr("checked", value)
+        self.prop("checked", value)
     }
 
     fn disabled(self, value: impl IntoStorable) -> Self {
-        self.attr("disabled", value)
+        self.prop("disabled", value)
     }
 
     fn readonly(self, value: impl IntoStorable) -> Self {
-        self.attr("readonly", value)
+        self.prop("readOnly", value)
     }
 
     fn required(self, value: impl IntoStorable) -> Self {
-        self.attr("required", value)
+        self.prop("required", value)
     }
 
     fn placeholder(self, value: impl IntoStorable) -> Self {
@@ -109,7 +109,7 @@ pub trait FormAttributes: AttributeBuilder {
     }
 
     fn multiple(self, value: impl IntoStorable) -> Self {
-        self.attr("multiple", value)
+        self.prop("multiple", value)
     }
 
     fn accept(self, value: impl IntoStorable) -> Self {
@@ -117,7 +117,7 @@ pub trait FormAttributes: AttributeBuilder {
     }
 
     fn selected(self, value: impl IntoStorable) -> Self {
-        self.attr("selected", value)
+        self.prop("selected", value)
     }
 
     fn rows(self, value: impl IntoStorable) -> Self {
@@ -162,6 +162,10 @@ pub trait AnchorAttributes: AttributeBuilder {
     fn rel(self, value: impl IntoStorable) -> Self {
         self.attr("rel", value)
     }
+
+    fn download(self, value: impl IntoStorable) -> Self {
+        self.attr("download", value)
+    }
 }
 
 impl<T: AnchorTag> AnchorAttributes for TypedElement<T> {}
@@ -183,6 +187,30 @@ pub trait MediaAttributes: AttributeBuilder {
     fn height(self, value: impl IntoStorable) -> Self {
         self.attr("height", value)
     }
+
+    fn autoplay(self, value: impl IntoStorable) -> Self {
+        self.prop("autoplay", value)
+    }
+
+    fn controls(self, value: impl IntoStorable) -> Self {
+        self.prop("controls", value)
+    }
+
+    fn loop_(self, value: impl IntoStorable) -> Self {
+        self.prop("loop", value)
+    }
+
+    fn muted(self, value: impl IntoStorable) -> Self {
+        self.prop("muted", value)
+    }
+
+    fn poster(self, value: impl IntoStorable) -> Self {
+        self.attr("poster", value)
+    }
+
+    fn preload(self, value: impl IntoStorable) -> Self {
+        self.attr("preload", value)
+    }
 }
 
 impl<T: MediaTag> MediaAttributes for TypedElement<T> {}
@@ -190,7 +218,7 @@ impl<T: MediaTag> MediaAttributes for TypedElement<T> {}
 /// 交互属性：主要用于 dialog, details
 pub trait OpenAttributes: AttributeBuilder {
     fn open(self, value: impl IntoStorable) -> Self {
-        self.attr("open", value)
+        self.prop("open", value)
     }
 }
 

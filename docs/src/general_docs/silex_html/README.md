@@ -56,11 +56,13 @@ a("Link").href("https://github.com");
 
 ## 支持的标签
 
-目前覆盖了绝大多数标准的 HTML5 标签：
+目前覆盖了**所有**标准的 HTML5 和 SVG 标签（基于 MDN 数据自动生成）：
 
 *   **结构**: `div`, `section`, `header`, `footer`...
 *   **文本**: `p`, `span`, `h1`-`h6`, `strong`, `em`...
 *   **列表**: `ul`, `ol`, `li`.
 *   **表单**: `form`, `input`, `button`, `select`, `option`...
 *   **媒体**: `img`, `video`, `audio`...
-*   **SVG**: 完整的 SVG 标签支持 (`svg`, `path`, `circle`...)。
+*   **SVG**: 完整的 SVG 标签支持 (`svg`, `path`, `circle`, `filter`, `feGaussian_blur`...)。
+
+所有标签都提供强类型的 `TypedElement<T>` 返回值，确保类型安全。
