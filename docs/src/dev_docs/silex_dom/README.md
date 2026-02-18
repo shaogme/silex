@@ -29,7 +29,8 @@ silex_dom/src/
 ├── view.rs             // 视图挂载的核心逻辑 (View Trait)
 ├── attribute.rs        // 属性应用系统 (ApplyToDom, ApplyTarget)
 ├── attribute/
-│   ├── props.rs        // 属性的语义分类 Trait (FormAttributes, etc.)
+│   ├── apply.rs        // 具体应用逻辑 (setAttribute, classList 等)
+│   ├── typed.rs        // 响应式类型适配 (Signal -> ApplyToDom)
 │   └── into_storable.rs// 属性值的类型转换 (生命周期抹除)
 ├── event.rs            // 事件系统的 Traits (EventDescriptor)
 ├── event/
@@ -103,14 +104,16 @@ pub enum ApplyTarget<'a> {
 
 Silex 利用 Rust 的 Trait Bound 实现了编译时的 HTML 规范检查。
 
-*   **标签标记**：在 `tags.rs` 中定义了一系列空 Trait，如 `FormTag`, `MediaTag`。
-*   **属性分组**：在 `props.rs` 中定义属性 Trait，如 `FormAttributes` (包含 `type_`, `value`, `checked`)。
-*   **约束绑定**：
+*   **标签标记**: 在 `silex_dom/src/element/tags.rs` 中定义了一系列空 Trait，如 `FormTag`, `MediaTag`。
+*   **属性分组**: 在 `silex_html/src/attributes.rs` 中定义属性扩展 Trait，如 `FormAttributes` (包含 `type_`, `value`, `checked`)。
+*   **约束绑定**:
+    Codegen 工具会自动为特定标签生成 Trait 实现：
     ```rust
-    // 只有当 T 实现了 FormTag 时，TypedElement<T> 才实现 FormAttributes
-    impl<T: FormTag> FormAttributes for TypedElement<T> {}
+    // 只有 Input 结构体实现了 FormTag，且 codegen 生成了对应的 impl
+    impl FormAttributes for TypedElement<Input> { ... }
     ```
-    这意味着，如果你尝试对一个 `<div>` (它没有实现 `FormTag`) 调用 `.type_("text")`，编译器会直接报错。
+    这意味着，如果你尝试对一个 `<div>` (它没有实现 `FormTag` 相关的绑定) 调用 `.type_("text")`，编译器会直接报错。
+*   **Builder Pattern**: 所有的属性 Trait 都继承自 `AttributeBuilder`，保证了 `.id()`, `.class()` 等全局属性对所有元素可用。
 
 ### 4.4. 属性透传 (Attribute Forwarding)
 

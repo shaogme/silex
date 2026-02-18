@@ -51,9 +51,13 @@
 *   **HTML**: 所有标准 HTML5 标签。
 *   **SVG**: 所有标准 SVG 标签 (使用 `new_svg` 构造，属于 `http://www.w3.org/2000/svg` 命名空间)。
 
-### Key Marker Traits
+### Key Marker Traits & Injection
+
+生成的代码不仅定义了 Struct，还根据 `codegen` 工具中的逻辑（In-Memory Patching）为每个 Struct 实现了特定的 Marker Traits：
 
 *   `TextTag`: 允许包含文本节点。
-*   `FormTag`: 表单相关元素 (Input, Button 等)。
-*   `MediaTag`: 媒体元素 (Img, Video, Audio 等)。
-*   `SvgTag`: 所有 SVG 元素都实现此 Trait。
+*   `FormTag`: 标记该元素支持表单属性。
+*   `MediaTag`: 标记该元素支持媒体属性.
+*   `SvgTag`:所有 SVG 元素.
+
+Codegen 随后会为实现了这些 Marker 的 `TypedElement<T>` 生成属性 Trait 的具体实现（见 `silex_html/src/attributes.rs` 和生成的 `html.rs`）。

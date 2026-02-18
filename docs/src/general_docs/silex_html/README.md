@@ -46,13 +46,16 @@ ul!(
 例如，只有 `input` 才有 `type` 属性，只有 `a` 才有 `href` 属性：
 
 ```rust
-// ✅ 合法
+// ✅ 合法：Input 实现了 FormAttributes
 input().type_("text").value("Silex");
+// ✅ 合法：Anchor 实现了 AnchorAttributes
 a("Link").href("https://github.com");
 
-// ❌ 编译错误：div 没有 href 方法
+// ❌ 编译错误：div 没有实现 AnchorAttributes，因此没有 href 方法
 // div("Content").href(...) 
 ```
+
+这些特定属性被组织在不同的 Trait 中（如 `FormAttributes`, `MediaAttributes`, `TableAttributes` 等），只有对应的标签才实现了这些 Trait。全局属性（如 `id`, `class`, `style`）则对所有元素可用。
 
 ## 支持的标签
 

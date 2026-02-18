@@ -142,22 +142,21 @@
 
 ---
 
-## 模块: `props` (属性特征)
+## 模块: `attribute` (属性特征)
 
-源码路径: `silex_dom/src/attribute/props.rs`
+虽然 `silex_dom` 定义了基础的 `AttributeBuilder`，但具体的强类型属性 Trait（如 `FormAttributes`）主要定义在 `silex_html::attributes` 中，通过扩展 Trait 模式为 `TypedElement<T>` 提供方法。
 
-利用 Rust 的 Trait 系统实现 HTML 属性的类型约束。
-
-### Traits
-*   `GlobalAttributes`: `id`, `class`, `style`, `hidden`, etc. (Applicable to `Element`).
-*   `FormAttributes`: `type_`, `value`, `checked`, `disabled`, `placeholder`. (For `Input`, `Button`, etc.).
-*   `LabelAttributes`: `for_`.
-*   `AnchorAttributes`: `href`, `target`.
-*   `MediaAttributes`: `src`, `alt`, `width`, `height`.
-*   `OpenAttributes`: `open` (for `dialog`, `details`).
-*   `TableCellAttributes`: `colspan`, `rowspan`, `headers`.
-*   `TableHeaderAttributes`: `scope`, `abbr`.
-*   `AriaAttributes`: `role`, `aria-*`.
+### Trait Hierarchy
+*   **`AttributeBuilder`** (`silex_dom`): 基础 Trait，提供 `attr`, `prop`, `on`。
+*   **`GlobalAttributes`** (`silex_dom`): `id`, `class`, `style`, `hidden`... (自动为所有 `AttributeBuilder` 实现)。
+*   **`AriaAttributes`** (`silex_dom`): `role`, `aria-*`... (自动为所有 `AttributeBuilder` 实现)。
+*   **Specific Traits** (in `silex_html`, implemented by codegen):
+    *   `FormAttributes`: `type_`, `value`, `checked`... (For `Input`, `Button`...)
+    *   `LabelAttributes`: `for_`...
+    *   `AnchorAttributes`: `href`, `target`...
+    *   `MediaAttributes`: `src`, `controls`, `autoplay`...
+    *   `OpenAttributes`: `open`...
+    *   `TableCellAttributes` / `TableHeaderAttributes`: `colspan`, `scope`...
 
 ---
 

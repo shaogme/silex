@@ -49,11 +49,12 @@ div.class(move || if count.get() % 2 == 0 { "even" } else { "odd" })
 #### 专用的 Property API
 HTML Attribute 和 DOM Property 是不同的。例如 `input.value` 是 Property，而 `input.getAttribute('value')` 是初始值 Attribute。
 
-使用 `.prop()` 方法直接操作 DOM 对象属性：
+Silex 通过 `FormAttributes` 等 Trait 自动处理这种差异。例如 `.value()` 方法对 `input` 元素会自动调用 `set_value` (Property)，而对其他元素可能回退到 Attribute。
+
+如果不仅仅是常用属性，通过 `.prop()` 方法可以直接操作原本没有封装的 DOM 对象属性：
 
 ```rust
-input.prop("value", signal) // 绑定实时值
-     .prop("checked", true)
+element.prop("myCustomProperty", "someValue")
 ```
 
 #### Class Toggle

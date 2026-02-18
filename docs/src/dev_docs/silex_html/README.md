@@ -45,6 +45,7 @@ silex_html/
 2.  **生成过程**:
     *   读取 JSON 数据。
     *   根据分类（HTML vs SVG）分别生成 Rust 代码。
+    *   **内存补丁 (In-Memory Patching)**: 为了避免手动维护庞大的 JSON 文件，我们在代码生成阶段（`tools/silex_codegen/src/tags.rs`）动态地为特定标签添加 Trait 标记（例如，为 `input` 添加 `FormTag`，为 `img` 添加 `MediaTag`）。这些补丁不会修改磁盘上的 `tags.json`，只影响生成的代码。
     *   为每个标签调用 `silex_dom::define_tag!` 宏。
 
 ### 4.2 统一宏 `define_tag!`
@@ -100,4 +101,4 @@ silex_dom::define_tag!(Circle, "circle", circle, new_svg, void, ...);
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 
 *   **文档注释**: 目前自动生成的代码没有包含详细的文档注释（如 MDN 链接、标签描述）。未来可以在 `tags.json` 中丰富元数据，并在 codegen 阶段生成 `///` 注释。
-*   **属性绑定增强**: 虽然标签本身是强类型的，但属性绑定目前仍主要依赖 `web_sys` 的反射或通用的 builder pattern。未来可以利用 `TypedElement<T>` 中的 T 来进一步约束可以调用的属性方法（例如，只为 `TypedElement<Input>` 实现 `value()` 方法）。
+*   **属性绑定增强 (已实现)**: 我们已经通过 Codegen 为特定的 `TypedElement<T>` 生成了具体的属性 Trait 实现（例如 `impl FormAttributes for TypedElement<Input>`）。这使得 IDE 可以智能地提示可以在当前标签上使用的属性。

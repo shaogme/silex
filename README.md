@@ -167,9 +167,9 @@ settings.theme.set("Dark".to_string());
 Silex 处于快速迭代阶段，欢迎任何形式的贡献！无论是提交 Issue、PR，还是完善文档。
 
 详情请参考 `docs/` 目录下的开发文档：
-- [Silex Reactivity Design](docs/src/silex_reactivity/README.md)
-- [Silex Macro Guide](docs/src/silex_macros/README.md)
-- [Silex Core API](docs/src/silex_core/README.md)
+- [Silex Reactivity Design](docs/src/general_docs/silex_reactivity/README.md)
+- [Silex Macro Guide](docs/src/general_docs/silex_macros/README.md)
+- [Silex Core API](docs/src/general_docs/silex_core/README.md)
 
 ---
 
