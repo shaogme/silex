@@ -5,6 +5,23 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use web_sys::Node;
 
+/// Helper trait to deduce View type from a closure
+pub trait ShowContent {
+    type View: View;
+    fn render(&self) -> Self::View;
+}
+
+impl<F, V> ShowContent for F
+where
+    F: Fn() -> V,
+    V: View,
+{
+    type View = V;
+    fn render(&self) -> Self::View {
+        (self)()
+    }
+}
+
 /// Show 组件：根据条件渲染不同的视图
 ///
 /// 使用 Builder 模式构建：
@@ -19,64 +36,53 @@ use web_sys::Node;
 ///     .fallback(move || fallback_view);
 /// ```
 #[derive(Clone)]
-pub struct Show<Cond, ViewFn, FalsyViewFn, V1, V2> {
+pub struct Show<Cond, ViewFn, FalsyViewFn> {
     condition: Cond,
     view: ViewFn,
     fallback: FalsyViewFn,
-    _marker: std::marker::PhantomData<(V1, V2)>,
 }
 
 // 默认无 fallback 的构造函数
-impl<Cond, ViewFn, V1> Show<Cond, ViewFn, fn() -> (), V1, ()>
-where
-    Cond: Get<Value = bool> + 'static,
-    ViewFn: Fn() -> V1 + 'static,
-    V1: View,
-{
-    pub fn new(condition: Cond, view: ViewFn) -> Self {
+impl<Cond, ViewFn> Show<Cond, ViewFn, fn() -> ()> {
+    pub fn new<V>(condition: Cond, view: ViewFn) -> Self
+    where
+        Cond: Get<Value = bool> + 'static,
+        ViewFn: Fn() -> V + 'static,
+        V: View,
+    {
         Self {
             condition,
             view,
             fallback: || (),
-            _marker: std::marker::PhantomData,
         }
     }
 }
 
 // Builder 方法
-impl<Cond, ViewFn, FalsyViewFn, V1, V2> Show<Cond, ViewFn, FalsyViewFn, V1, V2>
+impl<Cond, ViewFn, FalsyViewFn> Show<Cond, ViewFn, FalsyViewFn>
 where
     Cond: Get<Value = bool> + 'static,
-    ViewFn: Fn() -> V1 + 'static,
-    FalsyViewFn: Fn() -> V2 + 'static,
-    V1: View,
-    V2: View,
+    ViewFn: ShowContent + 'static,
+    FalsyViewFn: ShowContent + 'static,
 {
     /// 设置当条件为 false 时的 fallback 视图 (Else 分支)
-    pub fn fallback<NewFalsyFn, NewV2>(
-        self,
-        fallback: NewFalsyFn,
-    ) -> Show<Cond, ViewFn, NewFalsyFn, V1, NewV2>
+    pub fn fallback<NewFalsyFn>(self, fallback: NewFalsyFn) -> Show<Cond, ViewFn, NewFalsyFn>
     where
-        NewFalsyFn: Fn() -> NewV2 + 'static,
-        NewV2: View,
+        NewFalsyFn: ShowContent + 'static,
     {
         Show {
             condition: self.condition,
             view: self.view,
             fallback,
-            _marker: std::marker::PhantomData,
         }
     }
 }
 
-impl<Cond, ViewFn, FalsyViewFn, V1, V2> View for Show<Cond, ViewFn, FalsyViewFn, V1, V2>
+impl<Cond, ViewFn, FalsyViewFn> View for Show<Cond, ViewFn, FalsyViewFn>
 where
     Cond: Get<Value = bool> + 'static,
-    ViewFn: Fn() -> V1 + 'static,
-    FalsyViewFn: Fn() -> V2 + 'static,
-    V1: View,
-    V2: View,
+    ViewFn: ShowContent + Clone + 'static,
+    FalsyViewFn: ShowContent + Clone + 'static,
 {
     fn mount(self, parent: &Node) {
         let document = silex_dom::document();
@@ -133,9 +139,9 @@ where
             let fragment_node: Node = fragment.clone().into();
 
             if val {
-                (view_fn)().mount(&fragment_node);
+                view_fn.render().mount(&fragment_node);
             } else {
-                (fallback_fn)().mount(&fragment_node);
+                fallback_fn.render().mount(&fragment_node);
             }
 
             // 插入新内容 (Insert new content)
@@ -156,7 +162,7 @@ use silex_core::traits::IntoSignal;
 pub trait SignalShowExt {
     type Cond: Get<Value = bool> + 'static;
 
-    fn when<V, F>(self, view: F) -> Show<Self::Cond, F, fn() -> (), V, ()>
+    fn when<V, F>(self, view: F) -> Show<Self::Cond, F, fn() -> ()>
     where
         V: View,
         F: Fn() -> V + 'static;
@@ -170,7 +176,7 @@ where
 {
     type Cond = S::Signal;
 
-    fn when<V, F>(self, view: F) -> Show<Self::Cond, F, fn() -> (), V, ()>
+    fn when<V, F>(self, view: F) -> Show<Self::Cond, F, fn() -> ()>
     where
         V: View,
         F: Fn() -> V + 'static,

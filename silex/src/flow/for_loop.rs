@@ -55,57 +55,83 @@ impl<T: Clone> ForLoopSource for SilexResult<Vec<T>> {
     }
 }
 
-pub struct For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> {
+/// Helper trait to extract Key type from function
+pub trait LoopKey<Item> {
+    type Key: std::hash::Hash + Eq + Clone + 'static;
+    fn get_key(&self, item: &Item) -> Self::Key;
+}
+
+impl<F, Item, K> LoopKey<Item> for F
+where
+    F: Fn(&Item) -> K,
+    K: std::hash::Hash + Eq + Clone + 'static,
+{
+    type Key = K;
+    fn get_key(&self, item: &Item) -> Self::Key {
+        (self)(item)
+    }
+}
+
+/// Helper trait to extract View type from Map function
+pub trait LoopMap<Item> {
+    type View: View;
+    fn map(&self, item: Item) -> Self::View;
+}
+
+impl<F, Item, V> LoopMap<Item> for F
+where
+    F: Fn(Item) -> V,
+    V: View,
+{
+    type View = V;
+    fn map(&self, item: Item) -> Self::View {
+        (self)(item)
+    }
+}
+
+pub struct For<ItemsFn, KeyFn, MapFn> {
     items: Rc<ItemsFn>,
     key: Rc<KeyFn>,
     map: Rc<MapFn>,
-    _marker: std::marker::PhantomData<(Item, Items, Key, V)>,
 }
 
-impl<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> Clone
-    for For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V>
-{
+impl<ItemsFn, KeyFn, MapFn> Clone for For<ItemsFn, KeyFn, MapFn> {
     fn clone(&self) -> Self {
         Self {
             items: self.items.clone(),
             key: self.key.clone(),
             map: self.map.clone(),
-            _marker: std::marker::PhantomData,
         }
     }
 }
 
-impl<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V>
-where
-    // ItemsFn returns the Source directly (e.g. Vec or Result<Vec>)
-    // We access it by reference via `With`.
-    ItemsFn: With<Value = Items> + 'static,
-    Items: ForLoopSource<Item = Item> + 'static,
-    KeyFn: Fn(&Item) -> Key + 'static,
-    MapFn: Fn(Item) -> V + 'static,
-    V: View,
-    Item: Clone + 'static,
-{
-    pub fn new(items: ItemsFn, key: KeyFn, map: MapFn) -> Self {
+impl<ItemsFn, KeyFn, MapFn> For<ItemsFn, KeyFn, MapFn> {
+    pub fn new<Items, Item, Key, V>(items: ItemsFn, key: KeyFn, map: MapFn) -> Self
+    where
+        ItemsFn: With<Value = Items>,
+        Items: ForLoopSource<Item = Item>,
+        KeyFn: Fn(&Item) -> Key,
+        MapFn: Fn(Item) -> V,
+    {
         Self {
             items: Rc::new(items),
             key: Rc::new(key),
             map: Rc::new(map),
-            _marker: std::marker::PhantomData,
         }
     }
 }
 
-impl<ItemsFn, Item, Items, KeyFn, Key, MapFn, V> View
-    for For<ItemsFn, Item, Items, KeyFn, Key, MapFn, V>
+impl<ItemsFn, KeyFn, MapFn> View for For<ItemsFn, KeyFn, MapFn>
 where
-    ItemsFn: With<Value = Items> + 'static,
-    Items: ForLoopSource<Item = Item> + 'static,
-    KeyFn: Fn(&Item) -> Key + 'static,
-    Key: std::hash::Hash + Eq + Clone + 'static,
-    MapFn: Fn(Item) -> V + 'static,
-    V: View,
-    Item: Clone + 'static,
+    // ItemsFn returns the Source directly (e.g. Vec or Result<Vec>)
+    // We access it by reference via `With`.
+    ItemsFn: With + 'static,
+    <ItemsFn as With>::Value: ForLoopSource + 'static,
+    // Access Item type via ForLoopSource assoc type
+    KeyFn: LoopKey<<<ItemsFn as With>::Value as ForLoopSource>::Item> + 'static,
+    MapFn: LoopMap<<<ItemsFn as With>::Value as ForLoopSource>::Item> + 'static,
+    // Ensure Item itself is static so we can use it in closures
+    <<ItemsFn as With>::Value as ForLoopSource>::Item: 'static,
 {
     fn mount(self, parent: &Node) {
         let document = silex_dom::document();
@@ -132,7 +158,12 @@ where
         let map_fn = self.map;
 
         // Store: (Nodes, ScopeId)
-        let active_rows = Rc::new(RefCell::new(HashMap::<Key, (Vec<Node>, NodeId)>::new()));
+        // We must fully qualify the Key type here because type aliases inside functions cannot capture
+        // generic parameters from the outer scope, and defining new generics would shadow them (causing errors).
+        let active_rows = Rc::new(RefCell::new(HashMap::<
+            <KeyFn as LoopKey<<<ItemsFn as With>::Value as ForLoopSource>::Item>>::Key,
+            (Vec<Node>, NodeId),
+        >::new()));
 
         Effect::new(move |_| {
             let mut rows_map = active_rows.borrow_mut();
@@ -156,7 +187,7 @@ where
 
                     for item_ref in items_slice {
                         // Calculate key from reference
-                        let key = (key_fn)(item_ref);
+                        let key = key_fn.get_key(item_ref);
                         new_keys.insert(key.clone());
 
                         if let Some((nodes, id)) = rows_map.get(&key) {
@@ -173,7 +204,7 @@ where
                             let map_fn = map_fn.clone();
 
                             let scope_id = create_scope(move || {
-                                let view = (map_fn)(item_owned);
+                                let view = map_fn.map(item_owned);
                                 view.mount(&fragment_node);
                             });
 
