@@ -759,7 +759,7 @@ dependencies = [
 
 [[package]]
 name = "router_example"
-version = "0.1.0-alpha.8"
+version = "0.1.0-beta.1"
 dependencies = [
  "silex",
  "wasm-bindgen",
@@ -841,7 +841,7 @@ dependencies = [
 
 [[package]]
 name = "silex"
-version = "0.1.0-alpha.8"
+version = "0.1.0-beta.1"
 dependencies = [
  "js-sys",
  "silex_core",
@@ -855,7 +855,7 @@ dependencies = [
 
 [[package]]
 name = "silex_codegen"
-version = "0.1.0-alpha.8"
+version = "0.1.0-beta.1"
 dependencies = [
  "heck",
  "reqwest",
@@ -865,7 +865,7 @@ dependencies = [
 
 [[package]]
 name = "silex_core"
-version = "0.1.0-alpha.8"
+version = "0.1.0-beta.1"
 dependencies = [
  "silex_reactivity",
  "wasm-bindgen",
@@ -875,7 +875,7 @@ dependencies = [
 
 [[package]]
 name = "silex_counter"
-version = "0.1.0-alpha.8"
+version = "0.1.0-beta.1"
 dependencies = [
  "gloo-timers",
  "silex",
@@ -883,7 +883,7 @@ dependencies = [
 
 [[package]]
 name = "silex_dom"
-version = "0.1.0-alpha.8"
+version = "0.1.0-beta.1"
 dependencies = [
  "js-sys",
  "silex_core",
@@ -893,7 +893,7 @@ dependencies = [
 
 [[package]]
 name = "silex_error_demo"
-version = "0.1.0-alpha.8"
+version = "0.1.0-beta.1"
 dependencies = [
  "silex",
  "silex_macros",
@@ -901,7 +901,7 @@ dependencies = [
 
 [[package]]
 name = "silex_html"
-version = "0.1.0-alpha.8"
+version = "0.1.0-beta.1"
 dependencies = [
  "silex_dom",
  "wasm-bindgen",
@@ -910,7 +910,7 @@ dependencies = [
 
 [[package]]
 name = "silex_macros"
-version = "0.1.0-alpha.8"
+version = "0.1.0-beta.1"
 dependencies = [
  "lightningcss",
  "proc-macro2",
@@ -920,11 +920,11 @@ dependencies = [
 
 [[package]]
 name = "silex_reactivity"
-version = "0.1.0-alpha.8"
+version = "0.1.0-beta.1"
 
 [[package]]
 name = "silex_showcase"
-version = "0.1.0-alpha.8"
+version = "0.1.0-beta.1"
 dependencies = [
  "gloo-timers",
  "silex",
@@ -967,7 +967,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "store_demo"
-version = "0.1.0-alpha.8"
+version = "0.1.0-beta.1"
 dependencies = [
  "silex",
 ]
