@@ -159,24 +159,22 @@ fn HomeView() -> impl View {
                 Card()
                     .title("Suspense (Async Loading)")
                     .child(
-                        SuspenseContext::provide(|| {
-                            // 1. Resource must be created inside provide closure
-                            let async_data_local: Resource<_, SilexError>  = Resource::new(
+                        suspense()
+                            .resource(|| Resource::new(
                                 || (),
                                 |_| async {
                                     gloo_timers::future::TimeoutFuture::new(2_000).await;
-                                    Ok("Loaded Data from Server!".to_string())
+                                    Ok::<_, SilexError>("Loaded Data from Server!".to_string())
                                 }
-                            );
-
-                            // 2. SuspenseBoundary captures the context
-                            SuspenseBoundary::new()
-                                .fallback(|| div("Loading data (approx 2s)...").style("color: orange; font-style: italic;"))
-                                .children(move || {
-                                    div(move || async_data_local.get().unwrap_or("Waiting...".to_string()))
-                                        .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
-                                })
-                        })
+                            ))
+                            .children(move |async_data_local| {
+                                SuspenseBoundary::new()
+                                    .fallback(|| div("Loading data (approx 2s)...").style("color: orange; font-style: italic;"))
+                                    .children(move || {
+                                        div(move || async_data_local.get().unwrap_or("Waiting...".to_string()))
+                                            .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
+                                    })
+                            })
                     )
     ))
 }

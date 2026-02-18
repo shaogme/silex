@@ -99,13 +99,16 @@ Silex 的路由系统基于浏览器 History API，实现了单页应用 (SPA) �
     2.  **逻辑/异步错误**：通过 `provide_context(ErrorContext)` 注入错误处理句柄。子组件可以通过 `SilexError` 向上抛出错误。
 *   **Fallback**：一旦捕获错误，立即卸载子树并渲染 `fallback` 提供的 UI。
 
-#### `SuspenseBoundary`
+#### `Suspense` (Builder) & `SuspenseBoundary`
 位于 `silex/src/components/suspense.rs`。
-*   **架构变更**：采用了“上下文穿透 (Context Layout)”模式，将 Context 的提供者 (`SuspenseContext::provide`) 与 UI 边界 (`SuspenseBoundary`) 分离。
-*   **实现策略**：支持两种模式 (`SuspenseMode`)：
-    *   **KeepAlive (默认)**：使用 CSS `display: none` 隐藏内容。虽然保留了 DOM，但通过分离 Resource 定义，避免了 Resource 重新初始化。
-    *   **Unmount**：物理卸载（Remove）子树 DOM。极大降低内存占用。
-*   **Context 捕获**：`SuspenseBoundary::new()` 必须在 `SuspenseContext::provide` 的闭包内调用，它会自动捕获当前的 `SuspenseContext`。
+*   **架构变更**：采用了 Builder 模式简化了“Context Layout”模式的使用。
+*   **New Flow**:
+    1.  `suspense()`: 启动一个 Builder。
+    2.  `.resource(|| Resource::new(...))`: 注册资源创建函数。Builder 内部会自动在 `SuspenseContext` 中执行它。
+    3.  `.children(|resource| ...)`: 接收创建好的 Resource，并返回最终视图（通常包含 `SuspenseBoundary`）。
+*   **`SuspenseBoundary`**: 仅负责 UI 切换逻辑（Loading / Fallback / Content）。
+    *   **Context Capture**: 必须在 Builder 的 `.children` 闭包内（即 Context 作用域内）使用。
+    *   **Modes**: 依然支持 `KeepAlive` (CSS Toggle) 和 `Unmount` (Physical DOM removal) 两种策略。
 
 #### `Portal`
 位于 `silex/src/components/portal.rs`。

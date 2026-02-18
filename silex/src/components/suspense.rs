@@ -5,11 +5,71 @@ use silex_dom::view::View;
 use silex_html::div;
 use web_sys::Node;
 
-#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
-pub enum SuspenseMode {
-    #[default]
-    KeepAlive,
-    Unmount,
+/// A builder for creating a Suspense context and providing resources.
+///
+/// # Example
+/// ```rust,ignore
+/// Suspense::new()
+///     .resource(|| Resource::new(source, fetcher))
+///     .children(|resource| {
+///         SuspenseBoundary::new()
+///             .fallback(|| "Loading...")
+///             .children(move || resource.get())
+///     })
+/// ```
+/// Creates a new Suspense builder.
+///
+/// This is a shorthand for `Suspense::new()`.
+pub fn suspense() -> Suspense<()> {
+    Suspense::new()
+}
+
+/// A builder for creating a Suspense context and providing resources.
+///
+/// # Example
+/// ```rust,ignore
+/// suspense()
+///     .resource(|| Resource::new(source, fetcher))
+///     .children(|resource| {
+///         SuspenseBoundary::new()
+///             .fallback(|| "Loading...")
+///             .children(move || resource.get())
+///     })
+/// ```
+pub struct Suspense<F = ()> {
+    resource_factory: F,
+}
+
+impl Suspense<()> {
+    pub fn new() -> Self {
+        Self {
+            resource_factory: (),
+        }
+    }
+
+    pub fn resource<R, F>(self, f: F) -> Suspense<F>
+    where
+        F: FnOnce() -> R,
+    {
+        Suspense {
+            resource_factory: f,
+        }
+    }
+}
+
+impl<F, R> Suspense<F>
+where
+    F: FnOnce() -> R,
+{
+    pub fn children<V, C>(self, child_fn: C) -> V
+    where
+        C: FnOnce(R) -> V,
+    {
+        SuspenseContext::provide(|| {
+            let resource = (self.resource_factory)();
+            child_fn(resource)
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -18,6 +78,13 @@ pub struct SuspenseBoundary<C, F> {
     fallback: F,
     mode: SuspenseMode,
     ctx: SuspenseContext,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub enum SuspenseMode {
+    #[default]
+    KeepAlive,
+    Unmount,
 }
 
 impl SuspenseBoundary<(), ()> {

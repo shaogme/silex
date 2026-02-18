@@ -196,35 +196,26 @@ ErrorBoundary(ErrorBoundaryProps {
 配合 `Resource` 使用，优雅处理异步数据加载状态。
 
 ```rust
-use silex::components::{SuspenseBoundary, SuspenseMode};
-use silex_core::reactivity::SuspenseContext;
+use silex::components::{suspense, SuspenseBoundary, SuspenseMode};
 
-// 上下文穿透模式 (Context Layout)
-SuspenseContext::provide(|| {
-    // 1. Resource 必须在 provide 闭包内定义，以便能找到上下文
-    let data = Resource::new(
-        source_signal, 
-        |id| async move { fetch_data(id).await }
-    );
-
-    // 2. 使用 SuspenseBoundary 渲染 UI，它会自动捕获当前的上下文
-    SuspenseBoundary::new()
-        .fallback(|| div("Loading..."))
-        .children(move || div(data.get()))
-})
+// Builder 模式 (推荐)
+suspense()
+    .resource(|| Resource::new(source_signal, fetcher))
+    .children(move |data| {
+        SuspenseBoundary::new()
+            .fallback(|| div("Loading..."))
+            .children(move || div(data.get()))
+    })
 
 // 卸载模式 (Unmount)
-SuspenseContext::provide(|| {
-    let data = Resource::new(
-        source_signal, 
-        |id| async move { fetch_data(id).await }
-    );
-
-    SuspenseBoundary::new()
-        .mode(SuspenseMode::Unmount) // <--- 启用卸载模式
-        .fallback(|| div("Loading..."))
-        .children(move || div(data.get()))
-})
+suspense()
+    .resource(|| Resource::new(source_signal, fetcher))
+    .children(move |data| {
+        SuspenseBoundary::new()
+            .mode(SuspenseMode::Unmount) // <--- 启用卸载模式
+            .fallback(|| div("Loading..."))
+            .children(move || div(data.get()))
+    })
 ```
 
 ## 5. 常用宏与工具 (Macros & Utilities)

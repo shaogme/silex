@@ -670,7 +670,7 @@ mod advanced {
 
     #[component]
     pub fn SuspenseDemo() -> impl View {
-        use silex::components::{SuspenseBoundary, SuspenseMode};
+        use silex::components::{ SuspenseBoundary, SuspenseMode};
 
         let (show_content, set_show_content) = signal(false);
         let (mode, set_mode) = signal(SuspenseMode::KeepAlive);
@@ -719,32 +719,28 @@ mod advanced {
 
             div![
                 Show::new(show_content, move || {
-                    SuspenseContext::provide(move || {
-                        let mode_val = mode.get();
-                        
-                        // Move Resource creation HERE so it picks up the SuspenseContext
-                        // Trigger is captured. Resource is created once when this closure runs (initially).
-                        let resource = Resource::new(trigger, heavy_work);
-                        
-                        SuspenseBoundary::new()
-                            .mode(mode_val)
-                            .fallback(|| div("Loading... (2s)").style("color: blue; font-weight: bold;"))
-                            .children(move || {
-                                // Crucial: We do NOT read resource.get() here.
-                                div![
+                    suspense()
+                        .resource(move || Resource::new(trigger, heavy_work))
+                        .children(move |resource| {
+                            SuspenseBoundary::new()
+                                .mode(mode.get())
+                                .fallback(|| div("Loading... (2s)").style("color: blue; font-weight: bold;"))
+                                .children(move || {
+                                    // Crucial: We do NOT read resource.get() here.
                                     div![
-                                        "Resource Data: ",
-                                        // Fine-grained reading: Only this text node updates
-                                        move || resource.get().unwrap_or_else(|| "Waiting...".to_string())
-                                    ],
-                                    div("1. Type something below."),
-                                    div("2. Click 'Reload Resource'."),
-                                    div("3. KeepAlive: Text stays. Unmount: Text gone."),
-                                    input().placeholder("Type here test persistence...")
-                                        .style("margin-top: 5px; padding: 5px; width: 250px;")
-                                ].style("border: 1px solid green; padding: 10px; background: #e8f5e9;")
-                            })
-                    })
+                                        div![
+                                            "Resource Data: ",
+                                            // Fine-grained reading: Only this text node updates
+                                            move || resource.get().unwrap_or_else(|| "Waiting...".to_string())
+                                        ],
+                                        div("1. Type something below."),
+                                        div("2. Click 'Reload Resource'."),
+                                        div("3. KeepAlive: Text stays. Unmount: Text gone."),
+                                        input().placeholder("Type here test persistence...")
+                                            .style("margin-top: 5px; padding: 5px; width: 250px;")
+                                    ].style("border: 1px solid green; padding: 10px; background: #e8f5e9;")
+                                })
+                        })
                 })
             ].style("min-height: 150px; border: 1px dashed #ccc; padding: 10px;")
         ]
