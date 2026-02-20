@@ -24,6 +24,8 @@ pub enum AdvancedRoute {
     Mutation,
     #[route("/suspense", view = advanced::SuspenseDemo)]
     Suspense,
+    #[route("/generics", view = advanced::GenericsDemo)]
+    Generics,
     #[route("/*", view = NotFoundPage)]
     NotFound,
 }
@@ -144,6 +146,13 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
                     route: AdvancedRoute::Suspense,
                 },
                 "Suspense"
+            )
+            .class("tab"),
+            Link(
+                AppRoute::Advanced {
+                    route: AdvancedRoute::Generics,
+                },
+                "Generics"
             )
             .class("tab"),
         ]

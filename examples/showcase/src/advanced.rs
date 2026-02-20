@@ -385,3 +385,27 @@ pub fn SuspenseDemo() -> impl View {
     ]
     .style("padding: 20px; border: 1px solid #ccc; border-radius: 8px; margin-top: 20px;")
 }
+
+// --- Generics Demo ---
+
+#[component]
+pub fn GenericMessage<'a, T: std::fmt::Display + Clone + 'static>(
+    value: T,
+    title: &'a str,
+) -> impl View {
+    div![h4(title.to_string()), p(format!("Value: {}", value)),]
+        .style("padding: 10px; border: 1px solid #eee; margin-bottom: 10px;")
+}
+
+#[component]
+pub fn GenericsDemo() -> impl View {
+    div![
+        h3("Generics & Lifetimes Demo"),
+        p("This demonstrates how #[component] macro supports generics and lifetimes natively."),
+        GenericMessage().value(42).title("Integer Message"),
+        GenericMessage()
+            .value("Hello Silex!")
+            .title("String Message"),
+    ]
+    .style("padding: 20px; border: 1px solid #ccc; border-radius: 8px; margin-top: 20px;")
+}

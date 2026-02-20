@@ -19,6 +19,34 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     // 处理结构体定义的泛型
     let (impl_generics, ty_generics, where_clause) = fn_generics.split_for_impl();
 
+    let phantom_types: Vec<_> = fn_generics
+        .params
+        .iter()
+        .filter_map(|p| match p {
+            syn::GenericParam::Type(t) => {
+                let id = &t.ident;
+                Some(quote! { #id })
+            }
+            syn::GenericParam::Lifetime(l) => {
+                let id = &l.lifetime;
+                Some(quote! { &#id () })
+            }
+            syn::GenericParam::Const(_) => None,
+        })
+        .collect();
+
+    let phantom_decl = if !phantom_types.is_empty() {
+        quote! { _phantom: ::std::marker::PhantomData<fn() -> (#(#phantom_types,)*)>, }
+    } else {
+        quote! {}
+    };
+
+    let phantom_init = if !phantom_types.is_empty() {
+        quote! { _phantom: ::std::marker::PhantomData, }
+    } else {
+        quote! {}
+    };
+
     for arg in input_fn.sig.inputs.iter() {
         let fn_arg = match arg {
             FnArg::Typed(arg) => arg,
@@ -37,17 +65,14 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         let mut prop_attrs = parse_prop_attrs(attrs)?;
 
         // Auto-enable `into` for specific types to improve DX
+        let type_ident = get_base_type_name(ty);
         if !prop_attrs.into_trait {
-            let type_str = quote::quote!(#ty).to_string();
-            // Clean up whitespace for comparison
-            let type_clean: String = type_str.chars().filter(|c| !c.is_whitespace()).collect();
-
-            if type_clean.ends_with("Children")
-                || type_clean.ends_with("AnyView")
-                || type_clean.ends_with("String")
-                || type_clean.ends_with("PathBuf")
-                || type_clean.starts_with("Callback")
-                || type_clean.starts_with("Signal")
+            if type_ident == "Children"
+                || type_ident == "AnyView"
+                || type_ident == "String"
+                || type_ident == "PathBuf"
+                || type_ident == "Callback"
+                || type_ident == "Signal"
             {
                 prop_attrs.into_trait = true;
             }
@@ -95,11 +120,9 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
             // 初始化逻辑
             if let Some(default_expr) = prop_attrs.default_value {
                 if prop_attrs.into_trait {
-                    let type_str = quote::quote!(#ty).to_string();
-                    let type_clean: String =
-                        type_str.chars().filter(|c| !c.is_whitespace()).collect();
+                    let type_ident = get_base_type_name(ty);
 
-                    if type_clean.ends_with("Children") || type_clean.ends_with("AnyView") {
+                    if type_ident == "Children" || type_ident == "AnyView" {
                         new_initializers.push(quote! { #param_name: ::silex::dom::view::View::into_any(#default_expr) });
                     } else {
                         new_initializers.push(quote! { #param_name: (#default_expr).into() });
@@ -121,10 +144,9 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         // 构建器方法 (Builder Methods)
         // 始终生成 .prop(val) 方法
         if prop_attrs.into_trait {
-            let type_str = quote::quote!(#ty).to_string();
-            let type_clean: String = type_str.chars().filter(|c| !c.is_whitespace()).collect();
+            let type_ident = get_base_type_name(ty);
 
-            if type_clean.ends_with("Children") || type_clean.ends_with("AnyView") {
+            if type_ident == "Children" || type_ident == "AnyView" {
                 if is_required {
                     builder_methods.push(quote! {
                         pub fn #param_name<__SilexValue: ::silex::dom::view::View + Clone + 'static>(mut self, val: __SilexValue) -> Self {
@@ -181,6 +203,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
             #(#struct_fields,)*
             // Internal storage for forwarded attributes
             _pending_attrs: Vec<::silex::dom::attribute::PendingAttribute>,
+            #phantom_decl
         }
 
         impl #impl_generics #struct_name #ty_generics #where_clause {
@@ -189,6 +212,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
                 Self {
                     #(#new_initializers,)*
                     _pending_attrs: Vec::new(),
+                    #phantom_init
                 }
             }
 
@@ -295,4 +319,13 @@ fn parse_prop_attrs(attrs: &[Attribute]) -> syn::Result<PropAttrs> {
     }
 
     Ok(result)
+}
+
+fn get_base_type_name(ty: &syn::Type) -> String {
+    if let syn::Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            return segment.ident.to_string();
+        }
+    }
+    "".to_string()
 }

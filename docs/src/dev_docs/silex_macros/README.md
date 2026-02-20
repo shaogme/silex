@@ -58,6 +58,7 @@ src/
 
 **特殊技巧**：
 *   **自动 Into 推导**：为了提升 DX，对于 `Children`, `AnyView`, `String`, `Callback` 等常用类型，宏会自动生成接受 `impl Into<T>` 的 Builder 方法，减少用户手动调用的 `.into()`。
+*   **泛型与生命周期支持 (`PhantomData` 注入)**：为了解决未在组件的 props 字段中直接使用的泛型参数（或复杂生命周期）引起的 `parameter is never used` 编译报错，宏会提取函数签名的所有泛型参数，并自动在生成的组件结构体中注入包裹了元组函数签名的原生 `_phantom: std::marker::PhantomData<fn() -> (#(#phantom_types,)*)>`，不仅消除了编译警告，还防止了破坏任何 `Send`/`Sync`/`Drop` 语义。
 
 ### 4.2 CSS 宏 `css!` (`css.rs`)
 
@@ -109,7 +110,6 @@ src/
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 
 ### 已知限制 (Limitations)
-*   **`#[component]` 泛型支持**：目前组件宏对泛型参数的处理较为基础，对于复杂的生命周期或常量泛型支持可能不完善。
 *   **Tuple Variants in Route**：`derive(Route)` 目前对 Tuple Variants 的支持有限，建议用户主要通过 Struct Variants 来进行路由参数绑定。
 
 ### 待办事项 (TODOs)

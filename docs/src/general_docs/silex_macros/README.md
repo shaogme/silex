@@ -46,6 +46,30 @@ Button()
 **多根节点 (Fragments) 支持：**
 如果组件返回多个根节点（例如返回元组或 `Fragment`），属性会采用**首个匹配策略**：属性会被转发给第一个能消费属性的子节点（通常是第一个 DOM 元素），后续节点不受影响。
 
+### 泛型与生命周期支持
+
+`#[component]` 宏原生支持复杂的泛型和生命周期参数。这意味着你可以定义接受多态类型或带有特定生命周期的引用的组件：
+
+```rust
+#[component]
+pub fn GenericMessage<'a, T: std::fmt::Display + Clone + 'static>(
+    value: T,
+    title: &'a str,
+) -> impl View {
+    div![
+        h4(title.to_string()),
+        p(format!("Value: {}", value)),
+    ]
+}
+
+// 使用方式：
+GenericMessage()
+    .value(42)  // 推导为 i32
+    .title("Number") // &'static str
+```
+
+在底层生成组件的 Builder 时，宏会自动处理相关的生命周期和泛型类型，并通过注入 `PhantomData` 来确保编译器正确追踪未使用（unused）但在宏块签名前声明了的参数。
+
 ## 2. 编写 CSS (`css!`)
 
 使用 `css!` 宏可以在 Rust 代码中直接编写 CSS，并享受自动哈希（Scoped CSS）和压缩功能。

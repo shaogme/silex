@@ -18,7 +18,7 @@ fn MyComponent(props...) -> impl View
     *   **Fields**: 每个函数参数映射为一个结构体字段。
         *   REQUIRED: `Option<T>` (初始化为 None)。
         *   OPTIONAL (`#[prop(default)]`): `T` (初始化为 `Default::default()`).
-    *   **Internal Fields**: `_pending_attrs: Vec<PendingAttribute>` 用于存储链式调用的各个属性。
+    *   **Internal Fields**: `_pending_attrs: Vec<PendingAttribute>` 用于存储链式调用的各个属性。此外还会提取出所有的泛型和生命周期，并在组件结构体注入 `_phantom: std::marker::PhantomData<fn() -> (Generics...)>`，以完美支持函数声明了泛型或生命周期但未直接在参数字段中使用时带来的 `unused parameter` 各类潜在错误。
     *   **Builder Methods**: 为每个字段生成链式调用方法 `fn prop_name(self, val: T) -> Self`。
 3.  **Impl AttributeBuilder**:
     *   为组件结构体实现 `AttributeBuilder` Trait。
