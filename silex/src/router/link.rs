@@ -8,6 +8,7 @@ use silex_html::A as TagA;
 use silex_html::a;
 
 /// `Link` 组件结构体
+#[derive(Clone)]
 pub struct Link {
     href: String,
     inner: TypedElement<TagA>,

@@ -60,7 +60,35 @@ fn MyComponent(props...) -> impl View
 
 ---
 
-## 3. 路由宏 `#[derive(Route)]`
+## 3. 样式组件宏 `styled!`
+
+提供 "CSS-in-Rust" 的高阶组件(HOC) 范式，减少样板代码并提供安全的样式透传与多态支持。
+
+### 语法与签名
+```rust
+styled! {
+    pub ComponentName<html_tag>(
+        /* ... 标准 props ... */
+    ) {
+        /* ... CSS 规则，支持 $(expr) 插值与嵌套 (&) ... */
+        variants: {
+            prop_name: {
+                variant_val: { /* static CSS */ }
+            }
+        }
+    }
+}
+```
+
+### 转换逻辑
+1.  **Parsing**: 分别解析出 Visibility、组件结构名、底层依托 HTML 标签 (Tag)、Props 工具签名以及 CSS 块（包括 `variants` 控制块）。
+2.  **CSS Compile**: 将 CSS 和表达式提取交由 `CssCompiler` 进行 hash 隔离和变量转换，生成编译期静态类名及其注入代码。
+3.  **Variant Codegen**: 禁止在 `variants` 中使用动态插值 `$(...)`。内部块会被展开为 `match` 匹配分支，该分支利用传参属性值 `ToString::to_string()` 的小写格式直接返回变体对应构建的纯静态 CSS 类名字符串。
+4.  **Desugaring**: 宏在 AST 的根节点上展开为一段附带了 `#[::silex::prelude::component]` 定理的代码块，所以享有等额的属性代理分配和透传层（返回为 `impl View`）。生成的静态 CSS 变量推入底层的 `.style()` 属性注入器方法上，Variants 类挂载到多路 `.class()` 生成器上。
+
+---
+
+## 4. 路由宏 `#[derive(Route)]`
 
 为 Enum 自动实现 `Routable` 和 `RouteView` Traits。
 
@@ -94,7 +122,7 @@ fn MyComponent(props...) -> impl View
 
 ---
 
-## 4. 状态宏 `#[derive(Store)]`
+## 5. 状态宏 `#[derive(Store)]`
 
 将普通 Struct 转换为细粒度响应式 Store，并生成 Context 管理代码。
 
@@ -145,7 +173,7 @@ fn use_user() -> UserStore {
 
 ---
 
-## 5. 辅助宏
+## 6. 辅助宏
 
 ### `style!`
 *   语法: `style! { "color": "red", width: "100px" }`
@@ -157,7 +185,7 @@ fn use_user() -> UserStore {
 
 ---
 
-## 6. Clone 宏 `clone!`
+## 7. Clone 宏 `clone!`
 
 简化闭包场景下的变量克隆。
 

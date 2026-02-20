@@ -94,7 +94,54 @@ button(()).class(btn_class).text("Styled Button")
 
 宏会返回一个唯一的类名（如 `slx-1a2b3c`），并将样式自动注入到页面 `<head>` 中。
 
-## 3. 类型安全路由 (`#[derive(Route)]`)
+## 3. 样式组件 (`styled!`)
+
+使用 `styled!` 宏可以带来类似 `styled-components` 的极致开发体验。它允许直接定义带作用域样式的组件，免去手写类名绑定，并且原生支持变体 (Variants) 来极大提高性能和复用性。
+
+```rust
+styled! {
+    pub StyledButton<button>(
+        children: Children,
+        #[prop(into)] color: Signal<String>,
+        #[prop(into)] size: Signal<String>,
+    ) {
+        background-color: rgb(98, 0, 234);
+        color: $(color);
+        padding: 8px 16px;
+        border-radius: 4px;
+        border: none;
+        cursor: pointer;
+        transition: transform 0.1s, color 0.2s;
+
+        &:hover {
+            background-color: #3700b3;
+        }
+
+        // 静态变体 (Variants) 支持，通过纯类名直接切换响应无需 CSS 变量分配。
+        variants: {
+            size: {
+                small: { padding: 4px 8px; font-size: 12px; }
+                medium: { padding: 8px 16px; font-size: 14px; }
+                large: { padding: 12px 24px; font-size: 18px; }
+            }
+        }
+    }
+}
+
+// 在任意组件中透明且类型安全地使用：
+StyledButton()
+    .children("Click me!")
+    .color(my_color)
+    .size("large")
+    .class("additional-external-classes") // 完全享受透传能力
+    .on(event::click, move |_| console_log("Clicked!"))
+```
+
+**核心优势**：
+1.  **脱糖直接兼容 `#[component]`**：生成的组件会自动返回基础节点构建并且注入所需属性重载和 `_pending_attrs`，完美支持外部 `.class()`, `.id()`, `.on_click()` 等链式方法调用重写。
+2.  **纯静态性能级变体 Variants**：对于非连续动画类的多属性集合变化（如主/从色彩模式、按键大中小模式），使用纯 CSS 类生成的 Variant 来规避运行时频繁覆盖及下发样式的系统开销。
+
+## 4. 类型安全路由 (`#[derive(Route)]`)
 
 通过宏自动从 Enum 生成**基于 Radix Tree 的高性能**路由匹配和渲染逻辑。
 
@@ -162,7 +209,7 @@ pub fn AuthGuard(children: Children) -> impl View {
 }
 ```
 
-## 4. 全局状态 Store (`#[derive(Store)]`)
+## 5. 全局状态 Store (`#[derive(Store)]`)
 
 快速创建深层响应式的数据结构，并自动生成 Context 访问钩子。
 
@@ -211,7 +258,7 @@ let theme_signal = store.config; // RwSignal<UserConfig>
 
 *注意：目前的 implementation 只是简单的字段 Signal 化，对于嵌套结构需要组合使用。*
 
-## 5. 样式与类名助手
+## 6. 样式与类名助手
 
 ### `style!`
 快速生成内联样式元组。
@@ -233,7 +280,7 @@ div(())
     ])
 ```
 
-## 6. 简化变量克隆 (`clone!`)
+## 7. 简化变量克隆 (`clone!`)
 
 在编写回调函数（Callback）或副作用（Effect）时，经常需要将外部变量的所有权移动到闭包中，但又希望保留外部变量的引用以供他用。传统的做法是手动克隆：
 

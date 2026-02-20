@@ -107,10 +107,16 @@ src/
 *   **内部克隆 (`@inner`)**：不仅在闭包外部克隆变量，还在闭包内部再次克隆。这对于 `FnMut` 闭包（可能会被多次调用）且每次调用都需要消费变量所有权的场景（如 `async` 块或 `move` 语义）至关重要。
 *   **实现方式**：宏解析闭包体，重新构造 `Expr::Closure`，并在原有代码块前插入生成的 `let clone = clone.clone();` 语句。
 
+### 4.6 样式组件宏 `styled!` (`styled.rs`)
+
+引入了类似 `styled-components` 的“样式即组件”范式。
+
+**核心机制**：
+*   **脱糖 (Desugaring)**：`styled!` 宏会将内部定义的组件（包括可见性、底层 HTML 标签、Props 等）在 AST 层面脱糖为一个标准的 `#[component]` 函数。这意味着它完美兼容现有的组件体系和属性透传 (`AttributeBuilder`)。
+*   **编译期提取与隔离**：复用了 `css::compiler::CssCompiler` 的逻辑，提取静态 CSS 并生成唯一类名，将动态插值 `$(expr)` 转换为 CSS 变量绑定 (`--slx-{hash}-{index}`)。
+*   **Variants 静态架构**：完全支持 `variants:` 语法块。通过在编译阶段静态合成各变体的 CSS 并生成类名，在运行时利用模式匹配直接返回对应属性值的静态类字符串。不仅具备极高的代码表现力，还有效避开了基于 CSS 变量进行多属性赋值产生的性能代价。
+
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 
 ### 已知限制 (Limitations)
 *   **Tuple Variants in Route**：`derive(Route)` 目前对 Tuple Variants 的支持有限，建议用户主要通过 Struct Variants 来进行路由参数绑定。
-
-### 待办事项 (TODOs)
-*   **更强大的 CSS 支持**：虽然已支持基础插值，但类似 styled-components 的高级 props 插值和更复杂的动态选择器仍需完善。

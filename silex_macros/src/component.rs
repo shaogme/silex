@@ -66,16 +66,15 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
 
         // Auto-enable `into` for specific types to improve DX
         let type_ident = get_base_type_name(ty);
-        if !prop_attrs.into_trait {
-            if type_ident == "Children"
+        if !prop_attrs.into_trait
+            && (type_ident == "Children"
                 || type_ident == "AnyView"
                 || type_ident == "String"
                 || type_ident == "PathBuf"
                 || type_ident == "Callback"
-                || type_ident == "Signal"
-            {
-                prop_attrs.into_trait = true;
-            }
+                || type_ident == "Signal")
+        {
+            prop_attrs.into_trait = true;
         }
 
         let param_name = match pat.as_ref() {
@@ -322,10 +321,10 @@ fn parse_prop_attrs(attrs: &[Attribute]) -> syn::Result<PropAttrs> {
 }
 
 fn get_base_type_name(ty: &syn::Type) -> String {
-    if let syn::Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            return segment.ident.to_string();
-        }
+    if let syn::Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+    {
+        return segment.ident.to_string();
     }
     "".to_string()
 }

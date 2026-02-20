@@ -44,12 +44,18 @@ pub fn css(input: TokenStream) -> TokenStream {
 }
 
 #[cfg(feature = "css")]
-mod style;
+#[proc_macro]
+pub fn styled(input: TokenStream) -> TokenStream {
+    match css::styled::styled_impl(input.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
 
 #[cfg(feature = "css")]
 #[proc_macro]
 pub fn style(input: TokenStream) -> TokenStream {
-    match style::style_impl(input.into()) {
+    match css::style::style_impl(input.into()) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),
     }
@@ -58,7 +64,7 @@ pub fn style(input: TokenStream) -> TokenStream {
 #[cfg(feature = "css")]
 #[proc_macro]
 pub fn classes(input: TokenStream) -> TokenStream {
-    match style::classes_impl(input.into()) {
+    match css::style::classes_impl(input.into()) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),
     }

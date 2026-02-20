@@ -68,43 +68,66 @@ pub enum AppRoute {
 
 // --- Layout & App ---
 
+styled! {
+    pub StyledNav<nav>(
+        children: Children,
+        #[prop(default = "horizontal")] direction: &'static str
+    ) {
+        background: #333;
+        color: white;
+        padding: 10px;
+        margin-bottom: 20px;
+        display: flex;
+        gap: 15px;
+        align-items: center;
+
+        & a {
+            color: white;
+            text-decoration: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+
+            &:hover {
+                background-color: rgba(255, 255, 255, 0.2);
+            }
+
+            &.active {
+                background-color: #007bff;
+                font-weight: bold;
+            }
+        }
+
+        variants: {
+            direction: {
+                horizontal: { flex-direction: row; }
+                vertical: { flex-direction: column; align-items: flex-start; }
+            }
+        }
+    }
+}
+
 #[component]
 pub fn NavBar() -> impl View {
-    let nav_link = css!(
-        r#"
-        color: white;
-        text-decoration: none;
-        padding: 8px 12px;
-        border-radius: 4px;
-        transition: background-color 0.2s;
-
-        &:hover {
-            background-color: rgba(255, 255, 255, 0.2);
-        }
-
-        &.active {
-            background-color: #007bff;
-            font-weight: bold;
-        }
-    "#
-    );
-
-    div![
-        Link(AppRoute::Home, "Home").class(nav_link).active_class("active"),
-        Link(AppRoute::Basics, "Basics").class(nav_link).active_class("active"),
-        Link(AppRoute::Flow, "Flow").class(nav_link).active_class("active"),
-        Link(AppRoute::Advanced {
-            route: AdvancedRoute::Index,
-        }, "Advanced")
-        .class(nav_link)
+    StyledNav().direction("horizontal").children((
+        Link(AppRoute::Home, "Home").active_class("active"),
+        Link(AppRoute::Basics, "Basics").active_class("active"),
+        Link(AppRoute::Flow, "Flow").active_class("active"),
+        Link(
+            AppRoute::Advanced {
+                route: AdvancedRoute::Index,
+            },
+            "Advanced",
+        )
         .active_class("active"),
-        Link(AppRoute::Styles {
-            route: StylesRoute::Index,
-        }, "Styles")
-        .class(nav_link)
+        Link(
+            AppRoute::Styles {
+                route: StylesRoute::Index,
+            },
+            "Styles",
+        )
         .active_class("active"),
-    ]
-    .style("background: #333; color: white; padding: 10px; margin-bottom: 20px; display: flex; gap: 15px; align-items: center;")
+    ))
 }
 
 #[component]

@@ -10,36 +10,47 @@ pub struct UserSettings {
     pub username: String,
 }
 
-#[component]
-pub fn CssDemo() -> impl View {
-    let (color, set_color) = signal("white".to_string());
-    let (scale, set_scale) = signal(1.0);
-
-    // Scoped CSS using css! macro with dynamic interpolation
-    let btn_class = css!(
-        r#"
-        background-color: #6200ea;
+styled! {
+    pub StyledButton<button>(
+        children: Children,
+        #[prop(into)] color: Signal<String>,
+        #[prop(into)] size: Signal<String>,
+    ) {
+        background-color: rgb(98, 0, 234);
         color: $(color);
-        padding: 8px 16px;
         border: none;
         border-radius: 4px;
         cursor: pointer;
-        transition: transform 0.1s, color 0.2s;
-        transform: scale($(scale));
+        transition: transform 0.1s, color 0.2s, padding 0.2s, font-size 0.2s;
 
         &:hover {
             background-color: #3700b3;
         }
-    "#
-    );
+
+        variants: {
+            size: {
+                small: { padding: 4px 8px; font-size: 12px; }
+                medium: { padding: 8px 16px; font-size: 14px; }
+                large: { padding: 12px 24px; font-size: 18px; }
+            }
+        }
+    }
+}
+
+#[component]
+pub fn CssDemo() -> impl View {
+    let (color, set_color) = signal("white".to_string());
+    let (size, set_size) = signal("medium".to_string());
 
     div![
         h3("CSS-in-Rust Demo"),
         p(
-            "The button below is styled using the `css!` macro with scoped styles and dynamic values (color, scale)."
+            "The button below is styled using the `styled!` macro with scoped styles, dynamic CSS variables (color), and static variants (size)."
         ),
-        button("Scoped Style Button")
-            .class(btn_class)
+        StyledButton()
+            .children("Scoped Style Button")
+            .color(color)
+            .size(size)
             .on(event::click, move |_| {
                 set_color.update(|c| {
                     *c = if *c == "white" {
@@ -48,7 +59,13 @@ pub fn CssDemo() -> impl View {
                         "white".to_string()
                     }
                 });
-                set_scale.update(|s| *s = if *s == 1.0 { 1.2 } else { 1.0 });
+                set_size.update(|s| {
+                    *s = if *s == "medium" {
+                        "large".to_string()
+                    } else {
+                        "medium".to_string()
+                    }
+                });
                 console_log("Clicked! Toggled styles.");
             }),
     ]
