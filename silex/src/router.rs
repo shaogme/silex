@@ -64,6 +64,12 @@ pub struct Router {
     child: Option<Rc<dyn Fn() -> AnyView>>,
 }
 
+impl Default for Router {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Router {
     /// 创建一个新的 Router
     pub fn new() -> Self {

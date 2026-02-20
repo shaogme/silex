@@ -35,13 +35,13 @@ fn App(user: UserStore) -> impl View {
     div((
         h1("Silex Store Demo"),
         p("This example demonstrates fine-grained reactivity using the #[derive(Store)] macro."),
-        
+
         // 显示区域
-        UserDisplay().user(user.clone()),
+        UserDisplay().user(user),
 
         // 编辑区域
-        UserEditor().user(user.clone()),
-        
+        UserEditor().user(user),
+
         // 调试信息：展示 Store 导出功能
         DebugPanel().user(user)
     ))
@@ -56,7 +56,7 @@ fn UserDisplay(user: UserStore) -> impl View {
             span("Name: ").style("font-weight: bold;"),
             // 直接绑定 store.name (ReadSignal)
             // 修改 age 不会触发这个文本节点的更新
-            span(user.name.clone()),
+            span(user.name),
         )),
         div((
             span("Age: ").style("font-weight: bold;"),
@@ -64,7 +64,7 @@ fn UserDisplay(user: UserStore) -> impl View {
         )),
         div((
             span("Email: ").style("font-weight: bold;"),
-            span(user.email.clone()),
+            span(user.email),
         )),
     ))
     .style("background: #f5f5f5; padding: 15px; border-radius: 4px; margin-bottom: 20px;")
@@ -79,7 +79,7 @@ fn UserEditor(user: UserStore) -> impl View {
             label("Change Name: "),
             input()
                 .attr("type", "text")
-                .attr("value", user.name.clone())
+                .attr("value", user.name)
                 .on_input(move |new_val| user.name.set(new_val)),
         )),
         // 修改 Age
@@ -95,7 +95,7 @@ fn UserEditor(user: UserStore) -> impl View {
             label("Change Email: "),
             input()
                 .attr("type", "text")
-                .attr("value", user.email.clone())
+                .attr("value", user.email)
                 .on_input(move |new_val| user.email.set(new_val)),
         )),
     ))

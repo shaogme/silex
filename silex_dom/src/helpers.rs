@@ -57,8 +57,8 @@ pub fn location() -> web_sys::Location {
 /// Current [`window.location.hash`](web_sys::Location::hash) without the beginning #.
 pub fn location_hash() -> Option<String> {
     location().hash().ok().map(|hash| {
-        if hash.starts_with('#') {
-            hash[1..].to_string()
+        if let Some(stripped) = hash.strip_prefix('#') {
+            stripped.to_string()
         } else {
             hash
         }

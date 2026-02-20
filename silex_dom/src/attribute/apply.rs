@@ -42,10 +42,8 @@ fn handle_err(res: Result<(), SilexError>) {
 fn get_style_decl(el: &WebElem) -> Option<CssStyleDeclaration> {
     if let Some(e) = el.dyn_ref::<HtmlElement>() {
         Some(e.style())
-    } else if let Some(e) = el.dyn_ref::<SvgElement>() {
-        Some(e.style())
     } else {
-        None
+        el.dyn_ref::<SvgElement>().map(|e| e.style())
     }
 }
 
@@ -255,19 +253,17 @@ impl ReactiveApply for String {
         let is_style = matches!(target, OwnedApplyTarget::Style)
             || matches!(target, OwnedApplyTarget::Attr(ref n) if n == "style");
 
-        if is_style {
-            if let Some(style) = get_style_decl(&el) {
-                Effect::new(move |_| {
-                    let v = f();
-                    let _ = style.set_property(&key, &v);
-                });
-            }
+        if is_style && let Some(style) = get_style_decl(&el) {
+            Effect::new(move |_| {
+                let v = f();
+                let _ = style.set_property(&key, &v);
+            });
         }
     }
 }
 
 // 4.1b &str Implementation
-impl<'a> ReactiveApply for &'a str {
+impl ReactiveApply for &str {
     fn apply_to_dom(f: impl Fn() -> Self + 'static, el: WebElem, target: OwnedApplyTarget) {
         String::apply_to_dom(move || f().to_string(), el, target)
     }

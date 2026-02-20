@@ -40,11 +40,12 @@ impl<T, E> MutationState<T, E> {
 }
 
 // --- Mutation ---
+type MutationFuture<T, E> = Pin<Box<dyn Future<Output = Result<T, E>>>>;
 
 struct MutationInner<Arg, T, E> {
     // 使用 Rc 而非 Box，以便我们可以克隆 action 并提取出 `mutate` 作用域，
     // 从而避免在执行用户提供的 `f` 时发生 RefCell 重入 panic（如果 `f` 内部也访问了 StoredValue）。
-    action: Rc<dyn Fn(Arg) -> Pin<Box<dyn Future<Output = Result<T, E>>>>>,
+    action: Rc<dyn Fn(Arg) -> MutationFuture<T, E>>,
     last_id: Cell<usize>,
 }
 
@@ -80,10 +81,7 @@ impl<Arg: 'static, T: Clone + 'static, E: Clone + 'static> Mutation<Arg, T, E> {
         let (state, set_state) = signal(MutationState::Idle);
 
         // Wrap the user provided future in a Box to erase the type.
-        let action = Rc::new(move |arg| {
-            let fut = f(arg);
-            Box::pin(async move { fut.await }) as Pin<Box<dyn Future<Output = Result<T, E>>>>
-        });
+        let action = Rc::new(move |arg| Box::pin(f(arg)) as MutationFuture<T, E>);
 
         let inner_val = MutationInner {
             action,

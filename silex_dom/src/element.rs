@@ -360,9 +360,9 @@ impl<T> View for TypedElement<T> {
     }
 }
 
-impl<T: Tag> Into<Element> for TypedElement<T> {
-    fn into(self) -> Element {
-        self.into_untyped()
+impl<T: Tag> From<TypedElement<T>> for Element {
+    fn from(val: TypedElement<T>) -> Self {
+        val.into_untyped()
     }
 }
 

@@ -140,39 +140,35 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
                         }
                     });
                 }
+            } else if is_required {
+                builder_methods.push(quote! {
+                    pub fn #param_name(mut self, val: impl Into<#ty>) -> Self {
+                        self.#param_name = Some(val.into());
+                        self
+                    }
+                });
             } else {
-                if is_required {
-                    builder_methods.push(quote! {
-                        pub fn #param_name(mut self, val: impl Into<#ty>) -> Self {
-                            self.#param_name = Some(val.into());
-                            self
-                        }
-                    });
-                } else {
-                    builder_methods.push(quote! {
-                        pub fn #param_name(mut self, val: impl Into<#ty>) -> Self {
-                            self.#param_name = val.into();
-                            self
-                        }
-                    });
+                builder_methods.push(quote! {
+                    pub fn #param_name(mut self, val: impl Into<#ty>) -> Self {
+                        self.#param_name = val.into();
+                        self
+                    }
+                });
+            }
+        } else if is_required {
+            builder_methods.push(quote! {
+                pub fn #param_name(mut self, val: #ty) -> Self {
+                    self.#param_name = Some(val);
+                    self
                 }
-            }
+            });
         } else {
-            if is_required {
-                builder_methods.push(quote! {
-                    pub fn #param_name(mut self, val: #ty) -> Self {
-                        self.#param_name = Some(val);
-                        self
-                    }
-                });
-            } else {
-                builder_methods.push(quote! {
-                    pub fn #param_name(mut self, val: #ty) -> Self {
-                        self.#param_name = val;
-                        self
-                    }
-                });
-            }
+            builder_methods.push(quote! {
+                pub fn #param_name(mut self, val: #ty) -> Self {
+                    self.#param_name = val;
+                    self
+                }
+            });
         }
     }
 

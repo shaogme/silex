@@ -190,10 +190,10 @@ where
         let computation = move || {
             // Access old value
             let old_value = RUNTIME.with(|rt| {
-                if let Some(signal) = rt.signals.get(id) {
-                    if let Some(val) = signal.value.downcast_ref::<T>() {
-                        return Some(val.clone());
-                    }
+                if let Some(signal) = rt.signals.get(id)
+                    && let Some(val) = signal.value.downcast_ref::<T>()
+                {
+                    return Some(val.clone());
                 }
                 None
             });
@@ -260,12 +260,11 @@ pub fn use_context<T: Clone + 'static>() -> Option<T> {
         let mut current_opt = rt.current_owner.get();
 
         while let Some(current) = current_opt {
-            if let Some(aux) = rt.node_aux.get(current) {
-                if let Some(ctx) = &aux.context {
-                    if let Some(val) = ctx.get(&TypeId::of::<T>()) {
-                        return val.downcast_ref::<T>().cloned();
-                    }
-                }
+            if let Some(aux) = rt.node_aux.get(current)
+                && let Some(ctx) = &aux.context
+                && let Some(val) = ctx.get(&TypeId::of::<T>())
+            {
+                return val.downcast_ref::<T>().cloned();
             }
 
             if let Some(node) = rt.graph.get(current) {
@@ -318,10 +317,10 @@ pub fn register_node_ref() -> NodeId {
 
 pub fn get_node_ref<T: Clone + 'static>(id: NodeId) -> Option<T> {
     RUNTIME.with(|rt| {
-        if let Some(data) = rt.node_refs.get(id) {
-            if let Some(ref element) = data.element {
-                return element.downcast_ref::<T>().cloned();
-            }
+        if let Some(data) = rt.node_refs.get(id)
+            && let Some(ref element) = data.element
+        {
+            return element.downcast_ref::<T>().cloned();
         }
         None
     })
@@ -370,10 +369,10 @@ pub fn store_value<T: 'static>(value: T) -> NodeId {
 
 pub fn try_with_stored_value<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
     RUNTIME.with(|rt| {
-        if let Some(data) = rt.stored_values.get(id) {
-            if let Some(val) = data.value.downcast_ref::<T>() {
-                return Some(f(val));
-            }
+        if let Some(data) = rt.stored_values.get(id)
+            && let Some(val) = data.value.downcast_ref::<T>()
+        {
+            return Some(f(val));
         }
         None
     })
@@ -384,10 +383,10 @@ pub fn try_update_stored_value<T: 'static, R>(
     f: impl FnOnce(&mut T) -> R,
 ) -> Option<R> {
     RUNTIME.with(|rt| {
-        if let Some(data) = rt.stored_values.get_mut(id) {
-            if let Some(val) = data.value.downcast_mut::<T>() {
-                return Some(f(val));
-            }
+        if let Some(data) = rt.stored_values.get_mut(id)
+            && let Some(val) = data.value.downcast_mut::<T>()
+        {
+            return Some(f(val));
         }
         None
     })
@@ -462,10 +461,10 @@ pub fn try_with_signal<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Op
         rt.track_dependency(id);
         rt.update_if_necessary(id);
 
-        if let Some(signal) = rt.signals.get(id) {
-            if let Some(val) = signal.value.downcast_ref::<T>() {
-                return Some(f(val));
-            }
+        if let Some(signal) = rt.signals.get(id)
+            && let Some(val) = signal.value.downcast_ref::<T>()
+        {
+            return Some(f(val));
         }
         None
     })
@@ -474,10 +473,10 @@ pub fn try_with_signal<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Op
 pub fn try_with_signal_untracked<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
     RUNTIME.with(|rt| {
         rt.update_if_necessary(id);
-        if let Some(signal) = rt.signals.get(id) {
-            if let Some(val) = signal.value.downcast_ref::<T>() {
-                return Some(f(val));
-            }
+        if let Some(signal) = rt.signals.get(id)
+            && let Some(val) = signal.value.downcast_ref::<T>()
+        {
+            return Some(f(val));
         }
         None
     })
@@ -488,10 +487,10 @@ pub fn try_update_signal_silent<T: 'static, R>(
     f: impl FnOnce(&mut T) -> R,
 ) -> Option<R> {
     RUNTIME.with(|rt| {
-        if let Some(signal) = rt.signals.get_mut(id) {
-            if let Some(val) = signal.value.downcast_mut::<T>() {
-                return Some(f(val));
-            }
+        if let Some(signal) = rt.signals.get_mut(id)
+            && let Some(val) = signal.value.downcast_mut::<T>()
+        {
+            return Some(f(val));
         }
         None
     })
@@ -532,15 +531,15 @@ pub fn set_debug_label(_id: NodeId, _label: impl Into<String>) {
 pub fn get_debug_label(_id: NodeId) -> Option<String> {
     #[cfg(debug_assertions)]
     {
-        return RUNTIME.with(|rt| {
-            if let Some(aux) = rt.node_aux.get(_id) {
-                if let Some(label) = &aux.debug_label {
-                    return Some(label.clone());
-                }
+        RUNTIME.with(|rt| {
+            if let Some(aux) = rt.node_aux.get(_id)
+                && let Some(label) = &aux.debug_label
+            {
+                return Some(label.clone());
             }
             // Check dead labels
             rt.dead_node_labels.get(_id).cloned()
-        });
+        })
     }
     #[cfg(not(debug_assertions))]
     {

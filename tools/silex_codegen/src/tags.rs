@@ -85,16 +85,16 @@ pub fn fetch_and_merge_tags(config: &mut TagConfig) -> Result<(), Box<dyn std::e
 
     let data: MdnCompatData = resp.json()?;
 
-    if let Some(category) = data.html {
-        if let Some(elements) = category.elements {
-            merge_tag_list(&mut config.html, elements, false);
-        }
+    if let Some(category) = data.html
+        && let Some(elements) = category.elements
+    {
+        merge_tag_list(&mut config.html, elements, false);
     }
 
-    if let Some(category) = data.svg {
-        if let Some(elements) = category.elements {
-            merge_tag_list(&mut config.svg, elements, true);
-        }
+    if let Some(category) = data.svg
+        && let Some(elements) = category.elements
+    {
+        merge_tag_list(&mut config.svg, elements, true);
     }
 
     Ok(())

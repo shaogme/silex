@@ -40,6 +40,12 @@ pub struct Suspense<F = ()> {
     resource_factory: F,
 }
 
+impl Default for Suspense<()> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Suspense<()> {
     pub fn new() -> Self {
         Self {
@@ -85,6 +91,12 @@ pub enum SuspenseMode {
     #[default]
     KeepAlive,
     Unmount,
+}
+
+impl Default for SuspenseBoundary<(), ()> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SuspenseBoundary<(), ()> {

@@ -178,7 +178,7 @@ pub(crate) fn provide_router_context(props: RouterContextProps) {
         navigator,
     };
     // 忽略可能的错误（如重复 provide），Router 应该是根级的
-    let _ = provide_context(ctx);
+    provide_context(ctx);
 }
 
 /// 获取路由上下文
@@ -219,14 +219,12 @@ pub fn use_query_map() -> silex_core::reactivity::Memo<HashMap<String, String>> 
         if let Ok(params) = web_sys::UrlSearchParams::new_with_str(&s) {
             // UrlSearchParams 是 Iterable，可以使用 js_sys::try_iter
             if let Ok(Some(iter)) = js_sys::try_iter(&params) {
-                for item in iter {
-                    if let Ok(val) = item {
-                        // 迭代出的每一项都是 [key, value] 数组
-                        let pair: js_sys::Array = val.unchecked_into();
-                        let k = pair.get(0).as_string().unwrap_or_default();
-                        let v = pair.get(1).as_string().unwrap_or_default();
-                        map.insert(k, v);
-                    }
+                for val in iter.flatten() {
+                    // 迭代出的每一项都是 [key, value] 数组
+                    let pair: js_sys::Array = val.unchecked_into();
+                    let k = pair.get(0).as_string().unwrap_or_default();
+                    let v = pair.get(1).as_string().unwrap_or_default();
+                    map.insert(k, v);
                 }
             }
         }
@@ -269,7 +267,6 @@ pub fn use_query_signal(key: impl Into<String>) -> silex_core::reactivity::RwSig
     // 监听 Query Map 的变化并同步到 Signal
     Effect::new({
         let key = key.clone();
-        let signal = signal;
         move |_| {
             let map = query_map.get();
             let url_val = map.get(&key).map(|s| s.as_str()).unwrap_or("");
@@ -279,13 +276,14 @@ pub fn use_query_signal(key: impl Into<String>) -> silex_core::reactivity::RwSig
             let current_signal_val = signal.get_untracked();
 
             // 使用 try_get_untracked 避免 panic (虽然在此上下文通常不会 disposed)
-            if let Some(last_val) = last_synced_value.try_get_untracked() {
-                if current_signal_val != url_val && last_val != url_val {
-                    signal.set(url_val.to_string());
-                    // 更新 last_synced_value，表示这个值是来自 URL 的最新状态
-                    // 使用 try_set_untracked 避免 panic
-                    let _ = last_synced_value.try_set_untracked(url_val.to_string());
-                }
+            if let Some(last_val) = last_synced_value.try_get_untracked()
+                && current_signal_val != url_val
+                && last_val != url_val
+            {
+                signal.set(url_val.to_string());
+                // 更新 last_synced_value，表示这个值是来自 URL 的最新状态
+                // 使用 try_set_untracked 避免 panic
+                let _ = last_synced_value.try_set_untracked(url_val.to_string());
             }
         }
     });

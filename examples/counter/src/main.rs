@@ -89,12 +89,12 @@ fn CounterControls() -> SilexResult<impl View> {
         button("-")
             .style(btn_style) // Apply array of styles
             .on_click(move |_| {
-                let _ = set_count.update(|n| *n -= 1);
+                set_count.update(|n| *n -= 1);
             }),
         span(count)
             .style("font-size: 1.5rem; font-weight: bold; min-width: 30px; text-align: center;"),
         button("+").style(btn_style).on_click(move |_| {
-            let _ = set_count.update(|n| *n += 1);
+            set_count.update(|n| *n += 1);
         }),
     ))
     .style("display: flex; align-items: center; gap: 15px;"))
@@ -133,7 +133,7 @@ fn HomeView() -> impl View {
         Card()
             .title("Global Counter (Persists across Nav)")
             .elevation(3)
-            .on_hover(|_| { let _ = web_sys::console::log_1(&"Card Hovered!".into()); })
+            .on_hover(|_| { web_sys::console::log_1(&"Card Hovered!".into()); })
             .child((
                 CounterControls(),
                 CounterDisplay(),
@@ -153,7 +153,7 @@ fn HomeView() -> impl View {
                     .placeholder("Enter name")
                     .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px; width: 100%;")
                     .value(name)
-                    .on_input(move |val| { let _ = set_name.set(val); })
+                    .on_input(move |val| { set_name.set(val); })
             )))),
 
         // Card 3: Control Flow
@@ -166,7 +166,7 @@ fn HomeView() -> impl View {
                     .fallback(|| div("✓ System works normally.")
                         .style("background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;"))
             ),
-        
+
                 // Card 4: Suspense (Context Layout Pattern)
                 Card()
                     .title("Suspense (Async Loading)")
@@ -217,7 +217,7 @@ enum AppRoute {
 
 // --- Main ---
 
-fn main() -> () {
+fn main() {
     setup_global_error_handlers();
     let window = web_sys::window().expect("No Window");
     let document = window.document().expect("No Document");

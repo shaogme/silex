@@ -21,7 +21,7 @@ pub fn css_impl(input: LitStr) -> Result<TokenStream> {
 
                 let mut expr_str = String::new();
                 let mut depth = 1;
-                while let Some(inner_c) = chars.next() {
+                for inner_c in chars.by_ref() {
                     if inner_c == '(' {
                         depth += 1;
                     } else if inner_c == ')' {

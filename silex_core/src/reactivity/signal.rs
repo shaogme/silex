@@ -261,7 +261,7 @@ impl<T> std::hash::Hash for Signal<T> {
 impl<T: 'static> Signal<T> {
     #[track_caller]
     pub fn derive(f: impl Fn() -> T + 'static) -> Self {
-        let id = register_derived(move || f());
+        let id = register_derived(f);
         Signal::Derived(id, PhantomData)
     }
 

@@ -7,7 +7,7 @@ pub fn ListDemo() -> impl View {
     div![
         h3("List Rendering with Signal Ergonomics"),
         p("Demonstrates passing a Signal directly to For::new without closure wrapper."),
-        ul(For::new(list, |item| *item, |item| li(item))),
+        ul(For::new(list, |item| *item, li)),
         button("Add Item").on(event::click, set_list.updater(|l| l.push("New Item"))),
     ]
 }

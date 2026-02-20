@@ -18,22 +18,20 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
             )?;
             for meta in nested {
                 if let Meta::NameValue(nv) = meta {
-                    if nv.path.is_ident("name") {
-                        if let syn::Expr::Lit(syn::ExprLit {
+                    if nv.path.is_ident("name")
+                        && let syn::Expr::Lit(syn::ExprLit {
                             lit: syn::Lit::Str(lit_str),
                             ..
                         }) = nv.value
-                        {
-                            hook_name = Some(syn::Ident::new(&lit_str.value(), lit_str.span()));
-                        }
-                    } else if nv.path.is_ident("err_msg") {
-                        if let syn::Expr::Lit(syn::ExprLit {
+                    {
+                        hook_name = Some(syn::Ident::new(&lit_str.value(), lit_str.span()));
+                    } else if nv.path.is_ident("err_msg")
+                        && let syn::Expr::Lit(syn::ExprLit {
                             lit: syn::Lit::Str(lit_str),
                             ..
                         }) = nv.value
-                        {
-                            err_msg = Some(lit_str.value());
-                        }
+                    {
+                        err_msg = Some(lit_str.value());
                     }
                 }
             }

@@ -88,18 +88,18 @@ pub fn NavBar() -> impl View {
     );
 
     div![
-        Link(AppRoute::Home, "Home").class(&nav_link).active_class("active"),
-        Link(AppRoute::Basics, "Basics").class(&nav_link).active_class("active"),
-        Link(AppRoute::Flow, "Flow").class(&nav_link).active_class("active"),
+        Link(AppRoute::Home, "Home").class(nav_link).active_class("active"),
+        Link(AppRoute::Basics, "Basics").class(nav_link).active_class("active"),
+        Link(AppRoute::Flow, "Flow").class(nav_link).active_class("active"),
         Link(AppRoute::Advanced {
             route: AdvancedRoute::Index,
         }, "Advanced")
-        .class(&nav_link)
+        .class(nav_link)
         .active_class("active"),
         Link(AppRoute::Styles {
             route: StylesRoute::Index,
         }, "Styles")
-        .class(&nav_link)
+        .class(nav_link)
         .active_class("active"),
     ]
     .style("background: #333; color: white; padding: 10px; margin-bottom: 20px; display: flex; gap: 15px; align-items: center;")

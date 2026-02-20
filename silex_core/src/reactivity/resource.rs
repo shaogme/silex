@@ -124,7 +124,6 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
             request_id.set(current_id);
 
             let fut = fetcher.fetch(source_val);
-            let suspense_ctx = suspense_ctx.clone();
 
             let alive = alive.clone();
             let request_id = request_id.clone();
@@ -226,11 +225,11 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> WithUntracked for
 
     fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         self.state.try_with_untracked(|s| {
-            if let ResourceState::Error(e) = s {
-                if let Some(ctx) = use_context::<crate::error::ErrorContext>() {
-                    let err_msg = format!("{:?}", e);
-                    (ctx.0)(crate::error::SilexError::Javascript(err_msg));
-                }
+            if let ResourceState::Error(e) = s
+                && let Some(ctx) = use_context::<crate::error::ErrorContext>()
+            {
+                let err_msg = format!("{:?}", e);
+                (ctx.0)(crate::error::SilexError::Javascript(err_msg));
             }
             let data = s.as_option().cloned();
             fun(&data)
@@ -246,6 +245,12 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> WithUntracked for
 pub struct SuspenseContext {
     pub count: ReadSignal<usize>,
     pub set_count: WriteSignal<usize>,
+}
+
+impl Default for SuspenseContext {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SuspenseContext {

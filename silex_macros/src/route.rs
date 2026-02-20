@@ -165,8 +165,8 @@ fn parse_path_segments(path: &str) -> (Vec<Segment>, bool) {
             wildcard = true;
             break;
         }
-        if s.starts_with(':') {
-            segments.push(Segment::Param(s[1..].to_string()));
+        if let Some(stripped) = s.strip_prefix(':') {
+            segments.push(Segment::Param(stripped.to_string()));
         } else {
             segments.push(Segment::Static(s.to_string()));
         }
@@ -578,10 +578,8 @@ fn generate_to_path_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resu
                     format_args.push(quote! { sub_route_val.to_path() });
                 }
             }
-        } else {
-            if format_string.is_empty() {
-                format_string.push('/');
-            }
+        } else if format_string.is_empty() {
+            format_string.push('/');
         }
 
         // 构造匹配模式
@@ -637,11 +635,7 @@ fn generate_to_path_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resu
                     let base_clean = base.trim_end_matches('/');
                     // 子路径通常由 Routable::to_path 生成，以 / 开头
                     // 但我们也处理不以 / 开头的情况
-                    let child_clean = if child.starts_with('/') {
-                        &child[1..]
-                    } else {
-                        &child
-                    };
+                    let child_clean = child.strip_prefix('/').unwrap_or(&child);
 
                     if base_clean.is_empty() {
                          format!("/{}", child_clean)
@@ -667,10 +661,10 @@ fn find_field_type<'a>(fields: &'a Fields, name: &str) -> Option<&'a syn::Type> 
     match fields {
         Fields::Named(named) => {
             for f in &named.named {
-                if let Some(ident) = &f.ident {
-                    if ident == name {
-                        return Some(&f.ty);
-                    }
+                if let Some(ident) = &f.ident
+                    && ident == name
+                {
+                    return Some(&f.ty);
                 }
             }
             None

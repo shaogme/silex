@@ -67,16 +67,14 @@ pub fn Counter() -> impl View {
                     }
                     timer.set_untracked(None);
                     set_is_running.set(false);
-                } else {
-                    if let Ok(handle) = set_interval_with_handle(
-                        move || {
-                            set_count.update(|n| *n += 1);
-                        },
-                        Duration::from_millis(1000),
-                    ) {
-                        timer.set_untracked(Some(handle));
-                        set_is_running.set(true);
-                    }
+                } else if let Ok(handle) = set_interval_with_handle(
+                    move || {
+                        set_count.update(|n| *n += 1);
+                    },
+                    Duration::from_millis(1000),
+                ) {
+                    timer.set_untracked(Some(handle));
+                    set_is_running.set(true);
                 }
             })
         ]
@@ -168,7 +166,7 @@ pub fn CloneDemo() -> impl View {
 
     // 1. Standard clone!
     let on_click = clone!(name, count => move |_| {
-        console_log(&format!("Clicked! Name: {}, Count: {}", name.get(), count.get()));
+        console_log(format!("Clicked! Name: {}, Count: {}", name.get(), count.get()));
         set_count.update(|n| *n += 1);
         set_name.update(|n| *n = format!("Silex {}", count.get() + 1));
     });
@@ -263,12 +261,12 @@ pub fn HybridDemo() -> impl View {
     div![
         h3("Hybrid Style (Recommended)"), // Function call for single child is fine too!
         p("Mix macros for structure and builder methods for attributes."),
-        
+
         // "Toggle" Logic
         div![
             span(is_active.map(|v| if *v { "State: Active" } else { "State: Inactive" }))
                 .style("margin-right: 15px;"),
-            
+
             button(is_active.map(|v| if *v { "Deactivate" } else { "Activate" }))
                 .on(event::click, move |_| set_active.update(|v| *v = !*v))
                 // Dynamic styling with builder pattern

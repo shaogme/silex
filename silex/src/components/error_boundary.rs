@@ -57,7 +57,7 @@ where
         let (error, set_error) = signal::<Option<SilexError>>(None);
 
         provide_context(ErrorContext(Rc::new(move |e| {
-            silex_core::log::console_error(&format!("ErrorBoundary caught error: {}", e));
+            silex_core::log::console_error(format!("ErrorBoundary caught error: {}", e));
             // Defer update to avoid render-induced updates
             wasm_bindgen_futures::spawn_local(async move {
                 set_error.set(Some(e));
@@ -96,7 +96,7 @@ where
                     } else {
                         "Unknown Panic".to_string()
                     };
-                    silex_core::log::console_error(&format!("ErrorBoundary caught panic: {}", msg));
+                    silex_core::log::console_error(format!("ErrorBoundary caught panic: {}", msg));
 
                     let err = SilexError::Javascript(msg);
                     // Trigger re-run to show fallback

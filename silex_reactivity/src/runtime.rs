@@ -12,24 +12,13 @@ use crate::value::AnyValue;
 // --- 基础类型定义 ---
 
 /// 辅助数据结构，存储“冷数据” (Cold Data)
+#[derive(Default)]
 pub(crate) struct NodeAux {
     pub(crate) children: Vec<NodeId>,
     pub(crate) cleanups: CleanupList,
     pub(crate) context: Option<HashMap<TypeId, Box<dyn Any>>>,
     #[cfg(debug_assertions)]
     pub(crate) debug_label: Option<String>,
-}
-
-impl Default for NodeAux {
-    fn default() -> Self {
-        Self {
-            children: Vec::new(),
-            cleanups: CleanupList::default(),
-            context: None,
-            #[cfg(debug_assertions)]
-            debug_label: None,
-        }
-    }
 }
 
 /// 响应式节点通用结构体 (Metadata)。
@@ -50,16 +39,12 @@ impl Node {
     }
 }
 
+#[derive(Default)]
 pub(crate) enum CleanupList {
+    #[default]
     Empty,
     Single(Box<dyn FnOnce()>),
     Many(Vec<Box<dyn FnOnce()>>),
-}
-
-impl Default for CleanupList {
-    fn default() -> Self {
-        Self::Empty
-    }
 }
 
 impl CleanupList {
@@ -304,10 +289,11 @@ impl Runtime {
             let mut target_version = 0;
 
             if let Some(signal_data) = self.signals.get_mut(target_id) {
-                if let Some((last_owner, last_version)) = signal_data.last_tracked_by {
-                    if last_owner == owner && last_version == owner_version {
-                        return; // Already tracked in this version
-                    }
+                if let Some((last_owner, last_version)) = signal_data.last_tracked_by
+                    && last_owner == owner
+                    && last_version == owner_version
+                {
+                    return; // Already tracked in this version
                 }
                 signal_data.subscribers.push(owner);
                 signal_data.last_tracked_by = Some((owner, owner_version));
@@ -436,21 +422,19 @@ impl Runtime {
 
         #[cfg(debug_assertions)]
         {
-            if let Some(aux) = self.node_aux.get_mut(id) {
-                if let Some(label) = aux.debug_label.take() {
-                    self.dead_node_labels.insert(id, label);
-                }
+            if let Some(aux) = self.node_aux.get_mut(id)
+                && let Some(label) = aux.debug_label.take()
+            {
+                self.dead_node_labels.insert(id, label);
             }
         }
 
-        if remove_from_parent {
-            if let Some(parent_id) = self.graph.get(id).and_then(|n| n.parent) {
-                if let Some(parent_aux) = self.node_aux.get_mut(parent_id) {
-                    if let Some(idx) = parent_aux.children.iter().position(|&x| x == id) {
-                        parent_aux.children.swap_remove(idx);
-                    }
-                }
-            }
+        if remove_from_parent
+            && let Some(parent_id) = self.graph.get(id).and_then(|n| n.parent)
+            && let Some(parent_aux) = self.node_aux.get_mut(parent_id)
+            && let Some(idx) = parent_aux.children.iter().position(|&x| x == id)
+        {
+            parent_aux.children.swap_remove(idx);
         }
 
         self.graph.remove(id);

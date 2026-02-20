@@ -261,17 +261,12 @@ impl<T> Iterator for ThinVecIntoIter<T> {
 
 // --- List Wrapper ---
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub enum List<T> {
+    #[default]
     Empty,
     Single(T),
     Many(ThinVec<T>),
-}
-
-impl<T> Default for List<T> {
-    fn default() -> Self {
-        Self::Empty
-    }
 }
 
 impl<T: Clone> List<T> {

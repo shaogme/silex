@@ -25,7 +25,7 @@ struct Slot<T> {
 impl<T> Slot<T> {
     #[inline(always)]
     fn occupied(&self) -> bool {
-        self.generation % 2 > 0
+        !self.generation.is_multiple_of(2)
     }
 }
 
@@ -283,8 +283,16 @@ impl<T> Default for Arena<T> {
 // High density maps (Signals, Effects) benefit from larger chunks (e.g. 64) for cache locality.
 // Sparse maps (NodeRefs) benefit from smaller chunks (e.g. 16) to save memory.
 
+type ChunkArray<T> = Box<[UnsafeCell<Option<T>>]>;
+
 pub struct SparseSecondaryMap<T, const N: usize = 16> {
-    chunks: UnsafeCell<Vec<Option<Box<[UnsafeCell<Option<T>>]>>>>,
+    chunks: UnsafeCell<Vec<Option<ChunkArray<T>>>>,
+}
+
+impl<T, const N: usize> Default for SparseSecondaryMap<T, N> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T, const N: usize> SparseSecondaryMap<T, N> {

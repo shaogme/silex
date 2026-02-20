@@ -178,7 +178,7 @@ pub fn ResourceDemo() -> impl View {
     div![
         h3("Resource & Optimistic UI"),
         p("Fetches user data with a 1s delay. You can optimistically update the name before the server responds."),
-        
+
         div![
             button("User 1").on(event::click, set_user_id.setter(1)),
             button("User 2").on(event::click, set_user_id.setter(2)),
@@ -191,10 +191,10 @@ pub fn ResourceDemo() -> impl View {
             // Show loading state using the new state enum helper
             move || {
                 let state = user_resource.state.get();
-                if state.is_loading() { 
-                    span(if let ResourceState::Reloading(_) = state { "Reloading..." } else { "Loading..." }).style("color: orange;") 
-                } else { 
-                    span("Idle").style("color: green;") 
+                if state.is_loading() {
+                    span(if let ResourceState::Reloading(_) = state { "Reloading..." } else { "Loading..." }).style("color: orange;")
+                } else {
+                    span("Idle").style("color: green;")
                 }
             }
         ].style("margin-bottom: 10px; font-weight: bold;"),
@@ -206,7 +206,7 @@ pub fn ResourceDemo() -> impl View {
                     div(format!("ID: {}", user.id)),
                     div(format!("Name: {}", user.name)),
                     div(format!("Role: {}", user.role)),
-                    
+
                     // Optimistic Update Controls
                     div![
                         h4("Optimistic Updates (Local Cache)"),
@@ -222,7 +222,7 @@ pub fn ResourceDemo() -> impl View {
                 None => div("No Data (or Loading...)").into_any(),
             }
         },
-        
+
         // Error Handling via state matching
         move || {
             if let ResourceState::Error(err) = user_resource.state.get() {
@@ -240,7 +240,7 @@ pub fn MutationDemo() -> impl View {
     // Simulate a login mutation
     // Takes (username, password) and returns a Result<String, String> token
     let login_mutation = Mutation::new(|(user, pass): (String, String)| async move {
-        console_log(&format!("Logging in as {}...", user));
+        console_log(format!("Logging in as {}...", user));
         gloo_timers::future::TimeoutFuture::new(1500).await;
 
         if user == "admin" && pass == "password" {

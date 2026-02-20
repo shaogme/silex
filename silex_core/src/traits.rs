@@ -141,7 +141,6 @@ pub mod ops_impl {
 /// *Note*: This requires the right-hand side operand to implement `IntoSignal`. Primitives (i32, f64, etc.)
 /// and Signals already implement this. Custom types used in reactive math operations will need to implement
 /// `IntoSignal` manually (mapping to `Constant<T>`).
-
 #[macro_export]
 macro_rules! impl_reactive_ops {
     ($target:ident) => {
@@ -289,25 +288,21 @@ impl_tuple_traits!(A, B, C, D);
 impl_tuple_traits!(A, B, C, D, E);
 impl_tuple_traits!(A, B, C, D, E, F);
 
+pub type CompareFn<T> = fn(&T, &T) -> bool;
+
 /// Provides a fluent API for checking equality on reactive values.
 pub trait ReactivePartialEq: With + Clone + 'static
 where
     Self::Value: PartialEq + Clone + Sized + 'static,
 {
-    fn equals<O>(
-        &self,
-        other: O,
-    ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>
+    fn equals<O>(&self, other: O) -> ReactiveBinary<Self, O::Signal, CompareFn<Self::Value>>
     where
         O: IntoSignal<Value = Self::Value> + Clone + 'static,
     {
         ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs == rhs)
     }
 
-    fn not_equals<O>(
-        &self,
-        other: O,
-    ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>
+    fn not_equals<O>(&self, other: O) -> ReactiveBinary<Self, O::Signal, CompareFn<Self::Value>>
     where
         O: IntoSignal<Value = Self::Value> + Clone + 'static,
     {
@@ -327,20 +322,14 @@ pub trait ReactivePartialOrd: With + Clone + 'static
 where
     Self::Value: PartialOrd + Clone + Sized + 'static,
 {
-    fn greater_than<O>(
-        &self,
-        other: O,
-    ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>
+    fn greater_than<O>(&self, other: O) -> ReactiveBinary<Self, O::Signal, CompareFn<Self::Value>>
     where
         O: IntoSignal<Value = Self::Value> + Clone + 'static,
     {
         ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs > rhs)
     }
 
-    fn less_than<O>(
-        &self,
-        other: O,
-    ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>
+    fn less_than<O>(&self, other: O) -> ReactiveBinary<Self, O::Signal, CompareFn<Self::Value>>
     where
         O: IntoSignal<Value = Self::Value> + Clone + 'static,
     {
@@ -350,7 +339,7 @@ where
     fn greater_than_or_equals<O>(
         &self,
         other: O,
-    ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>
+    ) -> ReactiveBinary<Self, O::Signal, CompareFn<Self::Value>>
     where
         O: IntoSignal<Value = Self::Value> + Clone + 'static,
     {
@@ -360,7 +349,7 @@ where
     fn less_than_or_equals<O>(
         &self,
         other: O,
-    ) -> ReactiveBinary<Self, O::Signal, fn(&Self::Value, &Self::Value) -> bool>
+    ) -> ReactiveBinary<Self, O::Signal, CompareFn<Self::Value>>
     where
         O: IntoSignal<Value = Self::Value> + Clone + 'static,
     {
@@ -921,18 +910,16 @@ pub fn panic_getting_disposed_signal(
                  already been disposed."
             )
         }
+    } else if let Some(defined_at) = defined_at {
+        format!(
+            "At {location}, you tried to access a reactive value which was \
+             defined at {defined_at}, but it has already been disposed."
+        )
     } else {
-        if let Some(defined_at) = defined_at {
-            format!(
-                "At {location}, you tried to access a reactive value which was \
-                 defined at {defined_at}, but it has already been disposed."
-            )
-        } else {
-            format!(
-                "At {location}, you tried to access a reactive value, but it has \
-                 already been disposed."
-            )
-        }
+        format!(
+            "At {location}, you tried to access a reactive value, but it has \
+             already been disposed."
+        )
     }
 }
 
@@ -953,7 +940,7 @@ pub trait SetUntracked: DefinedAt {
     /// Panics if you try to set a signal that has been disposed.
     #[track_caller]
     fn set_untracked(&self, value: Self::Value) {
-        if let Some(_) = self.try_set_untracked(value) {
+        if self.try_set_untracked(value).is_some() {
             panic!(
                 "{}",
                 crate::traits::panic_getting_disposed_signal(

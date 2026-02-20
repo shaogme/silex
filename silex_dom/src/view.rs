@@ -402,7 +402,9 @@ impl<V: View + Clone + 'static> Render for V {
 }
 
 /// 优化的 AnyView，使用 Enum 分发常见类型，减少 Box 开销。
+#[derive(Default)]
 pub enum AnyView {
+    #[default]
     Empty,
     Text(String),
     Element(crate::element::Element),
@@ -478,12 +480,6 @@ impl PartialEq for AnyView {
 /// 标准子组件类型，即类型擦除的 View
 /// 允许组件存储子元素而无需泛型
 pub type Children = AnyView;
-
-impl Default for AnyView {
-    fn default() -> Self {
-        AnyView::Empty
-    }
-}
 
 impl std::fmt::Debug for AnyView {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -89,23 +89,23 @@ pub fn clone_impl(input: TokenStream) -> syn::Result<TokenStream> {
             })
             .collect();
 
-        if !inner_clones.is_empty() {
-            if let Expr::Closure(closure) = body {
-                let old_body = &closure.body;
-                let new_body_tokens = quote! {
-                    {
-                        #(#inner_clones)*
-                        #old_body
-                    }
-                };
-
-                // Parse the new body back into an Expr to properly insert it into the closure
-                match syn::parse2::<Expr>(new_body_tokens) {
-                    Ok(new_expr) => {
-                        closure.body = Box::new(new_expr);
-                    }
-                    Err(e) => return Err(e),
+        if !inner_clones.is_empty()
+            && let Expr::Closure(closure) = body
+        {
+            let old_body = &closure.body;
+            let new_body_tokens = quote! {
+                {
+                    #(#inner_clones)*
+                    #old_body
                 }
+            };
+
+            // Parse the new body back into an Expr to properly insert it into the closure
+            match syn::parse2::<Expr>(new_body_tokens) {
+                Ok(new_expr) => {
+                    *closure.body = new_expr;
+                }
+                Err(e) => return Err(e),
             }
         }
 

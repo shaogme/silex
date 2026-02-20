@@ -11,7 +11,7 @@ fn App() -> impl View {
     div((
         h1("Error Boundary Demo"),
         p("This example demonstrates how ErrorBoundary catches errors."),
-        
+
         // 1. Recoverable Error (Result::Err) behavior
         div((
             h2("1. Recoverable Error Test"),

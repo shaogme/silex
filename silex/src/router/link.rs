@@ -93,12 +93,14 @@ impl View for Link {
 
         // 在绑定事件前，根据 Router 的 base_path 更新 DOM 元素的 href 属性
         // 这样可以保证原生行为（如右键打开新标签页）指向正确的物理路径
-        if let Some(ctx) = &router_ctx {
-            if !ctx.base_path.is_empty() && ctx.base_path != "/" && href.starts_with('/') {
-                let base = ctx.base_path.trim_end_matches('/');
-                let full_href = format!("{}{}", base, href);
-                let _ = self.inner.dom_element.set_attribute("href", &full_href);
-            }
+        if let Some(ctx) = &router_ctx
+            && !ctx.base_path.is_empty()
+            && ctx.base_path != "/"
+            && href.starts_with('/')
+        {
+            let base = ctx.base_path.trim_end_matches('/');
+            let full_href = format!("{}{}", base, href);
+            let _ = self.inner.dom_element.set_attribute("href", &full_href);
         }
 
         // 绑定点击事件

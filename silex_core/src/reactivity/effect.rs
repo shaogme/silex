@@ -48,11 +48,9 @@ impl Effect {
                 if immediate {
                     callback(&new_val, old_val.as_ref(), None);
                 }
-            } else {
-                if old_val.as_ref() != Some(&new_val) {
-                    callback(&new_val, old_val.as_ref(), None);
-                    *p_borrow = Some(new_val);
-                }
+            } else if old_val.as_ref() != Some(&new_val) {
+                callback(&new_val, old_val.as_ref(), None);
+                *p_borrow = Some(new_val);
             }
         })
     }
