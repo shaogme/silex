@@ -230,18 +230,48 @@ fn MyComp(name: String, #[prop(default)] age: i32) -> impl View {
 }
 ```
 
-### CSS 编写 (`css!` 与类型安全 CSS)
+### CSS 编写 (`css!` 与 `styled!`)
+Silex 拥有极为强大的**原生态类型安全 CSS 体系**！避免了一般框架所面临的字符串拼接引发的各类不安全 CSS Bug。由于其杜绝了通配符隐式字符串转化逃逸，您需要显式地通过我们提供的 Builder 或 Enum 类型组合属性。
+
+**基础插值：**
 ```rust
-use silex::css::units::{px, pct};
+use silex::css::types::{px, pct, hex};
 
 let w = signal(px(100));
+let c = signal(hex("#ff0000"));
 
 let cls = css!("
-    color: red; 
+    color: $(c); 
     width: $(w); /* 编译期类型校验，保障不会错写成单纯数字或者错用其他强单位 */
     &:hover { color: blue; }
 ");
 div("Hello").class(cls)
+```
+
+**复杂复合类型（工厂与 Builders）：**
+使用专用模块工厂快速安全打包例如 `margin`，`border` 等复合元素。
+```rust
+use silex::css::types::{border, padding, BorderStyleKeyword};
+
+let border_style = signal(border(px(1), BorderStyleKeyword::Solid, hex("#ccc")));
+let pad = signal(padding::x_y(px(8), px(16)));
+
+styled! {
+    pub StyledDiv<div>(
+        #[prop(into)] p_val: Signal<UnsafeCss>, // 如果确实需要越过系统拦截
+    ) {
+        border: $(border_style);
+        padding: $(pad);
+        margin: $(p_val);
+
+        variants: {
+            size: {
+                small: { font-size: 12px; }
+                large: { font-size: 20px; }
+            }
+        }
+    }
+}
 ```
 
 ### 属性助手 (`style!`, `classes!`)

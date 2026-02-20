@@ -120,7 +120,10 @@ Silex 的路由系统基于浏览器 History API，实现了单页应用 (SPA) �
 位于 `silex/src/css.rs` 及 `silex/src/css/types.rs`。
 *   **架构设计**：它不单纯是传统意义上的 CSS Runtime 工具链，而是与 `silex_macros` 协同构筑的前后端一体化防线。抛弃单纯接受一切 `Display` 给字符串 `+` 的行为。
 *   **Property Tags (属性感知)**：内置了数以百计零开销的 Trait Bounds Tag 结构体（ZST）充当标识（诸如 `props::Width`，`props::Color` 等）。
-*   **验证流**：伴随 `DynamicCss` 产生的每一次插值的验证绑定，将宏层面所追踪到的标签经由此处的 `make_dynamic_val_for::<P, S>(source: S)` 落入限制。使得 `ValidFor<P>` 这个 Trait 得以在运行时构建前提前在编译期就成功实施阻断诸如 "传入 f64 给 color 属性" 的语法错误！实现严丝合缝的闭环。
+*   **验证流**：伴随 `DynamicCss` 产生的每一次插值的验证绑定，将宏层面所追踪到的标签经由此处的 `make_dynamic_val_for::<P, S>(source: S)` 落入限制。使得 `ValidFor<P>` 这个 Trait 得以在运行时构建前提前在编译期就成功实施阻断由于随意插值引发的语法错误！实现严丝合缝的闭环。
+*   **封锁隐式逃逸与 `UnsafeCss`**：彻底废除对 `&str`、`String` 及 `Any` 属性的泛用 `ValidFor` 实现，转而要求开发者在需要越过类型检查时显式声明使用 `UnsafeCss::new(...)`，显式标明非安全 CSS 越境边界。
+*   **复合复合与工厂函数 (Factory Functions)**：对于 `border` 这类需要多种类型排版的复杂属性，我们抽离宏层面的不确定推断，彻底采用 Rust `const fn border(width, style, color)` 工厂函数及其对应类型 `BorderValue` 来处理，保障属性间的调用签名依然 100% 安全。
+*   **构建器模块 (Builders)**：针对 `margin`、`padding` 等支持 1～4 个参数重载且仅需同类型（或不同维度的同类型）组合的复合属性，提供模块级的方法集成：如 `margin::all()`, `padding::x_y()` 等。在传递进宏引擎插值前预先把控好组装逻辑。
 
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 

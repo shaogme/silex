@@ -145,6 +145,8 @@
 *   **silex::css::types & units**:
     *   提供基于包裹原语（如 `px`, `pct`）的强类型约束机制组合（Type-Safe CSS Tools）。
     *   结合底层泛型方法如 `make_dynamic_val_for<P, S>` 在编译运行时之间实施 `ValidFor` Trait 的安全性校准。
+    *   **复合类型工厂**: 利用如 `border()` 返回专属 `BorderValue`、或 `margin::all()` 创建多维值，剥离宏对于杂糅属性拆解的负担，依靠 Rust 函数 Trait Bound 进行更具条理的安全约束。
+    *   **显式逃逸 (`UnsafeCss`)**: 废弃泛用 `&str` 的随意通行，通过 `UnsafeCss::new("calc(...)")` 显式标识未知或高级组合边界。
 
 ## 6. 宏支持 (Macros Support)
 

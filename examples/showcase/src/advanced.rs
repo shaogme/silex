@@ -13,14 +13,18 @@ pub struct UserSettings {
 styled! {
     pub StyledButton<button>(
         children: Children,
-        #[prop(into)] color: Signal<silex::css::UnsafeCss>,
+        #[prop(into)] color: Signal<Hex>,
         #[prop(into)] size: Signal<String>,
-        #[prop(into)] hover_color: Signal<silex::css::UnsafeCss>,
+        #[prop(into)] hover_color: Signal<Hex>,
         #[prop(into)] pseudo_state: Signal<String>,
+        #[prop(into)] border_style: Signal<BorderValue>,
+        #[prop(into)] padding_val: Signal<UnsafeCss>,
     ) {
         background-color: rgb(98, 0, 234);
         color: $(color);
-        border: none;
+        border: $(border_style);
+        margin: $(margin::x_y(px(4), px(0)));
+        padding: $(padding_val);
         border-radius: 4px;
         cursor: pointer;
         transition: transform 0.1s, color 0.2s, padding 0.2s, font-size 0.2s, background-color 0.2s;
@@ -32,9 +36,9 @@ styled! {
 
         variants: {
             size: {
-                small: { padding: 4px 8px; font-size: 12px; }
-                medium: { padding: 8px 16px; font-size: 14px; }
-                large: { padding: 12px 24px; font-size: 18px; }
+                small: { font-size: 12px; }
+                medium: { font-size: 14px; }
+                large: { font-size: 18px; }
             }
         }
     }
@@ -42,15 +46,18 @@ styled! {
 
 #[component]
 pub fn CssDemo() -> impl View {
-    let (color, set_color) = signal(silex::css::UnsafeCss::new("white"));
+    let (color, set_color) = signal(hex("#ffffff"));
     let (size, set_size) = signal("medium".to_string());
-    let (hover_color, set_hover_color) = signal(silex::css::UnsafeCss::new("#3700b3"));
+    let (hover_color, set_hover_color) = signal(hex("#3700b3"));
     let (pseudo_state, set_pseudo_state) = signal("hover".to_string());
+    let (border_state, set_border_state) =
+        signal(border(px(2), BorderStyleKeyword::Solid, hex("#3700b3")));
+    let (padding_state, set_padding_state) = signal(padding::x_y(px(8), px(16)));
 
     div![
         h3("CSS-in-Rust Demo"),
         p(
-            "The button below is styled using the `styled!` macro with scoped styles, dynamic CSS variables (color), static variants (size), and NEW dynamic rules (selectors and nested values)!"
+            "The button below is styled using the `styled!` macro with scoped styles, dynamic CSS variables (color), static variants (size), and NEW factory functions (border) & builders (margin/padding)!"
         ),
         StyledButton()
             .children("Scoped Style Button")
@@ -58,12 +65,14 @@ pub fn CssDemo() -> impl View {
             .size(size)
             .hover_color(hover_color)
             .pseudo_state(pseudo_state)
+            .border_style(border_state)
+            .padding_val(padding_state)
             .on(event::click, move |_| {
                 set_color.update(|c| {
-                    *c = if c.0 == "white" {
-                        silex::css::UnsafeCss::new("#ffd700")
+                    *c = if c.0 == "#ffffff" {
+                        hex("#ffd700")
                     } else {
-                        silex::css::UnsafeCss::new("white")
+                        hex("#ffffff")
                     }
                 });
                 set_size.update(|s| {
@@ -73,11 +82,17 @@ pub fn CssDemo() -> impl View {
                         "medium".to_string()
                     }
                 });
+                set_border_state.update(|b| {
+                    *b = border(px(2), BorderStyleKeyword::Dashed, hex("#ff4081"));
+                });
+                set_padding_state.update(|p| {
+                    *p = padding::x_y(px(12), px(24));
+                });
                 set_hover_color.update(|c| {
                     *c = if c.0 == "#3700b3" {
-                        silex::css::UnsafeCss::new("#ff4081") // Vibrant pinkish hue
+                        hex("#ff4081") // Vibrant pinkish hue
                     } else {
-                        silex::css::UnsafeCss::new("#3700b3")
+                        hex("#3700b3")
                     }
                 });
                 set_pseudo_state.update(|s| {

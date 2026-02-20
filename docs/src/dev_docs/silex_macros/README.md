@@ -79,7 +79,9 @@ src/
 6.  **代码出码和多态校验体系**：
     *   生成调用 `silex::css::inject_style` 的代码注入静态 CSS。
     *   返回 `silex::css::DynamicCss` 结构体，该结构体实现了 `ApplyToDom`。
-    *   **Codegen 类型注入**：通过宏代码生成将捕获的属性标量（例如 `width` 获取到强类型 `BackgroundColor`），进而在闭包生成中使用例如 `make_dynamic_val_for::<silex::css::types::props::BackgroundColor, _>` 进行多态 Trait Bounds (`ValidFor<P>`) 限制。如果使用了不被接受的基础类型或未提供单位将会在触发编译级别的强类型安全异常错误。
+    *   **Codegen 类型注入**：通过宏代码生成将捕获的属性标量（例如 `width` 获取到强类型 `Width`），进而在闭包生成中使用例如 `make_dynamic_val_for::<silex::css::types::props::Width, _>` 进行多态 Trait Bounds (`ValidFor<P>`) 限制。如果使用了不被接受的基础类型或未提供单位将会在触发编译级别的强类型安全异常错误。
+    *   **强拦截与显式越权 (`UnsafeCss`)**: 废除了一切 `String`、`&str` 及 `impl Display` 到统配属性的兜底放行。要插入例如 `calc()` 等未全面类型化的表达式片段，只能严格包装进 `UnsafeCss::new()` 显式表示放弃安全审查。
+    *   **复合类型重构支持**: 将复杂如 `margin: 10px 20px` 以及 `border: 1px solid black` 的安全组装抽离到非宏层的 Rust `const fns` 工厂与 Builder 系统中，宏只负责安全单点取值。
 
 ### 4.3 路由宏 `#[derive(Route)]` (`route.rs`)
 

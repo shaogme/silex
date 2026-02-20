@@ -98,14 +98,21 @@ button(()).class(btn_class).text("Styled Button")
 `css!` 和 `styled!` 宏原生支持编译期类型安全。它们会自动感知插值所处的 CSS 属性名（如 `width`），并限制传入信号或变量的值类型。配合 `silex::css::types::props` 和如 `px(100)`, `pct(50)` 这样的包装类，能够完美防范因忘记写单位引发的 CSS 无效问题：
 
 ```rust
-use silex::css::units::{px, pct, rgba};
+use silex::css::types::{px, pct};
+use silex::css::types::{border, BorderStyleKeyword, UnsafeCss, hex};
 
 let w = signal(px(100)); // Px 类型被限定允许给 Width
+let bd = signal(border(px(1), BorderStyleKeyword::Solid, hex("#ccc"))); // 专属工厂函数保障多位组合安全
+let custom_calc = signal(UnsafeCss::new("calc(100% - 20px)")); // 若需超出约束边界请显式包装
+
 let cls = css!(r#"
     width: $(w); /* ✅ 合规 */
     height: $(pct(50.0)); /* ✅ 合规 */
+    border: $(bd); /* ✅ 单值化强类型复合体合规 */
+    margin: $(custom_calc); /* ⚠️ 显式越权非安全逃逸 */
     /* color: $(123.45); ❌ 编译报错：the trait `ValidFor<Color>` is not implemented for `f64` */
     /* z-index: $(px(99)); ❌ 编译报错：拦住企图把像素单位送给 ZIndex 的不合规行为 */
+    /* padding: $("10px 20px"); ❌ 编译报错：阻绝散乱的字符串拼接（除非用 UnsafeCss 或是 padding::x_y 构建器）*/
 "#);
 ```
 

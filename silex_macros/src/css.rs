@@ -24,6 +24,14 @@ pub(crate) fn get_prop_type(
         "color",
         "background-color",
         "z-index",
+        "display",
+        "position",
+        "flex-direction",
+        "background-image",
+        "border",
+        "border-width",
+        "border-style",
+        "border-color",
     ];
     if supported.contains(&prop) {
         let pascal: String = prop

@@ -61,6 +61,8 @@ fn MyComponent(props...) -> impl View
     *   生成 `silex::css::inject_style` 调用。
     *   基于所追踪匹配到的 CSS 标签转换对应的 Rust Trait 参数形式（如转化 `background-color` 到泛型约束标签 `types::props::BackgroundColor`）。
     *   通过生成的代码块调用 `make_dynamic_val_for::<P, S>` 时，实施非常严密的基于 `ValidFor<P>` 类型的编译期类型断言检查。
+    *   **杜绝隐式逃逸与使用 `UnsafeCss`**：彻底移除针对 `&str`/`String` 类型提供的泛用兜底验证。任何脱离基础包裹类型或工厂构建器的越权插入，必须由开发者显式封装为 `UnsafeCss::new(...)`，宏引擎与运行时将对其安全放行。
+    *   **复合复合工厂**：对于 `border` 等属性不再尝试在宏内部做危险的字面量混排切分，而是统一要求接收诸如 `border()` 或 `margin::x_y()` 等原生 Rust 函数验证安全后生成的特定结果进行单点插值。
     *   若**无动态值**：返回静态类名字符串 `"slx-{hash}"`。
     *   若**有动态值**：返回 `DynamicCss` 结构体，包含类名和变量更新闭包列表 (Updaters)。
 

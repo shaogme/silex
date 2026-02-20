@@ -45,6 +45,13 @@ pub mod prelude {
     #[cfg(feature = "macros")]
     pub use silex_macros::*;
 
+    // Export CSS types for easier use in styled! / css! macros
+    pub use crate::css::types::{
+        BorderStyleKeyword, BorderValue, DisplayKeyword, FlexDirectionKeyword, Hex, Hsl, Percent,
+        PositionKeyword, Px, Rem, Rgba, UnsafeCss, Url, Vh, Vw, border, hex, hsl, margin, padding,
+        pct, px, rem, rgba, url, vh, vw,
+    };
+
     // Resolve ambiguous glob re-exports
     pub use crate::core::prelude::{Map, Set, Track};
     pub use crate::flow::Switch;
