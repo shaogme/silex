@@ -1,3 +1,4 @@
+pub mod ast;
 pub mod compiler;
 pub mod style;
 pub mod styled;
@@ -7,6 +8,46 @@ use quote::quote;
 use syn::{LitStr, Result};
 
 use compiler::CssCompiler;
+
+pub(crate) fn get_prop_type(
+    prop: &str,
+    span: proc_macro2::Span,
+) -> Result<proc_macro2::TokenStream> {
+    if prop == "any" {
+        return Ok(quote::quote_spanned! { span => ::silex::css::types::props::Any });
+    }
+    let supported = [
+        "width",
+        "height",
+        "margin",
+        "padding",
+        "color",
+        "background-color",
+        "z-index",
+    ];
+    if supported.contains(&prop) {
+        let pascal: String = prop
+            .split('-')
+            .map(|part| {
+                let mut c = part.chars();
+                match c.next() {
+                    None => String::new(),
+                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                }
+            })
+            .collect();
+        let ident = syn::Ident::new(&pascal, proc_macro2::Span::call_site());
+        Ok(quote::quote_spanned! { span => ::silex::css::types::props::#ident })
+    } else {
+        Err(syn::Error::new(
+            span,
+            format!(
+                "Unsupported dynamic CSS property: `{}`. If you need to use this property with interpolation, you may need to use UnsafeCss or update the framework.",
+                prop
+            ),
+        ))
+    }
+}
 
 pub fn css_impl(input: LitStr) -> Result<TokenStream> {
     let css_content = input.value();
@@ -31,35 +72,27 @@ pub fn css_impl(input: LitStr) -> Result<TokenStream> {
         })
     } else {
         // Generate DynamicCss struct
-        let var_decls: Vec<TokenStream> = expressions
-            .iter()
-            .enumerate()
-            .map(|(i, expr)| {
-                let var_name = format!("--slx-{:x}-{}", hash, i);
-                // Use the helper function to avoid type inference issues
-                quote! {
-                    (#var_name, ::silex::css::make_dynamic_val(#expr))
-                }
-            })
-            .collect();
+        let mut var_decls = Vec::new();
+        for (i, (prop, expr)) in expressions.iter().enumerate() {
+            let var_name = format!("--slx-{:x}-{}", hash, i);
+            let prop_type = get_prop_type(prop, input.span())?;
+            var_decls.push(quote! {
+                (#var_name, ::silex::css::make_dynamic_val_for::<#prop_type, _>(#expr))
+            });
+        }
 
-        let rule_decls: Vec<TokenStream> = dynamic_rules
-            .iter()
-            .map(|rule| {
-                let template = &rule.template;
-                let exprs: Vec<TokenStream> = rule
-                    .expressions
-                    .iter()
-                    .map(|expr| {
-                        quote! { ::silex::css::make_dynamic_val(#expr) }
-                    })
-                    .collect();
-
-                quote! {
-                    (#template, ::std::vec![ #(#exprs),* ])
-                }
-            })
-            .collect();
+        let mut rule_decls = Vec::new();
+        for rule in &dynamic_rules {
+            let template = &rule.template;
+            let mut exprs = Vec::new();
+            for (prop, expr) in &rule.expressions {
+                let prop_type = get_prop_type(prop, input.span())?;
+                exprs.push(quote! { ::silex::css::make_dynamic_val_for::<#prop_type, _>(#expr) });
+            }
+            rule_decls.push(quote! {
+                (#template, ::std::vec![ #(#exprs),* ])
+            });
+        }
 
         Ok(quote! {
             {

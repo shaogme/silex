@@ -46,15 +46,21 @@ fn MyComponent(props...) -> impl View
 编译时 CSS 处理与注入。
 
 ### 工作流
-1.  **Input**: CSS 字符串字面量，支持 `$(expr)` 动态值插值。
-2.  **Interpolation**:
-    *   解析 `$(expr)` 并利用 `IntoSignal` trait 转换为响应式信号。
-    *   在 CSS 中替换为变量 `--slx-{hash}-{index}`。
-3.  **Hashing**: 计算处理后的 CSS 内容 Hash，生成唯一类名 `slx-{hash}`。
-4.  **Scoping**: 将 CSS 内容包裹在 `.slx-{hash} { ... }` 中。
-5.  **Validation & Minification**: 使用 `lightningcss` 解析、验证并压缩 CSS。
-6.  **Codegen**:
+1.  **Input**: CSS 块，包含各种 CSS 规则和 `$(expr)` 动态值插值。
+2.  **AST Parsing (`ast.rs`)**:
+    *   使用 `syn` 将输入的 TokenStream 解析为强类型的 CSS 抽象语法树 (`CssBlock`, `CssRule`, `CssDeclaration`, `CssNested`, `CssAtRule`, `CssValue`)。
+3.  **Processing & Tracking (`compiler.rs`)**:
+    *   遍历 AST，在 `compiler.rs` 中进行语义处理，将静态 Token 拼接为字符串，并提取 `CssValue::Dynamic`。
+    *   感知所处的 CSS 属性上下文以供后续强类型检查。
+    *   在提取出的静态 CSS 模板中将插值替换为 CSS 变量占位符 `--slx-tmp-{index}`（然后再统一替换为带 Hash 的 `--slx-{hash}-{index}`）。
+    *   将包含动态插值的嵌套规则提取为局部的动态规则分片 (`DynamicRule`)。
+4.  **Hashing**: 计算输入 TokenStream 的 Hash，生成类名 `slx-{hash}` 及其对应的样式隔离域。
+5.  **Scoping**: 根据哈希将全局的 CSS 类包裹在 `.slx-{hash} { ... }` 之中。
+6.  **Validation & Minification**: 使用 `lightningcss` 解析、验证并压缩提取好的静态样式组合。
+7.  **Codegen & Type Checking**:
     *   生成 `silex::css::inject_style` 调用。
+    *   基于所追踪匹配到的 CSS 标签转换对应的 Rust Trait 参数形式（如转化 `background-color` 到泛型约束标签 `types::props::BackgroundColor`）。
+    *   通过生成的代码块调用 `make_dynamic_val_for::<P, S>` 时，实施非常严密的基于 `ValidFor<P>` 类型的编译期类型断言检查。
     *   若**无动态值**：返回静态类名字符串 `"slx-{hash}"`。
     *   若**有动态值**：返回 `DynamicCss` 结构体，包含类名和变量更新闭包列表 (Updaters)。
 

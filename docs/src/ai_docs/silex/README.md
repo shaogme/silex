@@ -142,6 +142,9 @@
     *   检查 `<head>` 中是否存在 `id`。
     *   若不存在，创建 `<style id="...">` 并注入 CSS 内容。
     *   **Idempotent**: 多次调用无副作用。
+*   **silex::css::types & units**:
+    *   提供基于包裹原语（如 `px`, `pct`）的强类型约束机制组合（Type-Safe CSS Tools）。
+    *   结合底层泛型方法如 `make_dynamic_val_for<P, S>` 在编译运行时之间实施 `ValidFor` Trait 的安全性校准。
 
 ## 6. 宏支持 (Macros Support)
 

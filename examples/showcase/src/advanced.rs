@@ -13,9 +13,9 @@ pub struct UserSettings {
 styled! {
     pub StyledButton<button>(
         children: Children,
-        #[prop(into)] color: Signal<String>,
+        #[prop(into)] color: Signal<silex::css::UnsafeCss>,
         #[prop(into)] size: Signal<String>,
-        #[prop(into)] hover_color: Signal<String>,
+        #[prop(into)] hover_color: Signal<silex::css::UnsafeCss>,
         #[prop(into)] pseudo_state: Signal<String>,
     ) {
         background-color: rgb(98, 0, 234);
@@ -42,9 +42,9 @@ styled! {
 
 #[component]
 pub fn CssDemo() -> impl View {
-    let (color, set_color) = signal("white".to_string());
+    let (color, set_color) = signal(silex::css::UnsafeCss::new("white"));
     let (size, set_size) = signal("medium".to_string());
-    let (hover_color, set_hover_color) = signal("#3700b3".to_string());
+    let (hover_color, set_hover_color) = signal(silex::css::UnsafeCss::new("#3700b3"));
     let (pseudo_state, set_pseudo_state) = signal("hover".to_string());
 
     div![
@@ -60,10 +60,10 @@ pub fn CssDemo() -> impl View {
             .pseudo_state(pseudo_state)
             .on(event::click, move |_| {
                 set_color.update(|c| {
-                    *c = if *c == "white" {
-                        "#ffd700".to_string()
+                    *c = if c.0 == "white" {
+                        silex::css::UnsafeCss::new("#ffd700")
                     } else {
-                        "white".to_string()
+                        silex::css::UnsafeCss::new("white")
                     }
                 });
                 set_size.update(|s| {
@@ -74,10 +74,10 @@ pub fn CssDemo() -> impl View {
                     }
                 });
                 set_hover_color.update(|c| {
-                    *c = if *c == "#3700b3" {
-                        "#ff4081".to_string() // Vibrant pinkish hue
+                    *c = if c.0 == "#3700b3" {
+                        silex::css::UnsafeCss::new("#ff4081") // Vibrant pinkish hue
                     } else {
-                        "#3700b3".to_string()
+                        silex::css::UnsafeCss::new("#3700b3")
                     }
                 });
                 set_pseudo_state.update(|s| {

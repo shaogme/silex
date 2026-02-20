@@ -94,6 +94,24 @@ button(()).class(btn_class).text("Styled Button")
 
 宏会返回一个唯一的类名（如 `slx-1a2b3c`），并将样式自动注入到页面 `<head>` 中。
 
+**高级类型校验 (Compile-time Type Safety)：**
+`css!` 和 `styled!` 宏原生支持编译期类型安全。它们会自动感知插值所处的 CSS 属性名（如 `width`），并限制传入信号或变量的值类型。配合 `silex::css::types::props` 和如 `px(100)`, `pct(50)` 这样的包装类，能够完美防范因忘记写单位引发的 CSS 无效问题：
+
+```rust
+use silex::css::units::{px, pct, rgba};
+
+let w = signal(px(100)); // Px 类型被限定允许给 Width
+let cls = css!(r#"
+    width: $(w); /* ✅ 合规 */
+    height: $(pct(50.0)); /* ✅ 合规 */
+    /* color: $(123.45); ❌ 编译报错：the trait `ValidFor<Color>` is not implemented for `f64` */
+    /* z-index: $(px(99)); ❌ 编译报错：拦住企图把像素单位送给 ZIndex 的不合规行为 */
+"#);
+```
+
+**底层解析重构 (AST-driven Compiler)**：
+`css!` 的内部机制基于强大的强类型解析引擎。首先由专用语法解析树（`ast.rs`）利用 `syn` 将零散输入提取为 `CssDeclaration`、`CssNested` 等语法单元节点；其次交由 `CssCompiler` 进行词法抽离。这种方式不仅对错误语法容错和检查提出了极高水准，也将局部更新和静态压缩的渲染职责彻底一分为二，奠定了强大的动态注入能力。
+
 ## 3. 样式组件 (`styled!`)
 
 使用 `styled!` 宏可以带来类似 `styled-components` 的极致开发体验。它允许直接定义带作用域样式的组件，免去手写类名绑定，并且原生支持变体 (Variants) 和 **局部动态规则 (Dynamic Rules)**。

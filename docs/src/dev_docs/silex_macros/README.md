@@ -30,7 +30,10 @@ Rust 的静态类型系统虽然安全，但在 UI 开发中往往伴随着繁�
 src/
 ├── lib.rs          // 入口文件，根据 feature 导出宏
 ├── component.rs    // #[component] 宏实现：组件转换逻辑
-├── css.rs          // css! 宏实现：集成 lightningcss
+├── css/            // css! 及 styled! 宏实现
+│   ├── ast.rs      // CSS 抽象语法树解析 (基于 syn)
+│   ├── compiler.rs // AST 遍历、动态值提取及静态 CSS 构建
+│   └── styled.rs   // styled! 组件的合成与拆解
 ├── style.rs        // style!, classes! 宏实现
 ├── route.rs        // #[derive(Route)] 实现：路由匹配与生成
 ├── store.rs        // #[derive(Store)] 实现：全局状态管理
@@ -60,20 +63,23 @@ src/
 *   **自动 Into 推导**：为了提升 DX，对于 `Children`, `AnyView`, `String`, `Callback` 等常用类型，宏会自动生成接受 `impl Into<T>` 的 Builder 方法，减少用户手动调用的 `.into()`。
 *   **泛型与生命周期支持 (`PhantomData` 注入)**：为了解决未在组件的 props 字段中直接使用的泛型参数（或复杂生命周期）引起的 `parameter is never used` 编译报错，宏会提取函数签名的所有泛型参数，并自动在生成的组件结构体中注入包裹了元组函数签名的原生 `_phantom: std::marker::PhantomData<fn() -> (#(#phantom_types,)*)>`，不仅消除了编译警告，还防止了破坏任何 `Send`/`Sync`/`Drop` 语义。
 
-### 4.2 CSS 宏 `css!` (`css.rs`)
+### 4.2 CSS 宏 `css!` (`css/ast.rs` & `css/compiler.rs`)
 
-实现了 CSS-in-Rust 的核心逻辑。
+实现了 CSS-in-Rust 的核心逻辑，由重构后的强类型解析和编译引擎支撑。
 
 **核心流程**：
-1.  **动态值解析**：扫描 CSS 字符串中的 `$(expr)` 插值语法。
-    *   提取表达式并转换为 Signal（自动处理解包）。
-    *   生成唯一的 CSS 变量名（如 `--slx-{hash}-{index}`）替换原插值位置。
-2.  **哈希计算**：对处理后的 CSS 字符串计算 Hash，生成唯一类名 `slx-{hash}`。
-3.  **作用域封装**：将 CSS 内容包裹在 `.slx-{hash} { ... }` 选择器中，实现样式隔离。
-4.  **处理与压缩**：调用 `lightningcss` 库对 CSS 进行解析、验证语法并压缩（Minify）。
-5.  **代码注入与运行时绑定**：
+1.  **AST 解析 (`ast.rs`)**：利用 `syn::parse` 将原生的输入 TokenStream 逐层解析为结构化的抽象语法树实体，例如 `CssBlock`, `CssRule`, `CssDeclaration`, `CssNested` 和 `CssAtRule`。区分了静态语法单元（`CssValue::Static`）和动态插值（`CssValue::Dynamic`）。
+2.  **语义遍历与萃取 (`compiler.rs`)**：负责遍历上述的 AST 节点树：
+    *   剥离并拼接所有的静态 Token 构筑核心的基础 CSS 字符串。
+    *   将动态插值 `$(expr)` 连同其所在的上下文依赖属性名抽出，合并到表达式等待队列，而在静态模板处留下形如 `--slx-tmp-{index}` 的占位符。
+    *   **动态分块提取 (Dynamic Extract)**：若是遇上含有选区级或是特殊动态参数的 `Nested` Node 时，其块信息会被剥出并作为一个隔离并支持动态重组的 `DynamicRule` 元组模板，待运行时动态注入以破除原生 CSS 原生局限。
+3.  **哈希计算与变量下发**：针对输入的 Token 进行特征哈希生成局部的随机后缀 `slx-{hash}`。将上文埋设的所有占位符 `--slx-tmp-*` 实化为局部的独设 CSS 变量 `--slx-{hash}-*`。
+4.  **作用域封装**：将纯净的静态 CSS 载入到一个全局包裹对象层 `.slx-{hash} { ... }` 之中以防止污染。
+5.  **语法校验与极致压缩 (Minification)**：调用外部强引擎 `lightningcss` 对此静态 CSS 解析，实施语法层验证和体积极优化。
+6.  **代码出码和多态校验体系**：
     *   生成调用 `silex::css::inject_style` 的代码注入静态 CSS。
-    *   返回 `silex::css::DynamicCss` 结构体，该结构体实现了 `ApplyToDom`，能够自动将动态值绑定到元素的内联样式（`style="..."`）中，实现高性能的细粒度更新。
+    *   返回 `silex::css::DynamicCss` 结构体，该结构体实现了 `ApplyToDom`。
+    *   **Codegen 类型注入**：通过宏代码生成将捕获的属性标量（例如 `width` 获取到强类型 `BackgroundColor`），进而在闭包生成中使用例如 `make_dynamic_val_for::<silex::css::types::props::BackgroundColor, _>` 进行多态 Trait Bounds (`ValidFor<P>`) 限制。如果使用了不被接受的基础类型或未提供单位将会在触发编译级别的强类型安全异常错误。
 
 ### 4.3 路由宏 `#[derive(Route)]` (`route.rs`)
 
@@ -121,3 +127,7 @@ src/
 
 ### 已知限制 (Limitations)
 *   **Tuple Variants in Route**：`derive(Route)` 目前对 Tuple Variants 的支持有限，建议用户主要通过 Struct Variants 来进行路由参数绑定。
+
+### 计划中的强类型演进 (Future Expansions for Type-Safe CSS)
+*   **结构化复合样式支持 (Composite Properties)**：对 `border`、`box-shadow` 支持复合构建，比如接受由开发者新建实现好 `ValidFor<props::Border>` 接口的 `struct BorderDesc { w: Px, s: BorderStyle, c: Rgba }`，并让其实现一个格式化的复杂的 `Display`。
+*   **原生防沉淀强算力支持 (Math Operators)**：计划为包裹单位注入基础的 `Add` / `Sub` 重载，允许写出基于组件级别的 `px(300) + px(50)` 及基于计算 Signal 环境的相加，进而自动演变为 CSS 中合规支持的基础类型或者在构建时直接化简为单值。

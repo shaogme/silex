@@ -230,9 +230,17 @@ fn MyComp(name: String, #[prop(default)] age: i32) -> impl View {
 }
 ```
 
-### CSS 编写 (`css!`)
+### CSS 编写 (`css!` 与类型安全 CSS)
 ```rust
-let cls = css!("color: red; &:hover { color: blue; }");
+use silex::css::units::{px, pct};
+
+let w = signal(px(100));
+
+let cls = css!("
+    color: red; 
+    width: $(w); /* 编译期类型校验，保障不会错写成单纯数字或者错用其他强单位 */
+    &:hover { color: blue; }
+");
 div("Hello").class(cls)
 ```
 

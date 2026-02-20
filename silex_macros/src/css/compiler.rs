@@ -1,27 +1,28 @@
+use crate::css::ast::{CssBlock, CssRule, CssValue};
 use lightningcss::stylesheet::{MinifyOptions, ParserOptions, PrinterOptions, StyleSheet};
 use lightningcss::targets::Targets;
-use proc_macro2::{Delimiter, Group, Span, TokenStream, TokenTree};
+use proc_macro2::{Delimiter, Span, TokenStream, TokenTree};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use syn::Result;
 
 pub struct DynamicRule {
     pub template: String,
-    pub expressions: Vec<TokenStream>,
+    pub expressions: Vec<(String, TokenStream)>,
 }
 
 pub struct CssCompileResult {
     pub class_name: String,
     pub style_id: String,
     pub final_css: String,
-    pub expressions: Vec<TokenStream>,
+    pub expressions: Vec<(String, TokenStream)>,
     pub dynamic_rules: Vec<DynamicRule>,
     pub hash: u64,
 }
 
 struct ParserState {
     static_css: String,
-    expressions: Vec<TokenStream>,
+    expressions: Vec<(String, TokenStream)>,
     dynamic_rules: Vec<DynamicRule>,
     class_name: String,
 }
@@ -43,7 +44,9 @@ impl CssCompiler {
             class_name: class_name.clone(),
         };
 
-        parse_css_ast(ts, &mut state)?;
+        let block: CssBlock = syn::parse2(ts)?;
+
+        process_css_block(&block, &mut state)?;
 
         let mut final_source_css = state.static_css.clone();
         for i in 0..state.expressions.len() {
@@ -85,99 +88,233 @@ impl CssCompiler {
     }
 }
 
-fn parse_css_ast(ts: TokenStream, state: &mut ParserState) -> Result<()> {
-    let mut buffer = Vec::new();
-    let iter = ts.into_iter().peekable();
+fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
+    for rule in &block.rules {
+        match rule {
+            CssRule::Declaration(decl) => {
+                state.static_css.push_str(&decl.property);
+                state.static_css.push_str(": ");
+                let mut prev_was_ident_or_literal = false;
+                for v in &decl.values {
+                    let mut space_before = false;
+                    let current_is_ident_or_literal;
 
-    for tt in iter {
-        match &tt {
-            TokenTree::Group(g) if g.delimiter() == Delimiter::Brace => {
-                let mut is_dynamic = false;
-                let mut i = 0;
-                while i < buffer.len() {
-                    if let TokenTree::Punct(p) = &buffer[i]
-                        && p.as_char() == '$'
-                        && i + 1 < buffer.len()
-                        && let TokenTree::Group(ig) = &buffer[i + 1]
-                        && ig.delimiter() == Delimiter::Parenthesis
-                    {
-                        is_dynamic = true;
-                        break;
+                    match v {
+                        CssValue::Static(tt) => {
+                            match tt {
+                                TokenTree::Ident(_) | TokenTree::Literal(_) => {
+                                    current_is_ident_or_literal = true;
+                                    space_before = prev_was_ident_or_literal;
+                                }
+                                _ => {
+                                    current_is_ident_or_literal = false;
+                                }
+                            }
+                            if space_before {
+                                state.static_css.push(' ');
+                            }
+
+                            match tt {
+                                TokenTree::Group(g) => {
+                                    let (open, close) = match g.delimiter() {
+                                        Delimiter::Parenthesis => ('(', ')'),
+                                        Delimiter::Brace => ('{', '}'),
+                                        Delimiter::Bracket => ('[', ']'),
+                                        Delimiter::None => (' ', ' '),
+                                    };
+                                    if open != ' ' {
+                                        state.static_css.push(open);
+                                    }
+                                    state
+                                        .static_css
+                                        .push_str(&append_token_stream_strings(&g.stream()));
+                                    if close != ' ' {
+                                        state.static_css.push(close);
+                                    }
+                                }
+                                _ => state.static_css.push_str(&tt.to_string()),
+                            }
+                        }
+                        CssValue::Dynamic(expr) => {
+                            current_is_ident_or_literal = true;
+                            space_before = prev_was_ident_or_literal;
+                            if space_before {
+                                state.static_css.push(' ');
+                            }
+
+                            let idx = state.expressions.len();
+                            state
+                                .expressions
+                                .push((decl.property.clone(), expr.clone()));
+                            state
+                                .static_css
+                                .push_str(&format!("var(--slx-tmp-{})", idx));
+                        }
                     }
-                    i += 1;
+                    prev_was_ident_or_literal = current_is_ident_or_literal;
                 }
+                if decl.semi_token.is_some() {
+                    state.static_css.push_str("; ");
+                }
+            }
+            CssRule::Nested(nested) => {
+                let has_dynamic_sel = contains_dynamic_selector(&nested.selectors);
+                if has_dynamic_sel {
+                    let mut template = String::new();
+                    let mut exprs = Vec::new();
 
-                if is_dynamic {
-                    let (template, exprs) = build_dynamic_template(&buffer, g, &state.class_name)?;
+                    extract_dynamic_selector(
+                        &nested.selectors,
+                        &mut template,
+                        &mut exprs,
+                        &state.class_name,
+                    );
+                    template.push_str(" { ");
+                    build_dynamic_block(&nested.block, &mut template, &mut exprs);
+                    template.push_str(" }");
+
                     state.dynamic_rules.push(DynamicRule {
                         template,
                         expressions: exprs,
                     });
-                    buffer.clear();
                 } else {
-                    let ts_buf: TokenStream = buffer.drain(..).collect();
-                    let prelude_str = process_static_property_stream(ts_buf, state)?;
-                    state.static_css.push_str(&prelude_str);
+                    let mut sel_str = String::new();
+                    build_static_selector(&nested.selectors, &mut sel_str, &state.class_name);
+                    state.static_css.push_str(&sel_str);
                     state.static_css.push_str(" { ");
-                    parse_css_ast(g.stream(), state)?;
+                    process_css_block(&nested.block, state)?;
                     state.static_css.push_str(" } ");
                 }
             }
-            TokenTree::Punct(p) if p.as_char() == ';' => {
-                buffer.push(tt);
-                let ts_buf: TokenStream = buffer.drain(..).collect();
-                let prop_str = process_static_property_stream(ts_buf, state)?;
-                state.static_css.push_str(&prop_str);
-            }
-            _ => {
-                buffer.push(tt);
+            CssRule::AtRule(at) => {
+                state.static_css.push('@');
+                state.static_css.push_str(&at.name.to_string());
+                state.static_css.push(' ');
+                let ts_str = append_token_stream_strings(&at.params);
+                state.static_css.push_str(&ts_str);
+                state.static_css.push_str(" { ");
+                process_css_block(&at.block, state)?;
+                state.static_css.push_str(" } ");
             }
         }
     }
-
-    if !buffer.is_empty() {
-        let ts_buf: TokenStream = buffer.drain(..).collect();
-        let prop_str = process_static_property_stream(ts_buf, state)?;
-        state.static_css.push_str(&prop_str);
-    }
-
     Ok(())
 }
 
-fn process_static_property_stream(ts: TokenStream, state: &mut ParserState) -> Result<String> {
-    let mut out = String::new();
-    let mut iter = ts.into_iter().peekable();
-    let mut prev_tt: Option<TokenTree> = None;
+fn build_dynamic_block(
+    block: &CssBlock,
+    template: &mut String,
+    exprs: &mut Vec<(String, TokenStream)>,
+) {
+    for rule in &block.rules {
+        match rule {
+            CssRule::Declaration(decl) => {
+                template.push_str(&decl.property);
+                template.push_str(": ");
+                let mut prev_was_ident_or_literal = false;
+                for v in &decl.values {
+                    let mut space_before = false;
+                    let current_is_ident_or_literal;
 
-    while let Some(tt) = iter.next() {
-        let mut space_before = false;
-        if let Some(prev) = &prev_tt {
-            match (prev, &tt) {
-                (TokenTree::Ident(_), TokenTree::Ident(_)) => space_before = true,
-                (TokenTree::Ident(_), TokenTree::Literal(_)) => space_before = true,
-                (TokenTree::Literal(_), TokenTree::Ident(_)) => space_before = true,
-                (TokenTree::Literal(_), TokenTree::Literal(_)) => space_before = true,
-                _ => {}
+                    match v {
+                        CssValue::Static(tt) => {
+                            match tt {
+                                TokenTree::Ident(_) | TokenTree::Literal(_) => {
+                                    current_is_ident_or_literal = true;
+                                    space_before = prev_was_ident_or_literal;
+                                }
+                                _ => {
+                                    current_is_ident_or_literal = false;
+                                }
+                            }
+                            if space_before {
+                                template.push(' ');
+                            }
+
+                            match tt {
+                                TokenTree::Group(g) => {
+                                    let (open, close) = match g.delimiter() {
+                                        Delimiter::Parenthesis => ('(', ')'),
+                                        Delimiter::Brace => ('{', '}'),
+                                        Delimiter::Bracket => ('[', ']'),
+                                        Delimiter::None => (' ', ' '),
+                                    };
+                                    if open != ' ' {
+                                        template.push(open);
+                                    }
+                                    template.push_str(&append_token_stream_strings(&g.stream()));
+                                    if close != ' ' {
+                                        template.push(close);
+                                    }
+                                }
+                                _ => template.push_str(&tt.to_string()),
+                            }
+                        }
+                        CssValue::Dynamic(ts) => {
+                            current_is_ident_or_literal = true;
+                            space_before = prev_was_ident_or_literal;
+                            if space_before {
+                                template.push(' ');
+                            }
+
+                            template.push_str("{}");
+                            exprs.push((decl.property.clone(), ts.clone()));
+                        }
+                    }
+                    prev_was_ident_or_literal = current_is_ident_or_literal;
+                }
+                if decl.semi_token.is_some() {
+                    template.push_str("; ");
+                }
+            }
+            CssRule::Nested(nested) => {
+                extract_dynamic_selector(&nested.selectors, template, exprs, "");
+                template.push_str(" { ");
+                build_dynamic_block(&nested.block, template, exprs);
+                template.push_str(" } ");
+            }
+            CssRule::AtRule(at) => {
+                template.push('@');
+                template.push_str(&at.name.to_string());
+                template.push(' ');
+                template.push_str(&append_token_stream_strings(&at.params));
+                template.push_str(" { ");
+                build_dynamic_block(&at.block, template, exprs);
+                template.push_str(" } ");
             }
         }
+    }
+}
 
-        if let TokenTree::Punct(ref p) = tt
+fn contains_dynamic_selector(ts: &TokenStream) -> bool {
+    let mut iter = ts.clone().into_iter().peekable();
+    while let Some(tt) = iter.next() {
+        if let TokenTree::Punct(p) = &tt
             && p.as_char() == '$'
             && let Some(TokenTree::Group(g)) = iter.peek()
             && g.delimiter() == Delimiter::Parenthesis
         {
-            if space_before {
-                out.push(' ');
-            }
-            let expr_ts = g.stream();
-            let idx = state.expressions.len();
-            state.expressions.push(expr_ts);
-            out.push_str(&format!("var(--slx-tmp-{})", idx));
-
-            prev_tt = Some(iter.next().unwrap()); // consume group
-            continue;
+            return true;
         }
+    }
+    false
+}
 
+fn append_token_stream_strings(ts: &TokenStream) -> String {
+    let mut out = String::new();
+    let iter = ts.clone().into_iter().peekable();
+    let mut prev_tt: Option<TokenTree> = None;
+    for tt in iter {
+        let mut space_before = false;
+        if let Some(prev) = &prev_tt {
+            match (prev, &tt) {
+                (TokenTree::Ident(_), TokenTree::Ident(_))
+                | (TokenTree::Ident(_), TokenTree::Literal(_))
+                | (TokenTree::Literal(_), TokenTree::Ident(_))
+                | (TokenTree::Literal(_), TokenTree::Literal(_)) => space_before = true,
+                _ => {}
+            }
+        }
         if space_before {
             out.push(' ');
         }
@@ -192,7 +329,7 @@ fn process_static_property_stream(ts: TokenStream, state: &mut ParserState) -> R
                 if delim.0 != ' ' {
                     out.push(delim.0);
                 }
-                out.push_str(&process_static_property_stream(g.stream(), state)?);
+                out.push_str(&append_token_stream_strings(&g.stream()));
                 if delim.1 != ' ' {
                     out.push(delim.1);
                 }
@@ -212,68 +349,93 @@ fn process_static_property_stream(ts: TokenStream, state: &mut ParserState) -> R
             }
         }
     }
-    Ok(out)
+    out
 }
 
-fn build_dynamic_template(
-    prelude: &[TokenTree],
-    body: &Group,
-    class_name: &str,
-) -> Result<(String, Vec<TokenStream>)> {
-    let mut template = String::new();
-    let mut exprs = Vec::new();
+fn build_static_selector(ts: &TokenStream, out: &mut String, class_name: &str) {
+    let iter = ts.clone().into_iter().peekable();
+    let mut prev_tt: Option<TokenTree> = None;
 
-    let mut has_ampersand = false;
-    let mut is_at_rule = false;
+    for tt in iter {
+        let mut space_before = false;
+        if let Some(prev) = &prev_tt {
+            match (prev, &tt) {
+                (TokenTree::Ident(_), TokenTree::Ident(_))
+                | (TokenTree::Ident(_), TokenTree::Literal(_))
+                | (TokenTree::Literal(_), TokenTree::Ident(_))
+                | (TokenTree::Literal(_), TokenTree::Literal(_)) => space_before = true,
+                _ => {}
+            }
+        }
 
-    for tt in prelude {
-        if let TokenTree::Punct(p) = tt {
-            if p.as_char() == '&' {
-                has_ampersand = true;
-            } else if p.as_char() == '@' {
-                is_at_rule = true;
+        if let TokenTree::Punct(ref p) = tt
+            && p.as_char() == '&'
+        {
+            if space_before {
+                out.push(' ');
+            }
+            out.push_str(&format!(".{}", class_name));
+            prev_tt = Some(TokenTree::Ident(proc_macro2::Ident::new(
+                "dummy",
+                Span::call_site(),
+            )));
+            continue;
+        }
+
+        if space_before {
+            out.push(' ');
+        }
+
+        match tt {
+            TokenTree::Group(g) => {
+                let delim = match g.delimiter() {
+                    Delimiter::Parenthesis => ('(', ')'),
+                    Delimiter::Brace => ('{', '}'),
+                    Delimiter::Bracket => ('[', ']'),
+                    Delimiter::None => (' ', ' '),
+                };
+                if delim.0 != ' ' {
+                    out.push(delim.0);
+                }
+                out.push_str(&append_token_stream_strings(&g.stream()));
+                if delim.1 != ' ' {
+                    out.push(delim.1);
+                }
+                prev_tt = Some(TokenTree::Group(g));
+            }
+            TokenTree::Punct(p) => {
+                out.push(p.as_char());
+                prev_tt = Some(TokenTree::Punct(p));
+            }
+            TokenTree::Ident(id) => {
+                out.push_str(&id.to_string());
+                prev_tt = Some(TokenTree::Ident(id));
+            }
+            TokenTree::Literal(lit) => {
+                out.push_str(&lit.to_string());
+                prev_tt = Some(TokenTree::Literal(lit));
             }
         }
     }
-
-    if !is_at_rule && !has_ampersand {
-        template.push_str(&format!(".{} ", class_name));
-    }
-
-    let prelude_stream: TokenStream = prelude.iter().cloned().collect();
-    extract_dynamic_template(
-        prelude_stream,
-        &mut template,
-        &mut exprs,
-        class_name,
-        is_at_rule,
-    );
-
-    template.push_str(" { ");
-    extract_dynamic_template(body.stream(), &mut template, &mut exprs, class_name, false);
-    template.push_str(" } ");
-
-    Ok((template, exprs))
 }
 
-fn extract_dynamic_template(
-    ts: TokenStream,
+fn extract_dynamic_selector(
+    ts: &TokenStream,
     out: &mut String,
-    exprs: &mut Vec<TokenStream>,
+    exprs: &mut Vec<(String, TokenStream)>,
     class_name: &str,
-    is_at_rule: bool,
 ) {
-    let mut iter = ts.into_iter().peekable();
+    let mut iter = ts.clone().into_iter().peekable();
     let mut prev_tt: Option<TokenTree> = None;
 
     while let Some(tt) = iter.next() {
         let mut space_before = false;
         if let Some(prev) = &prev_tt {
             match (prev, &tt) {
-                (TokenTree::Ident(_), TokenTree::Ident(_)) => space_before = true,
-                (TokenTree::Ident(_), TokenTree::Literal(_)) => space_before = true,
-                (TokenTree::Literal(_), TokenTree::Ident(_)) => space_before = true,
-                (TokenTree::Literal(_), TokenTree::Literal(_)) => space_before = true,
+                (TokenTree::Ident(_), TokenTree::Ident(_))
+                | (TokenTree::Ident(_), TokenTree::Literal(_))
+                | (TokenTree::Literal(_), TokenTree::Ident(_))
+                | (TokenTree::Literal(_), TokenTree::Literal(_)) => space_before = true,
                 _ => {}
             }
         }
@@ -287,11 +449,11 @@ fn extract_dynamic_template(
                         out.push(' ');
                     }
                     out.push_str("{}");
-                    exprs.push(g.stream());
+                    exprs.push(("any".to_string(), g.stream()));
                     prev_tt = Some(iter.next().unwrap());
                     continue;
                 }
-            } else if p.as_char() == '&' && !is_at_rule {
+            } else if p.as_char() == '&' && !class_name.is_empty() {
                 if space_before {
                     out.push(' ');
                 }
@@ -307,17 +469,22 @@ fn extract_dynamic_template(
         if space_before {
             out.push(' ');
         }
+
         match tt {
             TokenTree::Group(g) => {
-                let (open, close) = match g.delimiter() {
-                    Delimiter::Parenthesis => ("(", ")"),
-                    Delimiter::Brace => ("{", "}"),
-                    Delimiter::Bracket => ("[", "]"),
-                    Delimiter::None => ("", ""),
+                let delim = match g.delimiter() {
+                    Delimiter::Parenthesis => ('(', ')'),
+                    Delimiter::Brace => ('{', '}'),
+                    Delimiter::Bracket => ('[', ']'),
+                    Delimiter::None => (' ', ' '),
                 };
-                out.push_str(open);
-                extract_dynamic_template(g.stream(), out, exprs, class_name, is_at_rule);
-                out.push_str(close);
+                if delim.0 != ' ' {
+                    out.push(delim.0);
+                }
+                extract_dynamic_selector(&g.stream(), out, exprs, class_name);
+                if delim.1 != ' ' {
+                    out.push(delim.1);
+                }
                 prev_tt = Some(TokenTree::Group(g));
             }
             TokenTree::Punct(p) => {

@@ -1,3 +1,6 @@
+pub mod types;
+pub use types::UnsafeCss;
+
 use silex_core::traits::{Get, IntoSignal, With};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable};
 use silex_dom::document;
@@ -152,10 +155,10 @@ impl IntoStorable for DynamicCss {
 
 /// Helper function to create a reactive string getter from any signal-like value.
 /// Used by the css! macro to handle $(...) interpolation.
-pub fn make_dynamic_val<S>(source: S) -> Rc<dyn Fn() -> String>
+pub fn make_dynamic_val_for<P, S>(source: S) -> Rc<dyn Fn() -> String>
 where
     S: IntoSignal,
-    S::Value: Clone + Sized, // Required for Get
+    S::Value: Clone + Sized + types::ValidFor<P> + Display,
     S::Signal: Get + 'static,
     <S::Signal as With>::Value: Display,
 {

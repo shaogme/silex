@@ -114,6 +114,14 @@ Silex 的路由系统基于浏览器 History API，实现了单页应用 (SPA) �
 位于 `silex/src/components/portal.rs`。
 *   **Context 连通性**：这是 Portal 最重要的特性。尽管 DOM 节点被挂载到了 `body` 或其他位置，但由于 `Reactive Scope` 是在组件创建时建立的，Portal 内部的代码仍然可以访问其书写位置（Lexical Scope）的 Context。这使得在 Portal 内部使用 `use_context` 依然有效。
 
+### 4.4 CSS 工具 (CSS Tools)
+
+#### 强类型 CSS 运行时 (Type-Safe CSS Runtime)
+位于 `silex/src/css.rs` 及 `silex/src/css/types.rs`。
+*   **架构设计**：它不单纯是传统意义上的 CSS Runtime 工具链，而是与 `silex_macros` 协同构筑的前后端一体化防线。抛弃单纯接受一切 `Display` 给字符串 `+` 的行为。
+*   **Property Tags (属性感知)**：内置了数以百计零开销的 Trait Bounds Tag 结构体（ZST）充当标识（诸如 `props::Width`，`props::Color` 等）。
+*   **验证流**：伴随 `DynamicCss` 产生的每一次插值的验证绑定，将宏层面所追踪到的标签经由此处的 `make_dynamic_val_for::<P, S>(source: S)` 落入限制。使得 `ValidFor<P>` 这个 Trait 得以在运行时构建前提前在编译期就成功实施阻断诸如 "传入 f64 给 color 属性" 的语法错误！实现严丝合缝的闭环。
+
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 
 1.  (已解决) **Flow 组件类型简化**: `For` 和 `Show` 的泛型参数已大幅简化，移除了结构体上的冗余泛型，改用辅助 Trait 进行推导。

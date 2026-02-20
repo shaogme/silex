@@ -124,22 +124,14 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let var_decls: Vec<TokenStream> = expressions
         .iter()
         .enumerate()
-        .map(|(i, expr_ts)| {
+        .map(|(i, (prop, expr_ts))| -> Result<TokenStream> {
             let var_ident = quote::format_ident!("var_{}", i);
-            if let Ok(expr) = syn::parse2::<syn::Expr>(expr_ts.clone()) {
-                match &expr {
-                    syn::Expr::Path(path) if path.path.get_ident().is_some() => {
-                        quote! { let #var_ident = #expr; }
-                    }
-                    _ => {
-                        quote! { let #var_ident = ::silex::rx!(#expr); }
-                    }
-                }
-            } else {
-                quote! { let #var_ident = ::silex::rx!(#expr_ts); }
-            }
+            let prop_type = crate::css::get_prop_type(prop, tag.span())?;
+            Ok(quote! {
+                let #var_ident = ::silex::css::make_dynamic_val_for::<#prop_type, _>(#expr_ts);
+            })
         })
-        .collect();
+        .collect::<Result<Vec<TokenStream>>>()?;
 
     let style_bindings: Vec<TokenStream> = expressions
         .iter()
@@ -148,7 +140,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             let var_name = format!("--slx-{:x}-{}", hash, i);
             let var_ident = quote::format_ident!("var_{}", i);
             quote! {
-                .style((#var_name, #var_ident))
+                .style((#var_name, move || #var_ident()))
             }
         })
         .collect();
@@ -239,21 +231,11 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             let template = &rule.template;
             let mut eval_vars = Vec::new();
 
-            for (expr_idx, expr_ts) in rule.expressions.iter().enumerate() {
+            for (expr_idx, (prop, expr_ts)) in rule.expressions.iter().enumerate() {
                 let var_ident = quote::format_ident!("dyn_var_{}_{}", rule_idx, expr_idx);
+                let prop_type = crate::css::get_prop_type(prop, tag.span())?;
 
-                if let Ok(expr) = syn::parse2::<syn::Expr>(expr_ts.clone()) {
-                    match &expr {
-                        syn::Expr::Path(path) if path.path.get_ident().is_some() => {
-                            dyn_var_decls.push(quote! { let #var_ident = #expr; });
-                        }
-                        _ => {
-                            dyn_var_decls.push(quote! { let #var_ident = ::silex::rx!(#expr); });
-                        }
-                    }
-                } else {
-                    dyn_var_decls.push(quote! { let #var_ident = ::silex::rx!(#expr_ts); });
-                }
+                dyn_var_decls.push(quote! { let #var_ident = ::silex::css::make_dynamic_val_for::<#prop_type, _>(#expr_ts); });
 
                 let clone_ident = quote::format_ident!("dyn_var_{}_{}_clone", rule_idx, expr_idx);
                 dyn_var_decls.push(quote! { let #clone_ident = #var_ident.clone(); });
@@ -263,7 +245,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             template_blocks.push(quote! {
                 {
                     let mut result_rule = ::std::string::ToString::to_string(#template);
-                    let vals = [ #( ::std::string::ToString::to_string(&::silex::prelude::Get::get(&#eval_vars)) ),* ];
+                    let vals = [ #( #eval_vars() ),* ];
                     for val in vals {
                         if let Some(pos) = result_rule.find("{}") {
                             result_rule.replace_range(pos..pos+2, &val);
