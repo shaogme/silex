@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use syn::{Attribute, FnArg, ItemFn, Pat, spanned::Spanned};
+use syn::{Attribute, FnArg, ItemFn, Pat};
 
 pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     let fn_name = &input_fn.sig.ident;
@@ -23,8 +23,8 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         let fn_arg = match arg {
             FnArg::Typed(arg) => arg,
             FnArg::Receiver(r) => {
-                return Err(syn::Error::new(
-                    r.span(),
+                return Err(syn::Error::new_spanned(
+                    r.self_token,
                     "Component functions cannot have `self` parameter",
                 ));
             }
@@ -56,8 +56,8 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         let param_name = match pat.as_ref() {
             Pat::Ident(ident) => &ident.ident,
             _ => {
-                return Err(syn::Error::new(
-                    pat.span(),
+                return Err(syn::Error::new_spanned(
+                    pat,
                     "Component parameters must be simple identifiers",
                 ));
             }

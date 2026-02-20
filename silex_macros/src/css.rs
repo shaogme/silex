@@ -34,15 +34,20 @@ pub fn css_impl(input: LitStr) -> Result<TokenStream> {
                 }
 
                 if depth != 0 {
-                    return Err(syn::Error::new(
-                        input.span(),
+                    return Err(syn::Error::new_spanned(
+                        &input,
                         "Unbalanced parentheses in interpolation",
                     ));
                 }
 
                 let index = expressions.len();
                 // Validate expression syntax early
-                let expr: TokenStream = syn::parse_str(&expr_str)?;
+                let expr: TokenStream = syn::parse_str(&expr_str).map_err(|e| {
+                    syn::Error::new_spanned(
+                        &input,
+                        format!("Invalid expression in interpolation: {}", e),
+                    )
+                })?;
                 expressions.push(expr);
 
                 // Use a temporary variable name that is valid in CSS
@@ -81,13 +86,13 @@ pub fn css_impl(input: LitStr) -> Result<TokenStream> {
     // Use lightningcss to parse the stylesheet. This validates the syntax.
     // We use a dummy filename "silex_generated.css".
     let mut stylesheet = StyleSheet::parse(&wrapped_css, ParserOptions::default())
-        .map_err(|e| syn::Error::new(input.span(), format!("Invalid CSS: {}", e)))?;
+        .map_err(|e| syn::Error::new_spanned(&input, format!("Invalid CSS: {}", e)))?;
 
     // 6. Minify
     // Optimize the CSS for size.
     stylesheet
         .minify(MinifyOptions::default())
-        .map_err(|e| syn::Error::new(input.span(), format!("CSS Minification failed: {}", e)))?;
+        .map_err(|e| syn::Error::new_spanned(&input, format!("CSS Minification failed: {}", e)))?;
 
     // 7. Generate Output CSS
     let res = stylesheet
@@ -96,7 +101,7 @@ pub fn css_impl(input: LitStr) -> Result<TokenStream> {
             targets: Targets::default(), // Default targets (modern browsers)
             ..PrinterOptions::default()
         })
-        .map_err(|e| syn::Error::new(input.span(), format!("CSS Printing failed: {}", e)))?;
+        .map_err(|e| syn::Error::new_spanned(&input, format!("CSS Printing failed: {}", e)))?;
 
     let final_css = res.code;
 

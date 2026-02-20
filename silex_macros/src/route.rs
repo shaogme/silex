@@ -2,10 +2,12 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use std::collections::BTreeMap;
 use syn::parse::Parse;
+use syn::spanned::Spanned;
 use syn::{Attribute, Data, DeriveInput, Error, Fields, Member, Token};
 
 struct RouteDef {
     variant_ident: syn::Ident,
+    route_attr_span: proc_macro2::Span,
     fields: Fields,
     path_segments: Vec<Segment>,
     is_wildcard: bool,
@@ -27,7 +29,7 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
         Data::Enum(ref data) => &data.variants,
         _ => {
             return Err(Error::new_spanned(
-                input,
+                &input.ident,
                 "Route derive only supports Enums",
             ));
         }
@@ -41,11 +43,12 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
             .iter()
             .find(|attr| attr.path().is_ident("route"));
 
-        let (route_path, view_component, guards) = if let Some(attr) = route_attr {
-            parse_route_attr(attr)?
+        let (route_path, view_component, guards, route_attr_span) = if let Some(attr) = route_attr {
+            let (p, v, g) = parse_route_attr(attr)?;
+            (p, v, g, attr.span())
         } else {
             return Err(Error::new_spanned(
-                variant,
+                &variant.ident,
                 "Missing #[route(\"...\")] attribute",
             ));
         };
@@ -53,10 +56,11 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
         let (segments, is_wildcard) = parse_path_segments(&route_path);
 
         // 检测嵌套字段
-        let nested_field = detect_nested_field(&variant.fields, &segments)?;
+        let nested_field = detect_nested_field(&variant.fields, &segments, route_attr_span)?;
 
         route_defs.push(RouteDef {
             variant_ident: variant.ident.clone(),
+            route_attr_span,
             fields: variant.fields.clone(),
             path_segments: segments,
             is_wildcard,
@@ -137,8 +141,8 @@ fn parse_route_attr(attr: &Attribute) -> syn::Result<(String, Option<syn::Path>,
                     guards.push(input.parse()?);
                 }
             } else {
-                return Err(Error::new(
-                    key.span(),
+                return Err(Error::new_spanned(
+                    &key,
                     "Expected 'view' or 'guard' parameter",
                 ));
             }
@@ -175,7 +179,11 @@ fn parse_path_segments(path: &str) -> (Vec<Segment>, bool) {
     (segments, wildcard)
 }
 
-fn detect_nested_field(fields: &Fields, segments: &[Segment]) -> syn::Result<Option<Member>> {
+fn detect_nested_field(
+    fields: &Fields,
+    segments: &[Segment],
+    route_attr_span: proc_macro2::Span,
+) -> syn::Result<Option<Member>> {
     let param_names: Vec<&str> = segments
         .iter()
         .filter_map(|s| match s {
@@ -234,22 +242,21 @@ fn detect_nested_field(fields: &Fields, segments: &[Segment]) -> syn::Result<Opt
             }
         }
         Fields::Unnamed(unnamed) => {
-            // Tuple variants don't support named params in this macro implementation usually.
             if !param_names.is_empty() {
-                return Err(Error::new_spanned(
-                    fields,
+                return Err(Error::new(
+                    route_attr_span,
                     "Route params only supported with Named Fields",
                 ));
             }
 
-            for (i, _field) in unnamed.unnamed.iter().enumerate() {
+            for (i, field) in unnamed.unnamed.iter().enumerate() {
                 // For tuple variants, any field implies nested because no params are allowed.
                 // We accept it as nested regardless of attribute.
                 // But we still enforce existing rule: only 1 field allowed.
 
                 if nested.is_some() {
                     return Err(Error::new_spanned(
-                        fields,
+                        field,
                         "Multiple fields in tuple variant. Only one nested route field allowed.",
                     ));
                 }
@@ -441,8 +448,8 @@ fn generate_route_handler(def: &RouteDef, enum_name: &syn::Ident) -> syn::Result
         if let Segment::Param(name) = seg {
             let ident = format_ident!("{}", name);
             let field_ty = find_field_type(&def.fields, name).ok_or_else(|| {
-                Error::new_spanned(
-                    variant_ident,
+                Error::new(
+                    def.route_attr_span,
                     format!("Route param '{}' not found in variant fields", name),
                 )
             })?;
@@ -495,10 +502,7 @@ fn generate_route_handler(def: &RouteDef, enum_name: &syn::Ident) -> syn::Result
             }
             Fields::Unnamed(f) => f.unnamed.first().unwrap().ty.clone(),
             _ => {
-                return Err(Error::new_spanned(
-                    variant_ident,
-                    "Unit struct nested error",
-                ));
+                return Err(Error::new(def.route_attr_span, "Unit struct nested error"));
             }
         };
 
@@ -759,7 +763,7 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
                         });
                     } else {
                         return Err(Error::new_spanned(
-                            &def.fields,
+                            unnamed,
                             "Route view binding currently only supports Named Fields (e.g., Variant { id: String }) to map parameters to component props. Please convert your Tuple Variant to a Struct Variant.",
                         ));
                     }

@@ -49,14 +49,14 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
             Fields::Named(ref fields) => &fields.named,
             _ => {
                 return Err(syn::Error::new_spanned(
-                    name,
+                    &input.ident,
                     "Store derive only supports structs with named fields",
                 ));
             }
         },
         _ => {
             return Err(syn::Error::new_spanned(
-                name,
+                &input.ident,
                 "Store derive only supports structs",
             ));
         }
