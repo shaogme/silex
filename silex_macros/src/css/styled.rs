@@ -104,66 +104,6 @@ impl Parse for StyledComponent {
     }
 }
 
-fn token_stream_to_css(ts: proc_macro2::TokenStream) -> String {
-    let mut out = String::new();
-    let mut prev_tt: Option<proc_macro2::TokenTree> = None;
-
-    for tt in ts {
-        let mut space_before = false;
-
-        if let Some(prev) = &prev_tt {
-            match (prev, &tt) {
-                (proc_macro2::TokenTree::Ident(_), proc_macro2::TokenTree::Ident(_)) => {
-                    space_before = true
-                }
-                (proc_macro2::TokenTree::Ident(_), proc_macro2::TokenTree::Literal(_)) => {
-                    space_before = true
-                }
-                (proc_macro2::TokenTree::Literal(_), proc_macro2::TokenTree::Ident(_)) => {
-                    space_before = true
-                }
-                (proc_macro2::TokenTree::Literal(_), proc_macro2::TokenTree::Literal(_)) => {
-                    space_before = true
-                }
-                _ => {}
-            }
-        }
-
-        if space_before {
-            out.push(' ');
-        }
-
-        match &tt {
-            proc_macro2::TokenTree::Group(g) => {
-                let delim = match g.delimiter() {
-                    proc_macro2::Delimiter::Parenthesis => ('(', ')'),
-                    proc_macro2::Delimiter::Brace => ('{', '}'),
-                    proc_macro2::Delimiter::Bracket => ('[', ']'),
-                    proc_macro2::Delimiter::None => (' ', ' '),
-                };
-                if delim.0 != ' ' {
-                    out.push(delim.0);
-                }
-                out.push_str(&token_stream_to_css(g.stream()));
-                if delim.1 != ' ' {
-                    out.push(delim.1);
-                }
-            }
-            proc_macro2::TokenTree::Punct(p) => {
-                out.push(p.as_char());
-            }
-            proc_macro2::TokenTree::Ident(id) => {
-                out.push_str(&id.to_string());
-            }
-            proc_macro2::TokenTree::Literal(lit) => {
-                out.push_str(&lit.to_string());
-            }
-        }
-        prev_tt = Some(tt);
-    }
-    out
-}
-
 pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let parsed: StyledComponent = syn::parse2(input)?;
 
@@ -172,17 +112,14 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let tag = parsed.tag;
     let props = parsed.props;
 
-    let css_str = token_stream_to_css(parsed.css_block);
-    let css_str = css_str.replace("$(", "$ (");
-    let css_str = css_str.replace("$ (", "$(");
-
-    let compile_result = CssCompiler::compile(&css_str, tag.span())?;
+    let compile_result = CssCompiler::compile(parsed.css_block, tag.span())?;
 
     let class_name = compile_result.class_name;
     let style_id = compile_result.style_id;
     let final_css = compile_result.final_css;
     let expressions = compile_result.expressions;
     let hash = compile_result.hash;
+    let dynamic_rules = compile_result.dynamic_rules;
 
     let var_decls: Vec<TokenStream> = expressions
         .iter()
@@ -231,15 +168,17 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         let mut match_arms = Vec::new();
 
         for (variant_name, variant_css) in &group.variants {
-            let css_str = token_stream_to_css(variant_css.clone());
-            let css_str = css_str.replace("$(", "$ (");
-            let css_str = css_str.replace("$ (", "$(");
-
-            let compile_result = CssCompiler::compile(&css_str, variant_name.span())?;
+            let compile_result = CssCompiler::compile(variant_css.clone(), variant_name.span())?;
             if !compile_result.expressions.is_empty() {
                 return Err(syn::Error::new(
                     variant_name.span(),
                     "Dynamic expressions $(...) are not supported inside variant blocks. Variants must be static.",
+                ));
+            }
+            if !compile_result.dynamic_rules.is_empty() {
+                return Err(syn::Error::new(
+                    variant_name.span(),
+                    "Dynamic rules $(...) are not supported inside variant blocks. Variants must be static.",
                 ));
             }
 
@@ -284,6 +223,68 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         quote! { () }
     };
 
+    let mut dynamic_rule_effects = Vec::new();
+    if !dynamic_rules.is_empty() {
+        dynamic_rule_effects.push(quote! {
+            static INSTANCE_COUNTER: ::std::sync::atomic::AtomicUsize = ::std::sync::atomic::AtomicUsize::new(0);
+            let instance_id = INSTANCE_COUNTER.fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
+            let dyn_style_id = format!("{}-dyn-{}", #class_name, instance_id);
+            let manager = ::std::rc::Rc::new(::silex::css::DynamicStyleManager::new(&dyn_style_id));
+        });
+
+        let mut dyn_var_decls = Vec::new();
+        let mut template_blocks = Vec::new();
+
+        for (rule_idx, rule) in dynamic_rules.iter().enumerate() {
+            let template = &rule.template;
+            let mut eval_vars = Vec::new();
+
+            for (expr_idx, expr_ts) in rule.expressions.iter().enumerate() {
+                let var_ident = quote::format_ident!("dyn_var_{}_{}", rule_idx, expr_idx);
+
+                if let Ok(expr) = syn::parse2::<syn::Expr>(expr_ts.clone()) {
+                    match &expr {
+                        syn::Expr::Path(path) if path.path.get_ident().is_some() => {
+                            dyn_var_decls.push(quote! { let #var_ident = #expr; });
+                        }
+                        _ => {
+                            dyn_var_decls.push(quote! { let #var_ident = ::silex::rx!(#expr); });
+                        }
+                    }
+                } else {
+                    dyn_var_decls.push(quote! { let #var_ident = ::silex::rx!(#expr_ts); });
+                }
+
+                let clone_ident = quote::format_ident!("dyn_var_{}_{}_clone", rule_idx, expr_idx);
+                dyn_var_decls.push(quote! { let #clone_ident = #var_ident.clone(); });
+                eval_vars.push(clone_ident);
+            }
+
+            template_blocks.push(quote! {
+                {
+                    let mut result_rule = ::std::string::ToString::to_string(#template);
+                    let vals = [ #( ::std::string::ToString::to_string(&::silex::prelude::Get::get(&#eval_vars)) ),* ];
+                    for val in vals {
+                        if let Some(pos) = result_rule.find("{}") {
+                            result_rule.replace_range(pos..pos+2, &val);
+                        }
+                    }
+                    combined_css.push_str(&result_rule);
+                    combined_css.push('\n');
+                }
+            });
+        }
+
+        dynamic_rule_effects.push(quote! {
+            #(#dyn_var_decls)*
+            ::silex::core::reactivity::Effect::new(move |_| {
+                let mut combined_css = ::std::string::String::new();
+                #(#template_blocks)*
+                manager.update(&combined_css);
+            });
+        });
+    }
+
     let expanded = quote! {
         #[::silex::prelude::component]
         #vis fn #name(
@@ -294,6 +295,8 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
 
             ::silex::css::inject_style(#style_id, #final_css);
             #(#variant_injections)*
+
+            #(#dynamic_rule_effects)*
 
             ::silex::html::#tag(#children_binding)
                 .class(#class_name)

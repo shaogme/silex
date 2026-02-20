@@ -15,16 +15,19 @@ styled! {
         children: Children,
         #[prop(into)] color: Signal<String>,
         #[prop(into)] size: Signal<String>,
+        #[prop(into)] hover_color: Signal<String>,
+        #[prop(into)] pseudo_state: Signal<String>,
     ) {
         background-color: rgb(98, 0, 234);
         color: $(color);
         border: none;
         border-radius: 4px;
         cursor: pointer;
-        transition: transform 0.1s, color 0.2s, padding 0.2s, font-size 0.2s;
+        transition: transform 0.1s, color 0.2s, padding 0.2s, font-size 0.2s, background-color 0.2s;
 
-        &:hover {
-            background-color: #3700b3;
+        &:$(pseudo_state) {
+            background-color: $(hover_color);
+            transform: scale(1.05);
         }
 
         variants: {
@@ -41,16 +44,20 @@ styled! {
 pub fn CssDemo() -> impl View {
     let (color, set_color) = signal("white".to_string());
     let (size, set_size) = signal("medium".to_string());
+    let (hover_color, set_hover_color) = signal("#3700b3".to_string());
+    let (pseudo_state, set_pseudo_state) = signal("hover".to_string());
 
     div![
         h3("CSS-in-Rust Demo"),
         p(
-            "The button below is styled using the `styled!` macro with scoped styles, dynamic CSS variables (color), and static variants (size)."
+            "The button below is styled using the `styled!` macro with scoped styles, dynamic CSS variables (color), static variants (size), and NEW dynamic rules (selectors and nested values)!"
         ),
         StyledButton()
             .children("Scoped Style Button")
             .color(color)
             .size(size)
+            .hover_color(hover_color)
+            .pseudo_state(pseudo_state)
             .on(event::click, move |_| {
                 set_color.update(|c| {
                     *c = if *c == "white" {
@@ -66,7 +73,21 @@ pub fn CssDemo() -> impl View {
                         "medium".to_string()
                     }
                 });
-                console_log("Clicked! Toggled styles.");
+                set_hover_color.update(|c| {
+                    *c = if *c == "#3700b3" {
+                        "#ff4081".to_string() // Vibrant pinkish hue
+                    } else {
+                        "#3700b3".to_string()
+                    }
+                });
+                set_pseudo_state.update(|s| {
+                    *s = if *s == "hover" {
+                        "active".to_string()
+                    } else {
+                        "hover".to_string()
+                    }
+                });
+                console_log("Clicked! Toggled styles and dynamic rules.");
             }),
     ]
 }

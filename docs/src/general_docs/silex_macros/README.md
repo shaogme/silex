@@ -96,25 +96,29 @@ button(()).class(btn_class).text("Styled Button")
 
 ## 3. 样式组件 (`styled!`)
 
-使用 `styled!` 宏可以带来类似 `styled-components` 的极致开发体验。它允许直接定义带作用域样式的组件，免去手写类名绑定，并且原生支持变体 (Variants) 来极大提高性能和复用性。
+使用 `styled!` 宏可以带来类似 `styled-components` 的极致开发体验。它允许直接定义带作用域样式的组件，免去手写类名绑定，并且原生支持变体 (Variants) 和 **局部动态规则 (Dynamic Rules)**。
 
 ```rust
 styled! {
     pub StyledButton<button>(
         children: Children,
         #[prop(into)] color: Signal<String>,
+        #[prop(into)] hover_color: Signal<String>,
         #[prop(into)] size: Signal<String>,
+        #[prop(into)] pseudo_state: Signal<String>,
     ) {
         background-color: rgb(98, 0, 234);
-        color: $(color);
+        color: $(color); /* 基础值插值 */
         padding: 8px 16px;
         border-radius: 4px;
         border: none;
         cursor: pointer;
-        transition: transform 0.1s, color 0.2s;
+        transition: transform 0.1s, color 0.2s, background-color 0.2s;
 
-        &:hover {
-            background-color: #3700b3;
+        /* 动态规则插值：连选择器和部分块属性也能被 Signal 控制！*/
+        &:$(pseudo_state) {
+            background-color: $(hover_color);
+            transform: scale(1.05);
         }
 
         // 静态变体 (Variants) 支持，通过纯类名直接切换响应无需 CSS 变量分配。
@@ -132,6 +136,8 @@ styled! {
 StyledButton()
     .children("Click me!")
     .color(my_color)
+    .hover_color("#ff4081")
+    .pseudo_state("active") // 可以按需改变触发条件！
     .size("large")
     .class("additional-external-classes") // 完全享受透传能力
     .on(event::click, move |_| console_log("Clicked!"))
@@ -139,7 +145,8 @@ StyledButton()
 
 **核心优势**：
 1.  **脱糖直接兼容 `#[component]`**：生成的组件会自动返回基础节点构建并且注入所需属性重载和 `_pending_attrs`，完美支持外部 `.class()`, `.id()`, `.on_click()` 等链式方法调用重写。
-2.  **纯静态性能级变体 Variants**：对于非连续动画类的多属性集合变化（如主/从色彩模式、按键大中小模式），使用纯 CSS 类生成的 Variant 来规避运行时频繁覆盖及下发样式的系统开销。
+2.  **动态规则与纯享原生能力**：允许使用 `&:$(pseudo)` 的超强局部动态注入技术，这意味着我们可以安全地将 Signal 应用于伪类、伪元素乃至媒体查询触发值的热更新上！
+3.  **纯静态性能级变体 Variants**：对于非连续动画类的多属性集合变化（如主/从色彩模式、按键大中小模式），使用纯 CSS 类生成的 Variant 来规避运行时频繁覆盖及下发样式的系统开销。
 
 ## 4. 类型安全路由 (`#[derive(Route)]`)
 

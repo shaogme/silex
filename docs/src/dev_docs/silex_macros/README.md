@@ -113,7 +113,8 @@ src/
 
 **核心机制**：
 *   **脱糖 (Desugaring)**：`styled!` 宏会将内部定义的组件（包括可见性、底层 HTML 标签、Props 等）在 AST 层面脱糖为一个标准的 `#[component]` 函数。这意味着它完美兼容现有的组件体系和属性透传 (`AttributeBuilder`)。
-*   **编译期提取与隔离**：复用了 `css::compiler::CssCompiler` 的逻辑，提取静态 CSS 并生成唯一类名，将动态插值 `$(expr)` 转换为 CSS 变量绑定 (`--slx-{hash}-{index}`)。
+*   **编译期提取与变量隔离**：复用了 `css::compiler::CssCompiler` 的逻辑，提取静态 CSS 并生成唯一类名，将仅存在于属性值内的动态插值 `$(expr)` 转换为 CSS 变量绑定 (`--slx-{hash}-{index}`)。
+*   **动态规则树分片 (Dynamic Rules)**：在词法解析阶段 (TokenTree Parsing)，如果宏检测到选择器层面（或嵌套属性名前缀）包含 `$(...)`，会将这段包含大括号的规则块从主 CSS 静态树中剥离，形成游离分片，并依托 `DynamicStyleManager` 实例以闭包的方式按需利用 DOM 的 `<style>` 重置方法直接重塑热更新规则！借此彻底突破了原生 CSS Variable 不可用于选择器的天生局限。
 *   **Variants 静态架构**：完全支持 `variants:` 语法块。通过在编译阶段静态合成各变体的 CSS 并生成类名，在运行时利用模式匹配直接返回对应属性值的静态类字符串。不仅具备极高的代码表现力，还有效避开了基于 CSS 变量进行多属性赋值产生的性能代价。
 
 ## 5. 存在的问题和 TODO (Issues and TODOs)

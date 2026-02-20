@@ -70,7 +70,13 @@ styled! {
     pub ComponentName<html_tag>(
         /* ... 标准 props ... */
     ) {
-        /* ... CSS 规则，支持 $(expr) 插值与嵌套 (&) ... */
+        /* ... CSS 规则，支持纯属性值 $(expr) 静态变量插值 ... */
+        /* ... 及强大的构造性选择器 &(expr) 独立动态分片更新 ! ... */
+        
+        &:$(pseudo_prop) {
+            color: $(hover_color);
+        }
+
         variants: {
             prop_name: {
                 variant_val: { /* static CSS */ }
@@ -82,9 +88,14 @@ styled! {
 
 ### 转换逻辑
 1.  **Parsing**: 分别解析出 Visibility、组件结构名、底层依托 HTML 标签 (Tag)、Props 工具签名以及 CSS 块（包括 `variants` 控制块）。
-2.  **CSS Compile**: 将 CSS 和表达式提取交由 `CssCompiler` 进行 hash 隔离和变量转换，生成编译期静态类名及其注入代码。
-3.  **Variant Codegen**: 禁止在 `variants` 中使用动态插值 `$(...)`。内部块会被展开为 `match` 匹配分支，该分支利用传参属性值 `ToString::to_string()` 的小写格式直接返回变体对应构建的纯静态 CSS 类名字符串。
-4.  **Desugaring**: 宏在 AST 的根节点上展开为一段附带了 `#[::silex::prelude::component]` 定理的代码块，所以享有等额的属性代理分配和透传层（返回为 `impl View`）。生成的静态 CSS 变量推入底层的 `.style()` 属性注入器方法上，Variants 类挂载到多路 `.class()` 生成器上。
+2.  **CSS Compile (AST Fragmentation)**: 将 CSS 交由 `CssCompiler` 处理。
+    * 属性侧表达式转为 CSS 层级临时变量进行分离提取。
+    * 选择器侧表达式及其闭包触发规则树分片，形成 `DynamicRule` 并抛出返回。
+3.  **Variant Codegen**: 禁止在 `variants` 中使用动态插值 `$(...)` 及动态规则块。内部块会被展开为 `match` 匹配分支，直接返回变体对应构建的纯静态 CSS 类名字符串。
+4.  **Desugaring**: 宏在 AST 的根节点上展开为一段附带了 `#[::silex::prelude::component]` 定理的代码块，享有等额的属性代理分配和透传层（返回为 `impl View`）。
+    * 生成的静态 CSS 变量推入底层的 `.style()` 属性注入器方法上。
+    * 分离提取出的 `DynamicRule` （即像伪类这样的规则动态构建），依托新加组件局部单例管理器构建额外的 Effect 进行实时 `.update()` 按需生成和抛弃。
+    * Variants 类挂载到多路 `.class()` 生成器上。
 
 ---
 
