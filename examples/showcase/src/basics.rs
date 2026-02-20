@@ -33,7 +33,7 @@ pub fn Greeting(
 pub fn Counter() -> impl View {
     let (count, set_count) = signal(0);
     let double_count = count * 2; // Operator overloading creates a Memo automatically
-    
+
     // Timer Handle for Auto Increment (StoredValue: doesn't trigger UI updates itself)
     let timer = StoredValue::new(None::<IntervalHandle>);
     // UI State for the timer
@@ -53,28 +53,34 @@ pub fn Counter() -> impl View {
             button("+").on(event::click, set_count.updater(|n| *n += 1)),
         ]
         .style("display: flex; gap: 10px; align-items: center;"),
-        
         // Auto Increment Demo using set_interval and StoredValue
         div![
-            button(is_running.map(|r| if *r { "Stop Auto Inc" } else { "Start Auto Inc" }))
-                .on(event::click, move |_| {
-                    if is_running.get() {
-                        if let Some(handle) = timer.get_untracked() {
-                            handle.clear();
-                        }
-                        timer.set_untracked(None);
-                        set_is_running.set(false);
-                    } else {
-                        if let Ok(handle) = set_interval_with_handle(move || {
-                            set_count.update(|n| *n += 1);
-                        }, Duration::from_millis(1000)) {
-                            timer.set_untracked(Some(handle));
-                            set_is_running.set(true);
-                        }
+            button(is_running.map(|r| if *r {
+                "Stop Auto Inc"
+            } else {
+                "Start Auto Inc"
+            }))
+            .on(event::click, move |_| {
+                if is_running.get() {
+                    if let Some(handle) = timer.get_untracked() {
+                        handle.clear();
                     }
-                })
-        ].style("margin: 10px 0;"),
-
+                    timer.set_untracked(None);
+                    set_is_running.set(false);
+                } else {
+                    if let Ok(handle) = set_interval_with_handle(
+                        move || {
+                            set_count.update(|n| *n += 1);
+                        },
+                        Duration::from_millis(1000),
+                    ) {
+                        timer.set_untracked(Some(handle));
+                        set_is_running.set(true);
+                    }
+                }
+            })
+        ]
+        .style("margin: 10px 0;"),
         // Manual Input Demo using event_target_value
         div![
             span("Set Value: "),
@@ -86,10 +92,14 @@ pub fn Counter() -> impl View {
                         set_count.set(n);
                     }
                 })
-        ].style("margin-bottom: 10px;"),
-
+        ]
+        .style("margin-bottom: 10px;"),
         div!["Double: ", double_count]
-            .classes((count % 2).equals(0).map(|is_even| if *is_even { "even" } else { "odd" }))
+            .classes(
+                (count % 2)
+                    .equals(0)
+                    .map(|is_even| if *is_even { "even" } else { "odd" })
+            )
             .style("margin-top: 5px; color: #666; font-size: 0.9em;"),
     ]
 }
@@ -118,13 +128,11 @@ pub fn NodeRefDemo() -> impl View {
 pub fn SvgIconDemo() -> impl View {
     #[component]
     fn ShieldCheck() -> Element {
-        svg(
-            path()
-                .attr("stroke-linecap", "round")
-                .attr("stroke-linejoin", "round")
-                .attr("stroke-width", "2")
-                .attr("d", "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"),
-        )
+        svg(path()
+            .attr("stroke-linecap", "round")
+            .attr("stroke-linejoin", "round")
+            .attr("stroke-width", "2")
+            .attr("d", "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"))
         .attr("viewBox", "0 0 24 24")
         .attr("fill", "none")
         .attr("stroke", "currentColor")
@@ -154,7 +162,7 @@ pub fn SvgIconDemo() -> impl View {
 pub fn CloneDemo() -> impl View {
     let (name, set_name) = signal("Silex".to_string());
     let (count, set_count) = signal(0);
-    
+
     let (logs, set_logs) = signal(Vec::<String>::new());
     let payload = "DataPayload".to_string();
 
@@ -170,8 +178,8 @@ pub fn CloneDemo() -> impl View {
     let on_click_inner = clone!(set_logs, @payload => move |_| {
         // 'payload' is automatically cloned at the start of this block
         // so we can move it (consume it) without "use of moved value" errors
-        let owned_data = payload; 
-        
+        let owned_data = payload;
+
         set_logs.update(|l| {
             if l.len() >= 5 { l.remove(0); }
             l.push(format!("Consumed: {}", owned_data));
@@ -184,20 +192,20 @@ pub fn CloneDemo() -> impl View {
         div![
             p(name.map(|n| format!("Current Name: {}", n))),
             p(count.map(|c| format!("Current Count: {}", c))),
-        ].style("margin-bottom: 10px; font-family: monospace;"),
-        
+        ]
+        .style("margin-bottom: 10px; font-family: monospace;"),
         button("Log & Update (Standard)")
             .on(event::click, on_click)
             .style("margin-right: 10px;"),
-
         div![].style("height: 1px; background: #ccc; margin: 15px 0;"),
-
         p("2. Inner Clone (@): Clones variable INSIDE closure to allow moving/consuming it."),
-        button("Consume Payload (Inner Clone)")
-            .on(event::click, on_click_inner),
-        
-        ul(For::new(logs, |l| l.clone(), |l| li(l).style("font-size: 0.8em;")))
-            .style("margin-top: 10px; background: #eee; padding: 10px; border-radius: 4px;")
+        button("Consume Payload (Inner Clone)").on(event::click, on_click_inner),
+        ul(For::new(
+            logs,
+            |l| l.clone(),
+            |l| li(l).style("font-size: 0.8em;")
+        ))
+        .style("margin-top: 10px; background: #eee; padding: 10px; border-radius: 4px;")
     ]
     .style("padding: 20px; border: 1px dashed #4caf50; margin-top: 20px;")
 }
@@ -290,8 +298,8 @@ pub fn BasicsPage() -> impl View {
             button("Submit")
                 .attr("disabled", name_signal.read_signal().equals(""))
                 .style("margin-left: 10px;")
-        ].style("margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px;"),
-        
+        ]
+        .style("margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px;"),
         Greeting().name(name_signal),
         Counter(),
         CloneDemo(),

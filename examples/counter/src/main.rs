@@ -33,7 +33,8 @@ fn CounterDisplay() -> SilexResult<impl View> {
     let is_even = Memo::new(move |_| count.get() % 2 == 0);
 
     // Demo: CSS-in-Rust (Scoped CSS)
-    let container_class = css!(r#"
+    let container_class = css!(
+        r#"
         margin-top: 10px;
         color: #555;
         font-size: 0.9rem;
@@ -48,7 +49,8 @@ fn CounterDisplay() -> SilexResult<impl View> {
             transform: scale(1.01);
             box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
-    "#);
+    "#
+    );
 
     Ok(div((
         span("Global Context Status: "),
@@ -57,7 +59,12 @@ fn CounterDisplay() -> SilexResult<impl View> {
             .style(("color", "#6200ea")),
         div(" (Even Number - Dynamic Class Active)")
             .style(("margin-top", "5px"))
-            .style(move || format!("opacity: {}; transition: opacity 0.3s", if is_even.get() { 1.0 } else { 0.0 })),
+            .style(move || {
+                format!(
+                    "opacity: {}; transition: opacity 0.3s",
+                    if is_even.get() { 1.0 } else { 0.0 }
+                )
+            }),
     ))
     .class(container_class)
     .class(("even-number", is_even))) // Adds class "even-number" when count is even
@@ -81,13 +88,16 @@ fn CounterControls() -> SilexResult<impl View> {
     Ok(div((
         button("-")
             .style(btn_style) // Apply array of styles
-            .on_click(move |_| { let _ = set_count.update(|n| *n -= 1); }),
+            .on_click(move |_| {
+                let _ = set_count.update(|n| *n -= 1);
+            }),
         span(count)
             .style("font-size: 1.5rem; font-weight: bold; min-width: 30px; text-align: center;"),
-        button("+")
-            .style(btn_style)
-            .on_click(move |_| { let _ = set_count.update(|n| *n += 1); }),
-    )).style("display: flex; align-items: center; gap: 15px;"))
+        button("+").style(btn_style).on_click(move |_| {
+            let _ = set_count.update(|n| *n += 1);
+        }),
+    ))
+    .style("display: flex; align-items: center; gap: 15px;"))
 }
 
 // --- Views ---
@@ -95,19 +105,21 @@ fn CounterControls() -> SilexResult<impl View> {
 #[component]
 fn NavBar() -> impl View {
     div((
-        Link("/", "Home").style("margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold;"),
-        Link("/about", "About").style("text-decoration: none; color: #007bff; font-weight: bold;")
-    )).style("margin-bottom: 20px; padding: 10px; border-bottom: 1px solid #eee")
+        Link("/", "Home")
+            .style("margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold;"),
+        Link("/about", "About").style("text-decoration: none; color: #007bff; font-weight: bold;"),
+    ))
+    .style("margin-bottom: 20px; padding: 10px; border-bottom: 1px solid #eee")
 }
 
 #[component]
 fn HomeView() -> impl View {
     // 页面级状态
     let (name, set_name) = signal("Rustacean".to_string());
-    
+
     // 全局状态通过 Context 获取
     let count = expect_context::<ReadSignal<i32>>();
-    
+
     let is_high = Memo::new(move |_| count.get() > 5);
 
     div((
@@ -190,9 +202,7 @@ fn AboutView() -> impl View {
 
 #[component]
 fn NotFound() -> impl View {
-    div(
-        h1("404 - Page Not Found")
-    ).style("color: red; padding: 20px;")
+    div(h1("404 - Page Not Found")).style("color: red; padding: 20px;")
 }
 
 #[derive(Route, Clone, PartialEq)]
@@ -216,7 +226,7 @@ fn main() -> () {
     create_scope(move || {
         // 全局状态 (App Store)
         let (count, set_count) = signal(0);
-        
+
         // 注入全局 Context
         provide_context(count);
         provide_context(set_count);

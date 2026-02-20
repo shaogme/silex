@@ -56,17 +56,18 @@ fn UserDisplay(user: UserStore) -> impl View {
             span("Name: ").style("font-weight: bold;"),
             // 直接绑定 store.name (ReadSignal)
             // 修改 age 不会触发这个文本节点的更新
-            span(user.name.clone())
+            span(user.name.clone()),
         )),
         div((
             span("Age: ").style("font-weight: bold;"),
-            span(move || user.age.get().to_string())
+            span(move || user.age.get().to_string()),
         )),
         div((
             span("Email: ").style("font-weight: bold;"),
-            span(user.email.clone())
+            span(user.email.clone()),
         )),
-    )).style("background: #f5f5f5; padding: 15px; border-radius: 4px; margin-bottom: 20px;")
+    ))
+    .style("background: #f5f5f5; padding: 15px; border-radius: 4px; margin-bottom: 20px;")
 }
 
 // 用户编辑组件
@@ -79,39 +80,35 @@ fn UserEditor(user: UserStore) -> impl View {
             input()
                 .attr("type", "text")
                 .attr("value", user.name.clone())
-                .on_input(move |new_val| user.name.set(new_val))
+                .on_input(move |new_val| user.name.set(new_val)),
         )),
-        
         // 修改 Age
         div((
             label("Change Age: "),
-            button("Increment Age")
-                .on_click(move |_| {
-                    user.age.update(|age| *age += 1);
-                }),
-            span("(Only updates Age node)").style("margin-left: 10px; color: #666;")
+            button("Increment Age").on_click(move |_| {
+                user.age.update(|age| *age += 1);
+            }),
+            span("(Only updates Age node)").style("margin-left: 10px; color: #666;"),
         )),
-
         // 修改 Email
         div((
             label("Change Email: "),
             input()
                 .attr("type", "text")
                 .attr("value", user.email.clone())
-                .on_input(move |new_val| user.email.set(new_val))
+                .on_input(move |new_val| user.email.set(new_val)),
         )),
-    )).style("display: flex; flex-direction: column; gap: 10px;")
+    ))
+    .style("display: flex; flex-direction: column; gap: 10px;")
 }
 
 // 调试面板组件
 #[component]
 fn DebugPanel(user: UserStore) -> impl View {
-    div((
-        button("Log Current State to Console")
-            .on_click(move |_| {
-                // 演示 get() 方法还原普通结构体
-                let current_state = user.get();
-                web_sys::console::log_1(&format!("Current Store State: {:?}", current_state).into());
-            }),
-    )).style("margin-top: 20px; border-top: 1px dashed #ccc; padding-top: 10px;")
+    div((button("Log Current State to Console").on_click(move |_| {
+        // 演示 get() 方法还原普通结构体
+        let current_state = user.get();
+        web_sys::console::log_1(&format!("Current Store State: {:?}", current_state).into());
+    }),))
+    .style("margin-top: 20px; border-top: 1px dashed #ccc; padding-top: 10px;")
 }

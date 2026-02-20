@@ -35,11 +35,19 @@ pub fn CssDemo() -> impl View {
 
     div![
         h3("CSS-in-Rust Demo"),
-        p("The button below is styled using the `css!` macro with scoped styles and dynamic values (color, scale)."),
+        p(
+            "The button below is styled using the `css!` macro with scoped styles and dynamic values (color, scale)."
+        ),
         button("Scoped Style Button")
             .class(btn_class)
             .on(event::click, move |_| {
-                set_color.update(|c| *c = if *c == "white" { "#ffd700".to_string() } else { "white".to_string() });
+                set_color.update(|c| {
+                    *c = if *c == "white" {
+                        "#ffd700".to_string()
+                    } else {
+                        "white".to_string()
+                    }
+                });
                 set_scale.update(|s| *s = if *s == 1.0 { 1.2 } else { 1.0 });
                 console_log("Clicked! Toggled styles.");
             }),
@@ -60,21 +68,28 @@ pub fn StoreDemo() -> impl View {
             p![strong("Theme: "), settings.theme],
             p![
                 strong("Notifications: "),
-                text(settings.notifications.map(|n| if *n { "On" } else { "Off" })),
+                text(
+                    settings
+                        .notifications
+                        .map(|n| if *n { "On" } else { "Off" })
+                ),
             ],
         ]
         .style("border: 1px solid #ccc; padding: 10px; margin-bottom: 10px;"),
         h4("Update Settings"),
         div![
-            button("Toggle Theme").on(event::click, rx! {
-                settings.theme.update(|t| {
-                    *t = if t == "Light" {
-                        "Dark".to_string()
-                    } else {
-                        "Light".to_string()
-                    }
-                })
-            }),
+            button("Toggle Theme").on(
+                event::click,
+                rx! {
+                    settings.theme.update(|t| {
+                        *t = if t == "Light" {
+                            "Dark".to_string()
+                        } else {
+                            "Light".to_string()
+                        }
+                    })
+                }
+            ),
             button("Toggle Notifications")
                 .on(event::click, settings.notifications.updater(|n| *n = !*n)),
             input()
@@ -91,9 +106,7 @@ pub fn QueryDemo() -> impl View {
 
     div![
         h3("Query Signal Demo"),
-        p(
-            "This input is synced with the URL query parameter 'demo_val' using `use_query_signal`."
-        ),
+        p("This input is synced with the URL query parameter 'demo_val' using `use_query_signal`."),
         div![
             input()
                 .bind_value(val) // Automatic two-way binding
@@ -115,17 +128,17 @@ pub fn QueryDemo() -> impl View {
 #[component]
 pub fn AuthGuard(children: Children) -> impl View {
     let settings = use_user_settings();
-    
+
     move || {
-            if settings.username.get() != "Guest" {
-                children.clone()
-            } else {
-                div![
+        if settings.username.get() != "Guest" {
+            children.clone()
+        } else {
+            div![
                     h3("🔒 Restricted Access"),
                     p("This content is protected. Please go to 'Store Demo' and change your username to something other than 'Guest'."),
                 ].style("padding: 20px; background: #fff0f0; border: 1px solid #ffcccc; color: #cc0000;")
                 .into_any()
-            }
+        }
     }
 }
 
@@ -139,7 +152,7 @@ struct UserProfile {
 async fn mock_fetch_user(id: i32) -> Result<UserProfile, String> {
     // Simulate network delay
     gloo_timers::future::TimeoutFuture::new(1000).await;
-    
+
     if id < 0 {
         return Err("Invalid User ID".to_string());
     }
@@ -147,14 +160,18 @@ async fn mock_fetch_user(id: i32) -> Result<UserProfile, String> {
     Ok(UserProfile {
         id,
         name: format!("User {}", id),
-        role: if id == 1 { "Admin".to_string() } else { "Member".to_string() },
+        role: if id == 1 {
+            "Admin".to_string()
+        } else {
+            "Member".to_string()
+        },
     })
 }
 
 #[component]
 pub fn ResourceDemo() -> impl View {
     let (user_id, set_user_id) = signal(1);
-    
+
     // Create Resource: triggers when user_id changes
     let user_resource = Resource::new(user_id, mock_fetch_user);
 
@@ -225,7 +242,7 @@ pub fn MutationDemo() -> impl View {
     let login_mutation = Mutation::new(|(user, pass): (String, String)| async move {
         console_log(&format!("Logging in as {}...", user));
         gloo_timers::future::TimeoutFuture::new(1500).await;
-        
+
         if user == "admin" && pass == "password" {
             Ok("fake_jwt_token_12345".to_string())
         } else {
@@ -239,7 +256,6 @@ pub fn MutationDemo() -> impl View {
     div![
         h3("Mutation Demo (Async Write)"),
         p("Enter 'admin' / 'password' to succeed, others to fail."),
-        
         div![
             input()
                 .bind_value(username)
@@ -260,38 +276,37 @@ pub fn MutationDemo() -> impl View {
                 })
                 .attr("disabled", move || login_mutation.loading()) // Make reactive
                 .style("padding: 5px 10px;"),
-        ].style("margin-bottom: 10px;"),
-
+        ]
+        .style("margin-bottom: 10px;"),
         // Loading State
         move || if login_mutation.loading() {
             div("Logging in...").style("color: blue;").into_any()
         } else {
             "".into_any()
         },
-
         // Error State
-        move || login_mutation.error().map(|err| {
-            div(format!("Error: {}", err)).style("color: red;")
-        }),
-
+        move || login_mutation
+            .error()
+            .map(|err| { div(format!("Error: {}", err)).style("color: red;") }),
         // Success State
         move || login_mutation.value().map(|token| {
             div![
                 div("Login Successful!").style("color: green; font-weight: bold;"),
-                div(format!("Token: {}", token)).style("font-family: monospace; background: #eee; padding: 5px;")
+                div(format!("Token: {}", token))
+                    .style("font-family: monospace; background: #eee; padding: 5px;")
             ]
         })
-
-    ].style("padding: 20px; border: 1px solid #ccc; border-radius: 8px;")
+    ]
+    .style("padding: 20px; border: 1px solid #ccc; border-radius: 8px;")
 }
 
 #[component]
 pub fn SuspenseDemo() -> impl View {
-    use silex::components::{ SuspenseBoundary, SuspenseMode};
+    use silex::components::{SuspenseBoundary, SuspenseMode};
 
     let (show_content, set_show_content) = signal(false);
     let (mode, set_mode) = signal(SuspenseMode::KeepAlive);
-    
+
     // Trigger for reloading the resource
     let (trigger, set_trigger) = signal(0);
 
@@ -304,7 +319,6 @@ pub fn SuspenseDemo() -> impl View {
     div![
         h3("Suspense Modes Demo"),
         p("Compare KeepAlive (Data persists) vs Unmount mode (Data resets)."),
-        
         // Mode Selection
         div![
             label![
@@ -314,7 +328,8 @@ pub fn SuspenseDemo() -> impl View {
                     .attr("checked", move || mode.get() == SuspenseMode::KeepAlive)
                     .on(event::change, set_mode.setter(SuspenseMode::KeepAlive)),
                 " KeepAlive (CSS Hide)"
-            ].style("margin-right: 15px;"),
+            ]
+            .style("margin-right: 15px;"),
             label![
                 input()
                     .attr("type", "radio")
@@ -323,43 +338,50 @@ pub fn SuspenseDemo() -> impl View {
                     .on(event::change, set_mode.setter(SuspenseMode::Unmount)),
                 " Unmount (DOM Remove)"
             ]
-        ].style("margin-bottom: 15px;"),
-
+        ]
+        .style("margin-bottom: 15px;"),
         div![
-            button(show_content.map(|s| if *s { "Destroy Component" } else { "Create Component" }))
-                .on(event::click, set_show_content.updater(|s| *s = !*s))
-                .style("margin-right: 10px;"),
-            
-            button("Reload Resource")
-                .on(event::click, set_trigger.updater(|n| *n += 1))
-        ].style("margin-bottom: 15px;"),
-
-        div![
-            Show::new(show_content, move || {
-                suspense()
-                    .resource(move || Resource::new(trigger, heavy_work))
-                    .children(move |resource| {
-                        SuspenseBoundary::new()
-                            .mode(mode.get())
-                            .fallback(|| div("Loading... (2s)").style("color: blue; font-weight: bold;"))
-                            .children(move || {
-                                // Crucial: We do NOT read resource.get() here.
+            button(show_content.map(|s| if *s {
+                "Destroy Component"
+            } else {
+                "Create Component"
+            }))
+            .on(event::click, set_show_content.updater(|s| *s = !*s))
+            .style("margin-right: 10px;"),
+            button("Reload Resource").on(event::click, set_trigger.updater(|n| *n += 1))
+        ]
+        .style("margin-bottom: 15px;"),
+        div![Show::new(show_content, move || {
+            suspense()
+                .resource(move || Resource::new(trigger, heavy_work))
+                .children(move |resource| {
+                    SuspenseBoundary::new()
+                        .mode(mode.get())
+                        .fallback(|| {
+                            div("Loading... (2s)").style("color: blue; font-weight: bold;")
+                        })
+                        .children(move || {
+                            // Crucial: We do NOT read resource.get() here.
+                            div![
                                 div![
-                                    div![
-                                        "Resource Data: ",
-                                        // Fine-grained reading: Only this text node updates
-                                        move || resource.get().unwrap_or_else(|| "Waiting...".to_string())
-                                    ],
-                                    div("1. Type something below."),
-                                    div("2. Click 'Reload Resource'."),
-                                    div("3. KeepAlive: Text stays. Unmount: Text gone."),
-                                    input().placeholder("Type here test persistence...")
-                                        .style("margin-top: 5px; padding: 5px; width: 250px;")
-                                ].style("border: 1px solid green; padding: 10px; background: #e8f5e9;")
-                            })
-                    })
-            })
-        ].style("min-height: 150px; border: 1px dashed #ccc; padding: 10px;")
+                                    "Resource Data: ",
+                                    // Fine-grained reading: Only this text node updates
+                                    move || resource
+                                        .get()
+                                        .unwrap_or_else(|| "Waiting...".to_string())
+                                ],
+                                div("1. Type something below."),
+                                div("2. Click 'Reload Resource'."),
+                                div("3. KeepAlive: Text stays. Unmount: Text gone."),
+                                input()
+                                    .placeholder("Type here test persistence...")
+                                    .style("margin-top: 5px; padding: 5px; width: 250px;")
+                            ]
+                            .style("border: 1px solid green; padding: 10px; background: #e8f5e9;")
+                        })
+                })
+        })]
+        .style("min-height: 150px; border: 1px dashed #ccc; padding: 10px;")
     ]
     .style("padding: 20px; border: 1px solid #ccc; border-radius: 8px; margin-top: 20px;")
 }

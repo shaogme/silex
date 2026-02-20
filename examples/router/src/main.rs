@@ -76,9 +76,10 @@ fn UsersLayout(route: UsersRoute) -> impl View {
             nav_link("/users", "User List"),
             span("|").style("margin: 0 10px; color: #ccc;"),
             nav_link("/users/new", "Create User (Static)"),
-        )).style("border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;"),
+        ))
+        .style("border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;"),
         // 渲染子路由
-        route.render()
+        route.render(),
     ))
 }
 
@@ -93,15 +94,19 @@ fn UserList() -> impl View {
 
     div((
         h3("Select a User:"),
-        ul(
-            users.into_iter().map(|(id, name)| {
-                li(
-                    Link(UsersRoute::Detail { id }, format!("👤 {} (ID: {})", name, id))
-                        .style("text-decoration: none; color: #2196f3;")
-                        .active_class("active-user")
-                ).style("margin: 5px 0;")
-            }).collect::<Vec<_>>()
-        ).style("list-style: none; padding: 0;")
+        ul(users
+            .into_iter()
+            .map(|(id, name)| {
+                li(Link(
+                    UsersRoute::Detail { id },
+                    format!("👤 {} (ID: {})", name, id),
+                )
+                .style("text-decoration: none; color: #2196f3;")
+                .active_class("active-user"))
+                .style("margin: 5px 0;")
+            })
+            .collect::<Vec<_>>())
+        .style("list-style: none; padding: 0;"),
     ))
 }
 
@@ -115,14 +120,24 @@ fn UserDetail(id: u32) -> impl View {
         div((
             h3(format!("User Profile: #{}", id)),
             button("Go Back")
-                .on_click(move |_| navigator.push(AppRoute::Users { route: UsersRoute::List }))
-                .style("font-size: 0.8rem; padding: 5px 10px; cursor: pointer;")
-        )).style("display: flex; justify-content: space-between; align-items: center;"),
+                .on_click(move |_| {
+                    navigator.push(AppRoute::Users {
+                        route: UsersRoute::List,
+                    })
+                })
+                .style("font-size: 0.8rem; padding: 5px 10px; cursor: pointer;"),
+        ))
+        .style("display: flex; justify-content: space-between; align-items: center;"),
         hr().style("border: 0; border-top: 1px solid #eee; margin: 15px 0;"),
-        p((strong("Current Path: "), span(path).style("font-family: monospace;"))),
-        div(
-            p(format!("This component is rendered with strict prop id: {}", id))
-        ).style("background: #f5f5f5; padding: 10px; border-radius: 4px; margin-top: 10px;")
+        p((
+            strong("Current Path: "),
+            span(path).style("font-family: monospace;"),
+        )),
+        div(p(format!(
+            "This component is rendered with strict prop id: {}",
+            id
+        )))
+        .style("background: #f5f5f5; padding: 10px; border-radius: 4px; margin-top: 10px;"),
     )))
 }
 
@@ -131,7 +146,7 @@ fn NotFound() -> impl View {
     div((
         h1("404"),
         p("Page not found."),
-        Link("/", "Return Home").style("color: #2196f3; text-decoration: underline;")
+        Link("/", "Return Home").style("color: #2196f3; text-decoration: underline;"),
     ))
     .style("text-align: center; padding: 50px; color: #d32f2f;")
 }
@@ -166,7 +181,6 @@ fn MainLayout(child: AnyView) -> impl View {
     .style("font-family: sans-serif; max-width: 800px; margin: 0 auto; color: #333;")
 }
 
-
 // 定义子路由枚举 (Users Module)
 #[derive(Route, Clone, PartialEq)]
 enum UsersRoute {
@@ -185,12 +199,12 @@ enum AppRoute {
     Home,
     #[route("/search", view = SearchPage)]
     Search,
-    
+
     // 递归嵌套：所有以 /users 开头的路径交给 UsersRoute 处理
     #[route("/users/*", view = UsersLayout)]
     Users {
         #[nested]
-        route: UsersRoute 
+        route: UsersRoute,
     },
 
     #[route("/*", view = NotFound)]
@@ -203,7 +217,7 @@ enum AppRoute {
 
 fn main() {
     setup_global_error_handlers();
-    
+
     let window = web_sys::window().unwrap();
     let document = window.document().unwrap();
     let body = document.body().unwrap();
@@ -211,7 +225,7 @@ fn main() {
     // 注入全局样式用于 Active Link 高亮
     let style_el = document.create_element("style").unwrap();
     style_el.set_text_content(Some(".nav-active { background-color: #e3f2fd !important; color: #1976d2 !important; font-weight: bold; }"));
-    
+
     if let Ok(Some(head)) = document.query_selector("head") {
         let _ = head.append_child(&style_el);
     } else {
@@ -220,12 +234,9 @@ fn main() {
 
     // 创建一个渲染闭包，将路由映射到视图
     // 采用“视图组合”模式：match 分发 + Layout 函数包裹
-    
+
     create_scope(move || {
-        let app = MainLayout().child(
-            Router::new()
-                .match_route::<AppRoute>()
-        );
+        let app = MainLayout().child(Router::new().match_route::<AppRoute>());
         app.mount(&body);
     });
 }

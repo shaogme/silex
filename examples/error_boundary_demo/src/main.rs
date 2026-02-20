@@ -57,18 +57,20 @@ fn App() -> impl View {
 #[component]
 fn RecoverableComponent() -> impl View {
     let (should_error, set_should_error) = signal(false);
-    
+
     move || {
         if should_error.get() {
-             // Return an Err, which triggers handle_error -> ErrorContext
-              Err(SilexError::Javascript("User clicked the error button!".into()))
+            // Return an Err, which triggers handle_error -> ErrorContext
+            Err(SilexError::Javascript(
+                "User clicked the error button!".into(),
+            ))
         } else {
-             Ok(div((
-                 p("Component is running normally."),
-                 button("Trigger Result::Err").on_click(move |_| {
-                     set_should_error.set(true);
-                 })
-             )))
+            Ok(div((
+                p("Component is running normally."),
+                button("Trigger Result::Err").on_click(move |_| {
+                    set_should_error.set(true);
+                }),
+            )))
         }
     }
 }
@@ -76,37 +78,37 @@ fn RecoverableComponent() -> impl View {
 // A component that conditionally renders a child that panics immediately during construction
 #[component]
 fn PanicToggleComponent() -> impl View {
-     let (show_panic, _set_show_panic) = signal(false);
-     
-     move || {
-         if show_panic.get() {
-             // We wrap the panicking component in a way that its construction is delayed until this closure runs
-             // Because ErrorBoundary wraps this closure in effect and catch_unwind, it captures this panic.
-             // 无参数组件直接调用
-             Some(ImmediatePanic())
-         } else {
-             None
-         }
-     }
+    let (show_panic, _set_show_panic) = signal(false);
+
+    move || {
+        if show_panic.get() {
+            // We wrap the panicking component in a way that its construction is delayed until this closure runs
+            // Because ErrorBoundary wraps this closure in effect and catch_unwind, it captures this panic.
+            // 无参数组件直接调用
+            Some(ImmediatePanic())
+        } else {
+            None
+        }
+    }
 }
 
 #[component]
 fn ImmediatePanic() -> impl View {
     let (active, set_active) = signal(false);
-    
+
     div((
-         p("Ready to panic?"),
-         button("Click to Panic Immediately").on_click(move |_| {
-              set_active.set(true);
-         }),
-         // This closure runs inside an effect.
-         // Silex View wrapper now implements catch_unwind within the reactive effect,
-         // so this panic SHOULD be caught by the ErrorBoundary.
-         move || {
-             if active.get() {
-                 panic!("KA-BOOM! Panic in render function.");
-             }
-             "Safe"
-         }
+        p("Ready to panic?"),
+        button("Click to Panic Immediately").on_click(move |_| {
+            set_active.set(true);
+        }),
+        // This closure runs inside an effect.
+        // Silex View wrapper now implements catch_unwind within the reactive effect,
+        // so this panic SHOULD be caught by the ErrorBoundary.
+        move || {
+            if active.get() {
+                panic!("KA-BOOM! Panic in render function.");
+            }
+            "Safe"
+        },
     ))
 }
