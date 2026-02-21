@@ -1,17 +1,19 @@
 pub mod attribute;
 pub mod element;
+pub mod event;
+pub mod helpers;
 pub mod view;
 
-pub use attribute::*;
-pub use element::tags;
-pub use element::*;
-pub use view::*;
-
-pub mod helpers;
-pub use helpers::*;
-
-pub mod event;
-pub use event::{EventDescriptor, EventHandler, WithEventArg, WithoutEventArg};
+pub mod prelude {
+    pub use crate::attribute::*;
+    pub use crate::element::*;
+    pub use crate::event;
+    pub use crate::event::{EventDescriptor, EventHandler, WithEventArg, WithoutEventArg};
+    pub use crate::helpers::*;
+    pub use crate::setup_global_error_handlers;
+    pub use crate::view::*;
+    pub use crate::view_match;
+}
 
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;

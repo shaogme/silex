@@ -1,6 +1,5 @@
 use crate::attributes::*;
-use silex_dom::TypedElement;
-use silex_dom::attribute::*;
+use silex_dom::prelude::*;
 use wasm_bindgen::JsCast;
 
 // --- Tags ---
@@ -9,20 +8,18 @@ impl AnchorAttributes for TypedElement<A> {
     fn href<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlAnchorElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_href(v));
         self
     }
     fn target<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlAnchorElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value
             .into_storable()
             .apply_string(move |v| el.set_target(v));
@@ -31,20 +28,18 @@ impl AnchorAttributes for TypedElement<A> {
     fn rel<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlAnchorElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_rel(v));
         self
     }
     fn download<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlAnchorElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value
             .into_storable()
             .apply_string(move |v| el.set_download(v));
@@ -59,20 +54,18 @@ impl AnchorAttributes for TypedElement<Area> {
     fn href<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlAreaElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_href(v));
         self
     }
     fn target<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlAreaElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value
             .into_storable()
             .apply_string(move |v| el.set_target(v));
@@ -81,20 +74,18 @@ impl AnchorAttributes for TypedElement<Area> {
     fn rel<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlAreaElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_rel(v));
         self
     }
     fn download<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlAreaElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value
             .into_storable()
             .apply_string(move |v| el.set_download(v));
@@ -108,10 +99,9 @@ impl MediaAttributes for TypedElement<Audio> {
     fn src<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlAudioElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_src(v));
         self
     }
@@ -119,10 +109,9 @@ impl MediaAttributes for TypedElement<Audio> {
     fn autoplay<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlAudioElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_autoplay(v));
@@ -131,10 +120,9 @@ impl MediaAttributes for TypedElement<Audio> {
     fn controls<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlAudioElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_controls(v));
@@ -143,20 +131,18 @@ impl MediaAttributes for TypedElement<Audio> {
     fn loop_<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlAudioElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value.into_storable().apply_bool(move |v| el.set_loop(v));
         self
     }
     fn muted<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlAudioElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value.into_storable().apply_bool(move |v| el.set_muted(v));
         self
     }
@@ -181,34 +167,32 @@ impl FormAttributes for TypedElement<Button> {
     fn type_<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("type", value)
     }
     fn value<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlButtonElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_value(v));
         self
     }
     fn checked<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("checked", value)
     }
     fn disabled<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlButtonElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_disabled(v));
@@ -217,35 +201,35 @@ impl FormAttributes for TypedElement<Button> {
     fn placeholder<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("placeholder", value)
     }
     fn readonly<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("readOnly", value)
     }
     fn required<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("required", value)
     }
     fn selected<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("selected", value)
     }
     fn multiple<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("multiple", value)
     }
@@ -273,10 +257,9 @@ impl OpenAttributes for TypedElement<Details> {
     fn open<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlDetailsElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value.into_storable().apply_bool(move |v| el.set_open(v));
         self
     }
@@ -287,10 +270,9 @@ impl OpenAttributes for TypedElement<Dialog> {
     fn open<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlDialogElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value.into_storable().apply_bool(move |v| el.set_open(v));
         self
     }
@@ -305,7 +287,7 @@ impl MediaAttributes for TypedElement<Embed> {
     fn src<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("src", value)
     }
@@ -331,31 +313,30 @@ impl FormAttributes for TypedElement<Fieldset> {
     fn type_<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("type", value)
     }
     fn value<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.prop("value", value)
     }
     fn checked<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("checked", value)
     }
     fn disabled<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlFieldSetElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_disabled(v));
@@ -364,35 +345,35 @@ impl FormAttributes for TypedElement<Fieldset> {
     fn placeholder<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("placeholder", value)
     }
     fn readonly<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("readOnly", value)
     }
     fn required<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("required", value)
     }
     fn selected<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("selected", value)
     }
     fn multiple<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("multiple", value)
     }
@@ -413,63 +394,63 @@ impl FormAttributes for TypedElement<Form> {
     fn type_<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("type", value)
     }
     fn value<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.prop("value", value)
     }
     fn checked<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("checked", value)
     }
     fn disabled<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("disabled", value)
     }
     fn placeholder<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("placeholder", value)
     }
     fn readonly<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("readOnly", value)
     }
     fn required<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("required", value)
     }
     fn selected<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("selected", value)
     }
     fn multiple<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("multiple", value)
     }
@@ -501,10 +482,9 @@ impl MediaAttributes for TypedElement<Iframe> {
     fn src<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlIFrameElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_src(v));
         self
     }
@@ -515,10 +495,9 @@ impl MediaAttributes for TypedElement<Img> {
     fn src<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlImageElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_src(v));
         self
     }
@@ -529,40 +508,36 @@ impl FormAttributes for TypedElement<Input> {
     fn type_<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlInputElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_type(v));
         self
     }
     fn value<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlInputElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_value(v));
         self
     }
     fn checked<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlInputElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value.into_storable().apply_bool(move |v| el.set_checked(v));
         self
     }
     fn disabled<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlInputElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_disabled(v));
@@ -571,10 +546,9 @@ impl FormAttributes for TypedElement<Input> {
     fn placeholder<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlInputElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value
             .into_storable()
             .apply_string(move |v| el.set_placeholder(v));
@@ -583,10 +557,9 @@ impl FormAttributes for TypedElement<Input> {
     fn readonly<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlInputElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_read_only(v));
@@ -595,10 +568,9 @@ impl FormAttributes for TypedElement<Input> {
     fn required<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlInputElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_required(v));
@@ -607,17 +579,16 @@ impl FormAttributes for TypedElement<Input> {
     fn selected<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("selected", value)
     }
     fn multiple<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlInputElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_multiple(v));
@@ -631,10 +602,9 @@ impl LabelAttributes for TypedElement<Label> {
     fn for_<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlLabelElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value
             .into_storable()
             .apply_string(move |v| el.set_html_for(v));
@@ -648,20 +618,18 @@ impl AnchorAttributes for TypedElement<Link> {
     fn href<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlLinkElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_href(v));
         self
     }
     fn target<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlLinkElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value
             .into_storable()
             .apply_string(move |v| el.set_target(v));
@@ -670,17 +638,16 @@ impl AnchorAttributes for TypedElement<Link> {
     fn rel<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlLinkElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_rel(v));
         self
     }
     fn download<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("download", value)
     }
@@ -702,7 +669,7 @@ impl MediaAttributes for TypedElement<Object> {
     fn src<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("src", value)
     }
@@ -721,31 +688,30 @@ impl FormAttributes for TypedElement<Optgroup> {
     fn type_<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("type", value)
     }
     fn value<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.prop("value", value)
     }
     fn checked<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("checked", value)
     }
     fn disabled<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlOptGroupElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_disabled(v));
@@ -754,35 +720,35 @@ impl FormAttributes for TypedElement<Optgroup> {
     fn placeholder<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("placeholder", value)
     }
     fn readonly<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("readOnly", value)
     }
     fn required<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("required", value)
     }
     fn selected<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("selected", value)
     }
     fn multiple<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("multiple", value)
     }
@@ -799,34 +765,32 @@ impl FormAttributes for TypedElement<OptionTag> {
     fn type_<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("type", value)
     }
     fn value<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlOptionElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_value(v));
         self
     }
     fn checked<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("checked", value)
     }
     fn disabled<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlOptionElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_disabled(v));
@@ -835,31 +799,30 @@ impl FormAttributes for TypedElement<OptionTag> {
     fn placeholder<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("placeholder", value)
     }
     fn readonly<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("readOnly", value)
     }
     fn required<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("required", value)
     }
     fn selected<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlOptionElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_selected(v));
@@ -868,7 +831,7 @@ impl FormAttributes for TypedElement<OptionTag> {
     fn multiple<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("multiple", value)
     }
@@ -878,66 +841,65 @@ impl FormAttributes for TypedElement<Output> {
     fn type_<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("type", value)
     }
     fn value<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlOutputElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_value(v));
         self
     }
     fn checked<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("checked", value)
     }
     fn disabled<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("disabled", value)
     }
     fn placeholder<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("placeholder", value)
     }
     fn readonly<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("readOnly", value)
     }
     fn required<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("required", value)
     }
     fn selected<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("selected", value)
     }
     fn multiple<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("multiple", value)
     }
@@ -964,34 +926,32 @@ impl FormAttributes for TypedElement<Select> {
     fn type_<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("type", value)
     }
     fn value<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlSelectElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_value(v));
         self
     }
     fn checked<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("checked", value)
     }
     fn disabled<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlSelectElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_disabled(v));
@@ -1000,24 +960,23 @@ impl FormAttributes for TypedElement<Select> {
     fn placeholder<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("placeholder", value)
     }
     fn readonly<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("readOnly", value)
     }
     fn required<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlSelectElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_required(v));
@@ -1026,17 +985,16 @@ impl FormAttributes for TypedElement<Select> {
     fn selected<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("selected", value)
     }
     fn multiple<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlSelectElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_multiple(v));
@@ -1058,10 +1016,9 @@ impl MediaAttributes for TypedElement<Source> {
     fn src<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlSourceElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_src(v));
         self
     }
@@ -1081,10 +1038,9 @@ impl TableCellAttributes for TypedElement<Td> {
     fn colspan<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlTableCellElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| {
             if let Ok(n) = v.parse::<u32>() {
                 el.set_col_span(n);
@@ -1097,10 +1053,9 @@ impl TableCellAttributes for TypedElement<Td> {
     fn rowspan<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlTableCellElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| {
             if let Ok(n) = v.parse::<u32>() {
                 el.set_row_span(n);
@@ -1113,10 +1068,9 @@ impl TableCellAttributes for TypedElement<Td> {
     fn headers<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlTableCellElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value
             .into_storable()
             .apply_string(move |v| el.set_headers(v));
@@ -1136,34 +1090,32 @@ impl FormAttributes for TypedElement<Textarea> {
     fn type_<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         self.attr("type", value)
     }
     fn value<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlTextAreaElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_value(v));
         self
     }
     fn checked<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("checked", value)
     }
     fn disabled<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlTextAreaElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_disabled(v));
@@ -1172,10 +1124,9 @@ impl FormAttributes for TypedElement<Textarea> {
     fn placeholder<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlTextAreaElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value
             .into_storable()
             .apply_string(move |v| el.set_placeholder(v));
@@ -1184,10 +1135,9 @@ impl FormAttributes for TypedElement<Textarea> {
     fn readonly<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlTextAreaElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_read_only(v));
@@ -1196,10 +1146,9 @@ impl FormAttributes for TypedElement<Textarea> {
     fn required<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlTextAreaElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_required(v));
@@ -1208,14 +1157,14 @@ impl FormAttributes for TypedElement<Textarea> {
     fn selected<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("selected", value)
     }
     fn multiple<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         self.prop("multiple", value)
     }
@@ -1233,10 +1182,9 @@ impl TableCellAttributes for TypedElement<Th> {
     fn colspan<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlTableCellElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| {
             if let Ok(n) = v.parse::<u32>() {
                 el.set_col_span(n);
@@ -1249,10 +1197,9 @@ impl TableCellAttributes for TypedElement<Th> {
     fn rowspan<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlTableCellElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| {
             if let Ok(n) = v.parse::<u32>() {
                 el.set_row_span(n);
@@ -1265,10 +1212,9 @@ impl TableCellAttributes for TypedElement<Th> {
     fn headers<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlTableCellElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value
             .into_storable()
             .apply_string(move |v| el.set_headers(v));
@@ -1279,20 +1225,18 @@ impl TableHeaderAttributes for TypedElement<Th> {
     fn scope<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlTableCellElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_scope(v));
         self
     }
     fn abbr<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlTableCellElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_abbr(v));
         self
     }
@@ -1306,10 +1250,9 @@ impl MediaAttributes for TypedElement<Track> {
     fn src<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlTrackElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_src(v));
         self
     }
@@ -1324,10 +1267,9 @@ impl MediaAttributes for TypedElement<Video> {
     fn src<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyStringAttribute,
+        V::Stored: ApplyStringAttribute,
     {
         let el: web_sys::HtmlVideoElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyStringAttribute;
         value.into_storable().apply_string(move |v| el.set_src(v));
         self
     }
@@ -1335,10 +1277,9 @@ impl MediaAttributes for TypedElement<Video> {
     fn autoplay<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlVideoElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_autoplay(v));
@@ -1347,10 +1288,9 @@ impl MediaAttributes for TypedElement<Video> {
     fn controls<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlVideoElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value
             .into_storable()
             .apply_bool(move |v| el.set_controls(v));
@@ -1359,20 +1299,18 @@ impl MediaAttributes for TypedElement<Video> {
     fn loop_<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlVideoElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value.into_storable().apply_bool(move |v| el.set_loop(v));
         self
     }
     fn muted<V>(self, value: V) -> Self
     where
         V: IntoStorable,
-        V::Stored: silex_dom::ApplyBoolAttribute,
+        V::Stored: ApplyBoolAttribute,
     {
         let el: web_sys::HtmlVideoElement = self.element.dom_element.clone().unchecked_into();
-        use silex_dom::ApplyBoolAttribute;
         value.into_storable().apply_bool(move |v| el.set_muted(v));
         self
     }

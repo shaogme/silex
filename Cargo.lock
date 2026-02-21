@@ -1286,6 +1286,7 @@ version = "0.1.0-beta.1"
 dependencies = [
  "silex_core",
  "silex_dom",
+ "trybuild",
  "wasm-bindgen",
  "web-sys",
 ]

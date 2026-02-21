@@ -38,30 +38,24 @@ pub mod dom {
 
 pub mod prelude {
     pub use crate::components::*;
-    pub use crate::core::prelude::*;
-    pub use crate::core::*;
     pub use crate::flow::*;
     pub use crate::router::*;
     pub use crate::store::*;
     pub use crate::{SilexError, SilexResult};
-    pub use silex_core::rx;
-    pub use silex_dom::*;
+    pub use silex_core::prelude::*;
+    pub use silex_css::prelude::*;
+    pub use silex_dom::prelude::*;
     pub use silex_html::*;
     #[cfg(feature = "macros")]
     pub use silex_macros::*;
-
-    // Export CSS types for easier use in styled! / css! macros
-    pub use silex_css::types::*;
-
-    pub use silex_css::builder::{Style, sty};
-    pub use silex_css::theme::{ThemeVariables, set_global_theme, theme_variables, use_theme};
 
     // Resolve ambiguous glob re-exports
     pub use crate::components::Center;
     pub use crate::core::prelude::{Map, Set, Track};
     pub use crate::flow::Switch;
     pub use crate::router::Link;
-    pub use silex_dom::{View, text};
+    pub use silex_css::prelude::Style;
+    pub use silex_dom::prelude::{View, text};
     pub use silex_html::{Em, em};
     #[cfg(feature = "macros")]
     pub use silex_macros::{define_theme, style};

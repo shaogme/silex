@@ -7,13 +7,13 @@ error[E0277]: 类型 `MarginValue` 无法作为有效的 CSS `Padding` 属性值
   = note: 请检查是否传入了错误的类型（例如将 Px 传给了 Color）。如果必须传入复杂的动态表达式，可以使用 `UnsafeCss::new(...)` 显式绕过。
 help: the trait `ValidFor<Padding>` is not implemented for `MarginValue`
       but trait `ValidFor<Margin>` is implemented for it
- --> src/css/types.rs
+ --> src/types.rs
   |
   | impl ValidFor<props::Margin> for MarginValue {}
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   = help: for that trait implementation, expected `Margin`, found `Padding`
-note: required by a bound in `silex::prelude::Style::padding`
- --> src/css/builder.rs
+note: required by a bound in `silex_css::builder::Style::padding`
+ --> src/builder.rs
   |
   | crate::for_all_properties!(generate_builder_methods);
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

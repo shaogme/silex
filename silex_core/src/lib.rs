@@ -30,9 +30,13 @@ macro_rules! rx {
 }
 
 pub mod prelude {
+    pub use crate::batch_read;
+    pub use crate::batch_read_untracked;
+    pub use crate::callback::Callback;
     pub use crate::log::*;
     pub use crate::node_ref::NodeRef;
     pub use crate::reactivity::*;
+    pub use crate::rx;
     pub use crate::traits::*;
     pub use crate::{SilexError, SilexResult};
 }

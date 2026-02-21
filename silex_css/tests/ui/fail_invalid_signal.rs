@@ -1,4 +1,4 @@
-use silex::prelude::*;
+use silex_css::prelude::*;
 
 fn main() {
     let (color_sig, _) = signal(hex("#fff"));

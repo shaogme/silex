@@ -1,6 +1,6 @@
 use crate::SilexError;
 use silex_core::reactivity::on_cleanup;
-use silex_dom::View;
+use silex_dom::prelude::View;
 use web_sys::Node;
 
 /// Portal 组件：将子视图渲染到当前 DOM 树之外的节点（默认是 document.body）。

@@ -4,7 +4,7 @@ use silex_core::reactivity::{
     Effect, NodeId, ReadSignal, WriteSignal, batch, create_scope, dispose, signal,
 };
 use silex_core::traits::{IntoSignal, Set, With};
-use silex_dom::View;
+use silex_dom::prelude::View;
 use std::cell::RefCell;
 use std::rc::Rc;
 use web_sys::Node;

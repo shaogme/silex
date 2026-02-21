@@ -17,3 +17,6 @@ silex_core.workspace = true
 silex_dom.workspace = true
 wasm-bindgen.workspace = true
 web-sys.workspace = true
+
+[dev-dependencies]
+trybuild = "1.0"

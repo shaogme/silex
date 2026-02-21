@@ -44,22 +44,22 @@ macro_rules! define_tag {
     ($struct_name:ident, $tag_name:literal, $fn_name:ident, $constructor:ident, void, [$($traits:ident),*]) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub struct $struct_name;
-        impl $crate::tags::Tag for $struct_name {}
-        $( impl $crate::tags::$traits for $struct_name {} )*
+        impl $crate::prelude::tags::Tag for $struct_name {}
+        $( impl $crate::prelude::tags::$traits for $struct_name {} )*
 
-        pub fn $fn_name() -> $crate::TypedElement<$struct_name> {
-            $crate::TypedElement::$constructor($tag_name)
+        pub fn $fn_name() -> $crate::prelude::TypedElement<$struct_name> {
+            $crate::prelude::TypedElement::$constructor($tag_name)
         }
     };
 
     ($struct_name:ident, $tag_name:literal, $fn_name:ident, $constructor:ident, non_void, [$($traits:ident),*]) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub struct $struct_name;
-        impl $crate::tags::Tag for $struct_name {}
-        $( impl $crate::tags::$traits for $struct_name {} )*
+        impl $crate::prelude::tags::Tag for $struct_name {}
+        $( impl $crate::prelude::tags::$traits for $struct_name {} )*
 
-        pub fn $fn_name<V: $crate::view::View>(child: V) -> $crate::TypedElement<$struct_name> {
-            let el = $crate::TypedElement::$constructor($tag_name);
+        pub fn $fn_name<V: $crate::view::View>(child: V) -> $crate::prelude::TypedElement<$struct_name> {
+            let el = $crate::prelude::TypedElement::$constructor($tag_name);
             child.mount(&el.element.dom_element);
             el
         }

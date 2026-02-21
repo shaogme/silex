@@ -1,7 +1,7 @@
 use crate::SilexError;
 use silex_core::reactivity::Effect;
 use silex_core::traits::Get;
-use silex_dom::View;
+use silex_dom::prelude::View;
 use std::cell::RefCell;
 use std::rc::Rc;
 use web_sys::Node;

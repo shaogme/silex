@@ -1,0 +1,10 @@
+error[E0425]: cannot find function `signal` in this scope
+ --> tests/ui/fail_invalid_signal.rs:4:26
+  |
+4 |     let (color_sig, _) = signal(hex("#fff"));
+  |                          ^^^^^^ not found in this scope
+  |
+help: consider importing this function
+  |
+1 + use silex_core::prelude::signal;
+  |

@@ -1,5 +1,5 @@
 use silex_core::{reactivity::Effect, traits::With};
-use silex_dom::View;
+use silex_dom::prelude::View;
 use web_sys::Node;
 
 /// Dynamic 组件：用于渲染动态内容，类似于 SolidJS 的 <Dynamic>

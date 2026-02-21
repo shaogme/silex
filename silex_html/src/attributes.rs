@@ -1,4 +1,4 @@
-use silex_dom::{ApplyBoolAttribute, ApplyStringAttribute, AttributeBuilder, IntoStorable};
+use silex_dom::prelude::*;
 
 /// 表单与输入属性：主要用于 input, select, textarea, button, form
 pub trait FormAttributes: AttributeBuilder {

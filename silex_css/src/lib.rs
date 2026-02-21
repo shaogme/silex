@@ -2,7 +2,12 @@ pub mod builder;
 pub mod registry;
 pub mod theme;
 pub mod types;
-pub use types::UnsafeCss;
+
+pub mod prelude {
+    pub use crate::builder::{Style, sty};
+    pub use crate::theme::{ThemeVariables, set_global_theme, theme_variables, use_theme};
+    pub use crate::types::*;
+}
 
 use silex_core::reactivity::{Effect, on_cleanup};
 use silex_core::traits::{Get, IntoSignal, With};
