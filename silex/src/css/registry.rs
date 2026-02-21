@@ -315,7 +315,7 @@ macro_rules! for_all_properties {
             (offset_path, "offset-path", OffsetPath, Shorthand),
             (offset_position, "offset-position", OffsetPosition, Shorthand),
             (offset_rotate, "offset-rotate", OffsetRotate, Shorthand),
-            (opacity, "opacity", Opacity, Custom),
+            (opacity, "opacity", Opacity, Number),
             (order, "order", Order, Number),
             (orphans, "orphans", Orphans, Number),
             (outline, "outline", Outline, Shorthand),

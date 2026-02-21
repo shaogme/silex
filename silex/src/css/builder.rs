@@ -11,6 +11,7 @@ pub(crate) type StaticRule = (&'static str, String);
 pub(crate) type DynamicRule = (&'static str, DynamicValue);
 pub(crate) type PseudoRule = (&'static str, Style);
 
+#[derive(Clone)]
 pub struct Style {
     pub(crate) static_rules: Vec<StaticRule>,
     pub(crate) dynamic_rules: Vec<DynamicRule>,
@@ -111,6 +112,12 @@ crate::for_all_properties!(generate_builder_methods);
 
 impl ApplyToDom for Style {
     fn apply(self, el: &web_sys::Element, _target: ApplyTarget) {
+        self.apply_to_element(el);
+    }
+}
+
+impl Style {
+    pub fn apply_to_element(self, el: &web_sys::Element) -> String {
         // 1. 生成稳定哈希（忽略动态值，仅对选择器和属性名哈希）
         let mut hasher = DefaultHasher::new();
         for (k, v) in &self.static_rules {
@@ -182,6 +189,30 @@ impl ApplyToDom for Style {
                 }
             });
         }
+        class_base
+    }
+}
+
+impl silex_dom::attribute::ReactiveApply for Style {
+    fn apply_to_dom(
+        f: impl Fn() -> Self + 'static,
+        el: web_sys::Element,
+        _target: silex_dom::attribute::OwnedApplyTarget,
+    ) {
+        let el = el.clone();
+        silex_core::reactivity::Effect::new(move |prev_class: Option<String>| {
+            if let Some(c) = prev_class {
+                let _ = el.class_list().remove_1(&c);
+            }
+            let style = f();
+            style.apply_to_element(&el)
+        });
+    }
+}
+
+impl From<Option<Style>> for Style {
+    fn from(opt: Option<Style>) -> Self {
+        opt.unwrap_or_default()
     }
 }
 

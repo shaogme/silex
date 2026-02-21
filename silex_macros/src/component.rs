@@ -227,6 +227,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
                     ::silex::dom::attribute::ApplyTarget::Prop(n) => ::silex::dom::attribute::OwnedApplyTarget::Prop(n.to_string()),
                     ::silex::dom::attribute::ApplyTarget::Class => ::silex::dom::attribute::OwnedApplyTarget::Class,
                     ::silex::dom::attribute::ApplyTarget::Style => ::silex::dom::attribute::OwnedApplyTarget::Style,
+                    ::silex::dom::attribute::ApplyTarget::Apply => ::silex::dom::attribute::OwnedApplyTarget::Apply,
                 };
                 // Convert to storable type before storing
                 self._pending_attrs.push(

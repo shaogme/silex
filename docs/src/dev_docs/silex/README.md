@@ -27,7 +27,13 @@ silex/src/
 ├── components/         // 内置 UI 组件
 │   ├── error_boundary.rs // 错误边界
 │   ├── portal.rs         // 传送门（跨 DOM 渲染）
-│   └── suspense.rs       // 异步资源挂起
+│   ├── suspense.rs       // 异步资源挂起
+│   └── layout.rs         // 基础布局组件 (Stack, Center, Grid)
+├── css/                // CSS 运行时与类型系统
+│   ├── builder.rs        // 零宏开销 Builder
+│   ├── registry.rs       // 全量 CSS 属性绑定生成册
+│   ├── theme.rs          // 主题注入系统
+│   └── types.rs          // CSS 强类型约束系统
 ├── flow/               // 逻辑控制流组件
 │   ├── dynamic.rs        // 动态组件
 │   ├── for_loop.rs       // 列表渲染 (Keyed)
@@ -114,15 +120,30 @@ Silex 的路由系统基于浏览器 History API，实现了单页应用 (SPA) �
 位于 `silex/src/components/portal.rs`。
 *   **Context 连通性**：这是 Portal 最重要的特性。尽管 DOM 节点被挂载到了 `body` 或其他位置，但由于 `Reactive Scope` 是在组件创建时建立的，Portal 内部的代码仍然可以访问其书写位置（Lexical Scope）的 Context。这使得在 Portal 内部使用 `use_context` 依然有效。
 
+#### `Layout` 组件组 (Stack, Center, Grid)
+位于 `silex/src/components/layout.rs`。
+*   **基础布局原语**：提供现代网页常见的响应式布局容器。
+    *   **Stack**: 弹性 Flex 堆叠流，默认 `Column` 向下排布。支持动态 `gap` 和主/交叉轴对齐配置。
+    *   **Center**: 绝对居中的 Flex 容器简写。
+    *   **Grid**: 快速构建二维网格的容器，支持 `columns` 和 `gap`。
+
+#### 主题上下文注入 (Theme System)
+位于 `silex/src/css/theme.rs`。
+*   **去包裹设计**: 为了保证类似 Flex/Grid 的嵌套层级不受不必要的父容器 DOM 打扰，Silex 没有提供一个 `ThemeProvider` 标签组件，而是采用 `Apply` Trait 机制：`div(..).apply(theme_variables(theme))` 进行挂载。或者通过 `set_global_theme(theme)` 将变量挂靠在 `<style>` 内为 `:root` 共享。
+
 ### 4.4 CSS 工具 (CSS Tools)
 
 #### 强类型 CSS 运行时 (Type-Safe CSS Runtime)
-位于 `silex/src/css.rs` 及 `silex/src/css/types.rs`。
+位于 `silex/src/css.rs` 、 `silex/src/css/registry.rs` 与 `silex/src/css/types.rs`。
 *   **架构设计**：它不单纯是传统意义上的 CSS Runtime 工具链，而是与 `silex_macros` 协同构筑的前后端一体化防线。抛弃单纯接受一切 `Display` 给字符串 `+` 的行为。
-*   **Property Tags (属性感知)**：基于 MDN (Mozilla Developer Network) 的标准 CSS 属性数据自动化生成。内置了数以百计零开销的 Trait Bounds Tag 结构体（ZST）充当标识（诸如 `props::Width`，`props::Color` 等）。
-*   **验证流**：伴随 `DynamicCss` 产生的每一次插值的验证绑定，将宏层面所追踪到的标签经由此处的 `make_dynamic_val_for::<P, S>(source: S)` 落入限制。使得 `ValidFor<P>` 这个 Trait 得以在运行时构建前提前在编译期就成功实施阻断由于随意插值引发的语法错误！实现严丝合缝的闭环。
-*   **封锁隐式逃逸与 `UnsafeCss`**：彻底废除对 `&str`、`String` 及 `Any` 属性的泛用 `ValidFor` 实现，转而要求开发者在需要越过类型检查时显式声明使用 `UnsafeCss::new(...)`，显式标明非安全 CSS 越境边界。
-*   **复合复合与工厂函数 (Factory Functions)**：对于 `border` 这类需要多种类型排版的复杂属性，我们抽离宏层面的不确定推断，彻底采用 Rust `const fn border(width, style, color)` 工厂函数及其对应类型 `BorderValue` 来处理，保障属性间的调用签名依然 100% 安全。
+*   **自动化注册表 (registry.rs)**: 基于 `for_all_properties!` 自动化生产出了标准 CSS 属性名同 Rust `struct` ZST 标签的枚举绑定映射，为工具链构筑底层完备属性字典。
+*   **Property Tags (属性感知)**：基于上述注册表，系统生成了内建 Trait Bounds Tag 结构体（诸如 `props::Width`，`props::Color` 等）。验证流伴随 `DynamicCss`，使得 `ValidFor<P>` 这个 Trait 得以在运行时构建前提前在编译期就成功实施阻断语法错误。
+*   **封锁隐式逃逸与 `UnsafeCss`**：彻底废除对 `&str`、`String` 及 `Any` 属性的泛用 `ValidFor` 实现，转而要求开发者在需要越过类型检查时显式声明使用 `UnsafeCss::new(...)`。
+*   **复合复合与工厂函数 (Factory Functions)**：对于 `border` 这类需要多种类型排版的复杂属性，采用 Rust `const fn border(width, style, color)` 工厂函数及其对应类型 `BorderValue` 处理。
+
+#### 动态样式托管引擎 (DynamicCss & DynamicStyleManager)
+*   **混合挂载与 `DynamicCss`**: Silex 宏会将样式打散。静态规则利用基本全局 `class` 进行共享；直接属性能使用 CSS Var 替换的则抽取为 `vars`，在同个组件内聚合并使用单个 `Effect` 配合 `style.set_property` 原子性更新；如果涉及无法以 CSS Var 处理的伪类或内嵌插值结构（`rules`），运行时将其分发给一个个独立的 `Effect`，它们会伴随信号变化动态重哈希类名（带有 `-dyn-[hash]`），同步修改元素 classList。
+*   **带引用计数的回收机制 (Reference Counting GC)**: 对于那些动态注册为 `rules` 的 `<style>` 标签，Silex `DynamicStyleManager` 内建了一个全局共享的带有智能内存释放的字典。通过 `DYNAMIC_STYLE_REGISTRY` 给每段被使用的 CSS 进行引用计数。一旦失去使用，便放入带有上限（通常为 128）的丢弃缓冲队列（LRU）。当发生丢弃时，DOM `head` 中的废弃 `<style>` 会被物理擦除。该设计有效终结了动态创建 CSS 极可能带来的内存和节点泄漏顽疾。
 #### 类型安全构建器 (Type-Safe Builder: Style)
 位于 `silex/src/css/builder.rs`。
 *   **设计动机**：为了满足对极致编译性能（零宏路径）和 100% Rust 原生补全极致追求的场景。

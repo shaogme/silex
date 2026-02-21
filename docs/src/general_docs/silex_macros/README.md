@@ -350,3 +350,46 @@ let callback = clone!(store, @id => move |_| {
     store.add_project(id); 
 });
 ```
+
+## 8. 强类型主题系统 (`define_theme!`)
+
+Silex 提供了高度集成的强类型主题系统，保障在 CSS 中使用主题变量时的类型安全。
+
+### 定义主题
+
+使用 `define_theme!` 声明具有严格类型约束的主题结构：
+
+```rust
+define_theme! {
+    pub struct AppTheme {
+        pub primary_color: silex::css::types::props::Color,
+        pub base_padding: silex::css::types::props::Padding,
+    }
+}
+```
+
+宏会自动生成：
+1. `AppTheme` 结构体。
+2. 隐藏的内部 Trait（如 `AppThemeFields`）及其实现，以便在编译期抽取验证每个字段的类型。
+3. 实现 `ThemeType` 和 `ThemeToCss`，支持自动将字段展开为原生的全量 CSS 变量 (`--slx-theme-primary_color`) 提供给 DOM 树。
+
+### 与样式组件紧密结合
+
+在 `styled!` 宏定义的组件中，你可以通过 `#[theme(AppTheme)]` 属性声明其绑定的主题类型，并直接在 CSS 中通过全局标识符 `Theme.xxx` 引用主题库中的值：
+
+```rust
+styled! {
+    #[theme(AppTheme)] // 声明主题环境
+    pub ThemedBox<div>(
+        children: Children,
+    ) {
+        // 直接使用 Theme. 引用字段
+        // 系统在编译期强检查 AppTheme.base_padding 的类型是否适用于 padding 属性！
+        padding: Theme.base_padding; 
+        background-color: Theme.primary_color;
+        border-radius: 8px;
+    }
+}
+```
+
+`styled!` 宏的编译器能够聪明地识别 `Theme.字段` 表达式。它不仅会将代码自动转换成标准的 `var(--slx-theme-字段)` 原生查询形态，还会在 Rust 层自动注入针对被引用字段的类型合法性断言（`assert_valid<ValidFor<T>>`）。借助这套工作流，彻底排除了在变更主题字段时意外造成运行期样式损坏的可能性。

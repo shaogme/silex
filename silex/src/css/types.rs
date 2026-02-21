@@ -16,11 +16,23 @@ impl<T: Display> CssValue for T {}
 // 核心包裹单元类型 (Units)
 // ==========================================
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Px(pub f64);
 impl Display for Px {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}px", self.0)
+    }
+}
+
+impl From<i32> for Px {
+    fn from(v: i32) -> Self {
+        Px(v as f64)
+    }
+}
+
+impl From<f64> for Px {
+    fn from(v: f64) -> Self {
+        Px(v)
     }
 }
 
@@ -82,6 +94,12 @@ impl Display for Vh {
 
 #[derive(Clone, Debug)]
 pub struct Hex(pub String);
+
+impl Default for Hex {
+    fn default() -> Self {
+        Self("#000000".to_string())
+    }
+}
 impl Display for Hex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)

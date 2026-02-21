@@ -1,3 +1,5 @@
+extern crate self as silex;
+
 pub mod components;
 pub mod css;
 pub mod flow;
@@ -49,13 +51,15 @@ pub mod prelude {
     pub use crate::css::types::*;
 
     pub use crate::css::builder::{Style, sty};
+    pub use crate::css::theme::{ThemeVariables, set_global_theme, theme_variables, use_theme};
 
     // Resolve ambiguous glob re-exports
+    pub use crate::components::Center;
     pub use crate::core::prelude::{Map, Set, Track};
     pub use crate::flow::Switch;
     pub use crate::router::Link;
     pub use silex_dom::{View, text};
     pub use silex_html::{Em, em};
     #[cfg(feature = "macros")]
-    pub use silex_macros::style;
+    pub use silex_macros::{define_theme, style};
 }

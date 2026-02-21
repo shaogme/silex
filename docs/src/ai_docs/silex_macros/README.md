@@ -100,8 +100,9 @@ styled! {
 2.  **CSS Compile (AST Fragmentation)**: 将 CSS 交由 `CssCompiler` 处理。
     * 属性侧表达式转为 CSS 层级临时变量进行分离提取。
     * 选择器侧表达式及其闭包触发规则树分片，形成 `DynamicRule` 并抛出返回。
-3.  **Variant Codegen**: 禁止在 `variants` 中使用动态插值 `$(...)` 及动态规则块。内部块会被展开为 `match` 匹配分支，直接返回变体对应构建的纯静态 CSS 类名字符串。
-4.  **Desugaring**: 宏在 AST 的根节点上展开为一段附带了 `#[::silex::prelude::component]` 定理的代码块，享有等额的属性代理分配和透传层（返回为 `impl View`）。
+3. **Variant Codegen**: 禁止在 `variants` 中使用动态插值 `$(...)` 及动态规则块。内部块会被展开为 `match` 匹配分支，直接返回变体对应构建的纯静态 CSS 类名字符串。
+4. **Theme 解析与校验**: 编译器会提取组件 CSS 块内对形如 `Theme.field` 的访问模式。自动转换向基于该字段推导出的 `var(--slx-theme-field)` 引用。并且识别宏头部的 `#[theme(AppTheme)]` 属性，强制生出对主题被应用属性类型的安全断言约束（如 `assert_valid(&AppTheme.color)`）。
+5. **Desugaring**: 宏在 AST 的根节点上展开为一段附带了 `#[::silex::prelude::component]` 定理的代码块，享有等额的属性代理分配和透传层（返回为 `impl View`）。
     * 生成的静态 CSS 变量推入底层的 `.style()` 属性注入器方法上。
     * 分离提取出的 `DynamicRule` （即像伪类这样的规则动态构建），依托新加组件局部单例管理器构建额外的 Effect 进行实时 `.update()` 按需生成和抛弃。
     * Variants 类挂载到多路 `.class()` 生成器上。
@@ -233,3 +234,27 @@ let callback = clone!(data => move || {
         1.  生成外部 `let inner_ident = inner_ident.clone();` (用于捕获)。
         2.  这是关键：如果 `=>` 后是闭包，宏会解析闭包体，并在其开头注入 `let inner_ident = inner_ident.clone();`。
 *   **Use Case**: 适用于 `FnMut` 闭包中需要消费（consume/move）捕获变量的场景，确保每次闭包调用都有新的克隆副本可用，避免 `use of moved value` 错误。
+
+---
+
+## 8. Theme 宏 `define_theme!`
+
+提供主题变量定义的构建体系，配合 CSS 编译器进行强类型验证。
+
+### 用法
+```rust
+define_theme! {
+    pub struct AppTheme {
+        pub primary_color: ::silex::css::types::props::Color,
+        // ...
+    }
+}
+```
+
+### 转换逻辑
+1.  **Parsing**: 解析出 `struct` 名称及其定义的强类型字段。
+2.  **Expansion**:
+    *   构建原名结构体 (如 `AppTheme`)，包含定义的相同字段。
+    *   生成映射 Trait 并为 `AppTheme` 实现，使得在编译期能够解析各字段实际类型（如通过 `ThemeFields::primary_color` 或类似形式参与 `styled!` 中的类型萃取与断言推导）。
+    *   实现 `::silex::css::theme::ThemeType` 和 `::silex::css::theme::ThemeToCss`。后者赋予主题数据向 CSS Variables 展开的能力：在运行时生成形如 `--slx-theme-primary_color: #123456;` 规格的字符串串联用于 DOM 插接。
+    *   提供 `Display` Trait 使得输出为拼接的 CSS var。

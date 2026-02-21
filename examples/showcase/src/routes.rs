@@ -26,6 +26,10 @@ pub enum AdvancedRoute {
     Suspense,
     #[route("/generics", view = advanced::GenericsDemo)]
     Generics,
+    #[route("/theme", view = advanced::ThemeDemo)]
+    Theme,
+    #[route("/theme-layout", view = advanced::LayoutFriendlyThemeDemo)]
+    ThemeLayout,
     #[route("/*", view = NotFoundPage)]
     NotFound,
 }
@@ -69,7 +73,7 @@ pub enum AppRoute {
 // --- Layout & App ---
 
 styled! {
-    pub StyledNav<nav>(
+    pub StyledNav<nav> (
         children: Children,
         #[prop(default = "horizontal")] direction: &'static str
     ) {
@@ -176,6 +180,20 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
                     route: AdvancedRoute::Generics,
                 },
                 "Generics"
+            )
+            .class("tab"),
+            Link(
+                AppRoute::Advanced {
+                    route: AdvancedRoute::Theme,
+                },
+                "Theme"
+            )
+            .class("tab"),
+            Link(
+                AppRoute::Advanced {
+                    route: AdvancedRoute::ThemeLayout,
+                },
+                "Theme Layout Test"
             )
             .class("tab"),
         ]

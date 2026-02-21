@@ -21,7 +21,7 @@ Silex 的视图系统非常灵活，支持多种类型直接作为视图：
 *   **集合**: `Vec<V>`, Slice `[V]`, 元组 `(A, B)` 都会按顺序渲染其内容。
 
 ### 3. Attributes (属性)
-Silex 提供了一套统一且强大的属性设置 API。所有设置属性的方法（`.attr()`, `.prop()`, `.class()`, `.style()` 等）都支持泛型 `V: IntoStorable`，这意味着你可以传入：
+Silex 提供了一套统一且强大的属性设置 API。所有设置属性的方法（`.attr()`, `.prop()`, `.class()`, `.style()`, `.apply()` 等）都支持泛型 `V: IntoStorable`，这意味着你可以传入：
 
 *   **静态值**: `&str`, `String`, `bool`.
 *   **信号**: `Signal<T>`, `ReadSignal<T>`, `Memo<T>`, `Derived`, `ReactiveBinary`.
@@ -44,6 +44,13 @@ let (count, set_count) = signal(0);
 
 // class 会随着 count 的奇偶性自动切换
 div.class(move || if count.get() % 2 == 0 { "even" } else { "odd" })
+```
+
+#### 通用应用 (Apply)
+如果需要应用一段通用的逻辑、主题变量或 Mixins（即值本身知道如何将自己挂载到 DOM 上），可以使用 `.apply()` 方法：
+
+```rust
+element.apply(theme_variables(theme))
 ```
 
 #### 专用的 Property API

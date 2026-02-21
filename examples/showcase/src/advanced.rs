@@ -10,6 +10,38 @@ pub struct UserSettings {
     pub username: String,
 }
 
+define_theme! {
+    pub struct AppTheme {
+        pub primary: Hex,
+        pub secondary: Hex,
+        pub surface: Hex,
+        pub text: Hex,
+        pub radius: Px,
+    }
+}
+
+pub type Theme = AppTheme;
+
+pub fn default_light_theme() -> AppTheme {
+    AppTheme {
+        primary: hex("#6366f1"),
+        secondary: hex("#a855f7"),
+        surface: hex("#ffffff"),
+        text: hex("#1f2937"),
+        radius: px(12),
+    }
+}
+
+pub fn default_dark_theme() -> AppTheme {
+    AppTheme {
+        primary: hex("#818cf8"),
+        secondary: hex("#c084fc"),
+        surface: hex("#111827"),
+        text: hex("#f9fafb"),
+        radius: px(12),
+    }
+}
+
 styled! {
     pub DemoCard<div>(children: Children) {
         background: rgba(30, 30, 35, 0.6);
@@ -193,6 +225,29 @@ pub fn CssDemo() -> impl View {
                 ]
                 .style("display: flex; align-items: center;")
             }
+        )),
+
+        DemoCard().children((
+            h3("Layout Primitives (New)"),
+            p("Using the brand new Stack and Grid components for structural layout.")
+                .style("margin-bottom: 24px; color: #9ca3af;"),
+
+                Stack()
+                .gap(16)
+                .children((
+                    span("Vertical Stack with Gap"),
+                    Grid()
+                        .columns(3)
+                        .gap(12)
+                        .children((
+                            div("Grid Item 1").style("background: #312e81; padding: 10px; border-radius: 8px;"),
+                            div("Grid Item 2").style("background: #312e81; padding: 10px; border-radius: 8px;"),
+                            div("Grid Item 3").style("background: #312e81; padding: 10px; border-radius: 8px;"),
+                        )),
+                    Center()
+                        .style(sty().background_color(hex("#4f46e5")).padding(px(12)).border_radius(px(8)))
+                        .children("I am perfectly centered"),
+                ))
         )),
     ]
 }
@@ -551,4 +606,133 @@ pub fn GenericsDemo() -> impl View {
             .title("String Message"),
     ]
     .style("padding: 20px; border: 1px solid #ccc; border-radius: 8px; margin-top: 20px;")
+}
+
+styled! {
+    pub ThemePreviewCard<div>(children: Children) {
+        background-color: $theme.surface;
+        color: $theme.text;
+        border-radius: $theme.radius;
+        padding: 32px;
+        border: 2px solid $theme.primary;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+        margin-top: 24px;
+    }
+}
+
+styled! {
+    pub ThemeButton<button>(
+        children: Children,
+        #[prop(into)] active: Signal<bool>
+    ) {
+        background-color: $theme.secondary;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.2s;
+        opacity: $(move || if active.get() { 1.0 } else { 0.8 });
+
+        &:hover {
+            filter: brightness(1.1);
+            transform: translateY(-1px);
+        }
+
+        &:active {
+            transform: translateY(0);
+        }
+    }
+}
+
+#[component]
+pub fn ThemeDemo() -> impl View {
+    let (theme, set_theme) = signal(default_light_theme());
+    let is_dark = theme.map(|t| t.surface.0 == "#111827");
+
+    div![
+        h3("🎨 Real-time Theme Engine"),
+        p("Define CSS variables via Rust structs and propagate them through the component tree.")
+            .style("color: #6b7280; margin-bottom: 24px;"),
+
+        div![
+            button("🌞 Light Mode")
+                .on(event::click, move |_| set_theme.set(default_light_theme()))
+                .style(move || {
+                    let active = !is_dark.get();
+                    let base = "padding: 8px 16px; border-radius: 6px; cursor: pointer; transition: all 0.2s; margin-right: 12px;";
+                    if active {
+                        format!("{} background: #6366f1; color: white; border: 1px solid #6366f1;", base)
+                    } else {
+                        format!("{} background: #f3f4f6; color: #374151; border: 1px solid #d1d5db;", base)
+                    }
+                }),
+            button("🌙 Dark Mode")
+                .on(event::click, move |_| set_theme.set(default_dark_theme()))
+                .style(move || {
+                    let active = is_dark.get();
+                    let base = "padding: 8px 16px; border-radius: 6px; cursor: pointer; transition: all 0.2s;";
+                    if active {
+                        format!("{} background: #4f46e5; color: white; border: 1px solid #4f46e5;", base)
+                    } else {
+                        format!("{} background: #f3f4f6; color: #374151; border: 1px solid #d1d5db;", base)
+                    }
+                }),
+        ],
+
+        // Use apply to inject theme variables
+        ThemePreviewCard().apply(theme_variables(theme)).children((
+            h4("Dynamic Component Style"),
+            p("These styles are reacting to the Rust-defined theme object via CSS variables."),
+            ThemeButton().children("Themed Button").active(false)
+        ))
+    ]
+    .style("padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background: #f9fafb;")
+}
+
+#[component]
+pub fn LayoutFriendlyThemeDemo() -> impl View {
+    let (theme, _) = signal(default_dark_theme());
+
+    div![
+        h3("🏗️ Layout Friendly Theme Provider"),
+        p("Testing ThemeProvider with 'display: contents' and manual variable injection."),
+
+        DemoCard().children((
+            h4("1. ThemeProvider inside Flex (Column)"),
+            p("The red border is around the Stack. The ThemeProvider should NOT break the Flex layout flow."),
+            Stack().style(sty().border(border(px(2), BorderStyleKeyword::Solid, hex("#ef4444"))).padding(px(8))).children((
+                div("Item 1 (Inside ThemeVariable context)").style("background: #1e1e24; padding: 10px; margin: 4px; border-radius: 4px; border: 1px solid $theme.primary;")
+                    .apply(theme_variables(theme)),
+                div("Item 2 (Inside ThemeVariable context)").style("background: #1e1e24; padding: 10px; margin: 4px; border-radius: 4px; border: 1px solid $theme.secondary;")
+                    .apply(theme_variables(theme)),
+                div("Item 3 (Outside ThemeProvider)").style("background: #1e1e24; padding: 10px; margin: 4px; border-radius: 4px;"),
+            ))
+        )),
+
+        DemoCard().children((
+            h4("2. Manual Variable Injection (theme_variables)"),
+            p("Injecting theme variables directly into a div without an extra wrapper."),
+            div![
+                "I have theme colors applied directly!",
+                div("Sub-element using $theme.primary").style("color: $theme.primary; font-weight: bold;")
+            ]
+            .apply(theme_variables(theme))
+            .style("padding: 20px; border: 2px dashed $theme.secondary; border-radius: 12px;")
+        )),
+
+        DemoCard().children((
+            h4("3. Stack Layout Continuity (Issue #1 Test)"),
+            p("Stack as a child of another layout should maintain Flow correctly without wrapper div breaks."),
+            Stack().style(sty().border(border(px(2), BorderStyleKeyword::Solid, hex("#3b82f6"))).padding(px(8))).children((
+                Stack().gap(4).apply(theme_variables(theme)).children((
+                    div("Nested Stack Item 1").style("background: $theme.surface; color: $theme.text; padding: 10px; border-radius: 4px; border: 1px solid $theme.primary;"),
+                    div("Nested Stack Item 2").style("background: $theme.surface; color: $theme.text; padding: 10px; border-radius: 4px; border: 1px solid $theme.secondary;"),
+                )),
+                div("Direct Sibling of Nested Stack").style("background: #1e1e24; color: #fff; padding: 10px; margin-top: 4px; border-radius: 4px;"),
+            ))
+        ))
+    ]
 }

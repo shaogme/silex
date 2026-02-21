@@ -33,7 +33,8 @@ src/
 ├── css/            // css! 及 styled! 宏实现
 │   ├── ast.rs      // CSS 抽象语法树解析 (基于 syn)
 │   ├── compiler.rs // AST 遍历、动态值提取及静态 CSS 构建
-│   └── styled.rs   // styled! 组件的合成与拆解
+│   ├── styled.rs   // styled! 组件的合成与拆解
+│   └── theme.rs    // define_theme! 强类型主题宏实现
 ├── style.rs        // style!, classes! 宏实现
 ├── route.rs        // #[derive(Route)] 实现：路由匹配与生成
 ├── store.rs        // #[derive(Store)] 实现：全局状态管理
@@ -126,8 +127,18 @@ src/
 **核心机制**：
 *   **脱糖 (Desugaring)**：`styled!` 宏会将内部定义的组件（包括可见性、底层 HTML 标签、Props 等）在 AST 层面脱糖为一个标准的 `#[component]` 函数。这意味着它完美兼容现有的组件体系和属性透传 (`AttributeBuilder`)。
 *   **编译期提取与变量隔离**：复用了 `css::compiler::CssCompiler` 的逻辑，提取静态 CSS 并生成唯一类名，将仅存在于属性值内的动态插值 `$(expr)` 转换为 CSS 变量绑定 (`--slx-{hash}-{index}`)。
+*   **主题聚合与强类型断言**：通过探测内部对于形如 `Theme.target_field` 的标识符调用，自动构建为对应 CSS 变量 `--slx-theme-target_field` 并由解析器分析属性上下文。根据宏参数 `#[theme(StructName)]` 所提供的主题上下文，利用局部闭包进行借用判定，注入基于 `assert_valid` 且作用于 `StructName.target_field` 的泛型合法性验证块，零代价在编译期排除赋值风险。
 *   **动态规则树分片 (Dynamic Rules)**：在词法解析阶段 (TokenTree Parsing)，如果宏检测到选择器层面（或嵌套属性名前缀）包含 `$(...)`，会将这段包含大括号的规则块从主 CSS 静态树中剥离，形成游离分片，并依托 `DynamicStyleManager` 实例以闭包的方式按需利用 DOM 的 `<style>` 重置方法直接重塑热更新规则！借此彻底突破了原生 CSS Variable 不可用于选择器的天生局限。
 *   **Variants 静态架构**：完全支持 `variants:` 语法块。通过在编译阶段静态合成各变体的 CSS 并生成类名，在运行时利用模式匹配直接返回对应属性值的静态类字符串。不仅具备极高的代码表现力，还有效避开了基于 CSS 变量进行多属性赋值产生的性能代价。
+
+### 4.7 强类型主题宏 `define_theme!` (`css/theme.rs`)
+
+`define_theme!` 的主要职责是建立受约束的结构体并搭接主题字典。
+
+**结构重定义**：
+由于目前过程宏难以对原本存在的 Struct 获取到深度的泛型类型反射信息，该宏通过重塑整个强类型字段体系来工作：
+*   **映射机制**: 生成隐式内部 Trait `<TheName>Fields` 用以辅助。
+*   **生成约束及串联**: 为其实现原生地 `ThemeToCss` 与 `Display`：其依靠读取其上所有定义好的标量自动遍历串联为形如 `--slx-theme-xxx: val;` 的大型全局行内样式字串。随后可将其赋能在全域 `GlobalTheme` 下或者局部作用域。
 
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 

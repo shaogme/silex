@@ -88,6 +88,7 @@ pub enum ApplyTarget<'a> {
     Prop(&'a str), // 用 js_sys::Reflect 设置属性
     Class,         // 操作 classList
     Style,         // 操作 style.setProperty
+    Apply,         // 通用应用（处理复杂的响应式逻辑或 Mixins）
 }
 ```
 

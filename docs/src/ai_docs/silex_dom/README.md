@@ -43,6 +43,7 @@
 *   `class(self, value: impl ApplyToDom)`: 添加 class (支持多类名字符串).
 *   `classes(self, value: impl ApplyToDom)`: 同 `class`.
 *   `style(self, value: impl ApplyToDom)`: 设置内联样式.
+*   `apply(self, value: impl ApplyToDom)`: 通用一般化应用，常用作 mixins 和主题变量.
 *   `class_toggle<C>(self, name: &str, condition: C)`: 根据 `condition` (bool 或 signal) 切换 class.
 *   `node_ref<N>(self, node_ref: NodeRef<N>)`: 绑定 DOM 引用。`N` 必须实现 `JsCast`。**`NodeRef` 是 `Copy` 的，无需 clone**。
 
@@ -78,6 +79,7 @@
     *   `Prop(&'a str)`: `js_sys::Reflect::set`.
     *   `Class`: `classList.add/remove`.
     *   `Style`: `style.setProperty`.
+    *   `Apply`: 通用应用设计，例如动态主题或 Mixins.
 
 ### `ApplyToDom` Trait
 *   **Definition**: `pub trait ApplyToDom { fn apply(self, el: &WebElem, target: ApplyTarget); }`

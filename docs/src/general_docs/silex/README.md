@@ -218,7 +218,54 @@ suspense()
     })
 ```
 
-## 5. 常用宏与工具 (Macros & Utilities)
+## 5. UI 与布局 (UI & Layout)
+
+Silex 提供了一些基础的原子组件来迅速搭建响应式应用布局结构以及实现主题隔离机制：
+
+### 布局组件 (Stack, Center, Grid)
+内置实现了高度复用的布局原语，均已自动提供类型及属性信号响应绑定功能：
+```rust
+use silex::components::layout::*;
+
+// 纵向 Flex，子元素以 10px 间隔
+Stack((
+    div("Child 1"),
+    div("Child 2")
+))
+.gap(10)
+.direction(FlexDirectionKeyword::Row) // 切换为横排
+
+// 居中包围
+Center(div("I am in the center"))
+
+// 3 列网格网格
+Grid((
+    div("Cell 1"),
+    div("Cell 2"),
+    div("Cell 3"),
+))
+.columns(3)
+.gap(8)
+```
+
+### 主题注入 (Theme System)
+为了解决深层组件组件主题透传问题且杜绝包裹产生多余的 `<div class="theme-provider">` DOM 节点致使 `Flex/Grid` 失效：
+```rust
+// 通过宏预先构建具有强类型校验保障的系统 （细节见 silex_macros 文档）
+#[theme(MyTheme)]
+struct AppTheme { ... }
+
+let my_theme_signal = signal(AppTheme { ... });
+
+// 1. 全局生效方案:
+set_global_theme(my_theme_signal); 
+
+// 2. 将主题直接应用（注入 CSS Vars）到已经建立在流里的组件上进行范围挂载:
+Stack(...)
+    .apply(theme_variables(my_theme_signal))
+```
+
+## 6. 常用宏与工具 (Macros & Utilities)
 
 Silex 提供了一系列宏来简化开发，这些宏都已包含在 prelude 中。
 
@@ -247,7 +294,8 @@ let cls = css!("
 ");
 div("Hello").class(cls)
 ```
-**性能注记：** 所有的动态插值 $(...) 现在都通过 **CSS 变量 (CSS Variables)** 进行高效更新。这意味着当信号变化时，框架仅调用一次极轻量的 `style.setProperty`，而无需重新生成 CSS 类或操作 DOM 结构，在高频更新场景下性能表现极其卓越。
+**性能注记：** 所有的动态插值 $(...) 现在大部分都通过 **CSS 变量 (CSS Variables)** 进行高效更新。这意味着当信号变化时，框架仅调用一次极轻量的 `style.setProperty`，而无需操作 DOM 结构，在高频更新场景下性能表现极其卓越。
+对于无法用内联变量表示的插值（例如嵌套伪类中的动态值），Silex 内置了拥有**引用计数 (Reference Counting)** 及 **LRU 缓存回收**机制的 `DynamicStyleManager`，它会在后台自动计算哈希生成独特类名并复用 `<style>` 标签，既实现了无死角的完全响应式，又使得长期运行的应用不至于出现 `<style>` DOM 节点污染与内存溢出。
 
 **复杂复合类型（工厂与 Builders）：**
 使用专用模块工厂快速安全打包例如 `margin`，`border` 等复合元素。

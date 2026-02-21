@@ -16,6 +16,7 @@
         "left": "Dimension",
         "right": "Dimension",
         "max-width": "Dimension",
-        "min-width": "Dimension"
+        "min-width": "Dimension",
+        "opacity": "Number"
     }
 }

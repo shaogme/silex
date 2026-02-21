@@ -21,6 +21,8 @@ pub enum ApplyTarget<'a> {
     Class,
     /// Specialized `.style(...)` call
     Style,
+    /// Generic application (e.g. mixins, theme variables)
+    Apply,
 }
 
 // --- ApplyToDom Trait ---
@@ -146,6 +148,7 @@ pub enum OwnedApplyTarget {
     Prop(String),
     Class,
     Style,
+    Apply,
 }
 
 impl<'a> From<ApplyTarget<'a>> for OwnedApplyTarget {
@@ -155,6 +158,7 @@ impl<'a> From<ApplyTarget<'a>> for OwnedApplyTarget {
             ApplyTarget::Prop(n) => OwnedApplyTarget::Prop(n.to_string()),
             ApplyTarget::Class => OwnedApplyTarget::Class,
             ApplyTarget::Style => OwnedApplyTarget::Style,
+            ApplyTarget::Apply => OwnedApplyTarget::Apply,
         }
     }
 }
@@ -241,6 +245,7 @@ impl ReactiveApply for String {
                     );
                 });
             }
+            OwnedApplyTarget::Apply => {}
         }
     }
 
@@ -360,6 +365,7 @@ where
             ApplyTarget::Prop(n) => OwnedApplyTarget::Prop(n.to_string()),
             ApplyTarget::Class => OwnedApplyTarget::Class,
             ApplyTarget::Style => OwnedApplyTarget::Style,
+            ApplyTarget::Apply => OwnedApplyTarget::Apply,
         };
 
         T::apply_to_dom(self, el, owned_target);
@@ -531,6 +537,7 @@ impl PendingAttribute {
                         OwnedApplyTarget::Prop(n) => ApplyTarget::Prop(n),
                         OwnedApplyTarget::Class => ApplyTarget::Class,
                         OwnedApplyTarget::Style => ApplyTarget::Style,
+                        OwnedApplyTarget::Apply => ApplyTarget::Apply,
                     };
                     v.apply(el, t);
                 }

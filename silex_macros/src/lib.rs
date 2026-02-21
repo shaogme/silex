@@ -70,6 +70,15 @@ pub fn classes(input: TokenStream) -> TokenStream {
     }
 }
 
+#[cfg(feature = "css")]
+#[proc_macro]
+pub fn define_theme(input: TokenStream) -> TokenStream {
+    match css::theme::bridge_theme_impl(input.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
 /// `#[component]` 属性宏
 ///
 /// 将一个函数转换为 Silex 组件，自动生成 Props 结构体并简化组件定义。

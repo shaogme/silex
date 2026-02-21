@@ -3,7 +3,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
-use syn::{FnArg, Ident, Result, Token, Visibility};
+use syn::{Attribute, FnArg, Generics, Ident, Result, Token, Visibility};
 
 /// A variant group, representing `prop_name: { variant1: { ... }, variant2: { ... } }`
 pub struct VariantGroup {
@@ -13,8 +13,10 @@ pub struct VariantGroup {
 
 /// Represents the syntax tree for a `styled!` macro call.
 pub struct StyledComponent {
+    pub attrs: Vec<Attribute>,
     pub vis: Visibility,
     pub name: Ident,
+    pub generics: Generics,
     pub tag: Ident,
     pub props: Punctuated<FnArg, Token![,]>,
     pub css_block: TokenStream,
@@ -23,11 +25,22 @@ pub struct StyledComponent {
 
 impl Parse for StyledComponent {
     fn parse(input: ParseStream) -> Result<Self> {
-        // 1. Parse Visibility and Name
+        let attrs = input.call(Attribute::parse_outer)?;
         let vis: Visibility = input.parse()?;
         let name: Ident = input.parse()?;
 
-        // 2. Parse Tag: <button>
+        // Peek if we have generics: Stack<T> <div> vs Stack <div>
+        let mut generics = Generics::default();
+        if input.peek(Token![<]) {
+            let fork = input.fork();
+            let _gen: Result<Generics> = fork.parse();
+            if fork.peek(Token![<]) {
+                // If there's another '<' after the first block, the first was generics
+                generics = input.parse()?;
+            }
+        }
+
+        // 2. Parse Tag: <div>
         if !input.peek(Token![<]) {
             return Err(input.error("Expected `<` followed by a tag name or component name"));
         }
@@ -42,6 +55,11 @@ impl Parse for StyledComponent {
         let props_content;
         syn::parenthesized!(props_content in input);
         let props = props_content.parse_terminated(FnArg::parse, Token![,])?;
+
+        // 3.5 Parse Where Clause
+        if input.peek(Token![where]) {
+            generics.where_clause = Some(input.parse()?);
+        }
 
         // 4. Parse CSS Block and Variants: {...}
         let css_content;
@@ -94,8 +112,10 @@ impl Parse for StyledComponent {
         }
 
         Ok(StyledComponent {
+            attrs,
             vis,
             name,
+            generics,
             tag,
             props,
             css_block,
@@ -106,13 +126,16 @@ impl Parse for StyledComponent {
 
 pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let parsed: StyledComponent = syn::parse2(input)?;
+    let attrs = &parsed.attrs;
+    let vis = &parsed.vis;
+    let name = &parsed.name;
+    let tag = &parsed.tag;
+    let props = &parsed.props;
+    let css_block = parsed.css_block;
+    let variants = &parsed.variants;
+    let generics = &parsed.generics;
 
-    let vis = parsed.vis;
-    let name = parsed.name;
-    let tag = parsed.tag;
-    let props = parsed.props;
-
-    let compile_result = CssCompiler::compile(parsed.css_block, tag.span())?;
+    let compile_result = CssCompiler::compile(css_block, tag.span())?;
 
     let class_name = compile_result.class_name;
     let style_id = compile_result.style_id;
@@ -120,6 +143,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let expressions = compile_result.expressions;
     let hash = compile_result.hash;
     let dynamic_rules = compile_result.dynamic_rules;
+    let theme_refs = compile_result.theme_refs;
 
     let var_decls: Vec<TokenStream> = expressions
         .iter()
@@ -144,6 +168,44 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             }
         })
         .collect();
+
+    let theme_assertions: Vec<TokenStream> = theme_refs
+        .iter()
+        .map(|(prop, key)| -> Result<TokenStream> {
+            let prop_type = if prop == "any" {
+                quote! { ::silex::css::types::props::Any }
+            } else {
+                crate::css::get_prop_type(prop, tag.span())?
+            };
+
+            let mut theme_name = quote! { Theme };
+            for attr in attrs {
+                if attr.path().is_ident("theme")
+                    && let Ok(nested) = attr.parse_args::<syn::Ident>()
+                {
+                    theme_name = quote! { #nested };
+                }
+            }
+
+            let key_path: Vec<TokenStream> = key
+                .split('.')
+                .map(|s| {
+                    let id = quote::format_ident!("{}", s);
+                    quote! { #id }
+                })
+                .collect();
+
+            Ok(quote! {
+                const _: () = {
+                    fn assert_valid<V: ::silex::css::types::ValidFor<#prop_type>>(_: &V) {}
+                    #[allow(non_upper_case_globals, unused_variables)]
+                    let _ = |t: &#theme_name| {
+                        assert_valid(&t #(.#key_path)*);
+                    };
+                };
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
 
     let mut variant_injections = Vec::new();
     let mut variant_class_bindings = Vec::new();
@@ -182,16 +244,17 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
                 ::silex::css::inject_style(#style_id, #final_css);
             });
 
-            let variant_name_lower = variant_name.to_string().to_lowercase();
+            let variant_name_str = variant_name.to_string();
+            let variant_name_lower = variant_name_str.to_lowercase();
             match_arms.push(quote! {
-                #variant_name_lower => #class_name,
+                v if ::std::string::ToString::to_string(&v).to_lowercase() == #variant_name_lower => #class_name,
             });
         }
 
         variant_class_bindings.push(quote! {
             .class(move || {
-                let val = ::std::string::ToString::to_string(&#sig_ident.get()).to_lowercase();
-                match val.as_str() {
+                let val = #sig_ident.get();
+                match val {
                     #(#match_arms)*
                     _ => "",
                 }
@@ -200,12 +263,20 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     }
 
     let mut has_children = false;
-    for arg in &props {
+    let mut style_prop = None;
+    let mut existing_prop_names = std::collections::HashSet::new();
+    for arg in props {
         if let syn::FnArg::Typed(pat_type) = arg
             && let syn::Pat::Ident(pat_ident) = &*pat_type.pat
-            && pat_ident.ident == "children"
         {
-            has_children = true;
+            let name = &pat_ident.ident;
+            existing_prop_names.insert(name.clone());
+            if name == "children" {
+                has_children = true;
+            }
+            if name == "style" {
+                style_prop = Some(name.clone());
+            }
         }
     }
 
@@ -215,11 +286,35 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         quote! { () }
     };
 
-    let mut dynamic_rule_effects = Vec::new();
-    if !dynamic_rules.is_empty() {
-        dynamic_rule_effects.push(quote! {
-            let manager = ::std::rc::Rc::new(::std::cell::RefCell::new(Some(::silex::css::DynamicStyleManager::new())));
-            let manager_cleanup = manager.clone();
+    let style_prop_binding = if let Some(ident) = style_prop {
+        quote! { .style(#ident) }
+    } else {
+        quote! {}
+    };
+
+    let mut dynamic_rule_inits = Vec::new();
+    let mut dynamic_rule_classes = Vec::new();
+
+    for (rule_idx, rule) in dynamic_rules.iter().enumerate() {
+        let template = &rule.template;
+        let mut dyn_var_decls = Vec::new();
+        let mut eval_vars = Vec::new();
+
+        for (expr_idx, (prop, expr_ts)) in rule.expressions.iter().enumerate() {
+            let var_ident = quote::format_ident!("dyn_var_{}_{}", rule_idx, expr_idx);
+            let prop_type = crate::css::get_prop_type(prop, tag.span())?;
+
+            dyn_var_decls.push(quote! {
+                let #var_ident = ::silex::css::make_dynamic_val_for::<#prop_type, _>(#expr_ts);
+            });
+            eval_vars.push(var_ident);
+        }
+
+        let manager_ident = quote::format_ident!("manager_{}", rule_idx);
+        dynamic_rule_inits.push(quote! {
+            #(#dyn_var_decls)*
+            let #manager_ident = ::std::rc::Rc::new(::std::cell::RefCell::new(Some(::silex::css::DynamicStyleManager::new())));
+            let manager_cleanup = #manager_ident.clone();
             ::silex::core::reactivity::on_cleanup(move || {
                 if let Ok(mut opt_mgr) = manager_cleanup.try_borrow_mut() {
                     let _ = opt_mgr.take();
@@ -227,95 +322,86 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             });
         });
 
-        let mut dyn_var_decls = Vec::new();
-        let mut template_blocks = Vec::new();
-
-        for (rule_idx, rule) in dynamic_rules.iter().enumerate() {
-            let template = &rule.template;
-            let mut eval_vars = Vec::new();
-
-            for (expr_idx, (prop, expr_ts)) in rule.expressions.iter().enumerate() {
-                let var_ident = quote::format_ident!("dyn_var_{}_{}", rule_idx, expr_idx);
-                let prop_type = crate::css::get_prop_type(prop, tag.span())?;
-
-                dyn_var_decls.push(quote! { let #var_ident = ::silex::css::make_dynamic_val_for::<#prop_type, _>(#expr_ts); });
-
-                let clone_ident = quote::format_ident!("dyn_var_{}_{}_clone", rule_idx, expr_idx);
-                dyn_var_decls.push(quote! { let #clone_ident = #var_ident.clone(); });
-                eval_vars.push(clone_ident);
-            }
-
-            template_blocks.push(quote! {
-                {
-                    let mut result_rule = ::std::string::ToString::to_string(#template);
-                    let vals = [ #( #eval_vars() ),* ];
-                    for val in vals {
-                        if let Some(pos) = result_rule.find("{}") {
-                            result_rule.replace_range(pos..pos+2, &val);
-                        }
-                    }
-                    ::std::hash::Hash::hash(&result_rule, &mut hasher);
-                    resolved_rules.push(result_rule);
-                }
-            });
-        }
-
-        // We do not push Effect::new here. Instead, we generate dynamic_class_binding.
-        let dynamic_class_binding = quote! {
+        dynamic_rule_classes.push(quote! {
             .class({
-                let manager = manager.clone();
+                let manager = #manager_ident.clone();
                 move || {
                     let mut hasher = ::std::collections::hash_map::DefaultHasher::new();
-                    ::std::hash::Hash::hash(b"silex-dyn-salt-css-v1", &mut hasher);
+                    ::std::hash::Hash::hash(b"silex-dyn-salt-css-v2", &mut hasher);
+                    ::std::hash::Hash::hash(#template, &mut hasher);
 
-                    let mut resolved_rules = ::std::vec::Vec::new();
-                    #(#template_blocks)*
+                    let mut resolved_rule = ::std::string::ToString::to_string(#template);
+                    #(
+                        let val = #eval_vars();
+                        if let Some(pos) = resolved_rule.find("{}") {
+                            resolved_rule.replace_range(pos..pos + 2, &val);
+                        }
+                    )*
 
+                    ::std::hash::Hash::hash(&resolved_rule, &mut hasher);
                     let hash_val = ::std::hash::Hasher::finish(&hasher);
                     let dyn_class = format!("{}-dyn-{:x}", #class_name, hash_val);
 
-                    let mut combined_css = ::std::string::String::new();
-                    for rule in resolved_rules {
-                        let rule_with_dyn_class = rule.replace(#class_name, &dyn_class);
-                        combined_css.push_str(&rule_with_dyn_class);
-                        combined_css.push('\n');
-                    }
-
                     if let Ok(mut opt) = manager.try_borrow_mut() {
                         if let Some(mgr) = opt.as_mut() {
-                            mgr.update(&dyn_class, &combined_css);
+                            let rule_with_dyn_class = resolved_rule.replace(#class_name, &dyn_class);
+                            mgr.update(&dyn_class, &rule_with_dyn_class);
                         }
                     }
 
                     dyn_class
                 }
             })
-        };
-
-        dynamic_rule_effects.push(quote! {
-            #(#dyn_var_decls)*
         });
+    }
 
-        variant_class_bindings.push(dynamic_class_binding);
+    let (impl_generics, _ty_generics, where_clause) = generics.split_for_impl();
+
+    // Create a new Punctuated list for all props to avoid trailing comma issues
+    let mut all_fn_args = props.clone();
+
+    // Ensure it doesn't have a trailing comma before we push more args
+    if !all_fn_args.empty_or_trailing()
+        && variants
+            .iter()
+            .any(|v| !existing_prop_names.contains(&v.prop_name))
+    {
+        // all_fn_args.push_punctuation(Token![,](Span::call_site()));
+        // Punctuated handles separator automatically when pushing
+    }
+
+    for v in variants {
+        if !existing_prop_names.contains(&v.prop_name) {
+            let prop = &v.prop_name;
+            let arg: syn::FnArg = syn::parse_quote! {
+                #[prop(into, default)]
+                #prop: ::silex::core::reactivity::Signal<::std::string::String>
+            };
+            all_fn_args.push(arg);
+        }
     }
 
     let expanded = quote! {
-        #[::silex::prelude::component]
-        #vis fn #name(
-            #props
-        ) -> impl ::silex::dom::View {
+        #(#attrs)*
+        #[::silex::macros::component]
+        #vis fn #name #impl_generics (
+            #all_fn_args
+        ) -> impl ::silex::dom::view::View #where_clause {
             #(#var_decls)*
             #(#prop_sig_bindings)*
+            #(#theme_assertions)*
 
             ::silex::css::inject_style(#style_id, #final_css);
             #(#variant_injections)*
 
-            #(#dynamic_rule_effects)*
+            #(#dynamic_rule_inits)*
 
             ::silex::html::#tag(#children_binding)
                 .class(#class_name)
+                #style_prop_binding
                 #(#style_bindings)*
                 #(#variant_class_bindings)*
+                #(#dynamic_rule_classes)*
         }
     };
 

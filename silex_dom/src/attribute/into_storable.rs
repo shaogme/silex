@@ -162,6 +162,13 @@ where
     }
 }
 
+impl<V: IntoStorable> IntoStorable for Option<V> {
+    type Stored = Option<V::Stored>;
+    fn into_storable(self) -> Self::Stored {
+        self.map(|v| v.into_storable())
+    }
+}
+
 impl<V: IntoStorable> IntoStorable for Vec<V> {
     type Stored = Vec<V::Stored>;
     fn into_storable(self) -> Self::Stored {

@@ -47,6 +47,16 @@ pub trait AttributeBuilder: Sized {
     {
         self.build_event(event, callback)
     }
+
+    /// Generic application of a value that knows how to apply itself to the DOM.
+    /// Useful for mixins, theme variables, or complex reactive logic.
+    fn apply<V>(self, value: V) -> Self
+    where
+        V: IntoStorable,
+    {
+        // Wrap in a storable type and build
+        self.build_attribute(ApplyTarget::Apply, value)
+    }
 }
 
 // --- 分层 Trait 定义 (from props.rs) ---

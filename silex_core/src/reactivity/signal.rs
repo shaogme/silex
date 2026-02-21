@@ -311,6 +311,12 @@ impl<T: 'static> Signal<T> {
     }
 }
 
+impl<T: Default + Clone + 'static> Default for Signal<T> {
+    fn default() -> Self {
+        T::default().into()
+    }
+}
+
 impl<T: Clone + 'static> Signal<T> {
     // derive moved to T: 'static block
 

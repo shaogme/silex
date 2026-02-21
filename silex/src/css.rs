@@ -1,5 +1,6 @@
 pub mod builder;
 pub mod registry;
+pub mod theme;
 pub mod types;
 pub use types::UnsafeCss;
 
@@ -8,10 +9,7 @@ use silex_core::traits::{Get, IntoSignal, With};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable};
 use silex_dom::document;
 use std::cell::RefCell;
-use std::collections::{
-    HashMap,
-    hash_map::{DefaultHasher, Entry},
-};
+use std::collections::{HashMap, VecDeque, hash_map::DefaultHasher};
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
@@ -50,6 +48,28 @@ pub fn inject_style(id: &str, content: &str) {
         .expect("Failed to append style to head");
 }
 
+/// Updates the content of an existing style block by ID.
+/// If it doesn't exist, it will be created via `inject_style`.
+pub fn update_style(id: &str, content: &str) {
+    let doc = document();
+    if let Some(el) = doc.get_element_by_id(id) {
+        el.set_inner_html(content);
+    } else {
+        inject_style(id, content);
+    }
+}
+
+/// Applies a CSS variable string (e.g. "--var: val; --var2: val2;") to the root element (:root).
+pub fn apply_vars_to_root(vars: &str) {
+    let doc = document();
+    if let Some(root) = doc.document_element()
+        && root.dyn_ref::<HtmlElement>().is_some()
+    {
+        let css = format!(":root {{ {} }}", vars);
+        update_style("silex-theme-root", &css);
+    }
+}
+
 pub type CssVariableGetter = Rc<dyn Fn() -> String>;
 
 /// Manages an injected <style> block uniquely for a component instance.
@@ -59,8 +79,11 @@ struct DynamicStyleState {
     style_el: Element,
 }
 
+const CACHE_LIMIT: usize = 128;
+
 thread_local! {
     static DYNAMIC_STYLE_REGISTRY: RefCell<HashMap<String, Rc<RefCell<DynamicStyleState>>>> = RefCell::new(HashMap::new());
+    static RETIRED_STYLES: RefCell<VecDeque<String>> = const { RefCell::new(VecDeque::new()) };
 }
 
 /// Manages an injected <style> block uniquely for a component instance.
@@ -93,7 +116,20 @@ impl DynamicStyleManager {
 
         DYNAMIC_STYLE_REGISTRY.with(|registry| {
             let mut reg = registry.borrow_mut();
-            let state_rc = reg.entry(id.to_string()).or_insert_with(|| {
+
+            if let Some(state_rc) = reg.get(id).cloned() {
+                let mut state = state_rc.borrow_mut();
+                if state.ref_count == 0 {
+                    // Remove from retired list if it was there
+                    RETIRED_STYLES.with(|retired| {
+                        let mut r = retired.borrow_mut();
+                        if let Some(pos) = r.iter().position(|x| x == id) {
+                            r.remove(pos);
+                        }
+                    });
+                }
+                state.ref_count += 1;
+            } else {
                 let doc = document();
                 let head = doc.head().expect("No <head> element found in document");
 
@@ -106,17 +142,18 @@ impl DynamicStyleManager {
                     style_el.set_inner_html(content);
                 }
 
-                let style_node: Node = style_el.clone().into();
+                let style_node: Node = style_el.clone().unchecked_into();
                 head.append_child(&style_node)
                     .expect("Failed to append style to head");
 
-                Rc::new(RefCell::new(DynamicStyleState {
-                    ref_count: 0,
-                    style_el,
-                }))
-            });
-
-            state_rc.borrow_mut().ref_count += 1;
+                reg.insert(
+                    id.to_string(),
+                    Rc::new(RefCell::new(DynamicStyleState {
+                        ref_count: 1,
+                        style_el,
+                    })),
+                );
+            }
         });
 
         if let Some(old_id) = self.id.take() {
@@ -126,20 +163,33 @@ impl DynamicStyleManager {
     }
 
     fn release(id: &str) {
-        DYNAMIC_STYLE_REGISTRY.with(|registry| {
+        let to_be_removed = DYNAMIC_STYLE_REGISTRY.with(|registry| {
             let mut reg = registry.borrow_mut();
-            if let Entry::Occupied(entry) = reg.entry(id.to_string()) {
-                let count = {
-                    let mut state = entry.get().borrow_mut();
-                    state.ref_count -= 1;
-                    state.ref_count
-                };
-                if count == 0 {
-                    let state = entry.remove();
-                    state.borrow().style_el.remove();
+            if let Some(state_rc) = reg.get(id).cloned() {
+                let mut state = state_rc.borrow_mut();
+                state.ref_count -= 1;
+                if state.ref_count == 0 {
+                    let id_str = id.to_string();
+                    return RETIRED_STYLES.with(|retired| {
+                        let mut r = retired.borrow_mut();
+                        r.push_back(id_str);
+
+                        if r.len() > CACHE_LIMIT
+                            && let Some(to_remove_id) = r.pop_front()
+                            && let Some(st_rc) = reg.remove(&to_remove_id)
+                        {
+                            return Some(st_rc);
+                        }
+                        None
+                    });
                 }
             }
+            None
         });
+
+        if let Some(st) = to_be_removed {
+            st.borrow().style_el.remove();
+        }
     }
 }
 
@@ -171,27 +221,28 @@ impl ApplyToDom for DynamicCss {
         self.class_name.apply(el, target);
 
         // 2. Apply dynamic variables (always as inline styles)
-        for (name, getter) in self.vars {
+        // Optimization: Coalesce all variable updates into a single effect
+        if !self.vars.is_empty() {
             let el = el.clone();
-            let name = name.to_string(); // 'static -> String for closure capture
-
-            // Create an effect to keep the CSS variable in sync with the signal/expression
+            let vars = self.vars;
             Effect::new(move |_| {
-                let value = getter();
-                // Attempt to get style declaration from HtmlElement or SvgElement
                 if let Some(style) = el
                     .dyn_ref::<HtmlElement>()
                     .map(|e| e.style())
                     .or_else(|| el.dyn_ref::<SvgElement>().map(|e| e.style()))
                 {
-                    // Set the CSS variable (e.g., --slx-1234-0: red)
-                    let _ = style.set_property(&name, &value);
+                    for (name, getter) in &vars {
+                        let value = getter();
+                        let _ = style.set_property(name, &value);
+                    }
                 }
             });
         }
 
         // 3. Apply isolated component dynamic rules
-        if !self.rules.is_empty() {
+        // Optimization: Each rule now gets its own effect and hashing.
+        // This allows styles to be reused if only some properties change, or if multiple components share a rule.
+        for (template, getters) in self.rules {
             let manager = Rc::new(RefCell::new(Some(DynamicStyleManager::new())));
             let manager_cleanup = manager.clone();
             on_cleanup(move || {
@@ -200,28 +251,23 @@ impl ApplyToDom for DynamicCss {
                 }
             });
 
-            let rules = self.rules;
             let el_clone = el.clone();
             let base_class = self.class_name;
 
             Effect::new(move |prev_class: Option<String>| {
                 let mut hasher = DefaultHasher::new();
-                Hash::hash(b"silex-dyn-salt-css-v1", &mut hasher);
+                Hash::hash(b"silex-dyn-salt-css-v2", &mut hasher);
+                Hash::hash(template, &mut hasher);
 
-                let mut resolved_rules = Vec::new();
-
-                for (template, getters) in &rules {
-                    let mut result_rule = template.to_string();
-                    for getter in getters {
-                        let val = getter();
-                        if let Some(pos) = result_rule.find("{}") {
-                            result_rule.replace_range(pos..pos + 2, &val);
-                        }
+                let mut resolved_rule = template.to_string();
+                for getter in &getters {
+                    let val = getter();
+                    if let Some(pos) = resolved_rule.find("{}") {
+                        resolved_rule.replace_range(pos..pos + 2, &val);
                     }
-                    Hash::hash(&result_rule, &mut hasher);
-                    resolved_rules.push(result_rule);
                 }
 
+                Hash::hash(&resolved_rule, &mut hasher);
                 let hash_val = hasher.finish();
                 let dyn_class = format!("{}-dyn-{:x}", base_class, hash_val);
 
@@ -231,17 +277,14 @@ impl ApplyToDom for DynamicCss {
                     }
                     let _ = el_clone.class_list().add_1(&dyn_class);
 
-                    let mut combined_css = String::new();
-                    for rule in resolved_rules {
-                        let rule_with_dyn_class = rule.replace(base_class, &dyn_class);
-                        combined_css.push_str(&rule_with_dyn_class);
-                        combined_css.push('\n');
-                    }
+                    let dot_base = format!(".{}", base_class);
+                    let dot_dyn = format!(".{}", dyn_class);
+                    let rule_with_dyn_class = resolved_rule.replace(&dot_base, &dot_dyn);
 
                     if let Ok(mut opt) = manager.try_borrow_mut()
                         && let Some(mgr) = opt.as_mut()
                     {
-                        mgr.update(&dyn_class, &combined_css);
+                        mgr.update(&dyn_class, &rule_with_dyn_class);
                     }
                 }
 

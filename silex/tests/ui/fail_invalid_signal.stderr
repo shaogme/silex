@@ -1,0 +1,27 @@
+error[E0277]: 类型 `Hex` 无法作为有效的 CSS `Height` 属性值使用
+ --> tests/ui/fail_invalid_signal.rs:7:26
+  |
+7 |     let _ = Style::new().height(color_sig);
+  |                          ^^^^^^ 无效的 CSS 属性类型
+  |
+  = help: the trait `ValidFor<Height>` is not implemented for `Hex`
+  = note: 请检查是否传入了错误的类型（例如将 Px 传给了 Color）。如果必须传入复杂的动态表达式，可以使用 `UnsafeCss::new(...)` 显式绕过。
+  = help: the following other types implement trait `ValidFor<Prop>`:
+            `Hex` implements `ValidFor<AlignContent>`
+            `Hex` implements `ValidFor<AlignItems>`
+            `Hex` implements `ValidFor<AlignSelf>`
+            `Hex` implements `ValidFor<AlignmentBaseline>`
+            `Hex` implements `ValidFor<Animation>`
+            `Hex` implements `ValidFor<AnimationComposition>`
+            `Hex` implements `ValidFor<AnimationDelay>`
+            `Hex` implements `ValidFor<AnimationDirection>`
+          and $N others
+note: required by a bound in `silex::prelude::Style::height`
+ --> src/css/builder.rs
+  |
+  | crate::for_all_properties!(generate_builder_methods);
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  | |
+  | required by a bound in this associated function
+  | required by this bound in `Style::height`
+  = note: this error originates in the macro `generate_builder_methods` which comes from the expansion of the macro `crate::for_all_properties` (in Nightly builds, run with -Z macro-backtrace for more info)
