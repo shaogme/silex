@@ -4,6 +4,7 @@ members = [
     "silex_macros",
     "silex_core",
     "silex_html",
+    "silex_css",
     "silex_dom", 
     "silex_reactivity",
     "examples/counter",
@@ -11,7 +12,7 @@ members = [
     "examples/error_boundary_demo",
     "examples/router",
     "examples/showcase",
-    "tools/silex_codegen"
+    "tools/silex_codegen",
 ]
 exclude = [
     "docs",
@@ -40,6 +41,7 @@ silex = { path = "silex", version = "0.1.0-beta.1" }
 silex_core = { path = "silex_core", version = "0.1.0-beta.1" }
 silex_dom = { path = "silex_dom", version = "0.1.0-beta.1" }
 silex_html = { path = "silex_html", version = "0.1.0-beta.1" }
+silex_css = { path = "silex_css", version = "0.1.0-beta.1" }
 silex_macros = { path = "silex_macros", version = "0.1.0-beta.1" }
 silex_reactivity = { path = "silex_reactivity", version = "0.1.0-beta.1" }
 wasm-bindgen = { version = "0.2", default-features = false }

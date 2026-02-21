@@ -19,14 +19,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "tools/silex_codegen/tags.json",
                 "tools/silex_codegen/css.json",
                 "silex_html/src/tags",
-                "silex/src/css",
+                "silex_css/src",
             )
         } else if current_dir.join("tags.json").exists() {
             (
                 "tags.json",
                 "css.json",
                 "../../silex_html/src/tags",
-                "../../silex/src/css",
+                "../../silex_css/src",
             )
         } else {
             return Err(

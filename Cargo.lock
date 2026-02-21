@@ -1242,6 +1242,7 @@ version = "0.1.0-beta.1"
 dependencies = [
  "js-sys",
  "silex_core",
+ "silex_css",
  "silex_dom",
  "silex_html",
  "silex_macros",
@@ -1277,6 +1278,16 @@ version = "0.1.0-beta.1"
 dependencies = [
  "gloo-timers",
  "silex",
+]
+
+[[package]]
+name = "silex_css"
+version = "0.1.0-beta.1"
+dependencies = [
+ "silex_core",
+ "silex_dom",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

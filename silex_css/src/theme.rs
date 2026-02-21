@@ -84,6 +84,6 @@ where
     // Apply reactive updates to :root
     ::silex_core::prelude::Effect::new(move |_| {
         let vars = theme.get().to_css_variables();
-        crate::css::apply_vars_to_root(&vars);
+        crate::apply_vars_to_root(&vars);
     });
 }

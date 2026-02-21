@@ -1,4 +1,4 @@
-use crate::css::types::{ValidFor, props};
+use crate::types::{ValidFor, props};
 use silex_core::traits::{Get, IntoSignal, With};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable};
 use std::fmt::Display;
@@ -173,7 +173,7 @@ impl Style {
         }
 
         // 3. 注入样式并添加类名
-        crate::css::inject_style(&class_base, &css_str);
+        crate::inject_style(&class_base, &css_str);
         let _ = el.class_list().add_1(&class_base);
 
         // 4. 建立极轻量更新 Effect (只有 style.setProperty)

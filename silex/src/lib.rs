@@ -1,7 +1,6 @@
 extern crate self as silex;
 
 pub mod components;
-pub mod css;
 pub mod flow;
 pub mod router;
 pub mod store;
@@ -22,6 +21,10 @@ pub mod core {
 
 pub mod html {
     pub use silex_html::*;
+}
+
+pub mod css {
+    pub use silex_css::*;
 }
 
 #[cfg(feature = "macros")]
@@ -48,10 +51,10 @@ pub mod prelude {
     pub use silex_macros::*;
 
     // Export CSS types for easier use in styled! / css! macros
-    pub use crate::css::types::*;
+    pub use silex_css::types::*;
 
-    pub use crate::css::builder::{Style, sty};
-    pub use crate::css::theme::{ThemeVariables, set_global_theme, theme_variables, use_theme};
+    pub use silex_css::builder::{Style, sty};
+    pub use silex_css::theme::{ThemeVariables, set_global_theme, theme_variables, use_theme};
 
     // Resolve ambiguous glob re-exports
     pub use crate::components::Center;

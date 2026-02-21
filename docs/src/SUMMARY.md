@@ -1,6 +1,7 @@
 # Summary
 
 - [Silex Core Library](./general_docs/silex/README.md)
+- [Silex CSS Subsystem](./general_docs/silex_css/README.md)
 - [Silex Reactivity Engine](./general_docs/silex_reactivity/README.md)
 - [Silex Core API](./general_docs/silex_core/README.md)
 - [Silex DOM System](./general_docs/silex_dom/README.md)
