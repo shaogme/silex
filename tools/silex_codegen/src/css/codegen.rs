@@ -60,6 +60,14 @@ pub fn generate_keywords_code(props: &[ProcessedProp]) -> String {
                 code.push_str(&format!("    {} => \"{}\",\n", variant, kw));
             }
             code.push_str("});\n\n");
+
+            // Add global Auto support if this property keyword accepts "auto"
+            if prop.keywords.contains(&"auto".to_string()) {
+                code.push_str(&format!(
+                    "impl ValidFor<props::{}> for Auto {{}}\n",
+                    prop.struct_name
+                ));
+            }
         }
     }
 

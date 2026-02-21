@@ -37,7 +37,7 @@ styled! {
         #[prop(into)] hover_color: Signal<Hex>,
         #[prop(into)] pseudo_state: Signal<String>,
         #[prop(into)] border_style: Signal<BorderValue>,
-        #[prop(into)] padding_val: Signal<UnsafeCss>,
+        #[prop(into)] padding_val: Signal<PaddingValue>,
     ) {
         background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
         color: $(color);

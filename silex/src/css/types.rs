@@ -185,74 +185,146 @@ where
     BorderValue(format!("{} {} {}", width, style, color))
 }
 
+#[derive(Clone, Debug)]
+pub struct MarginValue(pub String);
+impl Display for MarginValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl ValidFor<props::Margin> for MarginValue {}
+
 pub mod margin {
     use super::*;
-    pub fn all<T: ValidFor<props::Margin> + Display>(v: T) -> UnsafeCss {
-        UnsafeCss::new(format!("{}", v))
+    pub fn all<T: ValidFor<props::Margin> + Display>(v: T) -> MarginValue {
+        MarginValue(format!("{}", v))
     }
-    pub fn x_y<X, Y>(x: X, y: Y) -> UnsafeCss
+    pub fn x_y<X, Y>(x: X, y: Y) -> MarginValue
     where
         X: ValidFor<props::Margin> + Display,
         Y: ValidFor<props::Margin> + Display,
     {
-        UnsafeCss::new(format!("{} {}", x, y))
+        MarginValue(format!("{} {}", x, y))
     }
-    pub fn top_right_bottom_left<T, R, B, L>(top: T, right: R, bottom: B, left: L) -> UnsafeCss
+    pub fn top_right_bottom_left<T, R, B, L>(top: T, right: R, bottom: B, left: L) -> MarginValue
     where
         T: ValidFor<props::Margin> + Display,
         R: ValidFor<props::Margin> + Display,
         B: ValidFor<props::Margin> + Display,
         L: ValidFor<props::Margin> + Display,
     {
-        UnsafeCss::new(format!("{} {} {} {}", top, right, bottom, left))
+        MarginValue(format!("{} {} {} {}", top, right, bottom, left))
     }
-    pub fn top<V: ValidFor<props::Top> + Display>(v: V) -> UnsafeCss {
-        UnsafeCss::new(format!("{}", v))
+    pub fn top<V: ValidFor<props::Top> + Display>(v: V) -> MarginValue {
+        MarginValue(format!("{}", v))
     }
-    pub fn right<V: ValidFor<props::Right> + Display>(v: V) -> UnsafeCss {
-        UnsafeCss::new(format!("{}", v))
+    pub fn right<V: ValidFor<props::Right> + Display>(v: V) -> MarginValue {
+        MarginValue(format!("{}", v))
     }
-    pub fn bottom<V: ValidFor<props::Bottom> + Display>(v: V) -> UnsafeCss {
-        UnsafeCss::new(format!("{}", v))
+    pub fn bottom<V: ValidFor<props::Bottom> + Display>(v: V) -> MarginValue {
+        MarginValue(format!("{}", v))
     }
-    pub fn left<V: ValidFor<props::Left> + Display>(v: V) -> UnsafeCss {
-        UnsafeCss::new(format!("{}", v))
+    pub fn left<V: ValidFor<props::Left> + Display>(v: V) -> MarginValue {
+        MarginValue(format!("{}", v))
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct PaddingValue(pub String);
+impl Display for PaddingValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl ValidFor<props::Padding> for PaddingValue {}
+
 pub mod padding {
     use super::*;
-    pub fn all<T: ValidFor<props::Padding> + Display>(v: T) -> UnsafeCss {
-        UnsafeCss::new(format!("{}", v))
+    pub fn all<T: ValidFor<props::Padding> + Display>(v: T) -> PaddingValue {
+        PaddingValue(format!("{}", v))
     }
-    pub fn x_y<X, Y>(x: X, y: Y) -> UnsafeCss
+    pub fn x_y<X, Y>(x: X, y: Y) -> PaddingValue
     where
         X: ValidFor<props::Padding> + Display,
         Y: ValidFor<props::Padding> + Display,
     {
-        UnsafeCss::new(format!("{} {}", x, y))
+        PaddingValue(format!("{} {}", x, y))
     }
-    pub fn top_right_bottom_left<T, R, B, L>(top: T, right: R, bottom: B, left: L) -> UnsafeCss
+    pub fn top_right_bottom_left<T, R, B, L>(top: T, right: R, bottom: B, left: L) -> PaddingValue
     where
         T: ValidFor<props::Padding> + Display,
         R: ValidFor<props::Padding> + Display,
         B: ValidFor<props::Padding> + Display,
         L: ValidFor<props::Padding> + Display,
     {
-        UnsafeCss::new(format!("{} {} {} {}", top, right, bottom, left))
+        PaddingValue(format!("{} {} {} {}", top, right, bottom, left))
     }
-    pub fn top<V: ValidFor<props::Top> + Display>(v: V) -> UnsafeCss {
-        UnsafeCss::new(format!("{}", v))
+    pub fn top<V: ValidFor<props::Top> + Display>(v: V) -> PaddingValue {
+        PaddingValue(format!("{}", v))
     }
-    pub fn right<V: ValidFor<props::Right> + Display>(v: V) -> UnsafeCss {
-        UnsafeCss::new(format!("{}", v))
+    pub fn right<V: ValidFor<props::Right> + Display>(v: V) -> PaddingValue {
+        PaddingValue(format!("{}", v))
     }
-    pub fn bottom<V: ValidFor<props::Bottom> + Display>(v: V) -> UnsafeCss {
-        UnsafeCss::new(format!("{}", v))
+    pub fn bottom<V: ValidFor<props::Bottom> + Display>(v: V) -> PaddingValue {
+        PaddingValue(format!("{}", v))
     }
-    pub fn left<V: ValidFor<props::Left> + Display>(v: V) -> UnsafeCss {
-        UnsafeCss::new(format!("{}", v))
+    pub fn left<V: ValidFor<props::Left> + Display>(v: V) -> PaddingValue {
+        PaddingValue(format!("{}", v))
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct FlexValue(pub String);
+impl Display for FlexValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl ValidFor<props::Flex> for FlexValue {}
+
+pub fn flex<G, S, B>(grow: G, shrink: S, basis: B) -> FlexValue
+where
+    G: ValidFor<props::FlexGrow> + Display,
+    S: ValidFor<props::FlexShrink> + Display,
+    B: ValidFor<props::FlexBasis> + Display,
+{
+    FlexValue(format!("{} {} {}", grow, shrink, basis))
+}
+
+#[derive(Clone, Debug)]
+pub struct TransitionValue(pub String);
+impl Display for TransitionValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl ValidFor<props::Transition> for TransitionValue {}
+
+pub fn transition<P, D, T, E>(property: P, duration: D, timing: T, delay: E) -> TransitionValue
+where
+    P: ValidFor<props::TransitionProperty> + Display,
+    D: ValidFor<props::TransitionDuration> + Display,
+    T: ValidFor<props::TransitionTimingFunction> + Display,
+    E: ValidFor<props::TransitionDelay> + Display,
+{
+    TransitionValue(format!("{} {} {} {}", property, duration, timing, delay))
+}
+
+#[derive(Clone, Debug)]
+pub struct BackgroundValue(pub String);
+impl Display for BackgroundValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl ValidFor<props::Background> for BackgroundValue {}
+
+pub fn background<C, I>(color: C, image: I) -> BackgroundValue
+where
+    C: ValidFor<props::BackgroundColor> + Display,
+    I: ValidFor<props::BackgroundImage> + Display,
+{
+    BackgroundValue(format!("{} {}", color, image))
 }
 
 #[derive(Clone, Debug)]
@@ -280,7 +352,6 @@ macro_rules! impl_valid_for_dimension {
         impl ValidFor<$prop> for Em {}
         impl ValidFor<$prop> for Vw {}
         impl ValidFor<$prop> for Vh {}
-        impl ValidFor<$prop> for Auto {}
     };
 }
 
@@ -382,6 +453,11 @@ impl_into_signal_for_css!(
     Hsl,
     Url,
     BorderValue,
+    MarginValue,
+    PaddingValue,
+    FlexValue,
+    TransitionValue,
+    BackgroundValue,
     UnsafeCss
 );
 

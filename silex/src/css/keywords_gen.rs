@@ -785,6 +785,7 @@ define_css_enum!(AccentColorKeyword (props::AccentColor) {
     Yellowgreen => "yellowgreen",
 });
 
+impl ValidFor<props::AccentColor> for Auto {}
 define_css_enum!(AlignContentKeyword (props::AlignContent) {
     Baseline => "baseline",
     Center => "center",
@@ -800,7 +801,7 @@ define_css_enum!(AlignContentKeyword (props::AlignContent) {
     SpaceEvenly => "space-evenly",
     Start => "start",
     Stretch => "stretch",
-    Unsafe => "unsafe",
+    Unsafe_ => "unsafe",
 });
 
 define_css_enum!(AlignItemsKeyword (props::AlignItems) {
@@ -818,7 +819,7 @@ define_css_enum!(AlignItemsKeyword (props::AlignItems) {
     SelfStart => "self-start",
     Start => "start",
     Stretch => "stretch",
-    Unsafe => "unsafe",
+    Unsafe_ => "unsafe",
 });
 
 define_css_enum!(AlignSelfKeyword (props::AlignSelf) {
@@ -837,9 +838,10 @@ define_css_enum!(AlignSelfKeyword (props::AlignSelf) {
     SelfStart => "self-start",
     Start => "start",
     Stretch => "stretch",
-    Unsafe => "unsafe",
+    Unsafe_ => "unsafe",
 });
 
+impl ValidFor<props::AlignSelf> for Auto {}
 define_css_enum!(AlignmentBaselineKeyword (props::AlignmentBaseline) {
     Alphabetic => "alphabetic",
     Baseline => "baseline",
@@ -881,6 +883,7 @@ define_css_enum!(AnimationKeyword (props::Animation) {
     StepStart => "step-start",
 });
 
+impl ValidFor<props::Animation> for Auto {}
 define_css_enum!(AnimationCompositionKeyword (props::AnimationComposition) {
     Accumulate => "accumulate",
     Add => "add",
@@ -898,6 +901,7 @@ define_css_enum!(AnimationDurationKeyword (props::AnimationDuration) {
     Auto => "auto",
 });
 
+impl ValidFor<props::AnimationDuration> for Auto {}
 define_css_enum!(AnimationFillModeKeyword (props::AnimationFillMode) {
     Backwards => "backwards",
     Both => "both",
@@ -955,10 +959,12 @@ define_css_enum!(AppearanceKeyword (props::Appearance) {
     Textfield => "textfield",
 });
 
+impl ValidFor<props::Appearance> for Auto {}
 define_css_enum!(AspectRatioKeyword (props::AspectRatio) {
     Auto => "auto",
 });
 
+impl ValidFor<props::AspectRatio> for Auto {}
 define_css_enum!(BackdropFilterKeyword (props::BackdropFilter) {
     None => "none",
 });
@@ -992,6 +998,7 @@ define_css_enum!(BackgroundKeyword (props::Background) {
     Top => "top",
 });
 
+impl ValidFor<props::Background> for Auto {}
 define_css_enum!(BackgroundAttachmentKeyword (props::BackgroundAttachment) {
     Fixed => "fixed",
     Local => "local",
@@ -1269,10 +1276,11 @@ define_css_enum!(BackgroundSizeKeyword (props::BackgroundSize) {
     Cover => "cover",
 });
 
+impl ValidFor<props::BackgroundSize> for Auto {}
 define_css_enum!(BaselineShiftKeyword (props::BaselineShift) {
     Baseline => "baseline",
     Sub => "sub",
-    Super => "super",
+    Super_ => "super",
 });
 
 define_css_enum!(BaselineSourceKeyword (props::BaselineSource) {
@@ -1281,6 +1289,7 @@ define_css_enum!(BaselineSourceKeyword (props::BaselineSource) {
     Last => "last",
 });
 
+impl ValidFor<props::BaselineSource> for Auto {}
 define_css_enum!(BorderKeyword (props::Border) {
     AccentColor => "AccentColor",
     AccentColorText => "AccentColorText",
@@ -2325,6 +2334,7 @@ define_css_enum!(BorderImageWidthKeyword (props::BorderImageWidth) {
     Auto => "auto",
 });
 
+impl ValidFor<props::BorderImageWidth> for Auto {}
 define_css_enum!(BorderInlineEndKeyword (props::BorderInlineEnd) {
     AccentColor => "AccentColor",
     AccentColorText => "AccentColorText",
@@ -4004,6 +4014,7 @@ define_css_enum!(BottomKeyword (props::Bottom) {
     Auto => "auto",
 });
 
+impl ValidFor<props::Bottom> for Auto {}
 define_css_enum!(BoxDecorationBreakKeyword (props::BoxDecorationBreak) {
     Clone => "clone",
     Slice => "slice",
@@ -4228,6 +4239,7 @@ define_css_enum!(BreakAfterKeyword (props::BreakAfter) {
     Verso => "verso",
 });
 
+impl ValidFor<props::BreakAfter> for Auto {}
 define_css_enum!(BreakBeforeKeyword (props::BreakBefore) {
     All => "all",
     Always => "always",
@@ -4245,6 +4257,7 @@ define_css_enum!(BreakBeforeKeyword (props::BreakBefore) {
     Verso => "verso",
 });
 
+impl ValidFor<props::BreakBefore> for Auto {}
 define_css_enum!(BreakInsideKeyword (props::BreakInside) {
     Auto => "auto",
     Avoid => "avoid",
@@ -4253,6 +4266,7 @@ define_css_enum!(BreakInsideKeyword (props::BreakInside) {
     AvoidRegion => "avoid-region",
 });
 
+impl ValidFor<props::BreakInside> for Auto {}
 define_css_enum!(CaptionSideKeyword (props::CaptionSide) {
     Bottom => "bottom",
     Top => "top",
@@ -4263,6 +4277,7 @@ define_css_enum!(CaretAnimationKeyword (props::CaretAnimation) {
     Manual => "manual",
 });
 
+impl ValidFor<props::CaretAnimation> for Auto {}
 define_css_enum!(CaretColorKeyword (props::CaretColor) {
     AccentColor => "AccentColor",
     AccentColorText => "AccentColorText",
@@ -4459,6 +4474,7 @@ define_css_enum!(CaretColorKeyword (props::CaretColor) {
     Yellowgreen => "yellowgreen",
 });
 
+impl ValidFor<props::CaretColor> for Auto {}
 define_css_enum!(CaretShapeKeyword (props::CaretShape) {
     Auto => "auto",
     Bar => "bar",
@@ -4466,6 +4482,7 @@ define_css_enum!(CaretShapeKeyword (props::CaretShape) {
     Underscore => "underscore",
 });
 
+impl ValidFor<props::CaretShape> for Auto {}
 define_css_enum!(ClearKeyword (props::Clear) {
     Both => "both",
     InlineEnd => "inline-end",
@@ -4692,6 +4709,7 @@ define_css_enum!(ColorInterpolationFiltersKeyword (props::ColorInterpolationFilt
     SRgb => "sRGB",
 });
 
+impl ValidFor<props::ColorInterpolationFilters> for Auto {}
 define_css_enum!(ColorSchemeKeyword (props::ColorScheme) {
     Dark => "dark",
     Light => "light",
@@ -4703,11 +4721,13 @@ define_css_enum!(ColumnCountKeyword (props::ColumnCount) {
     Auto => "auto",
 });
 
+impl ValidFor<props::ColumnCount> for Auto {}
 define_css_enum!(ColumnFillKeyword (props::ColumnFill) {
     Auto => "auto",
     Balance => "balance",
 });
 
+impl ValidFor<props::ColumnFill> for Auto {}
 define_css_enum!(ColumnGapKeyword (props::ColumnGap) {
     Normal => "normal",
 });
@@ -4716,6 +4736,7 @@ define_css_enum!(ColumnHeightKeyword (props::ColumnHeight) {
     Auto => "auto",
 });
 
+impl ValidFor<props::ColumnHeight> for Auto {}
 define_css_enum!(ColumnRuleColorKeyword (props::ColumnRuleColor) {
     AccentColor => "AccentColor",
     AccentColorText => "AccentColorText",
@@ -4920,12 +4941,14 @@ define_css_enum!(ColumnWidthKeyword (props::ColumnWidth) {
     Auto => "auto",
 });
 
+impl ValidFor<props::ColumnWidth> for Auto {}
 define_css_enum!(ColumnWrapKeyword (props::ColumnWrap) {
     Auto => "auto",
     Nowrap => "nowrap",
     Wrap => "wrap",
 });
 
+impl ValidFor<props::ColumnWrap> for Auto {}
 define_css_enum!(ContainKeyword (props::Contain) {
     Content => "content",
     InlineSize => "inline-size",
@@ -4942,26 +4965,31 @@ define_css_enum!(ContainIntrinsicBlockSizeKeyword (props::ContainIntrinsicBlockS
     None => "none",
 });
 
+impl ValidFor<props::ContainIntrinsicBlockSize> for Auto {}
 define_css_enum!(ContainIntrinsicHeightKeyword (props::ContainIntrinsicHeight) {
     Auto => "auto",
     None => "none",
 });
 
+impl ValidFor<props::ContainIntrinsicHeight> for Auto {}
 define_css_enum!(ContainIntrinsicInlineSizeKeyword (props::ContainIntrinsicInlineSize) {
     Auto => "auto",
     None => "none",
 });
 
+impl ValidFor<props::ContainIntrinsicInlineSize> for Auto {}
 define_css_enum!(ContainIntrinsicSizeKeyword (props::ContainIntrinsicSize) {
     Auto => "auto",
     None => "none",
 });
 
+impl ValidFor<props::ContainIntrinsicSize> for Auto {}
 define_css_enum!(ContainIntrinsicWidthKeyword (props::ContainIntrinsicWidth) {
     Auto => "auto",
     None => "none",
 });
 
+impl ValidFor<props::ContainIntrinsicWidth> for Auto {}
 define_css_enum!(ContainerNameKeyword (props::ContainerName) {
     None => "none",
 });
@@ -4988,6 +5016,7 @@ define_css_enum!(ContentVisibilityKeyword (props::ContentVisibility) {
     Visible => "visible",
 });
 
+impl ValidFor<props::ContentVisibility> for Auto {}
 define_css_enum!(CornerBlockEndShapeKeyword (props::CornerBlockEndShape) {
     Bevel => "bevel",
     Notch => "notch",
@@ -5163,13 +5192,13 @@ define_css_enum!(CursorKeyword (props::Cursor) {
     ContextMenu => "context-menu",
     Copy => "copy",
     Crosshair => "crosshair",
-    Default => "default",
+    Default_ => "default",
     EResize => "e-resize",
     EwResize => "ew-resize",
     Grab => "grab",
     Grabbing => "grabbing",
     Help => "help",
-    Move => "move",
+    Move_ => "move",
     NResize => "n-resize",
     NeResize => "ne-resize",
     NeswResize => "nesw-resize",
@@ -5193,6 +5222,7 @@ define_css_enum!(CursorKeyword (props::Cursor) {
     ZoomOut => "zoom-out",
 });
 
+impl ValidFor<props::Cursor> for Auto {}
 define_css_enum!(DKeyword (props::D) {
     None => "none",
     Path => "path",
@@ -5247,6 +5277,7 @@ define_css_enum!(DominantBaselineKeyword (props::DominantBaseline) {
     TextTop => "text-top",
 });
 
+impl ValidFor<props::DominantBaseline> for Auto {}
 define_css_enum!(DynamicRangeLimitKeyword (props::DynamicRangeLimit) {
     Constrained => "constrained",
     NoLimit => "no-limit",
@@ -5736,6 +5767,7 @@ define_css_enum!(FontKerningKeyword (props::FontKerning) {
     Normal => "normal",
 });
 
+impl ValidFor<props::FontKerning> for Auto {}
 define_css_enum!(FontLanguageOverrideKeyword (props::FontLanguageOverride) {
     Normal => "normal",
 });
@@ -5745,6 +5777,7 @@ define_css_enum!(FontOpticalSizingKeyword (props::FontOpticalSizing) {
     None => "none",
 });
 
+impl ValidFor<props::FontOpticalSizing> for Auto {}
 define_css_enum!(FontPaletteKeyword (props::FontPalette) {
     Dark => "dark",
     Light => "light",
@@ -5794,16 +5827,19 @@ define_css_enum!(FontSynthesisSmallCapsKeyword (props::FontSynthesisSmallCaps) {
     None => "none",
 });
 
+impl ValidFor<props::FontSynthesisSmallCaps> for Auto {}
 define_css_enum!(FontSynthesisStyleKeyword (props::FontSynthesisStyle) {
     Auto => "auto",
     None => "none",
 });
 
+impl ValidFor<props::FontSynthesisStyle> for Auto {}
 define_css_enum!(FontSynthesisWeightKeyword (props::FontSynthesisWeight) {
     Auto => "auto",
     None => "none",
 });
 
+impl ValidFor<props::FontSynthesisWeight> for Auto {}
 define_css_enum!(FontVariantKeyword (props::FontVariant) {
     AllPetiteCaps => "all-petite-caps",
     AllSmallCaps => "all-small-caps",
@@ -5916,7 +5952,7 @@ define_css_enum!(FontVariantNumericKeyword (props::FontVariantNumeric) {
 define_css_enum!(FontVariantPositionKeyword (props::FontVariantPosition) {
     Normal => "normal",
     Sub => "sub",
-    Super => "super",
+    Super_ => "super",
 });
 
 define_css_enum!(FontVariationSettingsKeyword (props::FontVariationSettings) {
@@ -5936,6 +5972,7 @@ define_css_enum!(ForcedColorAdjustKeyword (props::ForcedColorAdjust) {
     PreserveParentColor => "preserve-parent-color",
 });
 
+impl ValidFor<props::ForcedColorAdjust> for Auto {}
 define_css_enum!(GridKeyword (props::Grid) {
     AutoFlow => "auto-flow",
     Dense => "dense",
@@ -5946,6 +5983,7 @@ define_css_enum!(GridAreaKeyword (props::GridArea) {
     Span => "span",
 });
 
+impl ValidFor<props::GridArea> for Auto {}
 define_css_enum!(GridAutoColumnsKeyword (props::GridAutoColumns) {
     Auto => "auto",
     FitContent => "fit-content",
@@ -5954,6 +5992,7 @@ define_css_enum!(GridAutoColumnsKeyword (props::GridAutoColumns) {
     Minmax => "minmax",
 });
 
+impl ValidFor<props::GridAutoColumns> for Auto {}
 define_css_enum!(GridAutoFlowKeyword (props::GridAutoFlow) {
     Column => "column",
     Dense => "dense",
@@ -5968,36 +6007,43 @@ define_css_enum!(GridAutoRowsKeyword (props::GridAutoRows) {
     Minmax => "minmax",
 });
 
+impl ValidFor<props::GridAutoRows> for Auto {}
 define_css_enum!(GridColumnKeyword (props::GridColumn) {
     Auto => "auto",
     Span => "span",
 });
 
+impl ValidFor<props::GridColumn> for Auto {}
 define_css_enum!(GridColumnEndKeyword (props::GridColumnEnd) {
     Auto => "auto",
     Span => "span",
 });
 
+impl ValidFor<props::GridColumnEnd> for Auto {}
 define_css_enum!(GridColumnStartKeyword (props::GridColumnStart) {
     Auto => "auto",
     Span => "span",
 });
 
+impl ValidFor<props::GridColumnStart> for Auto {}
 define_css_enum!(GridRowKeyword (props::GridRow) {
     Auto => "auto",
     Span => "span",
 });
 
+impl ValidFor<props::GridRow> for Auto {}
 define_css_enum!(GridRowEndKeyword (props::GridRowEnd) {
     Auto => "auto",
     Span => "span",
 });
 
+impl ValidFor<props::GridRowEnd> for Auto {}
 define_css_enum!(GridRowStartKeyword (props::GridRowStart) {
     Auto => "auto",
     Span => "span",
 });
 
+impl ValidFor<props::GridRowStart> for Auto {}
 define_css_enum!(GridTemplateKeyword (props::GridTemplate) {
     Auto => "auto",
     FitContent => "fit-content",
@@ -6007,6 +6053,7 @@ define_css_enum!(GridTemplateKeyword (props::GridTemplate) {
     None => "none",
 });
 
+impl ValidFor<props::GridTemplate> for Auto {}
 define_css_enum!(GridTemplateAreasKeyword (props::GridTemplateAreas) {
     None => "none",
 });
@@ -6024,6 +6071,7 @@ define_css_enum!(GridTemplateColumnsKeyword (props::GridTemplateColumns) {
     Subgrid => "subgrid",
 });
 
+impl ValidFor<props::GridTemplateColumns> for Auto {}
 define_css_enum!(GridTemplateRowsKeyword (props::GridTemplateRows) {
     Auto => "auto",
     AutoFill => "auto-fill",
@@ -6037,6 +6085,7 @@ define_css_enum!(GridTemplateRowsKeyword (props::GridTemplateRows) {
     Subgrid => "subgrid",
 });
 
+impl ValidFor<props::GridTemplateRows> for Auto {}
 define_css_enum!(HangingPunctuationKeyword (props::HangingPunctuation) {
     AllowEnd => "allow-end",
     First => "first",
@@ -6052,20 +6101,24 @@ define_css_enum!(HeightKeyword (props::Height) {
     MinContent => "min-content",
 });
 
+impl ValidFor<props::Height> for Auto {}
 define_css_enum!(HyphenateCharacterKeyword (props::HyphenateCharacter) {
     Auto => "auto",
 });
 
+impl ValidFor<props::HyphenateCharacter> for Auto {}
 define_css_enum!(HyphenateLimitCharsKeyword (props::HyphenateLimitChars) {
     Auto => "auto",
 });
 
+impl ValidFor<props::HyphenateLimitChars> for Auto {}
 define_css_enum!(HyphensKeyword (props::Hyphens) {
     Auto => "auto",
     Manual => "manual",
     None => "none",
 });
 
+impl ValidFor<props::Hyphens> for Auto {}
 define_css_enum!(ImageOrientationKeyword (props::ImageOrientation) {
     Flip => "flip",
     FromImage => "from-image",
@@ -6078,6 +6131,7 @@ define_css_enum!(ImageRenderingKeyword (props::ImageRendering) {
     Smooth => "smooth",
 });
 
+impl ValidFor<props::ImageRendering> for Auto {}
 define_css_enum!(InitialLetterKeyword (props::InitialLetter) {
     Normal => "normal",
 });
@@ -6087,6 +6141,7 @@ define_css_enum!(InteractivityKeyword (props::Interactivity) {
     Inert => "inert",
 });
 
+impl ValidFor<props::Interactivity> for Auto {}
 define_css_enum!(InterestDelayEndKeyword (props::InterestDelayEnd) {
     Normal => "normal",
 });
@@ -6100,6 +6155,7 @@ define_css_enum!(IsolationKeyword (props::Isolation) {
     Isolate => "isolate",
 });
 
+impl ValidFor<props::Isolation> for Auto {}
 define_css_enum!(JustifyContentKeyword (props::JustifyContent) {
     Center => "center",
     End => "end",
@@ -6114,7 +6170,7 @@ define_css_enum!(JustifyContentKeyword (props::JustifyContent) {
     SpaceEvenly => "space-evenly",
     Start => "start",
     Stretch => "stretch",
-    Unsafe => "unsafe",
+    Unsafe_ => "unsafe",
 });
 
 define_css_enum!(JustifyItemsKeyword (props::JustifyItems) {
@@ -6135,7 +6191,7 @@ define_css_enum!(JustifyItemsKeyword (props::JustifyItems) {
     SelfStart => "self-start",
     Start => "start",
     Stretch => "stretch",
-    Unsafe => "unsafe",
+    Unsafe_ => "unsafe",
 });
 
 define_css_enum!(JustifySelfKeyword (props::JustifySelf) {
@@ -6156,13 +6212,15 @@ define_css_enum!(JustifySelfKeyword (props::JustifySelf) {
     SelfStart => "self-start",
     Start => "start",
     Stretch => "stretch",
-    Unsafe => "unsafe",
+    Unsafe_ => "unsafe",
 });
 
+impl ValidFor<props::JustifySelf> for Auto {}
 define_css_enum!(LeftKeyword (props::Left) {
     Auto => "auto",
 });
 
+impl ValidFor<props::Left> for Auto {}
 define_css_enum!(LetterSpacingKeyword (props::LetterSpacing) {
     Normal => "normal",
 });
@@ -6370,6 +6428,7 @@ define_css_enum!(LineBreakKeyword (props::LineBreak) {
     Strict => "strict",
 });
 
+impl ValidFor<props::LineBreak> for Auto {}
 define_css_enum!(LineClampKeyword (props::LineClamp) {
     None => "none",
 });
@@ -6396,18 +6455,22 @@ define_css_enum!(MarginBottomKeyword (props::MarginBottom) {
     Auto => "auto",
 });
 
+impl ValidFor<props::MarginBottom> for Auto {}
 define_css_enum!(MarginLeftKeyword (props::MarginLeft) {
     Auto => "auto",
 });
 
+impl ValidFor<props::MarginLeft> for Auto {}
 define_css_enum!(MarginRightKeyword (props::MarginRight) {
     Auto => "auto",
 });
 
+impl ValidFor<props::MarginRight> for Auto {}
 define_css_enum!(MarginTopKeyword (props::MarginTop) {
     Auto => "auto",
 });
 
+impl ValidFor<props::MarginTop> for Auto {}
 define_css_enum!(MarkerKeyword (props::Marker) {
     None => "none",
 });
@@ -6457,6 +6520,7 @@ define_css_enum!(MaskKeyword (props::Mask) {
     ViewBox => "view-box",
 });
 
+impl ValidFor<props::Mask> for Auto {}
 define_css_enum!(MaskBorderModeKeyword (props::MaskBorderMode) {
     Alpha => "alpha",
     Luminance => "luminance",
@@ -6481,6 +6545,7 @@ define_css_enum!(MaskBorderWidthKeyword (props::MaskBorderWidth) {
     Auto => "auto",
 });
 
+impl ValidFor<props::MaskBorderWidth> for Auto {}
 define_css_enum!(MaskClipKeyword (props::MaskClip) {
     BorderBox => "border-box",
     ContentBox => "content-box",
@@ -6540,6 +6605,7 @@ define_css_enum!(MaskSizeKeyword (props::MaskSize) {
     Cover => "cover",
 });
 
+impl ValidFor<props::MaskSize> for Auto {}
 define_css_enum!(MaskTypeKeyword (props::MaskType) {
     Alpha => "alpha",
     Luminance => "luminance",
@@ -6576,6 +6642,7 @@ define_css_enum!(MinHeightKeyword (props::MinHeight) {
     MinContent => "min-content",
 });
 
+impl ValidFor<props::MinHeight> for Auto {}
 define_css_enum!(MinWidthKeyword (props::MinWidth) {
     Auto => "auto",
     FitContent => "fit-content",
@@ -6583,6 +6650,7 @@ define_css_enum!(MinWidthKeyword (props::MinWidth) {
     MinContent => "min-content",
 });
 
+impl ValidFor<props::MinWidth> for Auto {}
 define_css_enum!(MixBlendModeKeyword (props::MixBlendMode) {
     Color => "color",
     ColorBurn => "color-burn",
@@ -6629,6 +6697,7 @@ define_css_enum!(OffsetAnchorKeyword (props::OffsetAnchor) {
     Top => "top",
 });
 
+impl ValidFor<props::OffsetAnchor> for Auto {}
 define_css_enum!(OffsetPathKeyword (props::OffsetPath) {
     BorderBox => "border-box",
     ContentBox => "content-box",
@@ -6649,11 +6718,13 @@ define_css_enum!(OffsetPositionKeyword (props::OffsetPosition) {
     Top => "top",
 });
 
+impl ValidFor<props::OffsetPosition> for Auto {}
 define_css_enum!(OffsetRotateKeyword (props::OffsetRotate) {
     Auto => "auto",
     Reverse => "reverse",
 });
 
+impl ValidFor<props::OffsetRotate> for Auto {}
 define_css_enum!(OutlineColorKeyword (props::OutlineColor) {
     AccentColor => "AccentColor",
     AccentColorText => "AccentColorText",
@@ -6850,6 +6921,7 @@ define_css_enum!(OutlineColorKeyword (props::OutlineColor) {
     Yellowgreen => "yellowgreen",
 });
 
+impl ValidFor<props::OutlineColor> for Auto {}
 define_css_enum!(OutlineStyleKeyword (props::OutlineStyle) {
     Auto => "auto",
     Dashed => "dashed",
@@ -6863,6 +6935,7 @@ define_css_enum!(OutlineStyleKeyword (props::OutlineStyle) {
     Solid => "solid",
 });
 
+impl ValidFor<props::OutlineStyle> for Auto {}
 define_css_enum!(OutlineWidthKeyword (props::OutlineWidth) {
     Medium => "medium",
     Thick => "thick",
@@ -6877,11 +6950,13 @@ define_css_enum!(OverflowKeyword (props::Overflow) {
     Visible => "visible",
 });
 
+impl ValidFor<props::Overflow> for Auto {}
 define_css_enum!(OverflowAnchorKeyword (props::OverflowAnchor) {
     Auto => "auto",
     None => "none",
 });
 
+impl ValidFor<props::OverflowAnchor> for Auto {}
 define_css_enum!(OverflowBlockKeyword (props::OverflowBlock) {
     Auto => "auto",
     Clip => "clip",
@@ -6890,6 +6965,7 @@ define_css_enum!(OverflowBlockKeyword (props::OverflowBlock) {
     Visible => "visible",
 });
 
+impl ValidFor<props::OverflowBlock> for Auto {}
 define_css_enum!(OverflowClipMarginKeyword (props::OverflowClipMargin) {
     BorderBox => "border-box",
     ContentBox => "content-box",
@@ -6904,6 +6980,7 @@ define_css_enum!(OverflowInlineKeyword (props::OverflowInline) {
     Visible => "visible",
 });
 
+impl ValidFor<props::OverflowInline> for Auto {}
 define_css_enum!(OverflowWrapKeyword (props::OverflowWrap) {
     Anywhere => "anywhere",
     BreakWord => "break-word",
@@ -6918,6 +6995,7 @@ define_css_enum!(OverflowXKeyword (props::OverflowX) {
     Visible => "visible",
 });
 
+impl ValidFor<props::OverflowX> for Auto {}
 define_css_enum!(OverflowYKeyword (props::OverflowY) {
     Auto => "auto",
     Clip => "clip",
@@ -6926,40 +7004,47 @@ define_css_enum!(OverflowYKeyword (props::OverflowY) {
     Visible => "visible",
 });
 
+impl ValidFor<props::OverflowY> for Auto {}
 define_css_enum!(OverscrollBehaviorKeyword (props::OverscrollBehavior) {
     Auto => "auto",
     Contain => "contain",
     None => "none",
 });
 
+impl ValidFor<props::OverscrollBehavior> for Auto {}
 define_css_enum!(OverscrollBehaviorBlockKeyword (props::OverscrollBehaviorBlock) {
     Auto => "auto",
     Contain => "contain",
     None => "none",
 });
 
+impl ValidFor<props::OverscrollBehaviorBlock> for Auto {}
 define_css_enum!(OverscrollBehaviorInlineKeyword (props::OverscrollBehaviorInline) {
     Auto => "auto",
     Contain => "contain",
     None => "none",
 });
 
+impl ValidFor<props::OverscrollBehaviorInline> for Auto {}
 define_css_enum!(OverscrollBehaviorXKeyword (props::OverscrollBehaviorX) {
     Auto => "auto",
     Contain => "contain",
     None => "none",
 });
 
+impl ValidFor<props::OverscrollBehaviorX> for Auto {}
 define_css_enum!(OverscrollBehaviorYKeyword (props::OverscrollBehaviorY) {
     Auto => "auto",
     Contain => "contain",
     None => "none",
 });
 
+impl ValidFor<props::OverscrollBehaviorY> for Auto {}
 define_css_enum!(PageKeyword (props::Page) {
     Auto => "auto",
 });
 
+impl ValidFor<props::Page> for Auto {}
 define_css_enum!(PaintOrderKeyword (props::PaintOrder) {
     Fill => "fill",
     Markers => "markers",
@@ -6993,11 +7078,12 @@ define_css_enum!(PointerEventsKeyword (props::PointerEvents) {
     VisibleStroke => "visibleStroke",
 });
 
+impl ValidFor<props::PointerEvents> for Auto {}
 define_css_enum!(PositionKeyword (props::Position) {
     Absolute => "absolute",
     Fixed => "fixed",
     Relative => "relative",
-    Static => "static",
+    Static_ => "static",
     Sticky => "sticky",
 });
 
@@ -7011,6 +7097,7 @@ define_css_enum!(QuotesKeyword (props::Quotes) {
     None => "none",
 });
 
+impl ValidFor<props::Quotes> for Auto {}
 define_css_enum!(ReadingFlowKeyword (props::ReadingFlow) {
     FlexFlow => "flex-flow",
     FlexVisual => "flex-visual",
@@ -7034,6 +7121,7 @@ define_css_enum!(RightKeyword (props::Right) {
     Auto => "auto",
 });
 
+impl ValidFor<props::Right> for Auto {}
 define_css_enum!(RotateKeyword (props::Rotate) {
     None => "none",
     Z => "z",
@@ -7055,6 +7143,7 @@ define_css_enum!(RubyOverhangKeyword (props::RubyOverhang) {
     None => "none",
 });
 
+impl ValidFor<props::RubyOverhang> for Auto {}
 define_css_enum!(RubyPositionKeyword (props::RubyPosition) {
     Alternate => "alternate",
     InterCharacter => "inter-character",
@@ -7071,6 +7160,7 @@ define_css_enum!(ScrollBehaviorKeyword (props::ScrollBehavior) {
     Smooth => "smooth",
 });
 
+impl ValidFor<props::ScrollBehavior> for Auto {}
 define_css_enum!(ScrollMarkerGroupKeyword (props::ScrollMarkerGroup) {
     After => "after",
     Before => "before",
@@ -7081,46 +7171,57 @@ define_css_enum!(ScrollPaddingKeyword (props::ScrollPadding) {
     Auto => "auto",
 });
 
+impl ValidFor<props::ScrollPadding> for Auto {}
 define_css_enum!(ScrollPaddingBlockKeyword (props::ScrollPaddingBlock) {
     Auto => "auto",
 });
 
+impl ValidFor<props::ScrollPaddingBlock> for Auto {}
 define_css_enum!(ScrollPaddingBlockEndKeyword (props::ScrollPaddingBlockEnd) {
     Auto => "auto",
 });
 
+impl ValidFor<props::ScrollPaddingBlockEnd> for Auto {}
 define_css_enum!(ScrollPaddingBlockStartKeyword (props::ScrollPaddingBlockStart) {
     Auto => "auto",
 });
 
+impl ValidFor<props::ScrollPaddingBlockStart> for Auto {}
 define_css_enum!(ScrollPaddingBottomKeyword (props::ScrollPaddingBottom) {
     Auto => "auto",
 });
 
+impl ValidFor<props::ScrollPaddingBottom> for Auto {}
 define_css_enum!(ScrollPaddingInlineKeyword (props::ScrollPaddingInline) {
     Auto => "auto",
 });
 
+impl ValidFor<props::ScrollPaddingInline> for Auto {}
 define_css_enum!(ScrollPaddingInlineEndKeyword (props::ScrollPaddingInlineEnd) {
     Auto => "auto",
 });
 
+impl ValidFor<props::ScrollPaddingInlineEnd> for Auto {}
 define_css_enum!(ScrollPaddingInlineStartKeyword (props::ScrollPaddingInlineStart) {
     Auto => "auto",
 });
 
+impl ValidFor<props::ScrollPaddingInlineStart> for Auto {}
 define_css_enum!(ScrollPaddingLeftKeyword (props::ScrollPaddingLeft) {
     Auto => "auto",
 });
 
+impl ValidFor<props::ScrollPaddingLeft> for Auto {}
 define_css_enum!(ScrollPaddingRightKeyword (props::ScrollPaddingRight) {
     Auto => "auto",
 });
 
+impl ValidFor<props::ScrollPaddingRight> for Auto {}
 define_css_enum!(ScrollPaddingTopKeyword (props::ScrollPaddingTop) {
     Auto => "auto",
 });
 
+impl ValidFor<props::ScrollPaddingTop> for Auto {}
 define_css_enum!(ScrollSnapAlignKeyword (props::ScrollSnapAlign) {
     Center => "center",
     End => "end",
@@ -7147,6 +7248,7 @@ define_css_enum!(ScrollTargetGroupKeyword (props::ScrollTargetGroup) {
     None => "none",
 });
 
+impl ValidFor<props::ScrollTargetGroup> for Auto {}
 define_css_enum!(ScrollbarColorKeyword (props::ScrollbarColor) {
     AccentColor => "AccentColor",
     AccentColorText => "AccentColorText",
@@ -7343,18 +7445,21 @@ define_css_enum!(ScrollbarColorKeyword (props::ScrollbarColor) {
     Yellowgreen => "yellowgreen",
 });
 
+impl ValidFor<props::ScrollbarColor> for Auto {}
 define_css_enum!(ScrollbarGutterKeyword (props::ScrollbarGutter) {
     Auto => "auto",
     BothEdges => "both-edges",
     Stable => "stable",
 });
 
+impl ValidFor<props::ScrollbarGutter> for Auto {}
 define_css_enum!(ScrollbarWidthKeyword (props::ScrollbarWidth) {
     Auto => "auto",
     None => "none",
     Thin => "thin",
 });
 
+impl ValidFor<props::ScrollbarWidth> for Auto {}
 define_css_enum!(ShapeOutsideKeyword (props::ShapeOutside) {
     BorderBox => "border-box",
     ContentBox => "content-box",
@@ -7370,6 +7475,7 @@ define_css_enum!(ShapeRenderingKeyword (props::ShapeRendering) {
     OptimizeSpeed => "optimizeSpeed",
 });
 
+impl ValidFor<props::ShapeRendering> for Auto {}
 define_css_enum!(StrokeKeyword (props::Stroke) {
     AccentColor => "AccentColor",
     AccentColorText => "AccentColorText",
@@ -7591,6 +7697,7 @@ define_css_enum!(TableLayoutKeyword (props::TableLayout) {
     Fixed => "fixed",
 });
 
+impl ValidFor<props::TableLayout> for Auto {}
 define_css_enum!(TextAlignKeyword (props::TextAlign) {
     Center => "center",
     End => "end",
@@ -7611,6 +7718,7 @@ define_css_enum!(TextAlignLastKeyword (props::TextAlignLast) {
     Start => "start",
 });
 
+impl ValidFor<props::TextAlignLast> for Auto {}
 define_css_enum!(TextAnchorKeyword (props::TextAnchor) {
     End => "end",
     Middle => "middle",
@@ -7622,6 +7730,7 @@ define_css_enum!(TextAutospaceKeyword (props::TextAutospace) {
     Normal => "normal",
 });
 
+impl ValidFor<props::TextAutospace> for Auto {}
 define_css_enum!(TextBoxKeyword (props::TextBox) {
     Normal => "normal",
 });
@@ -7636,6 +7745,7 @@ define_css_enum!(TextBoxEdgeKeyword (props::TextBoxEdge) {
     Text => "text",
 });
 
+impl ValidFor<props::TextBoxEdge> for Auto {}
 define_css_enum!(TextBoxTrimKeyword (props::TextBoxTrim) {
     None => "none",
     TrimBoth => "trim-both",
@@ -7848,6 +7958,7 @@ define_css_enum!(TextDecorationInsetKeyword (props::TextDecorationInset) {
     Auto => "auto",
 });
 
+impl ValidFor<props::TextDecorationInset> for Auto {}
 define_css_enum!(TextDecorationLineKeyword (props::TextDecorationLine) {
     Blink => "blink",
     GrammarError => "grammar-error",
@@ -7864,6 +7975,7 @@ define_css_enum!(TextDecorationSkipInkKeyword (props::TextDecorationSkipInk) {
     None => "none",
 });
 
+impl ValidFor<props::TextDecorationSkipInk> for Auto {}
 define_css_enum!(TextDecorationStyleKeyword (props::TextDecorationStyle) {
     Dashed => "dashed",
     Dotted => "dotted",
@@ -7877,6 +7989,7 @@ define_css_enum!(TextDecorationThicknessKeyword (props::TextDecorationThickness)
     FromFont => "from-font",
 });
 
+impl ValidFor<props::TextDecorationThickness> for Auto {}
 define_css_enum!(TextEmphasisColorKeyword (props::TextEmphasisColor) {
     AccentColor => "AccentColor",
     AccentColorText => "AccentColorText",
@@ -8080,6 +8193,7 @@ define_css_enum!(TextEmphasisPositionKeyword (props::TextEmphasisPosition) {
     Under => "under",
 });
 
+impl ValidFor<props::TextEmphasisPosition> for Auto {}
 define_css_enum!(TextEmphasisStyleKeyword (props::TextEmphasisStyle) {
     Circle => "circle",
     Dot => "dot",
@@ -8103,6 +8217,7 @@ define_css_enum!(TextJustifyKeyword (props::TextJustify) {
     None => "none",
 });
 
+impl ValidFor<props::TextJustify> for Auto {}
 define_css_enum!(TextOrientationKeyword (props::TextOrientation) {
     Mixed => "mixed",
     Sideways => "sideways",
@@ -8121,6 +8236,7 @@ define_css_enum!(TextRenderingKeyword (props::TextRendering) {
     OptimizeSpeed => "optimizeSpeed",
 });
 
+impl ValidFor<props::TextRendering> for Auto {}
 define_css_enum!(TextShadowKeyword (props::TextShadow) {
     AccentColor => "AccentColor",
     AccentColorText => "AccentColorText",
@@ -8331,6 +8447,7 @@ define_css_enum!(TextUnderlineOffsetKeyword (props::TextUnderlineOffset) {
     Auto => "auto",
 });
 
+impl ValidFor<props::TextUnderlineOffset> for Auto {}
 define_css_enum!(TextUnderlinePositionKeyword (props::TextUnderlinePosition) {
     Auto => "auto",
     FromFont => "from-font",
@@ -8339,6 +8456,7 @@ define_css_enum!(TextUnderlinePositionKeyword (props::TextUnderlinePosition) {
     Under => "under",
 });
 
+impl ValidFor<props::TextUnderlinePosition> for Auto {}
 define_css_enum!(TextWrapModeKeyword (props::TextWrapMode) {
     Nowrap => "nowrap",
     Wrap => "wrap",
@@ -8351,6 +8469,7 @@ define_css_enum!(TextWrapStyleKeyword (props::TextWrapStyle) {
     Stable => "stable",
 });
 
+impl ValidFor<props::TextWrapStyle> for Auto {}
 define_css_enum!(TimelineTriggerKeyword (props::TimelineTrigger) {
     None => "none",
 });
@@ -8366,6 +8485,7 @@ define_css_enum!(TimelineTriggerExitRangeEndKeyword (props::TimelineTriggerExitR
     Normal => "normal",
 });
 
+impl ValidFor<props::TimelineTriggerExitRangeEnd> for Auto {}
 define_css_enum!(TimelineTriggerExitRangeStartKeyword (props::TimelineTriggerExitRangeStart) {
     Auto => "auto",
     Contain => "contain",
@@ -8377,6 +8497,7 @@ define_css_enum!(TimelineTriggerExitRangeStartKeyword (props::TimelineTriggerExi
     Normal => "normal",
 });
 
+impl ValidFor<props::TimelineTriggerExitRangeStart> for Auto {}
 define_css_enum!(TimelineTriggerNameKeyword (props::TimelineTriggerName) {
     None => "none",
 });
@@ -8406,10 +8527,12 @@ define_css_enum!(TimelineTriggerSourceKeyword (props::TimelineTriggerSource) {
     None => "none",
 });
 
+impl ValidFor<props::TimelineTriggerSource> for Auto {}
 define_css_enum!(TopKeyword (props::Top) {
     Auto => "auto",
 });
 
+impl ValidFor<props::Top> for Auto {}
 define_css_enum!(TouchActionKeyword (props::TouchAction) {
     Auto => "auto",
     Manipulation => "manipulation",
@@ -8423,6 +8546,7 @@ define_css_enum!(TouchActionKeyword (props::TouchAction) {
     PinchZoom => "pinch-zoom",
 });
 
+impl ValidFor<props::TouchAction> for Auto {}
 define_css_enum!(TransformKeyword (props::Transform) {
     None => "none",
 });
@@ -8507,6 +8631,7 @@ define_css_enum!(UserSelectKeyword (props::UserSelect) {
     Text => "text",
 });
 
+impl ValidFor<props::UserSelect> for Auto {}
 define_css_enum!(VectorEffectKeyword (props::VectorEffect) {
     FixedPosition => "fixed-position",
     NonRotation => "non-rotation",
@@ -8520,7 +8645,7 @@ define_css_enum!(VerticalAlignKeyword (props::VerticalAlign) {
     Bottom => "bottom",
     Middle => "middle",
     Sub => "sub",
-    Super => "super",
+    Super_ => "super",
     TextBottom => "text-bottom",
     TextTop => "text-top",
     Top => "top",
@@ -8563,12 +8688,14 @@ define_css_enum!(WidthKeyword (props::Width) {
     MinContent => "min-content",
 });
 
+impl ValidFor<props::Width> for Auto {}
 define_css_enum!(WillChangeKeyword (props::WillChange) {
     Auto => "auto",
     Contents => "contents",
     ScrollPosition => "scroll-position",
 });
 
+impl ValidFor<props::WillChange> for Auto {}
 define_css_enum!(WordBreakKeyword (props::WordBreak) {
     AutoPhrase => "auto-phrase",
     BreakAll => "break-all",
@@ -8598,6 +8725,7 @@ define_css_enum!(ZIndexKeyword (props::ZIndex) {
     Auto => "auto",
 });
 
+impl ValidFor<props::ZIndex> for Auto {}
 define_css_enum!(ZoomKeyword (props::Zoom) {
     Normal => "normal",
     Reset => "reset",
@@ -8606,22 +8734,18 @@ define_css_enum!(ZoomKeyword (props::Zoom) {
 macro_rules! register_generated_keywords {
     ($callback:ident) => {
         $callback! {
-            WebkitLineClampKeyword,
-            WebkitTextFillColorKeyword,
-            WebkitTextStrokeKeyword,
-            WebkitTextStrokeColorKeyword,
             AccentColorKeyword,
             AlignContentKeyword,
             AlignItemsKeyword,
             AlignSelfKeyword,
             AlignmentBaselineKeyword,
             AllKeyword,
-            AnimationKeyword,
             AnimationCompositionKeyword,
             AnimationDirectionKeyword,
             AnimationDurationKeyword,
             AnimationFillModeKeyword,
             AnimationIterationCountKeyword,
+            AnimationKeyword,
             AnimationNameKeyword,
             AnimationPlayStateKeyword,
             AnimationTimingFunctionKeyword,
@@ -8630,12 +8754,12 @@ macro_rules! register_generated_keywords {
             AspectRatioKeyword,
             BackdropFilterKeyword,
             BackfaceVisibilityKeyword,
-            BackgroundKeyword,
             BackgroundAttachmentKeyword,
             BackgroundBlendModeKeyword,
             BackgroundClipKeyword,
             BackgroundColorKeyword,
             BackgroundImageKeyword,
+            BackgroundKeyword,
             BackgroundOriginKeyword,
             BackgroundPositionKeyword,
             BackgroundPositionXKeyword,
@@ -8644,7 +8768,6 @@ macro_rules! register_generated_keywords {
             BackgroundSizeKeyword,
             BaselineShiftKeyword,
             BaselineSourceKeyword,
-            BorderKeyword,
             BorderBlockEndKeyword,
             BorderBlockStartKeyword,
             BorderBottomKeyword,
@@ -8658,17 +8781,18 @@ macro_rules! register_generated_keywords {
             BorderImageWidthKeyword,
             BorderInlineEndKeyword,
             BorderInlineStartKeyword,
-            BorderLeftKeyword,
+            BorderKeyword,
             BorderLeftColorKeyword,
+            BorderLeftKeyword,
             BorderLeftStyleKeyword,
             BorderLeftWidthKeyword,
-            BorderRightKeyword,
             BorderRightColorKeyword,
+            BorderRightKeyword,
             BorderRightStyleKeyword,
             BorderRightWidthKeyword,
             BorderStyleKeyword,
-            BorderTopKeyword,
             BorderTopColorKeyword,
+            BorderTopKeyword,
             BorderTopStyleKeyword,
             BorderTopWidthKeyword,
             BorderWidthKeyword,
@@ -8686,8 +8810,8 @@ macro_rules! register_generated_keywords {
             ClearKeyword,
             ClipPathKeyword,
             ClipRuleKeyword,
-            ColorKeyword,
             ColorInterpolationFiltersKeyword,
+            ColorKeyword,
             ColorSchemeKeyword,
             ColumnCountKeyword,
             ColumnFillKeyword,
@@ -8697,12 +8821,12 @@ macro_rules! register_generated_keywords {
             ColumnSpanKeyword,
             ColumnWidthKeyword,
             ColumnWrapKeyword,
-            ContainKeyword,
             ContainIntrinsicBlockSizeKeyword,
             ContainIntrinsicHeightKeyword,
             ContainIntrinsicInlineSizeKeyword,
             ContainIntrinsicSizeKeyword,
             ContainIntrinsicWidthKeyword,
+            ContainKeyword,
             ContainerNameKeyword,
             ContainerTypeKeyword,
             ContentKeyword,
@@ -8737,51 +8861,51 @@ macro_rules! register_generated_keywords {
             FillKeyword,
             FillRuleKeyword,
             FilterKeyword,
-            FlexKeyword,
             FlexBasisKeyword,
             FlexDirectionKeyword,
+            FlexKeyword,
             FlexWrapKeyword,
             FloatKeyword,
             FloodColorKeyword,
-            FontKeyword,
             FontFamilyKeyword,
             FontFeatureSettingsKeyword,
             FontKerningKeyword,
+            FontKeyword,
             FontLanguageOverrideKeyword,
             FontOpticalSizingKeyword,
             FontPaletteKeyword,
-            FontSizeKeyword,
             FontSizeAdjustKeyword,
+            FontSizeKeyword,
             FontStyleKeyword,
             FontSynthesisKeyword,
             FontSynthesisSmallCapsKeyword,
             FontSynthesisStyleKeyword,
             FontSynthesisWeightKeyword,
-            FontVariantKeyword,
             FontVariantAlternatesKeyword,
             FontVariantCapsKeyword,
             FontVariantEastAsianKeyword,
             FontVariantEmojiKeyword,
+            FontVariantKeyword,
             FontVariantLigaturesKeyword,
             FontVariantNumericKeyword,
             FontVariantPositionKeyword,
             FontVariationSettingsKeyword,
             FontWeightKeyword,
             ForcedColorAdjustKeyword,
-            GridKeyword,
             GridAreaKeyword,
             GridAutoColumnsKeyword,
             GridAutoFlowKeyword,
             GridAutoRowsKeyword,
-            GridColumnKeyword,
             GridColumnEndKeyword,
+            GridColumnKeyword,
             GridColumnStartKeyword,
-            GridRowKeyword,
+            GridKeyword,
             GridRowEndKeyword,
+            GridRowKeyword,
             GridRowStartKeyword,
-            GridTemplateKeyword,
             GridTemplateAreasKeyword,
             GridTemplateColumnsKeyword,
+            GridTemplateKeyword,
             GridTemplateRowsKeyword,
             HangingPunctuationKeyword,
             HeightKeyword,
@@ -8811,11 +8935,10 @@ macro_rules! register_generated_keywords {
             MarginLeftKeyword,
             MarginRightKeyword,
             MarginTopKeyword,
-            MarkerKeyword,
             MarkerEndKeyword,
+            MarkerKeyword,
             MarkerMidKeyword,
             MarkerStartKeyword,
-            MaskKeyword,
             MaskBorderModeKeyword,
             MaskBorderRepeatKeyword,
             MaskBorderSliceKeyword,
@@ -8824,6 +8947,7 @@ macro_rules! register_generated_keywords {
             MaskClipKeyword,
             MaskCompositeKeyword,
             MaskImageKeyword,
+            MaskKeyword,
             MaskModeKeyword,
             MaskOriginKeyword,
             MaskPositionKeyword,
@@ -8846,17 +8970,17 @@ macro_rules! register_generated_keywords {
             OutlineColorKeyword,
             OutlineStyleKeyword,
             OutlineWidthKeyword,
-            OverflowKeyword,
             OverflowAnchorKeyword,
             OverflowBlockKeyword,
             OverflowClipMarginKeyword,
             OverflowInlineKeyword,
+            OverflowKeyword,
             OverflowWrapKeyword,
             OverflowXKeyword,
             OverflowYKeyword,
-            OverscrollBehaviorKeyword,
             OverscrollBehaviorBlockKeyword,
             OverscrollBehaviorInlineKeyword,
+            OverscrollBehaviorKeyword,
             OverscrollBehaviorXKeyword,
             OverscrollBehaviorYKeyword,
             PageKeyword,
@@ -8878,14 +9002,14 @@ macro_rules! register_generated_keywords {
             ScaleKeyword,
             ScrollBehaviorKeyword,
             ScrollMarkerGroupKeyword,
-            ScrollPaddingKeyword,
-            ScrollPaddingBlockKeyword,
             ScrollPaddingBlockEndKeyword,
+            ScrollPaddingBlockKeyword,
             ScrollPaddingBlockStartKeyword,
             ScrollPaddingBottomKeyword,
-            ScrollPaddingInlineKeyword,
             ScrollPaddingInlineEndKeyword,
+            ScrollPaddingInlineKeyword,
             ScrollPaddingInlineStartKeyword,
+            ScrollPaddingKeyword,
             ScrollPaddingLeftKeyword,
             ScrollPaddingRightKeyword,
             ScrollPaddingTopKeyword,
@@ -8898,8 +9022,8 @@ macro_rules! register_generated_keywords {
             ScrollbarWidthKeyword,
             ShapeOutsideKeyword,
             ShapeRenderingKeyword,
-            StrokeKeyword,
             StrokeDasharrayKeyword,
+            StrokeKeyword,
             StrokeLinecapKeyword,
             StrokeLinejoinKeyword,
             TableLayoutKeyword,
@@ -8907,8 +9031,8 @@ macro_rules! register_generated_keywords {
             TextAlignLastKeyword,
             TextAnchorKeyword,
             TextAutospaceKeyword,
-            TextBoxKeyword,
             TextBoxEdgeKeyword,
+            TextBoxKeyword,
             TextBoxTrimKeyword,
             TextCombineUprightKeyword,
             TextDecorationColorKeyword,
@@ -8931,21 +9055,21 @@ macro_rules! register_generated_keywords {
             TextUnderlinePositionKeyword,
             TextWrapModeKeyword,
             TextWrapStyleKeyword,
-            TimelineTriggerKeyword,
             TimelineTriggerExitRangeEndKeyword,
             TimelineTriggerExitRangeStartKeyword,
+            TimelineTriggerKeyword,
             TimelineTriggerNameKeyword,
             TimelineTriggerRangeEndKeyword,
             TimelineTriggerRangeStartKeyword,
             TimelineTriggerSourceKeyword,
             TopKeyword,
             TouchActionKeyword,
-            TransformKeyword,
             TransformBoxKeyword,
+            TransformKeyword,
             TransformOriginKeyword,
             TransformStyleKeyword,
-            TransitionKeyword,
             TransitionBehaviorKeyword,
+            TransitionKeyword,
             TransitionPropertyKeyword,
             TransitionTimingFunctionKeyword,
             TranslateKeyword,
@@ -8957,8 +9081,12 @@ macro_rules! register_generated_keywords {
             ViewTransitionClassKeyword,
             ViewTransitionNameKeyword,
             VisibilityKeyword,
-            WhiteSpaceKeyword,
+            WebkitLineClampKeyword,
+            WebkitTextFillColorKeyword,
+            WebkitTextStrokeColorKeyword,
+            WebkitTextStrokeKeyword,
             WhiteSpaceCollapseKeyword,
+            WhiteSpaceKeyword,
             WidthKeyword,
             WillChangeKeyword,
             WordBreakKeyword,
