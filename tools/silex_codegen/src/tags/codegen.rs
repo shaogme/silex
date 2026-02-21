@@ -1,4 +1,4 @@
-use crate::tags::TagDef;
+use super::TagDef;
 use heck::AsSnakeCase;
 
 // --- Generation Logic ---

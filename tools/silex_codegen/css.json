@@ -1,0 +1,4556 @@
+{
+  "properties": [
+    {
+      "name": "-webkit-line-clamp",
+      "method_name": "webkit_line_clamp",
+      "struct_name": "WebkitLineClamp",
+      "group": "Number",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "-webkit-text-fill-color",
+      "method_name": "webkit_text_fill_color",
+      "struct_name": "WebkitTextFillColor",
+      "group": "Color",
+      "keywords": []
+    },
+    {
+      "name": "-webkit-text-stroke",
+      "method_name": "webkit_text_stroke",
+      "struct_name": "WebkitTextStroke",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "-webkit-text-stroke-color",
+      "method_name": "webkit_text_stroke_color",
+      "struct_name": "WebkitTextStrokeColor",
+      "group": "Color",
+      "keywords": []
+    },
+    {
+      "name": "-webkit-text-stroke-width",
+      "method_name": "webkit_text_stroke_width",
+      "struct_name": "WebkitTextStrokeWidth",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "accent-color",
+      "method_name": "accent_color",
+      "struct_name": "AccentColor",
+      "group": "Color",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "align-content",
+      "method_name": "align_content",
+      "struct_name": "AlignContent",
+      "group": "Dimension",
+      "keywords": [
+        "normal",
+        "stretch",
+        "center",
+        "flex-start",
+        "flex-end",
+        "start",
+        "end",
+        "self-start",
+        "self-end",
+        "space-between",
+        "space-around",
+        "space-evenly",
+        "baseline"
+      ]
+    },
+    {
+      "name": "align-items",
+      "method_name": "align_items",
+      "struct_name": "AlignItems",
+      "group": "Dimension",
+      "keywords": [
+        "normal",
+        "stretch",
+        "center",
+        "flex-start",
+        "flex-end",
+        "start",
+        "end",
+        "self-start",
+        "self-end",
+        "space-between",
+        "space-around",
+        "space-evenly",
+        "baseline"
+      ]
+    },
+    {
+      "name": "align-self",
+      "method_name": "align_self",
+      "struct_name": "AlignSelf",
+      "group": "Dimension",
+      "keywords": [
+        "normal",
+        "stretch",
+        "center",
+        "flex-start",
+        "flex-end",
+        "start",
+        "end",
+        "self-start",
+        "self-end",
+        "space-between",
+        "space-around",
+        "space-evenly",
+        "baseline"
+      ]
+    },
+    {
+      "name": "alignment-baseline",
+      "method_name": "alignment_baseline",
+      "struct_name": "AlignmentBaseline",
+      "group": "Keyword",
+      "keywords": [
+        "alphabetic",
+        "baseline",
+        "central",
+        "ideographic",
+        "mathematical",
+        "middle",
+        "text-after-edge",
+        "text-before-edge"
+      ]
+    },
+    {
+      "name": "all",
+      "method_name": "all",
+      "struct_name": "All",
+      "group": "Keyword",
+      "keywords": [
+        "inherit",
+        "initial",
+        "revert",
+        "revert-layer",
+        "unset"
+      ]
+    },
+    {
+      "name": "animation",
+      "method_name": "animation",
+      "struct_name": "Animation",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "animation-composition",
+      "method_name": "animation_composition",
+      "struct_name": "AnimationComposition",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "animation-delay",
+      "method_name": "animation_delay",
+      "struct_name": "AnimationDelay",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "animation-direction",
+      "method_name": "animation_direction",
+      "struct_name": "AnimationDirection",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "animation-duration",
+      "method_name": "animation_duration",
+      "struct_name": "AnimationDuration",
+      "group": "Keyword",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "animation-fill-mode",
+      "method_name": "animation_fill_mode",
+      "struct_name": "AnimationFillMode",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "animation-iteration-count",
+      "method_name": "animation_iteration_count",
+      "struct_name": "AnimationIterationCount",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "animation-name",
+      "method_name": "animation_name",
+      "struct_name": "AnimationName",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "animation-play-state",
+      "method_name": "animation_play_state",
+      "struct_name": "AnimationPlayState",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "animation-timing-function",
+      "method_name": "animation_timing_function",
+      "struct_name": "AnimationTimingFunction",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "animation-trigger",
+      "method_name": "animation_trigger",
+      "struct_name": "AnimationTrigger",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "appearance",
+      "method_name": "appearance",
+      "struct_name": "Appearance",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "none"
+      ]
+    },
+    {
+      "name": "aspect-ratio",
+      "method_name": "aspect_ratio",
+      "struct_name": "AspectRatio",
+      "group": "Keyword",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "backdrop-filter",
+      "method_name": "backdrop_filter",
+      "struct_name": "BackdropFilter",
+      "group": "Shorthand",
+      "keywords": []
+    },
+    {
+      "name": "backface-visibility",
+      "method_name": "backface_visibility",
+      "struct_name": "BackfaceVisibility",
+      "group": "Keyword",
+      "keywords": [
+        "hidden",
+        "visible"
+      ]
+    },
+    {
+      "name": "background",
+      "method_name": "background",
+      "struct_name": "Background",
+      "group": "Shorthand",
+      "keywords": []
+    },
+    {
+      "name": "background-attachment",
+      "method_name": "background_attachment",
+      "struct_name": "BackgroundAttachment",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "background-blend-mode",
+      "method_name": "background_blend_mode",
+      "struct_name": "BackgroundBlendMode",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "background-clip",
+      "method_name": "background_clip",
+      "struct_name": "BackgroundClip",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "background-color",
+      "method_name": "background_color",
+      "struct_name": "BackgroundColor",
+      "group": "Color",
+      "keywords": []
+    },
+    {
+      "name": "background-image",
+      "method_name": "background_image",
+      "struct_name": "BackgroundImage",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "background-origin",
+      "method_name": "background_origin",
+      "struct_name": "BackgroundOrigin",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "background-position",
+      "method_name": "background_position",
+      "struct_name": "BackgroundPosition",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "background-position-x",
+      "method_name": "background_position_x",
+      "struct_name": "BackgroundPositionX",
+      "group": "Dimension",
+      "keywords": [
+        "center",
+        "left",
+        "right",
+        "x-end",
+        "x-start"
+      ]
+    },
+    {
+      "name": "background-position-y",
+      "method_name": "background_position_y",
+      "struct_name": "BackgroundPositionY",
+      "group": "Dimension",
+      "keywords": [
+        "bottom",
+        "center",
+        "top",
+        "y-end",
+        "y-start"
+      ]
+    },
+    {
+      "name": "background-repeat",
+      "method_name": "background_repeat",
+      "struct_name": "BackgroundRepeat",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "background-size",
+      "method_name": "background_size",
+      "struct_name": "BackgroundSize",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "baseline-shift",
+      "method_name": "baseline_shift",
+      "struct_name": "BaselineShift",
+      "group": "Dimension",
+      "keywords": [
+        "baseline",
+        "sub",
+        "super"
+      ]
+    },
+    {
+      "name": "baseline-source",
+      "method_name": "baseline_source",
+      "struct_name": "BaselineSource",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "first",
+        "last"
+      ]
+    },
+    {
+      "name": "block-size",
+      "method_name": "block_size",
+      "struct_name": "BlockSize",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "border",
+      "method_name": "border",
+      "struct_name": "Border",
+      "group": "Shorthand",
+      "keywords": []
+    },
+    {
+      "name": "border-block",
+      "method_name": "border_block",
+      "struct_name": "BorderBlock",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "border-block-color",
+      "method_name": "border_block_color",
+      "struct_name": "BorderBlockColor",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "border-block-end",
+      "method_name": "border_block_end",
+      "struct_name": "BorderBlockEnd",
+      "group": "Color",
+      "keywords": []
+    },
+    {
+      "name": "border-block-end-color",
+      "method_name": "border_block_end_color",
+      "struct_name": "BorderBlockEndColor",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "border-block-end-style",
+      "method_name": "border_block_end_style",
+      "struct_name": "BorderBlockEndStyle",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "border-block-end-width",
+      "method_name": "border_block_end_width",
+      "struct_name": "BorderBlockEndWidth",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-block-start",
+      "method_name": "border_block_start",
+      "struct_name": "BorderBlockStart",
+      "group": "Color",
+      "keywords": []
+    },
+    {
+      "name": "border-block-start-color",
+      "method_name": "border_block_start_color",
+      "struct_name": "BorderBlockStartColor",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "border-block-start-style",
+      "method_name": "border_block_start_style",
+      "struct_name": "BorderBlockStartStyle",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "border-block-start-width",
+      "method_name": "border_block_start_width",
+      "struct_name": "BorderBlockStartWidth",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-block-style",
+      "method_name": "border_block_style",
+      "struct_name": "BorderBlockStyle",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "border-block-width",
+      "method_name": "border_block_width",
+      "struct_name": "BorderBlockWidth",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-bottom",
+      "method_name": "border_bottom",
+      "struct_name": "BorderBottom",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-bottom-color",
+      "method_name": "border_bottom_color",
+      "struct_name": "BorderBottomColor",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "border-bottom-left-radius",
+      "method_name": "border_bottom_left_radius",
+      "struct_name": "BorderBottomLeftRadius",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-bottom-right-radius",
+      "method_name": "border_bottom_right_radius",
+      "struct_name": "BorderBottomRightRadius",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-bottom-style",
+      "method_name": "border_bottom_style",
+      "struct_name": "BorderBottomStyle",
+      "group": "Keyword",
+      "keywords": [
+        "none",
+        "hidden",
+        "dotted",
+        "dashed",
+        "solid",
+        "double",
+        "groove",
+        "ridge",
+        "inset",
+        "outset"
+      ]
+    },
+    {
+      "name": "border-bottom-width",
+      "method_name": "border_bottom_width",
+      "struct_name": "BorderBottomWidth",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-collapse",
+      "method_name": "border_collapse",
+      "struct_name": "BorderCollapse",
+      "group": "Keyword",
+      "keywords": [
+        "collapse",
+        "separate"
+      ]
+    },
+    {
+      "name": "border-color",
+      "method_name": "border_color",
+      "struct_name": "BorderColor",
+      "group": "Color",
+      "keywords": []
+    },
+    {
+      "name": "border-end-end-radius",
+      "method_name": "border_end_end_radius",
+      "struct_name": "BorderEndEndRadius",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-end-start-radius",
+      "method_name": "border_end_start_radius",
+      "struct_name": "BorderEndStartRadius",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-image",
+      "method_name": "border_image",
+      "struct_name": "BorderImage",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "border-image-outset",
+      "method_name": "border_image_outset",
+      "struct_name": "BorderImageOutset",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-image-repeat",
+      "method_name": "border_image_repeat",
+      "struct_name": "BorderImageRepeat",
+      "group": "Keyword",
+      "keywords": [
+        "repeat",
+        "round",
+        "space",
+        "stretch"
+      ]
+    },
+    {
+      "name": "border-image-slice",
+      "method_name": "border_image_slice",
+      "struct_name": "BorderImageSlice",
+      "group": "Dimension",
+      "keywords": [
+        "fill"
+      ]
+    },
+    {
+      "name": "border-image-source",
+      "method_name": "border_image_source",
+      "struct_name": "BorderImageSource",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "border-image-width",
+      "method_name": "border_image_width",
+      "struct_name": "BorderImageWidth",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "border-inline",
+      "method_name": "border_inline",
+      "struct_name": "BorderInline",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "border-inline-color",
+      "method_name": "border_inline_color",
+      "struct_name": "BorderInlineColor",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "border-inline-end",
+      "method_name": "border_inline_end",
+      "struct_name": "BorderInlineEnd",
+      "group": "Color",
+      "keywords": []
+    },
+    {
+      "name": "border-inline-end-color",
+      "method_name": "border_inline_end_color",
+      "struct_name": "BorderInlineEndColor",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "border-inline-end-style",
+      "method_name": "border_inline_end_style",
+      "struct_name": "BorderInlineEndStyle",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "border-inline-end-width",
+      "method_name": "border_inline_end_width",
+      "struct_name": "BorderInlineEndWidth",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-inline-start",
+      "method_name": "border_inline_start",
+      "struct_name": "BorderInlineStart",
+      "group": "Color",
+      "keywords": []
+    },
+    {
+      "name": "border-inline-start-color",
+      "method_name": "border_inline_start_color",
+      "struct_name": "BorderInlineStartColor",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "border-inline-start-style",
+      "method_name": "border_inline_start_style",
+      "struct_name": "BorderInlineStartStyle",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "border-inline-start-width",
+      "method_name": "border_inline_start_width",
+      "struct_name": "BorderInlineStartWidth",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-inline-style",
+      "method_name": "border_inline_style",
+      "struct_name": "BorderInlineStyle",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "border-inline-width",
+      "method_name": "border_inline_width",
+      "struct_name": "BorderInlineWidth",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-left",
+      "method_name": "border_left",
+      "struct_name": "BorderLeft",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-left-color",
+      "method_name": "border_left_color",
+      "struct_name": "BorderLeftColor",
+      "group": "Color",
+      "keywords": []
+    },
+    {
+      "name": "border-left-style",
+      "method_name": "border_left_style",
+      "struct_name": "BorderLeftStyle",
+      "group": "Keyword",
+      "keywords": [
+        "none",
+        "hidden",
+        "dotted",
+        "dashed",
+        "solid",
+        "double",
+        "groove",
+        "ridge",
+        "inset",
+        "outset"
+      ]
+    },
+    {
+      "name": "border-left-width",
+      "method_name": "border_left_width",
+      "struct_name": "BorderLeftWidth",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-radius",
+      "method_name": "border_radius",
+      "struct_name": "BorderRadius",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-right",
+      "method_name": "border_right",
+      "struct_name": "BorderRight",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-right-color",
+      "method_name": "border_right_color",
+      "struct_name": "BorderRightColor",
+      "group": "Color",
+      "keywords": []
+    },
+    {
+      "name": "border-right-style",
+      "method_name": "border_right_style",
+      "struct_name": "BorderRightStyle",
+      "group": "Keyword",
+      "keywords": [
+        "none",
+        "hidden",
+        "dotted",
+        "dashed",
+        "solid",
+        "double",
+        "groove",
+        "ridge",
+        "inset",
+        "outset"
+      ]
+    },
+    {
+      "name": "border-right-width",
+      "method_name": "border_right_width",
+      "struct_name": "BorderRightWidth",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-spacing",
+      "method_name": "border_spacing",
+      "struct_name": "BorderSpacing",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-start-end-radius",
+      "method_name": "border_start_end_radius",
+      "struct_name": "BorderStartEndRadius",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-start-start-radius",
+      "method_name": "border_start_start_radius",
+      "struct_name": "BorderStartStartRadius",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-style",
+      "method_name": "border_style",
+      "struct_name": "BorderStyle",
+      "group": "Keyword",
+      "keywords": [
+        "none",
+        "hidden",
+        "dotted",
+        "dashed",
+        "solid",
+        "double",
+        "groove",
+        "ridge",
+        "inset",
+        "outset"
+      ]
+    },
+    {
+      "name": "border-top",
+      "method_name": "border_top",
+      "struct_name": "BorderTop",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-top-color",
+      "method_name": "border_top_color",
+      "struct_name": "BorderTopColor",
+      "group": "Color",
+      "keywords": []
+    },
+    {
+      "name": "border-top-left-radius",
+      "method_name": "border_top_left_radius",
+      "struct_name": "BorderTopLeftRadius",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-top-right-radius",
+      "method_name": "border_top_right_radius",
+      "struct_name": "BorderTopRightRadius",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-top-style",
+      "method_name": "border_top_style",
+      "struct_name": "BorderTopStyle",
+      "group": "Keyword",
+      "keywords": [
+        "none",
+        "hidden",
+        "dotted",
+        "dashed",
+        "solid",
+        "double",
+        "groove",
+        "ridge",
+        "inset",
+        "outset"
+      ]
+    },
+    {
+      "name": "border-top-width",
+      "method_name": "border_top_width",
+      "struct_name": "BorderTopWidth",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "border-width",
+      "method_name": "border_width",
+      "struct_name": "BorderWidth",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "bottom",
+      "method_name": "bottom",
+      "struct_name": "Bottom",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "box-decoration-break",
+      "method_name": "box_decoration_break",
+      "struct_name": "BoxDecorationBreak",
+      "group": "Keyword",
+      "keywords": [
+        "clone",
+        "slice"
+      ]
+    },
+    {
+      "name": "box-shadow",
+      "method_name": "box_shadow",
+      "struct_name": "BoxShadow",
+      "group": "Shorthand",
+      "keywords": []
+    },
+    {
+      "name": "box-sizing",
+      "method_name": "box_sizing",
+      "struct_name": "BoxSizing",
+      "group": "Keyword",
+      "keywords": [
+        "border-box",
+        "content-box"
+      ]
+    },
+    {
+      "name": "break-after",
+      "method_name": "break_after",
+      "struct_name": "BreakAfter",
+      "group": "Keyword",
+      "keywords": [
+        "all",
+        "always",
+        "auto",
+        "avoid",
+        "avoid-column",
+        "avoid-page",
+        "avoid-region",
+        "column",
+        "left",
+        "page",
+        "recto",
+        "region",
+        "right",
+        "verso"
+      ]
+    },
+    {
+      "name": "break-before",
+      "method_name": "break_before",
+      "struct_name": "BreakBefore",
+      "group": "Keyword",
+      "keywords": [
+        "all",
+        "always",
+        "auto",
+        "avoid",
+        "avoid-column",
+        "avoid-page",
+        "avoid-region",
+        "column",
+        "left",
+        "page",
+        "recto",
+        "region",
+        "right",
+        "verso"
+      ]
+    },
+    {
+      "name": "break-inside",
+      "method_name": "break_inside",
+      "struct_name": "BreakInside",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "avoid",
+        "avoid-column",
+        "avoid-page",
+        "avoid-region"
+      ]
+    },
+    {
+      "name": "caption-side",
+      "method_name": "caption_side",
+      "struct_name": "CaptionSide",
+      "group": "Keyword",
+      "keywords": [
+        "bottom",
+        "top"
+      ]
+    },
+    {
+      "name": "caret",
+      "method_name": "caret",
+      "struct_name": "Caret",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "caret-animation",
+      "method_name": "caret_animation",
+      "struct_name": "CaretAnimation",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "manual"
+      ]
+    },
+    {
+      "name": "caret-color",
+      "method_name": "caret_color",
+      "struct_name": "CaretColor",
+      "group": "Color",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "caret-shape",
+      "method_name": "caret_shape",
+      "struct_name": "CaretShape",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "bar",
+        "block",
+        "underscore"
+      ]
+    },
+    {
+      "name": "clear",
+      "method_name": "clear",
+      "struct_name": "Clear",
+      "group": "Keyword",
+      "keywords": [
+        "both",
+        "inline-end",
+        "inline-start",
+        "left",
+        "none",
+        "right"
+      ]
+    },
+    {
+      "name": "clip-path",
+      "method_name": "clip_path",
+      "struct_name": "ClipPath",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "clip-rule",
+      "method_name": "clip_rule",
+      "struct_name": "ClipRule",
+      "group": "Keyword",
+      "keywords": [
+        "evenodd",
+        "nonzero"
+      ]
+    },
+    {
+      "name": "color",
+      "method_name": "color",
+      "struct_name": "Color",
+      "group": "Color",
+      "keywords": []
+    },
+    {
+      "name": "color-interpolation-filters",
+      "method_name": "color_interpolation_filters",
+      "struct_name": "ColorInterpolationFilters",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "linearRGB",
+        "sRGB"
+      ]
+    },
+    {
+      "name": "color-scheme",
+      "method_name": "color_scheme",
+      "struct_name": "ColorScheme",
+      "group": "Keyword",
+      "keywords": [
+        "dark",
+        "light",
+        "normal",
+        "only"
+      ]
+    },
+    {
+      "name": "column-count",
+      "method_name": "column_count",
+      "struct_name": "ColumnCount",
+      "group": "Number",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "column-fill",
+      "method_name": "column_fill",
+      "struct_name": "ColumnFill",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "balance"
+      ]
+    },
+    {
+      "name": "column-gap",
+      "method_name": "column_gap",
+      "struct_name": "ColumnGap",
+      "group": "Dimension",
+      "keywords": [
+        "normal"
+      ]
+    },
+    {
+      "name": "column-height",
+      "method_name": "column_height",
+      "struct_name": "ColumnHeight",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "column-rule",
+      "method_name": "column_rule",
+      "struct_name": "ColumnRule",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "column-rule-color",
+      "method_name": "column_rule_color",
+      "struct_name": "ColumnRuleColor",
+      "group": "Color",
+      "keywords": []
+    },
+    {
+      "name": "column-rule-style",
+      "method_name": "column_rule_style",
+      "struct_name": "ColumnRuleStyle",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "column-rule-width",
+      "method_name": "column_rule_width",
+      "struct_name": "ColumnRuleWidth",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "column-span",
+      "method_name": "column_span",
+      "struct_name": "ColumnSpan",
+      "group": "Keyword",
+      "keywords": [
+        "all",
+        "none"
+      ]
+    },
+    {
+      "name": "column-width",
+      "method_name": "column_width",
+      "struct_name": "ColumnWidth",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "column-wrap",
+      "method_name": "column_wrap",
+      "struct_name": "ColumnWrap",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "nowrap",
+        "wrap"
+      ]
+    },
+    {
+      "name": "columns",
+      "method_name": "columns",
+      "struct_name": "Columns",
+      "group": "Shorthand",
+      "keywords": []
+    },
+    {
+      "name": "contain",
+      "method_name": "contain",
+      "struct_name": "Contain",
+      "group": "Keyword",
+      "keywords": [
+        "content",
+        "inline-size",
+        "layout",
+        "none",
+        "paint",
+        "size",
+        "strict",
+        "style"
+      ]
+    },
+    {
+      "name": "contain-intrinsic-block-size",
+      "method_name": "contain_intrinsic_block_size",
+      "struct_name": "ContainIntrinsicBlockSize",
+      "group": "Dimension",
+      "keywords": [
+        "auto",
+        "none"
+      ]
+    },
+    {
+      "name": "contain-intrinsic-height",
+      "method_name": "contain_intrinsic_height",
+      "struct_name": "ContainIntrinsicHeight",
+      "group": "Dimension",
+      "keywords": [
+        "auto",
+        "none"
+      ]
+    },
+    {
+      "name": "contain-intrinsic-inline-size",
+      "method_name": "contain_intrinsic_inline_size",
+      "struct_name": "ContainIntrinsicInlineSize",
+      "group": "Dimension",
+      "keywords": [
+        "auto",
+        "none"
+      ]
+    },
+    {
+      "name": "contain-intrinsic-size",
+      "method_name": "contain_intrinsic_size",
+      "struct_name": "ContainIntrinsicSize",
+      "group": "Dimension",
+      "keywords": [
+        "auto",
+        "none"
+      ]
+    },
+    {
+      "name": "contain-intrinsic-width",
+      "method_name": "contain_intrinsic_width",
+      "struct_name": "ContainIntrinsicWidth",
+      "group": "Dimension",
+      "keywords": [
+        "auto",
+        "none"
+      ]
+    },
+    {
+      "name": "container",
+      "method_name": "container",
+      "struct_name": "Container",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "container-name",
+      "method_name": "container_name",
+      "struct_name": "ContainerName",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "container-type",
+      "method_name": "container_type",
+      "struct_name": "ContainerType",
+      "group": "Keyword",
+      "keywords": [
+        "inline-size",
+        "normal",
+        "scroll-state",
+        "size"
+      ]
+    },
+    {
+      "name": "content",
+      "method_name": "content",
+      "struct_name": "Content",
+      "group": "Keyword",
+      "keywords": [
+        "none",
+        "normal"
+      ]
+    },
+    {
+      "name": "content-visibility",
+      "method_name": "content_visibility",
+      "struct_name": "ContentVisibility",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "hidden",
+        "visible"
+      ]
+    },
+    {
+      "name": "corner-block-end-shape",
+      "method_name": "corner_block_end_shape",
+      "struct_name": "CornerBlockEndShape",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "corner-block-start-shape",
+      "method_name": "corner_block_start_shape",
+      "struct_name": "CornerBlockStartShape",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "corner-bottom-left-shape",
+      "method_name": "corner_bottom_left_shape",
+      "struct_name": "CornerBottomLeftShape",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "corner-bottom-right-shape",
+      "method_name": "corner_bottom_right_shape",
+      "struct_name": "CornerBottomRightShape",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "corner-bottom-shape",
+      "method_name": "corner_bottom_shape",
+      "struct_name": "CornerBottomShape",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "corner-end-end-shape",
+      "method_name": "corner_end_end_shape",
+      "struct_name": "CornerEndEndShape",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "corner-end-start-shape",
+      "method_name": "corner_end_start_shape",
+      "struct_name": "CornerEndStartShape",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "corner-inline-end-shape",
+      "method_name": "corner_inline_end_shape",
+      "struct_name": "CornerInlineEndShape",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "corner-inline-start-shape",
+      "method_name": "corner_inline_start_shape",
+      "struct_name": "CornerInlineStartShape",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "corner-left-shape",
+      "method_name": "corner_left_shape",
+      "struct_name": "CornerLeftShape",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "corner-right-shape",
+      "method_name": "corner_right_shape",
+      "struct_name": "CornerRightShape",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "corner-shape",
+      "method_name": "corner_shape",
+      "struct_name": "CornerShape",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "corner-start-end-shape",
+      "method_name": "corner_start_end_shape",
+      "struct_name": "CornerStartEndShape",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "corner-start-start-shape",
+      "method_name": "corner_start_start_shape",
+      "struct_name": "CornerStartStartShape",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "corner-top-left-shape",
+      "method_name": "corner_top_left_shape",
+      "struct_name": "CornerTopLeftShape",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "corner-top-right-shape",
+      "method_name": "corner_top_right_shape",
+      "struct_name": "CornerTopRightShape",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "corner-top-shape",
+      "method_name": "corner_top_shape",
+      "struct_name": "CornerTopShape",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "counter-increment",
+      "method_name": "counter_increment",
+      "struct_name": "CounterIncrement",
+      "group": "Number",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "counter-reset",
+      "method_name": "counter_reset",
+      "struct_name": "CounterReset",
+      "group": "Number",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "counter-set",
+      "method_name": "counter_set",
+      "struct_name": "CounterSet",
+      "group": "Number",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "cursor",
+      "method_name": "cursor",
+      "struct_name": "Cursor",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "default",
+        "pointer",
+        "wait",
+        "text",
+        "move",
+        "help",
+        "not-allowed",
+        "grab",
+        "grabbing"
+      ]
+    },
+    {
+      "name": "cx",
+      "method_name": "cx",
+      "struct_name": "Cx",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "cy",
+      "method_name": "cy",
+      "struct_name": "Cy",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "d",
+      "method_name": "d",
+      "struct_name": "D",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "direction",
+      "method_name": "direction",
+      "struct_name": "Direction",
+      "group": "Keyword",
+      "keywords": [
+        "ltr",
+        "rtl"
+      ]
+    },
+    {
+      "name": "display",
+      "method_name": "display",
+      "struct_name": "Display",
+      "group": "Keyword",
+      "keywords": [
+        "block",
+        "inline",
+        "inline-block",
+        "flex",
+        "inline-flex",
+        "grid",
+        "inline-grid",
+        "none",
+        "contents",
+        "table",
+        "list-item",
+        "inherit",
+        "initial",
+        "unset"
+      ]
+    },
+    {
+      "name": "dominant-baseline",
+      "method_name": "dominant_baseline",
+      "struct_name": "DominantBaseline",
+      "group": "Keyword",
+      "keywords": [
+        "alphabetic",
+        "auto",
+        "central",
+        "hanging",
+        "ideographic",
+        "mathematical",
+        "middle",
+        "text-bottom",
+        "text-top"
+      ]
+    },
+    {
+      "name": "dynamic-range-limit",
+      "method_name": "dynamic_range_limit",
+      "struct_name": "DynamicRangeLimit",
+      "group": "Keyword",
+      "keywords": [
+        "constrained",
+        "no-limit",
+        "standard"
+      ]
+    },
+    {
+      "name": "empty-cells",
+      "method_name": "empty_cells",
+      "struct_name": "EmptyCells",
+      "group": "Keyword",
+      "keywords": [
+        "hide",
+        "show"
+      ]
+    },
+    {
+      "name": "fill",
+      "method_name": "fill",
+      "struct_name": "Fill",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "fill-opacity",
+      "method_name": "fill_opacity",
+      "struct_name": "FillOpacity",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "fill-rule",
+      "method_name": "fill_rule",
+      "struct_name": "FillRule",
+      "group": "Keyword",
+      "keywords": [
+        "evenodd",
+        "nonzero"
+      ]
+    },
+    {
+      "name": "filter",
+      "method_name": "filter",
+      "struct_name": "Filter",
+      "group": "Shorthand",
+      "keywords": []
+    },
+    {
+      "name": "flex",
+      "method_name": "flex",
+      "struct_name": "Flex",
+      "group": "Shorthand",
+      "keywords": []
+    },
+    {
+      "name": "flex-basis",
+      "method_name": "flex_basis",
+      "struct_name": "FlexBasis",
+      "group": "Keyword",
+      "keywords": [
+        "content"
+      ]
+    },
+    {
+      "name": "flex-direction",
+      "method_name": "flex_direction",
+      "struct_name": "FlexDirection",
+      "group": "Keyword",
+      "keywords": [
+        "row",
+        "row-reverse",
+        "column",
+        "column-reverse"
+      ]
+    },
+    {
+      "name": "flex-flow",
+      "method_name": "flex_flow",
+      "struct_name": "FlexFlow",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "flex-grow",
+      "method_name": "flex_grow",
+      "struct_name": "FlexGrow",
+      "group": "Number",
+      "keywords": []
+    },
+    {
+      "name": "flex-shrink",
+      "method_name": "flex_shrink",
+      "struct_name": "FlexShrink",
+      "group": "Number",
+      "keywords": []
+    },
+    {
+      "name": "flex-wrap",
+      "method_name": "flex_wrap",
+      "struct_name": "FlexWrap",
+      "group": "Keyword",
+      "keywords": [
+        "nowrap",
+        "wrap",
+        "wrap-reverse"
+      ]
+    },
+    {
+      "name": "float",
+      "method_name": "float",
+      "struct_name": "Float",
+      "group": "Keyword",
+      "keywords": [
+        "inline-end",
+        "inline-start",
+        "left",
+        "none",
+        "right"
+      ]
+    },
+    {
+      "name": "flood-color",
+      "method_name": "flood_color",
+      "struct_name": "FloodColor",
+      "group": "Color",
+      "keywords": []
+    },
+    {
+      "name": "flood-opacity",
+      "method_name": "flood_opacity",
+      "struct_name": "FloodOpacity",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "font",
+      "method_name": "font",
+      "struct_name": "Font",
+      "group": "Shorthand",
+      "keywords": []
+    },
+    {
+      "name": "font-family",
+      "method_name": "font_family",
+      "struct_name": "FontFamily",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "font-feature-settings",
+      "method_name": "font_feature_settings",
+      "struct_name": "FontFeatureSettings",
+      "group": "Keyword",
+      "keywords": [
+        "normal"
+      ]
+    },
+    {
+      "name": "font-kerning",
+      "method_name": "font_kerning",
+      "struct_name": "FontKerning",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "none",
+        "normal"
+      ]
+    },
+    {
+      "name": "font-language-override",
+      "method_name": "font_language_override",
+      "struct_name": "FontLanguageOverride",
+      "group": "Keyword",
+      "keywords": [
+        "normal"
+      ]
+    },
+    {
+      "name": "font-optical-sizing",
+      "method_name": "font_optical_sizing",
+      "struct_name": "FontOpticalSizing",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "none"
+      ]
+    },
+    {
+      "name": "font-palette",
+      "method_name": "font_palette",
+      "struct_name": "FontPalette",
+      "group": "Keyword",
+      "keywords": [
+        "dark",
+        "light",
+        "normal"
+      ]
+    },
+    {
+      "name": "font-size",
+      "method_name": "font_size",
+      "struct_name": "FontSize",
+      "group": "Dimension",
+      "keywords": [
+        "math"
+      ]
+    },
+    {
+      "name": "font-size-adjust",
+      "method_name": "font_size_adjust",
+      "struct_name": "FontSizeAdjust",
+      "group": "Number",
+      "keywords": [
+        "cap-height",
+        "ch-width",
+        "ex-height",
+        "from-font",
+        "ic-height",
+        "ic-width",
+        "none"
+      ]
+    },
+    {
+      "name": "font-style",
+      "method_name": "font_style",
+      "struct_name": "FontStyle",
+      "group": "Keyword",
+      "keywords": [
+        "italic",
+        "normal",
+        "oblique"
+      ]
+    },
+    {
+      "name": "font-synthesis",
+      "method_name": "font_synthesis",
+      "struct_name": "FontSynthesis",
+      "group": "Keyword",
+      "keywords": [
+        "none",
+        "position",
+        "small-caps",
+        "style",
+        "weight"
+      ]
+    },
+    {
+      "name": "font-synthesis-small-caps",
+      "method_name": "font_synthesis_small_caps",
+      "struct_name": "FontSynthesisSmallCaps",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "none"
+      ]
+    },
+    {
+      "name": "font-synthesis-style",
+      "method_name": "font_synthesis_style",
+      "struct_name": "FontSynthesisStyle",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "none"
+      ]
+    },
+    {
+      "name": "font-synthesis-weight",
+      "method_name": "font_synthesis_weight",
+      "struct_name": "FontSynthesisWeight",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "none"
+      ]
+    },
+    {
+      "name": "font-variant",
+      "method_name": "font_variant",
+      "struct_name": "FontVariant",
+      "group": "Keyword",
+      "keywords": [
+        "all-petite-caps",
+        "all-small-caps",
+        "historical-forms",
+        "none",
+        "normal",
+        "ordinal",
+        "petite-caps",
+        "ruby",
+        "slashed-zero",
+        "small-caps",
+        "titling-caps",
+        "unicase"
+      ]
+    },
+    {
+      "name": "font-variant-alternates",
+      "method_name": "font_variant_alternates",
+      "struct_name": "FontVariantAlternates",
+      "group": "Keyword",
+      "keywords": [
+        "historical-forms",
+        "normal"
+      ]
+    },
+    {
+      "name": "font-variant-caps",
+      "method_name": "font_variant_caps",
+      "struct_name": "FontVariantCaps",
+      "group": "Keyword",
+      "keywords": [
+        "all-petite-caps",
+        "all-small-caps",
+        "normal",
+        "petite-caps",
+        "small-caps",
+        "titling-caps",
+        "unicase"
+      ]
+    },
+    {
+      "name": "font-variant-east-asian",
+      "method_name": "font_variant_east_asian",
+      "struct_name": "FontVariantEastAsian",
+      "group": "Keyword",
+      "keywords": [
+        "normal",
+        "ruby"
+      ]
+    },
+    {
+      "name": "font-variant-emoji",
+      "method_name": "font_variant_emoji",
+      "struct_name": "FontVariantEmoji",
+      "group": "Keyword",
+      "keywords": [
+        "emoji",
+        "normal",
+        "text",
+        "unicode"
+      ]
+    },
+    {
+      "name": "font-variant-ligatures",
+      "method_name": "font_variant_ligatures",
+      "struct_name": "FontVariantLigatures",
+      "group": "Keyword",
+      "keywords": [
+        "none",
+        "normal"
+      ]
+    },
+    {
+      "name": "font-variant-numeric",
+      "method_name": "font_variant_numeric",
+      "struct_name": "FontVariantNumeric",
+      "group": "Keyword",
+      "keywords": [
+        "normal",
+        "ordinal",
+        "slashed-zero"
+      ]
+    },
+    {
+      "name": "font-variant-position",
+      "method_name": "font_variant_position",
+      "struct_name": "FontVariantPosition",
+      "group": "Keyword",
+      "keywords": [
+        "normal",
+        "sub",
+        "super"
+      ]
+    },
+    {
+      "name": "font-variation-settings",
+      "method_name": "font_variation_settings",
+      "struct_name": "FontVariationSettings",
+      "group": "Number",
+      "keywords": [
+        "normal"
+      ]
+    },
+    {
+      "name": "font-weight",
+      "method_name": "font_weight",
+      "struct_name": "FontWeight",
+      "group": "Number",
+      "keywords": [
+        "normal",
+        "bold",
+        "bolder",
+        "lighter"
+      ]
+    },
+    {
+      "name": "forced-color-adjust",
+      "method_name": "forced_color_adjust",
+      "struct_name": "ForcedColorAdjust",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "none",
+        "preserve-parent-color"
+      ]
+    },
+    {
+      "name": "gap",
+      "method_name": "gap",
+      "struct_name": "Gap",
+      "group": "Shorthand",
+      "keywords": []
+    },
+    {
+      "name": "grid",
+      "method_name": "grid",
+      "struct_name": "Grid",
+      "group": "Shorthand",
+      "keywords": []
+    },
+    {
+      "name": "grid-area",
+      "method_name": "grid_area",
+      "struct_name": "GridArea",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "grid-auto-columns",
+      "method_name": "grid_auto_columns",
+      "struct_name": "GridAutoColumns",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "grid-auto-flow",
+      "method_name": "grid_auto_flow",
+      "struct_name": "GridAutoFlow",
+      "group": "Keyword",
+      "keywords": [
+        "column",
+        "dense",
+        "row"
+      ]
+    },
+    {
+      "name": "grid-auto-rows",
+      "method_name": "grid_auto_rows",
+      "struct_name": "GridAutoRows",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "grid-column",
+      "method_name": "grid_column",
+      "struct_name": "GridColumn",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "grid-column-end",
+      "method_name": "grid_column_end",
+      "struct_name": "GridColumnEnd",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "grid-column-start",
+      "method_name": "grid_column_start",
+      "struct_name": "GridColumnStart",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "grid-row",
+      "method_name": "grid_row",
+      "struct_name": "GridRow",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "grid-row-end",
+      "method_name": "grid_row_end",
+      "struct_name": "GridRowEnd",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "grid-row-start",
+      "method_name": "grid_row_start",
+      "struct_name": "GridRowStart",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "grid-template",
+      "method_name": "grid_template",
+      "struct_name": "GridTemplate",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "grid-template-areas",
+      "method_name": "grid_template_areas",
+      "struct_name": "GridTemplateAreas",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "grid-template-columns",
+      "method_name": "grid_template_columns",
+      "struct_name": "GridTemplateColumns",
+      "group": "Keyword",
+      "keywords": [
+        "none",
+        "subgrid"
+      ]
+    },
+    {
+      "name": "grid-template-rows",
+      "method_name": "grid_template_rows",
+      "struct_name": "GridTemplateRows",
+      "group": "Keyword",
+      "keywords": [
+        "none",
+        "subgrid"
+      ]
+    },
+    {
+      "name": "hanging-punctuation",
+      "method_name": "hanging_punctuation",
+      "struct_name": "HangingPunctuation",
+      "group": "Keyword",
+      "keywords": [
+        "allow-end",
+        "first",
+        "force-end",
+        "last",
+        "none"
+      ]
+    },
+    {
+      "name": "height",
+      "method_name": "height",
+      "struct_name": "Height",
+      "group": "Dimension",
+      "keywords": [
+        "auto",
+        "fit-content",
+        "max-content",
+        "min-content"
+      ]
+    },
+    {
+      "name": "hyphenate-character",
+      "method_name": "hyphenate_character",
+      "struct_name": "HyphenateCharacter",
+      "group": "Keyword",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "hyphenate-limit-chars",
+      "method_name": "hyphenate_limit_chars",
+      "struct_name": "HyphenateLimitChars",
+      "group": "Number",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "hyphens",
+      "method_name": "hyphens",
+      "struct_name": "Hyphens",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "manual",
+        "none"
+      ]
+    },
+    {
+      "name": "image-orientation",
+      "method_name": "image_orientation",
+      "struct_name": "ImageOrientation",
+      "group": "Keyword",
+      "keywords": [
+        "flip",
+        "from-image"
+      ]
+    },
+    {
+      "name": "image-rendering",
+      "method_name": "image_rendering",
+      "struct_name": "ImageRendering",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "crisp-edges",
+        "pixelated",
+        "smooth"
+      ]
+    },
+    {
+      "name": "initial-letter",
+      "method_name": "initial_letter",
+      "struct_name": "InitialLetter",
+      "group": "Number",
+      "keywords": [
+        "normal"
+      ]
+    },
+    {
+      "name": "inline-size",
+      "method_name": "inline_size",
+      "struct_name": "InlineSize",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "inset",
+      "method_name": "inset",
+      "struct_name": "Inset",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "inset-block",
+      "method_name": "inset_block",
+      "struct_name": "InsetBlock",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "inset-block-end",
+      "method_name": "inset_block_end",
+      "struct_name": "InsetBlockEnd",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "inset-block-start",
+      "method_name": "inset_block_start",
+      "struct_name": "InsetBlockStart",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "inset-inline",
+      "method_name": "inset_inline",
+      "struct_name": "InsetInline",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "inset-inline-end",
+      "method_name": "inset_inline_end",
+      "struct_name": "InsetInlineEnd",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "inset-inline-start",
+      "method_name": "inset_inline_start",
+      "struct_name": "InsetInlineStart",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "interactivity",
+      "method_name": "interactivity",
+      "struct_name": "Interactivity",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "inert"
+      ]
+    },
+    {
+      "name": "interest-delay",
+      "method_name": "interest_delay",
+      "struct_name": "InterestDelay",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "interest-delay-end",
+      "method_name": "interest_delay_end",
+      "struct_name": "InterestDelayEnd",
+      "group": "Keyword",
+      "keywords": [
+        "normal"
+      ]
+    },
+    {
+      "name": "interest-delay-start",
+      "method_name": "interest_delay_start",
+      "struct_name": "InterestDelayStart",
+      "group": "Keyword",
+      "keywords": [
+        "normal"
+      ]
+    },
+    {
+      "name": "isolation",
+      "method_name": "isolation",
+      "struct_name": "Isolation",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "isolate"
+      ]
+    },
+    {
+      "name": "justify-content",
+      "method_name": "justify_content",
+      "struct_name": "JustifyContent",
+      "group": "Dimension",
+      "keywords": [
+        "normal",
+        "stretch",
+        "center",
+        "flex-start",
+        "flex-end",
+        "start",
+        "end",
+        "self-start",
+        "self-end",
+        "space-between",
+        "space-around",
+        "space-evenly",
+        "baseline"
+      ]
+    },
+    {
+      "name": "justify-items",
+      "method_name": "justify_items",
+      "struct_name": "JustifyItems",
+      "group": "Dimension",
+      "keywords": [
+        "normal",
+        "stretch",
+        "center",
+        "flex-start",
+        "flex-end",
+        "start",
+        "end",
+        "self-start",
+        "self-end",
+        "space-between",
+        "space-around",
+        "space-evenly",
+        "baseline"
+      ]
+    },
+    {
+      "name": "justify-self",
+      "method_name": "justify_self",
+      "struct_name": "JustifySelf",
+      "group": "Dimension",
+      "keywords": [
+        "normal",
+        "stretch",
+        "center",
+        "flex-start",
+        "flex-end",
+        "start",
+        "end",
+        "self-start",
+        "self-end",
+        "space-between",
+        "space-around",
+        "space-evenly",
+        "baseline"
+      ]
+    },
+    {
+      "name": "left",
+      "method_name": "left",
+      "struct_name": "Left",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "letter-spacing",
+      "method_name": "letter_spacing",
+      "struct_name": "LetterSpacing",
+      "group": "Dimension",
+      "keywords": [
+        "normal"
+      ]
+    },
+    {
+      "name": "lighting-color",
+      "method_name": "lighting_color",
+      "struct_name": "LightingColor",
+      "group": "Color",
+      "keywords": []
+    },
+    {
+      "name": "line-break",
+      "method_name": "line_break",
+      "struct_name": "LineBreak",
+      "group": "Keyword",
+      "keywords": [
+        "anywhere",
+        "auto",
+        "loose",
+        "normal",
+        "strict"
+      ]
+    },
+    {
+      "name": "line-clamp",
+      "method_name": "line_clamp",
+      "struct_name": "LineClamp",
+      "group": "Number",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "line-height",
+      "method_name": "line_height",
+      "struct_name": "LineHeight",
+      "group": "Dimension",
+      "keywords": [
+        "normal"
+      ]
+    },
+    {
+      "name": "list-style",
+      "method_name": "list_style",
+      "struct_name": "ListStyle",
+      "group": "Shorthand",
+      "keywords": []
+    },
+    {
+      "name": "list-style-image",
+      "method_name": "list_style_image",
+      "struct_name": "ListStyleImage",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "list-style-position",
+      "method_name": "list_style_position",
+      "struct_name": "ListStylePosition",
+      "group": "Keyword",
+      "keywords": [
+        "inside",
+        "outside"
+      ]
+    },
+    {
+      "name": "list-style-type",
+      "method_name": "list_style_type",
+      "struct_name": "ListStyleType",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "margin",
+      "method_name": "margin",
+      "struct_name": "Margin",
+      "group": "Shorthand",
+      "keywords": []
+    },
+    {
+      "name": "margin-block",
+      "method_name": "margin_block",
+      "struct_name": "MarginBlock",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "margin-block-end",
+      "method_name": "margin_block_end",
+      "struct_name": "MarginBlockEnd",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "margin-block-start",
+      "method_name": "margin_block_start",
+      "struct_name": "MarginBlockStart",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "margin-bottom",
+      "method_name": "margin_bottom",
+      "struct_name": "MarginBottom",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "margin-inline",
+      "method_name": "margin_inline",
+      "struct_name": "MarginInline",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "margin-inline-end",
+      "method_name": "margin_inline_end",
+      "struct_name": "MarginInlineEnd",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "margin-inline-start",
+      "method_name": "margin_inline_start",
+      "struct_name": "MarginInlineStart",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "margin-left",
+      "method_name": "margin_left",
+      "struct_name": "MarginLeft",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "margin-right",
+      "method_name": "margin_right",
+      "struct_name": "MarginRight",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "margin-top",
+      "method_name": "margin_top",
+      "struct_name": "MarginTop",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "marker",
+      "method_name": "marker",
+      "struct_name": "Marker",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "marker-end",
+      "method_name": "marker_end",
+      "struct_name": "MarkerEnd",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "marker-mid",
+      "method_name": "marker_mid",
+      "struct_name": "MarkerMid",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "marker-start",
+      "method_name": "marker_start",
+      "struct_name": "MarkerStart",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "mask",
+      "method_name": "mask",
+      "struct_name": "Mask",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "mask-border",
+      "method_name": "mask_border",
+      "struct_name": "MaskBorder",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "mask-border-mode",
+      "method_name": "mask_border_mode",
+      "struct_name": "MaskBorderMode",
+      "group": "Keyword",
+      "keywords": [
+        "alpha",
+        "luminance"
+      ]
+    },
+    {
+      "name": "mask-border-outset",
+      "method_name": "mask_border_outset",
+      "struct_name": "MaskBorderOutset",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "mask-border-repeat",
+      "method_name": "mask_border_repeat",
+      "struct_name": "MaskBorderRepeat",
+      "group": "Keyword",
+      "keywords": [
+        "repeat",
+        "round",
+        "space",
+        "stretch"
+      ]
+    },
+    {
+      "name": "mask-border-slice",
+      "method_name": "mask_border_slice",
+      "struct_name": "MaskBorderSlice",
+      "group": "Number",
+      "keywords": [
+        "fill"
+      ]
+    },
+    {
+      "name": "mask-border-source",
+      "method_name": "mask_border_source",
+      "struct_name": "MaskBorderSource",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "mask-border-width",
+      "method_name": "mask_border_width",
+      "struct_name": "MaskBorderWidth",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "mask-clip",
+      "method_name": "mask_clip",
+      "struct_name": "MaskClip",
+      "group": "Keyword",
+      "keywords": [
+        "no-clip"
+      ]
+    },
+    {
+      "name": "mask-composite",
+      "method_name": "mask_composite",
+      "struct_name": "MaskComposite",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "mask-image",
+      "method_name": "mask_image",
+      "struct_name": "MaskImage",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "mask-mode",
+      "method_name": "mask_mode",
+      "struct_name": "MaskMode",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "mask-origin",
+      "method_name": "mask_origin",
+      "struct_name": "MaskOrigin",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "mask-position",
+      "method_name": "mask_position",
+      "struct_name": "MaskPosition",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "mask-repeat",
+      "method_name": "mask_repeat",
+      "struct_name": "MaskRepeat",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "mask-size",
+      "method_name": "mask_size",
+      "struct_name": "MaskSize",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "mask-type",
+      "method_name": "mask_type",
+      "struct_name": "MaskType",
+      "group": "Keyword",
+      "keywords": [
+        "alpha",
+        "luminance"
+      ]
+    },
+    {
+      "name": "math-depth",
+      "method_name": "math_depth",
+      "struct_name": "MathDepth",
+      "group": "Number",
+      "keywords": [
+        "auto-add"
+      ]
+    },
+    {
+      "name": "math-style",
+      "method_name": "math_style",
+      "struct_name": "MathStyle",
+      "group": "Keyword",
+      "keywords": [
+        "compact",
+        "normal"
+      ]
+    },
+    {
+      "name": "max-block-size",
+      "method_name": "max_block_size",
+      "struct_name": "MaxBlockSize",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "max-height",
+      "method_name": "max_height",
+      "struct_name": "MaxHeight",
+      "group": "Dimension",
+      "keywords": [
+        "fit-content",
+        "max-content",
+        "min-content",
+        "none"
+      ]
+    },
+    {
+      "name": "max-inline-size",
+      "method_name": "max_inline_size",
+      "struct_name": "MaxInlineSize",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "max-width",
+      "method_name": "max_width",
+      "struct_name": "MaxWidth",
+      "group": "Dimension",
+      "keywords": [
+        "fit-content",
+        "max-content",
+        "min-content",
+        "none"
+      ]
+    },
+    {
+      "name": "min-block-size",
+      "method_name": "min_block_size",
+      "struct_name": "MinBlockSize",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "min-height",
+      "method_name": "min_height",
+      "struct_name": "MinHeight",
+      "group": "Dimension",
+      "keywords": [
+        "auto",
+        "fit-content",
+        "max-content",
+        "min-content"
+      ]
+    },
+    {
+      "name": "min-inline-size",
+      "method_name": "min_inline_size",
+      "struct_name": "MinInlineSize",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "min-width",
+      "method_name": "min_width",
+      "struct_name": "MinWidth",
+      "group": "Dimension",
+      "keywords": [
+        "auto",
+        "fit-content",
+        "max-content",
+        "min-content"
+      ]
+    },
+    {
+      "name": "mix-blend-mode",
+      "method_name": "mix_blend_mode",
+      "struct_name": "MixBlendMode",
+      "group": "Keyword",
+      "keywords": [
+        "plus-darker",
+        "plus-lighter"
+      ]
+    },
+    {
+      "name": "object-fit",
+      "method_name": "object_fit",
+      "struct_name": "ObjectFit",
+      "group": "Keyword",
+      "keywords": [
+        "contain",
+        "cover",
+        "fill",
+        "none",
+        "scale-down"
+      ]
+    },
+    {
+      "name": "object-position",
+      "method_name": "object_position",
+      "struct_name": "ObjectPosition",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "offset",
+      "method_name": "offset",
+      "struct_name": "Offset",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "offset-anchor",
+      "method_name": "offset_anchor",
+      "struct_name": "OffsetAnchor",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "offset-distance",
+      "method_name": "offset_distance",
+      "struct_name": "OffsetDistance",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "offset-path",
+      "method_name": "offset_path",
+      "struct_name": "OffsetPath",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "offset-position",
+      "method_name": "offset_position",
+      "struct_name": "OffsetPosition",
+      "group": "Dimension",
+      "keywords": [
+        "auto",
+        "normal"
+      ]
+    },
+    {
+      "name": "offset-rotate",
+      "method_name": "offset_rotate",
+      "struct_name": "OffsetRotate",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "reverse"
+      ]
+    },
+    {
+      "name": "opacity",
+      "method_name": "opacity",
+      "struct_name": "Opacity",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "order",
+      "method_name": "order",
+      "struct_name": "Order",
+      "group": "Number",
+      "keywords": []
+    },
+    {
+      "name": "orphans",
+      "method_name": "orphans",
+      "struct_name": "Orphans",
+      "group": "Number",
+      "keywords": []
+    },
+    {
+      "name": "outline",
+      "method_name": "outline",
+      "struct_name": "Outline",
+      "group": "Shorthand",
+      "keywords": []
+    },
+    {
+      "name": "outline-color",
+      "method_name": "outline_color",
+      "struct_name": "OutlineColor",
+      "group": "Color",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "outline-offset",
+      "method_name": "outline_offset",
+      "struct_name": "OutlineOffset",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "outline-style",
+      "method_name": "outline_style",
+      "struct_name": "OutlineStyle",
+      "group": "Keyword",
+      "keywords": [
+        "none",
+        "hidden",
+        "dotted",
+        "dashed",
+        "solid",
+        "double",
+        "groove",
+        "ridge",
+        "inset",
+        "outset"
+      ]
+    },
+    {
+      "name": "outline-width",
+      "method_name": "outline_width",
+      "struct_name": "OutlineWidth",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "overflow",
+      "method_name": "overflow",
+      "struct_name": "Overflow",
+      "group": "Keyword",
+      "keywords": [
+        "visible",
+        "hidden",
+        "clip",
+        "scroll",
+        "auto"
+      ]
+    },
+    {
+      "name": "overflow-anchor",
+      "method_name": "overflow_anchor",
+      "struct_name": "OverflowAnchor",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "none"
+      ]
+    },
+    {
+      "name": "overflow-block",
+      "method_name": "overflow_block",
+      "struct_name": "OverflowBlock",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "clip",
+        "hidden",
+        "scroll",
+        "visible"
+      ]
+    },
+    {
+      "name": "overflow-clip-margin",
+      "method_name": "overflow_clip_margin",
+      "struct_name": "OverflowClipMargin",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "overflow-inline",
+      "method_name": "overflow_inline",
+      "struct_name": "OverflowInline",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "clip",
+        "hidden",
+        "scroll",
+        "visible"
+      ]
+    },
+    {
+      "name": "overflow-wrap",
+      "method_name": "overflow_wrap",
+      "struct_name": "OverflowWrap",
+      "group": "Keyword",
+      "keywords": [
+        "anywhere",
+        "break-word",
+        "normal"
+      ]
+    },
+    {
+      "name": "overflow-x",
+      "method_name": "overflow_x",
+      "struct_name": "OverflowX",
+      "group": "Keyword",
+      "keywords": [
+        "visible",
+        "hidden",
+        "clip",
+        "scroll",
+        "auto"
+      ]
+    },
+    {
+      "name": "overflow-y",
+      "method_name": "overflow_y",
+      "struct_name": "OverflowY",
+      "group": "Keyword",
+      "keywords": [
+        "visible",
+        "hidden",
+        "clip",
+        "scroll",
+        "auto"
+      ]
+    },
+    {
+      "name": "overscroll-behavior",
+      "method_name": "overscroll_behavior",
+      "struct_name": "OverscrollBehavior",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "contain",
+        "none"
+      ]
+    },
+    {
+      "name": "overscroll-behavior-block",
+      "method_name": "overscroll_behavior_block",
+      "struct_name": "OverscrollBehaviorBlock",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "contain",
+        "none"
+      ]
+    },
+    {
+      "name": "overscroll-behavior-inline",
+      "method_name": "overscroll_behavior_inline",
+      "struct_name": "OverscrollBehaviorInline",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "contain",
+        "none"
+      ]
+    },
+    {
+      "name": "overscroll-behavior-x",
+      "method_name": "overscroll_behavior_x",
+      "struct_name": "OverscrollBehaviorX",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "contain",
+        "none"
+      ]
+    },
+    {
+      "name": "overscroll-behavior-y",
+      "method_name": "overscroll_behavior_y",
+      "struct_name": "OverscrollBehaviorY",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "contain",
+        "none"
+      ]
+    },
+    {
+      "name": "padding",
+      "method_name": "padding",
+      "struct_name": "Padding",
+      "group": "Shorthand",
+      "keywords": []
+    },
+    {
+      "name": "padding-block",
+      "method_name": "padding_block",
+      "struct_name": "PaddingBlock",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "padding-block-end",
+      "method_name": "padding_block_end",
+      "struct_name": "PaddingBlockEnd",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "padding-block-start",
+      "method_name": "padding_block_start",
+      "struct_name": "PaddingBlockStart",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "padding-bottom",
+      "method_name": "padding_bottom",
+      "struct_name": "PaddingBottom",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "padding-inline",
+      "method_name": "padding_inline",
+      "struct_name": "PaddingInline",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "padding-inline-end",
+      "method_name": "padding_inline_end",
+      "struct_name": "PaddingInlineEnd",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "padding-inline-start",
+      "method_name": "padding_inline_start",
+      "struct_name": "PaddingInlineStart",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "padding-left",
+      "method_name": "padding_left",
+      "struct_name": "PaddingLeft",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "padding-right",
+      "method_name": "padding_right",
+      "struct_name": "PaddingRight",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "padding-top",
+      "method_name": "padding_top",
+      "struct_name": "PaddingTop",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "page",
+      "method_name": "page",
+      "struct_name": "Page",
+      "group": "Keyword",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "paint-order",
+      "method_name": "paint_order",
+      "struct_name": "PaintOrder",
+      "group": "Keyword",
+      "keywords": [
+        "fill",
+        "markers",
+        "normal",
+        "stroke"
+      ]
+    },
+    {
+      "name": "perspective",
+      "method_name": "perspective",
+      "struct_name": "Perspective",
+      "group": "Dimension",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "perspective-origin",
+      "method_name": "perspective_origin",
+      "struct_name": "PerspectiveOrigin",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "place-content",
+      "method_name": "place_content",
+      "struct_name": "PlaceContent",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "place-items",
+      "method_name": "place_items",
+      "struct_name": "PlaceItems",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "place-self",
+      "method_name": "place_self",
+      "struct_name": "PlaceSelf",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "pointer-events",
+      "method_name": "pointer_events",
+      "struct_name": "PointerEvents",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "none",
+        "inherit",
+        "initial"
+      ]
+    },
+    {
+      "name": "position",
+      "method_name": "position",
+      "struct_name": "Position",
+      "group": "Keyword",
+      "keywords": [
+        "static",
+        "relative",
+        "absolute",
+        "fixed",
+        "sticky"
+      ]
+    },
+    {
+      "name": "print-color-adjust",
+      "method_name": "print_color_adjust",
+      "struct_name": "PrintColorAdjust",
+      "group": "Keyword",
+      "keywords": [
+        "economy",
+        "exact"
+      ]
+    },
+    {
+      "name": "quotes",
+      "method_name": "quotes",
+      "struct_name": "Quotes",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "none"
+      ]
+    },
+    {
+      "name": "r",
+      "method_name": "r",
+      "struct_name": "R",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "reading-flow",
+      "method_name": "reading_flow",
+      "struct_name": "ReadingFlow",
+      "group": "Keyword",
+      "keywords": [
+        "flex-flow",
+        "flex-visual",
+        "grid-columns",
+        "grid-order",
+        "grid-rows",
+        "normal",
+        "source-order"
+      ]
+    },
+    {
+      "name": "reading-order",
+      "method_name": "reading_order",
+      "struct_name": "ReadingOrder",
+      "group": "Number",
+      "keywords": []
+    },
+    {
+      "name": "resize",
+      "method_name": "resize",
+      "struct_name": "Resize",
+      "group": "Keyword",
+      "keywords": [
+        "block",
+        "both",
+        "horizontal",
+        "inline",
+        "none",
+        "vertical"
+      ]
+    },
+    {
+      "name": "right",
+      "method_name": "right",
+      "struct_name": "Right",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "rotate",
+      "method_name": "rotate",
+      "struct_name": "Rotate",
+      "group": "Number",
+      "keywords": [
+        "none",
+        "x",
+        "y",
+        "z"
+      ]
+    },
+    {
+      "name": "row-gap",
+      "method_name": "row_gap",
+      "struct_name": "RowGap",
+      "group": "Dimension",
+      "keywords": [
+        "normal"
+      ]
+    },
+    {
+      "name": "ruby-align",
+      "method_name": "ruby_align",
+      "struct_name": "RubyAlign",
+      "group": "Keyword",
+      "keywords": [
+        "center",
+        "space-around",
+        "space-between",
+        "start"
+      ]
+    },
+    {
+      "name": "ruby-overhang",
+      "method_name": "ruby_overhang",
+      "struct_name": "RubyOverhang",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "none"
+      ]
+    },
+    {
+      "name": "ruby-position",
+      "method_name": "ruby_position",
+      "struct_name": "RubyPosition",
+      "group": "Keyword",
+      "keywords": [
+        "alternate",
+        "inter-character",
+        "over",
+        "under"
+      ]
+    },
+    {
+      "name": "rx",
+      "method_name": "rx",
+      "struct_name": "Rx",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "ry",
+      "method_name": "ry",
+      "struct_name": "Ry",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "scale",
+      "method_name": "scale",
+      "struct_name": "Scale",
+      "group": "Dimension",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "scroll-behavior",
+      "method_name": "scroll_behavior",
+      "struct_name": "ScrollBehavior",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "smooth"
+      ]
+    },
+    {
+      "name": "scroll-margin",
+      "method_name": "scroll_margin",
+      "struct_name": "ScrollMargin",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "scroll-margin-block",
+      "method_name": "scroll_margin_block",
+      "struct_name": "ScrollMarginBlock",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "scroll-margin-block-end",
+      "method_name": "scroll_margin_block_end",
+      "struct_name": "ScrollMarginBlockEnd",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "scroll-margin-block-start",
+      "method_name": "scroll_margin_block_start",
+      "struct_name": "ScrollMarginBlockStart",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "scroll-margin-bottom",
+      "method_name": "scroll_margin_bottom",
+      "struct_name": "ScrollMarginBottom",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "scroll-margin-inline",
+      "method_name": "scroll_margin_inline",
+      "struct_name": "ScrollMarginInline",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "scroll-margin-inline-end",
+      "method_name": "scroll_margin_inline_end",
+      "struct_name": "ScrollMarginInlineEnd",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "scroll-margin-inline-start",
+      "method_name": "scroll_margin_inline_start",
+      "struct_name": "ScrollMarginInlineStart",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "scroll-margin-left",
+      "method_name": "scroll_margin_left",
+      "struct_name": "ScrollMarginLeft",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "scroll-margin-right",
+      "method_name": "scroll_margin_right",
+      "struct_name": "ScrollMarginRight",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "scroll-margin-top",
+      "method_name": "scroll_margin_top",
+      "struct_name": "ScrollMarginTop",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "scroll-marker-group",
+      "method_name": "scroll_marker_group",
+      "struct_name": "ScrollMarkerGroup",
+      "group": "Keyword",
+      "keywords": [
+        "after",
+        "before",
+        "none"
+      ]
+    },
+    {
+      "name": "scroll-padding",
+      "method_name": "scroll_padding",
+      "struct_name": "ScrollPadding",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "scroll-padding-block",
+      "method_name": "scroll_padding_block",
+      "struct_name": "ScrollPaddingBlock",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "scroll-padding-block-end",
+      "method_name": "scroll_padding_block_end",
+      "struct_name": "ScrollPaddingBlockEnd",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "scroll-padding-block-start",
+      "method_name": "scroll_padding_block_start",
+      "struct_name": "ScrollPaddingBlockStart",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "scroll-padding-bottom",
+      "method_name": "scroll_padding_bottom",
+      "struct_name": "ScrollPaddingBottom",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "scroll-padding-inline",
+      "method_name": "scroll_padding_inline",
+      "struct_name": "ScrollPaddingInline",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "scroll-padding-inline-end",
+      "method_name": "scroll_padding_inline_end",
+      "struct_name": "ScrollPaddingInlineEnd",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "scroll-padding-inline-start",
+      "method_name": "scroll_padding_inline_start",
+      "struct_name": "ScrollPaddingInlineStart",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "scroll-padding-left",
+      "method_name": "scroll_padding_left",
+      "struct_name": "ScrollPaddingLeft",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "scroll-padding-right",
+      "method_name": "scroll_padding_right",
+      "struct_name": "ScrollPaddingRight",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "scroll-padding-top",
+      "method_name": "scroll_padding_top",
+      "struct_name": "ScrollPaddingTop",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "scroll-snap-align",
+      "method_name": "scroll_snap_align",
+      "struct_name": "ScrollSnapAlign",
+      "group": "Keyword",
+      "keywords": [
+        "center",
+        "end",
+        "none",
+        "start"
+      ]
+    },
+    {
+      "name": "scroll-snap-stop",
+      "method_name": "scroll_snap_stop",
+      "struct_name": "ScrollSnapStop",
+      "group": "Keyword",
+      "keywords": [
+        "always",
+        "normal"
+      ]
+    },
+    {
+      "name": "scroll-snap-type",
+      "method_name": "scroll_snap_type",
+      "struct_name": "ScrollSnapType",
+      "group": "Keyword",
+      "keywords": [
+        "block",
+        "both",
+        "inline",
+        "mandatory",
+        "none",
+        "proximity",
+        "x",
+        "y"
+      ]
+    },
+    {
+      "name": "scroll-target-group",
+      "method_name": "scroll_target_group",
+      "struct_name": "ScrollTargetGroup",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "none"
+      ]
+    },
+    {
+      "name": "scrollbar-color",
+      "method_name": "scrollbar_color",
+      "struct_name": "ScrollbarColor",
+      "group": "Color",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "scrollbar-gutter",
+      "method_name": "scrollbar_gutter",
+      "struct_name": "ScrollbarGutter",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "both-edges",
+        "stable"
+      ]
+    },
+    {
+      "name": "scrollbar-width",
+      "method_name": "scrollbar_width",
+      "struct_name": "ScrollbarWidth",
+      "group": "Dimension",
+      "keywords": [
+        "auto",
+        "none",
+        "thin"
+      ]
+    },
+    {
+      "name": "shape-image-threshold",
+      "method_name": "shape_image_threshold",
+      "struct_name": "ShapeImageThreshold",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "shape-margin",
+      "method_name": "shape_margin",
+      "struct_name": "ShapeMargin",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "shape-outside",
+      "method_name": "shape_outside",
+      "struct_name": "ShapeOutside",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "shape-rendering",
+      "method_name": "shape_rendering",
+      "struct_name": "ShapeRendering",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "crispEdges",
+        "geometricPrecision",
+        "optimizeSpeed"
+      ]
+    },
+    {
+      "name": "stop-color",
+      "method_name": "stop_color",
+      "struct_name": "StopColor",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "stop-opacity",
+      "method_name": "stop_opacity",
+      "struct_name": "StopOpacity",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "stroke",
+      "method_name": "stroke",
+      "struct_name": "Stroke",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "stroke-dasharray",
+      "method_name": "stroke_dasharray",
+      "struct_name": "StrokeDasharray",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "stroke-dashoffset",
+      "method_name": "stroke_dashoffset",
+      "struct_name": "StrokeDashoffset",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "stroke-linecap",
+      "method_name": "stroke_linecap",
+      "struct_name": "StrokeLinecap",
+      "group": "Keyword",
+      "keywords": [
+        "butt",
+        "round",
+        "square"
+      ]
+    },
+    {
+      "name": "stroke-linejoin",
+      "method_name": "stroke_linejoin",
+      "struct_name": "StrokeLinejoin",
+      "group": "Keyword",
+      "keywords": [
+        "arcs",
+        "bevel",
+        "miter",
+        "miter-clip",
+        "round"
+      ]
+    },
+    {
+      "name": "stroke-miterlimit",
+      "method_name": "stroke_miterlimit",
+      "struct_name": "StrokeMiterlimit",
+      "group": "Number",
+      "keywords": []
+    },
+    {
+      "name": "stroke-opacity",
+      "method_name": "stroke_opacity",
+      "struct_name": "StrokeOpacity",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "stroke-width",
+      "method_name": "stroke_width",
+      "struct_name": "StrokeWidth",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "tab-size",
+      "method_name": "tab_size",
+      "struct_name": "TabSize",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "table-layout",
+      "method_name": "table_layout",
+      "struct_name": "TableLayout",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "fixed"
+      ]
+    },
+    {
+      "name": "text-align",
+      "method_name": "text_align",
+      "struct_name": "TextAlign",
+      "group": "Keyword",
+      "keywords": [
+        "left",
+        "right",
+        "center",
+        "justify",
+        "start",
+        "end"
+      ]
+    },
+    {
+      "name": "text-align-last",
+      "method_name": "text_align_last",
+      "struct_name": "TextAlignLast",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "center",
+        "end",
+        "justify",
+        "left",
+        "right",
+        "start"
+      ]
+    },
+    {
+      "name": "text-anchor",
+      "method_name": "text_anchor",
+      "struct_name": "TextAnchor",
+      "group": "Keyword",
+      "keywords": [
+        "end",
+        "middle",
+        "start"
+      ]
+    },
+    {
+      "name": "text-autospace",
+      "method_name": "text_autospace",
+      "struct_name": "TextAutospace",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "normal"
+      ]
+    },
+    {
+      "name": "text-box",
+      "method_name": "text_box",
+      "struct_name": "TextBox",
+      "group": "Keyword",
+      "keywords": [
+        "normal"
+      ]
+    },
+    {
+      "name": "text-box-edge",
+      "method_name": "text_box_edge",
+      "struct_name": "TextBoxEdge",
+      "group": "Keyword",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "text-box-trim",
+      "method_name": "text_box_trim",
+      "struct_name": "TextBoxTrim",
+      "group": "Keyword",
+      "keywords": [
+        "none",
+        "trim-both",
+        "trim-end",
+        "trim-start"
+      ]
+    },
+    {
+      "name": "text-combine-upright",
+      "method_name": "text_combine_upright",
+      "struct_name": "TextCombineUpright",
+      "group": "Number",
+      "keywords": [
+        "all",
+        "digits",
+        "none"
+      ]
+    },
+    {
+      "name": "text-decoration",
+      "method_name": "text_decoration",
+      "struct_name": "TextDecoration",
+      "group": "Keyword",
+      "keywords": [
+        "none",
+        "underline",
+        "overline",
+        "line-through",
+        "blink"
+      ]
+    },
+    {
+      "name": "text-decoration-color",
+      "method_name": "text_decoration_color",
+      "struct_name": "TextDecorationColor",
+      "group": "Color",
+      "keywords": []
+    },
+    {
+      "name": "text-decoration-inset",
+      "method_name": "text_decoration_inset",
+      "struct_name": "TextDecorationInset",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "text-decoration-line",
+      "method_name": "text_decoration_line",
+      "struct_name": "TextDecorationLine",
+      "group": "Keyword",
+      "keywords": [
+        "blink",
+        "grammar-error",
+        "line-through",
+        "none",
+        "overline",
+        "spelling-error",
+        "underline"
+      ]
+    },
+    {
+      "name": "text-decoration-skip-ink",
+      "method_name": "text_decoration_skip_ink",
+      "struct_name": "TextDecorationSkipInk",
+      "group": "Keyword",
+      "keywords": [
+        "all",
+        "auto",
+        "none"
+      ]
+    },
+    {
+      "name": "text-decoration-style",
+      "method_name": "text_decoration_style",
+      "struct_name": "TextDecorationStyle",
+      "group": "Keyword",
+      "keywords": [
+        "dashed",
+        "dotted",
+        "double",
+        "solid",
+        "wavy"
+      ]
+    },
+    {
+      "name": "text-decoration-thickness",
+      "method_name": "text_decoration_thickness",
+      "struct_name": "TextDecorationThickness",
+      "group": "Dimension",
+      "keywords": [
+        "auto",
+        "from-font"
+      ]
+    },
+    {
+      "name": "text-emphasis",
+      "method_name": "text_emphasis",
+      "struct_name": "TextEmphasis",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "text-emphasis-color",
+      "method_name": "text_emphasis_color",
+      "struct_name": "TextEmphasisColor",
+      "group": "Color",
+      "keywords": []
+    },
+    {
+      "name": "text-emphasis-position",
+      "method_name": "text_emphasis_position",
+      "struct_name": "TextEmphasisPosition",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "left",
+        "over",
+        "right",
+        "under"
+      ]
+    },
+    {
+      "name": "text-emphasis-style",
+      "method_name": "text_emphasis_style",
+      "struct_name": "TextEmphasisStyle",
+      "group": "Keyword",
+      "keywords": [
+        "circle",
+        "dot",
+        "double-circle",
+        "filled",
+        "none",
+        "open",
+        "sesame",
+        "triangle"
+      ]
+    },
+    {
+      "name": "text-indent",
+      "method_name": "text_indent",
+      "struct_name": "TextIndent",
+      "group": "Dimension",
+      "keywords": [
+        "each-line",
+        "hanging"
+      ]
+    },
+    {
+      "name": "text-justify",
+      "method_name": "text_justify",
+      "struct_name": "TextJustify",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "inter-character",
+        "inter-word",
+        "none"
+      ]
+    },
+    {
+      "name": "text-orientation",
+      "method_name": "text_orientation",
+      "struct_name": "TextOrientation",
+      "group": "Keyword",
+      "keywords": [
+        "mixed",
+        "sideways",
+        "upright"
+      ]
+    },
+    {
+      "name": "text-overflow",
+      "method_name": "text_overflow",
+      "struct_name": "TextOverflow",
+      "group": "Keyword",
+      "keywords": [
+        "clip",
+        "ellipsis"
+      ]
+    },
+    {
+      "name": "text-rendering",
+      "method_name": "text_rendering",
+      "struct_name": "TextRendering",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "geometricPrecision",
+        "optimizeLegibility",
+        "optimizeSpeed"
+      ]
+    },
+    {
+      "name": "text-shadow",
+      "method_name": "text_shadow",
+      "struct_name": "TextShadow",
+      "group": "Shorthand",
+      "keywords": []
+    },
+    {
+      "name": "text-transform",
+      "method_name": "text_transform",
+      "struct_name": "TextTransform",
+      "group": "Keyword",
+      "keywords": [
+        "capitalize",
+        "full-size-kana",
+        "full-width",
+        "lowercase",
+        "math-auto",
+        "none",
+        "uppercase"
+      ]
+    },
+    {
+      "name": "text-underline-offset",
+      "method_name": "text_underline_offset",
+      "struct_name": "TextUnderlineOffset",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "text-underline-position",
+      "method_name": "text_underline_position",
+      "struct_name": "TextUnderlinePosition",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "from-font",
+        "left",
+        "right",
+        "under"
+      ]
+    },
+    {
+      "name": "text-wrap",
+      "method_name": "text_wrap",
+      "struct_name": "TextWrap",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "text-wrap-mode",
+      "method_name": "text_wrap_mode",
+      "struct_name": "TextWrapMode",
+      "group": "Keyword",
+      "keywords": [
+        "nowrap",
+        "wrap"
+      ]
+    },
+    {
+      "name": "text-wrap-style",
+      "method_name": "text_wrap_style",
+      "struct_name": "TextWrapStyle",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "balance",
+        "pretty",
+        "stable"
+      ]
+    },
+    {
+      "name": "timeline-trigger",
+      "method_name": "timeline_trigger",
+      "struct_name": "TimelineTrigger",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "timeline-trigger-exit-range",
+      "method_name": "timeline_trigger_exit_range",
+      "struct_name": "TimelineTriggerExitRange",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "timeline-trigger-exit-range-end",
+      "method_name": "timeline_trigger_exit_range_end",
+      "struct_name": "TimelineTriggerExitRangeEnd",
+      "group": "Dimension",
+      "keywords": [
+        "auto",
+        "normal"
+      ]
+    },
+    {
+      "name": "timeline-trigger-exit-range-start",
+      "method_name": "timeline_trigger_exit_range_start",
+      "struct_name": "TimelineTriggerExitRangeStart",
+      "group": "Dimension",
+      "keywords": [
+        "auto",
+        "normal"
+      ]
+    },
+    {
+      "name": "timeline-trigger-name",
+      "method_name": "timeline_trigger_name",
+      "struct_name": "TimelineTriggerName",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "timeline-trigger-range",
+      "method_name": "timeline_trigger_range",
+      "struct_name": "TimelineTriggerRange",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "timeline-trigger-range-end",
+      "method_name": "timeline_trigger_range_end",
+      "struct_name": "TimelineTriggerRangeEnd",
+      "group": "Dimension",
+      "keywords": [
+        "normal"
+      ]
+    },
+    {
+      "name": "timeline-trigger-range-start",
+      "method_name": "timeline_trigger_range_start",
+      "struct_name": "TimelineTriggerRangeStart",
+      "group": "Dimension",
+      "keywords": [
+        "normal"
+      ]
+    },
+    {
+      "name": "timeline-trigger-source",
+      "method_name": "timeline_trigger_source",
+      "struct_name": "TimelineTriggerSource",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "top",
+      "method_name": "top",
+      "struct_name": "Top",
+      "group": "Dimension",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "touch-action",
+      "method_name": "touch_action",
+      "struct_name": "TouchAction",
+      "group": "Keyword",
+      "keywords": [
+        "auto",
+        "manipulation",
+        "none",
+        "pan-down",
+        "pan-left",
+        "pan-right",
+        "pan-up",
+        "pan-x",
+        "pan-y",
+        "pinch-zoom"
+      ]
+    },
+    {
+      "name": "transform",
+      "method_name": "transform",
+      "struct_name": "Transform",
+      "group": "Shorthand",
+      "keywords": []
+    },
+    {
+      "name": "transform-box",
+      "method_name": "transform_box",
+      "struct_name": "TransformBox",
+      "group": "Keyword",
+      "keywords": [
+        "border-box",
+        "content-box",
+        "fill-box",
+        "stroke-box",
+        "view-box"
+      ]
+    },
+    {
+      "name": "transform-origin",
+      "method_name": "transform_origin",
+      "struct_name": "TransformOrigin",
+      "group": "Dimension",
+      "keywords": [
+        "bottom",
+        "center",
+        "left",
+        "right",
+        "top"
+      ]
+    },
+    {
+      "name": "transform-style",
+      "method_name": "transform_style",
+      "struct_name": "TransformStyle",
+      "group": "Keyword",
+      "keywords": [
+        "flat",
+        "preserve-3d"
+      ]
+    },
+    {
+      "name": "transition",
+      "method_name": "transition",
+      "struct_name": "Transition",
+      "group": "Shorthand",
+      "keywords": []
+    },
+    {
+      "name": "transition-behavior",
+      "method_name": "transition_behavior",
+      "struct_name": "TransitionBehavior",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "transition-delay",
+      "method_name": "transition_delay",
+      "struct_name": "TransitionDelay",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "transition-duration",
+      "method_name": "transition_duration",
+      "struct_name": "TransitionDuration",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "transition-property",
+      "method_name": "transition_property",
+      "struct_name": "TransitionProperty",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "transition-timing-function",
+      "method_name": "transition_timing_function",
+      "struct_name": "TransitionTimingFunction",
+      "group": "Custom",
+      "keywords": []
+    },
+    {
+      "name": "translate",
+      "method_name": "translate",
+      "struct_name": "Translate",
+      "group": "Dimension",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "trigger-scope",
+      "method_name": "trigger_scope",
+      "struct_name": "TriggerScope",
+      "group": "Keyword",
+      "keywords": [
+        "all",
+        "none"
+      ]
+    },
+    {
+      "name": "unicode-bidi",
+      "method_name": "unicode_bidi",
+      "struct_name": "UnicodeBidi",
+      "group": "Keyword",
+      "keywords": [
+        "bidi-override",
+        "embed",
+        "isolate",
+        "isolate-override",
+        "normal",
+        "plaintext"
+      ]
+    },
+    {
+      "name": "user-select",
+      "method_name": "user_select",
+      "struct_name": "UserSelect",
+      "group": "Keyword",
+      "keywords": [
+        "all",
+        "auto",
+        "none",
+        "text"
+      ]
+    },
+    {
+      "name": "vector-effect",
+      "method_name": "vector_effect",
+      "struct_name": "VectorEffect",
+      "group": "Keyword",
+      "keywords": [
+        "fixed-position",
+        "non-rotation",
+        "non-scaling-size",
+        "non-scaling-stroke",
+        "none"
+      ]
+    },
+    {
+      "name": "vertical-align",
+      "method_name": "vertical_align",
+      "struct_name": "VerticalAlign",
+      "group": "Dimension",
+      "keywords": [
+        "baseline",
+        "bottom",
+        "middle",
+        "sub",
+        "super",
+        "text-bottom",
+        "text-top",
+        "top"
+      ]
+    },
+    {
+      "name": "view-transition-class",
+      "method_name": "view_transition_class",
+      "struct_name": "ViewTransitionClass",
+      "group": "Keyword",
+      "keywords": [
+        "none"
+      ]
+    },
+    {
+      "name": "view-transition-name",
+      "method_name": "view_transition_name",
+      "struct_name": "ViewTransitionName",
+      "group": "Keyword",
+      "keywords": [
+        "match-element",
+        "none"
+      ]
+    },
+    {
+      "name": "visibility",
+      "method_name": "visibility",
+      "struct_name": "Visibility",
+      "group": "Keyword",
+      "keywords": [
+        "visible",
+        "hidden",
+        "collapse"
+      ]
+    },
+    {
+      "name": "white-space",
+      "method_name": "white_space",
+      "struct_name": "WhiteSpace",
+      "group": "Keyword",
+      "keywords": [
+        "normal",
+        "pre",
+        "pre-line",
+        "pre-wrap"
+      ]
+    },
+    {
+      "name": "white-space-collapse",
+      "method_name": "white_space_collapse",
+      "struct_name": "WhiteSpaceCollapse",
+      "group": "Keyword",
+      "keywords": [
+        "break-spaces",
+        "collapse",
+        "preserve",
+        "preserve-breaks",
+        "preserve-spaces"
+      ]
+    },
+    {
+      "name": "widows",
+      "method_name": "widows",
+      "struct_name": "Widows",
+      "group": "Number",
+      "keywords": []
+    },
+    {
+      "name": "width",
+      "method_name": "width",
+      "struct_name": "Width",
+      "group": "Dimension",
+      "keywords": [
+        "auto",
+        "fit-content",
+        "max-content",
+        "min-content"
+      ]
+    },
+    {
+      "name": "will-change",
+      "method_name": "will_change",
+      "struct_name": "WillChange",
+      "group": "Keyword",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "word-break",
+      "method_name": "word_break",
+      "struct_name": "WordBreak",
+      "group": "Keyword",
+      "keywords": [
+        "auto-phrase",
+        "break-all",
+        "break-word",
+        "keep-all",
+        "normal"
+      ]
+    },
+    {
+      "name": "word-spacing",
+      "method_name": "word_spacing",
+      "struct_name": "WordSpacing",
+      "group": "Dimension",
+      "keywords": [
+        "normal"
+      ]
+    },
+    {
+      "name": "word-wrap",
+      "method_name": "word_wrap",
+      "struct_name": "WordWrap",
+      "group": "Keyword",
+      "keywords": [
+        "break-word",
+        "normal"
+      ]
+    },
+    {
+      "name": "writing-mode",
+      "method_name": "writing_mode",
+      "struct_name": "WritingMode",
+      "group": "Keyword",
+      "keywords": [
+        "horizontal-tb",
+        "sideways-lr",
+        "sideways-rl",
+        "vertical-lr",
+        "vertical-rl"
+      ]
+    },
+    {
+      "name": "x",
+      "method_name": "x",
+      "struct_name": "X",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "y",
+      "method_name": "y",
+      "struct_name": "Y",
+      "group": "Dimension",
+      "keywords": []
+    },
+    {
+      "name": "z-index",
+      "method_name": "z_index",
+      "struct_name": "ZIndex",
+      "group": "Number",
+      "keywords": [
+        "auto"
+      ]
+    },
+    {
+      "name": "zoom",
+      "method_name": "zoom",
+      "struct_name": "Zoom",
+      "group": "Dimension",
+      "keywords": [
+        "normal",
+        "reset"
+      ]
+    }
+  ]
+}

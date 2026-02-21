@@ -162,63 +162,7 @@ macro_rules! define_css_enum {
     };
 }
 
-define_css_enum!(DisplayKeyword (props::Display) {
-    Flex => "flex", Block => "block", Grid => "grid", Inline => "inline",
-    InlineBlock => "inline-block", InlineFlex => "inline-flex", None => "none"
-});
-
-define_css_enum!(PositionKeyword (props::Position) {
-    Relative => "relative", Absolute => "absolute", Fixed => "fixed", Static => "static", Sticky => "sticky"
-});
-
-define_css_enum!(BorderStyleKeyword (props::BorderStyle) {
-    None => "none", Hidden => "hidden", Dotted => "dotted", Dashed => "dashed", Solid => "solid",
-    Double => "double", Groove => "groove", Ridge => "ridge", Inset => "inset", Outset => "outset"
-});
-
-define_css_enum!(FlexDirectionKeyword (props::FlexDirection) {
-    Row => "row", RowReverse => "row-reverse", Column => "column", ColumnReverse => "column-reverse"
-});
-
-define_css_enum!(CursorKeyword (props::Cursor) {
-    Auto => "auto", Default => "default", Pointer => "pointer", Wait => "wait",
-    Text => "text", Move => "move", Help => "help", NotAllowed => "not-allowed"
-});
-
-define_css_enum!(AlignItemsKeyword (props::AlignItems) {
-    Stretch => "stretch", Center => "center", FlexStart => "flex-start", FlexEnd => "flex-end", Baseline => "baseline"
-});
-
-define_css_enum!(JustifyContentKeyword (props::JustifyContent) {
-    FlexStart => "flex-start", FlexEnd => "flex-end", Center => "center",
-    SpaceBetween => "space-between", SpaceAround => "space-around", SpaceEvenly => "space-evenly"
-});
-
-define_css_enum!(FlexWrapKeyword (props::FlexWrap) {
-    Nowrap => "nowrap", Wrap => "wrap", WrapReverse => "wrap-reverse"
-});
-
-define_css_enum!(VisibilityKeyword (props::Visibility) {
-    Visible => "visible", Hidden => "hidden", Collapse => "collapse"
-});
-
-define_css_enum!(OverflowKeyword (props::Overflow, props::OverflowX, props::OverflowY) {
-    Visible => "visible", Hidden => "hidden", Scroll => "scroll", Auto => "auto"
-});
-
-define_css_enum!(TextAlignKeyword (props::TextAlign) {
-    Left => "left", Right => "right", Center => "center", Justify => "justify"
-});
-
-define_css_enum!(FontWeightKeyword (props::FontWeight) {
-    Normal => "normal", Bold => "bold", Bolder => "bolder", Lighter => "lighter",
-    W100 => "100", W200 => "200", W300 => "300", W400 => "400", W500 => "500",
-    W600 => "600", W700 => "700", W800 => "800", W900 => "900"
-});
-
-define_css_enum!(PointerEventsKeyword (props::PointerEvents) {
-    Auto => "auto", None => "none"
-});
+include!("keywords_gen.rs");
 
 // ==========================================
 // 复合属性工厂 (Shorthand Factories)
@@ -379,11 +323,21 @@ macro_rules! define_props {
     (@group $pascal:ident, Custom) => {
         impl ValidFor<props::$pascal> for String {}
         impl ValidFor<props::$pascal> for &'static str {}
+        impl_valid_for_dimension!(props::$pascal);
+        impl ValidFor<props::$pascal> for Rgba {}
+        impl ValidFor<props::$pascal> for Hex {}
+        impl ValidFor<props::$pascal> for Hsl {}
     };
-    // 复合属性专用 (如 border)
+    // 复合属性专用 (如 border, margin)
     (@group $pascal:ident, Shorthand) => {
         impl ValidFor<props::$pascal> for String {}
         impl ValidFor<props::$pascal> for &'static str {}
+        impl_valid_for_dimension!(props::$pascal);
+        impl ValidFor<props::$pascal> for Rgba {}
+        impl ValidFor<props::$pascal> for Hex {}
+        impl ValidFor<props::$pascal> for Hsl {}
+        impl ValidFor<props::$pascal> for i32 {}
+        impl ValidFor<props::$pascal> for f64 {}
     };
     // 关键字分组 (由 define_css_enum 补充)
     (@group $pascal:ident, Keyword) => {};
@@ -395,8 +349,6 @@ crate::for_all_properties!(define_props);
 // --- 手动补充跨组约束 ---
 impl ValidFor<props::Border> for BorderValue {}
 impl ValidFor<props::Background> for Url {}
-impl ValidFor<props::Background> for String {}
-impl ValidFor<props::Background> for &'static str {}
 impl ValidFor<props::BackgroundImage> for Url {}
 impl<T: Display> ValidFor<props::Any> for T {}
 
@@ -430,18 +382,7 @@ impl_into_signal_for_css!(
     Hsl,
     Url,
     BorderValue,
-    UnsafeCss,
-    DisplayKeyword,
-    PositionKeyword,
-    BorderStyleKeyword,
-    FlexDirectionKeyword,
-    CursorKeyword,
-    AlignItemsKeyword,
-    JustifyContentKeyword,
-    FlexWrapKeyword,
-    VisibilityKeyword,
-    OverflowKeyword,
-    TextAlignKeyword,
-    FontWeightKeyword,
-    PointerEventsKeyword
+    UnsafeCss
 );
+
+register_generated_keywords!(impl_into_signal_for_css);
