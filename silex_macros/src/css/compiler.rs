@@ -1,4 +1,4 @@
-use crate::css::ast::{CssBlock, CssRule, CssValue};
+use crate::css::ast::{CssBlock, CssRule};
 use lightningcss::stylesheet::{MinifyOptions, ParserOptions, PrinterOptions, StyleSheet};
 use lightningcss::targets::Targets;
 use proc_macro2::{Delimiter, Span, TokenStream, TokenTree};
@@ -48,12 +48,7 @@ impl CssCompiler {
 
         process_css_block(&block, &mut state)?;
 
-        let mut final_source_css = state.static_css.clone();
-        for i in 0..state.expressions.len() {
-            let placeholder = format!("--slx-tmp-{}", i);
-            let real_var = format!("--slx-{:x}-{}", hash, i);
-            final_source_css = final_source_css.replace(&placeholder, &real_var);
-        }
+        let final_source_css = state.static_css;
 
         let wrapped_css = format!(".{} {{ {} }}", class_name, final_source_css);
 
@@ -94,65 +89,18 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
             CssRule::Declaration(decl) => {
                 state.static_css.push_str(&decl.property);
                 state.static_css.push_str(": ");
-                let mut prev_was_ident_or_literal = false;
-                for v in &decl.values {
-                    let mut space_before = false;
-                    let current_is_ident_or_literal;
 
-                    match v {
-                        CssValue::Static(tt) => {
-                            match tt {
-                                TokenTree::Ident(_) | TokenTree::Literal(_) => {
-                                    current_is_ident_or_literal = true;
-                                    space_before = prev_was_ident_or_literal;
-                                }
-                                _ => {
-                                    current_is_ident_or_literal = false;
-                                }
-                            }
-                            if space_before {
-                                state.static_css.push(' ');
-                            }
+                state.static_css.push(' ');
+                let mut local_out = String::new();
+                extract_dynamic_value(
+                    &decl.values,
+                    &mut local_out,
+                    &mut state.expressions,
+                    &decl.property,
+                    &state.class_name,
+                );
+                state.static_css.push_str(&local_out);
 
-                            match tt {
-                                TokenTree::Group(g) => {
-                                    let (open, close) = match g.delimiter() {
-                                        Delimiter::Parenthesis => ('(', ')'),
-                                        Delimiter::Brace => ('{', '}'),
-                                        Delimiter::Bracket => ('[', ']'),
-                                        Delimiter::None => (' ', ' '),
-                                    };
-                                    if open != ' ' {
-                                        state.static_css.push(open);
-                                    }
-                                    state
-                                        .static_css
-                                        .push_str(&append_token_stream_strings(&g.stream()));
-                                    if close != ' ' {
-                                        state.static_css.push(close);
-                                    }
-                                }
-                                _ => state.static_css.push_str(&tt.to_string()),
-                            }
-                        }
-                        CssValue::Dynamic(expr) => {
-                            current_is_ident_or_literal = true;
-                            space_before = prev_was_ident_or_literal;
-                            if space_before {
-                                state.static_css.push(' ');
-                            }
-
-                            let idx = state.expressions.len();
-                            state
-                                .expressions
-                                .push((decl.property.clone(), expr.clone()));
-                            state
-                                .static_css
-                                .push_str(&format!("var(--slx-tmp-{})", idx));
-                        }
-                    }
-                    prev_was_ident_or_literal = current_is_ident_or_literal;
-                }
                 if decl.semi_token.is_some() {
                     state.static_css.push_str("; ");
                 }
@@ -211,58 +159,22 @@ fn build_dynamic_block(
             CssRule::Declaration(decl) => {
                 template.push_str(&decl.property);
                 template.push_str(": ");
-                let mut prev_was_ident_or_literal = false;
-                for v in &decl.values {
-                    let mut space_before = false;
-                    let current_is_ident_or_literal;
 
-                    match v {
-                        CssValue::Static(tt) => {
-                            match tt {
-                                TokenTree::Ident(_) | TokenTree::Literal(_) => {
-                                    current_is_ident_or_literal = true;
-                                    space_before = prev_was_ident_or_literal;
-                                }
-                                _ => {
-                                    current_is_ident_or_literal = false;
-                                }
-                            }
-                            if space_before {
-                                template.push(' ');
-                            }
+                template.push(' ');
+                let mut local_out = String::new();
+                let class_name_dummy = ""; // We are building an unparameterized dynamic block mostly here.
+                extract_dynamic_value(
+                    &decl.values,
+                    &mut local_out,
+                    exprs,
+                    &decl.property,
+                    class_name_dummy,
+                );
+                // Replace the var(--slx-xxx) generated by `extract_dynamic_value` with `{}`
+                // since build_dynamic_block expects a simple template substitution `{}` for its dynamic values.
+                let re = rust_runtime_hack_replace_vars(&local_out);
+                template.push_str(&re);
 
-                            match tt {
-                                TokenTree::Group(g) => {
-                                    let (open, close) = match g.delimiter() {
-                                        Delimiter::Parenthesis => ('(', ')'),
-                                        Delimiter::Brace => ('{', '}'),
-                                        Delimiter::Bracket => ('[', ']'),
-                                        Delimiter::None => (' ', ' '),
-                                    };
-                                    if open != ' ' {
-                                        template.push(open);
-                                    }
-                                    template.push_str(&append_token_stream_strings(&g.stream()));
-                                    if close != ' ' {
-                                        template.push(close);
-                                    }
-                                }
-                                _ => template.push_str(&tt.to_string()),
-                            }
-                        }
-                        CssValue::Dynamic(ts) => {
-                            current_is_ident_or_literal = true;
-                            space_before = prev_was_ident_or_literal;
-                            if space_before {
-                                template.push(' ');
-                            }
-
-                            template.push_str("{}");
-                            exprs.push((decl.property.clone(), ts.clone()));
-                        }
-                    }
-                    prev_was_ident_or_literal = current_is_ident_or_literal;
-                }
                 if decl.semi_token.is_some() {
                     template.push_str("; ");
                 }
@@ -482,6 +394,107 @@ fn extract_dynamic_selector(
                     out.push(delim.0);
                 }
                 extract_dynamic_selector(&g.stream(), out, exprs, class_name);
+                if delim.1 != ' ' {
+                    out.push(delim.1);
+                }
+                prev_tt = Some(TokenTree::Group(g));
+            }
+            TokenTree::Punct(p) => {
+                out.push(p.as_char());
+                prev_tt = Some(TokenTree::Punct(p));
+            }
+            TokenTree::Ident(id) => {
+                out.push_str(&id.to_string());
+                prev_tt = Some(TokenTree::Ident(id));
+            }
+            TokenTree::Literal(lit) => {
+                out.push_str(&lit.to_string());
+                prev_tt = Some(TokenTree::Literal(lit));
+            }
+        }
+    }
+}
+
+// Quick string replace hack since regex isn't guaranteed available in proc macro without adding deps.
+fn rust_runtime_hack_replace_vars(s: &str) -> String {
+    let mut res = String::new();
+    let mut i = 0;
+    let bytes = s.as_bytes();
+    while i < bytes.len() {
+        if s[i..].starts_with("var(--") {
+            let end = s[i..].find(')');
+            if let Some(e) = end {
+                res.push_str("{}");
+                i += e + 1;
+                continue;
+            }
+        }
+        res.push(bytes[i] as char);
+        i += 1;
+    }
+    res
+}
+
+fn extract_dynamic_value(
+    ts: &TokenStream,
+    out: &mut String,
+    exprs: &mut Vec<(String, TokenStream)>,
+    prop_name: &str,
+    class_name: &str,
+) {
+    let mut iter = ts.clone().into_iter().peekable();
+    let mut prev_tt: Option<TokenTree> = None;
+
+    while let Some(tt) = iter.next() {
+        let mut space_before = false;
+        if let Some(prev) = &prev_tt {
+            match (prev, &tt) {
+                (TokenTree::Ident(_), TokenTree::Ident(_))
+                | (TokenTree::Ident(_), TokenTree::Literal(_))
+                | (TokenTree::Literal(_), TokenTree::Ident(_))
+                | (TokenTree::Literal(_), TokenTree::Literal(_)) => space_before = true,
+                _ => {}
+            }
+        }
+
+        if let TokenTree::Punct(ref p) = tt
+            && p.as_char() == '$'
+            && let Some(TokenTree::Group(g)) = iter.peek()
+            && g.delimiter() == Delimiter::Parenthesis
+        {
+            if space_before {
+                out.push(' ');
+            }
+            let idx = exprs.len();
+            exprs.push((prop_name.to_string(), g.stream()));
+            use std::fmt::Write;
+            // Use class_name format logic. If class_name is empty, defaults to a placeholder.
+            if !class_name.is_empty() {
+                let _ = write!(out, "var(--{}-{})", class_name, idx);
+            } else {
+                let _ = write!(out, "var(--dyn-{})", idx);
+            }
+
+            prev_tt = Some(iter.next().unwrap());
+            continue;
+        }
+
+        if space_before {
+            out.push(' ');
+        }
+
+        match tt {
+            TokenTree::Group(g) => {
+                let delim = match g.delimiter() {
+                    Delimiter::Parenthesis => ('(', ')'),
+                    Delimiter::Brace => ('{', '}'),
+                    Delimiter::Bracket => ('[', ']'),
+                    Delimiter::None => (' ', ' '),
+                };
+                if delim.0 != ' ' {
+                    out.push(delim.0);
+                }
+                extract_dynamic_value(&g.stream(), out, exprs, prop_name, class_name);
                 if delim.1 != ' ' {
                     out.push(delim.1);
                 }

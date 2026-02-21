@@ -70,7 +70,7 @@ pub struct CssDeclaration {
     pub property: String,
     #[allow(dead_code)]
     pub colon_token: Token![:],
-    pub values: Vec<CssValue>,
+    pub values: TokenStream,
     #[allow(dead_code)]
     pub semi_token: Option<Token![;]>,
 }
@@ -98,28 +98,16 @@ impl Parse for CssDeclaration {
 
         let colon_token: Token![:] = input.parse()?;
 
-        // Parse values until `;` or EOF
-        let mut values = Vec::new();
-        while !input.is_empty() && !input.peek(Token![;]) {
-            if input.peek(Token![$]) {
-                // Peek next to see if it's a `(` for dynamic value `$(...)`
-                let fork = input.fork();
-                let _dollar: Token![$] = fork.parse()?;
-                if fork.peek(token::Paren) {
-                    let _dollar: Token![$] = input.parse()?;
-                    let content;
-                    syn::parenthesized!(content in input);
-                    let ts = content.parse::<TokenStream>()?;
-                    values.push(CssValue::Dynamic(ts));
-                } else {
-                    let tt: TokenTree = input.parse()?;
-                    values.push(CssValue::Static(tt));
-                }
-            } else {
-                let tt: TokenTree = input.parse()?;
-                values.push(CssValue::Static(tt));
-            }
+        // Parse values until `;` or EOF (or `}` if it's the last declaration in a block without a semicolon)
+        let mut value_tokens = TokenStream::new();
+        while !input.is_empty() && !input.peek(Token![;]) && !input.peek(token::Brace) {
+            let tt: TokenTree = input.parse()?;
+            value_tokens.extend(std::iter::once(tt));
         }
+
+        // We'll treat the whole chunk of tokens as one Unparsed block,
+        // to delegate the dynamic value extraction to the compiler phase or treat it as a stream.
+        let values = value_tokens;
 
         let semi_token = if input.peek(Token![;]) {
             Some(input.parse()?)
@@ -224,11 +212,4 @@ impl Parse for CssAtRule {
             block,
         })
     }
-}
-
-/// A value inside a declaration
-#[derive(Clone)]
-pub enum CssValue {
-    Static(TokenTree),
-    Dynamic(TokenStream),
 }

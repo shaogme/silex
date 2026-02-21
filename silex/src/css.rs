@@ -118,9 +118,14 @@ impl ApplyToDom for DynamicCss {
 
         // 3. Apply isolated component dynamic rules
         if !self.rules.is_empty() {
-            static INSTANCE_COUNTER: std::sync::atomic::AtomicUsize =
-                std::sync::atomic::AtomicUsize::new(0);
-            let instance_id = INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            std::thread_local! {
+                static INSTANCE_COUNTER: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+            }
+            let instance_id = INSTANCE_COUNTER.with(|c| {
+                let id = c.get();
+                c.set(id + 1);
+                id
+            });
             let style_id = format!("{}-dyn-{}", self.class_name, instance_id);
 
             let manager = Rc::new(DynamicStyleManager::new(&style_id));

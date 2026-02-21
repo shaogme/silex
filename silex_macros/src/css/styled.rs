@@ -218,8 +218,14 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let mut dynamic_rule_effects = Vec::new();
     if !dynamic_rules.is_empty() {
         dynamic_rule_effects.push(quote! {
-            static INSTANCE_COUNTER: ::std::sync::atomic::AtomicUsize = ::std::sync::atomic::AtomicUsize::new(0);
-            let instance_id = INSTANCE_COUNTER.fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
+            ::std::thread_local! {
+                static INSTANCE_COUNTER: ::std::cell::Cell<usize> = const { ::std::cell::Cell::new(0) };
+            }
+            let instance_id = INSTANCE_COUNTER.with(|c| {
+                let id = c.get();
+                c.set(id + 1);
+                id
+            });
             let dyn_style_id = format!("{}-dyn-{}", #class_name, instance_id);
             let manager = ::std::rc::Rc::new(::silex::css::DynamicStyleManager::new(&dyn_style_id));
         });
