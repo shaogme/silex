@@ -1,4 +1,5 @@
 pub mod builder;
+pub mod registry;
 pub mod types;
 pub use types::UnsafeCss;
 

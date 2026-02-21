@@ -16,77 +16,22 @@ pub(crate) fn get_prop_type(
     if prop == "any" {
         return Ok(quote::quote_spanned! { span => ::silex::css::types::props::Any });
     }
-    let supported = [
-        "width",
-        "height",
-        "margin",
-        "padding",
-        "color",
-        "background",
-        "background-color",
-        "z-index",
-        "display",
-        "position",
-        "flex-direction",
-        "flex-wrap",
-        "flex-grow",
-        "flex-shrink",
-        "flex-basis",
-        "align-items",
-        "justify-content",
-        "background-image",
-        "border",
-        "border-width",
-        "border-style",
-        "border-color",
-        "border-radius",
-        "font-size",
-        "font-weight",
-        "letter-spacing",
-        "line-height",
-        "text-align",
-        "text-decoration",
-        "cursor",
-        "gap",
-        "top",
-        "left",
-        "right",
-        "bottom",
-        "opacity",
-        "visibility",
-        "pointer-events",
-        "overflow",
-        "overflow-x",
-        "overflow-y",
-        "transition",
-        "transform",
-        "box-shadow",
-        "backdrop-filter",
-        "filter",
-        "outline",
-    ];
-    if supported.contains(&prop) {
-        let pascal: String = prop
-            .split('-')
-            .map(|part| {
-                let mut c = part.chars();
-                match c.next() {
-                    None => String::new(),
-                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-                }
-            })
-            .collect();
-        let ident = syn::Ident::new(&pascal, proc_macro2::Span::call_site());
-        Ok(quote::quote_spanned! { span => ::silex::css::types::props::#ident })
-    } else {
-        Err(syn::Error::new(
-            span,
-            format!(
-                "Unsupported dynamic CSS property: `{}`. If you need to use this property with interpolation, you may need to use UnsafeCss or update the framework.",
-                prop
-            ),
-        ))
-    }
+
+    // 自动化转换：kebab-case -> PascalCase
+    // 这样宏就不需要维护一份属性白名单，直接映射到运行时定义的类型
+    let pascal: String = prop
+        .split('-')
+        .map(|part| {
+            let mut c = part.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        })
+        .collect();
+
+    let ident = syn::Ident::new(&pascal, proc_macro2::Span::call_site());
+    Ok(quote::quote_spanned! { span => ::silex::css::types::props::#ident })
 }
 
 pub fn css_impl(input: LitStr) -> Result<TokenStream> {

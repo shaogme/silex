@@ -1,4 +1,3 @@
-use crate::css::inject_style;
 use crate::css::types::{ValidFor, props};
 use silex_core::traits::{Get, IntoSignal, With};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable};
@@ -33,23 +32,55 @@ impl Style {
         }
     }
 
-    pub fn on_hover(mut self, f: impl FnOnce(Style) -> Style) -> Self {
+    pub fn on_hover<F>(mut self, f: F) -> Self
+    where
+        F: FnOnce(Style) -> Style,
+    {
         self.pseudo_rules.push((":hover", f(Style::new())));
         self
     }
 
-    pub fn on_active(mut self, f: impl FnOnce(Style) -> Style) -> Self {
+    pub fn on_active<F>(mut self, f: F) -> Self
+    where
+        F: FnOnce(Style) -> Style,
+    {
         self.pseudo_rules.push((":active", f(Style::new())));
         self
     }
 
-    pub fn on_focus(mut self, f: impl FnOnce(Style) -> Style) -> Self {
+    pub fn on_focus<F>(mut self, f: F) -> Self
+    where
+        F: FnOnce(Style) -> Style,
+    {
         self.pseudo_rules.push((":focus", f(Style::new())));
         self
     }
 
-    pub fn pseudo(mut self, class: &'static str, f: impl FnOnce(Style) -> Style) -> Self {
-        self.pseudo_rules.push((class, f(Style::new())));
+    pub fn pseudo<F>(mut self, selector: &'static str, f: F) -> Self
+    where
+        F: FnOnce(Style) -> Style,
+    {
+        self.pseudo_rules.push((selector, f(Style::new())));
+        self
+    }
+
+    /// 内部通用方法：添加一条 CSS 规则
+    fn add_rule<V, ValType, P>(mut self, prop: &'static str, value: V) -> Self
+    where
+        V: IntoSignal<Value = ValType> + 'static,
+        ValType: ValidFor<P> + Display + Clone + 'static,
+        <V as IntoSignal>::Signal: Get + 'static,
+        <<V as IntoSignal>::Signal as With>::Value: Display,
+    {
+        if value.is_constant_value() {
+            let signal = value.into_signal();
+            let val_str = format!("{}", signal.get());
+            self.static_rules.push((prop, val_str));
+        } else {
+            let signal = value.into_signal();
+            self.dynamic_rules
+                .push((prop, Rc::new(move || format!("{}", signal.get()))));
+        }
         self
     }
 }
@@ -58,88 +89,25 @@ pub fn sty() -> Style {
     Style::new()
 }
 
-macro_rules! implement_css_properties {
-    ( $( ($prop_snake:ident, $prop_kebab:expr, $type_struct:ty) ),* $(,)? ) => {
+macro_rules! generate_builder_methods {
+    ($( ($snake:ident, $kebab:expr, $pascal:ident, $group:ident) ),*) => {
         impl Style {
             $(
-                pub fn $prop_snake<V, ValType>(mut self, value: V) -> Self
+                pub fn $snake<V, ValType>(self, value: V) -> Self
                 where
                     V: IntoSignal<Value = ValType> + 'static,
-                    ValType: ValidFor<$type_struct> + Display + Clone + 'static,
+                    ValType: ValidFor<props::$pascal> + Display + Clone + 'static,
                     <V as IntoSignal>::Signal: Get + 'static,
                     <<V as IntoSignal>::Signal as With>::Value: Display,
                 {
-                    if value.is_constant_value() {
-                        let signal = value.into_signal();
-                        let val_str = format!("{}", signal.get());
-                        self.static_rules.push(($prop_kebab, val_str));
-                    } else {
-                        let signal = value.into_signal();
-                        self.dynamic_rules.push(($prop_kebab, Rc::new(move || format!("{}", signal.get()))));
-                    }
-                    self
+                    self.add_rule::<V, ValType, props::$pascal>($kebab, value)
                 }
             )*
         }
     };
 }
 
-implement_css_properties! {
-    (width, "width", props::Width),
-    (height, "height", props::Height),
-    (margin, "margin", props::Margin),
-    (padding, "padding", props::Padding),
-    (color, "color", props::Color),
-    (background_color, "background-color", props::BackgroundColor),
-    (z_index, "z-index", props::ZIndex),
-    (display, "display", props::Display),
-    (position, "position", props::Position),
-    (flex_direction, "flex-direction", props::FlexDirection),
-    (background_image, "background-image", props::BackgroundImage),
-
-    (border, "border", props::Border),
-    (border_width, "border-width", props::BorderWidth),
-    (border_style, "border-style", props::BorderStyle),
-    (border_color, "border-color", props::BorderColor),
-    (border_radius, "border-radius", props::BorderRadius),
-    (font_size, "font-size", props::FontSize),
-    (font_weight, "font-weight", props::FontWeight),
-    (letter_spacing, "letter-spacing", props::LetterSpacing),
-    (line_height, "line-height", props::LineHeight),
-    (text_align, "text-align", props::TextAlign),
-    (text_decoration, "text-decoration", props::TextDecoration),
-    (cursor, "cursor", props::Cursor),
-    (gap, "gap", props::Gap),
-
-    (align_items, "align-items", props::AlignItems),
-    (justify_content, "justify-content", props::JustifyContent),
-    (flex_wrap, "flex-wrap", props::FlexWrap),
-    (flex_grow, "flex-grow", props::FlexGrow),
-    (flex_shrink, "flex-shrink", props::FlexShrink),
-    (flex_basis, "flex-basis", props::FlexBasis),
-
-    (top, "top", props::Top),
-    (left, "left", props::Left),
-    (right, "right", props::Right),
-    (bottom, "bottom", props::Bottom),
-
-    (opacity, "opacity", props::Opacity),
-    (visibility, "visibility", props::Visibility),
-    (pointer_events, "pointer-events", props::PointerEvents),
-
-    (overflow, "overflow", props::Overflow),
-    (overflow_x, "overflow-x", props::OverflowX),
-    (overflow_y, "overflow-y", props::OverflowY),
-
-    (transition, "transition", props::Transition),
-    (transform, "transform", props::Transform),
-    (box_shadow, "box-shadow", props::BoxShadow),
-    (backdrop_filter, "backdrop-filter", props::BackdropFilter),
-    (filter, "filter", props::Filter),
-
-    (background, "background", props::Background),
-    (outline, "outline", props::Outline),
-}
+crate::for_all_properties!(generate_builder_methods);
 
 impl ApplyToDom for Style {
     fn apply(self, el: &web_sys::Element, _target: ApplyTarget) {
@@ -188,7 +156,7 @@ impl ApplyToDom for Style {
             }
 
             if !css_str.is_empty() {
-                inject_style(&class_name, &css_str);
+                crate::css::inject_style(&class_name, &css_str);
                 let _ = el.class_list().add_1(&class_name);
             }
         }
