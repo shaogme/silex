@@ -36,135 +36,205 @@ silex_dom::define_tag!(
 silex_dom::define_tag!(Defs, "defs", defs, new_svg, non_void, [SvgTag, TextTag]);
 silex_dom::define_tag!(Desc, "desc", desc, new_svg, non_void, [SvgTag, TextTag]);
 silex_dom::define_tag!(Ellipse, "ellipse", ellipse, new_svg, void, [SvgTag]);
-silex_dom::define_tag!(FeBlend, "feBlend", fe_blend, new_svg, void, [SvgTag]);
+silex_dom::define_tag!(
+    FeBlend,
+    "feBlend",
+    fe_blend,
+    new_svg,
+    non_void,
+    [SvgTag, TextTag]
+);
 silex_dom::define_tag!(
     FeColorMatrix,
     "feColorMatrix",
     fe_color_matrix,
     new_svg,
-    void,
-    [SvgTag]
+    non_void,
+    [SvgTag, TextTag]
 );
 silex_dom::define_tag!(
     FeComponentTransfer,
     "feComponentTransfer",
     fe_component_transfer,
     new_svg,
-    void,
-    [SvgTag]
+    non_void,
+    [SvgTag, TextTag]
 );
 silex_dom::define_tag!(
     FeComposite,
     "feComposite",
     fe_composite,
     new_svg,
-    void,
-    [SvgTag]
+    non_void,
+    [SvgTag, TextTag]
 );
 silex_dom::define_tag!(
     FeConvolveMatrix,
     "feConvolveMatrix",
     fe_convolve_matrix,
     new_svg,
-    void,
-    [SvgTag]
+    non_void,
+    [SvgTag, TextTag]
 );
 silex_dom::define_tag!(
     FeDiffuseLighting,
     "feDiffuseLighting",
     fe_diffuse_lighting,
     new_svg,
-    void,
-    [SvgTag]
+    non_void,
+    [SvgTag, TextTag]
 );
 silex_dom::define_tag!(
     FeDisplacementMap,
     "feDisplacementMap",
     fe_displacement_map,
     new_svg,
-    void,
-    [SvgTag]
+    non_void,
+    [SvgTag, TextTag]
 );
 silex_dom::define_tag!(
     FeDistantLight,
     "feDistantLight",
     fe_distant_light,
     new_svg,
-    void,
-    [SvgTag]
+    non_void,
+    [SvgTag, TextTag]
 );
 silex_dom::define_tag!(
     FeDropShadow,
     "feDropShadow",
     fe_drop_shadow,
     new_svg,
-    void,
-    [SvgTag]
+    non_void,
+    [SvgTag, TextTag]
 );
-silex_dom::define_tag!(FeFlood, "feFlood", fe_flood, new_svg, void, [SvgTag]);
-silex_dom::define_tag!(FeFuncA, "feFuncA", fe_func_a, new_svg, void, [SvgTag]);
-silex_dom::define_tag!(FeFuncB, "feFuncB", fe_func_b, new_svg, void, [SvgTag]);
-silex_dom::define_tag!(FeFuncG, "feFuncG", fe_func_g, new_svg, void, [SvgTag]);
-silex_dom::define_tag!(FeFuncR, "feFuncR", fe_func_r, new_svg, void, [SvgTag]);
+silex_dom::define_tag!(
+    FeFlood,
+    "feFlood",
+    fe_flood,
+    new_svg,
+    non_void,
+    [SvgTag, TextTag]
+);
+silex_dom::define_tag!(
+    FeFuncA,
+    "feFuncA",
+    fe_func_a,
+    new_svg,
+    non_void,
+    [SvgTag, TextTag]
+);
+silex_dom::define_tag!(
+    FeFuncB,
+    "feFuncB",
+    fe_func_b,
+    new_svg,
+    non_void,
+    [SvgTag, TextTag]
+);
+silex_dom::define_tag!(
+    FeFuncG,
+    "feFuncG",
+    fe_func_g,
+    new_svg,
+    non_void,
+    [SvgTag, TextTag]
+);
+silex_dom::define_tag!(
+    FeFuncR,
+    "feFuncR",
+    fe_func_r,
+    new_svg,
+    non_void,
+    [SvgTag, TextTag]
+);
 silex_dom::define_tag!(
     FeGaussianBlur,
     "feGaussianBlur",
     fe_gaussian_blur,
     new_svg,
-    void,
-    [SvgTag]
+    non_void,
+    [SvgTag, TextTag]
 );
-silex_dom::define_tag!(FeImage, "feImage", fe_image, new_svg, void, [SvgTag]);
-silex_dom::define_tag!(FeMerge, "feMerge", fe_merge, new_svg, void, [SvgTag]);
+silex_dom::define_tag!(
+    FeImage,
+    "feImage",
+    fe_image,
+    new_svg,
+    non_void,
+    [SvgTag, TextTag]
+);
+silex_dom::define_tag!(
+    FeMerge,
+    "feMerge",
+    fe_merge,
+    new_svg,
+    non_void,
+    [SvgTag, TextTag]
+);
 silex_dom::define_tag!(
     FeMergeNode,
     "feMergeNode",
     fe_merge_node,
     new_svg,
-    void,
-    [SvgTag]
+    non_void,
+    [SvgTag, TextTag]
 );
 silex_dom::define_tag!(
     FeMorphology,
     "feMorphology",
     fe_morphology,
     new_svg,
-    void,
-    [SvgTag]
+    non_void,
+    [SvgTag, TextTag]
 );
-silex_dom::define_tag!(FeOffset, "feOffset", fe_offset, new_svg, void, [SvgTag]);
+silex_dom::define_tag!(
+    FeOffset,
+    "feOffset",
+    fe_offset,
+    new_svg,
+    non_void,
+    [SvgTag, TextTag]
+);
 silex_dom::define_tag!(
     FePointLight,
     "fePointLight",
     fe_point_light,
     new_svg,
-    void,
-    [SvgTag]
+    non_void,
+    [SvgTag, TextTag]
 );
 silex_dom::define_tag!(
     FeSpecularLighting,
     "feSpecularLighting",
     fe_specular_lighting,
     new_svg,
-    void,
-    [SvgTag]
+    non_void,
+    [SvgTag, TextTag]
 );
 silex_dom::define_tag!(
     FeSpotLight,
     "feSpotLight",
     fe_spot_light,
     new_svg,
-    void,
-    [SvgTag]
+    non_void,
+    [SvgTag, TextTag]
 );
-silex_dom::define_tag!(FeTile, "feTile", fe_tile, new_svg, void, [SvgTag]);
+silex_dom::define_tag!(
+    FeTile,
+    "feTile",
+    fe_tile,
+    new_svg,
+    non_void,
+    [SvgTag, TextTag]
+);
 silex_dom::define_tag!(
     FeTurbulence,
     "feTurbulence",
     fe_turbulence,
     new_svg,
-    void,
-    [SvgTag]
+    non_void,
+    [SvgTag, TextTag]
 );
 silex_dom::define_tag!(
     Filter,
@@ -183,7 +253,7 @@ silex_dom::define_tag!(
     [SvgTag, TextTag]
 );
 silex_dom::define_tag!(G, "g", g, new_svg, non_void, [SvgTag, TextTag]);
-silex_dom::define_tag!(Image, "image", image, new_svg, non_void, [SvgTag, TextTag]);
+silex_dom::define_tag!(Image, "image", image, new_svg, void, [SvgTag]);
 silex_dom::define_tag!(Line, "line", line, new_svg, void, [SvgTag]);
 silex_dom::define_tag!(
     LinearGradient,
@@ -284,15 +354,8 @@ silex_dom::define_tag!(
     [SvgTag, TextTag]
 );
 silex_dom::define_tag!(Tspan, "tspan", tspan, new_svg, non_void, [SvgTag, TextTag]);
-silex_dom::define_tag!(Use, "use", use_tag, new_svg, void, [SvgTag]);
-silex_dom::define_tag!(
-    ViewTag,
-    "view",
-    view_tag,
-    new_svg,
-    non_void,
-    [SvgTag, TextTag]
-);
+silex_dom::define_tag!(UseEl, "use", use_el, new_svg, void, [SvgTag]);
+silex_dom::define_tag!(View, "view", view, new_svg, non_void, [SvgTag, TextTag]);
 
 // --- Macros ---
 #[macro_export]
@@ -331,6 +394,131 @@ macro_rules! desc {
     ($($child:expr),+ $(,)?) => { $crate::svg::desc(($($child),+)) };
 }
 #[macro_export]
+macro_rules! fe_blend {
+    () => { $crate::svg::fe_blend(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_blend(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_color_matrix {
+    () => { $crate::svg::fe_color_matrix(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_color_matrix(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_component_transfer {
+    () => { $crate::svg::fe_component_transfer(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_component_transfer(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_composite {
+    () => { $crate::svg::fe_composite(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_composite(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_convolve_matrix {
+    () => { $crate::svg::fe_convolve_matrix(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_convolve_matrix(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_diffuse_lighting {
+    () => { $crate::svg::fe_diffuse_lighting(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_diffuse_lighting(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_displacement_map {
+    () => { $crate::svg::fe_displacement_map(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_displacement_map(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_distant_light {
+    () => { $crate::svg::fe_distant_light(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_distant_light(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_drop_shadow {
+    () => { $crate::svg::fe_drop_shadow(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_drop_shadow(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_flood {
+    () => { $crate::svg::fe_flood(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_flood(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_func_a {
+    () => { $crate::svg::fe_func_a(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_func_a(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_func_b {
+    () => { $crate::svg::fe_func_b(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_func_b(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_func_g {
+    () => { $crate::svg::fe_func_g(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_func_g(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_func_r {
+    () => { $crate::svg::fe_func_r(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_func_r(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_gaussian_blur {
+    () => { $crate::svg::fe_gaussian_blur(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_gaussian_blur(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_image {
+    () => { $crate::svg::fe_image(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_image(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_merge {
+    () => { $crate::svg::fe_merge(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_merge(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_merge_node {
+    () => { $crate::svg::fe_merge_node(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_merge_node(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_morphology {
+    () => { $crate::svg::fe_morphology(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_morphology(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_offset {
+    () => { $crate::svg::fe_offset(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_offset(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_point_light {
+    () => { $crate::svg::fe_point_light(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_point_light(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_specular_lighting {
+    () => { $crate::svg::fe_specular_lighting(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_specular_lighting(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_spot_light {
+    () => { $crate::svg::fe_spot_light(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_spot_light(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_tile {
+    () => { $crate::svg::fe_tile(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_tile(($($child),+)) };
+}
+#[macro_export]
+macro_rules! fe_turbulence {
+    () => { $crate::svg::fe_turbulence(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::fe_turbulence(($($child),+)) };
+}
+#[macro_export]
 macro_rules! filter {
     () => { $crate::svg::filter(()) };
     ($($child:expr),+ $(,)?) => { $crate::svg::filter(($($child),+)) };
@@ -344,11 +532,6 @@ macro_rules! foreign_object {
 macro_rules! g {
     () => { $crate::svg::g(()) };
     ($($child:expr),+ $(,)?) => { $crate::svg::g(($($child),+)) };
-}
-#[macro_export]
-macro_rules! image {
-    () => { $crate::svg::image(()) };
-    ($($child:expr),+ $(,)?) => { $crate::svg::image(($($child),+)) };
 }
 #[macro_export]
 macro_rules! linear_gradient {
@@ -436,7 +619,7 @@ macro_rules! tspan {
     ($($child:expr),+ $(,)?) => { $crate::svg::tspan(($($child),+)) };
 }
 #[macro_export]
-macro_rules! view_tag {
-    () => { $crate::svg::view_tag(()) };
-    ($($child:expr),+ $(,)?) => { $crate::svg::view_tag(($($child),+)) };
+macro_rules! view {
+    () => { $crate::svg::view(()) };
+    ($($child:expr),+ $(,)?) => { $crate::svg::view(($($child),+)) };
 }

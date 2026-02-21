@@ -790,7 +790,7 @@ impl FormAttributes for TypedElement<Optgroup> {
 silex_dom::define_tag!(
     OptionTag,
     "option",
-    option,
+    option_tag,
     new,
     non_void,
     [TextTag, FormTag]
@@ -1747,9 +1747,9 @@ macro_rules! optgroup {
     ($($child:expr),+ $(,)?) => { $crate::html::optgroup(($($child),+)) };
 }
 #[macro_export]
-macro_rules! option {
-    () => { $crate::html::option(()) };
-    ($($child:expr),+ $(,)?) => { $crate::html::option(($($child),+)) };
+macro_rules! option_tag {
+    () => { $crate::html::option_tag(()) };
+    ($($child:expr),+ $(,)?) => { $crate::html::option_tag(($($child),+)) };
 }
 #[macro_export]
 macro_rules! output {

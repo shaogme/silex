@@ -45,7 +45,18 @@ pub fn generate_keywords_code(props: &[ProcessedProp]) -> String {
                 enum_name, prop.struct_name
             ));
             for kw in &prop.keywords {
-                let variant = AsPascalCase(kw).to_string();
+                let mut variant = AsPascalCase(kw).to_string();
+
+                // 1. If starts with digit, prepend underscore
+                if variant.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                    variant = format!("_{}", variant);
+                }
+
+                // 2. Handle Rust keywords and common conflicts
+                if is_reserved_word(&variant) {
+                    variant = format!("{}_", variant);
+                }
+
                 code.push_str(&format!("    {} => \"{}\",\n", variant, kw));
             }
             code.push_str("});\n\n");
@@ -56,6 +67,10 @@ pub fn generate_keywords_code(props: &[ProcessedProp]) -> String {
     code.push_str("macro_rules! register_generated_keywords {\n");
     code.push_str("    ($callback:ident) => {\n");
     code.push_str("        $callback! {\n");
+
+    // Ensure deterministic order for keyword list
+    keyword_types.sort();
+
     for (i, kt) in keyword_types.iter().enumerate() {
         if i == keyword_types.len() - 1 {
             code.push_str(&format!("            {}", kt));
@@ -68,4 +83,48 @@ pub fn generate_keywords_code(props: &[ProcessedProp]) -> String {
     code.push_str("}\n");
 
     code
+}
+
+fn is_reserved_word(s: &str) -> bool {
+    matches!(
+        s,
+        "Self"
+            | "Self_"
+            | "Super"
+            | "Move"
+            | "Continue"
+            | "Break"
+            | "Default"
+            | "Loop"
+            | "Match"
+            | "If"
+            | "Else"
+            | "While"
+            | "For"
+            | "In"
+            | "Let"
+            | "Const"
+            | "Static"
+            | "Mut"
+            | "Pub"
+            | "Crate"
+            | "Mod"
+            | "Struct"
+            | "Enum"
+            | "Trait"
+            | "Type"
+            | "As"
+            | "Async"
+            | "Await"
+            | "Fn"
+            | "Dyn"
+            | "Impl"
+            | "Where"
+            | "Unsafe"
+            | "Extern"
+            | "Ref"
+            | "Use"
+            | "Try"
+            | "Yield"
+    )
 }

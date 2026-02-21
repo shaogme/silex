@@ -46,13 +46,7 @@ pub mod prelude {
     pub use silex_macros::*;
 
     // Export CSS types for easier use in styled! / css! macros
-    pub use crate::css::types::{
-        AlignItemsKeyword, BorderStyleKeyword, BorderValue, CursorKeyword, DisplayKeyword,
-        FlexDirectionKeyword, FlexWrapKeyword, FontWeightKeyword, Hex, Hsl, JustifyContentKeyword,
-        OverflowKeyword, Percent, PointerEventsKeyword, PositionKeyword, Px, Rem, Rgba,
-        TextAlignKeyword, UnsafeCss, Url, Vh, VisibilityKeyword, Vw, border, hex, hsl, margin,
-        padding, pct, px, rem, rgba, url, vh, vw,
-    };
+    pub use crate::css::types::*;
 
     pub use crate::css::builder::{Style, sty};
 
@@ -60,7 +54,8 @@ pub mod prelude {
     pub use crate::core::prelude::{Map, Set, Track};
     pub use crate::flow::Switch;
     pub use crate::router::Link;
-    pub use silex_dom::text;
+    pub use silex_dom::{View, text};
+    pub use silex_html::{Em, em};
     #[cfg(feature = "macros")]
     pub use silex_macros::style;
 }

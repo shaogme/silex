@@ -1,0 +1,9 @@
+{
+    "whitelist": [
+        "-webkit-line-clamp",
+        "-webkit-text-fill-color",
+        "-webkit-text-stroke",
+        "-webkit-text-stroke-color",
+        "-webkit-text-stroke-width"
+    ]
+}

@@ -6,7 +6,6 @@ mod css;
 mod tags;
 
 use tags::codegen::generate_module_content;
-use tags::{apply_memory_only_patches, fetch_and_merge_tags, load_config};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
@@ -46,27 +45,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Output dir:  {}", out_dir.display());
     println!("CSS dir:     {}", css_out_dir.display());
 
-    // 2. Load existing configs (Source of Truth)
-    let mut config = load_config(tags_path)?;
-    let mut css_config = css::load_config(css_json_path)?;
+    // 2. Load CSS overrides if they exist (needed for whitelist in fetch mode)
+    let overrides_path = "tools/silex_codegen/css_overrides.json";
+    let css_overrides: css::types::Overrides = if std::path::Path::new(overrides_path).exists() {
+        let content = fs::read_to_string(overrides_path)?;
+        if content.trim().is_empty() {
+            css::types::Overrides::default()
+        } else {
+            serde_json::from_str(&content).unwrap_or_default()
+        }
+    } else {
+        css::types::Overrides::default()
+    };
 
-    // 3. FETCH MODE: Modify JSON files ONLY here
+    // 3. FETCH MODE: Refresh JSON files from MDN
     if should_fetch {
         println!("\n[FETCH MODE] Fetching data from MDN...");
-        fetch_and_merge_tags(&mut config)?;
-        css::fetch_and_merge_css(&mut css_config)?;
 
-        // Save the CLEAN configs back to JSON files
-        let updated_tags_json = serde_json::to_string_pretty(&config)?;
-        fs::write(tags_path, updated_tags_json)?;
+        // Direct fetch without any state/merging logic
+        let fetch_tags_config = tags::fetch_tags()?;
+        let fetch_css_config = css::fetch_css(&css_overrides.whitelist)?;
+
+        // Save exactly what was fetched to JSON files
+        fs::write(tags_path, serde_json::to_string_pretty(&fetch_tags_config)?)?;
         println!("[FETCH MODE] Updated {}", tags_path.display());
 
-        let updated_css_json = serde_json::to_string_pretty(&css_config)?;
-        fs::write(css_json_path, updated_css_json)?;
+        fs::write(
+            css_json_path,
+            serde_json::to_string_pretty(&fetch_css_config)?,
+        )?;
         println!("[FETCH MODE] Updated {}", css_json_path.display());
-    } else {
-        println!("\n[CODEGEN MODE] Using existing JSON configs (Read-Only)");
     }
+
+    // 4. Load Source of Truth for Codegen
+    let config = tags::load_config(tags_path)?;
+    let mut css_config = css::load_config(css_json_path)?;
+
+    // Always apply overrides and patches in memory ONLY for consistent codegen
+    println!("\n[CODEGEN MODE] Applying in-memory patches and overrides...");
+    css_config.apply_overrides(&css_overrides);
+
+    let mut gen_config = config.clone();
+    tags::apply_memory_only_patches(&mut gen_config);
 
     // --- CSS Codegen ---
     let registry_code = css::generate_registry_macro(&css_config.properties);
@@ -76,15 +96,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let keywords_code = css::generate_keywords_code(&css_config.properties);
     fs::write(css_out_dir.join("keywords_gen.rs"), keywords_code)?;
     println!("Generated keywords_gen.rs");
-
-    // 4. CODEGEN MODE: In-Memory Processing
-    // We clone the config to ensure the generation logic operates on a separate instance
-    // that includes patches, while the file on disk remains untouched/clean.
-    let mut gen_config = config.clone();
-
-    // Apply patches for traits that are required for compilation but NOT stored in tags.json
-    // STRICT RULE: These changes happen in memory only.
-    apply_memory_only_patches(&mut gen_config);
 
     // 5. Generate and Write Rust Code
     if !out_dir.exists() {

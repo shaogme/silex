@@ -75,7 +75,7 @@ pub fn load_config(path: &Path) -> Result<TagConfig, Box<dyn std::error::Error>>
 
 // --- Fetch Logic ---
 
-pub fn fetch_and_merge_tags(config: &mut TagConfig) -> Result<(), Box<dyn std::error::Error>> {
+pub fn fetch_tags() -> Result<TagConfig, Box<dyn std::error::Error>> {
     let client = Client::builder().user_agent("silex-codegen").build()?;
     let url = "https://unpkg.com/@mdn/browser-compat-data/data.json";
 
@@ -86,42 +86,35 @@ pub fn fetch_and_merge_tags(config: &mut TagConfig) -> Result<(), Box<dyn std::e
     }
 
     let data: MdnCompatData = resp.json()?;
+    let mut config = TagConfig {
+        html: vec![],
+        svg: vec![],
+    };
 
     if let Some(category) = data.html
         && let Some(elements) = category.elements
     {
-        merge_tag_list(&mut config.html, elements, false);
+        config.html = build_tag_list(elements, false);
     }
 
     if let Some(category) = data.svg
         && let Some(elements) = category.elements
     {
-        merge_tag_list(&mut config.svg, elements, true);
+        config.svg = build_tag_list(elements, true);
     }
 
-    Ok(())
+    Ok(config)
 }
 
-fn merge_tag_list(
-    existing_tags: &mut Vec<TagDef>,
-    mdn_elements: HashMap<String, Value>,
-    is_svg: bool,
-) {
-    let mut existing_map: HashMap<String, usize> = existing_tags
-        .iter()
-        .enumerate()
-        .map(|(i, t)| (t.tag_name.clone(), i))
-        .collect();
-
+fn build_tag_list(mdn_elements: HashMap<String, Value>, is_svg: bool) -> Vec<TagDef> {
+    let mut tags = Vec::new();
     let mut sorted_mdn_keys: Vec<String> = mdn_elements.keys().cloned().collect();
     sorted_mdn_keys.sort();
 
     for tag_name in sorted_mdn_keys {
-        if existing_map.contains_key(&tag_name) {
-            continue;
-        }
+        // PURE RAW MAPPING: No keyword sanitization here!
+        let struct_name = AsPascalCase(&tag_name).to_string();
 
-        let struct_name = sanitize_struct_name(&tag_name, is_svg);
         let is_void = if is_svg {
             SVG_SHAPE_ELEMENTS.contains(&tag_name.as_str())
         } else {
@@ -138,24 +131,69 @@ fn merge_tag_list(
             traits.push("TextTag".to_string());
         }
 
-        let new_def = TagDef {
+        tags.push(TagDef {
             struct_name,
             tag_name: tag_name.clone(),
-            func_name: sanitize_func_name(&tag_name),
+            func_name: None, // No manual function naming in raw JSON
             is_void,
             traits,
-        };
-        existing_tags.push(new_def);
-        existing_map.insert(tag_name, existing_tags.len() - 1);
+        });
     }
+    tags
 }
 
 // --- In-Memory Patch Logic ---
 
 pub fn apply_memory_only_patches(config: &mut TagConfig) {
+    // 1. Sanitize Struct Names (Avoid Rust Keywords/Prelude conflicts)
+    for tag in config.html.iter_mut().chain(config.svg.iter_mut()) {
+        let is_svg = tag.traits.iter().any(|t| t == "SvgTag");
+        tag.struct_name = match tag.struct_name.as_str() {
+            "Type" => "TypeEl".to_string(),
+            "Box" => "BoxEl".to_string(),
+            "Loop" => "LoopEl".to_string(),
+            "If" => "IfEl".to_string(),
+            "For" => "ForEl".to_string(),
+            "While" => "WhileEl".to_string(),
+            "Mod" => "ModEl".to_string(),
+            "Use" => "UseEl".to_string(),
+            "Impl" => "ImplEl".to_string(),
+            "Trait" => "TraitEl".to_string(),
+            "Pub" => "PubEl".to_string(),
+            "Struct" => "StructEl".to_string(),
+            "Enum" => "EnumEl".to_string(),
+            "Fn" => "FnEl".to_string(),
+            "Let" => "LetEl".to_string(),
+            "Mut" => "MutEl".to_string(),
+            "Ref" => "RefEl".to_string(),
+            "Option" => "OptionTag".to_string(),
+            "Data" => "DataTag".to_string(),
+            "A" if is_svg => "SvgA".to_string(),
+            "Script" if is_svg => "SvgScript".to_string(),
+            "Style" if is_svg => "SvgStyle".to_string(),
+            "Title" if is_svg => "SvgTitle".to_string(),
+            _ => tag.struct_name.clone(),
+        };
+
+        // 2. Sanitize Function Names (Snake Case with keyword protection)
+        tag.func_name = match tag.tag_name.as_str() {
+            "type" => Some("type_el".to_string()),
+            "box" => Some("box_el".to_string()),
+            "loop" => Some("loop_el".to_string()),
+            "if" => Some("if_el".to_string()),
+            "for" => Some("for_el".to_string()),
+            "while" => Some("while_el".to_string()),
+            "mod" => Some("mod_el".to_string()),
+            "use" => Some("use_el".to_string()),
+            "option" => Some("option_tag".to_string()),
+            "data" => Some("data_tag".to_string()),
+            _ => None,
+        };
+    }
+
+    // 3. Apply Trait patches
     for tag in &mut config.html {
         let name = tag.tag_name.clone();
-
         match name.as_str() {
             "input" | "textarea" | "select" | "option" | "optgroup" | "button" | "fieldset"
             | "output" | "form" => {
@@ -184,57 +222,3 @@ fn ensure_trait_in_memory(tag: &mut TagDef, trait_name: &str) {
 }
 
 // --- Helpers ---
-
-fn sanitize_struct_name(tag_name: &str, is_svg: bool) -> String {
-    let pascal = AsPascalCase(tag_name).to_string();
-    let name = match pascal.as_str() {
-        "Type" => "TypeEl".to_string(), // type is a keyword
-        "Box" => "BoxEl".to_string(),   // box is a keyword
-        "Loop" => "LoopEl".to_string(), // loop is a keyword
-        "If" => "IfEl".to_string(),
-        "For" => "ForEl".to_string(),
-        "While" => "WhileEl".to_string(),
-        "Mod" => "ModEl".to_string(),
-        "Use" => "UseEl".to_string(),
-        "Impl" => "ImplEl".to_string(),
-        "Trait" => "TraitEl".to_string(),
-        "Pub" => "PubEl".to_string(),
-        "Struct" => "StructEl".to_string(),
-        "Enum" => "EnumEl".to_string(),
-        "Fn" => "FnEl".to_string(),
-        "Let" => "LetEl".to_string(),
-        "Mut" => "MutEl".to_string(),
-        "Ref" => "RefEl".to_string(),
-        "NoScript" => "NoScript".to_string(), // noscript
-        _ => pascal,
-    };
-
-    if is_svg && name == "A" {
-        return "SvgA".to_string(); // conflict with HTML A
-    }
-    if is_svg && name == "Script" {
-        return "SvgScript".to_string();
-    }
-    if is_svg && name == "Style" {
-        return "SvgStyle".to_string();
-    }
-    if is_svg && name == "Title" {
-        return "SvgTitle".to_string();
-    }
-
-    name
-}
-
-fn sanitize_func_name(tag_name: &str) -> Option<String> {
-    match tag_name {
-        "type" => Some("type_el".to_string()),
-        "box" => Some("box_el".to_string()),
-        "loop" => Some("loop_el".to_string()),
-        "if" => Some("if_el".to_string()),
-        "for" => Some("for_el".to_string()),
-        "while" => Some("while_el".to_string()),
-        "mod" => Some("mod_el".to_string()),
-        "use" => Some("use_el".to_string()),
-        _ => None,
-    }
-}
