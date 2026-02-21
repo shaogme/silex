@@ -75,6 +75,9 @@ silex_core/src/
     *   仅当 `T: Clone` 时可用。
     *   本质上就是 `self.with(Clone::clone)`。
     *   **警示**：文档中多次强调避免在热路径对大对象使用 `Get`。
+4.  **`IntoSignal` (转换与常量预测)**:
+    *   除了 `into_signal()` 外，新增了 `is_constant_value()`。
+    *   这允许框架在“信号化”一个值之前，就先知道它是否是常量，从而进行更激进的静态优化。
 
 #### 修改层级 (Mutation Hierarchy)
 
@@ -98,6 +101,7 @@ pub enum Signal<T: 'static> {
 *   **Derived 变体**：这是一个无缓存的计算属性。当你写 `signal_a + signal_b` 时，返回的就是一个 `Signal::Derived`。它没有专门的存储空间，每次访问都重新运行底层的闭包。
 *   **StoredConstant**: 这是一个优化。对于 `signal(42)` 或者常量配置（大对象），我们不需要追踪机制，但为了接口统一，我们把它包装起来。
 *   **InlineConstant**: 这是一个**极致优化**。对于 `i32`, `f64`, `bool` 等小型的 `Copy` 类型，我们将值直接**内联存储**在 `Signal` 枚举的变体中（通过 unsafe 位压缩），从而**完全消除了 Arena 内存分配**。这意味着 `Signal::from(42)` 现在是零分配的。
+*   **is_constant()**: `Signal` 提供此方法用于在运行时快速检测其是否为常量。这对于 `silex_dom` 等上层库非常有用，可以据此决定是否需要为该值挂载监听器。
 
 ### 4.3. 宏魔法 (`macros`)
 

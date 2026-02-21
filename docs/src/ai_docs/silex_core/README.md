@@ -62,6 +62,7 @@
     *   `InlineConstant` 变体将小数据（如 `i32`）直接内联存储在 `Signal` 内部，避免 Arena 分配。
 *   **Methods**:
     *   `derive(f: impl Fn() -> T)`: 创建一个派生信号。
+    *   `is_constant() -> bool`: Returns `true` if the signal is `StoredConstant` or `InlineConstant`.
     *   `get() -> T`: (via `Get` trait).
     *   `slice(getter: impl Fn(&T) -> &O)`: 创建一个指向内部字段的切片信号 `SignalSlice`，实现零拷贝访问。
 *   **Conversions**:
@@ -127,7 +128,16 @@
     *   **Use Case**: 当你需要一个满足 `Get<Value=T>` 接口但实际上永远不会改变的值时使用。
 
 #### `IntoSignal` Trait
-*   **Trait**: `pub trait IntoSignal { type Value; type Signal: Get<Value = Self::Value>; fn into_signal(self) -> Self::Signal; }`
+*   **Trait**: 
+    ```rust
+    pub trait IntoSignal {
+        type Value;
+        type Signal: With<Value = Self::Value>;
+
+        fn into_signal(self) -> Self::Signal;
+        fn is_constant_value(&self) -> bool;
+    }
+    ```
 *   **Semantics**:
     *   这是一个辅助 Trait，用于编写灵活的 API。
     *   为所有基本类型 (`u8`..`u128`, `i8`..`i128`, `f32`, `f64`, `bool`, `char`, `String`, `&str`) 实现了该 Trait，转换为 `Constant<T>`。

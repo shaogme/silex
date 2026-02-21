@@ -10,6 +10,7 @@
 
 *   **SignalWrapper (通用信号)**:
     *   `Signal<T>`: 统一的信号包装器，**实现了 `Copy`, `PartialEq`, `Eq`, `Hash`**。
+    *   **常量检查**: 提供 `.is_constant()` 方法，用于判断该信号是否为静态常量（`StoredConstant` 或 `InlineConstant`），从而允许渲染引擎进行差异化优化。
     *   它可以包装 `ReadSignal`, `RwSignal`, `Memo`，`Derived` (派生闭包) 或 `Constant` (常量)。
     *   **内存优化**: 对于 `i32`, `f64`, `bool` 等小型 `Copy` 类型，`Signal<T>` 会将值直接内联存储在枚举中（`InlineConstant`），从而**完全消除 Arena 分配**。这意味着 `Signal::from(42)` 现在是**零分配**的。
     *   作为组件 Props 的首选类型，因为它能接受任何类型的响应式数据源。
@@ -27,7 +28,9 @@
         *   `batch_read!(s1, s2 => |v1, v2| ...)`: 同时访问多个信号并追踪，零 Clone。
         *   `batch_read_untracked!(s1, s2 => |v1, v2| ...)`: 同时访问多个信号不追踪，零 Clone。
     *   **写**: `Set` (设置并通知), `SetUntracked` (设置不通知), `Update` (修改并通知), `SignalSetter` (生成 setter), `SignalUpdater` (生成 updater)。
-    *   **转换**: `IntoSignal` (值转信号)。允许组件 Props 接受 `impl IntoSignal`，从而同时支持静态值（自动转为 `Constant`，零分配）和动态信号。也支持将元组 `(Signal<A>, Signal<B>)` 转换为组合信号 `Signal<(A, B)>`。
+    *   **转换**: `IntoSignal` (值转信号)。允许组件 Props 接受 `impl IntoSignal`，从而同时支持静态值（自动转为 `Constant`，零分配）和动态信号。
+        *   **is_constant_value**: 提供 `.is_constant_value()` 方法，可以在不转换信号的情况下预先判断输入源是否为常量。
+        *   支持元组转换：`(Signal<A>, Signal<B>)` 可转换为组合信号 `Signal<(A, B)>`。
     *   **性能建议**: 
         *   对于小型 `Copy` 类型（如 `i32`），`Signal::from(val)` 是零分配的，非常高效。
         *   对于大型对象（如 `String`），`Signal::from(val)` 仍会在运行时分配 Arena 内存。若传递大型静态值，建议直接使用引用或 `StoredValue`。

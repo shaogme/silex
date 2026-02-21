@@ -32,6 +32,10 @@ pub(crate) fn get_prop_type(
         "border-width",
         "border-style",
         "border-color",
+        "border-radius",
+        "font-size",
+        "cursor",
+        "gap",
     ];
     if supported.contains(&prop) {
         let pascal: String = prop

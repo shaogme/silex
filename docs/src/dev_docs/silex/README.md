@@ -123,7 +123,15 @@ Silex 的路由系统基于浏览器 History API，实现了单页应用 (SPA) �
 *   **验证流**：伴随 `DynamicCss` 产生的每一次插值的验证绑定，将宏层面所追踪到的标签经由此处的 `make_dynamic_val_for::<P, S>(source: S)` 落入限制。使得 `ValidFor<P>` 这个 Trait 得以在运行时构建前提前在编译期就成功实施阻断由于随意插值引发的语法错误！实现严丝合缝的闭环。
 *   **封锁隐式逃逸与 `UnsafeCss`**：彻底废除对 `&str`、`String` 及 `Any` 属性的泛用 `ValidFor` 实现，转而要求开发者在需要越过类型检查时显式声明使用 `UnsafeCss::new(...)`，显式标明非安全 CSS 越境边界。
 *   **复合复合与工厂函数 (Factory Functions)**：对于 `border` 这类需要多种类型排版的复杂属性，我们抽离宏层面的不确定推断，彻底采用 Rust `const fn border(width, style, color)` 工厂函数及其对应类型 `BorderValue` 来处理，保障属性间的调用签名依然 100% 安全。
-*   **构建器模块 (Builders)**：针对 `margin`、`padding` 等支持 1～4 个参数重载且仅需同类型（或不同维度的同类型）组合的复合属性，提供模块级的方法集成：如 `margin::all()`, `padding::x_y()` 等。在传递进宏引擎插值前预先把控好组装逻辑。
+#### 类型安全构建器 (Type-Safe Builder: Style)
+位于 `silex/src/css/builder.rs`。
+*   **设计动机**：为了满足对极致编译性能（零宏路径）和 100% Rust 原生补全极致追求的场景。
+*   **核心逻辑**：
+    *   **链式 API**：提供一系列强类型方法如 `.width(px(100))`。它不仅仅是字符串拼接，而是利用 `IntoSignal` 和 `ValidFor` trait 在编译期拦截类型不匹配的属性赋值。
+    *   **智能分配**：
+        *   当属性是**常量**时，合并进 `static_rules`。多处使用相同 `Style` 的静态部分会被哈希成同名 Class，共享样式注入。
+        *   当属性是**信号/闭包**时，进入 `dynamic_rules`。在 DOM 挂载时通过响应式 Effect 实时更新元素的 `style` 对象。
+    *   **伪类响应式支持**：这是一个技术难点。通过 `on_hover(|s| ...)` 定义的样式。如果其中包含动态部分，Style 引擎会为该元素分配唯一的 `slx-bldr-dyn-N` 类名，并在全局 `<style>` 标签中实时更新该类名的伪类定义（由 `DynamicStyleManager` 管理），解决了内联样式（inline-style）无法覆盖伪类的局限。
 
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 

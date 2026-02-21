@@ -104,6 +104,48 @@ pub fn CssDemo() -> impl View {
                 });
                 console_log("Clicked! Toggled styles and dynamic rules.");
             }),
+        hr().style("margin: 30px 0; border: none; border-top: 1px solid #eee;"),
+        h3("Type-Safe Style Builder Demo"),
+        p(
+            "This section demonstrates the new pure Rust Style Builder API. It provides a chainable, type-safe way to define styles without macro overhead, while still supporting reactivity and pseudo-classes."
+        ),
+        div![
+            span("Hover me!").style(
+                Style::new()
+                    .display(DisplayKeyword::Block)
+                    .padding(px(20))
+                    .background_color(hex("#f8f9fa"))
+                    .border(border(px(1), BorderStyleKeyword::Solid, hex("#dee2e6")))
+                    .border_radius(px(12))
+                    .color(hex("#212529"))
+                    .font_size(px(16))
+                    .cursor(CursorKeyword::Pointer)
+                    .on_hover(|s| {
+                        s.background_color(hex("#e9ecef"))
+                            .border_color(hex("#adb5bd"))
+                            .color(hex("#00bfff"))
+                    })
+            )
+        ],
+        p("The builder also supports reactive signals natively:"),
+        {
+            let (count, set_count) = signal(0);
+            div![
+                button("Increase Width").on(event::click, move |_| set_count.update(|n| *n += 1)),
+                div("Reactive Width Box").style(
+                    Style::new()
+                        .width(move || px(150 + count.get() * 20))
+                        .height(px(40))
+                        .background_color(hex("#6200ea"))
+                        .color(hex("#fff"))
+                        .display(DisplayKeyword::Flex)
+                        .margin(margin::all(px(10)))
+                        .padding(padding::all(px(5)))
+                        .border_radius(px(4))
+                )
+            ]
+            .style("display: flex; align-items: center; gap: 10px;")
+        }
     ]
 }
 

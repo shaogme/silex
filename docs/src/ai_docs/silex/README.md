@@ -137,16 +137,34 @@
     *   `SuspenseBoundary` 负责具体的 UI 切换（Hidden vs Fallback）。
 
 ## 5. CSS 工具 (silex::css)
+
 `silex/src/css.rs`
+
+### 5.1 基础注入 (inject_style)
 *   **inject_style(id, content)**: 
     *   检查 `<head>` 中是否存在 `id`。
     *   若不存在，创建 `<style id="...">` 并注入 CSS 内容。
     *   **Idempotent**: 多次调用无副作用。
-*   **silex::css::types & units**:
-    *   提供基于包裹原语（如 `px`, `pct`）的强类型约束机制组合（Type-Safe CSS Tools）。
-    *   结合底层泛型方法如 `make_dynamic_val_for<P, S>` 在编译运行时之间实施 `ValidFor` Trait 的安全性校准。
-    *   **复合类型工厂**: 利用如 `border()` 返回专属 `BorderValue`、或 `margin::all()` 创建多维值，剥离宏对于杂糅属性拆解的负担，依靠 Rust 函数 Trait Bound 进行更具条理的安全约束。
-    *   **显式逃逸 (`UnsafeCss`)**: 废弃泛用 `&str` 的随意通行，通过 `UnsafeCss::new("calc(...)")` 显式标识未知或高级组合边界。
+
+### 5.2 强类型系统 (silex::css::types)
+*   提供基于包裹原语（如 `px`, `pct`）的强类型约束机制组合（Type-Safe CSS Tools）。
+*   结合底层泛型方法如 `make_dynamic_val_for<P, S>` 在编译运行时之间实施 `ValidFor` Trait 的安全性校准。
+*   **复合类型工厂**: 利用如 `border()` 返回专属 `BorderValue`、或 `margin::all()` 创建多维值，剥离宏对于杂糅属性拆解的负担。
+*   **显式逃逸 (`UnsafeCss`)**: 废弃泛用 `&str` 的随意通行，通过 `UnsafeCss::new("calc(...)")` 显式标识未知或高级组合边界。
+
+### 5.3 Type-Safe Builder API (Style Builder)
+`silex/src/css/builder.rs` -> `struct Style`
+
+为追求零宏开销 (Zero Macro Overhead) 和极致类型安全设计的纯 Rust API。
+
+*   **API 形态**: 链式调用，通过 `Style::new()` 或 `sty()` 初始化。
+*   **属性实现**: 通过 `implement_css_properties!` 宏（声明宏而非过程宏，无解析开销）生成强类型 Setter，自动关联 `ValidFor<T>` 约束。
+*   **静态与动态提取 (Static & Dynamic Extraction)**:
+    1.  **静态规则**: 收集所有常量值，计算 `DefaultHasher` 指纹，生成 `.slx-bldr-{hash}` 类名并调用 `inject_style` 提升至 `<head>`。
+    2.  **动态规则**: 收集闭包/信号值，在 `apply` 阶段为每个元素通过 `Effect` 挂载 `inline style`。
+    3.  **伪类处理**: 支持 `on_hover`, `on_active`, `on_focus`。若伪类中包含动态插值，会自动利用 `DynamicStyleManager` 创建实例级类名并由运行时更新该类的 CSS 内容（以在内联样式无法表达伪类的情况下实现响应式）。
+*   **DOM 集成**: 实现了 `ApplyToDom` trait，可直接在 `html::div().style(Style::new())` 中使用。
+
 
 ## 6. 宏支持 (Macros Support)
 

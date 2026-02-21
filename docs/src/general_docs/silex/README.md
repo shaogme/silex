@@ -274,6 +274,35 @@ styled! {
 }
 ```
 
+### 样式构建器 (Style Builder)
+
+除了宏，Silex 还提供了一套纯 Rust 的样式构建 API，适用于希望完全避免过程宏开销、或需要极致类型安全提示的场景。
+
+```rust
+use silex::css::builder::Style;
+use silex::css::types::{px, hex, DisplayKeyword};
+
+let (width, _) = signal(px(200));
+
+div("I am styled by Builder")
+    .style(
+        Style::new()
+            .display(DisplayKeyword::Flex)
+            .width(width) // 支持响应式信号
+            .background_color(hex("#f0f0f0"))
+            .padding(px(20))
+            .on_hover(|s| { // 支持伪类
+                s.background_color(hex("#e0e0e0"))
+                 .color(hex("#00bfff"))
+            })
+    )
+```
+
+**对比优势：**
+*   **零开销**：不使用过程宏进行字符串解析，纯泛型展开，编译速度极快。
+*   **强类型提示**：Rust Analyzer 可以准确提示每一个属性的合法参数（如 `Display` 只能传 `DisplayKeyword` 枚举）。
+*   **智能优化**：静态样式自动提升到 `<head>` 共享，动态样式自动绑定 inline-style 或动态 CSS 类。
+
 ### 属性助手 (`style!`, `classes!`)
 *   `style!`: `div(()).style(style! { "color": "red", "margin": "10px" })`
 *   `classes!`: `div(()).class(classes!["btn", "active" => is_active])`

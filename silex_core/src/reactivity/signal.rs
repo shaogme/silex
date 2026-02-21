@@ -117,6 +117,10 @@ where
     fn into_signal(self) -> Self::Signal {
         self
     }
+
+    fn is_constant_value(&self) -> bool {
+        false
+    }
 }
 
 // --- ReactiveBinary ---
@@ -210,6 +214,10 @@ where
     fn into_signal(self) -> Self::Signal {
         self
     }
+
+    fn is_constant_value(&self) -> bool {
+        false
+    }
 }
 
 // --- Signal 信号 Enum ---
@@ -293,6 +301,13 @@ impl<T: 'static> Signal<T> {
             ptr::copy_nonoverlapping(src_ptr, dst_ptr, mem::size_of::<T>());
             value.assume_init()
         }
+    }
+
+    pub fn is_constant(&self) -> bool {
+        matches!(
+            self,
+            Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _)
+        )
     }
 }
 

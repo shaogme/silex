@@ -375,6 +375,8 @@ pub trait IntoSignal {
     type Signal: With<Value = Self::Value>;
 
     fn into_signal(self) -> Self::Signal;
+
+    fn is_constant_value(&self) -> bool;
 }
 
 macro_rules! impl_into_signal_primitive {
@@ -386,6 +388,10 @@ macro_rules! impl_into_signal_primitive {
 
                 fn into_signal(self) -> Self::Signal {
                     Constant(self)
+                }
+
+                fn is_constant_value(&self) -> bool {
+                    true
                 }
             }
         )*
@@ -403,6 +409,10 @@ impl IntoSignal for String {
     fn into_signal(self) -> Self::Signal {
         Constant(self)
     }
+
+    fn is_constant_value(&self) -> bool {
+        true
+    }
 }
 
 impl IntoSignal for &str {
@@ -411,6 +421,10 @@ impl IntoSignal for &str {
 
     fn into_signal(self) -> Self::Signal {
         Constant(self.to_string())
+    }
+
+    fn is_constant_value(&self) -> bool {
+        true
     }
 }
 
@@ -421,6 +435,10 @@ impl<T: Clone + 'static> IntoSignal for Signal<T> {
     fn into_signal(self) -> Self::Signal {
         self
     }
+
+    fn is_constant_value(&self) -> bool {
+        self.is_constant()
+    }
 }
 
 impl<T: Clone + 'static> IntoSignal for ReadSignal<T> {
@@ -429,6 +447,10 @@ impl<T: Clone + 'static> IntoSignal for ReadSignal<T> {
 
     fn into_signal(self) -> Self::Signal {
         self
+    }
+
+    fn is_constant_value(&self) -> bool {
+        false
     }
 }
 
@@ -439,6 +461,10 @@ impl<T: Clone + 'static> IntoSignal for RwSignal<T> {
     fn into_signal(self) -> Self::Signal {
         self
     }
+
+    fn is_constant_value(&self) -> bool {
+        false
+    }
 }
 
 impl<T: Clone + PartialEq + 'static> IntoSignal for Memo<T> {
@@ -448,6 +474,10 @@ impl<T: Clone + PartialEq + 'static> IntoSignal for Memo<T> {
     fn into_signal(self) -> Self::Signal {
         self
     }
+
+    fn is_constant_value(&self) -> bool {
+        false
+    }
 }
 
 impl<T: Clone + 'static> IntoSignal for Constant<T> {
@@ -456,6 +486,10 @@ impl<T: Clone + 'static> IntoSignal for Constant<T> {
 
     fn into_signal(self) -> Self::Signal {
         self
+    }
+
+    fn is_constant_value(&self) -> bool {
+        true
     }
 }
 
@@ -471,6 +505,10 @@ where
 
     fn into_signal(self) -> Self::Signal {
         Signal::derive(self)
+    }
+
+    fn is_constant_value(&self) -> bool {
+        false
     }
 }
 
@@ -493,6 +531,12 @@ macro_rules! impl_into_signal_tuple {
                 Signal::derive(move || {
                     impl_into_signal_tuple_nest!($($name),+)
                 })
+            }
+
+            fn is_constant_value(&self) -> bool {
+                #[allow(non_snake_case)]
+                let ($($name,)+) = self;
+                $($name.is_constant_value() &&)+ true
             }
         }
     }

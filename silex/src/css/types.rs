@@ -34,6 +34,11 @@ pub mod props {
     pub struct BorderWidth;
     pub struct BorderStyle;
     pub struct BorderColor;
+
+    pub struct BorderRadius;
+    pub struct FontSize;
+    pub struct Cursor;
+    pub struct Gap;
 }
 
 // ==========================================
@@ -169,6 +174,9 @@ impl_valid_for_dimension!(props::Height);
 impl_valid_for_dimension!(props::Margin);
 impl_valid_for_dimension!(props::Padding);
 impl_valid_for_dimension!(props::BorderWidth);
+impl_valid_for_dimension!(props::BorderRadius);
+impl_valid_for_dimension!(props::FontSize);
+impl_valid_for_dimension!(props::Gap);
 
 impl ValidFor<props::ZIndex> for i32 {}
 impl ValidFor<props::ZIndex> for u32 {}
@@ -275,6 +283,34 @@ impl Display for FlexDirectionKeyword {
     }
 }
 impl ValidFor<props::FlexDirection> for FlexDirectionKeyword {}
+
+#[derive(Clone, Copy, Debug)]
+pub enum CursorKeyword {
+    Auto,
+    Default,
+    Pointer,
+    Wait,
+    Text,
+    Move,
+    Help,
+    NotAllowed,
+}
+
+impl Display for CursorKeyword {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Auto => write!(f, "auto"),
+            Self::Default => write!(f, "default"),
+            Self::Pointer => write!(f, "pointer"),
+            Self::Wait => write!(f, "wait"),
+            Self::Text => write!(f, "text"),
+            Self::Move => write!(f, "move"),
+            Self::Help => write!(f, "help"),
+            Self::NotAllowed => write!(f, "not-allowed"),
+        }
+    }
+}
+impl ValidFor<props::Cursor> for CursorKeyword {}
 
 #[derive(Clone, Debug)]
 pub struct Hex(pub String);
@@ -430,6 +466,10 @@ impl ValidFor<props::Border> for UnsafeCss {}
 impl ValidFor<props::BorderWidth> for UnsafeCss {}
 impl ValidFor<props::BorderStyle> for UnsafeCss {}
 impl ValidFor<props::BorderColor> for UnsafeCss {}
+impl ValidFor<props::BorderRadius> for UnsafeCss {}
+impl ValidFor<props::FontSize> for UnsafeCss {}
+impl ValidFor<props::Cursor> for UnsafeCss {}
+impl ValidFor<props::Gap> for UnsafeCss {}
 
 // ==========================================
 // 响应式信号集成 (Reactivity Integration)
@@ -444,6 +484,10 @@ macro_rules! impl_into_signal_for_css {
 
                 fn into_signal(self) -> Self::Signal {
                     silex_core::reactivity::Constant(self)
+                }
+
+                fn is_constant_value(&self) -> bool {
+                    true
                 }
             }
         )*
@@ -467,5 +511,6 @@ impl_into_signal_for_css!(
     Hsl,
     Url,
     BorderValue,
-    UnsafeCss
+    UnsafeCss,
+    CursorKeyword
 );
