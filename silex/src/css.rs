@@ -3,12 +3,20 @@ pub mod registry;
 pub mod types;
 pub use types::UnsafeCss;
 
+use silex_core::reactivity::{Effect, on_cleanup};
 use silex_core::traits::{Get, IntoSignal, With};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable};
 use silex_dom::document;
+use std::cell::RefCell;
+use std::collections::{
+    HashMap,
+    hash_map::{DefaultHasher, Entry},
+};
 use std::fmt::Display;
+use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
+use web_sys::{Element, HtmlElement, Node, SvgElement};
 
 /// Injects a CSS string into the document head with a unique ID.
 /// This function is idempotent: if a style with the given ID already exists, it does nothing.
@@ -37,7 +45,7 @@ pub fn inject_style(id: &str, content: &str) {
     style_el.set_inner_html(content);
 
     // Append to head
-    let style_node: web_sys::Node = style_el.unchecked_into();
+    let style_node: Node = style_el.unchecked_into();
     head.append_child(&style_node)
         .expect("Failed to append style to head");
 }
@@ -46,36 +54,100 @@ pub type CssVariableGetter = Rc<dyn Fn() -> String>;
 
 /// Manages an injected <style> block uniquely for a component instance.
 /// It cleans up the tag when dropped, preventing CSSOM leaks.
+struct DynamicStyleState {
+    ref_count: usize,
+    style_el: Element,
+}
+
+thread_local! {
+    static DYNAMIC_STYLE_REGISTRY: RefCell<HashMap<String, Rc<RefCell<DynamicStyleState>>>> = RefCell::new(HashMap::new());
+}
+
+/// Manages an injected <style> block uniquely for a component instance.
+/// It cleans up the tag when dropped, preventing CSSOM leaks.
 pub struct DynamicStyleManager {
-    style_el: web_sys::Element,
+    id: Option<String>,
+}
+
+impl Default for DynamicStyleManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DynamicStyleManager {
-    pub fn new(id: &str) -> Self {
-        let doc = document();
-        let head = doc.head().expect("No <head> element found in document");
-
-        let style_el = doc
-            .create_element("style")
-            .expect("Failed to create style element");
-
-        style_el.set_id(id);
-
-        let style_node: web_sys::Node = style_el.clone().into();
-        head.append_child(&style_node)
-            .expect("Failed to append style to head");
-
-        Self { style_el }
+    pub fn new() -> Self {
+        Self { id: None }
     }
 
-    pub fn update(&self, content: &str) {
-        self.style_el.set_inner_html(content);
+    pub fn new_with_id(id: &str) -> Self {
+        let mut mgr = Self::new();
+        mgr.update(id, "");
+        mgr
+    }
+
+    pub fn update(&mut self, id: &str, content: &str) {
+        if self.id.as_deref() == Some(id) {
+            return;
+        }
+
+        DYNAMIC_STYLE_REGISTRY.with(|registry| {
+            let mut reg = registry.borrow_mut();
+            let state_rc = reg.entry(id.to_string()).or_insert_with(|| {
+                let doc = document();
+                let head = doc.head().expect("No <head> element found in document");
+
+                let style_el = doc
+                    .create_element("style")
+                    .expect("Failed to create style element");
+
+                style_el.set_id(id);
+                if !content.is_empty() {
+                    style_el.set_inner_html(content);
+                }
+
+                let style_node: Node = style_el.clone().into();
+                head.append_child(&style_node)
+                    .expect("Failed to append style to head");
+
+                Rc::new(RefCell::new(DynamicStyleState {
+                    ref_count: 0,
+                    style_el,
+                }))
+            });
+
+            state_rc.borrow_mut().ref_count += 1;
+        });
+
+        if let Some(old_id) = self.id.take() {
+            Self::release(&old_id);
+        }
+        self.id = Some(id.to_string());
+    }
+
+    fn release(id: &str) {
+        DYNAMIC_STYLE_REGISTRY.with(|registry| {
+            let mut reg = registry.borrow_mut();
+            if let Entry::Occupied(entry) = reg.entry(id.to_string()) {
+                let count = {
+                    let mut state = entry.get().borrow_mut();
+                    state.ref_count -= 1;
+                    state.ref_count
+                };
+                if count == 0 {
+                    let state = entry.remove();
+                    state.borrow().style_el.remove();
+                }
+            }
+        });
     }
 }
 
 impl Drop for DynamicStyleManager {
     fn drop(&mut self) {
-        self.style_el.remove();
+        if let Some(id) = &self.id {
+            Self::release(id);
+        }
     }
 }
 
@@ -93,7 +165,7 @@ pub struct DynamicCss {
 }
 
 impl ApplyToDom for DynamicCss {
-    fn apply(self, el: &web_sys::Element, target: ApplyTarget) {
+    fn apply(self, el: &Element, target: ApplyTarget) {
         // 1. Apply class name (as normal string class)
         // This ensures the element gets the static CSS rules.
         self.class_name.apply(el, target);
@@ -104,13 +176,13 @@ impl ApplyToDom for DynamicCss {
             let name = name.to_string(); // 'static -> String for closure capture
 
             // Create an effect to keep the CSS variable in sync with the signal/expression
-            silex_core::reactivity::Effect::new(move |_| {
+            Effect::new(move |_| {
                 let value = getter();
                 // Attempt to get style declaration from HtmlElement or SvgElement
                 if let Some(style) = el
-                    .dyn_ref::<web_sys::HtmlElement>()
+                    .dyn_ref::<HtmlElement>()
                     .map(|e| e.style())
-                    .or_else(|| el.dyn_ref::<web_sys::SvgElement>().map(|e| e.style()))
+                    .or_else(|| el.dyn_ref::<SvgElement>().map(|e| e.style()))
                 {
                     // Set the CSS variable (e.g., --slx-1234-0: red)
                     let _ = style.set_property(&name, &value);
@@ -120,21 +192,24 @@ impl ApplyToDom for DynamicCss {
 
         // 3. Apply isolated component dynamic rules
         if !self.rules.is_empty() {
-            std::thread_local! {
-                static INSTANCE_COUNTER: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-            }
-            let instance_id = INSTANCE_COUNTER.with(|c| {
-                let id = c.get();
-                c.set(id + 1);
-                id
+            let manager = Rc::new(RefCell::new(Some(DynamicStyleManager::new())));
+            let manager_cleanup = manager.clone();
+            on_cleanup(move || {
+                if let Ok(mut opt_mgr) = manager_cleanup.try_borrow_mut() {
+                    let _ = opt_mgr.take();
+                }
             });
-            let style_id = format!("{}-dyn-{}", self.class_name, instance_id);
 
-            let manager = Rc::new(DynamicStyleManager::new(&style_id));
             let rules = self.rules;
+            let el_clone = el.clone();
+            let base_class = self.class_name;
 
-            silex_core::reactivity::Effect::new(move |_| {
-                let mut combined_css = String::new();
+            Effect::new(move |prev_class: Option<String>| {
+                let mut hasher = DefaultHasher::new();
+                Hash::hash(b"silex-dyn-salt-css-v1", &mut hasher);
+
+                let mut resolved_rules = Vec::new();
+
                 for (template, getters) in &rules {
                     let mut result_rule = template.to_string();
                     for getter in getters {
@@ -143,10 +218,34 @@ impl ApplyToDom for DynamicCss {
                             result_rule.replace_range(pos..pos + 2, &val);
                         }
                     }
-                    combined_css.push_str(&result_rule);
-                    combined_css.push('\n');
+                    Hash::hash(&result_rule, &mut hasher);
+                    resolved_rules.push(result_rule);
                 }
-                manager.update(&combined_css);
+
+                let hash_val = hasher.finish();
+                let dyn_class = format!("{}-dyn-{:x}", base_class, hash_val);
+
+                if Some(&dyn_class) != prev_class.as_ref() {
+                    if let Some(old_class) = &prev_class {
+                        let _ = el_clone.class_list().remove_1(old_class);
+                    }
+                    let _ = el_clone.class_list().add_1(&dyn_class);
+
+                    let mut combined_css = String::new();
+                    for rule in resolved_rules {
+                        let rule_with_dyn_class = rule.replace(base_class, &dyn_class);
+                        combined_css.push_str(&rule_with_dyn_class);
+                        combined_css.push('\n');
+                    }
+
+                    if let Ok(mut opt) = manager.try_borrow_mut()
+                        && let Some(mgr) = opt.as_mut()
+                    {
+                        mgr.update(&dyn_class, &combined_css);
+                    }
+                }
+
+                dyn_class
             });
         }
     }

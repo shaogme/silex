@@ -111,103 +111,75 @@ crate::for_all_properties!(generate_builder_methods);
 
 impl ApplyToDom for Style {
     fn apply(self, el: &web_sys::Element, _target: ApplyTarget) {
-        if !self.static_rules.is_empty()
-            || !self
-                .pseudo_rules
-                .iter()
-                .all(|(_, s)| s.static_rules.is_empty())
-        {
-            let mut hasher = DefaultHasher::new();
-
-            for (k, v) in &self.static_rules {
+        // 1. 生成稳定哈希（忽略动态值，仅对选择器和属性名哈希）
+        let mut hasher = DefaultHasher::new();
+        for (k, v) in &self.static_rules {
+            k.hash(&mut hasher);
+            v.hash(&mut hasher);
+        }
+        for (prop, _) in &self.dynamic_rules {
+            prop.hash(&mut hasher);
+            "dyn-val".hash(&mut hasher); // 动态值占位
+        }
+        for (pseudo, style) in &self.pseudo_rules {
+            pseudo.hash(&mut hasher);
+            for (k, v) in &style.static_rules {
                 k.hash(&mut hasher);
                 v.hash(&mut hasher);
             }
-
-            for (pseudo, style) in &self.pseudo_rules {
-                pseudo.hash(&mut hasher);
-                for (k, v) in &style.static_rules {
-                    k.hash(&mut hasher);
-                    v.hash(&mut hasher);
-                }
-            }
-
-            let hash_val = hasher.finish();
-            let class_name = format!("slx-bldr-{:x}", hash_val);
-
-            let mut css_str = String::new();
-
-            if !self.static_rules.is_empty() {
-                css_str.push_str(&format!(".{} {{\n", class_name));
-                for (k, v) in &self.static_rules {
-                    css_str.push_str(&format!("  {}: {};\n", k, v));
-                }
-                css_str.push_str("}\n");
-            }
-
-            for (pseudo, style) in &self.pseudo_rules {
-                if !style.static_rules.is_empty() {
-                    css_str.push_str(&format!(".{}{} {{\n", class_name, pseudo));
-                    for (k, v) in &style.static_rules {
-                        css_str.push_str(&format!("  {}: {};\n", k, v));
-                    }
-                    css_str.push_str("}\n");
-                }
-            }
-
-            if !css_str.is_empty() {
-                crate::css::inject_style(&class_name, &css_str);
-                let _ = el.class_list().add_1(&class_name);
+            for (prop, _) in &style.dynamic_rules {
+                prop.hash(&mut hasher);
+                "dyn-val".hash(&mut hasher);
             }
         }
+        let hash_val = hasher.finish();
+        let class_base = format!("slx-bldr-{:x}", hash_val);
 
-        for (prop, getter) in self.dynamic_rules {
+        // 2. 构造静态 CSS，动态值使用变量占位
+        let mut css_str = String::new();
+        let mut dyn_bindings = Vec::new();
+
+        css_str.push_str(&format!(".{} {{\n", class_base));
+        for (k, v) in &self.static_rules {
+            css_str.push_str(&format!("  {}: {};\n", k, v));
+        }
+        for (i, (prop, getter)) in self.dynamic_rules.into_iter().enumerate() {
+            let var_name = format!("--sb-{:x}-{}", hash_val, i);
+            css_str.push_str(&format!("  {}: var({});\n", prop, var_name));
+            dyn_bindings.push((var_name, getter));
+        }
+        css_str.push_str("}\n");
+
+        let mut dyn_idx = dyn_bindings.len();
+        for (pseudo, style) in self.pseudo_rules {
+            css_str.push_str(&format!(".{}{} {{\n", class_base, pseudo));
+            for (k, v) in style.static_rules {
+                css_str.push_str(&format!("  {}: {};\n", k, v));
+            }
+            for (prop, getter) in style.dynamic_rules {
+                let var_name = format!("--sb-{:x}-{}", hash_val, dyn_idx);
+                css_str.push_str(&format!("  {}: var({});\n", prop, var_name));
+                dyn_bindings.push((var_name, getter));
+                dyn_idx += 1;
+            }
+            css_str.push_str("}\n");
+        }
+
+        // 3. 注入样式并添加类名
+        crate::css::inject_style(&class_base, &css_str);
+        let _ = el.class_list().add_1(&class_base);
+
+        // 4. 建立极轻量更新 Effect (只有 style.setProperty)
+        for (var_name, getter) in dyn_bindings {
             let el_clone = el.clone();
-
             silex_core::reactivity::Effect::new(move |_| {
-                let v = getter();
                 if let Some(style) = el_clone
                     .dyn_ref::<web_sys::HtmlElement>()
                     .map(|e| e.style())
                     .or_else(|| el_clone.dyn_ref::<web_sys::SvgElement>().map(|e| e.style()))
                 {
-                    let _ = style.set_property(prop, &v);
+                    let _ = style.set_property(&var_name, &getter());
                 }
-            });
-        }
-
-        let dyn_pseudo: Vec<_> = self
-            .pseudo_rules
-            .into_iter()
-            .filter(|(_, s)| !s.dynamic_rules.is_empty())
-            .map(|(p, s)| (p, s.dynamic_rules))
-            .collect();
-
-        if !dyn_pseudo.is_empty() {
-            std::thread_local! {
-                static INSTANCE_COUNTER: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-            }
-            let instance_id = INSTANCE_COUNTER.with(|c| {
-                let id = c.get();
-                c.set(id + 1);
-                id
-            });
-            let dyn_class = format!("slx-bldr-dyn-{}", instance_id);
-            let _ = el.class_list().add_1(&dyn_class);
-
-            let manager = std::rc::Rc::new(crate::css::DynamicStyleManager::new(&dyn_class));
-
-            silex_core::reactivity::Effect::new(move |_| {
-                let mut combined_css = String::new();
-                for (pseudo, rules) in &dyn_pseudo {
-                    combined_css.push_str(&format!(".{}{} {{\n", dyn_class, pseudo));
-                    for (prop, getter) in rules {
-                        let val = getter();
-                        combined_css.push_str(&format!("  {}: {};\n", prop, val));
-                    }
-                    combined_css.push_str("}\n");
-                }
-                manager.update(&combined_css);
             });
         }
     }

@@ -218,16 +218,13 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let mut dynamic_rule_effects = Vec::new();
     if !dynamic_rules.is_empty() {
         dynamic_rule_effects.push(quote! {
-            ::std::thread_local! {
-                static INSTANCE_COUNTER: ::std::cell::Cell<usize> = const { ::std::cell::Cell::new(0) };
-            }
-            let instance_id = INSTANCE_COUNTER.with(|c| {
-                let id = c.get();
-                c.set(id + 1);
-                id
+            let manager = ::std::rc::Rc::new(::std::cell::RefCell::new(Some(::silex::css::DynamicStyleManager::new())));
+            let manager_cleanup = manager.clone();
+            ::silex::core::reactivity::on_cleanup(move || {
+                if let Ok(mut opt_mgr) = manager_cleanup.try_borrow_mut() {
+                    let _ = opt_mgr.take();
+                }
             });
-            let dyn_style_id = format!("{}-dyn-{}", #class_name, instance_id);
-            let manager = ::std::rc::Rc::new(::silex::css::DynamicStyleManager::new(&dyn_style_id));
         });
 
         let mut dyn_var_decls = Vec::new();
@@ -257,20 +254,49 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
                             result_rule.replace_range(pos..pos+2, &val);
                         }
                     }
-                    combined_css.push_str(&result_rule);
-                    combined_css.push('\n');
+                    ::std::hash::Hash::hash(&result_rule, &mut hasher);
+                    resolved_rules.push(result_rule);
                 }
             });
         }
 
+        // We do not push Effect::new here. Instead, we generate dynamic_class_binding.
+        let dynamic_class_binding = quote! {
+            .class({
+                let manager = manager.clone();
+                move || {
+                    let mut hasher = ::std::collections::hash_map::DefaultHasher::new();
+                    ::std::hash::Hash::hash(b"silex-dyn-salt-css-v1", &mut hasher);
+
+                    let mut resolved_rules = ::std::vec::Vec::new();
+                    #(#template_blocks)*
+
+                    let hash_val = ::std::hash::Hasher::finish(&hasher);
+                    let dyn_class = format!("{}-dyn-{:x}", #class_name, hash_val);
+
+                    let mut combined_css = ::std::string::String::new();
+                    for rule in resolved_rules {
+                        let rule_with_dyn_class = rule.replace(#class_name, &dyn_class);
+                        combined_css.push_str(&rule_with_dyn_class);
+                        combined_css.push('\n');
+                    }
+
+                    if let Ok(mut opt) = manager.try_borrow_mut() {
+                        if let Some(mgr) = opt.as_mut() {
+                            mgr.update(&dyn_class, &combined_css);
+                        }
+                    }
+
+                    dyn_class
+                }
+            })
+        };
+
         dynamic_rule_effects.push(quote! {
             #(#dyn_var_decls)*
-            ::silex::core::reactivity::Effect::new(move |_| {
-                let mut combined_css = ::std::string::String::new();
-                #(#template_blocks)*
-                manager.update(&combined_css);
-            });
         });
+
+        variant_class_bindings.push(dynamic_class_binding);
     }
 
     let expanded = quote! {
