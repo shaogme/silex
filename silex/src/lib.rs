@@ -47,9 +47,11 @@ pub mod prelude {
 
     // Export CSS types for easier use in styled! / css! macros
     pub use crate::css::types::{
-        BorderStyleKeyword, BorderValue, CursorKeyword, DisplayKeyword, FlexDirectionKeyword, Hex,
-        Hsl, Percent, PositionKeyword, Px, Rem, Rgba, UnsafeCss, Url, Vh, Vw, border, hex, hsl,
-        margin, padding, pct, px, rem, rgba, url, vh, vw,
+        AlignItemsKeyword, BorderStyleKeyword, BorderValue, CursorKeyword, DisplayKeyword,
+        FlexDirectionKeyword, FlexWrapKeyword, FontWeightKeyword, Hex, Hsl, JustifyContentKeyword,
+        OverflowKeyword, Percent, PointerEventsKeyword, PositionKeyword, Px, Rem, Rgba,
+        TextAlignKeyword, UnsafeCss, Url, Vh, VisibilityKeyword, Vw, border, hex, hsl, margin,
+        padding, pct, px, rem, rgba, url, vh, vw,
     };
 
     pub use crate::css::builder::{Style, sty};

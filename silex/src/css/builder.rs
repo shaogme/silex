@@ -103,8 +103,42 @@ implement_css_properties! {
     (border_color, "border-color", props::BorderColor),
     (border_radius, "border-radius", props::BorderRadius),
     (font_size, "font-size", props::FontSize),
+    (font_weight, "font-weight", props::FontWeight),
+    (letter_spacing, "letter-spacing", props::LetterSpacing),
+    (line_height, "line-height", props::LineHeight),
+    (text_align, "text-align", props::TextAlign),
+    (text_decoration, "text-decoration", props::TextDecoration),
     (cursor, "cursor", props::Cursor),
     (gap, "gap", props::Gap),
+
+    (align_items, "align-items", props::AlignItems),
+    (justify_content, "justify-content", props::JustifyContent),
+    (flex_wrap, "flex-wrap", props::FlexWrap),
+    (flex_grow, "flex-grow", props::FlexGrow),
+    (flex_shrink, "flex-shrink", props::FlexShrink),
+    (flex_basis, "flex-basis", props::FlexBasis),
+
+    (top, "top", props::Top),
+    (left, "left", props::Left),
+    (right, "right", props::Right),
+    (bottom, "bottom", props::Bottom),
+
+    (opacity, "opacity", props::Opacity),
+    (visibility, "visibility", props::Visibility),
+    (pointer_events, "pointer-events", props::PointerEvents),
+
+    (overflow, "overflow", props::Overflow),
+    (overflow_x, "overflow-x", props::OverflowX),
+    (overflow_y, "overflow-y", props::OverflowY),
+
+    (transition, "transition", props::Transition),
+    (transform, "transform", props::Transform),
+    (box_shadow, "box-shadow", props::BoxShadow),
+    (backdrop_filter, "backdrop-filter", props::BackdropFilter),
+    (filter, "filter", props::Filter),
+
+    (background, "background", props::Background),
+    (outline, "outline", props::Outline),
 }
 
 impl ApplyToDom for Style {

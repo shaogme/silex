@@ -11,6 +11,25 @@ pub struct UserSettings {
 }
 
 styled! {
+    pub DemoCard<div>(children: Children) {
+        background: rgba(30, 30, 35, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        padding: 32px;
+        margin: 24px 0;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(12px);
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+
+        &:hover {
+            transform: translateY(-4px);
+            border-color: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+        }
+    }
+}
+
+styled! {
     pub StyledButton<button>(
         children: Children,
         #[prop(into)] color: Signal<Hex>,
@@ -20,24 +39,36 @@ styled! {
         #[prop(into)] border_style: Signal<BorderValue>,
         #[prop(into)] padding_val: Signal<UnsafeCss>,
     ) {
-        background-color: rgb(98, 0, 234);
+        background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
         color: $(color);
         border: $(border_style);
-        margin: $(margin::x_y(px(4), px(0)));
+        margin: $(margin::x_y(px(8), px(0)));
         padding: $(padding_val);
-        border-radius: 4px;
+        border-radius: 10px;
+        font-weight: 600;
+        letter-spacing: 0.3px;
         cursor: pointer;
-        transition: transform 0.1s, color 0.2s, padding 0.2s, font-size 0.2s, background-color 0.2s;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.3);
+        outline: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
 
         &:$(pseudo_state) {
-            background-color: $(hover_color);
-            transform: scale(1.05);
+            background: $(hover_color);
+            transform: translateY(-2px) scale(1.03);
+            box-shadow: 0 8px 25px rgba(168, 85, 247, 0.4);
+        }
+
+        &:active {
+            transform: translateY(0) scale(0.98);
         }
 
         variants: {
             size: {
-                small: { font-size: 12px; }
-                medium: { font-size: 14px; }
+                small: { font-size: 13px; }
+                medium: { font-size: 15px; }
                 large: { font-size: 18px; }
             }
         }
@@ -48,104 +79,121 @@ styled! {
 pub fn CssDemo() -> impl View {
     let (color, set_color) = signal(hex("#ffffff"));
     let (size, set_size) = signal("medium".to_string());
-    let (hover_color, set_hover_color) = signal(hex("#3700b3"));
+    let (hover_color, set_hover_color) = signal(hex("#4f46e5"));
     let (pseudo_state, set_pseudo_state) = signal("hover".to_string());
     let (border_state, set_border_state) =
-        signal(border(px(2), BorderStyleKeyword::Solid, hex("#3700b3")));
-    let (padding_state, set_padding_state) = signal(padding::x_y(px(8), px(16)));
+        signal(border(px(2), BorderStyleKeyword::Solid, hex("transparent")));
+    let (padding_state, set_padding_state) = signal(padding::x_y(px(12), px(24)));
 
     div![
-        h3("CSS-in-Rust Demo"),
-        p(
-            "The button below is styled using the `styled!` macro with scoped styles, dynamic CSS variables (color), static variants (size), and NEW factory functions (border) & builders (margin/padding)!"
-        ),
-        StyledButton()
-            .children("Scoped Style Button")
-            .color(color)
-            .size(size)
-            .hover_color(hover_color)
-            .pseudo_state(pseudo_state)
-            .border_style(border_state)
-            .padding_val(padding_state)
-            .on(event::click, move |_| {
-                set_color.update(|c| {
-                    *c = if c.0 == "#ffffff" {
-                        hex("#ffd700")
-                    } else {
-                        hex("#ffffff")
-                    }
-                });
-                set_size.update(|s| {
-                    *s = if *s == "medium" {
-                        "large".to_string()
-                    } else {
-                        "medium".to_string()
-                    }
-                });
-                set_border_state.update(|b| {
-                    *b = border(px(2), BorderStyleKeyword::Dashed, hex("#ff4081"));
-                });
-                set_padding_state.update(|p| {
-                    *p = padding::x_y(px(12), px(24));
-                });
-                set_hover_color.update(|c| {
-                    *c = if c.0 == "#3700b3" {
-                        hex("#ff4081") // Vibrant pinkish hue
-                    } else {
-                        hex("#3700b3")
-                    }
-                });
-                set_pseudo_state.update(|s| {
-                    *s = if *s == "hover" {
-                        "active".to_string()
-                    } else {
-                        "hover".to_string()
-                    }
-                });
-                console_log("Clicked! Toggled styles and dynamic rules.");
-            }),
-        hr().style("margin: 30px 0; border: none; border-top: 1px solid #eee;"),
-        h3("Type-Safe Style Builder Demo"),
-        p(
-            "This section demonstrates the new pure Rust Style Builder API. It provides a chainable, type-safe way to define styles without macro overhead, while still supporting reactivity and pseudo-classes."
-        ),
         div![
-            span("Hover me!").style(
-                Style::new()
-                    .display(DisplayKeyword::Block)
-                    .padding(px(20))
-                    .background_color(hex("#f8f9fa"))
-                    .border(border(px(1), BorderStyleKeyword::Solid, hex("#dee2e6")))
-                    .border_radius(px(12))
-                    .color(hex("#212529"))
-                    .font_size(px(16))
-                    .cursor(CursorKeyword::Pointer)
-                    .on_hover(|s| {
-                        s.background_color(hex("#e9ecef"))
-                            .border_color(hex("#adb5bd"))
-                            .color(hex("#00bfff"))
-                    })
-            )
-        ],
-        p("The builder also supports reactive signals natively:"),
-        {
-            let (count, set_count) = signal(0);
+            h2("✨ CSS-in-Rust"),
+            p("Experience the power of scoped, type-safe, and reactive styling in pure Rust.")
+                .style("opacity: 0.7; font-size: 1.1em;"),
+        ].style("margin-bottom: 40px;"),
+
+        DemoCard().children((
+            h3("Atomic & Scoped Styles"),
+            p(
+                "The button below demonstrates the `styled!` macro with dynamic interpolation, variants, and factory functions."
+            ).style("margin-bottom: 24px; color: #9ca3af;"),
+            StyledButton()
+                .children("Interactive Button")
+                .color(color)
+                .size(size)
+                .hover_color(hover_color)
+                .pseudo_state(pseudo_state)
+                .border_style(border_state)
+                .padding_val(padding_state)
+                .on(event::click, move |_| {
+                    set_color.update(|c| {
+                        *c = if c.0 == "#ffffff" {
+                            hex("#fbbf24") // Amber 400
+                        } else {
+                            hex("#ffffff")
+                        }
+                    });
+                    set_size.update(|s| {
+                        *s = if *s == "medium" {
+                            "large".to_string()
+                        } else {
+                            "medium".to_string()
+                        }
+                    });
+                    set_border_state.update(|b| {
+                        *b = border(px(2), BorderStyleKeyword::Dashed, hex("#f472b6"));
+                    });
+                    set_padding_state.update(|p| {
+                        *p = padding::x_y(px(16), px(32));
+                    });
+                    set_hover_color.update(|c| {
+                        *c = if c.0 == "#4f46e5" {
+                            hex("#ec4899") // Pink 500
+                        } else {
+                            hex("#4f46e5")
+                        }
+                    });
+                    set_pseudo_state.update(|s| {
+                        *s = if *s == "hover" {
+                            "active".to_string()
+                        } else {
+                            "hover".to_string()
+                        }
+                    });
+                    console_log("Styles and dynamic rules updated!");
+                }),
+        )),
+
+        DemoCard().children((
+            h3("Type-Safe Style Builder"),
+            p(
+                "A chainable, type-safe API for defining styles without macros, supporting full reactivity."
+            ).style("margin-bottom: 24px; color: #9ca3af;"),
             div![
-                button("Increase Width").on(event::click, move |_| set_count.update(|n| *n += 1)),
-                div("Reactive Width Box").style(
+                span("Hover to Reveal Effects").style(
                     Style::new()
-                        .width(move || px(150 + count.get() * 20))
-                        .height(px(40))
-                        .background_color(hex("#6200ea"))
-                        .color(hex("#fff"))
-                        .display(DisplayKeyword::Flex)
-                        .margin(margin::all(px(10)))
-                        .padding(padding::all(px(5)))
-                        .border_radius(px(4))
+                        .display(DisplayKeyword::InlineBlock)
+                        .padding(padding::x_y(px(24), px(40)))
+                        .background_color(hex("#1e1e24"))
+                        .border(border(px(1), BorderStyleKeyword::Solid, hex("#374151")))
+                        .border_radius(px(16))
+                        .color(hex("#e5e7eb"))
+                        .font_size(px(16))
+                        .font_weight(600)
+                        .cursor(CursorKeyword::Pointer)
+                        .transition("all 0.4s ease")
+                        .on_hover(|s| {
+                            s.background_color(hex("#312e81"))
+                                .border_color(hex("#6366f1"))
+                                .color(hex("#ffffff"))
+                                .transform("scale(1.05) rotate(1deg)")
+                        })
                 )
-            ]
-            .style("display: flex; align-items: center; gap: 10px;")
-        }
+            ],
+            p("Signals are natively supported in the builder:").style("margin: 20px 0 10px; font-size: 0.9em; opacity: 0.6;"),
+            {
+                let (count, set_count) = signal(0);
+                div![
+                    button("Grow").on(event::click, move |_| set_count.update(|n| *n += 1))
+                        .style("padding: 8px 16px; border-radius: 6px; border: 1px solid #374151; background: #111827; color: white; cursor: pointer;"),
+                    div(move || format!("Reactive Width: {}px", 180 + count.get() * 30)).style(
+                        Style::new()
+                            .width(move || px(180 + count.get() * 30))
+                            .height(px(48))
+                            .background("linear-gradient(90deg, #4f46e5, #9333ea)")
+                            .color(hex("#fff"))
+                            .display(DisplayKeyword::Flex)
+                            .align_items(AlignItemsKeyword::Center)
+                            .justify_content(JustifyContentKeyword::Center)
+                            .margin(margin::left(px(16)))
+                            .border_radius(px(12))
+                            .box_shadow("0 4px 12px rgba(79, 70, 229, 0.3)")
+                            .transition("width 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)")
+                    )
+                ]
+                .style("display: flex; align-items: center;")
+            }
+        )),
     ]
 }
 
