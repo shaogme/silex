@@ -209,7 +209,7 @@ pub fn CssDemo() -> impl View {
                     button("Grow").on(event::click, move |_| set_count.update(|n| *n += 1))
                         .style("padding: 8px 16px; border-radius: 6px; border: 1px solid #374151; background: #111827; color: white; cursor: pointer;"),
                     div(move || format!("Reactive Width: {}px", 180 + count.get() * 30)).style(
-                        Style::new()
+                        sty()
                             .width(move || px(180 + count.get() * 30))
                             .height(px(48))
                             .background("linear-gradient(90deg, #4f46e5, #9333ea)")
@@ -656,32 +656,57 @@ pub fn ThemeDemo() -> impl View {
         h3("🎨 Real-time Theme Engine"),
         p("Define CSS variables via Rust structs and propagate them through the component tree.")
             .style("color: #6b7280; margin-bottom: 24px;"),
-
         div![
             button("🌞 Light Mode")
                 .on(event::click, move |_| set_theme.set(default_light_theme()))
-                .style(move || {
-                    let active = !is_dark.get();
-                    let base = "padding: 8px 16px; border-radius: 6px; cursor: pointer; transition: all 0.2s; margin-right: 12px;";
-                    if active {
-                        format!("{} background: #6366f1; color: white; border: 1px solid #6366f1;", base)
-                    } else {
-                        format!("{} background: #f3f4f6; color: #374151; border: 1px solid #d1d5db;", base)
-                    }
-                }),
+                .style(
+                    sty()
+                        .padding(padding::x_y(px(8), px(16)))
+                        .border_radius(px(6))
+                        .cursor(CursorKeyword::Pointer)
+                        .transition("all 0.2s")
+                        .margin(margin::right(px(12)))
+                        .background_color(move || if !is_dark.get() {
+                            hex("#6366f1")
+                        } else {
+                            hex("#f3f4f6")
+                        })
+                        .color(move || if !is_dark.get() {
+                            hex("#ffffff")
+                        } else {
+                            hex("#374151")
+                        })
+                        .border(move || if !is_dark.get() {
+                            border(px(1), BorderStyleKeyword::Solid, hex("#6366f1"))
+                        } else {
+                            border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db"))
+                        })
+                ),
             button("🌙 Dark Mode")
                 .on(event::click, move |_| set_theme.set(default_dark_theme()))
-                .style(move || {
-                    let active = is_dark.get();
-                    let base = "padding: 8px 16px; border-radius: 6px; cursor: pointer; transition: all 0.2s;";
-                    if active {
-                        format!("{} background: #4f46e5; color: white; border: 1px solid #4f46e5;", base)
-                    } else {
-                        format!("{} background: #f3f4f6; color: #374151; border: 1px solid #d1d5db;", base)
-                    }
-                }),
+                .style(
+                    sty()
+                        .padding(padding::x_y(px(8), px(16)))
+                        .border_radius(px(6))
+                        .cursor(CursorKeyword::Pointer)
+                        .transition("all 0.2s")
+                        .background_color(move || if is_dark.get() {
+                            hex("#4f46e5")
+                        } else {
+                            hex("#f3f4f6")
+                        })
+                        .color(move || if is_dark.get() {
+                            hex("#ffffff")
+                        } else {
+                            hex("#374151")
+                        })
+                        .border(move || if is_dark.get() {
+                            border(px(1), BorderStyleKeyword::Solid, hex("#4f46e5"))
+                        } else {
+                            border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db"))
+                        })
+                ),
         ],
-
         // Use apply to inject theme variables
         ThemePreviewCard().apply(theme_variables(theme)).children((
             h4("Dynamic Component Style"),

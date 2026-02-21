@@ -269,15 +269,16 @@ pub fn HybridDemo() -> impl View {
 
             button(is_active.map(|v| if *v { "Deactivate" } else { "Activate" }))
                 .on(event::click, move |_| set_active.update(|v| *v = !*v))
-                // Dynamic styling with builder pattern
-                .style(is_active.map(|v| {
-                    if *v {
-                        "background-color: #ef5350; color: white;"
-                    } else {
-                        "background-color: #66bb6a; color: white;"
-                    }
-                }))
-                .style("padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.2s;")
+                // Dynamic styling with type-safe builder pattern based on signal
+                .style(sty()
+                    .background_color(move || if is_active.get() { hex("#ef5350") } else { hex("#66bb6a") })
+                    .color(hex("#ffffff"))
+                    .padding(padding::x_y(px(8), px(16)))
+                    .border(border(px(0), BorderStyleKeyword::None, hex("transparent")))
+                    .border_radius(px(4))
+                    .cursor(CursorKeyword::Pointer)
+                    .transition("background-color 0.2s")
+                )
         ]
     ]
     .style("padding: 20px; border: 1px solid #d1c4e9; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);")
