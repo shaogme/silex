@@ -117,7 +117,10 @@ let cls = css!(r#"
 ```
 
 **底层解析重构 (AST-driven Compiler)**：
-`css!` 的内部机制基于强大的强类型解析引擎。首先由专用语法解析树（`ast.rs`）利用 `syn` 将零散输入提取为 `CssDeclaration`、`CssNested` 等语法单元节点；其次交由 `CssCompiler` 进行词法抽离。这种方式不仅对错误语法容错和检查提出了极高水准，也将局部更新和静态压缩的渲染职责彻底一分为二，奠定了强大的动态注入能力。
+`css!` 的内部机制基于强大的强类型解析引擎。首先由专用语法解析树（`ast.rs`）利用 `syn` 将输入 Token 流递归解析为 `CssDeclaration`、`CssNested` 及 `CssAtRule`（支持 `@media` 等）语法单元。其次交由 `CssCompiler` 进行语义提取：
+*   **静态压缩**：通过 `lightningcss` 进行极致压缩和语法验证。
+*   **Token 间隙优化**：编译器内置了智能间隙提取逻辑，确保诸如 `font-family` 或自定义值中的标识符与字面量之间保留正确的空格。
+*   **自动类型映射**：宏会自动将 kebab-case 的属性名（如 `background-color`）映射到运行时的 PascalCase 类型标签（如 `props::BackgroundColor`），实现无感知识库同步的编译期验证。
 
 ## 3. 样式组件 (`styled!`)
 

@@ -247,6 +247,7 @@ let cls = css!("
 ");
 div("Hello").class(cls)
 ```
+**性能注记：** 所有的动态插值 $(...) 现在都通过 **CSS 变量 (CSS Variables)** 进行高效更新。这意味着当信号变化时，框架仅调用一次极轻量的 `style.setProperty`，而无需重新生成 CSS 类或操作 DOM 结构，在高频更新场景下性能表现极其卓越。
 
 **复杂复合类型（工厂与 Builders）：**
 使用专用模块工厂快速安全打包例如 `margin`，`border` 等复合元素。
@@ -301,7 +302,7 @@ div("I am styled by Builder")
 **对比优势：**
 *   **零开销**：不使用过程宏进行字符串解析，纯泛型展开，编译速度极快。
 *   **强类型提示**：Rust Analyzer 可以准确提示每一个属性的合法参数（如 `Display` 只能传 `DisplayKeyword` 枚举）。
-*   **智能优化**：静态样式自动提升到 `<head>` 共享，动态样式自动绑定 inline-style 或动态 CSS 类。
+*   **CSS 变量级优化**：静态样式自动提升到 `<head>` 共享；动态属性自动绑定为 CSS 变量，通过响应式 Effect 进行原子化更新，避免重绘抖动。
 
 ### 属性助手 (`style!`, `classes!`)
 *   `style!`: `div(()).style(style! { "color": "red", "margin": "10px" })`

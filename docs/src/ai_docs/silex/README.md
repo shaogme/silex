@@ -161,7 +161,7 @@
 *   **属性实现**: 通过 `implement_css_properties!` 宏（声明宏而非过程宏，无解析开销）生成强类型 Setter，自动关联 `ValidFor<T>` 约束。
 *   **静态与动态提取 (Static & Dynamic Extraction)**:
     1.  **静态规则**: 收集所有常量值，计算 `DefaultHasher` 指纹，生成 `.slx-bldr-{hash}` 类名并调用 `inject_style` 提升至 `<head>`。
-    2.  **动态规则**: 收集闭包/信号值，在 `apply` 阶段为每个元素通过 `Effect` 挂载 `inline style`。
+    2.  **动态规则 (CSS 变量优化)**: 收集闭包/信号值，在渲染时为属性分配 CSS 变量名（如 `--sb-{hash}-{index}`）。在 `Effect` 中通过 `style.set_property` 原子化更新该变量。该方案保证了在高频场景下（如拖拽、动画）最低的渲染负载。
     3.  **伪类处理**: 支持 `on_hover`, `on_active`, `on_focus`。若伪类中包含动态插值，会自动利用 `DynamicStyleManager` 创建实例级类名并由运行时更新该类的 CSS 内容（以在内联样式无法表达伪类的情况下实现响应式）。
 *   **DOM 集成**: 实现了 `ApplyToDom` trait，可直接在 `html::div().style(Style::new())` 中使用。
 

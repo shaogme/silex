@@ -68,8 +68,12 @@ src/
 实现了 CSS-in-Rust 的核心逻辑，由重构后的强类型解析和编译引擎支撑。
 
 **核心流程**：
-1.  **AST 解析 (`ast.rs`)**：利用 `syn::parse` 将原生的输入 TokenStream 逐层解析为结构化的抽象语法树实体，例如 `CssBlock`, `CssRule`, `CssDeclaration`, `CssNested` 和 `CssAtRule`。区分了静态语法单元（`CssValue::Static`）和动态插值（`CssValue::Dynamic`）。
+1.  **AST 解析 (`ast.rs`)**：利用 `syn::parse` 将原生的输入 TokenStream 逐层解析为结构化的抽象语法树实体，包括 `CssBlock`, `CssRule`, `CssDeclaration`, `CssNested` 和 `CssAtRule`。它现在完整支持：
+    *   **@-Rules**: 如 `@media` 块的递归解析。
+    *   **动态选择器**: 允许在选择器中使用 `$(expr)`，例如 `&:$(state)`。
+    *   **分号容错**: 允许块级最后一条声明省略分号。
 2.  **语义遍历与萃取 (`compiler.rs`)**：负责遍历上述的 AST 节点树：
+    *   **智能空格恢复**: 在将 TokenStream 转回 CSS 字符串时，通过 `append_token_stream_strings` 逻辑，在 Ident/Literal 之间自动补全必要的空格，解决诸如 `1px solid black` 连词的问题。
     *   剥离并拼接所有的静态 Token 构筑核心的基础 CSS 字符串。
     *   将动态插值 `$(expr)` 连同其所在的上下文依赖属性名抽出，合并到表达式等待队列，而在静态模板处留下形如 `--slx-tmp-{index}` 的占位符。
     *   **动态分块提取 (Dynamic Extract)**：若是遇上含有选区级或是特殊动态参数的 `Nested` Node 时，其块信息会被剥出并作为一个隔离并支持动态重组的 `DynamicRule` 元组模板，待运行时动态注入以破除原生 CSS 原生局限。
@@ -78,10 +82,10 @@ src/
 5.  **语法校验与极致压缩 (Minification)**：调用外部强引擎 `lightningcss` 对此静态 CSS 解析，实施语法层验证和体积极优化。
 6.  **代码出码和多态校验体系**：
     *   生成调用 `silex::css::inject_style` 的代码注入静态 CSS。
+    *   **自动属性映射**: 通过 `get_prop_type` 函数，宏自动执行 `kebab-case` -> `PascalCase` 转换。这意味着宏不需要硬编码属性列表，而是直接尝试寻找 `::silex::css::types::props` 下对应的 ZST 标签，将验证职责解耦。
     *   返回 `silex::css::DynamicCss` 结构体，该结构体实现了 `ApplyToDom`。
-    *   **Codegen 类型注入**：通过宏代码生成将捕获的属性标量（例如 `width` 获取到强类型 `Width`），进而在闭包生成中使用例如 `make_dynamic_val_for::<silex::css::types::props::Width, _>` 进行多态 Trait Bounds (`ValidFor<P>`) 限制。如果使用了不被接受的基础类型或未提供单位将会在触发编译级别的强类型安全异常错误。
-    *   **强拦截与显式越权 (`UnsafeCss`)**: 废除了一切 `String`、`&str` 及 `impl Display` 到统配属性的兜底放行。要插入例如 `calc()` 等未全面类型化的表达式片段，只能严格包装进 `UnsafeCss::new()` 显式表示放弃安全审查。
-    *   **复合类型重构支持**: 将复杂如 `margin: 10px 20px` 以及 `border: 1px solid black` 的安全组装抽离到非宏层的 Rust `const fns` 工厂与 Builder 系统中，宏只负责安全单点取值。
+    *   **Codegen 类型注入**：通过宏代码生成将捕获的属性标量（例如 `width` 获取到由 `get_prop_type` 转换后的强类型 `props::Width`），进而实施多态 Trait Bounds (`ValidFor<P>`) 限制。
+    *   **强拦截与显式越权 (`UnsafeCss`)**: 废弃泛用 `&str` 的放行，若需越过类型检查，必须显式包装进 `UnsafeCss::new()`。
 
 ### 4.3 路由宏 `#[derive(Route)]` (`route.rs`)
 
