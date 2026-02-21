@@ -5,5 +5,17 @@
         "-webkit-text-stroke",
         "-webkit-text-stroke-color",
         "-webkit-text-stroke-width"
-    ]
+    ],
+    "groups": {
+        "display": "Keyword",
+        "position": "Keyword",
+        "width": "Dimension",
+        "height": "Dimension",
+        "top": "Dimension",
+        "bottom": "Dimension",
+        "left": "Dimension",
+        "right": "Dimension",
+        "max-width": "Dimension",
+        "min-width": "Dimension"
+    }
 }

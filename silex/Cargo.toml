@@ -24,3 +24,6 @@ wasm-bindgen-futures.workspace = true
 [features]
 default = ["macros"]
 macros = ["silex_macros"]
+
+[dev-dependencies]
+trybuild = "1.0"
