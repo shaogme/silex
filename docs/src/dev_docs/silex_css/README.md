@@ -25,7 +25,13 @@
 ```text
 src/
 ├── builder.rs          // 零宏 Style 构建器系统
-├── types.rs            // 强类型属性 (props)、单位 (units) 及 ValidFor 验证 trait
+├── types/              // 强类型属性与单位系统
+│   ├── units.rs        // 基础 CSS 单位 (Px, Rem等)
+│   ├── calc.rs         // 计算属性 (calc, min, max, clamp) 及运算符重载
+│   ├── shorthands.rs   // 复合属性工厂 (Border, Margin等)
+│   ├── gradients.rs    // 渐变生成器 DSL
+│   └── reactivity.rs   // 响应式信号 IntoSignal 集成
+├── types.rs            // 类型系统入口，定义 ValidFor trait 与属性注册宏
 ├── theme.rs            // 主题上下文集成与变量同步逻辑
 ├── runtime/
 │   ├── registry.rs     // 全局样式表注册表 (Static & Document Registry)
@@ -52,7 +58,14 @@ impl ValidFor<props::Width> for Percent {}
 ```
 这种设计利用了 Rust 的类型系统实现了“非法状态不可表示”。
 
-### 4.2 零宏构建器逻辑 (`builder.rs`)
+### 4.2 运算符重载与计算表达式 (`calc.rs`)
+为了提供原生的 CSS 计算体验，`silex_css` 针对标量类型（如 `Px`, `Rem`）重载了算术运算符：
+- **运算符重载**：`px(100) + rem(2)` 会在编译期生成一个 `CalcValue<LengthMark>`，其内部字符串为 `(100px + 2rem)`。
+- **计算函数**：支持 `calc()`, `min()`, `max()`, `clamp()`。
+    - `clamp(px(100), pct(50), px(500))` -> `clamp(100px, 50%, 500px)`。
+- **数学安全**：通过 `LengthMark`, `AngleMark` 等标记，防止将长度与角度进行错误的算术运算。
+
+### 4.3 零宏构建器逻辑 (`builder.rs`)
 `Style` 构建器在执行 `apply_to_element` 时会经历以下步骤：
 1.  **稳定哈希**：对所有的属性名和静态值进行哈希，生成唯一的 `class_base`。
 2.  **CSS 生成与变量占位**：
@@ -60,7 +73,7 @@ impl ValidFor<props::Width> for Percent {}
     *   动态值（信号）被替换为 `--sb-<hash>-<index>` 格式的 CSS 变量名。
 3.  **原子更新 Effect**：为每个动态值启动一个极轻量的 `Effect`，该 Effect **不触碰** CSSOM 树，只调用 `style.set_property` 修改当前元素的变量值。
 
-### 4.3 文档注册表同步 (`runtime/registry.rs`)
+### 4.4 文档注册表同步 (`runtime/registry.rs`)
 为了避免高频插入样式表导致的布局抖动（Layout Thrashing），`DocumentStyleRegistry` 采用了微任务同步机制：
 ```rust
 fn sync(&mut self) {
@@ -74,7 +87,7 @@ fn sync(&mut self) {
 ```
 通过比较 `last_sync_ids`（记录样式表指针地址），我们能跳过 99% 的冗余同步调用。
 
-### 4.4 动态样式 GC 策略 (`runtime/dynamic.rs`)
+### 4.5 动态样式 GC 策略 (`runtime/dynamic.rs`)
 `DynamicStyleState` 实现了 `Drop`：
 - 当一个样式不再被任何组件引用，且超出 `RETIRED_STYLES` 的 LRU 限制（当前为 128）时，它会从全局 `DocumentStyleRegistry` 中自动移除。
 - `DYNAMIC_STYLE_REGISTRY` 内部维护 `Weak<DynamicStyleState>`，确保如果同一个组件或相同样式的组件重新挂载，可以立即复用现有的 StyleSheet 对象，避免重复解析。

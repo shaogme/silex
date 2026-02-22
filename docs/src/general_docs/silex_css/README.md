@@ -85,7 +85,32 @@ styled! {
 
 ---
 
-## 4. 主题系统 (Theme System)
+## 4. 计算属性与运算符重载
+
+Silex CSS 允许你像编写原生 CSS 一样进行数值计算。通过重载算术运算符，你可以直接组合不同的单位。
+
+### 算术运算
+```rust
+use silex::css::prelude::*;
+
+let width = px(100) + rem(2); // 自动生成 (100px + 2rem)
+let half = width / 2.0;       // 自动生成 ((100px + 2rem) / 2)
+```
+
+### 现代 CSS 函数
+完全支持 `calc()`, `min()`, `max()` 和 `clamp()`，且具有编译时类型检查。
+
+```rust
+use silex::css::prelude::*;
+
+sty().width(clamp(px(200), pct(50), px(800)))
+     .font_size(min(vec![rem(2), vw(5)]))
+     .margin_top(calc(px(100) - rem(1)));
+```
+
+---
+
+## 5. 主题系统 (Theme System)
 
 传统的样式框架在实现主题方案时，往往需要包裹一层 `<div>` 主题容器，这会破坏 Flex/Grid 布局。Silex 的主题系统通过 **CSS 变量注入** 巧妙解决了这个问题。
 
@@ -120,7 +145,7 @@ div("主题文字").style(sty().color(t.map(|v| v.primary.clone())))
 
 ---
 
-## 5. 核心引擎与架构
+## 6. 核心引擎与架构
 
 `silex_css` 的高性能离不开其底层的**中心化注册机制**：
 
