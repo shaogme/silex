@@ -191,6 +191,14 @@ macro_rules! define_props {
         impl ValidFor<props::$pascal> for String {}
         impl ValidFor<props::$pascal> for &'static str {}
     };
+    // 透明度分组
+    (@group $pascal:ident, Alpha) => {
+        impl ValidFor<props::$pascal> for f64 {}
+        impl ValidFor<props::$pascal> for f32 {}
+        impl ValidFor<props::$pascal> for Percent {}
+        impl ValidFor<props::$pascal> for String {}
+        impl ValidFor<props::$pascal> for &'static str {}
+    };
 }
 
 // 调用中心注册表执行代码生成

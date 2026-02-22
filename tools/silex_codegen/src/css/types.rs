@@ -23,6 +23,7 @@ pub enum PropGroup {
     Shorthand,
     Custom,
     Complex,
+    Alpha,
 }
 
 impl PropGroup {
@@ -35,6 +36,7 @@ impl PropGroup {
             Self::Shorthand => "Shorthand",
             Self::Custom => "Custom",
             Self::Complex => "Complex",
+            Self::Alpha => "Alpha",
         }
     }
 }
@@ -79,6 +81,7 @@ impl CssConfig {
                     "Keyword" => PropGroup::Keyword,
                     "Shorthand" => PropGroup::Shorthand,
                     "Complex" => PropGroup::Complex,
+                    "Alpha" => PropGroup::Alpha,
                     _ => PropGroup::Custom,
                 };
             }

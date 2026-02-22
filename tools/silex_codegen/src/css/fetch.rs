@@ -134,6 +134,8 @@ fn classify_property(
         PropGroup::Dimension
     } else if syntax.contains("<color") || syntax.contains("color>") {
         PropGroup::Color
+    } else if syntax.contains("<alpha-value>") || name.ends_with("-opacity") || name == "opacity" {
+        PropGroup::Alpha
     } else if syntax.contains("<number") || syntax.contains("<integer") || name == "font-weight" {
         PropGroup::Number
     } else if !keywords.is_empty() && keywords.len() < 50 {
