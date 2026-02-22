@@ -28,3 +28,8 @@
 ## 4. 主题上下文注入 (Theme System)
 位于 `silex_css/src/theme.rs`。
 *   **去包裹设计**: 为了保证类似 Flex/Grid 的嵌套层级不受不必要的父容器 DOM 打扰，Silex 没有提供一个 `ThemeProvider` 标签组件，而是采用 `Apply` Trait 机制：`div(..).apply(theme_variables(theme))` 进行挂载。或者通过 `set_global_theme(theme)` 将变量挂靠在 `<style>` 内为 `:root` 共享。
+*   **索引化更新 (Performance Indexing)**: 最新的主题系统彻底废弃了 `to_css_variables()` 产生的长字符串方案。现在通过 `ThemeToCss` trait 预导出的 `get_variable_names()` 和 `get_variable_values()`，在 `Effect` 中通过索引对比每一个分量，仅对变动的变量调用 `style.set_property`。
+
+## 5. 架构与哈希改进
+*   **哈希解耦**: 为了支持更复杂的哈希策略（如未来可能的缩写混淆），`silex_hash` 引入了 `css` 专用模块。所有 CSS 相关的哈希逻辑（如 `Normalized` 包装器）均迁入此处。
+*   **缓存对比策略**: 在 `DynamicCss` 和 `Style` Builder 内部，通过 `Option<Vec<String>>` 在 `Effect` 中保存上一轮的计算结果。这确保了即便信号频繁触发，只要最终生成的 CSS 属性值未变，就不会触发昂贵的字符串哈希和 `<style>` 内容更新。

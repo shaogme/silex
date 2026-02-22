@@ -1286,6 +1286,7 @@ version = "0.1.0-beta.1"
 dependencies = [
  "silex_core",
  "silex_dom",
+ "silex_hash",
  "trybuild",
  "wasm-bindgen",
  "web-sys",
@@ -1308,6 +1309,10 @@ dependencies = [
  "silex",
  "silex_macros",
 ]
+
+[[package]]
+name = "silex_hash"
+version = "0.1.0-beta.1"
 
 [[package]]
 name = "silex_html"

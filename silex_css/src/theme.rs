@@ -37,7 +37,7 @@ where
     fn apply(self, el: &::web_sys::Element, _target: ::silex_dom::attribute::ApplyTarget) {
         let theme = self.0;
         let el = el.clone();
-        ::silex_core::prelude::Effect::new(move |_| {
+        ::silex_core::prelude::Effect::new(move |prev_values: Option<Vec<String>>| {
             use ::wasm_bindgen::JsCast;
             if let Some(style) = el
                 .dyn_ref::<::web_sys::HtmlElement>()
@@ -47,10 +47,21 @@ where
                 let theme_val = theme.get();
                 let names = T::get_variable_names();
                 let values = theme_val.get_variable_values();
-                for (name, value) in names.iter().zip(values.iter()) {
-                    let _ = style.set_property(name, value);
+
+                if let Some(old_vals) = &prev_values {
+                    for (i, (name, value)) in names.iter().zip(values.iter()).enumerate() {
+                        if Some(value) != old_vals.get(i) {
+                            let _ = style.set_property(name, value);
+                        }
+                    }
+                } else {
+                    for (name, value) in names.iter().zip(values.iter()) {
+                        let _ = style.set_property(name, value);
+                    }
                 }
+                return values;
             }
+            Vec::new()
         });
     }
 }
@@ -80,7 +91,7 @@ where
     ::silex_core::prelude::provide_context(theme);
 
     // Apply reactive updates to :root
-    ::silex_core::prelude::Effect::new(move |_| {
+    ::silex_core::prelude::Effect::new(move |prev_values: Option<Vec<String>>| {
         use ::wasm_bindgen::JsCast;
         let doc = ::silex_dom::document();
         if let Some(root) = doc.document_element()
@@ -89,9 +100,20 @@ where
             let theme_val = theme.get();
             let names = T::get_variable_names();
             let values = theme_val.get_variable_values();
-            for (name, value) in names.iter().zip(values.iter()) {
-                let _ = style.set_property(name, value);
+
+            if let Some(old_vals) = &prev_values {
+                for (i, (name, value)) in names.iter().zip(values.iter()).enumerate() {
+                    if Some(value) != old_vals.get(i) {
+                        let _ = style.set_property(name, value);
+                    }
+                }
+            } else {
+                for (name, value) in names.iter().zip(values.iter()) {
+                    let _ = style.set_property(name, value);
+                }
             }
+            return values;
         }
+        Vec::new()
     });
 }

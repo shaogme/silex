@@ -7,6 +7,7 @@ members = [
     "silex_css",
     "silex_dom", 
     "silex_reactivity",
+    "silex_hash",
     "examples/counter",
     "examples/store_demo",
     "examples/error_boundary_demo",
@@ -44,6 +45,8 @@ silex_html = { path = "silex_html", version = "0.1.0-beta.1" }
 silex_css = { path = "silex_css", version = "0.1.0-beta.1" }
 silex_macros = { path = "silex_macros", version = "0.1.0-beta.1" }
 silex_reactivity = { path = "silex_reactivity", version = "0.1.0-beta.1" }
+silex_hash = { path = "silex_hash", version = "0.1.0-beta.1" }
+
 wasm-bindgen = { version = "0.2", default-features = false }
 web-sys = { version = "0.3", default-features = false, features = [
     "AnimationEvent",

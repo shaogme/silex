@@ -37,5 +37,10 @@
 ## 4. 主题系统 (Theme System)
 `silex_css/src/theme.rs`
 *   **ThemeVariables**: 零开销插入机制。不再引入额外包裹 DOM，而是通过扩展方法 `div(...).apply(theme_variables(theme_signal))` 直接监听信号变化并将主题变量转换后注入 `element.style`。
+*   **更新优化**: 在 `define_theme!` 宏生成代码时，预计算属性名数组。更新时通过索引直接对对比旧值并调用 `CSSStyleDeclaration.setProperty`，完全消除了旧版本中的字符串解析 (`split(';')`) 开销，达到亚毫秒级更新性能。
 *   **全局模式**: `set_global_theme(theme_signal)` 可将主题挂载到 `:root` 上。
 *   **Context**: 内部自动注入或查询 `use_theme<T>()` 获取。
+
+## 5. 性能与哈希策略 (Performance & Hashing)
+*   **silex_hash::css**: 核心哈希逻辑已独立至 `css` 模块，以提供更好的向前兼容性。
+*   **稳定哈希与缓存**: 在 `Effect` 内部，只有当属性值发生变化时才会重新计算哈希和更新 DOM。通过在 `Effect` 闭包中保存 `prev_values`（如 `Vec<String>`），实现了极轻量的差异化更新 (diffing)，避免了冗余的哈希计算和样式重注入。

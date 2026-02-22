@@ -2,7 +2,7 @@ use crate::types::{ValidFor, props};
 use silex_core::traits::{Get, IntoSignal, With};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable};
 use std::fmt::Display;
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 
@@ -119,28 +119,30 @@ impl ApplyToDom for Style {
 impl Style {
     pub fn apply_to_element(self, el: &web_sys::Element) -> String {
         // 1. 生成稳定哈希（忽略动态值，仅对选择器和属性名哈希）
-        let mut hasher = DefaultHasher::new();
+        let mut hasher = silex_hash::css::CssHasher::new();
         for (k, v) in &self.static_rules {
-            k.hash(&mut hasher);
-            v.hash(&mut hasher);
+            silex_hash::css::Normalized(k).hash(&mut hasher);
+            silex_hash::css::Normalized(v).hash(&mut hasher);
         }
         for (prop, _) in &self.dynamic_rules {
-            prop.hash(&mut hasher);
+            silex_hash::css::Normalized(prop).hash(&mut hasher);
             "dyn-val".hash(&mut hasher); // 动态值占位
         }
         for (pseudo, style) in &self.pseudo_rules {
-            pseudo.hash(&mut hasher);
+            silex_hash::css::Normalized(pseudo).hash(&mut hasher);
             for (k, v) in &style.static_rules {
-                k.hash(&mut hasher);
-                v.hash(&mut hasher);
+                silex_hash::css::Normalized(k).hash(&mut hasher);
+                silex_hash::css::Normalized(v).hash(&mut hasher);
             }
             for (prop, _) in &style.dynamic_rules {
-                prop.hash(&mut hasher);
+                silex_hash::css::Normalized(prop).hash(&mut hasher);
                 "dyn-val".hash(&mut hasher);
             }
         }
         let hash_val = hasher.finish();
-        let class_base = format!("slx-bldr-{:x}", hash_val);
+        let mut hash_buf = [0u8; 13];
+        let hash_str = silex_hash::css::encode_base36(hash_val, &mut hash_buf);
+        let class_base = format!("slx-{}", hash_str);
 
         // 2. 构造静态 CSS，动态值使用变量占位
         let mut css_str = String::new();
@@ -151,7 +153,7 @@ impl Style {
             css_str.push_str(&format!("  {}: {};\n", k, v));
         }
         for (i, (prop, getter)) in self.dynamic_rules.into_iter().enumerate() {
-            let var_name = format!("--sb-{:x}-{}", hash_val, i);
+            let var_name = format!("--sb-{}-{}", hash_str, i);
             css_str.push_str(&format!("  {}: var({});\n", prop, var_name));
             dyn_bindings.push((var_name, getter));
         }
@@ -164,7 +166,7 @@ impl Style {
                 css_str.push_str(&format!("  {}: {};\n", k, v));
             }
             for (prop, getter) in style.dynamic_rules {
-                let var_name = format!("--sb-{:x}-{}", hash_val, dyn_idx);
+                let var_name = format!("--sb-{}-{}", hash_str, dyn_idx);
                 css_str.push_str(&format!("  {}: var({});\n", prop, var_name));
                 dyn_bindings.push((var_name, getter));
                 dyn_idx += 1;
@@ -179,14 +181,17 @@ impl Style {
         // 4. 建立极轻量更新 Effect (只有 style.setProperty)
         for (var_name, getter) in dyn_bindings {
             let el_clone = el.clone();
-            silex_core::reactivity::Effect::new(move |_| {
-                if let Some(style) = el_clone
-                    .dyn_ref::<web_sys::HtmlElement>()
-                    .map(|e| e.style())
-                    .or_else(|| el_clone.dyn_ref::<web_sys::SvgElement>().map(|e| e.style()))
+            silex_core::reactivity::Effect::new(move |prev: Option<String>| {
+                let current = getter();
+                if prev.as_ref() != Some(&current)
+                    && let Some(style) = el_clone
+                        .dyn_ref::<web_sys::HtmlElement>()
+                        .map(|e| e.style())
+                        .or_else(|| el_clone.dyn_ref::<web_sys::SvgElement>().map(|e| e.style()))
                 {
-                    let _ = style.set_property(&var_name, &getter());
+                    let _ = style.set_property(&var_name, &current);
                 }
+                current
             });
         }
         class_base

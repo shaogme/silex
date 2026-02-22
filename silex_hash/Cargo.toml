@@ -1,5 +1,5 @@
 [package]
-name = "silex_css"
+name = "silex_hash"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,11 +13,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-silex_core.workspace = true
-silex_dom.workspace = true
-silex_hash.workspace = true
-wasm-bindgen.workspace = true
-web-sys.workspace = true
 
-[dev-dependencies]
-trybuild = "1.0"
+[features]
+default = ["alloc"]
+alloc = []

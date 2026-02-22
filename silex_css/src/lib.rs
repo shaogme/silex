@@ -9,17 +9,14 @@ pub mod prelude {
     pub use crate::types::*;
 }
 
-use silex_core::reactivity::{Effect, on_cleanup};
-use silex_core::traits::{Get, IntoSignal, With};
-use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable};
-use silex_dom::document;
+use silex_core::prelude::*;
+use silex_dom::prelude::*;
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque, hash_map::DefaultHasher};
+use std::collections::{HashMap, VecDeque};
 use std::fmt::Display;
-use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
-use web_sys::{Element, HtmlElement, Node, SvgElement};
+use web_sys::{Element, Node};
 
 /// Injects a CSS string into the document head with a unique ID.
 /// This function is idempotent: if a style with the given ID already exists, it does nothing.
@@ -219,17 +216,24 @@ impl ApplyToDom for DynamicCss {
         if !self.vars.is_empty() {
             let el = el.clone();
             let vars = self.vars;
-            Effect::new(move |_| {
+            ::silex_core::prelude::Effect::new(move |prev_values: Option<Vec<String>>| {
+                use ::wasm_bindgen::JsCast;
                 if let Some(style) = el
-                    .dyn_ref::<HtmlElement>()
+                    .dyn_ref::<::web_sys::HtmlElement>()
                     .map(|e| e.style())
-                    .or_else(|| el.dyn_ref::<SvgElement>().map(|e| e.style()))
+                    .or_else(|| el.dyn_ref::<::web_sys::SvgElement>().map(|e| e.style()))
                 {
-                    for (name, getter) in &vars {
+                    let mut current_vals = Vec::with_capacity(vars.len());
+                    for (i, (name, getter)) in vars.iter().enumerate() {
                         let value = getter();
-                        let _ = style.set_property(name, &value);
+                        if prev_values.as_ref().and_then(|v| v.get(i)) != Some(&value) {
+                            let _ = style.set_property(name, &value);
+                        }
+                        current_vals.push(value);
                     }
+                    return current_vals;
                 }
+                Vec::new()
             });
         }
 
@@ -248,25 +252,38 @@ impl ApplyToDom for DynamicCss {
             let el_clone = el.clone();
             let base_class = self.class_name;
 
-            Effect::new(move |prev_class: Option<String>| {
-                let mut hasher = DefaultHasher::new();
-                Hash::hash(b"silex-dyn-salt-css-v2", &mut hasher);
-                Hash::hash(template, &mut hasher);
+            Effect::new(move |prev: Option<(Vec<String>, String)>| {
+                // 1. Get current values and compare with previous
+                let current_vals: Vec<String> = getters.iter().map(|g| g()).collect();
+                if let Some((old_vals, _)) = &prev
+                    && current_vals == *old_vals
+                {
+                    return prev.unwrap();
+                }
+                // Values changed, we will proceed to re-hash and update
+                // Note: old_class is still applied to el_clone, it will be removed below if name changes
 
+                // 2. Compute new resolve rule and hash (Only when values changed)
                 let mut resolved_rule = template.to_string();
-                for getter in &getters {
-                    let val = getter();
+                for val in &current_vals {
                     if let Some(pos) = resolved_rule.find("{}") {
-                        resolved_rule.replace_range(pos..pos + 2, &val);
+                        resolved_rule.replace_range(pos..pos + 2, val);
                     }
                 }
 
-                Hash::hash(&resolved_rule, &mut hasher);
-                let hash_val = hasher.finish();
-                let dyn_class = format!("{}-dyn-{:x}", base_class, hash_val);
+                let hash_val = silex_hash::css::hash_one((
+                    b"silex-dyn-v3",
+                    silex_hash::css::Normalized(template),
+                    silex_hash::css::Normalized(&resolved_rule),
+                ));
+                let mut hash_buf = [0u8; 13];
+                let hash_str = silex_hash::css::encode_base36(hash_val, &mut hash_buf);
+                let dyn_class = format!("{}-d{}", base_class, hash_str);
 
-                if Some(&dyn_class) != prev_class.as_ref() {
-                    if let Some(old_class) = &prev_class {
+                // 3. Update DOM and Registry if name changed
+                let prev_class = prev.as_ref().map(|(_, c)| c);
+                if Some(&dyn_class) != prev_class {
+                    if let Some(old_class) = prev_class {
                         let _ = el_clone.class_list().remove_1(old_class);
                     }
                     let _ = el_clone.class_list().add_1(&dyn_class);
@@ -282,7 +299,7 @@ impl ApplyToDom for DynamicCss {
                     }
                 }
 
-                dyn_class
+                (current_vals, dyn_class)
             });
         }
     }

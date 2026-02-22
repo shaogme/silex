@@ -21,7 +21,7 @@ let cls = css!("
 div("Hello").class(cls)
 ```
 **性能注记：** 所有的动态插值 $(...) 现在大部分都通过 **CSS 变量 (CSS Variables)** 进行高效更新。这意味着当信号变化时，框架仅调用一次极轻量的 `style.setProperty`，而无需操作 DOM 结构，在高频更新场景下性能表现极其卓越。
-对于无法用内联变量表示的插值（例如嵌套伪类中的动态值），Silex 内置了拥有**引用计数 (Reference Counting)** 及 **LRU 缓存回收**机制的 `DynamicStyleManager`，它会在后台自动计算哈希生成独特类名并复用 `<style>` 标签，既实现了无死角的完全响应式，又使得长期运行的应用不至于出现 `<style>` DOM 节点污染与内存溢出。
+对于无法用内联变量表示的插值（例如嵌套伪类中的动态值），Silex 内置了拥有**引用计数 (Reference Counting)** 及 **LRU 缓存回收**机制的 `DynamicStyleManager`。最新的版本进一步优化了哈希计算逻辑，通过在后台预对比值变化，极大降低了重复计算哈希带来的 CPU 开销。
 
 **复杂复合类型（工厂与 Builders）：**
 使用专用模块工厂快速安全打包例如 `margin`，`border` 等复合元素。
@@ -93,4 +93,6 @@ set_global_theme(my_theme_signal);
 // 2. 将主题直接应用（注入 CSS Vars）到已经建立在流里的组件上进行范围挂载:
 Stack(...)
     .apply(theme_variables(my_theme_signal))
+
+**性能优化：** 最新的主题系统采用“索引化更新”技术。在主题切换或动态修改主题属性时，框架不再进行字符串解析，而是通过预编译的索引直接修改对应的 CSS 变量，确保即使在包含数百个主题变量的大型应用中也能瞬时响应。
 ```
