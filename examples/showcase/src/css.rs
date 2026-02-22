@@ -398,6 +398,42 @@ pub fn AdvancedStyling() -> impl View {
                         div(()).style(sty().height(px(100)).border_radius(px(12)).background_image(linear_gradient().repeating().to(Direction::ToBottomRight).stop(hex("#1e1e24"), pct(0)).stop(hex("#1e1e24"), px(10)).stop(hex("#312e81"), px(10)).stop(hex("#312e81"), px(20)).build()))
                     ],
                 ))
+            )),
+            DemoCard().children((
+                h4("3. Responsive & Nested (Style Builder)"),
+                p("The enhanced `sty()` API now supports `@media` and complex nesting, just like the `styled!` macro.").style("margin-bottom: 16px; font-size: 0.9em; opacity: 0.7;"),
+                div![
+                    span("Resize window and hover child!").style(
+                        sty()
+                            .display(DisplayKeyword::Block)
+                            .padding(px(32))
+                            .background(hex("#1e1e24"))
+                            .border(border(px(1), BorderStyleKeyword::Solid, hex("#374151")))
+                            .border_radius(px(16))
+                            .transition("all 0.3s")
+                            .nest("& > .child-box", |s| s
+                                .width(px(60))
+                                .height(px(60))
+                                .background(hex("#6366f1"))
+                                .border_radius(px(8))
+                                .transition("all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55)")
+                            )
+                            .on_hover(|s| s
+                                .border_color(hex("#6366f1"))
+                                .nest("& > .child-box", |s| s
+                                    .transform("translateX(100px) rotate(180deg)")
+                                    .background(hex("#a855f7"))
+                                )
+                            )
+                            .media("@media (max-width: 768px)", |s| s
+                                .background(hex("#312e81"))
+                                .nest("& > .child-box", |s| s
+                                    .background(hex("#f43f5e"))
+                                )
+                            )
+                    ),
+                    div("I am the child box").class("child-box").style("margin-top: 16px; color: #fff; font-size: 12px; text-align: center; line-height: 60px;")
+                ].style("position: relative;")
             ))
         ))
     ]

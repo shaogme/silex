@@ -9,13 +9,18 @@ use wasm_bindgen::JsCast;
 pub(crate) type DynamicValue = Rc<dyn Fn() -> String>;
 pub(crate) type StaticRule = (&'static str, String);
 pub(crate) type DynamicRule = (&'static str, DynamicValue);
-pub(crate) type PseudoRule = (&'static str, Style);
+
+#[derive(Clone)]
+pub(crate) enum NestedRule {
+    Media(&'static str, Style),
+    Selector(&'static str, Style),
+}
 
 #[derive(Clone)]
 pub struct Style {
     pub(crate) static_rules: Vec<StaticRule>,
     pub(crate) dynamic_rules: Vec<DynamicRule>,
-    pub(crate) pseudo_rules: Vec<PseudoRule>,
+    pub(crate) nested_rules: Vec<NestedRule>,
 }
 
 impl Default for Style {
@@ -29,40 +34,57 @@ impl Style {
         Self {
             static_rules: Vec::new(),
             dynamic_rules: Vec::new(),
-            pseudo_rules: Vec::new(),
+            nested_rules: Vec::new(),
         }
     }
 
-    pub fn on_hover<F>(mut self, f: F) -> Self
+    /// 定义媒体查询，例如 `.media("@media (max-width: 600px)", |s| s.width(PX(100)))`
+    pub fn media<F>(mut self, query: &'static str, f: F) -> Self
     where
         F: FnOnce(Style) -> Style,
     {
-        self.pseudo_rules.push((":hover", f(Style::new())));
+        self.nested_rules
+            .push(NestedRule::Media(query, f(Style::new())));
         self
     }
 
-    pub fn on_active<F>(mut self, f: F) -> Self
+    /// 定义嵌套选择器，例如 `.nest("& > div", |s| s.opacity(0.8))`
+    /// 支持 "&" 占位符，若无则默认作为组合后缀（例如 ":hover"）
+    pub fn nest<F>(mut self, selector: &'static str, f: F) -> Self
     where
         F: FnOnce(Style) -> Style,
     {
-        self.pseudo_rules.push((":active", f(Style::new())));
+        self.nested_rules
+            .push(NestedRule::Selector(selector, f(Style::new())));
         self
     }
 
-    pub fn on_focus<F>(mut self, f: F) -> Self
+    pub fn on_hover<F>(self, f: F) -> Self
     where
         F: FnOnce(Style) -> Style,
     {
-        self.pseudo_rules.push((":focus", f(Style::new())));
-        self
+        self.nest(":hover", f)
     }
 
-    pub fn pseudo<F>(mut self, selector: &'static str, f: F) -> Self
+    pub fn on_active<F>(self, f: F) -> Self
     where
         F: FnOnce(Style) -> Style,
     {
-        self.pseudo_rules.push((selector, f(Style::new())));
-        self
+        self.nest(":active", f)
+    }
+
+    pub fn on_focus<F>(self, f: F) -> Self
+    where
+        F: FnOnce(Style) -> Style,
+    {
+        self.nest(":focus", f)
+    }
+
+    pub fn pseudo<F>(self, selector: &'static str, f: F) -> Self
+    where
+        F: FnOnce(Style) -> Style,
+    {
+        self.nest(selector, f)
     }
 
     /// 内部通用方法：添加一条 CSS 规则
@@ -118,61 +140,20 @@ impl ApplyToDom for Style {
 
 impl Style {
     pub fn apply_to_element(self, el: &web_sys::Element) -> String {
-        // 1. 生成稳定哈希（忽略动态值，仅对选择器和属性名哈希）
+        // 1. 生成稳定哈希（忽略动态值，递归所有嵌套规则）
         let mut hasher = silex_hash::css::CssHasher::new();
-        for (k, v) in &self.static_rules {
-            silex_hash::css::Normalized(k).hash(&mut hasher);
-            silex_hash::css::Normalized(v).hash(&mut hasher);
-        }
-        for (prop, _) in &self.dynamic_rules {
-            silex_hash::css::Normalized(prop).hash(&mut hasher);
-            "dyn-val".hash(&mut hasher); // 动态值占位
-        }
-        for (pseudo, style) in &self.pseudo_rules {
-            silex_hash::css::Normalized(pseudo).hash(&mut hasher);
-            for (k, v) in &style.static_rules {
-                silex_hash::css::Normalized(k).hash(&mut hasher);
-                silex_hash::css::Normalized(v).hash(&mut hasher);
-            }
-            for (prop, _) in &style.dynamic_rules {
-                silex_hash::css::Normalized(prop).hash(&mut hasher);
-                "dyn-val".hash(&mut hasher);
-            }
-        }
+        hash_recursive(&self, &mut hasher);
         let hash_val = hasher.finish();
         let mut hash_buf = [0u8; 13];
         let hash_str = silex_hash::css::encode_base36(hash_val, &mut hash_buf);
         let class_base = format!("slx-{}", hash_str);
 
-        // 2. 构造静态 CSS，动态值使用变量占位
+        // 2. 递归构造 CSS，收集所有动态绑定
         let mut css_str = String::new();
         let mut dyn_bindings = Vec::new();
+        let base_sel = format!(".{}", class_base);
 
-        css_str.push_str(&format!(".{} {{\n", class_base));
-        for (k, v) in &self.static_rules {
-            css_str.push_str(&format!("  {}: {};\n", k, v));
-        }
-        for (i, (prop, getter)) in self.dynamic_rules.into_iter().enumerate() {
-            let var_name = format!("--sb-{}-{}", hash_str, i);
-            css_str.push_str(&format!("  {}: var({});\n", prop, var_name));
-            dyn_bindings.push((var_name, getter));
-        }
-        css_str.push_str("}\n");
-
-        let mut dyn_idx = dyn_bindings.len();
-        for (pseudo, style) in self.pseudo_rules {
-            css_str.push_str(&format!(".{}{} {{\n", class_base, pseudo));
-            for (k, v) in style.static_rules {
-                css_str.push_str(&format!("  {}: {};\n", k, v));
-            }
-            for (prop, getter) in style.dynamic_rules {
-                let var_name = format!("--sb-{}-{}", hash_str, dyn_idx);
-                css_str.push_str(&format!("  {}: var({});\n", prop, var_name));
-                dyn_bindings.push((var_name, getter));
-                dyn_idx += 1;
-            }
-            css_str.push_str("}\n");
-        }
+        generate_css_recursive(&self, &base_sel, hash_str, &mut css_str, &mut dyn_bindings);
 
         // 3. 注入样式并添加类名
         crate::inject_style(&class_base, &css_str);
@@ -195,6 +176,76 @@ impl Style {
             });
         }
         class_base
+    }
+}
+
+/// 递归计算样式的稳定哈希
+fn hash_recursive(style: &Style, hasher: &mut silex_hash::css::CssHasher) {
+    for (k, v) in &style.static_rules {
+        silex_hash::css::Normalized(k).hash(hasher);
+        silex_hash::css::Normalized(v).hash(hasher);
+    }
+    for (prop, _) in &style.dynamic_rules {
+        silex_hash::css::Normalized(prop).hash(hasher);
+        "dyn-val".hash(hasher); // 动态值占位
+    }
+    for rule in &style.nested_rules {
+        match rule {
+            NestedRule::Media(query, sub) => {
+                "media".hash(hasher);
+                silex_hash::css::Normalized(query).hash(hasher);
+                hash_recursive(sub, hasher);
+            }
+            NestedRule::Selector(selector, sub) => {
+                "selector".hash(hasher);
+                silex_hash::css::Normalized(selector).hash(hasher);
+                hash_recursive(sub, hasher);
+            }
+        }
+    }
+}
+
+/// 递归生成 CSS 字符串并收集动态绑定
+fn generate_css_recursive(
+    style: &Style,
+    base_selector: &str,
+    hash_str: &str,
+    css_out: &mut String,
+    dyn_bindings: &mut Vec<(String, DynamicValue)>,
+) {
+    // 写入当前层级的规则
+    if !style.static_rules.is_empty() || !style.dynamic_rules.is_empty() {
+        css_out.push_str(base_selector);
+        css_out.push_str(" {\n");
+        for (k, v) in &style.static_rules {
+            css_out.push_str(&format!("  {}: {};\n", k, v));
+        }
+        for (prop, getter) in &style.dynamic_rules {
+            let var_name = format!("--sb-{}-{}", hash_str, dyn_bindings.len());
+            css_out.push_str(&format!("  {}: var({});\n", prop, var_name));
+            dyn_bindings.push((var_name, getter.clone()));
+        }
+        css_out.push_str("}\n");
+    }
+
+    // 处理嵌套规则
+    for rule in &style.nested_rules {
+        match rule {
+            NestedRule::Media(query, sub) => {
+                css_out.push_str(query);
+                css_out.push_str(" {\n");
+                generate_css_recursive(sub, base_selector, hash_str, css_out, dyn_bindings);
+                css_out.push_str("}\n");
+            }
+            NestedRule::Selector(selector, sub) => {
+                let full_selector = if selector.contains('&') {
+                    selector.replace('&', base_selector)
+                } else {
+                    format!("{}{}", base_selector, selector)
+                };
+                generate_css_recursive(sub, &full_selector, hash_str, css_out, dyn_bindings);
+            }
+        }
     }
 }
 
