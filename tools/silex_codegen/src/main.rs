@@ -45,26 +45,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Output dir:  {}", out_dir.display());
     println!("CSS dir:     {}", css_out_dir.display());
 
-    // 2. Load CSS overrides if they exist (needed for whitelist in fetch mode)
-    let overrides_path = "tools/silex_codegen/css_overrides.json";
-    let css_overrides: css::types::Overrides = if std::path::Path::new(overrides_path).exists() {
-        let content = fs::read_to_string(overrides_path)?;
-        if content.trim().is_empty() {
-            css::types::Overrides::default()
-        } else {
-            serde_json::from_str(&content).unwrap_or_default()
-        }
-    } else {
-        css::types::Overrides::default()
-    };
-
     // 3. FETCH MODE: Refresh JSON files from MDN
     if should_fetch {
         println!("\n[FETCH MODE] Fetching data from MDN...");
 
         // Direct fetch without any state/merging logic
         let fetch_tags_config = tags::fetch_tags()?;
-        let fetch_css_config = css::fetch_css(&css_overrides.whitelist)?;
+        let fetch_css_config = css::fetch_css()?;
 
         // Save exactly what was fetched to JSON files
         fs::write(tags_path, serde_json::to_string_pretty(&fetch_tags_config)?)?;
@@ -79,11 +66,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 4. Load Source of Truth for Codegen
     let config = tags::load_config(tags_path)?;
-    let mut css_config = css::load_config(css_json_path)?;
+    let css_config = css::load_config(css_json_path)?;
 
     // Always apply overrides and patches in memory ONLY for consistent codegen
-    println!("\n[CODEGEN MODE] Applying in-memory patches and overrides...");
-    css_config.apply_overrides(&css_overrides);
+    println!("\n[CODEGEN MODE] Applying in-memory patches...");
 
     let mut gen_config = config.clone();
     tags::apply_memory_only_patches(&mut gen_config);

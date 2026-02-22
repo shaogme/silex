@@ -2,7 +2,14 @@ use super::types::{CssConfig, MdnCssProperty, MdnCssSyntax, ProcessedProp, PropG
 use heck::{AsPascalCase, AsSnakeCase};
 use std::collections::HashMap;
 
-pub fn fetch_css(whitelist: &[String]) -> Result<CssConfig, Box<dyn std::error::Error>> {
+pub fn fetch_css() -> Result<CssConfig, Box<dyn std::error::Error>> {
+    let whitelist = [
+        "-webkit-line-clamp",
+        "-webkit-text-fill-color",
+        "-webkit-text-stroke",
+        "-webkit-text-stroke-color",
+        "-webkit-text-stroke-width",
+    ];
     let client = reqwest::blocking::Client::builder()
         .user_agent("silex-codegen")
         .build()?;
@@ -37,7 +44,7 @@ pub fn fetch_css(whitelist: &[String]) -> Result<CssConfig, Box<dyn std::error::
 
     for (name, prop) in &raw_props {
         // Only standard properties, unless whitelisted
-        if prop.status != "standard" && !whitelist.contains(name) {
+        if prop.status != "standard" && !whitelist.contains(&name.as_str()) {
             continue;
         }
 
@@ -118,31 +125,32 @@ fn classify_property(
         || syntax.contains('#')
         || syntax.contains(' ') && !syntax.trim().is_empty();
 
-    let group = if is_complex {
-        // Special rule: if it looks like a shorthand but we only want to expose it as Dimension/Color
-        // because it's essentially just a value with optional flags, we might refine this.
-        // But for most common ones (margin, border, flex), Shorthand is safer.
-        PropGroup::Shorthand
-    } else if syntax.contains("<length")
-        || syntax.contains("<percentage")
-        || name.contains("width") && !name.contains("stroke")
-        || name.contains("height")
-        || syntax.contains("radius>")
-        || name.contains("radius")
-        || name == "zoom"
-    {
-        PropGroup::Dimension
-    } else if syntax.contains("<color") || syntax.contains("color>") {
-        PropGroup::Color
-    } else if syntax.contains("<alpha-value>") || name.ends_with("-opacity") || name == "opacity" {
-        PropGroup::Alpha
-    } else if syntax.contains("<number") || syntax.contains("<integer") || name == "font-weight" {
-        PropGroup::Number
-    } else if !keywords.is_empty() && keywords.len() < 50 {
-        PropGroup::Keyword
-    } else {
-        PropGroup::Custom
-    };
+    let group =
+        if syntax.contains("<alpha-value>") || name.ends_with("-opacity") || name == "opacity" {
+            PropGroup::Alpha
+        } else if syntax.contains("<length")
+            || syntax.contains("<percentage")
+            || (name.contains("width") && !name.contains("stroke"))
+            || name.contains("height")
+            || syntax.contains("radius>")
+            || name.contains("radius")
+            || name == "zoom"
+        {
+            PropGroup::Dimension
+        } else if syntax.contains("<color") || syntax.contains("color>") {
+            PropGroup::Color
+        } else if syntax.contains("<number") || syntax.contains("<integer") || name == "font-weight"
+        {
+            PropGroup::Number
+        } else if name == "display" {
+            PropGroup::Keyword
+        } else if is_complex {
+            PropGroup::Shorthand
+        } else if !keywords.is_empty() && keywords.len() < 50 {
+            PropGroup::Keyword
+        } else {
+            PropGroup::Custom
+        };
 
     (group, keywords)
 }

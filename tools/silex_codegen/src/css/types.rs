@@ -52,43 +52,9 @@ pub struct ProcessedProp {
 
 use std::collections::HashMap;
 
-#[derive(Debug, Deserialize, Serialize, Clone, Default)]
-pub struct Overrides {
-    #[serde(default)]
-    pub whitelist: Vec<String>,
-    #[serde(default)]
-    pub groups: HashMap<String, String>,
-    #[serde(default)]
-    pub keywords: HashMap<String, Vec<String>>,
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CssConfig {
     pub properties: Vec<ProcessedProp>,
     #[serde(default)]
     pub syntaxes: HashMap<String, MdnCssSyntax>,
-}
-
-impl CssConfig {
-    pub fn apply_overrides(&mut self, overrides: &Overrides) {
-        for prop in &mut self.properties {
-            // Apply group overrides
-            if let Some(group_str) = overrides.groups.get(&prop.name) {
-                prop.group = match group_str.as_str() {
-                    "Dimension" => PropGroup::Dimension,
-                    "Color" => PropGroup::Color,
-                    "Number" => PropGroup::Number,
-                    "Keyword" => PropGroup::Keyword,
-                    "Shorthand" => PropGroup::Shorthand,
-                    "Complex" => PropGroup::Complex,
-                    "Alpha" => PropGroup::Alpha,
-                    _ => PropGroup::Custom,
-                };
-            }
-            // Apply keyword overrides
-            if let Some(keywords) = overrides.keywords.get(&prop.name) {
-                prop.keywords = keywords.clone();
-            }
-        }
-    }
 }
