@@ -141,7 +141,6 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let style_id = compile_result.style_id;
     let final_css = compile_result.final_css;
     let expressions = compile_result.expressions;
-    let hash = compile_result.hash;
     let dynamic_rules = compile_result.dynamic_rules;
     let theme_refs = compile_result.theme_refs;
 
@@ -161,7 +160,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         .iter()
         .enumerate()
         .map(|(i, _)| {
-            let var_name = format!("--slx-{:x}-{}", hash, i);
+            let var_name = format!("--{}-{}", class_name, i);
             let var_ident = quote::format_ident!("var_{}", i);
             quote! {
                 .style((#var_name, move || #var_ident()))
@@ -326,10 +325,6 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             .class({
                 let manager = #manager_ident.clone();
                 move || {
-                    let mut hasher = ::std::collections::hash_map::DefaultHasher::new();
-                    ::std::hash::Hash::hash(b"silex-dyn-salt-css-v2", &mut hasher);
-                    ::std::hash::Hash::hash(#template, &mut hasher);
-
                     let mut resolved_rule = ::std::string::ToString::to_string(#template);
                     #(
                         let val = #eval_vars();
@@ -338,9 +333,10 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
                         }
                     )*
 
-                    ::std::hash::Hash::hash(&resolved_rule, &mut hasher);
-                    let hash_val = ::std::hash::Hasher::finish(&hasher);
-                    let dyn_class = format!("{}-dyn-{:x}", #class_name, hash_val);
+                    let hash_val = ::silex::hash::css::hash_one(&resolved_rule);
+                    let mut buf = [0u8; 13];
+                    let b36 = ::silex::hash::css::encode_base36(hash_val, &mut buf);
+                    let dyn_class = format!("{}-dyn-{}", #class_name, b36);
 
                     if let Ok(mut opt) = manager.try_borrow_mut() {
                         if let Some(mgr) = opt.as_mut() {

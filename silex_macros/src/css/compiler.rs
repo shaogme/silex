@@ -2,8 +2,6 @@ use crate::css::ast::{CssBlock, CssRule};
 use lightningcss::stylesheet::{MinifyOptions, ParserOptions, PrinterOptions, StyleSheet};
 use lightningcss::targets::Targets;
 use proc_macro2::{Delimiter, Span, TokenStream, TokenTree};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use syn::Result;
 
 pub struct DynamicRule {
@@ -18,7 +16,6 @@ pub struct CssCompileResult {
     pub expressions: Vec<(String, TokenStream)>,
     pub dynamic_rules: Vec<DynamicRule>,
     pub theme_refs: Vec<(String, String)>,
-    pub hash: u64,
 }
 
 struct ParserState {
@@ -33,10 +30,10 @@ pub struct CssCompiler;
 
 impl CssCompiler {
     pub fn compile(ts: TokenStream, span: Span) -> Result<CssCompileResult> {
-        let mut hasher = DefaultHasher::new();
-        ts.to_string().hash(&mut hasher);
-        let hash = hasher.finish();
-        let class_name = format!("slx-{:x}", hash);
+        let ts_string = ts.to_string();
+        let hash = silex_hash::css::hash_one(&ts_string);
+        let mut buf = [0u8; 13];
+        let class_name = format!("slx-{}", silex_hash::css::encode_base36(hash, &mut buf));
         let style_id = format!("style-{}", class_name);
 
         let mut state = ParserState {
@@ -82,7 +79,6 @@ impl CssCompiler {
             expressions: state.expressions,
             dynamic_rules: state.dynamic_rules,
             theme_refs: state.theme_refs,
-            hash,
         })
     }
 }

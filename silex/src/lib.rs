@@ -36,6 +36,10 @@ pub mod dom {
     pub use silex_dom::*;
 }
 
+pub mod hash {
+    pub use silex_hash::*;
+}
+
 pub mod prelude {
     pub use crate::components::*;
     pub use crate::flow::*;

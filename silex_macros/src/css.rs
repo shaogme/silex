@@ -46,7 +46,6 @@ pub fn css_impl(input: LitStr) -> Result<TokenStream> {
     let expressions = compile_result.expressions;
     let dynamic_rules = compile_result.dynamic_rules;
     let theme_refs = compile_result.theme_refs;
-    let hash = compile_result.hash;
 
     let theme_assertions: Vec<TokenStream> = theme_refs
         .iter()
@@ -86,7 +85,7 @@ pub fn css_impl(input: LitStr) -> Result<TokenStream> {
         // Generate DynamicCss struct
         let mut var_decls = Vec::new();
         for (i, (prop, expr)) in expressions.iter().enumerate() {
-            let var_name = format!("--slx-{:x}-{}", hash, i);
+            let var_name = format!("--{}-{}", class_name, i);
             let prop_type = get_prop_type(prop, input.span())?;
             var_decls.push(quote! {
                 (#var_name, ::silex::css::make_dynamic_val_for::<#prop_type, _>(#expr))

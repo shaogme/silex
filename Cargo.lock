@@ -1244,6 +1244,7 @@ dependencies = [
  "silex_core",
  "silex_css",
  "silex_dom",
+ "silex_hash",
  "silex_html",
  "silex_macros",
  "trybuild",
@@ -1332,6 +1333,7 @@ dependencies = [
  "lightningcss",
  "proc-macro2",
  "quote",
+ "silex_hash",
  "syn 2.0.114",
 ]
 

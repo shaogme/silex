@@ -17,6 +17,7 @@ silex_dom.workspace = true
 silex_html.workspace = true
 silex_css.workspace = true
 silex_macros = { workspace = true, optional = true }
+silex_hash.workspace = true
 wasm-bindgen.workspace = true
 web-sys.workspace = true
 js-sys.workspace = true
