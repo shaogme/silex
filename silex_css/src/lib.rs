@@ -64,17 +64,6 @@ pub fn update_style(id: &str, content: &str) {
     }
 }
 
-/// Applies a CSS variable string (e.g. "--var: val; --var2: val2;") to the root element (:root).
-pub fn apply_vars_to_root(vars: &str) {
-    let doc = document();
-    if let Some(root) = doc.document_element()
-        && root.dyn_ref::<HtmlElement>().is_some()
-    {
-        let css = format!(":root {{ {} }}", vars);
-        update_style("silex-theme-root", &css);
-    }
-}
-
 pub type CssVariableGetter = Rc<dyn Fn() -> String>;
 
 /// Manages an injected <style> block uniquely for a component instance.

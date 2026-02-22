@@ -208,7 +208,6 @@ pub fn CloneDemo() -> impl View {
     .style("padding: 20px; border: 1px dashed #4caf50; margin-top: 20px;")
 }
 
-
 #[component]
 pub fn BasicsPage() -> impl View {
     let name_signal = RwSignal::new("Developer".to_string());

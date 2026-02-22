@@ -37,12 +37,16 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
     let mut trait_decl_items: Vec<TokenStream> = Vec::new();
     let mut trait_impl_items: Vec<TokenStream> = Vec::new();
     let mut to_css_items: Vec<TokenStream> = Vec::new();
+    let mut field_idents = Vec::new();
+    let mut css_vars = Vec::new();
 
     for field in &def.fields {
         let field_name = field.ident.as_ref().unwrap();
         let field_ty = &field.ty;
 
         let css_var = format!("--slx-theme-{}", field_name);
+        css_vars.push(css_var.clone());
+        field_idents.push(field_name.clone());
 
         struct_fields.push(quote! {
             pub #field_name: #field_ty
@@ -88,6 +92,18 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
                 let mut s = String::new();
                 #( s.push_str(&#to_css_items); )*
                 s
+            }
+
+            fn get_variable_values(&self) -> Vec<String> {
+                vec![
+                    #( self.#field_idents.to_string() ),*
+                ]
+            }
+
+            fn get_variable_names() -> &'static [&'static str] {
+                &[
+                    #( #css_vars ),*
+                ]
             }
         }
 

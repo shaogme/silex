@@ -12,6 +12,8 @@ pub type Theme = ();
 
 pub trait ThemeToCss: Display {
     fn to_css_variables(&self) -> String;
+    fn get_variable_values(&self) -> Vec<String>;
+    fn get_variable_names() -> &'static [&'static str];
 }
 
 /// Helper that applies theme variables to any element without an extra wrapper.
@@ -42,15 +44,11 @@ where
                 .map(|e| e.style())
                 .or_else(|| el.dyn_ref::<::web_sys::SvgElement>().map(|e| e.style()))
             {
-                let vars = theme.get().to_css_variables();
-                for rule in vars.split(';') {
-                    let rule = rule.trim();
-                    if rule.is_empty() {
-                        continue;
-                    }
-                    if let Some((name, value)) = rule.split_once(':') {
-                        let _ = style.set_property(name.trim(), value.trim());
-                    }
+                let theme_val = theme.get();
+                let names = T::get_variable_names();
+                let values = theme_val.get_variable_values();
+                for (name, value) in names.iter().zip(values.iter()) {
+                    let _ = style.set_property(name, value);
                 }
             }
         });
@@ -83,7 +81,17 @@ where
 
     // Apply reactive updates to :root
     ::silex_core::prelude::Effect::new(move |_| {
-        let vars = theme.get().to_css_variables();
-        crate::apply_vars_to_root(&vars);
+        use ::wasm_bindgen::JsCast;
+        let doc = ::silex_dom::document();
+        if let Some(root) = doc.document_element()
+            && let Some(style) = root.dyn_ref::<::web_sys::HtmlElement>().map(|e| e.style())
+        {
+            let theme_val = theme.get();
+            let names = T::get_variable_names();
+            let values = theme_val.get_variable_values();
+            for (name, value) in names.iter().zip(values.iter()) {
+                let _ = style.set_property(name, value);
+            }
+        }
     });
 }
