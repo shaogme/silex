@@ -1,5 +1,6 @@
 use crate::advanced;
 use crate::basics;
+use crate::css;
 use crate::flow_control;
 use silex::prelude::*;
 
@@ -12,8 +13,6 @@ fn SelectDemo() -> impl View {
 pub enum AdvancedRoute {
     #[route("/", view = SelectDemo)]
     Index,
-    #[route("/css", view = advanced::CssDemo)]
-    Css,
     #[route("/store", view = advanced::StoreDemo)]
     Store,
     #[route("/query", view = advanced::QueryDemo, guard = advanced::AuthGuard)]
@@ -26,23 +25,25 @@ pub enum AdvancedRoute {
     Suspense,
     #[route("/generics", view = advanced::GenericsDemo)]
     Generics,
-    #[route("/theme", view = advanced::ThemeDemo)]
-    Theme,
-    #[route("/theme-layout", view = advanced::LayoutFriendlyThemeDemo)]
-    ThemeLayout,
     #[route("/*", view = NotFoundPage)]
     NotFound,
 }
 
 #[derive(Route, Clone, PartialEq)]
-pub enum StylesRoute {
-    #[route("/", view = basics::SelectStyleDemo)]
+pub enum CssRoute {
+    #[route("/", view = css::SelectStylesPage)]
     Index,
-    #[route("/builder", view = basics::BuilderDemo)]
+    #[route("/in-rust", view = css::CssInRustDemo)]
+    InRust,
+    #[route("/theme", view = css::ThemeDemo)]
+    Theme,
+    #[route("/theme-layout", view = css::LayoutFriendlyThemeDemo)]
+    ThemeLayout,
+    #[route("/builder", view = css::BuilderDemo)]
     Builder,
-    #[route("/macro", view = basics::MacroDemo)]
+    #[route("/macro", view = css::MacroDemo)]
     Macro,
-    #[route("/hybrid", view = basics::HybridDemo)]
+    #[route("/hybrid", view = css::HybridDemo)]
     Hybrid,
     #[route("/*", view = NotFoundPage)]
     NotFound,
@@ -56,15 +57,15 @@ pub enum AppRoute {
     Basics,
     #[route("/flow", view = flow_control::FlowPage)]
     Flow,
+    #[route("/css/*", view = CssLayout)]
+    Css {
+        #[nested]
+        route: CssRoute,
+    },
     #[route("/advanced/*", view = AdvancedLayout)]
     Advanced {
         #[nested]
         route: AdvancedRoute,
-    },
-    #[route("/styles/*", view = StylesLayout)]
-    Styles {
-        #[nested]
-        route: StylesRoute,
     },
     #[route("/*", view = NotFoundPage)]
     NotFound,
@@ -118,17 +119,17 @@ pub fn NavBar() -> impl View {
         Link(AppRoute::Basics, "Basics").active_class("active"),
         Link(AppRoute::Flow, "Flow").active_class("active"),
         Link(
+            AppRoute::Css {
+                route: CssRoute::Index,
+            },
+            "CSS",
+        )
+        .active_class("active"),
+        Link(
             AppRoute::Advanced {
                 route: AdvancedRoute::Index,
             },
             "Advanced",
-        )
-        .active_class("active"),
-        Link(
-            AppRoute::Styles {
-                route: StylesRoute::Index,
-            },
-            "Styles",
         )
         .active_class("active"),
     ))
@@ -139,7 +140,6 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
     div![
         h2("Advanced Features"),
         div![
-            Link("/advanced/css", "CSS Demo").class("tab"), // Support string literal
             Link(
                 AppRoute::Advanced {
                     route: AdvancedRoute::Store,
@@ -182,36 +182,26 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
                 "Generics"
             )
             .class("tab"),
-            Link(
-                AppRoute::Advanced {
-                    route: AdvancedRoute::Theme,
-                },
-                "Theme"
-            )
-            .class("tab"),
-            Link(
-                AppRoute::Advanced {
-                    route: AdvancedRoute::ThemeLayout,
-                },
-                "Theme Layout Test"
-            )
-            .class("tab"),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 20px;"),
-        // Delegate rendering to the route itself via RouteView
         route.render(),
     ]
 }
 
 #[component]
-fn StylesLayout(route: StylesRoute) -> impl View {
+fn CssLayout(route: CssRoute) -> impl View {
     div![
-        h2("Coding Style Comparison"),
-        p("Silex supports multiple coding styles. Choose one below to see the difference."),
+        h2("CSS & Styling"),
+        p(
+            "Silex provides multiple ways to style your applications, from CSS-in-Rust to type-safe builders."
+        ),
         div![
-            Link("/styles/builder", "Builder Style").class("tab"),
-            Link("/styles/macro", "Macro Style").class("tab"),
-            Link("/styles/hybrid", "Hybrid Style").class("tab"),
+            Link("/css/in-rust", "CSS-in-Rust").class("tab"),
+            Link("/css/theme", "Theme Engine").class("tab"),
+            Link("/css/theme-layout", "Theme Layout").class("tab"),
+            Link("/css/builder", "Builder Style").class("tab"),
+            Link("/css/macro", "Macro Style").class("tab"),
+            Link("/css/hybrid", "Hybrid Style").class("tab"),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 20px;"),
         route.render(),
@@ -232,16 +222,16 @@ fn HomePage() -> impl View {
             li(Link(AppRoute::Basics, "Basics: Components, Props, Signals")),
             li(Link(AppRoute::Flow, "Flow Control: Loops, Conditions")),
             li(Link(
+                AppRoute::Css {
+                    route: CssRoute::Index,
+                },
+                "CSS: CSS-in-Rust, Themes, and Style Comparison"
+            )),
+            li(Link(
                 AppRoute::Advanced {
                     route: AdvancedRoute::Index,
                 },
-                "Advanced: Router to Store & CSS"
-            )),
-            li(Link(
-                AppRoute::Styles {
-                    route: StylesRoute::Index,
-                },
-                "Styles: Comparison of Builder vs Macro vs Hybrid"
+                "Advanced: Store, Router, Resource, Mutation"
             )),
         ],
     ]

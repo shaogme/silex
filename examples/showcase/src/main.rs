@@ -1,9 +1,10 @@
 use silex::prelude::*;
 
 mod advanced;
-pub mod basics;
-pub mod flow_control;
-pub mod routes;
+mod basics;
+mod css;
+mod flow_control;
+mod routes;
 
 use advanced::{UserSettings, UserSettingsStore};
 use routes::{AppRoute, NavBar};
