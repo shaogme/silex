@@ -28,10 +28,10 @@ src/
 ├── types/              // 强类型属性与单位系统
 │   ├── units.rs        // 基础 CSS 单位 (Px, Rem等)
 │   ├── calc.rs         // 计算属性 (calc, min, max, clamp) 及运算符重载
-│   ├── shorthands.rs   // 复合属性工厂 (Border, Margin等)
+│   ├── shorthands.rs   // 基础复合属性工厂 (Border, Margin等)
 │   ├── gradients.rs    // 渐变生成器 DSL
-│   └── reactivity.rs   // 响应式信号 IntoSignal 集成
-├── types.rs            // 类型系统入口，定义 ValidFor trait 与属性注册宏
+│   └── complex.rs      // 复杂属性 DSL (Transform, GridAreas等)
+├── types.rs            // 类型系统入口，定义 ValidFor trait 并整合响应式绑定
 ├── theme.rs            // 主题上下文集成与变量同步逻辑
 ├── runtime/
 │   ├── registry.rs     // 全局样式表注册表 (Static & Document Registry)
@@ -54,6 +54,11 @@ pub trait ValidFor<Prop> {}
 
 impl ValidFor<props::Width> for Px {}
 impl ValidFor<props::Width> for Percent {}
+// 核心验证组：
+// - Dimension: 长度单位
+// - Color: 颜色单位
+// - Number: 各类数字
+// - Complex: 独立于以上组的复杂 DSL (如 TransformBuilder)
 // 编译期会拦截：Style::new().width(rgba(0,0,0,1))
 ```
 这种设计利用了 Rust 的类型系统实现了“非法状态不可表示”。

@@ -215,7 +215,7 @@ pub fn StylingBasics() -> impl View {
                             s.background_color(hex("#312e81"))
                                 .border_color(hex("#6366f1"))
                                 .color(hex("#ffffff"))
-                                .transform("scale(1.05) rotate(1deg)")
+                                .transform(transform().scale(1.05).rotate(deg(1)))
                         })
                 )
             ],
@@ -278,7 +278,7 @@ pub fn Theming() -> impl View {
         h2("🎨 Theme Engine"),
         p("Define design tokens in Rust and propagate them via CSS variables with full layout transparency.")
             .style("color: #6b7280; margin-bottom: 32px; font-size: 1.1em;"),
-        
+
         div![
             button("🌞 Light Mode")
                 .on(event::click, move |_| set_theme.set(default_light_theme()))
@@ -349,7 +349,7 @@ pub fn AdvancedStyling() -> impl View {
         h2("🧮 Advanced Styling"),
         p("Type-safe CSS math functions and declarative gradients for complex visuals.")
             .style("margin-bottom: 32px; color: #9ca3af; font-size: 1.1em;"),
-        
+
         Stack().gap(24).children((
             DemoCard().children((
                 h4("1. Math Functions (calc, clamp, min, max)"),
@@ -421,7 +421,7 @@ pub fn AdvancedStyling() -> impl View {
                             .on_hover(|s| s
                                 .border_color(hex("#6366f1"))
                                 .nest("& > .child-box", |s| s
-                                    .transform("translateX(100px) rotate(180deg)")
+                                    .transform(transform().translate_x(px(100)).rotate(deg(180)))
                                     .background(hex("#a855f7"))
                                 )
                             )
@@ -434,8 +434,36 @@ pub fn AdvancedStyling() -> impl View {
                     ),
                     div("I am the child box").class("child-box").style("margin-top: 16px; color: #fff; font-size: 12px; text-align: center; line-height: 60px;")
                 ].style("position: relative;")
+            )),
+            DemoCard().children((
+                h4("4. Complex DSLs (Grid Areas & Font Variations)"),
+                p("Specialized support for complex grid layouts and variable fonts.").style("margin-bottom: 24px; color: #9ca3af;"),
+                Stack().gap(24).children((
+                    div![
+                        span("Grid Template Areas").style("margin-bottom: 8px; display: block; font-size: 0.9em; opacity: 0.7;"),
+                        div![
+                            div("Header").style(sty().grid_area("header").background(hex("#4f46e5")).padding(px(8))),
+                            div("Main").style(sty().grid_area("main").background(hex("#312e81")).padding(px(24))),
+                            div("Sidebar").style(sty().grid_area("sidebar").background(hex("#1e1e24")).padding(px(8))),
+                        ].style(
+                            sty()
+                                .display(DisplayKeyword::Grid)
+                                .gap(px(8))
+                                .grid_template_areas(grid_template_areas(["header header", "main sidebar"]))
+                                .grid_template_columns("2fr 1fr")
+                        )
+                    ],
+                    div![
+                        span("Font Variation Settings").style("margin-bottom: 8px; display: block; font-size: 0.9em; opacity: 0.7;"),
+                        div("Variable Font Styling (Weight: 700, Ital: 0.5)")
+                            .style(
+                                sty()
+                                    .font_size(px(24))
+                                    .font_variation_settings(font_variation_settings([("wght", 700.0), ("ital", 0.5)]))
+                            )
+                    ]
+                ))
             ))
         ))
     ]
 }
-

@@ -97,7 +97,44 @@ styled! {
 
 ---
 
-## 4. 计算属性与运算符重载
+## 4. 复杂属性 DSL (Complex Properties)
+
+对于 `transform` 或 `grid-template-areas` 等语法极其复杂的属性，Silex 提供了专门的 DSL（领域专用语言）来确保输入的正确性。
+
+### 变换 (Transform)
+支持链式调用，无需手动拼接字符串，且会自动验证单位。
+
+```rust
+sty().transform(
+    transform()
+        .translate(px(10), px(20))
+        .rotate(deg(45))
+        .scale(1.2)
+)
+```
+
+### 网格区域 (Grid Template Areas)
+通过 Rust 数组/向量声明布局，自动处理引号包裹。
+
+```rust
+sty().grid_template_areas(
+    grid_template_areas(["header header", "main sidebar"])
+)
+// 生成: grid-template-areas: "header header" "main sidebar";
+```
+
+### 字体变体 (Font Variation Settings)
+为变体字体（Variable Fonts）提供结构化输入。
+
+```rust
+sty().font_variation_settings(
+    font_variation_settings([("wght", 700.0), ("ital", 0.5)])
+)
+```
+
+---
+
+## 5. 计算属性与运算符重载
 
 Silex CSS 允许你像编写原生 CSS 一样进行数值计算。通过重载算术运算符，你可以直接组合不同的单位。
 
@@ -122,7 +159,7 @@ sty().width(clamp(px(200), pct(50), px(800)))
 
 ---
 
-## 5. 主题系统 (Theme System)
+## 6. 主题系统 (Theme System)
 
 传统的样式框架在实现主题方案时，往往需要包裹一层 `<div>` 主题容器，这会破坏 Flex/Grid 布局。Silex 的主题系统通过 **CSS 变量注入** 巧妙解决了这个问题。
 
@@ -157,7 +194,7 @@ div("主题文字").style(sty().color(t.map(|v| v.primary.clone())))
 
 ---
 
-## 6. 核心引擎与架构
+## 7. 核心引擎与架构
 
 `silex_css` 的高性能离不开其底层的**中心化注册机制**：
 

@@ -92,6 +92,13 @@ fn classify_property(
     prop: &MdnCssProperty,
     resolver: &SyntaxResolver,
 ) -> (PropGroup, Vec<String>) {
+    // 0. Explicitly handle Complex properties
+    if name == "transform" || name == "grid-template-areas" || name == "font-variation-settings" {
+        let syntax = &prop.syntax;
+        let keywords = resolver.resolve_keywords(syntax);
+        return (PropGroup::Complex, keywords);
+    }
+
     let syntax = &prop.syntax;
 
     // 1. Determine Keywords (Recursively)

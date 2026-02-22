@@ -1,12 +1,13 @@
 use std::fmt::Display;
 
 pub mod calc;
+pub mod complex;
 pub mod gradients;
-pub mod reactivity;
 pub mod shorthands;
 pub mod units;
 
 pub use calc::*;
+pub use complex::*;
 pub use gradients::*;
 pub use shorthands::*;
 pub use units::*;
@@ -185,6 +186,11 @@ macro_rules! define_props {
     };
     // 关键字分组 (由 define_css_enum 补充)
     (@group $pascal:ident, Keyword) => {};
+    // 复杂属性分组 (transform, grid-template-areas 等)
+    (@group $pascal:ident, Complex) => {
+        impl ValidFor<props::$pascal> for String {}
+        impl ValidFor<props::$pascal> for &'static str {}
+    };
 }
 
 // 调用中心注册表执行代码生成
@@ -197,5 +203,48 @@ impl ValidFor<props::BackgroundImage> for Url {}
 impl<T: Display> ValidFor<props::Any> for T {}
 
 // 响应式集成后的注册
-use crate::types::reactivity::impl_into_signal_for_css;
+macro_rules! impl_into_signal_for_css {
+    ($($t:ty),*) => {
+        $(
+            impl silex_core::traits::IntoSignal for $t {
+                type Value = $t;
+                type Signal = silex_core::reactivity::Constant<$t>;
+                fn into_signal(self) -> Self::Signal { silex_core::reactivity::Constant(self) }
+                fn is_constant_value(&self) -> bool { true }
+            }
+        )*
+    };
+}
+
+impl_into_signal_for_css!(
+    Px,
+    Percent,
+    Rgba,
+    Auto,
+    Rem,
+    Em,
+    Vw,
+    Vh,
+    Hex,
+    Hsl,
+    Url,
+    BorderValue,
+    MarginValue,
+    PaddingValue,
+    FlexValue,
+    TransitionValue,
+    BackgroundValue,
+    UnsafeCss,
+    TransformValue,
+    TransformBuilder,
+    GridTemplateAreasValue,
+    FontVariationSettingsValue,
+    CalcValue<LengthMark>,
+    CalcValue<AngleMark>,
+    Deg,
+    Rad,
+    Turn,
+    GradientValue
+);
+
 register_generated_keywords!(impl_into_signal_for_css);
