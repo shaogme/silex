@@ -31,20 +31,12 @@ pub enum AdvancedRoute {
 
 #[derive(Route, Clone, PartialEq)]
 pub enum CssRoute {
-    #[route("/", view = css::SelectStylesPage)]
-    Index,
-    #[route("/in-rust", view = css::CssInRustDemo)]
-    InRust,
-    #[route("/theme", view = css::ThemeDemo)]
-    Theme,
-    #[route("/theme-layout", view = css::LayoutFriendlyThemeDemo)]
-    ThemeLayout,
-    #[route("/builder", view = css::BuilderDemo)]
-    Builder,
-    #[route("/macro", view = css::MacroDemo)]
-    Macro,
-    #[route("/hybrid", view = css::HybridDemo)]
-    Hybrid,
+    #[route("/", view = css::StylingBasics)]
+    Basics,
+    #[route("/theming", view = css::Theming)]
+    Theming,
+    #[route("/advanced", view = css::AdvancedStyling)]
+    Advanced,
     #[route("/*", view = NotFoundPage)]
     NotFound,
 }
@@ -120,7 +112,7 @@ pub fn NavBar() -> impl View {
         Link(AppRoute::Flow, "Flow").active_class("active"),
         Link(
             AppRoute::Css {
-                route: CssRoute::Index,
+                route: CssRoute::Basics,
             },
             "CSS",
         )
@@ -196,12 +188,9 @@ fn CssLayout(route: CssRoute) -> impl View {
             "Silex provides multiple ways to style your applications, from CSS-in-Rust to type-safe builders."
         ),
         div![
-            Link("/css/in-rust", "CSS-in-Rust").class("tab"),
-            Link("/css/theme", "Theme Engine").class("tab"),
-            Link("/css/theme-layout", "Theme Layout").class("tab"),
-            Link("/css/builder", "Builder Style").class("tab"),
-            Link("/css/macro", "Macro Style").class("tab"),
-            Link("/css/hybrid", "Hybrid Style").class("tab"),
+            Link("/css/", "Basics").class("tab"),
+            Link("/css/theming", "Theme Engine").class("tab"),
+            Link("/css/advanced", "Advanced CSS").class("tab"),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 20px;"),
         route.render(),
@@ -223,7 +212,7 @@ fn HomePage() -> impl View {
             li(Link(AppRoute::Flow, "Flow Control: Loops, Conditions")),
             li(Link(
                 AppRoute::Css {
-                    route: CssRoute::Index,
+                    route: CssRoute::Basics,
                 },
                 "CSS: CSS-in-Rust, Themes, and Style Comparison"
             )),

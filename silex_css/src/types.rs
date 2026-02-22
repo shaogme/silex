@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::marker::PhantomData;
 
 /// 核心验证 Trait
 /// 用于保证传入的值属于当前 CSS 属性合法的类型。
@@ -11,6 +12,97 @@ pub trait ValidFor<Prop> {}
 
 pub trait CssValue: Display {}
 impl<T: Display> CssValue for T {}
+
+// ==========================================
+// 核心标记 Trait 与 量纲 (Marks & Marker Traits)
+// ==========================================
+
+#[derive(Clone, Copy, Debug)]
+pub struct LengthMark;
+#[derive(Clone, Copy, Debug)]
+pub struct AngleMark;
+#[derive(Clone, Copy, Debug)]
+pub struct NumberMark;
+#[derive(Clone, Copy, Debug)]
+pub struct ColorMark;
+
+pub trait CssLength: Display {}
+pub trait CssAngle: Display {}
+pub trait CssColor: Display {}
+pub trait CssNumber: Display {}
+pub trait CssPercentage: Display {}
+
+#[derive(Clone, Debug)]
+pub struct CalcValue<Mark>(pub String, pub PhantomData<Mark>);
+
+impl<Mark> CalcValue<Mark> {
+    pub fn new(s: String) -> Self {
+        Self(s, PhantomData)
+    }
+    pub fn binary<L: Display, R: Display>(l: L, op: &'static str, r: R) -> Self {
+        Self(format!("({} {} {})", l, op, r), PhantomData)
+    }
+}
+
+impl<Mark> Display for CalcValue<Mark> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl CssLength for CalcValue<LengthMark> {}
+impl CssAngle for CalcValue<AngleMark> {}
+
+impl<Mark> From<CalcValue<Mark>> for String {
+    fn from(v: CalcValue<Mark>) -> Self {
+        v.0
+    }
+}
+
+pub fn calc<Mark>(v: CalcValue<Mark>) -> CalcValue<Mark> {
+    CalcValue::new(format!("calc({})", v.0))
+}
+
+pub fn min<Mark, T, I>(args: I) -> CalcValue<Mark>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<CalcValue<Mark>>,
+{
+    let mut s = String::from("min(");
+    for (i, arg) in args.into_iter().enumerate() {
+        if i > 0 {
+            s.push_str(", ");
+        }
+        let v: CalcValue<Mark> = arg.into();
+        s.push_str(&v.0);
+    }
+    s.push(')');
+    CalcValue::new(s)
+}
+
+pub fn max<Mark, T, I>(args: I) -> CalcValue<Mark>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<CalcValue<Mark>>,
+{
+    let mut s = String::from("max(");
+    for (i, arg) in args.into_iter().enumerate() {
+        if i > 0 {
+            s.push_str(", ");
+        }
+        let v: CalcValue<Mark> = arg.into();
+        s.push_str(&v.0);
+    }
+    s.push(')');
+    CalcValue::new(s)
+}
+
+pub fn clamp<Mark, T>(min_v: T, val: T, max_v: T) -> CalcValue<Mark>
+where
+    T: Into<CalcValue<Mark>> + Display,
+{
+    CalcValue::new(format!("clamp({}, {}, {})", min_v, val, max_v))
+}
 
 // ==========================================
 // 核心包裹单元类型 (Units)
@@ -92,6 +184,30 @@ impl Display for Vh {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct Deg(pub f64);
+impl Display for Deg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}deg", self.0)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Rad(pub f64);
+impl Display for Rad {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}rad", self.0)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Turn(pub f64);
+impl Display for Turn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}turn", self.0)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Hex(pub String);
 
@@ -145,6 +261,18 @@ pub fn vw<T: Into<f64>>(v: T) -> Vw {
 #[inline]
 pub fn vh<T: Into<f64>>(v: T) -> Vh {
     Vh(v.into())
+}
+#[inline]
+pub fn deg<T: Into<f64>>(v: T) -> Deg {
+    Deg(v.into())
+}
+#[inline]
+pub fn rad<T: Into<f64>>(v: T) -> Rad {
+    Rad(v.into())
+}
+#[inline]
+pub fn turn<T: Into<f64>>(v: T) -> Turn {
+    Turn(v.into())
 }
 #[inline]
 pub fn rgba(r: u8, g: u8, b: u8, a: f32) -> Rgba {
@@ -345,6 +473,218 @@ where
     BackgroundValue(format!("{} {}", color, image))
 }
 
+// ==========================================
+// 渐变 DSL (Gradients)
+// ==========================================
+
+#[derive(Clone, Debug)]
+pub struct GradientValue(pub String);
+impl Display for GradientValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl ValidFor<props::BackgroundImage> for GradientValue {}
+impl ValidFor<props::Background> for GradientValue {}
+
+#[derive(Clone, Debug)]
+pub enum Direction {
+    ToTop,
+    ToBottom,
+    ToLeft,
+    ToRight,
+    ToTopLeft,
+    ToTopRight,
+    ToBottomLeft,
+    ToBottomRight,
+    Angle(CalcValue<AngleMark>),
+}
+
+impl Display for Direction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ToTop => write!(f, "to top"),
+            Self::ToBottom => write!(f, "to bottom"),
+            Self::ToLeft => write!(f, "to left"),
+            Self::ToRight => write!(f, "to right"),
+            Self::ToTopLeft => write!(f, "to top left"),
+            Self::ToTopRight => write!(f, "to top right"),
+            Self::ToBottomLeft => write!(f, "to bottom left"),
+            Self::ToBottomRight => write!(f, "to bottom right"),
+            Self::Angle(a) => write!(f, "{}", a),
+        }
+    }
+}
+
+impl From<Deg> for Direction {
+    fn from(v: Deg) -> Self {
+        Self::Angle(v.into())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ColorStop {
+    pub color: String,
+    pub position: Option<String>,
+}
+
+impl Display for ColorStop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.color)?;
+        if let Some(pos) = &self.position {
+            write!(f, " {}", pos)?;
+        }
+        Ok(())
+    }
+}
+
+pub struct LinearGradientBuilder {
+    direction: Option<Direction>,
+    stops: Vec<ColorStop>,
+    repeating: bool,
+}
+
+impl Default for LinearGradientBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LinearGradientBuilder {
+    pub fn new() -> Self {
+        Self {
+            direction: None,
+            stops: Vec::new(),
+            repeating: false,
+        }
+    }
+    pub fn to(mut self, dir: Direction) -> Self {
+        self.direction = Some(dir);
+        self
+    }
+    pub fn stop<C: CssColor, P: Display>(mut self, color: C, pos: impl Into<Option<P>>) -> Self {
+        self.stops.push(ColorStop {
+            color: color.to_string(),
+            position: pos.into().map(|p| p.to_string()),
+        });
+        self
+    }
+    pub fn repeating(mut self) -> Self {
+        self.repeating = true;
+        self
+    }
+    pub fn build(self) -> GradientValue {
+        let name = if self.repeating {
+            "repeating-linear-gradient"
+        } else {
+            "linear-gradient"
+        };
+        let mut s = format!("{}(", name);
+        let mut first = true;
+        if let Some(dir) = self.direction {
+            s.push_str(&dir.to_string());
+            first = false;
+        }
+        for stop in self.stops {
+            if !first {
+                s.push_str(", ");
+            }
+            s.push_str(&stop.to_string());
+            first = false;
+        }
+        s.push(')');
+        GradientValue(s)
+    }
+}
+
+pub fn linear_gradient() -> LinearGradientBuilder {
+    LinearGradientBuilder::new()
+}
+
+pub struct RadialGradientBuilder {
+    shape_size: Option<String>,
+    position: Option<String>,
+    stops: Vec<ColorStop>,
+    repeating: bool,
+}
+
+impl Default for RadialGradientBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RadialGradientBuilder {
+    pub fn new() -> Self {
+        Self {
+            shape_size: None,
+            position: None,
+            stops: Vec::new(),
+            repeating: false,
+        }
+    }
+    pub fn circle(mut self) -> Self {
+        self.shape_size = Some("circle".to_string());
+        self
+    }
+    pub fn ellipse(mut self) -> Self {
+        self.shape_size = Some("ellipse".to_string());
+        self
+    }
+    pub fn at<P: Display>(mut self, pos: P) -> Self {
+        self.position = Some(pos.to_string());
+        self
+    }
+    pub fn stop<C: CssColor, P: Display>(mut self, color: C, pos: impl Into<Option<P>>) -> Self {
+        self.stops.push(ColorStop {
+            color: color.to_string(),
+            position: pos.into().map(|p| p.to_string()),
+        });
+        self
+    }
+    pub fn repeating(mut self) -> Self {
+        self.repeating = true;
+        self
+    }
+    pub fn build(self) -> GradientValue {
+        let name = if self.repeating {
+            "repeating-radial-gradient"
+        } else {
+            "radial-gradient"
+        };
+        let mut s = format!("{}(", name);
+        let mut first = true;
+
+        if let Some(ss) = &self.shape_size {
+            s.push_str(ss);
+            first = false;
+        }
+
+        if let Some(pos) = &self.position {
+            if !first {
+                s.push(' ');
+            }
+            s.push_str("at ");
+            s.push_str(pos);
+            first = false;
+        }
+
+        for stop in self.stops {
+            if !first {
+                s.push_str(", ");
+            }
+            s.push_str(&stop.to_string());
+            first = false;
+        }
+        s.push(')');
+        GradientValue(s)
+    }
+}
+
+pub fn radial_gradient() -> RadialGradientBuilder {
+    RadialGradientBuilder::new()
+}
+
 #[derive(Clone, Debug)]
 pub struct UnsafeCss(pub String);
 impl UnsafeCss {
@@ -370,7 +710,141 @@ macro_rules! impl_valid_for_dimension {
         impl ValidFor<$prop> for Em {}
         impl ValidFor<$prop> for Vw {}
         impl ValidFor<$prop> for Vh {}
+        impl ValidFor<$prop> for CalcValue<LengthMark> {}
     };
+}
+
+macro_rules! impl_css_ops {
+    ($t:ty, $trait:ident, $mark:ident) => {
+        impl<R: $trait> std::ops::Add<R> for $t {
+            type Output = CalcValue<$mark>;
+            fn add(self, rhs: R) -> Self::Output {
+                CalcValue::binary(self, " + ", rhs)
+            }
+        }
+        impl<R: $trait> std::ops::Sub<R> for $t {
+            type Output = CalcValue<$mark>;
+            fn sub(self, rhs: R) -> Self::Output {
+                CalcValue::binary(self, " - ", rhs)
+            }
+        }
+        impl std::ops::Mul<f64> for $t {
+            type Output = CalcValue<$mark>;
+            fn mul(self, rhs: f64) -> Self::Output {
+                CalcValue::binary(self, " * ", rhs)
+            }
+        }
+        impl std::ops::Div<f64> for $t {
+            type Output = CalcValue<$mark>;
+            fn div(self, rhs: f64) -> Self::Output {
+                CalcValue::binary(self, " / ", rhs)
+            }
+        }
+    };
+}
+
+impl CssLength for Px {}
+impl CssLength for Percent {}
+impl CssLength for Rem {}
+impl CssLength for Em {}
+impl CssLength for Vw {}
+impl CssLength for Vh {}
+
+impl CssAngle for Deg {}
+impl CssAngle for Rad {}
+impl CssAngle for Turn {}
+
+impl CssColor for Rgba {}
+impl CssColor for Hex {}
+impl CssColor for Hsl {}
+
+impl From<Px> for CalcValue<LengthMark> {
+    fn from(v: Px) -> Self {
+        v.into_calc()
+    }
+}
+impl From<Percent> for CalcValue<LengthMark> {
+    fn from(v: Percent) -> Self {
+        v.into_calc()
+    }
+}
+impl From<Rem> for CalcValue<LengthMark> {
+    fn from(v: Rem) -> Self {
+        v.into_calc()
+    }
+}
+impl From<Em> for CalcValue<LengthMark> {
+    fn from(v: Em) -> Self {
+        v.into_calc()
+    }
+}
+impl From<Vw> for CalcValue<LengthMark> {
+    fn from(v: Vw) -> Self {
+        v.into_calc()
+    }
+}
+impl From<Vh> for CalcValue<LengthMark> {
+    fn from(v: Vh) -> Self {
+        v.into_calc()
+    }
+}
+
+impl From<Deg> for CalcValue<AngleMark> {
+    fn from(v: Deg) -> Self {
+        v.into_calc()
+    }
+}
+impl From<Rad> for CalcValue<AngleMark> {
+    fn from(v: Rad) -> Self {
+        v.into_calc()
+    }
+}
+impl From<Turn> for CalcValue<AngleMark> {
+    fn from(v: Turn) -> Self {
+        v.into_calc()
+    }
+}
+
+impl_css_ops!(Px, CssLength, LengthMark);
+impl_css_ops!(Percent, CssLength, LengthMark);
+impl_css_ops!(Rem, CssLength, LengthMark);
+impl_css_ops!(Em, CssLength, LengthMark);
+impl_css_ops!(Vw, CssLength, LengthMark);
+impl_css_ops!(Vh, CssLength, LengthMark);
+impl_css_ops!(CalcValue<LengthMark>, CssLength, LengthMark);
+
+impl_css_ops!(Deg, CssAngle, AngleMark);
+impl_css_ops!(Rad, CssAngle, AngleMark);
+impl_css_ops!(Turn, CssAngle, AngleMark);
+impl_css_ops!(CalcValue<AngleMark>, CssAngle, AngleMark);
+
+trait IntoCalc<Mark> {
+    fn into_calc(self) -> CalcValue<Mark>;
+}
+impl<T: Display> IntoCalc<LengthMark> for T {
+    fn into_calc(self) -> CalcValue<LengthMark> {
+        CalcValue::new(self.to_string())
+    }
+}
+impl IntoCalc<AngleMark> for Deg {
+    fn into_calc(self) -> CalcValue<AngleMark> {
+        CalcValue::new(self.to_string())
+    }
+}
+impl IntoCalc<AngleMark> for Rad {
+    fn into_calc(self) -> CalcValue<AngleMark> {
+        CalcValue::new(self.to_string())
+    }
+}
+impl IntoCalc<AngleMark> for Turn {
+    fn into_calc(self) -> CalcValue<AngleMark> {
+        CalcValue::new(self.to_string())
+    }
+}
+impl IntoCalc<AngleMark> for CalcValue<AngleMark> {
+    fn into_calc(self) -> CalcValue<AngleMark> {
+        self
+    }
 }
 
 macro_rules! define_props {
@@ -476,7 +950,13 @@ impl_into_signal_for_css!(
     FlexValue,
     TransitionValue,
     BackgroundValue,
-    UnsafeCss
+    UnsafeCss,
+    CalcValue<LengthMark>,
+    CalcValue<AngleMark>,
+    Deg,
+    Rad,
+    Turn,
+    GradientValue
 );
 
 register_generated_keywords!(impl_into_signal_for_css);

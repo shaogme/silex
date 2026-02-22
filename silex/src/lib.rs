@@ -54,7 +54,7 @@ pub mod prelude {
     pub use crate::core::prelude::{Map, Set, Track};
     pub use crate::flow::Switch;
     pub use crate::router::Link;
-    pub use silex_css::prelude::Style;
+    pub use silex_css::prelude::{Style, linear_gradient, radial_gradient};
     pub use silex_dom::prelude::{View, text};
     pub use silex_html::{Em, em};
     #[cfg(feature = "macros")]

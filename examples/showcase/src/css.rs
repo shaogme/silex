@@ -142,12 +142,7 @@ styled! {
 // --- Demo Components ---
 
 #[component]
-pub fn SelectStylesPage() -> impl View {
-    div("Select a CSS demo above to see the power of Silex styling.")
-}
-
-#[component]
-pub fn CssInRustDemo() -> impl View {
+pub fn StylingBasics() -> impl View {
     let (color, set_color) = signal(hex("#ffffff"));
     let (size, set_size) = signal("medium".to_string());
     let (hover_color, set_hover_color) = signal(hex("#4f46e5"));
@@ -158,18 +153,18 @@ pub fn CssInRustDemo() -> impl View {
 
     div![
         div![
-            h2("✨ CSS-in-Rust"),
-            p("Experience the power of scoped, type-safe, and reactive styling in pure Rust.")
+            h2("✨ Styling Basics"),
+            p("Silex offers powerful ways to style components: from scoped CSS-in-Rust to type-safe builders.")
                 .style("opacity: 0.7; font-size: 1.1em;"),
         ].style("margin-bottom: 40px;"),
 
         DemoCard().children((
-            h3("Atomic & Scoped Styles"),
+            h3("1. Atomic & Scoped Styles (styled!)"),
             p(
-                "The button below demonstrates the `styled!` macro with dynamic interpolation, variants, and factory functions."
+                "The `styled!` macro creates scoped, reusable components with dynamic interpolation and variants."
             ).style("margin-bottom: 24px; color: #9ca3af;"),
             StyledButton()
-                .children("Interactive Button")
+                .children("Interactive Scoped Button")
                 .color(color)
                 .size(size)
                 .hover_color(hover_color)
@@ -178,18 +173,10 @@ pub fn CssInRustDemo() -> impl View {
                 .padding_val(padding_state)
                 .on(event::click, move |_| {
                     set_color.update(|c| {
-                        *c = if c.0 == "#ffffff" {
-                            hex("#fbbf24") // Amber 400
-                        } else {
-                            hex("#ffffff")
-                        }
+                        *c = if c.0 == "#ffffff" { hex("#fbbf24") } else { hex("#ffffff") }
                     });
                     set_size.update(|s| {
-                        *s = if *s == "medium" {
-                            "large".to_string()
-                        } else {
-                            "medium".to_string()
-                        }
+                        *s = if *s == "medium" { "large".to_string() } else { "medium".to_string() }
                     });
                     set_border_state.update(|b| {
                         *b = border(px(2), BorderStyleKeyword::Dashed, hex("#f472b6"));
@@ -198,31 +185,22 @@ pub fn CssInRustDemo() -> impl View {
                         *p = padding::x_y(px(16), px(32));
                     });
                     set_hover_color.update(|c| {
-                        *c = if c.0 == "#4f46e5" {
-                            hex("#ec4899") // Pink 500
-                        } else {
-                            hex("#4f46e5")
-                        }
+                        *c = if c.0 == "#4f46e5" { hex("#ec4899") } else { hex("#4f46e5") }
                     });
                     set_pseudo_state.update(|s| {
-                        *s = if *s == "hover" {
-                            "active".to_string()
-                        } else {
-                            "hover".to_string()
-                        }
+                        *s = if *s == "hover" { "active".to_string() } else { "hover".to_string() }
                     });
-                    console_log("Styles and dynamic rules updated!");
                 }),
         )),
 
         DemoCard().children((
-            h3("Type-Safe Style Builder"),
+            h3("2. Type-Safe Style Builder (sty)"),
             p(
-                "A chainable, type-safe API for defining styles without macros, supporting full reactivity."
+                "A chainable API for defining styles with full reactivity, ideal for dynamic inline styles."
             ).style("margin-bottom: 24px; color: #9ca3af;"),
             div![
                 span("Hover to Reveal Effects").style(
-                    Style::new()
+                    sty()
                         .display(DisplayKeyword::InlineBlock)
                         .padding(padding::x_y(px(24), px(40)))
                         .background_color(hex("#1e1e24"))
@@ -241,7 +219,7 @@ pub fn CssInRustDemo() -> impl View {
                         })
                 )
             ],
-            p("Signals are natively supported in the builder:").style("margin: 20px 0 10px; font-size: 0.9em; opacity: 0.6;"),
+            p("Signals are natively supported:").style("margin: 20px 0 10px; font-size: 0.9em; opacity: 0.6;"),
             {
                 let (count, set_count) = signal(0);
                 div![
@@ -267,8 +245,8 @@ pub fn CssInRustDemo() -> impl View {
         )),
 
         DemoCard().children((
-            h3("Layout Primitives"),
-            p("Using the brand new Stack and Grid components for structural layout.")
+            h3("3. Layout Primitives"),
+            p("Structural layout components like Stack, Grid, and Center for effortless alignment.")
                 .style("margin-bottom: 24px; color: #9ca3af;"),
 
                 Stack()
@@ -292,14 +270,15 @@ pub fn CssInRustDemo() -> impl View {
 }
 
 #[component]
-pub fn ThemeDemo() -> impl View {
+pub fn Theming() -> impl View {
     let (theme, set_theme) = signal(default_light_theme());
     let is_dark = theme.map(|t| t.surface.0 == "#111827");
 
     div![
-        h3("🎨 Real-time Theme Engine"),
-        p("Define CSS variables via Rust structs and propagate them through the component tree.")
-            .style("color: #6b7280; margin-bottom: 24px;"),
+        h2("🎨 Theme Engine"),
+        p("Define design tokens in Rust and propagate them via CSS variables with full layout transparency.")
+            .style("color: #6b7280; margin-bottom: 32px; font-size: 1.1em;"),
+        
         div![
             button("🌞 Light Mode")
                 .on(event::click, move |_| set_theme.set(default_light_theme()))
@@ -310,21 +289,9 @@ pub fn ThemeDemo() -> impl View {
                         .cursor(CursorKeyword::Pointer)
                         .transition("all 0.2s")
                         .margin(margin::right(px(12)))
-                        .background_color(move || if !is_dark.get() {
-                            hex("#6366f1")
-                        } else {
-                            hex("#f3f4f6")
-                        })
-                        .color(move || if !is_dark.get() {
-                            hex("#ffffff")
-                        } else {
-                            hex("#374151")
-                        })
-                        .border(move || if !is_dark.get() {
-                            border(px(1), BorderStyleKeyword::Solid, hex("#6366f1"))
-                        } else {
-                            border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db"))
-                        })
+                        .background_color(move || if !is_dark.get() { hex("#6366f1") } else { hex("#f3f4f6") })
+                        .color(move || if !is_dark.get() { hex("#ffffff") } else { hex("#374151") })
+                        .border(move || if !is_dark.get() { border(px(1), BorderStyleKeyword::Solid, hex("#6366f1")) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) })
                 ),
             button("🌙 Dark Mode")
                 .on(event::click, move |_| set_theme.set(default_dark_theme()))
@@ -334,140 +301,105 @@ pub fn ThemeDemo() -> impl View {
                         .border_radius(px(6))
                         .cursor(CursorKeyword::Pointer)
                         .transition("all 0.2s")
-                        .background_color(move || if is_dark.get() {
-                            hex("#4f46e5")
-                        } else {
-                            hex("#f3f4f6")
-                        })
-                        .color(move || if is_dark.get() {
-                            hex("#ffffff")
-                        } else {
-                            hex("#374151")
-                        })
-                        .border(move || if is_dark.get() {
-                            border(px(1), BorderStyleKeyword::Solid, hex("#4f46e5"))
-                        } else {
-                            border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db"))
-                        })
+                        .background_color(move || if is_dark.get() { hex("#4f46e5") } else { hex("#f3f4f6") })
+                        .color(move || if is_dark.get() { hex("#ffffff") } else { hex("#374151") })
+                        .border(move || if is_dark.get() { border(px(1), BorderStyleKeyword::Solid, hex("#4f46e5")) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) })
                 ),
-        ],
-        // Use apply to inject theme variables
+        ].style("margin-bottom: 24px;"),
+
         ThemePreviewCard().apply(theme_variables(theme)).children((
-            h4("Dynamic Component Style"),
-            p("These styles are reacting to the Rust-defined theme object via CSS variables."),
-            ThemeButton().children("Themed Button").active(false)
+            h4("Real-time Propagation"),
+            p("These styles react to the Rust theme object via CSS variables."),
+            ThemeButton().children("Themed Scoped Button").active(false)
+        )),
+
+        h3("Layout Continuity").style("margin: 40px 0 16px;"),
+        p("Theme variables are injected via 'apply', ensuring no extra DOM wrappers break CSS layouts like Flex or Grid.")
+            .style("color: #9ca3af; margin-bottom: 24px;"),
+
+        DemoCard().children((
+            h4("1. Theme variables in Flex (Stack)"),
+            p("The red border is a Stack. Variable injection doesn't break the flow.").style("margin-bottom: 12px; font-size: 0.9em; opacity: 0.7;"),
+            Stack().style(sty().border(border(px(2), BorderStyleKeyword::Solid, hex("#ef4444"))).padding(px(8))).children((
+                div("Themed Row 1").style("background: #1e1e24; padding: 10px; margin: 4px; border-radius: 4px; border: 1px solid $theme.primary;")
+                    .apply(theme_variables(theme)),
+                div("Themed Row 2").style("background: #1e1e24; padding: 10px; margin: 4px; border-radius: 4px; border: 1px solid $theme.secondary;")
+                    .apply(theme_variables(theme)),
+            ))
+        )),
+
+        DemoCard().children((
+            h4("2. Nested Layout Stability"),
+            p("Even deeply nested layouts remain stable with variable injection.").style("margin-bottom: 12px; font-size: 0.9em; opacity: 0.7;"),
+            Stack().style(sty().border(border(px(2), BorderStyleKeyword::Solid, hex("#3b82f6"))).padding(px(8))).children((
+                Stack().gap(4).apply(theme_variables(theme)).children((
+                    div("Nested 1").style("background: $theme.surface; color: $theme.text; padding: 10px; border-radius: 4px; border: 1px solid $theme.primary;"),
+                    div("Nested 2").style("background: $theme.surface; color: $theme.text; padding: 10px; border-radius: 4px; border: 1px solid $theme.secondary;"),
+                )),
+                div("Sibling of Nested Stack").style("background: #1e1e24; color: #fff; padding: 10px; margin-top: 4px; border-radius: 4px;"),
+            ))
         ))
     ]
     .style("padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background: #f9fafb;")
 }
 
 #[component]
-pub fn LayoutFriendlyThemeDemo() -> impl View {
-    let (theme, _) = signal(default_dark_theme());
-
+pub fn AdvancedStyling() -> impl View {
     div![
-        h3("🏗️ Layout Friendly Theme Provider"),
-        p("Testing ThemeProvider with 'display: contents' and manual variable injection."),
-
-        DemoCard().children((
-            h4("1. ThemeProvider inside Flex (Column)"),
-            p("The red border is around the Stack. The ThemeProvider should NOT break the Flex layout flow."),
-            Stack().style(sty().border(border(px(2), BorderStyleKeyword::Solid, hex("#ef4444"))).padding(px(8))).children((
-                div("Item 1 (Inside ThemeVariable context)").style("background: #1e1e24; padding: 10px; margin: 4px; border-radius: 4px; border: 1px solid $theme.primary;")
-                    .apply(theme_variables(theme)),
-                div("Item 2 (Inside ThemeVariable context)").style("background: #1e1e24; padding: 10px; margin: 4px; border-radius: 4px; border: 1px solid $theme.secondary;")
-                    .apply(theme_variables(theme)),
-                div("Item 3 (Outside ThemeProvider)").style("background: #1e1e24; padding: 10px; margin: 4px; border-radius: 4px;"),
-            ))
-        )),
-
-        DemoCard().children((
-            h4("2. Manual Variable Injection (theme_variables)"),
-            p("Injecting theme variables directly into a div without an extra wrapper."),
-            div![
-                "I have theme colors applied directly!",
-                div("Sub-element using $theme.primary").style("color: $theme.primary; font-weight: bold;")
-            ]
-            .apply(theme_variables(theme))
-            .style("padding: 20px; border: 2px dashed $theme.secondary; border-radius: 12px;")
-        )),
-
-        DemoCard().children((
-            h4("3. Stack Layout Continuity (Issue #1 Test)"),
-            p("Stack as a child of another layout should maintain Flow correctly without wrapper div breaks."),
-            Stack().style(sty().border(border(px(2), BorderStyleKeyword::Solid, hex("#3b82f6"))).padding(px(8))).children((
-                Stack().gap(4).apply(theme_variables(theme)).children((
-                    div("Nested Stack Item 1").style("background: $theme.surface; color: $theme.text; padding: 10px; border-radius: 4px; border: 1px solid $theme.primary;"),
-                    div("Nested Stack Item 2").style("background: $theme.surface; color: $theme.text; padding: 10px; border-radius: 4px; border: 1px solid $theme.secondary;"),
-                )),
-                div("Direct Sibling of Nested Stack").style("background: #1e1e24; color: #fff; padding: 10px; margin-top: 4px; border-radius: 4px;"),
+        h2("🧮 Advanced Styling"),
+        p("Type-safe CSS math functions and declarative gradients for complex visuals.")
+            .style("margin-bottom: 32px; color: #9ca3af; font-size: 1.1em;"),
+        
+        Stack().gap(24).children((
+            DemoCard().children((
+                h4("1. Math Functions (calc, clamp, min, max)"),
+                p("Perform type-safe math operations across units at compile time.").style("margin-bottom: 16px; font-size: 0.9em; opacity: 0.7;"),
+                Stack().gap(12).children((
+                    div("Calc: 100% - 60px").style(
+                        sty()
+                            .width(calc(pct(100) - px(60)))
+                            .height(px(40))
+                            .background("#312e81")
+                            .border_radius(px(8))
+                            .display(DisplayKeyword::Flex)
+                            .align_items(AlignItemsKeyword::Center)
+                            .padding(padding::left(px(12)))
+                    ),
+                    div("Clamp (15% | 50% | 85%)").style(
+                        sty()
+                            .width(clamp(pct(15), pct(50), pct(85)))
+                            .height(px(40))
+                            .background("#4338ca")
+                            .border_radius(px(8))
+                            .display(DisplayKeyword::Flex)
+                            .align_items(AlignItemsKeyword::Center)
+                            .padding(padding::left(px(12)))
+                    ),
+                ))
+            )),
+            DemoCard().children((
+                h4("2. Gradients DSL"),
+                p("Declarative API for complex linear and radial gradients.").style("margin-bottom: 16px; font-size: 0.9em; opacity: 0.7;"),
+                Grid().columns(2).gap(16).children((
+                    div![
+                        p("Linear").style("margin-bottom: 8px; font-size: 0.8em;"),
+                        div(()).style(sty().height(px(100)).border_radius(px(12)).background_image(linear_gradient().to(Direction::ToRight).stop(hex("#6366f1"), pct(0)).stop(hex("#a855f7"), pct(100)).build()))
+                    ],
+                    div![
+                        p("Radial").style("margin-bottom: 8px; font-size: 0.8em;"),
+                        div(()).style(sty().height(px(100)).border_radius(px(12)).background_image(radial_gradient().circle().at(ObjectPositionKeyword::Center).stop(hex("#818cf8"), pct(0)).stop(hex("#1e1e24"), pct(100)).build()))
+                    ],
+                    div![
+                        p("Angled (45deg)").style("margin-bottom: 8px; font-size: 0.8em;"),
+                        div(()).style(sty().height(px(100)).border_radius(px(12)).background_image(linear_gradient().to(deg(45).into()).stop(hex("#f43f5e"), pct(0)).stop(hex("#fb923c"), pct(100)).build()))
+                    ],
+                    div![
+                        p("Repeating").style("margin-bottom: 8px; font-size: 0.8em;"),
+                        div(()).style(sty().height(px(100)).border_radius(px(12)).background_image(linear_gradient().repeating().to(Direction::ToBottomRight).stop(hex("#1e1e24"), pct(0)).stop(hex("#1e1e24"), px(10)).stop(hex("#312e81"), px(10)).stop(hex("#312e81"), px(20)).build()))
+                    ],
+                ))
             ))
         ))
     ]
 }
 
-#[component]
-pub fn BuilderDemo() -> impl View {
-    div(
-        div(
-            (
-                h3("Builder Style"),
-                p("This component is built using only function calls and method chaining."),
-                button("Click Me (Builder)")
-                    .class("btn-builder")
-                    .style("background-color: #e0f7fa; color: #006064; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;")
-                    .on(event::click, |_| console_log("Builder button clicked!")),
-            )
-        )
-        .style("padding: 20px; border: 1px solid #b2ebf2; border-radius: 8px; margin-bottom: 20px;")
-    )
-}
-
-#[component]
-pub fn MacroDemo() -> impl View {
-    let (count, set_count) = signal(0);
-
-    div![
-        h3![ "Macro Style" ],
-        p![ "This component uses macros for a more declarative, HTML-like feel." ],
-        div![
-            button![ "-" ]
-                .class("btn-macro")
-                .on(event::click, set_count.updater(|n| *n -= 1)),
-            span![ " Count: ", count, " " ].style("margin: 0 10px; font-weight: bold;"),
-            button![ "+" ]
-                .class("btn-macro")
-                .on(event::click, set_count.updater(|n| *n += 1)),
-        ]
-        .style("display: flex; align-items: center; margin-top: 10px;")
-    ]
-    .style("padding: 20px; border: 1px solid #ffccbc; background-color: #fffbe6; border-radius: 8px; margin-bottom: 20px;")
-}
-
-#[component]
-pub fn HybridDemo() -> impl View {
-    let (is_active, set_active) = signal(false);
-
-    div![
-        h3("Hybrid Style (Recommended)"),
-        p("Mix macros for structure and builder methods for attributes."),
-
-        div![
-            span(is_active.map(|v| if *v { "State: Active" } else { "State: Inactive" }))
-                .style("margin-right: 15px;"),
-
-            button(is_active.map(|v| if *v { "Deactivate" } else { "Activate" }))
-                .on(event::click, move |_| set_active.update(|v| *v = !*v))
-                .style(sty()
-                    .background_color(move || if is_active.get() { hex("#ef5350") } else { hex("#66bb6a") })
-                    .color(hex("#ffffff"))
-                    .padding(padding::x_y(px(8), px(16)))
-                    .border(border(px(0), BorderStyleKeyword::None, hex("transparent")))
-                    .border_radius(px(4))
-                    .cursor(CursorKeyword::Pointer)
-                    .transition("background-color 0.2s")
-                )
-        ]
-    ]
-    .style("padding: 20px; border: 1px solid #d1c4e9; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);")
-}
