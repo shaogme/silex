@@ -73,7 +73,7 @@ impl<T: 'static> WithUntracked for StoredValue<T> {
 
 impl<T: 'static> IsDisposed for StoredValue<T> {
     fn is_disposed(&self) -> bool {
-        !silex_reactivity::is_signal_valid(self.id)
+        !silex_reactivity::is_stored_value_valid(self.id)
     }
 }
 

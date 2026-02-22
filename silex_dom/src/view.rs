@@ -1,8 +1,9 @@
 use crate::attribute::PendingAttribute;
 use crate::element::Element;
 use silex_core::error::handle_error;
-use silex_core::reactivity::{Derived, Effect, Memo, ReactiveBinary, ReadSignal, RwSignal, Signal};
-use silex_core::traits::{Get, Track, WithUntracked};
+use silex_core::prelude::DerivedPayload;
+use silex_core::reactivity::{Effect, Memo, ReadSignal, RwSignal, Signal};
+use silex_core::traits::{Get, With};
 use silex_core::{SilexError, SilexResult};
 use std::fmt::Display;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -32,16 +33,21 @@ pub trait View {
     }
 }
 
+/// Non-generic helper to mount a text node. Reduces monomorphization bloat for static text.
+pub fn mount_text_node(parent: &Node, text: &str) {
+    let document = crate::document();
+    let node = document.create_text_node(text);
+    if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
+        handle_error(e);
+    }
+}
+
 // --- View Trait Implementations ---
 
 // 1. 静态文本 (String, &str)
 impl View for String {
     fn mount(self, parent: &Node) {
-        let document = crate::document();
-        let node = document.create_text_node(&self);
-        if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-            handle_error(e);
-        }
+        mount_text_node(parent, &self);
     }
 
     fn into_any(self) -> AnyView {
@@ -51,11 +57,7 @@ impl View for String {
 
 impl View for &str {
     fn mount(self, parent: &Node) {
-        let document = crate::document();
-        let node = document.create_text_node(self);
-        if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-            handle_error(e);
-        }
+        mount_text_node(parent, self);
     }
 
     fn into_any(self) -> AnyView {
@@ -69,11 +71,7 @@ macro_rules! impl_view_for_primitive {
         $(
             impl View for $t {
                 fn mount(self, parent: &Node) {
-                    let document = crate::document();
-                    let node = document.create_text_node(&self.to_string());
-                    if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-                        handle_error(e);
-                    }
+                    mount_text_node(parent, &self.to_string());
                 }
 
                 fn into_any(self) -> AnyView {
@@ -171,6 +169,27 @@ where
     }
 }
 
+// 3.5 Rx Support
+impl<F, V> View for silex_core::Rx<F, silex_core::RxValue>
+where
+    F: Fn() -> V + 'static,
+    V: View + 'static,
+{
+    fn mount(self, parent: &Node) {
+        self.0.mount(parent);
+    }
+}
+
+impl<V> View for silex_core::Rx<std::rc::Rc<dyn Fn() -> V>, silex_core::RxValue>
+where
+    V: View + 'static,
+{
+    fn mount(self, parent: &Node) {
+        let f = self.0.clone();
+        (move || f()).mount(parent);
+    }
+}
+
 // 4. 直接 Signal 支持
 impl<T> View for ReadSignal<T>
 where
@@ -247,51 +266,25 @@ where
     }
 }
 
-impl<S, F, U> View for Derived<S, F>
+impl<D, F, U> View for silex_core::Rx<DerivedPayload<D, F>, silex_core::RxValue>
 where
-    S: WithUntracked + Track + Clone + 'static,
-    F: Fn(&S::Value) -> U + Clone + 'static,
-    U: Display + Clone + 'static,
+    DerivedPayload<D, F>: silex_core::traits::RxInternal + Clone + 'static,
+    U: Display + 'static,
+    DerivedPayload<D, F>: silex_core::traits::RxInternal<Value = U>,
 {
     fn mount(self, parent: &Node) {
         let document = crate::document();
-        // 1. 创建占位符
         let node = document.create_text_node("");
         if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
             handle_error(e);
             return;
         }
 
-        // 2. 创建副作用
-        let signal = self;
+        let rx = self;
         Effect::new(move |_| {
-            let value = signal.get();
-            node.set_node_value(Some(&value.to_string()));
-        });
-    }
-}
-
-impl<L, R, F, U> View for ReactiveBinary<L, R, F>
-where
-    L: WithUntracked + Track + Clone + 'static,
-    R: WithUntracked + Track + Clone + 'static,
-    F: Fn(&L::Value, &R::Value) -> U + Clone + 'static,
-    U: Display + Clone + 'static,
-{
-    fn mount(self, parent: &Node) {
-        let document = crate::document();
-        // 1. 创建占位符
-        let node = document.create_text_node("");
-        if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-            handle_error(e);
-            return;
-        }
-
-        // 2. 创建副作用
-        let signal = self;
-        Effect::new(move |_| {
-            let value = signal.get();
-            node.set_node_value(Some(&value.to_string()));
+            rx.with(|value| {
+                node.set_node_value(Some(&value.to_string()));
+            });
         });
     }
 }

@@ -157,36 +157,39 @@ pub fn SvgIconDemo() -> impl View {
 }
 
 #[component]
-pub fn CloneDemo() -> impl View {
+pub fn EventDemo() -> impl View {
     let (name, set_name) = signal("Silex".to_string());
     let (count, set_count) = signal(0);
 
     let (logs, set_logs) = signal(Vec::<String>::new());
     let payload = "DataPayload".to_string();
 
-    // 1. Standard clone!
-    let on_click = clone!(name, count => move |_| {
-        console_log(format!("Clicked! Name: {}, Count: {}", name.get(), count.get()));
+    // Since Signal is Copy, we can just move it directly into closures without cloning!
+    let on_click = move |_| {
+        console_log(format!(
+            "Clicked! Name: {}, Count: {}",
+            name.get(),
+            count.get()
+        ));
         set_count.update(|n| *n += 1);
         set_name.update(|n| *n = format!("Silex {}", count.get() + 1));
-    });
+    };
 
-    // 2. Inner clone! (@ syntax)
-    // Useful when the closure is FnMut (multiple calls) but you need ownership of data inside (e.g., async move)
-    let on_click_inner = clone!(set_logs, @payload => move |_| {
-        // 'payload' is automatically cloned at the start of this block
-        // so we can move it (consume it) without "use of moved value" errors
-        let owned_data = payload;
+    let on_click_inner = move |_| {
+        // For non-Copy types like String, we clone them manually if needed multiple times
+        let owned_data = payload.clone();
 
         set_logs.update(|l| {
-            if l.len() >= 5 { l.remove(0); }
+            if l.len() >= 5 {
+                l.remove(0);
+            }
             l.push(format!("Consumed: {}", owned_data));
         });
-    });
+    };
 
     div![
-        h3("Clone Macro Demo"),
-        p("1. Standard Clone: Captures external variables for use in closure."),
+        h3("Event & Closure Demo"),
+        p("1. Signals are Copy: You can directly move them into closures without cloning."),
         div![
             p(name.map(|n| format!("Current Name: {}", n))),
             p(count.map(|c| format!("Current Count: {}", c))),
@@ -196,8 +199,8 @@ pub fn CloneDemo() -> impl View {
             .on(event::click, on_click)
             .style("margin-right: 10px;"),
         div![].style("height: 1px; background: #ccc; margin: 15px 0;"),
-        p("2. Inner Clone (@): Clones variable INSIDE closure to allow moving/consuming it."),
-        button("Consume Payload (Inner Clone)").on(event::click, on_click_inner),
+        p("2. Non-Copy types: Clone manually inside the closure."),
+        button("Consume Payload").on(event::click, on_click_inner),
         ul(For::new(
             logs,
             |l| l.clone(),
@@ -225,7 +228,7 @@ pub fn BasicsPage() -> impl View {
         .style("margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px;"),
         Greeting().name(name_signal),
         Counter(),
-        CloneDemo(),
+        EventDemo(),
         NodeRefDemo(),
         SvgIconDemo(),
         // AttributeDemo omitted for brevity, logic is same as previous

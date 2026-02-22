@@ -20,8 +20,8 @@ use web_sys::Node;
 #[derive(Clone)]
 pub struct Switch<Source, T, V> {
     source: Source,
-    cases: Vec<(T, Rc<dyn Fn() -> V>)>,
-    fallback: Rc<dyn Fn() -> V>,
+    cases: Vec<(T, Rc<dyn crate::flow::ViewFactory<View = V>>)>,
+    fallback: Rc<dyn crate::flow::ViewFactory<View = V>>,
     _marker: std::marker::PhantomData<V>,
 }
 
@@ -31,7 +31,10 @@ where
     T: PartialEq + Clone + 'static,
     V: View + 'static,
 {
-    pub fn new(source: Source, fallback: impl Fn() -> V + 'static) -> Self {
+    pub fn new(
+        source: Source,
+        fallback: impl crate::flow::ViewFactory<View = V> + 'static,
+    ) -> Self {
         Self {
             source,
             cases: Vec::new(),
@@ -40,7 +43,11 @@ where
         }
     }
 
-    pub fn case(mut self, value: T, view_fn: impl Fn() -> V + 'static) -> Self {
+    pub fn case(
+        mut self,
+        value: T,
+        view_fn: impl crate::flow::ViewFactory<View = V> + 'static,
+    ) -> Self {
         self.cases.push((value, Rc::new(view_fn)));
         self
     }
@@ -109,7 +116,7 @@ where
 
             // Handle panic in view generation/render to avoid crash loop?
             // "view_fn().mount()" should be safe-ish user code.
-            view_fn().mount(&fragment_node);
+            view_fn.render().mount(&fragment_node);
 
             if let Some(parent) = end_node.parent_node() {
                 let _ = parent.insert_before(&fragment_node, Some(&end_node));

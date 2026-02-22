@@ -1,8 +1,6 @@
 use super::{ApplyToDom, AttributeGroup, ReactiveApply};
-use silex_core::reactivity::{
-    Constant, Derived, Memo, ReactiveBinary, ReadSignal, RwSignal, Signal,
-};
-use silex_core::traits::{IntoSignal, Track, WithUntracked};
+use silex_core::reactivity::{Constant, Memo, ReadSignal, RwSignal, Signal};
+use silex_core::traits::IntoRx;
 
 // --- IntoStorable: 允许非 'static 类型转换为可存储类型 ---
 
@@ -93,37 +91,11 @@ where
     }
 }
 
-impl<S, F, U> IntoStorable for Derived<S, F>
-where
-    S: WithUntracked + Track + Clone + 'static,
-    F: Fn(&S::Value) -> U + Clone + 'static,
-    U: ReactiveApply + Clone + 'static,
-{
-    type Stored = Self;
-    fn into_storable(self) -> Self::Stored {
-        self
-    }
-}
-
-impl<L, R, F, U> IntoStorable for ReactiveBinary<L, R, F>
-where
-    L: WithUntracked + Track + Clone + 'static,
-    R: WithUntracked + Track + Clone + 'static,
-    F: Fn(&L::Value, &R::Value) -> U + Clone + 'static,
-    U: ReactiveApply + Clone + 'static,
-{
-    type Stored = Self;
-    fn into_storable(self) -> Self::Stored {
-        self
-    }
-}
-
 // --- 3. 闭包类型 ---
 
-impl<F, T> IntoStorable for F
+impl<F, M> IntoStorable for silex_core::Rx<F, M>
 where
-    F: Fn() -> T + 'static,
-    T: ReactiveApply + 'static,
+    Self: ApplyToDom + 'static,
 {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {
@@ -139,23 +111,20 @@ where
 impl<K, V> IntoStorable for (K, V)
 where
     K: IntoStorable<Stored = String>,
-    V: IntoSignal,
-    V::Signal: 'static,
-    (String, V::Signal): ApplyToDom,
+    V: IntoRx,
+    V::RxType: 'static,
+    (String, V::RxType): ApplyToDom,
 {
-    type Stored = (String, V::Signal);
+    type Stored = (String, V::RxType);
 
     fn into_storable(self) -> Self::Stored {
-        (self.0.into_storable(), self.1.into_signal())
+        (self.0.into_storable(), self.1.into_rx())
     }
 }
 
 // --- IntoStorable 实现：集合类型 ---
 
-impl<V: IntoStorable, const N: usize> IntoStorable for [V; N]
-where
-    [V::Stored; N]: Default,
-{
+impl<V: IntoStorable, const N: usize> IntoStorable for [V; N] {
     type Stored = [V::Stored; N];
     fn into_storable(self) -> Self::Stored {
         self.map(|v| v.into_storable())

@@ -5,21 +5,27 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use web_sys::Node;
 
-/// Helper trait to deduce View type from a closure
-pub trait ShowContent {
+/// Helper trait to deduce View type from a reactive view factory
+pub trait ViewFactory {
     type View: View;
     fn render(&self) -> Self::View;
 }
 
-impl<F, V> ShowContent for F
+impl<F, V, M> ViewFactory for silex_core::Rx<F, M>
 where
     F: Fn() -> V,
     V: View,
 {
     type View = V;
     fn render(&self) -> Self::View {
-        (self)()
+        (self.0)()
     }
+}
+
+/// Implement ViewFactory for empty function pointer to support default fallback
+impl ViewFactory for fn() -> () {
+    type View = ();
+    fn render(&self) -> Self::View {}
 }
 
 /// Show 组件：根据条件渲染不同的视图
@@ -32,8 +38,8 @@ where
 /// let view = "Content";
 /// let fallback_view = "Fallback";
 ///
-/// Show::new(condition, move || view)
-///     .fallback(move || fallback_view);
+/// Show::new(condition, rx!(view))
+///     .fallback(rx!(fallback_view));
 /// ```
 #[derive(Clone)]
 pub struct Show<Cond, ViewFn, FalsyViewFn> {
@@ -44,11 +50,10 @@ pub struct Show<Cond, ViewFn, FalsyViewFn> {
 
 // 默认无 fallback 的构造函数
 impl<Cond, ViewFn> Show<Cond, ViewFn, fn() -> ()> {
-    pub fn new<V>(condition: Cond, view: ViewFn) -> Self
+    pub fn new(condition: Cond, view: ViewFn) -> Self
     where
         Cond: Get<Value = bool> + 'static,
-        ViewFn: Fn() -> V + 'static,
-        V: View,
+        ViewFn: ViewFactory + 'static,
     {
         Self {
             condition,
@@ -62,13 +67,13 @@ impl<Cond, ViewFn> Show<Cond, ViewFn, fn() -> ()> {
 impl<Cond, ViewFn, FalsyViewFn> Show<Cond, ViewFn, FalsyViewFn>
 where
     Cond: Get<Value = bool> + 'static,
-    ViewFn: ShowContent + 'static,
-    FalsyViewFn: ShowContent + 'static,
+    ViewFn: ViewFactory + 'static,
+    FalsyViewFn: ViewFactory + 'static,
 {
     /// 设置当条件为 false 时的 fallback 视图 (Else 分支)
     pub fn fallback<NewFalsyFn>(self, fallback: NewFalsyFn) -> Show<Cond, ViewFn, NewFalsyFn>
     where
-        NewFalsyFn: ShowContent + 'static,
+        NewFalsyFn: ViewFactory + 'static,
     {
         Show {
             condition: self.condition,
@@ -81,8 +86,8 @@ where
 impl<Cond, ViewFn, FalsyViewFn> View for Show<Cond, ViewFn, FalsyViewFn>
 where
     Cond: Get<Value = bool> + 'static,
-    ViewFn: ShowContent + Clone + 'static,
-    FalsyViewFn: ShowContent + Clone + 'static,
+    ViewFn: ViewFactory + Clone + 'static,
+    FalsyViewFn: ViewFactory + Clone + 'static,
 {
     fn mount(self, parent: &Node) {
         let document = silex_dom::document();
@@ -156,31 +161,29 @@ where
 
 // --- Signal 扩展 ---
 
-use silex_core::traits::IntoSignal;
+use silex_core::traits::IntoRx;
 
 /// Signal 扩展特质，提供 .when() 语法糖
 pub trait SignalShowExt {
     type Cond: Get<Value = bool> + 'static;
 
-    fn when<V, F>(self, view: F) -> Show<Self::Cond, F, fn() -> ()>
+    fn when<F>(self, view: F) -> Show<Self::Cond, F, fn() -> ()>
     where
-        V: View,
-        F: Fn() -> V + 'static;
+        F: ViewFactory + 'static;
 }
 
-// 为所有 IntoSignal<Value = bool> 的类型实现扩展
+// 为所有 IntoRx<Value = bool> 的类型实现扩展
 impl<S> SignalShowExt for S
 where
-    S: IntoSignal<Value = bool>,
-    S::Signal: Clone + 'static,
+    S: IntoRx<Value = bool>,
+    S::RxType: Get<Value = bool> + Clone + 'static,
 {
-    type Cond = S::Signal;
+    type Cond = S::RxType;
 
-    fn when<V, F>(self, view: F) -> Show<Self::Cond, F, fn() -> ()>
+    fn when<F>(self, view: F) -> Show<Self::Cond, F, fn() -> ()>
     where
-        V: View,
-        F: Fn() -> V + 'static,
+        F: ViewFactory + 'static,
     {
-        Show::new(self.into_signal(), view)
+        Show::new(self.into_rx(), view)
     }
 }

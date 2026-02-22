@@ -6,17 +6,17 @@ use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::Node;
 
-/// View 工厂包装器，必须实现 PartialEq 以便在 Signal/Memo 中使用
+/// Router View 工厂包装器，必须实现 PartialEq 以便在 Signal/Memo 中使用
 #[derive(Clone)]
-pub struct ViewFactory(pub Rc<dyn Fn() -> AnyView>);
+pub struct RouterViewFactory(pub Rc<dyn Fn() -> AnyView>);
 
-impl PartialEq for ViewFactory {
+impl PartialEq for RouterViewFactory {
     fn eq(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
     }
 }
 
-impl View for ViewFactory {
+impl View for RouterViewFactory {
     fn mount(self, parent: &Node) {
         // 创建闭包，利用 View for F 的已有逻辑
         // 我们需要构造一个 Fn() -> AnyView 的闭包

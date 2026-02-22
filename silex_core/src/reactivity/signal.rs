@@ -45,50 +45,53 @@ impl<T> WithUntracked for Constant<T> {
     }
 }
 
-// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
-
-// --- Derived ---
+// --- DerivedPayload ---
 
 #[derive(Clone, Copy)]
-pub struct Derived<S, F> {
-    pub(crate) source: S,
-    pub(crate) f: F,
+pub struct DerivedPayload<Deps, F> {
+    pub(crate) deps: Deps,
+    pub(crate) func: F,
 }
 
-impl<S: std::fmt::Debug, F> std::fmt::Debug for Derived<S, F> {
+impl<D: std::fmt::Debug, F> std::fmt::Debug for DerivedPayload<D, F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Derived")
-            .field("source", &self.source)
-            .field("f", &"Fn(...)")
+        f.debug_struct("DerivedPayload")
+            .field("deps", &self.deps)
+            .field("func", &"Fn(...)")
             .finish()
     }
 }
 
-impl<S, F> Derived<S, F> {
-    pub const fn new(source: S, f: F) -> Self {
-        Self { source, f }
+impl<D, F> DerivedPayload<D, F> {
+    pub const fn new(deps: D, func: F) -> Self {
+        Self { deps, func }
     }
 }
 
-impl<S: DefinedAt, F> DefinedAt for Derived<S, F> {
-    fn defined_at(&self) -> Option<&'static Location<'static>> {
-        self.source.defined_at()
+impl<D: DefinedAt, F> DefinedAt for DerivedPayload<D, F> {
+    fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
+        self.deps.defined_at()
+    }
+
+    fn debug_name(&self) -> Option<String> {
+        self.deps.debug_name()
     }
 }
 
-impl<S: IsDisposed, F> IsDisposed for Derived<S, F> {
+impl<D: IsDisposed, F> IsDisposed for DerivedPayload<D, F> {
     fn is_disposed(&self) -> bool {
-        self.source.is_disposed()
+        self.deps.is_disposed()
     }
 }
 
-impl<S: Track, F> Track for Derived<S, F> {
+impl<D: Track, F> Track for DerivedPayload<D, F> {
     fn track(&self) {
-        self.source.track();
+        self.deps.track();
     }
 }
 
-impl<S, F, U> WithUntracked for Derived<S, F>
+// Unary / Map implementation
+impl<S, F, U> WithUntracked for DerivedPayload<S, F>
 where
     S: WithUntracked,
     F: Fn(&S::Value) -> U,
@@ -96,90 +99,15 @@ where
     type Value = U;
 
     fn try_with_untracked<R>(&self, fun: impl FnOnce(&Self::Value) -> R) -> Option<R> {
-        self.source.try_with_untracked(|val| {
-            let mapped = (self.f)(val);
+        self.deps.try_with_untracked(|val| {
+            let mapped = (self.func)(val);
             fun(&mapped)
         })
     }
 }
 
-// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
-
-impl<S, F, U> IntoSignal for Derived<S, F>
-where
-    S: WithUntracked + Track + Clone + 'static,
-    F: Fn(&S::Value) -> U + Clone + 'static,
-    U: Clone + 'static,
-{
-    type Value = U;
-    type Signal = Self;
-
-    fn into_signal(self) -> Self::Signal {
-        self
-    }
-
-    fn is_constant_value(&self) -> bool {
-        false
-    }
-}
-
-// --- ReactiveBinary ---
-
-#[derive(Clone, Copy)]
-pub struct ReactiveBinary<L, R, F> {
-    pub(crate) lhs: L,
-    pub(crate) rhs: R,
-    pub(crate) f: F,
-}
-
-impl<L: std::fmt::Debug, R: std::fmt::Debug, F> std::fmt::Debug for ReactiveBinary<L, R, F> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ReactiveBinary")
-            .field("lhs", &self.lhs)
-            .field("rhs", &self.rhs)
-            .field("f", &"Fn(...)")
-            .finish()
-    }
-}
-
-impl<L, R, F> ReactiveBinary<L, R, F> {
-    pub const fn new(lhs: L, rhs: R, f: F) -> Self {
-        Self { lhs, rhs, f }
-    }
-}
-
-impl<L, R, F> DefinedAt for ReactiveBinary<L, R, F>
-where
-    L: DefinedAt,
-    R: DefinedAt,
-{
-    fn defined_at(&self) -> Option<&'static Location<'static>> {
-        self.lhs.defined_at().or(self.rhs.defined_at())
-    }
-}
-
-impl<L, R, F> IsDisposed for ReactiveBinary<L, R, F>
-where
-    L: IsDisposed,
-    R: IsDisposed,
-{
-    fn is_disposed(&self) -> bool {
-        self.lhs.is_disposed() || self.rhs.is_disposed()
-    }
-}
-
-impl<L, R, F> Track for ReactiveBinary<L, R, F>
-where
-    L: Track,
-    R: Track,
-{
-    fn track(&self) {
-        self.lhs.track();
-        self.rhs.track();
-    }
-}
-
-impl<L, R, F, U> WithUntracked for ReactiveBinary<L, R, F>
+// Binary implementation (using tuple as deps)
+impl<L, R, F, U> WithUntracked for DerivedPayload<(L, R), F>
 where
     L: WithUntracked,
     R: WithUntracked,
@@ -188,10 +116,11 @@ where
     type Value = U;
 
     fn try_with_untracked<Res>(&self, fun: impl FnOnce(&Self::Value) -> Res) -> Option<Res> {
-        self.lhs
+        self.deps
+            .0
             .try_with_untracked(|lhs_val| {
-                self.rhs.try_with_untracked(|rhs_val| {
-                    let res = (self.f)(lhs_val, rhs_val);
+                self.deps.1.try_with_untracked(|rhs_val| {
+                    let res = (self.func)(lhs_val, rhs_val);
                     fun(&res)
                 })
             })
@@ -199,24 +128,43 @@ where
     }
 }
 
-// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
+// --- RxInternal for DerivedPayload ---
 
-impl<L, R, F, U> IntoSignal for ReactiveBinary<L, R, F>
+impl<D, F> RxInternal for DerivedPayload<D, F>
 where
-    L: WithUntracked + Track + Clone + 'static,
-    R: WithUntracked + Track + Clone + 'static,
-    F: Fn(&L::Value, &R::Value) -> U + Clone + 'static,
-    U: Clone + 'static,
+    D: RxInternal,
+    Self: WithUntracked + Track + DefinedAt + IsDisposed,
 {
-    type Value = U;
-    type Signal = Self;
+    type Value = <Self as WithUntracked>::Value;
 
-    fn into_signal(self) -> Self::Signal {
-        self
+    #[inline(always)]
+    fn rx_track(&self) {
+        self.track();
     }
 
-    fn is_constant_value(&self) -> bool {
-        false
+    #[inline(always)]
+    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.try_with_untracked(fun)
+    }
+
+    #[inline(always)]
+    fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
+        self.defined_at()
+    }
+
+    #[inline(always)]
+    fn rx_debug_name(&self) -> Option<String> {
+        self.debug_name()
+    }
+
+    #[inline(always)]
+    fn rx_is_disposed(&self) -> bool {
+        self.is_disposed()
+    }
+
+    #[inline(always)]
+    fn rx_is_constant(&self) -> bool {
+        self.deps.rx_is_constant()
     }
 }
 
@@ -776,8 +724,12 @@ pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
     untrack_scoped(f)
 }
 
-use crate::impl_reactive_ops;
-impl_reactive_ops!(Signal);
-impl_reactive_ops!(ReadSignal);
-impl_reactive_ops!(RwSignal);
-impl_reactive_ops!(Constant);
+crate::impl_rx_delegate!(Signal, false);
+crate::impl_rx_delegate!(ReadSignal, false);
+crate::impl_rx_delegate!(RwSignal, false);
+crate::impl_rx_delegate!(Constant, true);
+
+crate::impl_reactive_ops!(Signal);
+crate::impl_reactive_ops!(ReadSignal);
+crate::impl_reactive_ops!(RwSignal);
+crate::impl_reactive_ops!(Constant);

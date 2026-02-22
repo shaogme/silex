@@ -38,7 +38,6 @@ src/
 ├── style.rs        // style!, classes! 宏实现
 ├── route.rs        // #[derive(Route)] 实现：路由匹配与生成
 ├── store.rs        // #[derive(Store)] 实现：全局状态管理
-└── clone.rs        // clone! 宏实现：闭包变量捕获语法糖
 ```
 
 ### 核心组件关系
@@ -112,15 +111,7 @@ src/
 *   生成一个新的 `StoreStruct`，并实现 `silex::store::Store` trait，使其能够自动从 Context 中获取。
 *   生成辅助 Hook `use_{struct_name_snake_case}`，封装 `use_context` 和错误处理逻辑。
 
-### 4.5 Clone 宏 `clone!` (`clone.rs`)
-
-解决 Rust 闭包中捕获变量所有权的痛点。
-
-**难点解析**：
-*   **内部克隆 (`@inner`)**：不仅在闭包外部克隆变量，还在闭包内部再次克隆。这对于 `FnMut` 闭包（可能会被多次调用）且每次调用都需要消费变量所有权的场景（如 `async` 块或 `move` 语义）至关重要。
-*   **实现方式**：宏解析闭包体，重新构造 `Expr::Closure`，并在原有代码块前插入生成的 `let clone = clone.clone();` 语句。
-
-### 4.6 样式组件宏 `styled!` (`styled.rs`)
+### 4.5 样式组件宏 `styled!` (`styled.rs`)
 
 引入了类似 `styled-components` 的“样式即组件”范式。
 
@@ -131,7 +122,7 @@ src/
 *   **动态规则树分片 (Dynamic Rules)**：在词法解析阶段 (TokenTree Parsing)，如果宏检测到选择器层面（或嵌套属性名前缀）包含 `$(...)`，会将这段包含大括号的规则块从主 CSS 静态树中剥离，形成游离分片，并依托 `DynamicStyleManager` 实例以闭包的方式按需利用 DOM 的 `<style>` 重置方法直接重塑热更新规则！借此彻底突破了原生 CSS Variable 不可用于选择器的天生局限。
 *   **Variants 静态架构**：完全支持 `variants:` 语法块。通过在编译阶段静态合成各变体的 CSS 并生成类名，在运行时利用模式匹配直接返回对应属性值的静态类字符串。不仅具备极高的代码表现力，还有效避开了基于 CSS 变量进行多属性赋值产生的性能代价。
 
-### 4.7 强类型主题宏 `define_theme!` (`css/theme.rs`)
+### 4.6 强类型主题宏 `define_theme!` (`css/theme.rs`)
 
 `define_theme!` 的主要职责是建立受约束的结构体并搭接主题字典。
 

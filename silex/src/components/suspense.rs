@@ -14,7 +14,7 @@ use web_sys::Node;
 ///     .children(|resource| {
 ///         SuspenseBoundary::new()
 ///             .fallback(|| "Loading...")
-///             .children(move || resource.get())
+///             .children(rx!(resource.get()))
 ///     })
 /// ```
 /// Creates a new Suspense builder.
@@ -140,9 +140,9 @@ impl<C, F> SuspenseBoundary<C, F> {
 
 impl<C, F, VRes, FRes> View for SuspenseBoundary<C, F>
 where
-    C: Fn() -> VRes + 'static,
+    C: crate::flow::ViewFactory<View = VRes> + 'static,
     VRes: View + 'static,
-    F: Fn() -> FRes + 'static,
+    F: crate::flow::ViewFactory<View = FRes> + 'static,
     FRes: View + 'static,
 {
     fn mount(self, parent: &Node) {
@@ -162,7 +162,7 @@ where
 
                     // 1. Content Wrapper (Hidden when loading)
                     let content_wrapper = div(()).class("suspense-content");
-                    let _ = content_wrapper.clone().style(move || {
+                    let _ = content_wrapper.clone().style(silex_core::rx! {
                         if count.get() > 0 {
                             "display: none"
                         } else {
@@ -173,14 +173,14 @@ where
                     let content_root = content_wrapper.element;
 
                     Effect::new(move |_| {
-                        let view = children_fn();
+                        let view = children_fn.render();
                         content_root.set_inner_html("");
                         view.mount(&content_root);
                     });
 
                     // 2. Fallback Wrapper (Visible when loading)
                     let fallback_wrapper = div(()).class("suspense-fallback");
-                    let _ = fallback_wrapper.clone().style(move || {
+                    let _ = fallback_wrapper.clone().style(silex_core::rx! {
                         if count.get() > 0 {
                             "display: block"
                         } else {
@@ -191,7 +191,7 @@ where
                     let fallback_root = fallback_wrapper.element;
 
                     Effect::new(move |_| {
-                        let view = fallback_fn();
+                        let view = fallback_fn.render();
                         fallback_root.set_inner_html("");
                         view.mount(&fallback_root);
                     });
@@ -212,7 +212,7 @@ where
                         } else {
                             // Active: Mount content
                             // Re-executing children_fn re-establishes fine-grained dependencies
-                            let view = children_fn();
+                            let view = children_fn.render();
                             content_root.set_inner_html("");
                             view.mount(&content_root);
                         }
@@ -226,7 +226,7 @@ where
                     Effect::new(move |_| {
                         if count.get() > 0 {
                             // Suspended: Show Fallback
-                            let view = fallback_fn();
+                            let view = fallback_fn.render();
                             fallback_root.set_inner_html("");
                             view.mount(&fallback_root);
                         } else {

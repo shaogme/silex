@@ -236,11 +236,10 @@ impl IntoStorable for DynamicCss {
 
 pub fn make_dynamic_val_for<P, S>(source: S) -> Rc<dyn Fn() -> String>
 where
-    S: IntoSignal,
-    S::Value: Clone + Sized + types::ValidFor<P> + Display,
-    S::Signal: Get + 'static,
-    <S::Signal as With>::Value: Display,
+    S: IntoRx,
+    S::Value: Clone + Sized + types::ValidFor<P> + Display + 'static,
+    S::RxType: Get<Value = S::Value> + 'static,
 {
-    let signal = source.into_signal();
+    let signal = source.into_rx();
     Rc::new(move || format!("{}", signal.get()))
 }

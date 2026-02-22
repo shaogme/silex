@@ -1,5 +1,5 @@
 use crate::types::{ValidFor, props};
-use silex_core::traits::{Get, IntoSignal, With};
+use silex_core::traits::{Get, IntoRx, With};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable};
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
@@ -88,19 +88,18 @@ impl Style {
     }
 
     /// 内部通用方法：添加一条 CSS 规则
-    fn add_rule<V, ValType, P>(mut self, prop: &'static str, value: V) -> Self
+    fn add_rule<V, P>(mut self, prop: &'static str, value: V) -> Self
     where
-        V: IntoSignal<Value = ValType> + 'static,
-        ValType: ValidFor<P> + Display + Clone + 'static,
-        <V as IntoSignal>::Signal: Get + 'static,
-        <<V as IntoSignal>::Signal as With>::Value: Display,
+        V: IntoRx + 'static,
+        V::Value: Display + ValidFor<P> + Clone + Sized,
+        V::RxType: Get + With<Value = V::Value> + Clone + 'static,
     {
-        if value.is_constant_value() {
-            let signal = value.into_signal();
+        if value.is_constant() {
+            let signal = value.into_rx();
             let val_str = format!("{}", signal.get());
             self.static_rules.push((prop, val_str));
         } else {
-            let signal = value.into_signal();
+            let signal = value.into_rx();
             self.dynamic_rules
                 .push((prop, Rc::new(move || format!("{}", signal.get()))));
         }
@@ -116,14 +115,13 @@ macro_rules! generate_builder_methods {
     ($( ($snake:ident, $kebab:expr, $pascal:ident, $group:ident) ),*) => {
         impl Style {
             $(
-                pub fn $snake<V, ValType>(self, value: V) -> Self
+                pub fn $snake<V>(self, value: V) -> Self
                 where
-                    V: IntoSignal<Value = ValType> + 'static,
-                    ValType: ValidFor<props::$pascal> + Display + Clone + 'static,
-                    <V as IntoSignal>::Signal: Get + 'static,
-                    <<V as IntoSignal>::Signal as With>::Value: Display,
+                    V: IntoRx + 'static,
+                    V::Value: ValidFor<props::$pascal> + Display + Clone + Sized + 'static,
+                    V::RxType: Get + With<Value = V::Value> + Clone + 'static,
                 {
-                    self.add_rule::<V, ValType, props::$pascal>($kebab, value)
+                    self.add_rule::<V, props::$pascal>($kebab, value)
                 }
             )*
         }

@@ -315,43 +315,7 @@ div(())
     ])
 ```
 
-## 7. 简化变量克隆 (`clone!`)
-
-在编写回调函数（Callback）或副作用（Effect）时，经常需要将外部变量的所有权移动到闭包中，但又希望保留外部变量的引用以供他用。传统的做法是手动克隆：
-
-```rust
-let name = name_signal.clone();
-let age = age_signal.clone();
-let callback = move || {
-    println!("Name: {}, Age: {}", name.get(), age.get());
-};
-```
-
-使用 `clone!` 宏可以大大简化这一过程：
-
-```rust
-let callback = clone!(name_signal, age_signal => move || {
-    println!("Name: {}, Age: {}", name_signal.get(), age_signal.get());
-});
-```
-
-宏会自动生成 `let variable = variable.clone();` 语句，并将其包裹在一个新的作用域中，使得闭包捕获的是克隆后的变量。
-
-### 内部克隆 (Inner Clone)
-
-如果闭包是 `FnMut` 且你在闭包内部 `move`（消耗）了变量的所有权（例如传给 `async move` 块），你需要确保每次执行闭包时都拥有该变量的独立副本。
-
-使用 `@` 前缀可以指示宏除了在闭包外部克隆一次（用于捕获），还在闭包内部的最前端再次注入克隆语句。
-
-```rust
-// id 需要被消费（传递给 add_project），但闭包本身会被多次调用
-let callback = clone!(store, @id => move |_| {
-    // 宏会自动在此处生成: let id = id.clone();
-    store.add_project(id); 
-});
-```
-
-## 8. 强类型主题系统 (`define_theme!`)
+## 7. 强类型主题系统 (`define_theme!`)
 
 Silex 提供了高度集成的强类型主题系统，保障在 CSS 中使用主题变量时的类型安全。
 

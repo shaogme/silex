@@ -26,9 +26,8 @@ silex_hash = { workspace =  true, optional = true }
 # silex.workspace = true
 
 [features]
-default = ["component", "css", "store", "route", "clone"]
+default = ["component", "css", "store", "route"]
 component = []
 css = ["dep:lightningcss", "dep:silex_hash"]
 store = []
 route = []
-clone = []

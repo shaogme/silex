@@ -11,12 +11,13 @@
 *   **SignalWrapper (通用信号)**:
     *   `Signal<T>`: 统一的信号包装器，**实现了 `Copy`, `PartialEq`, `Eq`, `Hash`**。
     *   **常量检查**: 提供 `.is_constant()` 方法，用于判断该信号是否为静态常量（`StoredConstant` 或 `InlineConstant`），从而允许渲染引擎进行差异化优化。
-    *   它可以包装 `ReadSignal`, `RwSignal`, `Memo`，`Derived` (派生闭包) 或 `Constant` (常量)。
+    *   它可以包装 `ReadSignal`, `RwSignal`, `Memo`，`DerivedPayload` (派生) 或 `Constant` (常量)。
     *   **内存优化**: 对于 `i32`, `f64`, `bool` 等小型 `Copy` 类型，`Signal<T>` 会将值直接内联存储在枚举中（`InlineConstant`），从而**完全消除 Arena 分配**。这意味着 `Signal::from(42)` 现在是**零分配**的。
     *   作为组件 Props 的首选类型，因为它能接受任何类型的响应式数据源。
 
 *   **Trait System (特征系统) - Zero-Copy First**:
     *   Silex 的特征系统设计以 **`With` (闭包访问)** 为绝对核心，旨在避免不必要的内存克隆。
+    *   **Rx 委托 (Rx Delegate)**: 所有的响应式操作（如加减法、拼写检查等）都通过 `Rx` 包装器统一处理。
     *   **核心 (Core)**: 
         *   `With`: `fn with(|v| ...)`。通过引用访问值并追踪。这是最基础的原语。
         *   `WithUntracked`: `fn with_untracked(|v| ...)`。通过引用访问值但不追踪。
@@ -25,12 +26,12 @@
         *   `GetUntracked`: `fn get_untracked()`。`WithUntracked` + `Clone` 的语法糖。
     *   **派生**: `Map` (基于 `With` 的引用映射，零开销)。
     *   **多信号访问**: 
-        *   `batch_read!(s1, s2 => |v1, v2| ...)`: 同时访问多个信号并追踪，零 Clone。
+        *   `batch_read!(s1, s2 => |v1: &T1, v2: &T2| ...)`: 同时访问多个信号并追踪，零 Clone。这是处理多个信号组合逻辑的推荐方式。
         *   `batch_read_untracked!(s1, s2 => |v1, v2| ...)`: 同时访问多个信号不追踪，零 Clone。
     *   **写**: `Set` (设置并通知), `SetUntracked` (设置不通知), `Update` (修改并通知), `SignalSetter` (生成 setter), `SignalUpdater` (生成 updater)。
-    *   **转换**: `IntoSignal` (值转信号)。允许组件 Props 接受 `impl IntoSignal`，从而同时支持静态值（自动转为 `Constant`，零分配）和动态信号。
-        *   **is_constant_value**: 提供 `.is_constant_value()` 方法，可以在不转换信号的情况下预先判断输入源是否为常量。
-        *   支持元组转换：`(Signal<A>, Signal<B>)` 可转换为组合信号 `Signal<(A, B)>`。
+    *   **转换**: `IntoRx` (大一统接口)。允许组件 Props 接受 `impl IntoRx`，从而同时支持静态值（自动转为 `Constant`，零分配）、动态信号、闭包甚至元组。
+        *   **is_constant**: 提供 `.is_constant()` 方法，用于判断输入源是否为常量。
+        *   支持元组转换：`(Signal<A>, Signal<B>)` 可直接转化为组合 `Rx`。
     *   **性能建议**: 
         *   对于小型 `Copy` 类型（如 `i32`），`Signal::from(val)` 是零分配的，非常高效。
         *   对于大型对象（如 `String`），`Signal::from(val)` 仍会在运行时分配 Arena 内存。若传递大型静态值，建议直接使用引用或 `StoredValue`。
@@ -48,12 +49,16 @@
         *   返回一个 `SignalSlice`，它持有源信号和投影函数。
         *   允许以**引用方式**访问大结构体的字段，实现**零拷贝**读取，极大优化了 `Vec` 或复杂 Struct 的访问性能。
     *   **Lazy Evaluation (惰性求值)**:
-        *   `Map`, 比较操作 (`equals`, `greater_than`...), 算术运算 (`add`, `sub`...) 均返回 `Derived` 或 `ReactiveBinary`。
+        *   `Map`, 比较操作 (`equals`, `greater_than`...), 算术运算 (`add`, `sub`...) 均返回 `DerivedPayload`。
         *   这些结构体是零开销的 **无状态 (Stateless)** 计算单元。每次被访问时都会重新执行闭包，**不** 缓存结果。
         *   对于昂贵的计算，请务必使用 `.memo()` 或 `Signal::derive` 来创建有状态的缓存节点，以免影响性能。
 
-*   **Effect (副作用)**:
-    *   `Effect`: 创建自动追踪依赖的副作用，使用 `Effect::new`。
+*   **rx! 智能宏**:
+    *   `rx!` 是 Silex 中最重要的工具宏之一，它具有“智能感知”能力：
+        *   **值模式 (`RxValue`)**: `rx!(count.get() * 2)` 或 `rx!(move || ...)` 自动创建一个用于 UI 绑定的计算单元。
+        *   **事件模式 (`RxEffect`)**: `rx!(|e| log!("{:?}", e))` 或 `rx!(move |e| ...)` 自动创建一个带参数的事件处理器。
+    *   它极大地简化了闭包的编写，使代码更接近 HTML/JS 的声明式体验。
+    *   `rx!` 生成的对象支持直接进行响应式运算。
 
 *   **Batching (批量更新)**:
     *   `batch`: 一个性能优化工具。在 `batch` 闭包内的所有信号更新，直到闭包执行完毕后才会触发 Effect。

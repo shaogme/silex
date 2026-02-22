@@ -59,7 +59,7 @@ fn CounterDisplay() -> SilexResult<impl View> {
             .style(("color", "#6200ea")),
         div(" (Even Number - Dynamic Class Active)")
             .style(("margin-top", "5px"))
-            .style(move || {
+            .style(rx! {
                 format!(
                     "opacity: {}; transition: opacity 0.3s",
                     if is_even.get() { 1.0 } else { 0.0 }
@@ -67,7 +67,7 @@ fn CounterDisplay() -> SilexResult<impl View> {
             }),
     ))
     .class(container_class)
-    .class(("even-number", is_even))) // Adds class "even-number" when count is even
+    .class(("even-number", rx!(is_even.get())))) // Adds class "even-number" when count is even
 }
 
 #[component]
@@ -161,10 +161,10 @@ fn HomeView() -> impl View {
             .title("Control Flow")
             .child(
                 is_high
-                    .when(|| div("⚠️ Warning: Count is getting high!")
-                        .style("background: #ffebee; color: #c62828; padding: 10px; border-radius: 4px;"))
-                    .fallback(|| div("✓ System works normally.")
-                        .style("background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;"))
+                    .when(rx!(div("⚠️ Warning: Count is getting high!")
+                        .style("background: #ffebee; color: #c62828; padding: 10px; border-radius: 4px;")))
+                    .fallback(rx!(div("✓ System works normally.")
+                        .style("background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;")))
             ),
 
                 // Card 4: Suspense (Context Layout Pattern)
@@ -173,7 +173,7 @@ fn HomeView() -> impl View {
                     .child(
                         suspense()
                             .resource(|| Resource::new(
-                                || (),
+                                rx!(()),
                                 |_| async {
                                     gloo_timers::future::TimeoutFuture::new(2_000).await;
                                     Ok::<_, SilexError>("Loaded Data from Server!".to_string())
@@ -181,9 +181,9 @@ fn HomeView() -> impl View {
                             ))
                             .children(move |async_data_local| {
                                 SuspenseBoundary::new()
-                                    .fallback(|| div("Loading data (approx 2s)...").style("color: orange; font-style: italic;"))
-                                    .children(move || {
-                                        div(move || async_data_local.get().unwrap_or("Waiting...".to_string()))
+                                    .fallback(rx!(div("Loading data (approx 2s)...").style("color: orange; font-style: italic;")))
+                                    .children(rx! {
+                                        div(rx!(async_data_local.get().unwrap_or("Waiting...".to_string())))
                                             .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
                                     })
                             })

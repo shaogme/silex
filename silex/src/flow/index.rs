@@ -3,7 +3,7 @@ use crate::flow::for_loop::ForLoopSource;
 use silex_core::reactivity::{
     Effect, NodeId, ReadSignal, WriteSignal, batch, create_scope, dispose, signal,
 };
-use silex_core::traits::{IntoSignal, Set, With};
+use silex_core::traits::{IntoRx, Set, With};
 use silex_dom::prelude::View;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -28,9 +28,9 @@ where
     V: View,
     Item: 'static,
 {
-    pub fn new(items: impl IntoSignal<Value = Items, Signal = ItemsFn>, map: MapFn) -> Self {
+    pub fn new(items: impl IntoRx<Value = Items, RxType = ItemsFn>, map: MapFn) -> Self {
         Self {
-            items: Rc::new(items.into_signal()),
+            items: Rc::new(items.into_rx()),
             map: Rc::new(map),
             _marker: std::marker::PhantomData,
         }

@@ -10,35 +10,77 @@ pub use callback::Callback;
 pub use error::{SilexError, SilexResult};
 pub use node_ref::NodeRef;
 
-/// `rx!` 宏：简化创建响应式闭包的语法。
+pub struct RxValue;
+pub struct RxEffect;
+
+/// 响应式计算单元或事件处理器。
+/// Rx 始终不应该要求实现 Clone trait 或 Copy trait。
+pub struct Rx<F, M = RxValue>(pub F, pub ::core::marker::PhantomData<M>);
+
+impl<F: Clone, M> Clone for Rx<F, M> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone(), self.1)
+    }
+}
+
+impl<F: Copy, M> Copy for Rx<F, M> {}
+
+/// `rx!` 宏：创建响应式计算单元或事件处理器。
 ///
-/// 等同于 `move || { ... }`。
-///
-/// # 示例
-/// ```rust
-/// use silex_core::rx;
-/// use silex_core::prelude::*;
-///
-/// let (count, set_count) = signal(0);
-/// let double = rx!(count.get() * 2);
-/// ```
+/// 支持多种形式：
+/// - `rx!(expression)`: 创建无参计算单元。
+/// - `rx!(|args| body)`: 创建带参数的计算单元或事件处理器。
+#[macro_export]
+#[doc(hidden)]
+macro_rules! rx_effect {
+    // 带类型标注的单参数
+    (move | $arg:ident : $ty:ty | $($body:tt)*) => {
+        $crate::Rx(move |$arg: $ty| { $($body)* }, ::core::marker::PhantomData::<$crate::RxEffect>)
+    };
+    (| $arg:ident : $ty:ty | $($body:tt)*) => {
+        $crate::Rx(move |$arg: $ty| { $($body)* }, ::core::marker::PhantomData::<$crate::RxEffect>)
+    };
+    // 不带类型的单参数
+    (move | $arg:ident | $($body:tt)*) => {
+        $crate::Rx(move |$arg| { $($body)* }, ::core::marker::PhantomData::<$crate::RxEffect>)
+    };
+    (| $arg:ident | $($body:tt)*) => {
+        $crate::Rx(move |$arg| { $($body)* }, ::core::marker::PhantomData::<$crate::RxEffect>)
+    };
+}
+
 #[macro_export]
 macro_rules! rx {
+    // 1. 匹配 move || -> Value (Getter)
+    (move || $($body:tt)*) => {
+        $crate::Rx(move || { $($body)* }, ::core::marker::PhantomData::<$crate::RxValue>)
+    };
+    // 2. 匹配 || -> Value (Getter)
+    (|| $($body:tt)*) => {
+        $crate::Rx(move || { $($body)* }, ::core::marker::PhantomData::<$crate::RxValue>)
+    };
+    // 3. 匹配带 move 的带参数闭包 -> Effect
+    (move | $($rest:tt)*) => {
+        $crate::rx_effect!(move | $($rest)*)
+    };
+    // 4. 匹配不带 move 的带参数闭包 -> Effect
+    (| $($rest:tt)*) => {
+        $crate::rx_effect!(| $($rest)*)
+    };
+    // 5. 匹配普通表达式 -> Value
     ($($expr:tt)*) => {
-        move || { $($expr)* }
+        $crate::Rx(move || { $($expr)* }, ::core::marker::PhantomData::<$crate::RxValue>)
     };
 }
 
 pub mod prelude {
-    pub use crate::batch_read;
-    pub use crate::batch_read_untracked;
     pub use crate::callback::Callback;
     pub use crate::log::*;
     pub use crate::node_ref::NodeRef;
     pub use crate::reactivity::*;
-    pub use crate::rx;
     pub use crate::traits::*;
     pub use crate::{SilexError, SilexResult};
+    pub use crate::{batch_read, batch_read_untracked, rx};
 }
 
 /// Multi-signal batch read macro for zero-copy access to multiple signals.

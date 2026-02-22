@@ -84,5 +84,6 @@ impl<T: 'static> From<Memo<T>> for crate::reactivity::Signal<T> {
     }
 }
 
-use crate::impl_reactive_ops;
-impl_reactive_ops!(Memo);
+crate::impl_rx_delegate!(Memo, false);
+
+crate::impl_reactive_ops!(Memo);

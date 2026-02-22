@@ -228,9 +228,9 @@ pub fn MutationDemo() -> impl View {
                     e.prevent_default();
 
                     // Note: "login_mutation.mutate((username.get(), password.get()));" is the same as "login_mutation.mutate_with((username, password));"
-                    login_mutation.mutate_with((username, password).into_signal());
+                    login_mutation.mutate_with((username, password).into_rx());
                 })
-                .attr("disabled", move || login_mutation.loading()) // Make reactive
+                .attr("disabled", rx!(login_mutation.loading())) // Make reactive
                 .style("padding: 5px 10px;"),
         ]
         .style("margin-bottom: 10px;"),
@@ -281,7 +281,7 @@ pub fn SuspenseDemo() -> impl View {
                 input()
                     .attr("type", "radio")
                     .attr("name", "suspense_mode")
-                    .attr("checked", move || mode.get() == SuspenseMode::KeepAlive)
+                    .attr("checked", rx!(mode.get() == SuspenseMode::KeepAlive))
                     .on(event::change, set_mode.setter(SuspenseMode::KeepAlive)),
                 " KeepAlive (CSS Hide)"
             ]
@@ -290,7 +290,7 @@ pub fn SuspenseDemo() -> impl View {
                 input()
                     .attr("type", "radio")
                     .attr("name", "suspense_mode")
-                    .attr("checked", move || mode.get() == SuspenseMode::Unmount)
+                    .attr("checked", rx!(mode.get() == SuspenseMode::Unmount))
                     .on(event::change, set_mode.setter(SuspenseMode::Unmount)),
                 " Unmount (DOM Remove)"
             ]
@@ -307,24 +307,22 @@ pub fn SuspenseDemo() -> impl View {
             button("Reload Resource").on(event::click, set_trigger.updater(|n| *n += 1))
         ]
         .style("margin-bottom: 15px;"),
-        div![Show::new(show_content, move || {
+        div![Show::new(show_content, rx! {
             suspense()
                 .resource(move || Resource::new(trigger, heavy_work))
                 .children(move |resource| {
                     SuspenseBoundary::new()
                         .mode(mode.get())
-                        .fallback(|| {
-                            div("Loading... (2s)").style("color: blue; font-weight: bold;")
-                        })
-                        .children(move || {
+                        .fallback(rx!(div("Loading... (2s)").style("color: blue; font-weight: bold;")))
+                        .children(rx! {
                             // Crucial: We do NOT read resource.get() here.
                             div![
                                 div![
                                     "Resource Data: ",
                                     // Fine-grained reading: Only this text node updates
-                                    move || resource
+                                    rx!(resource
                                         .get()
-                                        .unwrap_or_else(|| "Waiting...".to_string())
+                                        .unwrap_or_else(|| "Waiting...".to_string()))
                                 ],
                                 div("1. Type something below."),
                                 div("2. Click 'Reload Resource'."),

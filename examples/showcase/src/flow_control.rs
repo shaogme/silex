@@ -20,11 +20,14 @@ pub fn ShowDemo() -> impl View {
         h3("Conditional Rendering with Show"),
         p("Demonstrates passing a Signal directly to Show::new as condition."),
         button("Toggle Visibility").on(event::click, set_visible.updater(|v| *v = !*v)),
-        Show::new(visible, || div("✅ Content is visible!")
-            .style("color: green; padding: 10px; background: #e8f5e9;"),)
-        .fallback(
-            || div("❌ Content is hidden").style("color: red; padding: 10px; background: #ffebee;")
-        ),
+        Show::new(
+            visible,
+            rx!(div("✅ Content is visible!")
+                .style("color: green; padding: 10px; background: #e8f5e9;"))
+        )
+        .fallback(rx!(
+            div("❌ Content is hidden").style("color: red; padding: 10px; background: #ffebee;")
+        )),
     ]
 }
 
@@ -67,13 +70,19 @@ pub fn SwitchDemo() -> impl View {
             button("Tab 3").on(event::click, set_tab.setter(2)),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 10px;"),
-        Switch::new(tab, || div("Fallback (Should not happen)"))
-            .case(0, || div("Content for Tab 1")
-                .style("padding: 10px; background: #eee;"))
-            .case(1, || div("Content for Tab 2")
-                .style("padding: 10px; background: #ddd;"))
-            .case(2, || div("Content for Tab 3")
-                .style("padding: 10px; background: #ccc;"))
+        Switch::new(tab, rx!(div("Fallback (Should not happen)")))
+            .case(
+                0,
+                rx!(div("Content for Tab 1").style("padding: 10px; background: #eee;"))
+            )
+            .case(
+                1,
+                rx!(div("Content for Tab 2").style("padding: 10px; background: #ddd;"))
+            )
+            .case(
+                2,
+                rx!(div("Content for Tab 3").style("padding: 10px; background: #ccc;"))
+            )
     ]
 }
 
@@ -106,19 +115,17 @@ pub fn PortalDemo() -> impl View {
     div![
         h3("Portal Demo"),
         button("Toggle Modal").on(event::click, set_show_modal.updater(|v| *v = !*v)),
-        Show::new(show_modal, move || {
-            Portal::new(
+        Show::new(show_modal, rx!(Portal::new(
+            div![
                 div![
-                    div![
-                        h4("I am a Modal!"),
-                        p("I am rendered via Portal directly into the body, but I share context!"),
-                        button("Close").on(event::click, set_show_modal.setter(false))
-                    ]
-                    .style("background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); min-width: 300px;")
+                    h4("I am a Modal!"),
+                    p("I am rendered via Portal directly into the body, but I share context!"),
+                    button("Close").on(event::click, set_show_modal.setter(false))
                 ]
-                .style("position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 9999;")
-            )
-        })
+                .style("background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); min-width: 300px;")
+            ]
+            .style("position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 9999;")
+        )))
     ]
 }
 

@@ -1,320 +1,134 @@
-//! A series of traits to implement the behavior of reactive primitive, especially signals.
+//! 定义响应式原始组件（Signals, Memos, Rx 等）的行为核心。
 //!
-//! ## Design Philosophy: Zero-Copy First
+//! ## 设计哲学：零拷贝优先 & Rx 委托
 //!
-//! The core insight of this trait system is that [`With`] (closure-based access) is the fundamental
-//! primitive for accessing reactive values. This is because:
+//! Silex 的 Trait 系统建立在以下两个核心理念之上：
 //!
-//! 1. **Memory Layout**: Signal values are stored in an arena (Map/Vec). To access them, we need to
-//!    hold a lock on the storage and provide a reference.
-//! 2. **Zero-Copy**: Using closures allows us to work with `&T` directly without cloning.
-//! 3. **?Sized Support**: Closures can work with dynamically-sized types like `str` or `[T]`.
+//! 1. **零拷贝 (Zero-Copy)**：[`With`]（基于闭包的访问）是系统的第一公民。
+//!    - 信号值通常存储在 Arena（Map/Vec）中。访问它们涉及获取锁。
+//!    - 使用闭包允许直接处理 `&T`，避免了不必要的 `Clone` 开销。
+//!    - 天然支持动态大小类型（DST），如 `str` 或 `[T]`。
+//! 2. **Rx 委托 (Rx Delegate)**：现代 Silex 采用委托模式。[`Rx`] 包装器是所有响应式操作（算术、比较、Map 等）的对外接口。
+//!    - 通过 [`IntoRx`] 接口，常量、信号、闭包及元组都能无缝转化为统一的 `Rx`。
 //!
-//! The [`Get`] trait (which clones the value) is deliberately NOT the core primitive. It's only
-//! available as a convenience method when `T: Clone + Sized`, and should be avoided on hot paths
-//! where cloning is expensive.
+//! ## 元组与组合性
 //!
-//! ## Important: Tuples Are NOT Signals
+//! 虽然元组（如 `(Signal<A>, Signal<B>)`）现在通过 [`IntoRx`] 支持转换为 `Rx`，但需要注意：
+//! - 这种转换实际上是“组合评估”。由于无法在物理内存连续获取 `&(A, B)`，它会克隆每个元素来构建结果元组。
+//! - 对于追求极致性能、且需要多路访问的场景，请使用 [`batch_read!`] 宏实现真正的**零拷贝**。
 //!
-//! Tuples of signals `(Signal<A>, Signal<B>)` cannot implement zero-copy access for `&(A, B)`
-//! because A and B are stored in different memory locations. Instead of silently cloning,
-//! we provide the [`batch_read!`] macro for explicit zero-copy multi-signal access.
+//! ## 核心原则
+//! 1. **组合语义**：大多数高级 Trait（如 `With`, `Get`, `Map`）都是通过基础 Trait 组合而成的 Blanket Implementations。
+//! 2. **原子化实现**：底层原语只需实现 [`Track`], [`Notify`], [`WithUntracked`] 和 [`UpdateUntracked`]。
+//! 3. **容错性**：大多数读取操作包含 `try_` 变体，在信号已被销毁（Disposed）时安全返回 `None`。
 //!
-//! ## Principles
-//! 1. **Composition**: Most of the traits are implemented as combinations of more primitive base traits,
-//!    and blanket implemented for all types that implement those traits.
-//! 2. **Fallibility**: Most traits includes a `try_` variant, which returns `None` if the method
-//!    fails (e.g., if signals are arena allocated and this can't be found).
-//! 3. **Zero-Copy**: Prefer [`With`]/[`WithUntracked`] over [`Get`]/[`GetUntracked`] to avoid cloning.
+//! ## Trait 结构一览
 //!
-//! ## Metadata Traits
-//! - [`DefinedAt`] is used for debugging in the case of errors and should be implemented for all
-//!   signal types.
-//! - [`IsDisposed`] checks whether a signal is currently accessible.
+//! ### 基础核心 (底层实现者关注)
+//! | Trait               | 作用                                                                           |
+//! |---------------------|--------------------------------------------------------------------------------|
+//! | [`Track`]           | 追踪变化，将当前值添加为当前响应式上下文的依赖。                               |
+//! | [`Notify`]          | 通知订阅者该值已更改。                                                         |
+//! | [`WithUntracked`]   | **核心原语**：提供对值的闭包式不可变访问（不追踪依赖）。                      |
+//! | [`UpdateUntracked`] | 提供闭包式可变更新（不触发通知）。                                            |
+//! | [`RxInternal`]      | **内部桥梁**：被包装在 `Rx` 内部的统一操作接口（对用户隐藏）。                |
 //!
-//! ## Base Traits (Core - Implement These)
-//! | Trait               | Mode    | Description                                                                           |
-//! |---------------------|---------|---------------------------------------------------------------------------------------|
-//! | [`Track`]           | —       | Tracks changes to this value, adding it as a source of the current reactive observer. |
-//! | [`Notify`]          | —       | Notifies subscribers that this value has changed.                                     |
-//! | [`WithUntracked`]   | Closure | **Core**: Gives immutable access to the value of this signal without tracking.        |
-//! | [`UpdateUntracked`] | Closure | Gives mutable access to update the value of this signal without notifying.            |
+//! ### 派生能力 (基于自动实现)
+//! | 类别 | Trait | 组合方式 | 描述 |
+//! |------|-------|---------|------|
+//! | **读取** | [`With`] | `WithUntracked` + `Track` | **核心 API**：带响应式追踪的闭包式访问。 |
+//! | | [`Get`] | `With` + `Clone` | 复制当前值并追踪依赖（快捷方式）。 |
+//! | | [`Map`] | `With` | 创建派生信号（`Derived`），返回 `Rx`。 |
+//! | **更新** | [`Update`] | `UpdateUntracked` + `Notify` | 应用闭包并通知系统刷新。 |
+//! | | [`Set`] | `Update` | 直接覆盖旧值。 |
+//! | **转换** | [`IntoRx`] | — | **大一统接口**：将任意类型转化为统一的 `Rx`。 |
 //!
-//! ## Derived Traits (Blanket Implemented)
+//! ## 比较与算术运算
 //!
-//! ### Access
-//! | Trait             | Mode          | Composition                        | Description
-//! |-------------------|---------------|------------------------------------|------------
-//! | [`With`]          | `fn(&T) -> U` | [`WithUntracked`] + [`Track`]      | **Core**: Applies closure to the current value with reactive tracking.
-//! | [`GetUntracked`]  | `T`           | [`WithUntracked`] + [`Clone`]      | Extension: Clones the current value (requires `T: Clone + Sized`).
-//! | [`Get`]           | `T`           | [`With`] + [`Clone`]               | Extension: Clones with reactive tracking (requires `T: Clone + Sized`).
-//! | [`Map`]           | `Derived<S,F>`| [`With`]                           | Creates a derived signal from this signal.
+//! 所有的 `Rx` 类型通过 [`ReactivePartialEq`] 和 [`ReactivePartialOrd`] 获得流畅的比较接口（如 `.equals()`），
+//! 并自动支持标准算术运算符（`+`, `-`, `*`, `/` 等），这些运算都会返回一个新的包装过的 `Rx`。
 //!
-//! ### Update
-//! | Trait               | Mode          | Composition                        | Description
-//! |---------------------|---------------|------------------------------------|------------
-//! | [`Update`]          | `fn(&mut T)`  | [`UpdateUntracked`] + [`Notify`]   | Applies closure to the current value to update it, and notifies subscribers.
-//! | [`Set`]             | `T`           | [`Update`]                         | Sets the value to a new value, and notifies subscribers.
-//! | [`SignalSetter`]    | `Fn`          | [`Set`]                            | Creates a closure that sets the signal to a specific value.
-//! | [`SignalUpdater`]   | `Fn`          | [`Update`]                         | Creates a closure that updates the signal using a specific function.
+//! ## 多信号访问示例
 //!
-//! ## Using the Traits
-//!
-//! These traits are designed so that you can implement as few as possible, and the rest will be
-//! implemented automatically.
-//!
-//! For example, if you have a struct for which you can implement [`WithUntracked`] and [`Track`], then
-//! [`With`] will be implemented automatically (as will [`GetUntracked`] and
-//! [`Get`] for `Clone + Sized` types).
-//!
-//! ## Multi-Signal Access
-//!
-//! For accessing multiple signals without cloning, use the [`batch_read!`] macro:
+//! 使用 [`batch_read!`] 宏实现零拷贝多信号访问：
 //!
 //! ```rust,ignore
-//! let (name_signal, age_signal) = (signal("Alice".to_string()), signal(42));
+//! let (name, age) = (signal("Alice".to_string()), signal(42));
 //!
-//! // Zero-copy multi-signal access:
-//! batch_read!(name_signal, age_signal => |name: &String, age: &i32| {
+//! // 零拷贝：直接通过引用访问，不克隆 String
+//! batch_read!(name, age => |name: &String, age: &i32| {
 //!     println!("{} is {} years old", name, age);
 //! });
 //! ```
 
-/// A module containing static helper functions for reactive operations.
-/// usage of these avoids generating unique closures for every operator implementation.
+use crate::reactivity::{DerivedPayload, Memo};
+use crate::{Rx, RxValue};
+use std::panic::Location;
+
 #[doc(hidden)]
-pub mod ops_impl {
-    use std::ops::*;
+pub mod impls;
 
-    #[inline]
-    pub fn add<T: Add<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
-        lhs.clone().add(rhs.clone())
-    }
-    #[inline]
-    pub fn sub<T: Sub<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
-        lhs.clone().sub(rhs.clone())
-    }
-    #[inline]
-    pub fn mul<T: Mul<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
-        lhs.clone().mul(rhs.clone())
-    }
-    #[inline]
-    pub fn div<T: Div<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
-        lhs.clone().div(rhs.clone())
-    }
-    #[inline]
-    pub fn rem<T: Rem<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
-        lhs.clone().rem(rhs.clone())
-    }
-    #[inline]
-    pub fn bitand<T: BitAnd<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
-        lhs.clone().bitand(rhs.clone())
-    }
-    #[inline]
-    pub fn bitor<T: BitOr<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
-        lhs.clone().bitor(rhs.clone())
-    }
-    #[inline]
-    pub fn bitxor<T: BitXor<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
-        lhs.clone().bitxor(rhs.clone())
-    }
-    #[inline]
-    pub fn shl<T: Shl<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
-        lhs.clone().shl(rhs.clone())
-    }
-    #[inline]
-    pub fn shr<T: Shr<Output = T> + Clone>(lhs: &T, rhs: &T) -> T {
-        lhs.clone().shr(rhs.clone())
-    }
-    #[inline]
-    pub fn neg<T: Neg<Output = T> + Clone>(val: &T) -> T {
-        val.clone().neg()
-    }
-    #[inline]
-    pub fn not<T: Not<Output = T> + Clone>(val: &T) -> T {
-        val.clone().not()
-    }
-}
-
-///   compiled code size.
+/// 允许将各种类型（原始类型、信号、Rx）转换为统一的 `Rx` 包装器。
 ///
-/// *Note*: This requires the right-hand side operand to implement `IntoSignal`. Primitives (i32, f64, etc.)
-/// and Signals already implement this. Custom types used in reactive math operations will need to implement
-/// `IntoSignal` manually (mapping to `Constant<T>`).
-#[macro_export]
-macro_rules! impl_reactive_ops {
-    ($target:ident) => {
-        $crate::impl_reactive_op!($target, Add, add);
-        $crate::impl_reactive_op!($target, Sub, sub);
-        $crate::impl_reactive_op!($target, Mul, mul);
-        $crate::impl_reactive_op!($target, Div, div);
-        $crate::impl_reactive_op!($target, Rem, rem);
-        $crate::impl_reactive_op!($target, BitAnd, bitand);
-        $crate::impl_reactive_op!($target, BitOr, bitor);
-        $crate::impl_reactive_op!($target, BitXor, bitxor);
-        $crate::impl_reactive_op!($target, Shl, shl);
-        $crate::impl_reactive_op!($target, Shr, shr);
-
-        $crate::impl_reactive_unary_op!($target, Neg, neg);
-        $crate::impl_reactive_unary_op!($target, Not, not);
-    };
+/// *注意*: 原始类型（i32, f64, &str 等）会自动转换为 `Constant<T>`。
+pub trait IntoRx {
+    type Value;
+    type RxType;
+    fn into_rx(self) -> Self::RxType;
+    fn is_constant(&self) -> bool;
 }
 
-#[macro_export]
-macro_rules! impl_reactive_op {
-    ($target:ident, $trait:ident, $method:ident) => {
-        // Op with anything convertible to a Signal (Primitives + Signals)
-        impl<T, R> std::ops::$trait<R> for $target<T>
-        where
-            T: std::ops::$trait<T, Output = T> + Clone + 'static,
-            T: PartialEq + 'static,
-            R: $crate::traits::IntoSignal<Value = T>,
-            R::Signal: 'static,
-        {
-            type Output =
-                $crate::reactivity::ReactiveBinary<$target<T>, R::Signal, fn(&T, &T) -> T>;
-
-            fn $method(self, rhs: R) -> Self::Output {
-                $crate::reactivity::ReactiveBinary::new(
-                    self,
-                    rhs.into_signal(),
-                    $crate::traits::ops_impl::$method,
-                )
-            }
-        }
-    };
+/// A trait used internally by `Rx` to delegate calls to either a closure or a reactive primitive.
+#[doc(hidden)]
+pub trait RxInternal {
+    type Value: ?Sized;
+    fn rx_track(&self);
+    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>;
+    fn rx_defined_at(&self) -> Option<&'static std::panic::Location<'static>>;
+    fn rx_debug_name(&self) -> Option<String>;
+    fn rx_is_disposed(&self) -> bool;
+    fn rx_is_constant(&self) -> bool;
 }
-
-#[macro_export]
-macro_rules! impl_reactive_unary_op {
-    ($target:ident, $trait:ident, $method:ident) => {
-        impl<T> std::ops::$trait for $target<T>
-        where
-            T: std::ops::$trait<Output = T> + Clone + 'static,
-            T: PartialEq + 'static,
-        {
-            type Output = $crate::reactivity::Derived<$target<T>, fn(&T) -> T>;
-
-            fn $method(self) -> Self::Output {
-                $crate::reactivity::Derived::new(self, $crate::traits::ops_impl::$method)
-            }
-        }
-    };
-}
-
-impl<F, T> DefinedAt for F
-where
-    F: Fn() -> T,
-{
-    fn defined_at(&self) -> Option<&'static Location<'static>> {
-        None
-    }
-}
-
-impl<F, T> IsDisposed for F
-where
-    F: Fn() -> T,
-{
-    fn is_disposed(&self) -> bool {
-        false // Closures are never disposed
-    }
-}
-
-impl<F, T> Track for F
-where
-    F: Fn() -> T,
-{
-    fn track(&self) {
-        // Closures don't have built-in tracking - tracking happens when
-        // the closure accesses signals internally
-    }
-}
-
-impl<F, T> WithUntracked for F
-where
-    F: Fn() -> T,
-{
-    type Value = T;
-
-    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        let val = self();
-        Some(fun(&val))
-    }
-}
-
-macro_rules! impl_tuple_traits {
-    ($($T:ident),*) => {
-        impl<$($T),*> DefinedAt for ($($T,)*)
-        where
-            $($T: DefinedAt),*
-        {
-            fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
-                None
-            }
-        }
-
-        impl<$($T),*> IsDisposed for ($($T,)*)
-        where
-            $($T: IsDisposed),*
-        {
-            #[allow(non_snake_case)]
-            fn is_disposed(&self) -> bool {
-                let ($($T,)*) = self;
-                // A tuple is disposed if any of its components is disposed
-                $($T.is_disposed() ||)* false
-            }
-        }
-
-        impl<$($T),*> Track for ($($T,)*)
-        where
-            $($T: Track),*
-        {
-            #[allow(non_snake_case)]
-            fn track(&self) {
-                let ($($T,)*) = self;
-                $($T.track();)*
-            }
-        }
-
-        // NOTE: We intentionally DO NOT implement WithUntracked/With/GetUntracked/Get
-        // for tuples. See the comment block above for the rationale.
-        // Use `batch_read!` macro instead for zero-copy multi-signal access.
-    };
-}
-
-impl_tuple_traits!(A, B);
-impl_tuple_traits!(A, B, C);
-impl_tuple_traits!(A, B, C, D);
-impl_tuple_traits!(A, B, C, D, E);
-impl_tuple_traits!(A, B, C, D, E, F);
 
 pub type CompareFn<T> = fn(&T, &T) -> bool;
+
+#[doc(hidden)]
+macro_rules! reactive_compare_method {
+    ($name:ident, $op:tt, $bound:ident) => {
+        fn $name<O>(
+            &self,
+            other: O,
+        ) -> Rx<
+            DerivedPayload<
+                (Self::RxType, O::RxType),
+                fn(&<Self as IntoRx>::Value, &<Self as IntoRx>::Value) -> bool,
+            >,
+            RxValue,
+        >
+        where
+            Self: IntoRx,
+            Self::RxType: RxInternal<Value = <Self as IntoRx>::Value> + Clone + 'static,
+            O: IntoRx<Value = <Self as IntoRx>::Value>,
+            O::RxType: RxInternal<Value = <Self as IntoRx>::Value> + Clone + 'static,
+            <Self as IntoRx>::Value: $bound + Clone + Sized + 'static,
+        {
+            let lhs = self.clone().into_rx();
+            let rhs = other.into_rx();
+            Rx(
+                DerivedPayload::new((lhs, rhs), |lv, rv| lv $op rv),
+                ::core::marker::PhantomData,
+            )
+        }
+    };
+}
 
 /// Provides a fluent API for checking equality on reactive values.
 pub trait ReactivePartialEq: With + Clone + 'static
 where
     Self::Value: PartialEq + Clone + Sized + 'static,
 {
-    fn equals<O>(&self, other: O) -> ReactiveBinary<Self, O::Signal, CompareFn<Self::Value>>
-    where
-        O: IntoSignal<Value = Self::Value> + Clone + 'static,
-    {
-        ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs == rhs)
-    }
-
-    fn not_equals<O>(&self, other: O) -> ReactiveBinary<Self, O::Signal, CompareFn<Self::Value>>
-    where
-        O: IntoSignal<Value = Self::Value> + Clone + 'static,
-    {
-        ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs != rhs)
-    }
-}
-
-impl<S> ReactivePartialEq for S
-where
-    S: With + Clone + 'static,
-    S::Value: PartialEq + Clone + Sized + 'static,
-{
+    reactive_compare_method!(equals, ==, PartialEq);
+    reactive_compare_method!(not_equals, !=, PartialEq);
 }
 
 /// Provides a fluent API for checking ordering on reactive values.
@@ -322,247 +136,11 @@ pub trait ReactivePartialOrd: With + Clone + 'static
 where
     Self::Value: PartialOrd + Clone + Sized + 'static,
 {
-    fn greater_than<O>(&self, other: O) -> ReactiveBinary<Self, O::Signal, CompareFn<Self::Value>>
-    where
-        O: IntoSignal<Value = Self::Value> + Clone + 'static,
-    {
-        ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs > rhs)
-    }
-
-    fn less_than<O>(&self, other: O) -> ReactiveBinary<Self, O::Signal, CompareFn<Self::Value>>
-    where
-        O: IntoSignal<Value = Self::Value> + Clone + 'static,
-    {
-        ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs < rhs)
-    }
-
-    fn greater_than_or_equals<O>(
-        &self,
-        other: O,
-    ) -> ReactiveBinary<Self, O::Signal, CompareFn<Self::Value>>
-    where
-        O: IntoSignal<Value = Self::Value> + Clone + 'static,
-    {
-        ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs >= rhs)
-    }
-
-    fn less_than_or_equals<O>(
-        &self,
-        other: O,
-    ) -> ReactiveBinary<Self, O::Signal, CompareFn<Self::Value>>
-    where
-        O: IntoSignal<Value = Self::Value> + Clone + 'static,
-    {
-        ReactiveBinary::new(self.clone(), other.into_signal(), |lhs, rhs| lhs <= rhs)
-    }
+    reactive_compare_method!(greater_than, >, PartialOrd);
+    reactive_compare_method!(less_than, <, PartialOrd);
+    reactive_compare_method!(greater_than_or_equals, >=, PartialOrd);
+    reactive_compare_method!(less_than_or_equals, <=, PartialOrd);
 }
-
-impl<S> ReactivePartialOrd for S
-where
-    S: With + Clone + 'static,
-    S::Value: PartialOrd + Clone + Sized + 'static,
-{
-}
-
-// use any_spawner::Executor;
-// use futures::{Stream, StreamExt};
-use crate::reactivity::{Constant, Derived, Memo, ReactiveBinary, ReadSignal, RwSignal, Signal};
-
-// --- IntoSignal ---
-
-pub trait IntoSignal {
-    type Value;
-    type Signal: With<Value = Self::Value>;
-
-    fn into_signal(self) -> Self::Signal;
-
-    fn is_constant_value(&self) -> bool;
-}
-
-macro_rules! impl_into_signal_primitive {
-    ($($t:ty),*) => {
-        $(
-            impl IntoSignal for $t {
-                type Value = $t; // Self
-                type Signal = Constant<$t>;
-
-                fn into_signal(self) -> Self::Signal {
-                    Constant(self)
-                }
-
-                fn is_constant_value(&self) -> bool {
-                    true
-                }
-            }
-        )*
-    };
-}
-
-impl_into_signal_primitive!(
-    bool, char, u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64
-);
-
-impl IntoSignal for String {
-    type Value = String;
-    type Signal = Constant<String>;
-
-    fn into_signal(self) -> Self::Signal {
-        Constant(self)
-    }
-
-    fn is_constant_value(&self) -> bool {
-        true
-    }
-}
-
-impl IntoSignal for &str {
-    type Value = String;
-    type Signal = Constant<String>;
-
-    fn into_signal(self) -> Self::Signal {
-        Constant(self.to_string())
-    }
-
-    fn is_constant_value(&self) -> bool {
-        true
-    }
-}
-
-impl<T: Clone + 'static> IntoSignal for Signal<T> {
-    type Value = T;
-    type Signal = Signal<T>;
-
-    fn into_signal(self) -> Self::Signal {
-        self
-    }
-
-    fn is_constant_value(&self) -> bool {
-        self.is_constant()
-    }
-}
-
-impl<T: Clone + 'static> IntoSignal for ReadSignal<T> {
-    type Value = T;
-    type Signal = ReadSignal<T>;
-
-    fn into_signal(self) -> Self::Signal {
-        self
-    }
-
-    fn is_constant_value(&self) -> bool {
-        false
-    }
-}
-
-impl<T: Clone + 'static> IntoSignal for RwSignal<T> {
-    type Value = T;
-    type Signal = RwSignal<T>;
-
-    fn into_signal(self) -> Self::Signal {
-        self
-    }
-
-    fn is_constant_value(&self) -> bool {
-        false
-    }
-}
-
-impl<T: Clone + PartialEq + 'static> IntoSignal for Memo<T> {
-    type Value = T;
-    type Signal = Memo<T>;
-
-    fn into_signal(self) -> Self::Signal {
-        self
-    }
-
-    fn is_constant_value(&self) -> bool {
-        false
-    }
-}
-
-impl<T: Clone + 'static> IntoSignal for Constant<T> {
-    type Value = T;
-    type Signal = Constant<T>;
-
-    fn into_signal(self) -> Self::Signal {
-        self
-    }
-
-    fn is_constant_value(&self) -> bool {
-        true
-    }
-}
-
-// Allows closures to be treated as derived signals automatically.
-// E.g. `signal + (|| 5)`
-impl<F, T> IntoSignal for F
-where
-    F: Fn() -> T + 'static,
-    T: Clone + 'static,
-{
-    type Value = T;
-    type Signal = Signal<T>;
-
-    fn into_signal(self) -> Self::Signal {
-        Signal::derive(self)
-    }
-
-    fn is_constant_value(&self) -> bool {
-        false
-    }
-}
-
-macro_rules! impl_into_signal_tuple {
-    ($($name:ident : $T:ident),+) => {
-        impl<$($T),+> IntoSignal for ($($T,)+)
-        where
-            $($T: IntoSignal),+,
-            $($T::Value: Clone + 'static),+,
-            $($T::Signal: 'static),+
-        {
-            type Value = ($($T::Value,)+);
-            type Signal = Signal<Self::Value>;
-
-            #[allow(non_snake_case)]
-            fn into_signal(self) -> Self::Signal {
-                let ($($name,)+) = self;
-                $(let $name = $name.into_signal();)+
-
-                Signal::derive(move || {
-                    impl_into_signal_tuple_nest!($($name),+)
-                })
-            }
-
-            fn is_constant_value(&self) -> bool {
-                #[allow(non_snake_case)]
-                let ($($name,)+) = self;
-                $($name.is_constant_value() &&)+ true
-            }
-        }
-    }
-}
-
-macro_rules! impl_into_signal_tuple_nest {
-    ($s1:ident, $s2:ident) => {
-        $s1.with(|v1| $s2.with(|v2| (v1.clone(), v2.clone())))
-    };
-    ($s1:ident, $s2:ident, $s3:ident) => {
-        $s1.with(|v1| $s2.with(|v2| $s3.with(|v3| (v1.clone(), v2.clone(), v3.clone()))))
-    };
-    ($s1:ident, $s2:ident, $s3:ident, $s4:ident) => {
-        $s1.with(|v1| {
-            $s2.with(|v2| {
-                $s3.with(|v3| $s4.with(|v4| (v1.clone(), v2.clone(), v3.clone(), v4.clone())))
-            })
-        })
-    };
-}
-
-impl_into_signal_tuple!(idx0: T0, idx1: T1);
-impl_into_signal_tuple!(idx0: T0, idx1: T1, idx2: T2);
-impl_into_signal_tuple!(idx0: T0, idx1: T1, idx2: T2, idx3: T3);
-
-use std::panic::Location;
 
 #[doc(hidden)]
 /// Provides a sensible panic message for accessing disposed signals.
@@ -653,19 +231,6 @@ pub trait With: DefinedAt {
     }
 }
 
-impl<T> With for T
-where
-    T: WithUntracked + Track,
-{
-    type Value = <T as WithUntracked>::Value;
-
-    #[track_caller]
-    fn try_with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.track();
-        self.try_with_untracked(fun)
-    }
-}
-
 /// Extension trait: Clones the value of the signal, without tracking.
 ///
 /// This is a **convenience trait** built on top of [`WithUntracked`]. It requires `T: Clone + Sized`.
@@ -694,14 +259,6 @@ where
         self.try_get_untracked()
             .unwrap_or_else(unwrap_signal!(self))
     }
-}
-
-// Blanket implementation: any type with WithUntracked where Value: Clone + Sized gets GetUntracked
-impl<T> GetUntracked for T
-where
-    T: WithUntracked,
-    T::Value: Clone + Sized,
-{
 }
 
 /// Extension trait: Clones the value of the signal, with reactive tracking.
@@ -733,14 +290,6 @@ where
     }
 }
 
-// Blanket implementation: any type with With where Value: Clone + Sized gets Get
-impl<T> Get for T
-where
-    T: With,
-    T::Value: Clone + Sized,
-{
-}
-
 /// Allows creating a derived signal from this signal.
 ///
 /// Unlike [`Get`], this trait uses [`WithUntracked`] as its basis, meaning it works
@@ -750,24 +299,9 @@ pub trait Map: Sized {
     type Value: ?Sized;
 
     /// Creates a derived signal from this signal.
-    fn map<U, F>(self, f: F) -> Derived<Self, F>
+    fn map<U, F>(self, f: F) -> crate::Rx<DerivedPayload<Self, F>, crate::RxValue>
     where
-        F: Fn(&Self::Value) -> U;
-}
-
-// Map is based on WithUntracked, not Get - this is intentional for zero-copy support
-impl<S> Map for S
-where
-    S: WithUntracked + Track,
-{
-    type Value = S::Value;
-
-    fn map<U, F>(self, f: F) -> Derived<Self, F>
-    where
-        F: Fn(&Self::Value) -> U,
-    {
-        Derived::new(self, f)
-    }
+        F: Fn(&Self::Value) -> U + Clone + 'static;
 }
 
 /// Allows converting a signal into a memoized signal.
@@ -781,20 +315,6 @@ where
     fn memo(self) -> Memo<Self::Value>
     where
         Self::Value: PartialEq + 'static;
-}
-
-impl<T> Memoize for T
-where
-    T: With + Clone + 'static,
-    T::Value: Clone + Sized,
-{
-    fn memo(self) -> Memo<Self::Value>
-    where
-        Self::Value: PartialEq + 'static,
-    {
-        let this = self.clone();
-        Memo::new(move |_| this.with(Clone::clone))
-    }
 }
 
 /// Notifies subscribers of a change in this signal.
@@ -875,28 +395,6 @@ pub trait Set {
     /// If the signal has already been disposed, returns `Some(value)` with the value that was
     /// passed in. Otherwise, returns `None`.
     fn try_set(&self, value: Self::Value) -> Option<Self::Value>;
-}
-
-impl<T> Set for T
-where
-    T: Update + IsDisposed,
-{
-    type Value = <Self as Update>::Value;
-
-    #[track_caller]
-    fn set(&self, value: Self::Value) {
-        self.try_update(|n| *n = value);
-    }
-
-    #[track_caller]
-    fn try_set(&self, value: Self::Value) -> Option<Self::Value> {
-        if self.is_disposed() {
-            Some(value)
-        } else {
-            self.set(value);
-            None
-        }
-    }
 }
 
 /// Allows creating a setter closure from this signal.
@@ -993,23 +491,6 @@ pub trait SetUntracked: DefinedAt {
                     std::panic::Location::caller()
                 )
             );
-        }
-    }
-}
-
-impl<T> SetUntracked for T
-where
-    T: UpdateUntracked + IsDisposed,
-{
-    type Value = <Self as UpdateUntracked>::Value;
-
-    #[track_caller]
-    fn try_set_untracked(&self, value: Self::Value) -> Option<Self::Value> {
-        if self.is_disposed() {
-            Some(value)
-        } else {
-            self.update_untracked(|n| *n = value);
-            None
         }
     }
 }

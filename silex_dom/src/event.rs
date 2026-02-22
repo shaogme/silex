@@ -50,3 +50,28 @@ where
         Box::new(move |_| self())
     }
 }
+impl<F, E, T, M> EventHandler<E, WithoutEventArg> for silex_core::Rx<F, M>
+where
+    F: FnMut() -> T + 'static,
+    E: 'static,
+    T: 'static,
+{
+    fn into_handler(mut self) -> Box<dyn FnMut(E)> {
+        Box::new(move |_| {
+            (self.0)();
+        })
+    }
+}
+
+impl<F, E, T, M> EventHandler<E, WithEventArg> for silex_core::Rx<F, M>
+where
+    F: FnMut(E) -> T + 'static,
+    E: 'static,
+    T: 'static,
+{
+    fn into_handler(mut self) -> Box<dyn FnMut(E)> {
+        Box::new(move |e| {
+            (self.0)(e);
+        })
+    }
+}

@@ -8,15 +8,17 @@
 
 ## 2. 理念和思路 (Philosophy and Design)
 
-### 核心思想：零拷贝优先 (Zero-Copy First)
+### 核心思想：零拷贝优先 & Rx 委托 (Zero-Copy & Rx Delegate)
 
-`silex_core` 的设计核心在于**极度厌恶不必要的内存分配和拷贝**。
+`silex_core` 的设计建立在两个核心支柱之上：
 
-*   **以闭包访问为基础**：不同于传统的 "Getter 返回值" 模式（如 `fn get() -> T`），Silex 极其推崇 "闭包访问" 模式（`fn with(|val| ...)`）。
-    *   在底层，信号的值存储在 Arena 或 `RefCell` 中。要获取 `T`，通常需要持有锁。
-    *   如果直接返回 `T`，对于 `String` 或 `Vec` 等大对象，必须进行 `Check`。
-    *   通过 `With` 特征 (`try_with(|val: &T| ...)`)，我们可以直接把内部数据的引用传递给用户闭包，实现 **Zero-Copy**。
-*   **元组非信号 (Tuples are not Signals)**：为了贯彻零拷贝，`silex_core` 明确拒绝将 `(Signal<A>, Signal<B>)` 视为一个可以直接 `with` 的组合信号。因为 A 和 B 存储在内存的不同位置，无法同时给出一个 `&(A, B)` 的引用。为此，我们设计了 `batch_read!` 宏来显式处理多信号的零拷贝访问。
+*   **以闭包访问为基础 (Zero-Copy)**：不同于传统的 "Getter 返回值" 模式（如 `fn get() -> T`），Silex 极其推崇 "闭包访问" 模式（`fn with(|val| ...)`）。
+    *   在底层，信号的值存储在 Arena 中。获取 `T` 通常涉及获取锁。
+    *   通过 `With` 特征 (`try_with(|val: &T| ...)`)，可以直接把内部数据的引用传递给用户闭包，实现 **Zero-Copy**。
+*   **Rx 委托模式 (Rx Delegate)**：现代 Silex 采用委托模式。所有的响应式操作（算术、比较、映射等）不再直接实现在每个信号类型上，而是通过 [`IntoRx`] 统一转换为 [`Rx`] 包装器。
+    *   [`Rx`] 作为所有响应式计算的对外接口，极大地减少了泛型膨胀和重复代码。
+    *   通过 [`RxInternal`] 隐藏内部实现细节，保持 API 的整洁。
+*   **元组支持 (Tuples support)**：元组（如 `(Signal<A>, Signal<B>)`）现在通过 [`IntoRx`] 自动支持转换为组合 `Rx`。虽然这涉及克隆来构建结果元组，但它提供了极佳的组合灵活性。对于追求性能的场景，仍推荐使用 [`batch_read!`] 宏。
 
 ### 统一的特征系统 (Unified Trait System)
 
@@ -24,7 +26,7 @@
 
 *   **组合优于继承**：功能被拆分为原子化的 Traits：`Track`（追踪）、`Notify`（通知）、`WithUntracked`（访问）、`UpdateUntracked`（修改）。
 *   **自动推导**：高级功能由低级功能自动组合而成。例如，只要实现了 `WithUntracked` + `Track`，类型就自动获得了 `With`（自动追踪访问）和 `Map`（派生）的能力。
-*   **灵活性**：这允许 `Constant<T>`（常量）、`Derived`（计算属性）、`ReadSignal`（读信号）虽然底层实现完全不同，但对外仅仅表现为“可读取的响应式数据”。
+*   **灵活性**：这允许 `Constant<T>`（常量）、`DerivedPayload`（派生）、`ReadSignal`（读信号）虽然底层实现完全不同，但对外仅仅表现为“可读取的响应式数据”。
 
 ## 3. 模块内结构 (Internal Structure)
 
@@ -74,10 +76,12 @@ silex_core/src/
 3.  **`Get` / `GetUntracked` (便利性扩展)**:
     *   仅当 `T: Clone` 时可用。
     *   本质上就是 `self.with(Clone::clone)`。
-    *   **警示**：文档中多次强调避免在热路径对大对象使用 `Get`。
-4.  **`IntoSignal` (转换与常量预测)**:
-    *   除了 `into_signal()` 外，新增了 `is_constant_value()`。
-    *   这允许框架在“信号化”一个值之前，就先知道它是否是常量，从而进行更激进的静态优化。
+    *   **警示**：避免在热路径对大对象使用 `Get`。
+4.  **`IntoRx` (大一统接口)**:
+    *   允许将常量、信号、闭包及元组转化为统一的 `Rx`。
+    *   提供了 `is_constant()` 检测，允许框架进行激进的静态优化。
+5.  **`RxInternal` (委托原语)**:
+    *   隐藏的底层 Trait，定义了 `Rx` 包装器如何与实际数据交互。
 
 #### 修改层级 (Mutation Hierarchy)
 
@@ -98,9 +102,8 @@ pub enum Signal<T: 'static> {
 }
 ```
 
-*   **Derived 变体**：这是一个无缓存的计算属性。当你写 `signal_a + signal_b` 时，返回的就是一个 `Signal::Derived`。它没有专门的存储空间，每次访问都重新运行底层的闭包。
-*   **StoredConstant**: 这是一个优化。对于 `signal(42)` 或者常量配置（大对象），我们不需要追踪机制，但为了接口统一，我们把它包装起来。
-*   **InlineConstant**: 这是一个**极致优化**。对于 `i32`, `f64`, `bool` 等小型的 `Copy` 类型，我们将值直接**内联存储**在 `Signal` 枚举的变体中（通过 unsafe 位压缩），从而**完全消除了 Arena 内存分配**。这意味着 `Signal::from(42)` 现在是零分配的。
+*   **Rx Delegate**: 所有的运算符实现 (`+`, `-`, `*`, `/` 等) 以及逻辑比较 (`equals`, `greater_than` 等) 均不在 `Signal` 枚举上直接实现，而是先调用 `.into_rx()`。这大幅降低了代码生成的复杂度（见 `traits/impls.rs`）。
+*   **InlineConstant**: 这是一个**极致优化**。对于 `i32`, `f64`, `bool` 等小型的 `Copy` 类型，我们将值直接**内联存储**在 `Signal` 枚举的变体中（通过 unsafe 位拷贝），从而**完全消除了 Arena 内存分配**。这意味着 `Signal::from(42)` 现在是零分配的。
 *   **is_constant()**: `Signal` 提供此方法用于在运行时快速检测其是否为常量。这对于 `silex_dom` 等上层库非常有用，可以据此决定是否需要为该值挂载监听器。
 
 ### 4.3. 宏魔法 (`macros`)
@@ -112,6 +115,11 @@ pub enum Signal<T: 'static> {
     *   解决了“多信号零拷贝”的难题。
     *   原理：将回调嵌套。
     *   `batch_read!(a, b => |ref_a, ref_b| ...)` 展开为 `a.with(|ref_a| b.with(|ref_b| ...))`。
+
+*   **`Rx<F, M>` 包装器**：
+    *   `Rx` 是闭包的薄包装，通过 `PhantomData<M>` 区分 `RxValue` (计算单元) 和 `RxEffect` (事件处理器)。
+    *   它实现了 `WithUntracked`, `Track`, `DefinedAt` 等 Trait，使其可以直接参与响应式运算。
+    *   **运算符重载** (`+`, `-`, `==` 等) 均返回 `Rx<DerivedPayload, RxValue>`。
 
 ### 4.4. 异步原语 (Resource & Mutation)
 

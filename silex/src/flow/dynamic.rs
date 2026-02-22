@@ -14,7 +14,7 @@ use web_sys::Node;
 ///
 /// let (component_name, set_component_name) = signal("A");
 ///
-/// Dynamic::new(move || {
+/// Dynamic::new(rx! {
 ///     let name = component_name.get();
 ///     if name == "A" {
 ///         "Component A"
@@ -53,14 +53,14 @@ where
     /// ```ignore
     /// Dynamic::bind(mode, |m| view_match!(m, { ... }))
     /// ```
-    pub fn bind<S, T, Map>(source: S, map_fn: Map) -> Dynamic<V, impl Fn() -> V>
+    pub fn bind<S, T, Map>(source: S, map_fn: Map) -> Dynamic<V, impl With<Value = V>>
     where
         S: With<Value = T> + 'static,
         Map: Fn(T) -> V + 'static,
         T: Clone + 'static,
         V: Clone,
     {
-        let combined_accessor = move || source.with(|val| map_fn(val.clone()));
+        let combined_accessor = silex_core::rx!(source.with(|val| map_fn(val.clone())));
         Dynamic::new(combined_accessor)
     }
 }

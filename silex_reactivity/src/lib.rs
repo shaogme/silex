@@ -198,7 +198,13 @@ where
                 None
             });
 
-            let new_value = f(old_value.as_ref());
+            let new_value = RUNTIME.with(|rt| {
+                let prev_owner = rt.current_owner.get();
+                rt.current_owner.set(Some(id));
+                let v = f(old_value.as_ref());
+                rt.current_owner.set(prev_owner);
+                v
+            });
 
             let mut changed = false;
             if let Some(old) = &old_value {
@@ -429,7 +435,13 @@ pub fn register_derived<T: 'static>(f: impl Fn() -> T + 'static) -> NodeId {
         };
 
         let computation = move || {
-            let new_value = f();
+            let new_value = RUNTIME.with(|rt| {
+                let prev_owner = rt.current_owner.get();
+                rt.current_owner.set(Some(id));
+                let v = f();
+                rt.current_owner.set(prev_owner);
+                v
+            });
             // Always notify for generic derived (no equality check)
             RUNTIME.with(|rt| {
                 if let Some(signal) = rt.signals.get_mut(id) {
@@ -490,6 +502,7 @@ pub fn try_update_signal_silent<T: 'static, R>(
         if let Some(signal) = rt.signals.get_mut(id)
             && let Some(val) = signal.value.downcast_mut::<T>()
         {
+            signal.version = signal.version.wrapping_add(1);
             return Some(f(val));
         }
         None
@@ -498,6 +511,10 @@ pub fn try_update_signal_silent<T: 'static, R>(
 
 pub fn is_signal_valid(id: NodeId) -> bool {
     RUNTIME.with(|rt| rt.signals.contains_key(id))
+}
+
+pub fn is_stored_value_valid(id: NodeId) -> bool {
+    RUNTIME.with(|rt| rt.stored_values.contains_key(id))
 }
 
 pub fn get_node_defined_at(_id: NodeId) -> Option<&'static std::panic::Location<'static>> {

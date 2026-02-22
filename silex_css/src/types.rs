@@ -1,10 +1,10 @@
 use std::fmt::Display;
 
-pub mod calc;
-pub mod complex;
-pub mod gradients;
-pub mod shorthands;
-pub mod units;
+mod calc;
+mod complex;
+mod gradients;
+mod shorthands;
+mod units;
 
 pub use calc::*;
 pub use complex::*;
@@ -211,20 +211,20 @@ impl ValidFor<props::BackgroundImage> for Url {}
 impl<T: Display> ValidFor<props::Any> for T {}
 
 // 响应式集成后的注册
-macro_rules! impl_into_signal_for_css {
+macro_rules! impl_into_rx_for_css {
     ($($t:ty),*) => {
         $(
-            impl silex_core::traits::IntoSignal for $t {
+            impl silex_core::traits::IntoRx for $t {
                 type Value = $t;
-                type Signal = silex_core::reactivity::Constant<$t>;
-                fn into_signal(self) -> Self::Signal { silex_core::reactivity::Constant(self) }
-                fn is_constant_value(&self) -> bool { true }
+                type RxType = silex_core::Rx<silex_core::reactivity::Constant<$t>, silex_core::RxValue>;
+                fn into_rx(self) -> Self::RxType { silex_core::Rx(silex_core::reactivity::Constant(self), ::core::marker::PhantomData) }
+                fn is_constant(&self) -> bool { true }
             }
         )*
     };
 }
 
-impl_into_signal_for_css!(
+impl_into_rx_for_css!(
     Px,
     Percent,
     Rgba,
@@ -255,4 +255,4 @@ impl_into_signal_for_css!(
     GradientValue
 );
 
-register_generated_keywords!(impl_into_signal_for_css);
+register_generated_keywords!(impl_into_rx_for_css);

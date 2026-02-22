@@ -10,7 +10,7 @@
 
 ### 1. Trait System (特征系统)
 
-`silex_core` 基于 Traits 构建了灵活的响应式接口。所有信号类型均实现了这些 Trait。
+`silex_core` 基于 Traits 构建了灵活的响应式接口。Silex 采用**Rx 委托 (Rx Delegate)** 模式，通过 [`Rx`] 包装器统一所有的响应式操作。
 
 #### Metadata Traits
 *   `DefinedAt`: `fn defined_at(&self) -> Option<&'static Location<'static>>`。调试辅助，提供信号定义的位置信息。
@@ -26,14 +26,15 @@
     *   `GetUntracked`: `fn try_get_untracked(&self) -> Option<Self::Value>`。(`WithUntracked` + `Clone`)。不追踪，直接 Clone 并返回值。仅当 `T: Clone` 时可用。**注意：避免在热路径上对大对象使用。**
     *   `Get`: `fn try_get(&self) -> Option<Self::Value>`。(`With` + `Clone`)。自动追踪，直接 Clone 并返回值。仅当 `T: Clone` 时可用。
 *   **Derived**:
-    *   `Map`: `fn map<U, F>(self, f: F) -> Derived<Self, F>`。基于 `With` 实现。从当前信号创建派生计算信号 `Derived`。闭包接受引用 `&T`，减少 `Clone` 开销。这是一个轻量级的惰性求值信号，不涉及 Memo 缓存开销。
+    *   `Map`: `fn map<U, F>(self, f: F) -> Rx<DerivedPayload<Self, F>, RxValue>`。基于 `With` 实现。从当前信号创建派生计算包装器。闭包接受引用 `&T`，减少 `Clone` 开销。这是一种轻量级的惰性求值方式，不涉及 Node 注册开销。
     *   `Memoize`: `fn memo(self) -> Memo<Self::Value>`。将任意信号转换为 `Memo` 缓存信号。要求 `T: Clone + PartialEq`。
 *   **Multi-Signal Access (多信号访问)**:
     *   `batch_read!(s1, s2 => |v1, v2| ...)`: 宏。允许同时以引用方式访问多个信号，实现零拷贝。
     *   `batch_read_untracked!(s1, s2 => |v1, v2| ...)`: 宏。同上，但不追踪依赖。
 
 *   **Conversion Traits**:
-    *   `IntoSignal`: `fn into_signal(self) -> Self::Signal`。用于将普通值或信号统一转换为特定的信号类型。常用于组件参数，使其既能接受 `T` (自动转为 `Constant<T>`) 也能接受 `ReadSignal<T>` / `Memo<T>` 等。
+    *   `IntoRx`: `fn into_rx(self) -> Self::RxType`。**关键转换接口**。用于将常量、信号、闭包及元组无缝转化为统一的 `Rx` 包装器。
+    *   `RxInternal`: **内部核心特征**。被包装在 `Rx` 内部的统一操作接口（对用户隐藏），支持追踪、访问、定义位置、调试名、销毁状态及常量检测。
 
 #### Update Traits (写更新)
 *   `Notify`: `fn notify(&self)`。显式通知。触发 subscribers 更新。
@@ -46,7 +47,17 @@
 
 ---
 
-### 2. Signal Wrappers (信号包装器)
+### 2. Reactive Wrappers (响应式包装器)
+
+#### `Rx<F, M>`
+*   **Struct**: `pub struct Rx<F, M = RxValue>(pub F, pub PhantomData<M>)`
+*   **Semantics**: Silex 的通用响应式包装器。
+    *   `M = RxValue`: **计算单元 (Getter)**。类似于 `Fn() -> T`，用于属性绑定或派生计算。
+    *   `M = RxEffect`: **副作用/回调 (Effect)**。具有特定参数的闭包，用于事件处理。
+*   **Features**: 
+    *   实现了 `Add`, `Sub` 等所有运算符重载。
+    *   实现了 `ReactivePartialEq` (`equals`) 和 `ReactivePartialOrd` (`greater_than`)。
+    *   支持零拷贝访问 (`With`, `WithUntracked`)。
 
 #### `Signal<T>`
 *   **Enum**:
@@ -54,10 +65,10 @@
     *   `Derived(NodeId, PhantomData<T>)`
     *   `StoredConstant(NodeId, PhantomData<T>)`
     *   `InlineConstant(u64, PhantomData<T>)` (Internal optimization: zero-allocation for small Copy types)
-*   **Traits**: `Copy`, `Clone`, `Debug`, `PartialEq`, `Eq`, `Hash`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
+*   **Traits**: `Copy`, `Clone`, `Debug`, `PartialEq`, `Eq`, `Hash`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`, `IntoRx`.
 *   **Semantics**:
     *   通用的信号接口，统一了 `ReadSignal`、派生计算和常量。
-    *   `Derived` 变体持有一个在 Runtime 中注册的闭包，每次 `get()` 时重新执行闭包（无缓存）。
+    *   其核心操作现在委托给 `Rx` 处理。
     *   `StoredConstant` 变体持有一个存储在 Runtime 中的常量值。
     *   `InlineConstant` 变体将小数据（如 `i32`）直接内联存储在 `Signal` 内部，避免 Arena 分配。
 *   **Methods**:
@@ -72,9 +83,10 @@
 *   **Operator Overloads**:
     *   实现了 `Add`, `Sub`, `Mul`, `Div`, `Rem`, `BitAnd`, `BitOr`, `BitXor`, `Shl`, `Shr`, `Neg`, `Not`。
     *   支持 `Signal op Signal` 以及 `Signal op T`。
-    *   所有运算均返回 `ReactiveBinary` (二元) 或 `Derived` (一元)，自动创建惰性派生计算，无额外缓存开销。
+    *   所有运算均返回包装在 `Rx` 中的 `DerivedPayload`，自动创建惰性派生计算，无额外缓存开销。
     *   **Lazy Evaluation (惰性求值)**:
-        *   `ReactiveBinary` 和 `Derived` (用于 `Map`) 都是**无状态的 (Stateless)**。它们不缓存结果，每次被访问 (`try_with`) 时都会**重新执行**计算闭包。
+        *   `DerivedPayload` (用于所有运算符和 `Map`) 是**无状态的 (Stateless)**。它们不缓存结果，每次被访问 (`try_with`) 时都会**重新执行**计算闭包。
+        *   它们通常被包装在 `Rx<P, RxValue>` 中使用。
         *   这对于轻量级操作（如比较 `equals`、简单算术 `add`）非常高效（Zero-Copy）。
         *   **Performance Trap (性能陷阱)**: 如果派生计算非常昂贵，这种惰性重算可能导致性能问题。对于昂贵的计算，请使用 `memo()` 或 `Signal::derive` 显式创建有状态的缓存节点。
 
@@ -83,8 +95,8 @@
 *   **Traits**: `Copy`, `Clone`, `Debug`, `PartialEq`, `Eq`, `Hash`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
 *   **Methods**:
     *   `slice(getter: impl Fn(&T) -> &O)`: 创建一个指向内部字段的切片信号 `SignalSlice`，实现零拷贝访问。
-*   **Fluent API**: 实现了 `equals`, `not_equals`, `greater_than`, `less_than`, `greater_than_or_equals`, `less_than_or_equals`，返回 `ReactiveBinary<Self, O::Signal, ...>`。这些方法被重命名以避免与标准库 `PartialEq`/`PartialOrd` 冲突。
-*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符，返回 `ReactiveBinary<...>` 或 `Derived<...>`。
+*   **Fluent API**: 实现了 `equals`, `not_equals`, `greater_than`, `less_than`, `greater_than_or_equals`, `less_than_or_equals`，返回包装在 `Rx` 中的 `DerivedPayload`。这些方法被重命名以避免与标准库 `PartialEq`/`PartialOrd` 冲突。
+*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符，返回包装在 `Rx` 中的 `DerivedPayload`。
 
 #### `WriteSignal<T>`
 *   **Struct**: `pub struct WriteSignal<T> { id: NodeId, marker: PhantomData<T> }`
@@ -104,7 +116,7 @@
     *   **Implements**: `SignalSetter`, `SignalUpdater`.
     *   **Methods**:
         *   `slice`: (继承自 `ReadSignal` 部分)。
-*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符 (针对 Read 部分)，返回 `ReactiveBinary` / `Derived`。
+*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符 (针对 Read 部分)，返回包装在 `Rx` 中的 `DerivedPayload`。
 
 #### `Memo<T>`
 *   **Struct**: `pub struct Memo<T> { id: NodeId, marker: PhantomData<T> }`
@@ -112,7 +124,7 @@
 *   **Semantics**: 派生计算信号。值被缓存，仅在依赖变更时无效。
 *   **Methods**:
     *   `new(f: impl Fn(Option<&T>) -> T)`: 创建 Memo。
-*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符，返回 `ReactiveBinary` / `Derived`。
+*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符，返回包装在 `Rx` 中的 `DerivedPayload`。
 
 #### `signal<T>`
 *   **Signature**: `pub fn signal<T: 'static>(value: T) -> (ReadSignal<T>, WriteSignal<T>)`
@@ -124,31 +136,28 @@
 *   **Semantics**:
     *   一个极轻量级的包装器，直接持有值 `T`。
     *   实现了所有读取相关的 Signal Traits，但 `track` 它是空操作，永远不会导致重新渲染。
-    *   它是 `IntoSignal` 对基本类型 (如 `bool`, `i32`, `String`) 的默认转换目标。
     *   **Use Case**: 当你需要一个满足 `Get<Value=T>` 接口但实际上永远不会改变的值时使用。
 
-#### `IntoSignal` Trait
+#### `IntoRx` Trait
 *   **Trait**: 
     ```rust
-    pub trait IntoSignal {
+    pub trait IntoRx {
         type Value;
-        type Signal: With<Value = Self::Value>;
-
-        fn into_signal(self) -> Self::Signal;
-        fn is_constant_value(&self) -> bool;
+        type RxType;
+        fn into_rx(self) -> Self::RxType;
+        fn is_constant(&self) -> bool;
     }
     ```
 *   **Semantics**:
-    *   这是一个辅助 Trait，用于编写灵活的 API。
-    *   为所有基本类型 (`u8`..`u128`, `i8`..`i128`, `f32`, `f64`, `bool`, `char`, `String`, `&str`) 实现了该 Trait，转换为 `Constant<T>`。
-    *   为所有信号类型 (`Signal`, `ReadSignal`, `RwSignal`, `Memo`, `Constant`) 实现了该 Trait，转换为它们自己。
-    *   **Tuples (元组)**: 为 2-4 个元素的元组（如 `(Signal<A>, Signal<B>)`）实现了该 Trait。它们会被转换为一个通过 `Signal::derive` 创建的 `Signal<(A, B)>`，从而将多个信号合并为一个组合信号。
-    *   这允许组件接受 `impl IntoSignal<Value=T>`，从而既支持直接传值，也支持传信号。
+    *   这是 Silex 大一统的核心 Trait，用于编写灵活的 API。
+    *   **Primitives**: 为所有基本类型 (`u8`..`u128`, `i8`..`i128`, `f32`, `f64`, `bool`, `char`, `String`, `&str`) 实现了该 Trait，转换为 `Rx<Constant<T>>`。
+    *   **Signals**: 为所有信号类型 (`Signal`, `ReadSignal`, `RwSignal`, `Memo`, `Constant`) 实现了该 Trait，转换为对应的 `Rx` 委托。
+    *   **Closures**: 为 `Fn() -> T` 实现了该 Trait，使其可直接作为计算单元使用。
+    *   **Tuples (元组)**: 为 2-4 个元素的元组（如 `(Signal<A>, Signal<B>)`）实现了该 Trait。它们通过派生组合转化为一个统一的 `Rx`。
 *   **Performance Advice (性能建议)**:
-    *   `Signal::from(value)` 现在进行了**智能优化**。
-    *   **Small Copy Types (e.g., i32, bool)**: 转换为 `InlineConstant`。这是**零分配 (Zero-Allocation)** 的，速度极快。
-    *   **Large Types (e.g., String)**: 仍会调用 `store_value(value)`，在响应式运行时中分配内存。
-    *   当组件参数接受 `impl IntoSignal` 时，对于小类型可以直接传值，无需担心开销。对于大对象，如果是静态常量，建议传递引用或结构体内部管理，避免不必要的 Arena 存储。
+    *   **Small Copy Types (e.g., i32, bool)**: `IntoRx` 转换是**零分配 (Zero-Allocation)** 的，速度极快（通过 `InlineConstant`）。
+    *   **Large Types (e.g., String)**: `Signal::from(value)` 仍会调用 `store_value(value)`，在响应式运行时中分配内存。
+    *   当组件参数接受 `impl IntoRx` 时，对于小类型可以直接传值，无需担心开销。
 
 #### `StoredValue<T>`
 
@@ -367,7 +376,31 @@ view! {
 
 ## 宏 (Macros)
 
-### `rx!`
-*   **Definition**: `macro_rules! rx { ($($expr:tt)*) => { move || { $($expr)* } }; }`
-*   **Usage**: `let doubled = rx!(count.get() * 2);`
-*   **Semantics**: 语法糖，用于快速创建 `move ||` 闭包，常用于 Signals 的派生计算或属性绑定。
+### `rx!` & `rx_effect!`
+
+*   **Definition**: `rx!` 是创建响应式计算单元 (`RxValue`) 或事件处理器 (`RxEffect`) 的统一入口。
+*   **Structure**:
+    ```rust
+    pub struct Rx<F, M = RxValue>(pub F, pub PhantomData<M>);
+    ```
+*   **Modes**:
+    1.  **Getter (`RxValue`)**:
+        *   `rx!(expression)`: 将表达式包装在 `move ||` 闭包中。
+        *   `rx!(move || body)` 或 `rx!(|| body)`: 手动闭包定义。
+        *   用于 `view!` 中的属性绑定或派生计算。
+    2.  **Effect/Callback (`RxEffect`)**:
+        *   `rx!(|arg| body)`: 创建带参数的回调/处理器。
+        *   `rx!(|arg: Type| body)`: 带类型标注的回调。
+        *   支持 `move |arg| ...` 语法。
+        *   内部通过 `rx_effect!` 宏实现。
+*   **Semantics**: 
+    *   `Rx` 封装了闭包及其意图（Value vs Effect）。
+    *   实现了 `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked` 等 Trait。
+    *   可以直接参与响应式运算（如 `rx!(count.get()) + 1`）。
+
+### `batch_read!` & `batch_read_untracked!`
+
+*   **Purpose**: 解决多信号读取时的零拷贝难题。
+*   **Syntax**: `batch_read!(s1, s2, ... => |v1: &T1, v2: &T2, ...| { ... })`
+*   **Logic**: 通过嵌套 `.with()` 闭包，确保在同一个执行流中持有所有信号的存储锁，从而安全地暴露内部引用。
+*   **Limit**: 目前宏支持 2-4 个信号的组合。更多信号建议手动嵌套或使用 `Memo`。

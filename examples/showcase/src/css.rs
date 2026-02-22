@@ -126,7 +126,7 @@ styled! {
         cursor: pointer;
         font-weight: 600;
         transition: all 0.2s;
-        opacity: $(move || if active.get() { 1.0 } else { 0.8 });
+        opacity: $(rx!(if active.get() { 1.0 } else { 0.8 }));
 
         &:hover {
             filter: brightness(1.1);
@@ -135,6 +135,37 @@ styled! {
 
         &:active {
             transform: translateY(0);
+        }
+    }
+}
+
+styled! {
+    pub DynamicVariantBtn<button>(
+        children: Children,
+        #[prop(into)] kind: Signal<String>,
+        #[prop(into)] dynamic_width: Signal<Px>,
+    ) {
+        border-radius: 8px;
+        padding: 12px 24px;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        border: none;
+        color: white;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+
+        variants: {
+            kind: {
+                primary: { 
+                    background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+                    width: $(dynamic_width);
+                }
+                secondary: { 
+                    background: linear-gradient(135deg, #10b981 0%, #3b82f6 100%);
+                    width: $(rx!(dynamic_width.get() + px(60)));
+                }
+            }
         }
     }
 }
@@ -194,6 +225,33 @@ pub fn StylingBasics() -> impl View {
         )),
 
         DemoCard().children((
+            h3("1.5 Dynamic Variants & Attribute Passthrough"),
+            p(
+                "The `styled!` macro now supports dynamic interpolation directly inside variants, and fully preserves the chainable typed attributes of native HTML tags."
+            ).style("margin-bottom: 24px; color: #9ca3af;"),
+            {
+                let (btn_kind, set_btn_kind) = signal("primary".to_string());
+                let (btn_width, _set_btn_width) = signal(px(160));
+                
+                Stack().gap(16).children((
+                    DynamicVariantBtn()
+                        .kind(btn_kind)
+                        .dynamic_width(btn_width)
+                        .children("Toggle Variant")
+                        // Below are native HTML <button> attributes seamlessly passed through!
+                        .id("passthrough-button") 
+                        .type_("button") 
+                        .title("Hover me! I'm a native button")
+                        .on_click(move |_| {
+                            set_btn_kind.update(|k| *k = if k.as_str() == "primary" { "secondary".to_string() } else { "primary".to_string() });
+                        }),
+                    div(rx!(format!("Current Variant: {}, Base Width Signal: {}", btn_kind.get(), btn_width.get())))
+                        .style("font-size: 0.9em; opacity: 0.8;")
+                ))
+            }
+        )),
+
+        DemoCard().children((
             h3("2. Type-Safe Style Builder (sty)"),
             p(
                 "A chainable API for defining styles with full reactivity, ideal for dynamic inline styles."
@@ -225,9 +283,9 @@ pub fn StylingBasics() -> impl View {
                 div![
                     button("Grow").on(event::click, move |_| set_count.update(|n| *n += 1))
                         .style("padding: 8px 16px; border-radius: 6px; border: 1px solid #374151; background: #111827; color: white; cursor: pointer;"),
-                    div(move || format!("Reactive Width: {}px", 180 + count.get() * 30)).style(
+                    div(rx!(format!("Reactive Width: {}px", 180 + count.get() * 30))).style(
                         sty()
-                            .width(move || px(180 + count.get() * 30))
+                            .width(rx!(px(180 + count.get() * 30)))
                             .height(px(48))
                             .background("linear-gradient(90deg, #4f46e5, #9333ea)")
                             .color(hex("#fff"))
@@ -289,9 +347,9 @@ pub fn Theming() -> impl View {
                         .cursor(CursorKeyword::Pointer)
                         .transition("all 0.2s")
                         .margin(margin::right(px(12)))
-                        .background_color(move || if !is_dark.get() { hex("#6366f1") } else { hex("#f3f4f6") })
-                        .color(move || if !is_dark.get() { hex("#ffffff") } else { hex("#374151") })
-                        .border(move || if !is_dark.get() { border(px(1), BorderStyleKeyword::Solid, hex("#6366f1")) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) })
+                        .background_color(rx!(if !is_dark.get() { hex("#6366f1") } else { hex("#f3f4f6") }))
+                        .color(rx!(if !is_dark.get() { hex("#ffffff") } else { hex("#374151") }))
+                        .border(rx!(if !is_dark.get() { border(px(1), BorderStyleKeyword::Solid, hex("#6366f1")) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) }))
                 ),
             button("🌙 Dark Mode")
                 .on(event::click, move |_| set_theme.set(default_dark_theme()))
@@ -301,9 +359,9 @@ pub fn Theming() -> impl View {
                         .border_radius(px(6))
                         .cursor(CursorKeyword::Pointer)
                         .transition("all 0.2s")
-                        .background_color(move || if is_dark.get() { hex("#4f46e5") } else { hex("#f3f4f6") })
-                        .color(move || if is_dark.get() { hex("#ffffff") } else { hex("#374151") })
-                        .border(move || if is_dark.get() { border(px(1), BorderStyleKeyword::Solid, hex("#4f46e5")) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) })
+                        .background_color(rx!(if is_dark.get() { hex("#4f46e5") } else { hex("#f3f4f6") }))
+                        .color(rx!(if is_dark.get() { hex("#ffffff") } else { hex("#374151") }))
+                        .border(rx!(if is_dark.get() { border(px(1), BorderStyleKeyword::Solid, hex("#4f46e5")) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) }))
                 ),
         ].style("margin-bottom: 24px;"),
 

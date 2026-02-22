@@ -1,7 +1,5 @@
-use silex_core::reactivity::{
-    Constant, Derived, Effect, Memo, ReactiveBinary, ReadSignal, RwSignal, Signal,
-};
-use silex_core::traits::{Get, Track, WithUntracked};
+use silex_core::reactivity::{Constant, Memo, ReadSignal, RwSignal, Signal};
+use silex_core::traits::Get;
 use std::fmt::Display;
 
 // --- 9. Apply Traits (for Codegen) ---
@@ -18,6 +16,26 @@ pub trait ApplyBoolAttribute {
         F: Fn(bool) + Clone + 'static;
 }
 
+// --- Internal Generic Helpers (Shared to reduce monomorphization) ---
+
+fn apply_string_reactive_internal<F>(f: Rc<dyn Fn() -> String>, setter: F)
+where
+    F: Fn(&str) + Clone + 'static,
+{
+    silex_core::reactivity::Effect::new(move |_| {
+        setter(&f());
+    });
+}
+
+fn apply_bool_reactive_internal<F>(f: Rc<dyn Fn() -> bool>, setter: F)
+where
+    F: Fn(bool) + Clone + 'static,
+{
+    silex_core::reactivity::Effect::new(move |_| {
+        setter(f());
+    });
+}
+
 // Implementations for Static Types
 impl ApplyStringAttribute for String {
     fn apply_string<F>(self, setter: F)
@@ -27,9 +45,6 @@ impl ApplyStringAttribute for String {
         setter(&self);
     }
 }
-
-// Reference types are handled by IntoStorable converting to String/Owned usually,
-// but if IntoStorable returns &str or similar (it returns Stored='static), it's covered.
 
 impl ApplyBoolAttribute for bool {
     fn apply_bool<F>(self, setter: F)
@@ -60,6 +75,7 @@ impl_apply_string_primitive!(
 );
 
 // --- Reactive Implementations ---
+use std::rc::Rc;
 
 // Macro to implement for standard signals (ReadSignal, RwSignal, Signal, Memo)
 macro_rules! impl_apply_string_for_signal {
@@ -73,9 +89,7 @@ macro_rules! impl_apply_string_for_signal {
                 where
                     F: Fn(&str) + Clone + 'static,
                 {
-                    Effect::new(move |_| {
-                        setter(&self.get().to_string());
-                    });
+                    apply_string_reactive_internal(Rc::new(move || self.get().to_string()), setter);
                 }
             }
         )*
@@ -97,41 +111,6 @@ where
     }
 }
 
-// Derived
-impl<S, F, U> ApplyStringAttribute for Derived<S, F>
-where
-    S: WithUntracked + Track + Clone + 'static,
-    F: Fn(&S::Value) -> U + Clone + 'static,
-    U: Display + Clone + 'static, // U must be Display + Clone
-{
-    fn apply_string<Set>(self, setter: Set)
-    where
-        Set: Fn(&str) + Clone + 'static,
-    {
-        Effect::new(move |_| {
-            setter(&self.get().to_string());
-        });
-    }
-}
-
-// ReactiveBinary
-impl<L, R, F, U> ApplyStringAttribute for ReactiveBinary<L, R, F>
-where
-    L: WithUntracked + Track + Clone + 'static,
-    R: WithUntracked + Track + Clone + 'static,
-    F: Fn(&L::Value, &R::Value) -> U + Clone + 'static,
-    U: Display + Clone + 'static,
-{
-    fn apply_string<Set>(self, setter: Set)
-    where
-        Set: Fn(&str) + Clone + 'static,
-    {
-        Effect::new(move |_| {
-            setter(&self.get().to_string());
-        });
-    }
-}
-
 // --- ApplyBoolAttribute Implementations ---
 
 // Macro for standard signals
@@ -146,9 +125,7 @@ macro_rules! impl_apply_bool_for_signal {
                 where
                     F: Fn(bool) + Clone + 'static,
                 {
-                    Effect::new(move |_| {
-                        setter(self.get().into());
-                    });
+                    apply_bool_reactive_internal(Rc::new(move || self.get().into()), setter);
                 }
             }
         )*
@@ -167,40 +144,5 @@ where
         F: Fn(bool) + Clone + 'static,
     {
         setter(self.get().into());
-    }
-}
-
-// Derived
-impl<S, F, U> ApplyBoolAttribute for Derived<S, F>
-where
-    S: WithUntracked + Track + Clone + 'static,
-    F: Fn(&S::Value) -> U + Clone + 'static,
-    U: Into<bool> + Clone + 'static,
-{
-    fn apply_bool<Set>(self, setter: Set)
-    where
-        Set: Fn(bool) + Clone + 'static,
-    {
-        Effect::new(move |_| {
-            setter(self.get().into());
-        });
-    }
-}
-
-// ReactiveBinary
-impl<L, R, F, U> ApplyBoolAttribute for ReactiveBinary<L, R, F>
-where
-    L: WithUntracked + Track + Clone + 'static,
-    R: WithUntracked + Track + Clone + 'static,
-    F: Fn(&L::Value, &R::Value) -> U + Clone + 'static,
-    U: Into<bool> + Clone + 'static,
-{
-    fn apply_bool<Set>(self, setter: Set)
-    where
-        Set: Fn(bool) + Clone + 'static,
-    {
-        Effect::new(move |_| {
-            setter(self.get().into());
-        });
     }
 }
