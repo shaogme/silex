@@ -1,10 +1,7 @@
 use heck::AsPascalCase;
-use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
 
 pub mod codegen;
 
@@ -54,38 +51,10 @@ const SVG_SHAPE_ELEMENTS: &[&str] = &[
     "circle", "ellipse", "line", "path", "polygon", "polyline", "rect", "use", "image", "stop",
 ];
 
-pub fn load_config(path: &Path) -> Result<TagConfig, Box<dyn std::error::Error>> {
-    if !path.exists() {
-        return Ok(TagConfig {
-            html: vec![],
-            svg: vec![],
-        });
-    }
+// --- Parse Logic ---
 
-    let content = fs::read_to_string(path)?;
-    if content.trim().is_empty() {
-        return Ok(TagConfig {
-            html: vec![],
-            svg: vec![],
-        });
-    }
-
-    Ok(serde_json::from_str(&content)?)
-}
-
-// --- Fetch Logic ---
-
-pub fn fetch_tags() -> Result<TagConfig, Box<dyn std::error::Error>> {
-    let client = Client::builder().user_agent("silex-codegen").build()?;
-    let url = "https://unpkg.com/@mdn/browser-compat-data/data.json";
-
-    println!("Downloading from {}", url);
-    let resp = client.get(url).send()?;
-    if !resp.status().is_success() {
-        return Err(format!("Failed to fetch MDN data: {}", resp.status()).into());
-    }
-
-    let data: MdnCompatData = resp.json()?;
+pub fn parse_tags(compat_data_str: &str) -> Result<TagConfig, Box<dyn std::error::Error>> {
+    let data: MdnCompatData = serde_json::from_str(compat_data_str)?;
     let mut config = TagConfig {
         html: vec![],
         svg: vec![],
@@ -220,5 +189,3 @@ fn ensure_trait_in_memory(tag: &mut TagDef, trait_name: &str) {
         tag.traits.push(trait_name.to_string());
     }
 }
-
-// --- Helpers ---
