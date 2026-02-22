@@ -2,17 +2,20 @@
 
 `silex_css` 是 Silex 框架抽离的 CSS 核心验证逻辑、类型定义及运行时 Style Builder Crate。
 
-## 1. 基础注入与动态管理 (CSS Injection & Management)
-*   **inject_style(id, content)**: 
-    *   检查 `<head>` 中是否存在 `id`。
-    *   若不存在，创建 `<style id="...">` 并注入 CSS 内容。
-    *   **Idempotent**: 多次调用无副作用。
-*   **DynamicStyleManager**: 
-    *   负责管理带生命周期的动态 `<style>` 标签。
-    *   基于 `thread_local!` 使用 `DYNAMIC_STYLE_REGISTRY`（引用计数 `ref_count`）和 `RETIRED_STYLES` (LRU 队列，Limit=128)。确保组件挂载/卸载时，精确回收或复用 CSSOM 资源，防止长期运行 SPA 导致的 `<style>` 泄漏。
+## 1. 现代 CSSOM 引擎 (Adopted StyleSheets & CSSOM)
+*   **零 DOM 损耗 (Zero DOM Overhead)**: 彻底抛弃传统的 `<style>` 标签注入方案。所有样式均通过现代浏览器的 `Adopted StyleSheets` API 注入，样式完全存在于内存对象（`CSSStyleSheet`）中，极大降低了 DOM 压力。
+*   **StaticStyleRegistry (全局静态合并)**: 
+    *   通过 `inject_style(id, content)` 调用。
+    *   将所有非响应式样式合并到单一的全局 `shared_sheet` 中。
+    *   使用 `insert_rule` 进行增量注入，避免全量字符串解析开销。
+*   **DynamicStyleManager (弱引用生命周期管理)**: 
+    *   负责管理具有组件实例生命周期的动态样式。
+    *   **弱引用优化 (Weak Reference Optimization)**: 内部利用 Rust 的 `Rc` 与 `Weak` 指针自动管理生命周期。
+    *   **自动回收**: 当最后一个使用该样式的组件销毁且 `RETIRED_STYLES` (LRU 缓存, Limit=128) 发生淘汰时，`DynamicStyleState` 会通过 `Drop` trait 自动从 `DocumentStyleRegistry` 中移除对应的样式表。
+    *   **单向同步**: `DocumentStyleRegistry` 维护 `document.adoptedStyleSheets` 的镜像数组，支持微任务批处理更新 (`perform_sync`)，防止同一帧内频繁操作浏览器样式列表。
 *   **DynamicCss (运行时响应态)**: `css!` 宏的实际产物。
     1.  **静态类名**: 提前在编译期就确立的 `.slx-[hash]`。
-    2.  **局部变量 (vars)**: 多条利用 CSS 变量（如 `color: var(--...);`）构建的属性。由单一 `Effect` 聚合并在变化时仅调用 DOM `style.set_ property`，不造成布局抖动。
+    2.  **局部变量 (vars)**: 多条利用 CSS 变量（如 `color: var(--...);`）构建的属性。由单一 `Effect` 聚合并在变化时仅调用 DOM `style.set_property`，不造成布局抖动。
     3.  **局部规则 (rules)**: 对于带有插值的伪类或子选择器（如 `&:hover { width: $(w); }`)，在独立的 `Effect` 中评估插值并在执行时求取哈希，由 `DynamicStyleManager` 推送形如 `.slx-1234abcd-dyn-e5f6` 的新类，并自动变更元素的 `classList`。
 
 ## 2. 强类型系统 (silex_css::types & registry)

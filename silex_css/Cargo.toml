@@ -18,6 +18,8 @@ silex_dom.workspace = true
 silex_hash.workspace = true
 wasm-bindgen.workspace = true
 web-sys.workspace = true
+js-sys.workspace = true
+wasm-bindgen-futures.workspace = true
 
 [dev-dependencies]
 trybuild = "1.0"
