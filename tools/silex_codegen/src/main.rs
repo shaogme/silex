@@ -89,9 +89,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tags::apply_memory_only_patches(&mut gen_config);
 
     // --- CSS Codegen ---
-    let registry_code = css::generate_registry_macro(&css_config.properties);
-    fs::write(css_out_dir.join("registry.rs"), registry_code)?;
-    println!("Generated registry.rs");
+    let properties_code = css::generate_properties_macro(&css_config.properties);
+    fs::write(css_out_dir.join("properties.rs"), properties_code)?;
+    println!("Generated properties.rs");
 
     let keywords_code = css::generate_keywords_code(&css_config.properties);
     fs::write(css_out_dir.join("keywords_gen.rs"), keywords_code)?;

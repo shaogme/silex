@@ -2,7 +2,7 @@ pub mod codegen;
 pub mod fetch;
 pub mod types;
 
-pub use codegen::{generate_keywords_code, generate_registry_macro};
+pub use codegen::{generate_keywords_code, generate_properties_macro};
 pub use fetch::fetch_css;
 use std::fs;
 use std::path::Path;

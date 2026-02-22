@@ -1,7 +1,7 @@
 use super::types::ProcessedProp;
 use heck::AsPascalCase;
 
-pub fn generate_registry_macro(props: &[ProcessedProp]) -> String {
+pub fn generate_properties_macro(props: &[ProcessedProp]) -> String {
     let mut code = String::new();
     code.push_str("/// 自动生成的 CSS 属性注册表\n");
     code.push_str("#[macro_export]\n");

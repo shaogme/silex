@@ -1,38 +1,90 @@
-# Silex CSS 核心文档
+# Silex CSS 核心实现分析
 
-`silex_css` 是框架中隔离的 CSS 核心包，专责处理 CSS 的运行时注入、强类型验证和无宏 Builder 构建系统。它通过独立出来，大幅提高了宏系统和主体库变更时的重新编译速度。
+`silex_css` 是 Silex 框架中负责样式处理的核心 crate。它不仅提供了一套强类型的 CSS 构建系统，还包含了一个高性能的 CSSOM 运行时，旨在解决传统 Web 框架在处理样式时面临的性能瓶颈、类型安全缺失以及 DOM 压力问题。
 
-## 1. 强类型 CSS 运行时 (Type-Safe CSS Runtime)
-位于 `silex_css/src/lib.rs` 、 `silex_css/src/registry.rs` 与 `silex_css/src/types.rs`。
-*   **架构设计**：它不单纯是传统意义上的 CSS Runtime 工具链，而是与 `silex_macros` 协同构筑的前后端一体化防线。抛弃单纯接受一切 `Display` 给字符串 `+` 的行为。
-*   **自动化注册表 (registry.rs)**: 基于 `for_all_properties!` 自动化生产出了标准 CSS 属性名同 Rust `struct` ZST 标签的枚举绑定映射，为工具链构筑底层完备属性字典。
-*   **Property Tags (属性感知)**：基于上述注册表，系统生成了内建 Trait Bounds Tag 结构体（诸如 `props::Width`，`props::Color` 等）。验证流伴随 `DynamicCss`，使得 `ValidFor<P>` 这个 Trait 得以在运行时构建前提前在编译期就成功实施阻断语法错误。
-*   **封锁隐式逃逸与 `UnsafeCss`**：彻底废除对 `&str`、`String` 及 `Any` 属性的泛用 `ValidFor` 实现，转而要求开发者在需要越过类型检查时显式声明使用 `UnsafeCss::new(...)`。
-*   **复合复合与工厂函数 (Factory Functions)**：对于 `border` 这类需要多种类型排版的复杂属性，采用 Rust `const fn border(width, style, color)` 工厂函数及其对应类型 `BorderValue` 处理。
+## 1. 概要 (Overview)
 
-## 2. 现代 CSSOM 引擎 (Adopted StyleSheets & Weak GC)
-*   **混合挂载与 `DynamicCss`**: Silex 将样式打散。静态规则通过全局 `StaticStyleRegistry` 合并注入。直接属性能使用 CSS Var 替换的则抽取为 `vars`，在同个组件内聚合并使用单个 `Effect` 配合 `style.set_property` 原子性更新；如果涉及无法以 CSS Var 处理的伪类或内嵌插值结构（`rules`），运行时将其分发给一个个独立的 `Effect`，它们会伴随信号变化动态重哈希类名，由 `DynamicStyleManager` 托管。
-*   **基于弱引用的自动化 GC (Weak Reference Lifecycle)**: 彻底废弃了手动 `ref_count` 维护。
-    *   **零 DOM 模式**：所有样式通过 `document.adoptedStyleSheets` 挂载，不再在 HTML 中产生任何 `<style>` 节点。
-    *   **自动化清理**：通过 Rust 的 `Rc<DynamicStyleState>` 维持活跃引用。一旦组件卸载且该样式不在 LRU 缓存池（`RETIRED_STYLES`）中，`Drop` 协议会自动触发。
-    *   **原子更新逻辑**：`DocumentStyleRegistry` 作为单一事实来源，持有样式表镜像，并在微任务中合并 `sync` 请求。这确保了无论组件树如何复杂，对 `adoptedStyleSheets` 的赋值操作始终是确定且高性能的。该设计不仅终结了节点泄漏，还大幅降低了浏览器重新计算样式的总开销。
+*   **定义**：一个集成了强类型验证、零宏构建器 (Zero-macro Builder) 以及现代 CSSOM 运行时的 CSS 管理引擎。
+*   **作用**：在 Silex 架构中，`silex_css` 为 `silex_macros` 提供的 `styled!` 宏以及用户直接使用的 `sty()` 构建器提供底层支持。它负责将 Rust 代码中的样式描述转换为高效的浏览器指令（如 `adoptedStyleSheets` 和 `setProperty`）。
+*   **目标受众**：本文档主要面向希望了解 Silex 样式系统底层优化机制的贡献者。阅读前建议了解现代浏览器的 `Constructable StyleSheets` API 以及 Rust 的响应式系统基础。
 
-## 3. 类型安全构建器 (Type-Safe Builder: Style)
-位于 `silex_css/src/builder.rs`。
-*   **设计动机**：为了满足对极致编译性能（零宏路径）和 100% Rust 原生补全极致追求的场景。
-*   **核心逻辑**：
-    *   **链式 API**：提供一系列强类型方法如 `.width(px(100))`。它不仅仅是字符串拼接，而是利用 `IntoSignal` 和 `ValidFor` trait 在编译期拦截类型不匹配的属性赋值。
-    *   **智能分配**：
-        *   当属性是**常量**时，合并进 `static_rules`。多处使用相同 `Style` 的静态部分会被哈希成同名 Class，共享样式注入到 `<head>`。
-        *   当属性是**信号/闭包**时，进入 `dynamic_rules`。在 DOM 挂载时通过响应式 Effect 绑定 **CSS 变量**。
-    *   **高频更新优化**：这是 Silex 的核心优化点。对于动态属性（如 `width: $(w)`），系统会为对应的 class 生成一个唯一的 CSS 变量占位（例如 `--sb-hash-0`）。当信号更新时，Effect 只执行轻量的 `element.style.setProperty('--sb-hash-0', val)`。这避免了修改内联 style 字符串导致的浏览器样式重计算压力，且能与静态 Class 完美配合。
-    *   **伪类响应式支持**：通过 `on_hover(|s| ...)` 定义的样式。如果其中包含动态部分，Style 引擎会为该元素分配唯一的类名，并由 `DynamicStyleManager` 管理对应的 CSSOM 对象。该样式表会自动同步到全局 `Adopted StyleSheets` 列表中，无需在 DOM 中创建任何物理节点，解决了内联样式（inline-style）无法覆盖伪类的局限。
+## 2. 理念和思路 (Philosophy and Design)
 
-## 4. 主题上下文注入 (Theme System)
-位于 `silex_css/src/theme.rs`。
-*   **去包裹设计**: 为了保证类似 Flex/Grid 的嵌套层级不受不必要的父容器 DOM 打扰，Silex 没有提供一个 `ThemeProvider` 标签组件，而是采用 `Apply` Trait 机制：`div(..).apply(theme_variables(theme))` 进行挂载。或者通过 `set_global_theme(theme)` 将变量挂靠在 `<style>` 内为 `:root` 共享。
-*   **索引化更新 (Performance Indexing)**: 最新的主题系统彻底废弃了 `to_css_variables()` 产生的长字符串方案。现在通过 `ThemeToCss` trait 预导出的 `get_variable_names()` 和 `get_variable_values()`，在 `Effect` 中通过索引对比每一个分量，仅对变动的变量调用 `style.set_property`。
+*   **设计背景**：传统的样式更新方案（如修改 `className` 或内联 `style` 字符串）会触发大规模的重计算（Recalculate Style）和解析压力。同时，动态样式的生命周期管理一直是前端框架的难点，容易导致内存泄漏。
+*   **核心思想**：
+    *   **零 DOM 压力**：彻底放弃 `<style>` 标签，完全基于 `adoptedStyleSheets` 实现样式注入。
+    *   **极简更新路径**：对于动态样式，优先使用 CSS 变量（CSS Variables）进行占位，更新时仅触发轻量级的 `element.style.setProperty`。
+    *   **编译时安全**：利用 Rust 的 ZST (Zero-Sized Types) 和 Trait 系统，在编译期拦截非法的属性赋值（如将 `Color` 传给 `Width`）。
+    *   **自动化生命周期**：结合弱引用（Weak References）和 LRU 缓存，实现样式的自动注入与销毁。
+*   **方案取舍 (Trade-offs)**：
+    *   **为什么不使用内联样式？** 内联样式无法处理伪类（`:hover`）、伪元素（`::before`）和媒体查询。
+    *   **为什么不使用 CSS-in-JS 常见的 Hash 方案？** 传统的 Hash 方案在属性变更时需要生成新的类名并注入新的样式表，开销巨大。Silex 通过“静态结构 Hash + 动态变量注入”的组合方案，兼顾了功能完整性和性能。
 
-## 5. 架构与哈希改进
-*   **哈希解耦**: 为了支持更复杂的哈希策略（如未来可能的缩写混淆），`silex_hash` 引入了 `css` 专用模块。所有 CSS 相关的哈希逻辑（如 `Normalized` 包装器）均迁入此处。
-*   **缓存对比策略**: 在 `DynamicCss` 和 `Style` Builder 内部，通过 `Option<Vec<String>>` 在 `Effect` 中保存上一轮的计算结果。这确保了即便信号频繁触发，只要最终生成的 CSS 属性值未变，就不会触发昂贵的字符串哈希和 `<style>` 内容更新。
+## 3. 模块内结构 (Internal Structure)
+
+```text
+src/
+├── builder.rs          // 零宏 Style 构建器系统
+├── types.rs            // 强类型属性 (props)、单位 (units) 及 ValidFor 验证 trait
+├── theme.rs            // 主题上下文集成与变量同步逻辑
+├── runtime/
+│   ├── registry.rs     // 全局样式表注册表 (Static & Document Registry)
+│   └── dynamic.rs      // 动态样式状态管理与弱引用 GC
+└── properties.rs       // 自动生成的属性宏定义 (由编译工具产出)
+```
+
+### 核心组件关系
+1.  **`Style` (Builder)**：用户接口，收集 `StaticRule` 和 `DynamicRule`。
+2.  **`DocumentStyleRegistry`**：单一事实来源，管理整个 `document` 的 `adoptedStyleSheets` 列表。
+3.  **`StaticStyleRegistry`**：负责将所有组件共用的静态 CSS 规则合并到一个共享的 StyleSheet 中。
+4.  **`DynamicStyleManager`**：负责管理那些无法用简单变量解决的复杂动态规则（如随状态变化的伪类），通过引用计数和 LRU 确保不发生泄露。
+
+## 4. 代码详细分析 (Detailed Analysis)
+
+### 4.1 强类型验证机制 (`ValidFor<P>`)
+在 `src/types.rs` 中，我们为每一个 CSS 属性定义了一个 ZST 结构体（如 `props::Width`）。
+```rust
+pub trait ValidFor<Prop> {}
+
+impl ValidFor<props::Width> for Px {}
+impl ValidFor<props::Width> for Percent {}
+// 编译期会拦截：Style::new().width(rgba(0,0,0,1))
+```
+这种设计利用了 Rust 的类型系统实现了“非法状态不可表示”。
+
+### 4.2 零宏构建器逻辑 (`builder.rs`)
+`Style` 构建器在执行 `apply_to_element` 时会经历以下步骤：
+1.  **稳定哈希**：对所有的属性名和静态值进行哈希，生成唯一的 `class_base`。
+2.  **CSS 生成与变量占位**：
+    *   静态值直接写入 CSS。
+    *   动态值（信号）被替换为 `--sb-<hash>-<index>` 格式的 CSS 变量名。
+3.  **原子更新 Effect**：为每个动态值启动一个极轻量的 `Effect`，该 Effect **不触碰** CSSOM 树，只调用 `style.set_property` 修改当前元素的变量值。
+
+### 4.3 文档注册表同步 (`runtime/registry.rs`)
+为了避免高频插入样式表导致的布局抖动（Layout Thrashing），`DocumentStyleRegistry` 采用了微任务同步机制：
+```rust
+fn sync(&mut self) {
+    if self.is_pending { return; }
+    self.is_pending = true;
+    wasm_bindgen_futures::spawn_local(async {
+        // 在微任务中合并所有变更，一次性调用 set_adopted_style_sheets
+        DOCUMENT_REGISTRY.with(|dr| dr.borrow_mut().perform_sync());
+    });
+}
+```
+通过比较 `last_sync_ids`（记录样式表指针地址），我们能跳过 99% 的冗余同步调用。
+
+### 4.4 动态样式 GC 策略 (`runtime/dynamic.rs`)
+`DynamicStyleState` 实现了 `Drop`：
+- 当一个样式不再被任何组件引用，且超出 `RETIRED_STYLES` 的 LRU 限制（当前为 128）时，它会从全局 `DocumentStyleRegistry` 中自动移除。
+- `DYNAMIC_STYLE_REGISTRY` 内部维护 `Weak<DynamicStyleState>`，确保如果同一个组件或相同样式的组件重新挂载，可以立即复用现有的 StyleSheet 对象，避免重复解析。
+
+## 5. 存在的问题和 TODO (Issues and TODOs)
+
+*   **已知限制**：目前 `Style` 构建器在哈希时未考虑伪类内部的层级细化，复杂的嵌套伪类可能会导致哈希冲突（概率极低但理论存在）。
+*   **性能瓶颈**：当页面存在数千个不同的动态 `Style` 对象时，虽然 DOM 压力小，但 Rust 端的 `Effect` 闭包管理会有一定的内存开销。
+*   **TODO**：
+    1.  [ ] 实现样式的跨组件去重（目前仅在单组件多次渲染间去重）。
+    2.  [ ] 支持更复杂的 CSS 简写属性（Shorthand Properties）的智能解析。
+    3.  [ ] 进一步优化 `split_rules` 的性能。
+
