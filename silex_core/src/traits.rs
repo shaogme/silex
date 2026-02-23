@@ -66,9 +66,7 @@
 //! ```
 
 use crate::reactivity::{DerivedPayload, Memo, NodeId};
-use crate::{NodeRef, Rx, RxValue};
-use std::cell::OnceCell;
-use std::marker::PhantomData;
+use crate::{Rx, RxValue};
 use std::ops::Deref;
 use std::panic::Location;
 
@@ -83,102 +81,10 @@ pub trait ReactivityNode {
 #[doc(hidden)]
 pub mod impls;
 
-/// 能够持有 Arena 中响应式值引用的守卫。
-pub struct RxGuard<'a, T: ?Sized> {
-    pub(crate) value: &'a T,
-    /// 内部持有 Token 确保数据在 Guard 存续期间不被非法清理
-    pub(crate) _guard_token: Option<NodeRef>,
-}
-
-impl<'a, T: ?Sized> RxGuard<'a, T> {
-    /// 投影守卫持有的引用。
-    #[inline(always)]
-    pub fn map<U: ?Sized>(self, f: impl FnOnce(&T) -> &U) -> RxGuard<'a, U> {
-        RxGuard {
-            value: f(self.value),
-            _guard_token: self._guard_token,
-        }
-    }
-}
-
-impl<T: ?Sized> Deref for RxGuard<'_, T> {
-    type Target = T;
-
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        self.value
-    }
-}
-
-/// 能够持有临时生成的响应式值（Owned）的守卫。
-pub struct OwnedGuard<T> {
-    pub(crate) value: T,
-}
-
-impl<T> Deref for OwnedGuard<T> {
-    type Target = T;
-
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        &self.value
-    }
-}
-
-/// 能够持有静态常量引用的守卫。
-pub struct ConstantGuard<T: ?Sized + 'static> {
-    pub(crate) value: &'static T,
-}
-
-impl<T: ?Sized + 'static> Deref for ConstantGuard<T> {
-    type Target = T;
-
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        self.value
-    }
-}
-
-macro_rules! impl_tuple_read_guard {
-    ($name:ident, $($idx:tt : $meth:ident : $G:ident : $V:ident),+; $cell_idx:tt; $marker_idx:tt) => {
-        /// 为元组设计的自适应守卫，支持分段式（零拷贝）读取。
-        /// 其结构本身就是一个包含各元素内部守卫的元组，支持通过 `.0`, `.1` 直接访问各分部。
-        pub struct $name<'a, $($G, $V),+>(
-            $(pub $G,)+
-            pub(crate) OnceCell<($($V,)+)>,
-            pub(crate) PhantomData<&'a ()>
-        );
-
-        impl<'a, $($G, $V),+> $name<'a, $($G, $V),+> {
-            $(
-                /// 获取该位置的分段守卫引用。
-                #[inline(always)]
-                pub fn $meth(&self) -> &$G {
-                    &self.$idx
-                }
-            )+
-        }
-
-        impl<'a, $($G, $V),+> Deref for $name<'a, $($G, $V),+>
-        where
-            $($G: Deref<Target = $V>),+,
-            $($V: Clone),+
-        {
-            type Target = ($($V,)+);
-
-            fn deref(&self) -> &Self::Target {
-                self.$cell_idx.get_or_init(|| {
-                    ($(self.$idx.deref().clone(),)+)
-                })
-            }
-        }
-    };
-}
-
-impl_tuple_read_guard!(Tuple2ReadGuard, 0: _0: G0: V0, 1: _1: G1: V1; 2; 3);
-impl_tuple_read_guard!(Tuple3ReadGuard, 0: _0: G0: V0, 1: _1: G1: V1, 2: _2: G2: V2; 3; 4);
-impl_tuple_read_guard!(Tuple4ReadGuard, 0: _0: G0: V0, 1: _1: G1: V1, 2: _2: G2: V2, 3: _3: G3: V3; 4; 5);
-impl_tuple_read_guard!(Tuple5ReadGuard, 0: _0: G0: V0, 1: _1: G1: V1, 2: _2: G2: V2, 3: _3: G3: V3, 4: _4: G4: V4; 5; 6);
-impl_tuple_read_guard!(Tuple6ReadGuard, 0: _0: G0: V0, 1: _1: G1: V1, 2: _2: G2: V2, 3: _3: G3: V3, 4: _4: G4: V4, 5: _5: G5: V5; 6; 7);
+#[doc(hidden)]
+pub mod guards;
+#[doc(hidden)]
+pub use guards::*;
 
 /// 允许将各种类型（原始类型、信号、Rx）转换为统一的 `Rx` 包装器。
 ///
@@ -316,38 +222,8 @@ macro_rules! unwrap_rx {
                 panic!(
                     "{}",
                     $crate::traits::panic_getting_disposed_signal(
-                        $rx.rx_defined_at(),
-                        $rx.rx_debug_name(),
-                        location
-                    )
-                );
-            }
-            #[cfg(not(debug_assertions))]
-            {
-                panic!(
-                    "Tried to access a reactive value that has already been \
-                     disposed."
-                );
-            }
-        }
-    }};
-}
-
-#[doc(hidden)]
-/// Provides a sensible panic message for accessing disposed signals.
-#[macro_export]
-macro_rules! unwrap_signal {
-    ($signal:ident) => {{
-        #[cfg(debug_assertions)]
-        let location = std::panic::Location::caller();
-        || {
-            #[cfg(debug_assertions)]
-            {
-                panic!(
-                    "{}",
-                    $crate::traits::panic_getting_disposed_signal(
-                        $signal.defined_at(),
-                        $signal.debug_name(),
+                        $rx.defined_at(),
+                        $rx.debug_name(),
                         location
                     )
                 );
@@ -480,7 +356,7 @@ pub trait WithUntracked: DefinedAt {
     #[track_caller]
     fn with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> U {
         self.try_with_untracked(fun)
-            .unwrap_or_else(unwrap_signal!(self))
+            .unwrap_or_else(unwrap_rx!(self))
     }
 }
 
@@ -510,7 +386,7 @@ pub trait With: DefinedAt {
     /// Panics if you try to access a signal that has been disposed.
     #[track_caller]
     fn with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> U {
-        self.try_with(fun).unwrap_or_else(unwrap_signal!(self))
+        self.try_with(fun).unwrap_or_else(unwrap_rx!(self))
     }
 }
 
@@ -562,7 +438,7 @@ pub trait UpdateUntracked: DefinedAt {
     #[track_caller]
     fn update_untracked<U>(&self, fun: impl FnOnce(&mut Self::Value) -> U) -> U {
         self.try_update_untracked(fun)
-            .unwrap_or_else(unwrap_signal!(self))
+            .unwrap_or_else(unwrap_rx!(self))
     }
 
     /// Updates the value by applying a function, returning the value returned by that function,

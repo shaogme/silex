@@ -59,11 +59,11 @@ macro_rules! impl_closure_rx {
     (
         impl<$($gen:ident),*> $target:ty $(where $($bounds:tt)*)?
     ) => {
-        impl<$($gen),*> RxInternal for $target $(where $($bounds)*)? {
+        impl<$($gen),*> RxInternal for $target $(where $($bounds)*, T: 'static)? {
             type Value = T;
-            type ReadOutput<'a> = OwnedGuard<T> where Self: 'a;
+            type ReadOutput<'a> = RxGuard<'a, T, T> where Self: 'a;
 
-            #[inline(always)] fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> { let val = (self)(); Some(OwnedGuard { value: val }) }
+            #[inline(always)] fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> { let val = (self)(); Some(RxGuard::Owned(val)) }
         }
     };
 }
@@ -321,7 +321,7 @@ macro_rules! impl_rx_delegate {
         impl<T: 'static> $crate::traits::RxInternal for $target<T> {
             type Value = T;
             type ReadOutput<'a>
-                = $crate::traits::RxGuard<'a, T>
+                = $crate::traits::RxGuard<'a, T, T>
             where
                 Self: 'a;
 
@@ -337,9 +337,9 @@ macro_rules! impl_rx_delegate {
                     ::silex_reactivity::try_with_signal_untracked(id, |v: &T| {
                         std::mem::transmute::<&T, &'static T>(v)
                     })
-                    .map(|v| $crate::traits::RxGuard {
+                    .map(|v| $crate::traits::RxGuard::Borrowed {
                         value: v,
-                        _guard_token: Some($crate::NodeRef::from_id(id)),
+                        token: Some($crate::NodeRef::from_id(id)),
                     })
                 }
             }

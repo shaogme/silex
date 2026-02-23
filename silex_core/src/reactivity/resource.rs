@@ -216,7 +216,7 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
 impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxInternal for Resource<T, E> {
     type Value = Option<T>;
     type ReadOutput<'a>
-        = OwnedGuard<Option<T>>
+        = RxGuard<'a, Option<T>, Option<T>>
     where
         Self: 'a;
 
@@ -234,9 +234,7 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxInternal for Re
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
         self.state
-            .rx_try_with_untracked(|s: &ResourceState<T, E>| OwnedGuard {
-                value: s.as_option().cloned(),
-            })
+            .rx_try_with_untracked(|s| RxGuard::Owned(s.as_option().cloned()))
     }
 
     #[inline(always)]

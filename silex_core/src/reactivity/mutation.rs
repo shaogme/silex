@@ -178,7 +178,7 @@ impl<Arg: 'static, T: Clone + 'static, E: Clone + 'static> Mutation<Arg, T, E> {
 impl<Arg, T: Clone + 'static, E: Clone + 'static> RxInternal for Mutation<Arg, T, E> {
     type Value = Option<T>;
     type ReadOutput<'a>
-        = OwnedGuard<Option<T>>
+        = RxGuard<'a, Option<T>, Option<T>>
     where
         Self: 'a;
 
@@ -196,9 +196,7 @@ impl<Arg, T: Clone + 'static, E: Clone + 'static> RxInternal for Mutation<Arg, T
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
         self.state
-            .rx_try_with_untracked(|s: &MutationState<T, E>| OwnedGuard {
-                value: s.value().cloned(),
-            })
+            .rx_try_with_untracked(|s| RxGuard::Owned(s.value().cloned()))
     }
 
     #[inline(always)]

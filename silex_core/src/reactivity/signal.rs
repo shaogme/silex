@@ -36,15 +36,15 @@ pub struct Constant<T>(pub T);
 impl<T: 'static> RxInternal for Constant<T> {
     type Value = T;
     type ReadOutput<'a>
-        = RxGuard<'a, T>
+        = RxGuard<'a, T, T>
     where
         Self: 'a;
 
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-        Some(RxGuard {
+        Some(RxGuard::Borrowed {
             value: &self.0,
-            _guard_token: None,
+            token: None,
         })
     }
 
@@ -108,7 +108,7 @@ where
 {
     type Value = U;
     type ReadOutput<'a>
-        = OwnedGuard<U>
+        = RxGuard<'a, U, U>
     where
         Self: 'a;
 
@@ -121,7 +121,7 @@ where
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
         self.deps.rx_try_with_untracked(|val| {
             let res = (self.func)(val);
-            OwnedGuard { value: res }
+            RxGuard::Owned(res)
         })
     }
 
@@ -174,28 +174,10 @@ impl<T> PartialEq for Signal<T> {
 
 impl<T> Eq for Signal<T> {}
 
-/// 为 Signal 专门设计的自适应守卫。
-pub enum SignalReadGuard<'a, T: 'static> {
-    Arena(RxGuard<'a, T>),
-    Inline(T),
-}
-
-impl<T: 'static> std::ops::Deref for SignalReadGuard<'_, T> {
-    type Target = T;
-
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Self::Arena(g) => g.deref(),
-            Self::Inline(v) => v,
-        }
-    }
-}
-
 impl<T: 'static> RxInternal for Signal<T> {
     type Value = T;
     type ReadOutput<'a>
-        = SignalReadGuard<'a, T>
+        = RxGuard<'a, T, T>
     where
         Self: 'a;
 
@@ -209,29 +191,25 @@ impl<T: 'static> RxInternal for Signal<T> {
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
         match self {
-            Signal::Read(s) => s.rx_read_untracked().map(SignalReadGuard::Arena),
+            Signal::Read(s) => s.rx_read_untracked(),
             Signal::Derived(id, _) => {
                 // 不进行 rx_track，仅获取当前值
                 unsafe {
-                    rx_borrow_signal_unsafe::<T>(*id).map(|v| {
-                        SignalReadGuard::Arena(RxGuard {
-                            value: v,
-                            _guard_token: Some(crate::NodeRef::from_id(*id)),
-                        })
+                    rx_borrow_signal_unsafe::<T>(*id).map(|v| RxGuard::Borrowed {
+                        value: v,
+                        token: Some(crate::NodeRef::from_id(*id)),
                     })
                 }
             }
             Signal::StoredConstant(id, _) => unsafe {
-                rx_borrow_stored_value_unsafe::<T>(*id).map(|v| {
-                    SignalReadGuard::Arena(RxGuard {
-                        value: v,
-                        _guard_token: Some(crate::NodeRef::from_id(*id)),
-                    })
+                rx_borrow_stored_value_unsafe::<T>(*id).map(|v| RxGuard::Borrowed {
+                    value: v,
+                    token: Some(crate::NodeRef::from_id(*id)),
                 })
             },
             Signal::InlineConstant(val, _) => {
                 let val = unsafe { Self::unpack_inline(*val) };
-                Some(SignalReadGuard::Inline(val))
+                Some(RxGuard::Owned(val))
             }
         }
     }

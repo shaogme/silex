@@ -59,7 +59,7 @@ impl<T: 'static> StoredValue<T> {
 impl<T: 'static> RxInternal for StoredValue<T> {
     type Value = T;
     type ReadOutput<'a>
-        = RxGuard<'a, T>
+        = RxGuard<'a, T, T>
     where
         Self: 'a;
 
@@ -79,9 +79,9 @@ impl<T: 'static> RxInternal for StoredValue<T> {
             silex_reactivity::try_with_stored_value(self.id, |v: &T| {
                 std::mem::transmute::<&T, &'static T>(v)
             })
-            .map(|v| RxGuard {
+            .map(|v| RxGuard::Borrowed {
                 value: v,
-                _guard_token: Some(crate::NodeRef::from_id(self.id)),
+                token: Some(crate::NodeRef::from_id(self.id)),
             })
         }
     }
