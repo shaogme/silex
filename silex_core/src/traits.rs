@@ -157,19 +157,7 @@ pub type CompareFn<T> = fn(&T, &T) -> bool;
 #[doc(hidden)]
 macro_rules! reactive_compare_method {
     ($name:ident, $fn_impl:ident, $op:tt, $bound:ident) => {
-        fn $name<O: 'static>(
-            &self,
-            other: O,
-        ) -> Rx<
-            crate::reactivity::DerivedPayload<
-                (
-                    crate::reactivity::Signal<<Self as IntoRx>::Value>,
-                    crate::reactivity::Signal<<Self as IntoRx>::Value>,
-                ),
-                fn(&(<Self as IntoRx>::Value, <Self as IntoRx>::Value)) -> bool,
-            >,
-            RxValue,
-        >
+        fn $name<O: 'static>(&self, other: O) -> Rx<crate::reactivity::OpPayload<bool>, RxValue>
         where
             Self: IntoRx,
             Self::RxType: RxInternal<Value = <Self as IntoRx>::Value> + Clone + 'static,
@@ -179,10 +167,26 @@ macro_rules! reactive_compare_method {
         {
             let lhs = self.clone().into_signal();
             let rhs = other.into_signal();
+
+            #[inline(always)]
+            unsafe fn read_impl<InnerT: $bound + 'static>(inputs: &[NodeId]) -> Option<bool> {
+                unsafe {
+                    let a = crate::reactivity::rx_borrow_signal_unsafe::<InnerT>(inputs[0])?;
+                    let b = crate::reactivity::rx_borrow_signal_unsafe::<InnerT>(inputs[1])?;
+                    Some($crate::traits::impls::ops_impl::$fn_impl(a, b))
+                }
+            }
+
+            let is_const = lhs.is_constant() && rhs.is_constant();
+
             Rx(
-                crate::reactivity::DerivedPayload::new((lhs, rhs), |(lv, rv)| {
-                    $crate::traits::impls::ops_impl::$fn_impl(lv, rv)
-                }),
+                crate::reactivity::OpPayload {
+                    inputs: [lhs.ensure_node_id(), rhs.ensure_node_id()],
+                    input_count: 2,
+                    read: read_impl::<<Self as IntoRx>::Value>,
+                    track: crate::reactivity::op_trampolines::track_inputs,
+                    is_constant: is_const,
+                },
                 ::core::marker::PhantomData,
             )
         }

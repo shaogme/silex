@@ -2,7 +2,7 @@ use crate::attribute::PendingAttribute;
 use crate::element::Element;
 use silex_core::error::handle_error;
 use silex_core::reactivity::{
-    Constant, DerivedPayload, Effect, Memo, ReadSignal, RwSignal, Signal, SignalSlice,
+    Constant, DerivedPayload, Effect, Memo, OpPayload, ReadSignal, RwSignal, Signal, SignalSlice,
 };
 use silex_core::traits::{Read, RxInternal};
 use silex_core::{SilexError, SilexResult};
@@ -184,7 +184,7 @@ where
     }
 }
 
-// 3.6 Type-erased closure delegation
+// 3.6 Type closure delegation
 impl<V> View for std::rc::Rc<dyn Fn() -> V>
 where
     V: View + 'static,
@@ -195,26 +195,117 @@ where
     }
 }
 
-// 4. 直接 Signal 支持
+// --- 响应式文本归一化内核 (Reactive Text Consolidation Kernel) ---
+
+trait ReactiveText: 'static {
+    fn track(&self);
+    fn render(&self) -> String;
+}
+
+/// 非泛型内核函数：负责处理所有响应式文本更新。
+/// 通过类型擦除避免为每种计算生成独立的 Effect 代码，大幅减小二进制体积。
+fn mount_reactive_text_(parent: &Node, rx: Box<dyn ReactiveText>) {
+    let document = crate::document();
+    let node = document.create_text_node("");
+    if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
+        handle_error(e);
+        return;
+    }
+
+    Effect::new(move |_| {
+        rx.track();
+        let value = rx.render();
+        node.set_node_value(Some(&value));
+    });
+}
+
+// 为各种类型实现 ReactiveText 桥接
+
+impl<T> ReactiveText for ReadSignal<T>
+where
+    T: Display + Clone + 'static,
+{
+    fn track(&self) {
+        self.rx_track();
+    }
+    fn render(&self) -> String {
+        self.get_untracked().to_string()
+    }
+}
+
+impl<T> ReactiveText for Memo<T>
+where
+    T: Display + Clone + PartialEq + 'static,
+{
+    fn track(&self) {
+        self.rx_track();
+    }
+    fn render(&self) -> String {
+        self.get_untracked().to_string()
+    }
+}
+
+impl<T> ReactiveText for Signal<T>
+where
+    T: Display + Clone + 'static,
+{
+    fn track(&self) {
+        self.rx_track();
+    }
+    fn render(&self) -> String {
+        self.get_untracked().to_string()
+    }
+}
+
+impl<S, F, U> ReactiveText for DerivedPayload<S, F>
+where
+    Self: RxInternal<Value = U> + Clone + 'static,
+    U: Display + 'static,
+{
+    fn track(&self) {
+        self.rx_track();
+    }
+    fn render(&self) -> String {
+        self.rx_try_with_untracked(|v: &U| v.to_string())
+            .unwrap_or_default()
+    }
+}
+
+impl<U> ReactiveText for OpPayload<U>
+where
+    Self: RxInternal<Value = U> + Clone + 'static,
+    U: Display + 'static,
+{
+    fn track(&self) {
+        self.rx_track();
+    }
+    fn render(&self) -> String {
+        self.rx_try_with_untracked(|v: &U| v.to_string())
+            .unwrap_or_default()
+    }
+}
+
+impl<S, F, O> ReactiveText for SignalSlice<S, F, O>
+where
+    Self: RxInternal<Value = O> + Clone + 'static,
+    O: Display + ?Sized + 'static,
+{
+    fn track(&self) {
+        self.rx_track();
+    }
+    fn render(&self) -> String {
+        self.rx_try_with_untracked(|v: &O| v.to_string())
+            .unwrap_or_default()
+    }
+}
+
+// 4. 直接 Signal 支持 (重定向到归一化内核)
 impl<T> View for ReadSignal<T>
 where
     T: Display + Clone + 'static,
 {
     fn mount(self, parent: &Node) {
-        let document = crate::document();
-        // 1. 创建占位符
-        let node = document.create_text_node("");
-        if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-            handle_error(e);
-            return;
-        }
-
-        // 2. 创建副作用
-        let signal = self;
-        Effect::new(move |_| {
-            let value = signal.get();
-            node.set_node_value(Some(&value.to_string()));
-        });
+        mount_reactive_text_(parent, Box::new(self));
     }
 }
 
@@ -223,20 +314,7 @@ where
     T: Display + Clone + PartialEq + 'static,
 {
     fn mount(self, parent: &Node) {
-        let document = crate::document();
-        // 1. 创建占位符
-        let node = document.create_text_node("");
-        if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-            handle_error(e);
-            return;
-        }
-
-        // 2. 创建副作用
-        let signal = self;
-        Effect::new(move |_| {
-            let value = signal.get();
-            node.set_node_value(Some(&value.to_string()));
-        });
+        mount_reactive_text_(parent, Box::new(self));
     }
 }
 
@@ -245,7 +323,7 @@ where
     T: Display + Clone + 'static,
 {
     fn mount(self, parent: &Node) {
-        self.read_signal().mount(parent);
+        mount_reactive_text_(parent, Box::new(self.read_signal()));
     }
 }
 
@@ -254,20 +332,7 @@ where
     T: Display + Clone + 'static,
 {
     fn mount(self, parent: &Node) {
-        let document = crate::document();
-        // 1. 创建占位符
-        let node = document.create_text_node("");
-        if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-            handle_error(e);
-            return;
-        }
-
-        // 2. 创建副作用
-        let signal = self;
-        Effect::new(move |_| {
-            let value = signal.get();
-            node.set_node_value(Some(&value.to_string()));
-        });
+        mount_reactive_text_(parent, Box::new(self));
     }
 }
 
@@ -279,44 +344,29 @@ where
     U: Display + 'static,
 {
     fn mount(self, parent: &Node) {
-        let document = crate::document();
-        let node = document.create_text_node("");
-        if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-            handle_error(e);
-            return;
-        }
-
-        let rx = self;
-        Effect::new(move |_| {
-            rx.rx_track();
-            rx.rx_try_with_untracked(|value| {
-                node.set_node_value(Some(&value.to_string()));
-            });
-        });
+        mount_reactive_text_(parent, Box::new(self));
     }
 }
 
-// 4.3 SignalSlice View (Text Update)
+// 4.2 OpPayload View (Text Update)
+impl<U> View for OpPayload<U>
+where
+    Self: RxInternal<Value = U> + Clone + 'static,
+    U: Display + 'static,
+{
+    fn mount(self, parent: &Node) {
+        mount_reactive_text_(parent, Box::new(self));
+    }
+}
+
+// 4.4 SignalSlice View (Text Update)
 impl<S, F, O> View for SignalSlice<S, F, O>
 where
     Self: RxInternal<Value = O> + Clone + 'static,
     O: Display + ?Sized + 'static,
 {
     fn mount(self, parent: &Node) {
-        let document = crate::document();
-        let node = document.create_text_node("");
-        if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-            handle_error(e);
-            return;
-        }
-
-        let rx = self;
-        Effect::new(move |_| {
-            rx.rx_track();
-            rx.rx_try_with_untracked(|value| {
-                node.set_node_value(Some(&value.to_string()));
-            });
-        });
+        mount_reactive_text_(parent, Box::new(self));
     }
 }
 

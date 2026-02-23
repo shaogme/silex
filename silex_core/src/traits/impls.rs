@@ -490,24 +490,36 @@ macro_rules! impl_rx_op {
             R: $crate::traits::IntoRx<Value = T> + 'static,
             R::RxType: $crate::traits::RxInternal<Value = T> + Clone + 'static,
         {
-            type Output = Rx<
-                crate::reactivity::DerivedPayload<
-                    (crate::reactivity::Signal<T>, crate::reactivity::Signal<T>),
-                    fn(&(T, T)) -> T,
-                >,
-                crate::RxValue,
-            >;
+            type Output = Rx<crate::reactivity::OpPayload<T>, crate::RxValue>;
 
             #[inline]
             fn $method(self, rhs: R) -> Self::Output {
                 let lhs = self.into_signal();
                 let rhs = rhs.into_signal();
+
+                #[inline(always)]
+                unsafe fn read_impl<InnerT>(inputs: &[NodeId]) -> Option<InnerT>
+                where
+                    for<'a> &'a InnerT: std::ops::$trait<&'a InnerT, Output = InnerT>,
+                    InnerT: 'static,
+                {
+                    unsafe {
+                        let a = crate::reactivity::rx_borrow_signal_unsafe::<InnerT>(inputs[0])?;
+                        let b = crate::reactivity::rx_borrow_signal_unsafe::<InnerT>(inputs[1])?;
+                        Some($crate::traits::impls::ops_impl::$method(a, b))
+                    }
+                }
+
+                let is_const = lhs.is_constant() && rhs.is_constant();
+
                 $crate::Rx(
-                    $crate::reactivity::DerivedPayload::new(
-                        (lhs, rhs),
-                        (|(lv, rv)| $crate::traits::impls::ops_impl::$method(lv, rv))
-                            as fn(&(T, T)) -> T,
-                    ),
+                    $crate::reactivity::OpPayload {
+                        inputs: [lhs.ensure_node_id(), rhs.ensure_node_id()],
+                        input_count: 2,
+                        read: read_impl::<T>,
+                        track: crate::reactivity::op_trampolines::track_inputs,
+                        is_constant: is_const,
+                    },
                     ::core::marker::PhantomData,
                 )
             }
@@ -524,19 +536,34 @@ macro_rules! impl_rx_unary_op {
             for<'a> &'a T: std::ops::$trait<Output = T>,
             T: Clone + 'static,
         {
-            type Output = Rx<
-                crate::reactivity::DerivedPayload<crate::reactivity::Signal<T>, fn(&T) -> T>,
-                crate::RxValue,
-            >;
+            type Output = Rx<crate::reactivity::OpPayload<T>, crate::RxValue>;
 
             #[inline]
             fn $method(self) -> Self::Output {
                 let val = self.into_signal();
+
+                #[inline(always)]
+                unsafe fn read_impl<InnerT>(inputs: &[NodeId]) -> Option<InnerT>
+                where
+                    for<'a> &'a InnerT: std::ops::$trait<Output = InnerT>,
+                    InnerT: 'static,
+                {
+                    unsafe {
+                        let a = crate::reactivity::rx_borrow_signal_unsafe::<InnerT>(inputs[0])?;
+                        Some($crate::traits::impls::ops_impl::$method(a))
+                    }
+                }
+
+                let is_const = val.is_constant();
+
                 $crate::Rx(
-                    $crate::reactivity::DerivedPayload::new(
-                        val,
-                        $crate::traits::impls::ops_impl::$method::<T> as fn(&T) -> T,
-                    ),
+                    $crate::reactivity::OpPayload {
+                        inputs: [val.ensure_node_id(), val.ensure_node_id()],
+                        input_count: 1,
+                        read: read_impl::<T>,
+                        track: crate::reactivity::op_trampolines::track_inputs,
+                        is_constant: is_const,
+                    },
                     ::core::marker::PhantomData,
                 )
             }

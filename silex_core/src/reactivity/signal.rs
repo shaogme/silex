@@ -15,8 +15,15 @@ use crate::{Rx, RxValue};
 
 /// 内部辅助函数：直接从运行时借用信号值。
 /// 安全性：由 RxGuard 的生命周期和 Silex Arena 的地址稳定性保证。
-unsafe fn rx_borrow_signal_unsafe<T: 'static>(id: NodeId) -> Option<&'static T> {
-    silex_reactivity::try_with_signal_untracked(id, |v: &T| unsafe {
+pub(crate) unsafe fn rx_borrow_signal_unsafe<T: 'static>(id: NodeId) -> Option<&'static T> {
+    // 1. 尝试作为响应式信号借用
+    if let Some(v) = silex_reactivity::try_with_signal_untracked(id, |v: &T| unsafe {
+        std::mem::transmute::<&T, &'static T>(v)
+    }) {
+        return Some(v);
+    }
+    // 2. 尝试作为静态存储值借用 (常量)
+    silex_reactivity::try_with_stored_value(id, |v: &T| unsafe {
         std::mem::transmute::<&T, &'static T>(v)
     })
 }
@@ -142,15 +149,92 @@ where
     }
 }
 
+// --- OpPayload (Aggressive De-genericization) ---
+
+#[derive(Clone, Copy)]
+pub struct OpPayload<U: 'static> {
+    pub inputs: [NodeId; 2],
+    pub input_count: u8,
+    pub read: unsafe fn(inputs: &[NodeId]) -> Option<U>,
+    pub track: fn(inputs: &[NodeId]),
+    pub is_constant: bool,
+}
+
+impl<U: 'static> std::fmt::Debug for OpPayload<U> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpPayload")
+            .field("inputs", &&self.inputs[..self.input_count as usize])
+            .field("read", &format_args!("{:p}", self.read as *const ()))
+            .field("is_constant", &self.is_constant)
+            .finish()
+    }
+}
+
+impl<U: 'static> RxInternal for OpPayload<U> {
+    type Value = U;
+    type ReadOutput<'a>
+        = RxGuard<'a, U, U>
+    where
+        Self: 'a;
+
+    #[inline(always)]
+    fn rx_track(&self) {
+        (self.track)(&self.inputs[..self.input_count as usize]);
+    }
+
+    #[inline(always)]
+    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
+        unsafe { (self.read)(&self.inputs[..self.input_count as usize]).map(RxGuard::Owned) }
+    }
+
+    fn rx_is_constant(&self) -> bool {
+        self.is_constant
+    }
+
+    fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
+        get_node_defined_at(self.inputs[0])
+    }
+
+    fn rx_is_disposed(&self) -> bool {
+        for i in 0..self.input_count as usize {
+            if !is_signal_valid(self.inputs[i]) {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+// Trampoline 辅助工具：用于在宏中生成虚函数表实例
+pub mod op_trampolines {
+    use super::*;
+
+    pub fn track_inputs(inputs: &[NodeId]) {
+        for &id in inputs {
+            track_signal(id);
+        }
+    }
+}
+
 // --- Signal 信号 Enum ---
 
-#[derive(Debug)]
 pub enum Signal<T: 'static> {
     Read(ReadSignal<T>),
     Derived(NodeId, PhantomData<T>),
     StoredConstant(NodeId, PhantomData<T>),
     #[allow(missing_docs)] // Internal optimization detail
     InlineConstant(u64, PhantomData<T>),
+}
+
+impl<T: 'static> std::fmt::Debug for Signal<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Read(s) => f.debug_tuple("Read").field(s).finish(),
+            Self::Derived(id, _) => f.debug_tuple("Derived").field(id).finish(),
+            Self::StoredConstant(id, _) => f.debug_tuple("StoredConstant").field(id).finish(),
+            Self::InlineConstant(val, _) => f.debug_tuple("InlineConstant").field(val).finish(),
+        }
+    }
 }
 
 impl<T> Clone for Signal<T> {
@@ -312,6 +396,20 @@ impl<T: 'static> Signal<T> {
             Signal::Derived(id, _) => Some(*id),
             Signal::StoredConstant(id, _) => Some(*id),
             Signal::InlineConstant(_, _) => None,
+        }
+    }
+
+    /// 确保信号具有 NodeId。
+    /// 如果是内联常量，则会将其提升为存储常量。
+    pub fn ensure_node_id(&self) -> NodeId {
+        if let Some(id) = self.node_id() {
+            id
+        } else if let Signal::InlineConstant(storage, _) = self {
+            // 安全性：InlineConstant 保证了 T 不实现 Drop 且大小合适
+            let value = unsafe { Self::unpack_inline(*storage) };
+            store_value(value)
+        } else {
+            unreachable!("Signal must be either Read, Derived, StoredConstant or InlineConstant")
         }
     }
 
