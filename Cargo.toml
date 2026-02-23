@@ -117,4 +117,8 @@ wasm-bindgen-futures = { version = "0.4.56", default-features = false }
 panic = "unwind"
 
 [profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
 panic = "unwind"

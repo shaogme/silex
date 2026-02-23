@@ -2,8 +2,7 @@ use crate::attribute::PendingAttribute;
 use crate::element::Element;
 use silex_core::error::handle_error;
 use silex_core::reactivity::{
-    BinaryDerivedPayload, Constant, DerivedPayload, Effect, Memo, ReadSignal, RwSignal, Signal,
-    SignalSlice,
+    Constant, DerivedPayload, Effect, Memo, ReadSignal, RwSignal, Signal, SignalSlice,
 };
 use silex_core::traits::{Get, RxInternal};
 use silex_core::{SilexError, SilexResult};
@@ -275,30 +274,6 @@ where
 // 4. 通用 RxInternal 支持 (Display 类型)
 // 4.1 DerivedPayload View (Text Update)
 impl<S, F, U> View for DerivedPayload<S, F>
-where
-    Self: RxInternal<Value = U> + Clone + 'static,
-    U: Display + 'static,
-{
-    fn mount(self, parent: &Node) {
-        let document = crate::document();
-        let node = document.create_text_node("");
-        if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-            handle_error(e);
-            return;
-        }
-
-        let rx = self;
-        Effect::new(move |_| {
-            rx.rx_track();
-            rx.rx_try_with_untracked(|value| {
-                node.set_node_value(Some(&value.to_string()));
-            });
-        });
-    }
-}
-
-// 4.2 BinaryDerivedPayload View (Text Update)
-impl<L, R, F, U> View for BinaryDerivedPayload<L, R, F>
 where
     Self: RxInternal<Value = U> + Clone + 'static,
     U: Display + 'static,

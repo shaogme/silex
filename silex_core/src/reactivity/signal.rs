@@ -126,13 +126,6 @@ pub struct DerivedPayload<Deps, F> {
     pub(crate) func: F,
 }
 
-#[derive(Clone, Copy)]
-pub struct BinaryDerivedPayload<L, R, F> {
-    pub(crate) lhs: L,
-    pub(crate) rhs: R,
-    pub(crate) func: F,
-}
-
 impl<D: std::fmt::Debug, F> std::fmt::Debug for DerivedPayload<D, F> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DerivedPayload")
@@ -142,25 +135,9 @@ impl<D: std::fmt::Debug, F> std::fmt::Debug for DerivedPayload<D, F> {
     }
 }
 
-impl<L: std::fmt::Debug, R: std::fmt::Debug, F> std::fmt::Debug for BinaryDerivedPayload<L, R, F> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BinaryDerivedPayload")
-            .field("lhs", &self.lhs)
-            .field("rhs", &self.rhs)
-            .field("func", &"Fn(...)")
-            .finish()
-    }
-}
-
 impl<D, F> DerivedPayload<D, F> {
     pub const fn new(deps: D, func: F) -> Self {
         Self { deps, func }
-    }
-}
-
-impl<L, R, F> BinaryDerivedPayload<L, R, F> {
-    pub const fn new(lhs: L, rhs: R, func: F) -> Self {
-        Self { lhs, rhs, func }
     }
 }
 
@@ -174,38 +151,15 @@ impl<D: DefinedAt, F> DefinedAt for DerivedPayload<D, F> {
     }
 }
 
-impl<L: DefinedAt, R, F> DefinedAt for BinaryDerivedPayload<L, R, F> {
-    fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
-        self.lhs.defined_at()
-    }
-
-    fn debug_name(&self) -> Option<String> {
-        self.lhs.debug_name()
-    }
-}
-
 impl<D: IsDisposed, F> IsDisposed for DerivedPayload<D, F> {
     fn is_disposed(&self) -> bool {
         self.deps.is_disposed()
     }
 }
 
-impl<L: IsDisposed, R: IsDisposed, F> IsDisposed for BinaryDerivedPayload<L, R, F> {
-    fn is_disposed(&self) -> bool {
-        self.lhs.is_disposed() || self.rhs.is_disposed()
-    }
-}
-
 impl<D: Track, F> Track for DerivedPayload<D, F> {
     fn track(&self) {
         self.deps.track();
-    }
-}
-
-impl<L: Track, R: Track, F> Track for BinaryDerivedPayload<L, R, F> {
-    fn track(&self) {
-        self.lhs.track();
-        self.rhs.track();
     }
 }
 
@@ -222,25 +176,6 @@ where
             let mapped = (self.func)(val);
             fun(&mapped)
         })
-    }
-}
-
-// Binary implementation (using tuple as deps)
-impl<L, R, F, U> WithUntracked for BinaryDerivedPayload<L, R, F>
-where
-    L: WithUntracked,
-    R: WithUntracked,
-    F: Fn(&L::Value, &R::Value) -> U + Clone,
-{
-    type Value = U;
-
-    fn try_with_untracked<Res>(&self, fun: impl FnOnce(&Self::Value) -> Res) -> Option<Res> {
-        self.lhs.try_with_untracked(|lv| {
-            self.rhs.try_with_untracked(|rv| {
-                let res = (self.func)(lv, rv);
-                fun(&res)
-            })
-        })?
     }
 }
 
@@ -299,68 +234,6 @@ where
 
     fn rx_is_disposed(&self) -> bool {
         self.deps.rx_is_disposed()
-    }
-}
-
-// Binary implementation
-impl<L, R, F, U> RxInternal for BinaryDerivedPayload<L, R, F>
-where
-    L: RxInternal,
-    R: RxInternal,
-    F: Fn(&L::Value, &R::Value) -> U + Clone + 'static,
-    U: 'static,
-{
-    type Value = U;
-    type ReadOutput<'a>
-        = OwnedGuard<U>
-    where
-        Self: 'a;
-
-    #[inline(always)]
-    fn rx_track(&self) {
-        self.lhs.rx_track();
-        self.rhs.rx_track();
-    }
-
-    #[inline(always)]
-    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
-        self.rx_track();
-        self.rx_read_untracked()
-    }
-
-    #[inline(always)]
-    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-        self.lhs.rx_try_with_untracked(|lv| {
-            self.rhs.rx_try_with_untracked(|rv| {
-                let res = (self.func)(lv, rv);
-                OwnedGuard { value: res }
-            })
-        })?
-    }
-
-    fn rx_try_with_untracked<Res>(&self, fun: impl FnOnce(&Self::Value) -> Res) -> Option<Res> {
-        self.lhs.rx_try_with_untracked(|lv| {
-            self.rhs.rx_try_with_untracked(|rv| {
-                let res = (self.func)(lv, rv);
-                fun(&res)
-            })
-        })?
-    }
-
-    fn rx_is_constant(&self) -> bool {
-        self.lhs.rx_is_constant() && self.rhs.rx_is_constant()
-    }
-
-    fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
-        None
-    }
-
-    fn rx_debug_name(&self) -> Option<String> {
-        None
-    }
-
-    fn rx_is_disposed(&self) -> bool {
-        self.lhs.rx_is_disposed() || self.rhs.rx_is_disposed()
     }
 }
 
@@ -699,54 +572,42 @@ impl<T> ReadSignal<T> {
     }
 }
 
-impl<T> std::fmt::Debug for ReadSignal<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ReadSignal({:?})", self.id)
-    }
+#[macro_export]
+#[doc(hidden)]
+macro_rules! impl_signal_core_traits {
+    ($($ty:ident),*) => {
+        $(
+            impl<T> std::fmt::Debug for $ty<T> {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    write!(f, "{}({:?})", stringify!($ty), self.id)
+                }
+            }
+
+            impl<T> Clone for $ty<T> {
+                fn clone(&self) -> Self {
+                    *self
+                }
+            }
+            impl<T> Copy for $ty<T> {}
+
+            impl<T> PartialEq for $ty<T> {
+                fn eq(&self, other: &Self) -> bool {
+                    self.id == other.id
+                }
+            }
+
+            impl<T> Eq for $ty<T> {}
+
+            impl<T> std::hash::Hash for $ty<T> {
+                fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                    self.id.hash(state);
+                }
+            }
+        )*
+    };
 }
 
-impl<T> Clone for ReadSignal<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<T> Copy for ReadSignal<T> {}
-
-impl<T> PartialEq for ReadSignal<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl<T> Eq for ReadSignal<T> {}
-
-impl<T> std::hash::Hash for ReadSignal<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-    }
-}
-
-impl<T> DefinedAt for ReadSignal<T> {
-    fn defined_at(&self) -> Option<&'static Location<'static>> {
-        get_node_defined_at(self.id)
-    }
-
-    fn debug_name(&self) -> Option<String> {
-        get_debug_label(self.id)
-    }
-}
-
-impl<T> IsDisposed for ReadSignal<T> {
-    fn is_disposed(&self) -> bool {
-        !is_signal_valid(self.id)
-    }
-}
-
-impl<T> Track for ReadSignal<T> {
-    fn track(&self) {
-        track_signal(self.id);
-    }
-}
+impl_signal_core_traits!(ReadSignal);
 
 // Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
 
@@ -766,32 +627,7 @@ impl<T> WriteSignal<T> {
     }
 }
 
-impl<T> std::fmt::Debug for WriteSignal<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "WriteSignal({:?})", self.id)
-    }
-}
-
-impl<T> Clone for WriteSignal<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<T> Copy for WriteSignal<T> {}
-
-impl<T> PartialEq for WriteSignal<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl<T> Eq for WriteSignal<T> {}
-
-impl<T> std::hash::Hash for WriteSignal<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-    }
-}
+impl_signal_core_traits!(WriteSignal);
 
 impl<T> DefinedAt for WriteSignal<T> {
     fn defined_at(&self) -> Option<&'static Location<'static>> {
@@ -917,28 +753,6 @@ impl<T: 'static> RwSignal<T> {
         O: ?Sized + 'static, // O can be unsized (e.g. str)
     {
         SignalSlice::new(self, getter)
-    }
-}
-
-impl<T: 'static> DefinedAt for RwSignal<T> {
-    fn defined_at(&self) -> Option<&'static Location<'static>> {
-        self.read.defined_at()
-    }
-
-    fn debug_name(&self) -> Option<String> {
-        self.read.debug_name()
-    }
-}
-
-impl<T: 'static> IsDisposed for RwSignal<T> {
-    fn is_disposed(&self) -> bool {
-        self.read.is_disposed()
-    }
-}
-
-impl<T: 'static> Track for RwSignal<T> {
-    fn track(&self) {
-        self.read.track();
     }
 }
 

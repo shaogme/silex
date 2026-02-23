@@ -1,9 +1,6 @@
 use std::marker::PhantomData;
-use std::panic::Location;
 
 use silex_reactivity::NodeId;
-
-use crate::traits::*;
 
 // --- Memo ---
 
@@ -12,18 +9,7 @@ pub struct Memo<T> {
     pub(crate) marker: PhantomData<T>,
 }
 
-impl<T> std::fmt::Debug for Memo<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Memo({:?})", self.id)
-    }
-}
-
-impl<T> Clone for Memo<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<T> Copy for Memo<T> {}
+crate::impl_signal_core_traits!(Memo);
 
 impl<T: Clone + PartialEq + 'static> Memo<T> {
     pub fn new<F>(f: F) -> Self
@@ -42,28 +28,6 @@ impl<T> Memo<T> {
     pub fn with_name(self, name: impl Into<String>) -> Self {
         silex_reactivity::set_debug_label(self.id, name);
         self
-    }
-}
-
-impl<T> DefinedAt for Memo<T> {
-    fn defined_at(&self) -> Option<&'static Location<'static>> {
-        None
-    }
-
-    fn debug_name(&self) -> Option<String> {
-        silex_reactivity::get_debug_label(self.id)
-    }
-}
-
-impl<T> IsDisposed for Memo<T> {
-    fn is_disposed(&self) -> bool {
-        !silex_reactivity::is_signal_valid(self.id)
-    }
-}
-
-impl<T> Track for Memo<T> {
-    fn track(&self) {
-        silex_reactivity::track_signal(self.id);
     }
 }
 

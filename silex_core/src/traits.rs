@@ -311,7 +311,7 @@ macro_rules! reactive_compare_method {
             &self,
             other: O,
         ) -> Rx<
-            crate::reactivity::BinaryDerivedPayload<Self::RxType, O::RxType, fn(&<Self as IntoRx>::Value, &<Self as IntoRx>::Value) -> bool>,
+            crate::reactivity::DerivedPayload<(Self::RxType, O::RxType), fn(&(<Self as IntoRx>::Value, <Self as IntoRx>::Value)) -> bool>,
             RxValue,
         >
         where
@@ -324,7 +324,7 @@ macro_rules! reactive_compare_method {
             let lhs = self.clone().into_rx();
             let rhs = other.into_rx();
             Rx(
-                crate::reactivity::BinaryDerivedPayload::new(lhs, rhs, |lv, rv| lv $op rv),
+                crate::reactivity::DerivedPayload::new((lhs, rhs), |(lv, rv)| lv $op rv),
                 ::core::marker::PhantomData,
             )
         }
@@ -455,6 +455,14 @@ pub trait Track {
     /// Subscribes to this signal in the current reactive scope without doing anything with its value.
     #[track_caller]
     fn track(&self);
+}
+
+impl<T: ReactivityNode> Track for T {
+    #[inline(always)]
+    #[track_caller]
+    fn track(&self) {
+        ::silex_reactivity::track_signal(self.node_id());
+    }
 }
 
 /// Give read-only access to a signal's value by reference inside a closure,
@@ -696,6 +704,13 @@ pub trait IsDisposed {
     fn is_disposed(&self) -> bool;
 }
 
+impl<T: ReactivityNode> IsDisposed for T {
+    #[inline(always)]
+    fn is_disposed(&self) -> bool {
+        !::silex_reactivity::is_signal_valid(self.node_id())
+    }
+}
+
 /// Describes where the signal was defined. This is used for diagnostic warnings and is purely a
 /// debug-mode tool.
 pub trait DefinedAt {
@@ -706,6 +721,18 @@ pub trait DefinedAt {
     /// Returns the debug name of the signal, if any.
     fn debug_name(&self) -> Option<String> {
         None
+    }
+}
+
+impl<T: ReactivityNode> DefinedAt for T {
+    #[inline(always)]
+    fn defined_at(&self) -> Option<&'static Location<'static>> {
+        ::silex_reactivity::get_node_defined_at(self.node_id())
+    }
+
+    #[inline(always)]
+    fn debug_name(&self) -> Option<String> {
+        ::silex_reactivity::get_debug_label(self.node_id())
     }
 }
 

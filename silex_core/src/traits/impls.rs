@@ -3,7 +3,6 @@ use crate::reactivity::{Constant, DerivedPayload, Memo};
 use crate::{Rx, RxValue};
 use std::cell::OnceCell;
 use std::marker::PhantomData;
-use std::panic::Location;
 
 /// A module containing static helper functions for reactive operations.
 /// usage of these avoids generating unique closures for every operator implementation.
@@ -38,104 +37,28 @@ pub mod ops_impl {
     );
 }
 
-impl<F, T> RxInternal for F
-where
-    F: Fn() -> T,
-{
-    type Value = T;
-    type ReadOutput<'a>
-        = OwnedGuard<T>
-    where
-        Self: 'a;
+macro_rules! impl_closure_rx {
+    (
+        impl<$($gen:ident),*> $target:ty $(where $($bounds:tt)*)?
+    ) => {
+        impl<$($gen),*> RxInternal for $target $(where $($bounds)*)? {
+            type Value = T;
+            type ReadOutput<'a> = OwnedGuard<T> where Self: 'a;
 
-    #[inline(always)]
-    fn rx_track(&self) {}
-
-    #[inline(always)]
-    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
-        self.rx_read_untracked()
-    }
-
-    #[inline(always)]
-    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-        let val = (self)();
-        Some(OwnedGuard { value: val })
-    }
-
-    #[inline(always)]
-    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        let val = (self)();
-        Some(fun(&val))
-    }
-
-    #[inline(always)]
-    fn rx_defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
-        None
-    }
-
-    #[inline(always)]
-    fn rx_debug_name(&self) -> Option<String> {
-        None
-    }
-
-    #[inline(always)]
-    fn rx_is_disposed(&self) -> bool {
-        false
-    }
-
-    #[inline(always)]
-    fn rx_is_constant(&self) -> bool {
-        false
-    }
+            #[inline(always)] fn rx_track(&self) {}
+            #[inline(always)] fn rx_read(&self) -> Option<Self::ReadOutput<'_>> { self.rx_read_untracked() }
+            #[inline(always)] fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> { let val = (self)(); Some(OwnedGuard { value: val }) }
+            #[inline(always)] fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> { let val = (self)(); Some(fun(&val)) }
+            #[inline(always)] fn rx_defined_at(&self) -> Option<&'static std::panic::Location<'static>> { None }
+            #[inline(always)] fn rx_debug_name(&self) -> Option<String> { None }
+            #[inline(always)] fn rx_is_disposed(&self) -> bool { false }
+            #[inline(always)] fn rx_is_constant(&self) -> bool { false }
+        }
+    };
 }
 
-impl<T> RxInternal for ::std::rc::Rc<dyn Fn() -> T> {
-    type Value = T;
-    type ReadOutput<'a>
-        = OwnedGuard<T>
-    where
-        Self: 'a;
-
-    #[inline(always)]
-    fn rx_track(&self) {}
-
-    #[inline(always)]
-    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
-        self.rx_read_untracked()
-    }
-
-    #[inline(always)]
-    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-        let val = (self)();
-        Some(OwnedGuard { value: val })
-    }
-
-    #[inline(always)]
-    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        let val = (self)();
-        Some(fun(&val))
-    }
-
-    #[inline(always)]
-    fn rx_defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> {
-        None
-    }
-
-    #[inline(always)]
-    fn rx_debug_name(&self) -> Option<String> {
-        None
-    }
-
-    #[inline(always)]
-    fn rx_is_disposed(&self) -> bool {
-        false
-    }
-
-    #[inline(always)]
-    fn rx_is_constant(&self) -> bool {
-        false
-    }
-}
+impl_closure_rx!(impl<F, T> F where F: Fn() -> T);
+impl_closure_rx!(impl<T> ::std::rc::Rc<dyn Fn() -> T>);
 
 impl<V: ?Sized + 'static> RxInternal for ::std::rc::Rc<dyn AnyRxInternal<V>> {
     type Value = V;
@@ -185,108 +108,79 @@ impl<V: ?Sized + 'static> RxInternal for ::std::rc::Rc<dyn AnyRxInternal<V>> {
     }
 }
 
-macro_rules! impl_rx_wrapper_traits {
-    () => {
-        impl<F, M> RxInternal for Rx<F, M>
-        where
-            F: RxInternal,
-        {
-            type Value = F::Value;
-            type ReadOutput<'a>
-                = F::ReadOutput<'a>
-            where
-                Self: 'a;
+impl<F: RxInternal, M> RxInternal for Rx<F, M> {
+    type Value = F::Value;
+    type ReadOutput<'a>
+        = F::ReadOutput<'a>
+    where
+        Self: 'a;
 
-            #[inline(always)]
-            fn rx_track(&self) {
-                self.0.rx_track();
-            }
-
-            #[inline(always)]
-            fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
-                self.0.rx_read()
-            }
-
-            #[inline(always)]
-            fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-                self.0.rx_read_untracked()
-            }
-
-            #[inline(always)]
-            fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-                self.0.rx_try_with_untracked(fun)
-            }
-
-            #[inline(always)]
-            fn rx_defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> {
-                self.0.rx_defined_at()
-            }
-
-            #[inline(always)]
-            fn rx_debug_name(&self) -> Option<String> {
-                self.0.rx_debug_name()
-            }
-
-            #[inline(always)]
-            fn rx_is_disposed(&self) -> bool {
-                self.0.rx_is_disposed()
-            }
-
-            #[inline(always)]
-            fn rx_is_constant(&self) -> bool {
-                self.0.rx_is_constant()
-            }
-        }
-
-        impl<F, M> DefinedAt for Rx<F, M>
-        where
-            F: RxInternal,
-        {
-            #[inline(always)]
-            fn defined_at(&self) -> Option<&'static Location<'static>> {
-                self.0.rx_defined_at()
-            }
-            #[inline(always)]
-            fn debug_name(&self) -> Option<String> {
-                self.0.rx_debug_name()
-            }
-        }
-
-        impl<F, M> IsDisposed for Rx<F, M>
-        where
-            F: RxInternal,
-        {
-            #[inline(always)]
-            fn is_disposed(&self) -> bool {
-                self.0.rx_is_disposed()
-            }
-        }
-
-        impl<F, M> Track for Rx<F, M>
-        where
-            F: RxInternal,
-        {
-            #[inline(always)]
-            fn track(&self) {
-                self.0.rx_track();
-            }
-        }
-
-        impl<F, M> WithUntracked for Rx<F, M>
-        where
-            F: RxInternal,
-        {
-            type Value = F::Value;
-
-            #[inline(always)]
-            fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-                self.0.rx_try_with_untracked(fun)
-            }
-        }
-    };
+    #[inline(always)]
+    fn rx_track(&self) {
+        self.0.rx_track();
+    }
+    #[inline(always)]
+    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
+        self.0.rx_read()
+    }
+    #[inline(always)]
+    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
+        self.0.rx_read_untracked()
+    }
+    #[inline(always)]
+    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.0.rx_try_with_untracked(fun)
+    }
+    #[inline(always)]
+    fn rx_defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
+        self.0.rx_defined_at()
+    }
+    #[inline(always)]
+    fn rx_debug_name(&self) -> Option<String> {
+        self.0.rx_debug_name()
+    }
+    #[inline(always)]
+    fn rx_is_disposed(&self) -> bool {
+        self.0.rx_is_disposed()
+    }
+    #[inline(always)]
+    fn rx_is_constant(&self) -> bool {
+        self.0.rx_is_constant()
+    }
 }
 
-impl_rx_wrapper_traits!();
+impl<F: RxInternal, M> DefinedAt for Rx<F, M> {
+    #[inline(always)]
+    fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
+        self.0.rx_defined_at()
+    }
+    #[inline(always)]
+    fn debug_name(&self) -> Option<String> {
+        self.0.rx_debug_name()
+    }
+}
+
+impl<F: RxInternal, M> IsDisposed for Rx<F, M> {
+    #[inline(always)]
+    fn is_disposed(&self) -> bool {
+        self.0.rx_is_disposed()
+    }
+}
+
+impl<F: RxInternal, M> Track for Rx<F, M> {
+    #[inline(always)]
+    fn track(&self) {
+        self.0.rx_track();
+    }
+}
+
+impl<F: RxInternal, M> WithUntracked for Rx<F, M> {
+    type Value = F::Value;
+    #[inline(always)]
+    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.0.rx_try_with_untracked(fun)
+    }
+}
 
 // --- 元组 RxInternal 实现：支持递归常量检测 ---
 
@@ -674,10 +568,12 @@ macro_rules! impl_rx_op {
             R::RxType: $crate::traits::RxInternal<Value = T> + Clone + 'static,
         {
             type Output = $crate::Rx<
-                $crate::reactivity::BinaryDerivedPayload<
-                    ::std::rc::Rc<dyn $crate::traits::AnyRxInternal<T>>,
-                    ::std::rc::Rc<dyn $crate::traits::AnyRxInternal<T>>,
-                    fn(&T, &T) -> T,
+                $crate::reactivity::DerivedPayload<
+                    (
+                        ::std::rc::Rc<dyn $crate::traits::AnyRxInternal<T>>,
+                        ::std::rc::Rc<dyn $crate::traits::AnyRxInternal<T>>,
+                    ),
+                    fn(&(T, T)) -> T,
                 >,
                 $crate::RxValue,
             >;
@@ -687,11 +583,9 @@ macro_rules! impl_rx_op {
                 let lhs = self.into_any();
                 let rhs = rhs.into_any_rx();
                 $crate::Rx(
-                    $crate::reactivity::BinaryDerivedPayload::new(
-                        lhs.0,
-                        rhs.0,
-                        $crate::traits::impls::ops_impl::$method,
-                    ),
+                    $crate::reactivity::DerivedPayload::new((lhs.0, rhs.0), |(lv, rv)| {
+                        $crate::traits::impls::ops_impl::$method(lv, rv)
+                    }),
                     ::core::marker::PhantomData,
                 )
             }
