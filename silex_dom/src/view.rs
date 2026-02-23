@@ -1,9 +1,11 @@
 use crate::attribute::PendingAttribute;
 use crate::element::Element;
 use silex_core::error::handle_error;
-use silex_core::prelude::DerivedPayload;
-use silex_core::reactivity::{Effect, Memo, ReadSignal, RwSignal, Signal};
-use silex_core::traits::{Get, With};
+use silex_core::reactivity::{
+    BinaryDerivedPayload, Constant, DerivedPayload, Effect, Memo, ReadSignal, RwSignal, Signal,
+    SignalSlice,
+};
+use silex_core::traits::{Get, RxInternal};
 use silex_core::{SilexError, SilexResult};
 use std::fmt::Display;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -169,23 +171,27 @@ where
     }
 }
 
-// 3.5 Rx Support
-impl<F, V> View for silex_core::Rx<F, silex_core::RxValue>
+// 3.5 Rx Delegation (Delegates to inner payload if it implements View)
+impl<F, M> View for silex_core::Rx<F, M>
 where
-    F: Fn() -> V + 'static,
-    V: View + 'static,
+    F: View,
 {
     fn mount(self, parent: &Node) {
         self.0.mount(parent);
     }
+
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
+        self.0.apply_attributes(attrs);
+    }
 }
 
-impl<V> View for silex_core::Rx<std::rc::Rc<dyn Fn() -> V>, silex_core::RxValue>
+// 3.6 Type-erased closure delegation
+impl<V> View for std::rc::Rc<dyn Fn() -> V>
 where
     V: View + 'static,
 {
     fn mount(self, parent: &Node) {
-        let f = self.0.clone();
+        let f = self.clone();
         (move || f()).mount(parent);
     }
 }
@@ -266,11 +272,12 @@ where
     }
 }
 
-impl<D, F, U> View for silex_core::Rx<DerivedPayload<D, F>, silex_core::RxValue>
+// 4. 通用 RxInternal 支持 (Display 类型)
+// 4.1 DerivedPayload View (Text Update)
+impl<S, F, U> View for DerivedPayload<S, F>
 where
-    DerivedPayload<D, F>: silex_core::traits::RxInternal + Clone + 'static,
+    Self: RxInternal<Value = U> + Clone + 'static,
     U: Display + 'static,
-    DerivedPayload<D, F>: silex_core::traits::RxInternal<Value = U>,
 {
     fn mount(self, parent: &Node) {
         let document = crate::document();
@@ -282,10 +289,73 @@ where
 
         let rx = self;
         Effect::new(move |_| {
-            rx.with(|value| {
+            rx.rx_track();
+            rx.rx_try_with_untracked(|value| {
                 node.set_node_value(Some(&value.to_string()));
             });
         });
+    }
+}
+
+// 4.2 BinaryDerivedPayload View (Text Update)
+impl<L, R, F, U> View for BinaryDerivedPayload<L, R, F>
+where
+    Self: RxInternal<Value = U> + Clone + 'static,
+    U: Display + 'static,
+{
+    fn mount(self, parent: &Node) {
+        let document = crate::document();
+        let node = document.create_text_node("");
+        if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
+            handle_error(e);
+            return;
+        }
+
+        let rx = self;
+        Effect::new(move |_| {
+            rx.rx_track();
+            rx.rx_try_with_untracked(|value| {
+                node.set_node_value(Some(&value.to_string()));
+            });
+        });
+    }
+}
+
+// 4.3 SignalSlice View (Text Update)
+impl<S, F, O> View for SignalSlice<S, F, O>
+where
+    Self: RxInternal<Value = O> + Clone + 'static,
+    O: Display + ?Sized + 'static,
+{
+    fn mount(self, parent: &Node) {
+        let document = crate::document();
+        let node = document.create_text_node("");
+        if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
+            handle_error(e);
+            return;
+        }
+
+        let rx = self;
+        Effect::new(move |_| {
+            rx.rx_track();
+            rx.rx_try_with_untracked(|value| {
+                node.set_node_value(Some(&value.to_string()));
+            });
+        });
+    }
+}
+
+// 4.4 Constant View (Static Text)
+impl<T> View for Constant<T>
+where
+    T: Display + Clone + 'static,
+{
+    fn mount(self, parent: &Node) {
+        mount_text_node(parent, &self.0.to_string());
+    }
+
+    fn into_any(self) -> AnyView {
+        AnyView::Text(self.0.to_string())
     }
 }
 

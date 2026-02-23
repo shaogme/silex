@@ -7,6 +7,7 @@ use crate::SilexError;
 use crate::reactivity::signal::{ReadSignal, WriteSignal, signal};
 use crate::reactivity::stored_value::StoredValue;
 use crate::traits::*;
+use std::panic::Location;
 
 // --- MutationState ---
 
@@ -170,5 +171,90 @@ impl<Arg: 'static, T: Clone + 'static, E: Clone + 'static> Mutation<Arg, T, E> {
             MutationState::Error(e) => Some(e.clone()),
             _ => None,
         })
+    }
+}
+
+impl<Arg, T: Clone + 'static, E: Clone + 'static> DefinedAt for Mutation<Arg, T, E> {
+    fn defined_at(&self) -> Option<&'static Location<'static>> {
+        self.state.defined_at()
+    }
+}
+
+impl<Arg, T: Clone + 'static, E: Clone + 'static> IsDisposed for Mutation<Arg, T, E> {
+    fn is_disposed(&self) -> bool {
+        self.state.is_disposed()
+    }
+}
+
+impl<Arg, T: Clone + 'static, E: Clone + 'static> Track for Mutation<Arg, T, E> {
+    fn track(&self) {
+        self.state.track();
+    }
+}
+
+impl<Arg, T: Clone + 'static, E: Clone + 'static> RxInternal for Mutation<Arg, T, E> {
+    type Value = Option<T>;
+    type ReadOutput<'a>
+        = OwnedGuard<Option<T>>
+    where
+        Self: 'a;
+
+    #[inline(always)]
+    fn rx_track(&self) {
+        self.state.rx_track();
+    }
+
+    #[inline(always)]
+    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
+        self.rx_track();
+        self.rx_read_untracked()
+    }
+
+    #[inline(always)]
+    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
+        self.state.rx_try_with_untracked(|s| OwnedGuard {
+            value: s.value().cloned(),
+        })
+    }
+
+    #[inline(always)]
+    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.state.rx_try_with_untracked(|s| {
+            let val = s.value().cloned();
+            fun(&val)
+        })
+    }
+
+    #[inline(always)]
+    fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
+        self.state.rx_defined_at()
+    }
+
+    #[inline(always)]
+    fn rx_debug_name(&self) -> Option<String> {
+        self.state.rx_debug_name()
+    }
+
+    #[inline(always)]
+    fn rx_is_disposed(&self) -> bool {
+        self.state.rx_is_disposed()
+    }
+
+    #[inline(always)]
+    fn rx_is_constant(&self) -> bool {
+        false
+    }
+}
+
+impl<Arg, T: Clone + 'static, E: Clone + 'static> IntoRx for Mutation<Arg, T, E> {
+    type Value = Option<T>;
+    type RxType = crate::Rx<Self, crate::RxValue>;
+    #[inline(always)]
+    fn into_rx(self) -> Self::RxType {
+        crate::Rx(self, std::marker::PhantomData)
+    }
+    #[inline(always)]
+    fn is_constant(&self) -> bool {
+        false
     }
 }

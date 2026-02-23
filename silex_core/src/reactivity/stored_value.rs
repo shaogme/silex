@@ -4,6 +4,7 @@ use std::panic::Location;
 use silex_reactivity::NodeId;
 
 use crate::traits::*;
+use crate::{Rx, RxValue};
 
 // --- StoredValue ---
 
@@ -85,6 +86,75 @@ impl<T: 'static> Track for StoredValue<T> {
 }
 
 // Note: GetUntracked is now blanket-implemented via WithUntracked when T: Clone
+
+impl<T: 'static> RxInternal for StoredValue<T> {
+    type Value = T;
+    type ReadOutput<'a>
+        = RxGuard<'a, T>
+    where
+        Self: 'a;
+
+    #[inline(always)]
+    fn rx_track(&self) {
+        // StoredValue is non-reactive, no-op
+    }
+
+    #[inline(always)]
+    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
+        self.rx_read_untracked()
+    }
+
+    #[inline(always)]
+    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
+        unsafe {
+            silex_reactivity::try_with_stored_value(self.id, |v: &T| {
+                std::mem::transmute::<&T, &'static T>(v)
+            })
+            .map(|v| RxGuard {
+                value: v,
+                _guard_token: Some(crate::NodeRef::from_id(self.id)),
+            })
+        }
+    }
+
+    #[inline(always)]
+    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.try_with_untracked(fun)
+    }
+
+    #[inline(always)]
+    fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
+        self.defined_at()
+    }
+
+    #[inline(always)]
+    fn rx_debug_name(&self) -> Option<String> {
+        self.debug_name()
+    }
+
+    #[inline(always)]
+    fn rx_is_disposed(&self) -> bool {
+        self.is_disposed()
+    }
+
+    #[inline(always)]
+    fn rx_is_constant(&self) -> bool {
+        true
+    }
+}
+
+impl<T: 'static> IntoRx for StoredValue<T> {
+    type Value = T;
+    type RxType = Rx<Self, RxValue>;
+    #[inline(always)]
+    fn into_rx(self) -> Self::RxType {
+        Rx(self, PhantomData)
+    }
+    #[inline(always)]
+    fn is_constant(&self) -> bool {
+        true
+    }
+}
 
 impl<T: 'static> UpdateUntracked for StoredValue<T> {
     type Value = T;

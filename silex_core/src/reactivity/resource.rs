@@ -8,6 +8,8 @@ use silex_reactivity::{on_cleanup, use_context};
 use crate::SilexError;
 use crate::reactivity::Memo;
 use crate::traits::*;
+use crate::{Rx, RxValue};
+use std::marker::PhantomData;
 
 use super::effect::Effect;
 use super::signal::{ReadSignal, WriteSignal, signal};
@@ -84,7 +86,7 @@ where
 }
 
 impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
-    pub fn new<S, Fetcher>(source: impl Get<Value = S> + 'static, fetcher: Fetcher) -> Self
+    pub fn new<S, Fetcher>(source: impl Read<Value = S> + 'static, fetcher: Fetcher) -> Self
     where
         S: PartialEq + Clone + 'static,
         Fetcher: ResourceFetcher<S, Data = T, Error = E> + 'static,
@@ -215,6 +217,70 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> IsDisposed for Re
 impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Track for Resource<T, E> {
     fn track(&self) {
         self.state.track();
+    }
+}
+
+impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxInternal for Resource<T, E> {
+    type Value = Option<T>;
+    type ReadOutput<'a>
+        = OwnedGuard<Option<T>>
+    where
+        Self: 'a;
+
+    #[inline(always)]
+    fn rx_track(&self) {
+        self.state.rx_track();
+    }
+
+    #[inline(always)]
+    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
+        self.rx_track();
+        self.rx_read_untracked()
+    }
+
+    #[inline(always)]
+    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
+        self.state.rx_try_with_untracked(|s| OwnedGuard {
+            value: s.as_option().cloned(),
+        })
+    }
+
+    #[inline(always)]
+    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.try_with_untracked(fun)
+    }
+
+    #[inline(always)]
+    fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
+        self.state.rx_defined_at()
+    }
+
+    #[inline(always)]
+    fn rx_debug_name(&self) -> Option<String> {
+        self.state.rx_debug_name()
+    }
+
+    #[inline(always)]
+    fn rx_is_disposed(&self) -> bool {
+        self.state.rx_is_disposed()
+    }
+
+    #[inline(always)]
+    fn rx_is_constant(&self) -> bool {
+        false
+    }
+}
+
+impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> IntoRx for Resource<T, E> {
+    type Value = Option<T>;
+    type RxType = Rx<Self, RxValue>;
+    #[inline(always)]
+    fn into_rx(self) -> Self::RxType {
+        Rx(self, PhantomData)
+    }
+    #[inline(always)]
+    fn is_constant(&self) -> bool {
+        false
     }
 }
 

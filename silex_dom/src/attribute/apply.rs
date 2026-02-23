@@ -1,7 +1,6 @@
 use silex_core::SilexError;
-use silex_core::prelude::DerivedPayload;
 use silex_core::reactivity::{Constant, Effect, Memo, ReadSignal, RwSignal, Signal};
-use silex_core::traits::{IntoRx, With};
+use silex_core::traits::{Get, IntoRx, RxInternal, With};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -38,28 +37,16 @@ pub trait RxTask<M> {
     fn run_rx(self, el: &WebElem, target: ApplyTarget);
 }
 
-// 1. Value Calculation: () -> T
+// 1. Value Calculation: any RxInternal
 impl<F, T> RxTask<silex_core::RxValue> for F
 where
-    F: Fn() -> T + 'static,
-    T: ReactiveApply + 'static,
+    F: RxInternal<Value = T> + 'static,
+    T: ReactiveApply + Clone + 'static,
 {
     fn run_rx(self, el: &WebElem, target: ApplyTarget) {
         let el = el.clone();
         let owned_target = OwnedApplyTarget::from(target);
-        T::apply_to_dom(self, el, owned_target);
-    }
-}
-
-// 1b. Type-erased Value Calculation: Rc<dyn Fn() -> T>
-impl<T> RxTask<silex_core::RxValue> for Rc<dyn Fn() -> T>
-where
-    T: ReactiveApply + 'static,
-{
-    fn run_rx(self, el: &WebElem, target: ApplyTarget) {
-        let el = el.clone();
-        let owned_target = OwnedApplyTarget::from(target);
-        T::apply_to_dom(move || self(), el, owned_target);
+        T::apply_to_dom(move || self.try_get().unwrap(), el, owned_target);
     }
 }
 
@@ -489,21 +476,6 @@ where
 {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
         apply_via_signal::<Self>(self, el, target);
-    }
-}
-
-impl<D, F, U> ApplyToDom for silex_core::Rx<DerivedPayload<D, F>, silex_core::RxValue>
-where
-    DerivedPayload<D, F>: silex_core::traits::RxInternal + Clone + 'static,
-    U: ReactiveApply + Clone + 'static,
-    DerivedPayload<D, F>: silex_core::traits::RxInternal<Value = U>,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        let el = el.clone();
-        let owned_target = OwnedApplyTarget::from(target);
-        let rx = self;
-
-        U::apply_to_dom(move || rx.with(|v| v.clone()), el, owned_target);
     }
 }
 

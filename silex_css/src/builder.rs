@@ -1,5 +1,5 @@
 use crate::types::{ValidFor, props};
-use silex_core::traits::{Get, IntoRx, With};
+use silex_core::traits::{Get, IntoRx};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable};
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
@@ -92,7 +92,7 @@ impl Style {
     where
         V: IntoRx + 'static,
         V::Value: Display + ValidFor<P> + Clone + Sized,
-        V::RxType: Get + With<Value = V::Value> + Clone + 'static,
+        V::RxType: Get + silex_core::traits::RxInternal<Value = V::Value> + Clone + 'static,
     {
         if value.is_constant() {
             let signal = value.into_rx();
@@ -119,7 +119,7 @@ macro_rules! generate_builder_methods {
                 where
                     V: IntoRx + 'static,
                     V::Value: ValidFor<props::$pascal> + Display + Clone + Sized + 'static,
-                    V::RxType: Get + With<Value = V::Value> + Clone + 'static,
+                    V::RxType: Get + silex_core::traits::RxInternal<Value = V::Value> + Clone + 'static,
                 {
                     self.add_rule::<V, props::$pascal>($kebab, value)
                 }

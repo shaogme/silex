@@ -11,6 +11,22 @@ use silex_reactivity::{
 
 use crate::reactivity::SignalSlice;
 use crate::traits::*;
+use crate::{Rx, RxValue};
+
+/// 内部辅助函数：直接从运行时借用信号值。
+/// 安全性：由 RxGuard 的生命周期和 Silex Arena 的地址稳定性保证。
+unsafe fn rx_borrow_signal_unsafe<T: 'static>(id: NodeId) -> Option<&'static T> {
+    silex_reactivity::try_with_signal_untracked(id, |v: &T| unsafe {
+        std::mem::transmute::<&T, &'static T>(v)
+    })
+}
+
+/// 内部辅助函数：直接从运行时借用 StoredValue。
+unsafe fn rx_borrow_stored_value_unsafe<T: 'static>(id: NodeId) -> Option<&'static T> {
+    silex_reactivity::try_with_stored_value(id, |v: &T| unsafe {
+        std::mem::transmute::<&T, &'static T>(v)
+    })
+}
 
 // --- Constant ---
 
@@ -37,11 +53,68 @@ impl<T> Track for Constant<T> {
     fn track(&self) {}
 }
 
-impl<T> WithUntracked for Constant<T> {
+impl<T: 'static> RxInternal for Constant<T> {
     type Value = T;
+    type ReadOutput<'a>
+        = RxGuard<'a, T>
+    where
+        Self: 'a;
 
-    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+    #[inline(always)]
+    fn rx_track(&self) {}
+
+    #[inline(always)]
+    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
+        Some(RxGuard {
+            value: &self.0,
+            _guard_token: None,
+        })
+    }
+
+    #[inline(always)]
+    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
+        self.rx_read()
+    }
+
+    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         Some(fun(&self.0))
+    }
+
+    fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
+        None
+    }
+
+    fn rx_debug_name(&self) -> Option<String> {
+        Some("Constant".to_string())
+    }
+
+    fn rx_is_disposed(&self) -> bool {
+        false
+    }
+
+    fn rx_is_constant(&self) -> bool {
+        true
+    }
+}
+
+impl<T: 'static> IntoRx for Constant<T> {
+    type Value = T;
+    type RxType = Rx<Self, RxValue>;
+    #[inline(always)]
+    fn into_rx(self) -> Self::RxType {
+        Rx(self, PhantomData)
+    }
+    #[inline(always)]
+    fn is_constant(&self) -> bool {
+        true
+    }
+}
+
+impl<T: 'static> WithUntracked for Constant<T> {
+    type Value = T;
+    #[inline(always)]
+    fn try_with_untracked<U>(&self, fun: impl FnOnce(&T) -> U) -> Option<U> {
+        self.rx_try_with_untracked(fun)
     }
 }
 
@@ -50,6 +123,13 @@ impl<T> WithUntracked for Constant<T> {
 #[derive(Clone, Copy)]
 pub struct DerivedPayload<Deps, F> {
     pub(crate) deps: Deps,
+    pub(crate) func: F,
+}
+
+#[derive(Clone, Copy)]
+pub struct BinaryDerivedPayload<L, R, F> {
+    pub(crate) lhs: L,
+    pub(crate) rhs: R,
     pub(crate) func: F,
 }
 
@@ -62,9 +142,25 @@ impl<D: std::fmt::Debug, F> std::fmt::Debug for DerivedPayload<D, F> {
     }
 }
 
+impl<L: std::fmt::Debug, R: std::fmt::Debug, F> std::fmt::Debug for BinaryDerivedPayload<L, R, F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BinaryDerivedPayload")
+            .field("lhs", &self.lhs)
+            .field("rhs", &self.rhs)
+            .field("func", &"Fn(...)")
+            .finish()
+    }
+}
+
 impl<D, F> DerivedPayload<D, F> {
     pub const fn new(deps: D, func: F) -> Self {
         Self { deps, func }
+    }
+}
+
+impl<L, R, F> BinaryDerivedPayload<L, R, F> {
+    pub const fn new(lhs: L, rhs: R, func: F) -> Self {
+        Self { lhs, rhs, func }
     }
 }
 
@@ -78,9 +174,25 @@ impl<D: DefinedAt, F> DefinedAt for DerivedPayload<D, F> {
     }
 }
 
+impl<L: DefinedAt, R, F> DefinedAt for BinaryDerivedPayload<L, R, F> {
+    fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
+        self.lhs.defined_at()
+    }
+
+    fn debug_name(&self) -> Option<String> {
+        self.lhs.debug_name()
+    }
+}
+
 impl<D: IsDisposed, F> IsDisposed for DerivedPayload<D, F> {
     fn is_disposed(&self) -> bool {
         self.deps.is_disposed()
+    }
+}
+
+impl<L: IsDisposed, R: IsDisposed, F> IsDisposed for BinaryDerivedPayload<L, R, F> {
+    fn is_disposed(&self) -> bool {
+        self.lhs.is_disposed() || self.rhs.is_disposed()
     }
 }
 
@@ -90,11 +202,18 @@ impl<D: Track, F> Track for DerivedPayload<D, F> {
     }
 }
 
+impl<L: Track, R: Track, F> Track for BinaryDerivedPayload<L, R, F> {
+    fn track(&self) {
+        self.lhs.track();
+        self.rhs.track();
+    }
+}
+
 // Unary / Map implementation
 impl<S, F, U> WithUntracked for DerivedPayload<S, F>
 where
     S: WithUntracked,
-    F: Fn(&S::Value) -> U,
+    F: Fn(&S::Value) -> U + Clone,
 {
     type Value = U;
 
@@ -107,64 +226,141 @@ where
 }
 
 // Binary implementation (using tuple as deps)
-impl<L, R, F, U> WithUntracked for DerivedPayload<(L, R), F>
+impl<L, R, F, U> WithUntracked for BinaryDerivedPayload<L, R, F>
 where
     L: WithUntracked,
     R: WithUntracked,
-    F: Fn(&L::Value, &R::Value) -> U,
+    F: Fn(&L::Value, &R::Value) -> U + Clone,
 {
     type Value = U;
 
     fn try_with_untracked<Res>(&self, fun: impl FnOnce(&Self::Value) -> Res) -> Option<Res> {
-        self.deps
-            .0
-            .try_with_untracked(|lhs_val| {
-                self.deps.1.try_with_untracked(|rhs_val| {
-                    let res = (self.func)(lhs_val, rhs_val);
-                    fun(&res)
-                })
+        self.lhs.try_with_untracked(|lv| {
+            self.rhs.try_with_untracked(|rv| {
+                let res = (self.func)(lv, rv);
+                fun(&res)
             })
-            .flatten()
+        })?
     }
 }
 
-// --- RxInternal for DerivedPayload ---
+// --- RxInternal for DerivedPayloads ---
 
-impl<D, F> RxInternal for DerivedPayload<D, F>
+// Unary / Map implementation
+impl<S, F, U> RxInternal for DerivedPayload<S, F>
 where
-    D: RxInternal,
-    Self: WithUntracked + Track + DefinedAt + IsDisposed,
+    S: RxInternal,
+    F: Fn(&S::Value) -> U + Clone + 'static,
+    U: 'static,
 {
-    type Value = <Self as WithUntracked>::Value;
+    type Value = U;
+    type ReadOutput<'a>
+        = OwnedGuard<U>
+    where
+        Self: 'a;
 
     #[inline(always)]
     fn rx_track(&self) {
-        self.track();
+        self.deps.rx_track();
     }
 
     #[inline(always)]
-    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.try_with_untracked(fun)
+    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
+        self.rx_track();
+        self.rx_read_untracked()
     }
 
     #[inline(always)]
-    fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
-        self.defined_at()
+    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
+        self.deps.rx_try_with_untracked(|val| {
+            let res = (self.func)(val);
+            OwnedGuard { value: res }
+        })
     }
 
-    #[inline(always)]
-    fn rx_debug_name(&self) -> Option<String> {
-        self.debug_name()
+    fn rx_try_with_untracked<R>(&self, fun: impl FnOnce(&Self::Value) -> R) -> Option<R> {
+        self.deps.rx_try_with_untracked(|val| {
+            let res = (self.func)(val);
+            fun(&res)
+        })
     }
 
-    #[inline(always)]
-    fn rx_is_disposed(&self) -> bool {
-        self.is_disposed()
-    }
-
-    #[inline(always)]
     fn rx_is_constant(&self) -> bool {
         self.deps.rx_is_constant()
+    }
+
+    fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
+        self.deps.rx_defined_at()
+    }
+
+    fn rx_debug_name(&self) -> Option<String> {
+        self.deps.rx_debug_name()
+    }
+
+    fn rx_is_disposed(&self) -> bool {
+        self.deps.rx_is_disposed()
+    }
+}
+
+// Binary implementation
+impl<L, R, F, U> RxInternal for BinaryDerivedPayload<L, R, F>
+where
+    L: RxInternal,
+    R: RxInternal,
+    F: Fn(&L::Value, &R::Value) -> U + Clone + 'static,
+    U: 'static,
+{
+    type Value = U;
+    type ReadOutput<'a>
+        = OwnedGuard<U>
+    where
+        Self: 'a;
+
+    #[inline(always)]
+    fn rx_track(&self) {
+        self.lhs.rx_track();
+        self.rhs.rx_track();
+    }
+
+    #[inline(always)]
+    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
+        self.rx_track();
+        self.rx_read_untracked()
+    }
+
+    #[inline(always)]
+    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
+        self.lhs.rx_try_with_untracked(|lv| {
+            self.rhs.rx_try_with_untracked(|rv| {
+                let res = (self.func)(lv, rv);
+                OwnedGuard { value: res }
+            })
+        })?
+    }
+
+    fn rx_try_with_untracked<Res>(&self, fun: impl FnOnce(&Self::Value) -> Res) -> Option<Res> {
+        self.lhs.rx_try_with_untracked(|lv| {
+            self.rhs.rx_try_with_untracked(|rv| {
+                let res = (self.func)(lv, rv);
+                fun(&res)
+            })
+        })?
+    }
+
+    fn rx_is_constant(&self) -> bool {
+        self.lhs.rx_is_constant() && self.rhs.rx_is_constant()
+    }
+
+    fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
+        None
+    }
+
+    fn rx_debug_name(&self) -> Option<String> {
+        None
+    }
+
+    fn rx_is_disposed(&self) -> bool {
+        self.lhs.rx_is_disposed() || self.rhs.rx_is_disposed()
     }
 }
 
@@ -199,6 +395,106 @@ impl<T> PartialEq for Signal<T> {
 }
 
 impl<T> Eq for Signal<T> {}
+
+/// 为 Signal 专门设计的自适应守卫。
+pub enum SignalReadGuard<'a, T: 'static> {
+    Arena(RxGuard<'a, T>),
+    Inline(T),
+}
+
+impl<T: 'static> std::ops::Deref for SignalReadGuard<'_, T> {
+    type Target = T;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Arena(g) => g.deref(),
+            Self::Inline(v) => v,
+        }
+    }
+}
+
+impl<T: 'static> RxInternal for Signal<T> {
+    type Value = T;
+    type ReadOutput<'a>
+        = SignalReadGuard<'a, T>
+    where
+        Self: 'a;
+
+    #[inline(always)]
+    fn rx_track(&self) {
+        self.track();
+    }
+
+    #[inline(always)]
+    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
+        self.rx_track();
+        self.rx_read_untracked()
+    }
+
+    #[inline(always)]
+    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
+        match self {
+            Signal::Read(s) => s.rx_read_untracked().map(SignalReadGuard::Arena),
+            Signal::Derived(id, _) => {
+                // 不进行 rx_track，仅获取当前值
+                unsafe {
+                    rx_borrow_signal_unsafe::<T>(*id).map(|v| {
+                        SignalReadGuard::Arena(RxGuard {
+                            value: v,
+                            _guard_token: Some(crate::NodeRef::from_id(*id)),
+                        })
+                    })
+                }
+            }
+            Signal::StoredConstant(id, _) => unsafe {
+                rx_borrow_stored_value_unsafe::<T>(*id).map(|v| {
+                    SignalReadGuard::Arena(RxGuard {
+                        value: v,
+                        _guard_token: Some(crate::NodeRef::from_id(*id)),
+                    })
+                })
+            },
+            Signal::InlineConstant(val, _) => {
+                let val = unsafe { Self::unpack_inline(*val) };
+                Some(SignalReadGuard::Inline(val))
+            }
+        }
+    }
+
+    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.try_with_untracked(fun)
+    }
+
+    fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
+        self.defined_at()
+    }
+
+    fn rx_debug_name(&self) -> Option<String> {
+        self.debug_name()
+    }
+
+    fn rx_is_disposed(&self) -> bool {
+        self.is_disposed()
+    }
+
+    fn rx_is_constant(&self) -> bool {
+        self.is_constant()
+    }
+}
+
+impl<T: 'static> IntoRx for Signal<T> {
+    type Value = T;
+    type RxType = Rx<Self, RxValue>;
+    #[inline(always)]
+    fn into_rx(self) -> Self::RxType {
+        Rx(self, PhantomData)
+    }
+    #[inline(always)]
+    fn is_constant(&self) -> bool {
+        self.is_constant()
+    }
+}
 
 impl<T> std::hash::Hash for Signal<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -452,13 +748,7 @@ impl<T> Track for ReadSignal<T> {
     }
 }
 
-impl<T: 'static> WithUntracked for ReadSignal<T> {
-    type Value = T;
-
-    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        try_with_signal_untracked(self.id, fun)
-    }
-}
+// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
 
 // Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
 
@@ -658,13 +948,7 @@ impl<T: 'static> Notify for RwSignal<T> {
     }
 }
 
-impl<T: 'static> WithUntracked for RwSignal<T> {
-    type Value = T;
-
-    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.read.try_with_untracked(fun)
-    }
-}
+// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
 
 impl<T: 'static> UpdateUntracked for RwSignal<T> {
     type Value = T;
@@ -724,10 +1008,12 @@ pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
     untrack_scoped(f)
 }
 
-crate::impl_rx_delegate!(Signal, false);
-crate::impl_rx_delegate!(ReadSignal, false);
-crate::impl_rx_delegate!(RwSignal, false);
-crate::impl_rx_delegate!(Constant, true);
+// 手动实现了 RxInternal，移除自动委托以避免冲突
+// crate::impl_rx_delegate!(Signal, false);
+crate::impl_rx_delegate!(ReadSignal, SignalID, false);
+crate::impl_rx_delegate!(RwSignal, read, false);
+// Constant 使用手动实现以获得更优性能
+// crate::impl_rx_delegate!(Constant, true);
 
 crate::impl_reactive_ops!(Signal);
 crate::impl_reactive_ops!(ReadSignal);

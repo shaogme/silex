@@ -45,6 +45,16 @@ impl<T: Clone + 'static> Default for NodeRef<T> {
     }
 }
 
+impl<T> NodeRef<T> {
+    /// 从已有的 `NodeId` 创建 `NodeRef`。
+    pub(crate) fn from_id(id: NodeId) -> Self {
+        Self {
+            id,
+            marker: PhantomData,
+        }
+    }
+}
+
 impl<T: Clone + 'static> NodeRef<T> {
     /// 创建一个新的空 `NodeRef`。
     pub fn new() -> Self {

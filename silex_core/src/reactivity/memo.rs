@@ -67,13 +67,7 @@ impl<T> Track for Memo<T> {
     }
 }
 
-impl<T: 'static> WithUntracked for Memo<T> {
-    type Value = T;
-
-    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        silex_reactivity::try_with_signal_untracked(self.id, fun)
-    }
-}
+// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
 
 impl<T: 'static> From<Memo<T>> for crate::reactivity::Signal<T> {
     fn from(m: Memo<T>) -> Self {
@@ -84,6 +78,6 @@ impl<T: 'static> From<Memo<T>> for crate::reactivity::Signal<T> {
     }
 }
 
-crate::impl_rx_delegate!(Memo, false);
+crate::impl_rx_delegate!(Memo, SignalID, false);
 
 crate::impl_reactive_ops!(Memo);

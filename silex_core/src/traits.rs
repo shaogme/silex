@@ -61,33 +61,245 @@
 //! });
 //! ```
 
-use crate::reactivity::{DerivedPayload, Memo};
-use crate::{Rx, RxValue};
+use crate::reactivity::{DerivedPayload, Memo, NodeId};
+use crate::{NodeRef, Rx, RxValue};
+use std::cell::OnceCell;
+use std::marker::PhantomData;
+use std::ops::Deref;
 use std::panic::Location;
+
+/// A internal trait implemented by reactive types that are backed by a `NodeId`.
+/// This is used to provide blanket implementations of high-level traits.
+#[doc(hidden)]
+pub trait ReactivityNode {
+    type Value: 'static;
+    fn node_id(&self) -> NodeId;
+}
 
 #[doc(hidden)]
 pub mod impls;
+
+/// 能够持有 Arena 中响应式值引用的守卫。
+pub struct RxGuard<'a, T: ?Sized> {
+    pub(crate) value: &'a T,
+    /// 内部持有 Token 确保数据在 Guard 存续期间不被非法清理
+    pub(crate) _guard_token: Option<NodeRef>,
+}
+
+impl<'a, T: ?Sized> RxGuard<'a, T> {
+    /// 投影守卫持有的引用。
+    #[inline(always)]
+    pub fn map<U: ?Sized>(self, f: impl FnOnce(&T) -> &U) -> RxGuard<'a, U> {
+        RxGuard {
+            value: f(self.value),
+            _guard_token: self._guard_token,
+        }
+    }
+}
+
+impl<T: ?Sized> Deref for RxGuard<'_, T> {
+    type Target = T;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.value
+    }
+}
+
+/// 能够持有临时生成的响应式值（Owned）的守卫。
+pub struct OwnedGuard<T> {
+    pub(crate) value: T,
+}
+
+impl<T> Deref for OwnedGuard<T> {
+    type Target = T;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+/// 能够持有静态常量引用的守卫。
+pub struct ConstantGuard<T: ?Sized + 'static> {
+    pub(crate) value: &'static T,
+}
+
+impl<T: ?Sized + 'static> Deref for ConstantGuard<T> {
+    type Target = T;
+
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        self.value
+    }
+}
+
+macro_rules! impl_tuple_read_guard {
+    ($name:ident, $($idx:tt : $meth:ident : $G:ident : $V:ident),+; $cell_idx:tt; $marker_idx:tt) => {
+        /// 为元组设计的自适应守卫，支持分段式（零拷贝）读取。
+        /// 其结构本身就是一个包含各元素内部守卫的元组，支持通过 `.0`, `.1` 直接访问各分部。
+        pub struct $name<'a, $($G, $V),+>(
+            $(pub $G,)+
+            pub(crate) OnceCell<($($V,)+)>,
+            pub(crate) PhantomData<&'a ()>
+        );
+
+        impl<'a, $($G, $V),+> $name<'a, $($G, $V),+> {
+            $(
+                /// 获取该位置的分段守卫引用。
+                #[inline(always)]
+                pub fn $meth(&self) -> &$G {
+                    &self.$idx
+                }
+            )+
+        }
+
+        impl<'a, $($G, $V),+> Deref for $name<'a, $($G, $V),+>
+        where
+            $($G: Deref<Target = $V>),+,
+            $($V: Clone),+
+        {
+            type Target = ($($V,)+);
+
+            fn deref(&self) -> &Self::Target {
+                self.$cell_idx.get_or_init(|| {
+                    ($(self.$idx.deref().clone(),)+)
+                })
+            }
+        }
+    };
+}
+
+impl_tuple_read_guard!(Tuple2ReadGuard, 0: _0: G0: V0, 1: _1: G1: V1; 2; 3);
+impl_tuple_read_guard!(Tuple3ReadGuard, 0: _0: G0: V0, 1: _1: G1: V1, 2: _2: G2: V2; 3; 4);
+impl_tuple_read_guard!(Tuple4ReadGuard, 0: _0: G0: V0, 1: _1: G1: V1, 2: _2: G2: V2, 3: _3: G3: V3; 4; 5);
+impl_tuple_read_guard!(Tuple5ReadGuard, 0: _0: G0: V0, 1: _1: G1: V1, 2: _2: G2: V2, 3: _3: G3: V3, 4: _4: G4: V4; 5; 6);
+impl_tuple_read_guard!(Tuple6ReadGuard, 0: _0: G0: V0, 1: _1: G1: V1, 2: _2: G2: V2, 3: _3: G3: V3, 4: _4: G4: V4, 5: _5: G5: V5; 6; 7);
 
 /// 允许将各种类型（原始类型、信号、Rx）转换为统一的 `Rx` 包装器。
 ///
 /// *注意*: 原始类型（i32, f64, &str 等）会自动转换为 `Constant<T>`。
 pub trait IntoRx {
-    type Value;
+    type Value: ?Sized;
     type RxType;
     fn into_rx(self) -> Self::RxType;
     fn is_constant(&self) -> bool;
+
+    /// 将当前类型转换为类型擦除后的 AnyRx。
+    fn into_any_rx(self) -> crate::AnyRx<Self::Value>
+    where
+        Self: Sized,
+        Self::Value: Sized + 'static,
+        Self::RxType: RxInternal<Value = Self::Value> + Clone + 'static,
+    {
+        let rx = self.into_rx();
+        crate::Rx(rx.rx_into_any(), ::core::marker::PhantomData)
+    }
 }
 
 /// A trait used internally by `Rx` to delegate calls to either a closure or a reactive primitive.
 #[doc(hidden)]
 pub trait RxInternal {
     type Value: ?Sized;
+
+    /// 自适应返回类型：由具体实现决定返回 Borrowed 或 Owned
+    type ReadOutput<'a>: Deref<Target = Self::Value>
+    where
+        Self: 'a;
+
     fn rx_track(&self);
+
+    /// 响应式读取：追踪依赖并返回守卫。
+    fn rx_read(&self) -> Option<Self::ReadOutput<'_>>;
+
+    /// 非响应式读取：不追踪依赖并返回守卫。
+    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>>;
+
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>;
     fn rx_defined_at(&self) -> Option<&'static std::panic::Location<'static>>;
     fn rx_debug_name(&self) -> Option<String>;
     fn rx_is_disposed(&self) -> bool;
     fn rx_is_constant(&self) -> bool;
+
+    /// 将当前的响应式单体转换为类型擦除后的 Rc。
+    fn rx_into_any(self) -> std::rc::Rc<dyn AnyRxInternal<Self::Value>>
+    where
+        Self: Sized + Clone + 'static,
+        Self::Value: Sized + 'static,
+    {
+        std::rc::Rc::new(self) as std::rc::Rc<dyn AnyRxInternal<Self::Value>>
+    }
+}
+
+/// A type-erased version of [`RxInternal`] to stop monomorphization bloat.
+#[doc(hidden)]
+pub trait AnyRxInternal<V: ?Sized> {
+    fn rx_track_erased(&self);
+    fn rx_read_erased(&self) -> Option<ErasedRxGuard<'_, V>>;
+    fn rx_read_untracked_erased(&self) -> Option<ErasedRxGuard<'_, V>>;
+    fn rx_defined_at_erased(&self) -> Option<&'static std::panic::Location<'static>>;
+    fn rx_debug_name_erased(&self) -> Option<String>;
+    fn rx_is_disposed_erased(&self) -> bool;
+    fn rx_is_constant_erased(&self) -> bool;
+}
+
+/// A guard for type-erased reactive values.
+pub struct ErasedRxGuard<'a, V: ?Sized> {
+    inner: Box<dyn std::ops::Deref<Target = V> + 'a>,
+}
+
+impl<V: ?Sized> std::ops::Deref for ErasedRxGuard<'_, V> {
+    type Target = V;
+
+    #[inline(always)]
+    fn deref(&self) -> &V {
+        &self.inner
+    }
+}
+
+impl<T, V> AnyRxInternal<V> for T
+where
+    T: RxInternal<Value = V>,
+    V: ?Sized,
+{
+    #[inline(always)]
+    fn rx_track_erased(&self) {
+        self.rx_track();
+    }
+
+    #[inline(always)]
+    fn rx_read_erased(&self) -> Option<ErasedRxGuard<'_, V>> {
+        self.rx_read().map(|g| ErasedRxGuard {
+            inner: Box::new(g) as Box<dyn std::ops::Deref<Target = V>>,
+        })
+    }
+
+    #[inline(always)]
+    fn rx_read_untracked_erased(&self) -> Option<ErasedRxGuard<'_, V>> {
+        self.rx_read_untracked().map(|g| ErasedRxGuard {
+            inner: Box::new(g) as Box<dyn std::ops::Deref<Target = V>>,
+        })
+    }
+
+    #[inline(always)]
+    fn rx_defined_at_erased(&self) -> Option<&'static std::panic::Location<'static>> {
+        self.rx_defined_at()
+    }
+
+    #[inline(always)]
+    fn rx_debug_name_erased(&self) -> Option<String> {
+        self.rx_debug_name()
+    }
+
+    #[inline(always)]
+    fn rx_is_disposed_erased(&self) -> bool {
+        self.rx_is_disposed()
+    }
+
+    #[inline(always)]
+    fn rx_is_constant_erased(&self) -> bool {
+        self.rx_is_constant()
+    }
 }
 
 pub type CompareFn<T> = fn(&T, &T) -> bool;
@@ -99,10 +311,7 @@ macro_rules! reactive_compare_method {
             &self,
             other: O,
         ) -> Rx<
-            DerivedPayload<
-                (Self::RxType, O::RxType),
-                fn(&<Self as IntoRx>::Value, &<Self as IntoRx>::Value) -> bool,
-            >,
+            crate::reactivity::BinaryDerivedPayload<Self::RxType, O::RxType, fn(&<Self as IntoRx>::Value, &<Self as IntoRx>::Value) -> bool>,
             RxValue,
         >
         where
@@ -110,12 +319,12 @@ macro_rules! reactive_compare_method {
             Self::RxType: RxInternal<Value = <Self as IntoRx>::Value> + Clone + 'static,
             O: IntoRx<Value = <Self as IntoRx>::Value>,
             O::RxType: RxInternal<Value = <Self as IntoRx>::Value> + Clone + 'static,
-            <Self as IntoRx>::Value: $bound + Clone + Sized + 'static,
+            <Self as IntoRx>::Value: $bound + Sized + 'static,
         {
             let lhs = self.clone().into_rx();
             let rhs = other.into_rx();
             Rx(
-                DerivedPayload::new((lhs, rhs), |lv, rv| lv $op rv),
+                crate::reactivity::BinaryDerivedPayload::new(lhs, rhs, |lv, rv| lv $op rv),
                 ::core::marker::PhantomData,
             )
         }
@@ -125,7 +334,7 @@ macro_rules! reactive_compare_method {
 /// Provides a fluent API for checking equality on reactive values.
 pub trait ReactivePartialEq: With + Clone + 'static
 where
-    Self::Value: PartialEq + Clone + Sized + 'static,
+    Self::Value: PartialEq + Sized + 'static,
 {
     reactive_compare_method!(equals, ==, PartialEq);
     reactive_compare_method!(not_equals, !=, PartialEq);
@@ -134,12 +343,42 @@ where
 /// Provides a fluent API for checking ordering on reactive values.
 pub trait ReactivePartialOrd: With + Clone + 'static
 where
-    Self::Value: PartialOrd + Clone + Sized + 'static,
+    Self::Value: PartialOrd + Sized + 'static,
 {
     reactive_compare_method!(greater_than, >, PartialOrd);
     reactive_compare_method!(less_than, <, PartialOrd);
     reactive_compare_method!(greater_than_or_equals, >=, PartialOrd);
     reactive_compare_method!(less_than_or_equals, <=, PartialOrd);
+}
+
+#[doc(hidden)]
+/// Provides a sensible panic message for accessing disposed reactive values.
+#[macro_export]
+macro_rules! unwrap_rx {
+    ($rx:ident) => {{
+        #[cfg(debug_assertions)]
+        let location = std::panic::Location::caller();
+        move || {
+            #[cfg(debug_assertions)]
+            {
+                panic!(
+                    "{}",
+                    $crate::traits::panic_getting_disposed_signal(
+                        $rx.rx_defined_at(),
+                        $rx.rx_debug_name(),
+                        location
+                    )
+                );
+            }
+            #[cfg(not(debug_assertions))]
+            {
+                panic!(
+                    "Tried to access a reactive value that has already been \
+                     disposed."
+                );
+            }
+        }
+    }};
 }
 
 #[doc(hidden)]
@@ -171,6 +410,36 @@ macro_rules! unwrap_signal {
         }
     }};
 }
+
+/// 自适应读取 Trait。
+/// 用户无需关心底层是克隆还是借用，该 Trait 会根据类型自动选择最优路径。
+pub trait Read: RxInternal {
+    /// 执行响应式读取，返回一个智能守卫。
+    #[track_caller]
+    fn read(&self) -> Self::ReadOutput<'_> {
+        self.try_read().unwrap_or_else(unwrap_rx!(self))
+    }
+
+    /// 执行响应式读取，返回一个智能守卫。如果信号已被销毁，返回 `None`。
+    #[track_caller]
+    fn try_read(&self) -> Option<Self::ReadOutput<'_>> {
+        self.rx_read()
+    }
+
+    /// 执行非响应式读取，返回一个智能守卫。
+    #[track_caller]
+    fn read_untracked(&self) -> Self::ReadOutput<'_> {
+        self.try_read_untracked().unwrap_or_else(unwrap_rx!(self))
+    }
+
+    /// 执行非响应式读取，返回一个智能守卫。如果信号已被销毁，返回 `None`。
+    #[track_caller]
+    fn try_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
+        self.rx_read_untracked()
+    }
+}
+
+impl<T: ?Sized + RxInternal> Read for T {}
 
 /// Allows disposing an arena-allocated signal before its owner has been disposed.
 pub trait Dispose {
@@ -233,21 +502,21 @@ pub trait With: DefinedAt {
 
 /// Extension trait: Clones the value of the signal, without tracking.
 ///
-/// This is a **convenience trait** built on top of [`WithUntracked`]. It requires `T: Clone + Sized`.
-/// For zero-copy access, prefer using [`WithUntracked::with_untracked`] directly.
+/// This is a **convenience trait** built on top of [`Read`]. It requires `T: Clone` on its methods.
+/// For zero-copy access, prefer using [`Read::read_untracked`] directly.
 ///
 /// # Performance Note
 /// This trait performs a clone operation. On hot paths or with expensive-to-clone types,
-/// prefer using [`WithUntracked::with_untracked`] instead.
-pub trait GetUntracked: WithUntracked
-where
-    Self::Value: Clone + Sized,
-{
+/// prefer using [`Read::read_untracked`] instead.
+pub trait GetUntracked: Read {
     /// Clones and returns the value of the signal,
     /// or `None` if the signal has already been disposed.
     #[track_caller]
-    fn try_get_untracked(&self) -> Option<Self::Value> {
-        self.try_with_untracked(Clone::clone)
+    fn try_get_untracked(&self) -> Option<Self::Value>
+    where
+        Self::Value: Sized + Clone,
+    {
+        self.try_read_untracked().map(|v| v.clone())
     }
 
     /// Clones and returns the value of the signal.
@@ -255,29 +524,32 @@ where
     /// # Panics
     /// Panics if you try to access a signal that has been disposed.
     #[track_caller]
-    fn get_untracked(&self) -> Self::Value {
+    fn get_untracked(&self) -> Self::Value
+    where
+        Self::Value: Sized + Clone,
+    {
         self.try_get_untracked()
-            .unwrap_or_else(unwrap_signal!(self))
+            .unwrap_or_else(|| unwrap_rx!(self)())
     }
 }
 
 /// Extension trait: Clones the value of the signal, with reactive tracking.
 ///
-/// This is a **convenience trait** built on top of [`With`]. It requires `T: Clone + Sized`.
-/// For zero-copy access, prefer using [`With::with`] directly.
+/// This is a **convenience trait** built on top of [`Read`]. It requires `T: Clone` on its methods.
+/// For zero-copy access, prefer using [`Read::read`] directly.
 ///
 /// # Performance Note
 /// This trait performs a clone operation. On hot paths or with expensive-to-clone types,
-/// prefer using [`With::with`] instead.
-pub trait Get: With
-where
-    Self::Value: Clone + Sized,
-{
+/// prefer using [`Read::read`] instead.
+pub trait Get: Read {
     /// Subscribes to the signal, then clones and returns the value of the signal,
     /// or `None` if the signal has already been disposed.
     #[track_caller]
-    fn try_get(&self) -> Option<Self::Value> {
-        self.try_with(Clone::clone)
+    fn try_get(&self) -> Option<Self::Value>
+    where
+        Self::Value: Sized + Clone,
+    {
+        self.try_read().map(|v| v.clone())
     }
 
     /// Subscribes to the signal, then clones and returns the value of the signal.
@@ -285,8 +557,11 @@ where
     /// # Panics
     /// Panics if you try to access a signal that has been disposed.
     #[track_caller]
-    fn get(&self) -> Self::Value {
-        self.try_get().unwrap_or_else(unwrap_signal!(self))
+    fn get(&self) -> Self::Value
+    where
+        Self::Value: Sized + Clone,
+    {
+        self.try_get().unwrap_or_else(|| unwrap_rx!(self)())
     }
 }
 
