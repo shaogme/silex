@@ -1,152 +1,12 @@
-use crate::attributes::*;
-use silex_dom::prelude::*;
-use wasm_bindgen::JsCast;
-
 // --- Tags ---
 silex_dom::define_tag!(A, "a", a, new, non_void, [TextTag, AnchorTag]);
-impl AnchorAttributes for TypedElement<A> {
-    fn href<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlAnchorElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_href(v));
-        self
-    }
-    fn target<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlAnchorElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_string(move |v| el.set_target(v));
-        self
-    }
-    fn rel<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlAnchorElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_rel(v));
-        self
-    }
-    fn download<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlAnchorElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_string(move |v| el.set_download(v));
-        self
-    }
-}
 silex_dom::define_tag!(Abbr, "abbr", abbr, new, non_void, [TextTag]);
 silex_dom::define_tag!(Acronym, "acronym", acronym, new, non_void, [TextTag]);
 silex_dom::define_tag!(Address, "address", address, new, non_void, [TextTag]);
 silex_dom::define_tag!(Area, "area", area, new, void, [AnchorTag]);
-impl AnchorAttributes for TypedElement<Area> {
-    fn href<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlAreaElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_href(v));
-        self
-    }
-    fn target<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlAreaElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_string(move |v| el.set_target(v));
-        self
-    }
-    fn rel<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlAreaElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_rel(v));
-        self
-    }
-    fn download<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlAreaElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_string(move |v| el.set_download(v));
-        self
-    }
-}
 silex_dom::define_tag!(Article, "article", article, new, non_void, [TextTag]);
 silex_dom::define_tag!(Aside, "aside", aside, new, non_void, [TextTag]);
 silex_dom::define_tag!(Audio, "audio", audio, new, non_void, [TextTag, MediaTag]);
-impl MediaAttributes for TypedElement<Audio> {
-    fn src<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlAudioElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_src(v));
-        self
-    }
-    // width/height passed to attr for flexibility (%, px, auto)
-    fn autoplay<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlAudioElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_autoplay(v));
-        self
-    }
-    fn controls<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlAudioElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_controls(v));
-        self
-    }
-    fn loop_<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlAudioElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_bool(move |v| el.set_loop(v));
-        self
-    }
-    fn muted<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlAudioElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_bool(move |v| el.set_muted(v));
-        self
-    }
-}
 silex_dom::define_tag!(B, "b", b, new, non_void, [TextTag]);
 silex_dom::define_tag!(Base, "base", base, new, void, []);
 silex_dom::define_tag!(Bdi, "bdi", bdi, new, non_void, [TextTag]);
@@ -163,77 +23,6 @@ silex_dom::define_tag!(
 silex_dom::define_tag!(Body, "body", body, new, non_void, [TextTag]);
 silex_dom::define_tag!(Br, "br", br, new, void, []);
 silex_dom::define_tag!(Button, "button", button, new, non_void, [TextTag, FormTag]);
-impl FormAttributes for TypedElement<Button> {
-    fn type_<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("type", value)
-    }
-    fn value<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlButtonElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_value(v));
-        self
-    }
-    fn checked<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("checked", value)
-    }
-    fn disabled<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlButtonElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_disabled(v));
-        self
-    }
-    fn placeholder<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("placeholder", value)
-    }
-    fn readonly<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("readOnly", value)
-    }
-    fn required<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("required", value)
-    }
-    fn selected<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("selected", value)
-    }
-    fn multiple<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("multiple", value)
-    }
-}
 silex_dom::define_tag!(Canvas, "canvas", canvas, new, non_void, [TextTag]);
 silex_dom::define_tag!(Caption, "caption", caption, new, non_void, [TextTag]);
 silex_dom::define_tag!(Center, "center", center, new, non_void, [TextTag]);
@@ -253,46 +42,14 @@ silex_dom::define_tag!(
     non_void,
     [TextTag, OpenTag]
 );
-impl OpenAttributes for TypedElement<Details> {
-    fn open<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlDetailsElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_bool(move |v| el.set_open(v));
-        self
-    }
-}
 silex_dom::define_tag!(Dfn, "dfn", dfn, new, non_void, [TextTag]);
 silex_dom::define_tag!(Dialog, "dialog", dialog, new, non_void, [TextTag, OpenTag]);
-impl OpenAttributes for TypedElement<Dialog> {
-    fn open<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlDialogElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_bool(move |v| el.set_open(v));
-        self
-    }
-}
 silex_dom::define_tag!(Dir, "dir", dir, new, non_void, [TextTag]);
 silex_dom::define_tag!(Div, "div", div, new, non_void, [TextTag]);
 silex_dom::define_tag!(Dl, "dl", dl, new, non_void, [TextTag]);
 silex_dom::define_tag!(Dt, "dt", dt, new, non_void, [TextTag]);
 silex_dom::define_tag!(Em, "em", em, new, non_void, [TextTag]);
 silex_dom::define_tag!(Embed, "embed", embed, new, void, [MediaTag]);
-impl MediaAttributes for TypedElement<Embed> {
-    fn src<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("src", value)
-    }
-    // width/height passed to attr for flexibility (%, px, auto)
-}
 silex_dom::define_tag!(
     Fencedframe,
     "fencedframe",
@@ -309,75 +66,6 @@ silex_dom::define_tag!(
     non_void,
     [TextTag, FormTag]
 );
-impl FormAttributes for TypedElement<Fieldset> {
-    fn type_<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("type", value)
-    }
-    fn value<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.prop("value", value)
-    }
-    fn checked<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("checked", value)
-    }
-    fn disabled<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlFieldSetElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_disabled(v));
-        self
-    }
-    fn placeholder<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("placeholder", value)
-    }
-    fn readonly<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("readOnly", value)
-    }
-    fn required<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("required", value)
-    }
-    fn selected<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("selected", value)
-    }
-    fn multiple<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("multiple", value)
-    }
-}
 silex_dom::define_tag!(
     Figcaption,
     "figcaption",
@@ -390,71 +78,6 @@ silex_dom::define_tag!(Figure, "figure", figure, new, non_void, [TextTag]);
 silex_dom::define_tag!(Font, "font", font, new, non_void, [TextTag]);
 silex_dom::define_tag!(Footer, "footer", footer, new, non_void, [TextTag]);
 silex_dom::define_tag!(Form, "form", form, new, non_void, [TextTag, FormTag]);
-impl FormAttributes for TypedElement<Form> {
-    fn type_<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("type", value)
-    }
-    fn value<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.prop("value", value)
-    }
-    fn checked<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("checked", value)
-    }
-    fn disabled<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("disabled", value)
-    }
-    fn placeholder<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("placeholder", value)
-    }
-    fn readonly<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("readOnly", value)
-    }
-    fn required<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("required", value)
-    }
-    fn selected<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("selected", value)
-    }
-    fn multiple<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("multiple", value)
-    }
-}
 silex_dom::define_tag!(Frame, "frame", frame, new, non_void, [TextTag]);
 silex_dom::define_tag!(Frameset, "frameset", frameset, new, non_void, [TextTag]);
 silex_dom::define_tag!(
@@ -478,180 +101,14 @@ silex_dom::define_tag!(Hr, "hr", hr, new, void, []);
 silex_dom::define_tag!(Html, "html", html, new, non_void, [TextTag]);
 silex_dom::define_tag!(I, "i", i, new, non_void, [TextTag]);
 silex_dom::define_tag!(Iframe, "iframe", iframe, new, non_void, [TextTag, MediaTag]);
-impl MediaAttributes for TypedElement<Iframe> {
-    fn src<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlIFrameElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_src(v));
-        self
-    }
-    // width/height passed to attr for flexibility (%, px, auto)
-}
 silex_dom::define_tag!(Img, "img", img, new, void, [MediaTag]);
-impl MediaAttributes for TypedElement<Img> {
-    fn src<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlImageElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_src(v));
-        self
-    }
-    // width/height passed to attr for flexibility (%, px, auto)
-}
 silex_dom::define_tag!(Input, "input", input, new, void, [FormTag]);
-impl FormAttributes for TypedElement<Input> {
-    fn type_<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlInputElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_type(v));
-        self
-    }
-    fn value<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlInputElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_value(v));
-        self
-    }
-    fn checked<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlInputElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_bool(move |v| el.set_checked(v));
-        self
-    }
-    fn disabled<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlInputElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_disabled(v));
-        self
-    }
-    fn placeholder<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlInputElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_string(move |v| el.set_placeholder(v));
-        self
-    }
-    fn readonly<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlInputElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_read_only(v));
-        self
-    }
-    fn required<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlInputElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_required(v));
-        self
-    }
-    fn selected<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("selected", value)
-    }
-    fn multiple<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlInputElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_multiple(v));
-        self
-    }
-}
 silex_dom::define_tag!(Ins, "ins", ins, new, non_void, [TextTag]);
 silex_dom::define_tag!(Kbd, "kbd", kbd, new, non_void, [TextTag]);
 silex_dom::define_tag!(Label, "label", label, new, non_void, [TextTag, LabelTag]);
-impl LabelAttributes for TypedElement<Label> {
-    fn for_<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlLabelElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_string(move |v| el.set_html_for(v));
-        self
-    }
-}
 silex_dom::define_tag!(Legend, "legend", legend, new, non_void, [TextTag]);
 silex_dom::define_tag!(Li, "li", li, new, non_void, [TextTag]);
 silex_dom::define_tag!(Link, "link", link, new, void, [AnchorTag]);
-impl AnchorAttributes for TypedElement<Link> {
-    fn href<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlLinkElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_href(v));
-        self
-    }
-    fn target<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlLinkElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_string(move |v| el.set_target(v));
-        self
-    }
-    fn rel<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlLinkElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_rel(v));
-        self
-    }
-    fn download<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("download", value)
-    }
-}
 silex_dom::define_tag!(Main, "main", main, new, non_void, [TextTag]);
 silex_dom::define_tag!(Map, "map", map, new, non_void, [TextTag]);
 silex_dom::define_tag!(Mark, "mark", mark, new, non_void, [TextTag]);
@@ -665,16 +122,6 @@ silex_dom::define_tag!(Noembed, "noembed", noembed, new, non_void, [TextTag]);
 silex_dom::define_tag!(Noframes, "noframes", noframes, new, non_void, [TextTag]);
 silex_dom::define_tag!(Noscript, "noscript", noscript, new, non_void, [TextTag]);
 silex_dom::define_tag!(Object, "object", object, new, non_void, [TextTag, MediaTag]);
-impl MediaAttributes for TypedElement<Object> {
-    fn src<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("src", value)
-    }
-    // width/height passed to attr for flexibility (%, px, auto)
-}
 silex_dom::define_tag!(Ol, "ol", ol, new, non_void, [TextTag]);
 silex_dom::define_tag!(
     Optgroup,
@@ -684,75 +131,6 @@ silex_dom::define_tag!(
     non_void,
     [TextTag, FormTag]
 );
-impl FormAttributes for TypedElement<Optgroup> {
-    fn type_<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("type", value)
-    }
-    fn value<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.prop("value", value)
-    }
-    fn checked<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("checked", value)
-    }
-    fn disabled<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlOptGroupElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_disabled(v));
-        self
-    }
-    fn placeholder<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("placeholder", value)
-    }
-    fn readonly<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("readOnly", value)
-    }
-    fn required<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("required", value)
-    }
-    fn selected<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("selected", value)
-    }
-    fn multiple<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("multiple", value)
-    }
-}
 silex_dom::define_tag!(
     OptionTag,
     "option",
@@ -761,149 +139,7 @@ silex_dom::define_tag!(
     non_void,
     [TextTag, FormTag]
 );
-impl FormAttributes for TypedElement<OptionTag> {
-    fn type_<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("type", value)
-    }
-    fn value<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlOptionElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_value(v));
-        self
-    }
-    fn checked<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("checked", value)
-    }
-    fn disabled<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlOptionElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_disabled(v));
-        self
-    }
-    fn placeholder<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("placeholder", value)
-    }
-    fn readonly<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("readOnly", value)
-    }
-    fn required<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("required", value)
-    }
-    fn selected<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlOptionElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_selected(v));
-        self
-    }
-    fn multiple<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("multiple", value)
-    }
-}
 silex_dom::define_tag!(Output, "output", output, new, non_void, [TextTag, FormTag]);
-impl FormAttributes for TypedElement<Output> {
-    fn type_<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("type", value)
-    }
-    fn value<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlOutputElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_value(v));
-        self
-    }
-    fn checked<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("checked", value)
-    }
-    fn disabled<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("disabled", value)
-    }
-    fn placeholder<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("placeholder", value)
-    }
-    fn readonly<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("readOnly", value)
-    }
-    fn required<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("required", value)
-    }
-    fn selected<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("selected", value)
-    }
-    fn multiple<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("multiple", value)
-    }
-}
 silex_dom::define_tag!(P, "p", p, new, non_void, [TextTag]);
 silex_dom::define_tag!(Param, "param", param, new, void, []);
 silex_dom::define_tag!(Picture, "picture", picture, new, non_void, [TextTag]);
@@ -922,85 +158,6 @@ silex_dom::define_tag!(Script, "script", script, new, non_void, [TextTag]);
 silex_dom::define_tag!(Search, "search", search, new, non_void, [TextTag]);
 silex_dom::define_tag!(Section, "section", section, new, non_void, [TextTag]);
 silex_dom::define_tag!(Select, "select", select, new, non_void, [TextTag, FormTag]);
-impl FormAttributes for TypedElement<Select> {
-    fn type_<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("type", value)
-    }
-    fn value<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlSelectElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_value(v));
-        self
-    }
-    fn checked<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("checked", value)
-    }
-    fn disabled<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlSelectElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_disabled(v));
-        self
-    }
-    fn placeholder<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("placeholder", value)
-    }
-    fn readonly<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("readOnly", value)
-    }
-    fn required<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlSelectElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_required(v));
-        self
-    }
-    fn selected<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("selected", value)
-    }
-    fn multiple<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlSelectElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_multiple(v));
-        self
-    }
-}
 silex_dom::define_tag!(
     Selectedcontent,
     "selectedcontent",
@@ -1012,18 +169,6 @@ silex_dom::define_tag!(
 silex_dom::define_tag!(Slot, "slot", slot, new, non_void, [TextTag]);
 silex_dom::define_tag!(Small, "small", small, new, non_void, [TextTag]);
 silex_dom::define_tag!(Source, "source", source, new, void, [MediaTag]);
-impl MediaAttributes for TypedElement<Source> {
-    fn src<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlSourceElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_src(v));
-        self
-    }
-    // width/height passed to attr for flexibility (%, px, auto)
-}
 silex_dom::define_tag!(Span, "span", span, new, non_void, [TextTag]);
 silex_dom::define_tag!(Strike, "strike", strike, new, non_void, [TextTag]);
 silex_dom::define_tag!(Strong, "strong", strong, new, non_void, [TextTag]);
@@ -1034,49 +179,6 @@ silex_dom::define_tag!(Sup, "sup", sup, new, non_void, [TextTag]);
 silex_dom::define_tag!(Table, "table", table, new, non_void, [TextTag]);
 silex_dom::define_tag!(Tbody, "tbody", tbody, new, non_void, [TextTag]);
 silex_dom::define_tag!(Td, "td", td, new, non_void, [TextTag, TableCellTag]);
-impl TableCellAttributes for TypedElement<Td> {
-    fn colspan<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlTableCellElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| {
-            if let Ok(n) = v.parse::<u32>() {
-                el.set_col_span(n);
-            } else {
-                let _ = el.set_attribute("colspan", v);
-            }
-        });
-        self
-    }
-    fn rowspan<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlTableCellElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| {
-            if let Ok(n) = v.parse::<u32>() {
-                el.set_row_span(n);
-            } else {
-                let _ = el.set_attribute("rowspan", v);
-            }
-        });
-        self
-    }
-    fn headers<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlTableCellElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_string(move |v| el.set_headers(v));
-        self
-    }
-}
 silex_dom::define_tag!(Template, "template", template, new, non_void, [TextTag]);
 silex_dom::define_tag!(
     Textarea,
@@ -1086,89 +188,6 @@ silex_dom::define_tag!(
     non_void,
     [TextTag, FormTag]
 );
-impl FormAttributes for TypedElement<Textarea> {
-    fn type_<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        self.attr("type", value)
-    }
-    fn value<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlTextAreaElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_value(v));
-        self
-    }
-    fn checked<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("checked", value)
-    }
-    fn disabled<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlTextAreaElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_disabled(v));
-        self
-    }
-    fn placeholder<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlTextAreaElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_string(move |v| el.set_placeholder(v));
-        self
-    }
-    fn readonly<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlTextAreaElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_read_only(v));
-        self
-    }
-    fn required<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlTextAreaElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_required(v));
-        self
-    }
-    fn selected<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("selected", value)
-    }
-    fn multiple<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        self.prop("multiple", value)
-    }
-}
 silex_dom::define_tag!(Tfoot, "tfoot", tfoot, new, non_void, [TextTag]);
 silex_dom::define_tag!(
     Th,
@@ -1178,143 +197,16 @@ silex_dom::define_tag!(
     non_void,
     [TextTag, TableCellTag, TableHeaderTag]
 );
-impl TableCellAttributes for TypedElement<Th> {
-    fn colspan<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlTableCellElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| {
-            if let Ok(n) = v.parse::<u32>() {
-                el.set_col_span(n);
-            } else {
-                let _ = el.set_attribute("colspan", v);
-            }
-        });
-        self
-    }
-    fn rowspan<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlTableCellElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| {
-            if let Ok(n) = v.parse::<u32>() {
-                el.set_row_span(n);
-            } else {
-                let _ = el.set_attribute("rowspan", v);
-            }
-        });
-        self
-    }
-    fn headers<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlTableCellElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_string(move |v| el.set_headers(v));
-        self
-    }
-}
-impl TableHeaderAttributes for TypedElement<Th> {
-    fn scope<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlTableCellElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_scope(v));
-        self
-    }
-    fn abbr<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlTableCellElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_abbr(v));
-        self
-    }
-}
 silex_dom::define_tag!(Thead, "thead", thead, new, non_void, [TextTag]);
 silex_dom::define_tag!(Time, "time", time, new, non_void, [TextTag]);
 silex_dom::define_tag!(Title, "title", title, new, non_void, [TextTag]);
 silex_dom::define_tag!(Tr, "tr", tr, new, non_void, [TextTag]);
 silex_dom::define_tag!(Track, "track", track, new, void, [MediaTag]);
-impl MediaAttributes for TypedElement<Track> {
-    fn src<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlTrackElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_src(v));
-        self
-    }
-    // width/height passed to attr for flexibility (%, px, auto)
-}
 silex_dom::define_tag!(Tt, "tt", tt, new, non_void, [TextTag]);
 silex_dom::define_tag!(U, "u", u, new, non_void, [TextTag]);
 silex_dom::define_tag!(Ul, "ul", ul, new, non_void, [TextTag]);
 silex_dom::define_tag!(Var, "var", var, new, non_void, [TextTag]);
 silex_dom::define_tag!(Video, "video", video, new, non_void, [TextTag, MediaTag]);
-impl MediaAttributes for TypedElement<Video> {
-    fn src<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
-        let el: web_sys::HtmlVideoElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_string(move |v| el.set_src(v));
-        self
-    }
-    // width/height passed to attr for flexibility (%, px, auto)
-    fn autoplay<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlVideoElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_autoplay(v));
-        self
-    }
-    fn controls<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlVideoElement = self.element.dom_element.clone().unchecked_into();
-        value
-            .into_storable()
-            .apply_bool(move |v| el.set_controls(v));
-        self
-    }
-    fn loop_<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlVideoElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_bool(move |v| el.set_loop(v));
-        self
-    }
-    fn muted<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
-        let el: web_sys::HtmlVideoElement = self.element.dom_element.clone().unchecked_into();
-        value.into_storable().apply_bool(move |v| el.set_muted(v));
-        self
-    }
-}
 silex_dom::define_tag!(Wbr, "wbr", wbr, new, void, []);
 silex_dom::define_tag!(Xmp, "xmp", xmp, new, non_void, [TextTag]);
 

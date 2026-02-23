@@ -290,3 +290,13 @@ pub trait TableHeaderAttributes: AttributeBuilder {
         self.attr("abbr", value)
     }
 }
+
+// --- Blanket Implementations for TypedElement<T> ---
+
+impl<T: FormTag> FormAttributes for TypedElement<T> {}
+impl<T: LabelTag> LabelAttributes for TypedElement<T> {}
+impl<T: AnchorTag> AnchorAttributes for TypedElement<T> {}
+impl<T: MediaTag> MediaAttributes for TypedElement<T> {}
+impl<T: OpenTag> OpenAttributes for TypedElement<T> {}
+impl<T: TableCellTag> TableCellAttributes for TypedElement<T> {}
+impl<T: TableHeaderTag> TableHeaderAttributes for TypedElement<T> {}
