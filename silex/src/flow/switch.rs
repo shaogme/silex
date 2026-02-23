@@ -1,6 +1,6 @@
 use crate::SilexError;
 use silex_core::reactivity::Effect;
-use silex_core::traits::Get;
+use silex_core::traits::Read;
 use silex_dom::prelude::View;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -27,7 +27,7 @@ pub struct Switch<Source, T, V> {
 
 impl<Source, T, V> Switch<Source, T, V>
 where
-    Source: Get<Value = T> + 'static,
+    Source: Read<Value = T> + 'static,
     T: PartialEq + Clone + 'static,
     V: View + 'static,
 {
@@ -55,7 +55,7 @@ where
 
 impl<Source, T, V> View for Switch<Source, T, V>
 where
-    Source: Get<Value = T> + 'static,
+    Source: Read<Value = T> + 'static,
     T: PartialEq + Clone + 'static,
     V: View + 'static,
 {

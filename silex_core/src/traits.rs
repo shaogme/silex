@@ -21,9 +21,10 @@
 //! - **零拷贝路径**：对于追求极致性能的多路且无需克隆的场景，依然推荐使用 [`batch_read!`] 宏，它提供了真实的底层结构分段式借用多路读取。
 //!
 //! ## 核心原则
-//! 1. **组合语义**：大多数高级 Trait（如 `With`, `Get`, `Map`）都是通过基础 Trait 组合而成的 Blanket Implementations。
+//! 1. **组合语义**：大多数高级 Trait（如 `With`, `Read`, `Map`）都是通过基础 Trait 组合而成的 Blanket Implementations。
 //! 2. **原子化实现**：底层原语只需实现 [`Track`], [`Notify`], [`WithUntracked`] 和 [`UpdateUntracked`]。
-//! 3. **容错性**：大多数读取操作包含 `try_` 变体，在信号已被销毁（Disposed）时安全返回 `None`。
+//! 3. **自适应读取**：[`Read`] Trait 统一了响应式与非响应式读取，并提供可选的克隆访问（`get` 系列方法）。
+//! 4. **容错性**：大多数读取操作包含 `try_` 变体，在信号已被销毁（Disposed）时安全返回 `None`。
 //!
 //! ## Trait 结构一览
 //!
@@ -32,15 +33,15 @@
 //! |---------------------|--------------------------------------------------------------------------------|
 //! | [`Track`]           | 追踪变化，将当前值添加为当前响应式上下文的依赖。                               |
 //! | [`Notify`]          | 通知订阅者该值已更改。                                                         |
-//! | [`WithUntracked`]   | **核心原语**：提供对值的闭包式不可变访问（不追踪依赖）。                      |
+//! | [`WithUntracked`]   | 提供对值的闭包式不可变访问（不追踪依赖）。                                     |
 //! | [`UpdateUntracked`] | 提供闭包式可变更新（不触发通知）。                                            |
 //! | [`RxInternal`]      | **内部桥梁**：被包装在 `Rx` 内部的统一操作接口（对用户隐藏）。                |
 //!
 //! ### 派生能力 (基于自动实现)
 //! | 类别 | Trait | 组合方式 | 描述 |
 //! |------|-------|---------|------|
-//! | **读取** | [`With`] | `WithUntracked` + `Track` | **核心 API**：带响应式追踪的闭包式访问。 |
-//! | | [`Get`] | `With` + `Clone` | 复制当前值并追踪依赖（快捷方式）。 |
+//! | **读取** | [`With`] | `WithUntracked` + `Track` | 带响应式追踪的闭包式访问（零拷贝）。 |
+//! | | [`Read`] | `RxInternal` | **核心读取接口**：支持自适应读取（Guard）与克隆读取（`get`）。 |
 //! | | [`Map`] | `With` | 创建派生信号（`Derived`），返回 `Rx`。 |
 //! | **更新** | [`Update`] | `UpdateUntracked` + `Notify` | 应用闭包并通知系统刷新。 |
 //! | | [`Set`] | `Update` | 直接覆盖旧值。 |
@@ -440,6 +441,51 @@ pub trait Read: RxInternal {
     fn try_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
         self.rx_read_untracked()
     }
+
+    /// Clones and returns the value of the signal,
+    /// or `None` if the signal has already been disposed.
+    #[track_caller]
+    fn try_get_untracked(&self) -> Option<Self::Value>
+    where
+        Self::Value: Sized + Clone,
+    {
+        self.try_read_untracked().map(|v| v.clone())
+    }
+
+    /// Clones and returns the value of the signal.
+    ///
+    /// # Panics
+    /// Panics if you try to access a signal that has been disposed.
+    #[track_caller]
+    fn get_untracked(&self) -> Self::Value
+    where
+        Self::Value: Sized + Clone,
+    {
+        self.try_get_untracked()
+            .unwrap_or_else(|| unwrap_rx!(self)())
+    }
+
+    /// Subscribes to the signal, then clones and returns the value of the signal,
+    /// or `None` if the signal has already been disposed.
+    #[track_caller]
+    fn try_get(&self) -> Option<Self::Value>
+    where
+        Self::Value: Sized + Clone,
+    {
+        self.try_read().map(|v| v.clone())
+    }
+
+    /// Subscribes to the signal, then clones and returns the value of the signal.
+    ///
+    /// # Panics
+    /// Panics if you try to access a signal that has been disposed.
+    #[track_caller]
+    fn get(&self) -> Self::Value
+    where
+        Self::Value: Sized + Clone,
+    {
+        self.try_get().unwrap_or_else(|| unwrap_rx!(self)())
+    }
 }
 
 impl<T: ?Sized + RxInternal> Read for T {}
@@ -460,11 +506,11 @@ pub trait Track {
     fn track(&self);
 }
 
-impl<T: ReactivityNode> Track for T {
+impl<T: ?Sized + RxInternal> Track for T {
     #[inline(always)]
     #[track_caller]
     fn track(&self) {
-        ::silex_reactivity::track_signal(self.node_id());
+        self.rx_track();
     }
 }
 
@@ -490,6 +536,15 @@ pub trait WithUntracked: DefinedAt {
     }
 }
 
+impl<T: ?Sized + RxInternal> WithUntracked for T {
+    type Value = T::Value;
+    #[inline(always)]
+    #[track_caller]
+    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.rx_try_with_untracked(fun)
+    }
+}
+
 /// Give read-only access to a signal's value by reference inside a closure,
 /// and subscribes the active reactive observer (an effect or computed) to changes in its value.
 pub trait With: DefinedAt {
@@ -508,71 +563,6 @@ pub trait With: DefinedAt {
     #[track_caller]
     fn with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> U {
         self.try_with(fun).unwrap_or_else(unwrap_signal!(self))
-    }
-}
-
-/// Extension trait: Clones the value of the signal, without tracking.
-///
-/// This is a **convenience trait** built on top of [`Read`]. It requires `T: Clone` on its methods.
-/// For zero-copy access, prefer using [`Read::read_untracked`] directly.
-///
-/// # Performance Note
-/// This trait performs a clone operation. On hot paths or with expensive-to-clone types,
-/// prefer using [`Read::read_untracked`] instead.
-pub trait GetUntracked: Read {
-    /// Clones and returns the value of the signal,
-    /// or `None` if the signal has already been disposed.
-    #[track_caller]
-    fn try_get_untracked(&self) -> Option<Self::Value>
-    where
-        Self::Value: Sized + Clone,
-    {
-        self.try_read_untracked().map(|v| v.clone())
-    }
-
-    /// Clones and returns the value of the signal.
-    ///
-    /// # Panics
-    /// Panics if you try to access a signal that has been disposed.
-    #[track_caller]
-    fn get_untracked(&self) -> Self::Value
-    where
-        Self::Value: Sized + Clone,
-    {
-        self.try_get_untracked()
-            .unwrap_or_else(|| unwrap_rx!(self)())
-    }
-}
-
-/// Extension trait: Clones the value of the signal, with reactive tracking.
-///
-/// This is a **convenience trait** built on top of [`Read`]. It requires `T: Clone` on its methods.
-/// For zero-copy access, prefer using [`Read::read`] directly.
-///
-/// # Performance Note
-/// This trait performs a clone operation. On hot paths or with expensive-to-clone types,
-/// prefer using [`Read::read`] instead.
-pub trait Get: Read {
-    /// Subscribes to the signal, then clones and returns the value of the signal,
-    /// or `None` if the signal has already been disposed.
-    #[track_caller]
-    fn try_get(&self) -> Option<Self::Value>
-    where
-        Self::Value: Sized + Clone,
-    {
-        self.try_read().map(|v| v.clone())
-    }
-
-    /// Subscribes to the signal, then clones and returns the value of the signal.
-    ///
-    /// # Panics
-    /// Panics if you try to access a signal that has been disposed.
-    #[track_caller]
-    fn get(&self) -> Self::Value
-    where
-        Self::Value: Sized + Clone,
-    {
-        self.try_get().unwrap_or_else(|| unwrap_rx!(self)())
     }
 }
 
@@ -707,10 +697,10 @@ pub trait IsDisposed {
     fn is_disposed(&self) -> bool;
 }
 
-impl<T: ReactivityNode> IsDisposed for T {
+impl<T: ?Sized + RxInternal> IsDisposed for T {
     #[inline(always)]
     fn is_disposed(&self) -> bool {
-        !::silex_reactivity::is_signal_valid(self.node_id())
+        self.rx_is_disposed()
     }
 }
 
@@ -727,15 +717,15 @@ pub trait DefinedAt {
     }
 }
 
-impl<T: ReactivityNode> DefinedAt for T {
+impl<T: ?Sized + RxInternal> DefinedAt for T {
     #[inline(always)]
     fn defined_at(&self) -> Option<&'static Location<'static>> {
-        ::silex_reactivity::get_node_defined_at(self.node_id())
+        self.rx_defined_at()
     }
 
     #[inline(always)]
     fn debug_name(&self) -> Option<String> {
-        ::silex_reactivity::get_debug_label(self.node_id())
+        self.rx_debug_name()
     }
 }
 

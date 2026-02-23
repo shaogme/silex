@@ -33,26 +33,6 @@ unsafe fn rx_borrow_stored_value_unsafe<T: 'static>(id: NodeId) -> Option<&'stat
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Constant<T>(pub T);
 
-impl<T> DefinedAt for Constant<T> {
-    fn defined_at(&self) -> Option<&'static Location<'static>> {
-        None
-    }
-
-    fn debug_name(&self) -> Option<String> {
-        Some("Constant".to_string())
-    }
-}
-
-impl<T> IsDisposed for Constant<T> {
-    fn is_disposed(&self) -> bool {
-        false
-    }
-}
-
-impl<T> Track for Constant<T> {
-    fn track(&self) {}
-}
-
 impl<T: 'static> RxInternal for Constant<T> {
     type Value = T;
     type ReadOutput<'a>
@@ -110,14 +90,6 @@ impl<T: 'static> IntoRx for Constant<T> {
     }
 }
 
-impl<T: 'static> WithUntracked for Constant<T> {
-    type Value = T;
-    #[inline(always)]
-    fn try_with_untracked<U>(&self, fun: impl FnOnce(&T) -> U) -> Option<U> {
-        self.rx_try_with_untracked(fun)
-    }
-}
-
 // --- DerivedPayload ---
 
 #[derive(Clone, Copy)]
@@ -138,44 +110,6 @@ impl<D: std::fmt::Debug, F> std::fmt::Debug for DerivedPayload<D, F> {
 impl<D, F> DerivedPayload<D, F> {
     pub const fn new(deps: D, func: F) -> Self {
         Self { deps, func }
-    }
-}
-
-impl<D: DefinedAt, F> DefinedAt for DerivedPayload<D, F> {
-    fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
-        self.deps.defined_at()
-    }
-
-    fn debug_name(&self) -> Option<String> {
-        self.deps.debug_name()
-    }
-}
-
-impl<D: IsDisposed, F> IsDisposed for DerivedPayload<D, F> {
-    fn is_disposed(&self) -> bool {
-        self.deps.is_disposed()
-    }
-}
-
-impl<D: Track, F> Track for DerivedPayload<D, F> {
-    fn track(&self) {
-        self.deps.track();
-    }
-}
-
-// Unary / Map implementation
-impl<S, F, U> WithUntracked for DerivedPayload<S, F>
-where
-    S: WithUntracked,
-    F: Fn(&S::Value) -> U + Clone,
-{
-    type Value = U;
-
-    fn try_with_untracked<R>(&self, fun: impl FnOnce(&Self::Value) -> R) -> Option<R> {
-        self.deps.try_with_untracked(|val| {
-            let mapped = (self.func)(val);
-            fun(&mapped)
-        })
     }
 }
 
@@ -296,7 +230,13 @@ impl<T: 'static> RxInternal for Signal<T> {
 
     #[inline(always)]
     fn rx_track(&self) {
-        self.track();
+        match self {
+            Signal::Read(s) => s.rx_track(),
+            Signal::Derived(id, _) => {
+                track_signal(*id);
+            }
+            Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _) => {}
+        }
     }
 
     #[inline(always)]
@@ -336,19 +276,43 @@ impl<T: 'static> RxInternal for Signal<T> {
     }
 
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.try_with_untracked(fun)
+        match self {
+            Signal::Read(s) => s.rx_try_with_untracked(fun),
+            Signal::Derived(id, _) => try_with_signal_untracked(*id, fun),
+            Signal::StoredConstant(id, _) => try_with_stored_value(*id, fun),
+            Signal::InlineConstant(val, _) => {
+                // Unsafe: we verified safety conditions on creation
+                let val = unsafe { Self::unpack_inline(*val) };
+                Some(fun(&val))
+            }
+        }
     }
 
     fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
-        self.defined_at()
+        match self {
+            Signal::Read(s) => s.rx_defined_at(),
+            Signal::Derived(id, _) => get_node_defined_at(*id),
+            Signal::StoredConstant(id, _) => get_node_defined_at(*id),
+            Signal::InlineConstant(_, _) => None,
+        }
     }
 
     fn rx_debug_name(&self) -> Option<String> {
-        self.debug_name()
+        match self {
+            Signal::Read(s) => s.rx_debug_name(),
+            Signal::Derived(id, _) => get_debug_label(*id),
+            Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _) => {
+                Some("Constant".to_string())
+            }
+        }
     }
 
     fn rx_is_disposed(&self) -> bool {
-        self.is_disposed()
+        match self {
+            Signal::Read(s) => s.rx_is_disposed(),
+            Signal::Derived(id, _) => !is_signal_valid(*id),
+            Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _) => false,
+        }
     }
 
     fn rx_is_constant(&self) -> bool {
@@ -457,67 +421,7 @@ impl<T: Clone + 'static> Signal<T> {
     }
 }
 
-impl<T> DefinedAt for Signal<T> {
-    fn defined_at(&self) -> Option<&'static Location<'static>> {
-        match self {
-            Signal::Read(s) => s.defined_at(),
-            Signal::Derived(id, _) => get_node_defined_at(*id),
-            Signal::StoredConstant(id, _) => get_node_defined_at(*id),
-            Signal::InlineConstant(_, _) => None,
-        }
-    }
-
-    fn debug_name(&self) -> Option<String> {
-        match self {
-            Signal::Read(s) => s.debug_name(),
-            Signal::Derived(id, _) => get_debug_label(*id),
-            Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _) => {
-                Some("Constant".to_string())
-            }
-        }
-    }
-}
-
-impl<T> IsDisposed for Signal<T> {
-    fn is_disposed(&self) -> bool {
-        match self {
-            Signal::Read(s) => s.is_disposed(),
-            Signal::Derived(id, _) => !is_signal_valid(*id),
-            Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _) => false,
-        }
-    }
-}
-
-impl<T: 'static> Track for Signal<T> {
-    fn track(&self) {
-        match self {
-            Signal::Read(s) => s.track(),
-            Signal::Derived(id, _) => {
-                track_signal(*id);
-            }
-            Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _) => {}
-        }
-    }
-}
-
-impl<T: 'static> WithUntracked for Signal<T> {
-    type Value = T;
-
-    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        match self {
-            Signal::Read(s) => s.try_with_untracked(fun),
-            Signal::Derived(id, _) => try_with_signal_untracked(*id, fun),
-            Signal::StoredConstant(id, _) => try_with_stored_value(*id, fun),
-            Signal::InlineConstant(val, _) => {
-                // Unsafe: we verified safety conditions on creation
-                let val = unsafe { Self::unpack_inline(*val) };
-                Some(fun(&val))
-            }
-        }
-    }
-}
-
-// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
+// Note: GetUntracked and Get methods are now provided as default methods in the Read trait.
 
 impl<T: Clone + 'static> From<T> for Signal<T> {
     #[track_caller]
@@ -608,8 +512,6 @@ macro_rules! impl_signal_core_traits {
 }
 
 impl_signal_core_traits!(ReadSignal);
-
-// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
 
 // Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
 

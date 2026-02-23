@@ -149,39 +149,6 @@ impl<F: RxInternal, M> RxInternal for Rx<F, M> {
     }
 }
 
-impl<F: RxInternal, M> DefinedAt for Rx<F, M> {
-    #[inline(always)]
-    fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
-        self.0.rx_defined_at()
-    }
-    #[inline(always)]
-    fn debug_name(&self) -> Option<String> {
-        self.0.rx_debug_name()
-    }
-}
-
-impl<F: RxInternal, M> IsDisposed for Rx<F, M> {
-    #[inline(always)]
-    fn is_disposed(&self) -> bool {
-        self.0.rx_is_disposed()
-    }
-}
-
-impl<F: RxInternal, M> Track for Rx<F, M> {
-    #[inline(always)]
-    fn track(&self) {
-        self.0.rx_track();
-    }
-}
-
-impl<F: RxInternal, M> WithUntracked for Rx<F, M> {
-    type Value = F::Value;
-    #[inline(always)]
-    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.0.rx_try_with_untracked(fun)
-    }
-}
-
 // --- 元组 RxInternal 实现：支持递归常量检测 ---
 
 // 已移除旧的递归助手，改用更高效的直接构造方案
@@ -256,9 +223,6 @@ macro_rules! impl_tuple_everything {
             #[inline(always)] fn rx_is_disposed(&self) -> bool { $(self.$idx.rx_is_disposed() || )+ false }
             #[inline(always)] fn rx_is_constant(&self) -> bool { $(self.$idx.rx_is_constant() && )+ true }
         }
-        impl<$($T: Track),+> Track for ($($T,)+) { #[inline(always)] fn track(&self) { $(self.$idx.track();)+ } }
-        impl<$($T: IsDisposed),+> IsDisposed for ($($T,)+) { #[inline(always)] fn is_disposed(&self) -> bool { $(self.$idx.is_disposed() || )+ false } }
-        impl<$($T: DefinedAt),+> DefinedAt for ($($T,)+) { #[inline(always)] fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> { None } }
     };
 }
 
@@ -336,14 +300,6 @@ macro_rules! impl_rx_delegate {
                 $is_const
             }
         }
-
-        impl<T: 'static> $crate::traits::WithUntracked for $target<T> {
-            type Value = T;
-            #[inline(always)]
-            fn try_with_untracked<U>(&self, fun: impl FnOnce(&T) -> U) -> Option<U> {
-                $crate::traits::RxInternal::rx_try_with_untracked(self, fun)
-            }
-        }
     };
     ($target:ident, SignalID, $is_const:expr) => {
         impl<T: 'static> $crate::traits::ReactivityNode for $target<T> {
@@ -367,17 +323,6 @@ macro_rules! impl_rx_delegate {
             }
         }
 
-        impl<T: 'static> $crate::traits::WithUntracked for $target<T> {
-            type Value = T;
-            #[inline(always)]
-            fn try_with_untracked<U>(&self, fun: impl FnOnce(&T) -> U) -> Option<U> {
-                ::silex_reactivity::try_with_signal_untracked(
-                    $crate::traits::ReactivityNode::node_id(self),
-                    fun,
-                )
-            }
-        }
-
         impl<T: 'static> $crate::traits::RxInternal for $target<T> {
             type Value = T;
             type ReadOutput<'a>
@@ -387,7 +332,7 @@ macro_rules! impl_rx_delegate {
 
             #[inline(always)]
             fn rx_track(&self) {
-                $crate::traits::Track::track(self);
+                ::silex_reactivity::track_signal($crate::traits::ReactivityNode::node_id(self));
             }
             #[inline(always)]
             fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
@@ -411,19 +356,24 @@ macro_rules! impl_rx_delegate {
 
             #[inline(always)]
             fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&T) -> U) -> Option<U> {
-                $crate::traits::WithUntracked::try_with_untracked(self, fun)
+                ::silex_reactivity::try_with_signal_untracked(
+                    $crate::traits::ReactivityNode::node_id(self),
+                    fun,
+                )
             }
             #[inline(always)]
             fn rx_defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> {
-                $crate::traits::DefinedAt::defined_at(self)
+                ::silex_reactivity::get_node_defined_at($crate::traits::ReactivityNode::node_id(
+                    self,
+                ))
             }
             #[inline(always)]
             fn rx_debug_name(&self) -> Option<String> {
-                $crate::traits::DefinedAt::debug_name(self)
+                ::silex_reactivity::get_debug_label($crate::traits::ReactivityNode::node_id(self))
             }
             #[inline(always)]
             fn rx_is_disposed(&self) -> bool {
-                $crate::traits::IsDisposed::is_disposed(self)
+                !::silex_reactivity::is_signal_valid($crate::traits::ReactivityNode::node_id(self))
             }
             #[inline(always)]
             fn rx_is_constant(&self) -> bool {
@@ -453,14 +403,6 @@ macro_rules! impl_rx_delegate {
             }
         }
 
-        impl<T: 'static> $crate::traits::WithUntracked for $target<T> {
-            type Value = T;
-            #[inline(always)]
-            fn try_with_untracked<U>(&self, fun: impl FnOnce(&T) -> U) -> Option<U> {
-                self.$field.rx_try_with_untracked(fun)
-            }
-        }
-
         impl<T: 'static> $crate::traits::RxInternal for $target<T> {
             type Value = T;
             type ReadOutput<'a>
@@ -470,7 +412,7 @@ macro_rules! impl_rx_delegate {
 
             #[inline(always)]
             fn rx_track(&self) {
-                $crate::traits::Track::track(self);
+                self.$field.rx_track();
             }
             #[inline(always)]
             fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
@@ -486,11 +428,11 @@ macro_rules! impl_rx_delegate {
             }
             #[inline(always)]
             fn rx_defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> {
-                self.$field.defined_at()
+                self.$field.rx_defined_at()
             }
             #[inline(always)]
             fn rx_debug_name(&self) -> Option<String> {
-                self.$field.debug_name()
+                self.$field.rx_debug_name()
             }
             #[inline(always)]
             fn rx_is_disposed(&self) -> bool {
@@ -721,12 +663,6 @@ where
         self.try_with_untracked(fun)
     }
 }
-
-// Blanket implementation: any type with RxInternal gets GetUntracked
-impl<T: ?Sized> GetUntracked for T where T: RxInternal {}
-
-// Blanket implementation: any type with RxInternal gets Get
-impl<T: ?Sized> Get for T where T: RxInternal {}
 
 // Map is based on WithUntracked, not Get - this is intentional for zero-copy support
 impl<S> Map for S

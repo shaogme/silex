@@ -1,5 +1,5 @@
 use silex_core::reactivity::Effect;
-use silex_core::traits::Get;
+use silex_core::traits::Read;
 use silex_dom::prelude::View;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -52,7 +52,7 @@ pub struct Show<Cond, ViewFn, FalsyViewFn> {
 impl<Cond, ViewFn> Show<Cond, ViewFn, fn() -> ()> {
     pub fn new(condition: Cond, view: ViewFn) -> Self
     where
-        Cond: Get<Value = bool> + 'static,
+        Cond: Read<Value = bool> + 'static,
         ViewFn: ViewFactory + 'static,
     {
         Self {
@@ -66,7 +66,7 @@ impl<Cond, ViewFn> Show<Cond, ViewFn, fn() -> ()> {
 // Builder 方法
 impl<Cond, ViewFn, FalsyViewFn> Show<Cond, ViewFn, FalsyViewFn>
 where
-    Cond: Get<Value = bool> + 'static,
+    Cond: Read<Value = bool> + 'static,
     ViewFn: ViewFactory + 'static,
     FalsyViewFn: ViewFactory + 'static,
 {
@@ -85,7 +85,7 @@ where
 
 impl<Cond, ViewFn, FalsyViewFn> View for Show<Cond, ViewFn, FalsyViewFn>
 where
-    Cond: Get<Value = bool> + 'static,
+    Cond: Read<Value = bool> + 'static,
     ViewFn: ViewFactory + Clone + 'static,
     FalsyViewFn: ViewFactory + Clone + 'static,
 {
@@ -165,7 +165,7 @@ use silex_core::traits::IntoRx;
 
 /// Signal 扩展特质，提供 .when() 语法糖
 pub trait SignalShowExt {
-    type Cond: Get<Value = bool> + 'static;
+    type Cond: Read<Value = bool> + 'static;
 
     fn when<F>(self, view: F) -> Show<Self::Cond, F, fn() -> ()>
     where
@@ -176,7 +176,7 @@ pub trait SignalShowExt {
 impl<S> SignalShowExt for S
 where
     S: IntoRx<Value = bool>,
-    S::RxType: Get<Value = bool> + Clone + 'static,
+    S::RxType: Read<Value = bool> + Clone + 'static,
 {
     type Cond = S::RxType;
 

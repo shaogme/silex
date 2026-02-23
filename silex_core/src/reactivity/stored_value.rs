@@ -45,43 +45,12 @@ impl<T: 'static> StoredValue<T> {
     where
         T: Clone,
     {
-        GetUntracked::get_untracked(self)
+        Read::get_untracked(self)
     }
 
     pub fn with_name(self, name: impl Into<String>) -> Self {
         silex_reactivity::set_debug_label(self.id, name);
         self
-    }
-}
-
-impl<T> DefinedAt for StoredValue<T> {
-    fn defined_at(&self) -> Option<&'static Location<'static>> {
-        None
-    }
-
-    fn debug_name(&self) -> Option<String> {
-        silex_reactivity::get_debug_label(self.id)
-    }
-}
-
-impl<T: 'static> WithUntracked for StoredValue<T> {
-    type Value = T;
-
-    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        silex_reactivity::try_with_stored_value(self.id, fun)
-    }
-}
-
-impl<T: 'static> IsDisposed for StoredValue<T> {
-    fn is_disposed(&self) -> bool {
-        !silex_reactivity::is_stored_value_valid(self.id)
-    }
-}
-
-// StoredValue doesn't track reactively by design - it's a non-reactive storage
-impl<T: 'static> Track for StoredValue<T> {
-    fn track(&self) {
-        // StoredValue is non-reactive, so tracking is a no-op
     }
 }
 
@@ -119,22 +88,22 @@ impl<T: 'static> RxInternal for StoredValue<T> {
 
     #[inline(always)]
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.try_with_untracked(fun)
+        silex_reactivity::try_with_stored_value(self.id, fun)
     }
 
     #[inline(always)]
     fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
-        self.defined_at()
+        None
     }
 
     #[inline(always)]
     fn rx_debug_name(&self) -> Option<String> {
-        self.debug_name()
+        silex_reactivity::get_debug_label(self.id)
     }
 
     #[inline(always)]
     fn rx_is_disposed(&self) -> bool {
-        self.is_disposed()
+        !silex_reactivity::is_stored_value_valid(self.id)
     }
 
     #[inline(always)]

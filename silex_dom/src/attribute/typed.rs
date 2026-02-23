@@ -1,5 +1,5 @@
 use silex_core::reactivity::{Constant, Memo, ReadSignal, RwSignal, Signal};
-use silex_core::traits::Get;
+use silex_core::traits::Read;
 use std::fmt::Display;
 
 // --- 9. Apply Traits (for Codegen) ---

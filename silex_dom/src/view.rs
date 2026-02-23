@@ -4,7 +4,7 @@ use silex_core::error::handle_error;
 use silex_core::reactivity::{
     Constant, DerivedPayload, Effect, Memo, ReadSignal, RwSignal, Signal, SignalSlice,
 };
-use silex_core::traits::{Get, RxInternal};
+use silex_core::traits::{Read, RxInternal};
 use silex_core::{SilexError, SilexResult};
 use std::fmt::Display;
 use std::panic::{AssertUnwindSafe, catch_unwind};

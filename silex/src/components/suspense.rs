@@ -1,5 +1,5 @@
 use silex_core::reactivity::{Effect, SuspenseContext, create_scope, use_suspense_context};
-use silex_core::traits::Get;
+use silex_core::traits::Read;
 use silex_dom::attribute::GlobalAttributes;
 use silex_dom::view::View;
 use silex_html::div;

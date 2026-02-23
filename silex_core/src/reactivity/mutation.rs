@@ -174,24 +174,6 @@ impl<Arg: 'static, T: Clone + 'static, E: Clone + 'static> Mutation<Arg, T, E> {
     }
 }
 
-impl<Arg, T: Clone + 'static, E: Clone + 'static> DefinedAt for Mutation<Arg, T, E> {
-    fn defined_at(&self) -> Option<&'static Location<'static>> {
-        self.state.defined_at()
-    }
-}
-
-impl<Arg, T: Clone + 'static, E: Clone + 'static> IsDisposed for Mutation<Arg, T, E> {
-    fn is_disposed(&self) -> bool {
-        self.state.is_disposed()
-    }
-}
-
-impl<Arg, T: Clone + 'static, E: Clone + 'static> Track for Mutation<Arg, T, E> {
-    fn track(&self) {
-        self.state.track();
-    }
-}
-
 impl<Arg, T: Clone + 'static, E: Clone + 'static> RxInternal for Mutation<Arg, T, E> {
     type Value = Option<T>;
     type ReadOutput<'a>
