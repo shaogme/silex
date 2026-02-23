@@ -188,6 +188,17 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
         self.set_state.set(ResourceState::Ready(value));
     }
 
+    /// Helper to check if the resource is currently `Loading`.
+    pub fn loading(&self) -> bool {
+        self.state.with(|s: &ResourceState<T, E>| s.is_loading())
+    }
+
+    /// Helper to get the last successful value, if any.
+    pub fn value(&self) -> Option<T> {
+        self.state
+            .with(|s: &ResourceState<T, E>| s.as_option().cloned())
+    }
+
     /// Helper to get data if available (Ready or Reloading)
     pub fn get_data(&self) -> Option<T> {
         self.state.with(|s| s.as_option().cloned())
@@ -222,22 +233,17 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxInternal for Re
 
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-        self.state.rx_try_with_untracked(|s| OwnedGuard {
-            value: s.as_option().cloned(),
-        })
+        self.state
+            .rx_try_with_untracked(|s: &ResourceState<T, E>| OwnedGuard {
+                value: s.as_option().cloned(),
+            })
     }
 
     #[inline(always)]
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.state.try_with_untracked(|s| {
-            if let ResourceState::Error(e) = s {
-                if let Some(ctx) = use_context::<crate::error::ErrorContext>() {
-                    let err_msg = format!("{:?}", e);
-                    (ctx.0)(crate::error::SilexError::Javascript(err_msg));
-                }
-            }
-            let data = s.as_option().cloned();
-            fun(&data)
+        self.state.rx_try_with_untracked(|s: &ResourceState<T, E>| {
+            let val = s.as_option().cloned();
+            fun(&val)
         })
     }
 
@@ -272,6 +278,14 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> IntoRx for Resour
     #[inline(always)]
     fn is_constant(&self) -> bool {
         false
+    }
+    #[inline(always)]
+    fn into_signal(self) -> crate::reactivity::Signal<Option<T>>
+    where
+        Self: 'static,
+        T: Clone,
+    {
+        crate::reactivity::Signal::derive(move || self.get())
     }
 }
 

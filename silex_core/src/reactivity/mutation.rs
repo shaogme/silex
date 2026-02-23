@@ -157,17 +157,18 @@ impl<Arg: 'static, T: Clone + 'static, E: Clone + 'static> Mutation<Arg, T, E> {
 
     /// Helper to check if the mutation is currently `Pending`.
     pub fn loading(&self) -> bool {
-        self.state.with(|s| s.is_loading())
+        self.state.with(|s: &MutationState<T, E>| s.is_loading())
     }
 
     /// Helper to get the last successful value, if any.
     pub fn value(&self) -> Option<T> {
-        self.state.with(|s| s.value().cloned())
+        self.state
+            .with(|s: &MutationState<T, E>| s.value().cloned())
     }
 
     /// Helper to get the last error, if any.
     pub fn error(&self) -> Option<E> {
-        self.state.with(|s| match s {
+        self.state.with(|s: &MutationState<T, E>| match s {
             MutationState::Error(e) => Some(e.clone()),
             _ => None,
         })
@@ -194,14 +195,15 @@ impl<Arg, T: Clone + 'static, E: Clone + 'static> RxInternal for Mutation<Arg, T
 
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-        self.state.rx_try_with_untracked(|s| OwnedGuard {
-            value: s.value().cloned(),
-        })
+        self.state
+            .rx_try_with_untracked(|s: &MutationState<T, E>| OwnedGuard {
+                value: s.value().cloned(),
+            })
     }
 
     #[inline(always)]
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.state.rx_try_with_untracked(|s| {
+        self.state.rx_try_with_untracked(|s: &MutationState<T, E>| {
             let val = s.value().cloned();
             fun(&val)
         })
@@ -238,5 +240,13 @@ impl<Arg, T: Clone + 'static, E: Clone + 'static> IntoRx for Mutation<Arg, T, E>
     #[inline(always)]
     fn is_constant(&self) -> bool {
         false
+    }
+    #[inline(always)]
+    fn into_signal(self) -> crate::reactivity::Signal<Option<T>>
+    where
+        Self: 'static,
+        T: Clone,
+    {
+        crate::reactivity::Signal::derive(move || self.get())
     }
 }

@@ -12,11 +12,6 @@ pub use node_ref::NodeRef;
 
 pub struct RxValue;
 pub struct RxEffect;
-/// Marker for type-erased reactive values.
-pub struct AnyTypeErased;
-
-/// `AnyRx<T>` 是类型擦除后的响应式容器，用于减小编译体积。
-pub type AnyRx<T> = Rx<std::rc::Rc<dyn crate::traits::AnyRxInternal<T>>, RxValue>;
 
 /// 响应式计算单元或事件处理器。
 /// Rx 始终不应该要求实现 Clone trait 或 Copy trait。
@@ -29,21 +24,6 @@ impl<F: Clone, M> Clone for Rx<F, M> {
 }
 
 impl<F: Copy, M> Copy for Rx<F, M> {}
-
-impl<F, M> Rx<F, M> {
-    /// 将当前的 `Rx` 转换为类型擦除后的 `AnyRx`。
-    /// 这会中止泛型单态化的递归展开，有效减小二进制体积。
-    pub fn into_any(self) -> AnyRx<F::Value>
-    where
-        F: crate::traits::RxInternal + 'static,
-        F::Value: 'static,
-    {
-        Rx(
-            std::rc::Rc::new(self.0) as std::rc::Rc<dyn crate::traits::AnyRxInternal<F::Value>>,
-            core::marker::PhantomData,
-        )
-    }
-}
 
 /// `rx!` 宏：创建响应式计算单元或事件处理器。
 ///

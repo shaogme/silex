@@ -219,6 +219,13 @@ macro_rules! impl_into_rx_for_css {
                 type RxType = silex_core::Rx<silex_core::reactivity::Constant<$t>, silex_core::RxValue>;
                 fn into_rx(self) -> Self::RxType { silex_core::Rx(silex_core::reactivity::Constant(self), ::core::marker::PhantomData) }
                 fn is_constant(&self) -> bool { true }
+                fn into_signal(self) -> silex_core::reactivity::Signal<$t>
+                where
+                    Self: Sized + 'static,
+                    $t: Sized + Clone + 'static,
+                {
+                    silex_core::reactivity::Signal::derive(move || self.clone())
+                }
             }
         )*
     };

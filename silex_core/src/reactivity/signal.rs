@@ -57,7 +57,7 @@ impl<T: 'static> RxInternal for Constant<T> {
     }
 }
 
-impl<T: 'static> IntoRx for Constant<T> {
+impl<T: Clone + 'static> IntoRx for Constant<T> {
     type Value = T;
     type RxType = Rx<Self, RxValue>;
     #[inline(always)]
@@ -67,6 +67,10 @@ impl<T: 'static> IntoRx for Constant<T> {
     #[inline(always)]
     fn is_constant(&self) -> bool {
         true
+    }
+    #[inline(always)]
+    fn into_signal(self) -> Signal<T> {
+        Signal::derive(move || self.get())
     }
 }
 
@@ -266,6 +270,10 @@ impl<T: 'static> IntoRx for Signal<T> {
     #[inline(always)]
     fn is_constant(&self) -> bool {
         self.is_constant()
+    }
+    #[inline(always)]
+    fn into_signal(self) -> Signal<Self::Value> {
+        self
     }
 }
 

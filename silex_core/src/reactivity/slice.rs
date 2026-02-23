@@ -115,6 +115,14 @@ where
     fn is_constant(&self) -> bool {
         self.source.rx_is_constant()
     }
+    #[inline(always)]
+    fn into_signal(self) -> crate::reactivity::Signal<Self::Value>
+    where
+        Self: 'static,
+        O: Sized + Clone, // Changed from Self::Value: Sized + Clone to O: Sized + Clone
+    {
+        crate::reactivity::Signal::derive(move || self.get())
+    }
 }
 
 crate::impl_reactive_ops!(SignalSlice<S, F, O>, [S, F, O]);

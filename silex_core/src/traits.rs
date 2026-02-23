@@ -10,13 +10,13 @@
 //!    - 天然支持动态大小类型（DST），如 `str` 或 `[T]`。
 //! 2. **Rx 委托 (Rx Delegate)**：现代 Silex 采用委托模式。[`Rx`] 包装器是所有响应式操作（算术、比较、Map 等）的对外接口。
 //!    - 通过 [`IntoRx`] 接口，常量、信号、闭包及元组都能无缝转化为统一的 `Rx`。
-//! 3. **类型擦除 (Type Erasure)**：为了防止泛型导致的单态化代码膨胀 (Monomorphization Bloat)，底层操作借助 `AnyRxInternal` 进行类型擦除。
-//!    - 复杂的派生和运算符现在被转化并由统一的元组派生 `DerivedPayload` 处理共享底层的动态派发机制，极大缩减了编译产物的体积。
+//! 3. **类型擦除 (Type Erasure)**：为了防止泛型导致的单态化代码膨胀 (Monomorphization Bloat)，底层操作借助响应式归一化技术。
+//!    - 复杂的派生和运算符现在被转化并由统一的 `Signal<T>` 和 `DerivedPayload` 处理，消除了大量针对性的组合结构泛型声明代码。
 //!
 //! ## 元组与组合性
 //!
 //! 通过宏自动实现，Silex 支持将包含多个响应式值的元组（如 `(Signal<A>, Signal<B>)`）转换为单一的 `Rx`：
-//! - **派生聚合**：元组各元素会通过类型擦除转换为 `Rc<dyn AnyRxInternal>`，并由统一的 `DerivedPayload` 承载，消除了大量针对性的组合结构泛型声明代码。
+//! - **派生聚合**：元组各元素会通过类型擦除转换为 `Signal<T>`，并由统一的 `DerivedPayload` 承载，消除了大量针对性的组合结构泛型声明代码。
 //! - **组合评估**：转换会隐式克隆各元素重新构建结果元组。
 //! - **零拷贝路径**：对于追求极致性能的多路且无需克隆的场景，依然推荐使用 [`batch_read!`] 宏，它提供了真实的底层结构分段式借用多路读取。
 //!
@@ -189,16 +189,12 @@ pub trait IntoRx {
     fn into_rx(self) -> Self::RxType;
     fn is_constant(&self) -> bool;
 
-    /// 将当前类型转换为类型擦除后的 AnyRx。
-    fn into_any_rx(self) -> crate::AnyRx<Self::Value>
+    /// 将当前类型转换为归一化后的 Signal<T>。
+    /// 这是 Silex 内部实现零成本类型擦除的核心机制。
+    fn into_signal(self) -> crate::reactivity::Signal<Self::Value>
     where
-        Self: Sized,
-        Self::Value: Sized + 'static,
-        Self::RxType: RxInternal<Value = Self::Value> + Clone + 'static,
-    {
-        let rx = self.into_rx();
-        crate::Rx(rx.rx_into_any(), ::core::marker::PhantomData)
-    }
+        Self: Sized + 'static,
+        Self::Value: Sized + Clone + 'static;
 }
 
 /// A trait used internally by `Rx` to delegate calls to either a closure or a reactive primitive.
@@ -248,98 +244,24 @@ pub trait RxInternal {
     fn rx_is_constant(&self) -> bool {
         false
     }
-
-    /// 将当前的响应式单体转换为类型擦除后的 Rc。
-    fn rx_into_any(self) -> std::rc::Rc<dyn AnyRxInternal<Self::Value>>
-    where
-        Self: Sized + Clone + 'static,
-        Self::Value: Sized + 'static,
-    {
-        std::rc::Rc::new(self) as std::rc::Rc<dyn AnyRxInternal<Self::Value>>
-    }
-}
-
-/// A type-erased version of [`RxInternal`] to stop monomorphization bloat.
-#[doc(hidden)]
-pub trait AnyRxInternal<V: ?Sized> {
-    fn rx_track_erased(&self);
-    fn rx_read_erased(&self) -> Option<ErasedRxGuard<'_, V>>;
-    fn rx_read_untracked_erased(&self) -> Option<ErasedRxGuard<'_, V>>;
-    fn rx_defined_at_erased(&self) -> Option<&'static std::panic::Location<'static>>;
-    fn rx_debug_name_erased(&self) -> Option<String>;
-    fn rx_is_disposed_erased(&self) -> bool;
-    fn rx_is_constant_erased(&self) -> bool;
-}
-
-/// A guard for type-erased reactive values.
-pub struct ErasedRxGuard<'a, V: ?Sized> {
-    inner: Box<dyn std::ops::Deref<Target = V> + 'a>,
-}
-
-impl<V: ?Sized> std::ops::Deref for ErasedRxGuard<'_, V> {
-    type Target = V;
-
-    #[inline(always)]
-    fn deref(&self) -> &V {
-        &self.inner
-    }
-}
-
-impl<T, V> AnyRxInternal<V> for T
-where
-    T: RxInternal<Value = V>,
-    V: ?Sized,
-{
-    #[inline(always)]
-    fn rx_track_erased(&self) {
-        self.rx_track();
-    }
-
-    #[inline(always)]
-    fn rx_read_erased(&self) -> Option<ErasedRxGuard<'_, V>> {
-        self.rx_read().map(|g| ErasedRxGuard {
-            inner: Box::new(g) as Box<dyn std::ops::Deref<Target = V>>,
-        })
-    }
-
-    #[inline(always)]
-    fn rx_read_untracked_erased(&self) -> Option<ErasedRxGuard<'_, V>> {
-        self.rx_read_untracked().map(|g| ErasedRxGuard {
-            inner: Box::new(g) as Box<dyn std::ops::Deref<Target = V>>,
-        })
-    }
-
-    #[inline(always)]
-    fn rx_defined_at_erased(&self) -> Option<&'static std::panic::Location<'static>> {
-        self.rx_defined_at()
-    }
-
-    #[inline(always)]
-    fn rx_debug_name_erased(&self) -> Option<String> {
-        self.rx_debug_name()
-    }
-
-    #[inline(always)]
-    fn rx_is_disposed_erased(&self) -> bool {
-        self.rx_is_disposed()
-    }
-
-    #[inline(always)]
-    fn rx_is_constant_erased(&self) -> bool {
-        self.rx_is_constant()
-    }
 }
 
 pub type CompareFn<T> = fn(&T, &T) -> bool;
 
 #[doc(hidden)]
 macro_rules! reactive_compare_method {
-    ($name:ident, $op:tt, $bound:ident) => {
-        fn $name<O>(
+    ($name:ident, $fn_impl:ident, $op:tt, $bound:ident) => {
+        fn $name<O: 'static>(
             &self,
             other: O,
         ) -> Rx<
-            crate::reactivity::DerivedPayload<(Self::RxType, O::RxType), fn(&(<Self as IntoRx>::Value, <Self as IntoRx>::Value)) -> bool>,
+            crate::reactivity::DerivedPayload<
+                (
+                    crate::reactivity::Signal<<Self as IntoRx>::Value>,
+                    crate::reactivity::Signal<<Self as IntoRx>::Value>,
+                ),
+                fn(&(<Self as IntoRx>::Value, <Self as IntoRx>::Value)) -> bool,
+            >,
             RxValue,
         >
         where
@@ -347,12 +269,14 @@ macro_rules! reactive_compare_method {
             Self::RxType: RxInternal<Value = <Self as IntoRx>::Value> + Clone + 'static,
             O: IntoRx<Value = <Self as IntoRx>::Value>,
             O::RxType: RxInternal<Value = <Self as IntoRx>::Value> + Clone + 'static,
-            <Self as IntoRx>::Value: $bound + Sized + 'static,
+            <Self as IntoRx>::Value: $bound + Sized + Clone + 'static,
         {
-            let lhs = self.clone().into_rx();
-            let rhs = other.into_rx();
+            let lhs = self.clone().into_signal();
+            let rhs = other.into_signal();
             Rx(
-                crate::reactivity::DerivedPayload::new((lhs, rhs), |(lv, rv)| lv $op rv),
+                crate::reactivity::DerivedPayload::new((lhs, rhs), |(lv, rv)| {
+                    $crate::traits::impls::ops_impl::$fn_impl(lv, rv)
+                }),
                 ::core::marker::PhantomData,
             )
         }
@@ -364,8 +288,8 @@ pub trait ReactivePartialEq: With + Clone + 'static
 where
     Self::Value: PartialEq + Sized + 'static,
 {
-    reactive_compare_method!(equals, ==, PartialEq);
-    reactive_compare_method!(not_equals, !=, PartialEq);
+    reactive_compare_method!(equals, eq, ==, PartialEq);
+    reactive_compare_method!(not_equals, ne, !=, PartialEq);
 }
 
 /// Provides a fluent API for checking ordering on reactive values.
@@ -373,10 +297,10 @@ pub trait ReactivePartialOrd: With + Clone + 'static
 where
     Self::Value: PartialOrd + Sized + 'static,
 {
-    reactive_compare_method!(greater_than, >, PartialOrd);
-    reactive_compare_method!(less_than, <, PartialOrd);
-    reactive_compare_method!(greater_than_or_equals, >=, PartialOrd);
-    reactive_compare_method!(less_than_or_equals, <=, PartialOrd);
+    reactive_compare_method!(greater_than, gt, >, PartialOrd);
+    reactive_compare_method!(less_than, lt, <, PartialOrd);
+    reactive_compare_method!(greater_than_or_equals, ge, >=, PartialOrd);
+    reactive_compare_method!(less_than_or_equals, le, <=, PartialOrd);
 }
 
 #[doc(hidden)]

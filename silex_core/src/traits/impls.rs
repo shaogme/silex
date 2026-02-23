@@ -35,6 +35,24 @@ pub mod ops_impl {
         bin: add:Add, sub:Sub, mul:Mul, div:Div, rem:Rem, bitand:BitAnd, bitor:BitOr, bitxor:BitXor, shl:Shl, shr:Shr;
         un: neg:Neg, not:Not
     );
+
+    macro_rules! gen_cmp_ops {
+        ($($fn:ident:$op:tt:$bound:ident),*) => {
+            $(
+                #[inline]
+                pub fn $fn<T>(lhs: &T, rhs: &T) -> bool
+                where
+                    T: $bound,
+                {
+                    lhs $op rhs
+                }
+            )*
+        };
+    }
+    gen_cmp_ops!(
+        eq:==:PartialEq, ne:!=:PartialEq,
+        gt:>:PartialOrd, lt:<:PartialOrd, ge:>=:PartialOrd, le:<=:PartialOrd
+    );
 }
 
 macro_rules! impl_closure_rx {
@@ -52,54 +70,6 @@ macro_rules! impl_closure_rx {
 
 impl_closure_rx!(impl<F, T> F where F: Fn() -> T);
 impl_closure_rx!(impl<T> ::std::rc::Rc<dyn Fn() -> T>);
-
-impl<V: ?Sized + 'static> RxInternal for ::std::rc::Rc<dyn AnyRxInternal<V>> {
-    type Value = V;
-    type ReadOutput<'a>
-        = ErasedRxGuard<'a, V>
-    where
-        Self: 'a;
-
-    #[inline(always)]
-    fn rx_track(&self) {
-        (**self).rx_track_erased();
-    }
-
-    #[inline(always)]
-    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
-        (**self).rx_read_erased()
-    }
-
-    #[inline(always)]
-    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-        (**self).rx_read_untracked_erased()
-    }
-
-    #[inline(always)]
-    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.rx_read_untracked().map(|g| fun(&*g))
-    }
-
-    #[inline(always)]
-    fn rx_defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> {
-        (**self).rx_defined_at_erased()
-    }
-
-    #[inline(always)]
-    fn rx_debug_name(&self) -> Option<String> {
-        (**self).rx_debug_name_erased()
-    }
-
-    #[inline(always)]
-    fn rx_is_disposed(&self) -> bool {
-        (**self).rx_is_disposed_erased()
-    }
-
-    #[inline(always)]
-    fn rx_is_constant(&self) -> bool {
-        (**self).rx_is_constant_erased()
-    }
-}
 
 impl<F: RxInternal, M> RxInternal for Rx<F, M> {
     type Value = F::Value;
@@ -155,14 +125,14 @@ macro_rules! impl_tuple_everything {
         #[allow(non_snake_case)]
         impl<$($T),+> IntoRx for ($($T,)+)
         where
-            $($T: IntoRx),+,
+            $($T: IntoRx + Clone + 'static),+,
             $($T::RxType: RxInternal<Value = $T::Value> + Clone + 'static),+,
             $($T::Value: Clone + 'static),+
         {
             type Value = ($($T::Value,)+);
             type RxType = Rx<
                 DerivedPayload<
-                    ($(std::rc::Rc<dyn AnyRxInternal<$T::Value>>,)+),
+                    ($(crate::reactivity::Signal<$T::Value>,)+),
                     fn(&($($T::Value,)+)) -> ($($T::Value,)+)
                 >,
                 RxValue
@@ -170,11 +140,19 @@ macro_rules! impl_tuple_everything {
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
                 let ($($T,)+) = self;
-                $(let $T = $T.into_any_rx().0;)+
+                $(let $T = $T.into_signal();)+
                 Rx(DerivedPayload::new(($($T,)+), |t| ($(t.$idx.clone(),)+)), ::core::marker::PhantomData)
             }
             #[inline(always)]
             fn is_constant(&self) -> bool { $(self.$idx.is_constant() && )+ true }
+            #[inline(always)]
+            fn into_signal(self) -> crate::reactivity::Signal<Self::Value>
+            where
+                Self: 'static,
+            {
+                let s = self.clone();
+                crate::reactivity::Signal::derive(move || s.clone().into_rx().get())
+            }
         }
     };
     (@impl $guard:ident, $($T:ident : $idx:tt),+) => {
@@ -227,8 +205,8 @@ impl_tuple_everything!(Tuple6ReadGuard, T0: 0, T1: 1, T2: 2, T3: 3, T4: 4, T5: 5
 
 impl<F, M> IntoRx for Rx<F, M>
 where
-    F: RxInternal,
-    F::Value: Sized,
+    F: RxInternal + Clone + 'static,
+    F::Value: Clone + 'static,
 {
     type Value = F::Value;
     type RxType = Self;
@@ -241,6 +219,14 @@ where
     #[inline(always)]
     fn is_constant(&self) -> bool {
         self.0.rx_is_constant()
+    }
+
+    #[inline(always)]
+    fn into_signal(self) -> crate::reactivity::Signal<Self::Value>
+    where
+        Self: 'static,
+    {
+        crate::reactivity::Signal::derive(move || self.get())
     }
 }
 
@@ -260,6 +246,11 @@ macro_rules! impl_into_rx_primitive {
                 #[inline(always)]
                 fn is_constant(&self) -> bool {
                     true
+                }
+
+                #[inline(always)]
+                fn into_signal(self) -> crate::reactivity::Signal<Self::Value> {
+                    crate::reactivity::Signal::from(impl_into_rx_primitive!(@val self $(, $conv)?))
                 }
             }
         )*
@@ -281,7 +272,7 @@ impl_into_rx_primitive!(
 #[macro_export]
 macro_rules! impl_rx_delegate {
     ($target:ident, $is_const:expr) => {
-        impl<T: 'static> $crate::traits::IntoRx for $target<T> {
+        impl<T: Clone + 'static> $crate::traits::IntoRx for $target<T> {
             type Value = T;
             type RxType = $crate::Rx<Self, $crate::RxValue>;
             #[inline(always)]
@@ -291,6 +282,10 @@ macro_rules! impl_rx_delegate {
             #[inline(always)]
             fn is_constant(&self) -> bool {
                 $is_const
+            }
+            #[inline(always)]
+            fn into_signal(self) -> $crate::reactivity::Signal<T> {
+                $crate::reactivity::Signal::derive(move || $crate::traits::Read::get(&self))
             }
         }
     };
@@ -303,7 +298,7 @@ macro_rules! impl_rx_delegate {
             }
         }
 
-        impl<T: 'static> $crate::traits::IntoRx for $target<T> {
+        impl<T: Clone + 'static> $crate::traits::IntoRx for $target<T> {
             type Value = T;
             type RxType = $crate::Rx<Self, $crate::RxValue>;
             #[inline(always)]
@@ -313,6 +308,13 @@ macro_rules! impl_rx_delegate {
             #[inline(always)]
             fn is_constant(&self) -> bool {
                 $is_const
+            }
+            #[inline(always)]
+            fn into_signal(self) -> $crate::reactivity::Signal<T> {
+                $crate::reactivity::Signal::Read($crate::reactivity::ReadSignal {
+                    id: self.id,
+                    marker: ::core::marker::PhantomData,
+                })
             }
         }
 
@@ -371,7 +373,7 @@ macro_rules! impl_rx_delegate {
             }
         }
 
-        impl<T: 'static> $crate::traits::IntoRx for $target<T> {
+        impl<T: Clone + 'static> $crate::traits::IntoRx for $target<T> {
             type Value = T;
             type RxType = $crate::Rx<Self, $crate::RxValue>;
             #[inline(always)]
@@ -381,6 +383,10 @@ macro_rules! impl_rx_delegate {
             #[inline(always)]
             fn is_constant(&self) -> bool {
                 $is_const
+            }
+            #[inline(always)]
+            fn into_signal(self) -> $crate::reactivity::Signal<T> {
+                $crate::traits::IntoRx::into_signal(self.$field)
             }
         }
 
@@ -480,29 +486,28 @@ macro_rules! impl_rx_op {
         where
             F: $crate::traits::RxInternal<Value = T> + Clone + 'static,
             for<'a> &'a T: std::ops::$trait<&'a T, Output = T>,
-            T: 'static,
-            R: $crate::traits::IntoRx<Value = T>,
+            T: Clone + 'static,
+            R: $crate::traits::IntoRx<Value = T> + 'static,
             R::RxType: $crate::traits::RxInternal<Value = T> + Clone + 'static,
         {
-            type Output = $crate::Rx<
-                $crate::reactivity::DerivedPayload<
-                    (
-                        ::std::rc::Rc<dyn $crate::traits::AnyRxInternal<T>>,
-                        ::std::rc::Rc<dyn $crate::traits::AnyRxInternal<T>>,
-                    ),
+            type Output = Rx<
+                crate::reactivity::DerivedPayload<
+                    (crate::reactivity::Signal<T>, crate::reactivity::Signal<T>),
                     fn(&(T, T)) -> T,
                 >,
-                $crate::RxValue,
+                crate::RxValue,
             >;
 
             #[inline]
             fn $method(self, rhs: R) -> Self::Output {
-                let lhs = self.into_any();
-                let rhs = rhs.into_any_rx();
+                let lhs = self.into_signal();
+                let rhs = rhs.into_signal();
                 $crate::Rx(
-                    $crate::reactivity::DerivedPayload::new((lhs.0, rhs.0), |(lv, rv)| {
-                        $crate::traits::impls::ops_impl::$method(lv, rv)
-                    }),
+                    $crate::reactivity::DerivedPayload::new(
+                        (lhs, rhs),
+                        (|(lv, rv)| $crate::traits::impls::ops_impl::$method(lv, rv))
+                            as fn(&(T, T)) -> T,
+                    ),
                     ::core::marker::PhantomData,
                 )
             }
@@ -517,23 +522,20 @@ macro_rules! impl_rx_unary_op {
         where
             F: $crate::traits::RxInternal<Value = T> + Clone + 'static,
             for<'a> &'a T: std::ops::$trait<Output = T>,
-            T: 'static,
+            T: Clone + 'static,
         {
-            type Output = $crate::Rx<
-                $crate::reactivity::DerivedPayload<
-                    ::std::rc::Rc<dyn $crate::traits::AnyRxInternal<T>>,
-                    fn(&T) -> T,
-                >,
-                $crate::RxValue,
+            type Output = Rx<
+                crate::reactivity::DerivedPayload<crate::reactivity::Signal<T>, fn(&T) -> T>,
+                crate::RxValue,
             >;
 
             #[inline]
             fn $method(self) -> Self::Output {
-                let val = self.into_any();
+                let val = self.into_signal();
                 $crate::Rx(
                     $crate::reactivity::DerivedPayload::new(
-                        val.0,
-                        $crate::traits::impls::ops_impl::$method,
+                        val,
+                        $crate::traits::impls::ops_impl::$method::<T> as fn(&T) -> T,
                     ),
                     ::core::marker::PhantomData,
                 )

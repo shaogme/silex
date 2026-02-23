@@ -123,6 +123,10 @@ impl<T: 'static> IntoRx for StoredValue<T> {
     fn is_constant(&self) -> bool {
         true
     }
+    #[inline(always)]
+    fn into_signal(self) -> crate::reactivity::Signal<T> {
+        crate::reactivity::Signal::StoredConstant(self.id, PhantomData)
+    }
 }
 
 impl<T: 'static> UpdateUntracked for StoredValue<T> {
