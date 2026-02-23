@@ -211,19 +211,43 @@ pub trait RxInternal {
     where
         Self: 'a;
 
-    fn rx_track(&self);
+    #[inline(always)]
+    fn rx_track(&self) {}
 
     /// 响应式读取：追踪依赖并返回守卫。
-    fn rx_read(&self) -> Option<Self::ReadOutput<'_>>;
+    #[inline(always)]
+    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
+        self.rx_track();
+        self.rx_read_untracked()
+    }
 
     /// 非响应式读取：不追踪依赖并返回守卫。
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>>;
 
-    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>;
-    fn rx_defined_at(&self) -> Option<&'static std::panic::Location<'static>>;
-    fn rx_debug_name(&self) -> Option<String>;
-    fn rx_is_disposed(&self) -> bool;
-    fn rx_is_constant(&self) -> bool;
+    #[inline(always)]
+    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.rx_read_untracked().map(|g| fun(&*g))
+    }
+
+    #[inline(always)]
+    fn rx_defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
+        None
+    }
+
+    #[inline(always)]
+    fn rx_debug_name(&self) -> Option<String> {
+        None
+    }
+
+    #[inline(always)]
+    fn rx_is_disposed(&self) -> bool {
+        false
+    }
+
+    #[inline(always)]
+    fn rx_is_constant(&self) -> bool {
+        false
+    }
 
     /// 将当前的响应式单体转换为类型擦除后的 Rc。
     fn rx_into_any(self) -> std::rc::Rc<dyn AnyRxInternal<Self::Value>>

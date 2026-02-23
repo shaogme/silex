@@ -45,14 +45,7 @@ macro_rules! impl_closure_rx {
             type Value = T;
             type ReadOutput<'a> = OwnedGuard<T> where Self: 'a;
 
-            #[inline(always)] fn rx_track(&self) {}
-            #[inline(always)] fn rx_read(&self) -> Option<Self::ReadOutput<'_>> { self.rx_read_untracked() }
             #[inline(always)] fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> { let val = (self)(); Some(OwnedGuard { value: val }) }
-            #[inline(always)] fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> { let val = (self)(); Some(fun(&val)) }
-            #[inline(always)] fn rx_defined_at(&self) -> Option<&'static std::panic::Location<'static>> { None }
-            #[inline(always)] fn rx_debug_name(&self) -> Option<String> { None }
-            #[inline(always)] fn rx_is_disposed(&self) -> bool { false }
-            #[inline(always)] fn rx_is_constant(&self) -> bool { false }
         }
     };
 }
@@ -334,11 +327,6 @@ macro_rules! impl_rx_delegate {
             fn rx_track(&self) {
                 ::silex_reactivity::track_signal($crate::traits::ReactivityNode::node_id(self));
             }
-            #[inline(always)]
-            fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
-                self.rx_track();
-                self.rx_read_untracked()
-            }
 
             #[inline(always)]
             fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
@@ -354,13 +342,6 @@ macro_rules! impl_rx_delegate {
                 }
             }
 
-            #[inline(always)]
-            fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&T) -> U) -> Option<U> {
-                ::silex_reactivity::try_with_signal_untracked(
-                    $crate::traits::ReactivityNode::node_id(self),
-                    fun,
-                )
-            }
             #[inline(always)]
             fn rx_defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> {
                 ::silex_reactivity::get_node_defined_at($crate::traits::ReactivityNode::node_id(
@@ -414,18 +395,12 @@ macro_rules! impl_rx_delegate {
             fn rx_track(&self) {
                 self.$field.rx_track();
             }
-            #[inline(always)]
-            fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
-                self.$field.rx_read()
-            }
+
             #[inline(always)]
             fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
                 self.$field.rx_read_untracked()
             }
-            #[inline(always)]
-            fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&T) -> U) -> Option<U> {
-                self.$field.rx_try_with_untracked(fun)
-            }
+
             #[inline(always)]
             fn rx_defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> {
                 self.$field.rx_defined_at()

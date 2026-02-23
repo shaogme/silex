@@ -6,7 +6,7 @@ use std::ptr;
 use silex_reactivity::{
     NodeId, get_debug_label, get_node_defined_at, is_signal_valid, notify_signal, register_derived,
     set_debug_label, signal as create_signal, store_value, track_signal, try_update_signal_silent,
-    try_with_signal_untracked, try_with_stored_value, untrack as untrack_scoped,
+    untrack as untrack_scoped,
 };
 
 use crate::reactivity::SignalSlice;
@@ -41,35 +41,15 @@ impl<T: 'static> RxInternal for Constant<T> {
         Self: 'a;
 
     #[inline(always)]
-    fn rx_track(&self) {}
-
-    #[inline(always)]
-    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
+    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
         Some(RxGuard {
             value: &self.0,
             _guard_token: None,
         })
     }
 
-    #[inline(always)]
-    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-        self.rx_read()
-    }
-
-    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        Some(fun(&self.0))
-    }
-
-    fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
-        None
-    }
-
     fn rx_debug_name(&self) -> Option<String> {
         Some("Constant".to_string())
-    }
-
-    fn rx_is_disposed(&self) -> bool {
-        false
     }
 
     fn rx_is_constant(&self) -> bool {
@@ -134,23 +114,10 @@ where
     }
 
     #[inline(always)]
-    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
-        self.rx_track();
-        self.rx_read_untracked()
-    }
-
-    #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
         self.deps.rx_try_with_untracked(|val| {
             let res = (self.func)(val);
             OwnedGuard { value: res }
-        })
-    }
-
-    fn rx_try_with_untracked<R>(&self, fun: impl FnOnce(&Self::Value) -> R) -> Option<R> {
-        self.deps.rx_try_with_untracked(|val| {
-            let res = (self.func)(val);
-            fun(&res)
         })
     }
 
@@ -230,19 +197,9 @@ impl<T: 'static> RxInternal for Signal<T> {
 
     #[inline(always)]
     fn rx_track(&self) {
-        match self {
-            Signal::Read(s) => s.rx_track(),
-            Signal::Derived(id, _) => {
-                track_signal(*id);
-            }
-            Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _) => {}
+        if let Some(id) = self.node_id() {
+            track_signal(id);
         }
-    }
-
-    #[inline(always)]
-    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
-        self.rx_track();
-        self.rx_read_untracked()
     }
 
     #[inline(always)]
@@ -275,44 +232,23 @@ impl<T: 'static> RxInternal for Signal<T> {
         }
     }
 
-    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        match self {
-            Signal::Read(s) => s.rx_try_with_untracked(fun),
-            Signal::Derived(id, _) => try_with_signal_untracked(*id, fun),
-            Signal::StoredConstant(id, _) => try_with_stored_value(*id, fun),
-            Signal::InlineConstant(val, _) => {
-                // Unsafe: we verified safety conditions on creation
-                let val = unsafe { Self::unpack_inline(*val) };
-                Some(fun(&val))
-            }
-        }
-    }
-
     fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
-        match self {
-            Signal::Read(s) => s.rx_defined_at(),
-            Signal::Derived(id, _) => get_node_defined_at(*id),
-            Signal::StoredConstant(id, _) => get_node_defined_at(*id),
-            Signal::InlineConstant(_, _) => None,
-        }
+        self.node_id().and_then(get_node_defined_at)
     }
 
     fn rx_debug_name(&self) -> Option<String> {
-        match self {
-            Signal::Read(s) => s.rx_debug_name(),
-            Signal::Derived(id, _) => get_debug_label(*id),
-            Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _) => {
-                Some("Constant".to_string())
-            }
+        let name = self.node_id().and_then(get_debug_label);
+        if name.is_none() && self.is_constant() {
+            Some("Constant".to_string())
+        } else {
+            name
         }
     }
 
     fn rx_is_disposed(&self) -> bool {
-        match self {
-            Signal::Read(s) => s.rx_is_disposed(),
-            Signal::Derived(id, _) => !is_signal_valid(*id),
-            Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _) => false,
-        }
+        self.node_id()
+            .map(|id| !is_signal_valid(id))
+            .unwrap_or(false)
     }
 
     fn rx_is_constant(&self) -> bool {
@@ -381,6 +317,15 @@ impl<T: 'static> Signal<T> {
             let dst_ptr = value.as_mut_ptr() as *mut u8;
             ptr::copy_nonoverlapping(src_ptr, dst_ptr, mem::size_of::<T>());
             value.assume_init()
+        }
+    }
+
+    pub fn node_id(&self) -> Option<NodeId> {
+        match self {
+            Signal::Read(s) => Some(s.id),
+            Signal::Derived(id, _) => Some(*id),
+            Signal::StoredConstant(id, _) => Some(*id),
+            Signal::InlineConstant(_, _) => None,
         }
     }
 

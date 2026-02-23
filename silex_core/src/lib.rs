@@ -125,47 +125,39 @@ pub mod prelude {
 /// ```
 #[macro_export]
 macro_rules! batch_read {
-    // Two signals
-    ($s1:expr, $s2:expr => |$p1:ident: $t1:ty, $p2:ident: $t2:ty| $body:expr) => {{
+    // 转发给递归实现
+    ($($s:expr),+ => |$($p:ident: $t:ty),+| $body:expr) => {
+        $crate::batch_read_recurse!([$($s),+] => [$($p: $t),+] => $body)
+    };
+}
+
+#[macro_export]
+#[doc(hidden)]
+macro_rules! batch_read_recurse {
+    ([$s1:expr] => [$p1:ident: $t1:ty] => $body:expr) => {{
         use $crate::traits::With;
-        ($s1).with(|$p1: $t1| ($s2).with(|$p2: $t2| $body))
+        ($s1).with(|$p1: $t1| $body)
     }};
-    // Three signals
-    ($s1:expr, $s2:expr, $s3:expr => |$p1:ident: $t1:ty, $p2:ident: $t2:ty, $p3:ident: $t3:ty| $body:expr) => {{
+    ([$s1:expr, $($ss:expr),+] => [$p1:ident: $t1:ty, $($ps:ident: $ts:ty),+] => $body:expr) => {{
         use $crate::traits::With;
-        ($s1).with(|$p1: $t1| ($s2).with(|$p2: $t2| ($s3).with(|$p3: $t3| $body)))
-    }};
-    // Four signals
-    ($s1:expr, $s2:expr, $s3:expr, $s4:expr => |$p1:ident: $t1:ty, $p2:ident: $t2:ty, $p3:ident: $t3:ty, $p4:ident: $t4:ty| $body:expr) => {{
-        use $crate::traits::With;
-        ($s1).with(|$p1: $t1| {
-            ($s2).with(|$p2: $t2| ($s3).with(|$p3: $t3| ($s4).with(|$p4: $t4| $body)))
-        })
+        ($s1).with(|$p1: $t1| $crate::batch_read_recurse!([$($ss),+] => [$($ps: $ts),+] => $body))
     }};
 }
 
 /// Untracked version of batch_read - does not subscribe to signal changes.
 #[macro_export]
 macro_rules! batch_read_untracked {
-    // Two signals
-    ($s1:expr, $s2:expr => |$p1:ident: $t1:ty, $p2:ident: $t2:ty| $body:expr) => {{
+    // 递归实现
+    ([$s1:expr] => [$p1:ident: $t1:ty] => $body:expr) => {{
         use $crate::traits::WithUntracked;
-        ($s1).with_untracked(|$p1: $t1| ($s2).with_untracked(|$p2: $t2| $body))
+        ($s1).with_untracked(|$p1: $t1| $body)
     }};
-    // Three signals
-    ($s1:expr, $s2:expr, $s3:expr => |$p1:ident: $t1:ty, $p2:ident: $t2:ty, $p3:ident: $t3:ty| $body:expr) => {{
+    ([$s1:expr, $($ss:expr),+] => [$p1:ident: $t1:ty, $($ps:ident: $ts:ty),+] => $body:expr) => {{
         use $crate::traits::WithUntracked;
-        ($s1).with_untracked(|$p1: $t1| {
-            ($s2).with_untracked(|$p2: $t2| ($s3).with_untracked(|$p3: $t3| $body))
-        })
+        ($s1).with_untracked(|$p1: $t1| $crate::batch_read_untracked!([$($ss),+] => [$($ps: $ts),+] => $body))
     }};
-    // Four signals
-    ($s1:expr, $s2:expr, $s3:expr, $s4:expr => |$p1:ident: $t1:ty, $p2:ident: $t2:ty, $p3:ident: $t3:ty, $p4:ident: $t4:ty| $body:expr) => {{
-        use $crate::traits::WithUntracked;
-        ($s1).with_untracked(|$p1: $t1| {
-            ($s2).with_untracked(|$p2: $t2| {
-                ($s3).with_untracked(|$p3: $t3| ($s4).with_untracked(|$p4: $t4| $body))
-            })
-        })
-    }};
+    // 包装器，支持外部调用的逗号分隔语法
+    ($($s:expr),+ => |$($p:ident: $t:ty),+| $body:expr) => {
+        $crate::batch_read_untracked!([$($s),+] => [$($p: $t),+] => $body)
+    };
 }
