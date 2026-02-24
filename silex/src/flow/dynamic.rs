@@ -1,4 +1,4 @@
-use silex_core::{reactivity::Effect, traits::With};
+use silex_core::{reactivity::Effect, traits::RxRead};
 use silex_dom::prelude::View;
 use web_sys::Node;
 
@@ -31,8 +31,9 @@ pub struct Dynamic<V, F> {
 
 impl<V, F> Dynamic<V, F>
 where
-    V: View + Clone,
-    F: With<Value = V> + 'static,
+    V: View + Clone + 'static,
+    F: RxRead<Value = V> + 'static,
+    for<'a> <F as silex_core::traits::RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = V>,
 {
     pub fn new(f: F) -> Self {
         Self {
@@ -53,12 +54,16 @@ where
     /// ```ignore
     /// Dynamic::bind(mode, |m| view_match!(m, { ... }))
     /// ```
-    pub fn bind<S, T, Map>(source: S, map_fn: Map) -> Dynamic<V, impl With<Value = V>>
+    pub fn bind<S, T, Map>(
+        source: S,
+        map_fn: Map,
+    ) -> Dynamic<V, silex_core::Rx<impl Fn() -> V + Clone, silex_core::RxValue>>
     where
-        S: With<Value = T> + 'static,
-        Map: Fn(T) -> V + 'static,
+        S: RxRead<Value = T> + Clone + 'static,
+        for<'a> <S as silex_core::traits::RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = T>,
+        Map: Fn(T) -> V + Clone + 'static,
         T: Clone + 'static,
-        V: Clone,
+        V: View + Clone + 'static,
     {
         let combined_accessor = silex_core::rx!(source.with(|val| map_fn(val.clone())));
         Dynamic::new(combined_accessor)
@@ -67,8 +72,9 @@ where
 
 impl<V, F> View for Dynamic<V, F>
 where
-    V: View + Clone,
-    F: With<Value = V> + 'static,
+    V: View + Clone + 'static,
+    F: RxRead<Value = V> + 'static,
+    for<'a> <F as silex_core::traits::RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = V>,
 {
     fn mount(self, parent: &Node) {
         let document = silex_dom::document();
@@ -99,7 +105,7 @@ where
         let view_fn = self.view_fn;
 
         Effect::new(move |_| {
-            let new_view = view_fn.with(Clone::clone);
+            let new_view = silex_core::traits::RxRead::with(&view_fn, Clone::clone);
 
             // 清理旧内容
             if let Some(parent) = start_node.parent_node() {

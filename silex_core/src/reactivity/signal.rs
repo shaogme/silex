@@ -99,13 +99,6 @@ impl<T: 'static> RxInternal for Constant<T> {
     }
 }
 
-impl<T: 'static> WithUntracked for Constant<T> {
-    #[inline(always)]
-    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.rx_try_with_untracked(fun)
-    }
-}
-
 impl<T: Clone + 'static> IntoRx for Constant<T> {
     type Value = T;
     type RxType = Rx<Self, RxValue>;
@@ -151,7 +144,7 @@ impl<D, F> DerivedPayload<D, F> {
 // Unary / Map implementation
 impl<S, F, U> RxBase for DerivedPayload<S, F>
 where
-    S: RxBase + WithUntracked,
+    S: RxBase + RxInternal,
     F: Fn(&S::Value) -> U + Clone + 'static,
     U: 'static,
 {
@@ -180,7 +173,7 @@ where
 
 impl<S, F, U> RxInternal for DerivedPayload<S, F>
 where
-    S: RxInternal + WithUntracked,
+    S: RxInternal,
     F: Fn(&S::Value) -> U + Clone + 'static,
     U: 'static,
 {
@@ -192,13 +185,13 @@ where
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
         self.deps
-            .try_with_untracked(|v| (self.func)(v))
+            .rx_try_with_untracked(|v| (self.func)(v))
             .map(RxGuard::Owned)
     }
 
     #[inline(always)]
     fn rx_try_with_untracked<URet>(&self, fun: impl FnOnce(&Self::Value) -> URet) -> Option<URet> {
-        self.deps.try_with_untracked(|v| {
+        self.deps.rx_try_with_untracked(|v| {
             let u_val = (self.func)(v);
             fun(&u_val)
         })
@@ -218,18 +211,6 @@ where
 
     fn rx_is_constant(&self) -> bool {
         self.deps.rx_is_constant()
-    }
-}
-
-impl<S, F, U> WithUntracked for DerivedPayload<S, F>
-where
-    S: RxInternal + WithUntracked,
-    F: Fn(&S::Value) -> U + Clone + 'static,
-    U: 'static,
-{
-    #[inline(always)]
-    fn try_with_untracked<URet>(&self, fun: impl FnOnce(&Self::Value) -> URet) -> Option<URet> {
-        self.rx_try_with_untracked(fun)
     }
 }
 
@@ -313,13 +294,6 @@ impl<U: 'static> RxInternal for OpPayload<U> {
 
     fn rx_is_constant(&self) -> bool {
         self.is_constant
-    }
-}
-
-impl<U: 'static> WithUntracked for OpPayload<U> {
-    #[inline(always)]
-    fn try_with_untracked<URet>(&self, fun: impl FnOnce(&Self::Value) -> URet) -> Option<URet> {
-        self.rx_try_with_untracked(fun)
     }
 }
 
@@ -452,7 +426,7 @@ impl<T: 'static> RxInternal for Signal<T> {
     #[inline(always)]
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         match self {
-            Signal::Read(s) => s.try_with_untracked(fun),
+            Signal::Read(s) => s.rx_try_with_untracked(fun),
             Signal::Derived(id, _) => unsafe { rx_borrow_signal_unsafe(*id).map(fun) },
             Signal::StoredConstant(id, _) => unsafe { rx_borrow_stored_value_unsafe(*id).map(fun) },
             Signal::InlineConstant(storage, _) => {
@@ -485,13 +459,6 @@ impl<T: 'static> RxInternal for Signal<T> {
     #[inline(always)]
     fn rx_is_constant(&self) -> bool {
         self.is_constant()
-    }
-}
-
-impl<T: 'static> WithUntracked for Signal<T> {
-    #[inline(always)]
-    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.rx_try_with_untracked(fun)
     }
 }
 
@@ -623,7 +590,7 @@ impl<T: Clone + 'static> Signal<T> {
     }
 }
 
-// Note: GetUntracked and Get methods are now provided as default methods in the Read trait.
+// Note: GetUntracked and Get methods are now provided as default methods in the RxRead trait.
 
 impl<T: Clone + 'static> From<T> for Signal<T> {
     #[track_caller]
@@ -715,7 +682,7 @@ macro_rules! impl_signal_core_traits {
 
 impl_signal_core_traits!(ReadSignal);
 
-// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
+// Note: GetUntracked and Get are now blanket-implemented via RxRead
 
 // --- WriteSignal ---
 

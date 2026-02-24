@@ -10,7 +10,7 @@ pub struct SignalSlice<S, F, O: ?Sized> {
 
 impl<S, F, O> SignalSlice<S, F, O>
 where
-    S: WithUntracked + Clone + 'static,
+    S: RxInternal + Clone + 'static,
     F: Fn(&S::Value) -> &O + Clone + 'static,
     O: ?Sized + 'static,
 {
@@ -39,7 +39,7 @@ impl<G: std::ops::Deref, O: ?Sized> std::ops::Deref for SliceGuard<G, O> {
 
 impl<S, F, O> RxBase for SignalSlice<S, F, O>
 where
-    S: Read + Clone + 'static,
+    S: RxRead + Clone + 'static,
     for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
     F: Fn(&S::Value) -> &O + Clone + 'static,
     O: ?Sized + 'static,
@@ -74,7 +74,7 @@ where
 
 impl<S, F, O> RxInternal for SignalSlice<S, F, O>
 where
-    S: Read + Clone + 'static,
+    S: RxRead + Clone + 'static,
     for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
     F: Fn(&S::Value) -> &O + Clone + 'static,
     O: ?Sized + 'static,
@@ -110,22 +110,9 @@ where
     }
 }
 
-impl<S, F, O> WithUntracked for SignalSlice<S, F, O>
-where
-    S: Read + Clone + 'static,
-    for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
-    F: Fn(&S::Value) -> &O + Clone + 'static,
-    O: ?Sized + 'static,
-{
-    #[inline(always)]
-    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.rx_try_with_untracked(fun)
-    }
-}
-
 impl<S, F, O> IntoRx for SignalSlice<S, F, O>
 where
-    S: Read + Clone + 'static,
+    S: RxRead + Clone + 'static,
     for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
     F: Fn(&S::Value) -> &O + Clone + 'static,
     O: ?Sized + 'static,

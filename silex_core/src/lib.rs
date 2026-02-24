@@ -76,11 +76,11 @@ macro_rules! batch_read {
 #[doc(hidden)]
 macro_rules! batch_read_recurse {
     ([$s1:expr] => [$p1:ident: $t1:ty] => $body:expr) => {{
-        use $crate::traits::With;
+        use $crate::traits::RxRead;
         ($s1).with(|$p1: $t1| $body)
     }};
     ([$s1:expr, $($ss:expr),+] => [$p1:ident: $t1:ty, $($ps:ident: $ts:ty),+] => $body:expr) => {{
-        use $crate::traits::With;
+        use $crate::traits::RxRead;
         ($s1).with(|$p1: $t1| $crate::batch_read_recurse!([$($ss),+] => [$($ps: $ts),+] => $body))
     }};
 }
@@ -90,11 +90,11 @@ macro_rules! batch_read_recurse {
 macro_rules! batch_read_untracked {
     // 递归实现
     ([$s1:expr] => [$p1:ident: $t1:ty] => $body:expr) => {{
-        use $crate::traits::WithUntracked;
+        use $crate::traits::RxRead;
         ($s1).with_untracked(|$p1: $t1| $body)
     }};
     ([$s1:expr, $($ss:expr),+] => [$p1:ident: $t1:ty, $($ps:ident: $ts:ty),+] => $body:expr) => {{
-        use $crate::traits::WithUntracked;
+        use $crate::traits::RxRead;
         ($s1).with_untracked(|$p1: $t1| $crate::batch_read_untracked!([$($ss),+] => [$($ps: $ts),+] => $body))
     }};
     // 包装器，支持外部调用的逗号分隔语法

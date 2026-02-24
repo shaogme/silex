@@ -1,5 +1,5 @@
 use silex_core::reactivity::Effect;
-use silex_core::traits::{Read, RxInternal};
+use silex_core::traits::{RxInternal, RxRead};
 use silex_dom::prelude::View;
 use std::cell::RefCell;
 use std::ops::Deref;
@@ -53,7 +53,7 @@ pub struct Show<Cond, ViewFn, FalsyViewFn> {
 impl<Cond, ViewFn> Show<Cond, ViewFn, fn() -> ()> {
     pub fn new(condition: Cond, view: ViewFn) -> Self
     where
-        Cond: Read<Value = bool> + 'static,
+        Cond: RxRead<Value = bool> + 'static,
         for<'a> Cond::ReadOutput<'a>: Deref<Target = bool>,
         ViewFn: ViewFactory + 'static,
     {
@@ -68,7 +68,7 @@ impl<Cond, ViewFn> Show<Cond, ViewFn, fn() -> ()> {
 // Builder 方法
 impl<Cond, ViewFn, FalsyViewFn> Show<Cond, ViewFn, FalsyViewFn>
 where
-    Cond: Read<Value = bool> + 'static,
+    Cond: RxRead<Value = bool> + 'static,
     for<'a> Cond::ReadOutput<'a>: Deref<Target = bool>,
     ViewFn: ViewFactory + 'static,
     FalsyViewFn: ViewFactory + 'static,
@@ -88,7 +88,7 @@ where
 
 impl<Cond, ViewFn, FalsyViewFn> View for Show<Cond, ViewFn, FalsyViewFn>
 where
-    Cond: Read<Value = bool> + 'static,
+    Cond: RxRead<Value = bool> + 'static,
     for<'a> Cond::ReadOutput<'a>: Deref<Target = bool>,
     ViewFn: ViewFactory + Clone + 'static,
     FalsyViewFn: ViewFactory + Clone + 'static,
@@ -171,7 +171,7 @@ use silex_core::traits::IntoRx;
 pub trait SignalShowExt: IntoRx<Value = bool> {
     fn when<F>(self, view: F) -> Show<Self::RxType, F, fn() -> ()>
     where
-        Self::RxType: Read<Value = bool> + 'static,
+        Self::RxType: RxRead<Value = bool> + 'static,
         for<'a> <Self::RxType as RxInternal>::ReadOutput<'a>: Deref<Target = bool>,
         F: ViewFactory + 'static;
 }
@@ -183,7 +183,7 @@ where
 {
     fn when<F>(self, view: F) -> Show<Self::RxType, F, fn() -> ()>
     where
-        Self::RxType: Read<Value = bool> + 'static,
+        Self::RxType: RxRead<Value = bool> + 'static,
         for<'a> <S::RxType as RxInternal>::ReadOutput<'a>: Deref<Target = bool>,
         F: ViewFactory + 'static,
     {

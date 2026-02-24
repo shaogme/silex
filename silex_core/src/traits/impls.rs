@@ -77,12 +77,6 @@ macro_rules! impl_closure_rx {
             }
         }
 
-        impl<$($gen),*> WithUntracked for $target $(where $($bounds)*, T: 'static)? {
-            #[inline(always)]
-            fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-                self.rx_try_with_untracked(fun)
-            }
-        }
     };
 }
 
@@ -146,16 +140,6 @@ impl<F: RxInternal, M> RxInternal for Rx<F, M> {
     #[inline(always)]
     fn rx_is_constant(&self) -> bool {
         self.0.rx_is_constant()
-    }
-}
-
-impl<F, M> WithUntracked for Rx<F, M>
-where
-    F: RxInternal + WithUntracked,
-{
-    #[inline(always)]
-    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.0.try_with_untracked(fun)
     }
 }
 
@@ -251,16 +235,6 @@ macro_rules! impl_tuple_everything {
             #[inline(always)] fn rx_is_constant(&self) -> bool { $(self.$idx.rx_is_constant() && )+ true }
         }
 
-        impl<$($T),+> WithUntracked for ($($T,)+)
-        where
-            $($T: RxInternal),+,
-            $($T::Value: Clone + 'static),+
-        {
-            #[inline(always)]
-            fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-                self.rx_try_with_untracked(fun)
-            }
-        }
     };
 }
 
@@ -376,13 +350,6 @@ macro_rules! impl_rx_delegate {
                 $crate::reactivity::Signal::derive(move || $crate::traits::Read::get(&self))
             }
         }
-
-        impl<T: Clone + 'static> $crate::traits::WithUntracked for $target<T> {
-            #[inline(always)]
-            fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-                $crate::traits::RxInternal::rx_try_with_untracked(self, fun)
-            }
-        }
     };
     ($target:ident, SignalID, $is_const:expr) => {
         impl<T: 'static> $crate::traits::RxBase for $target<T> {
@@ -471,13 +438,6 @@ macro_rules! impl_rx_delegate {
                 $is_const
             }
         }
-
-        impl<T: 'static> $crate::traits::WithUntracked for $target<T> {
-            #[inline(always)]
-            fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-                $crate::traits::RxInternal::rx_try_with_untracked(self, fun)
-            }
-        }
     };
     ($target:ident, $field:ident, $is_const:expr) => {
         impl<T: 'static> $crate::traits::RxBase for $target<T> {
@@ -548,13 +508,6 @@ macro_rules! impl_rx_delegate {
             #[inline(always)]
             fn rx_is_constant(&self) -> bool {
                 $is_const
-            }
-        }
-
-        impl<T: 'static> $crate::traits::WithUntracked for $target<T> {
-            #[inline(always)]
-            fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-                $crate::traits::RxInternal::rx_try_with_untracked(self, fun)
             }
         }
     };
@@ -778,33 +731,24 @@ crate::impl_rx_ops!();
 
 impl<S> ReactivePartialEq for S
 where
-    S: With + Clone + 'static,
+    S: RxRead + Clone + 'static,
     S::Value: PartialEq + Sized + 'static,
+    for<'a> S::ReadOutput<'a>: Deref<Target = S::Value>,
 {
 }
 
 impl<S> ReactivePartialOrd for S
 where
-    S: With + Clone + 'static,
+    S: RxRead + Clone + 'static,
     S::Value: PartialOrd + Sized + 'static,
+    for<'a> S::ReadOutput<'a>: Deref<Target = S::Value>,
 {
 }
 
-impl<T> With for T
-where
-    T: WithUntracked + RxBase,
-{
-    #[track_caller]
-    fn try_with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.track();
-        self.try_with_untracked(fun)
-    }
-}
-
-// Map is based on WithUntracked, not Get - this is intentional for zero-copy support
 impl<S> Map for S
 where
-    S: WithUntracked + Clone + 'static,
+    S: RxRead + Clone + 'static,
+    for<'a> S::ReadOutput<'a>: Deref<Target = S::Value>,
 {
     fn map<U, F>(self, f: F) -> crate::Rx<DerivedPayload<Self, F>, crate::RxValue>
     where
@@ -816,8 +760,9 @@ where
 
 impl<T> Memoize for T
 where
-    T: With + Clone + 'static,
+    T: RxRead + Clone + 'static,
     T::Value: Clone + Sized,
+    for<'a> T::ReadOutput<'a>: Deref<Target = T::Value>,
 {
     fn memo(self) -> Memo<Self::Value>
     where

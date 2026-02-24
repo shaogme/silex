@@ -149,7 +149,8 @@ impl<Arg: 'static, T: Clone + 'static, E: Clone + 'static> Mutation<Arg, T, E> {
 
     pub fn mutate_with<A>(&self, arg_accessor: A)
     where
-        A: With<Value = Arg>,
+        A: RxRead<Value = Arg>,
+        for<'a> A::ReadOutput<'a>: std::ops::Deref<Target = Arg>,
         Arg: Clone,
     {
         self.mutate(arg_accessor.with(Clone::clone));
@@ -239,13 +240,6 @@ impl<Arg, T: Clone + 'static, E: Clone + 'static> RxInternal for Mutation<Arg, T
     #[inline(always)]
     fn rx_is_constant(&self) -> bool {
         false
-    }
-}
-
-impl<Arg, T: Clone + 'static, E: Clone + 'static> WithUntracked for Mutation<Arg, T, E> {
-    #[inline(always)]
-    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.rx_try_with_untracked(fun)
     }
 }
 

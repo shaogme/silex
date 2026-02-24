@@ -1,6 +1,6 @@
 use crate::router::context::use_router;
 
-use silex_core::traits::Read;
+use silex_core::traits::RxRead;
 use silex_dom::attribute::{AttributeBuilder, GlobalAttributes};
 use silex_dom::element::TypedElement;
 use silex_dom::prelude::{GlobalEventAttributes, View};

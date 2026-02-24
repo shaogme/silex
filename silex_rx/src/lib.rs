@@ -197,7 +197,7 @@ pub fn rx(input: TokenStream) -> TokenStream {
         // 按相反顺序嵌套，以便外层先被处理
         for (orig, refer) in pairs.iter().rev() {
             nested = quote! {
-                #prefix::traits::With::with(&#orig, |#refer| {
+                #prefix::traits::RxRead::with(&#orig, |#refer| {
                     #nested
                 })
             };
@@ -208,7 +208,7 @@ pub fn rx(input: TokenStream) -> TokenStream {
         let mut nested = quote! { #expr };
         for (orig, refer) in pairs.iter().rev() {
             nested = quote! {
-                #prefix::traits::With::with(&#orig, |#refer| {
+                #prefix::traits::RxRead::with(&#orig, |#refer| {
                     #nested
                 })
             };

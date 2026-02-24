@@ -4,7 +4,7 @@
 //!
 //! Silex 的 Trait 系统建立在以下三个核心理念之上：
 //!
-//! 1. **零拷贝 (Zero-Copy)**：[`With`]（基于闭包的访问）是系统的第一公民。
+//! 1. **零拷贝 (Zero-Copy)**：闭包读取是系统的第一公民。
 //!    - 信号值通常存储在 Arena（Map/Vec）中。访问它们涉及获取锁。
 //!    - 使用闭包允许直接处理 `&T`，避免了不必要的 `Clone` 开销。
 //!    - 天然支持动态大小类型（DST），如 `str` 或 `[T]`。
@@ -21,9 +21,9 @@
 //! - **零拷贝路径**：对于追求极致性能的多路且无需克隆的场景，依然推荐使用 [`batch_read!`] 宏，它提供了真实的底层结构分段式借用多路读取。
 //!
 //! ## 核心原则
-//! 1. **组合语义**：大多数高级 Trait（如 `With`, `Read`, `Map`）都是通过基础 Trait 组合而成的 Blanket Implementations。
-//! 2. **原子化实现**：底层原语只需实现 [`Track`], [`Notify`], [`WithUntracked`] 和 [`UpdateUntracked`]。
-//! 3. **自适应读取**：[`Read`] Trait 统一了响应式与非响应式读取，并提供可选的克隆访问（`get` 系列方法）。
+//! 1. **组合语义**：大多数高级 Trait（如 `RxRead`, `Map`）都是通过基础 Trait 组合而成的 Blanket Implementations。
+//! 2. **原子化实现**：底层原语只需实现 [`Track`], [`Notify`] 和 [`UpdateUntracked`]。
+//! 3. **自适应读取**：[`RxRead`] Trait 统一了响应式与非响应式读取，并提供可选的克隆访问（`get` 系列方法）。
 //! 4. **容错性**：大多数读取操作包含 `try_` 变体，在信号已被销毁（Disposed）时安全返回 `None`。
 //!
 //! ## Trait 结构一览
@@ -33,16 +33,14 @@
 //! |---------------------|--------------------------------------------------------------------------------|
 //! | [`Track`]           | 追踪变化，将当前值添加为当前响应式上下文的依赖。                               |
 //! | [`Notify`]          | 通知订阅者该值已更改。                                                         |
-//! | [`WithUntracked`]   | 提供对值的闭包式不可变访问（不追踪依赖）。                                     |
 //! | [`UpdateUntracked`] | 提供闭包式可变更新（不触发通知）。                                            |
 //! | [`RxInternal`]      | **内部桥梁**：被包装在 `Rx` 内部的统一操作接口（对用户隐藏）。                |
 //!
 //! ### 派生能力 (基于自动实现)
 //! | 类别 | Trait | 组合方式 | 描述 |
 //! |------|-------|---------|------|
-//! | **读取** | [`With`] | `WithUntracked` + `Track` | 带响应式追踪的闭包式访问（零拷贝）。 |
-//! | | [`Read`] | `RxInternal` | **核心读取接口**：支持自适应读取（Guard）与克隆读取（`get`）。 |
-//! | | [`Map`] | `With` | 创建派生信号（`Derived`），返回 `Rx`。 |
+//! | **读取** | [`RxRead`] | `RxInternal` | **核心读取接口**：支持自适应读取（Guard/闭包）与克隆读取（`get`）。 |
+//! | | [`Map`] | `RxRead` | 创建派生信号（`Derived`），返回 `Rx`。 |
 //! | **更新** | [`Update`] | `UpdateUntracked` + `Notify` | 应用闭包并通知系统刷新。 |
 //! | | [`Set`] | `Update` | 直接覆盖旧值。 |
 //! | **转换** | [`IntoRx`] | — | **大一统接口**：将任意类型转化为统一的 `Rx`。 |
@@ -231,18 +229,20 @@ macro_rules! reactive_compare_method {
 }
 
 /// Provides a fluent API for checking equality on reactive values.
-pub trait ReactivePartialEq: With + Clone + 'static
+pub trait ReactivePartialEq: RxRead + Clone + 'static
 where
     Self::Value: PartialEq + Sized + 'static,
+    for<'a> Self::ReadOutput<'a>: Deref<Target = Self::Value>,
 {
     reactive_compare_method!(equals, eq, ==, PartialEq);
     reactive_compare_method!(not_equals, ne, !=, PartialEq);
 }
 
 /// Provides a fluent API for checking ordering on reactive values.
-pub trait ReactivePartialOrd: With + Clone + 'static
+pub trait ReactivePartialOrd: RxRead + Clone + 'static
 where
     Self::Value: PartialOrd + Sized + 'static,
+    for<'a> Self::ReadOutput<'a>: Deref<Target = Self::Value>,
 {
     reactive_compare_method!(greater_than, gt, >, PartialOrd);
     reactive_compare_method!(less_than, lt, <, PartialOrd);
@@ -280,12 +280,17 @@ macro_rules! unwrap_rx {
     }};
 }
 
-/// 自适应读取 Trait。
-/// 用户无需关心底层是克隆还是借用，该 Trait 会根据类型自动选择最优路径。
-pub trait Read: RxInternal
+/// 统一的自适应读取与访问 Trait (Unified Read and Access)。
+/// 向上统一 Guard 访问机制（借用）和闭包访问机制（映射），
+/// 用户无需关心底层是克隆还是借用，自动根据类型智能提供最合适的方式。
+pub trait RxRead: RxInternal
 where
     for<'a> Self::ReadOutput<'a>: Deref<Target = Self::Value>,
 {
+    // ==========================================
+    // 1. Guard 方式的访问（原 Read trait 功能）
+    // ==========================================
+
     /// 执行响应式读取，返回一个智能守卫。
     #[track_caller]
     fn read(&self) -> Self::ReadOutput<'_> {
@@ -310,8 +315,41 @@ where
         self.rx_read_untracked()
     }
 
-    /// Clones and returns the value of the signal,
-    /// or `None` if the signal has already been disposed.
+    // ==========================================
+    // 2. 闭包方式的访问（原 With/WithUntracked trait 功能）
+    // ==========================================
+
+    /// 响应式读取：订阅更改，并通过闭包访问底层值，返回闭包执行的结果。
+    #[track_caller]
+    fn with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> U {
+        self.try_with(fun).unwrap_or_else(unwrap_rx!(self))
+    }
+
+    /// 响应式读取：订阅更改，并通过闭包访问底层值。如果信号已被销毁，返回 `None`。
+    #[track_caller]
+    fn try_with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.track();
+        self.rx_try_with_untracked(fun)
+    }
+
+    /// 非响应式读取：通过闭包访问底层值（不订阅），返回闭包执行的结果。
+    #[track_caller]
+    fn with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> U {
+        self.try_with_untracked(fun)
+            .unwrap_or_else(unwrap_rx!(self))
+    }
+
+    /// 非响应式读取：通过闭包访问底层值（不订阅）。如果信号已被销毁，返回 `None`。
+    #[track_caller]
+    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.rx_try_with_untracked(fun)
+    }
+
+    // ==========================================
+    // 3. 克隆获取（Getters）
+    // ==========================================
+
+    /// 非响应式地克隆和返回值。如果是被销毁的，返回 None。
     #[track_caller]
     fn try_get_untracked(&self) -> Option<Self::Value>
     where
@@ -320,10 +358,10 @@ where
         self.try_read_untracked().map(|v| v.clone())
     }
 
-    /// Clones and returns the value of the signal.
+    /// 非响应式地克隆和返回值。
     ///
     /// # Panics
-    /// Panics if you try to access a signal that has been disposed.
+    /// 访问被销毁的信号时报错。
     #[track_caller]
     fn get_untracked(&self) -> Self::Value
     where
@@ -333,8 +371,7 @@ where
             .unwrap_or_else(|| unwrap_rx!(self)())
     }
 
-    /// Subscribes to the signal, then clones and returns the value of the signal,
-    /// or `None` if the signal has already been disposed.
+    /// 响应式地订阅信号，克隆并返回值。已被销毁则返回 None。
     #[track_caller]
     fn try_get(&self) -> Option<Self::Value>
     where
@@ -343,10 +380,10 @@ where
         self.try_read().map(|v| v.clone())
     }
 
-    /// Subscribes to the signal, then clones and returns the value of the signal.
+    /// 响应式地订阅信号，克隆并返回值。
     ///
     /// # Panics
-    /// Panics if you try to access a signal that has been disposed.
+    /// 访问被销毁的信号时报错。
     #[track_caller]
     fn get(&self) -> Self::Value
     where
@@ -355,10 +392,8 @@ where
         self.try_get().unwrap_or_else(|| unwrap_rx!(self)())
     }
 
-    /// 尝试获取值的副本。该方法不强制要求 `Clone` 约束。
-    /// - 如果信号已销毁：返回 `None`。
-    /// - 如果类型不支持 `Clone`：返回 `None`。
-    /// - 否则：返回 `Some(T)`。
+    /// 尝试获取值的副本。该方法不强制要求 `Clone` 约束（自适应回退）。
+    /// - 如果信号已销毁 / 未实现 Clone：返回 `None`。
     #[track_caller]
     fn try_get_cloned(&self) -> Option<Self::Value>
     where
@@ -368,7 +403,7 @@ where
         self.rx_get_adaptive()
     }
 
-    /// 非响应式地尝试获取值的副本。
+    /// 非响应式地尝试获取值的副本（自适应回退）。
     #[track_caller]
     fn try_get_cloned_untracked(&self) -> Option<Self::Value>
     where
@@ -387,7 +422,7 @@ where
     }
 }
 
-impl<T: ?Sized + RxInternal> Read for T where for<'a> T::ReadOutput<'a>: Deref<Target = T::Value> {}
+impl<T: ?Sized + RxInternal> RxRead for T where for<'a> T::ReadOutput<'a>: Deref<Target = T::Value> {}
 
 /// Allows disposing an arena-allocated signal before its owner has been disposed.
 pub trait Dispose {
@@ -398,47 +433,10 @@ pub trait Dispose {
     fn dispose(self);
 }
 
-/// Give read-only access to a signal's value by reference inside a closure,
-/// without tracking the value reactively.
-pub trait WithUntracked: RxBase {
-    /// Applies the closure to the value, and returns the result,
-    /// or `None` if the signal has already been disposed.
-    #[track_caller]
-    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>;
-
-    /// Applies the closure to the value, and returns the result.
-    ///
-    /// # Panics
-    /// Panics if you try to access a signal that has been disposed.
-    #[track_caller]
-    fn with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> U {
-        self.try_with_untracked(fun)
-            .unwrap_or_else(unwrap_rx!(self))
-    }
-}
-
-/// Give read-only access to a signal's value by reference inside a closure,
-/// and subscribes the active reactive observer (an effect or computed) to changes in its value.
-pub trait With: RxBase {
-    /// Subscribes to the signal, applies the closure to the value, and returns the result,
-    /// or `None` if the signal has already been disposed.
-    #[track_caller]
-    fn try_with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>;
-
-    /// Subscribes to the signal, applies the closure to the value, and returns the result.
-    ///
-    /// # Panics
-    /// Panics if you try to access a signal that has been disposed.
-    #[track_caller]
-    fn with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> U {
-        self.try_with(fun).unwrap_or_else(unwrap_rx!(self))
-    }
-}
-
 /// Allows creating a derived signal from this signal.
 ///
-/// Unlike [`Get`], this trait uses [`WithUntracked`] as its basis, meaning it works
-/// with the zero-copy closure-based access pattern.
+/// Unlike [`Get`], this trait uses closure-based access as its basis, meaning it works
+/// with the zero-copy access pattern.
 pub trait Map: RxBase + Sized {
     /// Creates a derived signal from this signal.
     fn map<U, F>(self, f: F) -> crate::Rx<DerivedPayload<Self, F>, crate::RxValue>
@@ -449,9 +447,10 @@ pub trait Map: RxBase + Sized {
 /// Allows converting a signal into a memoized signal.
 ///
 /// Requires `Value: Clone + Sized` since memoization needs to clone and store values.
-pub trait Memoize: With + Clone + 'static
+pub trait Memoize: RxRead + Clone + 'static
 where
     Self::Value: Sized,
+    for<'a> Self::ReadOutput<'a>: Deref<Target = Self::Value>,
 {
     /// Memoizes the value of the signal.
     fn memo(self) -> Memo<Self::Value>

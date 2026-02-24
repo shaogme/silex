@@ -3,7 +3,7 @@ use crate::flow::for_loop::ForLoopSource;
 use silex_core::reactivity::{
     Effect, NodeId, ReadSignal, WriteSignal, batch, create_scope, dispose, signal,
 };
-use silex_core::traits::{IntoRx, Set, With};
+use silex_core::traits::{IntoRx, RxRead, Set};
 use silex_dom::prelude::View;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -22,7 +22,8 @@ pub struct Index<ItemsFn, Item, Items, MapFn, V> {
 
 impl<ItemsFn, Item, Items, MapFn, V> Index<ItemsFn, Item, Items, MapFn, V>
 where
-    ItemsFn: With<Value = Items> + 'static,
+    ItemsFn: RxRead<Value = Items> + 'static,
+    for<'a> ItemsFn::ReadOutput<'a>: std::ops::Deref<Target = Items>,
     Items: ForLoopSource<Item = Item> + 'static,
     MapFn: Fn(ReadSignal<Item>, usize) -> V + 'static,
     V: View,
@@ -48,7 +49,8 @@ struct IndexRow<Item> {
 
 impl<ItemsFn, Item, Items, MapFn, V> View for Index<ItemsFn, Item, Items, MapFn, V>
 where
-    ItemsFn: With<Value = Items> + 'static,
+    ItemsFn: RxRead<Value = Items> + 'static,
+    for<'a> ItemsFn::ReadOutput<'a>: std::ops::Deref<Target = Items>,
     Items: ForLoopSource<Item = Item> + 'static,
     MapFn: Fn(ReadSignal<Item>, usize) -> V + 'static,
     V: View,

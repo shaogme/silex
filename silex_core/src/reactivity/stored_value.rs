@@ -45,7 +45,7 @@ impl<T: 'static> StoredValue<T> {
     where
         T: Clone,
     {
-        Read::get_untracked(self)
+        RxRead::get_untracked(self)
     }
 
     pub fn with_name(self, name: impl Into<String>) -> Self {
@@ -124,13 +124,6 @@ impl<T: 'static> RxInternal for StoredValue<T> {
     #[inline(always)]
     fn rx_is_constant(&self) -> bool {
         true
-    }
-}
-
-impl<T: 'static> WithUntracked for StoredValue<T> {
-    #[inline(always)]
-    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.rx_try_with_untracked(fun)
     }
 }
 

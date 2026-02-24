@@ -1,6 +1,6 @@
 use silex_core::SilexError;
 use silex_core::reactivity::{Constant, Effect, Memo, ReadSignal, RwSignal, Signal};
-use silex_core::traits::{IntoRx, Read, With};
+use silex_core::traits::{IntoRx, RxRead};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::ops::Deref;
@@ -41,7 +41,7 @@ pub trait RxTask<M> {
 // 1. Value Calculation: any RxInternal
 impl<F, T> RxTask<silex_core::RxValue> for F
 where
-    F: Read<Value = T> + 'static,
+    F: RxRead<Value = T> + 'static,
     for<'a> F::ReadOutput<'a>: Deref<Target = T>,
     T: ReactiveApply + Clone + 'static,
 {
@@ -206,7 +206,8 @@ fn apply_via_signal<S>(source: S, el: &WebElem, target: ApplyTarget)
 where
     S: IntoRx,
     S::Value: ReactiveApply + Clone + 'static,
-    S::RxType: With<Value = S::Value> + Clone + 'static,
+    S::RxType: RxRead<Value = S::Value> + Clone + 'static,
+    for<'a> <S::RxType as silex_core::traits::RxInternal>::ReadOutput<'a>: Deref<Target = S::Value>,
 {
     let signal = source.into_rx();
     let owned_target = OwnedApplyTarget::from(target);
@@ -487,7 +488,8 @@ where
     K: AsRef<str>,
     S: IntoRx,
     S::Value: ReactiveApply + Clone + 'static,
-    S::RxType: With<Value = S::Value> + Clone + 'static,
+    S::RxType: RxRead<Value = S::Value> + Clone + 'static,
+    for<'a> <S::RxType as silex_core::traits::RxInternal>::ReadOutput<'a>: Deref<Target = S::Value>,
 {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
         let (key, source) = self;

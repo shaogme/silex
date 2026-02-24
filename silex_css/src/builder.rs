@@ -1,5 +1,5 @@
 use crate::types::{ValidFor, props};
-use silex_core::traits::{IntoRx, Read, RxInternal};
+use silex_core::traits::{IntoRx, RxInternal, RxRead};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable};
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
@@ -91,7 +91,7 @@ impl Style {
     where
         V: IntoRx + 'static,
         V::Value: Display + ValidFor<P> + Clone + Sized,
-        V::RxType: Read<Value = V::Value> + Clone + 'static,
+        V::RxType: RxRead<Value = V::Value> + Clone + 'static,
         for<'a> <V::RxType as RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = V::Value>,
     {
         if value.is_constant() {
@@ -119,7 +119,7 @@ macro_rules! generate_builder_methods {
                 where
                     V: IntoRx + 'static,
                     V::Value: ValidFor<props::$pascal> + Display + Clone + Sized + 'static,
-                    V::RxType: Read<Value = V::Value> + Clone + 'static,
+                    V::RxType: RxRead<Value = V::Value> + Clone + 'static,
                     for<'a> <V::RxType as RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = V::Value>,
                 {
                     self.add_rule::<V, props::$pascal>($kebab, value)

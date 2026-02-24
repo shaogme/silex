@@ -1,6 +1,6 @@
 use crate::{SilexError, SilexResult};
 use silex_core::reactivity::{Effect, NodeId, batch, create_scope, dispose};
-use silex_core::traits::With;
+use silex_core::traits::RxRead;
 use silex_dom::prelude::View;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -108,7 +108,8 @@ impl<ItemsFn, KeyFn, MapFn> Clone for For<ItemsFn, KeyFn, MapFn> {
 impl<ItemsFn, KeyFn, MapFn> For<ItemsFn, KeyFn, MapFn> {
     pub fn new<Item, Key, V>(items: ItemsFn, key: KeyFn, map: MapFn) -> Self
     where
-        ItemsFn: With,
+        ItemsFn: RxRead,
+        for<'a> ItemsFn::ReadOutput<'a>: std::ops::Deref<Target = ItemsFn::Value>,
         ItemsFn::Value: ForLoopSource<Item = Item>,
         KeyFn: Fn(&Item) -> Key,
         MapFn: Fn(Item) -> V,
@@ -126,7 +127,8 @@ impl<ItemsFn, KeyFn, MapFn> View for For<ItemsFn, KeyFn, MapFn>
 where
     // ItemsFn returns the Source directly (e.g. Vec or Result<Vec>)
     // We access it by reference via `With`.
-    ItemsFn: With + 'static,
+    ItemsFn: RxRead + 'static,
+    for<'a> ItemsFn::ReadOutput<'a>: std::ops::Deref<Target = ItemsFn::Value>,
     ItemsFn::Value: ForLoopSource + 'static,
     // Access Item type via ForLoopSource assoc type
     KeyFn: LoopKey<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
