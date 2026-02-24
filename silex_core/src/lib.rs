@@ -4,6 +4,7 @@ pub mod log;
 pub mod node_ref;
 pub mod reactivity;
 
+pub mod logic;
 pub mod traits;
 
 pub use callback::Callback;
@@ -37,6 +38,7 @@ macro_rules! rx {
 pub mod prelude {
     pub use crate::callback::Callback;
     pub use crate::log::*;
+    pub use crate::logic::*;
     pub use crate::node_ref::NodeRef;
     pub use crate::reactivity::*;
     pub use crate::traits::*;

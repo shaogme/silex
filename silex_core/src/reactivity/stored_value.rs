@@ -36,9 +36,8 @@ impl<T: 'static> StoredValue<T> {
     }
 
     // Kept for backward compat or ease of use
-    // Kept for backward compat or ease of use
     pub fn set_untracked(&self, value: T) {
-        SetUntracked::set_untracked(self, value)
+        RxWrite::set_untracked(self, value)
     }
 
     pub fn get_untracked(&self) -> T
@@ -144,8 +143,17 @@ impl<T: 'static> IntoRx for StoredValue<T> {
     }
 }
 
-impl<T: 'static> UpdateUntracked for StoredValue<T> {
-    fn try_update_untracked<U>(&self, fun: impl FnOnce(&mut Self::Value) -> U) -> Option<U> {
+impl<T: 'static> RxWrite for StoredValue<T> {
+    #[inline(always)]
+    fn rx_try_update_untracked<URet>(
+        &self,
+        fun: impl FnOnce(&mut Self::Value) -> URet,
+    ) -> Option<URet> {
         silex_reactivity::try_update_stored_value(self.id, fun)
+    }
+
+    #[inline(always)]
+    fn rx_notify(&self) {
+        // StoredValue is non-reactive, notify is a no-op
     }
 }

@@ -198,7 +198,7 @@ pub trait GlobalEventAttributes: AttributeBuilder {
     }
 
     fn bind_value(self, signal: silex_core::reactivity::RwSignal<String>) -> Self {
-        use silex_core::traits::Set;
+        use silex_core::traits::RxWrite;
         let this = self.on_input(move |value| {
             signal.set(value);
         });

@@ -1,6 +1,6 @@
 use silex_core::error::{ErrorContext, SilexError};
 use silex_core::reactivity::{Effect, provide_context, signal};
-use silex_core::traits::{RxRead, Set};
+use silex_core::traits::{RxRead, RxWrite};
 use silex_dom::attribute::GlobalAttributes;
 use silex_dom::view::View;
 use silex_html::div;

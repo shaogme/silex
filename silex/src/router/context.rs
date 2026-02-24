@@ -1,5 +1,5 @@
 use silex_core::reactivity::{Memo, ReadSignal, Signal, WriteSignal, provide_context, use_context};
-use silex_core::traits::{RxRead, Set};
+use silex_core::traits::{RxRead, RxWrite};
 use silex_dom::view::{AnyView, View};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -244,7 +244,7 @@ pub fn use_query_map() -> silex_core::reactivity::Memo<HashMap<String, String>> 
 /// 一个 RwSignal，读写它会自动同步到 URL
 pub fn use_query_signal(key: impl Into<String>) -> silex_core::reactivity::RwSignal<String> {
     use silex_core::reactivity::{Effect, RwSignal, StoredValue};
-    use silex_core::traits::{RxRead, SetUntracked};
+    use silex_core::traits::{RxRead, RxWrite};
 
     let key = key.into();
     let query_map = use_query_map();

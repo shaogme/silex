@@ -724,40 +724,18 @@ impl<T: 'static> RxBase for WriteSignal<T> {
     }
 }
 
-impl<T> Notify for WriteSignal<T> {
-    fn notify(&self) {
-        notify_signal(self.id);
-    }
-}
-
-impl<T: 'static> UpdateUntracked for WriteSignal<T> {
-    fn try_update_untracked<U>(&self, fun: impl FnOnce(&mut Self::Value) -> U) -> Option<U> {
+impl<T: 'static> RxWrite for WriteSignal<T> {
+    #[inline(always)]
+    fn rx_try_update_untracked<URet>(
+        &self,
+        fun: impl FnOnce(&mut Self::Value) -> URet,
+    ) -> Option<URet> {
         try_update_signal_silent(self.id, fun)
     }
-}
 
-impl<T: Clone + 'static> SignalSetter for WriteSignal<T> {
-    fn setter(self, value: Self::Value) -> impl Fn() + Clone + 'static {
-        move || self.set(value.clone())
-    }
-}
-
-impl<T: 'static> SignalUpdater for WriteSignal<T> {
-    fn updater<F>(self, f: F) -> impl Fn() + Clone + 'static
-    where
-        F: Fn(&mut Self::Value) + Clone + 'static,
-    {
-        move || self.update(f.clone())
-    }
-}
-
-impl<T: 'static> Update for WriteSignal<T> {
-    fn try_maybe_update<U>(&self, fun: impl FnOnce(&mut Self::Value) -> (bool, U)) -> Option<U> {
-        let (did_update, val) = self.try_update_untracked(fun)?;
-        if did_update {
-            self.notify();
-        }
-        Some(val)
+    #[inline(always)]
+    fn rx_notify(&self) {
+        notify_signal(self.id);
     }
 }
 
@@ -827,42 +805,18 @@ impl<T: 'static> RwSignal<T> {
     }
 }
 
-impl<T: 'static> Notify for RwSignal<T> {
-    fn notify(&self) {
-        self.write.notify();
+impl<T: 'static> RxWrite for RwSignal<T> {
+    #[inline(always)]
+    fn rx_try_update_untracked<URet>(
+        &self,
+        fun: impl FnOnce(&mut Self::Value) -> URet,
+    ) -> Option<URet> {
+        self.write.rx_try_update_untracked(fun)
     }
-}
 
-// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
-
-// RwSignal RxBase is handled by the impl_rx_delegate macro below.
-
-impl<T: 'static> UpdateUntracked for RwSignal<T> {
-    fn try_update_untracked<U>(&self, fun: impl FnOnce(&mut Self::Value) -> U) -> Option<U> {
-        self.write.try_update_untracked(fun)
-    }
-}
-
-impl<T: 'static> Update for RwSignal<T> {
-    fn try_maybe_update<U>(&self, fun: impl FnOnce(&mut Self::Value) -> (bool, U)) -> Option<U> {
-        self.write.try_maybe_update(fun)
-    }
-}
-
-// Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
-
-impl<T: Clone + 'static> SignalSetter for RwSignal<T> {
-    fn setter(self, value: Self::Value) -> impl Fn() + Clone + 'static {
-        move || self.set(value.clone())
-    }
-}
-
-impl<T: 'static> SignalUpdater for RwSignal<T> {
-    fn updater<F>(self, f: F) -> impl Fn() + Clone + 'static
-    where
-        F: Fn(&mut Self::Value) + Clone + 'static,
-    {
-        move || self.update(f.clone())
+    #[inline(always)]
+    fn rx_notify(&self) {
+        self.write.rx_notify();
     }
 }
 

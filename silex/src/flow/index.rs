@@ -3,7 +3,7 @@ use crate::flow::for_loop::ForLoopSource;
 use silex_core::reactivity::{
     Effect, NodeId, ReadSignal, WriteSignal, batch, create_scope, dispose, signal,
 };
-use silex_core::traits::{IntoRx, RxRead, Set};
+use silex_core::traits::{IntoRx, RxRead, RxWrite};
 use silex_dom::prelude::View;
 use std::cell::RefCell;
 use std::rc::Rc;
