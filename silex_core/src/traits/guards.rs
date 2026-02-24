@@ -85,14 +85,13 @@ macro_rules! impl_tuple_guard {
 
         impl<'a, $($G, $V),+> Deref for $name<'a, $($G, $V),+>
         where
-            $($G: Deref<Target = $V>),+,
-            $($V: Clone),+
+            $($G: Deref<Target = $V>, $V: Clone),+
         {
             type Target = ($($V,)+);
 
             fn deref(&self) -> &Self::Target {
                 self.$cell_idx.get_or_init(|| {
-                    ($(self.$idx.deref().clone(),)+)
+                    ($( (*self.$idx).clone() ,)+)
                 })
             }
         }

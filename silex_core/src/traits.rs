@@ -85,6 +85,32 @@ pub mod guards;
 #[doc(hidden)]
 pub use guards::*;
 
+/// 内部自适应工具，用于在不引入显式 Clone 约束的情况下探测克隆能力。
+#[doc(hidden)]
+pub mod adaptive {
+    pub struct AdaptiveWrapper<'a, T>(pub &'a T);
+
+    impl<'a, T: Clone> AdaptiveWrapper<'a, T> {
+        #[inline(always)]
+        pub fn maybe_clone(&self) -> Option<T> {
+            Some(self.0.clone())
+        }
+    }
+
+    pub trait AdaptiveFallback {
+        type Value;
+        fn maybe_clone(&self) -> Option<Self::Value>;
+    }
+
+    impl<'a, T> AdaptiveFallback for AdaptiveWrapper<'a, T> {
+        type Value = T;
+        #[inline(always)]
+        fn maybe_clone(&self) -> Option<T> {
+            None
+        }
+    }
+}
+
 /// 允许将各种类型（原始类型、信号、Rx）转换为统一的 `Rx` 包装器。
 ///
 /// *注意*: 原始类型（i32, f64, &str 等）会自动转换为 `Constant<T>`。
@@ -104,11 +130,11 @@ pub trait IntoRx {
 
 /// A trait used internally by `Rx` to delegate calls to either a closure or a reactive primitive.
 #[doc(hidden)]
-pub trait RxInternal {
+pub trait RxInternal: DefinedAt {
     type Value: ?Sized;
 
     /// 自适应返回类型：由具体实现决定返回 Borrowed 或 Owned
-    type ReadOutput<'a>: Deref<Target = Self::Value>
+    type ReadOutput<'a>
     where
         Self: 'a;
 
@@ -125,10 +151,8 @@ pub trait RxInternal {
     /// 非响应式读取：不追踪依赖并返回守卫。
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>>;
 
-    #[inline(always)]
-    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.rx_read_untracked().map(|g| fun(&*g))
-    }
+    /// 提供对值的闭包式不可变访问（不追踪依赖）。
+    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>;
 
     #[inline(always)]
     fn rx_defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
@@ -148,6 +172,18 @@ pub trait RxInternal {
     #[inline(always)]
     fn rx_is_constant(&self) -> bool {
         false
+    }
+
+    #[inline(always)]
+    fn rx_get_adaptive(&self) -> Option<Self::Value>
+    where
+        Self::Value: Sized,
+    {
+        self.rx_try_with_untracked(|v| {
+            use crate::traits::adaptive::{AdaptiveFallback, AdaptiveWrapper};
+            AdaptiveWrapper(v).maybe_clone()
+        })
+        .flatten()
     }
 }
 
@@ -247,7 +283,10 @@ macro_rules! unwrap_rx {
 
 /// 自适应读取 Trait。
 /// 用户无需关心底层是克隆还是借用，该 Trait 会根据类型自动选择最优路径。
-pub trait Read: RxInternal {
+pub trait Read: RxInternal
+where
+    for<'a> Self::ReadOutput<'a>: Deref<Target = Self::Value>,
+{
     /// 执行响应式读取，返回一个智能守卫。
     #[track_caller]
     fn read(&self) -> Self::ReadOutput<'_> {
@@ -316,9 +355,40 @@ pub trait Read: RxInternal {
     {
         self.try_get().unwrap_or_else(|| unwrap_rx!(self)())
     }
+
+    /// 尝试获取值的副本。该方法不强制要求 `Clone` 约束。
+    /// - 如果信号已销毁：返回 `None`。
+    /// - 如果类型不支持 `Clone`：返回 `None`。
+    /// - 否则：返回 `Some(T)`。
+    #[track_caller]
+    fn try_get_cloned(&self) -> Option<Self::Value>
+    where
+        Self::Value: Sized,
+    {
+        self.rx_track();
+        self.rx_get_adaptive()
+    }
+
+    /// 非响应式地尝试获取值的副本。
+    #[track_caller]
+    fn try_get_cloned_untracked(&self) -> Option<Self::Value>
+    where
+        Self::Value: Sized,
+    {
+        self.rx_get_adaptive()
+    }
+
+    /// 获取值的副本或默认值。如果不支持克隆或信号已销毁，返回 `Default::default()`。
+    #[track_caller]
+    fn get_cloned_or_default(&self) -> Self::Value
+    where
+        Self::Value: Sized + Default,
+    {
+        self.try_get_cloned().unwrap_or_default()
+    }
 }
 
-impl<T: ?Sized + RxInternal> Read for T {}
+impl<T: ?Sized + RxInternal> Read for T where for<'a> T::ReadOutput<'a>: Deref<Target = T::Value> {}
 
 /// Allows disposing an arena-allocated signal before its owner has been disposed.
 pub trait Dispose {
@@ -363,15 +433,6 @@ pub trait WithUntracked: DefinedAt {
     fn with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> U {
         self.try_with_untracked(fun)
             .unwrap_or_else(unwrap_rx!(self))
-    }
-}
-
-impl<T: ?Sized + RxInternal> WithUntracked for T {
-    type Value = T::Value;
-    #[inline(always)]
-    #[track_caller]
-    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.rx_try_with_untracked(fun)
     }
 }
 

@@ -86,8 +86,10 @@ where
 }
 
 impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
-    pub fn new<S, Fetcher>(source: impl Read<Value = S> + 'static, fetcher: Fetcher) -> Self
+    pub fn new<S, Fetcher, R>(source: R, fetcher: Fetcher) -> Self
     where
+        R: Read<Value = S> + 'static,
+        for<'a> R::ReadOutput<'a>: std::ops::Deref<Target = S>,
         S: PartialEq + Clone + 'static,
         Fetcher: ResourceFetcher<S, Data = T, Error = E> + 'static,
     {
@@ -261,8 +263,28 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxInternal for Re
     }
 
     #[inline(always)]
+    fn rx_get_adaptive(&self) -> Option<Self::Value>
+    where
+        Self::Value: Sized,
+    {
+        self.rx_try_with_untracked(|v| {
+            use crate::traits::adaptive::AdaptiveWrapper;
+            AdaptiveWrapper(v).maybe_clone()
+        })
+        .flatten()
+    }
+
+    #[inline(always)]
     fn rx_is_constant(&self) -> bool {
         false
+    }
+}
+
+impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> WithUntracked for Resource<T, E> {
+    type Value = Option<T>;
+    #[inline(always)]
+    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.rx_try_with_untracked(fun)
     }
 }
 

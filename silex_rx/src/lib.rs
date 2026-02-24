@@ -13,23 +13,60 @@ struct SignalVisitor {
 impl VisitMut for SignalVisitor {
     fn visit_expr_mut(&mut self, i: &mut Expr) {
         if let Expr::Path(expr_path) = i
-            && let Some(segment) = expr_path.path.segments.last_mut() {
-                let name = segment.ident.to_string();
-                if let Some(original_name) = name.strip_prefix("__silex_rx_sig_") {
-                    let span = segment.ident.span();
-                    let original_ident = format_ident!("{}", original_name, span = span);
+            && let Some(segment) = expr_path.path.segments.last_mut()
+        {
+            let name = segment.ident.to_string();
+            if let Some(original_name) = name.strip_prefix("__silex_rx_sig_") {
+                let span = segment.ident.span();
+                let original_ident = format_ident!("{}", original_name, span = span);
 
-                    // 为该信号生成一个唯一的内部变量名（用于 .with 闭包参数）
-                    // 这样就不会遮蔽外部同名的信号句柄
-                    let ref_ident = self
-                        .signal_map
-                        .entry(original_ident.clone())
-                        .or_insert_with(|| format_ident!("__ref_{}", original_name, span = span));
+                // 为该信号生成一个唯一的内部变量名（用于 .with 闭包参数）
+                // 这样就不会遮蔽外部同名的信号句柄
+                let ref_ident = self
+                    .signal_map
+                    .entry(original_ident.clone())
+                    .or_insert_with(|| format_ident!("__ref_{}", original_name, span = span));
 
-                    segment.ident = ref_ident.clone();
-                }
+                segment.ident = ref_ident.clone();
             }
+        }
         visit_mut::visit_expr_mut(self, i);
+    }
+
+    fn visit_macro_mut(&mut self, i: &mut syn::Macro) {
+        fn process_tokens(
+            tokens: proc_macro2::TokenStream,
+            signal_map: &mut HashMap<syn::Ident, syn::Ident>,
+        ) -> proc_macro2::TokenStream {
+            tokens
+                .into_iter()
+                .map(|tt| match tt {
+                    proc_macro2::TokenTree::Ident(id) => {
+                        let name = id.to_string();
+                        if let Some(original_name) = name.strip_prefix("__silex_rx_sig_") {
+                            let span = id.span();
+                            let original_ident = format_ident!("{}", original_name, span = span);
+                            let ref_ident =
+                                signal_map.entry(original_ident.clone()).or_insert_with(|| {
+                                    format_ident!("__ref_{}", original_name, span = span)
+                                });
+                            proc_macro2::TokenTree::Ident(ref_ident.clone())
+                        } else {
+                            proc_macro2::TokenTree::Ident(id)
+                        }
+                    }
+                    proc_macro2::TokenTree::Group(g) => {
+                        let inner = process_tokens(g.stream(), signal_map);
+                        let mut new_group = proc_macro2::Group::new(g.delimiter(), inner);
+                        new_group.set_span(g.span());
+                        proc_macro2::TokenTree::Group(new_group)
+                    }
+                    _ => tt,
+                })
+                .collect()
+        }
+        i.tokens = process_tokens(i.tokens.clone(), &mut self.signal_map);
+        visit_mut::visit_macro_mut(self, i);
     }
 }
 
@@ -82,10 +119,11 @@ pub fn rx(input: TokenStream) -> TokenStream {
 
     for tt in iter.by_ref() {
         if let proc_macro2::TokenTree::Punct(ref p) = tt
-            && p.as_char() == ';' {
-                found_semi = true;
-                break;
-            }
+            && p.as_char() == ';'
+        {
+            found_semi = true;
+            break;
+        }
         first_part.extend(std::iter::once(tt));
     }
 

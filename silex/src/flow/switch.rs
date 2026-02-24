@@ -3,6 +3,7 @@ use silex_core::reactivity::Effect;
 use silex_core::traits::Read;
 use silex_dom::prelude::View;
 use std::cell::RefCell;
+use std::ops::Deref;
 use std::rc::Rc;
 use web_sys::Node;
 
@@ -28,6 +29,7 @@ pub struct Switch<Source, T, V> {
 impl<Source, T, V> Switch<Source, T, V>
 where
     Source: Read<Value = T> + 'static,
+    for<'a> Source::ReadOutput<'a>: Deref<Target = T>,
     T: PartialEq + Clone + 'static,
     V: View + 'static,
 {
@@ -56,6 +58,7 @@ where
 impl<Source, T, V> View for Switch<Source, T, V>
 where
     Source: Read<Value = T> + 'static,
+    for<'a> Source::ReadOutput<'a>: Deref<Target = T>,
     T: PartialEq + Clone + 'static,
     V: View + 'static,
 {

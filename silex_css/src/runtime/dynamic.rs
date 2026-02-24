@@ -239,6 +239,7 @@ where
     S: IntoRx,
     S::Value: Clone + Sized + types::ValidFor<P> + Display + 'static,
     S::RxType: Read<Value = S::Value> + 'static,
+    for<'a> <S::RxType as RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
 {
     let signal = source.into_rx();
     Rc::new(move || format!("{}", signal.get()))

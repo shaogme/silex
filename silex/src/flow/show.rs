@@ -1,7 +1,8 @@
 use silex_core::reactivity::Effect;
-use silex_core::traits::Read;
+use silex_core::traits::{Read, RxInternal};
 use silex_dom::prelude::View;
 use std::cell::RefCell;
+use std::ops::Deref;
 use std::rc::Rc;
 use web_sys::Node;
 
@@ -53,6 +54,7 @@ impl<Cond, ViewFn> Show<Cond, ViewFn, fn() -> ()> {
     pub fn new(condition: Cond, view: ViewFn) -> Self
     where
         Cond: Read<Value = bool> + 'static,
+        for<'a> Cond::ReadOutput<'a>: Deref<Target = bool>,
         ViewFn: ViewFactory + 'static,
     {
         Self {
@@ -67,6 +69,7 @@ impl<Cond, ViewFn> Show<Cond, ViewFn, fn() -> ()> {
 impl<Cond, ViewFn, FalsyViewFn> Show<Cond, ViewFn, FalsyViewFn>
 where
     Cond: Read<Value = bool> + 'static,
+    for<'a> Cond::ReadOutput<'a>: Deref<Target = bool>,
     ViewFn: ViewFactory + 'static,
     FalsyViewFn: ViewFactory + 'static,
 {
@@ -86,6 +89,7 @@ where
 impl<Cond, ViewFn, FalsyViewFn> View for Show<Cond, ViewFn, FalsyViewFn>
 where
     Cond: Read<Value = bool> + 'static,
+    for<'a> Cond::ReadOutput<'a>: Deref<Target = bool>,
     ViewFn: ViewFactory + Clone + 'static,
     FalsyViewFn: ViewFactory + Clone + 'static,
 {
@@ -164,11 +168,11 @@ where
 use silex_core::traits::IntoRx;
 
 /// Signal 扩展特质，提供 .when() 语法糖
-pub trait SignalShowExt {
-    type Cond: Read<Value = bool> + 'static;
-
-    fn when<F>(self, view: F) -> Show<Self::Cond, F, fn() -> ()>
+pub trait SignalShowExt: IntoRx<Value = bool> {
+    fn when<F>(self, view: F) -> Show<Self::RxType, F, fn() -> ()>
     where
+        Self::RxType: Read<Value = bool> + 'static,
+        for<'a> <Self::RxType as RxInternal>::ReadOutput<'a>: Deref<Target = bool>,
         F: ViewFactory + 'static;
 }
 
@@ -176,12 +180,11 @@ pub trait SignalShowExt {
 impl<S> SignalShowExt for S
 where
     S: IntoRx<Value = bool>,
-    S::RxType: Read<Value = bool> + Clone + 'static,
 {
-    type Cond = S::RxType;
-
-    fn when<F>(self, view: F) -> Show<Self::Cond, F, fn() -> ()>
+    fn when<F>(self, view: F) -> Show<Self::RxType, F, fn() -> ()>
     where
+        Self::RxType: Read<Value = bool> + 'static,
+        for<'a> <S::RxType as RxInternal>::ReadOutput<'a>: Deref<Target = bool>,
         F: ViewFactory + 'static,
     {
         Show::new(self.into_rx(), view)

@@ -357,3 +357,129 @@ pub fn GenericsDemo() -> impl View {
     ]
     .style("padding: 20px; border: 1px solid #ccc; border-radius: 8px; margin-top: 20px;")
 }
+
+// --- Adaptive Read & Reactive Tuple Demo ---
+
+/// A futuristic non-cloneable structure representing a unique hardware identity.
+/// This type represents a resource that should not be duplicated in memory.
+struct QuantumIdentity {
+    serial: u32,
+    signature: String,
+}
+
+impl QuantumIdentity {
+    fn new(serial: u32) -> Self {
+        Self {
+            serial,
+            signature: format!("Q-SIG-{:08X}", serial),
+        }
+    }
+}
+
+impl std::fmt::Display for QuantumIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ID:{} Σ:{}", self.serial, &self.signature[..8])
+    }
+}
+
+#[component]
+pub fn AdaptiveReadDemo() -> impl View {
+    let system_name = RwSignal::new("Nebula-1".to_string());
+    let (stability, set_stability) = signal(0.85); // 0.0 to 1.0
+
+    // Create a non-cloneable resource
+    let (identity, _) = signal(QuantumIdentity::new(0xDEADBEEF));
+
+    // 1. REACTIVE TUPLE: Used for organizational grouping and tracking.
+    // Note: (RwSignal<String>, ReadSignal<f64>, ReadSignal<QuantumIdentity>)
+    // implements RxInternal, allowing tracking even with non-cloneable items.
+    let core_vitals = (system_name, stability, identity);
+
+    Effect::new(move |_| {
+        core_vitals.track(); // Track the whole group at once
+        console_log("Quantum Core Vitals updated.");
+    });
+
+    // 2. SEGMENTED ACCESS (Recommended):
+    // Using $ syntax on individual signals is ALWAYS zero-copy and
+    // works even if the types are NOT Clone.
+    let status_bar = rx!(format!(
+        "System: {} | Stability: {:.0}% | {}",
+        $system_name,
+        $stability * 100.0,
+        $identity
+    ));
+
+    // 3. FINE-GRAINED REACTIVITY:
+    // Only the specific parts of the UI update when their respective signals change.
+    let detail_metrics = rx! {
+        div![
+            div![
+                strong("CORE NAME: "),
+                span($system_name.to_uppercase()).style("letter-spacing: 2px;")
+            ],
+            div![
+                strong("QUANTUM SIGNATURE: "),
+                i($identity.signature.clone())
+            ].style("margin-top: 5px; color: #7f8c8d;"),
+        ]
+    };
+
+    div![
+        h3("Adaptive Read & Segmented Access")
+            .style("color: #2c3e50; border-left: 5px solid #e74c3c; padding-left: 15px; margin-bottom: 20px;"),
+
+        p("Silex 0.1.0-beta.1 optimizes reactive access for performance. While tuples can group resources, segmented access using individual signals ensures zero-copy performance without Clone requirements."),
+
+        div![
+            // Live Status Bar
+            div(status_bar)
+                .style("background: #2c3e50; color: #ecf0f1; padding: 12px 20px; border-radius: 8px 8px 0 0; font-family: 'Courier New', monospace; font-size: 0.9em;"),
+
+            // Interaction Area
+            div![
+                detail_metrics,
+
+                div![
+                    label("Adjustment Stability: "),
+                    input()
+                        .attr("type", "range")
+                        .attr("min", "0")
+                        .attr("max", "1")
+                        .attr("step", "0.01")
+                        .prop("value", stability)
+                        .on(event::input, move |e| {
+                            if let Ok(val) = event_target_value(&e).parse::<f64>() {
+                                set_stability.set(val);
+                            }
+                        })
+                        .style("flex-grow: 1; accent-color: #e74c3c;"),
+                    span(rx!(format!("{:.0}%", *$stability * 100.0)))
+                        .style("width: 50px; text-align: right; font-weight: bold; color: #e74c3c;"),
+                ].style("margin-top: 20px; display: flex; align-items: center; gap: 15px;"),
+
+                div![
+                    label("Rename Core: "),
+                    input()
+                        .bind_value(system_name)
+                        .style("padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100%; box-sizing: border-box;"),
+                ].style("margin-top: 15px;"),
+            ]
+            .style("background: white; padding: 25px; border: 1px solid #2c3e50; border-top: none; border-radius: 0 0 8px 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);"),
+        ]
+        .style("margin: 20px 0;"),
+
+        div![
+            p("Architecture Insights:")
+                .style("font-weight: bold; margin-bottom: 5px;"),
+            ul![
+                li("Zero-Copy: The $ syntax expands to .with() calls, providing direct references."),
+                li("No Clone Needed: QuantumIdentity is non-cloneable, yet accessible via references."),
+                li("Tuple Limitation: Tuples grouping non-cloneable items are valid for tracking, but 'overall' access via .with() on the tuple itself is restricted to avoid accidental deep clones."),
+            ]
+            .style("font-size: 0.85em; color: #34495e;"),
+        ]
+        .style("padding: 15px; background: #fdf2f2; border-radius: 6px; border: 1px solid #fab1a0;")
+    ]
+    .style("margin-top: 30px;")
+}

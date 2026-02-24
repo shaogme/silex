@@ -55,12 +55,25 @@ impl<T: 'static> RxInternal for Constant<T> {
         })
     }
 
+    #[inline(always)]
+    fn rx_try_with_untracked<URet>(&self, fun: impl FnOnce(&Self::Value) -> URet) -> Option<URet> {
+        Some(fun(&self.0))
+    }
+
     fn rx_debug_name(&self) -> Option<String> {
         Some("Constant".to_string())
     }
 
     fn rx_is_constant(&self) -> bool {
         true
+    }
+}
+
+impl<T: 'static> WithUntracked for Constant<T> {
+    type Value = T;
+    #[inline(always)]
+    fn try_with_untracked<URet>(&self, fun: impl FnOnce(&Self::Value) -> URet) -> Option<URet> {
+        self.rx_try_with_untracked(fun)
     }
 }
 
@@ -126,9 +139,16 @@ where
 
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-        self.deps.rx_try_with_untracked(|val| {
-            let res = (self.func)(val);
-            RxGuard::Owned(res)
+        self.deps
+            .rx_try_with_untracked(|v| (self.func)(v))
+            .map(RxGuard::Owned)
+    }
+
+    #[inline(always)]
+    fn rx_try_with_untracked<URet>(&self, fun: impl FnOnce(&Self::Value) -> URet) -> Option<URet> {
+        self.deps.rx_try_with_untracked(|v| {
+            let u_val = (self.func)(v);
+            fun(&u_val)
         })
     }
 
@@ -146,6 +166,20 @@ where
 
     fn rx_is_disposed(&self) -> bool {
         self.deps.rx_is_disposed()
+    }
+}
+
+impl<S, F, U> WithUntracked for DerivedPayload<S, F>
+where
+    S: RxInternal + WithUntracked<Value = <S as RxInternal>::Value> + Track,
+    F: Fn(&<S as RxInternal>::Value) -> U + Clone + 'static,
+    U: 'static,
+{
+    type Value = U;
+
+    #[inline(always)]
+    fn try_with_untracked<URet>(&self, fun: impl FnOnce(&Self::Value) -> URet) -> Option<URet> {
+        crate::traits::RxInternal::rx_try_with_untracked(self, fun)
     }
 }
 
@@ -184,7 +218,16 @@ impl<U: 'static> RxInternal for OpPayload<U> {
 
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-        unsafe { (self.read)(&self.inputs[..self.input_count as usize]).map(RxGuard::Owned) }
+        self.rx_try_with_untracked(|v| unsafe { std::mem::transmute::<&U, &'static U>(v) })
+            .map(|v| RxGuard::Borrowed {
+                value: v,
+                token: None,
+            })
+    }
+
+    #[inline(always)]
+    fn rx_try_with_untracked<URet>(&self, fun: impl FnOnce(&Self::Value) -> URet) -> Option<URet> {
+        unsafe { (self.read)(&self.inputs[..self.input_count as usize]).map(|v| fun(&v)) }
     }
 
     fn rx_is_constant(&self) -> bool {
@@ -202,6 +245,15 @@ impl<U: 'static> RxInternal for OpPayload<U> {
             }
         }
         false
+    }
+}
+
+impl<U: 'static> WithUntracked for OpPayload<U> {
+    type Value = U;
+
+    #[inline(always)]
+    fn try_with_untracked<URet>(&self, fun: impl FnOnce(&Self::Value) -> URet) -> Option<URet> {
+        self.rx_try_with_untracked(fun)
     }
 }
 
@@ -298,10 +350,45 @@ impl<T: 'static> RxInternal for Signal<T> {
         }
     }
 
+    #[inline(always)]
+    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        match self {
+            Signal::Read(s) => s.rx_try_with_untracked(fun),
+            Signal::Derived(id, _) => unsafe { rx_borrow_signal_unsafe(*id).map(fun) },
+            Signal::StoredConstant(id, _) => unsafe { rx_borrow_stored_value_unsafe(*id).map(fun) },
+            Signal::InlineConstant(storage, _) => {
+                let val = unsafe { Self::unpack_inline(*storage) };
+                Some(fun(&val))
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn rx_get_adaptive(&self) -> Option<Self::Value>
+    where
+        Self::Value: Sized,
+    {
+        match self {
+            Signal::Read(s) => s.rx_get_adaptive(),
+            Signal::Derived(_, _) | Signal::StoredConstant(_, _) => self
+                .rx_try_with_untracked(|v| {
+                    use crate::traits::adaptive::{AdaptiveFallback, AdaptiveWrapper};
+                    AdaptiveWrapper(v).maybe_clone()
+                })
+                .flatten(),
+            Signal::InlineConstant(storage, _) => {
+                let val = unsafe { Self::unpack_inline(*storage) };
+                Some(val)
+            }
+        }
+    }
+
+    #[inline(always)]
     fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
         self.node_id().and_then(get_node_defined_at)
     }
 
+    #[inline(always)]
     fn rx_debug_name(&self) -> Option<String> {
         let name = self.node_id().and_then(get_debug_label);
         if name.is_none() && self.is_constant() {
@@ -311,14 +398,25 @@ impl<T: 'static> RxInternal for Signal<T> {
         }
     }
 
+    #[inline(always)]
     fn rx_is_disposed(&self) -> bool {
         self.node_id()
             .map(|id| !is_signal_valid(id))
             .unwrap_or(false)
     }
 
+    #[inline(always)]
     fn rx_is_constant(&self) -> bool {
         self.is_constant()
+    }
+}
+
+impl<T: 'static> WithUntracked for Signal<T> {
+    type Value = T;
+
+    #[inline(always)]
+    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.rx_try_with_untracked(fun)
     }
 }
 

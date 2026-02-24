@@ -25,6 +25,8 @@ pub enum AdvancedRoute {
     Suspense,
     #[route("/generics", view = advanced::GenericsDemo)]
     Generics,
+    #[route("/adaptive", view = advanced::AdaptiveReadDemo)]
+    Adaptive,
     #[route("/*", view = NotFoundPage)]
     NotFound,
 }
@@ -172,6 +174,13 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
                     route: AdvancedRoute::Generics,
                 },
                 "Generics"
+            )
+            .class("tab"),
+            Link(
+                AppRoute::Advanced {
+                    route: AdvancedRoute::Adaptive,
+                },
+                "Adaptive Read"
             )
             .class("tab"),
         ]

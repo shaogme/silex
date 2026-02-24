@@ -1,8 +1,9 @@
 use silex_core::SilexError;
 use silex_core::reactivity::{Constant, Effect, Memo, ReadSignal, RwSignal, Signal};
-use silex_core::traits::{IntoRx, Read, RxInternal, With};
+use silex_core::traits::{IntoRx, Read, With};
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::ops::Deref;
 use std::rc::Rc;
 use wasm_bindgen::{JsCast, JsValue};
 use web_sys::{CssStyleDeclaration, Element as WebElem, HtmlElement, SvgElement};
@@ -40,13 +41,14 @@ pub trait RxTask<M> {
 // 1. Value Calculation: any RxInternal
 impl<F, T> RxTask<silex_core::RxValue> for F
 where
-    F: RxInternal<Value = T> + 'static,
+    F: Read<Value = T> + 'static,
+    for<'a> F::ReadOutput<'a>: Deref<Target = T>,
     T: ReactiveApply + Clone + 'static,
 {
     fn run_rx(self, el: &WebElem, target: ApplyTarget) {
         let el = el.clone();
         let owned_target = OwnedApplyTarget::from(target);
-        T::apply_to_dom(move || self.try_get().unwrap(), el, owned_target);
+        T::apply_to_dom(move || self.get(), el, owned_target);
     }
 }
 

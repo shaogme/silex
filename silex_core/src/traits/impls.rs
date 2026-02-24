@@ -64,6 +64,19 @@ macro_rules! impl_closure_rx {
             type ReadOutput<'a> = RxGuard<'a, T, T> where Self: 'a;
 
             #[inline(always)] fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> { let val = (self)(); Some(RxGuard::Owned(val)) }
+            #[inline(always)] fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> { self.rx_read_untracked().map(|g| fun(&*g)) }
+            #[inline(always)]
+            fn rx_is_constant(&self) -> bool {
+                false
+            }
+        }
+
+        impl<$($gen),*> WithUntracked for $target $(where $($bounds)*, T: 'static)? {
+            type Value = T;
+            #[inline(always)]
+            fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+                self.rx_try_with_untracked(fun)
+            }
         }
     };
 }
@@ -95,6 +108,13 @@ impl<F: RxInternal, M> RxInternal for Rx<F, M> {
         self.0.rx_try_with_untracked(fun)
     }
     #[inline(always)]
+    fn rx_get_adaptive(&self) -> Option<Self::Value>
+    where
+        Self::Value: Sized,
+    {
+        self.0.rx_get_adaptive()
+    }
+    #[inline(always)]
     fn rx_defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
         self.0.rx_defined_at()
     }
@@ -112,9 +132,18 @@ impl<F: RxInternal, M> RxInternal for Rx<F, M> {
     }
 }
 
-// --- 元组 RxInternal 实现：支持递归常量检测 ---
+impl<F, M> WithUntracked for Rx<F, M>
+where
+    F: RxInternal + WithUntracked<Value = <F as RxInternal>::Value>,
+{
+    type Value = <F as RxInternal>::Value;
+    #[inline(always)]
+    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.0.try_with_untracked(fun)
+    }
+}
 
-// 已移除旧的递归助手，改用更高效的直接构造方案
+// --- 元组 RxInternal 实现：支持递归常量检测 ---
 
 macro_rules! impl_tuple_everything {
     ($guard:ident, $($T:ident : $idx:tt),+) => {
@@ -126,7 +155,6 @@ macro_rules! impl_tuple_everything {
         impl<$($T),+> IntoRx for ($($T,)+)
         where
             $($T: IntoRx + Clone + 'static),+,
-            $($T::RxType: RxInternal<Value = $T::Value> + Clone + 'static),+,
             $($T::Value: Clone + 'static),+
         {
             type Value = ($($T::Value,)+);
@@ -159,7 +187,7 @@ macro_rules! impl_tuple_everything {
         impl<$($T),+> RxInternal for ($($T,)+)
         where
             $($T: RxInternal),+,
-            $($T::Value: Clone + Sized),+
+            $($T::Value: Sized),+
         {
             type Value = ($($T::Value,)+);
             type ReadOutput<'a> = $guard<'a, $($T::ReadOutput<'a>, $T::Value),+> where Self: 'a;
@@ -184,15 +212,33 @@ macro_rules! impl_tuple_everything {
 
             #[inline(always)]
             fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-                let val = (
-                    $(self.$idx.rx_try_with_untracked(|v| Clone::clone(v))?,)+
-                );
-                Some(fun(&val))
+                self.rx_get_adaptive().map(|v| fun(&v))
             }
+
+            #[inline(always)]
+            fn rx_get_adaptive(&self) -> Option<Self::Value>
+            where
+                Self::Value: Sized,
+            {
+                Some(($( self.$idx.rx_get_adaptive()? ,)+))
+            }
+
             #[inline(always)] fn rx_defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> { None }
             #[inline(always)] fn rx_debug_name(&self) -> Option<String> { None }
             #[inline(always)] fn rx_is_disposed(&self) -> bool { $(self.$idx.rx_is_disposed() || )+ false }
             #[inline(always)] fn rx_is_constant(&self) -> bool { $(self.$idx.rx_is_constant() && )+ true }
+        }
+
+        impl<$($T),+> WithUntracked for ($($T,)+)
+        where
+            $($T: RxInternal),+,
+            $($T::Value: Clone + 'static),+
+        {
+            type Value = ($($T::Value,)+);
+            #[inline(always)]
+            fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+                self.rx_try_with_untracked(fun)
+            }
         }
     };
 }
@@ -207,6 +253,7 @@ impl<F, M> IntoRx for Rx<F, M>
 where
     F: RxInternal + Clone + 'static,
     F::Value: Clone + 'static,
+    for<'a> F::ReadOutput<'a>: std::ops::Deref<Target = F::Value>,
 {
     type Value = F::Value;
     type RxType = Self;
@@ -267,8 +314,6 @@ impl_into_rx_primitive!(
     &str : String => |s: &str| s.to_string()
 );
 
-// --- ReactivityNode Helper Implementations ---
-
 #[macro_export]
 macro_rules! impl_rx_delegate {
     ($target:ident, $is_const:expr) => {
@@ -286,6 +331,14 @@ macro_rules! impl_rx_delegate {
             #[inline(always)]
             fn into_signal(self) -> $crate::reactivity::Signal<T> {
                 $crate::reactivity::Signal::derive(move || $crate::traits::Read::get(&self))
+            }
+        }
+
+        impl<T: Clone + 'static> $crate::traits::WithUntracked for $target<T> {
+            type Value = T;
+            #[inline(always)]
+            fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+                $crate::traits::RxInternal::rx_try_with_untracked(self, fun)
             }
         }
     };
@@ -345,6 +398,24 @@ macro_rules! impl_rx_delegate {
             }
 
             #[inline(always)]
+            fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+                let id = $crate::traits::ReactivityNode::node_id(self);
+                ::silex_reactivity::try_with_signal_untracked(id, fun)
+            }
+
+            #[inline(always)]
+            fn rx_get_adaptive(&self) -> Option<Self::Value>
+            where
+                Self::Value: Sized,
+            {
+                self.rx_try_with_untracked(|v| {
+                    use crate::traits::adaptive::{AdaptiveFallback, AdaptiveWrapper};
+                    AdaptiveWrapper(v).maybe_clone()
+                })
+                .flatten()
+            }
+
+            #[inline(always)]
             fn rx_defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> {
                 ::silex_reactivity::get_node_defined_at($crate::traits::ReactivityNode::node_id(
                     self,
@@ -361,6 +432,14 @@ macro_rules! impl_rx_delegate {
             #[inline(always)]
             fn rx_is_constant(&self) -> bool {
                 $is_const
+            }
+        }
+
+        impl<T: 'static> $crate::traits::WithUntracked for $target<T> {
+            type Value = T;
+            #[inline(always)]
+            fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+                $crate::traits::RxInternal::rx_try_with_untracked(self, fun)
             }
         }
     };
@@ -408,6 +487,19 @@ macro_rules! impl_rx_delegate {
             }
 
             #[inline(always)]
+            fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+                self.$field.rx_try_with_untracked(fun)
+            }
+
+            #[inline(always)]
+            fn rx_get_adaptive(&self) -> Option<Self::Value>
+            where
+                Self::Value: Sized,
+            {
+                self.$field.rx_get_adaptive()
+            }
+
+            #[inline(always)]
             fn rx_defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> {
                 self.$field.rx_defined_at()
             }
@@ -422,6 +514,14 @@ macro_rules! impl_rx_delegate {
             #[inline(always)]
             fn rx_is_constant(&self) -> bool {
                 $is_const
+            }
+        }
+
+        impl<T: 'static> $crate::traits::WithUntracked for $target<T> {
+            type Value = T;
+            #[inline(always)]
+            fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+                $crate::traits::RxInternal::rx_try_with_untracked(self, fun)
             }
         }
     };
@@ -485,6 +585,7 @@ macro_rules! impl_rx_op {
         impl<F, R, T> std::ops::$trait<R> for $crate::Rx<F, $crate::RxValue>
         where
             F: $crate::traits::RxInternal<Value = T> + Clone + 'static,
+            for<'a> F::ReadOutput<'a>: std::ops::Deref<Target = T>,
             for<'a> &'a T: std::ops::$trait<&'a T, Output = T>,
             T: Clone + 'static,
             R: $crate::traits::IntoRx<Value = T> + 'static,
@@ -533,6 +634,7 @@ macro_rules! impl_rx_unary_op {
         impl<F, T> std::ops::$trait for $crate::Rx<F, $crate::RxValue>
         where
             F: $crate::traits::RxInternal<Value = T> + Clone + 'static,
+            for<'a> F::ReadOutput<'a>: std::ops::Deref<Target = T>,
             for<'a> &'a T: std::ops::$trait<Output = T>,
             T: Clone + 'static,
         {

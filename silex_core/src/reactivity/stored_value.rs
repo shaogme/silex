@@ -107,8 +107,28 @@ impl<T: 'static> RxInternal for StoredValue<T> {
     }
 
     #[inline(always)]
+    fn rx_get_adaptive(&self) -> Option<Self::Value>
+    where
+        Self::Value: Sized,
+    {
+        self.rx_try_with_untracked(|v| {
+            use crate::traits::adaptive::{AdaptiveFallback, AdaptiveWrapper};
+            AdaptiveWrapper(v).maybe_clone()
+        })
+        .flatten()
+    }
+
+    #[inline(always)]
     fn rx_is_constant(&self) -> bool {
         true
+    }
+}
+
+impl<T: 'static> WithUntracked for StoredValue<T> {
+    type Value = T;
+    #[inline(always)]
+    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.rx_try_with_untracked(fun)
     }
 }
 

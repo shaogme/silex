@@ -39,7 +39,8 @@ impl<G: std::ops::Deref, O: ?Sized> std::ops::Deref for SliceGuard<G, O> {
 
 impl<S, F, O> RxInternal for SignalSlice<S, F, O>
 where
-    S: RxInternal + Clone + 'static,
+    S: Read + Clone + 'static,
+    for<'a> <S as RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
     F: Fn(&<S as RxInternal>::Value) -> &O + Clone + 'static,
     O: ?Sized + 'static,
 {
@@ -92,14 +93,30 @@ where
         self.source.rx_is_disposed()
     }
 
+    #[inline(always)]
     fn rx_is_constant(&self) -> bool {
         self.source.rx_is_constant()
     }
 }
 
+impl<S, F, O> WithUntracked for SignalSlice<S, F, O>
+where
+    S: Read + WithUntracked<Value = <S as RxInternal>::Value> + Clone + 'static,
+    for<'a> <S as RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = <S as RxInternal>::Value>,
+    F: Fn(&<S as RxInternal>::Value) -> &O + Clone + 'static,
+    O: ?Sized + 'static,
+{
+    type Value = O;
+    #[inline(always)]
+    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        crate::traits::RxInternal::rx_try_with_untracked(self, fun)
+    }
+}
+
 impl<S, F, O> IntoRx for SignalSlice<S, F, O>
 where
-    S: RxInternal + Clone + 'static,
+    S: Read + WithUntracked<Value = <S as RxInternal>::Value> + Clone + 'static,
+    for<'a> <S as RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = <S as RxInternal>::Value>,
     F: Fn(&<S as RxInternal>::Value) -> &O + Clone + 'static,
     O: ?Sized + 'static,
 {
