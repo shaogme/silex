@@ -25,51 +25,12 @@ impl<F: Clone, M> Clone for Rx<F, M> {
 
 impl<F: Copy, M> Copy for Rx<F, M> {}
 
-/// `rx!` 宏：创建响应式计算单元或事件处理器。
-///
-/// 支持多种形式：
-/// - `rx!(expression)`: 创建无参计算单元。
-/// - `rx!(|args| body)`: 创建带参数的计算单元或事件处理器。
-#[macro_export]
-#[doc(hidden)]
-macro_rules! rx_effect {
-    // 带类型标注的单参数
-    (move | $arg:ident : $ty:ty | $($body:tt)*) => {
-        $crate::Rx(move |$arg: $ty| { $($body)* }, ::core::marker::PhantomData::<$crate::RxEffect>)
-    };
-    (| $arg:ident : $ty:ty | $($body:tt)*) => {
-        $crate::Rx(move |$arg: $ty| { $($body)* }, ::core::marker::PhantomData::<$crate::RxEffect>)
-    };
-    // 不带类型的单参数
-    (move | $arg:ident | $($body:tt)*) => {
-        $crate::Rx(move |$arg| { $($body)* }, ::core::marker::PhantomData::<$crate::RxEffect>)
-    };
-    (| $arg:ident | $($body:tt)*) => {
-        $crate::Rx(move |$arg| { $($body)* }, ::core::marker::PhantomData::<$crate::RxEffect>)
-    };
-}
+pub use silex_rx::rx as __internal_rx;
 
 #[macro_export]
 macro_rules! rx {
-    // 1. 匹配 move || -> Value (Getter)
-    (move || $($body:tt)*) => {
-        $crate::Rx(move || { $($body)* }, ::core::marker::PhantomData::<$crate::RxValue>)
-    };
-    // 2. 匹配 || -> Value (Getter)
-    (|| $($body:tt)*) => {
-        $crate::Rx(move || { $($body)* }, ::core::marker::PhantomData::<$crate::RxValue>)
-    };
-    // 3. 匹配带 move 的带参数闭包 -> Effect
-    (move | $($rest:tt)*) => {
-        $crate::rx_effect!(move | $($rest)*)
-    };
-    // 4. 匹配不带 move 的带参数闭包 -> Effect
-    (| $($rest:tt)*) => {
-        $crate::rx_effect!(| $($rest)*)
-    };
-    // 5. 匹配普通表达式 -> Value
-    ($($expr:tt)*) => {
-        $crate::Rx(move || { $($expr)* }, ::core::marker::PhantomData::<$crate::RxValue>)
+    ($($body:tt)*) => {
+        $crate::__internal_rx!($crate; $($body)*)
     };
 }
 

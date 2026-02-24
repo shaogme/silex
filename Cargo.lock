@@ -1268,6 +1268,7 @@ name = "silex_core"
 version = "0.1.0-beta.1"
 dependencies = [
  "silex_reactivity",
+ "silex_rx",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -1348,6 +1349,15 @@ dependencies = [
  "silex",
  "wasm-bindgen",
  "web-sys",
+]
+
+[[package]]
+name = "silex_rx"
+version = "0.1.0-beta.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
 ]
 
 [[package]]

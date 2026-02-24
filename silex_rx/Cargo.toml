@@ -1,19 +1,21 @@
 [package]
-name = "silex_core"
+name = "silex_rx"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description.workspace = true
 repository.workspace = true
+description.workspace = true
+readme.workspace = true
 homepage.workspace = true
+documentation.workspace = true
 keywords.workspace = true
 categories.workspace = true
-readme.workspace = true
+
+[lib]
+proc-macro = true
 
 [dependencies]
-silex_reactivity.workspace = true
-silex_rx.workspace = true
-wasm-bindgen.workspace = true
-web-sys.workspace = true
-wasm-bindgen-futures.workspace = true
+syn.workspace = true
+quote.workspace = true
+proc-macro2.workspace = true

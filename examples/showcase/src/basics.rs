@@ -55,7 +55,7 @@ pub fn Counter() -> impl View {
         .style("display: flex; gap: 10px; align-items: center;"),
         // Auto Increment Demo using set_interval and StoredValue
         div![
-            button(is_running.map(|r| if *r {
+            button(rx!(if *$is_running {
                 "Stop Auto Inc"
             } else {
                 "Start Auto Inc"
@@ -93,11 +93,7 @@ pub fn Counter() -> impl View {
         ]
         .style("margin-bottom: 10px;"),
         div!["Double: ", double_count]
-            .classes(
-                (count % 2)
-                    .equals(0)
-                    .map(|is_even| if *is_even { "even" } else { "odd" })
-            )
+            .classes(rx!(if *$count % 2 == 0 { "even" } else { "odd" }))
             .style("margin-top: 5px; color: #666; font-size: 0.9em;"),
     ]
 }

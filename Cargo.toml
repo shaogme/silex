@@ -5,7 +5,8 @@ members = [
     "silex_core",
     "silex_html",
     "silex_css",
-    "silex_dom", 
+    "silex_dom",
+    "silex_rx",
     "silex_reactivity",
     "silex_hash",
     "examples/counter",
@@ -46,6 +47,7 @@ silex_css = { path = "silex_css", version = "0.1.0-beta.1" }
 silex_macros = { path = "silex_macros", version = "0.1.0-beta.1" }
 silex_reactivity = { path = "silex_reactivity", version = "0.1.0-beta.1" }
 silex_hash = { path = "silex_hash", version = "0.1.0-beta.1" }
+silex_rx = { path = "silex_rx", version = "0.1.0-beta.1" }
 
 wasm-bindgen = { version = "0.2", default-features = false }
 web-sys = { version = "0.3", default-features = false, features = [
@@ -112,6 +114,9 @@ web-sys = { version = "0.3", default-features = false, features = [
 js-sys = { version = "0.3", default-features = false }
 wasm-bindgen-futures = { version = "0.4.56", default-features = false }
 
+syn = { version = "2.0", default-features = false }
+quote = { version = "1.0", default-features = false }
+proc-macro2 = { version = "1.0", default-features = false }
 
 [profile.dev]
 panic = "unwind"

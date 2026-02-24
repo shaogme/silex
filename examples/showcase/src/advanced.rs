@@ -38,11 +38,7 @@ pub fn StoreDemo() -> impl View {
                 event::click,
                 rx! {
                     settings.theme.update(|t| {
-                        *t = if t == "Light" {
-                            "Dark".to_string()
-                        } else {
-                            "Light".to_string()
-                        }
+                        *t = if t == "Light" { "Dark".to_string() } else { "Light".to_string() }
                     })
                 }
             ),
@@ -281,7 +277,7 @@ pub fn SuspenseDemo() -> impl View {
                 input()
                     .attr("type", "radio")
                     .attr("name", "suspense_mode")
-                    .attr("checked", rx!(mode.get() == SuspenseMode::KeepAlive))
+                    .attr("checked", rx!(*$mode == SuspenseMode::KeepAlive))
                     .on(event::change, set_mode.setter(SuspenseMode::KeepAlive)),
                 " KeepAlive (CSS Hide)"
             ]
@@ -290,7 +286,7 @@ pub fn SuspenseDemo() -> impl View {
                 input()
                     .attr("type", "radio")
                     .attr("name", "suspense_mode")
-                    .attr("checked", rx!(mode.get() == SuspenseMode::Unmount))
+                    .attr("checked", rx!(*$mode == SuspenseMode::Unmount))
                     .on(event::change, set_mode.setter(SuspenseMode::Unmount)),
                 " Unmount (DOM Remove)"
             ]
@@ -320,9 +316,7 @@ pub fn SuspenseDemo() -> impl View {
                                 div![
                                     "Resource Data: ",
                                     // Fine-grained reading: Only this text node updates
-                                    rx!(resource
-                                        .get()
-                                        .unwrap_or_else(|| "Waiting...".to_string()))
+                                    rx!(resource.get().unwrap_or_else(|| "Waiting...".to_string()))
                                 ],
                                 div("1. Type something below."),
                                 div("2. Click 'Reload Resource'."),
