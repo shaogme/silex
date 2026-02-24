@@ -4,7 +4,7 @@ use silex_core::error::handle_error;
 use silex_core::reactivity::{
     Constant, DerivedPayload, Effect, Memo, OpPayload, ReadSignal, RwSignal, Signal, SignalSlice,
 };
-use silex_core::traits::{Read, RxInternal};
+use silex_core::traits::{Read, RxBase, RxInternal};
 use silex_core::{SilexError, SilexResult};
 use std::fmt::Display;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -226,7 +226,7 @@ where
     T: Display + Clone + 'static,
 {
     fn track(&self) {
-        self.rx_track();
+        RxBase::track(self);
     }
     fn render(&self) -> String {
         self.get_untracked().to_string()
@@ -238,7 +238,7 @@ where
     T: Display + Clone + PartialEq + 'static,
 {
     fn track(&self) {
-        self.rx_track();
+        RxBase::track(self);
     }
     fn render(&self) -> String {
         self.get_untracked().to_string()
@@ -250,7 +250,7 @@ where
     T: Display + Clone + 'static,
 {
     fn track(&self) {
-        self.rx_track();
+        RxBase::track(self);
     }
     fn render(&self) -> String {
         self.get_untracked().to_string()
@@ -263,7 +263,7 @@ where
     U: Display + 'static,
 {
     fn track(&self) {
-        self.rx_track();
+        RxBase::track(self);
     }
     fn render(&self) -> String {
         self.rx_try_with_untracked(|v: &U| v.to_string())
@@ -277,7 +277,7 @@ where
     U: Display + 'static,
 {
     fn track(&self) {
-        self.rx_track();
+        RxBase::track(self);
     }
     fn render(&self) -> String {
         self.rx_try_with_untracked(|v: &U| v.to_string())
@@ -291,7 +291,7 @@ where
     O: Display + ?Sized + 'static,
 {
     fn track(&self) {
-        self.rx_track();
+        RxBase::track(self);
     }
     fn render(&self) -> String {
         self.rx_try_with_untracked(|v: &O| v.to_string())

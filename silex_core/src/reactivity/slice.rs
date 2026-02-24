@@ -37,29 +37,52 @@ impl<G: std::ops::Deref, O: ?Sized> std::ops::Deref for SliceGuard<G, O> {
     }
 }
 
-impl<S, F, O> RxInternal for SignalSlice<S, F, O>
+impl<S, F, O> RxBase for SignalSlice<S, F, O>
 where
     S: Read + Clone + 'static,
-    for<'a> <S as RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
-    F: Fn(&<S as RxInternal>::Value) -> &O + Clone + 'static,
+    for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
+    F: Fn(&S::Value) -> &O + Clone + 'static,
     O: ?Sized + 'static,
 {
     type Value = O;
+
+    #[inline(always)]
+    fn id(&self) -> Option<crate::reactivity::NodeId> {
+        self.source.id()
+    }
+
+    #[inline(always)]
+    fn track(&self) {
+        self.source.track();
+    }
+
+    #[inline(always)]
+    fn is_disposed(&self) -> bool {
+        self.source.is_disposed()
+    }
+
+    #[inline(always)]
+    fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
+        self.source.defined_at()
+    }
+
+    #[inline(always)]
+    fn debug_name(&self) -> Option<String> {
+        self.source.debug_name().map(|n| format!("{}.slice", n))
+    }
+}
+
+impl<S, F, O> RxInternal for SignalSlice<S, F, O>
+where
+    S: Read + Clone + 'static,
+    for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
+    F: Fn(&S::Value) -> &O + Clone + 'static,
+    O: ?Sized + 'static,
+{
     type ReadOutput<'a>
         = SliceGuard<S::ReadOutput<'a>, O>
     where
         Self: 'a;
-
-    #[inline(always)]
-    fn rx_track(&self) {
-        self.source.rx_track();
-    }
-
-    #[inline(always)]
-    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
-        self.rx_track();
-        self.rx_read_untracked()
-    }
 
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
@@ -81,18 +104,6 @@ where
             .rx_try_with_untracked(|val| fun((self.getter)(val)))
     }
 
-    fn rx_defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
-        self.source.rx_defined_at()
-    }
-
-    fn rx_debug_name(&self) -> Option<String> {
-        self.source.rx_debug_name().map(|n| format!("{}.slice", n))
-    }
-
-    fn rx_is_disposed(&self) -> bool {
-        self.source.rx_is_disposed()
-    }
-
     #[inline(always)]
     fn rx_is_constant(&self) -> bool {
         self.source.rx_is_constant()
@@ -101,23 +112,22 @@ where
 
 impl<S, F, O> WithUntracked for SignalSlice<S, F, O>
 where
-    S: Read + WithUntracked<Value = <S as RxInternal>::Value> + Clone + 'static,
-    for<'a> <S as RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = <S as RxInternal>::Value>,
-    F: Fn(&<S as RxInternal>::Value) -> &O + Clone + 'static,
+    S: Read + Clone + 'static,
+    for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
+    F: Fn(&S::Value) -> &O + Clone + 'static,
     O: ?Sized + 'static,
 {
-    type Value = O;
     #[inline(always)]
     fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        crate::traits::RxInternal::rx_try_with_untracked(self, fun)
+        self.rx_try_with_untracked(fun)
     }
 }
 
 impl<S, F, O> IntoRx for SignalSlice<S, F, O>
 where
-    S: Read + WithUntracked<Value = <S as RxInternal>::Value> + Clone + 'static,
-    for<'a> <S as RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = <S as RxInternal>::Value>,
-    F: Fn(&<S as RxInternal>::Value) -> &O + Clone + 'static,
+    S: Read + Clone + 'static,
+    for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
+    F: Fn(&S::Value) -> &O + Clone + 'static,
     O: ?Sized + 'static,
 {
     type Value = O;
@@ -136,7 +146,7 @@ where
     fn into_signal(self) -> crate::reactivity::Signal<Self::Value>
     where
         Self: 'static,
-        O: Sized + Clone, // Changed from Self::Value: Sized + Clone to O: Sized + Clone
+        O: Sized + Clone,
     {
         crate::reactivity::Signal::derive(move || self.get())
     }

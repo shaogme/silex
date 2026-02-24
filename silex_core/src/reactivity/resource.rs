@@ -215,51 +215,53 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
     }
 }
 
-impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxInternal for Resource<T, E> {
+impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxBase for Resource<T, E> {
     type Value = Option<T>;
+
+    #[inline(always)]
+    fn id(&self) -> Option<crate::reactivity::NodeId> {
+        self.state.id()
+    }
+
+    #[inline(always)]
+    fn track(&self) {
+        self.state.track();
+    }
+
+    #[inline(always)]
+    fn is_disposed(&self) -> bool {
+        self.state.is_disposed()
+    }
+
+    #[inline(always)]
+    fn defined_at(&self) -> Option<&'static Location<'static>> {
+        self.state.defined_at()
+    }
+
+    #[inline(always)]
+    fn debug_name(&self) -> Option<String> {
+        self.state.debug_name()
+    }
+}
+
+impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxInternal for Resource<T, E> {
     type ReadOutput<'a>
         = RxGuard<'a, Option<T>, Option<T>>
     where
         Self: 'a;
 
     #[inline(always)]
-    fn rx_track(&self) {
-        self.state.rx_track();
-    }
-
-    #[inline(always)]
-    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
-        self.rx_track();
-        self.rx_read_untracked()
-    }
-
-    #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
         self.state
-            .rx_try_with_untracked(|s| RxGuard::Owned(s.as_option().cloned()))
+            .try_with_untracked(|s| RxGuard::Owned(s.as_option().cloned()))
     }
 
     #[inline(always)]
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.state.rx_try_with_untracked(|s: &ResourceState<T, E>| {
+        self.state.try_with_untracked(|s: &ResourceState<T, E>| {
             let val = s.as_option().cloned();
             fun(&val)
         })
-    }
-
-    #[inline(always)]
-    fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
-        self.state.rx_defined_at()
-    }
-
-    #[inline(always)]
-    fn rx_debug_name(&self) -> Option<String> {
-        self.state.rx_debug_name()
-    }
-
-    #[inline(always)]
-    fn rx_is_disposed(&self) -> bool {
-        self.state.rx_is_disposed()
     }
 
     #[inline(always)]
@@ -281,7 +283,6 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxInternal for Re
 }
 
 impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> WithUntracked for Resource<T, E> {
-    type Value = Option<T>;
     #[inline(always)]
     fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         self.rx_try_with_untracked(fun)

@@ -106,10 +106,10 @@ impl<ItemsFn, KeyFn, MapFn> Clone for For<ItemsFn, KeyFn, MapFn> {
 }
 
 impl<ItemsFn, KeyFn, MapFn> For<ItemsFn, KeyFn, MapFn> {
-    pub fn new<Items, Item, Key, V>(items: ItemsFn, key: KeyFn, map: MapFn) -> Self
+    pub fn new<Item, Key, V>(items: ItemsFn, key: KeyFn, map: MapFn) -> Self
     where
-        ItemsFn: With<Value = Items>,
-        Items: ForLoopSource<Item = Item>,
+        ItemsFn: With,
+        ItemsFn::Value: ForLoopSource<Item = Item>,
         KeyFn: Fn(&Item) -> Key,
         MapFn: Fn(Item) -> V,
     {
@@ -121,17 +121,18 @@ impl<ItemsFn, KeyFn, MapFn> For<ItemsFn, KeyFn, MapFn> {
     }
 }
 
+// 3.7 For Loop implementation
 impl<ItemsFn, KeyFn, MapFn> View for For<ItemsFn, KeyFn, MapFn>
 where
     // ItemsFn returns the Source directly (e.g. Vec or Result<Vec>)
     // We access it by reference via `With`.
     ItemsFn: With + 'static,
-    <ItemsFn as With>::Value: ForLoopSource + 'static,
+    ItemsFn::Value: ForLoopSource + 'static,
     // Access Item type via ForLoopSource assoc type
-    KeyFn: LoopKey<<<ItemsFn as With>::Value as ForLoopSource>::Item> + 'static,
-    MapFn: LoopMap<<<ItemsFn as With>::Value as ForLoopSource>::Item> + 'static,
+    KeyFn: LoopKey<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
+    MapFn: LoopMap<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
     // Ensure Item itself is static so we can use it in closures
-    <<ItemsFn as With>::Value as ForLoopSource>::Item: 'static,
+    <ItemsFn::Value as ForLoopSource>::Item: 'static,
 {
     fn mount(self, parent: &Node) {
         let document = silex_dom::document();
@@ -161,7 +162,7 @@ where
         // We must fully qualify the Key type here because type aliases inside functions cannot capture
         // generic parameters from the outer scope, and defining new generics would shadow them (causing errors).
         let active_rows = Rc::new(RefCell::new(HashMap::<
-            <KeyFn as LoopKey<<<ItemsFn as With>::Value as ForLoopSource>::Item>>::Key,
+            <KeyFn as LoopKey<<ItemsFn::Value as ForLoopSource>::Item>>::Key,
             (Vec<Node>, NodeId),
         >::new()));
 

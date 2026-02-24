@@ -69,12 +69,31 @@ use crate::reactivity::{DerivedPayload, Memo, NodeId};
 use std::ops::Deref;
 use std::panic::Location;
 
-/// A internal trait implemented by reactive types that are backed by a `NodeId`.
-/// This is used to provide blanket implementations of high-level traits.
-#[doc(hidden)]
-pub trait ReactivityNode {
-    type Value: 'static;
-    fn node_id(&self) -> NodeId;
+/// 响应式系统的基础层级，统一了标识、追踪、生命周期监测和源码定位。
+pub trait RxBase {
+    /// 响应式值持有的数据类型。支持 ?Sized 以兼容 [T] 或 str。
+    type Value: ?Sized;
+
+    /// 获取底层节点 ID。常量或非节点组件可能返回 None。
+    fn id(&self) -> Option<NodeId>;
+
+    /// 建立响应式追踪（将其设为当前 Effect/Memo 的依赖）。
+    fn track(&self);
+
+    /// 检查该值是否已被销毁。
+    fn is_disposed(&self) -> bool {
+        self.id()
+            .map(|id| !crate::reactivity::is_signal_valid(id))
+            .unwrap_or(false)
+    }
+
+    /// 源码定义位置，用于调试模式下的错误追踪。
+    fn defined_at(&self) -> Option<&'static std::panic::Location<'static>>;
+
+    /// 调试名称（由 `.with_name()` 设置）。
+    fn debug_name(&self) -> Option<String> {
+        None
+    }
 }
 
 #[doc(hidden)]
@@ -130,21 +149,16 @@ pub trait IntoRx {
 
 /// A trait used internally by `Rx` to delegate calls to either a closure or a reactive primitive.
 #[doc(hidden)]
-pub trait RxInternal: DefinedAt {
-    type Value: ?Sized;
-
+pub trait RxInternal: RxBase {
     /// 自适应返回类型：由具体实现决定返回 Borrowed 或 Owned
     type ReadOutput<'a>
     where
         Self: 'a;
 
-    #[inline(always)]
-    fn rx_track(&self) {}
-
     /// 响应式读取：追踪依赖并返回守卫。
     #[inline(always)]
     fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
-        self.rx_track();
+        self.track();
         self.rx_read_untracked()
     }
 
@@ -153,21 +167,6 @@ pub trait RxInternal: DefinedAt {
 
     /// 提供对值的闭包式不可变访问（不追踪依赖）。
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>;
-
-    #[inline(always)]
-    fn rx_defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
-        None
-    }
-
-    #[inline(always)]
-    fn rx_debug_name(&self) -> Option<String> {
-        None
-    }
-
-    #[inline(always)]
-    fn rx_is_disposed(&self) -> bool {
-        false
-    }
 
     #[inline(always)]
     fn rx_is_constant(&self) -> bool {
@@ -365,7 +364,7 @@ where
     where
         Self::Value: Sized,
     {
-        self.rx_track();
+        self.track();
         self.rx_get_adaptive()
     }
 
@@ -399,27 +398,9 @@ pub trait Dispose {
     fn dispose(self);
 }
 
-/// Allows tracking the value of some reactive data.
-pub trait Track {
-    /// Subscribes to this signal in the current reactive scope without doing anything with its value.
-    #[track_caller]
-    fn track(&self);
-}
-
-impl<T: ?Sized + RxInternal> Track for T {
-    #[inline(always)]
-    #[track_caller]
-    fn track(&self) {
-        self.rx_track();
-    }
-}
-
 /// Give read-only access to a signal's value by reference inside a closure,
 /// without tracking the value reactively.
-pub trait WithUntracked: DefinedAt {
-    /// The type of the value contained in the signal.
-    type Value: ?Sized;
-
+pub trait WithUntracked: RxBase {
     /// Applies the closure to the value, and returns the result,
     /// or `None` if the signal has already been disposed.
     #[track_caller]
@@ -438,10 +419,7 @@ pub trait WithUntracked: DefinedAt {
 
 /// Give read-only access to a signal's value by reference inside a closure,
 /// and subscribes the active reactive observer (an effect or computed) to changes in its value.
-pub trait With: DefinedAt {
-    /// The type of the value contained in the signal.
-    type Value: ?Sized;
-
+pub trait With: RxBase {
     /// Subscribes to the signal, applies the closure to the value, and returns the result,
     /// or `None` if the signal has already been disposed.
     #[track_caller]
@@ -461,10 +439,7 @@ pub trait With: DefinedAt {
 ///
 /// Unlike [`Get`], this trait uses [`WithUntracked`] as its basis, meaning it works
 /// with the zero-copy closure-based access pattern.
-pub trait Map: Sized {
-    /// The type of the value contained in the signal.
-    type Value: ?Sized;
-
+pub trait Map: RxBase + Sized {
     /// Creates a derived signal from this signal.
     fn map<U, F>(self, f: F) -> crate::Rx<DerivedPayload<Self, F>, crate::RxValue>
     where
@@ -474,14 +449,14 @@ pub trait Map: Sized {
 /// Allows converting a signal into a memoized signal.
 ///
 /// Requires `Value: Clone + Sized` since memoization needs to clone and store values.
-pub trait Memoize: With
+pub trait Memoize: With + Clone + 'static
 where
-    Self::Value: Clone + Sized,
+    Self::Value: Sized,
 {
-    /// Creates a memoized signal from this signal.
+    /// Memoizes the value of the signal.
     fn memo(self) -> Memo<Self::Value>
     where
-        Self::Value: PartialEq + 'static;
+        Self::Value: Clone + PartialEq + 'static;
 }
 
 /// Notifies subscribers of a change in this signal.
@@ -493,10 +468,7 @@ pub trait Notify {
 
 /// Updates the value of a signal by applying a function that updates it in place,
 /// without notifying subscribers.
-pub trait UpdateUntracked: DefinedAt {
-    /// The type of the value contained in the signal.
-    type Value;
-
+pub trait UpdateUntracked: RxBase {
     /// Updates the value by applying a function, returning the value returned by that function.
     /// Does not notify subscribers that the signal has changed.
     ///
@@ -516,10 +488,7 @@ pub trait UpdateUntracked: DefinedAt {
 
 /// Updates the value of a signal by applying a function that updates it in place,
 /// notifying its subscribers that the value has changed.
-pub trait Update {
-    /// The type of the value contained in the signal.
-    type Value;
-
+pub trait Update: UpdateUntracked + Notify {
     /// Updates the value of the signal and notifies subscribers.
     #[track_caller]
     fn update(&self, fun: impl FnOnce(&mut Self::Value)) {
@@ -550,14 +519,15 @@ pub trait Update {
 }
 
 /// Updates the value of the signal by replacing it.
-pub trait Set {
-    /// The type of the value contained in the signal.
-    type Value;
-
-    /// Updates the value by replacing it, and notifies subscribers that it has changed.
+pub trait Set: Update
+where
+    Self::Value: Sized,
+{
+    /// Updates the value by replacing it.
+    #[track_caller]
     fn set(&self, value: Self::Value);
 
-    /// Updates the value by replacing it, and notifies subscribers that it has changed.
+    /// Updates the value by replacing it.
     ///
     /// If the signal has already been disposed, returns `Some(value)` with the value that was
     /// passed in. Otherwise, returns `None`.
@@ -565,59 +535,23 @@ pub trait Set {
 }
 
 /// Allows creating a setter closure from this signal.
-pub trait SignalSetter: Sized {
-    type Value;
-
-    /// Creates a closure that sets the signal to the given value.
+pub trait SignalSetter: RxBase + Sized
+where
+    Self::Value: Sized,
+{
+    /// Returns a closure that sets the signal's value when called.
     fn setter(self, value: Self::Value) -> impl Fn() + Clone + 'static;
 }
 
 /// Allows creating an updater closure from this signal.
-pub trait SignalUpdater: Sized {
-    type Value;
-
-    /// Creates a closure that updates the signal using the given function.
+pub trait SignalUpdater: RxBase + Sized
+where
+    Self::Value: Sized,
+{
+    /// Returns a closure that updates the signal's value using the provided function when called.
     fn updater<F>(self, f: F) -> impl Fn() + Clone + 'static
     where
         F: Fn(&mut Self::Value) + Clone + 'static;
-}
-
-/// Checks whether a signal has already been disposed.
-pub trait IsDisposed {
-    /// If `true`, the signal cannot be accessed without a panic.
-    fn is_disposed(&self) -> bool;
-}
-
-impl<T: ?Sized + RxInternal> IsDisposed for T {
-    #[inline(always)]
-    fn is_disposed(&self) -> bool {
-        self.rx_is_disposed()
-    }
-}
-
-/// Describes where the signal was defined. This is used for diagnostic warnings and is purely a
-/// debug-mode tool.
-pub trait DefinedAt {
-    /// Returns the location at which the signal was defined. This is usually simply `None` in
-    /// release mode.
-    fn defined_at(&self) -> Option<&'static Location<'static>>;
-
-    /// Returns the debug name of the signal, if any.
-    fn debug_name(&self) -> Option<String> {
-        None
-    }
-}
-
-impl<T: ?Sized + RxInternal> DefinedAt for T {
-    #[inline(always)]
-    fn defined_at(&self) -> Option<&'static Location<'static>> {
-        self.rx_defined_at()
-    }
-
-    #[inline(always)]
-    fn debug_name(&self) -> Option<String> {
-        self.rx_debug_name()
-    }
 }
 
 #[doc(hidden)]
@@ -652,10 +586,10 @@ pub fn panic_getting_disposed_signal(
 }
 
 /// Updates the value of the signal by replacing it, without notifying subscribers.
-pub trait SetUntracked: DefinedAt {
-    /// The type of the value contained in the signal.
-    type Value;
-
+pub trait SetUntracked: RxBase
+where
+    Self::Value: Sized,
+{
     /// Updates the value by replacing it, non-reactively.
     ///
     /// If the signal has already been disposed, returns `Some(value)` with the value that was

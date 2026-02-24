@@ -59,8 +59,14 @@ macro_rules! impl_closure_rx {
     (
         impl<$($gen:ident),*> $target:ty $(where $($bounds:tt)*)?
     ) => {
-        impl<$($gen),*> RxInternal for $target $(where $($bounds)*, T: 'static)? {
+        impl<$($gen),*> RxBase for $target $(where $($bounds)*, T: 'static)? {
             type Value = T;
+            #[inline(always)] fn id(&self) -> Option<NodeId> { None }
+            #[inline(always)] fn track(&self) {}
+            #[inline(always)] fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> { None }
+        }
+
+        impl<$($gen),*> RxInternal for $target $(where $($bounds)*, T: 'static)? {
             type ReadOutput<'a> = RxGuard<'a, T, T> where Self: 'a;
 
             #[inline(always)] fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> { let val = (self)(); Some(RxGuard::Owned(val)) }
@@ -72,7 +78,6 @@ macro_rules! impl_closure_rx {
         }
 
         impl<$($gen),*> WithUntracked for $target $(where $($bounds)*, T: 'static)? {
-            type Value = T;
             #[inline(always)]
             fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
                 self.rx_try_with_untracked(fun)
@@ -84,17 +89,41 @@ macro_rules! impl_closure_rx {
 impl_closure_rx!(impl<F, T> F where F: Fn() -> T);
 impl_closure_rx!(impl<T> ::std::rc::Rc<dyn Fn() -> T>);
 
-impl<F: RxInternal, M> RxInternal for Rx<F, M> {
+impl<F: RxBase, M> RxBase for Rx<F, M> {
     type Value = F::Value;
+
+    #[inline(always)]
+    fn id(&self) -> Option<NodeId> {
+        self.0.id()
+    }
+
+    #[inline(always)]
+    fn track(&self) {
+        self.0.track();
+    }
+
+    #[inline(always)]
+    fn is_disposed(&self) -> bool {
+        self.0.is_disposed()
+    }
+
+    #[inline(always)]
+    fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
+        self.0.defined_at()
+    }
+
+    #[inline(always)]
+    fn debug_name(&self) -> Option<String> {
+        self.0.debug_name()
+    }
+}
+
+impl<F: RxInternal, M> RxInternal for Rx<F, M> {
     type ReadOutput<'a>
         = F::ReadOutput<'a>
     where
         Self: 'a;
 
-    #[inline(always)]
-    fn rx_track(&self) {
-        self.0.rx_track();
-    }
     #[inline(always)]
     fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
         self.0.rx_read()
@@ -115,18 +144,6 @@ impl<F: RxInternal, M> RxInternal for Rx<F, M> {
         self.0.rx_get_adaptive()
     }
     #[inline(always)]
-    fn rx_defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
-        self.0.rx_defined_at()
-    }
-    #[inline(always)]
-    fn rx_debug_name(&self) -> Option<String> {
-        self.0.rx_debug_name()
-    }
-    #[inline(always)]
-    fn rx_is_disposed(&self) -> bool {
-        self.0.rx_is_disposed()
-    }
-    #[inline(always)]
     fn rx_is_constant(&self) -> bool {
         self.0.rx_is_constant()
     }
@@ -134,9 +151,8 @@ impl<F: RxInternal, M> RxInternal for Rx<F, M> {
 
 impl<F, M> WithUntracked for Rx<F, M>
 where
-    F: RxInternal + WithUntracked<Value = <F as RxInternal>::Value>,
+    F: RxInternal + WithUntracked,
 {
-    type Value = <F as RxInternal>::Value;
     #[inline(always)]
     fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         self.0.try_with_untracked(fun)
@@ -184,20 +200,29 @@ macro_rules! impl_tuple_everything {
         }
     };
     (@impl $guard:ident, $($T:ident : $idx:tt),+) => {
+        impl<$($T),+> RxBase for ($($T,)+)
+        where
+            $($T: RxBase),+,
+            $($T::Value: Sized),+
+        {
+            type Value = ($($T::Value,)+);
+            #[inline(always)] fn id(&self) -> Option<NodeId> { None }
+            #[inline(always)] fn track(&self) { $(self.$idx.track();)+ }
+            #[inline(always)] fn is_disposed(&self) -> bool { $(self.$idx.is_disposed() || )+ false }
+            #[inline(always)] fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> { None }
+            #[inline(always)] fn debug_name(&self) -> Option<String> { None }
+        }
+
         impl<$($T),+> RxInternal for ($($T,)+)
         where
             $($T: RxInternal),+,
             $($T::Value: Sized),+
         {
-            type Value = ($($T::Value,)+);
             type ReadOutput<'a> = $guard<'a, $($T::ReadOutput<'a>, $T::Value),+> where Self: 'a;
 
             #[inline(always)]
-            fn rx_track(&self) { $(self.$idx.rx_track();)+ }
-
-            #[inline(always)]
             fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
-                self.rx_track();
+                self.track();
                 self.rx_read_untracked()
             }
 
@@ -223,9 +248,6 @@ macro_rules! impl_tuple_everything {
                 Some(($( self.$idx.rx_get_adaptive()? ,)+))
             }
 
-            #[inline(always)] fn rx_defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> { None }
-            #[inline(always)] fn rx_debug_name(&self) -> Option<String> { None }
-            #[inline(always)] fn rx_is_disposed(&self) -> bool { $(self.$idx.rx_is_disposed() || )+ false }
             #[inline(always)] fn rx_is_constant(&self) -> bool { $(self.$idx.rx_is_constant() && )+ true }
         }
 
@@ -234,7 +256,6 @@ macro_rules! impl_tuple_everything {
             $($T: RxInternal),+,
             $($T::Value: Clone + 'static),+
         {
-            type Value = ($($T::Value,)+);
             #[inline(always)]
             fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
                 self.rx_try_with_untracked(fun)
@@ -317,6 +338,28 @@ impl_into_rx_primitive!(
 #[macro_export]
 macro_rules! impl_rx_delegate {
     ($target:ident, $is_const:expr) => {
+        impl<T: Clone + 'static> $crate::traits::RxBase for $target<T> {
+            type Value = T;
+            #[inline(always)]
+            fn id(&self) -> Option<$crate::reactivity::NodeId> {
+                None
+            }
+            #[inline(always)]
+            fn track(&self) {}
+            #[inline(always)]
+            fn is_disposed(&self) -> bool {
+                false
+            }
+            #[inline(always)]
+            fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> {
+                None
+            }
+            #[inline(always)]
+            fn debug_name(&self) -> Option<String> {
+                None
+            }
+        }
+
         impl<T: Clone + 'static> $crate::traits::IntoRx for $target<T> {
             type Value = T;
             type RxType = $crate::Rx<Self, $crate::RxValue>;
@@ -335,7 +378,6 @@ macro_rules! impl_rx_delegate {
         }
 
         impl<T: Clone + 'static> $crate::traits::WithUntracked for $target<T> {
-            type Value = T;
             #[inline(always)]
             fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
                 $crate::traits::RxInternal::rx_try_with_untracked(self, fun)
@@ -343,11 +385,27 @@ macro_rules! impl_rx_delegate {
         }
     };
     ($target:ident, SignalID, $is_const:expr) => {
-        impl<T: 'static> $crate::traits::ReactivityNode for $target<T> {
+        impl<T: 'static> $crate::traits::RxBase for $target<T> {
             type Value = T;
             #[inline(always)]
-            fn node_id(&self) -> $crate::reactivity::NodeId {
-                self.id
+            fn id(&self) -> Option<$crate::reactivity::NodeId> {
+                Some(self.id)
+            }
+            #[inline(always)]
+            fn track(&self) {
+                ::silex_reactivity::track_signal(self.id);
+            }
+            #[inline(always)]
+            fn is_disposed(&self) -> bool {
+                !::silex_reactivity::is_signal_valid(self.id)
+            }
+            #[inline(always)]
+            fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> {
+                ::silex_reactivity::get_node_defined_at(self.id)
+            }
+            #[inline(always)]
+            fn debug_name(&self) -> Option<String> {
+                ::silex_reactivity::get_debug_label(self.id)
             }
         }
 
@@ -372,20 +430,14 @@ macro_rules! impl_rx_delegate {
         }
 
         impl<T: 'static> $crate::traits::RxInternal for $target<T> {
-            type Value = T;
             type ReadOutput<'a>
                 = $crate::traits::RxGuard<'a, T, T>
             where
                 Self: 'a;
 
             #[inline(always)]
-            fn rx_track(&self) {
-                ::silex_reactivity::track_signal($crate::traits::ReactivityNode::node_id(self));
-            }
-
-            #[inline(always)]
             fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-                let id = $crate::traits::ReactivityNode::node_id(self);
+                let id = self.id;
                 unsafe {
                     ::silex_reactivity::try_with_signal_untracked(id, |v: &T| {
                         std::mem::transmute::<&T, &'static T>(v)
@@ -399,8 +451,7 @@ macro_rules! impl_rx_delegate {
 
             #[inline(always)]
             fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-                let id = $crate::traits::ReactivityNode::node_id(self);
-                ::silex_reactivity::try_with_signal_untracked(id, fun)
+                ::silex_reactivity::try_with_signal_untracked(self.id, fun)
             }
 
             #[inline(always)]
@@ -416,27 +467,12 @@ macro_rules! impl_rx_delegate {
             }
 
             #[inline(always)]
-            fn rx_defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> {
-                ::silex_reactivity::get_node_defined_at($crate::traits::ReactivityNode::node_id(
-                    self,
-                ))
-            }
-            #[inline(always)]
-            fn rx_debug_name(&self) -> Option<String> {
-                ::silex_reactivity::get_debug_label($crate::traits::ReactivityNode::node_id(self))
-            }
-            #[inline(always)]
-            fn rx_is_disposed(&self) -> bool {
-                !::silex_reactivity::is_signal_valid($crate::traits::ReactivityNode::node_id(self))
-            }
-            #[inline(always)]
             fn rx_is_constant(&self) -> bool {
                 $is_const
             }
         }
 
         impl<T: 'static> $crate::traits::WithUntracked for $target<T> {
-            type Value = T;
             #[inline(always)]
             fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
                 $crate::traits::RxInternal::rx_try_with_untracked(self, fun)
@@ -444,11 +480,27 @@ macro_rules! impl_rx_delegate {
         }
     };
     ($target:ident, $field:ident, $is_const:expr) => {
-        impl<T: 'static> $crate::traits::ReactivityNode for $target<T> {
+        impl<T: 'static> $crate::traits::RxBase for $target<T> {
             type Value = T;
             #[inline(always)]
-            fn node_id(&self) -> $crate::reactivity::NodeId {
-                $crate::traits::ReactivityNode::node_id(&self.$field)
+            fn id(&self) -> Option<$crate::reactivity::NodeId> {
+                $crate::traits::RxBase::id(&self.$field)
+            }
+            #[inline(always)]
+            fn track(&self) {
+                $crate::traits::RxBase::track(&self.$field)
+            }
+            #[inline(always)]
+            fn is_disposed(&self) -> bool {
+                $crate::traits::RxBase::is_disposed(&self.$field)
+            }
+            #[inline(always)]
+            fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> {
+                $crate::traits::RxBase::defined_at(&self.$field)
+            }
+            #[inline(always)]
+            fn debug_name(&self) -> Option<String> {
+                $crate::traits::RxBase::debug_name(&self.$field)
             }
         }
 
@@ -470,16 +522,10 @@ macro_rules! impl_rx_delegate {
         }
 
         impl<T: 'static> $crate::traits::RxInternal for $target<T> {
-            type Value = T;
             type ReadOutput<'a>
                 = <$crate::reactivity::ReadSignal<T> as $crate::traits::RxInternal>::ReadOutput<'a>
             where
                 Self: 'a;
-
-            #[inline(always)]
-            fn rx_track(&self) {
-                self.$field.rx_track();
-            }
 
             #[inline(always)]
             fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
@@ -500,25 +546,12 @@ macro_rules! impl_rx_delegate {
             }
 
             #[inline(always)]
-            fn rx_defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> {
-                self.$field.rx_defined_at()
-            }
-            #[inline(always)]
-            fn rx_debug_name(&self) -> Option<String> {
-                self.$field.rx_debug_name()
-            }
-            #[inline(always)]
-            fn rx_is_disposed(&self) -> bool {
-                self.$field.rx_is_disposed()
-            }
-            #[inline(always)]
             fn rx_is_constant(&self) -> bool {
                 $is_const
             }
         }
 
         impl<T: 'static> $crate::traits::WithUntracked for $target<T> {
-            type Value = T;
             #[inline(always)]
             fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
                 $crate::traits::RxInternal::rx_try_with_untracked(self, fun)
@@ -746,23 +779,21 @@ crate::impl_rx_ops!();
 impl<S> ReactivePartialEq for S
 where
     S: With + Clone + 'static,
-    <S as With>::Value: PartialEq + Sized + 'static,
+    S::Value: PartialEq + Sized + 'static,
 {
 }
 
 impl<S> ReactivePartialOrd for S
 where
     S: With + Clone + 'static,
-    <S as With>::Value: PartialOrd + Sized + 'static,
+    S::Value: PartialOrd + Sized + 'static,
 {
 }
 
 impl<T> With for T
 where
-    T: WithUntracked + Track,
+    T: WithUntracked + RxBase,
 {
-    type Value = <T as WithUntracked>::Value;
-
     #[track_caller]
     fn try_with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         self.track();
@@ -773,10 +804,8 @@ where
 // Map is based on WithUntracked, not Get - this is intentional for zero-copy support
 impl<S> Map for S
 where
-    S: WithUntracked + Track + Clone + 'static,
+    S: WithUntracked + Clone + 'static,
 {
-    type Value = S::Value;
-
     fn map<U, F>(self, f: F) -> crate::Rx<DerivedPayload<Self, F>, crate::RxValue>
     where
         F: Fn(&Self::Value) -> U + Clone + 'static,
@@ -801,10 +830,9 @@ where
 
 impl<T> Set for T
 where
-    T: Update + IsDisposed,
+    T: Update + RxBase,
+    T::Value: Sized,
 {
-    type Value = <Self as Update>::Value;
-
     #[track_caller]
     fn set(&self, value: Self::Value) {
         self.try_update(|n| *n = value);
@@ -823,10 +851,9 @@ where
 
 impl<T> SetUntracked for T
 where
-    T: UpdateUntracked + IsDisposed,
+    T: UpdateUntracked + RxBase,
+    T::Value: Sized,
 {
-    type Value = <Self as UpdateUntracked>::Value;
-
     #[track_caller]
     fn try_set_untracked(&self, value: Self::Value) -> Option<Self::Value> {
         if self.is_disposed() {

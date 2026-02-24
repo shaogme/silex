@@ -175,51 +175,53 @@ impl<Arg: 'static, T: Clone + 'static, E: Clone + 'static> Mutation<Arg, T, E> {
     }
 }
 
-impl<Arg, T: Clone + 'static, E: Clone + 'static> RxInternal for Mutation<Arg, T, E> {
+impl<Arg, T: Clone + 'static, E: Clone + 'static> RxBase for Mutation<Arg, T, E> {
     type Value = Option<T>;
+
+    #[inline(always)]
+    fn id(&self) -> Option<crate::reactivity::NodeId> {
+        self.state.id()
+    }
+
+    #[inline(always)]
+    fn track(&self) {
+        self.state.track();
+    }
+
+    #[inline(always)]
+    fn is_disposed(&self) -> bool {
+        self.state.is_disposed()
+    }
+
+    #[inline(always)]
+    fn defined_at(&self) -> Option<&'static Location<'static>> {
+        self.state.defined_at()
+    }
+
+    #[inline(always)]
+    fn debug_name(&self) -> Option<String> {
+        self.state.debug_name()
+    }
+}
+
+impl<Arg, T: Clone + 'static, E: Clone + 'static> RxInternal for Mutation<Arg, T, E> {
     type ReadOutput<'a>
         = RxGuard<'a, Option<T>, Option<T>>
     where
         Self: 'a;
 
     #[inline(always)]
-    fn rx_track(&self) {
-        self.state.rx_track();
-    }
-
-    #[inline(always)]
-    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
-        self.rx_track();
-        self.rx_read_untracked()
-    }
-
-    #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
         self.state
-            .rx_try_with_untracked(|s| RxGuard::Owned(s.value().cloned()))
+            .try_with_untracked(|s| RxGuard::Owned(s.value().cloned()))
     }
 
     #[inline(always)]
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.state.rx_try_with_untracked(|s: &MutationState<T, E>| {
+        self.state.try_with_untracked(|s: &MutationState<T, E>| {
             let val = s.value().cloned();
             fun(&val)
         })
-    }
-
-    #[inline(always)]
-    fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
-        self.state.rx_defined_at()
-    }
-
-    #[inline(always)]
-    fn rx_debug_name(&self) -> Option<String> {
-        self.state.rx_debug_name()
-    }
-
-    #[inline(always)]
-    fn rx_is_disposed(&self) -> bool {
-        self.state.rx_is_disposed()
     }
 
     #[inline(always)]
@@ -241,7 +243,6 @@ impl<Arg, T: Clone + 'static, E: Clone + 'static> RxInternal for Mutation<Arg, T
 }
 
 impl<Arg, T: Clone + 'static, E: Clone + 'static> WithUntracked for Mutation<Arg, T, E> {
-    type Value = Option<T>;
     #[inline(always)]
     fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         self.rx_try_with_untracked(fun)

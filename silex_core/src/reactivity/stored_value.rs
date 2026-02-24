@@ -56,22 +56,40 @@ impl<T: 'static> StoredValue<T> {
 
 // Note: GetUntracked is now blanket-implemented via WithUntracked when T: Clone
 
-impl<T: 'static> RxInternal for StoredValue<T> {
+impl<T: 'static> RxBase for StoredValue<T> {
     type Value = T;
-    type ReadOutput<'a>
-        = RxGuard<'a, T, T>
-    where
-        Self: 'a;
 
     #[inline(always)]
-    fn rx_track(&self) {
+    fn id(&self) -> Option<NodeId> {
+        Some(self.id)
+    }
+
+    #[inline(always)]
+    fn track(&self) {
         // StoredValue is non-reactive, no-op
     }
 
     #[inline(always)]
-    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
-        self.rx_read_untracked()
+    fn is_disposed(&self) -> bool {
+        !silex_reactivity::is_stored_value_valid(self.id)
     }
+
+    #[inline(always)]
+    fn defined_at(&self) -> Option<&'static Location<'static>> {
+        None
+    }
+
+    #[inline(always)]
+    fn debug_name(&self) -> Option<String> {
+        silex_reactivity::get_debug_label(self.id)
+    }
+}
+
+impl<T: 'static> RxInternal for StoredValue<T> {
+    type ReadOutput<'a>
+        = RxGuard<'a, T, T>
+    where
+        Self: 'a;
 
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
@@ -89,21 +107,6 @@ impl<T: 'static> RxInternal for StoredValue<T> {
     #[inline(always)]
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         silex_reactivity::try_with_stored_value(self.id, fun)
-    }
-
-    #[inline(always)]
-    fn rx_defined_at(&self) -> Option<&'static Location<'static>> {
-        None
-    }
-
-    #[inline(always)]
-    fn rx_debug_name(&self) -> Option<String> {
-        silex_reactivity::get_debug_label(self.id)
-    }
-
-    #[inline(always)]
-    fn rx_is_disposed(&self) -> bool {
-        !silex_reactivity::is_stored_value_valid(self.id)
     }
 
     #[inline(always)]
@@ -125,7 +128,6 @@ impl<T: 'static> RxInternal for StoredValue<T> {
 }
 
 impl<T: 'static> WithUntracked for StoredValue<T> {
-    type Value = T;
     #[inline(always)]
     fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         self.rx_try_with_untracked(fun)
@@ -150,8 +152,6 @@ impl<T: 'static> IntoRx for StoredValue<T> {
 }
 
 impl<T: 'static> UpdateUntracked for StoredValue<T> {
-    type Value = T;
-
     fn try_update_untracked<U>(&self, fun: impl FnOnce(&mut Self::Value) -> U) -> Option<U> {
         silex_reactivity::try_update_stored_value(self.id, fun)
     }
