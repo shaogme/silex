@@ -12,11 +12,10 @@ struct SignalVisitor {
 
 impl VisitMut for SignalVisitor {
     fn visit_expr_mut(&mut self, i: &mut Expr) {
-        if let Expr::Path(expr_path) = i {
-            if let Some(segment) = expr_path.path.segments.last_mut() {
+        if let Expr::Path(expr_path) = i
+            && let Some(segment) = expr_path.path.segments.last_mut() {
                 let name = segment.ident.to_string();
-                if name.starts_with("__silex_rx_sig_") {
-                    let original_name = &name["__silex_rx_sig_".len()..];
+                if let Some(original_name) = name.strip_prefix("__silex_rx_sig_") {
                     let span = segment.ident.span();
                     let original_ident = format_ident!("{}", original_name, span = span);
 
@@ -30,7 +29,6 @@ impl VisitMut for SignalVisitor {
                     segment.ident = ref_ident.clone();
                 }
             }
-        }
         visit_mut::visit_expr_mut(self, i);
     }
 }
@@ -82,13 +80,12 @@ pub fn rx(input: TokenStream) -> TokenStream {
     let mut first_part = proc_macro2::TokenStream::new();
     let mut found_semi = false;
 
-    while let Some(tt) = iter.next() {
-        if let proc_macro2::TokenTree::Punct(ref p) = tt {
-            if p.as_char() == ';' {
+    for tt in iter.by_ref() {
+        if let proc_macro2::TokenTree::Punct(ref p) = tt
+            && p.as_char() == ';' {
                 found_semi = true;
                 break;
             }
-        }
         first_part.extend(std::iter::once(tt));
     }
 
@@ -139,7 +136,7 @@ pub fn rx(input: TokenStream) -> TokenStream {
     visitor.visit_expr_mut(&mut expr);
 
     let m_type = if let Expr::Closure(ref closure) = expr {
-        if closure.inputs.len() > 0 {
+        if !closure.inputs.is_empty() {
             quote! { #prefix::RxEffect }
         } else {
             quote! { #prefix::RxValue }
@@ -167,7 +164,7 @@ pub fn rx(input: TokenStream) -> TokenStream {
                 })
             };
         }
-        closure.body = Box::new(parse2::<Expr>(quote! { { #nested } }).unwrap());
+        *closure.body = parse2::<Expr>(quote! { { #nested } }).unwrap();
         quote! { #closure }
     } else {
         let mut nested = quote! { #expr };

@@ -66,7 +66,6 @@
 //! ```
 
 use crate::reactivity::{DerivedPayload, Memo, NodeId};
-use crate::{Rx, RxValue};
 use std::ops::Deref;
 use std::panic::Location;
 
@@ -157,11 +156,14 @@ pub type CompareFn<T> = fn(&T, &T) -> bool;
 #[doc(hidden)]
 macro_rules! reactive_compare_method {
     ($name:ident, $fn_impl:ident, $op:tt, $bound:ident) => {
-        fn $name<O: 'static>(&self, other: O) -> Rx<crate::reactivity::OpPayload<bool>, RxValue>
+        fn $name<O>(
+            &self,
+            other: O,
+        ) -> $crate::Rx<$crate::reactivity::OpPayload<bool>, $crate::RxValue>
         where
             Self: IntoRx,
             Self::RxType: RxInternal<Value = <Self as IntoRx>::Value> + Clone + 'static,
-            O: IntoRx<Value = <Self as IntoRx>::Value>,
+            O: IntoRx<Value = <Self as IntoRx>::Value> + 'static,
             O::RxType: RxInternal<Value = <Self as IntoRx>::Value> + Clone + 'static,
             <Self as IntoRx>::Value: $bound + Sized + Clone + 'static,
         {
@@ -171,20 +173,20 @@ macro_rules! reactive_compare_method {
             #[inline(always)]
             unsafe fn read_impl<InnerT: $bound + 'static>(inputs: &[NodeId]) -> Option<bool> {
                 unsafe {
-                    let a = crate::reactivity::rx_borrow_signal_unsafe::<InnerT>(inputs[0])?;
-                    let b = crate::reactivity::rx_borrow_signal_unsafe::<InnerT>(inputs[1])?;
+                    let a = $crate::reactivity::rx_borrow_signal_unsafe::<InnerT>(inputs[0])?;
+                    let b = $crate::reactivity::rx_borrow_signal_unsafe::<InnerT>(inputs[1])?;
                     Some($crate::traits::impls::ops_impl::$fn_impl(a, b))
                 }
             }
 
             let is_const = lhs.is_constant() && rhs.is_constant();
 
-            Rx(
-                crate::reactivity::OpPayload {
+            $crate::Rx(
+                $crate::reactivity::OpPayload {
                     inputs: [lhs.ensure_node_id(), rhs.ensure_node_id()],
                     input_count: 2,
                     read: read_impl::<<Self as IntoRx>::Value>,
-                    track: crate::reactivity::op_trampolines::track_inputs,
+                    track: $crate::reactivity::op_trampolines::track_inputs,
                     is_constant: is_const,
                 },
                 ::core::marker::PhantomData,
