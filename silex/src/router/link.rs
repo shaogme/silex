@@ -32,7 +32,7 @@ pub fn Link<T: ToRoute, V: View + 'static>(to: T, child: V) -> Link {
 
 impl Link {
     /// 设置 CSS 类
-    pub fn class(self, name: &str) -> Self {
+    pub fn class(self, name: impl silex_dom::attribute::IntoStorable) -> Self {
         Self {
             inner: self.inner.class(name),
             ..self
@@ -40,7 +40,7 @@ impl Link {
     }
 
     /// 设置样式
-    pub fn style(self, css: &str) -> Self {
+    pub fn style(self, css: impl silex_dom::attribute::IntoStorable) -> Self {
         Self {
             inner: self.inner.style(css),
             ..self
@@ -48,12 +48,12 @@ impl Link {
     }
 
     /// 设置激活时的 CSS 类 (当当前路径匹配 href 时添加)
-    pub fn active_class(self, name: &str) -> Self {
+    pub fn active_class(self, name: impl Into<String>) -> Self {
         // 尝试获取 Router 上下文中的 path 信号
         if let Some(router) = use_router() {
             let path_signal = router.path;
             let href = self.href.clone();
-            let class_name = name.to_string();
+            let class_name = name.into();
 
             let is_active = silex_core::rx! {
                 let current_path = path_signal.get();

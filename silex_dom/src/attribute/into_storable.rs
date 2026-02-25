@@ -1,5 +1,4 @@
 use super::{ApplyToDom, AttributeGroup};
-use silex_core::traits::IntoRx;
 // --- IntoStorable: 允许非 'static 类型转换为可存储类型 ---
 
 /// 将值转换为可存储的类型。
@@ -15,10 +14,10 @@ pub trait IntoStorable {
 
 // --- 1. 基础类型 ---
 
-impl IntoStorable for &str {
-    type Stored = String;
+impl IntoStorable for &'static str {
+    type Stored = &'static str;
     fn into_storable(self) -> Self::Stored {
-        self.to_string()
+        self
     }
 }
 
@@ -60,7 +59,7 @@ impl_into_storable_primitive!(
 );
 
 // --- 2. Rx 支持 ---
-// 所有通过 rx!(...) 或 .into_rx() 创建的统一外衣在这里被支持
+// 所有通过 rx!(...) 或 .into_rx() 创建的统一外衣在这里直接支持（作为 'static 类型自转）
 
 impl<F, M> IntoStorable for silex_core::Rx<F, M>
 where
@@ -72,78 +71,72 @@ where
     }
 }
 
-// --- 3. Reactive Forwarders ---
-// These implementations allow using raw signals (Signal<T>, Memo<T>, etc.) directly as attributes.
-// They automatically normalize to Rx<Signal<T>, RxValueKind> during the into_storable conversion.
+// --- 3. Reactive Identity (自转实现) ---
+// 响应式原语本身已满足 'static，在 IntoStorable 阶段保持原样，
+// 真正的响应式绑定逻辑延迟到 ApplyToDom 阶段处理。
 
-macro_rules! impl_into_storable_forwarder {
+macro_rules! impl_into_storable_identity {
     ($($ty:ident),*) => {
         $(
             impl<T> IntoStorable for silex_core::reactivity::$ty<T>
             where
-                Self: silex_core::traits::IntoRx + 'static,
-                <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom + 'static,
+                Self: ApplyToDom + 'static,
             {
-                type Stored = <Self as silex_core::traits::IntoRx>::RxType;
+                type Stored = Self;
+                #[inline(always)]
                 fn into_storable(self) -> Self::Stored {
-                    self.into_rx()
+                    self
                 }
             }
         )*
     };
 }
 
-impl_into_storable_forwarder!(Signal, ReadSignal, RwSignal, Constant, Memo);
+impl_into_storable_identity!(Signal, ReadSignal, RwSignal, Constant, Memo);
 
 impl<S, F> IntoStorable for silex_core::reactivity::DerivedPayload<S, F>
 where
-    Self: silex_core::traits::IntoRx + 'static,
-    <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom + 'static,
+    Self: ApplyToDom + 'static,
 {
-    type Stored = <Self as silex_core::traits::IntoRx>::RxType;
+    type Stored = Self;
     fn into_storable(self) -> Self::Stored {
-        self.into_rx()
+        self
     }
 }
 
 impl<U, const N: usize> IntoStorable for silex_core::reactivity::OpPayload<U, N>
 where
-    Self: silex_core::traits::IntoRx + 'static,
-    <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom + 'static,
+    Self: ApplyToDom + 'static,
 {
-    type Stored = <Self as silex_core::traits::IntoRx>::RxType;
+    type Stored = Self;
     fn into_storable(self) -> Self::Stored {
-        self.into_rx()
+        self
     }
 }
 
 impl<S, F, O> IntoStorable for silex_core::reactivity::SignalSlice<S, F, O>
 where
-    Self: silex_core::traits::IntoRx + 'static,
-    <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom + 'static,
+    Self: ApplyToDom + 'static,
 {
-    type Stored = <Self as silex_core::traits::IntoRx>::RxType;
+    type Stored = Self;
     fn into_storable(self) -> Self::Stored {
-        self.into_rx()
+        self
     }
 }
 
 // --- 4. Tuple 实现 ---
 
 // 统一泛型实现：(Key, Value)
-// 适用于 (String, String) [Style], (String, bool) [Class], (String, Signal) 等所有情况
-// 通过 ApplyToDom 的 generic impl 和 ReactiveApply::apply_pair 分发逻辑
 impl<K, V> IntoStorable for (K, V)
 where
-    K: IntoStorable<Stored = String>,
-    V: IntoRx,
-    V::RxType: 'static,
-    (String, V::RxType): ApplyToDom,
+    K: IntoStorable,
+    V: IntoStorable,
+    (K::Stored, V::Stored): ApplyToDom + 'static,
 {
-    type Stored = (String, V::RxType);
+    type Stored = (K::Stored, V::Stored);
 
     fn into_storable(self) -> Self::Stored {
-        (self.0.into_storable(), self.1.into_rx())
+        (self.0.into_storable(), self.1.into_storable())
     }
 }
 

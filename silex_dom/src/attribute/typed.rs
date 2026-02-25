@@ -38,16 +38,25 @@ where
 impl ApplyStringAttribute for String {
     fn apply_string<F>(self, setter: F)
     where
-        F: Fn(&str) + 'static,
+        F: Fn(&str) + Clone + 'static,
     {
         setter(&self);
+    }
+}
+
+impl ApplyStringAttribute for &'static str {
+    fn apply_string<F>(self, setter: F)
+    where
+        F: Fn(&str) + Clone + 'static,
+    {
+        setter(self);
     }
 }
 
 impl ApplyBoolAttribute for bool {
     fn apply_bool<F>(self, setter: F)
     where
-        F: Fn(bool) + 'static,
+        F: Fn(bool) + Clone + 'static,
     {
         setter(self);
     }
@@ -60,7 +69,7 @@ macro_rules! impl_apply_string_primitive {
             impl ApplyStringAttribute for $t {
                 fn apply_string<F>(self, setter: F)
                 where
-                    F: Fn(&str) + 'static,
+                    F: Fn(&str) + Clone + 'static,
                 {
                     setter(&self.to_string());
                 }
@@ -83,9 +92,91 @@ where
 {
     fn apply_string<Setter>(self, setter: Setter)
     where
-        Setter: Fn(&str) + 'static,
+        Setter: Fn(&str) + Clone + 'static,
     {
         apply_string_reactive_internal(Rc::new(move || self.with(|v| v.to_string())), setter);
+    }
+}
+
+// 统一转发宏：将响应式原语转发给归一化的 Rx 处理
+macro_rules! impl_reactive_typed_forwarder {
+    ($($ty:ident),*) => {
+        $(
+            impl<T> ApplyStringAttribute for silex_core::reactivity::$ty<T>
+            where
+                T: Display + Clone + 'static,
+                Self: silex_core::traits::IntoRx + 'static,
+                <Self as silex_core::traits::IntoRx>::RxType: ApplyStringAttribute,
+            {
+                fn apply_string<Setter>(self, setter: Setter)
+                where
+                    Setter: Fn(&str) + Clone + 'static,
+                {
+                    use silex_core::traits::IntoRx;
+                    self.into_rx().apply_string(setter)
+                }
+            }
+
+            impl<T> ApplyBoolAttribute for silex_core::reactivity::$ty<T>
+            where
+                T: Into<bool> + Clone + 'static,
+                Self: silex_core::traits::IntoRx + 'static,
+                <Self as silex_core::traits::IntoRx>::RxType: ApplyBoolAttribute,
+            {
+                fn apply_bool<Setter>(self, setter: Setter)
+                where
+                    Setter: Fn(bool) + Clone + 'static,
+                {
+                    use silex_core::traits::IntoRx;
+                    self.into_rx().apply_bool(setter)
+                }
+            }
+        )*
+    };
+}
+
+impl_reactive_typed_forwarder!(Signal, ReadSignal, RwSignal, Constant, Memo);
+
+// 处理派生与组合类型
+impl<S, F> ApplyStringAttribute for silex_core::reactivity::DerivedPayload<S, F>
+where
+    Self: silex_core::traits::IntoRx + 'static,
+    <Self as silex_core::traits::IntoRx>::RxType: ApplyStringAttribute,
+{
+    fn apply_string<Setter>(self, setter: Setter)
+    where
+        Setter: Fn(&str) + Clone + 'static,
+    {
+        use silex_core::traits::IntoRx;
+        self.into_rx().apply_string(setter)
+    }
+}
+
+impl<U, const N: usize> ApplyStringAttribute for silex_core::reactivity::OpPayload<U, N>
+where
+    Self: silex_core::traits::IntoRx + 'static,
+    <Self as silex_core::traits::IntoRx>::RxType: ApplyStringAttribute,
+{
+    fn apply_string<Setter>(self, setter: Setter)
+    where
+        Setter: Fn(&str) + Clone + 'static,
+    {
+        use silex_core::traits::IntoRx;
+        self.into_rx().apply_string(setter)
+    }
+}
+
+impl<S, F, O> ApplyStringAttribute for silex_core::reactivity::SignalSlice<S, F, O>
+where
+    Self: silex_core::traits::IntoRx + 'static,
+    <Self as silex_core::traits::IntoRx>::RxType: ApplyStringAttribute,
+{
+    fn apply_string<Setter>(self, setter: Setter)
+    where
+        Setter: Fn(&str) + Clone + 'static,
+    {
+        use silex_core::traits::IntoRx;
+        self.into_rx().apply_string(setter)
     }
 }
 
@@ -98,8 +189,50 @@ where
 {
     fn apply_bool<Setter>(self, setter: Setter)
     where
-        Setter: Fn(bool) + 'static,
+        Setter: Fn(bool) + Clone + 'static,
     {
         apply_bool_reactive_internal(Rc::new(move || self.with(|v| v.clone().into())), setter);
+    }
+}
+
+impl<S, F> ApplyBoolAttribute for silex_core::reactivity::DerivedPayload<S, F>
+where
+    Self: silex_core::traits::IntoRx + 'static,
+    <Self as silex_core::traits::IntoRx>::RxType: ApplyBoolAttribute,
+{
+    fn apply_bool<Setter>(self, setter: Setter)
+    where
+        Setter: Fn(bool) + Clone + 'static,
+    {
+        use silex_core::traits::IntoRx;
+        self.into_rx().apply_bool(setter)
+    }
+}
+
+impl<U, const N: usize> ApplyBoolAttribute for silex_core::reactivity::OpPayload<U, N>
+where
+    Self: silex_core::traits::IntoRx + 'static,
+    <Self as silex_core::traits::IntoRx>::RxType: ApplyBoolAttribute,
+{
+    fn apply_bool<Setter>(self, setter: Setter)
+    where
+        Setter: Fn(bool) + Clone + 'static,
+    {
+        use silex_core::traits::IntoRx;
+        self.into_rx().apply_bool(setter)
+    }
+}
+
+impl<S, F, O> ApplyBoolAttribute for silex_core::reactivity::SignalSlice<S, F, O>
+where
+    Self: silex_core::traits::IntoRx + 'static,
+    <Self as silex_core::traits::IntoRx>::RxType: ApplyBoolAttribute,
+{
+    fn apply_bool<Setter>(self, setter: Setter)
+    where
+        Setter: Fn(bool) + Clone + 'static,
+    {
+        use silex_core::traits::IntoRx;
+        self.into_rx().apply_bool(setter)
     }
 }

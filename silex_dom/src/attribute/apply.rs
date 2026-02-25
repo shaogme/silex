@@ -40,6 +40,20 @@ where
     }
 }
 
+// --- 统一响应式应用逻辑 ---
+
+// 1. 已归一化的 Rx 容器 (Value)
+impl<F> ApplyToDom for silex_core::Rx<F, silex_core::RxValueKind>
+where
+    Self: silex_core::traits::IntoSignal + 'static,
+    <Self as silex_core::traits::RxValue>::Value: ReactiveApply + Clone + 'static,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        crate::attribute::apply_signal_internal(self.into_signal(), el, target);
+    }
+}
+
+// 2. 逻辑型 Rx (Effect)
 impl<F> ApplyToDom for silex_core::Rx<F, silex_core::RxEffectKind>
 where
     F: FnOnce(&WebElem) + 'static,
@@ -49,13 +63,58 @@ where
     }
 }
 
-impl<F> ApplyToDom for silex_core::Rx<F, silex_core::RxValueKind>
+// 2. 响应式原语转发器 (不再依赖 IntoStorable 的阶段转换)
+macro_rules! impl_apply_to_dom_rx_forwarder {
+    ($($ty:ident),*) => {
+        $(
+            impl<T> ApplyToDom for silex_core::reactivity::$ty<T>
+            where
+                T: ReactiveApply + Clone + 'static,
+                Self: silex_core::traits::IntoRx + 'static,
+                <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom,
+            {
+                fn apply(self, el: &WebElem, target: ApplyTarget) {
+                    use silex_core::traits::IntoRx;
+                    self.into_rx().apply(el, target);
+                }
+            }
+        )*
+    };
+}
+
+impl_apply_to_dom_rx_forwarder!(Signal, ReadSignal, RwSignal, Constant, Memo);
+
+// 3. 响应式组合/派生类型转发器
+impl<S, F> ApplyToDom for silex_core::reactivity::DerivedPayload<S, F>
 where
-    Self: silex_core::traits::IntoSignal + 'static,
-    <Self as silex_core::traits::RxValue>::Value: ReactiveApply + Clone + 'static,
+    Self: silex_core::traits::IntoRx + 'static,
+    <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom,
 {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
-        crate::attribute::apply_signal_internal(self.into_signal(), el, target);
+        use silex_core::traits::IntoRx;
+        self.into_rx().apply(el, target);
+    }
+}
+
+impl<U, const N: usize> ApplyToDom for silex_core::reactivity::OpPayload<U, N>
+where
+    Self: silex_core::traits::IntoRx + 'static,
+    <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        use silex_core::traits::IntoRx;
+        self.into_rx().apply(el, target);
+    }
+}
+
+impl<S, F, O> ApplyToDom for silex_core::reactivity::SignalSlice<S, F, O>
+where
+    Self: silex_core::traits::IntoRx + 'static,
+    <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        use silex_core::traits::IntoRx;
+        self.into_rx().apply(el, target);
     }
 }
 
@@ -396,11 +455,35 @@ impl ReactiveApply for bool {
     }
 }
 
-impl<K, S> ApplyToDom for (K, S)
+// 响应式元组：(Key, ReactiveSource)
+macro_rules! impl_apply_to_dom_tuple_forwarder {
+    ($($ty:ident),*) => {
+        $(
+            impl<K, T> ApplyToDom for (K, silex_core::reactivity::$ty<T>)
+            where
+                K: AsRef<str>,
+                T: ReactiveApply + Clone + 'static,
+            {
+                fn apply(self, el: &WebElem, target: ApplyTarget) {
+                    let (key, source) = self;
+                    let signal = source.into_signal();
+                    let el = el.clone();
+                    let owned_target = OwnedApplyTarget::from(target);
+                    let key_str = key.as_ref().to_string();
+                    T::apply_pair(signal, key_str, el, owned_target);
+                }
+            }
+        )*
+    };
+}
+
+impl_apply_to_dom_tuple_forwarder!(Signal, ReadSignal, RwSignal, Constant, Memo);
+
+impl<K, F, M> ApplyToDom for (K, silex_core::Rx<F, M>)
 where
     K: AsRef<str>,
-    S: IntoSignal + 'static,
-    S::Value: ReactiveApply + Clone + 'static,
+    silex_core::Rx<F, M>: silex_core::traits::IntoSignal + 'static,
+    <silex_core::Rx<F, M> as silex_core::traits::RxValue>::Value: ReactiveApply + Clone + 'static,
 {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
         let (key, source) = self;
@@ -408,8 +491,83 @@ where
         let el = el.clone();
         let owned_target = OwnedApplyTarget::from(target);
         let key_str = key.as_ref().to_string();
+        <<silex_core::Rx<F, M> as silex_core::traits::RxValue>::Value>::apply_pair(
+            signal,
+            key_str,
+            el,
+            owned_target,
+        );
+    }
+}
 
-        S::Value::apply_pair(signal, key_str, el, owned_target);
+// 静态元组 (Key, StaticValue)
+impl<K> ApplyToDom for (K, String)
+where
+    K: AsRef<str>,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        let (key, value) = self;
+        apply_static_pair(el, target, key.as_ref(), &value);
+    }
+}
+
+impl<K> ApplyToDom for (K, &str)
+where
+    K: AsRef<str>,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        let (key, value) = self;
+        apply_static_pair(el, target, key.as_ref(), value);
+    }
+}
+
+fn apply_static_pair(el: &WebElem, target: ApplyTarget, key: &str, value: &str) {
+    let owned_target = OwnedApplyTarget::from(target);
+    match owned_target {
+        OwnedApplyTarget::Style => {
+            if let Some(style) = get_style_decl(el) {
+                let _ = style.set_property(key, value);
+            }
+        }
+        OwnedApplyTarget::Attr(ref n) if n == "style" => {
+            if let Some(style) = get_style_decl(el) {
+                let _ = style.set_property(key, value);
+            }
+        }
+        _ => {
+            apply_immediate_string(el, target, value);
+        }
+    }
+}
+
+impl<K> ApplyToDom for (K, bool)
+where
+    K: AsRef<str>,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        let (key, value) = self;
+        let owned_target = OwnedApplyTarget::from(target);
+        match owned_target {
+            OwnedApplyTarget::Class => {
+                let list = el.class_list();
+                if value {
+                    let _ = list.add_1(key.as_ref());
+                } else {
+                    let _ = list.remove_1(key.as_ref());
+                }
+            }
+            OwnedApplyTarget::Attr(ref n) if n == "class" => {
+                let list = el.class_list();
+                if value {
+                    let _ = list.add_1(key.as_ref());
+                } else {
+                    let _ = list.remove_1(key.as_ref());
+                }
+            }
+            _ => {
+                apply_immediate_bool(el, target, value);
+            }
+        }
     }
 }
 
@@ -495,8 +653,8 @@ impl PendingAttribute {
             f: Rc::new(move |el| {
                 if let Some(v) = value_cell.borrow_mut().take() {
                     let t = match &target {
-                        OwnedApplyTarget::Attr(n) => ApplyTarget::Attr(n),
-                        OwnedApplyTarget::Prop(n) => ApplyTarget::Prop(n),
+                        OwnedApplyTarget::Attr(n) => ApplyTarget::Attr(n.as_str()),
+                        OwnedApplyTarget::Prop(n) => ApplyTarget::Prop(n.as_str()),
                         OwnedApplyTarget::Class => ApplyTarget::Class,
                         OwnedApplyTarget::Style => ApplyTarget::Style,
                         OwnedApplyTarget::Apply => ApplyTarget::Apply,
