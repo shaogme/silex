@@ -1,6 +1,6 @@
 use crate::reactivity::{Constant, NodeId};
-use crate::traits::RxBase;
 use crate::traits::guards::*;
+use crate::traits::{RxBase, RxValue};
 use crate::{Rx, RxValueKind};
 use std::ops::Deref;
 use std::panic::Location;
@@ -8,8 +8,7 @@ use std::panic::Location;
 /// 允许将各种类型（原始类型、信号、Rx）转换为统一的 `Rx` 包装器。
 ///
 /// *注意*: 原始类型（i32, f64, &str 等）会自动转换为 `Constant<T>`。
-pub trait IntoRx {
-    type Value: ?Sized;
+pub trait IntoRx: RxValue {
     type RxType;
     fn into_rx(self) -> Self::RxType;
     fn is_constant(&self) -> bool;
@@ -155,53 +154,17 @@ where
     fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         self.rx_try_with_untracked(fun)
     }
+}
 
+/// 克隆获取特质。仅当值支持克隆时自动生效。
+pub trait RxGet: RxRead
+where
+    Self::Value: Clone + Sized,
+    for<'a> Self::ReadOutput<'a>: Deref<Target = Self::Value>,
+{
     // ==========================================
     // 3. 克隆获取（Getters）
     // ==========================================
-
-    /// 非响应式地克隆和返回值。如果是被销毁的，返回 None。
-    #[track_caller]
-    fn try_get_untracked(&self) -> Option<Self::Value>
-    where
-        Self::Value: Sized + Clone,
-    {
-        self.try_read_untracked().map(|v| v.clone())
-    }
-
-    /// 非响应式地克隆和返回值。
-    ///
-    /// # Panics
-    /// 访问被销毁的信号时报错。
-    #[track_caller]
-    fn get_untracked(&self) -> Self::Value
-    where
-        Self::Value: Sized + Clone,
-    {
-        self.try_get_untracked()
-            .unwrap_or_else(|| unwrap_rx!(self)())
-    }
-
-    /// 响应式地订阅信号，克隆并返回值。已被销毁则返回 None。
-    #[track_caller]
-    fn try_get(&self) -> Option<Self::Value>
-    where
-        Self::Value: Sized + Clone,
-    {
-        self.try_read().map(|v| v.clone())
-    }
-
-    /// 响应式地订阅信号，克隆并返回值。
-    ///
-    /// # Panics
-    /// 访问被销毁的信号时报错。
-    #[track_caller]
-    fn get(&self) -> Self::Value
-    where
-        Self::Value: Sized + Clone,
-    {
-        self.try_get().unwrap_or_else(|| unwrap_rx!(self)())
-    }
 
     /// 尝试获取值的副本。该方法不强制要求 `Clone` 约束（自适应回退）。
     /// - 如果信号已销毁 / 未实现 Clone：返回 `None`。
@@ -231,6 +194,44 @@ where
     {
         self.try_get_cloned().unwrap_or_default()
     }
+
+    /// 非响应式地克隆和返回值。如果是被销毁的，返回 None。
+    #[track_caller]
+    fn try_get_untracked(&self) -> Option<Self::Value> {
+        self.try_read_untracked().map(|v| (*v).clone())
+    }
+
+    /// 非响应式地克隆和返回值。
+    ///
+    /// # Panics
+    /// 访问被销毁的信号时报错。
+    #[track_caller]
+    fn get_untracked(&self) -> Self::Value {
+        self.try_get_untracked()
+            .unwrap_or_else(|| unwrap_rx!(self)())
+    }
+
+    /// 响应式地订阅信号，克隆并返回值。已被销毁则返回 None。
+    #[track_caller]
+    fn try_get(&self) -> Option<Self::Value> {
+        self.try_read().map(|v| (*v).clone())
+    }
+
+    /// 响应式地订阅信号，克隆并返回值。
+    ///
+    /// # Panics
+    /// 访问被销毁的信号时报错。
+    #[track_caller]
+    fn get(&self) -> Self::Value {
+        self.try_get().unwrap_or_else(|| unwrap_rx!(self)())
+    }
+}
+
+impl<T: ?Sized + RxRead> RxGet for T
+where
+    T::Value: Clone + Sized,
+    for<'a> T::ReadOutput<'a>: Deref<Target = T::Value>,
+{
 }
 
 impl<T: ?Sized + RxInternal> RxRead for T where for<'a> T::ReadOutput<'a>: Deref<Target = T::Value> {}
@@ -272,8 +273,11 @@ macro_rules! impl_closure_rx {
     (
         impl<$($gen:ident),*> $target:ty $(where $($bounds:tt)*)?
     ) => {
-        impl<$($gen),*> RxBase for $target $(where $($bounds)*, T: 'static)? {
+        impl<$($gen),*> $crate::traits::RxValue for $target $(where $($bounds)*, T: 'static)? {
             type Value = T;
+        }
+
+        impl<$($gen),*> RxBase for $target $(where $($bounds)*, T: 'static)? {
             #[inline(always)] fn id(&self) -> Option<NodeId> { None }
             #[inline(always)] fn track(&self) {}
             #[inline(always)] fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> { None }
@@ -296,9 +300,11 @@ macro_rules! impl_closure_rx {
 impl_closure_rx!(impl<F, T> F where F: Fn() -> T);
 impl_closure_rx!(impl<T> ::std::rc::Rc<dyn Fn() -> T>);
 
-impl<F: RxBase, M> RxBase for Rx<F, M> {
+impl<F: crate::traits::RxValue, M> crate::traits::RxValue for Rx<F, M> {
     type Value = F::Value;
+}
 
+impl<F: RxBase, M> RxBase for Rx<F, M> {
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
         self.0.id()
@@ -361,12 +367,20 @@ impl<F: RxInternal, M> RxInternal for Rx<F, M> {
 macro_rules! impl_tuple_into_rx {
     ($len:expr, $($T:ident : $idx:tt),+) => {
         #[allow(non_snake_case)]
+        impl<$($T),+> $crate::traits::RxValue for ($($T,)+)
+        where
+            $($T: $crate::traits::RxValue),+,
+            $($T::Value: core::marker::Sized),+
+        {
+            type Value = ($($T::Value,)+);
+        }
+
+        #[allow(non_snake_case)]
         impl<$($T),+> IntoRx for ($($T,)+)
         where
             $($T: IntoRx + Clone + 'static),+,
-            $(<$T as IntoRx>::Value: Clone + 'static),+
+            $($T::Value: Clone + 'static),+
         {
-            type Value = ($(<$T as IntoRx>::Value,)+);
             type RxType = Rx<crate::reactivity::OpPayload<Self::Value, $len>, RxValueKind>;
 
             #[inline(always)]
@@ -387,7 +401,7 @@ macro_rules! impl_tuple_into_rx {
 
                 Rx(crate::reactivity::OpPayload {
                     inputs,
-                    read: read_impl::<$(<$T as IntoRx>::Value),+>,
+                    read: read_impl::<$($T::Value),+>,
                     track: crate::reactivity::op_trampolines::track_inputs,
                     is_constant,
                 }, ::core::marker::PhantomData)
@@ -409,9 +423,8 @@ macro_rules! impl_tuple_into_rx {
         impl<$($T),+> RxBase for ($($T,)+)
         where
             $($T: RxBase),+,
-            $(<$T as RxBase>::Value: Sized),+
+            $($T::Value: Sized),+
         {
-            type Value = ($(<$T as RxBase>::Value,)+);
             #[inline(always)] fn id(&self) -> Option<crate::reactivity::NodeId> { None }
             #[inline(always)] fn track(&self) { $(self.$idx.track();)+ }
             #[inline(always)] fn is_disposed(&self) -> bool { $(self.$idx.is_disposed() || )+ false }
@@ -422,8 +435,8 @@ macro_rules! impl_tuple_into_rx {
         impl<$($T),+> RxInternal for ($($T,)+)
         where
             $($T: RxInternal + Clone + 'static),+,
-            $($T: IntoRx<Value = <$T as RxBase>::Value>),+,
-            $(<$T as RxBase>::Value: Clone + Sized + 'static),+
+            $($T: IntoRx),+,
+            $($T::Value: Clone + Sized + 'static),+
         {
             type ReadOutput<'a> = RxGuard<'a, Self::Value, Self::Value> where Self: 'a;
 
@@ -464,7 +477,6 @@ where
     F::Value: Clone + 'static,
     for<'a> F::ReadOutput<'a>: std::ops::Deref<Target = F::Value>,
 {
-    type Value = F::Value;
     type RxType = Self;
 
     #[inline(always)]
@@ -489,8 +501,11 @@ where
 macro_rules! impl_into_rx_primitive {
     ($($t:ty $(: $val:ty => $conv:expr)?),*) => {
         $(
-            impl IntoRx for $t {
+            impl $crate::traits::RxValue for $t {
                 type Value = impl_into_rx_primitive!(@type $t $(, $val)?);
+            }
+
+            impl IntoRx for $t {
                 type RxType = Rx<Constant<Self::Value>, RxValueKind>;
 
                 #[inline(always)]
@@ -526,8 +541,11 @@ impl_into_rx_primitive!(
 #[macro_export]
 macro_rules! impl_rx_delegate {
     ($target:ident, $is_const:expr) => {
-        impl<T: Clone + 'static> $crate::traits::RxBase for $target<T> {
+        impl<T: 'static> $crate::traits::RxValue for $target<T> {
             type Value = T;
+        }
+
+        impl<T: Clone + 'static> $crate::traits::RxBase for $target<T> {
             #[inline(always)]
             fn id(&self) -> Option<$crate::reactivity::NodeId> {
                 None
@@ -549,7 +567,6 @@ macro_rules! impl_rx_delegate {
         }
 
         impl<T: Clone + 'static> $crate::traits::IntoRx for $target<T> {
-            type Value = T;
             type RxType = $crate::Rx<Self, $crate::RxValueKind>;
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
@@ -566,8 +583,11 @@ macro_rules! impl_rx_delegate {
         }
     };
     ($target:ident, SignalID, $is_const:expr) => {
-        impl<T: 'static> $crate::traits::RxBase for $target<T> {
+        impl<T: 'static> $crate::traits::RxValue for $target<T> {
             type Value = T;
+        }
+
+        impl<T: 'static> $crate::traits::RxBase for $target<T> {
             #[inline(always)]
             fn id(&self) -> Option<$crate::reactivity::NodeId> {
                 Some(self.id)
@@ -591,7 +611,6 @@ macro_rules! impl_rx_delegate {
         }
 
         impl<T: Clone + 'static> $crate::traits::IntoRx for $target<T> {
-            type Value = T;
             type RxType = $crate::Rx<Self, $crate::RxValueKind>;
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
@@ -654,8 +673,11 @@ macro_rules! impl_rx_delegate {
         }
     };
     ($target:ident, $field:ident, $is_const:expr) => {
-        impl<T: 'static> $crate::traits::RxBase for $target<T> {
+        impl<T: 'static> $crate::traits::RxValue for $target<T> {
             type Value = T;
+        }
+
+        impl<T: 'static> $crate::traits::RxBase for $target<T> {
             #[inline(always)]
             fn id(&self) -> Option<$crate::reactivity::NodeId> {
                 $crate::traits::RxBase::id(&self.$field)
@@ -679,7 +701,6 @@ macro_rules! impl_rx_delegate {
         }
 
         impl<T: Clone + 'static> $crate::traits::IntoRx for $target<T> {
-            type Value = T;
             type RxType = $crate::Rx<Self, $crate::RxValueKind>;
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {

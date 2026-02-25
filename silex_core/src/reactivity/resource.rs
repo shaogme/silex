@@ -215,9 +215,11 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
     }
 }
 
-impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxBase for Resource<T, E> {
+impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxValue for Resource<T, E> {
     type Value = Option<T>;
+}
 
+impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxBase for Resource<T, E> {
     #[inline(always)]
     fn id(&self) -> Option<crate::reactivity::NodeId> {
         self.state.id()
@@ -283,7 +285,6 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxInternal for Re
 }
 
 impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> IntoRx for Resource<T, E> {
-    type Value = Option<T>;
     type RxType = Rx<Self, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {

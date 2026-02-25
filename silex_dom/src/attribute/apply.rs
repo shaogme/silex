@@ -1,6 +1,6 @@
 use silex_core::SilexError;
 use silex_core::reactivity::{Constant, Effect, Memo, ReadSignal, RwSignal, Signal};
-use silex_core::traits::{IntoRx, RxRead};
+use silex_core::traits::{IntoRx, RxGet, RxRead};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::ops::Deref;

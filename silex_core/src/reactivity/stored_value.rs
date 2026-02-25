@@ -44,7 +44,7 @@ impl<T: 'static> StoredValue<T> {
     where
         T: Clone,
     {
-        RxRead::get_untracked(self)
+        RxGet::get_untracked(self)
     }
 
     pub fn with_name(self, name: impl Into<String>) -> Self {
@@ -55,9 +55,11 @@ impl<T: 'static> StoredValue<T> {
 
 // Note: GetUntracked is now blanket-implemented via WithUntracked when T: Clone
 
-impl<T: 'static> RxBase for StoredValue<T> {
+impl<T: 'static> RxValue for StoredValue<T> {
     type Value = T;
+}
 
+impl<T: 'static> RxBase for StoredValue<T> {
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
         Some(self.id)
@@ -127,7 +129,6 @@ impl<T: 'static> RxInternal for StoredValue<T> {
 }
 
 impl<T: 'static> IntoRx for StoredValue<T> {
-    type Value = T;
     type RxType = Rx<Self, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {

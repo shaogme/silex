@@ -214,8 +214,11 @@ impl<T: Display> ValidFor<props::Any> for T {}
 macro_rules! impl_into_rx_for_css {
     ($($t:ty),*) => {
         $(
-            impl silex_core::traits::IntoRx for $t {
+            impl silex_core::traits::RxValue for $t {
                 type Value = $t;
+            }
+
+            impl silex_core::traits::IntoRx for $t {
                 type RxType = silex_core::Rx<silex_core::reactivity::Constant<$t>, silex_core::RxValueKind>;
                 fn into_rx(self) -> Self::RxType { silex_core::Rx(silex_core::reactivity::Constant(self), ::core::marker::PhantomData) }
                 fn is_constant(&self) -> bool { true }

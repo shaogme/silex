@@ -176,9 +176,11 @@ impl<Arg: 'static, T: Clone + 'static, E: Clone + 'static> Mutation<Arg, T, E> {
     }
 }
 
-impl<Arg, T: Clone + 'static, E: Clone + 'static> RxBase for Mutation<Arg, T, E> {
+impl<Arg, T: Clone + 'static, E: Clone + 'static> RxValue for Mutation<Arg, T, E> {
     type Value = Option<T>;
+}
 
+impl<Arg, T: Clone + 'static, E: Clone + 'static> RxBase for Mutation<Arg, T, E> {
     #[inline(always)]
     fn id(&self) -> Option<crate::reactivity::NodeId> {
         self.state.id()
@@ -244,7 +246,6 @@ impl<Arg, T: Clone + 'static, E: Clone + 'static> RxInternal for Mutation<Arg, T
 }
 
 impl<Arg, T: Clone + 'static, E: Clone + 'static> IntoRx for Mutation<Arg, T, E> {
-    type Value = Option<T>;
     type RxType = crate::Rx<Self, crate::RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {

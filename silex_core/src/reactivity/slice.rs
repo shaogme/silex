@@ -37,6 +37,13 @@ impl<G: std::ops::Deref, O: ?Sized> std::ops::Deref for SliceGuard<G, O> {
     }
 }
 
+impl<S, F, O> RxValue for SignalSlice<S, F, O>
+where
+    O: ?Sized + 'static,
+{
+    type Value = O;
+}
+
 impl<S, F, O> RxBase for SignalSlice<S, F, O>
 where
     S: RxRead + Clone + 'static,
@@ -44,8 +51,6 @@ where
     F: Fn(&S::Value) -> &O + Clone + 'static,
     O: ?Sized + 'static,
 {
-    type Value = O;
-
     #[inline(always)]
     fn id(&self) -> Option<crate::reactivity::NodeId> {
         self.source.id()
@@ -117,7 +122,6 @@ where
     F: Fn(&S::Value) -> &O + Clone + 'static,
     O: ?Sized + 'static,
 {
-    type Value = O;
     type RxType = crate::Rx<Self, crate::RxValueKind>;
 
     #[inline(always)]

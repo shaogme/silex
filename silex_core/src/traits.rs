@@ -52,11 +52,14 @@
 
 use crate::reactivity::NodeId;
 
-/// 响应式系统的基础层级，统一了标识、追踪、生命周期监测和源码定位。
-pub trait RxBase {
+/// 响应式实体的核心价值定义。
+pub trait RxValue {
     /// 响应式值持有的数据类型。支持 ?Sized 以兼容 [T] 或 str。
     type Value: ?Sized;
+}
 
+/// 响应式系统的基础层级，统一了标识、追踪、生命周期监测和源码定位。
+pub trait RxBase: RxValue {
     /// 获取底层节点 ID。常量或非节点组件可能返回 None。
     fn id(&self) -> Option<NodeId>;
 

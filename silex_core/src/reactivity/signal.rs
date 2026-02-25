@@ -40,8 +40,11 @@ unsafe fn rx_borrow_stored_value_unsafe<T: 'static>(id: NodeId) -> Option<&'stat
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Constant<T>(pub T);
 
-impl<T: 'static> RxBase for Constant<T> {
+impl<T: 'static> RxValue for Constant<T> {
     type Value = T;
+}
+
+impl<T: 'static> RxBase for Constant<T> {
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
         None
@@ -100,7 +103,6 @@ impl<T: 'static> RxInternal for Constant<T> {
 }
 
 impl<T: Clone + 'static> IntoRx for Constant<T> {
-    type Value = T;
     type RxType = Rx<Self, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
@@ -142,13 +144,20 @@ impl<D, F> DerivedPayload<D, F> {
 // --- RxInternal for DerivedPayloads ---
 
 // Unary / Map implementation
+impl<S, F, U> RxValue for DerivedPayload<S, F>
+where
+    S: RxValue,
+    F: Fn(&S::Value) -> U + 'static,
+{
+    type Value = U;
+}
+
 impl<S, F, U> RxBase for DerivedPayload<S, F>
 where
     S: RxBase + RxInternal,
     F: Fn(&S::Value) -> U + Clone + 'static,
     U: 'static,
 {
-    type Value = U;
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
         self.deps.id()
@@ -234,8 +243,11 @@ impl<U: 'static, const N: usize> std::fmt::Debug for OpPayload<U, N> {
     }
 }
 
-impl<U: 'static, const N: usize> RxBase for OpPayload<U, N> {
+impl<U: 'static, const N: usize> RxValue for OpPayload<U, N> {
     type Value = U;
+}
+
+impl<U: 'static, const N: usize> RxBase for OpPayload<U, N> {
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
         None
@@ -349,9 +361,11 @@ impl<T> PartialEq for Signal<T> {
 
 impl<T> Eq for Signal<T> {}
 
-impl<T: 'static> RxBase for Signal<T> {
+impl<T: 'static> RxValue for Signal<T> {
     type Value = T;
+}
 
+impl<T: 'static> RxBase for Signal<T> {
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
         match self {
@@ -462,7 +476,6 @@ impl<T: 'static> RxInternal for Signal<T> {
 }
 
 impl<T: 'static> IntoRx for Signal<T> {
-    type Value = T;
     type RxType = Rx<Self, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
@@ -699,8 +712,11 @@ impl<T> WriteSignal<T> {
 
 impl_signal_core_traits!(WriteSignal);
 
-impl<T: 'static> RxBase for WriteSignal<T> {
+impl<T: 'static> RxValue for WriteSignal<T> {
     type Value = T;
+}
+
+impl<T: 'static> RxBase for WriteSignal<T> {
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
         Some(self.id)

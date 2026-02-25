@@ -12,17 +12,17 @@ macro_rules! reactive_compare_method {
             other: O,
         ) -> $crate::Rx<$crate::reactivity::OpPayload<bool, 2>, $crate::RxValueKind>
         where
-            Self: $crate::traits::IntoRx,
-            Self::RxType: $crate::traits::RxInternal<Value = <Self as $crate::traits::IntoRx>::Value> + Clone + 'static,
-            O: $crate::traits::IntoRx<Value = <Self as $crate::traits::IntoRx>::Value> + 'static,
-            O::RxType: $crate::traits::RxInternal<Value = <Self as $crate::traits::IntoRx>::Value> + Clone + 'static,
-            <Self as $crate::traits::IntoRx>::Value: $bound + Sized + Clone + 'static,
+            Self: $crate::traits::IntoRx + $crate::traits::RxValue,
+            O: $crate::traits::IntoRx + $crate::traits::RxValue<Value = Self::Value> + 'static,
+            Self::Value: $bound + Sized + Clone + 'static,
         {
             let lhs = self.clone().into_signal();
             let rhs = other.into_signal();
 
             #[inline(always)]
-            unsafe fn read_impl<InnerT: $bound + 'static>(inputs: &[$crate::reactivity::NodeId]) -> Option<bool> {
+            unsafe fn read_impl<InnerT: $bound + 'static>(
+                inputs: &[$crate::reactivity::NodeId],
+            ) -> Option<bool> {
                 unsafe {
                     let a = $crate::reactivity::rx_borrow_signal_unsafe::<InnerT>(inputs[0])?;
                     let b = $crate::reactivity::rx_borrow_signal_unsafe::<InnerT>(inputs[1])?;
@@ -35,7 +35,7 @@ macro_rules! reactive_compare_method {
             $crate::Rx(
                 $crate::reactivity::OpPayload {
                     inputs: [lhs.ensure_node_id(), rhs.ensure_node_id()],
-                    read: read_impl::<<Self as $crate::traits::IntoRx>::Value>,
+                    read: read_impl::<Self::Value>,
                     track: $crate::reactivity::op_trampolines::track_inputs,
                     is_constant: is_const,
                 },

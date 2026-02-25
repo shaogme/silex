@@ -206,7 +206,7 @@ pub trait GlobalEventAttributes: AttributeBuilder {
         this.apply(silex_core::rx!(move |el: &web_sys::Element| {
             let dom_element = el.clone();
             silex_core::reactivity::Effect::new(move |_| {
-                use silex_core::traits::RxRead;
+                use silex_core::traits::RxGet;
                 use wasm_bindgen::JsCast;
                 let value = signal.get();
                 if let Some(input) = dom_element.dyn_ref::<web_sys::HtmlInputElement>() {

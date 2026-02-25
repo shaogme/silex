@@ -1,6 +1,6 @@
 use crate::SilexError;
 use silex_core::reactivity::Effect;
-use silex_core::traits::RxRead;
+use silex_core::traits::{RxGet, RxRead};
 use silex_dom::prelude::View;
 use std::cell::RefCell;
 use std::ops::Deref;
