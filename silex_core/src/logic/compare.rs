@@ -10,7 +10,7 @@ macro_rules! reactive_compare_method {
         fn $name<O>(
             &self,
             other: O,
-        ) -> $crate::Rx<$crate::reactivity::OpPayload<bool>, $crate::RxValue>
+        ) -> $crate::Rx<$crate::reactivity::OpPayload<bool, 2>, $crate::RxValue>
         where
             Self: $crate::traits::IntoRx,
             Self::RxType: $crate::traits::RxInternal<Value = <Self as $crate::traits::IntoRx>::Value> + Clone + 'static,
@@ -35,7 +35,6 @@ macro_rules! reactive_compare_method {
             $crate::Rx(
                 $crate::reactivity::OpPayload {
                     inputs: [lhs.ensure_node_id(), rhs.ensure_node_id()],
-                    input_count: 2,
                     read: read_impl::<<Self as $crate::traits::IntoRx>::Value>,
                     track: $crate::reactivity::op_trampolines::track_inputs,
                     is_constant: is_const,

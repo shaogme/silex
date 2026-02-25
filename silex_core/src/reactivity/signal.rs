@@ -217,25 +217,24 @@ where
 // --- OpPayload (Aggressive De-genericization) ---
 
 #[derive(Clone, Copy)]
-pub struct OpPayload<U: 'static> {
-    pub inputs: [NodeId; 2],
-    pub input_count: u8,
+pub struct OpPayload<U: 'static, const N: usize> {
+    pub inputs: [NodeId; N],
     pub read: unsafe fn(inputs: &[NodeId]) -> Option<U>,
     pub track: fn(inputs: &[NodeId]),
     pub is_constant: bool,
 }
 
-impl<U: 'static> std::fmt::Debug for OpPayload<U> {
+impl<U: 'static, const N: usize> std::fmt::Debug for OpPayload<U, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpPayload")
-            .field("inputs", &&self.inputs[..self.input_count as usize])
+            .field("inputs", &&self.inputs)
             .field("read", &format_args!("{:p}", self.read as *const ()))
             .field("is_constant", &self.is_constant)
             .finish()
     }
 }
 
-impl<U: 'static> RxBase for OpPayload<U> {
+impl<U: 'static, const N: usize> RxBase for OpPayload<U, N> {
     type Value = U;
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
@@ -243,11 +242,11 @@ impl<U: 'static> RxBase for OpPayload<U> {
     }
     #[inline(always)]
     fn track(&self) {
-        (self.track)(&self.inputs[..self.input_count as usize]);
+        (self.track)(&self.inputs);
     }
     #[inline(always)]
     fn is_disposed(&self) -> bool {
-        for i in 0..self.input_count as usize {
+        for i in 0..N {
             if !is_signal_valid(self.inputs[i]) {
                 return true;
             }
@@ -264,7 +263,7 @@ impl<U: 'static> RxBase for OpPayload<U> {
     }
 }
 
-impl<U: 'static> RxInternal for OpPayload<U> {
+impl<U: 'static, const N: usize> RxInternal for OpPayload<U, N> {
     type ReadOutput<'a>
         = RxGuard<'a, U, U>
     where
@@ -272,12 +271,12 @@ impl<U: 'static> RxInternal for OpPayload<U> {
 
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-        unsafe { (self.read)(&self.inputs[..self.input_count as usize]).map(RxGuard::Owned) }
+        unsafe { (self.read)(&self.inputs).map(RxGuard::Owned) }
     }
 
     #[inline(always)]
     fn rx_try_with_untracked<URet>(&self, fun: impl FnOnce(&Self::Value) -> URet) -> Option<URet> {
-        unsafe { (self.read)(&self.inputs[..self.input_count as usize]).map(|v| fun(&v)) }
+        unsafe { (self.read)(&self.inputs).map(|v| fun(&v)) }
     }
 
     #[inline(always)]

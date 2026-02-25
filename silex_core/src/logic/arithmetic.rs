@@ -114,7 +114,7 @@ macro_rules! impl_rx_op {
             R: $crate::traits::IntoRx<Value = T> + 'static,
             R::RxType: $crate::traits::RxInternal<Value = T> + Clone + 'static,
         {
-            type Output = $crate::Rx<$crate::reactivity::OpPayload<T>, $crate::RxValue>;
+            type Output = $crate::Rx<$crate::reactivity::OpPayload<T, 2>, $crate::RxValue>;
 
             #[inline]
             fn $method(self, rhs: R) -> Self::Output {
@@ -141,7 +141,6 @@ macro_rules! impl_rx_op {
                 $crate::Rx(
                     $crate::reactivity::OpPayload {
                         inputs: [lhs.ensure_node_id(), rhs.ensure_node_id()],
-                        input_count: 2,
                         read: read_impl::<T>,
                         track: $crate::reactivity::op_trampolines::track_inputs,
                         is_constant: is_const,
@@ -163,7 +162,7 @@ macro_rules! impl_rx_unary_op {
             for<'a> &'a T: std::ops::$trait<Output = T>,
             T: Clone + 'static,
         {
-            type Output = $crate::Rx<$crate::reactivity::OpPayload<T>, $crate::RxValue>;
+            type Output = $crate::Rx<$crate::reactivity::OpPayload<T, 1>, $crate::RxValue>;
 
             #[inline]
             fn $method(self) -> Self::Output {
@@ -187,8 +186,7 @@ macro_rules! impl_rx_unary_op {
 
                 $crate::Rx(
                     $crate::reactivity::OpPayload {
-                        inputs: [val.ensure_node_id(), val.ensure_node_id()],
-                        input_count: 1,
+                        inputs: [val.ensure_node_id()],
                         read: read_impl::<T>,
                         track: $crate::reactivity::op_trampolines::track_inputs,
                         is_constant: is_const,

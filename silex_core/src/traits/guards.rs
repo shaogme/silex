@@ -1,6 +1,4 @@
 use crate::NodeRef;
-use std::cell::OnceCell;
-use std::marker::PhantomData;
 use std::ops::Deref;
 
 /// 内部辅助 Trait，用于抹平所有权存储与借用目标之间的 Deref 差异。
@@ -63,43 +61,3 @@ impl<'a, T: ?Sized, S> RxGuard<'a, T, S> {
         }
     }
 }
-
-macro_rules! impl_tuple_guard {
-    ($name:ident, $($idx:tt : $meth:ident : $G:ident : $V:ident),+; $cell_idx:tt) => {
-        /// 为元组设计的自适应守卫，支持分段式（零拷贝）读取。
-        pub struct $name<'a, $($G, $V),+>(
-            $(pub $G,)+
-            pub(crate) OnceCell<($($V,)+)>,
-            pub(crate) PhantomData<&'a ()>
-        );
-
-        impl<'a, $($G, $V),+> $name<'a, $($G, $V),+> {
-            $(
-                /// 获取该位置的分段守卫引用。
-                #[inline(always)]
-                pub fn $meth(&self) -> &$G {
-                    &self.$idx
-                }
-            )+
-        }
-
-        impl<'a, $($G, $V),+> Deref for $name<'a, $($G, $V),+>
-        where
-            $($G: Deref<Target = $V>, $V: Clone),+
-        {
-            type Target = ($($V,)+);
-
-            fn deref(&self) -> &Self::Target {
-                self.$cell_idx.get_or_init(|| {
-                    ($( (*self.$idx).clone() ,)+)
-                })
-            }
-        }
-    };
-}
-
-impl_tuple_guard!(Tuple2ReadGuard, 0: _0: G0: V0, 1: _1: G1: V1; 2);
-impl_tuple_guard!(Tuple3ReadGuard, 0: _0: G0: V0, 1: _1: G1: V1, 2: _2: G2: V2; 3);
-impl_tuple_guard!(Tuple4ReadGuard, 0: _0: G0: V0, 1: _1: G1: V1, 2: _2: G2: V2, 3: _3: G3: V3; 4);
-impl_tuple_guard!(Tuple5ReadGuard, 0: _0: G0: V0, 1: _1: G1: V1, 2: _2: G2: V2, 3: _3: G3: V3, 4: _4: G4: V4; 5);
-impl_tuple_guard!(Tuple6ReadGuard, 0: _0: G0: V0, 1: _1: G1: V1, 2: _2: G2: V2, 3: _3: G3: V3, 4: _4: G4: V4, 5: _5: G5: V5; 6);

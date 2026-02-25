@@ -271,7 +271,7 @@ where
     }
 }
 
-impl<U> ReactiveText for OpPayload<U>
+impl<U, const N: usize> ReactiveText for OpPayload<U, N>
 where
     Self: RxInternal<Value = U> + Clone + 'static,
     U: Display + 'static,
@@ -349,7 +349,7 @@ where
 }
 
 // 4.2 OpPayload View (Text Update)
-impl<U> View for OpPayload<U>
+impl<U, const N: usize> View for OpPayload<U, N>
 where
     Self: RxInternal<Value = U> + Clone + 'static,
     U: Display + 'static,

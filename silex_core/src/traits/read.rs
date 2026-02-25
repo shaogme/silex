@@ -1,9 +1,7 @@
-use crate::reactivity::{Constant, DerivedPayload, NodeId};
+use crate::reactivity::{Constant, NodeId};
 use crate::traits::RxBase;
 use crate::traits::guards::*;
 use crate::{Rx, RxValue};
-use std::cell::OnceCell;
-use std::marker::PhantomData;
 use std::ops::Deref;
 use std::panic::Location;
 
@@ -360,34 +358,44 @@ impl<F: RxInternal, M> RxInternal for Rx<F, M> {
 
 // --- 元组 RxInternal 实现：支持递归常量检测 ---
 
-macro_rules! impl_tuple_everything {
-    ($guard:ident, $($T:ident : $idx:tt),+) => {
-        impl_tuple_everything!(@impl $guard, $($T : $idx),+);
-    };
-    ($guard:ident, $($T:ident : $idx:tt),+ ; into) => {
-        impl_tuple_everything!(@impl $guard, $($T : $idx),+);
+macro_rules! impl_tuple_into_rx {
+    ($len:expr, $($T:ident : $idx:tt),+) => {
         #[allow(non_snake_case)]
         impl<$($T),+> IntoRx for ($($T,)+)
         where
             $($T: IntoRx + Clone + 'static),+,
-            $($T::Value: Clone + 'static),+
+            $(<$T as IntoRx>::Value: Clone + 'static),+
         {
-            type Value = ($($T::Value,)+);
-            type RxType = Rx<
-                DerivedPayload<
-                    ($(crate::reactivity::Signal<$T::Value>,)+),
-                    fn(&($($T::Value,)+)) -> ($($T::Value,)+)
-                >,
-                RxValue
-            >;
+            type Value = ($(<$T as IntoRx>::Value,)+);
+            type RxType = Rx<crate::reactivity::OpPayload<Self::Value, $len>, RxValue>;
+
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
-                let ($($T,)+) = self;
-                $(let $T = $T.into_signal();)+
-                Rx(DerivedPayload::new(($($T,)+), |t| ($(t.$idx.clone(),)+)), ::core::marker::PhantomData)
+                let is_constant = $(self.$idx.is_constant() && )+ true;
+                let signals = ($(self.$idx.into_signal(),)+);
+
+                #[inline(always)]
+                unsafe fn read_impl<$($T: Clone + 'static),+>(inputs: &[crate::reactivity::NodeId]) -> Option<($($T,)+)> {
+                    unsafe {
+                        Some(($(
+                            crate::reactivity::rx_borrow_signal_unsafe::<$T>(inputs[$idx])?.clone(),
+                        )+))
+                    }
+                }
+
+                let inputs = [$(signals.$idx.ensure_node_id()),+];
+
+                Rx(crate::reactivity::OpPayload {
+                    inputs,
+                    read: read_impl::<$(<$T as IntoRx>::Value),+>,
+                    track: crate::reactivity::op_trampolines::track_inputs,
+                    is_constant,
+                }, ::core::marker::PhantomData)
             }
+
             #[inline(always)]
             fn is_constant(&self) -> bool { $(self.$idx.is_constant() && )+ true }
+
             #[inline(always)]
             fn into_signal(self) -> crate::reactivity::Signal<Self::Value>
             where
@@ -397,15 +405,14 @@ macro_rules! impl_tuple_everything {
                 crate::reactivity::Signal::derive(move || s.clone().into_rx().get())
             }
         }
-    };
-    (@impl $guard:ident, $($T:ident : $idx:tt),+) => {
+
         impl<$($T),+> RxBase for ($($T,)+)
         where
             $($T: RxBase),+,
-            $($T::Value: Sized),+
+            $(<$T as RxBase>::Value: Sized),+
         {
-            type Value = ($($T::Value,)+);
-            #[inline(always)] fn id(&self) -> Option<NodeId> { None }
+            type Value = ($(<$T as RxBase>::Value,)+);
+            #[inline(always)] fn id(&self) -> Option<crate::reactivity::NodeId> { None }
             #[inline(always)] fn track(&self) { $(self.$idx.track();)+ }
             #[inline(always)] fn is_disposed(&self) -> bool { $(self.$idx.is_disposed() || )+ false }
             #[inline(always)] fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> { None }
@@ -414,24 +421,15 @@ macro_rules! impl_tuple_everything {
 
         impl<$($T),+> RxInternal for ($($T,)+)
         where
-            $($T: RxInternal),+,
-            $($T::Value: Sized),+
+            $($T: RxInternal + Clone + 'static),+,
+            $($T: IntoRx<Value = <$T as RxBase>::Value>),+,
+            $(<$T as RxBase>::Value: Clone + Sized + 'static),+
         {
-            type ReadOutput<'a> = $guard<'a, $($T::ReadOutput<'a>, $T::Value),+> where Self: 'a;
-
-            #[inline(always)]
-            fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
-                self.track();
-                self.rx_read_untracked()
-            }
+            type ReadOutput<'a> = RxGuard<'a, Self::Value, Self::Value> where Self: 'a;
 
             #[inline(always)]
             fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-                Some($guard(
-                    $(self.$idx.rx_read_untracked()?,)+
-                    OnceCell::new(),
-                    PhantomData
-                ))
+                Some(RxGuard::Owned(self.rx_get_adaptive()?))
             }
 
             #[inline(always)]
@@ -444,20 +442,21 @@ macro_rules! impl_tuple_everything {
             where
                 Self::Value: Sized,
             {
-                Some(($( self.$idx.rx_get_adaptive()? ,)+))
+                Some(($(
+                    self.$idx.rx_get_adaptive()?,
+                )+))
             }
 
             #[inline(always)] fn rx_is_constant(&self) -> bool { $(self.$idx.rx_is_constant() && )+ true }
         }
-
     };
 }
 
-impl_tuple_everything!(Tuple2ReadGuard, T0: 0, T1: 1; into);
-impl_tuple_everything!(Tuple3ReadGuard, T0: 0, T1: 1, T2: 2; into);
-impl_tuple_everything!(Tuple4ReadGuard, T0: 0, T1: 1, T2: 2, T3: 3; into);
-impl_tuple_everything!(Tuple5ReadGuard, T0: 0, T1: 1, T2: 2, T3: 3, T4: 4);
-impl_tuple_everything!(Tuple6ReadGuard, T0: 0, T1: 1, T2: 2, T3: 3, T4: 4, T5: 5);
+impl_tuple_into_rx!(2, T0: 0, T1: 1);
+impl_tuple_into_rx!(3, T0: 0, T1: 1, T2: 2);
+impl_tuple_into_rx!(4, T0: 0, T1: 1, T2: 2, T3: 3);
+impl_tuple_into_rx!(5, T0: 0, T1: 1, T2: 2, T3: 3, T4: 4);
+impl_tuple_into_rx!(6, T0: 0, T1: 1, T2: 2, T3: 3, T4: 4, T5: 5);
 
 impl<F, M> IntoRx for Rx<F, M>
 where
