@@ -89,7 +89,7 @@ pub fn AuthGuard(children: Children) -> impl View {
                     h3("🔒 Restricted Access"),
                     p("This content is protected. Please go to 'Store Demo' and change your username to something other than 'Guest'."),
                 ].style("padding: 20px; background: #fff0f0; border: 1px solid #ffcccc; color: #cc0000;")
-                .into_any()
+                .into_shared()
         }
     }
 }

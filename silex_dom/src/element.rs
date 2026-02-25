@@ -93,7 +93,11 @@ impl View for Element {
     }
 
     fn into_any(self) -> crate::view::AnyView {
-        crate::view::AnyView::Element(self)
+        crate::view::AnyView::Element(self.clone())
+    }
+
+    fn into_shared(self) -> crate::view::SharedView {
+        crate::view::SharedView::Element(self)
     }
 }
 
@@ -174,7 +178,11 @@ impl<T> View for TypedElement<T> {
     }
 
     fn into_any(self) -> crate::view::AnyView {
-        crate::view::AnyView::Element(self.element)
+        crate::view::AnyView::Element(self.element.clone())
+    }
+
+    fn into_shared(self) -> crate::view::SharedView {
+        crate::view::SharedView::Element(self.element)
     }
 }
 

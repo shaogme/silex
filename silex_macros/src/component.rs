@@ -69,6 +69,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         if !prop_attrs.into_trait
             && (type_ident == "Children"
                 || type_ident == "AnyView"
+                || type_ident == "SharedView"
                 || type_ident == "String"
                 || type_ident == "PathBuf"
                 || type_ident == "Callback"
@@ -121,7 +122,9 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
                 if prop_attrs.into_trait {
                     let type_ident = get_base_type_name(ty);
 
-                    if type_ident == "Children" || type_ident == "AnyView" {
+                    if type_ident == "SharedView" || type_ident == "Children" {
+                        new_initializers.push(quote! { #param_name: ::silex::dom::view::View::into_shared(#default_expr) });
+                    } else if type_ident == "AnyView" {
                         new_initializers.push(quote! { #param_name: ::silex::dom::view::View::into_any(#default_expr) });
                     } else {
                         new_initializers.push(quote! { #param_name: (#default_expr).into() });
@@ -145,17 +148,33 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         if prop_attrs.into_trait {
             let type_ident = get_base_type_name(ty);
 
-            if type_ident == "Children" || type_ident == "AnyView" {
+            if type_ident == "Children" || type_ident == "SharedView" {
                 if is_required {
                     builder_methods.push(quote! {
                         pub fn #param_name<__SilexValue: ::silex::dom::view::View + Clone + 'static>(mut self, val: __SilexValue) -> Self {
-                            self.#param_name = Some(val.into_any());
+                            self.#param_name = Some(val.into_shared());
                             self
                         }
                     });
                 } else {
                     builder_methods.push(quote! {
                         pub fn #param_name<__SilexValue: ::silex::dom::view::View + Clone + 'static>(mut self, val: __SilexValue) -> Self {
+                            self.#param_name = val.into_shared();
+                            self
+                        }
+                    });
+                }
+            } else if type_ident == "AnyView" {
+                if is_required {
+                    builder_methods.push(quote! {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::View + 'static>(mut self, val: __SilexValue) -> Self {
+                            self.#param_name = Some(val.into_any());
+                            self
+                        }
+                    });
+                } else {
+                    builder_methods.push(quote! {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::View + 'static>(mut self, val: __SilexValue) -> Self {
                             self.#param_name = val.into_any();
                             self
                         }

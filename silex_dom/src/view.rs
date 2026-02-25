@@ -20,17 +20,20 @@ pub trait View {
     /// Elements override this to actually apply attributes.
     fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
 
-    /// Convert this view into an AnyView (Type Erasure).
-    ///
-    /// By default, this wraps the view in a `Box<dyn Render>` (AnyView::Boxed).
-    /// Specific types (Element, String, Fragment) override this to return
-    /// their optimized Enum variant (AnyView::Element, AnyView::Text, etc.),
-    /// avoiding heap allocation.
+    /// Convert this view into an AnyView (Type Erasure without Clone requirement).
     fn into_any(self) -> AnyView
+    where
+        Self: Sized + 'static,
+    {
+        AnyView::Unique(Box::new(self))
+    }
+
+    /// Convert this view into a SharedView (Type Erasure with Clone requirement).
+    fn into_shared(self) -> SharedView
     where
         Self: Sized + Clone + 'static,
     {
-        AnyView::Boxed(Box::new(self))
+        SharedView::SharedBoxed(Box::new(self))
     }
 }
 
@@ -52,7 +55,11 @@ impl View for String {
     }
 
     fn into_any(self) -> AnyView {
-        AnyView::Text(self)
+        AnyView::Text(self.clone())
+    }
+
+    fn into_shared(self) -> SharedView {
+        SharedView::Text(self)
     }
 }
 
@@ -63,6 +70,10 @@ impl View for &str {
 
     fn into_any(self) -> AnyView {
         AnyView::Text(self.to_string())
+    }
+
+    fn into_shared(self) -> SharedView {
+        SharedView::Text(self.to_string())
     }
 }
 
@@ -78,6 +89,10 @@ macro_rules! impl_view_for_primitive {
                 fn into_any(self) -> AnyView {
                     AnyView::Text(self.to_string())
                 }
+
+                fn into_shared(self) -> SharedView {
+                    SharedView::Text(self.to_string())
+                }
             }
         )*
     };
@@ -92,6 +107,10 @@ impl View for () {
 
     fn into_any(self) -> AnyView {
         AnyView::Empty
+    }
+
+    fn into_shared(self) -> SharedView {
+        SharedView::Empty
     }
 }
 
@@ -382,6 +401,10 @@ where
     fn into_any(self) -> AnyView {
         AnyView::Text(self.0.to_string())
     }
+
+    fn into_shared(self) -> SharedView {
+        SharedView::Text(self.0.to_string())
+    }
 }
 
 // 5. 容器类型支持
@@ -468,28 +491,50 @@ impl<V: View> View for SilexResult<V> {
     }
 }
 
-// --- AnyView (Enum Optimization) ---
+// --- AnyView & SharedView (Type Erasure & Enum Optimization) ---
 
-/// 辅助特征，用于支持 Box<dyn View> 的移动语义挂载
-pub trait Render {
+/// 辅助特征（不要求 Clone，移动语义挂载）
+pub trait RenderOnce {
     fn mount_boxed(self: Box<Self>, parent: &Node);
-    fn clone_boxed(&self) -> Box<dyn Render>;
     fn apply_attributes_boxed(&mut self, attrs: Vec<PendingAttribute>);
 }
 
-impl<V: View + Clone + 'static> Render for V {
+impl<V: View + 'static> RenderOnce for V {
     fn mount_boxed(self: Box<Self>, parent: &Node) {
         (*self).mount(parent)
-    }
-    fn clone_boxed(&self) -> Box<dyn Render> {
-        Box::new(self.clone())
     }
     fn apply_attributes_boxed(&mut self, attrs: Vec<PendingAttribute>) {
         self.apply_attributes(attrs);
     }
 }
 
-/// 优化的 AnyView，使用 Enum 分发常见类型，减少 Box 开销。
+/// 辅助特征（支持克隆）
+pub trait RenderShared: RenderOnce {
+    fn clone_boxed(&self) -> Box<dyn RenderShared>;
+    fn into_once_boxed(self: Box<Self>) -> Box<dyn RenderOnce>;
+}
+
+impl<V: View + Clone + 'static> RenderShared for V {
+    fn clone_boxed(&self) -> Box<dyn RenderShared> {
+        Box::new(self.clone())
+    }
+    fn into_once_boxed(self: Box<Self>) -> Box<dyn RenderOnce> {
+        self
+    }
+}
+
+/// 优化的 SharedView，专用于需要重复使用或需要 Children 的组件边界
+#[derive(Default)]
+pub enum SharedView {
+    #[default]
+    Empty,
+    Text(String),
+    Element(crate::element::Element),
+    List(Vec<SharedView>),
+    SharedBoxed(Box<dyn RenderShared>),
+}
+
+/// 优化的 AnyView，作为所有视图类型擦除的终点（不要求 Clone）
 #[derive(Default)]
 pub enum AnyView {
     #[default]
@@ -497,12 +542,57 @@ pub enum AnyView {
     Text(String),
     Element(crate::element::Element),
     List(Vec<AnyView>),
-    Boxed(Box<dyn Render>),
+    Unique(Box<dyn RenderOnce>),
+    FromShared(SharedView),
+}
+
+impl SharedView {
+    pub fn new<V: View + Clone + 'static>(view: V) -> Self {
+        view.into_shared()
+    }
 }
 
 impl AnyView {
-    pub fn new<V: View + Clone + 'static>(view: V) -> Self {
+    pub fn new<V: View + 'static>(view: V) -> Self {
         view.into_any()
+    }
+}
+
+impl View for SharedView {
+    fn mount(self, parent: &Node) {
+        match self {
+            SharedView::Empty => {}
+            SharedView::Text(s) => s.mount(parent),
+            SharedView::Element(el) => el.mount(parent),
+            SharedView::List(list) => {
+                for child in list {
+                    child.mount(parent);
+                }
+            }
+            SharedView::SharedBoxed(b) => b.mount_boxed(parent),
+        }
+    }
+
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
+        match self {
+            SharedView::Empty => {}
+            SharedView::Text(_) => {}
+            SharedView::Element(el) => el.apply_attributes(attrs),
+            SharedView::List(list) => {
+                for child in list {
+                    child.apply_attributes(attrs.clone());
+                }
+            }
+            SharedView::SharedBoxed(b) => b.apply_attributes_boxed(attrs),
+        }
+    }
+
+    fn into_any(self) -> AnyView {
+        AnyView::FromShared(self)
+    }
+
+    fn into_shared(self) -> SharedView {
+        self
     }
 }
 
@@ -517,47 +607,50 @@ impl View for AnyView {
                     child.mount(parent);
                 }
             }
-            AnyView::Boxed(b) => b.mount_boxed(parent),
+            AnyView::Unique(b) => b.mount_boxed(parent),
+            AnyView::FromShared(s) => s.mount(parent),
         }
     }
 
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
         match self {
-            AnyView::Empty => {}   // Cannot apply attributes to empty
-            AnyView::Text(_) => {} // Typically cannot apply to text, unless wrapped (but Text impl View ignores it)
+            AnyView::Empty => {}
+            AnyView::Text(_) => {}
             AnyView::Element(el) => el.apply_attributes(attrs),
             AnyView::List(list) => {
-                // Forwarding strategy: First Match
                 for child in list {
                     child.apply_attributes(attrs.clone());
                 }
             }
-            AnyView::Boxed(b) => b.apply_attributes_boxed(attrs),
+            AnyView::Unique(b) => b.apply_attributes_boxed(attrs),
+            AnyView::FromShared(s) => s.apply_attributes(attrs),
         }
+    }
+
+    fn into_any(self) -> AnyView {
+        self
     }
 }
 
-impl Clone for AnyView {
+impl Clone for SharedView {
     fn clone(&self) -> Self {
         match self {
-            AnyView::Empty => AnyView::Empty,
-            AnyView::Text(s) => AnyView::Text(s.clone()),
-            AnyView::Element(el) => AnyView::Element(el.clone()),
-            AnyView::List(list) => AnyView::List(list.clone()),
-            AnyView::Boxed(b) => AnyView::Boxed(b.clone_boxed()),
+            SharedView::Empty => SharedView::Empty,
+            SharedView::Text(s) => SharedView::Text(s.clone()),
+            SharedView::Element(el) => SharedView::Element(el.clone()),
+            SharedView::List(list) => SharedView::List(list.clone()),
+            SharedView::SharedBoxed(b) => SharedView::SharedBoxed(b.clone_boxed()),
         }
     }
 }
 
-impl PartialEq for AnyView {
+impl PartialEq for SharedView {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (AnyView::Empty, AnyView::Empty) => true,
-            (AnyView::Text(a), AnyView::Text(b)) => a == b,
-            (AnyView::Element(a), AnyView::Element(b)) => a == b,
-            (AnyView::List(a), AnyView::List(b)) => a == b,
-
-            // Boxed is hard to compare partially.
+            (SharedView::Empty, SharedView::Empty) => true,
+            (SharedView::Text(a), SharedView::Text(b)) => a == b,
+            (SharedView::Element(a), SharedView::Element(b)) => a == b,
+            (SharedView::List(a), SharedView::List(b)) => a == b,
             _ => false,
         }
     }
@@ -565,9 +658,8 @@ impl PartialEq for AnyView {
 
 // --- Children & Fragment ---
 
-/// 标准子组件类型，即类型擦除的 View
-/// 允许组件存储子元素而无需泛型
-pub type Children = AnyView;
+/// 标准子组件类型，即受 Clone 保护的擦除 SharedView
+pub type Children = SharedView;
 
 impl std::fmt::Debug for AnyView {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -576,17 +668,30 @@ impl std::fmt::Debug for AnyView {
             Self::Text(arg0) => f.debug_tuple("AnyView(Text)").field(arg0).finish(),
             Self::Element(_) => write!(f, "AnyView(Element)"),
             Self::List(l) => f.debug_tuple("AnyView(List)").field(&l.len()).finish(),
-            Self::Boxed(_) => write!(f, "AnyView(Boxed)"),
+            Self::Unique(_) => write!(f, "AnyView(Unique)"),
+            Self::FromShared(s) => f.debug_tuple("AnyView(FromShared)").field(s).finish(),
+        }
+    }
+}
+
+impl std::fmt::Debug for SharedView {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Empty => write!(f, "SharedView(Empty)"),
+            Self::Text(arg0) => f.debug_tuple("SharedView(Text)").field(arg0).finish(),
+            Self::Element(_) => write!(f, "SharedView(Element)"),
+            Self::List(l) => f.debug_tuple("SharedView(List)").field(&l.len()).finish(),
+            Self::SharedBoxed(_) => write!(f, "SharedView(SharedBoxed)"),
         }
     }
 }
 
 /// 片段，用于容纳多个不同类型的子组件
 #[derive(Default, Clone)]
-pub struct Fragment(pub Vec<AnyView>);
+pub struct Fragment(pub Vec<SharedView>);
 
 impl Fragment {
-    pub fn new(children: Vec<AnyView>) -> Self {
+    pub fn new(children: Vec<SharedView>) -> Self {
         Self(children)
     }
 }
@@ -601,37 +706,59 @@ impl View for Fragment {
     }
 
     fn into_any(self) -> AnyView {
-        AnyView::List(self.0)
+        AnyView::FromShared(SharedView::List(self.0))
+    }
+
+    fn into_shared(self) -> SharedView {
+        SharedView::List(self.0)
     }
 }
 
-// --- From Implementations for AnyView (for Builder Pattern / Into Support) ---
+// --- From Implementations for Type Erasure ---
 
 impl From<Element> for AnyView {
     fn from(v: Element) -> Self {
         AnyView::Element(v)
     }
 }
-
 impl From<String> for AnyView {
     fn from(v: String) -> Self {
         AnyView::Text(v)
     }
 }
-
 impl From<&str> for AnyView {
     fn from(v: &str) -> Self {
         AnyView::Text(v.to_string())
     }
 }
-
 impl From<()> for AnyView {
     fn from(_: ()) -> Self {
         AnyView::Empty
     }
 }
 
-macro_rules! impl_from_primitive_for_anyview {
+impl From<Element> for SharedView {
+    fn from(v: Element) -> Self {
+        SharedView::Element(v)
+    }
+}
+impl From<String> for SharedView {
+    fn from(v: String) -> Self {
+        SharedView::Text(v)
+    }
+}
+impl From<&str> for SharedView {
+    fn from(v: &str) -> Self {
+        SharedView::Text(v.to_string())
+    }
+}
+impl From<()> for SharedView {
+    fn from(_: ()) -> Self {
+        SharedView::Empty
+    }
+}
+
+macro_rules! impl_from_primitive {
     ($($t:ty),*) => {
         $(
             impl From<$t> for AnyView {
@@ -639,20 +766,31 @@ macro_rules! impl_from_primitive_for_anyview {
                     AnyView::Text(v.to_string())
                 }
             }
+
+            impl From<$t> for SharedView {
+                fn from(v: $t) -> Self {
+                    SharedView::Text(v.to_string())
+                }
+            }
         )*
     };
 }
-impl_from_primitive_for_anyview!(
+impl_from_primitive!(
     i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, f32, f64, bool, char
 );
 
-impl<V: View + Clone + 'static> From<Vec<V>> for AnyView {
+impl<V: View + 'static> From<Vec<V>> for AnyView {
     fn from(v: Vec<V>) -> Self {
-        AnyView::new(v)
+        AnyView::List(v.into_iter().map(|item| item.into_any()).collect())
+    }
+}
+impl<V: View + Clone + 'static> From<Vec<V>> for SharedView {
+    fn from(v: Vec<V>) -> Self {
+        SharedView::List(v.into_iter().map(|item| item.into_shared()).collect())
     }
 }
 
-impl<V: View + Clone + 'static> From<Option<V>> for AnyView {
+impl<V: View + 'static> From<Option<V>> for AnyView {
     fn from(v: Option<V>) -> Self {
         match v {
             Some(val) => AnyView::new(val),
@@ -660,27 +798,40 @@ impl<V: View + Clone + 'static> From<Option<V>> for AnyView {
         }
     }
 }
+impl<V: View + Clone + 'static> From<Option<V>> for SharedView {
+    fn from(v: Option<V>) -> Self {
+        match v {
+            Some(val) => SharedView::new(val),
+            None => SharedView::Empty,
+        }
+    }
+}
 
-// Manually impl From for Tuples since we can't do generic V due to conflict with self-impl
-macro_rules! impl_from_tuple_for_anyview {
+macro_rules! impl_from_tuple {
     ($($name:ident),*) => {
-        impl<$($name: View + Clone + 'static),*> From<($($name,)*)> for AnyView {
+        impl<$($name: View + 'static),*> From<($($name,)*)> for AnyView {
             fn from(v: ($($name,)*)) -> Self {
                 AnyView::new(v)
+            }
+        }
+
+        impl<$($name: View + Clone + 'static),*> From<($($name,)*)> for SharedView {
+            fn from(v: ($($name,)*)) -> Self {
+                SharedView::new(v)
             }
         }
     }
 }
 
-impl_from_tuple_for_anyview!(A);
-impl_from_tuple_for_anyview!(A, B);
-impl_from_tuple_for_anyview!(A, B, C);
-impl_from_tuple_for_anyview!(A, B, C, D);
-impl_from_tuple_for_anyview!(A, B, C, D, E);
+impl_from_tuple!(A);
+impl_from_tuple!(A, B);
+impl_from_tuple!(A, B, C);
+impl_from_tuple!(A, B, C, D);
+impl_from_tuple!(A, B, C, D, E);
 
-/// 一个辅助宏，用于简化从 `match` 表达式返回 `AnyView` 的操作。
+/// 一个辅助宏，用于简化从 `match` 表达式返回 `SharedView` 的操作。
 ///
-/// 它会自动对每个分支的结果调用 `.into_any()`，从而允许不同类型的 View 在同一个 `match` 块中返回。
+/// 它会自动对每个分支的结果调用 `.into_shared()`，从而允许不同类型的 View 在同一个 `match` 块中返回。
 ///
 /// # 示例
 ///
@@ -693,7 +844,17 @@ impl_from_tuple_for_anyview!(A, B, C, D, E);
 /// ```
 #[macro_export]
 macro_rules! view_match {
-    // 匹配分支中可以包含 guard (if condition)
+    ($target:expr, { $($pat:pat $(if $guard:expr)? => $val:expr),* $(,)? }) => {
+        match $target {
+            $(
+                $pat $(if $guard)? => $crate::view::View::into_shared($val),
+            )*
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! any_view_match {
     ($target:expr, { $($pat:pat $(if $guard:expr)? => $val:expr),* $(,)? }) => {
         match $target {
             $(

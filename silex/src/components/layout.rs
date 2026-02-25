@@ -13,7 +13,7 @@ styled! {
         gap: Signal<i32>,
         #[prop(default, into)]
         style: Signal<Style>,
-        children: AnyView
+        children: Children
     ) {
         display: flex;
         flex-direction: $(direction);
@@ -28,7 +28,7 @@ styled! {
     pub Center <div> (
         #[prop(default, into)]
         style: Signal<Style>,
-        children: AnyView
+        children: Children
     ) {
         display: flex;
         align-items: center;
@@ -45,7 +45,7 @@ styled! {
         gap: Signal<i32>,
         #[prop(default, into)]
         style: Signal<Style>,
-        children: AnyView
+        children: Children
     ) {
         display: grid;
         grid-template-columns: repeat($(columns), minmax(0, 1fr));

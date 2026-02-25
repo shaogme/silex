@@ -12,7 +12,7 @@ fn Card<V: View + 'static>(child: V) -> impl View {
 }
 
 /// 导航链接样式封装
-fn nav_link<T: ToRoute>(to: T, label: &str) -> impl View {
+fn nav_link<T: ToRoute, V: View + 'static>(to: T, label: V) -> impl View {
     Link(to, label)
         .style("margin-right: 15px; text-decoration: none; color: #666; padding: 5px 10px; border-radius: 4px; transition: all 0.2s;")
         .active_class("nav-active") // 需要在全局 CSS 中定义 .nav-active { background: #e3f2fd; color: #1976d2; font-weight: bold; }
@@ -154,7 +154,7 @@ fn NotFound() -> impl View {
 // --- 主布局 ---
 
 #[component]
-fn MainLayout(child: AnyView) -> impl View {
+fn MainLayout(child: Children) -> impl View {
     div((
         // Header
         header((

@@ -431,7 +431,6 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     // Create a new Punctuated list for all props to avoid trailing comma issues
     let mut all_fn_args = props.clone();
 
-    // Ensure it doesn't have a trailing comma before we push more args
     if !all_fn_args.empty_or_trailing()
         && variants
             .iter()

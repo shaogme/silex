@@ -21,7 +21,7 @@ use crate::router::ToRoute;
 ///
 /// 类似于 HTML 的 `<a>` 标签，但会拦截点击事件并使用 Router 导航，而不是刷新页面。
 #[allow(non_snake_case)]
-pub fn Link<T: ToRoute, V: View>(to: T, child: V) -> Link {
+pub fn Link<T: ToRoute, V: View + 'static>(to: T, child: V) -> Link {
     let href = to.to_route();
     let element = a(child).attr("href", &href);
     Link {
