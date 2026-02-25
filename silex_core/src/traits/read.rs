@@ -270,7 +270,7 @@ macro_rules! impl_closure_rx {
             #[inline(always)] fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> { None }
         }
 
-        impl<$($gen),*> RxInternal for $target $(where $($bounds)*, T: $crate::traits::RxData)? {
+        impl<$($gen),*> $crate::traits::RxInternal for $target $(where $($bounds)*, T: $crate::traits::RxData)? {
             type ReadOutput<'a> = RxGuard<'a, T, T> where Self: 'a;
 
             #[inline(always)] fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> { let val = (self)(); Some(RxGuard::Owned(val)) }
@@ -281,11 +281,18 @@ macro_rules! impl_closure_rx {
             }
         }
 
+        impl<$($gen),*> $crate::traits::IntoSignal for $target $(where $($bounds)*, T: $crate::traits::RxCloneData + 'static)? {
+            #[inline(always)]
+            fn into_signal(self) -> $crate::reactivity::Signal<T> {
+                $crate::reactivity::Signal::derive(move || (self)())
+            }
+        }
+
     };
 }
 
-impl_closure_rx!(impl<F, T> F where F: Fn() -> T);
-impl_closure_rx!(impl<T> ::std::rc::Rc<dyn Fn() -> T>);
+impl_closure_rx!(impl<F, T> F where F: Fn() -> T + 'static, T: 'static);
+impl_closure_rx!(impl<T> ::std::rc::Rc<dyn Fn() -> T + 'static> where T: 'static);
 
 impl<F: crate::traits::RxValue, M> crate::traits::RxValue for Rx<F, M> {
     type Value = F::Value;

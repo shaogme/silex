@@ -1,6 +1,6 @@
 use silex_core::SilexError;
 use silex_core::reactivity::{Constant, Effect, Memo, ReadSignal, RwSignal, Signal};
-use silex_core::traits::{IntoRx, RxGet, RxRead};
+use silex_core::traits::{IntoRx, IntoSignal, RxGet, RxRead};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::ops::Deref;
@@ -38,17 +38,16 @@ pub trait RxTask<M> {
     fn run_rx(self, el: &WebElem, target: ApplyTarget);
 }
 
-// 1. Value Calculation: any RxInternal
+// 1. Value Calculation: 归一化路径
 impl<F, T> RxTask<silex_core::RxValueKind> for F
 where
-    F: RxRead<Value = T> + 'static,
-    for<'a> F::ReadOutput<'a>: Deref<Target = T>,
+    F: IntoSignal<Value = T> + Clone + 'static,
     T: ReactiveApply + Clone + 'static,
 {
     fn run_rx(self, el: &WebElem, target: ApplyTarget) {
-        let el = el.clone();
-        let owned_target = OwnedApplyTarget::from(target);
-        T::apply_to_dom(move || self.get(), el, owned_target);
+        // 利用归一化边界，将所有复杂的负载（闭包、算子等）坍缩为 Signal。
+        // 这确保了底层 Effect 逻辑只为 Signal<T> 生成一次。
+        apply_signal_internal(self.into_signal(), el, target);
     }
 }
 
@@ -202,17 +201,14 @@ fn apply_string_reactive_internal(
     }
 }
 
-fn apply_via_signal<S>(source: S, el: &WebElem, target: ApplyTarget)
+fn apply_signal_internal<T>(signal: Signal<T>, el: &WebElem, target: ApplyTarget)
 where
-    S: IntoRx,
-    S::Value: ReactiveApply + Clone + 'static,
-    S::RxType: RxRead<Value = S::Value> + 'static,
+    T: ReactiveApply + Clone + 'static,
 {
-    let signal = source.into_rx();
     let owned_target = OwnedApplyTarget::from(target);
     let el = el.clone();
 
-    S::Value::apply_to_dom(move || signal.with(|v| v.clone()), el, owned_target);
+    T::apply_to_dom(move || signal.get(), el, owned_target);
 }
 
 // --- OwnedApplyTarget & ReactiveApply ---
@@ -455,29 +451,48 @@ where
 
 // 5. Signals
 
-macro_rules! impl_apply_basic_signal {
-    ($($ty:ident),*) => {
-        $(
-            impl<T> ApplyToDom for $ty<T>
-            where
-                T: ReactiveApply + Clone + 'static,
-            {
-                fn apply(self, el: &WebElem, target: ApplyTarget) {
-                    apply_via_signal::<Self>(self, el, target);
-                }
-            }
-        )*
+impl<T> ApplyToDom for Signal<T>
+where
+    T: ReactiveApply + Clone + 'static,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        apply_signal_internal(self, el, target);
     }
 }
 
-impl_apply_basic_signal!(ReadSignal, RwSignal, Signal, Constant);
+impl<T> ApplyToDom for Constant<T>
+where
+    T: ReactiveApply + Clone + 'static,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        apply_signal_internal(self.into_signal(), el, target);
+    }
+}
+
+impl<T> ApplyToDom for ReadSignal<T>
+where
+    T: ReactiveApply + Clone + 'static,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        apply_signal_internal(self.into_signal(), el, target);
+    }
+}
+
+impl<T> ApplyToDom for RwSignal<T>
+where
+    T: ReactiveApply + Clone + 'static,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        apply_signal_internal(self.into_signal(), el, target);
+    }
+}
 
 impl<T> ApplyToDom for Memo<T>
 where
     T: ReactiveApply + Clone + PartialEq + 'static,
 {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
-        apply_via_signal::<Self>(self, el, target);
+        apply_signal_internal(self.into_signal(), el, target);
     }
 }
 

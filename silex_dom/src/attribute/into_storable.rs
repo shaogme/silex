@@ -1,6 +1,6 @@
 use super::{ApplyToDom, AttributeGroup, ReactiveApply};
 use silex_core::reactivity::{Constant, Memo, ReadSignal, RwSignal, Signal};
-use silex_core::traits::IntoRx;
+use silex_core::traits::{IntoRx, IntoSignal};
 
 // --- IntoStorable: 允许非 'static 类型转换为可存储类型 ---
 
@@ -69,25 +69,40 @@ macro_rules! impl_into_storable_signal {
             impl<T> IntoStorable for $ty<T>
             where
                 T: ReactiveApply + Clone + 'static,
+                $ty<T>: Into<Signal<T>>,
             {
-                type Stored = Self;
+                type Stored = Signal<T>;
                 fn into_storable(self) -> Self::Stored {
-                    self
+                    self.into()
                 }
             }
         )*
     };
 }
 
-impl_into_storable_signal!(ReadSignal, RwSignal, Signal, Constant);
+impl_into_storable_signal!(ReadSignal, RwSignal);
+
+impl<T: ReactiveApply + Clone + 'static> IntoStorable for Signal<T> {
+    type Stored = Self;
+    fn into_storable(self) -> Self::Stored {
+        self
+    }
+}
+
+impl<T: ReactiveApply + Clone + 'static> IntoStorable for Constant<T> {
+    type Stored = Signal<T>;
+    fn into_storable(self) -> Self::Stored {
+        self.into_signal()
+    }
+}
 
 impl<T> IntoStorable for Memo<T>
 where
     T: ReactiveApply + Clone + PartialEq + 'static,
 {
-    type Stored = Self;
+    type Stored = Signal<T>;
     fn into_storable(self) -> Self::Stored {
-        self
+        self.into()
     }
 }
 

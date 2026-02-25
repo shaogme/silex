@@ -4,7 +4,7 @@ use silex_core::error::handle_error;
 use silex_core::reactivity::{
     Constant, DerivedPayload, Effect, Memo, OpPayload, ReadSignal, RwSignal, Signal, SignalSlice,
 };
-use silex_core::traits::{RxBase, RxGet, RxInternal};
+use silex_core::traits::{IntoSignal, RxBase, RxInternal, RxValue};
 use silex_core::{SilexError, SilexResult};
 use std::fmt::Display;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -215,7 +215,7 @@ where
     }
 }
 
-// 3.5 Rx Delegation (Delegates to inner payload if it implements View)
+// 3.5 Rx Delegation (Simple Proxy)
 impl<F, M> View for silex_core::Rx<F, M>
 where
     F: View,
@@ -264,142 +264,77 @@ fn mount_reactive_text_(parent: &Node, rx: Box<dyn ReactiveText>) {
     });
 }
 
-// 为各种类型实现 ReactiveText 桥接
-
-impl<T> ReactiveText for ReadSignal<T>
+// 为所有符合条件的类型统一实现 ReactiveText 桥接
+impl<T> ReactiveText for T
 where
-    T: Display + Clone + 'static,
+    T: RxInternal + Clone + 'static,
+    T::Value: Display,
 {
     fn track(&self) {
         RxBase::track(self);
     }
     fn render(&self) -> String {
-        self.get_untracked().to_string()
-    }
-}
-
-impl<T> ReactiveText for Memo<T>
-where
-    T: Display + Clone + PartialEq + 'static,
-{
-    fn track(&self) {
-        RxBase::track(self);
-    }
-    fn render(&self) -> String {
-        self.get_untracked().to_string()
-    }
-}
-
-impl<T> ReactiveText for Signal<T>
-where
-    T: Display + Clone + 'static,
-{
-    fn track(&self) {
-        RxBase::track(self);
-    }
-    fn render(&self) -> String {
-        self.get_untracked().to_string()
-    }
-}
-
-impl<S, F, U> ReactiveText for DerivedPayload<S, F>
-where
-    Self: RxInternal<Value = U> + Clone + 'static,
-    U: Display + 'static,
-{
-    fn track(&self) {
-        RxBase::track(self);
-    }
-    fn render(&self) -> String {
-        self.rx_try_with_untracked(|v: &U| v.to_string())
+        self.rx_try_with_untracked(|v| v.to_string())
             .unwrap_or_default()
     }
 }
 
-impl<U, const N: usize> ReactiveText for OpPayload<U, N>
-where
-    Self: RxInternal<Value = U> + Clone + 'static,
-    U: Display + 'static,
-{
-    fn track(&self) {
-        RxBase::track(self);
-    }
-    fn render(&self) -> String {
-        self.rx_try_with_untracked(|v: &U| v.to_string())
-            .unwrap_or_default()
-    }
-}
-
-impl<S, F, O> ReactiveText for SignalSlice<S, F, O>
-where
-    Self: RxInternal<Value = O> + Clone + 'static,
-    O: Display + ?Sized + 'static,
-{
-    fn track(&self) {
-        RxBase::track(self);
-    }
-    fn render(&self) -> String {
-        self.rx_try_with_untracked(|v: &O| v.to_string())
-            .unwrap_or_default()
-    }
-}
-
-// 4. 直接 Signal 支持 (重定向到归一化内核)
-// 3.7 Reactive Text View implementations
-impl<T: Display + Clone + 'static> View for ReadSignal<T> {
-    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        mount_reactive_text_(parent, Box::new(self));
-    }
-}
-
+// 4. 直接 Signal 支持 (所有归一化后的入口)
 impl<T: Display + Clone + 'static> View for Signal<T> {
     fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
         mount_reactive_text_(parent, Box::new(self));
     }
 }
 
-impl<T: Display + Clone + PartialEq + 'static> View for Memo<T> {
-    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        mount_reactive_text_(parent, Box::new(self));
+// --- Normalization Bridges ---
+// 这些实现确保了 ReadSignal, RwSignal 等可以直接作为 View 使用。
+// 它们在渲染边界“坍缩”为 Signal<T>，从而复用高度优化的渲染内核。
+
+impl<T: Display + Clone + 'static> View for ReadSignal<T> {
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        self.into_signal().mount(parent, attrs);
     }
 }
 
-impl<S, F, U> View for DerivedPayload<S, F>
+impl<T: Display + Clone + 'static> View for RwSignal<T> {
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        self.into_signal().mount(parent, attrs);
+    }
+}
+
+impl<T: Display + Clone + PartialEq + 'static> View for Memo<T> {
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        self.into_signal().mount(parent, attrs);
+    }
+}
+
+impl<S, F> View for DerivedPayload<S, F>
 where
-    Self: RxInternal<Value = U> + Clone + 'static,
-    U: Display + 'static,
+    Self: IntoSignal + Clone + 'static,
+    <Self as RxValue>::Value: Display + Clone + 'static,
 {
-    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        mount_reactive_text_(parent, Box::new(self));
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        self.into_signal().mount(parent, attrs);
     }
 }
 
 impl<U, const N: usize> View for OpPayload<U, N>
 where
-    Self: RxInternal<Value = U> + Clone + 'static,
-    U: Display + 'static,
+    Self: IntoSignal + RxValue<Value = U> + Clone + 'static,
+    U: Display + Clone + 'static,
 {
-    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        mount_reactive_text_(parent, Box::new(self));
-    }
-}
-
-impl<T> View for RwSignal<T>
-where
-    T: Display + Clone + 'static,
-{
-    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        mount_reactive_text_(parent, Box::new(self.read_signal()));
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        self.into_signal().mount(parent, attrs);
     }
 }
 
 impl<S, F, O> View for SignalSlice<S, F, O>
 where
-    Self: RxInternal<Value = O> + Clone + 'static,
-    O: Display + ?Sized + 'static,
+    Self: IntoSignal + RxValue<Value = O> + Clone + 'static,
+    O: Display + Clone + 'static,
 {
-    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        mount_reactive_text_(parent, Box::new(self));
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        self.into_signal().mount(parent, attrs);
     }
 }
 

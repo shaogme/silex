@@ -227,6 +227,39 @@ where
     }
 }
 
+impl<S, F, U> IntoRx for DerivedPayload<S, F>
+where
+    S: RxInternal + Clone,
+    F: Fn(&S::Value) -> U + 'static,
+    U: RxData,
+{
+    type RxType = Rx<Self, RxValueKind>;
+
+    #[inline(always)]
+    fn into_rx(self) -> Self::RxType {
+        Rx(self, PhantomData)
+    }
+
+    #[inline(always)]
+    fn is_constant(&self) -> bool {
+        self.deps.rx_is_constant()
+    }
+}
+
+impl<S, F, U> crate::traits::IntoSignal for DerivedPayload<S, F>
+where
+    S: RxRead + Clone + 'static,
+    for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
+    F: Fn(&S::Value) -> U + 'static,
+    U: RxCloneData,
+{
+    #[inline(always)]
+    fn into_signal(self) -> Signal<Self::Value> {
+        use crate::traits::RxGet;
+        Signal::derive(move || self.get())
+    }
+}
+
 // --- OpPayload (Aggressive De-genericization) ---
 
 #[derive(Clone, Copy)]
@@ -309,6 +342,28 @@ impl<U: RxData, const N: usize> RxInternal for OpPayload<U, N> {
 
     fn rx_is_constant(&self) -> bool {
         self.is_constant
+    }
+}
+
+impl<U: RxData + Clone, const N: usize> IntoRx for OpPayload<U, N> {
+    type RxType = Rx<Self, RxValueKind>;
+
+    #[inline(always)]
+    fn into_rx(self) -> Self::RxType {
+        Rx(self, PhantomData)
+    }
+
+    #[inline(always)]
+    fn is_constant(&self) -> bool {
+        self.is_constant
+    }
+}
+
+impl<U: RxCloneData, const N: usize> crate::traits::IntoSignal for OpPayload<U, N> {
+    #[inline(always)]
+    fn into_signal(self) -> Signal<Self::Value> {
+        use crate::traits::RxGet;
+        Signal::derive(move || self.get())
     }
 }
 
