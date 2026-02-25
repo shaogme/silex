@@ -549,6 +549,10 @@ macro_rules! impl_reactive_apply_primitive {
                     let effect = GenericAttrEffect::new(node_id, primitive_to_string_erased::<$t>);
                     apply_erased_pair_reactive_internal(el, key, target, effect);
                 }
+                fn into_payload_reactive(signal: Signal<Self>) -> Option<AttributePayload> {
+                    let node_id = signal.ensure_node_id();
+                    Some(AttributePayload::ReactiveErasedString(node_id, primitive_to_string_erased::<$t>))
+                }
             }
         )*
     };
@@ -771,6 +775,8 @@ pub enum AttributePayload {
     ReactiveString(Signal<String>),
     /// 响应式布尔值
     ReactiveBool(Signal<bool>),
+    /// 擦除类型的响应式字符串级属性
+    ReactiveErasedString(silex_core::reactivity::NodeId, ErasedStringConverter),
     /// 动态求值载荷
     Dynamic(Rc<dyn Fn(&WebElem, &OwnedApplyTarget)>),
     /// 命令式回调：用于事件监听或复杂的 Mixin 逻辑
@@ -900,6 +906,12 @@ impl PendingAttribute {
             AttributePayload::ReactiveBool(signal) => {
                 if let Some(ref t) = self.target {
                     apply_bool_reactive_internal(el.clone(), t.clone(), *signal);
+                }
+            }
+            AttributePayload::ReactiveErasedString(node_id, converter) => {
+                if let Some(ref t) = self.target {
+                    let effect = GenericAttrEffect::new(*node_id, *converter);
+                    apply_erased_string_reactive_internal(el.clone(), t.clone(), effect);
                 }
             }
             AttributePayload::Dynamic(f) => {

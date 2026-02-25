@@ -2,7 +2,7 @@ use crate::attribute::PendingAttribute;
 use crate::element::Element;
 use silex_core::error::handle_error;
 use silex_core::reactivity::{Effect, Signal};
-use silex_core::traits::{IntoSignal, RxBase, RxInternal};
+use silex_core::traits::IntoSignal;
 use silex_core::{SilexError, SilexResult};
 use std::fmt::Display;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -229,6 +229,16 @@ where
 /// 泛型内核函数：负责处理所有响应式文本更新。
 /// 移除 Box<dyn ReactiveText>，通过直接接受 Signal<T> 避免昂贵的装箱和虚函数开销，提升运行时渲染性能。
 pub(crate) fn mount_reactive_text<T: Display + Clone + 'static>(parent: &Node, rx: Signal<T>) {
+    let node_id = rx.ensure_node_id();
+    let converter = crate::attribute::primitive_to_string_erased::<T>;
+    mount_erased_reactive_text_internal(parent, node_id, converter);
+}
+
+fn mount_erased_reactive_text_internal(
+    parent: &Node,
+    node_id: silex_core::reactivity::NodeId,
+    converter: crate::attribute::ErasedStringConverter,
+) {
     let document = crate::document();
     let node = document.create_text_node("");
     if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
@@ -237,10 +247,7 @@ pub(crate) fn mount_reactive_text<T: Display + Clone + 'static>(parent: &Node, r
     }
 
     Effect::new(move |_| {
-        RxBase::track(&rx);
-        let value = rx
-            .rx_try_with_untracked(|v| v.to_string())
-            .unwrap_or_default();
+        let value = converter(node_id);
         node.set_node_value(Some(&value));
     });
 }
