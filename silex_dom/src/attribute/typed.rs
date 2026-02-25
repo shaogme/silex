@@ -1,5 +1,3 @@
-use silex_core::reactivity::{Constant, Memo, ReadSignal, RwSignal, Signal};
-use silex_core::traits::RxGet;
 use std::fmt::Display;
 
 // --- 9. Apply Traits (for Codegen) ---
@@ -75,74 +73,33 @@ impl_apply_string_primitive!(
 );
 
 // --- Reactive Implementations ---
+use silex_core::traits::RxRead;
 use std::rc::Rc;
 
-// Macro to implement for standard signals (ReadSignal, RwSignal, Signal, Memo)
-macro_rules! impl_apply_string_for_signal {
-    ($($ty:ident),*) => {
-        $(
-            impl<T> ApplyStringAttribute for $ty<T>
-            where
-                T: Display + Clone + 'static,
-            {
-                fn apply_string<F>(self, setter: F)
-                where
-                    F: Fn(&str) + 'static,
-                {
-                    apply_string_reactive_internal(Rc::new(move || self.get().to_string()), setter);
-                }
-            }
-        )*
-    };
-}
-
-impl_apply_string_for_signal!(ReadSignal, RwSignal, Signal, Memo);
-
-// Constant: Optimization (No Effect needed)
-impl<T> ApplyStringAttribute for Constant<T>
+impl<F, M> ApplyStringAttribute for silex_core::Rx<F, M>
 where
-    T: Display + Clone + 'static,
+    Self: RxRead + Clone + 'static,
+    <Self as silex_core::traits::RxValue>::Value: Display + Clone + 'static,
 {
-    fn apply_string<F>(self, setter: F)
+    fn apply_string<Setter>(self, setter: Setter)
     where
-        F: Fn(&str) + 'static,
+        Setter: Fn(&str) + 'static,
     {
-        setter(&self.get().to_string());
+        apply_string_reactive_internal(Rc::new(move || self.with(|v| v.to_string())), setter);
     }
 }
 
 // --- ApplyBoolAttribute Implementations ---
 
-// Macro for standard signals
-macro_rules! impl_apply_bool_for_signal {
-    ($($ty:ident),*) => {
-        $(
-            impl<T> ApplyBoolAttribute for $ty<T>
-            where
-                T: Into<bool> + Clone + 'static,
-            {
-                fn apply_bool<F>(self, setter: F)
-                where
-                    F: Fn(bool) + 'static,
-                {
-                    apply_bool_reactive_internal(Rc::new(move || self.get().into()), setter);
-                }
-            }
-        )*
-    };
-}
-
-impl_apply_bool_for_signal!(ReadSignal, RwSignal, Signal, Memo);
-
-// Constant: No Effect
-impl<T> ApplyBoolAttribute for Constant<T>
+impl<F, M> ApplyBoolAttribute for silex_core::Rx<F, M>
 where
-    T: Into<bool> + Clone + 'static,
+    Self: RxRead + Clone + 'static,
+    <Self as silex_core::traits::RxValue>::Value: Into<bool> + Clone + 'static,
 {
-    fn apply_bool<F>(self, setter: F)
+    fn apply_bool<Setter>(self, setter: Setter)
     where
-        F: Fn(bool) + 'static,
+        Setter: Fn(bool) + 'static,
     {
-        setter(self.get().into());
+        apply_bool_reactive_internal(Rc::new(move || self.with(|v| v.clone().into())), setter);
     }
 }

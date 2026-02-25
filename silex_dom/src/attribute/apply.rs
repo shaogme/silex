@@ -1,5 +1,5 @@
 use silex_core::SilexError;
-use silex_core::reactivity::{Constant, Effect, Memo, OpPayload, ReadSignal, RwSignal, Signal};
+use silex_core::reactivity::{Effect, Signal};
 use silex_core::traits::{IntoSignal, RxGet};
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -46,6 +46,16 @@ where
 {
     fn apply(self, el: &WebElem, _target: ApplyTarget) {
         (self.0)(el);
+    }
+}
+
+impl<F> ApplyToDom for silex_core::Rx<F, silex_core::RxValueKind>
+where
+    Self: silex_core::traits::IntoSignal + 'static,
+    <Self as silex_core::traits::RxValue>::Value: ReactiveApply + Clone + 'static,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        crate::attribute::apply_signal_internal(self.into_signal(), el, target);
     }
 }
 
@@ -208,7 +218,7 @@ fn apply_bool_pair_reactive_internal(el: WebElem, key: String, signal: Signal<bo
     });
 }
 
-fn apply_signal_internal<T>(signal: Signal<T>, el: &WebElem, target: ApplyTarget)
+pub(crate) fn apply_signal_internal<T>(signal: Signal<T>, el: &WebElem, target: ApplyTarget)
 where
     T: ReactiveApply + Clone + 'static,
 {
@@ -383,71 +393,6 @@ impl ReactiveApply for bool {
         if is_class {
             apply_bool_pair_reactive_internal(el, key, signal);
         }
-    }
-}
-
-impl<F: 'static> ApplyToDom for silex_core::Rx<F, silex_core::RxValueKind>
-where
-    Self: IntoSignal,
-    <Self as silex_core::traits::RxValue>::Value: ReactiveApply + Clone + 'static,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        apply_signal_internal(self.into_signal(), el, target);
-    }
-}
-
-impl<T> ApplyToDom for Signal<T>
-where
-    T: ReactiveApply + Clone + 'static,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        apply_signal_internal(self, el, target);
-    }
-}
-
-impl<T> ApplyToDom for Constant<T>
-where
-    T: ReactiveApply + Clone + 'static,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        apply_signal_internal(self.into_signal(), el, target);
-    }
-}
-
-impl<T> ApplyToDom for ReadSignal<T>
-where
-    T: ReactiveApply + Clone + 'static,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        apply_signal_internal(self.into_signal(), el, target);
-    }
-}
-
-impl<T> ApplyToDom for RwSignal<T>
-where
-    T: ReactiveApply + Clone + 'static,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        apply_signal_internal(self.into_signal(), el, target);
-    }
-}
-
-impl<T> ApplyToDom for Memo<T>
-where
-    T: ReactiveApply + Clone + PartialEq + 'static,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        apply_signal_internal(self.into_signal(), el, target);
-    }
-}
-
-impl<U, const N: usize> ApplyToDom for OpPayload<U, N>
-where
-    Self: IntoSignal + silex_core::traits::RxValue<Value = U> + Clone + 'static,
-    U: ReactiveApply + Clone + 'static,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        apply_signal_internal(self.into_signal(), el, target);
     }
 }
 

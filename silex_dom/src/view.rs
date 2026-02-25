@@ -1,10 +1,8 @@
 use crate::attribute::PendingAttribute;
 use crate::element::Element;
 use silex_core::error::handle_error;
-use silex_core::reactivity::{
-    Constant, DerivedPayload, Effect, Memo, OpPayload, ReadSignal, RwSignal, Signal, SignalSlice,
-};
-use silex_core::traits::{IntoSignal, RxBase, RxInternal, RxValue};
+use silex_core::reactivity::{Effect, Signal};
+use silex_core::traits::{IntoSignal, RxBase, RxInternal};
 use silex_core::{SilexError, SilexResult};
 use std::fmt::Display;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -215,20 +213,6 @@ where
     }
 }
 
-// 3.5 Rx Delegation (Simple Proxy)
-impl<F, M> View for silex_core::Rx<F, M>
-where
-    F: View,
-{
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.0.mount(parent, attrs);
-    }
-
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
-        self.0.apply_attributes(attrs);
-    }
-}
-
 // 3.6 Type closure delegation
 impl<V> View for std::rc::Rc<dyn Fn() -> V>
 where
@@ -244,7 +228,7 @@ where
 
 /// 泛型内核函数：负责处理所有响应式文本更新。
 /// 移除 Box<dyn ReactiveText>，通过直接接受 Signal<T> 避免昂贵的装箱和虚函数开销，提升运行时渲染性能。
-fn mount_reactive_text<T: Display + Clone + 'static>(parent: &Node, rx: Signal<T>) {
+pub(crate) fn mount_reactive_text<T: Display + Clone + 'static>(parent: &Node, rx: Signal<T>) {
     let document = crate::document();
     let node = document.create_text_node("");
     if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
@@ -261,80 +245,77 @@ fn mount_reactive_text<T: Display + Clone + 'static>(parent: &Node, rx: Signal<T
     });
 }
 
-// 4. 直接 Signal 支持 (所有归一化后的入口)
-impl<T: Display + Clone + 'static> View for Signal<T> {
-    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        mount_reactive_text(parent, self);
-    }
-}
-
-// --- Normalization Bridges ---
-// 这些实现确保了 ReadSignal, RwSignal 等可以直接作为 View 使用。
-// 它们在渲染边界“坍缩”为 Signal<T>，从而复用高度优化的渲染内核。
-
-impl<T: Display + Clone + 'static> View for ReadSignal<T> {
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.into_signal().mount(parent, attrs);
-    }
-}
-
-impl<T: Display + Clone + 'static> View for RwSignal<T> {
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.into_signal().mount(parent, attrs);
-    }
-}
-
-impl<T: Display + Clone + PartialEq + 'static> View for Memo<T> {
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.into_signal().mount(parent, attrs);
-    }
-}
-
-impl<S, F> View for DerivedPayload<S, F>
+// 4. Rx wrapper support (Unified entry point for reactive normalization)
+impl<F, M> View for silex_core::Rx<F, M>
 where
-    Self: IntoSignal + Clone + 'static,
-    <Self as RxValue>::Value: Display + Clone + 'static,
+    F: View,
 {
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.into_signal().mount(parent, attrs);
+        self.0.mount(parent, attrs);
+    }
+
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
+        self.0.apply_attributes(attrs);
     }
 }
 
-impl<U, const N: usize> View for OpPayload<U, N>
+// 直接为内置响应式类型实现 View
+macro_rules! impl_view_for_reactive {
+    ($($ty:ident),*) => {
+        $(
+            impl<T: Display + Clone + 'static> View for silex_core::reactivity::$ty<T>
+            where
+                Self: IntoSignal<Value = T> + Clone + 'static,
+            {
+                fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+                    crate::view::mount_reactive_text(parent, self.into_signal());
+                }
+            }
+        )*
+    };
+}
+
+impl_view_for_reactive!(Signal, ReadSignal, RwSignal);
+
+impl<T: Display + Clone + 'static> View for silex_core::reactivity::Constant<T> {
+    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+        crate::view::mount_reactive_text(parent, self.into_signal());
+    }
+}
+
+impl<T: Display + Clone + PartialEq + 'static> View for silex_core::reactivity::Memo<T> {
+    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+        crate::view::mount_reactive_text(parent, self.into_signal());
+    }
+}
+
+impl<S, F> View for silex_core::reactivity::DerivedPayload<S, F>
 where
-    Self: IntoSignal + RxValue<Value = U> + Clone + 'static,
+    Self: IntoSignal + silex_core::traits::RxValue + Clone + 'static,
+    <Self as silex_core::traits::RxValue>::Value: Display + Clone + 'static,
+{
+    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+        crate::view::mount_reactive_text(parent, self.into_signal());
+    }
+}
+
+impl<U, const N: usize> View for silex_core::reactivity::OpPayload<U, N>
+where
+    Self: IntoSignal + silex_core::traits::RxValue<Value = U> + Clone + 'static,
     U: Display + Clone + 'static,
 {
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.into_signal().mount(parent, attrs);
+    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+        crate::view::mount_reactive_text(parent, self.into_signal());
     }
 }
 
-impl<S, F, O> View for SignalSlice<S, F, O>
+impl<S, F, O> View for silex_core::reactivity::SignalSlice<S, F, O>
 where
-    Self: IntoSignal + RxValue<Value = O> + Clone + 'static,
+    Self: IntoSignal + silex_core::traits::RxValue<Value = O> + Clone + 'static,
     O: Display + Clone + 'static,
 {
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.into_signal().mount(parent, attrs);
-    }
-}
-
-// 4.4 Constant View (Static Text)
-impl<T> View for Constant<T>
-where
-    T: Display + Clone + 'static,
-{
     fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        mount_text_node(parent, &self.0.to_string());
-    }
-
-    fn into_any(self) -> AnyView {
-        AnyView::Text(self.0.to_string())
-    }
-
-    fn into_shared(self) -> SharedView {
-        SharedView::Text(self.0.to_string())
+        crate::view::mount_reactive_text(parent, self.into_signal());
     }
 }
 
