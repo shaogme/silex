@@ -17,8 +17,8 @@ pub trait IntoRx: RxValue {
     /// 这是 Silex 内部实现零成本类型擦除的核心机制。
     fn into_signal(self) -> crate::reactivity::Signal<Self::Value>
     where
-        Self: Sized + 'static,
-        Self::Value: Sized + Clone + 'static;
+        Self: Sized + crate::traits::RxData,
+        Self::Value: Sized + crate::traits::RxCloneData;
 }
 
 /// A trait used internally by `Rx` to delegate calls to either a closure or a reactive primitive.
@@ -273,17 +273,17 @@ macro_rules! impl_closure_rx {
     (
         impl<$($gen:ident),*> $target:ty $(where $($bounds:tt)*)?
     ) => {
-        impl<$($gen),*> $crate::traits::RxValue for $target $(where $($bounds)*, T: 'static)? {
+        impl<$($gen),*> $crate::traits::RxValue for $target $(where $($bounds)*, T: $crate::traits::RxData)? {
             type Value = T;
         }
 
-        impl<$($gen),*> RxBase for $target $(where $($bounds)*, T: 'static)? {
+        impl<$($gen),*> RxBase for $target $(where $($bounds)*, T: $crate::traits::RxData)? {
             #[inline(always)] fn id(&self) -> Option<NodeId> { None }
             #[inline(always)] fn track(&self) {}
             #[inline(always)] fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> { None }
         }
 
-        impl<$($gen),*> RxInternal for $target $(where $($bounds)*, T: 'static)? {
+        impl<$($gen),*> RxInternal for $target $(where $($bounds)*, T: $crate::traits::RxData)? {
             type ReadOutput<'a> = RxGuard<'a, T, T> where Self: 'a;
 
             #[inline(always)] fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> { let val = (self)(); Some(RxGuard::Owned(val)) }
@@ -378,8 +378,8 @@ macro_rules! impl_tuple_into_rx {
         #[allow(non_snake_case)]
         impl<$($T),+> IntoRx for ($($T,)+)
         where
-            $($T: IntoRx + Clone + 'static),+,
-            $($T::Value: Clone + 'static),+
+            $($T: IntoRx + Clone + $crate::traits::RxData),+,
+            $($T::Value: $crate::traits::RxCloneData),+
         {
             type RxType = Rx<crate::reactivity::OpPayload<Self::Value, $len>, RxValueKind>;
 
@@ -434,9 +434,9 @@ macro_rules! impl_tuple_into_rx {
 
         impl<$($T),+> RxInternal for ($($T,)+)
         where
-            $($T: RxInternal + Clone + 'static),+,
+            $($T: RxInternal + Clone + $crate::traits::RxData),+,
             $($T: IntoRx),+,
-            $($T::Value: Clone + Sized + 'static),+
+            $($T::Value: Sized + $crate::traits::RxCloneData),+
         {
             type ReadOutput<'a> = RxGuard<'a, Self::Value, Self::Value> where Self: 'a;
 
@@ -473,8 +473,8 @@ impl_tuple_into_rx!(6, T0: 0, T1: 1, T2: 2, T3: 3, T4: 4, T5: 5);
 
 impl<F, M> IntoRx for Rx<F, M>
 where
-    F: RxInternal + Clone + 'static,
-    F::Value: Clone + 'static,
+    F: RxInternal + Clone + crate::traits::RxData,
+    F::Value: crate::traits::RxCloneData,
     for<'a> F::ReadOutput<'a>: std::ops::Deref<Target = F::Value>,
 {
     type RxType = Self;
@@ -541,11 +541,11 @@ impl_into_rx_primitive!(
 #[macro_export]
 macro_rules! impl_rx_delegate {
     ($target:ident, $is_const:expr) => {
-        impl<T: 'static> $crate::traits::RxValue for $target<T> {
+        impl<T: $crate::traits::RxData> $crate::traits::RxValue for $target<T> {
             type Value = T;
         }
 
-        impl<T: Clone + 'static> $crate::traits::RxBase for $target<T> {
+        impl<T: $crate::traits::RxCloneData> $crate::traits::RxBase for $target<T> {
             #[inline(always)]
             fn id(&self) -> Option<$crate::reactivity::NodeId> {
                 None
@@ -566,7 +566,7 @@ macro_rules! impl_rx_delegate {
             }
         }
 
-        impl<T: Clone + 'static> $crate::traits::IntoRx for $target<T> {
+        impl<T: $crate::traits::RxCloneData> $crate::traits::IntoRx for $target<T> {
             type RxType = $crate::Rx<Self, $crate::RxValueKind>;
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
@@ -583,11 +583,11 @@ macro_rules! impl_rx_delegate {
         }
     };
     ($target:ident, SignalID, $is_const:expr) => {
-        impl<T: 'static> $crate::traits::RxValue for $target<T> {
+        impl<T: $crate::traits::RxData> $crate::traits::RxValue for $target<T> {
             type Value = T;
         }
 
-        impl<T: 'static> $crate::traits::RxBase for $target<T> {
+        impl<T: $crate::traits::RxData> $crate::traits::RxBase for $target<T> {
             #[inline(always)]
             fn id(&self) -> Option<$crate::reactivity::NodeId> {
                 Some(self.id)
@@ -610,7 +610,7 @@ macro_rules! impl_rx_delegate {
             }
         }
 
-        impl<T: Clone + 'static> $crate::traits::IntoRx for $target<T> {
+        impl<T: $crate::traits::RxCloneData> $crate::traits::IntoRx for $target<T> {
             type RxType = $crate::Rx<Self, $crate::RxValueKind>;
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
@@ -629,7 +629,7 @@ macro_rules! impl_rx_delegate {
             }
         }
 
-        impl<T: 'static> $crate::traits::RxInternal for $target<T> {
+        impl<T: $crate::traits::RxData> $crate::traits::RxInternal for $target<T> {
             type ReadOutput<'a>
                 = $crate::traits::RxGuard<'a, T, T>
             where
@@ -673,11 +673,11 @@ macro_rules! impl_rx_delegate {
         }
     };
     ($target:ident, $field:ident, $is_const:expr) => {
-        impl<T: 'static> $crate::traits::RxValue for $target<T> {
+        impl<T: $crate::traits::RxData> $crate::traits::RxValue for $target<T> {
             type Value = T;
         }
 
-        impl<T: 'static> $crate::traits::RxBase for $target<T> {
+        impl<T: $crate::traits::RxData> $crate::traits::RxBase for $target<T> {
             #[inline(always)]
             fn id(&self) -> Option<$crate::reactivity::NodeId> {
                 $crate::traits::RxBase::id(&self.$field)
@@ -700,7 +700,7 @@ macro_rules! impl_rx_delegate {
             }
         }
 
-        impl<T: Clone + 'static> $crate::traits::IntoRx for $target<T> {
+        impl<T: $crate::traits::RxCloneData> $crate::traits::IntoRx for $target<T> {
             type RxType = $crate::Rx<Self, $crate::RxValueKind>;
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
@@ -716,7 +716,7 @@ macro_rules! impl_rx_delegate {
             }
         }
 
-        impl<T: 'static> $crate::traits::RxInternal for $target<T> {
+        impl<T: $crate::traits::RxData> $crate::traits::RxInternal for $target<T> {
             type ReadOutput<'a>
                 = <$crate::reactivity::ReadSignal<T> as $crate::traits::RxInternal>::ReadOutput<'a>
             where

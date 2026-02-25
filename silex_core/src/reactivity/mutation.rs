@@ -7,6 +7,7 @@ use crate::SilexError;
 use crate::reactivity::signal::{ReadSignal, WriteSignal, signal};
 use crate::reactivity::stored_value::StoredValue;
 use crate::traits::*;
+use crate::traits::{RxCloneData, RxData};
 use std::panic::Location;
 
 // --- MutationState ---
@@ -50,12 +51,7 @@ struct MutationInner<Arg, T, E> {
     last_id: Cell<usize>,
 }
 
-pub struct Mutation<Arg, T, E = SilexError>
-where
-    Arg: 'static,
-    T: 'static,
-    E: 'static,
-{
+pub struct Mutation<Arg, T, E = SilexError> {
     pub state: ReadSignal<MutationState<T, E>>,
     set_state: WriteSignal<MutationState<T, E>>,
     // Use StoredValue to hold the closure and ID, making Mutation pure Copy
@@ -70,7 +66,7 @@ impl<Arg, T, E> Clone for Mutation<Arg, T, E> {
 
 impl<Arg, T, E> Copy for Mutation<Arg, T, E> {}
 
-impl<Arg: 'static, T: Clone + 'static, E: Clone + 'static> Mutation<Arg, T, E> {
+impl<Arg: RxData, T: RxCloneData, E: RxCloneData> Mutation<Arg, T, E> {
     /// Create a new Mutation with the given async handler.
     ///
     /// The handler `f` takes an argument `Arg` and returns a Future resolving to `Result<T, E>`.
@@ -176,11 +172,11 @@ impl<Arg: 'static, T: Clone + 'static, E: Clone + 'static> Mutation<Arg, T, E> {
     }
 }
 
-impl<Arg, T: Clone + 'static, E: Clone + 'static> RxValue for Mutation<Arg, T, E> {
+impl<Arg: RxData, T: RxCloneData, E: RxCloneData> RxValue for Mutation<Arg, T, E> {
     type Value = Option<T>;
 }
 
-impl<Arg, T: Clone + 'static, E: Clone + 'static> RxBase for Mutation<Arg, T, E> {
+impl<Arg: RxData, T: RxCloneData, E: RxCloneData> RxBase for Mutation<Arg, T, E> {
     #[inline(always)]
     fn id(&self) -> Option<crate::reactivity::NodeId> {
         self.state.id()
@@ -207,7 +203,7 @@ impl<Arg, T: Clone + 'static, E: Clone + 'static> RxBase for Mutation<Arg, T, E>
     }
 }
 
-impl<Arg, T: Clone + 'static, E: Clone + 'static> RxInternal for Mutation<Arg, T, E> {
+impl<Arg: RxData, T: RxCloneData, E: RxCloneData> RxInternal for Mutation<Arg, T, E> {
     type ReadOutput<'a>
         = RxGuard<'a, Option<T>, Option<T>>
     where
@@ -245,7 +241,7 @@ impl<Arg, T: Clone + 'static, E: Clone + 'static> RxInternal for Mutation<Arg, T
     }
 }
 
-impl<Arg, T: Clone + 'static, E: Clone + 'static> IntoRx for Mutation<Arg, T, E> {
+impl<Arg: RxData, T: RxCloneData, E: RxCloneData> IntoRx for Mutation<Arg, T, E> {
     type RxType = crate::Rx<Self, crate::RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {

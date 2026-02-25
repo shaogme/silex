@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use crate::traits::{RxCloneData, RxData};
 use silex_reactivity::NodeId;
 
 // --- Memo ---
@@ -11,7 +12,7 @@ pub struct Memo<T> {
 
 crate::impl_signal_core_traits!(Memo);
 
-impl<T: Clone + PartialEq + 'static> Memo<T> {
+impl<T: RxCloneData + PartialEq> Memo<T> {
     pub fn new<F>(f: F) -> Self
     where
         F: Fn(Option<&T>) -> T + 'static,
@@ -33,7 +34,7 @@ impl<T> Memo<T> {
 
 // Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
 
-impl<T: 'static> From<Memo<T>> for crate::reactivity::Signal<T> {
+impl<T: RxData> From<Memo<T>> for crate::reactivity::Signal<T> {
     fn from(m: Memo<T>) -> Self {
         crate::reactivity::Signal::Read(crate::reactivity::ReadSignal {
             id: m.id,

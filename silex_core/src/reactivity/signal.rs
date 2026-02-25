@@ -11,11 +11,12 @@ use silex_reactivity::{
 
 use crate::reactivity::SignalSlice;
 use crate::traits::*;
+use crate::traits::{RxCloneData, RxData};
 use crate::{Rx, RxValueKind};
 
 /// 内部辅助函数：直接从运行时借用信号值。
 /// 安全性：由 RxGuard 的生命周期和 Silex Arena 的地址稳定性保证。
-pub(crate) unsafe fn rx_borrow_signal_unsafe<T: 'static>(id: NodeId) -> Option<&'static T> {
+pub(crate) unsafe fn rx_borrow_signal_unsafe<T: RxData>(id: NodeId) -> Option<&'static T> {
     // 1. 尝试作为响应式信号借用
     if let Some(v) = silex_reactivity::try_with_signal_untracked(id, |v: &T| unsafe {
         std::mem::transmute::<&T, &'static T>(v)
@@ -29,7 +30,7 @@ pub(crate) unsafe fn rx_borrow_signal_unsafe<T: 'static>(id: NodeId) -> Option<&
 }
 
 /// 内部辅助函数：直接从运行时借用 StoredValue。
-unsafe fn rx_borrow_stored_value_unsafe<T: 'static>(id: NodeId) -> Option<&'static T> {
+unsafe fn rx_borrow_stored_value_unsafe<T: RxData>(id: NodeId) -> Option<&'static T> {
     silex_reactivity::try_with_stored_value(id, |v: &T| unsafe {
         std::mem::transmute::<&T, &'static T>(v)
     })
@@ -40,11 +41,11 @@ unsafe fn rx_borrow_stored_value_unsafe<T: 'static>(id: NodeId) -> Option<&'stat
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Constant<T>(pub T);
 
-impl<T: 'static> RxValue for Constant<T> {
+impl<T: RxData> RxValue for Constant<T> {
     type Value = T;
 }
 
-impl<T: 'static> RxBase for Constant<T> {
+impl<T: RxData> RxBase for Constant<T> {
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
         None
@@ -65,7 +66,7 @@ impl<T: 'static> RxBase for Constant<T> {
     }
 }
 
-impl<T: 'static> RxInternal for Constant<T> {
+impl<T: RxData> RxInternal for Constant<T> {
     type ReadOutput<'a>
         = RxGuard<'a, T, T>
     where
@@ -102,7 +103,7 @@ impl<T: 'static> RxInternal for Constant<T> {
     }
 }
 
-impl<T: Clone + 'static> IntoRx for Constant<T> {
+impl<T: RxCloneData> IntoRx for Constant<T> {
     type RxType = Rx<Self, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
@@ -226,14 +227,14 @@ where
 // --- OpPayload (Aggressive De-genericization) ---
 
 #[derive(Clone, Copy)]
-pub struct OpPayload<U: 'static, const N: usize> {
+pub struct OpPayload<U, const N: usize> {
     pub inputs: [NodeId; N],
     pub read: unsafe fn(inputs: &[NodeId]) -> Option<U>,
     pub track: fn(inputs: &[NodeId]),
     pub is_constant: bool,
 }
 
-impl<U: 'static, const N: usize> std::fmt::Debug for OpPayload<U, N> {
+impl<U: RxData, const N: usize> std::fmt::Debug for OpPayload<U, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpPayload")
             .field("inputs", &&self.inputs)
@@ -243,11 +244,11 @@ impl<U: 'static, const N: usize> std::fmt::Debug for OpPayload<U, N> {
     }
 }
 
-impl<U: 'static, const N: usize> RxValue for OpPayload<U, N> {
+impl<U: RxData, const N: usize> RxValue for OpPayload<U, N> {
     type Value = U;
 }
 
-impl<U: 'static, const N: usize> RxBase for OpPayload<U, N> {
+impl<U: RxData, const N: usize> RxBase for OpPayload<U, N> {
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
         None
@@ -275,7 +276,7 @@ impl<U: 'static, const N: usize> RxBase for OpPayload<U, N> {
     }
 }
 
-impl<U: 'static, const N: usize> RxInternal for OpPayload<U, N> {
+impl<U: RxData, const N: usize> RxInternal for OpPayload<U, N> {
     type ReadOutput<'a>
         = RxGuard<'a, U, U>
     where
@@ -321,7 +322,7 @@ pub mod op_trampolines {
 
 // --- Signal 信号 Enum ---
 
-pub enum Signal<T: 'static> {
+pub enum Signal<T> {
     Read(ReadSignal<T>),
     Derived(NodeId, PhantomData<T>),
     StoredConstant(NodeId, PhantomData<T>),
@@ -329,7 +330,7 @@ pub enum Signal<T: 'static> {
     InlineConstant(u64, PhantomData<T>),
 }
 
-impl<T: 'static> std::fmt::Debug for Signal<T> {
+impl<T: RxData> std::fmt::Debug for Signal<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Read(s) => f.debug_tuple("Read").field(s).finish(),
@@ -361,11 +362,11 @@ impl<T> PartialEq for Signal<T> {
 
 impl<T> Eq for Signal<T> {}
 
-impl<T: 'static> RxValue for Signal<T> {
+impl<T: RxData> RxValue for Signal<T> {
     type Value = T;
 }
 
-impl<T: 'static> RxBase for Signal<T> {
+impl<T: RxData> RxBase for Signal<T> {
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
         match self {
@@ -404,7 +405,7 @@ impl<T: 'static> RxBase for Signal<T> {
     }
 }
 
-impl<T: 'static> RxInternal for Signal<T> {
+impl<T: RxData> RxInternal for Signal<T> {
     type ReadOutput<'a>
         = RxGuard<'a, T, T>
     where
@@ -475,7 +476,7 @@ impl<T: 'static> RxInternal for Signal<T> {
     }
 }
 
-impl<T: 'static> IntoRx for Signal<T> {
+impl<T: RxData> IntoRx for Signal<T> {
     type RxType = Rx<Self, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
@@ -505,7 +506,7 @@ impl<T> std::hash::Hash for Signal<T> {
 
 // --- Generic Impl Block ---
 
-impl<T: 'static> Signal<T> {
+impl<T: RxData> Signal<T> {
     #[track_caller]
     pub fn derive(f: impl Fn() -> T + 'static) -> Self {
         let id = register_derived(f);
@@ -573,13 +574,13 @@ impl<T: 'static> Signal<T> {
     }
 }
 
-impl<T: Default + Clone + 'static> Default for Signal<T> {
+impl<T: Default + RxCloneData> Default for Signal<T> {
     fn default() -> Self {
         T::default().into()
     }
 }
 
-impl<T: Clone + 'static> Signal<T> {
+impl<T: RxCloneData> Signal<T> {
     // derive moved to T: 'static block
 
     pub fn with_name(self, name: impl Into<String>) -> Self {
@@ -604,7 +605,7 @@ impl<T: Clone + 'static> Signal<T> {
 
 // Note: GetUntracked and Get methods are now provided as default methods in the RxRead trait.
 
-impl<T: Clone + 'static> From<T> for Signal<T> {
+impl<T: RxCloneData> From<T> for Signal<T> {
     #[track_caller]
     fn from(value: T) -> Self {
         if let Some(inline) = Self::try_inline(value.clone()) {
@@ -622,13 +623,13 @@ impl From<&str> for Signal<String> {
     }
 }
 
-impl<T: 'static> From<ReadSignal<T>> for Signal<T> {
+impl<T: RxData> From<ReadSignal<T>> for Signal<T> {
     fn from(s: ReadSignal<T>) -> Self {
         Signal::Read(s)
     }
 }
 
-impl<T: 'static> From<RwSignal<T>> for Signal<T> {
+impl<T: RxData> From<RwSignal<T>> for Signal<T> {
     fn from(s: RwSignal<T>) -> Self {
         Signal::Read(s.read)
     }
@@ -712,11 +713,11 @@ impl<T> WriteSignal<T> {
 
 impl_signal_core_traits!(WriteSignal);
 
-impl<T: 'static> RxValue for WriteSignal<T> {
+impl<T: RxData> RxValue for WriteSignal<T> {
     type Value = T;
 }
 
-impl<T: 'static> RxBase for WriteSignal<T> {
+impl<T: RxData> RxBase for WriteSignal<T> {
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
         Some(self.id)
@@ -739,7 +740,7 @@ impl<T: 'static> RxBase for WriteSignal<T> {
     }
 }
 
-impl<T: 'static> RxWrite for WriteSignal<T> {
+impl<T: RxData> RxWrite for WriteSignal<T> {
     #[inline(always)]
     fn rx_try_update_untracked<URet>(
         &self,
@@ -756,7 +757,7 @@ impl<T: 'static> RxWrite for WriteSignal<T> {
 
 // --- RwSignal ---
 
-pub struct RwSignal<T: 'static> {
+pub struct RwSignal<T> {
     pub read: ReadSignal<T>,
     pub write: WriteSignal<T>,
 }
@@ -783,7 +784,7 @@ impl<T> std::hash::Hash for RwSignal<T> {
     }
 }
 
-impl<T: 'static> RwSignal<T> {
+impl<T: RxData> RwSignal<T> {
     #[track_caller]
     pub fn new(value: T) -> Self {
         let (read, write) = signal(value);

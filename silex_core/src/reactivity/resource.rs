@@ -8,6 +8,7 @@ use silex_reactivity::{on_cleanup, use_context};
 use crate::SilexError;
 use crate::reactivity::Memo;
 use crate::traits::*;
+use crate::traits::{RxCloneData, RxData, RxError};
 use crate::{Rx, RxValueKind};
 use std::marker::PhantomData;
 
@@ -50,7 +51,7 @@ impl<T, E> ResourceState<T, E> {
     }
 }
 
-pub struct Resource<T: 'static, E: 'static = SilexError> {
+pub struct Resource<T, E = SilexError> {
     pub state: ReadSignal<ResourceState<T, E>>,
     set_state: WriteSignal<ResourceState<T, E>>,
     trigger: WriteSignal<usize>,
@@ -85,13 +86,13 @@ where
     }
 }
 
-impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
+impl<T: RxCloneData, E: RxError> Resource<T, E> {
     pub fn new<S, Fetcher, R>(source: R, fetcher: Fetcher) -> Self
     where
         R: RxRead<Value = S> + 'static,
         for<'a> R::ReadOutput<'a>: std::ops::Deref<Target = S>,
-        S: PartialEq + Clone + 'static,
-        Fetcher: ResourceFetcher<S, Data = T, Error = E> + 'static,
+        S: PartialEq + RxCloneData,
+        Fetcher: ResourceFetcher<S, Data = T, Error = E> + RxData,
     {
         // 默认状态为 Idle，直到第一次 Effect 执行变为 Loading
         let (state, set_state) = signal::<ResourceState<T, E>>(ResourceState::Idle);
@@ -206,7 +207,7 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
         self.state.with(|s| s.as_option().cloned())
     }
 
-    pub fn map<U: Clone + PartialEq + 'static>(
+    pub fn map<U: RxCloneData + PartialEq>(
         &self,
         f: impl Fn(Option<&T>) -> U + 'static,
     ) -> Memo<U> {
@@ -215,11 +216,11 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> Resource<T, E> {
     }
 }
 
-impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxValue for Resource<T, E> {
+impl<T: RxCloneData, E: RxError> RxValue for Resource<T, E> {
     type Value = Option<T>;
 }
 
-impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxBase for Resource<T, E> {
+impl<T: RxCloneData, E: RxError> RxBase for Resource<T, E> {
     #[inline(always)]
     fn id(&self) -> Option<crate::reactivity::NodeId> {
         self.state.id()
@@ -246,7 +247,7 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxBase for Resour
     }
 }
 
-impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxInternal for Resource<T, E> {
+impl<T: RxCloneData, E: RxError> RxInternal for Resource<T, E> {
     type ReadOutput<'a>
         = RxGuard<'a, Option<T>, Option<T>>
     where
@@ -284,7 +285,7 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxInternal for Re
     }
 }
 
-impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> IntoRx for Resource<T, E> {
+impl<T: RxCloneData, E: RxError> IntoRx for Resource<T, E> {
     type RxType = Rx<Self, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {

@@ -1,4 +1,5 @@
 use crate::traits::*;
+use crate::traits::{RxCloneData, RxData};
 use std::marker::PhantomData;
 
 #[derive(Clone, Copy)]
@@ -10,9 +11,9 @@ pub struct SignalSlice<S, F, O: ?Sized> {
 
 impl<S, F, O> SignalSlice<S, F, O>
 where
-    S: RxInternal + Clone + 'static,
+    S: RxInternal + RxCloneData,
     F: Fn(&S::Value) -> &O + Clone + 'static,
-    O: ?Sized + 'static,
+    O: ?Sized + RxData,
 {
     pub fn new(source: S, getter: F) -> Self {
         Self {
@@ -39,17 +40,17 @@ impl<G: std::ops::Deref, O: ?Sized> std::ops::Deref for SliceGuard<G, O> {
 
 impl<S, F, O> RxValue for SignalSlice<S, F, O>
 where
-    O: ?Sized + 'static,
+    O: ?Sized + RxData,
 {
     type Value = O;
 }
 
 impl<S, F, O> RxBase for SignalSlice<S, F, O>
 where
-    S: RxRead + Clone + 'static,
+    S: RxRead + RxCloneData,
     for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
     F: Fn(&S::Value) -> &O + Clone + 'static,
-    O: ?Sized + 'static,
+    O: ?Sized + RxData,
 {
     #[inline(always)]
     fn id(&self) -> Option<crate::reactivity::NodeId> {
@@ -79,10 +80,10 @@ where
 
 impl<S, F, O> RxInternal for SignalSlice<S, F, O>
 where
-    S: RxRead + Clone + 'static,
+    S: RxRead + RxCloneData,
     for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
     F: Fn(&S::Value) -> &O + Clone + 'static,
-    O: ?Sized + 'static,
+    O: ?Sized + RxData,
 {
     type ReadOutput<'a>
         = SliceGuard<S::ReadOutput<'a>, O>
@@ -117,10 +118,10 @@ where
 
 impl<S, F, O> IntoRx for SignalSlice<S, F, O>
 where
-    S: RxRead + Clone + 'static,
+    S: RxRead + RxCloneData,
     for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
     F: Fn(&S::Value) -> &O + Clone + 'static,
-    O: ?Sized + 'static,
+    O: ?Sized + RxData,
 {
     type RxType = crate::Rx<Self, crate::RxValueKind>;
 

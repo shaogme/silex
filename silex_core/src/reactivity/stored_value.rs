@@ -3,6 +3,7 @@ use std::panic::Location;
 
 use silex_reactivity::NodeId;
 
+use crate::traits::RxData;
 use crate::traits::*;
 use crate::{Rx, RxValueKind};
 
@@ -26,7 +27,7 @@ impl<T> Clone for StoredValue<T> {
 }
 impl<T> Copy for StoredValue<T> {}
 
-impl<T: 'static> StoredValue<T> {
+impl<T: RxData> StoredValue<T> {
     pub fn new(value: T) -> Self {
         let id = silex_reactivity::store_value(value);
         Self {
@@ -55,11 +56,11 @@ impl<T: 'static> StoredValue<T> {
 
 // Note: GetUntracked is now blanket-implemented via WithUntracked when T: Clone
 
-impl<T: 'static> RxValue for StoredValue<T> {
+impl<T: RxData> RxValue for StoredValue<T> {
     type Value = T;
 }
 
-impl<T: 'static> RxBase for StoredValue<T> {
+impl<T: RxData> RxBase for StoredValue<T> {
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
         Some(self.id)
@@ -86,7 +87,7 @@ impl<T: 'static> RxBase for StoredValue<T> {
     }
 }
 
-impl<T: 'static> RxInternal for StoredValue<T> {
+impl<T: RxData> RxInternal for StoredValue<T> {
     type ReadOutput<'a>
         = RxGuard<'a, T, T>
     where
@@ -128,7 +129,7 @@ impl<T: 'static> RxInternal for StoredValue<T> {
     }
 }
 
-impl<T: 'static> IntoRx for StoredValue<T> {
+impl<T: RxData> IntoRx for StoredValue<T> {
     type RxType = Rx<Self, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
@@ -144,7 +145,7 @@ impl<T: 'static> IntoRx for StoredValue<T> {
     }
 }
 
-impl<T: 'static> RxWrite for StoredValue<T> {
+impl<T: RxData> RxWrite for StoredValue<T> {
     #[inline(always)]
     fn rx_try_update_untracked<URet>(
         &self,

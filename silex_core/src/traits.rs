@@ -52,6 +52,16 @@
 
 use crate::reactivity::NodeId;
 
+/// 框架数据约束聚合层，用于统一管理生命周期与能力要求。
+pub trait RxData: 'static {}
+impl<T: ?Sized + 'static> RxData for T {}
+
+pub trait RxCloneData: Clone + RxData {}
+impl<T: Clone + 'static> RxCloneData for T {}
+
+pub trait RxError: Clone + std::fmt::Debug + RxData {}
+impl<T: Clone + std::fmt::Debug + 'static> RxError for T {}
+
 /// 响应式实体的核心价值定义。
 pub trait RxValue {
     /// 响应式值持有的数据类型。支持 ?Sized 以兼容 [T] 或 str。
