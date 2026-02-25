@@ -242,14 +242,9 @@ where
 
 // --- 响应式文本归一化内核 (Reactive Text Consolidation Kernel) ---
 
-trait ReactiveText: 'static {
-    fn track(&self);
-    fn render(&self) -> String;
-}
-
-/// 非泛型内核函数：负责处理所有响应式文本更新。
-/// 通过类型擦除避免为每种计算生成独立的 Effect 代码，大幅减小二进制体积。
-fn mount_reactive_text_(parent: &Node, rx: Box<dyn ReactiveText>) {
+/// 泛型内核函数：负责处理所有响应式文本更新。
+/// 移除 Box<dyn ReactiveText>，通过直接接受 Signal<T> 避免昂贵的装箱和虚函数开销，提升运行时渲染性能。
+fn mount_reactive_text<T: Display + Clone + 'static>(parent: &Node, rx: Signal<T>) {
     let document = crate::document();
     let node = document.create_text_node("");
     if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
@@ -258,31 +253,18 @@ fn mount_reactive_text_(parent: &Node, rx: Box<dyn ReactiveText>) {
     }
 
     Effect::new(move |_| {
-        rx.track();
-        let value = rx.render();
+        RxBase::track(&rx);
+        let value = rx
+            .rx_try_with_untracked(|v| v.to_string())
+            .unwrap_or_default();
         node.set_node_value(Some(&value));
     });
-}
-
-// 为所有符合条件的类型统一实现 ReactiveText 桥接
-impl<T> ReactiveText for T
-where
-    T: RxInternal + Clone + 'static,
-    T::Value: Display,
-{
-    fn track(&self) {
-        RxBase::track(self);
-    }
-    fn render(&self) -> String {
-        self.rx_try_with_untracked(|v| v.to_string())
-            .unwrap_or_default()
-    }
 }
 
 // 4. 直接 Signal 支持 (所有归一化后的入口)
 impl<T: Display + Clone + 'static> View for Signal<T> {
     fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        mount_reactive_text_(parent, Box::new(self));
+        mount_reactive_text(parent, self);
     }
 }
 
@@ -806,6 +788,13 @@ impl_from_tuple!(A, B);
 impl_from_tuple!(A, B, C);
 impl_from_tuple!(A, B, C, D);
 impl_from_tuple!(A, B, C, D, E);
+impl_from_tuple!(A, B, C, D, E, F);
+impl_from_tuple!(A, B, C, D, E, F, G);
+impl_from_tuple!(A, B, C, D, E, F, G, H);
+impl_from_tuple!(A, B, C, D, E, F, G, H, I);
+impl_from_tuple!(A, B, C, D, E, F, G, H, I, J);
+impl_from_tuple!(A, B, C, D, E, F, G, H, I, J, K);
+impl_from_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
 
 /// 一个辅助宏，用于简化从 `match` 表达式返回 `SharedView` 的操作。
 ///
