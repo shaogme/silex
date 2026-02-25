@@ -2,7 +2,6 @@ use crate::attribute::PendingAttribute;
 use crate::element::Element;
 use silex_core::error::handle_error;
 use silex_core::reactivity::{Effect, Signal};
-use silex_core::traits::IntoSignal;
 use silex_core::{SilexError, SilexResult};
 use std::fmt::Display;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -121,96 +120,92 @@ where
     V: View + 'static,
 {
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        let document = crate::document();
+        mount_dynamic_view_erased_internal(parent, attrs, Box::new(move || self().into_any()));
+    }
+}
 
-        // 1. 创建锚点 (Start & End Markers)
-        // 使用双锚点策略 (Range Cleaning)，确保清理时能够移除所有动态生成的兄弟节点
-        let start_marker = document.create_comment("dyn-start");
-        let start_node: Node = start_marker.into();
+/// 非泛型的动态视图挂载内核，用于减少单态化膨胀。
+fn mount_dynamic_view_erased_internal(
+    parent: &Node,
+    attrs: Vec<PendingAttribute>,
+    producer: Box<dyn Fn() -> AnyView>,
+) {
+    let document = crate::document();
 
-        if let Err(e) = parent.append_child(&start_node).map_err(SilexError::from) {
-            handle_error(e);
-            return;
+    // 1. 创建锚点 (Start & End Markers)
+    let start_marker = document.create_comment("dyn-start");
+    let start_node: Node = start_marker.into();
+
+    if let Err(e) = parent.append_child(&start_node).map_err(SilexError::from) {
+        handle_error(e);
+        return;
+    }
+
+    let end_marker = document.create_comment("dyn-end");
+    let end_node: Node = end_marker.into();
+
+    if let Err(e) = parent.append_child(&end_node).map_err(SilexError::from) {
+        handle_error(e);
+        return;
+    }
+
+    use std::cell::Cell;
+    use std::rc::Rc;
+    let prev_scope = Rc::new(Cell::new(None::<silex_core::reactivity::NodeId>));
+
+    Effect::new(move |_| {
+        if let Some(id) = prev_scope.get() {
+            silex_core::reactivity::dispose(id);
+            prev_scope.set(None);
         }
 
-        let end_marker = document.create_comment("dyn-end");
-        let end_node: Node = end_marker.into();
+        let start_node = start_node.clone();
+        let end_node = end_node.clone();
+        let document = document.clone();
+        let attrs = attrs.clone();
 
-        if let Err(e) = parent.append_child(&end_node).map_err(SilexError::from) {
-            handle_error(e);
-            return;
-        }
-
-        use std::cell::Cell;
-        use std::rc::Rc;
-        let prev_scope = Rc::new(Cell::new(None::<silex_core::reactivity::NodeId>));
-
-        Effect::new(move |_| {
-            // 清理前一次的残留副作用
-            if let Some(id) = prev_scope.get() {
-                silex_core::reactivity::dispose(id);
-                prev_scope.set(None);
-            }
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let view = producer();
 
             let start_node = start_node.clone();
             let end_node = end_node.clone();
             let document = document.clone();
-            let attrs = attrs.clone();
-
-            // 在产生副作用时捕获 Panic，防止整个应用崩溃，并允许 ErrorBoundary 捕获
-            let result = catch_unwind(AssertUnwindSafe(|| {
-                // 1. 追踪：首先在 Effect 作用域下执行 self()，确保其内部访问的信号被 Effect 记录为依赖
-                let view = self();
-
-                // 2. 隔离：套接 create_scope，确保 view.mount() 过程中产生的额外响应式节点归属于该 Scope
-                let start_node = start_node.clone();
-                let end_node = end_node.clone();
-                let document = document.clone();
-                let id = silex_core::reactivity::create_scope(move || {
-                    // A. 清理旧节点 (Range Clean)
-                    // 删除 start_node 和 end_node 之间的所有节点
-                    if let Some(parent) = start_node.parent_node() {
-                        while let Some(sibling) = start_node.next_sibling() {
-                            // 引用比较，到达结束锚点停止
-                            if sibling == end_node {
-                                break;
-                            }
-                            // 移除中间节点
-                            let _ = parent.remove_child(&sibling);
+            let id = silex_core::reactivity::create_scope(move || {
+                if let Some(parent) = start_node.parent_node() {
+                    while let Some(sibling) = start_node.next_sibling() {
+                        if sibling == end_node {
+                            break;
                         }
+                        let _ = parent.remove_child(&sibling);
                     }
+                }
 
-                    // B. 准备新内容 (使用 DocumentFragment 收集节点)
-                    let fragment = document.create_document_fragment();
-                    let fragment_node: Node = fragment.clone().into();
+                let fragment = document.create_document_fragment();
+                let fragment_node: Node = fragment.clone().into();
 
-                    // 挂载到 Fragment，并传递属性！
-                    view.mount(&fragment_node, attrs);
+                view.mount(&fragment_node, attrs);
 
-                    // C. 插入到 DOM (在 end_marker 之前)
-                    if let Some(parent) = end_node.parent_node() {
-                        let _ = parent.insert_before(&fragment_node, Some(&end_node));
-                    }
-                });
-                id
-            }));
+                if let Some(parent) = end_node.parent_node() {
+                    let _ = parent.insert_before(&fragment_node, Some(&end_node));
+                }
+            });
+            id
+        }));
 
-            if let Ok(id) = result {
-                prev_scope.set(Some(id));
-            } else if let Err(payload) = result {
-                // 转换 Panic payload 为 SilexError
-                let msg = if let Some(s) = payload.downcast_ref::<&str>() {
-                    format!("Panic in View: {}", s)
-                } else if let Some(s) = payload.downcast_ref::<String>() {
-                    format!("Panic in View: {}", s)
-                } else {
-                    "Unknown Panic in View".to_string()
-                };
+        if let Ok(id) = result {
+            prev_scope.set(Some(id));
+        } else if let Err(payload) = result {
+            let msg = if let Some(s) = payload.downcast_ref::<&str>() {
+                format!("Panic in View: {}", s)
+            } else if let Some(s) = payload.downcast_ref::<String>() {
+                format!("Panic in View: {}", s)
+            } else {
+                "Unknown Panic in View".to_string()
+            };
 
-                handle_error(SilexError::Javascript(msg));
-            }
-        });
-    }
+            handle_error(SilexError::Javascript(msg));
+        }
+    });
 }
 
 // 3.6 Type closure delegation
@@ -252,11 +247,131 @@ fn mount_erased_reactive_text_internal(
     });
 }
 
+// --- 响应式组件视图内核 (Reactive View Core) ---
+
+pub(crate) type ErasedViewConverter = fn(silex_core::reactivity::NodeId) -> SharedView;
+
+pub(crate) fn mount_reactive_view<T: View + Clone + 'static>(
+    parent: &Node,
+    rx: Signal<T>,
+    attrs: Vec<PendingAttribute>,
+) {
+    let node_id = rx.ensure_node_id();
+    let converter = view_to_shared_erased::<T>;
+    mount_erased_reactive_view_internal(parent, node_id, attrs, converter);
+}
+
+fn view_to_shared_erased<T: View + Clone + 'static>(
+    node_id: silex_core::reactivity::NodeId,
+) -> SharedView {
+    use silex_core::traits::RxRead;
+    let rx = silex_core::reactivity::Signal::<T>::Derived(node_id, std::marker::PhantomData);
+    rx.with(|v| v.clone().into_shared())
+}
+
+fn mount_erased_reactive_view_internal(
+    parent: &Node,
+    node_id: silex_core::reactivity::NodeId,
+    attrs: Vec<PendingAttribute>,
+    converter: ErasedViewConverter,
+) {
+    let document = crate::document();
+
+    let start_marker = document.create_comment("dyn-start");
+    let start_node: Node = start_marker.into();
+
+    if let Err(e) = parent.append_child(&start_node).map_err(SilexError::from) {
+        handle_error(e);
+        return;
+    }
+
+    let end_marker = document.create_comment("dyn-end");
+    let end_node: Node = end_marker.into();
+
+    if let Err(e) = parent.append_child(&end_node).map_err(SilexError::from) {
+        handle_error(e);
+        return;
+    }
+
+    use std::cell::Cell;
+    use std::rc::Rc;
+    let prev_scope = Rc::new(Cell::new(None::<silex_core::reactivity::NodeId>));
+
+    Effect::new(move |_| {
+        if let Some(id) = prev_scope.get() {
+            silex_core::reactivity::dispose(id);
+            prev_scope.set(None);
+        }
+
+        let start_node = start_node.clone();
+        let end_node = end_node.clone();
+        let document = document.clone();
+        let attrs = attrs.clone();
+
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let view = converter(node_id);
+
+            let start_node = start_node.clone();
+            let end_node = end_node.clone();
+            let document = document.clone();
+            let id = silex_core::reactivity::create_scope(move || {
+                if let Some(parent) = start_node.parent_node() {
+                    while let Some(sibling) = start_node.next_sibling() {
+                        if sibling == end_node {
+                            break;
+                        }
+                        let _ = parent.remove_child(&sibling);
+                    }
+                }
+
+                let fragment = document.create_document_fragment();
+                let fragment_node: Node = fragment.clone().into();
+
+                view.mount(&fragment_node, attrs);
+
+                if let Some(parent) = end_node.parent_node() {
+                    let _ = parent.insert_before(&fragment_node, Some(&end_node));
+                }
+            });
+            id
+        }));
+
+        if let Ok(id) = result {
+            prev_scope.set(Some(id));
+        } else if let Err(payload) = result {
+            let msg = if let Some(s) = payload.downcast_ref::<&str>() {
+                format!("Panic in View: {}", s)
+            } else if let Some(s) = payload.downcast_ref::<String>() {
+                format!("Panic in View: {}", s)
+            } else {
+                "Unknown Panic in View".to_string()
+            };
+
+            handle_error(SilexError::Javascript(msg));
+        }
+    });
+}
+
 // 4. Rx wrapper support (Unified entry point for reactive normalization)
-impl<F, M> View for silex_core::Rx<F, M>
+impl<F, V> View for silex_core::Rx<F, silex_core::RxValueKind>
+where
+    F: silex_core::traits::IntoSignal<Value = V> + 'static,
+    silex_core::reactivity::Signal<V>: View,
+    V: silex_core::traits::RxCloneData + Sized + 'static,
+{
+    #[inline(always)]
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        self.0.into_signal().mount(parent, attrs);
+    }
+
+    fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
+}
+
+impl<F> View for silex_core::Rx<F, silex_core::RxEffectKind>
 where
     F: View,
 {
+    #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.0.mount(parent, attrs);
     }
@@ -266,63 +381,145 @@ where
     }
 }
 
-// 直接为内置响应式类型实现 View
-macro_rules! impl_view_for_reactive {
-    ($($ty:ident),*) => {
+macro_rules! impl_view_for_reactive_erased_views {
+    ($($ty:ty),*) => {
         $(
-            impl<T: Display + Clone + 'static> View for silex_core::reactivity::$ty<T>
-            where
-                Self: IntoSignal<Value = T> + Clone + 'static,
-            {
-                fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-                    crate::view::mount_reactive_text(parent, self.into_signal());
+            impl View for silex_core::reactivity::Signal<$ty> {
+                fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+                    crate::view::mount_reactive_view(parent, self, attrs);
                 }
             }
         )*
     };
 }
 
-impl_view_for_reactive!(Signal, ReadSignal, RwSignal);
+impl_view_for_reactive_erased_views!(
+    crate::element::Element,
+    crate::view::SharedView,
+    crate::view::Fragment
+);
 
-impl<T: Display + Clone + 'static> View for silex_core::reactivity::Constant<T> {
-    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        crate::view::mount_reactive_text(parent, self.into_signal());
+impl<T: 'static> View for silex_core::reactivity::Signal<crate::element::TypedElement<T>> {
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        crate::view::mount_reactive_view(parent, self, attrs);
     }
 }
 
-impl<T: Display + Clone + PartialEq + 'static> View for silex_core::reactivity::Memo<T> {
-    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        crate::view::mount_reactive_text(parent, self.into_signal());
+macro_rules! impl_view_for_reactive_tuple_erased {
+    ($($name:ident),*) => {
+        impl<$($name: View + Clone + 'static),*> View for silex_core::reactivity::Signal<($($name,)*)> {
+            fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+                crate::view::mount_reactive_view(parent, self, attrs);
+            }
+        }
     }
 }
 
-impl<S, F> View for silex_core::reactivity::DerivedPayload<S, F>
+impl_view_for_reactive_tuple_erased!(A);
+impl_view_for_reactive_tuple_erased!(A, B);
+impl_view_for_reactive_tuple_erased!(A, B, C);
+impl_view_for_reactive_tuple_erased!(A, B, C, D);
+impl_view_for_reactive_tuple_erased!(A, B, C, D, E);
+impl_view_for_reactive_tuple_erased!(A, B, C, D, E, F);
+impl_view_for_reactive_tuple_erased!(A, B, C, D, E, F, G);
+impl_view_for_reactive_tuple_erased!(A, B, C, D, E, F, G, H);
+impl_view_for_reactive_tuple_erased!(A, B, C, D, E, F, G, H, I);
+impl_view_for_reactive_tuple_erased!(A, B, C, D, E, F, G, H, I, J);
+impl_view_for_reactive_tuple_erased!(A, B, C, D, E, F, G, H, I, J, K);
+impl_view_for_reactive_tuple_erased!(A, B, C, D, E, F, G, H, I, J, K, L);
+
+macro_rules! impl_view_for_signal_text {
+    ($($t:ty),*) => {
+        $(
+            impl View for silex_core::reactivity::Signal<$t> {
+                fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+                    crate::view::mount_reactive_text(parent, self);
+                }
+            }
+        )*
+    };
+}
+
+impl_view_for_signal_text!(
+    String,
+    bool,
+    char,
+    i8,
+    u8,
+    i16,
+    u16,
+    i32,
+    u32,
+    i64,
+    u64,
+    i128,
+    u128,
+    isize,
+    usize,
+    f32,
+    f64,
+    &'static str,
+    std::borrow::Cow<'static, str>
+);
+
+macro_rules! impl_view_forward_to_signal {
+    ($($ty:ident),*) => {
+        $(
+            impl<T> View for silex_core::reactivity::$ty<T>
+            where
+                T: silex_core::traits::RxCloneData + Sized + 'static,
+                Self: silex_core::traits::IntoSignal<Value = T> + Clone + 'static,
+                silex_core::reactivity::Signal<T>: View,
+            {
+                #[inline(always)]
+                fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+                    use silex_core::traits::IntoSignal;
+                    self.into_signal().mount(parent, attrs);
+                }
+            }
+        )*
+    };
+}
+
+impl_view_forward_to_signal!(ReadSignal, RwSignal, Constant, Memo);
+
+// 为复杂响应式 Payload 转发
+impl<S, F, V> View for silex_core::reactivity::DerivedPayload<S, F>
 where
-    Self: IntoSignal + silex_core::traits::RxValue + Clone + 'static,
-    <Self as silex_core::traits::RxValue>::Value: Display + Clone + 'static,
+    Self: silex_core::traits::IntoSignal<Value = V> + 'static,
+    V: silex_core::traits::RxCloneData + Sized + 'static,
+    silex_core::reactivity::Signal<V>: View,
 {
-    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        crate::view::mount_reactive_text(parent, self.into_signal());
+    #[inline(always)]
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        use silex_core::traits::IntoSignal;
+        self.into_signal().mount(parent, attrs);
     }
 }
 
 impl<U, const N: usize> View for silex_core::reactivity::OpPayload<U, N>
 where
-    Self: IntoSignal + silex_core::traits::RxValue<Value = U> + Clone + 'static,
-    U: Display + Clone + 'static,
+    Self: silex_core::traits::IntoSignal<Value = U> + 'static,
+    U: silex_core::traits::RxCloneData + Sized + 'static,
+    silex_core::reactivity::Signal<U>: View,
 {
-    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        crate::view::mount_reactive_text(parent, self.into_signal());
+    #[inline(always)]
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        use silex_core::traits::IntoSignal;
+        self.into_signal().mount(parent, attrs);
     }
 }
 
 impl<S, F, O> View for silex_core::reactivity::SignalSlice<S, F, O>
 where
-    Self: IntoSignal + silex_core::traits::RxValue<Value = O> + Clone + 'static,
-    O: Display + Clone + 'static,
+    Self: silex_core::traits::IntoSignal<Value = O> + 'static,
+    O: silex_core::traits::RxCloneData + Sized + 'static,
+    silex_core::reactivity::Signal<O>: View,
 {
-    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        crate::view::mount_reactive_text(parent, self.into_signal());
+    #[inline(always)]
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        use silex_core::traits::IntoSignal;
+        self.into_signal().mount(parent, attrs);
     }
 }
 

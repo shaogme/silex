@@ -115,10 +115,24 @@ impl std::ops::Deref for Element {
 }
 
 /// Type-safe wrapper for DOM elements
-#[derive(Clone, PartialEq)]
 pub struct TypedElement<T> {
     pub element: Element,
     _marker: PhantomData<T>,
+}
+
+impl<T> Clone for TypedElement<T> {
+    fn clone(&self) -> Self {
+        Self {
+            element: self.element.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T> PartialEq for TypedElement<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.element == other.element
+    }
 }
 
 impl<T> TypedElement<T> {
