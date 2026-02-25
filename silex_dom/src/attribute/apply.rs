@@ -158,6 +158,43 @@ where
     }
 }
 
+// --- Generic Attribute Effect (Operator Erasure) ---
+
+/// 将指定 NodeId 的值读取并格式化为 String 的静态函数签名
+pub type ErasedStringConverter = fn(silex_core::reactivity::NodeId) -> String;
+
+/// 擦除了底层响应式原始类型的 DOM 属性动态评估载体
+#[derive(Clone)]
+pub struct GenericAttrEffect {
+    node_id: silex_core::reactivity::NodeId,
+    converter: ErasedStringConverter,
+}
+
+impl GenericAttrEffect {
+    #[inline(always)]
+    pub fn new(node_id: silex_core::reactivity::NodeId, converter: ErasedStringConverter) -> Self {
+        Self { node_id, converter }
+    }
+
+    /// 在统一的副作用函数（Effect）内调用该方法获得字符串
+    #[inline(always)]
+    pub fn get_string(&self) -> String {
+        (self.converter)(self.node_id)
+    }
+}
+
+/// 依据给定类型的具体大小与实现，将 NodeId 内的值读出并转换为 String
+pub(crate) fn primitive_to_string_erased<T>(id: silex_core::reactivity::NodeId) -> String
+where
+    T: std::string::ToString + Clone + 'static,
+{
+    use silex_core::traits::RxGet;
+    // 利用 Signal::Derived 作为通用的 NodeId 读取包装器
+    silex_core::reactivity::Signal::<T>::Derived(id, std::marker::PhantomData)
+        .get()
+        .to_string()
+}
+
 // --- Internal Helper Functions (Non-generic to reduce monomorphization) ---
 
 fn handle_err(res: Result<(), SilexError>) {
@@ -209,11 +246,11 @@ fn set_string_property_internal(el: &WebElem, name: &str, value: &str, is_prop: 
     }
 }
 
-fn create_class_effect_internal(el: WebElem, signal: Signal<String>) {
+fn create_erased_class_effect_internal(el: WebElem, effect: GenericAttrEffect) {
     let prev_classes = Rc::new(RefCell::new(HashSet::new()));
 
     Effect::new(move |_| {
-        let value = signal.get();
+        let value = effect.get_string();
         let new_classes: HashSet<String> =
             value.split_whitespace().map(|s| s.to_string()).collect();
 
@@ -232,11 +269,11 @@ fn create_class_effect_internal(el: WebElem, signal: Signal<String>) {
     });
 }
 
-fn create_style_effect_internal(el: WebElem, signal: Signal<String>) {
+fn create_erased_style_effect_internal(el: WebElem, effect: GenericAttrEffect) {
     let prev_keys = Rc::new(RefCell::new(HashSet::<String>::new()));
 
     Effect::new(move |_| {
-        let value = signal.get();
+        let value = effect.get_string();
         let new_style_str = value.as_ref();
 
         if let Some(style) = get_style_decl(&el) {
@@ -257,29 +294,49 @@ fn create_style_effect_internal(el: WebElem, signal: Signal<String>) {
     });
 }
 
-fn apply_string_reactive_internal(el: WebElem, target: OwnedApplyTarget, signal: Signal<String>) {
+fn apply_erased_string_reactive_internal(
+    el: WebElem,
+    target: OwnedApplyTarget,
+    effect: GenericAttrEffect,
+) {
     match target {
-        OwnedApplyTarget::Class => create_class_effect_internal(el, signal),
-        OwnedApplyTarget::Style => create_style_effect_internal(el, signal),
+        OwnedApplyTarget::Class => create_erased_class_effect_internal(el, effect),
+        OwnedApplyTarget::Style => create_erased_style_effect_internal(el, effect),
         OwnedApplyTarget::Attr(name) => {
             if name == "class" {
-                create_class_effect_internal(el, signal);
+                create_erased_class_effect_internal(el, effect);
             } else if name == "style" {
-                create_style_effect_internal(el, signal);
+                create_erased_style_effect_internal(el, effect);
             } else {
                 Effect::new(move |_| {
-                    let value = signal.get();
+                    let value = effect.get_string();
                     set_string_property_internal(&el, &name, &value, false);
                 });
             }
         }
         OwnedApplyTarget::Prop(name) => {
             Effect::new(move |_| {
-                let value = signal.get();
+                let value = effect.get_string();
                 set_string_property_internal(&el, &name, &value, true);
             });
         }
         OwnedApplyTarget::Apply => {}
+    }
+}
+
+fn apply_erased_pair_reactive_internal(
+    el: WebElem,
+    key: String,
+    target: OwnedApplyTarget,
+    effect: GenericAttrEffect,
+) {
+    let is_style = matches!(target, OwnedApplyTarget::Style)
+        || matches!(target, OwnedApplyTarget::Attr(ref n) if n == "style");
+
+    if is_style && let Some(style) = get_style_decl(&el) {
+        Effect::new(move |_| {
+            let _ = style.set_property(&key, &effect.get_string());
+        });
     }
 }
 
@@ -446,19 +503,15 @@ impl<T: ApplyToDom> ApplyToDom for Option<T> {
 
 impl ReactiveApply for String {
     fn apply_to_dom(signal: Signal<Self>, el: WebElem, target: OwnedApplyTarget) {
-        apply_string_reactive_internal(el, target, signal);
+        let node_id = signal.ensure_node_id();
+        let effect = GenericAttrEffect::new(node_id, primitive_to_string_erased::<String>);
+        apply_erased_string_reactive_internal(el, target, effect);
     }
 
     fn apply_pair(signal: Signal<Self>, key: String, el: WebElem, target: OwnedApplyTarget) {
-        let is_style = matches!(target, OwnedApplyTarget::Style)
-            || matches!(target, OwnedApplyTarget::Attr(ref n) if n == "style");
-
-        if is_style && let Some(style) = get_style_decl(&el) {
-            Effect::new(move |_| {
-                let v = signal.get();
-                let _ = style.set_property(&key, &v);
-            });
-        }
+        let node_id = signal.ensure_node_id();
+        let effect = GenericAttrEffect::new(node_id, primitive_to_string_erased::<String>);
+        apply_erased_pair_reactive_internal(el, key, target, effect);
     }
 
     fn into_payload_reactive(signal: Signal<Self>) -> Option<AttributePayload> {
@@ -470,7 +523,9 @@ impl ReactiveApply for &'static str {
     fn apply_to_dom(signal: Signal<Self>, el: WebElem, target: OwnedApplyTarget) {
         let string_signal =
             silex_core::reactivity::Signal::derive(move || signal.get().to_string());
-        apply_string_reactive_internal(el, target, string_signal);
+        let node_id = string_signal.ensure_node_id();
+        let effect = GenericAttrEffect::new(node_id, primitive_to_string_erased::<String>);
+        apply_erased_string_reactive_internal(el, target, effect);
     }
 
     fn apply_pair(signal: Signal<Self>, key: String, el: WebElem, target: OwnedApplyTarget) {
@@ -485,18 +540,14 @@ macro_rules! impl_reactive_apply_primitive {
         $(
             impl ReactiveApply for $t {
                 fn apply_to_dom(signal: Signal<Self>, el: WebElem, target: OwnedApplyTarget) {
-                    let string_signal = silex_core::reactivity::Signal::derive(move || signal.get().to_string());
-                    apply_string_reactive_internal(el, target, string_signal);
+                    let node_id = signal.ensure_node_id();
+                    let effect = GenericAttrEffect::new(node_id, primitive_to_string_erased::<$t>);
+                    apply_erased_string_reactive_internal(el, target, effect);
                 }
                 fn apply_pair(signal: Signal<Self>, key: String, el: WebElem, target: OwnedApplyTarget) {
-                    let is_style = matches!(target, OwnedApplyTarget::Style)
-                        || matches!(target, OwnedApplyTarget::Attr(ref n) if n == "style");
-
-                    if is_style && let Some(style) = get_style_decl(&el) {
-                        Effect::new(move |_| {
-                            let _ = style.set_property(&key, &signal.get().to_string());
-                        });
-                    }
+                    let node_id = signal.ensure_node_id();
+                    let effect = GenericAttrEffect::new(node_id, primitive_to_string_erased::<$t>);
+                    apply_erased_pair_reactive_internal(el, key, target, effect);
                 }
             }
         )*
@@ -840,7 +891,10 @@ impl PendingAttribute {
             }
             AttributePayload::ReactiveString(signal) => {
                 if let Some(ref t) = self.target {
-                    apply_string_reactive_internal(el.clone(), t.clone(), *signal);
+                    let node_id = signal.ensure_node_id();
+                    let effect =
+                        GenericAttrEffect::new(node_id, primitive_to_string_erased::<String>);
+                    apply_erased_string_reactive_internal(el.clone(), t.clone(), effect);
                 }
             }
             AttributePayload::ReactiveBool(signal) => {
