@@ -1,9 +1,8 @@
 use silex_core::SilexError;
-use silex_core::reactivity::{Constant, Effect, Memo, ReadSignal, RwSignal, Signal};
-use silex_core::traits::{IntoRx, IntoSignal, RxGet, RxRead};
+use silex_core::reactivity::{Constant, Effect, Memo, OpPayload, ReadSignal, RwSignal, Signal};
+use silex_core::traits::{IntoSignal, RxGet};
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::ops::Deref;
 use std::rc::Rc;
 use wasm_bindgen::{JsCast, JsValue};
 use web_sys::{CssStyleDeclaration, Element as WebElem, HtmlElement, SvgElement};
@@ -32,34 +31,21 @@ pub trait ApplyToDom {
     fn apply(self, el: &WebElem, target: ApplyTarget);
 }
 
-// --- RxTask: Helper to distinguish different kinds of Rx closures ---
-
-pub trait RxTask<M> {
-    fn run_rx(self, el: &WebElem, target: ApplyTarget);
-}
-
-// 1. Value Calculation: 归一化路径
-impl<F, T> RxTask<silex_core::RxValueKind> for F
-where
-    F: IntoSignal<Value = T> + Clone + 'static,
-    T: ReactiveApply + Clone + 'static,
-{
-    fn run_rx(self, el: &WebElem, target: ApplyTarget) {
-        // 利用归一化边界，将所有复杂的负载（闭包、算子等）坍缩为 Signal。
-        // 这确保了底层 Effect 逻辑只为 Signal<T> 生成一次。
-        apply_signal_internal(self.into_signal(), el, target);
-    }
-}
-
-// 2. Continuous Element Modifier: (&Element) -> ()
-impl<F> RxTask<silex_core::RxEffectKind> for F
+impl<F> ApplyToDom for F
 where
     F: FnOnce(&WebElem) + 'static,
 {
-    fn run_rx(self, el: &WebElem, _target: ApplyTarget) {
-        // We handle it as a single execution if it's FnOnce.
-        // In the future, we could detect if it should be an Effect.
+    fn apply(self, el: &WebElem, _target: ApplyTarget) {
         (self)(el);
+    }
+}
+
+impl<F> ApplyToDom for silex_core::Rx<F, silex_core::RxEffectKind>
+where
+    F: FnOnce(&WebElem) + 'static,
+{
+    fn apply(self, el: &WebElem, _target: ApplyTarget) {
+        (self.0)(el);
     }
 }
 
@@ -93,7 +79,6 @@ fn parse_style_str(s: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Internal: Set a string attribute or property directly.
 fn set_string_property_internal(el: &WebElem, name: &str, value: &str, is_prop: bool) {
     if is_prop {
         let _ = js_sys::Reflect::set(el, &JsValue::from_str(name), &JsValue::from_str(value));
@@ -115,25 +100,21 @@ fn set_string_property_internal(el: &WebElem, name: &str, value: &str, is_prop: 
     }
 }
 
-/// Internal: Shared logic for reactive class updates.
-fn create_class_effect_internal(el: WebElem, f: Rc<dyn Fn() -> String>) {
-    // Diffing updates
+fn create_class_effect_internal(el: WebElem, signal: Signal<String>) {
     let prev_classes = Rc::new(RefCell::new(HashSet::new()));
 
     Effect::new(move |_| {
-        let value = f();
+        let value = signal.get();
         let new_classes: HashSet<String> =
             value.split_whitespace().map(|s| s.to_string()).collect();
 
         let mut prev = prev_classes.borrow_mut();
         let list = el.class_list();
 
-        // Remove stale classes
         for c in prev.difference(&new_classes) {
             let _ = list.remove_1(c);
         }
 
-        // Add new classes
         for c in new_classes.difference(&prev) {
             let _ = list.add_1(c);
         }
@@ -142,12 +123,11 @@ fn create_class_effect_internal(el: WebElem, f: Rc<dyn Fn() -> String>) {
     });
 }
 
-/// Internal: Shared logic for reactive style updates.
-fn create_style_effect_internal(el: WebElem, f: Rc<dyn Fn() -> String>) {
+fn create_style_effect_internal(el: WebElem, signal: Signal<String>) {
     let prev_keys = Rc::new(RefCell::new(HashSet::<String>::new()));
 
     Effect::new(move |_| {
-        let value = f();
+        let value = signal.get();
         let new_style_str = value.as_ref();
 
         if let Some(style) = get_style_decl(&el) {
@@ -155,12 +135,10 @@ fn create_style_effect_internal(el: WebElem, f: Rc<dyn Fn() -> String>) {
             let params = parse_style_str(new_style_str);
             let new_keys: HashSet<String> = params.iter().map(|(k, _)| k.clone()).collect();
 
-            // Remove keys that are in prev but not in new
             for k in prev.difference(&new_keys) {
                 let _ = style.remove_property(k);
             }
 
-            // Update all current properties
             for (k, v) in params {
                 let _ = style.set_property(&k, &v);
             }
@@ -170,30 +148,25 @@ fn create_style_effect_internal(el: WebElem, f: Rc<dyn Fn() -> String>) {
     });
 }
 
-/// Internal: Reactive application of a string value to a target.
-fn apply_string_reactive_internal(
-    el: WebElem,
-    target: OwnedApplyTarget,
-    f: Rc<dyn Fn() -> String>,
-) {
+fn apply_string_reactive_internal(el: WebElem, target: OwnedApplyTarget, signal: Signal<String>) {
     match target {
-        OwnedApplyTarget::Class => create_class_effect_internal(el, f),
-        OwnedApplyTarget::Style => create_style_effect_internal(el, f),
+        OwnedApplyTarget::Class => create_class_effect_internal(el, signal),
+        OwnedApplyTarget::Style => create_style_effect_internal(el, signal),
         OwnedApplyTarget::Attr(name) => {
             if name == "class" {
-                create_class_effect_internal(el, f);
+                create_class_effect_internal(el, signal);
             } else if name == "style" {
-                create_style_effect_internal(el, f);
+                create_style_effect_internal(el, signal);
             } else {
                 Effect::new(move |_| {
-                    let value = f();
+                    let value = signal.get();
                     set_string_property_internal(&el, &name, &value, false);
                 });
             }
         }
         OwnedApplyTarget::Prop(name) => {
             Effect::new(move |_| {
-                let value = f();
+                let value = signal.get();
                 set_string_property_internal(&el, &name, &value, true);
             });
         }
@@ -201,14 +174,46 @@ fn apply_string_reactive_internal(
     }
 }
 
+fn apply_bool_reactive_internal(el: WebElem, target: OwnedApplyTarget, signal: Signal<bool>) {
+    match target {
+        OwnedApplyTarget::Attr(name) => {
+            Effect::new(move |_| {
+                let val = signal.get();
+                if val {
+                    let _ = el.set_attribute(&name, "");
+                } else {
+                    let _ = el.remove_attribute(&name);
+                }
+            });
+        }
+        OwnedApplyTarget::Prop(name) => {
+            Effect::new(move |_| {
+                let val = signal.get();
+                let _ =
+                    js_sys::Reflect::set(&el, &JsValue::from_str(&name), &JsValue::from_bool(val));
+            });
+        }
+        _ => {}
+    }
+}
+
+fn apply_bool_pair_reactive_internal(el: WebElem, key: String, signal: Signal<bool>) {
+    let list = el.class_list();
+    Effect::new(move |_| {
+        if signal.get() {
+            let _ = list.add_1(&key);
+        } else {
+            let _ = list.remove_1(&key);
+        }
+    });
+}
+
 fn apply_signal_internal<T>(signal: Signal<T>, el: &WebElem, target: ApplyTarget)
 where
     T: ReactiveApply + Clone + 'static,
 {
     let owned_target = OwnedApplyTarget::from(target);
-    let el = el.clone();
-
-    T::apply_to_dom(move || signal.get(), el, owned_target);
+    T::apply_to_dom(signal, el.clone(), owned_target);
 }
 
 // --- OwnedApplyTarget & ReactiveApply ---
@@ -235,23 +240,19 @@ impl<'a> From<ApplyTarget<'a>> for OwnedApplyTarget {
 }
 
 pub trait ReactiveApply {
-    fn apply_to_dom(f: impl Fn() -> Self + 'static, el: WebElem, target: OwnedApplyTarget);
+    fn apply_to_dom(signal: Signal<Self>, el: WebElem, target: OwnedApplyTarget)
+    where
+        Self: Sized;
 
-    // New method to handle (Key, Value) pair application
-    fn apply_pair(
-        f: impl Fn() -> Self + 'static,
-        key: String,
-        el: WebElem,
-        target: OwnedApplyTarget,
-    ) {
-        // Default implementation does nothing
-        let _ = (f, key, el, target);
+    fn apply_pair(signal: Signal<Self>, key: String, el: WebElem, target: OwnedApplyTarget)
+    where
+        Self: Sized,
+    {
+        let _ = (signal, key, el, target);
     }
 }
 
 // --- Implementations ---
-
-// --- Immediate Application Helpers ---
 
 fn apply_immediate_string(el: &WebElem, target: ApplyTarget, value: &str) {
     match target {
@@ -279,7 +280,6 @@ fn apply_immediate_bool(el: &WebElem, target: ApplyTarget, value: bool) {
     }
 }
 
-// 1. Static Strings (&str, String, &String)
 impl ApplyToDom for &str {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
         apply_immediate_string(el, target, self);
@@ -298,14 +298,12 @@ impl ApplyToDom for &String {
     }
 }
 
-// 2. Bool (Attributes Only)
 impl ApplyToDom for bool {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
         apply_immediate_bool(el, target, self);
     }
 }
 
-// 3. Option
 impl<T: ApplyToDom> ApplyToDom for Option<T> {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
         if let Some(val) = self {
@@ -314,102 +312,35 @@ impl<T: ApplyToDom> ApplyToDom for Option<T> {
     }
 }
 
-// 4. Reactive Closures Implementation (via ReactiveApply)
-
-// 4.1 String Implementation (Reuses diffing logic for Class/Style)
 impl ReactiveApply for String {
-    fn apply_to_dom(f: impl Fn() -> Self + 'static, el: WebElem, target: OwnedApplyTarget) {
-        apply_string_reactive_internal(el, target, Rc::new(f));
+    fn apply_to_dom(signal: Signal<Self>, el: WebElem, target: OwnedApplyTarget) {
+        apply_string_reactive_internal(el, target, signal);
     }
 
-    fn apply_pair(
-        f: impl Fn() -> Self + 'static,
-        key: String,
-        el: WebElem,
-        target: OwnedApplyTarget,
-    ) {
+    fn apply_pair(signal: Signal<Self>, key: String, el: WebElem, target: OwnedApplyTarget) {
         let is_style = matches!(target, OwnedApplyTarget::Style)
             || matches!(target, OwnedApplyTarget::Attr(ref n) if n == "style");
 
         if is_style && let Some(style) = get_style_decl(&el) {
             Effect::new(move |_| {
-                let v = f();
+                let v = signal.get();
                 let _ = style.set_property(&key, &v);
             });
         }
     }
 }
 
-// 4.1b &str Implementation
-impl ReactiveApply for &str {
-    fn apply_to_dom(f: impl Fn() -> Self + 'static, el: WebElem, target: OwnedApplyTarget) {
-        apply_string_reactive_internal(el, target, Rc::new(move || f().to_string()))
+impl ReactiveApply for &'static str {
+    fn apply_to_dom(signal: Signal<Self>, el: WebElem, target: OwnedApplyTarget) {
+        let string_signal =
+            silex_core::reactivity::Signal::derive(move || signal.get().to_string());
+        apply_string_reactive_internal(el, target, string_signal);
     }
 
-    fn apply_pair(
-        f: impl Fn() -> Self + 'static,
-        key: String,
-        el: WebElem,
-        target: OwnedApplyTarget,
-    ) {
-        String::apply_pair(move || f().to_string(), key, el, target)
-    }
-}
-
-/// Internal: Shared logic for reactive boolean update.
-fn apply_bool_reactive_internal(el: WebElem, target: OwnedApplyTarget, f: Rc<dyn Fn() -> bool>) {
-    match target {
-        OwnedApplyTarget::Attr(name) => {
-            Effect::new(move |_| {
-                let val = f();
-                if val {
-                    let _ = el.set_attribute(&name, "");
-                } else {
-                    let _ = el.remove_attribute(&name);
-                }
-            });
-        }
-        OwnedApplyTarget::Prop(name) => {
-            Effect::new(move |_| {
-                let val = f();
-                let _ =
-                    js_sys::Reflect::set(&el, &JsValue::from_str(&name), &JsValue::from_bool(val));
-            });
-        }
-        _ => {}
-    }
-}
-
-/// Internal: Shared logic for toggling a class reactively.
-fn apply_bool_pair_reactive_internal(el: WebElem, key: String, f: Rc<dyn Fn() -> bool>) {
-    let list = el.class_list();
-    Effect::new(move |_| {
-        if f() {
-            let _ = list.add_1(&key);
-        } else {
-            let _ = list.remove_1(&key);
-        }
-    });
-}
-
-// 4.2 Boolean Implementation
-impl ReactiveApply for bool {
-    fn apply_to_dom(f: impl Fn() -> Self + 'static, el: WebElem, target: OwnedApplyTarget) {
-        apply_bool_reactive_internal(el, target, Rc::new(f));
-    }
-
-    fn apply_pair(
-        f: impl Fn() -> Self + 'static,
-        key: String,
-        el: WebElem,
-        target: OwnedApplyTarget,
-    ) {
-        let is_class = matches!(target, OwnedApplyTarget::Class)
-            || matches!(target, OwnedApplyTarget::Attr(ref n) if n == "class");
-
-        if is_class {
-            apply_bool_pair_reactive_internal(el, key, Rc::new(f));
-        }
+    fn apply_pair(signal: Signal<Self>, key: String, el: WebElem, target: OwnedApplyTarget) {
+        let string_signal =
+            silex_core::reactivity::Signal::derive(move || signal.get().to_string());
+        String::apply_pair(string_signal, key, el, target)
     }
 }
 
@@ -417,16 +348,17 @@ macro_rules! impl_reactive_apply_primitive {
     ($($t:ty),*) => {
         $(
             impl ReactiveApply for $t {
-                fn apply_to_dom(f: impl Fn() -> Self + 'static, el: WebElem, target: OwnedApplyTarget) {
-                    apply_string_reactive_internal(el, target, Rc::new(move || f().to_string()));
+                fn apply_to_dom(signal: Signal<Self>, el: WebElem, target: OwnedApplyTarget) {
+                    let string_signal = silex_core::reactivity::Signal::derive(move || signal.get().to_string());
+                    apply_string_reactive_internal(el, target, string_signal);
                 }
-                fn apply_pair(f: impl Fn() -> Self + 'static, key: String, el: WebElem, target: OwnedApplyTarget) {
+                fn apply_pair(signal: Signal<Self>, key: String, el: WebElem, target: OwnedApplyTarget) {
                     let is_style = matches!(target, OwnedApplyTarget::Style)
                         || matches!(target, OwnedApplyTarget::Attr(ref n) if n == "style");
 
                     if is_style && let Some(style) = get_style_decl(&el) {
                         Effect::new(move |_| {
-                            let _ = style.set_property(&key, &f().to_string());
+                            let _ = style.set_property(&key, &signal.get().to_string());
                         });
                     }
                 }
@@ -439,17 +371,30 @@ impl_reactive_apply_primitive!(
     u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, char
 );
 
-// 4.3 Blanket Implementation for Rx
-impl<F, M> ApplyToDom for silex_core::Rx<F, M>
-where
-    F: RxTask<M>,
-{
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        self.0.run_rx(el, target);
+impl ReactiveApply for bool {
+    fn apply_to_dom(signal: Signal<Self>, el: WebElem, target: OwnedApplyTarget) {
+        apply_bool_reactive_internal(el, target, signal);
+    }
+
+    fn apply_pair(signal: Signal<Self>, key: String, el: WebElem, target: OwnedApplyTarget) {
+        let is_class = matches!(target, OwnedApplyTarget::Class)
+            || matches!(target, OwnedApplyTarget::Attr(ref n) if n == "class");
+
+        if is_class {
+            apply_bool_pair_reactive_internal(el, key, signal);
+        }
     }
 }
 
-// 5. Signals
+impl<F: 'static> ApplyToDom for silex_core::Rx<F, silex_core::RxValueKind>
+where
+    Self: IntoSignal,
+    <Self as silex_core::traits::RxValue>::Value: ReactiveApply + Clone + 'static,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        apply_signal_internal(self.into_signal(), el, target);
+    }
+}
 
 impl<T> ApplyToDom for Signal<T>
 where
@@ -496,32 +441,33 @@ where
     }
 }
 
-// 6 Generic Tuple Implementation ((Key, Value))
+impl<U, const N: usize> ApplyToDom for OpPayload<U, N>
+where
+    Self: IntoSignal + silex_core::traits::RxValue<Value = U> + Clone + 'static,
+    U: ReactiveApply + Clone + 'static,
+{
+    fn apply(self, el: &WebElem, target: ApplyTarget) {
+        apply_signal_internal(self.into_signal(), el, target);
+    }
+}
+
 impl<K, S> ApplyToDom for (K, S)
 where
     K: AsRef<str>,
-    S: IntoRx,
+    S: IntoSignal + 'static,
     S::Value: ReactiveApply + Clone + 'static,
-    S::RxType: RxRead<Value = S::Value> + 'static,
-    for<'a> <S::RxType as silex_core::traits::RxInternal>::ReadOutput<'a>: Deref<Target = S::Value>,
 {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
         let (key, source) = self;
-        let signal = source.into_rx();
+        let signal = source.into_signal();
         let el = el.clone();
         let owned_target = OwnedApplyTarget::from(target);
         let key_str = key.as_ref().to_string();
 
-        S::Value::apply_pair(
-            move || signal.with(|v| v.clone()),
-            key_str,
-            el,
-            owned_target,
-        );
+        S::Value::apply_pair(signal, key_str, el, owned_target);
     }
 }
 
-// Primitives directly
 macro_rules! impl_apply_to_dom_for_primitive {
     ($($t:ty),*) => {
         $(
@@ -537,7 +483,6 @@ impl_apply_to_dom_for_primitive!(
     u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, char
 );
 
-// 7. Collections
 impl<V: ApplyToDom> ApplyToDom for Vec<V> {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
         for v in self {
@@ -589,28 +534,21 @@ impl_apply_to_dom_for_group!(T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12);
 
 // --- Attribute Forwarding Support ---
 
-/// Stores an attribute application operation to be executed later.
-/// Used for forwarding attributes from Components to their root elements.
 #[derive(Clone)]
 pub struct PendingAttribute {
     f: Rc<dyn Fn(&WebElem)>,
 }
 
 impl PendingAttribute {
-    /// Build a pending attribute that will be applied later.
-    /// Uses take-out semantics to avoid Clone requirement - the value is consumed on first apply.
     pub fn build<V>(value: V, target: OwnedApplyTarget) -> Self
     where
         V: ApplyToDom + 'static,
     {
-        // Wrap value in Rc<RefCell<Option<V>>> for take-out pattern
         let value_cell = Rc::new(RefCell::new(Some(value)));
 
         Self {
             f: Rc::new(move |el| {
-                // Take the value out (only succeeds once)
                 if let Some(v) = value_cell.borrow_mut().take() {
-                    // Map OwnedApplyTarget to ApplyTarget
                     let t = match &target {
                         OwnedApplyTarget::Attr(n) => ApplyTarget::Attr(n),
                         OwnedApplyTarget::Prop(n) => ApplyTarget::Prop(n),

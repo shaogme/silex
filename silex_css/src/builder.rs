@@ -250,16 +250,17 @@ fn generate_css_recursive(
 
 impl silex_dom::attribute::ReactiveApply for Style {
     fn apply_to_dom(
-        f: impl Fn() -> Self + 'static,
+        signal: silex_core::reactivity::Signal<Self>,
         el: web_sys::Element,
         _target: silex_dom::attribute::OwnedApplyTarget,
     ) {
         let el = el.clone();
         silex_core::reactivity::Effect::new(move |prev_class: Option<String>| {
-            if let Some(c) = prev_class {
-                let _ = el.class_list().remove_1(&c);
+            if let Some(c) = &prev_class {
+                let _ = el.class_list().remove_1(c);
             }
-            let style = f();
+            use silex_core::traits::RxGet;
+            let style = signal.get();
             style.apply_to_element(&el)
         });
     }
