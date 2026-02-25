@@ -4,7 +4,7 @@ use std::panic::Location;
 use silex_reactivity::NodeId;
 
 use crate::traits::*;
-use crate::{Rx, RxValue};
+use crate::{Rx, RxValueKind};
 
 // --- StoredValue ---
 
@@ -128,7 +128,7 @@ impl<T: 'static> RxInternal for StoredValue<T> {
 
 impl<T: 'static> IntoRx for StoredValue<T> {
     type Value = T;
-    type RxType = Rx<Self, RxValue>;
+    type RxType = Rx<Self, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
         Rx(self, PhantomData)

@@ -118,7 +118,7 @@ where
     O: ?Sized + 'static,
 {
     type Value = O;
-    type RxType = crate::Rx<Self, crate::RxValue>;
+    type RxType = crate::Rx<Self, crate::RxValueKind>;
 
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {

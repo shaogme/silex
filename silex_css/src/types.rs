@@ -216,7 +216,7 @@ macro_rules! impl_into_rx_for_css {
         $(
             impl silex_core::traits::IntoRx for $t {
                 type Value = $t;
-                type RxType = silex_core::Rx<silex_core::reactivity::Constant<$t>, silex_core::RxValue>;
+                type RxType = silex_core::Rx<silex_core::reactivity::Constant<$t>, silex_core::RxValueKind>;
                 fn into_rx(self) -> Self::RxType { silex_core::Rx(silex_core::reactivity::Constant(self), ::core::marker::PhantomData) }
                 fn is_constant(&self) -> bool { true }
                 fn into_signal(self) -> silex_core::reactivity::Signal<$t>

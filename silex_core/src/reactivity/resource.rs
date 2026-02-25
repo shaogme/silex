@@ -8,7 +8,7 @@ use silex_reactivity::{on_cleanup, use_context};
 use crate::SilexError;
 use crate::reactivity::Memo;
 use crate::traits::*;
-use crate::{Rx, RxValue};
+use crate::{Rx, RxValueKind};
 use std::marker::PhantomData;
 
 use super::effect::Effect;
@@ -284,7 +284,7 @@ impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> RxInternal for Re
 
 impl<T: Clone + 'static, E: Clone + 'static + std::fmt::Debug> IntoRx for Resource<T, E> {
     type Value = Option<T>;
-    type RxType = Rx<Self, RxValue>;
+    type RxType = Rx<Self, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
         Rx(self, PhantomData)

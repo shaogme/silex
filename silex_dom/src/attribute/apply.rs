@@ -39,7 +39,7 @@ pub trait RxTask<M> {
 }
 
 // 1. Value Calculation: any RxInternal
-impl<F, T> RxTask<silex_core::RxValue> for F
+impl<F, T> RxTask<silex_core::RxValueKind> for F
 where
     F: RxRead<Value = T> + 'static,
     for<'a> F::ReadOutput<'a>: Deref<Target = T>,
@@ -53,7 +53,7 @@ where
 }
 
 // 2. Continuous Element Modifier: (&Element) -> ()
-impl<F> RxTask<silex_core::RxEffect> for F
+impl<F> RxTask<silex_core::RxEffectKind> for F
 where
     F: FnOnce(&WebElem) + 'static,
 {

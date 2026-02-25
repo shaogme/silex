@@ -11,7 +11,7 @@ use silex_reactivity::{
 
 use crate::reactivity::SignalSlice;
 use crate::traits::*;
-use crate::{Rx, RxValue};
+use crate::{Rx, RxValueKind};
 
 /// 内部辅助函数：直接从运行时借用信号值。
 /// 安全性：由 RxGuard 的生命周期和 Silex Arena 的地址稳定性保证。
@@ -101,7 +101,7 @@ impl<T: 'static> RxInternal for Constant<T> {
 
 impl<T: Clone + 'static> IntoRx for Constant<T> {
     type Value = T;
-    type RxType = Rx<Self, RxValue>;
+    type RxType = Rx<Self, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
         Rx(self, PhantomData)
@@ -463,7 +463,7 @@ impl<T: 'static> RxInternal for Signal<T> {
 
 impl<T: 'static> IntoRx for Signal<T> {
     type Value = T;
-    type RxType = Rx<Self, RxValue>;
+    type RxType = Rx<Self, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
         Rx(self, PhantomData)

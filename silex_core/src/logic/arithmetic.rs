@@ -105,7 +105,7 @@ macro_rules! impl_rx_ops {
 #[macro_export]
 macro_rules! impl_rx_op {
     ($trait:ident, $method:ident) => {
-        impl<F, R, T> std::ops::$trait<R> for $crate::Rx<F, $crate::RxValue>
+        impl<F, R, T> std::ops::$trait<R> for $crate::Rx<F, $crate::RxValueKind>
         where
             F: $crate::traits::RxInternal<Value = T> + Clone + 'static,
             for<'a> F::ReadOutput<'a>: std::ops::Deref<Target = T>,
@@ -114,7 +114,7 @@ macro_rules! impl_rx_op {
             R: $crate::traits::IntoRx<Value = T> + 'static,
             R::RxType: $crate::traits::RxInternal<Value = T> + Clone + 'static,
         {
-            type Output = $crate::Rx<$crate::reactivity::OpPayload<T, 2>, $crate::RxValue>;
+            type Output = $crate::Rx<$crate::reactivity::OpPayload<T, 2>, $crate::RxValueKind>;
 
             #[inline]
             fn $method(self, rhs: R) -> Self::Output {
@@ -155,14 +155,14 @@ macro_rules! impl_rx_op {
 #[macro_export]
 macro_rules! impl_rx_unary_op {
     ($trait:ident, $method:ident) => {
-        impl<F, T> std::ops::$trait for $crate::Rx<F, $crate::RxValue>
+        impl<F, T> std::ops::$trait for $crate::Rx<F, $crate::RxValueKind>
         where
             F: $crate::traits::RxInternal<Value = T> + Clone + 'static,
             for<'a> F::ReadOutput<'a>: std::ops::Deref<Target = T>,
             for<'a> &'a T: std::ops::$trait<Output = T>,
             T: Clone + 'static,
         {
-            type Output = $crate::Rx<$crate::reactivity::OpPayload<T, 1>, $crate::RxValue>;
+            type Output = $crate::Rx<$crate::reactivity::OpPayload<T, 1>, $crate::RxValueKind>;
 
             #[inline]
             fn $method(self) -> Self::Output {

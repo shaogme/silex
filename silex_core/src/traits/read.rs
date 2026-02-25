@@ -1,7 +1,7 @@
 use crate::reactivity::{Constant, NodeId};
 use crate::traits::RxBase;
 use crate::traits::guards::*;
-use crate::{Rx, RxValue};
+use crate::{Rx, RxValueKind};
 use std::ops::Deref;
 use std::panic::Location;
 
@@ -367,7 +367,7 @@ macro_rules! impl_tuple_into_rx {
             $(<$T as IntoRx>::Value: Clone + 'static),+
         {
             type Value = ($(<$T as IntoRx>::Value,)+);
-            type RxType = Rx<crate::reactivity::OpPayload<Self::Value, $len>, RxValue>;
+            type RxType = Rx<crate::reactivity::OpPayload<Self::Value, $len>, RxValueKind>;
 
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
@@ -491,7 +491,7 @@ macro_rules! impl_into_rx_primitive {
         $(
             impl IntoRx for $t {
                 type Value = impl_into_rx_primitive!(@type $t $(, $val)?);
-                type RxType = Rx<Constant<Self::Value>, RxValue>;
+                type RxType = Rx<Constant<Self::Value>, RxValueKind>;
 
                 #[inline(always)]
                 fn into_rx(self) -> Self::RxType {
@@ -550,7 +550,7 @@ macro_rules! impl_rx_delegate {
 
         impl<T: Clone + 'static> $crate::traits::IntoRx for $target<T> {
             type Value = T;
-            type RxType = $crate::Rx<Self, $crate::RxValue>;
+            type RxType = $crate::Rx<Self, $crate::RxValueKind>;
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
                 $crate::Rx(self, ::core::marker::PhantomData)
@@ -592,7 +592,7 @@ macro_rules! impl_rx_delegate {
 
         impl<T: Clone + 'static> $crate::traits::IntoRx for $target<T> {
             type Value = T;
-            type RxType = $crate::Rx<Self, $crate::RxValue>;
+            type RxType = $crate::Rx<Self, $crate::RxValueKind>;
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
                 $crate::Rx(self, ::core::marker::PhantomData)
@@ -680,7 +680,7 @@ macro_rules! impl_rx_delegate {
 
         impl<T: Clone + 'static> $crate::traits::IntoRx for $target<T> {
             type Value = T;
-            type RxType = $crate::Rx<Self, $crate::RxValue>;
+            type RxType = $crate::Rx<Self, $crate::RxValueKind>;
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
                 $crate::Rx(self, ::core::marker::PhantomData)

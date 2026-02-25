@@ -136,7 +136,7 @@ pub fn rx(input: TokenStream) -> TokenStream {
 
     if raw_input.is_empty() {
         return quote! {
-            #prefix::Rx(move || {}, ::core::marker::PhantomData::<#prefix::RxValue>)
+            #prefix::Rx(move || {}, ::core::marker::PhantomData::<#prefix::RxValueKind>)
         }
         .into();
     }
@@ -161,7 +161,7 @@ pub fn rx(input: TokenStream) -> TokenStream {
             }),
             Err(_) => {
                 return quote! {
-                        #prefix::Rx(move || { #raw_input }, ::core::marker::PhantomData::<#prefix::RxValue>)
+                        #prefix::Rx(move || { #raw_input }, ::core::marker::PhantomData::<#prefix::RxValueKind>)
                     }
                     .into();
             }
@@ -175,12 +175,12 @@ pub fn rx(input: TokenStream) -> TokenStream {
 
     let m_type = if let Expr::Closure(ref closure) = expr {
         if !closure.inputs.is_empty() {
-            quote! { #prefix::RxEffect }
+            quote! { #prefix::RxEffectKind }
         } else {
-            quote! { #prefix::RxValue }
+            quote! { #prefix::RxValueKind }
         }
     } else {
-        quote! { #prefix::RxValue }
+        quote! { #prefix::RxValueKind }
     };
 
     // 准备信号列表

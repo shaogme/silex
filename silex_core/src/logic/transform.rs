@@ -5,7 +5,7 @@ use std::ops::Deref;
 /// 允许从当前信号创建一个衍生信号。
 pub trait Map: RxBase + Sized {
     /// 基于当前信号派生出一个新信号。
-    fn map<U, F>(self, f: F) -> crate::Rx<DerivedPayload<Self, F>, crate::RxValue>
+    fn map<U, F>(self, f: F) -> crate::Rx<DerivedPayload<Self, F>, crate::RxValueKind>
     where
         F: Fn(&Self::Value) -> U + Clone + 'static;
 }
@@ -15,7 +15,7 @@ where
     S: RxRead + Clone + 'static,
     for<'a> S::ReadOutput<'a>: Deref<Target = S::Value>,
 {
-    fn map<U, F>(self, f: F) -> crate::Rx<DerivedPayload<Self, F>, crate::RxValue>
+    fn map<U, F>(self, f: F) -> crate::Rx<DerivedPayload<Self, F>, crate::RxValueKind>
     where
         F: Fn(&Self::Value) -> U + Clone + 'static,
     {

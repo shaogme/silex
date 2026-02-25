@@ -57,7 +57,7 @@ where
     pub fn bind<S, T, Map>(
         source: S,
         map_fn: Map,
-    ) -> Dynamic<V, silex_core::Rx<impl Fn() -> V + Clone, silex_core::RxValue>>
+    ) -> Dynamic<V, silex_core::Rx<impl Fn() -> V + Clone, silex_core::RxValueKind>>
     where
         S: RxRead<Value = T> + Clone + 'static,
         for<'a> <S as silex_core::traits::RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = T>,

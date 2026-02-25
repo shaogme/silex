@@ -11,12 +11,12 @@ pub use callback::Callback;
 pub use error::{SilexError, SilexResult};
 pub use node_ref::NodeRef;
 
-pub struct RxValue;
-pub struct RxEffect;
+pub struct RxValueKind;
+pub struct RxEffectKind;
 
 /// 响应式计算单元或事件处理器。
 /// Rx 始终不应该要求实现 Clone trait 或 Copy trait。
-pub struct Rx<F, M = RxValue>(pub F, pub ::core::marker::PhantomData<M>);
+pub struct Rx<F, M = RxValueKind>(pub F, pub ::core::marker::PhantomData<M>);
 
 impl<F: Clone, M> Clone for Rx<F, M> {
     fn clone(&self) -> Self {

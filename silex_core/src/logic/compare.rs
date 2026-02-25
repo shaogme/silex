@@ -10,7 +10,7 @@ macro_rules! reactive_compare_method {
         fn $name<O>(
             &self,
             other: O,
-        ) -> $crate::Rx<$crate::reactivity::OpPayload<bool, 2>, $crate::RxValue>
+        ) -> $crate::Rx<$crate::reactivity::OpPayload<bool, 2>, $crate::RxValueKind>
         where
             Self: $crate::traits::IntoRx,
             Self::RxType: $crate::traits::RxInternal<Value = <Self as $crate::traits::IntoRx>::Value> + Clone + 'static,
