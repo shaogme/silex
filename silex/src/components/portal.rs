@@ -30,7 +30,7 @@ impl<V> View for Portal<V>
 where
     V: View,
 {
-    fn mount(self, _parent: &Node) {
+    fn mount(self, _parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         let document = silex_dom::document();
         // 默认挂载到 body
         let target = self
@@ -58,7 +58,7 @@ where
         }
 
         // 挂载子元素到容器中
-        self.child.mount(&container_node);
+        self.child.mount(&container_node, attrs);
 
         // 注册清理回调：当当前 Scope 被销毁时，移除容器节点
         let target_clone = target.clone();

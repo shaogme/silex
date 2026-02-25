@@ -134,7 +134,7 @@ where
     // Ensure Item itself is static so we can use it in closures
     <ItemsFn::Value as ForLoopSource>::Item: 'static,
 {
-    fn mount(self, parent: &Node) {
+    fn mount(self, parent: &Node, _attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         let document = silex_dom::document();
 
         // 1. Create Anchors
@@ -206,7 +206,7 @@ where
 
                             let scope_id = create_scope(move || {
                                 let view = map_fn.map(item_owned);
-                                view.mount(&fragment_node);
+                                view.mount(&fragment_node, Vec::new());
                             });
 
                             // Collect nodes from fragment before they are moved

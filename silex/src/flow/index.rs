@@ -54,7 +54,7 @@ where
     V: View,
     Item: Clone + 'static, // Item needs clone for Signal updates
 {
-    fn mount(self, parent: &Node) {
+    fn mount(self, parent: &Node, _attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         let document = silex_dom::document();
         let start_marker = document.create_comment("index-start");
         let start_node: Node = start_marker.into();
@@ -119,7 +119,7 @@ where
                             let map_fn = map_fn.clone();
 
                             let scope_id = create_scope(move || {
-                                (map_fn)(get, real_index).mount(&fragment_node_clone);
+                                (map_fn)(get, real_index).mount(&fragment_node_clone, Vec::new());
                             });
 
                             let nodes_list = fragment.child_nodes();

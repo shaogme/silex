@@ -25,7 +25,7 @@ fn main() {
         });
 
         // 3. 构建 UI
-        App().user(user).mount(&app_container);
+        App().user(user).mount(&app_container, Vec::new());
     });
 }
 

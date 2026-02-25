@@ -62,7 +62,7 @@ where
     T: PartialEq + Clone + 'static,
     V: View + 'static,
 {
-    fn mount(self, parent: &Node) {
+    fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         let document = silex_dom::document();
         let start_marker = document.create_comment("switch-start");
         let start_node: Node = start_marker.into();
@@ -119,7 +119,7 @@ where
 
             // Handle panic in view generation/render to avoid crash loop?
             // "view_fn().mount()" should be safe-ish user code.
-            view_fn.render().mount(&fragment_node);
+            view_fn.render().mount(&fragment_node, attrs.clone());
 
             if let Some(parent) = end_node.parent_node() {
                 let _ = parent.insert_before(&fragment_node, Some(&end_node));

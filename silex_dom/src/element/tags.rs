@@ -60,7 +60,7 @@ macro_rules! define_tag {
 
         pub fn $fn_name<V: $crate::view::View + 'static>(child: V) -> $crate::prelude::TypedElement<$struct_name> {
             let el = $crate::prelude::TypedElement::<$struct_name>::$constructor($tag_name);
-            child.mount(&el.element.dom_element);
+            child.mount(&el.element.dom_element, Vec::new());
             el
         }
     };

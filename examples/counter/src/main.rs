@@ -240,6 +240,6 @@ fn main() {
         .class("app-container")
         .style("font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;");
 
-        app.mount(&app_container);
+        app.mount(&app_container, Vec::new());
     });
 }

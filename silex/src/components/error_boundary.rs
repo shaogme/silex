@@ -53,7 +53,7 @@ where
     V1: View + 'static,
     V2: View + 'static,
 {
-    fn mount(self, parent: &Node) {
+    fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         let (error, set_error) = signal::<Option<SilexError>>(None);
 
         provide_context(ErrorContext(Rc::new(move |e| {
@@ -69,7 +69,7 @@ where
         let wrapper = div(()).style("display: contents");
 
         let wrapper_dom = wrapper.dom_element.clone();
-        wrapper.mount(parent);
+        wrapper.mount(parent, attrs);
 
         let props = self.props;
 
@@ -78,12 +78,12 @@ where
             wrapper_dom.set_inner_html("");
 
             if let Some(e) = error.get() {
-                (props.fallback)(e).mount(&wrapper_dom);
+                (props.fallback)(e).mount(&wrapper_dom, Vec::new());
             } else {
                 // Catch panic during view creation AND mounting
                 let process = || {
                     let view = (props.children)();
-                    view.mount(&wrapper_dom);
+                    view.mount(&wrapper_dom, Vec::new());
                 };
 
                 if let Err(payload) =

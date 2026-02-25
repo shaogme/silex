@@ -91,7 +91,7 @@ where
     ViewFn: ViewFactory + 'static,
     FalsyViewFn: ViewFactory + 'static,
 {
-    fn mount(self, parent: &Node) {
+    fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         let document = silex_dom::document();
 
         // 1. Create Anchors (Start & End Markers)
@@ -146,9 +146,9 @@ where
             let fragment_node: Node = fragment.clone().into();
 
             if val {
-                view_fn.render().mount(&fragment_node);
+                view_fn.render().mount(&fragment_node, attrs.clone());
             } else {
-                fallback_fn.render().mount(&fragment_node);
+                fallback_fn.render().mount(&fragment_node, attrs.clone());
             }
 
             // 插入新内容 (Insert new content)

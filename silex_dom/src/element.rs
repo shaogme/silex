@@ -30,7 +30,7 @@ pub fn mount_to_body<V: View>(view: V) {
 
     // Create a root reactive scope to ensure context and effects work correctly
     silex_core::reactivity::create_scope(move || {
-        view.mount(&body);
+        view.mount(&body, Vec::new());
     });
 }
 
@@ -77,7 +77,11 @@ impl AttributeBuilder for Element {
 }
 
 impl View for Element {
-    fn mount(self, parent: &::web_sys::Node) {
+    fn mount(mut self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
+        if !attrs.is_empty() {
+            self.apply_attributes(attrs);
+        }
+
         if let Err(e) = parent
             .append_child(&self.dom_element)
             .map_err(SilexError::from)
@@ -167,7 +171,11 @@ impl<T> AttributeBuilder for TypedElement<T> {
 }
 
 impl<T> View for TypedElement<T> {
-    fn mount(self, parent: &::web_sys::Node) {
+    fn mount(mut self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
+        if !attrs.is_empty() {
+            self.apply_attributes(attrs);
+        }
+
         if let Err(e) = parent.append_child(&self.element).map_err(SilexError::from) {
             silex_core::error::handle_error(e);
         }

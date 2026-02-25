@@ -13,27 +13,14 @@ use web_sys::Node;
 /// 视图特征 (View Trait)
 /// 核心特征：定义了如何将一个东西挂载到 DOM 上。
 pub trait View {
-    fn mount(self, parent: &Node);
+    /// Mount this view to a parent node with a set of pending attributes.
+    /// This is the primary entry point for mounting views.
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>);
 
     /// Apply forwarded attributes to this view.
     /// Default implementation does nothing (for Text, Fragment, etc.).
     /// Elements override this to actually apply attributes.
     fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
-
-    /// Mount with a set of pending attributes.
-    /// This is the key to plugging the "apply_attributes" black hole for dynamic views.
-    fn mount_with_attributes(self, parent: &Node, attrs: Vec<PendingAttribute>)
-    where
-        Self: Sized,
-    {
-        if attrs.is_empty() {
-            self.mount(parent);
-        } else {
-            let mut this = self;
-            this.apply_attributes(attrs);
-            this.mount(parent);
-        }
-    }
 
     /// Convert this view into an AnyView (Type Erasure without Clone requirement).
     fn into_any(self) -> AnyView
@@ -65,7 +52,7 @@ pub fn mount_text_node(parent: &Node, text: &str) {
 
 // 1. 静态文本 (String, &str)
 impl View for String {
-    fn mount(self, parent: &Node) {
+    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
         mount_text_node(parent, &self);
     }
 
@@ -79,7 +66,7 @@ impl View for String {
 }
 
 impl View for &str {
-    fn mount(self, parent: &Node) {
+    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
         mount_text_node(parent, self);
     }
 
@@ -97,7 +84,7 @@ macro_rules! impl_view_for_primitive {
     ($($t:ty),*) => {
         $(
             impl View for $t {
-                fn mount(self, parent: &Node) {
+                fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
                     mount_text_node(parent, &self.to_string());
                 }
 
@@ -118,7 +105,7 @@ impl_view_for_primitive!(
 );
 
 impl View for () {
-    fn mount(self, _parent: &Node) {}
+    fn mount(self, _parent: &Node, _attrs: Vec<PendingAttribute>) {}
 
     fn into_any(self) -> AnyView {
         AnyView::Empty
@@ -135,11 +122,7 @@ where
     F: Fn() -> V + 'static,
     V: View + 'static,
 {
-    fn mount(self, parent: &Node) {
-        self.mount_with_attributes(parent, Vec::new());
-    }
-
-    fn mount_with_attributes(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         let document = crate::document();
 
         // 1. 创建锚点 (Start & End Markers)
@@ -204,7 +187,7 @@ where
                     let fragment_node: Node = fragment.clone().into();
 
                     // 挂载到 Fragment，并传递属性！
-                    view.mount_with_attributes(&fragment_node, attrs);
+                    view.mount(&fragment_node, attrs);
 
                     // C. 插入到 DOM (在 end_marker 之前)
                     if let Some(parent) = end_node.parent_node() {
@@ -237,12 +220,8 @@ impl<F, M> View for silex_core::Rx<F, M>
 where
     F: View,
 {
-    fn mount(self, parent: &Node) {
-        self.0.mount(parent);
-    }
-
-    fn mount_with_attributes(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.0.mount_with_attributes(parent, attrs);
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        self.0.mount(parent, attrs);
     }
 
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
@@ -255,13 +234,9 @@ impl<V> View for std::rc::Rc<dyn Fn() -> V>
 where
     V: View + 'static,
 {
-    fn mount(self, parent: &Node) {
-        self.mount_with_attributes(parent, Vec::new());
-    }
-
-    fn mount_with_attributes(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         let f = self.clone();
-        (move || f()).mount_with_attributes(parent, attrs);
+        (move || f()).mount(parent, attrs);
     }
 }
 
@@ -370,20 +345,41 @@ where
 }
 
 // 4. 直接 Signal 支持 (重定向到归一化内核)
-impl<T> View for ReadSignal<T>
-where
-    T: Display + Clone + 'static,
-{
-    fn mount(self, parent: &Node) {
+// 3.7 Reactive Text View implementations
+impl<T: Display + Clone + 'static> View for ReadSignal<T> {
+    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
         mount_reactive_text_(parent, Box::new(self));
     }
 }
 
-impl<T> View for Memo<T>
+impl<T: Display + Clone + 'static> View for Signal<T> {
+    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+        mount_reactive_text_(parent, Box::new(self));
+    }
+}
+
+impl<T: Display + Clone + PartialEq + 'static> View for Memo<T> {
+    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+        mount_reactive_text_(parent, Box::new(self));
+    }
+}
+
+impl<S, F, U> View for DerivedPayload<S, F>
 where
-    T: Display + Clone + PartialEq + 'static,
+    Self: RxInternal<Value = U> + Clone + 'static,
+    U: Display + 'static,
 {
-    fn mount(self, parent: &Node) {
+    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+        mount_reactive_text_(parent, Box::new(self));
+    }
+}
+
+impl<U, const N: usize> View for OpPayload<U, N>
+where
+    Self: RxInternal<Value = U> + Clone + 'static,
+    U: Display + 'static,
+{
+    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
         mount_reactive_text_(parent, Box::new(self));
     }
 }
@@ -392,50 +388,17 @@ impl<T> View for RwSignal<T>
 where
     T: Display + Clone + 'static,
 {
-    fn mount(self, parent: &Node) {
+    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
         mount_reactive_text_(parent, Box::new(self.read_signal()));
     }
 }
 
-impl<T> View for Signal<T>
-where
-    T: Display + Clone + 'static,
-{
-    fn mount(self, parent: &Node) {
-        mount_reactive_text_(parent, Box::new(self));
-    }
-}
-
-// 4. 通用 RxInternal 支持 (Display 类型)
-// 4.1 DerivedPayload View (Text Update)
-impl<S, F, U> View for DerivedPayload<S, F>
-where
-    Self: RxInternal<Value = U> + Clone + 'static,
-    U: Display + 'static,
-{
-    fn mount(self, parent: &Node) {
-        mount_reactive_text_(parent, Box::new(self));
-    }
-}
-
-// 4.2 OpPayload View (Text Update)
-impl<U, const N: usize> View for OpPayload<U, N>
-where
-    Self: RxInternal<Value = U> + Clone + 'static,
-    U: Display + 'static,
-{
-    fn mount(self, parent: &Node) {
-        mount_reactive_text_(parent, Box::new(self));
-    }
-}
-
-// 4.4 SignalSlice View (Text Update)
 impl<S, F, O> View for SignalSlice<S, F, O>
 where
     Self: RxInternal<Value = O> + Clone + 'static,
     O: Display + ?Sized + 'static,
 {
-    fn mount(self, parent: &Node) {
+    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
         mount_reactive_text_(parent, Box::new(self));
     }
 }
@@ -445,7 +408,7 @@ impl<T> View for Constant<T>
 where
     T: Display + Clone + 'static,
 {
-    fn mount(self, parent: &Node) {
+    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
         mount_text_node(parent, &self.0.to_string());
     }
 
@@ -460,9 +423,9 @@ where
 
 // 5. 容器类型支持
 impl<V: View> View for Option<V> {
-    fn mount(self, parent: &Node) {
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         if let Some(v) = self {
-            v.mount(parent);
+            v.mount(parent, attrs);
         }
     }
 
@@ -474,9 +437,9 @@ impl<V: View> View for Option<V> {
 }
 
 impl<V: View> View for Vec<V> {
-    fn mount(self, parent: &Node) {
-        for v in self {
-            v.mount(parent);
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        for (i, v) in self.into_iter().enumerate() {
+            v.mount(parent, if i == 0 { attrs.clone() } else { Vec::new() });
         }
     }
 
@@ -488,9 +451,9 @@ impl<V: View> View for Vec<V> {
 }
 
 impl<V: View, const N: usize> View for [V; N] {
-    fn mount(self, parent: &Node) {
-        for v in self {
-            v.mount(parent);
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        for (i, v) in self.into_iter().enumerate() {
+            v.mount(parent, if i == 0 { attrs.clone() } else { Vec::new() });
         }
     }
 
@@ -505,10 +468,23 @@ impl<V: View, const N: usize> View for [V; N] {
 macro_rules! impl_view_for_tuple {
     ($($name:ident),*) => {
         impl<$($name: View),*> View for ($($name,)*) {
-            #[allow(non_snake_case)]
-            fn mount(self, parent: &Node) {
+            fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+                #[allow(non_snake_case)]
                 let ($($name,)*) = self;
-                $($name.mount(parent);)*
+                // Currently only apply attributes to the first element of a tuple View
+                // This is a design choice consistent with Fragments.
+                let mut first = true;
+                $(
+                    if first {
+                        $name.mount(parent, attrs.clone());
+                        #[allow(unused_assignments)]
+                        {
+                            first = false;
+                        }
+                    } else {
+                        $name.mount(parent, Vec::new());
+                    }
+                )*
             }
 
             #[allow(non_snake_case)]
@@ -534,9 +510,9 @@ impl_view_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
 
 // 7. Result 支持
 impl<V: View> View for SilexResult<V> {
-    fn mount(self, parent: &Node) {
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         match self {
-            Ok(v) => v.mount(parent),
+            Ok(v) => v.mount(parent, attrs),
             Err(e) => handle_error(e),
         }
     }
@@ -552,7 +528,7 @@ pub trait RenderOnce {
 
 impl<V: View + 'static> RenderOnce for V {
     fn mount_boxed(self: Box<Self>, parent: &Node, attrs: Vec<PendingAttribute>) {
-        (*self).mount_with_attributes(parent, attrs)
+        (*self).mount(parent, attrs)
     }
     fn apply_attributes_boxed(&mut self, attrs: Vec<PendingAttribute>) {
         self.apply_attributes(attrs);
@@ -610,21 +586,14 @@ impl AnyView {
 }
 
 impl View for SharedView {
-    fn mount(self, parent: &Node) {
-        self.mount_with_attributes(parent, Vec::new());
-    }
-
-    fn mount_with_attributes(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         match self {
             SharedView::Empty => {}
-            SharedView::Text(s) => s.mount_with_attributes(parent, attrs),
-            SharedView::Element(el) => el.mount_with_attributes(parent, attrs),
+            SharedView::Text(s) => s.mount(parent, attrs),
+            SharedView::Element(el) => el.mount(parent, attrs),
             SharedView::List(list) => {
                 for (i, child) in list.into_iter().enumerate() {
-                    child.mount_with_attributes(
-                        parent,
-                        if i == 0 { attrs.clone() } else { attrs.clone() },
-                    ); // FIXME: attributes should probably only apply to the first element or all? Usually all for fragments.
+                    child.mount(parent, if i == 0 { attrs.clone() } else { Vec::new() });
                 }
             }
             SharedView::SharedBoxed(b, mut inner_attrs) => {
@@ -660,25 +629,21 @@ impl View for SharedView {
 }
 
 impl View for AnyView {
-    fn mount(self, parent: &Node) {
-        self.mount_with_attributes(parent, Vec::new());
-    }
-
-    fn mount_with_attributes(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         match self {
             AnyView::Empty => {}
-            AnyView::Text(s) => s.mount_with_attributes(parent, attrs),
-            AnyView::Element(el) => el.mount_with_attributes(parent, attrs),
+            AnyView::Text(s) => s.mount(parent, attrs),
+            AnyView::Element(el) => el.mount(parent, attrs),
             AnyView::List(list) => {
-                for child in list {
-                    child.mount_with_attributes(parent, attrs.clone());
+                for (i, child) in list.into_iter().enumerate() {
+                    child.mount(parent, if i == 0 { attrs.clone() } else { Vec::new() });
                 }
             }
             AnyView::Unique(b, mut inner_attrs) => {
                 inner_attrs.extend(attrs);
                 b.mount_boxed(parent, inner_attrs);
             }
-            AnyView::FromShared(s) => s.mount_with_attributes(parent, attrs),
+            AnyView::FromShared(s) => s.mount(parent, attrs),
         }
     }
 
@@ -771,13 +736,9 @@ impl Fragment {
 }
 
 impl View for Fragment {
-    fn mount(self, parent: &Node) {
-        self.mount_with_attributes(parent, Vec::new());
-    }
-
-    fn mount_with_attributes(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        for child in self.0 {
-            child.mount_with_attributes(parent, attrs.clone());
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        for (i, child) in self.0.into_iter().enumerate() {
+            child.mount(parent, if i == 0 { attrs.clone() } else { Vec::new() });
         }
     }
 

@@ -73,7 +73,7 @@ where
     V: View + Clone + 'static,
     F: RxRead<Value = V> + 'static,
 {
-    fn mount(self, parent: &Node) {
+    fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         let document = silex_dom::document();
 
         // 1. Create Anchors
@@ -117,7 +117,7 @@ where
             // 准备新内容
             let fragment = document.create_document_fragment();
             let fragment_node: Node = fragment.clone().into();
-            new_view.mount(&fragment_node);
+            new_view.mount(&fragment_node, attrs.clone());
 
             // 插入新内容
             if let Some(parent) = end_node.parent_node() {

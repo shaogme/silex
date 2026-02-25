@@ -237,6 +237,6 @@ fn main() {
 
     create_scope(move || {
         let app = MainLayout().child(Router::new().match_route::<AppRoute>());
-        app.mount(&body);
+        app.mount(&body, Vec::new());
     });
 }

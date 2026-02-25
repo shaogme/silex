@@ -145,7 +145,7 @@ where
     F: crate::flow::ViewFactory<View = FRes> + 'static,
     FRes: View + 'static,
 {
-    fn mount(self, parent: &Node) {
+    fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         let children_fn = std::rc::Rc::new(self.children);
         let fallback_fn = std::rc::Rc::new(self.fallback);
         let mode = self.mode;
@@ -169,13 +169,13 @@ where
                             "display: block"
                         }
                     });
-                    content_wrapper.clone().mount(&parent_clone);
+                    content_wrapper.clone().mount(&parent_clone, attrs.clone());
                     let content_root = content_wrapper.element;
 
                     Effect::new(move |_| {
                         let view = children_fn.render();
                         content_root.set_inner_html("");
-                        view.mount(&content_root);
+                        view.mount(&content_root, Vec::new());
                     });
 
                     // 2. Fallback Wrapper (Visible when loading)
@@ -187,13 +187,13 @@ where
                             "display: none"
                         }
                     });
-                    fallback_wrapper.clone().mount(&parent_clone);
+                    fallback_wrapper.clone().mount(&parent_clone, Vec::new());
                     let fallback_root = fallback_wrapper.element;
 
                     Effect::new(move |_| {
                         let view = fallback_fn.render();
                         fallback_root.set_inner_html("");
-                        view.mount(&fallback_root);
+                        view.mount(&fallback_root, Vec::new());
                     });
                 }
                 SuspenseMode::Unmount => {
@@ -202,7 +202,7 @@ where
 
                     // 1. Content Wrapper
                     let content_wrapper = div(()).class("suspense-content");
-                    content_wrapper.clone().mount(&parent_clone);
+                    content_wrapper.clone().mount(&parent_clone, attrs);
                     let content_root = content_wrapper.element;
 
                     Effect::new(move |_| {
@@ -214,13 +214,13 @@ where
                             // Re-executing children_fn re-establishes fine-grained dependencies
                             let view = children_fn.render();
                             content_root.set_inner_html("");
-                            view.mount(&content_root);
+                            view.mount(&content_root, Vec::new());
                         }
                     });
 
                     // 2. Fallback Wrapper
                     let fallback_wrapper = div(()).class("suspense-fallback");
-                    fallback_wrapper.clone().mount(&parent_clone);
+                    fallback_wrapper.clone().mount(&parent_clone, Vec::new());
                     let fallback_root = fallback_wrapper.element;
 
                     Effect::new(move |_| {
@@ -228,7 +228,7 @@ where
                             // Suspended: Show Fallback
                             let view = fallback_fn.render();
                             fallback_root.set_inner_html("");
-                            view.mount(&fallback_root);
+                            view.mount(&fallback_root, Vec::new());
                         } else {
                             // Active: Unmount Fallback
                             fallback_root.set_inner_html("");

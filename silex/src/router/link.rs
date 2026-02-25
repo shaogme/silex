@@ -84,7 +84,7 @@ impl Link {
 }
 
 impl View for Link {
-    fn mount(self, parent: &web_sys::Node) {
+    fn mount(self, parent: &web_sys::Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         let href = self.href.clone();
 
         // 尝试获取 Router，用于：
@@ -105,7 +105,7 @@ impl View for Link {
         }
 
         // 绑定点击事件
-        // 我们必须将 router_ctx 移动到闭包中，因为在事件回调运行时，可能无法通过 use_context 获取到（Scope 问题）
+        // 我们必须将 router_ctx 移动 to 闭包中，因为在事件回调运行时，可能无法通过 use_context 获取到（Scope 问题）
         let element = self.inner.on_click(move |e: web_sys::MouseEvent| {
             // 阻止默认跳转行为
             e.prevent_default();
@@ -127,6 +127,6 @@ impl View for Link {
             }
         });
 
-        element.mount(parent);
+        element.mount(parent, attrs);
     }
 }

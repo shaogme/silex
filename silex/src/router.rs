@@ -153,7 +153,7 @@ pub trait RouteView: Routable {
 }
 
 impl View for Router {
-    fn mount(self, parent: &web_sys::Node) {
+    fn mount(self, parent: &web_sys::Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         // 1. 获取 window 对象
         let window = web_sys::window().expect("no global `window` exists");
         let location = window.location();
@@ -226,7 +226,7 @@ impl View for Router {
         // 5. 挂载容器
         let container = div(());
         let container_node = container.dom_element.clone();
-        container.mount(parent);
+        container.mount(parent, attrs);
 
         // 6. 清理
         on_cleanup(move || {
@@ -249,7 +249,7 @@ impl View for Router {
                 // 执行工厂函数获取 View
                 // 如果 factory 内部访问了 Signal (如 path)，这个 Effect 会自动建立依赖并在变化时重新运行
                 let view = factory();
-                view.mount(&parent);
+                view.mount(&parent, Vec::new());
             });
         }
     }

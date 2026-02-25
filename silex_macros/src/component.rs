@@ -276,14 +276,18 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
 
 
         impl #impl_generics ::silex::dom::view::View for #struct_name #ty_generics #where_clause {
-            fn mount(self, parent: &::silex::reexports::web_sys::Node) {
+            fn mount(self, parent: &::silex::reexports::web_sys::Node, attrs: Vec<::silex::dom::attribute::PendingAttribute>) {
                 // Runtime checks and bindings
                 #(#mount_checks)*
 
                 let view_instance = #fn_body;
 
+                // Merge component's own pending attributes with forwarded attributes
+                let mut all_attrs = self._pending_attrs;
+                all_attrs.extend(attrs);
+
                 // Forward attributes using the new robust propagation method
-                ::silex::dom::view::View::mount_with_attributes(view_instance, parent, self._pending_attrs);
+                ::silex::dom::view::View::mount(view_instance, parent, all_attrs);
             }
         }
 
