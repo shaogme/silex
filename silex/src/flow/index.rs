@@ -23,7 +23,6 @@ pub struct Index<ItemsFn, Item, Items, MapFn, V> {
 impl<ItemsFn, Item, Items, MapFn, V> Index<ItemsFn, Item, Items, MapFn, V>
 where
     ItemsFn: RxRead<Value = Items> + 'static,
-    for<'a> ItemsFn::ReadOutput<'a>: std::ops::Deref<Target = Items>,
     Items: ForLoopSource<Item = Item> + 'static,
     MapFn: Fn(ReadSignal<Item>, usize) -> V + 'static,
     V: View,
@@ -50,7 +49,6 @@ struct IndexRow<Item> {
 impl<ItemsFn, Item, Items, MapFn, V> View for Index<ItemsFn, Item, Items, MapFn, V>
 where
     ItemsFn: RxRead<Value = Items> + 'static,
-    for<'a> ItemsFn::ReadOutput<'a>: std::ops::Deref<Target = Items>,
     Items: ForLoopSource<Item = Item> + 'static,
     MapFn: Fn(ReadSignal<Item>, usize) -> V + 'static,
     V: View,

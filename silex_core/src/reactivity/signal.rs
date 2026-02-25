@@ -113,6 +113,9 @@ impl<T: RxCloneData> IntoRx for Constant<T> {
     fn is_constant(&self) -> bool {
         true
     }
+}
+
+impl<T: RxCloneData> crate::traits::IntoSignal for Constant<T> {
     #[inline(always)]
     fn into_signal(self) -> Signal<T> {
         Signal::derive(move || self.get())
@@ -156,7 +159,7 @@ where
 impl<S, F, U> RxBase for DerivedPayload<S, F>
 where
     S: RxBase + RxInternal,
-    F: Fn(&S::Value) -> U + Clone + 'static,
+    F: Fn(&S::Value) -> U + 'static,
     U: 'static,
 {
     #[inline(always)]
@@ -184,7 +187,7 @@ where
 impl<S, F, U> RxInternal for DerivedPayload<S, F>
 where
     S: RxInternal,
-    F: Fn(&S::Value) -> U + Clone + 'static,
+    F: Fn(&S::Value) -> U + 'static,
     U: 'static,
 {
     type ReadOutput<'a>
@@ -486,6 +489,9 @@ impl<T: RxData> IntoRx for Signal<T> {
     fn is_constant(&self) -> bool {
         self.is_constant()
     }
+}
+
+impl<T: RxData> crate::traits::IntoSignal for Signal<T> {
     #[inline(always)]
     fn into_signal(self) -> Signal<Self::Value> {
         self
@@ -596,7 +602,7 @@ impl<T: RxCloneData> Signal<T> {
 
     pub fn slice<O, F>(self, getter: F) -> SignalSlice<Self, F, O>
     where
-        F: Fn(&T) -> &O + Clone + 'static,
+        F: Fn(&T) -> &O + 'static,
         O: ?Sized + 'static,
     {
         SignalSlice::new(self, getter)
@@ -650,7 +656,7 @@ impl<T> ReadSignal<T> {
 
     pub fn slice<O, F>(self, getter: F) -> SignalSlice<Self, F, O>
     where
-        F: Fn(&T) -> &O + Clone + 'static,
+        F: Fn(&T) -> &O + 'static,
         O: ?Sized + 'static, // O can be unsized (e.g. str)
         T: 'static,
     {
@@ -814,7 +820,7 @@ impl<T: RxData> RwSignal<T> {
 
     pub fn slice<O, F>(self, getter: F) -> SignalSlice<Self, F, O>
     where
-        F: Fn(&T) -> &O + Clone + 'static,
+        F: Fn(&T) -> &O + 'static,
         O: ?Sized + 'static, // O can be unsized (e.g. str)
     {
         SignalSlice::new(self, getter)

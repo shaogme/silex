@@ -33,7 +33,6 @@ impl<V, F> Dynamic<V, F>
 where
     V: View + Clone + 'static,
     F: RxRead<Value = V> + 'static,
-    for<'a> <F as silex_core::traits::RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = V>,
 {
     pub fn new(f: F) -> Self {
         Self {
@@ -60,7 +59,6 @@ where
     ) -> Dynamic<V, silex_core::Rx<impl Fn() -> V + Clone, silex_core::RxValueKind>>
     where
         S: RxRead<Value = T> + Clone + 'static,
-        for<'a> <S as silex_core::traits::RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = T>,
         Map: Fn(T) -> V + Clone + 'static,
         T: Clone + 'static,
         V: View + Clone + 'static,
@@ -74,7 +72,6 @@ impl<V, F> View for Dynamic<V, F>
 where
     V: View + Clone + 'static,
     F: RxRead<Value = V> + 'static,
-    for<'a> <F as silex_core::traits::RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = V>,
 {
     fn mount(self, parent: &Node) {
         let document = silex_dom::document();

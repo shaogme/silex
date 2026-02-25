@@ -146,7 +146,6 @@ impl<Arg: RxData, T: RxCloneData, E: RxCloneData> Mutation<Arg, T, E> {
     pub fn mutate_with<A>(&self, arg_accessor: A)
     where
         A: RxRead<Value = Arg>,
-        for<'a> A::ReadOutput<'a>: std::ops::Deref<Target = Arg>,
         Arg: Clone,
     {
         self.mutate(arg_accessor.with(Clone::clone));
@@ -251,6 +250,11 @@ impl<Arg: RxData, T: RxCloneData, E: RxCloneData> IntoRx for Mutation<Arg, T, E>
     fn is_constant(&self) -> bool {
         false
     }
+}
+
+impl<Arg: RxData, T: RxCloneData, E: RxCloneData> crate::traits::IntoSignal
+    for Mutation<Arg, T, E>
+{
     #[inline(always)]
     fn into_signal(self) -> crate::reactivity::Signal<Option<T>>
     where

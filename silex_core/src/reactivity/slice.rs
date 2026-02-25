@@ -12,7 +12,7 @@ pub struct SignalSlice<S, F, O: ?Sized> {
 impl<S, F, O> SignalSlice<S, F, O>
 where
     S: RxInternal + RxCloneData,
-    F: Fn(&S::Value) -> &O + Clone + 'static,
+    F: Fn(&S::Value) -> &O + 'static,
     O: ?Sized + RxData,
 {
     pub fn new(source: S, getter: F) -> Self {
@@ -48,8 +48,7 @@ where
 impl<S, F, O> RxBase for SignalSlice<S, F, O>
 where
     S: RxRead + RxCloneData,
-    for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
-    F: Fn(&S::Value) -> &O + Clone + 'static,
+    F: Fn(&S::Value) -> &O + 'static,
     O: ?Sized + RxData,
 {
     #[inline(always)]
@@ -82,7 +81,7 @@ impl<S, F, O> RxInternal for SignalSlice<S, F, O>
 where
     S: RxRead + RxCloneData,
     for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
-    F: Fn(&S::Value) -> &O + Clone + 'static,
+    F: Fn(&S::Value) -> &O + 'static,
     O: ?Sized + RxData,
 {
     type ReadOutput<'a>
@@ -119,8 +118,7 @@ where
 impl<S, F, O> IntoRx for SignalSlice<S, F, O>
 where
     S: RxRead + RxCloneData,
-    for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
-    F: Fn(&S::Value) -> &O + Clone + 'static,
+    F: Fn(&S::Value) -> &O + 'static,
     O: ?Sized + RxData,
 {
     type RxType = crate::Rx<Self, crate::RxValueKind>;
@@ -134,11 +132,20 @@ where
     fn is_constant(&self) -> bool {
         self.source.rx_is_constant()
     }
+}
+
+impl<S, F, O> crate::traits::IntoSignal for SignalSlice<S, F, O>
+where
+    S: RxRead + RxCloneData,
+    for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
+    F: Fn(&S::Value) -> &O + 'static,
+    O: ?Sized + Clone + RxData,
+{
     #[inline(always)]
     fn into_signal(self) -> crate::reactivity::Signal<Self::Value>
     where
         Self: 'static,
-        O: Sized + Clone,
+        O: Sized,
     {
         crate::reactivity::Signal::derive(move || self.get())
     }

@@ -139,6 +139,9 @@ impl<T: RxData> IntoRx for StoredValue<T> {
     fn is_constant(&self) -> bool {
         true
     }
+}
+
+impl<T: RxData> crate::traits::IntoSignal for StoredValue<T> {
     #[inline(always)]
     fn into_signal(self) -> crate::reactivity::Signal<T> {
         crate::reactivity::Signal::StoredConstant(self.id, PhantomData)

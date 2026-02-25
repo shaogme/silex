@@ -111,14 +111,13 @@ macro_rules! impl_rx_op {
             for<'a> F::ReadOutput<'a>: std::ops::Deref<Target = T>,
             for<'a> &'a T: std::ops::$trait<&'a T, Output = T>,
             T: Clone + 'static,
-            R: $crate::traits::IntoRx<Value = T> + 'static,
-            R::RxType: $crate::traits::RxInternal<Value = T> + Clone + 'static,
+            R: $crate::traits::IntoRx<Value = T> + $crate::traits::IntoSignal + 'static,
         {
             type Output = $crate::Rx<$crate::reactivity::OpPayload<T, 2>, $crate::RxValueKind>;
 
             #[inline]
             fn $method(self, rhs: R) -> Self::Output {
-                use $crate::traits::IntoRx;
+                use $crate::traits::IntoSignal;
 
                 let lhs = self.into_signal();
                 let rhs = rhs.into_signal();
@@ -166,7 +165,7 @@ macro_rules! impl_rx_unary_op {
 
             #[inline]
             fn $method(self) -> Self::Output {
-                use $crate::traits::IntoRx;
+                use $crate::traits::IntoSignal;
 
                 let val = self.into_signal();
 

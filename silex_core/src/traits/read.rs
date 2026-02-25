@@ -12,9 +12,11 @@ pub trait IntoRx: RxValue {
     type RxType;
     fn into_rx(self) -> Self::RxType;
     fn is_constant(&self) -> bool;
+}
 
-    /// 将当前类型转换为归一化后的 Signal<T>。
-    /// 这是 Silex 内部实现零成本类型擦除的核心机制。
+/// 将任何响应式类型强转为完全归一化的 `Signal<T>` 枚举。
+/// 这是 Silex 内部实现零成本类型擦除的核心机制。
+pub trait IntoSignal: RxValue {
     fn into_signal(self) -> crate::reactivity::Signal<Self::Value>
     where
         Self: Sized + crate::traits::RxData,
@@ -93,14 +95,7 @@ macro_rules! unwrap_rx {
 /// 统一的自适应读取与访问 Trait (Unified Read and Access)。
 /// 向上统一 Guard 访问机制（借用）和闭包访问机制（映射），
 /// 用户无需关心底层是克隆还是借用，自动根据类型智能提供最合适的方式。
-pub trait RxRead: RxInternal
-where
-    for<'a> Self::ReadOutput<'a>: Deref<Target = Self::Value>,
-{
-    // ==========================================
-    // 1. Guard 方式的访问（原 Read trait 功能）
-    // ==========================================
-
+pub trait RxRead: RxInternal {
     /// 执行响应式读取，返回一个智能守卫。
     #[track_caller]
     fn read(&self) -> Self::ReadOutput<'_> {
@@ -124,10 +119,6 @@ where
     fn try_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
         self.rx_read_untracked()
     }
-
-    // ==========================================
-    // 2. 闭包方式的访问（原 With/WithUntracked trait 功能）
-    // ==========================================
 
     /// 响应式读取：订阅更改，并通过闭包访问底层值，返回闭包执行的结果。
     #[track_caller]
@@ -162,10 +153,6 @@ where
     Self::Value: Clone + Sized,
     for<'a> Self::ReadOutput<'a>: Deref<Target = Self::Value>,
 {
-    // ==========================================
-    // 3. 克隆获取（Getters）
-    // ==========================================
-
     /// 尝试获取值的副本。该方法不强制要求 `Clone` 约束（自适应回退）。
     /// - 如果信号已销毁 / 未实现 Clone：返回 `None`。
     #[track_caller]
@@ -234,7 +221,7 @@ where
 {
 }
 
-impl<T: ?Sized + RxInternal> RxRead for T where for<'a> T::ReadOutput<'a>: Deref<Target = T::Value> {}
+impl<T: ?Sized + RxInternal> RxRead for T {}
 
 #[doc(hidden)]
 pub fn panic_getting_disposed_signal(
@@ -378,7 +365,7 @@ macro_rules! impl_tuple_into_rx {
         #[allow(non_snake_case)]
         impl<$($T),+> IntoRx for ($($T,)+)
         where
-            $($T: IntoRx + Clone + $crate::traits::RxData),+,
+            $($T: IntoRx + crate::traits::IntoSignal + Clone + $crate::traits::RxData),+,
             $($T::Value: $crate::traits::RxCloneData),+
         {
             type RxType = Rx<crate::reactivity::OpPayload<Self::Value, $len>, RxValueKind>;
@@ -409,7 +396,14 @@ macro_rules! impl_tuple_into_rx {
 
             #[inline(always)]
             fn is_constant(&self) -> bool { $(self.$idx.is_constant() && )+ true }
+        }
 
+        #[allow(non_snake_case)]
+        impl<$($T),+> crate::traits::IntoSignal for ($($T,)+)
+        where
+            $($T: IntoRx + crate::traits::IntoSignal + Clone + $crate::traits::RxData),+,
+            $($T::Value: $crate::traits::RxCloneData),+
+        {
             #[inline(always)]
             fn into_signal(self) -> crate::reactivity::Signal<Self::Value>
             where
@@ -434,7 +428,7 @@ macro_rules! impl_tuple_into_rx {
 
         impl<$($T),+> RxInternal for ($($T,)+)
         where
-            $($T: RxInternal + Clone + $crate::traits::RxData),+,
+            $($T: RxInternal + $crate::traits::RxData),+,
             $($T: IntoRx),+,
             $($T::Value: Sized + $crate::traits::RxCloneData),+
         {
@@ -473,9 +467,8 @@ impl_tuple_into_rx!(6, T0: 0, T1: 1, T2: 2, T3: 3, T4: 4, T5: 5);
 
 impl<F, M> IntoRx for Rx<F, M>
 where
-    F: RxInternal + Clone + crate::traits::RxData,
+    F: RxInternal + crate::traits::RxData,
     F::Value: crate::traits::RxCloneData,
-    for<'a> F::ReadOutput<'a>: std::ops::Deref<Target = F::Value>,
 {
     type RxType = Self;
 
@@ -488,7 +481,14 @@ where
     fn is_constant(&self) -> bool {
         self.0.rx_is_constant()
     }
+}
 
+impl<F, M> crate::traits::IntoSignal for Rx<F, M>
+where
+    F: RxInternal + Clone + crate::traits::RxData,
+    F::Value: crate::traits::RxCloneData,
+    for<'a> F::ReadOutput<'a>: std::ops::Deref<Target = F::Value>,
+{
     #[inline(always)]
     fn into_signal(self) -> crate::reactivity::Signal<Self::Value>
     where
@@ -518,7 +518,9 @@ macro_rules! impl_into_rx_primitive {
                 fn is_constant(&self) -> bool {
                     true
                 }
+            }
 
+            impl crate::traits::IntoSignal for $t {
                 #[inline(always)]
                 fn into_signal(self) -> crate::reactivity::Signal<Self::Value> {
                     crate::reactivity::Signal::from(impl_into_rx_primitive!(@val self $(, $conv)?))
@@ -576,6 +578,9 @@ macro_rules! impl_rx_delegate {
             fn is_constant(&self) -> bool {
                 $is_const
             }
+        }
+
+        impl<T: $crate::traits::RxCloneData> $crate::traits::IntoSignal for $target<T> {
             #[inline(always)]
             fn into_signal(self) -> $crate::reactivity::Signal<T> {
                 $crate::reactivity::Signal::derive(move || $crate::traits::RxRead::get(&self))
@@ -620,6 +625,9 @@ macro_rules! impl_rx_delegate {
             fn is_constant(&self) -> bool {
                 $is_const
             }
+        }
+
+        impl<T: $crate::traits::RxCloneData> $crate::traits::IntoSignal for $target<T> {
             #[inline(always)]
             fn into_signal(self) -> $crate::reactivity::Signal<T> {
                 $crate::reactivity::Signal::Read($crate::reactivity::ReadSignal {
@@ -710,9 +718,12 @@ macro_rules! impl_rx_delegate {
             fn is_constant(&self) -> bool {
                 $is_const
             }
+        }
+
+        impl<T: $crate::traits::RxCloneData> $crate::traits::IntoSignal for $target<T> {
             #[inline(always)]
             fn into_signal(self) -> $crate::reactivity::Signal<T> {
-                $crate::traits::IntoRx::into_signal(self.$field)
+                $crate::traits::IntoSignal::into_signal(self.$field)
             }
         }
 

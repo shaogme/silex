@@ -20,7 +20,7 @@ pub trait ApplyBoolAttribute {
 
 fn apply_string_reactive_internal<F>(f: Rc<dyn Fn() -> String>, setter: F)
 where
-    F: Fn(&str) + Clone + 'static,
+    F: Fn(&str) + 'static,
 {
     silex_core::reactivity::Effect::new(move |_| {
         setter(&f());
@@ -29,7 +29,7 @@ where
 
 fn apply_bool_reactive_internal<F>(f: Rc<dyn Fn() -> bool>, setter: F)
 where
-    F: Fn(bool) + Clone + 'static,
+    F: Fn(bool) + 'static,
 {
     silex_core::reactivity::Effect::new(move |_| {
         setter(f());
@@ -40,7 +40,7 @@ where
 impl ApplyStringAttribute for String {
     fn apply_string<F>(self, setter: F)
     where
-        F: Fn(&str) + Clone + 'static,
+        F: Fn(&str) + 'static,
     {
         setter(&self);
     }
@@ -49,7 +49,7 @@ impl ApplyStringAttribute for String {
 impl ApplyBoolAttribute for bool {
     fn apply_bool<F>(self, setter: F)
     where
-        F: Fn(bool) + Clone + 'static,
+        F: Fn(bool) + 'static,
     {
         setter(self);
     }
@@ -62,7 +62,7 @@ macro_rules! impl_apply_string_primitive {
             impl ApplyStringAttribute for $t {
                 fn apply_string<F>(self, setter: F)
                 where
-                    F: Fn(&str) + Clone + 'static,
+                    F: Fn(&str) + 'static,
                 {
                     setter(&self.to_string());
                 }
@@ -87,7 +87,7 @@ macro_rules! impl_apply_string_for_signal {
             {
                 fn apply_string<F>(self, setter: F)
                 where
-                    F: Fn(&str) + Clone + 'static,
+                    F: Fn(&str) + 'static,
                 {
                     apply_string_reactive_internal(Rc::new(move || self.get().to_string()), setter);
                 }
@@ -105,7 +105,7 @@ where
 {
     fn apply_string<F>(self, setter: F)
     where
-        F: Fn(&str) + Clone + 'static,
+        F: Fn(&str) + 'static,
     {
         setter(&self.get().to_string());
     }
@@ -123,7 +123,7 @@ macro_rules! impl_apply_bool_for_signal {
             {
                 fn apply_bool<F>(self, setter: F)
                 where
-                    F: Fn(bool) + Clone + 'static,
+                    F: Fn(bool) + 'static,
                 {
                     apply_bool_reactive_internal(Rc::new(move || self.get().into()), setter);
                 }
@@ -141,7 +141,7 @@ where
 {
     fn apply_bool<F>(self, setter: F)
     where
-        F: Fn(bool) + Clone + 'static,
+        F: Fn(bool) + 'static,
     {
         setter(self.get().into());
     }

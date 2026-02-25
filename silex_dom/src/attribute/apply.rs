@@ -206,8 +206,7 @@ fn apply_via_signal<S>(source: S, el: &WebElem, target: ApplyTarget)
 where
     S: IntoRx,
     S::Value: ReactiveApply + Clone + 'static,
-    S::RxType: RxRead<Value = S::Value> + Clone + 'static,
-    for<'a> <S::RxType as silex_core::traits::RxInternal>::ReadOutput<'a>: Deref<Target = S::Value>,
+    S::RxType: RxRead<Value = S::Value> + 'static,
 {
     let signal = source.into_rx();
     let owned_target = OwnedApplyTarget::from(target);
@@ -488,7 +487,7 @@ where
     K: AsRef<str>,
     S: IntoRx,
     S::Value: ReactiveApply + Clone + 'static,
-    S::RxType: RxRead<Value = S::Value> + Clone + 'static,
+    S::RxType: RxRead<Value = S::Value> + 'static,
     for<'a> <S::RxType as silex_core::traits::RxInternal>::ReadOutput<'a>: Deref<Target = S::Value>,
 {
     fn apply(self, el: &WebElem, target: ApplyTarget) {

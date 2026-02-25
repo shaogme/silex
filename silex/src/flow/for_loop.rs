@@ -109,7 +109,6 @@ impl<ItemsFn, KeyFn, MapFn> For<ItemsFn, KeyFn, MapFn> {
     pub fn new<Item, Key, V>(items: ItemsFn, key: KeyFn, map: MapFn) -> Self
     where
         ItemsFn: RxRead,
-        for<'a> ItemsFn::ReadOutput<'a>: std::ops::Deref<Target = ItemsFn::Value>,
         ItemsFn::Value: ForLoopSource<Item = Item>,
         KeyFn: Fn(&Item) -> Key,
         MapFn: Fn(Item) -> V,
@@ -128,7 +127,6 @@ where
     // ItemsFn returns the Source directly (e.g. Vec or Result<Vec>)
     // We access it by reference via `With`.
     ItemsFn: RxRead + 'static,
-    for<'a> ItemsFn::ReadOutput<'a>: std::ops::Deref<Target = ItemsFn::Value>,
     ItemsFn::Value: ForLoopSource + 'static,
     // Access Item type via ForLoopSource assoc type
     KeyFn: LoopKey<<ItemsFn::Value as ForLoopSource>::Item> + 'static,

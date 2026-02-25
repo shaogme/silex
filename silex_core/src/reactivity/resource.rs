@@ -295,6 +295,9 @@ impl<T: RxCloneData, E: RxError> IntoRx for Resource<T, E> {
     fn is_constant(&self) -> bool {
         false
     }
+}
+
+impl<T: RxCloneData, E: RxError> crate::traits::IntoSignal for Resource<T, E> {
     #[inline(always)]
     fn into_signal(self) -> crate::reactivity::Signal<Option<T>>
     where

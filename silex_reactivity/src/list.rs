@@ -269,7 +269,7 @@ pub enum List<T> {
     Many(ThinVec<T>),
 }
 
-impl<T: Clone> List<T> {
+impl<T> List<T> {
     pub fn push(&mut self, elem: T) {
         match std::mem::replace(self, Self::Empty) {
             Self::Empty => *self = Self::Single(elem),
@@ -302,7 +302,7 @@ impl<T: Clone> List<T> {
     }
 }
 
-impl<T: PartialEq + Clone> List<T> {
+impl<T: PartialEq> List<T> {
     pub fn remove(&mut self, elem: &T) {
         match self {
             Self::Empty => {}

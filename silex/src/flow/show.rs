@@ -1,5 +1,5 @@
 use silex_core::reactivity::Effect;
-use silex_core::traits::{RxGet, RxInternal, RxRead};
+use silex_core::traits::{RxGet, RxRead};
 use silex_dom::prelude::View;
 use std::cell::RefCell;
 use std::ops::Deref;
@@ -54,7 +54,6 @@ impl<Cond, ViewFn> Show<Cond, ViewFn, fn() -> ()> {
     pub fn new(condition: Cond, view: ViewFn) -> Self
     where
         Cond: RxRead<Value = bool> + 'static,
-        for<'a> Cond::ReadOutput<'a>: Deref<Target = bool>,
         ViewFn: ViewFactory + 'static,
     {
         Self {
@@ -69,7 +68,6 @@ impl<Cond, ViewFn> Show<Cond, ViewFn, fn() -> ()> {
 impl<Cond, ViewFn, FalsyViewFn> Show<Cond, ViewFn, FalsyViewFn>
 where
     Cond: RxRead<Value = bool> + 'static,
-    for<'a> Cond::ReadOutput<'a>: Deref<Target = bool>,
     ViewFn: ViewFactory + 'static,
     FalsyViewFn: ViewFactory + 'static,
 {
@@ -90,8 +88,8 @@ impl<Cond, ViewFn, FalsyViewFn> View for Show<Cond, ViewFn, FalsyViewFn>
 where
     Cond: RxRead<Value = bool> + 'static,
     for<'a> Cond::ReadOutput<'a>: Deref<Target = bool>,
-    ViewFn: ViewFactory + Clone + 'static,
-    FalsyViewFn: ViewFactory + Clone + 'static,
+    ViewFn: ViewFactory + 'static,
+    FalsyViewFn: ViewFactory + 'static,
 {
     fn mount(self, parent: &Node) {
         let document = silex_dom::document();
@@ -172,7 +170,6 @@ pub trait SignalShowExt: IntoRx<Value = bool> {
     fn when<F>(self, view: F) -> Show<Self::RxType, F, fn() -> ()>
     where
         Self::RxType: RxRead<Value = bool> + 'static,
-        for<'a> <Self::RxType as RxInternal>::ReadOutput<'a>: Deref<Target = bool>,
         F: ViewFactory + 'static;
 }
 
@@ -184,7 +181,6 @@ where
     fn when<F>(self, view: F) -> Show<Self::RxType, F, fn() -> ()>
     where
         Self::RxType: RxRead<Value = bool> + 'static,
-        for<'a> <S::RxType as RxInternal>::ReadOutput<'a>: Deref<Target = bool>,
         F: ViewFactory + 'static,
     {
         Show::new(self.into_rx(), view)

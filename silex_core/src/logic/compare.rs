@@ -1,5 +1,4 @@
 use crate::traits::RxRead;
-use std::ops::Deref;
 
 pub type CompareFn<T> = fn(&T, &T) -> bool;
 
@@ -12,12 +11,15 @@ macro_rules! reactive_compare_method {
             other: O,
         ) -> $crate::Rx<$crate::reactivity::OpPayload<bool, 2>, $crate::RxValueKind>
         where
-            Self: $crate::traits::IntoRx + $crate::traits::RxValue,
-            O: $crate::traits::IntoRx + $crate::traits::RxValue<Value = Self::Value> + 'static,
+            Self: $crate::traits::IntoRx + $crate::traits::IntoSignal + $crate::traits::RxValue,
+            O: $crate::traits::IntoRx
+                + $crate::traits::IntoSignal
+                + $crate::traits::RxValue<Value = Self::Value>
+                + 'static,
             Self::Value: $bound + Sized + Clone + 'static,
         {
-            let lhs = self.clone().into_signal();
-            let rhs = other.into_signal();
+            let lhs = $crate::traits::IntoSignal::into_signal(self.clone());
+            let rhs = $crate::traits::IntoSignal::into_signal(other);
 
             #[inline(always)]
             unsafe fn read_impl<InnerT: $bound + 'static>(
@@ -49,7 +51,6 @@ macro_rules! reactive_compare_method {
 pub trait ReactivePartialEq: RxRead + Clone + 'static
 where
     Self::Value: PartialEq + Sized + 'static,
-    for<'a> Self::ReadOutput<'a>: Deref<Target = Self::Value>,
 {
     crate::reactive_compare_method!(equals, eq, ==, PartialEq);
     crate::reactive_compare_method!(not_equals, ne, !=, PartialEq);
@@ -59,7 +60,6 @@ where
 pub trait ReactivePartialOrd: RxRead + Clone + 'static
 where
     Self::Value: PartialOrd + Sized + 'static,
-    for<'a> Self::ReadOutput<'a>: Deref<Target = Self::Value>,
 {
     crate::reactive_compare_method!(greater_than, gt, >, PartialOrd);
     crate::reactive_compare_method!(less_than, lt, <, PartialOrd);
@@ -71,7 +71,6 @@ impl<S> ReactivePartialEq for S
 where
     S: RxRead + Clone + 'static,
     S::Value: PartialEq + Sized + 'static,
-    for<'a> S::ReadOutput<'a>: Deref<Target = S::Value>,
 {
 }
 
@@ -79,6 +78,5 @@ impl<S> ReactivePartialOrd for S
 where
     S: RxRead + Clone + 'static,
     S::Value: PartialOrd + Sized + 'static,
-    for<'a> S::ReadOutput<'a>: Deref<Target = S::Value>,
 {
 }

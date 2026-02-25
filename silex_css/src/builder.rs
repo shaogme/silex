@@ -91,7 +91,7 @@ impl Style {
     where
         V: IntoRx + RxValue + 'static,
         V::Value: Display + ValidFor<P> + Clone + Sized,
-        V::RxType: RxRead + RxValue<Value = V::Value> + Clone + 'static,
+        V::RxType: RxRead + RxValue<Value = V::Value> + 'static,
         for<'a> <V::RxType as RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = V::Value>,
     {
         if value.is_constant() {
