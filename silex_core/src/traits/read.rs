@@ -145,14 +145,7 @@ pub trait RxRead: RxInternal {
     fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         self.rx_try_with_untracked(fun)
     }
-}
 
-/// 克隆获取特质。仅当值支持克隆时自动生效。
-pub trait RxGet: RxRead
-where
-    Self::Value: Clone + Sized,
-    for<'a> Self::ReadOutput<'a>: Deref<Target = Self::Value>,
-{
     /// 尝试获取值的副本。该方法不强制要求 `Clone` 约束（自适应回退）。
     /// - 如果信号已销毁 / 未实现 Clone：返回 `None`。
     #[track_caller]
@@ -181,7 +174,14 @@ where
     {
         self.try_get_cloned().unwrap_or_default()
     }
+}
 
+/// 克隆获取特质。仅当值支持克隆时自动生效。
+pub trait RxGet: RxRead
+where
+    Self::Value: Clone + Sized,
+    for<'a> Self::ReadOutput<'a>: Deref<Target = Self::Value>,
+{
     /// 非响应式地克隆和返回值。如果是被销毁的，返回 None。
     #[track_caller]
     fn try_get_untracked(&self) -> Option<Self::Value> {
