@@ -91,7 +91,8 @@ impl View for Element {
     }
 
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
-        for attr in attrs {
+        let consolidated = crate::attribute::consolidate_attributes(attrs);
+        for attr in consolidated {
             attr.apply(&self.dom_element);
         }
     }

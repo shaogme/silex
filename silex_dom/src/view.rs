@@ -496,7 +496,10 @@ impl View for SharedView {
             }
             SharedView::SharedBoxed(b, mut inner_attrs) => {
                 inner_attrs.extend(attrs);
-                b.mount_boxed(parent, inner_attrs);
+                b.mount_boxed(
+                    parent,
+                    crate::attribute::consolidate_attributes(inner_attrs),
+                );
             }
         }
     }
@@ -512,7 +515,9 @@ impl View for SharedView {
                 }
             }
             SharedView::SharedBoxed(_, inner_attrs) => {
-                inner_attrs.extend(attrs);
+                let mut temp = std::mem::take(inner_attrs);
+                temp.extend(attrs);
+                *inner_attrs = crate::attribute::consolidate_attributes(temp);
             }
         }
     }
@@ -539,7 +544,10 @@ impl View for AnyView {
             }
             AnyView::Unique(b, mut inner_attrs) => {
                 inner_attrs.extend(attrs);
-                b.mount_boxed(parent, inner_attrs);
+                b.mount_boxed(
+                    parent,
+                    crate::attribute::consolidate_attributes(inner_attrs),
+                );
             }
             AnyView::FromShared(s) => s.mount(parent, attrs),
         }
@@ -556,7 +564,9 @@ impl View for AnyView {
                 }
             }
             AnyView::Unique(_, inner_attrs) => {
-                inner_attrs.extend(attrs);
+                let mut temp = std::mem::take(inner_attrs);
+                temp.extend(attrs);
+                *inner_attrs = crate::attribute::consolidate_attributes(temp);
             }
             AnyView::FromShared(s) => s.apply_attributes(attrs),
         }

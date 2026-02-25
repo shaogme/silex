@@ -29,6 +29,18 @@ pub enum ApplyTarget<'a> {
 /// Replaces AttributeValue, ApplyClass, ApplyStyle.
 pub trait ApplyToDom {
     fn apply(self, el: &WebElem, target: ApplyTarget);
+
+    fn into_payload(self) -> AttributePayload
+    where
+        Self: Sized + 'static,
+    {
+        let value_cell = std::cell::RefCell::new(Some(self));
+        AttributePayload::Dynamic(std::rc::Rc::new(move |el, target| {
+            if let Some(v) = value_cell.borrow_mut().take() {
+                v.apply(el, target.into());
+            }
+        }))
+    }
 }
 
 impl<F> ApplyToDom for F
@@ -50,6 +62,21 @@ where
 {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
         crate::attribute::apply_signal_internal(self.into_signal(), el, target);
+    }
+
+    fn into_payload(self) -> AttributePayload {
+        let signal = self.into_signal();
+        if let Some(payload) =
+            <<Self as silex_core::traits::RxValue>::Value as ReactiveApply>::into_payload_reactive(
+                signal,
+            )
+        {
+            payload
+        } else {
+            AttributePayload::Dynamic(std::rc::Rc::new(move |el, target| {
+                crate::attribute::apply_signal_internal(signal, el, ApplyTarget::from(target));
+            }))
+        }
     }
 }
 
@@ -77,6 +104,10 @@ macro_rules! impl_apply_to_dom_rx_forwarder {
                     use silex_core::traits::IntoRx;
                     self.into_rx().apply(el, target);
                 }
+                fn into_payload(self) -> AttributePayload {
+                    use silex_core::traits::IntoRx;
+                    self.into_rx().into_payload()
+                }
             }
         )*
     };
@@ -94,6 +125,10 @@ where
         use silex_core::traits::IntoRx;
         self.into_rx().apply(el, target);
     }
+    fn into_payload(self) -> AttributePayload {
+        use silex_core::traits::IntoRx;
+        self.into_rx().into_payload()
+    }
 }
 
 impl<U, const N: usize> ApplyToDom for silex_core::reactivity::OpPayload<U, N>
@@ -105,6 +140,10 @@ where
         use silex_core::traits::IntoRx;
         self.into_rx().apply(el, target);
     }
+    fn into_payload(self) -> AttributePayload {
+        use silex_core::traits::IntoRx;
+        self.into_rx().into_payload()
+    }
 }
 
 impl<S, F, O> ApplyToDom for silex_core::reactivity::SignalSlice<S, F, O>
@@ -115,6 +154,10 @@ where
     fn apply(self, el: &WebElem, target: ApplyTarget) {
         use silex_core::traits::IntoRx;
         self.into_rx().apply(el, target);
+    }
+    fn into_payload(self) -> AttributePayload {
+        use silex_core::traits::IntoRx;
+        self.into_rx().into_payload()
     }
 }
 
@@ -319,6 +362,13 @@ pub trait ReactiveApply {
     {
         let _ = (signal, key, el, target);
     }
+
+    fn into_payload_reactive(_signal: Signal<Self>) -> Option<AttributePayload>
+    where
+        Self: Sized,
+    {
+        None
+    }
 }
 
 // --- Implementations ---
@@ -353,11 +403,19 @@ impl ApplyToDom for &str {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
         apply_immediate_string(el, target, self);
     }
+
+    fn into_payload(self) -> AttributePayload {
+        AttributePayload::StaticString(self.to_string())
+    }
 }
 
 impl ApplyToDom for String {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
         apply_immediate_string(el, target, &self);
+    }
+
+    fn into_payload(self) -> AttributePayload {
+        AttributePayload::StaticString(self)
     }
 }
 
@@ -365,11 +423,19 @@ impl ApplyToDom for &String {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
         apply_immediate_string(el, target, self);
     }
+
+    fn into_payload(self) -> AttributePayload {
+        AttributePayload::StaticString(self.to_string())
+    }
 }
 
 impl ApplyToDom for bool {
     fn apply(self, el: &WebElem, target: ApplyTarget) {
         apply_immediate_bool(el, target, self);
+    }
+
+    fn into_payload(self) -> AttributePayload {
+        AttributePayload::StaticBool(self)
     }
 }
 
@@ -396,6 +462,10 @@ impl ReactiveApply for String {
                 let _ = style.set_property(&key, &v);
             });
         }
+    }
+
+    fn into_payload_reactive(signal: Signal<Self>) -> Option<AttributePayload> {
+        Some(AttributePayload::ReactiveString(signal))
     }
 }
 
@@ -452,6 +522,10 @@ impl ReactiveApply for bool {
         if is_class {
             apply_bool_pair_reactive_internal(el, key, signal);
         }
+    }
+
+    fn into_payload_reactive(signal: Signal<Self>) -> Option<AttributePayload> {
+        Some(AttributePayload::ReactiveBool(signal))
     }
 }
 
@@ -578,6 +652,10 @@ macro_rules! impl_apply_to_dom_for_primitive {
                 fn apply(self, el: &WebElem, target: ApplyTarget) {
                     apply_immediate_string(el, target, &self.to_string());
                 }
+
+                fn into_payload(self) -> AttributePayload {
+                    AttributePayload::StaticString(self.to_string())
+                }
             }
         )*
     };
@@ -638,8 +716,108 @@ impl_apply_to_dom_for_group!(T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12);
 // --- Attribute Forwarding Support ---
 
 #[derive(Clone)]
+pub enum AttributePayload {
+    /// 静态字符串：支持预合并（如 class, style）
+    StaticString(String),
+    /// 静态布尔值：用于开关型属性（如 disabled, checked）
+    StaticBool(bool),
+    /// 响应式字符串
+    ReactiveString(Signal<String>),
+    /// 响应式布尔值
+    ReactiveBool(Signal<bool>),
+    /// 动态求值载荷
+    Dynamic(Rc<dyn Fn(&WebElem, &OwnedApplyTarget)>),
+    /// 命令式回调：用于事件监听或复杂的 Mixin 逻辑
+    Command(Rc<dyn Fn(&WebElem)>),
+}
+
+#[derive(Clone)]
 pub struct PendingAttribute {
-    f: Rc<dyn Fn(&WebElem)>,
+    pub target: Option<OwnedApplyTarget>,
+    pub payload: AttributePayload,
+}
+
+impl<'a> From<&'a OwnedApplyTarget> for ApplyTarget<'a> {
+    fn from(target: &'a OwnedApplyTarget) -> Self {
+        match target {
+            OwnedApplyTarget::Attr(n) => ApplyTarget::Attr(n.as_str()),
+            OwnedApplyTarget::Prop(n) => ApplyTarget::Prop(n.as_str()),
+            OwnedApplyTarget::Class => ApplyTarget::Class,
+            OwnedApplyTarget::Style => ApplyTarget::Style,
+            OwnedApplyTarget::Apply => ApplyTarget::Apply,
+        }
+    }
+}
+
+pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttribute> {
+    let mut consolidated = Vec::new();
+    let mut classes = Vec::new();
+    let mut styles = Vec::new();
+
+    for attr in attrs {
+        if let Some(ref target) = attr.target {
+            match target {
+                OwnedApplyTarget::Class => {
+                    if let AttributePayload::StaticString(ref s) = attr.payload {
+                        classes.push(s.clone());
+                        continue;
+                    }
+                }
+                OwnedApplyTarget::Attr(name) if name == "class" => {
+                    if let AttributePayload::StaticString(ref s) = attr.payload {
+                        classes.push(s.clone());
+                        continue;
+                    }
+                }
+                OwnedApplyTarget::Style => {
+                    if let AttributePayload::StaticString(ref s) = attr.payload {
+                        styles.push(s.clone());
+                        continue;
+                    }
+                }
+                OwnedApplyTarget::Attr(name) if name == "style" => {
+                    if let AttributePayload::StaticString(ref s) = attr.payload {
+                        styles.push(s.clone());
+                        continue;
+                    }
+                }
+                _ => {}
+            }
+        }
+        consolidated.push(attr);
+    }
+
+    if !styles.is_empty() {
+        let mut merged_style = String::new();
+        for s in styles {
+            let s = s.trim();
+            if !s.is_empty() {
+                merged_style.push_str(s);
+                if !s.ends_with(';') {
+                    merged_style.push(';');
+                }
+            }
+        }
+        consolidated.insert(
+            0,
+            PendingAttribute {
+                target: Some(OwnedApplyTarget::Style),
+                payload: AttributePayload::StaticString(merged_style),
+            },
+        );
+    }
+
+    if !classes.is_empty() {
+        consolidated.insert(
+            0,
+            PendingAttribute {
+                target: Some(OwnedApplyTarget::Class),
+                payload: AttributePayload::StaticString(classes.join(" ")),
+            },
+        );
+    }
+
+    consolidated
 }
 
 impl PendingAttribute {
@@ -647,29 +825,49 @@ impl PendingAttribute {
     where
         V: ApplyToDom + 'static,
     {
-        let value_cell = Rc::new(RefCell::new(Some(value)));
-
         Self {
-            f: Rc::new(move |el| {
-                if let Some(v) = value_cell.borrow_mut().take() {
-                    let t = match &target {
-                        OwnedApplyTarget::Attr(n) => ApplyTarget::Attr(n.as_str()),
-                        OwnedApplyTarget::Prop(n) => ApplyTarget::Prop(n.as_str()),
-                        OwnedApplyTarget::Class => ApplyTarget::Class,
-                        OwnedApplyTarget::Style => ApplyTarget::Style,
-                        OwnedApplyTarget::Apply => ApplyTarget::Apply,
-                    };
-                    v.apply(el, t);
-                }
-            }),
+            target: Some(target),
+            payload: value.into_payload(),
         }
     }
 
     pub fn apply(&self, el: &WebElem) {
-        (self.f)(el);
+        match &self.payload {
+            AttributePayload::StaticString(val) => {
+                if let Some(ref t) = self.target {
+                    apply_immediate_string(el, ApplyTarget::from(t), val);
+                }
+            }
+            AttributePayload::StaticBool(val) => {
+                if let Some(ref t) = self.target {
+                    apply_immediate_bool(el, ApplyTarget::from(t), *val);
+                }
+            }
+            AttributePayload::ReactiveString(signal) => {
+                if let Some(ref t) = self.target {
+                    apply_string_reactive_internal(el.clone(), t.clone(), *signal);
+                }
+            }
+            AttributePayload::ReactiveBool(signal) => {
+                if let Some(ref t) = self.target {
+                    apply_bool_reactive_internal(el.clone(), t.clone(), *signal);
+                }
+            }
+            AttributePayload::Dynamic(f) => {
+                if let Some(ref t) = self.target {
+                    f(el, t);
+                }
+            }
+            AttributePayload::Command(f) => {
+                f(el);
+            }
+        }
     }
 
     pub fn new_listener(f: impl Fn(&WebElem) + 'static) -> Self {
-        Self { f: Rc::new(f) }
+        Self {
+            target: None,
+            payload: AttributePayload::Command(Rc::new(f)),
+        }
     }
 }
