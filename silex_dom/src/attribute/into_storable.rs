@@ -1,6 +1,5 @@
 use super::{ApplyToDom, AttributeGroup};
-use silex_core::traits::{IntoRx, IntoSignal};
-
+use silex_core::traits::IntoRx;
 // --- IntoStorable: 允许非 'static 类型转换为可存储类型 ---
 
 /// 将值转换为可存储的类型。
@@ -73,79 +72,59 @@ where
     }
 }
 
-// 代理宏：让内置响应式类型在作为属性时自动套一层 Rx 归一化
-macro_rules! impl_into_storable_signal {
+// --- 3. Reactive Forwarders ---
+// These implementations allow using raw signals (Signal<T>, Memo<T>, etc.) directly as attributes.
+// They automatically normalize to Rx<Signal<T>, RxValueKind> during the into_storable conversion.
+
+macro_rules! impl_into_storable_forwarder {
     ($($ty:ident),*) => {
         $(
             impl<T> IntoStorable for silex_core::reactivity::$ty<T>
             where
-                T: crate::attribute::ReactiveApply + Clone + 'static,
-                Self: silex_core::traits::IntoSignal<Value = T> + Clone + 'static,
+                Self: silex_core::traits::IntoRx + 'static,
+                <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom + 'static,
             {
-                type Stored = silex_core::Rx<silex_core::reactivity::Signal<T>, silex_core::RxValueKind>;
+                type Stored = <Self as silex_core::traits::IntoRx>::RxType;
                 fn into_storable(self) -> Self::Stored {
-                    silex_core::Rx(self.into_signal(), std::marker::PhantomData)
+                    self.into_rx()
                 }
             }
         )*
     };
 }
 
-impl_into_storable_signal!(Signal, ReadSignal, RwSignal);
-
-impl<T> IntoStorable for silex_core::reactivity::Constant<T>
-where
-    T: crate::attribute::ReactiveApply + Clone + 'static,
-{
-    type Stored = silex_core::Rx<silex_core::reactivity::Signal<T>, silex_core::RxValueKind>;
-    fn into_storable(self) -> Self::Stored {
-        silex_core::Rx(self.into_signal(), std::marker::PhantomData)
-    }
-}
-
-impl<T> IntoStorable for silex_core::reactivity::Memo<T>
-where
-    T: crate::attribute::ReactiveApply + Clone + PartialEq + 'static,
-{
-    type Stored = silex_core::Rx<silex_core::reactivity::Signal<T>, silex_core::RxValueKind>;
-    fn into_storable(self) -> Self::Stored {
-        silex_core::Rx(self.into_signal(), std::marker::PhantomData)
-    }
-}
+impl_into_storable_forwarder!(Signal, ReadSignal, RwSignal, Constant, Memo);
 
 impl<S, F> IntoStorable for silex_core::reactivity::DerivedPayload<S, F>
 where
-    Self: silex_core::traits::IntoSignal + silex_core::traits::RxValue + Clone + 'static,
-    <Self as silex_core::traits::RxValue>::Value: crate::attribute::ReactiveApply + Clone + 'static,
+    Self: silex_core::traits::IntoRx + 'static,
+    <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom + 'static,
 {
-    type Stored = silex_core::Rx<
-        silex_core::reactivity::Signal<<Self as silex_core::traits::RxValue>::Value>,
-        silex_core::RxValueKind,
-    >;
+    type Stored = <Self as silex_core::traits::IntoRx>::RxType;
     fn into_storable(self) -> Self::Stored {
-        silex_core::Rx(self.into_signal(), std::marker::PhantomData)
+        self.into_rx()
     }
 }
 
 impl<U, const N: usize> IntoStorable for silex_core::reactivity::OpPayload<U, N>
 where
-    Self: silex_core::traits::IntoSignal + silex_core::traits::RxValue<Value = U> + Clone + 'static,
-    U: crate::attribute::ReactiveApply + Clone + 'static,
+    Self: silex_core::traits::IntoRx + 'static,
+    <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom + 'static,
 {
-    type Stored = silex_core::Rx<silex_core::reactivity::Signal<U>, silex_core::RxValueKind>;
+    type Stored = <Self as silex_core::traits::IntoRx>::RxType;
     fn into_storable(self) -> Self::Stored {
-        silex_core::Rx(self.into_signal(), std::marker::PhantomData)
+        self.into_rx()
     }
 }
 
 impl<S, F, O> IntoStorable for silex_core::reactivity::SignalSlice<S, F, O>
 where
-    Self: silex_core::traits::IntoSignal + silex_core::traits::RxValue<Value = O> + Clone + 'static,
-    O: crate::attribute::ReactiveApply + Clone + 'static,
+    Self: silex_core::traits::IntoRx + 'static,
+    <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom + 'static,
 {
-    type Stored = silex_core::Rx<silex_core::reactivity::Signal<O>, silex_core::RxValueKind>;
+    type Stored = <Self as silex_core::traits::IntoRx>::RxType;
     fn into_storable(self) -> Self::Stored {
-        silex_core::Rx(self.into_signal(), std::marker::PhantomData)
+        self.into_rx()
     }
 }
 

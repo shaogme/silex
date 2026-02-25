@@ -107,7 +107,7 @@ macro_rules! impl_rx_op {
     ($trait:ident, $method:ident) => {
         impl<F, R, T> std::ops::$trait<R> for $crate::Rx<F, $crate::RxValueKind>
         where
-            F: $crate::traits::RxInternal<Value = T> + Clone + 'static,
+            F: $crate::traits::RxInternal<Value = T> + $crate::traits::IntoSignal + Clone + 'static,
             for<'a> F::ReadOutput<'a>: std::ops::Deref<Target = T>,
             for<'a> &'a T: std::ops::$trait<&'a T, Output = T>,
             T: Clone + 'static,
@@ -156,7 +156,7 @@ macro_rules! impl_rx_unary_op {
     ($trait:ident, $method:ident) => {
         impl<F, T> std::ops::$trait for $crate::Rx<F, $crate::RxValueKind>
         where
-            F: $crate::traits::RxInternal<Value = T> + Clone + 'static,
+            F: $crate::traits::RxInternal<Value = T> + $crate::traits::IntoSignal + Clone + 'static,
             for<'a> F::ReadOutput<'a>: std::ops::Deref<Target = T>,
             for<'a> &'a T: std::ops::$trait<Output = T>,
             T: Clone + 'static,

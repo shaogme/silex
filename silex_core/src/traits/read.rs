@@ -492,16 +492,15 @@ where
 
 impl<F, M> crate::traits::IntoSignal for Rx<F, M>
 where
-    F: RxInternal + Clone + crate::traits::RxData,
-    F::Value: crate::traits::RxCloneData,
-    for<'a> F::ReadOutput<'a>: std::ops::Deref<Target = F::Value>,
+    F: IntoSignal + 'static,
 {
     #[inline(always)]
     fn into_signal(self) -> crate::reactivity::Signal<Self::Value>
     where
-        Self: 'static,
+        Self: Sized + crate::traits::RxData,
+        Self::Value: Sized + crate::traits::RxCloneData,
     {
-        crate::reactivity::Signal::derive(move || self.get())
+        self.0.into_signal()
     }
 }
 
