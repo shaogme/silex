@@ -265,3 +265,57 @@ pub trait GlobalEventAttributes: AttributeBuilder {
 
 // 自动实现全局事件属性
 impl<T: AttributeBuilder> GlobalEventAttributes for T {}
+
+// --- AttributeBuilder Implementations for Erasure Types ---
+
+impl AttributeBuilder for crate::view::AnyView {
+    fn build_attribute<V>(mut self, target: ApplyTarget, value: V) -> Self
+    where
+        V: IntoStorable,
+    {
+        use crate::view::View;
+        self.apply_attributes(vec![PendingAttribute::build(
+            value.into_storable(),
+            OwnedApplyTarget::from(target),
+        )]);
+        self
+    }
+
+    fn build_event<E, F, M>(mut self, event: E, callback: F) -> Self
+    where
+        E: crate::event::EventDescriptor + 'static,
+        F: crate::event::EventHandler<E::EventType, M> + Clone + 'static,
+    {
+        use crate::view::View;
+        self.apply_attributes(vec![PendingAttribute::new_listener(move |el| {
+            crate::element::bind_event(el, event, callback.clone());
+        })]);
+        self
+    }
+}
+
+impl AttributeBuilder for crate::view::SharedView {
+    fn build_attribute<V>(mut self, target: ApplyTarget, value: V) -> Self
+    where
+        V: IntoStorable,
+    {
+        use crate::view::View;
+        self.apply_attributes(vec![PendingAttribute::build(
+            value.into_storable(),
+            OwnedApplyTarget::from(target),
+        )]);
+        self
+    }
+
+    fn build_event<E, F, M>(mut self, event: E, callback: F) -> Self
+    where
+        E: crate::event::EventDescriptor + 'static,
+        F: crate::event::EventHandler<E::EventType, M> + Clone + 'static,
+    {
+        use crate::view::View;
+        self.apply_attributes(vec![PendingAttribute::new_listener(move |el| {
+            crate::element::bind_event(el, event, callback.clone());
+        })]);
+        self
+    }
+}

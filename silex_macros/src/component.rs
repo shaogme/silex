@@ -280,14 +280,10 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
                 // Runtime checks and bindings
                 #(#mount_checks)*
 
-                let mut view_instance = #fn_body;
+                let view_instance = #fn_body;
 
-                // Forward attributes
-                if !self._pending_attrs.is_empty() {
-                    view_instance.apply_attributes(self._pending_attrs);
-                }
-
-                ::silex::dom::view::View::mount(view_instance, parent);
+                // Forward attributes using the new robust propagation method
+                ::silex::dom::view::View::mount_with_attributes(view_instance, parent, self._pending_attrs);
             }
         }
 

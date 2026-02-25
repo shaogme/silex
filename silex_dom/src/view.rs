@@ -20,12 +20,27 @@ pub trait View {
     /// Elements override this to actually apply attributes.
     fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
 
+    /// Mount with a set of pending attributes.
+    /// This is the key to plugging the "apply_attributes" black hole for dynamic views.
+    fn mount_with_attributes(self, parent: &Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        if attrs.is_empty() {
+            self.mount(parent);
+        } else {
+            let mut this = self;
+            this.apply_attributes(attrs);
+            this.mount(parent);
+        }
+    }
+
     /// Convert this view into an AnyView (Type Erasure without Clone requirement).
     fn into_any(self) -> AnyView
     where
         Self: Sized + 'static,
     {
-        AnyView::Unique(Box::new(self))
+        AnyView::Unique(Box::new(self), Vec::new())
     }
 
     /// Convert this view into a SharedView (Type Erasure with Clone requirement).
@@ -33,7 +48,7 @@ pub trait View {
     where
         Self: Sized + Clone + 'static,
     {
-        SharedView::SharedBoxed(Box::new(self))
+        SharedView::SharedBoxed(Box::new(self), Vec::new())
     }
 }
 
@@ -121,6 +136,10 @@ where
     V: View + 'static,
 {
     fn mount(self, parent: &Node) {
+        self.mount_with_attributes(parent, Vec::new());
+    }
+
+    fn mount_with_attributes(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         let document = crate::document();
 
         // 1. 创建锚点 (Start & End Markers)
@@ -141,39 +160,63 @@ where
             return;
         }
 
+        use std::cell::Cell;
+        use std::rc::Rc;
+        let prev_scope = Rc::new(Cell::new(None::<silex_core::reactivity::NodeId>));
+
         Effect::new(move |_| {
+            // 清理前一次的残留副作用
+            if let Some(id) = prev_scope.get() {
+                silex_core::reactivity::dispose(id);
+                prev_scope.set(None);
+            }
+
+            let start_node = start_node.clone();
+            let end_node = end_node.clone();
+            let document = document.clone();
+            let attrs = attrs.clone();
+
             // 在产生副作用时捕获 Panic，防止整个应用崩溃，并允许 ErrorBoundary 捕获
             let result = catch_unwind(AssertUnwindSafe(|| {
+                // 1. 追踪：首先在 Effect 作用域下执行 self()，确保其内部访问的信号被 Effect 记录为依赖
                 let view = self();
 
-                // A. 清理旧节点 (Range Clean)
-                // 删除 start_node 和 end_node 之间的所有节点
-                // 这比追踪 mounted_nodes 更健壮，特别是对于嵌套的动态 View 或 Fragment 逃逸情况
-                if let Some(parent) = start_node.parent_node() {
-                    while let Some(sibling) = start_node.next_sibling() {
-                        // 引用比较，到达结束锚点停止
-                        if sibling == end_node {
-                            break;
+                // 2. 隔离：套接 create_scope，确保 view.mount() 过程中产生的额外响应式节点归属于该 Scope
+                let start_node = start_node.clone();
+                let end_node = end_node.clone();
+                let document = document.clone();
+                let id = silex_core::reactivity::create_scope(move || {
+                    // A. 清理旧节点 (Range Clean)
+                    // 删除 start_node 和 end_node 之间的所有节点
+                    if let Some(parent) = start_node.parent_node() {
+                        while let Some(sibling) = start_node.next_sibling() {
+                            // 引用比较，到达结束锚点停止
+                            if sibling == end_node {
+                                break;
+                            }
+                            // 移除中间节点
+                            let _ = parent.remove_child(&sibling);
                         }
-                        // 移除中间节点
-                        let _ = parent.remove_child(&sibling);
                     }
-                }
 
-                // B. 准备新内容 (使用 DocumentFragment 收集节点)
-                let fragment = document.create_document_fragment();
-                let fragment_node: Node = fragment.clone().into();
+                    // B. 准备新内容 (使用 DocumentFragment 收集节点)
+                    let fragment = document.create_document_fragment();
+                    let fragment_node: Node = fragment.clone().into();
 
-                // 挂载到 Fragment
-                view.mount(&fragment_node);
+                    // 挂载到 Fragment，并传递属性！
+                    view.mount_with_attributes(&fragment_node, attrs);
 
-                // C. 插入到 DOM (在 end_marker 之前)
-                if let Some(parent) = end_node.parent_node() {
-                    let _ = parent.insert_before(&fragment_node, Some(&end_node));
-                }
+                    // C. 插入到 DOM (在 end_marker 之前)
+                    if let Some(parent) = end_node.parent_node() {
+                        let _ = parent.insert_before(&fragment_node, Some(&end_node));
+                    }
+                });
+                id
             }));
 
-            if let Err(payload) = result {
+            if let Ok(id) = result {
+                prev_scope.set(Some(id));
+            } else if let Err(payload) = result {
                 // 转换 Panic payload 为 SilexError
                 let msg = if let Some(s) = payload.downcast_ref::<&str>() {
                     format!("Panic in View: {}", s)
@@ -198,6 +241,10 @@ where
         self.0.mount(parent);
     }
 
+    fn mount_with_attributes(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        self.0.mount_with_attributes(parent, attrs);
+    }
+
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
         self.0.apply_attributes(attrs);
     }
@@ -209,8 +256,12 @@ where
     V: View + 'static,
 {
     fn mount(self, parent: &Node) {
+        self.mount_with_attributes(parent, Vec::new());
+    }
+
+    fn mount_with_attributes(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         let f = self.clone();
-        (move || f()).mount(parent);
+        (move || f()).mount_with_attributes(parent, attrs);
     }
 }
 
@@ -495,13 +546,13 @@ impl<V: View> View for SilexResult<V> {
 
 /// 辅助特征（不要求 Clone，移动语义挂载）
 pub trait RenderOnce {
-    fn mount_boxed(self: Box<Self>, parent: &Node);
+    fn mount_boxed(self: Box<Self>, parent: &Node, attrs: Vec<PendingAttribute>);
     fn apply_attributes_boxed(&mut self, attrs: Vec<PendingAttribute>);
 }
 
 impl<V: View + 'static> RenderOnce for V {
-    fn mount_boxed(self: Box<Self>, parent: &Node) {
-        (*self).mount(parent)
+    fn mount_boxed(self: Box<Self>, parent: &Node, attrs: Vec<PendingAttribute>) {
+        (*self).mount_with_attributes(parent, attrs)
     }
     fn apply_attributes_boxed(&mut self, attrs: Vec<PendingAttribute>) {
         self.apply_attributes(attrs);
@@ -531,7 +582,7 @@ pub enum SharedView {
     Text(String),
     Element(crate::element::Element),
     List(Vec<SharedView>),
-    SharedBoxed(Box<dyn RenderShared>),
+    SharedBoxed(Box<dyn RenderShared>, Vec<PendingAttribute>),
 }
 
 /// 优化的 AnyView，作为所有视图类型擦除的终点（不要求 Clone）
@@ -542,7 +593,7 @@ pub enum AnyView {
     Text(String),
     Element(crate::element::Element),
     List(Vec<AnyView>),
-    Unique(Box<dyn RenderOnce>),
+    Unique(Box<dyn RenderOnce>, Vec<PendingAttribute>),
     FromShared(SharedView),
 }
 
@@ -560,16 +611,26 @@ impl AnyView {
 
 impl View for SharedView {
     fn mount(self, parent: &Node) {
+        self.mount_with_attributes(parent, Vec::new());
+    }
+
+    fn mount_with_attributes(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         match self {
             SharedView::Empty => {}
-            SharedView::Text(s) => s.mount(parent),
-            SharedView::Element(el) => el.mount(parent),
+            SharedView::Text(s) => s.mount_with_attributes(parent, attrs),
+            SharedView::Element(el) => el.mount_with_attributes(parent, attrs),
             SharedView::List(list) => {
-                for child in list {
-                    child.mount(parent);
+                for (i, child) in list.into_iter().enumerate() {
+                    child.mount_with_attributes(
+                        parent,
+                        if i == 0 { attrs.clone() } else { attrs.clone() },
+                    ); // FIXME: attributes should probably only apply to the first element or all? Usually all for fragments.
                 }
             }
-            SharedView::SharedBoxed(b) => b.mount_boxed(parent),
+            SharedView::SharedBoxed(b, mut inner_attrs) => {
+                inner_attrs.extend(attrs);
+                b.mount_boxed(parent, inner_attrs);
+            }
         }
     }
 
@@ -583,7 +644,9 @@ impl View for SharedView {
                     child.apply_attributes(attrs.clone());
                 }
             }
-            SharedView::SharedBoxed(b) => b.apply_attributes_boxed(attrs),
+            SharedView::SharedBoxed(_, inner_attrs) => {
+                inner_attrs.extend(attrs);
+            }
         }
     }
 
@@ -598,17 +661,24 @@ impl View for SharedView {
 
 impl View for AnyView {
     fn mount(self, parent: &Node) {
+        self.mount_with_attributes(parent, Vec::new());
+    }
+
+    fn mount_with_attributes(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         match self {
             AnyView::Empty => {}
-            AnyView::Text(s) => s.mount(parent),
-            AnyView::Element(el) => el.mount(parent),
+            AnyView::Text(s) => s.mount_with_attributes(parent, attrs),
+            AnyView::Element(el) => el.mount_with_attributes(parent, attrs),
             AnyView::List(list) => {
                 for child in list {
-                    child.mount(parent);
+                    child.mount_with_attributes(parent, attrs.clone());
                 }
             }
-            AnyView::Unique(b) => b.mount_boxed(parent),
-            AnyView::FromShared(s) => s.mount(parent),
+            AnyView::Unique(b, mut inner_attrs) => {
+                inner_attrs.extend(attrs);
+                b.mount_boxed(parent, inner_attrs);
+            }
+            AnyView::FromShared(s) => s.mount_with_attributes(parent, attrs),
         }
     }
 
@@ -622,7 +692,9 @@ impl View for AnyView {
                     child.apply_attributes(attrs.clone());
                 }
             }
-            AnyView::Unique(b) => b.apply_attributes_boxed(attrs),
+            AnyView::Unique(_, inner_attrs) => {
+                inner_attrs.extend(attrs);
+            }
             AnyView::FromShared(s) => s.apply_attributes(attrs),
         }
     }
@@ -639,7 +711,9 @@ impl Clone for SharedView {
             SharedView::Text(s) => SharedView::Text(s.clone()),
             SharedView::Element(el) => SharedView::Element(el.clone()),
             SharedView::List(list) => SharedView::List(list.clone()),
-            SharedView::SharedBoxed(b) => SharedView::SharedBoxed(b.clone_boxed()),
+            SharedView::SharedBoxed(b, attrs) => {
+                SharedView::SharedBoxed(b.clone_boxed(), attrs.clone())
+            }
         }
     }
 }
@@ -668,7 +742,7 @@ impl std::fmt::Debug for AnyView {
             Self::Text(arg0) => f.debug_tuple("AnyView(Text)").field(arg0).finish(),
             Self::Element(_) => write!(f, "AnyView(Element)"),
             Self::List(l) => f.debug_tuple("AnyView(List)").field(&l.len()).finish(),
-            Self::Unique(_) => write!(f, "AnyView(Unique)"),
+            Self::Unique(_, _) => write!(f, "AnyView(Unique)"),
             Self::FromShared(s) => f.debug_tuple("AnyView(FromShared)").field(s).finish(),
         }
     }
@@ -681,7 +755,7 @@ impl std::fmt::Debug for SharedView {
             Self::Text(arg0) => f.debug_tuple("SharedView(Text)").field(arg0).finish(),
             Self::Element(_) => write!(f, "SharedView(Element)"),
             Self::List(l) => f.debug_tuple("SharedView(List)").field(&l.len()).finish(),
-            Self::SharedBoxed(_) => write!(f, "SharedView(SharedBoxed)"),
+            Self::SharedBoxed(_, _) => write!(f, "SharedView(SharedBoxed)"),
         }
     }
 }
@@ -698,11 +772,19 @@ impl Fragment {
 
 impl View for Fragment {
     fn mount(self, parent: &Node) {
-        self.0.mount(parent);
+        self.mount_with_attributes(parent, Vec::new());
+    }
+
+    fn mount_with_attributes(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        for child in self.0 {
+            child.mount_with_attributes(parent, attrs.clone());
+        }
     }
 
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
-        self.0.apply_attributes(attrs);
+        for child in &mut self.0 {
+            child.apply_attributes(attrs.clone());
+        }
     }
 
     fn into_any(self) -> AnyView {
