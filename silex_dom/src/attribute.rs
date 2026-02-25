@@ -162,8 +162,9 @@ pub trait GlobalEventAttributes: AttributeBuilder {
     where
         F: EventHandler<String, M> + Clone + 'static,
     {
-        let mut handler = callback.clone().into_handler();
+        let cb = callback.clone();
         self.apply(silex_core::rx!(move |el: &web_sys::Element| {
+            let mut handler = cb.clone().into_handler();
             use wasm_bindgen::JsCast;
             let closure =
                 wasm_bindgen::closure::Closure::wrap(Box::new(move |e: web_sys::InputEvent| {
@@ -234,9 +235,10 @@ pub trait GlobalEventAttributes: AttributeBuilder {
         F: FnMut(E) + 'static + Clone,
     {
         let event_type_str = event_type.to_string();
+        let cb_template = callback.clone();
         self.apply(silex_core::rx!(move |el: &web_sys::Element| {
             use wasm_bindgen::JsCast;
-            let mut cb = callback.clone();
+            let mut cb = cb_template.clone();
             let closure = wasm_bindgen::closure::Closure::wrap(Box::new(move |e: E| {
                 cb(e);
             }) as Box<dyn FnMut(E)>);

@@ -138,14 +138,14 @@ pub struct DynamicCss {
 }
 
 impl ApplyToDom for DynamicCss {
-    fn apply(self, el: &Element, target: ApplyTarget) {
+    fn apply(&self, el: &Element, target: ApplyTarget) {
         // 1. Apply class name
         self.class_name.apply(el, target);
 
         // 2. Apply inline variables with optimized Effect
         if !self.vars.is_empty() {
             let el = el.clone();
-            let vars = self.vars;
+            let vars = self.vars.clone();
             Effect::new(move |prev_values: Option<Vec<String>>| {
                 if let Some(style) = el
                     .dyn_ref::<web_sys::HtmlElement>()
@@ -167,7 +167,7 @@ impl ApplyToDom for DynamicCss {
         }
 
         // 3. Apply isolated component dynamic rules
-        for (template, getters) in self.rules {
+        for (template, getters) in self.rules.clone() {
             let manager = Rc::new(RefCell::new(Some(DynamicStyleManager::new())));
             let manager_cleanup = manager.clone();
             on_cleanup(move || {

@@ -34,8 +34,8 @@ impl<T> ::silex_dom::attribute::ApplyToDom for ThemeVariables<T>
 where
     T: ThemeType + ThemeToCss + Clone + 'static,
 {
-    fn apply(self, el: &::web_sys::Element, _target: ::silex_dom::attribute::ApplyTarget) {
-        let theme = self.0;
+    fn apply(&self, el: &::web_sys::Element, _target: ::silex_dom::attribute::ApplyTarget) {
+        let theme = self.0.clone();
         let el = el.clone();
         ::silex_core::prelude::Effect::new(move |prev_values: Option<Vec<String>>| {
             use ::wasm_bindgen::JsCast;

@@ -28,26 +28,23 @@ pub enum ApplyTarget<'a> {
 /// Any type that can be applied as an HTML attribute, class, or style.
 /// Replaces AttributeValue, ApplyClass, ApplyStyle.
 pub trait ApplyToDom {
-    fn apply(self, el: &WebElem, target: ApplyTarget);
+    fn apply(&self, el: &WebElem, target: ApplyTarget);
 
     fn into_payload(self) -> AttributePayload
     where
         Self: Sized + 'static,
     {
-        let value_cell = std::cell::RefCell::new(Some(self));
         AttributePayload::Dynamic(std::rc::Rc::new(move |el, target| {
-            if let Some(v) = value_cell.borrow_mut().take() {
-                v.apply(el, target.into());
-            }
+            self.apply(el, ApplyTarget::from(target));
         }))
     }
 }
 
 impl<F> ApplyToDom for F
 where
-    F: FnOnce(&WebElem) + 'static,
+    F: Fn(&WebElem) + 'static,
 {
-    fn apply(self, el: &WebElem, _target: ApplyTarget) {
+    fn apply(&self, el: &WebElem, _target: ApplyTarget) {
         (self)(el);
     }
 }
@@ -57,11 +54,11 @@ where
 // 1. 已归一化的 Rx 容器 (Value)
 impl<F> ApplyToDom for silex_core::Rx<F, silex_core::RxValueKind>
 where
-    Self: silex_core::traits::IntoSignal + 'static,
+    Self: silex_core::traits::IntoSignal + Clone + 'static,
     <Self as silex_core::traits::RxValue>::Value: ReactiveApply + Clone + 'static,
 {
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        crate::attribute::apply_signal_internal(self.into_signal(), el, target);
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
+        crate::attribute::apply_signal_internal(self.clone().into_signal(), el, target);
     }
 
     fn into_payload(self) -> AttributePayload {
@@ -83,9 +80,9 @@ where
 // 2. 逻辑型 Rx (Effect)
 impl<F> ApplyToDom for silex_core::Rx<F, silex_core::RxEffectKind>
 where
-    F: FnOnce(&WebElem) + 'static,
+    F: Fn(&WebElem) + 'static,
 {
-    fn apply(self, el: &WebElem, _target: ApplyTarget) {
+    fn apply(&self, el: &WebElem, _target: ApplyTarget) {
         (self.0)(el);
     }
 }
@@ -97,12 +94,12 @@ macro_rules! impl_apply_to_dom_rx_forwarder {
             impl<T> ApplyToDom for silex_core::reactivity::$ty<T>
             where
                 T: ReactiveApply + Clone + 'static,
-                Self: silex_core::traits::IntoRx + 'static,
+                Self: silex_core::traits::IntoRx + Clone + 'static,
                 <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom,
             {
-                fn apply(self, el: &WebElem, target: ApplyTarget) {
+                fn apply(&self, el: &WebElem, target: ApplyTarget) {
                     use silex_core::traits::IntoRx;
-                    self.into_rx().apply(el, target);
+                    self.clone().into_rx().apply(el, target);
                 }
                 fn into_payload(self) -> AttributePayload {
                     use silex_core::traits::IntoRx;
@@ -118,12 +115,12 @@ impl_apply_to_dom_rx_forwarder!(Signal, ReadSignal, RwSignal, Constant, Memo);
 // 3. 响应式组合/派生类型转发器
 impl<S, F> ApplyToDom for silex_core::reactivity::DerivedPayload<S, F>
 where
-    Self: silex_core::traits::IntoRx + 'static,
+    Self: silex_core::traits::IntoRx + Clone + 'static,
     <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom,
 {
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
         use silex_core::traits::IntoRx;
-        self.into_rx().apply(el, target);
+        self.clone().into_rx().apply(el, target);
     }
     fn into_payload(self) -> AttributePayload {
         use silex_core::traits::IntoRx;
@@ -133,12 +130,12 @@ where
 
 impl<U, const N: usize> ApplyToDom for silex_core::reactivity::OpPayload<U, N>
 where
-    Self: silex_core::traits::IntoRx + 'static,
+    Self: silex_core::traits::IntoRx + Clone + 'static,
     <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom,
 {
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
         use silex_core::traits::IntoRx;
-        self.into_rx().apply(el, target);
+        self.clone().into_rx().apply(el, target);
     }
     fn into_payload(self) -> AttributePayload {
         use silex_core::traits::IntoRx;
@@ -148,12 +145,12 @@ where
 
 impl<S, F, O> ApplyToDom for silex_core::reactivity::SignalSlice<S, F, O>
 where
-    Self: silex_core::traits::IntoRx + 'static,
+    Self: silex_core::traits::IntoRx + Clone + 'static,
     <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom,
 {
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
         use silex_core::traits::IntoRx;
-        self.into_rx().apply(el, target);
+        self.clone().into_rx().apply(el, target);
     }
     fn into_payload(self) -> AttributePayload {
         use silex_core::traits::IntoRx;
@@ -400,8 +397,8 @@ fn apply_immediate_bool(el: &WebElem, target: ApplyTarget, value: bool) {
 }
 
 impl ApplyToDom for &str {
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        apply_immediate_string(el, target, self);
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
+        apply_immediate_string(el, target, *self);
     }
 
     fn into_payload(self) -> AttributePayload {
@@ -410,8 +407,8 @@ impl ApplyToDom for &str {
 }
 
 impl ApplyToDom for String {
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        apply_immediate_string(el, target, &self);
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
+        apply_immediate_string(el, target, self);
     }
 
     fn into_payload(self) -> AttributePayload {
@@ -420,7 +417,7 @@ impl ApplyToDom for String {
 }
 
 impl ApplyToDom for &String {
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
         apply_immediate_string(el, target, self);
     }
 
@@ -430,8 +427,8 @@ impl ApplyToDom for &String {
 }
 
 impl ApplyToDom for bool {
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        apply_immediate_bool(el, target, self);
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
+        apply_immediate_bool(el, target, *self);
     }
 
     fn into_payload(self) -> AttributePayload {
@@ -440,7 +437,7 @@ impl ApplyToDom for bool {
 }
 
 impl<T: ApplyToDom> ApplyToDom for Option<T> {
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
         if let Some(val) = self {
             val.apply(el, target);
         }
@@ -535,11 +532,11 @@ macro_rules! impl_apply_to_dom_tuple_forwarder {
         $(
             impl<K, T> ApplyToDom for (K, silex_core::reactivity::$ty<T>)
             where
-                K: AsRef<str>,
+                K: AsRef<str> + Clone,
                 T: ReactiveApply + Clone + 'static,
             {
-                fn apply(self, el: &WebElem, target: ApplyTarget) {
-                    let (key, source) = self;
+                fn apply(&self, el: &WebElem, target: ApplyTarget) {
+                    let (key, source) = self.clone();
                     let signal = source.into_signal();
                     let el = el.clone();
                     let owned_target = OwnedApplyTarget::from(target);
@@ -555,12 +552,12 @@ impl_apply_to_dom_tuple_forwarder!(Signal, ReadSignal, RwSignal, Constant, Memo)
 
 impl<K, F, M> ApplyToDom for (K, silex_core::Rx<F, M>)
 where
-    K: AsRef<str>,
-    silex_core::Rx<F, M>: silex_core::traits::IntoSignal + 'static,
+    K: AsRef<str> + Clone,
+    silex_core::Rx<F, M>: silex_core::traits::IntoSignal + Clone + 'static,
     <silex_core::Rx<F, M> as silex_core::traits::RxValue>::Value: ReactiveApply + Clone + 'static,
 {
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        let (key, source) = self;
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
+        let (key, source) = self.clone();
         let signal = source.into_signal();
         let el = el.clone();
         let owned_target = OwnedApplyTarget::from(target);
@@ -579,9 +576,8 @@ impl<K> ApplyToDom for (K, String)
 where
     K: AsRef<str>,
 {
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        let (key, value) = self;
-        apply_static_pair(el, target, key.as_ref(), &value);
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
+        apply_static_pair(el, target, self.0.as_ref(), &self.1);
     }
 }
 
@@ -589,9 +585,8 @@ impl<K> ApplyToDom for (K, &str)
 where
     K: AsRef<str>,
 {
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        let (key, value) = self;
-        apply_static_pair(el, target, key.as_ref(), value);
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
+        apply_static_pair(el, target, self.0.as_ref(), self.1);
     }
 }
 
@@ -616,10 +611,10 @@ fn apply_static_pair(el: &WebElem, target: ApplyTarget, key: &str, value: &str) 
 
 impl<K> ApplyToDom for (K, bool)
 where
-    K: AsRef<str>,
+    K: AsRef<str> + Clone,
 {
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
-        let (key, value) = self;
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
+        let (key, value) = self.clone();
         let owned_target = OwnedApplyTarget::from(target);
         match owned_target {
             OwnedApplyTarget::Class => {
@@ -649,7 +644,7 @@ macro_rules! impl_apply_to_dom_for_primitive {
     ($($t:ty),*) => {
         $(
             impl ApplyToDom for $t {
-                fn apply(self, el: &WebElem, target: ApplyTarget) {
+                fn apply(&self, el: &WebElem, target: ApplyTarget) {
                     apply_immediate_string(el, target, &self.to_string());
                 }
 
@@ -665,7 +660,7 @@ impl_apply_to_dom_for_primitive!(
 );
 
 impl<V: ApplyToDom> ApplyToDom for Vec<V> {
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
         for v in self {
             v.apply(el, target);
         }
@@ -673,7 +668,7 @@ impl<V: ApplyToDom> ApplyToDom for Vec<V> {
 }
 
 impl<V: ApplyToDom, const N: usize> ApplyToDom for [V; N] {
-    fn apply(self, el: &WebElem, target: ApplyTarget) {
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
         for v in self {
             v.apply(el, target);
         }
@@ -691,9 +686,9 @@ pub fn group<T>(t: T) -> AttributeGroup<T> {
 macro_rules! impl_apply_to_dom_for_group {
     ($($name:ident)+) => {
         impl<$($name: ApplyToDom),+> ApplyToDom for AttributeGroup<($($name,)+)> {
-            fn apply(self, el: &WebElem, target: ApplyTarget) {
+            fn apply(&self, el: &WebElem, target: ApplyTarget) {
                 #[allow(non_snake_case)]
-                let ($($name,)+) = self.0;
+                let ($($name,)+) = &self.0;
                 $($name.apply(el, target);)+
             }
         }

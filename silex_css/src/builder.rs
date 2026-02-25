@@ -132,13 +132,13 @@ macro_rules! generate_builder_methods {
 crate::for_all_properties!(generate_builder_methods);
 
 impl ApplyToDom for Style {
-    fn apply(self, el: &web_sys::Element, _target: ApplyTarget) {
+    fn apply(&self, el: &web_sys::Element, _target: ApplyTarget) {
         self.apply_to_element(el);
     }
 }
 
 impl Style {
-    pub fn apply_to_element(self, el: &web_sys::Element) -> String {
+    pub fn apply_to_element(&self, el: &web_sys::Element) -> String {
         // 1. 生成稳定哈希（忽略动态值，递归所有嵌套规则）
         let mut hasher = silex_hash::css::CssHasher::new();
         hash_recursive(&self, &mut hasher);
