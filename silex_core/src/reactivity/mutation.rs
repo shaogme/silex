@@ -241,10 +241,13 @@ impl<Arg: RxData, T: RxCloneData, E: RxCloneData> RxInternal for Mutation<Arg, T
 }
 
 impl<Arg: RxData, T: RxCloneData, E: RxCloneData> IntoRx for Mutation<Arg, T, E> {
-    type RxType = crate::Rx<Self, crate::RxValueKind>;
+    type RxType = crate::Rx<Option<T>, crate::RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        crate::Rx(self, std::marker::PhantomData)
+        use crate::traits::RxGet;
+        crate::Rx::new_pooled(silex_reactivity::store_value(
+            Box::new(move || self.get()) as Box<dyn Fn() -> Option<T>>
+        ))
     }
     #[inline(always)]
     fn is_constant(&self) -> bool {

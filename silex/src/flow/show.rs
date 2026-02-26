@@ -12,14 +12,14 @@ pub trait ViewFactory {
     fn render(&self) -> Self::View;
 }
 
-impl<F, V, M> ViewFactory for silex_core::Rx<F, M>
+impl<V, M> ViewFactory for silex_core::Rx<V, M>
 where
-    F: Fn() -> V,
-    V: View,
+    V: View + Clone + 'static,
+    M: 'static,
 {
     type View = V;
     fn render(&self) -> Self::View {
-        (self.0)()
+        self.get_untracked()
     }
 }
 

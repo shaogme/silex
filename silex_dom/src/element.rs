@@ -231,19 +231,25 @@ where
     E: crate::event::EventDescriptor + 'static,
     F: EventHandler<E::EventType, M>,
 {
-    let mut handler = callback.into_handler();
-    let type_str = event.name();
+    let handler = callback.into_handler();
+    let type_str = event.name().to_string();
+    bind_event_impl(dom_element, type_str, handler);
+}
 
-    let closure = Closure::wrap(Box::new(move |e: E::EventType| {
+/// 内部实现：只针对事件类型 E 进行单态化，去除了对闭包类型 F 的依赖。
+/// 这样全应用所有同类型的事件（如 Click）将共享这段机器码。
+pub fn bind_event_impl<E>(dom_element: &WebElem, event_name: String, mut handler: Box<dyn FnMut(E)>)
+where
+    E: wasm_bindgen::convert::FromWasmAbi + wasm_bindgen::JsCast + 'static,
+{
+    let closure = Closure::wrap(Box::new(move |e: E| {
         handler(e);
-    }) as Box<dyn FnMut(E::EventType)>);
+    }) as Box<dyn FnMut(E)>);
 
     let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
 
-    // Note: event.name() returns generic string, we need to pass str reference
-    let type_str_ref: &str = &type_str;
     if let Err(e) = dom_element
-        .add_event_listener_with_callback(type_str_ref, js_value)
+        .add_event_listener_with_callback(&event_name, js_value)
         .map_err(SilexError::from)
     {
         silex_core::error::handle_error(e);
@@ -252,11 +258,9 @@ where
 
     let target = dom_element.clone();
     let js_fn = js_value.clone();
-    // We need to own the string for the cleanup closure
-    let type_clone = type_str.to_string();
 
     on_cleanup(move || {
-        let _ = target.remove_event_listener_with_callback(&type_clone, &js_fn);
+        let _ = target.remove_event_listener_with_callback(&event_name, &js_fn);
         drop(closure);
     });
 }

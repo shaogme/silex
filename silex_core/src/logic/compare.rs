@@ -6,43 +6,30 @@ pub type CompareFn<T> = fn(&T, &T) -> bool;
 #[macro_export]
 macro_rules! reactive_compare_method {
     ($name:ident, $fn_impl:ident, $op:tt, $bound:ident) => {
-        fn $name<O>(
-            &self,
-            other: O,
-        ) -> $crate::Rx<$crate::reactivity::OpPayload<bool, 2>, $crate::RxValueKind>
+        fn $name<O>(&self, other: O) -> $crate::Rx<bool, $crate::RxValueKind>
         where
             Self: $crate::traits::IntoRx + $crate::traits::IntoSignal + $crate::traits::RxValue,
             O: $crate::traits::IntoRx
                 + $crate::traits::IntoSignal
                 + $crate::traits::RxValue<Value = Self::Value>
                 + 'static,
-            Self::Value: $bound + Sized + Clone + 'static,
+            Self::Value: $bound + Sized + $crate::traits::RxCloneData + 'static,
         {
-            let lhs = $crate::traits::IntoSignal::into_signal(self.clone());
-            let rhs = $crate::traits::IntoSignal::into_signal(other);
+            use $crate::traits::RxGet;
+            let lhs = self.clone().into_signal();
+            let rhs = other.into_signal();
 
-            #[inline(always)]
-            unsafe fn read_impl<InnerT: $bound + 'static>(
-                inputs: &[$crate::reactivity::NodeId],
-            ) -> Option<bool> {
-                unsafe {
-                    let a = $crate::reactivity::rx_borrow_signal_unsafe::<InnerT>(inputs[0])?;
-                    let b = $crate::reactivity::rx_borrow_signal_unsafe::<InnerT>(inputs[1])?;
-                    Some($crate::logic::arithmetic::ops_impl::$fn_impl(a, b))
-                }
+            if lhs.is_constant() && rhs.is_constant() {
+                return $crate::Rx::new_constant($crate::logic::arithmetic::ops_impl::$fn_impl(
+                    &lhs.get(),
+                    &rhs.get(),
+                ));
             }
 
-            let is_const = lhs.is_constant() && rhs.is_constant();
-
-            $crate::Rx(
-                $crate::reactivity::OpPayload {
-                    inputs: [lhs.ensure_node_id(), rhs.ensure_node_id()],
-                    read: read_impl::<Self::Value>,
-                    track: $crate::reactivity::op_trampolines::track_inputs,
-                    is_constant: is_const,
-                },
-                ::core::marker::PhantomData,
-            )
+            $crate::Rx::new_pooled(::silex_reactivity::store_value(Box::new(move || {
+                $crate::logic::arithmetic::ops_impl::$fn_impl(&lhs.get(), &rhs.get())
+            })
+                as Box<dyn Fn() -> bool>))
         }
     };
 }

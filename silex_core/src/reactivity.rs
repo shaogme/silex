@@ -1,6 +1,7 @@
 pub use silex_reactivity::NodeId;
 pub use silex_reactivity::{
-    batch, create_scope, dispose, is_signal_valid, on_cleanup, provide_context, use_context,
+    batch, create_scope, dispose, is_signal_valid, on_cleanup, provide_context, store_value,
+    use_context,
 };
 
 mod effect;

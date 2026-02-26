@@ -136,7 +136,7 @@ pub fn rx(input: TokenStream) -> TokenStream {
 
     if raw_input.is_empty() {
         return quote! {
-            #prefix::Rx(move || {}, ::core::marker::PhantomData::<#prefix::RxValueKind>)
+            #prefix::Rx::<(), #prefix::RxValueKind>::new_constant(())
         }
         .into();
     }
@@ -161,9 +161,9 @@ pub fn rx(input: TokenStream) -> TokenStream {
             }),
             Err(_) => {
                 return quote! {
-                        #prefix::Rx(move || { #raw_input }, ::core::marker::PhantomData::<#prefix::RxValueKind>)
-                    }
-                    .into();
+                    #prefix::Rx::derive(Box::new(move || { #raw_input }))
+                }
+                .into();
             }
         },
     };
@@ -173,54 +173,65 @@ pub fn rx(input: TokenStream) -> TokenStream {
     };
     visitor.visit_expr_mut(&mut expr);
 
-    let m_type = if let Expr::Closure(ref closure) = expr {
-        if !closure.inputs.is_empty() {
-            quote! { #prefix::RxEffectKind }
-        } else {
-            quote! { #prefix::RxValueKind }
-        }
-    } else {
-        quote! { #prefix::RxValueKind }
-    };
-
     // 准备信号列表
     let mut pairs: Vec<_> = visitor.signal_map.into_iter().collect();
     pairs.sort_by(|a, b| a.0.to_string().cmp(&b.0.to_string()));
 
-    let original_idents: Vec<_> = pairs.iter().map(|p| &p.0).collect();
+    // 构建扁平化的捕获和读取逻辑
+    // 捕获阶段：在闭包外克隆信号句柄
+    // 读取阶段：在闭包内通过 .read() 获取 Guard
+    let mut capture_stmts = vec![];
+    let mut read_init_stmts = vec![];
+    for (orig, refer) in &pairs {
+        let sig_name = format_ident!("__sig_{}", orig);
+        let guard_name = format_ident!("__guard_{}", orig);
+        capture_stmts.push(quote! { let #sig_name = #orig.clone(); });
+        read_init_stmts.push(quote! {
+            let #guard_name = #prefix::traits::RxRead::read(&#sig_name);
+            let #refer = &*#guard_name;
+        });
+    }
 
-    // 构建嵌套逻辑
-    let inner_logic = if let Expr::Closure(mut closure) = expr {
+    let (f_expr, is_stored) = if let Expr::Closure(mut closure) = expr {
         closure.capture = Some(syn::token::Move::default());
+        let has_inputs = !closure.inputs.is_empty();
         let body = &closure.body;
-        let mut nested = quote! { #body };
-        // 按相反顺序嵌套，以便外层先被处理
-        for (orig, refer) in pairs.iter().rev() {
-            nested = quote! {
-                #prefix::traits::RxRead::with(&#orig, |#refer| {
-                    #nested
-                })
-            };
-        }
-        *closure.body = parse2::<Expr>(quote! { { #nested } }).unwrap();
-        quote! { #closure }
+
+        *closure.body = parse2::<Expr>(quote! {
+            {
+                #(#read_init_stmts)*
+                #body
+            }
+        })
+        .unwrap();
+
+        (quote! { #closure }, has_inputs)
     } else {
-        let mut nested = quote! { #expr };
-        for (orig, refer) in pairs.iter().rev() {
-            nested = quote! {
-                #prefix::traits::RxRead::with(&#orig, |#refer| {
-                    #nested
-                })
-            };
-        }
-        quote! { move || { #nested } }
+        (
+            quote! {
+                move || {
+                    #(#read_init_stmts)*
+                    #expr
+                }
+            },
+            false,
+        )
     };
 
-    // 最终克隆与构造
-    let output = quote! {
-        {
-            #(let #original_idents = #original_idents.clone();)*
-            #prefix::Rx(#inner_logic, ::core::marker::PhantomData::<#m_type>)
+    // 最终构造：根据是否带有参数决定调用 derive (计算) 还是 effect (存储/副作用)
+    let output = if is_stored {
+        quote! {
+            {
+                #(#capture_stmts)*
+                #prefix::Rx::effect(#f_expr)
+            }
+        }
+    } else {
+        quote! {
+            {
+                #(#capture_stmts)*
+                #prefix::Rx::derive(Box::new(#f_expr))
+            }
         }
     };
 

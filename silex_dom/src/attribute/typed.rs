@@ -109,7 +109,7 @@ where
     }
 }
 
-impl<F, M, V> ApplyStringAttribute for silex_core::Rx<F, M>
+impl<V, M> ApplyStringAttribute for silex_core::Rx<V, M>
 where
     Self: silex_core::traits::IntoSignal<Value = V> + 'static,
     V: Display + Clone + 'static,
@@ -123,7 +123,7 @@ where
     }
 }
 
-impl<F, M, V> ApplyBoolAttribute for silex_core::Rx<F, M>
+impl<V, M> ApplyBoolAttribute for silex_core::Rx<V, M>
 where
     Self: silex_core::traits::IntoSignal<Value = V> + 'static,
     V: Into<bool> + Clone + 'static,

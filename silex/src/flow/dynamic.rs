@@ -56,7 +56,7 @@ where
     pub fn bind<S, T, Map>(
         source: S,
         map_fn: Map,
-    ) -> Dynamic<V, silex_core::Rx<impl Fn() -> V + Clone, silex_core::RxValueKind>>
+    ) -> Dynamic<V, silex_core::Rx<V, silex_core::RxValueKind>>
     where
         S: RxRead<Value = T> + Clone + 'static,
         Map: Fn(T) -> V + Clone + 'static,

@@ -104,10 +104,10 @@ impl<T: RxData> RxInternal for Constant<T> {
 }
 
 impl<T: RxCloneData> IntoRx for Constant<T> {
-    type RxType = Rx<Self, RxValueKind>;
+    type RxType = Rx<T, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        Rx(self, PhantomData)
+        Rx::new_constant(self.0)
     }
     #[inline(always)]
     fn is_constant(&self) -> bool {
@@ -229,15 +229,19 @@ where
 
 impl<S, F, U> IntoRx for DerivedPayload<S, F>
 where
-    S: RxInternal + Clone,
+    S: RxInternal + Clone + 'static,
     F: Fn(&S::Value) -> U + 'static,
-    U: RxData,
+    U: RxCloneData, // 使用 RxCloneData 确保 .get() 可用
 {
-    type RxType = Rx<Self, RxValueKind>;
+    type RxType = Rx<U, RxValueKind>;
 
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        Rx(self, PhantomData)
+        Rx::new_pooled(silex_reactivity::store_value(Box::new(move || {
+            use crate::traits::RxGet;
+            self.get()
+        })
+            as Box<dyn Fn() -> U>))
     }
 
     #[inline(always)]
@@ -345,12 +349,16 @@ impl<U: RxData, const N: usize> RxInternal for OpPayload<U, N> {
     }
 }
 
-impl<U: RxData + Clone, const N: usize> IntoRx for OpPayload<U, N> {
-    type RxType = Rx<Self, RxValueKind>;
+impl<U: RxCloneData + 'static, const N: usize> IntoRx for OpPayload<U, N> {
+    type RxType = Rx<U, RxValueKind>;
 
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        Rx(self, PhantomData)
+        Rx::new_pooled(silex_reactivity::store_value(Box::new(move || {
+            use crate::traits::RxGet;
+            self.get()
+        })
+            as Box<dyn Fn() -> U>))
     }
 
     #[inline(always)]
@@ -535,10 +543,10 @@ impl<T: RxData> RxInternal for Signal<T> {
 }
 
 impl<T: RxData> IntoRx for Signal<T> {
-    type RxType = Rx<Self, RxValueKind>;
+    type RxType = Rx<T, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        Rx(self, PhantomData)
+        Rx::new_signal(self.ensure_node_id())
     }
     #[inline(always)]
     fn is_constant(&self) -> bool {

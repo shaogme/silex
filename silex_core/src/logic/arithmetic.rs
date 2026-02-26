@@ -105,47 +105,32 @@ macro_rules! impl_rx_ops {
 #[macro_export]
 macro_rules! impl_rx_op {
     ($trait:ident, $method:ident) => {
-        impl<F, R, T> std::ops::$trait<R> for $crate::Rx<F, $crate::RxValueKind>
+        impl<R, T> std::ops::$trait<R> for $crate::Rx<T, $crate::RxValueKind>
         where
-            F: $crate::traits::RxInternal<Value = T> + $crate::traits::IntoSignal + Clone + 'static,
-            for<'a> F::ReadOutput<'a>: std::ops::Deref<Target = T>,
             for<'a> &'a T: std::ops::$trait<&'a T, Output = T>,
-            T: Clone + 'static,
+            T: $crate::traits::RxCloneData + 'static,
             R: $crate::traits::IntoRx<Value = T> + $crate::traits::IntoSignal + 'static,
         {
-            type Output = $crate::Rx<$crate::reactivity::OpPayload<T, 2>, $crate::RxValueKind>;
+            type Output = $crate::Rx<T, $crate::RxValueKind>;
 
             #[inline]
             fn $method(self, rhs: R) -> Self::Output {
-                use $crate::traits::IntoSignal;
+                use $crate::traits::{IntoSignal, RxGet};
 
                 let lhs = self.into_signal();
                 let rhs = rhs.into_signal();
 
-                #[inline(always)]
-                unsafe fn read_impl<InnerT>(inputs: &[$crate::reactivity::NodeId]) -> Option<InnerT>
-                where
-                    for<'a> &'a InnerT: std::ops::$trait<&'a InnerT, Output = InnerT>,
-                    InnerT: 'static,
-                {
-                    unsafe {
-                        let a = $crate::reactivity::rx_borrow_signal_unsafe::<InnerT>(inputs[0])?;
-                        let b = $crate::reactivity::rx_borrow_signal_unsafe::<InnerT>(inputs[1])?;
-                        Some($crate::logic::arithmetic::ops_impl::$method(a, b))
-                    }
+                if lhs.is_constant() && rhs.is_constant() {
+                    return $crate::Rx::new_constant($crate::logic::arithmetic::ops_impl::$method(
+                        &lhs.get(),
+                        &rhs.get(),
+                    ));
                 }
 
-                let is_const = lhs.is_constant() && rhs.is_constant();
-
-                $crate::Rx(
-                    $crate::reactivity::OpPayload {
-                        inputs: [lhs.ensure_node_id(), rhs.ensure_node_id()],
-                        read: read_impl::<T>,
-                        track: $crate::reactivity::op_trampolines::track_inputs,
-                        is_constant: is_const,
-                    },
-                    ::core::marker::PhantomData,
-                )
+                $crate::Rx::new_pooled(::silex_reactivity::store_value(Box::new(move || {
+                    $crate::logic::arithmetic::ops_impl::$method(&lhs.get(), &rhs.get())
+                })
+                    as Box<dyn Fn() -> T>))
             }
         }
     };
@@ -154,44 +139,29 @@ macro_rules! impl_rx_op {
 #[macro_export]
 macro_rules! impl_rx_unary_op {
     ($trait:ident, $method:ident) => {
-        impl<F, T> std::ops::$trait for $crate::Rx<F, $crate::RxValueKind>
+        impl<T> std::ops::$trait for $crate::Rx<T, $crate::RxValueKind>
         where
-            F: $crate::traits::RxInternal<Value = T> + $crate::traits::IntoSignal + Clone + 'static,
-            for<'a> F::ReadOutput<'a>: std::ops::Deref<Target = T>,
             for<'a> &'a T: std::ops::$trait<Output = T>,
-            T: Clone + 'static,
+            T: $crate::traits::RxCloneData + 'static,
         {
-            type Output = $crate::Rx<$crate::reactivity::OpPayload<T, 1>, $crate::RxValueKind>;
+            type Output = $crate::Rx<T, $crate::RxValueKind>;
 
             #[inline]
             fn $method(self) -> Self::Output {
-                use $crate::traits::IntoSignal;
+                use $crate::traits::{IntoSignal, RxGet};
 
                 let val = self.into_signal();
 
-                #[inline(always)]
-                unsafe fn read_impl<InnerT>(inputs: &[$crate::reactivity::NodeId]) -> Option<InnerT>
-                where
-                    for<'a> &'a InnerT: std::ops::$trait<Output = InnerT>,
-                    InnerT: 'static,
-                {
-                    unsafe {
-                        let a = $crate::reactivity::rx_borrow_signal_unsafe::<InnerT>(inputs[0])?;
-                        Some($crate::logic::arithmetic::ops_impl::$method(a))
-                    }
+                if val.is_constant() {
+                    return $crate::Rx::new_constant($crate::logic::arithmetic::ops_impl::$method(
+                        &val.get(),
+                    ));
                 }
 
-                let is_const = val.is_constant();
-
-                $crate::Rx(
-                    $crate::reactivity::OpPayload {
-                        inputs: [val.ensure_node_id()],
-                        read: read_impl::<T>,
-                        track: $crate::reactivity::op_trampolines::track_inputs,
-                        is_constant: is_const,
-                    },
-                    ::core::marker::PhantomData,
-                )
+                $crate::Rx::new_pooled(::silex_reactivity::store_value(Box::new(move || {
+                    $crate::logic::arithmetic::ops_impl::$method(&val.get())
+                })
+                    as Box<dyn Fn() -> T>))
             }
         }
     };

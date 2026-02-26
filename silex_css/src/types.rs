@@ -219,10 +219,11 @@ macro_rules! impl_into_rx_for_css {
             }
 
             impl silex_core::traits::IntoRx for $t {
-                type RxType = silex_core::Rx<silex_core::reactivity::Constant<$t>, silex_core::RxValueKind>;
-                fn into_rx(self) -> Self::RxType { silex_core::Rx(silex_core::reactivity::Constant(self), ::core::marker::PhantomData) }
+                type RxType = silex_core::Rx<$t, silex_core::RxValueKind>;
+                fn into_rx(self) -> Self::RxType {
+                    silex_core::Rx::new_constant(self)
+                }
                 fn is_constant(&self) -> bool { true }
-
             }
 
             impl silex_core::traits::IntoSignal for $t {
@@ -231,7 +232,7 @@ macro_rules! impl_into_rx_for_css {
                     Self: Sized + 'static,
                     $t: Sized + Clone + 'static,
                 {
-                    silex_core::reactivity::Signal::derive(Box::new(move || self.clone()))
+                    silex_core::reactivity::Signal::from(self)
                 }
             }
         )*

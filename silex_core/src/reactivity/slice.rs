@@ -117,15 +117,19 @@ where
 
 impl<S, F, O> IntoRx for SignalSlice<S, F, O>
 where
-    S: RxRead + RxCloneData,
+    S: RxRead + RxCloneData + 'static,
+    for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
     F: Fn(&S::Value) -> &O + 'static,
-    O: ?Sized + RxData,
+    O: RxCloneData + 'static,
 {
-    type RxType = crate::Rx<Self, crate::RxValueKind>;
+    type RxType = crate::Rx<O, crate::RxValueKind>;
 
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        crate::Rx(self, PhantomData)
+        use crate::traits::RxGet;
+        crate::Rx::new_pooled(silex_reactivity::store_value(
+            Box::new(move || self.get()) as Box<dyn Fn() -> O>
+        ))
     }
 
     #[inline(always)]

@@ -1,23 +1,27 @@
-use crate::reactivity::{DerivedPayload, Memo};
+use crate::reactivity::Memo;
 use crate::traits::{RxBase, RxRead};
 
 /// 允许从当前信号创建一个衍生信号。
 pub trait Map: RxBase + Sized {
     /// 基于当前信号派生出一个新信号。
-    fn map<U, F>(self, f: F) -> crate::Rx<DerivedPayload<Self, F>, crate::RxValueKind>
+    fn map<U, F>(self, f: F) -> crate::Rx<U, crate::RxValueKind>
     where
-        F: Fn(&Self::Value) -> U + Clone + 'static;
+        F: Fn(&Self::Value) -> U + 'static,
+        U: 'static;
 }
 
 impl<S> Map for S
 where
-    S: RxRead + 'static,
+    S: RxRead + Clone + 'static,
 {
-    fn map<U, F>(self, f: F) -> crate::Rx<DerivedPayload<Self, F>, crate::RxValueKind>
+    fn map<U, F>(self, f: F) -> crate::Rx<U, crate::RxValueKind>
     where
         F: Fn(&Self::Value) -> U + 'static,
+        U: 'static,
     {
-        crate::Rx(DerivedPayload::new(self, f), ::core::marker::PhantomData)
+        crate::Rx::new_pooled(::silex_reactivity::store_value(
+            Box::new(move || self.with(|v| f(v))) as Box<dyn Fn() -> U>,
+        ))
     }
 }
 

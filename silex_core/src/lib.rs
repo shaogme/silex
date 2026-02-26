@@ -14,17 +14,91 @@ pub use node_ref::NodeRef;
 pub struct RxValueKind;
 pub struct RxEffectKind;
 
-/// 响应式计算单元或事件处理器。
-/// Rx 始终不应该要求实现 Clone trait 或 Copy trait。
-pub struct Rx<F, M = RxValueKind>(pub F, pub ::core::marker::PhantomData<M>);
-
-impl<F: Clone, M> Clone for Rx<F, M> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone(), self.1)
+impl<T: 'static> Rx<T, RxValueKind> {
+    /// 从已包装的闭包创建一个派生计算节点 (池化存储)。
+    /// 宏 `rx!` 的核心后端逻辑。通过接受 Box 来最小化单态化膨胀。
+    pub fn derive(f: Box<dyn Fn() -> T>) -> Self {
+        let id = crate::reactivity::store_value(f);
+        Self::new_pooled(id)
     }
 }
 
-impl<F: Copy, M> Copy for Rx<F, M> {}
+impl<T: 'static> Rx<T, RxEffectKind> {
+    /// 存储一个响应式值或回调（直接存储）。
+    pub fn effect(val: T) -> Self {
+        let id = crate::reactivity::store_value(val);
+        Self::new_stored(id)
+    }
+}
+
+pub enum RxInner<T> {
+    Constant(T),
+    Signal(crate::reactivity::NodeId),
+    Pooled(crate::reactivity::NodeId),
+    /// 直接存储的值（不通过工厂函数，直接借用）
+    Stored(crate::reactivity::NodeId),
+}
+
+impl<T: Clone> Clone for RxInner<T> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Constant(v) => Self::Constant(v.clone()),
+            Self::Signal(id) => Self::Signal(*id),
+            Self::Pooled(id) => Self::Pooled(*id),
+            Self::Stored(id) => Self::Stored(*id),
+        }
+    }
+}
+
+impl<T: Copy> Copy for RxInner<T> {}
+
+/// 响应式计算单元或事件处理器（类型擦除版）。
+/// Rx 现在对返回值 T 是泛型的，从而解决了闭包导致的单态化膨胀问题。
+pub struct Rx<T, M = RxValueKind> {
+    pub(crate) inner: RxInner<T>,
+    pub(crate) _marker: ::core::marker::PhantomData<M>,
+}
+
+impl<T, M> Rx<T, M> {
+    pub const fn new_constant(val: T) -> Self {
+        Self {
+            inner: RxInner::Constant(val),
+            _marker: ::core::marker::PhantomData,
+        }
+    }
+
+    pub const fn new_signal(id: crate::reactivity::NodeId) -> Self {
+        Self {
+            inner: RxInner::Signal(id),
+            _marker: ::core::marker::PhantomData,
+        }
+    }
+
+    pub const fn new_pooled(id: crate::reactivity::NodeId) -> Self {
+        Self {
+            inner: RxInner::Pooled(id),
+            _marker: ::core::marker::PhantomData,
+        }
+    }
+
+    pub const fn new_stored(id: crate::reactivity::NodeId) -> Self {
+        Self {
+            inner: RxInner::Stored(id),
+            _marker: ::core::marker::PhantomData,
+        }
+    }
+}
+
+impl<T: Clone, M> Clone for Rx<T, M> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            _marker: self._marker,
+        }
+    }
+}
+
+impl<T: Copy, M> Copy for Rx<T, M> {}
 
 pub use silex_rx::rx as __internal_rx;
 

@@ -57,7 +57,8 @@ where
     F: Fn(&WebElem) + 'static,
 {
     fn apply(&self, el: &WebElem, _target: ApplyTarget) {
-        (self.0)(el);
+        use silex_core::traits::RxRead;
+        self.with_untracked(|f| (f)(el));
     }
 }
 

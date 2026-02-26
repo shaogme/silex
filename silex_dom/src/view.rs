@@ -353,32 +353,19 @@ fn mount_erased_reactive_view_internal(
 }
 
 // 4. Rx wrapper support (Unified entry point for reactive normalization)
-impl<F, V> View for silex_core::Rx<F, silex_core::RxValueKind>
+impl<V, M> View for silex_core::Rx<V, M>
 where
-    F: silex_core::traits::IntoSignal<Value = V> + 'static,
-    silex_core::reactivity::Signal<V>: View,
     V: silex_core::traits::RxCloneData + Sized + 'static,
+    M: 'static,
+    silex_core::reactivity::Signal<V>: View,
 {
     #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.0.into_signal().mount(parent, attrs);
+        use silex_core::traits::IntoSignal;
+        self.into_signal().mount(parent, attrs);
     }
 
     fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
-}
-
-impl<F> View for silex_core::Rx<F, silex_core::RxEffectKind>
-where
-    F: View,
-{
-    #[inline(always)]
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.0.mount(parent, attrs);
-    }
-
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
-        self.0.apply_attributes(attrs);
-    }
 }
 
 macro_rules! impl_view_for_reactive_erased_views {

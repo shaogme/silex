@@ -50,28 +50,32 @@ where
         Box::new(move |_| self())
     }
 }
-impl<F, E, T, M> EventHandler<E, WithoutEventArg> for silex_core::Rx<F, M>
+impl<T, E> EventHandler<E, WithoutEventArg> for silex_core::Rx<T, silex_core::RxValueKind>
 where
-    F: FnMut() -> T + 'static,
-    E: 'static,
     T: 'static,
+    E: 'static,
 {
-    fn into_handler(mut self) -> Box<dyn FnMut(E)> {
+    fn into_handler(self) -> Box<dyn FnMut(E)> {
         Box::new(move |_| {
-            (self.0)();
+            use silex_core::traits::RxRead;
+            // 对于传值型的 Rx，触发读取副作用即可
+            let _ = self.read_untracked();
         })
     }
 }
 
-impl<F, E, T, M> EventHandler<E, WithEventArg> for silex_core::Rx<F, M>
+impl<F, E, T> EventHandler<E, WithEventArg> for silex_core::Rx<F, silex_core::RxEffectKind>
 where
-    F: FnMut(E) -> T + 'static,
+    F: Fn(E) -> T + 'static,
     E: 'static,
     T: 'static,
 {
-    fn into_handler(mut self) -> Box<dyn FnMut(E)> {
+    fn into_handler(self) -> Box<dyn FnMut(E)> {
         Box::new(move |e| {
-            (self.0)(e);
+            use silex_core::traits::RxRead;
+            self.with_untracked(|f| {
+                (f)(e);
+            });
         })
     }
 }

@@ -129,11 +129,11 @@ impl<T: RxData> RxInternal for StoredValue<T> {
     }
 }
 
-impl<T: RxData> IntoRx for StoredValue<T> {
-    type RxType = Rx<Self, RxValueKind>;
+impl<T: RxData + 'static> IntoRx for StoredValue<T> {
+    type RxType = Rx<T, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        Rx(self, PhantomData)
+        Rx::new_signal(self.id)
     }
     #[inline(always)]
     fn is_constant(&self) -> bool {

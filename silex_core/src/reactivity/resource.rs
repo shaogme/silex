@@ -10,7 +10,6 @@ use crate::reactivity::Memo;
 use crate::traits::*;
 use crate::traits::{RxCloneData, RxData, RxError};
 use crate::{Rx, RxValueKind};
-use std::marker::PhantomData;
 
 use super::effect::Effect;
 use super::signal::{ReadSignal, WriteSignal, signal};
@@ -286,10 +285,13 @@ impl<T: RxCloneData, E: RxError> RxInternal for Resource<T, E> {
 }
 
 impl<T: RxCloneData, E: RxError> IntoRx for Resource<T, E> {
-    type RxType = Rx<Self, RxValueKind>;
+    type RxType = Rx<Option<T>, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        Rx(self, PhantomData)
+        use crate::traits::RxGet;
+        Rx::new_pooled(silex_reactivity::store_value(
+            Box::new(move || self.get()) as Box<dyn Fn() -> Option<T>>
+        ))
     }
     #[inline(always)]
     fn is_constant(&self) -> bool {
