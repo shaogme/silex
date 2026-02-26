@@ -268,25 +268,48 @@ impl<T: crate::traits::RxData, M> RxBase for Rx<T, M> {
         match &self.inner {
             crate::RxInner::Constant(_) => None,
             crate::RxInner::Signal(id) => Some(*id),
-            crate::RxInner::Pooled(id) => Some(*id),
+            crate::RxInner::Closure(id) => Some(*id),
+            crate::RxInner::Op1(id) => Some(*id),
+            crate::RxInner::Op2(id) => Some(*id),
             crate::RxInner::Stored(id) => Some(*id),
         }
     }
 
     #[inline(always)]
     fn track(&self) {
-        if let Some(id) = self.id() {
-            // 只有 Signal 需要显式 track。Pooled 内部执行时会自行 track 依赖。
-            // 但为了保持一致性，如果它是 Node，我们依然尝试 track。
-            silex_reactivity::track_signal(id);
+        match &self.inner {
+            crate::RxInner::Constant(_) => {}
+            crate::RxInner::Signal(id) | crate::RxInner::Stored(id) => {
+                silex_reactivity::track_signal(*id);
+            }
+            crate::RxInner::Closure(id) => {
+                silex_reactivity::track_signal(*id);
+            }
+            crate::RxInner::Op1(id) => {
+                silex_reactivity::try_with_op1(*id, |bytes| unsafe {
+                    let op: &crate::reactivity::OpPayload<T, 1> = std::mem::transmute(bytes);
+                    (op.track)(&op.inputs);
+                });
+            }
+            crate::RxInner::Op2(id) => {
+                silex_reactivity::try_with_op2(*id, |bytes| unsafe {
+                    let op: &crate::reactivity::OpPayload<T, 2> = std::mem::transmute(bytes);
+                    (op.track)(&op.inputs);
+                });
+            }
         }
     }
 
     #[inline(always)]
     fn is_disposed(&self) -> bool {
-        self.id()
-            .map(|id| !silex_reactivity::is_signal_valid(id))
-            .unwrap_or(false)
+        match &self.inner {
+            crate::RxInner::Constant(_) => false,
+            crate::RxInner::Signal(id) => silex_reactivity::is_signal_valid(*id),
+            crate::RxInner::Closure(id) => silex_reactivity::is_closure_valid(*id),
+            crate::RxInner::Op1(id) => silex_reactivity::is_op1_valid(*id),
+            crate::RxInner::Op2(id) => silex_reactivity::is_op2_valid(*id),
+            crate::RxInner::Stored(id) => silex_reactivity::is_stored_value_valid(*id),
+        }
     }
 
     #[inline(always)]
@@ -319,11 +342,18 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
                     token: Some(crate::NodeRef::from_id(*id)),
                 })
             },
-            crate::RxInner::Pooled(id) => {
-                silex_reactivity::try_with_stored_value(*id, |f: &Box<dyn Fn() -> T>| {
-                    RxGuard::Owned(f())
-                })
-            }
+            crate::RxInner::Closure(id) => silex_reactivity::try_with_closure(
+                *id,
+                |f: &Box<dyn Fn() -> T>| RxGuard::Owned(f()),
+            ),
+            crate::RxInner::Op1(id) => silex_reactivity::try_with_op1(*id, |bytes| unsafe {
+                let op: &crate::reactivity::OpPayload<T, 1> = std::mem::transmute(bytes);
+                (op.read)(&op.inputs).map(RxGuard::Owned).unwrap()
+            }),
+            crate::RxInner::Op2(id) => silex_reactivity::try_with_op2(*id, |bytes| unsafe {
+                let op: &crate::reactivity::OpPayload<T, 2> = std::mem::transmute(bytes);
+                (op.read)(&op.inputs).map(RxGuard::Owned).unwrap()
+            }),
             crate::RxInner::Stored(id) => unsafe {
                 crate::reactivity::rx_borrow_signal_unsafe::<T>(*id).map(|v| RxGuard::Borrowed {
                     value: v,
@@ -340,9 +370,19 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
             crate::RxInner::Signal(id) => unsafe {
                 crate::reactivity::rx_borrow_signal_unsafe::<T>(*id).map(fun)
             },
-            crate::RxInner::Pooled(id) => {
-                silex_reactivity::try_with_stored_value(*id, |f: &Box<dyn Fn() -> T>| fun(&f()))
+            crate::RxInner::Closure(id) => {
+                silex_reactivity::try_with_closure(*id, |f: &Box<dyn Fn() -> T>| fun(&f()))
             }
+            crate::RxInner::Op1(id) => silex_reactivity::try_with_op1(*id, |bytes| unsafe {
+                let op: &crate::reactivity::OpPayload<T, 1> = std::mem::transmute(bytes);
+                (op.read)(&op.inputs).map(|v| fun(&v))
+            })
+            .flatten(),
+            crate::RxInner::Op2(id) => silex_reactivity::try_with_op2(*id, |bytes| unsafe {
+                let op: &crate::reactivity::OpPayload<T, 2> = std::mem::transmute(bytes);
+                (op.read)(&op.inputs).map(|v| fun(&v))
+            })
+            .flatten(),
             crate::RxInner::Stored(id) => {
                 silex_reactivity::try_with_stored_value(*id, |v: &T| fun(v))
             }
@@ -358,12 +398,78 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
 // --- 元组 RxInternal 实现：支持递归常量检测 ---
 
 macro_rules! impl_tuple_into_rx {
-    ($len:expr, $($T:ident : $idx:tt),+) => {
+    // 专用 2 元元组分支：直连 Op2
+    (2, $T0:ident : $idx0:tt, $T1:ident : $idx1:tt) => {
+        #[allow(non_snake_case)]
+        impl<$T0, $T1> $crate::traits::RxValue for ($T0, $T1)
+        where $T0: $crate::traits::RxValue, $T1: $crate::traits::RxValue,
+              $T0::Value: Sized, $T1::Value: Sized
+        {
+            type Value = ($T0::Value, $T1::Value);
+        }
+
+        #[allow(non_snake_case)]
+        impl<$T0, $T1> IntoRx for ($T0, $T1)
+        where
+            $T0: IntoRx + crate::traits::IntoSignal + Clone + $crate::traits::RxData, $T1: IntoRx + crate::traits::IntoSignal + Clone + $crate::traits::RxData,
+            $T0::Value: $crate::traits::RxCloneData, $T1::Value: $crate::traits::RxCloneData
+        {
+            type RxType = Rx<Self::Value, RxValueKind>;
+            #[inline(always)]
+            fn into_rx(self) -> Self::RxType {
+                let is_constant = self.is_constant();
+                let op = crate::reactivity::OpPayload {
+                    inputs: [self.$idx0.into_signal().ensure_node_id(), self.$idx1.into_signal().ensure_node_id()],
+                    read: crate::reactivity::op_trampolines::read_tuple_2::<$T0::Value, $T1::Value>,
+                    track: crate::reactivity::op_trampolines::track_inputs,
+                    is_constant,
+                };
+                Rx::new_op2(op)
+            }
+            #[inline(always)] fn is_constant(&self) -> bool { self.$idx0.is_constant() && self.$idx1.is_constant() }
+        }
+
+        #[allow(non_snake_case)]
+        impl<$T0, $T1> crate::traits::IntoSignal for ($T0, $T1)
+        where
+            $T0: IntoRx + crate::traits::IntoSignal + Clone + $crate::traits::RxData, $T1: IntoRx + crate::traits::IntoSignal + Clone + $crate::traits::RxData,
+            $T0::Value: $crate::traits::RxCloneData, $T1::Value: $crate::traits::RxCloneData
+        {
+            #[inline(always)]
+            fn into_signal(self) -> crate::reactivity::Signal<Self::Value> where Self: 'static {
+                crate::reactivity::Signal::derive(Box::new(move || self.clone().into_rx().get()))
+            }
+        }
+
+        impl<$T0, $T1> RxBase for ($T0, $T1)
+        where $T0: RxBase, $T1: RxBase, $T0::Value: Sized, $T1::Value: Sized
+        {
+            #[inline(always)] fn id(&self) -> Option<crate::reactivity::NodeId> { None }
+            #[inline(always)] fn track(&self) { self.$idx0.track(); self.$idx1.track(); }
+            #[inline(always)] fn is_disposed(&self) -> bool { self.$idx0.is_disposed() || self.$idx1.is_disposed() }
+            #[inline(always)] fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> { None }
+            #[inline(always)] fn debug_name(&self) -> Option<String> { None }
+        }
+
+        impl<$T0, $T1> RxInternal for ($T0, $T1)
+        where
+            $T0: RxInternal + $crate::traits::RxData, $T1: RxInternal + $crate::traits::RxData,
+            $T0: IntoRx, $T1: IntoRx,
+            $T0::Value: Sized + $crate::traits::RxCloneData, $T1::Value: Sized + $crate::traits::RxCloneData
+        {
+            type ReadOutput<'a> = RxGuard<'a, Self::Value, Self::Value> where Self: 'a;
+            #[inline(always)] fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> { Some(RxGuard::Owned(self.rx_get_adaptive()?)) }
+            #[inline(always)] fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> { self.rx_get_adaptive().map(|v| fun(&v)) }
+            #[inline(always)] fn rx_get_adaptive(&self) -> Option<Self::Value> where Self::Value: Sized { Some((self.$idx0.rx_get_adaptive()?, self.$idx1.rx_get_adaptive()?)) }
+            #[inline(always)] fn rx_is_constant(&self) -> bool { self.$idx0.rx_is_constant() && self.$idx1.rx_is_constant() }
+        }
+    };
+
+    // 多元元组分支 (N > 2)
+    ($len:expr, $trap:ident, $($T:ident : $idx:tt),+) => {
         #[allow(non_snake_case)]
         impl<$($T),+> $crate::traits::RxValue for ($($T,)+)
-        where
-            $($T: $crate::traits::RxValue),+,
-            $($T::Value: core::marker::Sized),+
+        where $($T: $crate::traits::RxValue),+, $($T::Value: core::marker::Sized),+
         {
             type Value = ($($T::Value,)+);
         }
@@ -375,28 +481,20 @@ macro_rules! impl_tuple_into_rx {
             $($T::Value: $crate::traits::RxCloneData),+
         {
             type RxType = Rx<Self::Value, RxValueKind>;
-
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
-                let signals = ($(self.$idx.into_signal(),)+);
-
-                #[inline(always)]
-                unsafe fn read_impl<$($T: Clone + 'static),+>(inputs: &[crate::reactivity::NodeId]) -> Option<($($T,)+)> {
-                    unsafe {
-                        Some(($(
-                            crate::reactivity::rx_borrow_signal_unsafe::<$T>(inputs[$idx])?.clone(),
-                        )+))
-                    }
-                }
-
-                Rx::new_pooled(silex_reactivity::store_value(Box::new(move || {
-                    let inputs = [$(signals.$idx.ensure_node_id()),+];
-                    unsafe { read_impl::<$($T::Value),+>(&inputs).unwrap() }
-                }) as Box<dyn Fn() -> Self::Value>))
+                let is_constant = self.is_constant();
+                let ids = [$(self.$idx.clone().into_signal().ensure_node_id()),+];
+                let meta_id = silex_reactivity::untrack(|| silex_reactivity::store_value(ids));
+                let op = crate::reactivity::OpPayload {
+                    inputs: [meta_id],
+                    read: crate::reactivity::op_trampolines::$trap::<$($T::Value),+>,
+                    track: crate::reactivity::op_trampolines::track_tuple_meta::<$len>,
+                    is_constant,
+                };
+                Rx::new_op1(op)
             }
-
-            #[inline(always)]
-            fn is_constant(&self) -> bool { $(self.$idx.is_constant() && )+ true }
+            #[inline(always)] fn is_constant(&self) -> bool { $(self.$idx.is_constant() && )+ true }
         }
 
         #[allow(non_snake_case)]
@@ -406,19 +504,13 @@ macro_rules! impl_tuple_into_rx {
             $($T::Value: $crate::traits::RxCloneData),+
         {
             #[inline(always)]
-            fn into_signal(self) -> crate::reactivity::Signal<Self::Value>
-            where
-                Self: 'static,
-            {
-                let s = self.clone();
-                crate::reactivity::Signal::derive(Box::new(move || s.clone().into_rx().get()))
+            fn into_signal(self) -> crate::reactivity::Signal<Self::Value> where Self: 'static {
+                crate::reactivity::Signal::derive(Box::new(move || self.clone().into_rx().get()))
             }
         }
 
         impl<$($T),+> RxBase for ($($T,)+)
-        where
-            $($T: RxBase),+,
-            $($T::Value: Sized),+
+        where $($T: RxBase),+, $($T::Value: Sized),+
         {
             #[inline(always)] fn id(&self) -> Option<crate::reactivity::NodeId> { None }
             #[inline(always)] fn track(&self) { $(self.$idx.track();)+ }
@@ -429,42 +521,23 @@ macro_rules! impl_tuple_into_rx {
 
         impl<$($T),+> RxInternal for ($($T,)+)
         where
-            $($T: RxInternal + $crate::traits::RxData),+,
-            $($T: IntoRx),+,
+            $($T: RxInternal + $crate::traits::RxData),+, $($T: IntoRx),+,
             $($T::Value: Sized + $crate::traits::RxCloneData),+
         {
             type ReadOutput<'a> = RxGuard<'a, Self::Value, Self::Value> where Self: 'a;
-
-            #[inline(always)]
-            fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-                Some(RxGuard::Owned(self.rx_get_adaptive()?))
-            }
-
-            #[inline(always)]
-            fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-                self.rx_get_adaptive().map(|v| fun(&v))
-            }
-
-            #[inline(always)]
-            fn rx_get_adaptive(&self) -> Option<Self::Value>
-            where
-                Self::Value: Sized,
-            {
-                Some(($(
-                    self.$idx.rx_get_adaptive()?,
-                )+))
-            }
-
+            #[inline(always)] fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> { Some(RxGuard::Owned(self.rx_get_adaptive()?)) }
+            #[inline(always)] fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> { self.rx_get_adaptive().map(|v| fun(&v)) }
+            #[inline(always)] fn rx_get_adaptive(&self) -> Option<Self::Value> where Self::Value: Sized { Some(($(self.$idx.rx_get_adaptive()?,)+)) }
             #[inline(always)] fn rx_is_constant(&self) -> bool { $(self.$idx.rx_is_constant() && )+ true }
         }
     };
 }
 
 impl_tuple_into_rx!(2, T0: 0, T1: 1);
-impl_tuple_into_rx!(3, T0: 0, T1: 1, T2: 2);
-impl_tuple_into_rx!(4, T0: 0, T1: 1, T2: 2, T3: 3);
-impl_tuple_into_rx!(5, T0: 0, T1: 1, T2: 2, T3: 3, T4: 4);
-impl_tuple_into_rx!(6, T0: 0, T1: 1, T2: 2, T3: 3, T4: 4, T5: 5);
+impl_tuple_into_rx!(3, read_tuple_3_meta, T0: 0, T1: 1, T2: 2);
+impl_tuple_into_rx!(4, read_tuple_4_meta, T0: 0, T1: 1, T2: 2, T3: 3);
+impl_tuple_into_rx!(5, read_tuple_5_meta, T0: 0, T1: 1, T2: 2, T3: 3, T4: 4);
+impl_tuple_into_rx!(6, read_tuple_6_meta, T0: 0, T1: 1, T2: 2, T3: 3, T4: 4, T5: 5);
 
 impl<T: crate::traits::RxData, M> IntoRx for Rx<T, M>
 where
@@ -500,7 +573,7 @@ where
                 // 目前简单起见，假设 Signal 节点可以直接转换。
                 crate::reactivity::Signal::Derived(id, std::marker::PhantomData)
             }
-            crate::RxInner::Pooled(_) => {
+            crate::RxInner::Closure(_) | crate::RxInner::Op1(_) | crate::RxInner::Op2(_) => {
                 crate::reactivity::Signal::derive(Box::new(move || self.clone().get()))
             }
             crate::RxInner::Stored(_id) => {
@@ -585,11 +658,10 @@ macro_rules! impl_rx_delegate {
             type RxType = $crate::Rx<T, $crate::RxValueKind>;
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
-                $crate::Rx::new_pooled(::silex_reactivity::store_value(Box::new(move || {
+                $crate::Rx::derive(Box::new(move || {
                     use $crate::traits::RxGet;
                     self.get()
-                })
-                    as Box<dyn Fn() -> T>))
+                }))
             }
             #[inline(always)]
             fn is_constant(&self) -> bool {

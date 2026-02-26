@@ -19,9 +19,7 @@ where
         F: Fn(&Self::Value) -> U + 'static,
         U: 'static,
     {
-        crate::Rx::new_pooled(::silex_reactivity::store_value(
-            Box::new(move || self.with(|v| f(v))) as Box<dyn Fn() -> U>,
-        ))
+        crate::Rx::derive(Box::new(move || self.with(|v| f(v))))
     }
 }
 

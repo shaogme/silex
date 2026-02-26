@@ -5,7 +5,7 @@ pub type CompareFn<T> = fn(&T, &T) -> bool;
 #[doc(hidden)]
 #[macro_export]
 macro_rules! reactive_compare_method {
-    ($name:ident, $fn_impl:ident, $op:tt, $bound:ident) => {
+    ($name:ident, $fn_impl:ident, $trap:ident, $op:tt, $bound:ident) => {
         fn $name<O>(&self, other: O) -> $crate::Rx<bool, $crate::RxValueKind>
         where
             Self: $crate::traits::IntoRx + $crate::traits::IntoSignal + $crate::traits::RxValue,
@@ -26,10 +26,13 @@ macro_rules! reactive_compare_method {
                 ));
             }
 
-            $crate::Rx::new_pooled(::silex_reactivity::store_value(Box::new(move || {
-                $crate::logic::arithmetic::ops_impl::$fn_impl(&lhs.get(), &rhs.get())
-            })
-                as Box<dyn Fn() -> bool>))
+            let op = $crate::reactivity::OpPayload {
+                inputs: [lhs.ensure_node_id(), rhs.ensure_node_id()],
+                read: $crate::logic::arithmetic::ops_impl::$trap::<Self::Value>,
+                track: $crate::reactivity::op_trampolines::track_inputs,
+                is_constant: false,
+            };
+            $crate::Rx::new_op2(op)
         }
     };
 }
@@ -39,8 +42,8 @@ pub trait ReactivePartialEq: RxRead + Clone + 'static
 where
     Self::Value: PartialEq + Sized + 'static,
 {
-    crate::reactive_compare_method!(equals, eq, ==, PartialEq);
-    crate::reactive_compare_method!(not_equals, ne, !=, PartialEq);
+    reactive_compare_method!(equals, eq, eq_t, ==, PartialEq);
+    reactive_compare_method!(not_equals, ne, ne_t, !=, PartialEq);
 }
 
 /// Provides a fluent API for checking ordering on reactive values.
@@ -48,10 +51,10 @@ pub trait ReactivePartialOrd: RxRead + Clone + 'static
 where
     Self::Value: PartialOrd + Sized + 'static,
 {
-    crate::reactive_compare_method!(greater_than, gt, >, PartialOrd);
-    crate::reactive_compare_method!(less_than, lt, <, PartialOrd);
-    crate::reactive_compare_method!(greater_than_or_equals, ge, >=, PartialOrd);
-    crate::reactive_compare_method!(less_than_or_equals, le, <=, PartialOrd);
+    reactive_compare_method!(greater_than, gt, gt_t, >, PartialOrd);
+    reactive_compare_method!(less_than, lt, lt_t, <, PartialOrd);
+    reactive_compare_method!(greater_than_or_equals, ge, ge_t, >=, PartialOrd);
+    reactive_compare_method!(less_than_or_equals, le, le_t, <=, PartialOrd);
 }
 
 impl<S> ReactivePartialEq for S

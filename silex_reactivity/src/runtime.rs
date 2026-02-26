@@ -123,6 +123,17 @@ pub(crate) struct StoredValueData {
     pub(crate) value: AnyValue,
 }
 
+/// 闭包存储池（Closure Pool）
+pub(crate) struct ClosureData {
+    pub(crate) f: Box<dyn Any>,
+}
+
+/// 零成本 Op 池（固定步长存储，强行对齐为 8 字节）
+#[repr(align(8))]
+pub(crate) struct Op1Data(pub(crate) [u8; 32]);
+#[repr(align(8))]
+pub(crate) struct Op2Data(pub(crate) [u8; 48]);
+
 pub(crate) struct WorkSpace {
     pub(crate) vec_pool: Vec<Vec<NodeId>>,
     pub(crate) deque_pool: Vec<VecDeque<NodeId>>,
@@ -170,6 +181,9 @@ pub struct Runtime {
     pub(crate) callbacks: SparseSecondaryMap<CallbackData>, // default 16
     pub(crate) node_refs: SparseSecondaryMap<NodeRefData>,  // default 16
     pub(crate) stored_values: SparseSecondaryMap<StoredValueData>, // default 16
+    pub(crate) closures: SparseSecondaryMap<ClosureData>,   // default 16
+    pub(crate) ops1: SparseSecondaryMap<Op1Data>,           // default 16
+    pub(crate) ops2: SparseSecondaryMap<Op2Data>,           // default 16
 
     // WorkSpace for reuse
     pub(crate) workspace: RefCell<WorkSpace>,
@@ -200,6 +214,9 @@ impl Runtime {
             callbacks: SparseSecondaryMap::new(),
             node_refs: SparseSecondaryMap::new(),
             stored_values: SparseSecondaryMap::new(),
+            closures: SparseSecondaryMap::new(),
+            ops1: SparseSecondaryMap::new(),
+            ops2: SparseSecondaryMap::new(),
             workspace: RefCell::new(WorkSpace::new()),
             current_owner: Cell::new(None),
             observer_queue: RefCell::new(VecDeque::new()),
@@ -442,8 +459,30 @@ impl Runtime {
         self.signals.remove(id);
         self.effects.remove(id);
         self.stored_values.remove(id);
+        self.closures.remove(id);
+        self.ops1.remove(id);
+        self.ops2.remove(id);
         self.states.remove(id);
         self.queued_observers.remove(id);
+    }
+
+    #[track_caller]
+    pub(crate) fn register_closure_internal(&self, f: Box<dyn Any>) -> NodeId {
+        let id = self.register_node();
+        self.closures.insert(id, ClosureData { f });
+        id
+    }
+
+    pub(crate) fn register_op1_internal(&self, data: [u8; 32]) -> NodeId {
+        let id = self.register_node();
+        self.ops1.insert(id, Op1Data(data));
+        id
+    }
+
+    pub(crate) fn register_op2_internal(&self, data: [u8; 48]) -> NodeId {
+        let id = self.register_node();
+        self.ops2.insert(id, Op2Data(data));
+        id
     }
 }
 

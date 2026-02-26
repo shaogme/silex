@@ -2,9 +2,12 @@
 /// usage of these avoids generating unique closures for every operator implementation.
 #[doc(hidden)]
 pub mod ops_impl {
+    use crate::reactivity::NodeId;
+    use crate::reactivity::rx_borrow_signal_unsafe;
     use std::ops::*;
+
     macro_rules! gen_ops {
-        (bin: $($fn:ident:$trait:ident),*; un: $($ufn:ident:$utrait:ident),*) => {
+        (bin: $($fn:ident:$trait:ident:$trap:ident),*; un: $($ufn:ident:$utrait:ident:$utrap:ident),*) => {
             $(
                 #[inline]
                 pub fn $fn<T>(lhs: &T, rhs: &T) -> T
@@ -12,6 +15,18 @@ pub mod ops_impl {
                     for<'a> &'a T: $trait<&'a T, Output = T>,
                 {
                     lhs.$fn(rhs)
+                }
+
+                pub unsafe fn $trap<T>(inputs: &[NodeId]) -> Option<T>
+                where
+                    for<'a> &'a T: $trait<&'a T, Output = T>,
+                    T: $crate::traits::RxData,
+                {
+                    unsafe {
+                        let lhs = rx_borrow_signal_unsafe::<T>(inputs[0])?;
+                        let rhs = rx_borrow_signal_unsafe::<T>(inputs[1])?;
+                        Some(lhs.$fn(rhs))
+                    }
                 }
             )*
             $(
@@ -22,16 +37,30 @@ pub mod ops_impl {
                 {
                     val.$ufn()
                 }
+
+                pub unsafe fn $utrap<T>(inputs: &[NodeId]) -> Option<T>
+                where
+                    for<'a> &'a T: $utrait<Output = T>,
+                    T: $crate::traits::RxData,
+                {
+                    unsafe {
+                        let val = rx_borrow_signal_unsafe::<T>(inputs[0])?;
+                        Some(val.$ufn())
+                    }
+                }
             )*
         };
     }
+
     gen_ops!(
-        bin: add:Add, sub:Sub, mul:Mul, div:Div, rem:Rem, bitand:BitAnd, bitor:BitOr, bitxor:BitXor, shl:Shl, shr:Shr;
-        un: neg:Neg, not:Not
+        bin: add:Add:add_t, sub:Sub:sub_t, mul:Mul:mul_t, div:Div:div_t, rem:Rem:rem_t,
+             bitand:BitAnd:bitand_t, bitor:BitOr:bitor_t, bitxor:BitXor:bitxor_t,
+             shl:Shl:shl_t, shr:Shr:shr_t;
+        un: neg:Neg:neg_t, not:Not:not_t
     );
 
     macro_rules! gen_cmp_ops {
-        ($($fn:ident:$op:tt:$bound:ident),*) => {
+        ($($fn:ident:$op:tt:$bound:ident:$trap:ident),*) => {
             $(
                 #[inline]
                 pub fn $fn<T>(lhs: &T, rhs: &T) -> bool
@@ -40,12 +69,23 @@ pub mod ops_impl {
                 {
                     lhs $op rhs
                 }
+
+                pub unsafe fn $trap<T>(inputs: &[NodeId]) -> Option<bool>
+                where
+                    T: $bound + $crate::traits::RxData,
+                {
+                    unsafe {
+                        let lhs = rx_borrow_signal_unsafe::<T>(inputs[0])?;
+                        let rhs = rx_borrow_signal_unsafe::<T>(inputs[1])?;
+                        Some(lhs $op rhs)
+                    }
+                }
             )*
         };
     }
     gen_cmp_ops!(
-        eq:==:PartialEq, ne:!=:PartialEq,
-        gt:>:PartialOrd, lt:<:PartialOrd, ge:>=:PartialOrd, le:<=:PartialOrd
+        eq:==:PartialEq:eq_t, ne:!=:PartialEq:ne_t,
+        gt:>:PartialOrd:gt_t, lt:<:PartialOrd:lt_t, ge:>=:PartialOrd:ge_t, le:<=:PartialOrd:le_t
     );
 }
 
@@ -86,25 +126,25 @@ macro_rules! impl_reactive_ops {
 #[macro_export]
 macro_rules! impl_rx_ops {
     () => {
-        $crate::impl_rx_op!(Add, add);
-        $crate::impl_rx_op!(Sub, sub);
-        $crate::impl_rx_op!(Mul, mul);
-        $crate::impl_rx_op!(Div, div);
-        $crate::impl_rx_op!(Rem, rem);
-        $crate::impl_rx_op!(BitAnd, bitand);
-        $crate::impl_rx_op!(BitOr, bitor);
-        $crate::impl_rx_op!(BitXor, bitxor);
-        $crate::impl_rx_op!(Shl, shl);
-        $crate::impl_rx_op!(Shr, shr);
+        $crate::impl_rx_op!(Add, add, add_t);
+        $crate::impl_rx_op!(Sub, sub, sub_t);
+        $crate::impl_rx_op!(Mul, mul, mul_t);
+        $crate::impl_rx_op!(Div, div, div_t);
+        $crate::impl_rx_op!(Rem, rem, rem_t);
+        $crate::impl_rx_op!(BitAnd, bitand, bitand_t);
+        $crate::impl_rx_op!(BitOr, bitor, bitor_t);
+        $crate::impl_rx_op!(BitXor, bitxor, bitxor_t);
+        $crate::impl_rx_op!(Shl, shl, shl_t);
+        $crate::impl_rx_op!(Shr, shr, shr_t);
 
-        $crate::impl_rx_unary_op!(Neg, neg);
-        $crate::impl_rx_unary_op!(Not, not);
+        $crate::impl_rx_unary_op!(Neg, neg, neg_t);
+        $crate::impl_rx_unary_op!(Not, not, not_t);
     };
 }
 
 #[macro_export]
 macro_rules! impl_rx_op {
-    ($trait:ident, $method:ident) => {
+    ($trait:ident, $method:ident, $trap:ident) => {
         impl<R, T> std::ops::$trait<R> for $crate::Rx<T, $crate::RxValueKind>
         where
             for<'a> &'a T: std::ops::$trait<&'a T, Output = T>,
@@ -127,10 +167,13 @@ macro_rules! impl_rx_op {
                     ));
                 }
 
-                $crate::Rx::new_pooled(::silex_reactivity::store_value(Box::new(move || {
-                    $crate::logic::arithmetic::ops_impl::$method(&lhs.get(), &rhs.get())
-                })
-                    as Box<dyn Fn() -> T>))
+                let op = $crate::reactivity::OpPayload {
+                    inputs: [lhs.ensure_node_id(), rhs.ensure_node_id()],
+                    read: $crate::logic::arithmetic::ops_impl::$trap::<T>,
+                    track: $crate::reactivity::op_trampolines::track_inputs,
+                    is_constant: false,
+                };
+                $crate::Rx::new_op2(op)
             }
         }
     };
@@ -138,7 +181,7 @@ macro_rules! impl_rx_op {
 
 #[macro_export]
 macro_rules! impl_rx_unary_op {
-    ($trait:ident, $method:ident) => {
+    ($trait:ident, $method:ident, $trap:ident) => {
         impl<T> std::ops::$trait for $crate::Rx<T, $crate::RxValueKind>
         where
             for<'a> &'a T: std::ops::$trait<Output = T>,
@@ -158,10 +201,13 @@ macro_rules! impl_rx_unary_op {
                     ));
                 }
 
-                $crate::Rx::new_pooled(::silex_reactivity::store_value(Box::new(move || {
-                    $crate::logic::arithmetic::ops_impl::$method(&val.get())
-                })
-                    as Box<dyn Fn() -> T>))
+                let op = $crate::reactivity::OpPayload {
+                    inputs: [val.ensure_node_id()],
+                    read: $crate::logic::arithmetic::ops_impl::$trap::<T>,
+                    track: $crate::reactivity::op_trampolines::track_inputs,
+                    is_constant: false,
+                };
+                $crate::Rx::new_op1(op)
             }
         }
     };

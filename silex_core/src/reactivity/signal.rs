@@ -237,11 +237,10 @@ where
 
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        Rx::new_pooled(silex_reactivity::store_value(Box::new(move || {
+        Rx::derive(Box::new(move || {
             use crate::traits::RxGet;
             self.get()
-        })
-            as Box<dyn Fn() -> U>))
+        }))
     }
 
     #[inline(always)]
@@ -354,11 +353,10 @@ impl<U: RxCloneData + 'static, const N: usize> IntoRx for OpPayload<U, N> {
 
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        Rx::new_pooled(silex_reactivity::store_value(Box::new(move || {
+        Rx::derive(Box::new(move || {
             use crate::traits::RxGet;
             self.get()
-        })
-            as Box<dyn Fn() -> U>))
+        }))
     }
 
     #[inline(always)]
@@ -383,6 +381,126 @@ pub mod op_trampolines {
         for &id in inputs {
             track_signal(id);
         }
+    }
+
+    /// 追踪打包在 StoredValue 中的 N 个信号
+    pub fn track_tuple_meta<const N: usize>(inputs: &[NodeId]) {
+        let meta_id = inputs[0];
+        let _ = silex_reactivity::try_with_stored_value(meta_id, |ids: &[NodeId; N]| {
+            for &id in ids {
+                track_signal(id);
+            }
+        });
+    }
+
+    // --- 二元直连元组读取 ---
+    pub unsafe fn read_tuple_2<T0: RxData, T1: RxData>(inputs: &[NodeId]) -> Option<(T0, T1)>
+    where
+        T0: Clone,
+        T1: Clone,
+    {
+        unsafe {
+            Some((
+                rx_borrow_signal_unsafe::<T0>(inputs[0])?.clone(),
+                rx_borrow_signal_unsafe::<T1>(inputs[1])?.clone(),
+            ))
+        }
+    }
+
+    // --- 打包元数据元组读取 (N > 2) ---
+    pub unsafe fn read_tuple_3_meta<T0: RxData, T1: RxData, T2: RxData>(
+        inputs: &[NodeId],
+    ) -> Option<(T0, T1, T2)>
+    where
+        T0: Clone,
+        T1: Clone,
+        T2: Clone,
+    {
+        let meta_id = inputs[0];
+        silex_reactivity::try_with_stored_value(meta_id, |ids: &[NodeId; 3]| unsafe {
+            Some((
+                rx_borrow_signal_unsafe::<T0>(ids[0])?.clone(),
+                rx_borrow_signal_unsafe::<T1>(ids[1])?.clone(),
+                rx_borrow_signal_unsafe::<T2>(ids[2])?.clone(),
+            ))
+        })
+        .flatten()
+    }
+
+    pub unsafe fn read_tuple_4_meta<T0: RxData, T1: RxData, T2: RxData, T3: RxData>(
+        inputs: &[NodeId],
+    ) -> Option<(T0, T1, T2, T3)>
+    where
+        T0: Clone,
+        T1: Clone,
+        T2: Clone,
+        T3: Clone,
+    {
+        let meta_id = inputs[0];
+        silex_reactivity::try_with_stored_value(meta_id, |ids: &[NodeId; 4]| unsafe {
+            Some((
+                rx_borrow_signal_unsafe::<T0>(ids[0])?.clone(),
+                rx_borrow_signal_unsafe::<T1>(ids[1])?.clone(),
+                rx_borrow_signal_unsafe::<T2>(ids[2])?.clone(),
+                rx_borrow_signal_unsafe::<T3>(ids[3])?.clone(),
+            ))
+        })
+        .flatten()
+    }
+
+    pub unsafe fn read_tuple_5_meta<T0: RxData, T1: RxData, T2: RxData, T3: RxData, T4: RxData>(
+        inputs: &[NodeId],
+    ) -> Option<(T0, T1, T2, T3, T4)>
+    where
+        T0: Clone,
+        T1: Clone,
+        T2: Clone,
+        T3: Clone,
+        T4: Clone,
+    {
+        let meta_id = inputs[0];
+        silex_reactivity::try_with_stored_value(meta_id, |ids: &[NodeId; 5]| unsafe {
+            Some((
+                rx_borrow_signal_unsafe::<T0>(ids[0])?.clone(),
+                rx_borrow_signal_unsafe::<T1>(ids[1])?.clone(),
+                rx_borrow_signal_unsafe::<T2>(ids[2])?.clone(),
+                rx_borrow_signal_unsafe::<T3>(ids[3])?.clone(),
+                rx_borrow_signal_unsafe::<T4>(ids[4])?.clone(),
+            ))
+        })
+        .flatten()
+    }
+
+    pub unsafe fn read_tuple_6_meta<
+        T0: RxData,
+        T1: RxData,
+        T2: RxData,
+        T3: RxData,
+        T4: RxData,
+        T5: RxData,
+    >(
+        inputs: &[NodeId],
+    ) -> Option<(T0, T1, T2, T3, T4, T5)>
+    where
+        T0: Clone,
+        T1: Clone,
+        T2: Clone,
+        T3: Clone,
+        T4: Clone,
+        T5: Clone,
+    {
+        let meta_id = inputs[0];
+        silex_reactivity::try_with_stored_value(meta_id, |ids: &[NodeId; 6]| unsafe {
+            Some((
+                rx_borrow_signal_unsafe::<T0>(ids[0])?.clone(),
+                rx_borrow_signal_unsafe::<T1>(ids[1])?.clone(),
+                rx_borrow_signal_unsafe::<T2>(ids[2])?.clone(),
+                rx_borrow_signal_unsafe::<T3>(ids[3])?.clone(),
+                rx_borrow_signal_unsafe::<T4>(ids[4])?.clone(),
+                rx_borrow_signal_unsafe::<T5>(ids[5])?.clone(),
+            ))
+        })
+        .flatten()
     }
 }
 

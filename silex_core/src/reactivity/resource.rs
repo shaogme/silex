@@ -288,10 +288,10 @@ impl<T: RxCloneData, E: RxError> IntoRx for Resource<T, E> {
     type RxType = Rx<Option<T>, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        use crate::traits::RxGet;
-        Rx::new_pooled(silex_reactivity::store_value(
-            Box::new(move || self.get()) as Box<dyn Fn() -> Option<T>>
-        ))
+        crate::Rx::derive(Box::new(move || {
+            use crate::traits::RxGet;
+            self.get()
+        }))
     }
     #[inline(always)]
     fn is_constant(&self) -> bool {
