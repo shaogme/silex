@@ -147,7 +147,7 @@ where
         Self: 'static,
         O: Sized,
     {
-        crate::reactivity::Signal::derive(move || self.get())
+        crate::reactivity::Signal::derive(Box::new(move || self.get()))
     }
 }
 

@@ -118,7 +118,7 @@ impl<T: RxCloneData> IntoRx for Constant<T> {
 impl<T: RxCloneData> crate::traits::IntoSignal for Constant<T> {
     #[inline(always)]
     fn into_signal(self) -> Signal<T> {
-        Signal::derive(move || self.get())
+        Signal::derive(Box::new(move || self.get()))
     }
 }
 
@@ -256,7 +256,7 @@ where
     #[inline(always)]
     fn into_signal(self) -> Signal<Self::Value> {
         use crate::traits::RxGet;
-        Signal::derive(move || self.get())
+        Signal::derive(Box::new(move || self.get()))
     }
 }
 
@@ -363,7 +363,7 @@ impl<U: RxCloneData, const N: usize> crate::traits::IntoSignal for OpPayload<U, 
     #[inline(always)]
     fn into_signal(self) -> Signal<Self::Value> {
         use crate::traits::RxGet;
-        Signal::derive(move || self.get())
+        Signal::derive(Box::new(move || self.get()))
     }
 }
 
@@ -569,7 +569,7 @@ impl<T> std::hash::Hash for Signal<T> {
 
 impl<T: RxData> Signal<T> {
     #[track_caller]
-    pub fn derive(f: impl Fn() -> T + 'static) -> Self {
+    pub fn derive(f: Box<dyn Fn() -> T>) -> Self {
         let id = register_derived(f);
         Signal::Derived(id, PhantomData)
     }

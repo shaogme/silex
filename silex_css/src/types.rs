@@ -231,7 +231,7 @@ macro_rules! impl_into_rx_for_css {
                     Self: Sized + 'static,
                     $t: Sized + Clone + 'static,
                 {
-                    silex_core::reactivity::Signal::derive(move || self.clone())
+                    silex_core::reactivity::Signal::derive(Box::new(move || self.clone()))
                 }
             }
         )*

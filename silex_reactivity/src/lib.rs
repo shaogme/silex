@@ -401,7 +401,7 @@ pub fn try_update_stored_value<T: 'static, R>(
 // --- Derived API ---
 
 #[track_caller]
-pub fn register_derived<T: 'static>(f: impl Fn() -> T + 'static) -> NodeId {
+pub fn register_derived<T: 'static>(f: Box<dyn Fn() -> T>) -> NodeId {
     RUNTIME.with(|rt| {
         let id = rt.register_node();
 

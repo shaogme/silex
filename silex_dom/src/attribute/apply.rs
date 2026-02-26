@@ -1,6 +1,6 @@
 use silex_core::SilexError;
 use silex_core::reactivity::{Effect, Signal};
-use silex_core::traits::{IntoSignal, RxGet};
+use silex_core::traits::RxGet;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -51,33 +51,7 @@ where
 
 // --- 统一响应式应用逻辑 ---
 
-// 1. 已归一化的 Rx 容器 (Value)
-impl<F> ApplyToDom for silex_core::Rx<F, silex_core::RxValueKind>
-where
-    Self: silex_core::traits::IntoSignal + Clone + 'static,
-    <Self as silex_core::traits::RxValue>::Value: ReactiveApply + Clone + 'static,
-{
-    fn apply(&self, el: &WebElem, target: ApplyTarget) {
-        crate::attribute::apply_signal_internal(self.clone().into_signal(), el, target);
-    }
-
-    fn into_payload(self) -> AttributePayload {
-        let signal = self.into_signal();
-        if let Some(payload) =
-            <<Self as silex_core::traits::RxValue>::Value as ReactiveApply>::into_payload_reactive(
-                signal,
-            )
-        {
-            payload
-        } else {
-            AttributePayload::Dynamic(std::rc::Rc::new(move |el, target| {
-                crate::attribute::apply_signal_internal(signal, el, ApplyTarget::from(target));
-            }))
-        }
-    }
-}
-
-// 2. 逻辑型 Rx (Effect)
+// 1. 逻辑型 Rx (Effect) - 用于 on_xxx 属性
 impl<F> ApplyToDom for silex_core::Rx<F, silex_core::RxEffectKind>
 where
     F: Fn(&WebElem) + 'static,
@@ -87,74 +61,27 @@ where
     }
 }
 
-// 2. 响应式原语转发器 (不再依赖 IntoStorable 的阶段转换)
-macro_rules! impl_apply_to_dom_rx_forwarder {
-    ($($ty:ident),*) => {
-        $(
-            impl<T> ApplyToDom for silex_core::reactivity::$ty<T>
-            where
-                T: ReactiveApply + Clone + 'static,
-                Self: silex_core::traits::IntoRx + Clone + 'static,
-                <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom,
-            {
-                fn apply(&self, el: &WebElem, target: ApplyTarget) {
-                    use silex_core::traits::IntoRx;
-                    self.clone().into_rx().apply(el, target);
-                }
-                fn into_payload(self) -> AttributePayload {
-                    use silex_core::traits::IntoRx;
-                    self.into_rx().into_payload()
-                }
-            }
-        )*
-    };
-}
-
-impl_apply_to_dom_rx_forwarder!(Signal, ReadSignal, RwSignal, Constant, Memo);
-
-// 3. 响应式组合/派生类型转发器
-impl<S, F> ApplyToDom for silex_core::reactivity::DerivedPayload<S, F>
+// 2. 响应式原语 (经过 IntoStorable 归一化后的终点)
+impl<T> ApplyToDom for silex_core::reactivity::Signal<T>
 where
-    Self: silex_core::traits::IntoRx + Clone + 'static,
-    <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom,
+    T: ReactiveApply + Clone + 'static,
 {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
-        use silex_core::traits::IntoRx;
-        self.clone().into_rx().apply(el, target);
+        crate::attribute::apply_signal_internal(self.clone(), el, target);
     }
-    fn into_payload(self) -> AttributePayload {
-        use silex_core::traits::IntoRx;
-        self.into_rx().into_payload()
-    }
-}
 
-impl<U, const N: usize> ApplyToDom for silex_core::reactivity::OpPayload<U, N>
-where
-    Self: silex_core::traits::IntoRx + Clone + 'static,
-    <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom,
-{
-    fn apply(&self, el: &WebElem, target: ApplyTarget) {
-        use silex_core::traits::IntoRx;
-        self.clone().into_rx().apply(el, target);
-    }
     fn into_payload(self) -> AttributePayload {
-        use silex_core::traits::IntoRx;
-        self.into_rx().into_payload()
-    }
-}
-
-impl<S, F, O> ApplyToDom for silex_core::reactivity::SignalSlice<S, F, O>
-where
-    Self: silex_core::traits::IntoRx + Clone + 'static,
-    <Self as silex_core::traits::IntoRx>::RxType: ApplyToDom,
-{
-    fn apply(&self, el: &WebElem, target: ApplyTarget) {
-        use silex_core::traits::IntoRx;
-        self.clone().into_rx().apply(el, target);
-    }
-    fn into_payload(self) -> AttributePayload {
-        use silex_core::traits::IntoRx;
-        self.into_rx().into_payload()
+        if let Some(payload) = <T as ReactiveApply>::into_payload_reactive(self.clone()) {
+            payload
+        } else {
+            AttributePayload::Dynamic(std::rc::Rc::new(move |el, target| {
+                crate::attribute::apply_signal_internal(
+                    self.clone(),
+                    el,
+                    ApplyTarget::from(target),
+                );
+            }))
+        }
     }
 }
 
@@ -522,7 +449,7 @@ impl ReactiveApply for String {
 impl ReactiveApply for &'static str {
     fn apply_to_dom(signal: Signal<Self>, el: WebElem, target: OwnedApplyTarget) {
         let string_signal =
-            silex_core::reactivity::Signal::derive(move || signal.get().to_string());
+            silex_core::reactivity::Signal::derive(Box::new(move || signal.get().to_string()));
         let node_id = string_signal.ensure_node_id();
         let effect = GenericAttrEffect::new(node_id, primitive_to_string_erased::<String>);
         apply_erased_string_reactive_internal(el, target, effect);
@@ -530,7 +457,7 @@ impl ReactiveApply for &'static str {
 
     fn apply_pair(signal: Signal<Self>, key: String, el: WebElem, target: OwnedApplyTarget) {
         let string_signal =
-            silex_core::reactivity::Signal::derive(move || signal.get().to_string());
+            silex_core::reactivity::Signal::derive(Box::new(move || signal.get().to_string()));
         String::apply_pair(string_signal, key, el, target)
     }
 }
@@ -581,48 +508,18 @@ impl ReactiveApply for bool {
     }
 }
 
-// 响应式元组：(Key, ReactiveSource)
-macro_rules! impl_apply_to_dom_tuple_forwarder {
-    ($($ty:ident),*) => {
-        $(
-            impl<K, T> ApplyToDom for (K, silex_core::reactivity::$ty<T>)
-            where
-                K: AsRef<str> + Clone,
-                T: ReactiveApply + Clone + 'static,
-            {
-                fn apply(&self, el: &WebElem, target: ApplyTarget) {
-                    let (key, source) = self.clone();
-                    let signal = source.into_signal();
-                    let el = el.clone();
-                    let owned_target = OwnedApplyTarget::from(target);
-                    let key_str = key.as_ref().to_string();
-                    T::apply_pair(signal, key_str, el, owned_target);
-                }
-            }
-        )*
-    };
-}
-
-impl_apply_to_dom_tuple_forwarder!(Signal, ReadSignal, RwSignal, Constant, Memo);
-
-impl<K, F, M> ApplyToDom for (K, silex_core::Rx<F, M>)
+// 响应式元组归一化终点：(Key, Signal<T>)
+impl<K, T> ApplyToDom for (K, silex_core::reactivity::Signal<T>)
 where
     K: AsRef<str> + Clone,
-    silex_core::Rx<F, M>: silex_core::traits::IntoSignal + Clone + 'static,
-    <silex_core::Rx<F, M> as silex_core::traits::RxValue>::Value: ReactiveApply + Clone + 'static,
+    T: ReactiveApply + Clone + 'static,
 {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
-        let (key, source) = self.clone();
-        let signal = source.into_signal();
+        let (key, signal) = self.clone();
         let el = el.clone();
         let owned_target = OwnedApplyTarget::from(target);
         let key_str = key.as_ref().to_string();
-        <<silex_core::Rx<F, M> as silex_core::traits::RxValue>::Value>::apply_pair(
-            signal,
-            key_str,
-            el,
-            owned_target,
-        );
+        T::apply_pair(signal, key_str, el, owned_target);
     }
 }
 

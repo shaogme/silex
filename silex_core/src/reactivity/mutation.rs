@@ -261,6 +261,6 @@ impl<Arg: RxData, T: RxCloneData, E: RxCloneData> crate::traits::IntoSignal
         Self: 'static,
         T: Clone,
     {
-        crate::reactivity::Signal::derive(move || self.get())
+        crate::reactivity::Signal::derive(Box::new(move || self.get()))
     }
 }

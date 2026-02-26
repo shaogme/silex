@@ -284,7 +284,7 @@ macro_rules! impl_closure_rx {
         impl<$($gen),*> $crate::traits::IntoSignal for $target $(where $($bounds)*, T: $crate::traits::RxCloneData + 'static)? {
             #[inline(always)]
             fn into_signal(self) -> $crate::reactivity::Signal<T> {
-                $crate::reactivity::Signal::derive(move || (self)())
+                $crate::reactivity::Signal::derive(Box::new(move || (self)()))
             }
         }
 
@@ -417,7 +417,7 @@ macro_rules! impl_tuple_into_rx {
                 Self: 'static,
             {
                 let s = self.clone();
-                crate::reactivity::Signal::derive(move || s.clone().into_rx().get())
+                crate::reactivity::Signal::derive(Box::new(move || s.clone().into_rx().get()))
             }
         }
 
@@ -589,7 +589,9 @@ macro_rules! impl_rx_delegate {
         impl<T: $crate::traits::RxCloneData> $crate::traits::IntoSignal for $target<T> {
             #[inline(always)]
             fn into_signal(self) -> $crate::reactivity::Signal<T> {
-                $crate::reactivity::Signal::derive(move || $crate::traits::RxRead::get(&self))
+                $crate::reactivity::Signal::derive(Box::new(move || {
+                    $crate::traits::RxRead::get(&self)
+                }))
             }
         }
     };

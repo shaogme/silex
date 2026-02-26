@@ -87,28 +87,42 @@ where
     }
 }
 
-// --- 3. Reactive Identity (自转实现) ---
-// 响应式原语本身已满足 'static，在 IntoStorable 阶段保持原样，
-// 真正的响应式绑定逻辑延迟到 ApplyToDom 阶段处理。
+// --- 3. 响应式归一化 (转换为 Signal) ---
 
-macro_rules! impl_into_storable_identity {
+impl<T> IntoStorable for silex_core::reactivity::Signal<T>
+where
+    Self: ApplyToDom + 'static,
+{
+    type Stored = Self;
+    #[inline(always)]
+    fn into_storable(self) -> Self::Stored {
+        self
+    }
+}
+
+macro_rules! impl_into_storable_to_signal {
     ($($ty:ident),*) => {
         $(
             impl<T> IntoStorable for silex_core::reactivity::$ty<T>
             where
-                Self: ApplyToDom + 'static,
+                Self: silex_core::traits::IntoSignal + 'static,
+                <Self as silex_core::traits::RxValue>::Value: silex_core::traits::RxCloneData + Sized,
+                silex_core::reactivity::Signal<<Self as silex_core::traits::RxValue>::Value>:
+                    ApplyToDom + 'static,
             {
-                type Stored = Self;
+                type Stored = silex_core::reactivity::Signal<<Self as silex_core::traits::RxValue>::Value>;
+
                 #[inline(always)]
                 fn into_storable(self) -> Self::Stored {
-                    self
+                    use silex_core::traits::IntoSignal;
+                    self.into_signal()
                 }
             }
         )*
     };
 }
 
-impl_into_storable_identity!(Signal, ReadSignal, RwSignal, Constant, Memo);
+impl_into_storable_to_signal!(ReadSignal, RwSignal, Constant, Memo);
 
 impl<S, F> IntoStorable for silex_core::reactivity::DerivedPayload<S, F>
 where

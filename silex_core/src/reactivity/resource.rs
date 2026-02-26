@@ -304,7 +304,7 @@ impl<T: RxCloneData, E: RxError> crate::traits::IntoSignal for Resource<T, E> {
         Self: 'static,
         T: Clone,
     {
-        crate::reactivity::Signal::derive(move || self.get())
+        crate::reactivity::Signal::derive(Box::new(move || self.get()))
     }
 }
 
