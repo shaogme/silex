@@ -1,6 +1,5 @@
 use silex_core::SilexError;
-use silex_core::reactivity::{Effect, Signal};
-use silex_core::traits::RxGet;
+use silex_core::reactivity::Effect;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -63,12 +62,12 @@ where
 }
 
 // 2. 响应式原语 (经过 IntoStorable 归一化后的终点)
-impl<T> ApplyToDom for silex_core::reactivity::Signal<T>
+impl<T> ApplyToDom for silex_core::Rx<T, silex_core::RxValueKind>
 where
     T: ReactiveApply + Clone + 'static,
 {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
-        crate::attribute::apply_signal_internal(self.clone(), el, target);
+        crate::attribute::apply_rx_internal(self.clone(), el, target);
     }
 
     fn into_payload(self) -> AttributePayload {
@@ -76,51 +75,10 @@ where
             payload
         } else {
             AttributePayload::Dynamic(std::rc::Rc::new(move |el, target| {
-                crate::attribute::apply_signal_internal(
-                    self.clone(),
-                    el,
-                    ApplyTarget::from(target),
-                );
+                crate::attribute::apply_rx_internal(self.clone(), el, ApplyTarget::from(target));
             }))
         }
     }
-}
-
-// --- Generic Attribute Effect (Operator Erasure) ---
-
-/// 将指定 NodeId 的值读取并格式化为 String 的静态函数签名
-pub type ErasedStringConverter = fn(silex_core::reactivity::NodeId) -> String;
-
-/// 擦除了底层响应式原始类型的 DOM 属性动态评估载体
-#[derive(Clone)]
-pub struct GenericAttrEffect {
-    node_id: silex_core::reactivity::NodeId,
-    converter: ErasedStringConverter,
-}
-
-impl GenericAttrEffect {
-    #[inline(always)]
-    pub fn new(node_id: silex_core::reactivity::NodeId, converter: ErasedStringConverter) -> Self {
-        Self { node_id, converter }
-    }
-
-    /// 在统一的副作用函数（Effect）内调用该方法获得字符串
-    #[inline(always)]
-    pub fn get_string(&self) -> String {
-        (self.converter)(self.node_id)
-    }
-}
-
-/// 依据给定类型的具体大小与实现，将 NodeId 内的值读出并转换为 String
-pub(crate) fn primitive_to_string_erased<T>(id: silex_core::reactivity::NodeId) -> String
-where
-    T: std::string::ToString + Clone + 'static,
-{
-    use silex_core::traits::RxGet;
-    // 利用 Signal::Derived 作为通用的 NodeId 读取包装器
-    silex_core::reactivity::Signal::<T>::Derived(id, std::marker::PhantomData)
-        .get()
-        .to_string()
 }
 
 // --- Internal Helper Functions (Non-generic to reduce monomorphization) ---
@@ -174,11 +132,15 @@ fn set_string_property_internal(el: &WebElem, name: &str, value: &str, is_prop: 
     }
 }
 
-fn create_erased_class_effect_internal(el: WebElem, effect: GenericAttrEffect) {
+fn create_erased_class_effect_internal(
+    el: WebElem,
+    rx: silex_core::Rx<String, silex_core::RxValueKind>,
+) {
     let prev_classes = Rc::new(RefCell::new(HashSet::new()));
 
     Effect::new(move |_| {
-        let value = effect.get_string();
+        use silex_core::traits::RxGet;
+        let value = rx.get();
         let new_classes: HashSet<String> =
             value.split_whitespace().map(|s| s.to_string()).collect();
 
@@ -197,12 +159,16 @@ fn create_erased_class_effect_internal(el: WebElem, effect: GenericAttrEffect) {
     });
 }
 
-fn create_erased_style_effect_internal(el: WebElem, effect: GenericAttrEffect) {
+fn create_erased_style_effect_internal(
+    el: WebElem,
+    rx: silex_core::Rx<String, silex_core::RxValueKind>,
+) {
     let prev_keys = Rc::new(RefCell::new(HashSet::<String>::new()));
 
     Effect::new(move |_| {
-        let value = effect.get_string();
-        let new_style_str = value.as_ref();
+        use silex_core::traits::RxGet;
+        let value = rx.get();
+        let new_style_str = value.as_str();
 
         if let Some(style) = get_style_decl(&el) {
             let mut prev = prev_keys.borrow_mut();
@@ -222,29 +188,31 @@ fn create_erased_style_effect_internal(el: WebElem, effect: GenericAttrEffect) {
     });
 }
 
-fn apply_erased_string_reactive_internal(
+fn apply_string_reactive_internal(
     el: WebElem,
     target: OwnedApplyTarget,
-    effect: GenericAttrEffect,
+    rx: silex_core::Rx<String, silex_core::RxValueKind>,
 ) {
     match target {
-        OwnedApplyTarget::Class => create_erased_class_effect_internal(el, effect),
-        OwnedApplyTarget::Style => create_erased_style_effect_internal(el, effect),
+        OwnedApplyTarget::Class => create_erased_class_effect_internal(el, rx),
+        OwnedApplyTarget::Style => create_erased_style_effect_internal(el, rx),
         OwnedApplyTarget::Attr(name) => {
             if name == "class" {
-                create_erased_class_effect_internal(el, effect);
+                create_erased_class_effect_internal(el, rx);
             } else if name == "style" {
-                create_erased_style_effect_internal(el, effect);
+                create_erased_style_effect_internal(el, rx);
             } else {
                 Effect::new(move |_| {
-                    let value = effect.get_string();
+                    use silex_core::traits::RxGet;
+                    let value = rx.get();
                     set_string_property_internal(&el, &name, &value, false);
                 });
             }
         }
         OwnedApplyTarget::Prop(name) => {
             Effect::new(move |_| {
-                let value = effect.get_string();
+                use silex_core::traits::RxGet;
+                let value = rx.get();
                 set_string_property_internal(&el, &name, &value, true);
             });
         }
@@ -252,27 +220,33 @@ fn apply_erased_string_reactive_internal(
     }
 }
 
-fn apply_erased_pair_reactive_internal(
+fn apply_string_pair_reactive_internal(
     el: WebElem,
     key: String,
     target: OwnedApplyTarget,
-    effect: GenericAttrEffect,
+    rx: silex_core::Rx<String, silex_core::RxValueKind>,
 ) {
     let is_style = matches!(target, OwnedApplyTarget::Style)
         || matches!(target, OwnedApplyTarget::Attr(ref n) if n == "style");
 
     if is_style && let Some(style) = get_style_decl(&el) {
         Effect::new(move |_| {
-            let _ = style.set_property(&key, &effect.get_string());
+            use silex_core::traits::RxGet;
+            let _ = style.set_property(&key, &rx.get());
         });
     }
 }
 
-fn apply_bool_reactive_internal(el: WebElem, target: OwnedApplyTarget, signal: Signal<bool>) {
+fn apply_bool_reactive_internal(
+    el: WebElem,
+    target: OwnedApplyTarget,
+    rx: silex_core::Rx<bool, silex_core::RxValueKind>,
+) {
     match target {
         OwnedApplyTarget::Attr(name) => {
             Effect::new(move |_| {
-                let val = signal.get();
+                use silex_core::traits::RxGet;
+                let val = rx.get();
                 if val {
                     let _ = el.set_attribute(&name, "");
                 } else {
@@ -282,7 +256,8 @@ fn apply_bool_reactive_internal(el: WebElem, target: OwnedApplyTarget, signal: S
         }
         OwnedApplyTarget::Prop(name) => {
             Effect::new(move |_| {
-                let val = signal.get();
+                use silex_core::traits::RxGet;
+                let val = rx.get();
                 let _ =
                     js_sys::Reflect::set(&el, &JsValue::from_str(&name), &JsValue::from_bool(val));
             });
@@ -291,10 +266,15 @@ fn apply_bool_reactive_internal(el: WebElem, target: OwnedApplyTarget, signal: S
     }
 }
 
-fn apply_bool_pair_reactive_internal(el: WebElem, key: String, signal: Signal<bool>) {
+fn apply_bool_pair_reactive_internal(
+    el: WebElem,
+    key: String,
+    rx: silex_core::Rx<bool, silex_core::RxValueKind>,
+) {
     let list = el.class_list();
     Effect::new(move |_| {
-        if signal.get() {
+        use silex_core::traits::RxGet;
+        if rx.get() {
             let _ = list.add_1(&key);
         } else {
             let _ = list.remove_1(&key);
@@ -302,12 +282,15 @@ fn apply_bool_pair_reactive_internal(el: WebElem, key: String, signal: Signal<bo
     });
 }
 
-pub(crate) fn apply_signal_internal<T>(signal: Signal<T>, el: &WebElem, target: ApplyTarget)
-where
-    T: ReactiveApply + Clone + 'static,
+pub(crate) fn apply_rx_internal<T>(
+    rx: silex_core::Rx<T, silex_core::RxValueKind>,
+    el: &WebElem,
+    target: ApplyTarget,
+) where
+    T: ReactiveApply + 'static,
 {
     let owned_target = OwnedApplyTarget::from(target);
-    T::apply_to_dom(signal, el.clone(), owned_target);
+    T::apply_to_dom(rx, el.clone(), owned_target);
 }
 
 // --- OwnedApplyTarget & ReactiveApply ---
@@ -334,18 +317,27 @@ impl<'a> From<ApplyTarget<'a>> for OwnedApplyTarget {
 }
 
 pub trait ReactiveApply {
-    fn apply_to_dom(signal: Signal<Self>, el: WebElem, target: OwnedApplyTarget)
-    where
+    fn apply_to_dom(
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        el: WebElem,
+        target: OwnedApplyTarget,
+    ) where
         Self: Sized;
 
-    fn apply_pair(signal: Signal<Self>, key: String, el: WebElem, target: OwnedApplyTarget)
-    where
+    fn apply_pair(
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        key: String,
+        el: WebElem,
+        target: OwnedApplyTarget,
+    ) where
         Self: Sized,
     {
-        let _ = (signal, key, el, target);
+        let _ = (rx, key, el, target);
     }
 
-    fn into_payload_reactive(_signal: Signal<Self>) -> Option<AttributePayload>
+    fn into_payload_reactive(
+        _rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+    ) -> Option<AttributePayload>
     where
         Self: Sized,
     {
@@ -430,36 +422,51 @@ impl<T: ApplyToDom> ApplyToDom for Option<T> {
 }
 
 impl ReactiveApply for String {
-    fn apply_to_dom(signal: Signal<Self>, el: WebElem, target: OwnedApplyTarget) {
-        let node_id = signal.ensure_node_id();
-        let effect = GenericAttrEffect::new(node_id, primitive_to_string_erased::<String>);
-        apply_erased_string_reactive_internal(el, target, effect);
+    fn apply_to_dom(
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        el: WebElem,
+        target: OwnedApplyTarget,
+    ) {
+        apply_string_reactive_internal(el, target, rx);
     }
 
-    fn apply_pair(signal: Signal<Self>, key: String, el: WebElem, target: OwnedApplyTarget) {
-        let node_id = signal.ensure_node_id();
-        let effect = GenericAttrEffect::new(node_id, primitive_to_string_erased::<String>);
-        apply_erased_pair_reactive_internal(el, key, target, effect);
+    fn apply_pair(
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        key: String,
+        el: WebElem,
+        target: OwnedApplyTarget,
+    ) {
+        apply_string_pair_reactive_internal(el, key, target, rx);
     }
 
-    fn into_payload_reactive(signal: Signal<Self>) -> Option<AttributePayload> {
-        Some(AttributePayload::ReactiveString(signal))
+    fn into_payload_reactive(
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+    ) -> Option<AttributePayload> {
+        Some(AttributePayload::ReactiveString(rx))
     }
 }
 
 impl ReactiveApply for &'static str {
-    fn apply_to_dom(signal: Signal<Self>, el: WebElem, target: OwnedApplyTarget) {
-        let string_signal =
-            silex_core::reactivity::Signal::derive(Box::new(move || signal.get().to_string()));
-        let node_id = string_signal.ensure_node_id();
-        let effect = GenericAttrEffect::new(node_id, primitive_to_string_erased::<String>);
-        apply_erased_string_reactive_internal(el, target, effect);
+    fn apply_to_dom(
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        el: WebElem,
+        target: OwnedApplyTarget,
+    ) {
+        use silex_core::traits::RxGet;
+        // 自动转换为 Rx<String> 实现类型擦除
+        let string_rx = silex_core::Rx::derive(Box::new(move || rx.get().to_string()));
+        apply_string_reactive_internal(el, target, string_rx);
     }
 
-    fn apply_pair(signal: Signal<Self>, key: String, el: WebElem, target: OwnedApplyTarget) {
-        let string_signal =
-            silex_core::reactivity::Signal::derive(Box::new(move || signal.get().to_string()));
-        String::apply_pair(string_signal, key, el, target)
+    fn apply_pair(
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        key: String,
+        el: WebElem,
+        target: OwnedApplyTarget,
+    ) {
+        use silex_core::traits::RxGet;
+        let string_rx = silex_core::Rx::derive(Box::new(move || rx.get().to_string()));
+        apply_string_pair_reactive_internal(el, key, target, string_rx);
     }
 }
 
@@ -467,19 +474,20 @@ macro_rules! impl_reactive_apply_primitive {
     ($($t:ty),*) => {
         $(
             impl ReactiveApply for $t {
-                fn apply_to_dom(signal: Signal<Self>, el: WebElem, target: OwnedApplyTarget) {
-                    let node_id = signal.ensure_node_id();
-                    let effect = GenericAttrEffect::new(node_id, primitive_to_string_erased::<$t>);
-                    apply_erased_string_reactive_internal(el, target, effect);
+                fn apply_to_dom(rx: silex_core::Rx<Self, silex_core::RxValueKind>, el: WebElem, target: OwnedApplyTarget) {
+                    use silex_core::traits::RxGet;
+                    let string_rx = silex_core::Rx::derive(Box::new(move || rx.get().to_string()));
+                    apply_string_reactive_internal(el, target, string_rx);
                 }
-                fn apply_pair(signal: Signal<Self>, key: String, el: WebElem, target: OwnedApplyTarget) {
-                    let node_id = signal.ensure_node_id();
-                    let effect = GenericAttrEffect::new(node_id, primitive_to_string_erased::<$t>);
-                    apply_erased_pair_reactive_internal(el, key, target, effect);
+                fn apply_pair(rx: silex_core::Rx<Self, silex_core::RxValueKind>, key: String, el: WebElem, target: OwnedApplyTarget) {
+                    use silex_core::traits::RxGet;
+                    let string_rx = silex_core::Rx::derive(Box::new(move || rx.get().to_string()));
+                    apply_string_pair_reactive_internal(el, key, target, string_rx);
                 }
-                fn into_payload_reactive(signal: Signal<Self>) -> Option<AttributePayload> {
-                    let node_id = signal.ensure_node_id();
-                    Some(AttributePayload::ReactiveErasedString(node_id, primitive_to_string_erased::<$t>))
+                fn into_payload_reactive(rx: silex_core::Rx<Self, silex_core::RxValueKind>) -> Option<AttributePayload> {
+                    use silex_core::traits::RxGet;
+                    let string_rx = silex_core::Rx::derive(Box::new(move || rx.get().to_string()));
+                    Some(AttributePayload::ReactiveString(string_rx))
                 }
             }
         )*
@@ -491,36 +499,47 @@ impl_reactive_apply_primitive!(
 );
 
 impl ReactiveApply for bool {
-    fn apply_to_dom(signal: Signal<Self>, el: WebElem, target: OwnedApplyTarget) {
-        apply_bool_reactive_internal(el, target, signal);
+    fn apply_to_dom(
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        el: WebElem,
+        target: OwnedApplyTarget,
+    ) {
+        apply_bool_reactive_internal(el, target, rx);
     }
 
-    fn apply_pair(signal: Signal<Self>, key: String, el: WebElem, target: OwnedApplyTarget) {
+    fn apply_pair(
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        key: String,
+        el: WebElem,
+        target: OwnedApplyTarget,
+    ) {
         let is_class = matches!(target, OwnedApplyTarget::Class)
             || matches!(target, OwnedApplyTarget::Attr(ref n) if n == "class");
 
         if is_class {
-            apply_bool_pair_reactive_internal(el, key, signal);
+            apply_bool_pair_reactive_internal(el, key, rx);
         }
     }
 
-    fn into_payload_reactive(signal: Signal<Self>) -> Option<AttributePayload> {
-        Some(AttributePayload::ReactiveBool(signal))
+    fn into_payload_reactive(
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+    ) -> Option<AttributePayload> {
+        Some(AttributePayload::ReactiveBool(rx))
     }
 }
 
-// 响应式元组归一化终点：(Key, Signal<T>)
-impl<K, T> ApplyToDom for (K, silex_core::reactivity::Signal<T>)
+// 响应式元组归一化终点：(K, Rx<T>)
+impl<K, T> ApplyToDom for (K, silex_core::Rx<T, silex_core::RxValueKind>)
 where
     K: AsRef<str> + Clone,
     T: ReactiveApply + Clone + 'static,
 {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
-        let (key, signal) = self.clone();
+        let (key, rx) = self.clone();
         let el = el.clone();
         let owned_target = OwnedApplyTarget::from(target);
         let key_str = key.as_ref().to_string();
-        T::apply_pair(signal, key_str, el, owned_target);
+        T::apply_pair(rx, key_str, el, owned_target);
     }
 }
 
@@ -670,11 +689,9 @@ pub enum AttributePayload {
     /// 静态布尔值：用于开关型属性（如 disabled, checked）
     StaticBool(bool),
     /// 响应式字符串
-    ReactiveString(Signal<String>),
+    ReactiveString(silex_core::Rx<String, silex_core::RxValueKind>),
     /// 响应式布尔值
-    ReactiveBool(Signal<bool>),
-    /// 擦除类型的响应式字符串级属性
-    ReactiveErasedString(silex_core::reactivity::NodeId, ErasedStringConverter),
+    ReactiveBool(silex_core::Rx<bool, silex_core::RxValueKind>),
     /// 动态求值载荷
     Dynamic(Rc<dyn Fn(&WebElem, &OwnedApplyTarget)>),
     /// 命令式回调：用于事件监听或复杂的 Mixin 逻辑
@@ -793,23 +810,14 @@ impl PendingAttribute {
                     apply_immediate_bool(el, ApplyTarget::from(t), *val);
                 }
             }
-            AttributePayload::ReactiveString(signal) => {
+            AttributePayload::ReactiveString(rx) => {
                 if let Some(ref t) = self.target {
-                    let node_id = signal.ensure_node_id();
-                    let effect =
-                        GenericAttrEffect::new(node_id, primitive_to_string_erased::<String>);
-                    apply_erased_string_reactive_internal(el.clone(), t.clone(), effect);
+                    apply_string_reactive_internal(el.clone(), t.clone(), rx.clone());
                 }
             }
-            AttributePayload::ReactiveBool(signal) => {
+            AttributePayload::ReactiveBool(rx) => {
                 if let Some(ref t) = self.target {
-                    apply_bool_reactive_internal(el.clone(), t.clone(), *signal);
-                }
-            }
-            AttributePayload::ReactiveErasedString(node_id, converter) => {
-                if let Some(ref t) = self.target {
-                    let effect = GenericAttrEffect::new(*node_id, *converter);
-                    apply_erased_string_reactive_internal(el.clone(), t.clone(), effect);
+                    apply_bool_reactive_internal(el.clone(), t.clone(), rx.clone());
                 }
             }
             AttributePayload::Dynamic(f) => {

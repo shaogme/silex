@@ -221,18 +221,17 @@ where
 
 // --- 响应式文本归一化内核 (Reactive Text Consolidation Kernel) ---
 
-/// 泛型内核函数：负责处理所有响应式文本更新。
-/// 移除 Box<dyn ReactiveText>，通过直接接受 Signal<T> 避免昂贵的装箱和虚函数开销，提升运行时渲染性能。
-pub(crate) fn mount_reactive_text<T: Display + Clone + 'static>(parent: &Node, rx: Signal<T>) {
-    let node_id = rx.ensure_node_id();
-    let converter = crate::attribute::primitive_to_string_erased::<T>;
-    mount_erased_reactive_text_internal(parent, node_id, converter);
+/// 泛型内核函数：负责将任何响应式类型转换为文本视图。
+pub(crate) fn mount_reactive_text<T: Display + Clone + 'static>(parent: &Node, signal: Signal<T>) {
+    use silex_core::traits::RxGet;
+    // 自动转换为 Rx<String> 实现类型擦除与池化节点读取
+    let rx = silex_core::Rx::derive(Box::new(move || signal.get().to_string()));
+    mount_string_reactive_text_internal(parent, rx);
 }
 
-fn mount_erased_reactive_text_internal(
+fn mount_string_reactive_text_internal(
     parent: &Node,
-    node_id: silex_core::reactivity::NodeId,
-    converter: crate::attribute::ErasedStringConverter,
+    rx: silex_core::Rx<String, silex_core::RxValueKind>,
 ) {
     let document = crate::document();
     let node = document.create_text_node("");
@@ -242,38 +241,29 @@ fn mount_erased_reactive_text_internal(
     }
 
     Effect::new(move |_| {
-        let value = converter(node_id);
+        use silex_core::traits::RxGet;
+        let value = rx.get();
         node.set_node_value(Some(&value));
     });
 }
 
 // --- 响应式组件视图内核 (Reactive View Core) ---
 
-pub(crate) type ErasedViewConverter = fn(silex_core::reactivity::NodeId) -> SharedView;
-
 pub(crate) fn mount_reactive_view<T: View + Clone + 'static>(
     parent: &Node,
-    rx: Signal<T>,
+    signal: Signal<T>,
     attrs: Vec<PendingAttribute>,
 ) {
-    let node_id = rx.ensure_node_id();
-    let converter = view_to_shared_erased::<T>;
-    mount_erased_reactive_view_internal(parent, node_id, attrs, converter);
+    use silex_core::traits::RxGet;
+    // 自动转换为 Rx<SharedView> 实现类型擦除
+    let rx = silex_core::Rx::derive(Box::new(move || signal.get().into_shared()));
+    mount_shared_view_reactive_internal(parent, rx, attrs);
 }
 
-fn view_to_shared_erased<T: View + Clone + 'static>(
-    node_id: silex_core::reactivity::NodeId,
-) -> SharedView {
-    use silex_core::traits::RxRead;
-    let rx = silex_core::reactivity::Signal::<T>::Derived(node_id, std::marker::PhantomData);
-    rx.with(|v| v.clone().into_shared())
-}
-
-fn mount_erased_reactive_view_internal(
+fn mount_shared_view_reactive_internal(
     parent: &Node,
-    node_id: silex_core::reactivity::NodeId,
+    rx: silex_core::Rx<SharedView, silex_core::RxValueKind>,
     attrs: Vec<PendingAttribute>,
-    converter: ErasedViewConverter,
 ) {
     let document = crate::document();
 
@@ -307,9 +297,11 @@ fn mount_erased_reactive_view_internal(
         let end_node = end_node.clone();
         let document = document.clone();
         let attrs = attrs.clone();
+        let rx = rx.clone();
 
         let result = catch_unwind(AssertUnwindSafe(|| {
-            let view = converter(node_id);
+            use silex_core::traits::RxGet;
+            let view = rx.get();
 
             let start_node = start_node.clone();
             let end_node = end_node.clone();

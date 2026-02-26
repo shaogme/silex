@@ -250,7 +250,7 @@ fn generate_css_recursive(
 
 impl silex_dom::attribute::ReactiveApply for Style {
     fn apply_to_dom(
-        signal: silex_core::reactivity::Signal<Self>,
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
         el: web_sys::Element,
         _target: silex_dom::attribute::OwnedApplyTarget,
     ) {
@@ -260,7 +260,7 @@ impl silex_dom::attribute::ReactiveApply for Style {
                 let _ = el.class_list().remove_1(c);
             }
             use silex_core::traits::RxGet;
-            let style = signal.get();
+            let style = rx.get();
             style.apply_to_element(&el)
         });
     }
