@@ -387,7 +387,7 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
 // --- 元组 RxInternal 实现：支持递归常量检测 ---
 
 macro_rules! impl_tuple_into_rx {
-    // 专用 2 元元组分支：直连 Op2
+    // 专用 2 元元组分支
     (2, $T0:ident : $idx0:tt, $T1:ident : $idx1:tt) => {
         #[allow(non_snake_case)]
         impl<$T0, $T1> $crate::traits::RxValue for ($T0, $T1)
@@ -407,13 +407,12 @@ macro_rules! impl_tuple_into_rx {
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
                 let is_constant = self.is_constant();
-                let op = crate::reactivity::OpPayload::new(
+                let op = crate::reactivity::StaticMap2Payload::new(
                     [self.$idx0.into_signal().ensure_node_id(), self.$idx1.into_signal().ensure_node_id()],
-                    crate::reactivity::op_trampolines::read_tuple_2::<$T0::Value, $T1::Value>,
-                    crate::reactivity::op_trampolines::track_inputs,
+                    crate::reactivity::op_trampolines::tuple_2_mapper::<$T0::Value, $T1::Value>,
                     is_constant,
                 );
-                Rx::new_op(op)
+                Rx::new_op_raw(op)
             }
             #[inline(always)] fn is_constant(&self) -> bool { self.$idx0.is_constant() && self.$idx1.is_constant() }
         }
@@ -475,13 +474,13 @@ macro_rules! impl_tuple_into_rx {
                 let is_constant = self.is_constant();
                 let ids = [$(self.$idx.clone().into_signal().ensure_node_id()),+];
                 let meta_id = silex_reactivity::untrack(|| silex_reactivity::store_value(ids));
-                let op = crate::reactivity::OpPayload::new(
-                    [meta_id],
+                let op = crate::reactivity::StaticMapPayload::new(
+                    meta_id,
                     crate::reactivity::op_trampolines::$trap::<$($T::Value),+>,
                     crate::reactivity::op_trampolines::track_tuple_meta::<$len>,
                     is_constant,
                 );
-                Rx::new_op(op)
+                Rx::new_op_raw(op)
             }
             #[inline(always)] fn is_constant(&self) -> bool { $(self.$idx.is_constant() && )+ true }
         }
@@ -523,10 +522,10 @@ macro_rules! impl_tuple_into_rx {
 }
 
 impl_tuple_into_rx!(2, T0: 0, T1: 1);
-impl_tuple_into_rx!(3, read_tuple_3_meta, T0: 0, T1: 1, T2: 2);
-impl_tuple_into_rx!(4, read_tuple_4_meta, T0: 0, T1: 1, T2: 2, T3: 3);
-impl_tuple_into_rx!(5, read_tuple_5_meta, T0: 0, T1: 1, T2: 2, T3: 3, T4: 4);
-impl_tuple_into_rx!(6, read_tuple_6_meta, T0: 0, T1: 1, T2: 2, T3: 3, T4: 4, T5: 5);
+impl_tuple_into_rx!(3, tuple_3_mapper, T0: 0, T1: 1, T2: 2);
+impl_tuple_into_rx!(4, tuple_4_mapper, T0: 0, T1: 1, T2: 2, T3: 3);
+impl_tuple_into_rx!(5, tuple_5_mapper, T0: 0, T1: 1, T2: 2, T3: 3, T4: 4);
+impl_tuple_into_rx!(6, tuple_6_mapper, T0: 0, T1: 1, T2: 2, T3: 3, T4: 4, T5: 5);
 
 impl<T: crate::traits::RxData, M> IntoRx for Rx<T, M>
 where

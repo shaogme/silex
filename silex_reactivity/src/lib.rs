@@ -548,6 +548,12 @@ pub fn is_op_valid(id: NodeId) -> bool {
     RUNTIME.with(|rt| rt.ops.contains_key(id))
 }
 
+/// 获取任何响应式节点的原始指针（不区分 Signal 或 StoredValue）。
+/// 用于 Silex Core 的高级去泛型化优化。
+pub unsafe fn try_get_any_raw_untracked(id: NodeId) -> Option<*const ()> {
+    RUNTIME.with(|rt| unsafe { rt.get_any_raw_ptr_untracked(id) })
+}
+
 pub fn get_node_defined_at(_id: NodeId) -> Option<&'static std::panic::Location<'static>> {
     #[cfg(debug_assertions)]
     {

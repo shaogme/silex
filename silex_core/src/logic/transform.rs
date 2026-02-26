@@ -43,7 +43,7 @@ where
             }
         }
         if let Some(id) = self.id() {
-            let op = crate::reactivity::StaticMapPayload::new(id, f, false);
+            let op = crate::reactivity::StaticMapPayload::new_unary(id, f, false);
             crate::Rx::new_op_raw(op)
         } else {
             crate::Rx::derive(Box::new(move || self.with(|v| f(v))))

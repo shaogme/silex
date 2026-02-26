@@ -95,6 +95,12 @@ impl AnyValue {
             None
         }
     }
+
+    /// 获取底层存储的原始指针。
+    /// 调用者负责指针的生存期和正确类型还原。
+    pub(crate) unsafe fn as_ptr(&self) -> *const () {
+        unsafe { (self.vtable.as_ptr)(self.data.as_ptr() as *const usize) }
+    }
 }
 
 impl Drop for AnyValue {

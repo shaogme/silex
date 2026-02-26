@@ -17,23 +17,12 @@ use crate::{Rx, RxValueKind};
 /// 内部辅助函数：直接从运行时借用信号值。
 /// 安全性：由 RxGuard 的生命周期和 Silex Arena 的地址稳定性保证。
 pub(crate) unsafe fn rx_borrow_signal_unsafe<T: RxData>(id: NodeId) -> Option<&'static T> {
-    // 1. 尝试作为响应式信号借用
-    if let Some(v) = silex_reactivity::try_with_signal_untracked(id, |v: &T| unsafe {
-        std::mem::transmute::<&T, &'static T>(v)
-    }) {
-        return Some(v);
-    }
-    // 2. 尝试作为静态存储值借用 (常量)
-    silex_reactivity::try_with_stored_value(id, |v: &T| unsafe {
-        std::mem::transmute::<&T, &'static T>(v)
-    })
+    unsafe { silex_reactivity::try_get_any_raw_untracked(id).map(|ptr| &*(ptr as *const T)) }
 }
 
 /// 内部辅助函数：直接从运行时借用 StoredValue。
 unsafe fn rx_borrow_stored_value_unsafe<T: RxData>(id: NodeId) -> Option<&'static T> {
-    silex_reactivity::try_with_stored_value(id, |v: &T| unsafe {
-        std::mem::transmute::<&T, &'static T>(v)
-    })
+    unsafe { silex_reactivity::try_get_any_raw_untracked(id).map(|ptr| &*(ptr as *const T)) }
 }
 
 // --- Constant ---
@@ -275,66 +264,94 @@ pub struct OpPayloadHeader<T> {
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct StaticMapPayload<InputT, OutputT> {
-    pub header: OpPayloadHeader<OutputT>,
+pub struct StaticMapPayload<OT> {
+    pub header: OpPayloadHeader<OT>,
     pub input_id: NodeId,
-    pub mapper: fn(&InputT) -> OutputT,
+    pub compute: unsafe fn(input_ptr: *const (), mapper_ptr: *const ()) -> OT,
+    pub mapper_ptr: *const (),
 }
 
-impl<IT: RxData, OT: RxData> StaticMapPayload<IT, OT> {
-    pub fn new(input_id: NodeId, mapper: fn(&IT) -> OT, is_constant: bool) -> Self {
+impl<OT: RxData> StaticMapPayload<OT> {
+    pub fn new<IT: RxData>(
+        input_id: NodeId,
+        mapper: fn(&IT) -> OT,
+        track: fn(this: *const u8),
+        is_constant: bool,
+    ) -> Self {
         Self {
             header: OpPayloadHeader {
-                read: op_trampolines::map_read_wrap::<IT, OT>,
-                track: op_trampolines::map_track_wrap::<IT, OT>,
+                read: op_trampolines::thin_map_read_wrap::<OT>,
+                track,
                 is_constant,
             },
             input_id,
-            mapper,
+            compute: op_trampolines::compute_map::<IT, OT>,
+            mapper_ptr: mapper as *const (),
         }
+    }
+
+    pub fn new_unary<IT: RxData>(
+        input_id: NodeId,
+        mapper: fn(&IT) -> OT,
+        is_constant: bool,
+    ) -> Self {
+        Self::new(input_id, mapper, op_trampolines::track_unary, is_constant)
     }
 }
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct StaticMap2Payload<I1, I2, OT> {
+pub struct StaticMap2Payload<OT> {
     pub header: OpPayloadHeader<OT>,
     pub inputs: [NodeId; 2],
-    pub mapper: fn(&I1, &I2) -> OT,
+    pub compute: unsafe fn(i1: *const (), i2: *const (), mapper_ptr: *const ()) -> OT,
+    pub mapper_ptr: *const (),
 }
 
-impl<I1: RxData, I2: RxData, OT: RxData> StaticMap2Payload<I1, I2, OT> {
-    pub fn new(inputs: [NodeId; 2], mapper: fn(&I1, &I2) -> OT, is_constant: bool) -> Self {
+impl<OT: RxData> StaticMap2Payload<OT> {
+    pub fn new<I1: RxData, I2: RxData>(
+        inputs: [NodeId; 2],
+        mapper: fn(&I1, &I2) -> OT,
+        is_constant: bool,
+    ) -> Self {
         Self {
             header: OpPayloadHeader {
-                read: op_trampolines::map2_read_wrap::<I1, I2, OT>,
-                track: op_trampolines::map2_track_wrap::<I1, I2, OT>,
+                read: op_trampolines::thin_map2_read_wrap::<OT>,
+                track: op_trampolines::track_binary,
                 is_constant,
             },
             inputs,
-            mapper,
+            compute: op_trampolines::compute_map2::<I1, I2, OT>,
+            mapper_ptr: mapper as *const (),
         }
     }
 }
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct StaticMap3Payload<I1, I2, I3, OT> {
+pub struct StaticMap3Payload<OT> {
     pub header: OpPayloadHeader<OT>,
     pub inputs: [NodeId; 3],
-    pub mapper: fn(&I1, &I2, &I3) -> OT,
+    pub compute:
+        unsafe fn(i1: *const (), i2: *const (), i3: *const (), mapper_ptr: *const ()) -> OT,
+    pub mapper_ptr: *const (),
 }
 
-impl<I1: RxData, I2: RxData, I3: RxData, OT: RxData> StaticMap3Payload<I1, I2, I3, OT> {
-    pub fn new(inputs: [NodeId; 3], mapper: fn(&I1, &I2, &I3) -> OT, is_constant: bool) -> Self {
+impl<OT: RxData> StaticMap3Payload<OT> {
+    pub fn new<I1: RxData, I2: RxData, I3: RxData>(
+        inputs: [NodeId; 3],
+        mapper: fn(&I1, &I2, &I3) -> OT,
+        is_constant: bool,
+    ) -> Self {
         Self {
             header: OpPayloadHeader {
-                read: op_trampolines::map3_read_wrap::<I1, I2, I3, OT>,
-                track: op_trampolines::map3_track_wrap::<I1, I2, I3, OT>,
+                read: op_trampolines::thin_map3_read_wrap::<OT>,
+                track: op_trampolines::track_ternary,
                 is_constant,
             },
             inputs,
-            mapper,
+            compute: op_trampolines::compute_map3::<I1, I2, I3, OT>,
+            mapper_ptr: mapper as *const (),
         }
     }
 }
@@ -482,50 +499,78 @@ pub mod op_trampolines {
         (payload.raw_track)(&payload.inputs)
     }
 
-    pub unsafe fn map_read_wrap<IT: RxData, OT: RxData>(this: *const u8) -> Option<OT> {
-        let payload = unsafe { &*(this as *const StaticMapPayload<IT, OT>) };
-        unsafe { rx_borrow_signal_unsafe::<IT>(payload.input_id).map(|v| (payload.mapper)(v)) }
+    pub unsafe fn thin_map_read_wrap<OT: RxData>(this: *const u8) -> Option<OT> {
+        let payload = unsafe { &*(this as *const StaticMapPayload<OT>) };
+        let input_ptr = unsafe { silex_reactivity::try_get_any_raw_untracked(payload.input_id)? };
+        Some(unsafe { (payload.compute)(input_ptr, payload.mapper_ptr) })
     }
 
-    pub fn map_track_wrap<IT: RxData, OT: RxData>(this: *const u8) {
-        let payload = unsafe { &*(this as *const StaticMapPayload<IT, OT>) };
-        track_signal(payload.input_id);
+    pub unsafe fn compute_map<IT: RxData, OT: RxData>(input: *const (), mapper: *const ()) -> OT {
+        let mapper: fn(&IT) -> OT = unsafe { std::mem::transmute(mapper) };
+        mapper(unsafe { &*(input as *const IT) })
     }
 
-    pub unsafe fn map2_read_wrap<I1: RxData, I2: RxData, OT: RxData>(
-        this: *const u8,
-    ) -> Option<OT> {
-        let payload = unsafe { &*(this as *const StaticMap2Payload<I1, I2, OT>) };
-        unsafe {
-            let v1 = rx_borrow_signal_unsafe::<I1>(payload.inputs[0])?;
-            let v2 = rx_borrow_signal_unsafe::<I2>(payload.inputs[1])?;
-            Some((payload.mapper)(&*v1, &*v2))
-        }
+    pub fn track_unary(this: *const u8) {
+        let offset = std::mem::size_of::<OpPayloadHeader<()>>();
+        let input_id_ptr = unsafe { this.add(offset) as *const NodeId };
+        track_signal(unsafe { *input_id_ptr });
     }
 
-    pub fn map2_track_wrap<I1: RxData, I2: RxData, OT: RxData>(this: *const u8) {
-        let payload = unsafe { &*(this as *const StaticMap2Payload<I1, I2, OT>) };
-        track_signal(payload.inputs[0]);
-        track_signal(payload.inputs[1]);
+    pub unsafe fn thin_map2_read_wrap<OT: RxData>(this: *const u8) -> Option<OT> {
+        let payload = unsafe { &*(this as *const StaticMap2Payload<OT>) };
+        let v1 = unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[0])? };
+        let v2 = unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[1])? };
+        Some(unsafe { (payload.compute)(v1, v2, payload.mapper_ptr) })
     }
 
-    pub unsafe fn map3_read_wrap<I1: RxData, I2: RxData, I3: RxData, OT: RxData>(
-        this: *const u8,
-    ) -> Option<OT> {
-        let payload = unsafe { &*(this as *const StaticMap3Payload<I1, I2, I3, OT>) };
-        unsafe {
-            let v1 = rx_borrow_signal_unsafe::<I1>(payload.inputs[0])?;
-            let v2 = rx_borrow_signal_unsafe::<I2>(payload.inputs[1])?;
-            let v3 = rx_borrow_signal_unsafe::<I3>(payload.inputs[2])?;
-            Some((payload.mapper)(&*v1, &*v2, &*v3))
-        }
+    pub unsafe fn compute_map2<I1: RxData, I2: RxData, OT: RxData>(
+        i1: *const (),
+        i2: *const (),
+        mapper: *const (),
+    ) -> OT {
+        let mapper: fn(&I1, &I2) -> OT = unsafe { std::mem::transmute(mapper) };
+        mapper(unsafe { &*(i1 as *const I1) }, unsafe {
+            &*(i2 as *const I2)
+        })
     }
 
-    pub fn map3_track_wrap<I1: RxData, I2: RxData, I3: RxData, OT: RxData>(this: *const u8) {
-        let payload = unsafe { &*(this as *const StaticMap3Payload<I1, I2, I3, OT>) };
-        track_signal(payload.inputs[0]);
-        track_signal(payload.inputs[1]);
-        track_signal(payload.inputs[2]);
+    pub fn track_binary(this: *const u8) {
+        let offset = std::mem::size_of::<OpPayloadHeader<()>>();
+        let inputs_ptr = unsafe { this.add(offset) as *const [NodeId; 2] };
+        let inputs = unsafe { *inputs_ptr };
+        track_signal(inputs[0]);
+        track_signal(inputs[1]);
+    }
+
+    pub unsafe fn thin_map3_read_wrap<OT: RxData>(this: *const u8) -> Option<OT> {
+        let payload = unsafe { &*(this as *const StaticMap3Payload<OT>) };
+        let v1 = unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[0])? };
+        let v2 = unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[1])? };
+        let v3 = unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[2])? };
+        Some(unsafe { (payload.compute)(v1, v2, v3, payload.mapper_ptr) })
+    }
+
+    pub unsafe fn compute_map3<I1: RxData, I2: RxData, I3: RxData, OT: RxData>(
+        i1: *const (),
+        i2: *const (),
+        i3: *const (),
+        mapper: *const (),
+    ) -> OT {
+        let mapper: fn(&I1, &I2, &I3) -> OT = unsafe { std::mem::transmute(mapper) };
+        mapper(
+            unsafe { &*(i1 as *const I1) },
+            unsafe { &*(i2 as *const I2) },
+            unsafe { &*(i3 as *const I3) },
+        )
+    }
+
+    pub fn track_ternary(this: *const u8) {
+        let offset = std::mem::size_of::<OpPayloadHeader<()>>();
+        let inputs_ptr = unsafe { this.add(offset) as *const [NodeId; 3] };
+        let inputs = unsafe { *inputs_ptr };
+        track_signal(inputs[0]);
+        track_signal(inputs[1]);
+        track_signal(inputs[2]);
     }
 
     pub fn track_inputs(inputs: &[NodeId]) {
@@ -535,8 +580,9 @@ pub mod op_trampolines {
     }
 
     /// 追踪打包在 StoredValue 中的 N 个信号
-    pub fn track_tuple_meta<const N: usize>(inputs: &[NodeId]) {
-        let meta_id = inputs[0];
+    pub fn track_tuple_meta<const N: usize>(this: *const u8) {
+        let offset = std::mem::size_of::<OpPayloadHeader<()>>();
+        let meta_id = unsafe { *(this.add(offset) as *const NodeId) };
         let _ = silex_reactivity::try_with_stored_value(meta_id, |ids: &[NodeId; N]| {
             for &id in ids {
                 track_signal(id);
@@ -544,114 +590,82 @@ pub mod op_trampolines {
         });
     }
 
-    // --- 二元直连元组读取 ---
-    pub unsafe fn read_tuple_2<T0: RxData, T1: RxData>(inputs: &[NodeId]) -> Option<(T0, T1)>
-    where
-        T0: Clone,
-        T1: Clone,
-    {
+    // --- 元组读取 Mappers ---
+
+    pub fn tuple_2_mapper<T0: Clone + 'static, T1: Clone + 'static>(i0: &T0, i1: &T1) -> (T0, T1) {
+        (i0.clone(), i1.clone())
+    }
+
+    pub fn tuple_3_mapper<T0: Clone + 'static, T1: Clone + 'static, T2: Clone + 'static>(
+        ids: &[NodeId; 3],
+    ) -> (T0, T1, T2) {
         unsafe {
-            Some((
-                rx_borrow_signal_unsafe::<T0>(inputs[0])?.clone(),
-                rx_borrow_signal_unsafe::<T1>(inputs[1])?.clone(),
-            ))
+            (
+                rx_borrow_signal_unsafe::<T0>(ids[0]).unwrap().clone(),
+                rx_borrow_signal_unsafe::<T1>(ids[1]).unwrap().clone(),
+                rx_borrow_signal_unsafe::<T2>(ids[2]).unwrap().clone(),
+            )
         }
     }
 
-    // --- 打包元数据元组读取 (N > 2) ---
-    pub unsafe fn read_tuple_3_meta<T0: RxData, T1: RxData, T2: RxData>(
-        inputs: &[NodeId],
-    ) -> Option<(T0, T1, T2)>
-    where
-        T0: Clone,
-        T1: Clone,
-        T2: Clone,
-    {
-        let meta_id = inputs[0];
-        silex_reactivity::try_with_stored_value(meta_id, |ids: &[NodeId; 3]| unsafe {
-            Some((
-                rx_borrow_signal_unsafe::<T0>(ids[0])?.clone(),
-                rx_borrow_signal_unsafe::<T1>(ids[1])?.clone(),
-                rx_borrow_signal_unsafe::<T2>(ids[2])?.clone(),
-            ))
-        })
-        .flatten()
-    }
-
-    pub unsafe fn read_tuple_4_meta<T0: RxData, T1: RxData, T2: RxData, T3: RxData>(
-        inputs: &[NodeId],
-    ) -> Option<(T0, T1, T2, T3)>
-    where
-        T0: Clone,
-        T1: Clone,
-        T2: Clone,
-        T3: Clone,
-    {
-        let meta_id = inputs[0];
-        silex_reactivity::try_with_stored_value(meta_id, |ids: &[NodeId; 4]| unsafe {
-            Some((
-                rx_borrow_signal_unsafe::<T0>(ids[0])?.clone(),
-                rx_borrow_signal_unsafe::<T1>(ids[1])?.clone(),
-                rx_borrow_signal_unsafe::<T2>(ids[2])?.clone(),
-                rx_borrow_signal_unsafe::<T3>(ids[3])?.clone(),
-            ))
-        })
-        .flatten()
-    }
-
-    pub unsafe fn read_tuple_5_meta<T0: RxData, T1: RxData, T2: RxData, T3: RxData, T4: RxData>(
-        inputs: &[NodeId],
-    ) -> Option<(T0, T1, T2, T3, T4)>
-    where
-        T0: Clone,
-        T1: Clone,
-        T2: Clone,
-        T3: Clone,
-        T4: Clone,
-    {
-        let meta_id = inputs[0];
-        silex_reactivity::try_with_stored_value(meta_id, |ids: &[NodeId; 5]| unsafe {
-            Some((
-                rx_borrow_signal_unsafe::<T0>(ids[0])?.clone(),
-                rx_borrow_signal_unsafe::<T1>(ids[1])?.clone(),
-                rx_borrow_signal_unsafe::<T2>(ids[2])?.clone(),
-                rx_borrow_signal_unsafe::<T3>(ids[3])?.clone(),
-                rx_borrow_signal_unsafe::<T4>(ids[4])?.clone(),
-            ))
-        })
-        .flatten()
-    }
-
-    pub unsafe fn read_tuple_6_meta<
-        T0: RxData,
-        T1: RxData,
-        T2: RxData,
-        T3: RxData,
-        T4: RxData,
-        T5: RxData,
+    pub fn tuple_4_mapper<
+        T0: Clone + 'static,
+        T1: Clone + 'static,
+        T2: Clone + 'static,
+        T3: Clone + 'static,
     >(
-        inputs: &[NodeId],
-    ) -> Option<(T0, T1, T2, T3, T4, T5)>
-    where
-        T0: Clone,
-        T1: Clone,
-        T2: Clone,
-        T3: Clone,
-        T4: Clone,
-        T5: Clone,
-    {
-        let meta_id = inputs[0];
-        silex_reactivity::try_with_stored_value(meta_id, |ids: &[NodeId; 6]| unsafe {
-            Some((
-                rx_borrow_signal_unsafe::<T0>(ids[0])?.clone(),
-                rx_borrow_signal_unsafe::<T1>(ids[1])?.clone(),
-                rx_borrow_signal_unsafe::<T2>(ids[2])?.clone(),
-                rx_borrow_signal_unsafe::<T3>(ids[3])?.clone(),
-                rx_borrow_signal_unsafe::<T4>(ids[4])?.clone(),
-                rx_borrow_signal_unsafe::<T5>(ids[5])?.clone(),
-            ))
-        })
-        .flatten()
+        ids: &[NodeId; 4],
+    ) -> (T0, T1, T2, T3) {
+        unsafe {
+            (
+                rx_borrow_signal_unsafe::<T0>(ids[0]).unwrap().clone(),
+                rx_borrow_signal_unsafe::<T1>(ids[1]).unwrap().clone(),
+                rx_borrow_signal_unsafe::<T2>(ids[2]).unwrap().clone(),
+                rx_borrow_signal_unsafe::<T3>(ids[3]).unwrap().clone(),
+            )
+        }
+    }
+
+    pub fn tuple_5_mapper<
+        T0: Clone + 'static,
+        T1: Clone + 'static,
+        T2: Clone + 'static,
+        T3: Clone + 'static,
+        T4: Clone + 'static,
+    >(
+        ids: &[NodeId; 5],
+    ) -> (T0, T1, T2, T3, T4) {
+        unsafe {
+            (
+                rx_borrow_signal_unsafe::<T0>(ids[0]).unwrap().clone(),
+                rx_borrow_signal_unsafe::<T1>(ids[1]).unwrap().clone(),
+                rx_borrow_signal_unsafe::<T2>(ids[2]).unwrap().clone(),
+                rx_borrow_signal_unsafe::<T3>(ids[3]).unwrap().clone(),
+                rx_borrow_signal_unsafe::<T4>(ids[4]).unwrap().clone(),
+            )
+        }
+    }
+
+    pub fn tuple_6_mapper<
+        T0: Clone + 'static,
+        T1: Clone + 'static,
+        T2: Clone + 'static,
+        T3: Clone + 'static,
+        T4: Clone + 'static,
+        T5: Clone + 'static,
+    >(
+        ids: &[NodeId; 6],
+    ) -> (T0, T1, T2, T3, T4, T5) {
+        unsafe {
+            (
+                rx_borrow_signal_unsafe::<T0>(ids[0]).unwrap().clone(),
+                rx_borrow_signal_unsafe::<T1>(ids[1]).unwrap().clone(),
+                rx_borrow_signal_unsafe::<T2>(ids[2]).unwrap().clone(),
+                rx_borrow_signal_unsafe::<T3>(ids[3]).unwrap().clone(),
+                rx_borrow_signal_unsafe::<T4>(ids[4]).unwrap().clone(),
+                rx_borrow_signal_unsafe::<T5>(ids[5]).unwrap().clone(),
+            )
+        }
     }
 }
 

@@ -473,6 +473,20 @@ impl Runtime {
         self.ops.insert(id, OpData(data));
         id
     }
+
+    /// 获取节点的原始指针（不区分 Signal 或 StoredValue）。
+    /// 注意：该函数不负责 track 依赖。
+    pub(crate) unsafe fn get_any_raw_ptr_untracked(&self, id: NodeId) -> Option<*const ()> {
+        // 先尝试作为信号获取
+        if let Some(s) = self.signals.get(id) {
+            return Some(unsafe { s.value.as_ptr() });
+        }
+        // 再尝试作为静态存储值获取
+        if let Some(sv) = self.stored_values.get(id) {
+            return Some(unsafe { sv.value.as_ptr() });
+        }
+        None
+    }
 }
 
 pub(crate) fn run_effect_internal(rt: &Runtime, effect_id: NodeId) {
