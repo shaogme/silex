@@ -1,11 +1,10 @@
 pub mod callback;
 pub mod error;
 pub mod log;
-pub mod node_ref;
-pub mod reactivity;
-
 pub mod logic;
 pub mod macros_helper;
+pub mod node_ref;
+pub mod reactivity;
 pub mod traits;
 
 pub use callback::Callback;

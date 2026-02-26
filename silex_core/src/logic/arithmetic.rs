@@ -119,27 +119,36 @@ macro_rules! impl_rx_op {
 
             #[inline]
             fn $method(self, rhs: R) -> Self::Output {
-                use $crate::traits::{IntoSignal, RxGet};
-
-                let lhs = self.into_signal();
-                let rhs = rhs.into_signal();
-
-                if lhs.is_constant() && rhs.is_constant() {
-                    return $crate::Rx::new_constant($crate::logic::arithmetic::ops_impl::$method(
-                        &lhs.get(),
-                        &rhs.get(),
-                    ));
-                }
-
-                let op = $crate::reactivity::StaticMap2Payload::new(
-                    [lhs.ensure_node_id(), rhs.ensure_node_id()],
+                $crate::logic::arithmetic::apply_binary_op::<T, R>(
+                    self,
+                    rhs,
                     $crate::logic::arithmetic::ops_impl::$method::<T>,
-                    false,
-                );
-                $crate::Rx::new_op_raw(op)
+                )
             }
         }
     };
+}
+
+pub fn apply_binary_op<T, R>(lhs: crate::Rx<T>, rhs: R, f: fn(&T, &T) -> T) -> crate::Rx<T>
+where
+    T: crate::traits::RxCloneData + 'static,
+    R: crate::traits::IntoSignal<Value = T> + 'static,
+{
+    use crate::traits::{IntoSignal, RxGet};
+
+    let lhs_s = lhs.into_signal();
+    let rhs_s = rhs.into_signal();
+
+    if lhs_s.is_constant() && rhs_s.is_constant() {
+        return crate::Rx::new_constant(f(&lhs_s.get(), &rhs_s.get()));
+    }
+
+    let op = crate::reactivity::StaticMap2Payload::new(
+        [lhs_s.ensure_node_id(), rhs_s.ensure_node_id()],
+        f,
+        false,
+    );
+    crate::Rx::new_op_raw(op)
 }
 
 #[macro_export]
@@ -154,25 +163,29 @@ macro_rules! impl_rx_unary_op {
 
             #[inline]
             fn $method(self) -> Self::Output {
-                use $crate::traits::{IntoSignal, RxGet};
-
-                let val = self.into_signal();
-
-                if val.is_constant() {
-                    return $crate::Rx::new_constant($crate::logic::arithmetic::ops_impl::$method(
-                        &val.get(),
-                    ));
-                }
-
-                let op = $crate::reactivity::StaticMapPayload::new_unary(
-                    val.ensure_node_id(),
+                $crate::logic::arithmetic::apply_unary_op::<T>(
+                    self,
                     $crate::logic::arithmetic::ops_impl::$method::<T>,
-                    false,
-                );
-                $crate::Rx::new_op_raw(op)
+                )
             }
         }
     };
+}
+
+pub fn apply_unary_op<T>(val: crate::Rx<T>, f: fn(&T) -> T) -> crate::Rx<T>
+where
+    T: crate::traits::RxCloneData + 'static,
+{
+    use crate::traits::{IntoSignal, RxGet};
+
+    let val_s = val.into_signal();
+
+    if val_s.is_constant() {
+        return crate::Rx::new_constant(f(&val_s.get()));
+    }
+
+    let op = crate::reactivity::StaticMapPayload::new_unary(val_s.ensure_node_id(), f, false);
+    crate::Rx::new_op_raw(op)
 }
 
 #[macro_export]

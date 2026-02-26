@@ -1,6 +1,6 @@
 use crate::reactivity::NodeId;
 use crate::traits::guards::*;
-use crate::traits::{RxBase, RxValue};
+use crate::traits::{RxBase, RxCloneData, RxData, RxValue};
 use crate::{Rx, RxValueKind};
 use std::ops::Deref;
 use std::panic::Location;
@@ -287,8 +287,7 @@ impl<T: crate::traits::RxData, M> RxBase for Rx<T, M> {
             crate::RxInner::Op(id) => {
                 silex_reactivity::try_with_op(*id, |bytes| {
                     use crate::reactivity::OpPayloadHeader;
-                    let header: &OpPayloadHeader<T> =
-                        unsafe { &*(bytes.as_ptr() as *const OpPayloadHeader<T>) };
+                    let header = unsafe { &*(bytes.as_ptr() as *const OpPayloadHeader) };
                     (header.track)(bytes.as_ptr());
                 });
             }
@@ -342,10 +341,15 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
             ),
             crate::RxInner::Op(id) => silex_reactivity::try_with_op(*id, |bytes| {
                 use crate::reactivity::OpPayloadHeader;
-                let header: &OpPayloadHeader<T> =
-                    unsafe { &*(bytes.as_ptr() as *const OpPayloadHeader<T>) };
-                unsafe { (header.read)(bytes.as_ptr()).map(RxGuard::Owned).unwrap() }
-            }),
+                let header = unsafe { &*(bytes.as_ptr() as *const OpPayloadHeader) };
+                let mut out = std::mem::MaybeUninit::<T>::uninit();
+                if unsafe { (header.read_to_ptr)(bytes.as_ptr(), out.as_mut_ptr() as *mut u8) } {
+                    Some(RxGuard::Owned(unsafe { out.assume_init() }))
+                } else {
+                    None
+                }
+            })
+            .flatten(),
             crate::RxInner::Stored(id) => unsafe {
                 crate::reactivity::rx_borrow_signal_unsafe::<T>(*id).map(|v| RxGuard::Borrowed {
                     value: v,
@@ -367,9 +371,14 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
             }
             crate::RxInner::Op(id) => silex_reactivity::try_with_op(*id, |bytes| {
                 use crate::reactivity::OpPayloadHeader;
-                let header: &OpPayloadHeader<T> =
-                    unsafe { &*(bytes.as_ptr() as *const OpPayloadHeader<T>) };
-                unsafe { (header.read)(bytes.as_ptr()).map(|v| fun(&v)) }
+                let header = unsafe { &*(bytes.as_ptr() as *const OpPayloadHeader) };
+                let mut out = std::mem::MaybeUninit::<T>::uninit();
+                if unsafe { (header.read_to_ptr)(bytes.as_ptr(), out.as_mut_ptr() as *mut u8) } {
+                    let v = unsafe { out.assume_init() };
+                    Some(fun(&v))
+                } else {
+                    None
+                }
             })
             .flatten(),
             crate::RxInner::Stored(id) => {
@@ -386,6 +395,33 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
 
 // --- 元组 RxInternal 实现：支持递归常量检测 ---
 
+#[inline(always)]
+pub fn create_tuple2_rx<I1: RxData, I2: RxData>(
+    ids: [crate::reactivity::NodeId; 2],
+    mapper: fn(&I1, &I2) -> (I1, I2),
+    is_constant: bool,
+) -> Rx<(I1, I2)> {
+    let op = crate::reactivity::StaticMap2Payload::new(ids, mapper, is_constant);
+    Rx::new_op_raw(op)
+}
+
+#[inline(always)]
+pub fn create_tuple_n_rx<const N: usize, V: RxCloneData + 'static>(
+    ids: [crate::reactivity::NodeId; N],
+    mapper: fn(&[crate::reactivity::NodeId; N]) -> V,
+    is_constant: bool,
+) -> Rx<V> {
+    let meta_id = silex_reactivity::untrack(|| silex_reactivity::store_value(ids));
+    // Important: for TupleN we need track_tuple_meta as track trampoline
+    let op = crate::reactivity::StaticMapPayload::<V>::new_with_track(
+        meta_id,
+        mapper,
+        crate::reactivity::op_trampolines::track_tuple_meta::<N>,
+        is_constant,
+    );
+    Rx::new_op_raw(op)
+}
+
 macro_rules! impl_tuple_into_rx {
     // 专用 2 元元组分支
     (2, $T0:ident : $idx0:tt, $T1:ident : $idx1:tt) => {
@@ -400,21 +436,31 @@ macro_rules! impl_tuple_into_rx {
         #[allow(non_snake_case)]
         impl<$T0, $T1> IntoRx for ($T0, $T1)
         where
-            $T0: IntoRx + crate::traits::IntoSignal + Clone + $crate::traits::RxData, $T1: IntoRx + crate::traits::IntoSignal + Clone + $crate::traits::RxData,
-            $T0::Value: $crate::traits::RxCloneData, $T1::Value: $crate::traits::RxCloneData
+            $T0: IntoRx + crate::traits::IntoSignal + Clone + $crate::traits::RxData,
+            $T1: IntoRx + crate::traits::IntoSignal + Clone + $crate::traits::RxData,
+            $T0::Value: $crate::traits::RxCloneData,
+            $T1::Value: $crate::traits::RxCloneData,
         {
             type RxType = Rx<Self::Value, RxValueKind>;
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
-                let is_constant = self.is_constant();
-                let op = crate::reactivity::StaticMap2Payload::new(
-                    [self.$idx0.into_signal().ensure_node_id(), self.$idx1.into_signal().ensure_node_id()],
+                let ids = [
+                    self.$idx0.clone().into_signal().ensure_node_id(),
+                    self.$idx1.clone().into_signal().ensure_node_id(),
+                ];
+                crate::traits::read::create_tuple2_rx::<
+                    $T0::Value,
+                    $T1::Value,
+                >(
+                    ids,
                     crate::reactivity::op_trampolines::tuple_2_mapper::<$T0::Value, $T1::Value>,
-                    is_constant,
-                );
-                Rx::new_op_raw(op)
+                    self.is_constant(),
+                )
             }
-            #[inline(always)] fn is_constant(&self) -> bool { self.$idx0.is_constant() && self.$idx1.is_constant() }
+            #[inline(always)]
+            fn is_constant(&self) -> bool {
+                self.$idx0.is_constant() && self.$idx1.is_constant()
+            }
         }
 
         #[allow(non_snake_case)]
@@ -471,18 +517,17 @@ macro_rules! impl_tuple_into_rx {
             type RxType = Rx<Self::Value, RxValueKind>;
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
-                let is_constant = self.is_constant();
                 let ids = [$(self.$idx.clone().into_signal().ensure_node_id()),+];
-                let meta_id = silex_reactivity::untrack(|| silex_reactivity::store_value(ids));
-                let op = crate::reactivity::StaticMapPayload::new(
-                    meta_id,
+                crate::traits::read::create_tuple_n_rx::<$len, Self::Value>(
+                    ids,
                     crate::reactivity::op_trampolines::$trap::<$($T::Value),+>,
-                    crate::reactivity::op_trampolines::track_tuple_meta::<$len>,
-                    is_constant,
-                );
-                Rx::new_op_raw(op)
+                    self.is_constant(),
+                )
             }
-            #[inline(always)] fn is_constant(&self) -> bool { $(self.$idx.is_constant() && )+ true }
+            #[inline(always)]
+            fn is_constant(&self) -> bool {
+                $(self.$idx.is_constant() && )+ true
+            }
         }
 
         #[allow(non_snake_case)]

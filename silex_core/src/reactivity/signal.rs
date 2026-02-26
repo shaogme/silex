@@ -256,8 +256,8 @@ where
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct OpPayloadHeader<T> {
-    pub read: unsafe fn(this: *const u8) -> Option<T>,
+pub struct OpPayloadHeader {
+    pub read_to_ptr: unsafe fn(this: *const u8, out: *mut u8) -> bool,
     pub track: fn(this: *const u8),
     pub is_constant: bool,
 }
@@ -265,28 +265,25 @@ pub struct OpPayloadHeader<T> {
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct StaticMapPayload<OT> {
-    pub header: OpPayloadHeader<OT>,
+    pub header: OpPayloadHeader,
     pub input_id: NodeId,
-    pub compute: unsafe fn(input_ptr: *const (), mapper_ptr: *const ()) -> OT,
+    pub compute: unsafe fn(input_ptr: *const (), out_ptr: *mut (), mapper_ptr: *const ()),
     pub mapper_ptr: *const (),
+    pub _marker: PhantomData<OT>,
 }
 
 impl<OT: RxData> StaticMapPayload<OT> {
-    pub fn new<IT: RxData>(
-        input_id: NodeId,
-        mapper: fn(&IT) -> OT,
-        track: fn(this: *const u8),
-        is_constant: bool,
-    ) -> Self {
+    pub fn new<IT: RxData>(input_id: NodeId, mapper: fn(&IT) -> OT, is_constant: bool) -> Self {
         Self {
             header: OpPayloadHeader {
-                read: op_trampolines::thin_map_read_wrap::<OT>,
-                track,
+                read_to_ptr: op_trampolines::thin_map_read_to_ptr,
+                track: op_trampolines::track_unary,
                 is_constant,
             },
             input_id,
             compute: op_trampolines::compute_map::<IT, OT>,
             mapper_ptr: mapper as *const (),
+            _marker: PhantomData,
         }
     }
 
@@ -295,17 +292,37 @@ impl<OT: RxData> StaticMapPayload<OT> {
         mapper: fn(&IT) -> OT,
         is_constant: bool,
     ) -> Self {
-        Self::new(input_id, mapper, op_trampolines::track_unary, is_constant)
+        Self::new(input_id, mapper, is_constant)
+    }
+
+    pub fn new_with_track<IT: RxData>(
+        input_id: NodeId,
+        mapper: fn(&IT) -> OT,
+        track_fn: fn(this: *const u8),
+        is_constant: bool,
+    ) -> Self {
+        Self {
+            header: OpPayloadHeader {
+                read_to_ptr: op_trampolines::thin_map_read_to_ptr,
+                track: track_fn,
+                is_constant,
+            },
+            input_id,
+            compute: op_trampolines::compute_map::<IT, OT>,
+            mapper_ptr: mapper as *const (),
+            _marker: PhantomData,
+        }
     }
 }
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct StaticMap2Payload<OT> {
-    pub header: OpPayloadHeader<OT>,
+    pub header: OpPayloadHeader,
     pub inputs: [NodeId; 2],
-    pub compute: unsafe fn(i1: *const (), i2: *const (), mapper_ptr: *const ()) -> OT,
+    pub compute: unsafe fn(i1: *const (), i2: *const (), out_ptr: *mut (), mapper_ptr: *const ()),
     pub mapper_ptr: *const (),
+    pub _marker: PhantomData<OT>,
 }
 
 impl<OT: RxData> StaticMap2Payload<OT> {
@@ -316,13 +333,14 @@ impl<OT: RxData> StaticMap2Payload<OT> {
     ) -> Self {
         Self {
             header: OpPayloadHeader {
-                read: op_trampolines::thin_map2_read_wrap::<OT>,
+                read_to_ptr: op_trampolines::thin_map2_read_to_ptr,
                 track: op_trampolines::track_binary,
                 is_constant,
             },
             inputs,
             compute: op_trampolines::compute_map2::<I1, I2, OT>,
             mapper_ptr: mapper as *const (),
+            _marker: PhantomData,
         }
     }
 }
@@ -330,11 +348,17 @@ impl<OT: RxData> StaticMap2Payload<OT> {
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct StaticMap3Payload<OT> {
-    pub header: OpPayloadHeader<OT>,
+    pub header: OpPayloadHeader,
     pub inputs: [NodeId; 3],
-    pub compute:
-        unsafe fn(i1: *const (), i2: *const (), i3: *const (), mapper_ptr: *const ()) -> OT,
+    pub compute: unsafe fn(
+        i1: *const (),
+        i2: *const (),
+        i3: *const (),
+        out_ptr: *mut (),
+        mapper_ptr: *const (),
+    ),
     pub mapper_ptr: *const (),
+    pub _marker: PhantomData<OT>,
 }
 
 impl<OT: RxData> StaticMap3Payload<OT> {
@@ -345,13 +369,14 @@ impl<OT: RxData> StaticMap3Payload<OT> {
     ) -> Self {
         Self {
             header: OpPayloadHeader {
-                read: op_trampolines::thin_map3_read_wrap::<OT>,
+                read_to_ptr: op_trampolines::thin_map3_read_to_ptr,
                 track: op_trampolines::track_ternary,
                 is_constant,
             },
             inputs,
             compute: op_trampolines::compute_map3::<I1, I2, I3, OT>,
             mapper_ptr: mapper as *const (),
+            _marker: PhantomData,
         }
     }
 }
@@ -359,28 +384,30 @@ impl<OT: RxData> StaticMap3Payload<OT> {
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct OpPayload<U, const N: usize> {
-    pub header: OpPayloadHeader<U>,
+    pub header: OpPayloadHeader,
     pub inputs: [NodeId; N],
-    pub raw_read: unsafe fn(inputs: &[NodeId]) -> Option<U>,
+    pub raw_read_to_ptr: unsafe fn(inputs: &[NodeId], out: *mut u8) -> bool,
     pub raw_track: fn(inputs: &[NodeId]),
+    pub _marker: PhantomData<U>,
 }
 
 impl<U: RxData, const N: usize> OpPayload<U, N> {
     pub fn new(
         inputs: [NodeId; N],
-        read: unsafe fn(inputs: &[NodeId]) -> Option<U>,
+        read_to_ptr: unsafe fn(inputs: &[NodeId], out: *mut u8) -> bool,
         track: fn(inputs: &[NodeId]),
         is_constant: bool,
     ) -> Self {
         Self {
             header: OpPayloadHeader {
-                read: op_trampolines::op_read_wrap::<U, N>,
+                read_to_ptr: op_trampolines::op_read_to_ptr_trampoline::<U, N>,
                 track: op_trampolines::op_track_wrap::<U, N>,
                 is_constant,
             },
             inputs,
-            raw_read: read,
+            raw_read_to_ptr: read_to_ptr,
             raw_track: track,
+            _marker: PhantomData,
         }
     }
 }
@@ -389,7 +416,10 @@ impl<U: RxData, const N: usize> std::fmt::Debug for OpPayload<U, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpPayload")
             .field("inputs", &&self.inputs)
-            .field("read", &format_args!("{:p}", self.raw_read as *const ()))
+            .field(
+                "read",
+                &format_args!("{:p}", self.raw_read_to_ptr as *const ()),
+            )
             .field("is_constant", &self.header.is_constant)
             .finish()
     }
@@ -435,12 +465,33 @@ impl<U: RxData, const N: usize> RxInternal for OpPayload<U, N> {
 
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-        unsafe { (self.header.read)(self as *const Self as *const u8).map(RxGuard::Owned) }
+        let mut out = mem::MaybeUninit::<U>::uninit();
+        unsafe {
+            if (self.header.read_to_ptr)(
+                self as *const Self as *const u8,
+                out.as_mut_ptr() as *mut u8,
+            ) {
+                Some(RxGuard::Owned(out.assume_init()))
+            } else {
+                None
+            }
+        }
     }
 
     #[inline(always)]
     fn rx_try_with_untracked<URet>(&self, fun: impl FnOnce(&Self::Value) -> URet) -> Option<URet> {
-        unsafe { (self.header.read)(self as *const Self as *const u8).map(|v| fun(&v)) }
+        let mut out = mem::MaybeUninit::<U>::uninit();
+        unsafe {
+            if (self.header.read_to_ptr)(
+                self as *const Self as *const u8,
+                out.as_mut_ptr() as *mut u8,
+            ) {
+                let v = out.assume_init();
+                Some(fun(&v))
+            } else {
+                None
+            }
+        }
     }
 
     #[inline(always)]
@@ -489,9 +540,12 @@ impl<U: RxCloneData, const N: usize> crate::traits::IntoSignal for OpPayload<U, 
 pub mod op_trampolines {
     use super::*;
 
-    pub unsafe fn op_read_wrap<U: RxData, const N: usize>(this: *const u8) -> Option<U> {
+    pub unsafe fn op_read_to_ptr_trampoline<U: RxData, const N: usize>(
+        this: *const u8,
+        out: *mut u8,
+    ) -> bool {
         let payload = unsafe { &*(this as *const OpPayload<U, N>) };
-        unsafe { (payload.raw_read)(&payload.inputs) }
+        unsafe { (payload.raw_read_to_ptr)(&payload.inputs, out) }
     }
 
     pub fn op_track_wrap<U: RxData, const N: usize>(this: *const u8) {
@@ -499,78 +553,105 @@ pub mod op_trampolines {
         (payload.raw_track)(&payload.inputs)
     }
 
-    pub unsafe fn thin_map_read_wrap<OT: RxData>(this: *const u8) -> Option<OT> {
-        let payload = unsafe { &*(this as *const StaticMapPayload<OT>) };
-        let input_ptr = unsafe { silex_reactivity::try_get_any_raw_untracked(payload.input_id)? };
-        Some(unsafe { (payload.compute)(input_ptr, payload.mapper_ptr) })
+    pub unsafe fn thin_map_read_to_ptr(this: *const u8, out: *mut u8) -> bool {
+        let payload = unsafe { &*(this as *const StaticMapPayload<()>) }; // Any OT works for layout
+        if let Some(input_ptr) =
+            unsafe { silex_reactivity::try_get_any_raw_untracked(payload.input_id) }
+        {
+            unsafe { (payload.compute)(input_ptr, out as *mut (), payload.mapper_ptr) };
+            true
+        } else {
+            false
+        }
     }
 
-    pub unsafe fn compute_map<IT: RxData, OT: RxData>(input: *const (), mapper: *const ()) -> OT {
+    pub unsafe fn compute_map<IT: RxData, OT: RxData>(
+        input: *const (),
+        out_ptr: *mut (),
+        mapper: *const (),
+    ) {
         let mapper: fn(&IT) -> OT = unsafe { std::mem::transmute(mapper) };
-        mapper(unsafe { &*(input as *const IT) })
+        let val = mapper(unsafe { &*(input as *const IT) });
+        unsafe { std::ptr::write(out_ptr as *mut OT, val) };
     }
 
     pub fn track_unary(this: *const u8) {
-        let offset = std::mem::size_of::<OpPayloadHeader<()>>();
-        let input_id_ptr = unsafe { this.add(offset) as *const NodeId };
-        track_signal(unsafe { *input_id_ptr });
+        let payload = unsafe { &*(this as *const StaticMapPayload<()>) };
+        track_signal(payload.input_id);
     }
 
-    pub unsafe fn thin_map2_read_wrap<OT: RxData>(this: *const u8) -> Option<OT> {
-        let payload = unsafe { &*(this as *const StaticMap2Payload<OT>) };
-        let v1 = unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[0])? };
-        let v2 = unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[1])? };
-        Some(unsafe { (payload.compute)(v1, v2, payload.mapper_ptr) })
+    pub unsafe fn thin_map2_read_to_ptr(this: *const u8, out: *mut u8) -> bool {
+        let payload = unsafe { &*(this as *const StaticMap2Payload<()>) };
+        if let Some(v1) = unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[0]) }
+        {
+            if let Some(v2) =
+                unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[1]) }
+            {
+                unsafe { (payload.compute)(v1, v2, out as *mut (), payload.mapper_ptr) };
+                return true;
+            }
+        }
+        false
     }
 
     pub unsafe fn compute_map2<I1: RxData, I2: RxData, OT: RxData>(
         i1: *const (),
         i2: *const (),
+        out_ptr: *mut (),
         mapper: *const (),
-    ) -> OT {
+    ) {
         let mapper: fn(&I1, &I2) -> OT = unsafe { std::mem::transmute(mapper) };
-        mapper(unsafe { &*(i1 as *const I1) }, unsafe {
+        let val = mapper(unsafe { &*(i1 as *const I1) }, unsafe {
             &*(i2 as *const I2)
-        })
+        });
+        unsafe { std::ptr::write(out_ptr as *mut OT, val) };
     }
 
     pub fn track_binary(this: *const u8) {
-        let offset = std::mem::size_of::<OpPayloadHeader<()>>();
-        let inputs_ptr = unsafe { this.add(offset) as *const [NodeId; 2] };
-        let inputs = unsafe { *inputs_ptr };
-        track_signal(inputs[0]);
-        track_signal(inputs[1]);
+        let payload = unsafe { &*(this as *const StaticMap2Payload<()>) };
+        track_signal(payload.inputs[0]);
+        track_signal(payload.inputs[1]);
     }
 
-    pub unsafe fn thin_map3_read_wrap<OT: RxData>(this: *const u8) -> Option<OT> {
-        let payload = unsafe { &*(this as *const StaticMap3Payload<OT>) };
-        let v1 = unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[0])? };
-        let v2 = unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[1])? };
-        let v3 = unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[2])? };
-        Some(unsafe { (payload.compute)(v1, v2, v3, payload.mapper_ptr) })
+    pub unsafe fn thin_map3_read_to_ptr(this: *const u8, out: *mut u8) -> bool {
+        let payload = unsafe { &*(this as *const StaticMap3Payload<()>) };
+        if let Some(v1) = unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[0]) }
+        {
+            if let Some(v2) =
+                unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[1]) }
+            {
+                if let Some(v3) =
+                    unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[2]) }
+                {
+                    unsafe { (payload.compute)(v1, v2, v3, out as *mut (), payload.mapper_ptr) };
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     pub unsafe fn compute_map3<I1: RxData, I2: RxData, I3: RxData, OT: RxData>(
         i1: *const (),
         i2: *const (),
         i3: *const (),
+        out_ptr: *mut (),
         mapper: *const (),
-    ) -> OT {
+    ) {
         let mapper: fn(&I1, &I2, &I3) -> OT = unsafe { std::mem::transmute(mapper) };
-        mapper(
+        let val = mapper(
             unsafe { &*(i1 as *const I1) },
             unsafe { &*(i2 as *const I2) },
             unsafe { &*(i3 as *const I3) },
-        )
+        );
+        unsafe { std::ptr::write(out_ptr as *mut OT, val) };
     }
 
     pub fn track_ternary(this: *const u8) {
-        let offset = std::mem::size_of::<OpPayloadHeader<()>>();
-        let inputs_ptr = unsafe { this.add(offset) as *const [NodeId; 3] };
-        let inputs = unsafe { *inputs_ptr };
-        track_signal(inputs[0]);
-        track_signal(inputs[1]);
-        track_signal(inputs[2]);
+        let payload = unsafe { &*(this as *const StaticMap3Payload<()>) };
+        track_signal(payload.inputs[0]);
+        track_signal(payload.inputs[1]);
+        track_signal(payload.inputs[2]);
     }
 
     pub fn track_inputs(inputs: &[NodeId]) {
@@ -581,8 +662,8 @@ pub mod op_trampolines {
 
     /// 追踪打包在 StoredValue 中的 N 个信号
     pub fn track_tuple_meta<const N: usize>(this: *const u8) {
-        let offset = std::mem::size_of::<OpPayloadHeader<()>>();
-        let meta_id = unsafe { *(this.add(offset) as *const NodeId) };
+        let payload = unsafe { &*(this as *const StaticMapPayload<()>) };
+        let meta_id = payload.input_id;
         let _ = silex_reactivity::try_with_stored_value(meta_id, |ids: &[NodeId; N]| {
             for &id in ids {
                 track_signal(id);
