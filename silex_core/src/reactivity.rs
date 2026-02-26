@@ -12,6 +12,8 @@ mod signal;
 mod slice;
 mod stored_value;
 
+pub mod dispatch;
+
 pub use effect::*;
 pub use memo::*;
 pub use mutation::*;

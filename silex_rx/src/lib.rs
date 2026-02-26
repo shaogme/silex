@@ -258,7 +258,7 @@ pub fn rx(input: TokenStream) -> TokenStream {
         }
 
         if pairs.is_empty() {
-            quote! { #prefix::Rx::new_constant(#expr) }
+            quote! { #prefix::Rx::<_, #prefix::RxValueKind>::new_constant(#expr) }
         } else if pairs.len() == 1 {
             let (orig, refer) = &pairs[0];
             quote! {
@@ -293,6 +293,9 @@ pub fn rx(input: TokenStream) -> TokenStream {
                 #prefix::Rx::effect(#f_expr)
             }
         }
+    } else if pairs.is_empty() {
+        // 无信号依赖时，直接视为常量，避免 Box 和闭包开销
+        quote! { #prefix::Rx::<_, #prefix::RxValueKind>::new_constant(#expr) }
     } else {
         quote! {
             {

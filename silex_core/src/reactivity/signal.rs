@@ -14,16 +14,7 @@ use crate::traits::*;
 use crate::traits::{RxCloneData, RxData};
 use crate::{Rx, RxValueKind};
 
-/// 内部辅助函数：直接从运行时借用信号值。
-/// 安全性：由 RxGuard 的生命周期和 Silex Arena 的地址稳定性保证。
-pub(crate) unsafe fn rx_borrow_signal_unsafe<T: RxData>(id: NodeId) -> Option<&'static T> {
-    unsafe { silex_reactivity::try_get_any_raw_untracked(id).map(|ptr| &*(ptr as *const T)) }
-}
-
-/// 内部辅助函数：直接从运行时借用 StoredValue。
-unsafe fn rx_borrow_stored_value_unsafe<T: RxData>(id: NodeId) -> Option<&'static T> {
-    unsafe { silex_reactivity::try_get_any_raw_untracked(id).map(|ptr| &*(ptr as *const T)) }
-}
+// 内部辅助函数已被 dispatch 模块取代
 
 // --- Constant ---
 
@@ -617,14 +608,20 @@ pub mod op_trampolines {
     }
 
     /// 追踪打包在 StoredValue 中的 N 个信号
-    pub fn track_tuple_meta<const N: usize>(this: *const u8) {
+    /// 追踪打包在 StoredValue 中的 N 个信号 (非泛型版本)
+    pub fn track_tuple_meta_slice(this: *const u8) {
         let payload = unsafe { &*(this as *const UnifiedStaticMapPayload<()>) };
         let meta_id = payload.inputs[0];
-        let _ = silex_reactivity::try_with_stored_value(meta_id, |ids: &[NodeId; N]| {
+        let _ = silex_reactivity::try_with_stored_value(meta_id, |ids: &Vec<NodeId>| {
             for &id in ids {
                 track_signal(id);
             }
         });
+    }
+
+    /// 已废弃：由 track_tuple_meta_slice 取代
+    pub fn track_tuple_meta<const N: usize>(this: *const u8) {
+        track_tuple_meta_slice(this);
     }
 
     // --- 元组读取 Mappers ---
@@ -638,9 +635,12 @@ pub mod op_trampolines {
     ) -> (T0, T1, T2) {
         unsafe {
             (
-                rx_borrow_signal_unsafe::<T0>(ids[0]).unwrap().clone(),
-                rx_borrow_signal_unsafe::<T1>(ids[1]).unwrap().clone(),
-                rx_borrow_signal_unsafe::<T2>(ids[2]).unwrap().clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[0]).unwrap() as *const T0))
+                    .clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[1]).unwrap() as *const T1))
+                    .clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[2]).unwrap() as *const T2))
+                    .clone(),
             )
         }
     }
@@ -655,10 +655,14 @@ pub mod op_trampolines {
     ) -> (T0, T1, T2, T3) {
         unsafe {
             (
-                rx_borrow_signal_unsafe::<T0>(ids[0]).unwrap().clone(),
-                rx_borrow_signal_unsafe::<T1>(ids[1]).unwrap().clone(),
-                rx_borrow_signal_unsafe::<T2>(ids[2]).unwrap().clone(),
-                rx_borrow_signal_unsafe::<T3>(ids[3]).unwrap().clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[0]).unwrap() as *const T0))
+                    .clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[1]).unwrap() as *const T1))
+                    .clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[2]).unwrap() as *const T2))
+                    .clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[3]).unwrap() as *const T3))
+                    .clone(),
             )
         }
     }
@@ -674,11 +678,16 @@ pub mod op_trampolines {
     ) -> (T0, T1, T2, T3, T4) {
         unsafe {
             (
-                rx_borrow_signal_unsafe::<T0>(ids[0]).unwrap().clone(),
-                rx_borrow_signal_unsafe::<T1>(ids[1]).unwrap().clone(),
-                rx_borrow_signal_unsafe::<T2>(ids[2]).unwrap().clone(),
-                rx_borrow_signal_unsafe::<T3>(ids[3]).unwrap().clone(),
-                rx_borrow_signal_unsafe::<T4>(ids[4]).unwrap().clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[0]).unwrap() as *const T0))
+                    .clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[1]).unwrap() as *const T1))
+                    .clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[2]).unwrap() as *const T2))
+                    .clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[3]).unwrap() as *const T3))
+                    .clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[4]).unwrap() as *const T4))
+                    .clone(),
             )
         }
     }
@@ -695,49 +704,19 @@ pub mod op_trampolines {
     ) -> (T0, T1, T2, T3, T4, T5) {
         unsafe {
             (
-                rx_borrow_signal_unsafe::<T0>(ids[0]).unwrap().clone(),
-                rx_borrow_signal_unsafe::<T1>(ids[1]).unwrap().clone(),
-                rx_borrow_signal_unsafe::<T2>(ids[2]).unwrap().clone(),
-                rx_borrow_signal_unsafe::<T3>(ids[3]).unwrap().clone(),
-                rx_borrow_signal_unsafe::<T4>(ids[4]).unwrap().clone(),
-                rx_borrow_signal_unsafe::<T5>(ids[5]).unwrap().clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[0]).unwrap() as *const T0))
+                    .clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[1]).unwrap() as *const T1))
+                    .clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[2]).unwrap() as *const T2))
+                    .clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[3]).unwrap() as *const T3))
+                    .clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[4]).unwrap() as *const T4))
+                    .clone(),
+                (&*(silex_reactivity::try_get_any_raw_untracked(ids[5]).unwrap() as *const T5))
+                    .clone(),
             )
-        }
-    }
-}
-
-pub(crate) mod internal_helpers {
-    use super::*;
-    use silex_reactivity::{
-        is_closure_valid, is_op_valid, is_signal_valid, is_stored_value_valid, track_signal,
-        try_with_op,
-    };
-
-    /// 非泛型的 track 逻辑实现 (Trampoline)。
-    /// 剥离了 RxInner 的 Match 分发，使所有 T 共享机器码。
-    #[inline]
-    pub fn rx_track_internal(id: crate::reactivity::NodeId, kind: crate::RxNodeKind) {
-        match kind {
-            crate::RxNodeKind::Signal | crate::RxNodeKind::Stored | crate::RxNodeKind::Closure => {
-                track_signal(id);
-            }
-            crate::RxNodeKind::Op => {
-                let _ = try_with_op(id, |bytes| {
-                    let header = unsafe { &*(bytes.as_ptr() as *const OpPayloadHeader) };
-                    (header.track)(bytes.as_ptr());
-                });
-            }
-        }
-    }
-
-    /// 非泛型的销毁状态检查 (Trampoline)。
-    #[inline]
-    pub fn rx_is_disposed_internal(id: crate::reactivity::NodeId, kind: crate::RxNodeKind) -> bool {
-        match kind {
-            crate::RxNodeKind::Signal => !is_signal_valid(id),
-            crate::RxNodeKind::Closure => !is_closure_valid(id),
-            crate::RxNodeKind::Op => !is_op_valid(id),
-            crate::RxNodeKind::Stored => !is_stored_value_valid(id),
         }
     }
 }
@@ -802,12 +781,12 @@ impl<T: RxData> RxBase for Signal<T> {
     #[inline(always)]
     fn track(&self) {
         match self {
-            Signal::Read(s) => internal_helpers::rx_track_internal(s.id, crate::RxNodeKind::Signal),
+            Signal::Read(s) => crate::reactivity::dispatch::track(s.id, crate::RxNodeKind::Signal),
             Signal::Derived(id, _) => {
-                internal_helpers::rx_track_internal(*id, crate::RxNodeKind::Closure)
+                crate::reactivity::dispatch::track(*id, crate::RxNodeKind::Closure)
             }
             Signal::StoredConstant(id, _) => {
-                internal_helpers::rx_track_internal(*id, crate::RxNodeKind::Stored)
+                crate::reactivity::dispatch::track(*id, crate::RxNodeKind::Stored)
             }
             Signal::InlineConstant(_, _) => {}
         }
@@ -817,13 +796,13 @@ impl<T: RxData> RxBase for Signal<T> {
     fn is_disposed(&self) -> bool {
         match self {
             Signal::Read(s) => {
-                internal_helpers::rx_is_disposed_internal(s.id, crate::RxNodeKind::Signal)
+                crate::reactivity::dispatch::is_disposed(s.id, crate::RxNodeKind::Signal)
             }
             Signal::Derived(id, _) => {
-                internal_helpers::rx_is_disposed_internal(*id, crate::RxNodeKind::Closure)
+                crate::reactivity::dispatch::is_disposed(*id, crate::RxNodeKind::Closure)
             }
             Signal::StoredConstant(id, _) => {
-                internal_helpers::rx_is_disposed_internal(*id, crate::RxNodeKind::Stored)
+                crate::reactivity::dispatch::is_disposed(*id, crate::RxNodeKind::Stored)
             }
             Signal::InlineConstant(_, _) => false,
         }
@@ -855,20 +834,11 @@ impl<T: RxData> RxInternal for Signal<T> {
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
         match self {
             Signal::Read(s) => s.rx_read_untracked(),
-            Signal::Derived(id, _) => {
-                // 不进行 track，仅获取当前值
-                unsafe {
-                    rx_borrow_signal_unsafe::<T>(*id).map(|v| RxGuard::Borrowed {
-                        value: v,
-                        token: Some(crate::NodeRef::from_id(*id)),
-                    })
-                }
-            }
+            Signal::Derived(id, _) => unsafe {
+                crate::reactivity::dispatch::rx_read_node_untracked(*id, crate::RxNodeKind::Closure)
+            },
             Signal::StoredConstant(id, _) => unsafe {
-                rx_borrow_stored_value_unsafe::<T>(*id).map(|v| RxGuard::Borrowed {
-                    value: v,
-                    token: Some(crate::NodeRef::from_id(*id)),
-                })
+                crate::reactivity::dispatch::rx_read_node_untracked(*id, crate::RxNodeKind::Stored)
             },
             Signal::InlineConstant(val, _) => {
                 let val = unsafe { Self::unpack_inline(*val) };
@@ -881,8 +851,18 @@ impl<T: RxData> RxInternal for Signal<T> {
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         match self {
             Signal::Read(s) => s.rx_try_with_untracked(fun),
-            Signal::Derived(id, _) => unsafe { rx_borrow_signal_unsafe(*id).map(fun) },
-            Signal::StoredConstant(id, _) => unsafe { rx_borrow_stored_value_unsafe(*id).map(fun) },
+            Signal::Derived(id, _) => crate::reactivity::dispatch::rx_try_with_node_untracked(
+                *id,
+                crate::RxNodeKind::Closure,
+                fun,
+            ),
+            Signal::StoredConstant(id, _) => {
+                crate::reactivity::dispatch::rx_try_with_node_untracked(
+                    *id,
+                    crate::RxNodeKind::Stored,
+                    fun,
+                )
+            }
             Signal::InlineConstant(storage, _) => {
                 let val = unsafe { Self::unpack_inline(*storage) };
                 Some(fun(&val))

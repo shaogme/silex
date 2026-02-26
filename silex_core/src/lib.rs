@@ -33,6 +33,18 @@ impl<T: 'static> Rx<T, RxValueKind> {
             _marker: ::core::marker::PhantomData,
         }
     }
+
+    /// 从纯函数指针创建一个派生计算节点。
+    /// 相比 `derive`，它不涉及闭包类型生成的代码膨胀。
+    pub fn derive_fn(f: fn() -> T) -> Self {
+        let id = silex_reactivity::untrack(|| {
+            silex_reactivity::register_closure(Box::new(f) as Box<dyn std::any::Any>)
+        });
+        Self {
+            inner: RxInner::Closure(id),
+            _marker: ::core::marker::PhantomData,
+        }
+    }
 }
 
 impl<T: 'static> Rx<T, RxEffectKind> {

@@ -3,7 +3,6 @@ use crate::traits::guards::*;
 use crate::traits::{RxBase, RxCloneData, RxData, RxValue};
 use crate::{Rx, RxValueKind};
 use std::ops::Deref;
-use std::panic::Location;
 
 /// 允许将各种类型（原始类型、信号、Rx）转换为统一的 `Rx` 包装器。
 ///
@@ -67,27 +66,11 @@ pub trait RxInternal: RxBase {
 #[macro_export]
 macro_rules! unwrap_rx {
     ($rx:ident) => {{
-        #[cfg(debug_assertions)]
+        let defined_at = $rx.defined_at();
+        let debug_name = $rx.debug_name();
         let location = std::panic::Location::caller();
         move || {
-            #[cfg(debug_assertions)]
-            {
-                panic!(
-                    "{}",
-                    $crate::traits::panic_getting_disposed_signal(
-                        $rx.defined_at(),
-                        $rx.debug_name(),
-                        location
-                    )
-                );
-            }
-            #[cfg(not(debug_assertions))]
-            {
-                panic!(
-                    "Tried to access a reactive value that has already been \
-                     disposed."
-                );
-            }
+            $crate::reactivity::dispatch::report_disposed(defined_at, debug_name, location);
         }
     }};
 }
@@ -223,36 +206,7 @@ where
 
 impl<T: ?Sized + RxInternal> RxRead for T {}
 
-#[doc(hidden)]
-pub fn panic_getting_disposed_signal(
-    defined_at: Option<&'static Location<'static>>,
-    debug_name: Option<String>,
-    location: &'static Location<'static>,
-) -> String {
-    if let Some(name) = debug_name {
-        if let Some(defined_at) = defined_at {
-            format!(
-                "At {location}, you tried to access a reactive value \"{name}\" which was \
-                 defined at {defined_at}, but it has already been disposed."
-            )
-        } else {
-            format!(
-                "At {location}, you tried to access a reactive value \"{name}\", but it has \
-                 already been disposed."
-            )
-        }
-    } else if let Some(defined_at) = defined_at {
-        format!(
-            "At {location}, you tried to access a reactive value which was \
-             defined at {defined_at}, but it has already been disposed."
-        )
-    } else {
-        format!(
-            "At {location}, you tried to access a reactive value, but it has \
-             already been disposed."
-        )
-    }
-}
+// 已移除：逻辑已移入 crate::reactivity::dispatch::report_disposed
 
 // --- Implementations moved from impls.rs ---
 
@@ -271,14 +225,14 @@ impl<T: crate::traits::RxData, M> RxBase for Rx<T, M> {
     #[inline(always)]
     fn track(&self) {
         if let Some((id, kind)) = self.inner.as_node_parts() {
-            crate::reactivity::internal_helpers::rx_track_internal(id, kind);
+            crate::reactivity::dispatch::track(id, kind);
         }
     }
 
     #[inline(always)]
     fn is_disposed(&self) -> bool {
         if let Some((id, kind)) = self.inner.as_node_parts() {
-            crate::reactivity::internal_helpers::rx_is_disposed_internal(id, kind)
+            crate::reactivity::dispatch::is_disposed(id, kind)
         } else {
             false
         }
@@ -308,33 +262,10 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
                 value: v,
                 token: None,
             }),
-            crate::RxInner::Signal(id) => unsafe {
-                crate::reactivity::rx_borrow_signal_unsafe::<T>(*id).map(|v| RxGuard::Borrowed {
-                    value: v,
-                    token: Some(crate::NodeRef::from_id(*id)),
-                })
-            },
-            crate::RxInner::Closure(id) => silex_reactivity::try_with_closure(
-                *id,
-                |f: &Box<dyn Fn() -> T>| RxGuard::Owned(f()),
-            ),
-            crate::RxInner::Op(id) => silex_reactivity::try_with_op(*id, |bytes| {
-                use crate::reactivity::OpPayloadHeader;
-                let header = unsafe { &*(bytes.as_ptr() as *const OpPayloadHeader) };
-                let mut out = std::mem::MaybeUninit::<T>::uninit();
-                if unsafe { (header.read_to_ptr)(bytes.as_ptr(), out.as_mut_ptr() as *mut u8) } {
-                    Some(RxGuard::Owned(unsafe { out.assume_init() }))
-                } else {
-                    None
-                }
-            })
-            .flatten(),
-            crate::RxInner::Stored(id) => unsafe {
-                crate::reactivity::rx_borrow_signal_unsafe::<T>(*id).map(|v| RxGuard::Borrowed {
-                    value: v,
-                    token: Some(crate::NodeRef::from_id(*id)),
-                })
-            },
+            _ => {
+                let (id, kind) = self.inner.as_node_parts()?;
+                unsafe { crate::reactivity::dispatch::rx_read_node_untracked(id, kind) }
+            }
         }
     }
 
@@ -342,26 +273,9 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         match &self.inner {
             crate::RxInner::Constant(v) => Some(fun(v)),
-            crate::RxInner::Signal(id) => unsafe {
-                crate::reactivity::rx_borrow_signal_unsafe::<T>(*id).map(fun)
-            },
-            crate::RxInner::Closure(id) => {
-                silex_reactivity::try_with_closure(*id, |f: &Box<dyn Fn() -> T>| fun(&f()))
-            }
-            crate::RxInner::Op(id) => silex_reactivity::try_with_op(*id, |bytes| {
-                use crate::reactivity::OpPayloadHeader;
-                let header = unsafe { &*(bytes.as_ptr() as *const OpPayloadHeader) };
-                let mut out = std::mem::MaybeUninit::<T>::uninit();
-                if unsafe { (header.read_to_ptr)(bytes.as_ptr(), out.as_mut_ptr() as *mut u8) } {
-                    let v = unsafe { out.assume_init() };
-                    Some(fun(&v))
-                } else {
-                    None
-                }
-            })
-            .flatten(),
-            crate::RxInner::Stored(id) => {
-                silex_reactivity::try_with_stored_value(*id, |v: &T| fun(v))
+            _ => {
+                let (id, kind) = self.inner.as_node_parts()?;
+                crate::reactivity::dispatch::rx_try_with_node_untracked(id, kind, fun)
             }
         }
     }
@@ -390,12 +304,13 @@ pub fn create_tuple_n_rx<const N: usize, V: RxCloneData + 'static>(
     mapper: fn(&[crate::reactivity::NodeId; N]) -> V,
     is_constant: bool,
 ) -> Rx<V> {
-    let meta_id = silex_reactivity::untrack(|| silex_reactivity::store_value(ids));
-    // Important: for TupleN we need track_tuple_meta as track trampoline
+    let ids_vec = ids.to_vec();
+    let meta_id = silex_reactivity::untrack(|| silex_reactivity::store_value(ids_vec));
+    // Important: for TupleN we need track_tuple_meta_slice as track trampoline
     let op = crate::reactivity::StaticMapPayload::<V>::new1_with_track(
         meta_id,
         mapper,
-        crate::reactivity::op_trampolines::track_tuple_meta::<N>,
+        crate::reactivity::op_trampolines::track_tuple_meta_slice,
         is_constant,
     );
     Rx::new_op_raw(op)
@@ -580,17 +495,11 @@ where
     {
         match self.inner {
             crate::RxInner::Constant(v) => crate::reactivity::Signal::from(v),
-            crate::RxInner::Signal(id) => {
-                // 判断是否是真正的 Signal。如果不是，可能需要封装。
-                // 目前简单起见，假设 Signal 节点可以直接转换。
+            crate::RxInner::Signal(id) | crate::RxInner::Closure(id) | crate::RxInner::Op(id) => {
                 crate::reactivity::Signal::Derived(id, std::marker::PhantomData)
             }
-            crate::RxInner::Closure(_) | crate::RxInner::Op(_) => {
-                crate::reactivity::Signal::derive(Box::new(move || self.clone().get()))
-            }
-            crate::RxInner::Stored(_id) => {
-                // 判断是否已经提升为 Signal 了。为了简单，直接包装。
-                crate::reactivity::Signal::derive(Box::new(move || self.clone().get()))
+            crate::RxInner::Stored(id) => {
+                crate::reactivity::Signal::StoredConstant(id, std::marker::PhantomData)
             }
         }
     }
