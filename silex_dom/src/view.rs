@@ -1,8 +1,10 @@
 use crate::attribute::PendingAttribute;
 use crate::element::Element;
 use silex_core::error::handle_error;
-use silex_core::reactivity::{Effect, Signal};
-use silex_core::{SilexError, SilexResult};
+use silex_core::logic::Map;
+use silex_core::reactivity::Effect;
+use silex_core::traits::{RxCloneData, RxRead};
+use silex_core::{Rx, RxValueKind, SilexError, SilexResult};
 use std::fmt::Display;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use web_sys::Node;
@@ -222,17 +224,17 @@ where
 // --- 响应式文本归一化内核 (Reactive Text Consolidation Kernel) ---
 
 /// 泛型内核函数：负责将任何响应式类型转换为文本视图。
-pub(crate) fn mount_reactive_text<T: Display + Clone + 'static>(parent: &Node, signal: Signal<T>) {
-    use silex_core::traits::RxGet;
-    // 自动转换为 Rx<String> 实现类型擦除与池化节点读取
-    let rx = silex_core::Rx::derive(Box::new(move || signal.get().to_string()));
-    mount_string_reactive_text_internal(parent, rx);
+pub(crate) fn mount_reactive_text<T, M>(parent: &Node, rx: Rx<T, M>)
+where
+    T: Display + RxCloneData + 'static,
+    M: 'static,
+{
+    // 自动转换为 Rx<String> 实现类型擦除
+    let rx_str = rx.map(|v: &T| v.to_string());
+    mount_string_reactive_text_internal(parent, rx_str);
 }
 
-fn mount_string_reactive_text_internal(
-    parent: &Node,
-    rx: silex_core::Rx<String, silex_core::RxValueKind>,
-) {
+fn mount_string_reactive_text_internal<M: 'static>(parent: &Node, rx: Rx<String, M>) {
     let document = crate::document();
     let node = document.create_text_node("");
     if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
@@ -241,28 +243,27 @@ fn mount_string_reactive_text_internal(
     }
 
     Effect::new(move |_| {
-        use silex_core::traits::RxGet;
-        let value = rx.get();
-        node.set_node_value(Some(&value));
+        rx.with(|value| {
+            node.set_node_value(Some(value));
+        });
     });
 }
 
 // --- 响应式组件视图内核 (Reactive View Core) ---
 
-pub(crate) fn mount_reactive_view<T: View + Clone + 'static>(
-    parent: &Node,
-    signal: Signal<T>,
-    attrs: Vec<PendingAttribute>,
-) {
-    use silex_core::traits::RxGet;
+pub(crate) fn mount_reactive_view<V, M>(parent: &Node, rx: Rx<V, M>, attrs: Vec<PendingAttribute>)
+where
+    V: View + RxCloneData + 'static,
+    M: 'static,
+{
     // 自动转换为 Rx<SharedView> 实现类型擦除
-    let rx = silex_core::Rx::derive(Box::new(move || signal.get().into_shared()));
-    mount_shared_view_reactive_internal(parent, rx, attrs);
+    let rx_shared = rx.map(|v| v.clone().into_shared());
+    mount_shared_view_reactive_internal(parent, rx_shared, attrs);
 }
 
-fn mount_shared_view_reactive_internal(
+fn mount_shared_view_reactive_internal<M: 'static>(
     parent: &Node,
-    rx: silex_core::Rx<SharedView, silex_core::RxValueKind>,
+    rx: Rx<SharedView, M>,
     attrs: Vec<PendingAttribute>,
 ) {
     let document = crate::document();
@@ -300,32 +301,33 @@ fn mount_shared_view_reactive_internal(
         let rx = rx.clone();
 
         let result = catch_unwind(AssertUnwindSafe(|| {
-            use silex_core::traits::RxGet;
-            let view = rx.get();
+            rx.with(|view| {
+                let start_node = start_node.clone();
+                let end_node = end_node.clone();
+                let document = document.clone();
+                let attrs = attrs.clone();
+                let view = view.clone();
 
-            let start_node = start_node.clone();
-            let end_node = end_node.clone();
-            let document = document.clone();
-            let id = silex_core::reactivity::create_scope(move || {
-                if let Some(parent) = start_node.parent_node() {
-                    while let Some(sibling) = start_node.next_sibling() {
-                        if sibling == end_node {
-                            break;
+                silex_core::reactivity::create_scope(move || {
+                    if let Some(parent) = start_node.parent_node() {
+                        while let Some(sibling) = start_node.next_sibling() {
+                            if sibling == end_node {
+                                break;
+                            }
+                            let _ = parent.remove_child(&sibling);
                         }
-                        let _ = parent.remove_child(&sibling);
                     }
-                }
 
-                let fragment = document.create_document_fragment();
-                let fragment_node: Node = fragment.clone().into();
+                    let fragment = document.create_document_fragment();
+                    let fragment_node: Node = fragment.clone().into();
 
-                view.mount(&fragment_node, attrs);
+                    view.mount(&fragment_node, attrs);
 
-                if let Some(parent) = end_node.parent_node() {
-                    let _ = parent.insert_before(&fragment_node, Some(&end_node));
-                }
-            });
-            id
+                    if let Some(parent) = end_node.parent_node() {
+                        let _ = parent.insert_before(&fragment_node, Some(&end_node));
+                    }
+                })
+            })
         }));
 
         if let Ok(id) = result {
@@ -345,81 +347,50 @@ fn mount_shared_view_reactive_internal(
 }
 
 // 4. Rx wrapper support (Unified entry point for reactive normalization)
-impl<V, M> View for silex_core::Rx<V, M>
+impl<V, M> View for Rx<V, M>
 where
-    V: silex_core::traits::RxCloneData + Sized + 'static,
+    V: RxCloneData + Sized + 'static,
     M: 'static,
-    silex_core::reactivity::Signal<V>: View,
+    Self: RxViewDispatcher,
 {
     #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        use silex_core::traits::IntoSignal;
-        self.into_signal().mount(parent, attrs);
+        self.dispatch_mount(parent, attrs);
     }
 
     fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
 }
 
-macro_rules! impl_view_for_reactive_erased_views {
-    ($($ty:ty),*) => {
-        $(
-            impl View for silex_core::reactivity::Signal<$ty> {
-                fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-                    crate::view::mount_reactive_view(parent, self, attrs);
-                }
-            }
-        )*
-    };
+/// 内部特征，用于 Rx 的 View 分发，解决 trait 冲突并优化路径
+pub trait RxViewDispatcher {
+    fn dispatch_mount(self, parent: &Node, attrs: Vec<PendingAttribute>);
 }
 
-impl_view_for_reactive_erased_views!(
-    crate::element::Element,
-    crate::view::SharedView,
-    crate::view::Fragment
-);
-
-impl<T: 'static> View for silex_core::reactivity::Signal<crate::element::TypedElement<T>> {
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        crate::view::mount_reactive_view(parent, self, attrs);
-    }
-}
-
-macro_rules! impl_view_for_reactive_tuple_erased {
-    ($($name:ident),*) => {
-        impl<$($name: View + Clone + 'static),*> View for silex_core::reactivity::Signal<($($name,)*)> {
-            fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-                crate::view::mount_reactive_view(parent, self, attrs);
-            }
-        }
-    }
-}
-
-impl_view_for_reactive_tuple_erased!(A);
-impl_view_for_reactive_tuple_erased!(A, B);
-impl_view_for_reactive_tuple_erased!(A, B, C);
-impl_view_for_reactive_tuple_erased!(A, B, C, D);
-impl_view_for_reactive_tuple_erased!(A, B, C, D, E);
-impl_view_for_reactive_tuple_erased!(A, B, C, D, E, F);
-impl_view_for_reactive_tuple_erased!(A, B, C, D, E, F, G);
-impl_view_for_reactive_tuple_erased!(A, B, C, D, E, F, G, H);
-impl_view_for_reactive_tuple_erased!(A, B, C, D, E, F, G, H, I);
-impl_view_for_reactive_tuple_erased!(A, B, C, D, E, F, G, H, I, J);
-impl_view_for_reactive_tuple_erased!(A, B, C, D, E, F, G, H, I, J, K);
-impl_view_for_reactive_tuple_erased!(A, B, C, D, E, F, G, H, I, J, K, L);
-
-macro_rules! impl_view_for_signal_text {
+macro_rules! impl_rx_view_dispatcher_text {
     ($($t:ty),*) => {
         $(
-            impl View for silex_core::reactivity::Signal<$t> {
-                fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-                    crate::view::mount_reactive_text(parent, self);
+            impl<M: 'static> RxViewDispatcher for Rx<$t, M> {
+                fn dispatch_mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+                    mount_reactive_text(parent, self);
                 }
             }
         )*
     };
 }
 
-impl_view_for_signal_text!(
+macro_rules! impl_rx_view_dispatcher_view {
+    ($($t:ty),*) => {
+        $(
+            impl<M: 'static> RxViewDispatcher for Rx<$t, M> {
+                fn dispatch_mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+                    mount_reactive_view(parent, self, attrs);
+                }
+            }
+        )*
+    };
+}
+
+impl_rx_view_dispatcher_text!(
     String,
     bool,
     char,
@@ -441,64 +412,96 @@ impl_view_for_signal_text!(
     std::borrow::Cow<'static, str>
 );
 
-macro_rules! impl_view_forward_to_signal {
+impl_rx_view_dispatcher_view!(
+    crate::element::Element,
+    crate::view::SharedView,
+    crate::view::Fragment
+);
+
+impl<V: View + RxCloneData + 'static, M: 'static> RxViewDispatcher for Rx<Option<V>, M> {
+    fn dispatch_mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        mount_reactive_view(parent, self, attrs);
+    }
+}
+
+// 元组支持
+macro_rules! impl_rx_view_dispatcher_tuple {
+    ($($name:ident),*) => {
+        impl<$($name: View + Clone + 'static),*, M: 'static> RxViewDispatcher for Rx<($($name,)*), M> {
+            fn dispatch_mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+                mount_reactive_view(parent, self, attrs);
+            }
+        }
+    }
+}
+impl_rx_view_dispatcher_tuple!(A);
+impl_rx_view_dispatcher_tuple!(A, B);
+impl_rx_view_dispatcher_tuple!(A, B, C);
+impl_rx_view_dispatcher_tuple!(A, B, C, D);
+
+impl<T: 'static, M: 'static> RxViewDispatcher for Rx<crate::element::TypedElement<T>, M> {
+    fn dispatch_mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        mount_reactive_view(parent, self, attrs);
+    }
+}
+
+macro_rules! impl_view_forward_to_rx {
     ($($ty:ident),*) => {
         $(
             impl<T> View for silex_core::reactivity::$ty<T>
             where
-                T: silex_core::traits::RxCloneData + Sized + 'static,
-                Self: silex_core::traits::IntoSignal<Value = T> + Clone + 'static,
-                silex_core::reactivity::Signal<T>: View,
+                T: RxCloneData + Sized + 'static,
+                Self: silex_core::traits::IntoRx<RxType = Rx<T, RxValueKind>> + Clone + 'static,
+                Rx<T, RxValueKind>: View,
             {
                 #[inline(always)]
                 fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-                    use silex_core::traits::IntoSignal;
-                    self.into_signal().mount(parent, attrs);
+                    use silex_core::traits::IntoRx;
+                    self.into_rx().mount(parent, attrs);
                 }
             }
         )*
     };
 }
 
-impl_view_forward_to_signal!(ReadSignal, RwSignal, Constant, Memo);
+impl_view_forward_to_rx!(ReadSignal, RwSignal, Constant, Memo, Signal);
 
-// 为复杂响应式 Payload 转发
 impl<S, F, V> View for silex_core::reactivity::DerivedPayload<S, F>
 where
-    Self: silex_core::traits::IntoSignal<Value = V> + 'static,
-    V: silex_core::traits::RxCloneData + Sized + 'static,
-    silex_core::reactivity::Signal<V>: View,
+    Self: silex_core::traits::IntoRx<RxType = Rx<V, RxValueKind>> + 'static,
+    V: RxCloneData + Sized + 'static,
+    Rx<V, RxValueKind>: View,
 {
     #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        use silex_core::traits::IntoSignal;
-        self.into_signal().mount(parent, attrs);
+        use silex_core::traits::IntoRx;
+        self.into_rx().mount(parent, attrs);
     }
 }
 
 impl<U, const N: usize> View for silex_core::reactivity::OpPayload<U, N>
 where
-    Self: silex_core::traits::IntoSignal<Value = U> + 'static,
-    U: silex_core::traits::RxCloneData + Sized + 'static,
-    silex_core::reactivity::Signal<U>: View,
+    Self: silex_core::traits::IntoRx<RxType = Rx<U, RxValueKind>> + 'static,
+    U: RxCloneData + Sized + 'static,
+    Rx<U, RxValueKind>: View,
 {
     #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        use silex_core::traits::IntoSignal;
-        self.into_signal().mount(parent, attrs);
+        use silex_core::traits::IntoRx;
+        self.into_rx().mount(parent, attrs);
     }
 }
 
 impl<S, F, O> View for silex_core::reactivity::SignalSlice<S, F, O>
 where
-    Self: silex_core::traits::IntoSignal<Value = O> + 'static,
-    O: silex_core::traits::RxCloneData + Sized + 'static,
-    silex_core::reactivity::Signal<O>: View,
+    Self: silex_core::traits::IntoRx<RxType = Rx<O, RxValueKind>> + 'static,
+    O: RxCloneData + Sized + 'static,
+    Rx<O, RxValueKind>: View,
 {
     #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        use silex_core::traits::IntoSignal;
-        self.into_signal().mount(parent, attrs);
+        use silex_core::traits::IntoRx;
+        self.into_rx().mount(parent, attrs);
     }
 }
 
