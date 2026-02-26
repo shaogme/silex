@@ -265,20 +265,115 @@ where
 
 // --- OpPayload (Aggressive De-genericization) ---
 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct OpPayloadHeader<T> {
+    pub read: unsafe fn(this: *const u8) -> Option<T>,
+    pub track: fn(this: *const u8),
+    pub is_constant: bool,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct StaticMapPayload<InputT, OutputT> {
+    pub header: OpPayloadHeader<OutputT>,
+    pub input_id: NodeId,
+    pub mapper: fn(&InputT) -> OutputT,
+}
+
+impl<IT: RxData, OT: RxData> StaticMapPayload<IT, OT> {
+    pub fn new(input_id: NodeId, mapper: fn(&IT) -> OT, is_constant: bool) -> Self {
+        Self {
+            header: OpPayloadHeader {
+                read: op_trampolines::map_read_wrap::<IT, OT>,
+                track: op_trampolines::map_track_wrap::<IT, OT>,
+                is_constant,
+            },
+            input_id,
+            mapper,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct StaticMap2Payload<I1, I2, OT> {
+    pub header: OpPayloadHeader<OT>,
+    pub inputs: [NodeId; 2],
+    pub mapper: fn(&I1, &I2) -> OT,
+}
+
+impl<I1: RxData, I2: RxData, OT: RxData> StaticMap2Payload<I1, I2, OT> {
+    pub fn new(inputs: [NodeId; 2], mapper: fn(&I1, &I2) -> OT, is_constant: bool) -> Self {
+        Self {
+            header: OpPayloadHeader {
+                read: op_trampolines::map2_read_wrap::<I1, I2, OT>,
+                track: op_trampolines::map2_track_wrap::<I1, I2, OT>,
+                is_constant,
+            },
+            inputs,
+            mapper,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct StaticMap3Payload<I1, I2, I3, OT> {
+    pub header: OpPayloadHeader<OT>,
+    pub inputs: [NodeId; 3],
+    pub mapper: fn(&I1, &I2, &I3) -> OT,
+}
+
+impl<I1: RxData, I2: RxData, I3: RxData, OT: RxData> StaticMap3Payload<I1, I2, I3, OT> {
+    pub fn new(inputs: [NodeId; 3], mapper: fn(&I1, &I2, &I3) -> OT, is_constant: bool) -> Self {
+        Self {
+            header: OpPayloadHeader {
+                read: op_trampolines::map3_read_wrap::<I1, I2, I3, OT>,
+                track: op_trampolines::map3_track_wrap::<I1, I2, I3, OT>,
+                is_constant,
+            },
+            inputs,
+            mapper,
+        }
+    }
+}
+
+#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct OpPayload<U, const N: usize> {
+    pub header: OpPayloadHeader<U>,
     pub inputs: [NodeId; N],
-    pub read: unsafe fn(inputs: &[NodeId]) -> Option<U>,
-    pub track: fn(inputs: &[NodeId]),
-    pub is_constant: bool,
+    pub raw_read: unsafe fn(inputs: &[NodeId]) -> Option<U>,
+    pub raw_track: fn(inputs: &[NodeId]),
+}
+
+impl<U: RxData, const N: usize> OpPayload<U, N> {
+    pub fn new(
+        inputs: [NodeId; N],
+        read: unsafe fn(inputs: &[NodeId]) -> Option<U>,
+        track: fn(inputs: &[NodeId]),
+        is_constant: bool,
+    ) -> Self {
+        Self {
+            header: OpPayloadHeader {
+                read: op_trampolines::op_read_wrap::<U, N>,
+                track: op_trampolines::op_track_wrap::<U, N>,
+                is_constant,
+            },
+            inputs,
+            raw_read: read,
+            raw_track: track,
+        }
+    }
 }
 
 impl<U: RxData, const N: usize> std::fmt::Debug for OpPayload<U, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpPayload")
             .field("inputs", &&self.inputs)
-            .field("read", &format_args!("{:p}", self.read as *const ()))
-            .field("is_constant", &self.is_constant)
+            .field("read", &format_args!("{:p}", self.raw_read as *const ()))
+            .field("is_constant", &self.header.is_constant)
             .finish()
     }
 }
@@ -294,7 +389,7 @@ impl<U: RxData, const N: usize> RxBase for OpPayload<U, N> {
     }
     #[inline(always)]
     fn track(&self) {
-        (self.track)(&self.inputs);
+        (self.header.track)(self as *const Self as *const u8);
     }
     #[inline(always)]
     fn is_disposed(&self) -> bool {
@@ -323,12 +418,12 @@ impl<U: RxData, const N: usize> RxInternal for OpPayload<U, N> {
 
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-        unsafe { (self.read)(&self.inputs).map(RxGuard::Owned) }
+        unsafe { (self.header.read)(self as *const Self as *const u8).map(RxGuard::Owned) }
     }
 
     #[inline(always)]
     fn rx_try_with_untracked<URet>(&self, fun: impl FnOnce(&Self::Value) -> URet) -> Option<URet> {
-        unsafe { (self.read)(&self.inputs).map(|v| fun(&v)) }
+        unsafe { (self.header.read)(self as *const Self as *const u8).map(|v| fun(&v)) }
     }
 
     #[inline(always)]
@@ -344,7 +439,7 @@ impl<U: RxData, const N: usize> RxInternal for OpPayload<U, N> {
     }
 
     fn rx_is_constant(&self) -> bool {
-        self.is_constant
+        self.header.is_constant
     }
 }
 
@@ -361,7 +456,7 @@ impl<U: RxCloneData + 'static, const N: usize> IntoRx for OpPayload<U, N> {
 
     #[inline(always)]
     fn is_constant(&self) -> bool {
-        self.is_constant
+        self.header.is_constant
     }
 }
 
@@ -376,6 +471,62 @@ impl<U: RxCloneData, const N: usize> crate::traits::IntoSignal for OpPayload<U, 
 // Trampoline 辅助工具：用于在宏中生成虚函数表实例
 pub mod op_trampolines {
     use super::*;
+
+    pub unsafe fn op_read_wrap<U: RxData, const N: usize>(this: *const u8) -> Option<U> {
+        let payload = unsafe { &*(this as *const OpPayload<U, N>) };
+        unsafe { (payload.raw_read)(&payload.inputs) }
+    }
+
+    pub fn op_track_wrap<U: RxData, const N: usize>(this: *const u8) {
+        let payload = unsafe { &*(this as *const OpPayload<U, N>) };
+        (payload.raw_track)(&payload.inputs)
+    }
+
+    pub unsafe fn map_read_wrap<IT: RxData, OT: RxData>(this: *const u8) -> Option<OT> {
+        let payload = unsafe { &*(this as *const StaticMapPayload<IT, OT>) };
+        unsafe { rx_borrow_signal_unsafe::<IT>(payload.input_id).map(|v| (payload.mapper)(v)) }
+    }
+
+    pub fn map_track_wrap<IT: RxData, OT: RxData>(this: *const u8) {
+        let payload = unsafe { &*(this as *const StaticMapPayload<IT, OT>) };
+        track_signal(payload.input_id);
+    }
+
+    pub unsafe fn map2_read_wrap<I1: RxData, I2: RxData, OT: RxData>(
+        this: *const u8,
+    ) -> Option<OT> {
+        let payload = unsafe { &*(this as *const StaticMap2Payload<I1, I2, OT>) };
+        unsafe {
+            let v1 = rx_borrow_signal_unsafe::<I1>(payload.inputs[0])?;
+            let v2 = rx_borrow_signal_unsafe::<I2>(payload.inputs[1])?;
+            Some((payload.mapper)(&*v1, &*v2))
+        }
+    }
+
+    pub fn map2_track_wrap<I1: RxData, I2: RxData, OT: RxData>(this: *const u8) {
+        let payload = unsafe { &*(this as *const StaticMap2Payload<I1, I2, OT>) };
+        track_signal(payload.inputs[0]);
+        track_signal(payload.inputs[1]);
+    }
+
+    pub unsafe fn map3_read_wrap<I1: RxData, I2: RxData, I3: RxData, OT: RxData>(
+        this: *const u8,
+    ) -> Option<OT> {
+        let payload = unsafe { &*(this as *const StaticMap3Payload<I1, I2, I3, OT>) };
+        unsafe {
+            let v1 = rx_borrow_signal_unsafe::<I1>(payload.inputs[0])?;
+            let v2 = rx_borrow_signal_unsafe::<I2>(payload.inputs[1])?;
+            let v3 = rx_borrow_signal_unsafe::<I3>(payload.inputs[2])?;
+            Some((payload.mapper)(&*v1, &*v2, &*v3))
+        }
+    }
+
+    pub fn map3_track_wrap<I1: RxData, I2: RxData, I3: RxData, OT: RxData>(this: *const u8) {
+        let payload = unsafe { &*(this as *const StaticMap3Payload<I1, I2, I3, OT>) };
+        track_signal(payload.inputs[0]);
+        track_signal(payload.inputs[1]);
+        track_signal(payload.inputs[2]);
+    }
 
     pub fn track_inputs(inputs: &[NodeId]) {
         for &id in inputs {

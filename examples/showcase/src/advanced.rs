@@ -27,7 +27,7 @@ pub fn StoreDemo() -> impl View {
                 text(
                     settings
                         .notifications
-                        .map(|n| if *n { "On" } else { "Off" })
+                        .map_fn(|n| if *n { "On" } else { "Off" })
                 ),
             ],
         ]
@@ -226,7 +226,7 @@ pub fn MutationDemo() -> impl View {
                     // Note: "login_mutation.mutate((username.get(), password.get()));" is the same as "login_mutation.mutate_with((username, password));"
                     login_mutation.mutate_with((username, password).into_rx());
                 })
-                .attr("disabled", rx!(login_mutation.loading())) // Make reactive
+                .attr("disabled", rx!(@fn login_mutation.loading())) // Optimized: No closure capture
                 .style("padding: 5px 10px;"),
         ]
         .style("margin-bottom: 10px;"),
@@ -293,7 +293,7 @@ pub fn SuspenseDemo() -> impl View {
         ]
         .style("margin-bottom: 15px;"),
         div![
-            button(show_content.map(|s| if *s {
+            button(show_content.map_fn(|s| if *s {
                 "Destroy Component"
             } else {
                 "Create Component"

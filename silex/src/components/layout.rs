@@ -19,7 +19,7 @@ styled! {
         flex-direction: $(direction);
         align-items: $(align);
         justify-content: $(justify);
-        gap: $(gap.map(|g| px(*g)));
+        gap: $(gap.map_fn(|g| px(*g)));
     }
 }
 
@@ -49,6 +49,6 @@ styled! {
     ) {
         display: grid;
         grid-template-columns: repeat($(columns), minmax(0, 1fr));
-        gap: $(gap.map(|g| px(*g)));
+        gap: $(gap.map_fn(|g| px(*g)));
     }
 }

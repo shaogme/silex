@@ -269,8 +269,7 @@ impl<T: crate::traits::RxData, M> RxBase for Rx<T, M> {
             crate::RxInner::Constant(_) => None,
             crate::RxInner::Signal(id) => Some(*id),
             crate::RxInner::Closure(id) => Some(*id),
-            crate::RxInner::Op1(id) => Some(*id),
-            crate::RxInner::Op2(id) => Some(*id),
+            crate::RxInner::Op(id) => Some(*id),
             crate::RxInner::Stored(id) => Some(*id),
         }
     }
@@ -285,16 +284,12 @@ impl<T: crate::traits::RxData, M> RxBase for Rx<T, M> {
             crate::RxInner::Closure(id) => {
                 silex_reactivity::track_signal(*id);
             }
-            crate::RxInner::Op1(id) => {
-                silex_reactivity::try_with_op1(*id, |bytes| unsafe {
-                    let op: &crate::reactivity::OpPayload<T, 1> = std::mem::transmute(bytes);
-                    (op.track)(&op.inputs);
-                });
-            }
-            crate::RxInner::Op2(id) => {
-                silex_reactivity::try_with_op2(*id, |bytes| unsafe {
-                    let op: &crate::reactivity::OpPayload<T, 2> = std::mem::transmute(bytes);
-                    (op.track)(&op.inputs);
+            crate::RxInner::Op(id) => {
+                silex_reactivity::try_with_op(*id, |bytes| {
+                    use crate::reactivity::OpPayloadHeader;
+                    let header: &OpPayloadHeader<T> =
+                        unsafe { &*(bytes.as_ptr() as *const OpPayloadHeader<T>) };
+                    (header.track)(bytes.as_ptr());
                 });
             }
         }
@@ -306,8 +301,7 @@ impl<T: crate::traits::RxData, M> RxBase for Rx<T, M> {
             crate::RxInner::Constant(_) => false,
             crate::RxInner::Signal(id) => silex_reactivity::is_signal_valid(*id),
             crate::RxInner::Closure(id) => silex_reactivity::is_closure_valid(*id),
-            crate::RxInner::Op1(id) => silex_reactivity::is_op1_valid(*id),
-            crate::RxInner::Op2(id) => silex_reactivity::is_op2_valid(*id),
+            crate::RxInner::Op(id) => silex_reactivity::is_op_valid(*id),
             crate::RxInner::Stored(id) => silex_reactivity::is_stored_value_valid(*id),
         }
     }
@@ -346,13 +340,11 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
                 *id,
                 |f: &Box<dyn Fn() -> T>| RxGuard::Owned(f()),
             ),
-            crate::RxInner::Op1(id) => silex_reactivity::try_with_op1(*id, |bytes| unsafe {
-                let op: &crate::reactivity::OpPayload<T, 1> = std::mem::transmute(bytes);
-                (op.read)(&op.inputs).map(RxGuard::Owned).unwrap()
-            }),
-            crate::RxInner::Op2(id) => silex_reactivity::try_with_op2(*id, |bytes| unsafe {
-                let op: &crate::reactivity::OpPayload<T, 2> = std::mem::transmute(bytes);
-                (op.read)(&op.inputs).map(RxGuard::Owned).unwrap()
+            crate::RxInner::Op(id) => silex_reactivity::try_with_op(*id, |bytes| {
+                use crate::reactivity::OpPayloadHeader;
+                let header: &OpPayloadHeader<T> =
+                    unsafe { &*(bytes.as_ptr() as *const OpPayloadHeader<T>) };
+                unsafe { (header.read)(bytes.as_ptr()).map(RxGuard::Owned).unwrap() }
             }),
             crate::RxInner::Stored(id) => unsafe {
                 crate::reactivity::rx_borrow_signal_unsafe::<T>(*id).map(|v| RxGuard::Borrowed {
@@ -373,14 +365,11 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
             crate::RxInner::Closure(id) => {
                 silex_reactivity::try_with_closure(*id, |f: &Box<dyn Fn() -> T>| fun(&f()))
             }
-            crate::RxInner::Op1(id) => silex_reactivity::try_with_op1(*id, |bytes| unsafe {
-                let op: &crate::reactivity::OpPayload<T, 1> = std::mem::transmute(bytes);
-                (op.read)(&op.inputs).map(|v| fun(&v))
-            })
-            .flatten(),
-            crate::RxInner::Op2(id) => silex_reactivity::try_with_op2(*id, |bytes| unsafe {
-                let op: &crate::reactivity::OpPayload<T, 2> = std::mem::transmute(bytes);
-                (op.read)(&op.inputs).map(|v| fun(&v))
+            crate::RxInner::Op(id) => silex_reactivity::try_with_op(*id, |bytes| {
+                use crate::reactivity::OpPayloadHeader;
+                let header: &OpPayloadHeader<T> =
+                    unsafe { &*(bytes.as_ptr() as *const OpPayloadHeader<T>) };
+                unsafe { (header.read)(bytes.as_ptr()).map(|v| fun(&v)) }
             })
             .flatten(),
             crate::RxInner::Stored(id) => {
@@ -418,13 +407,13 @@ macro_rules! impl_tuple_into_rx {
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
                 let is_constant = self.is_constant();
-                let op = crate::reactivity::OpPayload {
-                    inputs: [self.$idx0.into_signal().ensure_node_id(), self.$idx1.into_signal().ensure_node_id()],
-                    read: crate::reactivity::op_trampolines::read_tuple_2::<$T0::Value, $T1::Value>,
-                    track: crate::reactivity::op_trampolines::track_inputs,
+                let op = crate::reactivity::OpPayload::new(
+                    [self.$idx0.into_signal().ensure_node_id(), self.$idx1.into_signal().ensure_node_id()],
+                    crate::reactivity::op_trampolines::read_tuple_2::<$T0::Value, $T1::Value>,
+                    crate::reactivity::op_trampolines::track_inputs,
                     is_constant,
-                };
-                Rx::new_op2(op)
+                );
+                Rx::new_op(op)
             }
             #[inline(always)] fn is_constant(&self) -> bool { self.$idx0.is_constant() && self.$idx1.is_constant() }
         }
@@ -486,13 +475,13 @@ macro_rules! impl_tuple_into_rx {
                 let is_constant = self.is_constant();
                 let ids = [$(self.$idx.clone().into_signal().ensure_node_id()),+];
                 let meta_id = silex_reactivity::untrack(|| silex_reactivity::store_value(ids));
-                let op = crate::reactivity::OpPayload {
-                    inputs: [meta_id],
-                    read: crate::reactivity::op_trampolines::$trap::<$($T::Value),+>,
-                    track: crate::reactivity::op_trampolines::track_tuple_meta::<$len>,
+                let op = crate::reactivity::OpPayload::new(
+                    [meta_id],
+                    crate::reactivity::op_trampolines::$trap::<$($T::Value),+>,
+                    crate::reactivity::op_trampolines::track_tuple_meta::<$len>,
                     is_constant,
-                };
-                Rx::new_op1(op)
+                );
+                Rx::new_op(op)
             }
             #[inline(always)] fn is_constant(&self) -> bool { $(self.$idx.is_constant() && )+ true }
         }
@@ -573,7 +562,7 @@ where
                 // 目前简单起见，假设 Signal 节点可以直接转换。
                 crate::reactivity::Signal::Derived(id, std::marker::PhantomData)
             }
-            crate::RxInner::Closure(_) | crate::RxInner::Op1(_) | crate::RxInner::Op2(_) => {
+            crate::RxInner::Closure(_) | crate::RxInner::Op(_) => {
                 crate::reactivity::Signal::derive(Box::new(move || self.clone().get()))
             }
             crate::RxInner::Stored(_id) => {

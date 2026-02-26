@@ -5,6 +5,7 @@ pub mod node_ref;
 pub mod reactivity;
 
 pub mod logic;
+pub mod macros_helper;
 pub mod traits;
 
 pub use callback::Callback;
@@ -47,8 +48,7 @@ pub enum RxInner<T> {
     Constant(T),
     Signal(crate::reactivity::NodeId),
     Closure(crate::reactivity::NodeId),
-    Op1(crate::reactivity::NodeId),
-    Op2(crate::reactivity::NodeId),
+    Op(crate::reactivity::NodeId),
     /// 直接存储的值（不通过工厂函数，直接借用）
     Stored(crate::reactivity::NodeId),
 }
@@ -59,8 +59,7 @@ impl<T: Clone> Clone for RxInner<T> {
             Self::Constant(v) => Self::Constant(v.clone()),
             Self::Signal(id) => Self::Signal(*id),
             Self::Closure(id) => Self::Closure(*id),
-            Self::Op1(id) => Self::Op1(*id),
-            Self::Op2(id) => Self::Op2(*id),
+            Self::Op(id) => Self::Op(*id),
             Self::Stored(id) => Self::Stored(*id),
         }
     }
@@ -69,38 +68,21 @@ impl<T: Clone> Clone for RxInner<T> {
 impl<T: Copy> Copy for RxInner<T> {}
 
 impl<T: 'static, M> Rx<T, M> {
-    pub fn new_op1(op: crate::reactivity::OpPayload<T, 1>) -> Self {
-        const { assert!(std::mem::size_of::<crate::reactivity::OpPayload<T, 1>>() <= 32) };
-        let id = silex_reactivity::untrack(|| {
-            let mut storage = [0u8; 32];
-            unsafe {
-                std::ptr::write(
-                    storage.as_mut_ptr() as *mut crate::reactivity::OpPayload<T, 1>,
-                    op,
-                );
-            }
-            silex_reactivity::register_op1(storage)
-        });
-        Self {
-            inner: RxInner::Op1(id),
-            _marker: ::core::marker::PhantomData,
-        }
+    pub fn new_op<const N: usize>(op: crate::reactivity::OpPayload<T, N>) -> Self {
+        Self::new_op_raw(op)
     }
 
-    pub fn new_op2(op: crate::reactivity::OpPayload<T, 2>) -> Self {
-        const { assert!(std::mem::size_of::<crate::reactivity::OpPayload<T, 2>>() <= 48) };
+    pub fn new_op_raw<P: 'static>(op: P) -> Self {
+        const { assert!(std::mem::size_of::<P>() <= 64) };
         let id = silex_reactivity::untrack(|| {
-            let mut storage = [0u8; 48];
+            let mut storage = [0u8; 64];
             unsafe {
-                std::ptr::write(
-                    storage.as_mut_ptr() as *mut crate::reactivity::OpPayload<T, 2>,
-                    op,
-                );
+                std::ptr::write(storage.as_mut_ptr() as *mut P, op);
             }
-            silex_reactivity::register_op2(storage)
+            silex_reactivity::register_op(storage)
         });
         Self {
-            inner: RxInner::Op2(id),
+            inner: RxInner::Op(id),
             _marker: ::core::marker::PhantomData,
         }
     }

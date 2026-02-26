@@ -93,7 +93,7 @@ pub fn Counter() -> impl View {
         ]
         .style("margin-bottom: 10px;"),
         div!["Double: ", double_count]
-            .classes(rx!(if *$count % 2 == 0 { "even" } else { "odd" }))
+            .classes(rx!(@fn if *$count % 2 == 0 { "even" } else { "odd" }))
             .style("margin-top: 5px; color: #666; font-size: 0.9em;"),
     ]
 }
@@ -187,8 +187,8 @@ pub fn EventDemo() -> impl View {
         h3("Event & Closure Demo"),
         p("1. Signals are Copy: You can directly move them into closures without cloning."),
         div![
-            p(name.map(|n| format!("Current Name: {}", n))),
-            p(count.map(|c| format!("Current Count: {}", c))),
+            p(name.map_fn(|n| format!("Current Name: {}", n))), // map_fn: zero-allocation, no monomorphization bloat
+            p(count.map(|c| format!("Current Count: {}", c))), // map: traditional closure, still works for all cases
         ]
         .style("margin-bottom: 10px; font-family: monospace;"),
         button("Log & Update (Standard)")
