@@ -29,7 +29,7 @@ where
     U: 'static,
 {
     if let (Some(id1), Some(id2)) = (i1.id(), i2.id()) {
-        let op = StaticMap2Payload::new([id1, id2], f, false);
+        let op = StaticMap2Payload::new2([id1, id2], f, false);
         Rx::new_op_raw(op)
     } else {
         let s1 = i1.clone();
@@ -56,7 +56,7 @@ where
     U: 'static,
 {
     if let (Some(id1), Some(id2), Some(id3)) = (i1.id(), i2.id(), i3.id()) {
-        let op = StaticMap3Payload::new([id1, id2, id3], f, false);
+        let op = StaticMap3Payload::new3([id1, id2, id3], f, false);
         Rx::new_op_raw(op)
     } else {
         let s1 = i1.clone();

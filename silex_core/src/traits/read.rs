@@ -265,43 +265,22 @@ impl<T: crate::traits::RxData, M> crate::traits::RxValue for Rx<T, M> {
 impl<T: crate::traits::RxData, M> RxBase for Rx<T, M> {
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
-        match &self.inner {
-            crate::RxInner::Constant(_) => None,
-            crate::RxInner::Signal(id) => Some(*id),
-            crate::RxInner::Closure(id) => Some(*id),
-            crate::RxInner::Op(id) => Some(*id),
-            crate::RxInner::Stored(id) => Some(*id),
-        }
+        self.inner.as_node_parts().map(|(id, _)| id)
     }
 
     #[inline(always)]
     fn track(&self) {
-        match &self.inner {
-            crate::RxInner::Constant(_) => {}
-            crate::RxInner::Signal(id) | crate::RxInner::Stored(id) => {
-                silex_reactivity::track_signal(*id);
-            }
-            crate::RxInner::Closure(id) => {
-                silex_reactivity::track_signal(*id);
-            }
-            crate::RxInner::Op(id) => {
-                silex_reactivity::try_with_op(*id, |bytes| {
-                    use crate::reactivity::OpPayloadHeader;
-                    let header = unsafe { &*(bytes.as_ptr() as *const OpPayloadHeader) };
-                    (header.track)(bytes.as_ptr());
-                });
-            }
+        if let Some((id, kind)) = self.inner.as_node_parts() {
+            crate::reactivity::internal_helpers::rx_track_internal(id, kind);
         }
     }
 
     #[inline(always)]
     fn is_disposed(&self) -> bool {
-        match &self.inner {
-            crate::RxInner::Constant(_) => false,
-            crate::RxInner::Signal(id) => silex_reactivity::is_signal_valid(*id),
-            crate::RxInner::Closure(id) => silex_reactivity::is_closure_valid(*id),
-            crate::RxInner::Op(id) => silex_reactivity::is_op_valid(*id),
-            crate::RxInner::Stored(id) => silex_reactivity::is_stored_value_valid(*id),
+        if let Some((id, kind)) = self.inner.as_node_parts() {
+            crate::reactivity::internal_helpers::rx_is_disposed_internal(id, kind)
+        } else {
+            false
         }
     }
 
@@ -401,7 +380,7 @@ pub fn create_tuple2_rx<I1: RxData, I2: RxData>(
     mapper: fn(&I1, &I2) -> (I1, I2),
     is_constant: bool,
 ) -> Rx<(I1, I2)> {
-    let op = crate::reactivity::StaticMap2Payload::new(ids, mapper, is_constant);
+    let op = crate::reactivity::StaticMap2Payload::new2(ids, mapper, is_constant);
     Rx::new_op_raw(op)
 }
 
@@ -413,7 +392,7 @@ pub fn create_tuple_n_rx<const N: usize, V: RxCloneData + 'static>(
 ) -> Rx<V> {
     let meta_id = silex_reactivity::untrack(|| silex_reactivity::store_value(ids));
     // Important: for TupleN we need track_tuple_meta as track trampoline
-    let op = crate::reactivity::StaticMapPayload::<V>::new_with_track(
+    let op = crate::reactivity::StaticMapPayload::<V>::new1_with_track(
         meta_id,
         mapper,
         crate::reactivity::op_trampolines::track_tuple_meta::<N>,

@@ -143,7 +143,7 @@ where
         return crate::Rx::new_constant(f(&lhs_s.get(), &rhs_s.get()));
     }
 
-    let op = crate::reactivity::StaticMap2Payload::new(
+    let op = crate::reactivity::StaticMap2Payload::new2(
         [lhs_s.ensure_node_id(), rhs_s.ensure_node_id()],
         f,
         false,
@@ -184,7 +184,7 @@ where
         return crate::Rx::new_constant(f(&val_s.get()));
     }
 
-    let op = crate::reactivity::StaticMapPayload::new_unary(val_s.ensure_node_id(), f, false);
+    let op = crate::reactivity::StaticMapPayload::new1(val_s.ensure_node_id(), f, false);
     crate::Rx::new_op_raw(op)
 }
 

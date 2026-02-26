@@ -66,6 +66,30 @@ impl<T: Clone> Clone for RxInner<T> {
 
 impl<T: Copy> Copy for RxInner<T> {}
 
+/// 非泛型的响应式节点类型，用于 Trampoline 模式优化。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RxNodeKind {
+    Signal,
+    Closure,
+    Op,
+    Stored,
+}
+
+impl<T> RxInner<T> {
+    /// 将泛型枚举转换为非泛型的 NodeId 和类型标识。
+    /// 用于将逻辑分发到非泛型函数中。
+    #[inline(always)]
+    pub fn as_node_parts(&self) -> Option<(crate::reactivity::NodeId, RxNodeKind)> {
+        match self {
+            Self::Constant(_) => None,
+            Self::Signal(id) => Some((*id, RxNodeKind::Signal)),
+            Self::Closure(id) => Some((*id, RxNodeKind::Closure)),
+            Self::Op(id) => Some((*id, RxNodeKind::Op)),
+            Self::Stored(id) => Some((*id, RxNodeKind::Stored)),
+        }
+    }
+}
+
 impl<T: 'static, M> Rx<T, M> {
     pub fn new_op<const N: usize>(op: crate::reactivity::OpPayload<T, N>) -> Self {
         Self::new_op_raw(op)

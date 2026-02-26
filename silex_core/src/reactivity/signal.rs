@@ -264,38 +264,46 @@ pub struct OpPayloadHeader {
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct StaticMapPayload<OT> {
+pub struct UnifiedStaticMapPayload<OT> {
     pub header: OpPayloadHeader,
-    pub input_id: NodeId,
-    pub compute: unsafe fn(input_ptr: *const (), out_ptr: *mut (), mapper_ptr: *const ()),
+    pub input_count: usize,
+    pub inputs: [NodeId; 3],
+    pub compute: unsafe fn(inputs: *const *const (), out_ptr: *mut (), mapper_ptr: *const ()),
     pub mapper_ptr: *const (),
     pub _marker: PhantomData<OT>,
 }
 
-impl<OT: RxData> StaticMapPayload<OT> {
-    pub fn new<IT: RxData>(input_id: NodeId, mapper: fn(&IT) -> OT, is_constant: bool) -> Self {
+pub type StaticMapPayload<OT> = UnifiedStaticMapPayload<OT>;
+pub type StaticMap2Payload<OT> = UnifiedStaticMapPayload<OT>;
+pub type StaticMap3Payload<OT> = UnifiedStaticMapPayload<OT>;
+
+impl<OT: RxData> UnifiedStaticMapPayload<OT> {
+    pub fn new1<IT: RxData>(input_id: NodeId, mapper: fn(&IT) -> OT, is_constant: bool) -> Self {
         Self {
             header: OpPayloadHeader {
-                read_to_ptr: op_trampolines::thin_map_read_to_ptr,
-                track: op_trampolines::track_unary,
+                read_to_ptr: op_trampolines::unified_map_read_to_ptr,
+                track: op_trampolines::unified_track,
                 is_constant,
             },
-            input_id,
-            compute: op_trampolines::compute_map::<IT, OT>,
+            input_count: 1,
+            inputs: [
+                input_id,
+                NodeId {
+                    index: 0,
+                    generation: 0,
+                },
+                NodeId {
+                    index: 0,
+                    generation: 0,
+                },
+            ],
+            compute: op_trampolines::compute_map_1::<IT, OT>,
             mapper_ptr: mapper as *const (),
             _marker: PhantomData,
         }
     }
 
-    pub fn new_unary<IT: RxData>(
-        input_id: NodeId,
-        mapper: fn(&IT) -> OT,
-        is_constant: bool,
-    ) -> Self {
-        Self::new(input_id, mapper, is_constant)
-    }
-
-    pub fn new_with_track<IT: RxData>(
+    pub fn new1_with_track<IT: RxData>(
         input_id: NodeId,
         mapper: fn(&IT) -> OT,
         track_fn: fn(this: *const u8),
@@ -303,78 +311,68 @@ impl<OT: RxData> StaticMapPayload<OT> {
     ) -> Self {
         Self {
             header: OpPayloadHeader {
-                read_to_ptr: op_trampolines::thin_map_read_to_ptr,
+                read_to_ptr: op_trampolines::unified_map_read_to_ptr,
                 track: track_fn,
                 is_constant,
             },
-            input_id,
-            compute: op_trampolines::compute_map::<IT, OT>,
+            input_count: 1,
+            inputs: [
+                input_id,
+                NodeId {
+                    index: 0,
+                    generation: 0,
+                },
+                NodeId {
+                    index: 0,
+                    generation: 0,
+                },
+            ],
+            compute: op_trampolines::compute_map_1::<IT, OT>,
             mapper_ptr: mapper as *const (),
             _marker: PhantomData,
         }
     }
-}
 
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct StaticMap2Payload<OT> {
-    pub header: OpPayloadHeader,
-    pub inputs: [NodeId; 2],
-    pub compute: unsafe fn(i1: *const (), i2: *const (), out_ptr: *mut (), mapper_ptr: *const ()),
-    pub mapper_ptr: *const (),
-    pub _marker: PhantomData<OT>,
-}
-
-impl<OT: RxData> StaticMap2Payload<OT> {
-    pub fn new<I1: RxData, I2: RxData>(
+    pub fn new2<I1: RxData, I2: RxData>(
         inputs: [NodeId; 2],
         mapper: fn(&I1, &I2) -> OT,
         is_constant: bool,
     ) -> Self {
         Self {
             header: OpPayloadHeader {
-                read_to_ptr: op_trampolines::thin_map2_read_to_ptr,
-                track: op_trampolines::track_binary,
+                read_to_ptr: op_trampolines::unified_map_read_to_ptr,
+                track: op_trampolines::unified_track,
                 is_constant,
             },
-            inputs,
-            compute: op_trampolines::compute_map2::<I1, I2, OT>,
+            input_count: 2,
+            inputs: [
+                inputs[0],
+                inputs[1],
+                NodeId {
+                    index: 0,
+                    generation: 0,
+                },
+            ],
+            compute: op_trampolines::compute_map_2::<I1, I2, OT>,
             mapper_ptr: mapper as *const (),
             _marker: PhantomData,
         }
     }
-}
 
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct StaticMap3Payload<OT> {
-    pub header: OpPayloadHeader,
-    pub inputs: [NodeId; 3],
-    pub compute: unsafe fn(
-        i1: *const (),
-        i2: *const (),
-        i3: *const (),
-        out_ptr: *mut (),
-        mapper_ptr: *const (),
-    ),
-    pub mapper_ptr: *const (),
-    pub _marker: PhantomData<OT>,
-}
-
-impl<OT: RxData> StaticMap3Payload<OT> {
-    pub fn new<I1: RxData, I2: RxData, I3: RxData>(
+    pub fn new3<I1: RxData, I2: RxData, I3: RxData>(
         inputs: [NodeId; 3],
         mapper: fn(&I1, &I2, &I3) -> OT,
         is_constant: bool,
     ) -> Self {
         Self {
             header: OpPayloadHeader {
-                read_to_ptr: op_trampolines::thin_map3_read_to_ptr,
-                track: op_trampolines::track_ternary,
+                read_to_ptr: op_trampolines::unified_map_read_to_ptr,
+                track: op_trampolines::unified_track,
                 is_constant,
             },
+            input_count: 3,
             inputs,
-            compute: op_trampolines::compute_map3::<I1, I2, I3, OT>,
+            compute: op_trampolines::compute_map_3::<I1, I2, I3, OT>,
             mapper_ptr: mapper as *const (),
             _marker: PhantomData,
         }
@@ -553,105 +551,63 @@ pub mod op_trampolines {
         (payload.raw_track)(&payload.inputs)
     }
 
-    pub unsafe fn thin_map_read_to_ptr(this: *const u8, out: *mut u8) -> bool {
-        let payload = unsafe { &*(this as *const StaticMapPayload<()>) }; // Any OT works for layout
-        if let Some(input_ptr) =
-            unsafe { silex_reactivity::try_get_any_raw_untracked(payload.input_id) }
-        {
-            unsafe { (payload.compute)(input_ptr, out as *mut (), payload.mapper_ptr) };
-            true
-        } else {
-            false
+    pub unsafe fn unified_map_read_to_ptr(this: *const u8, out: *mut u8) -> bool {
+        let payload = unsafe { &*(this as *const UnifiedStaticMapPayload<()>) };
+        let mut input_ptrs = [std::ptr::null(); 3];
+        for i in 0..payload.input_count {
+            if let Some(ptr) =
+                unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[i]) }
+            {
+                input_ptrs[i] = ptr;
+            } else {
+                return false;
+            }
+        }
+        unsafe { (payload.compute)(input_ptrs.as_ptr(), out as *mut (), payload.mapper_ptr) };
+        true
+    }
+
+    pub fn unified_track(this: *const u8) {
+        let payload = unsafe { &*(this as *const UnifiedStaticMapPayload<()>) };
+        for i in 0..payload.input_count {
+            track_signal(payload.inputs[i]);
         }
     }
 
-    pub unsafe fn compute_map<IT: RxData, OT: RxData>(
-        input: *const (),
+    pub unsafe fn compute_map_1<IT: RxData, OT: RxData>(
+        inputs: *const *const (),
         out_ptr: *mut (),
         mapper: *const (),
     ) {
         let mapper: fn(&IT) -> OT = unsafe { std::mem::transmute(mapper) };
-        let val = mapper(unsafe { &*(input as *const IT) });
+        let i0 = unsafe { &*(*inputs as *const IT) };
+        let val = mapper(i0);
         unsafe { std::ptr::write(out_ptr as *mut OT, val) };
     }
 
-    pub fn track_unary(this: *const u8) {
-        let payload = unsafe { &*(this as *const StaticMapPayload<()>) };
-        track_signal(payload.input_id);
-    }
-
-    pub unsafe fn thin_map2_read_to_ptr(this: *const u8, out: *mut u8) -> bool {
-        let payload = unsafe { &*(this as *const StaticMap2Payload<()>) };
-        if let Some(v1) = unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[0]) }
-        {
-            if let Some(v2) =
-                unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[1]) }
-            {
-                unsafe { (payload.compute)(v1, v2, out as *mut (), payload.mapper_ptr) };
-                return true;
-            }
-        }
-        false
-    }
-
-    pub unsafe fn compute_map2<I1: RxData, I2: RxData, OT: RxData>(
-        i1: *const (),
-        i2: *const (),
+    pub unsafe fn compute_map_2<I1: RxData, I2: RxData, OT: RxData>(
+        inputs: *const *const (),
         out_ptr: *mut (),
         mapper: *const (),
     ) {
         let mapper: fn(&I1, &I2) -> OT = unsafe { std::mem::transmute(mapper) };
-        let val = mapper(unsafe { &*(i1 as *const I1) }, unsafe {
-            &*(i2 as *const I2)
-        });
+        let i0 = unsafe { &*(*inputs as *const I1) };
+        let i1 = unsafe { &*(*inputs.add(1) as *const I2) };
+        let val = mapper(i0, i1);
         unsafe { std::ptr::write(out_ptr as *mut OT, val) };
     }
 
-    pub fn track_binary(this: *const u8) {
-        let payload = unsafe { &*(this as *const StaticMap2Payload<()>) };
-        track_signal(payload.inputs[0]);
-        track_signal(payload.inputs[1]);
-    }
-
-    pub unsafe fn thin_map3_read_to_ptr(this: *const u8, out: *mut u8) -> bool {
-        let payload = unsafe { &*(this as *const StaticMap3Payload<()>) };
-        if let Some(v1) = unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[0]) }
-        {
-            if let Some(v2) =
-                unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[1]) }
-            {
-                if let Some(v3) =
-                    unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[2]) }
-                {
-                    unsafe { (payload.compute)(v1, v2, v3, out as *mut (), payload.mapper_ptr) };
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
-    pub unsafe fn compute_map3<I1: RxData, I2: RxData, I3: RxData, OT: RxData>(
-        i1: *const (),
-        i2: *const (),
-        i3: *const (),
+    pub unsafe fn compute_map_3<I1: RxData, I2: RxData, I3: RxData, OT: RxData>(
+        inputs: *const *const (),
         out_ptr: *mut (),
         mapper: *const (),
     ) {
         let mapper: fn(&I1, &I2, &I3) -> OT = unsafe { std::mem::transmute(mapper) };
-        let val = mapper(
-            unsafe { &*(i1 as *const I1) },
-            unsafe { &*(i2 as *const I2) },
-            unsafe { &*(i3 as *const I3) },
-        );
+        let i0 = unsafe { &*(*inputs as *const I1) };
+        let i1 = unsafe { &*(*inputs.add(1) as *const I2) };
+        let i2 = unsafe { &*(*inputs.add(2) as *const I3) };
+        let val = mapper(i0, i1, i2);
         unsafe { std::ptr::write(out_ptr as *mut OT, val) };
-    }
-
-    pub fn track_ternary(this: *const u8) {
-        let payload = unsafe { &*(this as *const StaticMap3Payload<()>) };
-        track_signal(payload.inputs[0]);
-        track_signal(payload.inputs[1]);
-        track_signal(payload.inputs[2]);
     }
 
     pub fn track_inputs(inputs: &[NodeId]) {
@@ -662,8 +618,8 @@ pub mod op_trampolines {
 
     /// 追踪打包在 StoredValue 中的 N 个信号
     pub fn track_tuple_meta<const N: usize>(this: *const u8) {
-        let payload = unsafe { &*(this as *const StaticMapPayload<()>) };
-        let meta_id = payload.input_id;
+        let payload = unsafe { &*(this as *const UnifiedStaticMapPayload<()>) };
+        let meta_id = payload.inputs[0];
         let _ = silex_reactivity::try_with_stored_value(meta_id, |ids: &[NodeId; N]| {
             for &id in ids {
                 track_signal(id);
@@ -750,6 +706,42 @@ pub mod op_trampolines {
     }
 }
 
+pub(crate) mod internal_helpers {
+    use super::*;
+    use silex_reactivity::{
+        is_closure_valid, is_op_valid, is_signal_valid, is_stored_value_valid, track_signal,
+        try_with_op,
+    };
+
+    /// 非泛型的 track 逻辑实现 (Trampoline)。
+    /// 剥离了 RxInner 的 Match 分发，使所有 T 共享机器码。
+    #[inline]
+    pub fn rx_track_internal(id: crate::reactivity::NodeId, kind: crate::RxNodeKind) {
+        match kind {
+            crate::RxNodeKind::Signal | crate::RxNodeKind::Stored | crate::RxNodeKind::Closure => {
+                track_signal(id);
+            }
+            crate::RxNodeKind::Op => {
+                let _ = try_with_op(id, |bytes| {
+                    let header = unsafe { &*(bytes.as_ptr() as *const OpPayloadHeader) };
+                    (header.track)(bytes.as_ptr());
+                });
+            }
+        }
+    }
+
+    /// 非泛型的销毁状态检查 (Trampoline)。
+    #[inline]
+    pub fn rx_is_disposed_internal(id: crate::reactivity::NodeId, kind: crate::RxNodeKind) -> bool {
+        match kind {
+            crate::RxNodeKind::Signal => !is_signal_valid(id),
+            crate::RxNodeKind::Closure => !is_closure_valid(id),
+            crate::RxNodeKind::Op => !is_op_valid(id),
+            crate::RxNodeKind::Stored => !is_stored_value_valid(id),
+        }
+    }
+}
+
 // --- Signal 信号 Enum ---
 
 pub enum Signal<T> {
@@ -809,14 +801,32 @@ impl<T: RxData> RxBase for Signal<T> {
 
     #[inline(always)]
     fn track(&self) {
-        if let Some(id) = self.id() {
-            track_signal(id);
+        match self {
+            Signal::Read(s) => internal_helpers::rx_track_internal(s.id, crate::RxNodeKind::Signal),
+            Signal::Derived(id, _) => {
+                internal_helpers::rx_track_internal(*id, crate::RxNodeKind::Closure)
+            }
+            Signal::StoredConstant(id, _) => {
+                internal_helpers::rx_track_internal(*id, crate::RxNodeKind::Stored)
+            }
+            Signal::InlineConstant(_, _) => {}
         }
     }
 
     #[inline(always)]
     fn is_disposed(&self) -> bool {
-        self.id().map(|id| !is_signal_valid(id)).unwrap_or(false)
+        match self {
+            Signal::Read(s) => {
+                internal_helpers::rx_is_disposed_internal(s.id, crate::RxNodeKind::Signal)
+            }
+            Signal::Derived(id, _) => {
+                internal_helpers::rx_is_disposed_internal(*id, crate::RxNodeKind::Closure)
+            }
+            Signal::StoredConstant(id, _) => {
+                internal_helpers::rx_is_disposed_internal(*id, crate::RxNodeKind::Stored)
+            }
+            Signal::InlineConstant(_, _) => false,
+        }
     }
 
     #[inline(always)]
