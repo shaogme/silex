@@ -241,13 +241,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
             fn build_attribute<__SilexValue>(mut self, target: ::silex::dom::attribute::ApplyTarget, value: __SilexValue) -> Self
             where __SilexValue: ::silex::dom::attribute::IntoStorable
             {
-                let owned_target = match target {
-                    ::silex::dom::attribute::ApplyTarget::Attr(n) => ::silex::dom::attribute::OwnedApplyTarget::Attr(n.to_string()),
-                    ::silex::dom::attribute::ApplyTarget::Prop(n) => ::silex::dom::attribute::OwnedApplyTarget::Prop(n.to_string()),
-                    ::silex::dom::attribute::ApplyTarget::Class => ::silex::dom::attribute::OwnedApplyTarget::Class,
-                    ::silex::dom::attribute::ApplyTarget::Style => ::silex::dom::attribute::OwnedApplyTarget::Style,
-                    ::silex::dom::attribute::ApplyTarget::Apply => ::silex::dom::attribute::OwnedApplyTarget::Apply,
-                };
+                let owned_target = ::silex::dom::attribute::OwnedApplyTarget::from(target);
                 // Convert to storable type before storing
                 self._pending_attrs.push(
                     ::silex::dom::attribute::PendingAttribute::build(value.into_storable(), owned_target)

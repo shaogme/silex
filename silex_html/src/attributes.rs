@@ -3,59 +3,31 @@ use silex_dom::prelude::*;
 /// 表单与输入属性：主要用于 input, select, textarea, button, form
 pub trait FormAttributes: AttributeBuilder {
     /// 设置 input 的 type 属性 (注意：使用 type_ 以避免关键字冲突)
-    fn type_<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
+    fn type_(self, value: impl IntoStorable) -> Self {
         self.attr("type", value)
     }
 
-    fn value<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
+    fn value(self, value: impl IntoStorable) -> Self {
         self.prop("value", value)
     }
 
-    fn checked<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
+    fn checked(self, value: impl IntoStorable) -> Self {
         self.prop("checked", value)
     }
 
-    fn disabled<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
+    fn disabled(self, value: impl IntoStorable) -> Self {
         self.prop("disabled", value)
     }
 
-    fn readonly<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
+    fn readonly(self, value: impl IntoStorable) -> Self {
         self.prop("readOnly", value)
     }
 
-    fn required<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
+    fn required(self, value: impl IntoStorable) -> Self {
         self.prop("required", value)
     }
 
-    fn placeholder<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
+    fn placeholder(self, value: impl IntoStorable) -> Self {
         self.attr("placeholder", value)
     }
 
@@ -87,11 +59,7 @@ pub trait FormAttributes: AttributeBuilder {
         self.attr("pattern", value)
     }
 
-    fn multiple<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
+    fn multiple(self, value: impl IntoStorable) -> Self {
         self.prop("multiple", value)
     }
 
@@ -99,11 +67,7 @@ pub trait FormAttributes: AttributeBuilder {
         self.attr("accept", value)
     }
 
-    fn selected<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
+    fn selected(self, value: impl IntoStorable) -> Self {
         self.prop("selected", value)
     }
 
@@ -127,57 +91,33 @@ pub trait FormAttributes: AttributeBuilder {
 /// 标签属性：主要用于 label
 pub trait LabelAttributes: AttributeBuilder {
     /// label 的 for 属性 (使用 for_)
-    fn for_<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
+    fn for_(self, value: impl IntoStorable) -> Self {
         self.attr("for", value)
     }
 }
 
 /// 链接属性：主要用于 a, link, area
 pub trait AnchorAttributes: AttributeBuilder {
-    fn href<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
+    fn href(self, value: impl IntoStorable) -> Self {
         self.attr("href", value)
     }
 
-    fn target<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
+    fn target(self, value: impl IntoStorable) -> Self {
         self.attr("target", value)
     }
 
-    fn rel<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
+    fn rel(self, value: impl IntoStorable) -> Self {
         self.attr("rel", value)
     }
 
-    fn download<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
+    fn download(self, value: impl IntoStorable) -> Self {
         self.attr("download", value)
     }
 }
 
 /// 媒体属性：主要用于 img, video, audio, source, iframe
 pub trait MediaAttributes: AttributeBuilder {
-    fn src<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
+    fn src(self, value: impl IntoStorable) -> Self {
         self.attr("src", value)
     }
 
@@ -193,35 +133,19 @@ pub trait MediaAttributes: AttributeBuilder {
         self.attr("height", value)
     }
 
-    fn autoplay<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
+    fn autoplay(self, value: impl IntoStorable) -> Self {
         self.prop("autoplay", value)
     }
 
-    fn controls<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
+    fn controls(self, value: impl IntoStorable) -> Self {
         self.prop("controls", value)
     }
 
-    fn loop_<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
+    fn loop_(self, value: impl IntoStorable) -> Self {
         self.prop("loop", value)
     }
 
-    fn muted<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
+    fn muted(self, value: impl IntoStorable) -> Self {
         self.prop("muted", value)
     }
 
@@ -236,57 +160,33 @@ pub trait MediaAttributes: AttributeBuilder {
 
 /// 交互属性：主要用于 dialog, details
 pub trait OpenAttributes: AttributeBuilder {
-    fn open<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyBoolAttribute,
-    {
+    fn open(self, value: impl IntoStorable) -> Self {
         self.prop("open", value)
     }
 }
 
 /// 表格单元格属性：主要用于 td, th
 pub trait TableCellAttributes: AttributeBuilder {
-    fn colspan<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
+    fn colspan(self, value: impl IntoStorable) -> Self {
         self.attr("colspan", value)
     }
 
-    fn rowspan<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
+    fn rowspan(self, value: impl IntoStorable) -> Self {
         self.attr("rowspan", value)
     }
 
-    fn headers<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
+    fn headers(self, value: impl IntoStorable) -> Self {
         self.attr("headers", value)
     }
 }
 
 /// 表头属性：主要用于 th
 pub trait TableHeaderAttributes: AttributeBuilder {
-    fn scope<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
+    fn scope(self, value: impl IntoStorable) -> Self {
         self.attr("scope", value)
     }
 
-    fn abbr<V>(self, value: V) -> Self
-    where
-        V: IntoStorable,
-        V::Stored: ApplyStringAttribute,
-    {
+    fn abbr(self, value: impl IntoStorable) -> Self {
         self.attr("abbr", value)
     }
 }

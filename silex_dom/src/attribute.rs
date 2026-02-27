@@ -2,11 +2,11 @@ use crate::event::{EventDescriptor, EventHandler};
 
 mod apply;
 mod into_storable;
-mod typed;
+mod op;
 
 pub use apply::*;
 pub use into_storable::*;
-pub use typed::*;
+pub use op::*;
 
 pub trait AttributeBuilder: Sized {
     /// Core hook: Apply or store a generic attribute/property directly using ApplyTarget mechanism.

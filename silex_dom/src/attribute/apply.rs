@@ -1,10 +1,15 @@
-use silex_core::SilexError;
 use silex_core::reactivity::Effect;
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
-use wasm_bindgen::{JsCast, JsValue};
-use web_sys::{CssStyleDeclaration, Element as WebElem, HtmlElement, SvgElement};
+use wasm_bindgen::JsValue;
+use web_sys::Element as WebElem;
+
+use super::op::{
+    AttrOp, apply_immediate_bool_internal, get_style_decl, parse_style_str,
+    set_string_property_internal,
+};
 
 // --- Apply Target Enum ---
 
@@ -29,12 +34,12 @@ pub enum ApplyTarget<'a> {
 pub trait ApplyToDom {
     fn apply(&self, el: &WebElem, target: ApplyTarget);
 
-    fn into_payload(self) -> AttributePayload
+    fn into_op(self, target: OwnedApplyTarget) -> AttrOp
     where
         Self: Sized + 'static,
     {
-        AttributePayload::Dynamic(std::rc::Rc::new(move |el, target| {
-            self.apply(el, ApplyTarget::from(target));
+        AttrOp::Custom(std::rc::Rc::new(move |el| {
+            self.apply(el, ApplyTarget::from(&target));
         }))
     }
 }
@@ -70,67 +75,19 @@ where
         crate::attribute::apply_rx_internal(self.clone(), el, target);
     }
 
-    fn into_payload(self) -> AttributePayload {
-        if let Some(payload) = <T as ReactiveApply>::into_payload_reactive(self.clone()) {
-            payload
+    fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
+        if let Some(op) = <T as ReactiveApply>::into_op_reactive(self.clone(), target.clone()) {
+            op
         } else {
-            AttributePayload::Dynamic(std::rc::Rc::new(move |el, target| {
-                crate::attribute::apply_rx_internal(self.clone(), el, ApplyTarget::from(target));
+            let rx = self.clone();
+            AttrOp::Custom(std::rc::Rc::new(move |el| {
+                crate::attribute::apply_rx_internal(rx.clone(), el, ApplyTarget::from(&target));
             }))
         }
     }
 }
 
 // --- Internal Helper Functions (Non-generic to reduce monomorphization) ---
-
-fn handle_err(res: Result<(), SilexError>) {
-    if let Err(e) = res {
-        silex_core::error::handle_error(e);
-    }
-}
-
-fn get_style_decl(el: &WebElem) -> Option<CssStyleDeclaration> {
-    if let Some(e) = el.dyn_ref::<HtmlElement>() {
-        Some(e.style())
-    } else {
-        el.dyn_ref::<SvgElement>().map(|e| e.style())
-    }
-}
-
-fn parse_style_str(s: &str) -> Vec<(String, String)> {
-    s.split(';')
-        .filter_map(|rule| {
-            let rule = rule.trim();
-            if rule.is_empty() {
-                None
-            } else {
-                rule.split_once(':')
-                    .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
-            }
-        })
-        .collect()
-}
-
-fn set_string_property_internal(el: &WebElem, name: &str, value: &str, is_prop: bool) {
-    if is_prop {
-        let _ = js_sys::Reflect::set(el, &JsValue::from_str(name), &JsValue::from_str(value));
-    } else {
-        match name {
-            "class" => el.set_class_name(value),
-            "style" => {
-                if let Some(style) = get_style_decl(el) {
-                    style.set_css_text(value);
-                }
-            }
-            _ => {
-                handle_err(
-                    el.set_attribute(name, value)
-                        .map_err(silex_core::SilexError::from),
-                );
-            }
-        }
-    }
-}
 
 fn create_erased_class_effect_internal(
     el: WebElem,
@@ -173,7 +130,7 @@ fn create_erased_style_effect_internal(
         if let Some(style) = get_style_decl(&el) {
             let mut prev = prev_keys.borrow_mut();
             let params = parse_style_str(new_style_str);
-            let new_keys: HashSet<String> = params.iter().map(|(k, _)| k.clone()).collect();
+            let new_keys: HashSet<String> = params.iter().map(|(k, _)| k.to_string()).collect();
 
             for k in prev.difference(&new_keys) {
                 let _ = style.remove_property(k);
@@ -222,7 +179,7 @@ fn apply_string_reactive_internal(
 
 fn apply_string_pair_reactive_internal(
     el: WebElem,
-    key: String,
+    key: Cow<'static, str>,
     target: OwnedApplyTarget,
     rx: silex_core::Rx<String, silex_core::RxValueKind>,
 ) {
@@ -268,7 +225,7 @@ fn apply_bool_reactive_internal(
 
 fn apply_bool_pair_reactive_internal(
     el: WebElem,
-    key: String,
+    key: Cow<'static, str>,
     rx: silex_core::Rx<bool, silex_core::RxValueKind>,
 ) {
     let list = el.class_list();
@@ -295,10 +252,10 @@ pub(crate) fn apply_rx_internal<T>(
 
 // --- OwnedApplyTarget & ReactiveApply ---
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OwnedApplyTarget {
-    Attr(String),
-    Prop(String),
+    Attr(Cow<'static, str>),
+    Prop(Cow<'static, str>),
     Class,
     Style,
     Apply,
@@ -307,8 +264,8 @@ pub enum OwnedApplyTarget {
 impl<'a> From<ApplyTarget<'a>> for OwnedApplyTarget {
     fn from(target: ApplyTarget<'a>) -> Self {
         match target {
-            ApplyTarget::Attr(n) => OwnedApplyTarget::Attr(n.to_string()),
-            ApplyTarget::Prop(n) => OwnedApplyTarget::Prop(n.to_string()),
+            ApplyTarget::Attr(n) => OwnedApplyTarget::Attr(Cow::Owned(n.to_string())),
+            ApplyTarget::Prop(n) => OwnedApplyTarget::Prop(Cow::Owned(n.to_string())),
             ApplyTarget::Class => OwnedApplyTarget::Class,
             ApplyTarget::Style => OwnedApplyTarget::Style,
             ApplyTarget::Apply => OwnedApplyTarget::Apply,
@@ -326,7 +283,7 @@ pub trait ReactiveApply {
 
     fn apply_pair(
         rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-        key: String,
+        key: Cow<'static, str>,
         el: WebElem,
         target: OwnedApplyTarget,
     ) where
@@ -335,12 +292,14 @@ pub trait ReactiveApply {
         let _ = (rx, key, el, target);
     }
 
-    fn into_payload_reactive(
-        _rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-    ) -> Option<AttributePayload>
+    fn into_op_reactive(
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        target: OwnedApplyTarget,
+    ) -> Option<AttrOp>
     where
         Self: Sized,
     {
+        let _ = (rx, target);
         None
     }
 }
@@ -358,28 +317,50 @@ fn apply_immediate_string(el: &WebElem, target: ApplyTarget, value: &str) {
 }
 
 fn apply_immediate_bool(el: &WebElem, target: ApplyTarget, value: bool) {
-    match target {
-        ApplyTarget::Attr(name) => {
-            if value {
-                let _ = el.set_attribute(name, "");
-            } else {
-                let _ = el.remove_attribute(name);
-            }
-        }
-        ApplyTarget::Prop(name) => {
-            let _ = js_sys::Reflect::set(el, &JsValue::from_str(name), &JsValue::from_bool(value));
-        }
-        _ => {}
+    if let ApplyTarget::Attr(name) = target {
+        apply_immediate_bool_internal(el, name, value, false);
+    } else if let ApplyTarget::Prop(name) = target {
+        apply_immediate_bool_internal(el, name, value, true);
     }
 }
 
-impl ApplyToDom for &str {
+impl ApplyToDom for &'static str {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
         apply_immediate_string(el, target, *self);
     }
-
-    fn into_payload(self) -> AttributePayload {
-        AttributePayload::StaticString(self.to_string())
+    fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
+        match target {
+            OwnedApplyTarget::Attr(name) => AttrOp::SetStaticAttr {
+                name: name.into(),
+                value: self.into(),
+            },
+            OwnedApplyTarget::Prop(name) => AttrOp::SetStaticProp {
+                name: name.into(),
+                value: JsValue::from_str(self),
+            },
+            OwnedApplyTarget::Class => AttrOp::SetStaticClasses(vec![self.into()]),
+            OwnedApplyTarget::Style => AttrOp::SetStaticStyles(
+                parse_style_str(self)
+                    .into_iter()
+                    .map(|(k, v)| {
+                        // 在 into_op 中，self 是 &'static str，所以返回的 Cow 确实是 'static。
+                        // 这里我们显式地重建 Cow 以通过编译器检查。
+                        let k = match k {
+                            Cow::Borrowed(s) => Cow::Borrowed(s),
+                            Cow::Owned(s) => Cow::Owned(s),
+                        };
+                        let v = match v {
+                            Cow::Borrowed(s) => Cow::Borrowed(s),
+                            Cow::Owned(s) => Cow::Owned(s),
+                        };
+                        (k, v)
+                    })
+                    .collect(),
+            ),
+            OwnedApplyTarget::Apply => AttrOp::Custom(std::rc::Rc::new(move |el| {
+                apply_immediate_string(el, ApplyTarget::Apply, self);
+            })),
+        }
     }
 }
 
@@ -388,8 +369,31 @@ impl ApplyToDom for String {
         apply_immediate_string(el, target, self);
     }
 
-    fn into_payload(self) -> AttributePayload {
-        AttributePayload::StaticString(self)
+    fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
+        match target {
+            OwnedApplyTarget::Attr(name) => AttrOp::SetStaticAttr {
+                name: name.into(),
+                value: self.into(),
+            },
+            OwnedApplyTarget::Prop(name) => AttrOp::SetStaticProp {
+                name: name.into(),
+                value: JsValue::from_str(&self),
+            },
+            OwnedApplyTarget::Class => AttrOp::SetStaticClasses(
+                self.split_whitespace()
+                    .map(|s| Cow::Owned(s.to_string()))
+                    .collect(),
+            ),
+            OwnedApplyTarget::Style => AttrOp::SetStaticStyles(
+                parse_style_str(&self)
+                    .into_iter()
+                    .map(|(k, v)| (k.into_owned().into(), v.into_owned().into()))
+                    .collect(),
+            ),
+            OwnedApplyTarget::Apply => AttrOp::Custom(std::rc::Rc::new(move |el| {
+                apply_immediate_string(el, ApplyTarget::Apply, &self);
+            })),
+        }
     }
 }
 
@@ -398,8 +402,9 @@ impl ApplyToDom for &String {
         apply_immediate_string(el, target, self);
     }
 
-    fn into_payload(self) -> AttributePayload {
-        AttributePayload::StaticString(self.to_string())
+    fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
+        // String is 'static, so we convert to owned String to satisfy 'static bound
+        self.to_string().into_op(target)
     }
 }
 
@@ -408,15 +413,35 @@ impl ApplyToDom for bool {
         apply_immediate_bool(el, target, *self);
     }
 
-    fn into_payload(self) -> AttributePayload {
-        AttributePayload::StaticBool(self)
+    fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
+        match target {
+            OwnedApplyTarget::Attr(name) => AttrOp::SetStaticBoolAttr {
+                name: name.into(),
+                value: self,
+            },
+            OwnedApplyTarget::Prop(name) => AttrOp::SetStaticBoolProp {
+                name: name.into(),
+                value: self,
+            },
+            _ => AttrOp::Custom(std::rc::Rc::new(move |el| {
+                apply_immediate_bool(el, ApplyTarget::Apply, self);
+            })),
+        }
     }
 }
 
-impl<T: ApplyToDom> ApplyToDom for Option<T> {
+impl<V: ApplyToDom + 'static> ApplyToDom for Option<V> {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
-        if let Some(val) = self {
-            val.apply(el, target);
+        if let Some(v) = self {
+            v.apply(el, target);
+        }
+    }
+
+    fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
+        if let Some(v) = self {
+            v.into_op(target)
+        } else {
+            AttrOp::Noop
         }
     }
 }
@@ -432,17 +457,54 @@ impl ReactiveApply for String {
 
     fn apply_pair(
         rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-        key: String,
+        key: Cow<'static, str>,
         el: WebElem,
         target: OwnedApplyTarget,
     ) {
         apply_string_pair_reactive_internal(el, key, target, rx);
     }
 
-    fn into_payload_reactive(
+    fn into_op_reactive(
         rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-    ) -> Option<AttributePayload> {
-        Some(AttributePayload::ReactiveString(rx))
+        target: OwnedApplyTarget,
+    ) -> Option<AttrOp> {
+        let op = match target {
+            OwnedApplyTarget::Attr(name) => {
+                if name == "class" {
+                    AttrOp::AddReactiveClasses(rx)
+                } else if name == "style" {
+                    AttrOp::BindReactiveStyleSheet(rx)
+                } else {
+                    AttrOp::BindReactiveAttr {
+                        name: name.into(),
+                        rx,
+                    }
+                }
+            }
+            OwnedApplyTarget::Prop(name) => AttrOp::BindReactiveProp {
+                name: name.into(),
+                rx: {
+                    let rx = rx.clone();
+                    silex_core::Rx::derive(Box::new(move || {
+                        use silex_core::traits::RxGet;
+                        JsValue::from_str(&rx.get())
+                    }))
+                },
+            },
+            OwnedApplyTarget::Class => AttrOp::AddReactiveClasses(rx),
+            OwnedApplyTarget::Style => AttrOp::BindReactiveStyleSheet(rx),
+            OwnedApplyTarget::Apply => {
+                let rx_inner = rx.clone();
+                AttrOp::Custom(std::rc::Rc::new(move |el| {
+                    apply_string_reactive_internal(
+                        el.clone(),
+                        OwnedApplyTarget::Apply,
+                        rx_inner.clone(),
+                    );
+                }))
+            }
+        };
+        Some(op)
     }
 }
 
@@ -460,7 +522,7 @@ impl ReactiveApply for &'static str {
 
     fn apply_pair(
         rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-        key: String,
+        key: Cow<'static, str>,
         el: WebElem,
         target: OwnedApplyTarget,
     ) {
@@ -479,15 +541,18 @@ macro_rules! impl_reactive_apply_primitive {
                     let string_rx = silex_core::Rx::derive(Box::new(move || rx.get().to_string()));
                     apply_string_reactive_internal(el, target, string_rx);
                 }
-                fn apply_pair(rx: silex_core::Rx<Self, silex_core::RxValueKind>, key: String, el: WebElem, target: OwnedApplyTarget) {
+                fn apply_pair(rx: silex_core::Rx<Self, silex_core::RxValueKind>, key: Cow<'static, str>, el: WebElem, target: OwnedApplyTarget) {
                     use silex_core::traits::RxGet;
                     let string_rx = silex_core::Rx::derive(Box::new(move || rx.get().to_string()));
                     apply_string_pair_reactive_internal(el, key, target, string_rx);
                 }
-                fn into_payload_reactive(rx: silex_core::Rx<Self, silex_core::RxValueKind>) -> Option<AttributePayload> {
-                    use silex_core::traits::RxGet;
-                    let string_rx = silex_core::Rx::derive(Box::new(move || rx.get().to_string()));
-                    Some(AttributePayload::ReactiveString(string_rx))
+                fn into_op_reactive(rx: silex_core::Rx<Self, silex_core::RxValueKind>, target: OwnedApplyTarget) -> Option<AttrOp> {
+                    let rx_inner = rx.clone();
+                    let string_rx = silex_core::Rx::derive(Box::new(move || {
+                        use silex_core::traits::RxGet;
+                        rx_inner.get().to_string()
+                    }));
+                    <String as ReactiveApply>::into_op_reactive(string_rx, target)
                 }
             }
         )*
@@ -509,7 +574,7 @@ impl ReactiveApply for bool {
 
     fn apply_pair(
         rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-        key: String,
+        key: Cow<'static, str>,
         el: WebElem,
         target: OwnedApplyTarget,
     ) {
@@ -521,25 +586,46 @@ impl ReactiveApply for bool {
         }
     }
 
-    fn into_payload_reactive(
+    fn into_op_reactive(
         rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-    ) -> Option<AttributePayload> {
-        Some(AttributePayload::ReactiveBool(rx))
+        target: OwnedApplyTarget,
+    ) -> Option<AttrOp> {
+        let op = match target {
+            OwnedApplyTarget::Attr(name) => AttrOp::BindReactiveBoolAttr {
+                name: name.into(),
+                rx,
+            },
+            OwnedApplyTarget::Prop(name) => AttrOp::BindReactiveBoolProp {
+                name: name.into(),
+                rx,
+            },
+            _ => {
+                let rx_inner = rx.clone();
+                let target_clone = target.clone();
+                AttrOp::Custom(std::rc::Rc::new(move |el| {
+                    apply_bool_reactive_internal(
+                        el.clone(),
+                        target_clone.clone(),
+                        rx_inner.clone(),
+                    );
+                }))
+            }
+        };
+        Some(op)
     }
 }
 
 // 响应式元组归一化终点：(K, Rx<T>)
 impl<K, T> ApplyToDom for (K, silex_core::Rx<T, silex_core::RxValueKind>)
 where
-    K: AsRef<str> + Clone,
+    K: Into<Cow<'static, str>> + Clone,
     T: ReactiveApply + Clone + 'static,
 {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
         let (key, rx) = self.clone();
         let el = el.clone();
         let owned_target = OwnedApplyTarget::from(target);
-        let key_str = key.as_ref().to_string();
-        T::apply_pair(rx, key_str, el, owned_target);
+        T::apply_pair(rx, key.into(), el, owned_target);
     }
 }
 
@@ -563,14 +649,13 @@ where
 }
 
 fn apply_static_pair(el: &WebElem, target: ApplyTarget, key: &str, value: &str) {
-    let owned_target = OwnedApplyTarget::from(target);
-    match owned_target {
-        OwnedApplyTarget::Style => {
+    match target {
+        ApplyTarget::Style => {
             if let Some(style) = get_style_decl(el) {
                 let _ = style.set_property(key, value);
             }
         }
-        OwnedApplyTarget::Attr(ref n) if n == "style" => {
+        ApplyTarget::Attr(ref n) if *n == "style" => {
             if let Some(style) = get_style_decl(el) {
                 let _ = style.set_property(key, value);
             }
@@ -620,8 +705,8 @@ macro_rules! impl_apply_to_dom_for_primitive {
                     apply_immediate_string(el, target, &self.to_string());
                 }
 
-                fn into_payload(self) -> AttributePayload {
-                    AttributePayload::StaticString(self.to_string())
+                fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
+                    self.to_string().into_op(target)
                 }
             }
         )*
@@ -631,19 +716,36 @@ impl_apply_to_dom_for_primitive!(
     u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, char
 );
 
-impl<V: ApplyToDom> ApplyToDom for Vec<V> {
+impl<V: ApplyToDom + 'static> ApplyToDom for Vec<V> {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
         for v in self {
             v.apply(el, target);
         }
     }
+
+    fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
+        // Fallback to custom for Vec to maintain simple multi-apply logic
+        AttrOp::Custom(std::rc::Rc::new(move |el| {
+            for v in &self {
+                v.apply(el, ApplyTarget::from(&target));
+            }
+        }))
+    }
 }
 
-impl<V: ApplyToDom, const N: usize> ApplyToDom for [V; N] {
+impl<V: ApplyToDom + 'static, const N: usize> ApplyToDom for [V; N] {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
         for v in self {
             v.apply(el, target);
         }
+    }
+
+    fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
+        AttrOp::Custom(std::rc::Rc::new(move |el| {
+            for v in &self {
+                v.apply(el, ApplyTarget::from(&target));
+            }
+        }))
     }
 }
 
@@ -657,11 +759,20 @@ pub fn group<T>(t: T) -> AttributeGroup<T> {
 
 macro_rules! impl_apply_to_dom_for_group {
     ($($name:ident)+) => {
-        impl<$($name: ApplyToDom),+> ApplyToDom for AttributeGroup<($($name,)+)> {
+        impl<$($name: ApplyToDom + 'static),+> ApplyToDom for AttributeGroup<($($name,)+)> {
             fn apply(&self, el: &WebElem, target: ApplyTarget) {
                 #[allow(non_snake_case)]
                 let ($($name,)+) = &self.0;
                 $($name.apply(el, target);)+
+            }
+
+            fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
+                #[allow(non_snake_case)]
+                let ($($name,)+) = self.0;
+                AttrOp::Custom(std::rc::Rc::new(move |el| {
+                    let target_ref = ApplyTarget::from(&target);
+                    $($name.apply(el, target_ref);)+
+                }))
             }
         }
     };
@@ -683,32 +794,15 @@ impl_apply_to_dom_for_group!(T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12);
 // --- Attribute Forwarding Support ---
 
 #[derive(Clone)]
-pub enum AttributePayload {
-    /// 静态字符串：支持预合并（如 class, style）
-    StaticString(String),
-    /// 静态布尔值：用于开关型属性（如 disabled, checked）
-    StaticBool(bool),
-    /// 响应式字符串
-    ReactiveString(silex_core::Rx<String, silex_core::RxValueKind>),
-    /// 响应式布尔值
-    ReactiveBool(silex_core::Rx<bool, silex_core::RxValueKind>),
-    /// 动态求值载荷
-    Dynamic(Rc<dyn Fn(&WebElem, &OwnedApplyTarget)>),
-    /// 命令式回调：用于事件监听或复杂的 Mixin 逻辑
-    Command(Rc<dyn Fn(&WebElem)>),
-}
-
-#[derive(Clone)]
 pub struct PendingAttribute {
-    pub target: Option<OwnedApplyTarget>,
-    pub payload: AttributePayload,
+    pub op: AttrOp,
 }
 
 impl<'a> From<&'a OwnedApplyTarget> for ApplyTarget<'a> {
     fn from(target: &'a OwnedApplyTarget) -> Self {
         match target {
-            OwnedApplyTarget::Attr(n) => ApplyTarget::Attr(n.as_str()),
-            OwnedApplyTarget::Prop(n) => ApplyTarget::Prop(n.as_str()),
+            OwnedApplyTarget::Attr(n) => ApplyTarget::Attr(&**n),
+            OwnedApplyTarget::Prop(n) => ApplyTarget::Prop(&**n),
             OwnedApplyTarget::Class => ApplyTarget::Class,
             OwnedApplyTarget::Style => ApplyTarget::Style,
             OwnedApplyTarget::Apply => ApplyTarget::Apply,
@@ -718,68 +812,100 @@ impl<'a> From<&'a OwnedApplyTarget> for ApplyTarget<'a> {
 
 pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttribute> {
     let mut consolidated = Vec::new();
-    let mut classes = Vec::new();
-    let mut styles = Vec::new();
+
+    // Class 收集器
+    let mut static_classes: Vec<Cow<'static, str>> = Vec::new();
+    let mut class_toggles: Vec<(Cow<'static, str>, silex_core::Rx<bool>)> = Vec::new();
+    let mut reactive_classes: Vec<silex_core::Rx<String>> = Vec::new();
+
+    // Style 收集器
+    let mut static_styles: Vec<(Cow<'static, str>, Cow<'static, str>)> = Vec::new();
+    let mut style_props: Vec<(Cow<'static, str>, silex_core::Rx<String>)> = Vec::new();
+    let mut style_sheets: Vec<silex_core::Rx<String>> = Vec::new();
 
     for attr in attrs {
-        if let Some(ref target) = attr.target {
-            match target {
-                OwnedApplyTarget::Class => {
-                    if let AttributePayload::StaticString(ref s) = attr.payload {
-                        classes.push(s.clone());
-                        continue;
+        match attr.op {
+            // --- Class 指令收集 ---
+            AttrOp::SetStaticClasses(v) => {
+                static_classes.extend(v);
+            }
+            AttrOp::AddClassToggle { name, rx } => {
+                class_toggles.push((name, rx));
+            }
+            AttrOp::AddReactiveClasses(rx) => {
+                reactive_classes.push(rx);
+            }
+
+            // --- Style 指令收集 ---
+            AttrOp::SetStaticStyles(v) => {
+                static_styles.extend(v);
+            }
+            AttrOp::BindStyleProperty { name, rx } => {
+                style_props.push((name, rx));
+            }
+            AttrOp::BindReactiveStyleSheet(rx) => {
+                style_sheets.push(rx);
+            }
+
+            // --- 通用属性指令 (检查是否为 class/style) ---
+            AttrOp::SetStaticAttr { name, value } => {
+                if name == "class" {
+                    match value {
+                        Cow::Borrowed(s) => {
+                            for token in s.split_whitespace() {
+                                static_classes.push(Cow::Borrowed(token));
+                            }
+                        }
+                        Cow::Owned(s) => {
+                            for token in s.split_whitespace() {
+                                static_classes.push(token.to_string().into());
+                            }
+                        }
                     }
+                } else if name == "style" {
+                    static_styles.extend(
+                        parse_style_str(&value)
+                            .into_iter()
+                            .map(|(k, v)| (k.into_owned().into(), v.into_owned().into())),
+                    );
+                } else {
+                    consolidated.push(PendingAttribute {
+                        op: AttrOp::SetStaticAttr { name, value },
+                    });
                 }
-                OwnedApplyTarget::Attr(name) if name == "class" => {
-                    if let AttributePayload::StaticString(ref s) = attr.payload {
-                        classes.push(s.clone());
-                        continue;
-                    }
-                }
-                OwnedApplyTarget::Style => {
-                    if let AttributePayload::StaticString(ref s) = attr.payload {
-                        styles.push(s.clone());
-                        continue;
-                    }
-                }
-                OwnedApplyTarget::Attr(name) if name == "style" => {
-                    if let AttributePayload::StaticString(ref s) = attr.payload {
-                        styles.push(s.clone());
-                        continue;
-                    }
-                }
-                _ => {}
+            }
+
+            // --- 其它指令，原样保留 ---
+            op => {
+                consolidated.push(PendingAttribute { op });
             }
         }
-        consolidated.push(attr);
     }
 
-    if !styles.is_empty() {
-        let mut merged_style = String::new();
-        for s in styles {
-            let s = s.trim();
-            if !s.is_empty() {
-                merged_style.push_str(s);
-                if !s.ends_with(';') {
-                    merged_style.push(';');
-                }
-            }
-        }
+    // 按需生成合并后的 Style 指令
+    if !static_styles.is_empty() || !style_props.is_empty() || !style_sheets.is_empty() {
         consolidated.insert(
             0,
             PendingAttribute {
-                target: Some(OwnedApplyTarget::Style),
-                payload: AttributePayload::StaticString(merged_style),
+                op: AttrOp::CombinedStyles {
+                    statics: static_styles,
+                    properties: style_props,
+                    sheets: style_sheets,
+                },
             },
         );
     }
 
-    if !classes.is_empty() {
+    // 按需生成合并后的 Class 指令
+    if !static_classes.is_empty() || !class_toggles.is_empty() || !reactive_classes.is_empty() {
         consolidated.insert(
             0,
             PendingAttribute {
-                target: Some(OwnedApplyTarget::Class),
-                payload: AttributePayload::StaticString(classes.join(" ")),
+                op: AttrOp::CombinedClasses {
+                    statics: static_classes,
+                    toggles: class_toggles,
+                    reactives: reactive_classes,
+                },
             },
         );
     }
@@ -792,49 +918,17 @@ impl PendingAttribute {
     where
         V: ApplyToDom + 'static,
     {
-        Self {
-            target: Some(target),
-            payload: value.into_payload(),
-        }
+        let op = value.into_op(target);
+        Self { op }
     }
 
     pub fn apply(&self, el: &WebElem) {
-        match &self.payload {
-            AttributePayload::StaticString(val) => {
-                if let Some(ref t) = self.target {
-                    apply_immediate_string(el, ApplyTarget::from(t), val);
-                }
-            }
-            AttributePayload::StaticBool(val) => {
-                if let Some(ref t) = self.target {
-                    apply_immediate_bool(el, ApplyTarget::from(t), *val);
-                }
-            }
-            AttributePayload::ReactiveString(rx) => {
-                if let Some(ref t) = self.target {
-                    apply_string_reactive_internal(el.clone(), t.clone(), rx.clone());
-                }
-            }
-            AttributePayload::ReactiveBool(rx) => {
-                if let Some(ref t) = self.target {
-                    apply_bool_reactive_internal(el.clone(), t.clone(), rx.clone());
-                }
-            }
-            AttributePayload::Dynamic(f) => {
-                if let Some(ref t) = self.target {
-                    f(el, t);
-                }
-            }
-            AttributePayload::Command(f) => {
-                f(el);
-            }
-        }
+        self.op.clone().apply(el);
     }
 
     pub fn new_listener(f: impl Fn(&WebElem) + 'static) -> Self {
         Self {
-            target: None,
-            payload: AttributePayload::Command(Rc::new(f)),
+            op: AttrOp::Custom(Rc::new(f)),
         }
     }
 }
