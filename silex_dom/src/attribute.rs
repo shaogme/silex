@@ -139,14 +139,16 @@ pub trait GlobalEventAttributes: AttributeBuilder {
     where
         N: wasm_bindgen::JsCast + Clone + 'static,
     {
-        self.apply(silex_core::rx!(move |el: &web_sys::Element| {
-            use wasm_bindgen::JsCast;
-            if let Ok(typed) = el.clone().dyn_into::<N>() {
-                node_ref.load(typed);
-            } else {
-                silex_core::log::console_error("NodeRef type mismatch: failed to cast element");
-            }
-        }))
+        self.apply(AttrOp::Custom(std::rc::Rc::new(
+            move |el: &web_sys::Element| {
+                use wasm_bindgen::JsCast;
+                if let Ok(typed) = el.clone().dyn_into::<N>() {
+                    node_ref.load(typed);
+                } else {
+                    silex_core::log::console_error("NodeRef type mismatch: failed to cast element");
+                }
+            },
+        )))
     }
 
     // --- Event API ---
@@ -163,39 +165,43 @@ pub trait GlobalEventAttributes: AttributeBuilder {
         F: EventHandler<String, M> + Clone + 'static,
     {
         let cb = callback.clone();
-        self.apply(silex_core::rx!(move |el: &web_sys::Element| {
-            let mut handler = cb.clone().into_handler();
-            use wasm_bindgen::JsCast;
-            let closure =
-                wasm_bindgen::closure::Closure::wrap(Box::new(move |e: web_sys::InputEvent| {
-                    if let Some(target) = e.target() {
-                        let input = target.unchecked_into::<web_sys::HtmlInputElement>();
-                        handler(input.value());
-                    } else {
-                        let err =
-                            silex_core::error::SilexError::Dom("Input event has no target".into());
-                        silex_core::error::handle_error(err);
-                    }
-                }) as Box<dyn FnMut(_)>);
+        self.apply(PendingAttribute::new_listener(
+            move |el: &web_sys::Element| {
+                let mut handler = cb.clone().into_handler();
+                use wasm_bindgen::JsCast;
+                let closure =
+                    wasm_bindgen::closure::Closure::wrap(Box::new(move |e: web_sys::InputEvent| {
+                        if let Some(target) = e.target() {
+                            let input = target.unchecked_into::<web_sys::HtmlInputElement>();
+                            handler(input.value());
+                        } else {
+                            let err = silex_core::error::SilexError::Dom(
+                                "Input event has no target".into(),
+                            );
+                            silex_core::error::handle_error(err);
+                        }
+                    })
+                        as Box<dyn FnMut(_)>);
 
-            let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
+                let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
 
-            if let Err(e) = el
-                .add_event_listener_with_callback("input", js_value)
-                .map_err(silex_core::error::SilexError::from)
-            {
-                silex_core::error::handle_error(e);
-                return;
-            }
+                if let Err(e) = el
+                    .add_event_listener_with_callback("input", js_value)
+                    .map_err(silex_core::error::SilexError::from)
+                {
+                    silex_core::error::handle_error(e);
+                    return;
+                }
 
-            let target = el.clone();
-            let js_fn = js_value.clone();
+                let target = el.clone();
+                let js_fn = js_value.clone();
 
-            silex_core::reactivity::on_cleanup(move || {
-                let _ = target.remove_event_listener_with_callback("input", &js_fn);
-                drop(closure);
-            });
-        }))
+                silex_core::reactivity::on_cleanup(move || {
+                    let _ = target.remove_event_listener_with_callback("input", &js_fn);
+                    drop(closure);
+                });
+            },
+        ))
     }
 
     fn bind_value(self, signal: silex_core::reactivity::RwSignal<String>) -> Self {
@@ -204,29 +210,33 @@ pub trait GlobalEventAttributes: AttributeBuilder {
             signal.set(value);
         });
 
-        this.apply(silex_core::rx!(move |el: &web_sys::Element| {
-            let dom_element = el.clone();
-            silex_core::reactivity::Effect::new(move |_| {
-                use silex_core::traits::RxGet;
-                use wasm_bindgen::JsCast;
-                let value = signal.get();
-                if let Some(input) = dom_element.dyn_ref::<web_sys::HtmlInputElement>() {
-                    if input.value() != value {
-                        input.set_value(&value);
+        this.apply(PendingAttribute::new_listener(
+            move |el: &web_sys::Element| {
+                let dom_element = el.clone();
+                silex_core::reactivity::Effect::new(move |_| {
+                    use silex_core::traits::RxGet;
+                    use wasm_bindgen::JsCast;
+                    let value = signal.get();
+                    if let Some(input) = dom_element.dyn_ref::<web_sys::HtmlInputElement>() {
+                        if input.value() != value {
+                            input.set_value(&value);
+                        }
+                    } else if let Some(area) = dom_element.dyn_ref::<web_sys::HtmlTextAreaElement>()
+                    {
+                        if area.value() != value {
+                            area.set_value(&value);
+                        }
+                    } else if let Some(select) = dom_element.dyn_ref::<web_sys::HtmlSelectElement>()
+                    {
+                        if select.value() != value {
+                            select.set_value(&value);
+                        }
+                    } else {
+                        let _ = dom_element.set_attribute("value", &value);
                     }
-                } else if let Some(area) = dom_element.dyn_ref::<web_sys::HtmlTextAreaElement>() {
-                    if area.value() != value {
-                        area.set_value(&value);
-                    }
-                } else if let Some(select) = dom_element.dyn_ref::<web_sys::HtmlSelectElement>() {
-                    if select.value() != value {
-                        select.set_value(&value);
-                    }
-                } else {
-                    let _ = dom_element.set_attribute("value", &value);
-                }
-            });
-        }))
+                });
+            },
+        ))
     }
 
     fn on_untyped<E, F>(self, event_type: &str, callback: F) -> Self
@@ -236,32 +246,35 @@ pub trait GlobalEventAttributes: AttributeBuilder {
     {
         let event_type_str = event_type.to_string();
         let cb_template = callback.clone();
-        self.apply(silex_core::rx!(move |el: &web_sys::Element| {
-            use wasm_bindgen::JsCast;
-            let mut cb = cb_template.clone();
-            let closure = wasm_bindgen::closure::Closure::wrap(Box::new(move |e: E| {
-                cb(e);
-            }) as Box<dyn FnMut(E)>);
+        self.apply(PendingAttribute::new_listener(
+            move |el: &web_sys::Element| {
+                use wasm_bindgen::JsCast;
+                let mut cb = cb_template.clone();
+                let closure = wasm_bindgen::closure::Closure::wrap(Box::new(move |e: E| {
+                    cb(e);
+                })
+                    as Box<dyn FnMut(E)>);
 
-            let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
+                let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
 
-            if let Err(e) = el
-                .add_event_listener_with_callback(&event_type_str, js_value)
-                .map_err(silex_core::error::SilexError::from)
-            {
-                silex_core::error::handle_error(e);
-                return;
-            }
+                if let Err(e) = el
+                    .add_event_listener_with_callback(&event_type_str, js_value)
+                    .map_err(silex_core::error::SilexError::from)
+                {
+                    silex_core::error::handle_error(e);
+                    return;
+                }
 
-            let target = el.clone();
-            let js_fn = js_value.clone();
-            let type_clone = event_type_str.clone();
+                let target = el.clone();
+                let js_fn = js_value.clone();
+                let type_clone = event_type_str.clone();
 
-            silex_core::reactivity::on_cleanup(move || {
-                let _ = target.remove_event_listener_with_callback(&type_clone, &js_fn);
-                drop(closure);
-            });
-        }))
+                silex_core::reactivity::on_cleanup(move || {
+                    let _ = target.remove_event_listener_with_callback(&type_clone, &js_fn);
+                    drop(closure);
+                });
+            },
+        ))
     }
 }
 

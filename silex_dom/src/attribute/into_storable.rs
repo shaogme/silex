@@ -75,9 +75,22 @@ where
     }
 }
 
-impl<F> IntoStorable for silex_core::Rx<F, silex_core::RxEffectKind>
-where
-    Self: ApplyToDom + 'static,
+impl IntoStorable for super::AttrOp {
+    type Stored = Self;
+    fn into_storable(self) -> Self::Stored {
+        self
+    }
+}
+
+impl IntoStorable for super::PendingAttribute {
+    type Stored = Self;
+    fn into_storable(self) -> Self::Stored {
+        self
+    }
+}
+
+impl IntoStorable
+    for silex_core::Rx<std::rc::Rc<dyn Fn(&web_sys::Element)>, silex_core::RxEffectKind>
 {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {

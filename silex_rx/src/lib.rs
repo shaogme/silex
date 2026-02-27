@@ -290,7 +290,7 @@ pub fn rx(input: TokenStream) -> TokenStream {
         quote! {
             {
                 #(#capture_stmts)*
-                #prefix::Rx::effect(#f_expr)
+                #prefix::Rx::effect(std::rc::Rc::new(#f_expr) as std::rc::Rc<dyn Fn(_)>)
             }
         }
     } else if pairs.is_empty() && matches!(expr, syn::Expr::Lit(_)) {

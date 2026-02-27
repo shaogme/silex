@@ -44,25 +44,51 @@ pub trait ApplyToDom {
     }
 }
 
-impl<F> ApplyToDom for F
-where
-    F: Fn(&WebElem) + 'static,
-{
+impl ApplyToDom for AttrOp {
+    fn apply(&self, el: &WebElem, _target: ApplyTarget) {
+        self.clone().apply(el);
+    }
+
+    fn into_op(self, _target: OwnedApplyTarget) -> AttrOp {
+        self
+    }
+}
+
+impl ApplyToDom for fn(&WebElem) {
     fn apply(&self, el: &WebElem, _target: ApplyTarget) {
         (self)(el);
+    }
+
+    fn into_op(self, _target: OwnedApplyTarget) -> AttrOp {
+        AttrOp::Custom(std::rc::Rc::new(self))
+    }
+}
+
+impl ApplyToDom for std::rc::Rc<dyn Fn(&WebElem)> {
+    fn apply(&self, el: &WebElem, _target: ApplyTarget) {
+        (self)(el);
+    }
+
+    fn into_op(self, _target: OwnedApplyTarget) -> AttrOp {
+        AttrOp::Custom(self.clone())
     }
 }
 
 // --- 统一响应式应用逻辑 ---
 
 // 1. 逻辑型 Rx (Effect) - 用于 on_xxx 属性
-impl<F> ApplyToDom for silex_core::Rx<F, silex_core::RxEffectKind>
-where
-    F: Fn(&WebElem) + 'static,
-{
+// 仅支持擦除后的 Rc<dyn Fn> 类型，以收敛单态化
+impl ApplyToDom for silex_core::Rx<std::rc::Rc<dyn Fn(&WebElem)>, silex_core::RxEffectKind> {
     fn apply(&self, el: &WebElem, _target: ApplyTarget) {
         use silex_core::traits::RxRead;
         self.with_untracked(|f| (f)(el));
+    }
+
+    fn into_op(self, _target: OwnedApplyTarget) -> AttrOp {
+        AttrOp::Custom(std::rc::Rc::new(move |el| {
+            use silex_core::traits::RxRead;
+            self.with_untracked(|f| (f)(el));
+        }))
     }
 }
 
@@ -977,6 +1003,16 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
     }
 
     consolidated
+}
+
+impl ApplyToDom for PendingAttribute {
+    fn apply(&self, el: &WebElem, _target: ApplyTarget) {
+        self.apply(el);
+    }
+
+    fn into_op(self, _target: OwnedApplyTarget) -> AttrOp {
+        self.op
+    }
 }
 
 impl PendingAttribute {

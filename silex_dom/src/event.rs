@@ -79,3 +79,19 @@ where
         })
     }
 }
+
+// 支持宏生成的类型擦除后的 Rc<dyn Fn>
+impl<E> EventHandler<E, WithEventArg>
+    for silex_core::Rx<std::rc::Rc<dyn Fn(E)>, silex_core::RxEffectKind>
+where
+    E: 'static,
+{
+    fn into_handler(self) -> Box<dyn FnMut(E)> {
+        Box::new(move |e| {
+            use silex_core::traits::RxRead;
+            self.with_untracked(|f| {
+                (f)(e);
+            });
+        })
+    }
+}
