@@ -89,6 +89,27 @@ where
 
 // --- Internal Helper Functions (Non-generic to reduce monomorphization) ---
 
+fn derive_string_rx_internal<T: std::fmt::Display + Clone + 'static>(
+    rx: silex_core::Rx<T, silex_core::RxValueKind>,
+) -> silex_core::Rx<String, silex_core::RxValueKind> {
+    silex_core::Rx::derive(Box::new(move || {
+        use silex_core::traits::RxGet;
+        rx.get().to_string()
+    }))
+}
+
+fn apply_primitive_static_internal(el: &WebElem, target: ApplyTarget, value: String) {
+    apply_immediate_string(el, target, &value);
+}
+
+fn apply_primitive_reactive_internal(
+    el: WebElem,
+    target: OwnedApplyTarget,
+    rx_erased: silex_core::Rx<String, silex_core::RxValueKind>,
+) {
+    apply_string_reactive_internal(el, target, rx_erased);
+}
+
 fn create_erased_class_effect_internal(
     el: WebElem,
     rx: silex_core::Rx<String, silex_core::RxValueKind>,
@@ -514,10 +535,9 @@ impl ReactiveApply for &'static str {
         el: WebElem,
         target: OwnedApplyTarget,
     ) {
-        use silex_core::traits::RxGet;
         // 自动转换为 Rx<String> 实现类型擦除
-        let string_rx = silex_core::Rx::derive(Box::new(move || rx.get().to_string()));
-        apply_string_reactive_internal(el, target, string_rx);
+        let string_rx = derive_string_rx_internal(rx);
+        apply_primitive_reactive_internal(el, target, string_rx);
     }
 
     fn apply_pair(
@@ -526,8 +546,7 @@ impl ReactiveApply for &'static str {
         el: WebElem,
         target: OwnedApplyTarget,
     ) {
-        use silex_core::traits::RxGet;
-        let string_rx = silex_core::Rx::derive(Box::new(move || rx.get().to_string()));
+        let string_rx = derive_string_rx_internal(rx);
         apply_string_pair_reactive_internal(el, key, target, string_rx);
     }
 }
@@ -537,21 +556,15 @@ macro_rules! impl_reactive_apply_primitive {
         $(
             impl ReactiveApply for $t {
                 fn apply_to_dom(rx: silex_core::Rx<Self, silex_core::RxValueKind>, el: WebElem, target: OwnedApplyTarget) {
-                    use silex_core::traits::RxGet;
-                    let string_rx = silex_core::Rx::derive(Box::new(move || rx.get().to_string()));
-                    apply_string_reactive_internal(el, target, string_rx);
+                    let string_rx = derive_string_rx_internal(rx);
+                    apply_primitive_reactive_internal(el, target, string_rx);
                 }
                 fn apply_pair(rx: silex_core::Rx<Self, silex_core::RxValueKind>, key: Cow<'static, str>, el: WebElem, target: OwnedApplyTarget) {
-                    use silex_core::traits::RxGet;
-                    let string_rx = silex_core::Rx::derive(Box::new(move || rx.get().to_string()));
+                    let string_rx = derive_string_rx_internal(rx);
                     apply_string_pair_reactive_internal(el, key, target, string_rx);
                 }
                 fn into_op_reactive(rx: silex_core::Rx<Self, silex_core::RxValueKind>, target: OwnedApplyTarget) -> Option<AttrOp> {
-                    let rx_inner = rx.clone();
-                    let string_rx = silex_core::Rx::derive(Box::new(move || {
-                        use silex_core::traits::RxGet;
-                        rx_inner.get().to_string()
-                    }));
+                    let string_rx = derive_string_rx_internal(rx);
                     <String as ReactiveApply>::into_op_reactive(string_rx, target)
                 }
             }
@@ -701,8 +714,9 @@ macro_rules! impl_apply_to_dom_for_primitive {
     ($($t:ty),*) => {
         $(
             impl ApplyToDom for $t {
+                #[inline]
                 fn apply(&self, el: &WebElem, target: ApplyTarget) {
-                    apply_immediate_string(el, target, &self.to_string());
+                    apply_primitive_static_internal(el, target, self.to_string());
                 }
 
                 fn into_op(self, target: OwnedApplyTarget) -> AttrOp {

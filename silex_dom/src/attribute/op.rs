@@ -192,117 +192,137 @@ impl AttrOp {
             }
             AttrOp::Noop => {}
 
-            // --- 阶段三：单 Effect 合并应用的深度优化 ---
+            // --- 阶段三：合并应用的深度优化 (分发到 Kernel 函数) ---
             AttrOp::CombinedClasses {
                 statics,
                 toggles,
                 reactives,
             } => {
-                let list = el.class_list();
-                // 1. 立即应用所有静态类（非响应式，仅执行一次）
-                for s in &statics {
-                    let _ = list.add_1(s);
-                }
-
-                if toggles.is_empty() && reactives.is_empty() {
-                    return;
-                }
-
-                // 2. 建立单 Effect 追踪所有响应式部分
-                let prev_reactive_tokens = Rc::new(RefCell::new(HashSet::<String>::new()));
-                let el_clone = el.clone();
-
-                Effect::new(move |_| {
-                    let list = el_clone.class_list();
-
-                    // 处理所有 Toggle (如 .class_toggle)
-                    for (name, rx) in &toggles {
-                        if rx.get() {
-                            let _ = list.add_1(name);
-                        } else {
-                            let _ = list.remove_1(name);
-                        }
-                    }
-
-                    // 处理所有响应式字符串类 (需要 Diff 算法以支持正确删除旧类)
-                    if !reactives.is_empty() {
-                        let mut new_tokens = HashSet::new();
-                        for rx in &reactives {
-                            for token in rx.get().split_whitespace() {
-                                new_tokens.insert(token.to_string());
-                            }
-                        }
-
-                        let mut prev = prev_reactive_tokens.borrow_mut();
-                        // 移除已不存在的旧类
-                        for c in prev.difference(&new_tokens) {
-                            let _ = list.remove_1(c);
-                        }
-                        // 添加新类
-                        for c in new_tokens.difference(&prev) {
-                            let _ = list.add_1(c);
-                        }
-                        *prev = new_tokens;
-                    }
-                });
+                apply_combined_classes_internal(el, statics, toggles, reactives);
             }
             AttrOp::CombinedStyles {
                 statics,
                 properties,
                 sheets,
             } => {
-                let style = match get_style_decl(el) {
-                    Some(s) => s,
-                    None => return,
-                };
-
-                // 1. 立即应用所有静态样式项
-                for (k, v) in &statics {
-                    let _ = style.set_property(k, v);
-                }
-
-                if properties.is_empty() && sheets.is_empty() {
-                    return;
-                }
-
-                // 2. 建立单 Effect 追踪所有响应式样式
-                let prev_sheet_keys = Rc::new(RefCell::new(HashSet::<String>::new()));
-                let el_clone = el.clone();
-
-                Effect::new(move |_| {
-                    if let Some(style) = get_style_decl(&el_clone) {
-                        // 处理单项 Property 绑定
-                        for (name, rx) in &properties {
-                            let _ = style.set_property(name, &rx.get());
-                        }
-
-                        // 处理整块响应式样式字符串 (Diff 处理)
-                        if !sheets.is_empty() {
-                            let mut new_style_map = std::collections::HashMap::new();
-                            for rx in &sheets {
-                                for (k, v) in parse_style_str(&rx.get()) {
-                                    new_style_map.insert(k.to_string(), v.to_string());
-                                }
-                            }
-
-                            let mut prev = prev_sheet_keys.borrow_mut();
-                            let new_keys: HashSet<_> = new_style_map.keys().cloned().collect();
-
-                            // 移除旧键
-                            for k in prev.difference(&new_keys) {
-                                let _ = style.remove_property(k);
-                            }
-                            // 设置新键/更新值
-                            for (k, v) in new_style_map {
-                                let _ = style.set_property(&k, &v);
-                            }
-                            *prev = new_keys;
-                        }
-                    }
-                });
+                apply_combined_styles_internal(el, statics, properties, sheets);
             }
         }
     }
+}
+
+// --- Kernel Implementation Functions for Combined Op ---
+
+fn apply_combined_classes_internal(
+    el: &Element,
+    statics: Vec<Cow<'static, str>>,
+    toggles: Vec<(Cow<'static, str>, Rx<bool>)>,
+    reactives: Vec<Rx<String>>,
+) {
+    let list = el.class_list();
+    // 1. 立即应用所有静态类（非响应式，仅执行一次）
+    for s in &statics {
+        let _ = list.add_1(s);
+    }
+
+    if toggles.is_empty() && reactives.is_empty() {
+        return;
+    }
+
+    // 2. 建立单 Effect 追踪所有响应式部分
+    let prev_reactive_tokens = Rc::new(RefCell::new(HashSet::<String>::new()));
+    let el_clone = el.clone();
+
+    Effect::new(move |_| {
+        let list = el_clone.class_list();
+
+        // 处理所有 Toggle (如 .class_toggle)
+        for (name, rx) in &toggles {
+            if rx.get() {
+                let _ = list.add_1(name);
+            } else {
+                let _ = list.remove_1(name);
+            }
+        }
+
+        // 处理所有响应式字符串类 (需要 Diff 算法以支持正确删除旧类)
+        if !reactives.is_empty() {
+            let mut new_tokens = HashSet::new();
+            for rx in &reactives {
+                for token in rx.get().split_whitespace() {
+                    new_tokens.insert(token.to_string());
+                }
+            }
+
+            let mut prev = prev_reactive_tokens.borrow_mut();
+            // 移除已不存在的旧类
+            for c in prev.difference(&new_tokens) {
+                let _ = list.remove_1(c);
+            }
+            // 添加新类
+            for c in new_tokens.difference(&prev) {
+                let _ = list.add_1(c);
+            }
+            *prev = new_tokens;
+        }
+    });
+}
+
+fn apply_combined_styles_internal(
+    el: &Element,
+    statics: Vec<(Cow<'static, str>, Cow<'static, str>)>,
+    properties: Vec<(Cow<'static, str>, Rx<String>)>,
+    sheets: Vec<Rx<String>>,
+) {
+    let style = match get_style_decl(el) {
+        Some(s) => s,
+        None => return,
+    };
+
+    // 1. 立即应用所有静态样式项
+    for (k, v) in &statics {
+        let _ = style.set_property(k, v);
+    }
+
+    if properties.is_empty() && sheets.is_empty() {
+        return;
+    }
+
+    // 2. 建立单 Effect 追踪所有响应式样式
+    let prev_sheet_keys = Rc::new(RefCell::new(HashSet::<String>::new()));
+    let el_clone = el.clone();
+
+    Effect::new(move |_| {
+        if let Some(style) = get_style_decl(&el_clone) {
+            // 处理单项 Property 绑定
+            for (name, rx) in &properties {
+                let _ = style.set_property(name, &rx.get());
+            }
+
+            // 处理整块响应式样式字符串 (Diff 处理)
+            if !sheets.is_empty() {
+                let mut new_style_map = std::collections::HashMap::new();
+                for rx in &sheets {
+                    for (k, v) in parse_style_str(&rx.get()) {
+                        new_style_map.insert(k.to_string(), v.to_string());
+                    }
+                }
+
+                let mut prev = prev_sheet_keys.borrow_mut();
+                let new_keys: HashSet<_> = new_style_map.keys().cloned().collect();
+
+                // 移除旧键
+                for k in prev.difference(&new_keys) {
+                    let _ = style.remove_property(k);
+                }
+                // 设置新键/更新值
+                for (k, v) in new_style_map {
+                    let _ = style.set_property(&k, &v);
+                }
+                *prev = new_keys;
+            }
+        }
+    });
 }
 
 // --- Kernel Functions (Non-generic DOM operations) ---

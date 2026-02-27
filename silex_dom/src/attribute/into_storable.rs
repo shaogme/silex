@@ -47,6 +47,7 @@ macro_rules! impl_into_storable_primitive {
         $(
             impl IntoStorable for $t {
                 type Stored = $t;
+                #[inline]
                 fn into_storable(self) -> Self::Stored {
                     self
                 }
