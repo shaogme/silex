@@ -293,8 +293,9 @@ pub fn rx(input: TokenStream) -> TokenStream {
                 #prefix::Rx::effect(#f_expr)
             }
         }
-    } else if pairs.is_empty() {
-        // 无信号依赖时，直接视为常量，避免 Box 和闭包开销
+    } else if pairs.is_empty() && matches!(expr, syn::Expr::Lit(_)) {
+        // 只有纯字面量才视为常量。
+        // 如果是代码块或方法调用，即便没有依赖也应视为派生，以支持延迟执行和副作用。
         quote! { #prefix::Rx::<_, #prefix::RxValueKind>::new_constant(#expr) }
     } else {
         quote! {
