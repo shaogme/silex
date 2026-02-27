@@ -738,12 +738,11 @@ impl<V: ApplyToDom + 'static> ApplyToDom for Vec<V> {
     }
 
     fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
-        // Fallback to custom for Vec to maintain simple multi-apply logic
-        AttrOp::Custom(std::rc::Rc::new(move |el| {
-            for v in &self {
-                v.apply(el, ApplyTarget::from(&target));
-            }
-        }))
+        let ops = self
+            .into_iter()
+            .map(|v| v.into_op(target.clone()))
+            .collect();
+        AttrOp::Sequence(ops)
     }
 }
 
@@ -755,11 +754,11 @@ impl<V: ApplyToDom + 'static, const N: usize> ApplyToDom for [V; N] {
     }
 
     fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
-        AttrOp::Custom(std::rc::Rc::new(move |el| {
-            for v in &self {
-                v.apply(el, ApplyTarget::from(&target));
-            }
-        }))
+        let ops = self
+            .into_iter()
+            .map(|v| v.into_op(target.clone()))
+            .collect();
+        AttrOp::Sequence(ops)
     }
 }
 
@@ -783,10 +782,9 @@ macro_rules! impl_apply_to_dom_for_group {
             fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
                 #[allow(non_snake_case)]
                 let ($($name,)+) = self.0;
-                AttrOp::Custom(std::rc::Rc::new(move |el| {
-                    let target_ref = ApplyTarget::from(&target);
-                    $($name.apply(el, target_ref);)+
-                }))
+                AttrOp::Sequence(vec![
+                    $($name.into_op(target.clone()),)+
+                ])
             }
         }
     };

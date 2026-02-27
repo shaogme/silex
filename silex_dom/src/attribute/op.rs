@@ -74,6 +74,9 @@ pub enum AttrOp {
         sheets: Vec<Rx<String>>,
     },
 
+    // --- 集合处理优化（替代部分 Custom 闭包） ---
+    Sequence(Vec<AttrOp>),
+
     // --- 逃逸舱与特殊指令 ---
     Custom(Rc<dyn Fn(&Element)>),
     Noop,
@@ -187,6 +190,12 @@ impl AttrOp {
                     }
                 });
             }
+            AttrOp::Sequence(ops) => {
+                for op in ops {
+                    op.apply(el);
+                }
+            }
+
             AttrOp::Custom(f) => {
                 f(el);
             }
