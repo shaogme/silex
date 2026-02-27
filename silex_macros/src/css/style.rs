@@ -47,11 +47,15 @@ pub fn style_impl(input: TokenStream) -> Result<TokenStream> {
         return Ok(quote! { () });
     }
 
-    let tuple_body = quote! { ( #(#expanded_props),* ) };
+    let mut expanded = quote! { silex::dom::attribute::AttrNil };
+    for prop in expanded_props.into_iter().rev() {
+        expanded = quote! {
+            silex::dom::attribute::AttrCons(#prop, #expanded)
+        };
+    }
 
-    // Wrap in group
     Ok(quote! {
-        silex::dom::attribute::group( #tuple_body )
+        silex::dom::attribute::group( #expanded )
     })
 }
 
@@ -98,9 +102,14 @@ pub fn classes_impl(input: TokenStream) -> Result<TokenStream> {
         return Ok(quote! { () });
     }
 
-    let tuple_body = quote! { ( #(#expanded_items),* ) };
+    let mut expanded = quote! { silex::dom::attribute::AttrNil };
+    for item in expanded_items.into_iter().rev() {
+        expanded = quote! {
+            silex::dom::attribute::AttrCons(#item, #expanded)
+        };
+    }
 
     Ok(quote! {
-        silex::dom::attribute::group( #tuple_body )
+        silex::dom::attribute::group( #expanded )
     })
 }

@@ -763,6 +763,40 @@ impl<V: ApplyToDom + 'static, const N: usize> ApplyToDom for [V; N] {
 }
 
 // 8. AttributeGroup (Macros)
+// --- Recursive Attribute Group Support ---
+
+pub trait AttrFlatten {
+    fn apply_to(&self, el: &WebElem, target: ApplyTarget);
+    fn flatten_into(self, target: &OwnedApplyTarget, acc: &mut Vec<AttrOp>);
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct AttrNil;
+
+#[derive(Clone, Debug)]
+pub struct AttrCons<H, T>(pub H, pub T);
+
+impl AttrFlatten for AttrNil {
+    fn apply_to(&self, _el: &WebElem, _target: ApplyTarget) {}
+    fn flatten_into(self, _target: &OwnedApplyTarget, _acc: &mut Vec<AttrOp>) {}
+}
+
+impl<H, T> AttrFlatten for AttrCons<H, T>
+where
+    H: ApplyToDom + 'static,
+    T: AttrFlatten,
+{
+    fn apply_to(&self, el: &WebElem, target: ApplyTarget) {
+        self.0.apply(el, target);
+        self.1.apply_to(el, target);
+    }
+
+    fn flatten_into(self, target: &OwnedApplyTarget, acc: &mut Vec<AttrOp>) {
+        acc.push(self.0.into_op(target.clone()));
+        self.1.flatten_into(target, acc);
+    }
+}
+
 #[derive(Clone)]
 pub struct AttributeGroup<T>(pub T);
 
@@ -770,38 +804,40 @@ pub fn group<T>(t: T) -> AttributeGroup<T> {
     AttributeGroup(t)
 }
 
-macro_rules! impl_apply_to_dom_for_group {
-    ($($name:ident)+) => {
-        impl<$($name: ApplyToDom + 'static),+> ApplyToDom for AttributeGroup<($($name,)+)> {
-            fn apply(&self, el: &WebElem, target: ApplyTarget) {
-                #[allow(non_snake_case)]
-                let ($($name,)+) = &self.0;
-                $($name.apply(el, target);)+
-            }
-
-            fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
-                #[allow(non_snake_case)]
-                let ($($name,)+) = self.0;
-                AttrOp::Sequence(vec![
-                    $($name.into_op(target.clone()),)+
-                ])
-            }
-        }
-    };
+impl ApplyToDom for AttrNil {
+    fn apply(&self, _el: &WebElem, _target: ApplyTarget) {}
+    fn into_op(self, _target: OwnedApplyTarget) -> AttrOp {
+        AttrOp::Noop
+    }
 }
 
-impl_apply_to_dom_for_group!(T1);
-impl_apply_to_dom_for_group!(T1 T2);
-impl_apply_to_dom_for_group!(T1 T2 T3);
-impl_apply_to_dom_for_group!(T1 T2 T3 T4);
-impl_apply_to_dom_for_group!(T1 T2 T3 T4 T5);
-impl_apply_to_dom_for_group!(T1 T2 T3 T4 T5 T6);
-impl_apply_to_dom_for_group!(T1 T2 T3 T4 T5 T6 T7);
-impl_apply_to_dom_for_group!(T1 T2 T3 T4 T5 T6 T7 T8);
-impl_apply_to_dom_for_group!(T1 T2 T3 T4 T5 T6 T7 T8 T9);
-impl_apply_to_dom_for_group!(T1 T2 T3 T4 T5 T6 T7 T8 T9 T10);
-impl_apply_to_dom_for_group!(T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11);
-impl_apply_to_dom_for_group!(T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12);
+impl<H, T> ApplyToDom for AttrCons<H, T>
+where
+    H: ApplyToDom + 'static,
+    T: AttrFlatten + 'static,
+{
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
+        self.apply_to(el, target);
+    }
+
+    fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
+        let mut ops = Vec::new();
+        self.flatten_into(&target, &mut ops);
+        AttrOp::Sequence(ops)
+    }
+}
+
+impl<T: AttrFlatten + 'static> ApplyToDom for AttributeGroup<T> {
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
+        self.0.apply_to(el, target);
+    }
+
+    fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
+        let mut ops = Vec::new();
+        self.0.flatten_into(&target, &mut ops);
+        AttrOp::Sequence(ops)
+    }
+}
 
 // --- Attribute Forwarding Support ---
 

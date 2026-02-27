@@ -214,31 +214,36 @@ impl<V: IntoStorable> IntoStorable for Vec<V> {
     }
 }
 
-// --- IntoStorable 实现：AttributeGroup ---
+// --- Recursive Attribute Group Support ---
 
-// 为 AttributeGroup 生成 IntoStorable 实现的宏
-macro_rules! impl_into_storable_for_group {
-    ($($name:ident)+) => {
-        impl<$($name: IntoStorable),+> IntoStorable for AttributeGroup<($($name,)+)> {
-            type Stored = AttributeGroup<($($name::Stored,)+)>;
-            fn into_storable(self) -> Self::Stored {
-                #[allow(non_snake_case)]
-                let ($($name,)+) = self.0;
-                AttributeGroup(($($name.into_storable(),)+))
-            }
-        }
-    };
+impl IntoStorable for super::AttrNil {
+    type Stored = super::AttrNil;
+    fn into_storable(self) -> Self::Stored {
+        self
+    }
 }
 
-impl_into_storable_for_group!(T1);
-impl_into_storable_for_group!(T1 T2);
-impl_into_storable_for_group!(T1 T2 T3);
-impl_into_storable_for_group!(T1 T2 T3 T4);
-impl_into_storable_for_group!(T1 T2 T3 T4 T5);
-impl_into_storable_for_group!(T1 T2 T3 T4 T5 T6);
-impl_into_storable_for_group!(T1 T2 T3 T4 T5 T6 T7);
-impl_into_storable_for_group!(T1 T2 T3 T4 T5 T6 T7 T8);
-impl_into_storable_for_group!(T1 T2 T3 T4 T5 T6 T7 T8 T9);
-impl_into_storable_for_group!(T1 T2 T3 T4 T5 T6 T7 T8 T9 T10);
-impl_into_storable_for_group!(T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11);
-impl_into_storable_for_group!(T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12);
+impl<H, T> IntoStorable for super::AttrCons<H, T>
+where
+    H: IntoStorable,
+    T: IntoStorable,
+    H::Stored: ApplyToDom + 'static,
+    T::Stored: super::AttrFlatten + 'static,
+{
+    type Stored = super::AttrCons<H::Stored, T::Stored>;
+    fn into_storable(self) -> Self::Stored {
+        super::AttrCons(self.0.into_storable(), self.1.into_storable())
+    }
+}
+
+// --- IntoStorable 实现：AttributeGroup ---
+
+impl<T: IntoStorable> IntoStorable for AttributeGroup<T>
+where
+    T::Stored: super::AttrFlatten + 'static,
+{
+    type Stored = AttributeGroup<T::Stored>;
+    fn into_storable(self) -> Self::Stored {
+        AttributeGroup(self.0.into_storable())
+    }
+}
