@@ -206,12 +206,6 @@ where
 
 impl<T: ?Sized + RxInternal> RxRead for T {}
 
-// 已移除：逻辑已移入 crate::reactivity::dispatch::report_disposed
-
-// --- Implementations moved from impls.rs ---
-
-// 移除旧的 impl_closure_rx，现在通过宏和 Rx::new_pooled 实现闭包池化。
-
 impl<T: crate::traits::RxData, M> crate::traits::RxValue for Rx<T, M> {
     type Value = T;
 }

@@ -1,6 +1,6 @@
-pub mod arithmetic;
-pub mod compare;
-pub mod transform;
+mod arithmetic;
+mod compare;
+mod transform;
 
 pub use arithmetic::*;
 pub use compare::*;
