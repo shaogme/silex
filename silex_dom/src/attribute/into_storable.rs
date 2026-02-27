@@ -60,20 +60,34 @@ impl_into_storable_primitive!(
 );
 
 // --- 2. Rx 支持 ---
-// 所有通过 rx!(...) 或 .into_rx() 创建的统一外衣在这里直接支持（作为 'static 类型自转）
-
-impl<V> IntoStorable for silex_core::Rx<V, silex_core::RxValueKind>
-where
-    V: silex_core::traits::RxCloneData + Sized + 'static,
-    Self: ApplyToDom + 'static,
-{
-    type Stored = Self;
-
-    #[inline(always)]
-    fn into_storable(self) -> Self::Stored {
-        self
-    }
+macro_rules! impl_into_storable_rx {
+    (($($gen:tt)*) => $ty:ty) => {
+        impl<$($gen)*> IntoStorable for $ty
+        where
+            Self: silex_core::traits::RxBase + silex_core::traits::IntoRx + 'static,
+            <Self as silex_core::traits::IntoRx>::RxType: super::ApplyToDom + 'static,
+        {
+            type Stored = <Self as silex_core::traits::IntoRx>::RxType;
+            #[inline(always)]
+            fn into_storable(self) -> Self::Stored {
+                use silex_core::traits::IntoRx;
+                self.into_rx()
+            }
+        }
+    };
 }
+
+impl_into_storable_rx!((V, M) => silex_core::Rx<V, M>);
+impl_into_storable_rx!((T) => silex_core::reactivity::Signal<T>);
+impl_into_storable_rx!((T) => silex_core::reactivity::ReadSignal<T>);
+impl_into_storable_rx!((T) => silex_core::reactivity::RwSignal<T>);
+impl_into_storable_rx!((T) => silex_core::reactivity::Constant<T>);
+impl_into_storable_rx!((T) => silex_core::reactivity::Memo<T>);
+impl_into_storable_rx!((U, const N: usize) => silex_core::reactivity::OpPayload<U, N>);
+impl_into_storable_rx!((S, F) => silex_core::reactivity::DerivedPayload<S, F>);
+impl_into_storable_rx!((S, F, O) => silex_core::reactivity::SignalSlice<S, F, O>);
+
+// --- 3. 静态载体与逃逸舱 ---
 
 impl IntoStorable for super::AttrOp {
     type Stored = Self;
@@ -86,105 +100,6 @@ impl IntoStorable for super::PendingAttribute {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {
         self
-    }
-}
-
-impl IntoStorable
-    for silex_core::Rx<std::rc::Rc<dyn Fn(&web_sys::Element)>, silex_core::RxEffectKind>
-{
-    type Stored = Self;
-    fn into_storable(self) -> Self::Stored {
-        self
-    }
-}
-
-// --- 3. 响应式归一化 (转换为 Rx) ---
-
-impl<T> IntoStorable for silex_core::reactivity::Signal<T>
-where
-    T: silex_core::traits::RxCloneData,
-    silex_core::Rx<T, silex_core::RxValueKind>: ApplyToDom + 'static,
-{
-    type Stored = silex_core::Rx<T, silex_core::RxValueKind>;
-    #[inline(always)]
-    fn into_storable(self) -> Self::Stored {
-        use silex_core::traits::IntoRx;
-        self.into_rx()
-    }
-}
-
-macro_rules! impl_into_storable_to_rx {
-    ($($ty:ident),*) => {
-        $(
-            impl<T> IntoStorable for silex_core::reactivity::$ty<T>
-            where
-                T: silex_core::traits::RxCloneData + Sized + 'static,
-                Self: silex_core::traits::IntoRx<RxType = silex_core::Rx<T, silex_core::RxValueKind>> + 'static,
-                silex_core::Rx<T, silex_core::RxValueKind>: ApplyToDom + 'static,
-            {
-                type Stored = silex_core::Rx<T, silex_core::RxValueKind>;
-
-                #[inline(always)]
-                fn into_storable(self) -> Self::Stored {
-                    use silex_core::traits::IntoRx;
-                    self.into_rx()
-                }
-            }
-        )*
-    };
-}
-
-impl_into_storable_to_rx!(ReadSignal, RwSignal, Constant, Memo);
-
-impl<S, F> IntoStorable for silex_core::reactivity::DerivedPayload<S, F>
-where
-    Self: silex_core::traits::IntoRx<
-            RxType = silex_core::Rx<
-                <Self as silex_core::traits::RxValue>::Value,
-                silex_core::RxValueKind,
-            >,
-        > + 'static,
-    <Self as silex_core::traits::RxValue>::Value: silex_core::traits::RxCloneData + Sized,
-    silex_core::Rx<<Self as silex_core::traits::RxValue>::Value, silex_core::RxValueKind>:
-        ApplyToDom + 'static,
-{
-    type Stored =
-        silex_core::Rx<<Self as silex_core::traits::RxValue>::Value, silex_core::RxValueKind>;
-
-    #[inline(always)]
-    fn into_storable(self) -> Self::Stored {
-        use silex_core::traits::IntoRx;
-        self.into_rx()
-    }
-}
-
-impl<U, const N: usize> IntoStorable for silex_core::reactivity::OpPayload<U, N>
-where
-    Self: silex_core::traits::IntoRx<RxType = silex_core::Rx<U, silex_core::RxValueKind>> + 'static,
-    U: silex_core::traits::RxCloneData + Sized + 'static,
-    silex_core::Rx<U, silex_core::RxValueKind>: ApplyToDom + 'static,
-{
-    type Stored = silex_core::Rx<U, silex_core::RxValueKind>;
-
-    #[inline(always)]
-    fn into_storable(self) -> Self::Stored {
-        use silex_core::traits::IntoRx;
-        self.into_rx()
-    }
-}
-
-impl<S, F, O> IntoStorable for silex_core::reactivity::SignalSlice<S, F, O>
-where
-    Self: silex_core::traits::IntoRx<RxType = silex_core::Rx<O, silex_core::RxValueKind>> + 'static,
-    O: silex_core::traits::RxCloneData + Sized + 'static,
-    silex_core::Rx<O, silex_core::RxValueKind>: ApplyToDom + 'static,
-{
-    type Stored = silex_core::Rx<O, silex_core::RxValueKind>;
-
-    #[inline(always)]
-    fn into_storable(self) -> Self::Stored {
-        use silex_core::traits::IntoRx;
-        self.into_rx()
     }
 }
 
