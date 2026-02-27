@@ -7,7 +7,7 @@ use wasm_bindgen::JsValue;
 use web_sys::Element as WebElem;
 
 use super::op::{
-    AttrOp, apply_immediate_bool_internal, get_style_decl, parse_style_str,
+    AttrData, AttrOp, AttrTarget, apply_immediate_bool_internal, get_style_decl, parse_style_str,
     set_string_property_internal,
 };
 
@@ -351,13 +351,15 @@ impl ApplyToDom for &'static str {
     }
     fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
         match target {
-            OwnedApplyTarget::Attr(name) => AttrOp::SetStaticAttr {
+            OwnedApplyTarget::Attr(name) => AttrOp::Update {
                 name: name.into(),
-                value: self.into(),
+                target: AttrTarget::Attr,
+                data: AttrData::StaticString(self.into()),
             },
-            OwnedApplyTarget::Prop(name) => AttrOp::SetStaticProp {
+            OwnedApplyTarget::Prop(name) => AttrOp::Update {
                 name: name.into(),
-                value: JsValue::from_str(self),
+                target: AttrTarget::Prop,
+                data: AttrData::StaticJs(JsValue::from_str(self)),
             },
             OwnedApplyTarget::Class => AttrOp::SetStaticClasses(vec![self.into()]),
             OwnedApplyTarget::Style => AttrOp::SetStaticStyles(
@@ -392,13 +394,15 @@ impl ApplyToDom for String {
 
     fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
         match target {
-            OwnedApplyTarget::Attr(name) => AttrOp::SetStaticAttr {
+            OwnedApplyTarget::Attr(name) => AttrOp::Update {
                 name: name.into(),
-                value: self.into(),
+                target: AttrTarget::Attr,
+                data: AttrData::StaticString(self.into()),
             },
-            OwnedApplyTarget::Prop(name) => AttrOp::SetStaticProp {
+            OwnedApplyTarget::Prop(name) => AttrOp::Update {
                 name: name.into(),
-                value: JsValue::from_str(&self),
+                target: AttrTarget::Prop,
+                data: AttrData::StaticJs(JsValue::from_str(&self)),
             },
             OwnedApplyTarget::Class => AttrOp::SetStaticClasses(
                 self.split_whitespace()
@@ -436,13 +440,15 @@ impl ApplyToDom for bool {
 
     fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
         match target {
-            OwnedApplyTarget::Attr(name) => AttrOp::SetStaticBoolAttr {
+            OwnedApplyTarget::Attr(name) => AttrOp::Update {
                 name: name.into(),
-                value: self,
+                target: AttrTarget::Attr,
+                data: AttrData::StaticBool(self),
             },
-            OwnedApplyTarget::Prop(name) => AttrOp::SetStaticBoolProp {
+            OwnedApplyTarget::Prop(name) => AttrOp::Update {
                 name: name.into(),
-                value: self,
+                target: AttrTarget::Prop,
+                data: AttrData::StaticBool(self),
             },
             _ => AttrOp::Custom(std::rc::Rc::new(move |el| {
                 apply_immediate_bool(el, ApplyTarget::Apply, self);
@@ -496,21 +502,23 @@ impl ReactiveApply for String {
                 } else if name == "style" {
                     AttrOp::BindReactiveStyleSheet(rx)
                 } else {
-                    AttrOp::BindReactiveAttr {
+                    AttrOp::Update {
                         name: name.into(),
-                        rx,
+                        target: AttrTarget::Attr,
+                        data: AttrData::ReactiveString(rx),
                     }
                 }
             }
-            OwnedApplyTarget::Prop(name) => AttrOp::BindReactiveProp {
+            OwnedApplyTarget::Prop(name) => AttrOp::Update {
                 name: name.into(),
-                rx: {
+                target: AttrTarget::Prop,
+                data: AttrData::ReactiveJs({
                     let rx = rx.clone();
                     silex_core::Rx::derive(Box::new(move || {
                         use silex_core::traits::RxGet;
                         JsValue::from_str(&rx.get())
                     }))
-                },
+                }),
             },
             OwnedApplyTarget::Class => AttrOp::AddReactiveClasses(rx),
             OwnedApplyTarget::Style => AttrOp::BindReactiveStyleSheet(rx),
@@ -604,13 +612,15 @@ impl ReactiveApply for bool {
         target: OwnedApplyTarget,
     ) -> Option<AttrOp> {
         let op = match target {
-            OwnedApplyTarget::Attr(name) => AttrOp::BindReactiveBoolAttr {
+            OwnedApplyTarget::Attr(name) => AttrOp::Update {
                 name: name.into(),
-                rx,
+                target: AttrTarget::Attr,
+                data: AttrData::ReactiveBool(rx),
             },
-            OwnedApplyTarget::Prop(name) => AttrOp::BindReactiveBoolProp {
+            OwnedApplyTarget::Prop(name) => AttrOp::Update {
                 name: name.into(),
-                rx,
+                target: AttrTarget::Prop,
+                data: AttrData::ReactiveBool(rx),
             },
             _ => {
                 let rx_inner = rx.clone();
@@ -896,7 +906,11 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
             }
 
             // --- 通用属性指令 (检查是否为 class/style) ---
-            AttrOp::SetStaticAttr { name, value } => {
+            AttrOp::Update {
+                name,
+                target: AttrTarget::Attr,
+                data: AttrData::StaticString(value),
+            } => {
                 if name == "class" {
                     match value {
                         Cow::Borrowed(s) => {
@@ -918,7 +932,11 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
                     );
                 } else {
                     consolidated.push(PendingAttribute {
-                        op: AttrOp::SetStaticAttr { name, value },
+                        op: AttrOp::Update {
+                            name,
+                            target: AttrTarget::Attr,
+                            data: AttrData::StaticString(value),
+                        },
                     });
                 }
             }

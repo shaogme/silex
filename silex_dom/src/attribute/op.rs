@@ -8,42 +8,34 @@ use std::rc::Rc;
 use wasm_bindgen::{JsCast, JsValue};
 use web_sys::{CssStyleDeclaration, Element, HtmlElement, SvgElement};
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AttrTarget {
+    /// Standard DOM attributes (setAttribute/removeAttribute)
+    Attr,
+    /// Direct DOM properties (JS object properties)
+    Prop,
+}
+
+#[derive(Clone)]
+pub enum AttrData {
+    // --- Static Values ---
+    StaticString(Cow<'static, str>),
+    StaticBool(bool),
+    StaticJs(JsValue),
+
+    // --- Reactive Values ---
+    ReactiveString(Rx<String>),
+    ReactiveBool(Rx<bool>),
+    ReactiveJs(Rx<JsValue>),
+}
+
 #[derive(Clone)]
 pub enum AttrOp {
-    // --- 通用属性与 Property ---
-    SetStaticAttr {
+    /// Unified update for attributes and properties (Static or Reactive)
+    Update {
         name: Cow<'static, str>,
-        value: Cow<'static, str>,
-    },
-    SetStaticProp {
-        name: Cow<'static, str>,
-        value: JsValue,
-    },
-    BindReactiveAttr {
-        name: Cow<'static, str>,
-        rx: Rx<String>,
-    },
-    BindReactiveProp {
-        name: Cow<'static, str>,
-        rx: Rx<JsValue>,
-    },
-
-    // 新增：布尔值属性与 Property
-    SetStaticBoolAttr {
-        name: Cow<'static, str>,
-        value: bool,
-    },
-    SetStaticBoolProp {
-        name: Cow<'static, str>,
-        value: bool,
-    },
-    BindReactiveBoolAttr {
-        name: Cow<'static, str>,
-        rx: Rx<bool>,
-    },
-    BindReactiveBoolProp {
-        name: Cow<'static, str>,
-        rx: Rx<bool>,
+        target: AttrTarget,
+        data: AttrData,
     },
 
     // --- Class 专项优化（收敛意图） ---
@@ -85,41 +77,8 @@ pub enum AttrOp {
 impl AttrOp {
     pub fn apply(self, el: &Element) {
         match self {
-            AttrOp::SetStaticAttr { name, value } => {
-                set_string_property_internal(el, &name, &value, false);
-            }
-            AttrOp::SetStaticProp { name, value } => {
-                let _ = js_sys::Reflect::set(el, &JsValue::from_str(&name), &value);
-            }
-            AttrOp::BindReactiveAttr { name, rx } => {
-                let el = el.clone();
-                Effect::new(move |_| {
-                    set_string_property_internal(&el, &name, &rx.get(), false);
-                });
-            }
-            AttrOp::BindReactiveProp { name, rx } => {
-                let el = el.clone();
-                Effect::new(move |_| {
-                    let _ = js_sys::Reflect::set(&el, &JsValue::from_str(&name), &rx.get());
-                });
-            }
-            AttrOp::SetStaticBoolAttr { name, value } => {
-                apply_immediate_bool_internal(el, &name, value, false);
-            }
-            AttrOp::SetStaticBoolProp { name, value } => {
-                apply_immediate_bool_internal(el, &name, value, true);
-            }
-            AttrOp::BindReactiveBoolAttr { name, rx } => {
-                let el = el.clone();
-                Effect::new(move |_| {
-                    apply_immediate_bool_internal(&el, &name, rx.get(), false);
-                });
-            }
-            AttrOp::BindReactiveBoolProp { name, rx } => {
-                let el = el.clone();
-                Effect::new(move |_| {
-                    apply_immediate_bool_internal(&el, &name, rx.get(), true);
-                });
+            AttrOp::Update { name, target, data } => {
+                apply_update_internal(el, &name, target, data);
             }
             AttrOp::SetStaticClasses(classes) => {
                 let list = el.class_list();
@@ -216,6 +175,42 @@ impl AttrOp {
             } => {
                 apply_combined_styles_internal(el, statics, properties, sheets);
             }
+        }
+    }
+}
+
+fn apply_update_internal(el: &Element, name: &str, target: AttrTarget, data: AttrData) {
+    let is_prop = matches!(target, AttrTarget::Prop);
+    match data {
+        AttrData::StaticString(value) => {
+            set_string_property_internal(el, name, &value, is_prop);
+        }
+        AttrData::StaticBool(value) => {
+            apply_immediate_bool_internal(el, name, value, is_prop);
+        }
+        AttrData::StaticJs(value) => {
+            let _ = js_sys::Reflect::set(el, &JsValue::from_str(name), &value);
+        }
+        AttrData::ReactiveString(rx) => {
+            let el = el.clone();
+            let name = name.to_string();
+            Effect::new(move |_| {
+                set_string_property_internal(&el, &name, &rx.get(), is_prop);
+            });
+        }
+        AttrData::ReactiveBool(rx) => {
+            let el = el.clone();
+            let name = name.to_string();
+            Effect::new(move |_| {
+                apply_immediate_bool_internal(&el, &name, rx.get(), is_prop);
+            });
+        }
+        AttrData::ReactiveJs(rx) => {
+            let el = el.clone();
+            let name = name.to_string();
+            Effect::new(move |_| {
+                let _ = js_sys::Reflect::set(&el, &JsValue::from_str(&name), &rx.get());
+            });
         }
     }
 }
