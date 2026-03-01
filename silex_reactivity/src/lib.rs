@@ -20,6 +20,20 @@ pub(crate) type DependencyList = List<(NodeId, u32)>;
 mod runtime;
 use runtime::{CallbackData, NodeRefData, RUNTIME, StoredValueData, run_effect_internal};
 
+/// 具有 16 字节对齐要求的 64 字节固定宽度缓冲区。
+/// 用于跨 crate 安全地传递和存储类型擦除后的 Payload。
+#[repr(C, align(16))]
+#[derive(Clone, Copy)]
+pub struct RawOpBuffer {
+    pub data: [u8; 64],
+}
+
+impl RawOpBuffer {
+    pub fn new() -> Self {
+        Self { data: [0u8; 64] }
+    }
+}
+
 // --- Public High-Level API ---
 
 #[track_caller]
@@ -532,11 +546,11 @@ pub fn try_with_closure<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> O
     })
 }
 
-pub fn register_op(data: [u8; 64]) -> NodeId {
-    RUNTIME.with(|rt| rt.register_op_internal(data))
+pub fn register_op(buffer: RawOpBuffer) -> NodeId {
+    RUNTIME.with(|rt| rt.register_op_internal(buffer))
 }
 
-pub fn try_with_op<R>(id: NodeId, f: impl FnOnce(&[u8; 64]) -> R) -> Option<R> {
+pub fn try_with_op<R>(id: NodeId, f: impl FnOnce(&RawOpBuffer) -> R) -> Option<R> {
     RUNTIME.with(|rt| rt.ops.get(id).map(|data| f(&data.0)))
 }
 

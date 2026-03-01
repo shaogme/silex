@@ -108,13 +108,22 @@ impl<T: 'static, M> Rx<T, M> {
     }
 
     pub fn new_op_raw<P: 'static>(op: P) -> Self {
-        const { assert!(std::mem::size_of::<P>() <= 64) };
+        const {
+            assert!(
+                std::mem::size_of::<P>() <= 64,
+                "Op payload exceeds 64 bytes"
+            );
+            assert!(
+                std::mem::align_of::<P>() <= 16,
+                "Op payload requires > 16-byte alignment"
+            );
+        };
         let id = silex_reactivity::untrack(|| {
-            let mut storage = [0u8; 64];
+            let mut buffer = silex_reactivity::RawOpBuffer::new();
             unsafe {
-                std::ptr::write(storage.as_mut_ptr() as *mut P, op);
+                std::ptr::write(buffer.data.as_mut_ptr() as *mut P, op);
             }
-            silex_reactivity::register_op(storage)
+            silex_reactivity::register_op(buffer)
         });
         Self {
             inner: RxInner::Op(id),

@@ -128,9 +128,8 @@ pub(crate) struct ClosureData {
     pub(crate) f: Box<dyn Any>,
 }
 
-/// 零成本 Op 池（固定步长存储，强行对齐为 8 字节）
-#[repr(align(8))]
-pub(crate) struct OpData(pub(crate) [u8; 64]);
+/// 零成本 Op 存储（固定步长，16 字节对齐由 RawOpBuffer 保证）
+pub(crate) struct OpData(pub(crate) crate::RawOpBuffer);
 
 pub(crate) struct WorkSpace {
     pub(crate) vec_pool: Vec<Vec<NodeId>>,
@@ -468,7 +467,7 @@ impl Runtime {
         id
     }
 
-    pub(crate) fn register_op_internal(&self, data: [u8; 64]) -> NodeId {
+    pub(crate) fn register_op_internal(&self, data: crate::RawOpBuffer) -> NodeId {
         let id = self.register_node();
         self.ops.insert(id, OpData(data));
         id

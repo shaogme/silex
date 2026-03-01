@@ -15,10 +15,10 @@ pub fn track(id: NodeId, kind: RxNodeKind) {
             track_signal(id);
         }
         RxNodeKind::Op => {
-            let _ = try_with_op(id, |bytes| {
+            let _ = try_with_op(id, |buffer| {
                 use crate::reactivity::OpPayloadHeader;
-                let header = unsafe { &*(bytes.as_ptr() as *const OpPayloadHeader) };
-                (header.track)(bytes.as_ptr());
+                let header = unsafe { &*(buffer.data.as_ptr() as *const OpPayloadHeader) };
+                (header.track)(buffer.data.as_ptr());
             });
         }
     }
@@ -80,10 +80,10 @@ pub unsafe fn read_to_ptr(id: NodeId, kind: RxNodeKind, out: *mut u8) -> bool {
                 false
             }
         },
-        RxNodeKind::Op => silex_reactivity::try_with_op(id, |bytes| {
+        RxNodeKind::Op => silex_reactivity::try_with_op(id, |buffer| {
             use crate::reactivity::OpPayloadHeader;
-            let header = unsafe { &*(bytes.as_ptr() as *const OpPayloadHeader) };
-            unsafe { (header.read_to_ptr)(bytes.as_ptr(), out) }
+            let header = unsafe { &*(buffer.data.as_ptr() as *const OpPayloadHeader) };
+            unsafe { (header.read_to_ptr)(buffer.data.as_ptr(), out) }
         })
         .unwrap_or(false),
         RxNodeKind::Closure => {
