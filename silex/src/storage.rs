@@ -1,10 +1,61 @@
-use serde::{Serialize, de::DeserializeOwned};
 use silex_core::error::{SilexError, SilexResult};
 use silex_core::reactivity::{Effect, RwSignal, on_cleanup};
 use silex_core::traits::{RxData, RxGet, RxWrite};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use web_sys::{Storage, StorageEvent};
+
+/// 存储编码器接口，用于将类型与字符串互相转换。
+pub trait StorageCodec: Sized {
+    fn encode(&self) -> String;
+    fn decode(val: &str) -> Option<Self>;
+}
+
+impl StorageCodec for String {
+    fn encode(&self) -> String {
+        self.clone()
+    }
+    fn decode(val: &str) -> Option<Self> {
+        Some(val.to_string())
+    }
+}
+
+macro_rules! impl_storage_codec_parse {
+    ($($t:ty),*) => {
+        $(
+            impl StorageCodec for $t {
+                fn encode(&self) -> String { self.to_string() }
+                fn decode(val: &str) -> Option<Self> { val.parse().ok() }
+            }
+        )*
+    };
+}
+
+impl_storage_codec_parse!(
+    i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64, bool
+);
+
+/// JSON 包装器，可在开启 `persistence` 特性时提供 Serde 支持。
+#[cfg(feature = "persistence")]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Json<T>(pub T);
+
+#[cfg(feature = "persistence")]
+impl<T: serde::Serialize + serde::de::DeserializeOwned> StorageCodec for Json<T> {
+    fn encode(&self) -> String {
+        serde_wasm_bindgen::to_value(&self.0)
+            .ok()
+            .and_then(|v| js_sys::JSON::stringify(&v).ok())
+            .and_then(|s| s.as_string())
+            .unwrap_or_default()
+    }
+    fn decode(val: &str) -> Option<Self> {
+        js_sys::JSON::parse(val)
+            .ok()
+            .and_then(|v| serde_wasm_bindgen::from_value(v).ok())
+            .map(Json)
+    }
+}
 
 pub mod utils {
     use super::*;
@@ -13,21 +64,20 @@ pub mod utils {
         web_sys::window()?.local_storage().ok().flatten()
     }
 
-    pub fn set_item<T: Serialize>(key: &str, value: &T) -> SilexResult<()> {
+    pub fn set_item<T: StorageCodec>(key: &str, value: &T) -> SilexResult<()> {
         let storage = get_storage()
             .ok_or_else(|| SilexError::Javascript("LocalStorage not available".into()))?;
-        let json =
-            serde_json::to_string(value).map_err(|e| SilexError::Javascript(e.to_string()))?;
+        let val_str = value.encode();
         storage
-            .set_item(key, &json)
+            .set_item(key, &val_str)
             .map_err(|_| SilexError::Javascript("Failed to set item in LocalStorage".into()))?;
         Ok(())
     }
 
-    pub fn get_item<T: DeserializeOwned>(key: &str) -> Option<T> {
+    pub fn get_item<T: StorageCodec>(key: &str) -> Option<T> {
         let storage = get_storage()?;
         let json = storage.get_item(key).ok().flatten()?;
-        serde_json::from_str(&json).ok()
+        T::decode(&json)
     }
 
     pub fn remove_item(key: &str) {
@@ -43,7 +93,7 @@ pub mod utils {
 /// 跨标签同步：监听浏览器的 `storage` 事件，并在发生变化时自动更新本地信号。
 pub fn use_local_storage<T>(key: impl Into<String>, default: T) -> RwSignal<T>
 where
-    T: RxData + Serialize + DeserializeOwned + Clone + PartialEq,
+    T: RxData + StorageCodec + Clone + PartialEq,
 {
     let key = key.into();
 
@@ -56,8 +106,7 @@ where
         let key = key.clone();
         move |_| {
             let val = signal.get();
-            // 只有当值真的变化时（通过 Effect 追踪），才序列化并写入
-            // 注意：这里我们不检查数据是否等于存储中的值，因为 Effect 只在 signal.set 调用时运行
+            // 只有当值真的变化时（通过 Effect 追踪），才写入
             let _ = utils::set_item(&key, &val);
         }
     });
@@ -69,10 +118,9 @@ where
 
         let on_storage = Closure::wrap(Box::new(move |ev: StorageEvent| {
             // 只同步匹配的 Key 且由 localStorage 触发的事件
-            // ev.key() 返回 Option<String>，我们将其与 Some(key_clone) 进行比较
             if ev.key().as_ref() == Some(&key_clone) {
                 if let Some(new_val_str) = ev.new_value() {
-                    if let Ok(new_val) = serde_json::from_str::<T>(&new_val_str) {
+                    if let Some(new_val) = T::decode(&new_val_str) {
                         // 避免不必要的更新：如果本地值已一致，则跳过
                         if signal_clone.get_untracked() != new_val {
                             signal_clone.set(new_val);

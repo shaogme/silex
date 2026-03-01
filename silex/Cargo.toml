@@ -22,12 +22,13 @@ wasm-bindgen.workspace = true
 web-sys.workspace = true
 js-sys.workspace = true
 wasm-bindgen-futures.workspace = true
-serde.workspace = true
-serde_json.workspace = true
+serde = { workspace = true, optional = true }
+serde-wasm-bindgen = { workspace = true, optional = true }
 
 [features]
 default = ["macros"]
 macros = ["silex_macros"]
+persistence = ["serde", "serde-wasm-bindgen"]
 
 [dev-dependencies]
 trybuild = "1.0"

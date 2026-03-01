@@ -55,19 +55,77 @@ pub fn StoreDemo() -> impl View {
     ]
 }
 
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+struct ComplexState {
+    name: String,
+    level: i32,
+    inventory: Vec<String>,
+}
+
+impl Default for ComplexState {
+    fn default() -> Self {
+        Self {
+            name: "New Hero".to_string(),
+            level: 1,
+            inventory: vec!["Wooden Sword".to_string()],
+        }
+    }
+}
+
+#[component]
+pub fn JsonStorageDemo() -> impl View {
+    let state = use_local_storage("showcase-json-state", Json(ComplexState::default()));
+
+    div![
+        h4("Native JSON Persistence Demo"),
+        p("This demo uses the `Json<T>` wrapper to persist a complex struct via browser-native `JSON.stringify/parse`."),
+        div![
+            p![strong("Hero: "), rx!(state.get().0.name)],
+            p![strong("Level: "), rx!(state.get().0.level.to_string())],
+            p![strong("Inventory: "), rx!(state.get().0.inventory.join(", "))],
+        ]
+        .style("background: var(--slx-theme-surface-alt, rgba(128,128,128,0.1)); padding: 10px; border-left: 4px solid var(--slx-theme-primary, #007bff); border-radius: 4px; margin-bottom: 10px;"),
+        div![
+            button("Level Up").on(event::click, move |_| {
+                state.update(|s| s.0.level += 1);
+            }),
+            button("Add Shield").on(event::click, move |_| {
+                state.update(|s| {
+                    if !s.0.inventory.contains(&"Shield".to_string()) {
+                        s.0.inventory.push("Shield".to_string());
+                    }
+                });
+            }),
+            button("Reset").on(event::click, move |_| {
+                state.set(Json(ComplexState::default()));
+            }),
+        ]
+        .style("display: flex; gap: 10px;"),
+    ]
+}
+
 #[component]
 pub fn StorageDemo() -> impl View {
     let count = use_local_storage("showcase-counter", 0);
 
     div![
-        h3("LocalStorage Hook Demo"),
-        p("This counter is synced with 'localStorage' using `use_local_storage`. It persists across refreshes and syncs across different tabs/windows."),
+        h3("LocalStorage Persistence"),
+        p("Silex provides a zero-cost abstraction for persistence. Basic types (int, string, bool) use direct string conversion, while complex structures use browser-native JSON via the `Json<T>` wrapper."),
+        
+        // 1. 基本类型持久化
         div![
-            button("-1").on(event::click, count.updater(|c| *c -= 1)),
-            span(count).style("font-size: 1.5em; font-weight: bold; min-width: 50px; text-align: center;"),
-            button("+1").on(event::click, count.updater(|c| *c += 1)),
-        ]
-        .style("display: flex; gap: 20px; align-items: center; margin: 15px 0;"),
+            h4("Basic Type Persistence (No Serde needed)"),
+            div![
+                button("-1").on(event::click, count.updater(|c| *c -= 1)),
+                span(count).style("font-size: 1.5em; font-weight: bold; min-width: 50px; text-align: center;"),
+                button("+1").on(event::click, count.updater(|c| *c += 1)),
+            ]
+            .style("display: flex; gap: 20px; align-items: center; margin: 15px 0;"),
+        ].style("padding: 15px; border: 1px solid var(--slx-theme-border); border-radius: 4px; margin-bottom: 20px;"),
+
+        // 2. 复杂类型持久化
+        JsonStorageDemo(),
+
         p![
             "Try opening this page in ",
             strong("another tab"),
