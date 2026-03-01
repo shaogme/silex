@@ -47,11 +47,11 @@ pub fn generate_module_content(
 
             code.push_str(&format!("#[macro_export] macro_rules! {} {{\n", macro_name));
             code.push_str(&format!(
-                "    () => {{ $crate::{}::{}(()) }};\n",
+                "    () => {{ $crate::{}::{}($crate::ViewNil) }};\n",
                 namespace, fn_name
             ));
             code.push_str(&format!(
-                "    ($($child:expr),+ $(,)?) => {{ $crate::{}::{}(($($child),+)) }};\n",
+                "    ($($child:expr),+ $(,)?) => {{ $crate::{}::{}($crate::view_chain!($($child),+)) }};\n",
                 namespace, fn_name
             ));
             code.push_str("}\n");

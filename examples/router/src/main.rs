@@ -24,11 +24,11 @@ fn nav_link<T: ToRoute, V: View + 'static>(to: T, label: V) -> impl View {
 
 #[component]
 fn Home() -> impl View {
-    div((
+    div!(
         h2("🏠 Home Page"),
         p("Welcome to the Router Test Suite."),
         p("Use the navigation bar above to test different routing features."),
-    ))
+    )
 }
 
 #[component]
@@ -38,10 +38,10 @@ fn SearchPage() -> impl View {
     let search_term = use_query_signal("q");
     let display_term = search_term; // 用于展示
 
-    Card().child(div((
+    Card().child(div!(
         h2("🔍 Search Query Test"),
         p("Type in the input below. The URL query parameter 'q' will update automatically!"),
-        div((
+        div!(
             input()
                 .type_("text")
                 .placeholder("Type search term...")
@@ -50,15 +50,15 @@ fn SearchPage() -> impl View {
             button("Clear")
                 .on_click(move |_| search_term.set(String::new()))
                 .style("padding: 8px 16px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer;"),
-        )).style("display: flex; gap: 10px; margin-bottom: 20px;"),
-        div((
+        ).style("display: flex; gap: 10px; margin-bottom: 20px;"),
+        div!(
             strong("Current Query Parameter (q): "),
             span(move || {
                 let v = display_term.get();
                 if v.is_empty() { "None".to_string() } else { v }
             }).style("color: #e91e63; font-family: monospace;")
-        ))
-    )))
+        )
+    ))
 }
 
 // --- 用户模块 (嵌套路由测试) ---
@@ -70,17 +70,17 @@ fn CreateUser() -> impl View {
 
 #[component]
 fn UsersLayout(route: UsersRoute) -> impl View {
-    div((
+    div!(
         h2("👥 Users Module"),
-        div((
+        div!(
             nav_link("/users", "User List"),
             span("|").style("margin: 0 10px; color: #ccc;"),
             nav_link("/users/new", "Create User (Static)"),
-        ))
+        )
         .style("border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;"),
         // 渲染子路由
         route.render(),
-    ))
+    )
 }
 
 #[component]
@@ -92,7 +92,7 @@ fn UserList() -> impl View {
         (42, "Silex Expert"),
     ];
 
-    div((
+    div!(
         h3("Select a User:"),
         ul(users
             .into_iter()
@@ -107,7 +107,7 @@ fn UserList() -> impl View {
             })
             .collect::<Vec<_>>())
         .style("list-style: none; padding: 0;"),
-    ))
+    )
 }
 
 #[component]
@@ -116,8 +116,8 @@ fn UserDetail(id: u32) -> impl View {
     let navigator = use_navigate();
     let path = use_location_path();
 
-    Card().child(div((
-        div((
+    Card().child(div!(
+        div!(
             h3(format!("User Profile: #{}", id)),
             button("Go Back")
                 .on_click(move |_| {
@@ -126,28 +126,28 @@ fn UserDetail(id: u32) -> impl View {
                     })
                 })
                 .style("font-size: 0.8rem; padding: 5px 10px; cursor: pointer;"),
-        ))
+        )
         .style("display: flex; justify-content: space-between; align-items: center;"),
         hr().style("border: 0; border-top: 1px solid #eee; margin: 15px 0;"),
-        p((
+        p!(
             strong("Current Path: "),
             span(path).style("font-family: monospace;"),
-        )),
-        div(p(format!(
+        ),
+        div!(p(format!(
             "This component is rendered with strict prop id: {}",
             id
         )))
         .style("background: #f5f5f5; padding: 10px; border-radius: 4px; margin-top: 10px;"),
-    )))
+    ))
 }
 
 #[component]
 fn NotFound() -> impl View {
-    div((
+    div!(
         h1("404"),
         p("Page not found."),
         Link("/", "Return Home").style("color: #2196f3; text-decoration: underline;"),
-    ))
+    )
     .style("text-align: center; padding: 50px; color: #d32f2f;")
 }
 
@@ -155,17 +155,17 @@ fn NotFound() -> impl View {
 
 #[component]
 fn MainLayout(child: Children) -> impl View {
-    div((
+    div!(
         // Header
-        header((
+        header!(
             h1("🚀 Silex Router").style("margin: 0; font-size: 1.5rem; color: #2c3e50;"),
-            nav((
+            nav!(
                 nav_link(AppRoute::Home, "Home"),
                 nav_link("/users", "Users"), // 混合使用：字符串仍然有效
                 nav_link(AppRoute::Search, "Search"),
                 nav_link("/nowhere", "404 Test"),
-            ))
-        ))
+            )
+        )
         .style("display: flex; align-items: center; justify-content: space-between; padding: 20px 0; border-bottom: 1px solid #eee;"),
 
         // Main Content Area
@@ -174,10 +174,10 @@ fn MainLayout(child: Children) -> impl View {
         ).style("padding: 20px 0;"),
 
         // Footer
-        footer(
+        footer!(
             p("Built with Silex & Rust")
         ).style("margin-top: 50px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #999; font-size: 0.8rem;")
-    ))
+    )
     .style("font-family: sans-serif; max-width: 800px; margin: 0 auto; color: #333;")
 }
 

@@ -341,34 +341,39 @@ impl<V: View + Clone + 'static> From<Option<V>> for SharedView {
     }
 }
 
-macro_rules! impl_from_tuple {
-    ($($name:ident),*) => {
-        impl<$($name: View + 'static),*> From<($($name,)*)> for AnyView {
-            fn from(v: ($($name,)*)) -> Self {
-                AnyView::new(v)
-            }
-        }
+// --- Recursive View Chain Erasure ---
 
-        impl<$($name: View + Clone + 'static),*> From<($($name,)*)> for SharedView {
-            fn from(v: ($($name,)*)) -> Self {
-                SharedView::new(v)
-            }
-        }
+impl From<crate::view::ViewNil> for AnyView {
+    fn from(_: crate::view::ViewNil) -> Self {
+        AnyView::Empty
     }
 }
 
-impl_from_tuple!(A);
-impl_from_tuple!(A, B);
-impl_from_tuple!(A, B, C);
-impl_from_tuple!(A, B, C, D);
-impl_from_tuple!(A, B, C, D, E);
-impl_from_tuple!(A, B, C, D, E, F);
-impl_from_tuple!(A, B, C, D, E, F, G);
-impl_from_tuple!(A, B, C, D, E, F, G, H);
-impl_from_tuple!(A, B, C, D, E, F, G, H, I);
-impl_from_tuple!(A, B, C, D, E, F, G, H, I, J);
-impl_from_tuple!(A, B, C, D, E, F, G, H, I, J, K);
-impl_from_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
+impl From<crate::view::ViewNil> for SharedView {
+    fn from(_: crate::view::ViewNil) -> Self {
+        SharedView::Empty
+    }
+}
+
+impl<H, T> From<crate::view::ViewCons<H, T>> for AnyView
+where
+    H: View + 'static,
+    T: View + 'static,
+{
+    fn from(v: crate::view::ViewCons<H, T>) -> Self {
+        AnyView::new(v)
+    }
+}
+
+impl<H, T> From<crate::view::ViewCons<H, T>> for SharedView
+where
+    H: View + Clone + 'static,
+    T: View + Clone + 'static,
+{
+    fn from(v: crate::view::ViewCons<H, T>) -> Self {
+        SharedView::new(v)
+    }
+}
 
 /// 一个辅助宏，用于简化从 `match` 表达式返回 `SharedView` 的操作。
 ///

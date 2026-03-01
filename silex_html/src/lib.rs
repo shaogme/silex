@@ -3,6 +3,9 @@ mod tags {
     pub mod svg;
 }
 
+pub use silex_dom::view::{ViewCons, ViewNil};
+pub use silex_dom::view_chain;
+
 pub mod attributes;
 pub use attributes::*;
 

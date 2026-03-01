@@ -13,10 +13,10 @@ fn Card(
         elevation * 4
     );
 
-    let mut root = div((
+    let mut root = div!(
         h1(title).style("margin-top: 0; font-size: 1.2rem; color: #333;"),
         child,
-    ))
+    )
     .class("card")
     .style(&style);
 
@@ -52,7 +52,7 @@ fn CounterDisplay() -> SilexResult<impl View> {
     "#
     );
 
-    Ok(div((
+    Ok(div!(
         span("Global Context Status: "),
         span(count)
             .style(("font-weight", "bold")) // Single tuple style
@@ -65,7 +65,7 @@ fn CounterDisplay() -> SilexResult<impl View> {
                     if is_even.get() { 1.0 } else { 0.0 }
                 )
             }),
-    ))
+    )
     .class(container_class)
     .class(("even-number", rx!(is_even.get())))) // Adds class "even-number" when count is even
 }
@@ -85,7 +85,7 @@ fn CounterControls() -> SilexResult<impl View> {
         ("transition", "background-color 0.2s"),
     ];
 
-    Ok(div((
+    Ok(div!(
         button("-")
             .style(btn_style) // Apply array of styles
             .on_click(move |_| {
@@ -96,7 +96,7 @@ fn CounterControls() -> SilexResult<impl View> {
         button("+").style(btn_style).on_click(move |_| {
             set_count.update(|n| *n += 1);
         }),
-    ))
+    )
     .style("display: flex; align-items: center; gap: 15px;"))
 }
 
@@ -104,11 +104,11 @@ fn CounterControls() -> SilexResult<impl View> {
 
 #[component]
 fn NavBar() -> impl View {
-    div((
+    div!(
         Link("/", "Home")
             .style("margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold;"),
         Link("/about", "About").style("text-decoration: none; color: #007bff; font-weight: bold;"),
-    ))
+    )
     .style("margin-bottom: 20px; padding: 10px; border-bottom: 1px solid #eee")
 }
 
@@ -122,19 +122,19 @@ fn HomeView() -> impl View {
 
     let is_high = Memo::new(move |_| count.get() > 5);
 
-    div((
+    div!(
         // Header
-        div((
+        div!(
             h1("Silex: Next Gen"),
             p("Builder Pattern + Router + Context + Suspense").style("color: #666"),
-        )).style("text-align: center; margin-bottom: 30px;"),
+        ).style("text-align: center; margin-bottom: 30px;"),
 
         // Card 1: Context-Aware Counter
         Card()
             .title("Global Counter (Persists across Nav)")
             .elevation(3)
             .on_hover(|_| { web_sys::console::log_1(&"Card Hovered!".into()); })
-            .child((
+            .child(view_chain!(
                 CounterControls(),
                 CounterDisplay(),
             )),
@@ -142,19 +142,19 @@ fn HomeView() -> impl View {
         // Card 2: Input & Local State
         Card()
             .title("Local State (Resets on Nav)")
-            .child(div(div((
-                div((
+            .child(div!(div!(
+                div!(
                     span("Hello, "),
                     span(name).style("color: #007bff; font-weight: bold;"),
                     span("!"),
-                )).style("margin-bottom: 10px"),
+                ).style("margin-bottom: 10px"),
                 input()
                     .type_("text")
                     .placeholder("Enter name")
                     .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px; width: 100%;")
                     .value(name)
                     .on_input(move |val| { set_name.set(val); })
-            )))),
+            ))),
 
         // Card 3: Control Flow
         Card()
@@ -188,16 +188,16 @@ fn HomeView() -> impl View {
                                     })
                             })
                     )
-    ))
+    )
 }
 
 #[component]
 fn AboutView() -> impl View {
-    div((
+    div!(
         h1("About"),
         p("This is the About Page to demonstrate Silex Router."),
         p("Try going back to Home, and notice the Global Counter is preserved (Context), while the Name input is reset (Local State)."),
-    )).style("padding: 20px; text-align: center;")
+    ).style("padding: 20px; text-align: center;")
 }
 
 #[component]
@@ -232,11 +232,11 @@ fn main() {
         provide_context(set_count);
 
         // 构建应用壳 (App Shell)
-        let app = div((
+        let app = div!(
             NavBar(),
             Router::new()
                 .match_route::<AppRoute>()
-        ))
+        )
         .class("app-container")
         .style("font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;");
 

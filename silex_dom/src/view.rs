@@ -11,6 +11,14 @@ use silex_core::{SilexError, SilexResult};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use web_sys::Node;
 
+/// 递归视图链辅助结构 - 空节点
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ViewNil;
+
+/// 递归视图链辅助结构 - 构造节点
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ViewCons<H, T>(pub H, pub T);
+
 /// 视图特征 (View Trait)
 /// 核心特征：定义了如何将一个东西挂载到 DOM 上。
 pub trait View {
@@ -266,47 +274,50 @@ impl<V: View, const N: usize> View for [V; N] {
     }
 }
 
-// 6. 元组支持
-macro_rules! impl_view_for_tuple {
-    ($($name:ident),*) => {
-        impl<$($name: View),*> View for ($($name,)*) {
-            fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-                #[allow(non_snake_case)]
-                let ($($name,)*) = self;
-                let mut first = true;
-                $(
-                    if first {
-                        $name.mount(parent, attrs.clone());
-                        #[allow(unused_assignments)]
-                        {
-                            first = false;
-                        }
-                    } else {
-                        $name.mount(parent, Vec::new());
-                    }
-                )*
-            }
+// 6. 递归元组支持 (Recursive Tuple Support)
 
-            #[allow(non_snake_case)]
-            fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
-                let ($($name,)*) = self;
-                $($name.apply_attributes(attrs.clone());)*
-            }
-        }
+impl View for ViewNil {
+    fn mount(self, _parent: &Node, _attrs: Vec<PendingAttribute>) {}
+    fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
+
+    fn into_any(self) -> AnyView {
+        AnyView::Empty
+    }
+
+    fn into_shared(self) -> SharedView {
+        SharedView::Empty
     }
 }
-impl_view_for_tuple!(A);
-impl_view_for_tuple!(A, B);
-impl_view_for_tuple!(A, B, C);
-impl_view_for_tuple!(A, B, C, D);
-impl_view_for_tuple!(A, B, C, D, E);
-impl_view_for_tuple!(A, B, C, D, E, F);
-impl_view_for_tuple!(A, B, C, D, E, F, G);
-impl_view_for_tuple!(A, B, C, D, E, F, G, H);
-impl_view_for_tuple!(A, B, C, D, E, F, G, H, I);
-impl_view_for_tuple!(A, B, C, D, E, F, G, H, I, J);
-impl_view_for_tuple!(A, B, C, D, E, F, G, H, I, J, K);
-impl_view_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
+
+impl<H: View, T: View> View for ViewCons<H, T> {
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        // 头节点接收 attributes
+        self.0.mount(parent, attrs);
+        // 后续链表不再接受 attributes (避免重复应用)
+        self.1.mount(parent, Vec::new());
+    }
+
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
+        self.0.apply_attributes(attrs.clone());
+        self.1.apply_attributes(attrs);
+    }
+}
+
+/// 将多个视图链接成递归视图链的宏。
+///
+/// 用于替代标准元组以减少单态化膨胀。
+#[macro_export]
+macro_rules! view_chain {
+    () => {
+        $crate::view::ViewNil
+    };
+    ($head:expr $(,)?) => {
+        $crate::view::ViewCons($head, $crate::view::ViewNil)
+    };
+    ($head:expr, $($tail:expr),+ $(,)?) => {
+        $crate::view::ViewCons($head, $crate::view_chain!($($tail),+))
+    };
+}
 
 // 7. Result 支持
 impl<V: View> View for SilexResult<V> {

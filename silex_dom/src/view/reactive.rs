@@ -212,20 +212,18 @@ impl<V: View + RxCloneData + 'static, M: 'static> RxViewDispatcher for Rx<Option
     }
 }
 
-// 元组支持
-macro_rules! impl_rx_view_dispatcher_tuple {
-    ($($name:ident),*) => {
-        impl<$($name: View + Clone + 'static),*, M: 'static> RxViewDispatcher for Rx<($($name,)*), M> {
-            fn dispatch_mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-                mount_reactive_view(parent, self, attrs);
-            }
-        }
+// --- Recursive View Chain Dispatcher ---
+
+impl<H, T, M> RxViewDispatcher for silex_core::Rx<crate::view::ViewCons<H, T>, M>
+where
+    H: View + Clone + 'static,
+    T: View + Clone + 'static,
+    M: 'static,
+{
+    fn dispatch_mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        mount_reactive_view(parent, self, attrs);
     }
 }
-impl_rx_view_dispatcher_tuple!(A);
-impl_rx_view_dispatcher_tuple!(A, B);
-impl_rx_view_dispatcher_tuple!(A, B, C);
-impl_rx_view_dispatcher_tuple!(A, B, C, D);
 
 impl<T: 'static, M: 'static> RxViewDispatcher for Rx<crate::element::TypedElement<T>, M> {
     fn dispatch_mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {

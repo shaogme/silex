@@ -11,8 +11,8 @@ pub mod prelude {
     pub use crate::event::{EventDescriptor, EventHandler, WithEventArg, WithoutEventArg};
     pub use crate::helpers::*;
     pub use crate::setup_global_error_handlers;
-    pub use crate::view::{View, any::*, reactive::*};
-    pub use crate::view_match;
+    pub use crate::view::{View, ViewCons, ViewNil, any::*, reactive::*};
+    pub use crate::{view_chain, view_match};
 }
 
 use wasm_bindgen::JsCast;

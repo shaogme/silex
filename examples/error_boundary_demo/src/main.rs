@@ -8,22 +8,22 @@ pub fn main() {
 
 #[component]
 fn App() -> impl View {
-    div((
+    div!(
         h1("Error Boundary Demo"),
         p("This example demonstrates how ErrorBoundary catches errors."),
 
         // 1. Recoverable Error (Result::Err) behavior
-        div((
+        div!(
             h2("1. Recoverable Error Test"),
             ErrorBoundary(ErrorBoundaryProps {
                 fallback: |err| {
-                    div((
+                    div!(
                         h3("Caught Recoverable Error!"),
                         p(format!("Error info: {}", err)),
                         button("Reset (Reload Page)").on_click(|_| {
                             let _ = web_sys::window().unwrap().location().reload();
                         })
-                    ))
+                    )
                     .style("background-color: #fee; border: 1px solid red; padding: 10px; color: red;")
                 },
                 children: || {
@@ -31,18 +31,18 @@ fn App() -> impl View {
                     RecoverableComponent()
                 }
             }),
-        )).style("margin-bottom: 20px; border: 1px solid #ccc; padding: 10px;"),
+        ).style("margin-bottom: 20px; border: 1px solid #ccc; padding: 10px;"),
 
         // 2. Immediate Panic Test
-        div((
+        div!(
             h2("2. Immediate Panic Test (Render Phase)"),
             p("Component below will panic completely upon rendering if triggered."),
             ErrorBoundary(ErrorBoundaryProps {
                 fallback: |err| {
-                    div((
+                    div!(
                         h3("Caught Panic!"),
                         p(format!("Panic details: {}", err)),
-                    ))
+                    )
                     .style("background-color: #fff3cd; border: 1px solid orange; padding: 10px; color: #856404;")
                 },
                 children: || {
@@ -50,8 +50,8 @@ fn App() -> impl View {
                     PanicToggleComponent()
                 }
             }),
-        )).style("margin-bottom: 20px; border: 1px solid #ccc; padding: 10px;"),
-    )).style("padding: 20px; font-family: sans-serif;")
+        ).style("margin-bottom: 20px; border: 1px solid #ccc; padding: 10px;"),
+    ).style("padding: 20px; font-family: sans-serif;")
 }
 
 #[component]
@@ -65,12 +65,12 @@ fn RecoverableComponent() -> impl View {
                 "User clicked the error button!".into(),
             ))
         } else {
-            Ok(div((
+            Ok(div!(
                 p("Component is running normally."),
                 button("Trigger Result::Err").on_click(move |_| {
                     set_should_error.set(true);
                 }),
-            )))
+            ))
         }
     }
 }
@@ -96,7 +96,7 @@ fn PanicToggleComponent() -> impl View {
 fn ImmediatePanic() -> impl View {
     let (active, set_active) = signal(false);
 
-    div((
+    div!(
         p("Ready to panic?"),
         button("Click to Panic Immediately").on_click(move |_| {
             set_active.set(true);
@@ -110,5 +110,5 @@ fn ImmediatePanic() -> impl View {
             }
             "Safe"
         },
-    ))
+    )
 }
