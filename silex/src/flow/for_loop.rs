@@ -199,25 +199,29 @@ where
                             // This is the only place we clone individual items, and only for new rows.
                             let item_owned = item_ref.clone();
 
-                            let fragment = document.create_document_fragment();
-                            let fragment_node: Node = fragment.clone().into();
+                            let (nodes, scope_id, fragment) =
+                                silex_core::reactivity::untrack(|| {
+                                    let fragment = document.create_document_fragment();
+                                    let fragment_node: Node = fragment.clone().into();
 
-                            let map_fn = map_fn.clone();
+                                    let map_fn = map_fn.clone();
 
-                            let scope_id = create_scope(move || {
-                                let view = map_fn.map(item_owned);
-                                view.mount(&fragment_node, Vec::new());
-                            });
+                                    let scope_id = create_scope(move || {
+                                        let view = map_fn.map(item_owned);
+                                        view.mount(&fragment_node, Vec::new());
+                                    });
 
-                            // Collect nodes from fragment before they are moved
-                            let nodes_list = fragment.child_nodes();
-                            let len = nodes_list.length();
-                            let mut nodes = Vec::with_capacity(len as usize);
-                            for i in 0..len {
-                                if let Some(n) = nodes_list.item(i) {
-                                    nodes.push(n);
-                                }
-                            }
+                                    // Collect nodes from fragment before they are moved
+                                    let nodes_list = fragment.child_nodes();
+                                    let len = nodes_list.length();
+                                    let mut nodes = Vec::with_capacity(len as usize);
+                                    for i in 0..len {
+                                        if let Some(n) = nodes_list.item(i) {
+                                            nodes.push(n);
+                                        }
+                                    }
+                                    (nodes, scope_id, fragment)
+                                });
 
                             new_rows_order.push((key, nodes, scope_id, Some(fragment)));
                         };

@@ -907,8 +907,26 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
     let mut style_props: Vec<(Cow<'static, str>, silex_core::Rx<String>)> = Vec::new();
     let mut style_sheets: Vec<silex_core::Rx<String>> = Vec::new();
 
+    // 递归打平函数
+    fn flatten_ops(op: AttrOp, acc: &mut Vec<AttrOp>) {
+        match op {
+            AttrOp::Sequence(ops) => {
+                for sub_op in ops {
+                    flatten_ops(sub_op, acc);
+                }
+            }
+            AttrOp::Noop => {}
+            _ => acc.push(op),
+        }
+    }
+
+    let mut flattened = Vec::new();
     for attr in attrs {
-        match attr.op {
+        flatten_ops(attr.op, &mut flattened);
+    }
+
+    for op in flattened {
+        match op {
             // --- Class 指令收集 ---
             AttrOp::SetStaticClasses(v) => {
                 static_classes.extend(v);
@@ -965,6 +983,26 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
                         },
                     });
                 }
+            }
+
+            // --- 合并指令收集 (防止重复合并导致覆盖) ---
+            AttrOp::CombinedClasses {
+                statics,
+                toggles,
+                reactives,
+            } => {
+                static_classes.extend(statics);
+                class_toggles.extend(toggles);
+                reactive_classes.extend(reactives);
+            }
+            AttrOp::CombinedStyles {
+                statics,
+                properties,
+                sheets,
+            } => {
+                static_styles.extend(statics);
+                style_props.extend(properties);
+                style_sheets.extend(sheets);
             }
 
             // --- 其它指令，原样保留 ---

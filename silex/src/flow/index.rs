@@ -108,31 +108,37 @@ where
                         // `map` is Rc<MapFn>.
 
                         for (i, item) in items_slice[common_len..].iter().enumerate() {
-                            let real_index = common_len + i;
-                            // Create signal for the row
-                            let (get, set) = signal(item.clone());
+                            let (set, scope_id, nodes, fragment_node) =
+                                silex_core::reactivity::untrack(|| {
+                                    let real_index = common_len + i;
+                                    // Create signal for the row
+                                    let (get, set) = signal(item.clone());
 
-                            let fragment = document.create_document_fragment();
-                            let fragment_node: Node = fragment.clone().into();
-                            let fragment_node_clone = fragment_node.clone();
+                                    let fragment = document.create_document_fragment();
+                                    let fragment_node: Node = fragment.clone().into();
+                                    let fragment_node_clone = fragment_node.clone();
 
-                            let map_fn = map_fn.clone();
+                                    let map_fn = map_fn.clone();
 
-                            let scope_id = create_scope(move || {
-                                (map_fn)(get, real_index).mount(&fragment_node_clone, Vec::new());
-                            });
+                                    let scope_id = create_scope(move || {
+                                        (map_fn)(get, real_index)
+                                            .mount(&fragment_node_clone, Vec::new());
+                                    });
 
-                            let nodes_list = fragment.child_nodes();
-                            let len = nodes_list.length();
-                            let mut nodes = Vec::with_capacity(len as usize);
-                            for j in 0..len {
-                                if let Some(n) = nodes_list.item(j) {
-                                    nodes.push(n);
-                                }
-                            }
+                                    let nodes_list = fragment.child_nodes();
+                                    let len = nodes_list.length();
+                                    let mut nodes = Vec::with_capacity(len as usize);
+                                    for j in 0..len {
+                                        if let Some(n) = nodes_list.item(j) {
+                                            nodes.push(n);
+                                        }
+                                    }
+
+                                    (set, scope_id, nodes, fragment_node)
+                                });
 
                             if let Some(p) = end_node.parent_node() {
-                                let _ = p.insert_before(&fragment_node, Some(&end_node)); // Pass fragment itself
+                                let _ = p.insert_before(&fragment_node, Some(&end_node));
                             }
 
                             rows_lock.push(IndexRow {
