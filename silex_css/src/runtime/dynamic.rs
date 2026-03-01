@@ -238,8 +238,7 @@ pub fn make_dynamic_val_for<P, S>(source: S) -> Rc<dyn Fn() -> String>
 where
     S: IntoRx,
     S::Value: Clone + Sized + types::ValidFor<P> + Display + 'static,
-    S::RxType: silex_core::traits::RxRead<Value = S::Value> + 'static,
-    for<'a> <S::RxType as RxInternal>::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
+    S::RxType: silex_core::traits::RxGet<Value = S::Value> + 'static,
 {
     let signal = source.into_rx();
     Rc::new(move || format!("{}", signal.get()))

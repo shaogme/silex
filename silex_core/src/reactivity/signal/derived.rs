@@ -217,7 +217,6 @@ where
 impl<S, F, U> crate::traits::IntoSignal for DerivedPayload<S, F>
 where
     S: RxRead + Clone + 'static,
-    for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
     F: Fn(&S::Value) -> U + 'static,
     U: RxCloneData,
 {

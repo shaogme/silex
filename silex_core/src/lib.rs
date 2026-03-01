@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 pub mod callback;
 pub mod error;
 pub mod log;
@@ -133,7 +134,9 @@ impl<T: 'static, M> Rx<T, M> {
 
     pub fn new_constant(val: T) -> Self {
         #[allow(clippy::manual_is_variant_and)]
-        if std::mem::size_of::<T>() <= std::mem::size_of::<u64>() && !std::mem::needs_drop::<T>() {
+        if const {
+            std::mem::size_of::<T>() <= std::mem::size_of::<u64>() && !std::mem::needs_drop::<T>()
+        } {
             unsafe {
                 let mut storage = 0u64;
                 std::ptr::copy_nonoverlapping(

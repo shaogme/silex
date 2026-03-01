@@ -160,41 +160,23 @@ pub trait RxRead: RxInternal {
 }
 
 /// 克隆获取特质。仅当值支持克隆时自动生效。
+/// 该 Trait 仅包含接口定义，具体的 HRTB 约束延迟到 Blanket Implementation 中处理，
+/// 从而简化了用户在使用该 Trait 作为约束时的书写负担。
 pub trait RxGet: RxRead
 where
     Self::Value: Clone + Sized,
-    for<'a> Self::ReadOutput<'a>: Deref<Target = Self::Value>,
 {
     /// 非响应式地克隆和返回值。如果是被销毁的，返回 None。
-    #[track_caller]
-    fn try_get_untracked(&self) -> Option<Self::Value> {
-        self.try_read_untracked().map(|v| (*v).clone())
-    }
+    fn try_get_untracked(&self) -> Option<Self::Value>;
 
     /// 非响应式地克隆和返回值。
-    ///
-    /// # Panics
-    /// 访问被销毁的信号时报错。
-    #[track_caller]
-    fn get_untracked(&self) -> Self::Value {
-        self.try_get_untracked()
-            .unwrap_or_else(|| unwrap_rx!(self)())
-    }
+    fn get_untracked(&self) -> Self::Value;
 
     /// 响应式地订阅信号，克隆并返回值。已被销毁则返回 None。
-    #[track_caller]
-    fn try_get(&self) -> Option<Self::Value> {
-        self.try_read().map(|v| (*v).clone())
-    }
+    fn try_get(&self) -> Option<Self::Value>;
 
     /// 响应式地订阅信号，克隆并返回值。
-    ///
-    /// # Panics
-    /// 访问被销毁的信号时报错。
-    #[track_caller]
-    fn get(&self) -> Self::Value {
-        self.try_get().unwrap_or_else(|| unwrap_rx!(self)())
-    }
+    fn get(&self) -> Self::Value;
 }
 
 impl<T: ?Sized + RxRead> RxGet for T
@@ -202,6 +184,30 @@ where
     T::Value: Clone + Sized,
     for<'a> T::ReadOutput<'a>: Deref<Target = T::Value>,
 {
+    #[track_caller]
+    #[inline(always)]
+    fn try_get_untracked(&self) -> Option<Self::Value> {
+        self.try_read_untracked().map(|v| (*v).clone())
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    fn get_untracked(&self) -> Self::Value {
+        self.try_get_untracked()
+            .unwrap_or_else(|| unwrap_rx!(self)())
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    fn try_get(&self) -> Option<Self::Value> {
+        self.try_read().map(|v| (*v).clone())
+    }
+
+    #[track_caller]
+    #[inline(always)]
+    fn get(&self) -> Self::Value {
+        self.try_get().unwrap_or_else(|| unwrap_rx!(self)())
+    }
 }
 
 impl<T: ?Sized + RxInternal> RxRead for T {}

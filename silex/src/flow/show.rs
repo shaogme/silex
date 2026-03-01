@@ -2,7 +2,6 @@ use silex_core::reactivity::Effect;
 use silex_core::traits::{RxGet, RxRead};
 use silex_dom::prelude::View;
 use std::cell::RefCell;
-use std::ops::Deref;
 use std::rc::Rc;
 use web_sys::Node;
 
@@ -86,8 +85,7 @@ where
 
 impl<Cond, ViewFn, FalsyViewFn> View for Show<Cond, ViewFn, FalsyViewFn>
 where
-    Cond: RxRead<Value = bool> + 'static,
-    for<'a> Cond::ReadOutput<'a>: Deref<Target = bool>,
+    Cond: RxGet<Value = bool> + 'static,
     ViewFn: ViewFactory + 'static,
     FalsyViewFn: ViewFactory + 'static,
 {

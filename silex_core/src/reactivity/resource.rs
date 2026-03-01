@@ -88,8 +88,7 @@ where
 impl<T: RxCloneData, E: RxError> Resource<T, E> {
     pub fn new<S, Fetcher, R>(source: R, fetcher: Fetcher) -> Self
     where
-        R: RxRead<Value = S> + 'static,
-        for<'a> R::ReadOutput<'a>: std::ops::Deref<Target = S>,
+        R: RxGet<Value = S> + 'static,
         S: PartialEq + RxCloneData,
         Fetcher: ResourceFetcher<S, Data = T, Error = E> + RxData,
     {
