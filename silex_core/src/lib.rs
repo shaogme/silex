@@ -17,8 +17,8 @@ pub struct RxEffectKind;
 /// 响应式计算单元或事件处理器（类型擦除版）。
 /// Rx 现在对返回值 T 是泛型的，从而解决了闭包导致的单态化膨胀问题。
 pub struct Rx<T, M = RxValueKind> {
-    pub(crate) inner: RxInner<T>,
-    pub(crate) _marker: ::core::marker::PhantomData<M>,
+    pub(crate) inner: RxInner,
+    pub(crate) _marker: ::core::marker::PhantomData<(T, M)>,
 }
 
 impl<T: 'static> Rx<T, RxValueKind> {
@@ -55,8 +55,8 @@ impl<T: 'static> Rx<T, RxEffectKind> {
     }
 }
 
-pub enum RxInner<T> {
-    Constant(T),
+pub enum RxInner {
+    InlineConstant(u64),
     Signal(crate::reactivity::NodeId),
     Closure(crate::reactivity::NodeId),
     Op(crate::reactivity::NodeId),
@@ -64,10 +64,10 @@ pub enum RxInner<T> {
     Stored(crate::reactivity::NodeId),
 }
 
-impl<T: Clone> Clone for RxInner<T> {
+impl Clone for RxInner {
     fn clone(&self) -> Self {
         match self {
-            Self::Constant(v) => Self::Constant(v.clone()),
+            Self::InlineConstant(v) => Self::InlineConstant(*v),
             Self::Signal(id) => Self::Signal(*id),
             Self::Closure(id) => Self::Closure(*id),
             Self::Op(id) => Self::Op(*id),
@@ -76,7 +76,7 @@ impl<T: Clone> Clone for RxInner<T> {
     }
 }
 
-impl<T: Copy> Copy for RxInner<T> {}
+impl Copy for RxInner {}
 
 /// 非泛型的响应式节点类型，用于 Trampoline 模式优化。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,13 +87,13 @@ pub enum RxNodeKind {
     Stored,
 }
 
-impl<T> RxInner<T> {
+impl RxInner {
     /// 将泛型枚举转换为非泛型的 NodeId 和类型标识。
     /// 用于将逻辑分发到非泛型函数中。
     #[inline(always)]
     pub fn as_node_parts(&self) -> Option<(crate::reactivity::NodeId, RxNodeKind)> {
         match self {
-            Self::Constant(_) => None,
+            Self::InlineConstant(_) => None,
             Self::Signal(id) => Some((*id, RxNodeKind::Signal)),
             Self::Closure(id) => Some((*id, RxNodeKind::Closure)),
             Self::Op(id) => Some((*id, RxNodeKind::Op)),
@@ -131,10 +131,41 @@ impl<T: 'static, M> Rx<T, M> {
         }
     }
 
-    pub const fn new_constant(val: T) -> Self {
-        Self {
-            inner: RxInner::Constant(val),
-            _marker: ::core::marker::PhantomData,
+    pub fn new_constant(val: T) -> Self {
+        #[allow(clippy::manual_is_variant_and)]
+        if std::mem::size_of::<T>() <= std::mem::size_of::<u64>() && !std::mem::needs_drop::<T>() {
+            unsafe {
+                let mut storage = 0u64;
+                std::ptr::copy_nonoverlapping(
+                    &val as *const T as *const u8,
+                    &mut storage as *mut u64 as *mut u8,
+                    std::mem::size_of::<T>(),
+                );
+                std::mem::forget(val);
+                Self {
+                    inner: RxInner::InlineConstant(storage),
+                    _marker: ::core::marker::PhantomData,
+                }
+            }
+        } else {
+            let id = silex_reactivity::untrack(|| silex_reactivity::store_value(val));
+            Self {
+                inner: RxInner::Stored(id),
+                _marker: ::core::marker::PhantomData,
+            }
+        }
+    }
+
+    /// Internal helper to unpack an inlined value
+    pub(crate) unsafe fn unpack_inline(storage: u64) -> T {
+        unsafe {
+            let mut value = std::mem::MaybeUninit::<T>::uninit();
+            std::ptr::copy_nonoverlapping(
+                &storage as *const u64 as *const u8,
+                value.as_mut_ptr() as *mut u8,
+                std::mem::size_of::<T>(),
+            );
+            value.assume_init()
         }
     }
 
@@ -161,10 +192,10 @@ impl<T: 'static, M> Rx<T, M> {
     }
 }
 
-impl<T: Clone, M> Clone for Rx<T, M> {
+impl<T, M> Clone for Rx<T, M> {
     fn clone(&self) -> Self {
         Self {
-            inner: self.inner.clone(),
+            inner: self.inner,
             _marker: self._marker,
         }
     }

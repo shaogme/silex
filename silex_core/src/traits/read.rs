@@ -252,10 +252,9 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
         match &self.inner {
-            crate::RxInner::Constant(v) => Some(RxGuard::Borrowed {
-                value: v,
-                token: None,
-            }),
+            crate::RxInner::InlineConstant(storage) => unsafe {
+                Some(RxGuard::Owned(Rx::<T, M>::unpack_inline(*storage)))
+            },
             _ => {
                 let (id, kind) = self.inner.as_node_parts()?;
                 unsafe { crate::reactivity::dispatch::rx_read_node_untracked(id, kind) }
@@ -266,7 +265,10 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
     #[inline(always)]
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         match &self.inner {
-            crate::RxInner::Constant(v) => Some(fun(v)),
+            crate::RxInner::InlineConstant(storage) => unsafe {
+                let val = Rx::<T, M>::unpack_inline(*storage);
+                Some(fun(&val))
+            },
             _ => {
                 let (id, kind) = self.inner.as_node_parts()?;
                 crate::reactivity::dispatch::rx_try_with_node_untracked(id, kind, fun)
@@ -276,7 +278,10 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
 
     #[inline(always)]
     fn rx_is_constant(&self) -> bool {
-        matches!(self.inner, crate::RxInner::Constant(_))
+        matches!(
+            self.inner,
+            crate::RxInner::InlineConstant(_) | crate::RxInner::Stored(_)
+        )
     }
 }
 
@@ -488,7 +493,9 @@ where
         Self: Sized,
     {
         match self.inner {
-            crate::RxInner::Constant(v) => crate::reactivity::Signal::from(v),
+            crate::RxInner::InlineConstant(storage) => {
+                crate::reactivity::Signal::InlineConstant(storage, std::marker::PhantomData)
+            }
             crate::RxInner::Signal(id) | crate::RxInner::Closure(id) | crate::RxInner::Op(id) => {
                 crate::reactivity::Signal::Derived(id, std::marker::PhantomData)
             }
