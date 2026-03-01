@@ -2,8 +2,10 @@ use silex::prelude::*;
 
 // --- Theme Definition ---
 define_theme! {
+    #[theme(prefix = "slx-theme")]
     pub struct AppTheme {
         pub primary: Hex,
+        #[theme(var = "--slx-theme-secondary")] // Explicit override
         pub secondary: Hex,
         pub surface: Hex,
         pub text: Hex,
@@ -112,6 +114,7 @@ styled! {
 }
 
 styled! {
+    #[theme(prefix = "slx-theme")]
     pub ThemePreviewCard<div>(children: Children) {
         background-color: $theme.surface;
         color: $theme.text;

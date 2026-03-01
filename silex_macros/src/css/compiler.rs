@@ -24,12 +24,17 @@ struct ParserState {
     dynamic_rules: Vec<DynamicRule>,
     theme_refs: Vec<(String, String)>,
     class_name: String,
+    theme_prefix: String,
 }
 
 pub struct CssCompiler;
 
 impl CssCompiler {
-    pub fn compile(ts: TokenStream, span: Span) -> Result<CssCompileResult> {
+    pub fn compile(
+        ts: TokenStream,
+        span: Span,
+        theme_prefix: Option<String>,
+    ) -> Result<CssCompileResult> {
         let ts_string = ts.to_string();
         let hash = silex_hash::css::hash_one(&ts_string);
         let mut buf = [0u8; 13];
@@ -42,6 +47,7 @@ impl CssCompiler {
             dynamic_rules: Vec::new(),
             theme_refs: Vec::new(),
             class_name: class_name.clone(),
+            theme_prefix: theme_prefix.unwrap_or_else(|| "slx-theme".to_string()),
         };
 
         let block: CssBlock = syn::parse2(ts)?;
@@ -99,6 +105,7 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                     &mut state.theme_refs,
                     &decl.property,
                     &state.class_name,
+                    &state.theme_prefix,
                 );
                 state.static_css.push_str(&local_out);
 
@@ -118,6 +125,7 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                         &mut selector_exprs,
                         &mut state.theme_refs,
                         &state.class_name,
+                        &state.theme_prefix,
                     );
                     template.push_str(" { ");
                     build_dynamic_block(
@@ -127,6 +135,7 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                         &mut state.expressions,
                         &mut state.theme_refs,
                         &state.class_name,
+                        &state.theme_prefix,
                     );
                     template.push_str(" }");
 
@@ -165,6 +174,7 @@ fn build_dynamic_block(
     global_expressions: &mut Vec<(String, TokenStream)>,
     theme_refs: &mut Vec<(String, String)>,
     class_name: &str,
+    theme_prefix: &str,
 ) {
     for rule in &block.rules {
         match rule {
@@ -180,6 +190,7 @@ fn build_dynamic_block(
                     theme_refs,
                     &decl.property,
                     class_name,
+                    theme_prefix,
                 );
 
                 if decl.semi_token.is_some() {
@@ -193,6 +204,7 @@ fn build_dynamic_block(
                     selector_exprs,
                     theme_refs,
                     "",
+                    theme_prefix,
                 );
                 template.push_str(" { ");
                 build_dynamic_block(
@@ -202,6 +214,7 @@ fn build_dynamic_block(
                     global_expressions,
                     theme_refs,
                     class_name,
+                    theme_prefix,
                 );
                 template.push_str(" } ");
             }
@@ -218,6 +231,7 @@ fn build_dynamic_block(
                     global_expressions,
                     theme_refs,
                     class_name,
+                    theme_prefix,
                 );
                 template.push_str(" } ");
             }
@@ -372,6 +386,7 @@ fn extract_dynamic_selector(
     exprs: &mut Vec<(String, TokenStream)>,
     theme_refs: &mut Vec<(String, String)>,
     class_name: &str,
+    theme_prefix: &str,
 ) {
     let mut iter = ts.clone().into_iter().peekable();
     let mut prev_tt: Option<TokenTree> = None;
@@ -431,7 +446,7 @@ fn extract_dynamic_selector(
                             out.push(' ');
                         }
                         let joined_key = path.join("-");
-                        out.push_str(&format!("var(--slx-theme-{})", joined_key));
+                        out.push_str(&format!("var(--{}-{})", theme_prefix, joined_key));
                         theme_refs.push(("any".to_string(), path.join(".")));
                         prev_tt = Some(TokenTree::Ident(proc_macro2::Ident::new(
                             "dummy",
@@ -468,7 +483,14 @@ fn extract_dynamic_selector(
                 if delim.0 != ' ' {
                     out.push(delim.0);
                 }
-                extract_dynamic_selector(&g.stream(), out, exprs, theme_refs, class_name);
+                extract_dynamic_selector(
+                    &g.stream(),
+                    out,
+                    exprs,
+                    theme_refs,
+                    class_name,
+                    theme_prefix,
+                );
                 if delim.1 != ' ' {
                     out.push(delim.1);
                 }
@@ -497,6 +519,7 @@ fn extract_dynamic_value(
     theme_refs: &mut Vec<(String, String)>,
     prop_name: &str,
     class_name: &str,
+    theme_prefix: &str,
 ) {
     let mut iter = ts.clone().into_iter().peekable();
     let mut prev_tt: Option<TokenTree> = None;
@@ -563,7 +586,7 @@ fn extract_dynamic_value(
                     }
                     let joined_key = path.join("-");
                     use std::fmt::Write;
-                    let _ = write!(out, "var(--slx-theme-{})", joined_key);
+                    let _ = write!(out, "var(--{}-{})", theme_prefix, joined_key);
                     theme_refs.push((prop_name.to_string(), path.join(".")));
                     prev_tt = Some(TokenTree::Ident(proc_macro2::Ident::new(
                         "dummy",
@@ -589,7 +612,15 @@ fn extract_dynamic_value(
                 if delim.0 != ' ' {
                     out.push(delim.0);
                 }
-                extract_dynamic_value(&g.stream(), out, exprs, theme_refs, prop_name, class_name);
+                extract_dynamic_value(
+                    &g.stream(),
+                    out,
+                    exprs,
+                    theme_refs,
+                    prop_name,
+                    class_name,
+                    theme_prefix,
+                );
                 if delim.1 != ' ' {
                     out.push(delim.1);
                 }

@@ -135,7 +135,21 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let variants = &parsed.variants;
     let generics = &parsed.generics;
 
-    let compile_result = CssCompiler::compile(css_block, tag.span())?;
+    let mut theme_prefix = None;
+    for attr in attrs {
+        if attr.path().is_ident("theme") {
+            let _ = attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("prefix") {
+                    let value = meta.value()?;
+                    let s: syn::LitStr = value.parse()?;
+                    theme_prefix = Some(s.value());
+                }
+                Ok(())
+            });
+        }
+    }
+
+    let compile_result = CssCompiler::compile(css_block, tag.span(), theme_prefix.clone())?;
 
     let class_name = compile_result.class_name;
     let style_id = compile_result.style_id;
@@ -168,6 +182,26 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         })
         .collect();
 
+    let mut theme_name = quote! { Theme };
+    for attr in attrs {
+        if attr.path().is_ident("theme") {
+            // Check if it's a simple #[theme(MyTheme)]
+            if let Ok(ident) = attr.parse_args::<syn::Ident>() {
+                theme_name = quote! { #ident };
+            } else {
+                // Try to see if it's #[theme(type = MyTheme)]
+                let _ = attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("type") {
+                        let value = meta.value()?;
+                        let ident: syn::Ident = value.parse()?;
+                        theme_name = quote! { #ident };
+                    }
+                    Ok(())
+                });
+            }
+        }
+    }
+
     let theme_assertions: Vec<TokenStream> = theme_refs
         .iter()
         .map(|(prop, key)| -> Result<TokenStream> {
@@ -176,15 +210,6 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             } else {
                 crate::css::get_prop_type(prop, tag.span())?
             };
-
-            let mut theme_name = quote! { Theme };
-            for attr in attrs {
-                if attr.path().is_ident("theme")
-                    && let Ok(nested) = attr.parse_args::<syn::Ident>()
-                {
-                    theme_name = quote! { #nested };
-                }
-            }
 
             let key_path: Vec<TokenStream> = key
                 .split('.')
@@ -204,7 +229,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
                 };
             })
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<Result<Vec<TokenStream>>>()?;
 
     let mut variant_injections = Vec::new();
     let mut variant_class_bindings = Vec::new();
@@ -223,7 +248,11 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         let mut match_arms = Vec::new();
 
         for (variant_name, variant_css) in &group.variants {
-            let compile_result = CssCompiler::compile(variant_css.clone(), variant_name.span())?;
+            let compile_result = CssCompiler::compile(
+                variant_css.clone(),
+                variant_name.span(),
+                theme_prefix.clone(),
+            )?;
             let variant_class_name = compile_result.class_name;
             let variant_style_id = compile_result.style_id;
             let variant_final_css = compile_result.final_css;
@@ -529,8 +558,13 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         }
     }
 
+    let filtered_attrs: Vec<_> = attrs
+        .iter()
+        .filter(|a| !a.path().is_ident("theme"))
+        .collect();
+
     let expanded = quote! {
-        #(#attrs)*
+        #(#filtered_attrs)*
         #[::silex::macros::component]
         #vis fn #name #impl_generics (
             #all_fn_args
