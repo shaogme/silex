@@ -7,6 +7,7 @@ define_theme! {
         pub secondary: Hex,
         pub surface: Hex,
         pub text: Hex,
+        pub border: Hex,
         pub radius: Px,
     }
 }
@@ -19,6 +20,7 @@ pub fn default_light_theme() -> AppTheme {
         secondary: hex("#a855f7"),
         surface: hex("#ffffff"),
         text: hex("#1f2937"),
+        border: hex("#e5e7eb"),
         radius: px(12),
     }
 }
@@ -29,7 +31,15 @@ pub fn default_dark_theme() -> AppTheme {
         secondary: hex("#c084fc"),
         surface: hex("#111827"),
         text: hex("#f9fafb"),
+        border: hex("#374151"),
         radius: px(12),
+    }
+}
+
+pub fn get_theme(name: &str) -> AppTheme {
+    match name {
+        "Dark" => default_dark_theme(),
+        _ => default_light_theme(),
     }
 }
 
@@ -37,8 +47,9 @@ pub fn default_dark_theme() -> AppTheme {
 
 styled! {
     pub DemoCard<div>(children: Children) {
-        background: rgba(30, 30, 35, 0.6);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: var(--slx-theme-surface);
+        color: var(--slx-theme-text);
+        border: 1px solid var(--slx-theme-border);
         border-radius: 16px;
         padding: 32px;
         margin: 24px 0;
@@ -329,7 +340,13 @@ pub fn StylingBasics() -> impl View {
 
 #[component]
 pub fn Theming() -> impl View {
-    let (theme, set_theme) = signal(default_light_theme());
+    let global_settings = crate::advanced::use_user_settings();
+    let initial_theme = if global_settings.theme.get_untracked() == "Dark" {
+        default_dark_theme()
+    } else {
+        default_light_theme()
+    };
+    let (theme, set_theme) = signal(initial_theme);
     let is_dark = theme.map(|t| t.surface.0 == "#111827");
 
     div![
@@ -398,7 +415,7 @@ pub fn Theming() -> impl View {
             ))
         ))
     ]
-    .style("padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background: #f9fafb;")
+    .style("padding: 24px; border: 1px solid var(--slx-theme-border); border-radius: 12px; background: var(--slx-theme-surface); transition: all 0.3s;")
 }
 
 #[component]

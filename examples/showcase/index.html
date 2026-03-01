@@ -4,6 +4,30 @@
 <head>
     <meta charset="utf-8" />
     <title>Silex ShowCase</title>
+    <style>
+        /* Immediate styles to prevent bright flash */
+        :root {
+            background-color: #ffffff;
+            color: #1f2937;
+        }
+
+        html[data-theme='Dark'] {
+            background-color: #111827;
+            color: #f9fafb;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: sans-serif;
+        }
+    </style>
+    <script>
+        (function () {
+            var t = localStorage.getItem('silex-showcase-theme');
+            if (t) document.documentElement.setAttribute('data-theme', t);
+        })();
+    </script>
 </head>
 
 <body>

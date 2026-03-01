@@ -100,6 +100,8 @@ web-sys = { version = "0.3", default-features = false, features = [
     "PointerEvent",
     "PromiseRejectionEvent",
     "ShadowRoot",
+    "Storage",
+    "StorageEvent",
     "StyleSheet",
     "SubmitEvent",
     "SvgElement",
@@ -113,6 +115,9 @@ web-sys = { version = "0.3", default-features = false, features = [
 ] }
 js-sys = { version = "0.3", default-features = false }
 wasm-bindgen-futures = { version = "0.4.56", default-features = false }
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 syn = { version = "2.0", default-features = false }
 quote = { version = "1.0", default-features = false }

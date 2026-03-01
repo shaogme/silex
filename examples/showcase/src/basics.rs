@@ -23,9 +23,10 @@ pub fn Greeting(
     .class("greeting-card")
     .style(style! {
         padding: "10px",
-        border: "1px solid #ddd",
+        border: "1px solid var(--slx-theme-border)",
         "border-radius": "4px",
-        "margin-bottom": "10px"
+        "margin-bottom": "10px",
+        background: "var(--slx-theme-surface)"
     })
 }
 
@@ -116,7 +117,7 @@ pub fn NodeRefDemo() -> impl View {
             }
         })
     ]
-    .style("padding: 20px; border: 1px dashed #999; margin-top: 20px;")
+    .style("padding: 20px; border: 1px dashed var(--slx-theme-border); margin-top: 20px;")
 }
 #[component]
 pub fn SvgIconDemo() -> impl View {
@@ -147,7 +148,7 @@ pub fn SvgIconDemo() -> impl View {
                 .attr("height", "50")
                 .style("color: red; margin-left: 10px;"),
         ]
-        .style("display: flex; align-items: center; padding: 10px; background: white; border: 1px solid #ddd;")
+        .style("display: flex; align-items: center; padding: 10px; background: var(--slx-theme-surface); border: 1px solid var(--slx-theme-border);")
     ]
     .style("margin-top: 20px;")
 }
@@ -202,9 +203,9 @@ pub fn EventDemo() -> impl View {
             |l| l.clone(),
             |l| li(l).style("font-size: 0.8em;")
         ))
-        .style("margin-top: 10px; background: #eee; padding: 10px; border-radius: 4px;")
+        .style("margin-top: 10px; background: var(--slx-theme-border); opacity: 0.5; padding: 10px; border-radius: 4px;")
     ]
-    .style("padding: 20px; border: 1px dashed #4caf50; margin-top: 20px;")
+    .style("padding: 20px; border: 1px dashed var(--slx-theme-border); margin-top: 20px;")
 }
 
 #[component]
@@ -221,7 +222,7 @@ pub fn BasicsPage() -> impl View {
                 .attr("disabled", name_signal.read_signal().equals(""))
                 .style("margin-left: 10px;")
         ]
-        .style("margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px;"),
+        .style("margin-bottom: 15px; padding: 10px; background: var(--slx-theme-surface); border-radius: 4px; border: 1px solid var(--slx-theme-border);"),
         Greeting().name(name_signal),
         Counter(),
         EventDemo(),

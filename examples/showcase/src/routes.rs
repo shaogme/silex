@@ -1,8 +1,11 @@
 use crate::advanced;
+use crate::advanced::use_user_settings;
 use crate::basics;
 use crate::css;
 use crate::flow_control;
 use silex::prelude::*;
+use silex::reexports::wasm_bindgen::JsCast;
+use silex::reexports::web_sys::{HtmlElement, MouseEvent};
 
 #[component]
 fn SelectDemo() -> impl View {
@@ -17,6 +20,8 @@ pub enum AdvancedRoute {
     Store,
     #[route("/query", view = advanced::QueryDemo, guard = advanced::AuthGuard)]
     Query,
+    #[route("/storage", view = advanced::StorageDemo)]
+    Storage,
     #[route("/resource", view = advanced::ResourceDemo)]
     Resource,
     #[route("/mutation", view = advanced::MutationDemo)]
@@ -72,27 +77,30 @@ styled! {
         children: Children,
         #[prop(default = "horizontal")] direction: &'static str
     ) {
-        background: #333;
-        color: white;
-        padding: 10px;
+        background: var(--slx-theme-surface);
+        color: var(--slx-theme-text);
+        border-bottom: 1px solid var(--slx-theme-border);
+        padding: 12px 24px;
         margin-bottom: 20px;
         display: flex;
         gap: 15px;
         align-items: center;
 
         & a {
-            color: white;
-            text-decoration: none;
+            color: var(--slx-theme-text);
+            opacity: 0.8;
             padding: 8px 12px;
             border-radius: 4px;
             transition: background-color 0.2s;
 
             &:hover {
-                background-color: rgba(255, 255, 255, 0.2);
+                background-color: var(--slx-theme-primary);
+                color: white;
             }
 
             &.active {
-                background-color: #007bff;
+                background-color: var(--slx-theme-primary);
+                color: white;
                 font-weight: bold;
             }
         }
@@ -108,6 +116,8 @@ styled! {
 
 #[component]
 pub fn NavBar() -> impl View {
+    let settings = use_user_settings();
+
     StyledNav().direction("horizontal").children((
         Link(AppRoute::Home, "Home").active_class("active"),
         Link(AppRoute::Basics, "Basics").active_class("active"),
@@ -126,6 +136,26 @@ pub fn NavBar() -> impl View {
             "Advanced",
         )
         .active_class("active"),
+        button(settings.theme.map_fn(|t| if t == "Light" { "🌙" } else { "🌞" }))
+            .on(
+                event::click,
+                move |_| {
+                    settings.theme.update(|t| {
+                        let new_theme = if t == "Light" { "Dark".to_string() } else { "Light".to_string() };
+                        console_log(&format!("Button Click: switching to {}", new_theme));
+                        *t = new_theme;
+                    })
+                }
+            )
+            .style("margin-left: auto; cursor: pointer; background: var(--slx-theme-border); border: none; padding: 8px 12px; border-radius: 50%; font-size: 1.2em; transition: all 0.3s; color: var(--slx-theme-text);")
+            .on(event::mouseover, move |e: MouseEvent| {
+                let target = e.target().unwrap().unchecked_into::<HtmlElement>();
+                let _ = target.style().set_property("background", "rgba(255,255,255,0.2)");
+            })
+            .on(event::mouseout, move |e: MouseEvent| {
+                let target = e.target().unwrap().unchecked_into::<HtmlElement>();
+                let _ = target.style().set_property("background", "rgba(255,255,255,0.1)");
+            }),
     ))
 }
 
@@ -146,6 +176,13 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
                     route: AdvancedRoute::Query,
                 },
                 "Query Param"
+            )
+            .class("tab"),
+            Link(
+                AppRoute::Advanced {
+                    route: AdvancedRoute::Storage,
+                },
+                "Storage"
             )
             .class("tab"),
             Link(

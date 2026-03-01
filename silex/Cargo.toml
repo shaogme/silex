@@ -22,6 +22,8 @@ wasm-bindgen.workspace = true
 web-sys.workspace = true
 js-sys.workspace = true
 wasm-bindgen-futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [features]
 default = ["macros"]

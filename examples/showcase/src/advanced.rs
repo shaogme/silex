@@ -2,10 +2,13 @@ use silex::prelude::*;
 use silex::reexports::web_sys;
 
 // --- Store Definition ---
-#[derive(Clone, Default, Store)]
+#[derive(Clone, Default, Store, serde::Serialize, serde::Deserialize)]
 #[store(name = "use_user_settings")]
+#[storage(prefix = "showcase-settings-")]
 pub struct UserSettings {
+    #[storage]
     pub theme: String,
+    #[storage(key = "notif_enabled")]
     pub notifications: bool,
     pub username: String,
 }
@@ -31,7 +34,7 @@ pub fn StoreDemo() -> impl View {
                 ),
             ],
         ]
-        .style("border: 1px solid #ccc; padding: 10px; margin-bottom: 10px;"),
+        .style("border: 1px solid var(--slx-theme-border); background: var(--slx-theme-surface); padding: 10px; margin-bottom: 10px;"),
         h4("Update Settings"),
         div![
             button("Toggle Theme").on(
@@ -53,6 +56,28 @@ pub fn StoreDemo() -> impl View {
 }
 
 #[component]
+pub fn StorageDemo() -> impl View {
+    let count = use_local_storage("showcase-counter", 0);
+
+    div![
+        h3("LocalStorage Hook Demo"),
+        p("This counter is synced with 'localStorage' using `use_local_storage`. It persists across refreshes and syncs across different tabs/windows."),
+        div![
+            button("-1").on(event::click, count.updater(|c| *c -= 1)),
+            span(count).style("font-size: 1.5em; font-weight: bold; min-width: 50px; text-align: center;"),
+            button("+1").on(event::click, count.updater(|c| *c += 1)),
+        ]
+        .style("display: flex; gap: 20px; align-items: center; margin: 15px 0;"),
+        p![
+            "Try opening this page in ",
+            strong("another tab"),
+            " and watch them sync in real-time!"
+        ]
+    ]
+    .style("padding: 20px; border: 1px solid var(--slx-theme-border); border-radius: 8px; background: var(--slx-theme-surface); transition: all 0.3s;")
+}
+
+#[component]
 pub fn QueryDemo() -> impl View {
     let val = use_query_signal("demo_val");
 
@@ -63,7 +88,7 @@ pub fn QueryDemo() -> impl View {
             input()
                 .bind_value(val) // Automatic two-way binding
                 .placeholder("Type here...")
-                .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px;"),
+                .style("padding: 8px; border: 1px solid var(--slx-theme-border); border-radius: 4px; background: var(--slx-theme-surface); color: var(--slx-theme-text);"),
             button("Reset")
                 .on(event::click, val.setter(String::new()))
                 .style("padding: 8px 16px; cursor: pointer;")
@@ -73,7 +98,7 @@ pub fn QueryDemo() -> impl View {
             strong("Current Value: "),
             val // Signals implement Display
         ]
-        .style("background: #f5f5f5; padding: 10px; border-radius: 4px;")
+        .style("background: var(--slx-theme-surface); border: 1px solid var(--slx-theme-border); padding: 10px; border-radius: 4px;")
     ]
 }
 
@@ -184,7 +209,7 @@ pub fn ResourceDemo() -> impl View {
             }
         }
     ]
-    .style("padding: 20px; border: 1px solid #ccc; border-radius: 8px;")
+    .style("padding: 20px; border: 1px solid var(--slx-theme-border); border-radius: 8px; background: var(--slx-theme-surface); transition: all 0.3s;")
 }
 
 #[component]
@@ -249,7 +274,7 @@ pub fn MutationDemo() -> impl View {
             ]
         })
     ]
-    .style("padding: 20px; border: 1px solid #ccc; border-radius: 8px;")
+    .style("padding: 20px; border: 1px solid var(--slx-theme-border); border-radius: 8px; background: var(--slx-theme-surface); transition: all 0.3s;")
 }
 
 #[component]
@@ -342,7 +367,7 @@ pub fn GenericMessage<'a, T: std::fmt::Display + Clone + 'static>(
     title: &'a str,
 ) -> impl View {
     div![h4(title.to_string()), p(format!("Value: {}", value)),]
-        .style("padding: 10px; border: 1px solid #eee; margin-bottom: 10px;")
+        .style("padding: 10px; border: 1px solid var(--slx-theme-border); background: var(--slx-theme-surface); transition: all 0.3s;")
 }
 
 #[component]
@@ -355,7 +380,7 @@ pub fn GenericsDemo() -> impl View {
             .value("Hello Silex!")
             .title("String Message"),
     ]
-    .style("padding: 20px; border: 1px solid #ccc; border-radius: 8px; margin-top: 20px;")
+    .style("padding: 20px; border: 1px solid var(--slx-theme-border); border-radius: 8px; margin-top: 20px; background: var(--slx-theme-surface); transition: all 0.3s;")
 }
 
 // --- Adaptive Read & Reactive Tuple Demo ---

@@ -3,6 +3,7 @@ extern crate self as silex;
 pub mod components;
 pub mod flow;
 pub mod router;
+pub mod storage;
 pub mod store;
 
 pub use components::*;
@@ -44,6 +45,7 @@ pub mod prelude {
     pub use crate::components::*;
     pub use crate::flow::*;
     pub use crate::router::*;
+    pub use crate::storage::*;
     pub use crate::store::*;
     pub use crate::{SilexError, SilexResult};
     pub use silex_core::prelude::*;

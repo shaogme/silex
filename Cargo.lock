@@ -1241,6 +1241,8 @@ name = "silex"
 version = "0.1.0-beta.1"
 dependencies = [
  "js-sys",
+ "serde",
+ "serde_json",
  "silex_core",
  "silex_css",
  "silex_dom",
@@ -1365,6 +1367,7 @@ name = "silex_showcase"
 version = "0.1.0-beta.1"
 dependencies = [
  "gloo-timers",
+ "serde",
  "silex",
  "silex_macros",
 ]

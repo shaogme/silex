@@ -9,6 +9,7 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
 
     let mut hook_name: Option<syn::Ident> = None;
     let mut err_msg: Option<String> = None;
+    let mut storage_prefix: Option<String> = None;
 
     // Parse attributes
     for attr in &input.attrs {
@@ -32,6 +33,24 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
                         }) = nv.value
                     {
                         err_msg = Some(lit_str.value());
+                    }
+                }
+            }
+        } else if attr.path().is_ident("storage") {
+            if let Meta::List(list) = &attr.meta {
+                let nested = list.parse_args_with(
+                    syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated,
+                )?;
+                for meta in nested {
+                    if let Meta::NameValue(nv) = meta {
+                        if nv.path.is_ident("prefix")
+                            && let syn::Expr::Lit(syn::ExprLit {
+                                lit: syn::Lit::Str(lit_str),
+                                ..
+                            }) = nv.value
+                        {
+                            storage_prefix = Some(lit_str.value());
+                        }
                     }
                 }
             }
@@ -72,8 +91,48 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
 
     let new_fields = fields.iter().map(|f| {
         let name = &f.ident;
-        quote! {
-            #name: ::silex::prelude::RwSignal::new(source.#name)
+        let mut storage_key: Option<String> = None;
+        let mut is_persistent = false;
+
+        for attr in &f.attrs {
+            if attr.path().is_ident("storage") {
+                is_persistent = true;
+                if let Meta::List(list) = &attr.meta {
+                    let res = list.parse_args_with(
+                        syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated,
+                    );
+                    if let Ok(nested) = res {
+                        for meta in nested {
+                            if let Meta::NameValue(nv) = meta {
+                                if nv.path.is_ident("key")
+                                    && let syn::Expr::Lit(syn::ExprLit {
+                                        lit: syn::Lit::Str(lit_str),
+                                        ..
+                                    }) = nv.value
+                                {
+                                    storage_key = Some(lit_str.value());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if is_persistent {
+            let key = storage_key.unwrap_or_else(|| name.as_ref().unwrap().to_string());
+            let full_key = if let Some(prefix) = &storage_prefix {
+                format!("{}{}", prefix, key)
+            } else {
+                key
+            };
+            quote! {
+                #name: ::silex::storage::use_local_storage(#full_key, source.#name)
+            }
+        } else {
+            quote! {
+                #name: ::silex::prelude::RwSignal::new(source.#name)
+            }
         }
     });
 
