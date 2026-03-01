@@ -8,6 +8,17 @@ pub use apply::*;
 pub use into_storable::*;
 pub use op::*;
 
+/// 指令组宏：将多个异构属性/事件平铺为一个 AttributeGroup。
+/// 这在创建自定义 Mixin 或组件透传属性时非常有用。
+#[macro_export]
+macro_rules! group {
+    ($($attr:expr),* $(,)?) => {
+        $crate::attribute::AttributeGroup(vec![
+            $( $crate::attribute::ApplyToDom::into_op($attr, $crate::attribute::OwnedApplyTarget::Apply) ),*
+        ])
+    };
+}
+
 pub trait AttributeBuilder: Sized {
     /// Core hook: Apply or store a generic attribute/property directly using ApplyTarget mechanism.
     /// Accepts any type that implements IntoStorable, allowing both static references (&str, &String)

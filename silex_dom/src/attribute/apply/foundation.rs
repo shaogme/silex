@@ -419,78 +419,42 @@ where
     }
 }
 
-// --- Recursive Attribute Group Support ---
+// --- Attribute Group Support (Erased Collection) ---
 
-pub trait AttrFlatten {
-    fn apply_to(&self, el: &WebElem, target: ApplyTarget);
-    fn flatten_into(self, target: &OwnedApplyTarget, acc: &mut Vec<AttrOp>);
-}
+/// 擦除后的属性组。
+/// 内部持有一组 AttrOp 指令，避免了递归泛型带来的单态化膨胀。
+#[derive(Clone, Default)]
+pub struct AttributeGroup(pub Vec<AttrOp>);
 
-#[derive(Clone, Copy, Debug, Default)]
-pub struct AttrNil;
-
-#[derive(Clone, Debug)]
-pub struct AttrCons<H, T>(pub H, pub T);
-
-impl AttrFlatten for AttrNil {
-    fn apply_to(&self, _el: &WebElem, _target: ApplyTarget) {}
-    fn flatten_into(self, _target: &OwnedApplyTarget, _acc: &mut Vec<AttrOp>) {}
-}
-
-impl<H, T> AttrFlatten for AttrCons<H, T>
+/// 创建一个擦除后的属性组。
+/// 这里的逻辑是：将所有输入项立即转换为 AttrOp。
+/// 默认使用 ApplyTarget::Apply 作为转换上下文。
+pub fn group<I>(items: I) -> AttributeGroup
 where
-    H: ApplyToDom + 'static,
-    T: AttrFlatten,
+    I: IntoIterator,
+    I::Item: ApplyToDom + 'static,
 {
-    fn apply_to(&self, el: &WebElem, target: ApplyTarget) {
-        self.0.apply(el, target);
-        self.1.apply_to(el, target);
-    }
-
-    fn flatten_into(self, target: &OwnedApplyTarget, acc: &mut Vec<AttrOp>) {
-        acc.push(self.0.into_op(target.clone()));
-        self.1.flatten_into(target, acc);
-    }
+    let ops = items
+        .into_iter()
+        .map(|item| item.into_op(OwnedApplyTarget::Apply))
+        .collect();
+    AttributeGroup(ops)
 }
 
-#[derive(Clone)]
-pub struct AttributeGroup<T>(pub T);
+impl ApplyToDom for AttributeGroup {
+    fn apply(&self, el: &WebElem, _target: ApplyTarget) {
+        for op in &self.0 {
+            op.clone().apply(el);
+        }
+    }
 
-pub fn group<T>(t: T) -> AttributeGroup<T> {
-    AttributeGroup(t)
-}
-
-impl ApplyToDom for AttrNil {
-    fn apply(&self, _el: &WebElem, _target: ApplyTarget) {}
     fn into_op(self, _target: OwnedApplyTarget) -> AttrOp {
-        AttrOp::Noop
-    }
-}
-
-impl<H, T> ApplyToDom for AttrCons<H, T>
-where
-    H: ApplyToDom + 'static,
-    T: AttrFlatten + 'static,
-{
-    fn apply(&self, el: &WebElem, target: ApplyTarget) {
-        self.apply_to(el, target);
-    }
-
-    fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
-        let mut ops = Vec::new();
-        self.flatten_into(&target, &mut ops);
-        AttrOp::Sequence(ops)
-    }
-}
-
-impl<T: AttrFlatten + 'static> ApplyToDom for AttributeGroup<T> {
-    fn apply(&self, el: &WebElem, target: ApplyTarget) {
-        self.0.apply_to(el, target);
-    }
-
-    fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
-        let mut ops = Vec::new();
-        self.0.flatten_into(&target, &mut ops);
-        AttrOp::Sequence(ops)
+        if self.0.is_empty() {
+            AttrOp::Noop
+        } else if self.0.len() == 1 {
+            self.0.into_iter().next().unwrap()
+        } else {
+            AttrOp::Sequence(self.0)
+        }
     }
 }

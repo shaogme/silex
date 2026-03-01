@@ -142,36 +142,11 @@ impl<V: IntoStorable> IntoStorable for Vec<V> {
     }
 }
 
-// --- Recursive Attribute Group Support ---
-
-impl IntoStorable for super::AttrNil {
-    type Stored = super::AttrNil;
-    fn into_storable(self) -> Self::Stored {
-        self
-    }
-}
-
-impl<H, T> IntoStorable for super::AttrCons<H, T>
-where
-    H: IntoStorable,
-    T: IntoStorable,
-    H::Stored: ApplyToDom + 'static,
-    T::Stored: super::AttrFlatten + 'static,
-{
-    type Stored = super::AttrCons<H::Stored, T::Stored>;
-    fn into_storable(self) -> Self::Stored {
-        super::AttrCons(self.0.into_storable(), self.1.into_storable())
-    }
-}
-
 // --- IntoStorable 实现：AttributeGroup ---
 
-impl<T: IntoStorable> IntoStorable for AttributeGroup<T>
-where
-    T::Stored: super::AttrFlatten + 'static,
-{
-    type Stored = AttributeGroup<T::Stored>;
+impl IntoStorable for AttributeGroup {
+    type Stored = AttributeGroup;
     fn into_storable(self) -> Self::Stored {
-        AttributeGroup(self.0.into_storable())
+        self
     }
 }

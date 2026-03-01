@@ -44,18 +44,16 @@ pub fn style_impl(input: TokenStream) -> Result<TokenStream> {
     }
 
     if expanded_props.is_empty() {
-        return Ok(quote! { () });
-    }
-
-    let mut expanded = quote! { silex::dom::attribute::AttrNil };
-    for prop in expanded_props.into_iter().rev() {
-        expanded = quote! {
-            silex::dom::attribute::AttrCons(#prop, #expanded)
-        };
+        return Ok(quote! { silex::dom::attribute::AttributeGroup::default() });
     }
 
     Ok(quote! {
-        silex::dom::attribute::group( #expanded )
+        ::silex::dom::attribute::AttributeGroup(vec![
+            #( ::silex::dom::attribute::ApplyToDom::into_op(
+                #expanded_props,
+                ::silex::dom::attribute::OwnedApplyTarget::Style
+            ) ),*
+        ])
     })
 }
 
@@ -99,17 +97,15 @@ pub fn classes_impl(input: TokenStream) -> Result<TokenStream> {
     }
 
     if expanded_items.is_empty() {
-        return Ok(quote! { () });
-    }
-
-    let mut expanded = quote! { silex::dom::attribute::AttrNil };
-    for item in expanded_items.into_iter().rev() {
-        expanded = quote! {
-            silex::dom::attribute::AttrCons(#item, #expanded)
-        };
+        return Ok(quote! { silex::dom::attribute::AttributeGroup::default() });
     }
 
     Ok(quote! {
-        silex::dom::attribute::group( #expanded )
+        ::silex::dom::attribute::AttributeGroup(vec![
+            #( ::silex::dom::attribute::ApplyToDom::into_op(
+                #expanded_items,
+                ::silex::dom::attribute::OwnedApplyTarget::Class
+            ) ),*
+        ])
     })
 }
