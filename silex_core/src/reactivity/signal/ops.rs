@@ -1,6 +1,6 @@
 use crate::traits::*;
 use crate::{Rx, RxValueKind};
-use silex_reactivity::{NodeId, is_signal_valid, track_signal};
+use silex_reactivity::{NodeId, is_signal_valid, track_signals_batch};
 use std::marker::PhantomData;
 use std::mem;
 use std::panic::Location;
@@ -322,9 +322,7 @@ pub mod op_trampolines {
 
     pub fn unified_track(this: *const u8) {
         let payload = unsafe { &*(this as *const UnifiedStaticMapPayload<()>) };
-        for i in 0..payload.input_count {
-            track_signal(payload.inputs[i]);
-        }
+        track_signals_batch(&payload.inputs[..payload.input_count]);
     }
 
     pub unsafe fn compute_map_1<IT: RxData, OT: RxData>(
@@ -364,18 +362,14 @@ pub mod op_trampolines {
     }
 
     pub fn track_inputs(inputs: &[NodeId]) {
-        for &id in inputs {
-            track_signal(id);
-        }
+        track_signals_batch(inputs);
     }
 
     pub fn track_tuple_meta_slice(this: *const u8) {
         let payload = unsafe { &*(this as *const UnifiedStaticMapPayload<()>) };
         let meta_id = payload.inputs[0];
         let _ = silex_reactivity::try_with_stored_value(meta_id, |ids: &Vec<NodeId>| {
-            for &id in ids {
-                track_signal(id);
-            }
+            track_signals_batch(ids);
         });
     }
 

@@ -322,6 +322,48 @@ impl Runtime {
         }
     }
 
+    pub(crate) fn track_dependencies(&self, target_ids: &[NodeId]) {
+        if target_ids.is_empty() {
+            return;
+        }
+
+        if let Some(owner) = self.current_owner.get() {
+            // 1. Identify Owner Type and get metadata
+            let (owner_version, is_owner_valid) = if let Some(eff) = self.effects.get_mut(owner) {
+                (eff.effect_version, true)
+            } else {
+                (0, false)
+            };
+
+            if !is_owner_valid {
+                return;
+            }
+
+            // Now borrow dependencies and signals separately
+            if let Some(eff) = self.effects.get_mut(owner) {
+                let dependencies = &mut eff.dependencies;
+
+                for &target_id in target_ids {
+                    if owner == target_id {
+                        continue;
+                    }
+
+                    if let Some(signal_data) = self.signals.get_mut(target_id) {
+                        if let Some((last_owner, last_version)) = signal_data.last_tracked_by
+                            && last_owner == owner
+                            && last_version == owner_version
+                        {
+                            continue; // Already tracked in this version
+                        }
+                        signal_data.subscribers.push(owner);
+                        signal_data.last_tracked_by = Some((owner, owner_version));
+                        dependencies.push((target_id, signal_data.version));
+                    }
+                }
+            }
+        }
+    }
+
     /// Use BFS Propagation via algorithm module
     pub(crate) fn queue_dependents(&self, source_id: NodeId) {
         let (mut queue, mut subs) = {

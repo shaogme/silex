@@ -362,6 +362,10 @@ pub fn track_signal(id: NodeId) {
     RUNTIME.with(|rt| rt.track_dependency(id))
 }
 
+pub fn track_signals_batch(ids: &[NodeId]) {
+    RUNTIME.with(|rt| rt.track_dependencies(ids))
+}
+
 pub fn notify_signal(id: NodeId) {
     RUNTIME.with(|rt| {
         rt.queue_dependents(id);
