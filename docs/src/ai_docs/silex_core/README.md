@@ -1,406 +1,256 @@
 # Crate: `silex_core`
 
-**High-level, type-safe API for Silex application development.**
+**Silex 应用开发的核心响应式 API 层。**
 
-此 Crate 对底层的 `silex_reactivity` 进行了封装，引入了泛型 (`PhantomData`) 以提供编译时类型检查，并集成了常用的工具宏和错误处理机制。
-
-## 模块: `reactivity` (响应式核心)
-
-源码路径: `silex_core/src/reactivity.rs`
-
-### 1. Trait System (特征系统)
-
-`silex_core` 基于 Traits 构建了灵活的响应式接口。Silex 采用**Rx 委托 (Rx Delegate)** 模式，通过 [`Rx`] 包装器统一所有的响应式操作。
-
-#### Metadata Traits
-*   `DefinedAt`: `fn defined_at(&self) -> Option<&'static Location<'static>>`。调试辅助，提供信号定义的位置信息。
-*   `debug_name(&self) -> Option<String>`。调试辅助，提供信号的语义化名称。
-*   `IsDisposed`: `fn is_disposed(&self) -> bool`。检查信号是否已被销毁。
-
-#### Access Traits (读访问) - **以 Zero-Copy 为核心**
-*   **Core Primitives (核心原语)**:
-    *   `WithUntracked`: `fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>`。**基础特征**。不追踪，通过闭包以**引用 (`&T`)** 方式访问值。这是实现零拷贝访问的基石。
-    *   `Track`: `fn track(&self)`。显式追踪。将当前信号添加为依赖。
-    *   `With`: `fn try_with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>`。**核心特征** (`WithUntracked` + `Track`)。自动追踪，通过闭包以**引用 (`&T`)** 方式访问值。
-*   **Convenience Extensions (便利扩展 - 基于 Clone)**:
-    *   `GetUntracked`: `fn try_get_untracked(&self) -> Option<Self::Value>`。(`WithUntracked` + `Clone`)。不追踪，直接 Clone 并返回值。仅当 `T: Clone` 时可用。**注意：避免在热路径上对大对象使用。**
-    *   `Get`: `fn try_get(&self) -> Option<Self::Value>`。(`With` + `Clone`)。自动追踪，直接 Clone 并返回值。仅当 `T: Clone` 时可用。
-*   **Derived**:
-    *   `Map`: `fn map<U, F>(self, f: F) -> Rx<DerivedPayload<Self, F>, RxValue>`。基于 `With` 实现。从当前信号创建派生计算包装器。闭包接受引用 `&T`，减少 `Clone` 开销。这是一种轻量级的惰性求值方式，不涉及 Node 注册开销。
-    *   `Memoize`: `fn memo(self) -> Memo<Self::Value>`。将任意信号转换为 `Memo` 缓存信号。要求 `T: Clone + PartialEq`。
-*   **Multi-Signal Access (多信号访问)**:
-    *   `batch_read!(s1, s2 => |v1, v2| ...)`: 宏。允许同时以引用方式访问多个信号，实现零拷贝。
-    *   `batch_read_untracked!(s1, s2 => |v1, v2| ...)`: 宏。同上，但不追踪依赖。
-
-*   **Conversion Traits**:
-    *   `IntoRx`: `fn into_rx(self) -> Self::RxType`。**关键转换接口**。用于将常量、信号、闭包及元组无缝转化为统一的 `Rx` 包装器。
-    *   `RxInternal`: **内部核心特征**。被包装在 `Rx` 内部的统一操作接口（对用户隐藏），支持追踪、访问、定义位置、调试名、销毁状态及常量检测。
-
-#### Update Traits (写更新)
-*   `Notify`: `fn notify(&self)`。显式通知。触发 subscribers 更新。
-*   `UpdateUntracked`: `fn try_update_untracked<U>(&self, fun: impl FnOnce(&mut Self::Value) -> U) -> Option<U>`。不通知，通过可变引用修改值。
-*   `Update`: `fn try_update<U>(&self, fun: impl FnOnce(&mut Self::Value) -> U) -> Option<U>`。修改值并自动通知。
-*   `Set`: `fn try_set(&self, value: Self::Value) -> Option<Self::Value>`。直接替换值并自动通知。
-*   `SignalSetter`: `fn setter(self, value: Self::Value) -> impl Fn() + Clone`。创建设置值的闭包。
-*   `SignalUpdater`: `fn updater<F>(self, f: F) -> impl Fn() + Clone`。创建更新值的闭包。
-*   `SetUntracked`: `fn try_set_untracked(&self, value: Self::Value) -> Option<Self::Value>`。不通知，直接替换值。
+此 Crate 对底层的 `silex_reactivity` 进行了高层级封装。其核心目标是通过**响应式归一化 (normalization)**、**Rx 委托 (Rx Delegate)** 和**自适应读取 (Adaptive Read)** 技术，在保证零拷贝 (Zero-copy) 性能的同时，极大地缩减因 Rust 泛型单态化导致的编译体积。
 
 ---
 
-### 2. Reactive Wrappers (响应式包装器)
+## 核心架构：类型擦除与 Rx 委托
 
-#### `Rx<F, M>`
-*   **Struct**: `pub struct Rx<F, M = RxValue>(pub F, pub PhantomData<M>)`
-*   **Semantics**: Silex 的通用响应式包装器。
-    *   `M = RxValue`: **计算单元 (Getter)**。类似于 `Fn() -> T`，用于属性绑定或派生计算。
-    *   `M = RxEffect`: **副作用/回调 (Effect)**。具有特定参数的闭包，用于事件处理。
-*   **Features**: 
-    *   实现了 `Add`, `Sub` 等所有运算符重载。
-    *   实现了 `ReactivePartialEq` (`equals`) 和 `ReactivePartialOrd` (`greater_than`)。
-    *   支持零拷贝访问 (`With`, `WithUntracked`)。
+Silex 采用了一种独特的“委托与擦除”架构来平衡易用性与性能：
 
-#### `Signal<T>`
-*   **Enum**:
-    *   `Read(ReadSignal<T>)`
-    *   `Derived(NodeId, PhantomData<T>)`
-    *   `StoredConstant(NodeId, PhantomData<T>)`
-    *   `InlineConstant(u64, PhantomData<T>)` (Internal optimization: zero-allocation for small Copy types)
-*   **Traits**: `Copy`, `Clone`, `Debug`, `PartialEq`, `Eq`, `Hash`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`, `IntoRx`.
-*   **Semantics**:
-    *   通用的信号接口，统一了 `ReadSignal`、派生计算和常量。
-    *   其核心操作现在委托给 `Rx` 处理。
-    *   `StoredConstant` 变体持有一个存储在 Runtime 中的常量值。
-    *   `InlineConstant` 变体将小数据（如 `i32`）直接内联存储在 `Signal` 内部，避免 Arena 分配。
-*   **Methods**:
-    *   `derive(f: impl Fn() -> T)`: 创建一个派生信号。
-    *   `is_constant() -> bool`: Returns `true` if the signal is `StoredConstant` or `InlineConstant`.
-    *   `get() -> T`: (via `Get` trait).
-    *   `slice(getter: impl Fn(&T) -> &O)`: 创建一个指向内部字段的切片信号 `SignalSlice`，实现零拷贝访问。
-*   **Conversions**:
-    *   `From<T>`: 将普通值转换为 `Signal::StoredConstant`。
-    *   `From<&str>`: 将字符串切片转换为 `Signal<String>` (StoredConstant)。
-    *   `From<ReadSignal<T>>`, `From<RwSignal<T>>`, `From<Memo<T>>`: 转换为 `Signal::Read`。
-*   **Operator Overloads**:
-    *   实现了 `Add`, `Sub`, `Mul`, `Div`, `Rem`, `BitAnd`, `BitOr`, `BitXor`, `Shl`, `Shr`, `Neg`, `Not`。
-    *   支持 `Signal op Signal` 以及 `Signal op T`。
-    *   所有运算均返回包装在 `Rx` 中的 `DerivedPayload`，自动创建惰性派生计算，无额外缓存开销。
-    *   **Lazy Evaluation (惰性求值)**:
-        *   `DerivedPayload` (用于所有运算符和 `Map`) 是**无状态的 (Stateless)**。它们不缓存结果，每次被访问 (`try_with`) 时都会**重新执行**计算闭包。
-        *   它们通常被包装在 `Rx<P, RxValue>` 中使用。
-        *   这对于轻量级操作（如比较 `equals`、简单算术 `add`）非常高效（Zero-Copy）。
-        *   **Performance Trap (性能陷阱)**: 如果派生计算非常昂贵，这种惰性重算可能导致性能问题。对于昂贵的计算，请使用 `memo()` 或 `Signal::derive` 显式创建有状态的缓存节点。
-
-#### `ReadSignal<T>`
-*   **Struct**: `pub struct ReadSignal<T> { id: NodeId, marker: PhantomData<T> }`
-*   **Traits**: `Copy`, `Clone`, `Debug`, `PartialEq`, `Eq`, `Hash`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
-*   **Methods**:
-    *   `slice(getter: impl Fn(&T) -> &O)`: 创建一个指向内部字段的切片信号 `SignalSlice`，实现零拷贝访问。
-*   **Fluent API**: 实现了 `equals`, `not_equals`, `greater_than`, `less_than`, `greater_than_or_equals`, `less_than_or_equals`，返回包装在 `Rx` 中的 `DerivedPayload`。这些方法被重命名以避免与标准库 `PartialEq`/`PartialOrd` 冲突。
-*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符，返回包装在 `Rx` 中的 `DerivedPayload`。
-
-#### `WriteSignal<T>`
-*   **Struct**: `pub struct WriteSignal<T> { id: NodeId, marker: PhantomData<T> }`
-*   **Traits**: `Copy`, `Clone`, `Debug`, `PartialEq`, `Eq`, `Hash`, `DefinedAt`, `IsDisposed`, `Notify`, `UpdateUntracked`, `Update`, `Set`, `SignalSetter`, `SignalUpdater`.
-*   **Methods**:
-    *   `set(new_value: T)`: (via `Set` trait).
-    *   `update(f: impl FnOnce(&mut T))`: (via `Update` trait).
-    *   `set(new_value: T)`: (via `Set` trait).
-    *   `update(f: impl FnOnce(&mut T))`: (via `Update` trait).
-    *   `setter(value: T) -> impl Fn()`: (via `SignalSetter` trait).
-    *   `updater(f: F) -> impl Fn()`: (via `SignalUpdater` trait).
-
-#### `RwSignal<T>`
-*   **Struct**: `pub struct RwSignal<T> { read: ReadSignal<T>, write: WriteSignal<T> }`
-*   **Traits**: Implements all traits of `ReadSignal` and `WriteSignal`.
-*   **Semantics**: 读写合一的信号句柄，常用于组件 Props。
-    *   **Implements**: `SignalSetter`, `SignalUpdater`.
-    *   **Methods**:
-        *   `slice`: (继承自 `ReadSignal` 部分)。
-*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符 (针对 Read 部分)，返回包装在 `Rx` 中的 `DerivedPayload`。
-
-#### `Memo<T>`
-*   **Struct**: `pub struct Memo<T> { id: NodeId, marker: PhantomData<T> }`
-*   **Traits**: `Copy`, `Clone`, `Debug`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`, `Map`.
-*   **Semantics**: 派生计算信号。值被缓存，仅在依赖变更时无效。
-*   **Methods**:
-    *   `new(f: impl Fn(Option<&T>) -> T)`: 创建 Memo。
-*   **Operator Overloads**: 同 `Signal<T>`，支持所有基本运算符，返回包装在 `Rx` 中的 `DerivedPayload`。
-
-#### `signal<T>`
-*   **Signature**: `pub fn signal<T: 'static>(value: T) -> (ReadSignal<T>, WriteSignal<T>)`
-*   **Usage**: `let (count, set_count) = signal(0);`
-
-#### `Constant<T>`
-*   **Struct**: `pub struct Constant<T>(pub T)`
-*   **Traits**: `Copy`, `Clone`, `Debug`, `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked`, `GetUntracked`, `With`, `Get`.
-*   **Semantics**:
-    *   一个极轻量级的包装器，直接持有值 `T`。
-    *   实现了所有读取相关的 Signal Traits，但 `track` 它是空操作，永远不会导致重新渲染。
-    *   **Use Case**: 当你需要一个满足 `Get<Value=T>` 接口但实际上永远不会改变的值时使用。
-
-#### `IntoRx` Trait
-*   **Trait**: 
-    ```rust
-    pub trait IntoRx {
-        type Value;
-        type RxType;
-        fn into_rx(self) -> Self::RxType;
-        fn is_constant(&self) -> bool;
-    }
-    ```
-*   **Semantics**:
-    *   这是 Silex 大一统的核心 Trait，用于编写灵活的 API。
-    *   **Primitives**: 为所有基本类型 (`u8`..`u128`, `i8`..`i128`, `f32`, `f64`, `bool`, `char`, `String`, `&str`) 实现了该 Trait，转换为 `Rx<Constant<T>>`。
-    *   **Signals**: 为所有信号类型 (`Signal`, `ReadSignal`, `RwSignal`, `Memo`, `Constant`) 实现了该 Trait，转换为对应的 `Rx` 委托。
-    *   **Closures**: 为 `Fn() -> T` 实现了该 Trait，使其可直接作为计算单元使用。
-    *   **Tuples (元组)**: 为 2-4 个元素的元组（如 `(Signal<A>, Signal<B>)`）实现了该 Trait。它们通过派生组合转化为一个统一的 `Rx`。
-*   **Performance Advice (性能建议)**:
-    *   **Small Copy Types (e.g., i32, bool)**: `IntoRx` 转换是**零分配 (Zero-Allocation)** 的，速度极快（通过 `InlineConstant`）。
-    *   **Large Types (e.g., String)**: `Signal::from(value)` 仍会调用 `store_value(value)`，在响应式运行时中分配内存。
-    *   当组件参数接受 `impl IntoRx` 时，对于小类型可以直接传值，无需担心开销。
-
-#### `StoredValue<T>`
-
-*   **Struct**: `pub struct StoredValue<T> { id: NodeId, marker: PhantomData<T> }`
-*   **Traits**: `Copy`, `Clone`, `Debug`, `DefinedAt`, `WithUntracked`, `GetUntracked`, `UpdateUntracked`, `SetUntracked`.
-*   **Semantics**: 非响应式的数据存储容器。数据均存储在响应式运行时中，随宿主 Scope/Effect 自动释放。
-*   **Use Case**: 存储不需要驱动 UI 更新的数据（如定时器句柄、大数据缓存），或在事件处理中进行无感知的状态修改。
-*   **Methods**:
-    *   `new(value: T) -> Self`: 创建存储值。
-    *   `set_untracked(value: T)`: (via `SetUntracked`).
-    *   `update_untracked(f: impl FnOnce(&mut T))`: (via `UpdateUntracked`).
-    *   `with_untracked<U>(f: impl FnOnce(&T) -> U) -> U`: (via `WithUntracked`).
-    *   `get_untracked() -> T`: (via `GetUntracked`).
-
-### 3. Utilities
-
-#### `batch`
-*   **Signature**: `pub fn batch<R>(f: impl FnOnce() -> R) -> R`
-*   **Semantics**: 延迟 Effect 的执行，直到闭包 `f` 结束。用于优化多次连续更新。
-
-
-### 4. Async Resources (异步资源)
-
-#### `Resource<T, E>`
-*   **Struct**:
-    ```rust
-    pub enum ResourceState<T, E> {
-        Idle,
-        Loading,
-        Ready(T),
-        Reloading(T), // Stale-While-Revalidate
-        Error(E),
-    }
-
-    pub struct Resource<T: 'static, E: 'static = SilexError> {
-        pub state: ReadSignal<ResourceState<T, E>>,
-        // internal: set_state, trigger
-    }
-    ```
-*   **Methods**:
-    *   `state.get()`: 获取当前完整的资源状态。
-    *   `get_data() -> Option<T>`: 便捷方法，获取数据（无论是 `Ready` 还是 `Reloading`）。
-    *   `refetch()`: 手动重新触发 `source` 变更，强制刷新。
-    *   `update(f: impl FnOnce(&mut T))`: 手动修改本地缓存数据 (Optimistic UI)。
-    *   `set(value: T)`: 直接设置本地缓存数据。
-    *   `Resource` 依然实现 `Get<Value=Option<T>>` 特征，以便于与现有代码兼容。
-
-#### `Resource::new<S, Fetcher>`
-*   **Signature**:
-    ```rust
-    pub fn new<S, Fetcher>(
-        source: impl Fn() -> S + 'static,
-        fetcher: Fetcher,
-    ) -> Self
-    ```
-*   **Semantics**:
-    1.  监听 `source` 闭包的变化。
-    2.  当 `source` 变化时，自增 `request_id` 并调用 `fetcher`。
-    3.  集成了 `SuspenseContext`：请求开始时 `increment`，结束时 `decrement`。
-    4.  处理竞态条件：丢弃旧 ID 的返回结果。
-
-### 5. Mutation (异步写入)
-
-#### `Mutation<Arg, T, E>`
-
-*   **Struct**:
-    ```rust
-    pub struct Mutation<Arg, T, E = SilexError> {
-        pub state: ReadSignal<MutationState<T, E>>,
-        // ...
-    }
-    
-    pub enum MutationState<T, E> {
-        /// Initial state
-        Idle,
-        /// Triggered and pending
-        Pending,
-        /// Last mutation successful
-        Success(T),
-        /// Last mutation failed
-        Error(E),
-    }
-    ```
-*   **Traits**: **`Copy`**, `Clone`.
-    *   Mutation 本身是一个轻量级的句柄，内部通过 `StoredValue` 引用执行逻辑，因此可以像 Signal 一样廉价复制。
-*   **Semantics**:
-    *   用于执行写操作（如 POST/PUT 请求）。
-    *   **手动触发**: 与 Resource 自动追踪依赖不同，Mutation 需要调用 `.mutate(arg)` 显式触发。
-    *   **竞态处理**: 自动处理并发请求，采用 "Latest Wins" 策略（最后一次触发的请求结果生效，旧请求的返回被忽略）。
-*   **Methods**:
-    *   `new<F, Fut>(f: F)`: 创建 Mutation。
-    *   `mutate(arg: Arg)`: 触发 Mutation。
-    *   `loading() -> bool`: 快捷检查是否为 `Pending`。
-    *   `value() -> Option<T>`: 获取最后一次成功的返回值。
-    *   `error() -> Option<E>`: 获取最后一次失败的错误。
-
-#### Usage Example
-
-```rust
-let login = Mutation::new(|(username, password)| async move {
-    my_api::login(username, password).await
-});
-
-let on_submit = move |_| {
-    login.mutate(("user".into(), "pass".into()));
-};
-
-view! {
-    <button on:click=on_submit disabled=login.loading()>
-        {move || if login.loading() { "Logging in..." } else { "Login" }}
-    </button>
-    {move || login.error().map(|e| view! { <div class="error">{format!("{:?}", e)}</div> })}
-}
-```
-
-### 6. Context & Suspense
-
-#### `provide_context`, `use_context`
-*   直接重导出自 `silex_reactivity`，增加了 `SilexError` 相关的默认 Context 支持。
-
-#### `expect_context<T>`
-*   **Signature**: `pub fn expect_context<T: Clone + 'static>() -> T`
-*   **Semantics**: 类似 `use_context`，但如果未找到 Context 会打印错误日志并 **Panic**。
-
-#### `SuspenseContext`
-*   **Struct**: `{ count: ReadSignal<usize>, set_count: WriteSignal<usize> }`
-*   **Usage**: 用于追踪全局或局部的异步任务数量。
-
-### 7. Lifecycle & Safety (生命周期与安全)
-
-#### Safer Cleanup (更安全的清理)
-*   `on_cleanup` 回调现在保证在 **子节点销毁之前** 执行。
-*   这意味着在清理函数中，依然可以安全地访问当前作用域内创建的 `Signal`、`StoredValue` 或其他响应式状态。
-*   此前（旧版本）清理执行顺序在子节点销毁之后，导致访问已销毁状态时 Panic。
-
-#### Debugging Support (调试支持)
-*   **Debug Labels**: 所有的 `Signal`, `Memo`, `StoredValue` 现在都支持 `.with_name("label")` 方法。
-*   **Panic Messages**: 当尝试访问已销毁的信号时，Panic 信息会包含该信号的名称（如果有），极大地辅助定位问题。
-    > "At locations..., you tried to access a reactive value 'DashboardTimer' which was defined at ..., but it has already been disposed."
+1.  **Rx 包装器 (`Rx<T, M>`)**: 用户面对的统一接口层。它持有逻辑负载并通过宏和 Trait 为各种类型（常量、信号、闭包、元组）提供一致的开发体验。**关键优化**：其内部闭包现在通过 `Box<dyn Fn() -> T>` 进行类型擦除并存储在池中，确保相同返回类型的不同闭包共享同一个 `Rx<T>`，极大缩减了单态化膨胀。
+2.  **响应式规范化 (Signal Canonicalization)**: 通过 `into_signal()` 方法，系统将各种实现背景的 `Rx<T>`（跨池化闭包、算子组合、常量等）统一规范化为轻量级的 `Signal<T>` 句柄。由于 `Signal<T>` 满足 `Copy` 且屏蔽了具体的实现载体差异，它成为了算子 (`OpPayload`) 之间进行无缝互操作的通用“原子句柄”。
+3.  **OpPayload**: 归一化的终点。它利用 **Const Generics (`const N: usize`)** 将响应式运算（加减乘除、比较、元组聚合等）转化为包含函数指针的非泛型结构体，从而切断了泛型递归。对于二元以上元组，通过 **Meta-ID (StoredValue)** 打包输入节点，使算子复杂度衡定为 `OpPayload<T, 1>`。
+4.  **静态映射与常量传播 (Static Mapping & Constant Propagation)**：引入了 `StaticMapPayload` 系列（支持 1/2/3 路输入）。同时，所有响应式算子（算术、比较、映射等）在执行前均会进行**常量检测**：若所有输入均为常量，直接在编译期或初始化期计算结果并返回 `Rx::new_constant`，彻底跳过响应式节点创建。
+5. **自适应读取 (Adaptive Read)**: 通过 `RxRead` 和 `RxGet` ，系统自动提供最优读取路径：
+    *   **Borrowed**: 直接借用 Arena 内的数据，零拷贝 (`RxRead::read`)。
+    *   **Adaptive**: 在不强制 `Clone` 约束的前提下尝试获取副本 (`RxRead::try_get_cloned`)。
+    *   **Owned**: 用于强制克隆导出 (`RxGet::get`，仅针对 `Clone` 类型)。
+6. **读获取严格分离 (Read & Get Separation)**: 取代了原有的自适应克隆探测，系统现将读取能力严格分解为 `RxRead`（提供引用守卫、闭包读取及**自适应克隆**，支持任何类型）和 `RxGet`（执行强力克隆导出，仅在 `Value: Clone + Sized` 时开放）。这在类型级别彻底切断了意外隐式克隆的可能性。
+7. **非泛型分发器 (Non-generic Dispatcher)**：核心响应式操作（`track`、`is_disposed`、`read_to_ptr`）由 `dispatch.rs` 内的非泛型函数驱动。通过将泛型负载转化为 `NodeId` + `RxNodeKind` 枚举，系统极大程度地收拢了机器码体积，避免了在每个泛型实例中生成冗长的调度逻辑。
+8. **受限的响应式投影与元组安全 (Restricted Slicing & Tuple Safety)**: `.slice()` 方法被设计为 `Signal` 和 `ReadSignal` 的特化接口。对于元组，不支持直接 `map`，必须通过 `$tuple.0` 精确分段零拷贝借用。
+9. **流畅化 API (Fluent API)**: 基于 `Map`、`Memoize`、`ReactivePartialEq` 等 Trait 提供的 Blanket Implementation，为所有 `Rx` 对象注入了 `.map()`、`.map_fn()`、`.equals()`、`.greater_than()` 等原生链式调用能力。这些接口内部均优先走常量传播路径，随后走去泛型化的 `OpPayload` 或 `StaticMapPayload` 路径。
 
 ---
 
-## 模块: `callback`
+## 1. 核心特征系统 (Trait System)
 
-源码路径: `silex_core/src/callback.rs`
+### 1.1 数据与基础 Trait
+源码路径: `silex_core/src/traits.rs`
 
-### `Callback<T>`
-*   **Struct**: `pub struct Callback<T = ()> { id: NodeId, marker: PhantomData<T> }`
-*   **Traits**: **`Copy`**, `Clone`, `Debug`, `Default`.
-*   **Semantics**: 使用 `NodeId` 句柄的轻量级回调包装器，闭包存储在响应式运行时。与 `Signal` 风格一致。
-*   **Methods**:
-    *   `new<F>(f: F) -> Self`: 创建回调。
-    *   `call(&self, arg: T)`: 执行回调。
-    *   `id(&self) -> NodeId`: 获取底层 ID。
-    *   `impl From<F>`: 允许直接传入闭包转换。
+| Trait | 定义/语义 | 备注 |
+| :--- | :--- | :--- |
+| `RxData` | `trait RxData: 'static` | 框架内所有响应式数据的基本约束。 |
+| `RxCloneData` | `trait RxCloneData: Clone + RxData` | 满足克隆能力的数据约束，用于 `RxGet`。 |
+| `RxError` | `trait RxError: Clone + Debug + RxData` | 异步资源错误类型的标准约束。 |
+| `RxValue` | `type Value: ?Sized` | **系统基石**。定义节点托管的数据类型，支持 `str` 等 DST。 |
+| `RxBase` | `fn track(&self)` | 提供 `id()`, `track()`, `is_disposed()`, `defined_at()`, `debug_name()`。 |
 
----
+### 1.2 内部实现 Trait
+源码路径: `silex_core/src/traits/read.rs`
 
-## 模块: `node_ref`
+| Trait | 关键方法 | 语义/作用 |
+| :--- | :--- | :--- |
+| **`RxInternal`** | `type ReadOutput<'a>` | **内部桥梁**：定义响应式读取的底层代理逻辑（Borrowed/Owned）。 |
+| | `rx_read_untracked()` | 不追踪依赖，返回 `Option<ReadOutput>`。 |
+| | `rx_try_with_untracked()` | 闭包式访问底层值。 |
+| | `rx_is_constant()` | 探测是否为静态常量。 |
+| | `rx_get_adaptive()` | **自适应回退**：无需 `Clone` 约束探测并尝试获取副本。 |
 
-源码路径: `silex_core/src/node_ref.rs`
+### 1.3 用户交互 Trait (API)
+所有用户方法均通过 Blanket Implementation 为符合条件的类型（如 `Rx`, `Signal`, `Tuple`）提供。
 
-### `NodeRef<T>`
-*   **Struct**: `pub struct NodeRef<T = ()> { id: NodeId, marker: PhantomData<T> }`
-*   **Traits**: **`Copy`**, `Clone`, `Debug`, `Default`.
-*   **Semantics**: 使用 `NodeId` 句柄的轻量级 DOM 节点引用，元素存储在响应式运行时。
-*   **Methods**:
-    *   `new() -> Self`: 创建空引用。
-    *   `get(&self) -> Option<T>`: 获取节点。如果未挂载或类型不匹配，返回 None。
-    *   `load(&self, node: T)`: 内部使用，加载节点（由框架自动调用）。
-    *   `id(&self) -> NodeId`: 获取底层 ID。
-*   **Usage**:
-    ```rust
-    let input_ref = NodeRef::<HtmlInputElement>::new();
-    input().node_ref(input_ref)  // 无需 .clone()，NodeRef 是 Copy 的
-    ```
+#### **`RxRead` (统一读取)**
+源码路径: `silex_core/src/traits/read.rs`
 
----
+*   **`read() -> Output`**: 追踪依赖，返回借用/所有权守卫（销毁时 Panic）。
+*   **`try_read() -> Option<Output>`**: 上述方法的非 Panic 变体。
+*   **`read_untracked() -> Output`**: 不追踪依赖，返回守卫。
+*   **`with(f) -> U`**: 追踪依赖，通过闭包访问。
+*   **`try_get_cloned() -> Option<Value>`**: 追踪依赖，尝试获取副本（自适应，不强制 Clone）。
+*   **`get_cloned_or_default() -> Value`**: 获取副本，失败则返回默认值。
 
-## 模块: `error`
+#### **`RxGet` (强力克隆)**
+仅当 `Value: Clone + Sized` 且 `ReadOutput` 可解引用时生效。
 
-源码路径: `silex_core/src/error.rs`
+*   **`get() -> Value`**: 追踪依赖，克隆并返回（销毁时 Panic）。
+*   **`get_untracked() -> Value`**: 不追踪依赖，克隆并返回。
 
-### `SilexError`
-*   **Enum**:
-    *   `Dom(String)`
-    *   `Reactivity(String)`
-    *   `Javascript(String)`
-*   **Traits**: Implements `std::error::Error`.
+#### **`RxWrite` (统一写入)**
+源码路径: `silex_core/src/traits/write.rs`
 
-### `ErrorContext`
-*   **Struct**: `pub struct ErrorContext(pub Rc<dyn Fn(SilexError)>)`
-*   **Semantics**: 错误处理的上报通道，通常由 `<ErrorBoundary>` 组件提供。
+*   **`update(f)`**: 就地修改并触发通知。
+*   **`try_update(f) -> Option`**: 上述方法的安全变体。
+*   **`set(v)`**: 覆盖值并触发通知（要求 `Sized`）。
+*   **`maybe_update(f: fn -> bool)`**: 仅当闭包返回 `true` 时触发通知。
+*   **`update_untracked(f)` / `set_untracked(v)`**: 静默更新（不通知订阅者）。
+*   **`notify()`**: 手动发送变更更新通知。
+*   **`setter(v)` / `updater(f)`**: 产生持有所有权的 `move` 闭包，用于事件回调。
 
-### `handle_error`
-*   **Signature**: `pub fn handle_error(err: SilexError)`
-*   **Logic**: 尝试获取 `ErrorContext` 并调用；若无 Context，则降级打印到控制台。
-
----
-
-## 模块: `log`
-
-源码路径: `silex_core/src/log.rs`
-
-### Macros
-*   `log!($($t:tt)*)`: 类似于 `println!`，输出普通日志。
-*   `warn!($($t:tt)*)`: 输出警告。
-*   `error!($($t:tt)*)`: 输出错误。
-*   `debug_log!`, `debug_warn!`, `debug_error!`: 仅在 `debug_assertions` 开启时输出。
-
-### Platform Support
-*   **Browser (wasm32)**: 调用 `web_sys::console::log_1` 等 API。
-*   **Native / Testing**: 调用标准 `println!` / `eprintln!`。
+#### **`IntoRx` / `IntoSignal` (归一化)**
+*   **`into_rx()`**: 将任何类型转化为 `Rx<T>`。
+*   **`into_signal()`**: 将各类实现背景展平为统一的枚举 `Signal<T>`。
 
 ---
 
-## 宏 (Macros)
+## 2. 守卫机制: `RxGuard<'a, T, S>`
 
-### `rx!` & `rx_effect!`
+源码路径: `silex_core/src/traits/guards.rs`
 
-*   **Definition**: `rx!` 是创建响应式计算单元 (`RxValue`) 或事件处理器 (`RxEffect`) 的统一入口。
-*   **Structure**:
-    ```rust
-    pub struct Rx<F, M = RxValue>(pub F, pub PhantomData<M>);
-    ```
-*   **Modes**:
-    1.  **Getter (`RxValue`)**:
-        *   `rx!(expression)`: 将表达式包装在 `move ||` 闭包中。
-        *   `rx!(move || body)` 或 `rx!(|| body)`: 手动闭包定义。
-        *   用于 `view!` 中的属性绑定或派生计算。
-    2.  **Effect/Callback (`RxEffect`)**:
-        *   `rx!(|arg| body)`: 创建带参数的回调/处理器。
-        *   `rx!(|arg: Type| body)`: 带类型标注的回调。
-        *   支持 `move |arg| ...` 语法。
-        *   内部通过 `rx_effect!` 宏实现。
-*   **Semantics**: 
-    *   `Rx` 封装了闭包及其意图（Value vs Effect）。
-    *   实现了 `DefinedAt`, `IsDisposed`, `Track`, `WithUntracked` 等 Trait。
-    *   可以直接参与响应式运算（如 `rx!(count.get()) + 1`）。
+Silex 通过 `RxGuard` 实现了透明的借用/所有权切换。
 
-### `batch_read!` & `batch_read_untracked!`
+*   **`Borrowed { value: &'a T, token: Option<NodeRef> }`**:
+    *   直接指向计算池 (Arena) 的稳定引用。
+    *   持有 `NodeRef` token 以确保在借用存续期间节点不被重排或销毁。
+*   **`Owned(S)`**:
+    *   持有计算产生的临时结果（如 `map` 执行结果或内联常量）。
+    *   `S` 必须实现 `GuardStorage<T>` (通常为 `S = T`)。
+*   **`try_map(f)`**:
+    *   **投影能力**：仅在 `Borrowed` 模式下支持将 `&T` 投射为 `&U` (子字段借用)，保持零拷贝。
 
-*   **Purpose**: 解决多信号读取时的零拷贝难题。
-*   **Syntax**: `batch_read!(s1, s2, ... => |v1: &T1, v2: &T2, ...| { ... })`
-*   **Logic**: 通过嵌套 `.with()` 闭包，确保在同一个执行流中持有所有信号的存储锁，从而安全地暴露内部引用。
-*   **Limit**: 目前宏支持 2-4 个信号的组合。更多信号建议手动嵌套或使用 `Memo`。
+---
+
+## 3. 响应式原始组件 (Reactive Primitives)
+
+### 3.1 `Rx<T, M>` (万能包装器)
+
+源码路径: `silex_core/src/lib.rs`
+
+Silex 的“智能指针”，持有 `RxInner` 变体：
+*   `Constant(T)`: 静态常量。
+*   `Signal(NodeId)`: 可选信号。
+*   `Closure(NodeId)`: 经过池化和类型擦除的闭包计算。
+*   `Op(NodeId)`: 去泛型化的运算符节点。
+*   `Stored(NodeId)`: 在 StoredValue 中直接借用的外部对象。
+
+**特化创建**:
+*   `Rx::derive(Box<dyn Fn() -> T>)`: 创建响应式派生计算。
+*   `Rx::derive_fn(fn() -> T)`: 零膨胀函数指针派生。
+*   `Rx::effect(val)`: 创建副作用专属负载。
+
+### 3.1 `Signal<T>` (归一化枚举)
+
+源码路径: `silex_core/src/reactivity/signal.rs`
+
+它是所有响应式源在逻辑上的最终形态，实现了 `Copy`, `PartialEq`, `Eq`, `Hash`。它作为“原子句柄”在框架内部流动，屏蔽了底层存储的差异。
+
+| 变体 | 内部数据 | 描述 |
+| :--- | :--- | :--- |
+| `Read(ReadSignal<T>)` | `NodeId` | 后端为 `signal(v)` 的可变信号。 |
+| `Derived(NodeId, ...)` | `NodeId` | 后端为池化闭包、算子或 `rx!` 产生的派生节点。 |
+| `StoredConstant(NodeId, ...)` | `NodeId`| 存储在 Arena 中但不可变的常量，不触发依赖追踪。 |
+| `InlineConstant(u64, ...)` | `u64` | **内联优化**：直接在枚举内存储 <= 64bit 且 `!needs_drop` 的类型，无需 Arena 分配。 |
+
+**核心方法**:
+*   `Signal::derive(f)`: 从池化闭包创建派生信号。
+*   `Signal::from(value)`: 将普通值转化为 `Signal`，优先触发 `try_inline` 优化。
+*   `.ensure_node_id() -> NodeId`: 确保其在 Arena 中拥有标识符。若为 `InlineConstant`，则会将其“提升”为 `StoredConstant`。
+*   `.is_constant()`: 判断该信号是否为常量变体（`StoredConstant` 或 `InlineConstant`）。
+*   `.slice(getter)`: 创建细粒度投影。
+
+### 3.2 `ReadSignal<T>` / `WriteSignal<T>` / `RwSignal<T>`
+
+源码路径: `silex_core/src/reactivity/signal/registry.rs`
+
+这些是对 `silex_reactivity` 底层信号的原生封装，是响应式数据的源头。
+
+*   **`ReadSignal<T>`**: 响应式只读句柄。支持 `read`, `with`, `track`。
+*   **`WriteSignal<T>`**: 响应式写句柄。支持 `update`, `set`, `notify`。
+*   **`RwSignal<T>`**: 读写合并句柄。通过 `Copy` 快速分发，也可通过 `.split()` 拆分。
+
+**全局函数**:
+*   **`signal(v) -> (Read, Write)`**: 创建一个新的底层响应式信号对。
+*   **`untrack(f)`**: 在非追踪作用域下执行闭包（即使在该闭包内读取信号也不建立依赖）。
+
+### 3.3 `Constant<T>` (逻辑常量)
+
+源码路径: `silex_core/src/reactivity/signal/derived.rs`
+
+一个轻量级的 `Rx` 负载，专门用于在 `Rx` 链中插入硬编码值而不引入任何节点开销。
+
+### 3.4 `Memo<T>` (缓存计算)
+
+源码路径: `silex_core/src/reactivity/memo.rs`
+
+*   **作用**: 缓存计算结果。仅在依赖项变化且产生的新值与旧值不等（`PartialEq`）时才通知下游更新。
+*   **约束**: `T: Clone + PartialEq + 'static`。
+*   **内部机制**: 依赖 `silex_reactivity::memo`。支持 `.with_name()` 调试。
+
+### 3.5 `StoredValue<T>` (非响应式存储)
+
+源码路径: `silex_core/src/reactivity/stored_value.rs`
+
+*   **语义**: 将非响应式数据存储在运行时 Arena 中，返回一个 `Copy` 的句柄。
+*   **特点**: **不触发依赖追踪**。适用于存储复杂的内部状态或仅用于命令式调用的数据。
+*   **操作**: 支持 `get_untracked`, `set_untracked` 和 `update_untracked`。
+
+---
+
+## 4. 运算载体与 Payload 机制
+
+### 4.1 `OpPayload<U, const N>` (通用算子)
+
+源码路径: `silex_core/src/reactivity/signal/ops.rs`
+
+Silex 通过将计算逻辑“展开”至非泛型函数指针来规避膨胀：
+*   **Header**: 包含 `read_to_ptr` 和 `track` 两个核心虚表指针。
+*   **Trampoline (蹦床)**: 算子实现了一系列静态 `op_trampolines`，通过 `std::mem::transmute` 将存储在特定布局中的数据还原并执行计算。
+*   **De-genericization**: 所有的二元运算、比较运算最终都由 `OpPayload<U, 2>` 承载。
+
+### 4.2 `UnifiedStaticMapPayload<T>` (归一化映射)
+
+它是 `StaticMapPayload` (1/2/3) 的统一实现，专门优化了 1 到 3 个信号映射的场景。它直接在内存中持有 `NodeId` 数组和对应的原始函数指针，实现了**零闭包、零单次单态化分配**的高频转换（如 CSS 单位转换）。
+
+---
+
+## 5. 细粒度操作与异步
+
+### 5.1 `SignalSlice` (响应式投影)
+
+源码路径: `silex_core/src/reactivity/slice.rs`
+
+*   **接口**: `signal.slice(|v| &v.field)`。
+*   **核心**: 配合 `SliceGuard` 直接投射原始引用。它持有源节点的 `NodeRef` token，确保在投影引用存续期间 Arena 不发生重排，实现真正的**零拷贝局部更新**。
+
+### 5.2 `Resource` & `Mutation` (异步管理)
+
+源码路径: `silex_core/src/reactivity/resource.rs`, `mutation.rs`
+
+*   **`Resource<T, E>`**: 拉取型异步流 (Fetch)。
+    *   **状态机**: `Idle -> Loading -> Ready/Error`。支持 `Reloading` (SWR) 状态。
+    *   **Suspense**: 自动与 `SuspenseContext` 集成，上报异步挂起状态。
+*   **`Mutation<Arg, T, E>`**: 触发型异步操作 (Submit)。
+    *   **竞态检查**: 采用 **Last-in-wins** 策略，通过内部 `last_id` 自动抵消旧的异步回调。
+    *   **纯净性**: 本身是 `Copy` 句柄，通过 `StoredValue` 托管执行逻辑。
+
+### 5.3 `NodeRef<T>` & `Callback<T>` (Copy 句柄)
+
+源码路径: `silex_core/src/node_ref.rs`, `callback.rs`
+
+由于返回的是 `NodeId` 句柄，这些类型在 UI 树中分发时**无需 Clone**：
+*   **`NodeRef<T>`**: 绑定 DOM 节点引用，用于命令式操作 (如 `.focus()`)。
+*   **`Callback<T>`**: 响应式回调包装器。支持跨闭包捕获而无需显式 `clone`，通过运行时动态派发。
+
+### 5.4 `Effect` (副作用)
+
+源码路径: `silex_core/src/reactivity/effect.rs`
+
+*   **`Effect::new(f)`**: 基础自动副作用。
+*   **`Effect::watch(deps, callback, immediate)`**: 精确依赖观察者。仅在 `deps()` 变化且不相等时触发 `callback`。
+
+---
+
+## 6. 宏与内部工具
+
+### 6.1 `rx!` (智能转换宏)
+
+*   **机制**: 识别 `$ident` 并重写为零拷贝多路读取。宏会在闭包外部自动克隆信号句柄，并在内部执行解引用守卫读取。
+*   **智能分发**:
+    *   **计算模式**: 若为表达式或不带参数的闭包，生成 `Rx::derive` (池化存储)。
+    *   **副作用模式**: 若闭包带有参数（如 `|el| ...`），生成 `Rx::effect` 进行存储。
+*   **优化优先 (@fn)**: 使用 `rx!(@fn ...)` 路径强制进入 `StaticMapPayload` 静态分发（支持最多 3 个信号），彻底消除闭包分配与泛型膨胀。底层依赖 `macros_helper.rs` 中的静态分发助手。
+
+### 6.2 `batch_read!` (多路读取)
+
+*   **签名**: `batch_read!(s1, s2 => |v1: &T1, v2: &T2| { ... })`。
+*   **核心**: 通过闭包嵌套实现多个信号的同步零拷贝借用。
+
+---
+
+## 7. 线程安全性与安全性
+
+*   **单线程 Runtime**: 专为 WASM 优化，不支持跨线程 (`!Send / !Sync`)。
+*   **Panic 安全**: 具备详细的 `DefinedAt` 追踪。
+*   **内存安全**: 依托于 `RxGuard` 的借用检查和 Arena 的物理地址稳定性。

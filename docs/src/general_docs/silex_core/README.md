@@ -1,180 +1,186 @@
-# Silex Core 核心库
+# Silex Core：响应式编程指南
 
-`silex_core` 是面向开发者的上层 API 库。它封装了底层的 `silex_reactivity` 引擎，提供了强类型的接口和常用的工具集。
+`silex_core` 是 Silex 框架的心脏。它提供了一套高效、简洁且类型安全的“响应式原语”，让你能够以声明式的方式管理应用状态。Silex 的核心理念是**极致性能**与**零成本抽象**，确保你的应用在保持代码整洁的同时，拥有媲美原生 Rust 的执行效率。
 
-## 模块概览
+本指南将带你从最基础的信号开始，逐步掌握 Silex 响应式系统的精髓。
 
-### 1. Reactivity (响应式系统)
+---
 
-该模块在 `silex_reactivity` 的基础上提供了类型安全的包装器。
+## 1. 响应式的基础：信号 (Signals)
 
-*   **SignalWrapper (通用信号)**:
-    *   `Signal<T>`: 统一的信号包装器，**实现了 `Copy`, `PartialEq`, `Eq`, `Hash`**。
-    *   **常量检查**: 提供 `.is_constant()` 方法，用于判断该信号是否为静态常量（`StoredConstant` 或 `InlineConstant`），从而允许渲染引擎进行差异化优化。
-    *   它可以包装 `ReadSignal`, `RwSignal`, `Memo`，`DerivedPayload` (派生) 或 `Constant` (常量)。
-    *   **内存优化**: 对于 `i32`, `f64`, `bool` 等小型 `Copy` 类型，`Signal<T>` 会将值直接内联存储在枚举中（`InlineConstant`），从而**完全消除 Arena 分配**。这意味着 `Signal::from(42)` 现在是**零分配**的。
-    *   作为组件 Props 的首选类型，因为它能接受任何类型的响应式数据源。
+在 Silex 中，**信号 (Signal)** 是存储状态的基本单元。你可以把它想象成一个“活”的变量：当你修改它的值时，所有依赖于该值的地方都会自动收到通知并更新。
 
-*   **Trait System (特征系统) - Zero-Copy First**:
-    *   Silex 的特征系统设计以 **`With` (闭包访问)** 为绝对核心，旨在避免不必要的内存克隆。
-    *   **Rx 委托 (Rx Delegate)**: 所有的响应式操作（如加减法、拼写检查等）都通过 `Rx` 包装器统一处理。
-    *   **核心 (Core)**: 
-        *   `With`: `fn with(|v| ...)`。通过引用访问值并追踪。这是最基础的原语。
-        *   `WithUntracked`: `fn with_untracked(|v| ...)`。通过引用访问值但不追踪。
-    *   **便利 (Convenience)**:
-        *   `Get`: `fn get()`。`With` + `Clone` 的语法糖。仅对 `Clone` 类型可用。应避免对大对象使用。
-        *   `GetUntracked`: `fn get_untracked()`。`WithUntracked` + `Clone` 的语法糖。
-    *   **派生**: `Map` (基于 `With` 的引用映射，零开销)。
-    *   **多信号访问**: 
-        *   `batch_read!(s1, s2 => |v1: &T1, v2: &T2| ...)`: 同时访问多个信号并追踪，零 Clone。这是处理多个信号组合逻辑的推荐方式。
-        *   `batch_read_untracked!(s1, s2 => |v1, v2| ...)`: 同时访问多个信号不追踪，零 Clone。
-    *   **写**: `Set` (设置并通知), `SetUntracked` (设置不通知), `Update` (修改并通知), `SignalSetter` (生成 setter), `SignalUpdater` (生成 updater)。
-    *   **转换**: `IntoRx` (大一统接口)。允许组件 Props 接受 `impl IntoRx`，从而同时支持静态值（自动转为 `Constant`，零分配）、动态信号、闭包甚至元组。
-        *   **is_constant**: 提供 `.is_constant()` 方法，用于判断输入源是否为常量。
-        *   支持元组转换：`(Signal<A>, Signal<B>)` 可直接转化为组合 `Rx`。
-    *   **性能建议**: 
-        *   对于小型 `Copy` 类型（如 `i32`），`Signal::from(val)` 是零分配的，非常高效。
-        *   对于大型对象（如 `String`），`Signal::from(val)` 仍会在运行时分配 Arena 内存。若传递大型静态值，建议直接使用引用或 `StoredValue`。
-    *   这种设计使得你可以灵活组合不同的行为。
-
-*   **Primitive Signals (基础信号)**: 
-    *   `ReadSignal<T>`: 只读信号句柄，实现了 `Get`, `GetUntracked` 等读取特征。实现了 `PartialEq`, `Eq`, `Hash`。
-    *   `WriteSignal<T>`: 可写信号句柄，实现了 `Set`, `Update`, `SignalSetter`, `SignalUpdater` 等写入特征。实现了 `PartialEq`, `Eq`, `Hash`。
-    *   `RwSignal<T>`: 读写一体的信号句柄，常用于组件 `Props`。实现了 `PartialEq`, `Eq`, `Hash`。
-    *   `Memo<T>`: 派生计算缓存，实现了 `Map` 等读取特征。
-    *   `Constant<T>`: 常量包装器，直接持有值。实现了 `Get` 等特征但无开销。是 `IntoSignal` 对字面量的默认转换结果。
-
-    *   **Slice (切片)**:
-        *   所有信号都支持 `.slice(|v| &v.field)` 方法。
-        *   返回一个 `SignalSlice`，它持有源信号和投影函数。
-        *   允许以**引用方式**访问大结构体的字段，实现**零拷贝**读取，极大优化了 `Vec` 或复杂 Struct 的访问性能。
-    *   **Lazy Evaluation (惰性求值)**:
-        *   `Map`, 比较操作 (`equals`, `greater_than`...), 算术运算 (`add`, `sub`...) 均返回 `DerivedPayload`。
-        *   这些结构体是零开销的 **无状态 (Stateless)** 计算单元。每次被访问时都会重新执行闭包，**不** 缓存结果。
-        *   对于昂贵的计算，请务必使用 `.memo()` 或 `Signal::derive` 来创建有状态的缓存节点，以免影响性能。
-
-*   **rx! 智能宏**:
-    *   `rx!` 是 Silex 中最重要的工具宏之一，它具有“智能感知”能力：
-        *   **值模式 (`RxValue`)**: `rx!(count.get() * 2)` 或 `rx!(move || ...)` 自动创建一个用于 UI 绑定的计算单元。
-        *   **事件模式 (`RxEffect`)**: `rx!(|e| log!("{:?}", e))` 或 `rx!(move |e| ...)` 自动创建一个带参数的事件处理器。
-    *   它极大地简化了闭包的编写，使代码更接近 HTML/JS 的声明式体验。
-    *   `rx!` 生成的对象支持直接进行响应式运算。
-
-*   **Batching (批量更新)**:
-    *   `batch`: 一个性能优化工具。在 `batch` 闭包内的所有信号更新，直到闭包执行完毕后才会触发 Effect。
-    *   适用于一次性修改多个状态，避免中间态导致的无效渲染。
-
-    ```rust
-    // 假设 count 和 double 是相关联的信号
-    batch(|| {
-        set_count.update(|n| *n += 1);
-        set_double.update(|n| *n = (*n) * 2);
-    }); // 此时才会触发 Effect
-    ```
-
-*   **Resource (异步资源)**:
-    *   `resource`: 用于处理异步数据加载（如 API 请求）。
-    *   **State-based**: 采用单一来源的 `state` 枚举 (`Idle`, `Loading`, `Ready(T)`, `Reloading(T)`, `Error(E)`)。
-    *   **Stale-While-Revalidate**: 当 `refetch` 时，状态会变为 `Reloading(old_data)`，UI 可据此决定是显示 Skeleton 还是仅显示顶部进度条。
-    *   集成 `Suspense` 支持。
-    *   支持 `refetch` 手动刷新。
-    *   支持 `update` / `set` 手动修改本地数据（Optimistic UI）。
-
-*   **Mutation (异步写入)**:
-    *   `Mutation<Arg, T, E>`: 用于处理数据变更请求（如 POST/PUT）。
-    *   **Manual Trigger**: 不同于 Resource，它不追踪依赖，必须通过 `.mutate(arg)` 手动触发。
-    *   **Race Handling**: 自动处理并发，只保留最后一次请求的结果 (Latest Wins)。
-    *   实现了 `Copy`，轻量级句柄。
-
-*   **Context (上下文)**:
-    *   `provide_context` / `use_context`: 基于类型 ID 的依赖注入机制，支持跨组件数据传递。
-    *   `expect_context`: 严格版 `use_context`，未找到时会 Panic。
-
-*   **StoredValue (存储值)**:
-    *   `StoredValue<T>`: 非响应式数据容器。
-    *   数据存储在运行时中，句柄实现 `Copy`。
-    *   **特点**: 读写**不触发**任何 UI 更新。
-    *   **优势**: 支持 `with_untracked` 以**引用**方式访问数据，适合存储复杂结构或不需渲染的内部状态。
-
-### 2. Callback (回调)
-
-*   **Callback<T>**: 一个轻量级的回调句柄，**实现了 `Copy`**。
-*   闭包存储在响应式运行时中，`Callback` 只持有一个 `NodeId`。
-*   用于在组件间传递事件处理函数，可以像 `Signal` 一样直接复制。
-
-### 3. NodeRef (DOM 引用)
-
-*   **NodeRef<T>**: 用于获取底层 DOM 节点的引用句柄，**实现了 `Copy`**。
-*   当需要调用命令式 DOM API（如 `.focus()`, `.showModal()`, Canvas 绘图）时使用。
-*   节点引用存储在响应式运行时中，`NodeRef` 只持有一个 `NodeId`。
+### 创建与基础操作
+最常用的信号是 `RwSignal`（可读写信号）。
 
 ```rust
-use web_sys::HtmlInputElement;
+use silex::prelude::*; // 推荐使用 prelude 导入核心工具
 
-let input_ref = NodeRef::<HtmlInputElement>::new();
+// 1. 创建一个操作对：只读信号与写入器
+let (count, set_count) = signal(0); 
 
-input()
-    .node_ref(input_ref)  // 无需 .clone()，NodeRef 是 Copy 的
-    .on_click(move |_| {
-        if let Some(el) = input_ref.get() {
-            let _ = el.focus();
-        }
-    })
+// 或者通过 RwSignal 直接创建（包含读写能力，最为常用）
+let count = RwSignal::new(0);
+
+// 2. 读取值 (响应式)
+println!("当前值: {}", count.get());
+
+// 3. 修改值
+count.set(10);
+
+// 4. 就地更新 (推荐用于结构体，避免频繁克隆)
+count.update(|n| *n += 1);
 ```
 
-### 4. Error Handling (错误处理)
+> [!TIP]
+> **信号是 `Copy` 的**：在 Silex 中，所有的信号句柄（如 `RwSignal`, `ReadSignal`, `Signal`）都实现了 `Copy` 特征。这意味着你可以像传递整数一样在组件间自由传递它们，**无需**使用 `.clone()`。
 
-*   **SilexError**: 统一的错误枚举，包含 `Dom`, `Reactivity`, `Javascript` 等变体。
-*   **ErrorBoundary**: 提供了错误捕获机制，通过 `ErrorContext` 向上传递错误。
+---
 
-### 5. Logging (日志)
+## 2. 自动化的力量：派生计算
 
-提供了同构的日志宏，自动适配浏览器控制台 (`console.log`) 和终端标准输出 (`println!`)。
+响应式最强大的地方在于，你可以基于已有信号创建“公式”。当源数据变化时，计算结果会自动更新。
 
-*   `log!(...)`
-*   `warn!(...)`
-*   `error!(...)`
-*   以及对应的 `debug_*` 变体。
-
-### 6. Debugging (调试增强)
-
-Silex 提供了强大的工具来帮助排查和避免响应式问题。
-
-*   **Named Signals (命名信号)**:
-    所有的 `Signal`, `Memo`, `StoredValue` 句柄都支持 `.with_name("MyLabel")`。
-    
-    ```rust
-    let (count, set_count) = signal(0);
-    count.with_name("Counter"); 
-    ```
-
-    当 Debug 模式下 Panic 时，报错会指出信号名称：
-    > "Tried to access a reactive value **'Counter'** but it has already been disposed."
-
-*   **Safe Cleanup (安全清理)**:
-    `on_cleanup` 回调保证在作用域销毁**开始时**就执行。即使作用域即将结束，您依然可以在清理函数中读取 Signal 的最后状态。
-
-## 最佳实践
-
-### 信号读写分离
-推荐使用 `(ReadSignal, WriteSignal)` 的元组解构形式创建信号，以明确读写权限。
+### 使用运算符 (Operator Overloading)
+Silex 为信号重载了算术和逻辑运算符，让代码读起来就像普通的 Rust 代码。
 
 ```rust
-let (count, set_count) = signal(0);
+let (a, _) = signal(10);
+let (b, _) = signal(20);
+
+// sum 是一个派生信号，当 a 或 b 变化时，它会自动重算
+let sum = a + b; 
+let is_positive = sum.greater_than(0); // 也可以使用流畅化 API
 ```
 
-### 句柄类型的 `Copy` 特性
-Silex 的信号句柄 (`ReadSignal`, `RwSignal`)、回调 (`Callback`) 和 DOM 引用 (`NodeRef`) 都实现了 `Copy`。这意味着它们只是指向底层数据的“指针”，复制它们非常廉价。
+### 使用 `rx!` 宏：智能与性能的平衡
+对于更复杂的逻辑，推荐使用 `rx!` 宏。它能自动追踪闭包内使用的所有信号，并提供极致性能。
+
+#### **`$变量` 语法：零拷贝访问**
+在 `rx!` 中访问信号时，使用 `$` 前缀可以直接获取内部引用的视图，完全避免数据克隆。
 
 ```rust
-let input_ref = NodeRef::<HtmlInputElement>::new();
-let cb = Callback::new(|x: i32| log!("{}", x));
+let first_name = RwSignal::new("Alice".to_string());
+let last_name = RwSignal::new("Smith".to_string());
 
-// 直接复制，无需 .clone()
-let ref2 = input_ref;
-let cb2 = cb;
+// $first_name 实际上是 &String 类型。
+// 宏会自动展开为嵌套引用访问，实现真正的零拷贝。
+let full_name = rx!(format!("{} {}", $first_name, $last_name));
 ```
 
-### 异步数据获取
-使用 `Resource` 而不是在 `Effect` 中手动 spawn 异步任务，以便更好地与 `Suspense` 集成和处理竞态条件。
-请利用 `ResourceState` 枚举来处理不同的 UI 状态（如 `Reloading` vs `Loading`）。
+#### **极致优化：`@fn` 静态分发**
+如果你确信表达式中**不捕获**局部外部变量（仅使用 `$信号` 和全局/常量），可以使用 `@fn` 前缀，这能显著减少编译后的代码体积。
+
+```rust
+// 零堆内存分配模式：将计算转化为极其轻量级的静态函数调用
+let display = rx!(@fn if *$count > 0 { "Visible" } else { "Hidden" });
+```
+
+---
+
+## 3. 极致性能：读取路径的选择
+
+为了性能最大化，Silex 区分了不同的读取方式。
+
+### `get()` vs `read()` vs `with()`
+- **`.get()`**: **【强力克隆】** 获取值的一个完整备份。仅当类型实现了 `Clone` 时可用。
+- **`.read()`**: **【引用守卫】** 返回一个守卫对象，通过它可以直接读取内部数据而无需克隆，适用于大型结构体。
+- **`.with(|v| ...)`**: **【闭包借用】** 将数据引用传递给闭包。这是最推荐的零拷贝读取方式。
+
+#### **读取方式对比**
+| 方法 | 性能 | 对 `Clone` 要求 | 返回类型 | 适用场景 |
+| :--- | :--- | :--- | :--- | :--- |
+| **`get()`** | 一般 (涉及拷贝) | 必须实现 | `T` | 简单数值 (如 `i32`, `bool`) |
+| **`read()`** | 优秀 (零拷贝) | 无要求 | `RxGuard` | 需要在作用域内手动处理引用 |
+| **`with()`** | 极致 (零拷贝) | 无要求 | 闭包返回值 `U` | 只需要读取结构体的某个部分 |
+
+---
+
+## 4. 细粒度更新：Memo 与 Slice
+
+在大规模应用中，避免不必要的 UI 刷新是性能的关键。
+
+### `Memo` (记忆化计算)
+只有当计算结果**真正发生变化**（基于 `PartialEq`）时，`Memo` 才会通知下游。
+
+```rust
+let count = RwSignal::new(0);
+// 即使 count 从 1 变到 2，is_even 依然是 false，
+// 依赖 is_even 的组件不会发生无效重绘。
+let is_even = count.map(|n| n % 2 == 0).memo();
+```
+
+### `SignalSlice` (响应式投影)
+当你有一个庞大的全局状态，但某个组件只关心其中的一个子字段时，请使用 `.slice()`。
+
+```rust
+struct AppState { user_name: String, theme: String }
+let state = RwSignal::new(AppState { ... });
+
+// 创建一个只关注“用户名”的切片。
+// 修改 theme 时，依赖 name_slice 的组件不会刷新！
+let name_slice = state.slice(|s| &s.user_name);
+```
+
+---
+
+## 5. 异步管理：Resource 与 Mutation
+
+Silex 将异步操作（网络请求）深度集成到了响应式系统中。
+
+### `Resource`：拉取型异步
+适用于加载数据（如：拉取用户信息）。它自带 `Loading`/`Error`/`Ready` 等状态。
+
+```rust
+let user_id = RwSignal::new(1);
+// 当 user_id 变化时，fetch 会自动重新执行
+let user_data = Resource::new(user_id, |id| async move {
+    api::fetch_user(id).await
+});
+
+// 在视图中直接使用状态映射
+view! {
+    Show::new(
+        move || user_data.loading(),
+        rx!(div("Loading...")),
+        rx!(div(format!("User: {:?}", user_data.get())))
+    )
+}
+```
+
+### `Mutation`：触发型异步
+适用于提交表单、点击按钮等主动动作。
+
+```rust
+let login_action = Mutation::new(|(user, pass)| async move {
+    api::login(user, pass).await
+});
+
+// 触发异步动作
+login_action.mutate(("admin".into(), "password".into()));
+```
+
+---
+
+## 6. 副作用：Effect
+
+当你需要在信号变化时执行一些非 UI 的操作（如记录日志或手动操作原生 DOM）时，使用 `Effect`。
+
+```rust
+let count = RwSignal::new(0);
+
+// 创建一个副作用，它会自动追踪闭包内使用的信号
+Effect::new(move |_| {
+    println!("计数器变了: {}", count.get());
+});
+```
+
+---
+
+## 总结：Silex Core 的优势
+
+1.  **极简 API**：通过宏和运算符重载，让响应式代码读起来像原生 Rust。
+2.  **极致小巧**：内部采用“响应式归一化”技术，极大减少了泛型单态化导致的编译体积膨胀。
+3.  **极致流畅**：基于 `RxGuard` 的自适应读取系统，确保了应用在处理大数据时依然保持零拷贝的高性能。
+
+掌握了 `silex_core` 的这些原语，你就已经拥有了构建高性能复杂前端应用的核心武器。下一步，可以查阅 [Silex DOM](./silex_dom/README.md) 了解如何将逻辑渲染到浏览器中。
