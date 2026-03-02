@@ -1,3 +1,4 @@
+use crate::core::FuncPtr;
 use crate::core::arena::Index as NodeId;
 use crate::core::value::AnyValue;
 use crate::runtime::{RUNTIME, UniversalDerivedRunner, UniversalMemoRunner};
@@ -34,15 +35,31 @@ where
 {
     RUNTIME.with(|rt| {
         let initial_value = rt.untrack(|| f(None));
-        let runner_f = move |old_any: Option<AnyValue>| -> AnyValue {
-            let old_t = old_any.and_then(|any| any.downcast_ref::<T>().cloned());
+
+        // --- Static Thunks ---
+        unsafe fn compute_thunk<T, F>(data: *mut (), old: Option<AnyValue>) -> AnyValue
+        where
+            T: Clone + PartialEq + 'static,
+            F: Fn(Option<&T>) -> T + 'static,
+        {
+            let f = unsafe { &*(data as *const F) };
+            let old_t = old.and_then(|any| any.downcast_ref::<T>().cloned());
             let new_t = f(old_t.as_ref());
             AnyValue::new_reactive(new_t)
-        };
+        }
+
+        unsafe fn drop_thunk<F>(data: *mut ()) {
+            let _ = unsafe { Box::from_raw(data as *mut F) };
+        }
+
+        let data = Box::into_raw(Box::new(f)) as *mut ();
+
         rt.create_memo_node_raw(
             AnyValue::new_reactive(initial_value),
             Box::new(UniversalMemoRunner {
-                f: Box::new(runner_f),
+                data,
+                compute: FuncPtr::new(compute_thunk::<T, F>),
+                drop: FuncPtr::new(drop_thunk::<F>),
             }),
         )
     })
@@ -52,11 +69,28 @@ where
 pub fn register_derived<T: 'static>(f: Box<dyn Fn() -> T>) -> NodeId {
     RUNTIME.with(|rt| {
         let initial_value = rt.untrack(|| f());
-        let runner_f = move || -> AnyValue { AnyValue::new(f()) };
+
+        // --- Static Thunks ---
+        unsafe fn compute_thunk<T>(data: *mut ()) -> AnyValue
+        where
+            T: 'static,
+        {
+            let f = unsafe { &*(data as *const Box<dyn Fn() -> T>) };
+            AnyValue::new(f())
+        }
+
+        unsafe fn drop_thunk<T>(data: *mut ()) {
+            let _ = unsafe { Box::from_raw(data as *mut Box<dyn Fn() -> T>) };
+        }
+
+        let data = Box::into_raw(Box::new(f)) as *mut ();
+
         rt.create_memo_node_raw(
             AnyValue::new(initial_value),
             Box::new(UniversalDerivedRunner {
-                f: Box::new(runner_f),
+                data,
+                compute: FuncPtr::new(compute_thunk::<T>),
+                drop: FuncPtr::new(drop_thunk::<T>),
             }),
         )
     })

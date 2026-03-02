@@ -462,7 +462,18 @@ pub(crate) trait MemoRunnerTrait {
 }
 
 pub(crate) struct UniversalMemoRunner {
-    pub(crate) f: Box<dyn Fn(Option<AnyValue>) -> AnyValue>,
+    pub(crate) data: *mut (),
+    pub(crate) compute: crate::core::FuncPtr<unsafe fn(*mut (), Option<AnyValue>) -> AnyValue>,
+    pub(crate) drop: crate::core::FuncPtr<unsafe fn(*mut ())>,
+}
+
+unsafe impl Send for UniversalMemoRunner {}
+unsafe impl Sync for UniversalMemoRunner {}
+
+impl Drop for UniversalMemoRunner {
+    fn drop(&mut self) {
+        unsafe { self.drop.as_fn()(self.data) };
+    }
 }
 
 impl MemoRunnerTrait for UniversalMemoRunner {
@@ -472,7 +483,9 @@ impl MemoRunnerTrait for UniversalMemoRunner {
         let new_any = {
             let prev_owner = rt.current_owner();
             rt.set_owner(Some(id));
-            let v = (self.f)(old_any.as_ref().and_then(|any| any.try_clone()));
+            let v = unsafe {
+                (self.compute.as_fn())(self.data, old_any.as_ref().and_then(|any| any.try_clone()))
+            };
             rt.set_owner(prev_owner);
             v
         };
@@ -487,7 +500,18 @@ impl MemoRunnerTrait for UniversalMemoRunner {
 }
 
 pub(crate) struct UniversalDerivedRunner {
-    pub(crate) f: Box<dyn Fn() -> AnyValue>,
+    pub(crate) data: *mut (),
+    pub(crate) compute: crate::core::FuncPtr<unsafe fn(*mut ()) -> AnyValue>,
+    pub(crate) drop: crate::core::FuncPtr<unsafe fn(*mut ())>,
+}
+
+unsafe impl Send for UniversalDerivedRunner {}
+unsafe impl Sync for UniversalDerivedRunner {}
+
+impl Drop for UniversalDerivedRunner {
+    fn drop(&mut self) {
+        unsafe { self.drop.as_fn()(self.data) };
+    }
 }
 
 impl MemoRunnerTrait for UniversalDerivedRunner {
@@ -495,7 +519,7 @@ impl MemoRunnerTrait for UniversalDerivedRunner {
         let new_any = {
             let prev_owner = rt.current_owner();
             rt.set_owner(Some(id));
-            let v = (self.f)();
+            let v = unsafe { (self.compute.as_fn())(self.data) };
             rt.set_owner(prev_owner);
             v
         };
