@@ -1,7 +1,6 @@
 use crate::attribute::PendingAttribute;
-use crate::view::{SharedView, View};
+use crate::view::View;
 use silex_core::error::handle_error;
-use silex_core::logic::Map;
 use silex_core::reactivity::Effect;
 use silex_core::traits::{RxCloneData, RxRead};
 use silex_core::{Rx, RxValueKind, SilexError};
@@ -17,12 +16,6 @@ where
     T: Display + RxCloneData + 'static,
     M: 'static,
 {
-    // 自动转换为 Rx<String> 实现类型擦除
-    let rx_str = rx.map_fn(|v| v.to_string());
-    mount_string_reactive_text_internal(parent, rx_str);
-}
-
-fn mount_string_reactive_text_internal<M: 'static>(parent: &Node, rx: Rx<String, M>) {
     let document = crate::document();
     let node = document.create_text_node("");
     if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
@@ -31,8 +24,10 @@ fn mount_string_reactive_text_internal<M: 'static>(parent: &Node, rx: Rx<String,
     }
 
     Effect::new(move |_| {
+        // 直接读取原始信号。
+        // Silex 调度系统会确保当 Effect 或其 Parent 为 Inert 时不执行此闭包。
         rx.with(|value| {
-            node.set_node_value(Some(value));
+            node.set_node_value(Some(&value.to_string()));
         });
     });
 }
@@ -44,16 +39,6 @@ where
     V: View + RxCloneData + 'static,
     M: 'static,
 {
-    // 自动转换为 Rx<SharedView> 实现类型擦除
-    let rx_shared = rx.map(|v| v.clone().into_shared());
-    mount_shared_view_reactive_internal(parent, rx_shared, attrs);
-}
-
-fn mount_shared_view_reactive_internal<M: 'static>(
-    parent: &Node,
-    rx: Rx<SharedView, M>,
-    attrs: Vec<PendingAttribute>,
-) {
     let document = crate::document();
 
     let start_marker = document.create_comment("dyn-start");
@@ -77,6 +62,7 @@ fn mount_shared_view_reactive_internal<M: 'static>(
     let prev_scope = Rc::new(Cell::new(None::<silex_core::reactivity::NodeId>));
 
     Effect::new(move |_| {
+        // --- 响应式图谱映射设计 (Reactive Mapping) ---
         if let Some(id) = prev_scope.get() {
             silex_core::reactivity::dispose(id);
             prev_scope.set(None);
@@ -86,17 +72,17 @@ fn mount_shared_view_reactive_internal<M: 'static>(
         let end_node = end_node.clone();
         let document = document.clone();
         let attrs = attrs.clone();
-        let rx = rx.clone();
 
         let result = catch_unwind(AssertUnwindSafe(|| {
             rx.with(|view| {
+                let view = view.clone();
                 let start_node = start_node.clone();
                 let end_node = end_node.clone();
                 let document = document.clone();
                 let attrs = attrs.clone();
-                let view = view.clone();
 
                 silex_core::reactivity::create_scope(move || {
+                    // 清理旧节点的 DOM 物理连接
                     if let Some(parent) = start_node.parent_node() {
                         while let Some(sibling) = start_node.next_sibling() {
                             if sibling == end_node {
@@ -111,6 +97,7 @@ fn mount_shared_view_reactive_internal<M: 'static>(
 
                     view.mount(&fragment_node, attrs);
 
+                    // 插入新内容
                     if let Some(parent) = end_node.parent_node() {
                         let _ = parent.insert_before(&fragment_node, Some(&end_node));
                     }
@@ -122,11 +109,11 @@ fn mount_shared_view_reactive_internal<M: 'static>(
             prev_scope.set(Some(id));
         } else if let Err(payload) = result {
             let msg = if let Some(s) = payload.downcast_ref::<&str>() {
-                format!("Panic in View: {}", s)
+                format!("Panic in Reactive View: {}", s)
             } else if let Some(s) = payload.downcast_ref::<String>() {
-                format!("Panic in View: {}", s)
+                format!("Panic in Reactive View: {}", s)
             } else {
-                "Unknown Panic in View".to_string()
+                "Unknown Panic in Reactive View".to_string()
             };
 
             handle_error(SilexError::Javascript(msg));
