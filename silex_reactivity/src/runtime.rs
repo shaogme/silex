@@ -9,6 +9,7 @@ use self::storage::*;
 use crate::DependencyList;
 use crate::core::algorithm::{self, GraphExecutor, NodeState, RuntimeAdapter as AbstractAdapter};
 use crate::core::arena::Index as NodeId;
+use crate::core::value::AnyValue;
 
 pub struct Runtime {
     pub(crate) storage: Storage,
@@ -31,11 +32,15 @@ impl Runtime {
 
     #[track_caller]
     pub fn create_signal<T: 'static>(&self, value: T) -> NodeId {
+        self.create_signal_untyped(AnyValue::new(value))
+    }
+
+    pub(crate) fn create_signal_untyped(&self, value: AnyValue) -> NodeId {
         let id = self.register_node();
         self.storage.signals.insert(
             id,
             SignalData {
-                value: crate::core::value::AnyValue::new(value),
+                value,
                 subscribers: crate::NodeList::Empty,
                 last_tracked_by: None,
                 version: 0,
@@ -169,6 +174,66 @@ impl Runtime {
         ws.return_vec(deps);
     }
 
+    pub(crate) fn notify_update(&self, id: NodeId) {
+        self.queue_dependents(id);
+        if self.scheduler.batch_depth.get() == 0 {
+            self.run_queue();
+        }
+    }
+
+    pub(crate) fn prepare_read(&self, id: NodeId) {
+        self.track_dependency(id);
+        self.update_if_necessary(id);
+    }
+
+    pub(crate) fn prepare_read_untracked(&self, id: NodeId) {
+        self.update_if_necessary(id);
+    }
+
+    pub(crate) fn update_signal_untyped(&self, id: NodeId, updater: &mut dyn FnMut(&mut AnyValue)) {
+        if let Some(signal) = self.storage.signals.get_mut(id) {
+            signal.version = signal.version.wrapping_add(1);
+            updater(&mut signal.value);
+            self.notify_update(id);
+        }
+    }
+
+    fn prepare_memo_node(&self, id: NodeId) {
+        // Signal Component
+        self.storage.signals.insert(
+            id,
+            SignalData {
+                value: crate::core::value::AnyValue::new(()), // Temporary dummy
+                subscribers: crate::NodeList::Empty,
+                last_tracked_by: None,
+                version: 0,
+            },
+        );
+
+        // Effect Component
+        self.storage.effects.insert(
+            id,
+            EffectData {
+                computation: None,
+                dependencies: DependencyList::default(),
+                effect_version: 0,
+            },
+        );
+
+        // State Component
+        self.storage.states.insert(id, NodeState::Clean);
+    }
+
+    pub(crate) fn commit_update(&self, id: NodeId, value: AnyValue, changed: bool) {
+        if changed {
+            if let Some(signal) = self.storage.signals.get_mut(id) {
+                signal.version = signal.version.wrapping_add(1);
+                signal.value = value;
+            }
+            self.notify_update(id);
+        }
+    }
+
     pub(crate) fn run_queue(&self) {
         if self.scheduler.running_queue.get() {
             return;
@@ -212,152 +277,81 @@ impl Runtime {
         T: Clone + PartialEq + 'static,
         F: Fn(Option<&T>) -> T + 'static,
     {
+        self.create_memo_untyped::<T>(Box::new(f))
+    }
+
+    fn create_memo_untyped<T>(&self, f: Box<dyn Fn(Option<&T>) -> T + 'static>) -> NodeId
+    where
+        T: Clone + PartialEq + 'static,
+    {
         let id = self.register_node();
+        self.prepare_memo_node(id);
 
-        // Signal Component
-        self.storage.signals.insert(
-            id,
-            SignalData {
-                value: crate::core::value::AnyValue::new(()), // Temporary dummy
-                subscribers: crate::NodeList::Empty,
-                last_tracked_by: None,
-                version: 0,
-            },
-        );
-
-        // Effect Component
-        self.storage.effects.insert(
-            id,
-            EffectData {
-                computation: None,
-                dependencies: DependencyList::default(),
-                effect_version: 0,
-            },
-        );
-
-        // State Component
-        self.storage.states.insert(id, NodeState::Clean);
-
-        let initial_value = {
-            let prev_owner = self.current_owner();
-            self.set_owner(Some(id));
-            let v = f(None);
-            self.set_owner(prev_owner);
-            v
-        };
-
-        let computation = move |rt: &Runtime| {
-            let old_value = {
-                if let Some(signal) = rt.storage.signals.get(id)
-                    && let Some(val) = signal.value.downcast_ref::<T>()
-                {
-                    Some(val.clone())
-                } else {
-                    None
-                }
-            };
-
-            let new_value = {
-                let prev_owner = rt.current_owner();
-                rt.set_owner(Some(id));
-                let v = f(old_value.as_ref());
-                rt.set_owner(prev_owner);
-                v
-            };
-
-            let mut changed = false;
-            if let Some(old) = &old_value {
-                if new_value != *old {
-                    changed = true;
-                }
-            } else {
-                changed = true;
-            }
-
-            if changed {
-                if let Some(signal) = rt.storage.signals.get_mut(id) {
-                    signal.value = crate::core::value::AnyValue::new(new_value);
-                    signal.version = signal.version.wrapping_add(1);
-                }
-                rt.queue_dependents(id);
-            }
-        };
-
+        let initial_value = self.untrack(|| f(None));
         if let Some(signal) = self.storage.signals.get_mut(id) {
-            signal.value = crate::core::value::AnyValue::new(initial_value);
-        }
-        if let Some(effect) = self.storage.effects.get_mut(id) {
-            effect.computation = Some(Box::new(computation));
+            signal.value = AnyValue::new_reactive(initial_value);
         }
 
+        let runner = move |old_any: Option<AnyValue>| -> AnyValue {
+            let old_t = old_any.and_then(|any| {
+                let r: &T = any.downcast_ref::<T>()?;
+                Some(r.clone())
+            });
+            let new_t = f(old_t.as_ref());
+            AnyValue::new_reactive(new_t)
+        };
+
+        self.register_memo_computation(
+            id,
+            Box::new(UniversalMemoRunner {
+                f: Box::new(runner),
+            }),
+        );
         id
     }
 
     pub fn register_derived<T: 'static>(&self, f: Box<dyn Fn() -> T>) -> NodeId {
+        self.create_derived_untyped(f)
+    }
+
+    fn create_derived_untyped<T: 'static>(&self, f: Box<dyn Fn() -> T>) -> NodeId {
         let id = self.register_node();
+        self.prepare_memo_node(id);
 
-        self.storage.signals.insert(
-            id,
-            SignalData {
-                value: crate::core::value::AnyValue::new(()),
-                subscribers: crate::NodeList::Empty,
-                last_tracked_by: None,
-                version: 0,
-            },
-        );
-
-        self.storage.effects.insert(
-            id,
-            EffectData {
-                computation: None,
-                dependencies: DependencyList::default(),
-                effect_version: 0,
-            },
-        );
-
-        self.storage.states.insert(id, NodeState::Clean);
-
-        let initial_value = {
-            let prev_owner = self.current_owner();
-            self.set_owner(Some(id));
-            let v = f();
-            self.set_owner(prev_owner);
-            v
-        };
-
-        let computation = move |rt: &Runtime| {
-            let new_value = {
-                let prev_owner = rt.current_owner();
-                rt.set_owner(Some(id));
-                let v = f();
-                rt.set_owner(prev_owner);
-                v
-            };
-            if let Some(signal) = rt.storage.signals.get_mut(id) {
-                signal.value = crate::core::value::AnyValue::new(new_value);
-                signal.version = signal.version.wrapping_add(1);
-            }
-            rt.queue_dependents(id);
-        };
-
+        let initial_value = self.untrack(|| f());
         if let Some(signal) = self.storage.signals.get_mut(id) {
-            signal.value = crate::core::value::AnyValue::new(initial_value);
-        }
-        if let Some(effect) = self.storage.effects.get_mut(id) {
-            effect.computation = Some(Box::new(computation));
+            signal.value = AnyValue::new(initial_value);
         }
 
+        let runner = move || -> AnyValue { AnyValue::new(f()) };
+
+        self.register_memo_computation(
+            id,
+            Box::new(UniversalDerivedRunner {
+                f: Box::new(runner),
+            }),
+        );
         id
     }
 
+    fn register_memo_computation(&self, id: NodeId, runner: Box<dyn MemoRunnerTrait>) {
+        let computation = move |rt: &Runtime| {
+            runner.run(rt, id);
+        };
+        if let Some(effect) = self.storage.effects.get_mut(id) {
+            effect.computation = Some(Box::new(computation));
+        }
+    }
+
     pub fn store_value<T: 'static>(&self, value: T) -> NodeId {
+        self.store_value_untyped(AnyValue::new(value))
+    }
+
+    pub(crate) fn store_value_untyped(&self, value: AnyValue) -> NodeId {
         let id = self.register_node();
-        self.storage.stored_values.insert(
-            id,
-            StoredValueData {
-                value: crate::core::value::AnyValue::new(value),
-            },
-        );
+        self.storage
+            .stored_values
+            .insert(id, StoredValueData { value });
         id
     }
 
@@ -365,13 +359,15 @@ impl Runtime {
     where
         F: Fn(Box<dyn std::any::Any>) + 'static,
     {
+        self.register_callback_untyped(std::rc::Rc::new(f))
+    }
+
+    pub(crate) fn register_callback_untyped(
+        &self,
+        f: std::rc::Rc<dyn Fn(Box<dyn std::any::Any>)>,
+    ) -> NodeId {
         let id = self.register_node();
-        self.storage.callbacks.insert(
-            id,
-            CallbackData {
-                f: std::rc::Rc::new(f),
-            },
-        );
+        self.storage.callbacks.insert(id, CallbackData { f });
         id
     }
 
@@ -515,5 +511,51 @@ impl GraphExecutor for Runtime {
             return true;
         }
         false
+    }
+}
+
+pub(crate) trait MemoRunnerTrait {
+    fn run(&self, rt: &Runtime, id: NodeId);
+}
+
+struct UniversalMemoRunner {
+    f: Box<dyn Fn(Option<AnyValue>) -> AnyValue>,
+}
+
+impl MemoRunnerTrait for UniversalMemoRunner {
+    fn run(&self, rt: &Runtime, id: NodeId) {
+        let old_any = rt.storage.signals.get(id).and_then(|s| s.value.try_clone());
+
+        let new_any = {
+            let prev_owner = rt.current_owner();
+            rt.set_owner(Some(id));
+            let v = (self.f)(old_any.as_ref().and_then(|any| any.try_clone()));
+            rt.set_owner(prev_owner);
+            v
+        };
+
+        let changed = match &old_any {
+            Some(old) => !new_any.try_eq(old),
+            None => true,
+        };
+
+        rt.commit_update(id, new_any, changed);
+    }
+}
+
+struct UniversalDerivedRunner {
+    f: Box<dyn Fn() -> AnyValue>,
+}
+
+impl MemoRunnerTrait for UniversalDerivedRunner {
+    fn run(&self, rt: &Runtime, id: NodeId) {
+        let new_any = {
+            let prev_owner = rt.current_owner();
+            rt.set_owner(Some(id));
+            let v = (self.f)();
+            rt.set_owner(prev_owner);
+            v
+        };
+        rt.commit_update(id, new_any, true);
     }
 }

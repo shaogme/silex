@@ -1,21 +1,13 @@
+use crate::core::FuncPtr;
 use std::alloc::Layout;
 use std::any::TypeId;
 use std::mem::{self, MaybeUninit};
 use std::ptr;
 
 /// The size of the inline buffer in `usize` units.
-/// 3 * 8 = 24 bytes on 64-bit systems.
-/// This matches the size of `String`, `Vec<T>`, and acts as a good balance.
 const INLINE_WORDS: usize = 3;
 
 /// A type-erased value with Small Object Optimization (SOO).
-///
-/// Instead of using an enum with variants for every primitive type,
-/// this struct uses a manual vtable strategy:
-/// - If `T` fits in the buffer and has suitable alignment, it is stored inline.
-/// - Otherwise, it is boxed and the `Box<T>` is stored inline (which fits easily).
-///
-/// Total size: 1 word (vtable) + 3 words (data) = 32 bytes on 64-bit.
 pub(crate) struct AnyValue {
     vtable: &'static AnyValueVTable,
     data: MaybeUninit<[usize; INLINE_WORDS]>,
@@ -23,61 +15,74 @@ pub(crate) struct AnyValue {
 
 struct AnyValueVTable {
     type_id: TypeId,
-    /// Get an immutable reference to the data.
-    /// The argument is a pointer to the start of the data buffer.
-    as_ptr: unsafe fn(*const usize) -> *const (),
-    /// Get a mutable reference to the data.
-    /// The argument is a pointer to the start of the data buffer.
-    as_mut_ptr: unsafe fn(*mut usize) -> *mut (),
-    /// Drop the value stored in the buffer.
-    drop: unsafe fn(*mut usize),
+    as_ptr: FuncPtr<unsafe fn(*const usize) -> *const ()>,
+    as_mut_ptr: FuncPtr<unsafe fn(*mut usize) -> *mut ()>,
+    drop: FuncPtr<unsafe fn(*mut usize)>,
+    clone: Option<FuncPtr<unsafe fn(*const usize) -> AnyValue>>,
+    eq: Option<FuncPtr<unsafe fn(*const usize, *const usize) -> bool>>,
 }
 
 impl AnyValue {
+    /// 创建一个普通的类型擦除值。不支持克隆和比较。
     pub(crate) fn new<T: 'static>(value: T) -> Self {
         let layout = Layout::new::<T>();
-
-        // Check if we can store T inline.
-        // Conditions:
-        // 1. Size fits in the buffer.
-        // 2. Alignment requirement is satisfied by [usize; N].
-        //    [usize] has alignment of `mem::align_of::<usize>()`.
         let fits_inline = layout.size() <= (INLINE_WORDS * mem::size_of::<usize>())
             && layout.align() <= mem::align_of::<usize>();
 
-        if fits_inline {
-            unsafe {
-                let mut data = MaybeUninit::<[usize; INLINE_WORDS]>::uninit();
-                // Write value into data buffer.
-                // We cast *mut usize -> *mut T. This is valid because we checked size and align.
-                ptr::write(data.as_mut_ptr() as *mut T, value);
-
-                AnyValue {
-                    vtable: &InlineVTable::<T>::VTABLE,
-                    data,
-                }
-            }
+        let mut data = MaybeUninit::<[usize; INLINE_WORDS]>::uninit();
+        let vtable: &'static AnyValueVTable = if fits_inline {
+            unsafe { ptr::write(data.as_mut_ptr() as *mut T, value) };
+            &InlineVTable::<T>::VTABLE
         } else {
-            // Box it
             let boxed = Box::new(value);
-            unsafe {
-                let mut data = MaybeUninit::<[usize; INLINE_WORDS]>::uninit();
-                // Write Box<T> into data buffer.
-                // Box<T> is a pointer, so it fits in [usize; 3] and aligns to usize.
-                ptr::write(data.as_mut_ptr() as *mut Box<T>, boxed);
+            unsafe { ptr::write(data.as_mut_ptr() as *mut Box<T>, boxed) };
+            &BoxedVTable::<T>::VTABLE
+        };
 
-                AnyValue {
-                    vtable: &BoxedVTable::<T>::VTABLE,
-                    data,
-                }
-            }
+        AnyValue { vtable, data }
+    }
+
+    /// 创建一个支持响应式操作（克隆、比较）的类型擦除值。
+    pub(crate) fn new_reactive<T: Clone + PartialEq + 'static>(value: T) -> Self {
+        let layout = Layout::new::<T>();
+        let fits_inline = layout.size() <= (INLINE_WORDS * mem::size_of::<usize>())
+            && layout.align() <= mem::align_of::<usize>();
+
+        let mut data = MaybeUninit::<[usize; INLINE_WORDS]>::uninit();
+        let vtable: &'static AnyValueVTable = if fits_inline {
+            unsafe { ptr::write(data.as_mut_ptr() as *mut T, value) };
+            &InlineReactiveVTable::<T>::VTABLE
+        } else {
+            let boxed = Box::new(value);
+            unsafe { ptr::write(data.as_mut_ptr() as *mut Box<T>, boxed) };
+            &BoxedReactiveVTable::<T>::VTABLE
+        };
+
+        AnyValue { vtable, data }
+    }
+
+    pub(crate) fn try_clone(&self) -> Option<Self> {
+        self.vtable
+            .clone
+            .map(|f| unsafe { f.as_fn()(self.data.as_ptr() as *const usize) })
+    }
+
+    pub(crate) fn try_eq(&self, other: &Self) -> bool {
+        if self.vtable.type_id != other.vtable.type_id {
+            return false;
         }
+        self.vtable.eq.map_or(false, |f| unsafe {
+            f.as_fn()(
+                self.data.as_ptr() as *const usize,
+                other.data.as_ptr() as *const usize,
+            )
+        })
     }
 
     pub(crate) fn downcast_ref<T: 'static>(&self) -> Option<&T> {
         if self.vtable.type_id == TypeId::of::<T>() {
             unsafe {
-                let val_ptr = (self.vtable.as_ptr)(self.data.as_ptr() as *const usize);
+                let val_ptr = self.vtable.as_ptr.as_fn()(self.data.as_ptr() as *const usize);
                 Some(&*(val_ptr as *const T))
             }
         } else {
@@ -88,7 +93,7 @@ impl AnyValue {
     pub(crate) fn downcast_mut<T: 'static>(&mut self) -> Option<&mut T> {
         if self.vtable.type_id == TypeId::of::<T>() {
             unsafe {
-                let val_ptr = (self.vtable.as_mut_ptr)(self.data.as_mut_ptr() as *mut usize);
+                let val_ptr = self.vtable.as_mut_ptr.as_fn()(self.data.as_mut_ptr() as *mut usize);
                 Some(&mut *(val_ptr as *mut T))
             }
         } else {
@@ -96,62 +101,77 @@ impl AnyValue {
         }
     }
 
-    /// 获取底层存储的原始指针。
-    /// 调用者负责指针的生存期和正确类型还原。
     pub(crate) unsafe fn as_ptr(&self) -> *const () {
-        unsafe { (self.vtable.as_ptr)(self.data.as_ptr() as *const usize) }
+        unsafe { self.vtable.as_ptr.as_fn()(self.data.as_ptr() as *const usize) }
     }
 }
 
 impl Drop for AnyValue {
     fn drop(&mut self) {
         unsafe {
-            (self.vtable.drop)(self.data.as_mut_ptr() as *mut usize);
+            self.vtable.drop.as_fn()(self.data.as_mut_ptr() as *mut usize);
         }
     }
 }
 
 // --- VTable Generators ---
 
-trait VTableGen<T> {
-    const VTABLE: AnyValueVTable;
-}
-
-/// VTable for values stored inline.
 struct InlineVTable<T>(std::marker::PhantomData<T>);
-
-impl<T: 'static> VTableGen<T> for InlineVTable<T> {
+impl<T: 'static> InlineVTable<T> {
     const VTABLE: AnyValueVTable = AnyValueVTable {
         type_id: TypeId::of::<T>(),
-        as_ptr: |ptr| {
-            // The buffer IS the value.
-            ptr as *const T as *const ()
-        },
-        as_mut_ptr: |ptr| ptr as *mut T as *mut (),
-        drop: |ptr| unsafe { ptr::drop_in_place(ptr as *mut T) },
+        as_ptr: FuncPtr::new(|ptr| ptr as *const T as *const ()),
+        as_mut_ptr: FuncPtr::new(|ptr| ptr as *mut T as *mut ()),
+        drop: FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut T) }),
+        clone: None,
+        eq: None,
     };
 }
 
-/// VTable for values stored in a Box (heap).
-struct BoxedVTable<T>(std::marker::PhantomData<T>);
-
-impl<T: 'static> VTableGen<T> for BoxedVTable<T> {
+struct InlineReactiveVTable<T>(std::marker::PhantomData<T>);
+impl<T: Clone + PartialEq + 'static> InlineReactiveVTable<T> {
     const VTABLE: AnyValueVTable = AnyValueVTable {
         type_id: TypeId::of::<T>(),
-        as_ptr: |ptr| unsafe {
-            // The buffer contains a Box<T>.
-            // 1. Cast buffer ptr to Box<T> ptr
-            let box_ptr = ptr as *const Box<T>;
-            // 2. Dereference Box<T> to get T
-            (&**box_ptr) as *const T as *const ()
-        },
-        as_mut_ptr: |ptr| unsafe {
-            let box_ptr = ptr as *mut Box<T>;
-            (&mut **box_ptr) as *mut T as *mut ()
-        },
-        drop: |ptr| unsafe {
-            // Drop the Box<T> residing in the buffer.
-            ptr::drop_in_place(ptr as *mut Box<T>)
-        },
+        as_ptr: FuncPtr::new(|ptr| ptr as *const T as *const ()),
+        as_mut_ptr: FuncPtr::new(|ptr| ptr as *mut T as *mut ()),
+        drop: FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut T) }),
+        clone: Some(FuncPtr::new(|ptr| {
+            AnyValue::new_reactive(unsafe { (*(ptr as *const T)).clone() })
+        })),
+        eq: Some(FuncPtr::new(|p1, p2| unsafe {
+            *(p1 as *const T) == *(p2 as *const T)
+        })),
+    };
+}
+
+struct BoxedVTable<T>(std::marker::PhantomData<T>);
+impl<T: 'static> BoxedVTable<T> {
+    const VTABLE: AnyValueVTable = AnyValueVTable {
+        type_id: TypeId::of::<T>(),
+        as_ptr: FuncPtr::new(|ptr| unsafe { (&**(ptr as *const Box<T>)) as *const T as *const () }),
+        as_mut_ptr: FuncPtr::new(|ptr| unsafe {
+            (&mut **(ptr as *mut Box<T>)) as *mut T as *mut ()
+        }),
+        drop: FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut Box<T>) }),
+        clone: None,
+        eq: None,
+    };
+}
+
+struct BoxedReactiveVTable<T>(std::marker::PhantomData<T>);
+impl<T: Clone + PartialEq + 'static> BoxedReactiveVTable<T> {
+    const VTABLE: AnyValueVTable = AnyValueVTable {
+        type_id: TypeId::of::<T>(),
+        as_ptr: FuncPtr::new(|ptr| unsafe { (&**(ptr as *const Box<T>)) as *const T as *const () }),
+        as_mut_ptr: FuncPtr::new(|ptr| unsafe {
+            (&mut **(ptr as *mut Box<T>)) as *mut T as *mut ()
+        }),
+        drop: FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut Box<T>) }),
+        clone: Some(FuncPtr::new(|ptr| {
+            AnyValue::new_reactive(unsafe { (**(ptr as *const Box<T>)).clone() })
+        })),
+        eq: Some(FuncPtr::new(|p1, p2| unsafe {
+            (**(p1 as *const Box<T>)) == (**(p2 as *const Box<T>))
+        })),
     };
 }

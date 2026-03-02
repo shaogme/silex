@@ -48,54 +48,42 @@ pub fn signal<T: 'static>(value: T) -> NodeId {
 
 pub fn try_get_signal<T: Clone + 'static>(id: NodeId) -> Option<T> {
     RUNTIME.with(|rt| {
-        rt.track_dependency(id);
-        rt.update_if_necessary(id);
-
-        if let Some(signal) = rt.storage.signals.get(id) {
-            if let Some(val) = signal.value.downcast_ref::<T>() {
-                return Some(val.clone());
-            } else {
-                eprintln!("Type mismatch in try_get_signal");
-            }
+        rt.prepare_read(id);
+        let signal = rt.storage.signals.get(id)?;
+        if let Some(val) = signal.value.downcast_ref::<T>() {
+            Some(val.clone())
+        } else {
+            eprintln!("Type mismatch in try_get_signal");
+            None
         }
-        None
     })
 }
 
 pub fn try_get_signal_untracked<T: Clone + 'static>(id: NodeId) -> Option<T> {
     RUNTIME.with(|rt| {
-        rt.update_if_necessary(id);
-
-        if let Some(signal) = rt.storage.signals.get(id) {
-            if let Some(val) = signal.value.downcast_ref::<T>() {
-                return Some(val.clone());
-            } else {
-                eprintln!("Type mismatch in try_get_signal_untracked");
-            }
+        rt.prepare_read_untracked(id);
+        let signal = rt.storage.signals.get(id)?;
+        if let Some(val) = signal.value.downcast_ref::<T>() {
+            Some(val.clone())
+        } else {
+            eprintln!("Type mismatch in try_get_signal_untracked");
+            None
         }
-        None
     })
 }
 
 pub fn update_signal<T: 'static>(id: NodeId, f: impl FnOnce(&mut T)) {
+    let mut f = Some(f);
     RUNTIME.with(|rt| {
-        {
-            if let Some(signal) = rt.storage.signals.get_mut(id) {
-                signal.version = signal.version.wrapping_add(1);
-                if let Some(val) = signal.value.downcast_mut::<T>() {
+        rt.update_signal_untyped(id, &mut |any_val| {
+            if let Some(f) = f.take() {
+                if let Some(val) = any_val.downcast_mut::<T>() {
                     f(val);
                 } else {
                     eprintln!("Type mismatch in update_signal");
-                    return;
                 }
-            } else {
-                return;
             }
-        }
-        rt.queue_dependents(id);
-        if rt.scheduler.batch_depth.get() == 0 {
-            rt.run_queue();
-        }
+        });
     })
 }
 
@@ -112,37 +100,30 @@ pub fn track_signals_batch(ids: &[NodeId]) {
 }
 
 pub fn notify_signal(id: NodeId) {
-    RUNTIME.with(|rt| {
-        rt.queue_dependents(id);
-        if rt.scheduler.batch_depth.get() == 0 {
-            rt.run_queue();
-        }
-    })
+    RUNTIME.with(|rt| rt.notify_update(id))
 }
 
 pub fn try_with_signal<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
     RUNTIME.with(|rt| {
-        rt.track_dependency(id);
-        rt.update_if_necessary(id);
-
-        if let Some(signal) = rt.storage.signals.get(id)
-            && let Some(val) = signal.value.downcast_ref::<T>()
-        {
-            return Some(f(val));
+        rt.prepare_read(id);
+        let signal = rt.storage.signals.get(id)?;
+        if let Some(val) = signal.value.downcast_ref::<T>() {
+            Some(f(val))
+        } else {
+            None
         }
-        None
     })
 }
 
 pub fn try_with_signal_untracked<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
     RUNTIME.with(|rt| {
-        rt.update_if_necessary(id);
-        if let Some(signal) = rt.storage.signals.get(id)
-            && let Some(val) = signal.value.downcast_ref::<T>()
-        {
-            return Some(f(val));
+        rt.prepare_read_untracked(id);
+        let signal = rt.storage.signals.get(id)?;
+        if let Some(val) = signal.value.downcast_ref::<T>() {
+            Some(f(val))
+        } else {
+            None
         }
-        None
     })
 }
 
