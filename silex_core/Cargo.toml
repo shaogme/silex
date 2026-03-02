@@ -11,6 +11,9 @@ keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 silex_reactivity.workspace = true
 silex_rx.workspace = true
