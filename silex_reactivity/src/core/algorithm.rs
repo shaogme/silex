@@ -1,4 +1,4 @@
-use crate::arena::Index as NodeId;
+use crate::core::arena::Index as NodeId;
 use std::collections::VecDeque;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -6,6 +6,72 @@ pub enum NodeState {
     Clean,
     Check,
     Dirty,
+}
+
+/// Abstraction over the storage part of the reactive graph.
+pub trait GraphStorage {
+    fn get_state(&self, id: NodeId) -> NodeState;
+    fn set_state(&self, id: NodeId, state: NodeState);
+    fn fill_subscribers(&self, id: NodeId, dest: &mut Vec<NodeId>);
+    fn fill_dependencies(&self, id: NodeId, dest: &mut Vec<NodeId>);
+    fn is_effect(&self, id: NodeId) -> bool;
+    fn check_dependencies_changed(&self, id: NodeId) -> bool;
+}
+
+/// Abstraction over the scheduler part of the reactive graph.
+pub trait GraphScheduler {
+    fn queue_effect(&self, id: NodeId);
+}
+
+/// Abstraction over the computation execution part (e.g. running user logic).
+pub trait GraphExecutor {
+    fn run_computation(&self, id: NodeId) -> bool;
+}
+
+/// A generic adapter that connects storage, scheduler, and executor to implement [ReactiveGraph].
+pub struct RuntimeAdapter<'a, S, SCHED, E> {
+    pub storage: &'a S,
+    pub scheduler: &'a SCHED,
+    pub executor: &'a E,
+}
+
+impl<S, SCHED, E> ReactiveGraph for RuntimeAdapter<'_, S, SCHED, E>
+where
+    S: GraphStorage,
+    SCHED: GraphScheduler,
+    E: GraphExecutor,
+{
+    fn get_state(&self, id: NodeId) -> NodeState {
+        self.storage.get_state(id)
+    }
+
+    fn set_state(&mut self, id: NodeId, state: NodeState) {
+        self.storage.set_state(id, state);
+    }
+
+    fn fill_subscribers(&self, id: NodeId, dest: &mut Vec<NodeId>) {
+        self.storage.fill_subscribers(id, dest);
+    }
+
+    fn fill_dependencies(&self, id: NodeId, dest: &mut Vec<NodeId>) {
+        self.storage.fill_dependencies(id, dest);
+    }
+
+    fn is_effect(&self, id: NodeId) -> bool {
+        self.storage.is_effect(id)
+    }
+
+    fn queue_effect(&mut self, id: NodeId) {
+        self.scheduler.queue_effect(id);
+    }
+
+    fn run_computation(&mut self, id: NodeId) -> bool {
+        self.executor.run_computation(id)
+    }
+
+    fn check_dependencies_changed(&mut self, id: NodeId) -> bool {
+        self.storage.check_dependencies_changed(id)
+    }
 }
 
 /// Abstraction over the reactive graph to decouple algorithms from the runtime.
