@@ -290,6 +290,11 @@ impl Runtime {
                 return;
             }
 
+            // 0. Ensure owner is alive and generation matches
+            if self.graph.get(owner).is_none() {
+                return;
+            }
+
             // 1. Identify Owner Type and get metadata
             // Only nodes with EffectData can be owners (dependencies)
             let (owner_version, is_owner_valid) = if let Some(eff) = self.effects.get_mut(owner) {
@@ -334,6 +339,11 @@ impl Runtime {
         }
 
         if let Some(owner) = self.current_owner.get() {
+            // 0. Ensure owner is alive and generation matches
+            if self.graph.get(owner).is_none() {
+                return;
+            }
+
             // 1. Identify Owner Type and get metadata
             let (owner_version, is_owner_valid) = if let Some(eff) = self.effects.get_mut(owner) {
                 (eff.effect_version, true)
@@ -431,6 +441,9 @@ impl Runtime {
     }
 
     pub(crate) fn clean_node(&self, id: NodeId) {
+        if self.graph.get(id).is_none() {
+            return;
+        }
         let (children, cleanups) = {
             if let Some(aux) = self.node_aux.get_mut(id) {
                 (
@@ -478,6 +491,9 @@ impl Runtime {
     }
 
     pub(crate) fn dispose_node_internal(&self, id: NodeId, remove_from_parent: bool) {
+        if self.graph.get(id).is_none() {
+            return;
+        }
         self.clean_node(id);
 
         #[cfg(debug_assertions)]
