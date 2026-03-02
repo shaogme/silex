@@ -143,7 +143,9 @@ pub fn dispose(id: NodeId) {
 pub fn on_cleanup(f: impl FnOnce() + 'static) {
     RUNTIME.with(|rt| {
         if let Some(owner) = rt.current_owner.get() {
-            rt.aux_mut(owner).cleanups.push(Box::new(f));
+            if let Some(aux) = rt.try_aux_mut(owner) {
+                aux.cleanups.push(Box::new(f));
+            }
         }
     });
 }
@@ -256,12 +258,13 @@ where
 pub fn provide_context_any(key: TypeId, value: Box<dyn Any>) {
     RUNTIME.with(|rt| {
         if let Some(owner) = rt.current_owner.get() {
-            let aux = rt.aux_mut(owner);
-            if aux.context.is_none() {
-                aux.context = Some(HashMap::new());
-            }
-            if let Some(ctx) = &mut aux.context {
-                ctx.insert(key, value);
+            if let Some(aux) = rt.try_aux_mut(owner) {
+                if aux.context.is_none() {
+                    aux.context = Some(HashMap::new());
+                }
+                if let Some(ctx) = &mut aux.context {
+                    ctx.insert(key, value);
+                }
             }
         }
     })
@@ -595,7 +598,9 @@ pub fn set_debug_label(_id: NodeId, _label: impl Into<String>) {
     {
         let label = _label.into();
         RUNTIME.with(|rt| {
-            rt.aux_mut(_id).debug_label = Some(label);
+            if let Some(aux) = rt.try_aux_mut(_id) {
+                aux.debug_label = Some(label);
+            }
         })
     }
 }

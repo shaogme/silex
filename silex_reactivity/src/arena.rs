@@ -283,7 +283,7 @@ impl<T> Default for Arena<T> {
 // High density maps (Signals, Effects) benefit from larger chunks (e.g. 64) for cache locality.
 // Sparse maps (NodeRefs) benefit from smaller chunks (e.g. 16) to save memory.
 
-type ChunkArray<T> = Box<[UnsafeCell<Option<T>>]>;
+type ChunkArray<T> = Box<[UnsafeCell<Option<(u32, T)>>]>;
 
 pub struct SparseSecondaryMap<T, const N: usize = 16> {
     chunks: UnsafeCell<Vec<Option<ChunkArray<T>>>>,
@@ -313,14 +313,26 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
 
             if chunks[chunk_idx].is_none() {
                 // Initialize chunk entries to None
-                // We construct a specific layout matching Box<[UnsafeCell<Option<T>>]>
-                let vec_chunk: Vec<UnsafeCell<Option<T>>> =
+                let vec_chunk: Vec<UnsafeCell<Option<(u32, T)>>> =
                     (0..N).map(|_| UnsafeCell::new(None)).collect();
                 chunks[chunk_idx] = Some(vec_chunk.into_boxed_slice());
             }
 
             if let Some(ref mut chunk) = chunks[chunk_idx] {
-                *chunk[offset].get() = Some(value);
+                let slot = &mut *chunk[offset].get();
+                // WRITE PROTECTION:
+                // Only allow insertion if:
+                // 1. The slot is empty.
+                // 2. The new generation is >= the stored generation (prevent ABA downgrade).
+                let can_write = if let Some((stored_gen, _)) = slot {
+                    key.generation >= *stored_gen
+                } else {
+                    true
+                };
+
+                if can_write {
+                    *slot = Some((key.generation, value));
+                }
             }
         }
     }
@@ -334,10 +346,13 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
             }
             if let Some(ref chunk) = chunks[chunk_idx] {
                 let slot = &*chunk[offset].get();
-                slot.as_ref()
-            } else {
-                None
+                if let Some((stored_gen, val)) = slot {
+                    if *stored_gen == key.generation {
+                        return Some(val);
+                    }
+                }
             }
+            None
         }
     }
 
@@ -351,10 +366,13 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
             }
             if let Some(ref mut chunk) = chunks[chunk_idx] {
                 let slot = &mut *chunk[offset].get();
-                slot.as_mut()
-            } else {
-                None
+                if let Some((stored_gen, val)) = slot {
+                    if *stored_gen == key.generation {
+                        return Some(val);
+                    }
+                }
             }
+            None
         }
     }
 
@@ -367,10 +385,13 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
             }
             if let Some(ref mut chunk) = chunks[chunk_idx] {
                 let slot = &mut *chunk[offset].get();
-                slot.take()
-            } else {
-                None
+                if let Some((stored_gen, _)) = slot {
+                    if *stored_gen == key.generation {
+                        return slot.take().map(|(_, v)| v);
+                    }
+                }
             }
+            None
         }
     }
 
@@ -458,8 +479,50 @@ mod tests {
 
         assert_eq!(map.get(id1).map(|s| s.as_str()), Some("Data1"));
         assert_eq!(map.get(id2), None);
-
         map.remove(id1);
         assert_eq!(map.get(id1), None);
+    }
+
+    #[test]
+    fn test_secondary_map_aba_protection() {
+        let arena = Arena::<()>::new();
+        let map = SparseSecondaryMap::<String>::new();
+
+        let id1 = arena.insert(());
+        map.insert(id1, "Data1".to_string());
+
+        // 模拟回收并生成新节点（重用 Index 但 Generation 增加）
+        arena.remove(id1);
+        let id2 = arena.insert(());
+        assert_eq!(id1.index, id2.index);
+        assert_ne!(id1.generation, id2.generation);
+
+        // 此时 map 中存的是 (id1.gen, "Data1")
+        // 使用 id2 访问应该返回 None，因为代数不匹配
+        assert_eq!(
+            map.get(id2),
+            None,
+            "New ID should not be able to read leaked old data"
+        );
+
+        // 为 id2 存数据，这会覆盖之前的 (id1.gen, "Data1")
+        map.insert(id2, "Data2".to_string());
+        assert_eq!(map.get(id2).map(|s| s.as_str()), Some("Data2"));
+
+        // 此时 id1 应该彻底失效，因为它尝试读取 index 时的 gen (id1.gen)
+        // 与 map 中存储的 gen (id2.gen) 不匹配
+        assert_eq!(
+            map.get(id1),
+            None,
+            "Old ID should not be able to read new node's data (ABA)"
+        );
+
+        // 尝试使用旧 ID 移除数据，应该无效
+        assert!(map.remove(id1).is_none());
+        assert_eq!(
+            map.get(id2).map(|s| s.as_str()),
+            Some("Data2"),
+            "Old ID removal should not affect new node"
+        );
     }
 }

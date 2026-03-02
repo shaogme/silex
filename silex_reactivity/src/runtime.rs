@@ -223,11 +223,15 @@ impl Runtime {
         }
     }
 
-    pub(crate) fn aux_mut(&self, id: NodeId) -> &mut NodeAux {
+    pub(crate) fn try_aux_mut(&self, id: NodeId) -> Option<&mut NodeAux> {
         if self.node_aux.get(id).is_none() {
+            // Ensure the node is actually alive before creating aux data.
+            if self.graph.get(id).is_none() {
+                return None;
+            }
             self.node_aux.insert(id, NodeAux::default());
         }
-        self.node_aux.get_mut(id).unwrap()
+        self.node_aux.get_mut(id)
     }
 
     #[track_caller]
@@ -244,7 +248,9 @@ impl Runtime {
         let id = self.graph.insert(node);
 
         if let Some(parent_id) = parent {
-            self.aux_mut(parent_id).children.push(id);
+            if let Some(aux) = self.try_aux_mut(parent_id) {
+                aux.children.push(id);
+            }
         }
         id
     }
