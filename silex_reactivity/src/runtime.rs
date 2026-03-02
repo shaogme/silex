@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::any::{Any, TypeId};
 
 pub(crate) mod scheduler;
 pub(crate) mod scope;
@@ -30,12 +30,7 @@ impl Runtime {
         }
     }
 
-    #[track_caller]
-    pub fn create_signal<T: 'static>(&self, value: T) -> NodeId {
-        self.create_signal_untyped(AnyValue::new(value))
-    }
-
-    pub(crate) fn create_signal_untyped(&self, value: AnyValue) -> NodeId {
+    pub fn create_signal(&self, value: AnyValue) -> NodeId {
         let id = self.register_node();
         self.storage.signals.insert(
             id,
@@ -49,13 +44,12 @@ impl Runtime {
         id
     }
 
-    #[track_caller]
-    pub fn create_effect<F: Fn() + 'static>(&self, f: F) -> NodeId {
+    pub fn create_effect(&self, f: Box<dyn Fn(&Runtime)>) -> NodeId {
         let id = self.register_node();
         self.storage.effects.insert(
             id,
             EffectData {
-                computation: Some(Box::new(move |_| f())),
+                computation: Some(f),
                 dependencies: DependencyList::default(),
                 effect_version: 0,
             },
@@ -272,65 +266,19 @@ impl Runtime {
         id
     }
 
-    pub fn create_memo<T, F>(&self, f: F) -> NodeId
-    where
-        T: Clone + PartialEq + 'static,
-        F: Fn(Option<&T>) -> T + 'static,
-    {
-        self.create_memo_untyped::<T>(Box::new(f))
-    }
-
-    fn create_memo_untyped<T>(&self, f: Box<dyn Fn(Option<&T>) -> T + 'static>) -> NodeId
-    where
-        T: Clone + PartialEq + 'static,
-    {
+    pub fn create_memo_node_raw(
+        &self,
+        initial_value: AnyValue,
+        runner: Box<dyn MemoRunnerTrait>,
+    ) -> NodeId {
         let id = self.register_node();
         self.prepare_memo_node(id);
 
-        let initial_value = self.untrack(|| f(None));
         if let Some(signal) = self.storage.signals.get_mut(id) {
-            signal.value = AnyValue::new_reactive(initial_value);
+            signal.value = initial_value;
         }
 
-        let runner = move |old_any: Option<AnyValue>| -> AnyValue {
-            let old_t = old_any.and_then(|any| {
-                let r: &T = any.downcast_ref::<T>()?;
-                Some(r.clone())
-            });
-            let new_t = f(old_t.as_ref());
-            AnyValue::new_reactive(new_t)
-        };
-
-        self.register_memo_computation(
-            id,
-            Box::new(UniversalMemoRunner {
-                f: Box::new(runner),
-            }),
-        );
-        id
-    }
-
-    pub fn register_derived<T: 'static>(&self, f: Box<dyn Fn() -> T>) -> NodeId {
-        self.create_derived_untyped(f)
-    }
-
-    fn create_derived_untyped<T: 'static>(&self, f: Box<dyn Fn() -> T>) -> NodeId {
-        let id = self.register_node();
-        self.prepare_memo_node(id);
-
-        let initial_value = self.untrack(|| f());
-        if let Some(signal) = self.storage.signals.get_mut(id) {
-            signal.value = AnyValue::new(initial_value);
-        }
-
-        let runner = move || -> AnyValue { AnyValue::new(f()) };
-
-        self.register_memo_computation(
-            id,
-            Box::new(UniversalDerivedRunner {
-                f: Box::new(runner),
-            }),
-        );
+        self.register_memo_computation(id, runner);
         id
     }
 
@@ -343,11 +291,7 @@ impl Runtime {
         }
     }
 
-    pub fn store_value<T: 'static>(&self, value: T) -> NodeId {
-        self.store_value_untyped(AnyValue::new(value))
-    }
-
-    pub(crate) fn store_value_untyped(&self, value: AnyValue) -> NodeId {
+    pub fn store_value(&self, value: AnyValue) -> NodeId {
         let id = self.register_node();
         self.storage
             .stored_values
@@ -379,28 +323,27 @@ impl Runtime {
         id
     }
 
-    pub fn provide_context<T: 'static>(&self, value: T) {
-        let key = std::any::TypeId::of::<T>();
+    pub fn provide_context(&self, key: TypeId, value: Box<dyn Any>) {
         if let Some(owner) = self.current_owner() {
             if let Some(aux) = self.storage.try_aux_mut(owner) {
                 if aux.context.is_none() {
                     aux.context = Some(std::collections::HashMap::new());
                 }
                 if let Some(ctx) = &mut aux.context {
-                    ctx.insert(key, Box::new(value));
+                    ctx.insert(key, value);
                 }
             }
         }
     }
 
-    pub fn use_context<T: Clone + 'static>(&self) -> Option<T> {
+    pub fn use_context_raw(&self, key: TypeId) -> Option<&dyn Any> {
         let mut current_opt = self.current_owner();
         while let Some(current) = current_opt {
             if let Some(aux) = self.storage.node_aux.get(current)
                 && let Some(ctx) = &aux.context
-                && let Some(val) = ctx.get(&std::any::TypeId::of::<T>())
+                && let Some(val) = ctx.get(&key)
             {
-                return val.downcast_ref::<T>().cloned();
+                return Some(val.as_ref());
             }
             current_opt = self.storage.graph.get(current).and_then(|n| n.parent);
         }
@@ -518,8 +461,8 @@ pub(crate) trait MemoRunnerTrait {
     fn run(&self, rt: &Runtime, id: NodeId);
 }
 
-struct UniversalMemoRunner {
-    f: Box<dyn Fn(Option<AnyValue>) -> AnyValue>,
+pub(crate) struct UniversalMemoRunner {
+    pub(crate) f: Box<dyn Fn(Option<AnyValue>) -> AnyValue>,
 }
 
 impl MemoRunnerTrait for UniversalMemoRunner {
@@ -543,8 +486,8 @@ impl MemoRunnerTrait for UniversalMemoRunner {
     }
 }
 
-struct UniversalDerivedRunner {
-    f: Box<dyn Fn() -> AnyValue>,
+pub(crate) struct UniversalDerivedRunner {
+    pub(crate) f: Box<dyn Fn() -> AnyValue>,
 }
 
 impl MemoRunnerTrait for UniversalDerivedRunner {

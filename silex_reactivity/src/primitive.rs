@@ -1,22 +1,27 @@
 use crate::core::arena::Index as NodeId;
-use crate::runtime::RUNTIME;
-use std::any::Any;
+use crate::core::value::AnyValue;
+use crate::runtime::{RUNTIME, UniversalDerivedRunner, UniversalMemoRunner};
+use std::any::{Any, TypeId};
 
 // --- Context ---
 
 pub fn provide_context<T: 'static>(value: T) {
-    RUNTIME.with(|rt| rt.provide_context(value));
+    RUNTIME.with(|rt| rt.provide_context(TypeId::of::<T>(), Box::new(value)));
 }
 
 pub fn use_context<T: Clone + 'static>() -> Option<T> {
-    RUNTIME.with(|rt| rt.use_context::<T>())
+    RUNTIME.with(|rt| {
+        rt.use_context_raw(TypeId::of::<T>())?
+            .downcast_ref::<T>()
+            .cloned()
+    })
 }
 
 // --- Effect ---
 
 #[track_caller]
 pub fn effect<F: Fn() + 'static>(f: F) -> NodeId {
-    RUNTIME.with(|rt| rt.create_effect(f))
+    RUNTIME.with(|rt| rt.create_effect(Box::new(move |_| f())))
 }
 
 // --- Memo ---
@@ -27,12 +32,34 @@ where
     T: Clone + PartialEq + 'static,
     F: Fn(Option<&T>) -> T + 'static,
 {
-    RUNTIME.with(|rt| rt.create_memo(f))
+    RUNTIME.with(|rt| {
+        let initial_value = rt.untrack(|| f(None));
+        let runner_f = move |old_any: Option<AnyValue>| -> AnyValue {
+            let old_t = old_any.and_then(|any| any.downcast_ref::<T>().cloned());
+            let new_t = f(old_t.as_ref());
+            AnyValue::new_reactive(new_t)
+        };
+        rt.create_memo_node_raw(
+            AnyValue::new_reactive(initial_value),
+            Box::new(UniversalMemoRunner {
+                f: Box::new(runner_f),
+            }),
+        )
+    })
 }
 
 #[track_caller]
 pub fn register_derived<T: 'static>(f: Box<dyn Fn() -> T>) -> NodeId {
-    RUNTIME.with(|rt| rt.register_derived(f))
+    RUNTIME.with(|rt| {
+        let initial_value = rt.untrack(|| f());
+        let runner_f = move || -> AnyValue { AnyValue::new(f()) };
+        rt.create_memo_node_raw(
+            AnyValue::new(initial_value),
+            Box::new(UniversalDerivedRunner {
+                f: Box::new(runner_f),
+            }),
+        )
+    })
 }
 
 pub fn run_derived<T: Clone + 'static>(id: NodeId) -> Option<T> {
@@ -43,7 +70,7 @@ pub fn run_derived<T: Clone + 'static>(id: NodeId) -> Option<T> {
 
 #[track_caller]
 pub fn signal<T: 'static>(value: T) -> NodeId {
-    RUNTIME.with(|rt| rt.create_signal(value))
+    RUNTIME.with(|rt| rt.create_signal(AnyValue::new(value)))
 }
 
 pub fn try_get_signal<T: Clone + 'static>(id: NodeId) -> Option<T> {
@@ -146,7 +173,7 @@ pub fn try_update_signal_silent<T: 'static, R>(
 
 #[track_caller]
 pub fn store_value<T: 'static>(value: T) -> NodeId {
-    RUNTIME.with(|rt| rt.store_value(value))
+    RUNTIME.with(|rt| rt.store_value(AnyValue::new(value)))
 }
 
 pub fn try_with_stored_value<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
