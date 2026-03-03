@@ -13,16 +13,16 @@ pub struct OpPayloadHeader {
     pub read_to_ptr: unsafe fn(this: *const u8, out: *mut u8) -> bool,
     pub track: fn(this: *const u8),
     pub is_constant: bool,
+    pub input_count: u32,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct UnifiedStaticMapPayload<OT> {
     pub header: OpPayloadHeader,
-    pub input_count: usize,
-    pub inputs: [NodeId; 3],
     pub compute: unsafe fn(inputs: *const *const (), out_ptr: *mut (), mapper_ptr: *const ()),
     pub mapper_ptr: *const (),
+    pub inputs: [NodeId; 3],
     pub _marker: PhantomData<OT>,
 }
 
@@ -37,8 +37,8 @@ impl<OT: RxData> UnifiedStaticMapPayload<OT> {
                 read_to_ptr: op_trampolines::unified_map_read_to_ptr,
                 track: op_trampolines::unified_track,
                 is_constant,
+                input_count: 1,
             },
-            input_count: 1,
             inputs: [
                 input_id,
                 NodeId {
@@ -67,8 +67,8 @@ impl<OT: RxData> UnifiedStaticMapPayload<OT> {
                 read_to_ptr: op_trampolines::unified_map_read_to_ptr,
                 track: track_fn,
                 is_constant,
+                input_count: 1,
             },
-            input_count: 1,
             inputs: [
                 input_id,
                 NodeId {
@@ -96,8 +96,8 @@ impl<OT: RxData> UnifiedStaticMapPayload<OT> {
                 read_to_ptr: op_trampolines::unified_map_read_to_ptr,
                 track: op_trampolines::unified_track,
                 is_constant,
+                input_count: 2,
             },
-            input_count: 2,
             inputs: [
                 inputs[0],
                 inputs[1],
@@ -122,8 +122,8 @@ impl<OT: RxData> UnifiedStaticMapPayload<OT> {
                 read_to_ptr: op_trampolines::unified_map_read_to_ptr,
                 track: op_trampolines::unified_track,
                 is_constant,
+                input_count: 3,
             },
-            input_count: 3,
             inputs,
             compute: op_trampolines::compute_map_3::<I1, I2, I3, OT>,
             mapper_ptr: mapper as *const (),
@@ -136,9 +136,9 @@ impl<OT: RxData> UnifiedStaticMapPayload<OT> {
 #[derive(Clone, Copy)]
 pub struct OpPayload<U, const N: usize> {
     pub header: OpPayloadHeader,
-    pub inputs: [NodeId; N],
     pub raw_read_to_ptr: unsafe fn(inputs: &[NodeId], out: *mut u8) -> bool,
     pub raw_track: fn(inputs: &[NodeId]),
+    pub inputs: [NodeId; N],
     pub _marker: PhantomData<U>,
 }
 
@@ -154,6 +154,7 @@ impl<U: RxData, const N: usize> OpPayload<U, N> {
                 read_to_ptr: op_trampolines::op_read_to_ptr_trampoline::<U, N>,
                 track: op_trampolines::op_track_wrap::<U, N>,
                 is_constant,
+                input_count: N as u32,
             },
             inputs,
             raw_read_to_ptr: read_to_ptr,
@@ -316,7 +317,11 @@ pub mod op_trampolines {
     pub unsafe fn unified_map_read_to_ptr(this: *const u8, out: *mut u8) -> bool {
         let payload = unsafe { &*(this as *const UnifiedStaticMapPayload<()>) };
         let mut input_ptrs = [std::ptr::null(); 3];
-        for (i, item) in input_ptrs.iter_mut().enumerate().take(payload.input_count) {
+        for (i, item) in input_ptrs
+            .iter_mut()
+            .enumerate()
+            .take(payload.header.input_count as usize)
+        {
             if let Some(ptr) =
                 unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[i]) }
             {
@@ -331,7 +336,7 @@ pub mod op_trampolines {
 
     pub fn unified_track(this: *const u8) {
         let payload = unsafe { &*(this as *const UnifiedStaticMapPayload<()>) };
-        track_signals_batch(&payload.inputs[..payload.input_count]);
+        track_signals_batch(&payload.inputs[..payload.header.input_count as usize]);
     }
 
     /// # Safety
