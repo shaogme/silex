@@ -67,13 +67,7 @@ pub enum RxInner {
 
 impl Clone for RxInner {
     fn clone(&self) -> Self {
-        match self {
-            Self::InlineConstant(v) => Self::InlineConstant(*v),
-            Self::Signal(id) => Self::Signal(*id),
-            Self::Closure(id) => Self::Closure(*id),
-            Self::Op(id) => Self::Op(*id),
-            Self::Stored(id) => Self::Stored(*id),
-        }
+        *self
     }
 }
 

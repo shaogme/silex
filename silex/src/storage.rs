@@ -118,14 +118,13 @@ where
 
         let on_storage = Closure::wrap(Box::new(move |ev: StorageEvent| {
             // 只同步匹配的 Key 且由 localStorage 触发的事件
-            if ev.key().as_ref() == Some(&key_clone) {
-                if let Some(new_val_str) = ev.new_value() {
-                    if let Some(new_val) = T::decode(&new_val_str) {
-                        // 避免不必要的更新：如果本地值已一致，则跳过
-                        if signal_clone.get_untracked() != new_val {
-                            signal_clone.set(new_val);
-                        }
-                    }
+            if ev.key().as_ref() == Some(&key_clone)
+                && let Some(new_val_str) = ev.new_value()
+                && let Some(new_val) = T::decode(&new_val_str)
+            {
+                // 避免不必要的更新：如果本地值已一致，则跳过
+                if signal_clone.get_untracked() != new_val {
+                    signal_clone.set(new_val);
                 }
             }
         }) as Box<dyn FnMut(StorageEvent)>);

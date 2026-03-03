@@ -45,8 +45,8 @@ fn main() {
 
         // 副作用：当 Store 中的主题变化时，同步给持久化信号、DOM 属性和 CSS 引擎
         Effect::new({
-            let store = store.clone();
-            let theme_persistent = theme_persistent.clone();
+            let store = store;
+            let theme_persistent = theme_persistent;
             move |_| {
                 let theme_name = store.theme.get();
 
@@ -54,15 +54,14 @@ fn main() {
                 theme_persistent.set(theme_name.clone());
 
                 // 同步至 <html> 的 data-theme 属性（用于 CSS 选择器）
-                if let Some(win) = ::silex::reexports::web_sys::window() {
-                    if let Some(doc) = win.document() {
-                        if let Some(root) = doc.document_element() {
-                            let _ = root.set_attribute("data-theme", &theme_name);
-                        }
-                    }
+                if let Some(win) = ::silex::reexports::web_sys::window()
+                    && let Some(doc) = win.document()
+                    && let Some(root) = doc.document_element()
+                {
+                    let _ = root.set_attribute("data-theme", &theme_name);
                 }
 
-                console_log(&format!("Global Sync: switching theme to {}", theme_name));
+                console_log(format!("Global Sync: switching theme to {}", theme_name));
                 set_theme_signal.set(crate::css::get_theme(&theme_name));
             }
         });
@@ -70,8 +69,8 @@ fn main() {
         // 跨标签同步支持：
         // 如果用户在另一个标签页改了主题，持久化信号会变化，将其同步回 Store
         Effect::new({
-            let store = store.clone();
-            let theme_persistent = theme_persistent.clone();
+            let store = store;
+            let theme_persistent = theme_persistent;
             move |_| {
                 let name = theme_persistent.get();
                 if store.theme.get_untracked() != name {

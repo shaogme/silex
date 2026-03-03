@@ -111,7 +111,7 @@ pub fn StorageDemo() -> impl View {
     div![
         h3("LocalStorage Persistence"),
         p("Silex provides a zero-cost abstraction for persistence. Basic types (int, string, bool) use direct string conversion, while complex structures use browser-native JSON via the `Json<T>` wrapper."),
-        
+
         // 1. 基本类型持久化
         div![
             h4("Basic Type Persistence (No Serde needed)"),

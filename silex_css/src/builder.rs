@@ -139,7 +139,7 @@ impl Style {
     pub fn apply_to_element(&self, el: &web_sys::Element) -> String {
         // 1. 生成稳定哈希（忽略动态值，递归所有嵌套规则）
         let mut hasher = silex_hash::css::CssHasher::new();
-        hash_recursive(&self, &mut hasher);
+        hash_recursive(self, &mut hasher);
         let hash_val = hasher.finish();
         let mut hash_buf = [0u8; 13];
         let hash_str = silex_hash::css::encode_base36(hash_val, &mut hash_buf);
@@ -150,7 +150,7 @@ impl Style {
         let mut dyn_bindings = Vec::new();
         let base_sel = format!(".{}", class_base);
 
-        generate_css_recursive(&self, &base_sel, hash_str, &mut css_str, &mut dyn_bindings);
+        generate_css_recursive(self, &base_sel, hash_str, &mut css_str, &mut dyn_bindings);
 
         // 3. 注入样式并添加类名
         crate::inject_style(&class_base, &css_str);

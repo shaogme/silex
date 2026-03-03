@@ -101,12 +101,11 @@ impl Runtime {
                 registered = true;
                 target_version = signal_data.version;
             }
-            if registered {
-                if let Some(owner_node) = self.storage.reactive.get_mut(owner)
-                    && let Some(eff) = &mut owner_node.effect
-                {
-                    eff.dependencies.push((target_id, target_version));
-                }
+            if registered
+                && let Some(owner_node) = self.storage.reactive.get_mut(owner)
+                && let Some(eff) = &mut owner_node.effect
+            {
+                eff.dependencies.push((target_id, target_version));
             }
         }
     }
@@ -329,9 +328,8 @@ impl Runtime {
         let vtable = unsafe { &*vtable_ptr };
         let data_ptr = unsafe { data.as_ptr().add(1) };
 
-        let initial_value = self.run_with_owner(id, || unsafe {
-            (vtable.compute.as_fn())(data_ptr as *const usize, None)
-        });
+        let initial_value =
+            self.run_with_owner(id, || unsafe { (vtable.compute.as_fn())(data_ptr, None) });
 
         if let Some(n) = self.storage.reactive.get_mut(id) {
             if let Some(signal) = &mut n.signal {
@@ -389,14 +387,14 @@ impl Runtime {
     }
 
     pub fn provide_context(&self, key: TypeId, value: Box<dyn Any>) {
-        if let Some(owner) = self.current_owner() {
-            if let Some(aux) = self.storage.try_aux_mut(owner) {
-                if aux.context.is_none() {
-                    aux.context = Some(std::collections::HashMap::new());
-                }
-                if let Some(ctx) = &mut aux.context {
-                    ctx.insert(key, value);
-                }
+        if let Some(owner) = self.current_owner()
+            && let Some(aux) = self.storage.try_aux_mut(owner)
+        {
+            if aux.context.is_none() {
+                aux.context = Some(std::collections::HashMap::new());
+            }
+            if let Some(ctx) = &mut aux.context {
+                ctx.insert(key, value);
             }
         }
     }
@@ -421,10 +419,10 @@ impl Runtime {
         {
             return Some(unsafe { s.value.as_ptr() });
         }
-        if let Some(extra) = self.storage.extras.get(id) {
-            if let ExtraData::StoredValue(sv) = extra {
-                return Some(unsafe { sv.value.as_ptr() });
-            }
+        if let Some(extra) = self.storage.extras.get(id)
+            && let ExtraData::StoredValue(sv) = extra
+        {
+            return Some(unsafe { sv.value.as_ptr() });
         }
         None
     }
@@ -477,10 +475,10 @@ impl Runtime {
             unsafe { f.call(self as *const Runtime as *const ()) };
             self.set_owner(prev_owner);
 
-            if let Some(n) = self.storage.reactive.get_mut(effect_id) {
-                if let Some(effect_data) = &mut n.effect {
-                    effect_data.computation = Some(f);
-                }
+            if let Some(n) = self.storage.reactive.get_mut(effect_id)
+                && let Some(effect_data) = &mut n.effect
+            {
+                effect_data.computation = Some(f);
             }
         }
     }

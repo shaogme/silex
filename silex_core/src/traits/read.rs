@@ -687,7 +687,7 @@ macro_rules! impl_rx_delegate {
                 Self::Value: Sized,
             {
                 self.rx_try_with_untracked(|v| {
-                    use crate::traits::adaptive::{AdaptiveFallback, AdaptiveWrapper};
+                    use $crate::traits::adaptive::{AdaptiveFallback, AdaptiveWrapper};
                     AdaptiveWrapper(v).maybe_clone()
                 })
                 .flatten()

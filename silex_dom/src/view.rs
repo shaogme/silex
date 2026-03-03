@@ -182,7 +182,8 @@ fn mount_dynamic_view_erased_internal(
             let start_node = start_node.clone();
             let end_node = end_node.clone();
             let document = document.clone();
-            let id = silex_core::reactivity::create_scope(move || {
+
+            silex_core::reactivity::create_scope(move || {
                 if let Some(parent) = start_node.parent_node() {
                     while let Some(sibling) = start_node.next_sibling() {
                         if sibling == end_node {
@@ -200,8 +201,7 @@ fn mount_dynamic_view_erased_internal(
                 if let Some(parent) = end_node.parent_node() {
                     let _ = parent.insert_before(&fragment_node, Some(&end_node));
                 }
-            });
-            id
+            })
         }));
 
         if let Ok(id) = result {

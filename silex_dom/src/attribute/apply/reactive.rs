@@ -262,14 +262,14 @@ impl ReactiveApply for String {
                     AttrOp::BindReactiveStyleSheet(rx)
                 } else {
                     AttrOp::Update {
-                        name: name.into(),
+                        name,
                         target: AttrTarget::Attr,
                         data: AttrData::ReactiveString(rx),
                     }
                 }
             }
             OwnedApplyTarget::Prop(name) => AttrOp::Update {
-                name: name.into(),
+                name,
                 target: AttrTarget::Prop,
                 data: AttrData::ReactiveJs({
                     let rx = rx.clone();
@@ -371,24 +371,20 @@ impl ReactiveApply for bool {
     ) -> Option<AttrOp> {
         let op = match target {
             OwnedApplyTarget::Attr(name) => AttrOp::Update {
-                name: name.into(),
+                name,
                 target: AttrTarget::Attr,
                 data: AttrData::ReactiveBool(rx),
             },
             OwnedApplyTarget::Prop(name) => AttrOp::Update {
-                name: name.into(),
+                name,
                 target: AttrTarget::Prop,
                 data: AttrData::ReactiveBool(rx),
             },
             _ => {
-                let rx_inner = rx.clone();
+                let rx_inner = rx;
                 let target_clone = target.clone();
                 AttrOp::Custom(std::rc::Rc::new(move |el| {
-                    apply_bool_reactive_internal(
-                        el.clone(),
-                        target_clone.clone(),
-                        rx_inner.clone(),
-                    );
+                    apply_bool_reactive_internal(el.clone(), target_clone.clone(), rx_inner);
                 }))
             }
         };

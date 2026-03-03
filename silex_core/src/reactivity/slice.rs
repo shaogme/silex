@@ -143,7 +143,7 @@ where
     S: RxRead + RxCloneData,
     for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
     F: Fn(&S::Value) -> &O + 'static,
-    O: ?Sized + Clone + RxData,
+    O: Clone + RxData,
 {
     #[inline(always)]
     fn into_signal(self) -> crate::reactivity::Signal<Self::Value>

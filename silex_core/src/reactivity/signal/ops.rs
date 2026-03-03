@@ -291,6 +291,11 @@ impl<U: RxCloneData, const N: usize> crate::traits::IntoSignal for OpPayload<U, 
 pub mod op_trampolines {
     use super::*;
 
+    /// # Safety
+    ///
+    /// This function is unsafe because it performs raw pointer dereferencing.
+    /// The caller must ensure that `this` points to a valid `OpPayload<U, N>`
+    /// and `out` points to a valid memory location for `U`.
     pub unsafe fn op_read_to_ptr_trampoline<U: RxData, const N: usize>(
         this: *const u8,
         out: *mut u8,
@@ -304,14 +309,18 @@ pub mod op_trampolines {
         (payload.raw_track)(&payload.inputs)
     }
 
+    /// # Safety
+    ///
+    /// The caller must ensure that `this` points to a valid `UnifiedStaticMapPayload<()>`
+    /// and `out` points to a valid memory location for the output type.
     pub unsafe fn unified_map_read_to_ptr(this: *const u8, out: *mut u8) -> bool {
         let payload = unsafe { &*(this as *const UnifiedStaticMapPayload<()>) };
         let mut input_ptrs = [std::ptr::null(); 3];
-        for i in 0..payload.input_count {
+        for (i, item) in input_ptrs.iter_mut().enumerate().take(payload.input_count) {
             if let Some(ptr) =
                 unsafe { silex_reactivity::try_get_any_raw_untracked(payload.inputs[i]) }
             {
-                input_ptrs[i] = ptr;
+                *item = ptr;
             } else {
                 return false;
             }
@@ -325,6 +334,12 @@ pub mod op_trampolines {
         track_signals_batch(&payload.inputs[..payload.input_count]);
     }
 
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - `inputs` points to an array of at least 1 valid pointer to `IT`.
+    /// - `out_ptr` points to a valid memory location for `OT`.
+    /// - `mapper` is a valid function pointer of type `fn(&IT) -> OT`.
     pub unsafe fn compute_map_1<IT: RxData, OT: RxData>(
         inputs: *const *const (),
         out_ptr: *mut (),
@@ -336,6 +351,12 @@ pub mod op_trampolines {
         unsafe { std::ptr::write(out_ptr as *mut OT, val) };
     }
 
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - `inputs` points to an array of at least 2 valid pointers to `I1` and `I2`.
+    /// - `out_ptr` points to a valid memory location for `OT`.
+    /// - `mapper` is a valid function pointer of type `fn(&I1, &I2) -> OT`.
     pub unsafe fn compute_map_2<I1: RxData, I2: RxData, OT: RxData>(
         inputs: *const *const (),
         out_ptr: *mut (),
@@ -348,6 +369,12 @@ pub mod op_trampolines {
         unsafe { std::ptr::write(out_ptr as *mut OT, val) };
     }
 
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - `inputs` points to an array of at least 3 valid pointers to `I1`, `I2`, and `I3`.
+    /// - `out_ptr` points to a valid memory location for `OT`.
+    /// - `mapper` is a valid function pointer of type `fn(&I1, &I2, &I3) -> OT`.
     pub unsafe fn compute_map_3<I1: RxData, I2: RxData, I3: RxData, OT: RxData>(
         inputs: *const *const (),
         out_ptr: *mut (),

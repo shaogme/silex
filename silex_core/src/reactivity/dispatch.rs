@@ -70,16 +70,13 @@ pub fn report_disposed(
 }
 
 /// 核心分发：将数据读取到原始指针。
-/// 安全性：调用者必须确保 out 指向的内存有足够的空间存储 T，且 id 对应的类型确实是 T。
+///
+/// # Safety
+///
+/// 调用者必须确保 out 指向的内存有足够的空间存储 T，且 id 对应的类型确实是 T。
 pub unsafe fn read_to_ptr(id: NodeId, kind: RxNodeKind, out: *mut u8) -> bool {
     match kind {
-        RxNodeKind::Signal | RxNodeKind::Stored => unsafe {
-            if silex_reactivity::try_get_any_raw_untracked(id).is_some() {
-                false
-            } else {
-                false
-            }
-        },
+        RxNodeKind::Signal | RxNodeKind::Stored => false,
         RxNodeKind::Op => silex_reactivity::try_with_op(id, |buffer| {
             use crate::reactivity::OpPayloadHeader;
             let header = unsafe { &*(buffer.data.as_ptr() as *const OpPayloadHeader) };
@@ -96,6 +93,10 @@ pub unsafe fn read_to_ptr(id: NodeId, kind: RxNodeKind, out: *mut u8) -> bool {
 
 /// 泛型助手：将节点读取逻辑收拢。
 /// 虽然此函数本身是泛型的，但它通过调用非泛型分发器来减少调用方的代码体积。
+///
+/// # Safety
+///
+/// 调用者必须确保 `id` 对应的节点确实存储了类型 `T`。
 pub unsafe fn rx_read_node_untracked<'a, T: crate::traits::RxData>(
     id: NodeId,
     kind: RxNodeKind,
@@ -117,9 +118,11 @@ pub unsafe fn rx_read_node_untracked<'a, T: crate::traits::RxData>(
                 None
             }
         }
-        RxNodeKind::Closure => silex_reactivity::try_with_closure(id, |f: &Box<dyn Fn() -> T>| {
-            crate::traits::RxGuard::Owned(f())
-        }),
+        RxNodeKind::Closure => {
+            silex_reactivity::try_with_closure::<Box<dyn Fn() -> T>, _>(id, |f| {
+                crate::traits::RxGuard::Owned(f())
+            })
+        }
     }
 }
 
@@ -143,7 +146,7 @@ pub fn rx_try_with_node_untracked<T: crate::traits::RxData, U>(
             }
         }
         RxNodeKind::Closure => {
-            silex_reactivity::try_with_closure(id, |f: &Box<dyn Fn() -> T>| fun(&f()))
+            silex_reactivity::try_with_closure::<Box<dyn Fn() -> T>, _>(id, |f| fun(&f()))
         }
     }
 }

@@ -14,12 +14,15 @@ pub(crate) struct AnyValue {
     data: MaybeUninit<[usize; INLINE_WORDS]>,
 }
 
+type CloneFn = unsafe fn(*const usize, TypeId, &'static AnyValueVTable) -> AnyValue;
+type EqFn = unsafe fn(*const usize, *const usize) -> bool;
+
 struct AnyValueVTable {
     as_ptr: FuncPtr<unsafe fn(*const usize) -> *const ()>,
     as_mut_ptr: FuncPtr<unsafe fn(*mut usize) -> *mut ()>,
     drop: FuncPtr<unsafe fn(*mut usize)>,
-    clone: Option<FuncPtr<unsafe fn(*const usize, TypeId, &'static AnyValueVTable) -> AnyValue>>,
-    eq: Option<FuncPtr<unsafe fn(*const usize, *const usize) -> bool>>,
+    clone: Option<FuncPtr<CloneFn>>,
+    eq: Option<FuncPtr<EqFn>>,
 }
 
 // Non-generic helpers to reduce bloat
@@ -101,7 +104,7 @@ impl AnyValue {
         if self.type_id != other.type_id {
             return false;
         }
-        self.vtable.eq.map_or(false, |f| unsafe {
+        self.vtable.eq.is_some_and(|f| unsafe {
             f.as_fn()(
                 self.data.as_ptr() as *const usize,
                 other.data.as_ptr() as *const usize,

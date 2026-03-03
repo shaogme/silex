@@ -156,16 +156,16 @@ pub fn rx(input: TokenStream) -> TokenStream {
     let mut final_raw_input = processed_input.clone();
 
     let mut tokens_iter = processed_input.clone().into_iter().peekable();
-    if let Some(proc_macro2::TokenTree::Punct(p)) = tokens_iter.peek() {
-        if p.as_char() == '@' {
-            tokens_iter.next(); // consume @
-            if let Some(proc_macro2::TokenTree::Ident(id)) = tokens_iter.peek() {
-                if id.to_string() == "fn" {
-                    tokens_iter.next(); // consume fn
-                    force_static = true;
-                    final_raw_input = tokens_iter.collect();
-                }
-            }
+    if let Some(proc_macro2::TokenTree::Punct(p)) = tokens_iter.peek()
+        && p.as_char() == '@'
+    {
+        tokens_iter.next(); // consume @
+        if let Some(proc_macro2::TokenTree::Ident(id)) = tokens_iter.peek()
+            && *id == "fn"
+        {
+            tokens_iter.next(); // consume fn
+            force_static = true;
+            final_raw_input = tokens_iter.collect();
         }
     }
 

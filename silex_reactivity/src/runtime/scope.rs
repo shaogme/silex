@@ -51,10 +51,10 @@ impl Runtime {
     }
 
     pub(crate) fn internal_on_cleanup(&self, thunk: OnceThunk) {
-        if let Some(owner) = self.current_owner() {
-            if let Some(aux) = self.storage.try_aux_mut(owner) {
-                aux.cleanups.push(thunk);
-            }
+        if let Some(owner) = self.current_owner()
+            && let Some(aux) = self.storage.try_aux_mut(owner)
+        {
+            aux.cleanups.push(thunk);
         }
     }
 
@@ -75,10 +75,10 @@ impl Runtime {
 
         let id = self.storage.graph.insert(node);
 
-        if let Some(parent_id) = parent {
-            if let Some(aux) = self.storage.try_aux_mut(parent_id) {
-                aux.children.push(id);
-            }
+        if let Some(parent_id) = parent
+            && let Some(aux) = self.storage.try_aux_mut(parent_id)
+        {
+            aux.children.push(id);
         }
         id
     }
