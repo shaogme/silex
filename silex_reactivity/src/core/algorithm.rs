@@ -118,12 +118,12 @@ pub fn propagate(
     graph.fill_subscribers(start_node, temp_subs);
 
     for &sub_id in temp_subs.iter() {
-        if graph.is_effect(sub_id) {
-            graph.queue_effect(sub_id);
-        } else {
-            let state = graph.get_state(sub_id);
-            if state != NodeState::Dirty {
-                graph.set_state(sub_id, NodeState::Dirty);
+        let state = graph.get_state(sub_id);
+        if state != NodeState::Dirty {
+            graph.set_state(sub_id, NodeState::Dirty);
+            if graph.is_effect(sub_id) {
+                graph.queue_effect(sub_id);
+            } else {
                 queue.push_back(sub_id);
             }
         }
@@ -135,13 +135,13 @@ pub fn propagate(
         graph.fill_subscribers(current_id, temp_subs);
 
         for &sub_id in temp_subs.iter() {
-            if graph.is_effect(sub_id) {
-                graph.queue_effect(sub_id);
-            } else {
-                let state = graph.get_state(sub_id);
-                // Optimization: Only propagate if Clean -> Check
-                if state == NodeState::Clean {
-                    graph.set_state(sub_id, NodeState::Check);
+            let state = graph.get_state(sub_id);
+            // Optimization: Only propagate if Clean -> Check
+            if state == NodeState::Clean {
+                graph.set_state(sub_id, NodeState::Check);
+                if graph.is_effect(sub_id) {
+                    graph.queue_effect(sub_id);
+                } else {
                     queue.push_back(sub_id);
                 }
             }

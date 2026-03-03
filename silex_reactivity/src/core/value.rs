@@ -335,9 +335,7 @@ macro_rules! impl_thunk_boxed_vtable {
     };
 }
 
-impl_thunk_vtable!(ThunkInlineVTable, Fn(*const ()), |f: &F, rt| f(rt));
 impl_thunk_vtable!(ThunkSimpleInlineVTable, Fn(), |f: &F, _rt| f());
-impl_thunk_boxed_vtable!(ThunkBoxedVTable, Fn(*const ()), |f: &F, rt| f(rt));
 impl_thunk_boxed_vtable!(ThunkSimpleBoxedVTable, Fn(), |f: &F, _rt| f());
 
 #[inline(never)]
@@ -352,10 +350,6 @@ fn thunk_value_new_internal(
 }
 
 impl ThunkValue {
-    pub(crate) fn new<F: Fn(*const ()) + 'static>(f: F) -> Self {
-        Self::create::<F, ThunkInlineVTable<F>, ThunkBoxedVTable<F>>(f)
-    }
-
     pub(crate) fn new_simple<F: Fn() + 'static>(f: F) -> Self {
         Self::create::<F, ThunkSimpleInlineVTable<F>, ThunkSimpleBoxedVTable<F>>(f)
     }
@@ -381,6 +375,10 @@ impl ThunkValue {
             unsafe { ptr::write(data.as_mut_ptr() as *mut Box<F>, boxed) };
             thunk_value_new_internal(data, &BVT::VTABLE)
         }
+    }
+
+    pub(crate) fn new_raw(data: [usize; INLINE_WORDS], vtable: &'static ThunkVTable) -> Self {
+        thunk_value_new_internal(data, vtable)
     }
 
     pub(crate) unsafe fn call(&self, rt: *const ()) {

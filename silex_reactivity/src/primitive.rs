@@ -48,34 +48,93 @@ where
     T: Clone + PartialEq + 'static,
     F: Fn(Option<&T>) -> T + 'static,
 {
-    let initial_value = RUNTIME.with(|rt| rt.untrack(|| f(None)));
+    let id = RUNTIME.with(|rt| rt.register_node());
+    internal_init_memo::<T, F>(id, f);
+    id
+}
 
-    let thunk = ThunkValue::new(move |rt_ptr: *const ()| {
-        let rt = unsafe { &*(rt_ptr as *const crate::runtime::Runtime) };
-        rt.update_memo_core(rt.current_owner().unwrap(), |old_any| {
-            let old_t = old_any.and_then(|any| any.downcast_ref::<T>().cloned());
-            let new_t = f(old_t.as_ref());
-            AnyValue::new_reactive(new_t)
-        });
+#[inline(never)]
+fn internal_init_memo<T, F>(id: NodeId, f: F)
+where
+    T: Clone + PartialEq + 'static,
+    F: Fn(Option<&T>) -> T + 'static,
+{
+    let layout = std::alloc::Layout::new::<F>();
+    let fits_inline = layout.size() <= 2 * std::mem::size_of::<usize>()
+        && layout.align() <= std::mem::align_of::<usize>();
+
+    let mut data = [0usize; 3];
+    if fits_inline {
+        data[0] = &MemoInlineVTable::<T, F>::VTABLE as *const _ as usize;
+        unsafe { std::ptr::write(data.as_mut_ptr().add(1) as *mut F, f) };
+    } else {
+        data[0] = &MemoBoxedVTable::<T, F>::VTABLE as *const _ as usize;
+        let boxed = Box::new(f);
+        unsafe { std::ptr::write(data.as_mut_ptr().add(1) as *mut Box<F>, boxed) };
+    }
+
+    RUNTIME.with(|rt| {
+        unsafe { rt.initialize_memo_raw(id, data) };
     });
-
-    internal_create_memo(AnyValue::new_reactive(initial_value), thunk)
 }
 
 #[track_caller]
 pub fn register_derived<T: 'static>(f: Box<dyn Fn() -> T>) -> NodeId {
-    let initial_value = RUNTIME.with(|rt| rt.untrack(|| f()));
-
-    let thunk = ThunkValue::new(move |rt_ptr: *const ()| {
-        let rt = unsafe { &*(rt_ptr as *const crate::runtime::Runtime) };
-        rt.update_memo_core(rt.current_owner().unwrap(), |_| AnyValue::new(f()));
-    });
-
-    internal_create_memo(AnyValue::new(initial_value), thunk)
+    let id = RUNTIME.with(|rt| rt.register_node());
+    internal_init_derived::<T>(id, f);
+    id
 }
 
-fn internal_create_memo(initial: AnyValue, thunk: ThunkValue) -> NodeId {
-    RUNTIME.with(|rt| rt.create_memo_node_untyped(initial, thunk))
+#[inline(never)]
+fn internal_init_derived<T: 'static>(id: NodeId, f: Box<dyn Fn() -> T>) {
+    let mut data = [0usize; 3];
+    data[0] = &DerivedVTable::<T>::VTABLE as *const _ as usize;
+    unsafe { std::ptr::write(data.as_mut_ptr().add(1) as *mut Box<dyn Fn() -> T>, f) };
+
+    RUNTIME.with(|rt| {
+        unsafe { rt.initialize_memo_raw(id, data) };
+    });
+}
+
+struct MemoInlineVTable<T, F>(std::marker::PhantomData<(T, F)>);
+impl<T: Clone + PartialEq + 'static, F: Fn(Option<&T>) -> T + 'static> MemoInlineVTable<T, F> {
+    const VTABLE: crate::runtime::MemoVTable = crate::runtime::MemoVTable {
+        compute: crate::core::FuncPtr::new(|ptr, old| {
+            let f = unsafe { &*(ptr as *const F) };
+            let old_t = old.and_then(|any| any.downcast_ref::<T>().cloned());
+            let new_t = f(old_t.as_ref());
+            AnyValue::new_reactive(new_t)
+        }),
+        drop: crate::core::FuncPtr::new(|ptr| unsafe { std::ptr::drop_in_place(ptr as *mut F) }),
+    };
+}
+
+struct MemoBoxedVTable<T, F>(std::marker::PhantomData<(T, F)>);
+impl<T: Clone + PartialEq + 'static, F: Fn(Option<&T>) -> T + 'static> MemoBoxedVTable<T, F> {
+    const VTABLE: crate::runtime::MemoVTable = crate::runtime::MemoVTable {
+        compute: crate::core::FuncPtr::new(|ptr, old| {
+            let f = unsafe { &**(ptr as *const Box<F>) };
+            let old_t = old.and_then(|any| any.downcast_ref::<T>().cloned());
+            let new_t = f(old_t.as_ref());
+            AnyValue::new_reactive(new_t)
+        }),
+        drop: crate::core::FuncPtr::new(|ptr| unsafe {
+            std::ptr::drop_in_place(ptr as *mut Box<F>)
+        }),
+    };
+}
+
+struct DerivedVTable<T>(std::marker::PhantomData<T>);
+impl<T: 'static> DerivedVTable<T> {
+    const VTABLE: crate::runtime::MemoVTable = crate::runtime::MemoVTable {
+        compute: crate::core::FuncPtr::new(|ptr, _| {
+            let f = unsafe { &**(ptr as *const Box<dyn Fn() -> T>) };
+            AnyValue::new(f())
+        }),
+        drop: crate::core::FuncPtr::new(|ptr| unsafe {
+            std::ptr::drop_in_place(ptr as *mut Box<dyn Fn() -> T>)
+        }),
+    };
 }
 
 pub fn run_derived<T: Clone + 'static>(id: NodeId) -> Option<T> {
@@ -122,6 +181,11 @@ pub fn try_get_signal_untracked<T: Clone + 'static>(id: NodeId) -> Option<T> {
 }
 
 pub fn update_signal<T: 'static>(id: NodeId, f: impl FnOnce(&mut T)) {
+    internal_update_signal::<T>(id, f);
+}
+
+#[inline(never)]
+fn internal_update_signal<T: 'static>(id: NodeId, f: impl FnOnce(&mut T)) {
     let mut f = Some(f);
     RUNTIME.with(|rt| {
         rt.update_signal_untyped(id, &mut |any_val| {

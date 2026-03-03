@@ -204,6 +204,7 @@ impl Runtime {
         self.update_if_necessary(id);
     }
 
+    #[inline(never)]
     pub(crate) fn update_signal_untyped(&self, id: NodeId, updater: &mut dyn FnMut(&mut AnyValue)) {
         if let Some(n) = self.storage.reactive.get_mut(id)
             && let Some(signal) = &mut n.signal
@@ -214,7 +215,7 @@ impl Runtime {
         }
     }
 
-    fn prepare_memo_node(&self, id: NodeId) {
+    pub(crate) fn prepare_memo_node(&self, id: NodeId) {
         self.storage.reactive.insert(
             id,
             ReactiveNode {
@@ -260,11 +261,7 @@ impl Runtime {
                     if let Some(n) = self.storage.reactive.get(id)
                         && n.effect.is_some()
                     {
-                        if n.signal.is_some() {
-                            self.update_if_necessary(id);
-                        } else {
-                            self.run_effect(id);
-                        }
+                        self.update_if_necessary(id);
                     }
                 }
                 None => break,
@@ -288,19 +285,35 @@ impl Runtime {
         id
     }
 
-    pub fn create_memo_node_untyped(&self, initial_value: AnyValue, thunk: ThunkValue) -> NodeId {
-        let id = self.register_node();
+    #[inline(never)]
+    pub(crate) fn run_with_owner<R>(&self, id: NodeId, f: impl FnOnce() -> R) -> R {
+        let prev = self.current_owner();
+        self.set_owner(Some(id));
+        let result = f();
+        self.set_owner(prev);
+        result
+    }
+
+    #[inline(never)]
+    pub(crate) unsafe fn initialize_memo_raw(&self, id: NodeId, data: [usize; 3]) {
         self.prepare_memo_node(id);
+
+        let vtable_ptr = data[0] as *const MemoVTable;
+        let vtable = unsafe { &*vtable_ptr };
+        let data_ptr = unsafe { data.as_ptr().add(1) };
+
+        let initial_value = self.run_with_owner(id, || unsafe {
+            (vtable.compute.as_fn())(data_ptr as *const usize, None)
+        });
 
         if let Some(n) = self.storage.reactive.get_mut(id) {
             if let Some(signal) = &mut n.signal {
                 signal.value = initial_value;
             }
             if let Some(effect) = &mut n.effect {
-                effect.computation = Some(thunk);
+                effect.computation = Some(ThunkValue::new_raw(data, &UNIVERSAL_MEMO_THUNK_VTABLE));
             }
         }
-        id
     }
 
     pub fn store_value(&self, value: AnyValue) -> NodeId {
@@ -429,10 +442,11 @@ impl Runtime {
 }
 
 impl Runtime {
+    #[inline(never)]
     pub(crate) fn update_memo_core(
         &self,
         id: NodeId,
-        compute_any: impl FnOnce(Option<AnyValue>) -> AnyValue,
+        compute_any: &mut dyn FnMut(Option<AnyValue>) -> AnyValue,
     ) {
         let old_any = self
             .storage
@@ -454,7 +468,37 @@ impl Runtime {
         };
         self.commit_update(id, new_any, changed);
     }
+
+    pub(crate) unsafe fn universal_memo_runner(ptr: *mut usize, rt_ptr: *const ()) {
+        let rt = unsafe { &*(rt_ptr as *const Runtime) };
+        let id = rt.current_owner().unwrap();
+        let vtable_ptr = unsafe { *(ptr as *const *const MemoVTable) };
+        let vtable = unsafe { &*vtable_ptr };
+        let data_ptr = unsafe { ptr.add(1) };
+
+        rt.update_memo_core(id, &mut |old| unsafe {
+            (vtable.compute.as_fn())(data_ptr, old)
+        });
+    }
+
+    pub(crate) unsafe fn universal_memo_drop(ptr: *mut usize) {
+        let vtable_ptr = unsafe { *(ptr as *const *const MemoVTable) };
+        let vtable = unsafe { &*vtable_ptr };
+        let data_ptr = unsafe { ptr.add(1) };
+        unsafe { (vtable.drop.as_fn())(data_ptr) };
+    }
 }
+
+pub(crate) struct MemoVTable {
+    pub(crate) compute: crate::core::FuncPtr<unsafe fn(*const usize, Option<AnyValue>) -> AnyValue>,
+    pub(crate) drop: crate::core::FuncPtr<unsafe fn(*mut usize)>,
+}
+
+pub(crate) static UNIVERSAL_MEMO_THUNK_VTABLE: crate::core::value::ThunkVTable =
+    crate::core::value::ThunkVTable {
+        drop: crate::core::FuncPtr::new(Runtime::universal_memo_drop),
+        call: crate::core::FuncPtr::new(Runtime::universal_memo_runner),
+    };
 
 impl GraphExecutor for Runtime {
     fn run_computation(&self, id: NodeId) -> bool {

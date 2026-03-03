@@ -115,11 +115,11 @@ impl Runtime {
         cleanups: CleanupList,
         dependencies: DependencyList,
     ) {
-        for cleanup in cleanups {
-            cleanup();
-        }
         for child in children {
             self.dispose_node_internal(child, false);
+        }
+        for cleanup in cleanups {
+            cleanup();
         }
         for (dep_id, _) in dependencies {
             if let Some(n) = self.storage.reactive.get_mut(dep_id)
