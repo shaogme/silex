@@ -8,4 +8,4 @@ pub mod thunk;
 
 pub use any_box::{AnyBox, SOO_CAPACITY};
 pub use func_ptr::FuncPtr;
-pub use thunk::{FactoryBox, FnBox, OnceBox};
+pub use thunk::{FactoryBox, FnBox, OnceBox, OnceBoxVTable, ThunkBox, ThunkBoxVTable};

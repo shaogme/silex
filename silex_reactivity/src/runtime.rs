@@ -9,7 +9,7 @@ use self::storage::*;
 use crate::DependencyList;
 use crate::core::algorithm::{self, GraphExecutor, NodeState, RuntimeAdapter as AbstractAdapter};
 use crate::core::arena::Index as NodeId;
-use crate::core::value::{AnyValue, ThunkValue};
+use crate::core::value::{AnyValue, ThunkVTable, ThunkValue};
 use std::mem;
 
 pub struct Runtime {
@@ -513,12 +513,12 @@ impl Runtime {
         self.commit_update(id, new_any, changed);
     }
 
-    pub(crate) unsafe fn universal_memo_runner(ptr: *mut u8, rt_ptr: *const ()) {
+    pub(crate) unsafe fn universal_memo_runner(ptr: *const u8, rt_ptr: *const ()) {
         let rt = unsafe { &*(rt_ptr as *const Runtime) };
         let id = rt.current_owner().unwrap();
         let vtable_ptr = unsafe { *(ptr as *const *const MemoVTable) };
         let vtable = unsafe { &*vtable_ptr };
-        let data_ptr = unsafe { ptr.add(mem::size_of::<usize>()) as *mut usize };
+        let data_ptr = unsafe { ptr.add(mem::size_of::<usize>()) as *const usize };
 
         rt.update_memo_core(id, &mut |old| unsafe {
             (vtable.compute.as_fn())(data_ptr, old)
@@ -538,11 +538,10 @@ pub(crate) struct MemoVTable {
     pub(crate) drop: crate::core::FuncPtr<unsafe fn(*mut usize)>,
 }
 
-pub(crate) static UNIVERSAL_MEMO_THUNK_VTABLE: crate::core::value::ThunkVTable =
-    crate::core::value::ThunkVTable {
-        drop: crate::core::FuncPtr::new(Runtime::universal_memo_drop),
-        call: crate::core::FuncPtr::new(Runtime::universal_memo_runner),
-    };
+pub(crate) static UNIVERSAL_MEMO_THUNK_VTABLE: ThunkVTable = ThunkVTable {
+    drop: crate::core::FuncPtr::new(Runtime::universal_memo_drop),
+    call: crate::core::FuncPtr::new(Runtime::universal_memo_runner),
+};
 
 impl GraphExecutor for Runtime {
     fn run_computation(&self, id: NodeId) -> bool {

@@ -227,116 +227,34 @@ impl<T: Clone + PartialEq + 'static> BoxedReactiveVTable<T> {
 
 // --- ThunkValue for Closures ---
 
-pub(crate) struct ThunkValue {
-    inner: AnyBox<ThunkVTable>,
-}
+pub(crate) type ThunkVTable = silex_vtable::ThunkBoxVTable<*const (), ()>;
 
-#[repr(C)]
-pub(crate) struct ThunkVTable {
-    pub(crate) drop: FuncPtr<unsafe fn(*mut u8)>,
-    pub(crate) call: FuncPtr<unsafe fn(*mut u8, *const ())>,
-}
-
-unsafe impl Sync for ThunkVTable {}
+pub(crate) struct ThunkValue(pub(crate) silex_vtable::ThunkBox<*const (), ()>);
 
 impl ThunkValue {
     pub(crate) fn new_simple<F: Fn() + 'static>(f: F) -> Self {
-        struct VGen<F>(PhantomData<F>);
-        impl<F: Fn() + 'static> VGen<F> {
-            const STACK: ThunkVTable = ThunkVTable {
-                drop: FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut F) }),
-                call: FuncPtr::new(|ptr, _| unsafe {
-                    let f = &*(ptr as *const F);
-                    f();
-                }),
-            };
-            const HEAP: ThunkVTable = ThunkVTable {
-                drop: FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut Box<F>) }),
-                call: FuncPtr::new(|ptr, _| unsafe {
-                    let f = &**(ptr as *const Box<F>);
-                    f();
-                }),
-            };
-        }
-
-        Self {
-            inner: AnyBox::new(f, &VGen::<F>::STACK, &VGen::<F>::HEAP),
-        }
+        Self(silex_vtable::ThunkBox::new(move |_| f()))
     }
 
     pub(crate) fn new_raw(data: [usize; 3], vtable: &'static ThunkVTable) -> Self {
-        Self {
-            inner: AnyBox { data, vtable },
-        }
+        Self(silex_vtable::ThunkBox::from_raw(data, vtable))
     }
 
     pub(crate) unsafe fn call(&self, rt: *const ()) {
-        unsafe {
-            (self.inner.vtable.call.as_fn())(self.inner.as_ptr() as *mut u8, rt);
-        }
-    }
-}
-
-impl Drop for ThunkValue {
-    fn drop(&mut self) {
-        unsafe {
-            (self.inner.vtable.drop.as_fn())(self.inner.as_mut_ptr());
-        }
+        self.0.call(rt);
     }
 }
 
 // --- OnceThunk for FnOnce ---
 
-pub(crate) struct OnceThunk {
-    inner: AnyBox<OnceThunkVTable>,
-}
-
-pub(crate) struct OnceThunkVTable {
-    pub(crate) drop: FuncPtr<unsafe fn(*mut u8)>,
-    pub(crate) call_and_drop: FuncPtr<unsafe fn(*mut u8)>,
-}
-
-unsafe impl Sync for OnceThunkVTable {}
+pub(crate) struct OnceThunk(pub(crate) silex_vtable::OnceBox<(), ()>);
 
 impl OnceThunk {
     pub(crate) fn new<F: FnOnce() + 'static>(f: F) -> Self {
-        struct VGen<F>(PhantomData<F>);
-        impl<F: FnOnce() + 'static> VGen<F> {
-            const STACK: OnceThunkVTable = OnceThunkVTable {
-                drop: FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut F) }),
-                call_and_drop: FuncPtr::new(|ptr| unsafe {
-                    let f = ptr::read(ptr as *mut F);
-                    f();
-                }),
-            };
-            const HEAP: OnceThunkVTable = OnceThunkVTable {
-                drop: FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut Box<F>) }),
-                call_and_drop: FuncPtr::new(|ptr| unsafe {
-                    let f = ptr::read(ptr as *mut Box<F>);
-                    (*f)();
-                }),
-            };
-        }
-
-        Self {
-            inner: AnyBox::new(f, &VGen::<F>::STACK, &VGen::<F>::HEAP),
-        }
+        Self(silex_vtable::OnceBox::new(move |_| f()))
     }
 
     pub(crate) fn call(self) {
-        let mut this = mem::ManuallyDrop::new(self);
-        let vtable = this.inner.vtable;
-        let data_ptr = this.inner.as_mut_ptr();
-        unsafe {
-            (vtable.call_and_drop.as_fn())(data_ptr);
-        }
-    }
-}
-
-impl Drop for OnceThunk {
-    fn drop(&mut self) {
-        unsafe {
-            (self.inner.vtable.drop.as_fn())(self.inner.as_mut_ptr());
-        }
+        self.0.call(());
     }
 }
