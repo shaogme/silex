@@ -16,6 +16,9 @@ pub struct FuncPtr<F> {
     _marker: PhantomData<F>,
 }
 
+unsafe impl<F> Sync for FuncPtr<F> {}
+unsafe impl<F> Send for FuncPtr<F> {}
+
 impl<F> FuncPtr<F> {
     /// 从一个具体的函数指针创建包装
     ///

@@ -10,15 +10,15 @@ const INLINE_WORDS: usize = 3;
 /// A type-erased value with Small Object Optimization (SOO).
 pub(crate) struct AnyValue {
     vtable: &'static AnyValueVTable,
+    type_id: TypeId,
     data: MaybeUninit<[usize; INLINE_WORDS]>,
 }
 
 struct AnyValueVTable {
-    type_id: TypeId,
     as_ptr: FuncPtr<unsafe fn(*const usize) -> *const ()>,
     as_mut_ptr: FuncPtr<unsafe fn(*mut usize) -> *mut ()>,
     drop: FuncPtr<unsafe fn(*mut usize)>,
-    clone: Option<FuncPtr<unsafe fn(*const usize) -> AnyValue>>,
+    clone: Option<FuncPtr<unsafe fn(*const usize, TypeId, &'static AnyValueVTable) -> AnyValue>>,
     eq: Option<FuncPtr<unsafe fn(*const usize, *const usize) -> bool>>,
 }
 
@@ -27,9 +27,11 @@ struct AnyValueVTable {
 fn any_value_new_internal(
     data: [usize; INLINE_WORDS],
     vtable: &'static AnyValueVTable,
+    type_id: TypeId,
 ) -> AnyValue {
     AnyValue {
         vtable,
+        type_id,
         data: MaybeUninit::new(data),
     }
 }
@@ -40,16 +42,23 @@ impl AnyValue {
         let layout = Layout::new::<T>();
         let fits_inline = layout.size() <= (INLINE_WORDS * mem::size_of::<usize>())
             && layout.align() <= mem::align_of::<usize>();
+        let type_id = TypeId::of::<T>();
 
         if fits_inline {
             let mut data = [0usize; INLINE_WORDS];
             unsafe { ptr::write(data.as_mut_ptr() as *mut T, value) };
-            any_value_new_internal(data, &InlineVTable::<T>::VTABLE)
+
+            // 物理原型共享：如果类型不需要 drop（如 Copy 类型），共享同一个 VTable
+            if !mem::needs_drop::<T>() {
+                any_value_new_internal(data, &COPY_NON_REACTIVE_VTABLE, type_id)
+            } else {
+                any_value_new_internal(data, &InlineVTable::<T>::VTABLE, type_id)
+            }
         } else {
             let mut data = [0usize; INLINE_WORDS];
             let boxed = Box::new(value);
             unsafe { ptr::write(data.as_mut_ptr() as *mut Box<T>, boxed) };
-            any_value_new_internal(data, &BoxedVTable::<T>::VTABLE)
+            any_value_new_internal(data, &BoxedVTable::<T>::VTABLE, type_id)
         }
     }
 
@@ -58,27 +67,38 @@ impl AnyValue {
         let layout = Layout::new::<T>();
         let fits_inline = layout.size() <= (INLINE_WORDS * mem::size_of::<usize>())
             && layout.align() <= mem::align_of::<usize>();
+        let type_id = TypeId::of::<T>();
 
         if fits_inline {
             let mut data = [0usize; INLINE_WORDS];
             unsafe { ptr::write(data.as_mut_ptr() as *mut T, value) };
-            any_value_new_internal(data, &InlineReactiveVTable::<T>::VTABLE)
+
+            // 物理原型共享：对于 Copy 且支持位比较的简单类型共享 VTable
+            if !mem::needs_drop::<T>() && is_bitwise_equatable(type_id) {
+                any_value_new_internal(data, &BITWISE_EQ_COPY_INLINE_VTABLE, type_id)
+            } else {
+                any_value_new_internal(data, &InlineReactiveVTable::<T>::VTABLE, type_id)
+            }
         } else {
             let mut data = [0usize; INLINE_WORDS];
             let boxed = Box::new(value);
             unsafe { ptr::write(data.as_mut_ptr() as *mut Box<T>, boxed) };
-            any_value_new_internal(data, &BoxedReactiveVTable::<T>::VTABLE)
+            any_value_new_internal(data, &BoxedReactiveVTable::<T>::VTABLE, type_id)
         }
     }
 
     pub(crate) fn try_clone(&self) -> Option<Self> {
-        self.vtable
-            .clone
-            .map(|f| unsafe { f.as_fn()(self.data.as_ptr() as *const usize) })
+        self.vtable.clone.map(|f| unsafe {
+            f.as_fn()(
+                self.data.as_ptr() as *const usize,
+                self.type_id,
+                self.vtable,
+            )
+        })
     }
 
     pub(crate) fn try_eq(&self, other: &Self) -> bool {
-        if self.vtable.type_id != other.vtable.type_id {
+        if self.type_id != other.type_id {
             return false;
         }
         self.vtable.eq.map_or(false, |f| unsafe {
@@ -90,7 +110,7 @@ impl AnyValue {
     }
 
     pub(crate) fn downcast_ref<T: 'static>(&self) -> Option<&T> {
-        if self.vtable.type_id == TypeId::of::<T>() {
+        if self.type_id == TypeId::of::<T>() {
             unsafe {
                 let val_ptr = self.vtable.as_ptr.as_fn()(self.data.as_ptr() as *const usize);
                 Some(&*(val_ptr as *const T))
@@ -101,7 +121,7 @@ impl AnyValue {
     }
 
     pub(crate) fn downcast_mut<T: 'static>(&mut self) -> Option<&mut T> {
-        if self.vtable.type_id == TypeId::of::<T>() {
+        if self.type_id == TypeId::of::<T>() {
             unsafe {
                 let val_ptr = self.vtable.as_mut_ptr.as_fn()(self.data.as_mut_ptr() as *mut usize);
                 Some(&mut *(val_ptr as *mut T))
@@ -124,12 +144,76 @@ impl Drop for AnyValue {
     }
 }
 
+// --- Shared VTable Functions ---
+
+unsafe fn shared_drop_noop(_: *mut usize) {}
+
+unsafe fn shared_clone_bitwise(
+    ptr: *const usize,
+    type_id: TypeId,
+    vtable: &'static AnyValueVTable,
+) -> AnyValue {
+    let mut data = [0usize; INLINE_WORDS];
+    unsafe {
+        ptr::copy_nonoverlapping(ptr, data.as_mut_ptr(), INLINE_WORDS);
+    }
+    AnyValue {
+        vtable,
+        type_id,
+        data: MaybeUninit::new(data),
+    }
+}
+
+unsafe fn shared_eq_bitwise(p1: *const usize, p2: *const usize) -> bool {
+    let (s1, s2) = unsafe {
+        (
+            std::slice::from_raw_parts(p1, INLINE_WORDS),
+            std::slice::from_raw_parts(p2, INLINE_WORDS),
+        )
+    };
+    s1 == s2
+}
+
+fn is_bitwise_equatable(id: TypeId) -> bool {
+    id == TypeId::of::<i8>()
+        || id == TypeId::of::<i16>()
+        || id == TypeId::of::<i32>()
+        || id == TypeId::of::<i64>()
+        || id == TypeId::of::<i128>()
+        || id == TypeId::of::<u8>()
+        || id == TypeId::of::<u16>()
+        || id == TypeId::of::<u32>()
+        || id == TypeId::of::<u64>()
+        || id == TypeId::of::<u128>()
+        || id == TypeId::of::<usize>()
+        || id == TypeId::of::<isize>()
+        || id == TypeId::of::<bool>()
+        || id == TypeId::of::<char>()
+}
+
+// --- Shared VTables ---
+
+static COPY_NON_REACTIVE_VTABLE: AnyValueVTable = AnyValueVTable {
+    as_ptr: FuncPtr::new(|ptr| ptr as *const ()),
+    as_mut_ptr: FuncPtr::new(|ptr| ptr as *mut ()),
+    drop: FuncPtr::new(shared_drop_noop),
+    clone: None,
+    eq: None,
+};
+
+static BITWISE_EQ_COPY_INLINE_VTABLE: AnyValueVTable = AnyValueVTable {
+    as_ptr: FuncPtr::new(|ptr| ptr as *const ()),
+    as_mut_ptr: FuncPtr::new(|ptr| ptr as *mut ()),
+    drop: FuncPtr::new(shared_drop_noop),
+    clone: Some(FuncPtr::new(shared_clone_bitwise)),
+    eq: Some(FuncPtr::new(shared_eq_bitwise)),
+};
+
 // --- VTable Generators ---
 
 struct InlineVTable<T>(std::marker::PhantomData<T>);
 impl<T: 'static> InlineVTable<T> {
     const VTABLE: AnyValueVTable = AnyValueVTable {
-        type_id: TypeId::of::<T>(),
         as_ptr: FuncPtr::new(|ptr| ptr as *const T as *const ()),
         as_mut_ptr: FuncPtr::new(|ptr| ptr as *mut T as *mut ()),
         drop: FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut T) }),
@@ -141,12 +225,20 @@ impl<T: 'static> InlineVTable<T> {
 struct InlineReactiveVTable<T>(std::marker::PhantomData<T>);
 impl<T: Clone + PartialEq + 'static> InlineReactiveVTable<T> {
     const VTABLE: AnyValueVTable = AnyValueVTable {
-        type_id: TypeId::of::<T>(),
         as_ptr: FuncPtr::new(|ptr| ptr as *const T as *const ()),
         as_mut_ptr: FuncPtr::new(|ptr| ptr as *mut T as *mut ()),
         drop: FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut T) }),
-        clone: Some(FuncPtr::new(|ptr| {
-            AnyValue::new_reactive(unsafe { (*(ptr as *const T)).clone() })
+        clone: Some(FuncPtr::new(|ptr, type_id, vtable| {
+            let mut data = [0usize; INLINE_WORDS];
+            unsafe {
+                let val = (*(ptr as *const T)).clone();
+                ptr::write(data.as_mut_ptr() as *mut T, val);
+            }
+            AnyValue {
+                vtable,
+                type_id,
+                data: MaybeUninit::new(data),
+            }
         })),
         eq: Some(FuncPtr::new(|p1, p2| unsafe {
             *(p1 as *const T) == *(p2 as *const T)
@@ -157,7 +249,6 @@ impl<T: Clone + PartialEq + 'static> InlineReactiveVTable<T> {
 struct BoxedVTable<T>(std::marker::PhantomData<T>);
 impl<T: 'static> BoxedVTable<T> {
     const VTABLE: AnyValueVTable = AnyValueVTable {
-        type_id: TypeId::of::<T>(),
         as_ptr: FuncPtr::new(|ptr| unsafe { (&**(ptr as *const Box<T>)) as *const T as *const () }),
         as_mut_ptr: FuncPtr::new(|ptr| unsafe {
             (&mut **(ptr as *mut Box<T>)) as *mut T as *mut ()
@@ -171,14 +262,23 @@ impl<T: 'static> BoxedVTable<T> {
 struct BoxedReactiveVTable<T>(std::marker::PhantomData<T>);
 impl<T: Clone + PartialEq + 'static> BoxedReactiveVTable<T> {
     const VTABLE: AnyValueVTable = AnyValueVTable {
-        type_id: TypeId::of::<T>(),
         as_ptr: FuncPtr::new(|ptr| unsafe { (&**(ptr as *const Box<T>)) as *const T as *const () }),
         as_mut_ptr: FuncPtr::new(|ptr| unsafe {
             (&mut **(ptr as *mut Box<T>)) as *mut T as *mut ()
         }),
         drop: FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut Box<T>) }),
-        clone: Some(FuncPtr::new(|ptr| {
-            AnyValue::new_reactive(unsafe { (**(ptr as *const Box<T>)).clone() })
+        clone: Some(FuncPtr::new(|ptr, type_id, vtable| {
+            let mut data = [0usize; INLINE_WORDS];
+            unsafe {
+                let boxed = &**(ptr as *const Box<T>);
+                let new_boxed = Box::new(boxed.clone());
+                ptr::write(data.as_mut_ptr() as *mut Box<T>, new_boxed);
+            }
+            AnyValue {
+                vtable,
+                type_id,
+                data: MaybeUninit::new(data),
+            }
         })),
         eq: Some(FuncPtr::new(|p1, p2| unsafe {
             (**(p1 as *const Box<T>)) == (**(p2 as *const Box<T>))
