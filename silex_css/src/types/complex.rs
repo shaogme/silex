@@ -1,5 +1,5 @@
 use crate::types::{ValidFor, props};
-use std::fmt::Display;
+use std::fmt::{Display, Write};
 
 // ==========================================
 // 复杂属性 DSL (Complex Properties)
@@ -62,13 +62,26 @@ impl TransformBuilder {
     }
 
     pub fn build(self) -> TransformValue {
-        TransformValue(self.parts.join(" "))
+        let mut val = String::new();
+        for (i, part) in self.parts.iter().enumerate() {
+            if i > 0 {
+                val.push(' ');
+            }
+            val.push_str(part);
+        }
+        TransformValue(val)
     }
 }
 
 impl Display for TransformBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.parts.join(" "))
+        for (i, part) in self.parts.iter().enumerate() {
+            if i > 0 {
+                f.write_char(' ')?;
+            }
+            f.write_str(part)?;
+        }
+        Ok(())
     }
 }
 
@@ -94,11 +107,13 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
-    let val = areas
-        .into_iter()
-        .map(|s| format!("\"{}\"", s.as_ref()))
-        .collect::<Vec<_>>()
-        .join(" ");
+    let mut val = String::new();
+    for (i, s) in areas.into_iter().enumerate() {
+        if i > 0 {
+            val.push(' ');
+        }
+        write!(val, "\"{}\"", s.as_ref()).unwrap();
+    }
     GridTemplateAreasValue(val)
 }
 
@@ -119,10 +134,12 @@ where
     K: Display,
     V: Display,
 {
-    let val = settings
-        .into_iter()
-        .map(|(k, v)| format!("\"{}\" {}", k, v))
-        .collect::<Vec<_>>()
-        .join(", ");
+    let mut val = String::new();
+    for (i, (k, v)) in settings.into_iter().enumerate() {
+        if i > 0 {
+            val.push_str(", ");
+        }
+        write!(val, "\"{}\" {}", k, v).unwrap();
+    }
     FontVariationSettingsValue(val)
 }
