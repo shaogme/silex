@@ -1,6 +1,6 @@
 use crate::core::algorithm::{GraphStorage, NodeState};
 use crate::core::arena::{Arena, Index as NodeId, SparseSecondaryMap};
-use crate::core::value::AnyValue;
+use crate::core::value::{AnyValue, ThunkValue};
 use crate::{DependencyList, NodeList};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -192,7 +192,7 @@ pub(crate) struct SignalData {
 }
 
 pub(crate) struct EffectData {
-    pub(crate) computation: Option<Box<dyn Fn(&crate::runtime::Runtime)>>,
+    pub(crate) computation: Option<ThunkValue>,
     pub(crate) dependencies: DependencyList,
     pub(crate) effect_version: u32,
 }

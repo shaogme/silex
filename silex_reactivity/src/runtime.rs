@@ -9,7 +9,7 @@ use self::storage::*;
 use crate::DependencyList;
 use crate::core::algorithm::{self, GraphExecutor, NodeState, RuntimeAdapter as AbstractAdapter};
 use crate::core::arena::Index as NodeId;
-use crate::core::value::AnyValue;
+use crate::core::value::{AnyValue, ThunkValue};
 
 pub struct Runtime {
     pub(crate) storage: Storage,
@@ -44,7 +44,7 @@ impl Runtime {
         id
     }
 
-    pub fn create_effect(&self, f: Box<dyn Fn(&Runtime)>) -> NodeId {
+    pub fn create_effect(&self, f: ThunkValue) -> NodeId {
         let id = self.register_node();
         self.storage.effects.insert(
             id,
@@ -266,11 +266,7 @@ impl Runtime {
         id
     }
 
-    pub fn create_memo_node_raw(
-        &self,
-        initial_value: AnyValue,
-        runner: Box<dyn MemoRunnerTrait>,
-    ) -> NodeId {
+    pub fn create_memo_node_untyped(&self, initial_value: AnyValue, thunk: ThunkValue) -> NodeId {
         let id = self.register_node();
         self.prepare_memo_node(id);
 
@@ -278,17 +274,10 @@ impl Runtime {
             signal.value = initial_value;
         }
 
-        self.register_memo_computation(id, runner);
-        id
-    }
-
-    fn register_memo_computation(&self, id: NodeId, runner: Box<dyn MemoRunnerTrait>) {
-        let computation = move |rt: &Runtime| {
-            runner.run(rt, id);
-        };
         if let Some(effect) = self.storage.effects.get_mut(id) {
-            effect.computation = Some(Box::new(computation));
+            effect.computation = Some(thunk);
         }
+        id
     }
 
     pub fn store_value(&self, value: AnyValue) -> NodeId {
@@ -299,14 +288,7 @@ impl Runtime {
         id
     }
 
-    pub fn register_callback<F>(&self, f: F) -> NodeId
-    where
-        F: Fn(Box<dyn std::any::Any>) + 'static,
-    {
-        self.register_callback_untyped(std::rc::Rc::new(f))
-    }
-
-    pub(crate) fn register_callback_untyped(
+    pub fn register_callback_untyped(
         &self,
         f: std::rc::Rc<dyn Fn(Box<dyn std::any::Any>)>,
     ) -> NodeId {
@@ -403,13 +385,32 @@ impl Runtime {
         if let Some(f) = computation_fn {
             let prev_owner = self.current_owner();
             self.set_owner(Some(effect_id));
-            f(self);
+            unsafe { f.call(self as *const Runtime as *const ()) };
             self.set_owner(prev_owner);
 
             if let Some(effect_data) = self.storage.effects.get_mut(effect_id) {
                 effect_data.computation = Some(f);
             }
         }
+    }
+}
+
+impl Runtime {
+    pub(crate) fn update_memo_core(&self, id: NodeId, compute_any: impl FnOnce(Option<AnyValue>) -> AnyValue) {
+        let old_any = self.storage.signals.get(id).and_then(|s| s.value.try_clone());
+        let new_any = {
+            let prev_owner = self.current_owner();
+            self.set_owner(Some(id));
+            let v = compute_any(old_any.as_ref().and_then(|any| any.try_clone()));
+            self.set_owner(prev_owner);
+            v
+        };
+        
+        let changed = match &old_any {
+            Some(old) => !new_any.try_eq(old),
+            None => true,
+        };
+        self.commit_update(id, new_any, changed);
     }
 }
 
@@ -442,7 +443,7 @@ impl GraphExecutor for Runtime {
         if let Some(f) = computation_fn {
             let prev_owner = self.current_owner();
             self.set_owner(Some(id));
-            f(self);
+            unsafe { f.call(self as *const Runtime as *const ()) };
             self.set_owner(prev_owner);
 
             if let Some(data) = self.storage.effects.get_mut(id) {
@@ -454,75 +455,5 @@ impl GraphExecutor for Runtime {
             return true;
         }
         false
-    }
-}
-
-pub(crate) trait MemoRunnerTrait {
-    fn run(&self, rt: &Runtime, id: NodeId);
-}
-
-pub(crate) struct UniversalMemoRunner {
-    pub(crate) data: *mut (),
-    pub(crate) compute: crate::core::FuncPtr<unsafe fn(*mut (), Option<AnyValue>) -> AnyValue>,
-    pub(crate) drop: crate::core::FuncPtr<unsafe fn(*mut ())>,
-}
-
-unsafe impl Send for UniversalMemoRunner {}
-unsafe impl Sync for UniversalMemoRunner {}
-
-impl Drop for UniversalMemoRunner {
-    fn drop(&mut self) {
-        unsafe { self.drop.as_fn()(self.data) };
-    }
-}
-
-impl MemoRunnerTrait for UniversalMemoRunner {
-    fn run(&self, rt: &Runtime, id: NodeId) {
-        let old_any = rt.storage.signals.get(id).and_then(|s| s.value.try_clone());
-
-        let new_any = {
-            let prev_owner = rt.current_owner();
-            rt.set_owner(Some(id));
-            let v = unsafe {
-                (self.compute.as_fn())(self.data, old_any.as_ref().and_then(|any| any.try_clone()))
-            };
-            rt.set_owner(prev_owner);
-            v
-        };
-
-        let changed = match &old_any {
-            Some(old) => !new_any.try_eq(old),
-            None => true,
-        };
-
-        rt.commit_update(id, new_any, changed);
-    }
-}
-
-pub(crate) struct UniversalDerivedRunner {
-    pub(crate) data: *mut (),
-    pub(crate) compute: crate::core::FuncPtr<unsafe fn(*mut ()) -> AnyValue>,
-    pub(crate) drop: crate::core::FuncPtr<unsafe fn(*mut ())>,
-}
-
-unsafe impl Send for UniversalDerivedRunner {}
-unsafe impl Sync for UniversalDerivedRunner {}
-
-impl Drop for UniversalDerivedRunner {
-    fn drop(&mut self) {
-        unsafe { self.drop.as_fn()(self.data) };
-    }
-}
-
-impl MemoRunnerTrait for UniversalDerivedRunner {
-    fn run(&self, rt: &Runtime, id: NodeId) {
-        let new_any = {
-            let prev_owner = rt.current_owner();
-            rt.set_owner(Some(id));
-            let v = unsafe { (self.compute.as_fn())(self.data) };
-            rt.set_owner(prev_owner);
-            v
-        };
-        rt.commit_update(id, new_any, true);
     }
 }
