@@ -30,3 +30,45 @@ pub trait Store: Sized + Clone + 'static {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Clone, PartialEq, Debug)]
+    struct MyStore {
+        value: i32,
+    }
+
+    impl Store for MyStore {}
+
+    #[test]
+    fn test_store_try_get_none() {
+        create_scope(|| {
+            let result = MyStore::try_get();
+            assert_eq!(result, None);
+        });
+    }
+
+    #[test]
+    fn test_store_provide_and_try_get() {
+        create_scope(|| {
+            let store = MyStore { value: 42 };
+            store.clone().provide();
+
+            let result = MyStore::try_get();
+            assert_eq!(result, Some(store));
+        });
+    }
+
+    #[test]
+    fn test_store_get() {
+        create_scope(|| {
+            let store = MyStore { value: 42 };
+            store.clone().provide();
+
+            let result = MyStore::get();
+            assert_eq!(result, store);
+        });
+    }
+}
