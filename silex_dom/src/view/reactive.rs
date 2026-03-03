@@ -222,7 +222,7 @@ where
 
     #[inline(always)]
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.clone().into_rx().mount_ref(parent, attrs);
+        self.into_rx().mount_ref(parent, attrs);
     }
 }
 
