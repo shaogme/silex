@@ -1,6 +1,6 @@
 use crate::core::algorithm::{GraphStorage, NodeState};
 use crate::core::arena::{Arena, Index as NodeId, SparseSecondaryMap};
-use crate::core::value::{AnyValue, ThunkValue};
+use crate::core::value::{AnyValue, OnceThunk, ThunkValue};
 use crate::{DependencyList, NodeList};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -156,12 +156,12 @@ impl Node {
 pub(crate) enum CleanupList {
     #[default]
     Empty,
-    Single(Box<dyn FnOnce()>),
-    Many(Vec<Box<dyn FnOnce()>>),
+    Single(OnceThunk),
+    Many(Vec<OnceThunk>),
 }
 
 impl CleanupList {
-    pub(crate) fn push(&mut self, f: Box<dyn FnOnce()>) {
+    pub(crate) fn push(&mut self, f: OnceThunk) {
         if let Self::Many(vec) = self {
             vec.push(f);
             return;
@@ -177,7 +177,7 @@ impl CleanupList {
 }
 
 impl IntoIterator for CleanupList {
-    type Item = Box<dyn FnOnce()>;
+    type Item = OnceThunk;
     type IntoIter = CleanupListIntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -191,12 +191,12 @@ impl IntoIterator for CleanupList {
 
 pub(crate) enum CleanupListIntoIter {
     Empty,
-    Single(Option<Box<dyn FnOnce()>>),
-    Many(std::vec::IntoIter<Box<dyn FnOnce()>>),
+    Single(Option<OnceThunk>),
+    Many(std::vec::IntoIter<OnceThunk>),
 }
 
 impl Iterator for CleanupListIntoIter {
-    type Item = Box<dyn FnOnce()>;
+    type Item = OnceThunk;
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Self::Empty => None,

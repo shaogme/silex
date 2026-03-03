@@ -1,5 +1,6 @@
 use crate::DependencyList;
 use crate::core::arena::Index as NodeId;
+use crate::core::value::OnceThunk;
 use crate::runtime::Runtime;
 use crate::runtime::storage::{CleanupList, Node};
 use std::cell::Cell;
@@ -46,9 +47,13 @@ impl Runtime {
     }
 
     pub fn on_cleanup(&self, f: impl FnOnce() + 'static) {
+        self.internal_on_cleanup(OnceThunk::new(f))
+    }
+
+    pub(crate) fn internal_on_cleanup(&self, thunk: OnceThunk) {
         if let Some(owner) = self.current_owner() {
             if let Some(aux) = self.storage.try_aux_mut(owner) {
-                aux.cleanups.push(Box::new(f));
+                aux.cleanups.push(thunk);
             }
         }
     }
@@ -119,7 +124,7 @@ impl Runtime {
             self.dispose_node_internal(child, false);
         }
         for cleanup in cleanups {
-            cleanup();
+            cleanup.call();
         }
         for (dep_id, _) in dependencies {
             if let Some(n) = self.storage.reactive.get_mut(dep_id)

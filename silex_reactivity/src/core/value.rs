@@ -395,3 +395,102 @@ impl Drop for ThunkValue {
         }
     }
 }
+
+// --- OnceThunk for FnOnce ---
+
+pub(crate) struct OnceThunk {
+    vtable: &'static OnceThunkVTable,
+    data: MaybeUninit<[usize; INLINE_WORDS]>,
+}
+
+pub(crate) struct OnceThunkVTable {
+    pub(crate) drop: FuncPtr<unsafe fn(*mut usize)>,
+    pub(crate) call_and_drop: FuncPtr<unsafe fn(*mut usize)>,
+}
+
+unsafe impl Sync for OnceThunkVTable {}
+
+trait OnceThunkVTableGen {
+    const VTABLE: OnceThunkVTable;
+}
+
+macro_rules! impl_once_thunk_vtable {
+    ($name:ident, $call_logic:expr) => {
+        struct $name<F>(std::marker::PhantomData<F>);
+        impl<F: FnOnce() + 'static> OnceThunkVTableGen for $name<F> {
+            const VTABLE: OnceThunkVTable = OnceThunkVTable {
+                drop: FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut F) }),
+                call_and_drop: FuncPtr::new(|ptr| unsafe {
+                    let f = ptr::read(ptr as *mut F);
+                    ($call_logic)(f);
+                }),
+            };
+        }
+    };
+}
+
+macro_rules! impl_once_thunk_boxed_vtable {
+    ($name:ident, $call_logic:expr) => {
+        struct $name<F>(std::marker::PhantomData<F>);
+        impl<F: FnOnce() + 'static> OnceThunkVTableGen for $name<F> {
+            const VTABLE: OnceThunkVTable = OnceThunkVTable {
+                drop: FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut Box<F>) }),
+                call_and_drop: FuncPtr::new(|ptr| unsafe {
+                    let f = ptr::read(ptr as *mut Box<F>);
+                    ($call_logic)(*f);
+                }),
+            };
+        }
+    };
+}
+
+impl_once_thunk_vtable!(OnceThunkSimpleInlineVTable, |f: F| f());
+impl_once_thunk_boxed_vtable!(OnceThunkSimpleBoxedVTable, |f: F| f());
+
+#[inline(never)]
+fn once_thunk_new_internal(
+    data: [usize; INLINE_WORDS],
+    vtable: &'static OnceThunkVTable,
+) -> OnceThunk {
+    OnceThunk {
+        vtable,
+        data: MaybeUninit::new(data),
+    }
+}
+
+impl OnceThunk {
+    pub(crate) fn new<F: FnOnce() + 'static>(f: F) -> Self {
+        let layout = Layout::new::<F>();
+        let fits_inline = layout.size() <= (INLINE_WORDS * mem::size_of::<usize>())
+            && layout.align() <= mem::align_of::<usize>();
+
+        if fits_inline {
+            let mut data = [0usize; INLINE_WORDS];
+            unsafe { ptr::write(data.as_mut_ptr() as *mut F, f) };
+            once_thunk_new_internal(data, &OnceThunkSimpleInlineVTable::<F>::VTABLE)
+        } else {
+            let mut data = [0usize; INLINE_WORDS];
+            let boxed = Box::new(f);
+            unsafe { ptr::write(data.as_mut_ptr() as *mut Box<F>, boxed) };
+            once_thunk_new_internal(data, &OnceThunkSimpleBoxedVTable::<F>::VTABLE)
+        }
+    }
+
+    pub(crate) fn call(mut self) {
+        let vtable = self.vtable;
+        let data_ptr = self.data.as_mut_ptr() as *mut usize;
+        // 这一步很重要：手动标识已“调用”，防止 Drop 再跑一遍
+        mem::forget(self);
+        unsafe {
+            (vtable.call_and_drop.as_fn())(data_ptr);
+        }
+    }
+}
+
+impl Drop for OnceThunk {
+    fn drop(&mut self) {
+        unsafe {
+            (self.vtable.drop.as_fn())(self.data.as_mut_ptr() as *mut usize);
+        }
+    }
+}
