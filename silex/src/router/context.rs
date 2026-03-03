@@ -18,11 +18,13 @@ impl PartialEq for RouterViewFactory {
 
 impl View for RouterViewFactory {
     fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        // 创建闭包，利用 View for F 的已有逻辑
-        // 我们需要构造一个 Fn() -> AnyView 的闭包
-        let factory = self.0.clone();
+        let factory = self.0;
         let closure = move || (factory)();
         closure.mount(parent, attrs);
+    }
+
+    fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
+        self.clone().mount(parent, attrs);
     }
 }
 

@@ -2,7 +2,7 @@ use crate::attribute::PendingAttribute;
 use crate::view::View;
 use silex_core::error::handle_error;
 use silex_core::reactivity::Effect;
-use silex_core::traits::{RxCloneData, RxRead};
+use silex_core::traits::{IntoRx, RxCloneData, RxRead};
 use silex_core::{Rx, RxValueKind, SilexError};
 use std::fmt::Display;
 use web_sys::Node;
@@ -41,7 +41,10 @@ where
     crate::view::mount_dynamic_view_universal(
         parent,
         attrs,
-        crate::view::ViewThunk::new(move || rx.with(|view| view.clone().into_any())),
+        crate::view::any::RenderThunk::new(move |args| {
+            let (p, a) = args;
+            rx.with(|view| view.mount_ref(&p, a))
+        }),
     );
 }
 
@@ -55,6 +58,11 @@ where
     #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.dispatch_mount(parent, attrs);
+    }
+
+    #[inline(always)]
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        self.clone().dispatch_mount(parent, attrs);
     }
 
     fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
@@ -153,8 +161,12 @@ macro_rules! impl_view_forward_to_rx {
             {
                 #[inline(always)]
                 fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-                    use silex_core::traits::IntoRx;
                     self.into_rx().mount(parent, attrs);
+                }
+
+                #[inline(always)]
+                fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+                    self.clone().into_rx().mount(parent, attrs);
                 }
             }
         )*
@@ -171,8 +183,15 @@ where
 {
     #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        use silex_core::traits::IntoRx;
         self.into_rx().mount(parent, attrs);
+    }
+
+    #[inline(always)]
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        // DerivedPayload does not implement Clone, so we must rely on the Rx it creates.
+        // This is safe because it's a factory.
+        let rx = IntoRx::into_rx(unsafe { std::ptr::read(self) });
+        rx.mount_ref(parent, attrs);
     }
 }
 
@@ -184,8 +203,13 @@ where
 {
     #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        use silex_core::traits::IntoRx;
         self.into_rx().mount(parent, attrs);
+    }
+
+    #[inline(always)]
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        let rx = IntoRx::into_rx(unsafe { std::ptr::read(self) });
+        rx.mount_ref(parent, attrs);
     }
 }
 
@@ -197,7 +221,12 @@ where
 {
     #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        use silex_core::traits::IntoRx;
         self.into_rx().mount(parent, attrs);
+    }
+
+    #[inline(always)]
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        let rx = IntoRx::into_rx(unsafe { std::ptr::read(self) });
+        rx.mount_ref(parent, attrs);
     }
 }

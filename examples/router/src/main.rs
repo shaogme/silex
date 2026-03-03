@@ -6,7 +6,7 @@ use silex::prelude::*;
 
 /// 一个简单的卡片容器
 #[component]
-fn Card<V: View + 'static>(child: V) -> impl View {
+fn Card<V: View + Clone + 'static>(child: V) -> impl View {
     div(child)
         .style("border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 10px 0; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05);")
 }

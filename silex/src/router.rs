@@ -154,6 +154,24 @@ pub trait RouteView: Routable {
 
 impl View for Router {
     fn mount(self, parent: &web_sys::Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
+        self.mount_internal(parent, attrs);
+    }
+
+    fn mount_ref(
+        &self,
+        parent: &web_sys::Node,
+        attrs: Vec<silex_dom::attribute::PendingAttribute>,
+    ) {
+        self.clone().mount_internal(parent, attrs);
+    }
+}
+
+impl Router {
+    fn mount_internal(
+        self,
+        parent: &web_sys::Node,
+        attrs: Vec<silex_dom::attribute::PendingAttribute>,
+    ) {
         // 1. 获取 window 对象
         let window = web_sys::window().expect("no global `window` exists");
         let location = window.location();
