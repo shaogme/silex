@@ -44,9 +44,7 @@ impl Storage {
 
     pub(crate) fn try_aux_mut(&self, id: NodeId) -> Option<&mut NodeAux> {
         if self.node_aux.get(id).is_none() {
-            if self.graph.get(id).is_none() {
-                return None;
-            }
+            self.graph.get(id)?;
             self.node_aux.insert(id, NodeAux::default());
         }
         self.node_aux.get_mut(id)
@@ -95,7 +93,7 @@ impl GraphStorage for Storage {
     fn is_effect(&self, id: NodeId) -> bool {
         self.reactive
             .get(id)
-            .map_or(false, |n| n.effect.is_some() && n.signal.is_none())
+            .is_some_and(|n| n.effect.is_some() && n.signal.is_none())
     }
 
     fn check_dependencies_changed(&self, id: NodeId) -> bool {

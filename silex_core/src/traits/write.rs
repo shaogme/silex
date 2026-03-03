@@ -57,10 +57,10 @@ pub trait RxWrite: RxBase {
     /// 根据条件触发修改与通知。闭包返回 true 才会触发 notify。
     #[track_caller]
     fn maybe_update(&self, fun: impl FnOnce(&mut Self::Value) -> bool) {
-        if let Some(should_notify) = self.rx_try_update_untracked(fun) {
-            if should_notify {
-                self.rx_notify();
-            }
+        if let Some(should_notify) = self.rx_try_update_untracked(fun)
+            && should_notify
+        {
+            self.rx_notify();
         }
     }
 

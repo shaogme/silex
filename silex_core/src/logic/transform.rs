@@ -25,10 +25,10 @@ where
         F: Fn(&Self::Value) -> U + 'static,
         U: 'static,
     {
-        if self.rx_is_constant() {
-            if let Some(res) = self.rx_try_with_untracked(|v| crate::Rx::new_constant(f(v))) {
-                return res;
-            }
+        if self.rx_is_constant()
+            && let Some(res) = self.rx_try_with_untracked(|v| crate::Rx::new_constant(f(v)))
+        {
+            return res;
         }
         crate::Rx::derive(Box::new(move || self.with(|v| f(v))))
     }
@@ -37,16 +37,16 @@ where
     where
         U: 'static,
     {
-        if self.rx_is_constant() {
-            if let Some(res) = self.rx_try_with_untracked(|v| crate::Rx::new_constant(f(v))) {
-                return res;
-            }
+        if self.rx_is_constant()
+            && let Some(res) = self.rx_try_with_untracked(|v| crate::Rx::new_constant(f(v)))
+        {
+            return res;
         }
         if let Some(id) = self.id() {
             let op = crate::reactivity::StaticMapPayload::new1(id, f, false);
             crate::Rx::new_op_raw(op)
         } else {
-            crate::Rx::derive(Box::new(move || self.with(|v| f(v))))
+            crate::Rx::derive(Box::new(move || self.with(f)))
         }
     }
 }

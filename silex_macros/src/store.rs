@@ -36,22 +36,21 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
                     }
                 }
             }
-        } else if attr.path().is_ident("storage") {
-            if let Meta::List(list) = &attr.meta {
-                let nested = list.parse_args_with(
-                    syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated,
-                )?;
-                for meta in nested {
-                    if let Meta::NameValue(nv) = meta {
-                        if nv.path.is_ident("prefix")
-                            && let syn::Expr::Lit(syn::ExprLit {
-                                lit: syn::Lit::Str(lit_str),
-                                ..
-                            }) = nv.value
-                        {
-                            storage_prefix = Some(lit_str.value());
-                        }
-                    }
+        } else if attr.path().is_ident("storage")
+            && let Meta::List(list) = &attr.meta
+        {
+            let nested = list.parse_args_with(
+                syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated,
+            )?;
+            for meta in nested {
+                if let Meta::NameValue(nv) = meta
+                    && nv.path.is_ident("prefix")
+                    && let syn::Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Str(lit_str),
+                        ..
+                    }) = nv.value
+                {
+                    storage_prefix = Some(lit_str.value());
                 }
             }
         }
@@ -103,15 +102,14 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
                     );
                     if let Ok(nested) = res {
                         for meta in nested {
-                            if let Meta::NameValue(nv) = meta {
-                                if nv.path.is_ident("key")
-                                    && let syn::Expr::Lit(syn::ExprLit {
-                                        lit: syn::Lit::Str(lit_str),
-                                        ..
-                                    }) = nv.value
-                                {
-                                    storage_key = Some(lit_str.value());
-                                }
+                            if let Meta::NameValue(nv) = meta
+                                && nv.path.is_ident("key")
+                                && let syn::Expr::Lit(syn::ExprLit {
+                                    lit: syn::Lit::Str(lit_str),
+                                    ..
+                                }) = nv.value
+                            {
+                                storage_key = Some(lit_str.value());
                             }
                         }
                     }

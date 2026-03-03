@@ -20,6 +20,12 @@ pub struct RawOpBuffer {
     pub data: [u8; 64],
 }
 
+impl Default for RawOpBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RawOpBuffer {
     pub fn new() -> Self {
         Self { data: [0u8; 64] }
@@ -51,6 +57,11 @@ pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
 
 /// 获取任何响应式节点的原始指针（不区分 Signal 或 StoredValue）。
 /// 用于 Silex Core 的高级去泛型化优化。
+///
+/// # Safety
+///
+/// 调用者必须确保返回的指针在当前上下文中有效。
+/// 如果节点被销毁，该指针将失效。
 pub unsafe fn try_get_any_raw_untracked(id: NodeId) -> Option<*const ()> {
     RUNTIME.with(|rt| unsafe { rt.get_any_raw_ptr_untracked(id) })
 }

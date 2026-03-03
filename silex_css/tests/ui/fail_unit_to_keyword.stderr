@@ -1,8 +1,10 @@
 error[E0277]: 类型 `Px` 无法作为有效的 CSS `silex_css::types::props::Display` 属性值使用
- --> tests/ui/fail_unit_to_keyword.rs:5:26
+ --> tests/ui/fail_unit_to_keyword.rs:5:34
   |
 5 |     let _ = Style::new().display(px(10));
-  |                          ^^^^^^^ 无效的 CSS 属性类型
+  |                          ------- ^^^^^^ 无效的 CSS 属性类型
+  |                          |
+  |                          required by a bound introduced by this call
   |
   = help: the trait `ValidFor<silex_css::types::props::Display>` is not implemented for `Px`
   = note: 请检查是否传入了错误的类型（例如将 Px 传给了 Color）。如果必须传入复杂的动态表达式，可以使用 `UnsafeCss::new(...)` 显式绕过。

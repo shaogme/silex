@@ -142,7 +142,7 @@ pub fn NavBar() -> impl View {
                 move |_| {
                     settings.theme.update(|t| {
                         let new_theme = if t == "Light" { "Dark".to_string() } else { "Light".to_string() };
-                        console_log(&format!("Button Click: switching to {}", new_theme));
+                        console_log(format!("Button Click: switching to {}", new_theme));
                         *t = new_theme;
                     })
                 }

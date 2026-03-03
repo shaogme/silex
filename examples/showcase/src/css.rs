@@ -171,11 +171,11 @@ styled! {
 
         variants: {
             kind: {
-                primary: { 
+                primary: {
                     background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
                     width: $(dynamic_width);
                 }
-                secondary: { 
+                secondary: {
                     background: linear-gradient(135deg, #10b981 0%, #3b82f6 100%);
                     width: $(rx!(dynamic_width.get() + px(60)));
                 }
@@ -246,7 +246,7 @@ pub fn StylingBasics() -> impl View {
             {
                 let (btn_kind, set_btn_kind) = signal("primary".to_string());
                 let (btn_width, _set_btn_width) = signal(px(160));
-                
+
                 Stack().gap(16).children(view_chain!(
                     DynamicVariantBtn()
                         .kind(btn_kind)

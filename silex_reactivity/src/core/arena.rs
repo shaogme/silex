@@ -346,10 +346,10 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
             }
             if let Some(ref chunk) = chunks[chunk_idx] {
                 let slot = &*chunk[offset].get();
-                if let Some((stored_gen, val)) = slot {
-                    if *stored_gen == key.generation {
-                        return Some(val);
-                    }
+                if let Some((stored_gen, val)) = slot
+                    && *stored_gen == key.generation
+                {
+                    return Some(val);
                 }
             }
             None
@@ -366,10 +366,10 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
             }
             if let Some(ref mut chunk) = chunks[chunk_idx] {
                 let slot = &mut *chunk[offset].get();
-                if let Some((stored_gen, val)) = slot {
-                    if *stored_gen == key.generation {
-                        return Some(val);
-                    }
+                if let Some((stored_gen, val)) = slot
+                    && *stored_gen == key.generation
+                {
+                    return Some(val);
                 }
             }
             None
@@ -385,10 +385,10 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
             }
             if let Some(ref mut chunk) = chunks[chunk_idx] {
                 let slot = &mut *chunk[offset].get();
-                if let Some((stored_gen, _)) = slot {
-                    if *stored_gen == key.generation {
-                        return slot.take().map(|(_, v)| v);
-                    }
+                if let Some((stored_gen, _)) = slot
+                    && *stored_gen == key.generation
+                {
+                    return slot.take().map(|(_, v)| v);
                 }
             }
             None

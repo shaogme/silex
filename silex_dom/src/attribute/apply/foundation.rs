@@ -47,8 +47,8 @@ impl<'a> From<ApplyTarget<'a>> for OwnedApplyTarget {
 impl<'a> From<&'a OwnedApplyTarget> for ApplyTarget<'a> {
     fn from(target: &'a OwnedApplyTarget) -> Self {
         match target {
-            OwnedApplyTarget::Attr(n) => ApplyTarget::Attr(&**n),
-            OwnedApplyTarget::Prop(n) => ApplyTarget::Prop(&**n),
+            OwnedApplyTarget::Attr(n) => ApplyTarget::Attr(n),
+            OwnedApplyTarget::Prop(n) => ApplyTarget::Prop(n),
             OwnedApplyTarget::Class => ApplyTarget::Class,
             OwnedApplyTarget::Style => ApplyTarget::Style,
             OwnedApplyTarget::Apply => ApplyTarget::Apply,
@@ -161,7 +161,7 @@ pub(crate) fn apply_static_pair(el: &WebElem, target: ApplyTarget, key: &str, va
                 let _ = style.set_property(key, value);
             }
         }
-        ApplyTarget::Attr(ref n) if *n == "style" => {
+        ApplyTarget::Attr("style") => {
             if let Some(style) = get_style_decl(el) {
                 let _ = style.set_property(key, value);
             }
@@ -178,37 +178,24 @@ pub(crate) fn apply_primitive_static_internal(el: &WebElem, target: ApplyTarget,
 
 impl ApplyToDom for &'static str {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
-        apply_immediate_string(el, target, *self);
+        apply_immediate_string(el, target, self);
     }
     fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
         match target {
             OwnedApplyTarget::Attr(name) => AttrOp::Update {
-                name: name.into(),
+                name,
                 target: AttrTarget::Attr,
                 data: AttrData::StaticString(self.into()),
             },
             OwnedApplyTarget::Prop(name) => AttrOp::Update {
-                name: name.into(),
+                name,
                 target: AttrTarget::Prop,
                 data: AttrData::StaticJs(JsValue::from_str(self)),
             },
             OwnedApplyTarget::Class => AttrOp::SetStaticClasses(vec![self.into()]),
-            OwnedApplyTarget::Style => AttrOp::SetStaticStyles(
-                parse_style_str(self)
-                    .into_iter()
-                    .map(|(k, v)| {
-                        let k = match k {
-                            Cow::Borrowed(s) => Cow::Borrowed(s),
-                            Cow::Owned(s) => Cow::Owned(s),
-                        };
-                        let v = match v {
-                            Cow::Borrowed(s) => Cow::Borrowed(s),
-                            Cow::Owned(s) => Cow::Owned(s),
-                        };
-                        (k, v)
-                    })
-                    .collect(),
-            ),
+            OwnedApplyTarget::Style => {
+                AttrOp::SetStaticStyles(parse_style_str(self).into_iter().collect())
+            }
             OwnedApplyTarget::Apply => AttrOp::Custom(std::rc::Rc::new(move |el| {
                 apply_immediate_string(el, ApplyTarget::Apply, self);
             })),
@@ -224,12 +211,12 @@ impl ApplyToDom for String {
     fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
         match target {
             OwnedApplyTarget::Attr(name) => AttrOp::Update {
-                name: name.into(),
+                name,
                 target: AttrTarget::Attr,
                 data: AttrData::StaticString(self.into()),
             },
             OwnedApplyTarget::Prop(name) => AttrOp::Update {
-                name: name.into(),
+                name,
                 target: AttrTarget::Prop,
                 data: AttrData::StaticJs(JsValue::from_str(&self)),
             },
@@ -269,12 +256,12 @@ impl ApplyToDom for bool {
     fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
         match target {
             OwnedApplyTarget::Attr(name) => AttrOp::Update {
-                name: name.into(),
+                name,
                 target: AttrTarget::Attr,
                 data: AttrData::StaticBool(self),
             },
             OwnedApplyTarget::Prop(name) => AttrOp::Update {
-                name: name.into(),
+                name,
                 target: AttrTarget::Prop,
                 data: AttrData::StaticBool(self),
             },

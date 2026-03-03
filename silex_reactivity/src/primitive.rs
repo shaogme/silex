@@ -173,10 +173,10 @@ fn internal_update_signal<T: 'static>(id: NodeId, f: impl FnOnce(&mut T)) {
     let mut f = Some(f);
     RUNTIME.with(|rt| {
         rt.update_signal_untyped(id, &mut |any_val| {
-            if let Some(f) = f.take() {
-                if let Some(val) = any_val.downcast_mut::<T>() {
-                    f(val);
-                }
+            if let Some(f) = f.take()
+                && let Some(val) = any_val.downcast_mut::<T>()
+            {
+                f(val);
             }
         });
     })
@@ -187,7 +187,7 @@ pub fn is_signal_valid(id: NodeId) -> bool {
         rt.storage
             .reactive
             .get(id)
-            .map_or(false, |n| n.signal.is_some())
+            .is_some_and(|n| n.signal.is_some())
     })
 }
 
@@ -257,7 +257,7 @@ pub fn is_stored_value_valid(id: NodeId) -> bool {
         rt.storage
             .extras
             .get(id)
-            .map_or(false, |e| matches!(e, ExtraData::StoredValue(_)))
+            .is_some_and(|e| matches!(e, ExtraData::StoredValue(_)))
     })
 }
 
@@ -281,7 +281,7 @@ pub fn is_closure_valid(id: NodeId) -> bool {
         rt.storage
             .extras
             .get(id)
-            .map_or(false, |e| matches!(e, ExtraData::Closure(_)))
+            .is_some_and(|e| matches!(e, ExtraData::Closure(_)))
     })
 }
 
@@ -305,7 +305,7 @@ pub fn is_op_valid(id: NodeId) -> bool {
         rt.storage
             .extras
             .get(id)
-            .map_or(false, |e| matches!(e, ExtraData::Op(_)))
+            .is_some_and(|e| matches!(e, ExtraData::Op(_)))
     })
 }
 
@@ -325,10 +325,10 @@ fn internal_register_callback(f: std::rc::Rc<dyn Fn(Box<dyn Any>)>) -> NodeId {
 
 pub fn invoke_callback(id: NodeId, arg: Box<dyn Any>) {
     RUNTIME.with(|rt| {
-        if let Some(extra) = rt.storage.extras.get(id) {
-            if let ExtraData::Callback(data) = extra {
-                (data.f)(arg);
-            }
+        if let Some(extra) = rt.storage.extras.get(id)
+            && let ExtraData::Callback(data) = extra
+        {
+            (data.f)(arg);
         }
     })
 }
@@ -338,7 +338,7 @@ pub fn is_callback_valid(id: NodeId) -> bool {
         rt.storage
             .extras
             .get(id)
-            .map_or(false, |e| matches!(e, ExtraData::Callback(_)))
+            .is_some_and(|e| matches!(e, ExtraData::Callback(_)))
     })
 }
 
@@ -367,10 +367,10 @@ pub fn get_node_ref<T: Clone + 'static>(id: NodeId) -> Option<T> {
 
 pub fn set_node_ref<T: 'static>(id: NodeId, element: T) {
     RUNTIME.with(|rt| {
-        if let Some(extra) = rt.storage.extras.get_mut(id) {
-            if let ExtraData::NodeRef(data) = extra {
-                data.element = Some(Box::new(element));
-            }
+        if let Some(extra) = rt.storage.extras.get_mut(id)
+            && let ExtraData::NodeRef(data) = extra
+        {
+            data.element = Some(Box::new(element));
         }
     })
 }
@@ -380,6 +380,6 @@ pub fn is_node_ref_valid(id: NodeId) -> bool {
         rt.storage
             .extras
             .get(id)
-            .map_or(false, |e| matches!(e, ExtraData::NodeRef(_)))
+            .is_some_and(|e| matches!(e, ExtraData::NodeRef(_)))
     })
 }
