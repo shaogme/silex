@@ -177,6 +177,23 @@ impl_view_forward_to_rx!(ReadSignal, RwSignal, Constant, Memo, Signal);
 
 impl<S, F, V> View for silex_core::reactivity::DerivedPayload<S, F>
 where
+    Self: silex_core::traits::IntoRx<RxType = Rx<V, RxValueKind>> + Clone + 'static,
+    V: RxCloneData + Sized + 'static,
+    Rx<V, RxValueKind>: View,
+{
+    #[inline(always)]
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        self.into_rx().mount(parent, attrs);
+    }
+
+    #[inline(always)]
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        self.clone().into_rx().mount_ref(parent, attrs);
+    }
+}
+
+impl<S, F, V> View for std::rc::Rc<silex_core::reactivity::DerivedPayload<S, F>>
+where
     Self: silex_core::traits::IntoRx<RxType = Rx<V, RxValueKind>> + 'static,
     V: RxCloneData + Sized + 'static,
     Rx<V, RxValueKind>: View,
@@ -188,10 +205,7 @@ where
 
     #[inline(always)]
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        // DerivedPayload does not implement Clone, so we must rely on the Rx it creates.
-        // This is safe because it's a factory.
-        let rx = IntoRx::into_rx(unsafe { std::ptr::read(self) });
-        rx.mount_ref(parent, attrs);
+        self.clone().into_rx().mount_ref(parent, attrs);
     }
 }
 
@@ -208,14 +222,13 @@ where
 
     #[inline(always)]
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        let rx = IntoRx::into_rx(unsafe { std::ptr::read(self) });
-        rx.mount_ref(parent, attrs);
+        self.clone().into_rx().mount_ref(parent, attrs);
     }
 }
 
 impl<S, F, O> View for silex_core::reactivity::SignalSlice<S, F, O>
 where
-    Self: silex_core::traits::IntoRx<RxType = Rx<O, RxValueKind>> + 'static,
+    Self: silex_core::traits::IntoRx<RxType = Rx<O, RxValueKind>> + Clone + 'static,
     O: RxCloneData + Sized + 'static,
     Rx<O, RxValueKind>: View,
 {
@@ -226,7 +239,6 @@ where
 
     #[inline(always)]
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        let rx = IntoRx::into_rx(unsafe { std::ptr::read(self) });
-        rx.mount_ref(parent, attrs);
+        self.clone().into_rx().mount_ref(parent, attrs);
     }
 }

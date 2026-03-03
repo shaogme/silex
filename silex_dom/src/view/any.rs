@@ -162,7 +162,11 @@ impl Drop for SharedViewBox {
 
 unsafe fn mount_stack<V: View>(data: *mut u8, parent: &Node, attrs: Vec<PendingAttribute>) {
     unsafe {
-        let view = std::ptr::read(data as *mut V);
+        // We need to move the view out of the raw buffer.
+        // For stack-allocated data, we can't easily use mem::replace without Default.
+        // But we can use replace with MaybeUninit to safely take the value.
+        let view_ptr = data as *mut mem::MaybeUninit<V>;
+        let view = mem::replace(&mut *view_ptr, mem::MaybeUninit::uninit()).assume_init();
         view.mount(parent, attrs);
     }
 }
@@ -189,15 +193,20 @@ unsafe fn drop_stack<V: View>(data: *mut u8) {
 
 unsafe fn mount_heap<V: View>(data: *mut u8, parent: &Node, attrs: Vec<PendingAttribute>) {
     unsafe {
-        let ptr = std::ptr::read(data as *mut *mut V);
-        let view = *Box::from_raw(ptr);
-        view.mount(parent, attrs);
+        // For heap data, data contains a *mut V.
+        // We replace it with null to "take" the pointer safely.
+        let ptr_ref = &mut *(data as *mut *mut V);
+        let ptr = mem::replace(ptr_ref, std::ptr::null_mut());
+        if !ptr.is_null() {
+            let view = *Box::from_raw(ptr);
+            view.mount(parent, attrs);
+        }
     }
 }
 
 unsafe fn mount_ref_heap<V: View>(data: *const u8, parent: &Node, attrs: Vec<PendingAttribute>) {
     unsafe {
-        let ptr = std::ptr::read(data as *const *mut V);
+        let ptr = *(data as *const *mut V);
         let view = &*ptr;
         view.mount_ref(parent, attrs);
     }
@@ -205,7 +214,7 @@ unsafe fn mount_ref_heap<V: View>(data: *const u8, parent: &Node, attrs: Vec<Pen
 
 unsafe fn apply_heap<V: View>(data: *mut u8, attrs: Vec<PendingAttribute>) {
     unsafe {
-        let ptr = std::ptr::read(data as *mut *mut V);
+        let ptr = *(data as *mut *mut V);
         let view = &mut *ptr;
         view.apply_attributes(attrs);
     }
@@ -213,8 +222,11 @@ unsafe fn apply_heap<V: View>(data: *mut u8, attrs: Vec<PendingAttribute>) {
 
 unsafe fn drop_heap<V: View>(data: *mut u8) {
     unsafe {
-        let ptr = std::ptr::read(data as *mut *mut V);
-        let _ = Box::from_raw(ptr);
+        let ptr_ref = &mut *(data as *mut *mut V);
+        let ptr = mem::replace(ptr_ref, std::ptr::null_mut());
+        if !ptr.is_null() {
+            let _ = Box::from_raw(ptr);
+        }
     }
 }
 
@@ -227,7 +239,7 @@ unsafe fn clone_stack<V: View + Clone + 'static>(data: *const u8) -> SharedViewB
 
 unsafe fn clone_heap<V: View + Clone + 'static>(data: *const u8) -> SharedViewBox {
     unsafe {
-        let ptr = std::ptr::read(data as *const *mut V);
+        let ptr = *(data as *const *mut V);
         let view = &*ptr;
         SharedViewBox::new(view.clone())
     }
