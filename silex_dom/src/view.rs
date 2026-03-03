@@ -36,7 +36,7 @@ pub trait View {
     where
         Self: Sized + 'static,
     {
-        AnyView::Unique(Box::new(self), Vec::new())
+        AnyView::new(self)
     }
 
     /// Convert this view into a SharedView (Type Erasure with Clone requirement).
@@ -44,7 +44,7 @@ pub trait View {
     where
         Self: Sized + Clone + 'static,
     {
-        SharedView::SharedBoxed(Box::new(self), Vec::new())
+        SharedView::new(self)
     }
 }
 
@@ -132,12 +132,12 @@ where
     V: View + 'static,
 {
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        mount_dynamic_view_erased_internal(parent, attrs, Box::new(move || self().into_any()));
+        mount_dynamic_view_universal(parent, attrs, Box::new(move || self().into_any()));
     }
 }
 
-/// 非泛型的动态视图挂载内核，用于减少单态化膨胀。
-fn mount_dynamic_view_erased_internal(
+/// 非泛型的动态视图挂载内核，作为所有响应式/延迟视图的调度终点，用于减少单态化膨胀。
+pub(crate) fn mount_dynamic_view_universal(
     parent: &Node,
     attrs: Vec<PendingAttribute>,
     producer: Box<dyn Fn() -> AnyView>,
@@ -208,11 +208,11 @@ fn mount_dynamic_view_erased_internal(
             prev_scope.set(Some(id));
         } else if let Err(payload) = result {
             let msg = if let Some(s) = payload.downcast_ref::<&str>() {
-                format!("Panic in View: {}", s)
+                format!("Panic in Dynamic View: {}", s)
             } else if let Some(s) = payload.downcast_ref::<String>() {
-                format!("Panic in View: {}", s)
+                format!("Panic in Dynamic View: {}", s)
             } else {
-                "Unknown Panic in View".to_string()
+                "Unknown Panic in Dynamic View".to_string()
             };
 
             handle_error(SilexError::Javascript(msg));

@@ -3,33 +3,221 @@ use crate::element::Element;
 use crate::view::View;
 use web_sys::Node;
 
-/// 辅助特征（不要求 Clone，移动语义挂载）
-pub trait RenderOnce {
-    fn mount_boxed(self: Box<Self>, parent: &Node, attrs: Vec<PendingAttribute>);
-    fn apply_attributes_boxed(&mut self, attrs: Vec<PendingAttribute>);
+// --- Manual VTable & SOO (Small Object Optimization) Infrastructure ---
+
+const SOO_CAPACITY: usize = 24; // 3 * size_of::<usize>()
+
+pub(crate) struct AnyViewVTable {
+    pub mount: unsafe fn(data: *mut u8, parent: &Node, attrs: Vec<PendingAttribute>),
+    pub apply_attributes: unsafe fn(data: *mut u8, attrs: Vec<PendingAttribute>),
+    pub drop: unsafe fn(data: *mut u8),
 }
 
-impl<V: View + 'static> RenderOnce for V {
-    fn mount_boxed(self: Box<Self>, parent: &Node, attrs: Vec<PendingAttribute>) {
-        (*self).mount(parent, attrs)
+pub struct AnyViewBox {
+    data: [usize; 3],
+    vtable: &'static AnyViewVTable,
+}
+
+pub(crate) struct SharedViewVTable {
+    pub any: AnyViewVTable,
+    pub clone: unsafe fn(data: *const u8) -> SharedViewBox,
+}
+
+pub struct SharedViewBox {
+    data: [usize; 3],
+    vtable: &'static SharedViewVTable,
+}
+
+impl AnyViewBox {
+    #[inline(always)]
+    pub fn new<V: View + 'static>(view: V) -> Self {
+        unsafe {
+            if std::mem::size_of::<V>() <= SOO_CAPACITY
+                && std::mem::align_of::<V>() <= std::mem::align_of::<usize>()
+            {
+                let mut data = [0usize; 3];
+                std::ptr::write(data.as_mut_ptr() as *mut V, view);
+                Self {
+                    data,
+                    vtable: &AnyViewVTable {
+                        mount: mount_stack::<V>,
+                        apply_attributes: apply_stack::<V>,
+                        drop: drop_stack::<V>,
+                    },
+                }
+            } else {
+                let mut data = [0usize; 3];
+                let ptr = Box::into_raw(Box::new(view));
+                std::ptr::write(data.as_mut_ptr() as *mut *mut V, ptr);
+                Self {
+                    data,
+                    vtable: &AnyViewVTable {
+                        mount: mount_heap::<V>,
+                        apply_attributes: apply_heap::<V>,
+                        drop: drop_heap::<V>,
+                    },
+                }
+            }
+        }
     }
-    fn apply_attributes_boxed(&mut self, attrs: Vec<PendingAttribute>) {
-        self.apply_attributes(attrs);
+
+    pub fn mount(mut self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        let vtable = self.vtable;
+        unsafe {
+            (vtable.mount)(self.data.as_mut_ptr() as *mut u8, parent, attrs);
+            std::mem::forget(self);
+        }
+    }
+
+    pub fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
+        unsafe {
+            (self.vtable.apply_attributes)(self.data.as_mut_ptr() as *mut u8, attrs);
+        }
     }
 }
 
-/// 辅助特征（支持克隆）
-pub trait RenderShared: RenderOnce {
-    fn clone_boxed(&self) -> Box<dyn RenderShared>;
-    fn into_once_boxed(self: Box<Self>) -> Box<dyn RenderOnce>;
+impl Drop for AnyViewBox {
+    fn drop(&mut self) {
+        unsafe {
+            (self.vtable.drop)(self.data.as_mut_ptr() as *mut u8);
+        }
+    }
 }
 
-impl<V: View + Clone + 'static> RenderShared for V {
-    fn clone_boxed(&self) -> Box<dyn RenderShared> {
-        Box::new(self.clone())
+impl SharedViewBox {
+    #[inline(always)]
+    pub fn new<V: View + Clone + 'static>(view: V) -> Self {
+        unsafe {
+            if std::mem::size_of::<V>() <= SOO_CAPACITY
+                && std::mem::align_of::<V>() <= std::mem::align_of::<usize>()
+            {
+                let mut data = [0usize; 3];
+                std::ptr::write(data.as_mut_ptr() as *mut V, view);
+                Self {
+                    data,
+                    vtable: &SharedViewVTable {
+                        any: AnyViewVTable {
+                            mount: mount_stack::<V>,
+                            apply_attributes: apply_stack::<V>,
+                            drop: drop_stack::<V>,
+                        },
+                        clone: clone_stack::<V>,
+                    },
+                }
+            } else {
+                let mut data = [0usize; 3];
+                let ptr = Box::into_raw(Box::new(view));
+                std::ptr::write(data.as_mut_ptr() as *mut *mut V, ptr);
+                Self {
+                    data,
+                    vtable: &SharedViewVTable {
+                        any: AnyViewVTable {
+                            mount: mount_heap::<V>,
+                            apply_attributes: apply_heap::<V>,
+                            drop: drop_heap::<V>,
+                        },
+                        clone: clone_heap::<V>,
+                    },
+                }
+            }
+        }
     }
-    fn into_once_boxed(self: Box<Self>) -> Box<dyn RenderOnce> {
-        self
+
+    pub fn mount(mut self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        let vtable = self.vtable;
+        unsafe {
+            (vtable.any.mount)(self.data.as_mut_ptr() as *mut u8, parent, attrs);
+            std::mem::forget(self);
+        }
+    }
+
+    pub fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
+        unsafe {
+            (self.vtable.any.apply_attributes)(self.data.as_mut_ptr() as *mut u8, attrs);
+        }
+    }
+
+    pub fn into_any(self) -> AnyViewBox {
+        let any_box = AnyViewBox {
+            data: self.data,
+            vtable: &self.vtable.any,
+        };
+        std::mem::forget(self);
+        any_box
+    }
+}
+
+impl Clone for SharedViewBox {
+    fn clone(&self) -> Self {
+        unsafe { (self.vtable.clone)(self.data.as_ptr() as *const u8) }
+    }
+}
+
+impl Drop for SharedViewBox {
+    fn drop(&mut self) {
+        unsafe {
+            (self.vtable.any.drop)(self.data.as_mut_ptr() as *mut u8);
+        }
+    }
+}
+
+// --- VTable Glue Functions ---
+
+unsafe fn mount_stack<V: View>(data: *mut u8, parent: &Node, attrs: Vec<PendingAttribute>) {
+    unsafe {
+        let view = std::ptr::read(data as *mut V);
+        view.mount(parent, attrs);
+    }
+}
+
+unsafe fn apply_stack<V: View>(data: *mut u8, attrs: Vec<PendingAttribute>) {
+    unsafe {
+        let view = &mut *(data as *mut V);
+        view.apply_attributes(attrs);
+    }
+}
+
+unsafe fn drop_stack<V: View>(data: *mut u8) {
+    unsafe {
+        std::ptr::drop_in_place(data as *mut V);
+    }
+}
+
+unsafe fn mount_heap<V: View>(data: *mut u8, parent: &Node, attrs: Vec<PendingAttribute>) {
+    unsafe {
+        let ptr = std::ptr::read(data as *mut *mut V);
+        let view = *Box::from_raw(ptr);
+        view.mount(parent, attrs);
+    }
+}
+
+unsafe fn apply_heap<V: View>(data: *mut u8, attrs: Vec<PendingAttribute>) {
+    unsafe {
+        let ptr = std::ptr::read(data as *mut *mut V);
+        let view = &mut *ptr;
+        view.apply_attributes(attrs);
+    }
+}
+
+unsafe fn drop_heap<V: View>(data: *mut u8) {
+    unsafe {
+        let ptr = std::ptr::read(data as *mut *mut V);
+        let _ = Box::from_raw(ptr);
+    }
+}
+
+unsafe fn clone_stack<V: View + Clone + 'static>(data: *const u8) -> SharedViewBox {
+    unsafe {
+        let view = &*(data as *const V);
+        SharedViewBox::new(view.clone())
+    }
+}
+
+unsafe fn clone_heap<V: View + Clone + 'static>(data: *const u8) -> SharedViewBox {
+    unsafe {
+        let ptr = std::ptr::read(data as *const *mut V);
+        let view = &*ptr;
+        SharedViewBox::new(view.clone())
     }
 }
 
@@ -41,7 +229,7 @@ pub enum SharedView {
     Text(String),
     Element(crate::element::Element),
     List(Vec<SharedView>),
-    SharedBoxed(Box<dyn RenderShared>, Vec<PendingAttribute>),
+    Boxed(SharedViewBox, Vec<PendingAttribute>),
 }
 
 /// 优化的 AnyView，作为所有视图类型擦除的终点（不要求 Clone）
@@ -52,19 +240,19 @@ pub enum AnyView {
     Text(String),
     Element(crate::element::Element),
     List(Vec<AnyView>),
-    Unique(Box<dyn RenderOnce>, Vec<PendingAttribute>),
+    Boxed(AnyViewBox, Vec<PendingAttribute>),
     FromShared(SharedView),
 }
 
 impl SharedView {
     pub fn new<V: View + Clone + 'static>(view: V) -> Self {
-        view.into_shared()
+        SharedView::Boxed(SharedViewBox::new(view), Vec::new())
     }
 }
 
 impl AnyView {
     pub fn new<V: View + 'static>(view: V) -> Self {
-        view.into_any()
+        AnyView::Boxed(AnyViewBox::new(view), Vec::new())
     }
 }
 
@@ -79,9 +267,9 @@ impl View for SharedView {
                     child.mount(parent, if i == 0 { attrs.clone() } else { Vec::new() });
                 }
             }
-            SharedView::SharedBoxed(b, mut inner_attrs) => {
+            SharedView::Boxed(b, mut inner_attrs) => {
                 inner_attrs.extend(attrs);
-                b.mount_boxed(
+                b.mount(
                     parent,
                     crate::attribute::consolidate_attributes(inner_attrs),
                 );
@@ -99,10 +287,11 @@ impl View for SharedView {
                     child.apply_attributes(attrs.clone());
                 }
             }
-            SharedView::SharedBoxed(_, inner_attrs) => {
+            SharedView::Boxed(b, inner_attrs) => {
                 let mut temp = std::mem::take(inner_attrs);
                 temp.extend(attrs);
                 *inner_attrs = crate::attribute::consolidate_attributes(temp);
+                b.apply_attributes(inner_attrs.clone());
             }
         }
     }
@@ -127,9 +316,9 @@ impl View for AnyView {
                     child.mount(parent, if i == 0 { attrs.clone() } else { Vec::new() });
                 }
             }
-            AnyView::Unique(b, mut inner_attrs) => {
+            AnyView::Boxed(b, mut inner_attrs) => {
                 inner_attrs.extend(attrs);
-                b.mount_boxed(
+                b.mount(
                     parent,
                     crate::attribute::consolidate_attributes(inner_attrs),
                 );
@@ -148,10 +337,11 @@ impl View for AnyView {
                     child.apply_attributes(attrs.clone());
                 }
             }
-            AnyView::Unique(_, inner_attrs) => {
+            AnyView::Boxed(b, inner_attrs) => {
                 let mut temp = std::mem::take(inner_attrs);
                 temp.extend(attrs);
                 *inner_attrs = crate::attribute::consolidate_attributes(temp);
+                b.apply_attributes(inner_attrs.clone());
             }
             AnyView::FromShared(s) => s.apply_attributes(attrs),
         }
@@ -169,9 +359,7 @@ impl Clone for SharedView {
             SharedView::Text(s) => SharedView::Text(s.clone()),
             SharedView::Element(el) => SharedView::Element(el.clone()),
             SharedView::List(list) => SharedView::List(list.clone()),
-            SharedView::SharedBoxed(b, attrs) => {
-                SharedView::SharedBoxed(b.clone_boxed(), attrs.clone())
-            }
+            SharedView::Boxed(b, attrs) => SharedView::Boxed(b.clone(), attrs.clone()),
         }
     }
 }
@@ -195,7 +383,7 @@ impl std::fmt::Debug for AnyView {
             Self::Text(arg0) => f.debug_tuple("AnyView(Text)").field(arg0).finish(),
             Self::Element(_) => write!(f, "AnyView(Element)"),
             Self::List(l) => f.debug_tuple("AnyView(List)").field(&l.len()).finish(),
-            Self::Unique(_, _) => write!(f, "AnyView(Unique)"),
+            Self::Boxed(_, _) => write!(f, "AnyView(Boxed)"),
             Self::FromShared(s) => f.debug_tuple("AnyView(FromShared)").field(s).finish(),
         }
     }
@@ -208,7 +396,7 @@ impl std::fmt::Debug for SharedView {
             Self::Text(arg0) => f.debug_tuple("SharedView(Text)").field(arg0).finish(),
             Self::Element(_) => write!(f, "SharedView(Element)"),
             Self::List(l) => f.debug_tuple("SharedView(List)").field(&l.len()).finish(),
-            Self::SharedBoxed(_, _) => write!(f, "SharedView(SharedBoxed)"),
+            Self::Boxed(_, _) => write!(f, "SharedView(Boxed)"),
         }
     }
 }

@@ -5,7 +5,6 @@ use silex_core::reactivity::Effect;
 use silex_core::traits::{RxCloneData, RxRead};
 use silex_core::{Rx, RxValueKind, SilexError};
 use std::fmt::Display;
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use web_sys::Node;
 
 // --- 响应式文本归一化内核 (Reactive Text Consolidation Kernel) ---
@@ -39,86 +38,11 @@ where
     V: View + RxCloneData + 'static,
     M: 'static,
 {
-    let document = crate::document();
-
-    let start_marker = document.create_comment("dyn-start");
-    let start_node: Node = start_marker.into();
-
-    if let Err(e) = parent.append_child(&start_node).map_err(SilexError::from) {
-        handle_error(e);
-        return;
-    }
-
-    let end_marker = document.create_comment("dyn-end");
-    let end_node: Node = end_marker.into();
-
-    if let Err(e) = parent.append_child(&end_node).map_err(SilexError::from) {
-        handle_error(e);
-        return;
-    }
-
-    use std::cell::Cell;
-    use std::rc::Rc;
-    let prev_scope = Rc::new(Cell::new(None::<silex_core::reactivity::NodeId>));
-
-    Effect::new(move |_| {
-        // --- 响应式图谱映射设计 (Reactive Mapping) ---
-        if let Some(id) = prev_scope.get() {
-            silex_core::reactivity::dispose(id);
-            prev_scope.set(None);
-        }
-
-        let start_node = start_node.clone();
-        let end_node = end_node.clone();
-        let document = document.clone();
-        let attrs = attrs.clone();
-
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            rx.with(|view| {
-                let view = view.clone();
-                let start_node = start_node.clone();
-                let end_node = end_node.clone();
-                let document = document.clone();
-                let attrs = attrs.clone();
-
-                silex_core::reactivity::create_scope(move || {
-                    // 清理旧节点的 DOM 物理连接
-                    if let Some(parent) = start_node.parent_node() {
-                        while let Some(sibling) = start_node.next_sibling() {
-                            if sibling == end_node {
-                                break;
-                            }
-                            let _ = parent.remove_child(&sibling);
-                        }
-                    }
-
-                    let fragment = document.create_document_fragment();
-                    let fragment_node: Node = fragment.clone().into();
-
-                    view.mount(&fragment_node, attrs);
-
-                    // 插入新内容
-                    if let Some(parent) = end_node.parent_node() {
-                        let _ = parent.insert_before(&fragment_node, Some(&end_node));
-                    }
-                })
-            })
-        }));
-
-        if let Ok(id) = result {
-            prev_scope.set(Some(id));
-        } else if let Err(payload) = result {
-            let msg = if let Some(s) = payload.downcast_ref::<&str>() {
-                format!("Panic in Reactive View: {}", s)
-            } else if let Some(s) = payload.downcast_ref::<String>() {
-                format!("Panic in Reactive View: {}", s)
-            } else {
-                "Unknown Panic in Reactive View".to_string()
-            };
-
-            handle_error(SilexError::Javascript(msg));
-        }
-    });
+    crate::view::mount_dynamic_view_universal(
+        parent,
+        attrs,
+        Box::new(move || rx.with(|view| view.clone().into_any())),
+    );
 }
 
 // 4. Rx wrapper support (Unified entry point for reactive normalization)
