@@ -94,7 +94,9 @@ impl Runtime {
         };
 
         let dependencies = {
-            if let Some(effect_data) = self.storage.effects.get_mut(id) {
+            if let Some(n) = self.storage.reactive.get_mut(id)
+                && let Some(effect_data) = &mut n.effect
+            {
                 let mut deps = DependencyList::default();
                 std::mem::swap(&mut effect_data.dependencies, &mut deps);
                 deps
@@ -120,7 +122,9 @@ impl Runtime {
             self.dispose_node_internal(child, false);
         }
         for (dep_id, _) in dependencies {
-            if let Some(signal_data) = self.storage.signals.get_mut(dep_id) {
+            if let Some(n) = self.storage.reactive.get_mut(dep_id)
+                && let Some(signal_data) = &mut n.signal
+            {
                 signal_data.subscribers.remove(&self_id);
             }
         }
@@ -151,12 +155,8 @@ impl Runtime {
 
         self.storage.graph.remove(id);
         self.storage.node_aux.remove(id);
-        self.storage.signals.remove(id);
-        self.storage.effects.remove(id);
-        self.storage.stored_values.remove(id);
-        self.storage.closures.remove(id);
-        self.storage.ops.remove(id);
-        self.storage.states.remove(id);
+        self.storage.reactive.remove(id);
+        self.storage.extras.remove(id);
         self.scheduler.queued_observers.remove(id);
     }
 }

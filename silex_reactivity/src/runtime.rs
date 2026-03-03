@@ -32,13 +32,17 @@ impl Runtime {
 
     pub fn create_signal(&self, value: AnyValue) -> NodeId {
         let id = self.register_node();
-        self.storage.signals.insert(
+        self.storage.reactive.insert(
             id,
-            SignalData {
-                value,
-                subscribers: crate::NodeList::Empty,
-                last_tracked_by: None,
-                version: 0,
+            ReactiveNode {
+                state: NodeState::Clean,
+                signal: Some(SignalData {
+                    value,
+                    subscribers: crate::NodeList::Empty,
+                    last_tracked_by: None,
+                    version: 0,
+                }),
+                effect: None,
             },
         );
         id
@@ -46,12 +50,16 @@ impl Runtime {
 
     pub fn create_effect(&self, f: ThunkValue) -> NodeId {
         let id = self.register_node();
-        self.storage.effects.insert(
+        self.storage.reactive.insert(
             id,
-            EffectData {
-                computation: Some(f),
-                dependencies: DependencyList::default(),
-                effect_version: 0,
+            ReactiveNode {
+                state: NodeState::Clean,
+                signal: None,
+                effect: Some(EffectData {
+                    computation: Some(f),
+                    dependencies: DependencyList::default(),
+                    effect_version: 0,
+                }),
             },
         );
         self.run_effect(id);
@@ -66,18 +74,22 @@ impl Runtime {
             if self.storage.graph.get(owner).is_none() {
                 return;
             }
-            let (owner_version, is_owner_valid) =
-                if let Some(eff) = self.storage.effects.get_mut(owner) {
-                    (eff.effect_version, true)
-                } else {
-                    (0, false)
-                };
+            let (owner_version, is_owner_valid) = if let Some(owner_node) =
+                self.storage.reactive.get_mut(owner)
+                && let Some(eff) = &owner_node.effect
+            {
+                (eff.effect_version, true)
+            } else {
+                (0, false)
+            };
             if !is_owner_valid {
                 return;
             }
             let mut registered = false;
             let mut target_version = 0;
-            if let Some(signal_data) = self.storage.signals.get_mut(target_id) {
+            if let Some(target_node) = self.storage.reactive.get_mut(target_id)
+                && let Some(signal_data) = &mut target_node.signal
+            {
                 if let Some((last_owner, last_version)) = signal_data.last_tracked_by
                     && last_owner == owner
                     && last_version == owner_version
@@ -90,7 +102,9 @@ impl Runtime {
                 target_version = signal_data.version;
             }
             if registered {
-                if let Some(eff) = self.storage.effects.get_mut(owner) {
+                if let Some(owner_node) = self.storage.reactive.get_mut(owner)
+                    && let Some(eff) = &mut owner_node.effect
+                {
                     eff.dependencies.push((target_id, target_version));
                 }
             }
@@ -105,22 +119,28 @@ impl Runtime {
             if self.storage.graph.get(owner).is_none() {
                 return;
             }
-            let (owner_version, is_owner_valid) =
-                if let Some(eff) = self.storage.effects.get_mut(owner) {
-                    (eff.effect_version, true)
-                } else {
-                    (0, false)
-                };
+            let (owner_version, is_owner_valid) = if let Some(owner_node) =
+                self.storage.reactive.get_mut(owner)
+                && let Some(eff) = &owner_node.effect
+            {
+                (eff.effect_version, true)
+            } else {
+                (0, false)
+            };
             if !is_owner_valid {
                 return;
             }
-            if let Some(eff) = self.storage.effects.get_mut(owner) {
+            if let Some(owner_node) = self.storage.reactive.get_mut(owner)
+                && let Some(eff) = &mut owner_node.effect
+            {
                 let dependencies = &mut eff.dependencies;
                 for &target_id in target_ids {
                     if owner == target_id {
                         continue;
                     }
-                    if let Some(signal_data) = self.storage.signals.get_mut(target_id) {
+                    if let Some(target_node) = self.storage.reactive.get_mut(target_id)
+                        && let Some(signal_data) = &mut target_node.signal
+                    {
                         if let Some((last_owner, last_version)) = signal_data.last_tracked_by
                             && last_owner == owner
                             && last_version == owner_version
@@ -185,7 +205,9 @@ impl Runtime {
     }
 
     pub(crate) fn update_signal_untyped(&self, id: NodeId, updater: &mut dyn FnMut(&mut AnyValue)) {
-        if let Some(signal) = self.storage.signals.get_mut(id) {
+        if let Some(n) = self.storage.reactive.get_mut(id)
+            && let Some(signal) = &mut n.signal
+        {
             signal.version = signal.version.wrapping_add(1);
             updater(&mut signal.value);
             self.notify_update(id);
@@ -193,34 +215,30 @@ impl Runtime {
     }
 
     fn prepare_memo_node(&self, id: NodeId) {
-        // Signal Component
-        self.storage.signals.insert(
+        self.storage.reactive.insert(
             id,
-            SignalData {
-                value: crate::core::value::AnyValue::new(()), // Temporary dummy
-                subscribers: crate::NodeList::Empty,
-                last_tracked_by: None,
-                version: 0,
+            ReactiveNode {
+                state: NodeState::Clean,
+                signal: Some(SignalData {
+                    value: crate::core::value::AnyValue::new(()), // Temporary dummy
+                    subscribers: crate::NodeList::Empty,
+                    last_tracked_by: None,
+                    version: 0,
+                }),
+                effect: Some(EffectData {
+                    computation: None,
+                    dependencies: DependencyList::default(),
+                    effect_version: 0,
+                }),
             },
         );
-
-        // Effect Component
-        self.storage.effects.insert(
-            id,
-            EffectData {
-                computation: None,
-                dependencies: DependencyList::default(),
-                effect_version: 0,
-            },
-        );
-
-        // State Component
-        self.storage.states.insert(id, NodeState::Clean);
     }
 
     pub(crate) fn commit_update(&self, id: NodeId, value: AnyValue, changed: bool) {
         if changed {
-            if let Some(signal) = self.storage.signals.get_mut(id) {
+            if let Some(n) = self.storage.reactive.get_mut(id)
+                && let Some(signal) = &mut n.signal
+            {
                 signal.version = signal.version.wrapping_add(1);
                 signal.value = value;
             }
@@ -239,8 +257,10 @@ impl Runtime {
             match next_to_run {
                 Some(id) => {
                     self.scheduler.queued_observers.remove(id);
-                    if self.storage.effects.contains_key(id) {
-                        if self.storage.signals.contains_key(id) {
+                    if let Some(n) = self.storage.reactive.get(id)
+                        && n.effect.is_some()
+                    {
+                        if n.signal.is_some() {
                             self.update_if_necessary(id);
                         } else {
                             self.run_effect(id);
@@ -256,13 +276,15 @@ impl Runtime {
     #[track_caller]
     pub fn create_closure(&self, f: Box<dyn Any>) -> NodeId {
         let id = self.register_node();
-        self.storage.closures.insert(id, ClosureData { f });
+        self.storage
+            .extras
+            .insert(id, ExtraData::Closure(ClosureData { f }));
         id
     }
 
     pub fn create_op(&self, data: crate::RawOpBuffer) -> NodeId {
         let id = self.register_node();
-        self.storage.ops.insert(id, OpData(data));
+        self.storage.extras.insert(id, ExtraData::Op(OpData(data)));
         id
     }
 
@@ -270,12 +292,13 @@ impl Runtime {
         let id = self.register_node();
         self.prepare_memo_node(id);
 
-        if let Some(signal) = self.storage.signals.get_mut(id) {
-            signal.value = initial_value;
-        }
-
-        if let Some(effect) = self.storage.effects.get_mut(id) {
-            effect.computation = Some(thunk);
+        if let Some(n) = self.storage.reactive.get_mut(id) {
+            if let Some(signal) = &mut n.signal {
+                signal.value = initial_value;
+            }
+            if let Some(effect) = &mut n.effect {
+                effect.computation = Some(thunk);
+            }
         }
         id
     }
@@ -283,8 +306,8 @@ impl Runtime {
     pub fn store_value(&self, value: AnyValue) -> NodeId {
         let id = self.register_node();
         self.storage
-            .stored_values
-            .insert(id, StoredValueData { value });
+            .extras
+            .insert(id, ExtraData::StoredValue(StoredValueData { value }));
         id
     }
 
@@ -293,15 +316,17 @@ impl Runtime {
         f: std::rc::Rc<dyn Fn(Box<dyn std::any::Any>)>,
     ) -> NodeId {
         let id = self.register_node();
-        self.storage.callbacks.insert(id, CallbackData { f });
+        self.storage
+            .extras
+            .insert(id, ExtraData::Callback(CallbackData { f }));
         id
     }
 
     pub fn register_node_ref(&self) -> NodeId {
         let id = self.register_node();
         self.storage
-            .node_refs
-            .insert(id, NodeRefData { element: None });
+            .extras
+            .insert(id, ExtraData::NodeRef(NodeRefData { element: None }));
         id
     }
 
@@ -333,11 +358,15 @@ impl Runtime {
     }
 
     pub(crate) unsafe fn get_any_raw_ptr_untracked(&self, id: NodeId) -> Option<*const ()> {
-        if let Some(s) = self.storage.signals.get(id) {
+        if let Some(n) = self.storage.reactive.get(id)
+            && let Some(s) = &n.signal
+        {
             return Some(unsafe { s.value.as_ptr() });
         }
-        if let Some(sv) = self.storage.stored_values.get(id) {
-            return Some(unsafe { sv.value.as_ptr() });
+        if let Some(extra) = self.storage.extras.get(id) {
+            if let ExtraData::StoredValue(sv) = extra {
+                return Some(unsafe { sv.value.as_ptr() });
+            }
         }
         None
     }
@@ -370,7 +399,9 @@ impl Runtime {
         };
 
         let (computation_fn, dependencies) = {
-            if let Some(effect_data) = self.storage.effects.get_mut(effect_id) {
+            if let Some(n) = self.storage.reactive.get_mut(effect_id)
+                && let Some(effect_data) = &mut n.effect
+            {
                 effect_data.effect_version = effect_data.effect_version.wrapping_add(1);
                 let mut deps = DependencyList::default();
                 std::mem::swap(&mut effect_data.dependencies, &mut deps);
@@ -388,16 +419,27 @@ impl Runtime {
             unsafe { f.call(self as *const Runtime as *const ()) };
             self.set_owner(prev_owner);
 
-            if let Some(effect_data) = self.storage.effects.get_mut(effect_id) {
-                effect_data.computation = Some(f);
+            if let Some(n) = self.storage.reactive.get_mut(effect_id) {
+                if let Some(effect_data) = &mut n.effect {
+                    effect_data.computation = Some(f);
+                }
             }
         }
     }
 }
 
 impl Runtime {
-    pub(crate) fn update_memo_core(&self, id: NodeId, compute_any: impl FnOnce(Option<AnyValue>) -> AnyValue) {
-        let old_any = self.storage.signals.get(id).and_then(|s| s.value.try_clone());
+    pub(crate) fn update_memo_core(
+        &self,
+        id: NodeId,
+        compute_any: impl FnOnce(Option<AnyValue>) -> AnyValue,
+    ) {
+        let old_any = self
+            .storage
+            .reactive
+            .get(id)
+            .and_then(|n| n.signal.as_ref())
+            .and_then(|s| s.value.try_clone());
         let new_any = {
             let prev_owner = self.current_owner();
             self.set_owner(Some(id));
@@ -405,7 +447,7 @@ impl Runtime {
             self.set_owner(prev_owner);
             v
         };
-        
+
         let changed = match &old_any {
             Some(old) => !new_any.try_eq(old),
             None => true,
@@ -428,7 +470,9 @@ impl GraphExecutor for Runtime {
         };
 
         let (computation_fn, dependencies) = {
-            if let Some(data) = self.storage.effects.get_mut(id) {
+            if let Some(n) = self.storage.reactive.get_mut(id)
+                && let Some(data) = &mut n.effect
+            {
                 data.effect_version = data.effect_version.wrapping_add(1);
                 let mut deps = DependencyList::default();
                 std::mem::swap(&mut data.dependencies, &mut deps);
@@ -446,11 +490,11 @@ impl GraphExecutor for Runtime {
             unsafe { f.call(self as *const Runtime as *const ()) };
             self.set_owner(prev_owner);
 
-            if let Some(data) = self.storage.effects.get_mut(id) {
-                data.computation = Some(f);
-            }
-            if let Some(state) = self.storage.states.get_mut(id) {
-                *state = NodeState::Clean;
+            if let Some(n) = self.storage.reactive.get_mut(id) {
+                if let Some(data) = &mut n.effect {
+                    data.computation = Some(f);
+                }
+                n.state = NodeState::Clean;
             }
             return true;
         }

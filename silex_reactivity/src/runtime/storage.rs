@@ -6,17 +6,25 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::rc::Rc;
 
+pub(crate) struct ReactiveNode {
+    pub(crate) state: NodeState,
+    pub(crate) signal: Option<SignalData>,
+    pub(crate) effect: Option<EffectData>,
+}
+
+pub(crate) enum ExtraData {
+    Callback(CallbackData),
+    NodeRef(NodeRefData),
+    StoredValue(StoredValueData),
+    Closure(ClosureData),
+    Op(OpData),
+}
+
 pub(crate) struct Storage {
     pub(crate) graph: Arena<Node>,
     pub(crate) node_aux: SparseSecondaryMap<NodeAux, 32>,
-    pub(crate) signals: SparseSecondaryMap<SignalData, 64>,
-    pub(crate) effects: SparseSecondaryMap<EffectData, 64>,
-    pub(crate) states: SparseSecondaryMap<NodeState, 64>,
-    pub(crate) callbacks: SparseSecondaryMap<CallbackData>,
-    pub(crate) node_refs: SparseSecondaryMap<NodeRefData>,
-    pub(crate) stored_values: SparseSecondaryMap<StoredValueData>,
-    pub(crate) closures: SparseSecondaryMap<ClosureData>,
-    pub(crate) ops: SparseSecondaryMap<OpData>,
+    pub(crate) reactive: SparseSecondaryMap<ReactiveNode, 64>,
+    pub(crate) extras: SparseSecondaryMap<ExtraData, 32>,
 
     #[cfg(debug_assertions)]
     pub(crate) dead_node_labels: SparseSecondaryMap<String>,
@@ -27,14 +35,8 @@ impl Storage {
         Self {
             graph: Arena::new(),
             node_aux: SparseSecondaryMap::new(),
-            signals: SparseSecondaryMap::new(),
-            effects: SparseSecondaryMap::new(),
-            states: SparseSecondaryMap::new(),
-            callbacks: SparseSecondaryMap::new(),
-            node_refs: SparseSecondaryMap::new(),
-            stored_values: SparseSecondaryMap::new(),
-            closures: SparseSecondaryMap::new(),
-            ops: SparseSecondaryMap::new(),
+            reactive: SparseSecondaryMap::new(),
+            extras: SparseSecondaryMap::new(),
             #[cfg(debug_assertions)]
             dead_node_labels: SparseSecondaryMap::new(),
         }
@@ -53,41 +55,61 @@ impl Storage {
 
 impl GraphStorage for Storage {
     fn get_state(&self, id: NodeId) -> NodeState {
-        self.states.get(id).copied().unwrap_or(NodeState::Clean)
+        self.reactive
+            .get(id)
+            .map(|n| n.state)
+            .unwrap_or(NodeState::Clean)
     }
 
     fn set_state(&self, id: NodeId, state: NodeState) {
-        if let Some(s) = self.states.get_mut(id) {
-            *s = state;
+        if let Some(n) = self.reactive.get_mut(id) {
+            n.state = state;
         } else {
-            self.states.insert(id, state);
+            self.reactive.insert(
+                id,
+                ReactiveNode {
+                    state,
+                    signal: None,
+                    effect: None,
+                },
+            );
         }
     }
 
     fn fill_subscribers(&self, id: NodeId, dest: &mut Vec<NodeId>) {
-        if let Some(signal) = self.signals.get(id) {
+        if let Some(n) = self.reactive.get(id)
+            && let Some(signal) = &n.signal
+        {
             signal.subscribers.for_each(|&n| dest.push(n));
         }
     }
 
     fn fill_dependencies(&self, id: NodeId, dest: &mut Vec<NodeId>) {
-        if let Some(eff) = self.effects.get(id) {
+        if let Some(n) = self.reactive.get(id)
+            && let Some(eff) = &n.effect
+        {
             eff.dependencies.for_each(|(n, _)| dest.push(*n));
         }
     }
 
     fn is_effect(&self, id: NodeId) -> bool {
-        self.effects.contains_key(id) && !self.signals.contains_key(id)
+        self.reactive
+            .get(id)
+            .map_or(false, |n| n.effect.is_some() && n.signal.is_none())
     }
 
     fn check_dependencies_changed(&self, id: NodeId) -> bool {
-        if let Some(eff) = self.effects.get(id) {
+        if let Some(n) = self.reactive.get(id)
+            && let Some(eff) = &n.effect
+        {
             let mut found_change = false;
             eff.dependencies.for_each(|(dep_id, expected_ver)| {
                 if found_change {
                     return;
                 }
-                if let Some(s) = self.signals.get(*dep_id) {
+                if let Some(dep_node) = self.reactive.get(*dep_id)
+                    && let Some(s) = &dep_node.signal
+                {
                     if s.version != *expected_ver {
                         found_change = true;
                     }

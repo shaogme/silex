@@ -1,6 +1,7 @@
 use crate::core::arena::Index as NodeId;
 use crate::core::value::{AnyValue, ThunkValue};
 use crate::runtime::RUNTIME;
+use crate::runtime::storage::ExtraData;
 use std::any::{Any, TypeId};
 
 // --- Context ---
@@ -96,8 +97,10 @@ pub fn try_get_signal<T: Clone + 'static>(id: NodeId) -> Option<T> {
     RUNTIME.with(|rt| {
         rt.prepare_read(id);
         rt.storage
-            .signals
+            .reactive
             .get(id)?
+            .signal
+            .as_ref()?
             .value
             .downcast_ref::<T>()
             .cloned()
@@ -108,8 +111,10 @@ pub fn try_get_signal_untracked<T: Clone + 'static>(id: NodeId) -> Option<T> {
     RUNTIME.with(|rt| {
         rt.prepare_read_untracked(id);
         rt.storage
-            .signals
+            .reactive
             .get(id)?
+            .signal
+            .as_ref()?
             .value
             .downcast_ref::<T>()
             .cloned()
@@ -130,7 +135,12 @@ pub fn update_signal<T: 'static>(id: NodeId, f: impl FnOnce(&mut T)) {
 }
 
 pub fn is_signal_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| rt.storage.signals.contains_key(id))
+    RUNTIME.with(|rt| {
+        rt.storage
+            .reactive
+            .get(id)
+            .map_or(false, |n| n.signal.is_some())
+    })
 }
 
 pub fn track_signal(id: NodeId) {
@@ -148,7 +158,8 @@ pub fn notify_signal(id: NodeId) {
 pub fn try_with_signal<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
     RUNTIME.with(|rt| {
         rt.prepare_read(id);
-        let signal = rt.storage.signals.get(id)?;
+        let n = rt.storage.reactive.get(id)?;
+        let signal = n.signal.as_ref()?;
         signal.value.downcast_ref::<T>().map(f)
     })
 }
@@ -156,7 +167,8 @@ pub fn try_with_signal<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Op
 pub fn try_with_signal_untracked<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
     RUNTIME.with(|rt| {
         rt.prepare_read_untracked(id);
-        let signal = rt.storage.signals.get(id)?;
+        let n = rt.storage.reactive.get(id)?;
+        let signal = n.signal.as_ref()?;
         signal.value.downcast_ref::<T>().map(f)
     })
 }
@@ -166,7 +178,8 @@ pub fn try_update_signal_silent<T: 'static, R>(
     f: impl FnOnce(&mut T) -> R,
 ) -> Option<R> {
     RUNTIME.with(|rt| {
-        let signal = rt.storage.signals.get_mut(id)?;
+        let n = rt.storage.reactive.get_mut(id)?;
+        let signal = n.signal.as_mut()?;
         let val = signal.value.downcast_mut::<T>()?;
         signal.version = signal.version.wrapping_add(1);
         Some(f(val))
@@ -186,8 +199,12 @@ fn internal_store_value(val: AnyValue) -> NodeId {
 
 pub fn try_with_stored_value<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
     RUNTIME.with(|rt| {
-        let data = rt.storage.stored_values.get(id)?;
-        data.value.downcast_ref::<T>().map(f)
+        let extra = rt.storage.extras.get(id)?;
+        if let ExtraData::StoredValue(sv) = extra {
+            sv.value.downcast_ref::<T>().map(f)
+        } else {
+            None
+        }
     })
 }
 
@@ -196,14 +213,23 @@ pub fn try_update_stored_value<T: 'static, R>(
     f: impl FnOnce(&mut T) -> R,
 ) -> Option<R> {
     RUNTIME.with(|rt| {
-        let data = rt.storage.stored_values.get_mut(id)?;
-        let val = data.value.downcast_mut::<T>()?;
-        Some(f(val))
+        let extra = rt.storage.extras.get_mut(id)?;
+        if let ExtraData::StoredValue(sv) = extra {
+            let val = sv.value.downcast_mut::<T>()?;
+            Some(f(val))
+        } else {
+            None
+        }
     })
 }
 
 pub fn is_stored_value_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| rt.storage.stored_values.contains_key(id))
+    RUNTIME.with(|rt| {
+        rt.storage
+            .extras
+            .get(id)
+            .map_or(false, |e| matches!(e, ExtraData::StoredValue(_)))
+    })
 }
 
 pub fn register_closure(f: Box<dyn Any>) -> NodeId {
@@ -212,13 +238,22 @@ pub fn register_closure(f: Box<dyn Any>) -> NodeId {
 
 pub fn try_with_closure<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
     RUNTIME.with(|rt| {
-        let data = rt.storage.closures.get(id)?;
-        data.f.downcast_ref::<T>().map(f)
+        let extra = rt.storage.extras.get(id)?;
+        if let ExtraData::Closure(c) = extra {
+            c.f.downcast_ref::<T>().map(f)
+        } else {
+            None
+        }
     })
 }
 
 pub fn is_closure_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| rt.storage.closures.contains_key(id))
+    RUNTIME.with(|rt| {
+        rt.storage
+            .extras
+            .get(id)
+            .map_or(false, |e| matches!(e, ExtraData::Closure(_)))
+    })
 }
 
 pub fn register_op(buffer: crate::RawOpBuffer) -> NodeId {
@@ -226,11 +261,23 @@ pub fn register_op(buffer: crate::RawOpBuffer) -> NodeId {
 }
 
 pub fn try_with_op<R>(id: NodeId, f: impl FnOnce(&crate::RawOpBuffer) -> R) -> Option<R> {
-    RUNTIME.with(|rt| rt.storage.ops.get(id).map(|data| f(&data.0)))
+    RUNTIME.with(|rt| {
+        let extra = rt.storage.extras.get(id)?;
+        if let ExtraData::Op(op) = extra {
+            Some(f(&op.0))
+        } else {
+            None
+        }
+    })
 }
 
 pub fn is_op_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| rt.storage.ops.contains_key(id))
+    RUNTIME.with(|rt| {
+        rt.storage
+            .extras
+            .get(id)
+            .map_or(false, |e| matches!(e, ExtraData::Op(_)))
+    })
 }
 
 // --- Callback API ---
@@ -249,14 +296,21 @@ fn internal_register_callback(f: std::rc::Rc<dyn Fn(Box<dyn Any>)>) -> NodeId {
 
 pub fn invoke_callback(id: NodeId, arg: Box<dyn Any>) {
     RUNTIME.with(|rt| {
-        if let Some(data) = rt.storage.callbacks.get(id) {
-            (data.f)(arg);
+        if let Some(extra) = rt.storage.extras.get(id) {
+            if let ExtraData::Callback(data) = extra {
+                (data.f)(arg);
+            }
         }
     })
 }
 
 pub fn is_callback_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| rt.storage.callbacks.contains_key(id))
+    RUNTIME.with(|rt| {
+        rt.storage
+            .extras
+            .get(id)
+            .map_or(false, |e| matches!(e, ExtraData::Callback(_)))
+    })
 }
 
 // --- NodeRef API ---
@@ -272,20 +326,31 @@ fn internal_register_node_ref() -> NodeId {
 
 pub fn get_node_ref<T: Clone + 'static>(id: NodeId) -> Option<T> {
     RUNTIME.with(|rt| {
-        let data = rt.storage.node_refs.get(id)?;
-        let element = data.element.as_ref()?;
-        element.downcast_ref::<T>().cloned()
+        let extra = rt.storage.extras.get(id)?;
+        if let ExtraData::NodeRef(data) = extra {
+            let element = data.element.as_ref()?;
+            element.downcast_ref::<T>().cloned()
+        } else {
+            None
+        }
     })
 }
 
 pub fn set_node_ref<T: 'static>(id: NodeId, element: T) {
     RUNTIME.with(|rt| {
-        if let Some(data) = rt.storage.node_refs.get_mut(id) {
-            data.element = Some(Box::new(element));
+        if let Some(extra) = rt.storage.extras.get_mut(id) {
+            if let ExtraData::NodeRef(data) = extra {
+                data.element = Some(Box::new(element));
+            }
         }
     })
 }
 
 pub fn is_node_ref_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| rt.storage.node_refs.contains_key(id))
+    RUNTIME.with(|rt| {
+        rt.storage
+            .extras
+            .get(id)
+            .map_or(false, |e| matches!(e, ExtraData::NodeRef(_)))
+    })
 }
