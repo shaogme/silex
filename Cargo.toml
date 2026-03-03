@@ -9,6 +9,7 @@ members = [
     "silex_rx",
     "silex_reactivity",
     "silex_hash",
+    "silex_vtable",
     "examples/counter",
     "examples/store_demo",
     "examples/error_boundary_demo",
@@ -51,6 +52,7 @@ silex_macros = { path = "silex_macros", version = "0.1.0-beta.1" }
 silex_reactivity = { path = "silex_reactivity", version = "0.1.0-beta.1" }
 silex_hash = { path = "silex_hash", version = "0.1.0-beta.1" }
 silex_rx = { path = "silex_rx", version = "0.1.0-beta.1" }
+silex_vtable = { path = "silex_vtable", version = "0.1.0-beta.1" }
 
 wasm-bindgen = { version = "0.2", default-features = false }
 web-sys = { version = "0.3", default-features = false, features = [

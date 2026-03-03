@@ -1315,6 +1315,7 @@ version = "0.1.0-beta.1"
 dependencies = [
  "js-sys",
  "silex_core",
+ "silex_vtable",
  "wasm-bindgen",
  "web-sys",
 ]
@@ -1354,6 +1355,9 @@ dependencies = [
 [[package]]
 name = "silex_reactivity"
 version = "0.1.0-beta.1"
+dependencies = [
+ "silex_vtable",
+]
 
 [[package]]
 name = "silex_router_example"
@@ -1389,6 +1393,10 @@ version = "0.1.0-beta.1"
 dependencies = [
  "silex",
 ]
+
+[[package]]
+name = "silex_vtable"
+version = "0.1.0-beta.1"
 
 [[package]]
 name = "siphasher"

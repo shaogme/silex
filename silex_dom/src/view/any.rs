@@ -1,77 +1,67 @@
 use crate::attribute::PendingAttribute;
 use crate::element::Element;
 use crate::view::View;
+use silex_vtable::any_box::AnyBox;
+use silex_vtable::func_ptr::FuncPtr;
+use silex_vtable::thunk::FactoryBox;
+use std::marker::PhantomData;
+use std::mem;
 use web_sys::Node;
 
-// --- Manual VTable & SOO (Small Object Optimization) Infrastructure ---
-
-const SOO_CAPACITY: usize = 24; // 3 * size_of::<usize>()
+// --- Manual VTable & SOO Infrastucture using silex_vtable ---
 
 pub(crate) struct AnyViewVTable {
-    pub mount: unsafe fn(data: *mut u8, parent: &Node, attrs: Vec<PendingAttribute>),
-    pub apply_attributes: unsafe fn(data: *mut u8, attrs: Vec<PendingAttribute>),
-    pub drop: unsafe fn(data: *mut u8),
+    pub mount: FuncPtr<unsafe fn(data: *mut u8, parent: &Node, attrs: Vec<PendingAttribute>)>,
+    pub apply_attributes: FuncPtr<unsafe fn(data: *mut u8, attrs: Vec<PendingAttribute>)>,
+    pub drop: FuncPtr<unsafe fn(data: *mut u8)>,
 }
 
 pub struct AnyViewBox {
-    data: [usize; 3],
-    vtable: &'static AnyViewVTable,
+    inner: AnyBox<AnyViewVTable>,
 }
 
 pub(crate) struct SharedViewVTable {
     pub any: AnyViewVTable,
-    pub clone: unsafe fn(data: *const u8) -> SharedViewBox,
+    pub clone: FuncPtr<unsafe fn(data: *const u8) -> SharedViewBox>,
 }
 
 pub struct SharedViewBox {
-    data: [usize; 3],
-    vtable: &'static SharedViewVTable,
+    inner: AnyBox<SharedViewVTable>,
 }
 
 impl AnyViewBox {
     #[inline(always)]
     pub fn new<V: View + 'static>(view: V) -> Self {
-        unsafe {
-            if std::mem::size_of::<V>() <= SOO_CAPACITY
-                && std::mem::align_of::<V>() <= std::mem::align_of::<usize>()
-            {
-                let mut data = [0usize; 3];
-                std::ptr::write(data.as_mut_ptr() as *mut V, view);
-                Self {
-                    data,
-                    vtable: &AnyViewVTable {
-                        mount: mount_stack::<V>,
-                        apply_attributes: apply_stack::<V>,
-                        drop: drop_stack::<V>,
-                    },
-                }
-            } else {
-                let mut data = [0usize; 3];
-                let ptr = Box::into_raw(Box::new(view));
-                std::ptr::write(data.as_mut_ptr() as *mut *mut V, ptr);
-                Self {
-                    data,
-                    vtable: &AnyViewVTable {
-                        mount: mount_heap::<V>,
-                        apply_attributes: apply_heap::<V>,
-                        drop: drop_heap::<V>,
-                    },
-                }
-            }
+        struct VGen<V>(PhantomData<V>);
+        impl<V: View + 'static> VGen<V> {
+            const STACK: AnyViewVTable = AnyViewVTable {
+                mount: FuncPtr::new(mount_stack::<V>),
+                apply_attributes: FuncPtr::new(apply_stack::<V>),
+                drop: FuncPtr::new(drop_stack::<V>),
+            };
+            const HEAP: AnyViewVTable = AnyViewVTable {
+                mount: FuncPtr::new(mount_heap::<V>),
+                apply_attributes: FuncPtr::new(apply_heap::<V>),
+                drop: FuncPtr::new(drop_heap::<V>),
+            };
+        }
+        Self {
+            inner: AnyBox::new(view, &VGen::<V>::STACK, &VGen::<V>::HEAP),
         }
     }
 
-    pub fn mount(mut self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        let vtable = self.vtable;
+    pub fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        let mut this = mem::ManuallyDrop::new(self);
+        let vtable = this.inner.vtable;
+        let data_ptr = this.inner.as_mut_ptr();
         unsafe {
-            (vtable.mount)(self.data.as_mut_ptr() as *mut u8, parent, attrs);
-            std::mem::forget(self);
+            (vtable.mount.as_fn())(data_ptr, parent, attrs);
         }
     }
 
     pub fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
         unsafe {
-            (self.vtable.apply_attributes)(self.data.as_mut_ptr() as *mut u8, attrs);
+            (self.inner.vtable.apply_attributes.as_fn())(self.inner.as_mut_ptr(), attrs);
         }
     }
 }
@@ -79,7 +69,7 @@ impl AnyViewBox {
 impl Drop for AnyViewBox {
     fn drop(&mut self) {
         unsafe {
-            (self.vtable.drop)(self.data.as_mut_ptr() as *mut u8);
+            (self.inner.vtable.drop.as_fn())(self.inner.as_mut_ptr());
         }
     }
 }
@@ -87,76 +77,66 @@ impl Drop for AnyViewBox {
 impl SharedViewBox {
     #[inline(always)]
     pub fn new<V: View + Clone + 'static>(view: V) -> Self {
-        unsafe {
-            if std::mem::size_of::<V>() <= SOO_CAPACITY
-                && std::mem::align_of::<V>() <= std::mem::align_of::<usize>()
-            {
-                let mut data = [0usize; 3];
-                std::ptr::write(data.as_mut_ptr() as *mut V, view);
-                Self {
-                    data,
-                    vtable: &SharedViewVTable {
-                        any: AnyViewVTable {
-                            mount: mount_stack::<V>,
-                            apply_attributes: apply_stack::<V>,
-                            drop: drop_stack::<V>,
-                        },
-                        clone: clone_stack::<V>,
-                    },
-                }
-            } else {
-                let mut data = [0usize; 3];
-                let ptr = Box::into_raw(Box::new(view));
-                std::ptr::write(data.as_mut_ptr() as *mut *mut V, ptr);
-                Self {
-                    data,
-                    vtable: &SharedViewVTable {
-                        any: AnyViewVTable {
-                            mount: mount_heap::<V>,
-                            apply_attributes: apply_heap::<V>,
-                            drop: drop_heap::<V>,
-                        },
-                        clone: clone_heap::<V>,
-                    },
-                }
-            }
+        struct VGen<V>(PhantomData<V>);
+        impl<V: View + Clone + 'static> VGen<V> {
+            const STACK: SharedViewVTable = SharedViewVTable {
+                any: AnyViewVTable {
+                    mount: FuncPtr::new(mount_stack::<V>),
+                    apply_attributes: FuncPtr::new(apply_stack::<V>),
+                    drop: FuncPtr::new(drop_stack::<V>),
+                },
+                clone: FuncPtr::new(clone_stack::<V>),
+            };
+            const HEAP: SharedViewVTable = SharedViewVTable {
+                any: AnyViewVTable {
+                    mount: FuncPtr::new(mount_heap::<V>),
+                    apply_attributes: FuncPtr::new(apply_heap::<V>),
+                    drop: FuncPtr::new(drop_heap::<V>),
+                },
+                clone: FuncPtr::new(clone_heap::<V>),
+            };
+        }
+        Self {
+            inner: AnyBox::new(view, &VGen::<V>::STACK, &VGen::<V>::HEAP),
         }
     }
 
-    pub fn mount(mut self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        let vtable = self.vtable;
+    pub fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        let mut this = mem::ManuallyDrop::new(self);
+        let vtable = this.inner.vtable;
+        let data_ptr = this.inner.as_mut_ptr();
         unsafe {
-            (vtable.any.mount)(self.data.as_mut_ptr() as *mut u8, parent, attrs);
-            std::mem::forget(self);
+            (vtable.any.mount.as_fn())(data_ptr, parent, attrs);
         }
     }
 
     pub fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
         unsafe {
-            (self.vtable.any.apply_attributes)(self.data.as_mut_ptr() as *mut u8, attrs);
+            (self.inner.vtable.any.apply_attributes.as_fn())(self.inner.as_mut_ptr(), attrs);
         }
     }
 
     pub fn into_any(self) -> AnyViewBox {
-        let any_box = AnyViewBox {
-            data: self.data,
-            vtable: &self.vtable.any,
-        };
-        std::mem::forget(self);
-        any_box
+        let this = mem::ManuallyDrop::new(self);
+        AnyViewBox {
+            inner: AnyBox {
+                data: this.inner.data,
+                vtable: &this.inner.vtable.any,
+            },
+        }
     }
 }
 
 impl Clone for SharedViewBox {
     fn clone(&self) -> Self {
-        unsafe { (self.vtable.clone)(self.data.as_ptr() as *const u8) }
+        unsafe { (self.inner.vtable.clone.as_fn())(self.inner.as_ptr()) }
     }
 }
 
 impl Drop for SharedViewBox {
     fn drop(&mut self) {
         unsafe {
-            (self.vtable.any.drop)(self.data.as_mut_ptr() as *mut u8);
+            (self.inner.vtable.any.drop.as_fn())(self.inner.as_mut_ptr());
         }
     }
 }
@@ -221,83 +201,9 @@ unsafe fn clone_heap<V: View + Clone + 'static>(data: *const u8) -> SharedViewBo
     }
 }
 
-// --- ViewThunk Infrastructure ---
+// --- ViewThunk ---
 
-pub(crate) struct ViewThunkVTable {
-    pub call: unsafe fn(data: *mut u8) -> AnyView,
-    pub drop: unsafe fn(data: *mut u8),
-}
-
-pub struct ViewThunk {
-    data: [usize; 3],
-    vtable: &'static ViewThunkVTable,
-}
-
-impl ViewThunk {
-    pub fn new<F>(f: F) -> Self
-    where
-        F: Fn() -> AnyView + 'static,
-    {
-        unsafe {
-            if std::mem::size_of::<F>() <= SOO_CAPACITY
-                && std::mem::align_of::<F>() <= std::mem::align_of::<usize>()
-            {
-                let mut data = [0usize; 3];
-                std::ptr::write(data.as_mut_ptr() as *mut F, f);
-                Self {
-                    data,
-                    vtable: &ViewThunkVTable {
-                        call: call_thunk_stack::<F>,
-                        drop: drop_thunk_stack::<F>,
-                    },
-                }
-            } else {
-                let mut data = [0usize; 3];
-                let ptr = Box::into_raw(Box::new(f));
-                std::ptr::write(data.as_mut_ptr() as *mut *mut F, ptr);
-                Self {
-                    data,
-                    vtable: &ViewThunkVTable {
-                        call: call_thunk_heap::<F>,
-                        drop: drop_thunk_heap::<F>,
-                    },
-                }
-            }
-        }
-    }
-
-    pub fn call(&self) -> AnyView {
-        unsafe { (self.vtable.call)(self.data.as_ptr() as *const u8 as *mut u8) }
-    }
-}
-
-impl Drop for ViewThunk {
-    fn drop(&mut self) {
-        unsafe { (self.vtable.drop)(self.data.as_mut_ptr() as *mut u8) }
-    }
-}
-
-unsafe fn call_thunk_stack<F: Fn() -> AnyView + 'static>(data: *mut u8) -> AnyView {
-    let f = unsafe { &*(data as *const F) };
-    f()
-}
-
-unsafe fn drop_thunk_stack<F>(data: *mut u8) {
-    unsafe {
-        std::ptr::drop_in_place(data as *mut F);
-    }
-}
-
-unsafe fn call_thunk_heap<F: Fn() -> AnyView + 'static>(data: *mut u8) -> AnyView {
-    let ptr = unsafe { *(data as *const *mut F) };
-    let f = unsafe { &*ptr };
-    f()
-}
-
-unsafe fn drop_thunk_heap<F>(data: *mut u8) {
-    let ptr = unsafe { *(data as *const *mut F) };
-    let _ = unsafe { Box::from_raw(ptr) };
-}
+pub type ViewThunk = FactoryBox<AnyView>;
 
 /// 优化的 SharedView，专用于需要重复使用或需要 Children 的组件边界
 #[derive(Default)]

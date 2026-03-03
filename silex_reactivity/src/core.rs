@@ -1,7 +1,6 @@
 pub mod algorithm;
 pub mod arena;
-pub mod func_ptr;
 pub mod list;
 pub mod value;
 
-pub use func_ptr::FuncPtr;
+pub use silex_vtable::func_ptr::FuncPtr;

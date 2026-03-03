@@ -1,6 +1,6 @@
-use std::marker::PhantomData;
-use std::mem::ManuallyDrop;
-use std::ptr::NonNull;
+use core::marker::PhantomData;
+use core::mem::ManuallyDrop;
+use core::ptr::NonNull;
 
 /// 一个包装了任意函数指针的结构体
 ///
@@ -26,12 +26,10 @@ impl<F> FuncPtr<F> {
     /// F 必须是一个函数指针类型 (fn type)，而不是闭包 trait。
     #[inline(always)]
     pub const fn new(f: F) -> Self {
-        // 在编译期断言 F 的大小必须等于指针大小
         const {
-            assert!(std::mem::size_of::<F>() == std::mem::size_of::<usize>());
+            assert!(core::mem::size_of::<F>() == core::mem::size_of::<usize>());
         }
 
-        // 使用 Union 实现 const 环境下的类型擦除转换
         #[repr(C)]
         union Transmute<F> {
             f: ManuallyDrop<F>,
@@ -52,15 +50,10 @@ impl<F> FuncPtr<F> {
     /// 获取原始函数指针
     #[inline(always)]
     pub fn as_fn(&self) -> F {
-        unsafe {
-            // 通过 transmute_copy 将 NonNull<()> 转换回函数指针 F
-            // 由于 FuncPtr::new 保证了大小一致，这里是安全的
-            std::mem::transmute_copy(&self.ptr)
-        }
+        unsafe { core::mem::transmute_copy(&self.ptr) }
     }
 }
 
-// 确保 FuncPtr 的大小等于指针大小
-const _: () = assert!(std::mem::size_of::<FuncPtr<fn()>>() == std::mem::size_of::<usize>());
-// 确保 Option 优化生效
-const _: () = assert!(std::mem::size_of::<Option<FuncPtr<fn()>>>() == std::mem::size_of::<usize>());
+const _: () = assert!(core::mem::size_of::<FuncPtr<fn()>>() == core::mem::size_of::<usize>());
+const _: () =
+    assert!(core::mem::size_of::<Option<FuncPtr<fn()>>>() == core::mem::size_of::<usize>());
