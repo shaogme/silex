@@ -13,9 +13,9 @@ use web_sys::Node;
 /// use silex::prelude::*;
 /// let (count, set_count) = signal(0);
 ///
-/// Switch::new(count, || "Default View")
-///     .case(0, || "Zero")
-///     .case(1, || "One");
+/// Switch::new(count, rx!("Default View"))
+///     .case(0, rx!("Zero"))
+///     .case(1, rx!("One"));
 /// ```
 #[derive(Clone)]
 pub struct Switch<Source, T, V> {
