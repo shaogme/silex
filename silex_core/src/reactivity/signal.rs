@@ -359,3 +359,5 @@ crate::impl_reactive_ops!(Signal);
 crate::impl_reactive_ops!(ReadSignal);
 crate::impl_reactive_ops!(RwSignal);
 crate::impl_reactive_ops!(Constant);
+#[cfg(test)]
+mod tests;
