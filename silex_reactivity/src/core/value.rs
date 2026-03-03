@@ -8,13 +8,13 @@ use std::ptr;
 /// A type-erased value with Small Object Optimization (SOO).
 pub(crate) struct AnyValue {
     inner: AnyBox<AnyValueVTable>,
-    type_id: TypeId,
 }
 
-type CloneFn = unsafe fn(*const u8, TypeId, &'static AnyValueVTable) -> AnyValue;
+type CloneFn = unsafe fn(*const u8, &'static AnyValueVTable) -> AnyValue;
 type EqFn = unsafe fn(*const u8, *const u8) -> bool;
 
 struct AnyValueVTable {
+    type_id: TypeId,
     as_ptr: FuncPtr<unsafe fn(*const u8) -> *const ()>,
     as_mut_ptr: FuncPtr<unsafe fn(*mut u8) -> *mut ()>,
     drop: FuncPtr<unsafe fn(*mut u8)>,
@@ -23,42 +23,23 @@ struct AnyValueVTable {
 }
 
 impl AnyValue {
-    /// 创建一个普通的类型擦除值。不支持克隆和比较。
     pub(crate) fn new<T: 'static>(value: T) -> Self {
-        let type_id = TypeId::of::<T>();
-
-        // 物理原型共享：如果类型不需要 drop（如 Copy 类型），共享同一个 VTable
-        let (v_stack, v_heap) = if !mem::needs_drop::<T>() {
-            (&COPY_NON_REACTIVE_VTABLE, &BoxedVTable::<T>::VTABLE)
-        } else {
-            (&InlineVTable::<T>::VTABLE, &BoxedVTable::<T>::VTABLE)
-        };
-
         AnyValue {
-            inner: AnyBox::new(value, v_stack, v_heap),
-            type_id,
+            inner: AnyBox::new(value, &InlineVTable::<T>::VTABLE, &BoxedVTable::<T>::VTABLE),
         }
     }
 
     /// 创建一个支持响应式操作（克隆、比较）的类型擦除值。
     pub(crate) fn new_reactive<T: Clone + PartialEq + 'static>(value: T) -> Self {
-        let type_id = TypeId::of::<T>();
-
-        let (v_stack, v_heap) = if !mem::needs_drop::<T>() && is_bitwise_equatable(type_id) {
-            (
-                &BITWISE_EQ_COPY_INLINE_VTABLE,
-                &BoxedReactiveVTable::<T>::VTABLE,
-            )
+        let is_bitwise = !mem::needs_drop::<T>() && is_bitwise_equatable(TypeId::of::<T>());
+        let v_stack = if is_bitwise {
+            &InlineReactiveVTable::<T>::BITWISE
         } else {
-            (
-                &InlineReactiveVTable::<T>::VTABLE,
-                &BoxedReactiveVTable::<T>::VTABLE,
-            )
+            &InlineReactiveVTable::<T>::NORMAL
         };
 
         AnyValue {
-            inner: AnyBox::new(value, v_stack, v_heap),
-            type_id,
+            inner: AnyBox::new(value, v_stack, &BoxedReactiveVTable::<T>::VTABLE),
         }
     }
 
@@ -66,11 +47,11 @@ impl AnyValue {
         self.inner
             .vtable
             .clone
-            .map(|f| unsafe { f.as_fn()(self.inner.as_ptr(), self.type_id, self.inner.vtable) })
+            .map(|f| unsafe { f.as_fn()(self.inner.as_ptr(), self.inner.vtable) })
     }
 
     pub(crate) fn try_eq(&self, other: &Self) -> bool {
-        if self.type_id != other.type_id {
+        if self.inner.vtable.type_id != other.inner.vtable.type_id {
             return false;
         }
         self.inner
@@ -80,7 +61,7 @@ impl AnyValue {
     }
 
     pub(crate) fn downcast_ref<T: 'static>(&self) -> Option<&T> {
-        if self.type_id == TypeId::of::<T>() {
+        if self.inner.vtable.type_id == TypeId::of::<T>() {
             unsafe {
                 let val_ptr = self.inner.vtable.as_ptr.as_fn()(self.inner.as_ptr());
                 Some(&*(val_ptr as *const T))
@@ -91,7 +72,7 @@ impl AnyValue {
     }
 
     pub(crate) fn downcast_mut<T: 'static>(&mut self) -> Option<&mut T> {
-        if self.type_id == TypeId::of::<T>() {
+        if self.inner.vtable.type_id == TypeId::of::<T>() {
             unsafe {
                 let val_ptr = self.inner.vtable.as_mut_ptr.as_fn()(self.inner.as_mut_ptr());
                 Some(&mut *(val_ptr as *mut T))
@@ -118,11 +99,7 @@ impl Drop for AnyValue {
 
 unsafe fn shared_drop_noop(_: *mut u8) {}
 
-unsafe fn shared_clone_bitwise(
-    ptr: *const u8,
-    type_id: TypeId,
-    vtable: &'static AnyValueVTable,
-) -> AnyValue {
+unsafe fn shared_clone_bitwise(ptr: *const u8, vtable: &'static AnyValueVTable) -> AnyValue {
     let mut inner = AnyBox {
         data: [0usize; 3],
         vtable,
@@ -130,7 +107,7 @@ unsafe fn shared_clone_bitwise(
     unsafe {
         ptr::copy_nonoverlapping(ptr, inner.as_mut_ptr(), silex_vtable::SOO_CAPACITY);
     }
-    AnyValue { inner, type_id }
+    AnyValue { inner }
 }
 
 unsafe fn shared_eq_bitwise(p1: *const u8, p2: *const u8) -> bool {
@@ -162,30 +139,19 @@ fn is_bitwise_equatable(id: TypeId) -> bool {
 
 // --- Shared VTables ---
 
-static COPY_NON_REACTIVE_VTABLE: AnyValueVTable = AnyValueVTable {
-    as_ptr: FuncPtr::new(|ptr| ptr as *const ()),
-    as_mut_ptr: FuncPtr::new(|ptr| ptr as *mut ()),
-    drop: FuncPtr::new(shared_drop_noop),
-    clone: None,
-    eq: None,
-};
-
-static BITWISE_EQ_COPY_INLINE_VTABLE: AnyValueVTable = AnyValueVTable {
-    as_ptr: FuncPtr::new(|ptr| ptr as *const ()),
-    as_mut_ptr: FuncPtr::new(|ptr| ptr as *mut ()),
-    drop: FuncPtr::new(shared_drop_noop),
-    clone: Some(FuncPtr::new(shared_clone_bitwise)),
-    eq: Some(FuncPtr::new(shared_eq_bitwise)),
-};
-
 // --- VTable Generators ---
 
 struct InlineVTable<T>(PhantomData<T>);
 impl<T: 'static> InlineVTable<T> {
     const VTABLE: AnyValueVTable = AnyValueVTable {
+        type_id: TypeId::of::<T>(),
         as_ptr: FuncPtr::new(|ptr| ptr as *const T as *const ()),
         as_mut_ptr: FuncPtr::new(|ptr| ptr as *mut T as *mut ()),
-        drop: FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut T) }),
+        drop: if mem::needs_drop::<T>() {
+            FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut T) })
+        } else {
+            FuncPtr::new(shared_drop_noop)
+        },
         clone: None,
         eq: None,
     };
@@ -193,26 +159,40 @@ impl<T: 'static> InlineVTable<T> {
 
 struct InlineReactiveVTable<T>(PhantomData<T>);
 impl<T: Clone + PartialEq + 'static> InlineReactiveVTable<T> {
-    const VTABLE: AnyValueVTable = AnyValueVTable {
+    const NORMAL: AnyValueVTable = AnyValueVTable {
+        type_id: TypeId::of::<T>(),
         as_ptr: FuncPtr::new(|ptr| ptr as *const T as *const ()),
         as_mut_ptr: FuncPtr::new(|ptr| ptr as *mut T as *mut ()),
-        drop: FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut T) }),
-        clone: Some(FuncPtr::new(|ptr, type_id, vtable| {
+        drop: if mem::needs_drop::<T>() {
+            FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut T) })
+        } else {
+            FuncPtr::new(shared_drop_noop)
+        },
+        clone: Some(FuncPtr::new(|ptr, vtable| {
             let val = unsafe { (*(ptr as *const T)).clone() };
             AnyValue {
-                inner: AnyBox::new(val, vtable, vtable), // Note: this logic might need care if vtable is not the same for heap
-                type_id,
+                inner: AnyBox::new(val, vtable, &BoxedReactiveVTable::<T>::VTABLE),
             }
         })),
         eq: Some(FuncPtr::new(|p1, p2| unsafe {
             *(p1 as *const T) == *(p2 as *const T)
         })),
     };
+
+    const BITWISE: AnyValueVTable = AnyValueVTable {
+        type_id: TypeId::of::<T>(),
+        as_ptr: FuncPtr::new(|ptr| ptr as *const T as *const ()),
+        as_mut_ptr: FuncPtr::new(|ptr| ptr as *mut T as *mut ()),
+        drop: FuncPtr::new(shared_drop_noop),
+        clone: Some(FuncPtr::new(shared_clone_bitwise)),
+        eq: Some(FuncPtr::new(shared_eq_bitwise)),
+    };
 }
 
 struct BoxedVTable<T>(PhantomData<T>);
 impl<T: 'static> BoxedVTable<T> {
     const VTABLE: AnyValueVTable = AnyValueVTable {
+        type_id: TypeId::of::<T>(),
         as_ptr: FuncPtr::new(|ptr| unsafe { (&**(ptr as *const Box<T>)) as *const T as *const () }),
         as_mut_ptr: FuncPtr::new(|ptr| unsafe {
             (&mut **(ptr as *mut Box<T>)) as *mut T as *mut ()
@@ -226,17 +206,17 @@ impl<T: 'static> BoxedVTable<T> {
 struct BoxedReactiveVTable<T>(PhantomData<T>);
 impl<T: Clone + PartialEq + 'static> BoxedReactiveVTable<T> {
     const VTABLE: AnyValueVTable = AnyValueVTable {
+        type_id: TypeId::of::<T>(),
         as_ptr: FuncPtr::new(|ptr| unsafe { (&**(ptr as *const Box<T>)) as *const T as *const () }),
         as_mut_ptr: FuncPtr::new(|ptr| unsafe {
             (&mut **(ptr as *mut Box<T>)) as *mut T as *mut ()
         }),
         drop: FuncPtr::new(|ptr| unsafe { ptr::drop_in_place(ptr as *mut Box<T>) }),
-        clone: Some(FuncPtr::new(|ptr, type_id, vtable| {
+        clone: Some(FuncPtr::new(|ptr, vtable| {
             let boxed = unsafe { &**(ptr as *const Box<T>) };
             let new_boxed = Box::new(boxed.clone());
             AnyValue {
                 inner: AnyBox::new(new_boxed, vtable, vtable),
-                type_id,
             }
         })),
         eq: Some(FuncPtr::new(|p1, p2| unsafe {
