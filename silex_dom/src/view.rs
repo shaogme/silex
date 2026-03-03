@@ -175,23 +175,22 @@ pub(crate) fn mount_dynamic_view_universal(
         let end_node = end_node.clone();
         let document = document.clone();
         let attrs = attrs.clone();
+        let producer = &producer;
 
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            let view = producer.call();
-
-            let start_node = start_node.clone();
-            let end_node = end_node.clone();
-            let document = document.clone();
+        let result = catch_unwind(AssertUnwindSafe(move || {
+            // 1. 在生产新视图前，先同步清理旧 DOM 节点。
+            // 这样做可以确保即使 producer.call() 发生 Panic，也不会留下响应式已失效的“僵尸”节点。
+            if let Some(parent) = start_node.parent_node() {
+                while let Some(sibling) = start_node.next_sibling() {
+                    if sibling == end_node {
+                        break;
+                    }
+                    let _ = parent.remove_child(&sibling);
+                }
+            }
 
             silex_core::reactivity::create_scope(move || {
-                if let Some(parent) = start_node.parent_node() {
-                    while let Some(sibling) = start_node.next_sibling() {
-                        if sibling == end_node {
-                            break;
-                        }
-                        let _ = parent.remove_child(&sibling);
-                    }
-                }
+                let view = producer.call();
 
                 let fragment = document.create_document_fragment();
                 let fragment_node: Node = fragment.clone().into();
