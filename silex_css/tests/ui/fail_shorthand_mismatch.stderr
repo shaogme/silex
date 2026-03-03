@@ -1,8 +1,10 @@
 error[E0277]: 类型 `MarginValue` 无法作为有效的 CSS `Padding` 属性值使用
- --> tests/ui/fail_shorthand_mismatch.rs:7:26
+ --> tests/ui/fail_shorthand_mismatch.rs:7:34
   |
 7 |     let _ = Style::new().padding(m);
-  |                          ^^^^^^^ 无效的 CSS 属性类型
+  |                          ------- ^ 无效的 CSS 属性类型
+  |                          |
+  |                          required by a bound introduced by this call
   |
   = note: 请检查是否传入了错误的类型（例如将 Px 传给了 Color）。如果必须传入复杂的动态表达式，可以使用 `UnsafeCss::new(...)` 显式绕过。
 help: the trait `ValidFor<Padding>` is not implemented for `MarginValue`

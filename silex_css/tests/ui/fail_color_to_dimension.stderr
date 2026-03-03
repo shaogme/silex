@@ -1,8 +1,10 @@
 error[E0277]: 类型 `Hex` 无法作为有效的 CSS `Width` 属性值使用
- --> tests/ui/fail_color_to_dimension.rs:5:26
+ --> tests/ui/fail_color_to_dimension.rs:5:32
   |
 5 |     let _ = Style::new().width(hex("#ff0000"));
-  |                          ^^^^^ 无效的 CSS 属性类型
+  |                          ----- ^^^^^^^^^^^^^^ 无效的 CSS 属性类型
+  |                          |
+  |                          required by a bound introduced by this call
   |
   = help: the trait `ValidFor<Width>` is not implemented for `Hex`
   = note: 请检查是否传入了错误的类型（例如将 Px 传给了 Color）。如果必须传入复杂的动态表达式，可以使用 `UnsafeCss::new(...)` 显式绕过。
