@@ -1,6 +1,6 @@
 use super::*;
-use std::rc::Rc;
 use silex_reactivity::create_scope;
+use std::rc::Rc;
 
 #[test]
 fn test_inline_constants() {
@@ -83,6 +83,9 @@ fn test_derive() {
 
         // Ensure evaluating the derived value directly evaluates to 42
         // We'll read the node untracked using standard core routines:
-        assert_eq!(silex_reactivity::run_derived::<i32>(d.ensure_node_id()), Some(42));
+        assert_eq!(
+            silex_reactivity::run_derived::<i32>(d.ensure_node_id()),
+            Some(42)
+        );
     });
 }
