@@ -18,6 +18,9 @@ pub use derived::*;
 pub use ops::*;
 pub use registry::*;
 
+#[cfg(test)]
+mod tests;
+
 // --- Signal 信号 Enum ---
 
 pub enum Signal<T> {
