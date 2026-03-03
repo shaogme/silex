@@ -41,7 +41,7 @@ where
     crate::view::mount_dynamic_view_universal(
         parent,
         attrs,
-        Box::new(move || rx.with(|view| view.clone().into_any())),
+        crate::view::ViewThunk::new(move || rx.with(|view| view.clone().into_any())),
     );
 }
 

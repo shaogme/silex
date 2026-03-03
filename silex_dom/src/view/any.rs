@@ -221,6 +221,84 @@ unsafe fn clone_heap<V: View + Clone + 'static>(data: *const u8) -> SharedViewBo
     }
 }
 
+// --- ViewThunk Infrastructure ---
+
+pub(crate) struct ViewThunkVTable {
+    pub call: unsafe fn(data: *mut u8) -> AnyView,
+    pub drop: unsafe fn(data: *mut u8),
+}
+
+pub struct ViewThunk {
+    data: [usize; 3],
+    vtable: &'static ViewThunkVTable,
+}
+
+impl ViewThunk {
+    pub fn new<F>(f: F) -> Self
+    where
+        F: Fn() -> AnyView + 'static,
+    {
+        unsafe {
+            if std::mem::size_of::<F>() <= SOO_CAPACITY
+                && std::mem::align_of::<F>() <= std::mem::align_of::<usize>()
+            {
+                let mut data = [0usize; 3];
+                std::ptr::write(data.as_mut_ptr() as *mut F, f);
+                Self {
+                    data,
+                    vtable: &ViewThunkVTable {
+                        call: call_thunk_stack::<F>,
+                        drop: drop_thunk_stack::<F>,
+                    },
+                }
+            } else {
+                let mut data = [0usize; 3];
+                let ptr = Box::into_raw(Box::new(f));
+                std::ptr::write(data.as_mut_ptr() as *mut *mut F, ptr);
+                Self {
+                    data,
+                    vtable: &ViewThunkVTable {
+                        call: call_thunk_heap::<F>,
+                        drop: drop_thunk_heap::<F>,
+                    },
+                }
+            }
+        }
+    }
+
+    pub fn call(&self) -> AnyView {
+        unsafe { (self.vtable.call)(self.data.as_ptr() as *const u8 as *mut u8) }
+    }
+}
+
+impl Drop for ViewThunk {
+    fn drop(&mut self) {
+        unsafe { (self.vtable.drop)(self.data.as_mut_ptr() as *mut u8) }
+    }
+}
+
+unsafe fn call_thunk_stack<F: Fn() -> AnyView + 'static>(data: *mut u8) -> AnyView {
+    let f = unsafe { &*(data as *const F) };
+    f()
+}
+
+unsafe fn drop_thunk_stack<F>(data: *mut u8) {
+    unsafe {
+        std::ptr::drop_in_place(data as *mut F);
+    }
+}
+
+unsafe fn call_thunk_heap<F: Fn() -> AnyView + 'static>(data: *mut u8) -> AnyView {
+    let ptr = unsafe { *(data as *const *mut F) };
+    let f = unsafe { &*ptr };
+    f()
+}
+
+unsafe fn drop_thunk_heap<F>(data: *mut u8) {
+    let ptr = unsafe { *(data as *const *mut F) };
+    let _ = unsafe { Box::from_raw(ptr) };
+}
+
 /// 优化的 SharedView，专用于需要重复使用或需要 Children 的组件边界
 #[derive(Default)]
 pub enum SharedView {

@@ -132,7 +132,7 @@ where
     V: View + 'static,
 {
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        mount_dynamic_view_universal(parent, attrs, Box::new(move || self().into_any()));
+        mount_dynamic_view_universal(parent, attrs, ViewThunk::new(move || self().into_any()));
     }
 }
 
@@ -140,7 +140,7 @@ where
 pub(crate) fn mount_dynamic_view_universal(
     parent: &Node,
     attrs: Vec<PendingAttribute>,
-    producer: Box<dyn Fn() -> AnyView>,
+    producer: ViewThunk,
 ) {
     let document = crate::document();
 
@@ -177,7 +177,7 @@ pub(crate) fn mount_dynamic_view_universal(
         let attrs = attrs.clone();
 
         let result = catch_unwind(AssertUnwindSafe(|| {
-            let view = producer();
+            let view = producer.call();
 
             let start_node = start_node.clone();
             let end_node = end_node.clone();
