@@ -215,6 +215,33 @@ impl Runtime {
         }
     }
 
+    pub(crate) fn get_signal_value(&self, id: NodeId) -> Option<&AnyValue> {
+        self.prepare_read(id);
+        self.storage
+            .reactive
+            .get(id)?
+            .signal
+            .as_ref()
+            .map(|s| &s.value)
+    }
+
+    pub(crate) fn get_signal_value_untracked(&self, id: NodeId) -> Option<&AnyValue> {
+        self.prepare_read_untracked(id);
+        self.storage
+            .reactive
+            .get(id)?
+            .signal
+            .as_ref()
+            .map(|s| &s.value)
+    }
+
+    pub(crate) fn get_signal_value_mut_silent(&self, id: NodeId) -> Option<&mut AnyValue> {
+        let n = self.storage.reactive.get_mut(id)?;
+        let signal = n.signal.as_mut()?;
+        signal.version = signal.version.wrapping_add(1);
+        Some(&mut signal.value)
+    }
+
     pub(crate) fn prepare_memo_node(&self, id: NodeId) {
         self.storage.reactive.insert(
             id,
@@ -322,6 +349,24 @@ impl Runtime {
             .extras
             .insert(id, ExtraData::StoredValue(StoredValueData { value }));
         id
+    }
+
+    pub(crate) fn get_stored_value(&self, id: NodeId) -> Option<&AnyValue> {
+        let extra = self.storage.extras.get(id)?;
+        if let ExtraData::StoredValue(sv) = extra {
+            Some(&sv.value)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn get_stored_value_mut(&self, id: NodeId) -> Option<&mut AnyValue> {
+        let extra = self.storage.extras.get_mut(id)?;
+        if let ExtraData::StoredValue(sv) = extra {
+            Some(&mut sv.value)
+        } else {
+            None
+        }
     }
 
     pub fn register_callback_untyped(

@@ -153,28 +153,12 @@ fn internal_create_signal(val: AnyValue) -> NodeId {
 }
 
 pub fn try_get_signal<T: Clone + 'static>(id: NodeId) -> Option<T> {
-    RUNTIME.with(|rt| {
-        rt.prepare_read(id);
-        rt.storage
-            .reactive
-            .get(id)?
-            .signal
-            .as_ref()?
-            .value
-            .downcast_ref::<T>()
-            .cloned()
-    })
+    RUNTIME.with(|rt| rt.get_signal_value(id)?.downcast_ref::<T>().cloned())
 }
 
 pub fn try_get_signal_untracked<T: Clone + 'static>(id: NodeId) -> Option<T> {
     RUNTIME.with(|rt| {
-        rt.prepare_read_untracked(id);
-        rt.storage
-            .reactive
-            .get(id)?
-            .signal
-            .as_ref()?
-            .value
+        rt.get_signal_value_untracked(id)?
             .downcast_ref::<T>()
             .cloned()
     })
@@ -220,20 +204,14 @@ pub fn notify_signal(id: NodeId) {
 }
 
 pub fn try_with_signal<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
-    RUNTIME.with(|rt| {
-        rt.prepare_read(id);
-        let n = rt.storage.reactive.get(id)?;
-        let signal = n.signal.as_ref()?;
-        signal.value.downcast_ref::<T>().map(f)
-    })
+    RUNTIME.with(|rt| rt.get_signal_value(id)?.downcast_ref::<T>().map(f))
 }
 
 pub fn try_with_signal_untracked<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
     RUNTIME.with(|rt| {
-        rt.prepare_read_untracked(id);
-        let n = rt.storage.reactive.get(id)?;
-        let signal = n.signal.as_ref()?;
-        signal.value.downcast_ref::<T>().map(f)
+        rt.get_signal_value_untracked(id)?
+            .downcast_ref::<T>()
+            .map(f)
     })
 }
 
@@ -242,10 +220,8 @@ pub fn try_update_signal_silent<T: 'static, R>(
     f: impl FnOnce(&mut T) -> R,
 ) -> Option<R> {
     RUNTIME.with(|rt| {
-        let n = rt.storage.reactive.get_mut(id)?;
-        let signal = n.signal.as_mut()?;
-        let val = signal.value.downcast_mut::<T>()?;
-        signal.version = signal.version.wrapping_add(1);
+        let val = rt.get_signal_value_mut_silent(id)?;
+        let val = val.downcast_mut::<T>()?;
         Some(f(val))
     })
 }
@@ -262,14 +238,7 @@ fn internal_store_value(val: AnyValue) -> NodeId {
 }
 
 pub fn try_with_stored_value<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
-    RUNTIME.with(|rt| {
-        let extra = rt.storage.extras.get(id)?;
-        if let ExtraData::StoredValue(sv) = extra {
-            sv.value.downcast_ref::<T>().map(f)
-        } else {
-            None
-        }
-    })
+    RUNTIME.with(|rt| rt.get_stored_value(id)?.downcast_ref::<T>().map(f))
 }
 
 pub fn try_update_stored_value<T: 'static, R>(
@@ -277,13 +246,9 @@ pub fn try_update_stored_value<T: 'static, R>(
     f: impl FnOnce(&mut T) -> R,
 ) -> Option<R> {
     RUNTIME.with(|rt| {
-        let extra = rt.storage.extras.get_mut(id)?;
-        if let ExtraData::StoredValue(sv) = extra {
-            let val = sv.value.downcast_mut::<T>()?;
-            Some(f(val))
-        } else {
-            None
-        }
+        let val = rt.get_stored_value_mut(id)?;
+        let val = val.downcast_mut::<T>()?;
+        Some(f(val))
     })
 }
 
