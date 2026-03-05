@@ -58,7 +58,10 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
     let mut css_vars = Vec::new();
 
     for field in &def.fields {
-        let field_name = field.ident.as_ref().unwrap();
+        let field_name = field
+            .ident
+            .as_ref()
+            .ok_or_else(|| syn::Error::new_spanned(field, "Theme fields must be named"))?;
         let field_ty = &field.ty;
 
         let mut custom_var = None;

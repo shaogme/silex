@@ -118,7 +118,11 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
         }
 
         if is_persistent {
-            let key = storage_key.unwrap_or_else(|| name.as_ref().unwrap().to_string());
+            let key = storage_key.unwrap_or_else(|| {
+                name.as_ref()
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| "unnamed_field".to_string())
+            });
             let full_key = if let Some(prefix) = &storage_prefix {
                 format!("{}{}", prefix, key)
             } else {

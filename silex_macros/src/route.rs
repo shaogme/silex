@@ -197,7 +197,13 @@ fn detect_nested_field(
     match fields {
         Fields::Named(named) => {
             for field in &named.named {
-                let name = field.ident.as_ref().unwrap().to_string();
+                let name = field
+                    .ident
+                    .as_ref()
+                    .ok_or_else(|| {
+                        Error::new_spanned(field, "Named fields must have an identifier")
+                    })?
+                    .to_string();
                 let is_param = param_names.contains(&name.as_str());
 
                 // Check for #[nested] attribute
@@ -226,7 +232,9 @@ fn detect_nested_field(
                                 "Multiple nested route fields defined. Only one allowed.",
                             ));
                         }
-                        nested = Some(Member::Named(field.ident.clone().unwrap()));
+                        nested = Some(Member::Named(field.ident.clone().ok_or_else(|| {
+                            Error::new_spanned(field, "Named fields must have an identifier")
+                        })?));
                     } else {
                         // Not a param, not marked nested -> Error
                         // This prevents typos in param names being inferred as nested routes.
@@ -319,12 +327,9 @@ impl Node {
                 if self.param_child.is_none() {
                     self.param_child = Some(Box::new(Node::default()));
                 }
-                self.param_child.as_mut().unwrap().insert(
-                    &segments[1..],
-                    route_idx,
-                    is_wildcard,
-                    is_nested,
-                );
+                if let Some(child) = self.param_child.as_mut() {
+                    child.insert(&segments[1..], route_idx, is_wildcard, is_nested);
+                }
             }
         }
     }
@@ -500,7 +505,17 @@ fn generate_route_handler(def: &RouteDef, enum_name: &syn::Ident) -> syn::Result
                     .ty
                     .clone()
             }
-            Fields::Unnamed(f) => f.unnamed.first().unwrap().ty.clone(),
+            Fields::Unnamed(f) => f
+                .unnamed
+                .first()
+                .ok_or_else(|| {
+                    Error::new(
+                        def.route_attr_span,
+                        "Tuple variants must have at least one field",
+                    )
+                })?
+                .ty
+                .clone(),
             _ => {
                 return Err(Error::new(def.route_attr_span, "Unit struct nested error"));
             }
@@ -618,7 +633,7 @@ fn generate_to_path_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resu
         // 对于嵌套情况，我们需要特殊的拼接逻辑以避免 //
         if def.nested_field.is_some() {
             // 分离 args
-            let child_arg = format_args.pop().unwrap(); // last one is child path
+            let child_arg = format_args.pop().unwrap_or_else(|| quote! { "" }); // last one is child path
             let base_args = format_args;
 
             // 移除 format_string 最后的 {} (这是之前专门为 nested 字段添加的占位符)
@@ -694,7 +709,9 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
                     let mut field_bindings = Vec::new();
 
                     for field in &named.named {
-                        let fname = field.ident.as_ref().unwrap();
+                        let fname = field.ident.as_ref().ok_or_else(|| {
+                            Error::new_spanned(field, "Named fields must have an identifier")
+                        })?;
                         field_bindings.push(fname.clone());
                         // Component::new().prop(prop)
                         props_setters.push(quote! { .#fname(#fname.clone()) });
