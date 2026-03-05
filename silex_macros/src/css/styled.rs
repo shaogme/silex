@@ -482,7 +482,11 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
 
     // --- 启发式精准类型恢复（面向原生标签）与自动透传 ---
     let tag_str = tag.to_string();
-    let is_native_tag = tag_str.chars().next().unwrap().is_ascii_lowercase();
+    let is_native_tag = tag_str
+        .chars()
+        .next()
+        .map(|c| c.is_ascii_lowercase())
+        .unwrap_or(false);
 
     let return_type = if is_native_tag {
         let pascal_name = match tag_str.as_str() {
