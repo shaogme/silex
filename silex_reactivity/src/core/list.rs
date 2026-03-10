@@ -47,7 +47,11 @@ impl<T> ThinVec<T> {
                 if header.len == header.cap {
                     self.grow();
                     // ptr might have changed
-                    let header = self.ptr.unwrap().cast::<Header>().as_mut();
+                    let header = self
+                        .ptr
+                        .expect("ThinVec::ptr should be Some after grow")
+                        .cast::<Header>()
+                        .as_mut();
                     self.write_at(header, header.len, elem);
                 } else {
                     self.write_at(header, header.len, elem);
@@ -55,7 +59,12 @@ impl<T> ThinVec<T> {
             }
         } else {
             self.grow_from_zero();
-            let header = unsafe { self.ptr.unwrap().cast::<Header>().as_mut() };
+            let header = unsafe {
+                self.ptr
+                    .expect("ThinVec::ptr should be Some after grow_from_zero")
+                    .cast::<Header>()
+                    .as_mut()
+            };
             unsafe { self.write_at(header, 0, elem) };
         }
     }
@@ -80,8 +89,8 @@ impl<T> ThinVec<T> {
     #[cold]
     fn grow_from_zero(&mut self) {
         let (layout, _) = Layout::new::<Header>()
-            .extend(Layout::array::<T>(Self::MIN_CAP).unwrap())
-            .unwrap();
+            .extend(Layout::array::<T>(Self::MIN_CAP).expect("Failed to create array layout"))
+            .expect("Failed to extend layout");
 
         let ptr = unsafe { alloc::alloc(layout) };
         if ptr.is_null() {
@@ -103,18 +112,18 @@ impl<T> ThinVec<T> {
 
     #[cold]
     fn grow(&mut self) {
-        let old_ptr = self.ptr.unwrap();
+        let old_ptr = self.ptr.expect("ThinVec::grow called on an empty ThinVec");
         let unsafe_header = unsafe { old_ptr.cast::<Header>().as_ref() };
         let old_cap = unsafe_header.cap;
         let new_cap = old_cap * 2;
 
         let (old_layout, _) = Layout::new::<Header>()
-            .extend(Layout::array::<T>(old_cap).unwrap())
-            .unwrap();
+            .extend(Layout::array::<T>(old_cap).expect("Failed to create array layout"))
+            .expect("Failed to extend layout");
 
         let (new_layout, _) = Layout::new::<Header>()
-            .extend(Layout::array::<T>(new_cap).unwrap())
-            .unwrap();
+            .extend(Layout::array::<T>(new_cap).expect("Failed to create array layout"))
+            .expect("Failed to extend layout");
 
         let new_ptr = unsafe { alloc::realloc(old_ptr.as_ptr(), old_layout, new_layout.size()) };
 
@@ -188,8 +197,8 @@ impl<T> Drop for ThinVec<T> {
                 }
 
                 let (layout, _) = Layout::new::<Header>()
-                    .extend(Layout::array::<T>(header.cap).unwrap())
-                    .unwrap();
+                    .extend(Layout::array::<T>(header.cap).expect("Failed to create array layout"))
+                    .expect("Failed to extend layout");
                 alloc::dealloc(ptr.as_ptr(), layout);
             }
         }
@@ -202,8 +211,8 @@ impl<T: Clone> Clone for ThinVec<T> {
             unsafe {
                 let header: &Header = ptr.cast::<Header>().as_ref();
                 let (layout, _) = Layout::new::<Header>()
-                    .extend(Layout::array::<T>(header.cap).unwrap())
-                    .unwrap();
+                    .extend(Layout::array::<T>(header.cap).expect("Failed to create array layout"))
+                    .expect("Failed to extend layout");
 
                 let new_ptr = alloc::alloc(layout);
                 if new_ptr.is_null() {
@@ -315,7 +324,11 @@ impl<T: PartialEq> List<T> {
                 if vec.remove(elem) {
                     if vec.len() == 1 {
                         unsafe {
-                            let header = vec.ptr.unwrap().cast::<Header>().as_mut();
+                            let header = vec
+                                .ptr
+                                .expect("ThinVec::ptr should be Some if len is 1")
+                                .cast::<Header>()
+                                .as_mut();
                             // Read the remaining element (at index 0)
                             let first = header.data_ptr::<T>().read();
 
