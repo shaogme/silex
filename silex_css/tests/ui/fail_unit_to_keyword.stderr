@@ -21,9 +21,14 @@ error[E0277]: 类型 `Px` 无法作为有效的 CSS `silex_css::types::props::Di
 note: required by a bound in `silex_css::builder::Style::display`
  --> src/builder.rs
   |
+  |                     V::Value: ValidFor<props::$pascal> + Display + Clone + Sized + 'static,
+  |                               ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Style::display`
+...
   | crate::for_all_properties!(generate_builder_methods);
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  | |
-  | required by a bound in this associated function
-  | required by this bound in `Style::display`
+  | ---------------------------------------------------- in this macro invocation
+  |
+ ::: src/properties.rs
+  |
+  |             (display, "display", Display, Keyword),
+  |              ------- required by a bound in this associated function
   = note: this error originates in the macro `generate_builder_methods` which comes from the expansion of the macro `crate::for_all_properties` (in Nightly builds, run with -Z macro-backtrace for more info)
