@@ -89,3 +89,25 @@ fn test_derive() {
         );
     });
 }
+
+#[test]
+fn test_rw_signal_new() {
+    create_scope(|| {
+        let rw = RwSignal::new(42);
+        assert_eq!(rw.get(), 42);
+
+        rw.set(43);
+        assert_eq!(rw.get(), 43);
+
+        let read = rw.read_signal();
+        assert_eq!(read.get(), 43);
+
+        let write = rw.write_signal();
+        write.set(44);
+        assert_eq!(rw.get(), 44);
+
+        let (r, w) = rw.split();
+        assert_eq!(r, read);
+        assert_eq!(w, write);
+    });
+}
