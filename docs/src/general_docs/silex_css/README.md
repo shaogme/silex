@@ -187,9 +187,9 @@ Stack(children)
 ### 在组件中使用主题
 ```rust
 // 通过宏获取主题变量，自动建立响应式关系
-let t = use_theme::<ModernTheme>();
-
-div("主题文字").style(sty().color(t.map(|v| v.primary.clone())))
+if let Some(t) = use_theme::<ModernTheme>() {
+    div("主题文字").style(sty().color(t.map(|v| v.primary.clone())))
+}
 ```
 
 ---

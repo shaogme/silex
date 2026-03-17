@@ -187,48 +187,43 @@ pub fn use_router() -> Option<RouterContext> {
 }
 
 /// Hook: 获取当前导航器
-pub fn use_navigate() -> Navigator {
-    use_router()
-        .expect("use_navigate called outside of <Router>")
-        .navigator
+pub fn use_navigate() -> Option<Navigator> {
+    use_router().map(|ctx| ctx.navigator)
 }
 
 /// Hook: 获取当前路径 (逻辑路径，不含 Base Path)
-pub fn use_location_path() -> Signal<String> {
-    use_router()
-        .map(|ctx| ctx.path.into())
-        .expect("use_location_path called outside of <Router>")
+pub fn use_location_path() -> Option<Signal<String>> {
+    use_router().map(|ctx| ctx.path.into())
 }
 
 /// Hook: 获取查询参数字符串
-pub fn use_location_search() -> Signal<String> {
-    use_router()
-        .map(|ctx| ctx.search.into())
-        .expect("use_location called outside of <Router>")
+pub fn use_location_search() -> Option<Signal<String>> {
+    use_router().map(|ctx| ctx.search.into())
 }
 
 /// Hook: 获取并解析查询参数为 Map
 ///
 /// 使用 `web_sys::UrlSearchParams` 进行标准化的解析，确保与浏览器的行为一致。
-pub fn use_query_map() -> silex_core::reactivity::Memo<HashMap<String, String>> {
-    let search_signal = use_location_search();
-    Memo::new(move |_| {
-        let s = search_signal.get();
-        let mut map = HashMap::new();
+pub fn use_query_map() -> Option<silex_core::reactivity::Memo<HashMap<String, String>>> {
+    use_location_search().map(|search_signal| {
+        Memo::new(move |_| {
+            let s = search_signal.get();
+            let mut map = HashMap::new();
 
-        if let Ok(params) = web_sys::UrlSearchParams::new_with_str(&s) {
-            // UrlSearchParams 是 Iterable，可以使用 js_sys::try_iter
-            if let Ok(Some(iter)) = js_sys::try_iter(&params) {
-                for val in iter.flatten() {
-                    // 迭代出的每一项都是 [key, value] 数组
-                    let pair: js_sys::Array = val.unchecked_into();
-                    let k = pair.get(0).as_string().unwrap_or_default();
-                    let v = pair.get(1).as_string().unwrap_or_default();
-                    map.insert(k, v);
+            if let Ok(params) = web_sys::UrlSearchParams::new_with_str(&s) {
+                // UrlSearchParams 是 Iterable，可以使用 js_sys::try_iter
+                if let Ok(Some(iter)) = js_sys::try_iter(&params) {
+                    for val in iter.flatten() {
+                        // 迭代出的每一项都是 [key, value] 数组
+                        let pair: js_sys::Array = val.unchecked_into();
+                        let k = pair.get(0).as_string().unwrap_or_default();
+                        let v = pair.get(1).as_string().unwrap_or_default();
+                        map.insert(k, v);
+                    }
                 }
             }
-        }
-        map
+            map
+        })
     })
 }
 
@@ -252,9 +247,8 @@ pub fn use_query_signal(key: impl Into<String>) -> silex_core::reactivity::RwSig
 
     // 初始化：从 Map 获取 (此时 Map 已经是 decode 过的了)
     let initial_value = query_map
-        .get_untracked()
-        .get(&key)
-        .cloned()
+        .as_ref()
+        .and_then(|m| m.get_untracked().get(&key).cloned())
         .unwrap_or_default();
 
     let signal = RwSignal::new(initial_value.clone());
@@ -265,50 +259,56 @@ pub fn use_query_signal(key: impl Into<String>) -> silex_core::reactivity::RwSig
 
     // URL -> Signal
     // 监听 Query Map 的变化并同步到 Signal
-    Effect::new({
-        let key = key.clone();
-        move |_| {
-            let map = query_map.get();
-            let url_val = map.get(&key).map(|s| s.as_str()).unwrap_or("");
+    if let Some(query_map) = query_map {
+        Effect::new({
+            let key = key.clone();
+            move |_| {
+                let map = query_map.get();
+                let url_val = map.get(&key).map(|s| s.as_str()).unwrap_or("");
 
-            // 只有当 URL 的值与 Signal 当前值不一致，且与我们刚写入的值也不一致时，才更新 Signal
-            // 这样可以防止：Signal 设置 "A" -> URL 变 "A" -> Effect 读 "A" -> Signal 再设一遍 "A" (虽然 Signal 内部有 check，但减少一次 set 调用总是好的)
-            let current_signal_val = signal.get_untracked();
+                // 只有当 URL 的值与 Signal 当前值不一致，且与我们刚写入的值也不一致时，才更新 Signal
+                // 这样可以防止：Signal 设置 "A" -> URL 变 "A" -> Effect 读 "A" -> Signal 再设一遍 "A" (虽然 Signal 内部有 check，但减少一次 set 调用总是好的)
+                let current_signal_val = signal.get_untracked();
 
-            // 使用 try_get_untracked 避免 panic (虽然在此上下文通常不会 disposed)
-            if let Some(last_val) = last_synced_value.try_get_untracked()
-                && current_signal_val != url_val
-                && last_val != url_val
-            {
-                signal.set(url_val.to_string());
-                // 更新 last_synced_value，表示这个值是来自 URL 的最新状态
-                // 使用 try_set_untracked 避免 panic
-                let _ = last_synced_value.try_set_untracked(url_val.to_string());
+                // 使用 try_get_untracked 避免 panic (虽然在此上下文通常不会 disposed)
+                if let Some(last_val) = last_synced_value.try_get_untracked()
+                    && current_signal_val != url_val
+                    && last_val != url_val
+                {
+                    signal.set(url_val.to_string());
+                    // 更新 last_synced_value，表示这个值是来自 URL 的最新状态
+                    // 使用 try_set_untracked 避免 panic
+                    let _ = last_synced_value.try_set_untracked(url_val.to_string());
+                }
             }
-        }
-    });
+        });
+    }
 
     // Signal -> URL
     // 监听 Signal 的变化并使用 Navigator 更新 URL
-    Effect::new(move |_| {
-        let val = signal.get();
-        let current_map = query_map.get_untracked();
-        let current_url_val = current_map.get(&key).map(|s| s.as_str()).unwrap_or("");
+    if let Some(navigator) = navigator {
+        if let Some(query_map) = query_map {
+            Effect::new(move |_| {
+                let val = signal.get();
+                let current_map = query_map.get_untracked();
+                let current_url_val = current_map.get(&key).map(|s| s.as_str()).unwrap_or("");
 
-        // 只有当 Signal 的值与 URL 当前值不一致时，才发起导航
-        if val != current_url_val {
-            // 更新缓存，标记这次变更是由 Signal 发起的
-            // 使用 try_set_untracked 避免 panic，如果已 disposed 则无需更新缓存
-            let _ = last_synced_value.try_set_untracked(val.clone());
+                // 只有当 Signal 的值与 URL 当前值不一致时，才发起导航
+                if val != current_url_val {
+                    // 更新缓存，标记这次变更是由 Signal 发起的
+                    // 使用 try_set_untracked 避免 panic，如果已 disposed 则无需更新缓存
+                    let _ = last_synced_value.try_set_untracked(val.clone());
 
-            let val_to_set = if val.is_empty() {
-                None
-            } else {
-                Some(val.as_str())
-            };
-            navigator.set_query(&key, val_to_set);
+                    let val_to_set = if val.is_empty() {
+                        None
+                    } else {
+                        Some(val.as_str())
+                    };
+                    navigator.set_query(&key, val_to_set);
+                }
+            });
         }
-    });
+    }
 
     signal
 }

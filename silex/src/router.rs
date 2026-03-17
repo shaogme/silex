@@ -112,14 +112,17 @@ impl Router {
         // 创建一个闭包，它在渲染时会获取当前路径并进行匹配
         self.child = Some(Rc::new(move || {
             // 获取当前路径 (这是一个 Signal，所以路径变化时会触发重新渲染)
-            let path_signal = crate::router::use_location_path();
-            let path = path_signal.get();
+            if let Some(path_signal) = crate::router::use_location_path() {
+                let path = path_signal.get();
 
-            if let Some(matched) = R::match_path(&path) {
-                render(matched).into_any()
+                if let Some(matched) = R::match_path(&path) {
+                    render(matched).into_any()
+                } else {
+                    // 如果没有匹配，渲染空。
+                    // 用户可以在 Enum 中定义 Fallback 变体 (e.g. #[route("/*")] NotFound) 来处理 404
+                    AnyView::new(())
+                }
             } else {
-                // 如果没有匹配，渲染空。
-                // 用户可以在 Enum 中定义 Fallback 变体 (e.g. #[route("/*")] NotFound) 来处理 404
                 AnyView::new(())
             }
         }));
@@ -132,11 +135,14 @@ impl Router {
         R: RouteView,
     {
         self.child = Some(Rc::new(move || {
-            let path_signal = crate::router::use_location_path();
-            let path = path_signal.get();
+            if let Some(path_signal) = crate::router::use_location_path() {
+                let path = path_signal.get();
 
-            if let Some(matched) = R::match_path(&path) {
-                matched.render()
+                if let Some(matched) = R::match_path(&path) {
+                    matched.render()
+                } else {
+                    AnyView::new(())
+                }
             } else {
                 AnyView::new(())
             }

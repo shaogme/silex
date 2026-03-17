@@ -39,10 +39,14 @@ fn App() -> impl View {
                 )),
                 main((
                     Dynamic::new(move || {
-                        match path.get().as_str() {
-                            "/" => Home().into_any(),
-                            "/about" => About().into_any(),
-                            _ => NotFound().into_any(),
+                        if let Some(path) = path {
+                            match path.get().as_str() {
+                                "/" => Home().into_any(),
+                                "/about" => About().into_any(),
+                                _ => NotFound().into_any(),
+                            }
+                        } else {
+                            AnyView::new(())
                         }
                     })
                 ))
@@ -88,8 +92,9 @@ Router::new().match_route::<MyRoutes>()
     ```
 *   **Code**: 使用 `use_navigate` hook。
     ```rust
-    let nav = use_navigate();
-    nav.push("/new-path");
+    if let Some(nav) = use_navigate() {
+        nav.push("/new-path");
+    }
     ```
 
 ### 查询参数 (Query Parameters)
@@ -97,7 +102,7 @@ Router::new().match_route::<MyRoutes>()
 Silex 提供了方便的 Hooks 来处理 URL 查询参数：
 
 *   **`use_query_map()`**:
-    *   返回 `Memo<HashMap<String, String>>`。
+    *   返回 `Option<Memo<HashMap<String, String>>>`。
     *   使用 `web_sys::UrlSearchParams` 标准解析，自动处理 URI 编码。
     *   响应式：当 URL 变化时自动更新。
 

@@ -121,9 +121,11 @@ fn UserDetail(id: u32) -> impl View {
             h3(format!("User Profile: #{}", id)),
             button("Go Back")
                 .on_click(move |_| {
-                    navigator.push(AppRoute::Users {
-                        route: UsersRoute::List,
-                    })
+                    if let Some(navigator) = &navigator {
+                        navigator.push(AppRoute::Users {
+                            route: UsersRoute::List,
+                        })
+                    }
                 })
                 .style("font-size: 0.8rem; padding: 5px 10px; cursor: pointer;"),
         )
@@ -131,7 +133,7 @@ fn UserDetail(id: u32) -> impl View {
         hr().style("border: 0; border-top: 1px solid #eee; margin: 15px 0;"),
         p!(
             strong("Current Path: "),
-            span(path).style("font-family: monospace;"),
+            span(move || path.map(|p| p.get()).unwrap_or_default()).style("font-family: monospace;"),
         ),
         div!(p(format!(
             "This component is rendered with strict prop id: {}",

@@ -77,9 +77,8 @@ where
 }
 
 /// Hook to get the current theme signal from context.
-pub fn use_theme<T: 'static>() -> ReadSignal<T> {
+pub fn use_theme<T: 'static>() -> Option<ReadSignal<T>> {
     ::silex_core::prelude::use_context::<ReadSignal<T>>()
-        .expect("No ThemeProvider found in hierarchy")
 }
 
 /// Sets a global theme that applies to the entire document (:root).
