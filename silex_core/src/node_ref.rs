@@ -80,3 +80,6 @@ impl<T: Clone + 'static> NodeRef<T> {
         self.id
     }
 }
+
+#[cfg(test)]
+mod tests;
