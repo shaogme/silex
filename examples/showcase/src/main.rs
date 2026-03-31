@@ -12,7 +12,11 @@ fn main() {
     setup_global_error_handlers();
 
     // 1. 使用持久化 Hook 代替手动的 localStorage 读取
-    let theme_persistent = use_local_storage("silex-showcase-theme", "Light".to_string());
+    let theme_persistent = persistent("silex-showcase-theme")
+        .local()
+        .string()
+        .default("Light".to_string())
+        .build();
 
     // Global State Initialization
     let store = UserSettingsStore::new(UserSettings {

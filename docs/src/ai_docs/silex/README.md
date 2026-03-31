@@ -19,6 +19,7 @@
 *   **State Management**: `RouterContext` (包含 `path`, `search` 信号)。
 *   **Sync Mechanism**: `popstate` 事件监听 + `history.pushState` 调用。
 *   **Matching**: 字符串前缀匹配 (Router) 或 Enum 强类型匹配 (Routable)。
+*   **Query Persistence**: URL query 不再通过单独 hook 暴露，而是通过 `silex::persist::QueryBackend` 接入统一 persist builder。
 
 ### RouterContext
 `silex/src/router/context.rs`
@@ -37,6 +38,33 @@
 *   **replace(url)**: 调用 `history.replaceState` 并更新 Context 信号。
 *   **set_query(key, value)**: 原子化更新查询参数。读取 -> 解析 -> 修改 -> Push。
 *   **Side Effects**: 直接操作 DOM History API，触发 `popstate` (模拟)。
+
+## 2.1 Persistence 系统 (silex::persist)
+
+`silex/src/persist/*`
+
+统一的外部状态绑定层，覆盖 `localStorage`、`sessionStorage` 与 URL query。
+
+### 核心入口
+*   `persistent(key)` -> `PersistentBuilder<...>`
+*   Backend 选择：`.local()` / `.session()` / `.query()`
+*   Codec 选择：`.string()` / `.parse::<T>()` / `.json::<T>()`
+*   构建结果：`Persistent<T>`
+
+### Persistent<T>
+*   内部持有 `RwSignal<T>` + `RwSignal<PersistenceState>` + 控制器状态。
+*   提供 `get`, `set`, `update`, `reload`, `flush`, `remove`, `reset`。
+*   已实现 `View`，因此文本型/可视型值可直接写进 `span(...)`、`p![...]` 等 UI 位置。
+*   已实现 `From<Persistent<T>> for RwSignal<T>`（在 `T: Clone + PartialEq + 'static` 下），因此 `bind_value` 等显式要求 `RwSignal<String>` 的常用 API 也可直接接受 `Persistent<String>`。
+
+### Store 宏持久化
+*   `#[derive(Store)]` 现已解析 `#[persist(...)]`，不再支持旧 `#[storage]`。
+*   struct 级别支持 `#[persist(prefix = "...")]`。
+*   字段级支持：
+    *   `#[persist(local, codec = "string")]`
+    *   `#[persist(session, codec = "parse")]`
+    *   `#[persist(query, key = "q", codec = "string")]`
+*   持久化字段生成 `Persistent<T>`，非持久化字段仍生成 `RwSignal<T>`。
 
 ### Component: Router
 `silex/src/router.rs` -> `struct Router`

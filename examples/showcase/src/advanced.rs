@@ -4,11 +4,11 @@ use silex::reexports::web_sys;
 // --- Store Definition ---
 #[derive(Clone, Default, Store, serde::Serialize, serde::Deserialize)]
 #[store(name = "use_user_settings")]
-#[storage(prefix = "showcase-settings-")]
+#[persist(prefix = "showcase-settings-")]
 pub struct UserSettings {
-    #[storage]
+    #[persist(local, codec = "string")]
     pub theme: String,
-    #[storage(key = "notif_enabled")]
+    #[persist(local, key = "notif_enabled", codec = "parse")]
     pub notifications: bool,
     pub username: String,
 }
@@ -74,30 +74,34 @@ impl Default for ComplexState {
 
 #[component]
 pub fn JsonStorageDemo() -> impl View {
-    let state = use_local_storage("showcase-json-state", Json(ComplexState::default()));
+    let state = persistent("showcase-json-state")
+        .local()
+        .json::<ComplexState>()
+        .default(ComplexState::default())
+        .build();
 
     div![
         h4("Native JSON Persistence Demo"),
-        p("This demo uses the `Json<T>` wrapper to persist a complex struct via browser-native `JSON.stringify/parse`."),
+        p("This demo uses the JSON codec to persist a complex struct via browser-native `JSON.stringify/parse`."),
         div![
-            p![strong("Hero: "), rx!(state.get().0.name)],
-            p![strong("Level: "), rx!(state.get().0.level.to_string())],
-            p![strong("Inventory: "), rx!(state.get().0.inventory.join(", "))],
+            p![strong("Hero: "), rx!(state.get().name)],
+            p![strong("Level: "), rx!(state.get().level.to_string())],
+            p![strong("Inventory: "), rx!(state.get().inventory.join(", "))],
         ]
         .style("background: var(--slx-theme-surface-alt, rgba(128,128,128,0.1)); padding: 10px; border-left: 4px solid var(--slx-theme-primary, #007bff); border-radius: 4px; margin-bottom: 10px;"),
         div![
             button("Level Up").on(event::click, move |_| {
-                state.update(|s| s.0.level += 1);
+                state.update(|s| s.level += 1);
             }),
             button("Add Shield").on(event::click, move |_| {
                 state.update(|s| {
-                    if !s.0.inventory.contains(&"Shield".to_string()) {
-                        s.0.inventory.push("Shield".to_string());
+                    if !s.inventory.contains(&"Shield".to_string()) {
+                        s.inventory.push("Shield".to_string());
                     }
                 });
             }),
             button("Reset").on(event::click, move |_| {
-                state.set(Json(ComplexState::default()));
+                state.set(ComplexState::default());
             }),
         ]
         .style("display: flex; gap: 10px;"),
@@ -106,11 +110,15 @@ pub fn JsonStorageDemo() -> impl View {
 
 #[component]
 pub fn StorageDemo() -> impl View {
-    let count = use_local_storage("showcase-counter", 0);
+    let count = persistent("showcase-counter")
+        .local()
+        .parse::<i32>()
+        .default(0)
+        .build();
 
     div![
         h3("LocalStorage Persistence"),
-        p("Silex provides a zero-cost abstraction for persistence. Basic types (int, string, bool) use direct string conversion, while complex structures use browser-native JSON via the `Json<T>` wrapper."),
+        p("Silex provides a unified persistence abstraction. Basic types use string and parse codecs, while complex structures use the JSON codec."),
 
         // 1. 基本类型持久化
         div![
@@ -137,11 +145,15 @@ pub fn StorageDemo() -> impl View {
 
 #[component]
 pub fn QueryDemo() -> impl View {
-    let val = use_query_signal("demo_val");
+    let val = persistent("demo_val")
+        .query()
+        .string()
+        .default(String::new())
+        .build();
 
     div![
         h3("Query Signal Demo"),
-        p("This input is synced with the URL query parameter 'demo_val' using `use_query_signal`."),
+        p("This input is synced with the URL query parameter 'demo_val' using `persistent(...).query()`."),
         div![
             input()
                 .bind_value(val) // Automatic two-way binding
@@ -154,7 +166,7 @@ pub fn QueryDemo() -> impl View {
         .style("display: flex; gap: 10px; margin: 10px 0; align-items: center;"),
         p![
             strong("Current Value: "),
-            val // Signals implement Display
+            val
         ]
         .style("background: var(--slx-theme-surface); border: 1px solid var(--slx-theme-border); padding: 10px; border-radius: 4px;")
     ]
