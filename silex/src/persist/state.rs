@@ -17,7 +17,8 @@ pub struct DecodeErrorInfo {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PersistenceState {
-    Ready,
+    Ready(String),
+    Syncing(String),
     Unavailable,
     ReadError(String),
     DecodeError(DecodeErrorInfo),
@@ -136,7 +137,7 @@ where
                 let _ = self.controller.try_update_untracked(|controller| {
                     controller.last_flushed_raw = None;
                 });
-                self.state.set(PersistenceState::Ready);
+                self.state.set(PersistenceState::Ready(String::new()));
                 Ok(())
             }
             Err(err) => {
@@ -301,7 +302,7 @@ pub(crate) fn flush_persistent_value<T: Clone + PartialEq + 'static>(
 
     if should_remove {
         if last_raw.is_none() {
-            state.set(PersistenceState::Ready);
+            state.set(PersistenceState::Ready(String::new()));
             return Ok(());
         }
 
@@ -313,7 +314,7 @@ pub(crate) fn flush_persistent_value<T: Clone + PartialEq + 'static>(
         let _ = controller.try_update_untracked(|controller| {
             controller.last_flushed_raw = None;
         });
-        state.set(PersistenceState::Ready);
+        state.set(PersistenceState::Ready(String::new()));
         return Ok(());
     }
 
@@ -326,7 +327,7 @@ pub(crate) fn flush_persistent_value<T: Clone + PartialEq + 'static>(
     };
 
     if last_raw.as_deref() == Some(raw.as_str()) {
-        state.set(PersistenceState::Ready);
+        state.set(PersistenceState::Ready(raw));
         return Ok(());
     }
 
@@ -337,7 +338,7 @@ pub(crate) fn flush_persistent_value<T: Clone + PartialEq + 'static>(
     let _ = controller.try_update_untracked(|controller| {
         controller.last_flushed_raw = Some(raw.clone());
     });
-    state.set(PersistenceState::Ready);
+    state.set(PersistenceState::Ready(raw));
     Ok(())
 }
 
@@ -400,7 +401,7 @@ fn apply_raw_value<T: Clone + PartialEq + 'static>(
             let _ = controller.try_update_untracked(|controller| {
                 controller.last_flushed_raw = Some(raw.clone());
             });
-            state.set(PersistenceState::Ready);
+            state.set(PersistenceState::Ready(raw));
             Ok(())
         }
         Err(PersistenceError::DecodeFailed { raw, message }) => {
@@ -440,6 +441,6 @@ fn apply_remove_policy<T: Clone + PartialEq + 'static>(
             value.set(default);
         }
     }
-    state.set(PersistenceState::Ready);
+    state.set(PersistenceState::Ready(String::new()));
     Ok(())
 }

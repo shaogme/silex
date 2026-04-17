@@ -314,7 +314,7 @@ where
             .expect("Default status verified by typestate");
 
         let value = RwSignal::new(default());
-        let state = RwSignal::new(PersistenceState::Ready);
+        let state = RwSignal::new(PersistenceState::Ready(String::new()));
 
         let backend = self.backend.clone();
         let codec = self.codec.clone();
@@ -360,7 +360,7 @@ where
                     let _ = controller.try_update_untracked(|controller| {
                         controller.last_flushed_raw = Some(raw.clone());
                     });
-                    state.set_untracked(PersistenceState::Ready);
+                    state.set_untracked(PersistenceState::Ready(raw));
                 }
                 Err(message) => {
                     state.set_untracked(PersistenceState::DecodeError(
@@ -381,7 +381,7 @@ where
             Ok(None) => {
                 had_missing_value = true;
                 value.set_untracked(default());
-                state.set_untracked(PersistenceState::Ready);
+                state.set_untracked(PersistenceState::Ready(String::new()));
             }
             Err(PersistenceError::BackendUnavailable) => {
                 value.set_untracked(default());
@@ -431,7 +431,7 @@ where
             if let Some(duration) = debounce_duration {
                 let timer = StoredValue::new(None::<silex_dom::helpers::TimeoutHandle>);
                 Effect::new(move |_| {
-                    value.get();
+                    let current = value.get();
                     let should_skip =
                         controller.with_untracked(|controller| controller.skip_next_auto_flush);
                     if should_skip {
@@ -439,6 +439,12 @@ where
                             controller.skip_next_auto_flush = false;
                         });
                         return;
+                    }
+
+                    // Update state to Syncing with current raw value
+                    let raw = controller.with_untracked(|c| (c.encode)(&current));
+                    if let Ok(raw) = raw {
+                        state.set(PersistenceState::Syncing(raw));
                     }
 
                     if let Some(handle) = timer.get_untracked() {
@@ -610,7 +616,7 @@ mod tests {
 
         assert_eq!(value.get_untracked(), 7);
         assert_eq!(backend.get("counter").unwrap(), Some("7".to_string()));
-        assert_eq!(value.state().get_untracked(), PersistenceState::Ready);
+        assert_eq!(value.state().get_untracked(), PersistenceState::Ready("7".to_string()));
     }
 
     #[test]
@@ -627,7 +633,7 @@ mod tests {
             backend.removed.borrow().as_slice(),
             &["counter".to_string()]
         );
-        assert_eq!(value.state().get_untracked(), PersistenceState::Ready);
+        assert_eq!(value.state().get_untracked(), PersistenceState::Ready("5".to_string()));
     }
 
     #[test]
@@ -641,7 +647,7 @@ mod tests {
         assert_eq!(value.get_untracked(), 11);
         assert_eq!(backend.get("counter").unwrap(), Some("11".to_string()));
         assert!(backend.removed.borrow().is_empty());
-        assert_eq!(value.state().get_untracked(), PersistenceState::Ready);
+        assert_eq!(value.state().get_untracked(), PersistenceState::Ready("11".to_string()));
     }
 
     #[test]
@@ -662,7 +668,7 @@ mod tests {
         .build();
 
         assert_eq!(value.get_untracked(), 9);
-        assert_eq!(value.state().get_untracked(), PersistenceState::Ready);
+        assert_eq!(value.state().get_untracked(), PersistenceState::Ready("9".to_string()));
     }
 
     #[test]
@@ -712,7 +718,7 @@ mod tests {
 
         assert_eq!(backend.get("name").unwrap(), None);
         assert_eq!(backend.removed.borrow().as_slice(), &["name".to_string()]);
-        assert_eq!(value.state().get_untracked(), PersistenceState::Ready);
+        assert_eq!(value.state().get_untracked(), PersistenceState::Ready(String::new()));
     }
 
     #[test]
@@ -733,6 +739,6 @@ mod tests {
         assert_eq!(value.get_untracked(), 5);
         assert_eq!(backend.get("counter").unwrap(), None);
         assert!(backend.removed.borrow().is_empty());
-        assert_eq!(value.state().get_untracked(), PersistenceState::Ready);
+        assert_eq!(value.state().get_untracked(), PersistenceState::Ready(String::new()));
     }
 }
