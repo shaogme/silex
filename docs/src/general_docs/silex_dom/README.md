@@ -42,7 +42,7 @@ div.id("app")
 任何接受属性值的地方，都可以传入一个 `rx!` 包装的计算单元。
 
 ```rust
-let (count, set_count) = signal(0);
+let (count, set_count) = Signal::new(0);
 
 // class 会随着 count 的奇偶性自动切换
 div.class(rx!(if count.get() % 2 == 0 { "even" } else { "odd" }))

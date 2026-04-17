@@ -12,7 +12,7 @@ use crate::traits::{RxCloneData, RxData, RxError};
 use crate::{Rx, RxValueKind};
 
 use super::effect::Effect;
-use super::signal::{ReadSignal, WriteSignal, signal};
+use super::signal::{ReadSignal, WriteSignal, Signal};
 
 // --- Resource ---
 
@@ -93,8 +93,8 @@ impl<T: RxCloneData, E: RxError> Resource<T, E> {
         Fetcher: ResourceFetcher<S, Data = T, Error = E> + RxData,
     {
         // 默认状态为 Idle，直到第一次 Effect 执行变为 Loading
-        let (state, set_state) = signal::<ResourceState<T, E>>(ResourceState::Idle);
-        let (trigger, set_trigger) = signal(0);
+        let (state, set_state) = Signal::<ResourceState<T, E>>::new(ResourceState::Idle);
+        let (trigger, set_trigger) = Signal::new(0);
 
         let alive = Rc::new(Cell::new(true));
         let alive_clone = alive.clone();
@@ -327,7 +327,7 @@ impl Default for SuspenseContext {
 
 impl SuspenseContext {
     pub fn new() -> Self {
-        let (count, set_count) = signal(0);
+        let (count, set_count) = Signal::new(0);
         Self { count, set_count }
     }
 

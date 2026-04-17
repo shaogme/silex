@@ -15,25 +15,6 @@ use web_sys::Node;
 ///     .children(|resource| {
 ///         SuspenseBoundary::new()
 ///             .fallback(|| "Loading...")
-///             .children(rx!(resource.get()))
-///     })
-/// ```
-/// Creates a new Suspense builder.
-///
-/// This is a shorthand for `Suspense::new()`.
-pub fn suspense() -> Suspense<()> {
-    Suspense::new()
-}
-
-/// A builder for creating a Suspense context and providing resources.
-///
-/// # Example
-/// ```rust,ignore
-/// suspense()
-///     .resource(|| Resource::new(source, fetcher))
-///     .children(|resource| {
-///         SuspenseBoundary::new()
-///             .fallback(|| "Loading...")
 ///             .children(move || resource.get())
 ///     })
 /// ```

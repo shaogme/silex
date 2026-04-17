@@ -115,7 +115,7 @@ fn NavBar() -> impl View {
 #[component]
 fn HomeView() -> impl View {
     // 页面级状态
-    let (name, set_name) = signal("Rustacean".to_string());
+    let (name, set_name) = Signal::new("Rustacean".to_string());
 
     // 全局状态通过 Context 获取
     let count = expect_context::<ReadSignal<i32>>();
@@ -166,28 +166,27 @@ fn HomeView() -> impl View {
                     .fallback(rx!(div("✓ System works normally.")
                         .style("background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;")))
             ),
-
-                // Card 4: Suspense (Context Layout Pattern)
-                Card()
-                    .title("Suspense (Async Loading)")
-                    .child(
-                        suspense()
-                            .resource(|| Resource::new(
-                                rx!(()),
-                                |_| async {
-                                    gloo_timers::future::TimeoutFuture::new(2_000).await;
-                                    Ok::<_, SilexError>("Loaded Data from Server!".to_string())
-                                }
-                            ))
-                            .children(move |async_data_local| {
-                                SuspenseBoundary::new()
-                                    .fallback(rx!(div("Loading data (approx 2s)...").style("color: orange; font-style: italic;")))
-                                    .children(rx! {
-                                        div(rx!(async_data_local.get().unwrap_or("Waiting...".to_string())))
-                                            .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
-                                    })
-                            })
-                    )
+            // Card 4: Suspense (Context Layout Pattern)
+            Card()
+                .title("Suspense (Async Loading)")
+                .child(
+                    Suspense::new()
+                        .resource(|| Resource::new(
+                            rx!(()),
+                            |_| async {
+                                gloo_timers::future::TimeoutFuture::new(2_000).await;
+                                Ok::<_, SilexError>("Loaded Data from Server!".to_string())
+                            }
+                        ))
+                        .children(move |async_data_local| {
+                            SuspenseBoundary::new()
+                                .fallback(rx!(div("Loading data (approx 2s)...").style("color: orange; font-style: italic;")))
+                                .children(rx! {
+                                    div(rx!(async_data_local.get().unwrap_or("Waiting...".to_string())))
+                                        .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
+                                })
+                        })
+                )
     )
 }
 
@@ -225,7 +224,7 @@ fn main() {
 
     create_scope(move || {
         // 全局状态 (App Store)
-        let (count, set_count) = signal(0);
+        let (count, set_count) = Signal::new(0);
 
         // 注入全局 Context
         provide_context(count);

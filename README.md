@@ -47,7 +47,7 @@ use silex::prelude::*;
 #[component]
 fn Counter() -> impl View {
     // 创建响应式信号
-    let (count, set_count) = signal(0);
+    let (count, set_count) = Signal::new(0);
     
     // 派生状态 (Memo)
     let double_count = Memo::new(move |_| count.get() * 2);

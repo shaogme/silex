@@ -128,7 +128,7 @@ Silex 的“智能指针”，持有 `RxInner` 变体：
 
 | 变体 | 内部数据 | 描述 |
 | :--- | :--- | :--- |
-| `Read(ReadSignal<T>)` | `NodeId` | 后端为 `signal(v)` 的可变信号。 |
+| `Read(ReadSignal<T>)` | `NodeId` | 后端为 `Signal::new(v)` 的可变信号。 |
 | `Derived(NodeId, ...)` | `NodeId` | 后端为池化闭包、算子或 `rx!` 产生的派生节点。 |
 | `StoredConstant(NodeId, ...)` | `NodeId`| 存储在 Arena 中但不可变的常量，不触发依赖追踪。 |
 | `InlineConstant(u64, ...)` | `u64` | **内联优化**：直接在枚举内存储 <= 64bit 且 `!needs_drop` 的类型，无需 Arena 分配。 |
@@ -151,7 +151,7 @@ Silex 的“智能指针”，持有 `RxInner` 变体：
 *   **`RwSignal<T>`**: 读写合并句柄。通过 `Copy` 快速分发，也可通过 `.split()` 拆分。
 
 **全局函数**:
-*   **`signal(v) -> (Read, Write)`**: 创建一个新的底层响应式信号对。
+*   **`Signal::new(v) -> (Read, Write)`**: 创建一个新的底层响应式信号对。
 *   **`untrack(f)`**: 在非追踪作用域下执行闭包（即使在该闭包内读取信号也不建立依赖）。
 
 ### 3.3 `Constant<T>` (逻辑常量)

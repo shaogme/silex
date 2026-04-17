@@ -372,7 +372,7 @@ fn storage_handle(kind: StorageAreaKind) -> Result<Storage, PersistenceError> {
 mod tests {
     use super::*;
     use crate::router::Navigator;
-    use silex_core::reactivity::{create_scope, signal};
+    use silex_core::reactivity::{create_scope, Signal};
     use silex_core::traits::RxWrite;
     use std::cell::RefCell;
     use std::collections::HashMap;
@@ -380,8 +380,8 @@ mod tests {
     fn test_query_backend(
         map: silex_core::reactivity::ReadSignal<HashMap<String, String>>,
     ) -> QueryBackend {
-        let (path, set_path) = signal("/".to_string());
-        let (search, set_search) = signal(String::new());
+        let (path, set_path) = Signal::new("/".to_string());
+        let (search, set_search) = Signal::new(String::new());
         QueryBackend {
             navigator: Some(Navigator {
                 base_path: "/".to_string(),
@@ -405,7 +405,7 @@ mod tests {
     #[test]
     fn query_backend_get_and_subscribe_follow_query_map_changes() {
         create_scope(|| {
-            let (map, set_map) = signal(HashMap::<String, String>::new());
+            let (map, set_map) = Signal::new(HashMap::<String, String>::new());
             let backend = test_query_backend(map);
             let events = Rc::new(RefCell::new(Vec::<BackendEvent>::new()));
 

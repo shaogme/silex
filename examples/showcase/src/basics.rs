@@ -32,13 +32,13 @@ pub fn Greeting(
 
 #[component]
 pub fn Counter() -> impl View {
-    let (count, set_count) = signal(0);
+    let (count, set_count) = Signal::new(0);
     let double_count = count * 2; // Operator overloading creates a Memo automatically
 
     // Timer Handle for Auto Increment (StoredValue: doesn't trigger UI updates itself)
     let timer = StoredValue::new(None::<IntervalHandle>);
     // UI State for the timer
-    let (is_running, set_is_running) = signal(false);
+    let (is_running, set_is_running) = Signal::new(false);
 
     div![
         h3("Interactive Counter"),
@@ -155,10 +155,10 @@ pub fn SvgIconDemo() -> impl View {
 
 #[component]
 pub fn EventDemo() -> impl View {
-    let (name, set_name) = signal("Silex".to_string());
-    let (count, set_count) = signal(0);
+    let (name, set_name) = Signal::new("Silex".to_string());
+    let (count, set_count) = Signal::new(0);
 
-    let (logs, set_logs) = signal(Vec::<String>::new());
+    let (logs, set_logs) = Signal::new(Vec::<String>::new());
     let payload = "DataPayload".to_string();
 
     // Since Signal is Copy, we can just move it directly into closures without cloning!

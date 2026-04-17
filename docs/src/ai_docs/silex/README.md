@@ -173,7 +173,7 @@
 `silex/src/components/suspense.rs`
 *   **Update**: 引入了 `Suspense` Builder 简化了 Context Layout 模式。
 *   **Usage**: 
-    1.  `suspense()`: 创建 Builder。
+    1.  `Suspense::new()`: 创建 Builder。
     2.  `.resource(fn)`: 注册资源工厂。
     3.  `.children(fn)`: 接收 Resource 并渲染 View (包含 `SuspenseBoundary`)。
 *   **Comparison**:

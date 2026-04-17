@@ -12,7 +12,7 @@ use web_sys::Node;
 /// ```rust
 /// use silex::prelude::*;
 ///
-/// let (component_name, set_component_name) = signal("A");
+/// let (component_name, set_component_name) = Signal::new("A");
 ///
 /// Dynamic::new(rx! {
 ///     let name = component_name.get();

@@ -217,7 +217,7 @@ async fn mock_fetch_user(id: i32) -> Result<UserProfile, String> {
 
 #[component]
 pub fn ResourceDemo() -> impl View {
-    let (user_id, set_user_id) = signal(1);
+    let (user_id, set_user_id) = Signal::new(1);
 
     // Create Resource: triggers when user_id changes
     let user_resource = Resource::new(user_id, mock_fetch_user);
@@ -351,11 +351,11 @@ pub fn MutationDemo() -> impl View {
 pub fn SuspenseDemo() -> impl View {
     use silex::components::{SuspenseBoundary, SuspenseMode};
 
-    let (show_content, set_show_content) = signal(false);
-    let (mode, set_mode) = signal(SuspenseMode::KeepAlive);
+    let (show_content, set_show_content) = Signal::new(false);
+    let (mode, set_mode) = Signal::new(SuspenseMode::KeepAlive);
 
     // Trigger for reloading the resource
-    let (trigger, set_trigger) = signal(0);
+    let (trigger, set_trigger) = Signal::new(0);
 
     // Mock heavy resource
     async fn heavy_work(id: i32) -> Result<String, String> {
@@ -399,7 +399,7 @@ pub fn SuspenseDemo() -> impl View {
         ]
         .style("margin-bottom: 15px;"),
         div![Show::new(show_content, rx! {
-            suspense()
+            Suspense::new()
                 .resource(move || Resource::new(trigger, heavy_work))
                 .children(move |resource| {
                     SuspenseBoundary::new()
@@ -480,10 +480,10 @@ impl std::fmt::Display for QuantumIdentity {
 #[component]
 pub fn AdaptiveReadDemo() -> impl View {
     let system_name = RwSignal::new("Nebula-1".to_string());
-    let (stability, set_stability) = signal(0.85); // 0.0 to 1.0
+    let (stability, set_stability) = Signal::new(0.85); // 0.0 to 1.0
 
     // Create a non-cloneable resource
-    let (identity, _) = signal(QuantumIdentity::new(0xDEADBEEF));
+    let (identity, _) = Signal::new(QuantumIdentity::new(0xDEADBEEF));
 
     // 1. REACTIVE TUPLE: Used for organizational grouping and tracking.
     // Note: (RwSignal<String>, ReadSignal<f64>, ReadSignal<QuantumIdentity>)

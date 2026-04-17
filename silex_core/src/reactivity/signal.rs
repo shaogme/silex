@@ -31,6 +31,22 @@ pub enum Signal<T> {
     InlineConstant(u64, PhantomData<T>),
 }
 
+impl<T: 'static> Signal<T> {
+    pub fn new(value: T) -> (ReadSignal<T>, WriteSignal<T>) {
+        let id = silex_reactivity::signal(value);
+        (
+            ReadSignal {
+                id,
+                marker: PhantomData,
+            },
+            WriteSignal {
+                id,
+                marker: PhantomData,
+            },
+        )
+    }
+}
+
 impl<T: RxData> std::fmt::Debug for Signal<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

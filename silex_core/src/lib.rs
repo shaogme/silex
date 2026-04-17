@@ -227,8 +227,8 @@ pub mod prelude {
 ///
 /// # Example
 /// ```rust,ignore
-/// let name = signal("Alice".to_string());
-/// let age = signal(42);
+/// let name = Signal::new("Alice".to_string());
+/// let age = Signal::new(42);
 ///
 /// // Zero-copy access - no cloning!
 /// batch_read!(name, age => |n: &String, a: &i32| {

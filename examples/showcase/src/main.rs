@@ -45,7 +45,7 @@ fn main() {
 
         // Create the global theme signal and sync it inside the reactive scope
         let (theme_signal, set_theme_signal) =
-            signal(crate::css::get_theme(&store.theme.get_untracked()));
+            Signal::new(crate::css::get_theme(&store.theme.get_untracked()));
 
         // 副作用：当 Store 中的主题变化时，同步给持久化信号、DOM 属性和 CSS 引擎
         Effect::new({
