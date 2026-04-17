@@ -26,13 +26,13 @@ macro_rules! reactive_compare_method {
                 ));
             }
 
-            let op = $crate::reactivity::OpPayload {
-                inputs: [lhs.ensure_node_id(), rhs.ensure_node_id()],
-                read: $crate::logic::arithmetic::ops_impl::$trap::<Self::Value>,
-                track: $crate::reactivity::op_trampolines::track_inputs,
-                is_constant: false,
-            };
-            $crate::Rx::new_op2(op)
+            let op = $crate::reactivity::OpPayload::new(
+                [lhs.ensure_node_id(), rhs.ensure_node_id()],
+                $crate::logic::arithmetic::ops_impl::$trap::<Self::Value>,
+                $crate::reactivity::op_trampolines::track_inputs,
+                false,
+            );
+            $crate::Rx::new_op(op)
         }
     };
 }

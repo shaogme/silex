@@ -532,32 +532,20 @@ pub fn try_with_closure<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> O
     })
 }
 
-pub fn register_op1(data: [u8; 32]) -> NodeId {
-    RUNTIME.with(|rt| rt.register_op1_internal(data))
+pub fn register_op(data: [u8; 64]) -> NodeId {
+    RUNTIME.with(|rt| rt.register_op_internal(data))
 }
 
-pub fn try_with_op1<R>(id: NodeId, f: impl FnOnce(&[u8; 32]) -> R) -> Option<R> {
-    RUNTIME.with(|rt| rt.ops1.get(id).map(|data| f(&data.0)))
-}
-
-pub fn register_op2(data: [u8; 48]) -> NodeId {
-    RUNTIME.with(|rt| rt.register_op2_internal(data))
-}
-
-pub fn try_with_op2<R>(id: NodeId, f: impl FnOnce(&[u8; 48]) -> R) -> Option<R> {
-    RUNTIME.with(|rt| rt.ops2.get(id).map(|data| f(&data.0)))
+pub fn try_with_op<R>(id: NodeId, f: impl FnOnce(&[u8; 64]) -> R) -> Option<R> {
+    RUNTIME.with(|rt| rt.ops.get(id).map(|data| f(&data.0)))
 }
 
 pub fn is_closure_valid(id: NodeId) -> bool {
     RUNTIME.with(|rt| rt.closures.contains_key(id))
 }
 
-pub fn is_op1_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| rt.ops1.contains_key(id))
-}
-
-pub fn is_op2_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| rt.ops2.contains_key(id))
+pub fn is_op_valid(id: NodeId) -> bool {
+    RUNTIME.with(|rt| rt.ops.contains_key(id))
 }
 
 pub fn get_node_defined_at(_id: NodeId) -> Option<&'static std::panic::Location<'static>> {

@@ -167,13 +167,13 @@ macro_rules! impl_rx_op {
                     ));
                 }
 
-                let op = $crate::reactivity::OpPayload {
-                    inputs: [lhs.ensure_node_id(), rhs.ensure_node_id()],
-                    read: $crate::logic::arithmetic::ops_impl::$trap::<T>,
-                    track: $crate::reactivity::op_trampolines::track_inputs,
-                    is_constant: false,
-                };
-                $crate::Rx::new_op2(op)
+                let op = $crate::reactivity::OpPayload::new(
+                    [lhs.ensure_node_id(), rhs.ensure_node_id()],
+                    $crate::logic::arithmetic::ops_impl::$trap::<T>,
+                    $crate::reactivity::op_trampolines::track_inputs,
+                    false,
+                );
+                $crate::Rx::new_op(op)
             }
         }
     };
@@ -201,13 +201,13 @@ macro_rules! impl_rx_unary_op {
                     ));
                 }
 
-                let op = $crate::reactivity::OpPayload {
-                    inputs: [val.ensure_node_id()],
-                    read: $crate::logic::arithmetic::ops_impl::$trap::<T>,
-                    track: $crate::reactivity::op_trampolines::track_inputs,
-                    is_constant: false,
-                };
-                $crate::Rx::new_op1(op)
+                let op = $crate::reactivity::OpPayload::new(
+                    [val.ensure_node_id()],
+                    $crate::logic::arithmetic::ops_impl::$trap::<T>,
+                    $crate::reactivity::op_trampolines::track_inputs,
+                    false,
+                );
+                $crate::Rx::new_op(op)
             }
         }
     };

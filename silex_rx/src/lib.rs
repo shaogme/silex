@@ -151,15 +151,41 @@ pub fn rx(input: TokenStream) -> TokenStream {
         .into();
     }
 
-    let mut expr = match parse2::<Expr>(processed_input.clone()) {
+    // 检测 @fn 标记
+    let mut force_static = false;
+    let mut final_raw_input = processed_input.clone();
+
+    let mut tokens_iter = processed_input.clone().into_iter().peekable();
+    if let Some(proc_macro2::TokenTree::Punct(p)) = tokens_iter.peek() {
+        if p.as_char() == '@' {
+            tokens_iter.next(); // consume @
+            if let Some(proc_macro2::TokenTree::Ident(id)) = tokens_iter.peek() {
+                if id.to_string() == "fn" {
+                    tokens_iter.next(); // consume fn
+                    force_static = true;
+                    final_raw_input = tokens_iter.collect();
+                }
+            }
+        }
+    }
+
+    let mut expr = match parse2::<Expr>(final_raw_input.clone()) {
         Ok(e) => e,
-        Err(_) => match parse2::<syn::Block>(processed_input.clone()) {
+        Err(_) => match parse2::<syn::Block>(final_raw_input.clone()) {
             Ok(block) => Expr::Block(syn::ExprBlock {
                 attrs: vec![],
                 label: None,
                 block,
             }),
             Err(_) => {
+                if force_static {
+                    return syn::Error::new_spanned(
+                        final_raw_input,
+                        "@fn requires a valid expression or block",
+                    )
+                    .to_compile_error()
+                    .into();
+                }
                 return quote! {
                     #prefix::Rx::derive(Box::new(move || { #raw_input }))
                 }
@@ -192,7 +218,7 @@ pub fn rx(input: TokenStream) -> TokenStream {
         });
     }
 
-    let (f_expr, is_stored) = if let Expr::Closure(mut closure) = expr {
+    let (f_expr, is_stored) = if let Expr::Closure(mut closure) = expr.clone() {
         closure.capture = Some(syn::token::Move::default());
         let has_inputs = !closure.inputs.is_empty();
         let body = &closure.body;
@@ -219,7 +245,48 @@ pub fn rx(input: TokenStream) -> TokenStream {
     };
 
     // 最终构造：根据是否带有参数决定调用 derive (计算) 还是 effect (存储/副作用)
-    let output = if is_stored {
+    let output = if force_static {
+        if is_stored {
+            // @fn 目前仅支持计算映射 (无参数闭包或带有 $ 变量的表达式)
+            // 带有参数的闭包 (|el| ...) 目前无法直接静态化，因为参数由外部注入，尚未在 StaticPayload 中实现支持。
+            return syn::Error::new_spanned(
+                final_raw_input,
+                "@fn optimization is not supported for effect closures with parameters (like |el: &Element|).",
+            )
+            .to_compile_error()
+            .into();
+        }
+
+        if pairs.is_empty() {
+            quote! { #prefix::Rx::new_constant(#expr) }
+        } else if pairs.len() == 1 {
+            let (orig, refer) = &pairs[0];
+            quote! {
+                #prefix::macros_helper::map1_static(#orig.clone(), |#refer| { #expr })
+            }
+        } else if pairs.len() == 2 {
+            let (orig1, refer1) = &pairs[0];
+            let (orig2, refer2) = &pairs[1];
+            quote! {
+                #prefix::macros_helper::map2_static(#orig1.clone(), #orig2.clone(), |#refer1, #refer2| { #expr })
+            }
+        } else if pairs.len() == 3 {
+            let (orig1, refer1) = &pairs[0];
+            let (orig2, refer2) = &pairs[1];
+            let (orig3, refer3) = &pairs[2];
+            quote! {
+                #prefix::macros_helper::map3_static(#orig1.clone(), #orig2.clone(), #orig3.clone(), |#refer1, #refer2, #refer3| { #expr })
+            }
+        } else {
+            // 超过 3 个信号，报错提醒（或者你可以选择在这里也回退，但既然用户写了 @fn，报错更负责）
+            return syn::Error::new_spanned(
+                final_raw_input,
+                "@fn optimization currently supports up to 3 signals.",
+            )
+            .to_compile_error()
+            .into();
+        }
+    } else if is_stored {
         quote! {
             {
                 #(#capture_stmts)*
