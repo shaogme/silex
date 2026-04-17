@@ -90,6 +90,10 @@ impl View for Element {
         }
     }
 
+    fn mount_ref(&self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
+        self.clone().mount(parent, attrs);
+    }
+
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
         let consolidated = crate::attribute::consolidate_attributes(attrs);
         for attr in consolidated {
@@ -194,6 +198,10 @@ impl<T> View for TypedElement<T> {
         if let Err(e) = parent.append_child(&self.element).map_err(SilexError::from) {
             silex_core::error::handle_error(e);
         }
+    }
+
+    fn mount_ref(&self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
+        self.element.mount_ref(parent, attrs);
     }
 
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {

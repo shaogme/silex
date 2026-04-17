@@ -16,7 +16,15 @@ pub struct ErrorBoundaryProps<F, C> {
 }
 
 pub struct ErrorBoundaryView<F, C> {
-    props: ErrorBoundaryProps<F, C>,
+    props: Rc<ErrorBoundaryProps<F, C>>,
+}
+
+impl<F, C> Clone for ErrorBoundaryView<F, C> {
+    fn clone(&self) -> Self {
+        Self {
+            props: self.props.clone(),
+        }
+    }
 }
 
 /// 错误边界组件
@@ -43,7 +51,9 @@ where
     V1: View + 'static,
     V2: View + 'static,
 {
-    ErrorBoundaryView { props }
+    ErrorBoundaryView {
+        props: Rc::new(props),
+    }
 }
 
 impl<F, C, V1, V2> View for ErrorBoundaryView<F, C>
@@ -54,6 +64,22 @@ where
     V2: View + 'static,
 {
     fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
+        self.mount_internal(parent, attrs);
+    }
+
+    fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
+        self.clone().mount_internal(parent, attrs);
+    }
+}
+
+impl<F, C, V1, V2> ErrorBoundaryView<F, C>
+where
+    F: Fn(SilexError) -> V1 + 'static,
+    C: Fn() -> V2 + 'static,
+    V1: View + 'static,
+    V2: View + 'static,
+{
+    fn mount_internal(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         let (error, set_error) = signal::<Option<SilexError>>(None);
 
         provide_context(ErrorContext(Rc::new(move |e| {
@@ -65,9 +91,7 @@ where
         })));
 
         // Create wrapper div
-        // We use "display: contents" so it doesn't affect layout if supported
         let wrapper = div(()).style("display: contents");
-
         let wrapper_dom = wrapper.dom_element.clone();
         wrapper.mount(parent, attrs);
 
@@ -80,7 +104,6 @@ where
             if let Some(e) = error.get() {
                 (props.fallback)(e).mount(&wrapper_dom, Vec::new());
             } else {
-                // Catch panic during view creation AND mounting
                 let process = || {
                     let view = (props.children)();
                     view.mount(&wrapper_dom, Vec::new());
@@ -99,8 +122,6 @@ where
                     silex_core::log::console_error(format!("ErrorBoundary caught panic: {}", msg));
 
                     let err = SilexError::Javascript(msg);
-                    // Trigger re-run to show fallback
-                    // Defer update to avoid render-induced updates
                     wasm_bindgen_futures::spawn_local(async move {
                         set_error.set(Some(err));
                     });

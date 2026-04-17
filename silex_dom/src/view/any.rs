@@ -12,6 +12,7 @@ use web_sys::Node;
 
 pub(crate) struct AnyViewVTable {
     pub mount: FuncPtr<unsafe fn(data: *mut u8, parent: &Node, attrs: Vec<PendingAttribute>)>,
+    pub mount_ref: FuncPtr<unsafe fn(data: *const u8, parent: &Node, attrs: Vec<PendingAttribute>)>,
     pub apply_attributes: FuncPtr<unsafe fn(data: *mut u8, attrs: Vec<PendingAttribute>)>,
     pub drop: FuncPtr<unsafe fn(data: *mut u8)>,
 }
@@ -36,11 +37,13 @@ impl AnyViewBox {
         impl<V: View + 'static> VGen<V> {
             const STACK: AnyViewVTable = AnyViewVTable {
                 mount: FuncPtr::new(mount_stack::<V>),
+                mount_ref: FuncPtr::new(mount_ref_stack::<V>),
                 apply_attributes: FuncPtr::new(apply_stack::<V>),
                 drop: FuncPtr::new(drop_stack::<V>),
             };
             const HEAP: AnyViewVTable = AnyViewVTable {
                 mount: FuncPtr::new(mount_heap::<V>),
+                mount_ref: FuncPtr::new(mount_ref_heap::<V>),
                 apply_attributes: FuncPtr::new(apply_heap::<V>),
                 drop: FuncPtr::new(drop_heap::<V>),
             };
@@ -56,6 +59,12 @@ impl AnyViewBox {
         let data_ptr = this.inner.as_mut_ptr();
         unsafe {
             (vtable.mount.as_fn())(data_ptr, parent, attrs);
+        }
+    }
+
+    pub fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        unsafe {
+            (self.inner.vtable.mount_ref.as_fn())(self.inner.as_ptr(), parent, attrs);
         }
     }
 
@@ -82,6 +91,7 @@ impl SharedViewBox {
             const STACK: SharedViewVTable = SharedViewVTable {
                 any: AnyViewVTable {
                     mount: FuncPtr::new(mount_stack::<V>),
+                    mount_ref: FuncPtr::new(mount_ref_stack::<V>),
                     apply_attributes: FuncPtr::new(apply_stack::<V>),
                     drop: FuncPtr::new(drop_stack::<V>),
                 },
@@ -90,6 +100,7 @@ impl SharedViewBox {
             const HEAP: SharedViewVTable = SharedViewVTable {
                 any: AnyViewVTable {
                     mount: FuncPtr::new(mount_heap::<V>),
+                    mount_ref: FuncPtr::new(mount_ref_heap::<V>),
                     apply_attributes: FuncPtr::new(apply_heap::<V>),
                     drop: FuncPtr::new(drop_heap::<V>),
                 },
@@ -107,6 +118,12 @@ impl SharedViewBox {
         let data_ptr = this.inner.as_mut_ptr();
         unsafe {
             (vtable.any.mount.as_fn())(data_ptr, parent, attrs);
+        }
+    }
+
+    pub fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        unsafe {
+            (self.inner.vtable.any.mount_ref.as_fn())(self.inner.as_ptr(), parent, attrs);
         }
     }
 
@@ -150,6 +167,13 @@ unsafe fn mount_stack<V: View>(data: *mut u8, parent: &Node, attrs: Vec<PendingA
     }
 }
 
+unsafe fn mount_ref_stack<V: View>(data: *const u8, parent: &Node, attrs: Vec<PendingAttribute>) {
+    unsafe {
+        let view = &*(data as *const V);
+        view.mount_ref(parent, attrs);
+    }
+}
+
 unsafe fn apply_stack<V: View>(data: *mut u8, attrs: Vec<PendingAttribute>) {
     unsafe {
         let view = &mut *(data as *mut V);
@@ -168,6 +192,14 @@ unsafe fn mount_heap<V: View>(data: *mut u8, parent: &Node, attrs: Vec<PendingAt
         let ptr = std::ptr::read(data as *mut *mut V);
         let view = *Box::from_raw(ptr);
         view.mount(parent, attrs);
+    }
+}
+
+unsafe fn mount_ref_heap<V: View>(data: *const u8, parent: &Node, attrs: Vec<PendingAttribute>) {
+    unsafe {
+        let ptr = std::ptr::read(data as *const *mut V);
+        let view = &*ptr;
+        view.mount_ref(parent, attrs);
     }
 }
 
@@ -201,9 +233,10 @@ unsafe fn clone_heap<V: View + Clone + 'static>(data: *const u8) -> SharedViewBo
     }
 }
 
-// --- ViewThunk ---
+// --- Thunks ---
 
 pub type ViewThunk = FactoryBox<AnyView>;
+pub type RenderThunk = silex_vtable::thunk::ThunkBox<(Node, Vec<PendingAttribute>), ()>;
 
 /// 优化的 SharedView，专用于需要重复使用或需要 Children 的组件边界
 #[derive(Default)]
@@ -261,6 +294,24 @@ impl View for SharedView {
         }
     }
 
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        match self {
+            SharedView::Empty => {}
+            SharedView::Text(s) => s.mount_ref(parent, attrs),
+            SharedView::Element(el) => el.mount_ref(parent, attrs),
+            SharedView::List(list) => {
+                for (i, child) in list.iter().enumerate() {
+                    child.mount_ref(parent, if i == 0 { attrs.clone() } else { Vec::new() });
+                }
+            }
+            SharedView::Boxed(b, inner_attrs) => {
+                let mut temp = inner_attrs.clone();
+                temp.extend(attrs);
+                b.mount_ref(parent, crate::attribute::consolidate_attributes(temp));
+            }
+        }
+    }
+
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
         match self {
             SharedView::Empty => {}
@@ -308,6 +359,25 @@ impl View for AnyView {
                 );
             }
             AnyView::FromShared(s) => s.mount(parent, attrs),
+        }
+    }
+
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        match self {
+            AnyView::Empty => {}
+            AnyView::Text(s) => s.mount_ref(parent, attrs),
+            AnyView::Element(el) => el.mount_ref(parent, attrs),
+            AnyView::List(list) => {
+                for (i, child) in list.iter().enumerate() {
+                    child.mount_ref(parent, if i == 0 { attrs.clone() } else { Vec::new() });
+                }
+            }
+            AnyView::Boxed(b, inner_attrs) => {
+                let mut temp = inner_attrs.clone();
+                temp.extend(attrs);
+                b.mount_ref(parent, crate::attribute::consolidate_attributes(temp));
+            }
+            AnyView::FromShared(s) => s.mount_ref(parent, attrs),
         }
     }
 
@@ -402,6 +472,12 @@ impl View for Fragment {
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         for (i, child) in self.0.into_iter().enumerate() {
             child.mount(parent, if i == 0 { attrs.clone() } else { Vec::new() });
+        }
+    }
+
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        for (i, child) in self.0.iter().enumerate() {
+            child.mount_ref(parent, if i == 0 { attrs.clone() } else { Vec::new() });
         }
     }
 

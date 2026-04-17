@@ -41,11 +41,20 @@ impl ViewFactory for fn() -> () {
 /// Show::new(condition, rx!(view))
 ///     .fallback(rx!(fallback_view));
 /// ```
-#[derive(Clone)]
 pub struct Show<Cond, ViewFn, FalsyViewFn> {
     condition: Cond,
-    view: ViewFn,
-    fallback: FalsyViewFn,
+    view: Rc<ViewFn>,
+    fallback: Rc<FalsyViewFn>,
+}
+
+impl<Cond: Clone, ViewFn, FalsyViewFn> Clone for Show<Cond, ViewFn, FalsyViewFn> {
+    fn clone(&self) -> Self {
+        Self {
+            condition: self.condition.clone(),
+            view: self.view.clone(),
+            fallback: self.fallback.clone(),
+        }
+    }
 }
 
 // 默认无 fallback 的构造函数
@@ -57,8 +66,8 @@ impl<Cond, ViewFn> Show<Cond, ViewFn, fn() -> ()> {
     {
         Self {
             condition,
-            view,
-            fallback: || (),
+            view: Rc::new(view),
+            fallback: Rc::new(|| ()),
         }
     }
 }
@@ -78,85 +87,82 @@ where
         Show {
             condition: self.condition,
             view: self.view,
-            fallback,
+            fallback: Rc::new(fallback),
         }
     }
 }
 
 impl<Cond, ViewFn, FalsyViewFn> View for Show<Cond, ViewFn, FalsyViewFn>
 where
-    Cond: RxGet<Value = bool> + 'static,
+    Cond: RxGet<Value = bool> + Clone + 'static,
     ViewFn: ViewFactory + 'static,
     FalsyViewFn: ViewFactory + 'static,
 {
     fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        let document = silex_dom::document();
-
-        // 1. Create Anchors (Start & End Markers)
-        let start_marker = document.create_comment("show-start");
-        let start_node: Node = start_marker.into();
-
-        if let Err(e) = parent
-            .append_child(&start_node)
-            .map_err(crate::SilexError::from)
-        {
-            silex_core::error::handle_error(e);
-            return;
-        }
-
-        let end_marker = document.create_comment("show-end");
-        let end_node: Node = end_marker.into();
-
-        if let Err(e) = parent
-            .append_child(&end_node)
-            .map_err(crate::SilexError::from)
-        {
-            silex_core::error::handle_error(e);
-            return;
-        }
-
-        let cond = self.condition;
-        let view_fn = self.view;
-        let fallback_fn = self.fallback;
-        let prev_state = Rc::new(RefCell::new(None::<bool>));
-
-        Effect::new(move |_| {
-            let val = cond.get();
-
-            let mut state = prev_state.borrow_mut();
-
-            if *state == Some(val) {
-                return;
-            }
-
-            // 清理旧内容 (Clean up between markers)
-            if let Some(parent) = start_node.parent_node() {
-                while let Some(sibling) = start_node.next_sibling() {
-                    if sibling == end_node {
-                        break;
-                    }
-                    let _ = parent.remove_child(&sibling);
-                }
-            }
-
-            // 准备新内容 (Prepare new content)
-            let fragment = document.create_document_fragment();
-            let fragment_node: Node = fragment.clone().into();
-
-            if val {
-                view_fn.render().mount(&fragment_node, attrs.clone());
-            } else {
-                fallback_fn.render().mount(&fragment_node, attrs.clone());
-            }
-
-            // 插入新内容 (Insert new content)
-            if let Some(parent) = end_node.parent_node() {
-                let _ = parent.insert_before(&fragment_node, Some(&end_node));
-            }
-
-            *state = Some(val);
-        });
+        mount_show_internal(self.condition, self.view, self.fallback, parent, attrs);
     }
+
+    fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
+        mount_show_internal(
+            self.condition.clone(),
+            self.view.clone(),
+            self.fallback.clone(),
+            parent,
+            attrs,
+        );
+    }
+}
+
+fn mount_show_internal<Cond, ViewFn, FalsyViewFn>(
+    condition: Cond,
+    view: Rc<ViewFn>,
+    fallback: Rc<FalsyViewFn>,
+    parent: &Node,
+    attrs: Vec<silex_dom::attribute::PendingAttribute>,
+) where
+    Cond: RxGet<Value = bool> + 'static,
+    ViewFn: ViewFactory + 'static,
+    FalsyViewFn: ViewFactory + 'static,
+{
+    let document = silex_dom::document();
+
+    let start_node: Node = document.create_comment("show-start").into();
+    let _ = parent.append_child(&start_node);
+
+    let end_node: Node = document.create_comment("show-end").into();
+    let _ = parent.append_child(&end_node);
+
+    let prev_state = Rc::new(RefCell::new(None::<bool>));
+
+    Effect::new(move |_| {
+        let val = condition.get();
+        let mut state = prev_state.borrow_mut();
+        if *state == Some(val) {
+            return;
+        }
+
+        if let Some(parent) = start_node.parent_node() {
+            while let Some(sibling) = start_node.next_sibling() {
+                if sibling == end_node {
+                    break;
+                }
+                let _ = parent.remove_child(&sibling);
+            }
+        }
+
+        let fragment_node: Node = document.create_document_fragment().into();
+        if val {
+            view.render().mount(&fragment_node, attrs.clone());
+        } else {
+            fallback.render().mount(&fragment_node, attrs.clone());
+        }
+
+        if let Some(parent) = end_node.parent_node() {
+            let _ = parent.insert_before(&fragment_node, Some(&end_node));
+        }
+
+        *state = Some(val);
+    });
 }
 
 // --- Signal 扩展 ---

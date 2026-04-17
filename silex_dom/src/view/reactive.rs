@@ -2,7 +2,7 @@ use crate::attribute::PendingAttribute;
 use crate::view::View;
 use silex_core::error::handle_error;
 use silex_core::reactivity::Effect;
-use silex_core::traits::{RxCloneData, RxRead};
+use silex_core::traits::{IntoRx, RxCloneData, RxRead};
 use silex_core::{Rx, RxValueKind, SilexError};
 use std::fmt::Display;
 use web_sys::Node;
@@ -41,7 +41,10 @@ where
     crate::view::mount_dynamic_view_universal(
         parent,
         attrs,
-        crate::view::ViewThunk::new(move || rx.with(|view| view.clone().into_any())),
+        crate::view::any::RenderThunk::new(move |args| {
+            let (p, a) = args;
+            rx.with(|view| view.mount_ref(&p, a))
+        }),
     );
 }
 
@@ -55,6 +58,11 @@ where
     #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.dispatch_mount(parent, attrs);
+    }
+
+    #[inline(always)]
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        self.clone().dispatch_mount(parent, attrs);
     }
 
     fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
@@ -153,8 +161,12 @@ macro_rules! impl_view_forward_to_rx {
             {
                 #[inline(always)]
                 fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-                    use silex_core::traits::IntoRx;
                     self.into_rx().mount(parent, attrs);
+                }
+
+                #[inline(always)]
+                fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+                    self.clone().into_rx().mount(parent, attrs);
                 }
             }
         )*
@@ -165,39 +177,56 @@ impl_view_forward_to_rx!(ReadSignal, RwSignal, Constant, Memo, Signal);
 
 impl<S, F, V> View for silex_core::reactivity::DerivedPayload<S, F>
 where
-    Self: silex_core::traits::IntoRx<RxType = Rx<V, RxValueKind>> + 'static,
+    Self: silex_core::traits::IntoRx<RxType = Rx<V, RxValueKind>> + Clone + 'static,
     V: RxCloneData + Sized + 'static,
     Rx<V, RxValueKind>: View,
 {
     #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        use silex_core::traits::IntoRx;
         self.into_rx().mount(parent, attrs);
+    }
+
+    #[inline(always)]
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        // DerivedPayload does not implement Clone, so we must rely on the Rx it creates.
+        // This is safe because it's a factory.
+        let rx = self.clone().into_rx();
+        rx.mount_ref(parent, attrs);
     }
 }
 
 impl<U, const N: usize> View for silex_core::reactivity::OpPayload<U, N>
 where
-    Self: silex_core::traits::IntoRx<RxType = Rx<U, RxValueKind>> + 'static,
+    Self: silex_core::traits::IntoRx<RxType = Rx<U, RxValueKind>> + Clone + 'static,
     U: RxCloneData + Sized + 'static,
     Rx<U, RxValueKind>: View,
 {
     #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        use silex_core::traits::IntoRx;
         self.into_rx().mount(parent, attrs);
+    }
+
+    #[inline(always)]
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        let rx = self.clone().into_rx();
+        rx.mount_ref(parent, attrs);
     }
 }
 
 impl<S, F, O> View for silex_core::reactivity::SignalSlice<S, F, O>
 where
-    Self: silex_core::traits::IntoRx<RxType = Rx<O, RxValueKind>> + 'static,
+    Self: silex_core::traits::IntoRx<RxType = Rx<O, RxValueKind>> + Clone + 'static,
     O: RxCloneData + Sized + 'static,
     Rx<O, RxValueKind>: View,
 {
     #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        use silex_core::traits::IntoRx;
         self.into_rx().mount(parent, attrs);
+    }
+
+    #[inline(always)]
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        let rx = self.clone().into_rx();
+        rx.mount_ref(parent, attrs);
     }
 }

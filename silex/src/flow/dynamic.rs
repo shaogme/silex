@@ -71,58 +71,57 @@ where
 impl<V, F> View for Dynamic<V, F>
 where
     V: View + Clone + 'static,
-    F: RxRead<Value = V> + 'static,
+    F: RxRead<Value = V> + Clone + 'static,
 {
     fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        let document = silex_dom::document();
-
-        // 1. Create Anchors
-        let start_marker = document.create_comment("dyn-start");
-        let start_node: Node = start_marker.into();
-
-        if let Err(e) = parent
-            .append_child(&start_node)
-            .map_err(crate::SilexError::from)
-        {
-            silex_core::error::handle_error(e);
-            return;
-        }
-
-        let end_marker = document.create_comment("dyn-end");
-        let end_node: Node = end_marker.into();
-
-        if let Err(e) = parent
-            .append_child(&end_node)
-            .map_err(crate::SilexError::from)
-        {
-            silex_core::error::handle_error(e);
-            return;
-        }
-
-        let view_fn = self.view_fn;
-
-        Effect::new(move |_| {
-            let new_view = silex_core::traits::RxRead::with(&view_fn, Clone::clone);
-
-            // 清理旧内容
-            if let Some(parent) = start_node.parent_node() {
-                while let Some(sibling) = start_node.next_sibling() {
-                    if sibling == end_node {
-                        break;
-                    }
-                    let _ = parent.remove_child(&sibling);
-                }
-            }
-
-            // 准备新内容
-            let fragment = document.create_document_fragment();
-            let fragment_node: Node = fragment.clone().into();
-            new_view.mount(&fragment_node, attrs.clone());
-
-            // 插入新内容
-            if let Some(parent) = end_node.parent_node() {
-                let _ = parent.insert_before(&fragment_node, Some(&end_node));
-            }
-        });
+        mount_dynamic_internal(self.view_fn, parent, attrs);
     }
+
+    fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
+        mount_dynamic_internal(self.view_fn.clone(), parent, attrs);
+    }
+}
+
+fn mount_dynamic_internal<V, F>(
+    view_fn: F,
+    parent: &Node,
+    attrs: Vec<silex_dom::attribute::PendingAttribute>,
+) where
+    V: View + Clone + 'static,
+    F: RxRead<Value = V> + 'static,
+{
+    let document = silex_dom::document();
+
+    // 1. Create Anchors
+    let start_marker = document.create_comment("dyn-start");
+    let start_node: Node = start_marker.into();
+    let _ = parent.append_child(&start_node);
+
+    let end_marker = document.create_comment("dyn-end");
+    let end_node: Node = end_marker.into();
+    let _ = parent.append_child(&end_node);
+
+    Effect::new(move |_| {
+        let new_view = silex_core::traits::RxRead::with(&view_fn, Clone::clone);
+
+        // 清理旧内容
+        if let Some(parent) = start_node.parent_node() {
+            while let Some(sibling) = start_node.next_sibling() {
+                if sibling == end_node {
+                    break;
+                }
+                let _ = parent.remove_child(&sibling);
+            }
+        }
+
+        // 准备新内容
+        let fragment = document.create_document_fragment();
+        let fragment_node: Node = fragment.clone().into();
+        new_view.mount(&fragment_node, attrs.clone());
+
+        // 插入新内容
+        if let Some(parent) = end_node.parent_node() {
+            let _ = parent.insert_before(&fragment_node, Some(&end_node));
+        }
+    });
 }
