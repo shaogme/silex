@@ -7,6 +7,7 @@
 *   `macros` (default): 启用过程宏支持。
 *   `persistence`: 启用 `silex::persist` 模块。
 *   `json`: 启用 `JsonCodec` 支持（依赖 `persistence`, `serde`, `serde-wasm-bindgen`）。
+*   `net`: 启用网络通信支持 (`silex::net`)。
 
 ## 1. 核心导出 (Core Exports)
 
@@ -183,7 +184,39 @@
     *   `Suspense::children` 内部调用 `SuspenseContext::provide`。
     *   `SuspenseBoundary` 负责具体的 UI 切换（Hidden vs Fallback）。
 
-## 5. 宏支持 (Macros Support)
+## 5. 网络系统 (silex::net)
+
+提供统一的异步网络通信接口，支持 HTTP, WebSocket 和 SSE。
+
+### HTTP Client (HttpClient)
+`silex/src/net/builder.rs`
+*   **Builder Pattern**: `HttpClient::get(url)` -> `HttpClientBuilder`。
+*   **功能支持**:
+    *   **动态解析**: 支持 `Signal`/`Memo` 作为 Header, Query, Path Param，请求发起时自动 resolve。
+    *   **Body 类型**: 支持 Empty, Text, JSON, Form。
+    *   **重试策略**: `RetryPolicy` 支持最大尝试次数、指数退避延迟及 Jitter（抖动）。
+    *   **缓存策略**: 支持 `None`, `NetworkFirst`, `CacheFirst`, `StaleWhileRevalidate`。集成持久化系统。
+    *   **拦截器**: 支持渲染前拦截 (`intercept`) 及响应后、重试时、出错时的回调。
+*   **响应式桥接**:
+    *   `.as_resource(source)`: 生成 `Resource<T, NetError>`，自动处理加载态。
+    *   `.as_mutation()`: 生成 `Mutation<(), T, NetError>`，用于执行副作用请求。
+
+### 实时通信
+`silex/src/net/backend.rs`
+*   **WebSocket**: `WebSocket::connect(url)` -> `WebSocketBuilder`。
+    *   提供 `state` (ConnectionState), `message`, `error` 响应式信号。
+    *   支持 JSON 消息的自动序列化与反序列化。
+*   **EventStream (SSE)**: `EventStream::new(url)` -> `EventStreamBuilder`。
+    *   支持监听特定命名的事件或默认消息。
+    *   提供消息历史 `messages` 信号及 `last_message` 辅助方法。
+
+### 编解码器 (Codec)
+`silex/src/net/codec.rs`
+*   **ResponseCodec<T>**: 定义如何将 http 响应文本转换为目标类型。
+*   **CacheCodec<T>**: 集成持久化时的缓存编解码逻辑。
+*   **内置实现**: `TextCodec` (String), `NetJsonCodec<T>` (Serde)。
+
+## 6. 宏支持 (Macros Support)
 
 `silex` 通过 `silex_macros` Crate 提供编译时能力，这些宏在 `silex::prelude` 中重新导出。
 

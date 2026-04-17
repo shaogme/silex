@@ -175,14 +175,14 @@ impl<B, T, D> PersistentBuilder<B, NoCodec, T, D> {
 
     /// Uses the JSON codec for complex serializable values.
     #[cfg(feature = "json")]
-    pub fn json<U>(self) -> PersistentBuilder<B, crate::persist::JsonCodec<U>, U, D>
+    pub fn json<U>(self) -> PersistentBuilder<B, crate::persist::PersistJsonCodec<U>, U, D>
     where
         U: serde::Serialize + serde::de::DeserializeOwned + Clone + 'static,
     {
         PersistentBuilder {
             key: self.key,
             backend: self.backend,
-            codec: crate::persist::JsonCodec::new(),
+            codec: crate::persist::PersistJsonCodec::new(),
             config: PersistConfig {
                 default: None,
                 write_default: self.config.write_default,

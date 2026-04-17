@@ -4,6 +4,8 @@ pub mod components;
 pub mod flow;
 #[cfg(feature = "persistence")]
 pub mod persist;
+#[cfg(feature = "net")]
+pub mod net;
 pub mod router;
 pub mod store;
 
@@ -15,6 +17,10 @@ pub mod reexports {
     pub use wasm_bindgen;
     pub use wasm_bindgen_futures;
     pub use web_sys;
+    #[cfg(feature = "json")]
+    pub use serde_json_wasm;
+    #[cfg(feature = "net")]
+    pub use gloo_timers;
 }
 
 pub mod core {
@@ -45,6 +51,8 @@ pub mod hash {
 pub mod prelude {
     pub use crate::components::*;
     pub use crate::flow::*;
+    #[cfg(feature = "net")]
+    pub use crate::net::*;
     #[cfg(feature = "persistence")]
     pub use crate::persist::*;
     pub use crate::router::*;

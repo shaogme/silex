@@ -19,6 +19,7 @@ silex = { path = "../../silex" } # 或者使用 git/crates.io 版本
 | `macros` | 启用 `css!`, `#[component]`, `#[derive(Store)]` 等宏支持。 | Yes |
 | `persistence` | 启用统一持久化系统 (`silex::persist`)。 | No |
 | `json` | 启用基于 Serde 的 JSON 编解码支持 (`JsonCodec`)。 | No |
+| `net` | 启用网络通信支持 (`HttpClient`, `WebSocket`, `SSE`)。 | No |
 
 推荐在代码中导入 prelude：
 ```rust
@@ -261,7 +262,63 @@ Grid((
 
 
 
-## 6. 常用宏与工具 (Macros & Utilities)
+## 7. 网络请求 (Networking)
+
+`silex` 提供了简洁且功能强大的 API 来处理 HTTP 请求、WebSocket 消息和 SSE 流。
+
+### HTTP 请求 (HttpClient)
+
+使用流式接口构建请求，并集成响应式系统：
+
+```rust
+// 1. 获取 JSON 数据并转化为 Resource (自动触发加载态)
+let user_id = Signal::new(1);
+let user_data = HttpClient::get("https://api.example.com/users/{id}")
+    .path_param("id", user_id)
+    .json::<User>()
+    .as_resource(user_id);
+
+// 2. 提交数据 (Mutation)
+let login = HttpClient::post("/api/login")
+    .json_body(login_info)
+    .json::<Token>()
+    .as_mutation();
+
+// 3. 配置重试与缓存
+let api = HttpClient::get("/api/config")
+    .retry_policy(3, Duration::from_secs(1))
+    .cache(CachePolicy::StaleWhileRevalidate)
+    .json::<Config>();
+```
+
+### WebSocket
+
+提供状态和消息的完整响应式绑定：
+
+```rust
+let ws = WebSocket::connect("ws://localhost:8080/chat")
+    .on_open(|| println!("Connected!"))
+    .build();
+
+// 获取实时消息信号 (自动 JSON 解码)
+let messages = ws.message::<ChatMessage>();
+
+// 发送消息
+ws.send_json(&msg)?;
+```
+
+### Server-Sent Events (SSE)
+
+```rust
+let stream = EventStream::new("/api/notifications")
+    .event("update") // 监听特定事件
+    .build();
+
+// 获取最后一条消息
+let last_msg = stream.last_message::<Notify>();
+```
+
+## 8. 常用宏与工具 (Macros & Utilities)
 
 Silex 提供了一系列宏来简化开发，这些宏都已包含在 prelude 中。
 

@@ -50,17 +50,17 @@ where
 
 #[cfg(feature = "json")]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct JsonCodec<T>(pub PhantomData<T>);
+pub struct PersistJsonCodec<T>(pub PhantomData<T>);
 
 #[cfg(feature = "json")]
-impl<T> JsonCodec<T> {
+impl<T> PersistJsonCodec<T> {
     pub fn new() -> Self {
         Self(PhantomData)
     }
 }
 
 #[cfg(feature = "json")]
-impl<T> PersistCodec<T> for JsonCodec<T>
+impl<T> PersistCodec<T> for PersistJsonCodec<T>
 where
     T: serde::Serialize + serde::de::DeserializeOwned + Clone + 'static,
 {

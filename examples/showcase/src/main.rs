@@ -3,6 +3,7 @@ mod advanced;
 mod basics;
 mod css;
 mod flow_control;
+mod net_demo;
 mod routes;
 
 use advanced::{UserSettings, UserSettingsStore};

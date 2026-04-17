@@ -9,7 +9,7 @@ pub use backend::{
 };
 pub use builder::{HasDefault, NoBackend, NoCodec, NoDefault, PersistentBuilder};
 #[cfg(feature = "json")]
-pub use codec::JsonCodec;
+pub use codec::PersistJsonCodec;
 pub use codec::{OptionCodec, ParseCodec, PersistCodec, StringCodec};
 pub use state::{DecodeErrorInfo, PersistenceState, Persistent};
 
