@@ -130,7 +130,7 @@ pub(crate) struct ClosureData {
 
 /// 零成本 Op 池（固定步长存储，强行对齐为 8 字节）
 #[repr(align(8))]
-pub(crate) struct OpData(pub(crate) [u8; 64]);
+pub struct OpData(pub [u8; 64]);
 
 pub(crate) struct WorkSpace {
     pub(crate) vec_pool: Vec<Vec<NodeId>>,

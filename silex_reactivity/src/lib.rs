@@ -540,6 +540,8 @@ pub fn try_with_op<R>(id: NodeId, f: impl FnOnce(&[u8; 64]) -> R) -> Option<R> {
     RUNTIME.with(|rt| rt.ops.get(id).map(|data| f(&data.0)))
 }
 
+pub use runtime::OpData;
+
 pub fn is_closure_valid(id: NodeId) -> bool {
     RUNTIME.with(|rt| rt.closures.contains_key(id))
 }

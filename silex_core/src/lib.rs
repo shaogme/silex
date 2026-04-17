@@ -74,12 +74,13 @@ impl<T: 'static, M> Rx<T, M> {
 
     pub fn new_op_raw<P: 'static>(op: P) -> Self {
         const { assert!(std::mem::size_of::<P>() <= 64) };
+        const { assert!(std::mem::align_of::<P>() <= 8) };
         let id = silex_reactivity::untrack(|| {
-            let mut storage = [0u8; 64];
+            let mut storage = crate::reactivity::OpData([0u8; 64]);
             unsafe {
-                std::ptr::write(storage.as_mut_ptr() as *mut P, op);
+                std::ptr::write(&mut storage as *mut _ as *mut P, op);
             }
-            silex_reactivity::register_op(storage)
+            silex_reactivity::register_op(storage.0)
         });
         Self {
             inner: RxInner::Op(id),
