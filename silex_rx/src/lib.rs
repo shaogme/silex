@@ -258,7 +258,14 @@ pub fn rx(input: TokenStream) -> TokenStream {
         }
 
         if pairs.is_empty() {
-            quote! { #prefix::Rx::<_, #prefix::RxValueKind>::new_constant(#expr) }
+            // 如果没有探测到信号变量，判断是否为字面量
+            let is_literal = matches!(expr, syn::Expr::Lit(_));
+            if is_literal {
+                quote! { #prefix::Rx::<_, #prefix::RxValueKind>::new_constant(#expr) }
+            } else {
+                // 如果不是字面量（可能是方法调用如 login.loading()），回退到 derive 以确保响应性
+                quote! { #prefix::Rx::<_, #prefix::RxValueKind>::derive(Box::new(#f_expr)) }
+            }
         } else if pairs.len() == 1 {
             let (orig, refer) = &pairs[0];
             quote! {
