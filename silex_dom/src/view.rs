@@ -199,16 +199,7 @@ pub(crate) fn mount_dynamic_view_universal(
         return;
     }
 
-    use std::cell::Cell;
-    use std::rc::Rc;
-    let prev_scope = Rc::new(Cell::new(None::<silex_core::reactivity::NodeId>));
-
     Effect::new(move |_| {
-        if let Some(id) = prev_scope.get() {
-            silex_core::reactivity::dispose(id);
-            prev_scope.set(None);
-        }
-
         let start_node = start_node.clone();
         let end_node = end_node.clone();
         let document = document.clone();
@@ -217,7 +208,6 @@ pub(crate) fn mount_dynamic_view_universal(
 
         let result = catch_unwind(AssertUnwindSafe(move || {
             // 1. 在生产新视图前，先同步清理旧 DOM 节点。
-            // 这样做可以确保即使 producer.call() 发生 Panic，也不会留下响应式已失效的“僵尸”节点。
             if let Some(parent) = start_node.parent_node() {
                 while let Some(sibling) = start_node.next_sibling() {
                     if sibling == end_node {
@@ -227,17 +217,20 @@ pub(crate) fn mount_dynamic_view_universal(
                 }
             }
 
-            silex_core::reactivity::create_scope(move || {
-                renderer.call((
-                    start_node.parent_node().unwrap_or(document.clone().into()),
-                    attrs,
-                ));
-            })
+            // 2. 使用 DocumentFragment 进行物理隔离增强，确保挂载位置精确性
+            let fragment = document.create_document_fragment();
+            let fragment_node: Node = fragment.clone().into();
+
+            // 在当前 Effect 环境下执行渲染，确保护留所有信号追踪
+            renderer.call((fragment_node.clone(), attrs));
+
+            // 3. 将生产的内容插入锚点之间
+            if let Some(parent) = end_node.parent_node() {
+                let _ = parent.insert_before(&fragment_node, Some(&end_node));
+            }
         }));
 
-        if let Ok(id) = result {
-            prev_scope.set(Some(id));
-        } else if let Err(payload) = result {
+        if let Err(payload) = result {
             let msg = if let Some(s) = payload.downcast_ref::<&str>() {
                 format!("Panic in Dynamic View: {}", s)
             } else if let Some(s) = payload.downcast_ref::<String>() {
