@@ -127,3 +127,6 @@ pub fn console_debug_error<S: AsRef<str>>(s: S) {
         console_error(s)
     }
 }
+
+#[cfg(test)]
+mod tests;

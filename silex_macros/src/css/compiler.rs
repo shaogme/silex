@@ -413,7 +413,7 @@ fn extract_dynamic_selector(
                     }
                     out.push_str("{}");
                     exprs.push(("any".to_string(), g.stream()));
-                    prev_tt = Some(iter.next().unwrap());
+                    prev_tt = iter.next();
                     continue;
                 }
 
@@ -554,7 +554,7 @@ fn extract_dynamic_value(
                     let _ = write!(out, "var(--dyn-{})", idx);
                 }
 
-                prev_tt = Some(iter.next().unwrap());
+                prev_tt = iter.next();
                 continue;
             }
 

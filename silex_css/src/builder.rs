@@ -1,7 +1,7 @@
 use crate::types::{ValidFor, props};
 use silex_core::traits::{IntoRx, RxGet, RxValue};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable};
-use std::fmt::Display;
+use std::fmt::{Display, Write};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
@@ -215,11 +215,11 @@ fn generate_css_recursive(
         css_out.push_str(base_selector);
         css_out.push_str(" {\n");
         for (k, v) in &style.static_rules {
-            css_out.push_str(&format!("  {}: {};\n", k, v));
+            let _ = writeln!(css_out, "  {}: {};", k, v);
         }
         for (prop, getter) in &style.dynamic_rules {
             let var_name = format!("--sb-{}-{}", hash_str, dyn_bindings.len());
-            css_out.push_str(&format!("  {}: var({});\n", prop, var_name));
+            let _ = writeln!(css_out, "  {}: var({});", prop, var_name);
             dyn_bindings.push((var_name, getter.clone()));
         }
         css_out.push_str("}\n");

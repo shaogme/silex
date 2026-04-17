@@ -1,3 +1,4 @@
+use silex_core::prelude::*;
 use silex_css::prelude::*;
 
 fn main() {

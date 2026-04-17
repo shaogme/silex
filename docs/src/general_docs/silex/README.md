@@ -10,6 +10,16 @@
 silex = { path = "../../silex" } # 或者使用 git/crates.io 版本
 ```
 
+## 功能特性 (Feature Flags)
+
+`silex` 提供以下功能开关，以优化编译时间和依赖体积：
+
+| Feature | Description | Default |
+| :--- | :--- | :--- |
+| `macros` | 启用 `css!`, `#[component]`, `#[derive(Store)]` 等宏支持。 | Yes |
+| `persistence` | 启用统一持久化系统 (`silex::persist`)。 | No |
+| `json` | 启用基于 Serde 的 JSON 编解码支持 (`JsonCodec`)。 | No |
+
 推荐在代码中导入 prelude：
 ```rust
 use silex::prelude::*;
@@ -92,28 +102,29 @@ Router::new().match_route::<MyRoutes>()
     nav.push("/new-path");
     ```
 
-### 查询参数 (Query Parameters)
+### 查询参数与外部状态 (Query Parameters & Persistence)
 
-Silex 提供了方便的 Hooks 来处理 URL 查询参数：
+Silex 提供了统一的持久化入口来处理 URL 查询参数、浏览器存储和双向绑定：
 
 *   **`use_query_map()`**:
     *   返回 `Memo<HashMap<String, String>>`。
     *   使用 `web_sys::UrlSearchParams` 标准解析，自动处理 URI 编码。
     *   响应式：当 URL 变化时自动更新。
 
-*   **`use_query_signal(key)`**:
-    *   实现了 **双向绑定**。
-    *   返回 `RwSignal<String>`。
-    *   **读**: 读取 URL 中的参数值。
-    *   **写**: 修改 Signal 会自动更新 URL (pushState) 并触发导航。
-    *   **防抖/防循环**: 内部实现了智能的循环检测，只有当值真正变化时才同步，避免无限循环和重复导航。
+*   **`Persistent::new(key)`**:
+    *   统一后端：`.local()`、`.session()`、`.query()`。
+    *   统一 codec：`.string()`、`.parse::<T>()`、`.json::<T>()`。
+    *   返回 `Persistent<T>`，可直接 `get/set/update`，也可直接用于常见 View / `bind_value` 场景。
 
     ```rust
-    // 示例：将输入框绑定到 ?q=...
-    let search = use_query_signal("q");
-    
-    input(())
-        .bind_value(search) // 双向绑定到 input value
+    let search = Persistent::new("q")
+        .query()
+        .string()
+        .default(String::new())
+        .build();
+
+    input()
+        .bind_value(search);
     ```
 
 ## 2. 流程控制 (Flow Control)

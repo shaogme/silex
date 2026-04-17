@@ -149,15 +149,37 @@ button("Click Me").class(btn_class)
 
 ```rust
 #[derive(Store, Clone, Default)]
+#[persist(prefix = "settings-")]
 struct UserSettings {
+    #[persist(local, codec = "string")]
     theme: String,
+    #[persist(local, codec = "parse")]
     notifications: bool,
 }
 
-// 在组件中使用
 let settings = expect_context::<UserSettingsStore>();
-// 细粒度更新：仅更新 theme 相关的 DOM
 settings.theme.set("Dark".to_string());
+```
+
+### 4. 外部状态持久化 (Persistence)
+
+`Persistent::new(key)` 统一封装了 `localStorage`、`sessionStorage` 和 URL query 三类外部状态后端。
+
+```rust
+let theme = Persistent::new("theme")
+    .local()
+    .string()
+    .default("Light".to_string())
+    .build();
+
+let page = Persistent::new("page")
+    .query()
+    .parse::<u32>()
+    .default(1)
+    .build();
+
+input().bind_value(theme);
+span(page);
 ```
 
 ---

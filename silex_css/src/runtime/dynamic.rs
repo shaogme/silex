@@ -187,12 +187,23 @@ impl ApplyToDom for DynamicCss {
                     return prev.unwrap();
                 }
 
-                let mut resolved_rule = template.to_string();
-                for val in &current_vals {
-                    if let Some(pos) = resolved_rule.find("{}") {
-                        resolved_rule.replace_range(pos..pos + 2, val);
+                let mut resolved_rule = String::with_capacity(
+                    template.len() + current_vals.iter().map(|v| v.len()).sum::<usize>(),
+                );
+                let mut last_pos = 0;
+                let mut vals_iter = current_vals.iter();
+
+                while let Some(pos) = template[last_pos..].find("{}") {
+                    if let Some(val) = vals_iter.next() {
+                        let actual_pos = last_pos + pos;
+                        resolved_rule.push_str(&template[last_pos..actual_pos]);
+                        resolved_rule.push_str(val);
+                        last_pos = actual_pos + 2;
+                    } else {
+                        break;
                     }
                 }
+                resolved_rule.push_str(&template[last_pos..]);
 
                 let hash_val = silex_hash::css::hash_one((
                     b"silex-dyn-v3",
