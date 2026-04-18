@@ -3,6 +3,9 @@ use crate::advanced::use_user_settings;
 use crate::basics;
 use crate::css;
 use crate::flow_control;
+use crate::net_demo;
+use crate::persistence;
+
 use silex::prelude::*;
 use silex::reexports::wasm_bindgen::JsCast;
 use silex::reexports::web_sys::{HtmlElement, MouseEvent};
@@ -56,6 +59,10 @@ pub enum AppRoute {
     Basics,
     #[route("/flow", view = flow_control::FlowPage)]
     Flow,
+    #[route("/net", view = net_demo::NetDemoPage)]
+    Net,
+    #[route("/persistence", view = persistence::PersistencePage)]
+    Persistence,
     #[route("/css/*", view = CssLayout)]
     Css {
         #[nested]
@@ -122,6 +129,9 @@ pub fn NavBar() -> impl View {
         Link(AppRoute::Home, "Home").active_class("active"),
         Link(AppRoute::Basics, "Basics").active_class("active"),
         Link(AppRoute::Flow, "Flow").active_class("active"),
+        Link(AppRoute::Net, "Net").active_class("active"),
+        Link(AppRoute::Persistence, "Persistence").active_class("active"),
+
         Link(
             AppRoute::Css {
                 route: CssRoute::Basics,
@@ -261,6 +271,14 @@ fn HomePage() -> impl View {
                     route: CssRoute::Basics,
                 },
                 "CSS: CSS-in-Rust, Themes, and Style Comparison"
+            )),
+            li(Link(
+                AppRoute::Net,
+                "Net: HttpClient, WebSocket, EventStream"
+            )),
+            li(Link(
+                AppRoute::Persistence,
+                "Persistence: WebStorage, Query, Sync, Codecs"
             )),
             li(Link(
                 AppRoute::Advanced {

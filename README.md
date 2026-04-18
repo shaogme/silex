@@ -36,7 +36,7 @@ Silex 不仅仅是一个视图库，它提供了构建现代 Web 应用所需的
 
 ```toml
 [dependencies]
-silex = "0.1.0-beta.1" # 请使用最新版本
+silex = "0.1.0-beta.2" # 请使用最新版本
 ```
 
 ### 2. 编写你的第一个应用
@@ -47,7 +47,7 @@ use silex::prelude::*;
 #[component]
 fn Counter() -> impl View {
     // 创建响应式信号
-    let (count, set_count) = signal(0);
+    let (count, set_count) = Signal::pair(0);
     
     // 派生状态 (Memo)
     let double_count = Memo::new(move |_| count.get() * 2);
@@ -149,15 +149,37 @@ button("Click Me").class(btn_class)
 
 ```rust
 #[derive(Store, Clone, Default)]
+#[persist(prefix = "settings-")]
 struct UserSettings {
+    #[persist(local, codec = "string")]
     theme: String,
+    #[persist(local, codec = "parse")]
     notifications: bool,
 }
 
-// 在组件中使用
 let settings = expect_context::<UserSettingsStore>();
-// 细粒度更新：仅更新 theme 相关的 DOM
 settings.theme.set("Dark".to_string());
+```
+
+### 4. 外部状态持久化 (Persistence)
+
+`Persistent::builder(key)` 统一封装了 `localStorage`、`sessionStorage` 和 URL query 三类外部状态后端。
+
+```rust
+let theme = Persistent::builder("theme")
+    .local()
+    .string()
+    .default("Light".to_string())
+    .build();
+
+let page = Persistent::builder("page")
+    .query()
+    .parse::<u32>()
+    .default(1)
+    .build();
+
+input().bind_value(theme);
+span(page);
 ```
 
 ---

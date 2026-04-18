@@ -215,8 +215,12 @@ pub trait GlobalEventAttributes: AttributeBuilder {
         ))
     }
 
-    fn bind_value(self, signal: silex_core::reactivity::RwSignal<String>) -> Self {
+    fn bind_value<S>(self, signal: S) -> Self
+    where
+        S: Into<silex_core::reactivity::RwSignal<String>>,
+    {
         use silex_core::traits::RxWrite;
+        let signal = signal.into();
         let this = self.on_input(move |value| {
             signal.set(value);
         });

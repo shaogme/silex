@@ -1,6 +1,13 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Data, DeriveInput, Fields, Meta, Result};
+use syn::{Data, DeriveInput, Field, Fields, Meta, Result, Type};
+
+#[derive(Clone)]
+struct PersistFieldConfig {
+    backend: syn::Ident,
+    codec: syn::LitStr,
+    key: Option<String>,
+}
 
 pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
     let name = &input.ident;
@@ -9,9 +16,8 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
 
     let mut hook_name: Option<syn::Ident> = None;
     let mut err_msg: Option<String> = None;
-    let mut storage_prefix: Option<String> = None;
+    let mut persist_prefix: Option<String> = None;
 
-    // Parse attributes
     for attr in &input.attrs {
         if attr.path().is_ident("store") {
             let nested = attr.parse_args_with(
@@ -36,7 +42,7 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
                     }
                 }
             }
-        } else if attr.path().is_ident("storage")
+        } else if attr.path().is_ident("persist")
             && let Meta::List(list) = &attr.meta
         {
             let nested = list.parse_args_with(
@@ -50,13 +56,12 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
                         ..
                     }) = nv.value
                 {
-                    storage_prefix = Some(lit_str.value());
+                    persist_prefix = Some(lit_str.value());
                 }
             }
         }
     }
 
-    // Default hook name if not provided: use_{snake_case_name}
     let hook_fn_name = hook_name.unwrap_or_else(|| {
         let snake_name = to_snake_case(&name.to_string());
         format_ident!("use_{}", snake_name)
@@ -80,85 +85,44 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
         }
     };
 
-    let struct_fields = fields.iter().map(|f| {
-        let name = &f.ident;
-        let ty = &f.ty;
-        quote! {
-            pub #name: ::silex::prelude::RwSignal<#ty>
-        }
-    });
-
-    let new_fields = fields.iter().map(|f| {
-        let name = &f.ident;
-        let mut storage_key: Option<String> = None;
-        let mut is_persistent = false;
-
-        for attr in &f.attrs {
-            if attr.path().is_ident("storage") {
-                is_persistent = true;
-                if let Meta::List(list) = &attr.meta {
-                    let res = list.parse_args_with(
-                        syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated,
-                    );
-                    if let Ok(nested) = res {
-                        for meta in nested {
-                            if let Meta::NameValue(nv) = meta
-                                && nv.path.is_ident("key")
-                                && let syn::Expr::Lit(syn::ExprLit {
-                                    lit: syn::Lit::Str(lit_str),
-                                    ..
-                                }) = nv.value
-                            {
-                                storage_key = Some(lit_str.value());
-                            }
-                        }
-                    }
-                }
+    let struct_fields = fields
+        .iter()
+        .map(|field| {
+            let name = &field.ident;
+            let ty = &field.ty;
+            match parse_field_persist(field)? {
+                Some(_) => Ok(quote! { pub #name: ::silex::prelude::Persistent<#ty> }),
+                None => Ok(quote! { pub #name: ::silex::prelude::RwSignal<#ty> }),
             }
-        }
+        })
+        .collect::<Result<Vec<_>>>()?;
 
-        if is_persistent {
-            let key = storage_key.unwrap_or_else(|| name.as_ref().unwrap().to_string());
-            let full_key = if let Some(prefix) = &storage_prefix {
-                format!("{}{}", prefix, key)
-            } else {
-                key
-            };
-            quote! {
-                #name: ::silex::storage::use_local_storage(#full_key, source.#name)
-            }
-        } else {
-            quote! {
-                #name: ::silex::prelude::RwSignal::new(source.#name)
-            }
-        }
-    });
+    let new_fields = fields
+        .iter()
+        .map(|field| build_field_initializer(field, persist_prefix.as_deref()))
+        .collect::<Result<Vec<_>>>()?;
 
     let get_fields = fields.iter().map(|f| {
         let name = &f.ident;
-        quote! {
-            #name: self.#name.get()
-        }
+        quote! { #name: self.#name.get() }
     });
 
     let panic_msg = err_msg.unwrap_or_else(|| format!("Context for {} not found", store_name));
 
-    let expanded = quote! {
-        /// Generated Store struct wrapping fields in RwSignal
+    Ok(quote! {
+        /// Generated Store struct wrapping fields in reactive handles
         #[derive(Clone, Copy)]
         #vis struct #store_name {
             #(#struct_fields),*
         }
 
         impl #store_name {
-            /// Create a new Store from the initial state
             pub fn new(source: #name) -> Self {
                 Self {
                     #(#new_fields),*
                 }
             }
 
-            /// Get a snapshot of the current state
             pub fn get(&self) -> #name {
                 #name {
                     #(#get_fields),*
@@ -175,9 +139,133 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
         #vis fn #hook_fn_name() -> #store_name {
             <#store_name as ::silex::store::Store>::get()
         }
-    };
+    })
+}
 
-    Ok(expanded)
+fn build_field_initializer(field: &Field, persist_prefix: Option<&str>) -> Result<TokenStream> {
+    let name = field.ident.as_ref().expect("named field");
+    let ty = &field.ty;
+
+    if let Some(config) = parse_field_persist(field)? {
+        let key = config.key.unwrap_or_else(|| name.to_string());
+        let full_key = if let Some(prefix) = persist_prefix {
+            format!("{}{}", prefix, key)
+        } else {
+            key
+        };
+        let backend_method = config.backend;
+        let codec_tokens = codec_builder_tokens(ty, &config.codec)?;
+        Ok(quote! {
+            #name: ::silex::prelude::Persistent::builder(#full_key)
+                .#backend_method()
+                #codec_tokens
+                .default(source.#name)
+                .build()
+        })
+    } else {
+        Ok(quote! {
+            #name: ::silex::prelude::RwSignal::new(source.#name)
+        })
+    }
+}
+
+fn parse_field_persist(field: &Field) -> Result<Option<PersistFieldConfig>> {
+    let mut config = None;
+
+    for attr in &field.attrs {
+        if !attr.path().is_ident("persist") {
+            continue;
+        }
+
+        let nested = attr.parse_args_with(
+            syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated,
+        )?;
+
+        let mut backend: Option<syn::Ident> = None;
+        let mut codec: Option<syn::LitStr> = None;
+        let mut key: Option<String> = None;
+
+        for meta in nested {
+            match meta {
+                Meta::Path(path) if path.is_ident("local") => {
+                    backend = Some(format_ident!("local"))
+                }
+                Meta::Path(path) if path.is_ident("session") => {
+                    backend = Some(format_ident!("session"))
+                }
+                Meta::Path(path) if path.is_ident("query") => {
+                    backend = Some(format_ident!("query"))
+                }
+                Meta::NameValue(nv) if nv.path.is_ident("key") => {
+                    if let syn::Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Str(lit_str),
+                        ..
+                    }) = nv.value
+                    {
+                        key = Some(lit_str.value());
+                    } else {
+                        return Err(syn::Error::new_spanned(
+                            nv,
+                            "persist key must be a string literal",
+                        ));
+                    }
+                }
+                Meta::NameValue(nv) if nv.path.is_ident("codec") => {
+                    if let syn::Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Str(lit_str),
+                        ..
+                    }) = nv.value
+                    {
+                        codec = Some(lit_str);
+                    } else {
+                        return Err(syn::Error::new_spanned(
+                            nv,
+                            "persist codec must be a string literal",
+                        ));
+                    }
+                }
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        other,
+                        "unsupported #[persist(...)] option",
+                    ));
+                }
+            }
+        }
+
+        let backend = backend.ok_or_else(|| {
+            syn::Error::new_spanned(
+                attr,
+                "#[persist(...)] requires one backend: local, session, or query",
+            )
+        })?;
+        let codec = codec.ok_or_else(|| {
+            syn::Error::new_spanned(
+                attr,
+                "#[persist(...)] requires codec = \"string\" | \"parse\" | \"json\"",
+            )
+        })?;
+
+        config = Some(PersistFieldConfig {
+            backend,
+            codec,
+            key,
+        });
+    }
+
+    Ok(config)
+}
+
+fn codec_builder_tokens(ty: &Type, codec: &syn::LitStr) -> Result<TokenStream> {
+    match codec.value().as_str() {
+        "string" => Ok(quote!(.string())),
+        "parse" => Ok(quote!(.parse::<#ty>())),
+        "json" => Ok(quote!(.json::<#ty>())),
+        _ => Err(syn::Error::new_spanned(
+            codec,
+            "unsupported codec, expected string|parse|json",
+        )),
+    }
 }
 
 fn to_snake_case(s: &str) -> String {
@@ -193,4 +281,37 @@ fn to_snake_case(s: &str) -> String {
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse_quote;
+
+    #[test]
+    fn store_macro_emits_persistent_fields_for_persist_attributes() {
+        let input: DeriveInput = parse_quote! {
+            #[store(name = "use_settings")]
+            #[persist(prefix = "settings-")]
+            pub struct Settings {
+                #[persist(local, codec = "string")]
+                pub theme: String,
+                #[persist(query, key = "page", codec = "parse")]
+                pub page: u32,
+                pub username: String,
+            }
+        };
+
+        let expanded = derive_store_impl(input).unwrap().to_string();
+
+        assert!(expanded.contains("pub theme : :: silex :: prelude :: Persistent < String >"));
+        assert!(expanded.contains("pub page : :: silex :: prelude :: Persistent < u32 >"));
+        assert!(expanded.contains("pub username : :: silex :: prelude :: RwSignal < String >"));
+        assert!(expanded.contains(
+            ":: silex :: prelude :: Persistent :: builder (\"settings-theme\") . local () . string () . default (source . theme) . build ()"
+        ));
+        assert!(expanded.contains(
+            ":: silex :: prelude :: Persistent :: builder (\"settings-page\") . query () . parse :: < u32 > () . default (source . page) . build ()"
+        ));
+    }
 }

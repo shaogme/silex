@@ -26,6 +26,11 @@ pub trait View {
     /// This is the primary entry point for mounting views.
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>);
 
+    /// Optimized mounting from a reference to avoid redundant clones.
+    /// For types that are cheap to clone (like Rc-based Elements), this can be just a clone + mount.
+    /// For expensive types (like Strings or Fragments), this should be implemented without cloning.
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>);
+
     /// Apply forwarded attributes to this view.
     /// Default implementation does nothing (for Text, Fragment, etc.).
     /// Elements override this to actually apply attributes.
@@ -36,7 +41,7 @@ pub trait View {
     where
         Self: Sized + 'static,
     {
-        AnyView::Unique(Box::new(self), Vec::new())
+        AnyView::new(self)
     }
 
     /// Convert this view into a SharedView (Type Erasure with Clone requirement).
@@ -44,7 +49,7 @@ pub trait View {
     where
         Self: Sized + Clone + 'static,
     {
-        SharedView::SharedBoxed(Box::new(self), Vec::new())
+        SharedView::new(self)
     }
 }
 
@@ -65,6 +70,10 @@ impl View for String {
         mount_text_node(parent, &self);
     }
 
+    fn mount_ref(&self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+        mount_text_node(parent, self);
+    }
+
     fn into_any(self) -> AnyView {
         AnyView::Text(self.clone())
     }
@@ -76,6 +85,10 @@ impl View for String {
 
 impl View for &str {
     fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+        mount_text_node(parent, self);
+    }
+
+    fn mount_ref(&self, parent: &Node, _attrs: Vec<PendingAttribute>) {
         mount_text_node(parent, self);
     }
 
@@ -94,6 +107,10 @@ macro_rules! impl_view_for_primitive {
         $(
             impl View for $t {
                 fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+                    mount_text_node(parent, &self.to_string());
+                }
+
+                fn mount_ref(&self, parent: &Node, _attrs: Vec<PendingAttribute>) {
                     mount_text_node(parent, &self.to_string());
                 }
 
@@ -116,6 +133,8 @@ impl_view_for_primitive!(
 impl View for () {
     fn mount(self, _parent: &Node, _attrs: Vec<PendingAttribute>) {}
 
+    fn mount_ref(&self, _parent: &Node, _attrs: Vec<PendingAttribute>) {}
+
     fn into_any(self) -> AnyView {
         AnyView::Empty
     }
@@ -128,19 +147,38 @@ impl View for () {
 // 3. 动态闭包支持 (Lazy View / Dynamic Text)
 impl<F, V> View for F
 where
-    F: Fn() -> V + 'static,
+    F: Fn() -> V + Clone + 'static,
     V: View + 'static,
 {
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        mount_dynamic_view_erased_internal(parent, attrs, Box::new(move || self().into_any()));
+        mount_dynamic_view_universal(
+            parent,
+            attrs,
+            RenderThunk::new(move |args| {
+                let (p, a) = args;
+                self().mount(&p, a);
+            }),
+        );
+    }
+
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        let this = self.clone();
+        mount_dynamic_view_universal(
+            parent,
+            attrs,
+            RenderThunk::new(move |args| {
+                let (p, a) = args;
+                this().mount(&p, a);
+            }),
+        );
     }
 }
 
-/// 非泛型的动态视图挂载内核，用于减少单态化膨胀。
-fn mount_dynamic_view_erased_internal(
+/// 非泛型的动态视图挂载内核，作为所有响应式/延迟视图的调度终点，用于减少单态化膨胀。
+pub(crate) fn mount_dynamic_view_universal(
     parent: &Node,
     attrs: Vec<PendingAttribute>,
-    producer: Box<dyn Fn() -> AnyView>,
+    renderer: RenderThunk,
 ) {
     let document = crate::document();
 
@@ -161,58 +199,44 @@ fn mount_dynamic_view_erased_internal(
         return;
     }
 
-    use std::cell::Cell;
-    use std::rc::Rc;
-    let prev_scope = Rc::new(Cell::new(None::<silex_core::reactivity::NodeId>));
-
     Effect::new(move |_| {
-        if let Some(id) = prev_scope.get() {
-            silex_core::reactivity::dispose(id);
-            prev_scope.set(None);
-        }
-
         let start_node = start_node.clone();
         let end_node = end_node.clone();
         let document = document.clone();
         let attrs = attrs.clone();
+        let renderer = &renderer;
 
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            let view = producer();
-
-            let start_node = start_node.clone();
-            let end_node = end_node.clone();
-            let document = document.clone();
-
-            silex_core::reactivity::create_scope(move || {
-                if let Some(parent) = start_node.parent_node() {
-                    while let Some(sibling) = start_node.next_sibling() {
-                        if sibling == end_node {
-                            break;
-                        }
-                        let _ = parent.remove_child(&sibling);
+        let result = catch_unwind(AssertUnwindSafe(move || {
+            // 1. 在生产新视图前，先同步清理旧 DOM 节点。
+            if let Some(parent) = start_node.parent_node() {
+                while let Some(sibling) = start_node.next_sibling() {
+                    if sibling == end_node {
+                        break;
                     }
+                    let _ = parent.remove_child(&sibling);
                 }
+            }
 
-                let fragment = document.create_document_fragment();
-                let fragment_node: Node = fragment.clone().into();
+            // 2. 使用 DocumentFragment 进行物理隔离增强，确保挂载位置精确性
+            let fragment = document.create_document_fragment();
+            let fragment_node: Node = fragment.clone().into();
 
-                view.mount(&fragment_node, attrs);
+            // 在当前 Effect 环境下执行渲染，确保护留所有信号追踪
+            renderer.call((fragment_node.clone(), attrs));
 
-                if let Some(parent) = end_node.parent_node() {
-                    let _ = parent.insert_before(&fragment_node, Some(&end_node));
-                }
-            })
+            // 3. 将生产的内容插入锚点之间
+            if let Some(parent) = end_node.parent_node() {
+                let _ = parent.insert_before(&fragment_node, Some(&end_node));
+            }
         }));
 
-        if let Ok(id) = result {
-            prev_scope.set(Some(id));
-        } else if let Err(payload) = result {
+        if let Err(payload) = result {
             let msg = if let Some(s) = payload.downcast_ref::<&str>() {
-                format!("Panic in View: {}", s)
+                format!("Panic in Dynamic View: {}", s)
             } else if let Some(s) = payload.downcast_ref::<String>() {
-                format!("Panic in View: {}", s)
+                format!("Panic in Dynamic View: {}", s)
             } else {
-                "Unknown Panic in View".to_string()
+                "Unknown Panic in Dynamic View".to_string()
             };
 
             handle_error(SilexError::Javascript(msg));
@@ -229,6 +253,11 @@ where
         let f = self.clone();
         (move || f()).mount(parent, attrs);
     }
+
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        let f = self.clone();
+        (move || f()).mount(parent, attrs);
+    }
 }
 
 // 5. 容器类型支持
@@ -236,6 +265,12 @@ impl<V: View> View for Option<V> {
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         if let Some(v) = self {
             v.mount(parent, attrs);
+        }
+    }
+
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        if let Some(v) = self {
+            v.mount_ref(parent, attrs.clone());
         }
     }
 
@@ -253,6 +288,12 @@ impl<V: View> View for Vec<V> {
         }
     }
 
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        for (i, v) in self.iter().enumerate() {
+            v.mount_ref(parent, if i == 0 { attrs.clone() } else { Vec::new() });
+        }
+    }
+
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
         for v in self {
             v.apply_attributes(attrs.clone());
@@ -267,6 +308,12 @@ impl<V: View, const N: usize> View for [V; N] {
         }
     }
 
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        for (i, v) in self.iter().enumerate() {
+            v.mount_ref(parent, if i == 0 { attrs.clone() } else { Vec::new() });
+        }
+    }
+
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
         for v in self {
             v.apply_attributes(attrs.clone());
@@ -278,6 +325,7 @@ impl<V: View, const N: usize> View for [V; N] {
 
 impl View for ViewNil {
     fn mount(self, _parent: &Node, _attrs: Vec<PendingAttribute>) {}
+    fn mount_ref(&self, _parent: &Node, _attrs: Vec<PendingAttribute>) {}
     fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
 
     fn into_any(self) -> AnyView {
@@ -295,6 +343,11 @@ impl<H: View, T: View> View for ViewCons<H, T> {
         self.0.mount(parent, attrs);
         // 后续链表不再接受 attributes (避免重复应用)
         self.1.mount(parent, Vec::new());
+    }
+
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        self.0.mount_ref(parent, attrs);
+        self.1.mount_ref(parent, Vec::new());
     }
 
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
@@ -325,6 +378,13 @@ impl<V: View> View for SilexResult<V> {
         match self {
             Ok(v) => v.mount(parent, attrs),
             Err(e) => handle_error(e),
+        }
+    }
+
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        match self {
+            Ok(v) => v.mount_ref(parent, attrs),
+            Err(e) => handle_error(e.clone()),
         }
     }
 }

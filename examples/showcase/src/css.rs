@@ -188,13 +188,13 @@ styled! {
 
 #[component]
 pub fn StylingBasics() -> impl View {
-    let (color, set_color) = signal(hex("#ffffff"));
-    let (size, set_size) = signal("medium".to_string());
-    let (hover_color, set_hover_color) = signal(hex("#4f46e5"));
-    let (pseudo_state, set_pseudo_state) = signal("hover".to_string());
+    let (color, set_color) = Signal::pair(hex("#ffffff"));
+    let (size, set_size) = Signal::pair("medium".to_string());
+    let (hover_color, set_hover_color) = Signal::pair(hex("#4f46e5"));
+    let (pseudo_state, set_pseudo_state) = Signal::pair("hover".to_string());
     let (border_state, set_border_state) =
-        signal(border(px(2), BorderStyleKeyword::Solid, hex("transparent")));
-    let (padding_state, set_padding_state) = signal(padding::x_y(px(12), px(24)));
+        Signal::pair(border(px(2), BorderStyleKeyword::Solid, hex("transparent")));
+    let (padding_state, set_padding_state) = Signal::pair(padding::x_y(px(12), px(24)));
 
     div![
         div![
@@ -244,8 +244,8 @@ pub fn StylingBasics() -> impl View {
                 "The `styled!` macro now supports dynamic interpolation directly inside variants, and fully preserves the chainable typed attributes of native HTML tags."
             ).style("margin-bottom: 24px; color: #9ca3af;"),
             {
-                let (btn_kind, set_btn_kind) = signal("primary".to_string());
-                let (btn_width, _set_btn_width) = signal(px(160));
+                let (btn_kind, set_btn_kind) = Signal::pair("primary".to_string());
+                let (btn_width, _set_btn_width) = Signal::pair(px(160));
 
                 Stack().gap(16).children(view_chain!(
                     DynamicVariantBtn()
@@ -293,7 +293,7 @@ pub fn StylingBasics() -> impl View {
             ],
             p("Signals are natively supported:").style("margin: 20px 0 10px; font-size: 0.9em; opacity: 0.6;"),
             {
-                let (count, set_count) = signal(0);
+                let (count, set_count) = Signal::pair(0);
                 div![
                     button("Grow").on(event::click, move |_| set_count.update(|n| *n += 1))
                         .style("padding: 8px 16px; border-radius: 6px; border: 1px solid #374151; background: #111827; color: white; cursor: pointer;"),
@@ -349,7 +349,7 @@ pub fn Theming() -> impl View {
     } else {
         default_light_theme()
     };
-    let (theme, set_theme) = signal(initial_theme);
+    let (theme, set_theme) = Signal::pair(initial_theme);
     let is_dark = theme.map(|t| t.surface.0 == "#111827");
 
     div![

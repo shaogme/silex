@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::rc::Rc;
 
 use crate::SilexError;
-use crate::reactivity::signal::{ReadSignal, WriteSignal, signal};
+use crate::reactivity::signal::{ReadSignal, Signal, WriteSignal};
 use crate::reactivity::stored_value::StoredValue;
 use crate::traits::*;
 use crate::traits::{RxCloneData, RxData};
@@ -75,7 +75,7 @@ impl<Arg: RxData, T: RxCloneData, E: RxCloneData> Mutation<Arg, T, E> {
         F: Fn(Arg) -> Fut + 'static,
         Fut: Future<Output = Result<T, E>> + 'static,
     {
-        let (state, set_state) = signal(MutationState::Idle);
+        let (state, set_state) = Signal::pair(MutationState::Idle);
 
         // Wrap the user provided future in a Box to erase the type.
         let action = Rc::new(move |arg| Box::pin(f(arg)) as MutationFuture<T, E>);

@@ -15,6 +15,7 @@ readme.workspace = true
 workspace = true
 
 [dependencies]
+silex_vtable.workspace = true
 silex_core.workspace = true
 wasm-bindgen.workspace = true
 web-sys.workspace = true

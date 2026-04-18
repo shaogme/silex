@@ -129,4 +129,12 @@ impl View for Link {
 
         element.mount(parent, attrs);
     }
+
+    fn mount_ref(
+        &self,
+        parent: &web_sys::Node,
+        attrs: Vec<silex_dom::attribute::PendingAttribute>,
+    ) {
+        self.clone().mount(parent, attrs);
+    }
 }

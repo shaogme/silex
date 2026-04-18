@@ -4,11 +4,11 @@ use silex::reexports::web_sys;
 // --- Store Definition ---
 #[derive(Clone, Default, Store, serde::Serialize, serde::Deserialize)]
 #[store(name = "use_user_settings")]
-#[storage(prefix = "showcase-settings-")]
+#[persist(prefix = "showcase-settings-")]
 pub struct UserSettings {
-    #[storage]
+    #[persist(local, codec = "string")]
     pub theme: String,
-    #[storage(key = "notif_enabled")]
+    #[persist(local, key = "notif_enabled", codec = "parse")]
     pub notifications: bool,
     pub username: String,
 }
@@ -74,30 +74,34 @@ impl Default for ComplexState {
 
 #[component]
 pub fn JsonStorageDemo() -> impl View {
-    let state = use_local_storage("showcase-json-state", Json(ComplexState::default()));
+    let state = Persistent::builder("showcase-json-state")
+        .local()
+        .json::<ComplexState>()
+        .default(ComplexState::default())
+        .build();
 
     div![
         h4("Native JSON Persistence Demo"),
-        p("This demo uses the `Json<T>` wrapper to persist a complex struct via browser-native `JSON.stringify/parse`."),
+        p("This demo uses the JSON codec to persist a complex struct via browser-native `JSON.stringify/parse`."),
         div![
-            p![strong("Hero: "), rx!(state.get().0.name)],
-            p![strong("Level: "), rx!(state.get().0.level.to_string())],
-            p![strong("Inventory: "), rx!(state.get().0.inventory.join(", "))],
+            p![strong("Hero: "), rx!(state.get().name)],
+            p![strong("Level: "), rx!(state.get().level.to_string())],
+            p![strong("Inventory: "), rx!(state.get().inventory.join(", "))],
         ]
         .style("background: var(--slx-theme-surface-alt, rgba(128,128,128,0.1)); padding: 10px; border-left: 4px solid var(--slx-theme-primary, #007bff); border-radius: 4px; margin-bottom: 10px;"),
         div![
             button("Level Up").on(event::click, move |_| {
-                state.update(|s| s.0.level += 1);
+                state.update(|s| s.level += 1);
             }),
             button("Add Shield").on(event::click, move |_| {
                 state.update(|s| {
-                    if !s.0.inventory.contains(&"Shield".to_string()) {
-                        s.0.inventory.push("Shield".to_string());
+                    if !s.inventory.contains(&"Shield".to_string()) {
+                        s.inventory.push("Shield".to_string());
                     }
                 });
             }),
             button("Reset").on(event::click, move |_| {
-                state.set(Json(ComplexState::default()));
+                state.set(ComplexState::default());
             }),
         ]
         .style("display: flex; gap: 10px;"),
@@ -106,11 +110,15 @@ pub fn JsonStorageDemo() -> impl View {
 
 #[component]
 pub fn StorageDemo() -> impl View {
-    let count = use_local_storage("showcase-counter", 0);
+    let count = Persistent::builder("showcase-counter")
+        .local()
+        .parse::<i32>()
+        .default(0)
+        .build();
 
     div![
         h3("LocalStorage Persistence"),
-        p("Silex provides a zero-cost abstraction for persistence. Basic types (int, string, bool) use direct string conversion, while complex structures use browser-native JSON via the `Json<T>` wrapper."),
+        p("Silex provides a unified persistence abstraction. Basic types use string and parse codecs, while complex structures use the JSON codec."),
 
         // 1. 基本类型持久化
         div![
@@ -137,11 +145,15 @@ pub fn StorageDemo() -> impl View {
 
 #[component]
 pub fn QueryDemo() -> impl View {
-    let val = use_query_signal("demo_val");
+    let val = Persistent::builder("demo_val")
+        .query()
+        .string()
+        .default(String::new())
+        .build();
 
     div![
         h3("Query Signal Demo"),
-        p("This input is synced with the URL query parameter 'demo_val' using `use_query_signal`."),
+        p("This input is synced with the URL query parameter 'demo_val' using `Persistent::builder(...).query()`."),
         div![
             input()
                 .bind_value(val) // Automatic two-way binding
@@ -154,7 +166,7 @@ pub fn QueryDemo() -> impl View {
         .style("display: flex; gap: 10px; margin: 10px 0; align-items: center;"),
         p![
             strong("Current Value: "),
-            val // Signals implement Display
+            val
         ]
         .style("background: var(--slx-theme-surface); border: 1px solid var(--slx-theme-border); padding: 10px; border-radius: 4px;")
     ]
@@ -205,7 +217,7 @@ async fn mock_fetch_user(id: i32) -> Result<UserProfile, String> {
 
 #[component]
 pub fn ResourceDemo() -> impl View {
-    let (user_id, set_user_id) = signal(1);
+    let (user_id, set_user_id) = Signal::pair(1);
 
     // Create Resource: triggers when user_id changes
     let user_resource = Resource::new(user_id, mock_fetch_user);
@@ -339,11 +351,11 @@ pub fn MutationDemo() -> impl View {
 pub fn SuspenseDemo() -> impl View {
     use silex::components::{SuspenseBoundary, SuspenseMode};
 
-    let (show_content, set_show_content) = signal(false);
-    let (mode, set_mode) = signal(SuspenseMode::KeepAlive);
+    let (show_content, set_show_content) = Signal::pair(false);
+    let (mode, set_mode) = Signal::pair(SuspenseMode::KeepAlive);
 
     // Trigger for reloading the resource
-    let (trigger, set_trigger) = signal(0);
+    let (trigger, set_trigger) = Signal::pair(0);
 
     // Mock heavy resource
     async fn heavy_work(id: i32) -> Result<String, String> {
@@ -387,7 +399,7 @@ pub fn SuspenseDemo() -> impl View {
         ]
         .style("margin-bottom: 15px;"),
         div![Show::new(show_content, rx! {
-            suspense()
+            Suspense::new()
                 .resource(move || Resource::new(trigger, heavy_work))
                 .children(move |resource| {
                     SuspenseBoundary::new()
@@ -468,10 +480,10 @@ impl std::fmt::Display for QuantumIdentity {
 #[component]
 pub fn AdaptiveReadDemo() -> impl View {
     let system_name = RwSignal::new("Nebula-1".to_string());
-    let (stability, set_stability) = signal(0.85); // 0.0 to 1.0
+    let (stability, set_stability) = Signal::pair(0.85); // 0.0 to 1.0
 
     // Create a non-cloneable resource
-    let (identity, _) = signal(QuantumIdentity::new(0xDEADBEEF));
+    let (identity, _) = Signal::pair(QuantumIdentity::new(0xDEADBEEF));
 
     // 1. REACTIVE TUPLE: Used for organizational grouping and tracking.
     // Note: (RwSignal<String>, ReadSignal<f64>, ReadSignal<QuantumIdentity>)
@@ -512,7 +524,7 @@ pub fn AdaptiveReadDemo() -> impl View {
         h3("Adaptive Read & Segmented Access")
             .style("color: #2c3e50; border-left: 5px solid #e74c3c; padding-left: 15px; margin-bottom: 20px;"),
 
-        p("Silex 0.1.0-beta.1 optimizes reactive access for performance. While tuples can group resources, segmented access using individual signals ensures zero-copy performance without Clone requirements."),
+        p("Silex 0.1.0-beta.2 optimizes reactive access for performance. While tuples can group resources, segmented access using individual signals ensures zero-copy performance without Clone requirements."),
 
         div![
             // Live Status Bar

@@ -5,7 +5,7 @@ pub use context::*;
 pub use link::*;
 
 use crate::router::context::{RouterContextProps, provide_router_context};
-use silex_core::reactivity::{Effect, on_cleanup, signal};
+use silex_core::reactivity::{Effect, Signal, on_cleanup};
 use silex_core::traits::{RxGet, RxWrite};
 use silex_dom::view::{AnyView, View};
 use silex_html::div;
@@ -154,6 +154,24 @@ pub trait RouteView: Routable {
 
 impl View for Router {
     fn mount(self, parent: &web_sys::Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
+        self.mount_internal(parent, attrs);
+    }
+
+    fn mount_ref(
+        &self,
+        parent: &web_sys::Node,
+        attrs: Vec<silex_dom::attribute::PendingAttribute>,
+    ) {
+        self.clone().mount_internal(parent, attrs);
+    }
+}
+
+impl Router {
+    fn mount_internal(
+        self,
+        parent: &web_sys::Node,
+        attrs: Vec<silex_dom::attribute::PendingAttribute>,
+    ) {
         // 1. 获取 window 对象
         let window = web_sys::window().expect("no global `window` exists");
         let location = window.location();
@@ -175,8 +193,8 @@ impl View for Router {
             };
 
         // 2. 初始化信号
-        let (path, set_path) = signal(initial_path);
-        let (search, set_search) = signal(initial_search);
+        let (path, set_path) = Signal::pair(initial_path);
+        let (search, set_search) = Signal::pair(initial_search);
 
         // 3. 提供 Context
         provide_router_context(RouterContextProps {

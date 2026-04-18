@@ -134,7 +134,24 @@ where
     // Ensure Item itself is static so we can use it in closures
     <ItemsFn::Value as ForLoopSource>::Item: 'static,
 {
-    fn mount(self, parent: &Node, _attrs: Vec<silex_dom::attribute::PendingAttribute>) {
+    fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
+        self.mount_internal(parent, attrs);
+    }
+
+    fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
+        self.clone().mount_internal(parent, attrs);
+    }
+}
+
+impl<ItemsFn, KeyFn, MapFn> For<ItemsFn, KeyFn, MapFn>
+where
+    ItemsFn: RxRead + 'static,
+    ItemsFn::Value: ForLoopSource + 'static,
+    KeyFn: LoopKey<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
+    MapFn: LoopMap<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
+    <ItemsFn::Value as ForLoopSource>::Item: 'static,
+{
+    fn mount_internal(self, parent: &Node, _attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         let document = silex_dom::document();
 
         // 1. Create Anchors

@@ -201,7 +201,7 @@ pub fn rx(input: TokenStream) -> TokenStream {
 
     // 准备信号列表
     let mut pairs: Vec<_> = visitor.signal_map.into_iter().collect();
-    pairs.sort_by(|a, b| a.0.to_string().cmp(&b.0.to_string()));
+    pairs.sort_by_key(|a| a.0.to_string());
 
     // 构建扁平化的捕获和读取逻辑
     // 捕获阶段：在闭包外克隆信号句柄
@@ -258,7 +258,14 @@ pub fn rx(input: TokenStream) -> TokenStream {
         }
 
         if pairs.is_empty() {
-            quote! { #prefix::Rx::<_, #prefix::RxValueKind>::new_constant(#expr) }
+            // 如果没有探测到信号变量，判断是否为字面量
+            let is_literal = matches!(expr, syn::Expr::Lit(_));
+            if is_literal {
+                quote! { #prefix::Rx::<_, #prefix::RxValueKind>::new_constant(#expr) }
+            } else {
+                // 如果不是字面量（可能是方法调用如 login.loading()），回退到 derive 以确保响应性
+                quote! { #prefix::Rx::<_, #prefix::RxValueKind>::derive(Box::new(#f_expr)) }
+            }
         } else if pairs.len() == 1 {
             let (orig, refer) = &pairs[0];
             quote! {

@@ -18,6 +18,9 @@ pub use derived::*;
 pub use ops::*;
 pub use registry::*;
 
+#[cfg(test)]
+mod tests;
+
 // --- Signal 信号 Enum ---
 
 pub enum Signal<T> {
@@ -26,6 +29,22 @@ pub enum Signal<T> {
     StoredConstant(NodeId, PhantomData<T>),
     #[allow(missing_docs)] // Internal optimization detail
     InlineConstant(u64, PhantomData<T>),
+}
+
+impl<T: 'static> Signal<T> {
+    pub fn pair(value: T) -> (ReadSignal<T>, WriteSignal<T>) {
+        let id = silex_reactivity::signal(value);
+        (
+            ReadSignal {
+                id,
+                marker: PhantomData,
+            },
+            WriteSignal {
+                id,
+                marker: PhantomData,
+            },
+        )
+    }
 }
 
 impl<T: RxData> std::fmt::Debug for Signal<T> {
@@ -359,5 +378,3 @@ crate::impl_reactive_ops!(Signal);
 crate::impl_reactive_ops!(ReadSignal);
 crate::impl_reactive_ops!(RwSignal);
 crate::impl_reactive_ops!(Constant);
-#[cfg(test)]
-mod tests;

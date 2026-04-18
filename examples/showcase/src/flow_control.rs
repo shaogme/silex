@@ -2,7 +2,7 @@ use silex::prelude::*;
 
 #[component]
 pub fn ListDemo() -> impl View {
-    let (list, set_list) = signal(vec!["Apple", "Banana", "Cherry"]);
+    let (list, set_list) = Signal::pair(vec!["Apple", "Banana", "Cherry"]);
 
     div![
         h3("List Rendering with Signal Ergonomics"),
@@ -14,7 +14,7 @@ pub fn ListDemo() -> impl View {
 
 #[component]
 pub fn ShowDemo() -> impl View {
-    let (visible, set_visible) = signal(true);
+    let (visible, set_visible) = Signal::pair(true);
 
     div![
         h3("Conditional Rendering with Show"),
@@ -33,7 +33,7 @@ pub fn ShowDemo() -> impl View {
 
 #[component]
 pub fn DynamicDemo() -> impl View {
-    let (mode, set_mode) = signal("A");
+    let (mode, set_mode) = Signal::pair("A");
 
     div![
         h3("Dynamic Component Switching"),
@@ -60,7 +60,7 @@ pub fn DynamicDemo() -> impl View {
 
 #[component]
 pub fn SwitchDemo() -> impl View {
-    let (tab, set_tab) = signal(0);
+    let (tab, set_tab) = Signal::pair(0);
 
     div![
         h3("Switch (Match) Demo"),
@@ -88,7 +88,7 @@ pub fn SwitchDemo() -> impl View {
 
 #[component]
 pub fn IndexDemo() -> impl View {
-    let (items, set_items) = signal(vec!["Item A", "Item B", "Item C"]);
+    let (items, set_items) = Signal::pair(vec!["Item A", "Item B", "Item C"]);
 
     div![
         h3("Index For Loop Demo"),
@@ -110,7 +110,7 @@ pub fn IndexDemo() -> impl View {
 
 #[component]
 pub fn PortalDemo() -> impl View {
-    let (show_modal, set_show_modal) = signal(false);
+    let (show_modal, set_show_modal) = Signal::pair(false);
 
     div![
         h3("Portal Demo"),

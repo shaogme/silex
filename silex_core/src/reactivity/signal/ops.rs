@@ -17,7 +17,6 @@ pub struct OpPayloadHeader {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct UnifiedStaticMapPayload<OT> {
     pub header: OpPayloadHeader,
     pub compute: unsafe fn(inputs: *const *const (), out_ptr: *mut (), mapper_ptr: *const ()),
@@ -25,6 +24,14 @@ pub struct UnifiedStaticMapPayload<OT> {
     pub inputs: [NodeId; 3],
     pub _marker: PhantomData<OT>,
 }
+
+impl<OT> Clone for UnifiedStaticMapPayload<OT> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<OT> Copy for UnifiedStaticMapPayload<OT> {}
 
 pub type StaticMapPayload<OT> = UnifiedStaticMapPayload<OT>;
 pub type StaticMap2Payload<OT> = UnifiedStaticMapPayload<OT>;
@@ -133,7 +140,6 @@ impl<OT: RxData> UnifiedStaticMapPayload<OT> {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct OpPayload<U, const N: usize> {
     pub header: OpPayloadHeader,
     pub raw_read_to_ptr: unsafe fn(inputs: &[NodeId], out: *mut u8) -> bool,
@@ -141,6 +147,14 @@ pub struct OpPayload<U, const N: usize> {
     pub inputs: [NodeId; N],
     pub _marker: PhantomData<U>,
 }
+
+impl<U, const N: usize> Clone for OpPayload<U, N> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<U, const N: usize> Copy for OpPayload<U, N> {}
 
 impl<U: RxData, const N: usize> OpPayload<U, N> {
     pub fn new(

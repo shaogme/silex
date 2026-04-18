@@ -9,6 +9,7 @@ members = [
     "silex_rx",
     "silex_reactivity",
     "silex_hash",
+    "silex_vtable",
     "examples/counter",
     "examples/store_demo",
     "examples/error_boundary_demo",
@@ -27,7 +28,7 @@ resolver = "3"
 warnings = "deny"
 
 [workspace.package]
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Shao G. <shaog.me@gmail.com>"]
@@ -42,15 +43,16 @@ categories = ["web-programming", "wasm", "gui"]
 [workspace.dependencies]
 
 # Internal Crates
-silex = { path = "silex", version = "0.1.0-beta.1" }
-silex_core = { path = "silex_core", version = "0.1.0-beta.1" }
-silex_dom = { path = "silex_dom", version = "0.1.0-beta.1" }
-silex_html = { path = "silex_html", version = "0.1.0-beta.1" }
-silex_css = { path = "silex_css", version = "0.1.0-beta.1" }
-silex_macros = { path = "silex_macros", version = "0.1.0-beta.1" }
-silex_reactivity = { path = "silex_reactivity", version = "0.1.0-beta.1" }
-silex_hash = { path = "silex_hash", version = "0.1.0-beta.1" }
-silex_rx = { path = "silex_rx", version = "0.1.0-beta.1" }
+silex = { path = "silex", version = "0.1.0-beta.2" }
+silex_core = { path = "silex_core", version = "0.1.0-beta.2" }
+silex_dom = { path = "silex_dom", version = "0.1.0-beta.2" }
+silex_html = { path = "silex_html", version = "0.1.0-beta.2" }
+silex_css = { path = "silex_css", version = "0.1.0-beta.2" }
+silex_macros = { path = "silex_macros", version = "0.1.0-beta.2" }
+silex_reactivity = { path = "silex_reactivity", version = "0.1.0-beta.2" }
+silex_hash = { path = "silex_hash", version = "0.1.0-beta.2" }
+silex_rx = { path = "silex_rx", version = "0.1.0-beta.2" }
+silex_vtable = { path = "silex_vtable", version = "0.1.0-beta.2" }
 
 wasm-bindgen = { version = "0.2", default-features = false }
 web-sys = { version = "0.3", default-features = false, features = [
@@ -61,15 +63,22 @@ web-sys = { version = "0.3", default-features = false, features = [
     "CssStyleDeclaration",
     "CssStyleSheet",
     "CustomEvent",
+    "AbortController",
+    "AbortSignal",
+    "Blob",
+    "CloseEvent",
+    "DomException",
     "Document",
     "DocumentFragment",
     "DomTokenList",
     "DragEvent",
     "Element",
+    "EventSource",
     "ErrorEvent",
     "Event",
     "EventTarget",
     "FocusEvent",
+    "FormData",
     "History",
     "HtmlAnchorElement",
     "HtmlAreaElement",
@@ -98,6 +107,15 @@ web-sys = { version = "0.3", default-features = false, features = [
     "KeyboardEvent",
     "Location",
     "MouseEvent",
+    "ProgressEvent",
+    "Headers",
+    "Request",
+    "RequestCache",
+    "RequestCredentials",
+    "RequestInit",
+    "RequestMode",
+    "RequestRedirect",
+    "Response",
     "Node",
     "NodeList",
     "PointerEvent",
@@ -112,16 +130,20 @@ web-sys = { version = "0.3", default-features = false, features = [
     "TouchEvent",
     "TransitionEvent",
     "UrlSearchParams",
+    "WebSocket",
+    "MessageEvent",
     "WheelEvent",
     "Window",
     "console"
 ] }
 js-sys = { version = "0.3", default-features = false }
 wasm-bindgen-futures = { version = "0.4.56", default-features = false }
+gloo-timers = { version = "0.3", default-features = false, features = ["futures"] }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde-wasm-bindgen = "0.6"
+serde-json-wasm = "1.0"
 
 syn = { version = "2.0", default-features = false }
 quote = { version = "1.0", default-features = false }

@@ -1,8 +1,9 @@
+use crate::prelude::Signal;
 use crate::reactivity::SignalSlice;
 use crate::traits::*;
 use silex_reactivity::{
     NodeId, get_debug_label, get_node_defined_at, is_signal_valid, notify_signal, set_debug_label,
-    signal as create_signal, track_signal, try_update_signal_silent, untrack as untrack_scoped,
+    track_signal, try_update_signal_silent, untrack as untrack_scoped,
 };
 use std::marker::PhantomData;
 use std::panic::Location;
@@ -157,7 +158,7 @@ impl<T> std::hash::Hash for RwSignal<T> {
 impl<T: RxData> RwSignal<T> {
     #[track_caller]
     pub fn new(value: T) -> Self {
-        let (read, write) = signal(value);
+        let (read, write) = Signal::pair(value);
         RwSignal { read, write }
     }
 
@@ -207,21 +208,6 @@ impl<T: 'static> RxWrite for RwSignal<T> {
 }
 
 // --- Global Functions ---
-
-#[track_caller]
-pub fn signal<T: 'static>(value: T) -> (ReadSignal<T>, WriteSignal<T>) {
-    let id = create_signal(value);
-    (
-        ReadSignal {
-            id,
-            marker: PhantomData,
-        },
-        WriteSignal {
-            id,
-            marker: PhantomData,
-        },
-    )
-}
 
 pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
     untrack_scoped(f)

@@ -10,6 +10,17 @@
 silex = { path = "../../silex" } # 或者使用 git/crates.io 版本
 ```
 
+## 功能特性 (Feature Flags)
+
+`silex` 提供以下功能开关，以优化编译时间和依赖体积：
+
+| Feature | Description | Default |
+| :--- | :--- | :--- |
+| `macros` | 启用 `css!`, `#[component]`, `#[derive(Store)]` 等宏支持。 | Yes |
+| `persistence` | 启用统一持久化系统 (`silex::persist`)。 | No |
+| `json` | 启用基于 Serde 的 JSON 编解码支持 (`JsonCodec`)。 | No |
+| `net` | 启用网络通信支持 (`HttpClient`, `WebSocket`, `SSE`)。 | No |
+
 推荐在代码中导入 prelude：
 ```rust
 use silex::prelude::*;
@@ -92,28 +103,29 @@ Router::new().match_route::<MyRoutes>()
     nav.push("/new-path");
     ```
 
-### 查询参数 (Query Parameters)
+### 查询参数与外部状态 (Query Parameters & Persistence)
 
-Silex 提供了方便的 Hooks 来处理 URL 查询参数：
+Silex 提供了统一的持久化入口来处理 URL 查询参数、浏览器存储和双向绑定：
 
 *   **`use_query_map()`**:
     *   返回 `Memo<HashMap<String, String>>`。
     *   使用 `web_sys::UrlSearchParams` 标准解析，自动处理 URI 编码。
     *   响应式：当 URL 变化时自动更新。
 
-*   **`use_query_signal(key)`**:
-    *   实现了 **双向绑定**。
-    *   返回 `RwSignal<String>`。
-    *   **读**: 读取 URL 中的参数值。
-    *   **写**: 修改 Signal 会自动更新 URL (pushState) 并触发导航。
-    *   **防抖/防循环**: 内部实现了智能的循环检测，只有当值真正变化时才同步，避免无限循环和重复导航。
+*   **`Persistent::builder(key)`**:
+    *   统一后端：`.local()`、`.session()`、`.query()`。
+    *   统一 codec：`.string()`、`.parse::<T>()`、`.json::<T>()`。
+    *   返回 `Persistent<T>`，可直接 `get/set/update`，也可直接用于常见 View / `bind_value` 场景。
 
     ```rust
-    // 示例：将输入框绑定到 ?q=...
-    let search = use_query_signal("q");
-    
-    input(())
-        .bind_value(search) // 双向绑定到 input value
+    let search = Persistent::builder("q")
+        .query()
+        .string()
+        .default(String::new())
+        .build();
+
+    input()
+        .bind_value(search);
     ```
 
 ## 2. 流程控制 (Flow Control)
@@ -122,7 +134,7 @@ Silex 提供了一组组件来处理常见的逻辑控制，这比手动编写 `
 
 ### Show (条件渲染)
 ```rust
-let (is_logged_in, set_log) = signal(false);
+let (is_logged_in, set_log) = Signal::pair(false);
 
 Show::new(is_logged_in, || UserDashboard())
     .fallback(|| LoginButton())
@@ -135,7 +147,7 @@ is_logged_in.when(|| UserDashboard())
 ### Switch (多路分支)
 类似于 `match` 语句，根据值选择渲染的内容。
 ```rust
-let (tab, set_tab) = signal(0);
+let (tab, set_tab) = Signal::pair(0);
 
 Switch::new(tab, || div("Fallback"))
     .case(0, || TabA())
@@ -153,7 +165,7 @@ Portal::new(div("I am a modal"))
 高效渲染列表数据，支持 Keyed Diff 算法。
 
 ```rust
-let (users, set_users) = signal(vec![
+let (users, set_users) = Signal::pair(vec![
     User { id: 1, name: "Alice" },
     User { id: 2, name: "Bob" },
 ]);
@@ -169,7 +181,7 @@ For::new(
 当列表项没有唯一 ID，或者列表项是基础类型（如 `Vec<String>`），或者列表长度固定仅内容变化时，使用 `Index` 比 `For` 更高效。它**复用** DOM 节点，仅更新 Signal。
 
 ```rust
-let (logs, set_logs) = signal(vec!["Log 1", "Log 2"]);
+let (logs, set_logs) = Signal::pair(vec!["Log 1", "Log 2"]);
 
 Index::new(logs, |item, index| {
     // item 是 Signal<T>，内容变化时直接更新文本节点
@@ -199,7 +211,7 @@ ErrorBoundary(ErrorBoundaryProps {
 use silex::components::{suspense, SuspenseBoundary, SuspenseMode};
 
 // Builder 模式 (推荐)
-suspense()
+Suspense::new()
     .resource(|| Resource::new(source_signal, fetcher))
     .children(move |data| {
         SuspenseBoundary::new()
@@ -208,7 +220,7 @@ suspense()
     })
 
 // 卸载模式 (Unmount)
-suspense()
+Suspense::new()
     .resource(|| Resource::new(source_signal, fetcher))
     .children(move |data| {
         SuspenseBoundary::new()
@@ -250,7 +262,63 @@ Grid((
 
 
 
-## 6. 常用宏与工具 (Macros & Utilities)
+## 7. 网络请求 (Networking)
+
+`silex` 提供了简洁且功能强大的 API 来处理 HTTP 请求、WebSocket 消息和 SSE 流。
+
+### HTTP 请求 (HttpClient)
+
+使用流式接口构建请求，并集成响应式系统：
+
+```rust
+// 1. 获取 JSON 数据并转化为 Resource (自动触发加载态)
+let user_id = Signal::pair(1);
+let user_data = HttpClient::get("https://api.example.com/users/{id}")
+    .path_param("id", user_id)
+    .json::<User>()
+    .as_resource(user_id);
+
+// 2. 提交数据 (Mutation)
+let login = HttpClient::post("/api/login")
+    .json_body(login_info)
+    .json::<Token>()
+    .as_mutation();
+
+// 3. 配置重试与缓存
+let api = HttpClient::get("/api/config")
+    .retry_policy(3, Duration::from_secs(1))
+    .cache(CachePolicy::StaleWhileRevalidate)
+    .json::<Config>();
+```
+
+### WebSocket
+
+提供状态和消息的完整响应式绑定：
+
+```rust
+let ws = WebSocket::connect("ws://localhost:8080/chat")
+    .on_open(|| println!("Connected!"))
+    .build();
+
+// 获取实时消息信号 (自动 JSON 解码)
+let messages = ws.message::<ChatMessage>();
+
+// 发送消息
+ws.send_json(&msg)?;
+```
+
+### Server-Sent Events (SSE)
+
+```rust
+let stream = EventStream::builder("/api/notifications")
+    .event("update") // 监听特定事件
+    .build();
+
+// 获取最后一条消息
+let last_msg = stream.last_message::<Notify>();
+```
+
+## 8. 常用宏与工具 (Macros & Utilities)
 
 Silex 提供了一系列宏来简化开发，这些宏都已包含在 prelude 中。
 

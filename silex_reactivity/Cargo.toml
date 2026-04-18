@@ -15,3 +15,4 @@ readme.workspace = true
 workspace = true
 
 [dependencies]
+silex_vtable.workspace = true

@@ -3,6 +3,7 @@ use silex_core::traits::RxGet;
 use silex_dom::attribute::GlobalAttributes;
 use silex_dom::view::View;
 use silex_html::div;
+use std::rc::Rc;
 use web_sys::Node;
 
 /// A builder for creating a Suspense context and providing resources.
@@ -10,25 +11,6 @@ use web_sys::Node;
 /// # Example
 /// ```rust,ignore
 /// Suspense::new()
-///     .resource(|| Resource::new(source, fetcher))
-///     .children(|resource| {
-///         SuspenseBoundary::new()
-///             .fallback(|| "Loading...")
-///             .children(rx!(resource.get()))
-///     })
-/// ```
-/// Creates a new Suspense builder.
-///
-/// This is a shorthand for `Suspense::new()`.
-pub fn suspense() -> Suspense<()> {
-    Suspense::new()
-}
-
-/// A builder for creating a Suspense context and providing resources.
-///
-/// # Example
-/// ```rust,ignore
-/// suspense()
 ///     .resource(|| Resource::new(source, fetcher))
 ///     .children(|resource| {
 ///         SuspenseBoundary::new()
@@ -78,12 +60,22 @@ where
     }
 }
 
-#[derive(Clone)]
 pub struct SuspenseBoundary<C, F> {
-    children: C,
-    fallback: F,
+    children: Rc<C>,
+    fallback: Rc<F>,
     mode: SuspenseMode,
     ctx: SuspenseContext,
+}
+
+impl<C, F> Clone for SuspenseBoundary<C, F> {
+    fn clone(&self) -> Self {
+        Self {
+            children: self.children.clone(),
+            fallback: self.fallback.clone(),
+            mode: self.mode,
+            ctx: self.ctx,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
@@ -105,8 +97,8 @@ impl SuspenseBoundary<(), ()> {
             "SuspenseContext not found. Ensure SuspenseBoundary is created inside SuspenseContext::provide closure.",
         );
         Self {
-            children: (),
-            fallback: (),
+            children: Rc::new(()),
+            fallback: Rc::new(()),
             mode: SuspenseMode::default(),
             ctx,
         }
@@ -116,7 +108,7 @@ impl SuspenseBoundary<(), ()> {
 impl<C, F> SuspenseBoundary<C, F> {
     pub fn children<NewC>(self, children: NewC) -> SuspenseBoundary<NewC, F> {
         SuspenseBoundary {
-            children,
+            children: Rc::new(children),
             fallback: self.fallback,
             mode: self.mode,
             ctx: self.ctx,
@@ -131,7 +123,7 @@ impl<C, F> SuspenseBoundary<C, F> {
     pub fn fallback<NewF>(self, fallback: NewF) -> SuspenseBoundary<C, NewF> {
         SuspenseBoundary {
             children: self.children,
-            fallback,
+            fallback: Rc::new(fallback),
             mode: self.mode,
             ctx: self.ctx,
         }
@@ -146,96 +138,80 @@ where
     FRes: View + 'static,
 {
     fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        let children_fn = std::rc::Rc::new(self.children);
-        let fallback_fn = std::rc::Rc::new(self.fallback);
+        let children_fn = self.children;
+        let fallback_fn = self.fallback;
         let mode = self.mode;
         let count = self.ctx.count;
 
         let parent_clone = parent.clone();
 
-        // create_scope is used to manage cleanups for the boundary logic
-        create_scope(move || {
-            match mode {
-                SuspenseMode::KeepAlive => {
-                    let children_fn = children_fn.clone();
-                    let fallback_fn = fallback_fn.clone();
+        create_scope(move || match mode {
+            SuspenseMode::KeepAlive => {
+                let children_fn = children_fn.clone();
+                let fallback_fn = fallback_fn.clone();
 
-                    // 1. Content Wrapper (Hidden when loading)
-                    let content_wrapper = div(()).class("suspense-content");
-                    let _ = content_wrapper.clone().style(silex_core::rx! {
-                        if count.get() > 0 {
-                            "display: none"
-                        } else {
-                            "display: block"
-                        }
-                    });
-                    content_wrapper.clone().mount(&parent_clone, attrs.clone());
-                    let content_root = content_wrapper.element;
+                let content_wrapper = div(()).class("suspense-content");
+                let _ = content_wrapper.clone().style(silex_core::rx! {
+                    if count.get() > 0 { "display: none" } else { "display: block" }
+                });
+                content_wrapper.clone().mount(&parent_clone, attrs.clone());
+                let content_root = content_wrapper.element;
 
-                    Effect::new(move |_| {
+                Effect::new(move |_| {
+                    let view = children_fn.render();
+                    content_root.set_inner_html("");
+                    view.mount(&content_root, Vec::new());
+                });
+
+                let fallback_wrapper = div(()).class("suspense-fallback");
+                let _ = fallback_wrapper.clone().style(silex_core::rx! {
+                    if count.get() > 0 { "display: block" } else { "display: none" }
+                });
+                fallback_wrapper.clone().mount(&parent_clone, Vec::new());
+                let fallback_root = fallback_wrapper.element;
+
+                Effect::new(move |_| {
+                    let view = fallback_fn.render();
+                    fallback_root.set_inner_html("");
+                    view.mount(&fallback_root, Vec::new());
+                });
+            }
+            SuspenseMode::Unmount => {
+                let children_fn = children_fn.clone();
+                let fallback_fn = fallback_fn.clone();
+
+                let content_wrapper = div(()).class("suspense-content");
+                content_wrapper.clone().mount(&parent_clone, attrs);
+                let content_root = content_wrapper.element;
+
+                Effect::new(move |_| {
+                    if count.get() > 0 {
+                        content_root.set_inner_html("");
+                    } else {
                         let view = children_fn.render();
                         content_root.set_inner_html("");
                         view.mount(&content_root, Vec::new());
-                    });
+                    }
+                });
 
-                    // 2. Fallback Wrapper (Visible when loading)
-                    let fallback_wrapper = div(()).class("suspense-fallback");
-                    let _ = fallback_wrapper.clone().style(silex_core::rx! {
-                        if count.get() > 0 {
-                            "display: block"
-                        } else {
-                            "display: none"
-                        }
-                    });
-                    fallback_wrapper.clone().mount(&parent_clone, Vec::new());
-                    let fallback_root = fallback_wrapper.element;
+                let fallback_wrapper = div(()).class("suspense-fallback");
+                fallback_wrapper.clone().mount(&parent_clone, Vec::new());
+                let fallback_root = fallback_wrapper.element;
 
-                    Effect::new(move |_| {
+                Effect::new(move |_| {
+                    if count.get() > 0 {
                         let view = fallback_fn.render();
                         fallback_root.set_inner_html("");
                         view.mount(&fallback_root, Vec::new());
-                    });
-                }
-                SuspenseMode::Unmount => {
-                    let children_fn = children_fn.clone();
-                    let fallback_fn = fallback_fn.clone();
-
-                    // 1. Content Wrapper
-                    let content_wrapper = div(()).class("suspense-content");
-                    content_wrapper.clone().mount(&parent_clone, attrs);
-                    let content_root = content_wrapper.element;
-
-                    Effect::new(move |_| {
-                        if count.get() > 0 {
-                            // Suspended: Unmount content
-                            content_root.set_inner_html("");
-                        } else {
-                            // Active: Mount content
-                            // Re-executing children_fn re-establishes fine-grained dependencies
-                            let view = children_fn.render();
-                            content_root.set_inner_html("");
-                            view.mount(&content_root, Vec::new());
-                        }
-                    });
-
-                    // 2. Fallback Wrapper
-                    let fallback_wrapper = div(()).class("suspense-fallback");
-                    fallback_wrapper.clone().mount(&parent_clone, Vec::new());
-                    let fallback_root = fallback_wrapper.element;
-
-                    Effect::new(move |_| {
-                        if count.get() > 0 {
-                            // Suspended: Show Fallback
-                            let view = fallback_fn.render();
-                            fallback_root.set_inner_html("");
-                            view.mount(&fallback_root, Vec::new());
-                        } else {
-                            // Active: Unmount Fallback
-                            fallback_root.set_inner_html("");
-                        }
-                    });
-                }
+                    } else {
+                        fallback_root.set_inner_html("");
+                    }
+                });
             }
         });
+    }
+
+    fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
+        self.clone().mount(parent, attrs);
     }
 }

@@ -283,6 +283,10 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
                 // Forward attributes using the new robust propagation method
                 ::silex::dom::view::View::mount(view_instance, parent, all_attrs);
             }
+
+            fn mount_ref(&self, parent: &::silex::reexports::web_sys::Node, attrs: Vec<::silex::dom::attribute::PendingAttribute>) {
+                self.clone().mount(parent, attrs);
+            }
         }
 
         // 生成同名构建函数

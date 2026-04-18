@@ -3,6 +3,8 @@ mod advanced;
 mod basics;
 mod css;
 mod flow_control;
+mod net_demo;
+mod persistence;
 mod routes;
 
 use advanced::{UserSettings, UserSettingsStore};
@@ -12,7 +14,11 @@ fn main() {
     setup_global_error_handlers();
 
     // 1. 使用持久化 Hook 代替手动的 localStorage 读取
-    let theme_persistent = use_local_storage("silex-showcase-theme", "Light".to_string());
+    let theme_persistent = Persistent::builder("silex-showcase-theme")
+        .local()
+        .string()
+        .default("Light".to_string())
+        .build();
 
     // Global State Initialization
     let store = UserSettingsStore::new(UserSettings {
@@ -41,7 +47,7 @@ fn main() {
 
         // Create the global theme signal and sync it inside the reactive scope
         let (theme_signal, set_theme_signal) =
-            signal(crate::css::get_theme(&store.theme.get_untracked()));
+            Signal::pair(crate::css::get_theme(&store.theme.get_untracked()));
 
         // 副作用：当 Store 中的主题变化时，同步给持久化信号、DOM 属性和 CSS 引擎
         Effect::new({

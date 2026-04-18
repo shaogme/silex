@@ -1,4 +1,3 @@
-use crate::SilexError;
 use silex_core::reactivity::Effect;
 use silex_core::traits::RxGet;
 use silex_dom::prelude::View;
@@ -6,12 +5,15 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use web_sys::Node;
 
+type BoxedViewFactory<V> = Rc<dyn crate::flow::ViewFactory<View = V>>;
+type Case<T, V> = (T, BoxedViewFactory<V>);
+
 /// Switch/Match 组件：多路分支渲染
 ///
 /// # Example
 /// ```rust
 /// use silex::prelude::*;
-/// let (count, set_count) = signal(0);
+/// let (count, set_count) = Signal::pair(0);
 ///
 /// Switch::new(count, rx!("Default View"))
 ///     .case(0, rx!("Zero"))
@@ -20,8 +22,8 @@ use web_sys::Node;
 #[derive(Clone)]
 pub struct Switch<Source, T, V> {
     source: Source,
-    cases: Vec<(T, Rc<dyn crate::flow::ViewFactory<View = V>>)>,
-    fallback: Rc<dyn crate::flow::ViewFactory<View = V>>,
+    cases: Vec<Case<T, V>>,
+    fallback: BoxedViewFactory<V>,
     _marker: std::marker::PhantomData<V>,
 }
 
@@ -55,72 +57,84 @@ where
 
 impl<Source, T, V> View for Switch<Source, T, V>
 where
-    Source: RxGet<Value = T> + 'static,
+    Source: RxGet<Value = T> + Clone + 'static,
     T: PartialEq + Clone + 'static,
     V: View + 'static,
 {
     fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        let document = silex_dom::document();
-        let start_marker = document.create_comment("switch-start");
-        let start_node: Node = start_marker.into();
-        if let Err(e) = parent.append_child(&start_node) {
-            silex_core::error::handle_error(SilexError::from(e));
-            return;
+        mount_switch_internal(
+            self.source,
+            Rc::new(self.cases),
+            self.fallback,
+            parent,
+            attrs,
+        );
+    }
+
+    fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
+        mount_switch_internal(
+            self.source.clone(),
+            Rc::new(self.cases.clone()),
+            self.fallback.clone(),
+            parent,
+            attrs,
+        );
+    }
+}
+
+fn mount_switch_internal<Source, T, V>(
+    source: Source,
+    cases: Rc<Vec<Case<T, V>>>,
+    fallback: BoxedViewFactory<V>,
+    parent: &Node,
+    attrs: Vec<silex_dom::attribute::PendingAttribute>,
+) where
+    Source: RxGet<Value = T> + 'static,
+    T: PartialEq + Clone + 'static,
+    V: View + 'static,
+{
+    let document = silex_dom::document();
+    let start_node: Node = document.create_comment("switch-start").into();
+    let _ = parent.append_child(&start_node);
+
+    let end_node: Node = document.create_comment("switch-end").into();
+    let _ = parent.append_child(&end_node);
+
+    let prev_index = Rc::new(RefCell::new(None::<isize>));
+
+    Effect::new(move |_| {
+        let val = source.get();
+        let mut found_idx = -1;
+        let mut view_fn = fallback.clone();
+
+        for (i, (case_val, case_view)) in cases.iter().enumerate() {
+            if *case_val == val {
+                found_idx = i as isize;
+                view_fn = case_view.clone();
+                break;
+            }
         }
 
-        let end_marker = document.create_comment("switch-end");
-        let end_node: Node = end_marker.into();
-        if let Err(e) = parent.append_child(&end_node) {
-            silex_core::error::handle_error(SilexError::from(e));
+        let mut prev = prev_index.borrow_mut();
+        if *prev == Some(found_idx) {
             return;
         }
+        *prev = Some(found_idx);
 
-        let source = self.source;
-        let cases = Rc::new(self.cases);
-        let fallback = self.fallback;
-
-        let prev_index = Rc::new(RefCell::new(None::<isize>));
-
-        Effect::new(move |_| {
-            let val = source.get();
-            let mut found_idx = -1;
-            let mut view_fn = fallback.clone();
-
-            for (i, (case_val, case_view)) in cases.iter().enumerate() {
-                if *case_val == val {
-                    found_idx = i as isize;
-                    view_fn = case_view.clone();
+        if let Some(parent) = start_node.parent_node() {
+            while let Some(sibling) = start_node.next_sibling() {
+                if sibling == end_node {
                     break;
                 }
+                let _ = parent.remove_child(&sibling);
             }
+        }
 
-            let mut prev = prev_index.borrow_mut();
-            if *prev == Some(found_idx) {
-                return;
-            }
-            *prev = Some(found_idx);
+        let fragment_node: Node = document.create_document_fragment().into();
+        view_fn.render().mount(&fragment_node, attrs.clone());
 
-            // Cleanup
-            if let Some(parent) = start_node.parent_node() {
-                while let Some(sibling) = start_node.next_sibling() {
-                    if sibling == end_node {
-                        break;
-                    }
-                    let _ = parent.remove_child(&sibling);
-                }
-            }
-
-            // Render
-            let fragment = document.create_document_fragment();
-            let fragment_node: Node = fragment.clone().into();
-
-            // Handle panic in view generation/render to avoid crash loop?
-            // "view_fn().mount()" should be safe-ish user code.
-            view_fn.render().mount(&fragment_node, attrs.clone());
-
-            if let Some(parent) = end_node.parent_node() {
-                let _ = parent.insert_before(&fragment_node, Some(&end_node));
-            }
-        });
-    }
+        if let Some(parent) = end_node.parent_node() {
+            let _ = parent.insert_before(&fragment_node, Some(&end_node));
+        }
+    });
 }
