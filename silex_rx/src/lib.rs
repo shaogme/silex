@@ -201,7 +201,7 @@ pub fn rx(input: TokenStream) -> TokenStream {
 
     // 准备信号列表
     let mut pairs: Vec<_> = visitor.signal_map.into_iter().collect();
-    pairs.sort_by(|a, b| a.0.to_string().cmp(&b.0.to_string()));
+    pairs.sort_by_key(|a| a.0.to_string());
 
     // 构建扁平化的捕获和读取逻辑
     // 捕获阶段：在闭包外克隆信号句柄
