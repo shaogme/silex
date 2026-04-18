@@ -13,7 +13,7 @@ type Case<T, V> = (T, BoxedViewFactory<V>);
 /// # Example
 /// ```rust
 /// use silex::prelude::*;
-/// let (count, set_count) = Signal::new(0);
+/// let (count, set_count) = Signal::pair(0);
 ///
 /// Switch::new(count, rx!("Default View"))
 ///     .case(0, rx!("Zero"))

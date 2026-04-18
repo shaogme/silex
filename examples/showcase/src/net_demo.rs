@@ -1,5 +1,5 @@
-use silex::prelude::*;
 use serde::{Deserialize, Serialize};
+use silex::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -12,13 +12,13 @@ pub struct Post {
 
 #[component]
 pub fn HttpClientDemo() -> impl View {
-    let (post_id, set_post_id) = Signal::new(1);
-    
+    let (post_id, set_post_id) = Signal::pair(1);
+
     // 1. Using HttpClient::as_resource for declarative fetching
     let post_client = HttpClient::get("https://jsonplaceholder.typicode.com/posts/{id}")
         .path_param("id", post_id)
         .json::<Post>();
-        
+
     let post_resource = post_client.as_resource(post_id);
 
     // 2. Using HttpClient::as_mutation for actions (POST)
@@ -34,7 +34,7 @@ pub fn HttpClientDemo() -> impl View {
     div![
         h3("HTTP Client Demo"),
         p("Declarative HTTP fetching with path parameters, resources, and mutations."),
-        
+
         div![
             span("Fetch Post ID: "),
             input()
@@ -75,7 +75,7 @@ pub fn HttpClientDemo() -> impl View {
                 .on(event::click, move |_| create_post_mutation.mutate(()))
                 .attr("disabled", create_post_mutation.loading())
                 .style("padding: 10px 20px; background: var(--slx-theme-primary); color: white; border: none; border-radius: 6px; cursor: pointer;"),
-            
+
             move || if create_post_mutation.loading() {
                 span(" Creating...").style("margin-left: 10px; color: var(--slx-theme-primary);").into_any()
             } else {
@@ -100,8 +100,8 @@ pub fn HttpClientDemo() -> impl View {
 pub fn WebSocketDemo() -> impl View {
     let url = RwSignal::new("wss://echo.websocket.org".to_string());
     let socket = StoredValue::new(None::<WebSocketConnection>);
-    let (is_connected, set_is_connected) = Signal::new(false);
-    let (last_message, set_last_message) = Signal::new(String::new());
+    let (is_connected, set_is_connected) = Signal::pair(false);
+    let (last_message, set_last_message) = Signal::pair(String::new());
     let input_text = RwSignal::new(String::new());
 
     div![
@@ -124,7 +124,7 @@ pub fn WebSocketDemo() -> impl View {
                             .on_open(move || set_is_connected.set(true))
                             .on_close(move |_, _| set_is_connected.set(false))
                             .build();
-                        
+
                         // Register message handler
                         let msg_signal = conn.raw_message();
                         Effect::new(move |_| {
@@ -171,15 +171,15 @@ pub fn WebSocketDemo() -> impl View {
 
 #[component]
 pub fn EventStreamDemo() -> impl View {
-    let (is_active, set_is_active) = Signal::new(false);
+    let (is_active, set_is_active) = Signal::pair(false);
     let url = RwSignal::new("https://stream.wikimedia.org/v2/stream/recentchange".to_string());
     let stream = StoredValue::new(None::<EventStreamConnection>);
-    let (events, set_events) = Signal::new(Vec::<String>::new());
+    let (events, set_events) = Signal::pair(Vec::<String>::new());
 
     div![
         h3("EventSource (SSE) Demo"),
         p("One-way server-to-client streaming for real-time updates."),
-        
+
         div![
             input()
                 .bind_value(url)
@@ -192,10 +192,10 @@ pub fn EventStreamDemo() -> impl View {
                         });
                         set_is_active.set(false);
                     } else {
-                        let conn = EventStream::new(url.get())
+                        let conn = EventStream::builder(url.get())
                             .on_open(move || set_events.update(|e| e.push("Connected to stream".into())))
                             .build();
-                        
+
                         let msgs = conn.raw_messages();
                         Effect::new(move |_| {
                             if let Some(items) = msgs.get().last() {
@@ -227,7 +227,7 @@ pub fn EventStreamDemo() -> impl View {
 
 #[component]
 pub fn NetDemoPage() -> impl View {
-    let (active_tab, set_active_tab) = Signal::new("http");
+    let (active_tab, set_active_tab) = Signal::pair("http");
 
     inject_style("net-demo-css", "
         .tab-nav { display: flex; gap: 10px; margin-bottom: 30px; border-bottom: 1px solid var(--slx-theme-border); padding-bottom: 15px; }
@@ -240,7 +240,7 @@ pub fn NetDemoPage() -> impl View {
     div![
         h2("🌐 Networking (silex_net)"),
         p("Comprehensive networking suite for Silex, supporting REST, WebSockets, and Server-Sent Events."),
-        
+
         // Navigation Tabs
         div![
             button("HTTP Client")

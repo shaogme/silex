@@ -53,7 +53,7 @@
 统一的外部状态绑定层，覆盖 `localStorage`、`sessionStorage` 与 URL query。
 
 ### 核心入口
-*   `Persistent::new(key)` -> `PersistentBuilder<...>`
+*   `Persistent::builder(key)` -> `PersistentBuilder<...>`
 *   Backend 选择：`.local()` / `.session()` / `.query()`
 *   Codec 选择：`.string()` / `.parse::<T>()` / `.json::<T>()`
 *   构建结果：`Persistent<T>`
@@ -206,7 +206,7 @@
 *   **WebSocket**: `WebSocket::connect(url)` -> `WebSocketBuilder`。
     *   提供 `state` (ConnectionState), `message`, `error` 响应式信号。
     *   支持 JSON 消息的自动序列化与反序列化。
-*   **EventStream (SSE)**: `EventStream::new(url)` -> `EventStreamBuilder`。
+*   **EventStream (SSE)**: `EventStream::builder(url)` -> `EventStreamBuilder`。
     *   支持监听特定命名的事件或默认消息。
     *   提供消息历史 `messages` 信号及 `last_message` 辅助方法。
 

@@ -115,7 +115,7 @@ fn NavBar() -> impl View {
 #[component]
 fn HomeView() -> impl View {
     // 页面级状态
-    let (name, set_name) = Signal::new("Rustacean".to_string());
+    let (name, set_name) = Signal::pair("Rustacean".to_string());
 
     // 全局状态通过 Context 获取
     let count = expect_context::<ReadSignal<i32>>();
@@ -224,7 +224,7 @@ fn main() {
 
     create_scope(move || {
         // 全局状态 (App Store)
-        let (count, set_count) = Signal::new(0);
+        let (count, set_count) = Signal::pair(0);
 
         // 注入全局 Context
         provide_context(count);

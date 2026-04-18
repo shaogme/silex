@@ -32,7 +32,7 @@ pub enum Signal<T> {
 }
 
 impl<T: 'static> Signal<T> {
-    pub fn new(value: T) -> (ReadSignal<T>, WriteSignal<T>) {
+    pub fn pair(value: T) -> (ReadSignal<T>, WriteSignal<T>) {
         let id = silex_reactivity::signal(value);
         (
             ReadSignal {

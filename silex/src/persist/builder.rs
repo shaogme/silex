@@ -50,7 +50,7 @@ impl<T> PersistConfig<T> {
 /// Builder for creating a `Persistent<T>` binding.
 ///
 /// Typical flow:
-/// 1. Start with [`Persistent::new`]
+/// 1. Start with [`Persistent::builder`]
 /// 2. Choose a backend with `.local()`, `.session()`, or `.query()`
 /// 3. Choose a codec with `.string()`, `.parse::<T>()`, or `.json::<T>()`
 /// 4. Provide a default with `.default(...)` or `.default_with(...)`
@@ -59,13 +59,13 @@ impl<T> PersistConfig<T> {
 /// ```rust,no_run
 /// use silex::prelude::*;
 ///
-/// let theme = Persistent::new("theme")
+/// let theme = Persistent::builder("theme")
 ///     .local()
 ///     .string()
 ///     .default("Light".to_string())
 ///     .build();
 ///
-/// let page = Persistent::new("page")
+/// let page = Persistent::builder("page")
 ///     .query()
 ///     .parse::<u32>()
 ///     .default(1)
@@ -452,14 +452,9 @@ where
                     }
 
                     let handle = silex_dom::helpers::set_timeout_with_handle(
-                        {
-                            let controller = controller.clone();
-                            let value = value.clone();
-                            let state = state.clone();
-                            move || {
-                                let _ = flush_persistent_value(controller, value, state);
-                                timer.set_untracked(None);
-                            }
+                        move || {
+                            let _ = flush_persistent_value(controller, value, state);
+                            timer.set_untracked(None);
                         },
                         duration,
                     );
@@ -517,11 +512,13 @@ mod tests {
     use std::cell::RefCell;
     use std::collections::HashMap;
 
+    type SubscriptionMap = Rc<RefCell<HashMap<String, Vec<Rc<dyn Fn(BackendEvent)>>>>>;
+
     #[derive(Clone, Default)]
     struct MockBackend {
         state: Rc<RefCell<HashMap<String, String>>>,
         removed: Rc<RefCell<Vec<String>>>,
-        subscriptions: Rc<RefCell<HashMap<String, Vec<Rc<dyn Fn(BackendEvent)>>>>>,
+        subscriptions: SubscriptionMap,
         fail_writes: Rc<RefCell<bool>>,
     }
 
@@ -616,7 +613,10 @@ mod tests {
 
         assert_eq!(value.get_untracked(), 7);
         assert_eq!(backend.get("counter").unwrap(), Some("7".to_string()));
-        assert_eq!(value.state().get_untracked(), PersistenceState::Ready("7".to_string()));
+        assert_eq!(
+            value.state().get_untracked(),
+            PersistenceState::Ready("7".to_string())
+        );
     }
 
     #[test]
@@ -633,7 +633,10 @@ mod tests {
             backend.removed.borrow().as_slice(),
             &["counter".to_string()]
         );
-        assert_eq!(value.state().get_untracked(), PersistenceState::Ready("5".to_string()));
+        assert_eq!(
+            value.state().get_untracked(),
+            PersistenceState::Ready("5".to_string())
+        );
     }
 
     #[test]
@@ -647,7 +650,10 @@ mod tests {
         assert_eq!(value.get_untracked(), 11);
         assert_eq!(backend.get("counter").unwrap(), Some("11".to_string()));
         assert!(backend.removed.borrow().is_empty());
-        assert_eq!(value.state().get_untracked(), PersistenceState::Ready("11".to_string()));
+        assert_eq!(
+            value.state().get_untracked(),
+            PersistenceState::Ready("11".to_string())
+        );
     }
 
     #[test]
@@ -668,7 +674,10 @@ mod tests {
         .build();
 
         assert_eq!(value.get_untracked(), 9);
-        assert_eq!(value.state().get_untracked(), PersistenceState::Ready("9".to_string()));
+        assert_eq!(
+            value.state().get_untracked(),
+            PersistenceState::Ready("9".to_string())
+        );
     }
 
     #[test]
@@ -718,7 +727,10 @@ mod tests {
 
         assert_eq!(backend.get("name").unwrap(), None);
         assert_eq!(backend.removed.borrow().as_slice(), &["name".to_string()]);
-        assert_eq!(value.state().get_untracked(), PersistenceState::Ready(String::new()));
+        assert_eq!(
+            value.state().get_untracked(),
+            PersistenceState::Ready(String::new())
+        );
     }
 
     #[test]
@@ -739,6 +751,9 @@ mod tests {
         assert_eq!(value.get_untracked(), 5);
         assert_eq!(backend.get("counter").unwrap(), None);
         assert!(backend.removed.borrow().is_empty());
-        assert_eq!(value.state().get_untracked(), PersistenceState::Ready(String::new()));
+        assert_eq!(
+            value.state().get_untracked(),
+            PersistenceState::Ready(String::new())
+        );
     }
 }

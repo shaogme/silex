@@ -51,4 +51,3 @@ impl NetError {
         matches!(status, 408 | 429 | 500..=599)
     }
 }
-

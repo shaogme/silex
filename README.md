@@ -47,7 +47,7 @@ use silex::prelude::*;
 #[component]
 fn Counter() -> impl View {
     // 创建响应式信号
-    let (count, set_count) = Signal::new(0);
+    let (count, set_count) = Signal::pair(0);
     
     // 派生状态 (Memo)
     let double_count = Memo::new(move |_| count.get() * 2);
@@ -163,16 +163,16 @@ settings.theme.set("Dark".to_string());
 
 ### 4. 外部状态持久化 (Persistence)
 
-`Persistent::new(key)` 统一封装了 `localStorage`、`sessionStorage` 和 URL query 三类外部状态后端。
+`Persistent::builder(key)` 统一封装了 `localStorage`、`sessionStorage` 和 URL query 三类外部状态后端。
 
 ```rust
-let theme = Persistent::new("theme")
+let theme = Persistent::builder("theme")
     .local()
     .string()
     .default("Light".to_string())
     .build();
 
-let page = Persistent::new("page")
+let page = Persistent::builder("page")
     .query()
     .parse::<u32>()
     .default(1)

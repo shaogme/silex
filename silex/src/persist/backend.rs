@@ -254,15 +254,12 @@ impl StorageDispatcher {
             }
         }
 
-        if self.subscribers.is_empty() {
-            if let Some(closure) = self.closure.take() {
-                if let Some(window) = web_sys::window() {
-                    let _ = window.remove_event_listener_with_callback(
-                        "storage",
-                        closure.as_ref().unchecked_ref(),
-                    );
-                }
-            }
+        if self.subscribers.is_empty()
+            && let Some(closure) = self.closure.take()
+            && let Some(window) = web_sys::window()
+        {
+            let _ = window
+                .remove_event_listener_with_callback("storage", closure.as_ref().unchecked_ref());
         }
     }
 
@@ -283,12 +280,12 @@ impl StorageDispatcher {
 
             let kind = if local_storage
                 .as_ref()
-                .map_or(false, |l| Object::is(area.as_ref(), l.as_ref()))
+                .is_some_and(|l| Object::is(area.as_ref(), l.as_ref()))
             {
                 StorageAreaKind::Local
             } else if session_storage
                 .as_ref()
-                .map_or(false, |s| Object::is(area.as_ref(), s.as_ref()))
+                .is_some_and(|s| Object::is(area.as_ref(), s.as_ref()))
             {
                 StorageAreaKind::Session
             } else {
@@ -372,7 +369,7 @@ fn storage_handle(kind: StorageAreaKind) -> Result<Storage, PersistenceError> {
 mod tests {
     use super::*;
     use crate::router::Navigator;
-    use silex_core::reactivity::{create_scope, Signal};
+    use silex_core::reactivity::{Signal, create_scope};
     use silex_core::traits::RxWrite;
     use std::cell::RefCell;
     use std::collections::HashMap;
@@ -380,8 +377,8 @@ mod tests {
     fn test_query_backend(
         map: silex_core::reactivity::ReadSignal<HashMap<String, String>>,
     ) -> QueryBackend {
-        let (path, set_path) = Signal::new("/".to_string());
-        let (search, set_search) = Signal::new(String::new());
+        let (path, set_path) = Signal::pair("/".to_string());
+        let (search, set_search) = Signal::pair(String::new());
         QueryBackend {
             navigator: Some(Navigator {
                 base_path: "/".to_string(),
@@ -405,7 +402,7 @@ mod tests {
     #[test]
     fn query_backend_get_and_subscribe_follow_query_map_changes() {
         create_scope(|| {
-            let (map, set_map) = Signal::new(HashMap::<String, String>::new());
+            let (map, set_map) = Signal::pair(HashMap::<String, String>::new());
             let backend = test_query_backend(map);
             let events = Rc::new(RefCell::new(Vec::<BackendEvent>::new()));
 

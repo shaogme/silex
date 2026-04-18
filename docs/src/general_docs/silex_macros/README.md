@@ -75,8 +75,8 @@ GenericMessage()
 使用 `css!` 宏可以在 Rust 代码中直接编写 CSS，并享受自动哈希（Scoped CSS）和压缩功能。
 
 ```rust
-let (color, _) = Signal::new("white".to_string());
-let scale = Signal::new(1.0).0;
+let (color, _) = Signal::pair("white".to_string());
+let scale = Signal::pair(1.0).0;
 
 let btn_class = css!(r#"
     background-color: blue;
@@ -101,9 +101,9 @@ button(()).class(btn_class).text("Styled Button")
 use silex::css::types::{px, pct};
 use silex::css::types::{border, BorderStyleKeyword, UnsafeCss, hex};
 
-let w = Signal::new(px(100)); // Px 类型被限定允许给 Width
-let bd = Signal::new(border(px(1), BorderStyleKeyword::Solid, hex("#ccc"))); // 专属工厂函数保障多位组合安全
-let custom_calc = Signal::new(UnsafeCss::new("calc(100% - 20px)")); // 若需超出约束边界请显式包装
+let w = Signal::pair(px(100)); // Px 类型被限定允许给 Width
+let bd = Signal::pair(border(px(1), BorderStyleKeyword::Solid, hex("#ccc"))); // 专属工厂函数保障多位组合安全
+let custom_calc = Signal::pair(UnsafeCss::new("calc(100% - 20px)")); // 若需超出约束边界请显式包装
 
 let cls = css!(r#"
     width: $(w); /* ✅ 合规 */
@@ -226,7 +226,7 @@ enum AppRoute {
 pub fn AuthGuard(children: Children) -> impl View {
     // 假设我们有一个全局用户状态
     let user_name = use_context::<ReadSignal<String>>()
-        .unwrap_or(Signal::new("Guest".to_string()).0);
+        .unwrap_or(Signal::pair("Guest".to_string()).0);
     
     move || {
          if user_name.get() != "Guest" {

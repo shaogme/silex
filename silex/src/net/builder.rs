@@ -1,19 +1,23 @@
+use crate::net::NetError;
 use crate::net::backend::{HttpBackend, Transport};
-#[cfg(feature = "json")]
-use crate::net::codec::NetJsonCodec;
 #[cfg(feature = "persistence")]
 use crate::net::codec::CacheCodec;
+#[cfg(feature = "json")]
+use crate::net::codec::NetJsonCodec;
 use crate::net::codec::{ResponseCodec, TextCodec};
-use crate::net::NetError;
 use crate::net::state::{CachePolicy, HttpMethod, HttpResponse, RequestBody, RequestSpec};
 use std::marker::PhantomData;
 use std::rc::Rc;
 use std::time::Duration;
+pub type BeforeSendHook = Rc<dyn Fn(&mut RequestSpec)>;
+pub type AfterResponseHook = Rc<dyn Fn(&RequestSpec, &HttpResponse)>;
+pub type OnRetryHook = Rc<dyn Fn(&RequestSpec, u32, Duration, &NetError)>;
+pub type OnErrorHook = Rc<dyn Fn(&RequestSpec, &NetError)>;
 
-use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal};
-use silex_core::traits::{RxCloneData, RxGet};
 #[cfg(feature = "net")]
 use gloo_timers::future::sleep;
+use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal};
+use silex_core::traits::{RxCloneData, RxGet};
 #[cfg(feature = "persistence")]
 use std::cell::Cell;
 
@@ -93,10 +97,10 @@ pub struct HttpClientBuilder<T, C> {
     response_codec: C,
     transport: Rc<dyn Transport>,
     cache: Option<CacheSpec<T>>,
-    before_send: Vec<Rc<dyn Fn(&mut RequestSpec)>>,
-    after_response: Vec<Rc<dyn Fn(&RequestSpec, &HttpResponse)>>,
-    on_retry: Vec<Rc<dyn Fn(&RequestSpec, u32, Duration, &NetError)>>,
-    on_error: Vec<Rc<dyn Fn(&RequestSpec, &NetError)>>,
+    before_send: Vec<BeforeSendHook>,
+    after_response: Vec<AfterResponseHook>,
+    on_retry: Vec<OnRetryHook>,
+    on_error: Vec<OnErrorHook>,
     retry: Option<crate::net::state::RetryPolicy>,
     _marker: PhantomData<T>,
 }
@@ -104,28 +108,31 @@ pub struct HttpClientBuilder<T, C> {
 pub struct HttpClient;
 
 impl HttpClient {
-    pub fn new(method: HttpMethod, url: impl Into<String>) -> HttpClientBuilder<String, TextCodec> {
+    pub fn builder(
+        method: HttpMethod,
+        url: impl Into<String>,
+    ) -> HttpClientBuilder<String, TextCodec> {
         HttpClientBuilder::new(method, url.into(), TextCodec)
     }
 
     pub fn get(url: impl Into<String>) -> HttpClientBuilder<String, TextCodec> {
-        Self::new(HttpMethod::Get, url)
+        Self::builder(HttpMethod::Get, url)
     }
 
     pub fn post(url: impl Into<String>) -> HttpClientBuilder<String, TextCodec> {
-        Self::new(HttpMethod::Post, url)
+        Self::builder(HttpMethod::Post, url)
     }
 
     pub fn put(url: impl Into<String>) -> HttpClientBuilder<String, TextCodec> {
-        Self::new(HttpMethod::Put, url)
+        Self::builder(HttpMethod::Put, url)
     }
 
     pub fn patch(url: impl Into<String>) -> HttpClientBuilder<String, TextCodec> {
-        Self::new(HttpMethod::Patch, url)
+        Self::builder(HttpMethod::Patch, url)
     }
 
     pub fn delete(url: impl Into<String>) -> HttpClientBuilder<String, TextCodec> {
-        Self::new(HttpMethod::Delete, url)
+        Self::builder(HttpMethod::Delete, url)
     }
 }
 
@@ -395,13 +402,7 @@ impl<T, C> HttpClientBuilder<T, C> {
         }
     }
 
-    fn notify_retry(
-        &self,
-        spec: &RequestSpec,
-        attempt: u32,
-        delay: Duration,
-        err: &NetError,
-    ) {
+    fn notify_retry(&self, spec: &RequestSpec, attempt: u32, delay: Duration, err: &NetError) {
         for hook in &self.on_retry {
             hook(spec, attempt, delay, err);
         }
@@ -503,10 +504,7 @@ macro_rules! impl_net_methods {
             Err(err)
         }
 
-        pub fn as_resource<S>(
-            self,
-            source: S,
-        ) -> silex_core::reactivity::Resource<T, NetError>
+        pub fn as_resource<S>(self, source: S) -> silex_core::reactivity::Resource<T, NetError>
         where
             S: RxGet + 'static,
             S::Value: PartialEq + RxCloneData,
@@ -517,9 +515,7 @@ macro_rules! impl_net_methods {
             })
         }
 
-        pub fn as_mutation(
-            self,
-        ) -> silex_core::reactivity::Mutation<(), T, NetError> {
+        pub fn as_mutation(self) -> silex_core::reactivity::Mutation<(), T, NetError> {
             silex_core::reactivity::Mutation::new(move |_| {
                 let client = self.clone();
                 async move { client.send().await }

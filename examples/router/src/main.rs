@@ -33,9 +33,9 @@ fn Home() -> impl View {
 
 #[component]
 fn SearchPage() -> impl View {
-    // 测试查询参数持久化：使用 Persistent::new(...).query() 实现双向绑定
+    // 测试查询参数持久化：使用 Persistent::builder(...).query() 实现双向绑定
     // 只要改变 search_term，URL 就会更新；URL 变了，search_term 也会更新
-    let search_term = Persistent::new("q")
+    let search_term = Persistent::builder("q")
         .query()
         .string()
         .default(String::new())

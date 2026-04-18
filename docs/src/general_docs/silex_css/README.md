@@ -24,8 +24,8 @@ Silex 要求显式指定单位，这不仅能获得 IDE 的自动补全，还能
 use silex::css::prelude::*;
 
 // 声明响应式变量
-let width = Signal::new(px(200));
-let color = Signal::new(hex("#4f46e5"));
+let width = Signal::pair(px(200));
+let color = Signal::pair(hex("#4f46e5"));
 
 // 使用 css! 宏
 let base_cls = css!("
@@ -171,7 +171,7 @@ struct ModernTheme {
     surface: Hex,
 }
 
-let theme_sig = Signal::new(ModernTheme {
+let theme_sig = Signal::pair(ModernTheme {
     primary: hex("#6366f1"),
     surface: hex("#ffffff"),
 });

@@ -272,9 +272,14 @@ fn HomePage() -> impl View {
                 },
                 "CSS: CSS-in-Rust, Themes, and Style Comparison"
             )),
-            li(Link(AppRoute::Net, "Net: HttpClient, WebSocket, EventStream")),
-            li(Link(AppRoute::Persistence, "Persistence: WebStorage, Query, Sync, Codecs")),
-
+            li(Link(
+                AppRoute::Net,
+                "Net: HttpClient, WebSocket, EventStream"
+            )),
+            li(Link(
+                AppRoute::Persistence,
+                "Persistence: WebStorage, Query, Sync, Codecs"
+            )),
             li(Link(
                 AppRoute::Advanced {
                     route: AdvancedRoute::Index,

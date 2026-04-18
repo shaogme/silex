@@ -23,17 +23,17 @@ pub fn PersistencePage() -> impl View {
         h2("Comprehensive Persistence Demo")
             .style("color: var(--slx-theme-primary); margin-bottom: 10px;"),
         p("This page demonstrates the full spectrum of Silex's persistence system, from basic LocalStorage to advanced debouncing and manual control."),
-        
+
         div![
             // 1. Storage Backends Comparison
             BackendGrid(),
-            
+
             // 2. Manual Control & Flash
             ManualFlushDemo(),
-            
+
             // 3. Debounced Persistence
             DebounceDemo(),
-            
+
             // 4. Error Handling & JSON
             ErrorHandlingDemo(),
         ].style("display: flex; flex-direction: column; gap: 30px; margin-top: 20px;")
@@ -52,19 +52,19 @@ fn Card(title: &'static str, children: Children) -> impl View {
 
 #[component]
 fn BackendGrid() -> impl View {
-    let local = Persistent::new("demo-local")
+    let local = Persistent::builder("demo-local")
         .local()
         .string()
         .default("Stored in LocalStorage".to_string())
         .build();
 
-    let session = Persistent::new("demo-session")
+    let session = Persistent::builder("demo-session")
         .session()
         .string()
         .default("Stored in SessionStorage".to_string())
         .build();
 
-    let query = Persistent::new("demo-query")
+    let query = Persistent::builder("demo-query")
         .query()
         .string()
         .default("Stored in URL Query".to_string())
@@ -100,7 +100,7 @@ fn BackendGrid() -> impl View {
 
 #[component]
 fn ManualFlushDemo() -> impl View {
-    let draft = Persistent::new("demo-draft")
+    let draft = Persistent::builder("demo-draft")
         .local()
         .string()
         .mode(PersistMode::Manual)
@@ -144,10 +144,12 @@ fn ManualFlushDemo() -> impl View {
 
 #[component]
 fn DebounceDemo() -> impl View {
-    let debounced = Persistent::new("demo-debounced")
+    let debounced = Persistent::builder("demo-debounced")
         .local()
         .string()
-        .sync(SyncStrategy::Debounce(std::time::Duration::from_millis(1500)))
+        .sync(SyncStrategy::Debounce(std::time::Duration::from_millis(
+            1500,
+        )))
         .default(String::new())
         .build();
 
@@ -158,7 +160,7 @@ fn DebounceDemo() -> impl View {
                 .bind_value(debounced)
                 .placeholder("Type quickly...")
                 .style("width: 100%; padding: 12px; border: 1px solid var(--slx-theme-border); border-radius: 6px; background: var(--slx-theme-surface-alt); color: var(--slx-theme-text); font-size: 1.1em;"),
-            
+
             div![
                 h4("Live Sync Tracking:").style("margin-bottom: 5px;"),
                 move || {
@@ -189,10 +191,10 @@ fn DebounceDemo() -> impl View {
 
 #[component]
 fn ErrorHandlingDemo() -> impl View {
-    let settings = Persistent::new("demo-complex-settings")
+    let settings = Persistent::builder("demo-complex-settings")
         .local()
         .json::<Settings>()
-        .on_decode_error(DecodePolicy::UseDefault) 
+        .on_decode_error(DecodePolicy::UseDefault)
         .default(Settings::default())
         .build();
 
@@ -221,7 +223,7 @@ fn ErrorHandlingDemo() -> impl View {
                     .style("width: 100%; accent-color: var(--slx-theme-primary);")
             ],
         ],
-        
+
         div![
             h4("Health Check").style("margin-bottom: 10px;"),
             move || {

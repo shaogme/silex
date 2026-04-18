@@ -34,7 +34,7 @@ impl ViewFactory for fn() -> () {
 /// ```rust
 /// use silex::prelude::*;
 ///
-/// let (condition, set_condition) = Signal::new(true);
+/// let (condition, set_condition) = Signal::pair(true);
 /// let view = "Content";
 /// let fallback_view = "Fallback";
 ///

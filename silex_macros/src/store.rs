@@ -156,7 +156,7 @@ fn build_field_initializer(field: &Field, persist_prefix: Option<&str>) -> Resul
         let backend_method = config.backend;
         let codec_tokens = codec_builder_tokens(ty, &config.codec)?;
         Ok(quote! {
-            #name: ::silex::prelude::Persistent::new(#full_key)
+            #name: ::silex::prelude::Persistent::builder(#full_key)
                 .#backend_method()
                 #codec_tokens
                 .default(source.#name)

@@ -17,7 +17,7 @@
 use silex::prelude::*; // 推荐使用 prelude 导入核心工具
 
 // 1. 创建一个操作对：只读信号与写入器
-let (count, set_count) = Signal::new(0); 
+let (count, set_count) = Signal::pair(0); 
 
 // 或者通过 RwSignal 直接创建（包含读写能力，最为常用）
 let count = RwSignal::new(0);
@@ -45,8 +45,8 @@ count.update(|n| *n += 1);
 Silex 为信号重载了算术和逻辑运算符，让代码读起来就像普通的 Rust 代码。
 
 ```rust
-let (a, _) = Signal::new(10);
-let (b, _) = Signal::new(20);
+let (a, _) = Signal::pair(10);
+let (b, _) = Signal::pair(20);
 
 // sum 是一个派生信号，当 a 或 b 变化时，它会自动重算
 let sum = a + b; 

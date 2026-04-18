@@ -158,7 +158,7 @@ impl<T> std::hash::Hash for RwSignal<T> {
 impl<T: RxData> RwSignal<T> {
     #[track_caller]
     pub fn new(value: T) -> Self {
-        let (read, write) = Signal::new(value);
+        let (read, write) = Signal::pair(value);
         RwSignal { read, write }
     }
 

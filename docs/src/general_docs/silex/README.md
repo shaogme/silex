@@ -112,13 +112,13 @@ Silex 提供了统一的持久化入口来处理 URL 查询参数、浏览器存
     *   使用 `web_sys::UrlSearchParams` 标准解析，自动处理 URI 编码。
     *   响应式：当 URL 变化时自动更新。
 
-*   **`Persistent::new(key)`**:
+*   **`Persistent::builder(key)`**:
     *   统一后端：`.local()`、`.session()`、`.query()`。
     *   统一 codec：`.string()`、`.parse::<T>()`、`.json::<T>()`。
     *   返回 `Persistent<T>`，可直接 `get/set/update`，也可直接用于常见 View / `bind_value` 场景。
 
     ```rust
-    let search = Persistent::new("q")
+    let search = Persistent::builder("q")
         .query()
         .string()
         .default(String::new())
@@ -134,7 +134,7 @@ Silex 提供了一组组件来处理常见的逻辑控制，这比手动编写 `
 
 ### Show (条件渲染)
 ```rust
-let (is_logged_in, set_log) = Signal::new(false);
+let (is_logged_in, set_log) = Signal::pair(false);
 
 Show::new(is_logged_in, || UserDashboard())
     .fallback(|| LoginButton())
@@ -147,7 +147,7 @@ is_logged_in.when(|| UserDashboard())
 ### Switch (多路分支)
 类似于 `match` 语句，根据值选择渲染的内容。
 ```rust
-let (tab, set_tab) = Signal::new(0);
+let (tab, set_tab) = Signal::pair(0);
 
 Switch::new(tab, || div("Fallback"))
     .case(0, || TabA())
@@ -165,7 +165,7 @@ Portal::new(div("I am a modal"))
 高效渲染列表数据，支持 Keyed Diff 算法。
 
 ```rust
-let (users, set_users) = Signal::new(vec![
+let (users, set_users) = Signal::pair(vec![
     User { id: 1, name: "Alice" },
     User { id: 2, name: "Bob" },
 ]);
@@ -181,7 +181,7 @@ For::new(
 当列表项没有唯一 ID，或者列表项是基础类型（如 `Vec<String>`），或者列表长度固定仅内容变化时，使用 `Index` 比 `For` 更高效。它**复用** DOM 节点，仅更新 Signal。
 
 ```rust
-let (logs, set_logs) = Signal::new(vec!["Log 1", "Log 2"]);
+let (logs, set_logs) = Signal::pair(vec!["Log 1", "Log 2"]);
 
 Index::new(logs, |item, index| {
     // item 是 Signal<T>，内容变化时直接更新文本节点
@@ -272,7 +272,7 @@ Grid((
 
 ```rust
 // 1. 获取 JSON 数据并转化为 Resource (自动触发加载态)
-let user_id = Signal::new(1);
+let user_id = Signal::pair(1);
 let user_data = HttpClient::get("https://api.example.com/users/{id}")
     .path_param("id", user_id)
     .json::<User>()
@@ -310,7 +310,7 @@ ws.send_json(&msg)?;
 ### Server-Sent Events (SSE)
 
 ```rust
-let stream = EventStream::new("/api/notifications")
+let stream = EventStream::builder("/api/notifications")
     .event("update") // 监听特定事件
     .build();
 

@@ -1,5 +1,5 @@
 use silex_core::error::{ErrorContext, SilexError};
-use silex_core::reactivity::{Effect, provide_context, Signal};
+use silex_core::reactivity::{Effect, Signal, provide_context};
 use silex_core::traits::{RxGet, RxWrite};
 use silex_dom::attribute::GlobalAttributes;
 use silex_dom::view::View;
@@ -80,7 +80,7 @@ where
     V2: View + 'static,
 {
     fn mount_internal(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        let (error, set_error) = Signal::<Option<SilexError>>::new(None);
+        let (error, set_error) = Signal::<Option<SilexError>>::pair(None);
 
         provide_context(ErrorContext(Rc::new(move |e| {
             silex_core::log::console_error(format!("ErrorBoundary caught error: {}", e));

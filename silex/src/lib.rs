@@ -2,10 +2,10 @@ extern crate self as silex;
 
 pub mod components;
 pub mod flow;
-#[cfg(feature = "persistence")]
-pub mod persist;
 #[cfg(feature = "net")]
 pub mod net;
+#[cfg(feature = "persistence")]
+pub mod persist;
 pub mod router;
 pub mod store;
 
@@ -13,14 +13,14 @@ pub use components::*;
 pub use silex_core::error::{SilexError, SilexResult};
 
 pub mod reexports {
+    #[cfg(feature = "net")]
+    pub use gloo_timers;
     pub use js_sys;
+    #[cfg(feature = "json")]
+    pub use serde_json_wasm;
     pub use wasm_bindgen;
     pub use wasm_bindgen_futures;
     pub use web_sys;
-    #[cfg(feature = "json")]
-    pub use serde_json_wasm;
-    #[cfg(feature = "net")]
-    pub use gloo_timers;
 }
 
 pub mod core {

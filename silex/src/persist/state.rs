@@ -9,6 +9,12 @@ use silex_core::{Rx, RxValueKind};
 use silex_dom::view::View;
 use std::rc::Rc;
 
+pub type PersistenceGetFn = Rc<dyn Fn(&str) -> Result<Option<String>, PersistenceError>>;
+pub type PersistenceSetFn = Rc<dyn Fn(&str, &str) -> Result<(), PersistenceError>>;
+pub type PersistenceRemoveFn = Rc<dyn Fn(&str) -> Result<(), PersistenceError>>;
+pub type PersistenceEncodeFn<T> = Rc<dyn Fn(&T) -> Result<String, PersistenceError>>;
+pub type PersistenceDecodeFn<T> = Rc<dyn Fn(&str) -> Result<T, PersistenceError>>;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct DecodeErrorInfo {
     pub raw: String,
@@ -32,11 +38,11 @@ pub(crate) struct PersistenceController<T> {
     pub remove_policy: RemovePolicy,
     pub last_flushed_raw: Option<String>,
     pub skip_next_auto_flush: bool,
-    pub backend_get: Rc<dyn Fn(&str) -> Result<Option<String>, PersistenceError>>,
-    pub backend_set: Rc<dyn Fn(&str, &str) -> Result<(), PersistenceError>>,
-    pub backend_remove: Rc<dyn Fn(&str) -> Result<(), PersistenceError>>,
-    pub encode: Rc<dyn Fn(&T) -> Result<String, PersistenceError>>,
-    pub decode: Rc<dyn Fn(&str) -> Result<T, PersistenceError>>,
+    pub backend_get: PersistenceGetFn,
+    pub backend_set: PersistenceSetFn,
+    pub backend_remove: PersistenceRemoveFn,
+    pub encode: PersistenceEncodeFn<T>,
+    pub decode: PersistenceDecodeFn<T>,
     pub should_remove: Rc<dyn Fn(&T) -> bool>,
     pub subscription: Option<BackendSubscription>,
 }
@@ -51,7 +57,7 @@ impl Persistent<()> {
     /// Starts a new persistent binding builder for the given backend key.
     ///
     /// This is the entry point for creating any persistent state (LocalStorage, SessionStorage, or URL Query).
-    pub fn new(key: impl Into<String>) -> PersistentBuilder<NoBackend, NoCodec> {
+    pub fn builder(key: impl Into<String>) -> PersistentBuilder<NoBackend, NoCodec> {
         PersistentBuilder::new(key)
     }
 }
@@ -73,7 +79,7 @@ where
     /// ```rust,no_run
     /// use silex::prelude::*;
     ///
-    /// let theme = Persistent::new("theme")
+    /// let theme = Persistent::builder("theme")
     ///     .local()
     ///     .string()
     ///     .default("Light".to_string())
@@ -158,7 +164,7 @@ where
     /// ```rust,no_run
     /// use silex::prelude::*;
     ///
-    /// let draft = Persistent::new("draft")
+    /// let draft = Persistent::builder("draft")
     ///     .local()
     ///     .string()
     ///     .mode(PersistMode::Manual)
@@ -271,7 +277,11 @@ where
         self.into_rx().mount(parent, attrs);
     }
 
-    fn mount_ref(&self, parent: &web_sys::Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
+    fn mount_ref(
+        &self,
+        parent: &web_sys::Node,
+        attrs: Vec<silex_dom::attribute::PendingAttribute>,
+    ) {
         self.into_rx().mount_ref(parent, attrs);
     }
 }

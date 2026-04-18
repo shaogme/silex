@@ -167,7 +167,8 @@ impl RetryPolicy {
         let backoff_millis = backoff_millis.min(u128::from(u64::MAX));
         let backoff = Duration::from_millis(backoff_millis as u64);
         if self.jitter {
-            let jitter_millis = (js_sys::Math::random() * backoff.as_millis() as f64).floor() as u128;
+            let jitter_millis =
+                (js_sys::Math::random() * backoff.as_millis() as f64).floor() as u128;
             Duration::from_millis(jitter_millis.min(u128::from(u64::MAX)) as u64)
         } else {
             backoff

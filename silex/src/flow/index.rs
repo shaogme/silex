@@ -1,6 +1,6 @@
 use crate::flow::for_loop::ForLoopSource;
 use silex_core::reactivity::{
-    Effect, NodeId, ReadSignal, WriteSignal, batch, create_scope, dispose, Signal,
+    Effect, NodeId, ReadSignal, Signal, WriteSignal, batch, create_scope, dispose,
 };
 use silex_core::traits::{IntoRx, RxRead, RxWrite};
 use silex_dom::prelude::View;
@@ -109,7 +109,7 @@ fn mount_index_internal<ItemsFn, Item, Items, MapFn, V>(
                         let (set, scope_id, nodes, fragment_node) =
                             silex_core::reactivity::untrack(|| {
                                 let real_index = common_len + i;
-                                let (get, set) = Signal::new(item.clone());
+                                let (get, set) = Signal::pair(item.clone());
                                 let fragment = document.create_document_fragment();
                                 let fragment_node: Node = fragment.clone().into();
                                 let fragment_node_clone = fragment_node.clone();

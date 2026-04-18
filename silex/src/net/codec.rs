@@ -34,7 +34,7 @@ impl crate::persist::PersistCodec<String> for TextCodec {
 #[cfg(feature = "persistence")]
 impl CacheCodec<String> for TextCodec {
     fn build_cache(key: String, default: String) -> crate::persist::Persistent<String> {
-        crate::persist::Persistent::new(key)
+        crate::persist::Persistent::builder(key)
             .local()
             .string()
             .default(default)
@@ -59,8 +59,7 @@ where
     T: serde::de::DeserializeOwned + Clone + 'static,
 {
     fn decode(&self, raw: &str) -> Result<T, NetError> {
-        serde_json_wasm::from_str(raw)
-            .map_err(|err| NetError::DecodeError(err.to_string()))
+        serde_json_wasm::from_str(raw).map_err(|err| NetError::DecodeError(err.to_string()))
     }
 }
 
@@ -84,7 +83,7 @@ where
     T: serde::Serialize + serde::de::DeserializeOwned + Clone + PartialEq + 'static,
 {
     fn build_cache(key: String, default: T) -> crate::persist::Persistent<T> {
-        crate::persist::Persistent::new(key)
+        crate::persist::Persistent::builder(key)
             .local()
             .json::<T>()
             .default(default)

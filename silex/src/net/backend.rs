@@ -1,14 +1,14 @@
 use crate::net::NetError;
-use crate::net::state::{ConnectionState, EventMessage, HttpResponse, RequestBody, RequestSpec};
 use crate::net::state::RetryPolicy;
+use crate::net::state::{ConnectionState, EventMessage, HttpResponse, RequestBody, RequestSpec};
+use js_sys::Function;
 use std::cell::Cell;
 use std::future::Future;
 use std::pin::Pin;
-use js_sys::Function;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsValue;
+use wasm_bindgen::closure::Closure;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
     AbortController, Event, EventSource as JsEventSource, FormData, Headers, MessageEvent, Request,
@@ -104,8 +104,7 @@ impl BrowserTransport {
             RequestBody::Form(fields) => {
                 let form = FormData::new().map_err(NetError::from)?;
                 for (name, value) in fields {
-                    form.append_with_str(name, value)
-                        .map_err(NetError::from)?;
+                    form.append_with_str(name, value).map_err(NetError::from)?;
                 }
                 init.set_body(form.as_ref());
             }
@@ -171,7 +170,7 @@ impl WebSocket {
 pub struct EventStream;
 
 impl EventStream {
-    pub fn new(url: impl Into<String>) -> EventStreamBuilder {
+    pub fn builder(url: impl Into<String>) -> EventStreamBuilder {
         EventStreamBuilder::new(url)
     }
 }
@@ -196,7 +195,6 @@ impl Drop for WebSocketConnection {
         let _ = self.socket.close();
     }
 }
-
 
 impl WebSocketConnection {
     pub fn state(&self) -> ReadSignal<ConnectionState> {
@@ -305,9 +303,9 @@ impl WebSocketBuilder {
                 .expect("failed to create WebSocket")
         };
 
-        let (state, set_state) = Signal::new(ConnectionState::Connecting);
-        let (message, set_message) = Signal::new(None::<String>);
-        let (error, set_error) = Signal::new(None::<String>);
+        let (state, set_state) = Signal::pair(ConnectionState::Connecting);
+        let (message, set_message) = Signal::pair(None::<String>);
+        let (error, set_error) = Signal::pair(None::<String>);
 
         let on_open_handlers = self.on_open.clone();
         let on_error_handlers = self.on_error.clone();
@@ -394,7 +392,6 @@ impl Drop for EventStreamConnection {
     }
 }
 
-
 impl EventStreamConnection {
     pub fn state(&self) -> ReadSignal<ConnectionState> {
         self.state
@@ -478,9 +475,9 @@ impl EventStreamBuilder {
     pub fn build(self) -> EventStreamConnection {
         let source = JsEventSource::new(&self.url).expect("failed to create EventSource");
 
-        let (state, set_state) = Signal::new(ConnectionState::Connecting);
-        let (messages, set_messages) = Signal::new(Vec::<EventMessage>::new());
-        let (error, set_error) = Signal::new(None::<String>);
+        let (state, set_state) = Signal::pair(ConnectionState::Connecting);
+        let (messages, set_messages) = Signal::pair(Vec::<EventMessage>::new());
+        let (error, set_error) = Signal::pair(None::<String>);
 
         let on_open_handlers = self.on_open.clone();
         let on_error_handlers = self.on_error.clone();
@@ -519,7 +516,7 @@ impl EventStreamBuilder {
         if let Some(event_name) = &self.event_name {
             let on_message_fn = on_message.as_ref().unchecked_ref::<Function>();
             source
-                .add_event_listener_with_callback(&event_name, on_message_fn)
+                .add_event_listener_with_callback(event_name, on_message_fn)
                 .expect("failed to register event listener");
         } else {
             source.set_onmessage(Some(on_message.as_ref().unchecked_ref::<Function>()));

@@ -74,7 +74,7 @@ impl Default for ComplexState {
 
 #[component]
 pub fn JsonStorageDemo() -> impl View {
-    let state = Persistent::new("showcase-json-state")
+    let state = Persistent::builder("showcase-json-state")
         .local()
         .json::<ComplexState>()
         .default(ComplexState::default())
@@ -110,7 +110,7 @@ pub fn JsonStorageDemo() -> impl View {
 
 #[component]
 pub fn StorageDemo() -> impl View {
-    let count = Persistent::new("showcase-counter")
+    let count = Persistent::builder("showcase-counter")
         .local()
         .parse::<i32>()
         .default(0)
@@ -145,7 +145,7 @@ pub fn StorageDemo() -> impl View {
 
 #[component]
 pub fn QueryDemo() -> impl View {
-    let val = Persistent::new("demo_val")
+    let val = Persistent::builder("demo_val")
         .query()
         .string()
         .default(String::new())
@@ -153,7 +153,7 @@ pub fn QueryDemo() -> impl View {
 
     div![
         h3("Query Signal Demo"),
-        p("This input is synced with the URL query parameter 'demo_val' using `Persistent::new(...).query()`."),
+        p("This input is synced with the URL query parameter 'demo_val' using `Persistent::builder(...).query()`."),
         div![
             input()
                 .bind_value(val) // Automatic two-way binding
@@ -217,7 +217,7 @@ async fn mock_fetch_user(id: i32) -> Result<UserProfile, String> {
 
 #[component]
 pub fn ResourceDemo() -> impl View {
-    let (user_id, set_user_id) = Signal::new(1);
+    let (user_id, set_user_id) = Signal::pair(1);
 
     // Create Resource: triggers when user_id changes
     let user_resource = Resource::new(user_id, mock_fetch_user);
@@ -351,11 +351,11 @@ pub fn MutationDemo() -> impl View {
 pub fn SuspenseDemo() -> impl View {
     use silex::components::{SuspenseBoundary, SuspenseMode};
 
-    let (show_content, set_show_content) = Signal::new(false);
-    let (mode, set_mode) = Signal::new(SuspenseMode::KeepAlive);
+    let (show_content, set_show_content) = Signal::pair(false);
+    let (mode, set_mode) = Signal::pair(SuspenseMode::KeepAlive);
 
     // Trigger for reloading the resource
-    let (trigger, set_trigger) = Signal::new(0);
+    let (trigger, set_trigger) = Signal::pair(0);
 
     // Mock heavy resource
     async fn heavy_work(id: i32) -> Result<String, String> {
@@ -480,10 +480,10 @@ impl std::fmt::Display for QuantumIdentity {
 #[component]
 pub fn AdaptiveReadDemo() -> impl View {
     let system_name = RwSignal::new("Nebula-1".to_string());
-    let (stability, set_stability) = Signal::new(0.85); // 0.0 to 1.0
+    let (stability, set_stability) = Signal::pair(0.85); // 0.0 to 1.0
 
     // Create a non-cloneable resource
-    let (identity, _) = Signal::new(QuantumIdentity::new(0xDEADBEEF));
+    let (identity, _) = Signal::pair(QuantumIdentity::new(0xDEADBEEF));
 
     // 1. REACTIVE TUPLE: Used for organizational grouping and tracking.
     // Note: (RwSignal<String>, ReadSignal<f64>, ReadSignal<QuantumIdentity>)
