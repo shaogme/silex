@@ -80,16 +80,14 @@ pub fn split_rules(css: &str) -> Vec<&str> {
                 }
             }
             b'{' if in_quote.is_none() => depth += 1,
-            b'}' if in_quote.is_none() => {
-                if depth > 0 {
-                    depth -= 1;
-                    if depth == 0 {
-                        let rule = css[start..i + 1].trim();
-                        if !rule.is_empty() {
-                            rules.push(rule);
-                        }
-                        start = i + 1;
+            b'}' if in_quote.is_none() && depth > 0 => {
+                depth -= 1;
+                if depth == 0 {
+                    let rule = css[start..i + 1].trim();
+                    if !rule.is_empty() {
+                        rules.push(rule);
                     }
+                    start = i + 1;
                 }
             }
             b';' if depth == 0 && in_quote.is_none() => {
