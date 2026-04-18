@@ -18,9 +18,9 @@ proc-macro = true
 workspace = true
 
 [dependencies]
-syn.workspace = true
-quote.workspace = true
-proc-macro2.workspace = true
+syn = { workspace = true, features = ["full", "extra-traits", "parsing", "printing", "proc-macro", "clone-impls"] }
+quote = { workspace = true, features = ["proc-macro"] }
+proc-macro2 = { workspace = true, features = ["proc-macro"] }
 lightningcss = { version = "1.0.0-alpha.70", optional = true , default-features = false }
 
 silex_hash = { workspace = true, optional = true }
