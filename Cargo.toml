@@ -28,7 +28,7 @@ resolver = "3"
 warnings = "deny"
 
 [workspace.package]
-version = "0.1.0-beta.2"
+version = "0.1.0-beta.3"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Shao G. <shaog.me@gmail.com>"]
@@ -43,16 +43,16 @@ categories = ["web-programming", "wasm", "gui"]
 [workspace.dependencies]
 
 # Internal Crates
-silex = { path = "silex", version = "0.1.0-beta.2" }
-silex_core = { path = "silex_core", version = "0.1.0-beta.2" }
-silex_dom = { path = "silex_dom", version = "0.1.0-beta.2" }
-silex_html = { path = "silex_html", version = "0.1.0-beta.2" }
-silex_css = { path = "silex_css", version = "0.1.0-beta.2" }
-silex_macros = { path = "silex_macros", version = "0.1.0-beta.2" }
-silex_reactivity = { path = "silex_reactivity", version = "0.1.0-beta.2" }
-silex_hash = { path = "silex_hash", version = "0.1.0-beta.2" }
-silex_rx = { path = "silex_rx", version = "0.1.0-beta.2" }
-silex_vtable = { path = "silex_vtable", version = "0.1.0-beta.2" }
+silex = { path = "silex", version = "0.1.0-beta.3" }
+silex_core = { path = "silex_core", version = "0.1.0-beta.3" }
+silex_dom = { path = "silex_dom", version = "0.1.0-beta.3" }
+silex_html = { path = "silex_html", version = "0.1.0-beta.3" }
+silex_css = { path = "silex_css", version = "0.1.0-beta.3" }
+silex_macros = { path = "silex_macros", version = "0.1.0-beta.3" }
+silex_reactivity = { path = "silex_reactivity", version = "0.1.0-beta.3" }
+silex_hash = { path = "silex_hash", version = "0.1.0-beta.3" }
+silex_rx = { path = "silex_rx", version = "0.1.0-beta.3" }
+silex_vtable = { path = "silex_vtable", version = "0.1.0-beta.3" }
 
 wasm-bindgen = { version = "0.2", default-features = false }
 web-sys = { version = "0.3", default-features = false, features = [
@@ -142,8 +142,6 @@ gloo-timers = { version = "0.3", default-features = false, features = ["futures"
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde-wasm-bindgen = "0.6"
-serde-json-wasm = "1.0"
 
 syn = { version = "2.0", default-features = false }
 quote = { version = "1.0", default-features = false }

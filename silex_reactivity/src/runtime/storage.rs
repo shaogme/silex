@@ -169,7 +169,7 @@ impl CleanupList {
         match old {
             Self::Empty => *self = Self::Single(f),
             Self::Single(prev) => *self = Self::Many(vec![prev, f]),
-            Self::Many(_) => unreachable!(),
+            Self::Many(_) => unreachable!("CleanupList::push: impossible state"),
         }
     }
 }

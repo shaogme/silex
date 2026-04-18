@@ -6,7 +6,7 @@
 
 *   `macros` (default): 启用过程宏支持。
 *   `persistence`: 启用 `silex::persist` 模块。
-*   `json`: 启用 `JsonCodec` 支持（依赖 `persistence`, `serde`, `serde-wasm-bindgen`）。
+*   `json`: 启用 `JsonCodec` 支持（依赖 `persistence`, `serde`, `serde_json`）。
 *   `net`: 启用网络通信支持 (`silex::net`)。
 
 ## 1. 核心导出 (Core Exports)

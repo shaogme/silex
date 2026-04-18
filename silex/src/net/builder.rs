@@ -225,7 +225,7 @@ impl<T, C> HttpClientBuilder<T, C> {
     where
         TBody: serde::Serialize,
     {
-        self.body = match serde_json_wasm::to_string(&value) {
+        self.body = match serde_json::to_string(&value) {
             Ok(raw) => RequestBody::Json(raw),
             Err(err) => RequestBody::Json(format!("{{\"serialize_error\":\"{}\"}}", err)),
         };

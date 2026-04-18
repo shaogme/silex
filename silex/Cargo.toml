@@ -26,14 +26,14 @@ web-sys.workspace = true
 js-sys.workspace = true
 wasm-bindgen-futures.workspace = true
 serde = { workspace = true, optional = true }
-serde-json-wasm = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 gloo-timers = { workspace = true, optional = true }
 
 [features]
 default = ["macros"]
 macros = ["silex_macros"]
 persistence = []
-json = ["dep:serde", "dep:serde-json-wasm"]
+json = ["dep:serde", "dep:serde_json"]
 net = ["dep:gloo-timers"]
 
 [dev-dependencies]

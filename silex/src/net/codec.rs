@@ -59,7 +59,7 @@ where
     T: serde::de::DeserializeOwned + Clone + 'static,
 {
     fn decode(&self, raw: &str) -> Result<T, NetError> {
-        serde_json_wasm::from_str(raw).map_err(|err| NetError::DecodeError(err.to_string()))
+        serde_json::from_str(raw).map_err(|err| NetError::DecodeError(err.to_string()))
     }
 }
 
@@ -69,11 +69,11 @@ where
     T: serde::Serialize + serde::de::DeserializeOwned + Clone + 'static,
 {
     fn encode(&self, value: &T) -> Result<String, String> {
-        serde_json_wasm::to_string(value).map_err(|err| err.to_string())
+        serde_json::to_string(value).map_err(|err| err.to_string())
     }
 
     fn decode(&self, raw: &str) -> Result<T, String> {
-        serde_json_wasm::from_str(raw).map_err(|err| err.to_string())
+        serde_json::from_str(raw).map_err(|err| err.to_string())
     }
 }
 

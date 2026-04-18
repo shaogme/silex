@@ -210,7 +210,7 @@ impl WebSocketConnection {
         Memo::new(move |_| {
             message
                 .get()
-                .and_then(|raw| serde_json_wasm::from_str(&raw).ok())
+                .and_then(|raw| serde_json::from_str(&raw).ok())
         })
     }
 
@@ -233,7 +233,7 @@ impl WebSocketConnection {
     where
         T: serde::Serialize,
     {
-        let payload = serde_json_wasm::to_string(value)
+        let payload = serde_json::to_string(value)
             .map_err(|err| NetError::SerializeError(err.to_string()))?;
         self.send(payload)
     }
@@ -407,7 +407,7 @@ impl EventStreamConnection {
             messages
                 .get()
                 .into_iter()
-                .filter_map(|msg| serde_json_wasm::from_str(&msg.data).ok())
+                .filter_map(|msg| serde_json::from_str(&msg.data).ok())
                 .collect()
         })
     }
@@ -422,7 +422,7 @@ impl EventStreamConnection {
             messages
                 .get()
                 .last()
-                .and_then(|msg| serde_json_wasm::from_str(&msg.data).ok())
+                .and_then(|msg| serde_json::from_str(&msg.data).ok())
         })
     }
 

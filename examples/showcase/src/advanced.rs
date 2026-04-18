@@ -524,7 +524,7 @@ pub fn AdaptiveReadDemo() -> impl View {
         h3("Adaptive Read & Segmented Access")
             .style("color: #2c3e50; border-left: 5px solid #e74c3c; padding-left: 15px; margin-bottom: 20px;"),
 
-        p("Silex 0.1.0-beta.2 optimizes reactive access for performance. While tuples can group resources, segmented access using individual signals ensures zero-copy performance without Clone requirements."),
+        p("Silex 0.1.0-beta.3 optimizes reactive access for performance. While tuples can group resources, segmented access using individual signals ensures zero-copy performance without Clone requirements."),
 
         div![
             // Live Status Bar
