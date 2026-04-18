@@ -308,10 +308,10 @@ mod tests {
         assert!(expanded.contains("pub page : :: silex :: prelude :: Persistent < u32 >"));
         assert!(expanded.contains("pub username : :: silex :: prelude :: RwSignal < String >"));
         assert!(expanded.contains(
-            ":: silex :: prelude :: Persistent :: new (\"settings-theme\") . local () . string ()"
+            ":: silex :: prelude :: Persistent :: builder (\"settings-theme\") . local () . string () . default (source . theme) . build ()"
         ));
         assert!(expanded.contains(
-            ":: silex :: prelude :: Persistent :: new (\"settings-page\") . query () . parse :: < u32 > ()"
+            ":: silex :: prelude :: Persistent :: builder (\"settings-page\") . query () . parse :: < u32 > () . default (source . page) . build ()"
         ));
     }
 }

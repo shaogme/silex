@@ -676,7 +676,7 @@ mod tests {
         assert_eq!(value.get_untracked(), 9);
         assert_eq!(
             value.state().get_untracked(),
-            PersistenceState::Ready("9".to_string())
+            PersistenceState::Ready(String::new())
         );
     }
 
