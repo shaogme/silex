@@ -24,16 +24,20 @@ pub trait ValidFor<Prop> {}
 pub trait CssValue: Display {}
 impl<T: Display> CssValue for T {}
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct UnsafeCss(pub String);
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct UnsafeCss(pub Option<String>);
 impl UnsafeCss {
     pub fn new<T: Display>(val: T) -> Self {
-        Self(val.to_string())
+        Self(Some(val.to_string()))
     }
 }
 impl Display for UnsafeCss {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        if let Some(v) = &self.0 {
+            write!(f, "{}", v)
+        } else {
+            Ok(())
+        }
     }
 }
 

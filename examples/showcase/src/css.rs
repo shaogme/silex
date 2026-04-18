@@ -218,7 +218,7 @@ pub fn StylingBasics() -> impl View {
                 .padding_val(padding_state)
                 .on(event::click, move |_| {
                     set_color.update(|c| {
-                        *c = if c.0 == "#ffffff" { hex("#fbbf24") } else { hex("#ffffff") }
+                        *c = if c.0.as_deref() == Some("#ffffff") { hex("#fbbf24") } else { hex("#ffffff") }
                     });
                     set_size.update(|s| {
                         *s = if *s == "medium" { "large".to_string() } else { "medium".to_string() }
@@ -230,7 +230,7 @@ pub fn StylingBasics() -> impl View {
                         *p = padding::x_y(px(16), px(32));
                     });
                     set_hover_color.update(|c| {
-                        *c = if c.0 == "#4f46e5" { hex("#ec4899") } else { hex("#4f46e5") }
+                        *c = if c.0.as_deref() == Some("#4f46e5") { hex("#ec4899") } else { hex("#4f46e5") }
                     });
                     set_pseudo_state.update(|s| {
                         *s = if *s == "hover" { "active".to_string() } else { "hover".to_string() }
@@ -350,7 +350,7 @@ pub fn Theming() -> impl View {
         default_light_theme()
     };
     let (theme, set_theme) = Signal::pair(initial_theme);
-    let is_dark = theme.map(|t| t.surface.0 == "#111827");
+    let is_dark = theme.map(|t| t.surface.0.as_deref() == Some("#111827"));
 
     div![
         h2("🎨 Theme Engine"),

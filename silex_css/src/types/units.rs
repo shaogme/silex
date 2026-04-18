@@ -5,184 +5,234 @@ use std::fmt::Display;
 // ==========================================
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Px(pub f64);
+pub struct Px(pub Option<f64>);
 impl Display for Px {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}px", self.0)
+        if let Some(v) = self.0 {
+            write!(f, "{}px", v)
+        } else {
+            Ok(())
+        }
     }
 }
 
 impl From<i32> for Px {
     fn from(v: i32) -> Self {
-        Px(v as f64)
+        Px(Some(v as f64))
     }
 }
 
 impl From<f64> for Px {
     fn from(v: f64) -> Self {
-        Px(v)
+        Px(Some(v))
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Percent(pub f64);
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Percent(pub Option<f64>);
 impl Display for Percent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}%", self.0)
+        if let Some(v) = self.0 {
+            write!(f, "{}%", v)
+        } else {
+            Ok(())
+        }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Rgba(pub u8, pub u8, pub u8, pub f32);
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Rgba(pub Option<(u8, u8, u8, f32)>);
 impl Display for Rgba {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "rgba({}, {}, {}, {})", self.0, self.1, self.2, self.3)
+        if let Some((r, g, b, a)) = self.0 {
+            write!(f, "rgba({}, {}, {}, {})", r, g, b, a)
+        } else {
+            Ok(())
+        }
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
-pub struct Auto;
+pub struct Auto(pub Option<()>);
 impl Display for Auto {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "auto")
+        if self.0.is_some() {
+            write!(f, "auto")
+        } else {
+            Ok(())
+        }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Rem(pub f64);
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Rem(pub Option<f64>);
 impl Display for Rem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}rem", self.0)
+        if let Some(v) = self.0 {
+            write!(f, "{}rem", v)
+        } else {
+            Ok(())
+        }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Em(pub f64);
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Em(pub Option<f64>);
 impl Display for Em {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}em", self.0)
+        if let Some(v) = self.0 {
+            write!(f, "{}em", v)
+        } else {
+            Ok(())
+        }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Vw(pub f64);
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Vw(pub Option<f64>);
 impl Display for Vw {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}vw", self.0)
+        if let Some(v) = self.0 {
+            write!(f, "{}vw", v)
+        } else {
+            Ok(())
+        }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Vh(pub f64);
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Vh(pub Option<f64>);
 impl Display for Vh {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}vh", self.0)
+        if let Some(v) = self.0 {
+            write!(f, "{}vh", v)
+        } else {
+            Ok(())
+        }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Deg(pub f64);
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Deg(pub Option<f64>);
 impl Display for Deg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}deg", self.0)
+        if let Some(v) = self.0 {
+            write!(f, "{}deg", v)
+        } else {
+            Ok(())
+        }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Rad(pub f64);
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Rad(pub Option<f64>);
 impl Display for Rad {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}rad", self.0)
+        if let Some(v) = self.0 {
+            write!(f, "{}rad", v)
+        } else {
+            Ok(())
+        }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Turn(pub f64);
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Turn(pub Option<f64>);
 impl Display for Turn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}turn", self.0)
+        if let Some(v) = self.0 {
+            write!(f, "{}turn", v)
+        } else {
+            Ok(())
+        }
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Hex(pub String);
-
-impl Default for Hex {
-    fn default() -> Self {
-        Self("#000000".to_string())
-    }
-}
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Hex(pub Option<String>);
 impl Display for Hex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        if let Some(v) = &self.0 {
+            write!(f, "{}", v)
+        } else {
+            Ok(())
+        }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Hsl(pub u16, pub u8, pub u8);
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Hsl(pub Option<(u16, u8, u8)>);
 impl Display for Hsl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "hsl({}, {}%, {}%)", self.0, self.1, self.2)
+        if let Some((h, s, l)) = self.0 {
+            write!(f, "hsl({}, {}%, {}%)", h, s, l)
+        } else {
+            Ok(())
+        }
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Url(pub String);
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Url(pub Option<String>);
 impl Display for Url {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "url('{}')", self.0)
+        if let Some(v) = &self.0 {
+            write!(f, "url('{}')", v)
+        } else {
+            Ok(())
+        }
     }
 }
 
 #[inline]
 pub fn px<T: Into<f64>>(v: T) -> Px {
-    Px(v.into())
+    Px(Some(v.into()))
 }
 #[inline]
 pub fn pct<T: Into<f64>>(v: T) -> Percent {
-    Percent(v.into())
+    Percent(Some(v.into()))
 }
 #[inline]
 pub fn rem<T: Into<f64>>(v: T) -> Rem {
-    Rem(v.into())
+    Rem(Some(v.into()))
 }
 #[inline]
 pub fn em<T: Into<f64>>(v: T) -> Em {
-    Em(v.into())
+    Em(Some(v.into()))
 }
 #[inline]
 pub fn vw<T: Into<f64>>(v: T) -> Vw {
-    Vw(v.into())
+    Vw(Some(v.into()))
 }
 #[inline]
 pub fn vh<T: Into<f64>>(v: T) -> Vh {
-    Vh(v.into())
+    Vh(Some(v.into()))
 }
 #[inline]
 pub fn deg<T: Into<f64>>(v: T) -> Deg {
-    Deg(v.into())
+    Deg(Some(v.into()))
 }
 #[inline]
 pub fn rad<T: Into<f64>>(v: T) -> Rad {
-    Rad(v.into())
+    Rad(Some(v.into()))
 }
 #[inline]
 pub fn turn<T: Into<f64>>(v: T) -> Turn {
-    Turn(v.into())
+    Turn(Some(v.into()))
 }
 #[inline]
 pub fn rgba(r: u8, g: u8, b: u8, a: f32) -> Rgba {
-    Rgba(r, g, b, a)
+    Rgba(Some((r, g, b, a)))
 }
 #[inline]
 pub fn hex<T: Into<String>>(v: T) -> Hex {
-    Hex(v.into())
+    Hex(Some(v.into()))
 }
 #[inline]
 pub fn hsl(h: u16, s: u8, l: u8) -> Hsl {
-    Hsl(h, s, l)
+    Hsl(Some((h, s, l)))
 }
 #[inline]
 pub fn url<T: Into<String>>(v: T) -> Url {
-    Url(v.into())
+    Url(Some(v.into()))
 }

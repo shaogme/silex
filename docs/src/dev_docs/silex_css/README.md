@@ -54,16 +54,21 @@ pub trait ValidFor<Prop> {}
 
 impl ValidFor<props::Width> for Px {}
 impl ValidFor<props::Width> for Percent {}
-// 核心验证组：
+// 零大小类型 (ZST) 验证组：
 // - Dimension: 长度单位
 // - Color: 颜色单位
 // - Number: 各类数字
 // - Complex: 独立于以上组的复杂 DSL (如 TransformBuilder)
 // 编译期会拦截：Style::new().width(rgba(0,0,0,1))
-```
-这种设计利用了 Rust 的类型系统实现了“非法状态不可表示”。
 
-### 4.2 运算符重载与计算表达式 (`calc.rs`)
+### 4.2 内部 Optional 系统与空值处理
+为了支持样式的“未设置”状态并提供有意义的 `Default` 实现，所有 CSS 类型（如 `Px`, `Hex`, `UnsafeCss` 等）内部均采用 `Option` 包装数据：
+- **默认值**：`Default::default()` 始终产生 `NoneValue`（内含 `None`），在渲染时被忽略。
+- **工厂函数**：`px(10.0)` 等工厂函数会生成 `Some` 包装的值。
+- **比较逻辑**：由于内部是 `Option`，若需直接比较内部字符串（如 `Hex`），建议使用 `.0.as_deref() == Some("#ffffff")`。
+- **元组属性**：对于 `Rgba` 或 `Hsl` 等多值属性，采用 `Option<(...)>` 结构。
+
+### 4.3 运算符重载与计算表达式 (`calc.rs`)
 为了提供原生的 CSS 计算体验，`silex_css` 针对标量类型（如 `Px`, `Rem`）重载了算术运算符：
 - **运算符重载**：`px(100) + rem(2)` 会在编译期生成一个 `CalcValue<LengthMark>`，其内部字符串为 `(100px + 2rem)`。
 - **计算函数**：支持 `calc()`, `min()`, `max()`, `clamp()`。

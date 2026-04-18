@@ -7,11 +7,15 @@ use std::fmt::{Display, Write};
 
 // --- Transform ---
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct TransformValue(pub String);
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TransformValue(pub Option<String>);
 impl Display for TransformValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        if let Some(v) = &self.0 {
+            write!(f, "{}", v)
+        } else {
+            Ok(())
+        }
     }
 }
 impl ValidFor<props::Transform> for TransformValue {}
@@ -69,7 +73,11 @@ impl TransformBuilder {
             }
             val.push_str(part);
         }
-        TransformValue(val)
+        if val.is_empty() {
+            TransformValue(None)
+        } else {
+            TransformValue(Some(val))
+        }
     }
 }
 
@@ -93,11 +101,15 @@ pub fn transform() -> TransformBuilder {
 
 // --- Grid Template Areas ---
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct GridTemplateAreasValue(pub String);
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GridTemplateAreasValue(pub Option<String>);
 impl Display for GridTemplateAreasValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        if let Some(v) = &self.0 {
+            write!(f, "{}", v)
+        } else {
+            Ok(())
+        }
     }
 }
 impl ValidFor<props::GridTemplateAreas> for GridTemplateAreasValue {}
@@ -114,16 +126,24 @@ where
         }
         write!(val, "\"{}\"", s.as_ref()).unwrap();
     }
-    GridTemplateAreasValue(val)
+    if val.is_empty() {
+        GridTemplateAreasValue(None)
+    } else {
+        GridTemplateAreasValue(Some(val))
+    }
 }
 
 // --- Font Variation Settings ---
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct FontVariationSettingsValue(pub String);
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FontVariationSettingsValue(pub Option<String>);
 impl Display for FontVariationSettingsValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        if let Some(v) = &self.0 {
+            write!(f, "{}", v)
+        } else {
+            Ok(())
+        }
     }
 }
 impl ValidFor<props::FontVariationSettings> for FontVariationSettingsValue {}
@@ -141,5 +161,9 @@ where
         }
         write!(val, "\"{}\" {}", k, v).unwrap();
     }
-    FontVariationSettingsValue(val)
+    if val.is_empty() {
+        FontVariationSettingsValue(None)
+    } else {
+        FontVariationSettingsValue(Some(val))
+    }
 }

@@ -5,11 +5,15 @@ use std::fmt::Display;
 // 渐变 DSL (Gradients)
 // ==========================================
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct GradientValue(pub String);
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct GradientValue(pub Option<String>);
 impl Display for GradientValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        if let Some(v) = &self.0 {
+            write!(f, "{}", v)
+        } else {
+            Ok(())
+        }
     }
 }
 impl ValidFor<props::BackgroundImage> for GradientValue {}
@@ -122,7 +126,7 @@ impl LinearGradientBuilder {
             first = false;
         }
         s.push(')');
-        GradientValue(s)
+        GradientValue(Some(s))
     }
 }
 
@@ -206,7 +210,7 @@ impl RadialGradientBuilder {
             first = false;
         }
         s.push(')');
-        GradientValue(s)
+        GradientValue(Some(s))
     }
 }
 
