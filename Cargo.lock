@@ -1247,7 +1247,7 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "silex"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "gloo-timers",
  "js-sys",
@@ -1267,7 +1267,7 @@ dependencies = [
 
 [[package]]
 name = "silex_codegen"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "heck",
  "reqwest",
@@ -1277,7 +1277,7 @@ dependencies = [
 
 [[package]]
 name = "silex_core"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "silex_reactivity",
  "silex_rx",
@@ -1288,7 +1288,7 @@ dependencies = [
 
 [[package]]
 name = "silex_counter"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "gloo-timers",
  "silex",
@@ -1296,7 +1296,7 @@ dependencies = [
 
 [[package]]
 name = "silex_css"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "js-sys",
  "silex_core",
@@ -1310,7 +1310,7 @@ dependencies = [
 
 [[package]]
 name = "silex_dom"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "js-sys",
  "silex_core",
@@ -1321,7 +1321,7 @@ dependencies = [
 
 [[package]]
 name = "silex_error_demo"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "silex",
  "silex_macros",
@@ -1329,11 +1329,11 @@ dependencies = [
 
 [[package]]
 name = "silex_hash"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 
 [[package]]
 name = "silex_html"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "silex_dom",
  "wasm-bindgen",
@@ -1342,7 +1342,7 @@ dependencies = [
 
 [[package]]
 name = "silex_macros"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "lightningcss",
  "proc-macro2",
@@ -1353,14 +1353,14 @@ dependencies = [
 
 [[package]]
 name = "silex_reactivity"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "silex_vtable",
 ]
 
 [[package]]
 name = "silex_router_example"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "silex",
  "wasm-bindgen",
@@ -1369,7 +1369,7 @@ dependencies = [
 
 [[package]]
 name = "silex_rx"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1378,7 +1378,7 @@ dependencies = [
 
 [[package]]
 name = "silex_showcase"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "gloo-timers",
  "serde",
@@ -1389,14 +1389,14 @@ dependencies = [
 
 [[package]]
 name = "silex_store_demo"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "silex",
 ]
 
 [[package]]
 name = "silex_vtable"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 
 [[package]]
 name = "siphasher"
