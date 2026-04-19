@@ -581,7 +581,7 @@ fn extract_dynamic_value(
                 if !ctx.class_name.is_empty() {
                     out.push_str(&format!("var(--{}-{})", ctx.class_name, idx));
                 } else {
-                    out.push_str(&format!("var(--dyn-{})", idx));
+                    out.push_str("{}");
                 }
                 iter.next();
                 return Ok(true);
@@ -595,7 +595,7 @@ fn extract_dynamic_value(
                 if !ctx.class_name.is_empty() {
                     out.push_str(&format!("var(--{}-{})", ctx.class_name, idx));
                 } else {
-                    out.push_str(&format!("var(--dyn-{})", idx));
+                    out.push_str("{}");
                 }
                 return Ok(true);
             }

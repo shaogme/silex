@@ -495,18 +495,57 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         .unwrap_or_else(|| quote::format_ident!("GlobalStyles"));
     let res = CssCompiler::compile_global(parsed.css_block, c_name.span(), parsed.is_unsafe)?;
 
-    let mut var_decls = Vec::new();
-    let mut style_bindings = Vec::new();
-    for (i, (prop, expr)) in res.expressions.iter().enumerate() {
-        let vid = quote::format_ident!("var_{}", i);
-        let pty = crate::css::get_prop_type(prop, c_name.span())?;
-        var_decls.push(quote! { let #vid = ::silex::css::make_dynamic_val_for::<#pty, _>(#expr); });
-        let vname = format!("--dyn-{}", i);
-        style_bindings.push(quote! { (::std::borrow::Cow::Borrowed(#vname), #vid.clone()) });
-    }
-
     let mut inits = Vec::new();
     let mut logics = Vec::new();
+
+    // 1. Process top-level expressions using template replacement (eliminates --dyn-N proxy)
+    if !res.expressions.is_empty() {
+        let mut evals = Vec::new();
+        let mut r_decls = Vec::new();
+        for (i, (prop, expr)) in res.expressions.iter().enumerate() {
+            let vid = quote::format_ident!("global_var_{}", i);
+            let pty = crate::css::get_prop_type(prop, c_name.span())?;
+            r_decls
+                .push(quote! { let #vid = ::silex::css::make_dynamic_val_for::<#pty, _>(#expr); });
+            evals.push(vid);
+        }
+
+        // Combine static (at-rules) and component (rules) CSS into one template
+        let template = format!("{}\n{}", res.static_css, res.component_css);
+        let mid = quote::format_ident!("global_root_manager");
+        let sid = &res.style_id;
+
+        inits.push(quote! {
+            #(#r_decls)*
+            let #mid = ::std::rc::Rc::new(::std::cell::RefCell::new(Some(::silex::css::DynamicStyleManager::new())));
+            let cleanup = #mid.clone();
+            ::silex::core::reactivity::on_cleanup(move || { if let Ok(mut o) = cleanup.try_borrow_mut() { o.take(); } });
+        });
+
+        logics.push(quote! {{
+            let manager = #mid.clone();
+            ::silex::prelude::rx! {
+                let mut res = ::std::string::ToString::to_string(#template);
+                #( if let Some(p) = res.find("{}") { res.replace_range(p..p+2, &#evals.get()); } )*
+                if let Ok(mut o) = manager.try_borrow_mut() { if let Some(m) = o.as_mut() { m.update(#sid, &res); } }
+            };
+        }});
+    } else {
+        // Purely static injection
+        let s_css = &res.static_css;
+        let c_css = &res.component_css;
+        let sid = &res.style_id;
+        let static_id = &res.static_id;
+
+        if !s_css.is_empty() {
+            inits.push(quote! { ::silex::css::inject_style(#static_id, #s_css); });
+        }
+        if !c_css.is_empty() {
+            inits.push(quote! { ::silex::css::inject_style(#sid, #c_css); });
+        }
+    }
+
+    // 2. Process nested dynamic rules (selectors with $)
     for (idx, rule) in res.dynamic_rules.iter().enumerate() {
         let template = &rule.template;
         let mut evals = Vec::new();
@@ -532,46 +571,16 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
                 #( if let Some(p) = res.find("{}") { res.replace_range(p..p+2, &#evals.get()); } )*
                 let rid = format!("{}-dyn-{}", #sid, #idx);
                 if let Ok(mut o) = manager.try_borrow_mut() { if let Some(m) = o.as_mut() { m.update(&rid, &res); } }
-            }
+            };
         }});
     }
-
-    let sid = &res.style_id;
-    let s_css = &res.static_css;
-    let c_css = &res.component_css;
-    let static_id = &res.static_id;
-    let has_dynamics = !style_bindings.is_empty() || !logics.is_empty();
 
     Ok(quote! {
         #[::silex::macros::component]
         pub fn #c_name() -> impl ::silex::dom::view::View {
-            const __STATIC_CSS: &str = #s_css;
-            const __COMPONENT_CSS: &str = #c_css;
-            let static_id = #static_id;
-
-            #(#var_decls)*
-            if !__STATIC_CSS.is_empty() {
-                ::silex::css::inject_style(static_id, __STATIC_CSS);
-            }
-            if !__COMPONENT_CSS.is_empty() {
-                ::silex::css::inject_style(#sid, __COMPONENT_CSS);
-            }
-
             #(#inits)*
             #(#logics)*
-            if #has_dynamics {
-                 ::silex::dom::view::View::into_any(
-                     ::silex::html::div(())
-                        .style("display: none;")
-                        .apply(::silex::dom::attribute::AttrOp::CombinedStyles {
-                            statics: ::std::vec![],
-                            properties: ::std::vec![ #(#style_bindings),* ],
-                            sheets: ::std::vec![],
-                        })
-                 )
-            } else {
-                ::silex::dom::view::View::into_any(())
-            }
+            ::silex::dom::view::View::into_any(())
         }
     })
 }
