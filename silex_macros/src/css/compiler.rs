@@ -311,7 +311,6 @@ where
             match (prev, &tt) {
                 (TokenTree::Ident(_), TokenTree::Ident(_))
                 | (TokenTree::Ident(_), TokenTree::Literal(_))
-                | (TokenTree::Literal(_), TokenTree::Ident(_))
                 | (TokenTree::Literal(_), TokenTree::Literal(_)) => space_before = true,
                 _ => {}
             }

@@ -56,6 +56,7 @@ global_style! {
         color: $theme.text;
         font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
         transition: background-color 0.3s, color 0.3s;
+        letter-spacing: -0.05 em;
     }
 
     * {
