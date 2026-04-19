@@ -16,6 +16,10 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     let mut mount_checks = Vec::new(); // Runtime checks for required props
     let mut used_prop_names = std::collections::HashSet::new();
 
+    let mut first_arg_is_children = false;
+    let mut first_arg_ty = None;
+    let mut first_arg_into_trait = false;
+
     // 处理结构体定义的泛型
     let (impl_generics, ty_generics, where_clause) = fn_generics.split_for_impl();
 
@@ -47,7 +51,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         quote! {}
     };
 
-    for arg in input_fn.sig.inputs.iter() {
+    for (index, arg) in input_fn.sig.inputs.iter().enumerate() {
         let fn_arg = match arg {
             FnArg::Typed(arg) => arg,
             FnArg::Receiver(r) => {
@@ -90,6 +94,12 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
 
         let param_name_str = param_name.to_string();
         used_prop_names.insert(param_name_str.clone());
+
+        if index == 0 && param_name_str == "children" {
+            first_arg_is_children = true;
+            first_arg_ty = Some(ty.clone());
+            first_arg_into_trait = prop_attrs.into_trait;
+        }
 
         // 策略:
         // 1. 如果有 default 值，字段类型为 T，初始化为 default。
@@ -214,6 +224,52 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
 
     // Forwarding methods are now handled by AttributeBuilder trait implementation
 
+    let component_constructor = if first_arg_is_children {
+        let ty = first_arg_ty.unwrap();
+        let type_ident = get_base_type_name(&ty);
+
+        if first_arg_into_trait {
+            if type_ident == "Children" || type_ident == "SharedView" {
+                quote! {
+                    // 生成同名带 children 参数的构建函数
+                    #[allow(non_snake_case)]
+                    #fn_vis fn #fn_name #impl_generics(children: impl ::silex::dom::view::View + Clone + 'static) -> #struct_name #ty_generics #where_clause {
+                        #struct_name::new().children(children)
+                    }
+                }
+            } else if type_ident == "AnyView" {
+                quote! {
+                    #[allow(non_snake_case)]
+                    #fn_vis fn #fn_name #impl_generics(children: impl ::silex::dom::view::View + 'static) -> #struct_name #ty_generics #where_clause {
+                        #struct_name::new().children(children)
+                    }
+                }
+            } else {
+                quote! {
+                    #[allow(non_snake_case)]
+                    #fn_vis fn #fn_name #impl_generics(children: impl Into<#ty>) -> #struct_name #ty_generics #where_clause {
+                        #struct_name::new().children(children)
+                    }
+                }
+            }
+        } else {
+            quote! {
+                #[allow(non_snake_case)]
+                #fn_vis fn #fn_name #impl_generics(children: #ty) -> #struct_name #ty_generics #where_clause {
+                    #struct_name::new().children(children)
+                }
+            }
+        }
+    } else {
+        quote! {
+            // 生成同名无参构建函数
+            #[allow(non_snake_case)]
+            #fn_vis fn #fn_name #impl_generics() -> #struct_name #ty_generics #where_clause {
+                #struct_name::new()
+            }
+        }
+    };
+
     let expanded = quote! {
         // 生成结构体
         #[derive(Clone)]
@@ -289,11 +345,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
             }
         }
 
-        // 生成同名构建函数
-        #[allow(non_snake_case)]
-        #fn_vis fn #fn_name #impl_generics() -> #struct_name #ty_generics #where_clause {
-            #struct_name::new()
-        }
+        #component_constructor
     };
 
     Ok(expanded)

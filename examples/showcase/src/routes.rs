@@ -125,7 +125,7 @@ styled! {
 pub fn NavBar() -> impl View {
     let settings = use_user_settings();
 
-    StyledNav().direction("horizontal").children(view_chain!(
+    StyledNav(view_chain!(
         Link(AppRoute::Home, "Home").active_class("active"),
         Link(AppRoute::Basics, "Basics").active_class("active"),
         Link(AppRoute::Flow, "Flow").active_class("active"),
@@ -166,7 +166,7 @@ pub fn NavBar() -> impl View {
                 let target = e.target().unwrap().unchecked_into::<HtmlElement>();
                 let _ = target.style().set_property("background", "rgba(255,255,255,0.1)");
             }),
-    ))
+    )).direction("horizontal")
 }
 
 #[component]

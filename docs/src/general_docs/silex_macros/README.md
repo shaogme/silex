@@ -25,9 +25,15 @@ fn Button(
 
 ```rust
 // 使用
+// 由于 label 不是 children 参数，所以依然使用无参构造 + 链式调用
 Button()
     .label("Click me") // 必须
     .opacity(0.8)      // 可选
+
+// 如果第一个参数是 children: Children，则必须使用
+// Parent(div("child"))
+// 代替
+// Parent().children(div("child"))
 ```
 
 ### 属性透传 (Attribute Forwarding)
@@ -161,8 +167,8 @@ styled! {
 }
 
 // 在任意组件中透明且类型安全地使用：
-StyledButton()
-    .children("Click me!")
+// 由于 children 是 StyledButton 的第一个参数，它可以直接传入构造函数
+StyledButton("Click me!")
     .color(my_color)
     .hover_color("#ff4081")
     .pseudo_state("active") // 可以按需改变触发条件！

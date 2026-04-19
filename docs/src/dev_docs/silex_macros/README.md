@@ -57,6 +57,7 @@ src/
     *   **Required**: 转换为 `Option<T>` 字段，初始化为 `None`。如果 `mount` 时仍为 `None`，则 panic。
     *   **Optional**: 带有 `#[prop(default)]` 的参数，转换为 `T` 字段，初始化为默认值。
 *   **Builder 模式**：为每个参数生成 `pub fn param_name(mut self, val: T) -> Self` 方法，支持链式调用。
+*   **入口函数构造**：宏会生成一个与组件函数同名的构造函数。如果组件的第一个参数是 `children`，则构造函数会强制要求传入该参数（作为 `impl View`），从而支持 `Parent(children)` 的嵌套写法。对于其他属性，依然使用链式 Builder 模式设置。
 *   **属性转发**：生成的结构体包含 `_pending_attrs: Vec<PendingAttribute>`，用于存储 `.class()`, `.id()` 等基础 HTML 属性，最终在 `mount` 时应用到根元素。
 
 **特殊技巧**：

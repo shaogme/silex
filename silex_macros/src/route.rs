@@ -724,11 +724,10 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
                     };
 
                     // 应用 Guard (从内向外包裹)
-                    // Guard(children) -> Guard().children(move || view)
+                    // 使用新的带参构造函数语法 #guard(children)
                     for guard in def.guards.iter().rev() {
                         view_expr = quote! {
-                            #guard()
-                                .children(move || #view_expr)
+                            #guard(move || #view_expr)
                                 .into_any()
                         };
                     }
@@ -746,8 +745,7 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
 
                     for guard in def.guards.iter().rev() {
                         view_expr = quote! {
-                            #guard()
-                                .children(move || #view_expr)
+                            #guard(move || #view_expr)
                                 .into_any()
                         };
                     }
@@ -769,8 +767,7 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
 
                         for guard in def.guards.iter().rev() {
                             view_expr = quote! {
-                                #guard()
-                                    .children(move || #view_expr)
+                                #guard(move || #view_expr)
                                     .into_any()
                             };
                         }

@@ -203,13 +203,14 @@ pub fn StylingBasics() -> impl View {
                 .style("opacity: 0.7; font-size: 1.1em;"),
         ].style("margin-bottom: 40px;"),
 
-        DemoCard().children(view_chain!(
+        DemoCard(view_chain!(
             h3("1. Atomic & Scoped Styles (styled!)"),
             p(
                 "The `styled!` macro creates scoped, reusable components with dynamic interpolation and variants."
             ).style("margin-bottom: 24px; color: #9ca3af;"),
-            StyledButton()
-                .children("Interactive Scoped Button")
+            StyledButton(view_chain!(
+                "Interactive Scoped Button"
+            ))
                 .color(color)
                 .size(size)
                 .hover_color(hover_color)
@@ -238,7 +239,7 @@ pub fn StylingBasics() -> impl View {
                 }),
         )),
 
-        DemoCard().children(view_chain!(
+        DemoCard(view_chain!(
             h3("1.5 Dynamic Variants & Attribute Passthrough"),
             p(
                 "The `styled!` macro now supports dynamic interpolation directly inside variants, and fully preserves the chainable typed attributes of native HTML tags."
@@ -247,11 +248,12 @@ pub fn StylingBasics() -> impl View {
                 let (btn_kind, set_btn_kind) = Signal::pair("primary".to_string());
                 let (btn_width, _set_btn_width) = Signal::pair(px(160));
 
-                Stack().gap(16).children(view_chain!(
-                    DynamicVariantBtn()
+                Stack(view_chain!(
+                    DynamicVariantBtn(view_chain!(
+                        "Toggle Variant"
+                    ))
                         .kind(btn_kind)
                         .dynamic_width(btn_width)
-                        .children("Toggle Variant")
                         // Below are native HTML <button> attributes seamlessly passed through!
                         .id("passthrough-button") 
                         .type_("button") 
@@ -261,11 +263,11 @@ pub fn StylingBasics() -> impl View {
                         }),
                     div(rx!(format!("Current Variant: {}, Base Width Signal: {}", btn_kind.get(), btn_width.get())))
                         .style("font-size: 0.9em; opacity: 0.8;")
-                ))
+                )).gap(16)
             }
         )),
 
-        DemoCard().children(view_chain!(
+        DemoCard(view_chain!(
             h3("2. Type-Safe Style Builder (sty)"),
             p(
                 "A chainable API for defining styles with full reactivity, ideal for dynamic inline styles."
@@ -316,27 +318,23 @@ pub fn StylingBasics() -> impl View {
             }
         )),
 
-        DemoCard().children(view_chain!(
+        DemoCard(view_chain!(
             h3("3. Layout Primitives"),
             p("Structural layout components like Stack, Grid, and Center for effortless alignment.")
                 .style("margin-bottom: 24px; color: #9ca3af;"),
 
-                Stack()
-                .gap(16)
-                .children(view_chain!(
-                    span("Vertical Stack with Gap"),
-                    Grid()
-                        .columns(3)
-                        .gap(12)
-                        .children(view_chain!(
-                            div("Grid Item 1").style("background: #312e81; padding: 10px; border-radius: 8px;"),
-                            div("Grid Item 2").style("background: #312e81; padding: 10px; border-radius: 8px;"),
-                            div("Grid Item 3").style("background: #312e81; padding: 10px; border-radius: 8px;"),
-                        )),
-                    Center()
-                        .style(sty().background_color(hex("#4f46e5")).padding(px(12)).border_radius(px(8)))
-                        .children("I am perfectly centered"),
+            Stack(view_chain!(
+                span("Vertical Stack with Gap"),
+                Grid(view_chain!(
+                    div("Grid Item 1").style("background: #312e81; padding: 10px; border-radius: 8px;"),
+                    div("Grid Item 2").style("background: #312e81; padding: 10px; border-radius: 8px;"),
+                    div("Grid Item 3").style("background: #312e81; padding: 10px; border-radius: 8px;"),
+                )).columns(3).gap(12),
+                Center(view_chain!(
+                    "I am perfectly centered"
                 ))
+                    .style(sty().background_color(hex("#4f46e5")).padding(px(12)).border_radius(px(8))),
+            )).gap(16)
         )),
     ]
 }
@@ -385,38 +383,38 @@ pub fn Theming() -> impl View {
                 ),
         ].style("margin-bottom: 24px;"),
 
-        ThemePreviewCard().apply(theme_variables(theme)).children(view_chain!(
+        ThemePreviewCard(view_chain!(
             h4("Real-time Propagation"),
             p("These styles react to the Rust theme object via CSS variables."),
-            ThemeButton().children("Themed Scoped Button").active(false)
-        )),
+            ThemeButton("Themed Scoped Button").active(false)
+        )).apply(theme_variables(theme)),
 
         h3("Layout Continuity").style("margin: 40px 0 16px;"),
         p("Theme variables are injected via 'apply', ensuring no extra DOM wrappers break CSS layouts like Flex or Grid.")
             .style("color: #9ca3af; margin-bottom: 24px;"),
 
-        DemoCard().children(view_chain!(
+        DemoCard(view_chain!(
             h4("1. Theme variables in Flex (Stack)"),
             p("The red border is a Stack. Variable injection doesn't break the flow.").style("margin-bottom: 12px; font-size: 0.9em; opacity: 0.7;"),
-            Stack().style(sty().border(border(px(2), BorderStyleKeyword::Solid, hex("#ef4444"))).padding(px(8))).children(view_chain!(
+            Stack(view_chain!(
                 div("Themed Row 1").style("background: #1e1e24; padding: 10px; margin: 4px; border-radius: 4px; border: 1px solid $theme.primary;")
                     .apply(theme_variables(theme)),
                 div("Themed Row 2").style("background: #1e1e24; padding: 10px; margin: 4px; border-radius: 4px; border: 1px solid $theme.secondary;")
                     .apply(theme_variables(theme)),
-            ))
+            )).style(sty().border(border(px(2), BorderStyleKeyword::Solid, hex("#ef4444"))).padding(px(8)))
         )),
 
-        DemoCard().children(view_chain!(
+        DemoCard(view_chain!(
             h4("2. Nested Layout Stability"),
             p("Even deeply nested layouts remain stable with variable injection.").style("margin-bottom: 12px; font-size: 0.9em; opacity: 0.7;"),
-            Stack().style(sty().border(border(px(2), BorderStyleKeyword::Solid, hex("#3b82f6"))).padding(px(8))).children(view_chain!(
-                Stack().gap(4).apply(theme_variables(theme)).children(view_chain!(
+            Stack(view_chain!(
+                Stack(view_chain!(
                     div("Nested 1").style("background: $theme.surface; color: $theme.text; padding: 10px; border-radius: 4px; border: 1px solid $theme.primary;"),
                     div("Nested 2").style("background: $theme.surface; color: $theme.text; padding: 10px; border-radius: 4px; border: 1px solid $theme.secondary;"),
-                )),
+                )).gap(4).apply(theme_variables(theme)),
                 div("Sibling of Nested Stack").style("background: #1e1e24; color: #fff; padding: 10px; margin-top: 4px; border-radius: 4px;"),
-            ))
-        ))
+            )).style(sty().border(border(px(2), BorderStyleKeyword::Solid, hex("#3b82f6"))).padding(px(8)))
+        )),
     ]
     .style("padding: 24px; border: 1px solid var(--slx-theme-border); border-radius: 12px; background: var(--slx-theme-surface); transition: all 0.3s;")
 }
@@ -428,11 +426,11 @@ pub fn AdvancedStyling() -> impl View {
         p("Type-safe CSS math functions and declarative gradients for complex visuals.")
             .style("margin-bottom: 32px; color: #9ca3af; font-size: 1.1em;"),
 
-        Stack().gap(24).children(view_chain!(
-            DemoCard().children(view_chain!(
+        Stack(view_chain!(
+            DemoCard(view_chain!(
                 h4("1. Math Functions (calc, clamp, min, max)"),
                 p("Perform type-safe math operations across units at compile time.").style("margin-bottom: 16px; font-size: 0.9em; opacity: 0.7;"),
-                Stack().gap(12).children(view_chain!(
+                Stack(view_chain!(
                     div("Calc: 100% - 60px").style(
                         sty()
                             .width(calc(pct(100) - px(60)))
@@ -453,12 +451,12 @@ pub fn AdvancedStyling() -> impl View {
                             .align_items(AlignItemsKeyword::Center)
                             .padding(padding::left(px(12)))
                     ),
-                ))
+                )).gap(12)
             )),
-            DemoCard().children(view_chain!(
+            DemoCard(view_chain!(
                 h4("2. Gradients DSL"),
                 p("Declarative API for complex linear and radial gradients.").style("margin-bottom: 16px; font-size: 0.9em; opacity: 0.7;"),
-                Grid().columns(2).gap(16).children(view_chain!(
+                Grid(view_chain!(
                     div![
                         p("Linear").style("margin-bottom: 8px; font-size: 0.8em;"),
                         div(()).style(sty().height(px(100)).border_radius(px(12)).background_image(linear_gradient().to(Direction::ToRight).stop(hex("#6366f1"), pct(0)).stop(hex("#a855f7"), pct(100)).build()))
@@ -475,9 +473,9 @@ pub fn AdvancedStyling() -> impl View {
                         p("Repeating").style("margin-bottom: 8px; font-size: 0.8em;"),
                         div(()).style(sty().height(px(100)).border_radius(px(12)).background_image(linear_gradient().repeating().to(Direction::ToBottomRight).stop(hex("#1e1e24"), pct(0)).stop(hex("#1e1e24"), px(10)).stop(hex("#312e81"), px(10)).stop(hex("#312e81"), px(20)).build()))
                     ],
-                ))
+                )).columns(2).gap(16)
             )),
-            DemoCard().children(view_chain!(
+            DemoCard(view_chain!(
                 h4("3. Responsive & Nested (Style Builder)"),
                 p("The enhanced `sty()` API now supports `@media` and complex nesting, just like the `styled!` macro.").style("margin-bottom: 16px; font-size: 0.9em; opacity: 0.7;"),
                 div![
@@ -513,10 +511,10 @@ pub fn AdvancedStyling() -> impl View {
                     div("I am the child box").class("child-box").style("margin-top: 16px; color: #fff; font-size: 12px; text-align: center; line-height: 60px;")
                 ].style("position: relative;")
             )),
-            DemoCard().children(view_chain!(
+            DemoCard(view_chain!(
                 h4("4. Complex DSLs (Grid Areas & Font Variations)"),
                 p("Specialized support for complex grid layouts and variable fonts.").style("margin-bottom: 24px; color: #9ca3af;"),
-                Stack().gap(24).children(view_chain!(
+                Stack(view_chain!(
                     div![
                         span("Grid Template Areas").style("margin-bottom: 8px; display: block; font-size: 0.9em; opacity: 0.7;"),
                         div![
@@ -540,8 +538,8 @@ pub fn AdvancedStyling() -> impl View {
                                     .font_variation_settings(font_variation_settings([("wght", 700.0), ("ital", 0.5)]))
                             )
                     ]
-                ))
+                )).gap(24)
             ))
-        ))
+        )).gap(24)
     ]
 }

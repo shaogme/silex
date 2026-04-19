@@ -3,6 +3,7 @@ use crate::prelude::*;
 styled! {
     /// 弹性布局容器 (Flexbox)
     pub Stack <div> (
+        children: Children,
         #[prop(default = FlexDirectionKeyword::Column, into)]
         direction: Signal<FlexDirectionKeyword>,
         #[prop(default = AlignItemsKeyword::Stretch, into)]
@@ -13,7 +14,6 @@ styled! {
         gap: Signal<i32>,
         #[prop(default, into)]
         style: Signal<Style>,
-        children: Children
     ) {
         display: flex;
         flex-direction: $(direction);
@@ -26,9 +26,9 @@ styled! {
 styled! {
     /// 居中容器
     pub Center <div> (
+        children: Children,
         #[prop(default, into)]
         style: Signal<Style>,
-        children: Children
     ) {
         display: flex;
         align-items: center;
@@ -39,13 +39,13 @@ styled! {
 styled! {
     /// 网格布局容器 (Grid)
     pub Grid <div> (
+        children: Children,
         #[prop(default = 1, into)]
         columns: Signal<i32>,
         #[prop(default, into)]
         gap: Signal<i32>,
         #[prop(default, into)]
         style: Signal<Style>,
-        children: Children
     ) {
         display: grid;
         grid-template-columns: repeat($(columns), minmax(0, 1fr));
