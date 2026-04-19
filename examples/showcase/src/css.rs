@@ -53,8 +53,8 @@ global! {
         margin: 0;
         padding: 0;
         min-height: 100vh;
-        background-color: $theme.surface;
-        color: $theme.text;
+        background-color: $AppTheme::SURFACE;
+        color: $AppTheme::TEXT;
         font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
         transition: background-color 0.3s, color 0.3s;
         letter-spacing: -0.05 em;
@@ -77,8 +77,8 @@ global! {
     .global-card {
         padding: 24px;
         border-radius: 12px;
-        border: 1px solid $theme.border;
-        background: $theme.surface;
+        border: 1px solid $AppTheme::BORDER;
+        background: $AppTheme::SURFACE;
         transition: transform 0.2s;
 
         &:hover {
@@ -89,7 +89,7 @@ global! {
 
     // Using string literal for complex selectors
     "div > .active-item" {
-        border-left: 4px solid $theme.primary;
+        border-left: 4px solid $AppTheme::PRIMARY;
         padding-left: 12px;
         font-weight: bold;
     }
@@ -100,7 +100,7 @@ global! {
             width: 8px;
         }
         "::-webkit-scrollbar-thumb" {
-            background: $theme.primary;
+            background: $AppTheme::PRIMARY;
             border-radius: 4px;
         }
     }
@@ -183,11 +183,11 @@ styled! {
 styled! {
     #[theme(prefix = "slx-theme")]
     pub ThemePreviewCard<div>(children: Children) {
-        background-color: $theme.surface;
-        color: $theme.text;
-        border-radius: $theme.radius;
+        background-color: $AppTheme::SURFACE;
+        color: $AppTheme::TEXT;
+        border-radius: $AppTheme::RADIUS;
         padding: 32px;
-        border: 2px solid $theme.primary;
+        border: 2px solid $AppTheme::PRIMARY;
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
         transition: all 0.3s ease;
         margin-top: 24px;
@@ -199,7 +199,7 @@ styled! {
         children: Children,
         #[prop(into)] active: Signal<bool>
     ) {
-        background-color: $theme.secondary;
+        background-color: $AppTheme::SECONDARY;
         color: white;
         border: none;
         padding: 12px 24px;

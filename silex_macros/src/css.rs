@@ -1,7 +1,7 @@
 pub mod ast;
+pub mod classes;
 pub mod compiler;
 pub mod error;
-pub mod classes;
 pub mod styled;
 pub mod theme;
 
@@ -64,7 +64,7 @@ pub(crate) fn get_prop_type(prop: &str, span: Span) -> Result<TokenStream> {
 
 pub fn css_impl(ts: TokenStream) -> Result<TokenStream> {
     let span = Span::call_site(); // Use call site for better error reporting in blocks
-    let compile_result = CssCompiler::compile(ts, span, None, false)?;
+    let compile_result = CssCompiler::compile(ts, span, false)?;
 
     let class_name = compile_result.class_name;
     let style_id = compile_result.style_id;
@@ -72,38 +72,9 @@ pub fn css_impl(ts: TokenStream) -> Result<TokenStream> {
     let component_css = compile_result.component_css;
     let expressions = compile_result.expressions;
     let dynamic_rules = compile_result.dynamic_rules;
-    let theme_refs = compile_result.theme_refs;
-
-    // TODO: Improve theme name discovery
-    let theme_name = quote! { Theme };
-
-    let theme_assertions: Vec<TokenStream> = theme_refs
-        .iter()
-        .map(|(prop, key)| -> Result<TokenStream> {
-            let prop_type = get_prop_type(prop, span)?;
-            let key_path: Vec<TokenStream> = key
-                .split('.')
-                .map(|s| {
-                    let id = quote::format_ident!("{}", s);
-                    quote! { #id }
-                })
-                .collect();
-
-            Ok(quote! {
-                const _: () = {
-                    fn assert_valid<V: ::silex::css::types::ValidFor<#prop_type>>(_: &V) {}
-                    #[allow(non_upper_case_globals, unused_variables)]
-                    let _ = |t: &#theme_name| {
-                        assert_valid(&t #(.#key_path)*);
-                    };
-                };
-            })
-        })
-        .collect::<Result<Vec<_>>>()?;
 
     let static_id = compile_result.static_id;
     let inits = quote! {
-        #(#theme_assertions)*
         if !#static_css.is_empty() {
             ::silex::css::inject_style(#static_id, #static_css);
         }

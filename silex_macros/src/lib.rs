@@ -37,7 +37,6 @@ pub fn global(input: TokenStream) -> TokenStream {
     }
 }
 
-
 #[cfg(feature = "css")]
 #[proc_macro]
 pub fn classes(input: TokenStream) -> TokenStream {

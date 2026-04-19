@@ -126,14 +126,8 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let parsed: StyledComponent = syn::parse2(input)?;
     let tag = &parsed.tag;
     let name = &parsed.name;
-    let (theme_prefix, theme_name) = extract_theme_info(&parsed.attrs);
 
-    let compile_result = CssCompiler::compile(
-        parsed.css_block,
-        tag.span(),
-        theme_prefix.clone(),
-        parsed.is_unsafe,
-    )?;
+    let compile_result = CssCompiler::compile(parsed.css_block, tag.span(), parsed.is_unsafe)?;
 
     let mut var_decls = Vec::new();
     let mut style_bindings = Vec::new();
@@ -177,12 +171,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
 
         let mut match_arms = Vec::new();
         for (v_name, v_css) in &group.variants {
-            let res = CssCompiler::compile(
-                v_css.clone(),
-                v_name.span(),
-                theme_prefix.clone(),
-                parsed.is_unsafe,
-            )?;
+            let res = CssCompiler::compile(v_css.clone(), v_name.span(), parsed.is_unsafe)?;
             let v_class = res.class_name;
             let v_style_id = res.style_id;
             let v_static_css = res.static_css;
@@ -234,9 +223,6 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             })
         });
     }
-
-    let theme_assertions =
-        generate_theme_assertions(&compile_result.theme_refs, &theme_name, tag.span())?;
 
     // Component Props logic
     let mut all_fn_args = parsed.props.clone();
@@ -299,7 +285,6 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
 
             #(#var_decls)*
             #(#prop_sig_bindings)*
-            #(#theme_assertions)*
 
             if !__STATIC_CSS.is_empty() {
                 ::silex::css::inject_style(#static_id, __STATIC_CSS);
@@ -324,28 +309,6 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         }
         #extra_impls
     })
-}
-
-fn extract_theme_info(attrs: &[Attribute]) -> (Option<String>, TokenStream) {
-    let mut prefix = None;
-    let mut name = quote! { Theme };
-    for attr in attrs {
-        if attr.path().is_ident("theme") {
-            let _ = attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("prefix") {
-                    prefix = Some(meta.value()?.parse::<syn::LitStr>()?.value());
-                } else if meta.path.is_ident("type") {
-                    let ident: Ident = meta.value()?.parse()?;
-                    name = quote! { #ident };
-                }
-                Ok(())
-            });
-            if let Ok(ident) = attr.parse_args::<Ident>() {
-                name = quote! { #ident };
-            }
-        }
-    }
-    (prefix, name)
 }
 
 fn process_dynamic_entries(
@@ -435,18 +398,6 @@ fn expand_dynamic_rule(
         quote! { .class({ let manager = #mgr_id.clone(); ::silex::prelude::rx! { #rx_body } }) },
     );
     Ok(())
-}
-
-fn generate_theme_assertions(
-    refs: &[(String, String)],
-    theme_name: &TokenStream,
-    span: Span,
-) -> Result<Vec<TokenStream>> {
-    refs.iter().map(|(prop, key)| {
-        let prop_ty = if prop == "any" { quote! { ::silex::css::types::props::Any } } else { crate::css::get_prop_type(prop, span)? };
-        let key_path: Vec<_> = key.split('.').map(|s| { let id = quote::format_ident!("{}", s); quote! { #id } }).collect();
-        Ok(quote! { const _: () = { fn assert_valid<V: ::silex::css::types::ValidFor<#prop_ty>>(_: &V) {} let _ = |t: &#theme_name| { assert_valid(&t #(.#key_path)*); }; }; })
-    }).collect()
 }
 
 fn get_tag_return_type(
@@ -542,7 +493,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     let c_name = parsed
         .name
         .unwrap_or_else(|| quote::format_ident!("GlobalStyles"));
-    let res = CssCompiler::compile_global(parsed.css_block, c_name.span(), None, parsed.is_unsafe)?;
+    let res = CssCompiler::compile_global(parsed.css_block, c_name.span(), parsed.is_unsafe)?;
 
     let mut var_decls = Vec::new();
     let mut style_bindings = Vec::new();
@@ -590,8 +541,6 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     let c_css = &res.component_css;
     let static_id = &res.static_id;
     let has_dynamics = !style_bindings.is_empty() || !logics.is_empty();
-    let theme_name = quote! { Theme };
-    let theme_assertions = generate_theme_assertions(&res.theme_refs, &theme_name, c_name.span())?;
 
     Ok(quote! {
         #[::silex::macros::component]
@@ -600,7 +549,6 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
             const __COMPONENT_CSS: &str = #c_css;
             let static_id = #static_id;
 
-            #(#theme_assertions)*
             #(#var_decls)*
             if !__STATIC_CSS.is_empty() {
                 ::silex::css::inject_style(static_id, __STATIC_CSS);

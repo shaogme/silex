@@ -86,9 +86,9 @@ styled! {
         children: Children,
         #[prop(default = "horizontal")] direction: &'static str
     ) {
-        background: $theme.surface;
-        color: $theme.text;
-        border-bottom: 1px solid $theme.border;
+        background: $AppTheme::SURFACE;
+        color: $AppTheme::TEXT;
+        border-bottom: 1px solid $AppTheme::BORDER;
         padding: 12px 24px;
         margin-bottom: 20px;
         display: flex;
@@ -96,19 +96,19 @@ styled! {
         align-items: center;
 
         & a {
-            color: $theme.text;
+            color: $AppTheme::TEXT;
             opacity: 0.8;
             padding: 8px 12px;
             border-radius: 4px;
             transition: background-color 0.2s;
 
             &:hover {
-                background-color: $theme.primary;
+                background-color: $AppTheme::PRIMARY;
                 color: white;
             }
 
             &.active {
-                background-color: $theme.primary;
+                background-color: $AppTheme::PRIMARY;
                 color: white;
                 font-weight: bold;
             }

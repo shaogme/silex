@@ -4,7 +4,6 @@ use syn::parse::{Parse, ParseStream, Parser};
 use syn::punctuated::Punctuated;
 use syn::{Expr, Result, Token};
 
-
 // --- classes! [...] implementation ---
 
 enum ClassItem {

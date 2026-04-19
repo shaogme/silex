@@ -336,21 +336,23 @@ theme! {
 
 ### 与样式组件紧密结合
 
-在 `styled!` 宏定义的组件中，你可以通过 `#[theme(AppTheme)]` 属性声明其绑定的主题类型，并直接在 CSS 中通过全局标识符 `$theme.xxx` 引用主题库中的值：
+在 `styled!` 宏定义的组件中，你可以通过 `$Path::TO::CONST` 语法（通常是 `$AppTheme::FIELD`）直接引用主题库中的值。这种方式利用了 Rust 原生的路径解析，提供了绝对的鲁棒性。
 
 ```rust
 styled! {
-    // 默认自动显式关联主主题（如果定义了的话）
     pub ThemedBox<div>(
         children: Children,
     ) {
-        // 直接使用 $theme. 引用字段
-        // 系统在编译期强检查 AppTheme.base_padding 的类型是否适用于 padding 属性！
-        padding: $theme.base_padding; 
-        background-color: $theme.primary_color;
+        // 直接使用 $AppTheme:: 引用常量
+        // 系统在编译期利用 Rust 的类型系统强检查字段类型是否适用于属性！
+        padding: $AppTheme::BASE_PADDING; 
+        background-color: $AppTheme::PRIMARY_COLOR;
         border-radius: 8px;
     }
 }
 ```
 
-`styled!` 宏的编译器能够聪明地识别 `$theme.字段` 表达式。它不仅会将代码自动转换成标准的 `var(--slx-theme-字段)` 原生查询形态，还会在 Rust 层自动注入针对被引用字段的类型合法性断言（`assert_valid<ValidFor<T>>`）。借助这套工作流，彻底排除了在变更主题字段时意外造成运行期样式损坏的可能性。
+`styled!` 宏的编译器会自动识别 `$` 后跟随的 Rust 路径。它不仅能正确解析常量引用的 CSS 变量值，还能在编译期直接捕获类型错误。
+
+> [!IMPORTANT]
+> **语法迁移提示**：旧有的 `$theme.field` 语法现已彻底移除。如果你在代码中继续使用它，编译器将抛出一个友好的错误提示，引导你迁移到新的路径语法。
