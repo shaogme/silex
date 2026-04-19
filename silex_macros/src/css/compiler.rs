@@ -114,7 +114,7 @@ impl CssCompiler {
                 .to_css(PrinterOptions {
                     minify: true,
                     targets: Targets::default(),
-                    ..PrinterOptions::default()
+                    ..Default::default()
                 })
                 .map_err(|e| {
                     crate::css::error::report_lightning_error(
@@ -124,7 +124,27 @@ impl CssCompiler {
                 })?
                 .code
         } else if !wrap_in_class && !state.static_css.trim().is_empty() {
-            state.static_css.clone()
+            // Run global styles through lightningcss for consistency (flattens nesting, minifies)
+            match StyleSheet::parse(&state.static_css, ParserOptions::default()) {
+                Ok(stylesheet) => stylesheet
+                    .to_css(PrinterOptions {
+                        minify: true,
+                        ..Default::default()
+                    })
+                    .map(|o| o.code)
+                    .map_err(|e| {
+                        crate::css::error::report_lightning_error(
+                            format!("Global CSS Printing: {}", e),
+                            span,
+                        )
+                    })?,
+                Err(e) => {
+                    return Err(crate::css::error::report_lightning_error(
+                        format!("Global CSS Parsing: {}", e),
+                        span,
+                    ));
+                }
+            }
         } else {
             "".to_string()
         };
@@ -595,7 +615,7 @@ fn extract_dynamic_value(
                 if !ctx.class_name.is_empty() {
                     out.push_str(&format!("var(--{}-{})", ctx.class_name, idx));
                 } else {
-                    out.push_str("{}");
+                    out.push_str(&format!("var(--slx-dyn-{})", idx));
                 }
                 return Ok(true);
             }

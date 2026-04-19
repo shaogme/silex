@@ -502,12 +502,14 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     if !res.expressions.is_empty() {
         let mut evals = Vec::new();
         let mut r_decls = Vec::new();
+        let mut idxs = Vec::new();
         for (i, (prop, expr)) in res.expressions.iter().enumerate() {
             let vid = quote::format_ident!("global_var_{}", i);
             let pty = crate::css::get_prop_type(prop, c_name.span())?;
             r_decls
                 .push(quote! { let #vid = ::silex::css::make_dynamic_val_for::<#pty, _>(#expr); });
             evals.push(vid);
+            idxs.push(i);
         }
 
         // Combine static (at-rules) and component (rules) CSS into one template
@@ -524,11 +526,14 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
 
         logics.push(quote! {{
             let manager = #mid.clone();
-            ::silex::prelude::rx! {
+            ::silex::prelude::Effect::new(move |_| {
                 let mut res = ::std::string::ToString::to_string(#template);
-                #( if let Some(p) = res.find("{}") { res.replace_range(p..p+2, &#evals.get()); } )*
+                #(
+                    let pid = format!("var(--slx-dyn-{})", #idxs);
+                    res = res.replace(&pid, &#evals.get());
+                )*
                 if let Ok(mut o) = manager.try_borrow_mut() { if let Some(m) = o.as_mut() { m.update(#sid, &res); } }
-            };
+            });
         }});
     } else {
         // Purely static injection
@@ -550,11 +555,13 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         let template = &rule.template;
         let mut evals = Vec::new();
         let mut r_decls = Vec::new();
+        let mut e_idxs = Vec::new();
         for (ei, (p, ex)) in rule.expressions.iter().enumerate() {
             let vid = quote::format_ident!("dyn_var_{}_{}", idx, ei);
             let pty = crate::css::get_prop_type(p, c_name.span())?;
             r_decls.push(quote! { let #vid = ::silex::css::make_dynamic_val_for::<#pty, _>(#ex); });
             evals.push(vid);
+            e_idxs.push(ei);
         }
         let mid = quote::format_ident!("manager_{}", idx);
         inits.push(quote! {
@@ -566,12 +573,17 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         let sid = &res.style_id;
         logics.push(quote! {{
             let manager = #mid.clone();
-            ::silex::prelude::rx! {
+            ::silex::prelude::Effect::new(move |_| {
                 let mut res = ::std::string::ToString::to_string(#template);
-                #( if let Some(p) = res.find("{}") { res.replace_range(p..p+2, &#evals.get()); } )*
+                #(
+                    let pid_val = format!("var(--slx-dyn-{})", #e_idxs);
+                    let pid_sel = format!("._slx_dyn_{}", #e_idxs);
+                    res = res.replace(&pid_val, &#evals.get());
+                    res = res.replace(&pid_sel, &#evals.get());
+                )*
                 let rid = format!("{}-dyn-{}", #sid, #idx);
                 if let Ok(mut o) = manager.try_borrow_mut() { if let Some(m) = o.as_mut() { m.update(&rid, &res); } }
-            };
+            });
         }});
     }
 

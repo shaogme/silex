@@ -85,6 +85,7 @@ impl DynamicStyleManager {
         if let Some(state) = &self.state
             && state.id == id
         {
+            let _ = state.sheet.replace_sync(content);
             return;
         }
 
@@ -100,9 +101,9 @@ impl DynamicStyleManager {
                         r.remove(pos);
                     }
                 });
+                let _ = state.sheet.replace_sync(content);
                 return state;
             }
-
             let sheet = CssStyleSheet::new().expect("Failed to create CssStyleSheet");
             let _ = sheet.replace_sync(content);
             DOCUMENT_REGISTRY.with(|dr| dr.borrow_mut().add_sheet(sheet.clone()));
