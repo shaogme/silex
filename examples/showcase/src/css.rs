@@ -1,7 +1,7 @@
 use silex::prelude::*;
 
 // --- Theme Definition ---
-define_theme! {
+theme! {
     #[theme(main, prefix = "slx-theme")]
     pub struct AppTheme {
         pub primary: Hex,
@@ -47,8 +47,8 @@ pub fn get_theme(name: &str) -> AppTheme {
 }
 
 // --- Global Styles ---
-// Using the new global_style! macro to define app-wide styles
-global_style! {
+// Using the new global! macro to define app-wide styles
+global! {
     html, body {
         margin: 0;
         padding: 0;

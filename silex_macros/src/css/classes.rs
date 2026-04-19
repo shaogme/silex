@@ -4,17 +4,6 @@ use syn::parse::{Parse, ParseStream, Parser};
 use syn::punctuated::Punctuated;
 use syn::{Expr, Result, Token};
 
-// --- style! { ... } implementation ---
-
-pub fn style_impl(input: TokenStream) -> Result<TokenStream> {
-    let css_tokens = crate::css::css_impl(input)?;
-
-    Ok(quote! {
-        ::silex::dom::attribute::AttributeGroup(vec![
-            ::silex::dom::attribute::ApplyToDom::into_op(#css_tokens, ::silex::dom::attribute::OwnedApplyTarget::Style)
-        ])
-    })
-}
 
 // --- classes! [...] implementation ---
 

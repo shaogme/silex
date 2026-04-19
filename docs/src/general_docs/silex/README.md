@@ -267,11 +267,11 @@ Silex 提供了一个能够与 CSS 变量无缝集成的强类型主题系统：
 *   **强类型校验**：定义主题后自动生成的常量（如 `AppTheme::PRIMARY`）自带属性类型，防止将颜色误传给尺寸。
 *   **全局模式**：使用 `set_global_theme(signal)` 为整个应用设置基础视觉方案。
 *   **局部补丁**：使用 `theme_patch(patch_signal)` 进行增量微调，利用 CSS 变量继承实现精准局部覆盖。
-*   **零损耗**：主题变量直接注入现有元素的 `style` 属性中，不会引入额外的 DOM 包裹层。
+*   **零损耗**：主题变量直接注入现有元素的属性中，不会引入额外的 DOM 包裹层。
 
 ```rust
 // 1. 设置全局主题
-set_global_theme(my_theme_signal);
+set_global_theme(theme_signal);
 
 // 2. 局部增量覆盖
 // 仅修改 primary 变量，其余变量自动从环境继承
@@ -351,8 +351,7 @@ fn MyComp(name: String, #[prop(default)] age: i32) -> impl View {
 }
 ```
 
-### 属性助手 (`style!`, `classes!`)
-*   `style!`: `div(()).style(style! { "color": "red", "margin": "10px" })`
+### 属性助手 (`classes!`)
 *   `classes!`: `div(()).class(classes!["btn", "active" => is_active])`
 
 详细文档请参阅 [silex_macros 文档](../silex_macros/README.md)。

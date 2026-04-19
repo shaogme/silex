@@ -105,7 +105,7 @@ styled! {
     * 选择器侧表达式及其闭包触发规则树分片，形成 `DynamicRule` 并抛出返回。
 3. **Variant Codegen**: 禁止在 `variants` 中使用动态插值 `$(...)` 及动态规则块。内部块会被展开为 `match` 匹配分支，直接返回变体对应构建的纯静态 CSS 类名字符串。
 4. **Theme 解析与校验**: 编译器会提取组件 CSS 块内对形如 `$theme.field` 的访问模式。自动转换向基于该字段推导出的 `var(--slx-theme-field)` 引用。
-    *   **自动主题关联**: 编译器会尝试在当前作用域查找 `Theme` 类型别名（通常由 `define_theme! { #[theme(main)] ... }` 生成）。
+    *   **自动主题关联**: 编译器会尝试在当前作用域查找 `Theme` 类型别名（通常由 `theme! { #[theme(main)] ... }` 生成）。
     *   **类型检查**: 识别到引用后，强制生成对主题被应用属性类型的安全断言约束（如 `assert_valid(&Theme::PRIMARY)`）。
 5. **Desugaring**: 宏在 AST 的根节点上展开为一段附带了 `#[::silex::prelude::component]` 定理的代码块，享有等额的属性代理分配和透传层（返回为 `impl View`）。
     * 生成的静态 CSS 变量推入底层的 `.style()` 属性注入器方法上。
@@ -201,10 +201,16 @@ fn use_user() -> UserStore {
 
 ## 6. 辅助宏
 
-### `style!`
-*   语法: `style! { color: red; margin-top: 10px; &:hover { opacity: 0.8; } }`
-*   底层实现: 彻底对接 `css_impl` 引擎。将输入解析为 Scoped CSS Block，但特殊处理使其作为一个 `DynamicCss` 整体返回，方便直接应用于 `.style()` 方法。
-*   输出: `AttributeGroup(vec![ (DynamicCss).into_op(OwnedApplyTarget::Style) ])`
+### `sty()` Builder
+推荐使用类型安全的 `sty()` Builder。
+```rust
+div(())
+    .style(sty()
+        .color(hex("#ff0000"))
+        .margin_top(px(10))
+        .on_hover(|s| s.transform(transform().scale(1.1)))
+    )
+```
 
 ### `classes!`
 *   语法: `classes![ "btn", "active" => is_active ]`
@@ -212,13 +218,13 @@ fn use_user() -> UserStore {
 
 ---
 
-## 7. Theme 宏 `define_theme!`
+## 7. Theme 宏 `theme!`
 
 提供主题变量定义的构建体系，配合 CSS 编译器进行强类型验证。
 
 ### 用法
 ```rust
-define_theme! {
+theme! {
     #[theme(main, prefix = "slx-theme")]
     pub struct AppTheme {
         pub primary_color: ::silex::css::types::props::Color,

@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 /// A trait that every Silex Theme must implement.
 /// This allows the `styled!` macro to perform compile-time type checks.
-/// Usually implemented via the `define_theme!` macro.
+/// Usually implemented via the `theme!` macro.
 pub trait ThemeType {}
 
 /// A dummy theme type to satisfy the default macro requirements.

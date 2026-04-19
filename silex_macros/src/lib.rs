@@ -30,26 +30,18 @@ pub fn styled(input: TokenStream) -> TokenStream {
 
 #[cfg(feature = "css")]
 #[proc_macro]
-pub fn global_style(input: TokenStream) -> TokenStream {
-    match css::styled::global_style_impl(input.into()) {
+pub fn global(input: TokenStream) -> TokenStream {
+    match css::styled::global_impl(input.into()) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),
     }
 }
 
-#[cfg(feature = "css")]
-#[proc_macro]
-pub fn style(input: TokenStream) -> TokenStream {
-    match css::style::style_impl(input.into()) {
-        Ok(tokens) => tokens.into(),
-        Err(e) => e.to_compile_error().into(),
-    }
-}
 
 #[cfg(feature = "css")]
 #[proc_macro]
 pub fn classes(input: TokenStream) -> TokenStream {
-    match css::style::classes_impl(input.into()) {
+    match css::classes::classes_impl(input.into()) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),
     }
@@ -57,7 +49,7 @@ pub fn classes(input: TokenStream) -> TokenStream {
 
 #[cfg(feature = "css")]
 #[proc_macro]
-pub fn define_theme(input: TokenStream) -> TokenStream {
+pub fn theme(input: TokenStream) -> TokenStream {
     match css::theme::bridge_theme_impl(input.into()) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),

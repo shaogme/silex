@@ -168,10 +168,10 @@ sty().width(clamp(px(200), pct(50), px(800)))
 传统的样式框架在实现主题切换时，通常依赖外层类名切换或 JS 环境注入。Silex 提供了一个高度原生的、基于 **CSS 变量注入** 的强类型主题系统，它不仅性能极高，而且支持极致的代码补全和类型校验。
 
 ### 6.1 定义主题
-使用 `define_theme!` 宏定义主题结构。通过 `#[theme(main)]` 标记主主题，宏会自动生成 `Theme` 类型别名，供其他样式宏自动识别。
+使用 `theme!` 宏定义主题结构。通过 `#[theme(main)]` 标记主主题，宏会自动生成 `Theme` 类型别名，供其他样式宏自动识别。
 
 ```rust
-define_theme! {
+theme! {
     #[theme(main, prefix = "slx")]
     pub struct AppTheme {
         pub primary: Hex,     // 颜色类型
@@ -181,7 +181,7 @@ define_theme! {
 }
 ```
 
-> **提示**：一旦定义了 `main` 主题，你在当前或子模块中使用 `css!`, `style!`, `styled!` 或 `global_style!` 时，所有 `$theme.field` 的引用都会自动关联到该主题并进行静态化校验。
+> **提示**：一旦定义了 `main` 主题，你在当前或子模块中使用 `css!`, `styled!` 或 `global!` 时，所有 `$theme.field` 的引用都会自动关联到该主题并进行静态化校验。
 
 ### 6.2 强类型变量引用 (推荐)
 宏生成的常量（如 `AppTheme::PRIMARY`）具有 `CssVar<Hex>` 类型，并在编译期继承 `Hex` 的校验规则。

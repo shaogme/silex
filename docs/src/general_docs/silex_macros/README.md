@@ -301,17 +301,6 @@ let theme_signal = store.config; // RwSignal<UserConfig>
 
 ## 6. 样式与类名助手
 
-### `style!`
-快速生成内联样式元组。
-```rust
-div(())
-    .style(style! {
-        color: red;
-        margin-top: 10px;
-        &:hover { transform: scale(1.1); } /* 现在支持完整的 CSS 语法！ */
-    })
-```
-
 ### `classes!`
 动态生成类名列表。
 ```rust
@@ -322,16 +311,16 @@ div(())
     ])
 ```
 
-## 7. 强类型主题系统 (`define_theme!`)
+## 7. 强类型主题系统 (`theme!`)
 
 Silex 提供了高度集成的强类型主题系统，保障在 CSS 中使用主题变量时的类型安全。
 
 ### 定义主题
 
-使用 `define_theme!` 声明具有严格类型约束的主题结构：
+使用 `theme!` 声明具有严格类型约束的主题结构：
 
 ```rust
-define_theme! {
+theme! {
     #[theme(main, prefix = "slx")] // 使用 main 标记为主主题，供其他宏自动关联
     pub struct AppTheme {
         pub primary_color: silex::css::types::props::Color,

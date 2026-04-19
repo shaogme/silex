@@ -504,7 +504,7 @@ fn get_extra_tag_impls(tag: &str, name: &Ident, generics: &Generics) -> TokenStr
     items
 }
 
-// --- global_style! ---
+// --- global! ---
 
 pub struct GlobalStyle {
     pub name: Option<Ident>,
@@ -537,7 +537,7 @@ impl Parse for GlobalStyle {
     }
 }
 
-pub fn global_style_impl(input: TokenStream) -> Result<TokenStream> {
+pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     let parsed: GlobalStyle = syn::parse2(input)?;
     let c_name = parsed
         .name

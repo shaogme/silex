@@ -63,7 +63,7 @@ impl<T, P> ValidFor<P> for CssVar<T> where T: ValidFor<P> {}
 - **Number**: 各类标量数字。
 - **Complex**: 独立 DSL (如 TransformBuilder)。
 
-### 4.2 宏驱动的主题系统 (`define_theme!`)
+### 4.2 宏驱动的主题系统 (`theme!`)
 主题系统不仅是运行时的变量同步，更是编译期的强约束：
 1. **常量生成**：宏通过 `pub const NAME: CssVar<T>` 为每个字段生成常量。
 2. **零开销引用**：这些常量内部使用 `CssVarValue::Static(&'static str)`，在 `sty()` 中直接作为字符串片段嵌入 CSS 哈希和样式表中。
