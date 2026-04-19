@@ -49,20 +49,28 @@ src/
 
 ### 4.1 强类型验证机制 (`ValidFor<P>`)
 在 `src/types.rs` 中，我们为每一个 CSS 属性定义了一个 ZST 结构体（如 `props::Width`）。
+
+**验证转发与 `CssVar<T>`**：
+为了让主题变量具备原始类型的校验能力，我们通过泛型转发实现了约束继承：
 ```rust
-pub trait ValidFor<Prop> {}
+impl<T, P> ValidFor<P> for CssVar<T> where T: ValidFor<P> {}
+```
+这保证了 `AppTheme::PRIMARY` (类型为 `CssVar<Hex>`) 只能在接收 `Color` 相关的属性方法（如 `color()`, `background_color()`）中使用。
 
-impl ValidFor<props::Width> for Px {}
-impl ValidFor<props::Width> for Percent {}
-// 零大小类型 (ZST) 验证组：
-// - Dimension: 长度单位
-// - Color: 颜色单位
-// - Number: 各类数字
-// - Complex: 独立于以上组的复杂 DSL (如 TransformBuilder)
-// 编译期会拦截：Style::new().width(rgba(0,0,0,1))
+**验证组 (Groups)**：
+- **Dimension**: 长度单位（Px, Rem, Em, Vw, Vh, CalcValue）。
+- **Color**: 颜色单位（Rgba, Hex, Hsl, ColorKeyword）。
+- **Number**: 各类标量数字。
+- **Complex**: 独立 DSL (如 TransformBuilder)。
 
-### 4.2 内部 Optional 系统与空值处理
-为了支持样式的“未设置”状态并提供有意义的 `Default` 实现，所有 CSS 类型（如 `Px`, `Hex`, `UnsafeCss` 等）内部均采用 `Option` 包装数据：
+### 4.2 宏驱动的主题系统 (`define_theme!`)
+主题系统不仅是运行时的变量同步，更是编译期的强约束：
+1. **常量生成**：宏通过 `pub const NAME: CssVar<T>` 为每个字段生成常量。
+2. **零开销引用**：这些常量内部使用 `CssVarValue::Static(&'static str)`，在 `sty()` 中直接作为字符串片段嵌入 CSS 哈希和样式表中。
+3. **Patch 系统**：自动生成 `ThemePatch` 结构体，用于局部覆盖。
+
+### 4.3 内部 Optional 系统与空值处理
+为了支持样式的“未设置”状态并提供有意义的 `Default` 实现，所有 CSS 类型内部均采用 `Option` 包装数据：
 - **默认值**：`Default::default()` 始终产生 `NoneValue`（内含 `None`），在渲染时被忽略。
 - **工厂函数**：`px(10.0)` 等工厂函数会生成 `Some` 包装的值。
 - **比较逻辑**：由于内部是 `Option`，若需直接比较内部字符串（如 `Hex`），建议使用 `.0.as_deref() == Some("#ffffff")`。

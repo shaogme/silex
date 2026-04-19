@@ -162,37 +162,59 @@ sty().width(clamp(px(200), pct(50), px(800)))
 
 ## 6. 主题系统 (Theme System)
 
-传统的样式框架在实现主题方案时，往往需要包裹一层 `<div>` 主题容器，这会破坏 Flex/Grid 布局。Silex 的主题系统通过 **CSS 变量注入** 巧妙解决了这个问题。
+传统的样式框架在实现主题切换时，通常依赖外层类名切换或 JS 环境注入。Silex 提供了一个高度原生的、基于 **CSS 变量注入** 的强类型主题系统，它不仅性能极高，而且支持极致的代码补全和类型校验。
 
-### 定义与应用主题
-使用 `define_theme!` 宏定义主题，它会自动生成配套的补丁结构体用于局部微调。
+### 6.1 定义主题
+使用 `define_theme!` 宏定义主题结构。宏会自动为每个字段生成对应的**强类型常量**。
 
 ```rust
 define_theme! {
     #[theme(prefix = "slx")]
     pub struct AppTheme {
-        pub primary: Hex,
+        pub primary: Hex,     // 颜色类型
+        pub radius: Px,       // 尺寸类型
         pub surface: Hex,
     }
 }
-
-// 方式 A：全局生效（应用于 :root）
-// 接收实现 IntoSignal 的任意类型（信号、常量、rx! 闭包）
-set_global_theme(theme_sig);
-
-// 方式 B：局部补丁（增量覆盖）
-// 仅修改 primary 颜色，其他变量自动从环境继承
-let patch = rx!(|| AppThemePatch::default().primary(hex("#ff69b4")));
-Stack(children)
-    .apply(theme_patch(patch)) 
 ```
 
-### 在组件中使用主题
-```rust
-// 获取全局主题信号
-let t = use_theme::<AppTheme>();
+### 6.2 强类型变量引用 (推荐)
+宏生成的常量（如 `AppTheme::PRIMARY`）具有 `CssVar<Hex>` 类型，并在编译期继承 `Hex` 的校验规则。
 
-div("主题文字").style(sty().color(t.map(|v| v.primary.clone())))
+```rust
+// ✅ 合法：primary 是颜色，可以传给 color()
+sty().color(AppTheme::PRIMARY)
+
+// ❌ 编译报错：无法将颜色传给 width()
+// 错误信息：类型 `CssVar<Hex>` 无法作为有效的 CSS `Width` 属性值使用
+sty().width(AppTheme::PRIMARY) 
+
+// ✅ 合法：radius 是尺寸，支持算术运算
+sty().border_radius(AppTheme::RADIUS + px(4))
+```
+
+### 6.3 应用主题
+Silex 支持全局挂载和局部补丁，所有操作均通过 `.apply()` 注入，不产生额外的 DOM 包装层。
+
+```rust
+// 1. 全局主题 (应用于 :root)
+// 支持信号、常量或 rx! 闭包
+set_global_theme(rx!(move || {
+    if is_dark.get() { default_dark_theme() } else { default_light_theme() }
+}));
+
+// 2. 局部补丁 (增量覆盖)
+// 仅修改 primary 变量，其余变量自动从环境继承 (CSS Inheritance)
+let patch = rx!(|| AppThemePatch::default().primary(hex("#ff69b4")));
+div("粉色主题区域").apply(theme_patch(patch))
+```
+
+### 6.4 获取主题状态
+如果你需要在 Rust 逻辑中直接访问当前的变量数值（而非仅仅引用变量名）：
+
+```rust
+let theme = use_theme::<AppTheme>();
+let is_dark = theme.map(|t| t.surface == "#111827");
 ```
 
 ---

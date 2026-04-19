@@ -157,10 +157,12 @@
 
 ### Theme (主题系统)
 `silex/src/css/theme.rs`
-*   **ThemeVariables**: 零开销插入机制。不再引入额外包裹 DOM，而是通过扩展方法 `div(...).apply(theme_variables(theme_signal))` 直接监听信号变化并将主题变量转换后注入 `element.style`。
-*   **ThemePatch (局部补丁)**: 允许通过 `div(...).apply(theme_patch(patch_signal))` 实现样式的增量微调。局部补丁仅覆盖特定变量，未覆盖的变量将通过 CSS 继承链自动回退到父级。
-*   **define_theme! 自动化**: 宏现在会自动为每个主题生成配套的 `{Name}Patch` 结构体，支持链式 Setter 控制（如 `AppThemePatch::default().primary(...)`）。
-*   **IntoSignal 兼容**: 所有主题 API 现已归一化，接收 `impl IntoSignal`。支持 `Signal`, `ReadSignal`, `Rx` (宏生成) 甚至常量。
+*   **ThemeVariables**: 零开销插入机制。通过扩展方法 `div(...).apply(theme_variables(theme_signal))` 直接将主题变量注入 `element.style`，无需额外 DOM。
+*   **ThemePatch (局部补丁)**: 支持增量微调。局部补丁仅覆盖特定变量，未覆盖变量通过 CSS 继承链回退。
+*   **define_theme! 自动化**: 
+    *   **Patch 生成**: 自动生成 `{Name}Patch` 结构体，支持链式 Setter（如 `AppThemePatch::default().primary(...)`）。
+    *   **强类型常量**: 自动生成 `pub const NAME: CssVar<T>`。这些常量具备编译期属性校验能力。
+*   **IntoSignal 兼容**: 所有主题 API 现已归一化，接收 `impl IntoSignal`。支持 `Signal`, `ReadSignal`, `Rx` (宏生成) 甚至常量，极大提升了 API 的人体工程学。
 *   **全局模式**: `set_global_theme(theme_signal)` 可将主题挂载到 `:root` 上。
 
 ### ErrorBoundary

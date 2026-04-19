@@ -264,15 +264,23 @@ Grid(view_chain!(
 
 Silex 提供了一个能够与 CSS 变量无缝集成的强类型主题系统：
 
+*   **强类型校验**：定义主题后自动生成的常量（如 `AppTheme::PRIMARY`）自带属性类型，防止将颜色误传给尺寸。
 *   **全局模式**：使用 `set_global_theme(signal)` 为整个应用设置基础视觉方案。
-*   **局部补丁**：使用 `theme_patch(patch_signal)` 在不破坏全局主题的前提下，对局部组件（如侧边栏、卡片）进行增量微调。
+*   **局部补丁**：使用 `theme_patch(patch_signal)` 进行增量微调，利用 CSS 变量继承实现精准局部覆盖。
 *   **零损耗**：主题变量直接注入现有元素的 `style` 属性中，不会引入额外的 DOM 包裹层。
 
 ```rust
-// 定义主题后自动生成补丁对象
+// 1. 设置全局主题
+set_global_theme(my_theme_signal);
+
+// 2. 局部增量覆盖
+// 仅修改 primary 变量，其余变量自动从环境继承
 let patch = rx!(|| AppThemePatch::default().primary(hex("#ff69b4")));
 div("局部变色卡片").apply(theme_patch(patch))
 
+// 3. 在样式中使用主题变量 (具备 IDE 补全与类型检查)
+sty().color(AppTheme::PRIMARY)
+     .border_radius(AppTheme::RADIUS)
 ```
 
 ## 7. 网络请求 (Networking)
