@@ -32,7 +32,7 @@ src/
 │   ├── gradients.rs    // 渐变生成器 DSL
 │   └── complex.rs      // 复杂属性 DSL (Transform, GridAreas等)
 ├── types.rs            // 类型系统入口，定义 ValidFor trait 并整合响应式绑定
-├── theme.rs            // 主题上下文集成与变量同步逻辑
+├── theme.rs            // 主题上下文集成、增量补丁 (Partial Patching) 与变量同步逻辑
 ├── runtime/
 │   ├── registry.rs     // 全局样式表注册表 (Static & Document Registry)
 │   └── dynamic.rs      // 动态样式状态管理与弱引用 GC

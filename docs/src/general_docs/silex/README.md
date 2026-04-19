@@ -260,7 +260,20 @@ Grid(view_chain!(
 .gap(px(8))
 ```
 
+### 主题系统 (Theme System)
 
+Silex 提供了一个能够与 CSS 变量无缝集成的强类型主题系统：
+
+*   **全局模式**：使用 `set_global_theme(signal)` 为整个应用设置基础视觉方案。
+*   **局部补丁**：使用 `theme_patch(patch_signal)` 在不破坏全局主题的前提下，对局部组件（如侧边栏、卡片）进行增量微调。
+*   **零损耗**：主题变量直接注入现有元素的 `style` 属性中，不会引入额外的 DOM 包裹层。
+
+```rust
+// 定义主题后自动生成补丁对象
+let patch = rx!(|| AppThemePatch::default().primary(hex("#ff69b4")));
+div("局部变色卡片").apply(theme_patch(patch))
+
+```
 
 ## 7. 网络请求 (Networking)
 

@@ -415,12 +415,7 @@ pub fn StylingBasics() -> impl View {
 #[component]
 pub fn Theming() -> impl View {
     let global_settings = crate::advanced::use_user_settings();
-    let initial_theme = if global_settings.theme.get_untracked() == "Dark" {
-        default_dark_theme()
-    } else {
-        default_light_theme()
-    };
-    let (theme, set_theme) = Signal::pair(initial_theme);
+    let theme = use_theme::<AppTheme>();
     let is_dark = theme.map(|t| t.surface.0 == "#111827");
 
     div![
@@ -430,7 +425,7 @@ pub fn Theming() -> impl View {
 
         div![
             button("🌞 Light Mode")
-                .on(event::click, move |_| set_theme.set(default_light_theme()))
+                .on(event::click, move |_| global_settings.theme.set("Light".to_string()))
                 .style(
                     sty()
                         .padding(padding::x_y(px(8), px(16)))
@@ -443,7 +438,7 @@ pub fn Theming() -> impl View {
                         .border(rx!(if !is_dark.get() { border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) }))
                 ),
             button("🌙 Dark Mode")
-                .on(event::click, move |_| set_theme.set(default_dark_theme()))
+                .on(event::click, move |_| global_settings.theme.set("Dark".to_string()))
                 .style(
                     sty()
                         .padding(padding::x_y(px(8), px(16)))
@@ -461,6 +456,22 @@ pub fn Theming() -> impl View {
             p("These styles react to the Rust theme object via CSS variables."),
             ThemeButton("Themed Scoped Button").active(false)
         )).apply(theme_variables(theme)),
+
+        h3("Incremental Patching (New)").style("margin: 40px 0 16px;"),
+        p("Only override specific variables (like 'primary') while inheriting the rest from the environment via CSS inheritance.")
+            .style("color: #9ca3af; margin-bottom: 24px;"),
+
+        div![
+            ThemePreviewCard(view_chain!(
+                h4("Primary Patch"),
+                p("This card ONLY patches 'primary' to Hot Pink."),
+                div![
+                    ThemeButton("Still Secondary Color").active(false),
+                    span(" (Variable inheritance in action!) ").style("font-size: 0.8em; opacity: 0.6;")
+                ]
+            ))
+            .apply(theme_patch(rx!(move || AppThemePatch::default().primary(hex("#ff69b4"))))),
+        ].apply(theme_variables(theme)),
 
         h3("Layout Continuity").style("margin: 40px 0 16px;"),
         p("Theme variables are injected via 'apply', ensuring no extra DOM wrappers break CSS layouts like Flex or Grid.")

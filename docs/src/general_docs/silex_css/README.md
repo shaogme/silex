@@ -165,30 +165,32 @@ sty().width(clamp(px(200), pct(50), px(800)))
 传统的样式框架在实现主题方案时，往往需要包裹一层 `<div>` 主题容器，这会破坏 Flex/Grid 布局。Silex 的主题系统通过 **CSS 变量注入** 巧妙解决了这个问题。
 
 ### 定义与应用主题
+使用 `define_theme!` 宏定义主题，它会自动生成配套的补丁结构体用于局部微调。
+
 ```rust
-#[theme(MyTheme)]
-struct ModernTheme {
-    primary: Hex,
-    surface: Hex,
+define_theme! {
+    #[theme(prefix = "slx")]
+    pub struct AppTheme {
+        pub primary: Hex,
+        pub surface: Hex,
+    }
 }
 
-let theme_sig = Signal::pair(ModernTheme {
-    primary: hex("#6366f1"),
-    surface: hex("#ffffff"),
-});
-
-// 应用方式 A：全局生效（应用于 :root）
+// 方式 A：全局生效（应用于 :root）
+// 接收实现 IntoSignal 的任意类型（信号、常量、rx! 闭包）
 set_global_theme(theme_sig);
 
-// 应用方式 B：局部生效（不产生多余 DOM）
+// 方式 B：局部补丁（增量覆盖）
+// 仅修改 primary 颜色，其他变量自动从环境继承
+let patch = rx!(|| AppThemePatch::default().primary(hex("#ff69b4")));
 Stack(children)
-    .apply(theme_variables(theme_sig)) 
+    .apply(theme_patch(patch)) 
 ```
 
 ### 在组件中使用主题
 ```rust
-// 通过宏获取主题变量，自动建立响应式关系
-let t = use_theme::<ModernTheme>();
+// 获取全局主题信号
+let t = use_theme::<AppTheme>();
 
 div("主题文字").style(sty().color(t.map(|v| v.primary.clone())))
 ```

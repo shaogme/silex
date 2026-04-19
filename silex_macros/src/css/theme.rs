@@ -99,6 +99,27 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
     }
 
     let trait_name = quote::format_ident!("{}Fields", name);
+    let patch_name = quote::format_ident!("{}Patch", name);
+    let mut patch_fields = Vec::new();
+    let mut patch_entries = Vec::new();
+    let mut patch_setters = Vec::new();
+
+    for (field_idx, field) in def.fields.iter().enumerate() {
+        let f_name = field_idents[field_idx].clone();
+        let f_ty = &field.ty;
+        let css_var_name = &css_vars[field_idx];
+
+        patch_fields.push(quote! { pub #f_name: Option<#f_ty> });
+        patch_entries.push(quote! {
+            (#css_var_name, self.#f_name.as_ref().map(|v| v.to_string()))
+        });
+        patch_setters.push(quote! {
+            pub fn #f_name(mut self, val: impl Into<#f_ty>) -> Self {
+                self.#f_name = Some(val.into());
+                self
+            }
+        });
+    }
     let filtered_attrs: Vec<_> = def
         .attrs
         .iter()
@@ -135,6 +156,19 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
         impl ::std::fmt::Display for #name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 write!(f, "{}", ::silex::css::theme::ThemeToCss::to_css_variables(self))
+            }
+        }
+
+        #[derive(Clone, Debug, Default)]
+        #vis struct #patch_name { #(#patch_fields),* }
+
+        impl #patch_name {
+            #(#patch_setters)*
+        }
+
+        impl ::silex::css::theme::ThemePatchToCss for #patch_name {
+            fn get_patch_entries(&self) -> Vec<(&'static str, Option<String>)> {
+                vec![ #(#patch_entries),* ]
             }
         }
     })
