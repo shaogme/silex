@@ -14,7 +14,9 @@ pub struct DynamicRule {
 pub struct CssCompileResult {
     pub class_name: String,
     pub style_id: String,
-    pub final_css: String,
+    pub static_id: String,
+    pub static_css: String,    // Fully static CSS (font-face, etc.)
+    pub component_css: String, // CSS scoped to this component (with dynamic vars)
     pub expressions: Vec<(String, TokenStream)>,
     pub dynamic_rules: Vec<DynamicRule>,
     pub theme_refs: Vec<(String, String)>,
@@ -79,54 +81,53 @@ impl CssCompiler {
         let block: CssBlock = syn::parse2(ts)?;
         process_css_block(&block, &mut state)?;
 
-        let final_source_css = if state.lifted_css.is_empty() {
-            state.static_css.clone()
-        } else {
-            format!("{}\n{}", state.lifted_css, state.static_css)
-        };
-
-        let wrapped_css = if wrap_in_class && !state.static_css.trim().is_empty() {
-            format!(".{} {{ {} }}", class_name, state.static_css)
-        } else if wrap_in_class {
-            // If only lifted CSS exists, don't wrap empty static CSS
-            state.lifted_css.clone()
-        } else {
-            final_source_css.clone()
-        };
-
-        // Combine lifted and wrapped
-        let full_css =
-            if wrap_in_class && !state.lifted_css.is_empty() && !state.static_css.trim().is_empty()
-            {
-                format!("{}\n{}", state.lifted_css, wrapped_css)
-            } else {
-                wrapped_css
-            };
-
-        let res = if full_css.trim().is_empty() {
+        let final_static_css = if state.lifted_css.is_empty() {
             "".to_string()
         } else {
-            let mut stylesheet = StyleSheet::parse(&full_css, ParserOptions::default())
-                .map_err(|e| syn::Error::new(span, format!("Invalid CSS: {}", e)))?;
-
-            stylesheet
-                .minify(MinifyOptions::default())
-                .map_err(|e| syn::Error::new(span, format!("CSS Minification failed: {}", e)))?;
-
+            let mut stylesheet = StyleSheet::parse(&state.lifted_css, ParserOptions::default())
+                .map_err(|e| crate::css::error::report_lightning_error(format!("Static CSS: {}", e), span))?;
+            stylesheet.minify(MinifyOptions::default()).ok();
             stylesheet
                 .to_css(PrinterOptions {
                     minify: true,
                     targets: Targets::default(),
                     ..PrinterOptions::default()
                 })
-                .map_err(|e| syn::Error::new(span, format!("CSS Printing failed: {}", e)))?
+                .map_err(|e| crate::css::error::report_lightning_error(format!("Static CSS Printing: {}", e), span))?
                 .code
+        };
+
+        let final_component_css = if wrap_in_class && !state.static_css.trim().is_empty() {
+            let wrapped = format!(".{} {{ {} }}", class_name, state.static_css);
+            let mut stylesheet = StyleSheet::parse(&wrapped, ParserOptions::default())
+                .map_err(|e| crate::css::error::report_lightning_error(format!("Component CSS: {}", e), span))?;
+            stylesheet.minify(MinifyOptions::default()).ok();
+            stylesheet
+                .to_css(PrinterOptions {
+                    minify: true,
+                    targets: Targets::default(),
+                    ..PrinterOptions::default()
+                })
+                .map_err(|e| crate::css::error::report_lightning_error(format!("Component CSS Printing: {}", e), span))?
+                .code
+        } else if !wrap_in_class && !state.static_css.trim().is_empty() {
+             state.static_css.clone()
+        } else {
+            "".to_string()
+        };
+
+        let static_id = if !final_static_css.is_empty() {
+            format!("static-{}", silex_hash::css::hash_one(&final_static_css))
+        } else {
+            "".to_string()
         };
 
         Ok(CssCompileResult {
             class_name,
             style_id,
-            final_css: res,
+            static_id,
+            static_css: final_static_css,
+            component_css: final_component_css,
             expressions: state.expressions,
             dynamic_rules: state.dynamic_rules,
             theme_refs: state.theme_refs,
@@ -362,8 +363,15 @@ fn process_tokens<F>(ts: &TokenStream, handler: &mut F) -> String
 where
     F: FnMut(&TokenTree, &mut Peekable<IntoIter>, &mut String, bool) -> bool,
 {
-    let mut out = String::new();
     let mut iter = ts.clone().into_iter().peekable();
+    process_tokens_iter(&mut iter, handler)
+}
+
+fn process_tokens_iter<F>(iter: &mut Peekable<IntoIter>, handler: &mut F) -> String
+where
+    F: FnMut(&TokenTree, &mut Peekable<IntoIter>, &mut String, bool) -> bool,
+{
+    let mut out = String::new();
     let mut prev_tt: Option<TokenTree> = None;
 
     while let Some(tt) = iter.next() {
@@ -377,7 +385,7 @@ where
             }
         }
 
-        if handler(&tt, &mut iter, &mut out, space_before) {
+        if handler(&tt, iter, &mut out, space_before) {
             prev_tt = Some(tt);
             continue;
         }
@@ -397,7 +405,8 @@ where
                 if delim.0 != ' ' {
                     out.push(delim.0);
                 }
-                out.push_str(&process_tokens(&g.stream(), handler));
+                let mut sub_iter = g.stream().into_iter().peekable();
+                out.push_str(&process_tokens_iter(&mut sub_iter, handler));
                 if delim.1 != ' ' {
                     out.push(delim.1);
                 }
@@ -471,15 +480,14 @@ fn extract_at_rule_params(
     theme_prefix: &str,
 ) -> String {
     process_tokens(ts, &mut |tt, iter, out, space_before| {
-        if let TokenTree::Punct(p) = tt
-            && p.as_char() == '$'
-            && let Some(var) = handle_theme_path(iter, theme_prefix, theme_refs, "at-rule")
-        {
-            if space_before {
-                out.push(' ');
+        if matches!(tt, TokenTree::Punct(p) if p.as_char() == '$') {
+            if let Some(var) = handle_theme_path(iter, theme_prefix, theme_refs, "at-rule") {
+                if space_before {
+                    out.push(' ');
+                }
+                out.push_str(&var);
+                return true;
             }
-            out.push_str(&var);
-            return true;
         }
         false
     })

@@ -82,30 +82,27 @@ impl DynamicStyleManager {
     }
 
     pub fn update(&mut self, id: &str, content: &str) {
-        if let Some(state) = &self.state
-            && state.id == id
-        {
-            return;
+        if let Some(state) = &self.state {
+            if state.id == id {
+                return;
+            }
         }
 
         let new_state = DYNAMIC_STYLE_REGISTRY.with(|registry| {
             let mut reg = registry.borrow_mut();
 
-            // Try to upgrade from registry (which holds weak references)
-            if let Some(weak) = reg.get(id)
-                && let Some(state) = weak.upgrade()
-            {
-                // It's still alive (either in use or in retirement)
-                RETIRED_STYLES.with(|retired| {
-                    let mut r = retired.borrow_mut();
-                    if let Some(pos) = r.iter().position(|s| s.id == id) {
-                        r.remove(pos);
-                    }
-                });
-                return state;
+            if let Some(weak) = reg.get(id) {
+                if let Some(state) = weak.upgrade() {
+                    RETIRED_STYLES.with(|retired| {
+                        let mut r = retired.borrow_mut();
+                        if let Some(pos) = r.iter().position(|s| s.id == id) {
+                            r.remove(pos);
+                        }
+                    });
+                    return state;
+                }
             }
 
-            // Not found or was dropped, create a new one
             let sheet = CssStyleSheet::new().expect("Failed to create CssStyleSheet");
             let _ = sheet.replace_sync(content);
             DOCUMENT_REGISTRY.with(|dr| dr.borrow_mut().add_sheet(sheet.clone()));
@@ -147,22 +144,31 @@ impl ApplyToDom for DynamicCss {
             let el = el.clone();
             let vars = self.vars.clone();
             Effect::new(move |prev_values: Option<Vec<String>>| {
-                if let Some(style) = el
+                let Some(style) = el
                     .dyn_ref::<web_sys::HtmlElement>()
                     .map(|e| e.style())
                     .or_else(|| el.dyn_ref::<web_sys::SvgElement>().map(|e| e.style()))
-                {
-                    let mut current_vals = Vec::with_capacity(vars.len());
-                    for (i, (name, getter)) in vars.iter().enumerate() {
-                        let value = getter.get();
-                        if prev_values.as_ref().and_then(|v| v.get(i)) != Some(&value) {
-                            let _ = style.set_property(name, &value);
-                        }
-                        current_vals.push(value);
+                else { return Vec::new() };
+
+                let mut current_vals = Vec::with_capacity(vars.len());
+                let mut changed = false;
+
+                for (i, (_name, getter)) in vars.iter().enumerate() {
+                    let val = getter.get();
+                    if !changed && prev_values.as_ref().and_then(|v| v.get(i)) != Some(&val) {
+                        changed = true;
                     }
-                    return current_vals;
+                    current_vals.push(val);
                 }
-                Vec::new()
+
+                if changed || prev_values.is_none() {
+                    for (i, (name, val)) in vars.iter().zip(current_vals.iter()).enumerate() {
+                       if prev_values.as_ref().and_then(|v| v.get(i)) != Some(val) {
+                           let _ = style.set_property(name.0, val);
+                       }
+                    }
+                }
+                current_vals
             });
         }
 

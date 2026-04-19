@@ -169,10 +169,18 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             let res = CssCompiler::compile(v_css.clone(), v_name.span(), theme_prefix.clone())?;
             let v_class = res.class_name;
             let v_style_id = res.style_id;
-            let v_final_css = res.final_css;
+            let v_static_css = res.static_css;
+            let v_component_css = res.component_css;
 
-            variant_injections
-                .push(quote! { ::silex::css::inject_style(#v_style_id, #v_final_css); });
+            let v_static_id = res.static_id;
+            variant_injections.push(quote! {
+                if !#v_static_css.is_empty() {
+                    ::silex::css::inject_style(#v_static_id, #v_static_css);
+                }
+                if !#v_component_css.is_empty() {
+                    ::silex::css::inject_style(#v_style_id, #v_component_css);
+                }
+            });
 
             process_dynamic_entries(
                 &res.expressions,
@@ -260,25 +268,41 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         .collect();
     let vis = &parsed.vis;
     let (impl_generics, _, _) = parsed.generics.split_for_impl();
-    let final_css = &compile_result.final_css;
+    let static_css = &compile_result.static_css;
+    let component_css = &compile_result.component_css;
     let style_id = &compile_result.style_id;
     let class_name = &compile_result.class_name;
+    let static_id = &compile_result.static_id;
 
     Ok(quote! {
         #(#filtered_attrs)*
         #[::silex::macros::component]
         #vis fn #name #impl_generics (#all_fn_args) -> #return_type {
+            const __STATIC_CSS: &str = #static_css;
+            const __COMPONENT_CSS: &str = #component_css;
+
             #(#var_decls)*
             #(#prop_sig_bindings)*
             #(#theme_assertions)*
-            ::silex::css::inject_style(#style_id, #final_css);
+
+            if !__STATIC_CSS.is_empty() {
+                ::silex::css::inject_style(#static_id, __STATIC_CSS);
+            }
+            if !__COMPONENT_CSS.is_empty() {
+                ::silex::css::inject_style(#style_id, __COMPONENT_CSS);
+            }
+
             #(#variant_injections)*
             #(#dynamic_rule_inits)*
 
             ::silex::html::#tag(#children_binding)
                 .class(#class_name)
                 #style_prop_binding
-                #(#style_bindings)*
+                .apply(::silex::dom::attribute::AttrOp::CombinedStyles {
+                    statics: ::std::vec![],
+                    properties: ::std::vec![ #(#style_bindings),* ],
+                    sheets: ::std::vec![],
+                })
                 #(#variant_class_bindings)*
                 #(#dynamic_rule_classes)*
         }
@@ -323,7 +347,7 @@ fn process_dynamic_entries(
             quote! { let #var_ident = ::silex::css::make_dynamic_val_for::<#prop_type, _>(#expr); },
         );
         let var_name = format!("--{}-{}", class_name, i);
-        style_bindings.push(quote! { .style((#var_name, #var_ident)) });
+        style_bindings.push(quote! { (::std::borrow::Cow::Borrowed(#var_name), #var_ident) });
     }
     Ok(())
 }
@@ -368,7 +392,7 @@ fn expand_dynamic_rule(
         quote! {
             if #sig.get() != #val { return "".to_string(); }
             let mut res = ::std::string::ToString::to_string(#template);
-            #( if let Some(p) = res.find("{}") { res.replace_range(p..p+2, &#eval_vars()); } )*
+            #( if let Some(p) = res.find("{}") { res.replace_range(p..p+2, &#eval_vars.get()); } )*
             let hash = ::silex::hash::css::hash_one(&res);
             let mut buf = [0u8; 13];
             let dyn_class = format!("{}-dyn-{}", #class_name, ::silex::hash::css::encode_base36(hash, &mut buf));
@@ -503,7 +527,7 @@ pub fn global_style_impl(input: TokenStream) -> Result<TokenStream> {
         let pty = crate::css::get_prop_type(prop, c_name.span())?;
         var_decls.push(quote! { let #vid = ::silex::css::make_dynamic_val_for::<#pty, _>(#expr); });
         let vname = format!("--dyn-{}", i);
-        style_bindings.push(quote! { .style((#vname, #vid.clone())) });
+        style_bindings.push(quote! { (::std::borrow::Cow::Borrowed(#vname), #vid.clone()) });
     }
 
     let mut inits = Vec::new();
@@ -537,19 +561,39 @@ pub fn global_style_impl(input: TokenStream) -> Result<TokenStream> {
         }});
     }
 
-    let has_dynamics = !style_bindings.is_empty() || !logics.is_empty();
     let sid = &res.style_id;
-    let fc = &res.final_css;
+    let s_css = &res.static_css;
+    let c_css = &res.component_css;
+    let static_id = &res.static_id;
+    let has_dynamics = !style_bindings.is_empty() || !logics.is_empty();
 
     Ok(quote! {
         #[::silex::macros::component]
         pub fn #c_name() -> impl ::silex::dom::view::View {
+            const __STATIC_CSS: &str = #s_css;
+            const __COMPONENT_CSS: &str = #c_css;
+            let static_id = #static_id;
+
             #(#var_decls)*
-            ::silex::css::inject_style(#sid, #fc);
+            if !__STATIC_CSS.is_empty() {
+                ::silex::css::inject_style(static_id, __STATIC_CSS);
+            }
+            if !__COMPONENT_CSS.is_empty() {
+                ::silex::css::inject_style(#sid, __COMPONENT_CSS);
+            }
+
             #(#inits)*
             #(#logics)*
             if #has_dynamics {
-                 ::silex::dom::view::View::into_any(::silex::html::div(()).style("display: none;") #(#style_bindings)*)
+                 ::silex::dom::view::View::into_any(
+                     ::silex::html::div(())
+                        .style("display: none;")
+                        .apply(::silex::dom::attribute::AttrOp::CombinedStyles {
+                            statics: ::std::vec![],
+                            properties: ::std::vec![ #(#style_bindings),* ],
+                            sheets: ::std::vec![],
+                        })
+                 )
             } else {
                 ::silex::dom::view::View::into_any(())
             }

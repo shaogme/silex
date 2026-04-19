@@ -29,14 +29,22 @@ pub enum CssRule {
 
 impl Parse for CssRule {
     fn parse(input: ParseStream) -> Result<Self> {
-        // We peek to differentiate.
-        // It's an @-rule if it starts with @.
+        // Fast path for @-rules
         if input.peek(Token![@]) {
             return input.parse().map(CssRule::AtRule);
         }
 
-        // To differentiate between Declaration and Nested rule, we need to inspect tokens
-        // until we find a `{` or a `:`. However, `syn` streams are mostly forward-only without `fork`.
+        // Fast path for common nested selectors
+        if input.peek(Token![&])
+            || input.peek(Token![.])
+            || input.peek(Token![#])
+            || input.peek(Token![*])
+            || input.peek(token::Bracket)
+        {
+            return input.parse().map(CssRule::Nested);
+        }
+
+        // Fallback to fork for ambiguous cases (like ident-based selectors vs properties)
         let fork = input.fork();
         let mut is_nested = false;
 
@@ -45,14 +53,10 @@ impl Parse for CssRule {
                 is_nested = true;
                 break;
             }
-            if fork.peek(Token![:]) {
-                // Not necessarily a declaration, pseudo-classes use `:`.
-                // If we see `:` but eventually see `{` before `;`, it's nested.
-            }
             if fork.peek(Token![;]) {
-                break; // definitely a declaration
+                break; // Definitely a declaration
             }
-            // advance fork
+            // Skip to the next potential marker
             let _: TokenTree = fork.parse()?;
         }
 
@@ -80,15 +84,13 @@ impl Parse for CssDeclaration {
         let mut prop_str = String::new();
 
         // Parse property name (idents and hyphens)
-        loop {
+        while input.peek(Ident::peek_any) || input.peek(Token![-]) {
             if input.peek(Ident::peek_any) {
                 let id = Ident::parse_any(input)?;
                 prop_str.push_str(&id.to_string());
-            } else if input.peek(Token![-]) {
-                let _dash: Token![-] = input.parse()?;
-                prop_str.push('-');
             } else {
-                break;
+                let _: Token![-] = input.parse()?;
+                prop_str.push('-');
             }
         }
 
@@ -98,16 +100,11 @@ impl Parse for CssDeclaration {
 
         let colon_token: Token![:] = input.parse()?;
 
-        // Parse values until `;` or EOF (or `}` if it's the last declaration in a block without a semicolon)
+        // Parse values until `;` or EOF or `}`
         let mut value_tokens = TokenStream::new();
         while !input.is_empty() && !input.peek(Token![;]) && !input.peek(token::Brace) {
-            let tt: TokenTree = input.parse()?;
-            value_tokens.extend(std::iter::once(tt));
+            value_tokens.extend(std::iter::once(input.parse::<TokenTree>()?));
         }
-
-        // We'll treat the whole chunk of tokens as one Unparsed block,
-        // to delegate the dynamic value extraction to the compiler phase or treat it as a stream.
-        let values = value_tokens;
 
         let semi_token = if input.peek(Token![;]) {
             Some(input.parse()?)
@@ -118,7 +115,7 @@ impl Parse for CssDeclaration {
         Ok(CssDeclaration {
             property: prop_str,
             colon_token,
-            values,
+            values: value_tokens,
             semi_token,
         })
     }
