@@ -45,6 +45,45 @@ pub fn get_theme(name: &str) -> AppTheme {
     }
 }
 
+// --- Global Styles ---
+// Using the new global_style! macro to define app-wide styles
+global_style! {
+    html, body {
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+        background-color: $theme.surface;
+        color: $theme.text;
+        font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        transition: background-color 0.3s, color 0.3s;
+    }
+
+    * {
+        box-sizing: border-box;
+    }
+
+    // Global class for cards with a native hover effect
+    .global-card {
+        padding: 24px;
+        border-radius: 12px;
+        border: 1px solid $theme.border;
+        background: $theme.surface;
+        transition: transform 0.2s;
+
+        &:hover {
+            transform: scale(1.02);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+    }
+
+    // Using string literal for complex selectors
+    "div > .active-item" {
+        border-left: 4px solid $theme.primary;
+        padding-left: 12px;
+        font-weight: bold;
+    }
+}
+
 // --- Styled Components ---
 
 styled! {

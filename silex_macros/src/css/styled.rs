@@ -595,3 +595,139 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
 
     Ok(expanded)
 }
+
+/// Represents the syntax tree for a `global_style!` macro call.
+pub struct GlobalStyle {
+    pub name: Option<Ident>,
+    pub css_block: TokenStream,
+}
+
+impl Parse for GlobalStyle {
+    fn parse(input: ParseStream) -> Result<Self> {
+        // Option 1: global_style! Name { ...rules... }
+        if input.peek(Ident) && input.peek2(syn::token::Brace) {
+            let name = input.parse()?;
+            let content;
+            syn::braced!(content in input);
+            let css_block = content.parse()?;
+            return Ok(GlobalStyle {
+                name: Some(name),
+                css_block,
+            });
+        }
+
+        // Option 2: global_style! { ...rules... }
+        let css_block = input.parse()?;
+        Ok(GlobalStyle {
+            name: None,
+            css_block,
+        })
+    }
+}
+
+pub fn global_style_impl(input: TokenStream) -> Result<TokenStream> {
+    let parsed: GlobalStyle = syn::parse2(input)?;
+    let component_name = parsed
+        .name
+        .unwrap_or_else(|| quote::format_ident!("GlobalStyles"));
+    let css_block = parsed.css_block;
+
+    let compile_result = CssCompiler::compile_global(css_block, component_name.span(), None)?;
+
+    let style_id = compile_result.style_id;
+    let final_css = compile_result.final_css;
+    let expressions = compile_result.expressions;
+    let dynamic_rules = compile_result.dynamic_rules;
+
+    let mut var_decls = Vec::new();
+    let mut style_bindings = Vec::new();
+
+    for (i, (prop, expr_ts)) in expressions.iter().enumerate() {
+        let var_ident = quote::format_ident!("var_{}", i);
+        let prop_type = crate::css::get_prop_type(prop, component_name.span())?;
+        var_decls.push(quote! {
+            let #var_ident = ::silex::css::make_dynamic_val_for::<#prop_type, _>(#expr_ts);
+        });
+
+        let var_name = format!("--dyn-{}", i);
+        style_bindings.push(quote! {
+            .style((#var_name, #var_ident.clone()))
+        });
+    }
+
+    let mut dynamic_rule_inits = Vec::new();
+    let mut dynamic_rule_logic = Vec::new();
+
+    for (rule_idx, rule) in dynamic_rules.iter().enumerate() {
+        let template = &rule.template;
+        let mut dyn_var_decls = Vec::new();
+        let mut eval_vars = Vec::new();
+
+        for (expr_idx, (prop, expr_ts)) in rule.expressions.iter().enumerate() {
+            let var_ident = quote::format_ident!("dyn_var_{}_{}", rule_idx, expr_idx);
+            let prop_type = crate::css::get_prop_type(prop, component_name.span())?;
+
+            dyn_var_decls.push(quote! {
+                let #var_ident = ::silex::css::make_dynamic_val_for::<#prop_type, _>(#expr_ts);
+            });
+            eval_vars.push(var_ident);
+        }
+
+        let manager_ident = quote::format_ident!("manager_{}", rule_idx);
+        dynamic_rule_inits.push(quote! {
+            #(#dyn_var_decls)*
+            let #manager_ident = ::std::rc::Rc::new(::std::cell::RefCell::new(Some(::silex::css::DynamicStyleManager::new())));
+            let manager_cleanup = #manager_ident.clone();
+            ::silex::core::reactivity::on_cleanup(move || {
+                if let Ok(mut opt_mgr) = manager_cleanup.try_borrow_mut() {
+                    let _ = opt_mgr.take();
+                }
+            });
+        });
+
+        dynamic_rule_logic.push(quote! {
+            {
+                let manager = #manager_ident.clone();
+                ::silex::prelude::rx! {
+                    let mut resolved_rule = ::std::string::ToString::to_string(#template);
+                    #(
+                        let val = #eval_vars.get();
+                        if let Some(pos) = resolved_rule.find("{}") {
+                            resolved_rule.replace_range(pos..pos + 2, &val);
+                        }
+                    )*
+                    let rule_id = format!("{}-dyn-{}", #style_id, #rule_idx);
+                    if let Ok(mut opt) = manager.try_borrow_mut() {
+                        if let Some(mgr) = opt.as_mut() {
+                            mgr.update(&rule_id, &resolved_rule);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    let has_dynamics = !style_bindings.is_empty() || !dynamic_rule_logic.is_empty();
+
+    let expanded = quote! {
+        #[::silex::macros::component]
+        pub fn #component_name() -> impl ::silex::dom::view::View {
+            #(#var_decls)*
+            ::silex::css::inject_style(#style_id, #final_css);
+            #(#dynamic_rule_inits)*
+            #(#dynamic_rule_logic)*
+
+            if #has_dynamics {
+                 ::silex::dom::view::View::into_any(
+                     ::silex::html::div(())
+                        .style("display: none;")
+                        #(#style_bindings)*
+                 )
+            } else {
+                ::silex::dom::view::View::into_any(())
+            }
+        }
+    };
+
+    Ok(expanded)
+}

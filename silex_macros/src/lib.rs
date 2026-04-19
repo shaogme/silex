@@ -31,6 +31,15 @@ pub fn styled(input: TokenStream) -> TokenStream {
 
 #[cfg(feature = "css")]
 #[proc_macro]
+pub fn global_style(input: TokenStream) -> TokenStream {
+    match css::styled::global_style_impl(input.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+#[cfg(feature = "css")]
+#[proc_macro]
 pub fn style(input: TokenStream) -> TokenStream {
     match css::style::style_impl(input.into()) {
         Ok(tokens) => tokens.into(),

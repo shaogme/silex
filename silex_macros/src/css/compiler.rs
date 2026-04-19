@@ -35,6 +35,23 @@ impl CssCompiler {
         span: Span,
         theme_prefix: Option<String>,
     ) -> Result<CssCompileResult> {
+        Self::compile_internal(ts, span, theme_prefix, true)
+    }
+
+    pub fn compile_global(
+        ts: TokenStream,
+        span: Span,
+        theme_prefix: Option<String>,
+    ) -> Result<CssCompileResult> {
+        Self::compile_internal(ts, span, theme_prefix, false)
+    }
+
+    fn compile_internal(
+        ts: TokenStream,
+        span: Span,
+        theme_prefix: Option<String>,
+        wrap_in_class: bool,
+    ) -> Result<CssCompileResult> {
         let ts_string = ts.to_string();
         let hash = silex_hash::css::hash_one(&ts_string);
         let mut buf = [0u8; 13];
@@ -46,7 +63,11 @@ impl CssCompiler {
             expressions: Vec::new(),
             dynamic_rules: Vec::new(),
             theme_refs: Vec::new(),
-            class_name: class_name.clone(),
+            class_name: if wrap_in_class {
+                class_name.clone()
+            } else {
+                "".to_string()
+            },
             theme_prefix: theme_prefix.unwrap_or_else(|| "slx-theme".to_string()),
         };
 
@@ -56,7 +77,11 @@ impl CssCompiler {
 
         let final_source_css = state.static_css;
 
-        let wrapped_css = format!(".{} {{ {} }}", class_name, final_source_css);
+        let wrapped_css = if wrap_in_class {
+            format!(".{} {{ {} }}", class_name, final_source_css)
+        } else {
+            final_source_css.clone()
+        };
 
         let res = if final_source_css.trim().is_empty() {
             "".to_string()
@@ -331,6 +356,7 @@ fn build_static_selector(ts: &TokenStream, out: &mut String, class_name: &str) {
 
         if let TokenTree::Punct(ref p) = tt
             && p.as_char() == '&'
+            && !class_name.is_empty()
         {
             if space_before {
                 out.push(' ');
@@ -373,7 +399,12 @@ fn build_static_selector(ts: &TokenStream, out: &mut String, class_name: &str) {
                 prev_tt = Some(TokenTree::Ident(id));
             }
             TokenTree::Literal(lit) => {
-                out.push_str(&lit.to_string());
+                let s = lit.to_string();
+                if s.starts_with('"') && s.ends_with('"') {
+                    out.push_str(&s[1..s.len() - 1]);
+                } else {
+                    out.push_str(&s);
+                }
                 prev_tt = Some(TokenTree::Literal(lit));
             }
         }
@@ -505,7 +536,12 @@ fn extract_dynamic_selector(
                 prev_tt = Some(TokenTree::Ident(id));
             }
             TokenTree::Literal(lit) => {
-                out.push_str(&lit.to_string());
+                let s = lit.to_string();
+                if s.starts_with('"') && s.ends_with('"') {
+                    out.push_str(&s[1..s.len() - 1]);
+                } else {
+                    out.push_str(&s);
+                }
                 prev_tt = Some(TokenTree::Literal(lit));
             }
         }
@@ -635,7 +671,12 @@ fn extract_dynamic_value(
                 prev_tt = Some(TokenTree::Ident(id));
             }
             TokenTree::Literal(lit) => {
-                out.push_str(&lit.to_string());
+                let s = lit.to_string();
+                if s.starts_with('"') && s.ends_with('"') {
+                    out.push_str(&s[1..s.len() - 1]);
+                } else {
+                    out.push_str(&s);
+                }
                 prev_tt = Some(TokenTree::Literal(lit));
             }
         }
