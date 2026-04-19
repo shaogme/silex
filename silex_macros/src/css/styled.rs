@@ -220,7 +220,9 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         .props
         .iter()
         .filter_map(|a| {
-            if let syn::FnArg::Typed(pt) = a && let syn::Pat::Ident(pi) = &*pt.pat {
+            if let syn::FnArg::Typed(pt) = a
+                && let syn::Pat::Ident(pi) = &*pt.pat
+            {
                 return Some(pi.ident.clone());
             }
             None

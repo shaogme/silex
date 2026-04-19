@@ -22,6 +22,7 @@ pub struct CssCompileResult {
 
 struct ParserState {
     static_css: String,
+    lifted_css: String,
     expressions: Vec<(String, TokenStream)>,
     dynamic_rules: Vec<DynamicRule>,
     theme_refs: Vec<(String, String)>,
@@ -63,6 +64,7 @@ impl CssCompiler {
 
         let mut state = ParserState {
             static_css: String::new(),
+            lifted_css: String::new(),
             expressions: Vec::new(),
             dynamic_rules: Vec::new(),
             theme_refs: Vec::new(),
@@ -77,17 +79,34 @@ impl CssCompiler {
         let block: CssBlock = syn::parse2(ts)?;
         process_css_block(&block, &mut state)?;
 
-        let final_source_css = state.static_css;
-        let wrapped_css = if wrap_in_class {
-            format!(".{} {{ {} }}", class_name, final_source_css)
+        let final_source_css = if state.lifted_css.is_empty() {
+            state.static_css.clone()
+        } else {
+            format!("{}\n{}", state.lifted_css, state.static_css)
+        };
+
+        let wrapped_css = if wrap_in_class && !state.static_css.trim().is_empty() {
+            format!(".{} {{ {} }}", class_name, state.static_css)
+        } else if wrap_in_class {
+            // If only lifted CSS exists, don't wrap empty static CSS
+            state.lifted_css.clone()
         } else {
             final_source_css.clone()
         };
 
-        let res = if final_source_css.trim().is_empty() {
+        // Combine lifted and wrapped
+        let full_css =
+            if wrap_in_class && !state.lifted_css.is_empty() && !state.static_css.trim().is_empty()
+            {
+                format!("{}\n{}", state.lifted_css, wrapped_css)
+            } else {
+                wrapped_css
+            };
+
+        let res = if full_css.trim().is_empty() {
             "".to_string()
         } else {
-            let mut stylesheet = StyleSheet::parse(&wrapped_css, ParserOptions::default())
+            let mut stylesheet = StyleSheet::parse(&full_css, ParserOptions::default())
                 .map_err(|e| syn::Error::new(span, format!("Invalid CSS: {}", e)))?;
 
             stylesheet
@@ -160,15 +179,57 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                 }
             }
             CssRule::AtRule(at) => {
-                state.static_css.push('@');
-                state.static_css.push_str(&at.name.to_string());
-                state.static_css.push(' ');
-                state
-                    .static_css
-                    .push_str(&append_token_stream_strings(&at.params));
-                state.static_css.push_str(" { ");
-                process_css_block(&at.block, state)?;
-                state.static_css.push_str(" } ");
+                let is_lifted =
+                    (at.name == "keyframes" || at.name == "font-face" || at.name == "import")
+                        && !state.class_name.is_empty();
+
+                let params =
+                    extract_at_rule_params(&at.params, &mut state.theme_refs, &state.theme_prefix);
+
+                let mut rule_str = String::new();
+                rule_str.push('@');
+                rule_str.push_str(&at.name.to_string());
+                rule_str.push(' ');
+                rule_str.push_str(&params);
+                rule_str.push_str(" { ");
+
+                // For nested rules inside @keyframes, we shouldn't use the class name.
+                // We create a temporary state with empty class_name for the inner block.
+                let mut inner_state = ParserState {
+                    static_css: String::new(),
+                    lifted_css: String::new(),
+                    expressions: state.expressions.clone(),
+                    dynamic_rules: Vec::new(),
+                    theme_refs: Vec::new(),
+                    class_name: if at.name == "keyframes" {
+                        "".to_string()
+                    } else {
+                        state.class_name.clone()
+                    },
+                    theme_prefix: state.theme_prefix.clone(),
+                };
+
+                process_css_block(&at.block, &mut inner_state)?;
+                rule_str.push_str(&inner_state.static_css);
+                rule_str.push_str(" } ");
+
+                // Sync back state
+                state.expressions = inner_state.expressions;
+                for tr in inner_state.theme_refs {
+                    state.theme_refs.push(tr);
+                }
+                // Dynamic rules inside @-rules is not fully supported yet in this implementation,
+                // but we should probably collect them anyway.
+                for dr in inner_state.dynamic_rules {
+                    state.dynamic_rules.push(dr);
+                }
+
+                if is_lifted {
+                    state.lifted_css.push_str(&rule_str);
+                    state.lifted_css.push('\n');
+                } else {
+                    state.static_css.push_str(&rule_str);
+                }
             }
         }
     }
@@ -402,6 +463,26 @@ fn handle_theme_path(
 pub fn append_token_stream_strings(ts: &TokenStream) -> String {
     // Basic version used for @-rules and such, no special $ or & handling
     process_tokens(ts, &mut |_, _, _, _| false)
+}
+
+fn extract_at_rule_params(
+    ts: &TokenStream,
+    theme_refs: &mut Vec<(String, String)>,
+    theme_prefix: &str,
+) -> String {
+    process_tokens(ts, &mut |tt, iter, out, space_before| {
+        if let TokenTree::Punct(p) = tt
+            && p.as_char() == '$'
+            && let Some(var) = handle_theme_path(iter, theme_prefix, theme_refs, "at-rule")
+        {
+            if space_before {
+                out.push(' ');
+            }
+            out.push_str(&var);
+            return true;
+        }
+        false
+    })
 }
 
 fn build_static_selector(ts: &TokenStream, class_name: &str) -> String {

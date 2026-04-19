@@ -59,6 +59,15 @@ global_style! {
         letter-spacing: -0.05 em;
     }
 
+    @keyframes fade_in {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 600px) {
+        .global-card { padding: 12px; }
+    }
+
     * {
         box-sizing: border-box;
     }
@@ -98,11 +107,17 @@ styled! {
         box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
         backdrop-filter: blur(12px);
         transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        animation: fade_in 0.8s ease-out;
 
         &:hover {
             transform: translateY(-4px);
             border-color: rgba(255, 255, 255, 0.15);
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+        }
+
+        @media (max-width: 768px) {
+            padding: 16px;
+            margin: 12px 0;
         }
     }
 }
