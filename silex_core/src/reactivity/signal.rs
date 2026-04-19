@@ -294,14 +294,14 @@ impl<T: RxData> Signal<T> {
     /// 确保信号具有 NodeId。
     /// 如果是内联常量，则会将其提升为存储常量。
     pub fn ensure_node_id(&self) -> NodeId {
-        if let Some(id) = self.node_id() {
-            id
-        } else if let Signal::InlineConstant(storage, _) = self {
-            // 安全性：InlineConstant 保证了 T 不实现 Drop 且大小合适
-            let value = unsafe { Self::unpack_inline(*storage) };
-            store_value(value)
-        } else {
-            unreachable!("Signal must be either Read, Derived, StoredConstant or InlineConstant")
+        match self {
+            Signal::Read(s) => s.id,
+            Signal::Derived(id, _) => *id,
+            Signal::StoredConstant(id, _) => *id,
+            Signal::InlineConstant(storage, _) => {
+                let value = unsafe { Self::unpack_inline(*storage) };
+                store_value(value)
+            }
         }
     }
 

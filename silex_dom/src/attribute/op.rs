@@ -1,6 +1,4 @@
-use silex_core::Rx;
-use silex_core::reactivity::Effect;
-use silex_core::traits::RxGet;
+use silex_core::prelude::*;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashSet;

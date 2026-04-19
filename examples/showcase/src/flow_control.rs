@@ -1,3 +1,4 @@
+use crate::css::AppTheme;
 use silex::prelude::*;
 
 #[component]
@@ -22,12 +23,19 @@ pub fn ShowDemo() -> impl View {
         button("Toggle Visibility").on(event::click, set_visible.updater(|v| *v = !*v)),
         Show::new(
             visible,
-            rx!(div("✅ Content is visible!")
-                .style("color: green; padding: 10px; background: #e8f5e9;"))
+            rx!(div("✅ Content is visible!").style(
+                sty()
+                    .color(hex("green"))
+                    .padding(px(10))
+                    .background(hex("#e8f5e9"))
+            ))
         )
-        .fallback(rx!(
-            div("❌ Content is hidden").style("color: red; padding: 10px; background: #ffebee;")
-        )),
+        .fallback(rx!(div("❌ Content is hidden").style(
+            sty()
+                .color(hex("red"))
+                .padding(px(10))
+                .background(hex("#ffebee"))
+        ))),
     ]
 }
 
@@ -48,11 +56,11 @@ pub fn DynamicDemo() -> impl View {
         Dynamic::bind(mode, |m| {
             view_match!(m, {
                 "A" => div("🅰️ Component A")
-                    .style("padding: 20px; background: #e3f2fd;"),
+                    .style(sty().padding(px(20)).background(hex("#e3f2fd"))),
                 "B" => div("🅱️ Component B")
-                    .style("padding: 20px; background: #fff3e0;"),
+                    .style(sty().padding(px(20)).background(hex("#fff3e0"))),
                 _ => div("©️ Component C")
-                    .style("padding: 20px; background: #f3e5f5;"),
+                    .style(sty().padding(px(20)).background(hex("#f3e5f5"))),
             })
         }),
     ]
@@ -73,15 +81,22 @@ pub fn SwitchDemo() -> impl View {
         Switch::new(tab, rx!(div("Fallback (Should not happen)")))
             .case(
                 0,
-                rx!(div("Content for Tab 1").style("padding: 10px; background: #eee;"))
+                rx!(div("Content for Tab 1")
+                    .style(sty().padding(px(10)).background(AppTheme::SURFACE_ALT)))
             )
             .case(
                 1,
-                rx!(div("Content for Tab 2").style("padding: 10px; background: #ddd;"))
+                rx!(div("Content for Tab 2")
+                    .style(sty().padding(px(10)).background(AppTheme::BORDER)))
             )
             .case(
                 2,
-                rx!(div("Content for Tab 3").style("padding: 10px; background: #ccc;"))
+                rx!(div("Content for Tab 3").style(
+                    sty()
+                        .padding(px(10))
+                        .background(AppTheme::BORDER)
+                        .opacity(0.8)
+                ))
             )
     ]
 }
@@ -115,17 +130,39 @@ pub fn PortalDemo() -> impl View {
     div![
         h3("Portal Demo"),
         button("Toggle Modal").on(event::click, set_show_modal.updater(|v| *v = !*v)),
-        Show::new(show_modal, rx!(Portal::new(
-            div![
+        Show::new(
+            show_modal,
+            rx!(Portal::new(
                 div![
-                    h4("I am a Modal!"),
-                    p("I am rendered via Portal directly into the body, but I share context!"),
-                    button("Close").on(event::click, set_show_modal.setter(false))
+                    div![
+                        h4("I am a Modal!"),
+                        p("I am rendered via Portal directly into the body, but I share context!"),
+                        button("Close").on(event::click, set_show_modal.setter(false))
+                    ]
+                    .style(
+                        sty()
+                            .background(AppTheme::SURFACE)
+                            .padding(px(20))
+                            .border_radius(px(8))
+                            .box_shadow("0 4px 12px rgba(0,0,0,0.2)")
+                            .min_width(px(300))
+                    )
                 ]
-                .style("background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); min-width: 300px;")
-            ]
-            .style("position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 9999;")
-        )))
+                .style(
+                    sty()
+                        .position(PositionKeyword::Fixed)
+                        .top(px(0))
+                        .left(px(0))
+                        .width(vw(100))
+                        .height(vh(100))
+                        .background(rgba(0, 0, 0, 0.5))
+                        .display(DisplayKeyword::Flex)
+                        .justify_content(JustifyContentKeyword::Center)
+                        .align_items(AlignItemsKeyword::Center)
+                        .z_index(9999)
+                )
+            ))
+        )
     ]
 }
 

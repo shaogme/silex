@@ -103,32 +103,28 @@ fn classify_property(
         || syntax.contains('#')
         || syntax.contains(' ') && !syntax.trim().is_empty();
 
-    let group =
-        if syntax.contains("<alpha-value>") || name.ends_with("-opacity") || name == "opacity" {
-            PropGroup::Alpha
-        } else if syntax.contains("<length")
-            || syntax.contains("<percentage")
-            || (name.contains("width") && !name.contains("stroke"))
-            || name.contains("height")
-            || syntax.contains("radius>")
-            || name.contains("radius")
-            || name == "zoom"
-        {
-            PropGroup::Dimension
-        } else if syntax.contains("<color") || syntax.contains("color>") {
-            PropGroup::Color
-        } else if syntax.contains("<number") || syntax.contains("<integer") || name == "font-weight"
-        {
-            PropGroup::Number
-        } else if name == "display" {
-            PropGroup::Keyword
-        } else if is_complex {
-            PropGroup::Shorthand
-        } else if !keywords.is_empty() && keywords.len() < 50 {
-            PropGroup::Keyword
-        } else {
-            PropGroup::Custom
-        };
+    let group = if is_complex {
+        PropGroup::Shorthand
+    } else if syntax.contains("<alpha-value>") || name.ends_with("-opacity") || name == "opacity" {
+        PropGroup::Alpha
+    } else if syntax.contains("<length")
+        || syntax.contains("<percentage")
+        || (name.contains("width") && !name.contains("stroke"))
+        || name.contains("height")
+        || syntax.contains("radius>")
+        || name.contains("radius")
+        || name == "zoom"
+    {
+        PropGroup::Dimension
+    } else if syntax.contains("<color") || syntax.contains("color>") {
+        PropGroup::Color
+    } else if syntax.contains("<number") || syntax.contains("<integer") || name == "font-weight" {
+        PropGroup::Number
+    } else if name == "display" || (!keywords.is_empty() && keywords.len() < 50) {
+        PropGroup::Keyword
+    } else {
+        PropGroup::Custom
+    };
 
     (group, keywords)
 }

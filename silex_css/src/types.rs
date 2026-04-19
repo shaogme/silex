@@ -41,12 +41,86 @@ impl Display for UnsafeCss {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum CssVarValue {
+    Static(&'static str),
+    Dynamic(String),
+}
+
+impl PartialEq<&str> for CssVarValue {
+    fn eq(&self, other: &&str) -> bool {
+        match self {
+            Self::Static(s) => s == other,
+            Self::Dynamic(s) => s == other,
+        }
+    }
+}
+
+impl Display for CssVarValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Static(s) => write!(f, "{}", s),
+            Self::Dynamic(s) => write!(f, "{}", s),
+        }
+    }
+}
+
+/// CSS 变量类型，可通过 `css_var()` 函数创建。
+/// 泛型 T 用于强类型校验，例如 `CssVar<Hex>` 仅在接收颜色的属性中有效。
+#[derive(Clone, Debug, PartialEq)]
+pub struct CssVar<T = ()>(pub CssVarValue, pub std::marker::PhantomData<T>);
+
+impl<T> From<T> for CssVar<T>
+where
+    T: Display,
+{
+    fn from(val: T) -> Self {
+        Self(
+            CssVarValue::Dynamic(val.to_string()),
+            std::marker::PhantomData,
+        )
+    }
+}
+
+impl<T> Default for CssVar<T> {
+    fn default() -> Self {
+        Self(CssVarValue::Static(""), std::marker::PhantomData)
+    }
+}
+
+impl<T> Display for CssVar<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// 创建一个 CSS 变量引用。
+/// 如果输入不带 `var()` 前缀，会自动包裹。
+/// 返回的 CssVar<()> 对所有 CSS 属性有效（不安全模式）。
+pub fn css_var(name: impl Display) -> CssVar<()> {
+    let name_str = name.to_string();
+    let val = if name_str.starts_with("var(") {
+        name_str
+    } else {
+        format!("var({})", name_str)
+    };
+    CssVar(CssVarValue::Dynamic(val), std::marker::PhantomData)
+}
+
 // ==========================================
 // 关键字 Enum 自动化
 // ==========================================
 
 macro_rules! define_css_enum {
+    (ColorKeyword ($($prop:path),*) $rest:tt) => {
+        define_css_enum!(@base ColorKeyword $rest);
+        // We handle ColorKeyword's ValidFor impls manually in define_props! or via traits
+    };
     ($name:ident ($($prop:path),*) { $($variant:ident => $val:expr),* $(,)? }) => {
+        define_css_enum!(@base $name { $($variant => $val),* });
+        $(impl crate::types::ValidFor<$prop> for $name {})*
+    };
+    (@base $name:ident { $($variant:ident => $val:expr),* $(,)? }) => {
         #[derive(Clone, Copy, Debug, PartialEq)]
         pub enum $name { $($variant),* }
         impl Display for $name {
@@ -54,7 +128,6 @@ macro_rules! define_css_enum {
                 match self { $(Self::$variant => write!(f, $val)),* }
             }
         }
-        $(impl crate::types::ValidFor<$prop> for $name {})*
     };
 }
 
@@ -140,8 +213,13 @@ macro_rules! define_props {
             pub struct Any;
         }
 
-        // 所有属性默认支持 UnsafeCss
-        $( impl ValidFor<props::$pascal> for UnsafeCss {} )*
+        // 所有属性默认支持 UnsafeCss 和无类型限制的 CssVar<()>
+        $(
+            impl ValidFor<props::$pascal> for UnsafeCss {}
+            impl ValidFor<props::$pascal> for CssVar<()> {}
+            // 核心：强类型 CssVar<T> 继承 T 的校验规则
+            impl<T> ValidFor<props::$pascal> for CssVar<T> where T: ValidFor<props::$pascal> {}
+        )*
 
         $(
             define_props!(@group $pascal, $group);
@@ -156,6 +234,7 @@ macro_rules! define_props {
         impl ValidFor<props::$pascal> for Rgba {}
         impl ValidFor<props::$pascal> for Hex {}
         impl ValidFor<props::$pascal> for Hsl {}
+        impl ValidFor<props::$pascal> for ColorKeyword {}
     };
     // 数字分组 (z-index, opacity 等)
     (@group $pascal:ident, Number) => {
@@ -176,6 +255,8 @@ macro_rules! define_props {
         impl ValidFor<props::$pascal> for Rgba {}
         impl ValidFor<props::$pascal> for Hex {}
         impl ValidFor<props::$pascal> for Hsl {}
+        impl ValidFor<props::$pascal> for ColorKeyword {}
+        impl ValidFor<props::$pascal> for NoneValue {}
     };
     // 复合属性专用 (如 border, margin)
     (@group $pascal:ident, Shorthand) => {
@@ -185,6 +266,8 @@ macro_rules! define_props {
         impl ValidFor<props::$pascal> for Rgba {}
         impl ValidFor<props::$pascal> for Hex {}
         impl ValidFor<props::$pascal> for Hsl {}
+        impl ValidFor<props::$pascal> for ColorKeyword {}
+        impl ValidFor<props::$pascal> for NoneValue {}
         impl ValidFor<props::$pascal> for i32 {}
         impl ValidFor<props::$pascal> for f64 {}
     };
@@ -210,6 +293,14 @@ crate::for_all_properties!(define_props);
 
 // --- 手动补充跨组约束 ---
 impl ValidFor<props::Border> for BorderValue {}
+impl ValidFor<props::BorderTop> for BorderValue {}
+impl ValidFor<props::BorderRight> for BorderValue {}
+impl ValidFor<props::BorderBottom> for BorderValue {}
+impl ValidFor<props::BorderLeft> for BorderValue {}
+impl ValidFor<props::BorderInlineStart> for BorderValue {}
+impl ValidFor<props::BorderInlineEnd> for BorderValue {}
+impl ValidFor<props::BorderBlockStart> for BorderValue {}
+impl ValidFor<props::BorderBlockEnd> for BorderValue {}
 impl ValidFor<props::Background> for Url {}
 impl ValidFor<props::BackgroundImage> for Url {}
 impl<T: Display> ValidFor<props::Any> for T {}
@@ -243,6 +334,24 @@ macro_rules! impl_into_rx_for_css {
     };
 }
 
+impl<T: 'static> silex_core::traits::RxValue for CssVar<T> {
+    type Value = Self;
+}
+impl<T: 'static> silex_core::traits::IntoRx for CssVar<T> {
+    type RxType = silex_core::Rx<Self, silex_core::RxValueKind>;
+    fn into_rx(self) -> Self::RxType {
+        silex_core::Rx::new_constant(self)
+    }
+    fn is_constant(&self) -> bool {
+        true
+    }
+}
+impl<T: Clone + 'static> silex_core::traits::IntoSignal for CssVar<T> {
+    fn into_signal(self) -> silex_core::reactivity::Signal<Self> {
+        silex_core::reactivity::Signal::from(self)
+    }
+}
+
 impl_into_rx_for_css!(
     Px,
     Percent,
@@ -254,6 +363,7 @@ impl_into_rx_for_css!(
     Vh,
     Hex,
     Hsl,
+    NoneValue,
     Url,
     BorderValue,
     MarginValue,

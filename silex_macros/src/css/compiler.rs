@@ -1,7 +1,9 @@
 use crate::css::ast::{CssBlock, CssRule};
 use lightningcss::stylesheet::{MinifyOptions, ParserOptions, PrinterOptions, StyleSheet};
 use lightningcss::targets::Targets;
+use proc_macro2::token_stream::IntoIter;
 use proc_macro2::{Delimiter, Span, TokenStream, TokenTree};
+use std::iter::Peekable;
 use syn::Result;
 
 pub struct DynamicRule {
@@ -12,140 +14,191 @@ pub struct DynamicRule {
 pub struct CssCompileResult {
     pub class_name: String,
     pub style_id: String,
-    pub final_css: String,
+    pub static_id: String,
+    pub static_css: String,    // Fully static CSS (font-face, etc.)
+    pub component_css: String, // CSS scoped to this component (with dynamic vars)
     pub expressions: Vec<(String, TokenStream)>,
     pub dynamic_rules: Vec<DynamicRule>,
-    pub theme_refs: Vec<(String, String)>,
 }
 
 struct ParserState {
     static_css: String,
+    lifted_css: String,
     expressions: Vec<(String, TokenStream)>,
     dynamic_rules: Vec<DynamicRule>,
-    theme_refs: Vec<(String, String)>,
     class_name: String,
-    theme_prefix: String,
+    is_unsafe: bool,
+}
+
+#[derive(Clone, Copy)]
+struct DynamicContext<'a> {
+    class_name: &'a str,
+    is_unsafe: bool,
 }
 
 pub struct CssCompiler;
 
 impl CssCompiler {
-    pub fn compile(
+    pub fn compile(ts: TokenStream, span: Span, is_unsafe: bool) -> Result<CssCompileResult> {
+        Self::compile_internal(ts, span, true, is_unsafe)
+    }
+
+    pub fn compile_global(
         ts: TokenStream,
         span: Span,
-        theme_prefix: Option<String>,
+        is_unsafe: bool,
+    ) -> Result<CssCompileResult> {
+        Self::compile_internal(ts, span, false, is_unsafe)
+    }
+
+    fn compile_internal(
+        ts: TokenStream,
+        span: Span,
+        wrap_in_class: bool,
+        is_unsafe: bool,
     ) -> Result<CssCompileResult> {
         let ts_string = ts.to_string();
         let hash = silex_hash::css::hash_one(&ts_string);
         let mut buf = [0u8; 13];
-        let class_name = format!("slx-{}", silex_hash::css::encode_base36(hash, &mut buf));
+        let class_base = silex_hash::css::encode_base36(hash, &mut buf);
+        let class_name = format!("slx-{}", class_base);
         let style_id = format!("style-{}", class_name);
 
         let mut state = ParserState {
             static_css: String::new(),
+            lifted_css: String::new(),
             expressions: Vec::new(),
             dynamic_rules: Vec::new(),
-            theme_refs: Vec::new(),
-            class_name: class_name.clone(),
-            theme_prefix: theme_prefix.unwrap_or_else(|| "slx-theme".to_string()),
+            class_name: if wrap_in_class {
+                class_name.clone()
+            } else {
+                "".to_string()
+            },
+            is_unsafe,
         };
 
         let block: CssBlock = syn::parse2(ts)?;
-
         process_css_block(&block, &mut state)?;
 
-        let final_source_css = state.static_css;
-
-        let wrapped_css = format!(".{} {{ {} }}", class_name, final_source_css);
-
-        let res = if final_source_css.trim().is_empty() {
+        let final_static_css = if state.lifted_css.is_empty() {
             "".to_string()
         } else {
-            let mut stylesheet = StyleSheet::parse(&wrapped_css, ParserOptions::default())
-                .map_err(|e| syn::Error::new(span, format!("Invalid CSS: {}", e)))?;
-
-            stylesheet
-                .minify(MinifyOptions::default())
-                .map_err(|e| syn::Error::new(span, format!("CSS Minification failed: {}", e)))?;
-
+            let mut stylesheet = StyleSheet::parse(&state.lifted_css, ParserOptions::default())
+                .map_err(|e| {
+                    crate::css::error::report_lightning_error(format!("Static CSS: {}", e), span)
+                })?;
+            stylesheet.minify(MinifyOptions::default()).ok();
             stylesheet
                 .to_css(PrinterOptions {
                     minify: true,
                     targets: Targets::default(),
                     ..PrinterOptions::default()
                 })
-                .map_err(|e| syn::Error::new(span, format!("CSS Printing failed: {}", e)))?
+                .map_err(|e| {
+                    crate::css::error::report_lightning_error(
+                        format!("Static CSS Printing: {}", e),
+                        span,
+                    )
+                })?
                 .code
+        };
+
+        let final_component_css = if wrap_in_class && !state.static_css.trim().is_empty() {
+            let wrapped = format!(".{} {{ {} }}", class_name, state.static_css);
+            let mut stylesheet =
+                StyleSheet::parse(&wrapped, ParserOptions::default()).map_err(|e| {
+                    crate::css::error::report_lightning_error(format!("Component CSS: {}", e), span)
+                })?;
+            stylesheet.minify(MinifyOptions::default()).ok();
+            stylesheet
+                .to_css(PrinterOptions {
+                    minify: true,
+                    targets: Targets::default(),
+                    ..PrinterOptions::default()
+                })
+                .map_err(|e| {
+                    crate::css::error::report_lightning_error(
+                        format!("Component CSS Printing: {}", e),
+                        span,
+                    )
+                })?
+                .code
+        } else if !wrap_in_class && !state.static_css.trim().is_empty() {
+            state.static_css.clone()
+        } else {
+            "".to_string()
+        };
+
+        let static_id = if !final_static_css.is_empty() {
+            format!("static-{}", silex_hash::css::hash_one(&final_static_css))
+        } else {
+            "".to_string()
         };
 
         Ok(CssCompileResult {
             class_name,
             style_id,
-            final_css: res,
+            static_id,
+            static_css: final_static_css,
+            component_css: final_component_css,
             expressions: state.expressions,
             dynamic_rules: state.dynamic_rules,
-            theme_refs: state.theme_refs,
         })
     }
 }
 
 fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
     for rule in &block.rules {
+        let ctx = DynamicContext {
+            class_name: &state.class_name,
+            is_unsafe: state.is_unsafe,
+        };
         match rule {
             CssRule::Declaration(decl) => {
                 state.static_css.push_str(&decl.property);
                 state.static_css.push_str(": ");
 
-                state.static_css.push(' ');
-                let mut local_out = String::new();
-                extract_dynamic_value(
+                let prop_for_expr = if state.is_unsafe {
+                    "any"
+                } else {
+                    &decl.property
+                };
+                let val = extract_dynamic_value(
                     &decl.values,
-                    &mut local_out,
                     &mut state.expressions,
-                    &mut state.theme_refs,
-                    &decl.property,
-                    &state.class_name,
-                    &state.theme_prefix,
-                );
-                state.static_css.push_str(&local_out);
+                    prop_for_expr,
+                    &ctx,
+                )?;
+                state.static_css.push_str(&val);
 
                 if decl.semi_token.is_some() {
                     state.static_css.push_str("; ");
                 }
             }
+            CssRule::Unsafe(u) => {
+                let old = state.is_unsafe;
+                state.is_unsafe = true;
+                process_css_block(&u.block, state)?;
+                state.is_unsafe = old;
+            }
             CssRule::Nested(nested) => {
-                let has_dynamic_sel = contains_dynamic_selector(&nested.selectors);
-                if has_dynamic_sel {
-                    let mut template = String::new();
+                if contains_dynamic_selector(&nested.selectors) {
                     let mut selector_exprs = Vec::new();
-
-                    extract_dynamic_selector(
-                        &nested.selectors,
-                        &mut template,
-                        &mut selector_exprs,
-                        &mut state.theme_refs,
-                        &state.class_name,
-                        &state.theme_prefix,
-                    );
-                    template.push_str(" { ");
-                    build_dynamic_block(
-                        &nested.block,
-                        &mut template,
+                    let template = build_dynamic_template(
+                        nested,
                         &mut selector_exprs,
                         &mut state.expressions,
-                        &mut state.theme_refs,
-                        &state.class_name,
-                        &state.theme_prefix,
-                    );
-                    template.push_str(" }");
-
+                        &DynamicContext {
+                            is_unsafe: false,
+                            ..ctx
+                        },
+                    )?;
                     state.dynamic_rules.push(DynamicRule {
                         template,
                         expressions: selector_exprs,
                     });
                 } else {
-                    let mut sel_str = String::new();
-                    build_static_selector(&nested.selectors, &mut sel_str, &state.class_name);
+                    let sel_str = build_static_selector(&nested.selectors, &state.class_name)?;
                     state.static_css.push_str(&sel_str);
                     state.static_css.push_str(" { ");
                     process_css_block(&nested.block, state)?;
@@ -153,90 +206,147 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                 }
             }
             CssRule::AtRule(at) => {
-                state.static_css.push('@');
-                state.static_css.push_str(&at.name.to_string());
-                state.static_css.push(' ');
-                let ts_str = append_token_stream_strings(&at.params);
-                state.static_css.push_str(&ts_str);
-                state.static_css.push_str(" { ");
-                process_css_block(&at.block, state)?;
-                state.static_css.push_str(" } ");
+                let is_lifted =
+                    (at.name == "keyframes" || at.name == "font-face" || at.name == "import")
+                        && !state.class_name.is_empty();
+
+                let params = extract_at_rule_params(&at.params)?;
+
+                let mut rule_str = String::new();
+                rule_str.push('@');
+                rule_str.push_str(&at.name.to_string());
+                rule_str.push(' ');
+                rule_str.push_str(&params);
+                rule_str.push_str(" { ");
+
+                // For nested rules inside @keyframes, we shouldn't use the class name.
+                // We create a temporary state with empty class_name for the inner block.
+                let mut inner_state = ParserState {
+                    static_css: String::new(),
+                    lifted_css: String::new(),
+                    expressions: state.expressions.clone(),
+                    dynamic_rules: Vec::new(),
+                    class_name: if at.name == "keyframes" {
+                        "".to_string()
+                    } else {
+                        state.class_name.clone()
+                    },
+                    is_unsafe: state.is_unsafe,
+                };
+
+                process_css_block(&at.block, &mut inner_state)?;
+                rule_str.push_str(&inner_state.static_css);
+                rule_str.push_str(" } ");
+
+                // Sync back state
+                state.expressions = inner_state.expressions;
+                // Dynamic rules inside @-rules is not fully supported yet in this implementation,
+                // but we should probably collect them anyway.
+                for dr in inner_state.dynamic_rules {
+                    state.dynamic_rules.push(dr);
+                }
+
+                if is_lifted {
+                    state.lifted_css.push_str(&rule_str);
+                    state.lifted_css.push('\n');
+                } else {
+                    state.static_css.push_str(&rule_str);
+                }
             }
         }
     }
     Ok(())
 }
 
-fn build_dynamic_block(
+fn build_dynamic_template(
+    nested: &crate::css::ast::CssNested,
+    selector_exprs: &mut Vec<(String, TokenStream)>,
+    global_expressions: &mut Vec<(String, TokenStream)>,
+    ctx: &DynamicContext,
+) -> Result<String> {
+    let mut template = extract_dynamic_selector(&nested.selectors, selector_exprs, ctx)?;
+    template.push_str(" { ");
+    build_dynamic_block_recursive(
+        &nested.block,
+        &mut template,
+        selector_exprs,
+        global_expressions,
+        ctx,
+    )?;
+    template.push_str(" }");
+    Ok(template)
+}
+
+fn build_dynamic_block_recursive(
     block: &CssBlock,
     template: &mut String,
     selector_exprs: &mut Vec<(String, TokenStream)>,
     global_expressions: &mut Vec<(String, TokenStream)>,
-    theme_refs: &mut Vec<(String, String)>,
-    class_name: &str,
-    theme_prefix: &str,
-) {
+    ctx: &DynamicContext,
+) -> Result<()> {
     for rule in &block.rules {
         match rule {
             CssRule::Declaration(decl) => {
                 template.push_str(&decl.property);
                 template.push_str(": ");
-
-                template.push(' ');
-                extract_dynamic_value(
-                    &decl.values,
-                    template,
-                    global_expressions,
-                    theme_refs,
-                    &decl.property,
-                    class_name,
-                    theme_prefix,
-                );
-
+                let prop_for_expr = if ctx.is_unsafe { "any" } else { &decl.property };
+                let val =
+                    extract_dynamic_value(&decl.values, global_expressions, prop_for_expr, ctx)?;
+                template.push_str(&val);
                 if decl.semi_token.is_some() {
                     template.push_str("; ");
                 }
             }
             CssRule::Nested(nested) => {
-                extract_dynamic_selector(
+                let sel = extract_dynamic_selector(
                     &nested.selectors,
-                    template,
                     selector_exprs,
-                    theme_refs,
-                    "",
-                    theme_prefix,
-                );
+                    &DynamicContext {
+                        class_name: "",
+                        ..*ctx
+                    },
+                )?;
+                template.push_str(&sel);
                 template.push_str(" { ");
-                build_dynamic_block(
+                build_dynamic_block_recursive(
                     &nested.block,
                     template,
                     selector_exprs,
                     global_expressions,
-                    theme_refs,
-                    class_name,
-                    theme_prefix,
-                );
+                    ctx,
+                )?;
                 template.push_str(" } ");
             }
             CssRule::AtRule(at) => {
                 template.push('@');
                 template.push_str(&at.name.to_string());
                 template.push(' ');
-                template.push_str(&append_token_stream_strings(&at.params));
+                template.push_str(&append_token_stream_strings(&at.params)?);
                 template.push_str(" { ");
-                build_dynamic_block(
+                build_dynamic_block_recursive(
                     &at.block,
                     template,
                     selector_exprs,
                     global_expressions,
-                    theme_refs,
-                    class_name,
-                    theme_prefix,
-                );
+                    ctx,
+                )?;
                 template.push_str(" } ");
+            }
+            CssRule::Unsafe(u) => {
+                build_dynamic_block_recursive(
+                    &u.block,
+                    template,
+                    selector_exprs,
+                    global_expressions,
+                    &DynamicContext {
+                        is_unsafe: true,
+                        ..*ctx
+                    },
+                )?;
             }
         }
     }
+    Ok(())
 }
 
 fn contains_dynamic_selector(ts: &TokenStream) -> bool {
@@ -261,85 +371,36 @@ fn contains_dynamic_selector(ts: &TokenStream) -> bool {
     false
 }
 
-fn append_token_stream_strings(ts: &TokenStream) -> String {
-    let mut out = String::new();
-    let iter = ts.clone().into_iter().peekable();
-    let mut prev_tt: Option<TokenTree> = None;
-    for tt in iter {
-        let mut space_before = false;
-        if let Some(prev) = &prev_tt {
-            match (prev, &tt) {
-                (TokenTree::Ident(_), TokenTree::Ident(_))
-                | (TokenTree::Ident(_), TokenTree::Literal(_))
-                | (TokenTree::Literal(_), TokenTree::Ident(_))
-                | (TokenTree::Literal(_), TokenTree::Literal(_)) => space_before = true,
-                _ => {}
-            }
-        }
-        if space_before {
-            out.push(' ');
-        }
-        match tt {
-            TokenTree::Group(g) => {
-                let delim = match g.delimiter() {
-                    Delimiter::Parenthesis => ('(', ')'),
-                    Delimiter::Brace => ('{', '}'),
-                    Delimiter::Bracket => ('[', ']'),
-                    Delimiter::None => (' ', ' '),
-                };
-                if delim.0 != ' ' {
-                    out.push(delim.0);
-                }
-                out.push_str(&append_token_stream_strings(&g.stream()));
-                if delim.1 != ' ' {
-                    out.push(delim.1);
-                }
-                prev_tt = Some(TokenTree::Group(g));
-            }
-            TokenTree::Punct(p) => {
-                out.push(p.as_char());
-                prev_tt = Some(TokenTree::Punct(p));
-            }
-            TokenTree::Ident(id) => {
-                out.push_str(&id.to_string());
-                prev_tt = Some(TokenTree::Ident(id));
-            }
-            TokenTree::Literal(lit) => {
-                out.push_str(&lit.to_string());
-                prev_tt = Some(TokenTree::Literal(lit));
-            }
-        }
-    }
-    out
+// --- Unified Token Stream Processing ---
+
+fn process_tokens<F>(ts: &TokenStream, handler: &mut F) -> Result<String>
+where
+    F: FnMut(&TokenTree, &mut Peekable<IntoIter>, &mut String, bool) -> Result<bool>,
+{
+    let mut iter = ts.clone().into_iter().peekable();
+    process_tokens_iter(&mut iter, handler)
 }
 
-fn build_static_selector(ts: &TokenStream, out: &mut String, class_name: &str) {
-    let iter = ts.clone().into_iter().peekable();
+fn process_tokens_iter<F>(iter: &mut Peekable<IntoIter>, handler: &mut F) -> Result<String>
+where
+    F: FnMut(&TokenTree, &mut Peekable<IntoIter>, &mut String, bool) -> Result<bool>,
+{
+    let mut out = String::new();
     let mut prev_tt: Option<TokenTree> = None;
 
-    for tt in iter {
+    while let Some(tt) = iter.next() {
         let mut space_before = false;
         if let Some(prev) = &prev_tt {
             match (prev, &tt) {
                 (TokenTree::Ident(_), TokenTree::Ident(_))
                 | (TokenTree::Ident(_), TokenTree::Literal(_))
-                | (TokenTree::Literal(_), TokenTree::Ident(_))
                 | (TokenTree::Literal(_), TokenTree::Literal(_)) => space_before = true,
                 _ => {}
             }
         }
 
-        if let TokenTree::Punct(ref p) = tt
-            && p.as_char() == '&'
-        {
-            if space_before {
-                out.push(' ');
-            }
-            out.push_str(&format!(".{}", class_name));
-            prev_tt = Some(TokenTree::Ident(proc_macro2::Ident::new(
-                "dummy",
-                Span::call_site(),
-            )));
+        if handler(&tt, iter, &mut out, space_before)? {
+            prev_tt = Some(tt);
             continue;
         }
 
@@ -358,7 +419,8 @@ fn build_static_selector(ts: &TokenStream, out: &mut String, class_name: &str) {
                 if delim.0 != ' ' {
                     out.push(delim.0);
                 }
-                out.push_str(&append_token_stream_strings(&g.stream()));
+                let mut sub_iter = g.stream().into_iter().peekable();
+                out.push_str(&process_tokens_iter(&mut sub_iter, handler)?);
                 if delim.1 != ' ' {
                     out.push(delim.1);
                 }
@@ -373,37 +435,99 @@ fn build_static_selector(ts: &TokenStream, out: &mut String, class_name: &str) {
                 prev_tt = Some(TokenTree::Ident(id));
             }
             TokenTree::Literal(lit) => {
-                out.push_str(&lit.to_string());
+                let s = lit.to_string();
+                if s.starts_with('"') && s.ends_with('"') {
+                    out.push_str(&s[1..s.len() - 1]);
+                } else {
+                    out.push_str(&s);
+                }
                 prev_tt = Some(TokenTree::Literal(lit));
             }
         }
     }
+    Ok(out)
+}
+
+fn handle_dollar_path(iter: &mut Peekable<IntoIter>) -> syn::Result<Option<TokenStream>> {
+    let mut sub_iter = iter.clone();
+    if let Some(TokenTree::Ident(id)) = sub_iter.next() {
+        // Try parsing as a path
+        let mut tokens = vec![TokenTree::Ident(id)];
+        while let Some(TokenTree::Punct(p)) = sub_iter.peek()
+            && p.as_char() == ':'
+        {
+            let p1 = sub_iter.next().unwrap();
+            if let Some(tt2) = sub_iter.next() {
+                if let TokenTree::Punct(ref p2) = tt2
+                    && p2.as_char() == ':'
+                {
+                    tokens.push(p1);
+                    tokens.push(tt2);
+                    if let Some(TokenTree::Ident(next_id)) = sub_iter.next() {
+                        tokens.push(TokenTree::Ident(next_id));
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        *iter = sub_iter;
+        return Ok(Some(tokens.into_iter().collect()));
+    }
+    Ok(None)
+}
+
+pub fn append_token_stream_strings(ts: &TokenStream) -> Result<String> {
+    // Basic version used for @-rules and such, no special $ or & handling
+    process_tokens(ts, &mut |_, _, _, _| Ok(false))
+}
+
+fn extract_at_rule_params(ts: &TokenStream) -> Result<String> {
+    // Note: At-rules with $Path currently treat the result as a static string if possible,
+    // but at-rules usually don't support runtime dynamic values in the same way.
+    // For now we just stringify it.
+    process_tokens(ts, &mut |tt, iter, out, space_before| {
+        if matches!(tt, TokenTree::Punct(p) if p.as_char() == '$')
+            && let Some(var) = handle_dollar_path(iter)?
+        {
+            if space_before {
+                out.push(' ');
+            }
+            out.push_str(&var.to_string());
+            return Ok(true);
+        }
+        Ok(false)
+    })
+}
+
+fn build_static_selector(ts: &TokenStream, class_name: &str) -> Result<String> {
+    process_tokens(ts, &mut |tt, _, out, space_before| {
+        if let TokenTree::Punct(p) = tt
+            && p.as_char() == '&'
+            && !class_name.is_empty()
+        {
+            if space_before {
+                out.push(' ');
+            }
+            out.push_str(&format!(".{}", class_name));
+            return Ok(true);
+        }
+        Ok(false)
+    })
 }
 
 fn extract_dynamic_selector(
     ts: &TokenStream,
-    out: &mut String,
     exprs: &mut Vec<(String, TokenStream)>,
-    theme_refs: &mut Vec<(String, String)>,
-    class_name: &str,
-    theme_prefix: &str,
-) {
-    let mut iter = ts.clone().into_iter().peekable();
-    let mut prev_tt: Option<TokenTree> = None;
-
-    while let Some(tt) = iter.next() {
-        let mut space_before = false;
-        if let Some(prev) = &prev_tt {
-            match (prev, &tt) {
-                (TokenTree::Ident(_), TokenTree::Ident(_))
-                | (TokenTree::Ident(_), TokenTree::Literal(_))
-                | (TokenTree::Literal(_), TokenTree::Ident(_))
-                | (TokenTree::Literal(_), TokenTree::Literal(_)) => space_before = true,
-                _ => {}
-            }
-        }
-
-        if let TokenTree::Punct(ref p) = tt {
+    ctx: &DynamicContext,
+) -> Result<String> {
+    process_tokens(ts, &mut |tt, iter, out, space_before| {
+        if let TokenTree::Punct(p) = tt {
             if p.as_char() == '$' {
                 if let Some(TokenTree::Group(g)) = iter.peek()
                     && g.delimiter() == Delimiter::Parenthesis
@@ -413,130 +537,37 @@ fn extract_dynamic_selector(
                     }
                     out.push_str("{}");
                     exprs.push(("any".to_string(), g.stream()));
-                    prev_tt = iter.next();
-                    continue;
+                    iter.next();
+                    return Ok(true);
                 }
-
-                // Theme support in selectors: $theme.key or $theme.a.b
-                let mut sub_iter = iter.clone();
-                if let Some(TokenTree::Ident(id)) = sub_iter.next()
-                    && id == "theme"
-                    && let Some(TokenTree::Punct(dot)) = sub_iter.next()
-                    && dot.as_char() == '.'
-                {
-                    let mut path = Vec::new();
-                    // First segment is mandatory
-                    if let Some(TokenTree::Ident(key)) = sub_iter.next() {
-                        path.push(key.to_string());
-                        // Continue parsing dots and idents
-                        while let Some(dot_peek) = sub_iter.peek()
-                            && let TokenTree::Punct(p) = dot_peek
-                            && p.as_char() == '.'
-                        {
-                            sub_iter.next(); // consume dot
-                            if let Some(TokenTree::Ident(id)) = sub_iter.next() {
-                                path.push(id.to_string());
-                            } else {
-                                break;
-                            }
-                        }
-
-                        iter = sub_iter;
-                        if space_before {
-                            out.push(' ');
-                        }
-                        let joined_key = path.join("-");
-                        out.push_str(&format!("var(--{}-{})", theme_prefix, joined_key));
-                        theme_refs.push(("any".to_string(), path.join(".")));
-                        prev_tt = Some(TokenTree::Ident(proc_macro2::Ident::new(
-                            "dummy",
-                            Span::call_site(),
-                        )));
-                        continue;
+                if let Some(path) = handle_dollar_path(iter)? {
+                    if space_before {
+                        out.push(' ');
                     }
+                    out.push_str("{}");
+                    exprs.push(("any".to_string(), path));
+                    return Ok(true);
                 }
-            } else if p.as_char() == '&' && !class_name.is_empty() {
+            } else if p.as_char() == '&' && !ctx.class_name.is_empty() {
                 if space_before {
                     out.push(' ');
                 }
-                out.push_str(&format!(".{}", class_name));
-                prev_tt = Some(TokenTree::Ident(proc_macro2::Ident::new(
-                    "dummy",
-                    Span::call_site(),
-                )));
-                continue;
+                out.push_str(&format!(".{}", ctx.class_name));
+                return Ok(true);
             }
         }
-
-        if space_before {
-            out.push(' ');
-        }
-
-        match tt {
-            TokenTree::Group(g) => {
-                let delim = match g.delimiter() {
-                    Delimiter::Parenthesis => ('(', ')'),
-                    Delimiter::Brace => ('{', '}'),
-                    Delimiter::Bracket => ('[', ']'),
-                    Delimiter::None => (' ', ' '),
-                };
-                if delim.0 != ' ' {
-                    out.push(delim.0);
-                }
-                extract_dynamic_selector(
-                    &g.stream(),
-                    out,
-                    exprs,
-                    theme_refs,
-                    class_name,
-                    theme_prefix,
-                );
-                if delim.1 != ' ' {
-                    out.push(delim.1);
-                }
-                prev_tt = Some(TokenTree::Group(g));
-            }
-            TokenTree::Punct(p) => {
-                out.push(p.as_char());
-                prev_tt = Some(TokenTree::Punct(p));
-            }
-            TokenTree::Ident(id) => {
-                out.push_str(&id.to_string());
-                prev_tt = Some(TokenTree::Ident(id));
-            }
-            TokenTree::Literal(lit) => {
-                out.push_str(&lit.to_string());
-                prev_tt = Some(TokenTree::Literal(lit));
-            }
-        }
-    }
+        Ok(false)
+    })
 }
 
 fn extract_dynamic_value(
     ts: &TokenStream,
-    out: &mut String,
     exprs: &mut Vec<(String, TokenStream)>,
-    theme_refs: &mut Vec<(String, String)>,
     prop_name: &str,
-    class_name: &str,
-    theme_prefix: &str,
-) {
-    let mut iter = ts.clone().into_iter().peekable();
-    let mut prev_tt: Option<TokenTree> = None;
-
-    while let Some(tt) = iter.next() {
-        let mut space_before = false;
-        if let Some(prev) = &prev_tt {
-            match (prev, &tt) {
-                (TokenTree::Ident(_), TokenTree::Ident(_))
-                | (TokenTree::Ident(_), TokenTree::Literal(_))
-                | (TokenTree::Literal(_), TokenTree::Ident(_))
-                | (TokenTree::Literal(_), TokenTree::Literal(_)) => space_before = true,
-                _ => {}
-            }
-        }
-
-        if let TokenTree::Punct(ref p) = tt
+    ctx: &DynamicContext,
+) -> Result<String> {
+    process_tokens(ts, &mut |tt, iter, out, space_before| {
+        if let TokenTree::Punct(p) = tt
             && p.as_char() == '$'
         {
             if let Some(TokenTree::Group(g)) = iter.peek()
@@ -547,97 +578,28 @@ fn extract_dynamic_value(
                 }
                 let idx = exprs.len();
                 exprs.push((prop_name.to_string(), g.stream()));
-                use std::fmt::Write;
-                if !class_name.is_empty() {
-                    let _ = write!(out, "var(--{}-{})", class_name, idx);
+                if !ctx.class_name.is_empty() {
+                    out.push_str(&format!("var(--{}-{})", ctx.class_name, idx));
                 } else {
-                    let _ = write!(out, "var(--dyn-{})", idx);
+                    out.push_str(&format!("var(--dyn-{})", idx));
                 }
-
-                prev_tt = iter.next();
-                continue;
+                iter.next();
+                return Ok(true);
             }
-
-            // Theme support: $theme.key or $theme.a.b
-            let mut sub_iter = iter.clone();
-            if let Some(TokenTree::Ident(id)) = sub_iter.next()
-                && id == "theme"
-                && let Some(TokenTree::Punct(dot)) = sub_iter.next()
-                && dot.as_char() == '.'
-            {
-                let mut path = Vec::new();
-                if let Some(TokenTree::Ident(key)) = sub_iter.next() {
-                    path.push(key.to_string());
-                    while let Some(dot_peek) = sub_iter.peek()
-                        && let TokenTree::Punct(p) = dot_peek
-                        && p.as_char() == '.'
-                    {
-                        sub_iter.next();
-                        if let Some(TokenTree::Ident(id)) = sub_iter.next() {
-                            path.push(id.to_string());
-                        } else {
-                            break;
-                        }
-                    }
-
-                    iter = sub_iter;
-                    if space_before {
-                        out.push(' ');
-                    }
-                    let joined_key = path.join("-");
-                    use std::fmt::Write;
-                    let _ = write!(out, "var(--{}-{})", theme_prefix, joined_key);
-                    theme_refs.push((prop_name.to_string(), path.join(".")));
-                    prev_tt = Some(TokenTree::Ident(proc_macro2::Ident::new(
-                        "dummy",
-                        Span::call_site(),
-                    )));
-                    continue;
+            if let Some(path) = handle_dollar_path(iter)? {
+                if space_before {
+                    out.push(' ');
                 }
+                let idx = exprs.len();
+                exprs.push((prop_name.to_string(), path));
+                if !ctx.class_name.is_empty() {
+                    out.push_str(&format!("var(--{}-{})", ctx.class_name, idx));
+                } else {
+                    out.push_str(&format!("var(--dyn-{})", idx));
+                }
+                return Ok(true);
             }
         }
-
-        if space_before {
-            out.push(' ');
-        }
-
-        match tt {
-            TokenTree::Group(g) => {
-                let delim = match g.delimiter() {
-                    Delimiter::Parenthesis => ('(', ')'),
-                    Delimiter::Brace => ('{', '}'),
-                    Delimiter::Bracket => ('[', ']'),
-                    Delimiter::None => (' ', ' '),
-                };
-                if delim.0 != ' ' {
-                    out.push(delim.0);
-                }
-                extract_dynamic_value(
-                    &g.stream(),
-                    out,
-                    exprs,
-                    theme_refs,
-                    prop_name,
-                    class_name,
-                    theme_prefix,
-                );
-                if delim.1 != ' ' {
-                    out.push(delim.1);
-                }
-                prev_tt = Some(TokenTree::Group(g));
-            }
-            TokenTree::Punct(p) => {
-                out.push(p.as_char());
-                prev_tt = Some(TokenTree::Punct(p));
-            }
-            TokenTree::Ident(id) => {
-                out.push_str(&id.to_string());
-                prev_tt = Some(TokenTree::Ident(id));
-            }
-            TokenTree::Literal(lit) => {
-                out.push_str(&lit.to_string());
-                prev_tt = Some(TokenTree::Literal(lit));
-            }
-        }
-    }
+        Ok(false)
+    })
 }

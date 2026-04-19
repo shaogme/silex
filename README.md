@@ -36,7 +36,7 @@ Silex 不仅仅是一个视图库，它提供了构建现代 Web 应用所需的
 
 ```toml
 [dependencies]
-silex = "0.1.0-beta.4" # 请使用最新版本
+silex = "0.1.0-beta.5" # 请使用最新版本
 ```
 
 ### 2. 编写你的第一个应用
@@ -126,19 +126,25 @@ fn App() -> impl View {
 
 ### 2. CSS-in-Rust
 
-不再需要单独的 CSS 文件，也不必担心类名冲突。
+不再需要单独的 CSS 文件，支持完整的 CSS 语法（嵌套、媒体查询、主题变量），并享受编译时校验。
 
 ```rust
-let btn_class = css!(r#"
+let btn_class = css! {
     background-color: #007bff;
     color: white;
     padding: 8px 16px;
     border-radius: 4px;
+    transition: all 0.2s;
     
     &:hover {
         background-color: #0056b3;
+        transform: translateY(-2px);
     }
-"#);
+
+    @media (max-width: 600px) {
+        width: 100%;
+    }
+};
 
 button("Click Me").class(btn_class)
 ```

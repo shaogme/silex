@@ -27,20 +27,6 @@ fn main() {
         username: "Guest".to_string(),
     });
 
-    // Inject Global CSS Reset & Theme Sync for Body
-    inject_style(
-        "body-reset",
-        "
-        body, html { 
-            margin: 0; 
-            padding: 0; 
-            background-color: var(--slx-theme-surface); 
-            color: var(--slx-theme-text);
-            transition: background-color 0.3s, color 0.3s;
-        }
-    ",
-    );
-
     mount_to_body(move || {
         // Provide Global Store to the entire app tree
         store.provide();
@@ -90,11 +76,19 @@ fn main() {
 
         // Define and return the root view
         div![
+            // Global Styles Component (Automatic injection)
+            crate::css::GlobalStyles(),
             // Global Layout Shell
             NavBar(),
             // Root Router
             Router::new().match_route::<AppRoute>(),
         ]
-        .style("background-color: var(--slx-theme-surface); color: var(--slx-theme-text); min-height: 100vh; transition: background-color 0.3s, color 0.3s;")
+        .style(
+            sty()
+                .background_color(crate::css::AppTheme::SURFACE)
+                .color(crate::css::AppTheme::TEXT)
+                .min_height(vh(100))
+                .transition("background-color 0.3s, color 0.3s"),
+        )
     });
 }

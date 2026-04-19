@@ -6,14 +6,10 @@ use std::fmt::Display;
 // ==========================================
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct BorderValue(pub Option<String>);
+pub struct BorderValue(pub String);
 impl Display for BorderValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(v) = &self.0 {
-            write!(f, "{}", v)
-        } else {
-            Ok(())
-        }
+        write!(f, "{}", self.0)
     }
 }
 
@@ -23,18 +19,14 @@ where
     S: ValidFor<props::BorderStyle> + Display,
     C: ValidFor<props::BorderColor> + Display,
 {
-    BorderValue(Some(format!("{} {} {}", width, style, color)))
+    BorderValue(format!("{} {} {}", width, style, color))
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct MarginValue(pub Option<String>);
+pub struct MarginValue(pub String);
 impl Display for MarginValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(v) = &self.0 {
-            write!(f, "{}", v)
-        } else {
-            Ok(())
-        }
+        write!(f, "{}", self.0)
     }
 }
 impl ValidFor<props::Margin> for MarginValue {}
@@ -42,14 +34,14 @@ impl ValidFor<props::Margin> for MarginValue {}
 pub mod margin {
     use super::*;
     pub fn all<T: ValidFor<props::Margin> + Display>(v: T) -> MarginValue {
-        MarginValue(Some(format!("{}", v)))
+        MarginValue(format!("{}", v))
     }
     pub fn x_y<X, Y>(x: X, y: Y) -> MarginValue
     where
         X: ValidFor<props::Margin> + Display,
         Y: ValidFor<props::Margin> + Display,
     {
-        MarginValue(Some(format!("{} {}", x, y)))
+        MarginValue(format!("{} {}", x, y))
     }
     pub fn top_right_bottom_left<T, R, B, L>(top: T, right: R, bottom: B, left: L) -> MarginValue
     where
@@ -58,31 +50,27 @@ pub mod margin {
         B: ValidFor<props::Margin> + Display,
         L: ValidFor<props::Margin> + Display,
     {
-        MarginValue(Some(format!("{} {} {} {}", top, right, bottom, left)))
+        MarginValue(format!("{} {} {} {}", top, right, bottom, left))
     }
     pub fn top<V: ValidFor<props::Top> + Display>(v: V) -> MarginValue {
-        MarginValue(Some(format!("{}", v)))
+        MarginValue(format!("{}", v))
     }
     pub fn right<V: ValidFor<props::Right> + Display>(v: V) -> MarginValue {
-        MarginValue(Some(format!("{}", v)))
+        MarginValue(format!("{}", v))
     }
     pub fn bottom<V: ValidFor<props::Bottom> + Display>(v: V) -> MarginValue {
-        MarginValue(Some(format!("{}", v)))
+        MarginValue(format!("{}", v))
     }
     pub fn left<V: ValidFor<props::Left> + Display>(v: V) -> MarginValue {
-        MarginValue(Some(format!("{}", v)))
+        MarginValue(format!("{}", v))
     }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct PaddingValue(pub Option<String>);
+pub struct PaddingValue(pub String);
 impl Display for PaddingValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(v) = &self.0 {
-            write!(f, "{}", v)
-        } else {
-            Ok(())
-        }
+        write!(f, "{}", self.0)
     }
 }
 impl ValidFor<props::Padding> for PaddingValue {}
@@ -90,14 +78,14 @@ impl ValidFor<props::Padding> for PaddingValue {}
 pub mod padding {
     use super::*;
     pub fn all<T: ValidFor<props::Padding> + Display>(v: T) -> PaddingValue {
-        PaddingValue(Some(format!("{}", v)))
+        PaddingValue(format!("{}", v))
     }
     pub fn x_y<X, Y>(x: X, y: Y) -> PaddingValue
     where
         X: ValidFor<props::Padding> + Display,
         Y: ValidFor<props::Padding> + Display,
     {
-        PaddingValue(Some(format!("{} {}", x, y)))
+        PaddingValue(format!("{} {}", x, y))
     }
     pub fn top_right_bottom_left<T, R, B, L>(top: T, right: R, bottom: B, left: L) -> PaddingValue
     where
@@ -106,31 +94,27 @@ pub mod padding {
         B: ValidFor<props::Padding> + Display,
         L: ValidFor<props::Padding> + Display,
     {
-        PaddingValue(Some(format!("{} {} {} {}", top, right, bottom, left)))
+        PaddingValue(format!("{} {} {} {}", top, right, bottom, left))
     }
     pub fn top<V: ValidFor<props::Top> + Display>(v: V) -> PaddingValue {
-        PaddingValue(Some(format!("{}", v)))
+        PaddingValue(format!("{}", v))
     }
     pub fn right<V: ValidFor<props::Right> + Display>(v: V) -> PaddingValue {
-        PaddingValue(Some(format!("{}", v)))
+        PaddingValue(format!("{}", v))
     }
     pub fn bottom<V: ValidFor<props::Bottom> + Display>(v: V) -> PaddingValue {
-        PaddingValue(Some(format!("{}", v)))
+        PaddingValue(format!("{}", v))
     }
     pub fn left<V: ValidFor<props::Left> + Display>(v: V) -> PaddingValue {
-        PaddingValue(Some(format!("{}", v)))
+        PaddingValue(format!("{}", v))
     }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct FlexValue(pub Option<String>);
+pub struct FlexValue(pub String);
 impl Display for FlexValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(v) = &self.0 {
-            write!(f, "{}", v)
-        } else {
-            Ok(())
-        }
+        write!(f, "{}", self.0)
     }
 }
 impl ValidFor<props::Flex> for FlexValue {}
@@ -141,18 +125,14 @@ where
     S: ValidFor<props::FlexShrink> + Display,
     B: ValidFor<props::FlexBasis> + Display,
 {
-    FlexValue(Some(format!("{} {} {}", grow, shrink, basis)))
+    FlexValue(format!("{} {} {}", grow, shrink, basis))
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct TransitionValue(pub Option<String>);
+pub struct TransitionValue(pub String);
 impl Display for TransitionValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(v) = &self.0 {
-            write!(f, "{}", v)
-        } else {
-            Ok(())
-        }
+        write!(f, "{}", self.0)
     }
 }
 impl ValidFor<props::Transition> for TransitionValue {}
@@ -164,21 +144,14 @@ where
     T: ValidFor<props::TransitionTimingFunction> + Display,
     E: ValidFor<props::TransitionDelay> + Display,
 {
-    TransitionValue(Some(format!(
-        "{} {} {} {}",
-        property, duration, timing, delay
-    )))
+    TransitionValue(format!("{} {} {} {}", property, duration, timing, delay))
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct BackgroundValue(pub Option<String>);
+pub struct BackgroundValue(pub String);
 impl Display for BackgroundValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(v) = &self.0 {
-            write!(f, "{}", v)
-        } else {
-            Ok(())
-        }
+        write!(f, "{}", self.0)
     }
 }
 impl ValidFor<props::Background> for BackgroundValue {}
@@ -188,5 +161,5 @@ where
     C: ValidFor<props::BackgroundColor> + Display,
     I: ValidFor<props::BackgroundImage> + Display,
 {
-    BackgroundValue(Some(format!("{} {}", color, image)))
+    BackgroundValue(format!("{} {}", color, image))
 }

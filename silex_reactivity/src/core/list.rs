@@ -246,25 +246,79 @@ impl<T: Clone> Clone for ThinVec<T> {
 }
 
 pub struct ThinVecIntoIter<T> {
-    vec: ThinVec<T>,
+    ptr: Option<NonNull<u8>>,
     idx: usize,
+    len: usize,
+    cap: usize,
+    _marker: PhantomData<T>,
 }
 
 impl<T> Iterator for ThinVecIntoIter<T> {
     type Item = T;
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(ptr) = self.vec.ptr {
+        if let Some(ptr) = self.ptr
+            && self.idx < self.len
+        {
             unsafe {
-                let header = ptr.cast::<Header>().as_ref();
-                if self.idx < header.len {
-                    // Use data_ptr
-                    let data = header.data_ptr::<T>().add(self.idx).read();
-                    self.idx += 1;
-                    return Some(data);
-                }
+                let header_ptr = ptr.as_ptr() as *const Header;
+                let data_ptr = (*header_ptr).data_ptr::<T>();
+                let data = data_ptr.add(self.idx).read();
+                self.idx += 1;
+                return Some(data);
             }
         }
         None
+    }
+}
+
+impl<T> Drop for ThinVecIntoIter<T> {
+    fn drop(&mut self) {
+        if let Some(ptr) = self.ptr {
+            unsafe {
+                // Drop remaining elements
+                if std::mem::needs_drop::<T>() {
+                    let header_ptr = ptr.as_ptr() as *mut Header;
+                    let data_ptr = (*header_ptr).data_ptr_mut::<T>();
+                    for i in self.idx..self.len {
+                        ptr::drop_in_place(data_ptr.add(i));
+                    }
+                }
+
+                // Deallocate
+                let (layout, _) = Layout::new::<Header>()
+                    .extend(Layout::array::<T>(self.cap).expect("Failed to create array layout"))
+                    .expect("Failed to extend layout");
+                alloc::dealloc(ptr.as_ptr(), layout);
+            }
+        }
+    }
+}
+
+impl<T> IntoIterator for ThinVec<T> {
+    type Item = T;
+    type IntoIter = ThinVecIntoIter<T>;
+
+    fn into_iter(mut self) -> Self::IntoIter {
+        if let Some(ptr) = self.ptr.take() {
+            unsafe {
+                let header = ptr.cast::<Header>().as_ref();
+                ThinVecIntoIter {
+                    ptr: Some(ptr),
+                    idx: 0,
+                    len: header.len,
+                    cap: header.cap,
+                    _marker: PhantomData,
+                }
+            }
+        } else {
+            ThinVecIntoIter {
+                ptr: None,
+                idx: 0,
+                len: 0,
+                cap: 0,
+                _marker: PhantomData,
+            }
+        }
     }
 }
 
@@ -355,7 +409,7 @@ impl<T> IntoIterator for List<T> {
         match self {
             List::Empty => ListIntoIter::Empty,
             List::Single(item) => ListIntoIter::Single(Some(item)),
-            List::Many(vec) => ListIntoIter::Many(ThinVecIntoIter { vec, idx: 0 }),
+            List::Many(vec) => ListIntoIter::Many(vec.into_iter()),
         }
     }
 }

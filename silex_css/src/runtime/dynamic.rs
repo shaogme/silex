@@ -9,7 +9,7 @@ use std::rc::{Rc, Weak};
 use wasm_bindgen::JsCast;
 use web_sys::{CssStyleSheet, Element};
 
-pub type CssVariableGetter = Rc<dyn Fn() -> String>;
+pub type CssVariableGetter = Rx<String>;
 
 const CACHE_LIMIT: usize = 128;
 
@@ -91,11 +91,9 @@ impl DynamicStyleManager {
         let new_state = DYNAMIC_STYLE_REGISTRY.with(|registry| {
             let mut reg = registry.borrow_mut();
 
-            // Try to upgrade from registry (which holds weak references)
             if let Some(weak) = reg.get(id)
                 && let Some(state) = weak.upgrade()
             {
-                // It's still alive (either in use or in retirement)
                 RETIRED_STYLES.with(|retired| {
                     let mut r = retired.borrow_mut();
                     if let Some(pos) = r.iter().position(|s| s.id == id) {
@@ -105,7 +103,6 @@ impl DynamicStyleManager {
                 return state;
             }
 
-            // Not found or was dropped, create a new one
             let sheet = CssStyleSheet::new().expect("Failed to create CssStyleSheet");
             let _ = sheet.replace_sync(content);
             DOCUMENT_REGISTRY.with(|dr| dr.borrow_mut().add_sheet(sheet.clone()));
@@ -138,31 +135,42 @@ pub struct DynamicCss {
 }
 
 impl ApplyToDom for DynamicCss {
-    fn apply(&self, el: &Element, target: ApplyTarget) {
+    fn apply(&self, el: &Element, _target: ApplyTarget) {
         // 1. Apply class name
-        self.class_name.apply(el, target);
+        self.class_name.apply(el, ApplyTarget::Class);
 
         // 2. Apply inline variables with optimized Effect
         if !self.vars.is_empty() {
             let el = el.clone();
             let vars = self.vars.clone();
             Effect::new(move |prev_values: Option<Vec<String>>| {
-                if let Some(style) = el
+                let Some(style) = el
                     .dyn_ref::<web_sys::HtmlElement>()
                     .map(|e| e.style())
                     .or_else(|| el.dyn_ref::<web_sys::SvgElement>().map(|e| e.style()))
-                {
-                    let mut current_vals = Vec::with_capacity(vars.len());
-                    for (i, (name, getter)) in vars.iter().enumerate() {
-                        let value = getter();
-                        if prev_values.as_ref().and_then(|v| v.get(i)) != Some(&value) {
-                            let _ = style.set_property(name, &value);
-                        }
-                        current_vals.push(value);
+                else {
+                    return Vec::new();
+                };
+
+                let mut current_vals = Vec::with_capacity(vars.len());
+                let mut changed = false;
+
+                for (i, (_name, getter)) in vars.iter().enumerate() {
+                    let val = getter.get();
+                    if !changed && prev_values.as_ref().and_then(|v| v.get(i)) != Some(&val) {
+                        changed = true;
                     }
-                    return current_vals;
+                    current_vals.push(val);
                 }
-                Vec::new()
+
+                if changed || prev_values.is_none() {
+                    for (i, (name, val)) in vars.iter().zip(current_vals.iter()).enumerate() {
+                        if prev_values.as_ref().and_then(|v| v.get(i)) != Some(val) {
+                            let _ = style.set_property(name.0, val);
+                        }
+                    }
+                }
+                current_vals
             });
         }
 
@@ -180,7 +188,7 @@ impl ApplyToDom for DynamicCss {
             let base_class = self.class_name;
 
             Effect::new(move |prev: Option<(Vec<String>, String)>| {
-                let current_vals: Vec<String> = getters.iter().map(|g| g()).collect();
+                let current_vals: Vec<String> = getters.iter().map(|g| g.get()).collect();
                 if let Some((old_vals, _)) = &prev
                     && current_vals == *old_vals
                 {
@@ -245,12 +253,12 @@ impl IntoStorable for DynamicCss {
     }
 }
 
-pub fn make_dynamic_val_for<P, S>(source: S) -> Rc<dyn Fn() -> String>
+pub fn make_dynamic_val_for<P, S>(source: S) -> Rx<String>
 where
     S: IntoRx,
     S::Value: Clone + Sized + types::ValidFor<P> + Display + 'static,
     S::RxType: silex_core::traits::RxGet<Value = S::Value> + 'static,
 {
     let signal = source.into_rx();
-    Rc::new(move || format!("{}", signal.get()))
+    Rx::derive(Box::new(move || format!("{}", signal.get())))
 }

@@ -21,25 +21,27 @@ pub trait CssColor: Display {}
 pub trait CssNumber: Display {}
 pub trait CssPercentage: Display {}
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct CalcValue<Mark>(pub Option<String>, pub PhantomData<Mark>);
+#[derive(Clone, Debug, PartialEq)]
+pub struct CalcValue<Mark>(pub String, pub PhantomData<Mark>);
+
+impl<Mark> Default for CalcValue<Mark> {
+    fn default() -> Self {
+        Self(String::new(), PhantomData)
+    }
+}
 
 impl<Mark> CalcValue<Mark> {
     pub fn new(s: String) -> Self {
-        Self(Some(s), PhantomData)
+        Self(s, PhantomData)
     }
     pub fn binary<L: Display, R: Display>(l: L, op: &'static str, r: R) -> Self {
-        Self(Some(format!("({} {} {})", l, op, r)), PhantomData)
+        Self(format!("({} {} {})", l, op, r), PhantomData)
     }
 }
 
 impl<Mark> Display for CalcValue<Mark> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(v) = &self.0 {
-            write!(f, "{}", v)
-        } else {
-            Ok(())
-        }
+        write!(f, "{}", self.0)
     }
 }
 
@@ -48,16 +50,12 @@ impl CssAngle for CalcValue<AngleMark> {}
 
 impl<Mark> From<CalcValue<Mark>> for String {
     fn from(v: CalcValue<Mark>) -> Self {
-        v.0.unwrap_or_default()
+        v.0
     }
 }
 
 pub fn calc<Mark>(v: CalcValue<Mark>) -> CalcValue<Mark> {
-    if let Some(inner) = v.0 {
-        CalcValue::new(format!("calc({})", inner))
-    } else {
-        CalcValue(None, PhantomData)
-    }
+    CalcValue::new(format!("calc({})", v.0))
 }
 
 pub fn min<Mark, T, I>(args: I) -> CalcValue<Mark>
@@ -69,16 +67,16 @@ where
     let mut empty = true;
     for arg in args {
         let v: CalcValue<Mark> = arg.into();
-        if let Some(inner) = v.0 {
+        if !v.0.is_empty() {
             if !empty {
                 s.push_str(", ");
             }
-            s.push_str(&inner);
+            s.push_str(&v.0);
             empty = false;
         }
     }
     if empty {
-        CalcValue(None, PhantomData)
+        CalcValue::default()
     } else {
         s.push(')');
         CalcValue::new(s)
@@ -94,16 +92,16 @@ where
     let mut empty = true;
     for arg in args {
         let v: CalcValue<Mark> = arg.into();
-        if let Some(inner) = v.0 {
+        if !v.0.is_empty() {
             if !empty {
                 s.push_str(", ");
             }
-            s.push_str(&inner);
+            s.push_str(&v.0);
             empty = false;
         }
     }
     if empty {
-        CalcValue(None, PhantomData)
+        CalcValue::default()
     } else {
         s.push(')');
         CalcValue::new(s)

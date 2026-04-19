@@ -1,10 +1,10 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
-use syn::{Field, Ident, Result, Token, Visibility, parse2};
+use syn::{Attribute, Field, Ident, Result, Token, Visibility, parse2};
 
 pub struct ThemeDefinition {
-    pub attrs: Vec<syn::Attribute>,
+    pub attrs: Vec<Attribute>,
     pub vis: Visibility,
     pub name: Ident,
     pub fields: Vec<Field>,
@@ -12,14 +12,12 @@ pub struct ThemeDefinition {
 
 impl Parse for ThemeDefinition {
     fn parse(input: ParseStream) -> Result<Self> {
-        let attrs = input.call(syn::Attribute::parse_outer)?;
+        let attrs = input.call(Attribute::parse_outer)?;
         let vis: Visibility = input.parse()?;
         input.parse::<Token![struct]>()?;
         let name: Ident = input.parse()?;
-
         let content;
         syn::braced!(content in input);
-
         let fields = content.parse_terminated(Field::parse_named, Token![,])?;
 
         Ok(ThemeDefinition {
@@ -37,100 +35,120 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
     let vis = &def.vis;
 
     let mut prefix = "slx-theme".to_string();
+    let mut is_main = false;
     for attr in &def.attrs {
         if attr.path().is_ident("theme") {
             let _ = attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("prefix") {
-                    let value = meta.value()?;
-                    let s: syn::LitStr = value.parse()?;
-                    prefix = s.value();
+                    prefix = meta.value()?.parse::<syn::LitStr>()?.value();
+                } else if meta.path.is_ident("main") {
+                    is_main = true;
                 }
                 Ok(())
             });
         }
     }
 
+    let is_main_tokens = if is_main {
+        quote! { #vis type Theme = #name; }
+    } else {
+        quote! {}
+    };
+
     let mut struct_fields = Vec::new();
-    let mut trait_decl_items: Vec<TokenStream> = Vec::new();
-    let mut trait_impl_items: Vec<TokenStream> = Vec::new();
-    let mut to_css_items: Vec<TokenStream> = Vec::new();
+    let mut trait_decl_items = Vec::new();
+    let mut trait_impl_items = Vec::new();
+    let mut to_css_items = Vec::new();
     let mut field_idents = Vec::new();
     let mut css_vars = Vec::new();
+    let mut const_impl_items = Vec::new();
 
     for field in &def.fields {
-        let field_name = field
+        let f_name = field
             .ident
             .as_ref()
             .ok_or_else(|| syn::Error::new_spanned(field, "Theme fields must be named"))?;
-        let field_ty = &field.ty;
+        let f_ty = &field.ty;
 
         let mut custom_var = None;
-        let mut filtered_field_attrs = Vec::new();
+        let mut filtered_attrs = Vec::new();
         for attr in &field.attrs {
             if attr.path().is_ident("theme") {
                 let _ = attr.parse_nested_meta(|meta| {
                     if meta.path.is_ident("var") {
-                        let value = meta.value()?;
-                        let s: syn::LitStr = value.parse()?;
-                        custom_var = Some(s.value());
+                        custom_var = Some(meta.value()?.parse::<syn::LitStr>()?.value());
                     }
                     Ok(())
                 });
             } else {
-                filtered_field_attrs.push(attr);
+                filtered_attrs.push(attr);
             }
         }
 
-        let css_var = custom_var.unwrap_or_else(|| {
-            format!("--{}-{}", prefix, field_name.to_string().replace("_", "-"))
-        });
-        css_vars.push(css_var.clone());
-        field_idents.push(field_name.clone());
+        let css_var_name = custom_var
+            .unwrap_or_else(|| format!("--{}-{}", prefix, f_name.to_string().replace('_', "-")));
+        css_vars.push(css_var_name.clone());
+        field_idents.push(f_name.clone());
 
-        struct_fields.push(quote! {
-            #(#filtered_field_attrs)*
-            pub #field_name: #field_ty
-        });
+        struct_fields.push(quote! { #(#filtered_attrs)* pub #f_name: #f_ty });
+        trait_decl_items.push(quote! { type #f_name; });
+        trait_impl_items.push(quote! { type #f_name = #f_ty; });
+        to_css_items.push(quote! { format!("{}: {};", #css_var_name, self.#f_name) });
 
-        // Declaration in trait
-        trait_decl_items.push(quote! {
-            type #field_name;
-        });
+        let const_name = quote::format_ident!("{}", f_name.to_string().to_uppercase());
+        let var_expr = format!("var({})", css_var_name);
 
-        // Definition in impl
-        trait_impl_items.push(quote! {
-            type #field_name = #field_ty;
-        });
-
-        to_css_items.push(quote! {
-            format!("{}: {};", #css_var, self.#field_name)
+        const_impl_items.push(quote! {
+            pub const #const_name: ::silex::css::types::CssVar<#f_ty> =
+                ::silex::css::types::CssVar(
+                    ::silex::css::types::CssVarValue::Static(#var_expr),
+                    ::std::marker::PhantomData
+                );
         });
     }
 
     let trait_name = quote::format_ident!("{}Fields", name);
+    let patch_name = quote::format_ident!("{}Patch", name);
+    let mut patch_fields = Vec::new();
+    let mut patch_entries = Vec::new();
+    let mut patch_setters = Vec::new();
 
+    for (field_idx, field) in def.fields.iter().enumerate() {
+        let f_name = field_idents[field_idx].clone();
+        let f_ty = &field.ty;
+        let css_var_name = &css_vars[field_idx];
+
+        patch_fields.push(quote! { pub #f_name: Option<#f_ty> });
+        patch_entries.push(quote! {
+            (#css_var_name, self.#f_name.as_ref().map(|v| v.to_string()))
+        });
+        patch_setters.push(quote! {
+            pub fn #f_name(mut self, val: impl Into<#f_ty>) -> Self {
+                self.#f_name = Some(val.into());
+                self
+            }
+        });
+    }
     let filtered_attrs: Vec<_> = def
         .attrs
         .iter()
         .filter(|a| !a.path().is_ident("theme"))
         .collect();
 
-    let expanded = quote! {
+    Ok(quote! {
         #[derive(Clone, Debug, Default)]
         #(#filtered_attrs)*
-        #vis struct #name {
-            #(#struct_fields),*
+        #vis struct #name { #(#struct_fields),* }
+
+        impl #name {
+            #(#const_impl_items)*
         }
 
         #[allow(non_camel_case_types)]
-        pub trait #trait_name {
-            #(#trait_decl_items)*
-        }
+        pub trait #trait_name { #(#trait_decl_items)* }
 
         #[allow(non_camel_case_types)]
-        impl #trait_name for #name {
-            #(#trait_impl_items)*
-        }
+        impl #trait_name for #name { #(#trait_impl_items)* }
 
         impl ::silex::css::theme::ThemeType for #name {}
 
@@ -140,18 +158,8 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
                 #( s.push_str(&#to_css_items); )*
                 s
             }
-
-            fn get_variable_values(&self) -> Vec<String> {
-                vec![
-                    #( self.#field_idents.to_string() ),*
-                ]
-            }
-
-            fn get_variable_names() -> &'static [&'static str] {
-                &[
-                    #( #css_vars ),*
-                ]
-            }
+            fn get_variable_values(&self) -> Vec<String> { vec![ #( self.#field_idents.to_string() ),* ] }
+            fn get_variable_names() -> &'static [&'static str] { &[ #( #css_vars ),* ] }
         }
 
         impl ::std::fmt::Display for #name {
@@ -159,7 +167,20 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
                 write!(f, "{}", ::silex::css::theme::ThemeToCss::to_css_variables(self))
             }
         }
-    };
 
-    Ok(expanded)
+        #[derive(Clone, Debug, Default)]
+        #vis struct #patch_name { #(#patch_fields),* }
+
+        impl #patch_name {
+            #(#patch_setters)*
+        }
+
+        #is_main_tokens
+
+        impl ::silex::css::theme::ThemePatchToCss for #patch_name {
+            fn get_patch_entries(&self) -> Vec<(&'static str, Option<String>)> {
+                vec![ #(#patch_entries),* ]
+            }
+        }
+    })
 }

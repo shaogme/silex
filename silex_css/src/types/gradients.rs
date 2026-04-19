@@ -6,14 +6,10 @@ use std::fmt::Display;
 // ==========================================
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct GradientValue(pub Option<String>);
+pub struct GradientValue(pub String);
 impl Display for GradientValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(v) = &self.0 {
-            write!(f, "{}", v)
-        } else {
-            Ok(())
-        }
+        write!(f, "{}", self.0)
     }
 }
 impl ValidFor<props::BackgroundImage> for GradientValue {}
@@ -126,7 +122,7 @@ impl LinearGradientBuilder {
             first = false;
         }
         s.push(')');
-        GradientValue(Some(s))
+        GradientValue(s)
     }
 }
 
@@ -210,7 +206,7 @@ impl RadialGradientBuilder {
             first = false;
         }
         s.push(')');
-        GradientValue(Some(s))
+        GradientValue(s)
     }
 }
 

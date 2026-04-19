@@ -25,9 +25,15 @@ fn Button(
 
 ```rust
 // 使用
+// 由于 label 不是 children 参数，所以依然使用无参构造 + 链式调用
 Button()
     .label("Click me") // 必须
     .opacity(0.8)      // 可选
+
+// 如果第一个参数是 children: Children，则必须使用
+// Parent(div("child"))
+// 代替
+// Parent().children(div("child"))
 ```
 
 ### 属性透传 (Attribute Forwarding)
@@ -78,7 +84,7 @@ GenericMessage()
 let (color, _) = Signal::pair("white".to_string());
 let scale = Signal::pair(1.0).0;
 
-let btn_class = css!(r#"
+let btn_class = css! {
     background-color: blue;
     color: $(color); /* 支持动态 Signal 插值 */
     transform: scale($(scale)); /* 自动处理任何实现了 IntoSignal 的类型 */
@@ -87,7 +93,7 @@ let btn_class = css!(r#"
     &:hover {
         background-color: darkblue;
     }
-"#);
+};
 
 button(()).class(btn_class).text("Styled Button")
 ```
@@ -105,7 +111,7 @@ let w = Signal::pair(px(100)); // Px 类型被限定允许给 Width
 let bd = Signal::pair(border(px(1), BorderStyleKeyword::Solid, hex("#ccc"))); // 专属工厂函数保障多位组合安全
 let custom_calc = Signal::pair(UnsafeCss::new("calc(100% - 20px)")); // 若需超出约束边界请显式包装
 
-let cls = css!(r#"
+let cls = css! {
     width: $(w); /* ✅ 合规 */
     height: $(pct(50.0)); /* ✅ 合规 */
     border: $(bd); /* ✅ 单值化强类型复合体合规 */
@@ -113,7 +119,7 @@ let cls = css!(r#"
     /* color: $(123.45); ❌ 编译报错：the trait `ValidFor<Color>` is not implemented for `f64` */
     /* z-index: $(px(99)); ❌ 编译报错：拦住企图把像素单位送给 ZIndex 的不合规行为 */
     /* padding: $("10px 20px"); ❌ 编译报错：阻绝散乱的字符串拼接（除非用 UnsafeCss 或是 padding::x_y 构建器）*/
-"#);
+};
 ```
 
 **底层解析重构 (AST-driven Compiler)**：
@@ -161,8 +167,8 @@ styled! {
 }
 
 // 在任意组件中透明且类型安全地使用：
-StyledButton()
-    .children("Click me!")
+// 由于 children 是 StyledButton 的第一个参数，它可以直接传入构造函数
+StyledButton("Click me!")
     .color(my_color)
     .hover_color("#ff4081")
     .pseudo_state("active") // 可以按需改变触发条件！
@@ -295,16 +301,6 @@ let theme_signal = store.config; // RwSignal<UserConfig>
 
 ## 6. 样式与类名助手
 
-### `style!`
-快速生成内联样式元组。
-```rust
-div(())
-    .style(style! {
-        "color": "red",
-        "margin-top": "10px"
-    })
-```
-
 ### `classes!`
 动态生成类名列表。
 ```rust
@@ -315,16 +311,17 @@ div(())
     ])
 ```
 
-## 7. 强类型主题系统 (`define_theme!`)
+## 7. 强类型主题系统 (`theme!`)
 
 Silex 提供了高度集成的强类型主题系统，保障在 CSS 中使用主题变量时的类型安全。
 
 ### 定义主题
 
-使用 `define_theme!` 声明具有严格类型约束的主题结构：
+使用 `theme!` 声明具有严格类型约束的主题结构：
 
 ```rust
-define_theme! {
+theme! {
+    #[theme(main, prefix = "slx")] // 使用 main 标记为主主题，供其他宏自动关联
     pub struct AppTheme {
         pub primary_color: silex::css::types::props::Color,
         pub base_padding: silex::css::types::props::Padding,
@@ -339,21 +336,23 @@ define_theme! {
 
 ### 与样式组件紧密结合
 
-在 `styled!` 宏定义的组件中，你可以通过 `#[theme(AppTheme)]` 属性声明其绑定的主题类型，并直接在 CSS 中通过全局标识符 `Theme.xxx` 引用主题库中的值：
+在 `styled!` 宏定义的组件中，你可以通过 `$Path::TO::CONST` 语法（通常是 `$AppTheme::FIELD`）直接引用主题库中的值。这种方式利用了 Rust 原生的路径解析，提供了绝对的鲁棒性。
 
 ```rust
 styled! {
-    #[theme(AppTheme)] // 声明主题环境
     pub ThemedBox<div>(
         children: Children,
     ) {
-        // 直接使用 Theme. 引用字段
-        // 系统在编译期强检查 AppTheme.base_padding 的类型是否适用于 padding 属性！
-        padding: Theme.base_padding; 
-        background-color: Theme.primary_color;
+        // 直接使用 $AppTheme:: 引用常量
+        // 系统在编译期利用 Rust 的类型系统强检查字段类型是否适用于属性！
+        padding: $AppTheme::BASE_PADDING; 
+        background-color: $AppTheme::PRIMARY_COLOR;
         border-radius: 8px;
     }
 }
 ```
 
-`styled!` 宏的编译器能够聪明地识别 `Theme.字段` 表达式。它不仅会将代码自动转换成标准的 `var(--slx-theme-字段)` 原生查询形态，还会在 Rust 层自动注入针对被引用字段的类型合法性断言（`assert_valid<ValidFor<T>>`）。借助这套工作流，彻底排除了在变更主题字段时意外造成运行期样式损坏的可能性。
+`styled!` 宏的编译器会自动识别 `$` 后跟随的 Rust 路径。它不仅能正确解析常量引用的 CSS 变量值，还能在编译期直接捕获类型错误。
+
+> [!IMPORTANT]
+> **语法迁移提示**：旧有的 `$theme.field` 语法现已彻底移除。如果你在代码中继续使用它，编译器将抛出一个友好的错误提示，引导你迁移到新的路径语法。

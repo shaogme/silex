@@ -64,6 +64,18 @@ impl Display for Auto {
     }
 }
 
+pub const AUTO: Auto = Auto(Some(()));
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct NoneValue;
+impl Display for NoneValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "none")
+    }
+}
+
+pub const NONE: NoneValue = NoneValue;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rem(pub Option<f64>);
 impl Display for Rem {
@@ -149,14 +161,10 @@ impl Display for Turn {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct Hex(pub Option<String>);
+pub struct Hex(pub String);
 impl Display for Hex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(v) = &self.0 {
-            write!(f, "{}", v)
-        } else {
-            Ok(())
-        }
+        write!(f, "{}", self.0)
     }
 }
 
@@ -173,14 +181,10 @@ impl Display for Hsl {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct Url(pub Option<String>);
+pub struct Url(pub String);
 impl Display for Url {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(v) = &self.0 {
-            write!(f, "url('{}')", v)
-        } else {
-            Ok(())
-        }
+        write!(f, "url('{}')", self.0)
     }
 }
 
@@ -197,7 +201,7 @@ pub fn rem<T: Into<f64>>(v: T) -> Rem {
     Rem(Some(v.into()))
 }
 #[inline]
-pub fn em<T: Into<f64>>(v: T) -> Em {
+pub fn em_unit<T: Into<f64>>(v: T) -> Em {
     Em(Some(v.into()))
 }
 #[inline]
@@ -226,7 +230,7 @@ pub fn rgba(r: u8, g: u8, b: u8, a: f32) -> Rgba {
 }
 #[inline]
 pub fn hex<T: Into<String>>(v: T) -> Hex {
-    Hex(Some(v.into()))
+    Hex(v.into())
 }
 #[inline]
 pub fn hsl(h: u16, s: u8, l: u8) -> Hsl {
@@ -234,5 +238,5 @@ pub fn hsl(h: u16, s: u8, l: u8) -> Hsl {
 }
 #[inline]
 pub fn url<T: Into<String>>(v: T) -> Url {
-    Url(Some(v.into()))
+    Url(v.into())
 }
