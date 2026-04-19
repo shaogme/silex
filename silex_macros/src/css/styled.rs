@@ -177,7 +177,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             let var_name = format!("--{}-{}", class_name, i);
             let var_ident = quote::format_ident!("var_{}", i);
             quote! {
-                .style((#var_name, #var_ident()))
+                .style((#var_name, #var_ident))
             }
         })
         .collect();
@@ -271,7 +271,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
                 let var_name = format!("--{}-{}", variant_class_name, i);
                 // 无条件注入动态内联样式
                 style_bindings.push(quote! {
-                    .style((#var_name, #var_ident()))
+                    .style((#var_name, #var_ident))
                 });
             }
 
@@ -432,7 +432,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
                 ::silex::prelude::rx! {
                     let mut resolved_rule = ::std::string::ToString::to_string(#template);
                     #(
-                        let val = #eval_vars();
+                        let val = #eval_vars.get();
                         if let Some(pos) = resolved_rule.find("{}") {
                             resolved_rule.replace_range(pos..pos + 2, &val);
                         }

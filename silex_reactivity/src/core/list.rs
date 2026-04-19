@@ -256,15 +256,15 @@ pub struct ThinVecIntoIter<T> {
 impl<T> Iterator for ThinVecIntoIter<T> {
     type Item = T;
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(ptr) = self.ptr {
-            if self.idx < self.len {
-                unsafe {
-                    let header_ptr = ptr.as_ptr() as *const Header;
-                    let data_ptr = (*header_ptr).data_ptr::<T>();
-                    let data = data_ptr.add(self.idx).read();
-                    self.idx += 1;
-                    return Some(data);
-                }
+        if let Some(ptr) = self.ptr
+            && self.idx < self.len
+        {
+            unsafe {
+                let header_ptr = ptr.as_ptr() as *const Header;
+                let data_ptr = (*header_ptr).data_ptr::<T>();
+                let data = data_ptr.add(self.idx).read();
+                self.idx += 1;
+                return Some(data);
             }
         }
         None

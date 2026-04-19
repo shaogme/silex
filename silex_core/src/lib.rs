@@ -210,6 +210,7 @@ macro_rules! rx {
 }
 
 pub mod prelude {
+    pub use crate::Rx;
     pub use crate::callback::Callback;
     pub use crate::log::*;
     pub use crate::logic::*;

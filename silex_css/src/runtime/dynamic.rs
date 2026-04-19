@@ -9,7 +9,7 @@ use std::rc::{Rc, Weak};
 use wasm_bindgen::JsCast;
 use web_sys::{CssStyleSheet, Element};
 
-pub type CssVariableGetter = Rc<dyn Fn() -> String>;
+pub type CssVariableGetter = Rx<String>;
 
 const CACHE_LIMIT: usize = 128;
 
@@ -154,7 +154,7 @@ impl ApplyToDom for DynamicCss {
                 {
                     let mut current_vals = Vec::with_capacity(vars.len());
                     for (i, (name, getter)) in vars.iter().enumerate() {
-                        let value = getter();
+                        let value = getter.get();
                         if prev_values.as_ref().and_then(|v| v.get(i)) != Some(&value) {
                             let _ = style.set_property(name, &value);
                         }
@@ -180,7 +180,7 @@ impl ApplyToDom for DynamicCss {
             let base_class = self.class_name;
 
             Effect::new(move |prev: Option<(Vec<String>, String)>| {
-                let current_vals: Vec<String> = getters.iter().map(|g| g()).collect();
+                let current_vals: Vec<String> = getters.iter().map(|g| g.get()).collect();
                 if let Some((old_vals, _)) = &prev
                     && current_vals == *old_vals
                 {
@@ -245,12 +245,12 @@ impl IntoStorable for DynamicCss {
     }
 }
 
-pub fn make_dynamic_val_for<P, S>(source: S) -> Rc<dyn Fn() -> String>
+pub fn make_dynamic_val_for<P, S>(source: S) -> Rx<String>
 where
     S: IntoRx,
     S::Value: Clone + Sized + types::ValidFor<P> + Display + 'static,
     S::RxType: silex_core::traits::RxGet<Value = S::Value> + 'static,
 {
     let signal = source.into_rx();
-    Rc::new(move || format!("{}", signal.get()))
+    Rx::derive(Box::new(move || format!("{}", signal.get())))
 }
