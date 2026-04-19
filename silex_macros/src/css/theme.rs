@@ -52,6 +52,7 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
     let mut to_css_items = Vec::new();
     let mut field_idents = Vec::new();
     let mut css_vars = Vec::new();
+    let mut const_impl_items = Vec::new();
 
     for field in &def.fields {
         let f_name = field
@@ -75,15 +76,26 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
             }
         }
 
-        let css_var = custom_var
+        let css_var_name = custom_var
             .unwrap_or_else(|| format!("--{}-{}", prefix, f_name.to_string().replace('_', "-")));
-        css_vars.push(css_var.clone());
+        css_vars.push(css_var_name.clone());
         field_idents.push(f_name.clone());
 
         struct_fields.push(quote! { #(#filtered_attrs)* pub #f_name: #f_ty });
         trait_decl_items.push(quote! { type #f_name; });
         trait_impl_items.push(quote! { type #f_name = #f_ty; });
-        to_css_items.push(quote! { format!("{}: {};", #css_var, self.#f_name) });
+        to_css_items.push(quote! { format!("{}: {};", #css_var_name, self.#f_name) });
+
+        let const_name = quote::format_ident!("{}", f_name.to_string().to_uppercase());
+        let var_expr = format!("var({})", css_var_name);
+
+        const_impl_items.push(quote! {
+            pub const #const_name: ::silex::css::types::CssVar<#f_ty> =
+                ::silex::css::types::CssVar(
+                    ::silex::css::types::CssVarValue::Static(#var_expr),
+                    ::std::marker::PhantomData
+                );
+        });
     }
 
     let trait_name = quote::format_ident!("{}Fields", name);
@@ -97,6 +109,10 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
         #[derive(Clone, Debug, Default)]
         #(#filtered_attrs)*
         #vis struct #name { #(#struct_fields),* }
+
+        impl #name {
+            #(#const_impl_items)*
+        }
 
         #[allow(non_camel_case_types)]
         pub trait #trait_name { #(#trait_decl_items)* }

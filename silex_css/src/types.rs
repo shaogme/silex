@@ -41,6 +41,51 @@ impl Display for UnsafeCss {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum CssVarValue {
+    Static(&'static str),
+    Dynamic(String),
+}
+
+impl Display for CssVarValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Static(s) => write!(f, "{}", s),
+            Self::Dynamic(s) => write!(f, "{}", s),
+        }
+    }
+}
+
+/// CSS 变量类型，可通过 `css_var()` 函数创建。
+/// 泛型 T 用于强类型校验，例如 `CssVar<Hex>` 仅在接收颜色的属性中有效。
+#[derive(Clone, Debug, PartialEq)]
+pub struct CssVar<T = ()>(pub CssVarValue, pub std::marker::PhantomData<T>);
+
+impl<T> Default for CssVar<T> {
+    fn default() -> Self {
+        Self(CssVarValue::Static(""), std::marker::PhantomData)
+    }
+}
+
+impl<T> Display for CssVar<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// 创建一个 CSS 变量引用。
+/// 如果输入不带 `var()` 前缀，会自动包裹。
+/// 返回的 CssVar<()> 对所有 CSS 属性有效（不安全模式）。
+pub fn css_var(name: impl Display) -> CssVar<()> {
+    let name_str = name.to_string();
+    let val = if name_str.starts_with("var(") {
+        name_str
+    } else {
+        format!("var({})", name_str)
+    };
+    CssVar(CssVarValue::Dynamic(val), std::marker::PhantomData)
+}
+
 // ==========================================
 // 关键字 Enum 自动化
 // ==========================================
@@ -140,8 +185,13 @@ macro_rules! define_props {
             pub struct Any;
         }
 
-        // 所有属性默认支持 UnsafeCss
-        $( impl ValidFor<props::$pascal> for UnsafeCss {} )*
+        // 所有属性默认支持 UnsafeCss 和无类型限制的 CssVar<()>
+        $(
+            impl ValidFor<props::$pascal> for UnsafeCss {}
+            impl ValidFor<props::$pascal> for CssVar<()> {}
+            // 核心：强类型 CssVar<T> 继承 T 的校验规则
+            impl<T> ValidFor<props::$pascal> for CssVar<T> where T: ValidFor<props::$pascal> {}
+        )*
 
         $(
             define_props!(@group $pascal, $group);
@@ -241,6 +291,24 @@ macro_rules! impl_into_rx_for_css {
             }
         )*
     };
+}
+
+impl<T: 'static> silex_core::traits::RxValue for CssVar<T> {
+    type Value = Self;
+}
+impl<T: 'static> silex_core::traits::IntoRx for CssVar<T> {
+    type RxType = silex_core::Rx<Self, silex_core::RxValueKind>;
+    fn into_rx(self) -> Self::RxType {
+        silex_core::Rx::new_constant(self)
+    }
+    fn is_constant(&self) -> bool {
+        true
+    }
+}
+impl<T: Clone + 'static> silex_core::traits::IntoSignal for CssVar<T> {
+    fn into_signal(self) -> silex_core::reactivity::Signal<Self> {
+        silex_core::reactivity::Signal::from(self)
+    }
 }
 
 impl_into_rx_for_css!(

@@ -82,25 +82,25 @@ impl DynamicStyleManager {
     }
 
     pub fn update(&mut self, id: &str, content: &str) {
-        if let Some(state) = &self.state {
-            if state.id == id {
-                return;
-            }
+        if let Some(state) = &self.state
+            && state.id == id
+        {
+            return;
         }
 
         let new_state = DYNAMIC_STYLE_REGISTRY.with(|registry| {
             let mut reg = registry.borrow_mut();
 
-            if let Some(weak) = reg.get(id) {
-                if let Some(state) = weak.upgrade() {
-                    RETIRED_STYLES.with(|retired| {
-                        let mut r = retired.borrow_mut();
-                        if let Some(pos) = r.iter().position(|s| s.id == id) {
-                            r.remove(pos);
-                        }
-                    });
-                    return state;
-                }
+            if let Some(weak) = reg.get(id)
+                && let Some(state) = weak.upgrade()
+            {
+                RETIRED_STYLES.with(|retired| {
+                    let mut r = retired.borrow_mut();
+                    if let Some(pos) = r.iter().position(|s| s.id == id) {
+                        r.remove(pos);
+                    }
+                });
+                return state;
             }
 
             let sheet = CssStyleSheet::new().expect("Failed to create CssStyleSheet");
@@ -148,7 +148,9 @@ impl ApplyToDom for DynamicCss {
                     .dyn_ref::<web_sys::HtmlElement>()
                     .map(|e| e.style())
                     .or_else(|| el.dyn_ref::<web_sys::SvgElement>().map(|e| e.style()))
-                else { return Vec::new() };
+                else {
+                    return Vec::new();
+                };
 
                 let mut current_vals = Vec::with_capacity(vars.len());
                 let mut changed = false;
@@ -163,9 +165,9 @@ impl ApplyToDom for DynamicCss {
 
                 if changed || prev_values.is_none() {
                     for (i, (name, val)) in vars.iter().zip(current_vals.iter()).enumerate() {
-                       if prev_values.as_ref().and_then(|v| v.get(i)) != Some(val) {
-                           let _ = style.set_property(name.0, val);
-                       }
+                        if prev_values.as_ref().and_then(|v| v.get(i)) != Some(val) {
+                            let _ = style.set_property(name.0, val);
+                        }
                     }
                 }
                 current_vals

@@ -92,6 +92,17 @@ global_style! {
         padding-left: 12px;
         font-weight: bold;
     }
+
+    unsafe {
+        // Global raw styles
+        "::-webkit-scrollbar" {
+            width: 8px;
+        }
+        "::-webkit-scrollbar-thumb" {
+            background: $theme.primary;
+            border-radius: 4px;
+        }
+    }
 }
 
 // --- Styled Components ---
@@ -274,7 +285,7 @@ pub fn StylingBasics() -> impl View {
                 .padding_val(padding_state)
                 .on(event::click, move |_| {
                     set_color.update(|c| {
-                        *c = if c.0.as_deref() == Some("#ffffff") { hex("#fbbf24") } else { hex("#ffffff") }
+                        *c = if c.0 == "#ffffff" { hex("#fbbf24") } else { hex("#ffffff") }
                     });
                     set_size.update(|s| {
                         *s = if *s == "medium" { "large".to_string() } else { "medium".to_string() }
@@ -286,7 +297,7 @@ pub fn StylingBasics() -> impl View {
                         *p = padding::x_y(px(16), px(32));
                     });
                     set_hover_color.update(|c| {
-                        *c = if c.0.as_deref() == Some("#4f46e5") { hex("#ec4899") } else { hex("#4f46e5") }
+                        *c = if c.0 == "#4f46e5" { hex("#ec4899") } else { hex("#4f46e5") }
                     });
                     set_pseudo_state.update(|s| {
                         *s = if *s == "hover" { "active".to_string() } else { "hover".to_string() }
@@ -403,7 +414,7 @@ pub fn Theming() -> impl View {
         default_light_theme()
     };
     let (theme, set_theme) = Signal::pair(initial_theme);
-    let is_dark = theme.map(|t| t.surface.0.as_deref() == Some("#111827"));
+    let is_dark = theme.map(|t| t.surface.0 == "#111827");
 
     div![
         h2("🎨 Theme Engine"),
@@ -534,36 +545,39 @@ pub fn AdvancedStyling() -> impl View {
                 h4("3. Responsive & Nested (Style Builder)"),
                 p("The enhanced `sty()` API now supports `@media` and complex nesting, just like the `styled!` macro.").style("margin-bottom: 16px; font-size: 0.9em; opacity: 0.7;"),
                 div![
-                    span("Resize window and hover child!").style(
+                    span![
+                        "Resize window and hover child!",
+                        div("I am the child box").class("child-box")
+                            .style("margin-top: 16px; color: #fff; font-size: 12px; text-align: center; width: fit-content; white-space: nowrap;")
+                    ].style(
                         sty()
                             .display(DisplayKeyword::Block)
                             .padding(px(32))
-                            .background(hex("#1e1e24"))
-                            .border(border(px(1), BorderStyleKeyword::Solid, hex("#374151")))
+                            .background(AppTheme::SURFACE)
+                            .color(AppTheme::TEXT)
+                            .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
                             .border_radius(px(16))
                             .transition("all 0.3s")
                             .nest("& > .child-box", |s| s
-                                .width(px(60))
-                                .height(px(60))
-                                .background(hex("#6366f1"))
+                                .padding(padding::x_y(px(12), px(20)))
+                                .background(AppTheme::PRIMARY)
                                 .border_radius(px(8))
                                 .transition("all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55)")
                             )
                             .on_hover(|s| s
-                                .border_color(hex("#6366f1"))
+                                .border_color(AppTheme::PRIMARY)
                                 .nest("& > .child-box", |s| s
                                     .transform(transform().translate_x(px(100)).rotate(deg(180)))
-                                    .background(hex("#a855f7"))
+                                    .background(AppTheme::SECONDARY)
                                 )
                             )
                             .media("@media (max-width: 768px)", |s| s
-                                .background(hex("#312e81"))
+                                .background(AppTheme::BORDER)
                                 .nest("& > .child-box", |s| s
                                     .background(hex("#f43f5e"))
                                 )
                             )
                     ),
-                    div("I am the child box").class("child-box").style("margin-top: 16px; color: #fff; font-size: 12px; text-align: center; line-height: 60px;")
                 ].style("position: relative;")
             )),
             DemoCard(view_chain!(
@@ -595,6 +609,69 @@ pub fn AdvancedStyling() -> impl View {
                     ]
                 )).gap(24)
             ))
+        )).gap(24),
+
+        h2("🔒 Unsafe Styles & Escape Hatches").style("margin-top: 48px;"),
+        p("Bypass compile-time property and type validation for non-standard CSS or raw value injection.")
+            .style("margin-bottom: 24px; color: #9ca3af;"),
+
+        Stack(view_chain!(
+            DemoCard(view_chain!(
+                h4("1. Local Unsafe Blocks"),
+                p("Use `unsafe { ... }` blocks to inject raw properties or bypass type checks locally.").style("margin-bottom: 16px; font-size: 0.9em; opacity: 0.7;"),
+                UnsafeBlockDemo("I have a raw orange glow").style("margin-bottom: 16px;")
+            )),
+            DemoCard(view_chain!(
+                h4("2. Global Unsafe Component"),
+                p("Marking a styled component as `unsafe` disables all validation for its entire CSS block.").style("margin-bottom: 16px; font-size: 0.9em; opacity: 0.7;"),
+                UnsafeCompDemo("Everything here is raw").style("width: 100%;")
+            ))
         )).gap(24)
     ]
+}
+
+// --- Unsafe Demos ---
+
+styled! {
+    pub UnsafeBlockDemo<div>(children: Children) {
+        padding: 24px;
+        border-radius: 12px;
+        background: #1e1e24;
+        transition: all 0.3s;
+
+        // standard styles
+        color: white;
+
+        unsafe {
+            // Non-standard or vendor properties
+            -webkit-backdrop-filter: blur(10px);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 0 20px rgba(251, 146, 60, 0.4);
+            // Using a semi-transparent background to make the blur visible
+            background-color: $(rx!(rgba(45, 45, 53, 0.7)));
+            // A truly custom property to verify raw injection
+            --silex-unsafe-check: "passed";
+        }
+    }
+}
+
+styled! {
+    pub unsafe UnsafeCompDemo<div>(children: Children) {
+        // Enire component is unsafe
+        padding: 32px;
+        border: 2px dashed #f43f5e;
+        border-radius: 16px;
+        background: $("rgba(17, 24, 39, 0.8)");
+
+        // No type checking here - passing a raw string for color
+        color: $("rgb(244, 63, 94)");
+
+        font-family: $(rx!("'Courier New', monospace".to_string()));
+        cursor: $("help");
+
+        &:hover {
+            border-color: $("cyan");
+            box-shadow: $("0 0 30px rgba(0, 255, 255, 0.3)");
+        }
+    }
 }

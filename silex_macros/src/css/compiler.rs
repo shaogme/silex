@@ -30,6 +30,14 @@ struct ParserState {
     theme_refs: Vec<(String, String)>,
     class_name: String,
     theme_prefix: String,
+    is_unsafe: bool,
+}
+
+#[derive(Clone, Copy)]
+struct DynamicContext<'a> {
+    class_name: &'a str,
+    theme_prefix: &'a str,
+    is_unsafe: bool,
 }
 
 pub struct CssCompiler;
@@ -39,16 +47,18 @@ impl CssCompiler {
         ts: TokenStream,
         span: Span,
         theme_prefix: Option<String>,
+        is_unsafe: bool,
     ) -> Result<CssCompileResult> {
-        Self::compile_internal(ts, span, theme_prefix, true)
+        Self::compile_internal(ts, span, theme_prefix, true, is_unsafe)
     }
 
     pub fn compile_global(
         ts: TokenStream,
         span: Span,
         theme_prefix: Option<String>,
+        is_unsafe: bool,
     ) -> Result<CssCompileResult> {
-        Self::compile_internal(ts, span, theme_prefix, false)
+        Self::compile_internal(ts, span, theme_prefix, false, is_unsafe)
     }
 
     fn compile_internal(
@@ -56,6 +66,7 @@ impl CssCompiler {
         span: Span,
         theme_prefix: Option<String>,
         wrap_in_class: bool,
+        is_unsafe: bool,
     ) -> Result<CssCompileResult> {
         let ts_string = ts.to_string();
         let hash = silex_hash::css::hash_one(&ts_string);
@@ -76,6 +87,7 @@ impl CssCompiler {
                 "".to_string()
             },
             theme_prefix: theme_prefix.unwrap_or_else(|| "slx-theme".to_string()),
+            is_unsafe,
         };
 
         let block: CssBlock = syn::parse2(ts)?;
@@ -85,7 +97,9 @@ impl CssCompiler {
             "".to_string()
         } else {
             let mut stylesheet = StyleSheet::parse(&state.lifted_css, ParserOptions::default())
-                .map_err(|e| crate::css::error::report_lightning_error(format!("Static CSS: {}", e), span))?;
+                .map_err(|e| {
+                    crate::css::error::report_lightning_error(format!("Static CSS: {}", e), span)
+                })?;
             stylesheet.minify(MinifyOptions::default()).ok();
             stylesheet
                 .to_css(PrinterOptions {
@@ -93,14 +107,21 @@ impl CssCompiler {
                     targets: Targets::default(),
                     ..PrinterOptions::default()
                 })
-                .map_err(|e| crate::css::error::report_lightning_error(format!("Static CSS Printing: {}", e), span))?
+                .map_err(|e| {
+                    crate::css::error::report_lightning_error(
+                        format!("Static CSS Printing: {}", e),
+                        span,
+                    )
+                })?
                 .code
         };
 
         let final_component_css = if wrap_in_class && !state.static_css.trim().is_empty() {
             let wrapped = format!(".{} {{ {} }}", class_name, state.static_css);
-            let mut stylesheet = StyleSheet::parse(&wrapped, ParserOptions::default())
-                .map_err(|e| crate::css::error::report_lightning_error(format!("Component CSS: {}", e), span))?;
+            let mut stylesheet =
+                StyleSheet::parse(&wrapped, ParserOptions::default()).map_err(|e| {
+                    crate::css::error::report_lightning_error(format!("Component CSS: {}", e), span)
+                })?;
             stylesheet.minify(MinifyOptions::default()).ok();
             stylesheet
                 .to_css(PrinterOptions {
@@ -108,10 +129,15 @@ impl CssCompiler {
                     targets: Targets::default(),
                     ..PrinterOptions::default()
                 })
-                .map_err(|e| crate::css::error::report_lightning_error(format!("Component CSS Printing: {}", e), span))?
+                .map_err(|e| {
+                    crate::css::error::report_lightning_error(
+                        format!("Component CSS Printing: {}", e),
+                        span,
+                    )
+                })?
                 .code
         } else if !wrap_in_class && !state.static_css.trim().is_empty() {
-             state.static_css.clone()
+            state.static_css.clone()
         } else {
             "".to_string()
         };
@@ -137,24 +163,39 @@ impl CssCompiler {
 
 fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
     for rule in &block.rules {
+        let ctx = DynamicContext {
+            class_name: &state.class_name,
+            theme_prefix: &state.theme_prefix,
+            is_unsafe: state.is_unsafe,
+        };
         match rule {
             CssRule::Declaration(decl) => {
                 state.static_css.push_str(&decl.property);
                 state.static_css.push_str(": ");
 
+                let prop_for_expr = if state.is_unsafe {
+                    "any"
+                } else {
+                    &decl.property
+                };
                 let val = extract_dynamic_value(
                     &decl.values,
                     &mut state.expressions,
                     &mut state.theme_refs,
-                    &decl.property,
-                    &state.class_name,
-                    &state.theme_prefix,
+                    prop_for_expr,
+                    &ctx,
                 );
                 state.static_css.push_str(&val);
 
                 if decl.semi_token.is_some() {
                     state.static_css.push_str("; ");
                 }
+            }
+            CssRule::Unsafe(u) => {
+                let old = state.is_unsafe;
+                state.is_unsafe = true;
+                process_css_block(&u.block, state)?;
+                state.is_unsafe = old;
             }
             CssRule::Nested(nested) => {
                 if contains_dynamic_selector(&nested.selectors) {
@@ -164,8 +205,10 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                         &mut selector_exprs,
                         &mut state.expressions,
                         &mut state.theme_refs,
-                        &state.class_name,
-                        &state.theme_prefix,
+                        &DynamicContext {
+                            is_unsafe: false,
+                            ..ctx
+                        },
                     );
                     state.dynamic_rules.push(DynamicRule {
                         template,
@@ -208,6 +251,7 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                         state.class_name.clone()
                     },
                     theme_prefix: state.theme_prefix.clone(),
+                    is_unsafe: state.is_unsafe,
                 };
 
                 process_css_block(&at.block, &mut inner_state)?;
@@ -242,16 +286,9 @@ fn build_dynamic_template(
     selector_exprs: &mut Vec<(String, TokenStream)>,
     global_expressions: &mut Vec<(String, TokenStream)>,
     theme_refs: &mut Vec<(String, String)>,
-    class_name: &str,
-    theme_prefix: &str,
+    ctx: &DynamicContext,
 ) -> String {
-    let mut template = extract_dynamic_selector(
-        &nested.selectors,
-        selector_exprs,
-        theme_refs,
-        class_name,
-        theme_prefix,
-    );
+    let mut template = extract_dynamic_selector(&nested.selectors, selector_exprs, theme_refs, ctx);
     template.push_str(" { ");
     build_dynamic_block_recursive(
         &nested.block,
@@ -259,8 +296,7 @@ fn build_dynamic_template(
         selector_exprs,
         global_expressions,
         theme_refs,
-        class_name,
-        theme_prefix,
+        ctx,
     );
     template.push_str(" }");
     template
@@ -272,21 +308,20 @@ fn build_dynamic_block_recursive(
     selector_exprs: &mut Vec<(String, TokenStream)>,
     global_expressions: &mut Vec<(String, TokenStream)>,
     theme_refs: &mut Vec<(String, String)>,
-    class_name: &str,
-    theme_prefix: &str,
+    ctx: &DynamicContext,
 ) {
     for rule in &block.rules {
         match rule {
             CssRule::Declaration(decl) => {
                 template.push_str(&decl.property);
                 template.push_str(": ");
+                let prop_for_expr = if ctx.is_unsafe { "any" } else { &decl.property };
                 let val = extract_dynamic_value(
                     &decl.values,
                     global_expressions,
                     theme_refs,
-                    &decl.property,
-                    class_name,
-                    theme_prefix,
+                    prop_for_expr,
+                    ctx,
                 );
                 template.push_str(&val);
                 if decl.semi_token.is_some() {
@@ -298,8 +333,10 @@ fn build_dynamic_block_recursive(
                     &nested.selectors,
                     selector_exprs,
                     theme_refs,
-                    "",
-                    theme_prefix,
+                    &DynamicContext {
+                        class_name: "",
+                        ..*ctx
+                    },
                 );
                 template.push_str(&sel);
                 template.push_str(" { ");
@@ -309,8 +346,7 @@ fn build_dynamic_block_recursive(
                     selector_exprs,
                     global_expressions,
                     theme_refs,
-                    class_name,
-                    theme_prefix,
+                    ctx,
                 );
                 template.push_str(" } ");
             }
@@ -326,10 +362,22 @@ fn build_dynamic_block_recursive(
                     selector_exprs,
                     global_expressions,
                     theme_refs,
-                    class_name,
-                    theme_prefix,
+                    ctx,
                 );
                 template.push_str(" } ");
+            }
+            CssRule::Unsafe(u) => {
+                build_dynamic_block_recursive(
+                    &u.block,
+                    template,
+                    selector_exprs,
+                    global_expressions,
+                    theme_refs,
+                    &DynamicContext {
+                        is_unsafe: true,
+                        ..*ctx
+                    },
+                );
             }
         }
     }
@@ -480,14 +528,14 @@ fn extract_at_rule_params(
     theme_prefix: &str,
 ) -> String {
     process_tokens(ts, &mut |tt, iter, out, space_before| {
-        if matches!(tt, TokenTree::Punct(p) if p.as_char() == '$') {
-            if let Some(var) = handle_theme_path(iter, theme_prefix, theme_refs, "at-rule") {
-                if space_before {
-                    out.push(' ');
-                }
-                out.push_str(&var);
-                return true;
+        if matches!(tt, TokenTree::Punct(p) if p.as_char() == '$')
+            && let Some(var) = handle_theme_path(iter, theme_prefix, theme_refs, "at-rule")
+        {
+            if space_before {
+                out.push(' ');
             }
+            out.push_str(&var);
+            return true;
         }
         false
     })
@@ -513,8 +561,7 @@ fn extract_dynamic_selector(
     ts: &TokenStream,
     exprs: &mut Vec<(String, TokenStream)>,
     theme_refs: &mut Vec<(String, String)>,
-    class_name: &str,
-    theme_prefix: &str,
+    ctx: &DynamicContext,
 ) -> String {
     process_tokens(ts, &mut |tt, iter, out, space_before| {
         if let TokenTree::Punct(p) = tt {
@@ -530,18 +577,18 @@ fn extract_dynamic_selector(
                     iter.next();
                     return true;
                 }
-                if let Some(var) = handle_theme_path(iter, theme_prefix, theme_refs, "any") {
+                if let Some(var) = handle_theme_path(iter, ctx.theme_prefix, theme_refs, "any") {
                     if space_before {
                         out.push(' ');
                     }
                     out.push_str(&var);
                     return true;
                 }
-            } else if p.as_char() == '&' && !class_name.is_empty() {
+            } else if p.as_char() == '&' && !ctx.class_name.is_empty() {
                 if space_before {
                     out.push(' ');
                 }
-                out.push_str(&format!(".{}", class_name));
+                out.push_str(&format!(".{}", ctx.class_name));
                 return true;
             }
         }
@@ -554,8 +601,7 @@ fn extract_dynamic_value(
     exprs: &mut Vec<(String, TokenStream)>,
     theme_refs: &mut Vec<(String, String)>,
     prop_name: &str,
-    class_name: &str,
-    theme_prefix: &str,
+    ctx: &DynamicContext,
 ) -> String {
     process_tokens(ts, &mut |tt, iter, out, space_before| {
         if let TokenTree::Punct(p) = tt
@@ -569,15 +615,15 @@ fn extract_dynamic_value(
                 }
                 let idx = exprs.len();
                 exprs.push((prop_name.to_string(), g.stream()));
-                if !class_name.is_empty() {
-                    out.push_str(&format!("var(--{}-{})", class_name, idx));
+                if !ctx.class_name.is_empty() {
+                    out.push_str(&format!("var(--{}-{})", ctx.class_name, idx));
                 } else {
                     out.push_str(&format!("var(--dyn-{})", idx));
                 }
                 iter.next();
                 return true;
             }
-            if let Some(var) = handle_theme_path(iter, theme_prefix, theme_refs, prop_name) {
+            if let Some(var) = handle_theme_path(iter, ctx.theme_prefix, theme_refs, prop_name) {
                 if space_before {
                     out.push(' ');
                 }

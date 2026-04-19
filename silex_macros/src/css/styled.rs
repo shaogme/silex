@@ -21,12 +21,17 @@ pub struct StyledComponent {
     pub props: Punctuated<FnArg, Token![,]>,
     pub css_block: TokenStream,
     pub variants: Vec<VariantGroup>,
+    pub is_unsafe: bool,
 }
 
 impl Parse for StyledComponent {
     fn parse(input: ParseStream) -> Result<Self> {
         let attrs = input.call(Attribute::parse_outer)?;
         let vis: Visibility = input.parse()?;
+        let is_unsafe = input.peek(Token![unsafe]);
+        if is_unsafe {
+            input.parse::<Token![unsafe]>()?;
+        }
         let name: Ident = input.parse()?;
 
         // Peek if we have generics
@@ -112,6 +117,7 @@ impl Parse for StyledComponent {
             props,
             css_block,
             variants,
+            is_unsafe,
         })
     }
 }
@@ -122,7 +128,12 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let name = &parsed.name;
     let (theme_prefix, theme_name) = extract_theme_info(&parsed.attrs);
 
-    let compile_result = CssCompiler::compile(parsed.css_block, tag.span(), theme_prefix.clone())?;
+    let compile_result = CssCompiler::compile(
+        parsed.css_block,
+        tag.span(),
+        theme_prefix.clone(),
+        parsed.is_unsafe,
+    )?;
 
     let mut var_decls = Vec::new();
     let mut style_bindings = Vec::new();
@@ -166,7 +177,12 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
 
         let mut match_arms = Vec::new();
         for (v_name, v_css) in &group.variants {
-            let res = CssCompiler::compile(v_css.clone(), v_name.span(), theme_prefix.clone())?;
+            let res = CssCompiler::compile(
+                v_css.clone(),
+                v_name.span(),
+                theme_prefix.clone(),
+                parsed.is_unsafe,
+            )?;
             let v_class = res.class_name;
             let v_style_id = res.style_id;
             let v_static_css = res.static_css;
@@ -493,10 +509,16 @@ fn get_extra_tag_impls(tag: &str, name: &Ident, generics: &Generics) -> TokenStr
 pub struct GlobalStyle {
     pub name: Option<Ident>,
     pub css_block: TokenStream,
+    pub is_unsafe: bool,
 }
 
 impl Parse for GlobalStyle {
     fn parse(input: ParseStream) -> Result<Self> {
+        let is_unsafe = input.peek(Token![unsafe]);
+        if is_unsafe {
+            input.parse::<Token![unsafe]>()?;
+        }
+
         if input.peek(Ident) && input.peek2(syn::token::Brace) {
             let name = input.parse()?;
             let content;
@@ -504,11 +526,13 @@ impl Parse for GlobalStyle {
             return Ok(GlobalStyle {
                 name: Some(name),
                 css_block: content.parse()?,
+                is_unsafe,
             });
         }
         Ok(GlobalStyle {
             name: None,
             css_block: input.parse()?,
+            is_unsafe,
         })
     }
 }
@@ -518,7 +542,7 @@ pub fn global_style_impl(input: TokenStream) -> Result<TokenStream> {
     let c_name = parsed
         .name
         .unwrap_or_else(|| quote::format_ident!("GlobalStyles"));
-    let res = CssCompiler::compile_global(parsed.css_block, c_name.span(), None)?;
+    let res = CssCompiler::compile_global(parsed.css_block, c_name.span(), None, parsed.is_unsafe)?;
 
     let mut var_decls = Vec::new();
     let mut style_bindings = Vec::new();

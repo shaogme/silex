@@ -65,7 +65,7 @@ pub(crate) fn get_prop_type(prop: &str, span: Span) -> Result<TokenStream> {
 pub fn css_impl(input: LitStr) -> Result<TokenStream> {
     let css_content = input.value();
     let ts = syn::parse_str::<TokenStream>(&css_content)?;
-    let compile_result = CssCompiler::compile(ts, input.span(), None)?;
+    let compile_result = CssCompiler::compile(ts, input.span(), None, false)?;
 
     let class_name = compile_result.class_name;
     let style_id = compile_result.style_id;

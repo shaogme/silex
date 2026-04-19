@@ -25,6 +25,7 @@ pub enum CssRule {
     Declaration(CssDeclaration),
     Nested(CssNested),
     AtRule(CssAtRule),
+    Unsafe(CssUnsafe),
 }
 
 impl Parse for CssRule {
@@ -42,6 +43,11 @@ impl Parse for CssRule {
             || input.peek(token::Bracket)
         {
             return input.parse().map(CssRule::Nested);
+        }
+
+        // Fast path for unsafe blocks
+        if input.peek(Token![unsafe]) && input.peek2(token::Brace) {
+            return input.parse().map(CssRule::Unsafe);
         }
 
         // Fallback to fork for ambiguous cases (like ident-based selectors vs properties)
@@ -205,6 +211,30 @@ impl Parse for CssAtRule {
             at_token,
             name,
             params,
+            brace_token,
+            block,
+        })
+    }
+}
+
+/// An unsafe block like `unsafe { ... }` where validation is disabled.
+#[derive(Clone)]
+pub struct CssUnsafe {
+    #[allow(dead_code)]
+    pub unsafe_token: Token![unsafe],
+    #[allow(dead_code)]
+    pub brace_token: token::Brace,
+    pub block: CssBlock,
+}
+
+impl Parse for CssUnsafe {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let unsafe_token: Token![unsafe] = input.parse()?;
+        let content;
+        let brace_token = syn::braced!(content in input);
+        let block: CssBlock = content.parse()?;
+        Ok(CssUnsafe {
+            unsafe_token,
             brace_token,
             block,
         })
