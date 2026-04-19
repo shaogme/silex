@@ -13,56 +13,38 @@ struct StyleProp {
 
 impl Parse for StyleProp {
     fn parse(input: ParseStream) -> Result<Self> {
-        let key_str = if input.peek(LitStr) {
+        let key = if input.peek(LitStr) {
             input.parse::<LitStr>()?.value()
         } else {
-            let ident = input.parse::<Ident>()?;
-            ident.to_string().replace('_', "-")
+            input.parse::<Ident>()?.to_string().replace('_', "-")
         };
-
         input.parse::<Token![:]>()?;
-        let value = input.parse::<Expr>()?;
-
         Ok(StyleProp {
-            key: key_str,
-            value,
+            key,
+            value: input.parse()?,
         })
     }
 }
 
 pub fn style_impl(input: TokenStream) -> Result<TokenStream> {
-    let parser = Punctuated::<StyleProp, Token![,]>::parse_terminated;
-    let props = parser.parse2(input)?;
-
-    let mut expanded_props = Vec::new();
-    for prop in props {
-        let key = prop.key;
-        let value = prop.value;
-        // Here we can optionally wrap `value` in `value.to_string()` if we wanted to support numbers
-        // but for now, we assume user provides compatible types (String, &str)
-        expanded_props.push(quote! { (#key, #value) });
+    let props = Punctuated::<StyleProp, Token![,]>::parse_terminated.parse2(input)?;
+    if props.is_empty() {
+        return Ok(quote! { ::silex::dom::attribute::AttributeGroup::default() });
     }
 
-    if expanded_props.is_empty() {
-        return Ok(quote! { silex::dom::attribute::AttributeGroup::default() });
-    }
+    let items = props.into_iter().map(|p| {
+        let (k, v) = (p.key, p.value);
+        quote! { ::silex::dom::attribute::ApplyToDom::into_op((#k, #v), ::silex::dom::attribute::OwnedApplyTarget::Style) }
+    });
 
-    Ok(quote! {
-        ::silex::dom::attribute::AttributeGroup(vec![
-            #( ::silex::dom::attribute::ApplyToDom::into_op(
-                #expanded_props,
-                ::silex::dom::attribute::OwnedApplyTarget::Style
-            ) ),*
-        ])
-    })
+    Ok(quote! { ::silex::dom::attribute::AttributeGroup(vec![ #(#items),* ]) })
 }
 
 // --- classes! [...] implementation ---
-// Syntax: classes![ "a", "b", "c" => cond ]
 
 enum ClassItem {
     Simple(Expr),
-    Conditional(Expr, Expr), // class => condition
+    Conditional(Expr, Expr),
 }
 
 impl Parse for ClassItem {
@@ -70,8 +52,7 @@ impl Parse for ClassItem {
         let expr = input.parse::<Expr>()?;
         if input.peek(Token![=>]) {
             input.parse::<Token![=>]>()?;
-            let cond = input.parse::<Expr>()?;
-            Ok(ClassItem::Conditional(expr, cond))
+            Ok(ClassItem::Conditional(expr, input.parse()?))
         } else {
             Ok(ClassItem::Simple(expr))
         }
@@ -79,33 +60,18 @@ impl Parse for ClassItem {
 }
 
 pub fn classes_impl(input: TokenStream) -> Result<TokenStream> {
-    let parser = Punctuated::<ClassItem, Token![,]>::parse_terminated;
-    let items = parser.parse2(input)?;
-
-    let mut expanded_items = Vec::new();
-    for item in items {
-        match item {
-            ClassItem::Simple(expr) => {
-                // simple "class"
-                expanded_items.push(quote! { #expr });
-            }
-            ClassItem::Conditional(cls, cond) => {
-                // "class" => condition  ->  ("class", condition)
-                expanded_items.push(quote! { (#cls, #cond) });
-            }
-        }
+    let items = Punctuated::<ClassItem, Token![,]>::parse_terminated.parse2(input)?;
+    if items.is_empty() {
+        return Ok(quote! { ::silex::dom::attribute::AttributeGroup::default() });
     }
 
-    if expanded_items.is_empty() {
-        return Ok(quote! { silex::dom::attribute::AttributeGroup::default() });
-    }
+    let expanded = items.into_iter().map(|item| {
+        let val = match item {
+            ClassItem::Simple(e) => quote! { #e },
+            ClassItem::Conditional(cls, cond) => quote! { (#cls, #cond) },
+        };
+        quote! { ::silex::dom::attribute::ApplyToDom::into_op(#val, ::silex::dom::attribute::OwnedApplyTarget::Class) }
+    });
 
-    Ok(quote! {
-        ::silex::dom::attribute::AttributeGroup(vec![
-            #( ::silex::dom::attribute::ApplyToDom::into_op(
-                #expanded_items,
-                ::silex::dom::attribute::OwnedApplyTarget::Class
-            ) ),*
-        ])
-    })
+    Ok(quote! { ::silex::dom::attribute::AttributeGroup(vec![ #(#expanded),* ]) })
 }
