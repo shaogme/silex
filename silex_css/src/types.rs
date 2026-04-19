@@ -70,6 +70,19 @@ impl Display for CssVarValue {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CssVar<T = ()>(pub CssVarValue, pub std::marker::PhantomData<T>);
 
+impl<T: CssColor> CssVar<T> {
+    pub fn alpha(self, alpha: f64) -> Self {
+        Self(
+            CssVarValue::Dynamic(format!(
+                "color-mix(in srgb, {}, transparent {}%)",
+                self.0,
+                (1.0 - alpha) * 100.0
+            )),
+            std::marker::PhantomData,
+        )
+    }
+}
+
 impl<T> From<T> for CssVar<T>
 where
     T: Display,
@@ -192,6 +205,7 @@ impl CssAngle for Turn {}
 impl CssColor for Rgba {}
 impl CssColor for Hex {}
 impl CssColor for Hsl {}
+impl CssColor for ColorKeyword {}
 
 impl_css_ops!(Px, CssLength, LengthMark);
 impl_css_ops!(Percent, CssLength, LengthMark);

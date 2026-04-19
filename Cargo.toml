@@ -28,7 +28,7 @@ resolver = "3"
 warnings = "deny"
 
 [workspace.package]
-version = "0.1.0-beta.7"
+version = "0.1.0-beta.8"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Shao G. <shaog.me@gmail.com>"]
@@ -43,16 +43,16 @@ categories = ["web-programming", "wasm", "gui"]
 [workspace.dependencies]
 
 # Internal Crates
-silex = { path = "silex", version = "0.1.0-beta.7" }
-silex_core = { path = "silex_core", version = "0.1.0-beta.7" }
-silex_dom = { path = "silex_dom", version = "0.1.0-beta.7" }
-silex_html = { path = "silex_html", version = "0.1.0-beta.7" }
-silex_css = { path = "silex_css", version = "0.1.0-beta.7" }
-silex_macros = { path = "silex_macros", version = "0.1.0-beta.7" }
-silex_reactivity = { path = "silex_reactivity", version = "0.1.0-beta.7" }
-silex_hash = { path = "silex_hash", version = "0.1.0-beta.7" }
-silex_rx = { path = "silex_rx", version = "0.1.0-beta.7" }
-silex_vtable = { path = "silex_vtable", version = "0.1.0-beta.7" }
+silex = { path = "silex", version = "0.1.0-beta.8" }
+silex_core = { path = "silex_core", version = "0.1.0-beta.8" }
+silex_dom = { path = "silex_dom", version = "0.1.0-beta.8" }
+silex_html = { path = "silex_html", version = "0.1.0-beta.8" }
+silex_css = { path = "silex_css", version = "0.1.0-beta.8" }
+silex_macros = { path = "silex_macros", version = "0.1.0-beta.8" }
+silex_reactivity = { path = "silex_reactivity", version = "0.1.0-beta.8" }
+silex_hash = { path = "silex_hash", version = "0.1.0-beta.8" }
+silex_rx = { path = "silex_rx", version = "0.1.0-beta.8" }
+silex_vtable = { path = "silex_vtable", version = "0.1.0-beta.8" }
 
 wasm-bindgen = { version = "0.2", default-features = false }
 web-sys = { version = "0.3", default-features = false, features = [

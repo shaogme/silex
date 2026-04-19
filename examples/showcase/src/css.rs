@@ -116,7 +116,7 @@ styled! {
         border-radius: 16px;
         padding: 32px;
         margin: 24px 0;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+        box-shadow: 0 10px 40px $(AppTheme::TEXT.alpha(0.15));
         backdrop-filter: blur(12px);
         transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         animation: fade_in 0.8s ease-out;
@@ -199,7 +199,7 @@ styled! {
         children: Children,
         #[prop(into)] active: Signal<bool>
     ) {
-        background-color: $AppTheme::SECONDARY;
+        background-color: $(AppTheme::SECONDARY.alpha(0.9));
         color: white;
         border: none;
         padding: 12px 24px;
@@ -272,6 +272,30 @@ pub fn StylingBasics() -> impl View {
             p("Silex offers powerful ways to style components: from scoped CSS-in-Rust to type-safe builders.")
                 .style("opacity: 0.7; font-size: 1.1em;"),
         ].style("margin-bottom: 40px;"),
+
+        DemoCard(view_chain!(
+            h3("🌈 Color Transformations"),
+            p("Use the new $(...) syntax to perform Rust-side transformations like alpha blending, which are then compiled to efficient CSS color-mix functions."),
+            div![
+                span("Primary with 20% alpha").style(
+                    sty()
+                        .background_color(AppTheme::PRIMARY.alpha(0.2))
+                        .color(AppTheme::PRIMARY)
+                        .padding("8px 16px")
+                        .border_radius(px(8))
+                        .font_weight(600)
+                        .margin_right(px(12))
+                ),
+                span("Secondary with 20% alpha").style(
+                    sty()
+                        .background_color(AppTheme::SECONDARY.alpha(0.2))
+                        .color(AppTheme::SECONDARY)
+                        .padding("8px 16px")
+                        .border_radius(px(8))
+                        .font_weight(600)
+                )
+            ].style("margin-top: 16px;")
+        )),
 
         DemoCard(view_chain!(
             h3("1. Atomic & Scoped Styles (styled!)"),

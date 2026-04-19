@@ -561,6 +561,14 @@ fn extract_dynamic_selector(
                     return Ok(true);
                 }
                 if let Some(path) = handle_dollar_path(iter)? {
+                    if let Some(proc_macro2::TokenTree::Punct(p)) = iter.peek()
+                        && p.as_char() == '.'
+                    {
+                        return Err(syn::Error::new(
+                            p.span(),
+                            "Unexpected '.' after dynamic variable. Use $(...) for complex expressions like method calls.",
+                        ));
+                    }
                     if space_before {
                         out.push(' ');
                     }
@@ -607,6 +615,14 @@ fn extract_dynamic_value(
                 return Ok(true);
             }
             if let Some(path) = handle_dollar_path(iter)? {
+                if let Some(proc_macro2::TokenTree::Punct(p)) = iter.peek()
+                    && p.as_char() == '.'
+                {
+                    return Err(syn::Error::new(
+                        p.span(),
+                        "Unexpected '.' after dynamic variable. Use $(...) for complex expressions like method calls.",
+                    ));
+                }
                 if space_before {
                     out.push(' ');
                 }

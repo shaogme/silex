@@ -41,7 +41,16 @@ impl Display for Percent {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Rgba(pub Option<(u8, u8, u8, f32)>);
+pub struct Rgba(pub Option<(u8, u8, u8, f64)>);
+impl Rgba {
+    pub fn alpha(self, alpha: f64) -> Self {
+        if let Some((r, g, b, _)) = self.0 {
+            Self(Some((r, g, b, alpha)))
+        } else {
+            self
+        }
+    }
+}
 impl Display for Rgba {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some((r, g, b, a)) = self.0 {
@@ -162,6 +171,12 @@ impl Display for Turn {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Hex(pub String);
+impl Hex {
+    pub fn alpha(self, alpha: f64) -> Hex {
+        let alpha_hex = (alpha * 255.0) as u8;
+        Hex(format!("{}{:02x}", self.0, alpha_hex))
+    }
+}
 impl Display for Hex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
@@ -169,11 +184,24 @@ impl Display for Hex {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Hsl(pub Option<(u16, u8, u8)>);
+pub struct Hsl(pub Option<(u16, u8, u8, f64)>);
+impl Hsl {
+    pub fn alpha(self, alpha: f64) -> Self {
+        if let Some((h, s, l, _)) = self.0 {
+            Self(Some((h, s, l, alpha)))
+        } else {
+            self
+        }
+    }
+}
 impl Display for Hsl {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some((h, s, l)) = self.0 {
-            write!(f, "hsl({}, {}%, {}%)", h, s, l)
+        if let Some((h, s, l, a)) = self.0 {
+            if (a - 1.0).abs() < f64::EPSILON {
+                write!(f, "hsl({}, {}%, {}%)", h, s, l)
+            } else {
+                write!(f, "hsla({}, {}%, {}%, {})", h, s, l, a)
+            }
         } else {
             Ok(())
         }
@@ -225,8 +253,12 @@ pub fn turn<T: Into<f64>>(v: T) -> Turn {
     Turn(Some(v.into()))
 }
 #[inline]
-pub fn rgba(r: u8, g: u8, b: u8, a: f32) -> Rgba {
-    Rgba(Some((r, g, b, a)))
+pub fn rgb(r: u8, g: u8, b: u8) -> Rgba {
+    Rgba(Some((r, g, b, 1.0)))
+}
+#[inline]
+pub fn rgba<T: Into<f64>>(r: u8, g: u8, b: u8, a: T) -> Rgba {
+    Rgba(Some((r, g, b, a.into())))
 }
 #[inline]
 pub fn hex<T: Into<String>>(v: T) -> Hex {
@@ -234,7 +266,11 @@ pub fn hex<T: Into<String>>(v: T) -> Hex {
 }
 #[inline]
 pub fn hsl(h: u16, s: u8, l: u8) -> Hsl {
-    Hsl(Some((h, s, l)))
+    Hsl(Some((h, s, l, 1.0)))
+}
+#[inline]
+pub fn hsla<A: Into<f64>>(h: u16, s: u8, l: u8, a: A) -> Hsl {
+    Hsl(Some((h, s, l, a.into())))
 }
 #[inline]
 pub fn url<T: Into<String>>(v: T) -> Url {
