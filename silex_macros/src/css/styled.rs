@@ -590,6 +590,8 @@ pub fn global_style_impl(input: TokenStream) -> Result<TokenStream> {
     let c_css = &res.component_css;
     let static_id = &res.static_id;
     let has_dynamics = !style_bindings.is_empty() || !logics.is_empty();
+    let theme_name = quote! { Theme };
+    let theme_assertions = generate_theme_assertions(&res.theme_refs, &theme_name, c_name.span())?;
 
     Ok(quote! {
         #[::silex::macros::component]
@@ -598,6 +600,7 @@ pub fn global_style_impl(input: TokenStream) -> Result<TokenStream> {
             const __COMPONENT_CSS: &str = #c_css;
             let static_id = #static_id;
 
+            #(#theme_assertions)*
             #(#var_decls)*
             if !__STATIC_CSS.is_empty() {
                 ::silex::css::inject_style(static_id, __STATIC_CSS);

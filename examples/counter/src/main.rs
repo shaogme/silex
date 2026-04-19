@@ -33,8 +33,7 @@ fn CounterDisplay() -> SilexResult<impl View> {
     let is_even = Memo::new(move |_| count.get() % 2 == 0);
 
     // Demo: CSS-in-Rust (Scoped CSS)
-    let container_class = css!(
-        r#"
+    let container_class = css! {
         margin-top: 10px;
         color: #555;
         font-size: 0.9rem;
@@ -49,8 +48,7 @@ fn CounterDisplay() -> SilexResult<impl View> {
             transform: scale(1.01);
             box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
-    "#
-    );
+    };
 
     Ok(div!(
         span("Global Context Status: "),

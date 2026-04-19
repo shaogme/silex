@@ -7,7 +7,7 @@ pub mod theme;
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
-use syn::{LitStr, Result};
+use syn::Result;
 
 use compiler::CssCompiler;
 
@@ -62,10 +62,9 @@ pub(crate) fn get_prop_type(prop: &str, span: Span) -> Result<TokenStream> {
     Ok(quote_spanned! { span => ::silex::css::types::props::#ident })
 }
 
-pub fn css_impl(input: LitStr) -> Result<TokenStream> {
-    let css_content = input.value();
-    let ts = syn::parse_str::<TokenStream>(&css_content)?;
-    let compile_result = CssCompiler::compile(ts, input.span(), None, false)?;
+pub fn css_impl(ts: TokenStream) -> Result<TokenStream> {
+    let span = Span::call_site(); // Use call site for better error reporting in blocks
+    let compile_result = CssCompiler::compile(ts, span, None, false)?;
 
     let class_name = compile_result.class_name;
     let style_id = compile_result.style_id;
@@ -75,10 +74,13 @@ pub fn css_impl(input: LitStr) -> Result<TokenStream> {
     let dynamic_rules = compile_result.dynamic_rules;
     let theme_refs = compile_result.theme_refs;
 
+    // TODO: Improve theme name discovery
+    let theme_name = quote! { Theme };
+
     let theme_assertions: Vec<TokenStream> = theme_refs
         .iter()
         .map(|(prop, key)| -> Result<TokenStream> {
-            let prop_type = get_prop_type(prop, input.span())?;
+            let prop_type = get_prop_type(prop, span)?;
             let key_path: Vec<TokenStream> = key
                 .split('.')
                 .map(|s| {
@@ -91,7 +93,7 @@ pub fn css_impl(input: LitStr) -> Result<TokenStream> {
                 const _: () = {
                     fn assert_valid<V: ::silex::css::types::ValidFor<#prop_type>>(_: &V) {}
                     #[allow(non_upper_case_globals, unused_variables)]
-                    let _ = |t: &Theme| {
+                    let _ = |t: &#theme_name| {
                         assert_valid(&t #(.#key_path)*);
                     };
                 };
@@ -123,7 +125,7 @@ pub fn css_impl(input: LitStr) -> Result<TokenStream> {
         let mut var_decls = Vec::new();
         for (i, (prop, expr)) in expressions.iter().enumerate() {
             let var_name = format!("--{}-{}", class_name, i);
-            let prop_type = get_prop_type(prop, input.span())?;
+            let prop_type = get_prop_type(prop, span)?;
             var_decls.push(quote! {
                 (#var_name, ::silex::css::make_dynamic_val_for::<#prop_type, _>(#expr))
             });
@@ -134,7 +136,7 @@ pub fn css_impl(input: LitStr) -> Result<TokenStream> {
             let template = &rule.template;
             let mut exprs = Vec::new();
             for (prop, expr) in &rule.expressions {
-                let prop_type = get_prop_type(prop, input.span())?;
+                let prop_type = get_prop_type(prop, span)?;
                 exprs.push(quote! { ::silex::css::make_dynamic_val_for::<#prop_type, _>(#expr) });
             }
             rule_decls.push(quote! {

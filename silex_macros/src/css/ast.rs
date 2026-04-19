@@ -78,10 +78,7 @@ impl Parse for CssRule {
 #[derive(Clone)]
 pub struct CssDeclaration {
     pub property: String,
-    #[allow(dead_code)]
-    pub colon_token: Token![:],
     pub values: TokenStream,
-    #[allow(dead_code)]
     pub semi_token: Option<Token![;]>,
 }
 
@@ -104,7 +101,7 @@ impl Parse for CssDeclaration {
             return Err(input.error("Expected CSS property name"));
         }
 
-        let colon_token: Token![:] = input.parse()?;
+        let _colon_token: Token![:] = input.parse()?;
 
         // Parse values until `;` or EOF or `}`
         let mut value_tokens = TokenStream::new();
@@ -120,7 +117,6 @@ impl Parse for CssDeclaration {
 
         Ok(CssDeclaration {
             property: prop_str,
-            colon_token,
             values: value_tokens,
             semi_token,
         })
@@ -131,8 +127,6 @@ impl Parse for CssDeclaration {
 #[derive(Clone)]
 pub struct CssNested {
     pub selectors: TokenStream,
-    #[allow(dead_code)]
-    pub brace_token: token::Brace,
     pub block: CssBlock,
 }
 
@@ -170,31 +164,24 @@ impl Parse for CssNested {
         }
 
         let content;
-        let brace_token = syn::braced!(content in input);
+        let _brace_token = syn::braced!(content in input);
         let block: CssBlock = content.parse()?;
 
-        Ok(CssNested {
-            selectors,
-            brace_token,
-            block,
-        })
+        Ok(CssNested { selectors, block })
     }
 }
 
 /// An @-rule like `@media (max-width: 600px) { ... }`
 #[derive(Clone)]
-#[allow(dead_code)]
 pub struct CssAtRule {
-    pub at_token: Token![@],
     pub name: Ident,
     pub params: TokenStream,
-    pub brace_token: token::Brace,
     pub block: CssBlock,
 }
 
 impl Parse for CssAtRule {
     fn parse(input: ParseStream) -> Result<Self> {
-        let at_token: Token![@] = input.parse()?;
+        let _at_token: Token![@] = input.parse()?;
         let name: Ident = input.parse()?;
 
         let mut params = TokenStream::new();
@@ -204,14 +191,12 @@ impl Parse for CssAtRule {
         }
 
         let content;
-        let brace_token = syn::braced!(content in input);
+        let _brace_token = syn::braced!(content in input);
         let block: CssBlock = content.parse()?;
 
         Ok(CssAtRule {
-            at_token,
             name,
             params,
-            brace_token,
             block,
         })
     }
@@ -220,23 +205,15 @@ impl Parse for CssAtRule {
 /// An unsafe block like `unsafe { ... }` where validation is disabled.
 #[derive(Clone)]
 pub struct CssUnsafe {
-    #[allow(dead_code)]
-    pub unsafe_token: Token![unsafe],
-    #[allow(dead_code)]
-    pub brace_token: token::Brace,
     pub block: CssBlock,
 }
 
 impl Parse for CssUnsafe {
     fn parse(input: ParseStream) -> Result<Self> {
-        let unsafe_token: Token![unsafe] = input.parse()?;
+        let _unsafe_token: Token![unsafe] = input.parse()?;
         let content;
-        let brace_token = syn::braced!(content in input);
+        let _brace_token = syn::braced!(content in input);
         let block: CssBlock = content.parse()?;
-        Ok(CssUnsafe {
-            unsafe_token,
-            brace_token,
-            block,
-        })
+        Ok(CssUnsafe { block })
     }
 }

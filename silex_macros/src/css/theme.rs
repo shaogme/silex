@@ -35,16 +35,25 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
     let vis = &def.vis;
 
     let mut prefix = "slx-theme".to_string();
+    let mut is_main = false;
     for attr in &def.attrs {
         if attr.path().is_ident("theme") {
             let _ = attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("prefix") {
                     prefix = meta.value()?.parse::<syn::LitStr>()?.value();
+                } else if meta.path.is_ident("main") {
+                    is_main = true;
                 }
                 Ok(())
             });
         }
     }
+
+    let is_main_tokens = if is_main {
+        quote! { #vis type Theme = #name; }
+    } else {
+        quote! {}
+    };
 
     let mut struct_fields = Vec::new();
     let mut trait_decl_items = Vec::new();
@@ -165,6 +174,8 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
         impl #patch_name {
             #(#patch_setters)*
         }
+
+        #is_main_tokens
 
         impl ::silex::css::theme::ThemePatchToCss for #patch_name {
             fn get_patch_entries(&self) -> Vec<(&'static str, Option<String>)> {

@@ -49,7 +49,7 @@ fn MyComponent(props...) -> impl View
 编译时 CSS 处理与注入。
 
 ### 工作流
-1.  **Input**: CSS 块，包含各种 CSS 规则和 `$(expr)` 动态值插值。
+1.  **Input**: CSS 代码块 (TokenStream)，包含各种 CSS 规则和 `$(expr)` 动态值插值。支持嵌套、媒体查询、伪类等。
 2.  **AST Parsing (`ast.rs`)**:
     *   使用 `syn` 将输入的 TokenStream 解析为强类型的 CSS 抽象语法树 (`CssBlock`, `CssRule`, `CssDeclaration`, `CssNested`, `CssAtRule`, `CssValue`)。
 3.  **Processing & Tracking (`compiler.rs`)**:
@@ -104,7 +104,9 @@ styled! {
     * 属性侧表达式转为 CSS 层级临时变量进行分离提取。
     * 选择器侧表达式及其闭包触发规则树分片，形成 `DynamicRule` 并抛出返回。
 3. **Variant Codegen**: 禁止在 `variants` 中使用动态插值 `$(...)` 及动态规则块。内部块会被展开为 `match` 匹配分支，直接返回变体对应构建的纯静态 CSS 类名字符串。
-4. **Theme 解析与校验**: 编译器会提取组件 CSS 块内对形如 `Theme.field` 的访问模式。自动转换向基于该字段推导出的 `var(--slx-theme-field)` 引用。并且识别宏头部的 `#[theme(AppTheme)]` 属性，强制生出对主题被应用属性类型的安全断言约束（如 `assert_valid(&AppTheme.color)`）。
+4. **Theme 解析与校验**: 编译器会提取组件 CSS 块内对形如 `$theme.field` 的访问模式。自动转换向基于该字段推导出的 `var(--slx-theme-field)` 引用。
+    *   **自动主题关联**: 编译器会尝试在当前作用域查找 `Theme` 类型别名（通常由 `define_theme! { #[theme(main)] ... }` 生成）。
+    *   **类型检查**: 识别到引用后，强制生成对主题被应用属性类型的安全断言约束（如 `assert_valid(&Theme::PRIMARY)`）。
 5. **Desugaring**: 宏在 AST 的根节点上展开为一段附带了 `#[::silex::prelude::component]` 定理的代码块，享有等额的属性代理分配和透传层（返回为 `impl View`）。
     * 生成的静态 CSS 变量推入底层的 `.style()` 属性注入器方法上。
     * 分离提取出的 `DynamicRule` （即像伪类这样的规则动态构建），依托新加组件局部单例管理器构建额外的 Effect 进行实时 `.update()` 按需生成和抛弃。
@@ -200,8 +202,9 @@ fn use_user() -> UserStore {
 ## 6. 辅助宏
 
 ### `style!`
-*   语法: `style! { "color": "red", width: "100px" }`
-*   输出: `silex::dom::attribute::group(("color", "red"), ("width", "100px"))`
+*   语法: `style! { color: red; margin-top: 10px; &:hover { opacity: 0.8; } }`
+*   底层实现: 彻底对接 `css_impl` 引擎。将输入解析为 Scoped CSS Block，但特殊处理使其作为一个 `DynamicCss` 整体返回，方便直接应用于 `.style()` 方法。
+*   输出: `AttributeGroup(vec![ (DynamicCss).into_op(OwnedApplyTarget::Style) ])`
 
 ### `classes!`
 *   语法: `classes![ "btn", "active" => is_active ]`
@@ -216,6 +219,7 @@ fn use_user() -> UserStore {
 ### 用法
 ```rust
 define_theme! {
+    #[theme(main, prefix = "slx-theme")]
     pub struct AppTheme {
         pub primary_color: ::silex::css::types::props::Color,
         // ...
@@ -224,9 +228,10 @@ define_theme! {
 ```
 
 ### 转换逻辑
-1.  **Parsing**: 解析出 `struct` 名称及其定义的强类型字段。
+1.  **Parsing**: 解析出 `struct` 名称及其定义的强类型字段。识别 `main` 属性。
 2.  **Expansion**:
     *   构建原名结构体 (如 `AppTheme`)，包含定义的相同字段。
-    *   生成映射 Trait 并为 `AppTheme` 实现，使得在编译期能够解析各字段实际类型（如通过 `ThemeFields::primary_color` 或类似形式参与 `styled!` 中的类型萃取与断言推导）。
-    *   实现 `::silex::css::theme::ThemeType` 和 `::silex::css::theme::ThemeToCss`。后者赋予主题数据向 CSS Variables 展开的能力：在运行时生成形如 `--slx-theme-primary_color: #123456;` 规格的字符串串联用于 DOM 插接。
+    *   **自动别名**: 如果存在 `main` 属性，生成 `pub type Theme = AppTheme;`，使得其他样式宏可以自动关联该主题。
+    *   生成映射 Trait 并为 `AppTheme` 实现，使得在编译期能够解析各字段实际类型。
+    *   实现 `::silex::css::theme::ThemeType` 和 `::silex::css::theme::ThemeToCss`。
     *   提供 `Display` Trait 使得输出为拼接的 CSS var。

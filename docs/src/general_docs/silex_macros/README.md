@@ -84,7 +84,7 @@ GenericMessage()
 let (color, _) = Signal::pair("white".to_string());
 let scale = Signal::pair(1.0).0;
 
-let btn_class = css!(r#"
+let btn_class = css! {
     background-color: blue;
     color: $(color); /* 支持动态 Signal 插值 */
     transform: scale($(scale)); /* 自动处理任何实现了 IntoSignal 的类型 */
@@ -93,7 +93,7 @@ let btn_class = css!(r#"
     &:hover {
         background-color: darkblue;
     }
-"#);
+};
 
 button(()).class(btn_class).text("Styled Button")
 ```
@@ -111,7 +111,7 @@ let w = Signal::pair(px(100)); // Px 类型被限定允许给 Width
 let bd = Signal::pair(border(px(1), BorderStyleKeyword::Solid, hex("#ccc"))); // 专属工厂函数保障多位组合安全
 let custom_calc = Signal::pair(UnsafeCss::new("calc(100% - 20px)")); // 若需超出约束边界请显式包装
 
-let cls = css!(r#"
+let cls = css! {
     width: $(w); /* ✅ 合规 */
     height: $(pct(50.0)); /* ✅ 合规 */
     border: $(bd); /* ✅ 单值化强类型复合体合规 */
@@ -119,7 +119,7 @@ let cls = css!(r#"
     /* color: $(123.45); ❌ 编译报错：the trait `ValidFor<Color>` is not implemented for `f64` */
     /* z-index: $(px(99)); ❌ 编译报错：拦住企图把像素单位送给 ZIndex 的不合规行为 */
     /* padding: $("10px 20px"); ❌ 编译报错：阻绝散乱的字符串拼接（除非用 UnsafeCss 或是 padding::x_y 构建器）*/
-"#);
+};
 ```
 
 **底层解析重构 (AST-driven Compiler)**：
@@ -306,8 +306,9 @@ let theme_signal = store.config; // RwSignal<UserConfig>
 ```rust
 div(())
     .style(style! {
-        "color": "red",
-        "margin-top": "10px"
+        color: red;
+        margin-top: 10px;
+        &:hover { transform: scale(1.1); } /* 现在支持完整的 CSS 语法！ */
     })
 ```
 
@@ -331,6 +332,7 @@ Silex 提供了高度集成的强类型主题系统，保障在 CSS 中使用主
 
 ```rust
 define_theme! {
+    #[theme(main, prefix = "slx")] // 使用 main 标记为主主题，供其他宏自动关联
     pub struct AppTheme {
         pub primary_color: silex::css::types::props::Color,
         pub base_padding: silex::css::types::props::Padding,
@@ -345,21 +347,21 @@ define_theme! {
 
 ### 与样式组件紧密结合
 
-在 `styled!` 宏定义的组件中，你可以通过 `#[theme(AppTheme)]` 属性声明其绑定的主题类型，并直接在 CSS 中通过全局标识符 `Theme.xxx` 引用主题库中的值：
+在 `styled!` 宏定义的组件中，你可以通过 `#[theme(AppTheme)]` 属性声明其绑定的主题类型，并直接在 CSS 中通过全局标识符 `$theme.xxx` 引用主题库中的值：
 
 ```rust
 styled! {
-    #[theme(AppTheme)] // 声明主题环境
+    // 默认自动显式关联主主题（如果定义了的话）
     pub ThemedBox<div>(
         children: Children,
     ) {
-        // 直接使用 Theme. 引用字段
+        // 直接使用 $theme. 引用字段
         // 系统在编译期强检查 AppTheme.base_padding 的类型是否适用于 padding 属性！
-        padding: Theme.base_padding; 
-        background-color: Theme.primary_color;
+        padding: $theme.base_padding; 
+        background-color: $theme.primary_color;
         border-radius: 8px;
     }
 }
 ```
 
-`styled!` 宏的编译器能够聪明地识别 `Theme.字段` 表达式。它不仅会将代码自动转换成标准的 `var(--slx-theme-字段)` 原生查询形态，还会在 Rust 层自动注入针对被引用字段的类型合法性断言（`assert_valid<ValidFor<T>>`）。借助这套工作流，彻底排除了在变更主题字段时意外造成运行期样式损坏的可能性。
+`styled!` 宏的编译器能够聪明地识别 `$theme.字段` 表达式。它不仅会将代码自动转换成标准的 `var(--slx-theme-字段)` 原生查询形态，还会在 Rust 层自动注入针对被引用字段的类型合法性断言（`assert_valid<ValidFor<T>>`）。借助这套工作流，彻底排除了在变更主题字段时意外造成运行期样式损坏的可能性。

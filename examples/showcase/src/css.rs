@@ -2,7 +2,7 @@ use silex::prelude::*;
 
 // --- Theme Definition ---
 define_theme! {
-    #[theme(prefix = "slx-theme")]
+    #[theme(main, prefix = "slx-theme")]
     pub struct AppTheme {
         pub primary: Hex,
         #[theme(var = "--slx-theme-secondary")] // Explicit override
@@ -14,8 +14,6 @@ define_theme! {
         pub radius: Px,
     }
 }
-
-pub type Theme = AppTheme;
 
 pub fn default_light_theme() -> AppTheme {
     AppTheme {

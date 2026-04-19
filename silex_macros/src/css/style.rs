@@ -2,42 +2,18 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::parse::{Parse, ParseStream, Parser};
 use syn::punctuated::Punctuated;
-use syn::{Expr, Ident, LitStr, Result, Token};
+use syn::{Expr, Result, Token};
 
 // --- style! { ... } implementation ---
 
-struct StyleProp {
-    key: String,
-    value: Expr,
-}
-
-impl Parse for StyleProp {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let key = if input.peek(LitStr) {
-            input.parse::<LitStr>()?.value()
-        } else {
-            input.parse::<Ident>()?.to_string().replace('_', "-")
-        };
-        input.parse::<Token![:]>()?;
-        Ok(StyleProp {
-            key,
-            value: input.parse()?,
-        })
-    }
-}
-
 pub fn style_impl(input: TokenStream) -> Result<TokenStream> {
-    let props = Punctuated::<StyleProp, Token![,]>::parse_terminated.parse2(input)?;
-    if props.is_empty() {
-        return Ok(quote! { ::silex::dom::attribute::AttributeGroup::default() });
-    }
+    let css_tokens = crate::css::css_impl(input)?;
 
-    let items = props.into_iter().map(|p| {
-        let (k, v) = (p.key, p.value);
-        quote! { ::silex::dom::attribute::ApplyToDom::into_op((#k, #v), ::silex::dom::attribute::OwnedApplyTarget::Style) }
-    });
-
-    Ok(quote! { ::silex::dom::attribute::AttributeGroup(vec![ #(#items),* ]) })
+    Ok(quote! {
+        ::silex::dom::attribute::AttributeGroup(vec![
+            ::silex::dom::attribute::ApplyToDom::into_op(#css_tokens, ::silex::dom::attribute::OwnedApplyTarget::Style)
+        ])
+    })
 }
 
 // --- classes! [...] implementation ---

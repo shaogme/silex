@@ -66,24 +66,25 @@ src/
 
 ### 4.2 CSS 宏 `css!` (`css/ast.rs` & `css/compiler.rs`)
 
-实现了 CSS-in-Rust 的核心逻辑，由重构后的强类型解析和编译引擎支撑。
+实现了 CSS-in-Rust 的核心逻辑，由重构后的强类型解析和编译引擎支撑。现在 `css!`、`style!` 分散入口均归一化由 `css_impl` 驱动。
 
 **核心流程**：
-1.  **AST 解析 (`ast.rs`)**：利用 `syn::parse` 将原生的输入 TokenStream 逐层解析为结构化的抽象语法树实体，包括 `CssBlock`, `CssRule`, `CssDeclaration`, `CssNested` 和 `CssAtRule`。它现在完整支持：
-    *   **@-Rules**: 如 `@media` 块的递归解析。
-    *   **动态选择器**: 允许在选择器中使用 `$(expr)`，例如 `&:$(state)`。
-    *   **分号容错**: 允许块级最后一条声明省略分号。
+1.  **AST 解析 (`ast.rs`)**：利用 `syn::parse` 将原生的输入 TokenStream 逐层解析。它现在支持代码块写法（取代了字符串字面量）并完整支持：
+    *   **@-Rules**   **define_theme! 自动化**: 
+    *   **Patch 生成**: 自动生成 `{Name}Patch` 结构体，支持链式 Setter。
+    *   **强类型常量**: 自动生成 `pub const NAME: CssVar<T>`。
+    *   **自动别名**: 通过 `#[theme(main)]` 自动生成 `type Theme = ...;`，简化样板代码。
 2.  **语义遍历与萃取 (`compiler.rs`)**：负责遍历上述的 AST 节点树：
-    *   **智能空格恢复**: 在将 TokenStream 转回 CSS 字符串时，通过 `append_token_stream_strings` 逻辑，在 Ident/Literal 之间自动补全必要的空格，解决诸如 `1px solid black` 连词的问题。
-    *   剥离并拼接所有的静态 Token 构筑核心的基础 CSS 字符串。
-    *   将动态插值 `$(expr)` 连同其所在的上下文依赖属性名抽出，合并到表达式等待队列，而在静态模板处留下形如 `--slx-tmp-{index}` 的占位符。
-    *   **动态分块提取 (Dynamic Extract)**：若是遇上含有选区级或是特殊动态参数的 `Nested` Node 时，其块信息会被剥出并作为一个隔离并支持动态重组的 `DynamicRule` 元组模板，待运行时动态注入以破除原生 CSS 原生局限。
+    *   **智能空格恢复**: 在将 TokenStream 转回 CSS 字符串时，解决了诸如 `1px solid black` 的连词问题。
+    *   **Theme 自动关联**: 如果未显式提供主题类型，编译器会自动在当前作用域查找 `Theme` 别名。
 3.  **哈希计算与变量下发**：针对输入的 Token 进行特征哈希生成局部的随机后缀 `slx-{hash}`。将上文埋设的所有占位符 `--slx-tmp-*` 实化为局部的独设 CSS 变量 `--slx-{hash}-*`。
 4.  **作用域封装**：将纯净的静态 CSS 载入到一个全局包裹对象层 `.slx-{hash} { ... }` 之中以防止污染。
-5.  **语法校验与极致压缩 (Minification)**：调用外部强引擎 `lightningcss` 对此静态 CSS 解析，实施语法层验证和体积极优化。
-6.  **代码出码和多态校验体系**：
-    *   生成调用 `silex::css::inject_style` 的代码注入静态 CSS。
-    *   **自动属性映射**: 通过 `get_prop_type` 函数，宏自动执行 `kebab-case` -> `PascalCase` 转换。这意味着宏不需要硬编码属性列表，而是直接尝试寻找 `::silex::css::types::props` 下对应的 ZST 标签，将验证职责解耦。
+5.  **语法校验与极致压缩 (Minification)**：调用外部强引擎 `lightningcss` 对此静态 CSS 解析，实施语法层验证和体积极优化。### `css!` 宏集成
+*   **Compile Time**: 将输入 (TokenStream) 交由 `css_impl` 处理。支持代码块 `{ ... }` 语法，计算 Hash，生成 Scoped CSS，压缩。
+*   **Runtime**: 生成的代码自动调用 `silex::css::inject_style`。
+*   **Theme Integration**: 自动查找 `Theme` 别名并进行静态变量验证。
+*   **Flow**: `Macro Expansion` -> `css_impl` -> `Hash & Compress` -> `Code Gen (inject_style)` -> `Runtime Execution`.
+ 转换。这意味着宏不需要硬编码属性列表，而是直接尝试寻找 `::silex::css::types::props` 下对应的 ZST 标签，将验证职责解耦。
     *   返回 `silex::css::DynamicCss` 结构体，该结构体实现了 `ApplyToDom`。
     *   **Codegen 类型注入**：通过宏代码生成将捕获的属性标量（例如 `width` 获取到由 `get_prop_type` 转换后的强类型 `props::Width`），进而实施多态 Trait Bounds (`ValidFor<P>`) 限制。
     *   **强拦截与显式越权 (`UnsafeCss`)**: 废弃泛用 `&str` 的放行，若需越过类型检查，必须显式包装进 `UnsafeCss::new()`。
@@ -119,7 +120,8 @@ src/
 **核心机制**：
 *   **脱糖 (Desugaring)**：`styled!` 宏会将内部定义的组件（包括可见性、底层 HTML 标签、Props 等）在 AST 层面脱糖为一个标准的 `#[component]` 函数。这意味着它完美兼容现有的组件体系和属性透传 (`AttributeBuilder`)。
 *   **编译期提取与变量隔离**：复用了 `css::compiler::CssCompiler` 的逻辑，提取静态 CSS 并生成唯一类名，将仅存在于属性值内的动态插值 `$(expr)` 转换为 CSS 变量绑定 (`--slx-{hash}-{index}`)。
-*   **主题聚合与强类型断言**：通过探测内部对于形如 `Theme.target_field` 的标识符调用，自动构建为对应 CSS 变量 `--slx-theme-target_field` 并由解析器分析属性上下文。根据宏参数 `#[theme(StructName)]` 所提供的主题上下文，利用局部闭包进行借用判定，注入基于 `assert_valid` 且作用于 `StructName.target_field` 的泛型合法性验证块，零代价在编译期排除赋值风险。
+*   **主题聚合与强类型断言**：通过探测内部对于形如 `$theme.field` 的标识符调用，自动构建为对应 CSS 变量 `--slx-theme-field` 并由解析器分析属性上下文。
+    *   **自动主题感知**: 宏会优先使用自动生成的 `Theme` 别名进行类型验证，极大减少了 `#[theme(...)]` 的显式书写工作。
 *   **动态规则树分片 (Dynamic Rules)**：在词法解析阶段 (TokenTree Parsing)，如果宏检测到选择器层面（或嵌套属性名前缀）包含 `$(...)`，会将这段包含大括号的规则块从主 CSS 静态树中剥离，形成游离分片，并依托 `DynamicStyleManager` 实例以闭包的方式按需利用 DOM 的 `<style>` 重置方法直接重塑热更新规则！借此彻底突破了原生 CSS Variable 不可用于选择器的天生局限。
 *   **Variants 静态架构**：完全支持 `variants:` 语法块。通过在编译阶段静态合成各变体的 CSS 并生成类名，在运行时利用模式匹配直接返回对应属性值的静态类字符串。不仅具备极高的代码表现力，还有效避开了基于 CSS 变量进行多属性赋值产生的性能代价。
 

@@ -13,8 +13,7 @@ mod store;
 #[cfg(feature = "css")]
 #[proc_macro]
 pub fn css(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as syn::LitStr);
-    match css::css_impl(input) {
+    match css::css_impl(input.into()) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),
     }

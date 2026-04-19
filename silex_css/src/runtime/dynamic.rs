@@ -135,9 +135,9 @@ pub struct DynamicCss {
 }
 
 impl ApplyToDom for DynamicCss {
-    fn apply(&self, el: &Element, target: ApplyTarget) {
+    fn apply(&self, el: &Element, _target: ApplyTarget) {
         // 1. Apply class name
-        self.class_name.apply(el, target);
+        self.class_name.apply(el, ApplyTarget::Class);
 
         // 2. Apply inline variables with optimized Effect
         if !self.vars.is_empty() {
