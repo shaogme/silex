@@ -1,3 +1,4 @@
+use crate::css::AppTheme;
 use silex::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -21,7 +22,7 @@ impl Default for Settings {
 pub fn PersistencePage() -> impl View {
     div![
         h2("Comprehensive Persistence Demo")
-            .style("color: var(--slx-theme-primary); margin-bottom: 10px;"),
+            .style(sty().color(AppTheme::PRIMARY).margin_bottom(px(10))),
         p("This page demonstrates the full spectrum of Silex's persistence system, from basic LocalStorage to advanced debouncing and manual control."),
 
         div![
@@ -44,10 +45,24 @@ pub fn PersistencePage() -> impl View {
 #[component]
 fn Card(title: &'static str, children: Children) -> impl View {
     div![
-        h3(title).style("margin-top: 0; border-bottom: 1px solid var(--slx-theme-border); padding-bottom: 10px; color: var(--slx-theme-primary);"),
+        h3(title).style(
+            sty()
+                .margin_top(px(0))
+                .border_bottom(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
+                .padding_bottom(px(10))
+                .color(AppTheme::PRIMARY)
+        ),
         children
     ]
-    .style("background: var(--slx-theme-surface); border: 1px solid var(--slx-theme-border); padding: 24px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); transition: transform 0.2s, box-shadow 0.2s;")
+    .style(
+        sty()
+            .background(AppTheme::SURFACE)
+            .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
+            .padding(px(24))
+            .border_radius(px(12))
+            .box_shadow("0 4px 12px rgba(0,0,0,0.08)")
+            .transition("transform 0.2s, box_shadow 0.2s"),
+    )
 }
 
 #[component]
@@ -74,27 +89,53 @@ fn BackendGrid() -> impl View {
         p("Different storage areas serving different lifetimes and visibility needs."),
         div![
             div![
-                label("LocalStorage").style("display: block; font-weight: bold; margin-bottom: 5px;"),
-                input()
-                    .bind_value(local)
-                    .style("width: 100%; padding: 8px; border: 1px solid var(--slx-theme-border); border-radius: 4px; background: var(--slx-theme-surface-alt); color: var(--slx-theme-text);"),
-                small("Persistent cross-sessions & tabs.").style("display: block; margin-top: 5px; opacity: 0.7;")
+                label("LocalStorage")
+                    .style("display: block; font-weight: bold; margin-bottom: 5px;"),
+                input().bind_value(local).style(
+                    sty()
+                        .width(pct(100))
+                        .padding(px(8))
+                        .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
+                        .border_radius(px(4))
+                        .background(AppTheme::SURFACE_ALT)
+                        .color(AppTheme::TEXT)
+                ),
+                small("Persistent cross-sessions & tabs.")
+                    .style("display: block; margin-top: 5px; opacity: 0.7;")
             ],
             div![
-                label("SessionStorage").style("display: block; font-weight: bold; margin-bottom: 5px;"),
-                input()
-                    .bind_value(session)
-                    .style("width: 100%; padding: 8px; border: 1px solid var(--slx-theme-border); border-radius: 4px; background: var(--slx-theme-surface-alt); color: var(--slx-theme-text);"),
-                small("Scoped to this tab/window.").style("display: block; margin-top: 5px; opacity: 0.7;")
+                label("SessionStorage")
+                    .style("display: block; font-weight: bold; margin-bottom: 5px;"),
+                input().bind_value(session).style(
+                    sty()
+                        .width(pct(100))
+                        .padding(px(8))
+                        .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
+                        .border_radius(px(4))
+                        .background(AppTheme::SURFACE_ALT)
+                        .color(AppTheme::TEXT)
+                ),
+                small("Scoped to this tab/window.")
+                    .style("display: block; margin-top: 5px; opacity: 0.7;")
             ],
             div![
                 label("URL Query").style("display: block; font-weight: bold; margin-bottom: 5px;"),
-                input()
-                    .bind_value(query)
-                    .style("width: 100%; padding: 8px; border: 1px solid var(--slx-theme-border); border-radius: 4px; background: var(--slx-theme-surface-alt); color: var(--slx-theme-text);"),
-                small("Synced to browser address bar.").style("display: block; margin-top: 5px; opacity: 0.7;")
+                input().bind_value(query).style(
+                    sty()
+                        .width(pct(100))
+                        .padding(px(8))
+                        .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
+                        .border_radius(px(4))
+                        .background(AppTheme::SURFACE_ALT)
+                        .color(AppTheme::TEXT)
+                ),
+                small("Synced to browser address bar.")
+                    .style("display: block; margin-top: 5px; opacity: 0.7;")
             ],
-        ].style("display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;")
+        ]
+        .style(
+            "display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;"
+        )
     ))
 }
 
@@ -113,18 +154,18 @@ fn ManualFlushDemo() -> impl View {
             textarea("")
                 .bind_value(draft)
                 .placeholder("Type a long message here...")
-                .style("width: 100%; height: 120px; padding: 12px; border: 1px solid var(--slx-theme-border); border-radius: 8px; background: var(--slx-theme-surface-alt); color: var(--slx-theme-text); resize: vertical;"),
+                .style(sty().width(pct(100)).height(px(120)).padding(px(12)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).border_radius(px(8)).background(AppTheme::SURFACE_ALT).color(AppTheme::TEXT).resize(ResizeKeyword::Vertical)),
             div![
                 button("💾 Save to Storage")
                     .on(event::click, move |_| {
                         let _ = draft.flush();
                     })
-                    .style("background: var(--slx-theme-primary); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; transition: opacity 0.2s;"),
+                    .style(sty().background(AppTheme::PRIMARY).color(hex("white")).border(NONE).padding(padding::x_y(px(8), px(16))).border_radius(px(6)).cursor(CursorKeyword::Pointer).transition("opacity 0.2s")),
                 button("🔄 Reload from Storage")
                     .on(event::click, move |_| {
                         let _ = draft.reload();
                     })
-                    .style("background: var(--slx-theme-surface); color: var(--slx-theme-text); border: 1px solid var(--slx-theme-border); padding: 8px 16px; border-radius: 6px; cursor: pointer;"),
+                    .style(sty().background(AppTheme::SURFACE).color(AppTheme::TEXT).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).padding(padding::x_y(px(8), px(16))).border_radius(px(6)).cursor(CursorKeyword::Pointer)),
                 button("🗑️ Forget")
                     .on(event::click, move |_| {
                         let _ = draft.remove();
@@ -159,7 +200,7 @@ fn DebounceDemo() -> impl View {
             input()
                 .bind_value(debounced)
                 .placeholder("Type quickly...")
-                .style("width: 100%; padding: 12px; border: 1px solid var(--slx-theme-border); border-radius: 6px; background: var(--slx-theme-surface-alt); color: var(--slx-theme-text); font-size: 1.1em;"),
+                .style(sty().width(pct(100)).padding(px(12)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).border_radius(px(6)).background(AppTheme::SURFACE_ALT).color(AppTheme::TEXT).font_size(em_unit(1.1))),
 
             div![
                 h4("Live Sync Tracking:").style("margin-bottom: 5px;"),
@@ -208,7 +249,7 @@ fn ErrorHandlingDemo() -> impl View {
                     .on(event::input, move |e| {
                          settings.update(|s| s.username = event_target_value(&e));
                     })
-                    .style("width: 100%; padding: 8px; border: 1px solid var(--slx-theme-border); border-radius: 4px; background: var(--slx-theme-surface-alt); color: var(--slx-theme-text);")
+                    .style(sty().width(pct(100)).padding(px(8)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).border_radius(px(4)).background(AppTheme::SURFACE_ALT).color(AppTheme::TEXT))
             ],
             div![
                 label(rx!(format!("Volume Level: {}%", settings.get().volume)))
@@ -238,7 +279,7 @@ fn ErrorHandlingDemo() -> impl View {
             },
             button("Reset to Factory Defaults")
                 .on(event::click, move |_| settings.reset())
-                .style("margin-top: 15px; background: transparent; border: 1px solid var(--slx-theme-border); padding: 6px 12px; border-radius: 4px; cursor: pointer; color: var(--slx-theme-text);")
-        ].style("margin-top: 25px; padding: 15px; background: var(--slx-theme-surface-alt); border-radius: 8px; border: 1px dashed var(--slx-theme-border);")
+                .style(sty().margin_top(px(15)).background(ColorKeyword::Transparent).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).padding(padding::x_y(px(6), px(12))).border_radius(px(4)).cursor(CursorKeyword::Pointer).color(AppTheme::TEXT))
+        ].style(sty().margin_top(px(25)).padding(px(15)).background(AppTheme::SURFACE_ALT).border_radius(px(8)).border(border(px(1), BorderStyleKeyword::Dashed, AppTheme::BORDER)))
     ))
 }

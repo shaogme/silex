@@ -47,6 +47,15 @@ pub enum CssVarValue {
     Dynamic(String),
 }
 
+impl PartialEq<&str> for CssVarValue {
+    fn eq(&self, other: &&str) -> bool {
+        match self {
+            Self::Static(s) => s == other,
+            Self::Dynamic(s) => s == other,
+        }
+    }
+}
+
 impl Display for CssVarValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -60,6 +69,18 @@ impl Display for CssVarValue {
 /// 泛型 T 用于强类型校验，例如 `CssVar<Hex>` 仅在接收颜色的属性中有效。
 #[derive(Clone, Debug, PartialEq)]
 pub struct CssVar<T = ()>(pub CssVarValue, pub std::marker::PhantomData<T>);
+
+impl<T> From<T> for CssVar<T>
+where
+    T: Display,
+{
+    fn from(val: T) -> Self {
+        Self(
+            CssVarValue::Dynamic(val.to_string()),
+            std::marker::PhantomData,
+        )
+    }
+}
 
 impl<T> Default for CssVar<T> {
     fn default() -> Self {
@@ -91,7 +112,15 @@ pub fn css_var(name: impl Display) -> CssVar<()> {
 // ==========================================
 
 macro_rules! define_css_enum {
+    (ColorKeyword ($($prop:path),*) $rest:tt) => {
+        define_css_enum!(@base ColorKeyword $rest);
+        // We handle ColorKeyword's ValidFor impls manually in define_props! or via traits
+    };
     ($name:ident ($($prop:path),*) { $($variant:ident => $val:expr),* $(,)? }) => {
+        define_css_enum!(@base $name { $($variant => $val),* });
+        $(impl crate::types::ValidFor<$prop> for $name {})*
+    };
+    (@base $name:ident { $($variant:ident => $val:expr),* $(,)? }) => {
         #[derive(Clone, Copy, Debug, PartialEq)]
         pub enum $name { $($variant),* }
         impl Display for $name {
@@ -99,7 +128,6 @@ macro_rules! define_css_enum {
                 match self { $(Self::$variant => write!(f, $val)),* }
             }
         }
-        $(impl crate::types::ValidFor<$prop> for $name {})*
     };
 }
 
@@ -206,6 +234,7 @@ macro_rules! define_props {
         impl ValidFor<props::$pascal> for Rgba {}
         impl ValidFor<props::$pascal> for Hex {}
         impl ValidFor<props::$pascal> for Hsl {}
+        impl ValidFor<props::$pascal> for ColorKeyword {}
     };
     // 数字分组 (z-index, opacity 等)
     (@group $pascal:ident, Number) => {
@@ -226,6 +255,8 @@ macro_rules! define_props {
         impl ValidFor<props::$pascal> for Rgba {}
         impl ValidFor<props::$pascal> for Hex {}
         impl ValidFor<props::$pascal> for Hsl {}
+        impl ValidFor<props::$pascal> for ColorKeyword {}
+        impl ValidFor<props::$pascal> for NoneValue {}
     };
     // 复合属性专用 (如 border, margin)
     (@group $pascal:ident, Shorthand) => {
@@ -235,6 +266,8 @@ macro_rules! define_props {
         impl ValidFor<props::$pascal> for Rgba {}
         impl ValidFor<props::$pascal> for Hex {}
         impl ValidFor<props::$pascal> for Hsl {}
+        impl ValidFor<props::$pascal> for ColorKeyword {}
+        impl ValidFor<props::$pascal> for NoneValue {}
         impl ValidFor<props::$pascal> for i32 {}
         impl ValidFor<props::$pascal> for f64 {}
     };
@@ -260,6 +293,14 @@ crate::for_all_properties!(define_props);
 
 // --- 手动补充跨组约束 ---
 impl ValidFor<props::Border> for BorderValue {}
+impl ValidFor<props::BorderTop> for BorderValue {}
+impl ValidFor<props::BorderRight> for BorderValue {}
+impl ValidFor<props::BorderBottom> for BorderValue {}
+impl ValidFor<props::BorderLeft> for BorderValue {}
+impl ValidFor<props::BorderInlineStart> for BorderValue {}
+impl ValidFor<props::BorderInlineEnd> for BorderValue {}
+impl ValidFor<props::BorderBlockStart> for BorderValue {}
+impl ValidFor<props::BorderBlockEnd> for BorderValue {}
 impl ValidFor<props::Background> for Url {}
 impl ValidFor<props::BackgroundImage> for Url {}
 impl<T: Display> ValidFor<props::Any> for T {}
@@ -322,6 +363,7 @@ impl_into_rx_for_css!(
     Vh,
     Hex,
     Hsl,
+    NoneValue,
     Url,
     BorderValue,
     MarginValue,

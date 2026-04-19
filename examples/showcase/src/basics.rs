@@ -1,3 +1,4 @@
+use crate::css::AppTheme;
 use silex::prelude::*;
 use std::time::Duration;
 
@@ -17,17 +18,18 @@ pub fn Greeting(
 
     div![
         span("Hello, "),
-        strong(name).style("color: #007bff"),
+        strong(name).style(sty().color(AppTheme::PRIMARY)),
         span(full_punctuation),
     ]
     .class("greeting-card")
-    .style(style! {
-        padding: "10px",
-        border: "1px solid var(--slx-theme-border)",
-        "border-radius": "4px",
-        "margin-bottom": "10px",
-        background: "var(--slx-theme-surface)"
-    })
+    .style(
+        sty()
+            .padding(px(10))
+            .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
+            .border_radius(px(4))
+            .margin_bottom(px(10))
+            .background(AppTheme::SURFACE),
+    )
 }
 
 #[component]
@@ -117,7 +119,12 @@ pub fn NodeRefDemo() -> impl View {
             }
         })
     ]
-    .style("padding: 20px; border: 1px dashed var(--slx-theme-border); margin-top: 20px;")
+    .style(
+        sty()
+            .padding(px(20))
+            .border(border(px(1), BorderStyleKeyword::Dashed, AppTheme::BORDER))
+            .margin_top(px(20)),
+    )
 }
 #[component]
 pub fn SvgIconDemo() -> impl View {
@@ -141,14 +148,23 @@ pub fn SvgIconDemo() -> impl View {
         div![
             ShieldCheck().style("width: 32px; height: 32px; color: green;"),
             ShieldCheck()
-                .style("width: 48px; height: 48px; color: blue; margin-left: 10px; cursor: pointer;")
+                .style(
+                    "width: 48px; height: 48px; color: blue; margin-left: 10px; cursor: pointer;"
+                )
                 .on(event::click, |_| console_log("Icon Clicked!")),
             ShieldCheck()
                 .attr("width", "50")
                 .attr("height", "50")
                 .style("color: red; margin-left: 10px;"),
         ]
-        .style("display: flex; align-items: center; padding: 10px; background: var(--slx-theme-surface); border: 1px solid var(--slx-theme-border);")
+        .style(
+            sty()
+                .display(DisplayKeyword::Flex)
+                .align_items(AlignItemsKeyword::Center)
+                .padding(px(10))
+                .background(AppTheme::SURFACE)
+                .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
+        )
     ]
     .style("margin-top: 20px;")
 }
@@ -203,9 +219,21 @@ pub fn EventDemo() -> impl View {
             |l| l.clone(),
             |l| li(l).style("font-size: 0.8em;")
         ))
-        .style("margin-top: 10px; background: var(--slx-theme-border); opacity: 0.5; padding: 10px; border-radius: 4px;")
+        .style(
+            sty()
+                .margin_top(px(10))
+                .background(AppTheme::BORDER)
+                .opacity(0.5)
+                .padding(px(10))
+                .border_radius(px(4))
+        )
     ]
-    .style("padding: 20px; border: 1px dashed var(--slx-theme-border); margin-top: 20px;")
+    .style(
+        sty()
+            .padding(px(20))
+            .border(border(px(1), BorderStyleKeyword::Dashed, AppTheme::BORDER))
+            .margin_top(px(20)),
+    )
 }
 
 #[component]
@@ -222,7 +250,14 @@ pub fn BasicsPage() -> impl View {
                 .attr("disabled", name_signal.read_signal().equals(""))
                 .style("margin-left: 10px;")
         ]
-        .style("margin-bottom: 15px; padding: 10px; background: var(--slx-theme-surface); border-radius: 4px; border: 1px solid var(--slx-theme-border);"),
+        .style(
+            sty()
+                .margin_bottom(px(15))
+                .padding(px(10))
+                .background(AppTheme::SURFACE)
+                .border_radius(px(4))
+                .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
+        ),
         Greeting().name(name_signal),
         Counter(),
         EventDemo(),

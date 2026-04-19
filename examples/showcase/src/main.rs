@@ -83,6 +83,12 @@ fn main() {
             // Root Router
             Router::new().match_route::<AppRoute>(),
         ]
-        .style("background-color: var(--slx-theme-surface); color: var(--slx-theme-text); min-height: 100vh; transition: background-color 0.3s, color 0.3s;")
+        .style(
+            sty()
+                .background_color(crate::css::AppTheme::SURFACE)
+                .color(crate::css::AppTheme::TEXT)
+                .min_height(vh(100))
+                .transition("background-color 0.3s, color 0.3s"),
+        )
     });
 }

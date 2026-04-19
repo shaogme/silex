@@ -6,6 +6,7 @@ use crate::flow_control;
 use crate::net_demo;
 use crate::persistence;
 
+use crate::css::AppTheme;
 use silex::prelude::*;
 use silex::reexports::wasm_bindgen::JsCast;
 use silex::reexports::web_sys::{HtmlElement, MouseEvent};
@@ -80,13 +81,14 @@ pub enum AppRoute {
 // --- Layout & App ---
 
 styled! {
+    #[theme(AppTheme)]
     pub StyledNav<nav> (
         children: Children,
         #[prop(default = "horizontal")] direction: &'static str
     ) {
-        background: var(--slx-theme-surface);
-        color: var(--slx-theme-text);
-        border-bottom: 1px solid var(--slx-theme-border);
+        background: $theme.surface;
+        color: $theme.text;
+        border-bottom: 1px solid $theme.border;
         padding: 12px 24px;
         margin-bottom: 20px;
         display: flex;
@@ -94,19 +96,19 @@ styled! {
         align-items: center;
 
         & a {
-            color: var(--slx-theme-text);
+            color: $theme.text;
             opacity: 0.8;
             padding: 8px 12px;
             border-radius: 4px;
             transition: background-color 0.2s;
 
             &:hover {
-                background-color: var(--slx-theme-primary);
+                background-color: $theme.primary;
                 color: white;
             }
 
             &.active {
-                background-color: var(--slx-theme-primary);
+                background-color: $theme.primary;
                 color: white;
                 font-weight: bold;
             }
@@ -131,7 +133,6 @@ pub fn NavBar() -> impl View {
         Link(AppRoute::Flow, "Flow").active_class("active"),
         Link(AppRoute::Net, "Net").active_class("active"),
         Link(AppRoute::Persistence, "Persistence").active_class("active"),
-
         Link(
             AppRoute::Css {
                 route: CssRoute::Basics,
@@ -146,27 +147,48 @@ pub fn NavBar() -> impl View {
             "Advanced",
         )
         .active_class("active"),
-        button(settings.theme.map_fn(|t| if t == "Light" { "🌙" } else { "🌞" }))
-            .on(
-                event::click,
-                move |_| {
-                    settings.theme.update(|t| {
-                        let new_theme = if t == "Light" { "Dark".to_string() } else { "Light".to_string() };
-                        console_log(format!("Button Click: switching to {}", new_theme));
-                        *t = new_theme;
-                    })
-                }
-            )
-            .style("margin-left: auto; cursor: pointer; background: var(--slx-theme-border); border: none; padding: 8px 12px; border-radius: 50%; font-size: 1.2em; transition: all 0.3s; color: var(--slx-theme-text);")
-            .on(event::mouseover, move |e: MouseEvent| {
-                let target = e.target().unwrap().unchecked_into::<HtmlElement>();
-                let _ = target.style().set_property("background", "rgba(255,255,255,0.2)");
+        button(
+            settings
+                .theme
+                .map_fn(|t| if t == "Light" { "🌙" } else { "🌞" })
+        )
+        .on(event::click, move |_| {
+            settings.theme.update(|t| {
+                let new_theme = if t == "Light" {
+                    "Dark".to_string()
+                } else {
+                    "Light".to_string()
+                };
+                console_log(format!("Button Click: switching to {}", new_theme));
+                *t = new_theme;
             })
-            .on(event::mouseout, move |e: MouseEvent| {
-                let target = e.target().unwrap().unchecked_into::<HtmlElement>();
-                let _ = target.style().set_property("background", "rgba(255,255,255,0.1)");
-            }),
-    )).direction("horizontal")
+        })
+        .style(
+            sty()
+                .margin_left(AUTO)
+                .cursor(CursorKeyword::Pointer)
+                .background(AppTheme::BORDER)
+                .border(NONE)
+                .padding(padding::x_y(px(8), px(12)))
+                .border_radius(pct(50))
+                .font_size(em_unit(1.2))
+                .transition("all 0.3s")
+                .color(AppTheme::TEXT)
+        )
+        .on(event::mouseover, move |e: MouseEvent| {
+            let target = e.target().unwrap().unchecked_into::<HtmlElement>();
+            let _ = target
+                .style()
+                .set_property("background", "rgba(255,255,255,0.2)");
+        })
+        .on(event::mouseout, move |e: MouseEvent| {
+            let target = e.target().unwrap().unchecked_into::<HtmlElement>();
+            let _ = target
+                .style()
+                .set_property("background", "rgba(255,255,255,0.1)");
+        }),
+    ))
+    .direction("horizontal")
 }
 
 #[component]

@@ -8,6 +8,7 @@ define_theme! {
         #[theme(var = "--slx-theme-secondary")] // Explicit override
         pub secondary: Hex,
         pub surface: Hex,
+        pub surface_alt: Hex,
         pub text: Hex,
         pub border: Hex,
         pub radius: Px,
@@ -21,6 +22,7 @@ pub fn default_light_theme() -> AppTheme {
         primary: hex("#6366f1"),
         secondary: hex("#a855f7"),
         surface: hex("#ffffff"),
+        surface_alt: hex("#f3f4f6"),
         text: hex("#1f2937"),
         border: hex("#e5e7eb"),
         radius: px(12),
@@ -32,6 +34,7 @@ pub fn default_dark_theme() -> AppTheme {
         primary: hex("#818cf8"),
         secondary: hex("#c084fc"),
         surface: hex("#111827"),
+        surface_alt: hex("#1f2937"),
         text: hex("#f9fafb"),
         border: hex("#374151"),
         radius: px(12),
@@ -136,9 +139,9 @@ styled! {
 styled! {
     pub StyledButton<button>(
         children: Children,
-        #[prop(into)] color: Signal<Hex>,
+        #[prop(into)] color: Signal<CssVar<Hex>>,
         #[prop(into)] size: Signal<String>,
-        #[prop(into)] hover_color: Signal<Hex>,
+        #[prop(into)] hover_color: Signal<CssVar<Hex>>,
         #[prop(into)] pseudo_state: Signal<String>,
         #[prop(into)] border_style: Signal<BorderValue>,
         #[prop(into)] padding_val: Signal<PaddingValue>,
@@ -254,12 +257,15 @@ styled! {
 
 #[component]
 pub fn StylingBasics() -> impl View {
-    let (color, set_color) = Signal::pair(hex("#ffffff"));
+    let (color, set_color) = Signal::pair(AppTheme::TEXT);
     let (size, set_size) = Signal::pair("medium".to_string());
-    let (hover_color, set_hover_color) = Signal::pair(hex("#4f46e5"));
+    let (hover_color, set_hover_color) = Signal::pair(AppTheme::PRIMARY);
     let (pseudo_state, set_pseudo_state) = Signal::pair("hover".to_string());
-    let (border_state, set_border_state) =
-        Signal::pair(border(px(2), BorderStyleKeyword::Solid, hex("transparent")));
+    let (border_state, set_border_state) = Signal::pair(border(
+        px(2),
+        BorderStyleKeyword::Solid,
+        ColorKeyword::Transparent,
+    ));
     let (padding_state, set_padding_state) = Signal::pair(padding::x_y(px(12), px(24)));
 
     div![
@@ -285,7 +291,8 @@ pub fn StylingBasics() -> impl View {
                 .padding_val(padding_state)
                 .on(event::click, move |_| {
                     set_color.update(|c| {
-                        *c = if c.0 == "#ffffff" { hex("#fbbf24") } else { hex("#ffffff") }
+                        // Toggle between theme text color and warning yellow
+                        *c = if *c == AppTheme::TEXT { hex("#fbbf24").into() } else { AppTheme::TEXT };
                     });
                     set_size.update(|s| {
                         *s = if *s == "medium" { "large".to_string() } else { "medium".to_string() }
@@ -297,7 +304,7 @@ pub fn StylingBasics() -> impl View {
                         *p = padding::x_y(px(16), px(32));
                     });
                     set_hover_color.update(|c| {
-                        *c = if c.0 == "#4f46e5" { hex("#ec4899") } else { hex("#4f46e5") }
+                        *c = if c.0 == "var(--slx-theme-primary)" { hex("#ec4899").into() } else { AppTheme::PRIMARY };
                     });
                     set_pseudo_state.update(|s| {
                         *s = if *s == "hover" { "active".to_string() } else { "hover".to_string() }
@@ -343,17 +350,17 @@ pub fn StylingBasics() -> impl View {
                     sty()
                         .display(DisplayKeyword::InlineBlock)
                         .padding(padding::x_y(px(24), px(40)))
-                        .background_color(hex("#1e1e24"))
-                        .border(border(px(1), BorderStyleKeyword::Solid, hex("#374151")))
-                        .border_radius(px(16))
-                        .color(hex("#e5e7eb"))
+                        .background_color(AppTheme::SURFACE)
+                        .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
+                        .border_radius(AppTheme::RADIUS)
+                        .color(AppTheme::TEXT)
                         .font_size(px(16))
                         .font_weight(600)
                         .cursor(CursorKeyword::Pointer)
                         .transition("all 0.4s ease")
                         .on_hover(|s| {
-                            s.background_color(hex("#312e81"))
-                                .border_color(hex("#6366f1"))
+                            s.background_color(AppTheme::PRIMARY)
+                                .border_color(AppTheme::SECONDARY)
                                 .color(hex("#ffffff"))
                                 .transform(transform().scale(1.05).rotate(deg(1)))
                         })
@@ -431,9 +438,9 @@ pub fn Theming() -> impl View {
                         .cursor(CursorKeyword::Pointer)
                         .transition("all 0.2s")
                         .margin(margin::right(px(12)))
-                        .background_color(rx!(if !is_dark.get() { hex("#6366f1") } else { hex("#f3f4f6") }))
+                        .background_color(rx!(if !is_dark.get() { AppTheme::PRIMARY } else { hex("#f3f4f6").into() }))
                         .color(rx!(if !is_dark.get() { hex("#ffffff") } else { hex("#374151") }))
-                        .border(rx!(if !is_dark.get() { border(px(1), BorderStyleKeyword::Solid, hex("#6366f1")) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) }))
+                        .border(rx!(if !is_dark.get() { border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) }))
                 ),
             button("🌙 Dark Mode")
                 .on(event::click, move |_| set_theme.set(default_dark_theme()))
@@ -443,9 +450,9 @@ pub fn Theming() -> impl View {
                         .border_radius(px(6))
                         .cursor(CursorKeyword::Pointer)
                         .transition("all 0.2s")
-                        .background_color(rx!(if is_dark.get() { hex("#4f46e5") } else { hex("#f3f4f6") }))
+                        .background_color(rx!(if is_dark.get() { AppTheme::PRIMARY } else { hex("#f3f4f6").into() }))
                         .color(rx!(if is_dark.get() { hex("#ffffff") } else { hex("#374151") }))
-                        .border(rx!(if is_dark.get() { border(px(1), BorderStyleKeyword::Solid, hex("#4f46e5")) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) }))
+                        .border(rx!(if is_dark.get() { border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) }))
                 ),
         ].style("margin-bottom: 24px;"),
 
@@ -463,9 +470,9 @@ pub fn Theming() -> impl View {
             h4("1. Theme variables in Flex (Stack)"),
             p("The red border is a Stack. Variable injection doesn't break the flow.").style("margin-bottom: 12px; font-size: 0.9em; opacity: 0.7;"),
             Stack(view_chain!(
-                div("Themed Row 1").style("background: #1e1e24; padding: 10px; margin: 4px; border-radius: 4px; border: 1px solid $theme.primary;")
+                div("Themed Row 1").style(sty().background(AppTheme::SURFACE_ALT).padding(px(10)).margin(px(4)).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY)))
                     .apply(theme_variables(theme)),
-                div("Themed Row 2").style("background: #1e1e24; padding: 10px; margin: 4px; border-radius: 4px; border: 1px solid $theme.secondary;")
+                div("Themed Row 2").style(sty().background(AppTheme::SURFACE_ALT).padding(px(10)).margin(px(4)).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::SECONDARY)))
                     .apply(theme_variables(theme)),
             )).style(sty().border(border(px(2), BorderStyleKeyword::Solid, hex("#ef4444"))).padding(px(8)))
         )),
@@ -475,14 +482,14 @@ pub fn Theming() -> impl View {
             p("Even deeply nested layouts remain stable with variable injection.").style("margin-bottom: 12px; font-size: 0.9em; opacity: 0.7;"),
             Stack(view_chain!(
                 Stack(view_chain!(
-                    div("Nested 1").style("background: $theme.surface; color: $theme.text; padding: 10px; border-radius: 4px; border: 1px solid $theme.primary;"),
-                    div("Nested 2").style("background: $theme.surface; color: $theme.text; padding: 10px; border-radius: 4px; border: 1px solid $theme.secondary;"),
+                    div("Nested 1").style(sty().background(AppTheme::SURFACE).color(AppTheme::TEXT).padding(px(10)).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY))),
+                    div("Nested 2").style(sty().background(AppTheme::SURFACE).color(AppTheme::TEXT).padding(px(10)).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::SECONDARY))),
                 )).gap(4).apply(theme_variables(theme)),
-                div("Sibling of Nested Stack").style("background: #1e1e24; color: #fff; padding: 10px; margin-top: 4px; border-radius: 4px;"),
+                div("Sibling of Nested Stack").style(sty().background(AppTheme::SURFACE_ALT).color(AppTheme::TEXT).padding(px(10)).margin_top(px(4)).border_radius(px(4))),
             )).style(sty().border(border(px(2), BorderStyleKeyword::Solid, hex("#3b82f6"))).padding(px(8)))
         )),
     ]
-    .style("padding: 24px; border: 1px solid var(--slx-theme-border); border-radius: 12px; background: var(--slx-theme-surface); transition: all 0.3s;")
+    .style(sty().padding(px(24)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).border_radius(px(12)).background(AppTheme::SURFACE).transition("all 0.3s"))
 }
 
 #[component]

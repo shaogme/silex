@@ -80,6 +80,62 @@ impl Style {
         self.nest(":focus", f)
     }
 
+    pub fn margin_x<V>(self, value: V) -> Self
+    where
+        V: IntoRx + RxValue + Clone + 'static,
+        V::Value: ValidFor<props::MarginLeft>
+            + ValidFor<props::MarginRight>
+            + Display
+            + Clone
+            + Sized
+            + 'static,
+        V::RxType: RxGet<Value = V::Value> + Clone + 'static,
+    {
+        self.margin_left(value.clone()).margin_right(value)
+    }
+
+    pub fn margin_y<V>(self, value: V) -> Self
+    where
+        V: IntoRx + RxValue + Clone + 'static,
+        V::Value: ValidFor<props::MarginTop>
+            + ValidFor<props::MarginBottom>
+            + Display
+            + Clone
+            + Sized
+            + 'static,
+        V::RxType: RxGet<Value = V::Value> + Clone + 'static,
+    {
+        self.margin_top(value.clone()).margin_bottom(value)
+    }
+
+    pub fn padding_x<V>(self, value: V) -> Self
+    where
+        V: IntoRx + RxValue + Clone + 'static,
+        V::Value: ValidFor<props::PaddingLeft>
+            + ValidFor<props::PaddingRight>
+            + Display
+            + Clone
+            + Sized
+            + 'static,
+        V::RxType: RxGet<Value = V::Value> + Clone + 'static,
+    {
+        self.padding_left(value.clone()).padding_right(value)
+    }
+
+    pub fn padding_y<V>(self, value: V) -> Self
+    where
+        V: IntoRx + RxValue + Clone + 'static,
+        V::Value: ValidFor<props::PaddingTop>
+            + ValidFor<props::PaddingBottom>
+            + Display
+            + Clone
+            + Sized
+            + 'static,
+        V::RxType: RxGet<Value = V::Value> + Clone + 'static,
+    {
+        self.padding_top(value.clone()).padding_bottom(value)
+    }
+
     pub fn pseudo<F>(self, selector: &'static str, f: F) -> Self
     where
         F: FnOnce(Style) -> Style,

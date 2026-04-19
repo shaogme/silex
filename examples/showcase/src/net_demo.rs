@@ -1,3 +1,4 @@
+use crate::css::AppTheme;
 use serde::{Deserialize, Serialize};
 use silex::prelude::*;
 
@@ -45,7 +46,7 @@ pub fn HttpClientDemo() -> impl View {
                         set_post_id.set(id);
                     }
                 })
-                .style("margin-right: 10px; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--slx-theme-border); background: var(--slx-theme-surface); color: var(--slx-theme-text);"),
+                .style(sty().margin_right(px(10)).padding(padding::x_y(px(4), px(8))).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).background(AppTheme::SURFACE).color(AppTheme::TEXT)),
             button("Refresh").on(event::click, move |_| post_resource.refetch()),
         ].style("margin-bottom: 20px;"),
 
@@ -53,31 +54,31 @@ pub fn HttpClientDemo() -> impl View {
         div![
             move || match post_resource.state.get() {
                 ResourceState::Ready(post) | ResourceState::Reloading(post) => div![
-                    h4(post.title).style("color: var(--slx-theme-primary); margin-top: 0;"),
+                    h4(post.title).style(sty().color(AppTheme::PRIMARY).margin_top(px(0))),
                     p(post.body).style("opacity: 0.8;"),
                     small(format!("User ID: {}", post.user_id)).style("opacity: 0.6;")
-                ].style("padding: 20px; background: rgba(0,0,0,0.05); border-radius: 8px; border: 1px solid var(--slx-theme-border);")
+                ].style(sty().padding(px(20)).background(AppTheme::SURFACE_ALT).border_radius(px(8)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)))
                 .into_any(),
                 ResourceState::Error(err) => div![
                     div("❌ Request Failed").style("color: red; font-weight: bold;"),
                     p(format!("{:?}", err)).style("font-size: 0.8em; opacity: 0.7;")
                 ].style("padding: 20px; border: 1px solid red; border-radius: 8px; background: rgba(255,0,0,0.05);").into_any(),
-                ResourceState::Loading if post_resource.get_data().is_none() => div("Loading post...").style("padding: 20px; color: var(--slx-theme-primary);").into_any(),
+                ResourceState::Loading if post_resource.get_data().is_none() => div("Loading post...").style(sty().padding(px(20)).color(AppTheme::PRIMARY)).into_any(),
                 _ => div("Select a post ID to fetch.").style("padding: 20px; opacity: 0.5;").into_any(),
             }
         ].style("min-height: 120px;"),
 
-        hr().style("margin: 30px 0; border: 0; border-top: 1px solid var(--slx-theme-border);"),
+        hr().style(sty().margin_y(px(30)).border(px(0)).border_top(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))),
 
         h4("Mutations (POST Request)"),
         div![
             button("Create New Mock Post")
                 .on(event::click, move |_| create_post_mutation.mutate(()))
                 .attr("disabled", create_post_mutation.loading())
-                .style("padding: 10px 20px; background: var(--slx-theme-primary); color: white; border: none; border-radius: 6px; cursor: pointer;"),
+                .style(sty().padding(padding::x_y(px(10), px(20))).background(AppTheme::PRIMARY).color(hex("white")).border(NONE).border_radius(px(6)).cursor(CursorKeyword::Pointer)),
 
             move || if create_post_mutation.loading() {
-                span(" Creating...").style("margin-left: 10px; color: var(--slx-theme-primary);").into_any()
+                span(" Creating...").style(sty().margin_left(px(10)).color(AppTheme::PRIMARY)).into_any()
             } else {
                 "".into_any()
             },
@@ -142,7 +143,7 @@ pub fn WebSocketDemo() -> impl View {
         div![
             span("Status: "),
             strong(move || if is_connected.get() { "Connected" } else { "Disconnected" })
-                .style(rx!(@fn if is_connected.get() { "color: green;" } else { "color: red;" })),
+                .style(rx!(@fn if is_connected.get() { sty().color(hex("green")) } else { sty().color(hex("red")) })),
         ].style("margin-bottom: 15px;"),
 
         Show::new(is_connected, rx! {
@@ -151,7 +152,7 @@ pub fn WebSocketDemo() -> impl View {
                     input()
                         .placeholder("Send something to echo server...")
                         .bind_value(input_text)
-                        .style("padding: 8px; width: 200px; border-radius: 4px; border: 1px solid var(--slx-theme-border); background: var(--slx-theme-surface); color: var(--slx-theme-text);"),
+                        .style(sty().padding(px(8)).width(px(200)).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).background(AppTheme::SURFACE).color(AppTheme::TEXT)),
                     button("Send").on(event::click, move |_| {
                         socket.with_untracked(|conn| if let Some(conn) = conn {
                             let _ = conn.send(input_text.get());
@@ -162,8 +163,8 @@ pub fn WebSocketDemo() -> impl View {
                 ],
                 div![
                     p("Last Echoed Message:"),
-                    div(last_message).style("padding: 15px; background: rgba(0,0,0,0.05); border-radius: 6px; font-family: monospace; border-left: 4px solid var(--slx-theme-primary);")
-                ].style("margin-top: 15px;"),
+                    div(last_message).style(sty().padding(px(15)).background(AppTheme::SURFACE_ALT).border_radius(px(6)).font_family("monospace").border_left(border(px(4), BorderStyleKeyword::Solid, AppTheme::PRIMARY)))
+                ].style(sty().margin_top(px(15))),
             ]
         })
     ]
@@ -218,9 +219,9 @@ pub fn EventStreamDemo() -> impl View {
             ul(For::new(
                 events,
                 |e| e.clone(),
-                |e| li(e).style("font-family: monospace; font-size: 0.8em; opacity: 0.8; margin-bottom: 4px; word-break: break-all; border-bottom: 1px solid rgba(0,0,0,0.05); padding-bottom: 2px;")
+                |e| li(e).style(sty().font_family("monospace").font_size(em_unit(0.8)).opacity(0.8).margin_bottom(px(4)).word_break(WordBreakKeyword::BreakAll).border_bottom(border(px(1), BorderStyleKeyword::Solid, AppTheme::SURFACE_ALT)).padding_bottom(px(2)))
             ))
-            .style("max-height: 300px; overflow-y: auto; background: var(--slx-theme-surface); border: 1px solid var(--slx-theme-border); padding: 15px; border-radius: 8px;")
+            .style(sty().max_height(px(300)).overflow_y(OverflowYKeyword::Auto).background(AppTheme::SURFACE).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).padding(px(15)).border_radius(px(8)))
         ]
     ]
 }
@@ -264,6 +265,6 @@ pub fn NetDemoPage() -> impl View {
             }
         ].class("demo-container")
     ]
-    .style("padding: 24px; border: 1px solid var(--slx-theme-border); border-radius: 12px; background: var(--slx-theme-surface); transition: all 0.3s;")
+    .style(sty().padding(px(24)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).border_radius(px(12)).background(AppTheme::SURFACE).transition("all 0.3s"))
     .classes("net-demo-page")
 }

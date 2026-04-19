@@ -1,3 +1,4 @@
+use crate::css::AppTheme;
 use silex::prelude::*;
 use silex::reexports::web_sys;
 
@@ -34,7 +35,13 @@ pub fn StoreDemo() -> impl View {
                 ),
             ],
         ]
-        .style("border: 1px solid var(--slx-theme-border); background: var(--slx-theme-surface); padding: 10px; margin-bottom: 10px;"),
+        .style(
+            sty()
+                .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
+                .background(AppTheme::SURFACE)
+                .padding(px(10))
+                .margin_bottom(px(10))
+        ),
         h4("Update Settings"),
         div![
             button("Toggle Theme").on(
@@ -82,13 +89,22 @@ pub fn JsonStorageDemo() -> impl View {
 
     div![
         h4("Native JSON Persistence Demo"),
-        p("This demo uses the JSON codec to persist a complex struct via browser-native `JSON.stringify/parse`."),
+        p(
+            "This demo uses the JSON codec to persist a complex struct via browser-native `JSON.stringify/parse`."
+        ),
         div![
             p![strong("Hero: "), rx!(state.get().name)],
             p![strong("Level: "), rx!(state.get().level.to_string())],
             p![strong("Inventory: "), rx!(state.get().inventory.join(", "))],
         ]
-        .style("background: var(--slx-theme-surface-alt, rgba(128,128,128,0.1)); padding: 10px; border-left: 4px solid var(--slx-theme-primary, #007bff); border-radius: 4px; margin-bottom: 10px;"),
+        .style(
+            sty()
+                .background(AppTheme::SURFACE_ALT)
+                .padding(px(10))
+                .border_left(border(px(4), BorderStyleKeyword::Solid, AppTheme::PRIMARY))
+                .border_radius(px(4))
+                .margin_bottom(px(10))
+        ),
         div![
             button("Level Up").on(event::click, move |_| {
                 state.update(|s| s.level += 1);
@@ -129,7 +145,7 @@ pub fn StorageDemo() -> impl View {
                 button("+1").on(event::click, count.updater(|c| *c += 1)),
             ]
             .style("display: flex; gap: 20px; align-items: center; margin: 15px 0;"),
-        ].style("padding: 15px; border: 1px solid var(--slx-theme-border); border-radius: 4px; margin-bottom: 20px;"),
+        ].style(sty().padding(px(15)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).border_radius(px(4)).margin_bottom(px(20))),
 
         // 2. 复杂类型持久化
         JsonStorageDemo(),
@@ -140,7 +156,7 @@ pub fn StorageDemo() -> impl View {
             " and watch them sync in real-time!"
         ]
     ]
-    .style("padding: 20px; border: 1px solid var(--slx-theme-border); border-radius: 8px; background: var(--slx-theme-surface); transition: all 0.3s;")
+    .style(sty().padding(px(20)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).border_radius(px(8)).background(AppTheme::SURFACE).transition("all 0.3s"))
 }
 
 #[component]
@@ -153,22 +169,33 @@ pub fn QueryDemo() -> impl View {
 
     div![
         h3("Query Signal Demo"),
-        p("This input is synced with the URL query parameter 'demo_val' using `Persistent::builder(...).query()`."),
+        p(
+            "This input is synced with the URL query parameter 'demo_val' using `Persistent::builder(...).query()`."
+        ),
         div![
             input()
                 .bind_value(val) // Automatic two-way binding
                 .placeholder("Type here...")
-                .style("padding: 8px; border: 1px solid var(--slx-theme-border); border-radius: 4px; background: var(--slx-theme-surface); color: var(--slx-theme-text);"),
+                .style(
+                    sty()
+                        .padding(px(8))
+                        .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
+                        .border_radius(px(4))
+                        .background(AppTheme::SURFACE)
+                        .color(AppTheme::TEXT)
+                ),
             button("Reset")
                 .on(event::click, val.setter(String::new()))
                 .style("padding: 8px 16px; cursor: pointer;")
         ]
         .style("display: flex; gap: 10px; margin: 10px 0; align-items: center;"),
-        p![
-            strong("Current Value: "),
-            val
-        ]
-        .style("background: var(--slx-theme-surface); border: 1px solid var(--slx-theme-border); padding: 10px; border-radius: 4px;")
+        p![strong("Current Value: "), val].style(
+            sty()
+                .background(AppTheme::SURFACE)
+                .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
+                .padding(px(10))
+                .border_radius(px(4))
+        )
     ]
 }
 
@@ -279,7 +306,7 @@ pub fn ResourceDemo() -> impl View {
             }
         }
     ]
-    .style("padding: 20px; border: 1px solid var(--slx-theme-border); border-radius: 8px; background: var(--slx-theme-surface); transition: all 0.3s;")
+    .style(sty().padding(px(20)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).border_radius(px(8)).background(AppTheme::SURFACE).transition("all 0.3s"))
 }
 
 #[component]
@@ -344,7 +371,14 @@ pub fn MutationDemo() -> impl View {
             ]
         })
     ]
-    .style("padding: 20px; border: 1px solid var(--slx-theme-border); border-radius: 8px; background: var(--slx-theme-surface); transition: all 0.3s;")
+    .style(
+        sty()
+            .padding(px(20))
+            .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
+            .border_radius(px(8))
+            .background(AppTheme::SURFACE)
+            .transition("all 0.3s"),
+    )
 }
 
 #[component]
@@ -436,8 +470,13 @@ pub fn GenericMessage<'a, T: std::fmt::Display + Clone + 'static>(
     value: T,
     title: &'a str,
 ) -> impl View {
-    div![h4(title.to_string()), p(format!("Value: {}", value)),]
-        .style("padding: 10px; border: 1px solid var(--slx-theme-border); background: var(--slx-theme-surface); transition: all 0.3s;")
+    div![h4(title.to_string()), p(format!("Value: {}", value)),].style(
+        sty()
+            .padding(px(10))
+            .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
+            .background(AppTheme::SURFACE)
+            .transition("all 0.3s"),
+    )
 }
 
 #[component]
@@ -450,7 +489,15 @@ pub fn GenericsDemo() -> impl View {
             .value("Hello Silex!")
             .title("String Message"),
     ]
-    .style("padding: 20px; border: 1px solid var(--slx-theme-border); border-radius: 8px; margin-top: 20px; background: var(--slx-theme-surface); transition: all 0.3s;")
+    .style(
+        sty()
+            .padding(px(20))
+            .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
+            .border_radius(px(8))
+            .margin_top(px(20))
+            .background(AppTheme::SURFACE)
+            .transition("all 0.3s"),
+    )
 }
 
 // --- Adaptive Read & Reactive Tuple Demo ---
