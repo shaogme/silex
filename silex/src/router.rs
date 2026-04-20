@@ -95,7 +95,7 @@ impl Router {
     /// 设置需要渲染的子视图
     pub fn render<F, V>(mut self, view_fn: F) -> Self
     where
-        V: Mount + Clone + 'static,
+        V: MountExt + 'static,
         F: Fn() -> V + 'static,
     {
         self.child = Some(Rc::new(move || view_fn().into_any()));
@@ -107,7 +107,7 @@ impl Router {
     where
         R: Routable,
         F: Fn(R) -> V + 'static,
-        V: Mount + Clone + 'static,
+        V: MountExt + 'static,
     {
         // 创建一个闭包，它在渲染时会获取当前路径并进行匹配
         self.child = Some(Rc::new(move || {

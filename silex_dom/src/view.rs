@@ -35,7 +35,7 @@ pub trait Mount: ApplyAttributes {
 }
 
 /// 挂载特征 - 引用型 (MountRef Trait)
-pub trait MountRef: ApplyAttributes {
+pub trait MountRef {
     /// Optimized mounting from a reference to avoid redundant clones.
     /// For types that are cheap to clone (like Rc-based Elements), this can be just a clone + mount.
     /// For expensive types (like Strings or Fragments), this should be implemented without cloning.
@@ -43,12 +43,12 @@ pub trait MountRef: ApplyAttributes {
 }
 
 /// 视图转换扩展 (Mount Extensions)
-pub trait MountExt: Mount + Sized + 'static {
+pub trait MountExt: MountRef + Mount + Sized + 'static {
     /// Convert this view into an AnyView (Type Erasure without Clone requirement).
     fn into_any(self) -> AnyView;
 }
 
-impl<T: Mount + Sized + 'static> MountExt for T {
+impl<T: MountRef + Mount + Sized + 'static> MountExt for T {
     fn into_any(self) -> AnyView {
         AnyView::new(self)
     }
@@ -90,14 +90,21 @@ impl MountRef for String {
     }
 }
 
-impl ApplyAttributes for &str {}
-impl Mount for &str {
-    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+impl MountRef for str {
+    fn mount_ref(&self, parent: &Node, _attrs: Vec<PendingAttribute>) {
         mount_text_node(parent, self);
     }
 }
+
 impl MountRef for &str {
     fn mount_ref(&self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+        mount_text_node(parent, self);
+    }
+}
+
+impl ApplyAttributes for &str {}
+impl Mount for &str {
+    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
         mount_text_node(parent, self);
     }
 }
@@ -114,7 +121,6 @@ impl<'a> MountRef for std::borrow::Cow<'a, str> {
         mount_text_node(parent, self.as_ref());
     }
 }
-
 // 2. 基础类型支持
 macro_rules! impl_mount_for_primitive {
     ($($t:ty),*) => {

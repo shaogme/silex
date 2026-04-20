@@ -58,7 +58,7 @@ macro_rules! define_tag {
         impl $crate::prelude::tags::Tag for $struct_name {}
         $( impl $crate::prelude::tags::$traits for $struct_name {} )*
 
-        pub fn $fn_name<V: $crate::view::Mount + 'static>(child: V) -> $crate::prelude::TypedElement<$struct_name> {
+        pub fn $fn_name<V: $crate::view::Mount>(child: V) -> $crate::prelude::TypedElement<$struct_name> {
             let el = $crate::prelude::TypedElement::<$struct_name>::$constructor($tag_name);
             $crate::view::Mount::mount(child, &el.element.dom_element, Vec::new());
             el

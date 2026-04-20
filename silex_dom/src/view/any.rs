@@ -11,6 +11,7 @@ use web_sys::Node;
 
 pub(crate) struct AnyViewVTable {
     pub mount: FuncPtr<unsafe fn(data: *mut u8, parent: &Node, attrs: Vec<PendingAttribute>)>,
+    pub mount_ref: FuncPtr<unsafe fn(data: *const u8, parent: &Node, attrs: Vec<PendingAttribute>)>,
     pub apply_attributes: FuncPtr<unsafe fn(data: *mut u8, attrs: Vec<PendingAttribute>)>,
     pub drop: FuncPtr<unsafe fn(data: *mut u8)>,
 }
@@ -33,16 +34,18 @@ pub struct SharedViewBox {
 
 impl AnyViewBox {
     #[inline(always)]
-    pub fn new<V: crate::view::Mount + 'static>(view: V) -> Self {
+    pub fn new<V: crate::view::MountExt + 'static>(view: V) -> Self {
         struct VGen<V>(PhantomData<V>);
-        impl<V: crate::view::Mount + 'static> VGen<V> {
+        impl<V: crate::view::MountExt + 'static> VGen<V> {
             const STACK: AnyViewVTable = AnyViewVTable {
                 mount: FuncPtr::new(mount_stack::<V>),
+                mount_ref: FuncPtr::new(mount_ref_stack::<V>),
                 apply_attributes: FuncPtr::new(apply_stack::<V>),
                 drop: FuncPtr::new(drop_stack::<V>),
             };
             const HEAP: AnyViewVTable = AnyViewVTable {
                 mount: FuncPtr::new(mount_heap::<V>),
+                mount_ref: FuncPtr::new(mount_ref_heap::<V>),
                 apply_attributes: FuncPtr::new(apply_heap::<V>),
                 drop: FuncPtr::new(drop_heap::<V>),
             };
@@ -58,6 +61,12 @@ impl AnyViewBox {
         let data_ptr = this.inner.as_mut_ptr();
         unsafe {
             (vtable.mount.as_fn())(data_ptr, parent, attrs);
+        }
+    }
+
+    pub fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        unsafe {
+            (self.inner.vtable.mount_ref.as_fn())(self.inner.as_ptr(), parent, attrs);
         }
     }
 
@@ -277,7 +286,7 @@ impl SharedView {
 }
 
 impl AnyView {
-    pub fn new<V: crate::view::Mount + 'static>(view: V) -> Self {
+    pub fn new<V: crate::view::MountExt + 'static>(view: V) -> Self {
         AnyView::Boxed(AnyViewBox::new(view), Vec::new())
     }
 }
@@ -363,6 +372,27 @@ impl crate::view::ApplyAttributes for AnyView {
                 b.apply_attributes(inner_attrs.clone());
             }
             AnyView::FromShared(s) => s.apply_attributes(attrs),
+        }
+    }
+}
+
+impl crate::view::MountRef for AnyView {
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        match self {
+            AnyView::Empty => {}
+            AnyView::Text(s) => s.mount_ref(parent, attrs),
+            AnyView::Element(el) => el.mount_ref(parent, attrs),
+            AnyView::List(list) => {
+                for (i, child) in list.iter().enumerate() {
+                    child.mount_ref(parent, if i == 0 { attrs.clone() } else { Vec::new() });
+                }
+            }
+            AnyView::Boxed(b, inner_attrs) => {
+                let mut temp = inner_attrs.clone();
+                temp.extend(attrs);
+                b.mount_ref(parent, crate::attribute::consolidate_attributes(temp));
+            }
+            AnyView::FromShared(s) => s.mount_ref(parent, attrs),
         }
     }
 }
@@ -541,9 +571,8 @@ impl_from_primitive!(
     i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, f32, f64, bool, char
 );
 
-impl<V: crate::view::Mount + 'static> From<Vec<V>> for AnyView {
+impl<V: crate::view::MountExt + 'static> From<Vec<V>> for AnyView {
     fn from(v: Vec<V>) -> Self {
-        use crate::view::MountExt;
         AnyView::List(v.into_iter().map(|item| item.into_any()).collect())
     }
 }
@@ -554,7 +583,7 @@ impl<V: crate::view::MountRef + crate::view::Mount + Clone + 'static> From<Vec<V
     }
 }
 
-impl<V: crate::view::Mount + 'static> From<Option<V>> for AnyView {
+impl<V: crate::view::MountExt + 'static> From<Option<V>> for AnyView {
     fn from(v: Option<V>) -> Self {
         match v {
             Some(val) => AnyView::new(val),
@@ -589,8 +618,8 @@ impl From<crate::view::ViewNil> for SharedView {
 
 impl<H, T> From<crate::view::ViewCons<H, T>> for AnyView
 where
-    H: crate::view::Mount + 'static,
-    T: crate::view::Mount + 'static,
+    H: crate::view::MountExt + 'static,
+    T: crate::view::MountExt + 'static,
 {
     fn from(v: crate::view::ViewCons<H, T>) -> Self {
         AnyView::new(v)
