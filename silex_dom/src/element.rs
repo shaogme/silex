@@ -1,5 +1,5 @@
 use crate::attribute::{ApplyTarget, ApplyToDom, IntoStorable, PendingAttribute};
-use crate::view::View;
+use crate::view::Mount;
 use silex_core::SilexError;
 use silex_core::reactivity::on_cleanup;
 
@@ -14,7 +14,7 @@ pub use tags::*;
 
 /// Identity function to wrap text content as a View.
 /// This matches the API expected by the showcase example and provides a explicit way to denote text nodes.
-pub fn text<V: View>(content: V) -> V {
+pub fn text<V: crate::view::MountRef>(content: V) -> V {
     content
 }
 
@@ -24,13 +24,14 @@ pub struct Element {
     pub dom_element: WebElem,
 }
 
-pub fn mount_to_body<V: View>(view: V) {
+pub fn mount_to_body<V: crate::view::Mount>(view: V) {
     let document = crate::document();
     let body = document.body().expect("No body element");
+    let node: web_sys::Node = body.into();
 
     // Create a root reactive scope to ensure context and effects work correctly
     silex_core::reactivity::create_scope(move || {
-        view.mount(&body, Vec::new());
+        view.mount(&node, Vec::new());
     });
 }
 
@@ -76,10 +77,19 @@ impl AttributeBuilder for Element {
     }
 }
 
-impl View for Element {
+impl crate::view::ApplyAttributes for Element {
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
+        let consolidated = crate::attribute::consolidate_attributes(attrs);
+        for attr in consolidated {
+            attr.apply(&self.dom_element);
+        }
+    }
+}
+
+impl crate::view::Mount for Element {
     fn mount(mut self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
         if !attrs.is_empty() {
-            self.apply_attributes(attrs);
+            crate::view::ApplyAttributes::apply_attributes(&mut self, attrs);
         }
 
         if let Err(e) = parent
@@ -89,24 +99,11 @@ impl View for Element {
             silex_core::error::handle_error(e);
         }
     }
+}
 
+impl crate::view::MountRef for Element {
     fn mount_ref(&self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
         self.clone().mount(parent, attrs);
-    }
-
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
-        let consolidated = crate::attribute::consolidate_attributes(attrs);
-        for attr in consolidated {
-            attr.apply(&self.dom_element);
-        }
-    }
-
-    fn into_any(self) -> crate::view::AnyView {
-        crate::view::AnyView::Element(self.clone())
-    }
-
-    fn into_shared(self) -> crate::view::SharedView {
-        crate::view::SharedView::Element(self)
     }
 }
 
@@ -189,31 +186,27 @@ impl<T> AttributeBuilder for TypedElement<T> {
     }
 }
 
-impl<T> View for TypedElement<T> {
+impl<T> crate::view::ApplyAttributes for TypedElement<T> {
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
+        self.element.apply_attributes(attrs);
+    }
+}
+
+impl<T> crate::view::Mount for TypedElement<T> {
     fn mount(mut self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
         if !attrs.is_empty() {
-            self.apply_attributes(attrs);
+            crate::view::ApplyAttributes::apply_attributes(&mut self, attrs);
         }
 
         if let Err(e) = parent.append_child(&self.element).map_err(SilexError::from) {
             silex_core::error::handle_error(e);
         }
     }
+}
 
+impl<T> crate::view::MountRef for TypedElement<T> {
     fn mount_ref(&self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
         self.element.mount_ref(parent, attrs);
-    }
-
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
-        self.element.apply_attributes(attrs);
-    }
-
-    fn into_any(self) -> crate::view::AnyView {
-        crate::view::AnyView::Element(self.element.clone())
-    }
-
-    fn into_shared(self) -> crate::view::SharedView {
-        crate::view::SharedView::Element(self.element)
     }
 }
 

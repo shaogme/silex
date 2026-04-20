@@ -3,7 +3,7 @@ use silex_core::reactivity::{
     Effect, NodeId, ReadSignal, Signal, WriteSignal, batch, create_scope, dispose,
 };
 use silex_core::traits::{IntoRx, RxRead, RxWrite};
-use silex_dom::prelude::View;
+use silex_dom::prelude::{ApplyAttributes, AutoReactiveView, Mount, MountRef};
 use std::cell::RefCell;
 use std::rc::Rc;
 use web_sys::Node;
@@ -24,7 +24,7 @@ where
     ItemsFn: RxRead<Value = Items> + 'static,
     Items: ForLoopSource<Item = Item> + 'static,
     MapFn: Fn(ReadSignal<Item>, usize) -> V + 'static,
-    V: View,
+    V: Mount,
     Item: 'static,
 {
     pub fn new(items: impl IntoRx<Value = Items, RxType = ItemsFn>, map: MapFn) -> Self {
@@ -45,18 +45,47 @@ struct IndexRow<Item> {
     nodes: Vec<Node>,
 }
 
-impl<ItemsFn, Item, Items, MapFn, V> View for Index<ItemsFn, Item, Items, MapFn, V>
+impl<ItemsFn, Item, Items, MapFn, V> ApplyAttributes for Index<ItemsFn, Item, Items, MapFn, V>
 where
     ItemsFn: RxRead<Value = Items> + Clone + 'static,
     Items: ForLoopSource<Item = Item> + 'static,
     MapFn: Fn(ReadSignal<Item>, usize) -> V + 'static,
-    V: View,
+    V: Mount,
+    Item: Clone + 'static,
+{
+}
+
+impl<ItemsFn, Item, Items, MapFn, V> Mount for Index<ItemsFn, Item, Items, MapFn, V>
+where
+    ItemsFn: RxRead<Value = Items> + Clone + 'static,
+    Items: ForLoopSource<Item = Item> + 'static,
+    MapFn: Fn(ReadSignal<Item>, usize) -> V + 'static,
+    V: Mount,
     Item: Clone + 'static,
 {
     fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         mount_index_internal(self.items, self.map, parent, attrs);
     }
+}
 
+impl<ItemsFn, Item, Items, MapFn, V> AutoReactiveView for Index<ItemsFn, Item, Items, MapFn, V>
+where
+    ItemsFn: RxRead<Value = Items> + Clone + 'static,
+    Items: ForLoopSource<Item = Item> + Clone + 'static,
+    MapFn: Fn(ReadSignal<Item>, usize) -> V + Clone + 'static,
+    V: Mount + Clone + 'static,
+    Item: Clone + 'static,
+{
+}
+
+impl<ItemsFn, Item, Items, MapFn, V> MountRef for Index<ItemsFn, Item, Items, MapFn, V>
+where
+    ItemsFn: RxRead<Value = Items> + Clone + 'static,
+    Items: ForLoopSource<Item = Item> + 'static,
+    MapFn: Fn(ReadSignal<Item>, usize) -> V + 'static,
+    V: Mount,
+    Item: Clone + 'static,
+{
     fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         mount_index_internal(self.items.clone(), self.map.clone(), parent, attrs);
     }
@@ -71,7 +100,7 @@ fn mount_index_internal<ItemsFn, Item, Items, MapFn, V>(
     ItemsFn: RxRead<Value = Items> + 'static,
     Items: ForLoopSource<Item = Item> + 'static,
     MapFn: Fn(ReadSignal<Item>, usize) -> V + 'static,
-    V: View,
+    V: Mount,
     Item: Clone + 'static,
 {
     let document = silex_dom::document();

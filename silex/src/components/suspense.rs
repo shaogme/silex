@@ -1,7 +1,7 @@
 use silex_core::reactivity::{Effect, SuspenseContext, create_scope, use_suspense_context};
 use silex_core::traits::RxGet;
 use silex_dom::attribute::GlobalAttributes;
-use silex_dom::view::View;
+use silex_dom::view::{ApplyAttributes, AutoReactiveView, Mount, MountRef};
 use silex_html::div;
 use std::rc::Rc;
 use web_sys::Node;
@@ -130,12 +130,17 @@ impl<C, F> SuspenseBoundary<C, F> {
     }
 }
 
-impl<C, F, VRes, FRes> View for SuspenseBoundary<C, F>
+impl<C, F> ApplyAttributes for SuspenseBoundary<C, F>
 where
-    C: crate::flow::ViewFactory<View = VRes> + 'static,
-    VRes: View + 'static,
-    F: crate::flow::ViewFactory<View = FRes> + 'static,
-    FRes: View + 'static,
+    C: MountRef + 'static,
+    F: MountRef + 'static,
+{
+}
+
+impl<C, F> Mount for SuspenseBoundary<C, F>
+where
+    C: MountRef + 'static,
+    F: MountRef + 'static,
 {
     fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         let children_fn = self.children;
@@ -158,9 +163,8 @@ where
                 let content_root = content_wrapper.element;
 
                 Effect::new(move |_| {
-                    let view = children_fn.render();
                     content_root.set_inner_html("");
-                    view.mount(&content_root, Vec::new());
+                    children_fn.mount_ref(&content_root, Vec::new());
                 });
 
                 let fallback_wrapper = div(()).class("suspense-fallback");
@@ -171,9 +175,8 @@ where
                 let fallback_root = fallback_wrapper.element;
 
                 Effect::new(move |_| {
-                    let view = fallback_fn.render();
                     fallback_root.set_inner_html("");
-                    view.mount(&fallback_root, Vec::new());
+                    fallback_fn.mount_ref(&fallback_root, Vec::new());
                 });
             }
             SuspenseMode::Unmount => {
@@ -188,9 +191,8 @@ where
                     if count.get() > 0 {
                         content_root.set_inner_html("");
                     } else {
-                        let view = children_fn.render();
                         content_root.set_inner_html("");
-                        view.mount(&content_root, Vec::new());
+                        children_fn.mount_ref(&content_root, Vec::new());
                     }
                 });
 
@@ -200,9 +202,8 @@ where
 
                 Effect::new(move |_| {
                     if count.get() > 0 {
-                        let view = fallback_fn.render();
                         fallback_root.set_inner_html("");
-                        view.mount(&fallback_root, Vec::new());
+                        fallback_fn.mount_ref(&fallback_root, Vec::new());
                     } else {
                         fallback_root.set_inner_html("");
                     }
@@ -210,7 +211,20 @@ where
             }
         });
     }
+}
 
+impl<C, F> AutoReactiveView for SuspenseBoundary<C, F>
+where
+    C: MountRef + 'static,
+    F: MountRef + 'static,
+{
+}
+
+impl<C, F> MountRef for SuspenseBoundary<C, F>
+where
+    C: MountRef + 'static,
+    F: MountRef + 'static,
+{
     fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         self.clone().mount(parent, attrs);
     }

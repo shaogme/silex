@@ -1,5 +1,5 @@
 use silex_core::reactivity::on_cleanup;
-use silex_dom::prelude::View;
+use silex_dom::prelude::{ApplyAttributes, AutoReactiveView, Mount, MountRef};
 use web_sys::Node;
 
 /// Portal 组件：将子视图渲染到当前 DOM 树之外的节点（默认是 document.body）。
@@ -25,9 +25,11 @@ impl<V> Portal<V> {
     }
 }
 
-impl<V> View for Portal<V>
+impl<V> ApplyAttributes for Portal<V> {}
+
+impl<V> Mount for Portal<V>
 where
-    V: View,
+    V: Mount,
 {
     fn mount(self, _parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         let document = silex_dom::document();
@@ -52,7 +54,14 @@ where
             let _ = target_clone.remove_child(&container_clone);
         });
     }
+}
 
+impl<V> AutoReactiveView for Portal<V> where V: MountRef + Clone + 'static {}
+
+impl<V> MountRef for Portal<V>
+where
+    V: MountRef,
+{
     fn mount_ref(&self, _parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         let document = silex_dom::document();
         let target = self
@@ -78,6 +87,6 @@ where
     }
 }
 
-pub fn portal<V: View>(child: V) -> Portal<V> {
+pub fn portal<V: Mount>(child: V) -> Portal<V> {
     Portal::new(child)
 }

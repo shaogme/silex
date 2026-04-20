@@ -6,7 +6,7 @@ use silex_core::traits::{
     IntoRx, IntoSignal, RxBase, RxData, RxGet, RxInternal, RxRead, RxValue, RxWrite,
 };
 use silex_core::{Rx, RxValueKind};
-use silex_dom::view::View;
+use silex_dom::view::{ApplyAttributes, Mount, MountRef};
 use std::rc::Rc;
 
 pub type PersistenceGetFn = Rc<dyn Fn(&str) -> Result<Option<String>, PersistenceError>>;
@@ -268,15 +268,28 @@ impl<T: Clone + PartialEq + 'static> From<Persistent<T>> for RwSignal<T> {
     }
 }
 
-impl<T> View for Persistent<T>
+impl<T> ApplyAttributes for Persistent<T>
 where
     T: silex_core::traits::RxCloneData + Sized + 'static,
-    Rx<T, RxValueKind>: View,
+    Rx<T, RxValueKind>: ApplyAttributes,
+{
+}
+
+impl<T> Mount for Persistent<T>
+where
+    T: silex_core::traits::RxCloneData + Sized + 'static,
+    Rx<T, RxValueKind>: Mount,
 {
     fn mount(self, parent: &web_sys::Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         self.into_rx().mount(parent, attrs);
     }
+}
 
+impl<T> MountRef for Persistent<T>
+where
+    T: silex_core::traits::RxCloneData + Sized + 'static,
+    Rx<T, RxValueKind>: MountRef,
+{
     fn mount_ref(
         &self,
         parent: &web_sys::Node,

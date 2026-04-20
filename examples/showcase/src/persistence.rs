@@ -19,7 +19,7 @@ impl Default for Settings {
 }
 
 #[component]
-pub fn PersistencePage() -> impl View {
+pub fn PersistencePage() -> impl Mount {
     div![
         h2("Comprehensive Persistence Demo")
             .style(sty().color(AppTheme::PRIMARY).margin_bottom(px(10))),
@@ -43,7 +43,7 @@ pub fn PersistencePage() -> impl View {
 }
 
 #[component]
-fn Card(title: &'static str, children: Children) -> impl View {
+fn Card(title: &'static str, children: Children) -> impl Mount {
     div![
         h3(title).style(
             sty()
@@ -66,7 +66,7 @@ fn Card(title: &'static str, children: Children) -> impl View {
 }
 
 #[component]
-fn BackendGrid() -> impl View {
+fn BackendGrid() -> impl Mount {
     let local = Persistent::builder("demo-local")
         .local()
         .string()
@@ -140,7 +140,7 @@ fn BackendGrid() -> impl View {
 }
 
 #[component]
-fn ManualFlushDemo() -> impl View {
+fn ManualFlushDemo() -> impl Mount {
     let draft = Persistent::builder("demo-draft")
         .local()
         .string()
@@ -184,7 +184,7 @@ fn ManualFlushDemo() -> impl View {
 }
 
 #[component]
-fn DebounceDemo() -> impl View {
+fn DebounceDemo() -> impl Mount {
     let debounced = Persistent::builder("demo-debounced")
         .local()
         .string()
@@ -231,7 +231,7 @@ fn DebounceDemo() -> impl View {
 }
 
 #[component]
-fn ErrorHandlingDemo() -> impl View {
+fn ErrorHandlingDemo() -> impl Mount {
     let settings = Persistent::builder("demo-complex-settings")
         .local()
         .json::<Settings>()

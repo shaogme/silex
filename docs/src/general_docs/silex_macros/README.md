@@ -219,7 +219,7 @@ enum AppRoute {
     #[route("/dashboard", view = Dashboard, guard = AuthGuard)]
     Dashboard,
 
-    // 支持多个 Guard，执行顺序由外向内: LogGuard -> AuthGuard -> View
+    // 支持多个 Guard，执行顺序由外向内: LogGuard -> AuthGuard -> Mount
     #[route("/admin", view = AdminPanel, guard = [LogGuard, AuthGuard])]
     Admin,
 }

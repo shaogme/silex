@@ -3,7 +3,7 @@ use crate::router::context::use_router;
 use silex_core::traits::RxGet;
 use silex_dom::attribute::{AttributeBuilder, GlobalAttributes};
 use silex_dom::element::TypedElement;
-use silex_dom::prelude::{GlobalEventAttributes, View};
+use silex_dom::prelude::{ApplyAttributes, GlobalEventAttributes, Mount, MountRef};
 use silex_html::A as TagA;
 use silex_html::a;
 
@@ -21,7 +21,7 @@ use crate::router::ToRoute;
 ///
 /// 类似于 HTML 的 `<a>` 标签，但会拦截点击事件并使用 Router 导航，而不是刷新页面。
 #[allow(non_snake_case)]
-pub fn Link<T: ToRoute, V: View + 'static>(to: T, child: V) -> Link {
+pub fn Link<T: ToRoute, V: Mount + 'static>(to: T, child: V) -> Link {
     let href = to.to_route();
     let element = a(child).attr("href", &href);
     Link {
@@ -83,7 +83,9 @@ impl Link {
     }
 }
 
-impl View for Link {
+impl ApplyAttributes for Link {}
+
+impl Mount for Link {
     fn mount(self, parent: &web_sys::Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         let href = self.href.clone();
 
@@ -129,7 +131,9 @@ impl View for Link {
 
         element.mount(parent, attrs);
     }
+}
 
+impl MountRef for Link {
     fn mount_ref(
         &self,
         parent: &web_sys::Node,

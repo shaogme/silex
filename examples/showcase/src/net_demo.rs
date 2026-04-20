@@ -12,7 +12,7 @@ pub struct Post {
 }
 
 #[component]
-pub fn HttpClientDemo() -> impl View {
+pub fn HttpClientDemo() -> impl Mount {
     let (post_id, set_post_id) = Signal::pair(1);
 
     // 1. Using HttpClient::as_resource for declarative fetching
@@ -57,14 +57,13 @@ pub fn HttpClientDemo() -> impl View {
                     h4(post.title).style(sty().color(AppTheme::PRIMARY).margin_top(px(0))),
                     p(post.body).style("opacity: 0.8;"),
                     small(format!("User ID: {}", post.user_id)).style("opacity: 0.6;")
-                ].style(sty().padding(px(20)).background(AppTheme::SURFACE_ALT).border_radius(px(8)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)))
-                .into_any(),
+                ].style(sty().padding(px(20)).background(AppTheme::SURFACE_ALT).border_radius(px(8)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))),
                 ResourceState::Error(err) => div![
                     div("❌ Request Failed").style("color: red; font-weight: bold;"),
                     p(format!("{:?}", err)).style("font-size: 0.8em; opacity: 0.7;")
-                ].style("padding: 20px; border: 1px solid red; border-radius: 8px; background: rgba(255,0,0,0.05);").into_any(),
-                ResourceState::Loading if post_resource.get_data().is_none() => div("Loading post...").style(sty().padding(px(20)).color(AppTheme::PRIMARY)).into_any(),
-                _ => div("Select a post ID to fetch.").style("padding: 20px; opacity: 0.5;").into_any(),
+                ].style("padding: 20px; border: 1px solid red; border-radius: 8px; background: rgba(255,0,0,0.05);"),
+                ResourceState::Loading if post_resource.get_data().is_none() => div("Loading post...").style(sty().padding(px(20)).color(AppTheme::PRIMARY)),
+                _ => div("Select a post ID to fetch.").style("padding: 20px; opacity: 0.5;"),
             }
         ].style("min-height: 120px;"),
 
@@ -98,7 +97,7 @@ pub fn HttpClientDemo() -> impl View {
 }
 
 #[component]
-pub fn WebSocketDemo() -> impl View {
+pub fn WebSocketDemo() -> impl Mount {
     let url = RwSignal::new("wss://echo.websocket.org".to_string());
     let socket = StoredValue::new(None::<WebSocketConnection>);
     let (is_connected, set_is_connected) = Signal::pair(false);
@@ -146,7 +145,7 @@ pub fn WebSocketDemo() -> impl View {
                 .style(rx!(@fn if is_connected.get() { sty().color(hex("green")) } else { sty().color(hex("red")) })),
         ].style("margin-bottom: 15px;"),
 
-        Show::new(is_connected, rx! {
+        Show::new(is_connected,
             div![
                 div![
                     input()
@@ -166,12 +165,12 @@ pub fn WebSocketDemo() -> impl View {
                     div(last_message).style(sty().padding(px(15)).background(AppTheme::SURFACE_ALT).border_radius(px(6)).font_family("monospace").border_left(border(px(4), BorderStyleKeyword::Solid, AppTheme::PRIMARY)))
                 ].style(sty().margin_top(px(15))),
             ]
-        })
+        )
     ]
 }
 
 #[component]
-pub fn EventStreamDemo() -> impl View {
+pub fn EventStreamDemo() -> impl Mount {
     let (is_active, set_is_active) = Signal::pair(false);
     let url = RwSignal::new("https://stream.wikimedia.org/v2/stream/recentchange".to_string());
     let stream = StoredValue::new(None::<EventStreamConnection>);
@@ -227,7 +226,7 @@ pub fn EventStreamDemo() -> impl View {
 }
 
 #[component]
-pub fn NetDemoPage() -> impl View {
+pub fn NetDemoPage() -> impl Mount {
     let (active_tab, set_active_tab) = Signal::pair("http");
 
     inject_style("net-demo-css", "

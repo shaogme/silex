@@ -85,10 +85,16 @@ pub fn theme(input: TokenStream) -> TokenStream {
 /// - `#[prop(default, into)]`: 可以组合使用
 #[cfg(feature = "component")]
 #[proc_macro_attribute]
-pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
     let input_fn = parse_macro_input!(item as ItemFn);
+    let attr_stream = proc_macro2::TokenStream::from(attr);
 
-    match component::generate_component(input_fn) {
+    let attrs = match component::parse_component_attrs(attr_stream) {
+        Ok(a) => a,
+        Err(e) => return e.to_compile_error().into(),
+    };
+
+    match component::generate_component(input_fn, attrs) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),
     }

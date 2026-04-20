@@ -1,8 +1,13 @@
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
+use syn::parse::Parser;
 use syn::{Attribute, FnArg, ItemFn, Pat};
 
-pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
+pub struct ComponentAttrs {
+    pub no_clone: bool,
+}
+
+pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Result<TokenStream2> {
     let fn_name = &input_fn.sig.ident;
     let fn_vis = &input_fn.vis;
     let fn_generics = &input_fn.sig.generics;
@@ -133,9 +138,9 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
                     let type_ident = get_base_type_name(ty);
 
                     if type_ident == "SharedView" || type_ident == "Children" {
-                        new_initializers.push(quote! { #param_name: ::silex::dom::view::View::into_shared(#default_expr) });
+                        new_initializers.push(quote! { #param_name: ::silex::dom::view::MountRefExt::into_shared(#default_expr) });
                     } else if type_ident == "AnyView" {
-                        new_initializers.push(quote! { #param_name: ::silex::dom::view::View::into_any(#default_expr) });
+                        new_initializers.push(quote! { #param_name: ::silex::dom::view::MountExt::into_any(#default_expr) });
                     } else {
                         new_initializers.push(quote! { #param_name: (#default_expr).into() });
                     }
@@ -161,14 +166,16 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
             if type_ident == "Children" || type_ident == "SharedView" {
                 if is_required {
                     builder_methods.push(quote! {
-                        pub fn #param_name<__SilexValue: ::silex::dom::view::View + Clone + 'static>(mut self, val: __SilexValue) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::MountRef + ::silex::dom::view::Mount + Clone + 'static>(mut self, val: __SilexValue) -> Self {
+                            use ::silex::dom::view::MountRefExt;
                             self.#param_name = Some(val.into_shared());
                             self
                         }
                     });
                 } else {
                     builder_methods.push(quote! {
-                        pub fn #param_name<__SilexValue: ::silex::dom::view::View + Clone + 'static>(mut self, val: __SilexValue) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::MountRef + ::silex::dom::view::Mount + Clone + 'static>(mut self, val: __SilexValue) -> Self {
+                            use ::silex::dom::view::MountRefExt;
                             self.#param_name = val.into_shared();
                             self
                         }
@@ -177,14 +184,16 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
             } else if type_ident == "AnyView" {
                 if is_required {
                     builder_methods.push(quote! {
-                        pub fn #param_name<__SilexValue: ::silex::dom::view::View + 'static>(mut self, val: __SilexValue) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::Mount + 'static>(mut self, val: __SilexValue) -> Self {
+                            use ::silex::dom::view::MountExt;
                             self.#param_name = Some(val.into_any());
                             self
                         }
                     });
                 } else {
                     builder_methods.push(quote! {
-                        pub fn #param_name<__SilexValue: ::silex::dom::view::View + 'static>(mut self, val: __SilexValue) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::Mount + 'static>(mut self, val: __SilexValue) -> Self {
+                            use ::silex::dom::view::MountExt;
                             self.#param_name = val.into_any();
                             self
                         }
@@ -233,14 +242,14 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
                 quote! {
                     // 生成同名带 children 参数的构建函数
                     #[allow(non_snake_case)]
-                    #fn_vis fn #fn_name #impl_generics(children: impl ::silex::dom::view::View + Clone + 'static) -> #struct_name #ty_generics #where_clause {
+                    #fn_vis fn #fn_name #impl_generics(children: impl ::silex::dom::view::MountRef + ::silex::dom::view::Mount + Clone + 'static) -> #struct_name #ty_generics #where_clause {
                         #struct_name::new().children(children)
                     }
                 }
             } else if type_ident == "AnyView" {
                 quote! {
                     #[allow(non_snake_case)]
-                    #fn_vis fn #fn_name #impl_generics(children: impl ::silex::dom::view::View + 'static) -> #struct_name #ty_generics #where_clause {
+                    #fn_vis fn #fn_name #impl_generics(children: impl ::silex::dom::view::Mount + 'static) -> #struct_name #ty_generics #where_clause {
                         #struct_name::new().children(children)
                     }
                 }
@@ -270,9 +279,27 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         }
     };
 
+    let derive_clone = if !attrs.no_clone {
+        quote! { #[derive(Clone)] }
+    } else {
+        quote! {}
+    };
+
+    let mount_ref_impl = if !attrs.no_clone {
+        quote! {
+            impl #impl_generics ::silex::dom::view::MountRef for #struct_name #ty_generics #where_clause {
+                fn mount_ref(&self, parent: &::silex::reexports::web_sys::Node, attrs: Vec<::silex::dom::attribute::PendingAttribute>) {
+                    self.clone().mount(parent, attrs);
+                }
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     let expanded = quote! {
         // 生成结构体
-        #[derive(Clone)]
+        #derive_clone
         #fn_vis struct #struct_name #impl_generics #where_clause {
             #(#struct_fields,)*
             // Internal storage for forwarded attributes
@@ -325,7 +352,9 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         }
 
 
-        impl #impl_generics ::silex::dom::view::View for #struct_name #ty_generics #where_clause {
+        impl #impl_generics ::silex::dom::view::ApplyAttributes for #struct_name #ty_generics #where_clause {}
+
+        impl #impl_generics ::silex::dom::view::Mount for #struct_name #ty_generics #where_clause {
             fn mount(self, parent: &::silex::reexports::web_sys::Node, attrs: Vec<::silex::dom::attribute::PendingAttribute>) {
                 // Runtime checks and bindings
                 #(#mount_checks)*
@@ -337,13 +366,11 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
                 all_attrs.extend(attrs);
 
                 // Forward attributes using the new robust propagation method
-                ::silex::dom::view::View::mount(view_instance, parent, all_attrs);
-            }
-
-            fn mount_ref(&self, parent: &::silex::reexports::web_sys::Node, attrs: Vec<::silex::dom::attribute::PendingAttribute>) {
-                self.clone().mount(parent, attrs);
+                ::silex::dom::view::Mount::mount(view_instance, parent, all_attrs);
             }
         }
+
+        #mount_ref_impl
 
         #component_constructor
     };
@@ -387,6 +414,28 @@ fn parse_prop_attrs(attrs: &[Attribute]) -> syn::Result<PropAttrs> {
         }
     }
 
+    Ok(result)
+}
+
+pub fn parse_component_attrs(args: TokenStream2) -> syn::Result<ComponentAttrs> {
+    let mut result = ComponentAttrs {
+        no_clone: false,
+    };
+
+    if args.is_empty() {
+        return Ok(result);
+    }
+
+    let parser = syn::meta::parser(|meta| {
+        if meta.path.is_ident("no_clone") {
+            result.no_clone = true;
+            Ok(())
+        } else {
+            Err(meta.error("unsupported component attribute"))
+        }
+    });
+
+    parser.parse2(args)?;
     Ok(result)
 }
 

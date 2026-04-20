@@ -263,11 +263,25 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         get_tag_return_type(&tag_str, tag.span(), parsed.generics.where_clause.as_ref());
     let extra_impls = get_extra_tag_impls(&tag_str, name, &parsed.generics);
 
+    let mut no_clone = false;
     let filtered_attrs: Vec<_> = parsed
         .attrs
         .iter()
-        .filter(|a| !a.path().is_ident("theme"))
+        .filter(|a| {
+            if a.path().is_ident("no_clone") {
+                no_clone = true;
+                false
+            } else {
+                !a.path().is_ident("theme")
+            }
+        })
         .collect();
+
+    let component_attr = if no_clone {
+        quote! { #[::silex::macros::component(no_clone)] }
+    } else {
+        quote! { #[::silex::macros::component] }
+    };
     let vis = &parsed.vis;
     let (impl_generics, _, _) = parsed.generics.split_for_impl();
     let static_css = &compile_result.static_css;
@@ -278,7 +292,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
 
     Ok(quote! {
         #(#filtered_attrs)*
-        #[::silex::macros::component]
+        #component_attr
         #vis fn #name #impl_generics (#all_fn_args) -> #return_type {
             const __STATIC_CSS: &str = #static_css;
             const __COMPONENT_CSS: &str = #component_css;
@@ -420,7 +434,7 @@ fn get_tag_return_type(
         let ident = Ident::new(&name, span);
         quote! { ::silex::dom::element::TypedElement<::silex::dom::element::tags::#ident> }
     } else {
-        quote! { impl ::silex::dom::attribute::AttributeBuilder + ::silex::dom::view::View #where_clause }
+        quote! { impl ::silex::dom::attribute::AttributeBuilder + ::silex::dom::view::Mount + ::silex::dom::view::MountRef + ::silex::dom::view::ApplyAttributes #where_clause }
     }
 }
 
@@ -458,6 +472,7 @@ fn get_extra_tag_impls(tag: &str, name: &Ident, generics: &Generics) -> TokenStr
 // --- global! ---
 
 pub struct GlobalStyle {
+    pub attrs: Vec<Attribute>,
     pub name: Option<Ident>,
     pub css_block: TokenStream,
     pub is_unsafe: bool,
@@ -465,6 +480,7 @@ pub struct GlobalStyle {
 
 impl Parse for GlobalStyle {
     fn parse(input: ParseStream) -> Result<Self> {
+        let attrs = input.call(Attribute::parse_outer)?;
         let is_unsafe = input.peek(Token![unsafe]);
         if is_unsafe {
             input.parse::<Token![unsafe]>()?;
@@ -475,12 +491,14 @@ impl Parse for GlobalStyle {
             let content;
             syn::braced!(content in input);
             return Ok(GlobalStyle {
+                attrs,
                 name: Some(name),
                 css_block: content.parse()?,
                 is_unsafe,
             });
         }
         Ok(GlobalStyle {
+            attrs,
             name: None,
             css_block: input.parse()?,
             is_unsafe,
@@ -490,6 +508,27 @@ impl Parse for GlobalStyle {
 
 pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     let parsed: GlobalStyle = syn::parse2(input)?;
+
+    let mut no_clone = false;
+    let filtered_attrs: Vec<_> = parsed
+        .attrs
+        .iter()
+        .filter(|a| {
+            if a.path().is_ident("no_clone") {
+                no_clone = true;
+                false
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    let component_attr = if no_clone {
+        quote! { #[::silex::macros::component(no_clone)] }
+    } else {
+        quote! { #[::silex::macros::component] }
+    };
+
     let c_name = parsed
         .name
         .unwrap_or_else(|| quote::format_ident!("GlobalStyles"));
@@ -588,11 +627,13 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     }
 
     Ok(quote! {
-        #[::silex::macros::component]
-        pub fn #c_name() -> impl ::silex::dom::view::View {
+        #(#filtered_attrs)*
+        #component_attr
+        pub fn #c_name() -> impl ::silex::dom::view::Mount + ::silex::dom::view::MountRef + ::silex::dom::view::ApplyAttributes {
             #(#inits)*
             #(#logics)*
-            ::silex::dom::view::View::into_any(())
+            use ::silex::dom::view::MountExt;
+            ::silex::dom::view::MountExt::into_any(())
         }
     })
 }

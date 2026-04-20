@@ -97,7 +97,7 @@
 ### For Loop (silex::flow::For)
 `silex/src/flow/for_loop.rs`
 *   **Algorithm**: Keyed Reconciliation (Diff 算法)。
-*   **Input**: `ItemsFn` (Accessor 返回 `Vec<T>`), `KeyFn` (Mapper -> Key), `MapFn` (Item -> View).
+*   **Input**: `ItemsFn` (Accessor 返回 `Vec<T>`), `KeyFn` (Mapper -> Key), `MapFn` (Item -> Mount).
 *   **Mechanism**:
     1. 追踪 `active_rows` (Map<Key, (Nodes, ScopeId)>)。
     2. 当列表变化时，计算新旧 Keys 差异。
@@ -114,7 +114,7 @@
 
 ### Dynamic (silex::flow::Dynamic)
 `silex/src/flow/dynamic.rs`
-*   **Logic**: 任意 `Fn() -> View` 的动态挂载点。
+*   **Logic**: 任意 `Fn() -> Mount` 的动态挂载点。
 *   **Implementation**: 使用 Marker Comments (`dyn-start`, `dyn-end`) 定位，每次 Effect 运行时清空区间并挂载新 View。
 
 ### Switch (silex::flow::Switch)

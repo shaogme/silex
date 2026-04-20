@@ -303,7 +303,7 @@ impl AttributeBuilder for crate::view::AnyView {
     where
         V: IntoStorable,
     {
-        use crate::view::View;
+        use crate::view::ApplyAttributes;
         self.apply_attributes(vec![PendingAttribute::build(
             value.into_storable(),
             OwnedApplyTarget::from(target),
@@ -316,7 +316,7 @@ impl AttributeBuilder for crate::view::AnyView {
         E: crate::event::EventDescriptor + 'static,
         F: crate::event::EventHandler<E::EventType, M> + Clone + 'static,
     {
-        use crate::view::View;
+        use crate::view::ApplyAttributes;
         self.apply_attributes(vec![PendingAttribute::new_listener(move |el| {
             crate::element::bind_event(el, event, callback.clone());
         })]);
@@ -329,7 +329,7 @@ impl AttributeBuilder for crate::view::SharedView {
     where
         V: IntoStorable,
     {
-        use crate::view::View;
+        use crate::view::ApplyAttributes;
         self.apply_attributes(vec![PendingAttribute::build(
             value.into_storable(),
             OwnedApplyTarget::from(target),
@@ -342,7 +342,7 @@ impl AttributeBuilder for crate::view::SharedView {
         E: crate::event::EventDescriptor + 'static,
         F: crate::event::EventHandler<E::EventType, M> + Clone + 'static,
     {
-        use crate::view::View;
+        use crate::view::ApplyAttributes;
         self.apply_attributes(vec![PendingAttribute::new_listener(move |el| {
             crate::element::bind_event(el, event, callback.clone());
         })]);

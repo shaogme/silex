@@ -9,7 +9,7 @@ pub fn Greeting(
     // `default = "..."` specifies a fallback value if the prop is omitted.
     #[prop(default = "World")] name: Signal<String>,
     #[prop(default)] punctuation: String,
-) -> impl View {
+) -> impl Mount {
     let full_punctuation = if punctuation.is_empty() {
         "!".to_string()
     } else {
@@ -33,7 +33,7 @@ pub fn Greeting(
 }
 
 #[component]
-pub fn Counter() -> impl View {
+pub fn Counter() -> impl Mount {
     let (count, set_count) = Signal::pair(0);
     let double_count = count * 2; // Operator overloading creates a Memo automatically
 
@@ -102,7 +102,7 @@ pub fn Counter() -> impl View {
 }
 
 #[component]
-pub fn NodeRefDemo() -> impl View {
+pub fn NodeRefDemo() -> impl Mount {
     use silex::reexports::web_sys::HtmlInputElement;
     let input_ref = NodeRef::<HtmlInputElement>::new();
 
@@ -127,7 +127,7 @@ pub fn NodeRefDemo() -> impl View {
     )
 }
 #[component]
-pub fn SvgIconDemo() -> impl View {
+pub fn SvgIconDemo() -> impl Mount {
     #[component]
     fn ShieldCheck() -> Element {
         svg(path()
@@ -170,7 +170,7 @@ pub fn SvgIconDemo() -> impl View {
 }
 
 #[component]
-pub fn EventDemo() -> impl View {
+pub fn EventDemo() -> impl Mount {
     let (name, set_name) = Signal::pair("Silex".to_string());
     let (count, set_count) = Signal::pair(0);
 
@@ -237,7 +237,7 @@ pub fn EventDemo() -> impl View {
 }
 
 #[component]
-pub fn BasicsPage() -> impl View {
+pub fn BasicsPage() -> impl Mount {
     let name_signal = RwSignal::new("Developer".to_string());
 
     div![

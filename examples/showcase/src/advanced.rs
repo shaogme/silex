@@ -15,7 +15,7 @@ pub struct UserSettings {
 }
 
 #[component]
-pub fn StoreDemo() -> impl View {
+pub fn StoreDemo() -> impl Mount {
     // Access global store provided in main
     // Note: `use_context::<T>() -> Option<T>` and `expect_context::<T>() -> T` are also available.
     // Access global store using the generated helper
@@ -80,7 +80,7 @@ impl Default for ComplexState {
 }
 
 #[component]
-pub fn JsonStorageDemo() -> impl View {
+pub fn JsonStorageDemo() -> impl Mount {
     let state = Persistent::builder("showcase-json-state")
         .local()
         .json::<ComplexState>()
@@ -125,7 +125,7 @@ pub fn JsonStorageDemo() -> impl View {
 }
 
 #[component]
-pub fn StorageDemo() -> impl View {
+pub fn StorageDemo() -> impl Mount {
     let count = Persistent::builder("showcase-counter")
         .local()
         .parse::<i32>()
@@ -160,7 +160,7 @@ pub fn StorageDemo() -> impl View {
 }
 
 #[component]
-pub fn QueryDemo() -> impl View {
+pub fn QueryDemo() -> impl Mount {
     let val = Persistent::builder("demo_val")
         .query()
         .string()
@@ -200,7 +200,7 @@ pub fn QueryDemo() -> impl View {
 }
 
 #[component]
-pub fn AuthGuard(children: Children) -> impl View {
+pub fn AuthGuard(children: Children) -> impl Mount {
     let settings = use_user_settings();
 
     move || {
@@ -208,10 +208,10 @@ pub fn AuthGuard(children: Children) -> impl View {
             children.clone()
         } else {
             div![
-                    h3("🔒 Restricted Access"),
-                    p("This content is protected. Please go to 'Store Demo' and change your username to something other than 'Guest'."),
-                ].style("padding: 20px; background: #fff0f0; border: 1px solid #ffcccc; color: #cc0000;")
-                .into_shared()
+                h3("🔒 Restricted Access"),
+                p("This content is protected. Please go to 'Store Demo' and change your username to something other than 'Guest'."),
+            ].style("padding: 20px; background: #fff0f0; border: 1px solid #ffcccc; color: #cc0000;")
+            .into_shared()
         }
     }
 }
@@ -243,7 +243,7 @@ async fn mock_fetch_user(id: i32) -> Result<UserProfile, String> {
 }
 
 #[component]
-pub fn ResourceDemo() -> impl View {
+pub fn ResourceDemo() -> impl Mount {
     let (user_id, set_user_id) = Signal::pair(1);
 
     // Create Resource: triggers when user_id changes
@@ -292,17 +292,17 @@ pub fn ResourceDemo() -> impl View {
                                 });
                             }),
                     ].style("margin-top: 15px; border-top: 1px solid #eee; padding-top: 10px;")
-                ].into_any(),
-                None => div("No Data (or Loading...)").into_any(),
+                ],
+                None => div("No Data (or Loading...)"),
             }
         },
 
         // Error Handling via state matching
         move || {
             if let ResourceState::Error(err) = user_resource.state.get() {
-                div(format!("Error: {}", err)).style("color: red; margin-top: 10px;").into_any()
+                div(format!("Error: {}", err)).style("color: red; margin-top: 10px;")
             } else {
-                "".into_any()
+                div("")
             }
         }
     ]
@@ -310,7 +310,7 @@ pub fn ResourceDemo() -> impl View {
 }
 
 #[component]
-pub fn MutationDemo() -> impl View {
+pub fn MutationDemo() -> impl Mount {
     // Simulate a login mutation
     // Takes (username, password) and returns a Result<String, String> token
     let login_mutation = Mutation::new(|(user, pass): (String, String)| async move {
@@ -354,9 +354,9 @@ pub fn MutationDemo() -> impl View {
         .style("margin-bottom: 10px;"),
         // Loading State
         move || if login_mutation.loading() {
-            div("Logging in...").style("color: blue;").into_any()
+            div("Logging in...").style("color: blue;")
         } else {
-            "".into_any()
+            div("")
         },
         // Error State
         move || login_mutation
@@ -382,7 +382,7 @@ pub fn MutationDemo() -> impl View {
 }
 
 #[component]
-pub fn SuspenseDemo() -> impl View {
+pub fn SuspenseDemo() -> impl Mount {
     use silex::components::{SuspenseBoundary, SuspenseMode};
 
     let (show_content, set_show_content) = Signal::pair(false);
@@ -432,14 +432,15 @@ pub fn SuspenseDemo() -> impl View {
             button("Reload Resource").on(event::click, set_trigger.updater(|n| *n += 1))
         ]
         .style("margin-bottom: 15px;"),
-        div![Show::new(show_content, rx! {
+        div![Show::new(
+            show_content,
             Suspense::new()
                 .resource(move || Resource::new(trigger, heavy_work))
                 .children(move |resource| {
                     SuspenseBoundary::new()
                         .mode(mode.get())
-                        .fallback(rx!(div("Loading... (2s)").style("color: blue; font-weight: bold;")))
-                        .children(rx! {
+                        .fallback(div("Loading... (2s)").style("color: blue; font-weight: bold;"))
+                        .children(
                             // Crucial: We do NOT read resource.get() here.
                             div![
                                 div![
@@ -454,10 +455,10 @@ pub fn SuspenseDemo() -> impl View {
                                     .placeholder("Type here test persistence...")
                                     .style("margin-top: 5px; padding: 5px; width: 250px;")
                             ]
-                            .style("border: 1px solid green; padding: 10px; background: #e8f5e9;")
-                        })
+                            .style("border: 1px solid green; padding: 10px; background: #e8f5e9;"),
+                        )
                 })
-        })]
+        )]
         .style("min-height: 150px; border: 1px dashed #ccc; padding: 10px;")
     ]
     .style("padding: 20px; border: 1px solid #ccc; border-radius: 8px; margin-top: 20px;")
@@ -469,7 +470,7 @@ pub fn SuspenseDemo() -> impl View {
 pub fn GenericMessage<'a, T: std::fmt::Display + Clone + 'static>(
     value: T,
     title: &'a str,
-) -> impl View {
+) -> impl Mount {
     div![h4(title.to_string()), p(format!("Value: {}", value)),].style(
         sty()
             .padding(px(10))
@@ -480,7 +481,7 @@ pub fn GenericMessage<'a, T: std::fmt::Display + Clone + 'static>(
 }
 
 #[component]
-pub fn GenericsDemo() -> impl View {
+pub fn GenericsDemo() -> impl Mount {
     div![
         h3("Generics & Lifetimes Demo"),
         p("This demonstrates how #[component] macro supports generics and lifetimes natively."),
@@ -525,7 +526,7 @@ impl std::fmt::Display for QuantumIdentity {
 }
 
 #[component]
-pub fn AdaptiveReadDemo() -> impl View {
+pub fn AdaptiveReadDemo() -> impl Mount {
     let system_name = RwSignal::new("Nebula-1".to_string());
     let (stability, set_stability) = Signal::pair(0.85); // 0.0 to 1.0
 

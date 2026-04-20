@@ -2,7 +2,7 @@ use crate::css::AppTheme;
 use silex::prelude::*;
 
 #[component]
-pub fn ListDemo() -> impl View {
+pub fn ListDemo() -> impl Mount {
     let (list, set_list) = Signal::pair(vec!["Apple", "Banana", "Cherry"]);
 
     div![
@@ -14,7 +14,7 @@ pub fn ListDemo() -> impl View {
 }
 
 #[component]
-pub fn ShowDemo() -> impl View {
+pub fn ShowDemo() -> impl Mount {
     let (visible, set_visible) = Signal::pair(true);
 
     div![
@@ -23,24 +23,26 @@ pub fn ShowDemo() -> impl View {
         button("Toggle Visibility").on(event::click, set_visible.updater(|v| *v = !*v)),
         Show::new(
             visible,
-            rx!(div("✅ Content is visible!").style(
+            div("✅ Content is visible!").style(
                 sty()
                     .color(hex("green"))
                     .padding(px(10))
                     .background(hex("#e8f5e9"))
-            ))
+            )
         )
-        .fallback(rx!(div("❌ Content is hidden").style(
-            sty()
-                .color(hex("red"))
-                .padding(px(10))
-                .background(hex("#ffebee"))
-        ))),
+        .fallback(
+            div("❌ Content is hidden").style(
+                sty()
+                    .color(hex("red"))
+                    .padding(px(10))
+                    .background(hex("#ffebee"))
+            )
+        ),
     ]
 }
 
 #[component]
-pub fn DynamicDemo() -> impl View {
+pub fn DynamicDemo() -> impl Mount {
     let (mode, set_mode) = Signal::pair("A");
 
     div![
@@ -67,7 +69,7 @@ pub fn DynamicDemo() -> impl View {
 }
 
 #[component]
-pub fn SwitchDemo() -> impl View {
+pub fn SwitchDemo() -> impl Mount {
     let (tab, set_tab) = Signal::pair(0);
 
     div![
@@ -78,31 +80,30 @@ pub fn SwitchDemo() -> impl View {
             button("Tab 3").on(event::click, set_tab.setter(2)),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 10px;"),
-        Switch::new(tab, rx!(div("Fallback (Should not happen)")))
+        Switch::new(tab, div("Fallback (Should not happen)"))
             .case(
                 0,
-                rx!(div("Content for Tab 1")
-                    .style(sty().padding(px(10)).background(AppTheme::SURFACE_ALT)))
+                div("Content for Tab 1")
+                    .style(sty().padding(px(10)).background(AppTheme::SURFACE_ALT))
             )
             .case(
                 1,
-                rx!(div("Content for Tab 2")
-                    .style(sty().padding(px(10)).background(AppTheme::BORDER)))
+                div("Content for Tab 2").style(sty().padding(px(10)).background(AppTheme::BORDER))
             )
             .case(
                 2,
-                rx!(div("Content for Tab 3").style(
+                div("Content for Tab 3").style(
                     sty()
                         .padding(px(10))
                         .background(AppTheme::BORDER)
                         .opacity(0.8)
-                ))
+                )
             )
     ]
 }
 
 #[component]
-pub fn IndexDemo() -> impl View {
+pub fn IndexDemo() -> impl Mount {
     let (items, set_items) = Signal::pair(vec!["Item A", "Item B", "Item C"]);
 
     div![
@@ -124,7 +125,7 @@ pub fn IndexDemo() -> impl View {
 }
 
 #[component]
-pub fn PortalDemo() -> impl View {
+pub fn PortalDemo() -> impl Mount {
     let (show_modal, set_show_modal) = Signal::pair(false);
 
     div![
@@ -132,7 +133,7 @@ pub fn PortalDemo() -> impl View {
         button("Toggle Modal").on(event::click, set_show_modal.updater(|v| *v = !*v)),
         Show::new(
             show_modal,
-            rx!(Portal::new(
+            Portal::new(
                 div![
                     div![
                         h4("I am a Modal!"),
@@ -161,13 +162,13 @@ pub fn PortalDemo() -> impl View {
                         .align_items(AlignItemsKeyword::Center)
                         .z_index(9999)
                 )
-            ))
+            )
         )
     ]
 }
 
 #[component]
-pub fn FlowPage() -> impl View {
+pub fn FlowPage() -> impl Mount {
     div![
         h2("Control Flow"),
         ListDemo(),

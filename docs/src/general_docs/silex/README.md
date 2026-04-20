@@ -136,8 +136,8 @@ Silex 提供了一组组件来处理常见的逻辑控制，这比手动编写 `
 ```rust
 let (is_logged_in, set_log) = Signal::pair(false);
 
-Show::new(is_logged_in, || UserDashboard())
-    .fallback(|| LoginButton())
+Show::new(is_logged_in, UserDashboard())
+    .fallback(LoginButton())
 ```
 或者使用语法糖：
 ```rust

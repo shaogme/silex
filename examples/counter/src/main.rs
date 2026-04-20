@@ -1,13 +1,13 @@
 use silex::prelude::*;
 use silex::reexports::*;
 
-#[component]
+#[component(no_clone)]
 fn Card(
     #[prop(default = "Default Title", into)] title: String,
     #[prop(default = 1)] elevation: u8,
-    #[prop(default)] child: Children, // Defaults to empty AnyView
+    #[prop(default)] child: AnyView,
     #[prop(default, into)] on_hover: Callback,
-) -> impl View {
+) -> impl Mount {
     let style = format!(
         "border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px {}px rgba(0,0,0,0.1); transition: transform 0.2s;",
         elevation * 4
@@ -26,7 +26,7 @@ fn Card(
 }
 
 #[component]
-fn CounterDisplay() -> SilexResult<impl View> {
+fn CounterDisplay() -> SilexResult<impl Mount> {
     let count = expect_context::<ReadSignal<i32>>();
 
     // Demo: Style Map (Vec) and Dynamic Class (Signal)
@@ -69,7 +69,7 @@ fn CounterDisplay() -> SilexResult<impl View> {
 }
 
 #[component]
-fn CounterControls() -> SilexResult<impl View> {
+fn CounterControls() -> SilexResult<impl Mount> {
     let set_count = expect_context::<WriteSignal<i32>>();
     let count = expect_context::<ReadSignal<i32>>();
 
@@ -101,7 +101,7 @@ fn CounterControls() -> SilexResult<impl View> {
 // --- Views ---
 
 #[component]
-fn NavBar() -> impl View {
+fn NavBar() -> impl Mount {
     div!(
         Link("/", "Home")
             .style("margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold;"),
@@ -111,7 +111,7 @@ fn NavBar() -> impl View {
 }
 
 #[component]
-fn HomeView() -> impl View {
+fn HomeView() -> impl Mount {
     // 页面级状态
     let (name, set_name) = Signal::pair("Rustacean".to_string());
 
@@ -159,10 +159,10 @@ fn HomeView() -> impl View {
             .title("Control Flow")
             .child(
                 is_high
-                    .when(rx!(div("⚠️ Warning: Count is getting high!")
-                        .style("background: #ffebee; color: #c62828; padding: 10px; border-radius: 4px;")))
-                    .fallback(rx!(div("✓ System works normally.")
-                        .style("background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;")))
+                    .when(div("⚠️ Warning: Count is getting high!")
+                        .style("background: #ffebee; color: #c62828; padding: 10px; border-radius: 4px;"))
+                    .fallback(div("✓ System works normally.")
+                        .style("background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;"))
             ),
             // Card 4: Suspense (Context Layout Pattern)
             Card()
@@ -178,18 +178,18 @@ fn HomeView() -> impl View {
                         ))
                         .children(move |async_data_local| {
                             SuspenseBoundary::new()
-                                .fallback(rx!(div("Loading data (approx 2s)...").style("color: orange; font-style: italic;")))
-                                .children(rx! {
+                                .fallback(div("Loading data (approx 2s)...").style("color: orange; font-style: italic;"))
+                                .children(
                                     div(rx!(async_data_local.get().unwrap_or("Waiting...".to_string())))
                                         .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
-                                })
+                                )
                         })
                 )
     )
 }
 
 #[component]
-fn AboutView() -> impl View {
+fn AboutView() -> impl Mount {
     div!(
         h1("About"),
         p("This is the About Page to demonstrate Silex Router."),
@@ -198,7 +198,7 @@ fn AboutView() -> impl View {
 }
 
 #[component]
-fn NotFound() -> impl View {
+fn NotFound() -> impl Mount {
     div(h1("404 - Page Not Found")).style("color: red; padding: 20px;")
 }
 

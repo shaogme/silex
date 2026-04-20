@@ -7,7 +7,7 @@ pub use link::*;
 use crate::router::context::{RouterContextProps, provide_router_context};
 use silex_core::reactivity::{Effect, Signal, on_cleanup};
 use silex_core::traits::{RxGet, RxWrite};
-use silex_dom::view::{AnyView, View};
+use silex_dom::view::{AnyView, ApplyAttributes, Mount, MountExt, MountRef};
 use silex_html::div;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
@@ -95,7 +95,7 @@ impl Router {
     /// 设置需要渲染的子视图
     pub fn render<F, V>(mut self, view_fn: F) -> Self
     where
-        V: View + Clone + 'static,
+        V: Mount + Clone + 'static,
         F: Fn() -> V + 'static,
     {
         self.child = Some(Rc::new(move || view_fn().into_any()));
@@ -107,7 +107,7 @@ impl Router {
     where
         R: Routable,
         F: Fn(R) -> V + 'static,
-        V: View + Clone + 'static,
+        V: Mount + Clone + 'static,
     {
         // 创建一个闭包，它在渲染时会获取当前路径并进行匹配
         self.child = Some(Rc::new(move || {
@@ -152,11 +152,15 @@ pub trait RouteView: Routable {
     fn render(&self) -> AnyView;
 }
 
-impl View for Router {
+impl ApplyAttributes for Router {}
+
+impl Mount for Router {
     fn mount(self, parent: &web_sys::Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         self.mount_internal(parent, attrs);
     }
+}
 
+impl MountRef for Router {
     fn mount_ref(
         &self,
         parent: &web_sys::Node,

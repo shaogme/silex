@@ -2,7 +2,7 @@ use silex_core::error::{ErrorContext, SilexError};
 use silex_core::reactivity::{Effect, Signal, provide_context};
 use silex_core::traits::{RxGet, RxWrite};
 use silex_dom::attribute::GlobalAttributes;
-use silex_dom::view::View;
+use silex_dom::view::{ApplyAttributes, AutoReactiveView, Mount, MountRef};
 use silex_html::div;
 use std::rc::Rc;
 use web_sys::Node;
@@ -48,25 +48,51 @@ pub fn ErrorBoundary<F, C, V1, V2>(props: ErrorBoundaryProps<F, C>) -> ErrorBoun
 where
     F: Fn(SilexError) -> V1 + 'static,
     C: Fn() -> V2 + 'static,
-    V1: View + 'static,
-    V2: View + 'static,
+    V1: Mount + 'static,
+    V2: Mount + 'static,
 {
     ErrorBoundaryView {
         props: Rc::new(props),
     }
 }
 
-impl<F, C, V1, V2> View for ErrorBoundaryView<F, C>
+impl<F, C, V1, V2> ApplyAttributes for ErrorBoundaryView<F, C>
 where
     F: Fn(SilexError) -> V1 + 'static,
     C: Fn() -> V2 + 'static,
-    V1: View + 'static,
-    V2: View + 'static,
+    V1: Mount + 'static,
+    V2: Mount + 'static,
+{
+}
+
+impl<F, C, V1, V2> Mount for ErrorBoundaryView<F, C>
+where
+    F: Fn(SilexError) -> V1 + 'static,
+    C: Fn() -> V2 + 'static,
+    V1: Mount + 'static,
+    V2: Mount + 'static,
 {
     fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         self.mount_internal(parent, attrs);
     }
+}
 
+impl<F, C, V1, V2> AutoReactiveView for ErrorBoundaryView<F, C>
+where
+    F: Fn(SilexError) -> V1 + 'static,
+    C: Fn() -> V2 + 'static,
+    V1: Mount + 'static,
+    V2: Mount + 'static,
+{
+}
+
+impl<F, C, V1, V2> MountRef for ErrorBoundaryView<F, C>
+where
+    F: Fn(SilexError) -> V1 + 'static,
+    C: Fn() -> V2 + 'static,
+    V1: Mount + 'static,
+    V2: Mount + 'static,
+{
     fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         self.clone().mount_internal(parent, attrs);
     }
@@ -76,8 +102,8 @@ impl<F, C, V1, V2> ErrorBoundaryView<F, C>
 where
     F: Fn(SilexError) -> V1 + 'static,
     C: Fn() -> V2 + 'static,
-    V1: View + 'static,
-    V2: View + 'static,
+    V1: Mount + 'static,
+    V2: Mount + 'static,
 {
     fn mount_internal(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         let (error, set_error) = Signal::<Option<SilexError>>::pair(None);

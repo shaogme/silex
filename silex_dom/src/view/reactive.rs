@@ -1,9 +1,8 @@
 use crate::attribute::PendingAttribute;
-use crate::view::View;
 use silex_core::error::handle_error;
 use silex_core::reactivity::Effect;
 use silex_core::traits::{IntoRx, RxCloneData, RxRead};
-use silex_core::{Rx, RxValueKind, SilexError};
+use silex_core::{Rx, SilexError};
 use std::fmt::Display;
 use web_sys::Node;
 
@@ -35,7 +34,7 @@ where
 
 pub(crate) fn mount_reactive_view<V, M>(parent: &Node, rx: Rx<V, M>, attrs: Vec<PendingAttribute>)
 where
-    V: View + RxCloneData + 'static,
+    V: crate::view::MountRef + RxCloneData + 'static,
     M: 'static,
 {
     crate::view::mount_dynamic_view_universal(
@@ -49,7 +48,17 @@ where
 }
 
 // 4. Rx wrapper support (Unified entry point for reactive normalization)
-impl<V, M> View for Rx<V, M>
+
+impl<V, M> crate::view::ApplyAttributes for Rx<V, M>
+where
+    V: RxCloneData + Sized + 'static,
+    M: 'static,
+    Self: RxViewDispatcher,
+{
+    fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
+}
+
+impl<V, M> crate::view::Mount for Rx<V, M>
 where
     V: RxCloneData + Sized + 'static,
     M: 'static,
@@ -59,45 +68,69 @@ where
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.dispatch_mount(parent, attrs);
     }
+}
 
+impl<V, M> crate::view::MountRef for Rx<V, M>
+where
+    V: RxCloneData + Sized + 'static,
+    M: 'static,
+    Self: RxViewDispatcher + Clone,
+{
     #[inline(always)]
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.clone().dispatch_mount(parent, attrs);
     }
-
-    fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
 }
 
-/// 内部特征，用于 Rx 的 View 分发，解决 trait 冲突并优化路径
+/// 内部特征，用于 Rx 的 View 分发，解决 trait 冲突并优化路径。
+///
+/// 任何希望作为 `Rx<V>` 挂载的视图类型，应实现 `AutoReactiveView`。
 pub trait RxViewDispatcher {
     fn dispatch_mount(self, parent: &Node, attrs: Vec<PendingAttribute>);
 }
 
-macro_rules! impl_rx_view_dispatcher_text {
+/// 核心特征：自动响应式视图。
+///
+/// 实现此特征的类型 `V` 会自动让 `Rx<V>` 获得视图挂载能力。
+/// 这是解决跨 Crate 的响应式组件支持的最佳方案。
+pub trait AutoReactiveView: crate::view::MountRef + RxCloneData + 'static {
+    /// 响应式挂载策略。默认使用 `mount_reactive_view`（完全重新挂载分支）。
+    /// 对于 `String` 等基础类型，应重写此方法以改用高效的 `mount_reactive_text`。
+    fn mount_reactive<M: 'static>(rx: Rx<Self, M>, parent: &Node, attrs: Vec<PendingAttribute>) {
+        mount_reactive_view(parent, rx, attrs);
+    }
+}
+
+// 统一的分发器实现
+impl<V: AutoReactiveView, M: 'static> RxViewDispatcher for Rx<V, M> {
+    #[inline(always)]
+    fn dispatch_mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        V::mount_reactive(self, parent, attrs);
+    }
+}
+
+macro_rules! impl_auto_reactive_view_text {
     ($($t:ty),*) => {
         $(
-            impl<M: 'static> RxViewDispatcher for Rx<$t, M> {
-                fn dispatch_mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-                    mount_reactive_text(parent, self);
+            impl AutoReactiveView for $t {
+                #[inline(always)]
+                fn mount_reactive<M: 'static>(rx: Rx<Self, M>, parent: &Node, _attrs: Vec<PendingAttribute>) {
+                    mount_reactive_text(parent, rx);
                 }
             }
         )*
     };
 }
 
-macro_rules! impl_rx_view_dispatcher_view {
+macro_rules! impl_auto_reactive_view_default {
     ($($t:ty),*) => {
         $(
-            impl<M: 'static> RxViewDispatcher for Rx<$t, M> {
-                fn dispatch_mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-                    mount_reactive_view(parent, self, attrs);
-                }
-            }
+            impl AutoReactiveView for $t {}
         )*
     };
 }
 
-impl_rx_view_dispatcher_text!(
+impl_auto_reactive_view_text!(
     String,
     bool,
     char,
@@ -119,54 +152,60 @@ impl_rx_view_dispatcher_text!(
     std::borrow::Cow<'static, str>
 );
 
-impl_rx_view_dispatcher_view!(
+impl_auto_reactive_view_default!(
     crate::element::Element,
     crate::view::SharedView,
     crate::view::any::Fragment
 );
 
-impl<V: View + RxCloneData + 'static, M: 'static> RxViewDispatcher for Rx<Option<V>, M> {
-    fn dispatch_mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        mount_reactive_view(parent, self, attrs);
-    }
-}
+impl<V: crate::view::MountRef + RxCloneData + 'static> AutoReactiveView for Option<V> {}
 
-// --- Recursive View Chain Dispatcher ---
-
-impl<H, T, M> RxViewDispatcher for silex_core::Rx<crate::view::ViewCons<H, T>, M>
+impl<H, T> AutoReactiveView for crate::view::ViewCons<H, T>
 where
-    H: View + Clone + 'static,
-    T: View + Clone + 'static,
-    M: 'static,
+    H: crate::view::MountRef + Clone + 'static,
+    T: crate::view::MountRef + Clone + 'static,
 {
-    fn dispatch_mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        mount_reactive_view(parent, self, attrs);
-    }
 }
 
-impl<T: 'static, M: 'static> RxViewDispatcher for Rx<crate::element::TypedElement<T>, M> {
-    fn dispatch_mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        mount_reactive_view(parent, self, attrs);
-    }
-}
+impl<T: 'static> AutoReactiveView for crate::element::TypedElement<T> {}
+
+// --- Signal 自动支持宏 ---
+
+use silex_core::RxValueKind;
 
 macro_rules! impl_view_forward_to_rx {
     ($($ty:ident),*) => {
         $(
-            impl<T> View for silex_core::reactivity::$ty<T>
+            impl<T> crate::view::ApplyAttributes for silex_core::reactivity::$ty<T>
             where
                 T: RxCloneData + Sized + 'static,
                 Self: silex_core::traits::IntoRx<RxType = Rx<T, RxValueKind>> + Clone + 'static,
-                Rx<T, RxValueKind>: View,
+                Rx<T, RxValueKind>: crate::view::ApplyAttributes,
+            {}
+
+            impl<T> crate::view::Mount for silex_core::reactivity::$ty<T>
+            where
+                T: RxCloneData + Sized + 'static,
+                Self: silex_core::traits::IntoRx<RxType = Rx<T, RxValueKind>> + Clone + 'static,
+                Rx<T, RxValueKind>: crate::view::Mount,
             {
                 #[inline(always)]
                 fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-                    self.into_rx().mount(parent, attrs);
+                    let rx = self.into_rx();
+                    crate::view::Mount::mount(rx, parent, attrs);
                 }
+            }
 
+            impl<T> crate::view::MountRef for silex_core::reactivity::$ty<T>
+            where
+                T: RxCloneData + Sized + 'static,
+                Self: silex_core::traits::IntoRx<RxType = Rx<T, RxValueKind>> + Clone + 'static,
+                Rx<T, RxValueKind>: crate::view::MountRef,
+            {
                 #[inline(always)]
                 fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-                    self.clone().into_rx().mount(parent, attrs);
+                    let rx = self.clone().into_rx();
+                    crate::view::MountRef::mount_ref(&rx, parent, attrs);
                 }
             }
         )*
@@ -175,68 +214,129 @@ macro_rules! impl_view_forward_to_rx {
 
 impl_view_forward_to_rx!(ReadSignal, RwSignal, Constant, Memo, Signal);
 
-impl<S, F, V> View for silex_core::reactivity::DerivedPayload<S, F>
+impl<S, F, V> crate::view::ApplyAttributes for silex_core::reactivity::DerivedPayload<S, F>
 where
     Self: silex_core::traits::IntoRx<RxType = Rx<V, RxValueKind>> + Clone + 'static,
     V: RxCloneData + Sized + 'static,
-    Rx<V, RxValueKind>: View,
+    Rx<V, RxValueKind>: crate::view::ApplyAttributes,
+{
+}
+
+impl<S, F, V> crate::view::Mount for silex_core::reactivity::DerivedPayload<S, F>
+where
+    Self: silex_core::traits::IntoRx<RxType = Rx<V, RxValueKind>> + Clone + 'static,
+    V: RxCloneData + Sized + 'static,
+    Rx<V, RxValueKind>: crate::view::Mount,
 {
     #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.into_rx().mount(parent, attrs);
     }
+}
 
+impl<S, F, V> crate::view::MountRef for silex_core::reactivity::DerivedPayload<S, F>
+where
+    Self: silex_core::traits::IntoRx<RxType = Rx<V, RxValueKind>> + Clone + 'static,
+    V: RxCloneData + Sized + 'static,
+    Rx<V, RxValueKind>: crate::view::MountRef,
+{
     #[inline(always)]
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.clone().into_rx().mount_ref(parent, attrs);
     }
 }
 
-impl<S, F, V> View for std::rc::Rc<silex_core::reactivity::DerivedPayload<S, F>>
+impl<S, F, V> crate::view::ApplyAttributes
+    for std::rc::Rc<silex_core::reactivity::DerivedPayload<S, F>>
 where
     Self: silex_core::traits::IntoRx<RxType = Rx<V, RxValueKind>> + 'static,
     V: RxCloneData + Sized + 'static,
-    Rx<V, RxValueKind>: View,
+    Rx<V, RxValueKind>: crate::view::ApplyAttributes,
+{
+}
+
+impl<S, F, V> crate::view::Mount for std::rc::Rc<silex_core::reactivity::DerivedPayload<S, F>>
+where
+    Self: silex_core::traits::IntoRx<RxType = Rx<V, RxValueKind>> + 'static,
+    V: RxCloneData + Sized + 'static,
+    Rx<V, RxValueKind>: crate::view::Mount,
 {
     #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.into_rx().mount(parent, attrs);
     }
+}
 
+impl<S, F, V> crate::view::MountRef for std::rc::Rc<silex_core::reactivity::DerivedPayload<S, F>>
+where
+    Self: silex_core::traits::IntoRx<RxType = Rx<V, RxValueKind>> + 'static,
+    V: RxCloneData + Sized + 'static,
+    Rx<V, RxValueKind>: crate::view::MountRef + Clone,
+{
     #[inline(always)]
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.clone().into_rx().mount_ref(parent, attrs);
     }
 }
 
-impl<U, const N: usize> View for silex_core::reactivity::OpPayload<U, N>
+impl<U, const N: usize> crate::view::ApplyAttributes for silex_core::reactivity::OpPayload<U, N>
 where
     Self: silex_core::traits::IntoRx<RxType = Rx<U, RxValueKind>> + 'static,
     U: RxCloneData + Sized + 'static,
-    Rx<U, RxValueKind>: View,
+    Rx<U, RxValueKind>: crate::view::ApplyAttributes,
+{
+}
+
+impl<U, const N: usize> crate::view::Mount for silex_core::reactivity::OpPayload<U, N>
+where
+    Self: silex_core::traits::IntoRx<RxType = Rx<U, RxValueKind>> + 'static,
+    U: RxCloneData + Sized + 'static,
+    Rx<U, RxValueKind>: crate::view::Mount,
 {
     #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.into_rx().mount(parent, attrs);
     }
+}
 
+impl<U, const N: usize> crate::view::MountRef for silex_core::reactivity::OpPayload<U, N>
+where
+    Self: silex_core::traits::IntoRx<RxType = Rx<U, RxValueKind>> + 'static,
+    U: RxCloneData + Sized + 'static,
+    Rx<U, RxValueKind>: crate::view::MountRef,
+{
     #[inline(always)]
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.into_rx().mount_ref(parent, attrs);
     }
 }
 
-impl<S, F, O> View for silex_core::reactivity::SignalSlice<S, F, O>
+impl<S, F, O> crate::view::ApplyAttributes for silex_core::reactivity::SignalSlice<S, F, O>
 where
     Self: silex_core::traits::IntoRx<RxType = Rx<O, RxValueKind>> + Clone + 'static,
     O: RxCloneData + Sized + 'static,
-    Rx<O, RxValueKind>: View,
+    Rx<O, RxValueKind>: crate::view::ApplyAttributes,
+{
+}
+
+impl<S, F, O> crate::view::Mount for silex_core::reactivity::SignalSlice<S, F, O>
+where
+    Self: silex_core::traits::IntoRx<RxType = Rx<O, RxValueKind>> + Clone + 'static,
+    O: RxCloneData + Sized + 'static,
+    Rx<O, RxValueKind>: crate::view::Mount,
 {
     #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.into_rx().mount(parent, attrs);
     }
+}
 
+impl<S, F, O> crate::view::MountRef for silex_core::reactivity::SignalSlice<S, F, O>
+where
+    Self: silex_core::traits::IntoRx<RxType = Rx<O, RxValueKind>> + Clone + 'static,
+    O: RxCloneData + Sized + 'static,
+    Rx<O, RxValueKind>: crate::view::MountRef,
+{
     #[inline(always)]
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.clone().into_rx().mount_ref(parent, attrs);

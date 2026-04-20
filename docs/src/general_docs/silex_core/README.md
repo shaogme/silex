@@ -138,14 +138,11 @@ let user_data = Resource::new(user_id, |id| async move {
     api::fetch_user(id).await
 });
 
-// 在视图中直接使用状态映射
-view! {
-    Show::new(
-        move || user_data.loading(),
-        rx!(div("Loading...")),
-        rx!(div(format!("User: {:?}", user_data.get())))
-    )
-}
+Show::new(
+    move || user_data.loading(),
+    div("Loading..."),
+    div(format!("User: {:?}", user_data.get()))
+)
 ```
 
 ### `Mutation`：触发型异步

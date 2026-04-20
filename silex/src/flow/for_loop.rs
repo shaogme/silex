@@ -1,7 +1,7 @@
 use crate::{SilexError, SilexResult};
 use silex_core::reactivity::{Effect, NodeId, batch, create_scope, dispose};
 use silex_core::traits::RxRead;
-use silex_dom::prelude::View;
+use silex_dom::prelude::{ApplyAttributes, AutoReactiveView, Mount, MountRef};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -74,14 +74,14 @@ where
 
 /// Helper trait to extract View type from Map function
 pub trait LoopMap<Item> {
-    type View: View;
+    type View: Mount;
     fn map(&self, item: Item) -> Self::View;
 }
 
 impl<F, Item, V> LoopMap<Item> for F
 where
     F: Fn(Item) -> V,
-    V: View,
+    V: Mount,
 {
     type View = V;
     fn map(&self, item: Item) -> Self::View {
@@ -122,22 +122,47 @@ impl<ItemsFn, KeyFn, MapFn> For<ItemsFn, KeyFn, MapFn> {
 }
 
 // 3.7 For Loop implementation
-impl<ItemsFn, KeyFn, MapFn> View for For<ItemsFn, KeyFn, MapFn>
+impl<ItemsFn, KeyFn, MapFn> ApplyAttributes for For<ItemsFn, KeyFn, MapFn>
 where
-    // ItemsFn returns the Source directly (e.g. Vec or Result<Vec>)
-    // We access it by reference via `With`.
     ItemsFn: RxRead + 'static,
     ItemsFn::Value: ForLoopSource + 'static,
-    // Access Item type via ForLoopSource assoc type
     KeyFn: LoopKey<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
     MapFn: LoopMap<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
-    // Ensure Item itself is static so we can use it in closures
+    <ItemsFn::Value as ForLoopSource>::Item: 'static,
+{
+}
+
+impl<ItemsFn, KeyFn, MapFn> Mount for For<ItemsFn, KeyFn, MapFn>
+where
+    ItemsFn: RxRead + 'static,
+    ItemsFn::Value: ForLoopSource + 'static,
+    KeyFn: LoopKey<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
+    MapFn: LoopMap<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
     <ItemsFn::Value as ForLoopSource>::Item: 'static,
 {
     fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         self.mount_internal(parent, attrs);
     }
+}
 
+impl<ItemsFn, KeyFn, MapFn> AutoReactiveView for For<ItemsFn, KeyFn, MapFn>
+where
+    ItemsFn: RxRead + 'static,
+    ItemsFn::Value: ForLoopSource + 'static,
+    KeyFn: LoopKey<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
+    MapFn: LoopMap<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
+    <ItemsFn::Value as ForLoopSource>::Item: 'static,
+{
+}
+
+impl<ItemsFn, KeyFn, MapFn> MountRef for For<ItemsFn, KeyFn, MapFn>
+where
+    ItemsFn: RxRead + 'static,
+    ItemsFn::Value: ForLoopSource + 'static,
+    KeyFn: LoopKey<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
+    MapFn: LoopMap<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
+    <ItemsFn::Value as ForLoopSource>::Item: 'static,
+{
     fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         self.clone().mount_internal(parent, attrs);
     }
