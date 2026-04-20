@@ -31,7 +31,7 @@ fn main() {
 
 // 使用 #[component(clone)] 宏定义参数需要 Clone 的组件
 #[component(clone)]
-fn App(user: UserStore) -> impl View {
+fn App(user: UserStore) -> impl Mount + MountRef {
     div!(
         h1("Silex Store Demo"),
         p("This example demonstrates fine-grained reactivity using the #[derive(Store)] macro."),
@@ -50,7 +50,7 @@ fn App(user: UserStore) -> impl View {
 
 // 用户信息显示组件
 #[component(clone)]
-fn UserDisplay(user: UserStore) -> impl View {
+fn UserDisplay(user: UserStore) -> impl Mount + MountRef {
     div!(
         div!(
             span("Name: ").style("font-weight: bold;"),
@@ -72,7 +72,7 @@ fn UserDisplay(user: UserStore) -> impl View {
 
 // 用户编辑组件
 #[component(clone)]
-fn UserEditor(user: UserStore) -> impl View {
+fn UserEditor(user: UserStore) -> impl Mount + MountRef {
     div!(
         // 修改 Name
         div!(
@@ -104,7 +104,7 @@ fn UserEditor(user: UserStore) -> impl View {
 
 // 调试面板组件
 #[component(clone)]
-fn DebugPanel(user: UserStore) -> impl View {
+fn DebugPanel(user: UserStore) -> impl Mount + MountRef {
     div!(button("Log Current State to Console").on_click(move |_| {
         // 演示 get() 方法还原普通结构体
         let current_state = user.get();

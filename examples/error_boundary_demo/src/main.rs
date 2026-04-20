@@ -7,7 +7,7 @@ pub fn main() {
 }
 
 #[component]
-fn App() -> impl View {
+fn App() -> impl Mount + MountRef {
     div!(
         h1("Error Boundary Demo"),
         p("This example demonstrates how ErrorBoundary catches errors."),
@@ -55,7 +55,7 @@ fn App() -> impl View {
 }
 
 #[component]
-fn RecoverableComponent() -> impl View {
+fn RecoverableComponent() -> impl Mount + MountRef {
     let (should_error, set_should_error) = Signal::pair(false);
 
     move || {
@@ -77,7 +77,7 @@ fn RecoverableComponent() -> impl View {
 
 // A component that conditionally renders a child that panics immediately during construction
 #[component]
-fn PanicToggleComponent() -> impl View {
+fn PanicToggleComponent() -> impl Mount + MountRef {
     let (show_panic, _set_show_panic) = Signal::pair(false);
 
     move || {
@@ -93,7 +93,7 @@ fn PanicToggleComponent() -> impl View {
 }
 
 #[component]
-fn ImmediatePanic() -> impl View {
+fn ImmediatePanic() -> impl Mount + MountRef {
     let (active, set_active) = Signal::pair(false);
 
     div!(

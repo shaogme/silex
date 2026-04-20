@@ -9,7 +9,7 @@
 ### 签名
 ```rust
 #[component]
-fn MyComponent(props...) -> impl View
+fn MyComponent(props...) -> impl Mount + MountRef
 ```
 
 ### 转换逻辑

@@ -263,13 +263,18 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         get_tag_return_type(&tag_str, tag.span(), parsed.generics.where_clause.as_ref());
     let extra_impls = get_extra_tag_impls(&tag_str, name, &parsed.generics);
 
+    let has_clone = parsed.attrs.iter().any(|a| a.path().is_ident("clone"));
     let filtered_attrs: Vec<_> = parsed
         .attrs
         .iter()
-        .filter(|a| !a.path().is_ident("theme"))
+        .filter(|a| !a.path().is_ident("theme") && !a.path().is_ident("clone"))
         .collect();
 
-    let component_attr = quote! { #[::silex::macros::component(clone)] };
+    let component_attr = if has_clone {
+        quote! { #[::silex::macros::component(clone)] }
+    } else {
+        quote! { #[::silex::macros::component] }
+    };
     let vis = &parsed.vis;
     let (impl_generics, _, _) = parsed.generics.split_for_impl();
     let static_css = &compile_result.static_css;
@@ -497,9 +502,18 @@ impl Parse for GlobalStyle {
 pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     let parsed: GlobalStyle = syn::parse2(input)?;
 
-    let filtered_attrs: Vec<_> = parsed.attrs.clone();
+    let has_clone = parsed.attrs.iter().any(|a| a.path().is_ident("clone"));
+    let filtered_attrs: Vec<_> = parsed
+        .attrs
+        .iter()
+        .filter(|a| !a.path().is_ident("clone"))
+        .collect();
 
-    let component_attr = quote! { #[::silex::macros::component(clone)] };
+    let component_attr = if has_clone {
+        quote! { #[::silex::macros::component(clone)] }
+    } else {
+        quote! { #[::silex::macros::component] }
+    };
 
     let c_name = parsed
         .name

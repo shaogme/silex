@@ -45,7 +45,7 @@ silex = "0.1.0-beta.8" # 请使用最新版本
 use silex::prelude::*;
 
 #[component]
-fn Counter() -> impl View {
+fn Counter() -> impl Mount + MountRef {
     // 创建响应式信号
     let (count, set_count) = Signal::pair(0);
     
@@ -119,7 +119,7 @@ enum AppRoute {
 }
 
 #[component]
-fn App() -> impl View {
+fn App() -> impl Mount + MountRef {
     Router::new().match_route::<AppRoute>()
 }
 ```

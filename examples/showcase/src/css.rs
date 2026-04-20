@@ -109,6 +109,7 @@ global! {
 // --- Styled Components ---
 
 styled! {
+    #[clone]
     pub DemoCard<div>(children: Children) {
         background: var(--slx-theme-surface);
         color: var(--slx-theme-text);
@@ -135,6 +136,7 @@ styled! {
 }
 
 styled! {
+    #[clone]
     pub StyledButton<button>(
         children: Children,
         #[prop(into)] color: Signal<CssVar<Hex>>,
@@ -195,6 +197,7 @@ styled! {
 }
 
 styled! {
+    #[clone]
     pub ThemeButton<button>(
         children: Children,
         #[prop(into)] active: Signal<bool>
@@ -221,6 +224,7 @@ styled! {
 }
 
 styled! {
+    #[clone]
     pub DynamicVariantBtn<button>(
         children: Children,
         #[prop(into)] kind: Signal<String>,
@@ -673,6 +677,7 @@ pub fn AdvancedStyling() -> impl Mount + MountRef {
 // --- Unsafe Demos ---
 
 styled! {
+    #[clone]
     pub UnsafeBlockDemo<div>(children: Children) {
         padding: 24px;
         border-radius: 12px;
@@ -696,6 +701,7 @@ styled! {
 }
 
 styled! {
+    #[clone]
     pub unsafe UnsafeCompDemo<div>(children: Children) {
         // Enire component is unsafe
         padding: 32px;

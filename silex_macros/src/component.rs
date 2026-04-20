@@ -173,7 +173,7 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
             if type_ident == "Children" || type_ident == "SharedView" {
                 if is_required {
                     builder_methods.push(quote! {
-                        pub fn #param_name<__SilexValue: ::silex::dom::view::MountRef + ::silex::dom::view::Mount + ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt + Clone + 'static>(mut self, val: __SilexValue) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::Mount + ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt + Clone>(mut self, val: __SilexValue) -> Self {
                             use ::silex::dom::view::MountRefExt;
                             self.#param_name = Some(val.into_shared());
                             self
@@ -181,7 +181,7 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
                     });
                 } else {
                     builder_methods.push(quote! {
-                        pub fn #param_name<__SilexValue: ::silex::dom::view::MountRef + ::silex::dom::view::Mount + ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt + Clone + 'static>(mut self, val: __SilexValue) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::Mount + ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt + Clone>(mut self, val: __SilexValue) -> Self {
                             use ::silex::dom::view::MountRefExt;
                             self.#param_name = val.into_shared();
                             self
@@ -191,7 +191,7 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
             } else if type_ident == "AnyView" {
                 if is_required {
                     builder_methods.push(quote! {
-                        pub fn #param_name<__SilexValue: ::silex::dom::view::MountExt + 'static>(mut self, val: __SilexValue) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::MountExt>(mut self, val: __SilexValue) -> Self {
                             use ::silex::dom::view::MountExt;
                             self.#param_name = Some(val.into_any());
                             self
@@ -199,7 +199,7 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
                     });
                 } else {
                     builder_methods.push(quote! {
-                        pub fn #param_name<__SilexValue: ::silex::dom::view::MountExt + 'static>(mut self, val: __SilexValue) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::MountExt>(mut self, val: __SilexValue) -> Self {
                             use ::silex::dom::view::MountExt;
                             self.#param_name = val.into_any();
                             self
@@ -249,7 +249,7 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
                 quote! {
                     // 生成同名带 children 参数的构建函数
                     #[allow(non_snake_case)]
-                    #fn_vis fn #fn_name #impl_generics(children: impl ::silex::dom::view::MountRef + ::silex::dom::view::Mount + ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt + Clone + 'static) -> #struct_name #ty_generics #where_clause {
+                    #fn_vis fn #fn_name #impl_generics(children: impl ::silex::dom::view::Mount + ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt + Clone) -> #struct_name #ty_generics #where_clause {
                         #struct_name::new().children(children)
                     }
                 }

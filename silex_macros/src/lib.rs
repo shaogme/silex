@@ -69,13 +69,13 @@ pub fn theme(input: TokenStream) -> TokenStream {
 ///     name: String,
 ///     #[prop(default)] age: u32,
 ///     #[prop(into)] message: String,
-/// ) -> impl View {
+/// ) -> impl Mount + MountRef {
 ///     div(format!("{} ({}): {}", name, age, message))
 /// }
 ///
 /// // 生成的代码等效于:
 /// // pub struct MyComponentProps<M> { ... }
-/// // pub fn MyComponent(props: MyComponentProps<...>) -> impl View { ... }
+/// // pub fn MyComponent(props: MyComponentProps<...>) -> impl Mount + MountRef { ... }
 /// ```
 ///
 /// # 属性

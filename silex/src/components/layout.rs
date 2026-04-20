@@ -2,6 +2,7 @@ use crate::prelude::*;
 
 styled! {
     /// 弹性布局容器 (Flexbox)
+    #[clone]
     pub Stack <div> (
         children: Children,
         #[prop(default = FlexDirectionKeyword::Column, into)]
@@ -25,6 +26,7 @@ styled! {
 
 styled! {
     /// 居中容器
+    #[clone]
     pub Center <div> (
         children: Children,
         #[prop(default, into)]
@@ -38,6 +40,7 @@ styled! {
 
 styled! {
     /// 网格布局容器 (Grid)
+    #[clone]
     pub Grid <div> (
         children: Children,
         #[prop(default = 1, into)]
