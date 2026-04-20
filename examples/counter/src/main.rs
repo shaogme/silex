@@ -1,13 +1,13 @@
 use silex::prelude::*;
 use silex::reexports::*;
 
-#[component(no_clone)]
+#[component]
 fn Card(
     #[prop(default = "Default Title", into)] title: String,
     #[prop(default = 1)] elevation: u8,
     #[prop(default)] child: AnyView,
     #[prop(default, into)] on_hover: Callback,
-) -> impl Mount {
+) -> impl Mount + MountRef {
     let style = format!(
         "border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px {}px rgba(0,0,0,0.1); transition: transform 0.2s;",
         elevation * 4
@@ -20,6 +20,7 @@ fn Card(
     .class("card")
     .style(&style);
 
+    let on_hover = on_hover.into_owned();
     root = root.on_click(move |_| on_hover.call(()));
 
     root
@@ -101,7 +102,7 @@ fn CounterControls() -> SilexResult<impl Mount> {
 // --- Views ---
 
 #[component]
-fn NavBar() -> impl Mount {
+fn NavBar() -> impl Mount + MountRef {
     div!(
         Link("/", "Home")
             .style("margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold;"),
@@ -111,7 +112,7 @@ fn NavBar() -> impl Mount {
 }
 
 #[component]
-fn HomeView() -> impl Mount {
+fn HomeView() -> impl Mount + MountRef {
     // 页面级状态
     let (name, set_name) = Signal::pair("Rustacean".to_string());
 
@@ -189,7 +190,7 @@ fn HomeView() -> impl Mount {
 }
 
 #[component]
-fn AboutView() -> impl Mount {
+fn AboutView() -> impl Mount + MountRef {
     div!(
         h1("About"),
         p("This is the About Page to demonstrate Silex Router."),
@@ -198,7 +199,7 @@ fn AboutView() -> impl Mount {
 }
 
 #[component]
-fn NotFound() -> impl Mount {
+fn NotFound() -> impl Mount + MountRef {
     div(h1("404 - Page Not Found")).style("color: red; padding: 20px;")
 }
 

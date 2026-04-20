@@ -29,8 +29,8 @@ fn main() {
     });
 }
 
-// 使用 #[component] 宏定义带参数的组件
-#[component]
+// 使用 #[component(clone)] 宏定义参数需要 Clone 的组件
+#[component(clone)]
 fn App(user: UserStore) -> impl View {
     div!(
         h1("Silex Store Demo"),
@@ -49,7 +49,7 @@ fn App(user: UserStore) -> impl View {
 }
 
 // 用户信息显示组件
-#[component]
+#[component(clone)]
 fn UserDisplay(user: UserStore) -> impl View {
     div!(
         div!(
@@ -71,7 +71,7 @@ fn UserDisplay(user: UserStore) -> impl View {
 }
 
 // 用户编辑组件
-#[component]
+#[component(clone)]
 fn UserEditor(user: UserStore) -> impl View {
     div!(
         // 修改 Name
@@ -103,7 +103,7 @@ fn UserEditor(user: UserStore) -> impl View {
 }
 
 // 调试面板组件
-#[component]
+#[component(clone)]
 fn DebugPanel(user: UserStore) -> impl View {
     div!(button("Log Current State to Console").on_click(move |_| {
         // 演示 get() 方法还原普通结构体

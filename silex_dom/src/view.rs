@@ -6,8 +6,10 @@ pub use reactive::*;
 
 use crate::attribute::PendingAttribute;
 use silex_core::error::handle_error;
+use silex_core::logic::Map;
 use silex_core::reactivity::Effect;
-use silex_core::{SilexError, SilexResult};
+use silex_core::{Rx, RxValueKind, SilexError, SilexResult};
+use std::ops::Deref;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use web_sys::Node;
 
@@ -28,7 +30,7 @@ pub trait ApplyAttributes {
 }
 
 /// 挂载特征 - 消耗型 (Mount Trait)
-pub trait Mount: ApplyAttributes {
+pub trait Mount {
     /// Mount this view to a parent node with a set of pending attributes.
     /// This is the primary entry point for mounting views.
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>);
@@ -42,13 +44,136 @@ pub trait MountRef {
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>);
 }
 
+/// 组件宏内部使用的借用包装器。
+///
+/// 这个包装器只承载借用，用于让组件在 `mount_ref` 路径里
+/// 既能按引用访问 prop，又能显式拿到 owned 值来处理需要所有权的场景。
+pub struct MountRefBorrow<'a, T: ?Sized>(pub &'a T);
+
+impl<'a, T: ?Sized> MountRefBorrow<'a, T> {
+    pub fn new(value: &'a T) -> Self {
+        Self(value)
+    }
+}
+
+pub trait IntoOwnedValue {
+    type Owned;
+
+    fn into_owned(self) -> Self::Owned;
+}
+
+impl<T> IntoOwnedValue for T
+where
+    T: Clone,
+{
+    type Owned = T;
+
+    fn into_owned(self) -> Self::Owned {
+        self
+    }
+}
+
+impl<'a, T> IntoOwnedValue for MountRefBorrow<'a, T>
+where
+    T: Clone,
+{
+    type Owned = T;
+
+    fn into_owned(self) -> Self::Owned {
+        self.0.clone()
+    }
+}
+
+impl<'a, T: MountRef + ?Sized> MountRef for MountRefBorrow<'a, T> {
+    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        self.0.mount_ref(parent, attrs);
+    }
+}
+
+impl<'a, T: ?Sized> ApplyAttributes for MountRefBorrow<'a, T> {}
+
+impl<'a, T> Mount for MountRefBorrow<'a, T>
+where
+    T: MountRef + ?Sized,
+{
+    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        self.0.mount_ref(parent, attrs);
+    }
+}
+
+impl<'a, T: ?Sized> Deref for MountRefBorrow<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<'a, T> MountRefBorrow<'a, T>
+where
+    T: Clone + Map + 'static,
+    T::Value: Sized + 'static,
+{
+    pub fn map<U>(&self, f: impl Fn(&T::Value) -> U + 'static) -> Rx<U, RxValueKind>
+    where
+        U: 'static,
+    {
+        self.0.clone().map(f)
+    }
+
+    pub fn map_fn<U>(&self, f: fn(&T::Value) -> U) -> Rx<U, RxValueKind>
+    where
+        U: 'static,
+    {
+        self.0.clone().map_fn(f)
+    }
+}
+
+impl<'a, T> std::fmt::Debug for MountRefBorrow<'a, T>
+where
+    T: std::fmt::Debug + ?Sized,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl<'a, T> std::fmt::Display for MountRefBorrow<'a, T>
+where
+    T: std::fmt::Display + ?Sized,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+macro_rules! impl_forward_binop_copy {
+    ($trait:ident, $method:ident) => {
+        impl<'a, T, Rhs> std::ops::$trait<Rhs> for MountRefBorrow<'a, T>
+        where
+            T: Copy + std::ops::$trait<Rhs>,
+        {
+            type Output = <T as std::ops::$trait<Rhs>>::Output;
+
+            fn $method(self, rhs: Rhs) -> Self::Output {
+                (*self.0).$method(rhs)
+            }
+        }
+    };
+}
+
+impl_forward_binop_copy!(Add, add);
+impl_forward_binop_copy!(Sub, sub);
+impl_forward_binop_copy!(Mul, mul);
+impl_forward_binop_copy!(Div, div);
+
 /// 视图转换扩展 (Mount Extensions)
-pub trait MountExt: MountRef + Mount + Sized + 'static {
+pub trait MountExt: MountRef + Mount + ApplyAttributes + Sized + 'static {
     /// Convert this view into an AnyView (Type Erasure without Clone requirement).
     fn into_any(self) -> AnyView;
 }
 
-impl<T: MountRef + Mount + Sized + 'static> MountExt for T {
+impl<T: MountRef + Mount + ApplyAttributes + Sized + 'static> MountExt for T {
     fn into_any(self) -> AnyView {
         AnyView::new(self)
     }
@@ -60,7 +185,7 @@ pub trait MountRefExt: MountRef + Sized + 'static {
     fn into_shared(self) -> SharedView;
 }
 
-impl<T: MountRef + Mount + Sized + Clone + 'static> MountRefExt for T {
+impl<T: MountRef + Mount + ApplyAttributes + Sized + Clone + 'static> MountRefExt for T {
     fn into_shared(self) -> SharedView {
         SharedView::new(self)
     }
@@ -413,9 +538,8 @@ macro_rules! view_chain {
 // 7. Result 支持
 impl<V: ApplyAttributes> ApplyAttributes for SilexResult<V> {
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
-        match self {
-            Ok(v) => v.apply_attributes(attrs),
-            Err(_) => {}
+        if let Ok(v) = self {
+            v.apply_attributes(attrs)
         }
     }
 }

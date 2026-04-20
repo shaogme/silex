@@ -253,7 +253,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         quote! { () }
     };
     let style_prop_binding = if existing_props.contains(&quote::format_ident!("style")) {
-        quote! { .style(style) }
+        quote! { .style(style.clone()) }
     } else {
         quote! {}
     };
@@ -263,25 +263,13 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         get_tag_return_type(&tag_str, tag.span(), parsed.generics.where_clause.as_ref());
     let extra_impls = get_extra_tag_impls(&tag_str, name, &parsed.generics);
 
-    let mut no_clone = false;
     let filtered_attrs: Vec<_> = parsed
         .attrs
         .iter()
-        .filter(|a| {
-            if a.path().is_ident("no_clone") {
-                no_clone = true;
-                false
-            } else {
-                !a.path().is_ident("theme")
-            }
-        })
+        .filter(|a| !a.path().is_ident("theme"))
         .collect();
 
-    let component_attr = if no_clone {
-        quote! { #[::silex::macros::component(no_clone)] }
-    } else {
-        quote! { #[::silex::macros::component] }
-    };
+    let component_attr = quote! { #[::silex::macros::component(clone)] };
     let vis = &parsed.vis;
     let (impl_generics, _, _) = parsed.generics.split_for_impl();
     let static_css = &compile_result.static_css;
@@ -336,9 +324,9 @@ fn process_dynamic_entries(
     for (i, (prop, expr)) in entries.iter().enumerate() {
         let var_ident = quote::format_ident!("dyn_var{}_{}", suffix, i);
         let prop_type = crate::css::get_prop_type(prop, span)?;
-        var_decls.push(
-            quote! { let #var_ident = ::silex::css::make_dynamic_val_for::<#prop_type, _>(#expr); },
-        );
+        var_decls.push(quote! {
+            let #var_ident = ::silex::css::make_dynamic_val_for::<#prop_type, _>((#expr).clone());
+        });
         let var_name = format!("--{}-{}", class_name, i);
         style_bindings.push(quote! { (::std::borrow::Cow::Borrowed(#var_name), #var_ident) });
     }
@@ -509,25 +497,9 @@ impl Parse for GlobalStyle {
 pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     let parsed: GlobalStyle = syn::parse2(input)?;
 
-    let mut no_clone = false;
-    let filtered_attrs: Vec<_> = parsed
-        .attrs
-        .iter()
-        .filter(|a| {
-            if a.path().is_ident("no_clone") {
-                no_clone = true;
-                false
-            } else {
-                true
-            }
-        })
-        .collect();
+    let filtered_attrs: Vec<_> = parsed.attrs.clone();
 
-    let component_attr = if no_clone {
-        quote! { #[::silex::macros::component(no_clone)] }
-    } else {
-        quote! { #[::silex::macros::component] }
-    };
+    let component_attr = quote! { #[::silex::macros::component(clone)] };
 
     let c_name = parsed
         .name

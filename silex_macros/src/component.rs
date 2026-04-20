@@ -4,7 +4,7 @@ use syn::parse::Parser;
 use syn::{Attribute, FnArg, ItemFn, Pat};
 
 pub struct ComponentAttrs {
-    pub no_clone: bool,
+    pub derive_clone: bool,
 }
 
 pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Result<TokenStream2> {
@@ -19,6 +19,7 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
     let mut builder_methods = Vec::new();
     let mut new_initializers = Vec::new();
     let mut mount_checks = Vec::new(); // Runtime checks for required props
+    let mut mount_ref_checks = Vec::new();
     let mut used_prop_names = std::collections::HashSet::new();
 
     let mut first_arg_is_children = false;
@@ -126,6 +127,9 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
             mount_checks.push(quote! {
                 let #param_name = self.#param_name.expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #param_name_str, "'"));
             });
+            mount_ref_checks.push(quote! {
+                let #param_name = ::silex::dom::view::MountRefBorrow::new(self.#param_name.as_ref().expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #param_name_str, "'")));
+            });
         } else {
             // 可选字段：直接存 T
             struct_fields.push(quote! {
@@ -156,6 +160,9 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
             mount_checks.push(quote! {
                 let #param_name = self.#param_name;
             });
+            mount_ref_checks.push(quote! {
+                let #param_name = ::silex::dom::view::MountRefBorrow::new(&self.#param_name);
+            });
         }
 
         // 构建器方法 (Builder Methods)
@@ -166,7 +173,7 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
             if type_ident == "Children" || type_ident == "SharedView" {
                 if is_required {
                     builder_methods.push(quote! {
-                        pub fn #param_name<__SilexValue: ::silex::dom::view::MountRef + ::silex::dom::view::Mount + Clone + 'static>(mut self, val: __SilexValue) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::MountRef + ::silex::dom::view::Mount + ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt + Clone + 'static>(mut self, val: __SilexValue) -> Self {
                             use ::silex::dom::view::MountRefExt;
                             self.#param_name = Some(val.into_shared());
                             self
@@ -174,7 +181,7 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
                     });
                 } else {
                     builder_methods.push(quote! {
-                        pub fn #param_name<__SilexValue: ::silex::dom::view::MountRef + ::silex::dom::view::Mount + Clone + 'static>(mut self, val: __SilexValue) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::MountRef + ::silex::dom::view::Mount + ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt + Clone + 'static>(mut self, val: __SilexValue) -> Self {
                             use ::silex::dom::view::MountRefExt;
                             self.#param_name = val.into_shared();
                             self
@@ -184,7 +191,7 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
             } else if type_ident == "AnyView" {
                 if is_required {
                     builder_methods.push(quote! {
-                        pub fn #param_name<__SilexValue: ::silex::dom::view::Mount + 'static>(mut self, val: __SilexValue) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::MountExt + 'static>(mut self, val: __SilexValue) -> Self {
                             use ::silex::dom::view::MountExt;
                             self.#param_name = Some(val.into_any());
                             self
@@ -192,7 +199,7 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
                     });
                 } else {
                     builder_methods.push(quote! {
-                        pub fn #param_name<__SilexValue: ::silex::dom::view::Mount + 'static>(mut self, val: __SilexValue) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::MountExt + 'static>(mut self, val: __SilexValue) -> Self {
                             use ::silex::dom::view::MountExt;
                             self.#param_name = val.into_any();
                             self
@@ -242,7 +249,7 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
                 quote! {
                     // 生成同名带 children 参数的构建函数
                     #[allow(non_snake_case)]
-                    #fn_vis fn #fn_name #impl_generics(children: impl ::silex::dom::view::MountRef + ::silex::dom::view::Mount + Clone + 'static) -> #struct_name #ty_generics #where_clause {
+                    #fn_vis fn #fn_name #impl_generics(children: impl ::silex::dom::view::MountRef + ::silex::dom::view::Mount + ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt + Clone + 'static) -> #struct_name #ty_generics #where_clause {
                         #struct_name::new().children(children)
                     }
                 }
@@ -279,13 +286,13 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
         }
     };
 
-    let derive_clone = if !attrs.no_clone {
+    let derive_clone = if attrs.derive_clone {
         quote! { #[derive(Clone)] }
     } else {
         quote! {}
     };
 
-    let mount_ref_impl = if !attrs.no_clone {
+    let mount_ref_impl = if attrs.derive_clone {
         quote! {
             impl #impl_generics ::silex::dom::view::MountRef for #struct_name #ty_generics #where_clause {
                 fn mount_ref(&self, parent: &::silex::reexports::web_sys::Node, attrs: Vec<::silex::dom::attribute::PendingAttribute>) {
@@ -294,7 +301,20 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
             }
         }
     } else {
-        quote! {}
+        quote! {
+            impl #impl_generics ::silex::dom::view::MountRef for #struct_name #ty_generics #where_clause {
+                fn mount_ref(&self, parent: &::silex::reexports::web_sys::Node, attrs: Vec<::silex::dom::attribute::PendingAttribute>) {
+                    #(#mount_ref_checks)*
+
+                    let view_instance = #fn_body;
+
+                    let mut all_attrs = self._pending_attrs.clone();
+                    all_attrs.extend(attrs);
+
+                    ::silex::dom::view::Mount::mount(view_instance, parent, all_attrs);
+                }
+            }
+        }
     };
 
     let expanded = quote! {
@@ -419,7 +439,7 @@ fn parse_prop_attrs(attrs: &[Attribute]) -> syn::Result<PropAttrs> {
 
 pub fn parse_component_attrs(args: TokenStream2) -> syn::Result<ComponentAttrs> {
     let mut result = ComponentAttrs {
-        no_clone: false,
+        derive_clone: false,
     };
 
     if args.is_empty() {
@@ -427,8 +447,8 @@ pub fn parse_component_attrs(args: TokenStream2) -> syn::Result<ComponentAttrs> 
     }
 
     let parser = syn::meta::parser(|meta| {
-        if meta.path.is_ident("no_clone") {
-            result.no_clone = true;
+        if meta.path.is_ident("clone") {
+            result.derive_clone = true;
             Ok(())
         } else {
             Err(meta.error("unsupported component attribute"))

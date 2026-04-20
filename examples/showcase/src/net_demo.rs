@@ -12,7 +12,7 @@ pub struct Post {
 }
 
 #[component]
-pub fn HttpClientDemo() -> impl Mount {
+pub fn HttpClientDemo() -> impl Mount + MountRef {
     let (post_id, set_post_id) = Signal::pair(1);
 
     // 1. Using HttpClient::as_resource for declarative fetching
@@ -97,7 +97,7 @@ pub fn HttpClientDemo() -> impl Mount {
 }
 
 #[component]
-pub fn WebSocketDemo() -> impl Mount {
+pub fn WebSocketDemo() -> impl Mount + MountRef {
     let url = RwSignal::new("wss://echo.websocket.org".to_string());
     let socket = StoredValue::new(None::<WebSocketConnection>);
     let (is_connected, set_is_connected) = Signal::pair(false);
@@ -170,7 +170,7 @@ pub fn WebSocketDemo() -> impl Mount {
 }
 
 #[component]
-pub fn EventStreamDemo() -> impl Mount {
+pub fn EventStreamDemo() -> impl Mount + MountRef {
     let (is_active, set_is_active) = Signal::pair(false);
     let url = RwSignal::new("https://stream.wikimedia.org/v2/stream/recentchange".to_string());
     let stream = StoredValue::new(None::<EventStreamConnection>);
@@ -226,7 +226,7 @@ pub fn EventStreamDemo() -> impl Mount {
 }
 
 #[component]
-pub fn NetDemoPage() -> impl Mount {
+pub fn NetDemoPage() -> impl Mount + MountRef {
     let (active_tab, set_active_tab) = Signal::pair("http");
 
     inject_style("net-demo-css", "

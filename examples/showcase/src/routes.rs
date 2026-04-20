@@ -12,7 +12,7 @@ use silex::reexports::wasm_bindgen::JsCast;
 use silex::reexports::web_sys::{HtmlElement, MouseEvent};
 
 #[component]
-fn SelectDemo() -> impl Mount {
+fn SelectDemo() -> impl Mount + MountRef {
     div("Select a demo above.")
 }
 
@@ -124,7 +124,7 @@ styled! {
 }
 
 #[component]
-pub fn NavBar() -> impl Mount {
+pub fn NavBar() -> impl Mount + MountRef {
     let settings = use_user_settings();
 
     StyledNav(view_chain!(
@@ -192,7 +192,7 @@ pub fn NavBar() -> impl Mount {
 }
 
 #[component]
-fn AdvancedLayout(route: AdvancedRoute) -> impl Mount {
+fn AdvancedLayout(route: AdvancedRoute) -> impl Mount + MountRef {
     div![
         h2("Advanced Features"),
         div![
@@ -259,7 +259,7 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl Mount {
 }
 
 #[component]
-fn CssLayout(route: CssRoute) -> impl Mount {
+fn CssLayout(route: CssRoute) -> impl Mount + MountRef {
     div![
         h2("CSS & Styling"),
         p(
@@ -276,12 +276,12 @@ fn CssLayout(route: CssRoute) -> impl Mount {
 }
 
 #[component]
-fn NotFoundPage() -> impl Mount {
+fn NotFoundPage() -> impl Mount + MountRef {
     div("404 - Page Not Found").style("color: red; padding: 20px;")
 }
 
 #[component]
-fn HomePage() -> impl Mount {
+fn HomePage() -> impl Mount + MountRef {
     div![
         h1("Welcome to Silex Showcase"),
         p("This example application demonstrates the core features of the Silex framework."),

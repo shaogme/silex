@@ -1,5 +1,4 @@
 use crate::attribute::{ApplyTarget, ApplyToDom, IntoStorable, PendingAttribute};
-use crate::view::Mount;
 use silex_core::SilexError;
 use silex_core::reactivity::on_cleanup;
 
@@ -103,7 +102,19 @@ impl crate::view::Mount for Element {
 
 impl crate::view::MountRef for Element {
     fn mount_ref(&self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
-        self.clone().mount(parent, attrs);
+        if !attrs.is_empty() {
+            let consolidated = crate::attribute::consolidate_attributes(attrs);
+            for attr in consolidated {
+                attr.apply(&self.dom_element);
+            }
+        }
+
+        if let Err(e) = parent
+            .append_child(&self.dom_element)
+            .map_err(SilexError::from)
+        {
+            silex_core::error::handle_error(e);
+        }
     }
 }
 

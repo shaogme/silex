@@ -1,5 +1,6 @@
 use crate::attribute::PendingAttribute;
 use crate::element::Element;
+use crate::view::{ApplyAttributes, Mount, MountExt, MountRef, MountRefExt};
 use silex_vtable::any_box::AnyBox;
 use silex_vtable::func_ptr::FuncPtr;
 use silex_vtable::thunk::FactoryBox;
@@ -34,9 +35,9 @@ pub struct SharedViewBox {
 
 impl AnyViewBox {
     #[inline(always)]
-    pub fn new<V: crate::view::MountExt + 'static>(view: V) -> Self {
+    pub fn new<V: MountExt + 'static>(view: V) -> Self {
         struct VGen<V>(PhantomData<V>);
-        impl<V: crate::view::MountExt + 'static> VGen<V> {
+        impl<V: MountExt + 'static> VGen<V> {
             const STACK: AnyViewVTable = AnyViewVTable {
                 mount: FuncPtr::new(mount_stack::<V>),
                 mount_ref: FuncPtr::new(mount_ref_stack::<V>),
@@ -87,9 +88,9 @@ impl Drop for AnyViewBox {
 
 impl SharedViewBox {
     #[inline(always)]
-    pub fn new<V: crate::view::MountRef + crate::view::Mount + Clone + 'static>(view: V) -> Self {
+    pub fn new<V: MountRef + Mount + ApplyAttributes + Clone + 'static>(view: V) -> Self {
         struct VGen<V>(PhantomData<V>);
-        impl<V: crate::view::MountRef + crate::view::Mount + Clone + 'static> VGen<V> {
+        impl<V: MountRef + Mount + ApplyAttributes + Clone + 'static> VGen<V> {
             const STACK: SharedViewVTable = SharedViewVTable {
                 mount: FuncPtr::new(mount_stack::<V>),
                 mount_ref: FuncPtr::new(mount_ref_stack::<V>),
@@ -148,11 +149,7 @@ impl Drop for SharedViewBox {
 
 // --- VTable Glue Functions ---
 
-unsafe fn mount_stack<V: crate::view::Mount>(
-    data: *mut u8,
-    parent: &Node,
-    attrs: Vec<PendingAttribute>,
-) {
+unsafe fn mount_stack<V: Mount>(data: *mut u8, parent: &Node, attrs: Vec<PendingAttribute>) {
     unsafe {
         let view_ptr = data as *mut mem::MaybeUninit<V>;
         let view = mem::replace(&mut *view_ptr, mem::MaybeUninit::uninit()).assume_init();
@@ -160,7 +157,7 @@ unsafe fn mount_stack<V: crate::view::Mount>(
     }
 }
 
-unsafe fn mount_ref_stack<V: crate::view::MountRef>(
+unsafe fn mount_ref_stack<V: MountRef>(
     data: *const u8,
     parent: &Node,
     attrs: Vec<PendingAttribute>,
@@ -187,11 +184,7 @@ unsafe fn drop_stack<V>(data: *mut u8) {
     }
 }
 
-unsafe fn mount_heap<V: crate::view::Mount>(
-    data: *mut u8,
-    parent: &Node,
-    attrs: Vec<PendingAttribute>,
-) {
+unsafe fn mount_heap<V: Mount>(data: *mut u8, parent: &Node, attrs: Vec<PendingAttribute>) {
     unsafe {
         let ptr_ref = &mut *(data as *mut *mut V);
         let ptr = mem::replace(ptr_ref, std::ptr::null_mut());
@@ -202,7 +195,7 @@ unsafe fn mount_heap<V: crate::view::Mount>(
     }
 }
 
-unsafe fn mount_ref_heap<V: crate::view::MountRef>(
+unsafe fn mount_ref_heap<V: MountRef>(
     data: *const u8,
     parent: &Node,
     attrs: Vec<PendingAttribute>,
@@ -232,7 +225,7 @@ unsafe fn drop_heap<V>(data: *mut u8) {
     }
 }
 
-unsafe fn clone_stack<V: crate::view::MountRef + crate::view::Mount + Clone + 'static>(
+unsafe fn clone_stack<V: MountRef + Mount + ApplyAttributes + Clone + 'static>(
     data: *const u8,
 ) -> SharedViewBox {
     unsafe {
@@ -241,7 +234,7 @@ unsafe fn clone_stack<V: crate::view::MountRef + crate::view::Mount + Clone + 's
     }
 }
 
-unsafe fn clone_heap<V: crate::view::MountRef + crate::view::Mount + Clone + 'static>(
+unsafe fn clone_heap<V: MountRef + Mount + ApplyAttributes + Clone + 'static>(
     data: *const u8,
 ) -> SharedViewBox {
     unsafe {
@@ -280,13 +273,13 @@ pub enum AnyView {
 }
 
 impl SharedView {
-    pub fn new<V: crate::view::MountRef + crate::view::Mount + Clone + 'static>(view: V) -> Self {
+    pub fn new<V: MountRef + Mount + ApplyAttributes + Clone + 'static>(view: V) -> Self {
         SharedView::Boxed(SharedViewBox::new(view), Vec::new())
     }
 }
 
 impl AnyView {
-    pub fn new<V: crate::view::MountExt + 'static>(view: V) -> Self {
+    pub fn new<V: MountExt + 'static>(view: V) -> Self {
         AnyView::Boxed(AnyViewBox::new(view), Vec::new())
     }
 }
@@ -312,7 +305,7 @@ impl crate::view::ApplyAttributes for SharedView {
     }
 }
 
-impl crate::view::Mount for SharedView {
+impl Mount for SharedView {
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         match self {
             SharedView::Empty => {}
@@ -334,7 +327,7 @@ impl crate::view::Mount for SharedView {
     }
 }
 
-impl crate::view::MountRef for SharedView {
+impl MountRef for SharedView {
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         match self {
             SharedView::Empty => {}
@@ -376,7 +369,7 @@ impl crate::view::ApplyAttributes for AnyView {
     }
 }
 
-impl crate::view::MountRef for AnyView {
+impl MountRef for AnyView {
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         match self {
             AnyView::Empty => {}
@@ -397,7 +390,7 @@ impl crate::view::MountRef for AnyView {
     }
 }
 
-impl crate::view::Mount for AnyView {
+impl Mount for AnyView {
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         match self {
             AnyView::Empty => {}
@@ -490,7 +483,7 @@ impl crate::view::ApplyAttributes for Fragment {
     }
 }
 
-impl crate::view::Mount for Fragment {
+impl Mount for Fragment {
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         for (i, child) in self.0.into_iter().enumerate() {
             child.mount(parent, if i == 0 { attrs.clone() } else { Vec::new() });
@@ -498,7 +491,7 @@ impl crate::view::Mount for Fragment {
     }
 }
 
-impl crate::view::MountRef for Fragment {
+impl MountRef for Fragment {
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         for (i, child) in self.0.iter().enumerate() {
             child.mount_ref(parent, if i == 0 { attrs.clone() } else { Vec::new() });
@@ -571,19 +564,18 @@ impl_from_primitive!(
     i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, f32, f64, bool, char
 );
 
-impl<V: crate::view::MountExt + 'static> From<Vec<V>> for AnyView {
+impl<V: MountExt + 'static> From<Vec<V>> for AnyView {
     fn from(v: Vec<V>) -> Self {
         AnyView::List(v.into_iter().map(|item| item.into_any()).collect())
     }
 }
-impl<V: crate::view::MountRef + crate::view::Mount + Clone + 'static> From<Vec<V>> for SharedView {
+impl<V: MountRef + Mount + ApplyAttributes + Clone + 'static> From<Vec<V>> for SharedView {
     fn from(v: Vec<V>) -> Self {
-        use crate::view::MountRefExt;
         SharedView::List(v.into_iter().map(|item| item.into_shared()).collect())
     }
 }
 
-impl<V: crate::view::MountExt + 'static> From<Option<V>> for AnyView {
+impl<V: MountExt + 'static> From<Option<V>> for AnyView {
     fn from(v: Option<V>) -> Self {
         match v {
             Some(val) => AnyView::new(val),
@@ -591,9 +583,7 @@ impl<V: crate::view::MountExt + 'static> From<Option<V>> for AnyView {
         }
     }
 }
-impl<V: crate::view::MountRef + crate::view::Mount + Clone + 'static> From<Option<V>>
-    for SharedView
-{
+impl<V: MountRef + Mount + ApplyAttributes + Clone + 'static> From<Option<V>> for SharedView {
     fn from(v: Option<V>) -> Self {
         match v {
             Some(val) => SharedView::new(val),
@@ -618,8 +608,8 @@ impl From<crate::view::ViewNil> for SharedView {
 
 impl<H, T> From<crate::view::ViewCons<H, T>> for AnyView
 where
-    H: crate::view::MountExt + 'static,
-    T: crate::view::MountExt + 'static,
+    H: MountExt + 'static,
+    T: MountExt + 'static,
 {
     fn from(v: crate::view::ViewCons<H, T>) -> Self {
         AnyView::new(v)
@@ -628,8 +618,8 @@ where
 
 impl<H, T> From<crate::view::ViewCons<H, T>> for SharedView
 where
-    H: crate::view::MountRef + crate::view::Mount + Clone + 'static,
-    T: crate::view::MountRef + crate::view::Mount + Clone + 'static,
+    H: MountRef + Mount + ApplyAttributes + Clone + 'static,
+    T: MountRef + Mount + ApplyAttributes + Clone + 'static,
 {
     fn from(v: crate::view::ViewCons<H, T>) -> Self {
         SharedView::new(v)
@@ -665,7 +655,7 @@ macro_rules! any_view_match {
     ($target:expr, { $($pat:pat $(if $guard:expr)? => $val:expr),* $(,)? }) => {
         match $target {
             $(
-                $pat $(if $guard)? => $crate::view::MountExt::into_any($val),
+                $pat $(if $guard)? => $MountExt::into_any($val),
             )*
         }
     };
