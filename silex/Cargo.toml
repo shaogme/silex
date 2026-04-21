@@ -19,7 +19,7 @@ silex_core.workspace = true
 silex_dom.workspace = true
 silex_html.workspace = true
 silex_css.workspace = true
-silex_macros = { workspace = true, optional = true }
+silex_macros = { workspace = true, default-features = false, features = ["component", "store", "route"]}
 silex_hash.workspace = true
 wasm-bindgen.workspace = true
 web-sys.workspace = true
@@ -30,8 +30,8 @@ serde_json = { workspace = true, optional = true }
 gloo-timers = { workspace = true, optional = true }
 
 [features]
-default = ["macros"]
-macros = ["silex_macros"]
+default = ["css"]
+css = ["silex_macros/css"]
 persistence = []
 json = ["dep:serde", "dep:serde_json"]
 net = ["dep:gloo-timers"]

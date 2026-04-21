@@ -25,32 +25,32 @@ fn main() {
         });
 
         // 3. 构建 UI
-        App().user(user).mount(&app_container, Vec::new());
+        App(user).mount(&app_container, Vec::new());
     });
 }
 
-// 使用 #[component(clone)] 宏定义参数需要 Clone 的组件
-#[component(clone)]
+// 使用 #[component] 宏定义组件
+#[component]
 fn App(user: UserStore) -> impl Mount + MountRef {
     div!(
         h1("Silex Store Demo"),
         p("This example demonstrates fine-grained reactivity using the #[derive(Store)] macro."),
 
         // 显示区域
-        UserDisplay().user(user),
+        UserDisplay(user),
 
         // 编辑区域
-        UserEditor().user(user),
+        UserEditor(user),
 
         // 调试信息：展示 Store 导出功能
-        DebugPanel().user(user)
+        DebugPanel(user)
     )
     .style("padding: 20px; font-family: sans-serif; max-width: 500px; margin: 0 auto; border: 1px solid #ccc; border-radius: 8px;")
 }
 
 // 用户信息显示组件
-#[component(clone)]
-fn UserDisplay(user: UserStore) -> impl Mount + MountRef {
+#[component]
+fn UserDisplay(#[prop(clone)] user: UserStore) -> impl Mount + MountRef {
     div!(
         div!(
             span("Name: ").style("font-weight: bold;"),
@@ -71,8 +71,8 @@ fn UserDisplay(user: UserStore) -> impl Mount + MountRef {
 }
 
 // 用户编辑组件
-#[component(clone)]
-fn UserEditor(user: UserStore) -> impl Mount + MountRef {
+#[component]
+fn UserEditor(#[prop(clone)] user: UserStore) -> impl Mount + MountRef {
     div!(
         // 修改 Name
         div!(
@@ -103,8 +103,8 @@ fn UserEditor(user: UserStore) -> impl Mount + MountRef {
 }
 
 // 调试面板组件
-#[component(clone)]
-fn DebugPanel(user: UserStore) -> impl Mount + MountRef {
+#[component]
+fn DebugPanel(#[prop(clone)] user: UserStore) -> impl Mount + MountRef {
     div!(button("Log Current State to Console").on_click(move |_| {
         // 演示 get() 方法还原普通结构体
         let current_state = user.get();

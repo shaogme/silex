@@ -1,11 +1,12 @@
 use crate::attribute::PendingAttribute;
 use crate::element::Element;
-use crate::view::{ApplyAttributes, Mount, MountExt, MountRef, MountRefExt};
+use crate::view::{Mount, MountExt, MountRef, MountRefExt};
 use silex_vtable::any_box::AnyBox;
 use silex_vtable::func_ptr::FuncPtr;
 use silex_vtable::thunk::FactoryBox;
 use std::marker::PhantomData;
 use std::mem;
+use std::rc::Rc;
 use web_sys::Node;
 
 // --- Manual VTable & SOO Infrastucture using silex_vtable ---
@@ -21,23 +22,15 @@ pub struct AnyViewBox {
     inner: AnyBox<AnyViewVTable>,
 }
 
-pub(crate) struct SharedViewVTable {
-    pub mount: FuncPtr<unsafe fn(data: *mut u8, parent: &Node, attrs: Vec<PendingAttribute>)>,
-    pub mount_ref: FuncPtr<unsafe fn(data: *const u8, parent: &Node, attrs: Vec<PendingAttribute>)>,
-    pub apply_attributes: FuncPtr<unsafe fn(data: *mut u8, attrs: Vec<PendingAttribute>)>,
-    pub clone: FuncPtr<unsafe fn(data: *const u8) -> SharedViewBox>,
-    pub drop: FuncPtr<unsafe fn(data: *mut u8)>,
-}
-
 pub struct SharedViewBox {
-    inner: AnyBox<SharedViewVTable>,
+    inner: Rc<AnyViewBox>,
 }
 
 impl AnyViewBox {
     #[inline(always)]
-    pub fn new<V: MountExt + 'static>(view: V) -> Self {
+    pub fn new<V: MountExt>(view: V) -> Self {
         struct VGen<V>(PhantomData<V>);
-        impl<V: MountExt + 'static> VGen<V> {
+        impl<V: MountExt> VGen<V> {
             const STACK: AnyViewVTable = AnyViewVTable {
                 mount: FuncPtr::new(mount_stack::<V>),
                 mount_ref: FuncPtr::new(mount_ref_stack::<V>),
@@ -88,61 +81,25 @@ impl Drop for AnyViewBox {
 
 impl SharedViewBox {
     #[inline(always)]
-    pub fn new<V: MountRef + Mount + ApplyAttributes + Clone + 'static>(view: V) -> Self {
-        struct VGen<V>(PhantomData<V>);
-        impl<V: MountRef + Mount + ApplyAttributes + Clone + 'static> VGen<V> {
-            const STACK: SharedViewVTable = SharedViewVTable {
-                mount: FuncPtr::new(mount_stack::<V>),
-                mount_ref: FuncPtr::new(mount_ref_stack::<V>),
-                apply_attributes: FuncPtr::new(apply_stack::<V>),
-                clone: FuncPtr::new(clone_stack::<V>),
-                drop: FuncPtr::new(drop_stack::<V>),
-            };
-            const HEAP: SharedViewVTable = SharedViewVTable {
-                mount: FuncPtr::new(mount_heap::<V>),
-                mount_ref: FuncPtr::new(mount_ref_heap::<V>),
-                apply_attributes: FuncPtr::new(apply_heap::<V>),
-                clone: FuncPtr::new(clone_heap::<V>),
-                drop: FuncPtr::new(drop_heap::<V>),
-            };
-        }
+    pub fn new<V: MountExt>(view: V) -> Self {
         Self {
-            inner: AnyBox::new(view, &VGen::<V>::STACK, &VGen::<V>::HEAP),
+            inner: Rc::new(AnyViewBox::new(view)),
         }
     }
 
     pub fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        let mut this = mem::ManuallyDrop::new(self);
-        let vtable = this.inner.vtable;
-        let data_ptr = this.inner.as_mut_ptr();
-        unsafe {
-            (vtable.mount.as_fn())(data_ptr, parent, attrs);
-        }
+        self.inner.mount_ref(parent, attrs);
     }
 
     pub fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        unsafe {
-            (self.inner.vtable.mount_ref.as_fn())(self.inner.as_ptr(), parent, attrs);
-        }
-    }
-
-    pub fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
-        unsafe {
-            (self.inner.vtable.apply_attributes.as_fn())(self.inner.as_mut_ptr(), attrs);
-        }
+        self.inner.mount_ref(parent, attrs);
     }
 }
 
 impl Clone for SharedViewBox {
     fn clone(&self) -> Self {
-        unsafe { (self.inner.vtable.clone.as_fn())(self.inner.as_ptr()) }
-    }
-}
-
-impl Drop for SharedViewBox {
-    fn drop(&mut self) {
-        unsafe {
-            (self.inner.vtable.drop.as_fn())(self.inner.as_mut_ptr());
+        Self {
+            inner: self.inner.clone(),
         }
     }
 }
@@ -225,31 +182,12 @@ unsafe fn drop_heap<V>(data: *mut u8) {
     }
 }
 
-unsafe fn clone_stack<V: MountRef + Mount + ApplyAttributes + Clone + 'static>(
-    data: *const u8,
-) -> SharedViewBox {
-    unsafe {
-        let view = &*(data as *const V);
-        SharedViewBox::new(view.clone())
-    }
-}
-
-unsafe fn clone_heap<V: MountRef + Mount + ApplyAttributes + Clone + 'static>(
-    data: *const u8,
-) -> SharedViewBox {
-    unsafe {
-        let ptr = *(data as *const *mut V);
-        let view = &*ptr;
-        SharedViewBox::new(view.clone())
-    }
-}
-
 // --- Thunks ---
 
 pub type ViewThunk = FactoryBox<AnyView>;
 pub type RenderThunk = silex_vtable::thunk::ThunkBox<(Node, Vec<PendingAttribute>), ()>;
 
-/// 优化的 SharedView，专用于需要重复使用或需要 Children 的组件边界
+/// 优化的 SharedView，专用于需要重复使用的组件边界
 #[derive(Default)]
 pub enum SharedView {
     #[default]
@@ -273,13 +211,13 @@ pub enum AnyView {
 }
 
 impl SharedView {
-    pub fn new<V: MountRef + Mount + ApplyAttributes + Clone + 'static>(view: V) -> Self {
+    pub fn new<V: MountExt>(view: V) -> Self {
         SharedView::Boxed(SharedViewBox::new(view), Vec::new())
     }
 }
 
 impl AnyView {
-    pub fn new<V: MountExt + 'static>(view: V) -> Self {
+    pub fn new<V: MountExt>(view: V) -> Self {
         AnyView::Boxed(AnyViewBox::new(view), Vec::new())
     }
 }
@@ -295,11 +233,10 @@ impl crate::view::ApplyAttributes for SharedView {
                     child.apply_attributes(attrs.clone());
                 }
             }
-            SharedView::Boxed(b, inner_attrs) => {
+            SharedView::Boxed(_, inner_attrs) => {
                 let mut temp = std::mem::take(inner_attrs);
                 temp.extend(attrs);
                 *inner_attrs = crate::attribute::consolidate_attributes(temp);
-                b.apply_attributes(inner_attrs.clone());
             }
         }
     }
@@ -462,9 +399,6 @@ impl std::fmt::Debug for SharedView {
     }
 }
 
-/// 标准子组件类型，即受 Clone 保护的擦除 SharedView
-pub type Children = SharedView;
-
 /// 片段，用于容纳多个不同类型的子组件
 #[derive(Default, Clone)]
 pub struct Fragment(pub Vec<SharedView>);
@@ -564,18 +498,18 @@ impl_from_primitive!(
     i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, f32, f64, bool, char
 );
 
-impl<V: MountExt + 'static> From<Vec<V>> for AnyView {
+impl<V: MountExt> From<Vec<V>> for AnyView {
     fn from(v: Vec<V>) -> Self {
         AnyView::List(v.into_iter().map(|item| item.into_any()).collect())
     }
 }
-impl<V: MountRef + Mount + ApplyAttributes + Clone + 'static> From<Vec<V>> for SharedView {
+impl<V: MountExt> From<Vec<V>> for SharedView {
     fn from(v: Vec<V>) -> Self {
         SharedView::List(v.into_iter().map(|item| item.into_shared()).collect())
     }
 }
 
-impl<V: MountExt + 'static> From<Option<V>> for AnyView {
+impl<V: MountExt> From<Option<V>> for AnyView {
     fn from(v: Option<V>) -> Self {
         match v {
             Some(val) => AnyView::new(val),
@@ -583,7 +517,7 @@ impl<V: MountExt + 'static> From<Option<V>> for AnyView {
         }
     }
 }
-impl<V: MountRef + Mount + ApplyAttributes + Clone + 'static> From<Option<V>> for SharedView {
+impl<V: MountExt> From<Option<V>> for SharedView {
     fn from(v: Option<V>) -> Self {
         match v {
             Some(val) => SharedView::new(val),
@@ -608,8 +542,8 @@ impl From<crate::view::ViewNil> for SharedView {
 
 impl<H, T> From<crate::view::ViewCons<H, T>> for AnyView
 where
-    H: MountExt + 'static,
-    T: MountExt + 'static,
+    H: MountExt,
+    T: MountExt,
 {
     fn from(v: crate::view::ViewCons<H, T>) -> Self {
         AnyView::new(v)
@@ -618,8 +552,8 @@ where
 
 impl<H, T> From<crate::view::ViewCons<H, T>> for SharedView
 where
-    H: MountRef + Mount + ApplyAttributes + Clone + 'static,
-    T: MountRef + Mount + ApplyAttributes + Clone + 'static,
+    H: MountExt,
+    T: MountExt,
 {
     fn from(v: crate::view::ViewCons<H, T>) -> Self {
         SharedView::new(v)

@@ -104,9 +104,12 @@ fn CounterControls() -> SilexResult<impl Mount> {
 #[component]
 fn NavBar() -> impl Mount + MountRef {
     div!(
-        Link("/", "Home")
+        Link("/")
+            .children("Home")
             .style("margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold;"),
-        Link("/about", "About").style("text-decoration: none; color: #007bff; font-weight: bold;"),
+        Link("/about")
+            .children("About")
+            .style("text-decoration: none; color: #007bff; font-weight: bold;"),
     )
     .style("margin-bottom: 20px; padding: 10px; border-bottom: 1px solid #eee")
 }
@@ -129,8 +132,7 @@ fn HomeView() -> impl Mount + MountRef {
         ).style("text-align: center; margin-bottom: 30px;"),
 
         // Card 1: Context-Aware Counter
-        Card()
-            .title("Global Counter (Persists across Nav)")
+        Card("Global Counter (Persists across Nav)")
             .elevation(3)
             .on_hover(|_| { web_sys::console::log_1(&"Card Hovered!".into()); })
             .child(view_chain!(
@@ -139,8 +141,7 @@ fn HomeView() -> impl Mount + MountRef {
             )),
 
         // Card 2: Input & Local State
-        Card()
-            .title("Local State (Resets on Nav)")
+        Card("Local State (Resets on Nav)")
             .child(div!(div!(
                 div!(
                     span("Hello, "),
@@ -156,8 +157,7 @@ fn HomeView() -> impl Mount + MountRef {
             ))),
 
         // Card 3: Control Flow
-        Card()
-            .title("Control Flow")
+        Card("Control Flow")
             .child(
                 is_high
                     .when(div("⚠️ Warning: Count is getting high!")
@@ -166,8 +166,7 @@ fn HomeView() -> impl Mount + MountRef {
                         .style("background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;"))
             ),
             // Card 4: Suspense (Context Layout Pattern)
-            Card()
-                .title("Suspense (Async Loading)")
+            Card("Suspense (Async Loading)")
                 .child(
                     Suspense::new()
                         .resource(|| Resource::new(

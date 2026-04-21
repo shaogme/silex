@@ -6,14 +6,19 @@ use silex::prelude::*;
 
 /// 一个简单的卡片容器
 #[component]
-fn Card<V: MountRef + 'static>(child: V) -> impl Mount + MountRef {
-    div(child)
+fn Card(children: AnyView) -> impl Mount + MountRef {
+    div(children)
         .style("border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 10px 0; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05);")
 }
 
 /// 导航链接样式封装
-fn nav_link<T: ToRoute, V: MountRef + 'static>(to: T, label: V) -> impl Mount + MountRef {
-    Link(to, label)
+#[component]
+fn NavLink<T: ToRoute + Clone + 'static>(
+    #[prop(clone)] to: T,
+    #[prop(clone)] children: SharedView,
+) -> impl Mount + MountRef {
+    Link(to.clone())
+        .children(children)
         .style("margin-right: 15px; text-decoration: none; color: #666; padding: 5px 10px; border-radius: 4px; transition: all 0.2s;")
         .active_class("nav-active") // 需要在全局 CSS 中定义 .nav-active { background: #e3f2fd; color: #1976d2; font-weight: bold; }
 }
@@ -42,12 +47,12 @@ fn SearchPage() -> impl Mount + MountRef {
         .build();
     let display_term = search_term; // 用于展示
 
-    Card().child(div!(
+    Card(div!(
         h2("🔍 Search Query Test"),
         p("Type in the input below. The URL query parameter 'q' will update automatically!"),
         div!(
             input()
-                .type_("text")
+                .attr("type", "text")
                 .placeholder("Type search term...")
                 .bind_value(search_term)
                 .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px; flex: 1;"),
@@ -69,7 +74,7 @@ fn SearchPage() -> impl Mount + MountRef {
 
 #[component]
 fn CreateUser() -> impl Mount + MountRef {
-    Card().child(h3("🆕 Create New User Form"))
+    Card(h3("🆕 Create New User Form"))
 }
 
 #[component]
@@ -77,9 +82,9 @@ fn UsersLayout(route: UsersRoute) -> impl Mount + MountRef {
     div!(
         h2("👥 Users Module"),
         div!(
-            nav_link("/users", "User List"),
+            NavLink("/users").children("User List"),
             span("|").style("margin: 0 10px; color: #ccc;"),
-            nav_link("/users/new", "Create User (Static)"),
+            NavLink("/users/new").children("Create User (Static)"),
         )
         .style("border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;"),
         // 渲染子路由
@@ -101,12 +106,10 @@ fn UserList() -> impl Mount + MountRef {
         ul(users
             .into_iter()
             .map(|(id, name)| {
-                li(Link(
-                    UsersRoute::Detail { id },
-                    format!("👤 {} (ID: {})", name, id),
-                )
-                .style("text-decoration: none; color: #2196f3;")
-                .active_class("active-user"))
+                li(Link(UsersRoute::Detail { id })
+                    .children(format!("👤 {} (ID: {})", name, id))
+                    .style("text-decoration: none; color: #2196f3;")
+                    .active_class("active-user"))
                 .style("margin: 5px 0;")
             })
             .collect::<Vec<_>>())
@@ -120,7 +123,7 @@ fn UserDetail(id: u32) -> impl Mount + MountRef {
     let navigator = use_navigate();
     let path = use_location_path();
 
-    Card().child(div!(
+    Card(div!(
         div!(
             h3(format!("User Profile: #{}", id)),
             button("Go Back")
@@ -150,7 +153,9 @@ fn NotFound() -> impl Mount + MountRef {
     div!(
         h1("404"),
         p("Page not found."),
-        Link("/", "Return Home").style("color: #2196f3; text-decoration: underline;"),
+        Link("/")
+            .children("Return Home")
+            .style("color: #2196f3; text-decoration: underline;"),
     )
     .style("text-align: center; padding: 50px; color: #d32f2f;")
 }
@@ -158,23 +163,23 @@ fn NotFound() -> impl Mount + MountRef {
 // --- 主布局 ---
 
 #[component]
-fn MainLayout(child: AnyView) -> impl Mount + MountRef {
+fn MainLayout(children: AnyView) -> impl Mount + MountRef {
     div!(
         // Header
         header!(
             h1("🚀 Silex Router").style("margin: 0; font-size: 1.5rem; color: #2c3e50;"),
             nav!(
-                nav_link(AppRoute::Home, "Home"),
-                nav_link("/users", "Users"), // 混合使用：字符串仍然有效
-                nav_link(AppRoute::Search, "Search"),
-                nav_link("/nowhere", "404 Test"),
+                NavLink(AppRoute::Home).children("Home"),
+                NavLink("/users").children("Users"), // 混合使用：字符串仍然有效
+                NavLink(AppRoute::Search).children("Search"),
+                NavLink("/nowhere").children("404 Test"),
             )
         )
         .style("display: flex; align-items: center; justify-content: space-between; padding: 20px 0; border-bottom: 1px solid #eee;"),
 
         // Main Content Area
         ::silex::html::main(
-            child
+            children
         ).style("padding: 20px 0;"),
 
         // Footer
@@ -240,7 +245,7 @@ fn main() {
     // 采用“视图组合”模式：match 分发 + Layout 函数包裹
 
     create_scope(move || {
-        let app = MainLayout().child(Router::new().match_route::<AppRoute>());
+        let app = MainLayout(Router::new().match_route::<AppRoute>());
         app.mount(&body, Vec::new());
     });
 }

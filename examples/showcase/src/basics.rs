@@ -4,7 +4,7 @@ use std::time::Duration;
 
 #[component]
 pub fn Greeting(
-    // Explicitly `into` is NOT needed for common types like String, PathBuf, Children, AnyView, and Callback.
+    // Explicitly `into` is NOT needed for common types like String, PathBuf, AnyView, and Callback.
     // The macro enables it by default, allowing you to pass string literals directly (e.g., .name("...")) without .into().
     // `default = "..."` specifies a fallback value if the prop is omitted.
     #[prop(default = "World")] name: Signal<String>,
@@ -258,7 +258,7 @@ pub fn BasicsPage() -> impl Mount + MountRef {
                 .border_radius(px(4))
                 .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
         ),
-        Greeting().name(name_signal),
+        Greeting(name_signal),
         Counter(),
         EventDemo(),
         NodeRefDemo(),

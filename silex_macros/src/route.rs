@@ -707,20 +707,32 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
                 Fields::Named(named) => {
                     let mut props_setters = Vec::new();
                     let mut field_bindings = Vec::new();
+                    let mut first_prop_expr = None;
 
-                    for field in &named.named {
+                    for (i, field) in named.named.iter().enumerate() {
                         let fname = field.ident.as_ref().ok_or_else(|| {
                             Error::new_spanned(field, "Named fields must have an identifier")
                         })?;
                         field_bindings.push(fname.clone());
-                        // Component::new().prop(prop)
-                        props_setters.push(quote! { .#fname(#fname.clone()) });
+
+                        if i == 0 {
+                            first_prop_expr = Some(quote! { #fname.clone() });
+                        } else {
+                            props_setters.push(quote! { .#fname(#fname.clone()) });
+                        }
                     }
 
-                    let mut view_expr = quote! {
-                        #view_component()
-                            #(#props_setters)*
-                            .into_any()
+                    let mut view_expr = if let Some(arg) = first_prop_expr {
+                        quote! {
+                            #view_component(#arg)
+                                #(#props_setters)*
+                                .into_any()
+                        }
+                    } else {
+                        quote! {
+                            #view_component()
+                                .into_any()
+                        }
                     };
 
                     // 应用 Guard (从内向外包裹)

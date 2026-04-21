@@ -1,144 +1,84 @@
-use crate::router::context::use_router;
-
-use silex_core::traits::RxGet;
-use silex_dom::attribute::{AttributeBuilder, GlobalAttributes};
-use silex_dom::element::TypedElement;
-use silex_dom::prelude::{ApplyAttributes, GlobalEventAttributes, Mount, MountRef};
-use silex_html::A as TagA;
-use silex_html::a;
-
-/// `Link` 组件结构体
-#[derive(Clone)]
-pub struct Link {
-    href: String,
-    inner: TypedElement<TagA>,
-}
-
-/// 创建一个链接组件，用于在应用内导航
 use crate::router::ToRoute;
+use crate::router::context::use_router;
+use silex_core::traits::RxGet;
+use silex_dom::prelude::*;
+use silex_html::a;
+use silex_macros::component;
 
 /// 创建一个链接组件，用于在应用内导航
 ///
 /// 类似于 HTML 的 `<a>` 标签，但会拦截点击事件并使用 Router 导航，而不是刷新页面。
-#[allow(non_snake_case)]
-pub fn Link<T: ToRoute, V: MountRef + 'static>(to: T, child: V) -> Link {
+#[component]
+pub fn Link<T: ToRoute + Clone + 'static>(
+    #[prop(clone)] to: T,
+    children: AnyView,
+    #[prop(into, default)] active_class: String,
+) -> impl Mount + MountRef {
     let href = to.to_route();
-    let element = a(child).attr("href", &href);
-    Link {
-        href,
-        inner: element,
-    }
-}
+    let router_ctx = use_router();
 
-impl Link {
-    /// 设置 CSS 类
-    pub fn class(self, name: impl silex_dom::attribute::IntoStorable) -> Self {
-        Self {
-            inner: self.inner.class(name),
-            ..self
-        }
-    }
+    // 1. 计算实际显示在 DOM 上的 href (包含 base_path处理)
+    // 这样做是为了支持右键在新标签页打开等原生行为
+    let display_href = if let Some(ctx) = &router_ctx
+        && !ctx.base_path.is_empty()
+        && ctx.base_path != "/"
+        && href.starts_with('/')
+    {
+        format!("{}{}", ctx.base_path.trim_end_matches('/'), href)
+    } else {
+        href.clone()
+    };
 
-    /// 设置样式
-    pub fn style(self, css: impl silex_dom::attribute::IntoStorable) -> Self {
-        Self {
-            inner: self.inner.style(css),
-            ..self
-        }
-    }
+    // 2. 如果指定了 active_class，创建响应式类名绑定
+    let is_active_class = if !active_class.is_empty()
+        && let Some(router) = &router_ctx
+    {
+        let path_signal = router.path;
+        let href_for_rx = href.clone();
+        let class_name = active_class.clone();
 
-    /// 设置激活时的 CSS 类 (当当前路径匹配 href 时添加)
-    pub fn active_class(self, name: impl Into<String>) -> Self {
-        // 尝试获取 Router 上下文中的 path 信号
-        if let Some(router) = use_router() {
-            let path_signal = router.path;
-            let href = self.href.clone();
-            let class_name = name.into();
-
-            let is_active = silex_core::rx! {
-                let current_path = path_signal.get();
-                if href == "/" {
-                    current_path == "/"
-                } else if current_path == href {
+        let is_active = silex_core::rx! {
+            let current_path = path_signal.get();
+            if href_for_rx == "/" {
+                current_path == "/"
+            } else if current_path == href_for_rx {
+                true
+            } else if current_path.starts_with(&href_for_rx) {
+                // 路径前缀匹配
+                if href_for_rx.ends_with('/') {
                     true
-                } else if current_path.starts_with(&href) {
-                    // 确保是路径段匹配，避免 /user 匹配 /users
-                    if href.ends_with('/') {
-                        true
-                    } else {
-                        current_path.chars().nth(href.len()) == Some('/')
-                    }
                 } else {
-                    false
+                    current_path.chars().nth(href_for_rx.len()) == Some('/')
                 }
-            };
-
-            Self {
-                inner: self.inner.class((class_name, is_active)),
-                ..self
+            } else {
+                false
             }
-        } else {
-            self
-        }
-    }
-}
+        };
+        // 返回 (String, F) 元组，符合 class() 方法对元组的处理逻辑
+        Some((class_name, is_active))
+    } else {
+        None
+    };
 
-impl ApplyAttributes for Link {}
+    // 3. 点击导航逻辑
+    let href_for_click = href.clone();
+    let router_for_click = router_ctx.clone();
 
-impl Mount for Link {
-    fn mount(self, parent: &web_sys::Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        let href = self.href.clone();
-
-        // 尝试获取 Router，用于：
-        // 1. base_path处理
-        // 2. 导航 (避免在 on_click 中丢失 scope)
-        let router_ctx = use_router();
-
-        // 在绑定事件前，根据 Router 的 base_path 更新 DOM 元素的 href 属性
-        // 这样可以保证原生行为（如右键打开新标签页）指向正确的物理路径
-        if let Some(ctx) = &router_ctx
-            && !ctx.base_path.is_empty()
-            && ctx.base_path != "/"
-            && href.starts_with('/')
-        {
-            let base = ctx.base_path.trim_end_matches('/');
-            let full_href = format!("{}{}", base, href);
-            let _ = self.inner.dom_element.set_attribute("href", &full_href);
-        }
-
-        // 绑定点击事件
-        // 我们必须将 router_ctx 移动 to 闭包中，因为在事件回调运行时，可能无法通过 use_context 获取到（Scope 问题）
-        let element = self.inner.on_click(move |e: web_sys::MouseEvent| {
+    a(children)
+        .attr("href", display_href)
+        .class(is_active_class)
+        .on_click(move |e: web_sys::MouseEvent| {
             // 阻止默认跳转行为
             e.prevent_default();
 
-            // 使用 router 导航
-            if let Some(ctx) = &router_ctx {
-                // 注意：这里仍然传递逻辑路径 (href)，Navigator 会自动处理 base_path
-                ctx.navigator.push(href.as_str());
+            if let Some(ctx) = &router_for_click {
+                // 使用 Router 导航
+                ctx.navigator.push(href_for_click.as_str());
             } else {
-                // 如果没有 router，尝试再次获取（以防万一），或者回退
-                // 注意：通常在事件处理程序中 use_router 会失败，所以主要依赖捕获的 ctx
-                if let Some(ctx) = use_router() {
-                    ctx.navigator.push(href.as_str());
-                } else {
-                    // 如果确实没有 router，回退到普通跳转
-                    let window = web_sys::window().unwrap();
-                    let _ = window.location().set_href(&href);
+                // 如果没有 Router (非预期情况)，回退到普通跳转
+                if let Some(window) = web_sys::window() {
+                    let _ = window.location().set_href(&href_for_click);
                 }
             }
-        });
-
-        element.mount(parent, attrs);
-    }
-}
-
-impl MountRef for Link {
-    fn mount_ref(
-        &self,
-        parent: &web_sys::Node,
-        attrs: Vec<silex_dom::attribute::PendingAttribute>,
-    ) {
-        self.clone().mount(parent, attrs);
-    }
+        })
 }

@@ -128,24 +128,24 @@ pub fn NavBar() -> impl Mount + MountRef {
     let settings = use_user_settings();
 
     StyledNav(view_chain!(
-        Link(AppRoute::Home, "Home").active_class("active"),
-        Link(AppRoute::Basics, "Basics").active_class("active"),
-        Link(AppRoute::Flow, "Flow").active_class("active"),
-        Link(AppRoute::Net, "Net").active_class("active"),
-        Link(AppRoute::Persistence, "Persistence").active_class("active"),
-        Link(
-            AppRoute::Css {
-                route: CssRoute::Basics,
-            },
-            "CSS",
-        )
+        Link(AppRoute::Home).children("Home").active_class("active"),
+        Link(AppRoute::Basics)
+            .children("Basics")
+            .active_class("active"),
+        Link(AppRoute::Flow).children("Flow").active_class("active"),
+        Link(AppRoute::Net).children("Net").active_class("active"),
+        Link(AppRoute::Persistence)
+            .children("Persistence")
+            .active_class("active"),
+        Link(AppRoute::Css {
+            route: CssRoute::Basics,
+        },)
+        .children("CSS")
         .active_class("active"),
-        Link(
-            AppRoute::Advanced {
-                route: AdvancedRoute::Index,
-            },
-            "Advanced",
-        )
+        Link(AppRoute::Advanced {
+            route: AdvancedRoute::Index,
+        },)
+        .children("Advanced")
         .active_class("active"),
         button(
             settings
@@ -196,61 +196,45 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl Mount + MountRef {
     div![
         h2("Advanced Features"),
         div![
-            Link(
-                AppRoute::Advanced {
-                    route: AdvancedRoute::Store,
-                },
-                "Store Demo"
-            )
+            Link(AppRoute::Advanced {
+                route: AdvancedRoute::Store,
+            },)
+            .children("Store Demo")
             .class("tab"),
-            Link(
-                AppRoute::Advanced {
-                    route: AdvancedRoute::Query,
-                },
-                "Query Param"
-            )
+            Link(AppRoute::Advanced {
+                route: AdvancedRoute::Query,
+            },)
+            .children("Query Param")
             .class("tab"),
-            Link(
-                AppRoute::Advanced {
-                    route: AdvancedRoute::Storage,
-                },
-                "Storage"
-            )
+            Link(AppRoute::Advanced {
+                route: AdvancedRoute::Storage,
+            },)
+            .children("Storage")
             .class("tab"),
-            Link(
-                AppRoute::Advanced {
-                    route: AdvancedRoute::Resource,
-                },
-                "Resource"
-            )
+            Link(AppRoute::Advanced {
+                route: AdvancedRoute::Resource,
+            },)
+            .children("Resource")
             .class("tab"),
-            Link(
-                AppRoute::Advanced {
-                    route: AdvancedRoute::Mutation,
-                },
-                "Mutation"
-            )
+            Link(AppRoute::Advanced {
+                route: AdvancedRoute::Mutation,
+            },)
+            .children("Mutation")
             .class("tab"),
-            Link(
-                AppRoute::Advanced {
-                    route: AdvancedRoute::Suspense,
-                },
-                "Suspense"
-            )
+            Link(AppRoute::Advanced {
+                route: AdvancedRoute::Suspense,
+            },)
+            .children("Suspense")
             .class("tab"),
-            Link(
-                AppRoute::Advanced {
-                    route: AdvancedRoute::Generics,
-                },
-                "Generics"
-            )
+            Link(AppRoute::Advanced {
+                route: AdvancedRoute::Generics,
+            },)
+            .children("Generics")
             .class("tab"),
-            Link(
-                AppRoute::Advanced {
-                    route: AdvancedRoute::Adaptive,
-                },
-                "Adaptive Read"
-            )
+            Link(AppRoute::Advanced {
+                route: AdvancedRoute::Adaptive,
+            },)
+            .children("Adaptive Read")
             .class("tab"),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 20px;"),
@@ -266,9 +250,9 @@ fn CssLayout(route: CssRoute) -> impl Mount + MountRef {
             "Silex provides multiple ways to style your applications, from CSS-in-Rust to type-safe builders."
         ),
         div![
-            Link("/css/", "Basics").class("tab"),
-            Link("/css/theming", "Theme Engine").class("tab"),
-            Link("/css/advanced", "Advanced CSS").class("tab"),
+            Link("/css/").children("Basics").class("tab"),
+            Link("/css/theming").children("Theme Engine").class("tab"),
+            Link("/css/advanced").children("Advanced CSS").class("tab"),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 20px;"),
         route.render(),
@@ -286,28 +270,19 @@ fn HomePage() -> impl Mount + MountRef {
         h1("Welcome to Silex Showcase"),
         p("This example application demonstrates the core features of the Silex framework."),
         ul![
-            li(Link(AppRoute::Basics, "Basics: Components, Props, Signals")),
-            li(Link(AppRoute::Flow, "Flow Control: Loops, Conditions")),
-            li(Link(
-                AppRoute::Css {
-                    route: CssRoute::Basics,
-                },
-                "CSS: CSS-in-Rust, Themes, and Style Comparison"
-            )),
-            li(Link(
-                AppRoute::Net,
-                "Net: HttpClient, WebSocket, EventStream"
-            )),
-            li(Link(
-                AppRoute::Persistence,
-                "Persistence: WebStorage, Query, Sync, Codecs"
-            )),
-            li(Link(
-                AppRoute::Advanced {
-                    route: AdvancedRoute::Index,
-                },
-                "Advanced: Store, Router, Resource, Mutation"
-            )),
+            li(Link(AppRoute::Basics).children("Basics: Components, Props, Signals")),
+            li(Link(AppRoute::Flow).children("Flow Control: Loops, Conditions")),
+            li(Link(AppRoute::Css {
+                route: CssRoute::Basics,
+            },)
+            .children("CSS: CSS-in-Rust, Themes, and Style Comparison")),
+            li(Link(AppRoute::Net,).children("Net: HttpClient, WebSocket, EventStream")),
+            li(Link(AppRoute::Persistence,)
+                .children("Persistence: WebStorage, Query, Sync, Codecs")),
+            li(Link(AppRoute::Advanced {
+                route: AdvancedRoute::Index,
+            },)
+            .children("Advanced: Store, Router, Resource, Mutation")),
         ],
     ]
 }

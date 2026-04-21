@@ -486,10 +486,8 @@ pub fn GenericsDemo() -> impl Mount + MountRef {
     div![
         h3("Generics & Lifetimes Demo"),
         p("This demonstrates how #[component] macro supports generics and lifetimes natively."),
-        GenericMessage().value(42).title("Integer Message"),
-        GenericMessage()
-            .value("Hello Silex!")
-            .title("String Message"),
+        GenericMessage(42).title("Integer Message"),
+        GenericMessage("Hello Silex!").title("String Message"),
     ]
     .style(
         sty()

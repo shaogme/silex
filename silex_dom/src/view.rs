@@ -253,24 +253,24 @@ impl_forward_binop_copy!(Mul, mul);
 impl_forward_binop_copy!(Div, div);
 
 /// 视图转换扩展 (Mount Extensions)
-pub trait MountExt: MountRef + Mount + ApplyAttributes + Sized + 'static {
+pub trait MountExt: MountRef + Mount + ApplyAttributes + 'static {
     /// Convert this view into an AnyView (Type Erasure without Clone requirement).
     fn into_any(self) -> AnyView;
 }
 
-impl<T: MountRef + Mount + ApplyAttributes + Sized + 'static> MountExt for T {
+impl<T: MountRef + Mount + ApplyAttributes + 'static> MountExt for T {
     fn into_any(self) -> AnyView {
         AnyView::new(self)
     }
 }
 
 /// 共享视图转换扩展 (MountRef Extensions)
-pub trait MountRefExt: MountRef + Sized + 'static {
+pub trait MountRefExt: MountRef + 'static {
     /// Convert this view into a SharedView (Type Erasure with Clone requirement).
     fn into_shared(self) -> SharedView;
 }
 
-impl<T: MountRef + Mount + ApplyAttributes + Sized + Clone + 'static> MountRefExt for T {
+impl<T: MountExt> MountRefExt for T {
     fn into_shared(self) -> SharedView {
         SharedView::new(self)
     }
