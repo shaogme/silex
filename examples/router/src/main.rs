@@ -6,7 +6,7 @@ use silex::prelude::*;
 
 /// 一个简单的卡片容器
 #[component]
-fn Card<V: MountRef + Clone + 'static>(child: V) -> impl Mount + MountRef {
+fn Card<V: MountRef + 'static>(child: V) -> impl Mount + MountRef {
     div(child)
         .style("border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 10px 0; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05);")
 }

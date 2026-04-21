@@ -125,10 +125,10 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
 
             // Mount 时检查
             mount_checks.push(quote! {
-                let #param_name = self.#param_name.expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #param_name_str, "'"));
+                let #param_name = ::silex::dom::view::Prop::new_owned(self.#param_name.expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #param_name_str, "'")));
             });
             mount_ref_checks.push(quote! {
-                let #param_name = ::silex::dom::view::MountRefBorrow::new(self.#param_name.as_ref().expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #param_name_str, "'")));
+                let #param_name = ::silex::dom::view::Prop::new_borrowed(self.#param_name.as_ref().expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #param_name_str, "'")));
             });
         } else {
             // 可选字段：直接存 T
@@ -158,10 +158,10 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
 
             // Mount 时直接解构（只是为了统一变量名绑定）
             mount_checks.push(quote! {
-                let #param_name = self.#param_name;
+                let #param_name = ::silex::dom::view::Prop::new_owned(self.#param_name);
             });
             mount_ref_checks.push(quote! {
-                let #param_name = ::silex::dom::view::MountRefBorrow::new(&self.#param_name);
+                let #param_name = ::silex::dom::view::Prop::new_borrowed(&self.#param_name);
             });
         }
 
@@ -173,7 +173,7 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
             if type_ident == "Children" || type_ident == "SharedView" {
                 if is_required {
                     builder_methods.push(quote! {
-                        pub fn #param_name<__SilexValue: ::silex::dom::view::Mount + ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt + Clone>(mut self, val: __SilexValue) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt + Clone>(mut self, val: __SilexValue) -> Self {
                             use ::silex::dom::view::MountRefExt;
                             self.#param_name = Some(val.into_shared());
                             self
@@ -181,7 +181,7 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
                     });
                 } else {
                     builder_methods.push(quote! {
-                        pub fn #param_name<__SilexValue: ::silex::dom::view::Mount + ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt + Clone>(mut self, val: __SilexValue) -> Self {
+                        pub fn #param_name<__SilexValue: ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt + Clone>(mut self, val: __SilexValue) -> Self {
                             use ::silex::dom::view::MountRefExt;
                             self.#param_name = val.into_shared();
                             self
@@ -223,15 +223,15 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
             }
         } else if is_required {
             builder_methods.push(quote! {
-                pub fn #param_name(mut self, val: #ty) -> Self {
-                    self.#param_name = Some(val);
+                pub fn #param_name(mut self, val: impl ::silex::dom::view::PropInto<#ty>) -> Self {
+                    self.#param_name = Some(::silex::dom::view::PropInto::prop_into(val));
                     self
                 }
             });
         } else {
             builder_methods.push(quote! {
-                pub fn #param_name(mut self, val: #ty) -> Self {
-                    self.#param_name = val;
+                pub fn #param_name(mut self, val: impl ::silex::dom::view::PropInto<#ty>) -> Self {
+                    self.#param_name = ::silex::dom::view::PropInto::prop_into(val);
                     self
                 }
             });
@@ -249,14 +249,14 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
                 quote! {
                     // 生成同名带 children 参数的构建函数
                     #[allow(non_snake_case)]
-                    #fn_vis fn #fn_name #impl_generics(children: impl ::silex::dom::view::Mount + ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt + Clone) -> #struct_name #ty_generics #where_clause {
+                    #fn_vis fn #fn_name #impl_generics(children: impl ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt + Clone) -> #struct_name #ty_generics #where_clause {
                         #struct_name::new().children(children)
                     }
                 }
             } else if type_ident == "AnyView" {
                 quote! {
                     #[allow(non_snake_case)]
-                    #fn_vis fn #fn_name #impl_generics(children: impl ::silex::dom::view::Mount + 'static) -> #struct_name #ty_generics #where_clause {
+                    #fn_vis fn #fn_name #impl_generics(children: impl ::silex::dom::view::MountExt) -> #struct_name #ty_generics #where_clause {
                         #struct_name::new().children(children)
                     }
                 }
@@ -311,7 +311,7 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
                     let mut all_attrs = self._pending_attrs.clone();
                     all_attrs.extend(attrs);
 
-                    ::silex::dom::view::Mount::mount(view_instance, parent, all_attrs);
+                    ::silex::dom::view::MountRef::mount_ref(&view_instance, parent, all_attrs);
                 }
             }
         }

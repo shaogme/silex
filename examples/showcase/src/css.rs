@@ -109,8 +109,7 @@ global! {
 // --- Styled Components ---
 
 styled! {
-    #[clone]
-    pub DemoCard<div>(children: Children) {
+    pub DemoCard<div>(children: AnyView) {
         background: var(--slx-theme-surface);
         color: var(--slx-theme-text);
         border: 1px solid var(--slx-theme-border);
@@ -136,9 +135,8 @@ styled! {
 }
 
 styled! {
-    #[clone]
     pub StyledButton<button>(
-        children: Children,
+        children: AnyView,
         #[prop(into)] color: Signal<CssVar<Hex>>,
         #[prop(into)] size: Signal<String>,
         #[prop(into)] hover_color: Signal<CssVar<Hex>>,
@@ -184,7 +182,7 @@ styled! {
 
 styled! {
     #[theme(prefix = "slx-theme")]
-    pub ThemePreviewCard<div>(children: Children) {
+    pub ThemePreviewCard<div>(children: AnyView) {
         background-color: $AppTheme::SURFACE;
         color: $AppTheme::TEXT;
         border-radius: $AppTheme::RADIUS;
@@ -197,9 +195,8 @@ styled! {
 }
 
 styled! {
-    #[clone]
     pub ThemeButton<button>(
-        children: Children,
+        children: AnyView,
         #[prop(into)] active: Signal<bool>
     ) {
         background-color: $(AppTheme::SECONDARY.alpha(0.9));
@@ -210,7 +207,7 @@ styled! {
         cursor: pointer;
         font-weight: 600;
         transition: all 0.2s;
-        opacity: $(rx!(if active.get() { 1.0 } else { 0.8 }));
+        opacity: $({ let active = active.clone(); rx!(if active.get() { 1.0 } else { 0.8 }) });
 
         &:hover {
             filter: brightness(1.1);
@@ -224,9 +221,8 @@ styled! {
 }
 
 styled! {
-    #[clone]
     pub DynamicVariantBtn<button>(
-        children: Children,
+        children: AnyView,
         #[prop(into)] kind: Signal<String>,
         #[prop(into)] dynamic_width: Signal<Px>,
     ) {
@@ -244,11 +240,11 @@ styled! {
             kind: {
                 primary: {
                     background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-                    width: $(dynamic_width);
+                    width: $(dynamic_width.clone());
                 }
                 secondary: {
                     background: linear-gradient(135deg, #10b981 0%, #3b82f6 100%);
-                    width: $(rx!(dynamic_width.get() + px(60)));
+                    width: $({ let dynamic_width = dynamic_width.clone(); rx!(dynamic_width.get() + px(60)) });
                 }
             }
         }
@@ -677,8 +673,7 @@ pub fn AdvancedStyling() -> impl Mount + MountRef {
 // --- Unsafe Demos ---
 
 styled! {
-    #[clone]
-    pub UnsafeBlockDemo<div>(children: Children) {
+    pub UnsafeBlockDemo<div>(children: AnyView) {
         padding: 24px;
         border-radius: 12px;
         background: #1e1e24;
@@ -701,8 +696,7 @@ styled! {
 }
 
 styled! {
-    #[clone]
-    pub unsafe UnsafeCompDemo<div>(children: Children) {
+    pub unsafe UnsafeCompDemo<div>(children: AnyView) {
         // Enire component is unsafe
         padding: 32px;
         border: 2px dashed #f43f5e;

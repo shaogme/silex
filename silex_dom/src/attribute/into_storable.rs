@@ -1,4 +1,5 @@
 use super::{ApplyToDom, AttributeGroup};
+use crate::view::Prop;
 // --- IntoStorable: 允许非 'static 类型转换为可存储类型 ---
 
 /// 将值转换为可存储的类型。
@@ -148,5 +149,18 @@ impl IntoStorable for AttributeGroup {
     type Stored = AttributeGroup;
     fn into_storable(self) -> Self::Stored {
         self
+    }
+}
+
+impl<'a, T> IntoStorable for Prop<'a, T>
+where
+    T: Clone + IntoStorable,
+{
+    type Stored = T::Stored;
+    fn into_storable(self) -> Self::Stored {
+        match self {
+            Self::Owned(v) => v.into_storable(),
+            Self::Borrowed(v) => v.clone().into_storable(),
+        }
     }
 }

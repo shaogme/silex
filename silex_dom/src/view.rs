@@ -8,6 +8,7 @@ use crate::attribute::PendingAttribute;
 use silex_core::error::handle_error;
 use silex_core::logic::Map;
 use silex_core::reactivity::Effect;
+use silex_core::traits::{IntoRx, IntoSignal, RxValue};
 use silex_core::{Rx, RxValueKind, SilexError, SilexResult};
 use std::ops::Deref;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -44,72 +45,144 @@ pub trait MountRef {
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>);
 }
 
-/// 组件宏内部使用的借用包装器。
+/// 组件宏内部使用的属性包装器。
 ///
-/// 这个包装器只承载借用，用于让组件在 `mount_ref` 路径里
-/// 既能按引用访问 prop，又能显式拿到 owned 值来处理需要所有权的场景。
-pub struct MountRefBorrow<'a, T: ?Sized>(pub &'a T);
+/// 该类型用于统一组件在 `mount` (Owned) 和 `mount_ref` (Borrowed) 路径下的行为。
+/// 它不实现 `Copy` 特征（即使 T 是 Copy），其 `Clone` 实现始终会产生一个 `Owned` 变体，
+/// 从而允许在闭包中安全地进行 `'static` 捕获，同时消除 Clippy 对 Copy 类型冗余克隆的警告。
+pub enum Prop<'a, T> {
+    Owned(T),
+    Borrowed(&'a T),
+}
 
-impl<'a, T: ?Sized> MountRefBorrow<'a, T> {
+impl<'a, T> Prop<'a, T> {
+    pub fn new_borrowed(value: &'a T) -> Self {
+        Self::Borrowed(value)
+    }
+
+    pub fn new_owned(value: T) -> Self {
+        Self::Owned(value)
+    }
+
+    /// 兼容性方法
     pub fn new(value: &'a T) -> Self {
-        Self(value)
+        Self::Borrowed(value)
     }
 }
 
-pub trait IntoOwnedValue {
-    type Owned;
-
-    fn into_owned(self) -> Self::Owned;
+impl<'a, T: Clone> Prop<'a, T> {
+    /// 注意：Prop 的 .clone() 返回的是 T 而不是 Prop！
+    ///
+    /// 这里的 inherent method 优先级高于下方的 Clone trait 实现。
+    /// 这是为了让组件代码通过 .clone() 拿到的总是 Owned 类型，
+    /// 从而可以安全地 move 进入 'static 闭包，且不触发 Clippy 对 Copy 类型冗余克隆的警告。
+    #[allow(clippy::should_implement_trait)]
+    pub fn clone(&self) -> T {
+        match self {
+            Self::Owned(v) => v.clone(),
+            Self::Borrowed(v) => (*v).clone(),
+        }
+    }
 }
 
-impl<T> IntoOwnedValue for T
-where
-    T: Clone,
-{
-    type Owned = T;
+impl<'a, T: Clone> Clone for Prop<'a, T> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Owned(v) => Self::Owned(v.clone()),
+            Self::Borrowed(v) => Self::Owned((*v).clone()),
+        }
+    }
+}
 
-    fn into_owned(self) -> Self::Owned {
+impl<'a, T: Copy> Copy for Prop<'a, T> {}
+
+/// 属性转换特征，允许组件构建器接受 Prop<T> 或 T。
+pub trait PropInto<T> {
+    fn prop_into(self) -> T;
+}
+
+impl<T> PropInto<T> for T {
+    #[inline(always)]
+    fn prop_into(self) -> T {
         self
     }
 }
 
-impl<'a, T> IntoOwnedValue for MountRefBorrow<'a, T>
-where
-    T: Clone,
-{
-    type Owned = T;
-
-    fn into_owned(self) -> Self::Owned {
-        self.0.clone()
+impl<'a, T: Clone> PropInto<T> for Prop<'a, T> {
+    #[inline(always)]
+    fn prop_into(self) -> T {
+        self.clone()
     }
 }
 
-impl<'a, T: MountRef + ?Sized> MountRef for MountRefBorrow<'a, T> {
+impl<'a, T: MountRef> MountRef for Prop<'a, T> {
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.0.mount_ref(parent, attrs);
+        match self {
+            Self::Owned(v) => v.mount_ref(parent, attrs),
+            Self::Borrowed(v) => v.mount_ref(parent, attrs),
+        }
     }
 }
 
-impl<'a, T: ?Sized> ApplyAttributes for MountRefBorrow<'a, T> {}
+impl<'a, T> ApplyAttributes for Prop<'a, T> {}
 
-impl<'a, T> Mount for MountRefBorrow<'a, T>
+impl<'a, T> Mount for Prop<'a, T>
 where
-    T: MountRef + ?Sized,
+    T: MountRef,
 {
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.0.mount_ref(parent, attrs);
+        match self {
+            Self::Owned(v) => v.mount_ref(parent, attrs),
+            Self::Borrowed(v) => v.mount_ref(parent, attrs),
+        }
     }
 }
 
-impl<'a, T: ?Sized> Deref for MountRefBorrow<'a, T> {
+impl<'a, T> Deref for Prop<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.0
+        match self {
+            Self::Owned(v) => v,
+            Self::Borrowed(v) => v,
+        }
     }
 }
 
-impl<'a, T> MountRefBorrow<'a, T>
+impl<'a, T: RxValue> RxValue for Prop<'a, T> {
+    type Value = T::Value;
+}
+
+impl<'a, T> IntoRx for Prop<'a, T>
+where
+    T: IntoRx + Clone,
+{
+    type RxType = T::RxType;
+    #[inline(always)]
+    fn into_rx(self) -> Self::RxType {
+        self.clone().into_rx()
+    }
+    #[inline(always)]
+    fn is_constant(&self) -> bool {
+        self.deref().is_constant()
+    }
+}
+
+impl<'a, T> IntoSignal for Prop<'a, T>
+where
+    T: IntoSignal + Clone,
+{
+    #[inline(always)]
+    fn into_signal(self) -> silex_core::reactivity::Signal<Self::Value>
+    where
+        Self: Sized + silex_core::traits::RxData,
+        Self::Value: Sized + silex_core::traits::RxCloneData,
+    {
+        self.clone().into_signal()
+    }
+}
+
+impl<'a, T> Prop<'a, T>
 where
     T: Clone + Map + 'static,
     T::Value: Sized + 'static,
@@ -118,45 +191,57 @@ where
     where
         U: 'static,
     {
-        self.0.clone().map(f)
+        match self {
+            Self::Owned(v) => v.clone().map(f),
+            Self::Borrowed(v) => (*v).clone().map(f),
+        }
     }
 
     pub fn map_fn<U>(&self, f: fn(&T::Value) -> U) -> Rx<U, RxValueKind>
     where
         U: 'static,
     {
-        self.0.clone().map_fn(f)
+        match self {
+            Self::Owned(v) => v.clone().map_fn(f),
+            Self::Borrowed(v) => (*v).clone().map_fn(f),
+        }
     }
 }
 
-impl<'a, T> std::fmt::Debug for MountRefBorrow<'a, T>
+impl<'a, T> std::fmt::Debug for Prop<'a, T>
 where
-    T: std::fmt::Debug + ?Sized,
+    T: std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+        match self {
+            Self::Owned(v) => v.fmt(f),
+            Self::Borrowed(v) => v.fmt(f),
+        }
     }
 }
 
-impl<'a, T> std::fmt::Display for MountRefBorrow<'a, T>
+impl<'a, T> std::fmt::Display for Prop<'a, T>
 where
-    T: std::fmt::Display + ?Sized,
+    T: std::fmt::Display,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+        match self {
+            Self::Owned(v) => v.fmt(f),
+            Self::Borrowed(v) => v.fmt(f),
+        }
     }
 }
 
 macro_rules! impl_forward_binop_copy {
     ($trait:ident, $method:ident) => {
-        impl<'a, T, Rhs> std::ops::$trait<Rhs> for MountRefBorrow<'a, T>
+        impl<'a, T, Rhs> std::ops::$trait<Rhs> for Prop<'a, T>
         where
             T: Copy + std::ops::$trait<Rhs>,
         {
             type Output = <T as std::ops::$trait<Rhs>>::Output;
 
             fn $method(self, rhs: Rhs) -> Self::Output {
-                (*self.0).$method(rhs)
+                self.deref().$method(rhs)
             }
         }
     };

@@ -20,7 +20,7 @@ fn Card(
     .class("card")
     .style(&style);
 
-    let on_hover = on_hover.into_owned();
+    let on_hover = on_hover.clone();
     root = root.on_click(move |_| on_hover.call(()));
 
     root

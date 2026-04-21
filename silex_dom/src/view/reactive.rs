@@ -34,7 +34,7 @@ where
 
 pub(crate) fn mount_reactive_view<V, M>(parent: &Node, rx: Rx<V, M>, attrs: Vec<PendingAttribute>)
 where
-    V: crate::view::MountRef + RxCloneData + 'static,
+    V: crate::view::MountRef + 'static,
     M: 'static,
 {
     crate::view::mount_dynamic_view_universal(
@@ -60,7 +60,7 @@ where
 
 impl<V, M> crate::view::Mount for Rx<V, M>
 where
-    V: RxCloneData + Sized + 'static,
+    V: Sized + 'static,
     M: 'static,
     Self: RxViewDispatcher,
 {
@@ -72,7 +72,7 @@ where
 
 impl<V, M> crate::view::MountRef for Rx<V, M>
 where
-    V: RxCloneData + Sized + 'static,
+    V: Sized + 'static,
     M: 'static,
     Self: RxViewDispatcher + Clone,
 {
@@ -93,7 +93,7 @@ pub trait RxViewDispatcher {
 ///
 /// 实现此特征的类型 `V` 会自动让 `Rx<V>` 获得视图挂载能力。
 /// 这是解决跨 Crate 的响应式组件支持的最佳方案。
-pub trait AutoReactiveView: crate::view::MountRef + RxCloneData + 'static {
+pub trait AutoReactiveView: crate::view::MountRef + Sized + 'static {
     /// 响应式挂载策略。默认使用 `mount_reactive_view`（完全重新挂载分支）。
     /// 对于 `String` 等基础类型，应重写此方法以改用高效的 `mount_reactive_text`。
     fn mount_reactive<M: 'static>(rx: Rx<Self, M>, parent: &Node, attrs: Vec<PendingAttribute>) {
@@ -155,15 +155,16 @@ impl_auto_reactive_view_text!(
 impl_auto_reactive_view_default!(
     crate::element::Element,
     crate::view::SharedView,
-    crate::view::any::Fragment
+    crate::view::any::Fragment,
+    crate::view::any::AnyView
 );
 
-impl<V: crate::view::MountRef + RxCloneData + 'static> AutoReactiveView for Option<V> {}
+impl<V: crate::view::MountRef + 'static> AutoReactiveView for Option<V> {}
 
 impl<H, T> AutoReactiveView for crate::view::ViewCons<H, T>
 where
-    H: crate::view::MountRef + Clone + 'static,
-    T: crate::view::MountRef + Clone + 'static,
+    H: crate::view::MountRef + 'static,
+    T: crate::view::MountRef + 'static,
 {
 }
 

@@ -2,9 +2,8 @@ use crate::prelude::*;
 
 styled! {
     /// 弹性布局容器 (Flexbox)
-    #[clone]
     pub Stack <div> (
-        children: Children,
+        children: AnyView,
         #[prop(default = FlexDirectionKeyword::Column, into)]
         direction: Signal<FlexDirectionKeyword>,
         #[prop(default = AlignItemsKeyword::Stretch, into)]
@@ -26,9 +25,8 @@ styled! {
 
 styled! {
     /// 居中容器
-    #[clone]
     pub Center <div> (
-        children: Children,
+        children: AnyView,
         #[prop(default, into)]
         style: Signal<Style>,
     ) {
@@ -40,9 +38,8 @@ styled! {
 
 styled! {
     /// 网格布局容器 (Grid)
-    #[clone]
     pub Grid <div> (
-        children: Children,
+        children: AnyView,
         #[prop(default = 1, into)]
         columns: Signal<i32>,
         #[prop(default, into)]

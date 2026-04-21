@@ -199,11 +199,12 @@ pub fn QueryDemo() -> impl Mount + MountRef {
     ]
 }
 
-#[component(clone)]
-pub fn AuthGuard(children: Children) -> impl Mount + MountRef {
+#[component]
+pub fn AuthGuard(children: SharedView) -> impl Mount + MountRef {
     let settings = use_user_settings();
+    let children = children.clone();
 
-    move || {
+    rx! {
         if settings.username.get() != "Guest" {
             children.clone()
         } else {
