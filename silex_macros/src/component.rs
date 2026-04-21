@@ -12,6 +12,7 @@ pub struct ComponentAttrs {
 }
 
 /// 属性解析结果
+#[derive(Default)]
 struct PropAttrs {
     default: bool,
     default_value: Option<TokenStream2>,
@@ -20,12 +21,82 @@ struct PropAttrs {
     render: bool,
 }
 
-/// 记录独立参数的信息，用于生成构造函数
-struct StandaloneArgInfo {
+/// 各种类型的参数处理逻辑 (Argument processing logic for different types)
+struct PropInfo {
     name: Ident,
     ty: Type,
-    into_trait: bool,
     type_ident: String,
+    into_trait: bool,
+    render: bool,
+    is_fn: bool,
+}
+
+impl PropInfo {
+    fn new(name: Ident, ty: Type, mut attrs: PropAttrs) -> Self {
+        let type_ident = get_base_type_name(&ty);
+        let is_fn = matches!(ty, Type::BareFn(_));
+
+        // 自动推断是否需要 into_trait
+        if !attrs.into_trait && !is_fn && is_auto_into_type(&type_ident) {
+            attrs.into_trait = true;
+        }
+
+        Self {
+            name,
+            ty,
+            type_ident,
+            into_trait: attrs.into_trait,
+            render: attrs.render,
+            is_fn,
+        }
+    }
+
+    /// 获取在构造函数或 new 中的参数类型
+    fn get_param_type(&self) -> TokenStream2 {
+        let ty = &self.ty;
+        if self.is_fn {
+            quote! { #ty }
+        } else if self.render {
+            match self.type_ident.as_str() {
+                "SharedView" => {
+                    quote! { impl ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt }
+                }
+                "AnyView" => quote! { impl ::silex::dom::view::MountExt },
+                _ => quote! { #ty },
+            }
+        } else if self.into_trait {
+            match self.type_ident.as_str() {
+                "SharedView" => {
+                    quote! { impl ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt }
+                }
+                "AnyView" => quote! { impl ::silex::dom::view::MountExt },
+                _ => quote! { impl Into<#ty> },
+            }
+        } else {
+            quote! { impl ::silex::dom::view::PropInto<#ty> }
+        }
+    }
+
+    /// 获取将输入参数转换为目标字段类型的逻辑
+    fn get_transformation(&self, input: TokenStream2) -> TokenStream2 {
+        if self.is_fn {
+            input
+        } else if self.render {
+            match self.type_ident.as_str() {
+                "SharedView" => quote! { #input.into_shared() },
+                "AnyView" => quote! { #input.into_any() },
+                _ => input,
+            }
+        } else if self.into_trait {
+            match self.type_ident.as_str() {
+                "SharedView" => quote! { #input.into_shared() },
+                "AnyView" => quote! { #input.into_any() },
+                _ => quote! { #input.into() },
+            }
+        } else {
+            quote! { ::silex::dom::view::PropInto::prop_into(#input) }
+        }
+    }
 }
 
 /// 组件生成上下文
@@ -45,7 +116,7 @@ struct ComponentGenerator {
     phantom_decl: TokenStream2,
     phantom_init: TokenStream2,
     standalone_count: usize,
-    standalone_args: Vec<StandaloneArgInfo>,
+    standalone_args: Vec<PropInfo>,
     used_prop_names: HashSet<String>,
 }
 
@@ -126,14 +197,7 @@ impl ComponentGenerator {
             let ty = &fn_arg.ty;
             let attrs = &fn_arg.attrs;
 
-            let mut prop_attrs = parse_prop_attrs(attrs)?;
-            let type_ident = get_base_type_name(ty);
-
-            // 自动推断是否需要 into_trait
-            if !prop_attrs.into_trait && is_auto_into_type(&type_ident) {
-                prop_attrs.into_trait = true;
-            }
-
+            let prop_attrs = parse_prop_attrs(attrs)?;
             let param_name = match pat.as_ref() {
                 Pat::Ident(ident) => &ident.ident,
                 _ => {
@@ -152,33 +216,39 @@ impl ComponentGenerator {
                 ));
             }
 
+            let prop_info = PropInfo::new(param_name.clone(), (**ty).clone(), prop_attrs);
             let is_standalone = index < self.standalone_count;
+
             if is_standalone {
-                self.standalone_args.push(StandaloneArgInfo {
-                    name: param_name.clone(),
-                    ty: (**ty).clone(),
-                    into_trait: prop_attrs.into_trait,
-                    type_ident: type_ident.clone(),
-                });
+                self.standalone_args.push(prop_info);
             }
 
-            self.generate_prop_logic(param_name, ty, &prop_attrs, &type_ident, is_standalone);
+            // We need the original prop_attrs for optional/default logic
+            let prop_attrs = parse_prop_attrs(attrs)?;
+            self.generate_prop_logic(param_name, ty, &prop_attrs, index < self.standalone_count);
         }
         Ok(())
     }
 
-    /// 为单个属性生成字段、初始化、挂载检查和 Builder 方法
     fn generate_prop_logic(
         &mut self,
         name: &Ident,
         ty: &Type,
         attrs: &PropAttrs,
-        type_ident: &str,
         is_standalone: bool,
     ) {
         let is_required = is_standalone || (!attrs.default && attrs.default_value.is_none());
         let struct_name = &self.struct_name;
         let name_str = name.to_string();
+        let prop_info = PropInfo::new(
+            name.clone(),
+            ty.clone(),
+            PropAttrs {
+                into_trait: attrs.into_trait,
+                render: attrs.render,
+                ..Default::default()
+            },
+        );
 
         // 1. 生成字段和初始化逻辑
         if is_required {
@@ -193,19 +263,7 @@ impl ComponentGenerator {
             self.struct_fields.push(quote! { pub #name: #ty });
 
             let init_val = if let Some(ref default_expr) = attrs.default_value {
-                if attrs.into_trait {
-                    match type_ident {
-                        "SharedView" => {
-                            quote! { ::silex::dom::view::MountRefExt::into_shared(#default_expr) }
-                        }
-                        "AnyView" => {
-                            quote! { ::silex::dom::view::MountExt::into_any(#default_expr) }
-                        }
-                        _ => quote! { (#default_expr).into() },
-                    }
-                } else {
-                    quote! { #default_expr }
-                }
+                prop_info.get_transformation(quote! { #default_expr })
             } else {
                 quote! { std::default::Default::default() }
             };
@@ -250,10 +308,7 @@ impl ComponentGenerator {
 
         // 3. 生成 Builder 方法
         self.builder_methods.push(self.generate_builder_method(
-            name,
-            ty,
-            attrs,
-            type_ident,
+            &prop_info,
             is_standalone,
             is_required,
         ));
@@ -261,126 +316,56 @@ impl ComponentGenerator {
 
     fn generate_builder_method(
         &self,
-        name: &Ident,
-        ty: &Type,
-        attrs: &PropAttrs,
-        type_ident: &str,
+        prop: &PropInfo,
         is_standalone: bool,
         is_required: bool,
     ) -> TokenStream2 {
-        if is_bare_fn_type(ty) {
-            let direct_val = if is_standalone || !is_required {
-                quote! { val }
-            } else {
-                quote! { Some(val) }
-            };
-            return quote! {
-                pub fn #name(mut self, val: #ty) -> Self {
-                    self.#name = #direct_val;
-                    self
-                }
-            };
-        }
+        let name = &prop.name;
+        let param_type = prop.get_param_type();
+        let target_val = prop.get_transformation(quote! { val });
 
-        if attrs.render {
-            match type_ident {
-                "SharedView" => {
-                    let direct_val = if is_standalone || !is_required {
-                        quote! { val.into_shared() }
-                    } else {
-                        quote! { Some(val.into_shared()) }
-                    };
-                    quote! {
-                        pub fn #name(mut self, val: impl ::silex::dom::view::MountRefExt) -> Self {
-                            use ::silex::dom::view::MountRefExt;
-                            self.#name = #direct_val;
-                            self
-                        }
-                    }
-                }
-                "AnyView" => {
-                    let direct_val = if is_standalone || !is_required {
-                        quote! { val.into_any() }
-                    } else {
-                        quote! { Some(val.into_any()) }
-                    };
-                    quote! {
-                        pub fn #name(mut self, val: impl ::silex::dom::view::MountExt) -> Self {
-                            use ::silex::dom::view::MountExt;
-                            self.#name = #direct_val;
-                            self
-                        }
-                    }
-                }
-                _ => {
-                    let direct_val = if is_standalone || !is_required {
-                        quote! { val }
-                    } else {
-                        quote! { Some(val) }
-                    };
-                    quote! {
-                        pub fn #name(mut self, val: #ty) -> Self {
-                            self.#name = #direct_val;
-                            self
-                        }
-                    }
-                }
-            }
-        } else if attrs.into_trait {
-            let target_val = if is_standalone || !is_required {
-                quote! { val.into_shared() }
-            } else {
-                quote! { Some(val.into_shared()) }
-            };
-            let any_target_val = if is_standalone || !is_required {
-                quote! { val.into_any() }
-            } else {
-                quote! { Some(val.into_any()) }
-            };
-            let into_target_val = if is_standalone || !is_required {
-                quote! { val.into() }
-            } else {
-                quote! { Some(val.into()) }
-            };
-
-            match type_ident {
-                "SharedView" => quote! {
-                    pub fn #name<__SilexValue: ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt>(mut self, val: __SilexValue) -> Self {
-                        use ::silex::dom::view::MountRefExt;
-                        self.#name = #target_val;
-                        self
-                    }
-                },
-                "AnyView" => quote! {
-                    pub fn #name<__SilexValue: ::silex::dom::view::MountExt>(mut self, val: __SilexValue) -> Self {
-                        use ::silex::dom::view::MountExt;
-                        self.#name = #any_target_val;
-                        self
-                    }
-                },
-                _ => quote! {
-                    pub fn #name(mut self, val: impl Into<#ty>) -> Self {
-                        self.#name = #into_target_val;
-                        self
-                    }
-                },
-            }
+        let final_val = if is_standalone || !is_required {
+            target_val
         } else {
-            let direct_val = if is_standalone || !is_required {
-                quote! { ::silex::dom::view::PropInto::prop_into(val) }
+            quote! { Some(#target_val) }
+        };
+
+        if prop.render && matches!(prop.type_ident.as_str(), "SharedView" | "AnyView") {
+            let trait_name = if prop.type_ident == "SharedView" {
+                quote! { MountRefExt }
             } else {
-                quote! { Some(::silex::dom::view::PropInto::prop_into(val)) }
+                quote! { MountExt }
             };
             quote! {
-                pub fn #name(mut self, val: impl ::silex::dom::view::PropInto<#ty>) -> Self {
-                    self.#name = #direct_val;
+                pub fn #name(mut self, val: impl ::silex::dom::view::#trait_name) -> Self {
+                    use ::silex::dom::view::#trait_name;
+                    self.#name = #final_val;
+                    self
+                }
+            }
+        } else if prop.into_trait && matches!(prop.type_ident.as_str(), "SharedView" | "AnyView") {
+            let trait_name = if prop.type_ident == "SharedView" {
+                quote! { MountRefExt }
+            } else {
+                quote! { MountExt }
+            };
+            quote! {
+                pub fn #name<__SilexValue: ::silex::dom::view::ApplyAttributes + ::silex::dom::view::#trait_name>(mut self, val: __SilexValue) -> Self {
+                    use ::silex::dom::view::#trait_name;
+                    self.#name = #final_val;
+                    self
+                }
+            }
+        } else {
+            quote! {
+                pub fn #name(mut self, val: #param_type) -> Self {
+                    self.#name = #final_val;
                     self
                 }
             }
         }
     }
 
-    /// 生成组件构造函数（用于简化宏调用的入口函数）
     fn generate_constructor(&self) -> TokenStream2 {
         let fn_name = &self.fn_name;
         let fn_vis = &self.fn_vis;
@@ -390,29 +375,11 @@ impl ComponentGenerator {
         let mut params = Vec::new();
         let mut call_args = Vec::new();
 
-        for info in &self.standalone_args {
-            let p_name = &info.name;
-            let ty = &info.ty;
-            let type_ident = &info.type_ident;
-
-            if is_bare_fn_type(ty) {
-                params.push(quote! { #p_name: #ty });
-            } else if info.into_trait {
-                match type_ident.as_str() {
-                    "SharedView" => {
-                        params.push(quote! { #p_name: impl ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt });
-                    }
-                    "AnyView" => {
-                        params.push(quote! { #p_name: impl ::silex::dom::view::MountExt });
-                    }
-                    _ => {
-                        params.push(quote! { #p_name: impl Into<#ty> });
-                    }
-                }
-            } else {
-                params.push(quote! { #p_name: impl ::silex::dom::view::PropInto<#ty> });
-            }
-            call_args.push(quote! { #p_name });
+        for prop in &self.standalone_args {
+            let name = &prop.name;
+            let param_type = prop.get_param_type();
+            params.push(quote! { #name: #param_type });
+            call_args.push(quote! { #name });
         }
 
         quote! {
@@ -466,41 +433,15 @@ impl ComponentGenerator {
         let mut new_params = Vec::new();
         let mut new_prelude = Vec::new();
 
-        for info in &self.standalone_args {
-            let p_name = &info.name;
-            let ty = &info.ty;
-            let type_ident = &info.type_ident;
+        for prop in &self.standalone_args {
+            let name = &prop.name;
+            let param_ty = prop.get_param_type();
+            let transform = prop.get_transformation(quote! { #name });
 
-            if is_bare_fn_type(ty) {
-                new_params.push(quote! { #p_name: #ty });
-                new_prelude.push(quote! { let #p_name = #p_name; });
-            } else if info.into_trait {
-                match type_ident.as_str() {
-                    "SharedView" => {
-                        new_params.push(quote! { #p_name: impl ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt });
-                        new_prelude.push(quote! {
-                            use ::silex::dom::view::MountRefExt;
-                            let #p_name = #p_name.into_shared();
-                        });
-                    }
-                    "AnyView" => {
-                        new_params.push(quote! { #p_name: impl ::silex::dom::view::MountExt });
-                        new_prelude.push(quote! {
-                            use ::silex::dom::view::MountExt;
-                            let #p_name = #p_name.into_any();
-                        });
-                    }
-                    _ => {
-                        new_params.push(quote! { #p_name: impl Into<#ty> });
-                        new_prelude.push(quote! { let #p_name = #p_name.into(); });
-                    }
-                }
-            } else {
-                new_params.push(quote! { #p_name: impl ::silex::dom::view::PropInto<#ty> });
-                new_prelude.push(
-                    quote! { let #p_name = ::silex::dom::view::PropInto::prop_into(#p_name); },
-                );
-            }
+            new_params.push(quote! { #name: #param_ty });
+            new_prelude.push(quote! {
+                let #name = #transform;
+            });
         }
 
         quote! {
@@ -598,13 +539,7 @@ pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Resul
 
 /// 解析属性上的标记，如 `#[prop(default = ...)]`
 fn parse_prop_attrs(attrs: &[Attribute]) -> syn::Result<PropAttrs> {
-    let mut result = PropAttrs {
-        default: false,
-        default_value: None,
-        into_trait: false,
-        clone: false,
-        render: false,
-    };
+    let mut result = PropAttrs::default();
 
     for attr in attrs {
         if attr.path().is_ident("prop") {
@@ -682,8 +617,4 @@ fn get_base_type_name(ty: &Type) -> String {
         return segment.ident.to_string();
     }
     "".to_string()
-}
-
-fn is_bare_fn_type(ty: &Type) -> bool {
-    matches!(ty, Type::BareFn(_))
 }
