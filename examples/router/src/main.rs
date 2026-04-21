@@ -158,7 +158,7 @@ fn NotFound() -> impl Mount + MountRef {
 // --- 主布局 ---
 
 #[component]
-fn MainLayout(child: Children) -> impl Mount + MountRef {
+fn MainLayout(child: AnyView) -> impl Mount + MountRef {
     div!(
         // Header
         header!(

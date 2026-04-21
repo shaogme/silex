@@ -83,7 +83,7 @@ pub enum AppRoute {
 styled! {
     #[theme(AppTheme)]
     pub StyledNav<nav> (
-        children: Children,
+        children: AnyView,
         #[prop(default = "horizontal")] direction: &'static str
     ) {
         background: $AppTheme::SURFACE;
