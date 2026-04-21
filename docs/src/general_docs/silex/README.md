@@ -155,10 +155,19 @@ Switch::new(tab, || div("Fallback"))
 ```
 
 ### Portal (传送门)
-将组件渲染到 DOM 树的其他位置（如 `body`），常用于模态框（Modals）、Tooltips。
+
+将组件渲染到当前 DOM 树之外的节点（默认是 `document.body`）。适用于模态框（Modals）、全局通知、浮动菜单等。
+
+**核心优势**：
+*   **Context 连通**：即便 DOM 位于 body 下，依然能无缝访问定义处的响应式上下文（Signals, Context）。
+*   **自动清理**：当 `Portal` 组件销毁时，它会自动从目标节点中移除渲染的内容。
+
 ```rust
-Portal::new(div("I am a modal"))
-    .mount_to(document.body().unwrap()) // 默认也是 body
+Portal(div!(
+    h2("我是模态框"),
+    button("关闭")
+))
+.mount_to(custom_node) // 可选，默认为 body
 ```
 
 ### For (列表渲染)
@@ -189,45 +198,53 @@ Index::new(logs, |item, index| {
 })
 ```
 
-## 3. 错误处理 (Warning & Error)
+## 3. 错误处理 (Error Handling)
 
-使用 `<ErrorBoundary>` 可以捕获子组件中的 Panic 或 `SilexError`，防止整个应用崩溃。
+使用 `<ErrorBoundary>` 可以捕获子组件树中的 **Panic** 或 **SilexError**。它能有效防止由于局部组件故障导致整个应用崩溃，并展示友好的备用 UI。
+
+### 基本用法
 
 ```rust
-ErrorBoundary(ErrorBoundaryProps {
-    fallback: |err| div(format!("发生错误: {}", err)).style("color: red"),
-    children: || {
-        // 可能出错的组件
-        DangerousComponent()
-    }
-})
+ErrorBoundary(move || DangerousComponent())
+    .fallback(|err| {
+        div!(
+            h3("糟糕，出错了"),
+            p(format!("错误详情: {}", err)),
+            button("重试").on_click(|_| {
+                // 逻辑处理，例如刷新页面
+                let _ = web_sys::window().unwrap().location().reload();
+            })
+        )
+        .style("background: #fff1f0; border: 1px solid #ffa39e; padding: 16px; border-radius: 8px;")
+    })
 ```
+
+### 核心特性
+*   **捕获同步 Panic**: 自动使用 `std::panic::catch_unwind` 包装子组件的渲染过程。
+*   **捕获逻辑错误**: 捕获子组件通过 `ErrorContext` 向上冒泡的 `SilexError`（例如在事件处理器或异步 Resource 中抛出的错误）。
+*   **状态隔离**: 错误界限会隔离故障，父级组件和其他不相关的组件树分支将保持正常工作。
+*   **异步兼容**: 错误状态的更新是异步调度的，避免了在渲染阶段直接修改状态导致的潜在问题。
 
 ## 4. 异步加载 (Suspense)
 
 配合 `Resource` 使用，优雅处理异步数据加载状态。
 
 ```rust
-use silex::components::{suspense, SuspenseBoundary, SuspenseMode};
-
-// Builder 模式 (推荐)
-Suspense::new()
-    .resource(|| Resource::new(source_signal, fetcher))
-    .children(move |data| {
-        SuspenseBoundary::new()
-            .fallback(|| div("Loading..."))
-            .children(move || div(data.get()))
-    })
+// 组件化 API
+Suspense(move || {
+    let data = Resource::new(source_signal, fetcher);
+    div(rx!(data.get().unwrap_or_default()))
+        .style("color: green")
+})
+.fallback(div("Loading..."))
 
 // 卸载模式 (Unmount)
-Suspense::new()
-    .resource(|| Resource::new(source_signal, fetcher))
-    .children(move |data| {
-        SuspenseBoundary::new()
-            .mode(SuspenseMode::Unmount) // <--- 启用卸载模式
-            .fallback(|| div("Loading..."))
-            .children(move || div(data.get()))
-    })
+Suspense(move || {
+    let data = Resource::new(source_signal, fetcher);
+    div(rx!(data.get().unwrap_or_default()))
+})
+.mode(SuspenseMode::Unmount) // <--- 启用卸载模式
+.fallback(div("Loading..."))
 ```
 
 ## 5. UI 与布局 (UI & Layout)

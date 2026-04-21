@@ -384,7 +384,7 @@ pub fn MutationDemo() -> impl Mount + MountRef {
 
 #[component]
 pub fn SuspenseDemo() -> impl Mount + MountRef {
-    use silex::components::{SuspenseBoundary, SuspenseMode};
+    use silex::components::SuspenseMode;
 
     let (show_content, set_show_content) = Signal::pair(false);
     let (mode, set_mode) = Signal::pair(SuspenseMode::KeepAlive);
@@ -435,29 +435,26 @@ pub fn SuspenseDemo() -> impl Mount + MountRef {
         .style("margin-bottom: 15px;"),
         div![rx! {
             if show_content.get() {
-                Suspense::new()
-                    .resource(move || Resource::new(trigger, heavy_work))
-                    .children(move |resource| {
-                        SuspenseBoundary(
-                            // Children
-                            move || div![
-                                div![
-                                    "Resource Data: ",
-                                    // Fine-grained reading: Only this text node updates
-                                    rx!(resource.get().unwrap_or_else(|| "Waiting...".to_string()))
-                                ],
-                                div("1. Type something below."),
-                                div("2. Click 'Reload Resource'."),
-                                div("3. KeepAlive: Text stays. Unmount: Text gone."),
-                                input()
-                                    .placeholder("Type here test persistence...")
-                                    .style("margin-top: 5px; padding: 5px; width: 250px;")
-                            ]
-                            .style("border: 1px solid green; padding: 10px; background: #e8f5e9;"),
-                        )
-                        .fallback(div("Loading... (2s)").style("color: blue; font-weight: bold;"))
-                        .mode(mode.get())
-                    }).into_shared()
+                Suspense(move || {
+                    let resource = Resource::new(trigger, heavy_work);
+                    div![
+                        div![
+                            "Resource Data: ",
+                            // Fine-grained reading: Only this text node updates
+                            rx!(resource.get().unwrap_or_else(|| "Waiting...".to_string()))
+                        ],
+                        div("1. Type something below."),
+                        div("2. Click 'Reload Resource'."),
+                        div("3. KeepAlive: Text stays. Unmount: Text gone."),
+                        input()
+                            .placeholder("Type here test persistence...")
+                            .style("margin-top: 5px; padding: 5px; width: 250px;")
+                    ]
+                    .style("border: 1px solid green; padding: 10px; background: #e8f5e9;")
+                })
+                .fallback(div("Loading... (2s)").style("color: blue; font-weight: bold;"))
+                .mode(mode.get())
+                .into_shared()
             } else {
                 ().into_shared()
             }

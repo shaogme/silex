@@ -1,4 +1,5 @@
-use std::cell::Cell;
+use std::any::Any;
+use std::cell::{Cell, RefCell};
 use std::future::Future;
 use std::panic::Location;
 use std::rc::Rc;
@@ -92,6 +93,21 @@ impl<T: RxCloneData, E: RxError> Resource<T, E> {
         S: PartialEq + RxCloneData,
         Fetcher: ResourceFetcher<S, Data = T, Error = E> + RxData,
     {
+        // Try to retrieve existing resource from SuspenseContext (Hook-style stability)
+        let suspense_ctx = use_suspense_context();
+        if let Some(ctx) = &suspense_ctx {
+            let idx = ctx.index.get();
+            let resources = ctx.resources.borrow();
+            if let Some(any_res) = resources.get(idx).cloned()
+                && let Some(res) = any_res.downcast_ref::<Self>() {
+                    let res_val = *res;
+                    drop(resources);
+                    ctx.index.set(idx + 1);
+                    return res_val;
+                }
+            drop(resources);
+        }
+
         // 默认状态为 Idle，直到第一次 Effect 执行变为 Loading
         let (state, set_state) = Signal::<ResourceState<T, E>>::pair(ResourceState::Idle);
         let (trigger, set_trigger) = Signal::pair(0);
@@ -149,11 +165,19 @@ impl<T: RxCloneData, E: RxError> Resource<T, E> {
             });
         });
 
-        Resource {
+        let res = Resource {
             state,
             set_state,
             trigger: set_trigger,
+        };
+
+        // Cache the newly created resource in the context
+        if let Some(ctx) = &suspense_ctx {
+            ctx.resources.borrow_mut().push(Rc::new(res));
+            ctx.index.set(ctx.index.get() + 1);
         }
+
+        res
     }
 
     pub fn refetch(&self) {
@@ -309,14 +333,14 @@ impl<T: RxCloneData, E: RxError> crate::traits::IntoSignal for Resource<T, E> {
     }
 }
 
-// Note: GetUntracked and Get methods are now provided as default methods in the Read trait.
-
 // --- Suspense ---
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct SuspenseContext {
     pub count: ReadSignal<usize>,
     pub set_count: WriteSignal<usize>,
+    pub(crate) resources: Rc<RefCell<Vec<Rc<dyn Any>>>>,
+    pub(crate) index: Rc<Cell<usize>>,
 }
 
 impl Default for SuspenseContext {
@@ -328,7 +352,12 @@ impl Default for SuspenseContext {
 impl SuspenseContext {
     pub fn new() -> Self {
         let (count, set_count) = Signal::pair(0);
-        Self { count, set_count }
+        Self {
+            count,
+            set_count,
+            resources: Rc::new(RefCell::new(Vec::new())),
+            index: Rc::new(Cell::new(0)),
+        }
     }
 
     pub fn increment(&self) {
@@ -343,11 +372,11 @@ impl SuspenseContext {
         });
     }
 
-    pub fn provide<T>(f: impl FnOnce() -> T) -> T {
+    pub fn provide_with<T>(ctx: Self, f: impl FnOnce() -> T) -> T {
         let mut result = None;
         crate::reactivity::create_scope(|| {
-            let ctx = Self::new();
-            crate::reactivity::provide_context(ctx);
+            crate::reactivity::provide_context(ctx.clone());
+            ctx.index.set(0); // Reset index for stable resource registration
             result = Some(f());
         });
         result.unwrap()

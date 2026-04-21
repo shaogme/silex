@@ -168,20 +168,18 @@ fn HomeView() -> impl Mount + MountRef {
             // Card 4: Suspense (Context Layout Pattern)
             Card("Suspense (Async Loading)")
                 .child(
-                    Suspense::new()
-                        .resource(|| Resource::new(
+                    Suspense(move || {
+                        let async_data_local = Resource::new(
                             rx!(()),
                             |_| async {
                                 gloo_timers::future::TimeoutFuture::new(2_000).await;
                                 Ok::<_, SilexError>("Loaded Data from Server!".to_string())
                             }
-                        ))
-                        .children(move |async_data_local| {
-                            SuspenseBoundary(
-                                div(rx!(async_data_local.get().unwrap_or("Waiting...".to_string())))
-                                    .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
-                            ).fallback(div("Loading data (approx 2s)...").style("color: orange; font-style: italic;"))
-                        })
+                        );
+                        div(rx!(async_data_local.get().unwrap_or("Waiting...".to_string())))
+                            .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
+                    })
+                    .fallback(div("Loading data (approx 2s)...").style("color: orange; font-style: italic;"))
                 )
     )
 }

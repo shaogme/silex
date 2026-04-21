@@ -1,61 +1,10 @@
-use silex_core::reactivity::{SuspenseContext, create_scope, use_suspense_context};
+use silex_core::reactivity::{SuspenseContext, create_scope};
 use silex_core::traits::RxGet;
 use silex_dom::prelude::*;
 use silex_html::div;
 use silex_macros::component;
+use std::marker::PhantomData;
 use web_sys::Node;
-
-/// A builder for creating a Suspense context and providing resources.
-///
-/// # Example
-/// ```rust,ignore
-/// Suspense::new()
-///     .resource(|| Resource::new(source, fetcher))
-///     .children(|resource| {
-///         SuspenseBoundary(move || resource.get(), || "Loading...")
-///     })
-/// ```
-pub struct Suspense<F = ()> {
-    resource_factory: F,
-}
-
-impl Default for Suspense<()> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Suspense<()> {
-    pub fn new() -> Self {
-        Self {
-            resource_factory: (),
-        }
-    }
-
-    pub fn resource<R, FB>(self, f: FB) -> Suspense<FB>
-    where
-        FB: FnOnce() -> R,
-    {
-        Suspense {
-            resource_factory: f,
-        }
-    }
-}
-
-impl<F, R> Suspense<F>
-where
-    F: FnOnce() -> R,
-{
-    pub fn children<V, C>(self, child_fn: C) -> V
-    where
-        C: FnOnce(R) -> V,
-    {
-        SuspenseContext::provide(|| {
-            let resource = (self.resource_factory)();
-            child_fn(resource)
-        })
-    }
-}
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub enum SuspenseMode {
@@ -64,95 +13,133 @@ pub enum SuspenseMode {
     Unmount,
 }
 
-/// SuspenseBoundary 组件
+/// Suspense 组件
 ///
-/// 用于处理异步加载状态，根据 SuspenseContext 的状态切换显示 children 或 fallback。
+/// 用于处理异步加载状态。它会创建一个 SuspenseContext 并将其提供给 `children` 闭包。
+/// 任何在 `children` 闭包内部创建的 Resource 都会自动注册到该上下文中。
+///
+/// # 示例
+/// ```rust,ignore
+/// Suspense(move || {
+///     let res = Resource::new(id, fetch_user);
+///     div![
+///         "User: ",
+///         rx!(res.get().map(|u| u.name))
+///     ]
+/// })
+/// .fallback(div("Loading..."))
+/// ```
 #[component]
-pub fn SuspenseBoundary<CH, FB>(
-    #[prop(clone)] children: CH,
-    #[prop(clone)] fallback: FB,
+pub fn Suspense<CH, R>(
+    children: CH,
+    #[prop(default = SharedView::Empty)] fallback: SharedView,
     #[prop(default)] mode: SuspenseMode,
-    #[prop(default = use_suspense_context().expect("SuspenseContext not found. Ensure SuspenseBoundary is created inside SuspenseContext::provide closure."))]
-    ctx: SuspenseContext,
 ) -> impl Mount + MountRef
 where
-    CH: MountExt + Clone + 'static,
-    FB: MountExt + Clone + 'static,
+    CH: Fn() -> R + Clone + 'static,
+    R: MountExt,
 {
-    // 从 Prop 中提取原始值，确保 View 是 'static 的
-    // 由于 ctx 具有默认值且不是第一个参数，它由宏处理为 Prop<SuspenseContext>
-    SuspenseBoundaryView {
-        children: children.clone(),
+    // 创建属于此 Suspense 边界的上下文
+    let ctx = SuspenseContext::new();
+
+    // 关键点：在组件初始化时（稳定作用域）执行一次工厂闭包。
+    // 这有三个目的：
+    // 1. 发现并创建所有 Resource 实例，并将它们缓存在 SuspenseContext 中。
+    // 2. 确保 Resource 实例绑定到稳定的组件作用域，而不是 Unmount 模式下临时的挂载作用域。
+    // 3. 生成初始视图供第一次挂载或 KeepAlive 模式使用。
+    let initial_view = SuspenseContext::provide_with(ctx.clone(), {
+        let children = children.clone();
+        move || children().into_shared()
+    });
+
+    SuspenseView {
+        factory: children.clone(),
+        initial_view,
         fallback: fallback.clone(),
         mode: *mode,
-        ctx: *ctx,
+        ctx,
+        _marker: PhantomData,
     }
 }
 
-struct SuspenseBoundaryView<CH, FB> {
-    children: CH,
-    fallback: FB,
+struct SuspenseView<CH, R> {
+    factory: CH,
+    initial_view: SharedView,
+    fallback: SharedView,
     mode: SuspenseMode,
     ctx: SuspenseContext,
+    _marker: PhantomData<R>,
 }
 
-impl<CH, FB> ApplyAttributes for SuspenseBoundaryView<CH, FB> {}
+impl<CH, R> ApplyAttributes for SuspenseView<CH, R> {}
 
-impl<CH, FB> Mount for SuspenseBoundaryView<CH, FB>
+impl<CH, R> Mount for SuspenseView<CH, R>
 where
-    CH: MountExt + Clone + 'static,
-    FB: MountExt + Clone + 'static,
+    CH: Fn() -> R + Clone + 'static,
+    R: MountExt,
 {
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        let children_fn = self.children;
-        let fallback_fn = self.fallback;
+        let factory = self.factory;
+        let initial_view = self.initial_view;
+        let fallback_view = self.fallback;
         let mode = self.mode;
-        let count = self.ctx.count;
         let parent_clone = parent.clone();
+        let count = self.ctx.count;
+        let ctx = self.ctx;
 
         create_scope(move || match mode {
             SuspenseMode::KeepAlive => {
-                let children_fn = children_fn.clone();
-                let fallback_fn = fallback_fn.clone();
+                let children_view = initial_view;
+                let fallback_view = fallback_view.clone();
 
-                // Content wrapper (KeepAlive: always in DOM, toggle visibility)
+                // KeepAlive 模式：始终保留 DOM 节点，仅切换显示状态
                 let content_wrapper = div(()).class("suspense-content");
                 let count_clone = count;
                 let _ = content_wrapper.clone().style(silex_core::rx! {
                     if count_clone.get() > 0 { "display: none" } else { "display: block" }
                 });
                 content_wrapper.clone().mount(&parent_clone, attrs);
-                children_fn.mount_ref(&content_wrapper.element, Vec::new());
+                children_view.mount_ref(&content_wrapper.element, Vec::new());
 
-                // Fallback wrapper (KeepAlive: always in DOM, toggle visibility)
                 let fallback_wrapper = div(()).class("suspense-fallback");
                 let count_clone = count;
                 let _ = fallback_wrapper.clone().style(silex_core::rx! {
                     if count_clone.get() > 0 { "display: block" } else { "display: none" }
                 });
                 fallback_wrapper.clone().mount(&parent_clone, Vec::new());
-                fallback_fn.mount_ref(&fallback_wrapper.element, Vec::new());
+                fallback_view.mount_ref(&fallback_wrapper.element, Vec::new());
             }
             SuspenseMode::Unmount => {
-                let children_fn = children_fn.clone();
-                let fallback_fn = fallback_fn.clone();
+                let factory = factory.clone();
+                let initial_view = initial_view;
+                let fallback_view = fallback_view.clone();
+                let ctx_clone = ctx.clone();
 
-                // Dynamic mounting for children
+                // 用于标记是否是第一次渲染
+                let is_first = std::rc::Rc::new(std::cell::Cell::new(true));
+
+                // Unmount 模式：真正从 DOM 中移除/添加节点
                 let count_clone = count;
                 let children_rx = silex_core::rx! {
                     if count_clone.get() == 0 {
-                        children_fn.clone().into_any()
+                        if is_first.get() {
+                            is_first.set(false);
+                            initial_view.clone().into_any()
+                        } else {
+                            // 重新执行工厂闭包以生成全新的视图（重置本地 DOM 状态）
+                            // 内部的 Resource::new 会从缓存中获取稳定的 Resource 实例
+                            SuspenseContext::provide_with(ctx_clone.clone(), factory.clone()).into_any()
+                        }
                     } else {
                         ().into_any()
                     }
                 };
                 children_rx.mount(&parent_clone, attrs);
 
-                // Dynamic mounting for fallback
                 let count_clone = count;
                 let fallback_rx = silex_core::rx! {
                     if count_clone.get() > 0 {
-                        fallback_fn.clone().into_any()
+                        fallback_view.clone().into_any()
                     } else {
                         ().into_any()
                     }
@@ -163,24 +150,26 @@ where
     }
 }
 
-impl<CH, FB> AutoReactiveView for SuspenseBoundaryView<CH, FB>
+impl<CH, R> AutoReactiveView for SuspenseView<CH, R>
 where
-    CH: MountExt + Clone + 'static,
-    FB: MountExt + Clone + 'static,
+    CH: Fn() -> R + Clone + 'static,
+    R: MountExt,
 {
 }
 
-impl<CH, FB> MountRef for SuspenseBoundaryView<CH, FB>
+impl<CH, R> MountRef for SuspenseView<CH, R>
 where
-    CH: MountExt + Clone + 'static,
-    FB: MountExt + Clone + 'static,
+    CH: Fn() -> R + Clone + 'static,
+    R: MountExt,
 {
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        let view = SuspenseBoundaryView {
-            children: self.children.clone(),
+        let view = SuspenseView {
+            factory: self.factory.clone(),
+            initial_view: self.initial_view.clone(),
             fallback: self.fallback.clone(),
             mode: self.mode,
-            ctx: self.ctx,
+            ctx: self.ctx.clone(),
+            _marker: PhantomData,
         };
         view.mount(parent, attrs);
     }

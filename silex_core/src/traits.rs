@@ -163,4 +163,6 @@ macro_rules! impl_rx_base_for_constant {
     };
 }
 
-impl_rx_base_for_constant!(i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64, bool, String, &str);
+impl_rx_base_for_constant!(
+    i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64, bool, String, &str
+);

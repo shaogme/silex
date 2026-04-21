@@ -141,10 +141,12 @@
 `silex/src/components/portal.rs`
 *   **Logic**: 跨 DOM 层级渲染。
 *   **Mechanism**:
-    1. 在目标位置 (默认 body) 创建一个容器 (`div` 或 Fragment)。
-    2. 将 `child` 挂载到该容器中。
-    3. **Context Preservation**: 由于是在当前 `mount` 方法中执行挂载逻辑，Reactive Context (Signals, Providers) 会自动保留并传递给子组件。
-    4. **Cleanup**: 注册 `on_cleanup` 回调，在当前组件销毁时从目标位置移除容器。
+    1.  **Target Selection**: 默认挂载到 `document.body`，也可通过 `mount_to` 属性指定特定的 `web_sys::Node`。
+    2.  **Container**: 在目标节点内创建一个 `div` 容器，并设置 `display: contents` 以最小化对 CSS 布局的影响。
+    3.  **Mounting**: 调用 `children.mount_ref` 将视图渲染进该容器。
+    4.  **Context Preservation**: 由于挂载逻辑在父组件的作用域内运行，响应式上下文（Scope, Context）自动保持连通。
+    5.  **Lifetime**: 注册 `on_cleanup` 回调。当 `Portal` 被卸载时，自动从目标位置执行 `remove_child` 移除容器，实现清理。
+    6.  **Return**: Portal 在组件声明的原始位置返回空视图（`()`），不产生任何物理节点。
 
 ## 4. UI 组件 (silex::components)
 
@@ -168,26 +170,26 @@
 
 ### ErrorBoundary
 `silex/src/components/error_boundary.rs`
-*   **Purpose**: 捕获子组件树中的 Errors 和 Panics。
+*   **Purpose**: 捕获子组件树中的 Errors 和 Panics，防止局部故障传播至全局。
 *   **Mechanism**:
-    1. `provide_context(ErrorContext)`: 注入错误处理闭包。
-    2. `catch_unwind`: 在 `mount` 阶段捕获同步 Panic。
-    3. `SilexError`: 通过上下文捕获异步或逻辑错误。
-    4. **Fallback**: 出错时替换正常子树为 `fallback` 视图。
+    1.  **Context Injection**: 通过 `provide_context(ErrorContext)` 注入一个错误处理闭包。该闭包捕获冒泡上来的 `SilexError`。
+    2.  **Panic Capture**: 实现 `Mount` trait 时，在渲染子组件的逻辑外层使用 `std::panic::catch_unwind` (配合 `AssertUnwindSafe`)。
+    3.  **State Management**: 内部持有一个 `Signal<Option<SilexError>>`。一旦捕获到错误或 Panic，通过 `wasm_bindgen_futures::spawn_local` 异步更新该信号，从而切换渲染分支。
+    4.  **Fallback**: 当信号为 `Some(err)` 时，调用 `fallback` 闭包渲染备用 UI；否则渲染正常的 `children`。
+    5.  **Layout**: 使用 `display: contents` 的 `div` 作为外观包装，确保对布局的侵入性最小。
 
-### Suspense (Builder) & SuspenseBoundary
+### Suspense (Component)
 `silex/src/components/suspense.rs`
-*   **Update**: 引入了 `Suspense` Builder 简化了 Context Layout 模式。
+*   **Update**: `Suspense` 现已完全组件化，由 `#[component]` 宏定义，不再使用 Builder 模式。`SuspenseBoundary` 逻辑已合并入 `Suspense`。
 *   **Usage**: 
-    1.  `Suspense::new()`: 创建 Builder。
-    2.  `.resource(fn)`: 注册资源工厂。
-    3.  `.children(fn)`: 接收 Resource 并渲染 View (包含 `SuspenseBoundary`)。
-*   **Comparison**:
-    *   **Old**: 显式嵌套 `SuspenseContext::provide({ ... Resource::new ... SuspenseBoundary::new ... })`。
-    *   **New**: 链式调用，自动处理 Scope 和 Context 注入。
+    1.  `Suspense(move || { ... })`: 接收一个工厂闭包。返回 `SharedView` 以支持复用。
+    2.  内部逻辑：工厂闭包内创建的 `Resource` 会通过 `SuspenseContext` 自动注册到该 Suspense 边界。
+    3.  `.fallback(view)`: 设置加载时的占位视图（接受 `impl Into<SharedView>`）。
+    4.  `.mode(SuspenseMode)`: 设置 `KeepAlive` (隐藏) 或 `Unmount` (移除) 模式。
 *   **Mechanism**:
-    *   `Suspense::children` 内部调用 `SuspenseContext::provide`。
-    *   `SuspenseBoundary` 负责具体的 UI 切换（Hidden vs Fallback）。
+    1.  **资源稳定性 (Hook-style)**: `SuspenseContext` 内部维护一个资源注册表（Resource Registry）和调用顺序索引。`Resource::new` 会首先检查该注册表，确保在 `Unmount` 模式下重新挂载（闭包重新执行）时，Resource 实例及其状态被复用，避免重复请求。
+    2.  **状态重置**: 在 `Unmount` 模式下，当资源加载完成进入就绪状态时，`Suspense` 会重新调用工厂闭包生成全新的 DOM 节点。这既利用了稳定的资源数据，又实现了对本地 DOM 状态（如 input 内容）的彻底重置。
+    3.  **生命周期保护**: 组件在初始化阶段会执行一次“预热”运行（Warm-up run），将资源实例锚定在稳定的组件作用域中，防止在 `Unmount` 模式切换中因临时作用域销毁而导致信号失效。
 
 ## 5. 网络系统 (silex::net)
 
