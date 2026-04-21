@@ -433,17 +433,14 @@ pub fn SuspenseDemo() -> impl Mount + MountRef {
             button("Reload Resource").on(event::click, set_trigger.updater(|n| *n += 1))
         ]
         .style("margin-bottom: 15px;"),
-        div![Show::new(
-            show_content,
-            Suspense::new()
-                .resource(move || Resource::new(trigger, heavy_work))
-                .children(move |resource| {
-                    SuspenseBoundary::new()
-                        .mode(mode.get())
-                        .fallback(div("Loading... (2s)").style("color: blue; font-weight: bold;"))
-                        .children(
-                            // Crucial: We do NOT read resource.get() here.
-                            div![
+        div![rx! {
+            if show_content.get() {
+                Suspense::new()
+                    .resource(move || Resource::new(trigger, heavy_work))
+                    .children(move |resource| {
+                        SuspenseBoundary(
+                            // Children
+                            move || div![
                                 div![
                                     "Resource Data: ",
                                     // Fine-grained reading: Only this text node updates
@@ -458,8 +455,13 @@ pub fn SuspenseDemo() -> impl Mount + MountRef {
                             ]
                             .style("border: 1px solid green; padding: 10px; background: #e8f5e9;"),
                         )
-                })
-        )]
+                        .fallback(div("Loading... (2s)").style("color: blue; font-weight: bold;"))
+                        .mode(mode.get())
+                    }).into_shared()
+            } else {
+                ().into_shared()
+            }
+        }]
         .style("min-height: 150px; border: 1px dashed #ccc; padding: 10px;")
     ]
     .style("padding: 20px; border: 1px solid #ccc; border-radius: 8px; margin-top: 20px;")

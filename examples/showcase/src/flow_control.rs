@@ -133,7 +133,7 @@ pub fn PortalDemo() -> impl Mount + MountRef {
         button("Toggle Modal").on(event::click, set_show_modal.updater(|v| *v = !*v)),
         Show::new(
             show_modal,
-            Portal::new(
+            Portal(
                 div![
                     div![
                         h4("I am a Modal!"),
@@ -163,6 +163,7 @@ pub fn PortalDemo() -> impl Mount + MountRef {
                         .z_index(9999)
                 )
             )
+            .into_shared()
         )
     ]
 }

@@ -177,12 +177,10 @@ fn HomeView() -> impl Mount + MountRef {
                             }
                         ))
                         .children(move |async_data_local| {
-                            SuspenseBoundary::new()
-                                .fallback(div("Loading data (approx 2s)...").style("color: orange; font-style: italic;"))
-                                .children(
-                                    div(rx!(async_data_local.get().unwrap_or("Waiting...".to_string())))
-                                        .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
-                                )
+                            SuspenseBoundary(
+                                div(rx!(async_data_local.get().unwrap_or("Waiting...".to_string())))
+                                    .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
+                            ).fallback(div("Loading data (approx 2s)...").style("color: orange; font-style: italic;"))
                         })
                 )
     )

@@ -15,8 +15,8 @@ fn App() -> impl Mount + MountRef {
         // 1. Recoverable Error (Result::Err) behavior
         div!(
             h2("1. Recoverable Error Test"),
-            ErrorBoundary(ErrorBoundaryProps {
-                fallback: |err| {
+            ErrorBoundary(RecoverableComponent)
+                .fallback(|err| {
                     div!(
                         h3("Caught Recoverable Error!"),
                         p(format!("Error info: {}", err)),
@@ -25,31 +25,21 @@ fn App() -> impl Mount + MountRef {
                         })
                     )
                     .style("background-color: #fee; border: 1px solid red; padding: 10px; color: red;")
-                },
-                children: || {
-                    // 无参数组件直接调用，不需要传递 Props
-                    RecoverableComponent()
-                }
-            }),
+                }),
         ).style("margin-bottom: 20px; border: 1px solid #ccc; padding: 10px;"),
 
         // 2. Immediate Panic Test
         div!(
             h2("2. Immediate Panic Test (Render Phase)"),
             p("Component below will panic completely upon rendering if triggered."),
-            ErrorBoundary(ErrorBoundaryProps {
-                fallback: |err| {
+            ErrorBoundary(PanicToggleComponent)
+                .fallback(|err| {
                     div!(
                         h3("Caught Panic!"),
                         p(format!("Panic details: {}", err)),
                     )
                     .style("background-color: #fff3cd; border: 1px solid orange; padding: 10px; color: #856404;")
-                },
-                children: || {
-                    // 无参数组件直接调用
-                    PanicToggleComponent()
-                }
-            }),
+                }),
         ).style("margin-bottom: 20px; border: 1px solid #ccc; padding: 10px;"),
     ).style("padding: 20px; font-family: sans-serif;")
 }

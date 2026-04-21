@@ -130,3 +130,37 @@ pub mod adaptive {
         }
     }
 }
+
+impl RxValue for () {
+    type Value = ();
+}
+
+impl RxBase for () {
+    #[inline(always)]
+    fn id(&self) -> Option<NodeId> {
+        None
+    }
+    #[inline(always)]
+    fn track(&self) {}
+    #[inline(always)]
+    fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
+        None
+    }
+}
+
+macro_rules! impl_rx_base_for_constant {
+    ($($t:ty),*) => {
+        $(
+            impl RxBase for $t {
+                #[inline(always)]
+                fn id(&self) -> Option<NodeId> { None }
+                #[inline(always)]
+                fn track(&self) {}
+                #[inline(always)]
+                fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> { None }
+            }
+        )*
+    };
+}
+
+impl_rx_base_for_constant!(i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64, bool, String, &str);

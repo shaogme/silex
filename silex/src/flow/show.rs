@@ -1,5 +1,6 @@
 use silex_core::traits::{IntoRx, RxGet};
 use silex_dom::prelude::{ApplyAttributes, AutoReactiveView, Mount, MountRef};
+use std::rc::Rc;
 use web_sys::Node;
 
 /// Show 组件：根据条件渲染不同的视图
@@ -18,8 +19,8 @@ use web_sys::Node;
 #[derive(Clone)]
 pub struct Show<Cond, V, FV> {
     condition: Cond,
-    view: V,
-    fallback: FV,
+    view: Rc<V>,
+    fallback: Rc<FV>,
 }
 
 // 默认无 fallback 的构造函数
@@ -31,8 +32,8 @@ where
     pub fn new(condition: Cond, view: V) -> Self {
         Self {
             condition,
-            view,
-            fallback: (),
+            view: Rc::new(view),
+            fallback: Rc::new(()),
         }
     }
 }
@@ -52,7 +53,7 @@ where
         Show {
             condition: self.condition,
             view: self.view,
-            fallback,
+            fallback: Rc::new(fallback),
         }
     }
 }
@@ -68,8 +69,8 @@ where
 impl<Cond, V, FV> Mount for Show<Cond, V, FV>
 where
     Cond: RxGet<Value = bool> + Clone + 'static,
-    V: MountRef + Clone + 'static,
-    FV: MountRef + Clone + 'static,
+    V: MountRef + 'static,
+    FV: MountRef + 'static,
 {
     fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         mount_show_internal(self.condition, self.view, self.fallback, parent, attrs);
@@ -79,16 +80,16 @@ where
 impl<Cond, V, FV> AutoReactiveView for Show<Cond, V, FV>
 where
     Cond: RxGet<Value = bool> + Clone + 'static,
-    V: MountRef + Clone + 'static,
-    FV: MountRef + Clone + 'static,
+    V: MountRef + 'static,
+    FV: MountRef + 'static,
 {
 }
 
 impl<Cond, V, FV> MountRef for Show<Cond, V, FV>
 where
     Cond: RxGet<Value = bool> + Clone + 'static,
-    V: MountRef + Clone + 'static,
-    FV: MountRef + Clone + 'static,
+    V: MountRef + 'static,
+    FV: MountRef + 'static,
 {
     fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         mount_show_internal(
@@ -103,8 +104,8 @@ where
 
 fn mount_show_internal<Cond, V, FV>(
     condition: Cond,
-    view: V,
-    fallback: FV,
+    view: Rc<V>,
+    fallback: Rc<FV>,
     parent: &Node,
     attrs: Vec<silex_dom::attribute::PendingAttribute>,
 ) where

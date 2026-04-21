@@ -4,6 +4,8 @@ use std::collections::HashSet;
 use syn::parse::Parser;
 use syn::{Attribute, Block, FnArg, Generics, Ident, ItemFn, Pat, Type, Visibility};
 
+// --- Data Structures ---
+
 /// 组件装饰器参数 (Component macro attributes)
 pub struct ComponentAttrs {}
 
@@ -43,6 +45,8 @@ struct ComponentGenerator {
     used_prop_names: HashSet<String>,
 }
 
+// --- Implementation ---
+
 impl ComponentGenerator {
     fn new(input_fn: ItemFn) -> Self {
         let fn_name = input_fn.sig.ident.clone();
@@ -66,6 +70,7 @@ impl ComponentGenerator {
         }
     }
 
+    /// 准备 PhantomData 以处理泛型
     fn prepare_phantom_data(&mut self) {
         let phantom_types: Vec<_> = self
             .fn_generics
@@ -91,6 +96,7 @@ impl ComponentGenerator {
         }
     }
 
+    /// 处理函数参数
     fn process_args(
         &mut self,
         inputs: &syn::punctuated::Punctuated<FnArg, syn::token::Comma>,
@@ -129,7 +135,12 @@ impl ComponentGenerator {
             };
 
             let param_name_str = param_name.to_string();
-            self.used_prop_names.insert(param_name_str.clone());
+            if !self.used_prop_names.insert(param_name_str.clone()) {
+                return Err(syn::Error::new_spanned(
+                    param_name,
+                    format!("Duplicate component parameter: `{}`", param_name_str),
+                ));
+            }
 
             if index == 0 {
                 self.first_arg = Some(FirstArgInfo {
@@ -140,50 +151,46 @@ impl ComponentGenerator {
                 });
             }
 
-            self.generate_prop_logic(param_name, ty, &prop_attrs, &type_ident);
+            self.generate_prop_logic(param_name, ty, &prop_attrs, &type_ident, index == 0);
         }
         Ok(())
     }
 
+    /// 为单个属性生成字段、初始化、挂载检查和 Builder 方法
     fn generate_prop_logic(
         &mut self,
         name: &Ident,
         ty: &Type,
         attrs: &PropAttrs,
         type_ident: &str,
+        is_first: bool,
     ) {
-        let is_required = !attrs.default && attrs.default_value.is_none();
+        let is_required = is_first || (!attrs.default && attrs.default_value.is_none());
         let struct_name = &self.struct_name;
         let name_str = name.to_string();
 
+        // 1. 生成字段和初始化逻辑
         if is_required {
-            self.struct_fields.push(quote! { pub #name: Option<#ty> });
-            self.new_initializers.push(quote! { #name: None });
-
-            self.mount_checks.push(quote! {
-                let #name = ::silex::dom::view::Prop::new_owned(self.#name.expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'")));
-            });
-
-            if attrs.clone {
-                self.mount_ref_checks.push(quote! {
-                    let #name = ::silex::dom::view::Prop::new_owned(self.#name.as_ref().expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'")).clone());
-                });
+            if is_first {
+                self.struct_fields.push(quote! { pub #name: #ty });
+                self.new_initializers.push(quote! { #name: __first_arg });
             } else {
-                self.mount_ref_checks.push(quote! {
-                    let #name = ::silex::dom::view::Prop::new_borrowed(self.#name.as_ref().expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'")));
-                });
+                self.struct_fields.push(quote! { pub #name: Option<#ty> });
+                self.new_initializers.push(quote! { #name: None });
             }
         } else {
             self.struct_fields.push(quote! { pub #name: #ty });
 
             let init_val = if let Some(ref default_expr) = attrs.default_value {
                 if attrs.into_trait {
-                    if type_ident == "SharedView" {
-                        quote! { ::silex::dom::view::MountRefExt::into_shared(#default_expr) }
-                    } else if type_ident == "AnyView" {
-                        quote! { ::silex::dom::view::MountExt::into_any(#default_expr) }
-                    } else {
-                        quote! { (#default_expr).into() }
+                    match type_ident {
+                        "SharedView" => {
+                            quote! { ::silex::dom::view::MountRefExt::into_shared(#default_expr) }
+                        }
+                        "AnyView" => {
+                            quote! { ::silex::dom::view::MountExt::into_any(#default_expr) }
+                        }
+                        _ => quote! { (#default_expr).into() },
                     }
                 } else {
                     quote! { #default_expr }
@@ -192,79 +199,119 @@ impl ComponentGenerator {
                 quote! { std::default::Default::default() }
             };
             self.new_initializers.push(quote! { #name: #init_val });
-
-            self.mount_checks.push(quote! {
-                let #name = ::silex::dom::view::Prop::new_owned(self.#name);
-            });
-
-            if attrs.clone {
-                self.mount_ref_checks.push(quote! {
-                    let #name = ::silex::dom::view::Prop::new_owned(self.#name.clone());
-                });
-            } else {
-                self.mount_ref_checks.push(quote! {
-                    let #name = ::silex::dom::view::Prop::new_borrowed(&self.#name);
-                });
-            }
         }
 
-        // 生成 Builder 方法
+        // 2. 生成 Mount 时的 Prop 处理逻辑
+        let (mount_owned, mount_borrowed) = if is_required {
+            if is_first {
+                (
+                    quote! { ::silex::dom::view::Prop::new_owned(self.#name) },
+                    if attrs.clone {
+                        quote! { ::silex::dom::view::Prop::new_owned(self.#name.clone()) }
+                    } else {
+                        quote! { ::silex::dom::view::Prop::new_borrowed(&self.#name) }
+                    },
+                )
+            } else {
+                (
+                    quote! { ::silex::dom::view::Prop::new_owned(self.#name.expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'"))) },
+                    if attrs.clone {
+                        quote! { ::silex::dom::view::Prop::new_owned(self.#name.as_ref().expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'")).clone()) }
+                    } else {
+                        quote! { ::silex::dom::view::Prop::new_borrowed(self.#name.as_ref().expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'"))) }
+                    },
+                )
+            }
+        } else {
+            (
+                quote! { ::silex::dom::view::Prop::new_owned(self.#name) },
+                if attrs.clone {
+                    quote! { ::silex::dom::view::Prop::new_owned(self.#name.clone()) }
+                } else {
+                    quote! { ::silex::dom::view::Prop::new_borrowed(&self.#name) }
+                },
+            )
+        };
+
+        self.mount_checks.push(quote! { let #name = #mount_owned; });
+        self.mount_ref_checks
+            .push(quote! { let #name = #mount_borrowed; });
+
+        // 3. 生成 Builder 方法
+        self.builder_methods.push(self.generate_builder_method(
+            name,
+            ty,
+            attrs,
+            type_ident,
+            is_first,
+            is_required,
+        ));
+    }
+
+    fn generate_builder_method(
+        &self,
+        name: &Ident,
+        ty: &Type,
+        attrs: &PropAttrs,
+        type_ident: &str,
+        is_first: bool,
+        is_required: bool,
+    ) -> TokenStream2 {
         if attrs.into_trait {
-            let target_val = if is_required {
-                quote! { Some(val.into_shared()) }
-            } else {
+            let target_val = if is_first || !is_required {
                 quote! { val.into_shared() }
-            };
-            let any_target_val = if is_required {
-                quote! { Some(val.into_any()) }
             } else {
+                quote! { Some(val.into_shared()) }
+            };
+            let any_target_val = if is_first || !is_required {
                 quote! { val.into_any() }
+            } else {
+                quote! { Some(val.into_any()) }
+            };
+            let into_target_val = if is_first || !is_required {
+                quote! { val.into() }
+            } else {
+                quote! { Some(val.into()) }
             };
 
-            if type_ident == "SharedView" {
-                self.builder_methods.push(quote! {
+            match type_ident {
+                "SharedView" => quote! {
                     pub fn #name<__SilexValue: ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt>(mut self, val: __SilexValue) -> Self {
                         use ::silex::dom::view::MountRefExt;
                         self.#name = #target_val;
                         self
                     }
-                });
-            } else if type_ident == "AnyView" {
-                self.builder_methods.push(quote! {
+                },
+                "AnyView" => quote! {
                     pub fn #name<__SilexValue: ::silex::dom::view::MountExt>(mut self, val: __SilexValue) -> Self {
                         use ::silex::dom::view::MountExt;
                         self.#name = #any_target_val;
                         self
                     }
-                });
-            } else {
-                let into_target_val = if is_required {
-                    quote! { Some(val.into()) }
-                } else {
-                    quote! { val.into() }
-                };
-                self.builder_methods.push(quote! {
+                },
+                _ => quote! {
                     pub fn #name(mut self, val: impl Into<#ty>) -> Self {
                         self.#name = #into_target_val;
                         self
                     }
-                });
+                },
             }
         } else {
-            let direct_val = if is_required {
-                quote! { Some(::silex::dom::view::PropInto::prop_into(val)) }
-            } else {
+            let direct_val = if is_first || !is_required {
                 quote! { ::silex::dom::view::PropInto::prop_into(val) }
+            } else {
+                quote! { Some(::silex::dom::view::PropInto::prop_into(val)) }
             };
-            self.builder_methods.push(quote! {
+            quote! {
                 pub fn #name(mut self, val: impl ::silex::dom::view::PropInto<#ty>) -> Self {
                     self.#name = #direct_val;
                     self
                 }
-            });
+            }
         }
     }
 
+    /// 生成组件构造函数（用于简化宏调用的入口函数）
     fn generate_constructor(&self) -> TokenStream2 {
         let fn_name = &self.fn_name;
         let fn_vis = &self.fn_vis;
@@ -277,33 +324,31 @@ impl ComponentGenerator {
             let type_ident = &info.type_ident;
 
             if info.into_trait {
-                if type_ident == "SharedView" {
-                    quote! {
+                match type_ident.as_str() {
+                    "SharedView" => quote! {
                         #[allow(non_snake_case)]
                         #fn_vis fn #fn_name #impl_generics(#p_name: impl ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt) -> #struct_name #ty_generics #where_clause {
-                            #struct_name::new().#p_name(#p_name)
+                            #struct_name::new(#p_name)
                         }
-                    }
-                } else if type_ident == "AnyView" {
-                    quote! {
+                    },
+                    "AnyView" => quote! {
                         #[allow(non_snake_case)]
                         #fn_vis fn #fn_name #impl_generics(#p_name: impl ::silex::dom::view::MountExt) -> #struct_name #ty_generics #where_clause {
-                            #struct_name::new().#p_name(#p_name)
+                            #struct_name::new(#p_name)
                         }
-                    }
-                } else {
-                    quote! {
+                    },
+                    _ => quote! {
                         #[allow(non_snake_case)]
                         #fn_vis fn #fn_name #impl_generics(#p_name: impl Into<#ty>) -> #struct_name #ty_generics #where_clause {
-                            #struct_name::new().#p_name(#p_name)
+                            #struct_name::new(#p_name)
                         }
-                    }
+                    },
                 }
             } else {
                 quote! {
                     #[allow(non_snake_case)]
                     #fn_vis fn #fn_name #impl_generics(#p_name: impl ::silex::dom::view::PropInto<#ty>) -> #struct_name #ty_generics #where_clause {
-                        #struct_name::new().#p_name(#p_name)
+                        #struct_name::new(#p_name)
                     }
                 }
             }
@@ -317,20 +362,29 @@ impl ComponentGenerator {
         }
     }
 
+    /// 展开生成所有相关的 Rust 代码
     fn expand(self) -> TokenStream2 {
+        let struct_decl = self.gen_struct_decl();
+        let impl_block = self.gen_impl_block();
+        let attr_builder_impl = self.gen_attribute_builder_impl();
+        let mount_impls = self.gen_mount_impls();
+        let constructor = self.generate_constructor();
+
+        quote! {
+            #struct_decl
+            #impl_block
+            #attr_builder_impl
+            #mount_impls
+            #constructor
+        }
+    }
+
+    fn gen_struct_decl(&self) -> TokenStream2 {
         let struct_name = &self.struct_name;
         let fn_vis = &self.fn_vis;
-        let fn_body = &self.fn_body;
-        let (impl_generics, ty_generics, where_clause) = self.fn_generics.split_for_impl();
-
         let fields = &self.struct_fields;
-        let initializers = &self.new_initializers;
-        let builders = &self.builder_methods;
-        let mount_checks = &self.mount_checks;
-        let mount_ref_checks = &self.mount_ref_checks;
         let phantom_decl = &self.phantom_decl;
-        let phantom_init = &self.phantom_init;
-        let constructor = self.generate_constructor();
+        let (impl_generics, _, where_clause) = self.fn_generics.split_for_impl();
 
         quote! {
             #fn_vis struct #struct_name #impl_generics #where_clause {
@@ -338,9 +392,56 @@ impl ComponentGenerator {
                 _pending_attrs: Vec<::silex::dom::attribute::PendingAttribute>,
                 #phantom_decl
             }
+        }
+    }
 
+    fn gen_impl_block(&self) -> TokenStream2 {
+        let struct_name = &self.struct_name;
+        let initializers = &self.new_initializers;
+        let builders = &self.builder_methods;
+        let phantom_init = &self.phantom_init;
+        let (impl_generics, ty_generics, where_clause) = self.fn_generics.split_for_impl();
+
+        let (new_params, new_prelude) = if let Some(ref info) = self.first_arg {
+            let ty = &info.ty;
+            let type_ident = &info.type_ident;
+            let p_ident = quote! { __first_arg };
+
+            if info.into_trait {
+                match type_ident.as_str() {
+                    "SharedView" => (
+                        quote! { #p_ident: impl ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt },
+                        quote! {
+                            use ::silex::dom::view::MountRefExt;
+                            let #p_ident = #p_ident.into_shared();
+                        },
+                    ),
+                    "AnyView" => (
+                        quote! { #p_ident: impl ::silex::dom::view::MountExt },
+                        quote! {
+                            use ::silex::dom::view::MountExt;
+                            let #p_ident = #p_ident.into_any();
+                        },
+                    ),
+                    _ => (
+                        quote! { #p_ident: impl Into<#ty> },
+                        quote! { let #p_ident = #p_ident.into(); },
+                    ),
+                }
+            } else {
+                (
+                    quote! { #p_ident: impl ::silex::dom::view::PropInto<#ty> },
+                    quote! { let #p_ident = ::silex::dom::view::PropInto::prop_into(#p_ident); },
+                )
+            }
+        } else {
+            (quote! {}, quote! {})
+        };
+
+        quote! {
             impl #impl_generics #struct_name #ty_generics #where_clause {
-                pub fn new() -> Self {
+                pub fn new(#new_params) -> Self {
+                    #new_prelude
                     Self {
                         #(#initializers,)*
                         _pending_attrs: Vec::new(),
@@ -350,7 +451,14 @@ impl ComponentGenerator {
 
                 #(#builders)*
             }
+        }
+    }
 
+    fn gen_attribute_builder_impl(&self) -> TokenStream2 {
+        let struct_name = &self.struct_name;
+        let (impl_generics, ty_generics, where_clause) = self.fn_generics.split_for_impl();
+
+        quote! {
             impl #impl_generics ::silex::dom::attribute::AttributeBuilder for #struct_name #ty_generics #where_clause {
                 fn build_attribute<__SilexValue>(mut self, target: ::silex::dom::attribute::ApplyTarget, value: __SilexValue) -> Self
                 where __SilexValue: ::silex::dom::attribute::IntoStorable
@@ -378,7 +486,17 @@ impl ComponentGenerator {
             }
 
             impl #impl_generics ::silex::dom::view::ApplyAttributes for #struct_name #ty_generics #where_clause {}
+        }
+    }
 
+    fn gen_mount_impls(&self) -> TokenStream2 {
+        let struct_name = &self.struct_name;
+        let fn_body = &self.fn_body;
+        let mount_checks = &self.mount_checks;
+        let mount_ref_checks = &self.mount_ref_checks;
+        let (impl_generics, ty_generics, where_clause) = self.fn_generics.split_for_impl();
+
+        quote! {
             impl #impl_generics ::silex::dom::view::Mount for #struct_name #ty_generics #where_clause {
                 fn mount(self, parent: &::silex::reexports::web_sys::Node, attrs: Vec<::silex::dom::attribute::PendingAttribute>) {
                     #(#mount_checks)*
@@ -398,11 +516,11 @@ impl ComponentGenerator {
                     ::silex::dom::view::MountRef::mount_ref(&view_instance, parent, all_attrs);
                 }
             }
-
-            #constructor
         }
     }
 }
+
+// --- Entry Point & Helpers ---
 
 /// 生成组件的核心入口
 pub fn generate_component(input_fn: ItemFn, _attrs: ComponentAttrs) -> syn::Result<TokenStream2> {
@@ -412,6 +530,7 @@ pub fn generate_component(input_fn: ItemFn, _attrs: ComponentAttrs) -> syn::Resu
     Ok(generator.expand())
 }
 
+/// 解析属性上的标记，如 `#[prop(default = ...)]`
 fn parse_prop_attrs(attrs: &[Attribute]) -> syn::Result<PropAttrs> {
     let mut result = PropAttrs {
         default: false,
@@ -447,6 +566,7 @@ fn parse_prop_attrs(attrs: &[Attribute]) -> syn::Result<PropAttrs> {
     Ok(result)
 }
 
+/// 解析组件宏本身的属性
 pub fn parse_component_attrs(args: TokenStream2) -> syn::Result<ComponentAttrs> {
     let result = ComponentAttrs {};
     if args.is_empty() {
@@ -457,6 +577,7 @@ pub fn parse_component_attrs(args: TokenStream2) -> syn::Result<ComponentAttrs> 
     Ok(result)
 }
 
+/// 判断类型是否应该默认开启 `into` 转换
 fn is_auto_into_type(ident: &str) -> bool {
     matches!(
         ident,
@@ -472,6 +593,7 @@ fn is_auto_into_type(ident: &str) -> bool {
     )
 }
 
+/// 获取类型的基本名称，用于特殊处理某些类型
 fn get_base_type_name(ty: &Type) -> String {
     if let Type::Path(type_path) = ty
         && let Some(segment) = type_path.path.segments.last()
