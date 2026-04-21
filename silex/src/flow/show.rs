@@ -1,100 +1,58 @@
 use silex_core::traits::{IntoRx, RxGet};
-use silex_dom::prelude::{ApplyAttributes, AutoReactiveView, Mount, MountRef};
-use std::rc::Rc;
+use silex_dom::prelude::*;
+use silex_macros::component;
 use web_sys::Node;
 
 /// Show 组件：根据条件渲染不同的视图
 ///
-/// 使用 Builder 模式构建：
+/// 使用方式：
 /// ```rust
-/// use silex::prelude::*;
-///
-/// let (condition, set_condition) = Signal::pair(true);
-/// let view = "Content";
-/// let fallback_view = "Fallback";
-///
-/// Show::new(condition, view)
-///     .fallback(fallback_view);
+/// Show(condition).children(view).fallback(fallback_view)
 /// ```
+#[component]
+pub fn Show<C>(
+    when: C,
+    #[prop(into)] children: SharedView,
+    #[prop(default = SharedView::Empty, into)] fallback: SharedView,
+) -> impl Mount + MountRef
+where
+    C: RxGet<Value = bool> + Clone + 'static,
+{
+    ShowView {
+        when: when.clone(),
+        children: children.clone(),
+        fallback: fallback.clone(),
+    }
+}
+
 #[derive(Clone)]
-pub struct Show<Cond, V, FV> {
-    condition: Cond,
-    view: Rc<V>,
-    fallback: Rc<FV>,
+struct ShowView<C> {
+    when: C,
+    children: SharedView,
+    fallback: SharedView,
 }
 
-// 默认无 fallback 的构造函数
-impl<Cond, V> Show<Cond, V, ()>
-where
-    Cond: RxGet<Value = bool> + 'static,
-    V: MountRef + 'static,
-{
-    pub fn new(condition: Cond, view: V) -> Self {
-        Self {
-            condition,
-            view: Rc::new(view),
-            fallback: Rc::new(()),
-        }
-    }
-}
+impl<C> ApplyAttributes for ShowView<C> {}
 
-// Builder 方法
-impl<Cond, V, FV> Show<Cond, V, FV>
+impl<C> Mount for ShowView<C>
 where
-    Cond: RxGet<Value = bool> + 'static,
-    V: MountRef + 'static,
-    FV: MountRef + 'static,
-{
-    /// 设置当条件为 false 时的 fallback 视图 (Else 分支)
-    pub fn fallback<NFV>(self, fallback: NFV) -> Show<Cond, V, NFV>
-    where
-        NFV: MountRef + 'static,
-    {
-        Show {
-            condition: self.condition,
-            view: self.view,
-            fallback: Rc::new(fallback),
-        }
-    }
-}
-
-impl<Cond, V, FV> ApplyAttributes for Show<Cond, V, FV>
-where
-    Cond: RxGet<Value = bool> + 'static,
-    V: MountRef + 'static,
-    FV: MountRef + 'static,
-{
-}
-
-impl<Cond, V, FV> Mount for Show<Cond, V, FV>
-where
-    Cond: RxGet<Value = bool> + Clone + 'static,
-    V: MountRef + 'static,
-    FV: MountRef + 'static,
+    C: RxGet<Value = bool> + Clone + 'static,
 {
     fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        mount_show_internal(self.condition, self.view, self.fallback, parent, attrs);
+        mount_show_internal(self.when, self.children, self.fallback, parent, attrs);
     }
 }
 
-impl<Cond, V, FV> AutoReactiveView for Show<Cond, V, FV>
-where
-    Cond: RxGet<Value = bool> + Clone + 'static,
-    V: MountRef + 'static,
-    FV: MountRef + 'static,
-{
-}
+impl<C> AutoReactiveView for ShowView<C> where C: RxGet<Value = bool> + Clone + 'static {}
 
-impl<Cond, V, FV> MountRef for Show<Cond, V, FV>
+impl<C> MountRef for ShowView<C>
 where
-    Cond: RxGet<Value = bool> + Clone + 'static,
-    V: MountRef + 'static,
-    FV: MountRef + 'static,
+    C: RxGet<Value = bool> + Clone + 'static,
 {
     fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         mount_show_internal(
-            self.condition.clone(),
-            self.view.clone(),
+            self.when.clone(),
+            self.children.clone(),
             self.fallback.clone(),
             parent,
             attrs,
@@ -102,16 +60,14 @@ where
     }
 }
 
-fn mount_show_internal<Cond, V, FV>(
-    condition: Cond,
-    view: Rc<V>,
-    fallback: Rc<FV>,
+fn mount_show_internal<C>(
+    condition: C,
+    view: SharedView,
+    fallback: SharedView,
     parent: &Node,
     attrs: Vec<silex_dom::attribute::PendingAttribute>,
 ) where
-    Cond: RxGet<Value = bool> + 'static,
-    V: MountRef + 'static,
-    FV: MountRef + 'static,
+    C: RxGet<Value = bool> + 'static,
 {
     use silex_dom::view::any::RenderThunk;
     silex_dom::view::mount_dynamic_view_universal(
@@ -132,10 +88,10 @@ fn mount_show_internal<Cond, V, FV>(
 
 /// Signal 扩展特质，提供 .when() 语法糖
 pub trait SignalShowExt: IntoRx<Value = bool> {
-    fn when<V>(self, view: V) -> Show<Self::RxType, V, ()>
+    fn when<V>(self, view: V) -> ShowComponent<Self::RxType>
     where
-        Self::RxType: RxGet<Value = bool> + 'static,
-        V: MountRef + 'static;
+        Self::RxType: RxGet<Value = bool> + Clone + 'static,
+        V: MountRefExt + 'static;
 }
 
 // 为所有 IntoRx<Value = bool> 的类型实现扩展
@@ -143,11 +99,11 @@ impl<S> SignalShowExt for S
 where
     S: IntoRx<Value = bool>,
 {
-    fn when<V>(self, view: V) -> Show<Self::RxType, V, ()>
+    fn when<V>(self, view: V) -> ShowComponent<Self::RxType>
     where
-        Self::RxType: RxGet<Value = bool> + 'static,
-        V: MountRef + 'static,
+        Self::RxType: RxGet<Value = bool> + Clone + 'static,
+        V: MountRefExt + 'static,
     {
-        Show::new(self.into_rx(), view)
+        Show(self.into_rx()).children(view.into_shared())
     }
 }

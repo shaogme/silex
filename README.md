@@ -66,10 +66,8 @@ fn Counter() -> impl Mount + MountRef {
         ],
 
         // 控制流组件
-        Show::new(
-            move || count.get() > 5,
-            || p("Count is greater than 5!").style("color: red;")
-        ),
+        Show(move || count.get() > 5)
+            .children(p("Count is greater than 5!").style("color: red;")),
         
         p(move || format!("Double: {}", double_count.get()))
     ]

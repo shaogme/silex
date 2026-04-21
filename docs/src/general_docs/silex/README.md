@@ -49,7 +49,7 @@ fn App() -> impl Mount + MountRef {
                     Link("/about", "关于"),
                 )),
                 main((
-                    Dynamic::new(move || {
+                    Dynamic(move || {
                         match path.get().as_str() {
                             "/" => Home().into_any(),
                             "/about" => About().into_any(),
@@ -136,12 +136,13 @@ Silex 提供了一组组件来处理常见的逻辑控制，这比手动编写 `
 ```rust
 let (is_logged_in, set_log) = Signal::pair(false);
 
-Show::new(is_logged_in, UserDashboard())
+Show(is_logged_in)
+    .children(UserDashboard())
     .fallback(LoginButton())
 ```
 或者使用语法糖：
 ```rust
-is_logged_in.when(|| UserDashboard())
+is_logged_in.when(UserDashboard())
 ```
 
 ### Switch (多路分支)
@@ -149,7 +150,7 @@ is_logged_in.when(|| UserDashboard())
 ```rust
 let (tab, set_tab) = Signal::pair(0);
 
-Switch::new(tab, || div("Fallback"))
+Switch(tab).fallback(|| div("Fallback"))
     .case(0, || TabA())
     .case(1, || TabB())
 ```
@@ -192,7 +193,7 @@ For::new(
 ```rust
 let (logs, set_logs) = Signal::pair(vec!["Log 1", "Log 2"]);
 
-Index::new(logs, |item, index| {
+Index(logs).children(|item, index| {
     // item 是 Signal<T>，内容变化时直接更新文本节点
     div((index, ": ", item))
 })

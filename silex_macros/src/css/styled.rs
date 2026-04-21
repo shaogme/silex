@@ -22,11 +22,31 @@ pub struct StyledComponent {
     pub css_block: TokenStream,
     pub variants: Vec<VariantGroup>,
     pub is_unsafe: bool,
+    pub standalone: Option<usize>,
 }
 
 impl Parse for StyledComponent {
     fn parse(input: ParseStream) -> Result<Self> {
-        let attrs = input.call(Attribute::parse_outer)?;
+        let mut attrs = input.call(Attribute::parse_outer)?;
+        let mut standalone = None;
+        attrs.retain(|attr| {
+            if attr.path().is_ident("standalone") {
+                if let syn::Meta::NameValue(nv) = &attr.meta {
+                    if let syn::Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Int(lit),
+                        ..
+                    }) = &nv.value
+                    {
+                        if let Ok(val) = lit.base10_parse::<usize>() {
+                            standalone = Some(val);
+                            return false;
+                        }
+                    }
+                }
+            }
+            true
+        });
+
         let vis: Visibility = input.parse()?;
         let is_unsafe = input.peek(Token![unsafe]);
         if is_unsafe {
@@ -118,6 +138,7 @@ impl Parse for StyledComponent {
             css_block,
             variants,
             is_unsafe,
+            standalone,
         })
     }
 }
@@ -269,7 +290,11 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         .filter(|a| !a.path().is_ident("theme"))
         .collect();
 
-    let component_attr = quote! { #[::silex::macros::component] };
+    let component_attr = if let Some(n) = parsed.standalone {
+        quote! { #[::silex::macros::component(standalone = #n)] }
+    } else {
+        quote! { #[::silex::macros::component] }
+    };
     let vis = &parsed.vis;
     let (impl_generics, _, _) = parsed.generics.split_for_impl();
     let static_css = &compile_result.static_css;

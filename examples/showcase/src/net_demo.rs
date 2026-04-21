@@ -145,7 +145,7 @@ pub fn WebSocketDemo() -> impl Mount + MountRef {
                 .style(rx!(@fn if is_connected.get() { sty().color(hex("green")) } else { sty().color(hex("red")) })),
         ].style("margin-bottom: 15px;"),
 
-        Show::new(is_connected,
+        Show(is_connected).children(
             div![
                 div![
                     input()
