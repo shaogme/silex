@@ -17,6 +17,7 @@ struct PropAttrs {
     default_value: Option<TokenStream2>,
     into_trait: bool,
     clone: bool,
+    render: bool,
 }
 
 /// 记录独立参数的信息，用于生成构造函数
@@ -267,7 +268,65 @@ impl ComponentGenerator {
         is_standalone: bool,
         is_required: bool,
     ) -> TokenStream2 {
-        if attrs.into_trait {
+        if is_bare_fn_type(ty) {
+            let direct_val = if is_standalone || !is_required {
+                quote! { val }
+            } else {
+                quote! { Some(val) }
+            };
+            return quote! {
+                pub fn #name(mut self, val: #ty) -> Self {
+                    self.#name = #direct_val;
+                    self
+                }
+            };
+        }
+
+        if attrs.render {
+            match type_ident {
+                "SharedView" => {
+                    let direct_val = if is_standalone || !is_required {
+                        quote! { val.into_shared() }
+                    } else {
+                        quote! { Some(val.into_shared()) }
+                    };
+                    quote! {
+                        pub fn #name(mut self, val: impl ::silex::dom::view::MountRefExt) -> Self {
+                            use ::silex::dom::view::MountRefExt;
+                            self.#name = #direct_val;
+                            self
+                        }
+                    }
+                }
+                "AnyView" => {
+                    let direct_val = if is_standalone || !is_required {
+                        quote! { val.into_any() }
+                    } else {
+                        quote! { Some(val.into_any()) }
+                    };
+                    quote! {
+                        pub fn #name(mut self, val: impl ::silex::dom::view::MountExt) -> Self {
+                            use ::silex::dom::view::MountExt;
+                            self.#name = #direct_val;
+                            self
+                        }
+                    }
+                }
+                _ => {
+                    let direct_val = if is_standalone || !is_required {
+                        quote! { val }
+                    } else {
+                        quote! { Some(val) }
+                    };
+                    quote! {
+                        pub fn #name(mut self, val: #ty) -> Self {
+                            self.#name = #direct_val;
+                            self
+                        }
+                    }
+                }
+            }
+        } else if attrs.into_trait {
             let target_val = if is_standalone || !is_required {
                 quote! { val.into_shared() }
             } else {
@@ -336,7 +395,9 @@ impl ComponentGenerator {
             let ty = &info.ty;
             let type_ident = &info.type_ident;
 
-            if info.into_trait {
+            if is_bare_fn_type(ty) {
+                params.push(quote! { #p_name: #ty });
+            } else if info.into_trait {
                 match type_ident.as_str() {
                     "SharedView" => {
                         params.push(quote! { #p_name: impl ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt });
@@ -410,7 +471,10 @@ impl ComponentGenerator {
             let ty = &info.ty;
             let type_ident = &info.type_ident;
 
-            if info.into_trait {
+            if is_bare_fn_type(ty) {
+                new_params.push(quote! { #p_name: #ty });
+                new_prelude.push(quote! { let #p_name = #p_name; });
+            } else if info.into_trait {
                 match type_ident.as_str() {
                     "SharedView" => {
                         new_params.push(quote! { #p_name: impl ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt });
@@ -525,8 +589,8 @@ impl ComponentGenerator {
 
 /// 生成组件的核心入口
 pub fn generate_component(input_fn: ItemFn, attrs: ComponentAttrs) -> syn::Result<TokenStream2> {
-    let mut generator = ComponentGenerator::new(input_fn.clone())
-        .with_standalone_count(attrs.standalone);
+    let mut generator =
+        ComponentGenerator::new(input_fn.clone()).with_standalone_count(attrs.standalone);
     generator.prepare_phantom_data();
     generator.process_args(&input_fn.sig.inputs)?;
     Ok(generator.expand())
@@ -539,6 +603,7 @@ fn parse_prop_attrs(attrs: &[Attribute]) -> syn::Result<PropAttrs> {
         default_value: None,
         into_trait: false,
         clone: false,
+        render: false,
     };
 
     for attr in attrs {
@@ -558,8 +623,11 @@ fn parse_prop_attrs(attrs: &[Attribute]) -> syn::Result<PropAttrs> {
                 } else if meta.path.is_ident("clone") {
                     result.clone = true;
                     Ok(())
+                } else if meta.path.is_ident("render") {
+                    result.render = true;
+                    Ok(())
                 } else {
-                    Err(meta.error("expected `default`, `into` or `clone`"))
+                    Err(meta.error("expected `default`, `into`, `clone` or `render`"))
                 }
             })?;
         }
@@ -614,4 +682,8 @@ fn get_base_type_name(ty: &Type) -> String {
         return segment.ident.to_string();
     }
     "".to_string()
+}
+
+fn is_bare_fn_type(ty: &Type) -> bool {
+    matches!(ty, Type::BareFn(_))
 }

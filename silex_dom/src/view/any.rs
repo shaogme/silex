@@ -222,21 +222,45 @@ impl AnyView {
     }
 }
 
+fn apply_list_attributes<V: crate::view::ApplyAttributes>(
+    list: &mut [V],
+    attrs: Vec<PendingAttribute>,
+) {
+    for child in list {
+        child.apply_attributes(attrs.clone());
+    }
+}
+
+fn mount_list_owned<V: Mount>(list: Vec<V>, parent: &Node, attrs: Vec<PendingAttribute>) {
+    for (i, child) in list.into_iter().enumerate() {
+        child.mount(parent, if i == 0 { attrs.clone() } else { Vec::new() });
+    }
+}
+
+fn mount_list_ref<V: MountRef>(list: &[V], parent: &Node, attrs: Vec<PendingAttribute>) {
+    for (i, child) in list.iter().enumerate() {
+        child.mount_ref(parent, if i == 0 { attrs.clone() } else { Vec::new() });
+    }
+}
+
+fn merge_attrs(
+    mut inner_attrs: Vec<PendingAttribute>,
+    attrs: Vec<PendingAttribute>,
+) -> Vec<PendingAttribute> {
+    inner_attrs.extend(attrs);
+    crate::attribute::consolidate_attributes(inner_attrs)
+}
+
 impl crate::view::ApplyAttributes for SharedView {
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
         match self {
             SharedView::Empty => {}
             SharedView::Text(_) => {}
             SharedView::Element(el) => el.apply_attributes(attrs),
-            SharedView::List(list) => {
-                for child in list {
-                    child.apply_attributes(attrs.clone());
-                }
-            }
+            SharedView::List(list) => apply_list_attributes(list, attrs),
             SharedView::Boxed(_, inner_attrs) => {
-                let mut temp = std::mem::take(inner_attrs);
-                temp.extend(attrs);
-                *inner_attrs = crate::attribute::consolidate_attributes(temp);
+                let temp = std::mem::take(inner_attrs);
+                *inner_attrs = merge_attrs(temp, attrs);
             }
         }
     }
@@ -248,17 +272,9 @@ impl Mount for SharedView {
             SharedView::Empty => {}
             SharedView::Text(s) => s.mount(parent, attrs),
             SharedView::Element(el) => el.mount(parent, attrs),
-            SharedView::List(list) => {
-                for (i, child) in list.into_iter().enumerate() {
-                    child.mount(parent, if i == 0 { attrs.clone() } else { Vec::new() });
-                }
-            }
-            SharedView::Boxed(b, mut inner_attrs) => {
-                inner_attrs.extend(attrs);
-                b.mount(
-                    parent,
-                    crate::attribute::consolidate_attributes(inner_attrs),
-                );
+            SharedView::List(list) => mount_list_owned(list, parent, attrs),
+            SharedView::Boxed(b, inner_attrs) => {
+                b.mount(parent, merge_attrs(inner_attrs, attrs));
             }
         }
     }
@@ -270,15 +286,9 @@ impl MountRef for SharedView {
             SharedView::Empty => {}
             SharedView::Text(s) => s.mount_ref(parent, attrs),
             SharedView::Element(el) => el.mount_ref(parent, attrs),
-            SharedView::List(list) => {
-                for (i, child) in list.iter().enumerate() {
-                    child.mount_ref(parent, if i == 0 { attrs.clone() } else { Vec::new() });
-                }
-            }
+            SharedView::List(list) => mount_list_ref(list, parent, attrs),
             SharedView::Boxed(b, inner_attrs) => {
-                let mut temp = inner_attrs.clone();
-                temp.extend(attrs);
-                b.mount_ref(parent, crate::attribute::consolidate_attributes(temp));
+                b.mount_ref(parent, merge_attrs(inner_attrs.clone(), attrs));
             }
         }
     }
@@ -290,15 +300,10 @@ impl crate::view::ApplyAttributes for AnyView {
             AnyView::Empty => {}
             AnyView::Text(_) => {}
             AnyView::Element(el) => el.apply_attributes(attrs),
-            AnyView::List(list) => {
-                for child in list {
-                    child.apply_attributes(attrs.clone());
-                }
-            }
+            AnyView::List(list) => apply_list_attributes(list, attrs),
             AnyView::Boxed(b, inner_attrs) => {
-                let mut temp = std::mem::take(inner_attrs);
-                temp.extend(attrs);
-                *inner_attrs = crate::attribute::consolidate_attributes(temp);
+                let temp = std::mem::take(inner_attrs);
+                *inner_attrs = merge_attrs(temp, attrs);
                 b.apply_attributes(inner_attrs.clone());
             }
             AnyView::FromShared(s) => s.apply_attributes(attrs),
@@ -312,15 +317,9 @@ impl MountRef for AnyView {
             AnyView::Empty => {}
             AnyView::Text(s) => s.mount_ref(parent, attrs),
             AnyView::Element(el) => el.mount_ref(parent, attrs),
-            AnyView::List(list) => {
-                for (i, child) in list.iter().enumerate() {
-                    child.mount_ref(parent, if i == 0 { attrs.clone() } else { Vec::new() });
-                }
-            }
+            AnyView::List(list) => mount_list_ref(list, parent, attrs),
             AnyView::Boxed(b, inner_attrs) => {
-                let mut temp = inner_attrs.clone();
-                temp.extend(attrs);
-                b.mount_ref(parent, crate::attribute::consolidate_attributes(temp));
+                b.mount_ref(parent, merge_attrs(inner_attrs.clone(), attrs));
             }
             AnyView::FromShared(s) => s.mount_ref(parent, attrs),
         }
@@ -333,17 +332,9 @@ impl Mount for AnyView {
             AnyView::Empty => {}
             AnyView::Text(s) => s.mount(parent, attrs),
             AnyView::Element(el) => el.mount(parent, attrs),
-            AnyView::List(list) => {
-                for (i, child) in list.into_iter().enumerate() {
-                    child.mount(parent, if i == 0 { attrs.clone() } else { Vec::new() });
-                }
-            }
-            AnyView::Boxed(b, mut inner_attrs) => {
-                inner_attrs.extend(attrs);
-                b.mount(
-                    parent,
-                    crate::attribute::consolidate_attributes(inner_attrs),
-                );
+            AnyView::List(list) => mount_list_owned(list, parent, attrs),
+            AnyView::Boxed(b, inner_attrs) => {
+                b.mount(parent, merge_attrs(inner_attrs, attrs));
             }
             AnyView::FromShared(s) => s.mount(parent, attrs),
         }

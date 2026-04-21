@@ -7,8 +7,8 @@ pub fn ListDemo() -> impl Mount + MountRef {
 
     div![
         h3("List Rendering with Signal Ergonomics"),
-        p("Demonstrates passing a Signal directly to For::new without closure wrapper."),
-        ul(For::new(list, |item| *item, li)),
+        p("Demonstrates passing a Signal directly to For without closure wrapper."),
+        ul(For(list, |item| *item).children(|item, _idx| li(item))),
         button("Add Item").on(event::click, set_list.updater(|l| l.push("New Item"))),
     ]
 }
@@ -80,7 +80,8 @@ pub fn SwitchDemo() -> impl Mount + MountRef {
             button("Tab 3").on(event::click, set_tab.setter(2)),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 10px;"),
-        Switch(tab).fallback(div("Fallback (Should not happen)"))
+        Switch(tab)
+            .fallback(div("Fallback (Should not happen)"))
             .case(
                 0,
                 div("Content for Tab 1")
@@ -109,13 +110,7 @@ pub fn IndexDemo() -> impl Mount + MountRef {
     div![
         h3("Index For Loop Demo"),
         p("Optimized for list updates by index."),
-        Index(items).children(|item, idx| {
-            div![
-                strong(format!("{}: ", idx)),
-                // item is a ReadSignal<String> here
-                item
-            ]
-        }),
+        Index(items).children(|item, idx| { div![strong(format!("{}: ", idx.get())), item] }),
         button("Append Item")
             .on(event::click, move |_| {
                 set_items.update(|list| list.push("New Item"));
@@ -131,39 +126,36 @@ pub fn PortalDemo() -> impl Mount + MountRef {
     div![
         h3("Portal Demo"),
         button("Toggle Modal").on(event::click, set_show_modal.updater(|v| *v = !*v)),
-        Show(show_modal)
-            .children(
-                Portal(
-                    div![
-                        div![
-                            h4("I am a Modal!"),
-                            p("I am rendered via Portal directly into the body, but I share context!"),
-                            button("Close").on(event::click, set_show_modal.setter(false))
-                        ]
-                        .style(
-                            sty()
-                                .background(AppTheme::SURFACE)
-                                .padding(px(20))
-                                .border_radius(px(8))
-                                .box_shadow("0 4px 12px rgba(0,0,0,0.2)")
-                                .min_width(px(300))
-                        )
-                    ]
-                    .style(
-                        sty()
-                            .position(PositionKeyword::Fixed)
-                            .top(px(0))
-                            .left(px(0))
-                            .width(vw(100))
-                            .height(vh(100))
-                            .background(rgba(0, 0, 0, 0.5))
-                            .display(DisplayKeyword::Flex)
-                            .justify_content(JustifyContentKeyword::Center)
-                            .align_items(AlignItemsKeyword::Center)
-                            .z_index(9999)
-                    )
+        Show(show_modal).children(Portal(
+            div![
+                div![
+                    h4("I am a Modal!"),
+                    p("I am rendered via Portal directly into the body, but I share context!"),
+                    button("Close").on(event::click, set_show_modal.setter(false))
+                ]
+                .style(
+                    sty()
+                        .background(AppTheme::SURFACE)
+                        .padding(px(20))
+                        .border_radius(px(8))
+                        .box_shadow("0 4px 12px rgba(0,0,0,0.2)")
+                        .min_width(px(300))
                 )
+            ]
+            .style(
+                sty()
+                    .position(PositionKeyword::Fixed)
+                    .top(px(0))
+                    .left(px(0))
+                    .width(vw(100))
+                    .height(vh(100))
+                    .background(rgba(0, 0, 0, 0.5))
+                    .display(DisplayKeyword::Flex)
+                    .justify_content(JustifyContentKeyword::Center)
+                    .align_items(AlignItemsKeyword::Center)
+                    .z_index(9999)
             )
+        ))
     ]
 }
 

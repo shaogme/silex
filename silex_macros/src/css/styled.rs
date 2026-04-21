@@ -30,19 +30,16 @@ impl Parse for StyledComponent {
         let mut attrs = input.call(Attribute::parse_outer)?;
         let mut standalone = None;
         attrs.retain(|attr| {
-            if attr.path().is_ident("standalone") {
-                if let syn::Meta::NameValue(nv) = &attr.meta {
-                    if let syn::Expr::Lit(syn::ExprLit {
-                        lit: syn::Lit::Int(lit),
-                        ..
-                    }) = &nv.value
-                    {
-                        if let Ok(val) = lit.base10_parse::<usize>() {
-                            standalone = Some(val);
-                            return false;
-                        }
-                    }
-                }
+            if attr.path().is_ident("standalone")
+                && let syn::Meta::NameValue(nv) = &attr.meta
+                && let syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Int(lit),
+                    ..
+                }) = &nv.value
+                && let Ok(val) = lit.base10_parse::<usize>()
+            {
+                standalone = Some(val);
+                return false;
             }
             true
         });

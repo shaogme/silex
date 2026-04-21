@@ -12,29 +12,29 @@ use web_sys::Node;
 #[component]
 pub fn Show<C>(
     when: C,
-    #[prop(into)] children: SharedView,
-    #[prop(default = SharedView::Empty, into)] fallback: SharedView,
+    #[prop(render)] children: SharedView,
+    #[prop(default = SharedView::Empty, render)] fallback: SharedView,
 ) -> impl Mount + MountRef
 where
     C: RxGet<Value = bool> + Clone + 'static,
 {
     ShowView {
-        when: when.clone(),
-        children: children.clone(),
-        fallback: fallback.clone(),
+        when,
+        children,
+        fallback,
     }
 }
 
 #[derive(Clone)]
-struct ShowView<C> {
-    when: C,
-    children: SharedView,
-    fallback: SharedView,
+struct ShowView<'a, C> {
+    when: Prop<'a, C>,
+    children: Prop<'a, SharedView>,
+    fallback: Prop<'a, SharedView>,
 }
 
-impl<C> ApplyAttributes for ShowView<C> {}
+impl<'a, C> ApplyAttributes for ShowView<'a, C> {}
 
-impl<C> Mount for ShowView<C>
+impl<'a, C> Mount for ShowView<'a, C>
 where
     C: RxGet<Value = bool> + Clone + 'static,
 {
@@ -43,44 +43,44 @@ where
     }
 }
 
-impl<C> AutoReactiveView for ShowView<C> where C: RxGet<Value = bool> + Clone + 'static {}
-
-impl<C> MountRef for ShowView<C>
+impl<'a, C> MountRef for ShowView<'a, C>
 where
     C: RxGet<Value = bool> + Clone + 'static,
 {
     fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         mount_show_internal(
-            self.when.clone(),
-            self.children.clone(),
-            self.fallback.clone(),
+            Prop::new_owned(self.when.clone()),
+            Prop::new_owned(self.children.clone()),
+            Prop::new_owned(self.fallback.clone()),
             parent,
             attrs,
         );
     }
 }
 
-fn mount_show_internal<C>(
-    condition: C,
-    view: SharedView,
-    fallback: SharedView,
+fn mount_show_internal<'a, C>(
+    condition: Prop<'a, C>,
+    view: Prop<'a, SharedView>,
+    fallback: Prop<'a, SharedView>,
     parent: &Node,
     attrs: Vec<silex_dom::attribute::PendingAttribute>,
 ) where
-    C: RxGet<Value = bool> + 'static,
+    C: RxGet<Value = bool> + Clone + 'static,
 {
-    use silex_dom::view::any::RenderThunk;
-    silex_dom::view::mount_dynamic_view_universal(
+    let condition = condition.into_owned();
+    let view = view.into_owned();
+    let fallback = fallback.into_owned();
+    silex_dom::view::mount_shared_branch_cached(
         parent,
         attrs,
-        RenderThunk::new(move |args| {
-            let (p, a) = args;
-            if condition.get() {
-                view.mount_ref(&p, a);
+        move || condition.get(),
+        move |active| {
+            if active {
+                view.clone()
             } else {
-                fallback.mount_ref(&p, a);
+                fallback.clone()
             }
-        }),
+        },
     );
 }
 
@@ -104,6 +104,6 @@ where
         Self::RxType: RxGet<Value = bool> + Clone + 'static,
         V: MountRefExt + 'static,
     {
-        Show(self.into_rx()).children(view.into_shared())
+        Show(self.into_rx()).children(view)
     }
 }

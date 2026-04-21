@@ -215,11 +215,9 @@ pub fn EventStreamDemo() -> impl Mount + MountRef {
 
         div![
             h4("Stream Log (Latest 50 events):"),
-            ul(For::new(
-                events,
-                |e| e.clone(),
-                |e| li(e).style(sty().font_family("monospace").font_size(em_unit(0.8)).opacity(0.8).margin_bottom(px(4)).word_break(WordBreakKeyword::BreakAll).border_bottom(border(px(1), BorderStyleKeyword::Solid, AppTheme::SURFACE_ALT)).padding_bottom(px(2)))
-            ))
+            ul(For(events, |e| e.clone()).children(|e, _idx| {
+                li(e).style(sty().font_family("monospace").font_size(em_unit(0.8)).opacity(0.8).margin_bottom(px(4)).word_break(WordBreakKeyword::BreakAll).border_bottom(border(px(1), BorderStyleKeyword::Solid, AppTheme::SURFACE_ALT)).padding_bottom(px(2)))
+            }))
             .style(sty().max_height(px(300)).overflow_y(OverflowYKeyword::Auto).background(AppTheme::SURFACE).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).padding(px(15)).border_radius(px(8)))
         ]
     ]

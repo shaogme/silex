@@ -214,12 +214,7 @@ pub fn EventDemo() -> impl Mount + MountRef {
         div![].style("height: 1px; background: #ccc; margin: 15px 0;"),
         p("2. Non-Copy types: Clone manually inside the closure."),
         button("Consume Payload").on(event::click, on_click_inner),
-        ul(For::new(
-            logs,
-            |l| l.clone(),
-            |l| li(l).style("font-size: 0.8em;")
-        ))
-        .style(
+        ul(For(logs, |l| l.clone()).children(|l, _idx| li(l).style("font-size: 0.8em;"))).style(
             sty()
                 .margin_top(px(10))
                 .background(AppTheme::BORDER)

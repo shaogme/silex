@@ -16,17 +16,14 @@ use web_sys::Node;
 ///
 /// 使用方式：
 /// ```rust
-/// Index(list).children(|item, index| li(item))
+/// Index(list).children(|item, index| li(rx! { index.get() }))
 /// ```
 #[component]
-pub fn Index<IF, I, IS, MF, V>(
-    each: IF,
-    children: MF,
-) -> impl Mount + MountRef
+pub fn Index<IF, I, IS, MF, V>(each: IF, #[prop(render)] children: MF) -> impl Mount + MountRef
 where
     IF: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = I> + 'static,
-    MF: Fn(ReadSignal<I>, usize) -> V + Clone + 'static,
+    MF: Fn(ReadSignal<I>, ReadSignal<usize>) -> V + Clone + 'static,
     V: Mount + 'static,
     I: Clone + 'static,
 {
@@ -59,7 +56,8 @@ where
 
 // Helper struct for row state
 struct IndexRow<Item> {
-    setter: WriteSignal<Item>,
+    item_setter: WriteSignal<Item>,
+    index_setter: WriteSignal<usize>,
     scope_id: NodeId,
     nodes: Vec<Node>,
 }
@@ -70,7 +68,7 @@ impl<IF, MF, I, IS, V> Mount for IndexView<IF, MF, I, IS, V>
 where
     IF: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = I> + 'static,
-    MF: Fn(ReadSignal<I>, usize) -> V + Clone + 'static,
+    MF: Fn(ReadSignal<I>, ReadSignal<usize>) -> V + Clone + 'static,
     V: Mount + 'static,
     I: Clone + 'static,
 {
@@ -83,7 +81,7 @@ impl<IF, MF, I, IS, V> AutoReactiveView for IndexView<IF, MF, I, IS, V>
 where
     IF: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = I> + 'static,
-    MF: Fn(ReadSignal<I>, usize) -> V + Clone + 'static,
+    MF: Fn(ReadSignal<I>, ReadSignal<usize>) -> V + Clone + 'static,
     V: Mount + 'static,
     I: Clone + 'static,
 {
@@ -93,7 +91,7 @@ impl<IF, MF, I, IS, V> MountRef for IndexView<IF, MF, I, IS, V>
 where
     IF: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = I> + 'static,
-    MF: Fn(ReadSignal<I>, usize) -> V + Clone + 'static,
+    MF: Fn(ReadSignal<I>, ReadSignal<usize>) -> V + Clone + 'static,
     V: Mount + 'static,
     I: Clone + 'static,
 {
@@ -110,7 +108,7 @@ fn mount_index_logic<IF, MF, I, IS, V>(
 ) where
     IF: RxRead<Value = IS> + 'static,
     IS: ForLoopSource<Item = I> + 'static,
-    MF: Fn(ReadSignal<I>, usize) -> V + 'static,
+    MF: Fn(ReadSignal<I>, ReadSignal<usize>) -> V + 'static,
     V: Mount,
     I: Clone + 'static,
 {
@@ -142,22 +140,24 @@ fn mount_index_logic<IF, MF, I, IS, V>(
                 let common_len = std::cmp::min(new_len, old_len);
 
                 for (i, item) in items_slice.iter().take(common_len).enumerate() {
-                    rows_lock[i].setter.set(item.clone());
+                    rows_lock[i].item_setter.set(item.clone());
+                    rows_lock[i].index_setter.set(i);
                 }
 
                 if new_len > old_len {
                     for (i, item) in items_slice[common_len..].iter().enumerate() {
-                        let (set, scope_id, nodes, fragment_node) =
+                        let (item_setter, index_setter, scope_id, nodes, fragment_node) =
                             silex_core::reactivity::untrack(|| {
                                 let real_index = common_len + i;
-                                let (get, set) = Signal::pair(item.clone());
+                                let (get, item_setter) = Signal::pair(item.clone());
+                                let (index_get, index_setter) = Signal::pair(real_index);
                                 let fragment = document.create_document_fragment();
                                 let fragment_node: Node = fragment.clone().into();
                                 let fragment_node_clone = fragment_node.clone();
                                 let map_fn = map_fn.clone();
 
                                 let scope_id = create_scope(move || {
-                                    (map_fn)(get, real_index)
+                                    (map_fn)(get, index_get)
                                         .mount(&fragment_node_clone, Vec::new());
                                 });
 
@@ -169,7 +169,7 @@ fn mount_index_logic<IF, MF, I, IS, V>(
                                         nodes.push(n);
                                     }
                                 }
-                                (set, scope_id, nodes, fragment_node)
+                                (item_setter, index_setter, scope_id, nodes, fragment_node)
                             });
 
                         if let Some(p) = end_node.parent_node() {
@@ -177,7 +177,8 @@ fn mount_index_logic<IF, MF, I, IS, V>(
                         }
 
                         rows_lock.push(IndexRow {
-                            setter: set,
+                            item_setter,
+                            index_setter,
                             scope_id,
                             nodes,
                         });

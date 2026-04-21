@@ -144,16 +144,19 @@ Show(is_logged_in)
 ```rust
 is_logged_in.when(UserDashboard())
 ```
+`Show` 的 `children` 和 `fallback` 都是渲染型参数，传入普通 `View` 即可。
 
 ### Switch (多路分支)
 类似于 `match` 语句，根据值选择渲染的内容。
 ```rust
 let (tab, set_tab) = Signal::pair(0);
 
-Switch(tab).fallback(|| div("Fallback"))
-    .case(0, || TabA())
-    .case(1, || TabB())
+Switch(tab)
+    .fallback(div("Fallback"))
+    .case(0, TabA())
+    .case(1, TabB())
 ```
+`Switch` 会在构建阶段检查重复 `case` 值，并在分支未变化时避免重复重建。
 
 ### Portal (传送门)
 
@@ -180,12 +183,14 @@ let (users, set_users) = Signal::pair(vec![
     User { id: 2, name: "Bob" },
 ]);
 
-For::new(
+For(
     users,           // 数据源 (Signal)
     |u| u.id,        // Key 提取函数 (必须唯一且稳定)
-    |u| div(u.name)  // 渲染函数
 )
+.children(|u, idx| div((idx.get(), ": ", u.name)))
+.error(|err| div(format!("For 出错: {}", err)))
 ```
+如果不传 `.error(...)`，默认会调用 `handle_error`。
 
 ### Index (索引列表渲染)
 当列表项没有唯一 ID，或者列表项是基础类型（如 `Vec<String>`），或者列表长度固定仅内容变化时，使用 `Index` 比 `For` 更高效。它**复用** DOM 节点，仅更新 Signal。

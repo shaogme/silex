@@ -99,12 +99,13 @@ impl<T: RxCloneData, E: RxError> Resource<T, E> {
             let idx = ctx.index.get();
             let resources = ctx.resources.borrow();
             if let Some(any_res) = resources.get(idx).cloned()
-                && let Some(res) = any_res.downcast_ref::<Self>() {
-                    let res_val = *res;
-                    drop(resources);
-                    ctx.index.set(idx + 1);
-                    return res_val;
-                }
+                && let Some(res) = any_res.downcast_ref::<Self>()
+            {
+                let res_val = *res;
+                drop(resources);
+                ctx.index.set(idx + 1);
+                return res_val;
+            }
             drop(resources);
         }
 

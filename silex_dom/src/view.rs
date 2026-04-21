@@ -7,11 +7,13 @@ pub use reactive::*;
 use crate::attribute::PendingAttribute;
 use silex_core::error::handle_error;
 use silex_core::logic::Map;
-use silex_core::reactivity::Effect;
+use silex_core::reactivity::{Effect, NodeId, create_scope, dispose};
 use silex_core::traits::{IntoRx, IntoSignal, RxValue};
 use silex_core::{Rx, RxValueKind, SilexError, SilexResult};
+use std::cell::RefCell;
 use std::ops::Deref;
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::rc::Rc;
 use web_sys::Node;
 
 /// 递归视图链辅助结构 - 空节点
@@ -80,6 +82,15 @@ impl<'a, T: Clone> Prop<'a, T> {
     pub fn clone(&self) -> T {
         match self {
             Self::Owned(v) => v.clone(),
+            Self::Borrowed(v) => (*v).clone(),
+        }
+    }
+
+    /// Consume the wrapper and return an owned value.
+    /// Borrowed values are cloned on demand.
+    pub fn into_owned(self) -> T {
+        match self {
+            Self::Owned(v) => v,
             Self::Borrowed(v) => (*v).clone(),
         }
     }
@@ -472,6 +483,128 @@ pub fn mount_dynamic_view_universal(
 
             handle_error(SilexError::Javascript(msg));
         }
+    });
+}
+
+fn clear_nodes_between(start_node: &Node, end_node: &Node) {
+    if let Some(parent) = start_node.parent_node() {
+        while let Some(sibling) = start_node.next_sibling() {
+            if sibling == *end_node {
+                break;
+            }
+            let _ = parent.remove_child(&sibling);
+        }
+    }
+}
+
+/// 带分支缓存的动态视图挂载内核。
+///
+/// 当 key 未变化时，当前分支会保持原样，避免重复清理和重建。
+pub fn mount_dynamic_view_cached<K, KeyFn, RenderFn>(
+    parent: &Node,
+    attrs: Vec<PendingAttribute>,
+    key_fn: KeyFn,
+    renderer: RenderFn,
+) where
+    K: PartialEq + Clone + 'static,
+    KeyFn: Fn() -> K + Clone + 'static,
+    RenderFn: Fn(K, (Node, Vec<PendingAttribute>)) + 'static,
+{
+    let document = crate::document();
+
+    let start_marker = document.create_comment("dyn-start");
+    let start_node: Node = start_marker.into();
+
+    if let Err(e) = parent.append_child(&start_node).map_err(SilexError::from) {
+        handle_error(e);
+        return;
+    }
+
+    let end_marker = document.create_comment("dyn-end");
+    let end_node: Node = end_marker.into();
+
+    if let Err(e) = parent.append_child(&end_node).map_err(SilexError::from) {
+        handle_error(e);
+        return;
+    }
+
+    let active_state = Rc::new(RefCell::new(None::<(K, NodeId)>));
+
+    Effect::new(move |_| {
+        let start_node = start_node.clone();
+        let end_node = end_node.clone();
+        let document = document.clone();
+        let attrs = attrs.clone();
+        let renderer = &renderer;
+        let active_state = active_state.clone();
+        let key_fn = key_fn.clone();
+
+        let result = catch_unwind(AssertUnwindSafe(move || {
+            let next_key = key_fn();
+
+            let unchanged = active_state
+                .borrow()
+                .as_ref()
+                .is_some_and(|(current_key, _)| current_key == &next_key);
+
+            if unchanged {
+                return;
+            }
+
+            if let Some((_, scope_id)) = active_state.borrow_mut().take() {
+                clear_nodes_between(&start_node, &end_node);
+                dispose(scope_id);
+            } else {
+                clear_nodes_between(&start_node, &end_node);
+            }
+
+            let fragment = document.create_document_fragment();
+            let fragment_node: Node = fragment.clone().into();
+            let fragment_node_for_scope = fragment_node.clone();
+            let attrs_for_scope = attrs.clone();
+            let next_key_for_render = next_key.clone();
+
+            let scope_id = create_scope(move || {
+                renderer(
+                    next_key_for_render.clone(),
+                    (fragment_node_for_scope.clone(), attrs_for_scope.clone()),
+                );
+            });
+
+            if let Some(parent) = end_node.parent_node() {
+                let _ = parent.insert_before(&fragment_node, Some(&end_node));
+            }
+
+            *active_state.borrow_mut() = Some((next_key, scope_id));
+        }));
+
+        if let Err(payload) = result {
+            let msg = if let Some(s) = payload.downcast_ref::<&str>() {
+                format!("Panic in Cached Dynamic View: {}", s)
+            } else if let Some(s) = payload.downcast_ref::<String>() {
+                format!("Panic in Cached Dynamic View: {}", s)
+            } else {
+                "Unknown Panic in Cached Dynamic View".to_string()
+            };
+
+            handle_error(SilexError::Javascript(msg));
+        }
+    });
+}
+
+/// 根据分支 key 选择 `SharedView` 的缓存挂载辅助层。
+pub fn mount_shared_branch_cached<K, KeyFn, BranchFn>(
+    parent: &Node,
+    attrs: Vec<PendingAttribute>,
+    key_fn: KeyFn,
+    branch_fn: BranchFn,
+) where
+    K: PartialEq + Clone + 'static,
+    KeyFn: Fn() -> K + Clone + 'static,
+    BranchFn: Fn(K) -> SharedView + 'static,
+{
+    mount_dynamic_view_cached(parent, attrs, key_fn, move |key, (p, a)| {
+        branch_fn(key).mount_ref(&p, a);
     });
 }
 
