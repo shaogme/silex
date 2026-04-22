@@ -36,7 +36,7 @@ Silex 提供了一个类型安全且易于使用的客户端路由。
 
 ```rust
 fn App() -> impl Mount + MountRef {
-    Router::new()
+    Router()
         .base("/app") // 可选：设置基础路径
         .render(|| {
             // 这里通常放置布局组件（Layout）
@@ -88,7 +88,7 @@ impl RouteView for MyRoutes {
 }
 
 // 在 Router 中使用
-Router::new().match_route::<MyRoutes>()
+Router().match_route::<MyRoutes>()
 ```
 
 ### 导航

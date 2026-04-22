@@ -245,7 +245,7 @@ fn main() {
     // 采用“视图组合”模式：match 分发 + Layout 函数包裹
 
     create_scope(move || {
-        let app = MainLayout(Router::new().match_route::<AppRoute>());
+        let app = MainLayout(Router().match_route::<AppRoute>());
         app.mount(&body, Vec::new());
     });
 }

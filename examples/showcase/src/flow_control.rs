@@ -66,7 +66,7 @@ pub fn ShowDemo() -> impl Mount + MountRef {
 
     div![
         h3("Conditional Rendering with Show"),
-        p("Demonstrates passing a Signal directly to Show::new as condition."),
+        p("Demonstrates passing a Signal directly to Show as condition."),
         button("Toggle Visibility").on(event::click, set_visible.updater(|v| *v = !*v)),
         Show(visible)
             .children(
@@ -101,7 +101,7 @@ pub fn DynamicDemo() -> impl Mount + MountRef {
             button("Show C").on(event::click, set_mode.setter("C")),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 10px;"),
-        // You can also use Dynamic::new(mode.map(|m| { view_match!(m, { ... }) })).
+        // You can also use Dynamic(mode.map(|m| { view_match!(m, { ... }) })).
         Dynamic(mode.map(|m| {
             view_match!(*m, {
                 "A" => div("🅰️ Component A")

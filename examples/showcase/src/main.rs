@@ -81,7 +81,7 @@ fn main() {
             // Global Layout Shell
             NavBar(),
             // Root Router
-            Router::new().match_route::<AppRoute>(),
+            Router().match_route::<AppRoute>(),
         ]
         .style(
             sty()

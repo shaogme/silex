@@ -227,7 +227,7 @@ fn main() {
         // 构建应用壳 (App Shell)
         let app = div!(
             NavBar(),
-            Router::new()
+            Router()
                 .match_route::<AppRoute>()
         )
         .class("app-container")

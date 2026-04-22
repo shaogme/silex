@@ -118,7 +118,7 @@ enum AppRoute {
 
 #[component]
 fn App() -> impl Mount + MountRef {
-    Router::new().match_route::<AppRoute>()
+    Router().match_route::<AppRoute>()
 }
 ```
 
