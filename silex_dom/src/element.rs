@@ -13,7 +13,7 @@ pub use tags::*;
 
 /// Identity function to wrap text content as a View.
 /// This matches the API expected by the showcase example and provides a explicit way to denote text nodes.
-pub fn text<V: crate::view::MountRef>(content: V) -> V {
+pub fn text<V: crate::view::View>(content: V) -> V {
     content
 }
 
@@ -23,7 +23,7 @@ pub struct Element {
     pub dom_element: WebElem,
 }
 
-pub fn mount_to_body<V: crate::view::Mount>(view: V) {
+pub fn mount_to_body<V: crate::view::View>(view: V) {
     let document = crate::document();
     let body = document.body().expect("No body element");
     let node: web_sys::Node = body.into();
@@ -85,23 +85,8 @@ impl crate::view::ApplyAttributes for Element {
     }
 }
 
-impl crate::view::Mount for Element {
-    fn mount(mut self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
-        if !attrs.is_empty() {
-            crate::view::ApplyAttributes::apply_attributes(&mut self, attrs);
-        }
-
-        if let Err(e) = parent
-            .append_child(&self.dom_element)
-            .map_err(SilexError::from)
-        {
-            silex_core::error::handle_error(e);
-        }
-    }
-}
-
-impl crate::view::MountRef for Element {
-    fn mount_ref(&self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
+impl crate::view::View for Element {
+    fn mount(&self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
         if !attrs.is_empty() {
             let consolidated = crate::attribute::consolidate_attributes(attrs);
             for attr in consolidated {
@@ -203,21 +188,9 @@ impl<T> crate::view::ApplyAttributes for TypedElement<T> {
     }
 }
 
-impl<T> crate::view::Mount for TypedElement<T> {
-    fn mount(mut self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
-        if !attrs.is_empty() {
-            crate::view::ApplyAttributes::apply_attributes(&mut self, attrs);
-        }
-
-        if let Err(e) = parent.append_child(&self.element).map_err(SilexError::from) {
-            silex_core::error::handle_error(e);
-        }
-    }
-}
-
-impl<T> crate::view::MountRef for TypedElement<T> {
-    fn mount_ref(&self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
-        self.element.mount_ref(parent, attrs);
+impl<T: 'static> crate::view::View for TypedElement<T> {
+    fn mount(&self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
+        self.element.mount(parent, attrs);
     }
 }
 

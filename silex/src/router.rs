@@ -8,7 +8,7 @@ use crate::router::context::{RouterContextProps, provide_router_context};
 use silex_core::reactivity::{Signal, on_cleanup};
 use silex_core::traits::{RxGet, RxWrite};
 use silex_dom::attribute::PendingAttribute;
-use silex_dom::view::{AnyView, ApplyAttributes, Mount, View, MountRef};
+use silex_dom::view::{AnyView, ApplyAttributes, View};
 use silex_html::div;
 use silex_macros::component;
 use std::marker::PhantomData;
@@ -93,7 +93,7 @@ impl RouterComponent {
     where
         R: Routable + 'static,
         F: Fn(R) -> V + Clone + 'static,
-        V: View,
+        V: View + 'static,
     {
         self.children = RouterMatchView::<R, F, V>::new(render).into_any();
         self
@@ -119,14 +119,8 @@ struct RouterView {
 
 impl ApplyAttributes for RouterView {}
 
-impl Mount for RouterView {
-    fn mount(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
-        self.mount_internal(parent, attrs);
-    }
-}
-
-impl MountRef for RouterView {
-    fn mount_ref(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
+impl View for RouterView {
+    fn mount(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
         self.clone().mount_internal(parent, attrs);
     }
 }
@@ -236,11 +230,11 @@ impl<R> RouterRouteView<R> {
 
 impl<R> ApplyAttributes for RouterRouteView<R> {}
 
-impl<R> Mount for RouterRouteView<R>
+impl<R> View for RouterRouteView<R>
 where
     R: RouteView + 'static,
 {
-    fn mount(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
+    fn mount(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
         let path_signal = crate::router::use_location_path();
         silex_dom::view::mount_branch_cached(
             parent,
@@ -254,15 +248,6 @@ where
                 }
             },
         );
-    }
-}
-
-impl<R> MountRef for RouterRouteView<R>
-where
-    R: RouteView + 'static,
-{
-    fn mount_ref(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
-        Self::new().mount(parent, attrs);
     }
 }
 
@@ -283,13 +268,13 @@ impl<R, F, V> RouterMatchView<R, F, V> {
 
 impl<R, F, V> ApplyAttributes for RouterMatchView<R, F, V> {}
 
-impl<R, F, V> Mount for RouterMatchView<R, F, V>
+impl<R, F, V> View for RouterMatchView<R, F, V>
 where
     R: Routable + 'static,
     F: Fn(R) -> V + Clone + 'static,
-    V: View,
+    V: View + 'static,
 {
-    fn mount(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
+    fn mount(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
         let path_signal = crate::router::use_location_path();
         let render = self.render.clone();
         silex_dom::view::mount_branch_cached(
@@ -304,21 +289,6 @@ where
                 }
             },
         );
-    }
-}
-
-impl<R, F, V> MountRef for RouterMatchView<R, F, V>
-where
-    R: Routable + 'static,
-    F: Fn(R) -> V + Clone + 'static,
-    V: View,
-{
-    fn mount_ref(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
-        Self {
-            render: self.render.clone(),
-            _phantom: PhantomData,
-        }
-        .mount(parent, attrs);
     }
 }
 

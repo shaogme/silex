@@ -1,6 +1,6 @@
 use silex_core::reactivity::{Memo, ReadSignal, Signal, WriteSignal, provide_context, use_context};
 use silex_core::traits::{RxGet, RxWrite};
-use silex_dom::view::{AnyView, ApplyAttributes, Mount, MountRef};
+use silex_dom::view::{AnyView, ApplyAttributes, View};
 use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
@@ -18,17 +18,11 @@ impl PartialEq for RouterViewFactory {
 
 impl ApplyAttributes for RouterViewFactory {}
 
-impl Mount for RouterViewFactory {
-    fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        let factory = self.0;
+impl View for RouterViewFactory {
+    fn mount(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
+        let factory = self.0.clone();
         let closure = move || (factory)();
         closure.mount(parent, attrs);
-    }
-}
-
-impl MountRef for RouterViewFactory {
-    fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        self.clone().mount(parent, attrs);
     }
 }
 

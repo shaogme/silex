@@ -47,14 +47,14 @@ where
 
 /// Helper trait to extract View type from Map function.
 pub trait LoopMap<Item> {
-    type View: Mount;
+    type View: View;
     fn map(&self, item: Item) -> Self::View;
 }
 
 impl<F, Item, V> LoopMap<Item> for F
 where
     F: Fn(Item) -> V,
-    V: Mount,
+    V: View + 'static,
 {
     type View = V;
 
@@ -117,7 +117,7 @@ where
     Item: Clone + 'static,
     Key: Hash + Eq + Clone + 'static,
     MF: Fn(ReadSignal<Item>, ReadSignal<usize>) -> V + Clone + 'static,
-    V: View,
+    V: View + 'static,
 {
     let children = children.into_owned();
     let children = Rc::new(move |item: ReadSignal<Item>, index: ReadSignal<usize>| {
@@ -162,33 +162,14 @@ struct ForView<'a, ItemsFn, IS, Item, Key> {
 
 impl<'a, ItemsFn, IS, Item, Key> ApplyAttributes for ForView<'a, ItemsFn, IS, Item, Key> {}
 
-impl<'a, ItemsFn, IS, Item, Key> Mount for ForView<'a, ItemsFn, IS, Item, Key>
+impl<'a, ItemsFn, IS, Item, Key> View for ForView<'a, ItemsFn, IS, Item, Key>
 where
     ItemsFn: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = Item> + Sized + 'static,
     Key: Hash + Eq + Clone + 'static,
     Item: Clone + 'static,
 {
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        mount_for_internal(
-            self.items,
-            self.key,
-            self.children,
-            self.error,
-            parent,
-            attrs,
-        );
-    }
-}
-
-impl<'a, ItemsFn, IS, Item, Key> MountRef for ForView<'a, ItemsFn, IS, Item, Key>
-where
-    ItemsFn: RxRead<Value = IS> + Clone + 'static,
-    IS: ForLoopSource<Item = Item> + Sized + 'static,
-    Key: Hash + Eq + Clone + 'static,
-    Item: Clone + 'static,
-{
-    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         mount_for_internal(
             Prop::new_owned(self.items.clone()),
             self.key,

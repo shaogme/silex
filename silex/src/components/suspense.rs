@@ -37,7 +37,7 @@ pub fn Suspense<CH, R>(
 ) -> impl View
 where
     CH: Fn() -> R + Clone + 'static,
-    R: View,
+    R: View + 'static,
 {
     let children = children.into_owned();
     let children = Rc::new(move || children().into_any());
@@ -74,15 +74,15 @@ struct SuspenseView {
 
 impl ApplyAttributes for SuspenseView {}
 
-impl Mount for SuspenseView {
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        let factory = self.factory;
-        let initial_view = self.initial_view;
-        let fallback_view = self.fallback;
+impl View for SuspenseView {
+    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        let factory = self.factory.clone();
+        let initial_view = self.initial_view.clone();
+        let fallback_view = self.fallback.clone();
         let mode = self.mode;
         let parent_clone = parent.clone();
         let count = self.ctx.count;
-        let ctx = self.ctx;
+        let ctx = self.ctx.clone();
 
         create_scope(move || match mode {
             SuspenseMode::KeepAlive => {
@@ -96,7 +96,7 @@ impl Mount for SuspenseView {
                     if count_clone.get() > 0 { "display: none" } else { "display: block" }
                 });
                 content_wrapper.clone().mount(&parent_clone, attrs);
-                children_view.mount_ref(&content_wrapper.element, Vec::new());
+                children_view.mount(&content_wrapper.element, Vec::new());
 
                 let fallback_wrapper = div(()).class("suspense-fallback");
                 let count_clone = count;
@@ -104,7 +104,7 @@ impl Mount for SuspenseView {
                     if count_clone.get() > 0 { "display: block" } else { "display: none" }
                 });
                 fallback_wrapper.clone().mount(&parent_clone, Vec::new());
-                fallback_view.mount_ref(&fallback_wrapper.element, Vec::new());
+                fallback_view.mount(&fallback_wrapper.element, Vec::new());
             }
             SuspenseMode::Unmount => {
                 let factory = factory.clone();
@@ -151,16 +151,3 @@ impl Mount for SuspenseView {
 }
 
 impl AutoReactiveView for SuspenseView {}
-
-impl MountRef for SuspenseView {
-    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        let view = SuspenseView {
-            factory: self.factory.clone(),
-            initial_view: self.initial_view.clone(),
-            fallback: self.fallback.clone(),
-            mode: self.mode,
-            ctx: self.ctx.clone(),
-        };
-        view.mount(parent, attrs);
-    }
-}

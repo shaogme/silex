@@ -12,8 +12,7 @@ pub mod prelude {
     pub use crate::helpers::*;
     pub use crate::setup_global_error_handlers;
     pub use crate::view::{
-        ApplyAttributes, AutoReactiveView, Mount, View, MountRef, Prop, ViewCons, ViewNil,
-        any::*, reactive::*,
+        ApplyAttributes, AutoReactiveView, Prop, View, ViewCons, ViewNil, any::*, reactive::*,
     };
     pub use crate::{view_chain, view_match};
 }

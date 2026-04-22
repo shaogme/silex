@@ -34,20 +34,11 @@ struct ShowView<'a, C> {
 
 impl<'a, C> ApplyAttributes for ShowView<'a, C> {}
 
-impl<'a, C> Mount for ShowView<'a, C>
+impl<'a, C> View for ShowView<'a, C>
 where
     C: RxGet<Value = bool> + Clone + 'static,
 {
-    fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        mount_show_internal(self.when, self.children, self.fallback, parent, attrs);
-    }
-}
-
-impl<'a, C> MountRef for ShowView<'a, C>
-where
-    C: RxGet<Value = bool> + Clone + 'static,
-{
-    fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
+    fn mount(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         mount_show_internal(
             Prop::new_owned(self.when.clone()),
             Prop::new_owned(self.children.clone()),
@@ -91,7 +82,7 @@ pub trait SignalShowExt: IntoRx<Value = bool> {
     fn when<V>(self, view: V) -> ShowComponent<Self::RxType>
     where
         Self::RxType: RxGet<Value = bool> + Clone + 'static,
-        V: View;
+        V: View + 'static;
 }
 
 // 为所有 IntoRx<Value = bool> 的类型实现扩展
@@ -102,7 +93,7 @@ where
     fn when<V>(self, view: V) -> ShowComponent<Self::RxType>
     where
         Self::RxType: RxGet<Value = bool> + Clone + 'static,
-        V: View,
+        V: View + 'static,
     {
         Show(self.into_rx()).children(view)
     }

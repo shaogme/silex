@@ -43,7 +43,7 @@ where
     /// 添加一个匹配分支
     pub fn case<V>(mut self, value: T, view: V) -> Self
     where
-        V: View,
+        V: View + 'static,
     {
         match self.cases.entry(value) {
             Entry::Vacant(entry) => {
@@ -69,22 +69,12 @@ struct SwitchView<'a, Source, T> {
 
 impl<'a, Source, T> ApplyAttributes for SwitchView<'a, Source, T> {}
 
-impl<'a, Source, T> Mount for SwitchView<'a, Source, T>
+impl<'a, Source, T> View for SwitchView<'a, Source, T>
 where
     Source: RxGet<Value = T> + Clone + 'static,
     T: Eq + Hash + Clone + 'static,
 {
-    fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        mount_switch_internal(self.source, self.cases, self.fallback, parent, attrs);
-    }
-}
-
-impl<'a, Source, T> MountRef for SwitchView<'a, Source, T>
-where
-    Source: RxGet<Value = T> + Clone + 'static,
-    T: Eq + Hash + Clone + 'static,
-{
-    fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
+    fn mount(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         mount_switch_internal(
             Prop::new_owned(self.source.clone()),
             Prop::new_owned(self.cases.clone()),

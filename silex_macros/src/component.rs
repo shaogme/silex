@@ -58,12 +58,12 @@ impl PropInfo {
             quote! { #ty }
         } else if self.render {
             match self.type_ident.as_str() {
-                "AnyView" => quote! { impl ::silex::dom::view::View },
+                "AnyView" => quote! { impl ::silex::dom::view::View + 'static },
                 _ => quote! { #ty },
             }
         } else if self.into_trait {
             match self.type_ident.as_str() {
-                "AnyView" => quote! { impl ::silex::dom::view::View },
+                "AnyView" => quote! { impl ::silex::dom::view::View + 'static },
                 _ => quote! { impl Into<#ty> },
             }
         } else {
@@ -102,7 +102,6 @@ struct ComponentGenerator {
     struct_fields: Vec<TokenStream2>,
     builder_methods: Vec<TokenStream2>,
     new_initializers: Vec<TokenStream2>,
-    mount_checks: Vec<TokenStream2>,
     mount_ref_checks: Vec<TokenStream2>,
 
     phantom_decl: TokenStream2,
@@ -128,7 +127,6 @@ impl ComponentGenerator {
             struct_fields: Vec::new(),
             builder_methods: Vec::new(),
             new_initializers: Vec::new(),
-            mount_checks: Vec::new(),
             mount_ref_checks: Vec::new(),
             phantom_decl: quote!(),
             phantom_init: quote!(),
@@ -262,39 +260,27 @@ impl ComponentGenerator {
             self.new_initializers.push(quote! { #name: #init_val });
         }
 
-        // 2. 生成 Mount 时的 Prop 处理逻辑
-        let (mount_owned, mount_borrowed) = if is_required {
+        // 2. 生成 View 挂载时的 Prop 处理逻辑
+        let mount_borrowed = if is_required {
             if is_standalone {
-                (
-                    quote! { ::silex::dom::view::Prop::new_owned(self.#name) },
-                    if attrs.clone {
-                        quote! { ::silex::dom::view::Prop::new_owned(self.#name.clone()) }
-                    } else {
-                        quote! { ::silex::dom::view::Prop::new_borrowed(&self.#name) }
-                    },
-                )
-            } else {
-                (
-                    quote! { ::silex::dom::view::Prop::new_owned(self.#name.expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'"))) },
-                    if attrs.clone {
-                        quote! { ::silex::dom::view::Prop::new_owned(self.#name.as_ref().expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'")).clone()) }
-                    } else {
-                        quote! { ::silex::dom::view::Prop::new_borrowed(self.#name.as_ref().expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'"))) }
-                    },
-                )
-            }
-        } else {
-            (
-                quote! { ::silex::dom::view::Prop::new_owned(self.#name) },
                 if attrs.clone {
                     quote! { ::silex::dom::view::Prop::new_owned(self.#name.clone()) }
                 } else {
                     quote! { ::silex::dom::view::Prop::new_borrowed(&self.#name) }
-                },
-            )
+                }
+            } else {
+                if attrs.clone {
+                    quote! { ::silex::dom::view::Prop::new_owned(self.#name.as_ref().expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'")).clone()) }
+                } else {
+                    quote! { ::silex::dom::view::Prop::new_borrowed(self.#name.as_ref().expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'"))) }
+                }
+            }
+        } else if attrs.clone {
+            quote! { ::silex::dom::view::Prop::new_owned(self.#name.clone()) }
+        } else {
+            quote! { ::silex::dom::view::Prop::new_borrowed(&self.#name) }
         };
 
-        self.mount_checks.push(quote! { let #name = #mount_owned; });
         self.mount_ref_checks
             .push(quote! { let #name = #mount_borrowed; });
 
@@ -324,7 +310,7 @@ impl ComponentGenerator {
 
         if prop.render && prop.type_ident == "AnyView" {
             quote! {
-                pub fn #name(mut self, val: impl ::silex::dom::view::View) -> Self {
+                pub fn #name(mut self, val: impl ::silex::dom::view::View + 'static) -> Self {
                     use ::silex::dom::view::View;
                     self.#name = #final_val;
                     self
@@ -332,7 +318,7 @@ impl ComponentGenerator {
             }
         } else if prop.into_trait && prop.type_ident == "AnyView" {
             quote! {
-                pub fn #name<__SilexValue: ::silex::dom::view::ApplyAttributes + ::silex::dom::view::View>(mut self, val: __SilexValue) -> Self {
+                pub fn #name<__SilexValue: ::silex::dom::view::View + 'static>(mut self, val: __SilexValue) -> Self {
                     use ::silex::dom::view::View;
                     self.#name = #final_val;
                     self
@@ -480,28 +466,17 @@ impl ComponentGenerator {
     fn gen_mount_impls(&self) -> TokenStream2 {
         let struct_name = &self.struct_name;
         let fn_body = &self.fn_body;
-        let mount_checks = &self.mount_checks;
         let mount_ref_checks = &self.mount_ref_checks;
         let (impl_generics, ty_generics, where_clause) = self.fn_generics.split_for_impl();
 
         quote! {
-            impl #impl_generics ::silex::dom::view::Mount for #struct_name #ty_generics #where_clause {
-                fn mount(self, parent: &::silex::reexports::web_sys::Node, attrs: Vec<::silex::dom::attribute::PendingAttribute>) {
-                    #(#mount_checks)*
-                    let view_instance = #fn_body;
-                    let mut all_attrs = self._pending_attrs;
-                    all_attrs.extend(attrs);
-                    ::silex::dom::view::Mount::mount(view_instance, parent, all_attrs);
-                }
-            }
-
-            impl #impl_generics ::silex::dom::view::MountRef for #struct_name #ty_generics #where_clause {
-                fn mount_ref(&self, parent: &::silex::reexports::web_sys::Node, attrs: Vec<::silex::dom::attribute::PendingAttribute>) {
+            impl #impl_generics ::silex::dom::view::View for #struct_name #ty_generics #where_clause {
+                fn mount(&self, parent: &::silex::reexports::web_sys::Node, attrs: Vec<::silex::dom::attribute::PendingAttribute>) {
                     #(#mount_ref_checks)*
                     let view_instance = #fn_body;
                     let mut all_attrs = self._pending_attrs.clone();
                     all_attrs.extend(attrs);
-                    ::silex::dom::view::MountRef::mount_ref(&view_instance, parent, all_attrs);
+                    ::silex::dom::view::View::mount(&view_instance, parent, all_attrs);
                 }
             }
         }

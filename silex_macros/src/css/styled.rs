@@ -444,7 +444,7 @@ fn get_tag_return_type(
         let ident = Ident::new(&name, span);
         quote! { ::silex::dom::element::TypedElement<::silex::dom::element::tags::#ident> }
     } else {
-        quote! { impl ::silex::dom::attribute::AttributeBuilder + ::silex::dom::view::Mount + ::silex::dom::view::MountRef + ::silex::dom::view::ApplyAttributes #where_clause }
+        quote! { impl ::silex::dom::attribute::AttributeBuilder + ::silex::dom::view::View + ::silex::dom::view::ApplyAttributes + 'static #where_clause }
     }
 }
 
@@ -623,7 +623,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     Ok(quote! {
         #(#filtered_attrs)*
         #component_attr
-        pub fn #c_name() -> impl ::silex::dom::view::Mount + ::silex::dom::view::MountRef + ::silex::dom::view::ApplyAttributes {
+        pub fn #c_name() -> impl ::silex::dom::view::View + ::silex::dom::view::ApplyAttributes + 'static {
             #(#inits)*
             #(#logics)*
             use ::silex::dom::view::View;

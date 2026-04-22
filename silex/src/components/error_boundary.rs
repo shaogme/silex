@@ -17,8 +17,8 @@ pub fn ErrorBoundary<FB, CH, V1, V2>(
 where
     FB: Fn(SilexError) -> V1 + Clone + 'static,
     CH: Fn() -> V2 + Clone + 'static,
-    V1: View,
-    V2: View,
+    V1: View + 'static,
+    V2: View + 'static,
 {
     let (error, set_error) = Signal::<Option<SilexError>>::pair(None);
 
@@ -48,12 +48,12 @@ struct ErrorBoundaryView {
 
 impl ApplyAttributes for ErrorBoundaryView {}
 
-impl Mount for ErrorBoundaryView {
-    fn mount(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
+impl View for ErrorBoundaryView {
+    fn mount(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
         let error = self.error;
         let set_error = self.set_error;
-        let fallback = self.fallback;
-        let children = self.children;
+        let fallback = self.fallback.clone();
+        let children = self.children.clone();
 
         div(move || {
             let fallback = fallback.clone();
@@ -95,15 +95,3 @@ impl Mount for ErrorBoundaryView {
 }
 
 impl AutoReactiveView for ErrorBoundaryView {}
-
-impl MountRef for ErrorBoundaryView {
-    fn mount_ref(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
-        ErrorBoundaryView {
-            children: self.children.clone(),
-            fallback: self.fallback.clone(),
-            error: self.error,
-            set_error: self.set_error,
-        }
-        .mount(parent, attrs);
-    }
-}

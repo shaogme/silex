@@ -16,35 +16,12 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 use web_sys::Node;
 
-/// 递归视图链辅助结构 - 空节点
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ViewNil;
-
-/// 递归视图链辅助结构 - 构造节点
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ViewCons<H, T>(pub H, pub T);
-
 /// 属性应用特征 (ApplyAttributes Trait)
 pub trait ApplyAttributes {
     /// Apply forwarded attributes to this view.
     /// Default implementation does nothing (for Text, Fragment, etc.).
     /// Elements override this to actually apply attributes.
     fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
-}
-
-/// 挂载特征 - 消耗型 (Mount Trait)
-pub trait Mount {
-    /// Mount this view to a parent node with a set of pending attributes.
-    /// This is the primary entry point for mounting views.
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>);
-}
-
-/// 挂载特征 - 引用型 (MountRef Trait)
-pub trait MountRef {
-    /// Optimized mounting from a reference to avoid redundant clones.
-    /// For types that are cheap to clone (like Rc-based Elements), this can be just a clone + mount.
-    /// For expensive types (like Strings or Fragments), this should be implemented without cloning.
-    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>);
 }
 
 /// 组件宏内部使用的属性包装器。
@@ -126,25 +103,13 @@ impl<'a, T: Clone> PropInto<T> for Prop<'a, T> {
     }
 }
 
-impl<'a, T: MountRef> MountRef for Prop<'a, T> {
-    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        match self {
-            Self::Owned(v) => v.mount_ref(parent, attrs),
-            Self::Borrowed(v) => v.mount_ref(parent, attrs),
-        }
-    }
-}
+impl<'a, T: View> ApplyAttributes for Prop<'a, T> {}
 
-impl<'a, T> ApplyAttributes for Prop<'a, T> {}
-
-impl<'a, T> Mount for Prop<'a, T>
-where
-    T: MountRef,
-{
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+impl<'a, T: View> View for Prop<'a, T> {
+    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         match self {
-            Self::Owned(v) => v.mount_ref(parent, attrs),
-            Self::Borrowed(v) => v.mount_ref(parent, attrs),
+            Self::Owned(v) => v.mount(parent, attrs),
+            Self::Borrowed(v) => v.mount(parent, attrs),
         }
     }
 }
@@ -263,16 +228,18 @@ impl_forward_binop_copy!(Sub, sub);
 impl_forward_binop_copy!(Mul, mul);
 impl_forward_binop_copy!(Div, div);
 
-/// 视图转换扩展 (Mount Extensions)
-pub trait View: MountRef + Mount + ApplyAttributes + 'static {
+/// 视图转换扩展
+pub trait View {
     /// Convert this view into an AnyView.
-    fn into_any(self) -> AnyView;
-}
-
-impl<T: MountRef + Mount + ApplyAttributes + 'static> View for T {
-    fn into_any(self) -> AnyView {
+    fn into_any(self) -> AnyView
+    where
+        Self: Sized + 'static,
+    {
         AnyView::new(self)
     }
+
+    /// Mount this view to a parent node with a set of pending attributes.
+    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>);
 }
 
 /// Non-generic helper to mount a text node. Reduces monomorphization bloat for static text.
@@ -288,45 +255,23 @@ pub fn mount_text_node(parent: &Node, text: &str) {
 
 // 1. 静态文本 (String, &str)
 impl ApplyAttributes for String {}
-impl Mount for String {
-    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        mount_text_node(parent, &self);
-    }
-}
-impl MountRef for String {
-    fn mount_ref(&self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+impl View for String {
+    fn mount(&self, parent: &Node, _attrs: Vec<PendingAttribute>) {
         mount_text_node(parent, self);
     }
 }
 
-impl MountRef for str {
-    fn mount_ref(&self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        mount_text_node(parent, self);
-    }
-}
-
-impl MountRef for &str {
-    fn mount_ref(&self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        mount_text_node(parent, self);
-    }
-}
-
-impl ApplyAttributes for &str {}
-impl Mount for &str {
-    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+impl ApplyAttributes for &'static str {}
+impl View for &'static str {
+    fn mount(&self, parent: &Node, _attrs: Vec<PendingAttribute>) {
         mount_text_node(parent, self);
     }
 }
 
 // 1.1 Cow support
-impl<'a> ApplyAttributes for std::borrow::Cow<'a, str> {}
-impl<'a> Mount for std::borrow::Cow<'a, str> {
-    fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-        mount_text_node(parent, &self);
-    }
-}
-impl<'a> MountRef for std::borrow::Cow<'a, str> {
-    fn mount_ref(&self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+impl ApplyAttributes for std::borrow::Cow<'static, str> {}
+impl View for std::borrow::Cow<'static, str> {
+    fn mount(&self, parent: &Node, _attrs: Vec<PendingAttribute>) {
         mount_text_node(parent, self.as_ref());
     }
 }
@@ -335,13 +280,8 @@ macro_rules! impl_mount_for_primitive {
     ($($t:ty),*) => {
         $(
             impl ApplyAttributes for $t {}
-            impl Mount for $t {
-                fn mount(self, parent: &Node, _attrs: Vec<PendingAttribute>) {
-                    mount_text_node(parent, &self.to_string());
-                }
-            }
-            impl MountRef for $t {
-                fn mount_ref(&self, parent: &Node, _attrs: Vec<PendingAttribute>) {
+            impl View for $t {
+                fn mount(&self, parent: &Node, _attrs: Vec<PendingAttribute>) {
                     mount_text_node(parent, &self.to_string());
                 }
             }
@@ -354,44 +294,24 @@ impl_mount_for_primitive!(
 );
 
 impl ApplyAttributes for () {}
-impl Mount for () {
-    fn mount(self, _parent: &Node, _attrs: Vec<PendingAttribute>) {}
-}
-impl MountRef for () {
-    fn mount_ref(&self, _parent: &Node, _attrs: Vec<PendingAttribute>) {}
+impl View for () {
+    fn mount(&self, _parent: &Node, _attrs: Vec<PendingAttribute>) {}
 }
 
 // 3. 动态闭包支持 (Lazy View / Dynamic Text)
 impl<F, V> ApplyAttributes for F
 where
     F: Fn() -> V + Clone + 'static,
-    V: Mount + 'static,
+    V: View + 'static,
 {
 }
 
-impl<F, V> Mount for F
+impl<F, V> View for F
 where
     F: Fn() -> V + Clone + 'static,
-    V: Mount + 'static,
+    V: View + 'static,
 {
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        mount_dynamic_view_universal(
-            parent,
-            attrs,
-            RenderThunk::new(move |args| {
-                let (p, a) = args;
-                self().mount(&p, a);
-            }),
-        );
-    }
-}
-
-impl<F, V> MountRef for F
-where
-    F: Fn() -> V + Clone + 'static,
-    V: Mount + 'static,
-{
-    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         let this = self.clone();
         mount_dynamic_view_universal(
             parent,
@@ -592,35 +512,25 @@ pub fn mount_branch_cached<K, KeyFn, BranchFn>(
     BranchFn: Fn(K) -> AnyView + 'static,
 {
     mount_dynamic_view_cached(parent, attrs, key_fn, move |key, (p, a)| {
-        branch_fn(key).mount_ref(&p, a);
+        branch_fn(key).mount(&p, a);
     });
 }
 
 // 3.6 Type closure delegation
-impl<V> ApplyAttributes for std::rc::Rc<dyn Fn() -> V> where V: Mount + 'static {}
+impl<V> ApplyAttributes for std::rc::Rc<dyn Fn() -> V> where V: View + 'static {}
 
-impl<V> Mount for std::rc::Rc<dyn Fn() -> V>
+impl<V> View for std::rc::Rc<dyn Fn() -> V>
 where
-    V: Mount + 'static,
+    V: View + 'static,
 {
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        let f = self;
-        (move || f()).mount(parent, attrs);
-    }
-}
-
-impl<V> MountRef for std::rc::Rc<dyn Fn() -> V>
-where
-    V: Mount + 'static,
-{
-    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         let f = self.clone();
         (move || f()).mount(parent, attrs);
     }
 }
 
 // 5. 容器类型支持
-impl<V: ApplyAttributes> ApplyAttributes for Option<V> {
+impl<V: View + ApplyAttributes> ApplyAttributes for Option<V> {
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
         if let Some(v) = self {
             v.apply_attributes(attrs);
@@ -628,23 +538,15 @@ impl<V: ApplyAttributes> ApplyAttributes for Option<V> {
     }
 }
 
-impl<V: Mount> Mount for Option<V> {
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+impl<V: View> View for Option<V> {
+    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         if let Some(v) = self {
             v.mount(parent, attrs);
         }
     }
 }
 
-impl<V: MountRef> MountRef for Option<V> {
-    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        if let Some(v) = self {
-            v.mount_ref(parent, attrs.clone());
-        }
-    }
-}
-
-impl<V: ApplyAttributes> ApplyAttributes for Vec<V> {
+impl<V: View + ApplyAttributes> ApplyAttributes for Vec<V> {
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
         for v in self {
             v.apply_attributes(attrs.clone());
@@ -652,23 +554,15 @@ impl<V: ApplyAttributes> ApplyAttributes for Vec<V> {
     }
 }
 
-impl<V: Mount> Mount for Vec<V> {
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        for (i, v) in self.into_iter().enumerate() {
+impl<V: View> View for Vec<V> {
+    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        for (i, v) in self.iter().enumerate() {
             v.mount(parent, if i == 0 { attrs.clone() } else { Vec::new() });
         }
     }
 }
 
-impl<V: MountRef> MountRef for Vec<V> {
-    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        for (i, v) in self.iter().enumerate() {
-            v.mount_ref(parent, if i == 0 { attrs.clone() } else { Vec::new() });
-        }
-    }
-}
-
-impl<V: ApplyAttributes, const N: usize> ApplyAttributes for [V; N] {
+impl<V: View + ApplyAttributes, const N: usize> ApplyAttributes for [V; N] {
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
         for v in self {
             v.apply_attributes(attrs.clone());
@@ -676,30 +570,27 @@ impl<V: ApplyAttributes, const N: usize> ApplyAttributes for [V; N] {
     }
 }
 
-impl<V: Mount, const N: usize> Mount for [V; N] {
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        for (i, v) in self.into_iter().enumerate() {
-            v.mount(parent, if i == 0 { attrs.clone() } else { Vec::new() });
-        }
-    }
-}
-
-impl<V: MountRef, const N: usize> MountRef for [V; N] {
-    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+impl<V: View, const N: usize> View for [V; N] {
+    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         for (i, v) in self.iter().enumerate() {
-            v.mount_ref(parent, if i == 0 { attrs.clone() } else { Vec::new() });
+            v.mount(parent, if i == 0 { attrs.clone() } else { Vec::new() });
         }
     }
 }
 
 // 6. 递归元组支持 (Recursive Tuple Support)
 
+/// 递归视图链辅助结构 - 空节点
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ViewNil;
+
+/// 递归视图链辅助结构 - 构造节点
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ViewCons<H, T>(pub H, pub T);
+
 impl ApplyAttributes for ViewNil {}
-impl Mount for ViewNil {
-    fn mount(self, _parent: &Node, _attrs: Vec<PendingAttribute>) {}
-}
-impl MountRef for ViewNil {
-    fn mount_ref(&self, _parent: &Node, _attrs: Vec<PendingAttribute>) {}
+impl View for ViewNil {
+    fn mount(&self, _parent: &Node, _attrs: Vec<PendingAttribute>) {}
 }
 
 impl<H: ApplyAttributes, T: ApplyAttributes> ApplyAttributes for ViewCons<H, T> {
@@ -709,19 +600,12 @@ impl<H: ApplyAttributes, T: ApplyAttributes> ApplyAttributes for ViewCons<H, T> 
     }
 }
 
-impl<H: Mount, T: Mount> Mount for ViewCons<H, T> {
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+impl<H: View, T: View> View for ViewCons<H, T> {
+    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         // 头节点接收 attributes
         self.0.mount(parent, attrs);
         // 后续链表不再接受 attributes (避免重复应用)
         self.1.mount(parent, Vec::new());
-    }
-}
-
-impl<H: MountRef, T: MountRef> MountRef for ViewCons<H, T> {
-    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.0.mount_ref(parent, attrs);
-        self.1.mount_ref(parent, Vec::new());
     }
 }
 
@@ -742,7 +626,7 @@ macro_rules! view_chain {
 }
 
 // 7. Result 支持
-impl<V: ApplyAttributes> ApplyAttributes for SilexResult<V> {
+impl<V: View + ApplyAttributes> ApplyAttributes for SilexResult<V> {
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
         if let Ok(v) = self {
             v.apply_attributes(attrs)
@@ -750,19 +634,10 @@ impl<V: ApplyAttributes> ApplyAttributes for SilexResult<V> {
     }
 }
 
-impl<V: Mount> Mount for SilexResult<V> {
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
+impl<V: View> View for SilexResult<V> {
+    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         match self {
             Ok(v) => v.mount(parent, attrs),
-            Err(e) => handle_error(e),
-        }
-    }
-}
-
-impl<V: MountRef> MountRef for SilexResult<V> {
-    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        match self {
-            Ok(v) => v.mount_ref(parent, attrs),
             Err(e) => handle_error(e.clone()),
         }
     }

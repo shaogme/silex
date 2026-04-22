@@ -29,9 +29,9 @@ pub fn Portal(
         let _ = target_clone.remove_child(&container_clone);
     });
 
-    // 使用 mount_ref 挂载，因为 AnyView 可能不实现 Clone (来自 Prop 包装时)
+    // 使用 mount 挂载，因为 AnyView 可能不需要消耗式所有权。
     // 且 Portal 逻辑本身不需要消耗子视图
-    children.mount_ref(&container_node, Vec::new());
+    children.mount(&container_node, Vec::new());
 
     // 返回空视图，因为 Portal 在原位置不渲染内容
 }

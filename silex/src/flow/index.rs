@@ -24,7 +24,7 @@ where
     IF: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = I> + 'static,
     MF: Fn(ReadSignal<I>, ReadSignal<usize>) -> V + Clone + 'static,
-    V: View,
+    V: View + 'static,
     I: Clone + 'static,
 {
     let children = children.into_owned();
@@ -69,14 +69,14 @@ struct IndexRow<Item> {
 
 impl<IF, I, IS> ApplyAttributes for IndexView<IF, I, IS> {}
 
-impl<IF, I, IS> Mount for IndexView<IF, I, IS>
+impl<IF, I, IS> View for IndexView<IF, I, IS>
 where
     IF: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = I> + 'static,
     I: Clone + 'static,
 {
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        mount_index_logic(self.each, self.children, parent, attrs);
+    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        mount_index_logic(self.each.clone(), self.children.clone(), parent, attrs);
     }
 }
 
@@ -86,17 +86,6 @@ where
     IS: ForLoopSource<Item = I> + 'static,
     I: Clone + 'static,
 {
-}
-
-impl<IF, I, IS> MountRef for IndexView<IF, I, IS>
-where
-    IF: RxRead<Value = IS> + Clone + 'static,
-    IS: ForLoopSource<Item = I> + 'static,
-    I: Clone + 'static,
-{
-    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        mount_index_logic(self.each.clone(), self.children.clone(), parent, attrs);
-    }
 }
 
 fn mount_index_logic<IF, I, IS>(
