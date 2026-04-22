@@ -39,6 +39,7 @@ where
     }
 }
 
+#[derive(Clone)]
 struct ErrorBoundaryView {
     children: Rc<dyn Fn() -> AnyView + 'static>,
     fallback: Rc<dyn Fn(SilexError) -> AnyView + 'static>,
@@ -50,10 +51,17 @@ impl ApplyAttributes for ErrorBoundaryView {}
 
 impl View for ErrorBoundaryView {
     fn mount(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
+        self.clone().mount_owned(parent, attrs);
+    }
+
+    fn mount_owned(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
         let error = self.error;
         let set_error = self.set_error;
-        let fallback = self.fallback.clone();
-        let children = self.children.clone();
+        let fallback = self.fallback;
+        let children = self.children;
 
         div(move || {
             let fallback = fallback.clone();
@@ -90,7 +98,7 @@ impl View for ErrorBoundaryView {
             }
         })
         .style("display: contents")
-        .mount(parent, attrs);
+        .mount_owned(parent, attrs);
     }
 }
 

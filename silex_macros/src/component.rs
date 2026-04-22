@@ -103,6 +103,7 @@ struct ComponentGenerator {
     builder_methods: Vec<TokenStream2>,
     new_initializers: Vec<TokenStream2>,
     mount_ref_checks: Vec<TokenStream2>,
+    mount_owned_checks: Vec<TokenStream2>,
 
     phantom_decl: TokenStream2,
     phantom_init: TokenStream2,
@@ -128,6 +129,7 @@ impl ComponentGenerator {
             builder_methods: Vec::new(),
             new_initializers: Vec::new(),
             mount_ref_checks: Vec::new(),
+            mount_owned_checks: Vec::new(),
             phantom_decl: quote!(),
             phantom_init: quote!(),
             standalone_count: 1, // 默认值为 1
@@ -281,8 +283,20 @@ impl ComponentGenerator {
             quote! { ::silex::dom::view::Prop::new_borrowed(&self.#name) }
         };
 
+        let mount_owned = if is_required {
+            if is_standalone {
+                quote! { ::silex::dom::view::Prop::new_owned(self.#name) }
+            } else {
+                quote! { ::silex::dom::view::Prop::new_owned(self.#name.expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'"))) }
+            }
+        } else {
+            quote! { ::silex::dom::view::Prop::new_owned(self.#name) }
+        };
+
         self.mount_ref_checks
             .push(quote! { let #name = #mount_borrowed; });
+        self.mount_owned_checks
+            .push(quote! { let #name = #mount_owned; });
 
         // 3. 生成 Builder 方法
         self.builder_methods.push(self.generate_builder_method(
@@ -467,6 +481,7 @@ impl ComponentGenerator {
         let struct_name = &self.struct_name;
         let fn_body = &self.fn_body;
         let mount_ref_checks = &self.mount_ref_checks;
+        let mount_owned_checks = &self.mount_owned_checks;
         let (impl_generics, ty_generics, where_clause) = self.fn_generics.split_for_impl();
 
         quote! {
@@ -476,7 +491,15 @@ impl ComponentGenerator {
                     let view_instance = #fn_body;
                     let mut all_attrs = self._pending_attrs.clone();
                     all_attrs.extend(attrs);
-                    ::silex::dom::view::View::mount(&view_instance, parent, all_attrs);
+                    ::silex::dom::view::View::mount_owned(view_instance, parent, all_attrs);
+                }
+
+                fn mount_owned(self, parent: &::silex::reexports::web_sys::Node, attrs: Vec<::silex::dom::attribute::PendingAttribute>) {
+                    #(#mount_owned_checks)*
+                    let view_instance = #fn_body;
+                    let mut all_attrs = self._pending_attrs;
+                    all_attrs.extend(attrs);
+                    ::silex::dom::view::View::mount_owned(view_instance, parent, all_attrs);
                 }
             }
         }

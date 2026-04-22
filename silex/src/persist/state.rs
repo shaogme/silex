@@ -281,7 +281,14 @@ where
     Rx<T, RxValueKind>: View,
 {
     fn mount(&self, parent: &web_sys::Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        (*self).into_rx().mount(parent, attrs);
+        (*self).mount_owned(parent, attrs);
+    }
+
+    fn mount_owned(self, parent: &web_sys::Node, attrs: Vec<silex_dom::attribute::PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        self.into_rx().mount_owned(parent, attrs);
     }
 }
 

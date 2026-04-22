@@ -45,7 +45,14 @@ impl ApplyAttributes for DynamicView {}
 
 impl View for DynamicView {
     fn mount(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        mount_dynamic_internal(self.view_fn.clone(), parent, attrs);
+        self.clone().mount_owned(parent, attrs);
+    }
+
+    fn mount_owned(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        mount_dynamic_internal(self.view_fn, parent, attrs);
     }
 }
 
@@ -60,7 +67,7 @@ fn mount_dynamic_internal(
         attrs,
         RenderThunk::new(move |args| {
             let (p, a) = args;
-            (view_fn.as_ref())().mount(&p, a);
+            (view_fn.as_ref())().mount_owned(&p, a);
         }),
     );
 }

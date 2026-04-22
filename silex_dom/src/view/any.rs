@@ -41,6 +41,12 @@ fn mount_list(list: &[AnyView], parent: &Node, attrs: Vec<PendingAttribute>) {
     }
 }
 
+fn mount_list_owned(list: Vec<AnyView>, parent: &Node, attrs: Vec<PendingAttribute>) {
+    for (i, child) in list.into_iter().enumerate() {
+        child.mount_owned(parent, if i == 0 { attrs.clone() } else { Vec::new() });
+    }
+}
+
 impl View for AnyView {
     fn into_any(self) -> Self {
         self
@@ -54,6 +60,21 @@ impl View for AnyView {
             AnyView::List(list) => mount_list(list, parent, attrs),
             AnyView::Boxed(b, inner_attrs) => {
                 b.mount(parent, merge_attrs(inner_attrs.clone(), attrs));
+            }
+        }
+    }
+
+    fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        match self {
+            AnyView::Empty => {}
+            AnyView::Text(s) => s.mount_owned(parent, attrs),
+            AnyView::Element(el) => el.mount_owned(parent, attrs),
+            AnyView::List(list) => mount_list_owned(list, parent, attrs),
+            AnyView::Boxed(b, inner_attrs) => {
+                b.mount(parent, merge_attrs(inner_attrs, attrs));
             }
         }
     }
@@ -136,6 +157,13 @@ impl crate::view::ApplyAttributes for Fragment {
 impl View for Fragment {
     fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         mount_list(&self.0, parent, attrs);
+    }
+
+    fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        mount_list_owned(self.0, parent, attrs);
     }
 }
 

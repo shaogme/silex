@@ -20,9 +20,15 @@ impl ApplyAttributes for RouterViewFactory {}
 
 impl View for RouterViewFactory {
     fn mount(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        let factory = self.0.clone();
-        let closure = move || (factory)();
-        closure.mount(parent, attrs);
+        self.clone().mount_owned(parent, attrs);
+    }
+
+    fn mount_owned(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        let factory = self.0;
+        (move || (factory)()).mount_owned(parent, attrs);
     }
 }
 

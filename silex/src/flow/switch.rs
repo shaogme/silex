@@ -83,6 +83,13 @@ where
             attrs,
         );
     }
+
+    fn mount_owned(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        mount_switch_internal(self.source, self.cases, self.fallback, parent, attrs);
+    }
 }
 
 fn mount_switch_internal<'a, Source, T>(

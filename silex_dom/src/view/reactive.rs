@@ -67,6 +67,13 @@ where
     fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.clone().dispatch_mount(parent, attrs);
     }
+
+    fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        self.dispatch_mount(parent, attrs);
+    }
 }
 
 /// 内部特征，用于 Rx 的 View 分发，解决 trait 冲突并优化路径。
@@ -176,8 +183,14 @@ macro_rules! impl_view_forward_to_rx {
                 Rx<T, RxValueKind>: crate::view::View,
             {
                 fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-                    let rx = self.clone().into_rx();
-                    rx.mount(parent, attrs);
+                    self.clone().into_rx().mount(parent, attrs);
+                }
+
+                fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)
+                where
+                    Self: Sized,
+                {
+                    self.into_rx().mount_owned(parent, attrs);
                 }
             }
         )*
@@ -203,6 +216,13 @@ where
     fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.clone().into_rx().mount(parent, attrs);
     }
+
+    fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        self.into_rx().mount_owned(parent, attrs);
+    }
 }
 
 impl<S, F, V> crate::view::ApplyAttributes
@@ -223,6 +243,13 @@ where
     fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.clone().into_rx().mount(parent, attrs);
     }
+
+    fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        self.into_rx().mount_owned(parent, attrs);
+    }
 }
 
 impl<S, F, O> crate::view::ApplyAttributes for silex_core::reactivity::SignalSlice<S, F, O>
@@ -241,5 +268,12 @@ where
 {
     fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.clone().into_rx().mount(parent, attrs);
+    }
+
+    fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        self.into_rx().mount_owned(parent, attrs);
     }
 }

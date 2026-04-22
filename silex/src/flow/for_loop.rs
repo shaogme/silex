@@ -179,6 +179,20 @@ where
             attrs,
         );
     }
+
+    fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        mount_for_internal(
+            self.items,
+            self.key,
+            self.children,
+            self.error,
+            parent,
+            attrs,
+        );
+    }
 }
 
 struct ForRow<Item> {
@@ -269,7 +283,7 @@ fn mount_for_internal<'a, ItemsFn, IS, Item, Key>(
 
                                 let scope_id = create_scope(move || {
                                     let view = (children_fn.as_ref())(item_get, index_get);
-                                    view.mount(&fragment_node, Vec::new());
+                                    view.mount_owned(&fragment_node, Vec::new());
                                 });
 
                                 let nodes_list = fragment.child_nodes();

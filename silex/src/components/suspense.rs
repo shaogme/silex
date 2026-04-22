@@ -64,6 +64,7 @@ where
     }
 }
 
+#[derive(Clone)]
 struct SuspenseView {
     factory: Rc<dyn Fn() -> AnyView + 'static>,
     initial_view: AnyView,
@@ -76,9 +77,16 @@ impl ApplyAttributes for SuspenseView {}
 
 impl View for SuspenseView {
     fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
+        self.clone().mount_owned(parent, attrs);
+    }
+
+    fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
         let factory = self.factory.clone();
-        let initial_view = self.initial_view.clone();
-        let fallback_view = self.fallback.clone();
+        let initial_view = self.initial_view;
+        let fallback_view = self.fallback;
         let mode = self.mode;
         let parent_clone = parent.clone();
         let count = self.ctx.count;
@@ -87,7 +95,7 @@ impl View for SuspenseView {
         create_scope(move || match mode {
             SuspenseMode::KeepAlive => {
                 let children_view = initial_view;
-                let fallback_view = fallback_view.clone();
+                let fallback_view = fallback_view;
 
                 // KeepAlive 模式：始终保留 DOM 节点，仅切换显示状态
                 let content_wrapper = div(()).class("suspense-content");
@@ -95,21 +103,23 @@ impl View for SuspenseView {
                 let _ = content_wrapper.clone().style(silex_core::rx! {
                     if count_clone.get() > 0 { "display: none" } else { "display: block" }
                 });
-                content_wrapper.clone().mount(&parent_clone, attrs);
-                children_view.mount(&content_wrapper.element, Vec::new());
+                let content_element = content_wrapper.element.clone();
+                content_wrapper.mount_owned(&parent_clone, attrs);
+                children_view.mount_owned(&content_element, Vec::new());
 
                 let fallback_wrapper = div(()).class("suspense-fallback");
                 let count_clone = count;
                 let _ = fallback_wrapper.clone().style(silex_core::rx! {
                     if count_clone.get() > 0 { "display: block" } else { "display: none" }
                 });
-                fallback_wrapper.clone().mount(&parent_clone, Vec::new());
-                fallback_view.mount(&fallback_wrapper.element, Vec::new());
+                let fallback_element = fallback_wrapper.element.clone();
+                fallback_wrapper.mount_owned(&parent_clone, Vec::new());
+                fallback_view.mount_owned(&fallback_element, Vec::new());
             }
             SuspenseMode::Unmount => {
                 let factory = factory.clone();
                 let initial_view = initial_view;
-                let fallback_view = fallback_view.clone();
+                let fallback_view = fallback_view;
                 let ctx_clone = ctx.clone();
 
                 // 用于标记是否是第一次渲染
@@ -134,7 +144,7 @@ impl View for SuspenseView {
                         ().into_any()
                     }
                 };
-                children_rx.mount(&parent_clone, attrs);
+                children_rx.mount_owned(&parent_clone, attrs);
 
                 let count_clone = count;
                 let fallback_rx = silex_core::rx! {
@@ -144,7 +154,7 @@ impl View for SuspenseView {
                         ().into_any()
                     }
                 };
-                fallback_rx.mount(&parent_clone, Vec::new());
+                fallback_rx.mount_owned(&parent_clone, Vec::new());
             }
         });
     }

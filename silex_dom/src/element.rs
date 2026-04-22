@@ -30,7 +30,7 @@ pub fn mount_to_body<V: crate::view::View>(view: V) {
 
     // Create a root reactive scope to ensure context and effects work correctly
     silex_core::reactivity::create_scope(move || {
-        view.mount(&node, Vec::new());
+        view.mount_owned(&node, Vec::new());
     });
 }
 
@@ -87,6 +87,25 @@ impl crate::view::ApplyAttributes for Element {
 
 impl crate::view::View for Element {
     fn mount(&self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
+        if !attrs.is_empty() {
+            let consolidated = crate::attribute::consolidate_attributes(attrs);
+            for attr in consolidated {
+                attr.apply(&self.dom_element);
+            }
+        }
+
+        if let Err(e) = parent
+            .append_child(&self.dom_element)
+            .map_err(SilexError::from)
+        {
+            silex_core::error::handle_error(e);
+        }
+    }
+
+    fn mount_owned(self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
         if !attrs.is_empty() {
             let consolidated = crate::attribute::consolidate_attributes(attrs);
             for attr in consolidated {
@@ -191,6 +210,13 @@ impl<T> crate::view::ApplyAttributes for TypedElement<T> {
 impl<T: 'static> crate::view::View for TypedElement<T> {
     fn mount(&self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
         self.element.mount(parent, attrs);
+    }
+
+    fn mount_owned(self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        self.element.mount_owned(parent, attrs);
     }
 }
 

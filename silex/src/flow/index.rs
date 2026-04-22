@@ -76,7 +76,14 @@ where
     I: Clone + 'static,
 {
     fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        mount_index_logic(self.each.clone(), self.children.clone(), parent, attrs);
+        self.clone().mount_owned(parent, attrs);
+    }
+
+    fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        mount_index_logic(self.each, self.children, parent, attrs);
     }
 }
 
@@ -142,7 +149,7 @@ fn mount_index_logic<IF, I, IS>(
 
                                 let scope_id = create_scope(move || {
                                     (map_fn)(get, index_get)
-                                        .mount(&fragment_node_clone, Vec::new());
+                                        .mount_owned(&fragment_node_clone, Vec::new());
                                 });
 
                                 let nodes_list = fragment.child_nodes();

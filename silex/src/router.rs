@@ -121,7 +121,14 @@ impl ApplyAttributes for RouterView {}
 
 impl View for RouterView {
     fn mount(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
-        self.clone().mount_internal(parent, attrs);
+        self.clone().mount_owned(parent, attrs);
+    }
+
+    fn mount_owned(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        self.mount_internal(parent, attrs);
     }
 }
 
@@ -199,7 +206,7 @@ impl RouterView {
         // 5. 挂载容器
         let container = div(());
         let container_node = container.dom_element.clone();
-        container.mount(parent, attrs);
+        container.mount_owned(parent, attrs);
 
         // 6. 清理
         on_cleanup(move || {
@@ -211,7 +218,7 @@ impl RouterView {
         });
 
         // 7. 渲染子视图
-        self.children.mount(&container_node, Vec::new());
+        self.children.mount_owned(&container_node, Vec::new());
     }
 }
 
@@ -235,6 +242,25 @@ where
     R: RouteView + 'static,
 {
     fn mount(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
+        let path_signal = crate::router::use_location_path();
+        silex_dom::view::mount_branch_cached(
+            parent,
+            attrs,
+            move || path_signal.get(),
+            move |path| {
+                if let Some(matched) = R::match_path(&path) {
+                    matched.render()
+                } else {
+                    AnyView::Empty
+                }
+            },
+        );
+    }
+
+    fn mount_owned(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
         let path_signal = crate::router::use_location_path();
         silex_dom::view::mount_branch_cached(
             parent,
@@ -277,6 +303,26 @@ where
     fn mount(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
         let path_signal = crate::router::use_location_path();
         let render = self.render.clone();
+        silex_dom::view::mount_branch_cached(
+            parent,
+            attrs,
+            move || path_signal.get(),
+            move |path| {
+                if let Some(matched) = R::match_path(&path) {
+                    render(matched).into_any()
+                } else {
+                    AnyView::Empty
+                }
+            },
+        );
+    }
+
+    fn mount_owned(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        let path_signal = crate::router::use_location_path();
+        let render = self.render;
         silex_dom::view::mount_branch_cached(
             parent,
             attrs,
