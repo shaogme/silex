@@ -1,6 +1,6 @@
 use crate::attribute::PendingAttribute;
 use crate::element::Element;
-use crate::view::{Mount, MountExt, MountRef, MountRefExt};
+use crate::view::{Mount, MountExt, MountRef};
 use silex_vtable::any_box::AnyBox;
 use silex_vtable::func_ptr::FuncPtr;
 use silex_vtable::thunk::FactoryBox;
@@ -20,10 +20,6 @@ pub(crate) struct AnyViewVTable {
 
 pub struct AnyViewBox {
     inner: AnyBox<AnyViewVTable>,
-}
-
-pub struct SharedViewBox {
-    inner: Rc<AnyViewBox>,
 }
 
 impl AnyViewBox {
@@ -74,30 +70,6 @@ impl Drop for AnyViewBox {
     fn drop(&mut self) {
         unsafe {
             (self.inner.vtable.drop.as_fn())(self.inner.as_mut_ptr());
-        }
-    }
-}
-
-impl SharedViewBox {
-    pub fn new<V: MountExt>(view: V) -> Self {
-        Self {
-            inner: Rc::new(AnyViewBox::new(view)),
-        }
-    }
-
-    pub fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.inner.mount_ref(parent, attrs);
-    }
-
-    pub fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.inner.mount_ref(parent, attrs);
-    }
-}
-
-impl Clone for SharedViewBox {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
         }
     }
 }
@@ -185,18 +157,7 @@ unsafe fn drop_heap<V>(data: *mut u8) {
 pub type ViewThunk = FactoryBox<AnyView>;
 pub type RenderThunk = silex_vtable::thunk::ThunkBox<(Node, Vec<PendingAttribute>), ()>;
 
-/// 优化的 SharedView，专用于需要重复使用的组件边界
-#[derive(Default)]
-pub enum SharedView {
-    #[default]
-    Empty,
-    Text(String),
-    Element(crate::element::Element),
-    List(Vec<SharedView>),
-    Boxed(SharedViewBox, Vec<PendingAttribute>),
-}
-
-/// 优化的 AnyView，作为所有视图类型擦除的终点（不要求 Clone）
+/// 优化的 AnyView，作为所有视图类型擦除的终点
 #[derive(Default)]
 pub enum AnyView {
     #[default]
@@ -204,19 +165,16 @@ pub enum AnyView {
     Text(String),
     Element(crate::element::Element),
     List(Vec<AnyView>),
-    Boxed(AnyViewBox, Vec<PendingAttribute>),
-    FromShared(SharedView),
-}
-
-impl SharedView {
-    pub fn new<V: MountExt>(view: V) -> Self {
-        SharedView::Boxed(SharedViewBox::new(view), Vec::new())
-    }
+    Boxed(Rc<AnyViewBox>, Vec<PendingAttribute>),
 }
 
 impl AnyView {
     pub fn new<V: MountExt>(view: V) -> Self {
-        AnyView::Boxed(AnyViewBox::new(view), Vec::new())
+        AnyView::Boxed(Rc::new(AnyViewBox::new(view)), Vec::new())
+    }
+
+    pub fn into_any(self) -> Self {
+        self
     }
 }
 
@@ -249,49 +207,6 @@ fn merge_attrs(
     crate::attribute::consolidate_attributes(inner_attrs)
 }
 
-impl crate::view::ApplyAttributes for SharedView {
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
-        match self {
-            SharedView::Empty => {}
-            SharedView::Text(_) => {}
-            SharedView::Element(el) => el.apply_attributes(attrs),
-            SharedView::List(list) => apply_list_attributes(list, attrs),
-            SharedView::Boxed(_, inner_attrs) => {
-                let temp = std::mem::take(inner_attrs);
-                *inner_attrs = merge_attrs(temp, attrs);
-            }
-        }
-    }
-}
-
-impl Mount for SharedView {
-    fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        match self {
-            SharedView::Empty => {}
-            SharedView::Text(s) => s.mount(parent, attrs),
-            SharedView::Element(el) => el.mount(parent, attrs),
-            SharedView::List(list) => mount_list_owned(list, parent, attrs),
-            SharedView::Boxed(b, inner_attrs) => {
-                b.mount(parent, merge_attrs(inner_attrs, attrs));
-            }
-        }
-    }
-}
-
-impl MountRef for SharedView {
-    fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        match self {
-            SharedView::Empty => {}
-            SharedView::Text(s) => s.mount_ref(parent, attrs),
-            SharedView::Element(el) => el.mount_ref(parent, attrs),
-            SharedView::List(list) => mount_list_ref(list, parent, attrs),
-            SharedView::Boxed(b, inner_attrs) => {
-                b.mount_ref(parent, merge_attrs(inner_attrs.clone(), attrs));
-            }
-        }
-    }
-}
-
 impl crate::view::ApplyAttributes for AnyView {
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
         match self {
@@ -299,12 +214,10 @@ impl crate::view::ApplyAttributes for AnyView {
             AnyView::Text(_) => {}
             AnyView::Element(el) => el.apply_attributes(attrs),
             AnyView::List(list) => apply_list_attributes(list, attrs),
-            AnyView::Boxed(b, inner_attrs) => {
+            AnyView::Boxed(_, inner_attrs) => {
                 let temp = std::mem::take(inner_attrs);
                 *inner_attrs = merge_attrs(temp, attrs);
-                b.apply_attributes(inner_attrs.clone());
             }
-            AnyView::FromShared(s) => s.apply_attributes(attrs),
         }
     }
 }
@@ -319,7 +232,6 @@ impl MountRef for AnyView {
             AnyView::Boxed(b, inner_attrs) => {
                 b.mount_ref(parent, merge_attrs(inner_attrs.clone(), attrs));
             }
-            AnyView::FromShared(s) => s.mount_ref(parent, attrs),
         }
     }
 }
@@ -332,32 +244,32 @@ impl Mount for AnyView {
             AnyView::Element(el) => el.mount(parent, attrs),
             AnyView::List(list) => mount_list_owned(list, parent, attrs),
             AnyView::Boxed(b, inner_attrs) => {
-                b.mount(parent, merge_attrs(inner_attrs, attrs));
+                b.mount_ref(parent, merge_attrs(inner_attrs, attrs));
             }
-            AnyView::FromShared(s) => s.mount(parent, attrs),
         }
     }
 }
 
-impl Clone for SharedView {
+impl Clone for AnyView {
     fn clone(&self) -> Self {
         match self {
-            SharedView::Empty => SharedView::Empty,
-            SharedView::Text(s) => SharedView::Text(s.clone()),
-            SharedView::Element(el) => SharedView::Element(el.clone()),
-            SharedView::List(list) => SharedView::List(list.clone()),
-            SharedView::Boxed(b, attrs) => SharedView::Boxed(b.clone(), attrs.clone()),
+            AnyView::Empty => AnyView::Empty,
+            AnyView::Text(s) => AnyView::Text(s.clone()),
+            AnyView::Element(el) => AnyView::Element(el.clone()),
+            AnyView::List(list) => AnyView::List(list.clone()),
+            AnyView::Boxed(b, attrs) => AnyView::Boxed(b.clone(), attrs.clone()),
         }
     }
 }
 
-impl PartialEq for SharedView {
+impl PartialEq for AnyView {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (SharedView::Empty, SharedView::Empty) => true,
-            (SharedView::Text(a), SharedView::Text(b)) => a == b,
-            (SharedView::Element(a), SharedView::Element(b)) => a == b,
-            (SharedView::List(a), SharedView::List(b)) => a == b,
+            (AnyView::Empty, AnyView::Empty) => true,
+            (AnyView::Text(a), AnyView::Text(b)) => a == b,
+            (AnyView::Element(a), AnyView::Element(b)) => a == b,
+            (AnyView::List(a), AnyView::List(b)) => a == b,
+            (AnyView::Boxed(a, _), AnyView::Boxed(b, _)) => Rc::ptr_eq(a, b),
             _ => false,
         }
     }
@@ -371,29 +283,16 @@ impl std::fmt::Debug for AnyView {
             Self::Element(_) => write!(f, "AnyView(Element)"),
             Self::List(l) => f.debug_tuple("AnyView(List)").field(&l.len()).finish(),
             Self::Boxed(_, _) => write!(f, "AnyView(Boxed)"),
-            Self::FromShared(s) => f.debug_tuple("AnyView(FromShared)").field(s).finish(),
-        }
-    }
-}
-
-impl std::fmt::Debug for SharedView {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Empty => write!(f, "SharedView(Empty)"),
-            Self::Text(arg0) => f.debug_tuple("SharedView(Text)").field(arg0).finish(),
-            Self::Element(_) => write!(f, "SharedView(Element)"),
-            Self::List(l) => f.debug_tuple("SharedView(List)").field(&l.len()).finish(),
-            Self::Boxed(_, _) => write!(f, "SharedView(Boxed)"),
         }
     }
 }
 
 /// 片段，用于容纳多个不同类型的子组件
 #[derive(Default, Clone)]
-pub struct Fragment(pub Vec<SharedView>);
+pub struct Fragment(pub Vec<AnyView>);
 
 impl Fragment {
-    pub fn new(children: Vec<SharedView>) -> Self {
+    pub fn new(children: Vec<AnyView>) -> Self {
         Self(children)
     }
 }
@@ -445,39 +344,12 @@ impl From<()> for AnyView {
     }
 }
 
-impl From<Element> for SharedView {
-    fn from(v: Element) -> Self {
-        SharedView::Element(v)
-    }
-}
-impl From<String> for SharedView {
-    fn from(v: String) -> Self {
-        SharedView::Text(v)
-    }
-}
-impl From<&str> for SharedView {
-    fn from(v: &str) -> Self {
-        SharedView::Text(v.to_string())
-    }
-}
-impl From<()> for SharedView {
-    fn from(_: ()) -> Self {
-        SharedView::Empty
-    }
-}
-
 macro_rules! impl_from_primitive {
     ($($t:ty),*) => {
         $(
             impl From<$t> for AnyView {
                 fn from(v: $t) -> Self {
                     AnyView::Text(v.to_string())
-                }
-            }
-
-            impl From<$t> for SharedView {
-                fn from(v: $t) -> Self {
-                    SharedView::Text(v.to_string())
                 }
             }
         )*
@@ -492,11 +364,6 @@ impl<V: MountExt> From<Vec<V>> for AnyView {
         AnyView::List(v.into_iter().map(|item| item.into_any()).collect())
     }
 }
-impl<V: MountExt> From<Vec<V>> for SharedView {
-    fn from(v: Vec<V>) -> Self {
-        SharedView::List(v.into_iter().map(|item| item.into_shared()).collect())
-    }
-}
 
 impl<V: MountExt> From<Option<V>> for AnyView {
     fn from(v: Option<V>) -> Self {
@@ -506,26 +373,12 @@ impl<V: MountExt> From<Option<V>> for AnyView {
         }
     }
 }
-impl<V: MountExt> From<Option<V>> for SharedView {
-    fn from(v: Option<V>) -> Self {
-        match v {
-            Some(val) => SharedView::new(val),
-            None => SharedView::Empty,
-        }
-    }
-}
 
 // --- Recursive View Chain Erasure ---
 
 impl From<crate::view::ViewNil> for AnyView {
     fn from(_: crate::view::ViewNil) -> Self {
         AnyView::Empty
-    }
-}
-
-impl From<crate::view::ViewNil> for SharedView {
-    fn from(_: crate::view::ViewNil) -> Self {
-        SharedView::Empty
     }
 }
 
@@ -539,19 +392,9 @@ where
     }
 }
 
-impl<H, T> From<crate::view::ViewCons<H, T>> for SharedView
-where
-    H: MountExt,
-    T: MountExt,
-{
-    fn from(v: crate::view::ViewCons<H, T>) -> Self {
-        SharedView::new(v)
-    }
-}
-
-/// 一个辅助宏，用于简化从 `match` 表达式返回 `SharedView` 的操作。
+/// 一个辅助宏，用于简化从 `match` 表达式返回 `AnyView` 的操作。
 ///
-/// 它会自动对每个分支的结果调用 `.into_shared()`，从而允许不同类型的 View 在同一个 `match` 块中返回。
+/// 它会自动对每个分支的结果调用 `.into_any()`，从而允许不同类型的 View 在同一个 `match` 块中返回。
 ///
 /// # 示例
 ///
@@ -567,7 +410,7 @@ macro_rules! view_match {
     ($target:expr, { $($pat:pat $(if $guard:expr)? => $val:expr),* $(,)? }) => {
         match $target {
             $(
-                $pat $(if $guard)? => $crate::view::MountRefExt::into_shared($val),
+                $pat $(if $guard)? => $val.into_any(),
             )*
         }
     };
@@ -578,7 +421,7 @@ macro_rules! any_view_match {
     ($target:expr, { $($pat:pat $(if $guard:expr)? => $val:expr),* $(,)? }) => {
         match $target {
             $(
-                $pat $(if $guard)? => $MountExt::into_any($val),
+                $pat $(if $guard)? => $val.into_any(),
             )*
         }
     };

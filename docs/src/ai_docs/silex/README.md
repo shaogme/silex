@@ -182,9 +182,9 @@
 `silex/src/components/suspense.rs`
 *   **Update**: `Suspense` 现已完全组件化，由 `#[component]` 宏定义，不再使用 Builder 模式。`SuspenseBoundary` 逻辑已合并入 `Suspense`。
 *   **Usage**: 
-    1.  `Suspense(move || { ... })`: 接收一个工厂闭包。返回 `SharedView` 以支持复用。
+    1.  `Suspense(move || { ... })`: 接收一个工厂闭包。返回 `AnyView` 以支持复用。
     2.  内部逻辑：工厂闭包内创建的 `Resource` 会通过 `SuspenseContext` 自动注册到该 Suspense 边界。
-    3.  `.fallback(view)`: 设置加载时的占位视图（接受 `impl Into<SharedView>`）。
+    3.  `.fallback(view)`: 设置加载时的占位视图（接受 `impl Into<AnyView>`）。
     4.  `.mode(SuspenseMode)`: 设置 `KeepAlive` (隐藏) 或 `Unmount` (移除) 模式。
 *   **Mechanism**:
     1.  **资源稳定性 (Hook-style)**: `SuspenseContext` 内部维护一个资源注册表（Resource Registry）和调用顺序索引。`Resource::new` 会首先检查该注册表，确保在 `Unmount` 模式下重新挂载（闭包重新执行）时，Resource 实例及其状态被复用，避免重复请求。

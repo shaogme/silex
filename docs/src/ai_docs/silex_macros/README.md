@@ -32,7 +32,7 @@ fn MyComponent(props...) -> impl Mount + MountRef
         4.  **Attribute Forwarding**: 调用 `view_instance.apply_attributes(_pending_attrs)`，将属性传递给内部视图。
         5.  挂载 View 实例。
 5.  **Constructor**: 生成同名函数作为组件入口。
-    *   **自动参数注入**: 如果组件的第一个参数名称为 `children` (类型为 `Children`, `AnyView` 或 `SharedView`)，则构建函数会自带该参数 (例如 `fn MyComponent(children: impl View + ...) -> MyComponentComponent`)。
+    *   **自动参数注入**: 如果组件的第一个参数名称为 `children` (类型为 `Children` 或 `AnyView`)，则构建函数会自带该参数 (例如 `fn MyComponent(children: impl View + ...) -> MyComponentComponent`)。
     *   **无参降级**: 否则，生成无参构造函数 `fn MyComponent() -> MyComponentComponent`。
     *   这允许在书写组件嵌套时使用更直观的 `Parent(Child())` 语法，而非 `Parent().children(Child())`。
 

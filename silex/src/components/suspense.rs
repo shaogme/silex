@@ -32,7 +32,7 @@ pub enum SuspenseMode {
 #[component]
 pub fn Suspense<CH, R>(
     children: CH,
-    #[prop(default = SharedView::Empty)] fallback: SharedView,
+    #[prop(default = AnyView::Empty)] fallback: AnyView,
     #[prop(default)] mode: SuspenseMode,
 ) -> impl Mount + MountRef
 where
@@ -49,7 +49,7 @@ where
     // 3. 生成初始视图供第一次挂载或 KeepAlive 模式使用。
     let initial_view = SuspenseContext::provide_with(ctx.clone(), {
         let children = children.clone();
-        move || children().into_shared()
+        move || children().into_any()
     });
 
     SuspenseView {
@@ -64,8 +64,8 @@ where
 
 struct SuspenseView<CH, R> {
     factory: CH,
-    initial_view: SharedView,
-    fallback: SharedView,
+    initial_view: AnyView,
+    fallback: AnyView,
     mode: SuspenseMode,
     ctx: SuspenseContext,
     _marker: PhantomData<R>,
@@ -124,7 +124,7 @@ where
                     if count_clone.get() == 0 {
                         if is_first.get() {
                             is_first.set(false);
-                            initial_view.clone().into_any()
+                            initial_view.clone()
                         } else {
                             // 重新执行工厂闭包以生成全新的视图（重置本地 DOM 状态）
                             // 内部的 Resource::new 会从缓存中获取稳定的 Resource 实例
@@ -139,7 +139,7 @@ where
                 let count_clone = count;
                 let fallback_rx = silex_core::rx! {
                     if count_clone.get() > 0 {
-                        fallback_view.clone().into_any()
+                        fallback_view.clone()
                     } else {
                         ().into_any()
                     }

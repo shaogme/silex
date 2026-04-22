@@ -151,7 +151,6 @@ impl_auto_reactive_view_text!(
 
 impl_auto_reactive_view_default!(
     crate::element::Element,
-    crate::view::SharedView,
     crate::view::any::Fragment,
     crate::view::any::AnyView
 );

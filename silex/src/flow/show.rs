@@ -12,8 +12,8 @@ use web_sys::Node;
 #[component]
 pub fn Show<C>(
     when: C,
-    #[prop(render)] children: SharedView,
-    #[prop(default = SharedView::Empty, render)] fallback: SharedView,
+    #[prop(render)] children: AnyView,
+    #[prop(default = AnyView::Empty, render)] fallback: AnyView,
 ) -> impl Mount + MountRef
 where
     C: RxGet<Value = bool> + Clone + 'static,
@@ -28,8 +28,8 @@ where
 #[derive(Clone)]
 struct ShowView<'a, C> {
     when: Prop<'a, C>,
-    children: Prop<'a, SharedView>,
-    fallback: Prop<'a, SharedView>,
+    children: Prop<'a, AnyView>,
+    fallback: Prop<'a, AnyView>,
 }
 
 impl<'a, C> ApplyAttributes for ShowView<'a, C> {}
@@ -60,8 +60,8 @@ where
 
 fn mount_show_internal<'a, C>(
     condition: Prop<'a, C>,
-    view: Prop<'a, SharedView>,
-    fallback: Prop<'a, SharedView>,
+    view: Prop<'a, AnyView>,
+    fallback: Prop<'a, AnyView>,
     parent: &Node,
     attrs: Vec<silex_dom::attribute::PendingAttribute>,
 ) where
@@ -70,7 +70,7 @@ fn mount_show_internal<'a, C>(
     let condition = condition.into_owned();
     let view = view.into_owned();
     let fallback = fallback.into_owned();
-    silex_dom::view::mount_shared_branch_cached(
+    silex_dom::view::mount_branch_cached(
         parent,
         attrs,
         move || condition.get(),
@@ -91,7 +91,7 @@ pub trait SignalShowExt: IntoRx<Value = bool> {
     fn when<V>(self, view: V) -> ShowComponent<Self::RxType>
     where
         Self::RxType: RxGet<Value = bool> + Clone + 'static,
-        V: MountRefExt + 'static;
+        V: MountExt + 'static;
 }
 
 // 为所有 IntoRx<Value = bool> 的类型实现扩展
@@ -102,7 +102,7 @@ where
     fn when<V>(self, view: V) -> ShowComponent<Self::RxType>
     where
         Self::RxType: RxGet<Value = bool> + Clone + 'static,
-        V: MountRefExt + 'static,
+        V: MountExt + 'static,
     {
         Show(self.into_rx()).children(view)
     }

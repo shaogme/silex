@@ -21,8 +21,8 @@ use web_sys::Node;
 #[component]
 pub fn Switch<Source, T>(
     source: Source,
-    #[prop(default)] cases: HashMap<T, SharedView>,
-    #[prop(default = SharedView::Empty, render)] fallback: SharedView,
+    #[prop(default)] cases: HashMap<T, AnyView>,
+    #[prop(default = AnyView::Empty, render)] fallback: AnyView,
 ) -> impl Mount + MountRef
 where
     Source: RxGet<Value = T> + Clone + 'static,
@@ -43,11 +43,11 @@ where
     /// 添加一个匹配分支
     pub fn case<V>(mut self, value: T, view: V) -> Self
     where
-        V: MountRefExt + 'static,
+        V: MountExt + 'static,
     {
         match self.cases.entry(value) {
             Entry::Vacant(entry) => {
-                entry.insert(view.into_shared());
+                entry.insert(view.into_any());
             }
             Entry::Occupied(_) => {
                 silex_core::error::handle_error(silex_core::SilexError::Javascript(
@@ -63,8 +63,8 @@ where
 #[derive(Clone)]
 struct SwitchView<'a, Source, T> {
     source: Prop<'a, Source>,
-    cases: Prop<'a, HashMap<T, SharedView>>,
-    fallback: Prop<'a, SharedView>,
+    cases: Prop<'a, HashMap<T, AnyView>>,
+    fallback: Prop<'a, AnyView>,
 }
 
 impl<'a, Source, T> ApplyAttributes for SwitchView<'a, Source, T> {}
@@ -97,8 +97,8 @@ where
 
 fn mount_switch_internal<'a, Source, T>(
     source: Prop<'a, Source>,
-    cases: Prop<'a, HashMap<T, SharedView>>,
-    fallback: Prop<'a, SharedView>,
+    cases: Prop<'a, HashMap<T, AnyView>>,
+    fallback: Prop<'a, AnyView>,
     parent: &Node,
     attrs: Vec<silex_dom::attribute::PendingAttribute>,
 ) where
@@ -112,7 +112,7 @@ fn mount_switch_internal<'a, Source, T>(
     let cases_for_key = cases.clone();
     let cases_for_render = cases.clone();
 
-    silex_dom::view::mount_shared_branch_cached(
+    silex_dom::view::mount_branch_cached(
         parent,
         attrs,
         move || {

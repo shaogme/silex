@@ -25,7 +25,7 @@ src/
 │   ├── op.rs            // AttrOp 统一指令集与执行内核
 │   └── into_storable.rs // 生命周期抹除与类型转换
 ├── view/                // 视图表示层
-│   ├── any.rs           // AnyView & SharedView 类型擦除
+│   ├── any.rs           // AnyView 类型擦除
 │   └── reactive.rs      // 响应式视图挂载与双锚点清理逻辑
 ├── element/             // 元素包装
 │   └── tags.rs          // 强类型 HTML 标签定义

@@ -200,7 +200,7 @@ pub fn QueryDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn AuthGuard(children: SharedView) -> impl Mount + MountRef {
+pub fn AuthGuard(children: AnyView) -> impl Mount + MountRef {
     let settings = use_user_settings();
     let children = children.clone();
 
@@ -212,7 +212,7 @@ pub fn AuthGuard(children: SharedView) -> impl Mount + MountRef {
                 h3("🔒 Restricted Access"),
                 p("This content is protected. Please go to 'Store Demo' and change your username to something other than 'Guest'."),
             ].style("padding: 20px; background: #fff0f0; border: 1px solid #ffcccc; color: #cc0000;")
-            .into_shared()
+            .into_any()
         }
     }
 }
@@ -454,9 +454,9 @@ pub fn SuspenseDemo() -> impl Mount + MountRef {
                 })
                 .fallback(div("Loading... (2s)").style("color: blue; font-weight: bold;"))
                 .mode(mode.get())
-                .into_shared()
+                .into_any()
             } else {
-                ().into_shared()
+                ().into_any()
             }
         }]
         .style("min-height: 150px; border: 1px dashed #ccc; padding: 10px;")

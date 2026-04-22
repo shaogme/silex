@@ -265,25 +265,13 @@ impl_forward_binop_copy!(Div, div);
 
 /// 视图转换扩展 (Mount Extensions)
 pub trait MountExt: MountRef + Mount + ApplyAttributes + 'static {
-    /// Convert this view into an AnyView (Type Erasure without Clone requirement).
+    /// Convert this view into an AnyView.
     fn into_any(self) -> AnyView;
 }
 
 impl<T: MountRef + Mount + ApplyAttributes + 'static> MountExt for T {
     fn into_any(self) -> AnyView {
         AnyView::new(self)
-    }
-}
-
-/// 共享视图转换扩展 (MountRef Extensions)
-pub trait MountRefExt: MountRef + 'static {
-    /// Convert this view into a SharedView (Type Erasure with Clone requirement).
-    fn into_shared(self) -> SharedView;
-}
-
-impl<T: MountExt> MountRefExt for T {
-    fn into_shared(self) -> SharedView {
-        SharedView::new(self)
     }
 }
 
@@ -592,8 +580,8 @@ pub fn mount_dynamic_view_cached<K, KeyFn, RenderFn>(
     });
 }
 
-/// 根据分支 key 选择 `SharedView` 的缓存挂载辅助层。
-pub fn mount_shared_branch_cached<K, KeyFn, BranchFn>(
+/// 根据分支 key 选择 `AnyView` 的缓存挂载辅助层。
+pub fn mount_branch_cached<K, KeyFn, BranchFn>(
     parent: &Node,
     attrs: Vec<PendingAttribute>,
     key_fn: KeyFn,
@@ -601,7 +589,7 @@ pub fn mount_shared_branch_cached<K, KeyFn, BranchFn>(
 ) where
     K: PartialEq + Clone + 'static,
     KeyFn: Fn() -> K + Clone + 'static,
-    BranchFn: Fn(K) -> SharedView + 'static,
+    BranchFn: Fn(K) -> AnyView + 'static,
 {
     mount_dynamic_view_cached(parent, attrs, key_fn, move |key, (p, a)| {
         branch_fn(key).mount_ref(&p, a);

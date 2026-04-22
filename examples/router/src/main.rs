@@ -15,7 +15,7 @@ fn Card(children: AnyView) -> impl Mount + MountRef {
 #[component]
 fn NavLink<T: ToRoute + Clone + 'static>(
     #[prop(clone)] to: T,
-    #[prop(clone)] children: SharedView,
+    #[prop(clone)] children: AnyView,
 ) -> impl Mount + MountRef {
     Link(to.clone())
         .children(children)

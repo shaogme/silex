@@ -58,17 +58,11 @@ impl PropInfo {
             quote! { #ty }
         } else if self.render {
             match self.type_ident.as_str() {
-                "SharedView" => {
-                    quote! { impl ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt }
-                }
                 "AnyView" => quote! { impl ::silex::dom::view::MountExt },
                 _ => quote! { #ty },
             }
         } else if self.into_trait {
             match self.type_ident.as_str() {
-                "SharedView" => {
-                    quote! { impl ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountRefExt }
-                }
                 "AnyView" => quote! { impl ::silex::dom::view::MountExt },
                 _ => quote! { impl Into<#ty> },
             }
@@ -83,13 +77,11 @@ impl PropInfo {
             input
         } else if self.render {
             match self.type_ident.as_str() {
-                "SharedView" => quote! { #input.into_shared() },
                 "AnyView" => quote! { #input.into_any() },
                 _ => input,
             }
         } else if self.into_trait {
             match self.type_ident.as_str() {
-                "SharedView" => quote! { #input.into_shared() },
                 "AnyView" => quote! { #input.into_any() },
                 _ => quote! { #input.into() },
             }
@@ -330,28 +322,18 @@ impl ComponentGenerator {
             quote! { Some(#target_val) }
         };
 
-        if prop.render && matches!(prop.type_ident.as_str(), "SharedView" | "AnyView") {
-            let trait_name = if prop.type_ident == "SharedView" {
-                quote! { MountRefExt }
-            } else {
-                quote! { MountExt }
-            };
+        if prop.render && prop.type_ident == "AnyView" {
             quote! {
-                pub fn #name(mut self, val: impl ::silex::dom::view::#trait_name) -> Self {
-                    use ::silex::dom::view::#trait_name;
+                pub fn #name(mut self, val: impl ::silex::dom::view::MountExt) -> Self {
+                    use ::silex::dom::view::MountExt;
                     self.#name = #final_val;
                     self
                 }
             }
-        } else if prop.into_trait && matches!(prop.type_ident.as_str(), "SharedView" | "AnyView") {
-            let trait_name = if prop.type_ident == "SharedView" {
-                quote! { MountRefExt }
-            } else {
-                quote! { MountExt }
-            };
+        } else if prop.into_trait && prop.type_ident == "AnyView" {
             quote! {
-                pub fn #name<__SilexValue: ::silex::dom::view::ApplyAttributes + ::silex::dom::view::#trait_name>(mut self, val: __SilexValue) -> Self {
-                    use ::silex::dom::view::#trait_name;
+                pub fn #name<__SilexValue: ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountExt>(mut self, val: __SilexValue) -> Self {
+                    use ::silex::dom::view::MountExt;
                     self.#name = #final_val;
                     self
                 }
@@ -598,7 +580,6 @@ fn is_auto_into_type(ident: &str) -> bool {
     matches!(
         ident,
         "AnyView"
-            | "SharedView"
             | "String"
             | "PathBuf"
             | "Callback"
