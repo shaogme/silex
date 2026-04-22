@@ -98,11 +98,7 @@ impl RxInner {
 }
 
 impl<T: 'static, M> Rx<T, M> {
-    pub fn new_op<const N: usize>(op: crate::reactivity::OpPayload<T, N>) -> Self {
-        Self::new_op_raw(op)
-    }
-
-    pub fn new_op_raw<P: 'static>(op: P) -> Self {
+    pub fn new_op<P: 'static>(op: P) -> Self {
         const {
             assert!(
                 std::mem::size_of::<P>() <= 64,

@@ -84,7 +84,6 @@ impl_into_storable_rx!((T) => silex_core::reactivity::ReadSignal<T>);
 impl_into_storable_rx!((T) => silex_core::reactivity::RwSignal<T>);
 impl_into_storable_rx!((T) => silex_core::reactivity::Constant<T>);
 impl_into_storable_rx!((T) => silex_core::reactivity::Memo<T>);
-impl_into_storable_rx!((U, const N: usize) => silex_core::reactivity::OpPayload<U, N>);
 impl_into_storable_rx!((S, F) => silex_core::reactivity::DerivedPayload<S, F>);
 impl_into_storable_rx!((S, F, O) => silex_core::reactivity::SignalSlice<S, F, O>);
 

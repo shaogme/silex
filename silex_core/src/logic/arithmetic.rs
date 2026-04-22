@@ -148,7 +148,7 @@ where
         f,
         false,
     );
-    crate::Rx::new_op_raw(op)
+    crate::Rx::new_op(op)
 }
 
 #[macro_export]
@@ -185,7 +185,7 @@ where
     }
 
     let op = crate::reactivity::StaticMapPayload::new1(val_s.ensure_node_id(), f, false);
-    crate::Rx::new_op_raw(op)
+    crate::Rx::new_op(op)
 }
 
 #[macro_export]

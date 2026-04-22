@@ -300,7 +300,7 @@ pub fn create_tuple2_rx<I1: RxData, I2: RxData>(
     is_constant: bool,
 ) -> Rx<(I1, I2)> {
     let op = crate::reactivity::StaticMap2Payload::new2(ids, mapper, is_constant);
-    Rx::new_op_raw(op)
+    Rx::new_op(op)
 }
 
 #[inline(always)]
@@ -318,7 +318,7 @@ pub fn create_tuple_n_rx<const N: usize, V: RxCloneData + 'static>(
         crate::reactivity::op_trampolines::track_tuple_meta_slice,
         is_constant,
     );
-    Rx::new_op_raw(op)
+    Rx::new_op(op)
 }
 
 macro_rules! impl_tuple_into_rx {

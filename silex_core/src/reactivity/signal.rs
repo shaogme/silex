@@ -94,7 +94,6 @@ impl<T: RxData> RxBase for Signal<T> {
         }
     }
 
-    #[inline(always)]
     fn track(&self) {
         match self {
             Signal::Read(s) => crate::reactivity::dispatch::track(s.id, crate::RxNodeKind::Signal),
@@ -108,7 +107,6 @@ impl<T: RxData> RxBase for Signal<T> {
         }
     }
 
-    #[inline(always)]
     fn is_disposed(&self) -> bool {
         match self {
             Signal::Read(s) => {
@@ -129,7 +127,6 @@ impl<T: RxData> RxBase for Signal<T> {
         self.id().and_then(get_node_defined_at)
     }
 
-    #[inline(always)]
     fn debug_name(&self) -> Option<String> {
         let name = self.id().and_then(get_debug_label);
         if name.is_none() && self.is_constant() {
@@ -218,14 +215,12 @@ impl<T: RxData> IntoRx for Signal<T> {
     fn into_rx(self) -> Self::RxType {
         Rx::new_signal(self.ensure_node_id())
     }
-    #[inline(always)]
     fn is_constant(&self) -> bool {
         self.is_constant()
     }
 }
 
 impl<T: RxData> crate::traits::IntoSignal for Signal<T> {
-    #[inline(always)]
     fn into_signal(self) -> Signal<Self::Value> {
         self
     }
