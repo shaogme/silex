@@ -7,6 +7,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::Document;
 use web_sys::Window;
 
+use silex_core::SilexError;
 use silex_core::reactivity::on_cleanup;
 
 // --- Window & Document Access ---
@@ -85,26 +86,35 @@ where
 
 /// Helper function to extract `event.target.value` from an event.
 /// Supports Input, TextArea, and Select elements.
+pub fn event_target_value_result<E>(event: &E) -> Result<String, SilexError>
+where
+    E: AsRef<web_sys::Event>,
+{
+    let target = event
+        .as_ref()
+        .target()
+        .ok_or_else(|| SilexError::Dom("Event target not found".into()))?;
+
+    if let Ok(element) = target.clone().dyn_into::<web_sys::HtmlInputElement>() {
+        return Ok(element.value());
+    }
+    if let Ok(element) = target.clone().dyn_into::<web_sys::HtmlTextAreaElement>() {
+        return Ok(element.value());
+    }
+    if let Ok(element) = target.dyn_into::<web_sys::HtmlSelectElement>() {
+        return Ok(element.value());
+    }
+
+    Err(SilexError::Dom(
+        "Event target does not expose a value".into(),
+    ))
+}
+
 pub fn event_target_value<E>(event: &E) -> String
 where
     E: AsRef<web_sys::Event>,
 {
-    let target = match event.as_ref().target() {
-        Some(t) => t,
-        None => return String::new(),
-    };
-
-    if let Ok(element) = target.clone().dyn_into::<web_sys::HtmlInputElement>() {
-        return element.value();
-    }
-    if let Ok(element) = target.clone().dyn_into::<web_sys::HtmlTextAreaElement>() {
-        return element.value();
-    }
-    if let Ok(element) = target.dyn_into::<web_sys::HtmlSelectElement>() {
-        return element.value();
-    }
-
-    String::new()
+    event_target_value_result(event).unwrap_or_default()
 }
 
 /// Helper function to extract `event.target.checked` from an event.

@@ -252,7 +252,7 @@ where
 /// 这样全应用所有同类型的事件（如 Click）将共享这段机器码。
 pub fn bind_event_impl<E>(dom_element: &WebElem, event_name: String, mut handler: Box<dyn FnMut(E)>)
 where
-    E: wasm_bindgen::convert::FromWasmAbi + wasm_bindgen::JsCast + 'static,
+    E: wasm_bindgen::convert::FromWasmAbi + 'static,
 {
     let closure = Closure::wrap(Box::new(move |e: E| {
         handler(e);

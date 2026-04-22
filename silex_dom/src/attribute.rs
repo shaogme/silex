@@ -175,42 +175,21 @@ pub trait GlobalEventAttributes: AttributeBuilder {
     where
         F: EventHandler<String, M> + Clone + 'static,
     {
-        let cb = callback.clone();
         self.apply(PendingAttribute::new_listener(
             move |el: &web_sys::Element| {
-                let mut handler = cb.clone().into_handler();
-                use wasm_bindgen::JsCast;
-                let closure =
-                    wasm_bindgen::closure::Closure::wrap(Box::new(move |e: web_sys::InputEvent| {
-                        if let Some(target) = e.target() {
-                            let input = target.unchecked_into::<web_sys::HtmlInputElement>();
-                            handler(input.value());
-                        } else {
-                            let err = silex_core::error::SilexError::Dom(
-                                "Input event has no target".into(),
-                            );
-                            silex_core::error::handle_error(err);
+                crate::element::bind_event_impl(
+                    el,
+                    "input".to_string(),
+                    Box::new({
+                        let mut handler = callback.clone().into_handler();
+                        move |e: web_sys::InputEvent| {
+                            match crate::helpers::event_target_value_result(&e) {
+                                Ok(value) => handler(value),
+                                Err(err) => silex_core::error::handle_error(err),
+                            }
                         }
-                    })
-                        as Box<dyn FnMut(_)>);
-
-                let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
-
-                if let Err(e) = el
-                    .add_event_listener_with_callback("input", js_value)
-                    .map_err(silex_core::error::SilexError::from)
-                {
-                    silex_core::error::handle_error(e);
-                    return;
-                }
-
-                let target = el.clone();
-                let js_fn = js_value.clone();
-
-                silex_core::reactivity::on_cleanup(move || {
-                    let _ = target.remove_event_listener_with_callback("input", &js_fn);
-                    drop(closure);
-                });
+                    }),
+                );
             },
         ))
     }
@@ -263,31 +242,11 @@ pub trait GlobalEventAttributes: AttributeBuilder {
         let cb_template = callback.clone();
         self.apply(PendingAttribute::new_listener(
             move |el: &web_sys::Element| {
-                use wasm_bindgen::JsCast;
-                let mut cb = cb_template.clone();
-                let closure = wasm_bindgen::closure::Closure::wrap(Box::new(move |e: E| {
-                    cb(e);
-                })
-                    as Box<dyn FnMut(E)>);
-
-                let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
-
-                if let Err(e) = el
-                    .add_event_listener_with_callback(&event_type_str, js_value)
-                    .map_err(silex_core::error::SilexError::from)
-                {
-                    silex_core::error::handle_error(e);
-                    return;
-                }
-
-                let target = el.clone();
-                let js_fn = js_value.clone();
-                let type_clone = event_type_str.clone();
-
-                silex_core::reactivity::on_cleanup(move || {
-                    let _ = target.remove_event_listener_with_callback(&type_clone, &js_fn);
-                    drop(closure);
-                });
+                crate::element::bind_event_impl(
+                    el,
+                    event_type_str.clone(),
+                    Box::new(cb_template.clone()),
+                );
             },
         ))
     }
