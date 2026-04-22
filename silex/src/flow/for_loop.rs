@@ -110,14 +110,14 @@ pub fn For<ItemsFn, IS, Item, Key, MF, V>(
     key: fn(&Item) -> Key,
     #[prop(render)] children: MF,
     #[prop(default = ::silex_core::error::handle_error, into)] error: ForErrorHandler,
-) -> impl Mount + MountRef
+) -> impl View
 where
     ItemsFn: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = Item> + Sized + 'static,
     Item: Clone + 'static,
     Key: Hash + Eq + Clone + 'static,
     MF: Fn(ReadSignal<Item>, ReadSignal<usize>) -> V + Clone + 'static,
-    V: MountExt,
+    V: View,
 {
     let children = children.into_owned();
     let children = Rc::new(move |item: ReadSignal<Item>, index: ReadSignal<usize>| {

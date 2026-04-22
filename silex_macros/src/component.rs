@@ -58,12 +58,12 @@ impl PropInfo {
             quote! { #ty }
         } else if self.render {
             match self.type_ident.as_str() {
-                "AnyView" => quote! { impl ::silex::dom::view::MountExt },
+                "AnyView" => quote! { impl ::silex::dom::view::View },
                 _ => quote! { #ty },
             }
         } else if self.into_trait {
             match self.type_ident.as_str() {
-                "AnyView" => quote! { impl ::silex::dom::view::MountExt },
+                "AnyView" => quote! { impl ::silex::dom::view::View },
                 _ => quote! { impl Into<#ty> },
             }
         } else {
@@ -324,16 +324,16 @@ impl ComponentGenerator {
 
         if prop.render && prop.type_ident == "AnyView" {
             quote! {
-                pub fn #name(mut self, val: impl ::silex::dom::view::MountExt) -> Self {
-                    use ::silex::dom::view::MountExt;
+                pub fn #name(mut self, val: impl ::silex::dom::view::View) -> Self {
+                    use ::silex::dom::view::View;
                     self.#name = #final_val;
                     self
                 }
             }
         } else if prop.into_trait && prop.type_ident == "AnyView" {
             quote! {
-                pub fn #name<__SilexValue: ::silex::dom::view::ApplyAttributes + ::silex::dom::view::MountExt>(mut self, val: __SilexValue) -> Self {
-                    use ::silex::dom::view::MountExt;
+                pub fn #name<__SilexValue: ::silex::dom::view::ApplyAttributes + ::silex::dom::view::View>(mut self, val: __SilexValue) -> Self {
+                    use ::silex::dom::view::View;
                     self.#name = #final_val;
                     self
                 }

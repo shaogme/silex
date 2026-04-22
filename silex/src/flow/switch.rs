@@ -23,7 +23,7 @@ pub fn Switch<Source, T>(
     source: Source,
     #[prop(default)] cases: HashMap<T, AnyView>,
     #[prop(default = AnyView::Empty, render)] fallback: AnyView,
-) -> impl Mount + MountRef
+) -> impl View
 where
     Source: RxGet<Value = T> + Clone + 'static,
     T: Eq + Hash + Clone + 'static,
@@ -43,7 +43,7 @@ where
     /// 添加一个匹配分支
     pub fn case<V>(mut self, value: T, view: V) -> Self
     where
-        V: MountExt,
+        V: View,
     {
         match self.cases.entry(value) {
             Entry::Vacant(entry) => {

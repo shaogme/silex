@@ -9,7 +9,7 @@ use web_sys::Node;
 pub fn Portal(
     #[prop(into)] children: AnyView,
     #[prop(default)] mount_to: Option<Node>,
-) -> impl Mount + MountRef {
+) -> impl View {
     let document = silex_dom::document();
     let target = mount_to
         .clone()

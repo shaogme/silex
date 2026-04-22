@@ -19,12 +19,12 @@ use web_sys::Node;
 /// Index(list).children(|item, index| li(rx! { index.get() }))
 /// ```
 #[component]
-pub fn Index<IF, I, IS, MF, V>(each: IF, #[prop(render)] children: MF) -> impl Mount + MountRef
+pub fn Index<IF, I, IS, MF, V>(each: IF, #[prop(render)] children: MF) -> impl View
 where
     IF: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = I> + 'static,
     MF: Fn(ReadSignal<I>, ReadSignal<usize>) -> V + Clone + 'static,
-    V: MountExt,
+    V: View,
     I: Clone + 'static,
 {
     let children = children.into_owned();

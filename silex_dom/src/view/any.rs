@@ -1,6 +1,6 @@
 use crate::attribute::PendingAttribute;
 use crate::element::Element;
-use crate::view::{Mount, MountExt, MountRef};
+use crate::view::{Mount, View, MountRef};
 use silex_vtable::any_box::AnyBox;
 use silex_vtable::func_ptr::FuncPtr;
 use silex_vtable::thunk::FactoryBox;
@@ -23,9 +23,9 @@ pub struct AnyViewBox {
 }
 
 impl AnyViewBox {
-    pub fn new<V: MountExt>(view: V) -> Self {
+    pub fn new<V: View>(view: V) -> Self {
         struct VGen<V>(PhantomData<V>);
-        impl<V: MountExt> VGen<V> {
+        impl<V: View> VGen<V> {
             const STACK: AnyViewVTable = AnyViewVTable {
                 mount: FuncPtr::new(mount_stack::<V>),
                 mount_ref: FuncPtr::new(mount_ref_stack::<V>),
@@ -169,7 +169,7 @@ pub enum AnyView {
 }
 
 impl AnyView {
-    pub fn new<V: MountExt>(view: V) -> Self {
+    pub fn new<V: View>(view: V) -> Self {
         AnyView::Boxed(Rc::new(AnyViewBox::new(view)), Vec::new())
     }
 
@@ -359,13 +359,13 @@ impl_from_primitive!(
     i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, f32, f64, bool, char
 );
 
-impl<V: MountExt> From<Vec<V>> for AnyView {
+impl<V: View> From<Vec<V>> for AnyView {
     fn from(v: Vec<V>) -> Self {
         AnyView::List(v.into_iter().map(|item| item.into_any()).collect())
     }
 }
 
-impl<V: MountExt> From<Option<V>> for AnyView {
+impl<V: View> From<Option<V>> for AnyView {
     fn from(v: Option<V>) -> Self {
         match v {
             Some(val) => AnyView::new(val),
@@ -384,8 +384,8 @@ impl From<crate::view::ViewNil> for AnyView {
 
 impl<H, T> From<crate::view::ViewCons<H, T>> for AnyView
 where
-    H: MountExt,
-    T: MountExt,
+    H: View,
+    T: View,
 {
     fn from(v: crate::view::ViewCons<H, T>) -> Self {
         AnyView::new(v)

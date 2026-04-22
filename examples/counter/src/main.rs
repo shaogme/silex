@@ -7,7 +7,7 @@ fn Card(
     #[prop(default = 1)] elevation: u8,
     #[prop(default)] child: AnyView,
     #[prop(default, into)] on_hover: Callback,
-) -> impl Mount + MountRef {
+) -> impl View {
     let style = format!(
         "border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px {}px rgba(0,0,0,0.1); transition: transform 0.2s;",
         elevation * 4
@@ -102,7 +102,7 @@ fn CounterControls() -> SilexResult<impl Mount> {
 // --- Views ---
 
 #[component]
-fn NavBar() -> impl Mount + MountRef {
+fn NavBar() -> impl View {
     div!(
         Link("/")
             .children("Home")
@@ -115,7 +115,7 @@ fn NavBar() -> impl Mount + MountRef {
 }
 
 #[component]
-fn HomeView() -> impl Mount + MountRef {
+fn HomeView() -> impl View {
     // 页面级状态
     let (name, set_name) = Signal::pair("Rustacean".to_string());
 
@@ -185,7 +185,7 @@ fn HomeView() -> impl Mount + MountRef {
 }
 
 #[component]
-fn AboutView() -> impl Mount + MountRef {
+fn AboutView() -> impl View {
     div!(
         h1("About"),
         p("This is the About Page to demonstrate Silex Router."),
@@ -194,7 +194,7 @@ fn AboutView() -> impl Mount + MountRef {
 }
 
 #[component]
-fn NotFound() -> impl Mount + MountRef {
+fn NotFound() -> impl View {
     div(h1("404 - Page Not Found")).style("color: red; padding: 20px;")
 }
 

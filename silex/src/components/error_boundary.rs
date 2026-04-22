@@ -13,12 +13,12 @@ use std::rc::Rc;
 pub fn ErrorBoundary<FB, CH, V1, V2>(
     #[prop(clone)] children: CH,
     #[prop(clone)] fallback: FB,
-) -> impl Mount + MountRef
+) -> impl View
 where
     FB: Fn(SilexError) -> V1 + Clone + 'static,
     CH: Fn() -> V2 + Clone + 'static,
-    V1: MountExt,
-    V2: MountExt,
+    V1: View,
+    V2: View,
 {
     let (error, set_error) = Signal::<Option<SilexError>>::pair(None);
 

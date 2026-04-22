@@ -4,7 +4,7 @@ use crate::css::AppTheme;
 use silex::prelude::*;
 
 #[component]
-pub fn ListDemo() -> impl Mount + MountRef {
+pub fn ListDemo() -> impl View {
     let (list, set_list) = Signal::pair(Ok(vec![
         Cow::Borrowed("Apple"),
         Cow::Borrowed("Banana"),
@@ -61,7 +61,7 @@ pub fn ListDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn ShowDemo() -> impl Mount + MountRef {
+pub fn ShowDemo() -> impl View {
     let (visible, set_visible) = Signal::pair(true);
 
     div![
@@ -89,7 +89,7 @@ pub fn ShowDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn DynamicDemo() -> impl Mount + MountRef {
+pub fn DynamicDemo() -> impl View {
     let (mode, set_mode) = Signal::pair("A");
 
     div![
@@ -116,7 +116,7 @@ pub fn DynamicDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn SwitchDemo() -> impl Mount + MountRef {
+pub fn SwitchDemo() -> impl View {
     let (tab, set_tab) = Signal::pair(0);
 
     div![
@@ -151,7 +151,7 @@ pub fn SwitchDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn IndexDemo() -> impl Mount + MountRef {
+pub fn IndexDemo() -> impl View {
     let (items, set_items) = Signal::pair(vec!["Item A", "Item B", "Item C"]);
 
     div![
@@ -167,7 +167,7 @@ pub fn IndexDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn PortalDemo() -> impl Mount + MountRef {
+pub fn PortalDemo() -> impl View {
     let (show_modal, set_show_modal) = Signal::pair(false);
 
     div![
@@ -207,7 +207,7 @@ pub fn PortalDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn FlowPage() -> impl Mount + MountRef {
+pub fn FlowPage() -> impl View {
     div![
         h2("Control Flow"),
         ListDemo(),

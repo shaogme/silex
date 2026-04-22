@@ -8,7 +8,7 @@ use crate::router::context::{RouterContextProps, provide_router_context};
 use silex_core::reactivity::{Signal, on_cleanup};
 use silex_core::traits::{RxGet, RxWrite};
 use silex_dom::attribute::PendingAttribute;
-use silex_dom::view::{AnyView, ApplyAttributes, Mount, MountExt, MountRef};
+use silex_dom::view::{AnyView, ApplyAttributes, Mount, View, MountRef};
 use silex_html::div;
 use silex_macros::component;
 use std::marker::PhantomData;
@@ -69,7 +69,7 @@ impl<R: Routable> ToRoute for R {
 pub fn Router(
     #[prop(into, default = "/")] base: String,
     #[prop(default = AnyView::Empty, render)] children: AnyView,
-) -> impl Mount + MountRef {
+) -> impl View {
     let base = base.into_owned();
     let children = children.into_owned();
     RouterView {
@@ -93,7 +93,7 @@ impl RouterComponent {
     where
         R: Routable + 'static,
         F: Fn(R) -> V + Clone + 'static,
-        V: MountExt,
+        V: View,
     {
         self.children = RouterMatchView::<R, F, V>::new(render).into_any();
         self
@@ -287,7 +287,7 @@ impl<R, F, V> Mount for RouterMatchView<R, F, V>
 where
     R: Routable + 'static,
     F: Fn(R) -> V + Clone + 'static,
-    V: MountExt,
+    V: View,
 {
     fn mount(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
         let path_signal = crate::router::use_location_path();
@@ -311,7 +311,7 @@ impl<R, F, V> MountRef for RouterMatchView<R, F, V>
 where
     R: Routable + 'static,
     F: Fn(R) -> V + Clone + 'static,
-    V: MountExt,
+    V: View,
 {
     fn mount_ref(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
         Self {

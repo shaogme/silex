@@ -34,10 +34,10 @@ pub fn Suspense<CH, R>(
     children: CH,
     #[prop(default = AnyView::Empty)] fallback: AnyView,
     #[prop(default)] mode: SuspenseMode,
-) -> impl Mount + MountRef
+) -> impl View
 where
     CH: Fn() -> R + Clone + 'static,
-    R: MountExt,
+    R: View,
 {
     let children = children.into_owned();
     let children = Rc::new(move || children().into_any());

@@ -254,7 +254,7 @@ styled! {
 // --- Demo Components ---
 
 #[component]
-pub fn StylingBasics() -> impl Mount + MountRef {
+pub fn StylingBasics() -> impl View {
     let (color, set_color) = Signal::pair(AppTheme::TEXT);
     let (size, set_size) = Signal::pair("medium".to_string());
     let (hover_color, set_hover_color) = Signal::pair(AppTheme::PRIMARY);
@@ -435,7 +435,7 @@ pub fn StylingBasics() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn Theming() -> impl Mount + MountRef {
+pub fn Theming() -> impl View {
     let global_settings = crate::advanced::use_user_settings();
     let theme = use_theme::<AppTheme>();
     let is_dark = theme.map(|t| t.surface.0 == "#111827");
@@ -526,7 +526,7 @@ pub fn Theming() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn AdvancedStyling() -> impl Mount + MountRef {
+pub fn AdvancedStyling() -> impl View {
     div![
         h2("🧮 Advanced Styling"),
         p("Type-safe CSS math functions and declarative gradients for complex visuals.")

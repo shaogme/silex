@@ -13,7 +13,7 @@ pub fn Link<T: ToRoute + Clone + 'static>(
     #[prop(clone)] to: T,
     children: AnyView,
     #[prop(into, default)] active_class: String,
-) -> impl Mount + MountRef {
+) -> impl View {
     let href = to.to_route();
     let router_ctx = use_router();
 

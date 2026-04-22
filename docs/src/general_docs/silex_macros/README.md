@@ -17,7 +17,7 @@ fn Button(
     #[prop(default = 1.0)] opacity: f64,
     // 自动调用 .into()，接受 &str 等
     #[prop(into)] on_click: Option<Callback<()>>,
-) -> impl Mount + MountRef {
+) -> impl View {
     button(())
         .style(format!("opacity: {}", opacity))
         .text(label)
@@ -61,7 +61,7 @@ Button()
 pub fn GenericMessage<'a, T: std::fmt::Display + Clone + 'static>(
     value: T,
     title: &'a str,
-) -> impl Mount + MountRef {
+) -> impl View {
     div![
         h4(title.to_string()),
         p(format!("Value: {}", value)),
@@ -229,7 +229,7 @@ enum AppRoute {
 
 ```rust
 #[component]
-pub fn AuthGuard(children: Children) -> impl Mount + MountRef {
+pub fn AuthGuard(children: Children) -> impl View {
     // 假设我们有一个全局用户状态
     let user_name = use_context::<ReadSignal<String>>()
         .unwrap_or(Signal::pair("Guest".to_string()).0);

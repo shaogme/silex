@@ -15,7 +15,7 @@ pub struct UserSettings {
 }
 
 #[component]
-pub fn StoreDemo() -> impl Mount + MountRef {
+pub fn StoreDemo() -> impl View {
     // Access global store provided in main
     // Note: `use_context::<T>() -> Option<T>` and `expect_context::<T>() -> T` are also available.
     // Access global store using the generated helper
@@ -80,7 +80,7 @@ impl Default for ComplexState {
 }
 
 #[component]
-pub fn JsonStorageDemo() -> impl Mount + MountRef {
+pub fn JsonStorageDemo() -> impl View {
     let state = Persistent::builder("showcase-json-state")
         .local()
         .json::<ComplexState>()
@@ -125,7 +125,7 @@ pub fn JsonStorageDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn StorageDemo() -> impl Mount + MountRef {
+pub fn StorageDemo() -> impl View {
     let count = Persistent::builder("showcase-counter")
         .local()
         .parse::<i32>()
@@ -160,7 +160,7 @@ pub fn StorageDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn QueryDemo() -> impl Mount + MountRef {
+pub fn QueryDemo() -> impl View {
     let val = Persistent::builder("demo_val")
         .query()
         .string()
@@ -200,7 +200,7 @@ pub fn QueryDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn AuthGuard(children: AnyView) -> impl Mount + MountRef {
+pub fn AuthGuard(children: AnyView) -> impl View {
     let settings = use_user_settings();
     let children = children.clone();
 
@@ -244,7 +244,7 @@ async fn mock_fetch_user(id: i32) -> Result<UserProfile, String> {
 }
 
 #[component]
-pub fn ResourceDemo() -> impl Mount + MountRef {
+pub fn ResourceDemo() -> impl View {
     let (user_id, set_user_id) = Signal::pair(1);
 
     // Create Resource: triggers when user_id changes
@@ -311,7 +311,7 @@ pub fn ResourceDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn MutationDemo() -> impl Mount + MountRef {
+pub fn MutationDemo() -> impl View {
     // Simulate a login mutation
     // Takes (username, password) and returns a Result<String, String> token
     let login_mutation = Mutation::new(|(user, pass): (String, String)| async move {
@@ -383,7 +383,7 @@ pub fn MutationDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn SuspenseDemo() -> impl Mount + MountRef {
+pub fn SuspenseDemo() -> impl View {
     use silex::components::SuspenseMode;
 
     let (show_content, set_show_content) = Signal::pair(false);
@@ -470,7 +470,7 @@ pub fn SuspenseDemo() -> impl Mount + MountRef {
 pub fn GenericMessage<'a, T: std::fmt::Display + Clone + 'static>(
     value: T,
     title: &'a str,
-) -> impl Mount + MountRef {
+) -> impl View {
     div![h4(title.to_string()), p(format!("Value: {}", value)),].style(
         sty()
             .padding(px(10))
@@ -481,7 +481,7 @@ pub fn GenericMessage<'a, T: std::fmt::Display + Clone + 'static>(
 }
 
 #[component]
-pub fn GenericsDemo() -> impl Mount + MountRef {
+pub fn GenericsDemo() -> impl View {
     div![
         h3("Generics & Lifetimes Demo"),
         p("This demonstrates how #[component] macro supports generics and lifetimes natively."),
@@ -524,7 +524,7 @@ impl std::fmt::Display for QuantumIdentity {
 }
 
 #[component]
-pub fn AdaptiveReadDemo() -> impl Mount + MountRef {
+pub fn AdaptiveReadDemo() -> impl View {
     let system_name = RwSignal::new("Nebula-1".to_string());
     let (stability, set_stability) = Signal::pair(0.85); // 0.0 to 1.0
 

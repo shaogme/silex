@@ -626,8 +626,8 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         pub fn #c_name() -> impl ::silex::dom::view::Mount + ::silex::dom::view::MountRef + ::silex::dom::view::ApplyAttributes {
             #(#inits)*
             #(#logics)*
-            use ::silex::dom::view::MountExt;
-            ::silex::dom::view::MountExt::into_any(())
+            use ::silex::dom::view::View;
+            ::silex::dom::view::View::into_any(())
         }
     })
 }

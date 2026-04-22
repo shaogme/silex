@@ -6,7 +6,7 @@ use silex::prelude::*;
 
 /// 一个简单的卡片容器
 #[component]
-fn Card(children: AnyView) -> impl Mount + MountRef {
+fn Card(children: AnyView) -> impl View {
     div(children)
         .style("border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 10px 0; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05);")
 }
@@ -16,7 +16,7 @@ fn Card(children: AnyView) -> impl Mount + MountRef {
 fn NavLink<T: ToRoute + Clone + 'static>(
     #[prop(clone)] to: T,
     #[prop(clone)] children: AnyView,
-) -> impl Mount + MountRef {
+) -> impl View {
     Link(to.clone())
         .children(children)
         .style("margin-right: 15px; text-decoration: none; color: #666; padding: 5px 10px; border-radius: 4px; transition: all 0.2s;")
@@ -28,7 +28,7 @@ fn NavLink<T: ToRoute + Clone + 'static>(
 // ==========================================
 
 #[component]
-fn Home() -> impl Mount + MountRef {
+fn Home() -> impl View {
     div!(
         h2("🏠 Home Page"),
         p("Welcome to the Router Test Suite."),
@@ -37,7 +37,7 @@ fn Home() -> impl Mount + MountRef {
 }
 
 #[component]
-fn SearchPage() -> impl Mount + MountRef {
+fn SearchPage() -> impl View {
     // 测试查询参数持久化：使用 Persistent::builder(...).query() 实现双向绑定
     // 只要改变 search_term，URL 就会更新；URL 变了，search_term 也会更新
     let search_term = Persistent::builder("q")
@@ -73,12 +73,12 @@ fn SearchPage() -> impl Mount + MountRef {
 // --- 用户模块 (嵌套路由测试) ---
 
 #[component]
-fn CreateUser() -> impl Mount + MountRef {
+fn CreateUser() -> impl View {
     Card(h3("🆕 Create New User Form"))
 }
 
 #[component]
-fn UsersLayout(route: UsersRoute) -> impl Mount + MountRef {
+fn UsersLayout(route: UsersRoute) -> impl View {
     div!(
         h2("👥 Users Module"),
         div!(
@@ -93,7 +93,7 @@ fn UsersLayout(route: UsersRoute) -> impl Mount + MountRef {
 }
 
 #[component]
-fn UserList() -> impl Mount + MountRef {
+fn UserList() -> impl View {
     let users = vec![
         (1, "Alice"),
         (2, "Bob"),
@@ -118,7 +118,7 @@ fn UserList() -> impl Mount + MountRef {
 }
 
 #[component]
-fn UserDetail(id: u32) -> impl Mount + MountRef {
+fn UserDetail(id: u32) -> impl View {
     // 使用传入的 id，不再依赖 use_params (更类型安全!)
     let navigator = use_navigate();
     let path = use_location_path();
@@ -149,7 +149,7 @@ fn UserDetail(id: u32) -> impl Mount + MountRef {
 }
 
 #[component]
-fn NotFound() -> impl Mount + MountRef {
+fn NotFound() -> impl View {
     div!(
         h1("404"),
         p("Page not found."),
@@ -163,7 +163,7 @@ fn NotFound() -> impl Mount + MountRef {
 // --- 主布局 ---
 
 #[component]
-fn MainLayout(children: AnyView) -> impl Mount + MountRef {
+fn MainLayout(children: AnyView) -> impl View {
     div!(
         // Header
         header!(

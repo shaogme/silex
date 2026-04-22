@@ -264,12 +264,12 @@ impl_forward_binop_copy!(Mul, mul);
 impl_forward_binop_copy!(Div, div);
 
 /// 视图转换扩展 (Mount Extensions)
-pub trait MountExt: MountRef + Mount + ApplyAttributes + 'static {
+pub trait View: MountRef + Mount + ApplyAttributes + 'static {
     /// Convert this view into an AnyView.
     fn into_any(self) -> AnyView;
 }
 
-impl<T: MountRef + Mount + ApplyAttributes + 'static> MountExt for T {
+impl<T: MountRef + Mount + ApplyAttributes + 'static> View for T {
     fn into_any(self) -> AnyView {
         AnyView::new(self)
     }

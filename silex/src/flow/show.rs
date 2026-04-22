@@ -14,7 +14,7 @@ pub fn Show<C>(
     when: C,
     #[prop(render)] children: AnyView,
     #[prop(default = AnyView::Empty, render)] fallback: AnyView,
-) -> impl Mount + MountRef
+) -> impl View
 where
     C: RxGet<Value = bool> + Clone + 'static,
 {
@@ -91,7 +91,7 @@ pub trait SignalShowExt: IntoRx<Value = bool> {
     fn when<V>(self, view: V) -> ShowComponent<Self::RxType>
     where
         Self::RxType: RxGet<Value = bool> + Clone + 'static,
-        V: MountExt;
+        V: View;
 }
 
 // 为所有 IntoRx<Value = bool> 的类型实现扩展
@@ -102,7 +102,7 @@ where
     fn when<V>(self, view: V) -> ShowComponent<Self::RxType>
     where
         Self::RxType: RxGet<Value = bool> + Clone + 'static,
-        V: MountExt,
+        V: View,
     {
         Show(self.into_rx()).children(view)
     }

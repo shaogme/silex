@@ -25,9 +25,9 @@ use web_sys::Node;
 /// });
 /// ```
 #[component]
-pub fn Dynamic<V, FView>(view_fn: FView) -> impl Mount + MountRef
+pub fn Dynamic<V, FView>(view_fn: FView) -> impl View
 where
-    V: MountExt + Clone + 'static,
+    V: View + Clone + 'static,
     FView: RxRead<Value = V> + Clone + 'static,
 {
     let view_fn = view_fn.into_owned();
