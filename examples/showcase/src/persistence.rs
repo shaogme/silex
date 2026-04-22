@@ -209,6 +209,7 @@ fn DebounceDemo() -> impl View {
                     let state = debounced.state().get();
                     let (status, content) = match &state {
                         PersistenceState::Ready(raw) => ("Ready", raw),
+                        PersistenceState::Dirty(raw) => ("Dirty (Modified)", raw),
                         PersistenceState::Syncing(raw) => ("Syncing...", raw),
                         PersistenceState::WriteError(err) => ("Write Error", err),
                         PersistenceState::ReadError(err) => ("Read Error", err),
@@ -222,6 +223,7 @@ fn DebounceDemo() -> impl View {
                     ]
                     .style(match state {
                          PersistenceState::Ready(_) => "color: #4caf50; border-left: 3px solid #4caf50; padding-left: 10px;",
+                         PersistenceState::Dirty(_) => "color: #ff9800; border-left: 3px solid #ff9800; padding-left: 10px;",
                          PersistenceState::Syncing(_) => "color: #2196f3; border-left: 3px solid #2196f3; padding-left: 10px;",
                          _ => "color: #f44336; border-left: 3px solid #f44336; padding-left: 10px;"
                     })

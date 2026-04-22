@@ -285,7 +285,7 @@ pub fn ResourceDemo() -> impl View {
                     // Optimistic Update Controls
                     div![
                         h4("Optimistic Updates (Local Cache)"),
-                        button("Rename to 'Modified' (Optimistic)")
+                        button("Rename to 'Modified'")
                             .on(event::click, move |_| {
                                 // Manually update the local resource data
                                 user_resource.update(|u| {

@@ -24,6 +24,7 @@ pub struct DecodeErrorInfo {
 #[derive(Clone, Debug, PartialEq)]
 pub enum PersistenceState {
     Ready(String),
+    Dirty(String),
     Syncing(String),
     Unavailable,
     ReadError(String),

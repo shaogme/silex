@@ -7,6 +7,7 @@ mod op;
 pub use apply::*;
 pub use into_storable::*;
 pub use op::*;
+use silex_core::traits::{RxGet, RxWrite};
 
 /// 指令组宏：将多个异构属性/事件平铺为一个 AttributeGroup。
 /// 这在创建自定义 Mixin 或组件透传属性时非常有用。
@@ -196,19 +197,18 @@ pub trait GlobalEventAttributes: AttributeBuilder {
 
     fn bind_value<S>(self, signal: S) -> Self
     where
-        S: Into<silex_core::reactivity::RwSignal<String>>,
+        S: RxGet<Value = String> + RxWrite + Clone + 'static,
     {
-        use silex_core::traits::RxWrite;
-        let signal = signal.into();
+        let s = signal.clone();
         let this = self.on_input(move |value| {
-            signal.set(value);
+            s.set(value);
         });
 
         this.apply(PendingAttribute::new_listener(
             move |el: &web_sys::Element| {
                 let dom_element = el.clone();
+                let signal = signal.clone();
                 silex_core::reactivity::Effect::new(move |_| {
-                    use silex_core::traits::RxGet;
                     use wasm_bindgen::JsCast;
                     let value = signal.get();
                     if let Some(input) = dom_element.dyn_ref::<web_sys::HtmlInputElement>() {
