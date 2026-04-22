@@ -323,11 +323,11 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             ::silex::html::#tag(#children_binding)
                 .class(#class_name)
                 #style_prop_binding
-                .apply(::silex::dom::attribute::AttrOp::CombinedStyles {
+                .apply(::silex::dom::attribute::AttrOp::CombinedStyles(::silex::dom::attribute::CombinedStyles {
                     statics: ::std::vec![],
                     properties: ::std::vec![ #(#style_bindings),* ],
                     sheets: ::std::vec![],
-                })
+                }))
                 #(#variant_class_bindings)*
                 #(#dynamic_rule_classes)*
         }

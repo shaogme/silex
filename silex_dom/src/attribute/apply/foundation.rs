@@ -3,8 +3,8 @@ use wasm_bindgen::JsValue;
 use web_sys::Element as WebElem;
 
 use crate::attribute::op::{
-    AttrData, AttrOp, AttrTarget, apply_immediate_bool_internal, get_style_decl, parse_style_str,
-    set_string_property_internal,
+    AttrData, AttrOp, AttrTarget, AttrUpdate, apply_immediate_bool_internal, get_style_decl,
+    parse_style_str, set_string_property_internal,
 };
 
 // --- Apply Target Enum ---
@@ -182,16 +182,16 @@ impl ApplyToDom for &'static str {
     }
     fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
         match target {
-            OwnedApplyTarget::Attr(name) => AttrOp::Update {
+            OwnedApplyTarget::Attr(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Attr,
                 data: AttrData::StaticString(self.into()),
-            },
-            OwnedApplyTarget::Prop(name) => AttrOp::Update {
+            }),
+            OwnedApplyTarget::Prop(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Prop,
                 data: AttrData::StaticJs(JsValue::from_str(self)),
-            },
+            }),
             OwnedApplyTarget::Class => AttrOp::SetStaticClasses(vec![self.into()]),
             OwnedApplyTarget::Style => {
                 AttrOp::SetStaticStyles(parse_style_str(self).into_iter().collect())
@@ -210,16 +210,16 @@ impl ApplyToDom for String {
 
     fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
         match target {
-            OwnedApplyTarget::Attr(name) => AttrOp::Update {
+            OwnedApplyTarget::Attr(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Attr,
                 data: AttrData::StaticString(self.into()),
-            },
-            OwnedApplyTarget::Prop(name) => AttrOp::Update {
+            }),
+            OwnedApplyTarget::Prop(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Prop,
                 data: AttrData::StaticJs(JsValue::from_str(&self)),
-            },
+            }),
             OwnedApplyTarget::Class => AttrOp::SetStaticClasses(
                 self.split_whitespace()
                     .map(|s| Cow::Owned(s.to_string()))
@@ -255,16 +255,16 @@ impl ApplyToDom for bool {
 
     fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
         match target {
-            OwnedApplyTarget::Attr(name) => AttrOp::Update {
+            OwnedApplyTarget::Attr(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Attr,
                 data: AttrData::StaticBool(self),
-            },
-            OwnedApplyTarget::Prop(name) => AttrOp::Update {
+            }),
+            OwnedApplyTarget::Prop(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Prop,
                 data: AttrData::StaticBool(self),
-            },
+            }),
             _ => AttrOp::Custom(std::rc::Rc::new(move |el| {
                 apply_immediate_bool(el, ApplyTarget::Apply, self);
             })),

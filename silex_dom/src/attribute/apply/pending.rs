@@ -3,7 +3,10 @@ use std::rc::Rc;
 use web_sys::Element as WebElem;
 
 use super::foundation::{ApplyTarget, ApplyToDom, OwnedApplyTarget};
-use crate::attribute::op::{AttrData, AttrOp, AttrTarget, parse_style_str};
+use crate::attribute::op::{
+    AttrData, AttrOp, AttrTarget, AttrUpdate, ClassToggle, CombinedClasses, CombinedStyles,
+    StyleProperty, parse_style_str,
+};
 
 // --- Attribute Forwarding Support ---
 
@@ -49,7 +52,7 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
             AttrOp::SetStaticClasses(v) => {
                 static_classes.extend(v);
             }
-            AttrOp::AddClassToggle { name, rx } => {
+            AttrOp::AddClassToggle(ClassToggle { name, rx }) => {
                 class_toggles.push((name, rx));
             }
             AttrOp::AddReactiveClasses(rx) => {
@@ -60,7 +63,7 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
             AttrOp::SetStaticStyles(v) => {
                 static_styles.extend(v);
             }
-            AttrOp::BindStyleProperty { name, rx } => {
+            AttrOp::BindStyleProperty(StyleProperty { name, rx }) => {
                 style_props.push((name, rx));
             }
             AttrOp::BindReactiveStyleSheet(rx) => {
@@ -68,11 +71,11 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
             }
 
             // --- 通用属性指令 (检查是否为 class/style) ---
-            AttrOp::Update {
+            AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Attr,
                 data: AttrData::StaticString(value),
-            } => {
+            }) => {
                 if name == "class" {
                     match value {
                         Cow::Borrowed(s) => {
@@ -94,30 +97,30 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
                     );
                 } else {
                     consolidated.push(PendingAttribute {
-                        op: AttrOp::Update {
+                        op: AttrOp::Update(AttrUpdate {
                             name,
                             target: AttrTarget::Attr,
                             data: AttrData::StaticString(value),
-                        },
+                        }),
                     });
                 }
             }
 
             // --- 合并指令收集 (防止重复合并导致覆盖) ---
-            AttrOp::CombinedClasses {
+            AttrOp::CombinedClasses(CombinedClasses {
                 statics,
                 toggles,
                 reactives,
-            } => {
+            }) => {
                 static_classes.extend(statics);
                 class_toggles.extend(toggles);
                 reactive_classes.extend(reactives);
             }
-            AttrOp::CombinedStyles {
+            AttrOp::CombinedStyles(CombinedStyles {
                 statics,
                 properties,
                 sheets,
-            } => {
+            }) => {
                 static_styles.extend(statics);
                 style_props.extend(properties);
                 style_sheets.extend(sheets);
@@ -135,11 +138,11 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
         consolidated.insert(
             0,
             PendingAttribute {
-                op: AttrOp::CombinedStyles {
+                op: AttrOp::CombinedStyles(CombinedStyles {
                     statics: static_styles,
                     properties: style_props,
                     sheets: style_sheets,
-                },
+                }),
             },
         );
     }
@@ -149,11 +152,11 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
         consolidated.insert(
             0,
             PendingAttribute {
-                op: AttrOp::CombinedClasses {
+                op: AttrOp::CombinedClasses(CombinedClasses {
                     statics: static_classes,
                     toggles: class_toggles,
                     reactives: reactive_classes,
-                },
+                }),
             },
         );
     }
