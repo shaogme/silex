@@ -15,7 +15,6 @@ pub struct AnyBox<V: 'static> {
 impl<V: 'static> AnyBox<V> {
     /// 创建一个新的 AnyBox。
     /// 给定一个值、分配 VTable 的逻辑（栈/堆两种情况）。
-    #[inline(always)]
     pub fn new<T: 'static>(value: T, vtable_stack: &'static V, vtable_heap: &'static V) -> Self {
         let layout = Layout::new::<T>();
         let fits_inline =

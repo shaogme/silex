@@ -264,7 +264,6 @@ impl<T> Arena<T> {
         }
     }
 
-    #[inline]
     fn get_chunk_offset(&self, index: u32) -> (usize, usize) {
         let idx = index as usize;
         (idx / CHUNK_SIZE, idx % CHUNK_SIZE)

@@ -48,7 +48,6 @@ macro_rules! impl_into_storable_primitive {
         $(
             impl IntoStorable for $t {
                 type Stored = $t;
-                #[inline]
                 fn into_storable(self) -> Self::Stored {
                     self
                 }
@@ -69,7 +68,6 @@ macro_rules! impl_into_storable_rx {
             <Self as silex_core::traits::IntoRx>::RxType: super::ApplyToDom + 'static,
         {
             type Stored = <Self as silex_core::traits::IntoRx>::RxType;
-            #[inline(always)]
             fn into_storable(self) -> Self::Stored {
                 use silex_core::traits::IntoRx;
                 self.into_rx()

@@ -324,7 +324,6 @@ macro_rules! impl_apply_to_dom_for_primitive {
     ($($t:ty),*) => {
         $(
             impl ApplyToDom for $t {
-                #[inline]
                 fn apply(&self, el: &WebElem, target: ApplyTarget) {
                     apply_primitive_static_internal(el, target, self.to_string());
                 }

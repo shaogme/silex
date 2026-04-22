@@ -111,7 +111,6 @@ pub mod adaptive {
     pub struct AdaptiveWrapper<'a, T>(pub &'a T);
 
     impl<'a, T: Clone> AdaptiveWrapper<'a, T> {
-        #[inline(always)]
         pub fn maybe_clone(&self) -> Option<T> {
             Some(self.0.clone())
         }
@@ -124,7 +123,6 @@ pub mod adaptive {
 
     impl<'a, T> AdaptiveFallback for AdaptiveWrapper<'a, T> {
         type Value = T;
-        #[inline(always)]
         fn maybe_clone(&self) -> Option<T> {
             None
         }
@@ -136,13 +134,10 @@ impl RxValue for () {
 }
 
 impl RxBase for () {
-    #[inline(always)]
     fn id(&self) -> Option<NodeId> {
         None
     }
-    #[inline(always)]
     fn track(&self) {}
-    #[inline(always)]
     fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
         None
     }
@@ -152,11 +147,8 @@ macro_rules! impl_rx_base_for_constant {
     ($($t:ty),*) => {
         $(
             impl RxBase for $t {
-                #[inline(always)]
                 fn id(&self) -> Option<NodeId> { None }
-                #[inline(always)]
                 fn track(&self) {}
-                #[inline(always)]
                 fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> { None }
             }
         )*

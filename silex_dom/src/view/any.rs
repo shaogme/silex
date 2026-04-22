@@ -27,7 +27,6 @@ pub struct SharedViewBox {
 }
 
 impl AnyViewBox {
-    #[inline(always)]
     pub fn new<V: MountExt>(view: V) -> Self {
         struct VGen<V>(PhantomData<V>);
         impl<V: MountExt> VGen<V> {
@@ -80,7 +79,6 @@ impl Drop for AnyViewBox {
 }
 
 impl SharedViewBox {
-    #[inline(always)]
     pub fn new<V: MountExt>(view: V) -> Self {
         Self {
             inner: Rc::new(AnyViewBox::new(view)),

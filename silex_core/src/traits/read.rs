@@ -43,12 +43,10 @@ pub trait RxInternal: RxBase {
     /// 提供对值的闭包式不可变访问（不追踪依赖）。
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>;
 
-    #[inline(always)]
     fn rx_is_constant(&self) -> bool {
         false
     }
 
-    #[inline(always)]
     fn rx_get_adaptive(&self) -> Option<Self::Value>
     where
         Self::Value: Sized,
@@ -185,26 +183,22 @@ where
     for<'a> T::ReadOutput<'a>: Deref<Target = T::Value>,
 {
     #[track_caller]
-    #[inline(always)]
     fn try_get_untracked(&self) -> Option<Self::Value> {
         self.try_read_untracked().map(|v| (*v).clone())
     }
 
     #[track_caller]
-    #[inline(always)]
     fn get_untracked(&self) -> Self::Value {
         self.try_get_untracked()
             .unwrap_or_else(|| unwrap_rx!(self)())
     }
 
     #[track_caller]
-    #[inline(always)]
     fn try_get(&self) -> Option<Self::Value> {
         self.try_read().map(|v| (*v).clone())
     }
 
     #[track_caller]
-    #[inline(always)]
     fn get(&self) -> Self::Value {
         self.try_get().unwrap_or_else(|| unwrap_rx!(self)())
     }
@@ -217,19 +211,16 @@ impl<T: crate::traits::RxData, M> crate::traits::RxValue for Rx<T, M> {
 }
 
 impl<T: crate::traits::RxData, M> RxBase for Rx<T, M> {
-    #[inline(always)]
     fn id(&self) -> Option<NodeId> {
         self.inner.as_node_parts().map(|(id, _)| id)
     }
 
-    #[inline(always)]
     fn track(&self) {
         if let Some((id, kind)) = self.inner.as_node_parts() {
             crate::reactivity::dispatch::track(id, kind);
         }
     }
 
-    #[inline(always)]
     fn is_disposed(&self) -> bool {
         if let Some((id, kind)) = self.inner.as_node_parts() {
             crate::reactivity::dispatch::is_disposed(id, kind)
@@ -238,12 +229,10 @@ impl<T: crate::traits::RxData, M> RxBase for Rx<T, M> {
         }
     }
 
-    #[inline(always)]
     fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
         self.id().and_then(silex_reactivity::get_node_defined_at)
     }
 
-    #[inline(always)]
     fn debug_name(&self) -> Option<String> {
         self.id().and_then(silex_reactivity::get_debug_label)
     }
@@ -255,7 +244,6 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
     where
         Self: 'a;
 
-    #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
         match &self.inner {
             crate::RxInner::InlineConstant(storage) => unsafe {
@@ -268,7 +256,6 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
         }
     }
 
-    #[inline(always)]
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         match &self.inner {
             crate::RxInner::InlineConstant(storage) => unsafe {
@@ -282,7 +269,6 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
         }
     }
 
-    #[inline(always)]
     fn rx_is_constant(&self) -> bool {
         matches!(
             self.inner,
@@ -293,7 +279,6 @@ impl<T: crate::traits::RxData, M> RxInternal for Rx<T, M> {
 
 // --- 元组 RxInternal 实现：支持递归常量检测 ---
 
-#[inline(always)]
 pub fn create_tuple2_rx<I1: RxData, I2: RxData>(
     ids: [crate::reactivity::NodeId; 2],
     mapper: fn(&I1, &I2) -> (I1, I2),
@@ -303,7 +288,6 @@ pub fn create_tuple2_rx<I1: RxData, I2: RxData>(
     Rx::new_op(op)
 }
 
-#[inline(always)]
 pub fn create_tuple_n_rx<const N: usize, V: RxCloneData + 'static>(
     ids: [crate::reactivity::NodeId; N],
     mapper: fn(&[crate::reactivity::NodeId; N]) -> V,
@@ -377,11 +361,11 @@ macro_rules! impl_tuple_into_rx {
         impl<$T0, $T1> RxBase for ($T0, $T1)
         where $T0: RxBase, $T1: RxBase, $T0::Value: Sized, $T1::Value: Sized
         {
-            #[inline(always)] fn id(&self) -> Option<crate::reactivity::NodeId> { None }
-            #[inline(always)] fn track(&self) { self.$idx0.track(); self.$idx1.track(); }
-            #[inline(always)] fn is_disposed(&self) -> bool { self.$idx0.is_disposed() || self.$idx1.is_disposed() }
-            #[inline(always)] fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> { None }
-            #[inline(always)] fn debug_name(&self) -> Option<String> { None }
+            fn id(&self) -> Option<crate::reactivity::NodeId> { None }
+            fn track(&self) { self.$idx0.track(); self.$idx1.track(); }
+            fn is_disposed(&self) -> bool { self.$idx0.is_disposed() || self.$idx1.is_disposed() }
+            fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> { None }
+            fn debug_name(&self) -> Option<String> { None }
         }
 
         impl<$T0, $T1> RxInternal for ($T0, $T1)
@@ -391,10 +375,10 @@ macro_rules! impl_tuple_into_rx {
             $T0::Value: Sized + $crate::traits::RxCloneData, $T1::Value: Sized + $crate::traits::RxCloneData
         {
             type ReadOutput<'a> = RxGuard<'a, Self::Value, Self::Value> where Self: 'a;
-            #[inline(always)] fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> { Some(RxGuard::Owned(self.rx_get_adaptive()?)) }
-            #[inline(always)] fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> { self.rx_get_adaptive().map(|v| fun(&v)) }
-            #[inline(always)] fn rx_get_adaptive(&self) -> Option<Self::Value> where Self::Value: Sized { Some((self.$idx0.rx_get_adaptive()?, self.$idx1.rx_get_adaptive()?)) }
-            #[inline(always)] fn rx_is_constant(&self) -> bool { self.$idx0.rx_is_constant() && self.$idx1.rx_is_constant() }
+            fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> { Some(RxGuard::Owned(self.rx_get_adaptive()?)) }
+            fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> { self.rx_get_adaptive().map(|v| fun(&v)) }
+            fn rx_get_adaptive(&self) -> Option<Self::Value> where Self::Value: Sized { Some((self.$idx0.rx_get_adaptive()?, self.$idx1.rx_get_adaptive()?)) }
+            fn rx_is_constant(&self) -> bool { self.$idx0.rx_is_constant() && self.$idx1.rx_is_constant() }
         }
     };
 
@@ -444,11 +428,11 @@ macro_rules! impl_tuple_into_rx {
         impl<$($T),+> RxBase for ($($T,)+)
         where $($T: RxBase),+, $($T::Value: Sized),+
         {
-            #[inline(always)] fn id(&self) -> Option<crate::reactivity::NodeId> { None }
-            #[inline(always)] fn track(&self) { $(self.$idx.track();)+ }
-            #[inline(always)] fn is_disposed(&self) -> bool { $(self.$idx.is_disposed() || )+ false }
-            #[inline(always)] fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> { None }
-            #[inline(always)] fn debug_name(&self) -> Option<String> { None }
+            fn id(&self) -> Option<crate::reactivity::NodeId> { None }
+            fn track(&self) { $(self.$idx.track();)+ }
+            fn is_disposed(&self) -> bool { $(self.$idx.is_disposed() || )+ false }
+            fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> { None }
+            fn debug_name(&self) -> Option<String> { None }
         }
 
         impl<$($T),+> RxInternal for ($($T,)+)
@@ -457,10 +441,10 @@ macro_rules! impl_tuple_into_rx {
             $($T::Value: Sized + $crate::traits::RxCloneData),+
         {
             type ReadOutput<'a> = RxGuard<'a, Self::Value, Self::Value> where Self: 'a;
-            #[inline(always)] fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> { Some(RxGuard::Owned(self.rx_get_adaptive()?)) }
-            #[inline(always)] fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> { self.rx_get_adaptive().map(|v| fun(&v)) }
-            #[inline(always)] fn rx_get_adaptive(&self) -> Option<Self::Value> where Self::Value: Sized { Some(($(self.$idx.rx_get_adaptive()?,)+)) }
-            #[inline(always)] fn rx_is_constant(&self) -> bool { $(self.$idx.rx_is_constant() && )+ true }
+            fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> { Some(RxGuard::Owned(self.rx_get_adaptive()?)) }
+            fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> { self.rx_get_adaptive().map(|v| fun(&v)) }
+            fn rx_get_adaptive(&self) -> Option<Self::Value> where Self::Value: Sized { Some(($(self.$idx.rx_get_adaptive()?,)+)) }
+            fn rx_is_constant(&self) -> bool { $(self.$idx.rx_is_constant() && )+ true }
         }
     };
 }
@@ -477,12 +461,10 @@ where
 {
     type RxType = Self;
 
-    #[inline(always)]
     fn into_rx(self) -> Self::RxType {
         self
     }
 
-    #[inline(always)]
     fn is_constant(&self) -> bool {
         self.rx_is_constant()
     }
@@ -493,7 +475,6 @@ where
     T: crate::traits::RxCloneData,
     M: 'static,
 {
-    #[inline(always)]
     fn into_signal(self) -> crate::reactivity::Signal<Self::Value>
     where
         Self: Sized,
@@ -562,21 +543,16 @@ macro_rules! impl_rx_delegate {
         }
 
         impl<T: $crate::traits::RxCloneData> $crate::traits::RxBase for $target<T> {
-            #[inline(always)]
             fn id(&self) -> Option<$crate::reactivity::NodeId> {
                 None
             }
-            #[inline(always)]
             fn track(&self) {}
-            #[inline(always)]
             fn is_disposed(&self) -> bool {
                 false
             }
-            #[inline(always)]
             fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> {
                 None
             }
-            #[inline(always)]
             fn debug_name(&self) -> Option<String> {
                 None
             }

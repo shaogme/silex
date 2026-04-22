@@ -23,14 +23,12 @@ impl CssHasher {
 }
 
 impl Hasher for CssHasher {
-    #[inline]
     fn write(&mut self, bytes: &[u8]) {
         for &b in bytes {
             self.0 ^= b as u64;
             self.0 = self.0.wrapping_mul(0x100000001b3);
         }
     }
-    #[inline]
     fn finish(&self) -> u64 {
         self.0
     }
@@ -42,7 +40,6 @@ pub struct CssBuildHasher;
 
 impl core::hash::BuildHasher for CssBuildHasher {
     type Hasher = CssHasher;
-    #[inline]
     fn build_hasher(&self) -> Self::Hasher {
         CssHasher::new()
     }

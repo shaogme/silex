@@ -64,7 +64,6 @@ where
     M: 'static,
     Self: RxViewDispatcher,
 {
-    #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.dispatch_mount(parent, attrs);
     }
@@ -76,7 +75,6 @@ where
     M: 'static,
     Self: RxViewDispatcher + Clone,
 {
-    #[inline(always)]
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.clone().dispatch_mount(parent, attrs);
     }
@@ -103,7 +101,6 @@ pub trait AutoReactiveView: crate::view::MountRef + Sized + 'static {
 
 // 统一的分发器实现
 impl<V: AutoReactiveView, M: 'static> RxViewDispatcher for Rx<V, M> {
-    #[inline(always)]
     fn dispatch_mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         V::mount_reactive(self, parent, attrs);
     }
@@ -229,7 +226,6 @@ where
     V: RxCloneData + Sized + 'static,
     Rx<V, RxValueKind>: crate::view::Mount,
 {
-    #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.into_rx().mount(parent, attrs);
     }
@@ -241,7 +237,6 @@ where
     V: RxCloneData + Sized + 'static,
     Rx<V, RxValueKind>: crate::view::MountRef,
 {
-    #[inline(always)]
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.clone().into_rx().mount_ref(parent, attrs);
     }
@@ -262,7 +257,6 @@ where
     V: RxCloneData + Sized + 'static,
     Rx<V, RxValueKind>: crate::view::Mount,
 {
-    #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.into_rx().mount(parent, attrs);
     }
@@ -274,7 +268,6 @@ where
     V: RxCloneData + Sized + 'static,
     Rx<V, RxValueKind>: crate::view::MountRef + Clone,
 {
-    #[inline(always)]
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.clone().into_rx().mount_ref(parent, attrs);
     }
@@ -294,7 +287,6 @@ where
     O: RxCloneData + Sized + 'static,
     Rx<O, RxValueKind>: crate::view::Mount,
 {
-    #[inline(always)]
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.into_rx().mount(parent, attrs);
     }
@@ -306,7 +298,6 @@ where
     O: RxCloneData + Sized + 'static,
     Rx<O, RxValueKind>: crate::view::MountRef,
 {
-    #[inline(always)]
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         self.clone().into_rx().mount_ref(parent, attrs);
     }

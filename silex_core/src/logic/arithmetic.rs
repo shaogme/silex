@@ -7,7 +7,6 @@ pub mod ops_impl {
     macro_rules! gen_ops {
         (bin: $($fn:ident:$trait:ident),*; un: $($ufn:ident:$utrait:ident),*) => {
             $(
-                #[inline]
                 pub fn $fn<T>(lhs: &T, rhs: &T) -> T
                 where
                     for<'a> &'a T: $trait<&'a T, Output = T>,
@@ -16,7 +15,6 @@ pub mod ops_impl {
                 }
             )*
             $(
-                #[inline]
                 pub fn $ufn<T>(val: &T) -> T
                 where
                     for<'a> &'a T: $utrait<Output = T>,
@@ -37,7 +35,6 @@ pub mod ops_impl {
     macro_rules! gen_cmp_ops {
         ($($fn:ident:$op:tt:$bound:ident),*) => {
             $(
-                #[inline]
                 pub fn $fn<T>(lhs: &T, rhs: &T) -> bool
                 where
                     T: $bound,
@@ -117,7 +114,6 @@ macro_rules! impl_rx_op {
         {
             type Output = $crate::Rx<T, $crate::RxValueKind>;
 
-            #[inline]
             fn $method(self, rhs: R) -> Self::Output {
                 $crate::logic::arithmetic::apply_binary_op::<T, R>(
                     self,
@@ -161,7 +157,6 @@ macro_rules! impl_rx_unary_op {
         {
             type Output = $crate::Rx<T, $crate::RxValueKind>;
 
-            #[inline]
             fn $method(self) -> Self::Output {
                 $crate::logic::arithmetic::apply_unary_op::<T>(
                     self,
