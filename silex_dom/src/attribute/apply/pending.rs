@@ -7,7 +7,7 @@ use crate::attribute::op::{AttrData, AttrOp, AttrTarget, parse_style_str};
 
 // --- Attribute Forwarding Support ---
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct PendingAttribute {
     pub op: AttrOp,
 }

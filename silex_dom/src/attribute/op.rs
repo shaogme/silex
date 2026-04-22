@@ -27,6 +27,20 @@ pub enum AttrData {
     ReactiveJs(Rx<JsValue>),
 }
 
+impl PartialEq for AttrData {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::StaticString(a), Self::StaticString(b)) => a == b,
+            (Self::StaticBool(a), Self::StaticBool(b)) => a == b,
+            (Self::StaticJs(a), Self::StaticJs(b)) => a == b,
+            (Self::ReactiveString(a), Self::ReactiveString(b)) => a == b,
+            (Self::ReactiveBool(a), Self::ReactiveBool(b)) => a == b,
+            (Self::ReactiveJs(a), Self::ReactiveJs(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum AttrOp {
     /// Unified update for attributes and properties (Static or Reactive)
@@ -70,6 +84,101 @@ pub enum AttrOp {
     // --- 逃逸舱与特殊指令 ---
     Custom(Rc<dyn Fn(&Element)>),
     Noop,
+}
+
+impl PartialEq for AttrOp {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::Update {
+                    name: a_name,
+                    target: a_target,
+                    data: a_data,
+                },
+                Self::Update {
+                    name: b_name,
+                    target: b_target,
+                    data: b_data,
+                },
+            ) => a_name == b_name && a_target == b_target && a_data == b_data,
+            (Self::SetStaticClasses(a), Self::SetStaticClasses(b)) => a == b,
+            (
+                Self::AddClassToggle {
+                    name: a_name,
+                    rx: a_rx,
+                },
+                Self::AddClassToggle {
+                    name: b_name,
+                    rx: b_rx,
+                },
+            ) => a_name == b_name && a_rx == b_rx,
+            (Self::AddReactiveClasses(a), Self::AddReactiveClasses(b)) => a == b,
+            (Self::SetStaticStyles(a), Self::SetStaticStyles(b)) => a == b,
+            (
+                Self::BindStyleProperty {
+                    name: a_name,
+                    rx: a_rx,
+                },
+                Self::BindStyleProperty {
+                    name: b_name,
+                    rx: b_rx,
+                },
+            ) => a_name == b_name && a_rx == b_rx,
+            (Self::BindReactiveStyleSheet(a), Self::BindReactiveStyleSheet(b)) => a == b,
+            (
+                Self::CombinedClasses {
+                    statics: a_statics,
+                    toggles: a_toggles,
+                    reactives: a_reactives,
+                },
+                Self::CombinedClasses {
+                    statics: b_statics,
+                    toggles: b_toggles,
+                    reactives: b_reactives,
+                },
+            ) => {
+                a_statics == b_statics
+                    && a_toggles.len() == b_toggles.len()
+                    && a_toggles
+                        .iter()
+                        .zip(b_toggles.iter())
+                        .all(|((a_name, a_rx), (b_name, b_rx))| a_name == b_name && a_rx == b_rx)
+                    && a_reactives.len() == b_reactives.len()
+                    && a_reactives
+                        .iter()
+                        .zip(b_reactives.iter())
+                        .all(|(a_rx, b_rx)| a_rx == b_rx)
+            }
+            (
+                Self::CombinedStyles {
+                    statics: a_statics,
+                    properties: a_properties,
+                    sheets: a_sheets,
+                },
+                Self::CombinedStyles {
+                    statics: b_statics,
+                    properties: b_properties,
+                    sheets: b_sheets,
+                },
+            ) => {
+                a_statics == b_statics
+                    && a_properties.len() == b_properties.len()
+                    && a_properties
+                        .iter()
+                        .zip(b_properties.iter())
+                        .all(|((a_name, a_rx), (b_name, b_rx))| a_name == b_name && a_rx == b_rx)
+                    && a_sheets.len() == b_sheets.len()
+                    && a_sheets
+                        .iter()
+                        .zip(b_sheets.iter())
+                        .all(|(a_rx, b_rx)| a_rx == b_rx)
+            }
+            (Self::Sequence(a), Self::Sequence(b)) => a == b,
+            (Self::Custom(a), Self::Custom(b)) => Rc::ptr_eq(a, b),
+            (Self::Noop, Self::Noop) => true,
+            _ => false,
+        }
+    }
 }
 
 impl AttrOp {

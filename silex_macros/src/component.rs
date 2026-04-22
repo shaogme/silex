@@ -12,7 +12,7 @@ pub struct ComponentAttrs {
 }
 
 /// 属性解析结果
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct PropAttrs {
     default: bool,
     default_value: Option<TokenStream2>,
@@ -21,34 +21,57 @@ struct PropAttrs {
     render: bool,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PropKind {
+    Regular,
+    AnyView,
+}
+
 /// 各种类型的参数处理逻辑 (Argument processing logic for different types)
+#[derive(Clone)]
 struct PropInfo {
     name: Ident,
     ty: Type,
-    type_ident: String,
+    kind: PropKind,
     into_trait: bool,
     render: bool,
     is_fn: bool,
 }
 
+#[derive(Clone)]
+struct PropSpec {
+    info: PropInfo,
+    attrs: PropAttrs,
+    is_standalone: bool,
+    is_required: bool,
+}
+
 impl PropInfo {
     fn new(name: Ident, ty: Type, mut attrs: PropAttrs) -> Self {
-        let type_ident = get_base_type_name(&ty);
+        let kind = if is_any_view_type(&ty) {
+            PropKind::AnyView
+        } else {
+            PropKind::Regular
+        };
         let is_fn = matches!(ty, Type::BareFn(_));
 
         // 自动推断是否需要 into_trait
-        if !attrs.into_trait && !is_fn && is_auto_into_type(&type_ident) {
+        if !attrs.into_trait && !is_fn && is_auto_into_type(&ty) {
             attrs.into_trait = true;
         }
 
         Self {
             name,
             ty,
-            type_ident,
+            kind,
             into_trait: attrs.into_trait,
             render: attrs.render,
             is_fn,
         }
+    }
+
+    fn is_any_view(&self) -> bool {
+        matches!(self.kind, PropKind::AnyView)
     }
 
     /// 获取在构造函数或 new 中的参数类型
@@ -57,14 +80,16 @@ impl PropInfo {
         if self.is_fn {
             quote! { #ty }
         } else if self.render {
-            match self.type_ident.as_str() {
-                "AnyView" => quote! { impl ::silex::dom::view::View + 'static },
-                _ => quote! { #ty },
+            if self.is_any_view() {
+                quote! { impl ::silex::dom::view::View + 'static }
+            } else {
+                quote! { #ty }
             }
         } else if self.into_trait {
-            match self.type_ident.as_str() {
-                "AnyView" => quote! { impl ::silex::dom::view::View + 'static },
-                _ => quote! { impl Into<#ty> },
+            if self.is_any_view() {
+                quote! { impl ::silex::dom::view::View + 'static }
+            } else {
+                quote! { impl Into<#ty> }
             }
         } else {
             quote! { impl ::silex::dom::view::PropInto<#ty> }
@@ -76,17 +101,155 @@ impl PropInfo {
         if self.is_fn {
             input
         } else if self.render {
-            match self.type_ident.as_str() {
-                "AnyView" => quote! { #input.into_any() },
-                _ => input,
+            if self.is_any_view() {
+                quote! { #input.into_any() }
+            } else {
+                input
             }
         } else if self.into_trait {
-            match self.type_ident.as_str() {
-                "AnyView" => quote! { #input.into_any() },
-                _ => quote! { #input.into() },
+            if self.is_any_view() {
+                quote! { #input.into_any() }
+            } else {
+                quote! { #input.into() }
             }
         } else {
             quote! { ::silex::dom::view::PropInto::prop_into(#input) }
+        }
+    }
+
+    fn generate_builder_method(&self, is_standalone: bool, is_required: bool) -> TokenStream2 {
+        let name = &self.name;
+        let param_type = self.get_param_type();
+        let target_val = self.get_transformation(quote! { val });
+
+        let final_val = if is_standalone || !is_required {
+            target_val
+        } else {
+            quote! { Some(#target_val) }
+        };
+
+        if self.render && self.is_any_view() {
+            quote! {
+                pub fn #name(mut self, val: impl ::silex::dom::view::View + 'static) -> Self {
+                    use ::silex::dom::view::View;
+                    self.#name = #final_val;
+                    self
+                }
+            }
+        } else if self.into_trait && self.is_any_view() {
+            quote! {
+                pub fn #name<__SilexValue: ::silex::dom::view::View + 'static>(mut self, val: __SilexValue) -> Self {
+                    use ::silex::dom::view::View;
+                    self.#name = #final_val;
+                    self
+                }
+            }
+        } else {
+            quote! {
+                pub fn #name(mut self, val: #param_type) -> Self {
+                    self.#name = #final_val;
+                    self
+                }
+            }
+        }
+    }
+}
+
+impl PropSpec {
+    fn new(name: Ident, ty: Type, attrs: PropAttrs, is_standalone: bool) -> Self {
+        let info = PropInfo::new(name, ty, attrs.clone());
+        let is_required = is_standalone || (!attrs.default && attrs.default_value.is_none());
+
+        Self {
+            info,
+            attrs,
+            is_standalone,
+            is_required,
+        }
+    }
+
+    fn register(self, generator: &mut ComponentGenerator) {
+        let prop_info = self.info.clone();
+        if self.is_standalone {
+            generator.standalone_args.push(prop_info);
+        }
+
+        generator.struct_fields.push(self.struct_field());
+        generator.new_initializers.push(self.new_initializer());
+        generator
+            .mount_ref_checks
+            .push(self.mount_ref_check(&generator.struct_name));
+        generator
+            .mount_owned_checks
+            .push(self.mount_owned_check(&generator.struct_name));
+        generator.builder_methods.push(
+            self.info
+                .generate_builder_method(self.is_standalone, self.is_required),
+        );
+    }
+
+    fn struct_field(&self) -> TokenStream2 {
+        let name = &self.info.name;
+        let ty = &self.info.ty;
+
+        if self.is_required && !self.is_standalone {
+            quote! { pub #name: Option<#ty> }
+        } else {
+            quote! { pub #name: #ty }
+        }
+    }
+
+    fn new_initializer(&self) -> TokenStream2 {
+        let name = &self.info.name;
+        if self.is_required {
+            if self.is_standalone {
+                quote! { #name }
+            } else {
+                quote! { #name: None }
+            }
+        } else if let Some(ref default_expr) = self.attrs.default_value {
+            let transform = self.info.get_transformation(quote! { #default_expr });
+            quote! { #name: #transform }
+        } else {
+            quote! { #name: std::default::Default::default() }
+        }
+    }
+
+    fn mount_ref_check(&self, struct_name: &Ident) -> TokenStream2 {
+        let name = &self.info.name;
+        let name_str = name.to_string();
+
+        if self.is_required {
+            if self.is_standalone {
+                if self.attrs.clone {
+                    quote! { let #name = ::silex::dom::view::Prop::new_owned(self.#name.clone()); }
+                } else {
+                    quote! { let #name = ::silex::dom::view::Prop::new_borrowed(&self.#name); }
+                }
+            } else if self.attrs.clone {
+                quote! { let #name = ::silex::dom::view::Prop::new_owned(self.#name.as_ref().expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'")).clone()); }
+            } else {
+                quote! { let #name = ::silex::dom::view::Prop::new_borrowed(self.#name.as_ref().expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'"))); }
+            }
+        } else if self.attrs.clone {
+            quote! { let #name = ::silex::dom::view::Prop::new_owned(self.#name.clone()); }
+        } else {
+            quote! { let #name = ::silex::dom::view::Prop::new_borrowed(&self.#name); }
+        }
+    }
+
+    fn mount_owned_check(&self, struct_name: &Ident) -> TokenStream2 {
+        let name = &self.info.name;
+        let name_str = name.to_string();
+
+        if self.is_required {
+            if self.is_standalone {
+                quote! { let #name = ::silex::dom::view::Prop::new_owned(self.#name); }
+            } else {
+                quote! { let #name = ::silex::dom::view::Prop::new_owned(self.#name.expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'"))); }
+            }
+        } else {
+            quote! { let #name = ::silex::dom::view::Prop::new_owned(self.#name); }
         }
     }
 }
@@ -208,144 +371,15 @@ impl ComponentGenerator {
                 ));
             }
 
-            let prop_info = PropInfo::new(param_name.clone(), (**ty).clone(), prop_attrs);
-            let is_standalone = index < self.standalone_count;
-
-            if is_standalone {
-                self.standalone_args.push(prop_info);
-            }
-
-            // We need the original prop_attrs for optional/default logic
-            let prop_attrs = parse_prop_attrs(attrs)?;
-            self.generate_prop_logic(param_name, ty, &prop_attrs, index < self.standalone_count);
+            let spec = PropSpec::new(
+                param_name.clone(),
+                (**ty).clone(),
+                prop_attrs,
+                index < self.standalone_count,
+            );
+            spec.register(self);
         }
         Ok(())
-    }
-
-    fn generate_prop_logic(
-        &mut self,
-        name: &Ident,
-        ty: &Type,
-        attrs: &PropAttrs,
-        is_standalone: bool,
-    ) {
-        let is_required = is_standalone || (!attrs.default && attrs.default_value.is_none());
-        let struct_name = &self.struct_name;
-        let name_str = name.to_string();
-        let prop_info = PropInfo::new(
-            name.clone(),
-            ty.clone(),
-            PropAttrs {
-                into_trait: attrs.into_trait,
-                render: attrs.render,
-                ..Default::default()
-            },
-        );
-
-        // 1. 生成字段和初始化逻辑
-        if is_required {
-            if is_standalone {
-                self.struct_fields.push(quote! { pub #name: #ty });
-                self.new_initializers.push(quote! { #name });
-            } else {
-                self.struct_fields.push(quote! { pub #name: Option<#ty> });
-                self.new_initializers.push(quote! { #name: None });
-            }
-        } else {
-            self.struct_fields.push(quote! { pub #name: #ty });
-
-            let init_val = if let Some(ref default_expr) = attrs.default_value {
-                prop_info.get_transformation(quote! { #default_expr })
-            } else {
-                quote! { std::default::Default::default() }
-            };
-            self.new_initializers.push(quote! { #name: #init_val });
-        }
-
-        // 2. 生成 View 挂载时的 Prop 处理逻辑
-        let mount_borrowed = if is_required {
-            if is_standalone {
-                if attrs.clone {
-                    quote! { ::silex::dom::view::Prop::new_owned(self.#name.clone()) }
-                } else {
-                    quote! { ::silex::dom::view::Prop::new_borrowed(&self.#name) }
-                }
-            } else {
-                if attrs.clone {
-                    quote! { ::silex::dom::view::Prop::new_owned(self.#name.as_ref().expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'")).clone()) }
-                } else {
-                    quote! { ::silex::dom::view::Prop::new_borrowed(self.#name.as_ref().expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'"))) }
-                }
-            }
-        } else if attrs.clone {
-            quote! { ::silex::dom::view::Prop::new_owned(self.#name.clone()) }
-        } else {
-            quote! { ::silex::dom::view::Prop::new_borrowed(&self.#name) }
-        };
-
-        let mount_owned = if is_required {
-            if is_standalone {
-                quote! { ::silex::dom::view::Prop::new_owned(self.#name) }
-            } else {
-                quote! { ::silex::dom::view::Prop::new_owned(self.#name.expect(concat!("Component '", stringify!(#struct_name), "' missing required prop: '", #name_str, "'"))) }
-            }
-        } else {
-            quote! { ::silex::dom::view::Prop::new_owned(self.#name) }
-        };
-
-        self.mount_ref_checks
-            .push(quote! { let #name = #mount_borrowed; });
-        self.mount_owned_checks
-            .push(quote! { let #name = #mount_owned; });
-
-        // 3. 生成 Builder 方法
-        self.builder_methods.push(self.generate_builder_method(
-            &prop_info,
-            is_standalone,
-            is_required,
-        ));
-    }
-
-    fn generate_builder_method(
-        &self,
-        prop: &PropInfo,
-        is_standalone: bool,
-        is_required: bool,
-    ) -> TokenStream2 {
-        let name = &prop.name;
-        let param_type = prop.get_param_type();
-        let target_val = prop.get_transformation(quote! { val });
-
-        let final_val = if is_standalone || !is_required {
-            target_val
-        } else {
-            quote! { Some(#target_val) }
-        };
-
-        if prop.render && prop.type_ident == "AnyView" {
-            quote! {
-                pub fn #name(mut self, val: impl ::silex::dom::view::View + 'static) -> Self {
-                    use ::silex::dom::view::View;
-                    self.#name = #final_val;
-                    self
-                }
-            }
-        } else if prop.into_trait && prop.type_ident == "AnyView" {
-            quote! {
-                pub fn #name<__SilexValue: ::silex::dom::view::View + 'static>(mut self, val: __SilexValue) -> Self {
-                    use ::silex::dom::view::View;
-                    self.#name = #final_val;
-                    self
-                }
-            }
-        } else {
-            quote! {
-                pub fn #name(mut self, val: #param_type) -> Self {
-                    self.#name = #final_val;
-                    self
-                }
-            }
-        }
     }
 
     fn generate_constructor(&self) -> TokenStream2 {
@@ -573,27 +607,59 @@ pub fn parse_component_attrs(args: TokenStream2) -> syn::Result<ComponentAttrs> 
     Ok(ComponentAttrs { standalone })
 }
 
+fn type_last_segment_name(ty: &Type) -> Option<String> {
+    if let Type::Path(type_path) = ty {
+        return type_path
+            .path
+            .segments
+            .last()
+            .map(|segment| segment.ident.to_string());
+    }
+    None
+}
+
+fn is_any_view_type(ty: &Type) -> bool {
+    type_last_segment_name(ty).is_some_and(|ident| ident == "AnyView")
+}
+
 /// 判断类型是否应该默认开启 `into` 转换
-fn is_auto_into_type(ident: &str) -> bool {
+fn is_auto_into_type(ty: &Type) -> bool {
     matches!(
-        ident,
-        "AnyView"
-            | "String"
-            | "PathBuf"
-            | "Callback"
-            | "Signal"
-            | "ReadSignal"
-            | "RwSignal"
-            | "Memo"
+        type_last_segment_name(ty).as_deref(),
+        Some("AnyView")
+            | Some("String")
+            | Some("PathBuf")
+            | Some("Callback")
+            | Some("Signal")
+            | Some("ReadSignal")
+            | Some("RwSignal")
+            | Some("Memo")
     )
 }
 
-/// 获取类型的基本名称，用于特殊处理某些类型
-fn get_base_type_name(ty: &Type) -> String {
-    if let Type::Path(type_path) = ty
-        && let Some(segment) = type_path.path.segments.last()
-    {
-        return segment.ident.to_string();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse_quote;
+
+    #[test]
+    fn parse_prop_attrs_supports_combined_flags() {
+        let attrs: Vec<Attribute> = vec![parse_quote!(#[prop(default = 42, into, clone, render)])];
+        let parsed = parse_prop_attrs(&attrs).expect("prop attrs should parse");
+
+        assert!(parsed.default);
+        assert_eq!(parsed.default_value.is_some(), true);
+        assert!(parsed.into_trait);
+        assert!(parsed.clone);
+        assert!(parsed.render);
     }
-    "".to_string()
+
+    #[test]
+    fn type_helpers_detect_any_view_and_common_into_types() {
+        let any_view_ty: Type = parse_quote!(::silex::dom::view::AnyView);
+        let string_ty: Type = parse_quote!(String);
+
+        assert!(is_any_view_type(&any_view_ty));
+        assert!(is_auto_into_type(&string_ty));
+    }
 }

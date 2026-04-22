@@ -99,7 +99,7 @@ impl<T> PropInto<T> for T {
 impl<'a, T: Clone> PropInto<T> for Prop<'a, T> {
     #[inline(always)]
     fn prop_into(self) -> T {
-        self.clone()
+        self.into_owned()
     }
 }
 

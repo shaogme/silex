@@ -118,7 +118,9 @@ impl PartialEq for AnyView {
             (AnyView::Text(a), AnyView::Text(b)) => a == b,
             (AnyView::Element(a), AnyView::Element(b)) => a == b,
             (AnyView::List(a), AnyView::List(b)) => a == b,
-            (AnyView::Boxed(a, _), AnyView::Boxed(b, _)) => Rc::ptr_eq(a, b),
+            (AnyView::Boxed(a, a_attrs), AnyView::Boxed(b, b_attrs)) => {
+                Rc::ptr_eq(a, b) && a_attrs == b_attrs
+            }
             _ => false,
         }
     }
@@ -164,6 +166,48 @@ impl View for Fragment {
         Self: Sized,
     {
         mount_list_owned(self.0, parent, attrs);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::attribute::AttrOp;
+    use std::rc::Rc;
+
+    #[derive(Clone)]
+    struct DummyView;
+
+    impl crate::view::ApplyAttributes for DummyView {}
+
+    impl View for DummyView {
+        fn mount(&self, _parent: &Node, _attrs: Vec<PendingAttribute>) {}
+
+        fn mount_owned(self, _parent: &Node, _attrs: Vec<PendingAttribute>)
+        where
+            Self: Sized,
+        {
+        }
+    }
+
+    #[test]
+    fn boxed_equality_includes_attributes() {
+        let view = Rc::new(DummyView);
+        let attrs = vec![PendingAttribute { op: AttrOp::Noop }];
+
+        let left = AnyView::Boxed(view.clone(), attrs.clone());
+        let right = AnyView::Boxed(view, attrs);
+
+        assert_eq!(left, right);
+    }
+
+    #[test]
+    fn boxed_equality_rejects_different_attributes() {
+        let view = Rc::new(DummyView);
+        let left = AnyView::Boxed(view.clone(), vec![]);
+        let right = AnyView::Boxed(view, vec![PendingAttribute { op: AttrOp::Noop }]);
+
+        assert_ne!(left, right);
     }
 }
 

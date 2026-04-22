@@ -56,6 +56,7 @@ impl<T: 'static> Rx<T, RxEffectKind> {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RxInner {
     InlineConstant(u64),
     Signal(crate::reactivity::NodeId),
@@ -64,14 +65,6 @@ pub enum RxInner {
     /// 直接存储的值（不通过工厂函数，直接借用）
     Stored(crate::reactivity::NodeId),
 }
-
-impl Clone for RxInner {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl Copy for RxInner {}
 
 /// 非泛型的响应式节点类型，用于 Trampoline 模式优化。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -194,6 +187,12 @@ impl<T, M> Clone for Rx<T, M> {
     }
 }
 
+impl<T, M> PartialEq for Rx<T, M> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
 impl<T: Copy, M> Copy for Rx<T, M> {}
 
 pub use silex_rx::rx as __internal_rx;
@@ -215,6 +214,30 @@ pub mod prelude {
     pub use crate::traits::*;
     pub use crate::{SilexError, SilexResult};
     pub use crate::{batch_read, batch_read_untracked, rx};
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rx_equality_tracks_inner_identity() {
+        let a = Rx::<(), RxValueKind>::new_signal(crate::reactivity::NodeId {
+            index: 1,
+            generation: 1,
+        });
+        let b = Rx::<(), RxValueKind>::new_signal(crate::reactivity::NodeId {
+            index: 1,
+            generation: 1,
+        });
+        let c = Rx::<(), RxValueKind>::new_signal(crate::reactivity::NodeId {
+            index: 2,
+            generation: 1,
+        });
+
+        assert!(a == b);
+        assert!(a != c);
+    }
 }
 
 /// Multi-signal batch read macro for zero-copy access to multiple signals.
