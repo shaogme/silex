@@ -91,7 +91,7 @@ pub trait SignalShowExt: IntoRx<Value = bool> {
     fn when<V>(self, view: V) -> ShowComponent<Self::RxType>
     where
         Self::RxType: RxGet<Value = bool> + Clone + 'static,
-        V: MountExt + 'static;
+        V: MountExt;
 }
 
 // 为所有 IntoRx<Value = bool> 的类型实现扩展
@@ -102,7 +102,7 @@ where
     fn when<V>(self, view: V) -> ShowComponent<Self::RxType>
     where
         Self::RxType: RxGet<Value = bool> + Clone + 'static,
-        V: MountExt + 'static,
+        V: MountExt,
     {
         Show(self.into_rx()).children(view)
     }

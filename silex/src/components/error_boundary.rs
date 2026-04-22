@@ -32,31 +32,23 @@ where
 
     // 使用专用包装视图以解决闭包生命周期与 Prop 生命周期绑定的问题
     ErrorBoundaryView {
-        children: children.clone(),
-        fallback: fallback.clone(),
+        children: Rc::new(move || children().into_any()),
+        fallback: Rc::new(move |e| fallback(e).into_any()),
         error,
         set_error,
-        _pd: std::marker::PhantomData,
     }
 }
 
-struct ErrorBoundaryView<FB, CH, V1, V2> {
-    children: CH,
-    fallback: FB,
+struct ErrorBoundaryView {
+    children: Rc<dyn Fn() -> AnyView + 'static>,
+    fallback: Rc<dyn Fn(SilexError) -> AnyView + 'static>,
     error: ReadSignal<Option<SilexError>>,
     set_error: WriteSignal<Option<SilexError>>,
-    _pd: std::marker::PhantomData<(V1, V2)>,
 }
 
-impl<FB, CH, V1, V2> ApplyAttributes for ErrorBoundaryView<FB, CH, V1, V2> {}
+impl ApplyAttributes for ErrorBoundaryView {}
 
-impl<FB, CH, V1, V2> Mount for ErrorBoundaryView<FB, CH, V1, V2>
-where
-    FB: Fn(SilexError) -> V1 + Clone + 'static,
-    CH: Fn() -> V2 + Clone + 'static,
-    V1: MountExt,
-    V2: MountExt,
-{
+impl Mount for ErrorBoundaryView {
     fn mount(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
         let error = self.error;
         let set_error = self.set_error;
@@ -68,11 +60,10 @@ where
             let children = children.clone();
 
             if let Some(e) = error.get() {
-                fallback(e).into_any()
+                fallback(e)
             } else {
-                let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-                    children().into_any()
-                }));
+                let res =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || children()));
 
                 match res {
                     Ok(view) => view,
@@ -103,29 +94,15 @@ where
     }
 }
 
-impl<FB, CH, V1, V2> AutoReactiveView for ErrorBoundaryView<FB, CH, V1, V2>
-where
-    FB: Fn(SilexError) -> V1 + Clone + 'static,
-    CH: Fn() -> V2 + Clone + 'static,
-    V1: MountExt,
-    V2: MountExt,
-{
-}
+impl AutoReactiveView for ErrorBoundaryView {}
 
-impl<FB, CH, V1, V2> MountRef for ErrorBoundaryView<FB, CH, V1, V2>
-where
-    FB: Fn(SilexError) -> V1 + Clone + 'static,
-    CH: Fn() -> V2 + Clone + 'static,
-    V1: MountExt,
-    V2: MountExt,
-{
+impl MountRef for ErrorBoundaryView {
     fn mount_ref(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
         ErrorBoundaryView {
             children: self.children.clone(),
             fallback: self.fallback.clone(),
             error: self.error,
             set_error: self.set_error,
-            _pd: std::marker::PhantomData,
         }
         .mount(parent, attrs);
     }

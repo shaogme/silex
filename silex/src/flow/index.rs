@@ -24,26 +24,31 @@ where
     IF: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = I> + 'static,
     MF: Fn(ReadSignal<I>, ReadSignal<usize>) -> V + Clone + 'static,
-    V: Mount + 'static,
+    V: MountExt,
     I: Clone + 'static,
 {
+    let children = children.into_owned();
+
+    let children = Rc::new(move |item: ReadSignal<I>, index: ReadSignal<usize>| {
+        children(item, index).into_any()
+    });
+
     IndexView {
         each: each.clone(),
-        children: children.clone(),
+        children,
         _marker: std::marker::PhantomData,
     }
 }
 
-struct IndexView<IF, MF, I, IS, V> {
+struct IndexView<IF, I, IS> {
     each: IF,
-    children: MF,
-    _marker: std::marker::PhantomData<(I, IS, V)>,
+    children: Rc<dyn Fn(ReadSignal<I>, ReadSignal<usize>) -> AnyView + 'static>,
+    _marker: std::marker::PhantomData<IS>,
 }
 
-impl<IF, MF, I, IS, V> Clone for IndexView<IF, MF, I, IS, V>
+impl<IF, I, IS> Clone for IndexView<IF, I, IS>
 where
     IF: Clone,
-    MF: Clone,
 {
     fn clone(&self) -> Self {
         Self {
@@ -62,14 +67,12 @@ struct IndexRow<Item> {
     nodes: Vec<Node>,
 }
 
-impl<IF, MF, I, IS, V> ApplyAttributes for IndexView<IF, MF, I, IS, V> {}
+impl<IF, I, IS> ApplyAttributes for IndexView<IF, I, IS> {}
 
-impl<IF, MF, I, IS, V> Mount for IndexView<IF, MF, I, IS, V>
+impl<IF, I, IS> Mount for IndexView<IF, I, IS>
 where
     IF: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = I> + 'static,
-    MF: Fn(ReadSignal<I>, ReadSignal<usize>) -> V + Clone + 'static,
-    V: Mount + 'static,
     I: Clone + 'static,
 {
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
@@ -77,22 +80,18 @@ where
     }
 }
 
-impl<IF, MF, I, IS, V> AutoReactiveView for IndexView<IF, MF, I, IS, V>
+impl<IF, I, IS> AutoReactiveView for IndexView<IF, I, IS>
 where
     IF: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = I> + 'static,
-    MF: Fn(ReadSignal<I>, ReadSignal<usize>) -> V + Clone + 'static,
-    V: Mount + 'static,
     I: Clone + 'static,
 {
 }
 
-impl<IF, MF, I, IS, V> MountRef for IndexView<IF, MF, I, IS, V>
+impl<IF, I, IS> MountRef for IndexView<IF, I, IS>
 where
     IF: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = I> + 'static,
-    MF: Fn(ReadSignal<I>, ReadSignal<usize>) -> V + Clone + 'static,
-    V: Mount + 'static,
     I: Clone + 'static,
 {
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
@@ -100,16 +99,14 @@ where
     }
 }
 
-fn mount_index_logic<IF, MF, I, IS, V>(
+fn mount_index_logic<IF, I, IS>(
     items_fn: IF,
-    map_fn: MF,
+    map_fn: Rc<dyn Fn(ReadSignal<I>, ReadSignal<usize>) -> AnyView + 'static>,
     parent: &Node,
     _attrs: Vec<PendingAttribute>,
 ) where
     IF: RxRead<Value = IS> + 'static,
     IS: ForLoopSource<Item = I> + 'static,
-    MF: Fn(ReadSignal<I>, ReadSignal<usize>) -> V + 'static,
-    V: Mount,
     I: Clone + 'static,
 {
     let document = silex_dom::document();
@@ -120,8 +117,6 @@ fn mount_index_logic<IF, MF, I, IS, V>(
     let _ = parent.append_child(&end_node);
 
     let rows = Rc::new(RefCell::new(Vec::<IndexRow<I>>::new()));
-    let map_fn = Rc::new(map_fn);
-
     Effect::new(move |_| {
         items_fn.with(|items| {
             let items_slice = match items.as_slice() {

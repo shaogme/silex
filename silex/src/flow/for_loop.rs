@@ -117,8 +117,13 @@ where
     Item: Clone + 'static,
     Key: Hash + Eq + Clone + 'static,
     MF: Fn(ReadSignal<Item>, ReadSignal<usize>) -> V + Clone + 'static,
-    V: Mount + 'static,
+    V: MountExt,
 {
+    let children = children.into_owned();
+    let children = Rc::new(move |item: ReadSignal<Item>, index: ReadSignal<usize>| {
+        children(item, index).into_any()
+    });
+
     ForView {
         items,
         key: *key,
@@ -147,27 +152,22 @@ where
 }
 
 #[derive(Clone)]
-struct ForView<'a, ItemsFn, IS, Item, Key, MF, V> {
+struct ForView<'a, ItemsFn, IS, Item, Key> {
     items: Prop<'a, ItemsFn>,
     key: fn(&Item) -> Key,
-    children: Prop<'a, MF>,
+    children: Rc<dyn Fn(ReadSignal<Item>, ReadSignal<usize>) -> AnyView + 'static>,
     error: Prop<'a, ForErrorHandler>,
-    _marker: PhantomData<(IS, Item, Key, V)>,
+    _marker: PhantomData<(IS, Item, Key)>,
 }
 
-impl<'a, ItemsFn, IS, Item, Key, MF, V> ApplyAttributes
-    for ForView<'a, ItemsFn, IS, Item, Key, MF, V>
-{
-}
+impl<'a, ItemsFn, IS, Item, Key> ApplyAttributes for ForView<'a, ItemsFn, IS, Item, Key> {}
 
-impl<'a, ItemsFn, IS, Item, Key, MF, V> Mount for ForView<'a, ItemsFn, IS, Item, Key, MF, V>
+impl<'a, ItemsFn, IS, Item, Key> Mount for ForView<'a, ItemsFn, IS, Item, Key>
 where
     ItemsFn: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = Item> + Sized + 'static,
-    Item: Clone + 'static,
     Key: Hash + Eq + Clone + 'static,
-    MF: Fn(ReadSignal<Item>, ReadSignal<usize>) -> V + Clone + 'static,
-    V: Mount + 'static,
+    Item: Clone + 'static,
 {
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         mount_for_internal(
@@ -181,20 +181,18 @@ where
     }
 }
 
-impl<'a, ItemsFn, IS, Item, Key, MF, V> MountRef for ForView<'a, ItemsFn, IS, Item, Key, MF, V>
+impl<'a, ItemsFn, IS, Item, Key> MountRef for ForView<'a, ItemsFn, IS, Item, Key>
 where
     ItemsFn: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = Item> + Sized + 'static,
-    Item: Clone + 'static,
     Key: Hash + Eq + Clone + 'static,
-    MF: Fn(ReadSignal<Item>, ReadSignal<usize>) -> V + Clone + 'static,
-    V: Mount + 'static,
+    Item: Clone + 'static,
 {
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         mount_for_internal(
             Prop::new_owned(self.items.clone()),
             self.key,
-            Prop::new_owned(self.children.clone()),
+            self.children.clone(),
             Prop::new_owned(self.error.clone()),
             parent,
             attrs,
@@ -209,23 +207,20 @@ struct ForRow<Item> {
     nodes: Vec<Node>,
 }
 
-fn mount_for_internal<'a, ItemsFn, IS, Item, Key, MF, V>(
+fn mount_for_internal<'a, ItemsFn, IS, Item, Key>(
     items_fn: Prop<'a, ItemsFn>,
     key_fn: fn(&Item) -> Key,
-    children_fn: Prop<'a, MF>,
+    children_fn: Rc<dyn Fn(ReadSignal<Item>, ReadSignal<usize>) -> AnyView + 'static>,
     error: Prop<'a, ForErrorHandler>,
     parent: &Node,
     _attrs: Vec<PendingAttribute>,
 ) where
     ItemsFn: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = Item> + Sized + 'static,
-    Item: Clone + 'static,
     Key: Hash + Eq + Clone + 'static,
-    MF: Fn(ReadSignal<Item>, ReadSignal<usize>) -> V + Clone + 'static,
-    V: Mount + 'static,
+    Item: Clone + 'static,
 {
     let items_fn = items_fn.into_owned();
-    let children_fn = Rc::new(children_fn.into_owned());
     let error = error.into_owned();
     let document = silex_dom::document();
 
@@ -271,10 +266,6 @@ fn mount_for_internal<'a, ItemsFn, IS, Item, Key, MF, V>(
                 for (index, item_ref) in items_slice.iter().enumerate() {
                     let key = key_fn(item_ref);
                     if !new_keys.insert(key.clone()) {
-                        debug_assert!(
-                            false,
-                            "Duplicate key detected in For loop; each key must be unique"
-                        );
                         error.call(SilexError::Javascript(
                             "Duplicate key detected in For loop; each key must be unique"
                                 .to_string(),

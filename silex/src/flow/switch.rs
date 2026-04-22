@@ -43,7 +43,7 @@ where
     /// 添加一个匹配分支
     pub fn case<V>(mut self, value: T, view: V) -> Self
     where
-        V: MountExt + 'static,
+        V: MountExt,
     {
         match self.cases.entry(value) {
             Entry::Vacant(entry) => {

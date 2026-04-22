@@ -1,15 +1,62 @@
+use std::borrow::Cow;
+
 use crate::css::AppTheme;
 use silex::prelude::*;
 
 #[component]
 pub fn ListDemo() -> impl Mount + MountRef {
-    let (list, set_list) = Signal::pair(vec!["Apple", "Banana", "Cherry"]);
+    let (list, set_list) = Signal::pair(Ok(vec![
+        Cow::Borrowed("Apple"),
+        Cow::Borrowed("Banana"),
+        Cow::Borrowed("Cherry"),
+    ]));
+    let (error_msg, set_error_msg) = Signal::pair(None::<String>);
 
     div![
-        h3("List Rendering with Signal Ergonomics"),
-        p("Demonstrates passing a Signal directly to For without closure wrapper."),
-        ul(For(list, |item| *item).children(|item, _idx| li(item))),
-        button("Add Item").on(event::click, set_list.updater(|l| l.push("New Item"))),
+        h3("List Rendering with Error Handling"),
+        p("Demonstrates explicit error handling in For component to avoid crashes."),
+        // Error display
+        Show(error_msg.map(|e| e.is_some())).children(move || {
+            div(error_msg.get().unwrap_or_default()).style(
+                sty()
+                    .color(hex("#d32f2f"))
+                    .background(hex("#ffebee"))
+                    .padding(px(10))
+                    .border_radius(px(4))
+                    .margin_bottom(px(10))
+                    .border(format!("1px solid {}", hex("#ef9a9a"))),
+            )
+        }),
+        ul(For(list, |item| item.clone())
+            .children(|item, _idx| li(item))
+            .error(move |err| {
+                set_error_msg.set(Some(format!("捕获到错误: {}", err)));
+            })),
+        div![
+            button("Add Item").on(event::click, move |_| {
+                set_error_msg.set(None);
+                set_list.update(|l| {
+                    if let Ok(v) = l {
+                        v.push(Cow::Owned(format!("New Item {}", v.len())));
+                    } else {
+                        *l = Ok(vec!["Apple".into(), "Banana".into(), "Cherry".into()]);
+                    }
+                });
+            }),
+            button("Duplicate Key").on(event::click, move |_| {
+                set_error_msg.set(None);
+                set_list.update(|l| {
+                    if let Ok(v) = l {
+                        v.push("Duplicate".into());
+                        v.push("Duplicate".into());
+                    }
+                });
+            }),
+            button("Simulate Error").on(event::click, move |_| {
+                set_list.set(Err(SilexError::Javascript("模拟数据加载失败".to_string())));
+            }),
+        ]
+        .style("display: flex; gap: 10px; margin-top: 10px;"),
     ]
 }
 

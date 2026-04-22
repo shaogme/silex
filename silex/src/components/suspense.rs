@@ -3,7 +3,7 @@ use silex_core::traits::RxGet;
 use silex_dom::prelude::*;
 use silex_html::div;
 use silex_macros::component;
-use std::marker::PhantomData;
+use std::rc::Rc;
 use web_sys::Node;
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
@@ -39,6 +39,9 @@ where
     CH: Fn() -> R + Clone + 'static,
     R: MountExt,
 {
+    let children = children.into_owned();
+    let children = Rc::new(move || children().into_any());
+
     // 创建属于此 Suspense 边界的上下文
     let ctx = SuspenseContext::new();
 
@@ -49,35 +52,29 @@ where
     // 3. 生成初始视图供第一次挂载或 KeepAlive 模式使用。
     let initial_view = SuspenseContext::provide_with(ctx.clone(), {
         let children = children.clone();
-        move || children().into_any()
+        move || children()
     });
 
     SuspenseView {
-        factory: children.clone(),
+        factory: children,
         initial_view,
         fallback: fallback.clone(),
         mode: *mode,
         ctx,
-        _marker: PhantomData,
     }
 }
 
-struct SuspenseView<CH, R> {
-    factory: CH,
+struct SuspenseView {
+    factory: Rc<dyn Fn() -> AnyView + 'static>,
     initial_view: AnyView,
     fallback: AnyView,
     mode: SuspenseMode,
     ctx: SuspenseContext,
-    _marker: PhantomData<R>,
 }
 
-impl<CH, R> ApplyAttributes for SuspenseView<CH, R> {}
+impl ApplyAttributes for SuspenseView {}
 
-impl<CH, R> Mount for SuspenseView<CH, R>
-where
-    CH: Fn() -> R + Clone + 'static,
-    R: MountExt,
-{
+impl Mount for SuspenseView {
     fn mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
         let factory = self.factory;
         let initial_view = self.initial_view;
@@ -128,7 +125,10 @@ where
                         } else {
                             // 重新执行工厂闭包以生成全新的视图（重置本地 DOM 状态）
                             // 内部的 Resource::new 会从缓存中获取稳定的 Resource 实例
-                            SuspenseContext::provide_with(ctx_clone.clone(), factory.clone()).into_any()
+                            SuspenseContext::provide_with(ctx_clone.clone(), {
+                                let factory = factory.clone();
+                                move || factory()
+                            })
                         }
                     } else {
                         ().into_any()
@@ -150,18 +150,9 @@ where
     }
 }
 
-impl<CH, R> AutoReactiveView for SuspenseView<CH, R>
-where
-    CH: Fn() -> R + Clone + 'static,
-    R: MountExt,
-{
-}
+impl AutoReactiveView for SuspenseView {}
 
-impl<CH, R> MountRef for SuspenseView<CH, R>
-where
-    CH: Fn() -> R + Clone + 'static,
-    R: MountExt,
-{
+impl MountRef for SuspenseView {
     fn mount_ref(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         let view = SuspenseView {
             factory: self.factory.clone(),
@@ -169,7 +160,6 @@ where
             fallback: self.fallback.clone(),
             mode: self.mode,
             ctx: self.ctx.clone(),
-            _marker: PhantomData,
         };
         view.mount(parent, attrs);
     }
