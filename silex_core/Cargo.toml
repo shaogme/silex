@@ -18,5 +18,5 @@ workspace = true
 silex_reactivity.workspace = true
 silex_rx.workspace = true
 wasm-bindgen.workspace = true
-web-sys.workspace = true
+web-sys = { workspace = true, features = ["console"] }
 wasm-bindgen-futures.workspace = true

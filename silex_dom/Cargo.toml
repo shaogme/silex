@@ -18,5 +18,33 @@ workspace = true
 silex_vtable.workspace = true
 silex_core.workspace = true
 wasm-bindgen.workspace = true
-web-sys.workspace = true
+web-sys = { workspace = true, features = [
+    "Document",
+    "Text",
+    "Window",
+    "Element",
+    "Comment",
+    "DocumentFragment",
+    "MouseEvent",
+    "InputEvent",
+    "HtmlInputElement",
+    "HtmlTextAreaElement",
+    "HtmlSelectElement",
+    "KeyboardEvent",
+    "DomTokenList",
+    "SvgElement",
+    "CssStyleDeclaration",
+    "SubmitEvent",
+    "FocusEvent",
+    "ErrorEvent",
+    "PointerEvent",
+    "DragEvent",
+    "TouchEvent",
+    "WheelEvent",
+    "AnimationEvent",
+    "TransitionEvent",
+    "CompositionEvent",
+    "Location",
+    "PromiseRejectionEvent"
+] }
 js-sys.workspace = true

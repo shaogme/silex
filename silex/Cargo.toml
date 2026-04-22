@@ -22,7 +22,12 @@ silex_css.workspace = true
 silex_macros = { workspace = true, default-features = false, features = ["component", "store", "route"]}
 silex_hash.workspace = true
 wasm-bindgen.workspace = true
-web-sys.workspace = true
+web-sys = { workspace = true, features = [
+    "History",
+    "Node",
+    "NodeList",
+    "UrlSearchParams"
+] }
 js-sys.workspace = true
 wasm-bindgen-futures.workspace = true
 serde = { workspace = true, optional = true }
@@ -32,9 +37,22 @@ gloo-timers = { workspace = true, optional = true }
 [features]
 default = ["css"]
 css = ["silex_macros/css"]
-persistence = []
+persistence = ["web-sys/Storage", "web-sys/StorageEvent"]
 json = ["dep:serde", "dep:serde_json"]
-net = ["dep:gloo-timers"]
+net = [
+    "dep:gloo-timers",
+    "web-sys/AbortController",
+    "web-sys/EventSource",
+    "web-sys/FormData",
+    "web-sys/Headers",
+    "web-sys/MessageEvent",
+    "web-sys/Request",
+    "web-sys/RequestInit",
+    "web-sys/Response",
+    "web-sys/WebSocket",
+    "web-sys/AbortSignal",
+    "web-sys/CloseEvent",
+]
 
 [dev-dependencies]
 trybuild = "1.0"
