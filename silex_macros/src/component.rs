@@ -51,7 +51,10 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     hidden_fn.sig.inputs = syn::parse_quote!(props: #props_name #ty_generics);
     hidden_fn
         .attrs
-        .push(syn::parse_quote!(#[allow(non_snake_case)]));
+        .retain(|attr| !attr.path().is_ident("component"));
+    hidden_fn
+        .attrs
+        .push(syn::parse_quote!(#[allow(non_snake_case, unused_variables, unused_mut)]));
 
     let mut hidden_stmts: Vec<syn::Stmt> = Vec::new();
     let destructure: syn::Stmt = syn::parse2(quote! {

@@ -665,6 +665,14 @@ pub struct ViewNil;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ViewCons<H, T>(pub H, pub T);
 
+/// 属性缺失标记 (用于编译期检查)
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PropMissing;
+
+/// 属性已设置标记 (用于编译期检查)
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PropFixed;
+
 impl ApplyAttributes for ViewNil {}
 impl View for ViewNil {
     fn mount(&self, _parent: &Node, _attrs: Vec<PendingAttribute>) {}
