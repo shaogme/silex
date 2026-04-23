@@ -13,12 +13,7 @@ fn Card(children: AnyView) -> impl View {
 
 /// 导航链接样式封装
 #[component]
-fn NavLink<T: ToRoute + Clone + 'static>(
-    #[prop(clone)] to: T,
-    #[prop(clone)]
-    #[chain]
-    children: AnyView,
-) -> impl View {
+fn NavLink<T: ToRoute + Clone + 'static>(to: T, #[chain] children: AnyView) -> impl View {
     Link(to.clone())
         .children(children)
         .style("margin-right: 15px; text-decoration: none; color: #666; padding: 5px 10px; border-radius: 4px; transition: all 0.2s;")

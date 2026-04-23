@@ -10,12 +10,7 @@ use std::rc::Rc;
 ///
 /// 捕获从子组件树中向上冒泡的 SilexError（通过 ErrorContext）。
 #[component]
-pub fn ErrorBoundary<FB, CH, V1, V2>(
-    #[prop(clone)] children: CH,
-    #[prop(clone)]
-    #[chain]
-    fallback: FB,
-) -> impl View
+pub fn ErrorBoundary<FB, CH, V1, V2>(children: CH, #[chain] fallback: FB) -> impl View
 where
     FB: Fn(SilexError) -> V1 + Clone + 'static,
     CH: Fn() -> V2 + Clone + 'static,

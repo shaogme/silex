@@ -7,7 +7,6 @@ struct FieldAttrs {
     default: bool,
     default_value: Option<TokenStream2>,
     into_trait: bool,
-    clone: bool,
     render: bool,
     chained: bool,
 }
@@ -339,16 +338,13 @@ fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
                 if meta.path.is_ident("into") {
                     result.into_trait = true;
                     Ok(())
-                } else if meta.path.is_ident("clone") {
-                    result.clone = true;
-                    Ok(())
                 } else if meta.path.is_ident("render") {
                     result.render = true;
                     Ok(())
                 } else if meta.path.is_ident("default") {
                     Err(meta.error("`default` is no longer supported in `#[prop]`, please use `#[chain(default)]` or `#[chain(default = ...)]` instead"))
                 } else {
-                    Err(meta.error("expected `into`, `clone` or `render`"))
+                    Err(meta.error("expected `into` or `render`"))
                 }
             })?;
         } else if attr.path().is_ident("chain") {

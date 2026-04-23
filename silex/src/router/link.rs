@@ -10,7 +10,7 @@ use silex_macros::component;
 /// 类似于 HTML 的 `<a>` 标签，但会拦截点击事件并使用 Router 导航，而不是刷新页面。
 #[component]
 pub fn Link<T: ToRoute + Clone + 'static>(
-    #[prop(clone)] to: T,
+    to: T,
     #[chain] children: AnyView,
     #[prop(into)]
     #[chain(default)]

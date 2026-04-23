@@ -50,7 +50,7 @@ fn App(user: UserStore) -> impl View {
 
 // 用户信息显示组件
 #[component]
-fn UserDisplay(#[prop(clone)] user: UserStore) -> impl View {
+fn UserDisplay(user: UserStore) -> impl View {
     div!(
         div!(
             span("Name: ").style("font-weight: bold;"),
@@ -72,7 +72,7 @@ fn UserDisplay(#[prop(clone)] user: UserStore) -> impl View {
 
 // 用户编辑组件
 #[component]
-fn UserEditor(#[prop(clone)] user: UserStore) -> impl View {
+fn UserEditor(user: UserStore) -> impl View {
     div!(
         // 修改 Name
         div!(
@@ -104,7 +104,7 @@ fn UserEditor(#[prop(clone)] user: UserStore) -> impl View {
 
 // 调试面板组件
 #[component]
-fn DebugPanel(#[prop(clone)] user: UserStore) -> impl View {
+fn DebugPanel(user: UserStore) -> impl View {
     div!(button("Log Current State to Console").on_click(move |_| {
         // 演示 get() 方法还原普通结构体
         let current_state = user.get();
