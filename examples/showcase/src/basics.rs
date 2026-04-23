@@ -3,15 +3,7 @@ use silex::prelude::*;
 use std::time::Duration;
 
 #[component]
-pub fn Greeting(
-    // Explicitly `into` is NOT needed for common types like String, PathBuf, AnyView, and Callback.
-    // The macro enables it by default, allowing you to pass string literals directly (e.g., .name("...")) without .into().
-    // `default = "..."` specifies a fallback value if the prop is omitted.
-    #[standalone]
-    #[prop(default = "World")]
-    name: Signal<String>,
-    #[prop(default)] punctuation: String,
-) -> impl View {
+pub fn Greeting(name: Signal<String>, #[chain(default)] punctuation: String) -> impl View {
     let full_punctuation = if punctuation.is_empty() {
         "!".to_string()
     } else {

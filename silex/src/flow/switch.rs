@@ -20,9 +20,11 @@ use web_sys::Node;
 /// ```
 #[component]
 pub fn Switch<Source, T>(
-    #[standalone] source: Source,
-    #[prop(default)] cases: HashMap<T, AnyView>,
-    #[prop(default = AnyView::Empty, render)] fallback: AnyView,
+    source: Source,
+    #[chain(default)] cases: HashMap<T, AnyView>,
+    #[prop(render)]
+    #[chain(default = AnyView::Empty)]
+    fallback: AnyView,
 ) -> impl View
 where
     Source: RxGet<Value = T> + Clone + 'static,

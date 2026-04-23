@@ -19,7 +19,12 @@ use web_sys::Node;
 /// Index(list).children(|item, index| li(rx! { index.get() }))
 /// ```
 #[component]
-pub fn Index<IF, I, IS, MF, V>(#[standalone] each: IF, #[prop(render)] children: MF) -> impl View
+pub fn Index<IF, I, IS, MF, V>(
+    each: IF,
+    #[prop(render)]
+    #[chain]
+    children: MF,
+) -> impl View
 where
     IF: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = I> + 'static,

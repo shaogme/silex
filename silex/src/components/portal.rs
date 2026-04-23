@@ -7,10 +7,8 @@ use web_sys::Node;
 /// 但保持响应式上下文（Context）的连通性。
 #[component]
 pub fn Portal(
-    #[standalone]
-    #[prop(into)]
-    children: AnyView,
-    #[prop(default)] mount_to: Option<Node>,
+    #[prop(into)] children: AnyView,
+    #[chain(default)] mount_to: Option<Node>,
 ) -> impl View {
     let document = silex_dom::document();
     let target = mount_to

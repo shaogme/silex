@@ -200,7 +200,7 @@ pub fn QueryDemo() -> impl View {
 }
 
 #[component]
-pub fn AuthGuard(#[standalone] children: AnyView) -> impl View {
+pub fn AuthGuard(children: AnyView) -> impl View {
     let settings = use_user_settings();
     let children = children.clone();
 
@@ -468,8 +468,8 @@ pub fn SuspenseDemo() -> impl View {
 
 #[component]
 pub fn GenericMessage<'a, T: std::fmt::Display + Clone + 'static>(
-    #[standalone] value: T,
-    title: &'a str,
+    value: T,
+    #[chain] title: &'a str,
 ) -> impl View {
     div![h4(title.to_string()), p(format!("Value: {}", value)),].style(
         sty()

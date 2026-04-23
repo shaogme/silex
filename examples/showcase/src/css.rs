@@ -207,7 +207,7 @@ styled! {
         cursor: pointer;
         font-weight: 600;
         transition: all 0.2s;
-        opacity: $({ let active = active.clone(); rx!(if active.get() { 1.0 } else { 0.8 }) });
+        opacity: $(rx!(if active.get() { 1.0 } else { 0.8 }));
 
         &:hover {
             filter: brightness(1.1);
@@ -240,11 +240,11 @@ styled! {
             kind: {
                 primary: {
                     background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-                    width: $(dynamic_width.clone());
+                    width: $(dynamic_width);
                 }
                 secondary: {
                     background: linear-gradient(135deg, #10b981 0%, #3b82f6 100%);
-                    width: $({ let dynamic_width = dynamic_width.clone(); rx!(dynamic_width.get() + px(60)) });
+                    width: $(rx!(dynamic_width.get() + px(60)));
                 }
             }
         }

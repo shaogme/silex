@@ -9,7 +9,7 @@ struct FieldAttrs {
     into_trait: bool,
     clone: bool,
     render: bool,
-    standalone: bool,
+    chained: bool,
 }
 
 #[derive(Clone)]
@@ -44,8 +44,7 @@ pub fn derive_props_builder_impl(input: DeriveInput) -> syn::Result<TokenStream2
                         .clone()
                         .expect("named fields must have identifiers");
                     let attrs = parse_field_attrs(&field.attrs)?;
-                    let required =
-                        !attrs.standalone && !attrs.default && attrs.default_value.is_none();
+                    let required = attrs.chained && !attrs.default && attrs.default_value.is_none();
                     Ok(FieldSpec {
                         ident,
                         ty: field.ty.clone(),
@@ -69,7 +68,7 @@ pub fn derive_props_builder_impl(input: DeriveInput) -> syn::Result<TokenStream2
         }
     };
 
-    let standalone_fields: Vec<_> = fields.iter().filter(|f| f.attrs.standalone).collect();
+    let standalone_fields: Vec<_> = fields.iter().filter(|f| !f.attrs.chained).collect();
 
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
@@ -85,7 +84,7 @@ pub fn derive_props_builder_impl(input: DeriveInput) -> syn::Result<TokenStream2
 
     let builder_field_inits = fields.iter().map(|field| {
         let ident = &field.ident;
-        if field.attrs.standalone {
+        if !field.attrs.chained {
             quote! { #ident }
         } else if let Some(default_expr) = &field.attrs.default_value {
             let init_expr = field_value_transform(field, quote! { #default_expr });
@@ -99,7 +98,7 @@ pub fn derive_props_builder_impl(input: DeriveInput) -> syn::Result<TokenStream2
         }
     });
 
-    let builder_setters = fields.iter().map(|field| generate_setter(field));
+    let builder_setters = fields.iter().map(generate_setter);
 
     let builder_new_params: Vec<_> = standalone_fields
         .iter()
@@ -144,11 +143,7 @@ pub fn derive_props_builder_impl(input: DeriveInput) -> syn::Result<TokenStream2
         .iter()
         .map(|field| {
             let ident = &field.ident;
-            if field.required {
-                quote! { #ident }
-            } else {
-                quote! { #ident }
-            }
+            quote! { #ident }
         })
         .collect();
 
@@ -310,7 +305,7 @@ fn generate_setter(field: &FieldSpec) -> TokenStream2 {
         quote! { val }
     };
 
-    let final_value = if field.attrs.standalone || !field.required {
+    let final_value = if !field.attrs.chained || !field.required {
         setter_value
     } else {
         quote! { ::core::option::Option::Some(#setter_value) }
@@ -341,15 +336,7 @@ fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
     for attr in attrs {
         if attr.path().is_ident("prop") {
             attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("default") {
-                    result.default = true;
-                    if meta.input.peek(syn::Token![=]) {
-                        meta.input.parse::<syn::Token![=]>()?;
-                        let expr: syn::Expr = meta.input.parse()?;
-                        result.default_value = Some(quote! { #expr });
-                    }
-                    Ok(())
-                } else if meta.path.is_ident("into") {
+                if meta.path.is_ident("into") {
                     result.into_trait = true;
                     Ok(())
                 } else if meta.path.is_ident("clone") {
@@ -358,12 +345,29 @@ fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
                 } else if meta.path.is_ident("render") {
                     result.render = true;
                     Ok(())
+                } else if meta.path.is_ident("default") {
+                    Err(meta.error("`default` is no longer supported in `#[prop]`, please use `#[chain(default)]` or `#[chain(default = ...)]` instead"))
                 } else {
-                    Err(meta.error("expected `default`, `into`, `clone` or `render`"))
+                    Err(meta.error("expected `into`, `clone` or `render`"))
                 }
             })?;
-        } else if attr.path().is_ident("standalone") {
-            result.standalone = true;
+        } else if attr.path().is_ident("chain") {
+            result.chained = true;
+            if !matches!(attr.meta, syn::Meta::Path(_)) {
+                attr.parse_nested_meta(|meta| {
+                    if meta.path.is_ident("default") {
+                        result.default = true;
+                        if meta.input.peek(syn::Token![=]) {
+                            meta.input.parse::<syn::Token![=]>()?;
+                            let expr: syn::Expr = meta.input.parse()?;
+                            result.default_value = Some(quote! { #expr });
+                        }
+                        Ok(())
+                    } else {
+                        Err(meta.error("expected `default`"))
+                    }
+                })?;
+            }
         }
     }
 

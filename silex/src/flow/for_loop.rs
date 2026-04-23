@@ -106,10 +106,14 @@ impl<T: Clone> ForLoopSource for SilexResult<Vec<T>> {
 /// ```
 #[component]
 pub fn For<ItemsFn, IS, Item, Key, MF, V>(
-    #[standalone] items: ItemsFn,
-    #[standalone] key: fn(&Item) -> Key,
-    #[prop(render)] children: MF,
-    #[prop(default = ::silex_core::error::handle_error, into)] error: ForErrorHandler,
+    items: ItemsFn,
+    key: fn(&Item) -> Key,
+    #[prop(render)]
+    #[chain]
+    children: MF,
+    #[prop(into)]
+    #[chain(default = ::silex_core::error::handle_error)]
+    error: ForErrorHandler,
 ) -> impl View
 where
     ItemsFn: RxRead<Value = IS> + Clone + 'static,
@@ -201,7 +205,7 @@ struct ForRow<Item> {
     nodes: Vec<Node>,
 }
 
-fn mount_for_internal<'a, ItemsFn, IS, Item, Key>(
+fn mount_for_internal<ItemsFn, IS, Item, Key>(
     items_fn: ItemsFn,
     key_fn: fn(&Item) -> Key,
     children_fn: Rc<dyn Fn(ReadSignal<Item>, ReadSignal<usize>) -> AnyView + 'static>,

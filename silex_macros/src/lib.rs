@@ -82,16 +82,16 @@ pub fn theme(input: TokenStream) -> TokenStream {
 ///
 /// # 属性
 ///
-/// - `#[prop(default)]`: 该属性将使用 `Default::default()` 作为默认值
+/// - `#[chain(default)]`: 该属性将使用 `Default::default()` 作为默认值，并启用链式调用
 /// - `#[prop(into)]`: 该属性将使用 `Into<T>` 转换输入
-/// - `#[prop(default, into)]`: 可以组合使用
+/// - `#[chain(default), prop(into)]`: 可以组合使用
 #[cfg(feature = "component")]
 #[proc_macro_attribute]
 pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
     if !attr.is_empty() {
         return syn::Error::new(
             proc_macro2::Span::call_site(),
-            "#[component] no longer accepts arguments; use field-level #[standalone] instead",
+            "#[component] no longer accepts arguments; use field-level #[chain] instead",
         )
         .to_compile_error()
         .into();
@@ -118,7 +118,7 @@ pub fn derive_store(input: TokenStream) -> TokenStream {
 ///
 /// 为组件 Props 结构体生成链式构造器与 `View` 桥接层。
 #[cfg(feature = "component")]
-#[proc_macro_derive(PropsBuilder, attributes(prop, standalone))]
+#[proc_macro_derive(PropsBuilder, attributes(prop, chain))]
 pub fn derive_props_builder(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     match props_builder::derive_props_builder_impl(input) {

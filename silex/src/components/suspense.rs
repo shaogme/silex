@@ -31,9 +31,9 @@ pub enum SuspenseMode {
 /// ```
 #[component]
 pub fn Suspense<CH, R>(
-    #[standalone] children: CH,
-    #[prop(default = AnyView::Empty)] fallback: AnyView,
-    #[prop(default)] mode: SuspenseMode,
+    children: CH,
+    #[chain(default = AnyView::Empty)] fallback: AnyView,
+    #[chain(default)] mode: SuspenseMode,
 ) -> impl View
 where
     CH: Fn() -> R + Clone + 'static,

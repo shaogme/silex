@@ -67,8 +67,12 @@ impl<R: Routable> ToRoute for R {
 /// `Router().base("/app").match_route::<AppRoute>()`
 #[component]
 pub fn Router(
-    #[prop(into, default = "/")] base: String,
-    #[prop(default = AnyView::Empty, render)] children: AnyView,
+    #[prop(into)]
+    #[chain(default = "/")]
+    base: String,
+    #[prop(render)]
+    #[chain(default = AnyView::Empty)]
+    children: AnyView,
 ) -> impl View {
     RouterView {
         base_path: normalize_base_path(&base),

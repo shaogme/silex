@@ -22,23 +22,13 @@ pub struct StyledComponent {
     pub css_block: TokenStream,
     pub variants: Vec<VariantGroup>,
     pub is_unsafe: bool,
-    pub standalone: Option<usize>,
 }
 
 impl Parse for StyledComponent {
     fn parse(input: ParseStream) -> Result<Self> {
         let mut attrs = input.call(Attribute::parse_outer)?;
-        let mut standalone = None;
         attrs.retain(|attr| {
-            if attr.path().is_ident("standalone")
-                && let syn::Meta::NameValue(nv) = &attr.meta
-                && let syn::Expr::Lit(syn::ExprLit {
-                    lit: syn::Lit::Int(lit),
-                    ..
-                }) = &nv.value
-                && let Ok(val) = lit.base10_parse::<usize>()
-            {
-                standalone = Some(val);
+            if attr.path().is_ident("standalone") {
                 return false;
             }
             true
@@ -135,7 +125,6 @@ impl Parse for StyledComponent {
             css_block,
             variants,
             is_unsafe,
-            standalone,
         })
     }
 }
@@ -260,19 +249,18 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     for v in &parsed.variants {
         if !existing_props.contains(&v.prop_name) {
             let p = &v.prop_name;
-            all_fn_args.push(syn::parse_quote! { #[prop(into, default)] #p: ::silex::core::reactivity::Signal<::std::string::String> });
+            all_fn_args.push(syn::parse_quote! { #[prop(into)] #[chain(default)] #p: ::silex::core::reactivity::Signal<::std::string::String> });
         }
     }
 
-    let standalone_count = parsed.standalone.unwrap_or(1);
     for (idx, arg) in all_fn_args.iter_mut().enumerate() {
-        if idx >= standalone_count {
-            break;
+        if idx == 0 {
+            continue;
         }
-        if let syn::FnArg::Typed(pt) = arg {
-            if !pt.attrs.iter().any(|a| a.path().is_ident("standalone")) {
-                pt.attrs.push(syn::parse_quote!(#[standalone]));
-            }
+        if let syn::FnArg::Typed(pt) = arg
+            && !pt.attrs.iter().any(|a| a.path().is_ident("chain"))
+        {
+            pt.attrs.push(syn::parse_quote!(#[chain(default)]));
         }
     }
 

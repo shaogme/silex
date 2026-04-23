@@ -3,12 +3,12 @@ use silex::reexports::*;
 
 #[component]
 fn Card(
-    #[standalone]
-    #[prop(default = "Default Title", into)]
-    title: String,
-    #[prop(default = 1)] elevation: u8,
-    #[prop(default)] child: AnyView,
-    #[prop(default, into)] on_hover: Callback,
+    #[prop(into)] title: String,
+    #[chain(default = 1)] elevation: u8,
+    #[chain(default)] child: AnyView,
+    #[prop(into)]
+    #[chain(default)]
+    on_hover: Callback,
 ) -> impl View {
     let style = format!(
         "border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px {}px rgba(0,0,0,0.1); transition: transform 0.2s;",
@@ -22,7 +22,6 @@ fn Card(
     .class("card")
     .style(&style);
 
-    let on_hover = on_hover.clone();
     root = root.on_click(move |_| on_hover.call(()));
 
     root

@@ -84,7 +84,7 @@ styled! {
     #[theme(AppTheme)]
     pub StyledNav<nav> (
         children: AnyView,
-        #[prop(default = "horizontal")] direction: &'static str
+        #[chain(default = "horizontal")] direction: &'static str
     ) {
         background: $AppTheme::SURFACE;
         color: $AppTheme::TEXT;
@@ -192,7 +192,7 @@ pub fn NavBar() -> impl View {
 }
 
 #[component]
-fn AdvancedLayout(#[standalone] route: AdvancedRoute) -> impl View {
+fn AdvancedLayout(route: AdvancedRoute) -> impl View {
     div![
         h2("Advanced Features"),
         div![
@@ -243,7 +243,7 @@ fn AdvancedLayout(#[standalone] route: AdvancedRoute) -> impl View {
 }
 
 #[component]
-fn CssLayout(#[standalone] route: CssRoute) -> impl View {
+fn CssLayout(route: CssRoute) -> impl View {
     div![
         h2("CSS & Styling"),
         p(

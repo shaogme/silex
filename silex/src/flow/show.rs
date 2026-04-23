@@ -11,9 +11,13 @@ use web_sys::Node;
 /// ```
 #[component]
 pub fn Show<C>(
-    #[standalone] when: C,
-    #[prop(render)] children: AnyView,
-    #[prop(default = AnyView::Empty, render)] fallback: AnyView,
+    when: C,
+    #[prop(render)]
+    #[chain]
+    children: AnyView,
+    #[prop(render)]
+    #[chain(default = AnyView::Empty)]
+    fallback: AnyView,
 ) -> impl View
 where
     C: RxGet<Value = bool> + Clone + 'static,

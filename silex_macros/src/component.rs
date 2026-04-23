@@ -58,7 +58,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         let #props_name { #(#prop_arg_names),* } = props;
     })?;
     hidden_stmts.push(destructure);
-    hidden_stmts.extend(hidden_fn.block.stmts.into_iter());
+    hidden_stmts.extend(hidden_fn.block.stmts);
     hidden_fn.block.stmts = hidden_stmts;
 
     Ok(quote! {

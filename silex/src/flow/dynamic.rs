@@ -25,7 +25,7 @@ use web_sys::Node;
 /// });
 /// ```
 #[component]
-pub fn Dynamic<V, FView>(#[standalone] view_fn: FView) -> impl View
+pub fn Dynamic<V, FView>(view_fn: FView) -> impl View
 where
     V: View + Clone + 'static,
     FView: RxRead<Value = V> + Clone + 'static,

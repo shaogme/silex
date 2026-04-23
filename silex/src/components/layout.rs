@@ -4,15 +4,15 @@ styled! {
     /// 弹性布局容器 (Flexbox)
     pub Stack <div> (
         children: AnyView,
-        #[prop(default = FlexDirectionKeyword::Column, into)]
+        #[prop(into)] #[chain(default = FlexDirectionKeyword::Column)]
         direction: Signal<FlexDirectionKeyword>,
-        #[prop(default = AlignItemsKeyword::Stretch, into)]
+        #[prop(into)] #[chain(default = AlignItemsKeyword::Stretch)]
         align: Signal<AlignItemsKeyword>,
-        #[prop(default = JustifyContentKeyword::FlexStart, into)]
+        #[prop(into)] #[chain(default = JustifyContentKeyword::FlexStart)]
         justify: Signal<JustifyContentKeyword>,
-        #[prop(default, into)]
+        #[prop(into)] #[chain(default)]
         gap: Signal<i32>,
-        #[prop(default, into)]
+        #[prop(into)] #[chain(default)]
         style: Signal<Style>,
     ) {
         display: flex;
@@ -27,7 +27,7 @@ styled! {
     /// 居中容器
     pub Center <div> (
         children: AnyView,
-        #[prop(default, into)]
+        #[prop(into)] #[chain(default)]
         style: Signal<Style>,
     ) {
         display: flex;
@@ -40,11 +40,11 @@ styled! {
     /// 网格布局容器 (Grid)
     pub Grid <div> (
         children: AnyView,
-        #[prop(default = 1, into)]
+        #[prop(into)] #[chain(default = 1)]
         columns: Signal<i32>,
-        #[prop(default, into)]
+        #[prop(into)] #[chain(default)]
         gap: Signal<i32>,
-        #[prop(default, into)]
+        #[prop(into)] #[chain(default)]
         style: Signal<Style>,
     ) {
         display: grid;
