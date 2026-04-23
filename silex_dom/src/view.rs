@@ -50,19 +50,6 @@ impl<'a, T> Prop<'a, T> {
 }
 
 impl<'a, T: Clone> Prop<'a, T> {
-    /// 注意：Prop 的 .clone() 返回的是 T 而不是 Prop！
-    ///
-    /// 这里的 inherent method 优先级高于下方的 Clone trait 实现。
-    /// 这是为了让组件代码通过 .clone() 拿到的总是 Owned 类型，
-    /// 从而可以安全地 move 进入 'static 闭包，且不触发 Clippy 对 Copy 类型冗余克隆的警告。
-    #[allow(clippy::should_implement_trait)]
-    pub fn clone(&self) -> T {
-        match self {
-            Self::Owned(v) => v.clone(),
-            Self::Borrowed(v) => (*v).clone(),
-        }
-    }
-
     /// Consume the wrapper and return an owned value.
     /// Borrowed values are cloned on demand.
     pub fn into_owned(self) -> T {
@@ -146,7 +133,7 @@ where
     type RxType = T::RxType;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        self.clone().into_rx()
+        self.into_owned().into_rx()
     }
     #[inline(always)]
     fn is_constant(&self) -> bool {
@@ -164,7 +151,7 @@ where
         Self: Sized + silex_core::traits::RxData,
         Self::Value: Sized + silex_core::traits::RxCloneData,
     {
-        self.clone().into_signal()
+        self.into_owned().into_signal()
     }
 }
 

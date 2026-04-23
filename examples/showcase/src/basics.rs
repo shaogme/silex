@@ -7,7 +7,9 @@ pub fn Greeting(
     // Explicitly `into` is NOT needed for common types like String, PathBuf, AnyView, and Callback.
     // The macro enables it by default, allowing you to pass string literals directly (e.g., .name("...")) without .into().
     // `default = "..."` specifies a fallback value if the prop is omitted.
-    #[prop(default = "World")] name: Signal<String>,
+    #[standalone]
+    #[prop(default = "World")]
+    name: Signal<String>,
     #[prop(default)] punctuation: String,
 ) -> impl View {
     let full_punctuation = if punctuation.is_empty() {
@@ -129,7 +131,7 @@ pub fn NodeRefDemo() -> impl View {
 #[component]
 pub fn SvgIconDemo() -> impl View {
     #[component]
-    fn ShieldCheck() -> Element {
+    fn ShieldCheck() -> impl View + AttributeBuilder {
         svg(path()
             .attr("stroke-linecap", "round")
             .attr("stroke-linejoin", "round")

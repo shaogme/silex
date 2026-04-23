@@ -45,7 +45,6 @@ extern "C" {
 /// [`console.error`](https://developer.mozilla.org/en-US/docs/Web/API/Console/error).
 ///
 /// On non-wasm targets, prints the panic to `stderr`.
-#[allow(dead_code)]
 #[cfg(debug_assertions)]
 fn hook(info: &panic::PanicHookInfo) {
     #[cfg(target_arch = "wasm32")]

@@ -5,6 +5,8 @@ use syn::{DeriveInput, ItemFn, parse_macro_input};
 mod component;
 #[cfg(feature = "css")]
 mod css;
+#[cfg(feature = "component")]
+mod props_builder;
 #[cfg(feature = "route")]
 mod route;
 #[cfg(feature = "store")]
@@ -86,15 +88,17 @@ pub fn theme(input: TokenStream) -> TokenStream {
 #[cfg(feature = "component")]
 #[proc_macro_attribute]
 pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
+    if !attr.is_empty() {
+        return syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "#[component] no longer accepts arguments; use field-level #[standalone] instead",
+        )
+        .to_compile_error()
+        .into();
+    }
+
     let input_fn = parse_macro_input!(item as ItemFn);
-    let attr_stream = proc_macro2::TokenStream::from(attr);
-
-    let attrs = match component::parse_component_attrs(attr_stream) {
-        Ok(a) => a,
-        Err(e) => return e.to_compile_error().into(),
-    };
-
-    match component::generate_component(input_fn, attrs) {
+    match component::generate_component(input_fn) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),
     }
@@ -105,6 +109,19 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn derive_store(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     match store::derive_store_impl(input) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+/// `#[derive(PropsBuilder)]` 结构体派生宏
+///
+/// 为组件 Props 结构体生成链式构造器与 `View` 桥接层。
+#[cfg(feature = "component")]
+#[proc_macro_derive(PropsBuilder, attributes(prop, standalone))]
+pub fn derive_props_builder(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    match props_builder::derive_props_builder_impl(input) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),
     }

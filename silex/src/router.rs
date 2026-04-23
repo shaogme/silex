@@ -65,13 +65,11 @@ impl<R: Routable> ToRoute for R {
 /// 这是标准组件入口，推荐用法：
 ///
 /// `Router().base("/app").match_route::<AppRoute>()`
-#[component(standalone = 0)]
+#[component]
 pub fn Router(
     #[prop(into, default = "/")] base: String,
     #[prop(default = AnyView::Empty, render)] children: AnyView,
 ) -> impl View {
-    let base = base.into_owned();
-    let children = children.into_owned();
     RouterView {
         base_path: normalize_base_path(&base),
         children,

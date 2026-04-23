@@ -25,12 +25,11 @@ use web_sys::Node;
 /// });
 /// ```
 #[component]
-pub fn Dynamic<V, FView>(view_fn: FView) -> impl View
+pub fn Dynamic<V, FView>(#[standalone] view_fn: FView) -> impl View
 where
     V: View + Clone + 'static,
     FView: RxRead<Value = V> + Clone + 'static,
 {
-    let view_fn = view_fn.into_owned();
     let view_fn = Rc::new(move || view_fn.with(|view| view.clone().into_any()));
 
     DynamicView { view_fn }

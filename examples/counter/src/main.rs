@@ -3,7 +3,9 @@ use silex::reexports::*;
 
 #[component]
 fn Card(
-    #[prop(default = "Default Title", into)] title: String,
+    #[standalone]
+    #[prop(default = "Default Title", into)]
+    title: String,
     #[prop(default = 1)] elevation: u8,
     #[prop(default)] child: AnyView,
     #[prop(default, into)] on_hover: Callback,
@@ -27,7 +29,7 @@ fn Card(
 }
 
 #[component]
-fn CounterDisplay() -> SilexResult<impl Mount> {
+fn CounterDisplay() -> SilexResult<impl View> {
     let count = expect_context::<ReadSignal<i32>>();
 
     // Demo: Style Map (Vec) and Dynamic Class (Signal)
@@ -70,7 +72,7 @@ fn CounterDisplay() -> SilexResult<impl Mount> {
 }
 
 #[component]
-fn CounterControls() -> SilexResult<impl Mount> {
+fn CounterControls() -> SilexResult<impl View> {
     let set_count = expect_context::<WriteSignal<i32>>();
     let count = expect_context::<ReadSignal<i32>>();
 

@@ -20,7 +20,7 @@ use web_sys::Node;
 /// ```
 #[component]
 pub fn Switch<Source, T>(
-    source: Source,
+    #[standalone] source: Source,
     #[prop(default)] cases: HashMap<T, AnyView>,
     #[prop(default = AnyView::Empty, render)] fallback: AnyView,
 ) -> impl View
@@ -29,9 +29,9 @@ where
     T: Eq + Hash + Clone + 'static,
 {
     SwitchView {
-        source,
-        cases,
-        fallback,
+        source: Prop::new_owned(source),
+        cases: Prop::new_owned(cases),
+        fallback: Prop::new_owned(fallback),
     }
 }
 
@@ -76,9 +76,9 @@ where
 {
     fn mount(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         mount_switch_internal(
-            Prop::new_owned(self.source.clone()),
-            Prop::new_owned(self.cases.clone()),
-            Prop::new_owned(self.fallback.clone()),
+            self.source.clone().into_owned(),
+            self.cases.clone().into_owned(),
+            self.fallback.clone().into_owned(),
             parent,
             attrs,
         );
@@ -88,23 +88,27 @@ where
     where
         Self: Sized,
     {
-        mount_switch_internal(self.source, self.cases, self.fallback, parent, attrs);
+        mount_switch_internal(
+            self.source.into_owned(),
+            self.cases.into_owned(),
+            self.fallback.into_owned(),
+            parent,
+            attrs,
+        );
     }
 }
 
-fn mount_switch_internal<'a, Source, T>(
-    source: Prop<'a, Source>,
-    cases: Prop<'a, HashMap<T, AnyView>>,
-    fallback: Prop<'a, AnyView>,
+fn mount_switch_internal<Source, T>(
+    source: Source,
+    cases: HashMap<T, AnyView>,
+    fallback: AnyView,
     parent: &Node,
     attrs: Vec<silex_dom::attribute::PendingAttribute>,
 ) where
     Source: RxGet<Value = T> + Clone + 'static,
     T: Eq + Hash + Clone + 'static,
 {
-    let source = source.into_owned();
-    let cases = std::rc::Rc::new(cases.into_owned());
-    let fallback = fallback.into_owned();
+    let cases = std::rc::Rc::new(cases);
 
     let cases_for_key = cases.clone();
     let cases_for_render = cases.clone();

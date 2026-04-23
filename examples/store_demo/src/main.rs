@@ -31,7 +31,7 @@ fn main() {
 
 // 使用 #[component] 宏定义组件
 #[component]
-fn App(user: UserStore) -> impl View {
+fn App(#[standalone] user: UserStore) -> impl View {
     div!(
         h1("Silex Store Demo"),
         p("This example demonstrates fine-grained reactivity using the #[derive(Store)] macro."),
@@ -50,7 +50,11 @@ fn App(user: UserStore) -> impl View {
 
 // 用户信息显示组件
 #[component]
-fn UserDisplay(#[prop(clone)] user: UserStore) -> impl View {
+fn UserDisplay(
+    #[standalone]
+    #[prop(clone)]
+    user: UserStore,
+) -> impl View {
     div!(
         div!(
             span("Name: ").style("font-weight: bold;"),
@@ -72,7 +76,11 @@ fn UserDisplay(#[prop(clone)] user: UserStore) -> impl View {
 
 // 用户编辑组件
 #[component]
-fn UserEditor(#[prop(clone)] user: UserStore) -> impl View {
+fn UserEditor(
+    #[standalone]
+    #[prop(clone)]
+    user: UserStore,
+) -> impl View {
     div!(
         // 修改 Name
         div!(
@@ -104,7 +112,11 @@ fn UserEditor(#[prop(clone)] user: UserStore) -> impl View {
 
 // 调试面板组件
 #[component]
-fn DebugPanel(#[prop(clone)] user: UserStore) -> impl View {
+fn DebugPanel(
+    #[standalone]
+    #[prop(clone)]
+    user: UserStore,
+) -> impl View {
     div!(button("Log Current State to Console").on_click(move |_| {
         // 演示 get() 方法还原普通结构体
         let current_state = user.get();

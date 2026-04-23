@@ -11,7 +11,7 @@ use web_sys::Node;
 /// ```
 #[component]
 pub fn Show<C>(
-    when: C,
+    #[standalone] when: C,
     #[prop(render)] children: AnyView,
     #[prop(default = AnyView::Empty, render)] fallback: AnyView,
 ) -> impl View
@@ -26,23 +26,23 @@ where
 }
 
 #[derive(Clone)]
-struct ShowView<'a, C> {
-    when: Prop<'a, C>,
-    children: Prop<'a, AnyView>,
-    fallback: Prop<'a, AnyView>,
+struct ShowView<C> {
+    when: C,
+    children: AnyView,
+    fallback: AnyView,
 }
 
-impl<'a, C> ApplyAttributes for ShowView<'a, C> {}
+impl<C> ApplyAttributes for ShowView<C> {}
 
-impl<'a, C> View for ShowView<'a, C>
+impl<C> View for ShowView<C>
 where
     C: RxGet<Value = bool> + Clone + 'static,
 {
     fn mount(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
         mount_show_internal(
-            Prop::new_owned(self.when.clone()),
-            Prop::new_owned(self.children.clone()),
-            Prop::new_owned(self.fallback.clone()),
+            self.when.clone(),
+            self.children.clone(),
+            self.fallback.clone(),
             parent,
             attrs,
         );
@@ -56,18 +56,15 @@ where
     }
 }
 
-fn mount_show_internal<'a, C>(
-    condition: Prop<'a, C>,
-    view: Prop<'a, AnyView>,
-    fallback: Prop<'a, AnyView>,
+fn mount_show_internal<C>(
+    condition: C,
+    view: AnyView,
+    fallback: AnyView,
     parent: &Node,
     attrs: Vec<silex_dom::attribute::PendingAttribute>,
 ) where
     C: RxGet<Value = bool> + Clone + 'static,
 {
-    let condition = condition.into_owned();
-    let view = view.into_owned();
-    let fallback = fallback.into_owned();
     silex_dom::view::mount_branch_cached(
         parent,
         attrs,

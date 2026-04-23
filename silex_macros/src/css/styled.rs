@@ -264,6 +264,18 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         }
     }
 
+    let standalone_count = parsed.standalone.unwrap_or(1);
+    for (idx, arg) in all_fn_args.iter_mut().enumerate() {
+        if idx >= standalone_count {
+            break;
+        }
+        if let syn::FnArg::Typed(pt) = arg {
+            if !pt.attrs.iter().any(|a| a.path().is_ident("standalone")) {
+                pt.attrs.push(syn::parse_quote!(#[standalone]));
+            }
+        }
+    }
+
     let has_children = existing_props.contains(&quote::format_ident!("children"));
     let children_binding = if has_children {
         quote! { children }
@@ -287,11 +299,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         .filter(|a| !a.path().is_ident("theme"))
         .collect();
 
-    let component_attr = if let Some(n) = parsed.standalone {
-        quote! { #[::silex::macros::component(standalone = #n)] }
-    } else {
-        quote! { #[::silex::macros::component] }
-    };
+    let component_attr = quote! { #[::silex::macros::component] };
     let vis = &parsed.vis;
     let (impl_generics, _, _) = parsed.generics.split_for_impl();
     let static_css = &compile_result.static_css;
@@ -442,7 +450,7 @@ fn get_tag_return_type(
             }
         };
         let ident = Ident::new(&name, span);
-        quote! { ::silex::dom::element::TypedElement<::silex::dom::element::tags::#ident> }
+        quote! { ::silex::dom::element::TypedElement<::silex::html::#ident> }
     } else {
         quote! { impl ::silex::dom::attribute::AttributeBuilder + ::silex::dom::view::View + ::silex::dom::view::ApplyAttributes + 'static #where_clause }
     }

@@ -19,7 +19,7 @@ use web_sys::Node;
 /// Index(list).children(|item, index| li(rx! { index.get() }))
 /// ```
 #[component]
-pub fn Index<IF, I, IS, MF, V>(each: IF, #[prop(render)] children: MF) -> impl View
+pub fn Index<IF, I, IS, MF, V>(#[standalone] each: IF, #[prop(render)] children: MF) -> impl View
 where
     IF: RxRead<Value = IS> + Clone + 'static,
     IS: ForLoopSource<Item = I> + 'static,
@@ -27,14 +27,12 @@ where
     V: View + 'static,
     I: Clone + 'static,
 {
-    let children = children.into_owned();
-
     let children = Rc::new(move |item: ReadSignal<I>, index: ReadSignal<usize>| {
         children(item, index).into_any()
     });
 
     IndexView {
-        each: each.clone(),
+        each,
         children,
         _marker: std::marker::PhantomData,
     }

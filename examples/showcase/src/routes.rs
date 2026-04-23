@@ -192,7 +192,7 @@ pub fn NavBar() -> impl View {
 }
 
 #[component]
-fn AdvancedLayout(route: AdvancedRoute) -> impl View {
+fn AdvancedLayout(#[standalone] route: AdvancedRoute) -> impl View {
     div![
         h2("Advanced Features"),
         div![
@@ -243,7 +243,7 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
 }
 
 #[component]
-fn CssLayout(route: CssRoute) -> impl View {
+fn CssLayout(#[standalone] route: CssRoute) -> impl View {
     div![
         h2("CSS & Styling"),
         p(

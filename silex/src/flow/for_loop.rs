@@ -104,10 +104,10 @@ impl<T: Clone> ForLoopSource for SilexResult<Vec<T>> {
 ///     .children(|item, idx| li(format!("{}: {}", idx.get(), item.name)))
 ///     .error(|err| log_error(err))
 /// ```
-#[component(standalone = 2)]
+#[component]
 pub fn For<ItemsFn, IS, Item, Key, MF, V>(
-    items: ItemsFn,
-    key: fn(&Item) -> Key,
+    #[standalone] items: ItemsFn,
+    #[standalone] key: fn(&Item) -> Key,
     #[prop(render)] children: MF,
     #[prop(default = ::silex_core::error::handle_error, into)] error: ForErrorHandler,
 ) -> impl View
@@ -119,16 +119,15 @@ where
     MF: Fn(ReadSignal<Item>, ReadSignal<usize>) -> V + Clone + 'static,
     V: View + 'static,
 {
-    let children = children.into_owned();
     let children = Rc::new(move |item: ReadSignal<Item>, index: ReadSignal<usize>| {
         children(item, index).into_any()
     });
 
     ForView {
-        items,
-        key: *key,
+        items: Prop::new_owned(items),
+        key,
         children,
-        error,
+        error: Prop::new_owned(error),
         _marker: PhantomData,
     }
 }
@@ -171,10 +170,10 @@ where
 {
     fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         mount_for_internal(
-            Prop::new_owned(self.items.clone()),
+            self.items.clone().into_owned(),
             self.key,
             self.children.clone(),
-            Prop::new_owned(self.error.clone()),
+            self.error.clone().into_owned(),
             parent,
             attrs,
         );
@@ -185,10 +184,10 @@ where
         Self: Sized,
     {
         mount_for_internal(
-            self.items,
+            self.items.into_owned(),
             self.key,
             self.children,
-            self.error,
+            self.error.into_owned(),
             parent,
             attrs,
         );
@@ -203,10 +202,10 @@ struct ForRow<Item> {
 }
 
 fn mount_for_internal<'a, ItemsFn, IS, Item, Key>(
-    items_fn: Prop<'a, ItemsFn>,
+    items_fn: ItemsFn,
     key_fn: fn(&Item) -> Key,
     children_fn: Rc<dyn Fn(ReadSignal<Item>, ReadSignal<usize>) -> AnyView + 'static>,
-    error: Prop<'a, ForErrorHandler>,
+    error: ForErrorHandler,
     parent: &Node,
     _attrs: Vec<PendingAttribute>,
 ) where
@@ -215,8 +214,6 @@ fn mount_for_internal<'a, ItemsFn, IS, Item, Key>(
     Key: Hash + Eq + Clone + 'static,
     Item: Clone + 'static,
 {
-    let items_fn = items_fn.into_owned();
-    let error = error.into_owned();
     let document = silex_dom::document();
 
     // 1. Create Anchors

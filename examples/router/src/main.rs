@@ -6,7 +6,7 @@ use silex::prelude::*;
 
 /// 一个简单的卡片容器
 #[component]
-fn Card(children: AnyView) -> impl View {
+fn Card(#[standalone] children: AnyView) -> impl View {
     div(children)
         .style("border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 10px 0; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05);")
 }
@@ -14,7 +14,9 @@ fn Card(children: AnyView) -> impl View {
 /// 导航链接样式封装
 #[component]
 fn NavLink<T: ToRoute + Clone + 'static>(
-    #[prop(clone)] to: T,
+    #[standalone]
+    #[prop(clone)]
+    to: T,
     #[prop(clone)] children: AnyView,
 ) -> impl View {
     Link(to.clone())
@@ -78,7 +80,7 @@ fn CreateUser() -> impl View {
 }
 
 #[component]
-fn UsersLayout(route: UsersRoute) -> impl View {
+fn UsersLayout(#[standalone] route: UsersRoute) -> impl View {
     div!(
         h2("👥 Users Module"),
         div!(
@@ -118,7 +120,7 @@ fn UserList() -> impl View {
 }
 
 #[component]
-fn UserDetail(id: u32) -> impl View {
+fn UserDetail(#[standalone] id: u32) -> impl View {
     // 使用传入的 id，不再依赖 use_params (更类型安全!)
     let navigator = use_navigate();
     let path = use_location_path();
@@ -163,7 +165,7 @@ fn NotFound() -> impl View {
 // --- 主布局 ---
 
 #[component]
-fn MainLayout(children: AnyView) -> impl View {
+fn MainLayout(#[standalone] children: AnyView) -> impl View {
     div!(
         // Header
         header!(

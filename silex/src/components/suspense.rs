@@ -31,7 +31,7 @@ pub enum SuspenseMode {
 /// ```
 #[component]
 pub fn Suspense<CH, R>(
-    children: CH,
+    #[standalone] children: CH,
     #[prop(default = AnyView::Empty)] fallback: AnyView,
     #[prop(default)] mode: SuspenseMode,
 ) -> impl View
@@ -39,7 +39,6 @@ where
     CH: Fn() -> R + Clone + 'static,
     R: View + 'static,
 {
-    let children = children.into_owned();
     let children = Rc::new(move || children().into_any());
 
     // 创建属于此 Suspense 边界的上下文
@@ -59,7 +58,7 @@ where
         factory: children,
         initial_view,
         fallback: fallback.clone(),
-        mode: *mode,
+        mode,
         ctx,
     }
 }

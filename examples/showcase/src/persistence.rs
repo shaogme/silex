@@ -43,7 +43,7 @@ pub fn PersistencePage() -> impl View {
 }
 
 #[component]
-fn Card(children: AnyView, title: &'static str) -> impl View {
+fn Card(#[standalone] children: AnyView, title: &'static str) -> impl View {
     div![
         h3(title).style(
             sty()
