@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
-use syn::{Attribute, Data, DeriveInput, Fields, Ident, Type};
+use syn::{Attribute, Data, DeriveInput, Fields, Ident, Type, Visibility};
 
 #[derive(Clone, Default)]
 struct FieldAttrs {
@@ -19,192 +19,267 @@ struct FieldSpec {
     required: bool,
 }
 
-fn get_builder_ty(
-    builder_name: &Ident,
-    prop_states: &[TokenStream2],
-    generics: &syn::Generics,
-) -> TokenStream2 {
-    let mut params = Vec::new();
-    // 1. Lifetimes must come first
-    for param in &generics.params {
-        if let syn::GenericParam::Lifetime(l) = param {
-            let lifetime = &l.lifetime;
-            params.push(quote! { #lifetime });
-        }
-    }
-    // 2. Then prop states (which are types)
-    for state in prop_states {
-        params.push(quote! { #state });
-    }
-    // 3. Then other generic parameters (types and consts)
-    for param in &generics.params {
-        match param {
-            syn::GenericParam::Type(t) => {
-                let ident = &t.ident;
-                params.push(quote! { #ident });
-            }
-            syn::GenericParam::Const(c) => {
-                let ident = &c.ident;
-                params.push(quote! { #ident });
-            }
-            _ => {}
-        }
-    }
-    if params.is_empty() {
-        quote! { #builder_name }
-    } else {
-        quote! { #builder_name <#(#params),*> }
+impl FieldSpec {
+    fn from_syn_field(field: &syn::Field) -> syn::Result<Self> {
+        let ident = field
+            .ident
+            .clone()
+            .expect("named fields must have identifiers");
+        let attrs = parse_field_attrs(&field.attrs)?;
+        let required = attrs.chained && !attrs.default && attrs.default_value.is_none();
+        Ok(FieldSpec {
+            ident,
+            ty: field.ty.clone(),
+            attrs,
+            required,
+        })
     }
 }
 
-pub fn derive_props_builder_impl(input: DeriveInput) -> syn::Result<TokenStream2> {
-    let DeriveInput {
-        ident: props_name,
-        generics,
-        vis,
-        data,
-        ..
-    } = input;
-    let builder_name = format_ident!("{}Builder", props_name);
-    let component_name = strip_props_suffix(&props_name);
-    let component_component_alias = format_ident!("{}Component", component_name);
-    let render_fn_name = format_ident!("__silex_render_{}", component_name);
+struct BuilderContext {
+    vis: Visibility,
+    props_name: Ident,
+    builder_name: Ident,
+    component_name: Ident,
+    component_component_alias: Ident,
+    render_fn_name: Ident,
+    generics: syn::Generics,
+    fields: Vec<FieldSpec>,
+    prop_generic_idents: Vec<Ident>,
+    required_fields: Vec<FieldSpec>,
+}
 
-    let fields = match data {
-        Data::Struct(ref data) => match &data.fields {
-            Fields::Named(named) => named
-                .named
-                .iter()
-                .map(|field| {
-                    let ident = field
-                        .ident
-                        .clone()
-                        .expect("named fields must have identifiers");
-                    let attrs = parse_field_attrs(&field.attrs)?;
-                    let required = attrs.chained && !attrs.default && attrs.default_value.is_none();
-                    Ok(FieldSpec {
-                        ident,
-                        ty: field.ty.clone(),
-                        attrs,
-                        required,
-                    })
-                })
-                .collect::<syn::Result<Vec<_>>>()?,
+impl BuilderContext {
+    fn new(input: DeriveInput) -> syn::Result<Self> {
+        let DeriveInput {
+            ident: props_name,
+            generics,
+            vis,
+            data,
+            ..
+        } = input;
+
+        let builder_name = format_ident!("{}Builder", props_name);
+        let component_name = strip_props_suffix(&props_name);
+        let component_component_alias = format_ident!("{}Component", component_name);
+        let render_fn_name = format_ident!("__silex_render_{}", component_name);
+
+        let fields = match data {
+            Data::Struct(ref data) => match &data.fields {
+                Fields::Named(named) => named
+                    .named
+                    .iter()
+                    .map(FieldSpec::from_syn_field)
+                    .collect::<syn::Result<Vec<_>>>()?,
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        props_name,
+                        "PropsBuilder only supports structs with named fields",
+                    ));
+                }
+            },
             _ => {
                 return Err(syn::Error::new_spanned(
                     props_name,
-                    "PropsBuilder only supports structs with named fields",
+                    "PropsBuilder only supports structs",
                 ));
             }
-        },
-        _ => {
-            return Err(syn::Error::new_spanned(
-                props_name,
-                "PropsBuilder only supports structs",
-            ));
-        }
-    };
+        };
 
-    let standalone_fields: Vec<_> = fields.iter().filter(|f| !f.attrs.chained).collect();
+        let required_fields: Vec<_> = fields.iter().filter(|f| f.required).cloned().collect();
+        let prop_generic_idents: Vec<_> = required_fields
+            .iter()
+            .map(|f| {
+                let name = to_upper_camel_case(&f.ident.to_string());
+                format_ident!("P{}", name)
+            })
+            .collect();
 
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-
-    let builder_fields = fields.iter().map(|field| {
-        let ident = &field.ident;
-        let ty = &field.ty;
-        if field.required {
-            quote! { #ident: ::core::option::Option<#ty> }
-        } else {
-            quote! { #ident: #ty }
-        }
-    });
-
-    let builder_field_inits = fields.iter().map(|field| {
-        let ident = &field.ident;
-        if !field.attrs.chained {
-            quote! { #ident }
-        } else if let Some(default_expr) = &field.attrs.default_value {
-            let init_expr = field_value_transform(field, quote! { #default_expr });
-            quote! { #ident: #init_expr }
-        } else if field.attrs.default {
-            quote! { #ident: ::core::default::Default::default() }
-        } else if field.required {
-            quote! { #ident: ::core::option::Option::None }
-        } else {
-            quote! { #ident: ::core::default::Default::default() }
-        }
-    });
-
-    let required_fields: Vec<_> = fields.iter().filter(|f| f.required).collect();
-    let prop_generic_idents: Vec<_> = required_fields
-        .iter()
-        .map(|f| {
-            let name = to_upper_camel_case(&f.ident.to_string());
-            format_ident!("P{}", name)
+        Ok(Self {
+            vis,
+            props_name,
+            builder_name,
+            component_name,
+            component_component_alias,
+            render_fn_name,
+            generics,
+            fields,
+            prop_generic_idents,
+            required_fields,
         })
-        .collect();
+    }
 
-    let builder_setters = fields.iter().map(|f| {
-        generate_setter(
-            f,
-            &builder_name,
-            &prop_generic_idents,
-            &required_fields,
-            &generics,
-            &fields,
-        )
-    });
+    fn get_builder_ty(&self, prop_states: &[TokenStream2]) -> TokenStream2 {
+        let mut params = Vec::new();
+        // 1. Lifetimes must come first
+        for param in &self.generics.params {
+            if let syn::GenericParam::Lifetime(l) = param {
+                let lifetime = &l.lifetime;
+                params.push(quote! { #lifetime });
+            }
+        }
+        // 2. Then prop states (which are types)
+        for state in prop_states {
+            params.push(quote! { #state });
+        }
+        // 3. Then other generic parameters (types and consts)
+        for param in &self.generics.params {
+            match param {
+                syn::GenericParam::Type(t) => {
+                    let ident = &t.ident;
+                    params.push(quote! { #ident });
+                }
+                syn::GenericParam::Const(c) => {
+                    let ident = &c.ident;
+                    params.push(quote! { #ident });
+                }
+                _ => {}
+            }
+        }
+        let builder_name = &self.builder_name;
+        if params.is_empty() {
+            quote! { #builder_name }
+        } else {
+            quote! { #builder_name <#(#params),*> }
+        }
+    }
 
-    let builder_new_params: Vec<_> = standalone_fields
-        .iter()
-        .map(|field| {
+    fn get_builder_generics(&self) -> (TokenStream2, TokenStream2) {
+        let mut decl_params = Vec::new();
+        let mut ty_params = Vec::new();
+
+        // 1. Lifetimes
+        for param in &self.generics.params {
+            if let syn::GenericParam::Lifetime(l) = param {
+                decl_params.push(quote! { #param });
+                let lifetime = &l.lifetime;
+                ty_params.push(quote! { #lifetime });
+            }
+        }
+        // 2. Prop generics
+        for ident in &self.prop_generic_idents {
+            decl_params.push(quote! { #ident });
+            ty_params.push(quote! { #ident });
+        }
+        // 3. Original type/const params
+        for param in &self.generics.params {
+            match param {
+                syn::GenericParam::Type(t) => {
+                    decl_params.push(quote! { #param });
+                    let ident = &t.ident;
+                    ty_params.push(quote! { #ident });
+                }
+                syn::GenericParam::Const(c) => {
+                    decl_params.push(quote! { #param });
+                    let ident = &c.ident;
+                    ty_params.push(quote! { #ident });
+                }
+                _ => {}
+            }
+        }
+
+        let decl = if decl_params.is_empty() {
+            quote! {}
+        } else {
+            quote! { <#(#decl_params),*> }
+        };
+        let ty = if ty_params.is_empty() {
+            quote! {}
+        } else {
+            quote! { <#(#ty_params),*> }
+        };
+        (decl, ty)
+    }
+
+    fn generate_builder_struct(&self) -> TokenStream2 {
+        let vis = &self.vis;
+        let builder_name = &self.builder_name;
+        let (_, _, where_clause) = self.generics.split_for_impl();
+        let (builder_generics_decl, _) = self.get_builder_generics();
+
+        let builder_fields = self.fields.iter().map(|field| {
             let ident = &field.ident;
             let ty = &field.ty;
-            quote! { #ident: #ty }
-        })
-        .collect();
-
-    let constructor_params: Vec<_> = standalone_fields
-        .iter()
-        .map(|field| {
-            let ident = &field.ident;
-            let ty = &field.ty;
-            if is_any_view_type(ty) {
-                quote! { #ident: impl ::silex::dom::view::View + 'static }
-            } else if field.attrs.into_trait || is_auto_into_type(ty) {
-                quote! { #ident: impl ::core::convert::Into<#ty> }
+            if field.required {
+                quote! { #ident: ::core::option::Option<#ty> }
             } else {
                 quote! { #ident: #ty }
             }
-        })
-        .collect();
+        });
 
-    let constructor_args: Vec<_> = standalone_fields
-        .iter()
-        .map(|field| {
+        let mut marker_types = Vec::new();
+        for param in &self.generics.params {
+            if let syn::GenericParam::Lifetime(l) = param {
+                let lifetime = &l.lifetime;
+                marker_types.push(quote! { &#lifetime () });
+            }
+        }
+        for ident in &self.prop_generic_idents {
+            marker_types.push(quote! { #ident });
+        }
+        for param in &self.generics.params {
+            match param {
+                syn::GenericParam::Type(t) => {
+                    let ident = &t.ident;
+                    marker_types.push(quote! { #ident });
+                }
+                syn::GenericParam::Const(c) => {
+                    let ident = &c.ident;
+                    marker_types.push(quote! { #ident });
+                }
+                _ => {}
+            }
+        }
+
+        quote! {
+            #[derive(Clone)]
+            #[allow(non_camel_case_types)]
+            #vis struct #builder_name #builder_generics_decl #where_clause {
+                #(#builder_fields,)*
+                _pending_attrs: ::std::vec::Vec<::silex::dom::attribute::PendingAttribute>,
+                _markers: ::core::marker::PhantomData<(#(#marker_types),*)>,
+            }
+        }
+    }
+
+    fn generate_builder_impl(&self) -> TokenStream2 {
+        let (builder_generics_decl, builder_generics_type) = self.get_builder_generics();
+        let builder_name = &self.builder_name;
+        let props_name = &self.props_name;
+        let (_, ty_generics, where_clause) = self.generics.split_for_impl();
+
+        let initial_states: Vec<_> = self
+            .prop_generic_idents
+            .iter()
+            .map(|_| quote! { ::silex::dom::view::PropMissing })
+            .collect();
+        let builder_ty_initial = self.get_builder_ty(&initial_states);
+
+        let standalone_fields: Vec<_> = self.fields.iter().filter(|f| !f.attrs.chained).collect();
+        let builder_new_params = standalone_fields.iter().map(|field| {
             let ident = &field.ident;
             let ty = &field.ty;
-            if is_any_view_type(ty) {
-                quote! { #ident.into_any() }
-            } else if field.attrs.into_trait || is_auto_into_type(ty) {
-                quote! { #ident.into() }
-            } else {
-                quote! { #ident }
-            }
-        })
-        .collect();
+            quote! { #ident: #ty }
+        });
 
-    let fields_destructure: Vec<_> = fields
-        .iter()
-        .map(|field| {
+        let builder_field_inits = self.fields.iter().map(|field| {
             let ident = &field.ident;
-            quote! { #ident }
-        })
-        .collect();
+            if !field.attrs.chained {
+                quote! { #ident }
+            } else if let Some(default_expr) = &field.attrs.default_value {
+                let init_expr = field_value_transform(field, quote! { #default_expr });
+                quote! { #ident: #init_expr }
+            } else if field.attrs.default {
+                quote! { #ident: ::core::default::Default::default() }
+            } else if field.required {
+                quote! { #ident: ::core::option::Option::None }
+            } else {
+                quote! { #ident: ::core::default::Default::default() }
+            }
+        });
 
-    let props_field_inits: Vec<_> = fields
-        .iter()
-        .map(|field| {
+        let fields_destructure = self.fields.iter().map(|f| &f.ident);
+        let props_field_inits = self.fields.iter().map(|field| {
             let ident = &field.ident;
             if field.required {
                 let name_str = ident.to_string();
@@ -214,313 +289,279 @@ pub fn derive_props_builder_impl(input: DeriveInput) -> syn::Result<TokenStream2
             } else {
                 quote! { #ident }
             }
-        })
-        .collect();
+        });
 
-    let mut builder_decl_params = Vec::new();
-    let mut builder_type_params = Vec::new();
+        let builder_setters = self.fields.iter().map(|f| self.generate_setter(f));
 
-    // 1. Lifetimes MUST come first in generic parameter lists
-    for param in &generics.params {
-        if let syn::GenericParam::Lifetime(_) = param {
-            builder_decl_params.push(quote! { #param });
-            if let syn::GenericParam::Lifetime(l) = param {
-                let lifetime = &l.lifetime;
-                builder_type_params.push(quote! { #lifetime });
+        quote! {
+            impl #builder_generics_decl #builder_name #builder_generics_type #where_clause {
+                pub fn new(#(#builder_new_params),*) -> #builder_ty_initial {
+                    #builder_name {
+                        #(#builder_field_inits,)*
+                        _pending_attrs: ::std::vec::Vec::new(),
+                        _markers: ::core::marker::PhantomData,
+                    }
+                }
+
+                pub fn into_parts(self) -> (#props_name #ty_generics, ::std::vec::Vec<::silex::dom::attribute::PendingAttribute>) {
+                    let Self {
+                        #(#fields_destructure,)*
+                        _pending_attrs,
+                        ..
+                    } = self;
+
+                    (
+                        #props_name {
+                            #(#props_field_inits,)*
+                        },
+                        _pending_attrs,
+                    )
+                }
+
+                pub fn build(self) -> #props_name #ty_generics {
+                    self.into_parts().0
+                }
+
+                #(#builder_setters)*
             }
         }
     }
 
-    // 2. Then our prop generic parameters (which are types)
-    for ident in &prop_generic_idents {
-        builder_decl_params.push(quote! { #ident });
-        builder_type_params.push(quote! { #ident });
-    }
+    fn generate_setter(&self, field: &FieldSpec) -> TokenStream2 {
+        let builder_name = &self.builder_name;
+        let ident = &field.ident;
+        let ty = &field.ty;
 
-    // 3. Then original type and const parameters
-    for param in &generics.params {
-        match param {
-            syn::GenericParam::Type(t) => {
-                builder_decl_params.push(quote! { #param });
-                let ident = &t.ident;
-                builder_type_params.push(quote! { #ident });
+        let fields_destructure: Vec<_> = self.fields.iter().map(|f| &f.ident).collect();
+
+        let setter_param = if is_any_view_type(ty) {
+            quote! { impl ::silex::dom::view::View + 'static }
+        } else if field.attrs.render {
+            quote! { #ty }
+        } else if field.attrs.into_trait || is_auto_into_type(ty) {
+            quote! { impl ::core::convert::Into<#ty> }
+        } else {
+            quote! { #ty }
+        };
+
+        let setter_value = if is_any_view_type(ty) {
+            quote! { val.into_any() }
+        } else if field.attrs.into_trait || is_auto_into_type(ty) {
+            quote! { val.into() }
+        } else {
+            quote! { val }
+        };
+
+        let final_value = if !field.attrs.chained || !field.required {
+            setter_value.clone()
+        } else {
+            quote! { ::core::option::Option::Some(#setter_value) }
+        };
+
+        if field.required {
+            let req_index = self
+                .required_fields
+                .iter()
+                .position(|f| f.ident == field.ident)
+                .unwrap();
+
+            let mut return_states = Vec::new();
+            for (i, p) in self.prop_generic_idents.iter().enumerate() {
+                if i == req_index {
+                    return_states.push(quote! { ::silex::dom::view::PropFixed });
+                } else {
+                    return_states.push(quote! { #p });
+                }
             }
-            syn::GenericParam::Const(c) => {
-                builder_decl_params.push(quote! { #param });
-                let ident = &c.ident;
-                builder_type_params.push(quote! { #ident });
+            let return_ty = self.get_builder_ty(&return_states);
+
+            quote! {
+                #[allow(non_camel_case_types, unused_variables)]
+                pub fn #ident(self, val: #setter_param) -> #return_ty {
+                    let Self {
+                        #(#fields_destructure,)*
+                        _pending_attrs,
+                        ..
+                    } = self;
+
+                    let #ident = #final_value;
+
+                    #builder_name {
+                        #(#fields_destructure,)*
+                        _pending_attrs,
+                        _markers: ::core::marker::PhantomData,
+                    }
+                }
             }
-            _ => {} // Lifetimes already handled
+        } else {
+            quote! {
+                pub fn #ident(mut self, val: #setter_param) -> Self {
+                    self.#ident = #final_value;
+                    self
+                }
+            }
         }
     }
 
-    let builder_generics_decl = if builder_decl_params.is_empty() {
-        quote! {}
-    } else {
-        quote! { <#(#builder_decl_params),*> }
-    };
-    let builder_generics_type = if builder_type_params.is_empty() {
-        quote! {}
-    } else {
-        quote! { <#(#builder_type_params),*> }
-    };
+    fn generate_view_impl(&self) -> TokenStream2 {
+        let (impl_generics, _, where_clause) = self.generics.split_for_impl();
+        let render_fn_name = &self.render_fn_name;
 
-    let mut initial_states = Vec::new();
-    for _ in &prop_generic_idents {
-        initial_states.push(quote! { ::silex::dom::view::PropMissing });
-    }
-    let builder_ty_initial = get_builder_ty(&builder_name, &initial_states, &generics);
+        let fixed_states: Vec<_> = self
+            .prop_generic_idents
+            .iter()
+            .map(|_| quote! { ::silex::dom::view::PropFixed })
+            .collect();
+        let builder_ty_fixed = self.get_builder_ty(&fixed_states);
 
-    let mut current_states = Vec::new();
-    for ident in &prop_generic_idents {
-        current_states.push(quote! { #ident });
-    }
-    let builder_ty_current = get_builder_ty(&builder_name, &current_states, &generics);
+        let mut view_where_clause: syn::WhereClause = match where_clause {
+            Some(clause) => clause.clone(),
+            None => syn::parse_quote!(where),
+        };
+        view_where_clause
+            .predicates
+            .push(syn::parse_quote!(#builder_ty_fixed: ::core::clone::Clone));
 
-    let mut marker_types = Vec::new();
-    // 1. Lifetimes (wrapped in &() to be types)
-    for param in &generics.params {
-        if let syn::GenericParam::Lifetime(l) = param {
-            let lifetime = &l.lifetime;
-            marker_types.push(quote! { &#lifetime () });
-        }
-    }
-    // 2. Prop generic types
-    for ident in &prop_generic_idents {
-        marker_types.push(quote! { #ident });
-    }
-    // 3. Original type and const parameters
-    for param in &generics.params {
-        match param {
-            syn::GenericParam::Type(t) => {
-                let ident = &t.ident;
-                marker_types.push(quote! { #ident });
+        quote! {
+            impl #impl_generics ::silex::dom::view::View for #builder_ty_fixed #view_where_clause {
+                fn mount(&self, parent: &::silex::reexports::web_sys::Node, attrs: ::std::vec::Vec<::silex::dom::attribute::PendingAttribute>) {
+                    self.clone().mount_owned(parent, attrs);
+                }
+
+                fn mount_owned(self, parent: &::silex::reexports::web_sys::Node, attrs: ::std::vec::Vec<::silex::dom::attribute::PendingAttribute>)
+                where
+                    Self: Sized,
+                {
+                    let (props, mut pending_attrs) = self.into_parts();
+                    pending_attrs.extend(attrs);
+                    let view_instance = #render_fn_name(props);
+                    ::silex::dom::view::View::mount_owned(view_instance, parent, pending_attrs);
+                }
             }
-            syn::GenericParam::Const(c) => {
-                let ident = &c.ident;
-                marker_types.push(quote! { #ident });
-            }
-            _ => {}
         }
     }
 
-    let builder_clone = quote! {
-        #[derive(Clone)]
-        #[allow(non_camel_case_types)]
-        #vis struct #builder_name #builder_generics_decl #where_clause {
-            #(#builder_fields,)*
-            _pending_attrs: ::std::vec::Vec<::silex::dom::attribute::PendingAttribute>,
-            _markers: ::core::marker::PhantomData<(#(#marker_types),*)>,
-        }
-    };
+    fn generate_attribute_impl(&self) -> TokenStream2 {
+        let (builder_generics_decl, _) = self.get_builder_generics();
+        let (_, _, where_clause) = self.generics.split_for_impl();
 
-    let builder_impl = quote! {
-        impl #builder_generics_decl #builder_name #builder_generics_type #where_clause {
-            pub fn new(#(#builder_new_params),*) -> #builder_ty_initial {
-                #builder_name {
-                    #(#builder_field_inits,)*
-                    _pending_attrs: ::std::vec::Vec::new(),
-                    _markers: ::core::marker::PhantomData,
+        let current_states: Vec<_> = self
+            .prop_generic_idents
+            .iter()
+            .map(|ident| quote! { #ident })
+            .collect();
+        let builder_ty_current = self.get_builder_ty(&current_states);
+
+        quote! {
+            impl #builder_generics_decl ::silex::dom::attribute::AttributeBuilder for #builder_ty_current #where_clause {
+                fn build_attribute<__SilexValue>(mut self, target: ::silex::dom::attribute::ApplyTarget, value: __SilexValue) -> Self
+                where
+                    __SilexValue: ::silex::dom::attribute::IntoStorable,
+                {
+                    let owned_target = ::silex::dom::attribute::OwnedApplyTarget::from(target);
+                    self._pending_attrs.push(
+                        ::silex::dom::attribute::PendingAttribute::build(
+                            value.into_storable(),
+                            owned_target,
+                        )
+                    );
+                    self
+                }
+
+                fn build_event<E, F, M>(mut self, event: E, callback: F) -> Self
+                where
+                    E: ::silex::dom::event::EventDescriptor + 'static,
+                    F: ::silex::dom::event::EventHandler<E::EventType, M> + Clone + 'static,
+                {
+                    let event = event.clone();
+                    self._pending_attrs.push(
+                        ::silex::dom::attribute::PendingAttribute::new_listener(move |el| {
+                            ::silex::dom::element::bind_event(el, event, callback.clone());
+                        })
+                    );
+                    self
                 }
             }
 
-            pub fn into_parts(self) -> (#props_name #ty_generics, ::std::vec::Vec<::silex::dom::attribute::PendingAttribute>) {
-                let Self {
-                    #(#fields_destructure,)*
-                    _pending_attrs,
-                    ..
-                } = self;
-
-                (
-                    #props_name {
-                        #(#props_field_inits,)*
-                    },
-                    _pending_attrs,
-                )
-            }
-
-            pub fn build(self) -> #props_name #ty_generics {
-                self.into_parts().0
-            }
-
-            #(#builder_setters)*
+            impl #builder_generics_decl ::silex::dom::view::ApplyAttributes for #builder_ty_current #where_clause {}
         }
-    };
-
-    let mut fixed_states = Vec::new();
-    for _ in &prop_generic_idents {
-        fixed_states.push(quote! { ::silex::dom::view::PropFixed });
     }
-    let builder_ty_fixed = get_builder_ty(&builder_name, &fixed_states, &generics);
 
-    let mut view_where_clause: syn::WhereClause = match where_clause {
-        Some(clause) => clause.clone(),
-        None => syn::parse_quote!(where),
-    };
-    view_where_clause.predicates.push(syn::parse_quote!(
-        #builder_ty_fixed: ::core::clone::Clone
-    ));
+    fn generate_constructor(&self) -> TokenStream2 {
+        let vis = &self.vis;
+        let component_name = &self.component_name;
+        let (impl_generics, _, where_clause) = self.generics.split_for_impl();
+        let component_component_alias = &self.component_component_alias;
 
-    let view_impl = quote! {
-        impl #impl_generics ::silex::dom::view::View for #builder_ty_fixed #view_where_clause {
-            fn mount(&self, parent: &::silex::reexports::web_sys::Node, attrs: ::std::vec::Vec<::silex::dom::attribute::PendingAttribute>) {
-                self.clone().mount_owned(parent, attrs);
+        let initial_states: Vec<_> = self
+            .prop_generic_idents
+            .iter()
+            .map(|_| quote! { ::silex::dom::view::PropMissing })
+            .collect();
+        let builder_ty_initial = self.get_builder_ty(&initial_states);
+
+        let fixed_states: Vec<_> = self
+            .prop_generic_idents
+            .iter()
+            .map(|_| quote! { ::silex::dom::view::PropFixed })
+            .collect();
+        let builder_ty_fixed = self.get_builder_ty(&fixed_states);
+
+        let standalone_fields: Vec<_> = self.fields.iter().filter(|f| !f.attrs.chained).collect();
+
+        let constructor_params = standalone_fields.iter().map(|field| {
+            let ident = &field.ident;
+            let ty = &field.ty;
+            if is_any_view_type(ty) {
+                quote! { #ident: impl ::silex::dom::view::View + 'static }
+            } else if field.attrs.into_trait || is_auto_into_type(ty) {
+                quote! { #ident: impl ::core::convert::Into<#ty> }
+            } else {
+                quote! { #ident: #ty }
             }
+        });
 
-            fn mount_owned(self, parent: &::silex::reexports::web_sys::Node, attrs: ::std::vec::Vec<::silex::dom::attribute::PendingAttribute>)
-            where
-                Self: Sized,
-            {
-                let (props, mut pending_attrs) = self.into_parts();
-                pending_attrs.extend(attrs);
-                let view_instance = #render_fn_name(props);
-                ::silex::dom::view::View::mount_owned(view_instance, parent, pending_attrs);
+        let constructor_args = standalone_fields.iter().map(|field| {
+            let ident = &field.ident;
+            let ty = &field.ty;
+            if is_any_view_type(ty) {
+                quote! { #ident.into_any() }
+            } else if field.attrs.into_trait || is_auto_into_type(ty) {
+                quote! { #ident.into() }
+            } else {
+                quote! { #ident }
+            }
+        });
+
+        quote! {
+            #[allow(non_camel_case_types)]
+            #[allow(type_alias_bounds)]
+            #vis type #component_component_alias #impl_generics = #builder_ty_fixed;
+
+            #[allow(non_snake_case, unused_variables, unused_mut)]
+            #vis fn #component_name #impl_generics(#(#constructor_params),*) -> #builder_ty_initial #where_clause {
+                <#builder_ty_initial>::new(#(#constructor_args),*)
             }
         }
-    };
+    }
+}
 
-    let attribute_impl = quote! {
-        impl #builder_generics_decl ::silex::dom::attribute::AttributeBuilder for #builder_ty_current #where_clause {
-            fn build_attribute<__SilexValue>(mut self, target: ::silex::dom::attribute::ApplyTarget, value: __SilexValue) -> Self
-            where
-                __SilexValue: ::silex::dom::attribute::IntoStorable,
-            {
-                let owned_target = ::silex::dom::attribute::OwnedApplyTarget::from(target);
-                self._pending_attrs.push(
-                    ::silex::dom::attribute::PendingAttribute::build(
-                        value.into_storable(),
-                        owned_target,
-                    )
-                );
-                self
-            }
+pub fn derive_props_builder_impl(input: DeriveInput) -> syn::Result<TokenStream2> {
+    let ctx = BuilderContext::new(input)?;
 
-            fn build_event<E, F, M>(mut self, event: E, callback: F) -> Self
-            where
-                E: ::silex::dom::event::EventDescriptor + 'static,
-                F: ::silex::dom::event::EventHandler<E::EventType, M> + Clone + 'static,
-            {
-                let event = event.clone();
-                self._pending_attrs.push(
-                    ::silex::dom::attribute::PendingAttribute::new_listener(move |el| {
-                        ::silex::dom::element::bind_event(el, event, callback.clone());
-                    })
-                );
-                self
-            }
-        }
-
-        impl #builder_generics_decl ::silex::dom::view::ApplyAttributes for #builder_ty_current #where_clause {}
-    };
-
-    let constructor_fn = quote! {
-        #[allow(non_snake_case, unused_variables, unused_mut)]
-        #vis fn #component_name #impl_generics(#(#constructor_params),*) -> #builder_ty_initial #where_clause {
-            <#builder_ty_initial>::new(#(#constructor_args),*)
-        }
-    };
-
-    let type_alias = quote! {
-        #[allow(non_camel_case_types)]
-        #[allow(type_alias_bounds)]
-        #vis type #component_component_alias #impl_generics = #builder_ty_fixed;
-    };
+    let builder_struct = ctx.generate_builder_struct();
+    let builder_impl = ctx.generate_builder_impl();
+    let attribute_impl = ctx.generate_attribute_impl();
+    let view_impl = ctx.generate_view_impl();
+    let constructor = ctx.generate_constructor();
 
     Ok(quote! {
-        #builder_clone
+        #builder_struct
         #builder_impl
         #attribute_impl
         #view_impl
-        #type_alias
-        #constructor_fn
+        #constructor
     })
-}
-
-fn generate_setter(
-    field: &FieldSpec,
-    builder_name: &Ident,
-    prop_generic_idents: &[Ident],
-    required_fields: &[&FieldSpec],
-    original_generics: &syn::Generics,
-    all_fields: &[FieldSpec],
-) -> TokenStream2 {
-    let ident = &field.ident;
-    let ty = &field.ty;
-
-    let fields_destructure: Vec<_> = all_fields
-        .iter()
-        .map(|f| {
-            let fid = &f.ident;
-            quote! { #fid }
-        })
-        .collect();
-
-    let setter_param = if is_any_view_type(ty) {
-        quote! { impl ::silex::dom::view::View + 'static }
-    } else if field.attrs.render {
-        quote! { #ty }
-    } else if field.attrs.into_trait || is_auto_into_type(ty) {
-        quote! { impl ::core::convert::Into<#ty> }
-    } else {
-        quote! { #ty }
-    };
-
-    let setter_value = if is_any_view_type(ty) {
-        quote! { val.into_any() }
-    } else if field.attrs.into_trait || is_auto_into_type(ty) {
-        quote! { val.into() }
-    } else {
-        quote! { val }
-    };
-
-    let final_value = if !field.attrs.chained || !field.required {
-        setter_value.clone()
-    } else {
-        quote! { ::core::option::Option::Some(#setter_value) }
-    };
-
-    if field.required {
-        let req_index = required_fields
-            .iter()
-            .position(|f| f.ident == field.ident)
-            .unwrap();
-
-        let mut return_states = Vec::new();
-        for (i, p) in prop_generic_idents.iter().enumerate() {
-            if i == req_index {
-                return_states.push(quote! { ::silex::dom::view::PropFixed });
-            } else {
-                return_states.push(quote! { #p });
-            }
-        }
-        let return_ty = get_builder_ty(builder_name, &return_states, original_generics);
-
-        quote! {
-            #[allow(non_camel_case_types, unused_variables)]
-            pub fn #ident(self, val: #setter_param) -> #return_ty {
-                let Self {
-                    #(#fields_destructure,)*
-                    _pending_attrs,
-                    ..
-                } = self;
-
-                let #ident = #final_value;
-
-                #builder_name {
-                    #(#fields_destructure,)*
-                    _pending_attrs,
-                    _markers: ::core::marker::PhantomData,
-                }
-            }
-        }
-    } else {
-        quote! {
-            pub fn #ident(mut self, val: #setter_param) -> Self {
-                self.#ident = #final_value;
-                self
-            }
-        }
-    }
 }
 
 fn field_value_transform(field: &FieldSpec, input: TokenStream2) -> TokenStream2 {
