@@ -5,7 +5,6 @@ use silex_core::reactivity::{
     Effect, NodeId, ReadSignal, Signal, WriteSignal, batch, create_scope, dispose, untrack,
 };
 use silex_core::traits::{ForErrorHandler, ForLoopSource, RxRead, RxWrite};
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::rc::Rc;
@@ -90,9 +89,8 @@ fn mount_keyed_loop_logic<IF, IS, T, K>(
         return;
     }
 
-    let active_rows = Rc::new(RefCell::new(HashMap::<K, KeyedLoopRow<T>>::new()));
-
-    Effect::new(move |_| {
+    Effect::new(move |prev_rows: Option<HashMap<K, KeyedLoopRow<T>>>| {
+        let mut rows_map = prev_rows.unwrap_or_default();
         items_fn.with(|items| {
             let Ok(items_slice) = items.as_slice() else {
                 if let Err(e) = items.as_slice() {
@@ -102,10 +100,8 @@ fn mount_keyed_loop_logic<IF, IS, T, K>(
             };
 
             batch(|| {
-                let rows_snapshot = active_rows.borrow();
                 let mut new_keys = HashSet::with_capacity(items_slice.len());
                 let mut new_rows_order = Vec::with_capacity(items_slice.len());
-                let mut new_rows_to_insert = Vec::new();
 
                 for (index, item_ref) in items_slice.iter().enumerate() {
                     let key = key_fn(item_ref);
@@ -117,7 +113,7 @@ fn mount_keyed_loop_logic<IF, IS, T, K>(
                         continue;
                     }
 
-                    if let Some(row) = rows_snapshot.get(&key) {
+                    if let Some(row) = rows_map.get(&key) {
                         row.item_setter.set(item_ref.clone());
                         row.index_setter.set(index);
                         new_rows_order.push((key, row.nodes.clone(), row.scope_id, None));
@@ -147,51 +143,33 @@ fn mount_keyed_loop_logic<IF, IS, T, K>(
                                 (nodes, scope_id, fragment, item_setter, index_setter)
                             });
 
-                        new_rows_to_insert.push((
-                            key.clone(),
-                            item_setter,
-                            index_setter,
-                            scope_id,
-                            nodes.clone(),
-                        ));
-                        new_rows_order.push((key, nodes, scope_id, Some(fragment)));
-                    };
-                }
-
-                drop(rows_snapshot);
-
-                // 更新 active_rows 并清理多余项
-                {
-                    let mut rows_map = active_rows.borrow_mut();
-
-                    // 插入新项
-                    for (key, item_setter, index_setter, scope_id, nodes) in new_rows_to_insert {
                         rows_map.insert(
-                            key,
+                            key.clone(),
                             KeyedLoopRow {
                                 item_setter,
                                 index_setter,
                                 scope_id,
-                                nodes,
+                                nodes: nodes.clone(),
                             },
                         );
-                    }
-
-                    // 清理旧项
-                    rows_map.retain(|k, row| {
-                        if !new_keys.contains(k) {
-                            for node in &row.nodes {
-                                if let Some(p) = node.parent_node() {
-                                    let _ = p.remove_child(node);
-                                }
-                            }
-                            dispose(row.scope_id);
-                            false
-                        } else {
-                            true
-                        }
-                    });
+                        new_rows_order.push((key, nodes, scope_id, Some(fragment)));
+                    };
                 }
+
+                // 清理旧项
+                rows_map.retain(|k, row| {
+                    if !new_keys.contains(k) {
+                        for node in &row.nodes {
+                            if let Some(p) = node.parent_node() {
+                                let _ = p.remove_child(node);
+                            }
+                        }
+                        dispose(row.scope_id);
+                        false
+                    } else {
+                        true
+                    }
+                });
 
                 // 物理协调 DOM 顺序
                 let mut cursor = start_node.next_sibling();
@@ -232,6 +210,7 @@ fn mount_keyed_loop_logic<IF, IS, T, K>(
                 }
             });
         });
+        rows_map
     });
 }
 
@@ -288,9 +267,8 @@ fn mount_indexed_loop_logic<IF, T, IS>(
     let _ = parent.append_child(&start_node);
     let _ = parent.append_child(&end_node);
 
-    let rows = Rc::new(RefCell::new(Vec::<IndexedLoopRow<T>>::new()));
-
-    Effect::new(move |_| {
+    Effect::new(move |prev_rows: Option<Vec<IndexedLoopRow<T>>>| {
+        let mut rows_list = prev_rows.unwrap_or_default();
         items_fn.with(|items| {
             let Ok(items_slice) = items.as_slice() else {
                 if let Err(e) = items.as_slice() {
@@ -299,17 +277,15 @@ fn mount_indexed_loop_logic<IF, T, IS>(
                 return;
             };
 
-            let mut rows_lock = rows.borrow_mut();
-
             batch(|| {
                 let new_len = items_slice.len();
-                let old_len = rows_lock.len();
+                let old_len = rows_list.len();
                 let common_len = std::cmp::min(new_len, old_len);
 
                 // 更新共有部分
                 for (i, item) in items_slice.iter().take(common_len).enumerate() {
-                    rows_lock[i].item_setter.set(item.clone());
-                    rows_lock[i].index_setter.set(i);
+                    rows_list[i].item_setter.set(item.clone());
+                    rows_list[i].index_setter.set(i);
                 }
 
                 // 添加新增项
@@ -346,7 +322,7 @@ fn mount_indexed_loop_logic<IF, T, IS>(
                             let _ = p.insert_before(&fragment_node, Some(&end_node));
                         }
 
-                        rows_lock.push(IndexedLoopRow {
+                        rows_list.push(IndexedLoopRow {
                             item_setter,
                             index_setter,
                             scope_id,
@@ -357,7 +333,7 @@ fn mount_indexed_loop_logic<IF, T, IS>(
 
                 // 移除多余项
                 if old_len > new_len {
-                    let to_remove = rows_lock.split_off(new_len);
+                    let to_remove = rows_list.split_off(new_len);
                     for row in to_remove {
                         dispose(row.scope_id);
                         for node in row.nodes {
@@ -369,5 +345,6 @@ fn mount_indexed_loop_logic<IF, T, IS>(
                 }
             });
         });
+        rows_list
     });
 }
