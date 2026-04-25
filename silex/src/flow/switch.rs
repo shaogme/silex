@@ -4,7 +4,7 @@ use silex_macros::component;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::hash::Hash;
-use web_sys::Node;
+use std::rc::Rc;
 
 /// Switch/Match 组件：多路分支渲染
 ///
@@ -30,10 +30,14 @@ where
     Source: RxGet<Value = T> + Clone + 'static,
     T: Eq + Hash + Clone + 'static,
 {
-    SwitchView {
-        source: Prop::new_owned(source),
-        cases: Prop::new_owned(cases),
-        fallback: Prop::new_owned(fallback),
+    let cases = Rc::new(cases);
+    silex_core::rx! {
+        let val = source.get();
+        if let Some(view) = cases.get(&val) {
+            view.clone()
+        } else {
+            fallback.clone()
+        }
     }
 }
 
@@ -60,80 +64,4 @@ where
         }
         self
     }
-}
-
-#[derive(Clone)]
-struct SwitchView<'a, Source, T> {
-    source: Prop<'a, Source>,
-    cases: Prop<'a, HashMap<T, AnyView>>,
-    fallback: Prop<'a, AnyView>,
-}
-
-impl<'a, Source, T> ApplyAttributes for SwitchView<'a, Source, T> {}
-
-impl<'a, Source, T> View for SwitchView<'a, Source, T>
-where
-    Source: RxGet<Value = T> + Clone + 'static,
-    T: Eq + Hash + Clone + 'static,
-{
-    fn mount(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        mount_switch_internal(
-            self.source.clone().into_owned(),
-            self.cases.clone().into_owned(),
-            self.fallback.clone().into_owned(),
-            parent,
-            attrs,
-        );
-    }
-
-    fn mount_owned(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>)
-    where
-        Self: Sized,
-    {
-        mount_switch_internal(
-            self.source.into_owned(),
-            self.cases.into_owned(),
-            self.fallback.into_owned(),
-            parent,
-            attrs,
-        );
-    }
-}
-
-fn mount_switch_internal<Source, T>(
-    source: Source,
-    cases: HashMap<T, AnyView>,
-    fallback: AnyView,
-    parent: &Node,
-    attrs: Vec<silex_dom::attribute::PendingAttribute>,
-) where
-    Source: RxGet<Value = T> + Clone + 'static,
-    T: Eq + Hash + Clone + 'static,
-{
-    let cases = std::rc::Rc::new(cases);
-
-    let cases_for_key = cases.clone();
-    let cases_for_render = cases.clone();
-
-    silex_dom::view::mount_branch_cached(
-        parent,
-        attrs,
-        move || {
-            let val = source.get();
-            if cases_for_key.contains_key(&val) {
-                Some(val)
-            } else {
-                None
-            }
-        },
-        move |selected| {
-            if let Some(case_key) = selected
-                && let Some(view) = cases_for_render.get(&case_key)
-            {
-                return view.clone();
-            }
-
-            fallback.clone()
-        },
-    );
 }

@@ -101,7 +101,7 @@
 *   **Mechanism**:
     1. 追踪 `active_rows` (Map<Key, (Nodes, ScopeId)>)。
     2. 当列表变化时，计算新旧 Keys 差异。
-    3. **Create**: 对新 Key 创建 Scope 和 View (Fragment)。
+    3. **Create**: 对新 Key 创建 Scope 和 View。
     4. **Delete**: 对消失的 Key 销毁 Scope 并移除 DOM Nodes。
     5. **Move**: 对位置变化的 Key，移动 DOM Nodes (InsertBefore)。
 *   **Performance**: O(N) 复杂度，最小化 DOM 操作。

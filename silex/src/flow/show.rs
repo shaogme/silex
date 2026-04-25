@@ -1,7 +1,6 @@
 use silex_core::traits::{IntoRx, RxGet};
 use silex_dom::prelude::*;
 use silex_macros::component;
-use web_sys::Node;
 
 /// Show 组件：根据条件渲染不同的视图
 ///
@@ -22,65 +21,13 @@ pub fn Show<C>(
 where
     C: RxGet<Value = bool> + Clone + 'static,
 {
-    ShowView {
-        when,
-        children,
-        fallback,
+    silex_core::rx! {
+        if when.get() {
+            children.clone()
+        } else {
+            fallback.clone()
+        }
     }
-}
-
-#[derive(Clone)]
-struct ShowView<C> {
-    when: C,
-    children: AnyView,
-    fallback: AnyView,
-}
-
-impl<C> ApplyAttributes for ShowView<C> {}
-
-impl<C> View for ShowView<C>
-where
-    C: RxGet<Value = bool> + Clone + 'static,
-{
-    fn mount(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        mount_show_internal(
-            self.when.clone(),
-            self.children.clone(),
-            self.fallback.clone(),
-            parent,
-            attrs,
-        );
-    }
-
-    fn mount_owned(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>)
-    where
-        Self: Sized,
-    {
-        mount_show_internal(self.when, self.children, self.fallback, parent, attrs);
-    }
-}
-
-fn mount_show_internal<C>(
-    condition: C,
-    view: AnyView,
-    fallback: AnyView,
-    parent: &Node,
-    attrs: Vec<silex_dom::attribute::PendingAttribute>,
-) where
-    C: RxGet<Value = bool> + Clone + 'static,
-{
-    silex_dom::view::mount_branch_cached(
-        parent,
-        attrs,
-        move || condition.get(),
-        move |active| {
-            if active {
-                view.clone()
-            } else {
-                fallback.clone()
-            }
-        },
-    );
 }
 
 // --- Signal 扩展 ---

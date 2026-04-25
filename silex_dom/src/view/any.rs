@@ -138,37 +138,6 @@ impl std::fmt::Debug for AnyView {
     }
 }
 
-/// 片段，用于容纳多个不同类型的子组件
-#[derive(Default, Clone)]
-pub struct Fragment(pub Vec<AnyView>);
-
-impl Fragment {
-    pub fn new(children: Vec<AnyView>) -> Self {
-        Self(children)
-    }
-}
-
-impl crate::view::ApplyAttributes for Fragment {
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
-        for child in &mut self.0 {
-            child.apply_attributes(attrs.clone());
-        }
-    }
-}
-
-impl View for Fragment {
-    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        mount_list(&self.0, parent, attrs);
-    }
-
-    fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)
-    where
-        Self: Sized,
-    {
-        mount_list_owned(self.0, parent, attrs);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

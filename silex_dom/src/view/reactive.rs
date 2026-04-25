@@ -145,11 +145,7 @@ impl_auto_reactive_view_text!(
     std::borrow::Cow<'static, str>
 );
 
-impl_auto_reactive_view_default!(
-    crate::element::Element,
-    crate::view::any::Fragment,
-    crate::view::any::AnyView
-);
+impl_auto_reactive_view_default!(crate::element::Element, crate::view::any::AnyView);
 
 impl<V: crate::view::View + 'static> AutoReactiveView for Option<V> {}
 

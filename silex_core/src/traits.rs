@@ -105,6 +105,9 @@ pub use read::*;
 mod write;
 pub use write::*;
 
+mod list;
+pub use list::*;
+
 /// 内部自适应工具，用于在不引入显式 Clone 约束的情况下探测克隆能力。
 #[doc(hidden)]
 pub mod adaptive {

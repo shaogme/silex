@@ -1,9 +1,8 @@
 use silex_core::error::{ErrorContext, SilexError};
-use silex_core::reactivity::{ReadSignal, Signal, WriteSignal, provide_context};
+use silex_core::reactivity::Signal;
 use silex_core::traits::{RxGet, RxWrite};
 use silex_dom::prelude::*;
-use silex_html::div;
-use silex_macros::component;
+use silex_macros::{component, render};
 use std::rc::Rc;
 
 /// ErrorBoundary 组件
@@ -19,56 +18,30 @@ where
 {
     let (error, set_error) = Signal::<Option<SilexError>>::pair(None);
 
-    provide_context(ErrorContext(Rc::new(move |e| {
+    let error_ctx = ErrorContext(Rc::new(move |e| {
         silex_core::log::console_error(format!("ErrorBoundary caught error: {}", e));
         // Defer update to avoid render-induced updates
         wasm_bindgen_futures::spawn_local(async move {
             set_error.set(Some(e));
         });
-    })));
+    }));
 
-    // 使用专用包装视图以解决闭包生命周期与 Prop 生命周期绑定的问题
-    ErrorBoundaryView {
-        children: Rc::new(move || children().into_any()),
-        fallback: Rc::new(move |e| fallback(e).into_any()),
-        error,
-        set_error,
-    }
-}
+    render! {
+        use scope;
+        use provide error_ctx;
 
-#[derive(Clone)]
-struct ErrorBoundaryView {
-    children: Rc<dyn Fn() -> AnyView + 'static>,
-    fallback: Rc<dyn Fn(SilexError) -> AnyView + 'static>,
-    error: ReadSignal<Option<SilexError>>,
-    set_error: WriteSignal<Option<SilexError>>,
-}
+        let fallback = fallback.clone();
+        let children = children.clone();
 
-impl ApplyAttributes for ErrorBoundaryView {}
-
-impl View for ErrorBoundaryView {
-    fn mount(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
-        self.clone().mount_owned(parent, attrs);
-    }
-
-    fn mount_owned(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>)
-    where
-        Self: Sized,
-    {
-        let error = self.error;
-        let set_error = self.set_error;
-        let fallback = self.fallback;
-        let children = self.children;
-
-        div(move || {
-            let fallback = fallback.clone();
-            let children = children.clone();
-
+        silex_core::rx! {
             if let Some(e) = error.get() {
-                fallback(e)
+                fallback(e).into_any()
             } else {
                 let res =
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || children()));
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe({
+                        let children = children.clone();
+                        move || children().into_any()
+                    }));
 
                 match res {
                     Ok(view) => view,
@@ -89,14 +62,10 @@ impl View for ErrorBoundaryView {
                         wasm_bindgen_futures::spawn_local(async move {
                             set_error.set(Some(err));
                         });
-                        ().into_any()
+                        AnyView::Empty
                     }
                 }
             }
-        })
-        .style("display: contents")
-        .mount_owned(parent, attrs);
+        }
     }
 }
-
-impl AutoReactiveView for ErrorBoundaryView {}

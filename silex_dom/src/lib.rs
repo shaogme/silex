@@ -13,7 +13,7 @@ pub mod prelude {
     pub use crate::setup_global_error_handlers;
     pub use crate::view::{
         ApplyAttributes, AutoReactiveView, Prop, PropFixed, PropMissing, View, ViewCons, ViewNil,
-        any::*, reactive::*,
+        any::*, logic::*, reactive::*,
     };
     pub use crate::{view_chain, view_match};
 }

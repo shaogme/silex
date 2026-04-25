@@ -7,6 +7,7 @@ mod component;
 mod css;
 #[cfg(feature = "component")]
 mod props_builder;
+mod render;
 #[cfg(feature = "route")]
 mod route;
 #[cfg(feature = "store")]
@@ -132,6 +133,14 @@ pub fn derive_props_builder(input: TokenStream) -> TokenStream {
 pub fn derive_route(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     match route::derive_route_impl(input) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+#[proc_macro]
+pub fn render(input: TokenStream) -> TokenStream {
+    match render::render_impl(input.into()) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),
     }
