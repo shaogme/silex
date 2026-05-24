@@ -44,7 +44,7 @@ where
         }
         if let Some(id) = self.id() {
             let op = crate::reactivity::StaticMapPayload::new1(id, f, false);
-            crate::Rx::new_op_raw(op)
+            crate::Rx::new_op(op)
         } else {
             crate::Rx::derive(Box::new(move || self.with(f)))
         }

@@ -35,7 +35,6 @@ pub mod css {
     pub use silex_css::*;
 }
 
-#[cfg(feature = "macros")]
 pub mod macros {
     pub use silex_macros::*;
 }
@@ -62,7 +61,6 @@ pub mod prelude {
     pub use silex_css::prelude::*;
     pub use silex_dom::prelude::*;
     pub use silex_html::*;
-    #[cfg(feature = "macros")]
     pub use silex_macros::*;
 
     // Resolve ambiguous glob re-exports
@@ -71,8 +69,7 @@ pub mod prelude {
     pub use crate::flow::Switch;
     pub use crate::router::Link;
     pub use silex_css::prelude::{Style, linear_gradient, radial_gradient};
-    pub use silex_dom::prelude::{ApplyAttributes, Mount, MountRef, text};
+    pub use silex_dom::prelude::{ApplyAttributes, View, text};
     pub use silex_html::{Em, em};
-    #[cfg(feature = "macros")]
     pub use silex_macros::{global, styled, theme};
 }

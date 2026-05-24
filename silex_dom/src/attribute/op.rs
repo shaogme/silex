@@ -27,42 +27,73 @@ pub enum AttrData {
     ReactiveJs(Rx<JsValue>),
 }
 
+impl PartialEq for AttrData {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::StaticString(a), Self::StaticString(b)) => a == b,
+            (Self::StaticBool(a), Self::StaticBool(b)) => a == b,
+            (Self::StaticJs(a), Self::StaticJs(b)) => a == b,
+            (Self::ReactiveString(a), Self::ReactiveString(b)) => a == b,
+            (Self::ReactiveBool(a), Self::ReactiveBool(b)) => a == b,
+            (Self::ReactiveJs(a), Self::ReactiveJs(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+// --- AttrOp Variant Structs ---
+
+#[derive(Clone, PartialEq)]
+pub struct AttrUpdate {
+    pub name: Cow<'static, str>,
+    pub target: AttrTarget,
+    pub data: AttrData,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct ClassToggle {
+    pub name: Cow<'static, str>,
+    pub rx: Rx<bool>,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct StyleProperty {
+    pub name: Cow<'static, str>,
+    pub rx: Rx<String>,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct CombinedClasses {
+    pub statics: Vec<Cow<'static, str>>,
+    pub toggles: Vec<(Cow<'static, str>, Rx<bool>)>,
+    pub reactives: Vec<Rx<String>>,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct CombinedStyles {
+    pub statics: Vec<(Cow<'static, str>, Cow<'static, str>)>,
+    pub properties: Vec<(Cow<'static, str>, Rx<String>)>,
+    pub sheets: Vec<Rx<String>>,
+}
+
 #[derive(Clone)]
 pub enum AttrOp {
     /// Unified update for attributes and properties (Static or Reactive)
-    Update {
-        name: Cow<'static, str>,
-        target: AttrTarget,
-        data: AttrData,
-    },
+    Update(AttrUpdate),
 
     // --- Class 专项优化（收敛意图） ---
     SetStaticClasses(Vec<Cow<'static, str>>),
-    AddClassToggle {
-        name: Cow<'static, str>,
-        rx: Rx<bool>,
-    },
+    AddClassToggle(ClassToggle),
     AddReactiveClasses(Rx<String>),
 
     // --- Style 专项优化（收敛意图） ---
     SetStaticStyles(Vec<(Cow<'static, str>, Cow<'static, str>)>),
-    BindStyleProperty {
-        name: Cow<'static, str>,
-        rx: Rx<String>,
-    },
+    BindStyleProperty(StyleProperty),
     BindReactiveStyleSheet(Rx<String>),
 
     // --- 阶段三：单 Effect 策略优化 (全面转向 AttrOp 的核心) ---
-    CombinedClasses {
-        statics: Vec<Cow<'static, str>>,
-        toggles: Vec<(Cow<'static, str>, Rx<bool>)>,
-        reactives: Vec<Rx<String>>,
-    },
-    CombinedStyles {
-        statics: Vec<(Cow<'static, str>, Cow<'static, str>)>,
-        properties: Vec<(Cow<'static, str>, Rx<String>)>,
-        sheets: Vec<Rx<String>>,
-    },
+    CombinedClasses(CombinedClasses),
+    CombinedStyles(CombinedStyles),
 
     // --- 集合处理优化（替代部分 Custom 闭包） ---
     Sequence(Vec<AttrOp>),
@@ -72,10 +103,30 @@ pub enum AttrOp {
     Noop,
 }
 
+impl PartialEq for AttrOp {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Update(a), Self::Update(b)) => a == b,
+            (Self::SetStaticClasses(a), Self::SetStaticClasses(b)) => a == b,
+            (Self::AddClassToggle(a), Self::AddClassToggle(b)) => a == b,
+            (Self::AddReactiveClasses(a), Self::AddReactiveClasses(b)) => a == b,
+            (Self::SetStaticStyles(a), Self::SetStaticStyles(b)) => a == b,
+            (Self::BindStyleProperty(a), Self::BindStyleProperty(b)) => a == b,
+            (Self::BindReactiveStyleSheet(a), Self::BindReactiveStyleSheet(b)) => a == b,
+            (Self::CombinedClasses(a), Self::CombinedClasses(b)) => a == b,
+            (Self::CombinedStyles(a), Self::CombinedStyles(b)) => a == b,
+            (Self::Sequence(a), Self::Sequence(b)) => a == b,
+            (Self::Custom(a), Self::Custom(b)) => Rc::ptr_eq(a, b),
+            (Self::Noop, Self::Noop) => true,
+            _ => false,
+        }
+    }
+}
+
 impl AttrOp {
     pub fn apply(self, el: &Element) {
         match self {
-            AttrOp::Update { name, target, data } => {
+            AttrOp::Update(AttrUpdate { name, target, data }) => {
                 apply_update_internal(el, &name, target, data);
             }
             AttrOp::SetStaticClasses(classes) => {
@@ -84,7 +135,7 @@ impl AttrOp {
                     let _ = list.add_1(&c);
                 }
             }
-            AttrOp::AddClassToggle { name, rx } => {
+            AttrOp::AddClassToggle(ClassToggle { name, rx }) => {
                 let list = el.class_list();
                 Effect::new(move |_| {
                     if rx.get() {
@@ -119,7 +170,7 @@ impl AttrOp {
                     }
                 }
             }
-            AttrOp::BindStyleProperty { name, rx } => {
+            AttrOp::BindStyleProperty(StyleProperty { name, rx }) => {
                 if let Some(style) = get_style_decl(el) {
                     Effect::new(move |_| {
                         let _ = style.set_property(&name, &rx.get());
@@ -159,18 +210,18 @@ impl AttrOp {
             AttrOp::Noop => {}
 
             // --- 阶段三：合并应用的深度优化 (分发到 Kernel 函数) ---
-            AttrOp::CombinedClasses {
+            AttrOp::CombinedClasses(CombinedClasses {
                 statics,
                 toggles,
                 reactives,
-            } => {
+            }) => {
                 apply_combined_classes_internal(el, statics, toggles, reactives);
             }
-            AttrOp::CombinedStyles {
+            AttrOp::CombinedStyles(CombinedStyles {
                 statics,
                 properties,
                 sheets,
-            } => {
+            }) => {
                 apply_combined_styles_internal(el, statics, properties, sheets);
             }
         }

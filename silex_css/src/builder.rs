@@ -1,14 +1,38 @@
 use crate::types::{ValidFor, props};
 use silex_core::traits::{IntoRx, RxGet, RxValue};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable};
+use std::borrow::Cow;
 use std::fmt::{Display, Write};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 
 pub(crate) type DynamicValue = Rc<dyn Fn() -> String>;
-pub(crate) type StaticRule = (&'static str, String);
+pub(crate) type StaticRule = (&'static str, Cow<'static, str>);
 pub(crate) type DynamicRule = (&'static str, DynamicValue);
+
+#[derive(Clone)]
+enum StyleValue {
+    Static(Cow<'static, str>),
+    Dynamic(DynamicValue),
+}
+
+impl StyleValue {
+    fn from_rx<V>(value: V) -> Self
+    where
+        V: IntoRx + RxValue + 'static,
+        V::Value: Display + Clone + Sized + 'static,
+        V::RxType: RxGet<Value = V::Value> + 'static,
+    {
+        if value.is_constant() {
+            let signal = value.into_rx();
+            Self::Static(Cow::Owned(format!("{}", signal.get())))
+        } else {
+            let signal = value.into_rx();
+            Self::Dynamic(Rc::new(move || format!("{}", signal.get())))
+        }
+    }
+}
 
 #[derive(Clone)]
 pub(crate) enum NestedRule {
@@ -143,20 +167,14 @@ impl Style {
         self.nest(selector, f)
     }
 
-    fn add_rule<V, P>(mut self, prop: &'static str, value: V) -> Self
-    where
-        V: IntoRx + RxValue + 'static,
-        V::Value: Display + ValidFor<P> + Clone + Sized,
-        V::RxType: RxGet<Value = V::Value> + 'static,
-    {
-        if value.is_constant() {
-            let signal = value.into_rx();
-            let val_str = format!("{}", signal.get());
-            self.static_rules.push((prop, val_str));
-        } else {
-            let signal = value.into_rx();
-            self.dynamic_rules
-                .push((prop, Rc::new(move || format!("{}", signal.get()))));
+    fn add_rule(mut self, prop: &'static str, value: StyleValue) -> Self {
+        match value {
+            StyleValue::Static(val_str) => {
+                self.static_rules.push((prop, val_str));
+            }
+            StyleValue::Dynamic(getter) => {
+                self.dynamic_rules.push((prop, getter));
+            }
         }
         self
     }
@@ -176,7 +194,7 @@ macro_rules! generate_builder_methods {
                     V::Value: ValidFor<props::$pascal> + Display + Clone + Sized + 'static,
                     V::RxType: RxGet<Value = V::Value> + Clone + 'static,
                 {
-                    self.add_rule::<V, props::$pascal>($kebab, value)
+                    self.add_rule($kebab, StyleValue::from_rx(value))
                 }
             )*
         }

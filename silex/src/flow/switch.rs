@@ -1,6 +1,10 @@
 use silex_core::traits::RxGet;
-use silex_dom::prelude::{ApplyAttributes, AutoReactiveView, Mount, MountRef};
-use web_sys::Node;
+use silex_dom::prelude::*;
+use silex_macros::component;
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+use std::hash::Hash;
+use std::rc::Rc;
 
 /// Switch/Match 组件：多路分支渲染
 ///
@@ -9,109 +13,55 @@ use web_sys::Node;
 /// use silex::prelude::*;
 /// let (count, set_count) = Signal::pair(0);
 ///
-/// Switch::new(count, "Default View")
+/// Switch(count)
+///     .fallback("Default View")
 ///     .case(0, "Zero")
 ///     .case(1, "One");
 /// ```
-#[derive(Clone)]
-pub struct Switch<Source, T, V> {
+#[component]
+pub fn Switch<Source, T>(
     source: Source,
-    cases: Vec<(T, V)>,
-    fallback: V,
-}
-
-impl<Source, T, V> Switch<Source, T, V>
+    #[chain(default)] cases: HashMap<T, AnyView>,
+    #[prop(render)]
+    #[chain(default = AnyView::Empty)]
+    fallback: AnyView,
+) -> impl View
 where
-    Source: RxGet<Value = T> + 'static,
-    T: PartialEq + Clone + 'static,
-    V: MountRef + 'static,
+    Source: RxGet<Value = T> + Clone + 'static,
+    T: Eq + Hash + Clone + 'static,
 {
-    pub fn new(source: Source, fallback: V) -> Self {
-        Self {
-            source,
-            cases: Vec::new(),
-            fallback,
+    let cases = Rc::new(cases);
+    silex_core::rx! {
+        let val = source.get();
+        if let Some(view) = cases.get(&val) {
+            view.clone()
+        } else {
+            fallback.clone()
         }
     }
+}
 
-    pub fn case(mut self, value: T, view: V) -> Self {
-        self.cases.push((value, view));
+impl<Source, T> SwitchComponent<Source, T>
+where
+    Source: RxGet<Value = T> + Clone + 'static,
+    T: Eq + Hash + Clone + 'static,
+{
+    /// 添加一个匹配分支
+    pub fn case<V>(mut self, value: T, view: V) -> Self
+    where
+        V: View + 'static,
+    {
+        match self.cases.entry(value) {
+            Entry::Vacant(entry) => {
+                entry.insert(view.into_any());
+            }
+            Entry::Occupied(_) => {
+                silex_core::error::handle_error(silex_core::SilexError::Javascript(
+                    "Duplicate case detected in Switch; each case value must be unique."
+                        .to_string(),
+                ));
+            }
+        }
         self
     }
-}
-
-impl<Source, T, V> ApplyAttributes for Switch<Source, T, V>
-where
-    Source: RxGet<Value = T> + 'static,
-    T: PartialEq + Clone + 'static,
-    V: MountRef + 'static,
-{
-}
-
-impl<Source, T, V> Mount for Switch<Source, T, V>
-where
-    Source: RxGet<Value = T> + Clone + 'static,
-    T: PartialEq + Clone + 'static,
-    V: MountRef + Clone + 'static,
-{
-    fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        mount_switch_internal(self.source, self.cases, self.fallback, parent, attrs);
-    }
-}
-
-impl<Source, T, V> AutoReactiveView for Switch<Source, T, V>
-where
-    Source: RxGet<Value = T> + Clone + 'static,
-    T: PartialEq + Clone + 'static,
-    V: MountRef + Clone + 'static,
-{
-}
-
-impl<Source, T, V> MountRef for Switch<Source, T, V>
-where
-    Source: RxGet<Value = T> + Clone + 'static,
-    T: PartialEq + Clone + 'static,
-    V: MountRef + Clone + 'static,
-{
-    fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        mount_switch_internal(
-            self.source.clone(),
-            self.cases.clone(),
-            self.fallback.clone(),
-            parent,
-            attrs,
-        );
-    }
-}
-
-fn mount_switch_internal<Source, T, V>(
-    source: Source,
-    cases: Vec<(T, V)>,
-    fallback: V,
-    parent: &Node,
-    attrs: Vec<silex_dom::attribute::PendingAttribute>,
-) where
-    Source: RxGet<Value = T> + 'static,
-    T: PartialEq + Clone + 'static,
-    V: MountRef + 'static,
-{
-    use silex_dom::view::any::RenderThunk;
-    silex_dom::view::mount_dynamic_view_universal(
-        parent,
-        attrs,
-        RenderThunk::new(move |args| {
-            let (p, a) = args;
-            let val = source.get();
-            let mut view = &fallback;
-
-            for (case_val, case_view) in &cases {
-                if *case_val == val {
-                    view = case_view;
-                    break;
-                }
-            }
-
-            view.mount_ref(&p, a);
-        }),
-    );
 }

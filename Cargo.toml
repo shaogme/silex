@@ -28,7 +28,7 @@ resolver = "3"
 warnings = "deny"
 
 [workspace.package]
-version = "0.1.0-beta.8"
+version = "0.1.0-beta.9"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Shao G. <shaog.me@gmail.com>"]
@@ -43,102 +43,22 @@ categories = ["web-programming", "wasm", "gui"]
 [workspace.dependencies]
 
 # Internal Crates
-silex = { path = "silex", version = "0.1.0-beta.8" }
-silex_core = { path = "silex_core", version = "0.1.0-beta.8" }
-silex_dom = { path = "silex_dom", version = "0.1.0-beta.8" }
-silex_html = { path = "silex_html", version = "0.1.0-beta.8" }
-silex_css = { path = "silex_css", version = "0.1.0-beta.8" }
-silex_macros = { path = "silex_macros", version = "0.1.0-beta.8" }
-silex_reactivity = { path = "silex_reactivity", version = "0.1.0-beta.8" }
-silex_hash = { path = "silex_hash", version = "0.1.0-beta.8" }
-silex_rx = { path = "silex_rx", version = "0.1.0-beta.8" }
-silex_vtable = { path = "silex_vtable", version = "0.1.0-beta.8" }
+silex = { path = "silex", version = "0.1.0-beta.9" }
+silex_core = { path = "silex_core", version = "0.1.0-beta.9" }
+silex_dom = { path = "silex_dom", version = "0.1.0-beta.9" }
+silex_html = { path = "silex_html", version = "0.1.0-beta.9" }
+silex_css = { path = "silex_css", version = "0.1.0-beta.9" }
+silex_macros = { path = "silex_macros", version = "0.1.0-beta.9", default-features = false }
+silex_reactivity = { path = "silex_reactivity", version = "0.1.0-beta.9" }
+silex_hash = { path = "silex_hash", version = "0.1.0-beta.9" }
+silex_rx = { path = "silex_rx", version = "0.1.0-beta.9" }
+silex_vtable = { path = "silex_vtable", version = "0.1.0-beta.9" }
 
 wasm-bindgen = { version = "0.2", default-features = false }
-web-sys = { version = "0.3", default-features = false, features = [
-    "AnimationEvent",
-    "Comment",
-    "CompositionEvent",
-    "CssRuleList",
-    "CssStyleDeclaration",
-    "CssStyleSheet",
-    "CustomEvent",
-    "AbortController",
-    "AbortSignal",
-    "Blob",
-    "CloseEvent",
-    "DomException",
-    "Document",
-    "DocumentFragment",
-    "DomTokenList",
-    "DragEvent",
-    "Element",
-    "EventSource",
-    "ErrorEvent",
-    "Event",
-    "EventTarget",
-    "FocusEvent",
-    "FormData",
-    "History",
-    "HtmlAnchorElement",
-    "HtmlAreaElement",
-    "HtmlAudioElement",
-    "HtmlButtonElement",
-    "HtmlDetailsElement",
-    "HtmlDialogElement",
-    "HtmlElement",
-    "HtmlFieldSetElement",
-    "HtmlHeadElement",
-    "HtmlIFrameElement",
-    "HtmlImageElement",
-    "HtmlInputElement",
-    "HtmlLabelElement",
-    "HtmlLinkElement",
-    "HtmlOptGroupElement",
-    "HtmlOptionElement",
-    "HtmlOutputElement",
-    "HtmlSelectElement",
-    "HtmlSourceElement",
-    "HtmlTableCellElement",
-    "HtmlTextAreaElement",
-    "HtmlTrackElement",
-    "HtmlVideoElement",
-    "InputEvent",
-    "KeyboardEvent",
-    "Location",
-    "MouseEvent",
-    "ProgressEvent",
-    "Headers",
-    "Request",
-    "RequestCache",
-    "RequestCredentials",
-    "RequestInit",
-    "RequestMode",
-    "RequestRedirect",
-    "Response",
-    "Node",
-    "NodeList",
-    "PointerEvent",
-    "PromiseRejectionEvent",
-    "ShadowRoot",
-    "Storage",
-    "StorageEvent",
-    "StyleSheet",
-    "SubmitEvent",
-    "SvgElement",
-    "Text",
-    "TouchEvent",
-    "TransitionEvent",
-    "UrlSearchParams",
-    "WebSocket",
-    "MessageEvent",
-    "WheelEvent",
-    "Window",
-    "console"
-] }
+web-sys = { version = "0.3", default-features = false }
 js-sys = { version = "0.3", default-features = false }
-wasm-bindgen-futures = { version = "0.4.56", default-features = false }
-gloo-timers = { version = "0.3", default-features = false, features = ["futures"] }
+wasm-bindgen-futures = { version = "0.4.68", default-features = false }
+gloo-timers = { version = "0.4", default-features = false, features = ["futures"] }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

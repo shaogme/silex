@@ -1,341 +1,44 @@
-use crate::{SilexError, SilexResult};
-use silex_core::reactivity::{Effect, NodeId, batch, create_scope, dispose};
-use silex_core::traits::RxRead;
-use silex_dom::prelude::{ApplyAttributes, AutoReactiveView, Mount, MountRef};
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use silex_core::reactivity::ReadSignal;
+use silex_core::traits::{ForErrorHandler, ForLoopSource, RxRead};
+use silex_dom::prelude::*;
+use silex_macros::component;
+use std::hash::Hash;
 use std::rc::Rc;
-use web_sys::Node;
 
-/// Trait to unify different types of data sources that can be used in a `For` loop
-/// via zero-copy slice access.
+/// 标准 component 化的 For 组件。
 ///
-/// Unlike the previous iteration approach which required cloning the collection,
-/// this trait allows the `For` component to inspect the data as a slice `&[T]`.
-/// We only clone the individual `Item` when we actually need to create a new row.
-pub trait ForLoopSource {
-    type Item: Clone;
-
-    /// Returns a slice of the items.
-    /// If the source represents an "empty" state (e.g. Option::None), return an empty slice.
-    /// If the source represents an error (e.g. Result::Err), return the error.
-    fn as_slice(&self) -> SilexResult<&[Self::Item]>;
-}
-
-// Impl for Vec<T>
-impl<T: Clone> ForLoopSource for Vec<T> {
-    type Item = T;
-
-    fn as_slice(&self) -> SilexResult<&[T]> {
-        Ok(self.as_slice())
-    }
-}
-
-// Impl for Option<Vec<T>>
-impl<T: Clone> ForLoopSource for Option<Vec<T>> {
-    type Item = T;
-
-    fn as_slice(&self) -> SilexResult<&[T]> {
-        match self {
-            Some(v) => Ok(v.as_slice()),
-            None => Ok(&[]),
-        }
-    }
-}
-
-// Impl for SilexResult<Vec<T>>
-impl<T: Clone> ForLoopSource for SilexResult<Vec<T>> {
-    type Item = T;
-
-    fn as_slice(&self) -> SilexResult<&[T]> {
-        match self {
-            Ok(v) => Ok(v.as_slice()),
-            Err(e) => Err(e.clone()),
-        }
-    }
-}
-
-/// Helper trait to extract Key type from function
-pub trait LoopKey<Item> {
-    type Key: std::hash::Hash + Eq + Clone + 'static;
-    fn get_key(&self, item: &Item) -> Self::Key;
-}
-
-impl<F, Item, K> LoopKey<Item> for F
+/// 使用方式：
+/// ```rust,ignore
+/// For(list, |item| item.id)
+///     .children(|item, idx| li(format!("{}: {}", idx.get(), item.name)))
+///     .error(|err| log_error(err))
+/// ```
+#[component]
+pub fn For<ItemsFn, IS, Item, Key, MF, V>(
+    each: ItemsFn,
+    key: fn(&Item) -> Key,
+    #[prop(render)]
+    #[chain]
+    children: MF,
+    #[prop(into)]
+    #[chain(default = ForErrorHandler::default())]
+    error: ForErrorHandler,
+) -> impl View
 where
-    F: Fn(&Item) -> K,
-    K: std::hash::Hash + Eq + Clone + 'static,
+    ItemsFn: RxRead<Value = IS> + Clone + 'static,
+    IS: ForLoopSource<Item = Item> + Sized + 'static,
+    Item: Clone + 'static,
+    Key: Hash + Eq + Clone + 'static,
+    MF: Fn(ReadSignal<Item>, ReadSignal<usize>) -> V + Clone + 'static,
+    V: View + 'static,
 {
-    type Key = K;
-    fn get_key(&self, item: &Item) -> Self::Key {
-        (self)(item)
-    }
-}
+    let view_fn = Rc::new(move |item, index| children(item, index).into_any());
 
-/// Helper trait to extract View type from Map function
-pub trait LoopMap<Item> {
-    type View: Mount;
-    fn map(&self, item: Item) -> Self::View;
-}
-
-impl<F, Item, V> LoopMap<Item> for F
-where
-    F: Fn(Item) -> V,
-    V: Mount,
-{
-    type View = V;
-    fn map(&self, item: Item) -> Self::View {
-        (self)(item)
-    }
-}
-
-pub struct For<ItemsFn, KeyFn, MapFn> {
-    items: Rc<ItemsFn>,
-    key: Rc<KeyFn>,
-    map: Rc<MapFn>,
-}
-
-impl<ItemsFn, KeyFn, MapFn> Clone for For<ItemsFn, KeyFn, MapFn> {
-    fn clone(&self) -> Self {
-        Self {
-            items: self.items.clone(),
-            key: self.key.clone(),
-            map: self.map.clone(),
-        }
-    }
-}
-
-impl<ItemsFn, KeyFn, MapFn> For<ItemsFn, KeyFn, MapFn> {
-    pub fn new<Item, Key, V>(items: ItemsFn, key: KeyFn, map: MapFn) -> Self
-    where
-        ItemsFn: RxRead,
-        ItemsFn::Value: ForLoopSource<Item = Item>,
-        KeyFn: Fn(&Item) -> Key,
-        MapFn: Fn(Item) -> V,
-    {
-        Self {
-            items: Rc::new(items),
-            key: Rc::new(key),
-            map: Rc::new(map),
-        }
-    }
-}
-
-// 3.7 For Loop implementation
-impl<ItemsFn, KeyFn, MapFn> ApplyAttributes for For<ItemsFn, KeyFn, MapFn>
-where
-    ItemsFn: RxRead + 'static,
-    ItemsFn::Value: ForLoopSource + 'static,
-    KeyFn: LoopKey<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
-    MapFn: LoopMap<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
-    <ItemsFn::Value as ForLoopSource>::Item: 'static,
-{
-}
-
-impl<ItemsFn, KeyFn, MapFn> Mount for For<ItemsFn, KeyFn, MapFn>
-where
-    ItemsFn: RxRead + 'static,
-    ItemsFn::Value: ForLoopSource + 'static,
-    KeyFn: LoopKey<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
-    MapFn: LoopMap<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
-    <ItemsFn::Value as ForLoopSource>::Item: 'static,
-{
-    fn mount(self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        self.mount_internal(parent, attrs);
-    }
-}
-
-impl<ItemsFn, KeyFn, MapFn> AutoReactiveView for For<ItemsFn, KeyFn, MapFn>
-where
-    ItemsFn: RxRead + 'static,
-    ItemsFn::Value: ForLoopSource + 'static,
-    KeyFn: LoopKey<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
-    MapFn: LoopMap<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
-    <ItemsFn::Value as ForLoopSource>::Item: 'static,
-{
-}
-
-impl<ItemsFn, KeyFn, MapFn> MountRef for For<ItemsFn, KeyFn, MapFn>
-where
-    ItemsFn: RxRead + 'static,
-    ItemsFn::Value: ForLoopSource + 'static,
-    KeyFn: LoopKey<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
-    MapFn: LoopMap<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
-    <ItemsFn::Value as ForLoopSource>::Item: 'static,
-{
-    fn mount_ref(&self, parent: &Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        self.clone().mount_internal(parent, attrs);
-    }
-}
-
-impl<ItemsFn, KeyFn, MapFn> For<ItemsFn, KeyFn, MapFn>
-where
-    ItemsFn: RxRead + 'static,
-    ItemsFn::Value: ForLoopSource + 'static,
-    KeyFn: LoopKey<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
-    MapFn: LoopMap<<ItemsFn::Value as ForLoopSource>::Item> + 'static,
-    <ItemsFn::Value as ForLoopSource>::Item: 'static,
-{
-    fn mount_internal(self, parent: &Node, _attrs: Vec<silex_dom::attribute::PendingAttribute>) {
-        let document = silex_dom::document();
-
-        // 1. Create Anchors
-        let start_marker = document.create_comment("for-start");
-        let start_node: Node = start_marker.into();
-
-        if let Err(e) = parent.append_child(&start_node).map_err(SilexError::from) {
-            silex_core::error::handle_error(e);
-            return;
-        }
-
-        let end_marker = document.create_comment("for-end");
-        let end_node: Node = end_marker.into();
-
-        if let Err(e) = parent.append_child(&end_node).map_err(SilexError::from) {
-            silex_core::error::handle_error(e);
-            return;
-        }
-
-        let items_fn = self.items;
-        let key_fn = self.key;
-        let map_fn = self.map;
-
-        // Store: (Nodes, ScopeId)
-        // We must fully qualify the Key type here because type aliases inside functions cannot capture
-        // generic parameters from the outer scope, and defining new generics would shadow them (causing errors).
-        let active_rows = Rc::new(RefCell::new(HashMap::<
-            <KeyFn as LoopKey<<ItemsFn::Value as ForLoopSource>::Item>>::Key,
-            (Vec<Node>, NodeId),
-        >::new()));
-
-        Effect::new(move |_| {
-            let mut rows_map = active_rows.borrow_mut();
-
-            // Zero-Copy Optimization:
-            // We use `with` to access the `Items` by reference.
-            // `as_slice()` gives us `&[Item]` without cloning the collection.
-            items_fn.with(|items| {
-                let items_slice = match items.as_slice() {
-                    Ok(s) => s,
-                    Err(e) => {
-                        silex_core::error::handle_error(e);
-                        return;
-                    }
-                };
-
-                batch(|| {
-                    let mut new_keys = HashSet::new();
-                    // (Key, Nodes, ScopeId, Optional Fragment for initial insert)
-                    let mut new_rows_order = Vec::with_capacity(items_slice.len());
-
-                    for item_ref in items_slice {
-                        // Calculate key from reference
-                        let key = key_fn.get_key(item_ref);
-                        new_keys.insert(key.clone());
-
-                        if let Some((nodes, id)) = rows_map.get(&key) {
-                            // Existing row: reuse nodes and scope
-                            new_rows_order.push((key, nodes.clone(), *id, None));
-                        } else {
-                            // New row: We MUST clone the Item here to pass ownership to map_fn.
-                            // This is the only place we clone individual items, and only for new rows.
-                            let item_owned = item_ref.clone();
-
-                            let (nodes, scope_id, fragment) =
-                                silex_core::reactivity::untrack(|| {
-                                    let fragment = document.create_document_fragment();
-                                    let fragment_node: Node = fragment.clone().into();
-
-                                    let map_fn = map_fn.clone();
-
-                                    let scope_id = create_scope(move || {
-                                        let view = map_fn.map(item_owned);
-                                        view.mount(&fragment_node, Vec::new());
-                                    });
-
-                                    // Collect nodes from fragment before they are moved
-                                    let nodes_list = fragment.child_nodes();
-                                    let len = nodes_list.length();
-                                    let mut nodes = Vec::with_capacity(len as usize);
-                                    for i in 0..len {
-                                        if let Some(n) = nodes_list.item(i) {
-                                            nodes.push(n);
-                                        }
-                                    }
-                                    (nodes, scope_id, fragment)
-                                });
-
-                            new_rows_order.push((key, nodes, scope_id, Some(fragment)));
-                        };
-                    }
-
-                    // Cleanup removed rows
-                    rows_map.retain(|k, (nodes, id)| {
-                        if !new_keys.contains(k) {
-                            // Remove all nodes for this row
-                            for node in nodes {
-                                if let Some(p) = node.parent_node() {
-                                    let _ = p.remove_child(node);
-                                }
-                            }
-                            dispose(*id);
-                            false
-                        } else {
-                            true
-                        }
-                    });
-
-                    // Reorder / Insert
-                    // Start scanning from start_marker
-                    let mut cursor = start_node.next_sibling();
-
-                    for (key, nodes, id, fragment_opt) in new_rows_order {
-                        // If this is a new row with a fragment, insert it efficiently
-                        if let Some(frag) = fragment_opt {
-                            let effective_cursor = cursor.as_ref().unwrap_or(&end_node);
-
-                            if let Some(parent) = effective_cursor.parent_node() {
-                                let _ = parent.insert_before(&frag, Some(effective_cursor));
-                            }
-                            // Inserted nodes are now in DOM. Update rows_map.
-                            rows_map.insert(key, (nodes, id));
-                        } else {
-                            // Existing row. Check if in place.
-                            if nodes.is_empty() {
-                                rows_map.insert(key, (nodes, id));
-                                continue;
-                            }
-
-                            let first_node = &nodes[0];
-
-                            // Check if first_node is at cursor
-                            let is_in_place = if let Some(ref c) = cursor {
-                                c.is_same_node(Some(first_node))
-                            } else {
-                                false
-                            };
-
-                            if is_in_place {
-                                // It matches. This row is correct.
-                                // Advance cursor past this row's nodes.
-                                for _ in 0..nodes.len() {
-                                    cursor = cursor.and_then(|c| c.next_sibling());
-                                }
-                            } else {
-                                // Not in place. Move nodes.
-                                let effective_cursor = cursor.as_ref().unwrap_or(&end_node);
-                                if let Some(parent) = effective_cursor.parent_node() {
-                                    for node in &nodes {
-                                        let _ = parent.insert_before(node, Some(effective_cursor));
-                                    }
-                                }
-                                // After moving, they are before cursor. Cursor stays same.
-                            }
-                            rows_map.insert(key, (nodes, id));
-                        }
-                    }
-                });
-            });
-        });
+    silex_dom::view::list::KeyedLoopView {
+        each,
+        key_fn: key,
+        view_fn,
+        error,
+        _marker: std::marker::PhantomData,
     }
 }

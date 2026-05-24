@@ -6,7 +6,8 @@ use wasm_bindgen::JsValue;
 use web_sys::Element as WebElem;
 
 use crate::attribute::op::{
-    AttrData, AttrOp, AttrTarget, get_style_decl, parse_style_str, set_string_property_internal,
+    AttrData, AttrOp, AttrTarget, AttrUpdate, get_style_decl, parse_style_str,
+    set_string_property_internal,
 };
 use silex_core::reactivity::Effect;
 
@@ -261,14 +262,14 @@ impl ReactiveApply for String {
                 } else if name == "style" {
                     AttrOp::BindReactiveStyleSheet(rx)
                 } else {
-                    AttrOp::Update {
+                    AttrOp::Update(AttrUpdate {
                         name,
                         target: AttrTarget::Attr,
                         data: AttrData::ReactiveString(rx),
-                    }
+                    })
                 }
             }
-            OwnedApplyTarget::Prop(name) => AttrOp::Update {
+            OwnedApplyTarget::Prop(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Prop,
                 data: AttrData::ReactiveJs({
@@ -278,7 +279,7 @@ impl ReactiveApply for String {
                         JsValue::from_str(&rx.get())
                     }))
                 }),
-            },
+            }),
             OwnedApplyTarget::Class => AttrOp::AddReactiveClasses(rx),
             OwnedApplyTarget::Style => AttrOp::BindReactiveStyleSheet(rx),
             OwnedApplyTarget::Apply => {
@@ -370,16 +371,16 @@ impl ReactiveApply for bool {
         target: OwnedApplyTarget,
     ) -> Option<AttrOp> {
         let op = match target {
-            OwnedApplyTarget::Attr(name) => AttrOp::Update {
+            OwnedApplyTarget::Attr(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Attr,
                 data: AttrData::ReactiveBool(rx),
-            },
-            OwnedApplyTarget::Prop(name) => AttrOp::Update {
+            }),
+            OwnedApplyTarget::Prop(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Prop,
                 data: AttrData::ReactiveBool(rx),
-            },
+            }),
             _ => {
                 let rx_inner = rx;
                 let target_clone = target.clone();

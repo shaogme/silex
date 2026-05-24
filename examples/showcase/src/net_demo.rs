@@ -12,7 +12,7 @@ pub struct Post {
 }
 
 #[component]
-pub fn HttpClientDemo() -> impl Mount + MountRef {
+pub fn HttpClientDemo() -> impl View {
     let (post_id, set_post_id) = Signal::pair(1);
 
     // 1. Using HttpClient::as_resource for declarative fetching
@@ -97,7 +97,7 @@ pub fn HttpClientDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn WebSocketDemo() -> impl Mount + MountRef {
+pub fn WebSocketDemo() -> impl View {
     let url = RwSignal::new("wss://echo.websocket.org".to_string());
     let socket = StoredValue::new(None::<WebSocketConnection>);
     let (is_connected, set_is_connected) = Signal::pair(false);
@@ -145,7 +145,7 @@ pub fn WebSocketDemo() -> impl Mount + MountRef {
                 .style(rx!(@fn if is_connected.get() { sty().color(hex("green")) } else { sty().color(hex("red")) })),
         ].style("margin-bottom: 15px;"),
 
-        Show::new(is_connected,
+        Show(is_connected).children(
             div![
                 div![
                     input()
@@ -170,7 +170,7 @@ pub fn WebSocketDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn EventStreamDemo() -> impl Mount + MountRef {
+pub fn EventStreamDemo() -> impl View {
     let (is_active, set_is_active) = Signal::pair(false);
     let url = RwSignal::new("https://stream.wikimedia.org/v2/stream/recentchange".to_string());
     let stream = StoredValue::new(None::<EventStreamConnection>);
@@ -215,18 +215,16 @@ pub fn EventStreamDemo() -> impl Mount + MountRef {
 
         div![
             h4("Stream Log (Latest 50 events):"),
-            ul(For::new(
-                events,
-                |e| e.clone(),
-                |e| li(e).style(sty().font_family("monospace").font_size(em_unit(0.8)).opacity(0.8).margin_bottom(px(4)).word_break(WordBreakKeyword::BreakAll).border_bottom(border(px(1), BorderStyleKeyword::Solid, AppTheme::SURFACE_ALT)).padding_bottom(px(2)))
-            ))
+            ul(For(events, |e| e.clone()).children(|e, _idx| {
+                li(e).style(sty().font_family("monospace").font_size(em_unit(0.8)).opacity(0.8).margin_bottom(px(4)).word_break(WordBreakKeyword::BreakAll).border_bottom(border(px(1), BorderStyleKeyword::Solid, AppTheme::SURFACE_ALT)).padding_bottom(px(2)))
+            }))
             .style(sty().max_height(px(300)).overflow_y(OverflowYKeyword::Auto).background(AppTheme::SURFACE).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).padding(px(15)).border_radius(px(8)))
         ]
     ]
 }
 
 #[component]
-pub fn NetDemoPage() -> impl Mount + MountRef {
+pub fn NetDemoPage() -> impl View {
     let (active_tab, set_active_tab) = Signal::pair("http");
 
     inject_style("net-demo-css", "

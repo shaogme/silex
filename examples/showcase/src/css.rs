@@ -207,7 +207,7 @@ styled! {
         cursor: pointer;
         font-weight: 600;
         transition: all 0.2s;
-        opacity: $({ let active = active.clone(); rx!(if active.get() { 1.0 } else { 0.8 }) });
+        opacity: $(rx!(if active.get() { 1.0 } else { 0.8 }));
 
         &:hover {
             filter: brightness(1.1);
@@ -240,11 +240,11 @@ styled! {
             kind: {
                 primary: {
                     background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-                    width: $(dynamic_width.clone());
+                    width: $(dynamic_width);
                 }
                 secondary: {
                     background: linear-gradient(135deg, #10b981 0%, #3b82f6 100%);
-                    width: $({ let dynamic_width = dynamic_width.clone(); rx!(dynamic_width.get() + px(60)) });
+                    width: $(rx!(dynamic_width.get() + px(60)));
                 }
             }
         }
@@ -254,7 +254,7 @@ styled! {
 // --- Demo Components ---
 
 #[component]
-pub fn StylingBasics() -> impl Mount + MountRef {
+pub fn StylingBasics() -> impl View {
     let (color, set_color) = Signal::pair(AppTheme::TEXT);
     let (size, set_size) = Signal::pair("medium".to_string());
     let (hover_color, set_hover_color) = Signal::pair(AppTheme::PRIMARY);
@@ -435,7 +435,7 @@ pub fn StylingBasics() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn Theming() -> impl Mount + MountRef {
+pub fn Theming() -> impl View {
     let global_settings = crate::advanced::use_user_settings();
     let theme = use_theme::<AppTheme>();
     let is_dark = theme.map(|t| t.surface.0 == "#111827");
@@ -526,7 +526,7 @@ pub fn Theming() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn AdvancedStyling() -> impl Mount + MountRef {
+pub fn AdvancedStyling() -> impl View {
     div![
         h2("🧮 Advanced Styling"),
         p("Type-safe CSS math functions and declarative gradients for complex visuals.")

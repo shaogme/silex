@@ -216,63 +216,63 @@ impl Display for Url {
     }
 }
 
-#[inline]
+#[inline(always)]
 pub fn px<T: Into<f64>>(v: T) -> Px {
     Px(Some(v.into()))
 }
-#[inline]
+#[inline(always)]
 pub fn pct<T: Into<f64>>(v: T) -> Percent {
     Percent(Some(v.into()))
 }
-#[inline]
+#[inline(always)]
 pub fn rem<T: Into<f64>>(v: T) -> Rem {
     Rem(Some(v.into()))
 }
-#[inline]
+#[inline(always)]
 pub fn em_unit<T: Into<f64>>(v: T) -> Em {
     Em(Some(v.into()))
 }
-#[inline]
+#[inline(always)]
 pub fn vw<T: Into<f64>>(v: T) -> Vw {
     Vw(Some(v.into()))
 }
-#[inline]
+#[inline(always)]
 pub fn vh<T: Into<f64>>(v: T) -> Vh {
     Vh(Some(v.into()))
 }
-#[inline]
+#[inline(always)]
 pub fn deg<T: Into<f64>>(v: T) -> Deg {
     Deg(Some(v.into()))
 }
-#[inline]
+#[inline(always)]
 pub fn rad<T: Into<f64>>(v: T) -> Rad {
     Rad(Some(v.into()))
 }
-#[inline]
+#[inline(always)]
 pub fn turn<T: Into<f64>>(v: T) -> Turn {
     Turn(Some(v.into()))
 }
-#[inline]
+#[inline(always)]
 pub fn rgb(r: u8, g: u8, b: u8) -> Rgba {
     Rgba(Some((r, g, b, 1.0)))
 }
-#[inline]
+#[inline(always)]
 pub fn rgba<T: Into<f64>>(r: u8, g: u8, b: u8, a: T) -> Rgba {
     Rgba(Some((r, g, b, a.into())))
 }
-#[inline]
+#[inline(always)]
 pub fn hex<T: Into<String>>(v: T) -> Hex {
     Hex(v.into())
 }
-#[inline]
+#[inline(always)]
 pub fn hsl(h: u16, s: u8, l: u8) -> Hsl {
     Hsl(Some((h, s, l, 1.0)))
 }
-#[inline]
+#[inline(always)]
 pub fn hsla<A: Into<f64>>(h: u16, s: u8, l: u8, a: A) -> Hsl {
     Hsl(Some((h, s, l, a.into())))
 }
-#[inline]
+#[inline(always)]
 pub fn url<T: Into<String>>(v: T) -> Url {
     Url(v.into())
 }

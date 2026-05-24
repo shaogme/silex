@@ -164,6 +164,7 @@ pub fn try_get_signal_untracked<T: Clone + 'static>(id: NodeId) -> Option<T> {
     })
 }
 
+#[inline(always)]
 pub fn update_signal<T: 'static>(id: NodeId, f: impl FnOnce(&mut T)) {
     internal_update_signal::<T>(id, f);
 }

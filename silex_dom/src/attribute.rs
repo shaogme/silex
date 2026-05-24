@@ -7,6 +7,7 @@ mod op;
 pub use apply::*;
 pub use into_storable::*;
 pub use op::*;
+use silex_core::traits::{RxGet, RxWrite};
 
 /// 指令组宏：将多个异构属性/事件平铺为一个 AttributeGroup。
 /// 这在创建自定义 Mixin 或组件透传属性时非常有用。
@@ -175,61 +176,39 @@ pub trait GlobalEventAttributes: AttributeBuilder {
     where
         F: EventHandler<String, M> + Clone + 'static,
     {
-        let cb = callback.clone();
         self.apply(PendingAttribute::new_listener(
             move |el: &web_sys::Element| {
-                let mut handler = cb.clone().into_handler();
-                use wasm_bindgen::JsCast;
-                let closure =
-                    wasm_bindgen::closure::Closure::wrap(Box::new(move |e: web_sys::InputEvent| {
-                        if let Some(target) = e.target() {
-                            let input = target.unchecked_into::<web_sys::HtmlInputElement>();
-                            handler(input.value());
-                        } else {
-                            let err = silex_core::error::SilexError::Dom(
-                                "Input event has no target".into(),
-                            );
-                            silex_core::error::handle_error(err);
+                crate::element::bind_event_impl(
+                    el,
+                    "input".to_string(),
+                    Box::new({
+                        let mut handler = callback.clone().into_handler();
+                        move |e: web_sys::InputEvent| {
+                            match crate::helpers::event_target_value_result(&e) {
+                                Ok(value) => handler(value),
+                                Err(err) => silex_core::error::handle_error(err),
+                            }
                         }
-                    })
-                        as Box<dyn FnMut(_)>);
-
-                let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
-
-                if let Err(e) = el
-                    .add_event_listener_with_callback("input", js_value)
-                    .map_err(silex_core::error::SilexError::from)
-                {
-                    silex_core::error::handle_error(e);
-                    return;
-                }
-
-                let target = el.clone();
-                let js_fn = js_value.clone();
-
-                silex_core::reactivity::on_cleanup(move || {
-                    let _ = target.remove_event_listener_with_callback("input", &js_fn);
-                    drop(closure);
-                });
+                    }),
+                );
             },
         ))
     }
 
     fn bind_value<S>(self, signal: S) -> Self
     where
-        S: Into<silex_core::reactivity::RwSignal<String>>,
+        S: RxGet<Value = String> + RxWrite + Clone + 'static,
     {
-        use silex_core::traits::RxWrite;
-        let signal = signal.into();
+        let s = signal.clone();
         let this = self.on_input(move |value| {
-            signal.set(value);
+            s.set(value);
         });
 
         this.apply(PendingAttribute::new_listener(
             move |el: &web_sys::Element| {
                 let dom_element = el.clone();
+                let signal = signal.clone();
                 silex_core::reactivity::Effect::new(move |_| {
-                    use silex_core::traits::RxGet;
                     use wasm_bindgen::JsCast;
                     let value = signal.get();
                     if let Some(input) = dom_element.dyn_ref::<web_sys::HtmlInputElement>() {
@@ -263,31 +242,11 @@ pub trait GlobalEventAttributes: AttributeBuilder {
         let cb_template = callback.clone();
         self.apply(PendingAttribute::new_listener(
             move |el: &web_sys::Element| {
-                use wasm_bindgen::JsCast;
-                let mut cb = cb_template.clone();
-                let closure = wasm_bindgen::closure::Closure::wrap(Box::new(move |e: E| {
-                    cb(e);
-                })
-                    as Box<dyn FnMut(E)>);
-
-                let js_value = closure.as_ref().unchecked_ref::<js_sys::Function>();
-
-                if let Err(e) = el
-                    .add_event_listener_with_callback(&event_type_str, js_value)
-                    .map_err(silex_core::error::SilexError::from)
-                {
-                    silex_core::error::handle_error(e);
-                    return;
-                }
-
-                let target = el.clone();
-                let js_fn = js_value.clone();
-                let type_clone = event_type_str.clone();
-
-                silex_core::reactivity::on_cleanup(move || {
-                    let _ = target.remove_event_listener_with_callback(&type_clone, &js_fn);
-                    drop(closure);
-                });
+                crate::element::bind_event_impl(
+                    el,
+                    event_type_str.clone(),
+                    Box::new(cb_template.clone()),
+                );
             },
         ))
     }
@@ -299,32 +258,6 @@ impl<T: AttributeBuilder> GlobalEventAttributes for T {}
 // --- AttributeBuilder Implementations for Erasure Types ---
 
 impl AttributeBuilder for crate::view::AnyView {
-    fn build_attribute<V>(mut self, target: ApplyTarget, value: V) -> Self
-    where
-        V: IntoStorable,
-    {
-        use crate::view::ApplyAttributes;
-        self.apply_attributes(vec![PendingAttribute::build(
-            value.into_storable(),
-            OwnedApplyTarget::from(target),
-        )]);
-        self
-    }
-
-    fn build_event<E, F, M>(mut self, event: E, callback: F) -> Self
-    where
-        E: crate::event::EventDescriptor + 'static,
-        F: crate::event::EventHandler<E::EventType, M> + Clone + 'static,
-    {
-        use crate::view::ApplyAttributes;
-        self.apply_attributes(vec![PendingAttribute::new_listener(move |el| {
-            crate::element::bind_event(el, event, callback.clone());
-        })]);
-        self
-    }
-}
-
-impl AttributeBuilder for crate::view::SharedView {
     fn build_attribute<V>(mut self, target: ApplyTarget, value: V) -> Self
     where
         V: IntoStorable,

@@ -12,8 +12,8 @@ pub mod prelude {
     pub use crate::helpers::*;
     pub use crate::setup_global_error_handlers;
     pub use crate::view::{
-        ApplyAttributes, AutoReactiveView, Mount, MountExt, MountRef, MountRefExt,
-        ViewCons, ViewNil, any::*, reactive::*,
+        ApplyAttributes, AutoReactiveView, Prop, PropFixed, PropMissing, View, ViewCons, ViewNil,
+        any::*, logic::*, reactive::*,
     };
     pub use crate::{view_chain, view_match};
 }
@@ -46,7 +46,6 @@ extern "C" {
 /// [`console.error`](https://developer.mozilla.org/en-US/docs/Web/API/Console/error).
 ///
 /// On non-wasm targets, prints the panic to `stderr`.
-#[allow(dead_code)]
 #[cfg(debug_assertions)]
 fn hook(info: &panic::PanicHookInfo) {
     #[cfg(target_arch = "wasm32")]

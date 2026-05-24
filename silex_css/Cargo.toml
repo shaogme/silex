@@ -20,7 +20,7 @@ silex_core.workspace = true
 silex_dom.workspace = true
 silex_hash.workspace = true
 wasm-bindgen.workspace = true
-web-sys.workspace = true
+web-sys = { workspace = true, features = ["CssStyleSheet", "CssRuleList"] }
 js-sys.workspace = true
 wasm-bindgen-futures.workspace = true
 

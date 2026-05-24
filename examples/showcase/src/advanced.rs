@@ -15,7 +15,7 @@ pub struct UserSettings {
 }
 
 #[component]
-pub fn StoreDemo() -> impl Mount + MountRef {
+pub fn StoreDemo() -> impl View {
     // Access global store provided in main
     // Note: `use_context::<T>() -> Option<T>` and `expect_context::<T>() -> T` are also available.
     // Access global store using the generated helper
@@ -80,7 +80,7 @@ impl Default for ComplexState {
 }
 
 #[component]
-pub fn JsonStorageDemo() -> impl Mount + MountRef {
+pub fn JsonStorageDemo() -> impl View {
     let state = Persistent::builder("showcase-json-state")
         .local()
         .json::<ComplexState>()
@@ -125,7 +125,7 @@ pub fn JsonStorageDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn StorageDemo() -> impl Mount + MountRef {
+pub fn StorageDemo() -> impl View {
     let count = Persistent::builder("showcase-counter")
         .local()
         .parse::<i32>()
@@ -160,7 +160,7 @@ pub fn StorageDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn QueryDemo() -> impl Mount + MountRef {
+pub fn QueryDemo() -> impl View {
     let val = Persistent::builder("demo_val")
         .query()
         .string()
@@ -200,7 +200,7 @@ pub fn QueryDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn AuthGuard(children: SharedView) -> impl Mount + MountRef {
+pub fn AuthGuard(children: AnyView) -> impl View {
     let settings = use_user_settings();
     let children = children.clone();
 
@@ -212,7 +212,7 @@ pub fn AuthGuard(children: SharedView) -> impl Mount + MountRef {
                 h3("🔒 Restricted Access"),
                 p("This content is protected. Please go to 'Store Demo' and change your username to something other than 'Guest'."),
             ].style("padding: 20px; background: #fff0f0; border: 1px solid #ffcccc; color: #cc0000;")
-            .into_shared()
+            .into_any()
         }
     }
 }
@@ -244,7 +244,7 @@ async fn mock_fetch_user(id: i32) -> Result<UserProfile, String> {
 }
 
 #[component]
-pub fn ResourceDemo() -> impl Mount + MountRef {
+pub fn ResourceDemo() -> impl View {
     let (user_id, set_user_id) = Signal::pair(1);
 
     // Create Resource: triggers when user_id changes
@@ -285,7 +285,7 @@ pub fn ResourceDemo() -> impl Mount + MountRef {
                     // Optimistic Update Controls
                     div![
                         h4("Optimistic Updates (Local Cache)"),
-                        button("Rename to 'Modified' (Optimistic)")
+                        button("Rename to 'Modified'")
                             .on(event::click, move |_| {
                                 // Manually update the local resource data
                                 user_resource.update(|u| {
@@ -311,7 +311,7 @@ pub fn ResourceDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn MutationDemo() -> impl Mount + MountRef {
+pub fn MutationDemo() -> impl View {
     // Simulate a login mutation
     // Takes (username, password) and returns a Result<String, String> token
     let login_mutation = Mutation::new(|(user, pass): (String, String)| async move {
@@ -383,8 +383,8 @@ pub fn MutationDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn SuspenseDemo() -> impl Mount + MountRef {
-    use silex::components::{SuspenseBoundary, SuspenseMode};
+pub fn SuspenseDemo() -> impl View {
+    use silex::components::SuspenseMode;
 
     let (show_content, set_show_content) = Signal::pair(false);
     let (mode, set_mode) = Signal::pair(SuspenseMode::KeepAlive);
@@ -433,33 +433,32 @@ pub fn SuspenseDemo() -> impl Mount + MountRef {
             button("Reload Resource").on(event::click, set_trigger.updater(|n| *n += 1))
         ]
         .style("margin-bottom: 15px;"),
-        div![Show::new(
-            show_content,
-            Suspense::new()
-                .resource(move || Resource::new(trigger, heavy_work))
-                .children(move |resource| {
-                    SuspenseBoundary::new()
-                        .mode(mode.get())
-                        .fallback(div("Loading... (2s)").style("color: blue; font-weight: bold;"))
-                        .children(
-                            // Crucial: We do NOT read resource.get() here.
-                            div![
-                                div![
-                                    "Resource Data: ",
-                                    // Fine-grained reading: Only this text node updates
-                                    rx!(resource.get().unwrap_or_else(|| "Waiting...".to_string()))
-                                ],
-                                div("1. Type something below."),
-                                div("2. Click 'Reload Resource'."),
-                                div("3. KeepAlive: Text stays. Unmount: Text gone."),
-                                input()
-                                    .placeholder("Type here test persistence...")
-                                    .style("margin-top: 5px; padding: 5px; width: 250px;")
-                            ]
-                            .style("border: 1px solid green; padding: 10px; background: #e8f5e9;"),
-                        )
+        div![rx! {
+            if show_content.get() {
+                Suspense(move || {
+                    let resource = Resource::new(trigger, heavy_work);
+                    div![
+                        div![
+                            "Resource Data: ",
+                            // Fine-grained reading: Only this text node updates
+                            rx!(resource.get().unwrap_or_else(|| "Waiting...".to_string()))
+                        ],
+                        div("1. Type something below."),
+                        div("2. Click 'Reload Resource'."),
+                        div("3. KeepAlive: Text stays. Unmount: Text gone."),
+                        input()
+                            .placeholder("Type here test persistence...")
+                            .style("margin-top: 5px; padding: 5px; width: 250px;")
+                    ]
+                    .style("border: 1px solid green; padding: 10px; background: #e8f5e9;")
                 })
-        )]
+                .fallback(div("Loading... (2s)").style("color: blue; font-weight: bold;"))
+                .mode(mode.get())
+                .into_any()
+            } else {
+                ().into_any()
+            }
+        }]
         .style("min-height: 150px; border: 1px dashed #ccc; padding: 10px;")
     ]
     .style("padding: 20px; border: 1px solid #ccc; border-radius: 8px; margin-top: 20px;")
@@ -470,8 +469,8 @@ pub fn SuspenseDemo() -> impl Mount + MountRef {
 #[component]
 pub fn GenericMessage<'a, T: std::fmt::Display + Clone + 'static>(
     value: T,
-    title: &'a str,
-) -> impl Mount + MountRef {
+    #[chain] title: &'a str,
+) -> impl View {
     div![h4(title.to_string()), p(format!("Value: {}", value)),].style(
         sty()
             .padding(px(10))
@@ -482,14 +481,12 @@ pub fn GenericMessage<'a, T: std::fmt::Display + Clone + 'static>(
 }
 
 #[component]
-pub fn GenericsDemo() -> impl Mount + MountRef {
+pub fn GenericsDemo() -> impl View {
     div![
         h3("Generics & Lifetimes Demo"),
         p("This demonstrates how #[component] macro supports generics and lifetimes natively."),
-        GenericMessage().value(42).title("Integer Message"),
-        GenericMessage()
-            .value("Hello Silex!")
-            .title("String Message"),
+        GenericMessage(42).title("Integer Message"),
+        GenericMessage("Hello Silex!").title("String Message"),
     ]
     .style(
         sty()
@@ -527,7 +524,7 @@ impl std::fmt::Display for QuantumIdentity {
 }
 
 #[component]
-pub fn AdaptiveReadDemo() -> impl Mount + MountRef {
+pub fn AdaptiveReadDemo() -> impl View {
     let system_name = RwSignal::new("Nebula-1".to_string());
     let (stability, set_stability) = Signal::pair(0.85); // 0.0 to 1.0
 

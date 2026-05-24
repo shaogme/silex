@@ -31,7 +31,7 @@ macro_rules! reactive_compare_method {
                 $crate::logic::arithmetic::ops_impl::$fn_impl::<Self::Value>,
                 false,
             );
-            $crate::Rx::new_op_raw(op)
+            $crate::Rx::new_op(op)
         }
     };
 }

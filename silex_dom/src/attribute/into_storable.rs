@@ -48,7 +48,6 @@ macro_rules! impl_into_storable_primitive {
         $(
             impl IntoStorable for $t {
                 type Stored = $t;
-                #[inline]
                 fn into_storable(self) -> Self::Stored {
                     self
                 }
@@ -69,7 +68,6 @@ macro_rules! impl_into_storable_rx {
             <Self as silex_core::traits::IntoRx>::RxType: super::ApplyToDom + 'static,
         {
             type Stored = <Self as silex_core::traits::IntoRx>::RxType;
-            #[inline(always)]
             fn into_storable(self) -> Self::Stored {
                 use silex_core::traits::IntoRx;
                 self.into_rx()
@@ -84,7 +82,6 @@ impl_into_storable_rx!((T) => silex_core::reactivity::ReadSignal<T>);
 impl_into_storable_rx!((T) => silex_core::reactivity::RwSignal<T>);
 impl_into_storable_rx!((T) => silex_core::reactivity::Constant<T>);
 impl_into_storable_rx!((T) => silex_core::reactivity::Memo<T>);
-impl_into_storable_rx!((U, const N: usize) => silex_core::reactivity::OpPayload<U, N>);
 impl_into_storable_rx!((S, F) => silex_core::reactivity::DerivedPayload<S, F>);
 impl_into_storable_rx!((S, F, O) => silex_core::reactivity::SignalSlice<S, F, O>);
 

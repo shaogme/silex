@@ -19,7 +19,7 @@ impl Default for Settings {
 }
 
 #[component]
-pub fn PersistencePage() -> impl Mount + MountRef {
+pub fn PersistencePage() -> impl View {
     div![
         h2("Comprehensive Persistence Demo")
             .style(sty().color(AppTheme::PRIMARY).margin_bottom(px(10))),
@@ -43,7 +43,7 @@ pub fn PersistencePage() -> impl Mount + MountRef {
 }
 
 #[component]
-fn Card(title: &'static str, children: Children) -> impl Mount + MountRef {
+fn Card(children: AnyView, #[chain] title: &'static str) -> impl View {
     div![
         h3(title).style(
             sty()
@@ -66,7 +66,7 @@ fn Card(title: &'static str, children: Children) -> impl Mount + MountRef {
 }
 
 #[component]
-fn BackendGrid() -> impl Mount + MountRef {
+fn BackendGrid() -> impl View {
     let local = Persistent::builder("demo-local")
         .local()
         .string()
@@ -85,7 +85,7 @@ fn BackendGrid() -> impl Mount + MountRef {
         .default("Stored in URL Query".to_string())
         .build();
 
-    Card().title("1. Backends Comparison").children(view_chain!(
+    Card(view_chain!(
         p("Different storage areas serving different lifetimes and visibility needs."),
         div![
             div![
@@ -137,10 +137,11 @@ fn BackendGrid() -> impl Mount + MountRef {
             "display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;"
         )
     ))
+    .title("1. Backends Comparison")
 }
 
 #[component]
-fn ManualFlushDemo() -> impl Mount + MountRef {
+fn ManualFlushDemo() -> impl View {
     let draft = Persistent::builder("demo-draft")
         .local()
         .string()
@@ -148,7 +149,7 @@ fn ManualFlushDemo() -> impl Mount + MountRef {
         .default(String::new())
         .build();
 
-    Card().title("2. Manual Persistence (Draft Mode)").children(view_chain!(
+    Card(view_chain!(
         p("Sometimes you don't want every keystroke saved. Use Manual mode for 'Save' button behavior."),
         div![
             textarea("")
@@ -180,11 +181,11 @@ fn ManualFlushDemo() -> impl Mount + MountRef {
                 }
             ].style("margin-top: 15px; font-size: 0.9em;")
         ]
-    ))
+    )).title("2. Manual Persistence (Draft Mode)")
 }
 
 #[component]
-fn DebounceDemo() -> impl Mount + MountRef {
+fn DebounceDemo() -> impl View {
     let debounced = Persistent::builder("demo-debounced")
         .local()
         .string()
@@ -194,7 +195,7 @@ fn DebounceDemo() -> impl Mount + MountRef {
         .default(String::new())
         .build();
 
-    Card().title("3. Debounced Syncing").children(view_chain!(
+    Card(view_chain!(
         p("Optimizes performance by delaying the write operation until 1.5s after the last change."),
         div![
             input()
@@ -208,6 +209,7 @@ fn DebounceDemo() -> impl Mount + MountRef {
                     let state = debounced.state().get();
                     let (status, content) = match &state {
                         PersistenceState::Ready(raw) => ("Ready", raw),
+                        PersistenceState::Dirty(raw) => ("Dirty (Modified)", raw),
                         PersistenceState::Syncing(raw) => ("Syncing...", raw),
                         PersistenceState::WriteError(err) => ("Write Error", err),
                         PersistenceState::ReadError(err) => ("Read Error", err),
@@ -221,17 +223,18 @@ fn DebounceDemo() -> impl Mount + MountRef {
                     ]
                     .style(match state {
                          PersistenceState::Ready(_) => "color: #4caf50; border-left: 3px solid #4caf50; padding-left: 10px;",
+                         PersistenceState::Dirty(_) => "color: #ff9800; border-left: 3px solid #ff9800; padding-left: 10px;",
                          PersistenceState::Syncing(_) => "color: #2196f3; border-left: 3px solid #2196f3; padding-left: 10px;",
                          _ => "color: #f44336; border-left: 3px solid #f44336; padding-left: 10px;"
                     })
                 }
             ].style("margin-top: 15px; background: rgba(0,0,0,0.05); padding: 12px; border-radius: 6px; font-family: monospace;")
         ]
-    ))
+    )).title("3. Debounced Syncing")
 }
 
 #[component]
-fn ErrorHandlingDemo() -> impl Mount + MountRef {
+fn ErrorHandlingDemo() -> impl View {
     let settings = Persistent::builder("demo-complex-settings")
         .local()
         .json::<Settings>()
@@ -239,7 +242,7 @@ fn ErrorHandlingDemo() -> impl Mount + MountRef {
         .default(Settings::default())
         .build();
 
-    Card().title("4. Error Handling & JSON").children(view_chain!(
+    Card(view_chain!(
         p("Using JSON codec for complex types with built-in error recovery policies."),
         div![
             div![
@@ -281,5 +284,5 @@ fn ErrorHandlingDemo() -> impl Mount + MountRef {
                 .on(event::click, move |_| settings.reset())
                 .style(sty().margin_top(px(15)).background(ColorKeyword::Transparent).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).padding(padding::x_y(px(6), px(12))).border_radius(px(4)).cursor(CursorKeyword::Pointer).color(AppTheme::TEXT))
         ].style(sty().margin_top(px(25)).padding(px(15)).background(AppTheme::SURFACE_ALT).border_radius(px(8)).border(border(px(1), BorderStyleKeyword::Dashed, AppTheme::BORDER)))
-    ))
+    )).title("4. Error Handling & JSON")
 }

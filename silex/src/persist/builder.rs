@@ -485,6 +485,35 @@ where
             }
         }
 
+        if matches!(self.config.mode, PersistMode::Manual) {
+            Effect::new(move |_| {
+                let current = value.get();
+                let (raw, last_raw, is_default) = controller.with_untracked(|c| {
+                    (
+                        (c.encode)(&current),
+                        c.last_flushed_raw.clone(),
+                        current == (c.default)(),
+                    )
+                });
+
+                if let Ok(raw) = raw {
+                    let is_ready = match &last_raw {
+                        Some(last) => last.as_str() == raw.as_str(),
+                        None => is_default,
+                    };
+                    if is_ready {
+                        if last_raw.is_none() {
+                            state.set(PersistenceState::Ready(String::new()));
+                        } else {
+                            state.set(PersistenceState::Ready(raw));
+                        }
+                    } else {
+                        state.set(PersistenceState::Dirty(raw));
+                    }
+                }
+            });
+        }
+
         on_cleanup(move || {
             let _ = controller.try_update_untracked(|controller| {
                 controller.subscription.take();

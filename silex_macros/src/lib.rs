@@ -5,6 +5,9 @@ use syn::{DeriveInput, ItemFn, parse_macro_input};
 mod component;
 #[cfg(feature = "css")]
 mod css;
+#[cfg(feature = "component")]
+mod props_builder;
+mod render;
 #[cfg(feature = "route")]
 mod route;
 #[cfg(feature = "store")]
@@ -69,32 +72,34 @@ pub fn theme(input: TokenStream) -> TokenStream {
 ///     name: String,
 ///     #[prop(default)] age: u32,
 ///     #[prop(into)] message: String,
-/// ) -> impl Mount + MountRef {
+/// ) -> impl View {
 ///     div(format!("{} ({}): {}", name, age, message))
 /// }
 ///
 /// // 生成的代码等效于:
 /// // pub struct MyComponentProps<M> { ... }
-/// // pub fn MyComponent(props: MyComponentProps<...>) -> impl Mount + MountRef { ... }
+/// // pub fn MyComponent(props: MyComponentProps<...>) -> impl View { ... }
 /// ```
 ///
 /// # 属性
 ///
-/// - `#[prop(default)]`: 该属性将使用 `Default::default()` 作为默认值
+/// - `#[chain(default)]`: 该属性将使用 `Default::default()` 作为默认值，并启用链式调用
 /// - `#[prop(into)]`: 该属性将使用 `Into<T>` 转换输入
-/// - `#[prop(default, into)]`: 可以组合使用
+/// - `#[chain(default), prop(into)]`: 可以组合使用
 #[cfg(feature = "component")]
 #[proc_macro_attribute]
 pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
+    if !attr.is_empty() {
+        return syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "#[component] no longer accepts arguments; use field-level #[chain] instead",
+        )
+        .to_compile_error()
+        .into();
+    }
+
     let input_fn = parse_macro_input!(item as ItemFn);
-    let attr_stream = proc_macro2::TokenStream::from(attr);
-
-    let attrs = match component::parse_component_attrs(attr_stream) {
-        Ok(a) => a,
-        Err(e) => return e.to_compile_error().into(),
-    };
-
-    match component::generate_component(input_fn, attrs) {
+    match component::generate_component(input_fn) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),
     }
@@ -110,11 +115,32 @@ pub fn derive_store(input: TokenStream) -> TokenStream {
     }
 }
 
+/// `#[derive(PropsBuilder)]` 结构体派生宏
+///
+/// 为组件 Props 结构体生成链式构造器与 `View` 桥接层。
+#[cfg(feature = "component")]
+#[proc_macro_derive(PropsBuilder, attributes(prop, chain))]
+pub fn derive_props_builder(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    match props_builder::derive_props_builder_impl(input) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
 #[cfg(feature = "route")]
 #[proc_macro_derive(Route, attributes(route, nested))]
 pub fn derive_route(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     match route::derive_route_impl(input) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+#[proc_macro]
+pub fn render(input: TokenStream) -> TokenStream {
+    match render::render_impl(input.into()) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),
     }

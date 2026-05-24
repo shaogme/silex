@@ -36,7 +36,7 @@ Silex 不仅仅是一个视图库，它提供了构建现代 Web 应用所需的
 
 ```toml
 [dependencies]
-silex = "0.1.0-beta.8" # 请使用最新版本
+silex = "0.1.0-beta.9" # 请使用最新版本
 ```
 
 ### 2. 编写你的第一个应用
@@ -45,7 +45,7 @@ silex = "0.1.0-beta.8" # 请使用最新版本
 use silex::prelude::*;
 
 #[component]
-fn Counter() -> impl Mount + MountRef {
+fn Counter() -> impl View {
     // 创建响应式信号
     let (count, set_count) = Signal::pair(0);
     
@@ -66,10 +66,8 @@ fn Counter() -> impl Mount + MountRef {
         ],
 
         // 控制流组件
-        Show::new(
-            move || count.get() > 5,
-            || p("Count is greater than 5!").style("color: red;")
-        ),
+        Show(move || count.get() > 5)
+            .children(p("Count is greater than 5!").style("color: red;")),
         
         p(move || format!("Double: {}", double_count.get()))
     ]
@@ -119,8 +117,8 @@ enum AppRoute {
 }
 
 #[component]
-fn App() -> impl Mount + MountRef {
-    Router::new().match_route::<AppRoute>()
+fn App() -> impl View {
+    Router().match_route::<AppRoute>()
 }
 ```
 

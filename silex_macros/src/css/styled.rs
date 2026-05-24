@@ -26,7 +26,14 @@ pub struct StyledComponent {
 
 impl Parse for StyledComponent {
     fn parse(input: ParseStream) -> Result<Self> {
-        let attrs = input.call(Attribute::parse_outer)?;
+        let mut attrs = input.call(Attribute::parse_outer)?;
+        attrs.retain(|attr| {
+            if attr.path().is_ident("standalone") {
+                return false;
+            }
+            true
+        });
+
         let vis: Visibility = input.parse()?;
         let is_unsafe = input.peek(Token![unsafe]);
         if is_unsafe {
@@ -242,7 +249,18 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     for v in &parsed.variants {
         if !existing_props.contains(&v.prop_name) {
             let p = &v.prop_name;
-            all_fn_args.push(syn::parse_quote! { #[prop(into, default)] #p: ::silex::core::reactivity::Signal<::std::string::String> });
+            all_fn_args.push(syn::parse_quote! { #[prop(into)] #[chain(default)] #p: ::silex::core::reactivity::Signal<::std::string::String> });
+        }
+    }
+
+    for (idx, arg) in all_fn_args.iter_mut().enumerate() {
+        if idx == 0 {
+            continue;
+        }
+        if let syn::FnArg::Typed(pt) = arg
+            && !pt.attrs.iter().any(|a| a.path().is_ident("chain"))
+        {
+            pt.attrs.push(syn::parse_quote!(#[chain(default)]));
         }
     }
 
@@ -263,18 +281,13 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         get_tag_return_type(&tag_str, tag.span(), parsed.generics.where_clause.as_ref());
     let extra_impls = get_extra_tag_impls(&tag_str, name, &parsed.generics);
 
-    let has_clone = parsed.attrs.iter().any(|a| a.path().is_ident("clone"));
     let filtered_attrs: Vec<_> = parsed
         .attrs
         .iter()
-        .filter(|a| !a.path().is_ident("theme") && !a.path().is_ident("clone"))
+        .filter(|a| !a.path().is_ident("theme"))
         .collect();
 
-    let component_attr = if has_clone {
-        quote! { #[::silex::macros::component(clone)] }
-    } else {
-        quote! { #[::silex::macros::component] }
-    };
+    let component_attr = quote! { #[::silex::macros::component] };
     let vis = &parsed.vis;
     let (impl_generics, _, _) = parsed.generics.split_for_impl();
     let static_css = &compile_result.static_css;
@@ -306,11 +319,11 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             ::silex::html::#tag(#children_binding)
                 .class(#class_name)
                 #style_prop_binding
-                .apply(::silex::dom::attribute::AttrOp::CombinedStyles {
+                .apply(::silex::dom::attribute::AttrOp::CombinedStyles(::silex::dom::attribute::CombinedStyles {
                     statics: ::std::vec![],
                     properties: ::std::vec![ #(#style_bindings),* ],
                     sheets: ::std::vec![],
-                })
+                }))
                 #(#variant_class_bindings)*
                 #(#dynamic_rule_classes)*
         }
@@ -425,9 +438,9 @@ fn get_tag_return_type(
             }
         };
         let ident = Ident::new(&name, span);
-        quote! { ::silex::dom::element::TypedElement<::silex::dom::element::tags::#ident> }
+        quote! { ::silex::dom::element::TypedElement<::silex::html::#ident> }
     } else {
-        quote! { impl ::silex::dom::attribute::AttributeBuilder + ::silex::dom::view::Mount + ::silex::dom::view::MountRef + ::silex::dom::view::ApplyAttributes #where_clause }
+        quote! { impl ::silex::dom::attribute::AttributeBuilder + ::silex::dom::view::View + ::silex::dom::view::ApplyAttributes + 'static #where_clause }
     }
 }
 
@@ -502,18 +515,9 @@ impl Parse for GlobalStyle {
 pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     let parsed: GlobalStyle = syn::parse2(input)?;
 
-    let has_clone = parsed.attrs.iter().any(|a| a.path().is_ident("clone"));
-    let filtered_attrs: Vec<_> = parsed
-        .attrs
-        .iter()
-        .filter(|a| !a.path().is_ident("clone"))
-        .collect();
+    let filtered_attrs: Vec<_> = parsed.attrs.iter().collect();
 
-    let component_attr = if has_clone {
-        quote! { #[::silex::macros::component(clone)] }
-    } else {
-        quote! { #[::silex::macros::component] }
-    };
+    let component_attr = quote! { #[::silex::macros::component] };
 
     let c_name = parsed
         .name
@@ -615,11 +619,11 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     Ok(quote! {
         #(#filtered_attrs)*
         #component_attr
-        pub fn #c_name() -> impl ::silex::dom::view::Mount + ::silex::dom::view::MountRef + ::silex::dom::view::ApplyAttributes {
+        pub fn #c_name() -> impl ::silex::dom::view::View + ::silex::dom::view::ApplyAttributes + 'static {
             #(#inits)*
             #(#logics)*
-            use ::silex::dom::view::MountExt;
-            ::silex::dom::view::MountExt::into_any(())
+            use ::silex::dom::view::View;
+            ::silex::dom::view::View::into_any(())
         }
     })
 }

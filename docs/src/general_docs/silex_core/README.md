@@ -138,11 +138,9 @@ let user_data = Resource::new(user_id, |id| async move {
     api::fetch_user(id).await
 });
 
-Show::new(
-    move || user_data.loading(),
-    div("Loading..."),
-    div(format!("User: {:?}", user_data.get()))
-)
+Show(move || user_data.loading())
+    .children(div("Loading..."))
+    .fallback(div(format!("User: {:?}", user_data.get())))
 ```
 
 ### `Mutation`：触发型异步

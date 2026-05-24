@@ -3,13 +3,7 @@ use silex::prelude::*;
 use std::time::Duration;
 
 #[component]
-pub fn Greeting(
-    // Explicitly `into` is NOT needed for common types like String, PathBuf, Children, AnyView, and Callback.
-    // The macro enables it by default, allowing you to pass string literals directly (e.g., .name("...")) without .into().
-    // `default = "..."` specifies a fallback value if the prop is omitted.
-    #[prop(default = "World")] name: Signal<String>,
-    #[prop(default)] punctuation: String,
-) -> impl Mount + MountRef {
+pub fn Greeting(name: Signal<String>, #[chain(default)] punctuation: String) -> impl View {
     let full_punctuation = if punctuation.is_empty() {
         "!".to_string()
     } else {
@@ -33,7 +27,7 @@ pub fn Greeting(
 }
 
 #[component]
-pub fn Counter() -> impl Mount + MountRef {
+pub fn Counter() -> impl View {
     let (count, set_count) = Signal::pair(0);
     let double_count = count * 2; // Operator overloading creates a Memo automatically
 
@@ -102,7 +96,7 @@ pub fn Counter() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn NodeRefDemo() -> impl Mount + MountRef {
+pub fn NodeRefDemo() -> impl View {
     use silex::reexports::web_sys::HtmlInputElement;
     let input_ref = NodeRef::<HtmlInputElement>::new();
 
@@ -127,9 +121,9 @@ pub fn NodeRefDemo() -> impl Mount + MountRef {
     )
 }
 #[component]
-pub fn SvgIconDemo() -> impl Mount + MountRef {
+pub fn SvgIconDemo() -> impl View {
     #[component]
-    fn ShieldCheck() -> Element {
+    fn ShieldCheck() -> impl View + AttributeBuilder {
         svg(path()
             .attr("stroke-linecap", "round")
             .attr("stroke-linejoin", "round")
@@ -170,7 +164,7 @@ pub fn SvgIconDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn EventDemo() -> impl Mount + MountRef {
+pub fn EventDemo() -> impl View {
     let (name, set_name) = Signal::pair("Silex".to_string());
     let (count, set_count) = Signal::pair(0);
 
@@ -214,12 +208,7 @@ pub fn EventDemo() -> impl Mount + MountRef {
         div![].style("height: 1px; background: #ccc; margin: 15px 0;"),
         p("2. Non-Copy types: Clone manually inside the closure."),
         button("Consume Payload").on(event::click, on_click_inner),
-        ul(For::new(
-            logs,
-            |l| l.clone(),
-            |l| li(l).style("font-size: 0.8em;")
-        ))
-        .style(
+        ul(For(logs, |l| l.clone()).children(|l, _idx| li(l).style("font-size: 0.8em;"))).style(
             sty()
                 .margin_top(px(10))
                 .background(AppTheme::BORDER)
@@ -237,7 +226,7 @@ pub fn EventDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn BasicsPage() -> impl Mount + MountRef {
+pub fn BasicsPage() -> impl View {
     let name_signal = RwSignal::new("Developer".to_string());
 
     div![
@@ -258,7 +247,7 @@ pub fn BasicsPage() -> impl Mount + MountRef {
                 .border_radius(px(4))
                 .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
         ),
-        Greeting().name(name_signal),
+        Greeting(name_signal),
         Counter(),
         EventDemo(),
         NodeRefDemo(),

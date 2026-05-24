@@ -8,7 +8,7 @@ use std::panic::Location;
 
 /// 非泛型的 track 逻辑实现 (Dispatcher)。
 /// 剥离了泛型分发，使所有类型的 Rx 共享相同的机器码。
-#[inline]
+#[inline(always)]
 pub fn track(id: NodeId, kind: RxNodeKind) {
     match kind {
         RxNodeKind::Signal | RxNodeKind::Stored | RxNodeKind::Closure => {
@@ -25,7 +25,7 @@ pub fn track(id: NodeId, kind: RxNodeKind) {
 }
 
 /// 非泛型的销毁状态检查 (Dispatcher)。
-#[inline]
+#[inline(always)]
 pub fn is_disposed(id: NodeId, kind: RxNodeKind) -> bool {
     match kind {
         RxNodeKind::Signal => !is_signal_valid(id),

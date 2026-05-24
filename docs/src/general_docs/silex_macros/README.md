@@ -17,7 +17,7 @@ fn Button(
     #[prop(default = 1.0)] opacity: f64,
     // 自动调用 .into()，接受 &str 等
     #[prop(into)] on_click: Option<Callback<()>>,
-) -> impl Mount + MountRef {
+) -> impl View {
     button(())
         .style(format!("opacity: {}", opacity))
         .text(label)
@@ -50,7 +50,7 @@ Button()
 ```
 
 **多根节点 (Fragments) 支持：**
-如果组件返回多个根节点（例如返回元组或 `Fragment`），属性会采用**首个匹配策略**：属性会被转发给第一个能消费属性的子节点（通常是第一个 DOM 元素），后续节点不受影响。
+如果组件返回多个根节点，属性会采用**首个匹配策略**：属性会被转发给第一个能消费属性的子节点（通常是第一个 DOM 元素），后续节点不受影响。
 
 ### 泛型与生命周期支持
 
@@ -61,7 +61,7 @@ Button()
 pub fn GenericMessage<'a, T: std::fmt::Display + Clone + 'static>(
     value: T,
     title: &'a str,
-) -> impl Mount + MountRef {
+) -> impl View {
     div![
         h4(title.to_string()),
         p(format!("Value: {}", value)),
@@ -229,7 +229,7 @@ enum AppRoute {
 
 ```rust
 #[component]
-pub fn AuthGuard(children: Children) -> impl Mount + MountRef {
+pub fn AuthGuard(children: Children) -> impl View {
     // 假设我们有一个全局用户状态
     let user_name = use_context::<ReadSignal<String>>()
         .unwrap_or(Signal::pair("Guest".to_string()).0);

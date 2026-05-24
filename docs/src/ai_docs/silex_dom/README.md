@@ -32,19 +32,17 @@ pub trait View {
     fn mount(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>);
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>);
     fn into_any(self) -> AnyView;
-    fn into_shared(self) -> SharedView;
 }
 ```
 
 ### 2.2 类型擦除 (Type Erasure) 优化
-为了支持异构视图（如 `match` 不同分支返回不同类型）和组件 `Children`，项目提供了两种优化的枚举类型：
+为了支持异构视图（如 `match` 不同分支返回不同类型）和组件 `Children`，项目提供了一个优化的枚举类型：
 
 | 类型 | 特点 | 适用场景 |
 | :--- | :--- | :--- |
-| **`AnyView`** | 单次所有权转移。内部使用 `Unique` 变体包装 `Box<dyn RenderOnce>`。 | 普通视图擦除、顶级 `mount`。 |
-| **`SharedView`** | 必须实现 `Clone`。利用 `SharedBoxed` 包装 `Box<dyn RenderShared>`。 | 组件的 `Children` 属性，需要多次挂载的场景。 |
+| **`AnyView`** | 支持 `Clone`，克隆外壳共享底层视图句柄。内部对常见类型仍然使用枚举变体，避免额外分配。 | 普通视图擦除、可重复挂载的组件边界、`Children` 属性。 |
 
-**优化点**：对于 `String`, `Element`, `List` 等常见类型，这两者均为枚举变体，**零堆分配**。
+**优化点**：对于 `String`, `Element`, `List` 等常见类型，仍然保留为枚举变体，**零堆分配**。
 
 ### 2.3 响应式视图内核 (`ReactiveView`)
 当视图为 `Rx<V>` 时，系统使用 **双锚点策略 (Double-Anchor Strategy)**：

@@ -1,48 +1,95 @@
+use std::borrow::Cow;
+
 use crate::css::AppTheme;
 use silex::prelude::*;
 
 #[component]
-pub fn ListDemo() -> impl Mount + MountRef {
-    let (list, set_list) = Signal::pair(vec!["Apple", "Banana", "Cherry"]);
+pub fn ListDemo() -> impl View {
+    let (list, set_list) = Signal::pair(Ok(vec![
+        Cow::Borrowed("Apple"),
+        Cow::Borrowed("Banana"),
+        Cow::Borrowed("Cherry"),
+    ]));
+    let (error_msg, set_error_msg) = Signal::pair(None::<String>);
 
     div![
-        h3("List Rendering with Signal Ergonomics"),
-        p("Demonstrates passing a Signal directly to For::new without closure wrapper."),
-        ul(For::new(list, |item| *item, li)),
-        button("Add Item").on(event::click, set_list.updater(|l| l.push("New Item"))),
+        h3("List Rendering with Error Handling"),
+        p("Demonstrates explicit error handling in For component to avoid crashes."),
+        // Error display
+        Show(error_msg.map(|e| e.is_some())).children(move || {
+            div(error_msg.get().unwrap_or_default()).style(
+                sty()
+                    .color(hex("#d32f2f"))
+                    .background(hex("#ffebee"))
+                    .padding(px(10))
+                    .border_radius(px(4))
+                    .margin_bottom(px(10))
+                    .border(format!("1px solid {}", hex("#ef9a9a"))),
+            )
+        }),
+        ul(For(list, |item| item.clone())
+            .children(|item, _idx| li(item))
+            .error(move |err| {
+                set_error_msg.set(Some(format!("捕获到错误: {}", err)));
+            })),
+        div![
+            button("Add Item").on(event::click, move |_| {
+                set_error_msg.set(None);
+                set_list.update(|l| {
+                    if let Ok(v) = l {
+                        v.push(Cow::Owned(format!("New Item {}", v.len())));
+                    } else {
+                        *l = Ok(vec!["Apple".into(), "Banana".into(), "Cherry".into()]);
+                    }
+                });
+            }),
+            button("Duplicate Key").on(event::click, move |_| {
+                set_error_msg.set(None);
+                set_list.update(|l| {
+                    if let Ok(v) = l {
+                        v.push("Duplicate".into());
+                        v.push("Duplicate".into());
+                    }
+                });
+            }),
+            button("Simulate Error").on(event::click, move |_| {
+                set_list.set(Err(SilexError::Javascript("模拟数据加载失败".to_string())));
+            }),
+        ]
+        .style("display: flex; gap: 10px; margin-top: 10px;"),
     ]
 }
 
 #[component]
-pub fn ShowDemo() -> impl Mount + MountRef {
+pub fn ShowDemo() -> impl View {
     let (visible, set_visible) = Signal::pair(true);
 
     div![
         h3("Conditional Rendering with Show"),
-        p("Demonstrates passing a Signal directly to Show::new as condition."),
+        p("Demonstrates passing a Signal directly to Show as condition."),
         button("Toggle Visibility").on(event::click, set_visible.updater(|v| *v = !*v)),
-        Show::new(
-            visible,
-            div("✅ Content is visible!").style(
-                sty()
-                    .color(hex("green"))
-                    .padding(px(10))
-                    .background(hex("#e8f5e9"))
+        Show(visible)
+            .children(
+                div("✅ Content is visible!").style(
+                    sty()
+                        .color(hex("green"))
+                        .padding(px(10))
+                        .background(hex("#e8f5e9"))
+                )
             )
-        )
-        .fallback(
-            div("❌ Content is hidden").style(
-                sty()
-                    .color(hex("red"))
-                    .padding(px(10))
-                    .background(hex("#ffebee"))
-            )
-        ),
+            .fallback(
+                div("❌ Content is hidden").style(
+                    sty()
+                        .color(hex("red"))
+                        .padding(px(10))
+                        .background(hex("#ffebee"))
+                )
+            ),
     ]
 }
 
 #[component]
-pub fn DynamicDemo() -> impl Mount + MountRef {
+pub fn DynamicDemo() -> impl View {
     let (mode, set_mode) = Signal::pair("A");
 
     div![
@@ -54,9 +101,9 @@ pub fn DynamicDemo() -> impl Mount + MountRef {
             button("Show C").on(event::click, set_mode.setter("C")),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 10px;"),
-        // You can also use Dynamic::new(mode.map(|m| { view_match!(m, { ... }) })).
-        Dynamic::bind(mode, |m| {
-            view_match!(m, {
+        // You can also use Dynamic(mode.map(|m| { view_match!(m, { ... }) })).
+        Dynamic(mode.map(|m| {
+            view_match!(*m, {
                 "A" => div("🅰️ Component A")
                     .style(sty().padding(px(20)).background(hex("#e3f2fd"))),
                 "B" => div("🅱️ Component B")
@@ -64,12 +111,12 @@ pub fn DynamicDemo() -> impl Mount + MountRef {
                 _ => div("©️ Component C")
                     .style(sty().padding(px(20)).background(hex("#f3e5f5"))),
             })
-        }),
+        })),
     ]
 }
 
 #[component]
-pub fn SwitchDemo() -> impl Mount + MountRef {
+pub fn SwitchDemo() -> impl View {
     let (tab, set_tab) = Signal::pair(0);
 
     div![
@@ -80,7 +127,8 @@ pub fn SwitchDemo() -> impl Mount + MountRef {
             button("Tab 3").on(event::click, set_tab.setter(2)),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 10px;"),
-        Switch::new(tab, div("Fallback (Should not happen)"))
+        Switch(tab)
+            .fallback(div("Fallback (Should not happen)"))
             .case(
                 0,
                 div("Content for Tab 1")
@@ -103,19 +151,13 @@ pub fn SwitchDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn IndexDemo() -> impl Mount + MountRef {
+pub fn IndexDemo() -> impl View {
     let (items, set_items) = Signal::pair(vec!["Item A", "Item B", "Item C"]);
 
     div![
         h3("Index For Loop Demo"),
         p("Optimized for list updates by index."),
-        Index::new(items, |item, idx| {
-            div![
-                strong(format!("{}: ", idx)),
-                // item is a ReadSignal<String> here
-                item
-            ]
-        }),
+        Index(items).children(|item, idx| { div![strong(format!("{}: ", idx.get())), item] }),
         button("Append Item")
             .on(event::click, move |_| {
                 set_items.update(|list| list.push("New Item"));
@@ -125,50 +167,47 @@ pub fn IndexDemo() -> impl Mount + MountRef {
 }
 
 #[component]
-pub fn PortalDemo() -> impl Mount + MountRef {
+pub fn PortalDemo() -> impl View {
     let (show_modal, set_show_modal) = Signal::pair(false);
 
     div![
         h3("Portal Demo"),
         button("Toggle Modal").on(event::click, set_show_modal.updater(|v| *v = !*v)),
-        Show::new(
-            show_modal,
-            Portal::new(
+        Show(show_modal).children(Portal(
+            div![
                 div![
-                    div![
-                        h4("I am a Modal!"),
-                        p("I am rendered via Portal directly into the body, but I share context!"),
-                        button("Close").on(event::click, set_show_modal.setter(false))
-                    ]
-                    .style(
-                        sty()
-                            .background(AppTheme::SURFACE)
-                            .padding(px(20))
-                            .border_radius(px(8))
-                            .box_shadow("0 4px 12px rgba(0,0,0,0.2)")
-                            .min_width(px(300))
-                    )
+                    h4("I am a Modal!"),
+                    p("I am rendered via Portal directly into the body, but I share context!"),
+                    button("Close").on(event::click, set_show_modal.setter(false))
                 ]
                 .style(
                     sty()
-                        .position(PositionKeyword::Fixed)
-                        .top(px(0))
-                        .left(px(0))
-                        .width(vw(100))
-                        .height(vh(100))
-                        .background(rgba(0, 0, 0, 0.5))
-                        .display(DisplayKeyword::Flex)
-                        .justify_content(JustifyContentKeyword::Center)
-                        .align_items(AlignItemsKeyword::Center)
-                        .z_index(9999)
+                        .background(AppTheme::SURFACE)
+                        .padding(px(20))
+                        .border_radius(px(8))
+                        .box_shadow("0 4px 12px rgba(0,0,0,0.2)")
+                        .min_width(px(300))
                 )
+            ]
+            .style(
+                sty()
+                    .position(PositionKeyword::Fixed)
+                    .top(px(0))
+                    .left(px(0))
+                    .width(vw(100))
+                    .height(vh(100))
+                    .background(rgba(0, 0, 0, 0.5))
+                    .display(DisplayKeyword::Flex)
+                    .justify_content(JustifyContentKeyword::Center)
+                    .align_items(AlignItemsKeyword::Center)
+                    .z_index(9999)
             )
-        )
+        ))
     ]
 }
 
 #[component]
-pub fn FlowPage() -> impl Mount + MountRef {
+pub fn FlowPage() -> impl View {
     div![
         h2("Control Flow"),
         ListDemo(),

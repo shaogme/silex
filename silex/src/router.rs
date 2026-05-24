@@ -5,10 +5,12 @@ pub use context::*;
 pub use link::*;
 
 use crate::router::context::{RouterContextProps, provide_router_context};
-use silex_core::reactivity::{Effect, Signal, on_cleanup};
+use silex_core::reactivity::{Signal, on_cleanup};
 use silex_core::traits::{RxGet, RxWrite};
-use silex_dom::view::{AnyView, ApplyAttributes, Mount, MountExt, MountRef};
-use silex_html::div;
+use silex_dom::attribute::PendingAttribute;
+use silex_dom::view::{AnyView, ApplyAttributes, View};
+use silex_macros::component;
+use std::marker::PhantomData;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
@@ -57,125 +59,82 @@ impl<R: Routable> ToRoute for R {
     }
 }
 
-/// 路由器组件
-#[derive(Clone)]
-pub struct Router {
-    base_path: String,
-    child: Option<Rc<dyn Fn() -> AnyView>>,
-}
-
-impl Default for Router {
-    fn default() -> Self {
-        Self::new()
+/// 路由器组件入口
+///
+/// 这是标准组件入口，推荐用法：
+///
+/// `Router().base("/app").match_route::<AppRoute>()`
+#[component]
+pub fn Router(
+    #[prop(into)]
+    #[chain(default = "/")]
+    base: String,
+    #[prop(render)]
+    #[chain(default = AnyView::Empty)]
+    children: AnyView,
+) -> impl View {
+    RouterView {
+        base_path: normalize_base_path(&base),
+        children,
     }
 }
 
-impl Router {
-    /// 创建一个新的 Router
-    pub fn new() -> Self {
-        Self {
-            base_path: "/".to_string(),
-            child: None,
-        }
-    }
-
-    /// 设置基础路径 (e.g. "/app")
-    pub fn base(mut self, path: &str) -> Self {
-        let mut p = path.to_string();
-        if !p.starts_with('/') {
-            p = format!("/{}", p);
-        }
-        if p.len() > 1 && p.ends_with('/') {
-            p.pop();
-        }
-        self.base_path = p;
-        self
-    }
-
-    /// 设置需要渲染的子视图
-    pub fn render<F, V>(mut self, view_fn: F) -> Self
-    where
-        V: MountExt + 'static,
-        F: Fn() -> V + 'static,
-    {
-        self.child = Some(Rc::new(move || view_fn().into_any()));
-        self
-    }
-
-    /// 使用实现了 Routable 的 Enum 进行强类型路由匹配
-    pub fn match_enum<R, F, V>(mut self, render: F) -> Self
-    where
-        R: Routable,
-        F: Fn(R) -> V + 'static,
-        V: MountExt + 'static,
-    {
-        // 创建一个闭包，它在渲染时会获取当前路径并进行匹配
-        self.child = Some(Rc::new(move || {
-            // 获取当前路径 (这是一个 Signal，所以路径变化时会触发重新渲染)
-            let path_signal = crate::router::use_location_path();
-            let path = path_signal.get();
-
-            if let Some(matched) = R::match_path(&path) {
-                render(matched).into_any()
-            } else {
-                // 如果没有匹配，渲染空。
-                // 用户可以在 Enum 中定义 Fallback 变体 (e.g. #[route("/*")] NotFound) 来处理 404
-                AnyView::new(())
-            }
-        }));
-        self
-    }
-
-    /// 自动匹配并渲染实现了 RouteView 的路由枚举
+impl RouterComponent {
+    /// 使用实现了 `RouteView` 的枚举自动匹配并渲染子视图。
     pub fn match_route<R>(mut self) -> Self
     where
-        R: RouteView,
+        R: RouteView + 'static,
     {
-        self.child = Some(Rc::new(move || {
-            let path_signal = crate::router::use_location_path();
-            let path = path_signal.get();
+        self.children = RouterRouteView::<R>::new().into_any();
+        self
+    }
 
-            if let Some(matched) = R::match_path(&path) {
-                matched.render()
-            } else {
-                AnyView::new(())
-            }
-        }));
+    /// 使用实现了 `Routable` 的枚举自定义渲染。
+    pub fn match_enum<R, F, V>(mut self, render: F) -> Self
+    where
+        R: Routable + 'static,
+        F: Fn(R) -> V + Clone + 'static,
+        V: View + 'static,
+    {
+        self.children = RouterMatchView::<R, F, V>::new(render).into_any();
         self
     }
 }
 
-/// 路由视图特征
-///
-/// 扩展 Routable，定义了路由如何渲染为视图。
-pub trait RouteView: Routable {
-    fn render(&self) -> AnyView;
+fn normalize_base_path(path: &str) -> String {
+    let mut p = path.to_string();
+    if !p.starts_with('/') {
+        p = format!("/{}", p);
+    }
+    if p.len() > 1 && p.ends_with('/') {
+        p.pop();
+    }
+    p
 }
 
-impl ApplyAttributes for Router {}
+#[derive(Clone)]
+struct RouterView {
+    base_path: String,
+    children: AnyView,
+}
 
-impl Mount for Router {
-    fn mount(self, parent: &web_sys::Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {
+impl ApplyAttributes for RouterView {}
+
+impl View for RouterView {
+    fn mount(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
+        self.clone().mount_owned(parent, attrs);
+    }
+
+    fn mount_owned(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
         self.mount_internal(parent, attrs);
     }
 }
 
-impl MountRef for Router {
-    fn mount_ref(
-        &self,
-        parent: &web_sys::Node,
-        attrs: Vec<silex_dom::attribute::PendingAttribute>,
-    ) {
-        self.clone().mount_internal(parent, attrs);
-    }
-}
-
-impl Router {
-    fn mount_internal(
-        self,
-        parent: &web_sys::Node,
-        attrs: Vec<silex_dom::attribute::PendingAttribute>,
-    ) {
+impl RouterView {
+    fn mount_internal(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
         // 1. 获取 window 对象
         let window = web_sys::window().expect("no global `window` exists");
         let location = window.location();
@@ -245,12 +204,7 @@ impl Router {
             .add_event_listener_with_callback("popstate", on_popstate.as_ref().unchecked_ref())
             .unwrap();
 
-        // 5. 挂载容器
-        let container = div(());
-        let container_node = container.dom_element.clone();
-        container.mount(parent, attrs);
-
-        // 6. 清理
+        // 5. 清理
         on_cleanup(move || {
             let w = web_sys::window().unwrap();
             let _ = w.remove_event_listener_with_callback(
@@ -259,20 +213,130 @@ impl Router {
             );
         });
 
-        // 7. 渲染 Child
-        if let Some(child_factory) = self.child {
-            let parent = container_node.clone();
-            let factory = child_factory.clone();
+        // 6. 渲染子视图
+        self.children.mount_owned(parent, attrs);
+    }
+}
 
-            Effect::new(move |_| {
-                // 清空容器，准备渲染新的视图
-                parent.set_text_content(Some(""));
+#[derive(Clone)]
+struct RouterRouteView<R> {
+    _phantom: PhantomData<R>,
+}
 
-                // 执行工厂函数获取 View
-                // 如果 factory 内部访问了 Signal (如 path)，这个 Effect 会自动建立依赖并在变化时重新运行
-                let view = factory();
-                view.mount(&parent, Vec::new());
-            });
+impl<R> RouterRouteView<R> {
+    fn new() -> Self {
+        Self {
+            _phantom: PhantomData,
         }
     }
+}
+
+impl<R> ApplyAttributes for RouterRouteView<R> {}
+
+impl<R> View for RouterRouteView<R>
+where
+    R: RouteView + 'static,
+{
+    fn mount(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
+        let path_signal = crate::router::use_location_path();
+        silex_dom::view::mount_branch_cached(
+            parent,
+            attrs,
+            move || path_signal.get(),
+            move |path| {
+                if let Some(matched) = R::match_path(&path) {
+                    matched.render()
+                } else {
+                    AnyView::Empty
+                }
+            },
+        );
+    }
+
+    fn mount_owned(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        let path_signal = crate::router::use_location_path();
+        silex_dom::view::mount_branch_cached(
+            parent,
+            attrs,
+            move || path_signal.get(),
+            move |path| {
+                if let Some(matched) = R::match_path(&path) {
+                    matched.render()
+                } else {
+                    AnyView::Empty
+                }
+            },
+        );
+    }
+}
+
+#[derive(Clone)]
+struct RouterMatchView<R, F, V> {
+    render: Rc<F>,
+    _phantom: PhantomData<(R, V)>,
+}
+
+impl<R, F, V> RouterMatchView<R, F, V> {
+    fn new(render: F) -> Self {
+        Self {
+            render: Rc::new(render),
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<R, F, V> ApplyAttributes for RouterMatchView<R, F, V> {}
+
+impl<R, F, V> View for RouterMatchView<R, F, V>
+where
+    R: Routable + 'static,
+    F: Fn(R) -> V + Clone + 'static,
+    V: View + 'static,
+{
+    fn mount(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
+        let path_signal = crate::router::use_location_path();
+        let render = self.render.clone();
+        silex_dom::view::mount_branch_cached(
+            parent,
+            attrs,
+            move || path_signal.get(),
+            move |path| {
+                if let Some(matched) = R::match_path(&path) {
+                    render(matched).into_any()
+                } else {
+                    AnyView::Empty
+                }
+            },
+        );
+    }
+
+    fn mount_owned(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        let path_signal = crate::router::use_location_path();
+        let render = self.render;
+        silex_dom::view::mount_branch_cached(
+            parent,
+            attrs,
+            move || path_signal.get(),
+            move |path| {
+                if let Some(matched) = R::match_path(&path) {
+                    render(matched).into_any()
+                } else {
+                    AnyView::Empty
+                }
+            },
+        );
+    }
+}
+
+/// 路由视图特征
+///
+/// 扩展 Routable，定义了路由如何渲染为视图。
+pub trait RouteView: Routable {
+    fn render(&self) -> AnyView;
 }

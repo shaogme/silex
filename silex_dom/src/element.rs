@@ -13,7 +13,7 @@ pub use tags::*;
 
 /// Identity function to wrap text content as a View.
 /// This matches the API expected by the showcase example and provides a explicit way to denote text nodes.
-pub fn text<V: crate::view::MountRef>(content: V) -> V {
+pub fn text<V: crate::view::View>(content: V) -> V {
     content
 }
 
@@ -23,14 +23,14 @@ pub struct Element {
     pub dom_element: WebElem,
 }
 
-pub fn mount_to_body<V: crate::view::Mount>(view: V) {
+pub fn mount_to_body<V: crate::view::View>(view: V) {
     let document = crate::document();
     let body = document.body().expect("No body element");
     let node: web_sys::Node = body.into();
 
     // Create a root reactive scope to ensure context and effects work correctly
     silex_core::reactivity::create_scope(move || {
-        view.mount(&node, Vec::new());
+        view.mount_owned(&node, Vec::new());
     });
 }
 
@@ -85,10 +85,13 @@ impl crate::view::ApplyAttributes for Element {
     }
 }
 
-impl crate::view::Mount for Element {
-    fn mount(mut self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
+impl crate::view::View for Element {
+    fn mount(&self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
         if !attrs.is_empty() {
-            crate::view::ApplyAttributes::apply_attributes(&mut self, attrs);
+            let consolidated = crate::attribute::consolidate_attributes(attrs);
+            for attr in consolidated {
+                attr.apply(&self.dom_element);
+            }
         }
 
         if let Err(e) = parent
@@ -98,10 +101,11 @@ impl crate::view::Mount for Element {
             silex_core::error::handle_error(e);
         }
     }
-}
 
-impl crate::view::MountRef for Element {
-    fn mount_ref(&self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
+    fn mount_owned(self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
         if !attrs.is_empty() {
             let consolidated = crate::attribute::consolidate_attributes(attrs);
             for attr in consolidated {
@@ -203,21 +207,16 @@ impl<T> crate::view::ApplyAttributes for TypedElement<T> {
     }
 }
 
-impl<T> crate::view::Mount for TypedElement<T> {
-    fn mount(mut self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
-        if !attrs.is_empty() {
-            crate::view::ApplyAttributes::apply_attributes(&mut self, attrs);
-        }
-
-        if let Err(e) = parent.append_child(&self.element).map_err(SilexError::from) {
-            silex_core::error::handle_error(e);
-        }
+impl<T: 'static> crate::view::View for TypedElement<T> {
+    fn mount(&self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
+        self.element.mount(parent, attrs);
     }
-}
 
-impl<T> crate::view::MountRef for TypedElement<T> {
-    fn mount_ref(&self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
-        self.element.mount_ref(parent, attrs);
+    fn mount_owned(self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>)
+    where
+        Self: Sized,
+    {
+        self.element.mount_owned(parent, attrs);
     }
 }
 
@@ -252,7 +251,7 @@ where
 /// 这样全应用所有同类型的事件（如 Click）将共享这段机器码。
 pub fn bind_event_impl<E>(dom_element: &WebElem, event_name: String, mut handler: Box<dyn FnMut(E)>)
 where
-    E: wasm_bindgen::convert::FromWasmAbi + wasm_bindgen::JsCast + 'static,
+    E: wasm_bindgen::convert::FromWasmAbi + 'static,
 {
     let closure = Closure::wrap(Box::new(move |e: E| {
         handler(e);

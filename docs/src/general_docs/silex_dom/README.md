@@ -61,11 +61,11 @@ element.apply(rx!(|el: &web_sys::Element| {
 }))
 ```
 
-### 4. Fragment & Attribute Forwarding (属性透传)
+### 4. Attribute Forwarding (属性透传)
 
-Silex 支持多根节点组件（Fragment），通常通过返回元组 `(A, B)` 或 `Fragment` 结构体实现。
+Silex 支持多根节点组件（view chain），通常通过 view_chain! 宏实现。
 
-当你在一个返回 Fragment 的组件（或容器类型如 `Option`, `Vec`）上设置属性（如 `.class("foo")`）时，Silex 采用**首个匹配 (First-Match)** 策略：
+当你在一个返回 view chain 的组件上设置属性（如 `.class("foo")`）时，Silex 采用**首个匹配 (First-Match)** 策略：
 
 *   属性会被向下传递给容器的所有子节点。
 *   **第一个**能够实际消费属性的真实 DOM 节点（`Element`）会应用这些属性并将该应用操作“取走”。
