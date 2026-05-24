@@ -216,30 +216,6 @@ pub mod prelude {
     pub use crate::{batch_read, batch_read_untracked, rx};
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rx_equality_tracks_inner_identity() {
-        let a = Rx::<(), RxValueKind>::new_signal(crate::reactivity::NodeId {
-            index: 1,
-            generation: 1,
-        });
-        let b = Rx::<(), RxValueKind>::new_signal(crate::reactivity::NodeId {
-            index: 1,
-            generation: 1,
-        });
-        let c = Rx::<(), RxValueKind>::new_signal(crate::reactivity::NodeId {
-            index: 2,
-            generation: 1,
-        });
-
-        assert!(a == b);
-        assert!(a != c);
-    }
-}
-
 /// Multi-signal batch read macro for zero-copy access to multiple signals.
 ///
 /// This macro provides a way to access multiple signals without cloning, by nesting
@@ -297,4 +273,28 @@ macro_rules! batch_read_untracked {
     ($($s:expr),+ => |$($p:ident: $t:ty),+| $body:expr) => {
         $crate::batch_read_untracked!([$($s),+] => [$($p: $t),+] => $body)
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rx_equality_tracks_inner_identity() {
+        let a = Rx::<(), RxValueKind>::new_signal(crate::reactivity::NodeId {
+            index: 1,
+            generation: 1,
+        });
+        let b = Rx::<(), RxValueKind>::new_signal(crate::reactivity::NodeId {
+            index: 1,
+            generation: 1,
+        });
+        let c = Rx::<(), RxValueKind>::new_signal(crate::reactivity::NodeId {
+            index: 2,
+            generation: 1,
+        });
+
+        assert!(a == b);
+        assert!(a != c);
+    }
 }
