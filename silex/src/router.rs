@@ -9,7 +9,6 @@ use silex_core::reactivity::{Signal, on_cleanup};
 use silex_core::traits::{RxGet, RxWrite};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::view::{AnyView, ApplyAttributes, View};
-use silex_html::div;
 use silex_macros::component;
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -205,12 +204,7 @@ impl RouterView {
             .add_event_listener_with_callback("popstate", on_popstate.as_ref().unchecked_ref())
             .unwrap();
 
-        // 5. 挂载容器
-        let container = div(());
-        let container_node = container.dom_element.clone();
-        container.mount_owned(parent, attrs);
-
-        // 6. 清理
+        // 5. 清理
         on_cleanup(move || {
             let w = web_sys::window().unwrap();
             let _ = w.remove_event_listener_with_callback(
@@ -219,8 +213,8 @@ impl RouterView {
             );
         });
 
-        // 7. 渲染子视图
-        self.children.mount_owned(&container_node, Vec::new());
+        // 6. 渲染子视图
+        self.children.mount_owned(parent, attrs);
     }
 }
 
