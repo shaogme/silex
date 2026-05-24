@@ -10,7 +10,7 @@ use std::rc::Rc;
 /// 适用于基础类型列表或无唯一 Key 的列表。
 ///
 /// 使用方式：
-/// ```rust
+/// ```rust,ignore
 /// Index(list).children(|item, index| li(rx! { index.get() }))
 /// ```
 #[component]

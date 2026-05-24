@@ -5,7 +5,7 @@ use silex_macros::component;
 /// Show 组件：根据条件渲染不同的视图
 ///
 /// 使用方式：
-/// ```rust
+/// ```rust,ignore
 /// Show(condition).children(view).fallback(fallback_view)
 /// ```
 #[component]

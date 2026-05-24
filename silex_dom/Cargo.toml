@@ -19,6 +19,8 @@ silex_vtable.workspace = true
 silex_core.workspace = true
 wasm-bindgen.workspace = true
 web-sys = { workspace = true, features = [
+    "Node",
+    "NodeList",
     "Document",
     "Text",
     "Window",
