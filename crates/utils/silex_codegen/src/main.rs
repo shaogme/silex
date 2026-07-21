@@ -14,15 +14,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Determine paths
     let current_dir = std::env::current_dir()?;
     let (mdn_compat_path, mdn_props_path, mdn_syntaxes_path, out_dir, css_out_dir) = if current_dir
-        .join("tools/silex_codegen")
+        .join("crates/utils/silex_codegen")
         .exists()
     {
         (
-            current_dir.join("tools/silex_codegen/mdn_compat_data.json"),
-            current_dir.join("tools/silex_codegen/mdn_css_properties.json"),
-            current_dir.join("tools/silex_codegen/mdn_css_syntaxes.json"),
-            current_dir.join("silex_html/src/tags"),
-            current_dir.join("silex_css/src"),
+            current_dir.join("crates/utils/silex_codegen/mdn_compat_data.json"),
+            current_dir.join("crates/utils/silex_codegen/mdn_css_properties.json"),
+            current_dir.join("crates/utils/silex_codegen/mdn_css_syntaxes.json"),
+            current_dir.join("crates/silex_html/src/tags"),
+            current_dir.join("crates/silex_css/src"),
         )
     } else if current_dir.ends_with("silex_codegen") {
         (
