@@ -21,11 +21,8 @@ fn NavLink<T: ToRoute + Clone + 'static>(to: T, #[chain] children: AnyView) -> i
 }
 
 // ==========================================
-// 页面组件
-// ==========================================
-
 #[component]
-fn Home() -> impl View {
+fn Home(_ctx: RouterContext) -> impl View {
     div!(
         h2("🏠 Home Page"),
         p("Welcome to the Router Test Suite."),
@@ -34,11 +31,9 @@ fn Home() -> impl View {
 }
 
 #[component]
-fn SearchPage() -> impl View {
-    // 测试查询参数持久化：使用 Persistent::builder(...).query() 实现双向绑定
-    // 只要改变 search_term，URL 就会更新；URL 变了，search_term 也会更新
+fn SearchPage(ctx: RouterContext) -> impl View {
     let search_term = Persistent::builder("q")
-        .query()
+        .query(&ctx)
         .string()
         .default(String::new())
         .build();
@@ -70,12 +65,12 @@ fn SearchPage() -> impl View {
 // --- 用户模块 (嵌套路由测试) ---
 
 #[component]
-fn CreateUser() -> impl View {
+fn CreateUser(_ctx: RouterContext) -> impl View {
     Card(h3("🆕 Create New User Form"))
 }
 
 #[component]
-fn UsersLayout(route: UsersRoute) -> impl View {
+fn UsersLayout(ctx: RouterContext, route: UsersRoute) -> impl View {
     div!(
         h2("👥 Users Module"),
         div!(
@@ -85,12 +80,12 @@ fn UsersLayout(route: UsersRoute) -> impl View {
         )
         .style("border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;"),
         // 渲染子路由
-        route.render(),
+        route.render(ctx),
     )
 }
 
 #[component]
-fn UserList() -> impl View {
+fn UserList(_ctx: RouterContext) -> impl View {
     let users = vec![
         (1, "Alice"),
         (2, "Bob"),
@@ -115,10 +110,9 @@ fn UserList() -> impl View {
 }
 
 #[component]
-fn UserDetail(id: u32) -> impl View {
-    // 使用传入的 id，不再依赖 use_params (更类型安全!)
-    let navigator = use_navigate();
-    let path = use_location_path();
+fn UserDetail(ctx: RouterContext, id: u32) -> impl View {
+    let navigator = ctx.navigator;
+    let path = ctx.path;
 
     Card(div!(
         div!(
@@ -146,7 +140,7 @@ fn UserDetail(id: u32) -> impl View {
 }
 
 #[component]
-fn NotFound() -> impl View {
+fn NotFound(_ctx: RouterContext) -> impl View {
     div!(
         h1("404"),
         p("Page not found."),

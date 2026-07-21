@@ -1,4 +1,4 @@
-use silex_core::reactivity::{Memo, ReadSignal, Signal, WriteSignal, provide_context, use_context};
+use silex_core::reactivity::{Memo, ReadSignal, StoredValue, WriteSignal};
 use silex_core::traits::{RxGet, RxWrite};
 use silex_dom::view::{AnyView, ApplyAttributes, View};
 use std::collections::HashMap;
@@ -33,10 +33,10 @@ impl View for RouterViewFactory {
 }
 
 /// 路由上下文，存储当前的路由状态
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct RouterContext {
     /// 基础路径 (e.g. "/app")
-    pub base_path: String,
+    pub base_path: StoredValue<String>,
     /// 当前路径 (pathname, relative to base_path)
     pub path: ReadSignal<String>,
     /// 当前查询参数 (search string)
@@ -45,10 +45,51 @@ pub struct RouterContext {
     pub navigator: Navigator,
 }
 
+impl RouterContext {
+    /// 创建新的 RouterContext
+    pub fn new(props: RouterContextProps) -> Self {
+        let base_path = StoredValue::new(props.base_path);
+        let navigator = Navigator {
+            base_path,
+            path: props.path,
+            search: props.search,
+            set_path: props.set_path,
+            set_search: props.set_search,
+        };
+        Self {
+            base_path,
+            path: props.path,
+            search: props.search,
+            navigator,
+        }
+    }
+
+    /// 获取解析后的查询参数 Memo
+    pub fn query_map(self) -> Memo<HashMap<String, String>> {
+        let search_signal = self.search;
+        Memo::new(move |_| {
+            let s = search_signal.get();
+            let mut map = HashMap::new();
+
+            if let Ok(params) = web_sys::UrlSearchParams::new_with_str(&s) {
+                if let Ok(Some(iter)) = js_sys::try_iter(&params) {
+                    for val in iter.flatten() {
+                        let pair: js_sys::Array = val.unchecked_into();
+                        let k = pair.get(0).as_string().unwrap_or_default();
+                        let v = pair.get(1).as_string().unwrap_or_default();
+                        map.insert(k, v);
+                    }
+                }
+            }
+            map
+        })
+    }
+}
+
 /// 导航控制器，用于执行路由跳转
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct Navigator {
-    pub(crate) base_path: String,
+    pub(crate) base_path: StoredValue<String>,
     pub(crate) path: ReadSignal<String>,
     pub(crate) search: ReadSignal<String>,
     pub(crate) set_path: WriteSignal<String>,
@@ -56,15 +97,16 @@ pub struct Navigator {
 }
 
 impl Navigator {
-    fn handle_navigation(&self, url: &str, replace: bool) {
+    fn handle_navigation(self, url: &str, replace: bool) {
         let window = web_sys::window().unwrap();
 
         // 1. 构造用于浏览器历史记录的完整 URL
+        let base_str = self.base_path.get_untracked();
         let full_url = if url.starts_with('/') {
-            if self.base_path == "/" || self.base_path.is_empty() {
+            if base_str == "/" || base_str.is_empty() {
                 url.to_string()
             } else {
-                let base = self.base_path.trim_end_matches('/');
+                let base = base_str.trim_end_matches('/');
                 format!("{}{}", base, url)
             }
         } else {
@@ -89,22 +131,17 @@ impl Navigator {
         let location = window.location();
         let raw_path = location.pathname().unwrap_or_else(|_| "/".to_string());
 
-        let logical_path = if !self.base_path.is_empty()
-            && self.base_path != "/"
-            && raw_path.starts_with(&self.base_path)
-        {
-            let p = &raw_path[self.base_path.len()..];
-            if p.is_empty() { "/" } else { p }
-        } else {
-            &raw_path
-        };
+        let logical_path =
+            if !base_str.is_empty() && base_str != "/" && raw_path.starts_with(&base_str) {
+                let p = &raw_path[base_str.len()..];
+                if p.is_empty() { "/" } else { p }
+            } else {
+                &raw_path
+            };
 
         let search = location.search().unwrap_or_default();
 
         // 更新信号 (带去重，避免不必要的副作用)
-        // 核心修复：Silex 的 WriteSignal.set 默认不检查 Equality，
-        // 导致只要调用 set 就会触发 Router 重渲染，Input 失去焦点。
-        // 这里我们手动检查相等性。
         if self.path.get_untracked() != logical_path {
             self.set_path.set(logical_path.to_string());
         }
@@ -115,12 +152,12 @@ impl Navigator {
     }
 
     /// 导航到指定路径
-    pub fn push<T: crate::router::ToRoute>(&self, to: T) {
+    pub fn push<T: crate::router::ToRoute>(self, to: T) {
         self.handle_navigation(&to.to_route(), false);
     }
 
     /// 替换当前路径
-    pub fn replace<T: crate::router::ToRoute>(&self, to: T) {
+    pub fn replace<T: crate::router::ToRoute>(self, to: T) {
         self.handle_navigation(&to.to_route(), true);
     }
 
@@ -128,7 +165,7 @@ impl Navigator {
     ///
     /// * `key`: 参数名
     /// * `value`: 参数值。如果为 `None`，则删除该参数。
-    pub fn set_query(&self, key: &str, value: Option<&str>) {
+    pub fn set_query(self, key: &str, value: Option<&str>) {
         let current_search = self.search.get_untracked();
 
         if let Ok(params) = web_sys::UrlSearchParams::new_with_str(&current_search) {
@@ -139,14 +176,7 @@ impl Navigator {
 
             let new_search = params.to_string().as_string().unwrap_or_default();
 
-            // 如果 search 没变，无需导航
-            // 注意：UrlSearchParams.to_string() 会标准化编码，所以即使逻辑没变，字符串也可能变化（例如顺序）
-            // 但这里我们主要关心键值对的变更。
-            // 既然是 set_query 显式调用，通常意味着意图变更。
-
             let pathname = self.path.get_untracked();
-            // path signal 是逻辑路径 (不含 base)，Navigator.push 会自动处理 base_path
-            // 但我们需要构造完整的 URL (path + search) 传给 push
             let new_url = if new_search.is_empty() {
                 pathname
             } else {
@@ -160,80 +190,10 @@ impl Navigator {
 
 /// 路由上下文所需的属性集合
 #[derive(Clone)]
-pub(crate) struct RouterContextProps {
+pub struct RouterContextProps {
     pub base_path: String,
     pub path: ReadSignal<String>,
     pub search: ReadSignal<String>,
     pub set_path: WriteSignal<String>,
     pub set_search: WriteSignal<String>,
-}
-
-/// 提供路由上下文 (由 Router 组件调用)
-pub(crate) fn provide_router_context(props: RouterContextProps) {
-    let navigator = Navigator {
-        base_path: props.base_path.clone(),
-        path: props.path,
-        search: props.search,
-        set_path: props.set_path,
-        set_search: props.set_search,
-    };
-    let ctx = RouterContext {
-        base_path: props.base_path,
-        path: props.path,
-        search: props.search,
-        navigator,
-    };
-    // 忽略可能的错误（如重复 provide），Router 应该是根级的
-    provide_context(ctx);
-}
-
-/// 获取路由上下文
-pub fn use_router() -> Option<RouterContext> {
-    use_context::<RouterContext>()
-}
-
-/// Hook: 获取当前导航器
-pub fn use_navigate() -> Navigator {
-    use_router()
-        .expect("use_navigate called outside of <Router>")
-        .navigator
-}
-
-/// Hook: 获取当前路径 (逻辑路径，不含 Base Path)
-pub fn use_location_path() -> Signal<String> {
-    use_router()
-        .map(|ctx| ctx.path.into())
-        .expect("use_location_path called outside of <Router>")
-}
-
-/// Hook: 获取查询参数字符串
-pub fn use_location_search() -> Signal<String> {
-    use_router()
-        .map(|ctx| ctx.search.into())
-        .expect("use_location called outside of <Router>")
-}
-
-/// Hook: 获取并解析查询参数为 Map
-///
-/// 使用 `web_sys::UrlSearchParams` 进行标准化的解析，确保与浏览器的行为一致。
-pub fn use_query_map() -> silex_core::reactivity::Memo<HashMap<String, String>> {
-    let search_signal = use_location_search();
-    Memo::new(move |_| {
-        let s = search_signal.get();
-        let mut map = HashMap::new();
-
-        if let Ok(params) = web_sys::UrlSearchParams::new_with_str(&s) {
-            // UrlSearchParams 是 Iterable，可以使用 js_sys::try_iter
-            if let Ok(Some(iter)) = js_sys::try_iter(&params) {
-                for val in iter.flatten() {
-                    // 迭代出的每一项都是 [key, value] 数组
-                    let pair: js_sys::Array = val.unchecked_into();
-                    let k = pair.get(0).as_string().unwrap_or_default();
-                    let v = pair.get(1).as_string().unwrap_or_default();
-                    map.insert(k, v);
-                }
-            }
-        }
-        map
-    })
 }

@@ -116,7 +116,7 @@ fn NavBar() -> impl View {
 }
 
 #[component]
-fn HomeView() -> impl View {
+fn HomeView(_ctx: RouterContext) -> impl View {
     // 页面级状态
     let (name, set_name) = Signal::pair("Rustacean".to_string());
 
@@ -186,7 +186,7 @@ fn HomeView() -> impl View {
 }
 
 #[component]
-fn AboutView() -> impl View {
+fn AboutView(_ctx: RouterContext) -> impl View {
     div!(
         h1("About"),
         p("This is the About Page to demonstrate Silex Router."),
@@ -195,7 +195,7 @@ fn AboutView() -> impl View {
 }
 
 #[component]
-fn NotFound() -> impl View {
+fn NotFound(_ctx: RouterContext) -> impl View {
     div(h1("404 - Page Not Found")).style("color: red; padding: 20px;")
 }
 

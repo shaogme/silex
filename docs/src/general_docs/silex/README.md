@@ -38,10 +38,9 @@ Silex 提供了一个类型安全且易于使用的客户端路由。
 fn App() -> impl View {
     Router()
         .base("/app") // 可选：设置基础路径
-        .render(|| {
-            // 这里通常放置布局组件（Layout）
-            // 根据路由匹配显示不同内容
-            let path = use_location_path();
+        .children(move |ctx| {
+            // 这里接收显式下发的 ctx: RouterContext
+            let path = ctx.path;
             
             div((
                 nav((
@@ -78,7 +77,7 @@ enum MyRoutes {
 }
 
 impl RouteView for MyRoutes {
-    fn render(&self) -> AnyView {
+    fn render(&self, ctx: RouterContext) -> AnyView {
         match self {
             MyRoutes::Home => Home().into_any(),
             MyRoutes::User(id) => UserPage(*id).into_any(),
@@ -97,20 +96,20 @@ Router().match_route::<MyRoutes>()
     ```rust
     Link(MyRoutes::Home, "Go Home")
     ```
-*   **Code**: 使用 `use_navigate` hook。
+*   **Code**: 通过路由上下文 `ctx.navigator` 进行页面跳转。
     ```rust
-    let nav = use_navigate();
-    nav.push("/new-path");
+    ctx.navigator.push("/new-path");
     ```
 
 ### 查询参数与外部状态 (Query Parameters & Persistence)
 
 Silex 提供了统一的持久化入口来处理 URL 查询参数、浏览器存储和双向绑定：
 
-*   **`use_query_map()`**:
+*   **`ctx.query_map()`**:
     *   返回 `Memo<HashMap<String, String>>`。
     *   使用 `web_sys::UrlSearchParams` 标准解析，自动处理 URI 编码。
     *   响应式：当 URL 变化时自动更新。
+
 
 *   **`Persistent::builder(key)`**:
     *   统一后端：`.local()`、`.session()`、`.query()`。

@@ -19,7 +19,7 @@ impl Default for Settings {
 }
 
 #[component]
-pub fn PersistencePage() -> impl View {
+pub fn PersistencePage(ctx: RouterContext) -> impl View {
     div![
         h2("Comprehensive Persistence Demo")
             .style(sty().color(AppTheme::PRIMARY).margin_bottom(px(10))),
@@ -27,7 +27,7 @@ pub fn PersistencePage() -> impl View {
 
         div![
             // 1. Storage Backends Comparison
-            BackendGrid(),
+            BackendGrid(ctx),
 
             // 2. Manual Control & Flash
             ManualFlushDemo(),
@@ -66,7 +66,7 @@ fn Card(children: AnyView, #[chain] title: &'static str) -> impl View {
 }
 
 #[component]
-fn BackendGrid() -> impl View {
+fn BackendGrid(ctx: RouterContext) -> impl View {
     let local = Persistent::builder("demo-local")
         .local()
         .string()
@@ -80,7 +80,7 @@ fn BackendGrid() -> impl View {
         .build();
 
     let query = Persistent::builder("demo-query")
-        .query()
+        .query(&ctx)
         .string()
         .default("Stored in URL Query".to_string())
         .build();

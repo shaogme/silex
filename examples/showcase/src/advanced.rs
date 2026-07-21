@@ -17,7 +17,7 @@ pub struct UserSettings {
 }
 
 #[component]
-pub fn StoreDemo() -> impl View {
+pub fn StoreDemo(_ctx: RouterContext) -> impl View {
     // Access global store provided in main
     // Note: `use_context::<T>() -> Option<T>` and `expect_context::<T>() -> T` are also available.
     // Access global store using the generated helper
@@ -127,7 +127,7 @@ pub fn JsonStorageDemo() -> impl View {
 }
 
 #[component]
-pub fn StorageDemo() -> impl View {
+pub fn StorageDemo(_ctx: RouterContext) -> impl View {
     let count = Persistent::builder("showcase-counter")
         .local()
         .parse::<i32>()
@@ -162,9 +162,9 @@ pub fn StorageDemo() -> impl View {
 }
 
 #[component]
-pub fn QueryDemo() -> impl View {
+pub fn QueryDemo(ctx: RouterContext) -> impl View {
     let val = Persistent::builder("demo_val")
-        .query()
+        .query(&ctx)
         .cow()
         .default("".into())
         .build();
@@ -246,7 +246,7 @@ async fn mock_fetch_user(id: i32) -> Result<UserProfile, String> {
 }
 
 #[component]
-pub fn ResourceDemo() -> impl View {
+pub fn ResourceDemo(_ctx: RouterContext) -> impl View {
     let (user_id, set_user_id) = Signal::pair(1);
 
     // Create Resource: triggers when user_id changes
@@ -313,7 +313,7 @@ pub fn ResourceDemo() -> impl View {
 }
 
 #[component]
-pub fn MutationDemo() -> impl View {
+pub fn MutationDemo(_ctx: RouterContext) -> impl View {
     // Simulate a login mutation
     // Takes (username, password) and returns a Result<String, String> token
     let login_mutation = Mutation::new(|(user, pass): (String, String)| async move {
@@ -385,7 +385,7 @@ pub fn MutationDemo() -> impl View {
 }
 
 #[component]
-pub fn SuspenseDemo() -> impl View {
+pub fn SuspenseDemo(_ctx: RouterContext) -> impl View {
     use silex::components::SuspenseMode;
 
     let (show_content, set_show_content) = Signal::pair(false);
@@ -483,7 +483,7 @@ pub fn GenericMessage<'a, T: std::fmt::Display + Clone + 'static>(
 }
 
 #[component]
-pub fn GenericsDemo() -> impl View {
+pub fn GenericsDemo(_ctx: RouterContext) -> impl View {
     div![
         h3("Generics & Lifetimes Demo"),
         p("This demonstrates how #[component] macro supports generics and lifetimes natively."),
@@ -526,7 +526,7 @@ impl std::fmt::Display for QuantumIdentity {
 }
 
 #[component]
-pub fn AdaptiveReadDemo() -> impl View {
+pub fn AdaptiveReadDemo(_ctx: RouterContext) -> impl View {
     let system_name = RwSignal::new(Cow::Borrowed("Nebula-1"));
     let (stability, set_stability) = Signal::pair(0.85); // 0.0 to 1.0
 

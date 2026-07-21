@@ -100,7 +100,7 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
         }
 
         impl ::silex::router::RouteView for #name {
-            fn render(&self) -> ::silex::dom::view::AnyView {
+            fn render(&self, ctx: ::silex::router::RouterContext) -> ::silex::dom::view::AnyView {
                 use ::silex::dom::view::View;
                 match self {
                     #render_arms
@@ -699,11 +699,7 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
         let variant_ident = &def.variant_ident;
 
         if let Some(view_component) = &def.view {
-            // 如果指定了 view，我们需要构建组件
-            // 策略：所有字段必须是 Named Field (除了可能的 unique nested field in tuple?)
-            // 我们通过字段名将 variant 的字段传给 Component::new().field(val)
-
-            match &def.fields {
+            let (pattern, mut view_expr) = match &def.fields {
                 Fields::Named(named) => {
                     let mut props_setters = Vec::new();
                     let mut field_bindings = Vec::new();
@@ -713,91 +709,77 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
                         let fname = field.ident.as_ref().ok_or_else(|| {
                             Error::new_spanned(field, "Named fields must have an identifier")
                         })?;
-                        field_bindings.push(fname.clone());
+
+                        let is_nested =
+                            matches!(&def.nested_field, Some(Member::Named(id)) if id == fname);
+                        let val_expr = if is_nested {
+                            if i == 0 {
+                                field_bindings.push(quote! { #fname: sub_route_val });
+                            }
+                            quote! { sub_route_val.clone() }
+                        } else {
+                            if i == 0 {
+                                field_bindings.push(quote! { #fname });
+                            }
+                            quote! { #fname.clone() }
+                        };
 
                         if i == 0 {
-                            first_prop_expr = Some(quote! { #fname.clone() });
+                            first_prop_expr = Some(val_expr);
                         } else {
-                            props_setters.push(quote! { .#fname(#fname.clone()) });
+                            if !is_nested {
+                                field_bindings.push(quote! { #fname });
+                            }
+                            props_setters.push(quote! { .#fname(#val_expr) });
                         }
                     }
 
-                    let mut view_expr = if let Some(arg) = first_prop_expr {
-                        quote! {
-                            #view_component(#arg)
-                                #(#props_setters)*
-                                .into_any()
-                        }
+                    let expr = if let Some(arg) = first_prop_expr {
+                        quote! { #view_component(ctx, #arg) #(#props_setters)* .into_any() }
                     } else {
-                        quote! {
-                            #view_component()
-                                .into_any()
-                        }
+                        quote! { #view_component(ctx) #(#props_setters)* .into_any() }
                     };
 
-                    // 应用 Guard (从内向外包裹)
-                    // 使用新的带参构造函数语法 #guard(children)
-                    for guard in def.guards.iter().rev() {
-                        view_expr = quote! {
-                            #guard(move || #view_expr)
-                                .into_any()
-                        };
-                    }
-
-                    arms.push(quote! {
-                        #enum_name::#variant_ident { #(#field_bindings),* } => {
-                            #view_expr
-                        }
-                    });
+                    (
+                        quote! { #enum_name::#variant_ident { #(#field_bindings),* } },
+                        expr,
+                    )
                 }
-                Fields::Unit => {
-                    let mut view_expr = quote! {
-                        #view_component().into_any()
-                    };
-
-                    for guard in def.guards.iter().rev() {
-                        view_expr = quote! {
-                            #guard(move || #view_expr)
-                                .into_any()
-                        };
-                    }
-
-                    arms.push(quote! {
-                        #enum_name::#variant_ident => #view_expr
-                    });
-                }
+                Fields::Unit => (
+                    quote! { #enum_name::#variant_ident },
+                    quote! { #view_component(ctx).into_any() },
+                ),
                 Fields::Unnamed(unnamed) => {
-                    // 对于 Tuple Variant，我们只允许一种情况：
-                    // 只有一个字段，且它是 nested route。
-                    // 并且我们需要猜测 prop 名字？
-                    // 为了安全起见，我们暂不支持 Tuple Variant 的自动绑定，要求用户改用 Named Variant
-                    // 除非... 没有任何字段（那匹配 Unit）
                     if unnamed.unnamed.is_empty() {
-                        let mut view_expr = quote! {
-                            #view_component().into_any()
-                        };
-
-                        for guard in def.guards.iter().rev() {
-                            view_expr = quote! {
-                                #guard(move || #view_expr)
-                                    .into_any()
-                            };
-                        }
-
-                        arms.push(quote! {
-                            #enum_name::#variant_ident() => #view_expr
-                        });
+                        (
+                            quote! { #enum_name::#variant_ident() },
+                            quote! { #view_component(ctx).into_any() },
+                        )
                     } else {
-                        return Err(Error::new_spanned(
-                            unnamed,
-                            "Route view binding currently only supports Named Fields (e.g., Variant { id: String }) to map parameters to component props. Please convert your Tuple Variant to a Struct Variant.",
-                        ));
+                        (
+                            quote! { #enum_name::#variant_ident(sub_route_val) },
+                            quote! { #view_component(ctx, sub_route_val.clone()).into_any() },
+                        )
                     }
                 }
+            };
+
+            for guard in def.guards.iter().rev() {
+                view_expr = quote! {
+                    #guard(move || #view_expr).into_any()
+                };
             }
+
+            arms.push(quote! { #pattern => #view_expr });
+        } else if let Some(Member::Named(nested_name)) = &def.nested_field {
+            arms.push(quote! {
+                #enum_name::#variant_ident { #nested_name: sub_route_val, .. } => sub_route_val.render(ctx)
+            });
+        } else if let Some(Member::Unnamed(_)) = &def.nested_field {
+            arms.push(quote! {
+                #enum_name::#variant_ident(sub_route_val) => sub_route_val.render(ctx)
+            });
         } else {
-            // 如果没有指定 view，返回 Empty
-            // 根据字段类型生成正确的匹配模式
             let pattern = match &def.fields {
                 Fields::Named(_) => quote! { #enum_name::#variant_ident { .. } },
                 Fields::Unnamed(_) => quote! { #enum_name::#variant_ident(..) },

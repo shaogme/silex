@@ -254,7 +254,7 @@ pub fn EventStreamDemo() -> impl View {
 }
 
 #[component]
-pub fn NetDemoPage() -> impl View {
+pub fn NetDemoPage(_ctx: RouterContext) -> impl View {
     let (active_tab, set_active_tab) = Signal::pair("http");
 
     inject_style("net-demo-css", "

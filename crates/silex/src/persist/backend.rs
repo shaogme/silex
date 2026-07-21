@@ -1,13 +1,15 @@
-use crate::persist::PersistenceError;
+use crate::{
+    persist::PersistenceError,
+    router::{Navigator, RouterContext},
+};
 use js_sys::Object;
 use ref_str::LocalStaticRefStr;
-use silex_core::reactivity::{Effect, Memo, NodeId, create_scope, dispose};
-use silex_core::traits::RxGet;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
-use wasm_bindgen::JsCast;
-use wasm_bindgen::closure::Closure;
+use silex_core::{
+    reactivity::{Effect, Memo, NodeId, create_scope, dispose},
+    traits::RxGet,
+};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Storage, StorageEvent};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -100,17 +102,16 @@ pub type SessionStorageBackend = WebStorageBackend<false>;
 
 #[derive(Clone)]
 pub struct QueryBackend {
-    navigator: Option<crate::router::Navigator>,
-    query_map: Option<Memo<std::collections::HashMap<String, String>>>,
+    navigator: Option<Navigator>,
+    query_map: Option<Memo<HashMap<String, String>>>,
 }
 
 impl QueryBackend {
-    pub fn new() -> Result<Self, PersistenceError> {
-        let router = crate::router::use_router().ok_or(PersistenceError::BackendUnavailable)?;
-        Ok(Self {
-            navigator: Some(router.navigator),
-            query_map: Some(crate::router::use_query_map()),
-        })
+    pub fn new(ctx: &RouterContext) -> Self {
+        Self {
+            navigator: Some(ctx.navigator),
+            query_map: Some(ctx.query_map()),
+        }
     }
 
     pub fn unavailable() -> Self {
@@ -120,15 +121,13 @@ impl QueryBackend {
         }
     }
 
-    fn navigator(&self) -> Result<&crate::router::Navigator, PersistenceError> {
+    fn navigator(&self) -> Result<&Navigator, PersistenceError> {
         self.navigator
             .as_ref()
             .ok_or(PersistenceError::BackendUnavailable)
     }
 
-    fn query_map(
-        &self,
-    ) -> Result<Memo<std::collections::HashMap<String, String>>, PersistenceError> {
+    fn query_map(&self) -> Result<Memo<HashMap<String, String>>, PersistenceError> {
         self.query_map.ok_or(PersistenceError::BackendUnavailable)
     }
 }
@@ -394,7 +393,7 @@ mod tests {
         let (search, set_search) = Signal::pair(String::new());
         QueryBackend {
             navigator: Some(Navigator {
-                base_path: "/".to_string(),
+                base_path: silex_core::reactivity::StoredValue::new("/".to_string()),
                 path,
                 search,
                 set_path,
@@ -405,11 +404,9 @@ mod tests {
     }
 
     #[test]
-    fn query_backend_new_without_router_is_unavailable() {
-        assert!(matches!(
-            QueryBackend::new(),
-            Err(PersistenceError::BackendUnavailable)
-        ));
+    fn query_backend_unavailable_works() {
+        let backend = QueryBackend::unavailable();
+        assert!(backend.get("key").is_err());
     }
 
     #[test]

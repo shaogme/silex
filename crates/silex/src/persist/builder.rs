@@ -1,22 +1,21 @@
-use crate::persist::backend::{
-    LocalStorageBackend, PersistenceBackend, QueryBackend, SessionStorageBackend,
-};
-use crate::persist::codec::{
-    OptionCodec, ParseCodec, PersistCodec, StringCodec, map_decode_error, map_encode_error,
-};
-use crate::persist::state::{
-    PersistenceController, PersistenceState, Persistent, apply_backend_event,
-    flush_persistent_value,
-};
 use crate::persist::{
     DecodePolicy, PersistMode, PersistenceError, RemovePolicy, SyncStrategy, WriteDefault,
+    backend::{LocalStorageBackend, PersistenceBackend, QueryBackend, SessionStorageBackend},
+    codec::{
+        OptionCodec, ParseCodec, PersistCodec, StringCodec, map_decode_error, map_encode_error,
+    },
+    state::{
+        PersistenceController, PersistenceState, Persistent, apply_backend_event,
+        flush_persistent_value,
+    },
 };
+use crate::router::RouterContext;
 use ref_str::LocalStaticRefStr;
-use silex_core::reactivity::{Effect, RwSignal, StoredValue, on_cleanup};
-use silex_core::traits::{RxData, RxGet, RxRead, RxWrite};
-use std::borrow::Cow;
-use std::marker::PhantomData;
-use std::rc::Rc;
+use silex_core::{
+    reactivity::{Effect, RwSignal, StoredValue, on_cleanup},
+    traits::{RxData, RxGet, RxRead, RxWrite},
+};
+use std::{borrow::Cow, marker::PhantomData, rc::Rc};
 
 /// Typestate marker used before a persistence backend has been selected.
 pub struct NoBackend;
@@ -121,12 +120,10 @@ impl<C, T, D> PersistentBuilder<NoBackend, C, T, D> {
     }
 
     /// Uses the router query string as the persistence backend.
-    ///
-    /// This must run inside a router context.
-    pub fn query(self) -> PersistentBuilder<QueryBackend, C, T, D> {
+    pub fn query(self, ctx: &RouterContext) -> PersistentBuilder<QueryBackend, C, T, D> {
         PersistentBuilder {
             key: self.key,
-            backend: QueryBackend::new().unwrap_or_else(|_| QueryBackend::unavailable()),
+            backend: QueryBackend::new(ctx),
             codec: self.codec,
             config: self.config,
             _marker: PhantomData,

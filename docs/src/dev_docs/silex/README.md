@@ -64,19 +64,19 @@ silex/src/
 Silex 的路由系统基于浏览器 History API，实现了单页应用 (SPA) 的客户端导航。
 
 *   **`RouterContext`**: 存储路由的核心状态，包括 `path`, `search` (Query Params) 和 `navigator`。
-    *   **设计细节**：使用 `ReadSignal<String>` 存储路径，确保路径变化时只通知依赖该路径的组件。`base_path` 的处理逻辑内建在 Router 和 Link 中，支持应用部署在子路径下。
+    *   **设计细节**：实现了 `Copy` 特征，`base_path` 由 `StoredValue<String>` 托管，确保句柄无成本复制传递。完全移除了全局 `use_context` / `provide_context`，改为由组件或闭包参数显式注入，极大地提升了并发安全性与显式可追踪性。
 *   **`Router` 组件**:
-    *   **初始化**：在 `mount` 阶段监听 `popstate` 事件，并将当前的路由状态注入到 Context 中。
-    *   **渲染**：`Router` 维护一个 `child` 闭包。当使用 `match_enum` 时，它会创建一个依赖于 `path` 信号的计算闭包。一旦路径改变，这个闭包重新执行，进行 Enum 匹配并返回新的 View。
+    *   **初始化**：在 `mount` 阶段监听 `popstate` 事件，构造 `RouterContext` 并将其作为参数显式透传给 `children` 渲染闭包。
+    *   **渲染**：`Router` 维护一个 `children: Rc<dyn Fn(&RouterContext) -> AnyView>` 闭包。当使用 `match_route::<AppRoute>()` 或 `match_enum` 时，由 `#[derive(Route)]` 派生宏生成无模糊依赖的类型安全视图链。
 *   **`Link` 组件**:
-    *   这是一个封装了 `<a>` 标签的组件。
+    *   这是一个封装了 `<a>` 标签的组件，支持显式传入 `router_ctx: Option<RouterContext>`。
     *   **拦截点击**：它会拦截 `click` 事件，调用 `event.prevent_default()`，然后使用 `Navigator::push` 进行无刷新跳转。
-    *   **Active State**：通过读取 Router Context 中的当前路径，自动计算并更新 `active` CSS 类，通过 `active_class` 方法配置。
+    *   **Active State**：通过读取 Router Context 中的当前 `path` 信号，自动计算并更新 `active` CSS 类，通过 `active_class` 方法配置。
 
 *   **Query Params 优化**:
-    *   **标准化解析**: `use_query_map` 内部统一使用 `web_sys::UrlSearchParams`，确保与浏览器行为一致。
+    *   **标准化解析**: `ctx.query_map()` 内部统一使用 `web_sys::UrlSearchParams`，确保与浏览器行为一致。
     *   **原子更新**: `Navigator::set_query` 提供了基于当前 URL 的增量更新能力。
-    *   **统一持久化后端**: query 参数现在通过 `persist::QueryBackend` 接入统一持久化系统，而不是单独的 `use_query_signal` hook。
+    *   **统一持久化后端**: query 参数可以通过 `.query(ctx)` 接入统一持久化系统。
     *   **循环抑制**: `Persistent<T>` 通过 `last_flushed_raw` 和后端快照比较避免多余写回，query 同步逻辑也复用这一套外部状态模型。
 
 ### 4.2 流程控制 (Flow Control)

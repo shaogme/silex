@@ -12,7 +12,7 @@ use silex::reexports::wasm_bindgen::JsCast;
 use silex::reexports::web_sys::{HtmlElement, MouseEvent};
 
 #[component]
-fn SelectDemo() -> impl View {
+fn SelectDemo(_ctx: RouterContext) -> impl View {
     div("Select a demo above.")
 }
 
@@ -192,7 +192,7 @@ pub fn NavBar() -> impl View {
 }
 
 #[component]
-fn AdvancedLayout(route: AdvancedRoute) -> impl View {
+fn AdvancedLayout(ctx: RouterContext, route: AdvancedRoute) -> impl View {
     div![
         h2("Advanced Features"),
         div![
@@ -238,12 +238,12 @@ fn AdvancedLayout(route: AdvancedRoute) -> impl View {
             .class("tab"),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 20px;"),
-        route.render(),
+        route.render(ctx),
     ]
 }
 
 #[component]
-fn CssLayout(route: CssRoute) -> impl View {
+fn CssLayout(ctx: RouterContext, route: CssRoute) -> impl View {
     div![
         h2("CSS & Styling"),
         p(
@@ -255,17 +255,17 @@ fn CssLayout(route: CssRoute) -> impl View {
             Link("/css/advanced").children("Advanced CSS").class("tab"),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 20px;"),
-        route.render(),
+        route.render(ctx),
     ]
 }
 
 #[component]
-fn NotFoundPage() -> impl View {
+fn NotFoundPage(_ctx: RouterContext) -> impl View {
     div("404 - Page Not Found").style("color: red; padding: 20px;")
 }
 
 #[component]
-fn HomePage() -> impl View {
+fn HomePage(_ctx: RouterContext) -> impl View {
     div![
         h1("Welcome to Silex Showcase"),
         p("This example application demonstrates the core features of the Silex framework."),

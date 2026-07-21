@@ -30,17 +30,17 @@
 
 ### RouterContext
 `silex/src/router/context.rs`
-存储路由全局状态，通过 `provide_context` 在 `Router` 组件根部注入。
+存储路由全局状态，实现 `Copy` 语义（句柄复制，零开销传递），通过显式视图树/闭包参数或 `#[derive(Route)]` 派生宏注入视图层。
 
 | Field | Type | Description |
 | :--- | :--- | :--- |
-| `base_path` | `String` | 应用的基础路径 (e.g. `/app`)，所有路由匹配基于此剥离。 |
+| `base_path` | `StoredValue<String>` | 应用的基础路径 (e.g. `/app`)，通过 Arena 存储维护，所有路由匹配基于此剥离。 |
 | `path` | `ReadSignal<String>` | 当前逻辑路径 (不含 base_path)。 |
 | `search` | `ReadSignal<String>` | 当前查询字符串 (含 `?`)。 |
-| `navigator` | `Navigator` | 封装了 `push`, `replace` 方法的控制器。 |
+| `navigator` | `Navigator` | 封装了 `push`, `replace`, `set_query` 方法的轻量级 `Copy` 控制器。 |
 
 #### Navigator
-`silex/src/router/context.rs` -> `struct Navigator`
+`silex/src/router/context.rs` -> `struct Navigator` (实现 `Clone, Copy`)
 *   **push(url)**: 调用 `history.pushState` 并更新 Context 信号。
 *   **replace(url)**: 调用 `history.replaceState` 并更新 Context 信号。
 *   **set_query(key, value)**: 原子化更新查询参数。读取 -> 解析 -> 修改 -> Push。
@@ -54,7 +54,7 @@
 
 ### 核心入口
 *   `Persistent::builder(key)` -> `PersistentBuilder<...>`
-*   Backend 选择：`.local()` / `.session()` / `.query()`
+*   Backend 选择：`.local()` / `.session()` / `.query(ctx)`
 *   Codec 选择：`.string()` / `.parse::<T>()` / `.json::<T>()`
 *   构建结果：`Persistent<T>`
 
@@ -75,12 +75,10 @@
 
 ### Component: Router
 `silex/src/router.rs` -> `struct Router`
-*   **Function**: 初始化路由上下文，监听 `popstate`，根据 `child` 闭包渲染视图。
+*   **Function**: 初始化路由上下文，监听 `popstate`，通过显式闭包参数 `move |ctx| ...` 或 `match_route::<AppRoute>()` 挂载视图。
 *   **mount**: 
     1. 计算初始 `path` (strip `base_path`)。
     2. 创建 `path`, `search` 信号。
-    3. `provide_context(RouterContext)`.
-    4. 挂载子视图容器 `div`。
     5. `Effect` 监听路由变化并重新执行 `child` 工厂函数。
 
 ### component: Link

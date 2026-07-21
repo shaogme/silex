@@ -1,5 +1,5 @@
 use crate::router::ToRoute;
-use crate::router::context::use_router;
+use crate::router::context::RouterContext;
 use silex_core::traits::RxGet;
 use silex_dom::prelude::*;
 use silex_html::a;
@@ -11,22 +11,24 @@ use silex_macros::component;
 #[component]
 pub fn Link<T: ToRoute + Clone + 'static>(
     to: T,
+    #[prop(into)]
+    #[chain(default)]
+    router_ctx: Option<RouterContext>,
     #[chain] children: AnyView,
     #[prop(into)]
     #[chain(default)]
     active_class: String,
 ) -> impl View {
     let href = to.to_route();
-    let router_ctx = use_router();
 
     // 1. 计算实际显示在 DOM 上的 href (包含 base_path处理)
-    // 这样做是为了支持右键在新标签页打开等原生行为
-    let display_href = if let Some(ctx) = &router_ctx
-        && !ctx.base_path.is_empty()
-        && ctx.base_path != "/"
-        && href.starts_with('/')
-    {
-        format!("{}{}", ctx.base_path.trim_end_matches('/'), href)
+    let display_href = if let Some(ctx) = router_ctx {
+        let base_path_str = ctx.base_path.get_untracked();
+        if !base_path_str.is_empty() && base_path_str != "/" && href.starts_with('/') {
+            format!("{}{}", base_path_str.trim_end_matches('/'), href)
+        } else {
+            href.clone()
+        }
     } else {
         href.clone()
     };
@@ -56,7 +58,6 @@ pub fn Link<T: ToRoute + Clone + 'static>(
                 false
             }
         };
-        // 返回 (String, F) 元组，符合 class() 方法对元组的处理逻辑
         Some((class_name, is_active))
     } else {
         None
@@ -77,7 +78,7 @@ pub fn Link<T: ToRoute + Clone + 'static>(
                 // 使用 Router 导航
                 ctx.navigator.push(href_for_click.as_str());
             } else {
-                // 如果没有 Router (非预期情况)，回退到普通跳转
+                // 如果没有 Router，回退到普通跳转
                 if let Some(window) = web_sys::window() {
                     let _ = window.location().set_href(&href_for_click);
                 }
