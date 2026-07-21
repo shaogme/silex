@@ -132,23 +132,14 @@ pub fn WebSocketDemo() -> impl View {
     let state_text = socket.map_or("Disconnected", |c| c.state.get().as_str());
     let is_connected = socket.map_or(false, |c| c.is_connected().get());
 
-    let last_message = move || {
-        socket.with(|conn| {
-            conn.as_ref()
-                .and_then(|c| c.raw_message().get())
-                .unwrap_or_default()
-        })
-    };
+    let last_message = socket.map_or(String::new(), |c| c.raw_message().get().unwrap_or_default());
 
     let send_message = move || {
         let text = input_text.get();
         if !text.trim().is_empty() {
-            socket.with_untracked(|conn| {
-                if let Some(conn) = conn {
-                    let _ = conn.send(text);
-                    input_text.set(String::new());
-                }
-            });
+            if socket.if_some_untracked(|conn| conn.send(&text)).is_some() {
+                input_text.set(String::new());
+            }
         }
     };
 
@@ -200,7 +191,7 @@ pub fn WebSocketDemo() -> impl View {
                 ],
                 div![
                     p("Last Echoed Message:"),
-                    div(move || last_message()).style(sty().padding(px(15)).background(AppTheme::SURFACE_ALT).border_radius(px(6)).font_family("monospace").border_left(border(px(4), BorderStyleKeyword::Solid, AppTheme::PRIMARY)))
+                    div(last_message).style(sty().padding(px(15)).background(AppTheme::SURFACE_ALT).border_radius(px(6)).font_family("monospace").border_left(border(px(4), BorderStyleKeyword::Solid, AppTheme::PRIMARY)))
                 ].style(sty().margin_top(px(15))),
             ]
         )

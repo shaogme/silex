@@ -343,6 +343,21 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> {
     {
         self.map_or(false, f)
     }
+
+    /// 响应式 `Option::and_then` 映射，返回派生 `Memo<Option<U>>`。
+    fn and_then<U>(&self, f: impl Fn(&T) -> Option<U> + 'static) -> Memo<Option<U>>
+    where
+        Self: Clone + 'static,
+        U: PartialEq + Clone + 'static,
+    {
+        let this = self.clone();
+        Memo::new(move |_| this.with(|opt| opt.as_ref().and_then(&f)))
+    }
+
+    /// 若底层值为 `Some(T)`，非响应式地执行闭包副作用，返回闭包的执行结果。
+    fn if_some_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
+        self.with_untracked(|opt| opt.as_ref().map(f))
+    }
 }
 
 impl<S, T> RxOptionExt<T> for S where S: RxRead<Value = Option<T>> {}
