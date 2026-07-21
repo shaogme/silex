@@ -57,3 +57,4 @@ net = [
 
 [dev-dependencies]
 trybuild = "1.0"
+wasm-bindgen-test.workspace = true

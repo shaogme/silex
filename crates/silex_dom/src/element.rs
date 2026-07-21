@@ -1,6 +1,7 @@
 use crate::attribute::{ApplyTarget, ApplyToDom, IntoStorable, PendingAttribute};
 use silex_core::SilexError;
-use silex_core::reactivity::on_cleanup;
+use silex_core::reactivity::{StoredValue, on_cleanup};
+use silex_core::traits::RxWrite;
 
 use std::marker::PhantomData;
 use wasm_bindgen::JsCast;
@@ -253,6 +254,8 @@ pub fn bind_event_impl<E>(dom_element: &WebElem, event_name: String, mut handler
 where
     E: wasm_bindgen::convert::FromWasmAbi + 'static,
 {
+    let closure_store = StoredValue::new(None::<Closure<dyn FnMut(E)>>);
+
     let closure = Closure::wrap(Box::new(move |e: E| {
         handler(e);
     }) as Box<dyn FnMut(E)>);
@@ -269,9 +272,12 @@ where
 
     let target = dom_element.clone();
     let js_fn = js_value.clone();
+    closure_store.update_untracked(|opt| *opt = Some(closure));
 
     on_cleanup(move || {
         let _ = target.remove_event_listener_with_callback(&event_name, &js_fn);
-        drop(closure);
+        closure_store.update_untracked(|opt| {
+            let _ = opt.take();
+        });
     });
 }

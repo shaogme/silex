@@ -1,0 +1,9 @@
+[package]
+name = "silex_tailwind_example"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+silex.workspace = true
+web-sys.workspace = true

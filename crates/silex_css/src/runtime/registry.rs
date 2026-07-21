@@ -19,14 +19,20 @@ pub struct StaticStyleRegistry {
 }
 
 impl StaticStyleRegistry {
-    pub(crate) fn with<R>(f: impl FnOnce(&mut Self) -> R) -> R {
+    pub(crate) fn with<R>(f: impl FnOnce(&mut Self) -> Option<R>) -> Option<R> {
         thread_local! {
             static INSTANCE: RefCell<StaticStyleRegistry> = RefCell::new(StaticStyleRegistry {
                 injected_ids: HashSet::new(),
                 shared_sheet: None,
             });
         }
-        INSTANCE.with(|i| f(&mut i.borrow_mut()))
+        INSTANCE.with(|i| {
+            if let Ok(mut reg) = i.try_borrow_mut() {
+                f(&mut reg)
+            } else {
+                None
+            }
+        })
     }
 
     pub fn inject(&mut self, id: &str, content: &str) {
@@ -43,13 +49,16 @@ impl StaticStyleRegistry {
                     let _ = sheet.insert_rule_with_index(rule, rule_list.length());
                 }
             }
-        } else {
-            // Initialize sheet
-            let sheet = CssStyleSheet::new().expect("Failed to create CssStyleSheet");
+        } else if let Ok(sheet) = CssStyleSheet::new() {
+            // Initialize sheet safely
             let _ = sheet.replace_sync(content);
 
             // Register as the static sheet in the document registry
-            DOCUMENT_REGISTRY.with(|dr| dr.borrow_mut().set_static_sheet(sheet.clone()));
+            DOCUMENT_REGISTRY.with(|dr| {
+                if let Ok(mut dr) = dr.try_borrow_mut() {
+                    dr.set_static_sheet(sheet.clone());
+                }
+            });
 
             self.shared_sheet = Some(sheet);
         }
@@ -112,7 +121,10 @@ pub fn split_rules(css: &str) -> Vec<&str> {
 /// Injects a CSS string into the document.
 /// This function uses a shared registry to merge static styles.
 pub fn inject_style(id: &str, content: &str) {
-    StaticStyleRegistry::with(|r| r.inject(id, content));
+    StaticStyleRegistry::with(|r| {
+        r.inject(id, content);
+        Some(())
+    });
 }
 
 /// Registry to manage the list of adopted stylesheets in the document.

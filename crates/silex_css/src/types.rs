@@ -314,6 +314,7 @@ for_all_properties!(define_props);
 
 // --- 手动补充跨组约束 ---
 impl ValidFor<props::Border> for BorderValue {}
+impl ValidFor<props::BorderColor> for BorderValue {}
 impl ValidFor<props::BorderTop> for BorderValue {}
 impl ValidFor<props::BorderRight> for BorderValue {}
 impl ValidFor<props::BorderBottom> for BorderValue {}

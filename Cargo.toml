@@ -16,6 +16,7 @@ members = [
     "examples/error_boundary_demo",
     "examples/router",
     "examples/showcase",
+    "examples/tailwind",
     "crates/utils/silex_codegen",
 ]
 exclude = [
@@ -60,6 +61,7 @@ wasm-bindgen = { version = "0.2", default-features = false }
 web-sys = { version = "0.3", default-features = false }
 js-sys = { version = "0.3", default-features = false }
 wasm-bindgen-futures = { version = "0.4.68", default-features = false }
+wasm-bindgen-test = "0.3"
 gloo-timers = { version = "0.4", default-features = false, features = ["futures"] }
 
 serde = { version = "1.0", features = ["derive"] }

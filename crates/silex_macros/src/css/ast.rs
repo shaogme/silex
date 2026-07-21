@@ -1,4 +1,5 @@
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
+use quote::ToTokens;
 use syn::ext::IdentExt;
 use syn::parse::{Parse, ParseStream};
 use syn::{Ident, Result, Token, token};
@@ -215,5 +216,70 @@ impl Parse for CssUnsafe {
         let _brace_token = syn::braced!(content in input);
         let block: CssBlock = content.parse()?;
         Ok(CssUnsafe { block })
+    }
+}
+
+impl ToTokens for CssBlock {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        for rule in &self.rules {
+            rule.to_tokens(tokens);
+        }
+    }
+}
+
+impl ToTokens for CssRule {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match self {
+            CssRule::Declaration(d) => d.to_tokens(tokens),
+            CssRule::Nested(n) => n.to_tokens(tokens),
+            CssRule::AtRule(a) => a.to_tokens(tokens),
+            CssRule::Unsafe(u) => u.to_tokens(tokens),
+        }
+    }
+}
+
+impl ToTokens for CssDeclaration {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let prop_ts: TokenStream = self.property.parse().unwrap_or_default();
+        let vals = &self.values;
+        tokens.extend(quote::quote! {
+            #prop_ts : #vals ;
+        });
+    }
+}
+
+impl ToTokens for CssNested {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let selectors = &self.selectors;
+        let block = &self.block;
+        tokens.extend(quote::quote! {
+            #selectors {
+                #block
+            }
+        });
+    }
+}
+
+impl ToTokens for CssAtRule {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let name = &self.name;
+        let params = &self.params;
+        let block = &self.block;
+        tokens.extend(quote::quote! {
+            @ #name #params {
+                #block
+            }
+        });
+    }
+}
+
+impl ToTokens for CssUnsafe {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let block = &self.block;
+        tokens.extend(quote::quote! {
+            unsafe {
+                #block
+            }
+        });
     }
 }

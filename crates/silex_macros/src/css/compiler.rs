@@ -6,11 +6,19 @@ use proc_macro2::{Delimiter, Span, TokenStream, TokenTree};
 use std::iter::Peekable;
 use syn::Result;
 
+#[derive(Debug)]
 pub struct DynamicRule {
     pub template: String,
     pub expressions: Vec<(String, TokenStream)>,
 }
 
+#[derive(Debug, Clone)]
+pub struct CssWarning {
+    pub message: String,
+    pub span: Span,
+}
+
+#[derive(Debug)]
 pub struct CssCompileResult {
     pub class_name: String,
     pub style_id: String,
@@ -19,6 +27,7 @@ pub struct CssCompileResult {
     pub component_css: String, // CSS scoped to this component (with dynamic vars)
     pub expressions: Vec<(String, TokenStream)>,
     pub dynamic_rules: Vec<DynamicRule>,
+    pub warnings: Vec<CssWarning>,
 }
 
 struct ParserState {
@@ -26,6 +35,7 @@ struct ParserState {
     lifted_css: String,
     expressions: Vec<(String, TokenStream)>,
     dynamic_rules: Vec<DynamicRule>,
+    warnings: Vec<CssWarning>,
     class_name: String,
     is_unsafe: bool,
 }
@@ -69,6 +79,7 @@ impl CssCompiler {
             lifted_css: String::new(),
             expressions: Vec::new(),
             dynamic_rules: Vec::new(),
+            warnings: Vec::new(),
             class_name: if wrap_in_class {
                 class_name.clone()
             } else {
@@ -87,7 +98,9 @@ impl CssCompiler {
                 .map_err(|e| {
                     crate::css::error::report_lightning_error(format!("Static CSS: {}", e), span)
                 })?;
-            stylesheet.minify(MinifyOptions::default()).ok();
+            stylesheet.minify(MinifyOptions::default()).map_err(|e| {
+                crate::css::error::report_lightning_error(format!("Static CSS Minify: {}", e), span)
+            })?;
             stylesheet
                 .to_css(PrinterOptions {
                     minify: true,
@@ -109,7 +122,12 @@ impl CssCompiler {
                 StyleSheet::parse(&wrapped, ParserOptions::default()).map_err(|e| {
                     crate::css::error::report_lightning_error(format!("Component CSS: {}", e), span)
                 })?;
-            stylesheet.minify(MinifyOptions::default()).ok();
+            stylesheet.minify(MinifyOptions::default()).map_err(|e| {
+                crate::css::error::report_lightning_error(
+                    format!("Component CSS Minify: {}", e),
+                    span,
+                )
+            })?;
             stylesheet
                 .to_css(PrinterOptions {
                     minify: true,
@@ -163,6 +181,7 @@ impl CssCompiler {
             component_css: final_component_css,
             expressions: state.expressions,
             dynamic_rules: state.dynamic_rules,
+            warnings: state.warnings,
         })
     }
 }
@@ -186,6 +205,7 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                 let val = extract_dynamic_value(
                     &decl.values,
                     &mut state.expressions,
+                    &mut state.warnings,
                     prop_for_expr,
                     &ctx,
                 )?;
@@ -208,6 +228,7 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                         nested,
                         &mut selector_exprs,
                         &mut state.expressions,
+                        &mut state.warnings,
                         &DynamicContext {
                             is_unsafe: false,
                             ..ctx
@@ -218,7 +239,8 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                         expressions: selector_exprs,
                     });
                 } else {
-                    let sel_str = build_static_selector(&nested.selectors, &state.class_name)?;
+                    let sel_str =
+                        append_token_stream_strings(&nested.selectors, &mut state.warnings)?;
                     state.static_css.push_str(&sel_str);
                     state.static_css.push_str(" { ");
                     process_css_block(&nested.block, state)?;
@@ -230,7 +252,12 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                     (at.name == "keyframes" || at.name == "font-face" || at.name == "import")
                         && !state.class_name.is_empty();
 
-                let params = extract_at_rule_params(&at.params)?;
+                let params = extract_at_rule_params(
+                    &at.params,
+                    &mut state.expressions,
+                    &mut state.warnings,
+                    &ctx,
+                )?;
 
                 let mut rule_str = String::new();
                 rule_str.push('@');
@@ -239,18 +266,13 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                 rule_str.push_str(&params);
                 rule_str.push_str(" { ");
 
-                // For nested rules inside @keyframes, we shouldn't use the class name.
-                // We create a temporary state with empty class_name for the inner block.
                 let mut inner_state = ParserState {
                     static_css: String::new(),
                     lifted_css: String::new(),
                     expressions: state.expressions.clone(),
                     dynamic_rules: Vec::new(),
-                    class_name: if at.name == "keyframes" {
-                        "".to_string()
-                    } else {
-                        state.class_name.clone()
-                    },
+                    warnings: state.warnings.clone(),
+                    class_name: state.class_name.clone(),
                     is_unsafe: state.is_unsafe,
                 };
 
@@ -260,8 +282,8 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
 
                 // Sync back state
                 state.expressions = inner_state.expressions;
-                // Dynamic rules inside @-rules is not fully supported yet in this implementation,
-                // but we should probably collect them anyway.
+                state.warnings = inner_state.warnings;
+                // Dynamic rules inside @-rules is collected
                 for dr in inner_state.dynamic_rules {
                     state.dynamic_rules.push(dr);
                 }
@@ -282,15 +304,17 @@ fn build_dynamic_template(
     nested: &crate::css::ast::CssNested,
     selector_exprs: &mut Vec<(String, TokenStream)>,
     global_expressions: &mut Vec<(String, TokenStream)>,
+    warnings: &mut Vec<CssWarning>,
     ctx: &DynamicContext,
 ) -> Result<String> {
-    let mut template = extract_dynamic_selector(&nested.selectors, selector_exprs, ctx)?;
+    let mut template = extract_dynamic_selector(&nested.selectors, selector_exprs, warnings, ctx)?;
     template.push_str(" { ");
     build_dynamic_block_recursive(
         &nested.block,
         &mut template,
         selector_exprs,
         global_expressions,
+        warnings,
         ctx,
     )?;
     template.push_str(" }");
@@ -302,6 +326,7 @@ fn build_dynamic_block_recursive(
     template: &mut String,
     selector_exprs: &mut Vec<(String, TokenStream)>,
     global_expressions: &mut Vec<(String, TokenStream)>,
+    warnings: &mut Vec<CssWarning>,
     ctx: &DynamicContext,
 ) -> Result<()> {
     for rule in &block.rules {
@@ -310,8 +335,13 @@ fn build_dynamic_block_recursive(
                 template.push_str(&decl.property);
                 template.push_str(": ");
                 let prop_for_expr = if ctx.is_unsafe { "any" } else { &decl.property };
-                let val =
-                    extract_dynamic_value(&decl.values, global_expressions, prop_for_expr, ctx)?;
+                let val = extract_dynamic_value(
+                    &decl.values,
+                    global_expressions,
+                    warnings,
+                    prop_for_expr,
+                    ctx,
+                )?;
                 template.push_str(&val);
                 if decl.semi_token.is_some() {
                     template.push_str("; ");
@@ -321,6 +351,7 @@ fn build_dynamic_block_recursive(
                 let sel = extract_dynamic_selector(
                     &nested.selectors,
                     selector_exprs,
+                    warnings,
                     &DynamicContext {
                         class_name: "",
                         ..*ctx
@@ -333,6 +364,7 @@ fn build_dynamic_block_recursive(
                     template,
                     selector_exprs,
                     global_expressions,
+                    warnings,
                     ctx,
                 )?;
                 template.push_str(" } ");
@@ -341,13 +373,14 @@ fn build_dynamic_block_recursive(
                 template.push('@');
                 template.push_str(&at.name.to_string());
                 template.push(' ');
-                template.push_str(&append_token_stream_strings(&at.params)?);
+                template.push_str(&append_token_stream_strings(&at.params, warnings)?);
                 template.push_str(" { ");
                 build_dynamic_block_recursive(
                     &at.block,
                     template,
                     selector_exprs,
                     global_expressions,
+                    warnings,
                     ctx,
                 )?;
                 template.push_str(" } ");
@@ -358,6 +391,7 @@ fn build_dynamic_block_recursive(
                     template,
                     selector_exprs,
                     global_expressions,
+                    warnings,
                     &DynamicContext {
                         is_unsafe: true,
                         ..*ctx
@@ -393,15 +427,23 @@ fn contains_dynamic_selector(ts: &TokenStream) -> bool {
 
 // --- Unified Token Stream Processing ---
 
-fn process_tokens<F>(ts: &TokenStream, handler: &mut F) -> Result<String>
+fn process_tokens<F>(
+    ts: &TokenStream,
+    warnings: &mut Vec<CssWarning>,
+    handler: &mut F,
+) -> Result<String>
 where
     F: FnMut(&TokenTree, &mut Peekable<IntoIter>, &mut String, bool) -> Result<bool>,
 {
     let mut iter = ts.clone().into_iter().peekable();
-    process_tokens_iter(&mut iter, handler)
+    process_tokens_iter(&mut iter, warnings, handler)
 }
 
-fn process_tokens_iter<F>(iter: &mut Peekable<IntoIter>, handler: &mut F) -> Result<String>
+fn process_tokens_iter<F>(
+    iter: &mut Peekable<IntoIter>,
+    warnings: &mut Vec<CssWarning>,
+    handler: &mut F,
+) -> Result<String>
 where
     F: FnMut(&TokenTree, &mut Peekable<IntoIter>, &mut String, bool) -> Result<bool>,
 {
@@ -414,7 +456,31 @@ where
             match (prev, &tt) {
                 (TokenTree::Ident(_), TokenTree::Ident(_))
                 | (TokenTree::Ident(_), TokenTree::Literal(_))
-                | (TokenTree::Literal(_), TokenTree::Literal(_)) => space_before = true,
+                | (TokenTree::Literal(_), TokenTree::Ident(_))
+                | (TokenTree::Literal(_), TokenTree::Literal(_))
+                | (TokenTree::Group(_), TokenTree::Ident(_))
+                | (TokenTree::Group(_), TokenTree::Literal(_))
+                | (TokenTree::Group(_), TokenTree::Group(_)) => space_before = true,
+                (TokenTree::Ident(_), TokenTree::Punct(p)) if p.as_char() == '&' => {
+                    space_before = true;
+                }
+                (TokenTree::Punct(p), TokenTree::Ident(_))
+                | (TokenTree::Punct(p), TokenTree::Literal(_))
+                    if p.as_char() == '$' =>
+                {
+                    space_before = true;
+                }
+                (TokenTree::Punct(p1), TokenTree::Punct(p2))
+                    if p2.as_char() == '&'
+                        && (p1.as_char() == '~' || p1.as_char() == '>' || p1.as_char() == '+') =>
+                {
+                    space_before = true;
+                }
+                (TokenTree::Punct(p1), _)
+                    if p1.as_char() == '~' || p1.as_char() == '>' || p1.as_char() == '+' =>
+                {
+                    space_before = true;
+                }
                 _ => {}
             }
         }
@@ -440,13 +506,19 @@ where
                     out.push(delim.0);
                 }
                 let mut sub_iter = g.stream().into_iter().peekable();
-                out.push_str(&process_tokens_iter(&mut sub_iter, handler)?);
+                out.push_str(&process_tokens_iter(&mut sub_iter, warnings, handler)?);
                 if delim.1 != ' ' {
                     out.push(delim.1);
                 }
                 prev_tt = Some(TokenTree::Group(g));
             }
             TokenTree::Punct(p) => {
+                if p.as_char() == '?' {
+                    warnings.push(CssWarning {
+                        message: "[Silex CSS Warning] Potentially ambiguous token '?' in CSS stream. If this is a Rust expression, wrap it in $(...).".to_string(),
+                        span: p.span(),
+                    });
+                }
                 out.push(p.as_char());
                 prev_tt = Some(TokenTree::Punct(p));
             }
@@ -502,40 +574,84 @@ fn handle_dollar_path(iter: &mut Peekable<IntoIter>) -> syn::Result<Option<Token
     Ok(None)
 }
 
-pub fn append_token_stream_strings(ts: &TokenStream) -> Result<String> {
+pub fn append_token_stream_strings(
+    ts: &TokenStream,
+    warnings: &mut Vec<CssWarning>,
+) -> Result<String> {
     // Basic version used for @-rules and such, no special $ or & handling
-    process_tokens(ts, &mut |_, _, _, _| Ok(false))
+    process_tokens(ts, warnings, &mut |_, _, _, _| Ok(false))
 }
 
-fn extract_at_rule_params(ts: &TokenStream) -> Result<String> {
-    // Note: At-rules with $Path currently treat the result as a static string if possible,
-    // but at-rules usually don't support runtime dynamic values in the same way.
-    // For now we just stringify it.
-    process_tokens(ts, &mut |tt, iter, out, space_before| {
-        if matches!(tt, TokenTree::Punct(p) if p.as_char() == '$')
-            && let Some(var) = handle_dollar_path(iter)?
-        {
-            if space_before {
-                out.push(' ');
+fn check_unexpected_complex_tokens(iter: &mut Peekable<IntoIter>) -> syn::Result<()> {
+    if let Some(next_tt) = iter.peek() {
+        match next_tt {
+            TokenTree::Punct(p_next) if matches!(p_next.as_char(), '.' | '!' | '?' | ':') => {
+                return Err(syn::Error::new(
+                    p_next.span(),
+                    format!(
+                        "Unexpected '{}' after dynamic variable. Complex expressions like method calls, array indexing, or field access must be wrapped in $(...).",
+                        p_next.as_char()
+                    ),
+                ));
             }
-            out.push_str(&var.to_string());
-            return Ok(true);
+            TokenTree::Group(g)
+                if matches!(g.delimiter(), Delimiter::Bracket | Delimiter::Parenthesis) =>
+            {
+                return Err(syn::Error::new(
+                    g.span(),
+                    "Unexpected brackets/parentheses after dynamic variable. Complex expressions like method calls, array indexing, or field access must be wrapped in $(...).",
+                ));
+            }
+            _ => {}
         }
-        Ok(false)
-    })
+    }
+    Ok(())
 }
 
-fn build_static_selector(ts: &TokenStream, class_name: &str) -> Result<String> {
-    process_tokens(ts, &mut |tt, _, out, space_before| {
+fn extract_at_rule_params(
+    ts: &TokenStream,
+    exprs: &mut Vec<(String, TokenStream)>,
+    warnings: &mut Vec<CssWarning>,
+    ctx: &DynamicContext,
+) -> Result<String> {
+    process_tokens(ts, warnings, &mut |tt, iter, out, space_before| {
         if let TokenTree::Punct(p) = tt
-            && p.as_char() == '&'
-            && !class_name.is_empty()
+            && p.as_char() == '$'
         {
-            if space_before {
-                out.push(' ');
+            if let Some(TokenTree::Group(g)) = iter.peek()
+                && g.delimiter() == Delimiter::Parenthesis
+            {
+                if space_before {
+                    out.push(' ');
+                }
+                let idx = exprs.len();
+                exprs.push(("any".to_string(), g.stream()));
+                if !ctx.class_name.is_empty() {
+                    out.push_str(&format!("var(--{}-{})", ctx.class_name, idx));
+                } else {
+                    out.push_str(&format!("var(--slx-dyn-{})", idx));
+                }
+                iter.next();
+                return Ok(true);
             }
-            out.push_str(&format!(".{}", class_name));
-            return Ok(true);
+            if let Some(path) = handle_dollar_path(iter)? {
+                check_unexpected_complex_tokens(iter)?;
+                if space_before {
+                    out.push(' ');
+                }
+                let idx = exprs.len();
+                exprs.push(("any".to_string(), path));
+                if !ctx.class_name.is_empty() {
+                    out.push_str(&format!("var(--{}-{})", ctx.class_name, idx));
+                } else {
+                    out.push_str(&format!("var(--slx-dyn-{})", idx));
+                }
+                return Ok(true);
+            }
+            return Err(syn::Error::new(
+                p.span(),
+                "Invalid dynamic expression syntax after '$'. Expected $ident, $path, or $(expression).",
+            ));
         }
         Ok(false)
     })
@@ -544,9 +660,10 @@ fn build_static_selector(ts: &TokenStream, class_name: &str) -> Result<String> {
 fn extract_dynamic_selector(
     ts: &TokenStream,
     exprs: &mut Vec<(String, TokenStream)>,
+    warnings: &mut Vec<CssWarning>,
     ctx: &DynamicContext,
 ) -> Result<String> {
-    process_tokens(ts, &mut |tt, iter, out, space_before| {
+    process_tokens(ts, warnings, &mut |tt, iter, out, space_before| {
         if let TokenTree::Punct(p) = tt {
             if p.as_char() == '$' {
                 if let Some(TokenTree::Group(g)) = iter.peek()
@@ -561,14 +678,7 @@ fn extract_dynamic_selector(
                     return Ok(true);
                 }
                 if let Some(path) = handle_dollar_path(iter)? {
-                    if let Some(proc_macro2::TokenTree::Punct(p)) = iter.peek()
-                        && p.as_char() == '.'
-                    {
-                        return Err(syn::Error::new(
-                            p.span(),
-                            "Unexpected '.' after dynamic variable. Use $(...) for complex expressions like method calls.",
-                        ));
-                    }
+                    check_unexpected_complex_tokens(iter)?;
                     if space_before {
                         out.push(' ');
                     }
@@ -576,6 +686,10 @@ fn extract_dynamic_selector(
                     exprs.push(("any".to_string(), path));
                     return Ok(true);
                 }
+                return Err(syn::Error::new(
+                    p.span(),
+                    "Invalid dynamic expression syntax after '$'. Expected $ident, $path, or $(expression).",
+                ));
             } else if p.as_char() == '&' && !ctx.class_name.is_empty() {
                 if space_before {
                     out.push(' ');
@@ -591,10 +705,11 @@ fn extract_dynamic_selector(
 fn extract_dynamic_value(
     ts: &TokenStream,
     exprs: &mut Vec<(String, TokenStream)>,
+    warnings: &mut Vec<CssWarning>,
     prop_name: &str,
     ctx: &DynamicContext,
 ) -> Result<String> {
-    process_tokens(ts, &mut |tt, iter, out, space_before| {
+    process_tokens(ts, warnings, &mut |tt, iter, out, space_before| {
         if let TokenTree::Punct(p) = tt
             && p.as_char() == '$'
         {
@@ -615,14 +730,7 @@ fn extract_dynamic_value(
                 return Ok(true);
             }
             if let Some(path) = handle_dollar_path(iter)? {
-                if let Some(proc_macro2::TokenTree::Punct(p)) = iter.peek()
-                    && p.as_char() == '.'
-                {
-                    return Err(syn::Error::new(
-                        p.span(),
-                        "Unexpected '.' after dynamic variable. Use $(...) for complex expressions like method calls.",
-                    ));
-                }
+                check_unexpected_complex_tokens(iter)?;
                 if space_before {
                     out.push(' ');
                 }
@@ -635,7 +743,78 @@ fn extract_dynamic_value(
                 }
                 return Ok(true);
             }
+            return Err(syn::Error::new(
+                p.span(),
+                "Invalid dynamic expression syntax after '$'. Expected $ident, $path, or $(expression).",
+            ));
         }
         Ok(false)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_invalid_dollar_syntax_fails() {
+        let ts = syn::parse_str("color: $;").unwrap();
+        let err = CssCompiler::compile(ts, Span::call_site(), false).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Invalid dynamic expression syntax after '$'")
+        );
+    }
+
+    #[test]
+    fn test_unwrapped_indexing_fails() {
+        let ts = syn::parse_str("color: $theme[0];").unwrap();
+        let err = CssCompiler::compile(ts, Span::call_site(), false).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Unexpected brackets/parentheses after dynamic variable")
+        );
+    }
+
+    #[test]
+    fn test_spacing_between_var_and_ident() {
+        let ts = syn::parse_str("border: $width solid $color;").unwrap();
+        let res = CssCompiler::compile(ts, Span::call_site(), false).unwrap();
+        assert!(res.component_css.contains("solid"));
+        assert_eq!(res.expressions.len(), 2);
+    }
+
+    #[test]
+    fn test_keyframes_uses_class_prefix_for_vars() {
+        let ts = syn::parse_str("@keyframes slide { 0% { margin-top: $val; } }").unwrap();
+        let res = CssCompiler::compile(ts, Span::call_site(), false).unwrap();
+        assert!(
+            res.static_css
+                .contains(&format!("var(--{}-0)", res.class_name))
+        );
+        assert_eq!(res.expressions.len(), 1);
+    }
+
+    #[test]
+    fn test_at_media_with_dynamic_value() {
+        let ts = syn::parse_str("@media (min-width: 600px) { color: $color; }").unwrap();
+        let res = CssCompiler::compile(ts, Span::call_site(), false).unwrap();
+        assert_eq!(res.expressions.len(), 1);
+        assert!(
+            res.component_css
+                .contains(&format!("var(--{}-0)", res.class_name))
+        );
+    }
+
+    #[test]
+    fn test_warning_emitted_for_question_mark() {
+        let ts = syn::parse_str("color: ?;").unwrap();
+        let res = CssCompiler::compile(ts, Span::call_site(), false).unwrap();
+        assert_eq!(res.warnings.len(), 1);
+        assert!(
+            res.warnings[0]
+                .message
+                .contains("Potentially ambiguous token '?'")
+        );
+    }
 }
