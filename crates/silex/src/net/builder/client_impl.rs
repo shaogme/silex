@@ -1,7 +1,7 @@
 use std::{rc::Rc, time::Duration};
 
 use silex_core::{
-    reactivity::{Mutation, Resource},
+    reactivity::{Mutation, Resource, SuspenseContext},
     traits::{RxCloneData, RxGet},
 };
 
@@ -114,19 +114,30 @@ macro_rules! impl_net_methods {
             )
         }
 
-        pub fn into_resource(self) -> Resource<T, NetError> {
-            self.as_resource(())
+        pub fn into_resource(
+            self,
+            suspense_ctx: impl Into<Option<SuspenseContext>>,
+        ) -> Resource<T, NetError> {
+            self.as_resource((), suspense_ctx)
         }
 
-        pub fn as_resource<S>(self, source: S) -> Resource<T, NetError>
+        pub fn as_resource<S>(
+            self,
+            source: S,
+            suspense_ctx: impl Into<Option<SuspenseContext>>,
+        ) -> Resource<T, NetError>
         where
             S: RxGet + 'static,
             S::Value: PartialEq + RxCloneData,
         {
-            Resource::new(source, move |_| {
-                let client = self.clone();
-                async move { client.send().await }
-            })
+            Resource::new(
+                source,
+                move |_| {
+                    let client = self.clone();
+                    async move { client.send().await }
+                },
+                suspense_ctx,
+            )
         }
 
         pub fn as_mutation(self) -> Mutation<(), T, NetError> {

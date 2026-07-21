@@ -169,13 +169,14 @@ fn HomeView(_ctx: RouterContext) -> impl View {
             // Card 4: Suspense (Context Layout Pattern)
             Card("Suspense (Async Loading)")
                 .child(
-                    Suspense(move || {
+                    Suspense(move |cx| {
                         let async_data_local = Resource::new(
                             rx!(()),
                             |_| async {
                                 gloo_timers::future::TimeoutFuture::new(2_000).await;
                                 Ok::<_, SilexError>("Loaded Data from Server!".to_string())
-                            }
+                            },
+                            cx,
                         );
                         div(rx!(async_data_local.get().unwrap_or("Waiting...".to_string())))
                             .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")

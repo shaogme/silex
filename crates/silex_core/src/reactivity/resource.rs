@@ -1,12 +1,6 @@
-use std::{
-    any::Any,
-    cell::{Cell, RefCell},
-    future::Future,
-    panic::Location,
-    rc::Rc,
-};
+use std::{any::Any, cell::Cell, future::Future, panic::Location, rc::Rc};
 
-use silex_reactivity::{on_cleanup, use_context};
+use silex_reactivity::on_cleanup;
 use wasm_bindgen_futures::spawn_local;
 
 use super::{
@@ -15,7 +9,7 @@ use super::{
 };
 use crate::{
     Rx, RxValueKind, SilexError,
-    reactivity::{Memo, NodeId, create_scope, provide_context},
+    reactivity::{Memo, NodeId, StoredValue},
     traits::{IntoSignal, RxCloneData, RxData, RxError, RxGet, adaptive::AdaptiveWrapper, *},
 };
 
@@ -91,26 +85,35 @@ where
 }
 
 impl<T: RxCloneData, E: RxError> Resource<T, E> {
-    pub fn new<S, Fetcher, R>(source: R, fetcher: Fetcher) -> Self
+    pub fn new<S, Fetcher, R>(
+        source: R,
+        fetcher: Fetcher,
+        suspense_ctx: impl Into<Option<SuspenseContext>>,
+    ) -> Self
     where
         R: RxGet<Value = S> + 'static,
         S: PartialEq + RxCloneData,
         Fetcher: ResourceFetcher<S, Data = T, Error = E> + RxData,
     {
+        let suspense_ctx = suspense_ctx.into();
+
         // Try to retrieve existing resource from SuspenseContext (Hook-style stability)
-        let suspense_ctx = use_suspense_context();
-        if let Some(ctx) = &suspense_ctx {
-            let idx = ctx.index.get();
-            let resources = ctx.resources.borrow();
-            if let Some(any_res) = resources.get(idx).cloned()
-                && let Some(res) = any_res.downcast_ref::<Self>()
-            {
-                let res_val = *res;
-                drop(resources);
-                ctx.index.set(idx + 1);
+        if let Some(ctx) = suspense_ctx {
+            let cached_res = ctx.state.with_untracked(|s| {
+                let idx = s.index;
+                if let Some(any_res) = s.resources.get(idx).cloned()
+                    && let Some(res) = any_res.downcast_ref::<Self>()
+                {
+                    Some((*res, idx))
+                } else {
+                    None
+                }
+            });
+
+            if let Some((res_val, idx)) = cached_res {
+                ctx.state.update_untracked(|s| s.index = idx + 1);
                 return res_val;
             }
-            drop(resources);
         }
 
         // 默认状态为 Idle，直到第一次 Effect 执行变为 Loading
@@ -127,8 +130,7 @@ impl<T: RxCloneData, E: RxError> Resource<T, E> {
             let source_val = source.get();
             let _ = trigger.get();
 
-            let suspense_ctx = use_suspense_context();
-            if let Some(ctx) = &suspense_ctx {
+            if let Some(ctx) = suspense_ctx {
                 ctx.increment();
             }
 
@@ -164,7 +166,7 @@ impl<T: RxCloneData, E: RxError> Resource<T, E> {
                     });
                 }
 
-                if let Some(ctx) = &suspense_ctx {
+                if let Some(ctx) = suspense_ctx {
                     ctx.decrement();
                 }
             });
@@ -177,9 +179,11 @@ impl<T: RxCloneData, E: RxError> Resource<T, E> {
         };
 
         // Cache the newly created resource in the context
-        if let Some(ctx) = &suspense_ctx {
-            ctx.resources.borrow_mut().push(Rc::new(res));
-            ctx.index.set(ctx.index.get() + 1);
+        if let Some(ctx) = suspense_ctx {
+            ctx.state.update_untracked(|s| {
+                s.resources.push(Rc::new(res));
+                s.index += 1;
+            });
         }
 
         res
@@ -334,12 +338,16 @@ impl<T: RxCloneData, E: RxError> IntoSignal for Resource<T, E> {
 
 // --- Suspense ---
 
-#[derive(Clone)]
+pub(crate) struct SuspenseState {
+    resources: Vec<Rc<dyn Any>>,
+    index: usize,
+}
+
+#[derive(Clone, Copy)]
 pub struct SuspenseContext {
     pub count: ReadSignal<usize>,
     pub set_count: WriteSignal<usize>,
-    pub(crate) resources: Rc<RefCell<Vec<Rc<dyn Any>>>>,
-    pub(crate) index: Rc<Cell<usize>>,
+    pub(crate) state: StoredValue<SuspenseState>,
 }
 
 impl Default for SuspenseContext {
@@ -351,11 +359,14 @@ impl Default for SuspenseContext {
 impl SuspenseContext {
     pub fn new() -> Self {
         let (count, set_count) = Signal::pair(0);
+        let state = StoredValue::new(SuspenseState {
+            resources: Vec::new(),
+            index: 0,
+        });
         Self {
             count,
             set_count,
-            resources: Rc::new(RefCell::new(Vec::new())),
-            index: Rc::new(Cell::new(0)),
+            state,
         }
     }
 
@@ -371,17 +382,7 @@ impl SuspenseContext {
         });
     }
 
-    pub fn provide_with<T>(ctx: Self, f: impl FnOnce() -> T) -> T {
-        let mut result = None;
-        create_scope(|| {
-            provide_context(ctx.clone());
-            ctx.index.set(0); // Reset index for stable resource registration
-            result = Some(f());
-        });
-        result.unwrap()
+    pub fn reset_index(&self) {
+        self.state.update_untracked(|s| s.index = 0);
     }
-}
-
-pub fn use_suspense_context() -> Option<SuspenseContext> {
-    use_context::<SuspenseContext>()
 }

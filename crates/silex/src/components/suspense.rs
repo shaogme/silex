@@ -35,24 +35,23 @@ pub fn Suspense<CH, R>(
     #[chain(default)] mode: SuspenseMode,
 ) -> impl View
 where
-    CH: Fn() -> R + Clone + 'static,
+    CH: Fn(SuspenseContext) -> R + Clone + 'static,
     R: View + 'static,
 {
-    let children = Rc::new(move || children().into_any());
+    let children = Rc::new(move |cx: SuspenseContext| children(cx).into_any());
 
     // 创建属于此 Suspense 边界的上下文
     let ctx = SuspenseContext::new();
 
     // 在组件初始化时（稳定作用域）执行一次工厂闭包。
     // 确保 Resource 实例绑定到稳定的组件作用域。
-    let initial_view = SuspenseContext::provide_with(ctx.clone(), {
-        let children = children.clone();
-        move || children()
-    });
+    let initial_view = {
+        ctx.reset_index();
+        children(ctx)
+    };
 
     render! {
         use scope;
-        use provide ctx.clone();
 
         match mode {
             SuspenseMode::KeepAlive => {
@@ -74,7 +73,6 @@ where
             SuspenseMode::Unmount => {
                 let count = ctx.count;
                 let (is_first, set_is_first) = Signal::pair(true);
-                let ctx_clone = ctx.clone();
                 let initial_view = initial_view.clone();
                 let children = children.clone();
                 let fallback = fallback.clone();
@@ -87,10 +85,9 @@ where
                                 initial_view.clone()
                             } else {
                                 let children = children.clone();
-                                let ctx = ctx_clone.clone();
+                                ctx.reset_index();
                                 render! {
-                                    use provide ctx;
-                                    children()
+                                    children(ctx)
                                 }.into_any()
                             }
                         } else {

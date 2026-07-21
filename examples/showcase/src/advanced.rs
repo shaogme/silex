@@ -250,7 +250,7 @@ pub fn ResourceDemo(_ctx: RouterContext) -> impl View {
     let (user_id, set_user_id) = Signal::pair(1);
 
     // Create Resource: triggers when user_id changes
-    let user_resource = Resource::new(user_id, mock_fetch_user);
+    let user_resource = Resource::new(user_id, mock_fetch_user, None);
 
     div![
         h3("Resource & Optimistic UI"),
@@ -437,8 +437,8 @@ pub fn SuspenseDemo(_ctx: RouterContext) -> impl View {
         .style("margin-bottom: 15px;"),
         div![rx! {
             if show_content.get() {
-                Suspense(move || {
-                    let resource = Resource::new(trigger, heavy_work);
+                Suspense(move |cx| {
+                    let resource = Resource::new(trigger, heavy_work, cx);
                     div![
                         div![
                             "Resource Data: ",

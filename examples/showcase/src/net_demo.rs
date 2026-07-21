@@ -46,7 +46,7 @@ pub fn HttpClientDemo() -> impl View {
         .timeout_ms(5000)
         .retry_policy(2, std::time::Duration::from_millis(300))
         .json::<Post>()
-        .as_resource(post_id);
+        .as_resource(post_id, None);
 
     // 2. Using HttpClient::as_mutation_with for parameterized actions (POST)
     let create_post_builder =

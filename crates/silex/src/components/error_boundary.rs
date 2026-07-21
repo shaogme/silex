@@ -28,7 +28,6 @@ where
 
     render! {
         use scope;
-        use provide error_ctx;
 
         let fallback = fallback.clone();
         let children = children.clone();
