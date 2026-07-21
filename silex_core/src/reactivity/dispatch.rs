@@ -1,7 +1,7 @@
 use crate::{
+    NodeRef, RxNodeKind,
     reactivity::{NodeId, OpPayloadHeader},
     traits::{RxData, RxGuard},
-    NodeRef, RxNodeKind,
 };
 use silex_reactivity::{
     is_closure_valid, is_op_valid, is_signal_valid, is_stored_value_valid, track_signal,
@@ -118,9 +118,7 @@ pub unsafe fn rx_read_node_untracked<'a, T: RxData>(
             }
         }
         RxNodeKind::Closure => {
-            try_with_closure::<Box<dyn Fn() -> T>, _>(id, |f| {
-                RxGuard::Owned(f())
-            })
+            try_with_closure::<Box<dyn Fn() -> T>, _>(id, |f| RxGuard::Owned(f()))
         }
     }
 }

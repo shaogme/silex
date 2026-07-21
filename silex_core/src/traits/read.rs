@@ -641,15 +641,11 @@ macro_rules! impl_rx_delegate {
             #[inline(always)]
             fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
                 let id = self.id;
-                unsafe {
-                    ::silex_reactivity::try_with_signal_untracked(id, |v: &T| {
-                        std::mem::transmute::<&T, &'static T>(v)
-                    })
-                    .map(|v| $crate::traits::RxGuard::Borrowed {
-                        value: v,
-                        token: Some($crate::NodeRef::from_id(id)),
-                    })
-                }
+                let val = ::silex_reactivity::try_get_signal_value_ref::<T>(id)?;
+                Some($crate::traits::RxGuard::Borrowed {
+                    value: val,
+                    token: Some($crate::NodeRef::from_id(id)),
+                })
             }
 
             #[inline(always)]

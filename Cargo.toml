@@ -8,6 +8,7 @@ members = [
     "silex_dom",
     "silex_rx",
     "silex_reactivity",
+    "silex_thread_local",
     "silex_hash",
     "silex_vtable",
     "examples/counter",
@@ -50,6 +51,7 @@ silex_html = { path = "silex_html", version = "0.1.0-beta.9" }
 silex_css = { path = "silex_css", version = "0.1.0-beta.9" }
 silex_macros = { path = "silex_macros", version = "0.1.0-beta.9", default-features = false }
 silex_reactivity = { path = "silex_reactivity", version = "0.1.0-beta.9" }
+silex_thread_local = { path = "silex_thread_local", version = "0.1.0-beta.9" }
 silex_hash = { path = "silex_hash", version = "0.1.0-beta.9" }
 silex_rx = { path = "silex_rx", version = "0.1.0-beta.9" }
 silex_vtable = { path = "silex_vtable", version = "0.1.0-beta.9" }
@@ -66,6 +68,8 @@ serde_json = "1.0"
 syn = { version = "2.0", default-features = false }
 quote = { version = "1.0", default-features = false }
 proc-macro2 = { version = "1.0", default-features = false }
+
+criterion = "0.7"
 
 [profile.dev]
 panic = "unwind"

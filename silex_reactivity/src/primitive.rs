@@ -5,7 +5,7 @@ use crate::{
         arena::Index as NodeId,
         value::{AnyValue, ThunkValue},
     },
-    runtime::{MemoVTable, RUNTIME, storage::ExtraData},
+    runtime::{MemoVTable, RUNTIME, Runtime, storage::ExtraData},
 };
 use std::{
     alloc::Layout,
@@ -23,7 +23,7 @@ pub fn provide_context<T: 'static>(value: T) {
 }
 
 fn internal_provide_context(key: TypeId, value: Box<dyn Any>) {
-    RUNTIME.with(|rt| rt.provide_context(key, value));
+    RUNTIME.get_or(Runtime::new).provide_context(key, value);
 }
 
 pub fn use_context<T: Clone + 'static>() -> Option<T> {
@@ -33,11 +33,10 @@ pub fn use_context<T: Clone + 'static>() -> Option<T> {
 }
 
 fn internal_use_context(key: TypeId) -> Option<&'static dyn Any> {
-    RUNTIME.with(|rt| {
-        // Safe: Runtime context value is 'static
-        let val = rt.use_context_raw(key)?;
-        Some(unsafe { &*(val as *const dyn Any) })
-    })
+    let rt = RUNTIME.get()?;
+    // Safe: Runtime context value is 'static
+    let val = rt.use_context_raw(key)?;
+    Some(unsafe { &*(val as *const dyn Any) })
 }
 
 // --- Effect ---
@@ -49,7 +48,7 @@ pub fn effect<F: Fn() + 'static>(f: F) -> NodeId {
 }
 
 fn internal_create_effect(thunk: ThunkValue) -> NodeId {
-    RUNTIME.with(|rt| rt.create_effect(thunk))
+    RUNTIME.get_or(Runtime::new).create_effect(thunk)
 }
 
 // --- Memo ---
@@ -60,7 +59,7 @@ where
     T: Clone + PartialEq + 'static,
     F: Fn(Option<&T>) -> T + 'static,
 {
-    let id = RUNTIME.with(|rt| rt.register_node());
+    let id = RUNTIME.get_or(Runtime::new).register_node();
     internal_init_memo::<T, F>(id, f);
     id
 }
@@ -85,14 +84,12 @@ where
         unsafe { write(data.as_mut_ptr().add(1) as *mut Box<F>, boxed) };
     }
 
-    RUNTIME.with(|rt| {
-        unsafe { rt.initialize_memo_raw(id, data) };
-    });
+    unsafe { RUNTIME.get_or(Runtime::new).initialize_memo_raw(id, data) };
 }
 
 #[track_caller]
 pub fn register_derived<T: 'static>(f: Box<dyn Fn() -> T>) -> NodeId {
-    let id = RUNTIME.with(|rt| rt.register_node());
+    let id = RUNTIME.get_or(Runtime::new).register_node();
     internal_init_derived::<T>(id, f);
     id
 }
@@ -103,9 +100,7 @@ fn internal_init_derived<T: 'static>(id: NodeId, f: Box<dyn Fn() -> T>) {
     data[0] = &DerivedVTable::<T>::VTABLE as *const _ as usize;
     unsafe { write(data.as_mut_ptr().add(1) as *mut Box<dyn Fn() -> T>, f) };
 
-    RUNTIME.with(|rt| {
-        unsafe { rt.initialize_memo_raw(id, data) };
-    });
+    unsafe { RUNTIME.get_or(Runtime::new).initialize_memo_raw(id, data) };
 }
 
 struct MemoInlineVTable<T, F>(PhantomData<(T, F)>);
@@ -157,19 +152,22 @@ pub fn signal<T: 'static>(value: T) -> NodeId {
 }
 
 fn internal_create_signal(val: AnyValue) -> NodeId {
-    RUNTIME.with(|rt| rt.create_signal(val))
+    RUNTIME.get_or(Runtime::new).create_signal(val)
 }
 
 pub fn try_get_signal<T: Clone + 'static>(id: NodeId) -> Option<T> {
-    RUNTIME.with(|rt| rt.get_signal_value(id)?.downcast_ref::<T>().cloned())
+    RUNTIME
+        .get()?
+        .get_signal_value(id)?
+        .downcast_ref::<T>()
+        .cloned()
 }
 
 pub fn try_get_signal_untracked<T: Clone + 'static>(id: NodeId) -> Option<T> {
-    RUNTIME.with(|rt| {
-        rt.get_signal_value_untracked(id)?
-            .downcast_ref::<T>()
-            .cloned()
-    })
+    let rt = RUNTIME.get()?;
+    rt.get_signal_value_untracked(id)?
+        .downcast_ref::<T>()
+        .cloned()
 }
 
 #[inline(always)]
@@ -180,59 +178,59 @@ pub fn update_signal<T: 'static>(id: NodeId, f: impl FnOnce(&mut T)) {
 #[inline(never)]
 fn internal_update_signal<T: 'static>(id: NodeId, f: impl FnOnce(&mut T)) {
     let mut f = Some(f);
-    RUNTIME.with(|rt| {
-        rt.update_signal_untyped(id, &mut |any_val| {
-            if let Some(f) = f.take()
-                && let Some(val) = any_val.downcast_mut::<T>()
-            {
-                f(val);
-            }
-        });
-    })
+    let rt = RUNTIME.get_or(Runtime::new);
+    rt.update_signal_untyped(id, &mut |any_val| {
+        if let Some(f) = f.take()
+            && let Some(val) = any_val.downcast_mut::<T>()
+        {
+            f(val);
+        }
+    });
 }
 
 pub fn is_signal_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| {
-        rt.storage
-            .reactive
-            .get(id)
-            .is_some_and(|n| n.signal.is_some())
-    })
+    let rt = RUNTIME.get_or(Runtime::new);
+    rt.storage
+        .reactive
+        .get(id)
+        .is_some_and(|n| n.signal.is_some())
 }
 
 pub fn track_signal(id: NodeId) {
-    RUNTIME.with(|rt| rt.track_dependency(id))
+    RUNTIME.get_or(Runtime::new).track_dependency(id);
 }
 
 pub fn track_signals_batch(ids: &[NodeId]) {
-    RUNTIME.with(|rt| rt.track_dependencies(ids))
+    RUNTIME.get_or(Runtime::new).track_dependencies(ids);
 }
 
 pub fn notify_signal(id: NodeId) {
-    RUNTIME.with(|rt| rt.notify_update(id))
+    RUNTIME.get_or(Runtime::new).notify_update(id);
 }
 
 pub fn try_with_signal<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
-    RUNTIME.with(|rt| rt.get_signal_value(id)?.downcast_ref::<T>().map(f))
+    RUNTIME
+        .get()?
+        .get_signal_value(id)?
+        .downcast_ref::<T>()
+        .map(f)
 }
 
 pub fn try_with_signal_untracked<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
-    RUNTIME.with(|rt| {
-        rt.get_signal_value_untracked(id)?
-            .downcast_ref::<T>()
-            .map(f)
-    })
+    let rt = RUNTIME.get()?;
+    rt.get_signal_value_untracked(id)?
+        .downcast_ref::<T>()
+        .map(f)
 }
 
 pub fn try_update_signal_silent<T: 'static, R>(
     id: NodeId,
     f: impl FnOnce(&mut T) -> R,
 ) -> Option<R> {
-    RUNTIME.with(|rt| {
-        let val = rt.get_signal_value_mut_silent(id)?;
-        let val = val.downcast_mut::<T>()?;
-        Some(f(val))
-    })
+    let rt = RUNTIME.get_or(Runtime::new);
+    let val = rt.get_signal_value_mut_silent(id)?;
+    let val = val.downcast_mut::<T>()?;
+    Some(f(val))
 }
 
 // --- Storage ---
@@ -243,79 +241,74 @@ pub fn store_value<T: 'static>(value: T) -> NodeId {
 }
 
 fn internal_store_value(val: AnyValue) -> NodeId {
-    RUNTIME.with(|rt| rt.store_value(val))
+    RUNTIME.get_or(Runtime::new).store_value(val)
 }
 
 pub fn try_with_stored_value<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
-    RUNTIME.with(|rt| rt.get_stored_value(id)?.downcast_ref::<T>().map(f))
+    let rt = RUNTIME.get()?;
+    rt.get_stored_value(id)?.downcast_ref::<T>().map(f)
 }
 
 pub fn try_update_stored_value<T: 'static, R>(
     id: NodeId,
     f: impl FnOnce(&mut T) -> R,
 ) -> Option<R> {
-    RUNTIME.with(|rt| {
-        let val = rt.get_stored_value_mut(id)?;
-        let val = val.downcast_mut::<T>()?;
-        Some(f(val))
-    })
+    let rt = RUNTIME.get_or(Runtime::new);
+    let val = rt.get_stored_value_mut(id)?;
+    let val = val.downcast_mut::<T>()?;
+    Some(f(val))
 }
 
 pub fn is_stored_value_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| {
-        rt.storage
-            .extras
-            .get(id)
-            .is_some_and(|e| matches!(e, ExtraData::StoredValue(_)))
-    })
+    let rt = RUNTIME.get_or(Runtime::new);
+    rt.storage
+        .extras
+        .get(id)
+        .is_some_and(|e| matches!(e, ExtraData::StoredValue(_)))
 }
 
 pub fn register_closure(f: Box<dyn Any>) -> NodeId {
-    RUNTIME.with(|rt| rt.create_closure(f))
+    RUNTIME.get_or(Runtime::new).create_closure(f)
 }
 
 pub fn try_with_closure<T: 'static, R>(id: NodeId, f: impl FnOnce(&T) -> R) -> Option<R> {
-    RUNTIME.with(|rt| {
-        let extra = rt.storage.extras.get(id)?;
-        if let ExtraData::Closure(c) = extra {
-            c.f.downcast_ref::<T>().map(f)
-        } else {
-            None
-        }
-    })
+    let rt = RUNTIME.get()?;
+    let extra = rt.storage.extras.get(id)?;
+    if let ExtraData::Closure(c) = extra {
+        c.f.downcast_ref::<T>().map(f)
+    } else {
+        None
+    }
 }
 
 pub fn is_closure_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| {
-        rt.storage
-            .extras
-            .get(id)
-            .is_some_and(|e| matches!(e, ExtraData::Closure(_)))
-    })
+    let rt = RUNTIME.get_or(Runtime::new);
+    rt.storage
+        .extras
+        .get(id)
+        .is_some_and(|e| matches!(e, ExtraData::Closure(_)))
 }
 
 pub fn register_op(buffer: RawOpBuffer) -> NodeId {
-    RUNTIME.with(|rt| rt.create_op(buffer))
+    RUNTIME.get_or(Runtime::new).create_op(buffer)
 }
 
 pub fn try_with_op<R>(id: NodeId, f: impl FnOnce(&RawOpBuffer) -> R) -> Option<R> {
-    RUNTIME.with(|rt| {
-        let extra = rt.storage.extras.get(id)?;
-        if let ExtraData::Op(op) = extra {
-            Some(f(&op.0))
-        } else {
-            None
-        }
-    })
+    let rt = RUNTIME.get()?;
+    let extra = rt.storage.extras.get(id)?;
+    if let ExtraData::Op(op) = extra {
+        Some(f(&op.0))
+    } else {
+        None
+    }
 }
 
 pub fn is_op_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| {
-        rt.storage
-            .extras
-            .get(id)
-            .is_some_and(|e| matches!(e, ExtraData::Op(_)))
-    })
+    let rt = RUNTIME.get_or(Runtime::new);
+    rt.storage
+        .extras
+        .get(id)
+        .is_some_and(|e| matches!(e, ExtraData::Op(_)))
 }
 
 // --- Callback API ---
@@ -329,26 +322,24 @@ where
 }
 
 fn internal_register_callback(f: Rc<dyn Fn(Box<dyn Any>)>) -> NodeId {
-    RUNTIME.with(|rt| rt.register_callback_untyped(f))
+    RUNTIME.get_or(Runtime::new).register_callback_untyped(f)
 }
 
 pub fn invoke_callback(id: NodeId, arg: Box<dyn Any>) {
-    RUNTIME.with(|rt| {
-        if let Some(extra) = rt.storage.extras.get(id)
-            && let ExtraData::Callback(data) = extra
-        {
-            (data.f)(arg);
-        }
-    })
+    let rt = RUNTIME.get_or(Runtime::new);
+    if let Some(extra) = rt.storage.extras.get(id)
+        && let ExtraData::Callback(data) = extra
+    {
+        (data.f)(arg);
+    }
 }
 
 pub fn is_callback_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| {
-        rt.storage
-            .extras
-            .get(id)
-            .is_some_and(|e| matches!(e, ExtraData::Callback(_)))
-    })
+    let rt = RUNTIME.get_or(Runtime::new);
+    rt.storage
+        .extras
+        .get(id)
+        .is_some_and(|e| matches!(e, ExtraData::Callback(_)))
 }
 
 // --- NodeRef API ---
@@ -359,36 +350,45 @@ pub fn register_node_ref() -> NodeId {
 }
 
 fn internal_register_node_ref() -> NodeId {
-    RUNTIME.with(|rt| rt.register_node_ref())
+    RUNTIME.get_or(Runtime::new).register_node_ref()
 }
 
 pub fn get_node_ref<T: Clone + 'static>(id: NodeId) -> Option<T> {
-    RUNTIME.with(|rt| {
-        let extra = rt.storage.extras.get(id)?;
-        if let ExtraData::NodeRef(data) = extra {
-            let element = data.element.as_ref()?;
-            element.downcast_ref::<T>().cloned()
-        } else {
-            None
-        }
-    })
+    let rt = RUNTIME.get()?;
+    let extra = rt.storage.extras.get(id)?;
+    if let ExtraData::NodeRef(data) = extra {
+        let element = data.element.as_ref()?;
+        element.downcast_ref::<T>().cloned()
+    } else {
+        None
+    }
 }
 
 pub fn set_node_ref<T: 'static>(id: NodeId, element: T) {
-    RUNTIME.with(|rt| {
-        if let Some(extra) = rt.storage.extras.get_mut(id)
-            && let ExtraData::NodeRef(data) = extra
-        {
-            data.element = Some(Box::new(element));
-        }
-    })
+    let rt = RUNTIME.get_or(Runtime::new);
+    if let Some(extra) = rt.storage.extras.get_mut(id)
+        && let ExtraData::NodeRef(data) = extra
+    {
+        data.element = Some(Box::new(element));
+    }
 }
 
 pub fn is_node_ref_valid(id: NodeId) -> bool {
-    RUNTIME.with(|rt| {
-        rt.storage
-            .extras
-            .get(id)
-            .is_some_and(|e| matches!(e, ExtraData::NodeRef(_)))
-    })
+    let rt = RUNTIME.get_or(Runtime::new);
+    rt.storage
+        .extras
+        .get(id)
+        .is_some_and(|e| matches!(e, ExtraData::NodeRef(_)))
+}
+
+pub fn try_get_stored_value_ref<T: 'static>(id: NodeId) -> Option<&'static T> {
+    let rt = RUNTIME.get()?;
+    let any_val = rt.get_stored_value(id)?;
+    any_val.downcast_ref::<T>()
+}
+
+pub fn try_get_signal_value_ref<T: 'static>(id: NodeId) -> Option<&'static T> {
+    let rt = RUNTIME.get()?;
+    let any_val = rt.get_signal_value_untracked(id)?;
+    any_val.downcast_ref::<T>()
 }

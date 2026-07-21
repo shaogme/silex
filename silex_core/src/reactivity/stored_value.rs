@@ -1,13 +1,12 @@
 use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     marker::PhantomData,
-    mem::transmute,
     panic::Location,
 };
 
 use silex_reactivity::{
     NodeId, get_debug_label, is_stored_value_valid, set_debug_label, store_value,
-    try_update_stored_value, try_with_stored_value,
+    try_get_stored_value_ref, try_update_stored_value, try_with_stored_value,
 };
 
 use crate::{
@@ -108,14 +107,11 @@ impl<T: RxData> RxInternal for StoredValue<T> {
 
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-        unsafe {
-            try_with_stored_value(self.id, |v: &T| transmute::<&T, &'static T>(v)).map(|v| {
-                RxGuard::Borrowed {
-                    value: v,
-                    token: Some(NodeRef::from_id(self.id)),
-                }
-            })
-        }
+        let val = try_get_stored_value_ref::<T>(self.id)?;
+        Some(RxGuard::Borrowed {
+            value: val,
+            token: Some(NodeRef::from_id(self.id)),
+        })
     }
 
     #[inline(always)]

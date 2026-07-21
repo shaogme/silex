@@ -26,12 +26,11 @@ pub struct Runtime {
     pub(crate) scopes: Scopes,
 }
 
-thread_local! {
-    pub(crate) static RUNTIME: Runtime = Runtime::new();
-}
+pub(crate) static RUNTIME: silex_thread_local::ThreadLocal<Runtime> =
+    silex_thread_local::ThreadLocal::new();
 
 impl Runtime {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             storage: Storage::new(),
             scheduler: Scheduler::new(),
@@ -57,7 +56,7 @@ impl Runtime {
         id
     }
 
-    pub fn create_effect(&self, f: ThunkValue) -> NodeId {
+    pub(crate) fn create_effect(&self, f: ThunkValue) -> NodeId {
         let id = self.register_node();
         self.storage.reactive.insert(
             id,

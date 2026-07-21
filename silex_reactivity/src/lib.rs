@@ -9,6 +9,7 @@ pub use crate::core::{
 };
 
 use runtime::RUNTIME;
+pub(crate) use runtime::Runtime;
 use std::panic::Location;
 
 pub use primitive::*;
@@ -37,26 +38,26 @@ impl RawOpBuffer {
 }
 
 pub fn batch<R>(f: impl FnOnce() -> R) -> R {
-    RUNTIME.with(|rt| rt.batch(f))
+    RUNTIME.get_or(Runtime::new).batch(f)
 }
 
 pub fn create_scope<F>(f: F) -> NodeId
 where
     F: FnOnce(),
 {
-    RUNTIME.with(|rt| rt.create_scope(f))
+    RUNTIME.get_or(Runtime::new).create_scope(f)
 }
 
 pub fn dispose(id: NodeId) {
-    RUNTIME.with(|rt| rt.dispose(id));
+    RUNTIME.get_or(Runtime::new).dispose(id);
 }
 
 pub fn on_cleanup(f: impl FnOnce() + 'static) {
-    RUNTIME.with(|rt| rt.on_cleanup(f));
+    RUNTIME.get_or(Runtime::new).on_cleanup(f);
 }
 
 pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
-    RUNTIME.with(|rt| rt.untrack(f))
+    RUNTIME.get_or(Runtime::new).untrack(f)
 }
 
 /// 获取任何响应式节点的原始指针（不区分 Signal 或 StoredValue）。
@@ -67,18 +68,18 @@ pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
 /// 调用者必须确保返回的指针在当前上下文中有效。
 /// 如果节点被销毁，该指针将失效。
 pub unsafe fn try_get_any_raw_untracked(id: NodeId) -> Option<*const ()> {
-    RUNTIME.with(|rt| unsafe { rt.get_any_raw_ptr_untracked(id) })
+    let rt = RUNTIME.get()?;
+    unsafe { rt.get_any_raw_ptr_untracked(id) }
 }
 
 pub fn get_node_defined_at(_id: NodeId) -> Option<&'static Location<'static>> {
     #[cfg(debug_assertions)]
     {
-        RUNTIME.with(|rt| {
-            if let Some(node) = rt.storage.graph.get(_id) {
-                return node.defined_at;
-            }
-            None
-        })
+        let rt = RUNTIME.get()?;
+        if let Some(node) = rt.storage.graph.get(_id) {
+            return node.defined_at;
+        }
+        None
     }
     #[cfg(not(debug_assertions))]
     {
@@ -92,26 +93,24 @@ pub fn set_debug_label(_id: NodeId, _label: impl Into<String>) {
     #[cfg(debug_assertions)]
     {
         let label = _label.into();
-        RUNTIME.with(|rt| {
-            if let Some(aux) = rt.storage.try_aux_mut(_id) {
-                aux.debug_label = Some(label);
-            }
-        })
+        let rt = RUNTIME.get_or(Runtime::new);
+        if let Some(aux) = rt.storage.try_aux_mut(_id) {
+            aux.debug_label = Some(label);
+        }
     }
 }
 
 pub fn get_debug_label(_id: NodeId) -> Option<String> {
     #[cfg(debug_assertions)]
     {
-        RUNTIME.with(|rt| {
-            if let Some(aux) = rt.storage.node_aux.get(_id)
-                && let Some(label) = &aux.debug_label
-            {
-                return Some(label.clone());
-            }
-            // Check dead labels
-            rt.storage.dead_node_labels.get(_id).cloned()
-        })
+        let rt = RUNTIME.get()?;
+        if let Some(aux) = rt.storage.node_aux.get(_id)
+            && let Some(label) = &aux.debug_label
+        {
+            return Some(label.clone());
+        }
+        // Check dead labels
+        rt.storage.dead_node_labels.get(_id).cloned()
     }
     #[cfg(not(debug_assertions))]
     {
