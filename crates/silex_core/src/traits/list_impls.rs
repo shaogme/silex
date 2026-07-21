@@ -1,13 +1,5 @@
 use crate::error::SilexResult;
-
-/// Trait to unify different types of data sources that can be used in a `For` loop
-/// via zero-copy slice access.
-pub trait ForLoopSource {
-    type Item: Clone;
-
-    /// Returns a slice of the items.
-    fn as_slice(&self) -> SilexResult<&[Self::Item]>;
-}
+use crate::traits::{ForErrorHandler, ForLoopSource};
 
 // Impl for Vec<T>
 impl<T: Clone + 'static> ForLoopSource for Vec<T> {
@@ -41,9 +33,6 @@ impl<T: Clone + 'static> ForLoopSource for SilexResult<Vec<T>> {
         }
     }
 }
-
-#[derive(Clone)]
-pub struct ForErrorHandler(std::rc::Rc<dyn Fn(crate::SilexError)>);
 
 impl ForErrorHandler {
     pub fn call(&self, err: crate::SilexError) {

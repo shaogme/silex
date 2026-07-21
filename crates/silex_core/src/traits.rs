@@ -51,7 +51,29 @@
 //!
 //! 这些运算通过统一的静态映射载体在不带来大量单态化代码膨胀的情况下流畅返回组合的派生 `Rx`。
 
-use crate::reactivity::NodeId;
+#[doc(hidden)]
+pub mod adaptive;
+
+mod base_impls;
+mod guards_impls;
+mod list_impls;
+mod read_impls;
+mod write_impls;
+
+pub use read_impls::{create_tuple_n_rx, create_tuple2_rx};
+
+use std::{fmt::Debug, panic::Location, rc::Rc};
+
+use crate::{
+    NodeRef, SilexError,
+    error::SilexResult,
+    reactivity::{NodeId, Signal, is_signal_valid},
+    traits::adaptive::{AdaptiveFallback, AdaptiveWrapper},
+};
+
+// ==========================================
+// 1. 核心数据约束与 Traits 定义
+// ==========================================
 
 /// 框架数据约束聚合层，用于统一管理生命周期与能力要求。
 pub trait RxData: 'static {}
@@ -60,8 +82,8 @@ impl<T: ?Sized + 'static> RxData for T {}
 pub trait RxCloneData: Clone + RxData {}
 impl<T: Clone + 'static> RxCloneData for T {}
 
-pub trait RxError: Clone + std::fmt::Debug + RxData {}
-impl<T: Clone + std::fmt::Debug + 'static> RxError for T {}
+pub trait RxError: Clone + Debug + RxData {}
+impl<T: Clone + Debug + 'static> RxError for T {}
 
 /// 响应式实体的核心价值定义。
 pub trait RxValue {
@@ -79,13 +101,11 @@ pub trait RxBase: RxValue {
 
     /// 检查该值是否已被销毁。
     fn is_disposed(&self) -> bool {
-        self.id()
-            .map(|id| !crate::reactivity::is_signal_valid(id))
-            .unwrap_or(false)
+        self.id().map(|id| !is_signal_valid(id)).unwrap_or(false)
     }
 
     /// 源码定义位置，用于调试模式下的错误追踪。
-    fn defined_at(&self) -> Option<&'static std::panic::Location<'static>>;
+    fn defined_at(&self) -> Option<&'static Location<'static>>;
 
     /// 调试名称（由 `.with_name()` 设置）。
     fn debug_name(&self) -> Option<String> {
@@ -93,71 +113,349 @@ pub trait RxBase: RxValue {
     }
 }
 
+// ==========================================
+// 2. Guards 结构体与 Trait
+// ==========================================
+
+/// 内部辅助 Trait，用于抹平所有权存储与借用目标之间的 Deref 差异。
+pub trait GuardStorage<T: ?Sized> {
+    fn borrow_storage(&self) -> &T;
+}
+
+/// 统一大一统的响应式守卫。
+///
+/// - 'a: 借用生命周期。
+/// - T: 逻辑值类型（支持 ?Sized）。
+/// - S: 内部存储类型（必须 Sized，默认为 ()，当需要 Owned 变体时应指定具体的类型）。
+pub enum RxGuard<'a, T: ?Sized, S = ()> {
+    /// 借用变体：可以是来自 Arena 的信号引用，也可以是来自 Constant 的静态引用。
+    Borrowed {
+        value: &'a T,
+        token: Option<NodeRef>,
+    },
+    /// 所有权变体：持有计算结果或内联值。
+    Owned(S),
+}
+
+// ==========================================
+// 3. 读取相关 Traits
+// ==========================================
+
+/// 允许将各种类型（原始类型、信号、Rx）转换为统一的 `Rx` 包装器。
+///
+/// *注意*: 原始类型（i32, f64, &str 等）会自动转换为 `Constant<T>`。
+pub trait IntoRx: RxValue {
+    type RxType;
+    fn into_rx(self) -> Self::RxType;
+    fn is_constant(&self) -> bool;
+}
+
+/// 将任何响应式类型强转为完全归一化的 `Signal<T>` 枚举。
+/// 这是 Silex 内部实现零成本类型擦除的核心机制。
+pub trait IntoSignal: RxValue {
+    fn into_signal(self) -> Signal<Self::Value>
+    where
+        Self: Sized + RxData,
+        Self::Value: Sized + RxCloneData;
+}
+
+/// A trait used internally by `Rx` to delegate calls to either a closure or a reactive primitive.
 #[doc(hidden)]
-mod guards;
+pub trait RxInternal: RxBase {
+    /// 自适应返回类型：由具体实现决定返回 Borrowed 或 Owned
+    type ReadOutput<'a>
+    where
+        Self: 'a;
+
+    /// 响应式读取：追踪依赖并返回守卫。
+    #[inline(always)]
+    fn rx_read(&self) -> Option<Self::ReadOutput<'_>> {
+        self.track();
+        self.rx_read_untracked()
+    }
+
+    /// 非响应式读取：不追踪依赖并返回守卫。
+    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>>;
+
+    /// 提供对值的闭包式不可变访问（不追踪依赖）。
+    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U>;
+
+    fn rx_is_constant(&self) -> bool {
+        false
+    }
+
+    fn rx_get_adaptive(&self) -> Option<Self::Value>
+    where
+        Self::Value: Sized,
+    {
+        self.rx_try_with_untracked(|v| AdaptiveWrapper(v).maybe_clone())
+            .flatten()
+    }
+}
+
 #[doc(hidden)]
-pub use guards::*;
-
-#[macro_use]
-mod read;
-pub use read::*;
-
-mod write;
-pub use write::*;
-
-mod list;
-pub use list::*;
-
-/// 内部自适应工具，用于在不引入显式 Clone 约束的情况下探测克隆能力。
-#[doc(hidden)]
-pub mod adaptive {
-    pub struct AdaptiveWrapper<'a, T>(pub &'a T);
-
-    impl<'a, T: Clone> AdaptiveWrapper<'a, T> {
-        pub fn maybe_clone(&self) -> Option<T> {
-            Some(self.0.clone())
+/// Provides a sensible panic message for accessing disposed reactive values.
+#[macro_export]
+macro_rules! unwrap_rx {
+    ($rx:ident) => {{
+        let defined_at = $rx.defined_at();
+        let debug_name = $rx.debug_name();
+        let location = std::panic::Location::caller();
+        move || {
+            $crate::reactivity::dispatch::report_disposed(defined_at, debug_name, location);
         }
+    }};
+}
+
+/// 统一的自适应读取与访问 Trait (Unified Read and Access)。
+/// 向上统一 Guard 访问机制（借用）和闭包访问机制（映射），
+/// 用户无需关心底层是克隆还是借用，自动根据类型智能提供最合适的方式。
+pub trait RxRead: RxInternal {
+    /// 执行响应式读取，返回一个智能守卫。
+    #[track_caller]
+    fn read(&self) -> Self::ReadOutput<'_> {
+        self.try_read().unwrap_or_else(unwrap_rx!(self))
     }
 
-    pub trait AdaptiveFallback {
-        type Value;
-        fn maybe_clone(&self) -> Option<Self::Value>;
+    /// 执行响应式读取，返回一个智能守卫。如果信号已被销毁，返回 `None`。
+    #[track_caller]
+    fn try_read(&self) -> Option<Self::ReadOutput<'_>> {
+        self.rx_read()
     }
 
-    impl<'a, T> AdaptiveFallback for AdaptiveWrapper<'a, T> {
-        type Value = T;
-        fn maybe_clone(&self) -> Option<T> {
+    /// 执行非响应式读取，返回一个智能守卫。
+    #[track_caller]
+    fn read_untracked(&self) -> Self::ReadOutput<'_> {
+        self.try_read_untracked().unwrap_or_else(unwrap_rx!(self))
+    }
+
+    /// 执行非响应式读取，返回一个智能守卫。如果信号已被销毁，返回 `None`。
+    #[track_caller]
+    fn try_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
+        self.rx_read_untracked()
+    }
+
+    /// 响应式读取：订阅更改，并通过闭包访问底层值，返回闭包执行的结果。
+    #[track_caller]
+    fn with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> U {
+        self.try_with(fun).unwrap_or_else(unwrap_rx!(self))
+    }
+
+    /// 响应式读取：订阅更改，并通过闭包访问底层值。如果信号已被销毁，返回 `None`。
+    #[track_caller]
+    fn try_with<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.track();
+        self.rx_try_with_untracked(fun)
+    }
+
+    /// 非响应式读取：通过闭包访问底层值（不订阅），返回闭包执行的结果。
+    #[track_caller]
+    fn with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> U {
+        self.try_with_untracked(fun)
+            .unwrap_or_else(unwrap_rx!(self))
+    }
+
+    /// 非响应式读取：通过闭包访问底层值（不订阅）。如果信号已被销毁，返回 `None`。
+    #[track_caller]
+    fn try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.rx_try_with_untracked(fun)
+    }
+
+    /// 尝试获取值的副本。该方法不强制要求 `Clone` 约束（自适应回退）。
+    /// - 如果信号已销毁 / 未实现 Clone：返回 `None`。
+    #[track_caller]
+    fn try_get_cloned(&self) -> Option<Self::Value>
+    where
+        Self::Value: Sized,
+    {
+        self.track();
+        self.rx_get_adaptive()
+    }
+
+    /// 非响应式地尝试获取值的副本（自适应回退）。
+    #[track_caller]
+    fn try_get_cloned_untracked(&self) -> Option<Self::Value>
+    where
+        Self::Value: Sized,
+    {
+        self.rx_get_adaptive()
+    }
+
+    /// 获取值的副本或默认值。如果不支持克隆或信号已销毁，返回 `Default::default()`。
+    #[track_caller]
+    fn get_cloned_or_default(&self) -> Self::Value
+    where
+        Self::Value: Sized + Default,
+    {
+        self.try_get_cloned().unwrap_or_default()
+    }
+}
+
+/// 克隆获取特质。仅当值支持克隆时自动生效。
+/// 该 Trait 仅包含接口定义，具体的 HRTB 约束延迟到 Blanket Implementation 中处理，
+/// 从而简化了用户在使用该 Trait 作为约束时的书写负担。
+pub trait RxGet: RxRead
+where
+    Self::Value: Clone + Sized,
+{
+    /// 非响应式地克隆和返回值。如果是被销毁的，返回 None。
+    fn try_get_untracked(&self) -> Option<Self::Value>;
+
+    /// 非响应式地克隆和返回值。
+    fn get_untracked(&self) -> Self::Value;
+
+    /// 响应式地订阅信号，克隆并返回值。已被销毁则返回 None。
+    fn try_get(&self) -> Option<Self::Value>;
+
+    /// 响应式地订阅信号，克隆并返回值。
+    fn get(&self) -> Self::Value;
+}
+
+// ==========================================
+// 4. 写入与通知 Trait
+// ==========================================
+
+/// 统一写入与通知 Trait (Unified Write and Notification).
+/// 向上整合了所有更新、替换及通知机制，开发者只需实现最基础的闭包突变和通知接口。
+pub trait RxWrite: RxBase {
+    /// 仅应用可变闭包更变数据，不通知任何订阅者。（底层无感更新）
+    /// 如果目标已被 disposed，则返回 None。
+    fn rx_try_update_untracked<URet>(
+        &self,
+        fun: impl FnOnce(&mut Self::Value) -> URet,
+    ) -> Option<URet>;
+
+    /// 手动向所有依赖此节点的订阅者发送数据变更通知。
+    fn rx_notify(&self);
+
+    // ==========================================
+    // 便利 Blanket API (由框架提供默认实现)
+    // ==========================================
+
+    /// 响应式更新：使用闭包就地修改数据，并在完成后触发通知。
+    #[track_caller]
+    fn update(&self, fun: impl FnOnce(&mut Self::Value)) {
+        self.try_update(fun).unwrap_or_else(unwrap_rx!(self))
+    }
+
+    /// 尝试响应式更新：被销毁时返回 None。
+    #[track_caller]
+    fn try_update<URet>(&self, fun: impl FnOnce(&mut Self::Value) -> URet) -> Option<URet> {
+        let res = self.rx_try_update_untracked(fun)?;
+        self.rx_notify();
+        Some(res)
+    }
+
+    /// 响应式替换：直接用新数据覆盖原有的值，然后触发通知。
+    #[track_caller]
+    fn set(&self, value: Self::Value)
+    where
+        Self::Value: Sized,
+    {
+        self.update(|v| *v = value);
+    }
+
+    /// 尝试响应式替换。
+    #[track_caller]
+    fn try_set(&self, value: Self::Value) -> Option<Self::Value>
+    where
+        Self::Value: Sized,
+    {
+        if self.is_disposed() {
+            Some(value)
+        } else {
+            self.set(value);
             None
         }
     }
-}
 
-impl RxValue for () {
-    type Value = ();
-}
-
-impl RxBase for () {
-    fn id(&self) -> Option<NodeId> {
-        None
+    /// 根据条件触发修改与通知。闭包返回 true 才会触发 notify。
+    #[track_caller]
+    fn maybe_update(&self, fun: impl FnOnce(&mut Self::Value) -> bool) {
+        if let Some(should_notify) = self.rx_try_update_untracked(fun)
+            && should_notify
+        {
+            self.rx_notify();
+        }
     }
-    fn track(&self) {}
-    fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
-        None
+
+    /// 静默更新：使用闭包就地修改数据，但【不触发通知】。
+    #[track_caller]
+    fn update_untracked<URet>(&self, fun: impl FnOnce(&mut Self::Value) -> URet) -> URet {
+        self.rx_try_update_untracked(fun)
+            .unwrap_or_else(unwrap_rx!(self))
+    }
+
+    /// 尝试静默更新。
+    #[track_caller]
+    fn try_update_untracked<URet>(
+        &self,
+        fun: impl FnOnce(&mut Self::Value) -> URet,
+    ) -> Option<URet> {
+        self.rx_try_update_untracked(fun)
+    }
+
+    /// 静默替换：直接覆写新数据，【不触发通知】。
+    #[track_caller]
+    fn set_untracked(&self, value: Self::Value)
+    where
+        Self::Value: Sized,
+    {
+        self.update_untracked(|v| *v = value);
+    }
+
+    /// 尝试静默替换。
+    #[track_caller]
+    fn try_set_untracked(&self, value: Self::Value) -> Option<Self::Value>
+    where
+        Self::Value: Sized,
+    {
+        if self.is_disposed() {
+            Some(value)
+        } else {
+            self.set_untracked(value);
+            None
+        }
+    }
+
+    /// 独立触发变更通知。
+    #[track_caller]
+    fn notify(&self) {
+        self.rx_notify();
+    }
+
+    /// 返回一个闭包，调用时会将信号设置为指定值。
+    fn setter(self, value: Self::Value) -> impl Fn() + Clone + 'static
+    where
+        Self: Sized + Clone + 'static,
+        Self::Value: Sized + Clone,
+    {
+        move || self.set(value.clone())
+    }
+
+    /// 返回一个闭包，调用时会使用提供的函数更新信号。
+    fn updater<F>(self, f: F) -> impl Fn() + Clone + 'static
+    where
+        Self: Sized + Clone + 'static,
+        Self::Value: Sized,
+        F: Fn(&mut Self::Value) + Clone + 'static,
+    {
+        move || self.update(f.clone())
     }
 }
 
-macro_rules! impl_rx_base_for_constant {
-    ($($t:ty),*) => {
-        $(
-            impl RxBase for $t {
-                fn id(&self) -> Option<NodeId> { None }
-                fn track(&self) {}
-                fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> { None }
-            }
-        )*
-    };
+// ==========================================
+// 5. 列表 Iterator 与 Error Handler Traits
+// ==========================================
+
+/// Trait to unify different types of data sources that can be used in a `For` loop
+/// via zero-copy slice access.
+pub trait ForLoopSource {
+    type Item: Clone;
+
+    /// Returns a slice of the items.
+    fn as_slice(&self) -> SilexResult<&[Self::Item]>;
 }
 
-impl_rx_base_for_constant!(
-    i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64, bool, String, &str
-);
+#[derive(Clone)]
+pub struct ForErrorHandler(Rc<dyn Fn(SilexError)>);
