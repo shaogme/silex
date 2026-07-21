@@ -183,7 +183,22 @@ impl<T, C> HttpClientBuilder<T, C> {
     }
 
     pub fn header(mut self, name: impl Into<String>, value: impl IntoNetValue) -> Self {
-        self.headers.push((name.into(), value.into_net_value()));
+        let name_str = name.into();
+        self.headers
+            .retain(|(h, _)| !h.eq_ignore_ascii_case(&name_str));
+        self.headers.push((name_str, value.into_net_value()));
+        self
+    }
+
+    pub fn headers_pairs<I, K, V>(mut self, headers: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: Into<String>,
+        V: IntoNetValue,
+    {
+        for (k, v) in headers {
+            self = self.header(k, v);
+        }
         self
     }
 
@@ -197,6 +212,18 @@ impl<T, C> HttpClientBuilder<T, C> {
 
     pub fn query(mut self, key: impl Into<String>, value: impl IntoNetValue) -> Self {
         self.query.push((key.into(), value.into_net_value()));
+        self
+    }
+
+    pub fn query_pairs<I, K, V>(mut self, queries: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: Into<String>,
+        V: IntoNetValue,
+    {
+        for (k, v) in queries {
+            self = self.query(k, v);
+        }
         self
     }
 
@@ -216,6 +243,23 @@ impl<T, C> HttpClientBuilder<T, C> {
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
         self
+    }
+
+    pub fn timeout_ms(self, millis: u64) -> Self {
+        self.timeout(Duration::from_millis(millis))
+    }
+
+    pub fn basic_auth(self, username: impl IntoNetValue, password: impl IntoNetValue) -> Self {
+        let user_res = username.into_net_value();
+        let pass_res = password.into_net_value();
+        self.header(
+            "Authorization",
+            ValueResolver::Dynamic(Rc::new(move || {
+                let credentials = format!("{}:{}", user_res.resolve(), pass_res.resolve());
+                let encoded = base64_encode(credentials.as_bytes());
+                format!("Basic {encoded}")
+            })),
+        )
     }
 
     pub fn intercept(mut self, f: impl Fn(&mut RequestSpec) + 'static) -> Self {
@@ -637,4 +681,35 @@ fn encode_component(value: &str) -> String {
     js_sys::encode_uri_component(value)
         .as_string()
         .unwrap_or_else(|| value.to_string())
+}
+
+fn base64_encode(input: &[u8]) -> String {
+    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::new();
+    let mut i = 0;
+    while i < input.len() {
+        let b0 = input[i];
+        let b1 = if i + 1 < input.len() { input[i + 1] } else { 0 };
+        let b2 = if i + 2 < input.len() { input[i + 2] } else { 0 };
+
+        let triplet = ((b0 as u32) << 16) | ((b1 as u32) << 8) | (b2 as u32);
+
+        result.push(CHARSET[((triplet >> 18) & 0x3F) as usize] as char);
+        result.push(CHARSET[((triplet >> 12) & 0x3F) as usize] as char);
+
+        if i + 1 < input.len() {
+            result.push(CHARSET[((triplet >> 6) & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+
+        if i + 2 < input.len() {
+            result.push(CHARSET[(triplet & 0x3F) as usize] as char);
+        } else {
+            result.push('=');
+        }
+
+        i += 3;
+    }
+    result
 }

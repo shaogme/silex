@@ -37,6 +37,7 @@ pub fn HttpClientDemo() -> impl View {
             let q = search_query.get();
             if q.is_empty() { None } else { Some(q) }
         })
+        .timeout_ms(5000)
         .retry_policy(2, std::time::Duration::from_millis(300))
         .json::<Post>()
         .as_resource(post_id);
@@ -128,21 +129,8 @@ pub fn WebSocketDemo() -> impl View {
     let socket = RwSignal::new(None::<WebSocketConnection>);
     let input_text = RwSignal::new(String::new());
 
-    let state_text = move || {
-        socket.with(|conn| {
-            conn.as_ref()
-                .map(|c| c.state.get().as_str())
-                .unwrap_or("Disconnected")
-        })
-    };
-
-    let is_connected = Memo::new(move |_| {
-        socket.with(|conn| {
-            conn.as_ref()
-                .map(|c| c.is_connected().get())
-                .unwrap_or(false)
-        })
-    });
+    let state_text = socket.map_or("Disconnected", |c| c.state.get().as_str());
+    let is_connected = socket.map_or(false, |c| c.is_connected().get());
 
     let last_message = move || {
         socket.with(|conn| {
@@ -189,7 +177,7 @@ pub fn WebSocketDemo() -> impl View {
 
         div![
             span("Status: "),
-            strong(move || state_text())
+            strong(state_text)
                 .style(rx!(@fn if is_connected.get() { sty().color(hex("green")) } else { sty().color(hex("red")) })),
         ].style("margin-bottom: 15px;"),
 
@@ -225,13 +213,7 @@ pub fn EventStreamDemo() -> impl View {
     let stream = RwSignal::new(None::<EventStreamConnection>);
     let logs = RwSignal::new(Vec::<WikimediaChange>::new());
 
-    let is_connected = Memo::new(move |_| {
-        stream.with(|conn| {
-            conn.as_ref()
-                .map(|c| c.is_connected().get())
-                .unwrap_or(false)
-        })
-    });
+    let is_connected = stream.map_or(false, |c| c.is_connected().get());
 
     // Sync stream messages to independent logs signal while connection is active
     Effect::new(move |_| {

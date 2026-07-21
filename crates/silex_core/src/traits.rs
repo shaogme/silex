@@ -67,7 +67,7 @@ use std::{fmt::Debug, panic::Location, rc::Rc};
 use crate::{
     NodeRef, SilexError,
     error::SilexResult,
-    reactivity::{NodeId, Signal, is_signal_valid},
+    reactivity::{Memo, NodeId, Signal, is_signal_valid},
     traits::adaptive::{AdaptiveFallback, AdaptiveWrapper},
 };
 
@@ -290,6 +290,62 @@ pub trait RxRead: RxInternal {
         self.try_get_cloned().unwrap_or_default()
     }
 }
+
+// ==========================================
+// 响应式 Option 特化扩展 (RxOptionExt)
+// ==========================================
+
+/// 当响应式类型持有的值为 `Option<T>` 时的特化扩展能力。
+pub trait RxOptionExt<T>: RxRead<Value = Option<T>> {
+    /// 响应式映射：从内部 `Option<T>` 中映射值，并在为 `None` 时回退到默认值，返回一个全新的派生 `Memo<U>`。
+    fn map_or<U>(&self, default: U, f: impl Fn(&T) -> U + 'static) -> Memo<U>
+    where
+        Self: Clone + 'static,
+        U: PartialEq + Clone + 'static,
+    {
+        let this = self.clone();
+        Memo::new(move |_| {
+            this.with(|opt| opt.as_ref().map(&f))
+                .unwrap_or_else(|| default.clone())
+        })
+    }
+
+    /// 响应式映射 (Closure fallback)：使用 Closure 延迟计算 `None` 时的回退默认值。
+    fn map_or_else<U>(
+        &self,
+        default: impl Fn() -> U + 'static,
+        f: impl Fn(&T) -> U + 'static,
+    ) -> Memo<U>
+    where
+        Self: Clone + 'static,
+        U: PartialEq + Clone + 'static,
+    {
+        let this = self.clone();
+        Memo::new(move |_| {
+            this.with(|opt| opt.as_ref().map(&f))
+                .unwrap_or_else(&default)
+        })
+    }
+
+    /// 响应式解包或回退 (`Option<T>` -> `Memo<T>`)。
+    fn unwrap_or(&self, default: T) -> Memo<T>
+    where
+        Self: Clone + 'static,
+        T: PartialEq + Clone + 'static,
+    {
+        self.map_or(default, |v| v.clone())
+    }
+
+    /// 校验内部 `Option<T>` 是否为 `Some` 且满足谓词条件。
+    fn is_some_and(&self, f: impl Fn(&T) -> bool + 'static) -> Memo<bool>
+    where
+        Self: Clone + 'static,
+    {
+        self.map_or(false, f)
+    }
+}
+
+impl<S, T> RxOptionExt<T> for S where S: RxRead<Value = Option<T>> {}
 
 /// 克隆获取特质。仅当值支持克隆时自动生效。
 /// 该 Trait 仅包含接口定义，具体的 HRTB 约束延迟到 Blanket Implementation 中处理，

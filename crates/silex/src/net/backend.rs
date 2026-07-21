@@ -422,6 +422,21 @@ impl EventStreamConnection {
         Memo::new(move |_| state.get().is_connected())
     }
 
+    pub fn is_connecting(&self) -> Memo<bool> {
+        let state = self.state;
+        Memo::new(move |_| matches!(state.get(), ConnectionState::Connecting))
+    }
+
+    pub fn is_closed(&self) -> Memo<bool> {
+        let state = self.state;
+        Memo::new(move |_| {
+            matches!(
+                state.get(),
+                ConnectionState::Closed | ConnectionState::Disconnected
+            )
+        })
+    }
+
     pub fn state(&self) -> ReadSignal<ConnectionState> {
         self.state
     }
