@@ -23,10 +23,7 @@ impl Parse for RenderInput {
                 directives.push(Directive::Scope);
                 input.parse::<Token![;]>()?;
             } else {
-                return Err(syn::Error::new_spanned(
-                    ident,
-                    "expected `scope`",
-                ));
+                return Err(syn::Error::new_spanned(ident, "expected `scope`"));
             }
         }
 

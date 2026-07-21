@@ -28,9 +28,7 @@ fn Card(
 }
 
 #[component]
-fn CounterDisplay() -> SilexResult<impl View> {
-    let count = expect_context::<ReadSignal<i32>>();
-
+fn CounterDisplay(count: ReadSignal<i32>) -> SilexResult<impl View> {
     // Demo: Style Map (Vec) and Dynamic Class (Signal)
     let is_even = Memo::new(move |_| count.get() % 2 == 0);
 
@@ -53,7 +51,7 @@ fn CounterDisplay() -> SilexResult<impl View> {
     };
 
     Ok(div!(
-        span("Global Context Status: "),
+        span("Global Status: "),
         span(count)
             .style(("font-weight", "bold")) // Single tuple style
             .style(("color", "#6200ea")),
@@ -71,10 +69,7 @@ fn CounterDisplay() -> SilexResult<impl View> {
 }
 
 #[component]
-fn CounterControls() -> SilexResult<impl View> {
-    let set_count = expect_context::<WriteSignal<i32>>();
-    let count = expect_context::<ReadSignal<i32>>();
-
+fn CounterControls(count: ReadSignal<i32>, set_count: WriteSignal<i32>) -> SilexResult<impl View> {
     // Demo: Style Array
     let btn_style = [
         ("padding", "8px 16px"),
@@ -105,10 +100,10 @@ fn CounterControls() -> SilexResult<impl View> {
 #[component]
 fn NavBar() -> impl View {
     div!(
-        Link("/")
+        Link(AppRoute::Home)
             .children("Home")
             .style("margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold;"),
-        Link("/about")
+        Link(AppRoute::About)
             .children("About")
             .style("text-decoration: none; color: #007bff; font-weight: bold;"),
     )
@@ -120,25 +115,24 @@ fn HomeView(_ctx: RouterContext) -> impl View {
     // 页面级状态
     let (name, set_name) = Signal::pair("Rustacean".to_string());
 
-    // 全局状态通过 Context 获取
-    let count = expect_context::<ReadSignal<i32>>();
-
+    // 显式本地信号传递演示
+    let (count, set_count) = Signal::pair(0);
     let is_high = Memo::new(move |_| count.get() > 5);
 
     div!(
         // Header
         div!(
             h1("Silex: Next Gen"),
-            p("Builder Pattern + Router + Context + Suspense").style("color: #666"),
+            p("Builder Pattern + Router + Explicit State + Suspense").style("color: #666"),
         ).style("text-align: center; margin-bottom: 30px;"),
 
-        // Card 1: Context-Aware Counter
-        Card("Global Counter (Persists across Nav)")
+        // Card 1: Explicit Parameter Counter
+        Card("Explicit Counter")
             .elevation(3)
             .on_hover(|_| { web_sys::console::log_1(&"Card Hovered!".into()); })
             .child(view_chain!(
-                CounterControls(),
-                CounterDisplay(),
+                CounterControls(count, set_count),
+                CounterDisplay(count),
             )),
 
         // Card 2: Input & Local State
@@ -166,23 +160,23 @@ fn HomeView(_ctx: RouterContext) -> impl View {
                     .fallback(div("✓ System works normally.")
                         .style("background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;"))
             ),
-            // Card 4: Suspense (Context Layout Pattern)
-            Card("Suspense (Async Loading)")
-                .child(
-                    Suspense(move |cx| {
-                        let async_data_local = Resource::new(
-                            rx!(()),
-                            |_| async {
-                                gloo_timers::future::TimeoutFuture::new(2_000).await;
-                                Ok::<_, SilexError>("Loaded Data from Server!".to_string())
-                            },
-                            cx,
-                        );
-                        div(rx!(async_data_local.get().unwrap_or("Waiting...".to_string())))
-                            .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
-                    })
-                    .fallback(div("Loading data (approx 2s)...").style("color: orange; font-style: italic;"))
-                )
+        // Card 4: Suspense
+        Card("Suspense (Async Loading)")
+            .child(
+                Suspense(move |cx| {
+                    let async_data_local = Resource::new(
+                        rx!(()),
+                        |_| async {
+                            gloo_timers::future::TimeoutFuture::new(2_000).await;
+                            Ok::<_, SilexError>("Loaded Data from Server!".to_string())
+                        },
+                        cx,
+                    );
+                    div(rx!(async_data_local.get().unwrap_or("Waiting...".to_string())))
+                        .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
+                })
+                .fallback(div("Loading data (approx 2s)...").style("color: orange; font-style: italic;"))
+            )
     )
 }
 
@@ -191,7 +185,7 @@ fn AboutView(_ctx: RouterContext) -> impl View {
     div!(
         h1("About"),
         p("This is the About Page to demonstrate Silex Router."),
-        p("Try going back to Home, and notice the Global Counter is preserved (Context), while the Name input is reset (Local State)."),
+        p("Try going back to Home, and notice the Counter is preserved while being passed explicitly to components."),
     ).style("padding: 20px; text-align: center;")
 }
 
@@ -219,18 +213,10 @@ fn main() {
     let app_container = document.get_element_by_id("app").expect("No App Element");
 
     create_scope(move || {
-        // 全局状态 (App Store)
-        let (count, set_count) = Signal::pair(0);
-
-        // 注入全局 Context
-        provide_context(count);
-        provide_context(set_count);
-
         // 构建应用壳 (App Shell)
         let app = div!(
             NavBar(),
-            Router()
-                .match_route::<AppRoute>()
+            Router().match_route::<AppRoute>()
         )
         .class("app-container")
         .style("font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;");

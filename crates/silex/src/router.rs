@@ -96,13 +96,11 @@ impl RouterComponent {
         F: Fn(R, RouterContext) -> V + Clone + 'static,
         V: View + 'static,
     {
-        self.children = Rc::new(move |ctx| {
-            RouterMatchView::<R, F, V>::new(render.clone(), *ctx).into_any()
-        });
+        self.children =
+            Rc::new(move |ctx| RouterMatchView::<R, F, V>::new(render.clone(), *ctx).into_any());
         self
     }
 }
-
 
 #[derive(Clone)]
 pub struct RouterView {
@@ -351,4 +349,3 @@ where
 pub trait RouteView: Routable {
     fn render(&self, ctx: RouterContext) -> AnyView;
 }
-
