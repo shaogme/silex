@@ -1246,6 +1246,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ref_str"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89139ceea9b891d4992981a77dc13ae3a9810a410feb2509b52889fef808eff4"
+
+[[package]]
 name = "regex"
 version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1519,6 +1525,7 @@ version = "0.1.0-beta.9"
 dependencies = [
  "gloo-timers",
  "js-sys",
+ "ref_str",
  "serde",
  "serde_json",
  "silex_core",

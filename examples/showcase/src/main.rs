@@ -24,7 +24,7 @@ fn main() {
     let store = UserSettingsStore::new(UserSettings {
         theme: theme_persistent.get_untracked(),
         notifications: true,
-        username: "Guest".to_string(),
+        username: "Guest".into(),
     });
 
     mount_to_body(move || {

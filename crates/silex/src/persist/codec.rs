@@ -1,4 +1,5 @@
 use crate::persist::PersistenceError;
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::marker::PhantomData;
 use std::str::FromStr;
@@ -22,6 +23,16 @@ impl PersistCodec<String> for StringCodec {
 
     fn decode(&self, raw: &str) -> Result<String, String> {
         Ok(raw.to_string())
+    }
+}
+
+impl PersistCodec<Cow<'static, str>> for StringCodec {
+    fn encode(&self, value: &Cow<'static, str>) -> Result<String, String> {
+        Ok(value.to_string())
+    }
+
+    fn decode(&self, raw: &str) -> Result<Cow<'static, str>, String> {
+        Ok(Cow::Owned(raw.to_string()))
     }
 }
 

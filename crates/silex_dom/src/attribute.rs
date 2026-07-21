@@ -195,13 +195,14 @@ pub trait GlobalEventAttributes: AttributeBuilder {
         ))
     }
 
-    fn bind_value<S>(self, signal: S) -> Self
+    fn bind_value<T, S>(self, signal: S) -> Self
     where
-        S: RxGet<Value = String> + RxWrite + Clone + 'static,
+        T: AsRef<str> + From<String> + Clone + PartialEq + 'static,
+        S: RxGet<Value = T> + RxWrite + Clone + 'static,
     {
         let s = signal.clone();
         let this = self.on_input(move |value| {
-            s.set(value);
+            s.set(T::from(value));
         });
 
         this.apply(PendingAttribute::new_listener(
@@ -211,22 +212,23 @@ pub trait GlobalEventAttributes: AttributeBuilder {
                 silex_core::reactivity::Effect::new(move |_| {
                     use wasm_bindgen::JsCast;
                     let value = signal.get();
+                    let str_val = value.as_ref();
                     if let Some(input) = dom_element.dyn_ref::<web_sys::HtmlInputElement>() {
-                        if input.value() != value {
-                            input.set_value(&value);
+                        if input.value() != str_val {
+                            input.set_value(str_val);
                         }
                     } else if let Some(area) = dom_element.dyn_ref::<web_sys::HtmlTextAreaElement>()
                     {
-                        if area.value() != value {
-                            area.set_value(&value);
+                        if area.value() != str_val {
+                            area.set_value(str_val);
                         }
                     } else if let Some(select) = dom_element.dyn_ref::<web_sys::HtmlSelectElement>()
                     {
-                        if select.value() != value {
-                            select.set_value(&value);
+                        if select.value() != str_val {
+                            select.set_value(str_val);
                         }
                     } else {
-                        let _ = dom_element.set_attribute("value", &value);
+                        let _ = dom_element.set_attribute("value", str_val);
                     }
                 });
             },

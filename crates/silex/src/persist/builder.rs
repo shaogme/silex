@@ -11,8 +11,10 @@ use crate::persist::state::{
 use crate::persist::{
     DecodePolicy, PersistMode, PersistenceError, RemovePolicy, SyncStrategy, WriteDefault,
 };
+use ref_str::LocalStaticRefStr;
 use silex_core::reactivity::{Effect, RwSignal, StoredValue, on_cleanup};
 use silex_core::traits::{RxData, RxGet, RxRead, RxWrite};
+use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
@@ -75,7 +77,7 @@ impl<T> PersistConfig<T> {
 /// assert_eq!(page.get(), 1);
 /// ```
 pub struct PersistentBuilder<B, C, T = (), D = NoDefault> {
-    key: String,
+    key: LocalStaticRefStr,
     backend: B,
     codec: C,
     config: PersistConfig<T>,
@@ -84,7 +86,7 @@ pub struct PersistentBuilder<B, C, T = (), D = NoDefault> {
 
 impl PersistentBuilder<NoBackend, NoCodec, (), NoDefault> {
     /// Starts a new persistent binding builder for the given backend key.
-    pub fn new(key: impl Into<String>) -> Self {
+    pub fn new(key: impl Into<LocalStaticRefStr>) -> Self {
         Self {
             key: key.into(),
             backend: NoBackend,
@@ -135,6 +137,24 @@ impl<C, T, D> PersistentBuilder<NoBackend, C, T, D> {
 impl<B, T, D> PersistentBuilder<B, NoCodec, T, D> {
     /// Uses the raw string value as-is.
     pub fn string(self) -> PersistentBuilder<B, StringCodec, String, D> {
+        PersistentBuilder {
+            key: self.key,
+            backend: self.backend,
+            codec: StringCodec,
+            config: PersistConfig {
+                default: None,
+                write_default: self.config.write_default,
+                decode_policy: self.config.decode_policy,
+                remove_policy: self.config.remove_policy,
+                mode: self.config.mode,
+                sync: self.config.sync,
+            },
+            _marker: PhantomData,
+        }
+    }
+
+    /// Uses raw string values managed via `Cow`.
+    pub fn cow(self) -> PersistentBuilder<B, StringCodec, Cow<'static, str>, D> {
         PersistentBuilder {
             key: self.key,
             backend: self.backend,
@@ -541,7 +561,7 @@ mod tests {
     use std::cell::RefCell;
     use std::collections::HashMap;
 
-    type SubscriptionMap = Rc<RefCell<HashMap<String, Vec<Rc<dyn Fn(BackendEvent)>>>>>;
+    type SubscriptionMap = Rc<RefCell<HashMap<LocalStaticRefStr, Vec<Rc<dyn Fn(BackendEvent)>>>>>;
 
     #[derive(Clone, Default)]
     struct MockBackend {
@@ -610,12 +630,12 @@ mod tests {
 
         fn subscribe(
             &self,
-            key: String,
+            key: impl Into<LocalStaticRefStr>,
             callback: Rc<dyn Fn(BackendEvent)>,
         ) -> Result<BackendSubscription, PersistenceError> {
             self.subscriptions
                 .borrow_mut()
-                .entry(key)
+                .entry(key.into())
                 .or_default()
                 .push(callback);
             Ok(BackendSubscription::new(|| {}))
@@ -627,7 +647,7 @@ mod tests {
         key: &str,
     ) -> PersistentBuilder<MockBackend, ParseCodec<i32>, i32, NoDefault> {
         PersistentBuilder {
-            key: key.to_string(),
+            key: key.to_string().into(),
             backend,
             codec: ParseCodec::new(),
             config: PersistConfig::new(),
@@ -689,7 +709,7 @@ mod tests {
     fn codec_selection_preserves_builder_configuration() {
         let backend = MockBackend::default();
         let value = PersistentBuilder {
-            key: "counter".to_string(),
+            key: "counter".into(),
             backend,
             codec: NoCodec,
             config: PersistConfig::<()>::new(),
@@ -740,7 +760,7 @@ mod tests {
     fn optional_none_flush_removes_backend_key() {
         let backend = MockBackend::with_value("name", "alice");
         let value = PersistentBuilder {
-            key: "name".to_string(),
+            key: "name".into(),
             backend: backend.clone(),
             codec: StringCodec,
             config: PersistConfig::<String>::new(),
@@ -773,7 +793,7 @@ mod tests {
         backend.emit(
             "counter",
             BackendEvent::Removed {
-                key: "counter".to_string(),
+                key: "counter".into(),
             },
         );
 

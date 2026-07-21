@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::css::AppTheme;
 use silex::prelude::*;
 use silex::reexports::web_sys;
@@ -11,7 +13,7 @@ pub struct UserSettings {
     pub theme: String,
     #[persist(local, key = "notif_enabled", codec = "parse")]
     pub notifications: bool,
-    pub username: String,
+    pub username: Cow<'static, str>,
 }
 
 #[component]
@@ -163,8 +165,8 @@ pub fn StorageDemo() -> impl View {
 pub fn QueryDemo() -> impl View {
     let val = Persistent::builder("demo_val")
         .query()
-        .string()
-        .default(String::new())
+        .cow()
+        .default("".into())
         .build();
 
     div![
@@ -185,7 +187,7 @@ pub fn QueryDemo() -> impl View {
                         .color(AppTheme::TEXT)
                 ),
             button("Reset")
-                .on(event::click, val.setter(String::new()))
+                .on(event::click, val.setter("".into()))
                 .style("padding: 8px 16px; cursor: pointer;")
         ]
         .style("display: flex; gap: 10px; margin: 10px 0; align-items: center;"),
@@ -525,7 +527,7 @@ impl std::fmt::Display for QuantumIdentity {
 
 #[component]
 pub fn AdaptiveReadDemo() -> impl View {
-    let system_name = RwSignal::new("Nebula-1".to_string());
+    let system_name = RwSignal::new(Cow::Borrowed("Nebula-1"));
     let (stability, set_stability) = Signal::pair(0.85); // 0.0 to 1.0
 
     // Create a non-cloneable resource

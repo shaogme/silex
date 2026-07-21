@@ -1,12 +1,14 @@
 use crate::persist::backend::{BackendEvent, BackendSubscription};
 use crate::persist::builder::PersistentBuilder;
 use crate::persist::{DecodePolicy, NoBackend, NoCodec, PersistenceError, RemovePolicy};
+use ref_str::LocalStaticRefStr;
 use silex_core::reactivity::{ReadSignal, RwSignal, StoredValue};
 use silex_core::traits::{
     IntoRx, IntoSignal, RxBase, RxData, RxGet, RxInternal, RxRead, RxValue, RxWrite,
 };
 use silex_core::{Rx, RxValueKind};
 use silex_dom::view::{ApplyAttributes, View};
+use std::borrow::Cow;
 use std::rc::Rc;
 
 pub type PersistenceGetFn = Rc<dyn Fn(&str) -> Result<Option<String>, PersistenceError>>;
@@ -33,7 +35,7 @@ pub enum PersistenceState {
 }
 
 pub(crate) struct PersistenceController<T> {
-    pub key: String,
+    pub key: LocalStaticRefStr,
     pub default: Rc<dyn Fn() -> T>,
     pub decode_policy: DecodePolicy,
     pub remove_policy: RemovePolicy,
@@ -58,8 +60,8 @@ impl Persistent<()> {
     /// Starts a new persistent binding builder for the given backend key.
     ///
     /// This is the entry point for creating any persistent state (LocalStorage, SessionStorage, or URL Query).
-    pub fn builder(key: impl Into<String>) -> PersistentBuilder<NoBackend, NoCodec> {
-        PersistentBuilder::new(key)
+    pub fn builder(key: impl Into<Cow<'static, str>>) -> PersistentBuilder<NoBackend, NoCodec> {
+        PersistentBuilder::new(key.into())
     }
 }
 
@@ -122,7 +124,7 @@ where
     /// Returns the backend key used by this persistent binding.
     pub fn key(&self) -> String {
         self.controller
-            .with_untracked(|controller| controller.key.clone())
+            .with_untracked(|controller| controller.key.to_string())
     }
 
     /// Resets the in-memory value back to its configured default.

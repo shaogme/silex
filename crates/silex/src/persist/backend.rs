@@ -1,5 +1,6 @@
 use crate::persist::PersistenceError;
 use js_sys::Object;
+use ref_str::LocalStaticRefStr;
 use silex_core::reactivity::{Effect, Memo, NodeId, create_scope, dispose};
 use silex_core::traits::RxGet;
 use std::cell::RefCell;
@@ -11,8 +12,13 @@ use web_sys::{Storage, StorageEvent};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum BackendEvent {
-    Set { key: String, value: String },
-    Removed { key: String },
+    Set {
+        key: LocalStaticRefStr,
+        value: String,
+    },
+    Removed {
+        key: LocalStaticRefStr,
+    },
     ExternalRefresh,
 }
 
@@ -42,7 +48,7 @@ pub trait PersistenceBackend: Clone + 'static {
     fn remove(&self, key: &str) -> Result<(), PersistenceError>;
     fn subscribe(
         &self,
-        key: String,
+        key: impl Into<LocalStaticRefStr>,
         callback: Rc<dyn Fn(BackendEvent)>,
     ) -> Result<BackendSubscription, PersistenceError>;
 }
@@ -142,10 +148,10 @@ impl<const IS_LOCAL: bool> PersistenceBackend for WebStorageBackend<IS_LOCAL> {
 
     fn subscribe(
         &self,
-        key: String,
+        key: impl Into<LocalStaticRefStr>,
         callback: Rc<dyn Fn(BackendEvent)>,
     ) -> Result<BackendSubscription, PersistenceError> {
-        subscribe_storage(Self::kind(), key, callback)
+        subscribe_storage(Self::kind(), key.into(), callback)
     }
 }
 
@@ -166,13 +172,14 @@ impl PersistenceBackend for QueryBackend {
 
     fn subscribe(
         &self,
-        key: String,
+        key: impl Into<LocalStaticRefStr>,
         callback: Rc<dyn Fn(BackendEvent)>,
     ) -> Result<BackendSubscription, PersistenceError> {
+        let key = key.into();
         let query_map = self.query_map()?;
         let scope_id: NodeId = create_scope(move || {
             Effect::new(move |prev: Option<Option<String>>| {
-                let current = query_map.get().get(&key).cloned();
+                let current = query_map.get().get(key.as_ref()).cloned();
                 if let Some(previous) = prev
                     && previous != current
                 {
@@ -203,7 +210,7 @@ struct StorageSubscriber {
 }
 
 struct StorageDispatcher {
-    subscribers: HashMap<(StorageAreaKind, String), Vec<StorageSubscriber>>,
+    subscribers: HashMap<(StorageAreaKind, LocalStaticRefStr), Vec<StorageSubscriber>>,
     next_id: usize,
     closure: Option<Closure<dyn FnMut(StorageEvent)>>,
     local_storage: Option<Storage>,
@@ -230,7 +237,7 @@ impl StorageDispatcher {
     fn subscribe(
         &mut self,
         kind: StorageAreaKind,
-        key: String,
+        key: LocalStaticRefStr,
         callback: Rc<dyn Fn(BackendEvent)>,
     ) -> Result<usize, PersistenceError> {
         self.ensure_listener()?;
@@ -246,11 +253,12 @@ impl StorageDispatcher {
         Ok(id)
     }
 
-    fn unsubscribe(&mut self, kind: StorageAreaKind, key: &str, id: usize) {
-        if let Some(subs) = self.subscribers.get_mut(&(kind, key.to_string())) {
+    fn unsubscribe(&mut self, kind: StorageAreaKind, key: impl Into<LocalStaticRefStr>, id: usize) {
+        let key = key.into();
+        if let Some(subs) = self.subscribers.get_mut(&(kind, key.clone())) {
             subs.retain(|s| s.id != id);
             if subs.is_empty() {
-                self.subscribers.remove(&(kind, key.to_string()));
+                self.subscribers.remove(&(kind, key));
             }
         }
 
@@ -298,13 +306,16 @@ impl StorageDispatcher {
             let new_value = event.new_value();
 
             DISPATCHER.with(|d| {
-                if let Some(subs) = d.borrow().subscribers.get(&(kind, key.clone())) {
+                let key_cow: LocalStaticRefStr = LocalStaticRefStr::from(key);
+                if let Some(subs) = d.borrow().subscribers.get(&(kind, key_cow.clone())) {
                     let event = match new_value {
                         Some(value) => BackendEvent::Set {
-                            key: key.clone(),
+                            key: key_cow.clone(),
                             value,
                         },
-                        None => BackendEvent::Removed { key: key.clone() },
+                        None => BackendEvent::Removed {
+                            key: key_cow.clone(),
+                        },
                     };
                     for sub in subs {
                         (sub.callback)(event.clone());
@@ -344,13 +355,15 @@ fn storage_remove(storage: &Storage, key: &str) -> Result<(), PersistenceError> 
 
 fn subscribe_storage(
     kind: StorageAreaKind,
-    key: String,
+    key: impl Into<LocalStaticRefStr>,
     callback: Rc<dyn Fn(BackendEvent)>,
 ) -> Result<BackendSubscription, PersistenceError> {
-    let id = DISPATCHER.with(|d| d.borrow_mut().subscribe(kind, key.clone(), callback))?;
+    let key = key.into();
+    let key_clone = key.clone();
+    let id = DISPATCHER.with(|d| d.borrow_mut().subscribe(kind, key, callback))?;
 
     Ok(BackendSubscription::new(move || {
-        DISPATCHER.with(|d| d.borrow_mut().unsubscribe(kind, &key, id));
+        DISPATCHER.with(|d| d.borrow_mut().unsubscribe(kind, key_clone, id));
     }))
 }
 
@@ -411,7 +424,7 @@ mod tests {
                 Rc::new(move |event| events.borrow_mut().push(event))
             };
 
-            let _subscription = backend.subscribe("q".to_string(), callback).unwrap();
+            let _subscription = backend.subscribe("q", callback).unwrap();
             assert_eq!(backend.get("q").unwrap(), None);
 
             let mut with_value = HashMap::new();
@@ -441,7 +454,7 @@ mod tests {
             Err(PersistenceError::BackendUnavailable)
         ));
         assert!(matches!(
-            backend.subscribe("q".to_string(), Rc::new(|_| {})),
+            backend.subscribe("q", Rc::new(|_| {})),
             Err(PersistenceError::BackendUnavailable)
         ));
     }

@@ -242,7 +242,7 @@ fn parse_field_persist(field: &Field) -> Result<Option<PersistFieldConfig>> {
         let codec = codec.ok_or_else(|| {
             syn::Error::new_spanned(
                 attr,
-                "#[persist(...)] requires codec = \"string\" | \"parse\" | \"json\"",
+                "#[persist(...)] requires codec = \"string\" | \"cow\" | \"parse\" | \"json\"",
             )
         })?;
 
@@ -259,11 +259,12 @@ fn parse_field_persist(field: &Field) -> Result<Option<PersistFieldConfig>> {
 fn codec_builder_tokens(ty: &Type, codec: &syn::LitStr) -> Result<TokenStream> {
     match codec.value().as_str() {
         "string" => Ok(quote!(.string())),
+        "cow" => Ok(quote!(.cow())),
         "parse" => Ok(quote!(.parse::<#ty>())),
         "json" => Ok(quote!(.json::<#ty>())),
         _ => Err(syn::Error::new_spanned(
             codec,
-            "unsupported codec, expected string|parse|json",
+            "unsupported codec, expected string|cow|parse|json",
         )),
     }
 }
