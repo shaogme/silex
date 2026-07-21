@@ -16,7 +16,10 @@ use silex_core::{
 use silex_dom::attribute::{
     ApplyTarget, ApplyToDom, IntoStorable, OwnedApplyTarget, ReactiveApply,
 };
-use silex_hash::css::{CssHasher, Normalized, encode_base36};
+use silex_hash::{
+    css::{CssHasher, Normalized, encode_base36},
+    css_hasher,
+};
 use std::{
     borrow::Cow,
     fmt::{Display, Write},
@@ -213,7 +216,7 @@ impl ApplyToDom for Style {
 impl Style {
     pub fn apply_to_element(&self, el: &Element) -> String {
         // 1. 生成稳定哈希（忽略动态值，递归所有嵌套规则）
-        let mut hasher = CssHasher::new();
+        let mut hasher = css_hasher!();
         hash_recursive(self, &mut hasher);
         let hash_val = hasher.finish();
         let mut hash_buf = [0u8; 13];

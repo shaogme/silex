@@ -1,14 +1,83 @@
 use core::hash::{Hash, Hasher};
 
+const K: u64 = 0xf1357aea2e62a9c5;
+
+#[inline]
+fn multiply_mix(x: u64, y: u64) -> u64 {
+    let full = (x as u128).wrapping_mul(y as u128);
+    ((full >> 64) as u64) ^ (full as u64)
+}
+
+#[inline]
+fn fast_hash_bytes(bytes: &[u8]) -> u64 {
+    let len = bytes.len();
+    let mut s0 = 0x243f6a8885a308d3u64;
+    let mut s1 = 0x13198a2e03707344u64;
+
+    if len <= 16 {
+        if len >= 8 {
+            s0 ^= u64::from_le(unsafe { (bytes.as_ptr() as *const u64).read_unaligned() });
+            s1 ^= u64::from_le(unsafe {
+                (bytes.as_ptr().add(len - 8) as *const u64).read_unaligned()
+            });
+        } else if len >= 4 {
+            s0 ^= u32::from_le(unsafe { (bytes.as_ptr() as *const u32).read_unaligned() }) as u64;
+            s1 ^= u32::from_le(unsafe {
+                (bytes.as_ptr().add(len - 4) as *const u32).read_unaligned()
+            }) as u64;
+        } else if len > 0 {
+            let lo = bytes[0];
+            let mid = bytes[len / 2];
+            let hi = bytes[len - 1];
+            s0 ^= lo as u64;
+            s1 ^= ((hi as u64) << 8) | mid as u64;
+        }
+    } else {
+        let mut bulk = &bytes[..(len - 1)];
+        while bulk.len() >= 16 {
+            let chunk = &bulk[..16];
+            let x = u64::from_le(unsafe { (chunk.as_ptr() as *const u64).read_unaligned() });
+            let y = u64::from_le(unsafe { (chunk.as_ptr().add(8) as *const u64).read_unaligned() });
+
+            let t = multiply_mix(s0 ^ x, 0xa4093822299f31d0u64 ^ y);
+            s0 = s1;
+            s1 = t;
+            bulk = &bulk[16..];
+        }
+
+        let suffix = &bytes[len - 16..];
+        s0 ^= u64::from_le(unsafe { (suffix.as_ptr() as *const u64).read_unaligned() });
+        s1 ^= u64::from_le(unsafe { (suffix.as_ptr().add(8) as *const u64).read_unaligned() });
+    }
+
+    multiply_mix(s0, s1) ^ (len as u64)
+}
+
+/// const 编译期计算源码位置字符串、行号、列号的 seed 哈希
+const fn const_hash_location(file: &'static str, line: u32, column: u32) -> u64 {
+    let bytes = file.as_bytes();
+    let mut h = 0xcbf29ce484222325u64 ^ (line as u64) ^ ((column as u64) << 32);
+    let mut i = 0;
+    while i < bytes.len() {
+        h ^= bytes[i] as u64;
+        h = h.wrapping_mul(0x100000001b3);
+        i += 1;
+    }
+    h
+}
+
 /// A non-cryptographic hasher for fast CSS class name generation.
-/// Uses FNV-1a algorithm which is faster for small strings.
+/// Uses `Fxhash` algorithm for high throughput.
 ///
 /// # Security
 ///
 /// This is **not** a cryptographic hash function. It is susceptible to collision attacks
 /// if used with untrusted input in a security-sensitive context. Only use it for
 /// generating stable identifiers (like CSS class names) from trusted source code strings.
-pub struct CssHasher(u64);
+#[derive(Debug, Clone)]
+pub struct CssHasher {
+    hash: u64,
+}
 
 impl Default for CssHasher {
     fn default() -> Self {
@@ -17,20 +86,78 @@ impl Default for CssHasher {
 }
 
 impl CssHasher {
+    #[inline]
     pub const fn new() -> Self {
-        Self(0xcbf29ce484222325)
+        Self::with_seed(0)
+    }
+
+    #[inline]
+    pub const fn with_seed(seed: u64) -> Self {
+        Self { hash: seed }
+    }
+
+    /// 编译期基于 `file!()`、`line!()` 和 `column!()` 生成唯一 Seed 的构造函数
+    #[inline]
+    pub const fn new_compile_time(file: &'static str, line: u32, column: u32) -> Self {
+        let seed = const_hash_location(file, line, column);
+        Self::with_seed(seed)
+    }
+
+    #[inline]
+    fn add_to_hash(&mut self, i: u64) {
+        self.hash = self.hash.wrapping_add(i).wrapping_mul(K);
     }
 }
 
+/// 快捷宏：在调用点自动捕获 `file!()` / `line!()` / `column!()` 并构造带编译期 Seed 的 `CssHasher`
+#[macro_export]
+macro_rules! css_hasher {
+    () => {
+        $crate::css::CssHasher::new_compile_time(file!(), line!(), column!())
+    };
+}
+
 impl Hasher for CssHasher {
-    fn write(&mut self, bytes: &[u8]) {
-        for &b in bytes {
-            self.0 ^= b as u64;
-            self.0 = self.0.wrapping_mul(0x100000001b3);
-        }
-    }
+    #[inline]
     fn finish(&self) -> u64 {
-        self.0
+        const ROTATE: u32 = 26;
+        self.hash.rotate_left(ROTATE)
+    }
+
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        self.write_u64(fast_hash_bytes(bytes));
+    }
+
+    #[inline]
+    fn write_u8(&mut self, i: u8) {
+        self.add_to_hash(i as u64);
+    }
+
+    #[inline]
+    fn write_u16(&mut self, i: u16) {
+        self.add_to_hash(i as u64);
+    }
+
+    #[inline]
+    fn write_u32(&mut self, i: u32) {
+        self.add_to_hash(i as u64);
+    }
+
+    #[inline]
+    fn write_u64(&mut self, i: u64) {
+        self.add_to_hash(i);
+    }
+
+    #[inline]
+    fn write_u128(&mut self, i: u128) {
+        self.add_to_hash(i as u64);
+        self.add_to_hash((i >> 64) as u64);
+    }
+
+    #[inline]
+    fn write_usize(&mut self, i: usize) {
+        self.add_to_hash(i as u64);
     }
 }
 
@@ -209,5 +336,23 @@ mod tests {
 
         let p3 = "margin: 10px20px;"; // This is semantically different
         assert_ne!(hash_one(Normalized(p1)), hash_one(Normalized(p3)));
+    }
+
+    #[test]
+    fn test_compile_time_seed() {
+        let (mut h1, mut h2) = (css_hasher!(), css_hasher!());
+        h1.write(b"abc");
+        h2.write(b"abc");
+        // 如果在同一行同一列展开或指定相同的 location 参数，Seed 相同，哈希结果一致
+        let mut h3 = CssHasher::new_compile_time("test.rs", 10, 5);
+        let mut h4 = CssHasher::new_compile_time("test.rs", 10, 5);
+        h3.write(b"abc");
+        h4.write(b"abc");
+        assert_eq!(h3.finish(), h4.finish());
+
+        // 不同行或不同列的 Seed 计算结果不同
+        let h_a = CssHasher::new_compile_time("test.rs", 10, 5);
+        let h_b = CssHasher::new_compile_time("test.rs", 10, 6);
+        assert_ne!(h_a.finish(), h_b.finish());
     }
 }
