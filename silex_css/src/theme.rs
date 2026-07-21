@@ -1,5 +1,11 @@
 use silex_core::prelude::*;
+use silex_dom::{
+    attribute::{ApplyTarget, ApplyToDom, IntoStorable},
+    document,
+};
 use std::fmt::Display;
+use wasm_bindgen::JsCast;
+use web_sys::{Element, HtmlElement, SvgElement};
 
 /// A trait that every Silex Theme must implement.
 /// This allows the `styled!` macro to perform compile-time type checks.
@@ -24,26 +30,25 @@ where
 {
     let signal = theme.into_signal();
     // Provide the theme signal in the current reactive scope
-    ::silex_core::prelude::provide_context(signal);
+    provide_context(signal);
     ThemeVariables(signal)
 }
 
 /// A structure that can be applied to a DOM element to inject theme variables.
 pub struct ThemeVariables<T>(pub Signal<T>);
 
-impl<T> ::silex_dom::attribute::ApplyToDom for ThemeVariables<T>
+impl<T> ApplyToDom for ThemeVariables<T>
 where
     T: ThemeType + ThemeToCss + RxCloneData + 'static,
 {
-    fn apply(&self, el: &::web_sys::Element, _target: ::silex_dom::attribute::ApplyTarget) {
+    fn apply(&self, el: &Element, _target: ApplyTarget) {
         let theme = self.0;
         let el = el.clone();
-        ::silex_core::prelude::Effect::new(move |prev_values: Option<Vec<String>>| {
-            use ::wasm_bindgen::JsCast;
+        Effect::new(move |prev_values: Option<Vec<String>>| {
             if let Some(style) = el
-                .dyn_ref::<::web_sys::HtmlElement>()
+                .dyn_ref::<HtmlElement>()
                 .map(|e| e.style())
-                .or_else(|| el.dyn_ref::<::web_sys::SvgElement>().map(|e| e.style()))
+                .or_else(|| el.dyn_ref::<SvgElement>().map(|e| e.style()))
             {
                 let theme_val = theme.get();
                 let names = T::get_variable_names();
@@ -67,7 +72,7 @@ where
     }
 }
 
-impl<T> silex_dom::attribute::IntoStorable for ThemeVariables<T>
+impl<T> IntoStorable for ThemeVariables<T>
 where
     T: ThemeType + ThemeToCss + RxCloneData + 'static,
 {
@@ -79,7 +84,7 @@ where
 
 /// Hook to get the current theme signal from context.
 pub fn use_theme<T: 'static>() -> Signal<T> {
-    ::silex_core::prelude::use_context::<Signal<T>>().expect("No ThemeProvider found in hierarchy")
+    use_context::<Signal<T>>().expect("No ThemeProvider found in hierarchy")
 }
 
 /// Sets a global theme that applies to the entire document (:root).
@@ -89,14 +94,13 @@ where
 {
     let signal = theme.into_signal();
     // Register the theme in the global context as well
-    ::silex_core::prelude::provide_context(signal);
+    provide_context(signal);
 
     // Apply reactive updates to :root
-    ::silex_core::prelude::Effect::new(move |prev_values: Option<Vec<String>>| {
-        use ::wasm_bindgen::JsCast;
-        let doc = ::silex_dom::document();
+    Effect::new(move |prev_values: Option<Vec<String>>| {
+        let doc = document();
         if let Some(root) = doc.document_element()
-            && let Some(style) = root.dyn_ref::<::web_sys::HtmlElement>().map(|e| e.style())
+            && let Some(style) = root.dyn_ref::<HtmlElement>().map(|e| e.style())
         {
             let theme_val = signal.get();
             let names = T::get_variable_names();
@@ -138,19 +142,18 @@ where
 /// A structure that can be applied to a DOM element to inject theme patch variables.
 pub struct ThemePatchVariables<P>(pub Signal<P>);
 
-impl<P> ::silex_dom::attribute::ApplyToDom for ThemePatchVariables<P>
+impl<P> ApplyToDom for ThemePatchVariables<P>
 where
     P: ThemePatchToCss + RxCloneData + 'static,
 {
-    fn apply(&self, el: &::web_sys::Element, _target: ::silex_dom::attribute::ApplyTarget) {
+    fn apply(&self, el: &Element, _target: ApplyTarget) {
         let patch = self.0;
         let el = el.clone();
-        ::silex_core::prelude::Effect::new(move |prev_values: Option<Vec<Option<String>>>| {
-            use ::wasm_bindgen::JsCast;
+        Effect::new(move |prev_values: Option<Vec<Option<String>>>| {
             if let Some(style) = el
-                .dyn_ref::<::web_sys::HtmlElement>()
+                .dyn_ref::<HtmlElement>()
                 .map(|e| e.style())
-                .or_else(|| el.dyn_ref::<::web_sys::SvgElement>().map(|e| e.style()))
+                .or_else(|| el.dyn_ref::<SvgElement>().map(|e| e.style()))
             {
                 let patch_val = patch.get();
                 let entries = patch_val.get_patch_entries();
@@ -189,7 +192,7 @@ where
     }
 }
 
-impl<P> silex_dom::attribute::IntoStorable for ThemePatchVariables<P>
+impl<P> IntoStorable for ThemePatchVariables<P>
 where
     P: ThemePatchToCss + RxCloneData + 'static,
 {

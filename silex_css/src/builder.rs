@@ -1,11 +1,30 @@
-use crate::types::{ValidFor, props};
-use silex_core::traits::{IntoRx, RxGet, RxValue};
-use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable};
-use std::borrow::Cow;
-use std::fmt::{Display, Write};
-use std::hash::{Hash, Hasher};
-use std::rc::Rc;
+use crate::{
+    for_all_properties, inject_style,
+    types::{
+        ValidFor, props,
+        props::{
+            MarginBottom, MarginLeft, MarginRight, MarginTop, PaddingBottom, PaddingLeft,
+            PaddingRight, PaddingTop,
+        },
+    },
+};
+use silex_core::{
+    Rx, RxValueKind,
+    reactivity::Effect,
+    traits::{IntoRx, RxGet, RxValue},
+};
+use silex_dom::attribute::{
+    ApplyTarget, ApplyToDom, IntoStorable, OwnedApplyTarget, ReactiveApply,
+};
+use silex_hash::css::{CssHasher, Normalized, encode_base36};
+use std::{
+    borrow::Cow,
+    fmt::{Display, Write},
+    hash::{Hash, Hasher},
+    rc::Rc,
+};
 use wasm_bindgen::JsCast;
+use web_sys::{Element, HtmlElement, SvgElement};
 
 pub(crate) type DynamicValue = Rc<dyn Fn() -> String>;
 pub(crate) type StaticRule = (&'static str, Cow<'static, str>);
@@ -107,12 +126,7 @@ impl Style {
     pub fn margin_x<V>(self, value: V) -> Self
     where
         V: IntoRx + RxValue + Clone + 'static,
-        V::Value: ValidFor<props::MarginLeft>
-            + ValidFor<props::MarginRight>
-            + Display
-            + Clone
-            + Sized
-            + 'static,
+        V::Value: ValidFor<MarginLeft> + ValidFor<MarginRight> + Display + Clone + Sized + 'static,
         V::RxType: RxGet<Value = V::Value> + Clone + 'static,
     {
         self.margin_left(value.clone()).margin_right(value)
@@ -121,12 +135,7 @@ impl Style {
     pub fn margin_y<V>(self, value: V) -> Self
     where
         V: IntoRx + RxValue + Clone + 'static,
-        V::Value: ValidFor<props::MarginTop>
-            + ValidFor<props::MarginBottom>
-            + Display
-            + Clone
-            + Sized
-            + 'static,
+        V::Value: ValidFor<MarginTop> + ValidFor<MarginBottom> + Display + Clone + Sized + 'static,
         V::RxType: RxGet<Value = V::Value> + Clone + 'static,
     {
         self.margin_top(value.clone()).margin_bottom(value)
@@ -135,12 +144,8 @@ impl Style {
     pub fn padding_x<V>(self, value: V) -> Self
     where
         V: IntoRx + RxValue + Clone + 'static,
-        V::Value: ValidFor<props::PaddingLeft>
-            + ValidFor<props::PaddingRight>
-            + Display
-            + Clone
-            + Sized
-            + 'static,
+        V::Value:
+            ValidFor<PaddingLeft> + ValidFor<PaddingRight> + Display + Clone + Sized + 'static,
         V::RxType: RxGet<Value = V::Value> + Clone + 'static,
     {
         self.padding_left(value.clone()).padding_right(value)
@@ -149,12 +154,8 @@ impl Style {
     pub fn padding_y<V>(self, value: V) -> Self
     where
         V: IntoRx + RxValue + Clone + 'static,
-        V::Value: ValidFor<props::PaddingTop>
-            + ValidFor<props::PaddingBottom>
-            + Display
-            + Clone
-            + Sized
-            + 'static,
+        V::Value:
+            ValidFor<PaddingTop> + ValidFor<PaddingBottom> + Display + Clone + Sized + 'static,
         V::RxType: RxGet<Value = V::Value> + Clone + 'static,
     {
         self.padding_top(value.clone()).padding_bottom(value)
@@ -201,22 +202,22 @@ macro_rules! generate_builder_methods {
     };
 }
 
-crate::for_all_properties!(generate_builder_methods);
+for_all_properties!(generate_builder_methods);
 
 impl ApplyToDom for Style {
-    fn apply(&self, el: &web_sys::Element, _target: ApplyTarget) {
+    fn apply(&self, el: &Element, _target: ApplyTarget) {
         self.apply_to_element(el);
     }
 }
 
 impl Style {
-    pub fn apply_to_element(&self, el: &web_sys::Element) -> String {
+    pub fn apply_to_element(&self, el: &Element) -> String {
         // 1. 生成稳定哈希（忽略动态值，递归所有嵌套规则）
-        let mut hasher = silex_hash::css::CssHasher::new();
+        let mut hasher = CssHasher::new();
         hash_recursive(self, &mut hasher);
         let hash_val = hasher.finish();
         let mut hash_buf = [0u8; 13];
-        let hash_str = silex_hash::css::encode_base36(hash_val, &mut hash_buf);
+        let hash_str = encode_base36(hash_val, &mut hash_buf);
         let class_base = format!("slx-{}", hash_str);
 
         // 2. 递归构造 CSS，收集所有动态绑定
@@ -227,19 +228,19 @@ impl Style {
         generate_css_recursive(self, &base_sel, hash_str, &mut css_str, &mut dyn_bindings);
 
         // 3. 注入样式并添加类名
-        crate::inject_style(&class_base, &css_str);
+        inject_style(&class_base, &css_str);
         let _ = el.class_list().add_1(&class_base);
 
         // 4. 建立极轻量更新 Effect (只有 style.setProperty)
         for (var_name, getter) in dyn_bindings {
             let el_clone = el.clone();
-            silex_core::reactivity::Effect::new(move |prev: Option<String>| {
+            Effect::new(move |prev: Option<String>| {
                 let current = getter();
                 if prev.as_ref() != Some(&current)
                     && let Some(style) = el_clone
-                        .dyn_ref::<web_sys::HtmlElement>()
+                        .dyn_ref::<HtmlElement>()
                         .map(|e| e.style())
-                        .or_else(|| el_clone.dyn_ref::<web_sys::SvgElement>().map(|e| e.style()))
+                        .or_else(|| el_clone.dyn_ref::<SvgElement>().map(|e| e.style()))
                 {
                     let _ = style.set_property(&var_name, &current);
                 }
@@ -251,25 +252,25 @@ impl Style {
 }
 
 /// 递归计算样式的稳定哈希
-fn hash_recursive(style: &Style, hasher: &mut silex_hash::css::CssHasher) {
+fn hash_recursive(style: &Style, hasher: &mut CssHasher) {
     for (k, v) in &style.static_rules {
-        silex_hash::css::Normalized(k).hash(hasher);
-        silex_hash::css::Normalized(v).hash(hasher);
+        Normalized(k).hash(hasher);
+        Normalized(v).hash(hasher);
     }
     for (prop, _) in &style.dynamic_rules {
-        silex_hash::css::Normalized(prop).hash(hasher);
+        Normalized(prop).hash(hasher);
         "dyn-val".hash(hasher); // 动态值占位
     }
     for rule in &style.nested_rules {
         match rule {
             NestedRule::Media(query, sub) => {
                 "media".hash(hasher);
-                silex_hash::css::Normalized(query).hash(hasher);
+                Normalized(query).hash(hasher);
                 hash_recursive(sub, hasher);
             }
             NestedRule::Selector(selector, sub) => {
                 "selector".hash(hasher);
-                silex_hash::css::Normalized(selector).hash(hasher);
+                Normalized(selector).hash(hasher);
                 hash_recursive(sub, hasher);
             }
         }
@@ -320,18 +321,13 @@ fn generate_css_recursive(
     }
 }
 
-impl silex_dom::attribute::ReactiveApply for Style {
-    fn apply_to_dom(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-        el: web_sys::Element,
-        _target: silex_dom::attribute::OwnedApplyTarget,
-    ) {
+impl ReactiveApply for Style {
+    fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: Element, _target: OwnedApplyTarget) {
         let el = el.clone();
-        silex_core::reactivity::Effect::new(move |prev_class: Option<String>| {
+        Effect::new(move |prev_class: Option<String>| {
             if let Some(c) = &prev_class {
                 let _ = el.class_list().remove_1(c);
             }
-            use silex_core::traits::RxGet;
             let style = rx.get();
             style.apply_to_element(&el)
         });

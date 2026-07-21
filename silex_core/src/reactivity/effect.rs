@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use silex_reactivity::NodeId;
+use silex_reactivity::{NodeId, effect};
 
 // --- Effect ---
 
@@ -19,7 +19,7 @@ impl Effect {
         let val = Rc::new(RefCell::new(None::<T>));
         let val_clone = val.clone();
 
-        let id = silex_reactivity::effect(move || {
+        let id = effect(move || {
             let old = val_clone.borrow_mut().take();
             let new = f(old);
             *val_clone.borrow_mut() = Some(new);

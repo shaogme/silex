@@ -1,14 +1,17 @@
-use std::cell::Cell;
-use std::future::Future;
-use std::pin::Pin;
-use std::rc::Rc;
+use std::{cell::Cell, future::Future, panic::Location, pin::Pin, rc::Rc};
 
-use crate::SilexError;
-use crate::reactivity::signal::{ReadSignal, Signal, WriteSignal};
-use crate::reactivity::stored_value::StoredValue;
-use crate::traits::*;
-use crate::traits::{RxCloneData, RxData};
-use std::panic::Location;
+use wasm_bindgen_futures::spawn_local;
+
+use crate::{
+    Rx, RxValueKind, SilexError,
+    reactivity::{
+        NodeId,
+        signal::{ReadSignal, Signal, WriteSignal},
+        stored_value::StoredValue,
+    },
+    traits::{IntoSignal, RxCloneData, RxData, RxGet, adaptive::AdaptiveWrapper, *},
+    warn,
+};
 
 // --- MutationState ---
 
@@ -109,7 +112,7 @@ impl<Arg: RxData, T: RxCloneData, E: RxCloneData> Mutation<Arg, T, E> {
         }) {
             Some(v) => v,
             None => {
-                crate::warn!("Mutation triggered after disposal");
+                warn!("Mutation triggered after disposal");
                 return;
             }
         };
@@ -124,7 +127,7 @@ impl<Arg: RxData, T: RxCloneData, E: RxCloneData> Mutation<Arg, T, E> {
         let set_state = self.set_state;
         let inner_handle = self.inner;
 
-        wasm_bindgen_futures::spawn_local(async move {
+        spawn_local(async move {
             let result = future.await;
 
             // Check ID
@@ -177,7 +180,7 @@ impl<Arg: RxData, T: RxCloneData, E: RxCloneData> RxValue for Mutation<Arg, T, E
 
 impl<Arg: RxData, T: RxCloneData, E: RxCloneData> RxBase for Mutation<Arg, T, E> {
     #[inline(always)]
-    fn id(&self) -> Option<crate::reactivity::NodeId> {
+    fn id(&self) -> Option<NodeId> {
         self.state.id()
     }
 
@@ -227,11 +230,8 @@ impl<Arg: RxData, T: RxCloneData, E: RxCloneData> RxInternal for Mutation<Arg, T
     where
         Self::Value: Sized,
     {
-        self.rx_try_with_untracked(|v| {
-            use crate::traits::adaptive::AdaptiveWrapper;
-            AdaptiveWrapper(v).maybe_clone()
-        })
-        .flatten()
+        self.rx_try_with_untracked(|v| AdaptiveWrapper(v).maybe_clone())
+            .flatten()
     }
 
     #[inline(always)]
@@ -241,13 +241,10 @@ impl<Arg: RxData, T: RxCloneData, E: RxCloneData> RxInternal for Mutation<Arg, T
 }
 
 impl<Arg: RxData, T: RxCloneData, E: RxCloneData> IntoRx for Mutation<Arg, T, E> {
-    type RxType = crate::Rx<Option<T>, crate::RxValueKind>;
+    type RxType = Rx<Option<T>, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        crate::Rx::derive(Box::new(move || {
-            use crate::traits::RxGet;
-            self.get()
-        }))
+        Rx::derive(Box::new(move || self.get()))
     }
     #[inline(always)]
     fn is_constant(&self) -> bool {
@@ -255,15 +252,13 @@ impl<Arg: RxData, T: RxCloneData, E: RxCloneData> IntoRx for Mutation<Arg, T, E>
     }
 }
 
-impl<Arg: RxData, T: RxCloneData, E: RxCloneData> crate::traits::IntoSignal
-    for Mutation<Arg, T, E>
-{
+impl<Arg: RxData, T: RxCloneData, E: RxCloneData> IntoSignal for Mutation<Arg, T, E> {
     #[inline(always)]
-    fn into_signal(self) -> crate::reactivity::Signal<Option<T>>
+    fn into_signal(self) -> Signal<Option<T>>
     where
         Self: 'static,
         T: Clone,
     {
-        crate::reactivity::Signal::derive(Box::new(move || self.get()))
+        Signal::derive(Box::new(move || self.get()))
     }
 }

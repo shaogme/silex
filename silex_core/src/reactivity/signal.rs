@@ -1,14 +1,29 @@
-use std::marker::PhantomData;
-use std::mem;
-use std::panic::Location;
-use std::ptr;
-
-use silex_reactivity::{
-    NodeId, get_debug_label, get_node_defined_at, register_derived, set_debug_label, store_value,
+use core::mem::discriminant;
+use std::{
+    fmt::{Debug, Formatter, Result as FmtResult},
+    hash::{Hash, Hasher},
+    marker::PhantomData,
+    mem,
+    panic::Location,
+    ptr,
 };
 
-use crate::traits::*;
-use crate::{Rx, RxValueKind};
+use silex_reactivity::{
+    NodeId, get_debug_label, get_node_defined_at, register_derived, set_debug_label, signal,
+    store_value,
+};
+
+use crate::{
+    Rx, RxNodeKind, RxValueKind, impl_reactive_ops, impl_rx_delegate,
+    reactivity::{
+        SignalSlice,
+        dispatch::{is_disposed, rx_read_node_untracked, rx_try_with_node_untracked, track},
+    },
+    traits::{
+        adaptive::{AdaptiveFallback, AdaptiveWrapper},
+        *,
+    },
+};
 
 mod derived;
 mod ops;
@@ -33,7 +48,7 @@ pub enum Signal<T> {
 
 impl<T: 'static> Signal<T> {
     pub fn pair(value: T) -> (ReadSignal<T>, WriteSignal<T>) {
-        let id = silex_reactivity::signal(value);
+        let id = signal(value);
         (
             ReadSignal {
                 id,
@@ -47,8 +62,8 @@ impl<T: 'static> Signal<T> {
     }
 }
 
-impl<T: RxData> std::fmt::Debug for Signal<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T: RxData> Debug for Signal<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Self::Read(s) => f.debug_tuple("Read").field(s).finish(),
             Self::Derived(id, _) => f.debug_tuple("Derived").field(id).finish(),
@@ -96,28 +111,18 @@ impl<T: RxData> RxBase for Signal<T> {
 
     fn track(&self) {
         match self {
-            Signal::Read(s) => crate::reactivity::dispatch::track(s.id, crate::RxNodeKind::Signal),
-            Signal::Derived(id, _) => {
-                crate::reactivity::dispatch::track(*id, crate::RxNodeKind::Closure)
-            }
-            Signal::StoredConstant(id, _) => {
-                crate::reactivity::dispatch::track(*id, crate::RxNodeKind::Stored)
-            }
+            Signal::Read(s) => track(s.id, RxNodeKind::Signal),
+            Signal::Derived(id, _) => track(*id, RxNodeKind::Closure),
+            Signal::StoredConstant(id, _) => track(*id, RxNodeKind::Stored),
             Signal::InlineConstant(_, _) => {}
         }
     }
 
     fn is_disposed(&self) -> bool {
         match self {
-            Signal::Read(s) => {
-                crate::reactivity::dispatch::is_disposed(s.id, crate::RxNodeKind::Signal)
-            }
-            Signal::Derived(id, _) => {
-                crate::reactivity::dispatch::is_disposed(*id, crate::RxNodeKind::Closure)
-            }
-            Signal::StoredConstant(id, _) => {
-                crate::reactivity::dispatch::is_disposed(*id, crate::RxNodeKind::Stored)
-            }
+            Signal::Read(s) => is_disposed(s.id, RxNodeKind::Signal),
+            Signal::Derived(id, _) => is_disposed(*id, RxNodeKind::Closure),
+            Signal::StoredConstant(id, _) => is_disposed(*id, RxNodeKind::Stored),
             Signal::InlineConstant(_, _) => false,
         }
     }
@@ -147,11 +152,9 @@ impl<T: RxData> RxInternal for Signal<T> {
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
         match self {
             Signal::Read(s) => s.rx_read_untracked(),
-            Signal::Derived(id, _) => unsafe {
-                crate::reactivity::dispatch::rx_read_node_untracked(*id, crate::RxNodeKind::Closure)
-            },
+            Signal::Derived(id, _) => unsafe { rx_read_node_untracked(*id, RxNodeKind::Closure) },
             Signal::StoredConstant(id, _) => unsafe {
-                crate::reactivity::dispatch::rx_read_node_untracked(*id, crate::RxNodeKind::Stored)
+                rx_read_node_untracked(*id, RxNodeKind::Stored)
             },
             Signal::InlineConstant(val, _) => {
                 let val = unsafe { Self::unpack_inline(*val) };
@@ -164,17 +167,9 @@ impl<T: RxData> RxInternal for Signal<T> {
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         match self {
             Signal::Read(s) => s.rx_try_with_untracked(fun),
-            Signal::Derived(id, _) => crate::reactivity::dispatch::rx_try_with_node_untracked(
-                *id,
-                crate::RxNodeKind::Closure,
-                fun,
-            ),
+            Signal::Derived(id, _) => rx_try_with_node_untracked(*id, RxNodeKind::Closure, fun),
             Signal::StoredConstant(id, _) => {
-                crate::reactivity::dispatch::rx_try_with_node_untracked(
-                    *id,
-                    crate::RxNodeKind::Stored,
-                    fun,
-                )
+                rx_try_with_node_untracked(*id, RxNodeKind::Stored, fun)
             }
             Signal::InlineConstant(storage, _) => {
                 let val = unsafe { Self::unpack_inline(*storage) };
@@ -191,10 +186,7 @@ impl<T: RxData> RxInternal for Signal<T> {
         match self {
             Signal::Read(s) => s.rx_get_adaptive(),
             Signal::Derived(_, _) | Signal::StoredConstant(_, _) => self
-                .rx_try_with_untracked(|v| {
-                    use crate::traits::adaptive::{AdaptiveFallback, AdaptiveWrapper};
-                    AdaptiveWrapper(v).maybe_clone()
-                })
+                .rx_try_with_untracked(|v| AdaptiveWrapper(v).maybe_clone())
                 .flatten(),
             Signal::InlineConstant(storage, _) => {
                 let val = unsafe { Self::unpack_inline(*storage) };
@@ -220,15 +212,15 @@ impl<T: RxData> IntoRx for Signal<T> {
     }
 }
 
-impl<T: RxData> crate::traits::IntoSignal for Signal<T> {
+impl<T: RxData> IntoSignal for Signal<T> {
     fn into_signal(self) -> Signal<Self::Value> {
         self
     }
 }
 
-impl<T> std::hash::Hash for Signal<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        core::mem::discriminant(self).hash(state);
+impl<T> Hash for Signal<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        discriminant(self).hash(state);
         match self {
             Self::Read(s) => s.hash(state),
             Self::Derived(id, _) => id.hash(state),
@@ -326,12 +318,12 @@ impl<T: RxCloneData> Signal<T> {
         self
     }
 
-    pub fn slice<O, F>(self, getter: F) -> crate::reactivity::SignalSlice<Self, F, O>
+    pub fn slice<O, F>(self, getter: F) -> SignalSlice<Self, F, O>
     where
         F: Fn(&T) -> &O + 'static,
         O: ?Sized + 'static,
     {
-        crate::reactivity::SignalSlice::new(self, getter)
+        SignalSlice::new(self, getter)
     }
 }
 
@@ -366,10 +358,10 @@ impl<T: RxData> From<RwSignal<T>> for Signal<T> {
 }
 
 // 手动实现了 RxInternal，移除自动委托以避免冲突
-crate::impl_rx_delegate!(ReadSignal, SignalID, false);
-crate::impl_rx_delegate!(RwSignal, read, false);
+impl_rx_delegate!(ReadSignal, SignalID, false);
+impl_rx_delegate!(RwSignal, read, false);
 
-crate::impl_reactive_ops!(Signal);
-crate::impl_reactive_ops!(ReadSignal);
-crate::impl_reactive_ops!(RwSignal);
-crate::impl_reactive_ops!(Constant);
+impl_reactive_ops!(Signal);
+impl_reactive_ops!(ReadSignal);
+impl_reactive_ops!(RwSignal);
+impl_reactive_ops!(Constant);

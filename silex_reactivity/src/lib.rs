@@ -1,16 +1,20 @@
 mod core;
-pub use crate::core::algorithm::NodeState;
-pub use crate::core::arena::{Arena, Index as NodeId, SparseSecondaryMap};
+mod primitive;
+mod runtime;
+
 pub(crate) use crate::core::list::List;
+pub use crate::core::{
+    algorithm::NodeState,
+    arena::{Arena, Index as NodeId, SparseSecondaryMap},
+};
+
+use runtime::RUNTIME;
+use std::panic::Location;
+
+pub use primitive::*;
 
 pub(crate) type NodeList = List<NodeId>;
 pub(crate) type DependencyList = List<(NodeId, u32)>;
-
-mod runtime;
-use runtime::RUNTIME;
-
-mod primitive;
-pub use primitive::*;
 
 /// 具有 16 字节对齐要求的 64 字节固定宽度缓冲区。
 /// 用于跨 crate 安全地传递和存储类型擦除后的 Payload。
@@ -66,7 +70,7 @@ pub unsafe fn try_get_any_raw_untracked(id: NodeId) -> Option<*const ()> {
     RUNTIME.with(|rt| unsafe { rt.get_any_raw_ptr_untracked(id) })
 }
 
-pub fn get_node_defined_at(_id: NodeId) -> Option<&'static std::panic::Location<'static>> {
+pub fn get_node_defined_at(_id: NodeId) -> Option<&'static Location<'static>> {
     #[cfg(debug_assertions)]
     {
         RUNTIME.with(|rt| {

@@ -1,9 +1,10 @@
-use crate::any_box::AnyBox;
-use crate::func_ptr::FuncPtr;
+use crate::{any_box::AnyBox, func_ptr::FuncPtr};
 use alloc::boxed::Box;
-use core::marker::PhantomData;
-use core::mem;
-use core::ptr;
+use core::{
+    marker::PhantomData,
+    mem::ManuallyDrop,
+    ptr::{self, drop_in_place},
+};
 
 // --- ThunkBox<Args, R>: Generic type-erased Fn(Args) -> R ---
 
@@ -91,7 +92,7 @@ impl<Args: 'static, R: 'static> OnceBox<Args, R> {
 
     #[inline(always)]
     pub fn call(self, args: Args) -> R {
-        let mut this = mem::ManuallyDrop::new(self);
+        let mut this = ManuallyDrop::new(self);
         let vtable = this.inner.vtable;
         let data_ptr = this.inner.as_mut_ptr();
         unsafe { (vtable.call.as_fn())(data_ptr, args) }
@@ -135,13 +136,11 @@ impl<R: 'static> FactoryBox<R> {
 }
 
 // --- Glue Functions ---
-
 unsafe fn drop_stack<T>(data: *mut u8) {
     unsafe {
-        ptr::drop_in_place(data as *mut T);
+        drop_in_place(data as *mut T);
     }
 }
-
 unsafe fn drop_heap<T>(data: *mut u8) {
     unsafe {
         let ptr = ptr::read(data as *mut *mut T);

@@ -1,7 +1,16 @@
-use crate::traits::*;
-use crate::{Rx, RxValueKind};
+use crate::{
+    Rx, RxValueKind,
+    traits::{
+        IntoSignal, RxGet,
+        adaptive::{AdaptiveFallback, AdaptiveWrapper},
+        *,
+    },
+};
 use silex_reactivity::NodeId;
-use std::panic::Location;
+use std::{
+    fmt::{Debug, Formatter, Result},
+    panic::Location,
+};
 
 // --- Constant ---
 
@@ -57,11 +66,8 @@ impl<T: RxData> RxInternal for Constant<T> {
     where
         Self::Value: Sized,
     {
-        self.rx_try_with_untracked(|v| {
-            use crate::traits::adaptive::{AdaptiveFallback, AdaptiveWrapper};
-            AdaptiveWrapper(v).maybe_clone()
-        })
-        .flatten()
+        self.rx_try_with_untracked(|v| AdaptiveWrapper(v).maybe_clone())
+            .flatten()
     }
 
     #[inline(always)]
@@ -82,7 +88,7 @@ impl<T: RxCloneData> IntoRx for Constant<T> {
     }
 }
 
-impl<T: RxCloneData> crate::traits::IntoSignal for Constant<T> {
+impl<T: RxCloneData> IntoSignal for Constant<T> {
     #[inline(always)]
     fn into_signal(self) -> super::Signal<T> {
         super::Signal::derive(Box::new(move || self.get()))
@@ -97,8 +103,8 @@ pub struct DerivedPayload<Deps, F> {
     pub(crate) func: F,
 }
 
-impl<D: std::fmt::Debug, F> std::fmt::Debug for DerivedPayload<D, F> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<D: Debug, F> Debug for DerivedPayload<D, F> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("DerivedPayload")
             .field("deps", &self.deps)
             .field("func", &"Fn(...)")
@@ -180,11 +186,8 @@ where
     where
         Self::Value: Sized,
     {
-        self.rx_try_with_untracked(|v| {
-            use crate::traits::adaptive::{AdaptiveFallback, AdaptiveWrapper};
-            AdaptiveWrapper(v).maybe_clone()
-        })
-        .flatten()
+        self.rx_try_with_untracked(|v| AdaptiveWrapper(v).maybe_clone())
+            .flatten()
     }
 
     fn rx_is_constant(&self) -> bool {
@@ -202,10 +205,7 @@ where
 
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        Rx::derive(Box::new(move || {
-            use crate::traits::RxGet;
-            self.get()
-        }))
+        Rx::derive(Box::new(move || self.get()))
     }
 
     #[inline(always)]
@@ -214,7 +214,7 @@ where
     }
 }
 
-impl<S, F, U> crate::traits::IntoSignal for DerivedPayload<S, F>
+impl<S, F, U> IntoSignal for DerivedPayload<S, F>
 where
     S: RxRead + Clone + 'static,
     F: Fn(&S::Value) -> U + 'static,
@@ -222,7 +222,6 @@ where
 {
     #[inline(always)]
     fn into_signal(self) -> super::Signal<Self::Value> {
-        use crate::traits::RxGet;
         super::Signal::derive(Box::new(move || self.get()))
     }
 }

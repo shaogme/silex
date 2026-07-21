@@ -1,7 +1,10 @@
-use std::alloc::{self, Layout};
-use std::marker::PhantomData;
-use std::ptr::{self, NonNull};
-use std::slice;
+use std::{
+    alloc::{self, Layout},
+    marker::PhantomData,
+    mem::{needs_drop, replace, size_of},
+    ptr::{self, NonNull},
+    slice,
+};
 
 /// A specialized, memory-efficient vector for `T`.
 /// Is stores length and capacity in a heap header to keep the stack size small (1 word).
@@ -169,7 +172,7 @@ impl<T: PartialEq> ThinVec<T> {
                     );
 
                     // Drop the removed element (now at the end) if necessary
-                    if std::mem::needs_drop::<T>() {
+                    if needs_drop::<T>() {
                         ptr::drop_in_place(slice.get_unchecked_mut(len - 1));
                     }
 
@@ -188,7 +191,7 @@ impl<T> Drop for ThinVec<T> {
             unsafe {
                 let header = ptr.cast::<Header>().as_mut();
 
-                if std::mem::needs_drop::<T>() {
+                if needs_drop::<T>() {
                     let data_ptr = header.data_ptr_mut::<T>();
                     let slice = slice::from_raw_parts_mut(data_ptr, header.len);
                     for item in slice {
@@ -219,7 +222,7 @@ impl<T: Clone> Clone for ThinVec<T> {
                     alloc::handle_alloc_error(layout);
                 }
 
-                ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr, std::mem::size_of::<Header>());
+                ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr, size_of::<Header>());
 
                 let new_header = &mut *new_ptr.cast::<Header>();
                 new_header.len = 0; // for exception safety
@@ -276,7 +279,7 @@ impl<T> Drop for ThinVecIntoIter<T> {
         if let Some(ptr) = self.ptr {
             unsafe {
                 // Drop remaining elements
-                if std::mem::needs_drop::<T>() {
+                if needs_drop::<T>() {
                     let header_ptr = ptr.as_ptr() as *mut Header;
                     let data_ptr = (*header_ptr).data_ptr_mut::<T>();
                     for i in self.idx..self.len {
@@ -334,7 +337,7 @@ pub enum List<T> {
 
 impl<T> List<T> {
     pub fn push(&mut self, elem: T) {
-        match std::mem::replace(self, Self::Empty) {
+        match replace(self, Self::Empty) {
             Self::Empty => *self = Self::Single(elem),
             Self::Single(val) => {
                 let mut vec = ThinVec::new();

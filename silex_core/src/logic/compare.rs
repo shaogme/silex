@@ -2,8 +2,6 @@ use crate::traits::RxRead;
 
 pub type CompareFn<T> = fn(&T, &T) -> bool;
 
-#[doc(hidden)]
-#[macro_export]
 macro_rules! reactive_compare_method {
     ($name:ident, $fn_impl:ident, $op:tt, $bound:ident) => {
         fn $name<O>(&self, other: O) -> $crate::Rx<bool, $crate::RxValueKind>

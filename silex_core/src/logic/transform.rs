@@ -1,52 +1,53 @@
-use crate::reactivity::Memo;
+use crate::reactivity::{Memo, StaticMapPayload};
 use crate::traits::{RxBase, RxRead};
+use crate::{Rx, RxValueKind};
 
 /// 允许从当前信号创建一个衍生信号。
 pub trait Map: RxBase + Sized {
     /// 基于当前信号派生出一个新信号。
-    fn map<U, F>(self, f: F) -> crate::Rx<U, crate::RxValueKind>
+    fn map<U, F>(self, f: F) -> Rx<U, RxValueKind>
     where
         F: Fn(&Self::Value) -> U + 'static,
         U: 'static;
 
     /// 使用静态函数指针派生出一个新信号（零成本，无闭包分配）。
-    fn map_fn<U>(self, f: fn(&Self::Value) -> U) -> crate::Rx<U, crate::RxValueKind>
+    fn map_fn<U>(self, f: fn(&Self::Value) -> U) -> Rx<U, RxValueKind>
     where
         U: 'static;
 }
 
 impl<S> Map for S
 where
-    S: crate::traits::RxRead + Clone + RxBase + 'static,
+    S: RxRead + Clone + RxBase + 'static,
     S::Value: Sized + 'static,
 {
-    fn map<U, F>(self, f: F) -> crate::Rx<U, crate::RxValueKind>
+    fn map<U, F>(self, f: F) -> Rx<U, RxValueKind>
     where
         F: Fn(&Self::Value) -> U + 'static,
         U: 'static,
     {
         if self.rx_is_constant()
-            && let Some(res) = self.rx_try_with_untracked(|v| crate::Rx::new_constant(f(v)))
+            && let Some(res) = self.rx_try_with_untracked(|v| Rx::new_constant(f(v)))
         {
             return res;
         }
-        crate::Rx::derive(Box::new(move || self.with(|v| f(v))))
+        Rx::derive(Box::new(move || self.with(|v| f(v))))
     }
 
-    fn map_fn<U>(self, f: fn(&Self::Value) -> U) -> crate::Rx<U, crate::RxValueKind>
+    fn map_fn<U>(self, f: fn(&Self::Value) -> U) -> Rx<U, RxValueKind>
     where
         U: 'static,
     {
         if self.rx_is_constant()
-            && let Some(res) = self.rx_try_with_untracked(|v| crate::Rx::new_constant(f(v)))
+            && let Some(res) = self.rx_try_with_untracked(|v| Rx::new_constant(f(v)))
         {
             return res;
         }
         if let Some(id) = self.id() {
-            let op = crate::reactivity::StaticMapPayload::new1(id, f, false);
-            crate::Rx::new_op(op)
+            let op = StaticMapPayload::new1(id, f, false);
+            Rx::new_op(op)
         } else {
-            crate::Rx::derive(Box::new(move || self.with(f)))
+            Rx::derive(Box::new(move || self.with(f)))
         }
     }
 }
@@ -64,7 +65,7 @@ where
         Self::Value: Clone + PartialEq + 'static;
 }
 
-impl<T, M> Memoize for crate::Rx<T, M>
+impl<T, M> Memoize for Rx<T, M>
 where
     T: Clone + Sized + 'static,
     M: 'static,

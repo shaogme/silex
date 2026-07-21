@@ -1,5 +1,5 @@
 use crate::types::{ValidFor, props};
-use std::fmt::Display;
+use std::fmt::{Display, Formatter, Result};
 
 // ==========================================
 // 复合属性工厂 (Shorthand Factories)
@@ -8,7 +8,7 @@ use std::fmt::Display;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BorderValue(pub String);
 impl Display for BorderValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.0)
     }
 }
@@ -25,7 +25,7 @@ where
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MarginValue(pub String);
 impl Display for MarginValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.0)
     }
 }
@@ -69,7 +69,7 @@ pub mod margin {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PaddingValue(pub String);
 impl Display for PaddingValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.0)
     }
 }
@@ -113,7 +113,7 @@ pub mod padding {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct FlexValue(pub String);
 impl Display for FlexValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.0)
     }
 }
@@ -131,7 +131,7 @@ where
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TransitionValue(pub String);
 impl Display for TransitionValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.0)
     }
 }
@@ -150,7 +150,7 @@ where
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BackgroundValue(pub String);
 impl Display for BackgroundValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.0)
     }
 }

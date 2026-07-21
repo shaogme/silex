@@ -1,7 +1,9 @@
-use std::alloc::{Layout, alloc};
-use std::cell::UnsafeCell;
-use std::mem::ManuallyDrop;
-use std::ptr;
+use std::{
+    alloc::{Layout, alloc, handle_alloc_error},
+    cell::UnsafeCell,
+    mem::{ManuallyDrop, needs_drop},
+    ptr,
+};
 
 const CHUNK_SIZE: usize = 128;
 
@@ -31,7 +33,7 @@ impl<T> Slot<T> {
 
 impl<T> Drop for Slot<T> {
     fn drop(&mut self) {
-        if core::mem::needs_drop::<T>() && self.occupied() {
+        if needs_drop::<T>() && self.occupied() {
             unsafe {
                 ManuallyDrop::drop(&mut self.u.value);
             }
@@ -51,7 +53,7 @@ impl<T> Chunk<T> {
         let ptr = unsafe { alloc(layout) } as *mut UnsafeCell<Slot<T>>;
 
         if ptr.is_null() {
-            std::alloc::handle_alloc_error(layout);
+            handle_alloc_error(layout);
         }
 
         // Initialize slots

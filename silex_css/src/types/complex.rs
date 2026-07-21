@@ -1,5 +1,5 @@
 use crate::types::{ValidFor, props};
-use std::fmt::{Display, Write};
+use std::fmt::{Display, Formatter, Result, Write};
 
 // ==========================================
 // 复杂属性 DSL (Complex Properties)
@@ -10,7 +10,7 @@ use std::fmt::{Display, Write};
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TransformValue(pub String);
 impl Display for TransformValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.0)
     }
 }
@@ -74,7 +74,7 @@ impl TransformBuilder {
 }
 
 impl Display for TransformBuilder {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         for (i, part) in self.parts.iter().enumerate() {
             if i > 0 {
                 f.write_char(' ')?;
@@ -96,7 +96,7 @@ pub fn transform() -> TransformBuilder {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct GridTemplateAreasValue(pub String);
 impl Display for GridTemplateAreasValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.0)
     }
 }
@@ -122,7 +122,7 @@ where
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct FontVariationSettingsValue(pub String);
 impl Display for FontVariationSettingsValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.0)
     }
 }

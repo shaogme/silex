@@ -1,4 +1,14 @@
-use std::fmt::Display;
+use crate::for_all_properties;
+use silex_core::{
+    Rx, RxValueKind,
+    reactivity::Signal,
+    traits::{IntoRx, IntoSignal, RxValue},
+};
+use std::{
+    fmt::{Display, Formatter, Result},
+    marker::PhantomData,
+    ops::{Add, Div, Mul, Sub},
+};
 
 mod calc;
 mod complex;
@@ -32,7 +42,7 @@ impl UnsafeCss {
     }
 }
 impl Display for UnsafeCss {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if let Some(v) = &self.0 {
             write!(f, "{}", v)
         } else {
@@ -57,7 +67,7 @@ impl PartialEq<&str> for CssVarValue {
 }
 
 impl Display for CssVarValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Self::Static(s) => write!(f, "{}", s),
             Self::Dynamic(s) => write!(f, "{}", s),
@@ -68,7 +78,7 @@ impl Display for CssVarValue {
 /// CSS 变量类型，可通过 `css_var()` 函数创建。
 /// 泛型 T 用于强类型校验，例如 `CssVar<Hex>` 仅在接收颜色的属性中有效。
 #[derive(Clone, Debug, PartialEq)]
-pub struct CssVar<T = ()>(pub CssVarValue, pub std::marker::PhantomData<T>);
+pub struct CssVar<T = ()>(pub CssVarValue, pub PhantomData<T>);
 
 impl<T: CssColor> CssVar<T> {
     pub fn alpha(self, alpha: f64) -> Self {
@@ -78,7 +88,7 @@ impl<T: CssColor> CssVar<T> {
                 self.0,
                 (1.0 - alpha) * 100.0
             )),
-            std::marker::PhantomData,
+            PhantomData,
         )
     }
 }
@@ -88,21 +98,18 @@ where
     T: Display,
 {
     fn from(val: T) -> Self {
-        Self(
-            CssVarValue::Dynamic(val.to_string()),
-            std::marker::PhantomData,
-        )
+        Self(CssVarValue::Dynamic(val.to_string()), PhantomData)
     }
 }
 
 impl<T> Default for CssVar<T> {
     fn default() -> Self {
-        Self(CssVarValue::Static(""), std::marker::PhantomData)
+        Self(CssVarValue::Static(""), PhantomData)
     }
 }
 
 impl<T> Display for CssVar<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.0)
     }
 }
@@ -117,7 +124,7 @@ pub fn css_var(name: impl Display) -> CssVar<()> {
     } else {
         format!("var({})", name_str)
     };
-    CssVar(CssVarValue::Dynamic(val), std::marker::PhantomData)
+    CssVar(CssVarValue::Dynamic(val), PhantomData)
 }
 
 // ==========================================
@@ -131,13 +138,13 @@ macro_rules! define_css_enum {
     };
     ($name:ident ($($prop:path),*) { $($variant:ident => $val:expr),* $(,)? }) => {
         define_css_enum!(@base $name { $($variant => $val),* });
-        $(impl crate::types::ValidFor<$prop> for $name {})*
+        $(impl ValidFor<$prop> for $name {})*
     };
     (@base $name:ident { $($variant:ident => $val:expr),* $(,)? }) => {
         #[derive(Clone, Copy, Debug, PartialEq)]
         pub enum $name { $($variant),* }
         impl Display for $name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            fn fmt(&self, f: &mut Formatter<'_>) -> Result {
                 match self { $(Self::$variant => write!(f, $val)),* }
             }
         }
@@ -164,25 +171,25 @@ macro_rules! impl_valid_for_dimension {
 
 macro_rules! impl_css_ops {
     ($t:ty, $trait:ident, $mark:ident) => {
-        impl<R: $trait> std::ops::Add<R> for $t {
+        impl<R: $trait> Add<R> for $t {
             type Output = CalcValue<$mark>;
             fn add(self, rhs: R) -> Self::Output {
                 CalcValue::binary(self, " + ", rhs)
             }
         }
-        impl<R: $trait> std::ops::Sub<R> for $t {
+        impl<R: $trait> Sub<R> for $t {
             type Output = CalcValue<$mark>;
             fn sub(self, rhs: R) -> Self::Output {
                 CalcValue::binary(self, " - ", rhs)
             }
         }
-        impl std::ops::Mul<f64> for $t {
+        impl Mul<f64> for $t {
             type Output = CalcValue<$mark>;
             fn mul(self, rhs: f64) -> Self::Output {
                 CalcValue::binary(self, " * ", rhs)
             }
         }
-        impl std::ops::Div<f64> for $t {
+        impl Div<f64> for $t {
             type Output = CalcValue<$mark>;
             fn div(self, rhs: f64) -> Self::Output {
                 CalcValue::binary(self, " / ", rhs)
@@ -303,7 +310,7 @@ macro_rules! define_props {
 }
 
 // 调用中心注册表执行代码生成
-crate::for_all_properties!(define_props);
+for_all_properties!(define_props);
 
 // --- 手动补充跨组约束 ---
 impl ValidFor<props::Border> for BorderValue {}
@@ -323,46 +330,46 @@ impl<T: Display> ValidFor<props::Any> for T {}
 macro_rules! impl_into_rx_for_css {
     ($($t:ty),*) => {
         $(
-            impl silex_core::traits::RxValue for $t {
+            impl RxValue for $t {
                 type Value = $t;
             }
 
-            impl silex_core::traits::IntoRx for $t {
-                type RxType = silex_core::Rx<$t, silex_core::RxValueKind>;
+            impl IntoRx for $t {
+                type RxType = Rx<$t, RxValueKind>;
                 fn into_rx(self) -> Self::RxType {
-                    silex_core::Rx::new_constant(self)
+                    Rx::new_constant(self)
                 }
                 fn is_constant(&self) -> bool { true }
             }
 
-            impl silex_core::traits::IntoSignal for $t {
-                fn into_signal(self) -> silex_core::reactivity::Signal<$t>
+            impl IntoSignal for $t {
+                fn into_signal(self) -> Signal<$t>
                 where
                     Self: Sized + 'static,
                     $t: Sized + Clone + 'static,
                 {
-                    silex_core::reactivity::Signal::from(self)
+                    Signal::from(self)
                 }
             }
         )*
     };
 }
 
-impl<T: 'static> silex_core::traits::RxValue for CssVar<T> {
+impl<T: 'static> RxValue for CssVar<T> {
     type Value = Self;
 }
-impl<T: 'static> silex_core::traits::IntoRx for CssVar<T> {
-    type RxType = silex_core::Rx<Self, silex_core::RxValueKind>;
+impl<T: 'static> IntoRx for CssVar<T> {
+    type RxType = Rx<Self, RxValueKind>;
     fn into_rx(self) -> Self::RxType {
-        silex_core::Rx::new_constant(self)
+        Rx::new_constant(self)
     }
     fn is_constant(&self) -> bool {
         true
     }
 }
-impl<T: Clone + 'static> silex_core::traits::IntoSignal for CssVar<T> {
-    fn into_signal(self) -> silex_core::reactivity::Signal<Self> {
-        silex_core::reactivity::Signal::from(self)
+impl<T: Clone + 'static> IntoSignal for CssVar<T> {
+    fn into_signal(self) -> Signal<Self> {
+        Signal::from(self)
     }
 }
 

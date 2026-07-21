@@ -1,11 +1,24 @@
-use std::marker::PhantomData;
-use std::panic::Location;
+use std::{
+    fmt::{Debug, Formatter, Result as FmtResult},
+    marker::PhantomData,
+    mem::transmute,
+    panic::Location,
+};
 
-use silex_reactivity::NodeId;
+use silex_reactivity::{
+    NodeId, get_debug_label, is_stored_value_valid, set_debug_label, store_value,
+    try_update_stored_value, try_with_stored_value,
+};
 
-use crate::traits::RxData;
-use crate::traits::*;
-use crate::{Rx, RxValueKind};
+use crate::{
+    NodeRef, Rx, RxValueKind,
+    reactivity::Signal,
+    traits::{
+        IntoSignal, RxData,
+        adaptive::{AdaptiveFallback, AdaptiveWrapper},
+        *,
+    },
+};
 
 // --- StoredValue ---
 
@@ -14,8 +27,8 @@ pub struct StoredValue<T> {
     pub(crate) marker: PhantomData<T>,
 }
 
-impl<T> std::fmt::Debug for StoredValue<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T> Debug for StoredValue<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "StoredValue({:?})", self.id)
     }
 }
@@ -29,7 +42,7 @@ impl<T> Copy for StoredValue<T> {}
 
 impl<T: RxData> StoredValue<T> {
     pub fn new(value: T) -> Self {
-        let id = silex_reactivity::store_value(value);
+        let id = store_value(value);
         Self {
             id,
             marker: PhantomData,
@@ -49,7 +62,7 @@ impl<T: RxData> StoredValue<T> {
     }
 
     pub fn with_name(self, name: impl Into<String>) -> Self {
-        silex_reactivity::set_debug_label(self.id, name);
+        set_debug_label(self.id, name);
         self
     }
 }
@@ -73,7 +86,7 @@ impl<T: RxData> RxBase for StoredValue<T> {
 
     #[inline(always)]
     fn is_disposed(&self) -> bool {
-        !silex_reactivity::is_stored_value_valid(self.id)
+        !is_stored_value_valid(self.id)
     }
 
     #[inline(always)]
@@ -83,7 +96,7 @@ impl<T: RxData> RxBase for StoredValue<T> {
 
     #[inline(always)]
     fn debug_name(&self) -> Option<String> {
-        silex_reactivity::get_debug_label(self.id)
+        get_debug_label(self.id)
     }
 }
 
@@ -96,19 +109,18 @@ impl<T: RxData> RxInternal for StoredValue<T> {
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
         unsafe {
-            silex_reactivity::try_with_stored_value(self.id, |v: &T| {
-                std::mem::transmute::<&T, &'static T>(v)
-            })
-            .map(|v| RxGuard::Borrowed {
-                value: v,
-                token: Some(crate::NodeRef::from_id(self.id)),
+            try_with_stored_value(self.id, |v: &T| transmute::<&T, &'static T>(v)).map(|v| {
+                RxGuard::Borrowed {
+                    value: v,
+                    token: Some(NodeRef::from_id(self.id)),
+                }
             })
         }
     }
 
     #[inline(always)]
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        silex_reactivity::try_with_stored_value(self.id, fun)
+        try_with_stored_value(self.id, fun)
     }
 
     #[inline(always)]
@@ -116,11 +128,8 @@ impl<T: RxData> RxInternal for StoredValue<T> {
     where
         Self::Value: Sized,
     {
-        self.rx_try_with_untracked(|v| {
-            use crate::traits::adaptive::{AdaptiveFallback, AdaptiveWrapper};
-            AdaptiveWrapper(v).maybe_clone()
-        })
-        .flatten()
+        self.rx_try_with_untracked(|v| AdaptiveWrapper(v).maybe_clone())
+            .flatten()
     }
 
     #[inline(always)]
@@ -141,10 +150,10 @@ impl<T: RxData + 'static> IntoRx for StoredValue<T> {
     }
 }
 
-impl<T: RxData> crate::traits::IntoSignal for StoredValue<T> {
+impl<T: RxData> IntoSignal for StoredValue<T> {
     #[inline(always)]
-    fn into_signal(self) -> crate::reactivity::Signal<T> {
-        crate::reactivity::Signal::StoredConstant(self.id, PhantomData)
+    fn into_signal(self) -> Signal<T> {
+        Signal::StoredConstant(self.id, PhantomData)
     }
 }
 
@@ -154,7 +163,7 @@ impl<T: RxData> RxWrite for StoredValue<T> {
         &self,
         fun: impl FnOnce(&mut Self::Value) -> URet,
     ) -> Option<URet> {
-        silex_reactivity::try_update_stored_value(self.id, fun)
+        try_update_stored_value(self.id, fun)
     }
 
     #[inline(always)]

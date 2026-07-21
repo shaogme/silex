@@ -49,6 +49,11 @@ pub mod ops_impl {
         gt:>:PartialOrd, lt:<:PartialOrd, ge:>=:PartialOrd, le:<=:PartialOrd
     );
 }
+use crate::{
+    Rx,
+    reactivity::{StaticMap2Payload, StaticMapPayload},
+    traits::{IntoSignal, RxCloneData, RxGet},
+};
 
 #[macro_export]
 macro_rules! impl_reactive_ops {
@@ -84,7 +89,6 @@ macro_rules! impl_reactive_ops {
     };
 }
 
-#[macro_export]
 macro_rules! impl_rx_ops {
     () => {
         $crate::impl_rx_op!(Add, add);
@@ -125,26 +129,20 @@ macro_rules! impl_rx_op {
     };
 }
 
-pub fn apply_binary_op<T, R>(lhs: crate::Rx<T>, rhs: R, f: fn(&T, &T) -> T) -> crate::Rx<T>
+pub fn apply_binary_op<T, R>(lhs: Rx<T>, rhs: R, f: fn(&T, &T) -> T) -> Rx<T>
 where
-    T: crate::traits::RxCloneData + 'static,
-    R: crate::traits::IntoSignal<Value = T> + 'static,
+    T: RxCloneData + 'static,
+    R: IntoSignal<Value = T> + 'static,
 {
-    use crate::traits::{IntoSignal, RxGet};
-
     let lhs_s = lhs.into_signal();
     let rhs_s = rhs.into_signal();
 
     if lhs_s.is_constant() && rhs_s.is_constant() {
-        return crate::Rx::new_constant(f(&lhs_s.get(), &rhs_s.get()));
+        return Rx::new_constant(f(&lhs_s.get(), &rhs_s.get()));
     }
 
-    let op = crate::reactivity::StaticMap2Payload::new2(
-        [lhs_s.ensure_node_id(), rhs_s.ensure_node_id()],
-        f,
-        false,
-    );
-    crate::Rx::new_op(op)
+    let op = StaticMap2Payload::new2([lhs_s.ensure_node_id(), rhs_s.ensure_node_id()], f, false);
+    Rx::new_op(op)
 }
 
 #[macro_export]
@@ -167,20 +165,18 @@ macro_rules! impl_rx_unary_op {
     };
 }
 
-pub fn apply_unary_op<T>(val: crate::Rx<T>, f: fn(&T) -> T) -> crate::Rx<T>
+pub fn apply_unary_op<T>(val: Rx<T>, f: fn(&T) -> T) -> Rx<T>
 where
-    T: crate::traits::RxCloneData + 'static,
+    T: RxCloneData + 'static,
 {
-    use crate::traits::{IntoSignal, RxGet};
-
     let val_s = val.into_signal();
 
     if val_s.is_constant() {
-        return crate::Rx::new_constant(f(&val_s.get()));
+        return Rx::new_constant(f(&val_s.get()));
     }
 
-    let op = crate::reactivity::StaticMapPayload::new1(val_s.ensure_node_id(), f, false);
-    crate::Rx::new_op(op)
+    let op = StaticMapPayload::new1(val_s.ensure_node_id(), f, false);
+    Rx::new_op(op)
 }
 
 #[macro_export]
@@ -251,4 +247,4 @@ macro_rules! impl_reactive_unary_op {
     };
 }
 
-crate::impl_rx_ops!();
+impl_rx_ops!();

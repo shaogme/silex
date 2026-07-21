@@ -1,7 +1,11 @@
 use std::marker::PhantomData;
 
-use crate::traits::{RxCloneData, RxData};
-use silex_reactivity::NodeId;
+use crate::{
+    impl_reactive_ops, impl_rx_delegate, impl_signal_core_traits,
+    reactivity::{ReadSignal, Signal},
+    traits::{RxCloneData, RxData},
+};
+use silex_reactivity::{NodeId, memo, set_debug_label};
 
 // --- Memo ---
 
@@ -10,14 +14,14 @@ pub struct Memo<T> {
     pub(crate) marker: PhantomData<T>,
 }
 
-crate::impl_signal_core_traits!(Memo);
+impl_signal_core_traits!(Memo);
 
 impl<T: RxCloneData + PartialEq> Memo<T> {
     pub fn new<F>(f: F) -> Self
     where
         F: Fn(Option<&T>) -> T + 'static,
     {
-        let id = silex_reactivity::memo(f);
+        let id = memo(f);
         Memo {
             id,
             marker: PhantomData,
@@ -27,22 +31,22 @@ impl<T: RxCloneData + PartialEq> Memo<T> {
 
 impl<T> Memo<T> {
     pub fn with_name(self, name: impl Into<String>) -> Self {
-        silex_reactivity::set_debug_label(self.id, name);
+        set_debug_label(self.id, name);
         self
     }
 }
 
 // Note: GetUntracked and Get are now blanket-implemented via WithUntracked + Track
 
-impl<T: RxData> From<Memo<T>> for crate::reactivity::Signal<T> {
+impl<T: RxData> From<Memo<T>> for Signal<T> {
     fn from(m: Memo<T>) -> Self {
-        crate::reactivity::Signal::Read(crate::reactivity::ReadSignal {
+        Signal::Read(ReadSignal {
             id: m.id,
             marker: PhantomData,
         })
     }
 }
 
-crate::impl_rx_delegate!(Memo, SignalID, false);
+impl_rx_delegate!(Memo, SignalID, false);
 
-crate::impl_reactive_ops!(Memo);
+impl_reactive_ops!(Memo);

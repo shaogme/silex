@@ -1,8 +1,8 @@
+use js_sys::Array;
 use silex_dom::prelude::*;
-use std::cell::RefCell;
-use std::collections::HashSet;
-use wasm_bindgen::JsCast;
-use wasm_bindgen::prelude::*;
+use std::{cell::RefCell, collections::HashSet};
+use wasm_bindgen::{JsCast, prelude::*};
+use wasm_bindgen_futures::spawn_local;
 use web_sys::CssStyleSheet;
 
 thread_local! {
@@ -162,7 +162,7 @@ impl DocumentStyleRegistry {
 
         self.is_pending = true;
 
-        wasm_bindgen_futures::spawn_local(async {
+        spawn_local(async {
             DOCUMENT_REGISTRY.with(|dr| {
                 if let Ok(mut dr) = dr.try_borrow_mut() {
                     dr.perform_sync();
@@ -203,7 +203,7 @@ impl DocumentStyleRegistry {
             new_list.push(sheet.clone().unchecked_into());
         }
 
-        let arr: js_sys::Array = new_list.into_iter().collect();
+        let arr: Array = new_list.into_iter().collect();
         doc.set_adopted_style_sheets(&arr);
 
         // Record the IDs for future comparison

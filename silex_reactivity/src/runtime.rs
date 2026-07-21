@@ -1,21 +1,29 @@
-use std::any::{Any, TypeId};
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+    mem,
+    rc::Rc,
+};
 
 pub(crate) mod scheduler;
 pub(crate) mod scope;
 pub(crate) mod storage;
 
-use self::scheduler::*;
-use self::storage::*;
-use crate::DependencyList;
-use crate::core::algorithm::{self, GraphExecutor, NodeState, RuntimeAdapter as AbstractAdapter};
-use crate::core::arena::Index as NodeId;
-use crate::core::value::{AnyValue, ThunkVTable, ThunkValue};
-use std::mem;
+use self::{scheduler::*, scope::Scopes, storage::*};
+use crate::{
+    DependencyList, NodeList, RawOpBuffer,
+    core::{
+        FuncPtr,
+        algorithm::{self, GraphExecutor, NodeState, RuntimeAdapter as AbstractAdapter},
+        arena::Index as NodeId,
+        value::{AnyValue, ThunkVTable, ThunkValue},
+    },
+};
 
 pub struct Runtime {
     pub(crate) storage: Storage,
     pub(crate) scheduler: Scheduler,
-    pub(crate) scopes: self::scope::Scopes,
+    pub(crate) scopes: Scopes,
 }
 
 thread_local! {
@@ -27,7 +35,7 @@ impl Runtime {
         Self {
             storage: Storage::new(),
             scheduler: Scheduler::new(),
-            scopes: self::scope::Scopes::new(),
+            scopes: Scopes::new(),
         }
     }
 
@@ -39,7 +47,7 @@ impl Runtime {
                 state: NodeState::Clean,
                 signal: Some(SignalData {
                     value,
-                    subscribers: crate::NodeList::Empty,
+                    subscribers: NodeList::Empty,
                     last_tracked_by: None,
                     version: 0,
                 }),
@@ -248,8 +256,8 @@ impl Runtime {
             ReactiveNode {
                 state: NodeState::Clean,
                 signal: Some(SignalData {
-                    value: crate::core::value::AnyValue::new(()), // Temporary dummy
-                    subscribers: crate::NodeList::Empty,
+                    value: AnyValue::new(()), // Temporary dummy
+                    subscribers: NodeList::Empty,
                     last_tracked_by: None,
                     version: 0,
                 }),
@@ -306,7 +314,7 @@ impl Runtime {
         id
     }
 
-    pub fn create_op(&self, data: crate::RawOpBuffer) -> NodeId {
+    pub fn create_op(&self, data: RawOpBuffer) -> NodeId {
         let id = self.register_node();
         self.storage.extras.insert(id, ExtraData::Op(OpData(data)));
         id
@@ -368,10 +376,7 @@ impl Runtime {
         }
     }
 
-    pub fn register_callback_untyped(
-        &self,
-        f: std::rc::Rc<dyn Fn(Box<dyn std::any::Any>)>,
-    ) -> NodeId {
+    pub fn register_callback_untyped(&self, f: Rc<dyn Fn(Box<dyn Any>)>) -> NodeId {
         let id = self.register_node();
         self.storage
             .extras
@@ -392,7 +397,7 @@ impl Runtime {
             && let Some(aux) = self.storage.try_aux_mut(owner)
         {
             if aux.context.is_none() {
-                aux.context = Some(std::collections::HashMap::new());
+                aux.context = Some(HashMap::new());
             }
             if let Some(ctx) = &mut aux.context {
                 ctx.insert(key, value);
@@ -446,10 +451,7 @@ impl Runtime {
     pub(crate) fn run_effect(&self, effect_id: NodeId) {
         let (children, cleanups) = {
             if let Some(aux) = self.storage.node_aux.get_mut(effect_id) {
-                (
-                    std::mem::take(&mut aux.children),
-                    std::mem::take(&mut aux.cleanups),
-                )
+                (mem::take(&mut aux.children), mem::take(&mut aux.cleanups))
             } else {
                 (Vec::new(), CleanupList::default())
             }
@@ -461,7 +463,7 @@ impl Runtime {
             {
                 effect_data.effect_version = effect_data.effect_version.wrapping_add(1);
                 let mut deps = DependencyList::default();
-                std::mem::swap(&mut effect_data.dependencies, &mut deps);
+                mem::swap(&mut effect_data.dependencies, &mut deps);
                 (effect_data.computation.take(), deps)
             } else {
                 return;
@@ -534,23 +536,20 @@ impl Runtime {
 }
 
 pub(crate) struct MemoVTable {
-    pub(crate) compute: crate::core::FuncPtr<unsafe fn(*const usize, Option<AnyValue>) -> AnyValue>,
-    pub(crate) drop: crate::core::FuncPtr<unsafe fn(*mut usize)>,
+    pub(crate) compute: FuncPtr<unsafe fn(*const usize, Option<AnyValue>) -> AnyValue>,
+    pub(crate) drop: FuncPtr<unsafe fn(*mut usize)>,
 }
 
 pub(crate) static UNIVERSAL_MEMO_THUNK_VTABLE: ThunkVTable = ThunkVTable {
-    drop: crate::core::FuncPtr::new(Runtime::universal_memo_drop),
-    call: crate::core::FuncPtr::new(Runtime::universal_memo_runner),
+    drop: FuncPtr::new(Runtime::universal_memo_drop),
+    call: FuncPtr::new(Runtime::universal_memo_runner),
 };
 
 impl GraphExecutor for Runtime {
     fn run_computation(&self, id: NodeId) -> bool {
         let (children, cleanups) = {
             if let Some(aux) = self.storage.node_aux.get_mut(id) {
-                (
-                    std::mem::take(&mut aux.children),
-                    std::mem::take(&mut aux.cleanups),
-                )
+                (mem::take(&mut aux.children), mem::take(&mut aux.cleanups))
             } else {
                 (Vec::new(), CleanupList::default())
             }
@@ -562,7 +561,7 @@ impl GraphExecutor for Runtime {
             {
                 data.effect_version = data.effect_version.wrapping_add(1);
                 let mut deps = DependencyList::default();
-                std::mem::swap(&mut data.dependencies, &mut deps);
+                mem::swap(&mut data.dependencies, &mut deps);
                 (data.computation.take(), deps)
             } else {
                 return false;

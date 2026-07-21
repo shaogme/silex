@@ -1,8 +1,20 @@
-use crate::core::arena::Index as NodeId;
-use crate::core::value::{AnyValue, ThunkValue};
-use crate::runtime::RUNTIME;
-use crate::runtime::storage::ExtraData;
-use std::any::{Any, TypeId};
+use crate::{
+    RawOpBuffer,
+    core::{
+        FuncPtr,
+        arena::Index as NodeId,
+        value::{AnyValue, ThunkValue},
+    },
+    runtime::{MemoVTable, RUNTIME, storage::ExtraData},
+};
+use std::{
+    alloc::Layout,
+    any::{Any, TypeId},
+    marker::PhantomData,
+    mem::{align_of, size_of},
+    ptr::{drop_in_place, write},
+    rc::Rc,
+};
 
 // --- Context ---
 
@@ -59,18 +71,18 @@ where
     T: Clone + PartialEq + 'static,
     F: Fn(Option<&T>) -> T + 'static,
 {
-    let layout = std::alloc::Layout::new::<F>();
-    let fits_inline = layout.size() <= 2 * std::mem::size_of::<usize>()
-        && layout.align() <= std::mem::align_of::<usize>();
+    let layout = Layout::new::<F>();
+    let fits_inline =
+        layout.size() <= 2 * size_of::<usize>() && layout.align() <= align_of::<usize>();
 
     let mut data = [0usize; 3];
     if fits_inline {
         data[0] = &MemoInlineVTable::<T, F>::VTABLE as *const _ as usize;
-        unsafe { std::ptr::write(data.as_mut_ptr().add(1) as *mut F, f) };
+        unsafe { write(data.as_mut_ptr().add(1) as *mut F, f) };
     } else {
         data[0] = &MemoBoxedVTable::<T, F>::VTABLE as *const _ as usize;
         let boxed = Box::new(f);
-        unsafe { std::ptr::write(data.as_mut_ptr().add(1) as *mut Box<F>, boxed) };
+        unsafe { write(data.as_mut_ptr().add(1) as *mut Box<F>, boxed) };
     }
 
     RUNTIME.with(|rt| {
@@ -89,51 +101,47 @@ pub fn register_derived<T: 'static>(f: Box<dyn Fn() -> T>) -> NodeId {
 fn internal_init_derived<T: 'static>(id: NodeId, f: Box<dyn Fn() -> T>) {
     let mut data = [0usize; 3];
     data[0] = &DerivedVTable::<T>::VTABLE as *const _ as usize;
-    unsafe { std::ptr::write(data.as_mut_ptr().add(1) as *mut Box<dyn Fn() -> T>, f) };
+    unsafe { write(data.as_mut_ptr().add(1) as *mut Box<dyn Fn() -> T>, f) };
 
     RUNTIME.with(|rt| {
         unsafe { rt.initialize_memo_raw(id, data) };
     });
 }
 
-struct MemoInlineVTable<T, F>(std::marker::PhantomData<(T, F)>);
+struct MemoInlineVTable<T, F>(PhantomData<(T, F)>);
 impl<T: Clone + PartialEq + 'static, F: Fn(Option<&T>) -> T + 'static> MemoInlineVTable<T, F> {
-    const VTABLE: crate::runtime::MemoVTable = crate::runtime::MemoVTable {
-        compute: crate::core::FuncPtr::new(|ptr, old| {
+    const VTABLE: MemoVTable = MemoVTable {
+        compute: FuncPtr::new(|ptr, old| {
             let f = unsafe { &*(ptr as *const F) };
             let old_t = old.and_then(|any| any.downcast_ref::<T>().cloned());
             let new_t = f(old_t.as_ref());
             AnyValue::new_reactive(new_t)
         }),
-        drop: crate::core::FuncPtr::new(|ptr| unsafe { std::ptr::drop_in_place(ptr as *mut F) }),
+        drop: FuncPtr::new(|ptr| unsafe { drop_in_place(ptr as *mut F) }),
     };
 }
 
-struct MemoBoxedVTable<T, F>(std::marker::PhantomData<(T, F)>);
+struct MemoBoxedVTable<T, F>(PhantomData<(T, F)>);
 impl<T: Clone + PartialEq + 'static, F: Fn(Option<&T>) -> T + 'static> MemoBoxedVTable<T, F> {
-    const VTABLE: crate::runtime::MemoVTable = crate::runtime::MemoVTable {
-        compute: crate::core::FuncPtr::new(|ptr, old| {
+    const VTABLE: MemoVTable = MemoVTable {
+        compute: FuncPtr::new(|ptr, old| {
             let f = unsafe { &**(ptr as *const Box<F>) };
             let old_t = old.and_then(|any| any.downcast_ref::<T>().cloned());
             let new_t = f(old_t.as_ref());
             AnyValue::new_reactive(new_t)
         }),
-        drop: crate::core::FuncPtr::new(|ptr| unsafe {
-            std::ptr::drop_in_place(ptr as *mut Box<F>)
-        }),
+        drop: FuncPtr::new(|ptr| unsafe { drop_in_place(ptr as *mut Box<F>) }),
     };
 }
 
-struct DerivedVTable<T>(std::marker::PhantomData<T>);
+struct DerivedVTable<T>(PhantomData<T>);
 impl<T: 'static> DerivedVTable<T> {
-    const VTABLE: crate::runtime::MemoVTable = crate::runtime::MemoVTable {
-        compute: crate::core::FuncPtr::new(|ptr, _| {
+    const VTABLE: MemoVTable = MemoVTable {
+        compute: FuncPtr::new(|ptr, _| {
             let f = unsafe { &**(ptr as *const Box<dyn Fn() -> T>) };
             AnyValue::new(f())
         }),
-        drop: crate::core::FuncPtr::new(|ptr| unsafe {
-            std::ptr::drop_in_place(ptr as *mut Box<dyn Fn() -> T>)
-        }),
+        drop: FuncPtr::new(|ptr| unsafe { drop_in_place(ptr as *mut Box<dyn Fn() -> T>) }),
     };
 }
 
@@ -286,11 +294,11 @@ pub fn is_closure_valid(id: NodeId) -> bool {
     })
 }
 
-pub fn register_op(buffer: crate::RawOpBuffer) -> NodeId {
+pub fn register_op(buffer: RawOpBuffer) -> NodeId {
     RUNTIME.with(|rt| rt.create_op(buffer))
 }
 
-pub fn try_with_op<R>(id: NodeId, f: impl FnOnce(&crate::RawOpBuffer) -> R) -> Option<R> {
+pub fn try_with_op<R>(id: NodeId, f: impl FnOnce(&RawOpBuffer) -> R) -> Option<R> {
     RUNTIME.with(|rt| {
         let extra = rt.storage.extras.get(id)?;
         if let ExtraData::Op(op) = extra {
@@ -317,10 +325,10 @@ pub fn register_callback<F>(f: F) -> NodeId
 where
     F: Fn(Box<dyn Any>) + 'static,
 {
-    internal_register_callback(std::rc::Rc::new(f))
+    internal_register_callback(Rc::new(f))
 }
 
-fn internal_register_callback(f: std::rc::Rc<dyn Fn(Box<dyn Any>)>) -> NodeId {
+fn internal_register_callback(f: Rc<dyn Fn(Box<dyn Any>)>) -> NodeId {
     RUNTIME.with(|rt| rt.register_callback_untyped(f))
 }
 

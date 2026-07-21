@@ -1,9 +1,12 @@
-use crate::DependencyList;
-use crate::core::arena::Index as NodeId;
-use crate::core::value::OnceThunk;
-use crate::runtime::Runtime;
-use crate::runtime::storage::{CleanupList, Node};
-use std::cell::Cell;
+use crate::{
+    DependencyList,
+    core::{arena::Index as NodeId, value::OnceThunk},
+    runtime::{
+        Runtime,
+        storage::{CleanupList, Node},
+    },
+};
+use std::{cell::Cell, mem, panic::Location};
 
 pub(crate) struct Scopes {
     pub(crate) current_owner: Cell<Option<NodeId>>,
@@ -70,7 +73,7 @@ impl Runtime {
 
         #[cfg(debug_assertions)]
         {
-            node.defined_at = Some(std::panic::Location::caller());
+            node.defined_at = Some(Location::caller());
         }
 
         let id = self.storage.graph.insert(node);
@@ -89,10 +92,7 @@ impl Runtime {
         }
         let (children, cleanups) = {
             if let Some(aux) = self.storage.node_aux.get_mut(id) {
-                (
-                    std::mem::take(&mut aux.children),
-                    std::mem::take(&mut aux.cleanups),
-                )
+                (mem::take(&mut aux.children), mem::take(&mut aux.cleanups))
             } else {
                 (Vec::new(), CleanupList::default())
             }
@@ -103,7 +103,7 @@ impl Runtime {
                 && let Some(effect_data) = &mut n.effect
             {
                 let mut deps = DependencyList::default();
-                std::mem::swap(&mut effect_data.dependencies, &mut deps);
+                mem::swap(&mut effect_data.dependencies, &mut deps);
                 deps
             } else {
                 DependencyList::default()

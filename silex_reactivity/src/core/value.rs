@@ -1,9 +1,6 @@
 use crate::core::FuncPtr;
-use silex_vtable::AnyBox;
-use std::any::TypeId;
-use std::marker::PhantomData;
-use std::mem;
-use std::ptr;
+use silex_vtable::{AnyBox, OnceBox, SOO_CAPACITY, ThunkBox, ThunkBoxVTable};
+use std::{any::TypeId, marker::PhantomData, mem, ptr, slice::from_raw_parts};
 
 /// A type-erased value with Small Object Optimization (SOO).
 pub(crate) struct AnyValue {
@@ -105,7 +102,7 @@ unsafe fn shared_clone_bitwise(ptr: *const u8, vtable: &'static AnyValueVTable) 
         vtable,
     };
     unsafe {
-        ptr::copy_nonoverlapping(ptr, inner.as_mut_ptr(), silex_vtable::SOO_CAPACITY);
+        ptr::copy_nonoverlapping(ptr, inner.as_mut_ptr(), SOO_CAPACITY);
     }
     AnyValue { inner }
 }
@@ -113,8 +110,8 @@ unsafe fn shared_clone_bitwise(ptr: *const u8, vtable: &'static AnyValueVTable) 
 unsafe fn shared_eq_bitwise(p1: *const u8, p2: *const u8) -> bool {
     let (s1, s2) = unsafe {
         (
-            std::slice::from_raw_parts(p1, silex_vtable::SOO_CAPACITY),
-            std::slice::from_raw_parts(p2, silex_vtable::SOO_CAPACITY),
+            from_raw_parts(p1, SOO_CAPACITY),
+            from_raw_parts(p2, SOO_CAPACITY),
         )
     };
     s1 == s2
@@ -227,17 +224,17 @@ impl<T: Clone + PartialEq + 'static> BoxedReactiveVTable<T> {
 
 // --- ThunkValue for Closures ---
 
-pub(crate) type ThunkVTable = silex_vtable::ThunkBoxVTable<*const (), ()>;
+pub(crate) type ThunkVTable = ThunkBoxVTable<*const (), ()>;
 
-pub(crate) struct ThunkValue(pub(crate) silex_vtable::ThunkBox<*const (), ()>);
+pub(crate) struct ThunkValue(pub(crate) ThunkBox<*const (), ()>);
 
 impl ThunkValue {
     pub(crate) fn new_simple<F: Fn() + 'static>(f: F) -> Self {
-        Self(silex_vtable::ThunkBox::new(move |_| f()))
+        Self(ThunkBox::new(move |_| f()))
     }
 
     pub(crate) fn new_raw(data: [usize; 3], vtable: &'static ThunkVTable) -> Self {
-        Self(silex_vtable::ThunkBox::from_raw(data, vtable))
+        Self(ThunkBox::from_raw(data, vtable))
     }
 
     pub(crate) unsafe fn call(&self, rt: *const ()) {
@@ -247,11 +244,11 @@ impl ThunkValue {
 
 // --- OnceThunk for FnOnce ---
 
-pub(crate) struct OnceThunk(pub(crate) silex_vtable::OnceBox<(), ()>);
+pub(crate) struct OnceThunk(pub(crate) OnceBox<(), ()>);
 
 impl OnceThunk {
     pub(crate) fn new<F: FnOnce() + 'static>(f: F) -> Self {
-        Self(silex_vtable::OnceBox::new(move |_| f()))
+        Self(OnceBox::new(move |_| f()))
     }
 
     pub(crate) fn call(self) {

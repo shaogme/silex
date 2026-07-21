@@ -1,6 +1,10 @@
-use crate::traits::*;
-use crate::traits::{RxCloneData, RxData};
-use std::marker::PhantomData;
+use std::{marker::PhantomData, ops::Deref, panic::Location};
+
+use crate::{
+    Rx, RxValueKind, impl_reactive_ops,
+    reactivity::{NodeId, Signal},
+    traits::*,
+};
 
 #[derive(Clone, Copy)]
 pub struct SignalSlice<S, F, O: ?Sized> {
@@ -30,7 +34,7 @@ pub struct SliceGuard<G, O: ?Sized> {
     value: *const O,
 }
 
-impl<G: std::ops::Deref, O: ?Sized> std::ops::Deref for SliceGuard<G, O> {
+impl<G: Deref, O: ?Sized> Deref for SliceGuard<G, O> {
     type Target = O;
     #[inline(always)]
     fn deref(&self) -> &O {
@@ -52,7 +56,7 @@ where
     O: ?Sized + RxData,
 {
     #[inline(always)]
-    fn id(&self) -> Option<crate::reactivity::NodeId> {
+    fn id(&self) -> Option<NodeId> {
         self.source.id()
     }
 
@@ -67,7 +71,7 @@ where
     }
 
     #[inline(always)]
-    fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> {
+    fn defined_at(&self) -> Option<&'static Location<'static>> {
         self.source.defined_at()
     }
 
@@ -80,7 +84,7 @@ where
 impl<S, F, O> RxInternal for SignalSlice<S, F, O>
 where
     S: RxRead + RxCloneData,
-    for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
+    for<'a> S::ReadOutput<'a>: Deref<Target = S::Value>,
     F: Fn(&S::Value) -> &O + 'static,
     O: ?Sized + RxData,
 {
@@ -118,18 +122,15 @@ where
 impl<S, F, O> IntoRx for SignalSlice<S, F, O>
 where
     S: RxRead + RxCloneData + 'static,
-    for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
+    for<'a> S::ReadOutput<'a>: Deref<Target = S::Value>,
     F: Fn(&S::Value) -> &O + 'static,
     O: RxCloneData + 'static,
 {
-    type RxType = crate::Rx<O, crate::RxValueKind>;
+    type RxType = Rx<O, RxValueKind>;
 
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        crate::Rx::derive(Box::new(move || {
-            use crate::traits::RxGet;
-            self.get()
-        }))
+        Rx::derive(Box::new(move || self.get()))
     }
 
     #[inline(always)]
@@ -138,21 +139,21 @@ where
     }
 }
 
-impl<S, F, O> crate::traits::IntoSignal for SignalSlice<S, F, O>
+impl<S, F, O> IntoSignal for SignalSlice<S, F, O>
 where
     S: RxRead + RxCloneData,
-    for<'a> S::ReadOutput<'a>: std::ops::Deref<Target = S::Value>,
+    for<'a> S::ReadOutput<'a>: Deref<Target = S::Value>,
     F: Fn(&S::Value) -> &O + 'static,
     O: Clone + RxData,
 {
     #[inline(always)]
-    fn into_signal(self) -> crate::reactivity::Signal<Self::Value>
+    fn into_signal(self) -> Signal<Self::Value>
     where
         Self: 'static,
         O: Sized,
     {
-        crate::reactivity::Signal::derive(Box::new(move || self.get()))
+        Signal::derive(Box::new(move || self.get()))
     }
 }
 
-crate::impl_reactive_ops!(SignalSlice<S, F, O>, [S, F, O]);
+impl_reactive_ops!(SignalSlice<S, F, O>, [S, F, O]);

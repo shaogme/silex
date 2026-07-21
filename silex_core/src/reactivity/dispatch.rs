@@ -1,10 +1,13 @@
-use crate::RxNodeKind;
-use crate::reactivity::NodeId;
+use crate::{
+    reactivity::{NodeId, OpPayloadHeader},
+    traits::{RxData, RxGuard},
+    NodeRef, RxNodeKind,
+};
 use silex_reactivity::{
     is_closure_valid, is_op_valid, is_signal_valid, is_stored_value_valid, track_signal,
-    try_with_op,
+    try_get_any_raw_untracked, try_with_closure, try_with_op,
 };
-use std::panic::Location;
+use std::{mem::MaybeUninit, panic::Location};
 
 /// 非泛型的 track 逻辑实现 (Dispatcher)。
 /// 剥离了泛型分发，使所有类型的 Rx 共享相同的机器码。
@@ -16,7 +19,6 @@ pub fn track(id: NodeId, kind: RxNodeKind) {
         }
         RxNodeKind::Op => {
             let _ = try_with_op(id, |buffer| {
-                use crate::reactivity::OpPayloadHeader;
                 let header = unsafe { &*(buffer.data.as_ptr() as *const OpPayloadHeader) };
                 (header.track)(buffer.data.as_ptr());
             });
@@ -77,8 +79,7 @@ pub fn report_disposed(
 pub unsafe fn read_to_ptr(id: NodeId, kind: RxNodeKind, out: *mut u8) -> bool {
     match kind {
         RxNodeKind::Signal | RxNodeKind::Stored => false,
-        RxNodeKind::Op => silex_reactivity::try_with_op(id, |buffer| {
-            use crate::reactivity::OpPayloadHeader;
+        RxNodeKind::Op => try_with_op(id, |buffer| {
             let header = unsafe { &*(buffer.data.as_ptr() as *const OpPayloadHeader) };
             unsafe { (header.read_to_ptr)(buffer.data.as_ptr(), out) }
         })
@@ -97,47 +98,45 @@ pub unsafe fn read_to_ptr(id: NodeId, kind: RxNodeKind, out: *mut u8) -> bool {
 /// # Safety
 ///
 /// 调用者必须确保 `id` 对应的节点确实存储了类型 `T`。
-pub unsafe fn rx_read_node_untracked<'a, T: crate::traits::RxData>(
+pub unsafe fn rx_read_node_untracked<'a, T: RxData>(
     id: NodeId,
     kind: RxNodeKind,
-) -> Option<crate::traits::RxGuard<'a, T, T>> {
+) -> Option<RxGuard<'a, T, T>> {
     match kind {
         RxNodeKind::Signal | RxNodeKind::Stored => unsafe {
-            silex_reactivity::try_get_any_raw_untracked(id).map(|ptr| {
-                crate::traits::RxGuard::Borrowed {
-                    value: &*(ptr as *const T),
-                    token: Some(crate::NodeRef::from_id(id)),
-                }
+            try_get_any_raw_untracked(id).map(|ptr| RxGuard::Borrowed {
+                value: &*(ptr as *const T),
+                token: Some(NodeRef::from_id(id)),
             })
         },
         RxNodeKind::Op => {
-            let mut out = std::mem::MaybeUninit::<T>::uninit();
+            let mut out = MaybeUninit::<T>::uninit();
             if unsafe { read_to_ptr(id, kind, out.as_mut_ptr() as *mut u8) } {
-                Some(crate::traits::RxGuard::Owned(unsafe { out.assume_init() }))
+                Some(RxGuard::Owned(unsafe { out.assume_init() }))
             } else {
                 None
             }
         }
         RxNodeKind::Closure => {
-            silex_reactivity::try_with_closure::<Box<dyn Fn() -> T>, _>(id, |f| {
-                crate::traits::RxGuard::Owned(f())
+            try_with_closure::<Box<dyn Fn() -> T>, _>(id, |f| {
+                RxGuard::Owned(f())
             })
         }
     }
 }
 
 /// 泛型助手：将节点访问逻辑收拢。
-pub fn rx_try_with_node_untracked<T: crate::traits::RxData, U>(
+pub fn rx_try_with_node_untracked<T: RxData, U>(
     id: NodeId,
     kind: RxNodeKind,
     fun: impl FnOnce(&T) -> U,
 ) -> Option<U> {
     match kind {
         RxNodeKind::Signal | RxNodeKind::Stored => unsafe {
-            silex_reactivity::try_get_any_raw_untracked(id).map(|ptr| fun(&*(ptr as *const T)))
+            try_get_any_raw_untracked(id).map(|ptr| fun(&*(ptr as *const T)))
         },
         RxNodeKind::Op => {
-            let mut out = std::mem::MaybeUninit::<T>::uninit();
+            let mut out = MaybeUninit::<T>::uninit();
             if unsafe { read_to_ptr(id, kind, out.as_mut_ptr() as *mut u8) } {
                 let v = unsafe { out.assume_init() };
                 Some(fun(&v))

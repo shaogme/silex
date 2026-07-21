@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Display, Formatter, Result};
 
 // ==========================================
 // 核心包裹单元类型 (Units)
@@ -7,7 +7,7 @@ use std::fmt::Display;
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Px(pub Option<f64>);
 impl Display for Px {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if let Some(v) = self.0 {
             write!(f, "{}px", v)
         } else {
@@ -31,7 +31,7 @@ impl From<f64> for Px {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Percent(pub Option<f64>);
 impl Display for Percent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if let Some(v) = self.0 {
             write!(f, "{}%", v)
         } else {
@@ -52,7 +52,7 @@ impl Rgba {
     }
 }
 impl Display for Rgba {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if let Some((r, g, b, a)) = self.0 {
             write!(f, "rgba({}, {}, {}, {})", r, g, b, a)
         } else {
@@ -64,7 +64,7 @@ impl Display for Rgba {
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct Auto(pub Option<()>);
 impl Display for Auto {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if self.0.is_some() {
             write!(f, "auto")
         } else {
@@ -78,7 +78,7 @@ pub const AUTO: Auto = Auto(Some(()));
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct NoneValue;
 impl Display for NoneValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "none")
     }
 }
@@ -88,7 +88,7 @@ pub const NONE: NoneValue = NoneValue;
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rem(pub Option<f64>);
 impl Display for Rem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if let Some(v) = self.0 {
             write!(f, "{}rem", v)
         } else {
@@ -100,7 +100,7 @@ impl Display for Rem {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Em(pub Option<f64>);
 impl Display for Em {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if let Some(v) = self.0 {
             write!(f, "{}em", v)
         } else {
@@ -112,7 +112,7 @@ impl Display for Em {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Vw(pub Option<f64>);
 impl Display for Vw {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if let Some(v) = self.0 {
             write!(f, "{}vw", v)
         } else {
@@ -124,7 +124,7 @@ impl Display for Vw {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Vh(pub Option<f64>);
 impl Display for Vh {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if let Some(v) = self.0 {
             write!(f, "{}vh", v)
         } else {
@@ -136,7 +136,7 @@ impl Display for Vh {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Deg(pub Option<f64>);
 impl Display for Deg {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if let Some(v) = self.0 {
             write!(f, "{}deg", v)
         } else {
@@ -148,7 +148,7 @@ impl Display for Deg {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rad(pub Option<f64>);
 impl Display for Rad {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if let Some(v) = self.0 {
             write!(f, "{}rad", v)
         } else {
@@ -160,7 +160,7 @@ impl Display for Rad {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Turn(pub Option<f64>);
 impl Display for Turn {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if let Some(v) = self.0 {
             write!(f, "{}turn", v)
         } else {
@@ -178,7 +178,7 @@ impl Hex {
     }
 }
 impl Display for Hex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.0)
     }
 }
@@ -195,7 +195,7 @@ impl Hsl {
     }
 }
 impl Display for Hsl {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if let Some((h, s, l, a)) = self.0 {
             if (a - 1.0).abs() < f64::EPSILON {
                 write!(f, "hsl({}, {}%, {}%)", h, s, l)
@@ -211,7 +211,7 @@ impl Display for Hsl {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Url(pub String);
 impl Display for Url {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "url('{}')", self.0)
     }
 }

@@ -1,5 +1,5 @@
-use crate::types::{AngleMark, CalcValue, CssColor, ValidFor, props};
-use std::fmt::Display;
+use crate::types::{AngleMark, CalcValue, CssColor, ValidFor, props, units::Deg};
+use std::fmt::{Display, Formatter, Result};
 
 // ==========================================
 // 渐变 DSL (Gradients)
@@ -8,7 +8,7 @@ use std::fmt::Display;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct GradientValue(pub String);
 impl Display for GradientValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.0)
     }
 }
@@ -29,7 +29,7 @@ pub enum Direction {
 }
 
 impl Display for Direction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Self::ToTop => write!(f, "to top"),
             Self::ToBottom => write!(f, "to bottom"),
@@ -44,7 +44,6 @@ impl Display for Direction {
     }
 }
 
-use crate::types::units::Deg;
 impl From<Deg> for Direction {
     fn from(v: Deg) -> Self {
         Self::Angle(v.into())
@@ -58,7 +57,7 @@ pub struct ColorStop {
 }
 
 impl Display for ColorStop {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.color)?;
         if let Some(pos) = &self.position {
             write!(f, " {}", pos)?;

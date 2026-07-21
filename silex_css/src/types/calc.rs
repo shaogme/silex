@@ -1,5 +1,5 @@
 use crate::types::units::{Deg, Em, Percent, Px, Rad, Rem, Turn, Vh, Vw};
-use std::fmt::Display;
+use std::fmt::{Display, Formatter, Result};
 use std::marker::PhantomData;
 
 // ==========================================
@@ -40,7 +40,7 @@ impl<Mark> CalcValue<Mark> {
 }
 
 impl<Mark> Display for CalcValue<Mark> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         write!(f, "{}", self.0)
     }
 }

@@ -1,6 +1,8 @@
-use core::marker::PhantomData;
-use core::mem::ManuallyDrop;
-use core::ptr::NonNull;
+use core::{
+    marker::PhantomData,
+    mem::{self, ManuallyDrop, transmute_copy},
+    ptr::NonNull,
+};
 
 /// 一个包装了任意函数指针的结构体
 ///
@@ -27,7 +29,7 @@ impl<F> FuncPtr<F> {
     #[inline(always)]
     pub const fn new(f: F) -> Self {
         const {
-            assert!(core::mem::size_of::<F>() == core::mem::size_of::<usize>());
+            assert!(mem::size_of::<F>() == mem::size_of::<usize>());
         }
 
         #[repr(C)]
@@ -50,10 +52,9 @@ impl<F> FuncPtr<F> {
     /// 获取原始函数指针
     #[inline(always)]
     pub fn as_fn(&self) -> F {
-        unsafe { core::mem::transmute_copy(&self.ptr) }
+        unsafe { transmute_copy(&self.ptr) }
     }
 }
 
-const _: () = assert!(core::mem::size_of::<FuncPtr<fn()>>() == core::mem::size_of::<usize>());
-const _: () =
-    assert!(core::mem::size_of::<Option<FuncPtr<fn()>>>() == core::mem::size_of::<usize>());
+const _: () = assert!(mem::size_of::<FuncPtr<fn()>>() == mem::size_of::<usize>());
+const _: () = assert!(mem::size_of::<Option<FuncPtr<fn()>>>() == mem::size_of::<usize>());

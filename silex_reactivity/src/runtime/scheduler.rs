@@ -1,6 +1,11 @@
-use crate::core::arena::{Index as NodeId, SparseSecondaryMap};
-use std::cell::{Cell, RefCell};
-use std::collections::VecDeque;
+use crate::core::{
+    algorithm::GraphScheduler,
+    arena::{Index as NodeId, SparseSecondaryMap},
+};
+use std::{
+    cell::{Cell, RefCell},
+    collections::VecDeque,
+};
 
 pub(crate) struct Scheduler {
     pub(crate) workspace: RefCell<WorkSpace>,
@@ -22,7 +27,7 @@ impl Scheduler {
     }
 }
 
-impl crate::core::algorithm::GraphScheduler for Scheduler {
+impl GraphScheduler for Scheduler {
     fn queue_effect(&self, id: NodeId) {
         if self.queued_observers.get(id).is_none() {
             self.queued_observers.insert(id, ());

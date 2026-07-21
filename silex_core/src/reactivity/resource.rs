@@ -1,19 +1,23 @@
-use std::any::Any;
-use std::cell::{Cell, RefCell};
-use std::future::Future;
-use std::panic::Location;
-use std::rc::Rc;
+use std::{
+    any::Any,
+    cell::{Cell, RefCell},
+    future::Future,
+    panic::Location,
+    rc::Rc,
+};
 
 use silex_reactivity::{on_cleanup, use_context};
+use wasm_bindgen_futures::spawn_local;
 
-use crate::SilexError;
-use crate::reactivity::Memo;
-use crate::traits::*;
-use crate::traits::{RxCloneData, RxData, RxError};
-use crate::{Rx, RxValueKind};
-
-use super::effect::Effect;
-use super::signal::{ReadSignal, Signal, WriteSignal};
+use super::{
+    effect::Effect,
+    signal::{ReadSignal, Signal, WriteSignal},
+};
+use crate::{
+    Rx, RxValueKind, SilexError,
+    reactivity::{Memo, NodeId, create_scope, provide_context},
+    traits::{IntoSignal, RxCloneData, RxData, RxError, RxGet, adaptive::AdaptiveWrapper, *},
+};
 
 // --- Resource ---
 
@@ -148,7 +152,7 @@ impl<T: RxCloneData, E: RxError> Resource<T, E> {
             let alive = alive.clone();
             let request_id = request_id.clone();
 
-            wasm_bindgen_futures::spawn_local(async move {
+            spawn_local(async move {
                 let res = fut.await;
 
                 if alive.get() && request_id.get() == current_id {
@@ -245,7 +249,7 @@ impl<T: RxCloneData, E: RxError> RxValue for Resource<T, E> {
 
 impl<T: RxCloneData, E: RxError> RxBase for Resource<T, E> {
     #[inline(always)]
-    fn id(&self) -> Option<crate::reactivity::NodeId> {
+    fn id(&self) -> Option<NodeId> {
         self.state.id()
     }
 
@@ -295,11 +299,8 @@ impl<T: RxCloneData, E: RxError> RxInternal for Resource<T, E> {
     where
         Self::Value: Sized,
     {
-        self.rx_try_with_untracked(|v| {
-            use crate::traits::adaptive::AdaptiveWrapper;
-            AdaptiveWrapper(v).maybe_clone()
-        })
-        .flatten()
+        self.rx_try_with_untracked(|v| AdaptiveWrapper(v).maybe_clone())
+            .flatten()
     }
 
     #[inline(always)]
@@ -312,10 +313,7 @@ impl<T: RxCloneData, E: RxError> IntoRx for Resource<T, E> {
     type RxType = Rx<Option<T>, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        crate::Rx::derive(Box::new(move || {
-            use crate::traits::RxGet;
-            self.get()
-        }))
+        Rx::derive(Box::new(move || self.get()))
     }
     #[inline(always)]
     fn is_constant(&self) -> bool {
@@ -323,14 +321,14 @@ impl<T: RxCloneData, E: RxError> IntoRx for Resource<T, E> {
     }
 }
 
-impl<T: RxCloneData, E: RxError> crate::traits::IntoSignal for Resource<T, E> {
+impl<T: RxCloneData, E: RxError> IntoSignal for Resource<T, E> {
     #[inline(always)]
-    fn into_signal(self) -> crate::reactivity::Signal<Option<T>>
+    fn into_signal(self) -> Signal<Option<T>>
     where
         Self: 'static,
         T: Clone,
     {
-        crate::reactivity::Signal::derive(Box::new(move || self.get()))
+        Signal::derive(Box::new(move || self.get()))
     }
 }
 
@@ -375,8 +373,8 @@ impl SuspenseContext {
 
     pub fn provide_with<T>(ctx: Self, f: impl FnOnce() -> T) -> T {
         let mut result = None;
-        crate::reactivity::create_scope(|| {
-            crate::reactivity::provide_context(ctx.clone());
+        create_scope(|| {
+            provide_context(ctx.clone());
             ctx.index.set(0); // Reset index for stable resource registration
             result = Some(f());
         });

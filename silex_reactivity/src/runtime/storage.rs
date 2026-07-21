@@ -1,10 +1,19 @@
-use crate::core::algorithm::{GraphStorage, NodeState};
-use crate::core::arena::{Arena, Index as NodeId, SparseSecondaryMap};
-use crate::core::value::{AnyValue, OnceThunk, ThunkValue};
-use crate::{DependencyList, NodeList};
-use std::any::{Any, TypeId};
-use std::collections::HashMap;
-use std::rc::Rc;
+use crate::{
+    DependencyList, NodeList, RawOpBuffer,
+    core::{
+        algorithm::{GraphStorage, NodeState},
+        arena::{Arena, Index as NodeId, SparseSecondaryMap},
+        value::{AnyValue, OnceThunk, ThunkValue},
+    },
+};
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+    mem,
+    panic::Location,
+    rc::Rc,
+    vec::IntoIter,
+};
 
 pub(crate) struct ReactiveNode {
     pub(crate) state: NodeState,
@@ -137,7 +146,7 @@ pub(crate) struct NodeAux {
 pub(crate) struct Node {
     pub(crate) parent: Option<NodeId>,
     #[cfg(debug_assertions)]
-    pub(crate) defined_at: Option<&'static std::panic::Location<'static>>,
+    pub(crate) defined_at: Option<&'static Location<'static>>,
 }
 
 impl Node {
@@ -165,7 +174,7 @@ impl CleanupList {
             return;
         }
 
-        let old = std::mem::take(self);
+        let old = mem::take(self);
         match old {
             Self::Empty => *self = Self::Single(f),
             Self::Single(prev) => *self = Self::Many(vec![prev, f]),
@@ -190,7 +199,7 @@ impl IntoIterator for CleanupList {
 pub(crate) enum CleanupListIntoIter {
     Empty,
     Single(Option<OnceThunk>),
-    Many(std::vec::IntoIter<OnceThunk>),
+    Many(IntoIter<OnceThunk>),
 }
 
 impl Iterator for CleanupListIntoIter {
@@ -233,4 +242,4 @@ pub(crate) struct ClosureData {
     pub(crate) f: Box<dyn Any>,
 }
 
-pub(crate) struct OpData(pub(crate) crate::RawOpBuffer);
+pub(crate) struct OpData(pub(crate) RawOpBuffer);

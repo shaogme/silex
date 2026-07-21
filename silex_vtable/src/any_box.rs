@@ -1,7 +1,5 @@
 use alloc::boxed::Box;
-use core::alloc::Layout;
-use core::mem;
-use core::ptr;
+use core::{alloc::Layout, mem, ptr};
 
 pub const SOO_CAPACITY: usize = 3 * mem::size_of::<usize>();
 

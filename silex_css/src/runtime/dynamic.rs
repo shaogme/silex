@@ -1,13 +1,15 @@
-use crate::runtime::registry::DOCUMENT_REGISTRY;
-use crate::types;
-use silex_core::prelude::*;
+use crate::{runtime::registry::DOCUMENT_REGISTRY, types};
+use silex_core::{prelude::*, traits::RxGet};
 use silex_dom::prelude::*;
-use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
-use std::fmt::Display;
-use std::rc::{Rc, Weak};
+use silex_hash::css::{Normalized, encode_base36, hash_one};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, VecDeque},
+    fmt::Display,
+    rc::{Rc, Weak},
+};
 use wasm_bindgen::JsCast;
-use web_sys::{CssStyleSheet, Element};
+use web_sys::{CssStyleSheet, Element, HtmlElement, SvgElement};
 
 pub type CssVariableGetter = Rx<String>;
 
@@ -146,9 +148,9 @@ impl ApplyToDom for DynamicCss {
             let vars = self.vars.clone();
             Effect::new(move |prev_values: Option<Vec<String>>| {
                 let Some(style) = el
-                    .dyn_ref::<web_sys::HtmlElement>()
+                    .dyn_ref::<HtmlElement>()
                     .map(|e| e.style())
-                    .or_else(|| el.dyn_ref::<web_sys::SvgElement>().map(|e| e.style()))
+                    .or_else(|| el.dyn_ref::<SvgElement>().map(|e| e.style()))
                 else {
                     return Vec::new();
                 };
@@ -214,13 +216,13 @@ impl ApplyToDom for DynamicCss {
                 }
                 resolved_rule.push_str(&template[last_pos..]);
 
-                let hash_val = silex_hash::css::hash_one((
+                let hash_val = hash_one((
                     b"silex-dyn-v3",
-                    silex_hash::css::Normalized(template),
-                    silex_hash::css::Normalized(&resolved_rule),
+                    Normalized(template),
+                    Normalized(&resolved_rule),
                 ));
                 let mut hash_buf = [0u8; 13];
-                let hash_str = silex_hash::css::encode_base36(hash_val, &mut hash_buf);
+                let hash_str = encode_base36(hash_val, &mut hash_buf);
                 let dyn_class = format!("{}-d{}", base_class, hash_str);
 
                 let prev_class = prev.as_ref().map(|(_, c)| c);
@@ -258,7 +260,7 @@ pub fn make_dynamic_val_for<P, S>(source: S) -> Rx<String>
 where
     S: IntoRx,
     S::Value: Clone + Sized + types::ValidFor<P> + Display + 'static,
-    S::RxType: silex_core::traits::RxGet<Value = S::Value> + 'static,
+    S::RxType: RxGet<Value = S::Value> + 'static,
 {
     let signal = source.into_rx();
     Rx::derive(Box::new(move || format!("{}", signal.get())))

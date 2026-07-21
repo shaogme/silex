@@ -1,12 +1,13 @@
-use crate::prelude::Signal;
-use crate::reactivity::SignalSlice;
-use crate::traits::*;
+use crate::{prelude::Signal, reactivity::SignalSlice, traits::*};
 use silex_reactivity::{
     NodeId, get_debug_label, get_node_defined_at, is_signal_valid, notify_signal, set_debug_label,
     track_signal, try_update_signal_silent, untrack as untrack_scoped,
 };
-use std::marker::PhantomData;
-use std::panic::Location;
+use std::{
+    hash::{Hash, Hasher},
+    marker::PhantomData,
+    panic::Location,
+};
 
 // --- ReadSignal ---
 
@@ -36,32 +37,37 @@ impl<T> ReadSignal<T> {
 macro_rules! impl_signal_core_traits {
     ($($ty:ident),*) => {
         $(
-            impl<T> std::fmt::Debug for $ty<T> {
-                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    write!(f, "{}({:?})", stringify!($ty), self.id)
-                }
-            }
+            const _: () = {
+                use std::fmt::{Debug, Formatter, Result};
+                use std::hash::{Hash, Hasher};
 
-            impl<T> Clone for $ty<T> {
-                fn clone(&self) -> Self {
-                    *self
+                impl<T> Debug for $ty<T> {
+                    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+                        write!(f, "{}({:?})", stringify!($ty), self.id)
+                    }
                 }
-            }
-            impl<T> Copy for $ty<T> {}
 
-            impl<T> PartialEq for $ty<T> {
-                fn eq(&self, other: &Self) -> bool {
-                    self.id == other.id
+                impl<T> Clone for $ty<T> {
+                    fn clone(&self) -> Self {
+                        *self
+                    }
                 }
-            }
+                impl<T> Copy for $ty<T> {}
 
-            impl<T> Eq for $ty<T> {}
-
-            impl<T> std::hash::Hash for $ty<T> {
-                fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-                    self.id.hash(state);
+                impl<T> PartialEq for $ty<T> {
+                    fn eq(&self, other: &Self) -> bool {
+                        self.id == other.id
+                    }
                 }
-            }
+
+                impl<T> Eq for $ty<T> {}
+
+                impl<T> Hash for $ty<T> {
+                    fn hash<H: Hasher>(&self, state: &mut H) {
+                        self.id.hash(state);
+                    }
+                }
+            };
         )*
     };
 }
@@ -148,8 +154,8 @@ impl<T> PartialEq for RwSignal<T> {
 
 impl<T> Eq for RwSignal<T> {}
 
-impl<T> std::hash::Hash for RwSignal<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl<T> Hash for RwSignal<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
         self.read.hash(state);
         self.write.hash(state);
     }
