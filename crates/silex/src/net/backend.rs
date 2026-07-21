@@ -1,26 +1,22 @@
-use crate::net::NetError;
-use crate::net::state::RetryPolicy;
-use crate::net::state::{ConnectionState, EventMessage, HttpResponse, RequestBody, RequestSpec};
+use std::{cell::Cell, future::Future, pin::Pin, rc::Rc};
+
 use js_sys::Function;
-use std::cell::Cell;
-use std::future::Future;
-use std::pin::Pin;
-use std::rc::Rc;
-use wasm_bindgen::JsCast;
-use wasm_bindgen::JsValue;
-use wasm_bindgen::closure::Closure;
+use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
     AbortController, Event, EventSource as JsEventSource, FormData, Headers, MessageEvent, Request,
     RequestInit, Response, WebSocket as JsWebSocket,
 };
 
-#[cfg(feature = "json")]
-use silex_core::reactivity::Memo;
-use silex_core::reactivity::{ReadSignal, Signal};
-#[cfg(feature = "json")]
-use silex_core::traits::RxGet;
-use silex_core::traits::RxWrite;
+use silex_core::{
+    reactivity::{Memo, ReadSignal, Signal},
+    traits::{RxGet, RxWrite},
+};
+
+use crate::net::{
+    NetError,
+    state::{ConnectionState, EventMessage, HttpResponse, RequestBody, RequestSpec, RetryPolicy},
+};
 
 pub type TransportFuture<'a> = Pin<Box<dyn Future<Output = Result<HttpResponse, NetError>> + 'a>>;
 

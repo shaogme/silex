@@ -1,28 +1,30 @@
-use crate::net::NetError;
-use crate::net::backend::{HttpBackend, Transport};
-#[cfg(feature = "persistence")]
-use crate::net::codec::CacheCodec;
+use crate::net::{
+    NetError,
+    backend::{HttpBackend, Transport},
+    codec::{ResponseCodec, TextCodec},
+    state::{CachePolicy, HttpMethod, HttpResponse, RequestBody, RequestSpec, RetryPolicy},
+};
+use silex_core::{
+    reactivity::{Memo, Mutation, ReadSignal, Resource, RwSignal, Signal},
+    traits::{RxCloneData, RxGet},
+};
+use std::{marker::PhantomData, rc::Rc, time::Duration};
+
 #[cfg(feature = "json")]
 use crate::net::codec::NetJsonCodec;
-use crate::net::codec::{ResponseCodec, TextCodec};
-use crate::net::state::{CachePolicy, HttpMethod, HttpResponse, RequestBody, RequestSpec};
-use std::marker::PhantomData;
-use std::rc::Rc;
-use std::time::Duration;
+
+#[cfg(feature = "net")]
+use gloo_timers::future::sleep;
+
+#[cfg(feature = "persistence")]
+use crate::{net::codec::CacheCodec, persist::Persistent};
+#[cfg(feature = "persistence")]
+use std::cell::Cell;
+
 pub type BeforeSendHook = Rc<dyn Fn(&mut RequestSpec)>;
 pub type AfterResponseHook = Rc<dyn Fn(&RequestSpec, &HttpResponse)>;
 pub type OnRetryHook = Rc<dyn Fn(&RequestSpec, u32, Duration, &NetError)>;
 pub type OnErrorHook = Rc<dyn Fn(&RequestSpec, &NetError)>;
-
-#[cfg(feature = "net")]
-use gloo_timers::future::sleep;
-use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal};
-use silex_core::traits::{RxCloneData, RxGet};
-#[cfg(feature = "persistence")]
-use std::cell::Cell;
-
-#[cfg(feature = "persistence")]
-use crate::persist::Persistent;
 
 #[derive(Clone)]
 pub enum ValueResolver {
@@ -123,7 +125,7 @@ pub struct HttpClientBuilder<T, C> {
     after_response: Vec<AfterResponseHook>,
     on_retry: Vec<OnRetryHook>,
     on_error: Vec<OnErrorHook>,
-    retry: Option<crate::net::state::RetryPolicy>,
+    retry: Option<RetryPolicy>,
     _marker: PhantomData<T>,
 }
 
@@ -226,13 +228,13 @@ impl<T, C> HttpClientBuilder<T, C> {
         self
     }
 
-    pub fn retry(mut self, retry: crate::net::state::RetryPolicy) -> Self {
+    pub fn retry(mut self, retry: RetryPolicy) -> Self {
         self.retry = Some(retry);
         self
     }
 
     pub fn retry_policy(self, attempts: u32, delay: Duration) -> Self {
-        self.retry(crate::net::state::RetryPolicy::new(attempts, delay))
+        self.retry(RetryPolicy::new(attempts, delay))
     }
 
     pub fn on_response(mut self, f: impl Fn(&RequestSpec, &HttpResponse) + 'static) -> Self {
@@ -430,7 +432,7 @@ impl<T, C> HttpClientBuilder<T, C> {
     }
 
     #[cfg(feature = "persistence")]
-    fn cache_store(&self, spec: &RequestSpec, value: T) -> Option<crate::persist::Persistent<T>>
+    fn cache_store(&self, spec: &RequestSpec, value: T) -> Option<Persistent<T>>
     where
         C: CacheCodec<T>,
         T: Clone + PartialEq + 'static,
@@ -519,10 +521,9 @@ macro_rules! impl_net_methods {
                 }
             }
 
-            let retry = self.retry.unwrap_or(crate::net::state::RetryPolicy::new(
-                1,
-                Duration::from_millis(0),
-            ));
+            let retry = self
+                .retry
+                .unwrap_or(RetryPolicy::new(1, Duration::from_millis(0)));
             let attempts = retry.max_attempts.max(1);
             let started_at = js_sys::Date::now();
 
@@ -572,23 +573,23 @@ macro_rules! impl_net_methods {
             )
         }
 
-        pub fn into_resource(self) -> silex_core::reactivity::Resource<T, NetError> {
+        pub fn into_resource(self) -> Resource<T, NetError> {
             self.as_resource(())
         }
 
-        pub fn as_resource<S>(self, source: S) -> silex_core::reactivity::Resource<T, NetError>
+        pub fn as_resource<S>(self, source: S) -> Resource<T, NetError>
         where
             S: RxGet + 'static,
             S::Value: PartialEq + RxCloneData,
         {
-            silex_core::reactivity::Resource::new(source, move |_| {
+            Resource::new(source, move |_| {
                 let client = self.clone();
                 async move { client.send().await }
             })
         }
 
-        pub fn as_mutation(self) -> silex_core::reactivity::Mutation<(), T, NetError> {
-            silex_core::reactivity::Mutation::new(move |_| {
+        pub fn as_mutation(self) -> Mutation<(), T, NetError> {
+            Mutation::new(move |_| {
                 let client = self.clone();
                 async move { client.send().await }
             })
@@ -617,7 +618,7 @@ where
 #[cfg(all(not(feature = "json"), feature = "persistence"))]
 impl<T, C> HttpClientBuilder<T, C>
 where
-    T: Clone + 'static,
+    T: Clone + PartialEq + 'static,
     C: ResponseCodec<T> + CacheCodec<T> + Clone + 'static,
 {
     impl_net_methods!();

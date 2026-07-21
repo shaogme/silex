@@ -1,5 +1,6 @@
 use proc_macro::TokenStream;
-use syn::{DeriveInput, ItemFn, parse_macro_input};
+#[cfg(any(feature = "component", feature = "store", feature = "route"))]
+use syn::{DeriveInput, parse_macro_input};
 
 #[cfg(feature = "component")]
 mod component;
@@ -98,7 +99,7 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
         .into();
     }
 
-    let input_fn = parse_macro_input!(item as ItemFn);
+    let input_fn = parse_macro_input!(item as syn::ItemFn);
     match component::generate_component(input_fn) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),

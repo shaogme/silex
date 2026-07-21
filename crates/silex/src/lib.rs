@@ -64,6 +64,7 @@ pub mod prelude {
     pub use silex_macros::*;
 
     // Resolve ambiguous glob re-exports
+    #[cfg(feature = "css")]
     pub use crate::components::Center;
     pub use crate::core::prelude::{Map, RxWrite};
     pub use crate::flow::Switch;
@@ -71,5 +72,6 @@ pub mod prelude {
     pub use silex_css::prelude::{Style, linear_gradient, radial_gradient};
     pub use silex_dom::prelude::{ApplyAttributes, View, text};
     pub use silex_html::{Em, em};
+    #[cfg(feature = "css")]
     pub use silex_macros::{global, styled, theme};
 }
