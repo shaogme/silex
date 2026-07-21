@@ -85,6 +85,11 @@ impl WebSocketConnection {
         })
     }
 
+    pub fn state_str(&self) -> Memo<&'static str> {
+        let state = self.state;
+        Memo::new(move |_| state.get().as_str())
+    }
+
     pub fn raw_message(&self) -> ReadSignal<Option<String>> {
         self.message
     }
@@ -97,6 +102,10 @@ impl WebSocketConnection {
         self.socket
             .send_with_str(&value.into())
             .map_err(NetError::from)
+    }
+
+    pub fn send_text(&self, value: impl Into<String>) -> Result<(), NetError> {
+        self.send(value)
     }
 
     #[cfg(feature = "json")]

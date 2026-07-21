@@ -5,7 +5,7 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, EventSource as JsEventSource, MessageEvent};
 
 use silex_core::{
-    reactivity::{Memo, ReadSignal, Signal},
+    reactivity::{Memo, ReadSignal, RwSignal, Signal},
     traits::{RxGet, RxWrite},
 };
 
@@ -26,7 +26,7 @@ impl EventStream {
 pub struct EventStreamConnection {
     source: JsEventSource,
     pub state: ReadSignal<ConnectionState>,
-    pub messages: ReadSignal<Vec<EventMessage>>,
+    pub messages: RwSignal<Vec<EventMessage>>,
     pub error: ReadSignal<Option<String>>,
     _on_open: Closure<dyn FnMut(Event)>,
     _on_message: Closure<dyn FnMut(MessageEvent)>,
@@ -104,12 +104,33 @@ impl EventStreamConnection {
         })
     }
 
+    #[cfg(feature = "json")]
+    pub fn latest_messages<T>(&self, limit: usize) -> Memo<Vec<T>>
+    where
+        T: serde::de::DeserializeOwned + Clone + PartialEq + 'static,
+    {
+        let messages = self.messages;
+        Memo::new(move |_| {
+            messages
+                .get()
+                .iter()
+                .rev()
+                .filter_map(|msg| serde_json::from_str(&msg.data).ok())
+                .take(limit)
+                .collect()
+        })
+    }
+
     pub fn raw_messages(&self) -> ReadSignal<Vec<EventMessage>> {
-        self.messages
+        self.messages.read_signal()
     }
 
     pub fn error(&self) -> ReadSignal<Option<String>> {
         self.error
+    }
+
+    pub fn clear_messages(&self) {
+        self.messages.set(Vec::new());
     }
 
     pub fn close(&self) {
@@ -154,7 +175,7 @@ impl EventStreamBuilder {
         let source = JsEventSource::new(&self.url).expect("failed to create EventSource");
 
         let (state, set_state) = Signal::pair(ConnectionState::Connecting);
-        let (messages, set_messages) = Signal::pair(Vec::<EventMessage>::new());
+        let messages = RwSignal::new(Vec::<EventMessage>::new());
         let (error, set_error) = Signal::pair(None::<String>);
 
         let on_open_handlers = self.on_open.clone();
@@ -172,8 +193,8 @@ impl EventStreamBuilder {
         let on_message = Closure::wrap(Box::new(move |event: MessageEvent| {
             let data = event.data().as_string().unwrap_or_default();
             let event_name = event.type_();
-            set_messages.update(|messages: &mut Vec<EventMessage>| {
-                messages.push(EventMessage {
+            messages.update(|msgs: &mut Vec<EventMessage>| {
+                msgs.push(EventMessage {
                     event: Some(event_name),
                     data,
                 });

@@ -25,36 +25,46 @@ pub struct WikimediaChange {
     pub wiki: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CreatePostInput {
+    pub title: String,
+    pub body: String,
+}
+
 #[component]
 pub fn HttpClientDemo() -> impl View {
     let (post_id, set_post_id) = Signal::pair(1);
     let search_query = RwSignal::new(String::new());
 
-    // 1. Declarative HTTP fetching with path parameters, retry policy, and optional query params
+    let new_title = RwSignal::new("Silex Net Post".to_string());
+    let new_body = RwSignal::new("Created via Silex Net mutation_with.".to_string());
+
+    // 1. Declarative HTTP fetching with path parameters, retry policy, and reactive closure query params
     let post_resource = HttpClient::get("https://jsonplaceholder.typicode.com/posts/{id}")
         .path_param("id", post_id)
-        .query_opt("filter", {
-            let q = search_query.get();
-            if q.is_empty() { None } else { Some(q) }
-        })
+        .query("filter", search_query)
         .timeout_ms(5000)
         .retry_policy(2, std::time::Duration::from_millis(300))
         .json::<Post>()
         .as_resource(post_id);
 
-    // 2. Using HttpClient::as_mutation for actions (POST)
-    let create_post_mutation = HttpClient::post("https://jsonplaceholder.typicode.com/posts")
-        .json_body(serde_json::json!({
-            "title": "Silex Net Demo",
-            "body": "This is a post created via Silex Net mutation.",
-            "userId": 1
-        }))
-        .json::<Post>()
-        .as_mutation();
+    // 2. Using HttpClient::as_mutation_with for parameterized actions (POST)
+    let create_post_builder =
+        HttpClient::post("https://jsonplaceholder.typicode.com/posts").json::<Post>();
+    let create_post_mutation =
+        create_post_builder.as_mutation_with(move |input: CreatePostInput| {
+            HttpClient::post("https://jsonplaceholder.typicode.com/posts")
+                .json_body(serde_json::json!({
+                    "title": input.title,
+                    "body": input.body,
+                    "userId": 1
+                }))
+                .json::<Post>()
+        });
 
     div![
         h3("HTTP Client Demo"),
-        p("Declarative HTTP fetching with path parameters, optional query parameters, auto-retries, resources, and mutations."),
+        p("Declarative HTTP fetching with path parameters, reactive closure query parameters, auto-retries, resources, and parameterized mutations."),
 
         div![
             span("Fetch Post ID: "),
@@ -98,10 +108,23 @@ pub fn HttpClientDemo() -> impl View {
 
         h4("Mutations (POST Request)"),
         div![
-            button("Create New Mock Post")
-                .on(event::click, move |_| create_post_mutation.mutate(()))
-                .attr("disabled", create_post_mutation.loading())
-                .style(sty().padding(padding::x_y(px(10), px(20))).background(AppTheme::PRIMARY).color(hex("white")).border(NONE).border_radius(px(6)).cursor(CursorKeyword::Pointer)),
+            div![
+                input()
+                    .placeholder("Post Title")
+                    .bind_value(new_title)
+                    .style(sty().margin_right(px(10)).padding(padding::x_y(px(6), px(10))).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).background(AppTheme::SURFACE).color(AppTheme::TEXT).width(px(200))),
+                input()
+                    .placeholder("Post Body")
+                    .bind_value(new_body)
+                    .style(sty().margin_right(px(10)).padding(padding::x_y(px(6), px(10))).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).background(AppTheme::SURFACE).color(AppTheme::TEXT).width(px(300))),
+                button("Submit Custom Post")
+                    .on(event::click, move |_| create_post_mutation.mutate(CreatePostInput {
+                        title: new_title.get(),
+                        body: new_body.get(),
+                    }))
+                    .attr("disabled", create_post_mutation.loading())
+                    .style(sty().padding(padding::x_y(px(10), px(20))).background(AppTheme::PRIMARY).color(hex("white")).border(NONE).border_radius(px(6)).cursor(CursorKeyword::Pointer)),
+            ].style("display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px;"),
 
             move || if create_post_mutation.loading() {
                 span(" Creating...").style(sty().margin_left(px(10)).color(AppTheme::PRIMARY)).into_any()
@@ -129,7 +152,7 @@ pub fn WebSocketDemo() -> impl View {
     let socket = RwSignal::new(None::<WebSocketConnection>);
     let input_text = RwSignal::new(String::new());
 
-    let state_text = socket.map_or("Disconnected", |c| c.state.get().as_str());
+    let state_text = socket.map_or("Disconnected", |c| c.state_str().get());
     let is_connected = socket.map_or(false, |c| c.is_connected().get());
 
     let last_message = socket.map_or(String::new(), |c| c.raw_message().get().unwrap_or_default());
@@ -202,20 +225,11 @@ pub fn WebSocketDemo() -> impl View {
 pub fn EventStreamDemo() -> impl View {
     let url = RwSignal::new("https://stream.wikimedia.org/v2/stream/recentchange".to_string());
     let stream = RwSignal::new(None::<EventStreamConnection>);
-    let logs = RwSignal::new(Vec::<WikimediaChange>::new());
 
     let is_connected = stream.map_or(false, |c| c.is_connected().get());
 
-    // Sync stream messages to independent logs signal while connection is active
-    Effect::new(move |_| {
-        stream.with(|conn| {
-            if let Some(conn) = conn.as_ref() {
-                let msgs = conn.messages::<WikimediaChange>().get();
-                if !msgs.is_empty() {
-                    logs.set(msgs.into_iter().rev().take(50).collect());
-                }
-            }
-        });
+    let logs = stream.map_or(Vec::<WikimediaChange>::new(), |c| {
+        c.latest_messages::<WikimediaChange>(50).get()
     });
 
     div![
@@ -240,7 +254,13 @@ pub fn EventStreamDemo() -> impl View {
                 })
                 .style("padding: 8px 16px; margin-left:10px; border-radius: 4px; cursor: pointer;"),
             button("Clear Log")
-                .on(event::click, move |_| logs.set(Vec::new()))
+                .on(event::click, move |_| {
+                    stream.with_untracked(|conn| {
+                        if let Some(conn) = conn {
+                            conn.clear_messages();
+                        }
+                    });
+                })
                 .style("padding: 8px 16px; margin-left:10px; border-radius: 4px; cursor: pointer; background: transparent; border: 1px solid var(--slx-theme-border); color: var(--slx-theme-text);"),
         ].style("display: flex; margin-bottom: 20px;"),
 

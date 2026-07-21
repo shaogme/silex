@@ -1,21 +1,22 @@
-use std::rc::Rc;
+use std::{borrow::Cow, rc::Rc};
 
+use silex_core::Rx;
 use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal};
-use silex_core::traits::RxGet;
+use silex_core::traits::RxRead;
 
 #[cfg(feature = "persistence")]
 use crate::persist::Persistent;
 
 #[derive(Clone)]
 pub enum ValueResolver {
-    Static(String),
+    Static(Cow<'static, str>),
     Dynamic(Rc<dyn Fn() -> String>),
 }
 
 impl ValueResolver {
     pub(crate) fn resolve(&self) -> String {
         match self {
-            Self::Static(value) => value.clone(),
+            Self::Static(value) => value.to_string(),
             Self::Dynamic(fun) => fun(),
         }
     }
@@ -33,43 +34,45 @@ impl IntoNetValue for ValueResolver {
 
 impl IntoNetValue for String {
     fn into_net_value(self) -> ValueResolver {
-        ValueResolver::Static(self)
+        ValueResolver::Static(Cow::Owned(self))
     }
 }
 
-impl IntoNetValue for &str {
+impl IntoNetValue for &'static str {
     fn into_net_value(self) -> ValueResolver {
-        ValueResolver::Static(self.to_string())
+        ValueResolver::Static(Cow::Borrowed(self))
     }
 }
 
 macro_rules! impl_into_net_value_for_rx {
-    ($ty:ty) => {
-        impl<T> IntoNetValue for $ty
+    (($($gen:tt)*) => $ty:ty) => {
+        impl<$($gen)*> IntoNetValue for $ty
         where
-            T: ToString + Clone + 'static,
+            Self: silex_core::traits::RxRead + 'static,
+            <Self as silex_core::traits::RxValue>::Value: ToString,
         {
             fn into_net_value(self) -> ValueResolver {
-                ValueResolver::Dynamic(Rc::new(move || self.get().to_string()))
+                ValueResolver::Dynamic(Rc::new(move || self.with(|v| v.to_string())))
             }
         }
     };
 }
 
-impl_into_net_value_for_rx!(ReadSignal<T>);
-impl_into_net_value_for_rx!(RwSignal<T>);
-impl_into_net_value_for_rx!(Signal<T>);
-impl_into_net_value_for_rx!(Memo<T>);
+impl_into_net_value_for_rx!((T, M) => Rx<T, M>);
+impl_into_net_value_for_rx!((T) => ReadSignal<T>);
+impl_into_net_value_for_rx!((T) => RwSignal<T>);
+impl_into_net_value_for_rx!((T) => Signal<T>);
+impl_into_net_value_for_rx!((T) => Memo<T>);
 
 #[cfg(feature = "persistence")]
-impl_into_net_value_for_rx!(Persistent<T>);
+impl_into_net_value_for_rx!((T) => Persistent<T>);
 
 macro_rules! impl_into_net_value_for_prim {
     ($($ty:ty),*) => {
         $(
             impl IntoNetValue for $ty {
                 fn into_net_value(self) -> ValueResolver {
-                    ValueResolver::Static(self.to_string())
+                    ValueResolver::Static(Cow::Owned(self.to_string()))
                 }
             }
         )*
@@ -79,3 +82,13 @@ macro_rules! impl_into_net_value_for_prim {
 impl_into_net_value_for_prim!(
     i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, bool, f32, f64
 );
+
+impl<F, T> IntoNetValue for F
+where
+    F: Fn() -> T + 'static,
+    T: ToString,
+{
+    fn into_net_value(self) -> ValueResolver {
+        ValueResolver::Dynamic(Rc::new(move || self().to_string()))
+    }
+}

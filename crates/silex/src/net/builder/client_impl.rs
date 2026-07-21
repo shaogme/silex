@@ -12,14 +12,11 @@ use crate::net::{
     state::{RequestSpec, RetryPolicy},
 };
 
-#[cfg(feature = "persistence")]
-use crate::net::state::CachePolicy;
-
 #[cfg(feature = "net")]
 use gloo_timers::future::sleep;
 
 #[cfg(feature = "persistence")]
-use crate::net::codec::CacheCodec;
+use crate::net::{codec::CacheCodec, state::CachePolicy};
 
 macro_rules! impl_net_methods {
     () => {
@@ -110,12 +107,10 @@ macro_rules! impl_net_methods {
         }
 
         pub fn bearer_auth(self, token: impl IntoNetValue) -> Self {
+            let resolver = token.into_net_value();
             self.header(
                 "Authorization",
-                ValueResolver::Dynamic(Rc::new({
-                    let token_res = token.into_net_value();
-                    move || format!("Bearer {}", token_res.resolve())
-                })),
+                ValueResolver::Dynamic(Rc::new(move || format!("Bearer {}", resolver.resolve()))),
             )
         }
 
@@ -137,6 +132,17 @@ macro_rules! impl_net_methods {
         pub fn as_mutation(self) -> Mutation<(), T, NetError> {
             Mutation::new(move |_| {
                 let client = self.clone();
+                async move { client.send().await }
+            })
+        }
+
+        pub fn as_mutation_with<Input, F>(self, f: F) -> Mutation<Input, T, NetError>
+        where
+            F: Fn(Input) -> Self + 'static,
+            Input: 'static,
+        {
+            Mutation::new(move |input: Input| {
+                let client = f(input);
                 async move { client.send().await }
             })
         }
