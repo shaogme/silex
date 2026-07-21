@@ -149,18 +149,20 @@ pub fn HttpClientDemo() -> impl View {
 #[component]
 pub fn WebSocketDemo() -> impl View {
     let url = RwSignal::new("wss://echo.websocket.org".to_string());
-    let socket = RwSignal::new(None::<WebSocketConnection>);
+    let socket = WebSocket::lazy(url.get_untracked());
     let input_text = RwSignal::new(String::new());
 
-    let state_text = socket.map_or("Disconnected", |c| c.state_str().get());
-    let is_connected = socket.map_or(false, |c| c.is_connected().get());
+    let state_text = socket.state_str();
+    let is_connected = socket.is_connected();
 
-    let last_message = socket.map_or(String::new(), |c| c.raw_message().get().unwrap_or_default());
+    let last_message = socket
+        .raw_message()
+        .map(|msg| msg.clone().unwrap_or_default());
 
     let send_message = move || {
         let text = input_text.get();
         if !text.trim().is_empty() {
-            if socket.if_some_untracked(|conn| conn.send(&text)).is_some() {
+            if socket.send_text(&text).is_ok() {
                 input_text.set(String::new());
             }
         }
@@ -175,17 +177,7 @@ pub fn WebSocketDemo() -> impl View {
                 .bind_value(url)
                 .style("flex-grow: 1; padding: 8px; border-radius: 4px; border: 1px solid var(--slx-theme-border); background: var(--slx-theme-surface); color: var(--slx-theme-text);"),
             button(move || if is_connected.get() { "Disconnect" } else { "Connect" })
-                .on(event::click, move |_| {
-                    if is_connected.get() {
-                        socket.with_untracked(|conn| if let Some(conn) = conn {
-                            let _ = conn.close();
-                        });
-                        socket.set(None);
-                    } else {
-                        let conn = WebSocket::open(url.get());
-                        socket.set(Some(conn));
-                    }
-                })
+                .on(event::click, move |_| socket.toggle())
                 .style("padding: 8px 16px; margin-left:10px; border-radius: 4px; cursor: pointer;"),
         ].style("display: flex; margin-bottom: 20px;"),
 
@@ -224,13 +216,10 @@ pub fn WebSocketDemo() -> impl View {
 #[component]
 pub fn EventStreamDemo() -> impl View {
     let url = RwSignal::new("https://stream.wikimedia.org/v2/stream/recentchange".to_string());
-    let stream = RwSignal::new(None::<EventStreamConnection>);
+    let mut stream = EventStream::lazy(url.get_untracked());
 
-    let is_connected = stream.map_or(false, |c| c.is_connected().get());
-
-    let logs = stream.map_or(Vec::<WikimediaChange>::new(), |c| {
-        c.latest_messages::<WikimediaChange>(50).get()
-    });
+    let is_connected = stream.is_connected();
+    let logs = stream.latest_messages::<WikimediaChange>(50);
 
     div![
         h3("EventSource (SSE) Demo"),
@@ -241,26 +230,10 @@ pub fn EventStreamDemo() -> impl View {
                 .bind_value(url)
                 .style("flex-grow: 1; padding: 8px; border-radius: 4px; border: 1px solid var(--slx-theme-border); background: var(--slx-theme-surface); color: var(--slx-theme-text);"),
             button(move || if is_connected.get() { "Stop Stream" } else { "Start Stream" })
-                .on(event::click, move |_| {
-                    if is_connected.get() {
-                        stream.with_untracked(|conn| if let Some(conn) = conn {
-                            conn.close();
-                        });
-                        stream.set(None);
-                    } else {
-                        let conn = EventStream::open(url.get());
-                        stream.set(Some(conn));
-                    }
-                })
+                .on(event::click, move |_| stream.toggle())
                 .style("padding: 8px 16px; margin-left:10px; border-radius: 4px; cursor: pointer;"),
             button("Clear Log")
-                .on(event::click, move |_| {
-                    stream.with_untracked(|conn| {
-                        if let Some(conn) = conn {
-                            conn.clear_messages();
-                        }
-                    });
-                })
+                .on(event::click, move |_| stream.clear_messages())
                 .style("padding: 8px 16px; margin-left:10px; border-radius: 4px; cursor: pointer; background: transparent; border: 1px solid var(--slx-theme-border); color: var(--slx-theme-text);"),
         ].style("display: flex; margin-bottom: 20px;"),
 

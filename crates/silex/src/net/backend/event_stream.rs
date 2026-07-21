@@ -5,8 +5,8 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, EventSource as JsEventSource, MessageEvent};
 
 use silex_core::{
-    reactivity::{Memo, ReadSignal, RwSignal, Signal},
-    traits::{RxGet, RxWrite},
+    reactivity::{Memo, ReadSignal, RwSignal, Signal, StoredValue},
+    traits::{RxGet, RxRead, RxWrite},
 };
 
 use crate::net::state::{ConnectionState, EventMessage};
@@ -21,32 +21,43 @@ impl EventStream {
     pub fn open(url: impl Into<String>) -> EventStreamConnection {
         Self::builder(url).build()
     }
+
+    pub fn lazy(url: impl Into<String>) -> EventStreamConnection {
+        Self::builder(url).auto_connect(false).build()
+    }
 }
 
+#[derive(Copy, Clone)]
 pub struct EventStreamConnection {
-    source: JsEventSource,
-    pub state: ReadSignal<ConnectionState>,
-    pub messages: RwSignal<Vec<EventMessage>>,
-    pub error: ReadSignal<Option<String>>,
+    inner: StoredValue<EventStreamInner>,
+    state: RwSignal<ConnectionState>,
+    messages: RwSignal<Vec<EventMessage>>,
+    error: ReadSignal<Option<String>>,
+}
+struct EventStreamInner {
+    source: Option<JsEventSource>,
+    url: String,
     _on_open: Closure<dyn FnMut(Event)>,
     _on_message: Closure<dyn FnMut(MessageEvent)>,
     _on_error: Closure<dyn FnMut(Event)>,
     event_name: Option<String>,
 }
 
-impl Drop for EventStreamConnection {
+impl Drop for EventStreamInner {
     fn drop(&mut self) {
-        self.source.set_onopen(None);
-        self.source.set_onerror(None);
-        if let Some(name) = &self.event_name {
-            let _ = self.source.remove_event_listener_with_callback(
-                name,
-                self._on_message.as_ref().unchecked_ref(),
-            );
-        } else {
-            self.source.set_onmessage(None);
+        if let Some(source) = &self.source {
+            source.set_onopen(None);
+            source.set_onerror(None);
+            if let Some(name) = &self.event_name {
+                let _ = source.remove_event_listener_with_callback(
+                    name,
+                    self._on_message.as_ref().unchecked_ref(),
+                );
+            } else {
+                source.set_onmessage(None);
+            }
+            source.close();
         }
-        self.source.close();
     }
 }
 
@@ -72,7 +83,7 @@ impl EventStreamConnection {
     }
 
     pub fn state(&self) -> ReadSignal<ConnectionState> {
-        self.state
+        self.state.read_signal()
     }
 
     #[cfg(feature = "json")]
@@ -134,7 +145,50 @@ impl EventStreamConnection {
     }
 
     pub fn close(&self) {
-        self.source.close();
+        self.inner.with(|inner| {
+            if let Some(source) = &inner.source {
+                source.close();
+            }
+        });
+        self.state.set(ConnectionState::Closed);
+    }
+
+    pub fn reconnect(&self) {
+        if matches!(
+            self.state.get(),
+            ConnectionState::Closed | ConnectionState::Disconnected | ConnectionState::Error
+        ) {
+            self.state.set(ConnectionState::Connecting);
+            self.inner.update(|inner| {
+                if let Ok(new_source) = JsEventSource::new(&inner.url) {
+                    new_source
+                        .set_onopen(Some(inner._on_open.as_ref().unchecked_ref::<Function>()));
+                    if let Some(event_name) = &inner.event_name {
+                        let _ = new_source.add_event_listener_with_callback(
+                            event_name,
+                            inner._on_message.as_ref().unchecked_ref::<Function>(),
+                        );
+                    } else {
+                        new_source.set_onmessage(Some(
+                            inner._on_message.as_ref().unchecked_ref::<Function>(),
+                        ));
+                    }
+                    new_source
+                        .set_onerror(Some(inner._on_error.as_ref().unchecked_ref::<Function>()));
+                    inner.source = Some(new_source);
+                }
+            });
+        }
+    }
+
+    pub fn toggle(&self) {
+        if self.state.get().is_connected()
+            || matches!(self.state.get(), ConnectionState::Connecting)
+        {
+            self.close();
+        } else {
+            self.reconnect();
+        }
     }
 }
 
@@ -142,6 +196,7 @@ impl EventStreamConnection {
 pub struct EventStreamBuilder {
     pub(crate) url: String,
     pub(crate) event_name: Option<String>,
+    pub(crate) auto_connect: bool,
     pub(crate) on_open: Vec<Rc<dyn Fn()>>,
     pub(crate) on_error: Vec<Rc<dyn Fn(String)>>,
 }
@@ -151,9 +206,15 @@ impl EventStreamBuilder {
         Self {
             url: url.into(),
             event_name: None,
+            auto_connect: true,
             on_open: Vec::new(),
             on_error: Vec::new(),
         }
+    }
+
+    pub fn auto_connect(mut self, auto_connect: bool) -> Self {
+        self.auto_connect = auto_connect;
+        self
     }
 
     pub fn event(mut self, name: impl Into<String>) -> Self {
@@ -172,24 +233,24 @@ impl EventStreamBuilder {
     }
 
     pub fn build(self) -> EventStreamConnection {
-        let source = JsEventSource::new(&self.url).expect("failed to create EventSource");
-
-        let (state, set_state) = Signal::pair(ConnectionState::Connecting);
+        let state = RwSignal::new(if self.auto_connect {
+            ConnectionState::Connecting
+        } else {
+            ConnectionState::Disconnected
+        });
         let messages = RwSignal::new(Vec::<EventMessage>::new());
         let (error, set_error) = Signal::pair(None::<String>);
 
         let on_open_handlers = self.on_open.clone();
         let on_error_handlers = self.on_error.clone();
 
-        let state_for_open = set_state;
         let on_open = Closure::wrap(Box::new(move |_event: Event| {
-            state_for_open.set(ConnectionState::Connected);
+            state.set(ConnectionState::Connected);
             for handler in &on_open_handlers {
                 handler();
             }
         }) as Box<dyn FnMut(Event)>);
 
-        let state_for_message = set_state;
         let on_message = Closure::wrap(Box::new(move |event: MessageEvent| {
             let data = event.data().as_string().unwrap_or_default();
             let event_name = event.type_();
@@ -199,38 +260,45 @@ impl EventStreamBuilder {
                     data,
                 });
             });
-            state_for_message.set(ConnectionState::Connected);
+            state.set(ConnectionState::Connected);
         }) as Box<dyn FnMut(MessageEvent)>);
 
-        let state_for_error = set_state;
         let on_error = Closure::wrap(Box::new(move |_event: Event| {
-            state_for_error.set(ConnectionState::Error);
+            state.set(ConnectionState::Error);
             set_error.set(Some("event stream error".to_string()));
             for handler in &on_error_handlers {
                 handler("event stream error".to_string());
             }
         }) as Box<dyn FnMut(Event)>);
 
-        source.set_onopen(Some(on_open.as_ref().unchecked_ref::<Function>()));
-        if let Some(event_name) = &self.event_name {
-            let on_message_fn = on_message.as_ref().unchecked_ref::<Function>();
-            source
-                .add_event_listener_with_callback(event_name, on_message_fn)
-                .expect("failed to register event listener");
+        let source = if self.auto_connect {
+            let s = JsEventSource::new(&self.url).expect("failed to create EventSource");
+            s.set_onopen(Some(on_open.as_ref().unchecked_ref::<Function>()));
+            if let Some(event_name) = &self.event_name {
+                let on_message_fn = on_message.as_ref().unchecked_ref::<Function>();
+                s.add_event_listener_with_callback(event_name, on_message_fn)
+                    .expect("failed to register event listener");
+            } else {
+                s.set_onmessage(Some(on_message.as_ref().unchecked_ref::<Function>()));
+            }
+            s.set_onerror(Some(on_error.as_ref().unchecked_ref::<Function>()));
+            Some(s)
         } else {
-            source.set_onmessage(Some(on_message.as_ref().unchecked_ref::<Function>()));
-        }
-        source.set_onerror(Some(on_error.as_ref().unchecked_ref::<Function>()));
+            None
+        };
 
         EventStreamConnection {
-            source,
+            inner: StoredValue::new(EventStreamInner {
+                source,
+                url: self.url,
+                _on_open: on_open,
+                _on_message: on_message,
+                _on_error: on_error,
+                event_name: self.event_name,
+            }),
             state,
             messages,
             error,
-            _on_open: on_open,
-            _on_message: on_message,
-            _on_error: on_error,
-            event_name: self.event_name,
         }
     }
 }

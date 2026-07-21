@@ -5,8 +5,8 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, MessageEvent, WebSocket as JsWebSocket};
 
 use silex_core::{
-    reactivity::{Memo, ReadSignal, Signal},
-    traits::{RxGet, RxWrite},
+    reactivity::{Memo, ReadSignal, Signal, StoredValue, WriteSignal},
+    traits::{RxGet, RxRead, RxWrite},
 };
 
 use crate::net::{
@@ -24,26 +24,40 @@ impl WebSocket {
     pub fn open(url: impl Into<String>) -> WebSocketConnection {
         Self::connect(url).build()
     }
+
+    pub fn lazy(url: impl Into<String>) -> WebSocketConnection {
+        Self::connect(url).auto_connect(false).build()
+    }
 }
 
+#[derive(Copy, Clone)]
 pub struct WebSocketConnection {
-    socket: JsWebSocket,
-    pub state: ReadSignal<ConnectionState>,
-    pub message: ReadSignal<Option<String>>,
-    pub error: ReadSignal<Option<String>>,
+    inner: StoredValue<WebSocketInner>,
+    state: ReadSignal<ConnectionState>,
+    message: ReadSignal<Option<String>>,
+    error: ReadSignal<Option<String>>,
+}
+
+struct WebSocketInner {
+    socket: Option<JsWebSocket>,
+    url: String,
+    protocols: Vec<String>,
+    set_state: WriteSignal<ConnectionState>,
     _on_open: Closure<dyn FnMut(Event)>,
     _on_message: Closure<dyn FnMut(MessageEvent)>,
     _on_error: Closure<dyn FnMut(web_sys::ErrorEvent)>,
     _on_close: Closure<dyn FnMut(web_sys::CloseEvent)>,
 }
 
-impl Drop for WebSocketConnection {
+impl Drop for WebSocketInner {
     fn drop(&mut self) {
-        self.socket.set_onopen(None);
-        self.socket.set_onmessage(None);
-        self.socket.set_onerror(None);
-        self.socket.set_onclose(None);
-        let _ = self.socket.close();
+        if let Some(socket) = &self.socket {
+            socket.set_onopen(None);
+            socket.set_onmessage(None);
+            socket.set_onerror(None);
+            socket.set_onclose(None);
+            let _ = socket.close();
+        }
     }
 }
 
@@ -99,9 +113,16 @@ impl WebSocketConnection {
     }
 
     pub fn send(&self, value: impl Into<String>) -> Result<(), NetError> {
-        self.socket
-            .send_with_str(&value.into())
-            .map_err(NetError::from)
+        let msg = value.into();
+        self.inner.with(|inner| {
+            if let Some(socket) = &inner.socket {
+                socket.send_with_str(&msg).map_err(NetError::from)
+            } else {
+                Err(NetError::ConnectionClosed(
+                    "WebSocket is not connected".into(),
+                ))
+            }
+        })
     }
 
     pub fn send_text(&self, value: impl Into<String>) -> Result<(), NetError> {
@@ -119,7 +140,60 @@ impl WebSocketConnection {
     }
 
     pub fn close(&self) -> Result<(), NetError> {
-        self.socket.close().map_err(NetError::from)
+        let res = self.inner.with(|inner| {
+            if let Some(socket) = &inner.socket {
+                socket.close().map_err(NetError::from)
+            } else {
+                Ok(())
+            }
+        });
+        self.inner.with(|inner| {
+            inner.set_state.set(ConnectionState::Closed);
+        });
+        res
+    }
+
+    pub fn reconnect(&self) {
+        if matches!(
+            self.state.get(),
+            ConnectionState::Closed | ConnectionState::Disconnected | ConnectionState::Error
+        ) {
+            self.inner.update(|inner| {
+                inner.set_state.set(ConnectionState::Connecting);
+                let socket_res = if inner.protocols.is_empty() {
+                    JsWebSocket::new(&inner.url)
+                } else {
+                    let protocols = js_sys::Array::new();
+                    for protocol in &inner.protocols {
+                        protocols.push(&wasm_bindgen::JsValue::from_str(protocol));
+                    }
+                    JsWebSocket::new_with_str_sequence(&inner.url, &protocols.into())
+                };
+
+                if let Ok(new_socket) = socket_res {
+                    new_socket
+                        .set_onopen(Some(inner._on_open.as_ref().unchecked_ref::<Function>()));
+                    new_socket.set_onmessage(Some(
+                        inner._on_message.as_ref().unchecked_ref::<Function>(),
+                    ));
+                    new_socket
+                        .set_onerror(Some(inner._on_error.as_ref().unchecked_ref::<Function>()));
+                    new_socket
+                        .set_onclose(Some(inner._on_close.as_ref().unchecked_ref::<Function>()));
+                    inner.socket = Some(new_socket);
+                }
+            });
+        }
+    }
+
+    pub fn toggle(&self) {
+        if self.state.get().is_connected()
+            || matches!(self.state.get(), ConnectionState::Connecting)
+        {
+            let _ = self.close();
+        } else {
+            self.reconnect();
+        }
     }
 }
 
@@ -127,6 +201,7 @@ impl WebSocketConnection {
 pub struct WebSocketBuilder {
     pub(crate) url: String,
     pub(crate) protocols: Vec<String>,
+    pub(crate) auto_connect: bool,
     pub(crate) reconnect: Option<RetryPolicy>,
     pub(crate) on_open: Vec<Rc<dyn Fn()>>,
     pub(crate) on_error: Vec<Rc<dyn Fn(String)>>,
@@ -138,11 +213,17 @@ impl WebSocketBuilder {
         Self {
             url: url.into(),
             protocols: Vec::new(),
+            auto_connect: true,
             reconnect: None,
             on_open: Vec::new(),
             on_error: Vec::new(),
             on_close: Vec::new(),
         }
+    }
+
+    pub fn auto_connect(mut self, auto_connect: bool) -> Self {
+        self.auto_connect = auto_connect;
+        self
     }
 
     pub fn protocol(mut self, protocol: impl Into<String>) -> Self {
@@ -171,19 +252,11 @@ impl WebSocketBuilder {
     }
 
     pub fn build(self) -> WebSocketConnection {
-        let socket = if self.protocols.is_empty() {
-            JsWebSocket::new(&self.url).expect("failed to create WebSocket")
+        let (state, set_state) = Signal::pair(if self.auto_connect {
+            ConnectionState::Connecting
         } else {
-            let protocols = js_sys::Array::new();
-            for protocol in &self.protocols {
-                protocols.push(&wasm_bindgen::JsValue::from_str(protocol));
-            }
-            let protocols = protocols.into();
-            JsWebSocket::new_with_str_sequence(&self.url, &protocols)
-                .expect("failed to create WebSocket")
-        };
-
-        let (state, set_state) = Signal::pair(ConnectionState::Connecting);
+            ConnectionState::Disconnected
+        });
         let (message, set_message) = Signal::pair(None::<String>);
         let (error, set_error) = Signal::pair(None::<String>);
 
@@ -227,20 +300,41 @@ impl WebSocketBuilder {
             let _ = reconnect;
         }) as Box<dyn FnMut(web_sys::CloseEvent)>);
 
-        socket.set_onopen(Some(on_open.as_ref().unchecked_ref::<Function>()));
-        socket.set_onmessage(Some(on_message.as_ref().unchecked_ref::<Function>()));
-        socket.set_onerror(Some(on_error.as_ref().unchecked_ref::<Function>()));
-        socket.set_onclose(Some(on_close.as_ref().unchecked_ref::<Function>()));
+        let socket = if self.auto_connect {
+            let socket_obj = if self.protocols.is_empty() {
+                JsWebSocket::new(&self.url).expect("failed to create WebSocket")
+            } else {
+                let protocols = js_sys::Array::new();
+                for protocol in &self.protocols {
+                    protocols.push(&wasm_bindgen::JsValue::from_str(protocol));
+                }
+                JsWebSocket::new_with_str_sequence(&self.url, &protocols.into())
+                    .expect("failed to create WebSocket")
+            };
+
+            socket_obj.set_onopen(Some(on_open.as_ref().unchecked_ref::<Function>()));
+            socket_obj.set_onmessage(Some(on_message.as_ref().unchecked_ref::<Function>()));
+            socket_obj.set_onerror(Some(on_error.as_ref().unchecked_ref::<Function>()));
+            socket_obj.set_onclose(Some(on_close.as_ref().unchecked_ref::<Function>()));
+            Some(socket_obj)
+        } else {
+            None
+        };
 
         WebSocketConnection {
-            socket,
+            inner: StoredValue::new(WebSocketInner {
+                socket,
+                url: self.url,
+                protocols: self.protocols,
+                set_state,
+                _on_open: on_open,
+                _on_message: on_message,
+                _on_error: on_error,
+                _on_close: on_close,
+            }),
             state,
             message,
             error,
-            _on_open: on_open,
-            _on_message: on_message,
-            _on_error: on_error,
-            _on_close: on_close,
         }
     }
 }
