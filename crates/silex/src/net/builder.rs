@@ -43,6 +43,12 @@ pub trait IntoNetValue {
     fn into_net_value(self) -> ValueResolver;
 }
 
+impl IntoNetValue for ValueResolver {
+    fn into_net_value(self) -> ValueResolver {
+        self
+    }
+}
+
 impl IntoNetValue for String {
     fn into_net_value(self) -> ValueResolver {
         ValueResolver::Static(self)
@@ -75,6 +81,22 @@ impl_into_net_value_for_rx!(Memo<T>);
 
 #[cfg(feature = "persistence")]
 impl_into_net_value_for_rx!(Persistent<T>);
+
+macro_rules! impl_into_net_value_for_prim {
+    ($($ty:ty),*) => {
+        $(
+            impl IntoNetValue for $ty {
+                fn into_net_value(self) -> ValueResolver {
+                    ValueResolver::Static(self.to_string())
+                }
+            }
+        )*
+    };
+}
+
+impl_into_net_value_for_prim!(
+    i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, bool, f32, f64
+);
 
 #[derive(Clone)]
 struct CacheSpec<T> {
@@ -163,9 +185,25 @@ impl<T, C> HttpClientBuilder<T, C> {
         self
     }
 
+    pub fn header_opt(self, name: impl Into<String>, value: Option<impl IntoNetValue>) -> Self {
+        if let Some(val) = value {
+            self.header(name, val)
+        } else {
+            self
+        }
+    }
+
     pub fn query(mut self, key: impl Into<String>, value: impl IntoNetValue) -> Self {
         self.query.push((key.into(), value.into_net_value()));
         self
+    }
+
+    pub fn query_opt(self, key: impl Into<String>, value: Option<impl IntoNetValue>) -> Self {
+        if let Some(val) = value {
+            self.query(key, val)
+        } else {
+            self
+        }
     }
 
     pub fn path_param(mut self, key: impl Into<String>, value: impl IntoNetValue) -> Self {
@@ -229,6 +267,16 @@ impl<T, C> HttpClientBuilder<T, C> {
             Ok(raw) => RequestBody::Json(raw),
             Err(err) => RequestBody::Json(format!("{{\"serialize_error\":\"{}\"}}", err)),
         };
+        if !self
+            .headers
+            .iter()
+            .any(|(h, _)| h.eq_ignore_ascii_case("content-type"))
+        {
+            self.headers.push((
+                "Content-Type".to_string(),
+                "application/json".into_net_value(),
+            ));
+        }
         self
     }
 
@@ -244,6 +292,16 @@ impl<T, C> HttpClientBuilder<T, C> {
                 .map(|(k, v)| (k.into(), v.into()))
                 .collect(),
         );
+        if !self
+            .headers
+            .iter()
+            .any(|(h, _)| h.eq_ignore_ascii_case("content-type"))
+        {
+            self.headers.push((
+                "Content-Type".to_string(),
+                "application/x-www-form-urlencoded".into_net_value(),
+            ));
+        }
         self
     }
 
@@ -502,6 +560,20 @@ macro_rules! impl_net_methods {
                 return Ok(value);
             }
             Err(err)
+        }
+
+        pub fn bearer_auth(self, token: impl IntoNetValue) -> Self {
+            self.header(
+                "Authorization",
+                ValueResolver::Dynamic(Rc::new({
+                    let token_res = token.into_net_value();
+                    move || format!("Bearer {}", token_res.resolve())
+                })),
+            )
+        }
+
+        pub fn into_resource(self) -> silex_core::reactivity::Resource<T, NetError> {
+            self.as_resource(())
         }
 
         pub fn as_resource<S>(self, source: S) -> silex_core::reactivity::Resource<T, NetError>

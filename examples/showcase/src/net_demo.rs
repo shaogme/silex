@@ -11,16 +11,35 @@ pub struct Post {
     pub user_id: i32,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WikimediaChange {
+    #[serde(default)]
+    pub id: Option<u64>,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub user: String,
+    #[serde(default, rename = "type")]
+    pub change_type: String,
+    #[serde(default)]
+    pub wiki: String,
+}
+
 #[component]
 pub fn HttpClientDemo() -> impl View {
     let (post_id, set_post_id) = Signal::pair(1);
+    let search_query = RwSignal::new(String::new());
 
-    // 1. Using HttpClient::as_resource for declarative fetching
-    let post_client = HttpClient::get("https://jsonplaceholder.typicode.com/posts/{id}")
+    // 1. Declarative HTTP fetching with path parameters, retry policy, and optional query params
+    let post_resource = HttpClient::get("https://jsonplaceholder.typicode.com/posts/{id}")
         .path_param("id", post_id)
-        .json::<Post>();
-
-    let post_resource = post_client.as_resource(post_id);
+        .query_opt("filter", {
+            let q = search_query.get();
+            if q.is_empty() { None } else { Some(q) }
+        })
+        .retry_policy(2, std::time::Duration::from_millis(300))
+        .json::<Post>()
+        .as_resource(post_id);
 
     // 2. Using HttpClient::as_mutation for actions (POST)
     let create_post_mutation = HttpClient::post("https://jsonplaceholder.typicode.com/posts")
@@ -34,7 +53,7 @@ pub fn HttpClientDemo() -> impl View {
 
     div![
         h3("HTTP Client Demo"),
-        p("Declarative HTTP fetching with path parameters, resources, and mutations."),
+        p("Declarative HTTP fetching with path parameters, optional query parameters, auto-retries, resources, and mutations."),
 
         div![
             span("Fetch Post ID: "),
@@ -47,8 +66,15 @@ pub fn HttpClientDemo() -> impl View {
                     }
                 })
                 .style(sty().margin_right(px(10)).padding(padding::x_y(px(4), px(8))).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).background(AppTheme::SURFACE).color(AppTheme::TEXT)),
+
+            span("Optional Filter Query: ").style("margin-left: 10px;"),
+            input()
+                .placeholder("Type query...")
+                .bind_value(search_query)
+                .style(sty().margin_right(px(10)).padding(padding::x_y(px(4), px(8))).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).background(AppTheme::SURFACE).color(AppTheme::TEXT)),
+
             button("Refresh").on(event::click, move |_| post_resource.refetch()),
-        ].style("margin-bottom: 20px;"),
+        ].style("margin-bottom: 20px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px;"),
 
         // Resource Display
         div![
@@ -56,7 +82,7 @@ pub fn HttpClientDemo() -> impl View {
                 ResourceState::Ready(post) | ResourceState::Reloading(post) => div![
                     h4(post.title).style(sty().color(AppTheme::PRIMARY).margin_top(px(0))),
                     p(post.body).style("opacity: 0.8;"),
-                    small(format!("User ID: {}", post.user_id)).style("opacity: 0.6;")
+                    small(format!("User ID: {} | Post ID: {}", post.user_id, post.id)).style("opacity: 0.6;")
                 ].style(sty().padding(px(20)).background(AppTheme::SURFACE_ALT).border_radius(px(8)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))),
                 ResourceState::Error(err) => div![
                     div("❌ Request Failed").style("color: red; font-weight: bold;"),
@@ -99,14 +125,48 @@ pub fn HttpClientDemo() -> impl View {
 #[component]
 pub fn WebSocketDemo() -> impl View {
     let url = RwSignal::new("wss://echo.websocket.org".to_string());
-    let socket = StoredValue::new(None::<WebSocketConnection>);
-    let (is_connected, set_is_connected) = Signal::pair(false);
-    let (last_message, set_last_message) = Signal::pair(String::new());
+    let socket = RwSignal::new(None::<WebSocketConnection>);
     let input_text = RwSignal::new(String::new());
+
+    let state_text = move || {
+        socket.with(|conn| {
+            conn.as_ref()
+                .map(|c| c.state.get().as_str())
+                .unwrap_or("Disconnected")
+        })
+    };
+
+    let is_connected = Memo::new(move |_| {
+        socket.with(|conn| {
+            conn.as_ref()
+                .map(|c| c.is_connected().get())
+                .unwrap_or(false)
+        })
+    });
+
+    let last_message = move || {
+        socket.with(|conn| {
+            conn.as_ref()
+                .and_then(|c| c.raw_message().get())
+                .unwrap_or_default()
+        })
+    };
+
+    let send_message = move || {
+        let text = input_text.get();
+        if !text.trim().is_empty() {
+            socket.with_untracked(|conn| {
+                if let Some(conn) = conn {
+                    let _ = conn.send(text);
+                    input_text.set(String::new());
+                }
+            });
+        }
+    };
 
     div![
         h3("WebSocket Demo"),
-        p("Real-time bidirectional communication with automatic connection state handling."),
+        p("Real-time bidirectional communication with automatic connection state handling & Enter key support."),
 
         div![
             input()
@@ -118,22 +178,10 @@ pub fn WebSocketDemo() -> impl View {
                         socket.with_untracked(|conn| if let Some(conn) = conn {
                             let _ = conn.close();
                         });
-                        set_is_connected.set(false);
+                        socket.set(None);
                     } else {
-                        let conn = WebSocket::connect(url.get())
-                            .on_open(move || set_is_connected.set(true))
-                            .on_close(move |_, _| set_is_connected.set(false))
-                            .build();
-
-                        // Register message handler
-                        let msg_signal = conn.raw_message();
-                        Effect::new(move |_| {
-                            if let Some(msg) = msg_signal.get() {
-                                set_last_message.set(msg);
-                            }
-                        });
-
-                        socket.set_untracked(Some(conn));
+                        let conn = WebSocket::open(url.get());
+                        socket.set(Some(conn));
                     }
                 })
                 .style("padding: 8px 16px; margin-left:10px; border-radius: 4px; cursor: pointer;"),
@@ -141,7 +189,7 @@ pub fn WebSocketDemo() -> impl View {
 
         div![
             span("Status: "),
-            strong(move || if is_connected.get() { "Connected" } else { "Disconnected" })
+            strong(move || state_text())
                 .style(rx!(@fn if is_connected.get() { sty().color(hex("green")) } else { sty().color(hex("red")) })),
         ].style("margin-bottom: 15px;"),
 
@@ -149,20 +197,22 @@ pub fn WebSocketDemo() -> impl View {
             div![
                 div![
                     input()
-                        .placeholder("Send something to echo server...")
+                        .placeholder("Send message (Press Enter)...")
                         .bind_value(input_text)
-                        .style(sty().padding(px(8)).width(px(200)).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).background(AppTheme::SURFACE).color(AppTheme::TEXT)),
+                        .on(event::keydown, move |e: silex::reexports::web_sys::KeyboardEvent| {
+                            if e.key() == "Enter" {
+                                send_message();
+                            }
+                        })
+                        .style(sty().padding(px(8)).width(px(260)).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).background(AppTheme::SURFACE).color(AppTheme::TEXT)),
                     button("Send").on(event::click, move |_| {
-                        socket.with_untracked(|conn| if let Some(conn) = conn {
-                            let _ = conn.send(input_text.get());
-                            input_text.set(String::new());
-                        });
+                        send_message();
                     })
                     .style("margin-left: 10px; padding: 8px 16px; cursor: pointer;"),
                 ],
                 div![
                     p("Last Echoed Message:"),
-                    div(last_message).style(sty().padding(px(15)).background(AppTheme::SURFACE_ALT).border_radius(px(6)).font_family("monospace").border_left(border(px(4), BorderStyleKeyword::Solid, AppTheme::PRIMARY)))
+                    div(move || last_message()).style(sty().padding(px(15)).background(AppTheme::SURFACE_ALT).border_radius(px(6)).font_family("monospace").border_left(border(px(4), BorderStyleKeyword::Solid, AppTheme::PRIMARY)))
                 ].style(sty().margin_top(px(15))),
             ]
         )
@@ -171,54 +221,68 @@ pub fn WebSocketDemo() -> impl View {
 
 #[component]
 pub fn EventStreamDemo() -> impl View {
-    let (is_active, set_is_active) = Signal::pair(false);
     let url = RwSignal::new("https://stream.wikimedia.org/v2/stream/recentchange".to_string());
-    let stream = StoredValue::new(None::<EventStreamConnection>);
-    let (events, set_events) = Signal::pair(Vec::<String>::new());
+    let stream = RwSignal::new(None::<EventStreamConnection>);
+    let logs = RwSignal::new(Vec::<WikimediaChange>::new());
+
+    let is_connected = Memo::new(move |_| {
+        stream.with(|conn| {
+            conn.as_ref()
+                .map(|c| c.is_connected().get())
+                .unwrap_or(false)
+        })
+    });
+
+    // Sync stream messages to independent logs signal while connection is active
+    Effect::new(move |_| {
+        stream.with(|conn| {
+            if let Some(conn) = conn.as_ref() {
+                let msgs = conn.messages::<WikimediaChange>().get();
+                if !msgs.is_empty() {
+                    logs.set(msgs.into_iter().rev().take(50).collect());
+                }
+            }
+        });
+    });
 
     div![
         h3("EventSource (SSE) Demo"),
-        p("One-way server-to-client streaming for real-time updates."),
+        p("One-way server-to-client streaming parsed directly into strongly typed Rust structs (Wikimedia Recent Changes)."),
 
         div![
             input()
                 .bind_value(url)
                 .style("flex-grow: 1; padding: 8px; border-radius: 4px; border: 1px solid var(--slx-theme-border); background: var(--slx-theme-surface); color: var(--slx-theme-text);"),
-            button(move || if is_active.get() { "Stop Stream" } else { "Start Stream" })
+            button(move || if is_connected.get() { "Stop Stream" } else { "Start Stream" })
                 .on(event::click, move |_| {
-                    if is_active.get() {
+                    if is_connected.get() {
                         stream.with_untracked(|conn| if let Some(conn) = conn {
                             conn.close();
                         });
-                        set_is_active.set(false);
+                        stream.set(None);
                     } else {
-                        let conn = EventStream::builder(url.get())
-                            .on_open(move || set_events.update(|e| e.push("Connected to stream".into())))
-                            .build();
-
-                        let msgs = conn.raw_messages();
-                        Effect::new(move |_| {
-                            if let Some(items) = msgs.get().last() {
-                                set_events.update(|e| {
-                                    e.push(format!("Event: {}", items.data));
-                                    if e.len() > 50 { e.remove(0); } // Keep log manageable
-                                });
-                            }
-                        });
-
-                        stream.set_untracked(Some(conn));
-                        set_is_active.set(true);
+                        let conn = EventStream::open(url.get());
+                        stream.set(Some(conn));
                     }
                 })
                 .style("padding: 8px 16px; margin-left:10px; border-radius: 4px; cursor: pointer;"),
+            button("Clear Log")
+                .on(event::click, move |_| logs.set(Vec::new()))
+                .style("padding: 8px 16px; margin-left:10px; border-radius: 4px; cursor: pointer; background: transparent; border: 1px solid var(--slx-theme-border); color: var(--slx-theme-text);"),
         ].style("display: flex; margin-bottom: 20px;"),
 
         div![
-            h4("Stream Log (Latest 50 events):"),
-            ul(For(events, |e| e.clone()).children(|e, _idx| {
-                li(e).style(sty().font_family("monospace").font_size(em_unit(0.8)).opacity(0.8).margin_bottom(px(4)).word_break(WordBreakKeyword::BreakAll).border_bottom(border(px(1), BorderStyleKeyword::Solid, AppTheme::SURFACE_ALT)).padding_bottom(px(2)))
+            h4("Stream Log (Wikipedia Edits):"),
+            ul(For(logs, |item| item.id.unwrap_or(0).to_string() + &item.title).children(|change_sig, _idx| {
+                let change = change_sig.get();
+                li(div![
+                    span(format!("[{}] ", change.wiki)).style("font-weight: bold; opacity: 0.6;"),
+                    span(format!("{} ", change.title)).style(sty().color(AppTheme::PRIMARY).font_weight("bold")),
+                    span(format!("by {}", change.user)).style("opacity: 0.8; font-style: italic;"),
+                    span(format!(" ({})", change.change_type)).style("font-size: 0.85em; opacity: 0.5;")
+                ]).style(sty().font_family("sans-serif").font_size(em_unit(0.9)).margin_bottom(px(6)).border_bottom(border(px(1), BorderStyleKeyword::Solid, AppTheme::SURFACE_ALT)).padding_bottom(px(4)))
             }))
-            .style(sty().max_height(px(300)).overflow_y(OverflowYKeyword::Auto).background(AppTheme::SURFACE).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).padding(px(15)).border_radius(px(8)))
+            .style(sty().max_height(px(320)).overflow_y(OverflowYKeyword::Auto).background(AppTheme::SURFACE).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).padding(px(15)).border_radius(px(8)))
         ]
     ]
 }

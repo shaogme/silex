@@ -97,7 +97,7 @@ impl HttpResponse {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConnectionState {
     Disconnected,
     Connecting,
@@ -105,6 +105,27 @@ pub enum ConnectionState {
     Closing,
     Closed,
     Error,
+}
+
+impl ConnectionState {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Disconnected => "Disconnected",
+            Self::Connecting => "Connecting...",
+            Self::Connected => "Connected",
+            Self::Closing => "Closing...",
+            Self::Closed => "Closed",
+            Self::Error => "Error",
+        }
+    }
+
+    pub fn is_connected(&self) -> bool {
+        matches!(self, Self::Connected)
+    }
+
+    pub fn is_active(&self) -> bool {
+        matches!(self, Self::Connecting | Self::Connected)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

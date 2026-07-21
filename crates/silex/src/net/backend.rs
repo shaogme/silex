@@ -165,6 +165,10 @@ impl WebSocket {
     pub fn connect(url: impl Into<String>) -> WebSocketBuilder {
         WebSocketBuilder::new(url)
     }
+
+    pub fn open(url: impl Into<String>) -> WebSocketConnection {
+        Self::connect(url).build()
+    }
 }
 
 pub struct EventStream;
@@ -172,6 +176,10 @@ pub struct EventStream;
 impl EventStream {
     pub fn builder(url: impl Into<String>) -> EventStreamBuilder {
         EventStreamBuilder::new(url)
+    }
+
+    pub fn open(url: impl Into<String>) -> EventStreamConnection {
+        Self::builder(url).build()
     }
 }
 
@@ -197,6 +205,26 @@ impl Drop for WebSocketConnection {
 }
 
 impl WebSocketConnection {
+    pub fn is_connected(&self) -> Memo<bool> {
+        let state = self.state;
+        Memo::new(move |_| state.get().is_connected())
+    }
+
+    pub fn is_connecting(&self) -> Memo<bool> {
+        let state = self.state;
+        Memo::new(move |_| matches!(state.get(), ConnectionState::Connecting))
+    }
+
+    pub fn is_closed(&self) -> Memo<bool> {
+        let state = self.state;
+        Memo::new(move |_| {
+            matches!(
+                state.get(),
+                ConnectionState::Closed | ConnectionState::Disconnected
+            )
+        })
+    }
+
     pub fn state(&self) -> ReadSignal<ConnectionState> {
         self.state
     }
@@ -393,6 +421,11 @@ impl Drop for EventStreamConnection {
 }
 
 impl EventStreamConnection {
+    pub fn is_connected(&self) -> Memo<bool> {
+        let state = self.state;
+        Memo::new(move |_| state.get().is_connected())
+    }
+
     pub fn state(&self) -> ReadSignal<ConnectionState> {
         self.state
     }
