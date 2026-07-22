@@ -68,6 +68,15 @@ pub fn tw(input: TokenStream) -> TokenStream {
     }
 }
 
+#[cfg(feature = "tw")]
+#[proc_macro]
+pub fn tw_variants(input: TokenStream) -> TokenStream {
+    match css::tw::tw_variants_impl(input.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
 #[cfg(feature = "css")]
 #[proc_macro]
 pub fn tw_verbose(input: TokenStream) -> TokenStream {

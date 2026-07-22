@@ -119,7 +119,7 @@ impl Parse for TwInput {
 }
 
 /// 剥离修饰符前缀（如 `hover:`, `md:`, `dark:`）与基础 Utility Token
-fn parse_modifiers_and_body(token: &str) -> (Vec<Modifier>, &str) {
+pub(crate) fn parse_modifiers_and_body(token: &str) -> (Vec<Modifier>, &str) {
     let mut modifiers = Vec::new();
     let mut current = token;
 

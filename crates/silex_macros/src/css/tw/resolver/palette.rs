@@ -267,10 +267,9 @@ pub fn parse_color_utility(token: &str) -> Option<(&'static str, UtilityValue)> 
     for &(prefix, prop) in PREFIXES {
         if let Some(rest) = token.strip_prefix(prefix)
             && let Some(rest) = rest.strip_prefix('-')
+            && let Some(val) = parse_color_value(rest)
         {
-            if let Some(val) = parse_color_value(rest) {
-                return Some((prop, val));
-            }
+            return Some((prop, val));
         }
     }
 

@@ -444,6 +444,80 @@ fn FractionalAndDirectionalDemo() -> impl View {
 }
 
 #[component]
+fn TailwindVariantsCvaDemo() -> impl View {
+    let (intent, set_intent) = Signal::pair("primary");
+    let (size, set_size) = Signal::pair("md");
+
+    let button_variants = tw_variants! {
+        base: "font-semibold rounded-xl transition-all duration-300 flex items-center justify-center cursor-pointer border-0 outline-none shadow-md hover:scale-105",
+        variants: {
+            intent: {
+                primary: "bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 shadow-md",
+                secondary: "bg-slate-200 text-slate-800 hover:bg-slate-300 dark:bg-slate-800 dark:text-white",
+                danger: "bg-rose-600 text-white hover:bg-rose-700 dark:bg-rose-500 dark:hover:bg-rose-600 shadow-md"
+            },
+            size: {
+                sm: "text-xs px-3 py-1.5 gap-1.5",
+                md: "text-sm px-4 py-2 gap-2",
+                lg: "text-base px-6 py-3 gap-3"
+            }
+        },
+        default_variants: {
+            intent: "primary",
+            size: "md"
+        },
+        compound_variants: [
+            {
+                intent: "danger",
+                size: "lg",
+                class: "ring-4 ring-rose-500/30 dark:ring-rose-400/40"
+            }
+        ]
+    };
+
+    let btn_cls = rx!(move || button_variants.get(intent.get(), size.get()));
+
+    div(view_chain!(
+        div(view_chain!(
+            span("11. Tailwind CVA Paradigm (tw_variants!)").class(tw!("text-xs font-black text-rose-600 dark:text-rose-400 uppercase tracking-widest")),
+            h2("Class Variance Authority & Compile-Time Merge").class(tw!("text-xl font-bold text-slate-900 dark:text-white mt-1 mb-2 transition-colors duration-300")),
+            p("Compose complex component variants (Intent, Size) with zero runtime overlap and automatic compile-time AST deduplication.")
+                .class(tw!("text-xs text-slate-600 dark:text-slate-300 mb-5 leading-relaxed transition-colors duration-300"))
+        )),
+        div(view_chain!(
+            // Interactive Variant Selectors
+            div(view_chain!(
+                div(view_chain!(
+                    span("Intent:").class(tw!("text-xs font-bold text-slate-500 dark:text-slate-400 mr-2")),
+                    button("Primary").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (intent.get() == "primary", "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| set_intent.set("primary")),
+                    button("Secondary").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (intent.get() == "secondary", "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| set_intent.set("secondary")),
+                    button("Danger").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (intent.get() == "danger", "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| set_intent.set("danger"))
+                )).class(tw!("flex flex-wrap items-center gap-1.5 mb-3")),
+                div(view_chain!(
+                    span("Size:").class(tw!("text-xs font-bold text-slate-500 dark:text-slate-400 mr-2")),
+                    button("Small (sm)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (size.get() == "sm", "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| set_size.set("sm")),
+                    button("Medium (md)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (size.get() == "md", "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| set_size.set("md")),
+                    button("Large (lg)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (size.get() == "lg", "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| set_size.set("lg"))
+                )).class(tw!("flex flex-wrap items-center gap-1.5"))
+            )).class(tw!("p-3.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-solid border-slate-200 dark:border-slate-800 mb-4 transition-colors duration-300")),
+
+            // Live Rendered Variant Button Showcase
+            div(view_chain!(
+                button(rx!(format!("⚡ Variant Button ({}, {})", intent.get(), size.get())))
+                    .class(btn_cls)
+            )).class(tw!("flex justify-center p-6 bg-slate-100 dark:bg-slate-950 rounded-2xl border border-solid border-slate-200 dark:border-slate-800/60 mb-4")),
+
+            // Badges
+            div(view_chain!(
+                span("✓ Cartesian Combination AST Pre-compilation").class(tw!("text-xs font-semibold text-white bg-rose-600 px-3 py-1.5 rounded-lg border border-solid border-rose-700")),
+                span("✓ Compound Variant Override (Danger + Lg)").class(tw!("text-xs font-semibold text-white bg-rose-600 px-3 py-1.5 rounded-lg border border-solid border-rose-700"))
+            )).class(tw!("flex flex-wrap gap-2"))
+        ))
+    ))
+    .class(card_container_cls())
+}
+
+#[component]
 fn App() -> impl View {
     let (is_dark, set_is_dark) = Signal::pair(true);
     let (category, set_category) = Signal::pair(DemoCategory::All);
@@ -490,7 +564,8 @@ fn App() -> impl View {
                         div(view_chain!(
                             ThemeSystemAndDiagnosticsDemo(),
                             ContainerQueriesAndDceDemo(),
-                            FractionalAndDirectionalDemo()
+                            FractionalAndDirectionalDemo(),
+                            TailwindVariantsCvaDemo()
                         )).class(tw!("grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6")).into_any()
                     } else {
                         ().into_any()

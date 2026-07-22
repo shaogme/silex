@@ -2,6 +2,9 @@ pub mod ast;
 pub mod codegen;
 pub mod parser;
 pub mod resolver;
+pub mod variants;
+
+pub use variants::tw_variants_impl;
 
 use ast::{TwInput, TwSegment};
 use codegen::{build_css_block_from_rules, build_css_block_from_tw};

@@ -43,10 +43,9 @@ pub fn resolve_rounded_utility(
             &["border-bottom-right-radius", "border-bottom-left-radius"],
             s,
         )
-    } else if let Some(s) = rest.strip_prefix("l-") {
-        (&["border-top-left-radius", "border-bottom-left-radius"], s)
     } else {
-        return None;
+        let s = rest.strip_prefix("l-")?;
+        (&["border-top-left-radius", "border-bottom-left-radius"], s)
     };
 
     let val = match size_str {

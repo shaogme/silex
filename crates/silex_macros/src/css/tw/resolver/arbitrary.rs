@@ -114,7 +114,7 @@ pub fn resolve_arbitrary(
     };
 
     let target_mods = if is_divide {
-        vec![
+        [
             modifiers.clone(),
             vec![Modifier::CustomSelector(DIVIDE_SELECTOR.into())],
         ]

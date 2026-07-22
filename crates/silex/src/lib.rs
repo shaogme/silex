@@ -75,5 +75,5 @@ pub mod prelude {
     #[cfg(feature = "css")]
     pub use silex_macros::{global, styled, theme};
     #[cfg(feature = "tw")]
-    pub use silex_macros::{tw, tw_verbose};
+    pub use silex_macros::{tw, tw_variants, tw_verbose};
 }

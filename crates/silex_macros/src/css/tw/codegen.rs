@@ -137,7 +137,7 @@ fn get_atomic_subproperties(prop: &str) -> Option<&'static [&'static str]> {
 }
 
 /// 编译期 Tailwind Merge: 相同修饰符组下的实用类属性消解 (支持简写属性与长写属性关联覆盖，Last-wins 覆盖先出者)
-fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
+pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
     let mut covered_subproperties = HashSet::new();
     let mut deduped_rev = Vec::new();
 
@@ -148,12 +148,14 @@ fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
             None => std::slice::from_ref(&prop),
         };
 
-        // 检查该规则包含的所有原子子属性是否已被后续（即更靠后出场）的规则完全覆盖
-        let all_covered = subprops.iter().all(|p| covered_subproperties.contains(*p));
+        // 检查该规则包含的所有原子子属性在相同的修饰符组下是否已被完全覆盖
+        let all_covered = subprops
+            .iter()
+            .all(|p| covered_subproperties.contains(&(rule.modifiers.clone(), p.to_string())));
 
         if !all_covered {
             for &p in subprops {
-                covered_subproperties.insert(p.to_string());
+                covered_subproperties.insert((rule.modifiers.clone(), p.to_string()));
             }
             deduped_rev.push(rule);
         }
