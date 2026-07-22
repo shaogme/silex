@@ -67,7 +67,7 @@ pub enum RxInner {
 }
 
 /// 非泛型的响应式节点类型，用于 Trampoline 模式优化。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RxNodeKind {
     Signal,
     Closure,

@@ -40,7 +40,7 @@ mod tests;
 
 pub enum Signal<T> {
     Read(ReadSignal<T>),
-    Derived(NodeId, PhantomData<T>),
+    Derived(NodeId, RxNodeKind, PhantomData<T>),
     StoredConstant(NodeId, PhantomData<T>),
     #[allow(missing_docs)] // Internal optimization detail
     InlineConstant(u64, PhantomData<T>),
@@ -66,7 +66,11 @@ impl<T: RxData> Debug for Signal<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Self::Read(s) => f.debug_tuple("Read").field(s).finish(),
-            Self::Derived(id, _) => f.debug_tuple("Derived").field(id).finish(),
+            Self::Derived(id, kind, _) => f
+                .debug_struct("Derived")
+                .field("id", id)
+                .field("kind", kind)
+                .finish(),
             Self::StoredConstant(id, _) => f.debug_tuple("StoredConstant").field(id).finish(),
             Self::InlineConstant(val, _) => f.debug_tuple("InlineConstant").field(val).finish(),
         }
@@ -84,7 +88,9 @@ impl<T> PartialEq for Signal<T> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Read(l), Self::Read(r)) => l == r,
-            (Self::Derived(l, _), Self::Derived(r, _)) => l == r,
+            (Self::Derived(l_id, l_k, _), Self::Derived(r_id, r_k, _)) => {
+                l_id == r_id && l_k == r_k
+            }
             (Self::StoredConstant(l, _), Self::StoredConstant(r, _)) => l == r,
             (Self::InlineConstant(l, _), Self::InlineConstant(r, _)) => l == r,
             _ => false,
@@ -103,7 +109,7 @@ impl<T: RxData> RxBase for Signal<T> {
     fn id(&self) -> Option<NodeId> {
         match self {
             Signal::Read(s) => Some(s.id),
-            Signal::Derived(id, _) => Some(*id),
+            Signal::Derived(id, _, _) => Some(*id),
             Signal::StoredConstant(id, _) => Some(*id),
             Signal::InlineConstant(_, _) => None,
         }
@@ -112,7 +118,7 @@ impl<T: RxData> RxBase for Signal<T> {
     fn track(&self) {
         match self {
             Signal::Read(s) => track(s.id, RxNodeKind::Signal),
-            Signal::Derived(id, _) => track(*id, RxNodeKind::Closure),
+            Signal::Derived(id, kind, _) => track(*id, *kind),
             Signal::StoredConstant(id, _) => track(*id, RxNodeKind::Stored),
             Signal::InlineConstant(_, _) => {}
         }
@@ -121,7 +127,7 @@ impl<T: RxData> RxBase for Signal<T> {
     fn is_disposed(&self) -> bool {
         match self {
             Signal::Read(s) => is_disposed(s.id, RxNodeKind::Signal),
-            Signal::Derived(id, _) => is_disposed(*id, RxNodeKind::Closure),
+            Signal::Derived(id, kind, _) => is_disposed(*id, *kind),
             Signal::StoredConstant(id, _) => is_disposed(*id, RxNodeKind::Stored),
             Signal::InlineConstant(_, _) => false,
         }
@@ -152,7 +158,7 @@ impl<T: RxData> RxInternal for Signal<T> {
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
         match self {
             Signal::Read(s) => s.rx_read_untracked(),
-            Signal::Derived(id, _) => unsafe { rx_read_node_untracked(*id, RxNodeKind::Closure) },
+            Signal::Derived(id, kind, _) => unsafe { rx_read_node_untracked(*id, *kind) },
             Signal::StoredConstant(id, _) => unsafe {
                 rx_read_node_untracked(*id, RxNodeKind::Stored)
             },
@@ -167,7 +173,7 @@ impl<T: RxData> RxInternal for Signal<T> {
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         match self {
             Signal::Read(s) => s.rx_try_with_untracked(fun),
-            Signal::Derived(id, _) => rx_try_with_node_untracked(*id, RxNodeKind::Closure, fun),
+            Signal::Derived(id, kind, _) => rx_try_with_node_untracked(*id, *kind, fun),
             Signal::StoredConstant(id, _) => {
                 rx_try_with_node_untracked(*id, RxNodeKind::Stored, fun)
             }
@@ -185,7 +191,7 @@ impl<T: RxData> RxInternal for Signal<T> {
     {
         match self {
             Signal::Read(s) => s.rx_get_adaptive(),
-            Signal::Derived(_, _) | Signal::StoredConstant(_, _) => self
+            Signal::Derived(_, _, _) | Signal::StoredConstant(_, _) => self
                 .rx_try_with_untracked(|v| AdaptiveWrapper(v).maybe_clone())
                 .flatten(),
             Signal::InlineConstant(storage, _) => {
@@ -223,7 +229,10 @@ impl<T> Hash for Signal<T> {
         discriminant(self).hash(state);
         match self {
             Self::Read(s) => s.hash(state),
-            Self::Derived(id, _) => id.hash(state),
+            Self::Derived(id, kind, _) => {
+                id.hash(state);
+                kind.hash(state);
+            }
             Self::StoredConstant(id, _) => id.hash(state),
             Self::InlineConstant(val, _) => val.hash(state),
         }
@@ -236,7 +245,7 @@ impl<T: RxData> Signal<T> {
     #[track_caller]
     pub fn derive(f: Box<dyn Fn() -> T>) -> Self {
         let id = register_derived(f);
-        Signal::Derived(id, PhantomData)
+        Signal::Derived(id, RxNodeKind::Closure, PhantomData)
     }
 
     /// Internal helper to try inlining a value
@@ -272,7 +281,7 @@ impl<T: RxData> Signal<T> {
     pub fn node_id(&self) -> Option<NodeId> {
         match self {
             Signal::Read(s) => Some(s.id),
-            Signal::Derived(id, _) => Some(*id),
+            Signal::Derived(id, _, _) => Some(*id),
             Signal::StoredConstant(id, _) => Some(*id),
             Signal::InlineConstant(_, _) => None,
         }
@@ -283,7 +292,7 @@ impl<T: RxData> Signal<T> {
     pub fn ensure_node_id(&self) -> NodeId {
         match self {
             Signal::Read(s) => s.id,
-            Signal::Derived(id, _) => *id,
+            Signal::Derived(id, _, _) => *id,
             Signal::StoredConstant(id, _) => *id,
             Signal::InlineConstant(storage, _) => {
                 let value = unsafe { Self::unpack_inline(*storage) };
@@ -312,7 +321,7 @@ impl<T: RxCloneData> Signal<T> {
             Signal::Read(s) => {
                 s.with_name(name);
             }
-            Signal::Derived(id, _) => set_debug_label(id, name),
+            Signal::Derived(id, _, _) => set_debug_label(id, name),
             Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _) => {} // Constants usually don't need debug labels in the graph
         }
         self

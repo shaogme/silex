@@ -141,9 +141,9 @@ where
     {
         match self.inner {
             RxInner::InlineConstant(storage) => Signal::InlineConstant(storage, PhantomData),
-            RxInner::Signal(id) | RxInner::Closure(id) | RxInner::Op(id) => {
-                Signal::Derived(id, PhantomData)
-            }
+            RxInner::Signal(id) => Signal::Derived(id, crate::RxNodeKind::Signal, PhantomData),
+            RxInner::Closure(id) => Signal::Derived(id, crate::RxNodeKind::Closure, PhantomData),
+            RxInner::Op(id) => Signal::Derived(id, crate::RxNodeKind::Op, PhantomData),
             RxInner::Stored(id) => Signal::StoredConstant(id, PhantomData),
         }
     }

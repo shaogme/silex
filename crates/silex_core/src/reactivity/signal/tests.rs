@@ -141,7 +141,7 @@ fn test_derive() {
     create_scope(|| {
         // Simple derived signal
         let d = Signal::derive(Box::new(|| 42));
-        assert!(matches!(d, Signal::Derived(_, _)));
+        assert!(matches!(d, Signal::Derived(..)));
         assert!(!d.is_constant());
 
         // Ensure evaluating the derived value directly evaluates to 42
