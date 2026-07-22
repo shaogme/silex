@@ -153,6 +153,14 @@ fn TabsAndDialogShowcase() -> impl View {
             ))
             .class(tw!("mb-6")),
             Separator().class(tw!("my-4")),
+            div(view_chain!(
+                span("Silex UI"),
+                Separator().orientation("vertical").class(tw!("h-4 mx-2")),
+                span("Docs"),
+                Separator().orientation("vertical").class(tw!("h-4 mx-2")),
+                span("GitHub")
+            ))
+            .class(tw!("flex items-center text-xs font-medium text-slate-500 dark:text-slate-400 mb-4")),
             // Dialog Trigger
             div(view_chain!(
                 Button("Open Modal Dialog")
