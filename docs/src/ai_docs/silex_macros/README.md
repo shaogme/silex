@@ -65,7 +65,7 @@ fn MyComponent(props...) -> impl View
     *   **自动类型推导**: 宏内部 `get_prop_type` 方法通过字符串处理实现 `kebab-case` 到 `PascalCase` 的映射。例如插值处属性名为 `font-size`，则自动映射到 `props::FontSize`。
     *   通过生成的代码块调用 `make_dynamic_val_for::<P, S>` 时，实施非常严密的基于 `ValidFor<P>` 类型的编译期类型断言检查。
     *   **Token 拼接与间隙策略**: 在 `append_token_stream_strings` 中实现了对 Ident 和 Literal 连续出现时的自动空格补全（Space Padding），保证生成的 CSS 语义正确。
-    *   **杜绝隐式逃逸与使用 `UnsafeCss`**：彻底移除针对 `&str`/`String` 类型提供的泛用兜底验证。任何脱离基础包裹类型或工厂构建器的越权插入，必须由开发者显式封装为 `UnsafeCss::new(...)`，宏引擎与运行时将对其安全放行。
+    *   **杜绝隐式逃逸与使用 `CssUnsafe`**：彻底移除针对 `&str`/`String` 类型提供的泛用兜底验证。任何脱离基础包裹类型或工厂构建器的越权插入，必须由开发者显式封装为 `css_unsafe(...)`，宏引擎与运行时将对其安全放行。
     *   **复合复合工厂**：对于 `border` 等属性不再尝试在宏内部做危险的字面量混排切分，而是统一要求接收诸如 `border()` 或 `margin::x_y()` 等原生 Rust 函数验证安全后生成的特定结果进行单点插值。
     *   若**无动态值**：返回静态类名字符串 `"slx-{hash}"`。
     *   若**有动态值**：返回 `DynamicCss` 结构体，包含类名和变量更新闭包列表 (Updaters)。

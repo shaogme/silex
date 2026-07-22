@@ -88,7 +88,7 @@ src/
  转换。这意味着宏不需要硬编码属性列表，而是直接尝试寻找 `::silex::css::types::props` 下对应的 ZST 标签，将验证职责解耦。
     *   返回 `silex::css::DynamicCss` 结构体，该结构体实现了 `ApplyToDom`。
     *   **Codegen 类型注入**：通过宏代码生成将捕获的属性标量（例如 `width` 获取到由 `get_prop_type` 转换后的强类型 `props::Width`），进而实施多态 Trait Bounds (`ValidFor<P>`) 限制。
-    *   **强拦截与显式越权 (`UnsafeCss`)**: 废弃泛用 `&str` 的放行，若需越过类型检查，必须显式包装进 `UnsafeCss::new()`。
+    *   **强拦截与显式越权 (`CssUnsafe`)**: 废弃泛用 `&str` 的放行，若需越过类型检查，必须显式包装进 `css_unsafe()`。
 
 ### 4.3 路由宏 `#[derive(Route)]` (`route.rs`)
 

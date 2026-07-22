@@ -105,11 +105,11 @@ button(()).class(btn_class).text("Styled Button")
 
 ```rust
 use silex::css::types::{px, pct};
-use silex::css::types::{border, BorderStyleKeyword, UnsafeCss, hex};
+use silex::css::types::{border, BorderStyleKeyword, CssUnsafe, hex};
 
 let w = Signal::pair(px(100)); // Px 类型被限定允许给 Width
 let bd = Signal::pair(border(px(1), BorderStyleKeyword::Solid, hex("#ccc"))); // 专属工厂函数保障多位组合安全
-let custom_calc = Signal::pair(UnsafeCss::new("calc(100% - 20px)")); // 若需超出约束边界请显式包装
+let custom_calc = Signal::pair(css_unsafe("calc(100% - 20px)")); // 若需超出约束边界请显式包装
 
 let cls = css! {
     width: $(w); /* ✅ 合规 */
@@ -118,7 +118,7 @@ let cls = css! {
     margin: $(custom_calc); /* ⚠️ 显式越权非安全逃逸 */
     /* color: $(123.45); ❌ 编译报错：the trait `ValidFor<Color>` is not implemented for `f64` */
     /* z-index: $(px(99)); ❌ 编译报错：拦住企图把像素单位送给 ZIndex 的不合规行为 */
-    /* padding: $("10px 20px"); ❌ 编译报错：阻绝散乱的字符串拼接（除非用 UnsafeCss 或是 padding::x_y 构建器）*/
+    /* padding: $("10px 20px"); ❌ 编译报错：阻绝散乱的字符串拼接（除非用 CssUnsafe 或是 padding::x_y 构建器）*/
 };
 ```
 

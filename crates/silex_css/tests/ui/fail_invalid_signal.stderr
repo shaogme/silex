@@ -7,7 +7,7 @@ error[E0277]: 类型 `Hex` 无法作为有效的 CSS `BorderTopWidth` 属性值�
   |                          required by a bound introduced by this call
   |
   = help: the trait `ValidFor<BorderTopWidth>` is not implemented for `Hex`
-  = note: 请检查是否传入了错误的类型（例如将 Px 传给了 Color）。如果必须传入复杂的动态表达式，可以使用 `UnsafeCss::new(...)` 显式绕过。
+  = note: 请检查是否传入了错误的类型（例如将 Px 传给了 Color）。如果必须传入复杂的动态表达式，可以使用 `css_unsafe(...)` 显式绕过。
   = help: `Hex` implements trait `ValidFor<Prop>`:
             ValidFor<AlignContent>
             ValidFor<AlignItems>

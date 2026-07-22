@@ -391,9 +391,19 @@ pub fn StylingBasics(_ctx: RouterContext) -> impl View {
             p("Signals are natively supported:").style("margin: 20px 0 10px; font-size: 0.9em; opacity: 0.6;"),
             {
                 let (count, set_count) = Signal::pair(0);
-                div![
-                    button("Grow").on(event::click, move |_| set_count.update(|n| *n += 1))
-                        .style("padding: 8px 16px; border-radius: 6px; border: 1px solid #374151; background: #111827; color: white; cursor: pointer;"),
+                let (show_shadow, set_show_shadow) = Signal::pair(true);
+                let (active_border, set_active_border) = Signal::pair(true);
+
+                Stack(view_chain!(
+                    div![
+                        button("Grow").on(event::click, move |_| set_count.update(|n| *n += 1))
+                            .style("padding: 8px 16px; border-radius: 6px; border: 1px solid #374151; background: #111827; color: white; cursor: pointer; margin-right: 8px;"),
+                        button("Toggle Box Shadow").on(event::click, move |_| set_show_shadow.update(|s| *s = !*s))
+                            .style("padding: 8px 16px; border-radius: 6px; border: 1px solid #374151; background: #111827; color: white; cursor: pointer; margin-right: 8px;"),
+                        button("Toggle Border").on(event::click, move |_| set_active_border.update(|b| *b = !*b))
+                            .style("padding: 8px 16px; border-radius: 6px; border: 1px solid #374151; background: #111827; color: white; cursor: pointer;"),
+                    ].style("display: flex; align-items: center; margin-bottom: 12px;"),
+
                     div(rx!(format!("Reactive Width: {}px", 180 + count.get() * 30))).style(
                         sty()
                             .width(rx!(px(180 + count.get() * 30)))
@@ -403,13 +413,14 @@ pub fn StylingBasics(_ctx: RouterContext) -> impl View {
                             .display(DisplayKeyword::Flex)
                             .align_items(AlignItemsKeyword::Center)
                             .justify_content(JustifyContentKeyword::Center)
-                            .margin(margin::left(px(16)))
                             .border_radius(px(12))
-                            .box_shadow("0 4px 12px rgba(79, 70, 229, 0.3)")
-                            .transition("width 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)")
+                            .transition("all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)")
+                            // 动态开启/删除 box-shadow 属性 (css_none() 即删除属性)
+                            .box_shadow(rx!(if show_shadow.get() { css_some("0 8px 20px rgba(79, 70, 229, 0.5)") } else { css_none() }))
+                            // 动态开启/删除 border 属性 (使用 CssOption::some/none 独立方法)
+                            .border(rx!(if active_border.get() { CssOption::some(border(px(2), BorderStyleKeyword::Solid, hex("#f472b6"))) } else { CssOption::none() }))
                     )
-                ]
-                .style("display: flex; align-items: center;")
+                ))
             }
         )),
 

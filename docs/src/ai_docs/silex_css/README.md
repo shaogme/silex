@@ -78,7 +78,7 @@ Silex CSS 的类型安全基石。通过为不同属性定义专有的零大小�
 | `Style` | `builder.rs` | 递归链式构建器。支持 `width()`, `on_hover()`, `nest()`, `media()` 等。 |
 | `CssVar<T>` | `types.rs` | 泛型强类型 CSS 变量容器。其 ValidFor 实现确保了主题变量的使用安全。 |
 | `Px(Option<f64>)` | `types.rs` | 标准 CSS 单位包装。所有单位现已统一使用 `Option` 包装内容。 |
-| `UnsafeCss(Option<String>)` | `types.rs` | 逃逸舱，用于绕过类型检查。 |
+| `CssUnsafe(Option<String>)` | `types.rs` | 逃逸舱，用于绕过类型检查。 |
 
 ### 5.2 核心 Functions
 

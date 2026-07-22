@@ -27,27 +27,78 @@ pub use units::*;
 #[diagnostic::on_unimplemented(
     message = "类型 `{Self}` 无法作为有效的 CSS `{Prop}` 属性值使用",
     label = "无效的 CSS 属性类型",
-    note = "请检查是否传入了错误的类型（例如将 Px 传给了 Color）。如果必须传入复杂的动态表达式，可以使用 `UnsafeCss::new(...)` 显式绕过。"
+    note = "请检查是否传入了错误的类型（例如将 Px 传给了 Color）。如果必须传入复杂的动态表达式，可以使用 `css_unsafe(...)` 显式绕过。"
 )]
 pub trait ValidFor<Prop> {}
 
 pub trait CssValue: Display {}
 impl<T: Display> CssValue for T {}
 
-#[derive(Clone, Debug, PartialEq, Default)]
-pub struct UnsafeCss(pub Option<String>);
-impl UnsafeCss {
-    pub fn new<T: Display>(val: T) -> Self {
-        Self(Some(val.to_string()))
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum CssOption<T> {
+    #[default]
+    None,
+    Some(T),
+}
+
+impl<T> CssOption<T> {
+    pub const fn some(val: T) -> Self {
+        Self::Some(val)
+    }
+
+    pub const fn none() -> Self {
+        Self::None
     }
 }
-impl Display for UnsafeCss {
+
+pub const fn css_some<T>(val: T) -> CssOption<T> {
+    CssOption::Some(val)
+}
+
+pub const fn css_none<T>() -> CssOption<T> {
+    CssOption::None
+}
+
+impl<T: Display> Display for CssOption<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        if let Some(v) = &self.0 {
-            write!(f, "{}", v)
-        } else {
-            Ok(())
+        match self {
+            Self::Some(val) => write!(f, "{}", val),
+            Self::None => Ok(()),
         }
+    }
+}
+
+impl<T> From<Option<T>> for CssOption<T> {
+    fn from(opt: Option<T>) -> Self {
+        match opt {
+            Option::Some(val) => Self::Some(val),
+            Option::None => Self::None,
+        }
+    }
+}
+
+impl<T> From<CssOption<T>> for Option<T> {
+    fn from(opt: CssOption<T>) -> Self {
+        match opt {
+            CssOption::Some(val) => Option::Some(val),
+            CssOption::None => Option::None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CssUnsafe(String);
+impl CssUnsafe {
+    pub fn new<T: Display>(val: T) -> Self {
+        Self(val.to_string())
+    }
+}
+pub fn css_unsafe<T: Display>(val: T) -> CssUnsafe {
+    CssUnsafe(val.to_string())
+}
+impl Display for CssUnsafe {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -234,12 +285,14 @@ macro_rules! define_props {
             pub struct Any;
         }
 
-        // 所有属性默认支持 UnsafeCss 和无类型限制的 CssVar<()>
+        // 所有属性默认支持 CssUnsafe 和无类型限制的 CssVar<()>
         $(
-            impl ValidFor<props::$pascal> for UnsafeCss {}
+            impl ValidFor<props::$pascal> for CssUnsafe {}
             impl ValidFor<props::$pascal> for CssVar<()> {}
             // 核心：强类型 CssVar<T> 继承 T 的校验规则
             impl<T> ValidFor<props::$pascal> for CssVar<T> where T: ValidFor<props::$pascal> {}
+            // 支持 CssOption<T> 作为合法属性值类型，当为 None 时在 CSS 中不输出（实现响应式移除）
+            impl<T> ValidFor<props::$pascal> for CssOption<T> where T: ValidFor<props::$pascal> {}
         )*
 
         $(
@@ -374,6 +427,24 @@ impl<T: Clone + 'static> IntoSignal for CssVar<T> {
     }
 }
 
+impl<T: Display + Clone + 'static> RxValue for CssOption<T> {
+    type Value = Self;
+}
+impl<T: Display + Clone + 'static> IntoRx for CssOption<T> {
+    type RxType = Rx<Self, RxValueKind>;
+    fn into_rx(self) -> Self::RxType {
+        Rx::new_constant(self)
+    }
+    fn is_constant(&self) -> bool {
+        true
+    }
+}
+impl<T: Display + Clone + 'static> IntoSignal for CssOption<T> {
+    fn into_signal(self) -> Signal<Self> {
+        Signal::from(self)
+    }
+}
+
 impl_into_rx_for_css!(
     Px,
     Percent,
@@ -393,7 +464,7 @@ impl_into_rx_for_css!(
     FlexValue,
     TransitionValue,
     BackgroundValue,
-    UnsafeCss,
+    CssUnsafe,
     TransformValue,
     TransformBuilder,
     GridTemplateAreasValue,
