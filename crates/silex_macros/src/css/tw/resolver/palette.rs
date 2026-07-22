@@ -320,21 +320,29 @@ mod tests {
     #[test]
     fn test_parse_color_value_arbitrary_hex_and_opacity() {
         let val = parse_color_value("[#fff]/50").unwrap();
-        assert_eq!(val, UtilityValue::ArbitraryLiteral("rgba(255, 255, 255, 0.5)".to_string()));
+        assert_eq!(
+            val,
+            UtilityValue::ArbitraryLiteral("rgba(255, 255, 255, 0.5)".to_string())
+        );
 
         let val8 = parse_color_value("[#1e293b80]/50").unwrap();
-        assert_eq!(val8, UtilityValue::ArbitraryLiteral("rgba(30, 41, 59, 0.5)".to_string()));
+        assert_eq!(
+            val8,
+            UtilityValue::ArbitraryLiteral("rgba(30, 41, 59, 0.5)".to_string())
+        );
     }
 
     #[test]
     fn test_parse_color_utility_prefixes() {
         let (prop, val) = parse_color_utility("bg-indigo-600/50").unwrap();
         assert_eq!(prop, "background-color");
-        assert_eq!(val, UtilityValue::ArbitraryLiteral("rgba(79, 70, 229, 0.5)".to_string()));
+        assert_eq!(
+            val,
+            UtilityValue::ArbitraryLiteral("rgba(79, 70, 229, 0.5)".to_string())
+        );
 
         let (prop2, val2) = parse_color_utility("border-t-red-500").unwrap();
         assert_eq!(prop2, "border-top-color");
         assert_eq!(val2, UtilityValue::HexColor("#ef4444".to_string()));
     }
 }
-

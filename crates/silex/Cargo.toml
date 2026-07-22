@@ -36,8 +36,9 @@ gloo-timers = { workspace = true, optional = true }
 ref_str = "0.2"
 
 [features]
-default = ["css"]
+default = ["css", "tw"]
 css = ["silex_macros/css"]
+tw = ["css", "silex_macros/tw"]
 persistence = ["web-sys/Storage", "web-sys/StorageEvent"]
 json = ["dep:serde", "dep:serde_json"]
 net = [

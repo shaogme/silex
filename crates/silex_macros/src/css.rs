@@ -4,6 +4,7 @@ pub mod compiler;
 pub mod error;
 pub mod styled;
 pub mod theme;
+#[cfg(feature = "tw")]
 pub mod tw;
 
 use proc_macro2::{Span, TokenStream};

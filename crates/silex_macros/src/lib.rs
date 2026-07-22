@@ -59,7 +59,7 @@ pub fn theme(input: TokenStream) -> TokenStream {
     }
 }
 
-#[cfg(feature = "css")]
+#[cfg(feature = "tw")]
 #[proc_macro]
 pub fn tw(input: TokenStream) -> TokenStream {
     match css::tw::tw_impl(input.into()) {
