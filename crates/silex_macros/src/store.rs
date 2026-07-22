@@ -107,7 +107,8 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
         quote! { #name: self.#name.get() }
     });
 
-    let panic_msg = err_msg.unwrap_or_else(|| format!("Store for {} not found in thread-local storage", store_name));
+    let panic_msg = err_msg
+        .unwrap_or_else(|| format!("Store for {} not found in thread-local storage", store_name));
 
     Ok(quote! {
         /// Generated Store struct wrapping fields in reactive handles

@@ -14,9 +14,8 @@ struct ThreadIdManager {
 
 impl ThreadIdManager {
     const fn new() -> Self {
-        const NULL_PTR: AtomicPtr<AtomicU64> = AtomicPtr::new(null_mut());
         Self {
-            blocks: [NULL_PTR; MAX_BLOCKS],
+            blocks: [const { AtomicPtr::new(null_mut()) }; MAX_BLOCKS],
         }
     }
 
@@ -185,12 +184,16 @@ pub struct ThreadLocal<T> {
 unsafe impl<T: Send> Send for ThreadLocal<T> {}
 unsafe impl<T> Sync for ThreadLocal<T> {}
 
-impl<T> ThreadLocal<T> {
-    const NULL_PTR: AtomicPtr<Entry<T>> = AtomicPtr::new(null_mut());
+impl<T> Default for ThreadLocal<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
+impl<T> ThreadLocal<T> {
     pub const fn new() -> Self {
         Self {
-            buckets: [Self::NULL_PTR; BUCKETS],
+            buckets: [const { AtomicPtr::new(null_mut()) }; BUCKETS],
             retired: AtomicPtr::new(null_mut()),
         }
     }
@@ -221,10 +224,10 @@ impl<T> ThreadLocal<T> {
         // SAFETY: bucket_ptr is valid and points to an array of size bucket_capacity(bucket_idx)
         unsafe {
             let entry = &*bucket_ptr.add(sub_idx);
-            if entry.present.load(Ordering::Acquire) {
-                if entry.owner_unique_id.load(Ordering::Relaxed) == get_unique_thread_id() {
-                    return Some(&*entry.value.get().cast::<T>());
-                }
+            if entry.present.load(Ordering::Acquire)
+                && entry.owner_unique_id.load(Ordering::Relaxed) == get_unique_thread_id()
+            {
+                return Some(&*entry.value.get().cast::<T>());
             }
         }
         None
@@ -266,7 +269,7 @@ impl<T> ThreadLocal<T> {
                 Err(actual) => {
                     // Reclaim our new bucket
                     unsafe {
-                        let _ = Box::from_raw(std::slice::from_raw_parts_mut(new_bucket, size));
+                        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(new_bucket, size));
                     }
                     bucket_ptr = actual;
                 }

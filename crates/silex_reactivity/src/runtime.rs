@@ -1,8 +1,4 @@
-use std::{
-    any::Any,
-    mem,
-    rc::Rc,
-};
+use std::{any::Any, mem, rc::Rc};
 
 pub(crate) mod scheduler;
 pub(crate) mod scope;
@@ -389,7 +385,6 @@ impl Runtime {
             .insert(id, ExtraData::NodeRef(NodeRefData { element: None }));
         id
     }
-
 
     pub(crate) unsafe fn get_any_raw_ptr_untracked(&self, id: NodeId) -> Option<*const ()> {
         if let Some(n) = self.storage.reactive.get(id)

@@ -215,17 +215,17 @@ where
     T: ReactiveApply + Clone + 'static,
 {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
-        apply_rx_internal(self.clone(), el, target);
+        apply_rx_internal(*self, el, target);
     }
 
     fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
-        if let Some(op) = <T as ReactiveApply>::into_op_reactive(self.clone(), target.clone()) {
+        if let Some(op) = <T as ReactiveApply>::into_op_reactive(self, target.clone()) {
             op
         } else {
-            let rx = self.clone();
+            let rx = self;
             let target_fixed = target.clone();
             AttrOp::Custom(std::rc::Rc::new(move |el| {
-                apply_rx_internal(rx.clone(), el, ApplyTarget::from(&target_fixed));
+                apply_rx_internal(rx, el, ApplyTarget::from(&target_fixed));
             }))
         }
     }
@@ -273,7 +273,6 @@ impl ReactiveApply for String {
                 name,
                 target: AttrTarget::Prop,
                 data: AttrData::ReactiveJs({
-                    let rx = rx.clone();
                     silex_core::Rx::derive(Box::new(move || {
                         use silex_core::traits::RxGet;
                         JsValue::from_str(&rx.get())
@@ -283,13 +282,9 @@ impl ReactiveApply for String {
             OwnedApplyTarget::Class => AttrOp::AddReactiveClasses(rx),
             OwnedApplyTarget::Style => AttrOp::BindReactiveStyleSheet(rx),
             OwnedApplyTarget::Apply => {
-                let rx_inner = rx.clone();
+                let rx_inner = rx;
                 AttrOp::Custom(std::rc::Rc::new(move |el| {
-                    apply_string_reactive_internal(
-                        el.clone(),
-                        OwnedApplyTarget::Apply,
-                        rx_inner.clone(),
-                    );
+                    apply_string_reactive_internal(el.clone(), OwnedApplyTarget::Apply, rx_inner);
                 }))
             }
         };

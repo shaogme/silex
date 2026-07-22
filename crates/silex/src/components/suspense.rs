@@ -86,9 +86,9 @@ where
                             } else {
                                 let children = children.clone();
                                 ctx.reset_index();
-                                render! {
+                                (render! {
                                     children(ctx)
-                                }.into_any()
+                                }).into_any()
                             }
                         } else {
                             AnyView::Empty

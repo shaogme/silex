@@ -74,7 +74,6 @@ where
     where
         T: PartialEq + 'static,
     {
-        let this = self.clone();
-        Memo::new(move |_| this.with(Clone::clone))
+        Memo::new(move |_| self.with(Clone::clone))
     }
 }

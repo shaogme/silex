@@ -65,7 +65,7 @@ where
     Self: RxViewDispatcher,
 {
     fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.clone().dispatch_mount(parent, attrs);
+        (*self).dispatch_mount(parent, attrs);
     }
 
     fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)

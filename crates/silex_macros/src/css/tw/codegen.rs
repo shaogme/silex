@@ -372,11 +372,11 @@ pub fn prune_unused_keyframes(rules: &mut Vec<CssRule>, detected_keyframes: &Has
     collect_used_animations(rules, &mut used);
 
     rules.retain(|rule| {
-        if let CssRule::AtRule(at_rule) = rule {
-            if at_rule.name == "keyframes" {
-                let name_param = at_rule.params.to_string();
-                return used.iter().any(|u| name_param.contains(u));
-            }
+        if let CssRule::AtRule(at_rule) = rule
+            && at_rule.name == "keyframes"
+        {
+            let name_param = at_rule.params.to_string();
+            return used.iter().any(|u| name_param.contains(u));
         }
         true
     });

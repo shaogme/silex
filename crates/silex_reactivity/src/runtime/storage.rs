@@ -6,13 +6,7 @@ use crate::{
         value::{AnyValue, OnceThunk, ThunkValue},
     },
 };
-use std::{
-    any::Any,
-    mem,
-    panic::Location,
-    rc::Rc,
-    vec::IntoIter,
-};
+use std::{any::Any, mem, panic::Location, rc::Rc, vec::IntoIter};
 
 pub(crate) struct ReactiveNode {
     pub(crate) state: NodeState,

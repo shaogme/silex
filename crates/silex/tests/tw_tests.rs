@@ -64,4 +64,3 @@ fn test_tw_multiple_at_rules() {
     let cls = tw!("md:@sm:p-4 sm:lg:m-2 dark:md:hover:bg-black");
     assert!(!cls.is_empty());
 }
-

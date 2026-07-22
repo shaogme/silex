@@ -150,14 +150,14 @@ pub fn parse_color_utility(token: &str) -> Option<(&'static str, UtilityValue)> 
             }
 
             // 3. Standard Palette colors: slate-900, indigo-600, etc.
-            if let Some((color_name, shade)) = rest.rsplit_once('-') {
-                if let Some(hex_str) = lookup_palette_color(color_name, shade) {
-                    let val = match opacity {
-                        Some(op) => UtilityValue::ArbitraryLiteral(hex_to_rgba(hex_str, op)),
-                        None => UtilityValue::HexColor(hex_str.to_string()),
-                    };
-                    return Some((prop, val));
-                }
+            if let Some((color_name, shade)) = rest.rsplit_once('-')
+                && let Some(hex_str) = lookup_palette_color(color_name, shade)
+            {
+                let val = match opacity {
+                    Some(op) => UtilityValue::ArbitraryLiteral(hex_to_rgba(hex_str, op)),
+                    None => UtilityValue::HexColor(hex_str.to_string()),
+                };
+                return Some((prop, val));
             }
         }
     }

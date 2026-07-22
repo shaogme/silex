@@ -161,10 +161,8 @@ pub fn WebSocketDemo() -> impl View {
 
     let send_message = move || {
         let text = input_text.get();
-        if !text.trim().is_empty() {
-            if socket.send_text(&text).is_ok() {
-                input_text.set(String::new());
-            }
+        if !text.trim().is_empty() && socket.send_text(&text).is_ok() {
+            input_text.set(String::new());
         }
     };
 

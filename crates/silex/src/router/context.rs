@@ -71,14 +71,14 @@ impl RouterContext {
             let s = search_signal.get();
             let mut map = HashMap::new();
 
-            if let Ok(params) = web_sys::UrlSearchParams::new_with_str(&s) {
-                if let Ok(Some(iter)) = js_sys::try_iter(&params) {
-                    for val in iter.flatten() {
-                        let pair: js_sys::Array = val.unchecked_into();
-                        let k = pair.get(0).as_string().unwrap_or_default();
-                        let v = pair.get(1).as_string().unwrap_or_default();
-                        map.insert(k, v);
-                    }
+            if let Ok(params) = web_sys::UrlSearchParams::new_with_str(&s)
+                && let Ok(Some(iter)) = js_sys::try_iter(&params)
+            {
+                for val in iter.flatten() {
+                    let pair: js_sys::Array = val.unchecked_into();
+                    let k = pair.get(0).as_string().unwrap_or_default();
+                    let v = pair.get(1).as_string().unwrap_or_default();
+                    map.insert(k, v);
                 }
             }
             map

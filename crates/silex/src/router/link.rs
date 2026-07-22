@@ -65,7 +65,7 @@ pub fn Link<T: ToRoute + Clone + 'static>(
 
     // 3. 点击导航逻辑
     let href_for_click = href.clone();
-    let router_for_click = router_ctx.clone();
+    let router_for_click = router_ctx;
 
     a(children)
         .attr("href", display_href)

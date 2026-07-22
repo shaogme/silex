@@ -413,46 +413,46 @@ fn resolve_pattern_utility(
     let is_negative = token.starts_with('-');
     let search_token = if is_negative { &token[1..] } else { token };
 
-    if let Some((prefix, val_str)) = search_token.rsplit_once('-') {
-        if let Ok(n) = val_str.parse::<f64>() {
-            let scale = if is_negative { -0.25 } else { 0.25 };
-            let rem_val = n * scale;
-            let val = UtilityValue::Numeric(rem_val, "rem");
+    if let Some((prefix, val_str)) = search_token.rsplit_once('-')
+        && let Ok(n) = val_str.parse::<f64>()
+    {
+        let scale = if is_negative { -0.25 } else { 0.25 };
+        let rem_val = n * scale;
+        let val = UtilityValue::Numeric(rem_val, "rem");
 
-            resolve_numeric_rules! {
-                prefix, modifiers, span, val;
+        resolve_numeric_rules! {
+            prefix, modifiers, span, val;
 
-                // 单属性映射 (默认使用计算后的 rem 数值)
-                "p"  => "padding",
-                "pt" => "padding-top",
-                "pr" => "padding-right",
-                "pb" => "padding-bottom",
-                "pl" => "padding-left",
-                "m"  => "margin",
-                "mt" => "margin-top",
-                "mr" => "margin-right",
-                "mb" => "margin-bottom",
-                "ml" => "margin-left",
-                "gap" => "gap",
-                "w"  => "width",
-                "h"  => "height",
+            // 单属性映射 (默认使用计算后的 rem 数值)
+            "p"  => "padding",
+            "pt" => "padding-top",
+            "pr" => "padding-right",
+            "pb" => "padding-bottom",
+            "pl" => "padding-left",
+            "m"  => "margin",
+            "mt" => "margin-top",
+            "mr" => "margin-right",
+            "mb" => "margin-bottom",
+            "ml" => "margin-left",
+            "gap" => "gap",
+            "w"  => "width",
+            "h"  => "height",
 
-                // 双属性对称映射 (默认使用计算后的 rem 数值)
-                "px"   => ["padding-left", "padding-right"],
-                "py"   => ["padding-top", "padding-bottom"],
-                "mx"   => ["margin-left", "margin-right"],
-                "my"   => ["margin-top", "margin-bottom"],
-                "size" => ["width", "height"],
+            // 双属性对称映射 (默认使用计算后的 rem 数值)
+            "px"   => ["padding-left", "padding-right"],
+            "py"   => ["padding-top", "padding-bottom"],
+            "mx"   => ["margin-left", "margin-right"],
+            "my"   => ["margin-top", "margin-bottom"],
+            "size" => ["width", "height"],
 
-                // 自定义计算/转换规则
-                "grid-cols"   => { "grid-template-columns" => UtilityValue::ArbitraryLiteral(format!("repeat({}, minmax(0, 1fr))", n as usize)) },
-                "opacity"     => { "opacity" => UtilityValue::Numeric(n / 100.0, "") },
-                "duration"    => { "transition-duration" => UtilityValue::Numeric(n, "ms") },
-                "rotate"      => { "transform" => UtilityValue::ArbitraryLiteral(format!("rotate({}deg)", if is_negative { -n } else { n })) },
-                "scale"       => { "transform" => UtilityValue::ArbitraryLiteral(format!("scale({})", n / 100.0)) },
-                "translate-x" => { "transform" => UtilityValue::ArbitraryLiteral(format!("translateX({}rem)", rem_val)) },
-                "translate-y" => { "transform" => UtilityValue::ArbitraryLiteral(format!("translateY({}rem)", rem_val)) },
-            }
+            // 自定义计算/转换规则
+            "grid-cols"   => { "grid-template-columns" => UtilityValue::ArbitraryLiteral(format!("repeat({}, minmax(0, 1fr))", n as usize)) },
+            "opacity"     => { "opacity" => UtilityValue::Numeric(n / 100.0, "") },
+            "duration"    => { "transition-duration" => UtilityValue::Numeric(n, "ms") },
+            "rotate"      => { "transform" => UtilityValue::ArbitraryLiteral(format!("rotate({}deg)", if is_negative { -n } else { n })) },
+            "scale"       => { "transform" => UtilityValue::ArbitraryLiteral(format!("scale({})", n / 100.0)) },
+            "translate-x" => { "transform" => UtilityValue::ArbitraryLiteral(format!("translateX({}rem)", rem_val)) },
+            "translate-y" => { "transform" => UtilityValue::ArbitraryLiteral(format!("translateY({}rem)", rem_val)) },
         }
     }
 
@@ -470,12 +470,13 @@ fn resolve_pattern_utility(
 
 /// 任意值语法解析: `w-[12px]`, `bg-[red]`
 fn parse_arbitrary_syntax(token: &str) -> Option<(&str, &str)> {
-    if let Some(open_idx) = token.find('[') {
-        if token.ends_with(']') && open_idx > 0 {
-            let prefix = &token[..open_idx];
-            let raw_val = &token[open_idx + 1..token.len() - 1];
-            return Some((prefix, raw_val));
-        }
+    if let Some(open_idx) = token.find('[')
+        && token.ends_with(']')
+        && open_idx > 0
+    {
+        let prefix = &token[..open_idx];
+        let raw_val = &token[open_idx + 1..token.len() - 1];
+        return Some((prefix, raw_val));
     }
     None
 }
@@ -545,16 +546,15 @@ fn resolve_arbitrary(
 }
 
 fn parse_theme_var(token: &str) -> Option<(&str, &str, Option<f64>)> {
-    if let Some((prefix, rest)) = token.split_once("-theme(") {
-        if rest.ends_with(')') {
-            let inner = &rest[..rest.len() - 1];
-            if let Some((var_name, op_str)) = inner.split_once('/') {
-                if let Ok(op) = op_str.parse::<f64>() {
-                    return Some((prefix, var_name, Some(op)));
-                }
-            }
-            return Some((prefix, inner, None));
+    if let Some((prefix, rest)) = token.split_once("-theme(")
+        && let Some(inner) = rest.strip_suffix(')')
+    {
+        if let Some((var_name, op_str)) = inner.split_once('/')
+            && let Ok(op) = op_str.parse::<f64>()
+        {
+            return Some((prefix, var_name, Some(op)));
         }
+        return Some((prefix, inner, None));
     }
     None
 }

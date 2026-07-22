@@ -20,7 +20,11 @@ pub fn tw_verbose_impl(ts: TokenStream) -> Result<TokenStream> {
 }
 
 fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
-    let input_str = if verbose { ts.to_string() } else { String::new() };
+    let input_str = if verbose {
+        ts.to_string()
+    } else {
+        String::new()
+    };
     let input: TwInput = syn::parse2(ts)?;
     let extra_classes = input.extra_classes.clone();
     let css_block = build_css_block_from_tw(input)?;
@@ -30,7 +34,8 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     let span = proc_macro2::Span::call_site();
 
     // 接入 silex_macros::css 编译管线，自动享受 LightningCSS 压缩与哈希 Class 注入
-    let mut compile_result = crate::css::compiler::CssCompiler::compile(block_ts.clone(), span, false)?;
+    let mut compile_result =
+        crate::css::compiler::CssCompiler::compile(block_ts.clone(), span, false)?;
 
     if !extra_classes.is_empty() {
         let extra_str = extra_classes.join(" ");
@@ -160,8 +165,12 @@ mod tests {
         .unwrap();
         println!("container component_css: {}", compile_result.component_css);
         assert!(
-            compile_result.component_css.contains("container-type:inline-size")
-                || compile_result.component_css.contains("container-type: inline-size")
+            compile_result
+                .component_css
+                .contains("container-type:inline-size")
+                || compile_result
+                    .component_css
+                    .contains("container-type: inline-size")
         );
         assert!(
             compile_result.component_css.contains("width>=640px")
@@ -186,12 +195,15 @@ mod tests {
             false,
         )
         .unwrap();
-        println!("multiple_at_rules component_css: {}", compile_result.component_css);
+        println!(
+            "multiple_at_rules component_css: {}",
+            compile_result.component_css
+        );
         assert!(
-            compile_result.component_css.contains("media") && compile_result.component_css.contains("container"),
+            compile_result.component_css.contains("media")
+                && compile_result.component_css.contains("container"),
             "Expected component_css to contain both media and container rules, got: {}",
             compile_result.component_css
         );
     }
 }
-

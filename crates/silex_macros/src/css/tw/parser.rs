@@ -16,10 +16,11 @@ impl Parse for TwInput {
 
                 for token in raw_str.split_whitespace() {
                     let (modifiers, body_token) = parse_modifiers_and_body(token);
-                    if modifiers.is_empty() && (body_token == "group" || body_token == "peer") {
-                        if !extra_classes.contains(&body_token.to_string()) {
-                            extra_classes.push(body_token.to_string());
-                        }
+                    if modifiers.is_empty()
+                        && (body_token == "group" || body_token == "peer")
+                        && !extra_classes.contains(&body_token.to_string())
+                    {
+                        extra_classes.push(body_token.to_string());
                     }
                     let mut resolved = resolve_utility(modifiers, body_token, span)?;
                     rules.append(&mut resolved);
@@ -36,10 +37,11 @@ impl Parse for TwInput {
                 let span = lit.span();
                 for token in raw_str.split_whitespace() {
                     let (modifiers, body_token) = parse_modifiers_and_body(token);
-                    if modifiers.is_empty() && (body_token == "group" || body_token == "peer") {
-                        if !extra_classes.contains(&body_token.to_string()) {
-                            extra_classes.push(body_token.to_string());
-                        }
+                    if modifiers.is_empty()
+                        && (body_token == "group" || body_token == "peer")
+                        && !extra_classes.contains(&body_token.to_string())
+                    {
+                        extra_classes.push(body_token.to_string());
                     }
                     let mut sub_rules = resolve_utility(modifiers, body_token, span)?;
                     for rule in &mut sub_rules {
@@ -102,8 +104,8 @@ fn parse_modifiers_and_body(token: &str) -> (Vec<Modifier>, &str) {
             }
         } else {
             match prefix {
-                "hover" | "focus" | "active" | "disabled" | "visited" | "first" | "last" | "odd"
-                | "even" => Modifier::PseudoClass(prefix.to_string()),
+                "hover" | "focus" | "active" | "disabled" | "visited" | "first" | "last"
+                | "odd" | "even" => Modifier::PseudoClass(prefix.to_string()),
                 "before" | "after" | "placeholder" => Modifier::PseudoElement(prefix.to_string()),
                 "sm" | "md" | "lg" | "xl" | "2xl" => Modifier::MediaBreakpoint(prefix.to_string()),
                 "dark" => Modifier::Dark,
@@ -132,11 +134,11 @@ fn split_modifier(s: &str) -> Option<(&str, &str)> {
     if let Some(colon_idx) = s.find(':') {
         let prefix = &s[..colon_idx];
         if prefix.contains('[') && !prefix.contains(']') {
-            if let Some(close_idx) = s.find(']') {
-                if let Some(next_colon) = s[close_idx..].find(':') {
-                    let real_colon = close_idx + next_colon;
-                    return Some((&s[..real_colon], &s[real_colon + 1..]));
-                }
+            if let Some(close_idx) = s.find(']')
+                && let Some(next_colon) = s[close_idx..].find(':')
+            {
+                let real_colon = close_idx + next_colon;
+                return Some((&s[..real_colon], &s[real_colon + 1..]));
             }
             return None;
         }
