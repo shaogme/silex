@@ -28,6 +28,18 @@ fn test_tw_theme_vars() {
 }
 
 #[wasm_bindgen_test]
+fn test_tw_theme_vars_with_opacity() {
+    let cls = tw!("bg-theme(primary/50) text-theme(border/80)");
+    assert!(!cls.is_empty());
+}
+
+#[wasm_bindgen_test]
+fn test_tw_verbose_macro() {
+    let cls = tw_verbose!("flex items-center p-4 bg-theme(primary/50)");
+    assert!(!cls.is_empty());
+}
+
+#[wasm_bindgen_test]
 fn test_tw_group_and_peer() {
     let cls = tw!("group-hover:scale-105 peer-focus:block");
     assert!(!cls.is_empty());
@@ -45,3 +57,11 @@ fn test_tw_tailwind_merge() {
     let cls = tw!("p-2 p-6 bg-[#ef4444] bg-white");
     assert!(!cls.is_empty());
 }
+
+#[wasm_bindgen_test]
+fn test_tw_multiple_at_rules() {
+    // 验证多重 AtRule 叠加 (例如 md:@sm:p-4) 不被覆盖且生成有效样式类
+    let cls = tw!("md:@sm:p-4 sm:lg:m-2 dark:md:hover:bg-black");
+    assert!(!cls.is_empty());
+}
+

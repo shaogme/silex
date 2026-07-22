@@ -18,6 +18,11 @@ pub enum Modifier {
     Group(String),
     /// 复合 Peer 状态修饰符 (例: peer-focus -> Peer("focus"))
     Peer(String),
+    /// 容器查询修饰符 (例: @sm, @md, @[300px], @sidebar/md)
+    ContainerQuery {
+        name: Option<String>,
+        min_width: String,
+    },
 }
 
 /// Utility 规则值类型
@@ -29,8 +34,8 @@ pub enum UtilityValue {
     Numeric(f64, &'static str),
     /// 颜色 Hex 值: "#1e1e24"
     HexColor(String),
-    /// Silex 主题变量: bg-theme(primary)
-    ThemeVar(String),
+    /// Silex 主题变量: bg-theme(primary) / bg-theme(primary/50)
+    ThemeVar(String, Option<f64>),
     /// 任意值字面量: p-[12px] -> "12px"
     ArbitraryLiteral(String),
     /// 动态 Rust 信号/表达式: p-[$(signal_val)]
@@ -43,7 +48,7 @@ impl PartialEq for UtilityValue {
             (Self::Keyword(a), Self::Keyword(b)) => a == b,
             (Self::Numeric(v1, u1), Self::Numeric(v2, u2)) => v1 == v2 && u1 == u2,
             (Self::HexColor(a), Self::HexColor(b)) => a == b,
-            (Self::ThemeVar(a), Self::ThemeVar(b)) => a == b,
+            (Self::ThemeVar(v1, o1), Self::ThemeVar(v2, o2)) => v1 == v2 && o1 == o2,
             (Self::ArbitraryLiteral(a), Self::ArbitraryLiteral(b)) => a == b,
             (Self::DynamicExpr(e1, _), Self::DynamicExpr(e2, _)) => {
                 quote::quote!(#e1).to_string() == quote::quote!(#e2).to_string()

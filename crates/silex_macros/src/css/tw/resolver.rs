@@ -1,3 +1,6 @@
+pub mod palette;
+pub mod suggest;
+
 use crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};
 use proc_macro2::Span;
 use syn::{Error, Result};
@@ -76,6 +79,11 @@ pub fn resolve_utility(
         "inline-grid" => { "display" => kw("inline-grid") },
         "hidden" => { "display" => kw("none") },
         "group" | "peer" => {},
+
+        // --- 容器查询 (Container Type & Name) ---
+        "@container" | "container" | "container-inline-size" => { "container-type" => kw("inline-size") },
+        "container-normal" => { "container-type" => kw("normal") },
+        "container-size" => { "container-type" => kw("size") },
 
         // --- Flexbox方向与包裹 ---
         "flex-row" => { "flex-direction" => kw("row") },
@@ -241,6 +249,9 @@ pub fn resolve_utility(
 
         // --- Transition & Cursor ---
         "transition-all" => { "transition" => kw("all 150ms cubic-bezier(0.4, 0, 0.2, 1)") },
+        "transition-colors" => {
+            "transition" => kw("color, background-color, border-color, text-decoration-color, fill, stroke 150ms cubic-bezier(0.4, 0, 0.2, 1)"),
+        },
         "transition" => {
             "transition" => kw("color, background-color, border-color, box-shadow, transform 150ms cubic-bezier(0.4, 0, 0.2, 1)"),
         },
@@ -353,23 +364,31 @@ fn color_prefix_to_prop(prefix: &str) -> Option<&'static str> {
         "bg" => Some("background-color"),
         "text" => Some("color"),
         "border" => Some("border-color"),
+        "border-t" => Some("border-top-color"),
+        "border-r" => Some("border-right-color"),
+        "border-b" => Some("border-bottom-color"),
+        "border-l" => Some("border-left-color"),
+        "outline" => Some("outline-color"),
+        "ring" => Some("outline-color"),
+        "fill" => Some("fill"),
+        "stroke" => Some("stroke"),
         _ => None,
     }
 }
 
-/// 解析前缀规律型 Utility (如 `p-4`, `mt-2`, `w-16`, `bg-theme(primary)`, `bg-[#1e293b]`, `w-[12px]`)
+/// 解析前缀规律型 Utility (如 `p-4`, `mt-2`, `w-16`, `bg-theme(primary)`, `text-slate-900`, `bg-indigo-600/50`, `w-[12px]`)
 fn resolve_pattern_utility(
     modifiers: Vec<Modifier>,
     token: &str,
     span: Span,
 ) -> Result<Vec<UtilityRule>> {
-    // 1. Theme 变量, 如 `bg-theme(primary)` / `text-theme(border)`
-    if let Some((prefix, theme_var)) = parse_theme_var(token) {
+    // 1. Theme 变量, 如 `bg-theme(primary)` / `text-theme(border)` / `bg-theme(primary/50)`
+    if let Some((prefix, theme_var, opacity)) = parse_theme_var(token) {
         if let Some(prop) = color_prefix_to_prop(prefix) {
             return Ok(vec![make_rule(
                 modifiers,
                 prop,
-                UtilityValue::ThemeVar(theme_var.to_string()),
+                UtilityValue::ThemeVar(theme_var.to_string(), opacity),
                 span,
             )]);
         }
@@ -379,20 +398,10 @@ fn resolve_pattern_utility(
         ));
     }
 
-    // 2. Hex 颜色, 如 `bg-[#1e1e24]` 或 `text-[#ffffff]`
-    if let Some((prefix, hex)) = parse_hex_color(token) {
-        if let Some(prop) = color_prefix_to_prop(prefix) {
-            return Ok(vec![make_rule(
-                modifiers,
-                prop,
-                UtilityValue::HexColor(format!("#{}", hex)),
-                span,
-            )]);
-        }
-        return Err(Error::new(
-            span,
-            format!("Invalid color prefix: '{}'", prefix),
-        ));
+    // 2. Phase 5: Tailwind 标准 Palette 色系、Hex 颜色与 /alpha 透明度后缀换算
+    // 支持 `text-slate-900`, `bg-indigo-600/50`, `border-emerald-500/25`, `bg-[#1e293b]/80`, `bg-white/50`
+    if let Some((prop, val)) = palette::parse_color_utility(token) {
+        return Ok(vec![make_rule(modifiers, prop, val, span)]);
     }
 
     // 3. 任意值与动态表达式, 如 `w-[100px]` 或 `p-[$(pad_val)]`
@@ -447,13 +456,16 @@ fn resolve_pattern_utility(
         }
     }
 
-    Err(Error::new(
-        span,
-        format!(
-            "Unknown or unsupported Utility class '{}'. Did you mean 'flex' or 'p-4'?",
-            token
+    let suggestion = suggest::find_best_suggestion(token);
+    let msg = match suggestion {
+        Some(s) => format!(
+            "Unknown or unsupported Utility class '{}'. Did you mean '{}'?",
+            token, s
         ),
-    ))
+        None => format!("Unknown or unsupported Utility class '{}'.", token),
+    };
+
+    Err(Error::new(span, msg))
 }
 
 /// 任意值语法解析: `w-[12px]`, `bg-[red]`
@@ -507,6 +519,7 @@ fn resolve_arbitrary(
         "backdrop-blur" => "backdrop-filter",
         "scale" | "scale-x" | "scale-y" | "rotate" | "translate-x" | "translate-y" => "transform",
         "animate" => "animation",
+        "container" | "container-name" => "container-name",
         _ => clean_prefix,
     };
 
@@ -531,21 +544,16 @@ fn resolve_arbitrary(
     )])
 }
 
-fn parse_theme_var(token: &str) -> Option<(&str, &str)> {
+fn parse_theme_var(token: &str) -> Option<(&str, &str, Option<f64>)> {
     if let Some((prefix, rest)) = token.split_once("-theme(") {
         if rest.ends_with(')') {
-            let var_name = &rest[..rest.len() - 1];
-            return Some((prefix, var_name));
-        }
-    }
-    None
-}
-
-fn parse_hex_color(token: &str) -> Option<(&str, &str)> {
-    if let Some((prefix, rest)) = token.split_once("-[#") {
-        if rest.ends_with(']') {
-            let hex = &rest[..rest.len() - 1];
-            return Some((prefix, hex));
+            let inner = &rest[..rest.len() - 1];
+            if let Some((var_name, op_str)) = inner.split_once('/') {
+                if let Ok(op) = op_str.parse::<f64>() {
+                    return Some((prefix, var_name, Some(op)));
+                }
+            }
+            return Some((prefix, inner, None));
         }
     }
     None
@@ -627,7 +635,18 @@ mod tests {
         let rules = resolve_pattern_utility(vec![], "bg-theme(primary)", span).unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].css_property, "background-color");
-        assert_eq!(rules[0].value, UtilityValue::ThemeVar("primary".into()));
+        assert_eq!(
+            rules[0].value,
+            UtilityValue::ThemeVar("primary".into(), None)
+        );
+
+        let rules = resolve_pattern_utility(vec![], "bg-theme(primary/50)", span).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "background-color");
+        assert_eq!(
+            rules[0].value,
+            UtilityValue::ThemeVar("primary".into(), Some(50.0))
+        );
 
         // 4. Hex 颜色解析规则
         let rules = resolve_utility(vec![], "bg-[#1e293b]", span).unwrap();
@@ -647,6 +666,62 @@ mod tests {
         assert_eq!(
             rules[0].value,
             UtilityValue::ArbitraryLiteral("100px".into())
+        );
+
+        // 6. Levenshtein 拼写纠错测试
+        let err = resolve_utility(vec![], "flexx", span).unwrap_err();
+        assert!(err.to_string().contains("Did you mean 'flex'?"));
+
+        let err = resolve_utility(vec![], "items-centerr", span).unwrap_err();
+        assert!(err.to_string().contains("Did you mean 'items-center'?"));
+
+        // 7. Phase 4: Container Query Utilities
+        let rules = resolve_utility(vec![], "@container", span).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "container-type");
+        assert_eq!(rules[0].value, UtilityValue::Keyword("inline-size"));
+
+        let rules = resolve_utility(vec![], "container-[sidebar]", span).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "container-name");
+        assert_eq!(
+            rules[0].value,
+            UtilityValue::ArbitraryLiteral("sidebar".into())
+        );
+
+        // 8. Phase 5: Standard Color Palette & Opacity Suffix Rules
+        let rules = resolve_utility(vec![], "text-slate-900", span).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "color");
+        assert_eq!(rules[0].value, UtilityValue::HexColor("#0f172a".into()));
+
+        let rules = resolve_utility(vec![], "bg-indigo-600/50", span).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "background-color");
+        assert_eq!(
+            rules[0].value,
+            UtilityValue::ArbitraryLiteral("rgba(79, 70, 229, 0.5)".into())
+        );
+
+        let rules = resolve_utility(vec![], "border-emerald-500/25", span).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "border-color");
+        assert_eq!(
+            rules[0].value,
+            UtilityValue::ArbitraryLiteral("rgba(16, 185, 129, 0.25)".into())
+        );
+
+        let rules = resolve_utility(vec![], "border-t-rose-500", span).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "border-top-color");
+        assert_eq!(rules[0].value, UtilityValue::HexColor("#f43f5e".into()));
+
+        let rules = resolve_utility(vec![], "bg-white/50", span).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "background-color");
+        assert_eq!(
+            rules[0].value,
+            UtilityValue::ArbitraryLiteral("rgba(255, 255, 255, 0.5)".into())
         );
     }
 }

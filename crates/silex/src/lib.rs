@@ -73,5 +73,5 @@ pub mod prelude {
     pub use silex_dom::prelude::{ApplyAttributes, View, text};
     pub use silex_html::{Em, em};
     #[cfg(feature = "css")]
-    pub use silex_macros::{global, styled, theme, tw};
+    pub use silex_macros::{global, styled, theme, tw, tw_verbose};
 }

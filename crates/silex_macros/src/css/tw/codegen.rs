@@ -45,6 +45,9 @@ pub fn build_css_block_from_tw(input: TwInput) -> Result<CssBlock> {
     // 3. 自动注入 Keyframes 规则
     inject_keyframes_rules(&mut root_rules, &detected_keyframes);
 
+    // 4. 零冗余 DCE 剪裁 Pass (Prune Unused Keyframes)
+    prune_unused_keyframes(&mut root_rules, &detected_keyframes);
+
     Ok(CssBlock { rules: root_rules })
 }
 
@@ -182,9 +185,15 @@ fn convert_rule_to_declaration(rule: &UtilityRule) -> CssRule {
             let lit = proc_macro2::Literal::string(hex);
             quote!(#lit)
         }
-        UtilityValue::ThemeVar(var) => {
-            let var_name = format!("var(--slx-theme-{})", var);
-            let lit = proc_macro2::Literal::string(&var_name);
+        UtilityValue::ThemeVar(var, opacity) => {
+            let val_str = match opacity {
+                Some(op) => format!(
+                    "color-mix(in srgb, var(--slx-theme-{}) {}%, transparent)",
+                    var, op
+                ),
+                None => format!("var(--slx-theme-{})", var),
+            };
+            let lit = proc_macro2::Literal::string(&val_str);
             quote!(#lit)
         }
         UtilityValue::ArbitraryLiteral(lit) => {
@@ -224,9 +233,6 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
 
     // 从右往左递归组装修饰符块
     let mut current_block = inner_block;
-    let mut is_at_rule = false;
-    let at_rule_name = Ident::new("media", Span::call_site());
-    let mut at_rule_params = TokenStream::new();
 
     for modifier in modifiers.into_iter().rev() {
         match modifier {
@@ -251,7 +257,7 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                 };
             }
             Modifier::Dark => {
-                let sel_str = ".dark &";
+                let sel_str = ".dark &, &.dark";
                 let ts: TokenStream = sel_str.parse().unwrap();
                 current_block = CssBlock {
                     rules: vec![CssRule::Nested(CssNested {
@@ -290,7 +296,6 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                 };
             }
             Modifier::MediaBreakpoint(bp) => {
-                is_at_rule = true;
                 let min_width = match bp.as_str() {
                     "sm" => "640px",
                     "md" => "768px",
@@ -300,27 +305,105 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                     _ => "640px",
                 };
                 let query = format!("(min-width: {})", min_width);
-                at_rule_params = query.parse().unwrap();
+                let at_rule_params: TokenStream = query.parse().unwrap();
+                let at_rule_name = Ident::new("media", Span::call_site());
+
+                let selector_ts: TokenStream = "&".parse().unwrap();
+                let nested_block = CssBlock {
+                    rules: vec![CssRule::Nested(CssNested {
+                        selectors: selector_ts,
+                        block: current_block,
+                    })],
+                };
+
+                let at_rule = CssAtRule {
+                    name: at_rule_name,
+                    params: at_rule_params,
+                    block: nested_block,
+                };
+
+                current_block = CssBlock {
+                    rules: vec![CssRule::AtRule(at_rule)],
+                };
+            }
+            Modifier::ContainerQuery { name, min_width } => {
+                let query = match name {
+                    Some(n) => format!("{} (min-width: {})", n, min_width),
+                    None => format!("(min-width: {})", min_width),
+                };
+                let at_rule_params: TokenStream = query.parse().unwrap();
+                let at_rule_name = Ident::new("container", Span::call_site());
+
+                let selector_ts: TokenStream = "&".parse().unwrap();
+                let nested_block = CssBlock {
+                    rules: vec![CssRule::Nested(CssNested {
+                        selectors: selector_ts,
+                        block: current_block,
+                    })],
+                };
+
+                let at_rule = CssAtRule {
+                    name: at_rule_name,
+                    params: at_rule_params,
+                    block: nested_block,
+                };
+
+                current_block = CssBlock {
+                    rules: vec![CssRule::AtRule(at_rule)],
+                };
             }
         }
     }
 
-    if is_at_rule {
-        Ok(CssRule::AtRule(CssAtRule {
-            name: at_rule_name,
-            params: at_rule_params,
+    if current_block.rules.len() == 1 {
+        Ok(current_block.rules.into_iter().next().unwrap())
+    } else {
+        let ts: TokenStream = "&".parse().unwrap();
+        Ok(CssRule::Nested(CssNested {
+            selectors: ts,
             block: current_block,
         }))
-    } else {
-        // 如果只有一层 Nested 提取出首个 CssRule
-        if current_block.rules.len() == 1 {
-            Ok(current_block.rules.into_iter().next().unwrap())
-        } else {
-            let ts: TokenStream = "&".parse().unwrap();
-            Ok(CssRule::Nested(CssNested {
-                selectors: ts,
-                block: current_block,
-            }))
+    }
+}
+
+/// 零冗余死代码剪裁 (DCE): 递归收集 block 中所有实际引用的 animation 名称，剔除多余的 @keyframes 规则
+pub fn prune_unused_keyframes(rules: &mut Vec<CssRule>, detected_keyframes: &HashSet<String>) {
+    let mut used = detected_keyframes.clone();
+    collect_used_animations(rules, &mut used);
+
+    rules.retain(|rule| {
+        if let CssRule::AtRule(at_rule) = rule {
+            if at_rule.name == "keyframes" {
+                let name_param = at_rule.params.to_string();
+                return used.iter().any(|u| name_param.contains(u));
+            }
+        }
+        true
+    });
+}
+
+fn collect_used_animations(rules: &[CssRule], used: &mut HashSet<String>) {
+    for rule in rules {
+        match rule {
+            CssRule::Declaration(decl) => {
+                if decl.property == "animation" || decl.property == "animation-name" {
+                    let val_str = decl.values.to_string();
+                    for name in &["spin", "ping", "pulse", "bounce"] {
+                        if val_str.contains(name) {
+                            used.insert((*name).to_string());
+                        }
+                    }
+                }
+            }
+            CssRule::Nested(nested) => {
+                collect_used_animations(&nested.block.rules, used);
+            }
+            CssRule::AtRule(at_rule) => {
+                if at_rule.name != "keyframes" {
+                    collect_used_animations(&at_rule.block.rules, used);
+                }
+            }
+            CssRule::Unsafe(_) => {}
         }
     }
 }

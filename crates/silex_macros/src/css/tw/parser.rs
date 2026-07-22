@@ -71,27 +71,52 @@ fn parse_modifiers_and_body(token: &str) -> (Vec<Modifier>, &str) {
     let mut modifiers = Vec::new();
     let mut current = token;
 
-    while let Some((prefix, rest)) = current.split_once(':') {
-        // 排除任意值选择器 [*:hover] 的冒号
-        if prefix.contains('[') {
-            break;
-        }
+    while let Some((prefix, rest)) = split_modifier(current) {
+        let modifier = if let Some(container_spec) = prefix.strip_prefix('@') {
+            let (c_name, spec) = if let Some((name, rest)) = container_spec.split_once('/') {
+                (Some(name.to_string()), rest)
+            } else {
+                (None, container_spec)
+            };
 
-        let modifier = match prefix {
-            "hover" | "focus" | "active" | "disabled" | "visited" | "first" | "last" | "odd"
-            | "even" => Modifier::PseudoClass(prefix.to_string()),
-            "before" | "after" | "placeholder" => Modifier::PseudoElement(prefix.to_string()),
-            "sm" | "md" | "lg" | "xl" | "2xl" => Modifier::MediaBreakpoint(prefix.to_string()),
-            "dark" => Modifier::Dark,
-            _ => {
-                if let Some(group_state) = prefix.strip_prefix("group-") {
-                    Modifier::Group(group_state.to_string())
-                } else if let Some(peer_state) = prefix.strip_prefix("peer-") {
-                    Modifier::Peer(peer_state.to_string())
-                } else if prefix.starts_with('[') && prefix.ends_with(']') {
-                    Modifier::CustomSelector(prefix[1..prefix.len() - 1].to_string())
-                } else {
-                    Modifier::PseudoClass(prefix.to_string())
+            let min_width = match spec {
+                "sm" => "640px".to_string(),
+                "md" => "768px".to_string(),
+                "lg" => "1024px".to_string(),
+                "xl" => "1280px".to_string(),
+                "2xl" => "1536px".to_string(),
+                _ => {
+                    let cleaned = spec.strip_prefix("min-").unwrap_or(spec);
+                    let cleaned = cleaned.strip_prefix('-').unwrap_or(cleaned);
+                    if cleaned.starts_with('[') && cleaned.ends_with(']') {
+                        cleaned[1..cleaned.len() - 1].to_string()
+                    } else {
+                        cleaned.to_string()
+                    }
+                }
+            };
+
+            Modifier::ContainerQuery {
+                name: c_name,
+                min_width,
+            }
+        } else {
+            match prefix {
+                "hover" | "focus" | "active" | "disabled" | "visited" | "first" | "last" | "odd"
+                | "even" => Modifier::PseudoClass(prefix.to_string()),
+                "before" | "after" | "placeholder" => Modifier::PseudoElement(prefix.to_string()),
+                "sm" | "md" | "lg" | "xl" | "2xl" => Modifier::MediaBreakpoint(prefix.to_string()),
+                "dark" => Modifier::Dark,
+                _ => {
+                    if let Some(group_state) = prefix.strip_prefix("group-") {
+                        Modifier::Group(group_state.to_string())
+                    } else if let Some(peer_state) = prefix.strip_prefix("peer-") {
+                        Modifier::Peer(peer_state.to_string())
+                    } else if prefix.starts_with('[') && prefix.ends_with(']') {
+                        Modifier::CustomSelector(prefix[1..prefix.len() - 1].to_string())
+                    } else {
+                        Modifier::PseudoClass(prefix.to_string())
+                    }
                 }
             }
         };
@@ -101,4 +126,21 @@ fn parse_modifiers_and_body(token: &str) -> (Vec<Modifier>, &str) {
     }
 
     (modifiers, current)
+}
+
+fn split_modifier(s: &str) -> Option<(&str, &str)> {
+    if let Some(colon_idx) = s.find(':') {
+        let prefix = &s[..colon_idx];
+        if prefix.contains('[') && !prefix.contains(']') {
+            if let Some(close_idx) = s.find(']') {
+                if let Some(next_colon) = s[close_idx..].find(':') {
+                    let real_colon = close_idx + next_colon;
+                    return Some((&s[..real_colon], &s[real_colon + 1..]));
+                }
+            }
+            return None;
+        }
+        return Some((prefix, &s[colon_idx + 1..]));
+    }
+    None
 }
