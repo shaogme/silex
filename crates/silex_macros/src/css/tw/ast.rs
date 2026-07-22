@@ -67,9 +67,23 @@ pub struct UtilityRule {
     pub span: Span,
 }
 
+/// `tw!` 宏的片段规则类型
+#[derive(Debug, Clone)]
+pub enum TwSegment {
+    /// 静态 Utility 规则段 (例: "p-4 rounded-xl")
+    Static(Vec<UtilityRule>),
+
+    /// 动态条件响应式分支段: (condition, then_rules, else_rules)
+    Conditional {
+        condition: Expr,
+        then_rules: Vec<UtilityRule>,
+        else_rules: Vec<UtilityRule>,
+    },
+}
+
 /// `tw!` 过程宏根输入结构
 #[derive(Debug, Clone)]
 pub struct TwInput {
-    pub rules: Vec<UtilityRule>,
+    pub segments: Vec<TwSegment>,
     pub extra_classes: Vec<String>,
 }

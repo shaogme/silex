@@ -5,13 +5,13 @@ use quote::quote;
 use std::collections::{HashMap, HashSet};
 use syn::Result;
 
-/// 将解析后的 `TwInput` 归一化转换构建为 `silex_macros::css::ast::CssBlock`
-pub fn build_css_block_from_tw(input: TwInput) -> Result<CssBlock> {
+/// 将解析后的 `Vec<UtilityRule>` 归一化转换构建为 `silex_macros::css::ast::CssBlock`
+pub fn build_css_block_from_rules(rules: Vec<UtilityRule>) -> Result<CssBlock> {
     let mut root_raw_rules = Vec::new();
     let mut modifier_groups: HashMap<Vec<Modifier>, Vec<UtilityRule>> = HashMap::new();
     let mut detected_keyframes: HashSet<String> = HashSet::new();
 
-    for rule in input.rules {
+    for rule in rules {
         // 收集所需 keyframes 动画
         if rule.css_property == "animation" {
             check_and_collect_keyframes(&rule.value, &mut detected_keyframes);
@@ -49,6 +49,25 @@ pub fn build_css_block_from_tw(input: TwInput) -> Result<CssBlock> {
     prune_unused_keyframes(&mut root_rules, &detected_keyframes);
 
     Ok(CssBlock { rules: root_rules })
+}
+
+/// 将解析后的 `TwInput` 归一化转换构建为 `silex_macros::css::ast::CssBlock`
+pub fn build_css_block_from_tw(input: TwInput) -> Result<CssBlock> {
+    let mut rules = Vec::new();
+    for seg in input.segments {
+        match seg {
+            crate::css::tw::ast::TwSegment::Static(r) => rules.extend(r),
+            crate::css::tw::ast::TwSegment::Conditional {
+                then_rules,
+                else_rules,
+                ..
+            } => {
+                rules.extend(then_rules);
+                rules.extend(else_rules);
+            }
+        }
+    }
+    build_css_block_from_rules(rules)
 }
 
 /// 获取指定 CSS 属性拆解后的原子子属性（用于简写属性与长写属性关联覆盖消解）

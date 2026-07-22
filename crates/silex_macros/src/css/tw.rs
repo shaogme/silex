@@ -3,8 +3,8 @@ pub mod codegen;
 pub mod parser;
 pub mod resolver;
 
-use ast::TwInput;
-use codegen::build_css_block_from_tw;
+use ast::{TwInput, TwSegment};
+use codegen::{build_css_block_from_rules, build_css_block_from_tw};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::Result;
@@ -19,6 +19,22 @@ pub fn tw_verbose_impl(ts: TokenStream) -> Result<TokenStream> {
     tw_impl_internal(ts, true)
 }
 
+fn generate_inits(compile_result: &crate::css::compiler::CssCompileResult) -> TokenStream {
+    let style_id = &compile_result.style_id;
+    let static_id = &compile_result.static_id;
+    let static_css = &compile_result.static_css;
+    let component_css = &compile_result.component_css;
+
+    quote! {
+        if !#static_css.is_empty() {
+            ::silex::css::inject_style(#static_id, #static_css);
+        }
+        if !#component_css.is_empty() {
+            ::silex::css::inject_style(#style_id, #component_css);
+        }
+    }
+}
+
 fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     let input_str = if verbose {
         ts.to_string()
@@ -27,32 +43,133 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     };
     let input: TwInput = syn::parse2(ts)?;
     let extra_classes = input.extra_classes.clone();
-    let css_block = build_css_block_from_tw(input)?;
-
-    // 将组装好的 Silex CssBlock 转化为 TokenStream
-    let block_ts = quote! { #css_block };
     let span = proc_macro2::Span::call_site();
 
-    // 接入 silex_macros::css 编译管线，自动享受 LightningCSS 压缩与哈希 Class 注入
-    let mut compile_result =
-        crate::css::compiler::CssCompiler::compile(block_ts.clone(), span, false)?;
+    let has_conditionals = input
+        .segments
+        .iter()
+        .any(|s| matches!(s, TwSegment::Conditional { .. }));
+
+    if !has_conditionals {
+        let css_block = build_css_block_from_tw(input)?;
+        let block_ts = quote! { #css_block };
+        let mut compile_result =
+            crate::css::compiler::CssCompiler::compile(block_ts.clone(), span, false)?;
+
+        if !extra_classes.is_empty() {
+            let extra_str = extra_classes.join(" ");
+            compile_result.class_name = format!("{} {}", compile_result.class_name, extra_str);
+        }
+
+        if verbose {
+            eprintln!("========== [Silex tw_verbose! Compile-Time Diagnostics] ==========");
+            eprintln!("Macro Input: {}", input_str);
+            eprintln!("Generated CssBlock AST:\n  {}", block_ts);
+            eprintln!("Compiled Class Name: {}", compile_result.class_name);
+            eprintln!("Static CSS:\n  {}", compile_result.static_css);
+            eprintln!("Component CSS:\n  {}", compile_result.component_css);
+            eprintln!("====================================================================");
+        }
+
+        return crate::css::generate_css_output(compile_result, span);
+    }
+
+    // 处理包含条件分支句段的情形
+    let mut inits_tokens = Vec::new();
+    let mut reactive_body = Vec::new();
+
+    for seg in input.segments {
+        match seg {
+            TwSegment::Static(rules) => {
+                if rules.is_empty() {
+                    continue;
+                }
+                let css_block = build_css_block_from_rules(rules)?;
+                let block_ts = quote! { #css_block };
+                let compile_result =
+                    crate::css::compiler::CssCompiler::compile(block_ts, span, false)?;
+                let cls_name = compile_result.class_name.clone();
+                inits_tokens.push(generate_inits(&compile_result));
+
+                reactive_body.push(quote! {
+                    if !_slx_cls.is_empty() { _slx_cls.push(' '); }
+                    _slx_cls.push_str(#cls_name);
+                });
+            }
+            TwSegment::Conditional {
+                condition,
+                then_rules,
+                else_rules,
+                ..
+            } => {
+                let then_cls = if then_rules.is_empty() {
+                    String::new()
+                } else {
+                    let css_block = build_css_block_from_rules(then_rules)?;
+                    let block_ts = quote! { #css_block };
+                    let compile_result =
+                        crate::css::compiler::CssCompiler::compile(block_ts, span, false)?;
+                    let cls = compile_result.class_name.clone();
+                    inits_tokens.push(generate_inits(&compile_result));
+                    cls
+                };
+
+                let else_cls = if else_rules.is_empty() {
+                    String::new()
+                } else {
+                    let css_block = build_css_block_from_rules(else_rules)?;
+                    let block_ts = quote! { #css_block };
+                    let compile_result =
+                        crate::css::compiler::CssCompiler::compile(block_ts, span, false)?;
+                    let cls = compile_result.class_name.clone();
+                    inits_tokens.push(generate_inits(&compile_result));
+                    cls
+                };
+
+                if !else_cls.is_empty() {
+                    reactive_body.push(quote! {
+                        if #condition {
+                            if !#then_cls.is_empty() {
+                                if !_slx_cls.is_empty() { _slx_cls.push(' '); }
+                                _slx_cls.push_str(#then_cls);
+                            }
+                        } else {
+                            if !_slx_cls.is_empty() { _slx_cls.push(' '); }
+                            _slx_cls.push_str(#else_cls);
+                        }
+                    });
+                } else {
+                    reactive_body.push(quote! {
+                        if #condition {
+                            if !#then_cls.is_empty() {
+                                if !_slx_cls.is_empty() { _slx_cls.push(' '); }
+                                _slx_cls.push_str(#then_cls);
+                            }
+                        }
+                    });
+                }
+            }
+        }
+    }
 
     if !extra_classes.is_empty() {
         let extra_str = extra_classes.join(" ");
-        compile_result.class_name = format!("{} {}", compile_result.class_name, extra_str);
+        reactive_body.push(quote! {
+            if !_slx_cls.is_empty() { _slx_cls.push(' '); }
+            _slx_cls.push_str(#extra_str);
+        });
     }
 
-    if verbose {
-        eprintln!("========== [Silex tw_verbose! Compile-Time Diagnostics] ==========");
-        eprintln!("Macro Input: {}", input_str);
-        eprintln!("Generated CssBlock AST:\n  {}", block_ts);
-        eprintln!("Compiled Class Name: {}", compile_result.class_name);
-        eprintln!("Static CSS:\n  {}", compile_result.static_css);
-        eprintln!("Component CSS:\n  {}", compile_result.component_css);
-        eprintln!("====================================================================");
-    }
-
-    crate::css::generate_css_output(compile_result, span)
+    Ok(quote! {
+        {
+            #(#inits_tokens)*
+            ::silex::core::rx!(move || {
+                let mut _slx_cls = ::std::string::String::with_capacity(64);
+                #(#reactive_body)*
+                _slx_cls
+            })
+        }
+    })
 }
 
 #[cfg(test)]
@@ -253,5 +370,20 @@ mod tests {
             "Expected compressed padding:.5rem 1rem 1rem or padding:1rem + padding-top, got: {}",
             compile_result.component_css
         );
+    }
+
+    #[test]
+    fn test_conditional_tw_macro() {
+        let ts = quote!(
+            "p-4",
+            (is_active, "bg-indigo-600 text-white"),
+            (is_dark, "bg-slate-900", "bg-white")
+        );
+        let output = tw_impl(ts).unwrap();
+        let code = output.to_string();
+        assert!(code.contains("rx !"));
+        assert!(code.contains("is_active"));
+        assert!(code.contains("is_dark"));
+        assert!(code.contains("inject_style"));
     }
 }

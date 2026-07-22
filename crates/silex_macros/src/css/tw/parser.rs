@@ -1,11 +1,11 @@
-use crate::css::tw::ast::{Modifier, TwInput, UtilityValue};
+use crate::css::tw::ast::{Modifier, TwInput, TwSegment};
 use crate::css::tw::resolver::resolve_utility;
 use syn::parse::{Parse, ParseStream};
 use syn::{Expr, LitStr, Result, Token, parenthesized};
 
 impl Parse for TwInput {
     fn parse(input: ParseStream) -> Result<Self> {
-        let mut rules = Vec::new();
+        let mut segments = Vec::new();
         let mut extra_classes = Vec::new();
 
         while !input.is_empty() {
@@ -13,6 +13,7 @@ impl Parse for TwInput {
                 let lit: LitStr = input.parse()?;
                 let raw_str = lit.value();
                 let span = lit.span();
+                let mut rules = Vec::new();
 
                 for token in raw_str.split_whitespace() {
                     let (modifiers, body_token) = parse_modifiers_and_body(token);
@@ -25,16 +26,46 @@ impl Parse for TwInput {
                     let mut resolved = resolve_utility(modifiers, body_token, span)?;
                     rules.append(&mut resolved);
                 }
+                segments.push(TwSegment::Static(rules));
             } else if input.peek(syn::token::Paren) {
-                // 条件句元组形态: ("bg-primary", is_active)
                 let content;
                 parenthesized!(content in input);
-                let lit: LitStr = content.parse()?;
-                content.parse::<Token![,]>()?;
-                let cond_expr: Expr = content.parse()?;
 
+                let (cond_expr, lit, else_lit) = if content.peek(LitStr) {
+                    let lit: LitStr = content.parse()?;
+                    content.parse::<Token![,]>()?;
+                    let cond_expr: Expr = content.parse()?;
+                    let else_lit: Option<LitStr> = if content.peek(Token![,]) {
+                        content.parse::<Token![,]>()?;
+                        if content.peek(LitStr) {
+                            Some(content.parse()?)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    (cond_expr, lit, else_lit)
+                } else {
+                    let cond_expr: Expr = content.parse()?;
+                    content.parse::<Token![,]>()?;
+                    let lit: LitStr = content.parse()?;
+                    let else_lit: Option<LitStr> = if content.peek(Token![,]) {
+                        content.parse::<Token![,]>()?;
+                        if content.peek(LitStr) {
+                            Some(content.parse()?)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    (cond_expr, lit, else_lit)
+                };
+
+                let mut then_rules = Vec::new();
                 let raw_str = lit.value();
-                let span = lit.span();
+                let lit_span = lit.span();
                 for token in raw_str.split_whitespace() {
                     let (modifiers, body_token) = parse_modifiers_and_body(token);
                     if modifiers.is_empty()
@@ -43,13 +74,32 @@ impl Parse for TwInput {
                     {
                         extra_classes.push(body_token.to_string());
                     }
-                    let mut sub_rules = resolve_utility(modifiers, body_token, span)?;
-                    for rule in &mut sub_rules {
-                        // 包装为动态表达式关联条件
-                        rule.value = UtilityValue::DynamicExpr(cond_expr.clone(), span);
-                    }
-                    rules.append(&mut sub_rules);
+                    let mut resolved = resolve_utility(modifiers, body_token, lit_span)?;
+                    then_rules.append(&mut resolved);
                 }
+
+                let mut else_rules = Vec::new();
+                if let Some(else_l) = else_lit {
+                    let raw_str = else_l.value();
+                    let else_span = else_l.span();
+                    for token in raw_str.split_whitespace() {
+                        let (modifiers, body_token) = parse_modifiers_and_body(token);
+                        if modifiers.is_empty()
+                            && (body_token == "group" || body_token == "peer")
+                            && !extra_classes.contains(&body_token.to_string())
+                        {
+                            extra_classes.push(body_token.to_string());
+                        }
+                        let mut resolved = resolve_utility(modifiers, body_token, else_span)?;
+                        else_rules.append(&mut resolved);
+                    }
+                }
+
+                segments.push(TwSegment::Conditional {
+                    condition: cond_expr,
+                    then_rules,
+                    else_rules,
+                });
             } else {
                 return Err(
                     input.error("Expected string literal or conditional tuple in tw! macro")
@@ -62,7 +112,7 @@ impl Parse for TwInput {
         }
 
         Ok(TwInput {
-            rules,
+            segments,
             extra_classes,
         })
     }
