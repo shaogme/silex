@@ -170,8 +170,12 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let tag = &parsed.tag;
     let name = &parsed.name;
 
-    let compile_result =
-        CssCompiler::compile_with_prefix(parsed.css_block, tag.span(), parsed.is_unsafe, "slx-st-")?;
+    let compile_result = CssCompiler::compile_with_prefix(
+        parsed.css_block,
+        tag.span(),
+        parsed.is_unsafe,
+        "slx-st-",
+    )?;
 
     let mut var_decls = Vec::new();
     let mut style_bindings = Vec::new();
@@ -215,7 +219,12 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
 
         let mut match_arms = Vec::new();
         for (v_name, v_css) in &group.variants {
-            let res = CssCompiler::compile_with_prefix(v_css.clone(), v_name.span(), parsed.is_unsafe, "slx-st-")?;
+            let res = CssCompiler::compile_with_prefix(
+                v_css.clone(),
+                v_name.span(),
+                parsed.is_unsafe,
+                "slx-st-",
+            )?;
             let v_class = res.class_name.clone();
             variant_injections.push(res.generate_inits());
 

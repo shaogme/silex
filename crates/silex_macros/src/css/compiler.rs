@@ -169,7 +169,10 @@ impl CssCompiler {
                 "slx-twv-" | "slx-st-" => "components",
                 _ => "utilities",
             };
-            let wrapped = format!("@layer {} {{ .{} {{ {} }} }}", layer_name, class_name, state.static_css);
+            let wrapped = format!(
+                "@layer {} {{ .{} {{ {} }} }}",
+                layer_name, class_name, state.static_css
+            );
             let mut stylesheet =
                 StyleSheet::parse(&wrapped, ParserOptions::default()).map_err(|e| {
                     crate::css::error::report_lightning_error(format!("Component CSS: {}", e), span)

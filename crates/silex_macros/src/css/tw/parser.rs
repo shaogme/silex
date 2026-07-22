@@ -100,8 +100,7 @@ impl Parse for TwInput {
                     (cond_expr, lit, else_lit)
                 };
 
-                let then_rules =
-                    parse_class_string(&lit.value(), lit.span(), &mut extra_classes)?;
+                let then_rules = parse_class_string(&lit.value(), lit.span(), &mut extra_classes)?;
                 let else_rules = if let Some(else_l) = else_lit {
                     parse_class_string(&else_l.value(), else_l.span(), &mut extra_classes)?
                 } else {

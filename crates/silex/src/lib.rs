@@ -76,8 +76,8 @@ pub mod prelude {
         Alert, AlertDescription, AlertTitle, Avatar, AvatarFallback, AvatarImage, Badge, Button,
         Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
         Checkbox, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input,
-        Progress, Separator, Skeleton, Switch as UiSwitch, Tabs, TabsContent, TabsList, TabsTrigger,
-        Textarea,
+        Progress, Separator, Skeleton, Switch as UiSwitch, Tabs, TabsContent, TabsList,
+        TabsTrigger, Textarea,
     };
     pub use silex_css::prelude::{Style, linear_gradient, radial_gradient};
     pub use silex_dom::prelude::{ApplyAttributes, View, text};

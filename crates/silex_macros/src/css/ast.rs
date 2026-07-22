@@ -239,7 +239,10 @@ pub struct CssApply {
 
 pub fn format_tailwind_token_stream(ts: &TokenStream) -> String {
     fn is_compact_token(tt: &TokenTree) -> bool {
-        matches!(tt, TokenTree::Ident(_) | TokenTree::Literal(_) | TokenTree::Group(_))
+        matches!(
+            tt,
+            TokenTree::Ident(_) | TokenTree::Literal(_) | TokenTree::Group(_)
+        )
     }
 
     fn stringify_group(g: &proc_macro2::Group) -> String {
