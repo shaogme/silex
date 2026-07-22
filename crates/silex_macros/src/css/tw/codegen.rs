@@ -436,9 +436,7 @@ fn convert_rule_to_declaration(rule: &UtilityRule) -> CssRule {
             let lit = proc_macro2::Literal::string(&val_str);
             quote!(#lit)
         }
-        UtilityValue::ArbitraryLiteral(lit) => {
-            parse_css_literal_to_tokens(lit)
-        }
+        UtilityValue::ArbitraryLiteral(lit) => parse_css_literal_to_tokens(lit),
         UtilityValue::DynamicExpr(expr, _expr_span) => {
             // 包装为 Silex 动态表达式节点 `$ ( expr )`
             let mut ts = TokenStream::new();

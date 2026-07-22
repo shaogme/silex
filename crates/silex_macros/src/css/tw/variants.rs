@@ -522,6 +522,9 @@ mod tests {
         // Both primary and alias_primary produce identical CSS rule sets,
         // so generate_inits() is called ONCE for the deduplicated class (which emits static + component inject_style calls).
         let inject_count = code.matches("inject_style").count();
-        assert_eq!(inject_count, 2, "Expected exactly 2 inject_style calls for 1 deduplicated class (static + component style injection)");
+        assert_eq!(
+            inject_count, 2,
+            "Expected exactly 2 inject_style calls for 1 deduplicated class (static + component style injection)"
+        );
     }
 }
