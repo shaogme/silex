@@ -3,18 +3,6 @@ use crate::css::tw::resolver::resolve_utility;
 use syn::parse::{Parse, ParseStream};
 use syn::{Expr, LitStr, Result, Token, parenthesized};
 
-#[inline]
-fn is_marker_class(token: &str) -> bool {
-    token == "group"
-        || token == "peer"
-        || token == "@container"
-        || token == "container"
-        || token.starts_with("group/")
-        || token.starts_with("peer/")
-        || token.starts_with("@container/")
-        || token.starts_with("container/")
-}
-
 fn split_state_and_name(rest: &str) -> (String, Option<String>) {
     if let Some(slash_idx) = rest.rfind('/') {
         let name_part = &rest[slash_idx + 1..];
@@ -43,7 +31,7 @@ fn parse_class_string(
     for token in raw_str.split_whitespace() {
         let (modifiers, body_token) = parse_modifiers_and_body(token);
         if modifiers.is_empty()
-            && is_marker_class(body_token)
+            && crate::css::tw::resolver::is_marker_class(body_token)
             && !extra_classes.contains(&body_token.to_string())
         {
             extra_classes.push(body_token.to_string());

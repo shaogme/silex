@@ -56,17 +56,27 @@ pub(super) fn make_rule(
     }
 }
 
+/// 判断是否为 Marker Class（如 group, peer, @container, container 或 group/name, peer/name, @container/name, container/name）
+#[inline]
+pub fn is_marker_class(token: &str) -> bool {
+    let base = match token.split_once('/') {
+        Some((prefix, _)) => prefix,
+        None => token,
+    };
+    matches!(base, "group" | "peer" | "@container" | "container")
+}
+
 /// 将基础的 Utility 词条（如 `p-4`, `hover:bg-primary`, `w-[12px]`）解析为标准的 `UtilityRule`
 pub fn resolve_utility(
     modifiers: Vec<Modifier>,
     utility_token: &str,
     span: Span,
 ) -> Result<Vec<UtilityRule>> {
-    if utility_token == "group"
-        || utility_token == "peer"
-        || utility_token.starts_with("group/")
-        || utility_token.starts_with("peer/")
-    {
+    let base = match utility_token.split_once('/') {
+        Some((prefix, _)) => prefix,
+        None => utility_token,
+    };
+    if matches!(base, "group" | "peer") {
         return Ok(vec![]);
     }
 

@@ -1658,6 +1658,7 @@ name = "silex_macros"
 version = "0.1.0-beta.9"
 dependencies = [
  "lightningcss",
+ "phf",
  "proc-macro2",
  "quote",
  "serde",
