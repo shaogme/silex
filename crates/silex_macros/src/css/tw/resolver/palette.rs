@@ -58,18 +58,18 @@ pub fn lookup_palette_color(color_name: &str, shade: &str) -> Option<&'static st
     }
 }
 
-/// 将 16 进制颜色及透明度百分比转换为 rgba(...) 表达式
+/// 将 16 进制颜色及透明度百分比转换为 rgba(...) 表达式（支持 3, 4, 6, 8 位 Hex）
 pub fn hex_to_rgba(hex: &str, alpha_pct: f64) -> String {
     let clean = hex.strip_prefix('#').unwrap_or(hex);
     let alpha = (alpha_pct / 100.0).clamp(0.0, 1.0);
 
     let (r, g, b) = match clean.len() {
-        6 => (
+        6 | 8 => (
             u8::from_str_radix(&clean[0..2], 16).unwrap_or(0),
             u8::from_str_radix(&clean[2..4], 16).unwrap_or(0),
             u8::from_str_radix(&clean[4..6], 16).unwrap_or(0),
         ),
-        3 => (
+        3 | 4 => (
             u8::from_str_radix(&clean[0..1], 16).unwrap_or(0) * 17,
             u8::from_str_radix(&clean[1..2], 16).unwrap_or(0) * 17,
             u8::from_str_radix(&clean[2..3], 16).unwrap_or(0) * 17,
@@ -88,18 +88,77 @@ pub fn hex_to_rgba(hex: &str, alpha_pct: f64) -> String {
     format!("rgba({}, {}, {}, {})", r, g, b, alpha_str)
 }
 
-/// 解析颜色相关的 Utility 类 (如 `text-slate-900`, `bg-indigo-600/50`, `bg-[#1e293b]`)
-pub fn parse_color_utility(token: &str) -> Option<(&'static str, UtilityValue)> {
-    let (base, opacity) = if let Some((b, op_str)) = token.split_once('/') {
+/// 解析颜色值词条（支持色板名如 `slate-900`, `indigo-600/50`, `white`, `black`, `transparent`, `[#1e293b]`, `rgba(...)`, `rgb(...)`, `hsl(...)`）
+pub fn parse_color_value(color_token: &str) -> Option<UtilityValue> {
+    let (base, opacity) = if let Some((b, op_str)) = color_token.split_once('/') {
         if let Ok(op) = op_str.parse::<f64>() {
-            (b, Some(op))
+            let pct = if (0.0..=1.0).contains(&op) {
+                op * 100.0
+            } else {
+                op
+            };
+            (b, Some(pct))
         } else {
-            (token, None)
+            (color_token, None)
         }
     } else {
-        (token, None)
+        (color_token, None)
     };
 
+    // 1. Direct function colors: rgba(...), rgb(...), hsl(...), hsla(...)
+    if base.starts_with("rgba(")
+        || base.starts_with("rgb(")
+        || base.starts_with("hsl(")
+        || base.starts_with("hsla(")
+    {
+        return Some(UtilityValue::ArbitraryLiteral(base.to_string()));
+    }
+
+    // 2. Hex color literal: [#1e293b]
+    if base.starts_with("[#") && base.ends_with(']') {
+        let hex = &base[2..base.len() - 1];
+        let full_hex = format!("#{}", hex);
+        return match opacity {
+            Some(op) => Some(UtilityValue::ArbitraryLiteral(hex_to_rgba(&full_hex, op))),
+            None => Some(UtilityValue::HexColor(full_hex)),
+        };
+    }
+
+    // 3. Keyword colors: white, black, transparent
+    if base == "white" {
+        return match opacity {
+            Some(op) => Some(UtilityValue::ArbitraryLiteral(hex_to_rgba("#ffffff", op))),
+            None => Some(UtilityValue::HexColor("#ffffff".to_string())),
+        };
+    }
+    if base == "black" {
+        return match opacity {
+            Some(op) => Some(UtilityValue::ArbitraryLiteral(hex_to_rgba("#000000", op))),
+            None => Some(UtilityValue::HexColor("#000000".to_string())),
+        };
+    }
+    if base == "transparent" {
+        return match opacity {
+            Some(_op) => Some(UtilityValue::ArbitraryLiteral(hex_to_rgba("#000000", 0.0))),
+            None => Some(UtilityValue::Keyword("transparent")),
+        };
+    }
+
+    // 4. Standard Palette colors: slate-900, indigo-600, etc.
+    if let Some((color_name, shade)) = base.rsplit_once('-')
+        && let Some(hex_str) = lookup_palette_color(color_name, shade)
+    {
+        return match opacity {
+            Some(op) => Some(UtilityValue::ArbitraryLiteral(hex_to_rgba(hex_str, op))),
+            None => Some(UtilityValue::HexColor(hex_str.to_string())),
+        };
+    }
+
+    None
+}
+
+/// 解析颜色相关的 Utility 类 (如 `text-slate-900`, `bg-indigo-600/50`, `bg-[#1e293b]`)
+pub fn parse_color_utility(token: &str) -> Option<(&'static str, UtilityValue)> {
     const PREFIXES: &[(&str, &str)] = &[
         ("border-t", "border-top-color"),
         ("border-r", "border-right-color"),
@@ -107,7 +166,8 @@ pub fn parse_color_utility(token: &str) -> Option<(&'static str, UtilityValue)> 
         ("border-l", "border-left-color"),
         ("border", "border-color"),
         ("outline", "outline-color"),
-        ("ring", "outline-color"),
+        ("accent", "accent-color"),
+        ("caret", "caret-color"),
         ("bg", "background-color"),
         ("text", "color"),
         ("fill", "fill"),
@@ -115,48 +175,10 @@ pub fn parse_color_utility(token: &str) -> Option<(&'static str, UtilityValue)> 
     ];
 
     for &(prefix, prop) in PREFIXES {
-        let prefix_dash = format!("{}-", prefix);
-        if base.starts_with(&prefix_dash) {
-            let rest = &base[prefix_dash.len()..];
-
-            // 1. Hex color literal: [#1e293b]
-            if rest.starts_with("[#") && rest.ends_with(']') {
-                let hex = &rest[2..rest.len() - 1];
-                let full_hex = format!("#{}", hex);
-                let val = match opacity {
-                    Some(op) => UtilityValue::ArbitraryLiteral(hex_to_rgba(&full_hex, op)),
-                    None => UtilityValue::HexColor(full_hex),
-                };
-                return Some((prop, val));
-            }
-
-            // 2. Keyword colors: white, black, transparent
-            if rest == "white" {
-                let val = match opacity {
-                    Some(op) => UtilityValue::ArbitraryLiteral(hex_to_rgba("#ffffff", op)),
-                    None => UtilityValue::HexColor("#ffffff".to_string()),
-                };
-                return Some((prop, val));
-            }
-            if rest == "black" {
-                let val = match opacity {
-                    Some(op) => UtilityValue::ArbitraryLiteral(hex_to_rgba("#000000", op)),
-                    None => UtilityValue::HexColor("#000000".to_string()),
-                };
-                return Some((prop, val));
-            }
-            if rest == "transparent" && opacity.is_none() {
-                return Some((prop, UtilityValue::Keyword("transparent")));
-            }
-
-            // 3. Standard Palette colors: slate-900, indigo-600, etc.
-            if let Some((color_name, shade)) = rest.rsplit_once('-')
-                && let Some(hex_str) = lookup_palette_color(color_name, shade)
-            {
-                let val = match opacity {
-                    Some(op) => UtilityValue::ArbitraryLiteral(hex_to_rgba(hex_str, op)),
-                    None => UtilityValue::HexColor(hex_str.to_string()),
-                };
+        if let Some(rest) = token.strip_prefix(prefix)
+            && let Some(rest) = rest.strip_prefix('-')
+        {
+            if let Some(val) = parse_color_value(rest) {
                 return Some((prop, val));
             }
         }

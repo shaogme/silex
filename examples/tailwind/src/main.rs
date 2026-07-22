@@ -7,7 +7,7 @@ fn Header(is_dark: Signal<bool>, set_is_dark: WriteSignal<bool>) -> impl View {
             // 顶栏顶层 Bar: 左侧 Label，右侧 Theme Toggle 按钮
             div(view_chain!(
                 span("⚡ Silex Tailwind Proc-Macro").class(tw!(
-                    "text-xs font-bold text-slate-700 dark:text-slate-900 uppercase tracking-wider px-3 py-1 bg-slate-100 dark:bg-white rounded-full border border-solid border-slate-300 dark:border-white"
+                    "text-xs font-bold text-slate-700 dark:text-slate-900 uppercase tracking-wider px-3 py-1 bg-slate-100 dark:bg-white rounded-full border border-solid border-slate-300 dark:border-white shadow-sm"
                 )),
                 button(rx!(if is_dark.get() { "🌙 Dark Mode" } else { "☀️ Light Mode" }))
                     .class(tw!(
@@ -278,6 +278,104 @@ fn ReactiveConditionalTwDemo() -> impl View {
 }
 
 #[component]
+fn NewSyntaxExpansionDemo() -> impl View {
+    div(view_chain!(
+        div(view_chain!(
+            span("9. Extended Tailwind v3/v4 Syntax System").class(tw!("text-sm font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider")),
+            h2("Rings, Gradients, Divide, Space & Line Clamp").class(tw!("text-2xl font-bold text-slate-900 dark:text-white mt-1 mb-2 transition-colors duration-300")),
+            p("Full support for Ring focus halos, linear gradients, child divide borders, element spacing, aspect ratio, line clamp, and interactive pointer events.")
+                .class(tw!("text-sm text-slate-600 dark:text-slate-300 mb-6 transition-colors duration-300"))
+        )),
+        div(view_chain!(
+            // 1. Ring & Offset
+            div(view_chain!(
+                span("Ring & Offset System").class(tw!("text-xs font-bold text-slate-600 dark:text-white dark:opacity-70 uppercase tracking-wider mb-3 block")),
+                div(view_chain!(
+                    button("Focus Ring-2 Halo").class(tw!("px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl cursor-pointer ring-2 ring-indigo-500/50 ring-offset-2 ring-offset-white dark:ring-offset-slate-900 transition-all")),
+                    button("Ring-4 Rose Halo").class(tw!("px-4 py-2 bg-rose-600 text-white text-xs font-bold rounded-xl cursor-pointer ring-4 ring-rose-500/40 ring-offset-2 ring-offset-white dark:ring-offset-slate-900 transition-all"))
+                )).class(tw!("flex flex-wrap gap-4"))
+            )).class(tw!("p-5 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-solid border-slate-200 dark:border-slate-800 transition-colors duration-300")),
+
+            // 2. Linear Gradients
+            div(view_chain!(
+                span("Linear Gradient System").class(tw!("text-xs font-bold text-slate-600 dark:text-white dark:opacity-70 uppercase tracking-wider mb-3 block")),
+                div(view_chain!(
+                    div("Indigo -> Purple -> Pink Linear Gradient Card")
+                        .class(tw!("p-5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-bold text-sm rounded-2xl shadow-lg text-center")),
+                    div("Emerald -> Cyan Gradient Card")
+                        .class(tw!("p-5 bg-gradient-to-br from-emerald-500 to-cyan-500 text-white font-bold text-sm rounded-2xl shadow-lg text-center"))
+                )).class(tw!("grid grid-cols-1 md:grid-cols-2 gap-4"))
+            )).class(tw!("p-5 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-solid border-slate-200 dark:border-slate-800 transition-colors duration-300")),
+
+            // 3. Divide & Space System
+            div(view_chain!(
+                span("Child Divide & Space System").class(tw!("text-xs font-bold text-slate-600 dark:text-white dark:opacity-70 uppercase tracking-wider mb-3 block")),
+                div(view_chain!(
+                    div("Divide Item 1: space-y-2 & divide-y").class(tw!("py-2 font-mono text-xs text-slate-700 dark:text-slate-200")),
+                    div("Divide Item 2: Automatic child border insertion").class(tw!("py-2 font-mono text-xs text-slate-700 dark:text-slate-200")),
+                    div("Divide Item 3: Zero custom selector boilerplate").class(tw!("py-2 font-mono text-xs text-slate-700 dark:text-slate-200"))
+                )).class(tw!("p-4 bg-white dark:bg-slate-900 rounded-2xl border border-solid border-slate-200 dark:border-slate-800 divide-y divide-slate-200 dark:divide-slate-800 space-y-1"))
+            )).class(tw!("p-5 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-solid border-slate-200 dark:border-slate-800 transition-colors duration-300")),
+
+            // Badges
+            div(view_chain!(
+                span("✓ ring-2 ring-indigo-500/50 ring-offset-2").class(tw!("text-xs font-semibold text-white bg-amber-600 px-3 py-1.5 rounded-lg border border-solid border-amber-700")),
+                span("✓ bg-gradient-to-r from-... via-... to-...").class(tw!("text-xs font-semibold text-white bg-amber-600 px-3 py-1.5 rounded-lg border border-solid border-amber-700")),
+                span("✓ divide-y divide-slate-200 & space-y-1").class(tw!("text-xs font-semibold text-white bg-amber-600 px-3 py-1.5 rounded-lg border border-solid border-amber-700"))
+            )).class(tw!("flex flex-wrap gap-3"))
+        )).class(tw!("flex flex-col gap-5"))
+    ))
+    .class(tw!("p-6 bg-white dark:bg-slate-800 border border-solid border-slate-200 dark:border-slate-700 rounded-3xl shadow-xl transition-colors duration-300"))
+}
+
+#[component]
+fn FractionalAndDirectionalDemo() -> impl View {
+    div(view_chain!(
+        div(view_chain!(
+            span("10. Fractional Sizing, Inset Positioning & Directional Borders (Phase 7)").class(tw!("text-sm font-bold text-teal-600 dark:text-teal-400 uppercase tracking-wider")),
+            h2("w-1/2 Fractions, Absolute Floating Inset & Directional Accent Borders").class(tw!("text-2xl font-bold text-slate-900 dark:text-white mt-1 mb-2 transition-colors duration-300")),
+            p("Supports fractional sizing (w-1/2, w-1/3), negative position offset (-top-3 left-1/2 -translate-x-1/2), directional borders (border-t-4), and diagonal corner radius.")
+                .class(tw!("text-sm text-slate-600 dark:text-slate-300 mb-6 transition-colors duration-300"))
+        )),
+        div(view_chain!(
+            // Card with top accent border and floating centered badge
+            div(view_chain!(
+                // Floating Badge positioned with -top-3 left-1/2 -translate-x-1/2
+                span("★ Floating Centered Badge (-top-3 left-1/2 -translate-x-1/2)")
+                    .class(tw!("absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 bg-gradient-to-r from-teal-500 to-indigo-600 text-white text-xs font-bold rounded-full shadow-md whitespace-nowrap")),
+
+                h3("Diagonal Rounded Corners & Top Accent Border")
+                    .class(tw!("text-lg font-bold text-slate-900 dark:text-white mb-2 pt-2")),
+                p("Card utilizes border-t-4 border-teal-500 and rounded-tl-3xl rounded-br-3xl diagonal corners.")
+                    .class(tw!("text-xs text-slate-600 dark:text-slate-300 mb-4")),
+
+                // Fractional Width Progress Bars
+                div(view_chain!(
+                    span("w-1/2 Progress Bar (50%)").class(tw!("text-xs font-mono text-slate-700 dark:text-slate-300 font-bold mb-1 block")),
+                    div(
+                        div("").class(tw!("w-1/2 h-full bg-teal-500 rounded-full"))
+                    ).class(tw!("w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mb-3 p-0.5")),
+
+                    span("w-1/3 Progress Bar (33.3%)").class(tw!("text-xs font-mono text-slate-700 dark:text-slate-300 font-bold mb-1 block")),
+                    div(
+                        div("").class(tw!("w-1/3 h-full bg-emerald-500 rounded-full"))
+                    ).class(tw!("w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden p-0.5"))
+                ))
+            ))
+            .class(tw!("relative p-6 bg-slate-50 dark:bg-slate-900 border-t-4 border-teal-500 rounded-tl-3xl rounded-br-3xl rounded-tr-lg rounded-bl-lg border border-solid border-slate-200 dark:border-slate-800 shadow-md transition-colors duration-300 mb-6")),
+
+            // Badges
+            div(view_chain!(
+                span("✓ w-1/2 & w-1/3: 50% & 33.33% width").class(tw!("text-xs font-semibold text-white bg-teal-600 px-3 py-1.5 rounded-lg border border-solid border-teal-700")),
+                span("✓ -top-3 left-1/2 -translate-x-1/2: Floating Centered Inset").class(tw!("text-xs font-semibold text-white bg-teal-600 px-3 py-1.5 rounded-lg border border-solid border-teal-700")),
+                span("✓ border-t-4 border-teal-500 & rounded-tl-3xl").class(tw!("text-xs font-semibold text-white bg-teal-600 px-3 py-1.5 rounded-lg border border-solid border-teal-700"))
+            )).class(tw!("flex flex-wrap gap-3"))
+        ))
+    ))
+    .class(tw!("p-6 bg-white dark:bg-slate-800 border border-solid border-slate-200 dark:border-slate-700 rounded-3xl shadow-xl transition-colors duration-300"))
+}
+
+#[component]
 fn App() -> impl View {
     let (is_dark, set_is_dark) = Signal::pair(true);
 
@@ -292,7 +390,9 @@ fn App() -> impl View {
                 ThemeSystemAndDiagnosticsDemo(),
                 ContainerQueriesAndDceDemo(),
                 StandardColorPaletteDemo(),
-                ReactiveConditionalTwDemo()
+                ReactiveConditionalTwDemo(),
+                NewSyntaxExpansionDemo(),
+                FractionalAndDirectionalDemo()
             ))
             .class(tw!("flex flex-col gap-8 max-w-5xl mx-auto"))
         ))
