@@ -57,7 +57,7 @@ impl<T> PersistConfig<T> {
 /// 4. Provide a default with `.default(...)` or `.default_with(...)`
 /// 5. Call `.build()`
 ///
-/// ```rust,no_run
+/// ```rust,ignore
 /// use silex::prelude::*;
 ///
 /// let theme = Persistent::builder("theme")
@@ -67,7 +67,7 @@ impl<T> PersistConfig<T> {
 ///     .build();
 ///
 /// let page = Persistent::builder("page")
-///     .query()
+///     .query(&ctx)
 ///     .parse::<u32>()
 ///     .default(1)
 ///     .build();

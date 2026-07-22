@@ -437,8 +437,8 @@ pub fn StylingBasics(_ctx: RouterContext) -> impl View {
 #[component]
 pub fn Theming(_ctx: RouterContext) -> impl View {
     let global_settings = crate::advanced::use_user_settings();
-    let theme = use_theme::<AppTheme>();
-    let is_dark = theme.map(|t| t.surface.0 == "#111827");
+    let theme = global_settings.theme.map_fn(|t| get_theme(t));
+    let is_dark = global_settings.theme.map_fn(|t| t == "Dark");
 
     div![
         h2("🎨 Theme Engine"),

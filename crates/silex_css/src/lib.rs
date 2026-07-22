@@ -8,7 +8,7 @@ pub mod prelude {
     pub use crate::builder::{Style, sty};
     pub use crate::runtime::{DynamicCss, DynamicStyleManager, inject_style};
     pub use crate::theme::{
-        ThemePatchToCss, ThemeVariables, set_global_theme, theme_patch, theme_variables, use_theme,
+        ThemePatchToCss, ThemeVariables, set_global_theme, theme_patch, theme_variables,
     };
     pub use crate::types::*;
 }

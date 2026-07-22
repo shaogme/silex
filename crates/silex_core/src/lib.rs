@@ -193,7 +193,7 @@ impl<T, M> PartialEq for Rx<T, M> {
     }
 }
 
-impl<T: Copy, M> Copy for Rx<T, M> {}
+impl<T, M> Copy for Rx<T, M> {}
 
 pub use silex_rx::rx as __internal_rx;
 

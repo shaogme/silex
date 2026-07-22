@@ -28,10 +28,7 @@ pub fn theme_variables<T>(theme: impl IntoSignal<Value = T> + 'static) -> ThemeV
 where
     T: ThemeType + ThemeToCss + RxCloneData + 'static,
 {
-    let signal = theme.into_signal();
-    // Provide the theme signal in the current reactive scope
-    provide_context(signal);
-    ThemeVariables(signal)
+    ThemeVariables(theme.into_signal())
 }
 
 /// A structure that can be applied to a DOM element to inject theme variables.
@@ -82,19 +79,12 @@ where
     }
 }
 
-/// Hook to get the current theme signal from context.
-pub fn use_theme<T: 'static>() -> Signal<T> {
-    use_context::<Signal<T>>().expect("No ThemeProvider found in hierarchy")
-}
-
 /// Sets a global theme that applies to the entire document (:root).
 pub fn set_global_theme<T>(theme: impl IntoSignal<Value = T> + 'static)
 where
     T: ThemeType + ThemeToCss + RxCloneData + 'static,
 {
     let signal = theme.into_signal();
-    // Register the theme in the global context as well
-    provide_context(signal);
 
     // Apply reactive updates to :root
     Effect::new(move |prev_values: Option<Vec<String>>| {

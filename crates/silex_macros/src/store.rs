@@ -107,13 +107,17 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
         quote! { #name: self.#name.get() }
     });
 
-    let panic_msg = err_msg.unwrap_or_else(|| format!("Context for {} not found", store_name));
+    let panic_msg = err_msg.unwrap_or_else(|| format!("Store for {} not found in thread-local storage", store_name));
 
     Ok(quote! {
         /// Generated Store struct wrapping fields in reactive handles
         #[derive(Clone, Copy)]
         #vis struct #store_name {
             #(#struct_fields),*
+        }
+
+        ::std::thread_local! {
+            static __SILEX_STORE_INSTANCE: ::std::cell::RefCell<::std::option::Option<#store_name>> = const { ::std::cell::RefCell::new(::std::option::Option::None) };
         }
 
         impl #store_name {
@@ -132,7 +136,18 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
 
         impl ::silex::store::Store for #store_name {
             fn get() -> Self {
-                 ::silex::prelude::use_context::<Self>().expect(#panic_msg)
+                Self::try_get().expect(#panic_msg)
+            }
+
+            fn try_get() -> ::std::option::Option<Self> {
+                __SILEX_STORE_INSTANCE.with(|cell| cell.borrow().clone())
+            }
+
+            fn provide(self) -> Self {
+                __SILEX_STORE_INSTANCE.with(|cell| {
+                    *cell.borrow_mut() = ::std::option::Option::Some(self);
+                });
+                self
             }
         }
 

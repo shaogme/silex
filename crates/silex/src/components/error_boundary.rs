@@ -1,9 +1,17 @@
-use silex_core::error::{ErrorContext, SilexError};
-use silex_core::reactivity::Signal;
-use silex_core::traits::{RxGet, RxWrite};
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::rc::Rc;
+
+use wasm_bindgen_futures::spawn_local;
+
+use silex_core::{
+    error::{ErrorContext, SilexError, provide_context},
+    log::console_error,
+    reactivity::Signal,
+    rx,
+    traits::{RxGet, RxWrite},
+};
 use silex_dom::prelude::*;
 use silex_macros::{component, render};
-use std::rc::Rc;
 
 /// ErrorBoundary 组件
 ///
@@ -19,12 +27,14 @@ where
     let (error, set_error) = Signal::<Option<SilexError>>::pair(None);
 
     let error_ctx = ErrorContext(Rc::new(move |e| {
-        silex_core::log::console_error(format!("ErrorBoundary caught error: {}", e));
+        console_error(format!("ErrorBoundary caught error: {}", e));
         // Defer update to avoid render-induced updates
-        wasm_bindgen_futures::spawn_local(async move {
+        spawn_local(async move {
             set_error.set(Some(e));
         });
     }));
+
+    provide_context(error_ctx);
 
     render! {
         use scope;
@@ -32,15 +42,14 @@ where
         let fallback = fallback.clone();
         let children = children.clone();
 
-        silex_core::rx! {
+        rx! {
             if let Some(e) = error.get() {
                 fallback(e).into_any()
             } else {
-                let res =
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe({
-                        let children = children.clone();
-                        move || children().into_any()
-                    }));
+                let res = catch_unwind(AssertUnwindSafe({
+                    let children = children.clone();
+                    move || children().into_any()
+                }));
 
                 match res {
                     Ok(view) => view,
@@ -52,13 +61,13 @@ where
                         } else {
                             "Unknown Panic".to_string()
                         };
-                        silex_core::log::console_error(format!(
+                        console_error(format!(
                             "ErrorBoundary caught panic: {}",
                             msg
                         ));
 
                         let err = SilexError::Javascript(msg);
-                        wasm_bindgen_futures::spawn_local(async move {
+                        spawn_local(async move {
                             set_error.set(Some(err));
                         });
                         AnyView::Empty

@@ -7,8 +7,7 @@ use crate::{
     },
 };
 use std::{
-    any::{Any, TypeId},
-    collections::HashMap,
+    any::Any,
     mem,
     panic::Location,
     rc::Rc,
@@ -136,7 +135,6 @@ impl GraphStorage for Storage {
 pub(crate) struct NodeAux {
     pub(crate) children: Vec<NodeId>,
     pub(crate) cleanups: CleanupList,
-    pub(crate) context: Option<HashMap<TypeId, Box<dyn Any>>>,
     #[cfg(debug_assertions)]
     pub(crate) debug_label: Option<String>,
 }

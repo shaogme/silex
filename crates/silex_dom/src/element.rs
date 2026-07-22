@@ -1,15 +1,19 @@
 use crate::attribute::{ApplyTarget, ApplyToDom, IntoStorable, PendingAttribute};
-use silex_core::SilexError;
-use silex_core::reactivity::{StoredValue, on_cleanup};
-use silex_core::traits::RxWrite;
+use crate::event::{EventDescriptor, EventHandler};
 
 use std::marker::PhantomData;
-use wasm_bindgen::JsCast;
-use wasm_bindgen::prelude::*;
+
+use wasm_bindgen::{JsCast, prelude::*};
 use web_sys::Element as WebElem;
 
+use silex_core::{
+    SilexError,
+    error::handle_error,
+    reactivity::{StoredValue, on_cleanup},
+    traits::RxWrite,
+};
+
 pub mod tags;
-use crate::event::{EventDescriptor, EventHandler};
 pub use tags::*;
 
 /// Identity function to wrap text content as a View.
@@ -99,7 +103,7 @@ impl crate::view::View for Element {
             .append_child(&self.dom_element)
             .map_err(SilexError::from)
         {
-            silex_core::error::handle_error(e);
+            handle_error(e);
         }
     }
 
@@ -118,7 +122,7 @@ impl crate::view::View for Element {
             .append_child(&self.dom_element)
             .map_err(SilexError::from)
         {
-            silex_core::error::handle_error(e);
+            handle_error(e);
         }
     }
 }
@@ -266,7 +270,7 @@ where
         .add_event_listener_with_callback(&event_name, js_value)
         .map_err(SilexError::from)
     {
-        silex_core::error::handle_error(e);
+        handle_error(e);
         return;
     }
 
@@ -276,7 +280,7 @@ where
 
     on_cleanup(move || {
         let _ = target.remove_event_listener_with_callback(&event_name, &js_fn);
-        closure_store.update_untracked(|opt| {
+        let _ = closure_store.try_update_untracked(|opt| {
             let _ = opt.take();
         });
     });

@@ -1,6 +1,5 @@
 use std::{
-    any::{Any, TypeId},
-    collections::HashMap,
+    any::Any,
     mem,
     rc::Rc,
 };
@@ -391,32 +390,6 @@ impl Runtime {
         id
     }
 
-    pub fn provide_context(&self, key: TypeId, value: Box<dyn Any>) {
-        if let Some(owner) = self.current_owner()
-            && let Some(aux) = self.storage.try_aux_mut(owner)
-        {
-            if aux.context.is_none() {
-                aux.context = Some(HashMap::new());
-            }
-            if let Some(ctx) = &mut aux.context {
-                ctx.insert(key, value);
-            }
-        }
-    }
-
-    pub fn use_context_raw(&self, key: TypeId) -> Option<&dyn Any> {
-        let mut current_opt = self.current_owner();
-        while let Some(current) = current_opt {
-            if let Some(aux) = self.storage.node_aux.get(current)
-                && let Some(ctx) = &aux.context
-                && let Some(val) = ctx.get(&key)
-            {
-                return Some(val.as_ref());
-            }
-            current_opt = self.storage.graph.get(current).and_then(|n| n.parent);
-        }
-        None
-    }
 
     pub(crate) unsafe fn get_any_raw_ptr_untracked(&self, id: NodeId) -> Option<*const ()> {
         if let Some(n) = self.storage.reactive.get(id)

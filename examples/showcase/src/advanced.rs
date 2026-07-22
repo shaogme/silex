@@ -18,8 +18,8 @@ pub struct UserSettings {
 
 #[component]
 pub fn StoreDemo(_ctx: RouterContext) -> impl View {
-    // Access global store provided in main
-    // Note: `use_context::<T>() -> Option<T>` and `expect_context::<T>() -> T` are also available.
+    // Access global store provided in main via thread local
+    // Note: `UserSettingsStore::try_get()` and `UserSettingsStore::get()` are also available.
     // Access global store using the generated helper
     let settings = use_user_settings();
 

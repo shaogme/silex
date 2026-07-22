@@ -9,35 +9,12 @@ use crate::{
 };
 use std::{
     alloc::Layout,
-    any::{Any, TypeId},
+    any::Any,
     marker::PhantomData,
     mem::{align_of, size_of},
     ptr::{drop_in_place, write},
     rc::Rc,
 };
-
-// --- Context ---
-
-pub fn provide_context<T: 'static>(value: T) {
-    internal_provide_context(TypeId::of::<T>(), Box::new(value));
-}
-
-fn internal_provide_context(key: TypeId, value: Box<dyn Any>) {
-    RUNTIME.get_or(Runtime::new).provide_context(key, value);
-}
-
-pub fn use_context<T: Clone + 'static>() -> Option<T> {
-    internal_use_context(TypeId::of::<T>())?
-        .downcast_ref::<T>()
-        .cloned()
-}
-
-fn internal_use_context(key: TypeId) -> Option<&'static dyn Any> {
-    let rt = RUNTIME.get()?;
-    // Safe: Runtime context value is 'static
-    let val = rt.use_context_raw(key)?;
-    Some(unsafe { &*(val as *const dyn Any) })
-}
 
 // --- Effect ---
 
