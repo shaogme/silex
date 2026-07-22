@@ -1,0 +1,18 @@
+[theme]
+prefix = "slx-theme"
+dark_mode = "class"
+
+[theme.colors]
+brand-primary = "#6366f1"
+brand-accent = "#ec4899"
+brand-success = "#10b981"
+brand-warning = "#f59e0b"
+
+[theme.dark_colors]
+brand-primary = "#818cf8"
+brand-accent = "#f472b6"
+brand-success = "#34d399"
+brand-warning = "#fbbf24"
+
+[theme.breakpoints]
+"3xl" = "1920px"

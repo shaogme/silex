@@ -518,6 +518,38 @@ fn TailwindVariantsCvaDemo() -> impl View {
 }
 
 #[component]
+fn SilexTomlDesignTokensDemo() -> impl View {
+    div(view_chain!(
+        div(view_chain!(
+            span("12. silex.toml & Design Tokens").class(tw!("text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest")),
+            h2("silex.toml Static Token Linkage").class(tw!("text-xl font-bold text-slate-900 dark:text-white mt-1 mb-2 transition-colors duration-300")),
+            p("Reads custom colors (bg-brand-primary, text-brand-accent) & custom breakpoints (3xl:) directly from silex.toml with compile-time Levenshtein typo suggestions.")
+                .class(tw!("text-xs text-slate-600 dark:text-slate-300 mb-5 leading-relaxed transition-colors duration-300"))
+        )),
+        div(view_chain!(
+            // Custom Color Token Swatches
+            div(view_chain!(
+                span("silex.toml Defined Tokens").class(tw!("text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2.5 block")),
+                div(view_chain!(
+                    div("bg-brand-primary").class(tw!("p-2.5 bg-brand-primary text-white text-xs font-mono font-bold rounded-xl text-center shadow-md")),
+                    div("text-brand-accent").class(tw!("p-2.5 bg-slate-100 dark:bg-slate-900 text-brand-accent text-xs font-mono font-bold rounded-xl text-center border border-solid border-slate-200 dark:border-slate-800 shadow-sm")),
+                    div("bg-brand-success/20").class(tw!("p-2.5 bg-brand-success/20 text-emerald-600 dark:text-emerald-400 text-xs font-mono font-bold rounded-xl text-center border border-solid border-emerald-500/30")),
+                    div("border-brand-warning").class(tw!("p-2.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-mono font-bold rounded-xl text-center border-2 border-solid border-brand-warning"))
+                )).class(tw!("grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4"))
+            )).class(tw!("p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-solid border-slate-200 dark:border-slate-800 mb-4 transition-colors duration-300")),
+
+            // Badges
+            div(view_chain!(
+                span("✓ bg-brand-primary (#6366f1)").class(tw!("text-xs font-semibold text-white bg-indigo-600 px-3 py-1.5 rounded-lg border border-solid border-indigo-700")),
+                span("✓ 3xl: (min-width: 1920px)").class(tw!("text-xs font-semibold text-white bg-indigo-600 px-3 py-1.5 rounded-lg border border-solid border-indigo-700")),
+                span("✓ Levenshtein Typo Check").class(tw!("text-xs font-semibold text-white bg-indigo-600 px-3 py-1.5 rounded-lg border border-solid border-indigo-700"))
+            )).class(tw!("flex flex-wrap gap-2"))
+        ))
+    ))
+    .class(card_container_cls())
+}
+
+#[component]
 fn App() -> impl View {
     let (is_dark, set_is_dark) = Signal::pair(true);
     let (category, set_category) = Signal::pair(DemoCategory::All);
@@ -565,7 +597,8 @@ fn App() -> impl View {
                             ThemeSystemAndDiagnosticsDemo(),
                             ContainerQueriesAndDceDemo(),
                             FractionalAndDirectionalDemo(),
-                            TailwindVariantsCvaDemo()
+                            TailwindVariantsCvaDemo(),
+                            SilexTomlDesignTokensDemo()
                         )).class(tw!("grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6")).into_any()
                     } else {
                         ().into_any()

@@ -124,6 +124,10 @@ pub(crate) fn parse_modifiers_and_body(token: &str) -> (Vec<Modifier>, &str) {
     let mut current = token;
 
     while let Some((prefix, rest)) = split_modifier(current) {
+        let is_custom_bp = crate::css::config::get_config()
+            .map(|cfg| cfg.theme.breakpoints.contains_key(prefix))
+            .unwrap_or(false);
+
         let modifier = if let Some(container_spec) = prefix.strip_prefix('@') {
             let (c_name, spec) = if let Some((name, rest)) = container_spec.split_once('/') {
                 (Some(name.to_string()), rest)
@@ -152,12 +156,13 @@ pub(crate) fn parse_modifiers_and_body(token: &str) -> (Vec<Modifier>, &str) {
                 name: c_name,
                 min_width,
             }
+        } else if is_custom_bp || matches!(prefix, "sm" | "md" | "lg" | "xl" | "2xl") {
+            Modifier::MediaBreakpoint(prefix.to_string())
         } else {
             match prefix {
                 "hover" | "focus" | "active" | "disabled" | "visited" | "first" | "last"
                 | "odd" | "even" => Modifier::PseudoClass(prefix.to_string()),
                 "before" | "after" | "placeholder" => Modifier::PseudoElement(prefix.to_string()),
-                "sm" | "md" | "lg" | "xl" | "2xl" => Modifier::MediaBreakpoint(prefix.to_string()),
                 "dark" => Modifier::Dark,
                 _ => {
                     if let Some(group_state) = prefix.strip_prefix("group-") {

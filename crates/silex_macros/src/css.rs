@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod classes;
 pub mod compiler;
+pub mod config;
 pub mod error;
 pub mod styled;
 pub mod theme;

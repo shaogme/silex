@@ -21,6 +21,8 @@ workspace = true
 syn = { workspace = true, features = ["full", "extra-traits", "parsing", "printing", "proc-macro", "clone-impls", "derive"] }
 quote = { workspace = true, features = ["proc-macro"] }
 proc-macro2 = { workspace = true, features = ["proc-macro"] }
+serde = { workspace = true }
+toml = { workspace = true }
 lightningcss = { version = "1.0.0-alpha.71", optional = true , default-features = false }
 
 silex_hash = { workspace = true, optional = true }

@@ -57,6 +57,20 @@ fn interpolate_hex(hex1: &str, hex2: &str, t: f64) -> String {
 
 /// 查找标准或非标色阶 Tailwind 色板颜色 (支持 1~999 任意数值内插，如 slate-850, indigo-25, red-975)
 pub fn lookup_palette_color(color_name: &str, shade: &str) -> Option<Cow<'static, str>> {
+    if let Some(cfg) = crate::css::config::get_config() {
+        let full = format!("{}-{}", color_name, shade);
+        if let Some(val) = cfg
+            .theme
+            .colors
+            .get(&full)
+            .or_else(|| cfg.theme.colors.get(color_name))
+            .or_else(|| cfg.theme.dark_colors.get(&full))
+            .or_else(|| cfg.theme.dark_colors.get(color_name))
+        {
+            return Some(Cow::Owned(val.clone()));
+        }
+    }
+
     let shades_array = get_raw_palette! {
         color_name;
         "slate"   => ["#f8fafc", "#f1f5f9", "#e2e8f0", "#cbd5e1", "#94a3b8", "#64748b", "#475569", "#334155", "#1e293b", "#0f172a", "#020617"],
@@ -192,6 +206,24 @@ pub fn parse_color_value(color_token: &str) -> Option<UtilityValue> {
     } else {
         (color_token, None)
     };
+
+    // 0. Custom theme colors from silex.toml
+    if let Some(cfg) = crate::css::config::get_config()
+        && let Some(val) = cfg
+            .theme
+            .colors
+            .get(base)
+            .or_else(|| cfg.theme.dark_colors.get(base))
+    {
+        if val.starts_with('#') {
+            return match opacity {
+                Some(op) => Some(UtilityValue::ArbitraryLiteral(hex_to_rgba(val, op))),
+                None => Some(UtilityValue::HexColor(val.clone())),
+            };
+        } else {
+            return Some(UtilityValue::ArbitraryLiteral(val.clone()));
+        }
+    }
 
     // 1. Direct function colors: rgba(...), rgb(...), hsl(...), hsla(...)
     if base.starts_with("rgba(")

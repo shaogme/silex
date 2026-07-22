@@ -296,16 +296,30 @@ pub fn levenshtein_distance(s1: &str, s2: &str) -> usize {
 }
 
 /// 在候选词列表中寻找与给定 token 最相近的 Utility 建议
-pub fn find_best_suggestion(token: &str) -> Option<&'static str> {
+pub fn find_best_suggestion(token: &str) -> Option<String> {
     let mut best_match = None;
     let mut min_dist = usize::MAX;
 
-    for &candidate in CANDIDATE_UTILITIES {
+    let mut candidates: Vec<String> = CANDIDATE_UTILITIES.iter().map(|s| s.to_string()).collect();
+
+    if let Some(cfg) = crate::css::config::get_config() {
+        for color_key in cfg.theme.colors.keys().chain(cfg.theme.dark_colors.keys()) {
+            candidates.push(color_key.clone());
+            candidates.push(format!("bg-{}", color_key));
+            candidates.push(format!("text-{}", color_key));
+            candidates.push(format!("border-{}", color_key));
+        }
+        for bp_key in cfg.theme.breakpoints.keys() {
+            candidates.push(bp_key.clone());
+        }
+    }
+
+    for candidate in &candidates {
         let dist = levenshtein_distance(token, candidate);
         let max_allowed = if candidate.len() <= 4 { 2 } else { 3 };
         if dist <= max_allowed && dist < min_dist {
             min_dist = dist;
-            best_match = Some(candidate);
+            best_match = Some(candidate.clone());
         }
     }
 
@@ -326,8 +340,11 @@ mod tests {
 
     #[test]
     fn test_find_best_suggestion() {
-        assert_eq!(find_best_suggestion("flexx"), Some("flex"));
-        assert_eq!(find_best_suggestion("items-centerr"), Some("items-center"));
+        assert_eq!(find_best_suggestion("flexx"), Some("flex".to_string()));
+        assert_eq!(
+            find_best_suggestion("items-centerr"),
+            Some("items-center".to_string())
+        );
         assert_eq!(find_best_suggestion("completely_unknown_token"), None);
     }
 }

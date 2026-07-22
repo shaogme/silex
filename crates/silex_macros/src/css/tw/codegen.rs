@@ -357,14 +357,42 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                 };
             }
             Modifier::Dark => {
-                let sel_str = ".dark &, &.dark";
-                let ts: TokenStream = sel_str.parse().unwrap();
-                current_block = CssBlock {
-                    rules: vec![CssRule::Nested(CssNested {
-                        selectors: ts,
-                        block: current_block,
-                    })],
-                };
+                let dark_mode = crate::css::config::get_config()
+                    .and_then(|cfg| cfg.theme.dark_mode.as_deref())
+                    .unwrap_or("class");
+
+                if dark_mode == "media" {
+                    let query = "(prefers-color-scheme: dark)";
+                    let at_rule_params: TokenStream = query.parse().unwrap();
+                    let at_rule_name = Ident::new("media", Span::call_site());
+
+                    let selector_ts: TokenStream = "&".parse().unwrap();
+                    let nested_block = CssBlock {
+                        rules: vec![CssRule::Nested(CssNested {
+                            selectors: selector_ts,
+                            block: current_block,
+                        })],
+                    };
+
+                    let at_rule = CssAtRule {
+                        name: at_rule_name,
+                        params: at_rule_params,
+                        block: nested_block,
+                    };
+
+                    current_block = CssBlock {
+                        rules: vec![CssRule::AtRule(at_rule)],
+                    };
+                } else {
+                    let sel_str = ".dark &, &.dark";
+                    let ts: TokenStream = sel_str.parse().unwrap();
+                    current_block = CssBlock {
+                        rules: vec![CssRule::Nested(CssNested {
+                            selectors: ts,
+                            block: current_block,
+                        })],
+                    };
+                }
             }
             Modifier::Group(state) => {
                 let sel_str = format!(".group:{} &", state);
@@ -396,14 +424,18 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                 };
             }
             Modifier::MediaBreakpoint(bp) => {
-                let min_width = match bp.as_str() {
+                let custom_bp = crate::css::config::get_config()
+                    .and_then(|cfg| cfg.theme.breakpoints.get(bp.as_str()))
+                    .map(|s| s.as_str());
+
+                let min_width = custom_bp.unwrap_or_else(|| match bp.as_str() {
                     "sm" => "640px",
                     "md" => "768px",
                     "lg" => "1024px",
                     "xl" => "1280px",
                     "2xl" => "1536px",
                     _ => "640px",
-                };
+                });
                 let query = format!("(min-width: {})", min_width);
                 let at_rule_params: TokenStream = query.parse().unwrap();
                 let at_rule_name = Ident::new("media", Span::call_site());
