@@ -32,10 +32,10 @@ pub fn TabsTrigger(
     let cls = rx!(move || {
         let is_active = active_tab.get() == value;
         let base = tw!(
-            "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer border-0",
+            "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer border border-solid border-transparent",
             (
                 is_active,
-                "bg-white text-slate-950 shadow-xs dark:bg-slate-950 dark:text-slate-50 font-semibold",
+                "bg-white text-slate-950 shadow-xs dark:bg-slate-900/40 dark:text-slate-50 dark:border-slate-800 font-semibold",
                 "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
             )
         ).get();

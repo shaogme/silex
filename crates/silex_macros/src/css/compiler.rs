@@ -104,7 +104,7 @@ impl CssCompiler {
             stylesheet
                 .to_css(PrinterOptions {
                     minify: true,
-                    targets: Targets::default(),
+                    targets: get_compiler_targets(),
                     ..PrinterOptions::default()
                 })
                 .map_err(|e| {
@@ -131,7 +131,7 @@ impl CssCompiler {
             stylesheet
                 .to_css(PrinterOptions {
                     minify: true,
-                    targets: Targets::default(),
+                    targets: get_compiler_targets(),
                     ..Default::default()
                 })
                 .map_err(|e| {
@@ -584,7 +584,9 @@ where
             TokenTree::Literal(lit) => {
                 let s = lit.to_string();
                 if s.starts_with('"') && s.ends_with('"') {
-                    out.push_str(&s[1..s.len() - 1]);
+                    let content = &s[1..s.len() - 1];
+                    let unescaped = content.replace("\\\\", "\\").replace("\\\"", "\"");
+                    out.push_str(&unescaped);
                 } else {
                     out.push_str(&s);
                 }
@@ -881,5 +883,16 @@ mod tests {
                 .message
                 .contains("Potentially ambiguous token '?'")
         );
+    }
+}
+
+fn get_compiler_targets() -> Targets {
+    let mut browsers = lightningcss::targets::Browsers::default();
+    browsers.chrome = Some(80 << 16);
+    browsers.safari = Some(13 << 16);
+    browsers.firefox = Some(75 << 16);
+    Targets {
+        browsers: Some(browsers),
+        ..Targets::default()
     }
 }

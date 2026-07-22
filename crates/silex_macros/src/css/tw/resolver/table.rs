@@ -90,6 +90,8 @@ define_static_table! {
     "grid" => { "display" => kw("grid") },
     "inline-grid" => { "display" => kw("inline-grid") },
     "hidden" => { "display" => kw("none") },
+    "field-sizing-content" => { "field-sizing" => kw("content") },
+    "field-sizing-fixed" => { "field-sizing" => kw("fixed") },
     "group" | "peer" => {},
 
     // --- 隔离 (Isolation) ---
@@ -340,6 +342,7 @@ define_static_table! {
     "border" => {
         "border-width" => px(1.0),
         "border-style" => kw("solid"),
+        "border-color" => kw("var(--border)"),
     },
     "border-0" => { "border-width" => px(0.0) },
     "border-2" => { "border-width" => px(2.0) },
@@ -354,8 +357,11 @@ define_static_table! {
 
     // --- 阴影 Shadow ---
     "shadow-2xs" => { "box-shadow" => kw("0 1px 1px 0 rgba(0, 0, 0, 0.05)") },
-    "shadow-xs" => { "box-shadow" => kw("0 1px 2px 0 rgba(0, 0, 0, 0.05)") },
-    "shadow-sm" => { "box-shadow" => kw("0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 1px 0 rgba(0, 0, 0, 0.05)") },
+    "shadow-xs" => {
+        "--tw-shadow" => kw("0 1px 2px 0 rgba(0, 0, 0, 0.05)"),
+        "box-shadow" => kw("var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow, 0 1px 2px 0 rgba(0, 0, 0, 0.05))"),
+    },
+    "shadow-sm" => { "box-shadow" => kw("0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1)") },
     "shadow" => {
         "box-shadow" => kw("0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1)"),
     },
@@ -402,11 +408,26 @@ define_static_table! {
         "box-shadow" => kw(super::RING_BOX_SHADOW),
     },
     "ring-inset" => { "--tw-ring-inset" => kw("inset") },
-    "ring-offset-0" => { "--tw-ring-offset-width" => px(0.0) },
-    "ring-offset-1" => { "--tw-ring-offset-width" => px(1.0) },
-    "ring-offset-2" => { "--tw-ring-offset-width" => px(2.0) },
-    "ring-offset-4" => { "--tw-ring-offset-width" => px(4.0) },
-    "ring-offset-8" => { "--tw-ring-offset-width" => px(8.0) },
+    "ring-offset-0" => {
+        "--tw-ring-offset-width" => px(0.0),
+        "box-shadow" => kw(super::RING_BOX_SHADOW),
+    },
+    "ring-offset-1" => {
+        "--tw-ring-offset-width" => px(1.0),
+        "box-shadow" => kw(super::RING_BOX_SHADOW),
+    },
+    "ring-offset-2" => {
+        "--tw-ring-offset-width" => px(2.0),
+        "box-shadow" => kw(super::RING_BOX_SHADOW),
+    },
+    "ring-offset-4" => {
+        "--tw-ring-offset-width" => px(4.0),
+        "box-shadow" => kw(super::RING_BOX_SHADOW),
+    },
+    "ring-offset-8" => {
+        "--tw-ring-offset-width" => px(8.0),
+        "box-shadow" => kw(super::RING_BOX_SHADOW),
+    },
 
     // --- Background Position & Repeat & Size ---
     "bg-bottom" => { "background-position" => kw("bottom") },

@@ -2,13 +2,13 @@ use crate::css::ast::{CssAtRule, CssBlock, CssDeclaration, CssNested, CssRule};
 use crate::css::tw::ast::{Modifier, TwInput, UtilityRule, UtilityValue};
 use proc_macro2::{Delimiter, Group, Ident, Punct, Spacing, Span, TokenStream, TokenTree};
 use quote::quote;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use syn::Result;
 
 /// 将解析后的 `Vec<UtilityRule>` 归一化转换构建为 `silex_macros::css::ast::CssBlock`
 pub fn build_css_block_from_rules(rules: Vec<UtilityRule>) -> Result<CssBlock> {
     let mut root_raw_rules = Vec::new();
-    let mut modifier_groups: HashMap<Vec<Modifier>, Vec<UtilityRule>> = HashMap::new();
+    let mut modifier_groups: Vec<(Vec<Modifier>, Vec<UtilityRule>)> = Vec::new();
     let mut detected_keyframes: HashSet<String> = HashSet::new();
 
     for rule in rules {
@@ -20,12 +20,19 @@ pub fn build_css_block_from_rules(rules: Vec<UtilityRule>) -> Result<CssBlock> {
         if rule.modifiers.is_empty() {
             root_raw_rules.push(rule);
         } else {
-            modifier_groups
-                .entry(rule.modifiers.clone())
-                .or_default()
-                .push(rule);
+            if let Some((_, group_rules)) = modifier_groups
+                .iter_mut()
+                .find(|(m, _)| m == &rule.modifiers)
+            {
+                group_rules.push(rule);
+            } else {
+                modifier_groups.push((rule.modifiers.clone(), vec![rule]));
+            }
         }
     }
+
+    // 按修饰符维度（修饰符数量少 -> 多的顺序）排序，确保基础 modifier 样式先出，复合 modifier 样式后出
+    modifier_groups.sort_by_key(|(m, _)| m.len());
 
     let mut root_rules = Vec::new();
 
@@ -397,8 +404,30 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                     };
                 }
             }
-            Modifier::Group(state) => {
-                let sel_str = format!(".group:{} &", state);
+            Modifier::Group { state, name } => {
+                let sel_str = format_group_peer_selector(true, &state, name.as_deref());
+                let lit = proc_macro2::Literal::string(&sel_str);
+                let ts = quote::quote!(#lit);
+                current_block = CssBlock {
+                    rules: vec![CssRule::Nested(CssNested {
+                        selectors: ts,
+                        block: current_block,
+                    })],
+                };
+            }
+            Modifier::Peer { state, name } => {
+                let sel_str = format_group_peer_selector(false, &state, name.as_deref());
+                let lit = proc_macro2::Literal::string(&sel_str);
+                let ts = quote::quote!(#lit);
+                current_block = CssBlock {
+                    rules: vec![CssRule::Nested(CssNested {
+                        selectors: ts,
+                        block: current_block,
+                    })],
+                };
+            }
+            Modifier::Child => {
+                let sel_str = "& > *";
                 let ts: TokenStream = sel_str.parse().unwrap();
                 current_block = CssBlock {
                     rules: vec![CssRule::Nested(CssNested {
@@ -407,9 +436,64 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                     })],
                 };
             }
-            Modifier::Peer(state) => {
-                let sel_str = format!(".peer:{} ~ &", state);
+            Modifier::Descendant => {
+                let sel_str = "& *";
                 let ts: TokenStream = sel_str.parse().unwrap();
+                current_block = CssBlock {
+                    rules: vec![CssRule::Nested(CssNested {
+                        selectors: ts,
+                        block: current_block,
+                    })],
+                };
+            }
+            Modifier::DataAttribute { key, value } => {
+                let sel_str = match value {
+                    Some(v) => format!("&[data-{}=\"{}\"]", key, v),
+                    None => format!("&[data-{}]", key),
+                };
+                let lit = proc_macro2::Literal::string(&sel_str);
+                let ts = quote::quote!(#lit);
+                current_block = CssBlock {
+                    rules: vec![CssRule::Nested(CssNested {
+                        selectors: ts,
+                        block: current_block,
+                    })],
+                };
+            }
+            Modifier::AriaAttribute { key, value } => {
+                let sel_str = match value {
+                    Some(v) => format!("&[aria-{}=\"{}\"]", key, v),
+                    None => format!("&[aria-{}]", key),
+                };
+                let lit = proc_macro2::Literal::string(&sel_str);
+                let ts = quote::quote!(#lit);
+                current_block = CssBlock {
+                    rules: vec![CssRule::Nested(CssNested {
+                        selectors: ts,
+                        block: current_block,
+                    })],
+                };
+            }
+            Modifier::Has(target) => {
+                let has_target = if let Some(inner) = target
+                    .strip_prefix("has-data-[")
+                    .and_then(|s| s.strip_suffix(']'))
+                {
+                    match inner.split_once('=') {
+                        Some((k, v)) => format!("[data-{}=\"{}\"]", k, v),
+                        None => format!("[data-{}]", inner),
+                    }
+                } else if let Some(inner) = target
+                    .strip_prefix("has-[")
+                    .and_then(|s| s.strip_suffix(']'))
+                {
+                    inner.to_string()
+                } else {
+                    target.clone()
+                };
+                let sel_str = format!("&:has({})", has_target);
+                let lit = proc_macro2::Literal::string(&sel_str);
+                let ts = quote::quote!(#lit);
                 current_block = CssBlock {
                     rules: vec![CssRule::Nested(CssNested {
                         selectors: ts,
@@ -547,5 +631,61 @@ fn collect_used_animations(rules: &[CssRule], used: &mut HashSet<String>) {
                 }
             }
         }
+    }
+}
+
+fn format_group_peer_selector(is_group: bool, state: &str, name: Option<&str>) -> String {
+    let base = match name {
+        Some(n) => {
+            if is_group {
+                format!(".group\\/{}", n)
+            } else {
+                format!(".peer\\/{}", n)
+            }
+        }
+        None => {
+            if is_group {
+                ".group".to_string()
+            } else {
+                ".peer".to_string()
+            }
+        }
+    };
+    let connector = if is_group { "&" } else { "~ &" };
+
+    if let Some(inner) = state
+        .strip_prefix("data-[")
+        .and_then(|s| s.strip_suffix(']'))
+    {
+        let attr = match inner.split_once('=') {
+            Some((k, v)) => format!("[data-{}=\"{}\"]", k, v),
+            None => format!("[data-{}]", inner),
+        };
+        format!("{}{}{}", base, attr, connector)
+    } else if let Some(inner) = state
+        .strip_prefix("has-data-[")
+        .and_then(|s| s.strip_suffix(']'))
+    {
+        let attr = match inner.split_once('=') {
+            Some((k, v)) => format!("[data-{}=\"{}\"]", k, v),
+            None => format!("[data-{}]", inner),
+        };
+        format!("{}:has({}){}", base, attr, connector)
+    } else if let Some(inner) = state
+        .strip_prefix("has-[")
+        .and_then(|s| s.strip_suffix(']'))
+    {
+        format!("{}:has({}){}", base, inner, connector)
+    } else if state.starts_with('[') && state.ends_with(']') {
+        let inner = &state[1..state.len() - 1];
+        if let Some(rest) = inner.strip_prefix("&:") {
+            format!("{}:{} {}", base, rest, connector)
+        } else if let Some(rest) = inner.strip_prefix('&') {
+            format!("{}{}{}", base, rest, connector)
+        } else {
+            format!("{}{} {}", base, inner, connector)
+        }
+    } else {
+        format!("{}:{} {}", base, state, connector)
     }
 }

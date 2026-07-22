@@ -3,6 +3,30 @@ use crate::css::tw::resolver::resolve_utility;
 use syn::parse::{Parse, ParseStream};
 use syn::{Expr, LitStr, Result, Token, parenthesized};
 
+#[inline]
+fn is_marker_class(token: &str) -> bool {
+    token == "group" || token == "peer" || token.starts_with("group/") || token.starts_with("peer/")
+}
+
+fn split_state_and_name(rest: &str) -> (String, Option<String>) {
+    if let Some(slash_idx) = rest.rfind('/') {
+        let name_part = &rest[slash_idx + 1..];
+        let state_part = &rest[..slash_idx];
+        if !name_part.is_empty()
+            && name_part
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
+            let open_brackets = state_part.chars().filter(|&c| c == '[').count();
+            let close_brackets = state_part.chars().filter(|&c| c == ']').count();
+            if open_brackets == close_brackets {
+                return (state_part.to_string(), Some(name_part.to_string()));
+            }
+        }
+    }
+    (rest.to_string(), None)
+}
+
 impl Parse for TwInput {
     fn parse(input: ParseStream) -> Result<Self> {
         let mut segments = Vec::new();
@@ -18,7 +42,7 @@ impl Parse for TwInput {
                 for token in raw_str.split_whitespace() {
                     let (modifiers, body_token) = parse_modifiers_and_body(token);
                     if modifiers.is_empty()
-                        && (body_token == "group" || body_token == "peer")
+                        && is_marker_class(body_token)
                         && !extra_classes.contains(&body_token.to_string())
                     {
                         extra_classes.push(body_token.to_string());
@@ -69,7 +93,7 @@ impl Parse for TwInput {
                 for token in raw_str.split_whitespace() {
                     let (modifiers, body_token) = parse_modifiers_and_body(token);
                     if modifiers.is_empty()
-                        && (body_token == "group" || body_token == "peer")
+                        && is_marker_class(body_token)
                         && !extra_classes.contains(&body_token.to_string())
                     {
                         extra_classes.push(body_token.to_string());
@@ -85,7 +109,7 @@ impl Parse for TwInput {
                     for token in raw_str.split_whitespace() {
                         let (modifiers, body_token) = parse_modifiers_and_body(token);
                         if modifiers.is_empty()
-                            && (body_token == "group" || body_token == "peer")
+                            && is_marker_class(body_token)
                             && !extra_classes.contains(&body_token.to_string())
                         {
                             extra_classes.push(body_token.to_string());
@@ -156,6 +180,10 @@ pub(crate) fn parse_modifiers_and_body(token: &str) -> (Vec<Modifier>, &str) {
                 name: c_name,
                 min_width,
             }
+        } else if prefix == "*" {
+            Modifier::Child
+        } else if prefix == "**" {
+            Modifier::Descendant
         } else if is_custom_bp || matches!(prefix, "sm" | "md" | "lg" | "xl" | "2xl") {
             Modifier::MediaBreakpoint(prefix.to_string())
         } else {
@@ -165,10 +193,47 @@ pub(crate) fn parse_modifiers_and_body(token: &str) -> (Vec<Modifier>, &str) {
                 "before" | "after" | "placeholder" => Modifier::PseudoElement(prefix.to_string()),
                 "dark" => Modifier::Dark,
                 _ => {
-                    if let Some(group_state) = prefix.strip_prefix("group-") {
-                        Modifier::Group(group_state.to_string())
-                    } else if let Some(peer_state) = prefix.strip_prefix("peer-") {
-                        Modifier::Peer(peer_state.to_string())
+                    if let Some(rest) = prefix.strip_prefix("group-") {
+                        let (state, name) = split_state_and_name(rest);
+                        Modifier::Group { state, name }
+                    } else if let Some(rest) = prefix.strip_prefix("peer-") {
+                        let (state, name) = split_state_and_name(rest);
+                        Modifier::Peer { state, name }
+                    } else if prefix.starts_with("data-[") && prefix.ends_with(']') {
+                        let inner = &prefix[6..prefix.len() - 1];
+                        if let Some((k, v)) = inner.split_once('=') {
+                            Modifier::DataAttribute {
+                                key: k.to_string(),
+                                value: Some(v.to_string()),
+                            }
+                        } else {
+                            Modifier::DataAttribute {
+                                key: inner.to_string(),
+                                value: None,
+                            }
+                        }
+                    } else if prefix.starts_with("aria-[") && prefix.ends_with(']') {
+                        let inner = &prefix[6..prefix.len() - 1];
+                        if let Some((k, v)) = inner.split_once('=') {
+                            Modifier::AriaAttribute {
+                                key: k.to_string(),
+                                value: Some(v.to_string()),
+                            }
+                        } else {
+                            Modifier::AriaAttribute {
+                                key: inner.to_string(),
+                                value: None,
+                            }
+                        }
+                    } else if let Some(rest) = prefix.strip_prefix("aria-") {
+                        Modifier::AriaAttribute {
+                            key: rest.to_string(),
+                            value: Some("true".to_string()),
+                        }
+                    } else if prefix.starts_with("has-[") && prefix.ends_with(']')
+                        || prefix.starts_with("has-data-[") && prefix.ends_with(']')
+                    {
+                        Modifier::Has(prefix.to_string())
                     } else if prefix.starts_with('[') && prefix.ends_with(']') {
                         Modifier::CustomSelector(prefix[1..prefix.len() - 1].to_string())
                     } else {

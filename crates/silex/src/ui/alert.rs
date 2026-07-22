@@ -5,13 +5,13 @@ use silex_macros::{component, styled, tw_variants};
 
 styled! {
     pub AlertTitle<h5>(children: AnyView) {
-        @apply mb-1 font-medium leading-none tracking-tight;
+        @apply font-medium leading-none tracking-tight mb-1;
     }
 }
 
 styled! {
     pub AlertDescription<div>(children: AnyView) {
-        @apply text-sm text-slate-500 dark:text-slate-400;
+        @apply text-sm text-muted-foreground [&_p]:leading-relaxed;
     }
 }
 
@@ -26,11 +26,11 @@ pub fn Alert(
     class: Signal<String>,
 ) -> impl View {
     let alert_variants = tw_variants! {
-        base: "relative w-full rounded-lg border border-solid p-4 text-sm",
+        base: "relative w-full rounded-lg border border-solid p-4 text-sm [&>svg]:size-4 [&>svg]:translate-y-0.5 [&>svg]:text-current",
         variants: {
             variant: {
-                default: "border-slate-200 bg-white text-slate-950 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-50",
-                destructive: "border-rose-500/50 bg-rose-50 text-rose-900 dark:border-rose-500/50 dark:bg-rose-950/50 dark:text-rose-200"
+                default: "border-border bg-background text-foreground",
+                destructive: "border-destructive/50 text-destructive bg-destructive/10 dark:border-destructive dark:bg-destructive/20"
             }
         },
         default_variants: {

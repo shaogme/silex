@@ -16,6 +16,34 @@ pub fn parse_arbitrary_syntax(token: &str) -> Option<(&str, &str)> {
     None
 }
 
+fn normalize_arbitrary_val(raw_val: &str) -> String {
+    let s = raw_val.replace('_', " ");
+    if !s.contains("calc(") {
+        return s;
+    }
+
+    let mut result = String::with_capacity(s.len() + 8);
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if (c == '+' || c == '-') && !result.is_empty() {
+            let prev = result.chars().last().unwrap_or(' ');
+            let next = chars.peek().copied().unwrap_or(' ');
+
+            if !prev.is_whitespace() && prev != '(' && prev != ',' {
+                result.push(' ');
+            }
+            result.push(c);
+            if !next.is_whitespace() && next != ')' && next != ',' {
+                result.push(' ');
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 /// 解析任意值到 UtilityRule
 pub fn resolve_arbitrary(
     modifiers: Vec<Modifier>,
@@ -23,9 +51,11 @@ pub fn resolve_arbitrary(
     raw_val: &str,
     span: Span,
 ) -> Result<Vec<UtilityRule>> {
+    let norm_val = normalize_arbitrary_val(raw_val);
+
     // 1. 处理任意属性语法 `[property:value]`, 如 `[--tw-ring-color:rgba(79,70,229,.2)]` 或 `[color:red]`
     if prefix.is_empty() {
-        if let Some((prop, val_str)) = raw_val.split_once(':') {
+        if let Some((prop, val_str)) = norm_val.split_once(':') {
             let value = if val_str.starts_with("$(") && val_str.ends_with(')') {
                 let expr_inner = &val_str[2..val_str.len() - 1];
                 let expr: syn::Expr =
@@ -94,8 +124,28 @@ pub fn resolve_arbitrary(
         }
         "animate" => ("animation", false),
         "container" | "container-name" => ("container-name", false),
-        "ring" => ("--tw-ring-color", false),
-        "ring-offset" => ("--tw-ring-offset-color", false),
+        "ring" => {
+            if norm_val.ends_with("px")
+                || norm_val.ends_with("rem")
+                || norm_val.ends_with("em")
+                || norm_val.parse::<f64>().is_ok()
+            {
+                ("--tw-ring-width", false)
+            } else {
+                ("--tw-ring-color", false)
+            }
+        }
+        "ring-offset" => {
+            if norm_val.ends_with("px")
+                || norm_val.ends_with("rem")
+                || norm_val.ends_with("em")
+                || norm_val.parse::<f64>().is_ok()
+            {
+                ("--tw-ring-offset-width", false)
+            } else {
+                ("--tw-ring-offset-color", false)
+            }
+        }
         "aspect" => ("aspect-ratio", false),
         "object" => ("object-fit", false),
         "col" => ("grid-column", false),
@@ -123,13 +173,21 @@ pub fn resolve_arbitrary(
         modifiers.clone()
     };
 
-    let value = if raw_val.starts_with("$(") && raw_val.ends_with(')') {
-        let expr_inner = &raw_val[2..raw_val.len() - 1];
+    let value = if norm_val.starts_with("$(") && norm_val.ends_with(')') {
+        let expr_inner = &norm_val[2..norm_val.len() - 1];
         let expr: syn::Expr =
             syn::parse_str(expr_inner).map_err(|e| Error::new(span, e.to_string()))?;
         UtilityValue::DynamicExpr(expr, span)
     } else {
-        UtilityValue::ArbitraryLiteral(raw_val.to_string())
+        match clean_prefix {
+            "translate-x" => UtilityValue::ArbitraryLiteral(format!("translateX({})", norm_val)),
+            "translate-y" => UtilityValue::ArbitraryLiteral(format!("translateY({})", norm_val)),
+            "rotate" => UtilityValue::ArbitraryLiteral(format!("rotate({})", norm_val)),
+            "scale" => UtilityValue::ArbitraryLiteral(format!("scale({})", norm_val)),
+            "scale-x" => UtilityValue::ArbitraryLiteral(format!("scaleX({})", norm_val)),
+            "scale-y" => UtilityValue::ArbitraryLiteral(format!("scaleY({})", norm_val)),
+            _ => UtilityValue::ArbitraryLiteral(norm_val),
+        }
     };
 
     if clean_prefix == "from" {
@@ -163,7 +221,7 @@ pub fn resolve_arbitrary(
     }
 
     let mut rules = vec![make_rule(target_mods.clone(), prop, value, span)];
-    if prop == "--tw-ring-color" {
+    if prop.starts_with("--tw-ring-") {
         rules.push(make_rule(
             target_mods,
             "box-shadow",
@@ -173,4 +231,39 @@ pub fn resolve_arbitrary(
     }
 
     Ok(rules)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_arbitrary_val() {
+        assert_eq!(
+            normalize_arbitrary_val("calc(100%-2px)"),
+            "calc(100% - 2px)"
+        );
+        assert_eq!(
+            normalize_arbitrary_val("calc(100%_-_2px)"),
+            "calc(100% - 2px)"
+        );
+        assert_eq!(
+            normalize_arbitrary_val("calc(50%+10px)"),
+            "calc(50% + 10px)"
+        );
+        assert_eq!(normalize_arbitrary_val("-10px"), "-10px");
+    }
+
+    #[test]
+    fn test_resolve_arbitrary_translate_x_calc() {
+        let rules =
+            resolve_arbitrary(vec![], "translate-x", "calc(100%-2px)", Span::call_site()).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "transform");
+        if let UtilityValue::ArbitraryLiteral(s) = &rules[0].value {
+            assert_eq!(s, "translateX(calc(100% - 2px))");
+        } else {
+            panic!("Expected ArbitraryLiteral");
+        }
+    }
 }

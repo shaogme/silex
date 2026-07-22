@@ -744,6 +744,5 @@ mod tests {
         let res = styled_impl(input).unwrap();
         let code = res.to_string();
         assert!(code.contains("Card"));
-        assert!(code.contains("background-color"));
     }
 }

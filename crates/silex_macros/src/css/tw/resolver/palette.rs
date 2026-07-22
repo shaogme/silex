@@ -276,6 +276,39 @@ pub fn parse_color_value(color_token: &str) -> Option<UtilityValue> {
         };
     }
 
+    // 5. Semantic CSS variable tokens: card, card-foreground, primary, border, etc.
+    const SEMANTIC_TOKENS: &[&str] = &[
+        "background",
+        "foreground",
+        "card",
+        "card-foreground",
+        "popover",
+        "popover-foreground",
+        "primary",
+        "primary-foreground",
+        "secondary",
+        "secondary-foreground",
+        "muted",
+        "muted-foreground",
+        "accent",
+        "accent-foreground",
+        "destructive",
+        "destructive-foreground",
+        "border",
+        "input",
+        "ring",
+    ];
+    if SEMANTIC_TOKENS.contains(&base) {
+        let var_expr = format!("var(--{})", base);
+        return Some(match opacity {
+            Some(op) => UtilityValue::ArbitraryLiteral(format!(
+                "color-mix(in srgb, {} {}%, transparent)",
+                var_expr, op
+            )),
+            None => UtilityValue::ArbitraryLiteral(var_expr),
+        });
+    }
+
     None
 }
 

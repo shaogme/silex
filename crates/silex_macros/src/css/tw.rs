@@ -266,7 +266,8 @@ mod tests {
         assert!(
             compile_result.component_css.contains(".peer:focus~&")
                 || compile_result.component_css.contains(".peer:focus ~ &")
-                || compile_result.component_css.contains(".peer:focus ~ ."),
+                || compile_result.component_css.contains(".peer:focus ~ .")
+                || compile_result.component_css.contains(".peer:focus~."),
             "Expected peer-focus rule, got: {}",
             compile_result.component_css
         );
@@ -605,6 +606,35 @@ mod tests {
         assert!(
             compile_result.component_css.contains("1920px")
                 || compile_result.component_css.contains("media")
+        );
+    }
+
+    #[test]
+    fn test_named_group_and_data_attributes() {
+        let input: TwInput = syn::parse2(quote!(
+            "group/avatar group-data-[size=sm]/avatar:text-xs *:data-[slot=avatar]:ring-2"
+        ))
+        .unwrap();
+        let css_block = build_css_block_from_tw(input).unwrap();
+        let compile_result = crate::css::compiler::CssCompiler::compile(
+            quote! { #css_block },
+            proc_macro2::Span::call_site(),
+            false,
+        )
+        .unwrap();
+        assert!(
+            compile_result
+                .component_css
+                .contains(".group\\/avatar[data-size=sm]")
+                || compile_result
+                    .component_css
+                    .contains(".group\\/avatar[data-size=\"sm\"]")
+        );
+        assert!(
+            compile_result.component_css.contains("[data-slot=avatar]")
+                || compile_result
+                    .component_css
+                    .contains("[data-slot=\"avatar\"]")
         );
     }
 }

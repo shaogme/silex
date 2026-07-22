@@ -3,7 +3,7 @@ use silex_macros::styled;
 
 styled! {
     pub Card<div>(children: AnyView) {
-        @apply flex flex-col gap-6 rounded-xl border border-solid border-slate-200 bg-white py-6 text-slate-950 shadow-sm dark:border-slate-800 dark:bg-slate-950 dark:text-slate-50;
+        @apply flex flex-col gap-6 rounded-xl border bg-card py-6 text-card-foreground shadow-sm;
     }
 }
 
@@ -21,7 +21,7 @@ styled! {
 
 styled! {
     pub CardDescription<p>(children: AnyView) {
-        @apply text-sm text-slate-500 dark:text-slate-400;
+        @apply text-sm text-muted-foreground;
     }
 }
 

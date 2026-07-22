@@ -215,10 +215,10 @@ fn FeedbackAndDataShowcase() -> impl View {
                         AvatarFallback("SG")
                     )),
                     Avatar(view_chain!(
-                        AvatarFallback("UI")
+                        AvatarFallback("UI").variant("indigo")
                     )).class(tw!("bg-indigo-600 text-white")),
                     Avatar(view_chain!(
-                        AvatarFallback("SX")
+                        AvatarFallback("SX").variant("emerald")
                     )).class(tw!("bg-emerald-600 text-white"))
                 )).class(tw!("flex items-center gap-3")),
 
@@ -239,6 +239,19 @@ fn App() -> impl View {
         .parse::<bool>()
         .default(true)
         .build();
+
+    Effect::new(move |_| {
+        let dark = is_dark.get();
+        if let Some(doc) = window().document()
+            && let Some(el) = doc.document_element()
+        {
+            if dark {
+                let _ = el.class_list().add_1("dark");
+            } else {
+                let _ = el.class_list().remove_1("dark");
+            }
+        }
+    });
 
     div(view_chain!(
         div(view_chain!(

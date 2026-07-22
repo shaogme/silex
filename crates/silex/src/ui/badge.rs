@@ -14,15 +14,15 @@ pub fn Badge(
     class: Signal<String>,
 ) -> impl View {
     let badge_variants = tw_variants! {
-        base: "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-full border border-solid border-transparent px-2.5 py-0.5 text-xs font-medium whitespace-nowrap transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2",
+        base: "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-full border border-solid border-transparent px-2.5 py-0.5 text-xs font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3",
         variants: {
             variant: {
-                default: "border-transparent bg-slate-900 text-slate-50 hover:bg-slate-900/90 dark:bg-slate-50 dark:text-slate-900 dark:hover:bg-slate-50/90 shadow-xs",
-                secondary: "border-transparent bg-slate-100 text-slate-900 hover:bg-slate-100/90 dark:bg-slate-800 dark:text-slate-50 dark:hover:bg-slate-800/90",
-                destructive: "border-transparent bg-rose-600 text-white dark:bg-rose-900 dark:text-slate-50 dark:hover:bg-rose-900/90 shadow-xs",
-                outline: "border-slate-200 text-slate-950 dark:border-slate-800 dark:text-slate-50",
-                ghost: "hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-900 dark:text-slate-50",
-                link: "text-slate-900 underline-offset-4 hover:underline dark:text-slate-50"
+                default: "border-transparent bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs",
+                secondary: "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/90",
+                destructive: "border-transparent bg-destructive text-white hover:bg-destructive/90 dark:bg-destructive/60 dark:hover:bg-destructive/90 shadow-xs",
+                outline: "border-border text-foreground hover:bg-accent hover:text-accent-foreground",
+                ghost: "hover:bg-accent hover:text-accent-foreground text-foreground",
+                link: "text-primary underline-offset-4 hover:underline"
             }
         },
         default_variants: {

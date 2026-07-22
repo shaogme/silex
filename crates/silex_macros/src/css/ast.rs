@@ -266,7 +266,13 @@ impl Parse for CssApply {
             .collect::<Vec<_>>()
             .join(" ")
             .replace(" - ", "-")
-            .replace(" : ", ":");
+            .replace(" : ", ":")
+            .replace(" / ", "/")
+            .replace(" [ ", "[")
+            .replace(" ] ", "]")
+            .replace(" ( ", "(")
+            .replace(" ) ", ")")
+            .replace(" . ", ".");
 
         Ok(CssApply {
             classes: classes_str,

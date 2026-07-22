@@ -14,15 +14,25 @@ pub enum Modifier {
     Dark,
     /// 自定义任意选择器修饰符: [&>svg]
     CustomSelector(String),
-    /// 复合 Group 状态修饰符 (例: group-hover -> Group("hover"))
-    Group(String),
-    /// 复合 Peer 状态修饰符 (例: peer-focus -> Peer("focus"))
-    Peer(String),
+    /// 复合 Group 状态修饰符 (例: group-hover -> state="hover", name=None; group-data-[size=sm]/avatar -> state="data-[size=sm]", name=Some("avatar"))
+    Group { state: String, name: Option<String> },
+    /// 复合 Peer 状态修饰符 (例: peer-focus -> state="focus", name=None; peer-data-[state=open]/sidebar -> state="focus", name=Some("sidebar"))
+    Peer { state: String, name: Option<String> },
     /// 容器查询修饰符 (例: @sm, @md, @[300px], @sidebar/md)
     ContainerQuery {
         name: Option<String>,
         min_width: String,
     },
+    /// 子元素选择修饰符: *: (`& > *`)
+    Child,
+    /// 后代元素选择修饰符: **: (`& *`)
+    Descendant,
+    /// Data 属性修饰符: data-[slot=avatar] -> key="slot", value=Some("avatar")
+    DataAttribute { key: String, value: Option<String> },
+    /// Aria 属性修饰符: aria-[expanded=true] 或 aria-checked
+    AriaAttribute { key: String, value: Option<String> },
+    /// Has 条件选择修饰符: has-[.active] 或 has-data-[size=lg]
+    Has(String),
 }
 
 /// Utility 规则值类型

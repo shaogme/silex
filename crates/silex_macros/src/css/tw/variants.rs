@@ -20,8 +20,8 @@ pub struct CompoundVariant {
 #[derive(Debug, Clone)]
 pub struct TwVariantsInput {
     pub base_rules: Vec<UtilityRule>,
-    /// variant_name -> (option_name -> rules)
-    pub variants: BTreeMap<String, BTreeMap<String, Vec<UtilityRule>>>,
+    /// variant_name -> (option_name -> rules) 保留用户定义时的真实顺序
+    pub variants: Vec<(String, BTreeMap<String, Vec<UtilityRule>>)>,
     /// variant_name -> default_option_name
     pub default_variants: BTreeMap<String, String>,
     pub compound_variants: Vec<CompoundVariant>,
@@ -54,7 +54,7 @@ fn parse_key_str(input: ParseStream) -> Result<String> {
 impl Parse for TwVariantsInput {
     fn parse(input: ParseStream) -> Result<Self> {
         let mut base_rules = Vec::new();
-        let mut variants = BTreeMap::new();
+        let mut variants = Vec::new();
         let mut default_variants = BTreeMap::new();
         let mut compound_variants = Vec::new();
 
@@ -90,7 +90,7 @@ impl Parse for TwVariantsInput {
                             }
                         }
 
-                        variants.insert(var_name, opt_map);
+                        variants.push((var_name, opt_map));
 
                         if content.peek(Token![,]) {
                             let _: Token![,] = content.parse()?;
@@ -177,12 +177,17 @@ struct VariantCombination {
 }
 
 fn generate_combinations(input: &TwVariantsInput, span: Span) -> Result<Vec<VariantCombination>> {
-    let variant_names: Vec<String> = input.variants.keys().cloned().collect();
+    let variant_names: Vec<String> = input.variants.iter().map(|(k, _)| k.clone()).collect();
 
     let mut tuples: Vec<BTreeMap<String, String>> = vec![BTreeMap::new()];
 
     for var_name in &variant_names {
-        let opts = &input.variants[var_name];
+        let opts = &input
+            .variants
+            .iter()
+            .find(|(k, _)| k == var_name)
+            .unwrap()
+            .1;
         let mut next_tuples = Vec::new();
 
         for tuple in &tuples {
@@ -202,8 +207,8 @@ fn generate_combinations(input: &TwVariantsInput, span: Span) -> Result<Vec<Vari
         let mut combined_rules = input.base_rules.clone();
 
         // 1. 附加选中变体的规则
-        for (var_name, opt_name) in &tuple {
-            if let Some(opts) = input.variants.get(var_name)
+        for (var_name, opts) in &input.variants {
+            if let Some(opt_name) = tuple.get(var_name)
                 && let Some(rules) = opts.get(opt_name)
             {
                 combined_rules.extend(rules.clone());
@@ -246,7 +251,7 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
     let span = Span::call_site();
     let input: TwVariantsInput = syn::parse2(ts)?;
 
-    let variant_names: Vec<String> = input.variants.keys().cloned().collect();
+    let variant_names: Vec<String> = input.variants.iter().map(|(k, _)| k.clone()).collect();
     let combinations = generate_combinations(&input, span)?;
 
     // 1. 生成 CSS 初始化注入 Token
@@ -272,10 +277,14 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
     let default_tuple: BTreeMap<String, String> = variant_names
         .iter()
         .map(|k| {
-            let def_val =
-                input.default_variants.get(k).cloned().unwrap_or_else(|| {
-                    input.variants[k].keys().next().cloned().unwrap_or_default()
-                });
+            let def_val = input.default_variants.get(k).cloned().unwrap_or_else(|| {
+                input
+                    .variants
+                    .iter()
+                    .find(|(name, _)| name == k)
+                    .and_then(|(_, opts)| opts.keys().next().cloned())
+                    .unwrap_or_default()
+            });
             (k.clone(), def_val)
         })
         .collect();

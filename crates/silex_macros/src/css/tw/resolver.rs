@@ -8,7 +8,7 @@ use crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};
 use proc_macro2::Span;
 use syn::{Error, Result};
 
-pub(super) const RING_BOX_SHADOW: &str = "var(--tw-ring-inset, ) 0 0 0 calc(var(--tw-ring-width, 3px) + var(--tw-ring-offset-width, 0px)) var(--tw-ring-color, rgba(59, 130, 246, 0.5))";
+pub(super) const RING_BOX_SHADOW: &str = "var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width, 0px) var(--tw-ring-offset-color, #0000), 0 0 0 var(--tw-ring-width, 3px) var(--tw-ring-color, rgba(59, 130, 246, 0.5)), var(--tw-shadow, 0 0 #0000)";
 
 pub(super) const DIVIDE_SELECTOR: &str = "& > :not([hidden]) ~ :not([hidden])";
 
@@ -62,6 +62,14 @@ pub fn resolve_utility(
     utility_token: &str,
     span: Span,
 ) -> Result<Vec<UtilityRule>> {
+    if utility_token == "group"
+        || utility_token == "peer"
+        || utility_token.starts_with("group/")
+        || utility_token.starts_with("peer/")
+    {
+        return Ok(vec![]);
+    }
+
     // 1. 尝试匹配静态表规则 (static rules table)
     if let Some(rules) = table::resolve_static_rule(&modifiers, utility_token, span) {
         return Ok(rules);
@@ -267,12 +275,10 @@ fn resolve_pattern_utility(
     // 5. Ring Colors: ring-offset-indigo-500, ring-indigo-500, ring-indigo-500/20
     if let Some(rest) = token.strip_prefix("ring-offset-") {
         if let Some(color_val) = palette::parse_color_value(rest) {
-            return Ok(vec![make_rule(
-                modifiers,
-                "--tw-ring-offset-color",
-                color_val,
-                span,
-            )]);
+            return Ok(vec![
+                make_rule(modifiers.clone(), "--tw-ring-offset-color", color_val, span),
+                make_rule(modifiers, "box-shadow", kw(RING_BOX_SHADOW), span),
+            ]);
         }
     } else if let Some(rest) = token.strip_prefix("ring-")
         && let Some(color_val) = palette::parse_color_value(rest)
