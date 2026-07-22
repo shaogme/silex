@@ -8,6 +8,8 @@ pub mod net;
 pub mod persist;
 pub mod router;
 pub mod store;
+#[cfg(feature = "tw")]
+pub mod ui;
 
 pub use components::*;
 pub use silex_core::error::{SilexError, SilexResult};
@@ -69,6 +71,14 @@ pub mod prelude {
     pub use crate::core::prelude::{Map, RxWrite};
     pub use crate::flow::Switch;
     pub use crate::router::Link;
+    #[cfg(feature = "tw")]
+    pub use crate::ui::{
+        Alert, AlertDescription, AlertTitle, Avatar, AvatarFallback, AvatarImage, Badge, Button,
+        Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
+        Checkbox, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Input,
+        Progress, Separator, Skeleton, Switch as UiSwitch, TabsContent, TabsList, TabsTrigger,
+        Textarea,
+    };
     pub use silex_css::prelude::{Style, linear_gradient, radial_gradient};
     pub use silex_dom::prelude::{ApplyAttributes, View, text};
     pub use silex_html::{Em, em};

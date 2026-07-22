@@ -207,6 +207,7 @@ pub fn resolve_static_rules(
         "bg-black" => { "background-color" => hex("#000000") },
         "text-black" => { "color" => hex("#000000") },
         "border-black" => { "border-color" => hex("#000000") },
+        "size-full" => { "width" => num(100.0, "%"), "height" => num(100.0, "%") },
 
         // --- 排版 Font & Text ---
         "text-left" => { "text-align" => kw("left") },
@@ -307,7 +308,9 @@ pub fn resolve_static_rules(
         "outline-none" => { "outline" => kw("2px solid transparent") },
 
         // --- 阴影 Shadow ---
-        "shadow-sm" => { "box-shadow" => kw("0 1px 2px 0 rgba(0, 0, 0, 0.05)") },
+        "shadow-2xs" => { "box-shadow" => kw("0 1px 1px 0 rgba(0, 0, 0, 0.05)") },
+        "shadow-xs" => { "box-shadow" => kw("0 1px 2px 0 rgba(0, 0, 0, 0.05)") },
+        "shadow-sm" => { "box-shadow" => kw("0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 1px 0 rgba(0, 0, 0, 0.05)") },
         "shadow" => {
             "box-shadow" => kw("0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1)"),
         },
@@ -324,6 +327,9 @@ pub fn resolve_static_rules(
             "box-shadow" => kw("0 25px 50px -12px rgba(0, 0, 0, 0.25)"),
         },
         "shadow-none" => { "box-shadow" => kw("none") },
+
+        // --- 文本装饰偏移 Text Decoration Offset ---
+        "underline-offset-auto" => { "text-underline-offset" => kw("auto") },
 
         // --- Ring System ---
         "ring" => {
@@ -533,9 +539,16 @@ pub fn resolve_static_rules(
         "transition-colors" => {
             "transition" => kw("color, background-color, border-color, text-decoration-color, fill, stroke 150ms cubic-bezier(0.4, 0, 0.2, 1)"),
         },
+        "transition-opacity" => {
+            "transition" => kw("opacity 150ms cubic-bezier(0.4, 0, 0.2, 1)"),
+        },
+        "transition-transform" => {
+            "transition" => kw("transform 150ms cubic-bezier(0.4, 0, 0.2, 1)"),
+        },
         "transition" => {
             "transition" => kw("color, background-color, border-color, box-shadow, transform 150ms cubic-bezier(0.4, 0, 0.2, 1)"),
         },
+        "backdrop-blur-xs" => { "backdrop-filter" => kw("blur(2px)") },
         "cursor-auto" => { "cursor" => kw("auto") },
         "cursor-default" => { "cursor" => kw("default") },
         "cursor-pointer" => { "cursor" => kw("pointer") },

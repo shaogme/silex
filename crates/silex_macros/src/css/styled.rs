@@ -331,6 +331,12 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let class_name = &compile_result.class_name;
     let static_id = &compile_result.static_id;
 
+    let node_init = if is_void_tag(&tag_str) {
+        quote! { ::silex::html::#tag() }
+    } else {
+        quote! { ::silex::html::#tag(#children_binding) }
+    };
+
     let fn_body: syn::Block = syn::parse_quote! {
         {
             const __STATIC_CSS: &str = #static_css;
@@ -349,7 +355,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             #(#variant_injections)*
             #(#dynamic_rule_inits)*
 
-            ::silex::html::#tag(#children_binding)
+            #node_init
                 .class(#class_name)
                 #style_prop_binding
                 .apply(::silex::dom::attribute::AttrOp::CombinedStyles(::silex::dom::attribute::CombinedStyles {
@@ -687,6 +693,33 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
             ::silex::dom::view::View::into_any(())
         }
     })
+}
+
+fn is_void_tag(tag: &str) -> bool {
+    matches!(
+        tag,
+        "area"
+            | "base"
+            | "br"
+            | "col"
+            | "embed"
+            | "hr"
+            | "img"
+            | "input"
+            | "link"
+            | "meta"
+            | "param"
+            | "source"
+            | "track"
+            | "wbr"
+            | "circle"
+            | "ellipse"
+            | "line"
+            | "path"
+            | "polygon"
+            | "polyline"
+            | "rect"
+    )
 }
 
 #[cfg(test)]

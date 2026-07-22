@@ -110,6 +110,12 @@ pub fn resolve_numeric_utility(
         return Some(border_rules);
     }
 
+    // 1.5 文本下划线偏移 (underline-offset-4, underline-offset-2 等)
+    if prefix == "underline-offset" && !is_fraction {
+        let px_val = if is_negative { -val_num } else { val_num };
+        return Some(vec![make_rule(mods, "text-underline-offset", px(px_val), span)]);
+    }
+
     // 2. 定位与 Inset 系统 (top-4, -left-1/2, inset-x-0 等)
     if matches!(
         prefix,
@@ -158,6 +164,10 @@ pub fn resolve_numeric_utility(
         let frac_rules = match prefix {
             "w" => vec![make_rule(mods, "width", pct_val, span)],
             "h" => vec![make_rule(mods, "height", pct_val, span)],
+            "min-w" => vec![make_rule(mods, "min-width", pct_val, span)],
+            "min-h" => vec![make_rule(mods, "min-height", pct_val, span)],
+            "max-w" => vec![make_rule(mods, "max-width", pct_val, span)],
+            "max-h" => vec![make_rule(mods, "max-height", pct_val, span)],
             "size" => vec![
                 make_rule(mods.clone(), "width", pct_val.clone(), span),
                 make_rule(mods, "height", pct_val, span),
@@ -203,6 +213,10 @@ pub fn resolve_numeric_utility(
         "gap-y" => vec![make_rule(mods, "row-gap", rem_rule_val, span)],
         "w" => vec![make_rule(mods, "width", rem_rule_val, span)],
         "h" => vec![make_rule(mods, "height", rem_rule_val, span)],
+        "min-w" => vec![make_rule(mods, "min-width", rem_rule_val, span)],
+        "min-h" => vec![make_rule(mods, "min-height", rem_rule_val, span)],
+        "max-w" => vec![make_rule(mods, "max-width", rem_rule_val, span)],
+        "max-h" => vec![make_rule(mods, "max-height", rem_rule_val, span)],
 
         // 对称双属性映射
         "px" => vec![

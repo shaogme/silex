@@ -1,0 +1,9 @@
+[package]
+name = "silex_ui_example"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+silex = { workspace = true, features = ["tw", "persistence"] }
+web-sys.workspace = true
