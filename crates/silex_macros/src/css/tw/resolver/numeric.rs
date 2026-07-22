@@ -113,7 +113,12 @@ pub fn resolve_numeric_utility(
     // 1.5 文本下划线偏移 (underline-offset-4, underline-offset-2 等)
     if prefix == "underline-offset" && !is_fraction {
         let px_val = if is_negative { -val_num } else { val_num };
-        return Some(vec![make_rule(mods, "text-underline-offset", px(px_val), span)]);
+        return Some(vec![make_rule(
+            mods,
+            "text-underline-offset",
+            px(px_val),
+            span,
+        )]);
     }
 
     // 2. 定位与 Inset 系统 (top-4, -left-1/2, inset-x-0 等)

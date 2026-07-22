@@ -1,8 +1,8 @@
 pub mod arbitrary;
 pub mod numeric;
 pub mod palette;
-pub mod static_rules;
 pub mod suggest;
+pub mod table;
 
 use crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};
 use proc_macro2::Span;
@@ -62,8 +62,8 @@ pub fn resolve_utility(
     utility_token: &str,
     span: Span,
 ) -> Result<Vec<UtilityRule>> {
-    // 1. 静态与预设规则精准匹配
-    if let Some(rules) = static_rules::resolve_static_rules(&modifiers, utility_token, span) {
+    // 1. 尝试匹配静态表规则 (static rules table)
+    if let Some(rules) = table::resolve_static_rule(&modifiers, utility_token, span) {
         return Ok(rules);
     }
 

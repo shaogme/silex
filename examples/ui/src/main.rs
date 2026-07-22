@@ -3,8 +3,6 @@ use silex::prelude::*;
 
 #[component]
 fn ButtonShowcase() -> impl View {
-    let (loading, set_loading) = Signal::pair(false);
-
     Card(view_chain!(
         CardHeader(view_chain!(
             CardTitle("Button & Badge System"),
@@ -13,36 +11,43 @@ fn ButtonShowcase() -> impl View {
         CardContent(view_chain!(
             // Variants
             div(view_chain!(
-                span("Variants").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400 w-full mb-1")),
+                span("Variants").class(tw!(
+                    "text-xs font-semibold text-slate-500 dark:text-slate-400 w-full mb-1"
+                )),
                 Button("Default").variant("default"),
                 Button("Destructive").variant("destructive"),
                 Button("Outline").variant("outline"),
                 Button("Secondary").variant("secondary"),
                 Button("Ghost").variant("ghost"),
                 Button("Link").variant("link")
-            )).class(tw!("flex flex-wrap items-center gap-2 mb-6")),
-
+            ))
+            .class(tw!("flex flex-wrap items-center gap-2 mb-6")),
             // Sizes
             div(view_chain!(
-                span("Sizes").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400 w-full mb-1")),
+                span("Sizes").class(tw!(
+                    "text-xs font-semibold text-slate-500 dark:text-slate-400 w-full mb-1"
+                )),
                 Button("XS").variant("outline").size("xs"),
                 Button("Small").variant("outline").size("sm"),
                 Button("Default").variant("outline").size("default"),
                 Button("Large").variant("outline").size("lg"),
                 Button("★").variant("outline").size("icon"),
                 Button("⚡").variant("default").size("icon-sm")
-            )).class(tw!("flex flex-wrap items-center gap-2 mb-6")),
-
+            ))
+            .class(tw!("flex flex-wrap items-center gap-2 mb-6")),
             // Badges
             div(view_chain!(
-                span("Badges").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400 w-full mb-1")),
+                span("Badges").class(tw!(
+                    "text-xs font-semibold text-slate-500 dark:text-slate-400 w-full mb-1"
+                )),
                 Badge("Default").variant("default"),
                 Badge("Secondary").variant("secondary"),
                 Badge("Destructive").variant("destructive"),
                 Badge("Outline").variant("outline"),
                 Badge("Ghost").variant("ghost"),
                 Badge("Link").variant("link")
-            )).class(tw!("flex flex-wrap items-center gap-2"))
+            ))
+            .class(tw!("flex flex-wrap items-center gap-2"))
         ))
     ))
 }
@@ -65,7 +70,7 @@ fn FormControlsShowcase() -> impl View {
                 Input()
                     .value(text_val)
                     .placeholder("Type something...")
-                    .on_input(move |e| set_text_val.set(e.target_value())),
+                    .on_input(move |v| set_text_val.set(v)),
                 p(rx!(move || format!("Live Bound Value: '{}'", text_val.get())))
                     .class(tw!("text-xs text-slate-500 mt-1.5 font-mono"))
             )).class(tw!("flex flex-col mb-6")),
@@ -88,7 +93,7 @@ fn FormControlsShowcase() -> impl View {
                 )).class(tw!("flex items-center gap-2")),
 
                 div(view_chain!(
-                    Switch()
+                    UiSwitch()
                         .checked(switch_val)
                         .on_change(move |v| set_switch_val.set(v)),
                     span("Airplane Mode").class(tw!("text-sm font-medium text-slate-900 dark:text-slate-100"))
@@ -114,48 +119,61 @@ fn TabsAndDialogShowcase() -> impl View {
                 TabsList(view_chain!(
                     TabsTrigger("Account", "account")
                         .active_tab(active_tab)
-                        .on_select(move |tab| set_active_tab.set(tab.to_string())),
+                        .on_select(move |tab: &'static str| set_active_tab.set(tab.to_string())),
                     TabsTrigger("Password", "password")
                         .active_tab(active_tab)
-                        .on_select(move |tab| set_active_tab.set(tab.to_string())),
+                        .on_select(move |tab: &'static str| set_active_tab.set(tab.to_string())),
                     TabsTrigger("Settings", "settings")
                         .active_tab(active_tab)
-                        .on_select(move |tab| set_active_tab.set(tab.to_string()))
+                        .on_select(move |tab: &'static str| set_active_tab.set(tab.to_string()))
                 )),
                 rx!(move || {
                     match active_tab.get().as_str() {
-                        "account" => TabsContent(p("Manage your account details and profile preferences.")).into_any(),
-                        "password" => TabsContent(p("Change your password and configure 2FA security.")).into_any(),
-                        _ => TabsContent(p("Customize system settings and notification channels.")).into_any(),
+                        "account" => {
+                            TabsContent(p("Manage your account details and profile preferences."))
+                                .into_any()
+                        }
+                        "password" => {
+                            TabsContent(p("Change your password and configure 2FA security."))
+                                .into_any()
+                        }
+                        _ => TabsContent(p("Customize system settings and notification channels."))
+                            .into_any(),
                     }
                 })
-            )).class(tw!("mb-6")),
-
+            ))
+            .class(tw!("mb-6")),
             Separator().class(tw!("my-4")),
-
             // Dialog Trigger
             div(view_chain!(
                 Button("Open Modal Dialog")
                     .variant("default")
                     .on_click(move |_| set_dialog_open.set(true)),
-
                 Dialog(view_chain!(
                     DialogHeader(view_chain!(
                         DialogTitle("Edit Profile"),
-                        DialogDescription("Make changes to your profile here. Click save when you're done.")
+                        DialogDescription(
+                            "Make changes to your profile here. Click save when you're done."
+                        )
                     )),
                     div(view_chain!(
                         Input().value("Shao G.").placeholder("Name"),
                         Input().value("shaog.me@gmail.com").placeholder("Email")
-                    )).class(tw!("grid gap-3 py-4")),
+                    ))
+                    .class(tw!("grid gap-3 py-4")),
                     DialogFooter(view_chain!(
-                        Button("Cancel").variant("outline").on_click(move |_| set_dialog_open.set(false)),
-                        Button("Save Changes").variant("default").on_click(move |_| set_dialog_open.set(false))
+                        Button("Cancel")
+                            .variant("outline")
+                            .on_click(move |_| set_dialog_open.set(false)),
+                        Button("Save Changes")
+                            .variant("default")
+                            .on_click(move |_| set_dialog_open.set(false))
                     ))
                 ))
                 .open(dialog_open)
-                .on_close(move || set_dialog_open.set(false))
-            )).class(tw!("flex items-center justify-between"))
+                .on_close(move |_| set_dialog_open.set(false))
+            ))
+            .class(tw!("flex items-center justify-between"))
         ))
     ))
 }
@@ -270,5 +288,6 @@ fn App() -> impl View {
 
 fn main() {
     setup_global_error_handlers();
+    silex::ui::inject_shadcn_base_styles();
     mount_to_body(App);
 }

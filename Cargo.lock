@@ -1730,7 +1730,6 @@ name = "silex_ui_example"
 version = "0.1.0-beta.9"
 dependencies = [
  "silex",
- "web-sys",
 ]
 
 [[package]]
