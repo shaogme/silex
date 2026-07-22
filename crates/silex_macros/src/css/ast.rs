@@ -27,12 +27,21 @@ pub enum CssRule {
     Nested(CssNested),
     AtRule(CssAtRule),
     Unsafe(CssUnsafe),
+    Apply(CssApply),
 }
 
 impl Parse for CssRule {
     fn parse(input: ParseStream) -> Result<Self> {
-        // Fast path for @-rules
+        // Fast path for @apply or @-rules
         if input.peek(Token![@]) {
+            let fork = input.fork();
+            let _: Token![@] = fork.parse()?;
+            if fork.peek(Ident) {
+                let id: Ident = fork.parse()?;
+                if id == "apply" {
+                    return input.parse().map(CssRule::Apply);
+                }
+            }
             return input.parse().map(CssRule::AtRule);
         }
 
@@ -219,6 +228,54 @@ impl Parse for CssUnsafe {
     }
 }
 
+/// An `@apply` directive like `@apply flex items-center px-4 py-2;`
+#[derive(Clone)]
+pub struct CssApply {
+    pub classes: String,
+    #[allow(dead_code)]
+    pub semi_token: Option<Token![;]>,
+    pub span: proc_macro2::Span,
+}
+
+impl Parse for CssApply {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let at_token: Token![@] = input.parse()?;
+        let apply_ident: Ident = input.parse()?;
+        if apply_ident != "apply" {
+            return Err(syn::Error::new(
+                apply_ident.span(),
+                "Expected `apply` after `@`",
+            ));
+        }
+
+        let start_span = at_token.span;
+        let mut classes_tokens = TokenStream::new();
+        while !input.is_empty() && !input.peek(Token![;]) && !input.peek(token::Brace) {
+            classes_tokens.extend(std::iter::once(input.parse::<TokenTree>()?));
+        }
+
+        let semi_token = if input.peek(Token![;]) {
+            Some(input.parse()?)
+        } else {
+            None
+        };
+
+        let classes_str = classes_tokens
+            .into_iter()
+            .map(|tt| tt.to_string())
+            .collect::<Vec<_>>()
+            .join(" ")
+            .replace(" - ", "-")
+            .replace(" : ", ":");
+
+        Ok(CssApply {
+            classes: classes_str,
+            semi_token,
+            span: start_span,
+        })
+    }
+}
+
 impl ToTokens for CssBlock {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         for rule in &self.rules {
@@ -234,6 +291,7 @@ impl ToTokens for CssRule {
             CssRule::Nested(n) => n.to_tokens(tokens),
             CssRule::AtRule(a) => a.to_tokens(tokens),
             CssRule::Unsafe(u) => u.to_tokens(tokens),
+            CssRule::Apply(ap) => ap.to_tokens(tokens),
         }
     }
 }
@@ -280,6 +338,15 @@ impl ToTokens for CssUnsafe {
             unsafe {
                 #block
             }
+        });
+    }
+}
+
+impl ToTokens for CssApply {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let classes: TokenStream = self.classes.parse().unwrap_or_default();
+        tokens.extend(quote::quote! {
+            @apply #classes ;
         });
     }
 }

@@ -215,6 +215,30 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                     state.static_css.push_str("; ");
                 }
             }
+            CssRule::Apply(ap) => {
+                #[cfg(feature = "tw")]
+                {
+                    let raw_str = ap.classes.trim().trim_matches('"');
+                    let mut rules = Vec::new();
+                    for token in raw_str.split_whitespace() {
+                        let (modifiers, body_token) =
+                            crate::css::tw::parser::parse_modifiers_and_body(token);
+                        let mut resolved = crate::css::tw::resolver::resolve_utility(
+                            modifiers, body_token, ap.span,
+                        )?;
+                        rules.append(&mut resolved);
+                    }
+                    let apply_block = crate::css::tw::codegen::build_css_block_from_rules(rules)?;
+                    process_css_block(&apply_block, state)?;
+                }
+                #[cfg(not(feature = "tw"))]
+                {
+                    return Err(syn::Error::new(
+                        ap.span,
+                        "The `@apply` directive requires the `tw` feature flag to be enabled in `silex_macros`.",
+                    ));
+                }
+            }
             CssRule::Unsafe(u) => {
                 let old = state.is_unsafe;
                 state.is_unsafe = true;
@@ -384,6 +408,37 @@ fn build_dynamic_block_recursive(
                     ctx,
                 )?;
                 template.push_str(" } ");
+            }
+            CssRule::Apply(ap) => {
+                #[cfg(feature = "tw")]
+                {
+                    let raw_str = ap.classes.trim().trim_matches('"');
+                    let mut rules = Vec::new();
+                    for token in raw_str.split_whitespace() {
+                        let (modifiers, body_token) =
+                            crate::css::tw::parser::parse_modifiers_and_body(token);
+                        let mut resolved = crate::css::tw::resolver::resolve_utility(
+                            modifiers, body_token, ap.span,
+                        )?;
+                        rules.append(&mut resolved);
+                    }
+                    let apply_block = crate::css::tw::codegen::build_css_block_from_rules(rules)?;
+                    build_dynamic_block_recursive(
+                        &apply_block,
+                        template,
+                        selector_exprs,
+                        global_expressions,
+                        warnings,
+                        ctx,
+                    )?;
+                }
+                #[cfg(not(feature = "tw"))]
+                {
+                    return Err(syn::Error::new(
+                        ap.span,
+                        "The `@apply` directive requires the `tw` feature flag to be enabled in `silex_macros`.",
+                    ));
+                }
             }
             CssRule::Unsafe(u) => {
                 build_dynamic_block_recursive(
@@ -804,6 +859,16 @@ mod tests {
             res.component_css
                 .contains(&format!("var(--{}-0)", res.class_name))
         );
+    }
+
+    #[test]
+    #[cfg(feature = "tw")]
+    fn test_apply_directive() {
+        let ts = syn::parse_str("@apply flex items-center px-4 py-2;").unwrap();
+        let res = CssCompiler::compile(ts, Span::call_site(), false).unwrap();
+        assert!(res.component_css.contains("display:flex"));
+        assert!(res.component_css.contains("align-items:center"));
+        assert!(res.component_css.contains("padding:.5rem 1rem"));
     }
 
     #[test]

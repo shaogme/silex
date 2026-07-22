@@ -135,6 +135,27 @@ styled! {
 }
 
 styled! {
+    pub ApplyDemoButton<button>(
+        children: AnyView,
+        #[prop(into)] variant: Signal<String>,
+    ) {
+        @apply flex items-center justify-center px-5 py-2.5 rounded-xl font-semibold transition-all duration-300 shadow-md cursor-pointer;
+
+        &:hover {
+            @apply scale-105 shadow-lg;
+        }
+
+        variants: {
+            variant: {
+                primary: "bg-indigo-600 text-white hover:bg-indigo-500",
+                secondary: "bg-slate-700 text-slate-100 hover:bg-slate-600",
+                outline: "border border-indigo-500 text-indigo-400 hover:bg-indigo-500/10",
+            }
+        }
+    }
+}
+
+styled! {
     pub StyledButton<button>(
         children: AnyView,
         #[prop(into)] color: Signal<CssVar<Hex>>,
@@ -661,6 +682,20 @@ pub fn AdvancedStyling(_ctx: RouterContext) -> impl View {
                 )).gap(24)
             ))
         )).gap(24),
+
+        h2("🎨 Deep Integration with `@apply` & Inline Tailwind Mixins").style("margin-top: 48px;"),
+        p("Use `@apply` directives inside `css!` & `styled!` blocks and inline Tailwind utility strings in variant definitions.")
+            .style("margin-bottom: 24px; color: #9ca3af;"),
+
+        DemoCard(view_chain!(
+            h4("1. `@apply` Directives & Inline Tailwind String Variants"),
+            p("Compose complex styles seamlessly using Tailwind utilities within standard styled! components.").style("margin-bottom: 16px; font-size: 0.9em; opacity: 0.7;"),
+            div![
+                ApplyDemoButton("Primary Variant").variant("primary"),
+                ApplyDemoButton("Secondary Variant").variant("secondary"),
+                ApplyDemoButton("Outline Variant").variant("outline"),
+            ].style(sty().display(DisplayKeyword::Flex).gap(px(16)))
+        )),
 
         h2("🔒 Unsafe Styles & Escape Hatches").style("margin-top: 48px;"),
         p("Bypass compile-time property and type validation for non-standard CSS or raw value injection.")

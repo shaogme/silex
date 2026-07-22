@@ -97,10 +97,46 @@ impl Parse for StyledComponent {
                         while !prop_variants_content.is_empty() {
                             let variant_name: Ident = prop_variants_content.parse()?;
                             let _colon2: Token![:] = prop_variants_content.parse()?;
-                            let variant_css;
-                            syn::braced!(variant_css in prop_variants_content);
-                            group_variants
-                                .push((variant_name, variant_css.parse::<TokenStream>()?));
+                            if prop_variants_content.peek(syn::LitStr) {
+                                let lit: syn::LitStr = prop_variants_content.parse()?;
+                                #[cfg(feature = "tw")]
+                                {
+                                    let raw_str = lit.value();
+                                    let span = lit.span();
+                                    let mut rules = Vec::new();
+                                    for token in raw_str.split_whitespace() {
+                                        let (modifiers, body_token) =
+                                            crate::css::tw::parser::parse_modifiers_and_body(token);
+                                        let mut resolved =
+                                            crate::css::tw::resolver::resolve_utility(
+                                                modifiers, body_token, span,
+                                            )?;
+                                        rules.append(&mut resolved);
+                                    }
+                                    let css_block =
+                                        crate::css::tw::codegen::build_css_block_from_rules(rules)?;
+                                    let ts = quote::quote! { #css_block };
+                                    group_variants.push((variant_name, ts));
+                                }
+                                #[cfg(not(feature = "tw"))]
+                                {
+                                    return Err(syn::Error::new(
+                                        lit.span(),
+                                        "Inline Tailwind string variants require the `tw` feature flag to be enabled in `silex_macros`.",
+                                    ));
+                                }
+                            } else {
+                                let variant_css;
+                                syn::braced!(variant_css in prop_variants_content);
+                                group_variants
+                                    .push((variant_name, variant_css.parse::<TokenStream>()?));
+                            }
+                            if prop_variants_content.peek(Token![,]) {
+                                let _: Token![,] = prop_variants_content.parse()?;
+                            }
+                        }
+                        if variants_content.peek(Token![,]) {
+                            let _: Token![,] = variants_content.parse()?;
                         }
                         variants.push(VariantGroup {
                             prop_name,
@@ -651,4 +687,30 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
             ::silex::dom::view::View::into_any(())
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(feature = "tw")]
+    fn test_styled_inline_tailwind_variants() {
+        let input = quote::quote! {
+            Card<button>(id: String, children: String) {
+                padding: 1rem;
+
+                variants: {
+                    theme_mode: {
+                        light: "bg-white text-slate-900",
+                        dark: "bg-slate-800 text-white",
+                    }
+                }
+            }
+        };
+        let res = styled_impl(input).unwrap();
+        let code = res.to_string();
+        assert!(code.contains("Card"));
+        assert!(code.contains("background-color"));
+    }
 }

@@ -504,6 +504,13 @@ fn collect_used_animations(rules: &[CssRule], used: &mut HashSet<String>) {
                 }
             }
             CssRule::Unsafe(_) => {}
+            CssRule::Apply(ap) => {
+                for name in &["spin", "ping", "pulse", "bounce"] {
+                    if ap.classes.contains(name) {
+                        used.insert((*name).to_string());
+                    }
+                }
+            }
         }
     }
 }
