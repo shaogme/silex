@@ -6,7 +6,7 @@ use proc_macro2::{Delimiter, Span, TokenStream, TokenTree};
 use std::iter::Peekable;
 use syn::Result;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DynamicRule {
     pub template: String,
     pub expressions: Vec<(String, TokenStream)>,
@@ -18,7 +18,7 @@ pub struct CssWarning {
     pub span: Span,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CssCompileResult {
     pub class_name: String,
     pub style_id: String,
