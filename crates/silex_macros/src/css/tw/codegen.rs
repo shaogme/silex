@@ -51,16 +51,95 @@ pub fn build_css_block_from_tw(input: TwInput) -> Result<CssBlock> {
     Ok(CssBlock { rules: root_rules })
 }
 
-/// 编译期 Tailwind Merge: 相同修饰符组下的实用类属性消解 (Last-wins 覆盖先出者)
+/// 获取指定 CSS 属性拆解后的原子子属性（用于简写属性与长写属性关联覆盖消解）
+fn get_atomic_subproperties(prop: &str) -> Option<&'static [&'static str]> {
+    match prop {
+        // --- Padding 边距类 ---
+        "padding" => Some(&[
+            "padding-top",
+            "padding-right",
+            "padding-bottom",
+            "padding-left",
+        ]),
+        "padding-inline" => Some(&["padding-left", "padding-right"]),
+        "padding-block" => Some(&["padding-top", "padding-bottom"]),
+
+        // --- Margin 外边距类 ---
+        "margin" => Some(&["margin-top", "margin-right", "margin-bottom", "margin-left"]),
+        "margin-inline" => Some(&["margin-left", "margin-right"]),
+        "margin-block" => Some(&["margin-top", "margin-bottom"]),
+
+        // --- Border 边框宽度类 ---
+        "border-width" => Some(&[
+            "border-top-width",
+            "border-right-width",
+            "border-bottom-width",
+            "border-left-width",
+        ]),
+
+        // --- Border 边框样式类 ---
+        "border-style" => Some(&[
+            "border-top-style",
+            "border-right-style",
+            "border-bottom-style",
+            "border-left-style",
+        ]),
+
+        // --- Border 边框颜色类 ---
+        "border-color" => Some(&[
+            "border-top-color",
+            "border-right-color",
+            "border-bottom-color",
+            "border-left-color",
+        ]),
+
+        // --- Border Radius 圆角类 ---
+        "border-radius" => Some(&[
+            "border-top-left-radius",
+            "border-top-right-radius",
+            "border-bottom-right-radius",
+            "border-bottom-left-radius",
+        ]),
+
+        // --- Inset 定位类 ---
+        "inset" => Some(&["top", "right", "bottom", "left"]),
+
+        // --- Overflow 溢出类 ---
+        "overflow" => Some(&["overflow-x", "overflow-y"]),
+
+        // --- Gap 间距类 ---
+        "gap" => Some(&["row-gap", "column-gap"]),
+
+        // --- Flex 弹性盒子类 ---
+        "flex" => Some(&["flex-grow", "flex-shrink", "flex-basis"]),
+
+        _ => None,
+    }
+}
+
+/// 编译期 Tailwind Merge: 相同修饰符组下的实用类属性消解 (支持简写属性与长写属性关联覆盖，Last-wins 覆盖先出者)
 fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
-    let mut seen_properties = HashSet::new();
+    let mut covered_subproperties = HashSet::new();
     let mut deduped_rev = Vec::new();
 
     for rule in rules.into_iter().rev() {
-        if seen_properties.insert(rule.css_property.clone()) {
+        let prop = rule.css_property.as_str();
+        let subprops: &[&str] = match get_atomic_subproperties(prop) {
+            Some(subs) => subs,
+            None => std::slice::from_ref(&prop),
+        };
+
+        // 检查该规则包含的所有原子子属性是否已被后续（即更靠后出场）的规则完全覆盖
+        let all_covered = subprops.iter().all(|p| covered_subproperties.contains(*p));
+
+        if !all_covered {
+            for &p in subprops {
+                covered_subproperties.insert(p.to_string());
+            }
             deduped_rev.push(rule);
         }
     }
+
     deduped_rev.into_iter().rev().collect()
 }
 

@@ -206,4 +206,52 @@ mod tests {
             compile_result.component_css
         );
     }
+
+    #[test]
+    fn test_shorthand_longhand_deduplication() {
+        // 1. pt-2 在前，p-4 在后：后面的 shorthand (p-4) 完全覆盖前面的 pt-2
+        let input: TwInput = syn::parse2(quote!("pt-2 p-4")).unwrap();
+        let css_block = build_css_block_from_tw(input).unwrap();
+        let block_ts = quote! { #css_block };
+        let compile_result = crate::css::compiler::CssCompiler::compile(
+            block_ts,
+            proc_macro2::Span::call_site(),
+            false,
+        )
+        .unwrap();
+        assert!(
+            !compile_result.component_css.contains("padding-top"),
+            "Expected padding-top to be overridden by later p-4 shorthand, got: {}",
+            compile_result.component_css
+        );
+        assert!(
+            compile_result.component_css.contains("padding:1rem")
+                || compile_result.component_css.contains("padding: 1rem"),
+            "Expected padding:1rem, got: {}",
+            compile_result.component_css
+        );
+
+        // 2. p-4 在前，pt-2 在后：两者保留并由 LightningCSS 压缩合并为 padding: .5rem 1rem 1rem
+        let input: TwInput = syn::parse2(quote!("p-4 pt-2")).unwrap();
+        let css_block = build_css_block_from_tw(input).unwrap();
+        let block_ts = quote! { #css_block };
+        let compile_result = crate::css::compiler::CssCompiler::compile(
+            block_ts,
+            proc_macro2::Span::call_site(),
+            false,
+        )
+        .unwrap();
+        assert!(
+            compile_result
+                .component_css
+                .contains("padding:.5rem 1rem 1rem")
+                || compile_result
+                    .component_css
+                    .contains("padding: .5rem 1rem 1rem")
+                || (compile_result.component_css.contains("padding:1rem")
+                    && compile_result.component_css.contains("padding-top")),
+            "Expected compressed padding:.5rem 1rem 1rem or padding:1rem + padding-top, got: {}",
+            compile_result.component_css
+        );
+    }
 }
