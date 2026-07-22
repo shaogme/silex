@@ -116,31 +116,40 @@ fn TabsAndDialogShowcase() -> impl View {
         CardContent(view_chain!(
             // Tabs
             div(view_chain!(
-                TabsList(view_chain!(
-                    TabsTrigger("Account", "account")
-                        .active_tab(active_tab)
-                        .on_select(move |tab: &'static str| set_active_tab.set(tab.to_string())),
-                    TabsTrigger("Password", "password")
-                        .active_tab(active_tab)
-                        .on_select(move |tab: &'static str| set_active_tab.set(tab.to_string())),
-                    TabsTrigger("Settings", "settings")
-                        .active_tab(active_tab)
-                        .on_select(move |tab: &'static str| set_active_tab.set(tab.to_string()))
-                )),
-                rx!(move || {
-                    match active_tab.get().as_str() {
-                        "account" => {
-                            TabsContent(p("Manage your account details and profile preferences."))
-                                .into_any()
+                Tabs(view_chain!(
+                    TabsList(view_chain!(
+                        TabsTrigger("Account", "account")
+                            .active_tab(active_tab)
+                            .on_select(move |tab: &'static str| set_active_tab.set(tab.to_string())),
+                        TabsTrigger("Password", "password")
+                            .active_tab(active_tab)
+                            .on_select(move |tab: &'static str| set_active_tab.set(tab.to_string())),
+                        TabsTrigger("Settings", "settings")
+                            .active_tab(active_tab)
+                            .on_select(move |tab: &'static str| set_active_tab.set(tab.to_string()))
+                    ))
+                    .class(tw!("grid w-full grid-cols-3")),
+                    rx!(move || {
+                        match active_tab.get().as_str() {
+                            "account" => {
+                                TabsContent(p("Manage your account details and profile preferences.").class(tw!("p-4 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-300")))
+                                    .value("account")
+                                    .active_tab(active_tab)
+                                    .into_any()
+                            }
+                            "password" => {
+                                TabsContent(p("Change your password and configure 2FA security.").class(tw!("p-4 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-300")))
+                                    .value("password")
+                                    .active_tab(active_tab)
+                                    .into_any()
+                            }
+                            _ => TabsContent(p("Customize system settings and notification channels.").class(tw!("p-4 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-300")))
+                                .value("settings")
+                                .active_tab(active_tab)
+                                .into_any(),
                         }
-                        "password" => {
-                            TabsContent(p("Change your password and configure 2FA security."))
-                                .into_any()
-                        }
-                        _ => TabsContent(p("Customize system settings and notification channels."))
-                            .into_any(),
-                    }
-                })
+                    })
+                ))
             ))
             .class(tw!("mb-6")),
             Separator().class(tw!("my-4")),

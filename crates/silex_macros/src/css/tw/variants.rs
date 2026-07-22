@@ -235,7 +235,7 @@ fn generate_combinations(input: &TwVariantsInput, span: Span) -> Result<Vec<Vari
         // 4. 构建 CssBlock 并编译
         let css_block = build_css_block_from_rules(deduped)?;
         let block_ts = quote! { #css_block };
-        let compile_result = CssCompiler::compile(block_ts, span, false)?;
+        let compile_result = CssCompiler::compile_with_prefix(block_ts, span, false, "slx-twv-")?;
 
         combinations.push(VariantCombination {
             options: tuple,
@@ -257,20 +257,7 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
     // 1. 生成 CSS 初始化注入 Token
     let mut inits_tokens = Vec::new();
     for comb in &combinations {
-        let res = &comb.compile_result;
-        let style_id = &res.style_id;
-        let static_id = &res.static_id;
-        let static_css = &res.static_css;
-        let component_css = &res.component_css;
-
-        inits_tokens.push(quote! {
-            if !#static_css.is_empty() {
-                ::silex::css::inject_style(#static_id, #static_css);
-            }
-            if !#component_css.is_empty() {
-                ::silex::css::inject_style(#style_id, #component_css);
-            }
-        });
+        inits_tokens.push(comb.compile_result.generate_inits());
     }
 
     // 2. 确定默认组合及 Class

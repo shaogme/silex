@@ -724,5 +724,21 @@ mod tests {
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].css_property, "isolation");
         assert_eq!(rules[0].value, UtilityValue::Keyword("isolate"));
+
+        // Outline 规则测试 (outline-1, outline-ring)
+        let rules = resolve_utility(vec![], "outline-1", span).unwrap();
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0].css_property, "outline-style");
+        assert_eq!(rules[0].value, UtilityValue::Keyword("solid"));
+        assert_eq!(rules[1].css_property, "outline-width");
+        assert_eq!(rules[1].value, UtilityValue::Numeric(1.0, "px"));
+
+        let rules = resolve_utility(vec![], "outline-ring", span).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "outline-color");
+        assert_eq!(
+            rules[0].value,
+            UtilityValue::ArbitraryLiteral("var(--ring)".into())
+        );
     }
 }

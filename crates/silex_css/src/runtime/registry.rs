@@ -16,6 +16,10 @@ pub struct StaticStyleRegistry {
     injected_ids: HashSet<String>,
     /// The shared stylesheet for all static styles.
     shared_sheet: Option<CssStyleSheet>,
+    /// Queue of pending rules awaiting microtask flush.
+    pending_rules: Vec<String>,
+    /// Whether a microtask flush has already been scheduled.
+    is_flush_pending: bool,
 }
 
 impl StaticStyleRegistry {
@@ -24,6 +28,8 @@ impl StaticStyleRegistry {
             static INSTANCE: RefCell<StaticStyleRegistry> = RefCell::new(StaticStyleRegistry {
                 injected_ids: HashSet::new(),
                 shared_sheet: None,
+                pending_rules: Vec::new(),
+                is_flush_pending: false,
             });
         }
         INSTANCE.with(|i| {
@@ -41,26 +47,62 @@ impl StaticStyleRegistry {
         }
         self.injected_ids.insert(id.to_string());
 
+        let rules = split_rules(content);
+        for rule in rules {
+            self.pending_rules.push(rule.to_string());
+        }
+
+        if self.shared_sheet.is_none() {
+            if let Ok(sheet) = CssStyleSheet::new() {
+                let mut init_content = String::from("@layer base, components, utilities;\n");
+                for r in self.pending_rules.drain(..) {
+                    init_content.push_str(&r);
+                    init_content.push('\n');
+                }
+                let _ = sheet.replace_sync(&init_content);
+
+                DOCUMENT_REGISTRY.with(|dr| {
+                    if let Ok(mut dr) = dr.try_borrow_mut() {
+                        dr.set_static_sheet(sheet.clone());
+                    }
+                });
+
+                self.shared_sheet = Some(sheet);
+                return;
+            }
+        }
+
+        self.schedule_flush();
+    }
+
+    fn schedule_flush(&mut self) {
+        if self.is_flush_pending || self.pending_rules.is_empty() {
+            return;
+        }
+        self.is_flush_pending = true;
+
+        spawn_local(async {
+            StaticStyleRegistry::with(|r| {
+                r.flush();
+                Some(())
+            });
+        });
+    }
+
+    pub fn flush(&mut self) {
+        self.is_flush_pending = false;
+        if self.pending_rules.is_empty() {
+            return;
+        }
+
         if let Some(sheet) = &self.shared_sheet {
-            // Incremental injection: insert each rule one by one to avoid full re-parsing
-            let rules = split_rules(content);
-            for rule in rules {
+            for rule in self.pending_rules.drain(..) {
                 if let Ok(rule_list) = sheet.css_rules() {
-                    let _ = sheet.insert_rule_with_index(rule, rule_list.length());
+                    let _ = sheet.insert_rule_with_index(&rule, rule_list.length());
                 }
             }
-        } else if let Ok(sheet) = CssStyleSheet::new() {
-            // Initialize sheet safely
-            let _ = sheet.replace_sync(content);
-
-            // Register as the static sheet in the document registry
-            DOCUMENT_REGISTRY.with(|dr| {
-                if let Ok(mut dr) = dr.try_borrow_mut() {
-                    dr.set_static_sheet(sheet.clone());
-                }
-            });
-
-            self.shared_sheet = Some(sheet);
+        } else {
+            self.pending_rules.clear();
         }
     }
 }

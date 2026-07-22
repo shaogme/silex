@@ -22,13 +22,19 @@ macro_rules! define_static_table {
             utility_token: &str,
             span: Span,
         ) -> Option<Vec<UtilityRule>> {
-            let mods = modifiers.to_vec();
+            let get_mods = || -> Vec<Modifier> {
+                if modifiers.is_empty() {
+                    Vec::new()
+                } else {
+                    modifiers.to_vec()
+                }
+            };
 
             match utility_token {
                 $(
                     $( $pat )|+ => Some(vec![
                         $(
-                            make_rule(mods.clone(), $prop, $val, span),
+                            make_rule(get_mods(), $prop, $val, span),
                         )*
                     ]),
                 )*

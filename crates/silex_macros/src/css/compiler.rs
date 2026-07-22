@@ -30,6 +30,25 @@ pub struct CssCompileResult {
     pub warnings: Vec<CssWarning>,
 }
 
+impl CssCompileResult {
+    /// Generates TokenStream for injecting static and component CSS styles
+    pub fn generate_inits(&self) -> TokenStream {
+        let static_id = &self.static_id;
+        let static_css = &self.static_css;
+        let style_id = &self.style_id;
+        let component_css = &self.component_css;
+
+        quote::quote! {
+            if !#static_css.is_empty() {
+                ::silex::css::inject_style(#static_id, #static_css);
+            }
+            if !#component_css.is_empty() {
+                ::silex::css::inject_style(#style_id, #component_css);
+            }
+        }
+    }
+}
+
 struct ParserState {
     static_css: String,
     lifted_css: String,
@@ -54,13 +73,31 @@ impl CssCompiler {
         span: Span,
         is_unsafe: bool,
     ) -> Result<CssCompileResult> {
+        Self::compile_block_with_prefix(block, span, is_unsafe, "slx-tw-")
+    }
+
+    pub fn compile_block_with_prefix(
+        block: &CssBlock,
+        span: Span,
+        is_unsafe: bool,
+        prefix: &str,
+    ) -> Result<CssCompileResult> {
         let ts_string = quote::quote!(#block).to_string();
-        Self::compile_block_internal(block, ts_string, span, true, is_unsafe)
+        Self::compile_block_internal(block, ts_string, span, true, is_unsafe, prefix)
     }
 
     pub fn compile(ts: TokenStream, span: Span, is_unsafe: bool) -> Result<CssCompileResult> {
+        Self::compile_with_prefix(ts, span, is_unsafe, "slx-tw-")
+    }
+
+    pub fn compile_with_prefix(
+        ts: TokenStream,
+        span: Span,
+        is_unsafe: bool,
+        prefix: &str,
+    ) -> Result<CssCompileResult> {
         let block: CssBlock = syn::parse2(ts.clone())?;
-        Self::compile_block_internal(&block, ts.to_string(), span, true, is_unsafe)
+        Self::compile_block_internal(&block, ts.to_string(), span, true, is_unsafe, prefix)
     }
 
     pub fn compile_global(
@@ -69,7 +106,7 @@ impl CssCompiler {
         is_unsafe: bool,
     ) -> Result<CssCompileResult> {
         let block: CssBlock = syn::parse2(ts.clone())?;
-        Self::compile_block_internal(&block, ts.to_string(), span, false, is_unsafe)
+        Self::compile_block_internal(&block, ts.to_string(), span, false, is_unsafe, "slx-")
     }
 
     fn compile_block_internal(
@@ -78,11 +115,12 @@ impl CssCompiler {
         span: Span,
         wrap_in_class: bool,
         is_unsafe: bool,
+        prefix: &str,
     ) -> Result<CssCompileResult> {
         let hash = silex_hash::css::hash_one(&ts_string);
         let mut buf = [0u8; 13];
         let class_base = silex_hash::css::encode_base36(hash, &mut buf);
-        let class_name = format!("slx-{}", class_base);
+        let class_name = format!("{}{}", prefix, class_base);
         let style_id = format!("style-{}", class_name);
 
         let mut state = ParserState {
@@ -127,7 +165,11 @@ impl CssCompiler {
         };
 
         let final_component_css = if wrap_in_class && !state.static_css.trim().is_empty() {
-            let wrapped = format!(".{} {{ {} }}", class_name, state.static_css);
+            let layer_name = match prefix {
+                "slx-twv-" | "slx-st-" => "components",
+                _ => "utilities",
+            };
+            let wrapped = format!("@layer {} {{ .{} {{ {} }} }}", layer_name, class_name, state.static_css);
             let mut stylesheet =
                 StyleSheet::parse(&wrapped, ParserOptions::default()).map_err(|e| {
                     crate::css::error::report_lightning_error(format!("Component CSS: {}", e), span)

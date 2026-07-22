@@ -170,7 +170,8 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let tag = &parsed.tag;
     let name = &parsed.name;
 
-    let compile_result = CssCompiler::compile(parsed.css_block, tag.span(), parsed.is_unsafe)?;
+    let compile_result =
+        CssCompiler::compile_with_prefix(parsed.css_block, tag.span(), parsed.is_unsafe, "slx-st-")?;
 
     let mut var_decls = Vec::new();
     let mut style_bindings = Vec::new();
@@ -214,21 +215,9 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
 
         let mut match_arms = Vec::new();
         for (v_name, v_css) in &group.variants {
-            let res = CssCompiler::compile(v_css.clone(), v_name.span(), parsed.is_unsafe)?;
-            let v_class = res.class_name;
-            let v_style_id = res.style_id;
-            let v_static_css = res.static_css;
-            let v_component_css = res.component_css;
-
-            let v_static_id = res.static_id;
-            variant_injections.push(quote! {
-                if !#v_static_css.is_empty() {
-                    ::silex::css::inject_style(#v_static_id, #v_static_css);
-                }
-                if !#v_component_css.is_empty() {
-                    ::silex::css::inject_style(#v_style_id, #v_component_css);
-                }
-            });
+            let res = CssCompiler::compile_with_prefix(v_css.clone(), v_name.span(), parsed.is_unsafe, "slx-st-")?;
+            let v_class = res.class_name.clone();
+            variant_injections.push(res.generate_inits());
 
             process_dynamic_entries(
                 &res.expressions,
@@ -633,17 +622,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         }});
     } else {
         // Purely static injection
-        let s_css = &res.static_css;
-        let c_css = &res.component_css;
-        let sid = &res.style_id;
-        let static_id = &res.static_id;
-
-        if !s_css.is_empty() {
-            inits.push(quote! { ::silex::css::inject_style(#static_id, #s_css); });
-        }
-        if !c_css.is_empty() {
-            inits.push(quote! { ::silex::css::inject_style(#sid, #c_css); });
-        }
+        inits.push(res.generate_inits());
     }
 
     // 2. Process nested dynamic rules (selectors with $)

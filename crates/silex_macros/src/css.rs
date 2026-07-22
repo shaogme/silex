@@ -107,15 +107,12 @@ pub(crate) fn generate_css_output(
     compile_result: compiler::CssCompileResult,
     span: Span,
 ) -> Result<TokenStream> {
+    let style_inits = compile_result.generate_inits();
     let class_name = compile_result.class_name;
-    let style_id = compile_result.style_id;
-    let static_css = compile_result.static_css;
-    let component_css = compile_result.component_css;
     let expressions = compile_result.expressions;
     let dynamic_rules = compile_result.dynamic_rules;
-
-    let static_id = compile_result.static_id;
     let warnings = compile_result.warnings;
+
     let warning_tokens = warnings.iter().map(|w| {
         let msg = &w.message;
         let warning_span = w.span;
@@ -129,12 +126,7 @@ pub(crate) fn generate_css_output(
 
     let inits = quote! {
         #(#warning_tokens)*
-        if !#static_css.is_empty() {
-            ::silex::css::inject_style(#static_id, #static_css);
-        }
-        if !#component_css.is_empty() {
-            ::silex::css::inject_style(#style_id, #component_css);
-        }
+        #style_inits
     };
 
     // Generate Rust Code

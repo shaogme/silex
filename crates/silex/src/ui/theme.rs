@@ -69,6 +69,7 @@ pub fn shadcn_dark_theme() -> ShadcnTheme {
 /// into the document style registry.
 pub fn inject_shadcn_base_styles() {
     let base_css = r#"
+@layer base {
 :root {
   --radius: 0.5rem;
   --background: oklch(0.985 0 0);
@@ -138,6 +139,7 @@ button, [type='button'], [type='reset'], [type='submit'] {
   margin: 0;
   background-color: transparent;
   background-image: none;
+}
 }
 "#;
     silex_css::inject_style("slx-shadcn-base-reset", base_css);

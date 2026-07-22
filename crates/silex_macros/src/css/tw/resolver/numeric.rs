@@ -1,7 +1,7 @@
 use crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};
 use proc_macro2::Span;
 
-use super::{make_rule, num, num_unitless, px, rem};
+use super::{kw, make_rule, num, num_unitless, px, rem};
 
 #[inline]
 fn format_num_clean(v: f64) -> String {
@@ -119,6 +119,14 @@ pub fn resolve_numeric_utility(
             px(px_val),
             span,
         )]);
+    }
+
+    // 1.6 Outline 宽度 (outline-0, outline-1, outline-2, outline-4, outline-8 等)
+    if prefix == "outline" && !is_fraction {
+        return Some(vec![
+            make_rule(mods.clone(), "outline-style", kw("solid"), span),
+            make_rule(mods, "outline-width", px(val_num), span),
+        ]);
     }
 
     // 2. 定位与 Inset 系统 (top-4, -left-1/2, inset-x-0 等)

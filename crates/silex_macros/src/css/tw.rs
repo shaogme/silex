@@ -22,22 +22,6 @@ pub fn tw_verbose_impl(ts: TokenStream) -> Result<TokenStream> {
     tw_impl_internal(ts, true)
 }
 
-fn generate_inits(compile_result: &crate::css::compiler::CssCompileResult) -> TokenStream {
-    let style_id = &compile_result.style_id;
-    let static_id = &compile_result.static_id;
-    let static_css = &compile_result.static_css;
-    let component_css = &compile_result.component_css;
-
-    quote! {
-        if !#static_css.is_empty() {
-            ::silex::css::inject_style(#static_id, #static_css);
-        }
-        if !#component_css.is_empty() {
-            ::silex::css::inject_style(#style_id, #component_css);
-        }
-    }
-}
-
 fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     let input_str = if verbose {
         ts.to_string()
@@ -91,7 +75,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                 let compile_result =
                     crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)?;
                 let cls_name = compile_result.class_name.clone();
-                inits_tokens.push(generate_inits(&compile_result));
+                inits_tokens.push(compile_result.generate_inits());
 
                 reactive_body.push(quote! {
                     if !_slx_cls.is_empty() { _slx_cls.push(' '); }
@@ -111,7 +95,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                     let compile_result =
                         crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)?;
                     let cls = compile_result.class_name.clone();
-                    inits_tokens.push(generate_inits(&compile_result));
+                    inits_tokens.push(compile_result.generate_inits());
                     cls
                 };
 
@@ -122,7 +106,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                     let compile_result =
                         crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)?;
                     let cls = compile_result.class_name.clone();
-                    inits_tokens.push(generate_inits(&compile_result));
+                    inits_tokens.push(compile_result.generate_inits());
                     cls
                 };
 

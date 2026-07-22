@@ -1,18 +1,91 @@
 use silex_core::prelude::*;
 use silex_dom::prelude::*;
-use silex_html::button;
-use silex_macros::{component, styled, tw};
+use silex_html::{button, div};
+use silex_macros::{component, tw, tw_variants};
 
-styled! {
-    pub TabsList<div>(children: AnyView) {
-        @apply inline-flex h-9 items-center justify-center rounded-lg bg-slate-100 p-1 text-slate-500 dark:bg-slate-800 dark:text-slate-400;
-    }
+#[component]
+pub fn Tabs(
+    children: AnyView,
+    #[prop(into)]
+    #[chain(default)]
+    orientation: Signal<String>,
+    #[prop(into)]
+    #[chain(default)]
+    class: Signal<String>,
+) -> impl View {
+    let cls = rx!(move || {
+        let base = tw!("group/tabs flex gap-2 data-[orientation=horizontal]:flex-col");
+        let extra = class.get();
+        if extra.is_empty() {
+            base.to_string()
+        } else {
+            format!("{} {}", base, extra)
+        }
+    });
+
+    let orient = rx!(move || {
+        let o = orientation.get();
+        if o.is_empty() {
+            "horizontal".to_string()
+        } else {
+            o
+        }
+    });
+
+    div(children)
+        .attr("data-slot", "tabs")
+        .attr("data-orientation", orient.clone())
+        .attr("orientation", orient)
+        .class(cls)
 }
 
-styled! {
-    pub TabsContent<div>(children: AnyView) {
-        @apply flex-1 outline-none mt-2;
-    }
+#[component]
+pub fn TabsList(
+    children: AnyView,
+    #[prop(into)]
+    #[chain(default)]
+    variant: Signal<String>,
+    #[prop(into)]
+    #[chain(default)]
+    class: Signal<String>,
+) -> impl View {
+    let list_variants = tw_variants! {
+        base: "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-[orientation=horizontal]/tabs:h-9 group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col data-[variant=line]:rounded-none",
+        variants: {
+            variant: {
+                default: "bg-muted",
+                line: "gap-1 bg-transparent"
+            }
+        },
+        default_variants: {
+            variant: "default"
+        }
+    };
+
+    let cls = rx!(move || {
+        let v = variant.get();
+        let base_cls = list_variants.get(if v.is_empty() { "default" } else { v.as_str() });
+        let extra = class.get();
+        if extra.is_empty() {
+            base_cls.to_string()
+        } else {
+            format!("{} {}", base_cls, extra)
+        }
+    });
+
+    let var_attr = rx!(move || {
+        let v = variant.get();
+        if v.is_empty() {
+            "default".to_string()
+        } else {
+            v
+        }
+    });
+
+    div(children)
+        .attr("data-slot", "tabs-list")
+        .attr("data-variant", var_attr)
+        .class(cls)
 }
 
 #[component]
@@ -30,24 +103,69 @@ pub fn TabsTrigger(
     on_select: Callback<&'static str>,
 ) -> impl View {
     let cls = rx!(move || {
-        let is_active = active_tab.get() == value;
         let base = tw!(
-            "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer border border-solid border-transparent",
-            (
-                is_active,
-                "bg-white text-slate-950 shadow-xs dark:bg-slate-900/40 dark:text-slate-50 dark:border-slate-800 font-semibold",
-                "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
-            )
-        ).get();
+            "relative inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap text-foreground/60 transition-all group-data-[orientation=vertical]/tabs:w-full group-data-[orientation=vertical]/tabs:justify-start hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 group-data-[variant=default]/tabs-list:data-[state=active]:shadow-sm group-data-[variant=line]/tabs-list:data-[state=active]:shadow-none dark:text-muted-foreground dark:hover:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 group-data-[variant=line]/tabs-list:bg-transparent group-data-[variant=line]/tabs-list:data-[state=active]:bg-transparent dark:group-data-[variant=line]/tabs-list:data-[state=active]:border-transparent dark:group-data-[variant=line]/tabs-list:data-[state=active]:bg-transparent data-[state=active]:bg-background data-[state=active]:text-foreground dark:data-[state=active]:border-input dark:data-[state=active]:bg-input/30 dark:data-[state=active]:text-foreground after:absolute after:bg-foreground after:opacity-0 after:transition-opacity group-data-[orientation=horizontal]/tabs:after:inset-x-0 group-data-[orientation=horizontal]/tabs:after:bottom-[-5px] group-data-[orientation=horizontal]/tabs:after:h-0.5 group-data-[orientation=vertical]/tabs:after:inset-y-0 group-data-[orientation=vertical]/tabs:after:-right-1 group-data-[orientation=vertical]/tabs:after:w-0.5 group-data-[variant=line]/tabs-list:data-[state=active]:after:opacity-100"
+        );
         let extra = class.get();
         if extra.is_empty() {
-            base
+            base.to_string()
         } else {
             format!("{} {}", base, extra)
         }
     });
 
+    let state_attr = rx!(move || {
+        if active_tab.get() == value {
+            "active"
+        } else {
+            "inactive"
+        }
+    });
+
     button(children)
+        .attr("data-slot", "tabs-trigger")
+        .attr("data-state", state_attr)
+        .attr("data-value", value)
         .class(cls)
         .on_click(move |_| on_select.call(value))
+}
+
+#[component]
+pub fn TabsContent(
+    children: AnyView,
+    #[prop(into)]
+    #[chain(default)]
+    value: &'static str,
+    #[prop(into)]
+    #[chain(default)]
+    active_tab: Signal<String>,
+    #[prop(into)]
+    #[chain(default)]
+    class: Signal<String>,
+) -> impl View {
+    let cls = rx!(move || {
+        let base = tw!("flex-1 outline-none");
+        let extra = class.get();
+        if extra.is_empty() {
+            base.to_string()
+        } else {
+            format!("{} {}", base, extra)
+        }
+    });
+
+    let state_attr = rx!(move || {
+        let val = value;
+        if !val.is_empty() && active_tab.get() == val {
+            "active"
+        } else if !val.is_empty() {
+            "inactive"
+        } else {
+            "active"
+        }
+    });
+
+    div(children)
+        .attr("data-slot", "tabs-content")
+        .attr("data-state", state_attr)
+        .class(cls)
 }
