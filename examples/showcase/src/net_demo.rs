@@ -255,13 +255,13 @@ pub fn EventStreamDemo() -> impl View {
 pub fn NetDemoPage(_ctx: RouterContext) -> impl View {
     let (active_tab, set_active_tab) = Signal::pair("http");
 
-    inject_style("net-demo-css", "
+    inject_css! {
         .tab-nav { display: flex; gap: 10px; margin-bottom: 30px; border-bottom: 1px solid var(--slx-theme-border); padding-bottom: 15px; }
         .tab-nav button { background: none; border: none; padding: 10px 20px; cursor: pointer; color: var(--slx-theme-text); opacity: 0.6; border-radius: 6px; transition: all 0.3s; }
         .tab-nav button:hover { background: rgba(0,0,0,0.05); opacity: 1; }
         .tab-nav button.active { background: var(--slx-theme-primary); color: white; opacity: 1; font-weight: bold; }
         .demo-container { min-height: 400px; }
-    ");
+    };
 
     div![
         h2("🌐 Networking (silex_net)"),

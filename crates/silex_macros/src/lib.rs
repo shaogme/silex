@@ -52,6 +52,15 @@ pub fn classes(input: TokenStream) -> TokenStream {
 
 #[cfg(feature = "css")]
 #[proc_macro]
+pub fn inject_css(input: TokenStream) -> TokenStream {
+    match css::inject_css_impl(input.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+#[cfg(feature = "css")]
+#[proc_macro]
 pub fn theme(input: TokenStream) -> TokenStream {
     match css::theme::bridge_theme_impl(input.into()) {
         Ok(tokens) => tokens.into(),

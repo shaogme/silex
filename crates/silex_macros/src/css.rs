@@ -97,6 +97,29 @@ pub(crate) fn get_prop_type(prop: &str, span: Span) -> Result<TokenStream> {
     Ok(quote_spanned! { span => ::silex::css::types::props::#ident })
 }
 
+pub fn inject_css_impl(ts: TokenStream) -> Result<TokenStream> {
+    let span = Span::call_site();
+    let compile_result = CssCompiler::compile_global(ts, span, false)?;
+    let static_id = &compile_result.static_id;
+    let static_css = &compile_result.static_css;
+    let style_id = &compile_result.style_id;
+    let component_css = &compile_result.component_css;
+
+    Ok(quote! {
+        {
+            const __STATIC_CSS: &str = #static_css;
+            const __COMPONENT_CSS: &str = #component_css;
+
+            if !__STATIC_CSS.is_empty() {
+                ::silex::css::inject_style(#static_id, __STATIC_CSS);
+            }
+            if !__COMPONENT_CSS.is_empty() {
+                ::silex::css::inject_style(#style_id, __COMPONENT_CSS);
+            }
+        }
+    })
+}
+
 pub fn css_impl(ts: TokenStream) -> Result<TokenStream> {
     let span = Span::call_site(); // Use call site for better error reporting in blocks
     let compile_result = CssCompiler::compile(ts, span, false)?;
