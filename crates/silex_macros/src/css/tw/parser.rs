@@ -5,7 +5,14 @@ use syn::{Expr, LitStr, Result, Token, parenthesized};
 
 #[inline]
 fn is_marker_class(token: &str) -> bool {
-    token == "group" || token == "peer" || token.starts_with("group/") || token.starts_with("peer/")
+    token == "group"
+        || token == "peer"
+        || token == "@container"
+        || token == "container"
+        || token.starts_with("group/")
+        || token.starts_with("peer/")
+        || token.starts_with("@container/")
+        || token.starts_with("container/")
 }
 
 fn split_state_and_name(rest: &str) -> (String, Option<String>) {
@@ -27,6 +34,26 @@ fn split_state_and_name(rest: &str) -> (String, Option<String>) {
     (rest.to_string(), None)
 }
 
+fn parse_class_string(
+    raw_str: &str,
+    span: proc_macro2::Span,
+    extra_classes: &mut Vec<String>,
+) -> Result<Vec<crate::css::tw::ast::UtilityRule>> {
+    let mut rules = Vec::new();
+    for token in raw_str.split_whitespace() {
+        let (modifiers, body_token) = parse_modifiers_and_body(token);
+        if modifiers.is_empty()
+            && is_marker_class(body_token)
+            && !extra_classes.contains(&body_token.to_string())
+        {
+            extra_classes.push(body_token.to_string());
+        }
+        let mut resolved = resolve_utility(modifiers, body_token, span)?;
+        rules.append(&mut resolved);
+    }
+    Ok(rules)
+}
+
 impl Parse for TwInput {
     fn parse(input: ParseStream) -> Result<Self> {
         let mut segments = Vec::new();
@@ -35,21 +62,7 @@ impl Parse for TwInput {
         while !input.is_empty() {
             if input.peek(LitStr) {
                 let lit: LitStr = input.parse()?;
-                let raw_str = lit.value();
-                let span = lit.span();
-                let mut rules = Vec::new();
-
-                for token in raw_str.split_whitespace() {
-                    let (modifiers, body_token) = parse_modifiers_and_body(token);
-                    if modifiers.is_empty()
-                        && is_marker_class(body_token)
-                        && !extra_classes.contains(&body_token.to_string())
-                    {
-                        extra_classes.push(body_token.to_string());
-                    }
-                    let mut resolved = resolve_utility(modifiers, body_token, span)?;
-                    rules.append(&mut resolved);
-                }
+                let rules = parse_class_string(&lit.value(), lit.span(), &mut extra_classes)?;
                 segments.push(TwSegment::Static(rules));
             } else if input.peek(syn::token::Paren) {
                 let content;
@@ -87,37 +100,13 @@ impl Parse for TwInput {
                     (cond_expr, lit, else_lit)
                 };
 
-                let mut then_rules = Vec::new();
-                let raw_str = lit.value();
-                let lit_span = lit.span();
-                for token in raw_str.split_whitespace() {
-                    let (modifiers, body_token) = parse_modifiers_and_body(token);
-                    if modifiers.is_empty()
-                        && is_marker_class(body_token)
-                        && !extra_classes.contains(&body_token.to_string())
-                    {
-                        extra_classes.push(body_token.to_string());
-                    }
-                    let mut resolved = resolve_utility(modifiers, body_token, lit_span)?;
-                    then_rules.append(&mut resolved);
-                }
-
-                let mut else_rules = Vec::new();
-                if let Some(else_l) = else_lit {
-                    let raw_str = else_l.value();
-                    let else_span = else_l.span();
-                    for token in raw_str.split_whitespace() {
-                        let (modifiers, body_token) = parse_modifiers_and_body(token);
-                        if modifiers.is_empty()
-                            && is_marker_class(body_token)
-                            && !extra_classes.contains(&body_token.to_string())
-                        {
-                            extra_classes.push(body_token.to_string());
-                        }
-                        let mut resolved = resolve_utility(modifiers, body_token, else_span)?;
-                        else_rules.append(&mut resolved);
-                    }
-                }
+                let then_rules =
+                    parse_class_string(&lit.value(), lit.span(), &mut extra_classes)?;
+                let else_rules = if let Some(else_l) = else_lit {
+                    parse_class_string(&else_l.value(), else_l.span(), &mut extra_classes)?
+                } else {
+                    Vec::new()
+                };
 
                 segments.push(TwSegment::Conditional {
                     condition: cond_expr,

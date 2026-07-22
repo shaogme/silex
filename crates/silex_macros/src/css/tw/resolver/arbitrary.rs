@@ -17,31 +17,63 @@ pub fn parse_arbitrary_syntax(token: &str) -> Option<(&str, &str)> {
 }
 
 fn normalize_arbitrary_val(raw_val: &str) -> String {
-    let s = raw_val.replace('_', " ");
-    if !s.contains("calc(") {
-        return s;
-    }
-
-    let mut result = String::with_capacity(s.len() + 8);
-    let mut chars = s.chars().peekable();
+    let mut out = String::with_capacity(raw_val.len() + 8);
+    let mut chars = raw_val.chars().peekable();
+    let mut dollar_depth: usize = 0;
 
     while let Some(c) = chars.next() {
-        if (c == '+' || c == '-') && !result.is_empty() {
-            let prev = result.chars().last().unwrap_or(' ');
+        // 1. 识别 Silex 动态表达式起点 `$(...`
+        if c == '$' && chars.peek() == Some(&'(') {
+            dollar_depth += 1;
+            out.push('$');
+            out.push('(');
+            chars.next(); // 消费 '('
+            continue;
+        }
+
+        // 2. 在 `$(...)` 保护区域内部：原样透传，保护 Rust 标识符与表达式语法
+        if dollar_depth > 0 {
+            out.push(c);
+            if c == '(' {
+                dollar_depth += 1;
+            } else if c == ')' {
+                dollar_depth -= 1;
+            }
+            continue;
+        }
+
+        // 3. 在 `$(...)` 区域外部：统一规范化 Tailwind 任意值与 calc(...) 运算符
+        if c == '_' {
+            if !out.ends_with(' ') {
+                out.push(' ');
+            }
+        } else if (c == '+' || c == '-') && !out.is_empty() {
+            let prev = out.chars().last().unwrap_or(' ');
             let next = chars.peek().copied().unwrap_or(' ');
 
-            if !prev.is_whitespace() && prev != '(' && prev != ',' {
-                result.push(' ');
-            }
-            result.push(c);
-            if !next.is_whitespace() && next != ')' && next != ',' {
-                result.push(' ');
+            // 检查 '-' 是否为标识符/CSS变量/前缀的一部分（如 -10px, --tw-var, 100%）
+            let is_identifier_hyphen = c == '-'
+                && (prev == '-'
+                    || next == '-'
+                    || (prev.is_alphanumeric() && next.is_alphanumeric()));
+
+            if is_identifier_hyphen {
+                out.push(c);
+            } else {
+                if !prev.is_whitespace() && prev != '(' && prev != ',' {
+                    out.push(' ');
+                }
+                out.push(c);
+                if !next.is_whitespace() && next != ')' && next != ',' {
+                    out.push(' ');
+                }
             }
         } else {
-            result.push(c);
+            out.push(c);
         }
     }
-    result
+
+    out
 }
 
 /// 解析任意值到 UtilityRule
@@ -124,6 +156,10 @@ pub fn resolve_arbitrary(
         }
         "animate" => ("animation", false),
         "container" | "container-name" => ("container-name", false),
+        "grid-rows" => ("grid-template-rows", false),
+        "grid-cols" => ("grid-template-columns", false),
+        "auto-rows" => ("grid-auto-rows", false),
+        "auto-cols" => ("grid-auto-columns", false),
         "ring" => {
             if norm_val.ends_with("px")
                 || norm_val.ends_with("rem")
@@ -252,6 +288,15 @@ mod tests {
             "calc(50% + 10px)"
         );
         assert_eq!(normalize_arbitrary_val("-10px"), "-10px");
+        assert_eq!(normalize_arbitrary_val("$(pad_val)"), "$(pad_val)");
+    }
+
+    #[test]
+    fn test_resolve_arbitrary_dynamic_expr_with_underscores() {
+        let rules = resolve_arbitrary(vec![], "p", "$(pad_val)", Span::call_site()).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "padding");
+        assert!(matches!(rules[0].value, UtilityValue::DynamicExpr(_, _)));
     }
 
     #[test]

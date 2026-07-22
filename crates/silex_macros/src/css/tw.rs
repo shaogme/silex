@@ -55,9 +55,8 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
 
     if !has_conditionals {
         let css_block = build_css_block_from_tw(input)?;
-        let block_ts = quote! { #css_block };
         let mut compile_result =
-            crate::css::compiler::CssCompiler::compile(block_ts.clone(), span, false)?;
+            crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)?;
 
         if !extra_classes.is_empty() {
             let extra_str = extra_classes.join(" ");
@@ -65,6 +64,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
         }
 
         if verbose {
+            let block_ts = quote! { #css_block };
             eprintln!("========== [Silex tw_verbose! Compile-Time Diagnostics] ==========");
             eprintln!("Macro Input: {}", input_str);
             eprintln!("Generated CssBlock AST:\n  {}", block_ts);
@@ -88,9 +88,8 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                     continue;
                 }
                 let css_block = build_css_block_from_rules(rules)?;
-                let block_ts = quote! { #css_block };
                 let compile_result =
-                    crate::css::compiler::CssCompiler::compile(block_ts, span, false)?;
+                    crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)?;
                 let cls_name = compile_result.class_name.clone();
                 inits_tokens.push(generate_inits(&compile_result));
 
@@ -109,9 +108,8 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                     String::new()
                 } else {
                     let css_block = build_css_block_from_rules(then_rules)?;
-                    let block_ts = quote! { #css_block };
                     let compile_result =
-                        crate::css::compiler::CssCompiler::compile(block_ts, span, false)?;
+                        crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)?;
                     let cls = compile_result.class_name.clone();
                     inits_tokens.push(generate_inits(&compile_result));
                     cls
@@ -121,9 +119,8 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                     String::new()
                 } else {
                     let css_block = build_css_block_from_rules(else_rules)?;
-                    let block_ts = quote! { #css_block };
                     let compile_result =
-                        crate::css::compiler::CssCompiler::compile(block_ts, span, false)?;
+                        crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)?;
                     let cls = compile_result.class_name.clone();
                     inits_tokens.push(generate_inits(&compile_result));
                     cls
@@ -302,6 +299,37 @@ mod tests {
             compile_result.component_css.contains("width>=400px")
                 || compile_result.component_css.contains("min-width: 400px")
                 || compile_result.component_css.contains("min-width:400px")
+        );
+    }
+
+    #[test]
+    fn test_named_container_query_css() {
+        let input: TwInput = syn::parse2(quote!("@container/card-header @card-header/sm:p-4")).unwrap();
+        let css_block = build_css_block_from_tw(input).unwrap();
+        let block_ts = quote! { #css_block };
+        let compile_result = crate::css::compiler::CssCompiler::compile(
+            block_ts,
+            proc_macro2::Span::call_site(),
+            false,
+        )
+        .unwrap();
+        println!("named container component_css: {}", compile_result.component_css);
+        assert!(
+            compile_result
+                .component_css
+                .contains("container:card-header/inline-size")
+                || compile_result
+                    .component_css
+                    .contains("container-name:card-header")
+                || compile_result
+                    .component_css
+                    .contains("container-name: card-header")
+        );
+        assert!(
+            compile_result.component_css.contains("card-header")
+                && (compile_result.component_css.contains("640px")
+                    || compile_result.component_css.contains("min-width")
+                    || compile_result.component_css.contains("width>=640px"))
         );
     }
 

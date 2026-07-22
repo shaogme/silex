@@ -103,6 +103,16 @@ define_static_table! {
     "container-normal" => { "container-type" => kw("normal") },
     "container-size" => { "container-type" => kw("size") },
 
+    // --- Grid Auto Flow, Rows & Columns ---
+    "auto-rows-auto" => { "grid-auto-rows" => kw("auto") },
+    "auto-rows-min" => { "grid-auto-rows" => kw("min-content") },
+    "auto-rows-max" => { "grid-auto-rows" => kw("max-content") },
+    "auto-rows-fr" => { "grid-auto-rows" => kw("minmax(0, 1fr)") },
+    "auto-cols-auto" => { "grid-auto-columns" => kw("auto") },
+    "auto-cols-min" => { "grid-auto-columns" => kw("min-content") },
+    "auto-cols-max" => { "grid-auto-columns" => kw("max-content") },
+    "auto-cols-fr" => { "grid-auto-columns" => kw("minmax(0, 1fr)") },
+
     // --- Flexbox 方向与包裹 ---
     "flex-row" => { "flex-direction" => kw("row") },
     "flex-row-reverse" => { "flex-direction" => kw("row-reverse") },
@@ -132,6 +142,10 @@ define_static_table! {
     "justify-around" => { "justify-content" => kw("space-around") },
     "justify-evenly" => { "justify-content" => kw("space-evenly") },
     "justify-stretch" => { "justify-content" => kw("stretch") },
+    "justify-items-start" => { "justify-items" => kw("start") },
+    "justify-items-end" => { "justify-items" => kw("end") },
+    "justify-items-center" => { "justify-items" => kw("center") },
+    "justify-items-stretch" => { "justify-items" => kw("stretch") },
 
     // --- Self & Place ---
     "self-auto" => { "align-self" => kw("auto") },

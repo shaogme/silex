@@ -237,6 +237,54 @@ pub struct CssApply {
     pub span: proc_macro2::Span,
 }
 
+pub fn format_tailwind_token_stream(ts: &TokenStream) -> String {
+    fn is_compact_token(tt: &TokenTree) -> bool {
+        matches!(tt, TokenTree::Ident(_) | TokenTree::Literal(_) | TokenTree::Group(_))
+    }
+
+    fn stringify_group(g: &proc_macro2::Group) -> String {
+        let inner = format_tailwind_token_stream(&g.stream());
+        match g.delimiter() {
+            Delimiter::Parenthesis => format!("({})", inner.trim()),
+            Delimiter::Brace => format!("{{{}}}", inner.trim()),
+            Delimiter::Bracket => format!("[{}]", inner.trim()),
+            Delimiter::None => inner,
+        }
+    }
+
+    let mut out = String::new();
+    let mut prev_tt: Option<TokenTree> = None;
+
+    for tt in ts.clone() {
+        if let Some(ref prev) = prev_tt {
+            let starts_new_utility = is_compact_token(&tt)
+                || matches!(&tt, TokenTree::Punct(p) if p.as_char() == '@' || p.as_char() == '*');
+            if is_compact_token(prev) && starts_new_utility {
+                out.push(' ');
+            }
+        }
+
+        match &tt {
+            TokenTree::Group(g) => {
+                out.push_str(&stringify_group(g));
+            }
+            TokenTree::Punct(p) => {
+                out.push(p.as_char());
+            }
+            TokenTree::Ident(id) => {
+                out.push_str(&id.to_string());
+            }
+            TokenTree::Literal(lit) => {
+                out.push_str(&lit.to_string());
+            }
+        }
+
+        prev_tt = Some(tt);
+    }
+
+    out
+}
+
 impl Parse for CssApply {
     fn parse(input: ParseStream) -> Result<Self> {
         let at_token: Token![@] = input.parse()?;
@@ -260,19 +308,7 @@ impl Parse for CssApply {
             None
         };
 
-        let classes_str = classes_tokens
-            .into_iter()
-            .map(|tt| tt.to_string())
-            .collect::<Vec<_>>()
-            .join(" ")
-            .replace(" - ", "-")
-            .replace(" : ", ":")
-            .replace(" / ", "/")
-            .replace(" [ ", "[")
-            .replace(" ] ", "]")
-            .replace(" ( ", "(")
-            .replace(" ) ", ")")
-            .replace(" . ", ".");
+        let classes_str = format_tailwind_token_stream(&classes_tokens);
 
         Ok(CssApply {
             classes: classes_str,

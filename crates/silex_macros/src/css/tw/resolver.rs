@@ -110,6 +110,22 @@ fn resolve_pattern_utility(
     token: &str,
     span: Span,
 ) -> Result<Vec<UtilityRule>> {
+    // 0. 处理命名容器 marker class (例: @container/card-header, container/sidebar)
+    if let Some(c_name) = token
+        .strip_prefix("@container/")
+        .or_else(|| token.strip_prefix("container/"))
+    {
+        return Ok(vec![
+            make_rule(
+                modifiers.clone(),
+                "container-name",
+                UtilityValue::ArbitraryLiteral(c_name.to_string()),
+                span,
+            ),
+            make_rule(modifiers, "container-type", kw("inline-size"), span),
+        ]);
+    }
+
     // 1. Theme 变量, 如 `bg-theme(primary)` / `text-theme(border)` / `bg-theme(primary/50)`
     if let Some((prefix, theme_var, opacity)) = parse_theme_var(token) {
         if prefix == "divide" {

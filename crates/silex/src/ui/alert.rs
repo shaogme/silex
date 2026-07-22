@@ -4,14 +4,14 @@ use silex_html::div;
 use silex_macros::{component, styled, tw_variants};
 
 styled! {
-    pub AlertTitle<h5>(children: AnyView) {
-        @apply font-medium leading-none tracking-tight mb-1;
+    pub AlertTitle<div>(children: AnyView) {
+        @apply col-start-2 line-clamp-1 min-h-4 font-medium tracking-tight;
     }
 }
 
 styled! {
     pub AlertDescription<div>(children: AnyView) {
-        @apply text-sm text-muted-foreground [&_p]:leading-relaxed;
+        @apply col-start-2 grid justify-items-start gap-1 text-sm text-muted-foreground [&_p]:leading-relaxed;
     }
 }
 
@@ -26,11 +26,11 @@ pub fn Alert(
     class: Signal<String>,
 ) -> impl View {
     let alert_variants = tw_variants! {
-        base: "relative w-full rounded-lg border border-solid p-4 text-sm [&>svg]:size-4 [&>svg]:translate-y-0.5 [&>svg]:text-current",
+        base: "relative grid w-full grid-cols-[0_1fr] items-start gap-y-0.5 rounded-lg border px-4 py-3 text-sm has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr] has-[>svg]:gap-x-3 [&>svg]:size-4 [&>svg]:translate-y-0.5 [&>svg]:text-current",
         variants: {
             variant: {
-                default: "border-border bg-background text-foreground",
-                destructive: "border-destructive/50 text-destructive bg-destructive/10 dark:border-destructive dark:bg-destructive/20"
+                default: "bg-card text-card-foreground",
+                destructive: "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 [&>svg]:text-current"
             }
         },
         default_variants: {

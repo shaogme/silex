@@ -492,8 +492,10 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                     target.clone()
                 };
                 let sel_str = format!("&:has({})", has_target);
-                let lit = proc_macro2::Literal::string(&sel_str);
-                let ts = quote::quote!(#lit);
+                let ts: TokenStream = sel_str.parse().unwrap_or_else(|_| {
+                    let lit = proc_macro2::Literal::string(&sel_str);
+                    quote::quote!(#lit)
+                });
                 current_block = CssBlock {
                     rules: vec![CssRule::Nested(CssNested {
                         selectors: ts,
@@ -546,11 +548,12 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                 };
             }
             Modifier::ContainerQuery { name, min_width } => {
-                let query = match name {
+                let query_str = match name {
                     Some(n) => format!("{} (min-width: {})", n, min_width),
                     None => format!("(min-width: {})", min_width),
                 };
-                let at_rule_params: TokenStream = query.parse().unwrap();
+                let lit = proc_macro2::Literal::string(&query_str);
+                let at_rule_params: TokenStream = quote::quote!(#lit);
                 let at_rule_name = Ident::new("container", Span::call_site());
 
                 let selector_ts: TokenStream = "&".parse().unwrap();

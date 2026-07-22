@@ -49,8 +49,18 @@ struct DynamicContext<'a> {
 pub struct CssCompiler;
 
 impl CssCompiler {
+    pub fn compile_block(
+        block: &CssBlock,
+        span: Span,
+        is_unsafe: bool,
+    ) -> Result<CssCompileResult> {
+        let ts_string = quote::quote!(#block).to_string();
+        Self::compile_block_internal(block, ts_string, span, true, is_unsafe)
+    }
+
     pub fn compile(ts: TokenStream, span: Span, is_unsafe: bool) -> Result<CssCompileResult> {
-        Self::compile_internal(ts, span, true, is_unsafe)
+        let block: CssBlock = syn::parse2(ts.clone())?;
+        Self::compile_block_internal(&block, ts.to_string(), span, true, is_unsafe)
     }
 
     pub fn compile_global(
@@ -58,16 +68,17 @@ impl CssCompiler {
         span: Span,
         is_unsafe: bool,
     ) -> Result<CssCompileResult> {
-        Self::compile_internal(ts, span, false, is_unsafe)
+        let block: CssBlock = syn::parse2(ts.clone())?;
+        Self::compile_block_internal(&block, ts.to_string(), span, false, is_unsafe)
     }
 
-    fn compile_internal(
-        ts: TokenStream,
+    fn compile_block_internal(
+        block: &CssBlock,
+        ts_string: String,
         span: Span,
         wrap_in_class: bool,
         is_unsafe: bool,
     ) -> Result<CssCompileResult> {
-        let ts_string = ts.to_string();
         let hash = silex_hash::css::hash_one(&ts_string);
         let mut buf = [0u8; 13];
         let class_base = silex_hash::css::encode_base36(hash, &mut buf);
@@ -88,8 +99,7 @@ impl CssCompiler {
             is_unsafe,
         };
 
-        let block: CssBlock = syn::parse2(ts)?;
-        process_css_block(&block, &mut state)?;
+        process_css_block(block, &mut state)?;
 
         let final_static_css = if state.lifted_css.is_empty() {
             "".to_string()
