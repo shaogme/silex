@@ -12,10 +12,6 @@ use web_sys::{Element, HtmlElement, SvgElement};
 /// Usually implemented via the `theme!` macro.
 pub trait ThemeType {}
 
-/// A dummy theme type to satisfy the default macro requirements.
-/// Users should alias this to their actual theme or use #[theme(MyTheme)].
-pub type Theme = ();
-
 pub trait ThemeToCss: Display {
     fn to_css_variables(&self) -> String;
     fn get_variable_values(&self) -> Vec<String>;

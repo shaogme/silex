@@ -180,10 +180,7 @@ impl<T: 'static, M> Rx<T, M> {
 
 impl<T, M> Clone for Rx<T, M> {
     fn clone(&self) -> Self {
-        Self {
-            inner: self.inner,
-            _marker: self._marker,
-        }
+        *self
     }
 }
 

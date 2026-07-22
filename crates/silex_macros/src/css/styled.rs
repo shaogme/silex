@@ -283,23 +283,20 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
 
     let filtered_attrs: Vec<_> = parsed
         .attrs
-        .iter()
+        .into_iter()
         .filter(|a| !a.path().is_ident("theme"))
         .collect();
 
-    let component_attr = quote! { #[::silex::macros::component] };
-    let vis = &parsed.vis;
-    let (impl_generics, _, _) = parsed.generics.split_for_impl();
+    let vis = parsed.vis;
+    let generics = parsed.generics;
     let static_css = &compile_result.static_css;
     let component_css = &compile_result.component_css;
     let style_id = &compile_result.style_id;
     let class_name = &compile_result.class_name;
     let static_id = &compile_result.static_id;
 
-    Ok(quote! {
-        #(#filtered_attrs)*
-        #component_attr
-        #vis fn #name #impl_generics (#all_fn_args) -> #return_type {
+    let fn_body: syn::Block = syn::parse_quote! {
+        {
             const __STATIC_CSS: &str = #static_css;
             const __COMPONENT_CSS: &str = #component_css;
 
@@ -327,6 +324,34 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
                 #(#variant_class_bindings)*
                 #(#dynamic_rule_classes)*
         }
+    };
+
+    let item_fn = syn::ItemFn {
+        attrs: filtered_attrs,
+        vis,
+        sig: syn::Signature {
+            constness: None,
+            asyncness: None,
+            unsafety: None,
+            abi: None,
+            fn_token: syn::token::Fn::default(),
+            ident: name.clone(),
+            generics,
+            paren_token: syn::token::Paren::default(),
+            inputs: all_fn_args.into_iter().collect(),
+            variadic: None,
+            output: syn::ReturnType::Type(
+                syn::token::RArrow::default(),
+                Box::new(syn::parse2(return_type)?),
+            ),
+        },
+        block: Box::new(fn_body),
+    };
+
+    let component_tokens = crate::component::generate_component(item_fn)?;
+
+    Ok(quote! {
+        #component_tokens
         #extra_impls
     })
 }
