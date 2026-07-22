@@ -150,9 +150,16 @@ fn get_atomic_subproperties(prop: &str) -> Option<&'static [&'static str]> {
 pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
     let mut covered_subproperties = HashSet::new();
     let mut deduped_rev = Vec::new();
+    let mut transform_rules: Vec<UtilityRule> = Vec::new();
 
     for rule in rules.into_iter().rev() {
         let prop = rule.css_property.as_str();
+
+        if prop == "transform" {
+            transform_rules.push(rule);
+            continue;
+        }
+
         let subprops: &[&str] = match get_atomic_subproperties(prop) {
             Some(subs) => subs,
             None => std::slice::from_ref(&prop),
@@ -171,7 +178,51 @@ pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityR
         }
     }
 
+    // 组合合并 transform 规则 (如 translateX(-50%) translateY(-50%))
+    if !transform_rules.is_empty() {
+        transform_rules.reverse(); // 恢复原始顺序
+        let first = transform_rules[0].clone();
+        let mut combined_vals = Vec::new();
+        for r in &transform_rules {
+            let val_str = utility_value_to_css_string(&r.value);
+            if !val_str.is_empty() {
+                combined_vals.push(val_str);
+            }
+        }
+        let merged_rule = UtilityRule {
+            modifiers: first.modifiers,
+            css_property: "transform".to_string(),
+            value: UtilityValue::ArbitraryLiteral(combined_vals.join(" ")),
+            span: first.span,
+        };
+        // 插入倒序 vector 的头部，翻转后保留在规则列表后方，维持正确的层叠覆盖顺序
+        deduped_rev.insert(0, merged_rule);
+    }
+
     deduped_rev.into_iter().rev().collect()
+}
+
+fn utility_value_to_css_string(val: &UtilityValue) -> String {
+    match val {
+        UtilityValue::Keyword(k) => k.to_string(),
+        UtilityValue::Numeric(v, unit) => {
+            if unit.is_empty() {
+                v.to_string()
+            } else {
+                format!("{}{}", v, unit)
+            }
+        }
+        UtilityValue::HexColor(hex) => hex.clone(),
+        UtilityValue::ThemeVar(var, opacity) => match opacity {
+            Some(op) => format!(
+                "color-mix(in srgb, var(--slx-theme-{}) {}%, transparent)",
+                var, op
+            ),
+            None => format!("var(--slx-theme-{})", var),
+        },
+        UtilityValue::ArbitraryLiteral(s) => s.clone(),
+        UtilityValue::DynamicExpr(expr, _) => quote::quote!(#expr).to_string(),
+    }
 }
 
 fn check_and_collect_keyframes(value: &UtilityValue, keyframes: &mut HashSet<String>) {
@@ -307,8 +358,7 @@ fn convert_rule_to_declaration(rule: &UtilityRule) -> CssRule {
             quote!(#lit)
         }
         UtilityValue::ArbitraryLiteral(lit) => {
-            let lit_node = proc_macro2::Literal::string(lit);
-            quote!(#lit_node)
+            parse_css_literal_to_tokens(lit)
         }
         UtilityValue::DynamicExpr(expr, _expr_span) => {
             // 包装为 Silex 动态表达式节点 `$ ( expr )`
@@ -690,5 +740,88 @@ fn format_group_peer_selector(is_group: bool, state: &str, name: Option<&str>) -
         }
     } else {
         format!("{}:{} {}", base, state, connector)
+    }
+}
+
+fn parse_css_literal_to_tokens(lit: &str) -> TokenStream {
+    if let Ok(ts) = lit.parse::<TokenStream>() {
+        return ts;
+    }
+    let mut ts = TokenStream::new();
+    let mut chars = lit.chars().peekable();
+    while let Some(&ch) = chars.peek() {
+        if ch.is_whitespace() {
+            chars.next();
+            continue;
+        }
+        if ch == '#' {
+            chars.next();
+            ts.extend(std::iter::once(TokenTree::Punct(Punct::new(
+                '#',
+                Spacing::Alone,
+            ))));
+            let mut hex = String::new();
+            while let Some(&c) = chars.peek() {
+                if c.is_ascii_hexdigit() {
+                    hex.push(c);
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+            if !hex.is_empty() {
+                let ident = Ident::new(&hex, Span::call_site());
+                ts.extend(std::iter::once(TokenTree::Ident(ident)));
+            }
+        } else {
+            chars.next();
+            ts.extend(std::iter::once(TokenTree::Punct(Punct::new(
+                ch,
+                Spacing::Alone,
+            ))));
+        }
+    }
+    ts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proc_macro2::Span;
+
+    #[test]
+    fn test_transform_rules_merging() {
+        let rules = vec![
+            UtilityRule {
+                modifiers: vec![],
+                css_property: "transform".to_string(),
+                value: UtilityValue::ArbitraryLiteral("translateX(-50%)".to_string()),
+                span: Span::call_site(),
+            },
+            UtilityRule {
+                modifiers: vec![],
+                css_property: "transform".to_string(),
+                value: UtilityValue::ArbitraryLiteral("translateY(-50%)".to_string()),
+                span: Span::call_site(),
+            },
+        ];
+
+        let deduped = deduplicate_utility_rules(rules);
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].css_property, "transform");
+        if let UtilityValue::ArbitraryLiteral(ref s) = deduped[0].value {
+            assert_eq!(s, "translateX(-50%) translateY(-50%)");
+        } else {
+            panic!("Expected ArbitraryLiteral");
+        }
+    }
+
+    #[test]
+    fn test_parse_css_literal_to_tokens_hex_and_functions() {
+        let hex_tokens = parse_css_literal_to_tokens("#ffffff");
+        assert_eq!(hex_tokens.to_string(), "# ffffff");
+
+        let fn_tokens = parse_css_literal_to_tokens("translateX(-50%)");
+        assert_eq!(fn_tokens.to_string(), "translateX (- 50 %)");
     }
 }
