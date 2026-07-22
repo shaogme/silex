@@ -31,8 +31,8 @@ pub fn build_css_block_from_rules(rules: Vec<UtilityRule>) -> Result<CssBlock> {
         }
     }
 
-    // 按修饰符维度（修饰符数量少 -> 多的顺序）排序，确保基础 modifier 样式先出，复合 modifier 样式后出
-    modifier_groups.sort_by_key(|(m, _)| m.len());
+    // 按修饰符分类与响应式断点 (min-width) 升序排序，保证样式层叠覆盖顺序符合 CSS Specificity 规范
+    modifier_groups.sort_by_key(|(m, _)| modifier_group_sort_key(m));
 
     let mut root_rules = Vec::new();
 
@@ -77,6 +77,41 @@ pub fn build_css_block_from_tw(input: TwInput) -> Result<CssBlock> {
     build_css_block_from_rules(rules)
 }
 
+/// 计算单修饰符的分类权重
+fn modifier_priority(m: &Modifier) -> u32 {
+    match m {
+        Modifier::Child | Modifier::Descendant => 10,
+        Modifier::PseudoClass(_) | Modifier::PseudoElement(_) => 20,
+        Modifier::DataAttribute { .. } | Modifier::AriaAttribute { .. } => 30,
+        Modifier::Group { .. } | Modifier::Peer { .. } => 40,
+        Modifier::Has(_) => 50,
+        Modifier::Dark => 60,
+        Modifier::ContainerQuery { .. } => 70,
+        Modifier::MediaBreakpoint(bp) => {
+            let px = match bp.as_str() {
+                "sm" => 640,
+                "md" => 768,
+                "lg" => 1024,
+                "xl" => 1280,
+                "2xl" => 1536,
+                _ => crate::css::config::get_config()
+                    .and_then(|cfg| cfg.theme.breakpoints.get(bp.as_str()))
+                    .and_then(|s| s.strip_suffix("px").and_then(|v| v.parse::<u32>().ok()))
+                    .unwrap_or(640),
+            };
+            1000 + px
+        }
+        Modifier::CustomSelector(_) => 5000,
+    }
+}
+
+/// 计算修饰符组的综合排序 Key
+fn modifier_group_sort_key(modifiers: &[Modifier]) -> (u32, u32, usize) {
+    let max_p = modifiers.iter().map(modifier_priority).max().unwrap_or(0);
+    let total_p: u32 = modifiers.iter().map(modifier_priority).sum();
+    (max_p, total_p, modifiers.len())
+}
+
 /// 获取指定 CSS 属性拆解后的原子子属性（用于简写属性与长写属性关联覆盖消解）
 fn get_atomic_subproperties(prop: &str) -> Option<&'static [&'static str]> {
     match prop {
@@ -95,6 +130,27 @@ fn get_atomic_subproperties(prop: &str) -> Option<&'static [&'static str]> {
         "margin-inline" => Some(&["margin-left", "margin-right"]),
         "margin-block" => Some(&["margin-top", "margin-bottom"]),
 
+        // --- Inset 定位类 ---
+        "inset" => Some(&["top", "right", "bottom", "left"]),
+        "inset-x" => Some(&["left", "right"]),
+        "inset-y" => Some(&["top", "bottom"]),
+
+        // --- Border 边框宽/样/色全覆盖简写 ---
+        "border" => Some(&[
+            "border-top-width",
+            "border-right-width",
+            "border-bottom-width",
+            "border-left-width",
+            "border-top-style",
+            "border-right-style",
+            "border-bottom-style",
+            "border-left-style",
+            "border-top-color",
+            "border-right-color",
+            "border-bottom-color",
+            "border-left-color",
+        ]),
+
         // --- Border 边框宽度类 ---
         "border-width" => Some(&[
             "border-top-width",
@@ -102,6 +158,8 @@ fn get_atomic_subproperties(prop: &str) -> Option<&'static [&'static str]> {
             "border-bottom-width",
             "border-left-width",
         ]),
+        "border-x-width" | "border-x" => Some(&["border-left-width", "border-right-width"]),
+        "border-y-width" | "border-y" => Some(&["border-top-width", "border-bottom-width"]),
 
         // --- Border 边框样式类 ---
         "border-style" => Some(&[
@@ -110,6 +168,8 @@ fn get_atomic_subproperties(prop: &str) -> Option<&'static [&'static str]> {
             "border-bottom-style",
             "border-left-style",
         ]),
+        "border-x-style" => Some(&["border-left-style", "border-right-style"]),
+        "border-y-style" => Some(&["border-top-style", "border-bottom-style"]),
 
         // --- Border 边框颜色类 ---
         "border-color" => Some(&[
@@ -118,6 +178,8 @@ fn get_atomic_subproperties(prop: &str) -> Option<&'static [&'static str]> {
             "border-bottom-color",
             "border-left-color",
         ]),
+        "border-x-color" => Some(&["border-left-color", "border-right-color"]),
+        "border-y-color" => Some(&["border-top-color", "border-bottom-color"]),
 
         // --- Border Radius 圆角类 ---
         "border-radius" => Some(&[
@@ -126,9 +188,6 @@ fn get_atomic_subproperties(prop: &str) -> Option<&'static [&'static str]> {
             "border-bottom-right-radius",
             "border-bottom-left-radius",
         ]),
-
-        // --- Inset 定位类 ---
-        "inset" => Some(&["top", "right", "bottom", "left"]),
 
         // --- Overflow 溢出类 ---
         "overflow" => Some(&["overflow-x", "overflow-y"]),
@@ -141,6 +200,26 @@ fn get_atomic_subproperties(prop: &str) -> Option<&'static [&'static str]> {
 
         // --- Columns 分栏类 ---
         "columns" => Some(&["column-width", "column-count"]),
+
+        // --- Scroll Margin 类 ---
+        "scroll-margin" => Some(&[
+            "scroll-margin-top",
+            "scroll-margin-right",
+            "scroll-margin-bottom",
+            "scroll-margin-left",
+        ]),
+        "scroll-margin-inline" => Some(&["scroll-margin-left", "scroll-margin-right"]),
+        "scroll-margin-block" => Some(&["scroll-margin-top", "scroll-margin-bottom"]),
+
+        // --- Scroll Padding 类 ---
+        "scroll-padding" => Some(&[
+            "scroll-padding-top",
+            "scroll-padding-right",
+            "scroll-padding-bottom",
+            "scroll-padding-left",
+        ]),
+        "scroll-padding-inline" => Some(&["scroll-padding-left", "scroll-padding-right"]),
+        "scroll-padding-block" => Some(&["scroll-padding-top", "scroll-padding-bottom"]),
 
         _ => None,
     }
@@ -747,41 +826,8 @@ fn parse_css_literal_to_tokens(lit: &str) -> TokenStream {
     if let Ok(ts) = lit.parse::<TokenStream>() {
         return ts;
     }
-    let mut ts = TokenStream::new();
-    let mut chars = lit.chars().peekable();
-    while let Some(&ch) = chars.peek() {
-        if ch.is_whitespace() {
-            chars.next();
-            continue;
-        }
-        if ch == '#' {
-            chars.next();
-            ts.extend(std::iter::once(TokenTree::Punct(Punct::new(
-                '#',
-                Spacing::Alone,
-            ))));
-            let mut hex = String::new();
-            while let Some(&c) = chars.peek() {
-                if c.is_ascii_hexdigit() {
-                    hex.push(c);
-                    chars.next();
-                } else {
-                    break;
-                }
-            }
-            if !hex.is_empty() {
-                let ident = Ident::new(&hex, Span::call_site());
-                ts.extend(std::iter::once(TokenTree::Ident(ident)));
-            }
-        } else {
-            chars.next();
-            ts.extend(std::iter::once(TokenTree::Punct(Punct::new(
-                ch,
-                Spacing::Alone,
-            ))));
-        }
-    }
-    ts
+    let proc_lit = proc_macro2::Literal::string(lit);
+    quote::quote!(#proc_lit)
 }
 
 #[cfg(test)]
@@ -823,5 +869,60 @@ mod tests {
 
         let fn_tokens = parse_css_literal_to_tokens("translateX(-50%)");
         assert_eq!(fn_tokens.to_string(), "translateX (- 50 %)");
+    }
+
+    #[test]
+    fn test_responsive_breakpoint_sorting() {
+        let lg_rule = UtilityRule {
+            modifiers: vec![Modifier::MediaBreakpoint("lg".to_string())],
+            css_property: "padding".to_string(),
+            value: UtilityValue::Numeric(2.0, "rem"),
+            span: Span::call_site(),
+        };
+        let sm_rule = UtilityRule {
+            modifiers: vec![Modifier::MediaBreakpoint("sm".to_string())],
+            css_property: "padding".to_string(),
+            value: UtilityValue::Numeric(0.5, "rem"),
+            span: Span::call_site(),
+        };
+
+        // 假定输入顺序为 lg 在前, sm 在后
+        let block = build_css_block_from_rules(vec![lg_rule, sm_rule]).unwrap();
+        assert_eq!(block.rules.len(), 2);
+
+        // 验证转换后的 AtRule 中，sm (640px) 应该排在 lg (1024px) 之前
+        if let CssRule::AtRule(ref at1) = block.rules[0] {
+            assert!(at1.params.to_string().contains("640px"));
+        } else {
+            panic!("Expected AtRule for sm breakpoint first");
+        }
+
+        if let CssRule::AtRule(ref at2) = block.rules[1] {
+            assert!(at2.params.to_string().contains("1024px"));
+        } else {
+            panic!("Expected AtRule for lg breakpoint second");
+        }
+    }
+
+    #[test]
+    fn test_extended_atomic_deduplication() {
+        let inset_x = UtilityRule {
+            modifiers: vec![],
+            css_property: "inset-x".to_string(),
+            value: UtilityValue::Numeric(0.0, "px"),
+            span: Span::call_site(),
+        };
+        let left_override = UtilityRule {
+            modifiers: vec![],
+            css_property: "left".to_string(),
+            value: UtilityValue::Numeric(1.0, "rem"),
+            span: Span::call_site(),
+        };
+
+        let deduped = deduplicate_utility_rules(vec![inset_x, left_override]);
+        // inset-x 生成了 left 和 right 的覆盖，后续的 left 将正确覆盖 inset-x 中的 left
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(deduped[0].css_property, "inset-x");
+        assert_eq!(deduped[1].css_property, "left");
     }
 }
