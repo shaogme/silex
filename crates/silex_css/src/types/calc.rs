@@ -22,7 +22,7 @@ pub trait CssNumber: Display {}
 pub trait CssPercentage: Display {}
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct CalcValue<Mark>(pub String, pub PhantomData<Mark>);
+pub struct CalcValue<Mark>(String, PhantomData<Mark>);
 
 impl<Mark> Default for CalcValue<Mark> {
     fn default() -> Self {
@@ -36,6 +36,35 @@ impl<Mark> CalcValue<Mark> {
     }
     pub fn binary<L: Display, R: Display>(l: L, op: &'static str, r: R) -> Self {
         Self(format!("({} {} {})", l, op, r), PhantomData)
+    }
+    #[inline]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+    #[inline]
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+    #[inline]
+    pub fn set_value(&mut self, s: impl Into<String>) {
+        self.0 = s.into();
+    }
+    #[inline]
+    pub fn with_value(mut self, s: impl Into<String>) -> Self {
+        self.0 = s.into();
+        self
+    }
+    #[inline]
+    pub fn set_expression(&mut self, s: impl Into<String>) {
+        self.set_value(s);
+    }
+    #[inline]
+    pub fn with_expression(self, s: impl Into<String>) -> Self {
+        self.with_value(s)
+    }
+    #[inline]
+    pub fn update(&mut self, f: impl FnOnce(&mut String)) {
+        f(&mut self.0);
     }
 }
 

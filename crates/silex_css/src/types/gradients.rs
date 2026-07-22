@@ -1,4 +1,6 @@
-use crate::types::{AngleMark, CalcValue, CssColor, ValidFor, props, units::Deg};
+use crate::types::{
+    AngleMark, CalcValue, CssColor, ValidFor, props, units::Deg, units::impl_string_value_wrapper,
+};
 use std::fmt::{Display, Formatter, Result};
 
 // ==========================================
@@ -6,12 +8,8 @@ use std::fmt::{Display, Formatter, Result};
 // ==========================================
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct GradientValue(pub String);
-impl Display for GradientValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.0)
-    }
-}
+pub struct GradientValue(String);
+impl_string_value_wrapper!(GradientValue);
 impl ValidFor<props::BackgroundImage> for GradientValue {}
 impl ValidFor<props::Background> for GradientValue {}
 
@@ -86,6 +84,13 @@ impl LinearGradientBuilder {
             repeating: false,
         }
     }
+    pub fn clear_stops(&mut self) -> &mut Self {
+        self.stops.clear();
+        self
+    }
+    pub fn stops(&self) -> &[ColorStop] {
+        &self.stops
+    }
     pub fn to(mut self, dir: Direction) -> Self {
         self.direction = Some(dir);
         self
@@ -150,6 +155,13 @@ impl RadialGradientBuilder {
             stops: Vec::new(),
             repeating: false,
         }
+    }
+    pub fn clear_stops(&mut self) -> &mut Self {
+        self.stops.clear();
+        self
+    }
+    pub fn stops(&self) -> &[ColorStop] {
+        &self.stops
     }
     pub fn circle(mut self) -> Self {
         self.shape_size = Some("circle".to_string());

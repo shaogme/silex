@@ -1,4 +1,4 @@
-use crate::types::{ValidFor, props};
+use crate::types::{ValidFor, props, units::impl_string_value_wrapper};
 use std::fmt::{Display, Formatter, Result, Write};
 
 // ==========================================
@@ -8,12 +8,8 @@ use std::fmt::{Display, Formatter, Result, Write};
 // --- Transform ---
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct TransformValue(pub String);
-impl Display for TransformValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.0)
-    }
-}
+pub struct TransformValue(String);
+impl_string_value_wrapper!(TransformValue);
 impl ValidFor<props::Transform> for TransformValue {}
 
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -24,6 +20,15 @@ pub struct TransformBuilder {
 impl TransformBuilder {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn clear(&mut self) -> &mut Self {
+        self.parts.clear();
+        self
+    }
+
+    pub fn parts(&self) -> &[String] {
+        &self.parts
     }
 
     pub fn translate<X: Display, Y: Display>(mut self, x: X, y: Y) -> Self {
@@ -94,12 +99,8 @@ pub fn transform() -> TransformBuilder {
 // --- Grid Template Areas ---
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct GridTemplateAreasValue(pub String);
-impl Display for GridTemplateAreasValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.0)
-    }
-}
+pub struct GridTemplateAreasValue(String);
+impl_string_value_wrapper!(GridTemplateAreasValue);
 impl ValidFor<props::GridTemplateAreas> for GridTemplateAreasValue {}
 
 pub fn grid_template_areas<I, S>(areas: I) -> GridTemplateAreasValue
@@ -120,12 +121,8 @@ where
 // --- Font Variation Settings ---
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct FontVariationSettingsValue(pub String);
-impl Display for FontVariationSettingsValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.0)
-    }
-}
+pub struct FontVariationSettingsValue(String);
+impl_string_value_wrapper!(FontVariationSettingsValue);
 impl ValidFor<props::FontVariationSettings> for FontVariationSettingsValue {}
 
 pub fn font_variation_settings<I, K, V>(settings: I) -> FontVariationSettingsValue

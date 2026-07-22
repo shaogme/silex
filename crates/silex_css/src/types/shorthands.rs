@@ -1,17 +1,13 @@
-use crate::types::{ValidFor, props};
-use std::fmt::{Display, Formatter, Result};
+use crate::types::{ValidFor, props, units::impl_string_value_wrapper};
+use std::fmt::Display;
 
 // ==========================================
 // 复合属性工厂 (Shorthand Factories)
 // ==========================================
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct BorderValue(pub String);
-impl Display for BorderValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.0)
-    }
-}
+pub struct BorderValue(String);
+impl_string_value_wrapper!(BorderValue);
 
 pub fn border<W, S, C>(width: W, style: S, color: C) -> BorderValue
 where
@@ -23,12 +19,8 @@ where
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct MarginValue(pub String);
-impl Display for MarginValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.0)
-    }
-}
+pub struct MarginValue(String);
+impl_string_value_wrapper!(MarginValue);
 impl ValidFor<props::Margin> for MarginValue {}
 
 pub mod margin {
@@ -67,12 +59,8 @@ pub mod margin {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct PaddingValue(pub String);
-impl Display for PaddingValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.0)
-    }
-}
+pub struct PaddingValue(String);
+impl_string_value_wrapper!(PaddingValue);
 impl ValidFor<props::Padding> for PaddingValue {}
 
 pub mod padding {
@@ -111,12 +99,8 @@ pub mod padding {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct FlexValue(pub String);
-impl Display for FlexValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.0)
-    }
-}
+pub struct FlexValue(String);
+impl_string_value_wrapper!(FlexValue);
 impl ValidFor<props::Flex> for FlexValue {}
 
 pub fn flex<G, S, B>(grow: G, shrink: S, basis: B) -> FlexValue
@@ -129,12 +113,8 @@ where
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct TransitionValue(pub String);
-impl Display for TransitionValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.0)
-    }
-}
+pub struct TransitionValue(String);
+impl_string_value_wrapper!(TransitionValue);
 impl ValidFor<props::Transition> for TransitionValue {}
 
 pub fn transition<P, D, T, E>(property: P, duration: D, timing: T, delay: E) -> TransitionValue
@@ -148,12 +128,8 @@ where
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct BackgroundValue(pub String);
-impl Display for BackgroundValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{}", self.0)
-    }
-}
+pub struct BackgroundValue(String);
+impl_string_value_wrapper!(BackgroundValue);
 impl ValidFor<props::Background> for BackgroundValue {}
 
 pub fn background<C, I>(color: C, image: I) -> BackgroundValue
