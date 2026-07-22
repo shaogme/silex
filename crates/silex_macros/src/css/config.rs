@@ -45,12 +45,11 @@ fn get_config_with_path() -> &'static Option<(SilexConfig, Option<PathBuf>)> {
 
         loop {
             let candidate = search_dir.join("silex.toml");
-            if candidate.is_file() {
-                if let Ok(content) = std::fs::read_to_string(&candidate) {
-                    if let Ok(config) = toml::from_str::<SilexConfig>(&content) {
-                        return Some((config, Some(candidate)));
-                    }
-                }
+            if candidate.is_file()
+                && let Ok(content) = std::fs::read_to_string(&candidate)
+                && let Ok(config) = toml::from_str::<SilexConfig>(&content)
+            {
+                return Some((config, Some(candidate)));
             }
             if !search_dir.pop() {
                 break;

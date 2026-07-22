@@ -660,5 +660,47 @@ mod tests {
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].css_property, "font-style");
         assert_eq!(rules[0].value, UtilityValue::Keyword("italic"));
+
+        // 多列与分栏 Break 规则测试
+        let rules = resolve_utility(vec![], "columns-4xl", span).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "column-width");
+        assert_eq!(rules[0].value, UtilityValue::Numeric(56.0, "rem"));
+
+        let rules = resolve_utility(vec![], "columns-2", span).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "column-count");
+        assert_eq!(rules[0].value, UtilityValue::Numeric(2.0, ""));
+
+        let rules = resolve_utility(vec![], "break-inside-avoid-flex", span).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "break-inside");
+        assert_eq!(rules[0].value, UtilityValue::Keyword("avoid-flex"));
+
+        // z-index, box-decoration & isolation 规则测试
+        let rules = resolve_utility(vec![], "z-50", span).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "z-index");
+        assert_eq!(rules[0].value, UtilityValue::Numeric(50.0, ""));
+
+        let rules = resolve_utility(vec![], "-z-10", span).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "z-index");
+        assert_eq!(rules[0].value, UtilityValue::Numeric(-10.0, ""));
+
+        let rules = resolve_utility(vec![], "z-auto", span).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "z-index");
+        assert_eq!(rules[0].value, UtilityValue::Keyword("auto"));
+
+        let rules = resolve_utility(vec![], "box-decoration-slice", span).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "box-decoration-break");
+        assert_eq!(rules[0].value, UtilityValue::Keyword("slice"));
+
+        let rules = resolve_utility(vec![], "isolate", span).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].css_property, "isolation");
+        assert_eq!(rules[0].value, UtilityValue::Keyword("isolate"));
     }
 }

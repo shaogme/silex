@@ -227,6 +227,13 @@ pub fn resolve_numeric_utility(
         ],
 
         // 复杂与转换规则
+        "z" => vec![make_rule(
+            mods,
+            "z-index",
+            num_unitless(if is_negative { -val_num } else { val_num }),
+            span,
+        )],
+        "columns" => vec![make_rule(mods, "column-count", num_unitless(val_num), span)],
         "grid-cols" => vec![make_rule(
             mods,
             "grid-template-columns",

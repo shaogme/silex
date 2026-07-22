@@ -64,27 +64,27 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
     let mut const_impl_items = Vec::new();
 
     let mut fields = def.fields.clone();
-    if fields.is_empty() {
-        if let Some(cfg) = crate::css::config::get_config() {
-            if let Some(p) = &cfg.theme.prefix {
-                prefix = p.clone();
-            }
-            let mut keys: Vec<&String> = cfg.theme.colors.keys().collect();
-            keys.sort();
-            for k in keys {
-                let rust_name = k.replace('-', "_");
-                let field_ident = syn::Ident::new(&rust_name, proc_macro2::Span::call_site());
-                let field_ty: syn::Type = syn::parse_quote!(String);
-                let field_ast: Field = syn::Field {
-                    attrs: Vec::new(),
-                    vis: syn::Visibility::Inherited,
-                    mutability: syn::FieldMutability::None,
-                    ident: Some(field_ident),
-                    colon_token: Some(Default::default()),
-                    ty: field_ty,
-                };
-                fields.push(field_ast);
-            }
+    if fields.is_empty()
+        && let Some(cfg) = crate::css::config::get_config()
+    {
+        if let Some(p) = &cfg.theme.prefix {
+            prefix = p.clone();
+        }
+        let mut keys: Vec<&String> = cfg.theme.colors.keys().collect();
+        keys.sort();
+        for k in keys {
+            let rust_name = k.replace('-', "_");
+            let field_ident = syn::Ident::new(&rust_name, proc_macro2::Span::call_site());
+            let field_ty: syn::Type = syn::parse_quote!(String);
+            let field_ast: Field = syn::Field {
+                attrs: Vec::new(),
+                vis: syn::Visibility::Inherited,
+                mutability: syn::FieldMutability::None,
+                ident: Some(field_ident),
+                colon_token: Some(Default::default()),
+                ty: field_ty,
+            };
+            fields.push(field_ast);
         }
     }
 

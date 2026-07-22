@@ -132,6 +132,9 @@ fn get_atomic_subproperties(prop: &str) -> Option<&'static [&'static str]> {
         // --- Flex 弹性盒子类 ---
         "flex" => Some(&["flex-grow", "flex-shrink", "flex-basis"]),
 
+        // --- Columns 分栏类 ---
+        "columns" => Some(&["column-width", "column-count"]),
+
         _ => None,
     }
 }
@@ -428,7 +431,7 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                     .and_then(|cfg| cfg.theme.breakpoints.get(bp.as_str()))
                     .map(|s| s.as_str());
 
-                let min_width = custom_bp.unwrap_or_else(|| match bp.as_str() {
+                let min_width = custom_bp.unwrap_or(match bp.as_str() {
                     "sm" => "640px",
                     "md" => "768px",
                     "lg" => "1024px",

@@ -13,7 +13,7 @@ use web_sys::Node;
 /// 一个特殊的视图，它通过 Key 来协调列表项。
 pub struct KeyedLoopView<IF, IS, T, K> {
     pub each: IF,
-    pub key_fn: fn(&T) -> K,
+    pub key_fn: Rc<dyn Fn(&T) -> K + 'static>,
     pub view_fn: Rc<dyn Fn(ReadSignal<T>, ReadSignal<usize>) -> AnyView + 'static>,
     pub error: ForErrorHandler,
     pub _marker: std::marker::PhantomData<(IS, T)>,
@@ -31,7 +31,7 @@ where
     fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
         mount_keyed_loop_logic(
             self.each.clone(),
-            self.key_fn,
+            self.key_fn.clone(),
             self.view_fn.clone(),
             self.error.clone(),
             parent,
@@ -63,7 +63,7 @@ struct KeyedLoopRow<T> {
 
 fn mount_keyed_loop_logic<IF, IS, T, K>(
     items_fn: IF,
-    key_fn: fn(&T) -> K,
+    key_fn: Rc<dyn Fn(&T) -> K + 'static>,
     view_fn: Rc<dyn Fn(ReadSignal<T>, ReadSignal<usize>) -> AnyView + 'static>,
     error: ForErrorHandler,
     parent: &Node,

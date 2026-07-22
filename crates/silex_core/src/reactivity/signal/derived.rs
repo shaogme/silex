@@ -15,7 +15,49 @@ use std::{
 // --- Constant ---
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Constant<T>(pub T);
+pub struct Constant<T>(T);
+
+impl<T> Constant<T> {
+    /// 创建一个新的常量信号。
+    #[inline(always)]
+    pub const fn new(value: T) -> Self {
+        Self(value)
+    }
+
+    /// 获取内部值的不可变引用。
+    #[inline(always)]
+    pub const fn value(&self) -> &T {
+        &self.0
+    }
+
+    /// 解构并返回内部值。
+    #[inline(always)]
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T> From<T> for Constant<T> {
+    #[inline(always)]
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
+
+impl<T> std::ops::Deref for Constant<T> {
+    type Target = T;
+    #[inline(always)]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> AsRef<T> for Constant<T> {
+    #[inline(always)]
+    fn as_ref(&self) -> &T {
+        &self.0
+    }
+}
 
 impl<T: RxData> RxValue for Constant<T> {
     type Value = T;

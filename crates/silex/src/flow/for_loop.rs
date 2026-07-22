@@ -14,9 +14,9 @@ use std::rc::Rc;
 ///     .error(|err| log_error(err))
 /// ```
 #[component]
-pub fn For<ItemsFn, IS, Item, Key, MF, V>(
+pub fn For<ItemsFn, IS, Item, Key, KF, MF, V>(
     each: ItemsFn,
-    key: fn(&Item) -> Key,
+    key: KF,
     #[prop(render)]
     #[chain]
     children: MF,
@@ -29,6 +29,7 @@ where
     IS: ForLoopSource<Item = Item> + Sized + 'static,
     Item: Clone + 'static,
     Key: Hash + Eq + Clone + 'static,
+    KF: Fn(&Item) -> Key + 'static,
     MF: Fn(ReadSignal<Item>, ReadSignal<usize>) -> V + Clone + 'static,
     V: View + 'static,
 {
@@ -36,7 +37,7 @@ where
 
     silex_dom::view::list::KeyedLoopView {
         each,
-        key_fn: key,
+        key_fn: Rc::new(key),
         view_fn,
         error,
         _marker: std::marker::PhantomData,

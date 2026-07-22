@@ -1,20 +1,81 @@
+use silex::persist::Persistent;
 use silex::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DemoCategory {
+pub enum DemoCategory {
     All,
     Core,
     Interactive,
     Advanced,
 }
 
+impl std::fmt::Display for DemoCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::All => write!(f, "All"),
+            Self::Core => write!(f, "Core"),
+            Self::Interactive => write!(f, "Interactive"),
+            Self::Advanced => write!(f, "Advanced"),
+        }
+    }
+}
+
+impl std::str::FromStr for DemoCategory {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Core" => Ok(Self::Core),
+            "Interactive" => Ok(Self::Interactive),
+            "Advanced" => Ok(Self::Advanced),
+            _ => Ok(Self::All),
+        }
+    }
+}
+
 #[component]
-fn Header(
-    is_dark: Signal<bool>,
-    set_is_dark: WriteSignal<bool>,
-    category: Signal<DemoCategory>,
-    set_category: WriteSignal<DemoCategory>,
+fn CategoryTab(
+    label: &'static str,
+    target: DemoCategory,
+    category: Persistent<DemoCategory>,
 ) -> impl View {
+    let is_active = rx!(move || category.get() == target);
+    button(label)
+        .class(tw!(
+            "px-4 py-2 text-xs rounded-xl transition-all duration-200 cursor-pointer border-0 outline-none",
+            (
+                is_active.get(),
+                "bg-indigo-600 text-white font-bold shadow-md",
+                "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-semibold"
+            )
+        ))
+        .on_click(move |_| category.set(target))
+}
+
+#[component]
+fn FeatureBadge(label: &'static str, theme: &'static str) -> impl View {
+    let cls = match theme {
+        "emerald" => tw!(
+            "text-xs font-semibold text-white bg-emerald-600 px-3 py-1.5 rounded-lg border border-solid border-emerald-700"
+        ),
+        "rose" => tw!(
+            "text-xs font-semibold text-white bg-rose-600 px-3 py-1.5 rounded-lg border border-solid border-rose-700"
+        ),
+        _ => tw!(
+            "text-xs font-semibold text-white bg-indigo-600 px-3 py-1.5 rounded-lg border border-solid border-indigo-700"
+        ),
+    };
+    span(label).class(cls)
+}
+
+#[component]
+fn Header(is_dark: Persistent<bool>, category: Persistent<DemoCategory>) -> impl View {
+    let categories = Constant::new(vec![
+        ("All Highlights", DemoCategory::All),
+        ("Core Engine", DemoCategory::Core),
+        ("Interactive & Reactivity", DemoCategory::Interactive),
+        ("Advanced (Phases 4-7)", DemoCategory::Advanced),
+    ]);
+
     div(view_chain!(
         // Top Toolbar Row: Badge, Statuses & Theme Toggle
         div(view_chain!(
@@ -27,11 +88,11 @@ fn Header(
                 ))
             )).class(tw!("flex items-center gap-3")),
 
-            button(rx!(if is_dark.get() { "🌙 Dark Mode" } else { "☀️ Light Mode" }))
+            button(rx!(if *$is_dark { "🌙 Dark Mode" } else { "☀️ Light Mode" }))
                 .class(tw!(
                     "flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-amber-300 font-bold text-xs rounded-full cursor-pointer border border-solid border-slate-300 dark:border-slate-700 transition-all duration-300 hover:scale-105 shadow-sm"
                 ))
-                .on_click(move |_| set_is_dark.update(|d| *d = !*d))
+                .on_click(move |_| is_dark.update(|d| *d = !*d))
         )).class(tw!("w-full flex items-center justify-between mb-8")),
 
         // Hero Title & Description
@@ -40,52 +101,12 @@ fn Header(
         p("Zero-runtime overhead Tailwind CSS parsed, merged, and optimized into compact AST classes at compile time via LightningCSS. Fully responsive with dynamic signal reactivity.")
             .class(tw!("text-sm sm:text-base text-slate-600 dark:text-slate-300 max-w-3xl text-center leading-relaxed mb-8 transition-colors duration-300")),
 
-        // Dashboard Category Tabs
-        div(view_chain!(
-            button("All Highlights")
-                .class(tw!(
-                    "px-4 py-2 text-xs rounded-xl transition-all duration-200 cursor-pointer border-0 outline-none",
-                    (
-                        category.get() == DemoCategory::All,
-                        "bg-indigo-600 text-white font-bold shadow-md",
-                        "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-semibold"
-                    )
-                ))
-                .on_click(move |_| set_category.set(DemoCategory::All)),
-
-            button("Core Engine")
-                .class(tw!(
-                    "px-4 py-2 text-xs rounded-xl transition-all duration-200 cursor-pointer border-0 outline-none",
-                    (
-                        category.get() == DemoCategory::Core,
-                        "bg-indigo-600 text-white font-bold shadow-md",
-                        "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-semibold"
-                    )
-                ))
-                .on_click(move |_| set_category.set(DemoCategory::Core)),
-
-            button("Interactive & Reactivity")
-                .class(tw!(
-                    "px-4 py-2 text-xs rounded-xl transition-all duration-200 cursor-pointer border-0 outline-none",
-                    (
-                        category.get() == DemoCategory::Interactive,
-                        "bg-indigo-600 text-white font-bold shadow-md",
-                        "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-semibold"
-                    )
-                ))
-                .on_click(move |_| set_category.set(DemoCategory::Interactive)),
-
-            button("Advanced (Phases 4-7)")
-                .class(tw!(
-                    "px-4 py-2 text-xs rounded-xl transition-all duration-200 cursor-pointer border-0 outline-none",
-                    (
-                        category.get() == DemoCategory::Advanced,
-                        "bg-indigo-600 text-white font-bold shadow-md",
-                        "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-semibold"
-                    )
-                ))
-                .on_click(move |_| set_category.set(DemoCategory::Advanced))
-        )).class(tw!("flex flex-wrap items-center justify-center gap-2 p-1.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-solid border-slate-200 dark:border-slate-800"))
+        // Dashboard Category Tabs rendered via Index component
+        div(Index(categories).children(move |item_sig, _| {
+            let (label, target) = item_sig.get();
+            CategoryTab(label, target, category)
+        }))
+        .class(tw!("flex flex-wrap items-center justify-center gap-2 p-1.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-solid border-slate-200 dark:border-slate-800"))
     ))
     .class(tw!("w-full max-w-6xl mx-auto mb-10 p-8 sm:p-10 bg-white dark:bg-slate-850 rounded-3xl border border-solid border-slate-200 dark:border-slate-800 shadow-xl transition-colors duration-300 flex flex-col items-center text-center"))
 }
@@ -93,7 +114,7 @@ fn Header(
 // Card Wrapper for Consistency
 fn card_container_cls() -> &'static str {
     tw!(
-        "p-6 bg-white dark:bg-slate-800 border border-solid border-slate-200 dark:border-slate-700/80 rounded-3xl shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col justify-between"
+        "p-6 bg-white dark:bg-slate-800 border border-solid border-slate-200 dark:border-slate-700/80 rounded-3xl shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col h-fit"
     )
 }
 
@@ -309,7 +330,7 @@ fn ReactiveConditionalTwDemo() -> impl View {
     let (is_active, set_is_active) = Signal::pair(false);
 
     let card_cls = tw!(
-        "p-6 bg-white dark:bg-slate-800 border rounded-3xl shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col justify-between",
+        "p-6 bg-white dark:bg-slate-800 border rounded-3xl shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col h-fit",
         (
             is_active.get(),
             "border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/40",
@@ -549,74 +570,166 @@ fn SilexTomlDesignTokensDemo() -> impl View {
     .class(card_container_cls())
 }
 
+#[derive(Clone, Copy)]
+struct CardMeta {
+    id: usize,
+    category: DemoCategory,
+    height: u32,
+}
+
+const CARDS_REGISTRY: &[CardMeta] = &[
+    CardMeta {
+        id: 1,
+        category: DemoCategory::Core,
+        height: 180,
+    },
+    CardMeta {
+        id: 2,
+        category: DemoCategory::Core,
+        height: 220,
+    },
+    CardMeta {
+        id: 3,
+        category: DemoCategory::Interactive,
+        height: 210,
+    },
+    CardMeta {
+        id: 4,
+        category: DemoCategory::Interactive,
+        height: 230,
+    },
+    CardMeta {
+        id: 5,
+        category: DemoCategory::Advanced,
+        height: 180,
+    },
+    CardMeta {
+        id: 6,
+        category: DemoCategory::Advanced,
+        height: 230,
+    },
+    CardMeta {
+        id: 7,
+        category: DemoCategory::Core,
+        height: 260,
+    },
+    CardMeta {
+        id: 8,
+        category: DemoCategory::Interactive,
+        height: 190,
+    },
+    CardMeta {
+        id: 9,
+        category: DemoCategory::Core,
+        height: 350,
+    },
+    CardMeta {
+        id: 10,
+        category: DemoCategory::Advanced,
+        height: 240,
+    },
+    CardMeta {
+        id: 11,
+        category: DemoCategory::Advanced,
+        height: 380,
+    },
+    CardMeta {
+        id: 12,
+        category: DemoCategory::Advanced,
+        height: 260,
+    },
+];
+
+fn render_card(id: usize) -> AnyView {
+    match id {
+        1 => TailwindMergeDemo().into_any(),
+        2 => KeyframesDemo().into_any(),
+        3 => GroupAndPeerDemo().into_any(),
+        4 => FiltersAndReactivityDemo().into_any(),
+        5 => ThemeSystemAndDiagnosticsDemo().into_any(),
+        6 => ContainerQueriesAndDceDemo().into_any(),
+        7 => StandardColorPaletteDemo().into_any(),
+        8 => ReactiveConditionalTwDemo().into_any(),
+        9 => NewSyntaxExpansionDemo().into_any(),
+        10 => FractionalAndDirectionalDemo().into_any(),
+        11 => TailwindVariantsCvaDemo().into_any(),
+        12 => SilexTomlDesignTokensDemo().into_any(),
+        _ => ().into_any(),
+    }
+}
+
+fn is_in_left_column(target_id: usize, current_cat: DemoCategory) -> bool {
+    let mut left_h = 0u32;
+    let mut right_h = 0u32;
+
+    for card in CARDS_REGISTRY {
+        if current_cat != DemoCategory::All && card.category != current_cat {
+            continue;
+        }
+        let is_left = left_h <= right_h;
+        if card.id == target_id {
+            return is_left;
+        }
+        if is_left {
+            left_h += card.height;
+        } else {
+            right_h += card.height;
+        }
+    }
+    false
+}
+
+fn render_column(is_left: bool, category: Persistent<DemoCategory>) -> impl View {
+    let visible_card_ids = category.map(move |cat| {
+        CARDS_REGISTRY
+            .iter()
+            .copied()
+            .filter(move |card| {
+                current_cat_matches(card.category, *cat)
+                    && (is_in_left_column(card.id, *cat) == is_left)
+            })
+            .map(|card| card.id)
+            .collect::<Vec<usize>>()
+    });
+
+    Index(visible_card_ids).children(|id_sig, _| rx!(move || render_card(id_sig.get())))
+}
+
+fn current_cat_matches(card_cat: DemoCategory, current_cat: DemoCategory) -> bool {
+    current_cat == DemoCategory::All || card_cat == current_cat
+}
+
 #[component]
 fn App() -> impl View {
-    let (is_dark, set_is_dark) = Signal::pair(true);
-    let (category, set_category) = Signal::pair(DemoCategory::All);
+    let is_dark = Persistent::builder("silex-tailwind-dark")
+        .local()
+        .parse::<bool>()
+        .default(true)
+        .build();
+
+    let category = Persistent::builder("silex-tailwind-category")
+        .local()
+        .parse::<DemoCategory>()
+        .default(DemoCategory::All)
+        .build();
 
     div(view_chain!(
         div(view_chain!(
-            Header(is_dark, set_is_dark, category, set_category),
+            Header(is_dark, category),
 
-            // Dashboard Content Grid
+            // Dashboard Content Grid: Dynamic Height-Sensing Greedy Masonry Allocation
             div(view_chain!(
-                // Section 1: Core Engine
-                rx! {
-                    let cat = category.get();
-                    if cat == DemoCategory::All || cat == DemoCategory::Core {
-                        div(view_chain!(
-                            TailwindMergeDemo(),
-                            KeyframesDemo(),
-                            StandardColorPaletteDemo(),
-                            NewSyntaxExpansionDemo()
-                        )).class(tw!("grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6")).into_any()
-                    } else {
-                        ().into_any()
-                    }
-                },
-
-                // Section 2: Interactive & Reactivity
-                rx! {
-                    let cat = category.get();
-                    if cat == DemoCategory::All || cat == DemoCategory::Interactive {
-                        div(view_chain!(
-                            GroupAndPeerDemo(),
-                            FiltersAndReactivityDemo(),
-                            ReactiveConditionalTwDemo()
-                        )).class(tw!("grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6")).into_any()
-                    } else {
-                        ().into_any()
-                    }
-                },
-
-                // Section 3: Advanced Features
-                rx! {
-                    let cat = category.get();
-                    if cat == DemoCategory::All || cat == DemoCategory::Advanced {
-                        div(view_chain!(
-                            ThemeSystemAndDiagnosticsDemo(),
-                            ContainerQueriesAndDceDemo(),
-                            FractionalAndDirectionalDemo(),
-                            TailwindVariantsCvaDemo(),
-                            SilexTomlDesignTokensDemo()
-                        )).class(tw!("grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6")).into_any()
-                    } else {
-                        ().into_any()
-                    }
-                }
+                div(render_column(true, category)).class(tw!("flex flex-col gap-6 w-full")),
+                div(render_column(false, category)).class(tw!("flex flex-col gap-6 w-full"))
             ))
-            .class(tw!("w-full max-w-6xl mx-auto"))
+            .class(tw!("grid grid-cols-1 md:grid-cols-2 gap-6 items-start w-full max-w-6xl mx-auto"))
         ))
         .class(tw!("min-h-screen p-4 sm:p-8 transition-colors duration-300 bg-slate-100 text-slate-900 dark:bg-slate-900 dark:text-slate-50"))
     ))
-    .class(rx!(if is_dark.get() { "dark" } else { "" }))
+    .class(rx!(if *$is_dark { "dark" } else { "" }))
 }
 
 fn main() {
-    let window = web_sys::window().expect("No Window");
-    let document = window.document().expect("No Document");
-    let app_container = document.get_element_by_id("app").expect("No App Element");
-
-    let app = App();
-    app.mount(&app_container, Vec::new());
+    setup_global_error_handlers();
+    mount_to_body(App);
 }
