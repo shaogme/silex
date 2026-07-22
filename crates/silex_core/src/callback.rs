@@ -1,7 +1,11 @@
-use std::any::Any;
+use std::any::{Any, type_name};
 use std::marker::PhantomData;
 
 pub use silex_reactivity::NodeId;
+use silex_reactivity::{invoke_callback, register_callback};
+
+#[cfg(debug_assertions)]
+use crate::log::console_error;
 
 /// A `Copy`-able wrapper for callbacks/event handlers.
 ///
@@ -38,14 +42,14 @@ impl<T: 'static> Callback<T> {
     where
         F: Fn(T) + 'static,
     {
-        let id = silex_reactivity::register_callback(move |any: Box<dyn Any>| {
+        let id = register_callback(move |any: Box<dyn Any>| {
             if let Ok(arg) = any.downcast::<T>() {
                 f(*arg);
             } else {
                 #[cfg(debug_assertions)]
                 {
-                    let type_name = std::any::type_name::<T>();
-                    crate::log::console_error(
+                    let type_name = type_name::<T>();
+                    console_error(
                         format!("Callback: type mismatch, expected {}", type_name).as_str(),
                     );
                 }
@@ -59,7 +63,7 @@ impl<T: 'static> Callback<T> {
 
     /// Call the callback with the given argument.
     pub fn call(&self, arg: T) {
-        silex_reactivity::invoke_callback(self.id, Box::new(arg));
+        invoke_callback(self.id, Box::new(arg));
     }
 
     /// Returns the underlying `NodeId` for this callback.

@@ -1,7 +1,9 @@
-use crate::logic::Map;
-use crate::reactivity::{StaticMap2Payload, StaticMap3Payload};
-use crate::traits::RxRead;
-use crate::{Rx, RxValueKind};
+use crate::{
+    Rx, RxValueKind,
+    logic::Map,
+    reactivity::{StaticMap2Payload, StaticMap3Payload},
+    traits::RxRead,
+};
 
 /// 使用 @fn 时，显式调用单信号静态映射。
 #[inline(always)]

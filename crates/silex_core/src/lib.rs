@@ -1,4 +1,3 @@
-#![recursion_limit = "256"]
 pub mod callback;
 pub mod error;
 pub mod log;
@@ -11,6 +10,7 @@ pub mod traits;
 pub use callback::Callback;
 pub use error::{SilexError, SilexResult};
 pub use node_ref::NodeRef;
+use reactivity::NodeId;
 
 pub struct RxValueKind;
 pub struct RxEffectKind;
@@ -59,11 +59,11 @@ impl<T: 'static> Rx<T, RxEffectKind> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RxInner {
     InlineConstant(u64),
-    Signal(crate::reactivity::NodeId),
-    Closure(crate::reactivity::NodeId),
-    Op(crate::reactivity::NodeId),
+    Signal(NodeId),
+    Closure(NodeId),
+    Op(NodeId),
     /// 直接存储的值（不通过工厂函数，直接借用）
-    Stored(crate::reactivity::NodeId),
+    Stored(NodeId),
 }
 
 /// 非泛型的响应式节点类型，用于 Trampoline 模式优化。
@@ -79,7 +79,7 @@ impl RxInner {
     /// 将泛型枚举转换为非泛型的 NodeId 和类型标识。
     /// 用于将逻辑分发到非泛型函数中。
     #[inline(always)]
-    pub fn as_node_parts(&self) -> Option<(crate::reactivity::NodeId, RxNodeKind)> {
+    pub fn as_node_parts(&self) -> Option<(NodeId, RxNodeKind)> {
         match self {
             Self::InlineConstant(_) => None,
             Self::Signal(id) => Some((*id, RxNodeKind::Signal)),
@@ -155,14 +155,14 @@ impl<T: 'static, M> Rx<T, M> {
         }
     }
 
-    pub const fn new_signal(id: crate::reactivity::NodeId) -> Self {
+    pub const fn new_signal(id: NodeId) -> Self {
         Self {
             inner: RxInner::Signal(id),
             _marker: ::core::marker::PhantomData,
         }
     }
 
-    pub const fn new_pooled(id: crate::reactivity::NodeId) -> Self {
+    pub const fn new_pooled(id: NodeId) -> Self {
         // We assume new_pooled is used for Closure, as it was previously for Pooled
         Self {
             inner: RxInner::Closure(id),
@@ -170,7 +170,7 @@ impl<T: 'static, M> Rx<T, M> {
         }
     }
 
-    pub const fn new_stored(id: crate::reactivity::NodeId) -> Self {
+    pub const fn new_stored(id: NodeId) -> Self {
         Self {
             inner: RxInner::Stored(id),
             _marker: ::core::marker::PhantomData,
@@ -202,15 +202,10 @@ macro_rules! rx {
 }
 
 pub mod prelude {
-    pub use crate::Rx;
-    pub use crate::callback::Callback;
-    pub use crate::log::*;
-    pub use crate::logic::*;
-    pub use crate::node_ref::NodeRef;
-    pub use crate::reactivity::*;
-    pub use crate::traits::*;
-    pub use crate::{SilexError, SilexResult};
-    pub use crate::{batch_read, batch_read_untracked, rx};
+    pub use crate::{
+        Callback, NodeRef, Rx, SilexError, SilexResult, batch_read, batch_read_untracked, log::*,
+        logic::*, reactivity::*, rx, traits::*,
+    };
 }
 
 /// Multi-signal batch read macro for zero-copy access to multiple signals.
@@ -278,15 +273,15 @@ mod tests {
 
     #[test]
     fn rx_equality_tracks_inner_identity() {
-        let a = Rx::<(), RxValueKind>::new_signal(crate::reactivity::NodeId {
+        let a = Rx::<(), RxValueKind>::new_signal(NodeId {
             index: 1,
             generation: 1,
         });
-        let b = Rx::<(), RxValueKind>::new_signal(crate::reactivity::NodeId {
+        let b = Rx::<(), RxValueKind>::new_signal(NodeId {
             index: 1,
             generation: 1,
         });
-        let c = Rx::<(), RxValueKind>::new_signal(crate::reactivity::NodeId {
+        let c = Rx::<(), RxValueKind>::new_signal(NodeId {
             index: 2,
             generation: 1,
         });

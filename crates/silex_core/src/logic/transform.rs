@@ -1,6 +1,8 @@
-use crate::reactivity::{Memo, StaticMapPayload};
-use crate::traits::{RxBase, RxRead};
-use crate::{Rx, RxValueKind};
+use crate::{
+    Rx, RxValueKind,
+    reactivity::{Memo, StaticMapPayload},
+    traits::{RxBase, RxRead},
+};
 
 /// 允许从当前信号创建一个衍生信号。
 pub trait Map: RxBase + Sized {
