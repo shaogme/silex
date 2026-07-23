@@ -1,6 +1,7 @@
-use std::borrow::Cow;
-use wasm_bindgen::JsCast;
-use wasm_bindgen::convert::FromWasmAbi;
+use std::{borrow::Cow, rc::Rc};
+use wasm_bindgen::{JsCast, convert::FromWasmAbi};
+
+use silex_core::{Rx, RxEffectKind, RxValueKind, traits::RxRead};
 
 /// Trait to define the metadata for a DOM event.
 ///
@@ -50,21 +51,20 @@ where
         Box::new(move |_| self())
     }
 }
-impl<T, E> EventHandler<E, WithoutEventArg> for silex_core::Rx<T, silex_core::RxValueKind>
+impl<T, E> EventHandler<E, WithoutEventArg> for Rx<T, RxValueKind>
 where
     T: 'static,
     E: 'static,
 {
     fn into_handler(self) -> Box<dyn FnMut(E)> {
         Box::new(move |_| {
-            use silex_core::traits::RxRead;
             // 对于传值型的 Rx，触发读取副作用即可
             let _ = self.read_untracked();
         })
     }
 }
 
-impl<F, E, T> EventHandler<E, WithEventArg> for silex_core::Rx<F, silex_core::RxEffectKind>
+impl<F, E, T> EventHandler<E, WithEventArg> for Rx<F, RxEffectKind>
 where
     F: Fn(E) -> T + 'static,
     E: 'static,
@@ -72,7 +72,6 @@ where
 {
     fn into_handler(self) -> Box<dyn FnMut(E)> {
         Box::new(move |e| {
-            use silex_core::traits::RxRead;
             self.with_untracked(|f| {
                 (f)(e);
             });
@@ -81,14 +80,12 @@ where
 }
 
 // 支持宏生成的类型擦除后的 Rc<dyn Fn>
-impl<E> EventHandler<E, WithEventArg>
-    for silex_core::Rx<std::rc::Rc<dyn Fn(E)>, silex_core::RxEffectKind>
+impl<E> EventHandler<E, WithEventArg> for Rx<Rc<dyn Fn(E)>, RxEffectKind>
 where
     E: 'static,
 {
     fn into_handler(self) -> Box<dyn FnMut(E)> {
         Box::new(move |e| {
-            use silex_core::traits::RxRead;
             self.with_untracked(|f| {
                 (f)(e);
             });

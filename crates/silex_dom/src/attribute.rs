@@ -1,6 +1,26 @@
 use std::borrow::Cow;
+use std::rc::Rc;
 
-use crate::event::{EventDescriptor, EventHandler};
+use wasm_bindgen::JsCast;
+use wasm_bindgen::convert::FromWasmAbi;
+use web_sys::{Element, Event, InputEvent, MouseEvent, PointerEvent};
+
+use silex_core::{
+    error::handle_error,
+    log::console_error,
+    node_ref::NodeRef,
+    reactivity::Effect,
+    traits::{RxGet, RxWrite},
+};
+
+use crate::{
+    element::bind_event_impl,
+    event::{
+        EventDescriptor, EventHandler, click, pointercancel, pointerdown, pointermove, pointerup,
+    },
+    helpers::event_target_value_result,
+    view::{AnyView, ApplyAttributes},
+};
 
 mod apply;
 mod into_storable;
@@ -9,7 +29,6 @@ mod op;
 pub use apply::*;
 pub use into_storable::*;
 pub use op::*;
-use silex_core::traits::{RxGet, RxWrite};
 
 /// 指令组宏：将多个异构属性/事件平铺为一个 AttributeGroup。
 /// 这在创建自定义 Mixin 或组件透传属性时非常有用。
@@ -217,102 +236,92 @@ pub trait GlobalEventAttributes: AttributeBuilder {
         self.build_attribute(ApplyTarget::Class, value)
     }
 
-    fn node_ref<N>(self, node_ref: silex_core::node_ref::NodeRef<N>) -> Self
+    fn node_ref<N>(self, node_ref: NodeRef<N>) -> Self
     where
-        N: wasm_bindgen::JsCast + Clone + 'static,
+        N: JsCast + Clone + 'static,
     {
-        self.apply(AttrOp::Custom(std::rc::Rc::new(
-            move |el: &web_sys::Element| {
-                use wasm_bindgen::JsCast;
-                if let Ok(typed) = el.clone().dyn_into::<N>() {
-                    node_ref.load(typed);
-                } else {
-                    silex_core::log::console_error("NodeRef type mismatch: failed to cast element");
-                }
-            },
-        )))
+        self.apply(AttrOp::Custom(Rc::new(move |el: &Element| {
+            if let Ok(typed) = el.clone().dyn_into::<N>() {
+                node_ref.load(typed);
+            } else {
+                console_error("NodeRef type mismatch: failed to cast element");
+            }
+        })))
     }
 
     // --- Event API ---
 
     fn on_click<F, M>(self, callback: F) -> Self
     where
-        F: EventHandler<web_sys::MouseEvent, M> + Clone + 'static,
+        F: EventHandler<MouseEvent, M> + Clone + 'static,
     {
-        self.build_event(crate::event::click, callback)
+        self.build_event(click, callback)
     }
 
     fn on_pointer_down<F, M>(self, callback: F) -> Self
     where
-        F: EventHandler<web_sys::PointerEvent, M> + Clone + 'static,
+        F: EventHandler<PointerEvent, M> + Clone + 'static,
     {
-        self.build_event(crate::event::pointerdown, callback)
+        self.build_event(pointerdown, callback)
     }
 
     fn on_pointer_move<F, M>(self, callback: F) -> Self
     where
-        F: EventHandler<web_sys::PointerEvent, M> + Clone + 'static,
+        F: EventHandler<PointerEvent, M> + Clone + 'static,
     {
-        self.build_event(crate::event::pointermove, callback)
+        self.build_event(pointermove, callback)
     }
 
     fn on_pointer_up<F, M>(self, callback: F) -> Self
     where
-        F: EventHandler<web_sys::PointerEvent, M> + Clone + 'static,
+        F: EventHandler<PointerEvent, M> + Clone + 'static,
     {
-        self.build_event(crate::event::pointerup, callback)
+        self.build_event(pointerup, callback)
     }
 
     fn on_pointer_cancel<F, M>(self, callback: F) -> Self
     where
-        F: EventHandler<web_sys::PointerEvent, M> + Clone + 'static,
+        F: EventHandler<PointerEvent, M> + Clone + 'static,
     {
-        self.build_event(crate::event::pointercancel, callback)
+        self.build_event(pointercancel, callback)
     }
 
     fn on_input<F, M>(self, callback: F) -> Self
     where
         F: EventHandler<String, M> + Clone + 'static,
     {
-        self.apply(PendingAttribute::new_listener(
-            move |el: &web_sys::Element| {
-                crate::element::bind_event_impl(
-                    el,
-                    "input".to_string(),
-                    Box::new({
-                        let mut handler = callback.clone().into_handler();
-                        move |e: web_sys::InputEvent| {
-                            match crate::helpers::event_target_value_result(&e) {
-                                Ok(value) => handler(value),
-                                Err(err) => silex_core::error::handle_error(err),
-                            }
-                        }
-                    }),
-                );
-            },
-        ))
+        self.apply(PendingAttribute::new_listener(move |el: &Element| {
+            bind_event_impl(
+                el,
+                "input".to_string(),
+                Box::new({
+                    let mut handler = callback.clone().into_handler();
+                    move |e: InputEvent| match event_target_value_result(&e) {
+                        Ok(value) => handler(value),
+                        Err(err) => handle_error(err),
+                    }
+                }),
+            );
+        }))
     }
 
     fn on_change<F, M>(self, callback: F) -> Self
     where
         F: EventHandler<String, M> + Clone + 'static,
     {
-        self.apply(PendingAttribute::new_listener(
-            move |el: &web_sys::Element| {
-                crate::element::bind_event_impl(
-                    el,
-                    "change".to_string(),
-                    Box::new({
-                        let mut handler = callback.clone().into_handler();
-                        move |e: web_sys::Event| match crate::helpers::event_target_value_result(&e)
-                        {
-                            Ok(value) => handler(value),
-                            Err(err) => silex_core::error::handle_error(err),
-                        }
-                    }),
-                );
-            },
-        ))
+        self.apply(PendingAttribute::new_listener(move |el: &Element| {
+            bind_event_impl(
+                el,
+                "change".to_string(),
+                Box::new({
+                    let mut handler = callback.clone().into_handler();
+                    move |e: Event| match event_target_value_result(&e) {
+                        Ok(value) => handler(value),
+                        Err(err) => handle_error(err),
+                    }
+                }),
+            );
+        }))
     }
 
     fn bind_value<T, S>(self, signal: S) -> Self
@@ -325,40 +334,32 @@ pub trait GlobalEventAttributes: AttributeBuilder {
             s.set(T::from(value));
         });
 
-        this.apply(PendingAttribute::new_listener(
-            move |el: &web_sys::Element| {
-                let dom_element = el.clone();
-                let signal = signal.clone();
-                silex_core::reactivity::Effect::new(move |_| {
-                    let value = signal.get();
-                    let str_val = value.as_ref();
-                    apply_attr_with_target_internal(
-                        &dom_element,
-                        "value",
-                        ApplyTarget::Known(KnownProp::Value),
-                        &Attr::from(str_val.to_string()),
-                    );
-                });
-            },
-        ))
+        this.apply(PendingAttribute::new_listener(move |el: &Element| {
+            let dom_element = el.clone();
+            let signal = signal.clone();
+            Effect::new(move |_| {
+                let value = signal.get();
+                let str_val = value.as_ref();
+                apply_attr_with_target_internal(
+                    &dom_element,
+                    "value",
+                    ApplyTarget::Known(KnownProp::Value),
+                    &Attr::from(str_val.to_string()),
+                );
+            });
+        }))
     }
 
     fn on_untyped<E, F>(self, event_type: &str, callback: F) -> Self
     where
-        E: wasm_bindgen::convert::FromWasmAbi + 'static,
+        E: FromWasmAbi + 'static,
         F: FnMut(E) + 'static + Clone,
     {
         let event_type_str = event_type.to_string();
         let cb_template = callback.clone();
-        self.apply(PendingAttribute::new_listener(
-            move |el: &web_sys::Element| {
-                crate::element::bind_event_impl(
-                    el,
-                    event_type_str.clone(),
-                    Box::new(cb_template.clone()),
-                );
-            },
-        ))
+        self.apply(PendingAttribute::new_listener(move |el: &Element| {
+            bind_event_impl(el, event_type_str.clone(), Box::new(cb_template.clone()));
+        }))
     }
 }
 
@@ -367,22 +368,20 @@ impl<T: AttributeBuilder> GlobalEventAttributes for T {}
 
 // --- AttributeBuilder Implementations for Erasure Types ---
 
-impl AttributeBuilder for crate::view::AnyView {
+impl AttributeBuilder for AnyView {
     fn build_attribute<V>(mut self, target: ApplyTarget, value: V) -> Self
     where
         V: IntoStorable,
     {
-        use crate::view::ApplyAttributes;
         self.apply_attributes(vec![PendingAttribute::build(value.into_storable(), target)]);
         self
     }
 
     fn build_event<E, F, M>(mut self, event: E, callback: F) -> Self
     where
-        E: crate::event::EventDescriptor + 'static,
-        F: crate::event::EventHandler<E::EventType, M> + Clone + 'static,
+        E: EventDescriptor + 'static,
+        F: EventHandler<E::EventType, M> + Clone + 'static,
     {
-        use crate::view::ApplyAttributes;
         self.apply_attributes(vec![PendingAttribute::new_listener(move |el| {
             crate::element::bind_event(el, event, callback.clone());
         })]);

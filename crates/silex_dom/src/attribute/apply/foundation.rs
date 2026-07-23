@@ -1,4 +1,6 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, rc::Rc};
+
+use silex_core::{Rx, RxValueKind};
 use wasm_bindgen::JsValue;
 use web_sys::Element as WebElem;
 
@@ -87,22 +89,19 @@ pub trait ApplyToDom {
     where
         Self: Sized + 'static,
     {
-        AttrOp::Custom(std::rc::Rc::new(move |el| {
+        AttrOp::Custom(Rc::new(move |el| {
             self.apply(el, target.clone());
         }))
     }
 }
 
 pub trait ReactiveApply {
-    fn apply_to_dom(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-        el: WebElem,
-        target: ApplyTarget,
-    ) where
+    fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: WebElem, target: ApplyTarget)
+    where
         Self: Sized;
 
     fn apply_pair(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        rx: Rx<Self, RxValueKind>,
         key: Cow<'static, str>,
         el: WebElem,
         target: ApplyTarget,
@@ -112,10 +111,7 @@ pub trait ReactiveApply {
         let _ = (rx, key, el, target);
     }
 
-    fn into_op_reactive(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-        target: ApplyTarget,
-    ) -> Option<AttrOp>
+    fn into_op_reactive(rx: Rx<Self, RxValueKind>, target: ApplyTarget) -> Option<AttrOp>
     where
         Self: Sized,
     {
@@ -124,7 +120,7 @@ pub trait ReactiveApply {
     }
 
     fn into_op_pair_reactive(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        rx: Rx<Self, RxValueKind>,
         key: Cow<'static, str>,
         target: ApplyTarget,
     ) -> Option<AttrOp>
@@ -154,11 +150,11 @@ impl ApplyToDom for fn(&WebElem) {
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp {
-        AttrOp::Custom(std::rc::Rc::new(self))
+        AttrOp::Custom(Rc::new(self))
     }
 }
 
-impl ApplyToDom for std::rc::Rc<dyn Fn(&WebElem)> {
+impl ApplyToDom for Rc<dyn Fn(&WebElem)> {
     fn apply(&self, el: &WebElem, _target: ApplyTarget) {
         (self)(el);
     }
@@ -235,7 +231,7 @@ impl ApplyToDom for &'static str {
             ApplyTarget::Style => {
                 AttrOp::static_styles(parse_style_str(self).into_iter().collect())
             }
-            ApplyTarget::Apply => AttrOp::Custom(std::rc::Rc::new(move |el| {
+            ApplyTarget::Apply => AttrOp::Custom(Rc::new(move |el| {
                 apply_immediate_string(el, &ApplyTarget::Apply, self);
             })),
         }
@@ -270,7 +266,7 @@ impl ApplyToDom for String {
             ),
             ApplyTarget::Apply => {
                 let self_clone = self;
-                AttrOp::Custom(std::rc::Rc::new(move |el| {
+                AttrOp::Custom(Rc::new(move |el| {
                     apply_immediate_string(el, &ApplyTarget::Apply, &self_clone);
                 }))
             }
@@ -318,7 +314,7 @@ impl ApplyToDom for Attr {
             }
             _ => {
                 let attr = self;
-                AttrOp::Custom(std::rc::Rc::new(move |el| {
+                AttrOp::Custom(Rc::new(move |el| {
                     apply_attr_internal(el, "", &attr);
                 }))
             }
@@ -342,7 +338,7 @@ impl ApplyToDom for bool {
             }
             _ => {
                 let val = self;
-                AttrOp::Custom(std::rc::Rc::new(move |el| {
+                AttrOp::Custom(Rc::new(move |el| {
                     apply_immediate_bool(el, &ApplyTarget::Apply, val);
                 }))
             }
@@ -420,7 +416,7 @@ impl_apply_to_dom_for_primitive!(
 // --- Tuples ---
 
 // 响应式元组归一化终点：(K, Rx<T>)
-impl<K, T> ApplyToDom for (K, silex_core::Rx<T, silex_core::RxValueKind>)
+impl<K, T> ApplyToDom for (K, Rx<T, RxValueKind>)
 where
     K: Into<Cow<'static, str>> + Clone + 'static,
     T: ReactiveApply + Clone + 'static,
@@ -445,7 +441,7 @@ where
             if let Some(op) = T::into_op_reactive(rx, target_effective.clone()) {
                 op
             } else {
-                AttrOp::Custom(std::rc::Rc::new(move |el| {
+                AttrOp::Custom(Rc::new(move |el| {
                     T::apply_pair(rx, key_cow.clone(), el.clone(), target_effective.clone());
                 }))
             }

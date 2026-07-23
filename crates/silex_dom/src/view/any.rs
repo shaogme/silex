@@ -142,7 +142,6 @@ impl std::fmt::Debug for AnyView {
 mod tests {
     use super::*;
     use crate::attribute::AttrOp;
-    use std::rc::Rc;
 
     #[derive(Clone)]
     struct DummyView;

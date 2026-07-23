@@ -1,5 +1,9 @@
-use crate::error::SilexResult;
-use crate::traits::{ForErrorHandler, ForLoopSource};
+use std::rc::Rc;
+
+use crate::{
+    error::{SilexError, SilexResult, handle_error},
+    traits::{ForErrorHandler, ForLoopSource},
+};
 
 // Impl for Vec<T>
 impl<T: Clone + 'static> ForLoopSource for Vec<T> {
@@ -35,22 +39,22 @@ impl<T: Clone + 'static> ForLoopSource for SilexResult<Vec<T>> {
 }
 
 impl ForErrorHandler {
-    pub fn call(&self, err: crate::SilexError) {
+    pub fn call(&self, err: SilexError) {
         (self.0)(err);
     }
 }
 
 impl<F> From<F> for ForErrorHandler
 where
-    F: Fn(crate::SilexError) + 'static,
+    F: Fn(SilexError) + 'static,
 {
     fn from(value: F) -> Self {
-        Self(std::rc::Rc::new(value))
+        Self(Rc::new(value))
     }
 }
 
 impl Default for ForErrorHandler {
     fn default() -> Self {
-        Self(std::rc::Rc::new(crate::error::handle_error))
+        Self(Rc::new(handle_error))
     }
 }

@@ -1,14 +1,14 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Display;
 use std::rc::Rc;
 
+use silex_core::reactivity::Effect;
+use silex_core::traits::{RxGet, RxRead};
+use silex_core::{Rx, RxEffectKind, RxValueKind};
 use wasm_bindgen::JsValue;
 use web_sys::Element as WebElem;
-
-use silex_core::reactivity::Effect;
-use silex_core::traits::RxGet;
-use silex_core::{Rx, RxValueKind};
 
 use super::foundation::{ApplyTarget, ApplyToDom, ReactiveApply};
 use crate::attribute::op::{
@@ -18,19 +18,16 @@ use crate::attribute::op::{
 
 // --- Internal Helper Functions (Non-generic to reduce monomorphization) ---
 
-pub(crate) fn derive_string_rx_internal<T: std::fmt::Display + Clone + 'static>(
-    rx: silex_core::Rx<T, silex_core::RxValueKind>,
-) -> silex_core::Rx<String, silex_core::RxValueKind> {
-    silex_core::Rx::derive(Box::new(move || {
-        use silex_core::traits::RxGet;
-        rx.get().to_string()
-    }))
+pub(crate) fn derive_string_rx_internal<T: Display + Clone + 'static>(
+    rx: Rx<T, RxValueKind>,
+) -> Rx<String, RxValueKind> {
+    Rx::derive(Box::new(move || rx.get().to_string()))
 }
 
-pub(crate) fn apply_primitive_reactive_internal<T: std::fmt::Display + Clone + 'static>(
+pub(crate) fn apply_primitive_reactive_internal<T: Display + Clone + 'static>(
     el: WebElem,
     target: ApplyTarget,
-    rx: silex_core::Rx<T, silex_core::RxValueKind>,
+    rx: Rx<T, RxValueKind>,
 ) {
     match target {
         ApplyTarget::Class => {
@@ -47,21 +44,18 @@ pub(crate) fn apply_primitive_reactive_internal<T: std::fmt::Display + Clone + '
         }
         ApplyTarget::Attr(name) => {
             Effect::new(move |_| {
-                use silex_core::traits::RxGet;
                 let value = rx.get().to_string();
                 set_string_property_internal(&el, &name, &value, false);
             });
         }
         ApplyTarget::Prop(name) => {
             Effect::new(move |_| {
-                use silex_core::traits::RxGet;
                 let value = rx.get().to_string();
                 set_string_property_internal(&el, &name, &value, true);
             });
         }
         ApplyTarget::Known(kp) => {
             Effect::new(move |_| {
-                use silex_core::traits::RxGet;
                 let value = rx.get().to_string();
                 apply_attr_with_target_internal(
                     &el,
@@ -75,31 +69,24 @@ pub(crate) fn apply_primitive_reactive_internal<T: std::fmt::Display + Clone + '
     }
 }
 
-fn create_erased_class_effect_internal(
-    el: WebElem,
-    rx: silex_core::Rx<String, silex_core::RxValueKind>,
-) {
+fn create_erased_class_effect_internal(el: WebElem, rx: Rx<String, RxValueKind>) {
     AttrOp::reactive_classes(rx).apply(&el);
 }
 
-fn create_erased_style_effect_internal(
-    el: WebElem,
-    rx: silex_core::Rx<String, silex_core::RxValueKind>,
-) {
+fn create_erased_style_effect_internal(el: WebElem, rx: Rx<String, RxValueKind>) {
     AttrOp::reactive_stylesheet(rx).apply(&el);
 }
 
 pub(crate) fn apply_string_reactive_internal(
     el: WebElem,
     target: ApplyTarget,
-    rx: silex_core::Rx<String, silex_core::RxValueKind>,
+    rx: Rx<String, RxValueKind>,
 ) {
     match target {
         ApplyTarget::Class => create_erased_class_effect_internal(el, rx),
         ApplyTarget::Style => create_erased_style_effect_internal(el, rx),
         ApplyTarget::Attr(name) => {
             Effect::new(move |_| {
-                use silex_core::traits::RxGet;
                 let value = rx.get();
                 set_string_property_internal(&el, &name, &value, false);
             });
@@ -129,13 +116,12 @@ pub(crate) fn apply_string_pair_reactive_internal(
     el: WebElem,
     key: Cow<'static, str>,
     target: ApplyTarget,
-    rx: silex_core::Rx<String, silex_core::RxValueKind>,
+    rx: Rx<String, RxValueKind>,
 ) {
     if matches!(target, ApplyTarget::Style)
         && let Some(style) = get_style_decl(&el)
     {
         Effect::new(move |_| {
-            use silex_core::traits::RxGet;
             let _ = style.set_property(&key, &rx.get());
         });
     }
@@ -144,12 +130,11 @@ pub(crate) fn apply_string_pair_reactive_internal(
 pub(crate) fn apply_bool_reactive_internal(
     el: WebElem,
     target: ApplyTarget,
-    rx: silex_core::Rx<bool, silex_core::RxValueKind>,
+    rx: Rx<bool, RxValueKind>,
 ) {
     match target {
         ApplyTarget::Attr(name) => {
             Effect::new(move |_| {
-                use silex_core::traits::RxGet;
                 let val = rx.get();
                 if val {
                     let _ = el.set_attribute(&name, "");
@@ -167,7 +152,6 @@ pub(crate) fn apply_bool_reactive_internal(
         }
         ApplyTarget::Known(kp) => {
             Effect::new(move |_| {
-                use silex_core::traits::RxGet;
                 let val = rx.get();
                 apply_attr_with_target_internal(
                     &el,
@@ -184,11 +168,10 @@ pub(crate) fn apply_bool_reactive_internal(
 pub(crate) fn apply_bool_pair_reactive_internal(
     el: WebElem,
     key: Cow<'static, str>,
-    rx: silex_core::Rx<bool, silex_core::RxValueKind>,
+    rx: Rx<bool, RxValueKind>,
 ) {
     let list = el.class_list();
     Effect::new(move |_| {
-        use silex_core::traits::RxGet;
         if rx.get() {
             let _ = list.add_1(&key);
         } else {
@@ -197,11 +180,8 @@ pub(crate) fn apply_bool_pair_reactive_internal(
     });
 }
 
-pub(crate) fn apply_rx_internal<T>(
-    rx: silex_core::Rx<T, silex_core::RxValueKind>,
-    el: &WebElem,
-    target: ApplyTarget,
-) where
+pub(crate) fn apply_rx_internal<T>(rx: Rx<T, RxValueKind>, el: &WebElem, target: ApplyTarget)
+where
     T: ReactiveApply + 'static,
 {
     T::apply_to_dom(rx, el.clone(), target);
@@ -209,22 +189,20 @@ pub(crate) fn apply_rx_internal<T>(
 
 // 1. 逻辑型 Rx (Effect) - 用于 on_xxx 属性
 // 仅支持擦除后的 Rc<dyn Fn> 类型，以收敛单态化
-impl ApplyToDom for silex_core::Rx<std::rc::Rc<dyn Fn(&WebElem)>, silex_core::RxEffectKind> {
+impl ApplyToDom for Rx<Rc<dyn Fn(&WebElem)>, RxEffectKind> {
     fn apply(&self, el: &WebElem, _target: ApplyTarget) {
-        use silex_core::traits::RxRead;
         self.with_untracked(|f| (f)(el));
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp {
-        AttrOp::Custom(std::rc::Rc::new(move |el| {
-            use silex_core::traits::RxRead;
+        AttrOp::Custom(Rc::new(move |el| {
             self.with_untracked(|f| (f)(el));
         }))
     }
 }
 
 // 2. 响应式原语 (经过 IntoStorable 归一化后的终点)
-impl<T> ApplyToDom for silex_core::Rx<T, silex_core::RxValueKind>
+impl<T> ApplyToDom for Rx<T, RxValueKind>
 where
     T: ReactiveApply + Clone + 'static,
 {
@@ -237,7 +215,7 @@ where
             op
         } else {
             let rx = self;
-            AttrOp::Custom(std::rc::Rc::new(move |el| {
+            AttrOp::Custom(Rc::new(move |el| {
                 apply_rx_internal(rx, el, target.clone());
             }))
         }
@@ -247,16 +225,12 @@ where
 // --- ReactiveApply Implementations ---
 
 impl ReactiveApply for String {
-    fn apply_to_dom(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-        el: WebElem,
-        target: ApplyTarget,
-    ) {
+    fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: WebElem, target: ApplyTarget) {
         apply_string_reactive_internal(el, target, rx);
     }
 
     fn apply_pair(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        rx: Rx<Self, RxValueKind>,
         key: Cow<'static, str>,
         el: WebElem,
         target: ApplyTarget,
@@ -264,10 +238,7 @@ impl ReactiveApply for String {
         apply_string_pair_reactive_internal(el, key, target, rx);
     }
 
-    fn into_op_reactive(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-        target: ApplyTarget,
-    ) -> Option<AttrOp> {
+    fn into_op_reactive(rx: Rx<Self, RxValueKind>, target: ApplyTarget) -> Option<AttrOp> {
         let op = match target {
             ApplyTarget::Attr(name) => AttrOp::Update(AttrUpdate {
                 target: ApplyTarget::Attr(name),
@@ -280,17 +251,14 @@ impl ReactiveApply for String {
             ApplyTarget::Prop(name) => AttrOp::Update(AttrUpdate {
                 target: ApplyTarget::Prop(name),
                 data: AttrData::ReactiveJs({
-                    silex_core::Rx::derive(Box::new(move || {
-                        use silex_core::traits::RxGet;
-                        JsValue::from_str(&rx.get())
-                    }))
+                    Rx::derive(Box::new(move || JsValue::from_str(&rx.get())))
                 }),
             }),
             ApplyTarget::Class => AttrOp::reactive_classes(rx),
             ApplyTarget::Style => AttrOp::reactive_stylesheet(rx),
             ApplyTarget::Apply => {
                 let rx_inner = rx;
-                AttrOp::Custom(std::rc::Rc::new(move |el| {
+                AttrOp::Custom(Rc::new(move |el| {
                     apply_string_reactive_internal(el.clone(), ApplyTarget::Apply, rx_inner);
                 }))
             }
@@ -299,7 +267,7 @@ impl ReactiveApply for String {
     }
 
     fn into_op_pair_reactive(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        rx: Rx<Self, RxValueKind>,
         key: Cow<'static, str>,
         target: ApplyTarget,
     ) -> Option<AttrOp> {
@@ -312,16 +280,12 @@ impl ReactiveApply for String {
 }
 
 impl ReactiveApply for &'static str {
-    fn apply_to_dom(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-        el: WebElem,
-        target: ApplyTarget,
-    ) {
+    fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: WebElem, target: ApplyTarget) {
         apply_primitive_reactive_internal(el, target, rx);
     }
 
     fn apply_pair(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        rx: Rx<Self, RxValueKind>,
         key: Cow<'static, str>,
         el: WebElem,
         target: ApplyTarget,
@@ -331,7 +295,7 @@ impl ReactiveApply for &'static str {
     }
 
     fn into_op_pair_reactive(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        rx: Rx<Self, RxValueKind>,
         key: Cow<'static, str>,
         target: ApplyTarget,
     ) -> Option<AttrOp> {
@@ -344,18 +308,18 @@ macro_rules! impl_reactive_apply_primitive {
     ($($t:ty),*) => {
         $(
             impl ReactiveApply for $t {
-                fn apply_to_dom(rx: silex_core::Rx<Self, silex_core::RxValueKind>, el: WebElem, target: ApplyTarget) {
+                fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: WebElem, target: ApplyTarget) {
                     apply_primitive_reactive_internal(el, target, rx);
                 }
-                fn apply_pair(rx: silex_core::Rx<Self, silex_core::RxValueKind>, key: Cow<'static, str>, el: WebElem, target: ApplyTarget) {
+                fn apply_pair(rx: Rx<Self, RxValueKind>, key: Cow<'static, str>, el: WebElem, target: ApplyTarget) {
                     let string_rx = derive_string_rx_internal(rx);
                     apply_string_pair_reactive_internal(el, key, target, string_rx);
                 }
-                fn into_op_reactive(rx: silex_core::Rx<Self, silex_core::RxValueKind>, target: ApplyTarget) -> Option<AttrOp> {
+                fn into_op_reactive(rx: Rx<Self, RxValueKind>, target: ApplyTarget) -> Option<AttrOp> {
                     let string_rx = derive_string_rx_internal(rx);
                     <String as ReactiveApply>::into_op_reactive(string_rx, target)
                 }
-                fn into_op_pair_reactive(rx: silex_core::Rx<Self, silex_core::RxValueKind>, key: Cow<'static, str>, target: ApplyTarget) -> Option<AttrOp> {
+                fn into_op_pair_reactive(rx: Rx<Self, RxValueKind>, key: Cow<'static, str>, target: ApplyTarget) -> Option<AttrOp> {
                     let string_rx = derive_string_rx_internal(rx);
                     <String as ReactiveApply>::into_op_pair_reactive(string_rx, key, target)
                 }
@@ -387,7 +351,7 @@ impl ReactiveApply for Attr {
             }
             _ => {
                 let rx_inner = rx;
-                AttrOp::Custom(std::rc::Rc::new(move |el| {
+                AttrOp::Custom(Rc::new(move |el| {
                     <Self as ReactiveApply>::apply_to_dom(rx_inner, el.clone(), target.clone());
                 }))
             }
@@ -397,16 +361,12 @@ impl ReactiveApply for Attr {
 }
 
 impl ReactiveApply for bool {
-    fn apply_to_dom(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-        el: WebElem,
-        target: ApplyTarget,
-    ) {
+    fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: WebElem, target: ApplyTarget) {
         apply_bool_reactive_internal(el, target, rx);
     }
 
     fn apply_pair(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        rx: Rx<Self, RxValueKind>,
         key: Cow<'static, str>,
         el: WebElem,
         target: ApplyTarget,
@@ -416,10 +376,7 @@ impl ReactiveApply for bool {
         }
     }
 
-    fn into_op_reactive(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-        target: ApplyTarget,
-    ) -> Option<AttrOp> {
+    fn into_op_reactive(rx: Rx<Self, RxValueKind>, target: ApplyTarget) -> Option<AttrOp> {
         let op = match target {
             ApplyTarget::Attr(_) | ApplyTarget::Prop(_) | ApplyTarget::Known(_) => {
                 AttrOp::Update(AttrUpdate {
@@ -429,7 +386,7 @@ impl ReactiveApply for bool {
             }
             _ => {
                 let rx_inner = rx;
-                AttrOp::Custom(std::rc::Rc::new(move |el| {
+                AttrOp::Custom(Rc::new(move |el| {
                     apply_bool_reactive_internal(el.clone(), target.clone(), rx_inner);
                 }))
             }
@@ -438,7 +395,7 @@ impl ReactiveApply for bool {
     }
 
     fn into_op_pair_reactive(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        rx: Rx<Self, RxValueKind>,
         key: Cow<'static, str>,
         target: ApplyTarget,
     ) -> Option<AttrOp> {
@@ -504,14 +461,13 @@ fn update_option_style_diff(el: &WebElem, prev: Option<&str>, new_val: Option<&s
 pub(crate) fn apply_option_reactive_internal<T>(
     el: WebElem,
     target: ApplyTarget,
-    rx: silex_core::Rx<Option<T>, silex_core::RxValueKind>,
+    rx: Rx<Option<T>, RxValueKind>,
 ) where
-    T: std::fmt::Display + Clone + 'static,
+    T: Display + Clone + 'static,
 {
     let prev_val = Rc::new(RefCell::new(None::<String>));
 
     Effect::new(move |_| {
-        use silex_core::traits::RxGet;
         let opt = rx.get();
         let new_val = opt.map(|v| v.to_string());
         let mut prev = prev_val.borrow_mut();
@@ -556,14 +512,13 @@ pub(crate) fn apply_option_pair_reactive_internal<T>(
     el: WebElem,
     key: Cow<'static, str>,
     target: ApplyTarget,
-    rx: silex_core::Rx<Option<T>, silex_core::RxValueKind>,
+    rx: Rx<Option<T>, RxValueKind>,
 ) where
-    T: std::fmt::Display + Clone + 'static,
+    T: Display + Clone + 'static,
 {
     if matches!(target, ApplyTarget::Class) {
         let list = el.class_list();
         Effect::new(move |_| {
-            use silex_core::traits::RxGet;
             if let Some(val) = rx.get() {
                 let s = val.to_string();
                 if s == "true" || !s.is_empty() {
@@ -579,7 +534,6 @@ pub(crate) fn apply_option_pair_reactive_internal<T>(
         && let Some(style) = get_style_decl(&el)
     {
         Effect::new(move |_| {
-            use silex_core::traits::RxGet;
             if let Some(val) = rx.get() {
                 let _ = style.set_property(&key, &val.to_string());
             } else {
@@ -591,18 +545,14 @@ pub(crate) fn apply_option_pair_reactive_internal<T>(
 
 impl<T> ReactiveApply for Option<T>
 where
-    T: std::fmt::Display + Clone + 'static,
+    T: Display + Clone + 'static,
 {
-    fn apply_to_dom(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-        el: WebElem,
-        target: ApplyTarget,
-    ) {
+    fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: WebElem, target: ApplyTarget) {
         apply_option_reactive_internal(el, target, rx);
     }
 
     fn apply_pair(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        rx: Rx<Self, RxValueKind>,
         key: Cow<'static, str>,
         el: WebElem,
         target: ApplyTarget,
@@ -610,47 +560,41 @@ where
         apply_option_pair_reactive_internal(el, key, target, rx);
     }
 
-    fn into_op_reactive(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-        target: ApplyTarget,
-    ) -> Option<AttrOp> {
+    fn into_op_reactive(rx: Rx<Self, RxValueKind>, target: ApplyTarget) -> Option<AttrOp> {
         if matches!(target, ApplyTarget::Class) {
-            Some(AttrOp::reactive_classes(silex_core::Rx::derive(Box::new(
+            Some(AttrOp::reactive_classes(Rx::derive(Box::new(move || {
+                rx.get().map(|v| v.to_string()).unwrap_or_default()
+            }))))
+        } else if matches!(target, ApplyTarget::Style) {
+            Some(AttrOp::reactive_stylesheet(Rx::derive(Box::new(
                 move || rx.get().map(|v| v.to_string()).unwrap_or_default(),
             ))))
-        } else if matches!(target, ApplyTarget::Style) {
-            Some(AttrOp::reactive_stylesheet(silex_core::Rx::derive(
-                Box::new(move || rx.get().map(|v| v.to_string()).unwrap_or_default()),
-            )))
         } else if matches!(
             target,
             ApplyTarget::Attr(_) | ApplyTarget::Known(_) | ApplyTarget::Prop(_)
         ) {
-            let opt_rx = silex_core::Rx::derive(Box::new(move || {
-                use silex_core::traits::RxGet;
-                rx.get().map(|v| v.to_string())
-            }));
+            let opt_rx = Rx::derive(Box::new(move || rx.get().map(|v| v.to_string())));
             Some(AttrOp::Update(AttrUpdate {
                 target,
                 data: AttrData::ReactiveOptionString(opt_rx),
             }))
         } else {
             let rx_inner = rx;
-            Some(AttrOp::Custom(std::rc::Rc::new(move |el| {
+            Some(AttrOp::Custom(Rc::new(move |el| {
                 apply_option_reactive_internal(el.clone(), target.clone(), rx_inner);
             })))
         }
     }
 
     fn into_op_pair_reactive(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        rx: Rx<Self, RxValueKind>,
         key: Cow<'static, str>,
         target: ApplyTarget,
     ) -> Option<AttrOp> {
         if matches!(target, ApplyTarget::Class) {
             Some(AttrOp::class_toggle(
                 key,
-                silex_core::Rx::derive(Box::new(move || {
+                Rx::derive(Box::new(move || {
                     rx.get()
                         .map(|v| {
                             let s = v.to_string();
@@ -662,7 +606,7 @@ where
         } else if matches!(target, ApplyTarget::Style) {
             Some(AttrOp::style_property(
                 key,
-                silex_core::Rx::derive(Box::new(move || {
+                Rx::derive(Box::new(move || {
                     rx.get().map(|v| v.to_string()).unwrap_or_default()
                 })),
             ))

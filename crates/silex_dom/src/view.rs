@@ -9,15 +9,21 @@ pub use logic::*;
 pub use reactive::*;
 
 use crate::attribute::PendingAttribute;
-use silex_core::error::handle_error;
-use silex_core::logic::Map;
-use silex_core::reactivity::{Effect, NodeId, create_scope, dispose};
-use silex_core::traits::{IntoRx, IntoSignal, RxValue};
-use silex_core::{Rx, RxValueKind, SilexError, SilexResult};
-use std::cell::RefCell;
-use std::ops::Deref;
-use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::rc::Rc;
+use silex_core::{
+    Rx, RxValueKind, SilexError, SilexResult,
+    error::handle_error,
+    logic::Map,
+    reactivity::{Effect, NodeId, Signal, create_scope, dispose},
+    traits::{IntoRx, IntoSignal, RxCloneData, RxData, RxValue},
+};
+use std::{
+    borrow::Cow,
+    cell::RefCell,
+    fmt::{Debug, Display, Formatter, Result as FmtResult},
+    ops::{Add, Deref, Div, Mul, Sub},
+    panic::{AssertUnwindSafe, catch_unwind},
+    rc::Rc,
+};
 use web_sys::Node;
 
 /// 属性应用特征 (ApplyAttributes Trait)
@@ -150,10 +156,10 @@ where
     T: IntoSignal + Clone,
 {
     #[inline(always)]
-    fn into_signal(self) -> silex_core::reactivity::Signal<Self::Value>
+    fn into_signal(self) -> Signal<Self::Value>
     where
-        Self: Sized + silex_core::traits::RxData,
-        Self::Value: Sized + silex_core::traits::RxCloneData,
+        Self: Sized + RxData,
+        Self::Value: Sized + RxCloneData,
     {
         self.into_owned().into_signal()
     }
@@ -185,11 +191,11 @@ where
     }
 }
 
-impl<'a, T> std::fmt::Debug for Prop<'a, T>
+impl<'a, T> Debug for Prop<'a, T>
 where
-    T: std::fmt::Debug,
+    T: Debug,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Self::Owned(v) => v.fmt(f),
             Self::Borrowed(v) => v.fmt(f),
@@ -197,11 +203,11 @@ where
     }
 }
 
-impl<'a, T> std::fmt::Display for Prop<'a, T>
+impl<'a, T> Display for Prop<'a, T>
 where
-    T: std::fmt::Display,
+    T: Display,
 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         match self {
             Self::Owned(v) => v.fmt(f),
             Self::Borrowed(v) => v.fmt(f),
@@ -211,11 +217,11 @@ where
 
 macro_rules! impl_forward_binop_copy {
     ($trait:ident, $method:ident) => {
-        impl<'a, T, Rhs> std::ops::$trait<Rhs> for Prop<'a, T>
+        impl<'a, T, Rhs> $trait<Rhs> for Prop<'a, T>
         where
-            T: Copy + std::ops::$trait<Rhs>,
+            T: Copy + $trait<Rhs>,
         {
-            type Output = <T as std::ops::$trait<Rhs>>::Output;
+            type Output = <T as $trait<Rhs>>::Output;
 
             fn $method(self, rhs: Rhs) -> Self::Output {
                 self.deref().$method(rhs)
@@ -289,8 +295,8 @@ impl View for &'static str {
 }
 
 // 1.1 Cow support
-impl ApplyAttributes for std::borrow::Cow<'static, str> {}
-impl View for std::borrow::Cow<'static, str> {
+impl ApplyAttributes for Cow<'static, str> {}
+impl View for Cow<'static, str> {
     fn mount(&self, parent: &Node, _attrs: Vec<PendingAttribute>) {
         mount_text_node(parent, self.as_ref());
     }
@@ -564,9 +570,9 @@ pub fn mount_branch_cached<K, KeyFn, BranchFn>(
 }
 
 // 3.6 Type closure delegation
-impl<V> ApplyAttributes for std::rc::Rc<dyn Fn() -> V> where V: View + 'static {}
+impl<V> ApplyAttributes for Rc<dyn Fn() -> V> where V: View + 'static {}
 
-impl<V> View for std::rc::Rc<dyn Fn() -> V>
+impl<V> View for Rc<dyn Fn() -> V>
 where
     V: View + 'static,
 {
