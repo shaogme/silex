@@ -502,7 +502,7 @@ fn TailwindVariantsCvaDemo() -> impl View {
         div(view_chain!(
             span("11. Tailwind CVA Paradigm (tw_variants!)").class(tw!("text-xs font-black text-rose-600 dark:text-rose-400 uppercase tracking-widest")),
             h2("Class Variance Authority & Compile-Time Merge").class(tw!("text-xl font-bold text-slate-900 dark:text-white mt-1 mb-2 transition-colors duration-300")),
-            p("Compose complex component variants (Intent, Size) with zero runtime overlap and automatic compile-time AST deduplication.")
+            p("Compose complex component variants (Intent, Size) with zero runtime overlap, automatic tw! wrapping, and declare_variants! delegation.")
                 .class(tw!("text-xs text-slate-600 dark:text-slate-300 mb-5 leading-relaxed transition-colors duration-300"))
         )),
         div(view_chain!(

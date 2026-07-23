@@ -63,11 +63,10 @@ pub fn TabsList(
     };
 
     let cls = rx!(move || {
-        let v = variant.get();
-        let base_cls = list_variants.get(if v.is_empty() { "default" } else { v.as_str() });
+        let base_cls = list_variants.get(variant.get());
         let extra = class.get();
         if extra.is_empty() {
-            base_cls.to_string()
+            base_cls
         } else {
             format!("{} {}", base_cls, extra)
         }

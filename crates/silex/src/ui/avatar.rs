@@ -28,15 +28,10 @@ pub fn Avatar(
     };
 
     let cls = rx!(move || {
-        let sz = size.get();
-        let base_cls = avatar_variants.get(if sz.is_empty() {
-            "default"
-        } else {
-            sz.as_str()
-        });
+        let base_cls = avatar_variants.get(size.get());
         let extra = class.get();
         if extra.is_empty() {
-            base_cls.to_string()
+            base_cls
         } else {
             format!("{} {}", base_cls, extra)
         }
@@ -111,12 +106,10 @@ pub fn AvatarFallback(
     };
 
     let cls = rx!(move || {
-        let v = variant.get();
-        let base_cls =
-            avatar_fallback_variants.get(if v.is_empty() { "default" } else { v.as_str() });
+        let base_cls = avatar_fallback_variants.get(variant.get());
         let extra = class.get();
         if extra.is_empty() {
-            base_cls.to_string()
+            base_cls
         } else {
             format!("{} {}", base_cls, extra)
         }
