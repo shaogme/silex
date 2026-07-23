@@ -13,6 +13,7 @@ pub struct UserSettings {
     pub theme: String,
     #[persist(local, key = "notif_enabled", codec = "parse")]
     pub notifications: bool,
+    #[persist(local, codec = "cow")]
     pub username: Cow<'static, str>,
 }
 
