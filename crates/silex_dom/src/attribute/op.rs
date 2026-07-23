@@ -598,25 +598,61 @@ pub(crate) fn apply_attr_with_target_internal(
 
         let handled = if let Some(input) = el.dyn_ref::<web_sys::HtmlInputElement>() {
             match prop {
-                KnownProp::Value => { input.set_value(attr_str); true }
-                KnownProp::Checked => { input.set_checked(is_truthy); true }
-                KnownProp::Disabled => { set_bool_and_sync!("disabled", input.set_disabled(is_truthy)); true }
-                KnownProp::ReadOnly => { set_bool_and_sync!("readonly", input.set_read_only(is_truthy)); true }
-                KnownProp::Required => { set_bool_and_sync!("required", input.set_required(is_truthy)); true }
+                KnownProp::Value => {
+                    input.set_value(attr_str);
+                    true
+                }
+                KnownProp::Checked => {
+                    input.set_checked(is_truthy);
+                    true
+                }
+                KnownProp::Disabled => {
+                    set_bool_and_sync!("disabled", input.set_disabled(is_truthy));
+                    true
+                }
+                KnownProp::ReadOnly => {
+                    set_bool_and_sync!("readonly", input.set_read_only(is_truthy));
+                    true
+                }
+                KnownProp::Required => {
+                    set_bool_and_sync!("required", input.set_required(is_truthy));
+                    true
+                }
             }
         } else if let Some(textarea) = el.dyn_ref::<web_sys::HtmlTextAreaElement>() {
             match prop {
-                KnownProp::Value => { textarea.set_value(attr_str); true }
-                KnownProp::Disabled => { set_bool_and_sync!("disabled", textarea.set_disabled(is_truthy)); true }
-                KnownProp::ReadOnly => { set_bool_and_sync!("readonly", textarea.set_read_only(is_truthy)); true }
-                KnownProp::Required => { set_bool_and_sync!("required", textarea.set_required(is_truthy)); true }
+                KnownProp::Value => {
+                    textarea.set_value(attr_str);
+                    true
+                }
+                KnownProp::Disabled => {
+                    set_bool_and_sync!("disabled", textarea.set_disabled(is_truthy));
+                    true
+                }
+                KnownProp::ReadOnly => {
+                    set_bool_and_sync!("readonly", textarea.set_read_only(is_truthy));
+                    true
+                }
+                KnownProp::Required => {
+                    set_bool_and_sync!("required", textarea.set_required(is_truthy));
+                    true
+                }
                 _ => false,
             }
         } else if let Some(select) = el.dyn_ref::<web_sys::HtmlSelectElement>() {
             match prop {
-                KnownProp::Value => { select.set_value(attr_str); true }
-                KnownProp::Disabled => { set_bool_and_sync!("disabled", select.set_disabled(is_truthy)); true }
-                KnownProp::Required => { set_bool_and_sync!("required", select.set_required(is_truthy)); true }
+                KnownProp::Value => {
+                    select.set_value(attr_str);
+                    true
+                }
+                KnownProp::Disabled => {
+                    set_bool_and_sync!("disabled", select.set_disabled(is_truthy));
+                    true
+                }
+                KnownProp::Required => {
+                    set_bool_and_sync!("required", select.set_required(is_truthy));
+                    true
+                }
                 _ => false,
             }
         } else if let Some(button) = el.dyn_ref::<web_sys::HtmlButtonElement>() {
@@ -628,9 +664,18 @@ pub(crate) fn apply_attr_with_target_internal(
             }
         } else if let Some(option) = el.dyn_ref::<web_sys::HtmlOptionElement>() {
             match prop {
-                KnownProp::Value => { option.set_value(attr_str); true }
-                KnownProp::Checked => { option.set_selected(is_truthy); true }
-                KnownProp::Disabled => { set_bool_and_sync!("disabled", option.set_disabled(is_truthy)); true }
+                KnownProp::Value => {
+                    option.set_value(attr_str);
+                    true
+                }
+                KnownProp::Checked => {
+                    option.set_selected(is_truthy);
+                    true
+                }
+                KnownProp::Disabled => {
+                    set_bool_and_sync!("disabled", option.set_disabled(is_truthy));
+                    true
+                }
                 _ => false,
             }
         } else {

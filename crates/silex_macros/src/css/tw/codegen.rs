@@ -229,8 +229,10 @@ fn get_atomic_subproperties(prop: &str) -> Option<&'static [&'static str]> {
 pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
     let mut covered_subproperties = HashSet::new();
     let mut deduped_rev = Vec::new();
-    let mut transform_rules_by_modifier: std::collections::HashMap<Vec<Modifier>, Vec<UtilityRule>> =
-        std::collections::HashMap::new();
+    let mut transform_rules_by_modifier: std::collections::HashMap<
+        Vec<Modifier>,
+        Vec<UtilityRule>,
+    > = std::collections::HashMap::new();
 
     for rule in rules.into_iter().rev() {
         let prop = rule.css_property.as_str();
@@ -942,11 +944,20 @@ mod tests {
             span: Span::call_site(),
         };
 
-        let deduped = deduplicate_utility_rules(vec![base_transform.clone(), dark_transform.clone()]);
-        assert_eq!(deduped.len(), 2, "Base transform and dark transform must NOT be merged together into one rule");
-        
-        let has_base = deduped.iter().any(|r| r.modifiers.is_empty() && r.css_property == "transform");
-        let has_dark = deduped.iter().any(|r| r.modifiers == vec![Modifier::Dark] && r.css_property == "transform");
+        let deduped =
+            deduplicate_utility_rules(vec![base_transform.clone(), dark_transform.clone()]);
+        assert_eq!(
+            deduped.len(),
+            2,
+            "Base transform and dark transform must NOT be merged together into one rule"
+        );
+
+        let has_base = deduped
+            .iter()
+            .any(|r| r.modifiers.is_empty() && r.css_property == "transform");
+        let has_dark = deduped
+            .iter()
+            .any(|r| r.modifiers == vec![Modifier::Dark] && r.css_property == "transform");
         assert!(has_base && has_dark);
     }
 }

@@ -3,7 +3,11 @@
 
 /// Root trait for all tag markers
 pub trait Tag {
-    type DomElement: wasm_bindgen::JsCast + AsRef<web_sys::Element> + AsRef<web_sys::Node> + Clone + 'static;
+    type DomElement: wasm_bindgen::JsCast
+        + AsRef<web_sys::Element>
+        + AsRef<web_sys::Node>
+        + Clone
+        + 'static;
 }
 
 // --- Group Traits (corresponding to props groups) ---

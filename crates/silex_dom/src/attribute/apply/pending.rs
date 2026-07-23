@@ -3,9 +3,7 @@ use std::rc::Rc;
 use web_sys::Element as WebElem;
 
 use super::foundation::{ApplyTarget, ApplyToDom};
-use crate::attribute::op::{
-    AttrOp, CombinedClasses, CombinedStyles,
-};
+use crate::attribute::op::{AttrOp, CombinedClasses, CombinedStyles};
 
 // --- Attribute Forwarding Support ---
 
@@ -189,4 +187,3 @@ impl AttrOp {
         AttrOp::Custom(Rc::new(f))
     }
 }
-

@@ -233,7 +233,9 @@ impl ApplyToDom for &'static str {
                 data: AttrData::StaticJs(JsValue::from_str(self)),
             }),
             ApplyTarget::Class => AttrOp::static_class(self.into()),
-            ApplyTarget::Style => AttrOp::static_styles(parse_style_str(self).into_iter().collect()),
+            ApplyTarget::Style => {
+                AttrOp::static_styles(parse_style_str(self).into_iter().collect())
+            }
             ApplyTarget::Apply => AttrOp::Custom(std::rc::Rc::new(move |el| {
                 apply_immediate_string(el, &ApplyTarget::Apply, self);
             })),
@@ -601,4 +603,3 @@ impl ApplyToDom for AttributeGroup {
         }
     }
 }
-

@@ -225,8 +225,12 @@ mod tests {
 
         // 验证 2：静态/组件 CSS 中生成的平移计算必须是语法合法的无空格函数调用 `translate(calc(100% - 2px))`
         assert!(
-            compile_result.component_css.contains("translate(calc(100% - 2px))")
-                || compile_result.component_css.contains("translateX(calc(100% - 2px))"),
+            compile_result
+                .component_css
+                .contains("translate(calc(100% - 2px))")
+                || compile_result
+                    .component_css
+                    .contains("translateX(calc(100% - 2px))"),
             "Expected valid translate calc syntax, got: {}",
             compile_result.component_css
         );

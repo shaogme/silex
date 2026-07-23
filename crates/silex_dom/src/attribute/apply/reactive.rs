@@ -12,8 +12,8 @@ use silex_core::{Rx, RxValueKind};
 
 use super::foundation::{ApplyTarget, ApplyToDom, ReactiveApply};
 use crate::attribute::op::{
-    Attr, AttrData, AttrOp, AttrUpdate, apply_attr_with_target_internal,
-    get_style_decl, parse_style_str, set_string_property_internal,
+    Attr, AttrData, AttrOp, AttrUpdate, apply_attr_with_target_internal, get_style_decl,
+    parse_style_str, set_string_property_internal,
 };
 
 // --- Internal Helper Functions (Non-generic to reduce monomorphization) ---
@@ -33,8 +33,12 @@ pub(crate) fn apply_primitive_reactive_internal<T: std::fmt::Display + Clone + '
     rx: silex_core::Rx<T, silex_core::RxValueKind>,
 ) {
     match target {
-        ApplyTarget::Class => create_erased_class_effect_internal(el, derive_string_rx_internal(rx)),
-        ApplyTarget::Style => create_erased_style_effect_internal(el, derive_string_rx_internal(rx)),
+        ApplyTarget::Class => {
+            create_erased_class_effect_internal(el, derive_string_rx_internal(rx))
+        }
+        ApplyTarget::Style => {
+            create_erased_style_effect_internal(el, derive_string_rx_internal(rx))
+        }
         ApplyTarget::Attr(ref name) if name == "class" => {
             create_erased_class_effect_internal(el, derive_string_rx_internal(rx));
         }
@@ -127,7 +131,9 @@ pub(crate) fn apply_string_pair_reactive_internal(
     target: ApplyTarget,
     rx: silex_core::Rx<String, silex_core::RxValueKind>,
 ) {
-    if matches!(target, ApplyTarget::Style) && let Some(style) = get_style_decl(&el) {
+    if matches!(target, ApplyTarget::Style)
+        && let Some(style) = get_style_decl(&el)
+    {
         Effect::new(move |_| {
             use silex_core::traits::RxGet;
             let _ = style.set_property(&key, &rx.get());
@@ -163,7 +169,12 @@ pub(crate) fn apply_bool_reactive_internal(
             Effect::new(move |_| {
                 use silex_core::traits::RxGet;
                 let val = rx.get();
-                apply_attr_with_target_internal(&el, kp.name(), ApplyTarget::Known(kp), &Attr::from(val));
+                apply_attr_with_target_internal(
+                    &el,
+                    kp.name(),
+                    ApplyTarget::Known(kp),
+                    &Attr::from(val),
+                );
             });
         }
         _ => {}
@@ -453,8 +464,10 @@ fn update_option_class_diff(el: &WebElem, prev: Option<&str>, new_val: Option<&s
         return;
     }
     let list = el.class_list();
-    let prev_tokens: HashSet<&str> = prev.map_or_else(HashSet::new, |p| p.split_whitespace().collect());
-    let new_tokens: HashSet<&str> = new_val.map_or_else(HashSet::new, |n| n.split_whitespace().collect());
+    let prev_tokens: HashSet<&str> =
+        prev.map_or_else(HashSet::new, |p| p.split_whitespace().collect());
+    let new_tokens: HashSet<&str> =
+        new_val.map_or_else(HashSet::new, |n| n.split_whitespace().collect());
 
     for &c in &prev_tokens {
         if !new_tokens.contains(c) {
@@ -511,16 +524,14 @@ pub(crate) fn apply_option_reactive_internal<T>(
         let mut prev = prev_val.borrow_mut();
 
         match target {
-            ApplyTarget::Attr(ref name) => {
-                match new_val {
-                    Some(ref v) => {
-                        set_string_property_internal(&el, name, v, false);
-                    }
-                    None => {
-                        let _ = el.remove_attribute(name);
-                    }
+            ApplyTarget::Attr(ref name) => match new_val {
+                Some(ref v) => {
+                    set_string_property_internal(&el, name, v, false);
                 }
-            }
+                None => {
+                    let _ = el.remove_attribute(name);
+                }
+            },
             ApplyTarget::Prop(ref name) => {
                 let attr = match &new_val {
                     Some(v) => Attr::from(v.clone()),
@@ -571,7 +582,9 @@ pub(crate) fn apply_option_pair_reactive_internal<T>(
                 let _ = list.remove_1(&key);
             }
         });
-    } else if matches!(target, ApplyTarget::Style) && let Some(style) = get_style_decl(&el) {
+    } else if matches!(target, ApplyTarget::Style)
+        && let Some(style) = get_style_decl(&el)
+    {
         Effect::new(move |_| {
             use silex_core::traits::RxGet;
             if let Some(val) = rx.get() {

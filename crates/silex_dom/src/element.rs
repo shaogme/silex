@@ -235,7 +235,10 @@ impl<T: Tag> crate::view::View for TypedElement<T> {
             }
         }
 
-        if let Err(e) = parent.append_child(self.as_node()).map_err(SilexError::from) {
+        if let Err(e) = parent
+            .append_child(self.as_node())
+            .map_err(SilexError::from)
+        {
             handle_error(e);
         }
     }
@@ -251,7 +254,10 @@ impl<T: Tag> crate::view::View for TypedElement<T> {
             }
         }
 
-        if let Err(e) = parent.append_child(self.as_node()).map_err(SilexError::from) {
+        if let Err(e) = parent
+            .append_child(self.as_node())
+            .map_err(SilexError::from)
+        {
             handle_error(e);
         }
     }

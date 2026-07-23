@@ -13,9 +13,7 @@ use silex_core::{
     reactivity::Effect,
     traits::{IntoRx, RxGet, RxValue},
 };
-use silex_dom::attribute::{
-    ApplyTarget, ApplyToDom, IntoStorable, ReactiveApply,
-};
+use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable, ReactiveApply};
 use silex_hash::{
     css::{CssHasher, Normalized, encode_base36},
     css_hasher,

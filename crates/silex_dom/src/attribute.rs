@@ -373,10 +373,7 @@ impl AttributeBuilder for crate::view::AnyView {
         V: IntoStorable,
     {
         use crate::view::ApplyAttributes;
-        self.apply_attributes(vec![PendingAttribute::build(
-            value.into_storable(),
-            target,
-        )]);
+        self.apply_attributes(vec![PendingAttribute::build(value.into_storable(), target)]);
         self
     }
 
@@ -429,10 +426,7 @@ mod tests {
         let signal = RwSignal::new(true);
         let rx = signal.into_rx();
         let op = ("active", rx).into_op(ApplyTarget::Class);
-        assert_eq!(
-            op,
-            AttrOp::class_toggle(Cow::Borrowed("active"), rx)
-        );
+        assert_eq!(op, AttrOp::class_toggle(Cow::Borrowed("active"), rx));
     }
 
     #[test]
@@ -440,10 +434,7 @@ mod tests {
         let signal = RwSignal::new("10px".to_string());
         let rx = signal.into_rx();
         let op = ("margin", rx).into_op(ApplyTarget::Style);
-        assert_eq!(
-            op,
-            AttrOp::style_property(Cow::Borrowed("margin"), rx)
-        );
+        assert_eq!(op, AttrOp::style_property(Cow::Borrowed("margin"), rx));
     }
 
     #[test]
@@ -472,7 +463,10 @@ mod tests {
 
         match &consolidated[0] {
             AttrOp::CombinedClasses(cc) => {
-                assert_eq!(cc.statics, vec![Cow::Borrowed("btn"), Cow::Borrowed("active")]);
+                assert_eq!(
+                    cc.statics,
+                    vec![Cow::Borrowed("btn"), Cow::Borrowed("active")]
+                );
                 assert_eq!(cc.toggles.len(), 1);
                 assert_eq!(cc.toggles[0].0, "highlight");
             }

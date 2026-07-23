@@ -65,7 +65,10 @@ pub fn generate_module_content(
                 fn_name.clone()
             };
 
-            code.push_str(&format!("#[rustfmt::skip] #[macro_export] macro_rules! {} {{\n", macro_name));
+            code.push_str(&format!(
+                "#[rustfmt::skip] #[macro_export] macro_rules! {} {{\n",
+                macro_name
+            ));
             code.push_str(&format!(
                 "    () => {{ $crate::{}::{}($crate::ViewNil) }};\n",
                 namespace, fn_name

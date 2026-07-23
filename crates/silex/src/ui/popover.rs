@@ -228,11 +228,7 @@ pub fn PopoverContent(
 
     let offset_val = rx!(move || {
         let o = side_offset.get();
-        if o == 0.0 {
-            4.0
-        } else {
-            o
-        }
+        if o == 0.0 { 4.0 } else { o }
     });
 
     let wrapper_cls =
@@ -334,12 +330,13 @@ pub fn PopoverContent(
         if is_open.get() {
             crate::components::Portal(view_chain!(
                 // Overlay for click-outside
-                div(())
-                    .class(tw!("fixed inset-0 z-50 bg-transparent"))
-                    .on(event::click, move |_| {
+                div(()).class(tw!("fixed inset-0 z-50 bg-transparent")).on(
+                    event::click,
+                    move |_| {
                         ctx.close();
                         on_close.call(());
-                    }),
+                    }
+                ),
                 // Content wrapper
                 div(div(stored.get())
                     .attr("data-slot", "popover-content")
@@ -418,5 +415,7 @@ where
         }
     });
 
-    div(children(ctx)).attr("data-slot", "popover").class(root_cls)
+    div(children(ctx))
+        .attr("data-slot", "popover")
+        .class(root_cls)
 }

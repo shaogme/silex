@@ -35,11 +35,7 @@ pub fn Input(
 
     let type_val = rx!(move || {
         let t = r#type.get();
-        if t.is_empty() {
-            "text".to_string()
-        } else {
-            t
-        }
+        if t.is_empty() { "text".to_string() } else { t }
     });
 
     input()
@@ -50,7 +46,8 @@ pub fn Input(
         .class(input_cls)
         .on(event::input, move |e: web_sys::InputEvent| {
             if let Some(target) = e.target()
-                && let Ok(input_el) = wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlInputElement>(target)
+                && let Ok(input_el) =
+                    wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlInputElement>(target)
             {
                 on_input.call(input_el.value());
             }
