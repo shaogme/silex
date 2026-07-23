@@ -64,17 +64,21 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     // 处理包含条件分支句段的情形
     let mut inits_tokens = Vec::new();
     let mut reactive_body = Vec::new();
-    let mut compiled_cache = ::std::collections::HashMap::<String, String>::new();
+    let mut compiled_cache = ::std::collections::HashMap::<u64, String>::new();
 
     let mut compile_rules_cached = |rules: Vec<ast::UtilityRule>| -> Result<String> {
         if rules.is_empty() {
             return Ok(String::new());
         }
-        let css_block = build_css_block_from_rules(rules)?;
-        let key = quote! { #css_block }.to_string();
+        use ::std::hash::{Hash, Hasher};
+        let mut hasher = ::std::collections::hash_map::DefaultHasher::new();
+        rules.hash(&mut hasher);
+        let key = hasher.finish();
+
         if let Some(cls) = compiled_cache.get(&key) {
             return Ok(cls.clone());
         }
+        let css_block = build_css_block_from_rules(rules)?;
         let compile_result =
             crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)?;
         let cls_name = compile_result.class_name.clone();
@@ -441,10 +445,7 @@ mod tests {
 
     #[test]
     fn test_conditional_tw_macro_deduplication() {
-        let ts = quote!(
-            "p-4",
-            (is_active, "bg-red-500", "bg-red-500")
-        );
+        let ts = quote!("p-4", (is_active, "bg-red-500", "bg-red-500"));
         let output = tw_impl(ts).unwrap();
         let code = output.to_string();
         // 每个编译块的 generate_inits 生成 2 个 inject_style 调用 (static_css 和 component_css)

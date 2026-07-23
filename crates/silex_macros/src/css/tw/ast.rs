@@ -68,6 +68,30 @@ impl PartialEq for UtilityValue {
     }
 }
 
+impl std::hash::Hash for UtilityValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Self::Keyword(k) => k.hash(state),
+            Self::Numeric(v, u) => {
+                v.to_bits().hash(state);
+                u.hash(state);
+            }
+            Self::HexColor(c) => c.hash(state),
+            Self::ThemeVar(v, o) => {
+                v.hash(state);
+                if let Some(alpha) = o {
+                    alpha.to_bits().hash(state);
+                }
+            }
+            Self::ArbitraryLiteral(a) => a.hash(state),
+            Self::DynamicExpr(e, _) => {
+                quote::quote!(#e).to_string().hash(state);
+            }
+        }
+    }
+}
+
 /// 归一化的 Utility 规则
 #[derive(Debug, Clone)]
 pub struct UtilityRule {
@@ -75,6 +99,14 @@ pub struct UtilityRule {
     pub css_property: String,
     pub value: UtilityValue,
     pub span: Span,
+}
+
+impl std::hash::Hash for UtilityRule {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.modifiers.hash(state);
+        self.css_property.hash(state);
+        self.value.hash(state);
+    }
 }
 
 /// `tw!` 宏的片段规则类型
