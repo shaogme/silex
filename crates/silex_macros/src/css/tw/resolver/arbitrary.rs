@@ -13,6 +13,13 @@ pub fn parse_arbitrary_syntax(token: &str) -> Option<(&str, &str)> {
         let raw_val = &token[open_idx + 1..token.len() - 1];
         return Some((prefix, raw_val));
     }
+    if let Some(open_idx) = token.find('(')
+        && token.ends_with(')')
+    {
+        let prefix = &token[..open_idx];
+        let raw_val = &token[open_idx + 1..token.len() - 1];
+        return Some((prefix, raw_val));
+    }
     None
 }
 
@@ -196,6 +203,7 @@ pub fn resolve_arbitrary(
         "via" => ("--tw-gradient-via", false),
         "to" => ("--tw-gradient-to", false),
         "divide" => ("border-color", true),
+        "origin" => ("transform-origin", false),
         _ => (clean_prefix, false),
     };
 
@@ -215,14 +223,20 @@ pub fn resolve_arbitrary(
             syn::parse_str(expr_inner).map_err(|e| Error::new(span, e.to_string()))?;
         UtilityValue::DynamicExpr(expr, span)
     } else {
+        let val_str = if norm_val.starts_with("--") {
+            format!("var({})", norm_val)
+        } else {
+            norm_val
+        };
+
         match clean_prefix {
-            "translate-x" => UtilityValue::ArbitraryLiteral(format!("translateX({})", norm_val)),
-            "translate-y" => UtilityValue::ArbitraryLiteral(format!("translateY({})", norm_val)),
-            "rotate" => UtilityValue::ArbitraryLiteral(format!("rotate({})", norm_val)),
-            "scale" => UtilityValue::ArbitraryLiteral(format!("scale({})", norm_val)),
-            "scale-x" => UtilityValue::ArbitraryLiteral(format!("scaleX({})", norm_val)),
-            "scale-y" => UtilityValue::ArbitraryLiteral(format!("scaleY({})", norm_val)),
-            _ => UtilityValue::ArbitraryLiteral(norm_val),
+            "translate-x" => UtilityValue::ArbitraryLiteral(format!("translateX({})", val_str)),
+            "translate-y" => UtilityValue::ArbitraryLiteral(format!("translateY({})", val_str)),
+            "rotate" => UtilityValue::ArbitraryLiteral(format!("rotate({})", val_str)),
+            "scale" => UtilityValue::ArbitraryLiteral(format!("scale({})", val_str)),
+            "scale-x" => UtilityValue::ArbitraryLiteral(format!("scaleX({})", val_str)),
+            "scale-y" => UtilityValue::ArbitraryLiteral(format!("scaleY({})", val_str)),
+            _ => UtilityValue::ArbitraryLiteral(val_str),
         }
     };
 

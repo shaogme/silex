@@ -59,5 +59,5 @@ pub fn Button(
         }
     });
 
-    button(children).class(cls)
+    button(children).attr("data-slot", "button").class(cls)
 }

@@ -14,7 +14,7 @@ use silex_core::{
     traits::{IntoRx, RxGet, RxValue},
 };
 use silex_dom::attribute::{
-    ApplyTarget, ApplyToDom, IntoStorable, OwnedApplyTarget, ReactiveApply,
+    ApplyTarget, ApplyToDom, IntoStorable, ReactiveApply,
 };
 use silex_hash::{
     css::{CssHasher, Normalized, encode_base36},
@@ -325,7 +325,7 @@ fn generate_css_recursive(
 }
 
 impl ReactiveApply for Style {
-    fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: Element, _target: OwnedApplyTarget) {
+    fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: Element, _target: ApplyTarget) {
         let el = el.clone();
         Effect::new(move |prev_class: Option<String>| {
             if let Some(c) = &prev_class {

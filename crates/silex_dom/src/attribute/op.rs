@@ -555,7 +555,6 @@ pub(crate) fn apply_attr_internal(el: &Element, name: &str, attr: &Attr) {
             let _ = el.set_attribute(name, "");
         }
         Attr::String(val) => match name {
-            "class" => el.set_class_name(val),
             "style" => {
                 if let Some(style) = get_style_decl(el) {
                     style.set_css_text(val);

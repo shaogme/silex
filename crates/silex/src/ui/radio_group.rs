@@ -1,0 +1,140 @@
+use silex_core::prelude::*;
+use silex_dom::prelude::*;
+use silex_html::{DataAttributes, FormAttributes, button, div, input, span};
+use silex_macros::{component, tw};
+
+#[component]
+pub fn RadioGroup(
+    children: AnyView,
+    #[prop(into)]
+    #[chain(default)]
+    orientation: Signal<String>,
+    #[prop(into)]
+    #[chain(default)]
+    disabled: Signal<bool>,
+    #[prop(into)]
+    #[chain(default)]
+    class: Signal<String>,
+) -> impl View {
+    let orient = rx!(move || {
+        if orientation.get() == "horizontal" {
+            "horizontal"
+        } else {
+            "vertical"
+        }
+    });
+
+    let group_cls = rx!(move || {
+        let base = tw!(
+            "grid gap-3 data-[orientation=horizontal]:flex data-[orientation=horizontal]:flex-row data-[orientation=horizontal]:items-center data-[disabled]:opacity-50 data-[disabled]:pointer-events-none"
+        );
+        let extra = class.get();
+        if extra.is_empty() {
+            base.to_string()
+        } else {
+            format!("{} {}", base, extra)
+        }
+    });
+
+    div(children)
+        .data_slot("radio-group")
+        .data_orientation(orient)
+        .data_disabled(rx!(move || if disabled.get() { Some("") } else { None }))
+        .class(group_cls)
+}
+
+#[component]
+pub fn RadioGroupItem(
+    value: &'static str,
+    #[prop(into)]
+    #[chain(default)]
+    selected_value: Signal<String>,
+    #[prop(into)]
+    #[chain(default)]
+    name: Signal<String>,
+    #[prop(into)]
+    #[chain(default)]
+    disabled: Signal<bool>,
+    #[prop(into)]
+    #[chain(default)]
+    required: Signal<bool>,
+    #[prop(into)]
+    #[chain(default)]
+    class: Signal<String>,
+    #[prop(into)]
+    #[chain(default)]
+    on_select: Callback<&'static str>,
+    #[prop(into)]
+    #[chain(default)]
+    on_change: Callback<String>,
+) -> impl View {
+    let is_checked = rx!(move || selected_value.get() == value);
+
+    let item_cls = rx!(move || {
+        let base = tw!(
+            "relative aspect-square size-4 shrink-0 rounded-full border border-slate-300 dark:border-slate-700 text-primary shadow-xs transition-all outline-none cursor-pointer flex items-center justify-center bg-white dark:bg-slate-950 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-primary data-[state=checked]:text-primary"
+        );
+        let extra = class.get();
+        if extra.is_empty() {
+            base.to_string()
+        } else {
+            format!("{} {}", base, extra)
+        }
+    });
+
+    let indicator_cls = rx!(move || {
+        if is_checked.get() {
+            tw!("size-2 rounded-full bg-primary transition-transform duration-150 scale-100")
+        } else {
+            tw!(
+                "size-2 rounded-full bg-primary transition-transform duration-150 scale-0 opacity-0"
+            )
+        }
+    });
+
+    let handle_click = {
+        let on_select = on_select.clone();
+        let on_change = on_change.clone();
+        move |_| {
+            if !disabled.get() {
+                on_select.call(value);
+                on_change.call(value.to_string());
+            }
+        }
+    };
+
+    button(view_chain!(
+        // Hidden native radio input for Accessibility & Form submission (referencing slider.rs pattern)
+        input()
+            .type_("radio")
+            .name(name)
+            .value(value)
+            .checked(is_checked)
+            .disabled(disabled)
+            .required(required)
+            .class(tw!("sr-only absolute opacity-0 pointer-events-none")),
+        // Visual Radio Indicator Dot
+        span(())
+            .data_slot("radio-group-indicator")
+            .class(indicator_cls)
+    ))
+    .data_slot("radio-group-item")
+    .data_value(value)
+    .data_state(rx!(move || if is_checked.get() {
+        "checked"
+    } else {
+        "unchecked"
+    }))
+    .data_disabled(rx!(move || if disabled.get() { Some("") } else { None }))
+    .aria_checked(rx!(move || if is_checked.get() { "true" } else { "false" }))
+    .attr(
+        "disabled",
+        rx!(move || if disabled.get() {
+            Some("disabled")
+        } else {
+            None
+        }),
+    )
+    .class(item_cls)
+    .on_click(handle_click)
+}

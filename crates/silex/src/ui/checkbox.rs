@@ -1,6 +1,6 @@
 use silex_core::prelude::*;
 use silex_dom::prelude::*;
-use silex_html::button;
+use silex_html::{button, path, svg};
 use silex_macros::{component, tw};
 
 #[component]
@@ -33,7 +33,25 @@ pub fn Checkbox(
         }
     });
 
-    let check_icon = rx!(move || if checked.get() { "✓" } else { "" });
+    let check_icon = rx!(move || {
+        if checked.get() {
+            let icon_cls = tw!("size-3.5");
+            svg(path().attr("d", "M20 6 9 17l-5-5"))
+                .attr("xmlns", "http://www.w3.org/2000/svg")
+                .attr("width", "14")
+                .attr("height", "14")
+                .attr("viewBox", "0 0 24 24")
+                .attr("fill", "none")
+                .attr("stroke", "currentColor")
+                .attr("stroke-width", "3")
+                .attr("stroke-linecap", "round")
+                .attr("stroke-linejoin", "round")
+                .class(icon_cls.to_string())
+                .into_any()
+        } else {
+            ().into_any()
+        }
+    });
 
     button(check_icon)
         .class(cls)

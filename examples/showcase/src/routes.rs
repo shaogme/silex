@@ -8,7 +8,6 @@ use crate::persistence;
 
 use crate::css::AppTheme;
 use silex::prelude::*;
-use silex::reexports::wasm_bindgen::JsCast;
 use silex::reexports::web_sys::{HtmlElement, MouseEvent};
 
 #[component]
@@ -176,13 +175,13 @@ pub fn NavBar() -> impl View {
                 .color(AppTheme::TEXT)
         )
         .on(event::mouseover, move |e: MouseEvent| {
-            let target = e.target().unwrap().unchecked_into::<HtmlElement>();
+            let target = event_target::<HtmlElement>(&e);
             let _ = target
                 .style()
                 .set_property("background", "rgba(255,255,255,0.2)");
         })
         .on(event::mouseout, move |e: MouseEvent| {
-            let target = e.target().unwrap().unchecked_into::<HtmlElement>();
+            let target = event_target::<HtmlElement>(&e);
             let _ = target
                 .style()
                 .set_property("background", "rgba(255,255,255,0.1)");

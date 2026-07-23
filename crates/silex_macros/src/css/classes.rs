@@ -34,7 +34,7 @@ pub fn classes_impl(input: TokenStream) -> Result<TokenStream> {
             ClassItem::Simple(e) => quote! { #e },
             ClassItem::Conditional(cls, cond) => quote! { (#cls, #cond) },
         };
-        quote! { ::silex::dom::attribute::ApplyToDom::into_op(#val, ::silex::dom::attribute::OwnedApplyTarget::Class) }
+        quote! { ::silex::dom::attribute::ApplyToDom::into_op(#val, ::silex::dom::attribute::ApplyTarget::Class) }
     });
 
     Ok(quote! { ::silex::dom::attribute::AttributeGroup(vec![ #(#expanded),* ]) })

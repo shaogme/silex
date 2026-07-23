@@ -39,6 +39,14 @@ impl<T> Clone for StoredValue<T> {
 }
 impl<T> Copy for StoredValue<T> {}
 
+impl<T> PartialEq for StoredValue<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl<T> Eq for StoredValue<T> {}
+
 impl<T: RxData> StoredValue<T> {
     pub fn new(value: T) -> Self {
         let id = store_value(value);

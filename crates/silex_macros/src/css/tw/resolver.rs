@@ -8,7 +8,7 @@ use crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};
 use proc_macro2::Span;
 use syn::{Error, Result};
 
-pub(super) const RING_BOX_SHADOW: &str = "var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width, 0px) var(--tw-ring-offset-color, #0000), 0 0 0 var(--tw-ring-width, 3px) var(--tw-ring-color, rgba(59, 130, 246, 0.5)), var(--tw-shadow, 0 0 #0000)";
+pub(super) const RING_BOX_SHADOW: &str = "var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width, 0px) var(--tw-ring-offset-color, #0000), 0 0 0 var(--tw-ring-width, 0px) var(--tw-ring-color, rgba(59, 130, 246, 0.5)), var(--tw-shadow, 0 0 #0000)";
 
 pub(super) const DIVIDE_SELECTOR: &str = "& > :not([hidden]) ~ :not([hidden])";
 

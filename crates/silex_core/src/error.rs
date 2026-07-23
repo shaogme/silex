@@ -57,7 +57,7 @@ pub fn pop_context() -> Option<ErrorContext> {
 }
 
 /// Retrieves the active ErrorContext from the top of the thread-local stack.
-pub fn use_context() -> Option<ErrorContext> {
+fn use_context() -> Option<ErrorContext> {
     ERROR_CONTEXT_STACK.with(|stack| stack.borrow().last().cloned())
 }
 

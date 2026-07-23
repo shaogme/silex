@@ -154,6 +154,15 @@ impl<T> PartialEq for RwSignal<T> {
 
 impl<T> Eq for RwSignal<T> {}
 
+impl<T> std::fmt::Debug for RwSignal<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RwSignal")
+            .field("read", &self.read)
+            .field("write", &self.write)
+            .finish()
+    }
+}
+
 impl<T> Hash for RwSignal<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.read.hash(state);

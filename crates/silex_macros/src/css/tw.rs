@@ -653,4 +653,40 @@ mod tests {
                     .contains("[data-slot=\"avatar\"]")
         );
     }
+
+    #[test]
+    fn test_pseudo_class_child_selectors() {
+        let input: TwInput =
+            syn::parse2(quote!("border-b last:border-b-0 first:border-t-0")).unwrap();
+        let css_block = build_css_block_from_tw(input).unwrap();
+        let compile_result = crate::css::compiler::CssCompiler::compile(
+            quote! { #css_block },
+            proc_macro2::Span::call_site(),
+            false,
+        )
+        .unwrap();
+        assert!(compile_result.component_css.contains(":last-child"));
+        assert!(compile_result.component_css.contains(":first-child"));
+    }
+
+    #[test]
+    fn test_origin_parenthesis_variable() {
+        let input: TwInput =
+            syn::parse2(quote!("origin-(--radix-popover-content-transform-origin)")).unwrap();
+        let css_block = build_css_block_from_tw(input).unwrap();
+        let compile_result = crate::css::compiler::CssCompiler::compile(
+            quote! { #css_block },
+            proc_macro2::Span::call_site(),
+            false,
+        )
+        .unwrap();
+        assert!(
+            compile_result
+                .component_css
+                .contains("transform-origin:var(--radix-popover-content-transform-origin)")
+                || compile_result
+                    .component_css
+                    .contains("transform-origin: var(--radix-popover-content-transform-origin)")
+        );
+    }
 }

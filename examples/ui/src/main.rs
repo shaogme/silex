@@ -1,5 +1,7 @@
 use silex::persist::Persistent;
 use silex::prelude::*;
+use silex::reexports::web_sys;
+use silex::ui::{Button, Dialog, Input, Progress, Switch, Textarea, *};
 
 #[component]
 fn ButtonShowcase() -> impl View {
@@ -93,7 +95,7 @@ fn FormControlsShowcase() -> impl View {
                 )).class(tw!("flex items-center gap-2")),
 
                 div(view_chain!(
-                    UiSwitch()
+                    Switch()
                         .checked(switch_val)
                         .on_change(move |v| set_switch_val.set(v)),
                     span("Airplane Mode").class(tw!("text-sm font-medium text-slate-900 dark:text-slate-100"))
@@ -250,6 +252,122 @@ fn FeedbackAndDataShowcase() -> impl View {
 }
 
 #[component]
+fn NewComponentsShowcase() -> impl View {
+    let (slider_val, set_slider_val) = Signal::pair(65.0f64);
+    let (toggle_pressed, set_toggle_pressed) = Signal::pair(true);
+    let (radio_val, set_radio_val) = Signal::pair("option-1".to_string());
+    let (popover_open, set_popover_open) = Signal::pair(false);
+    let (accordion_open, set_accordion_open) = Signal::pair(true);
+
+    Card(view_chain!(
+        CardHeader(view_chain!(
+            CardTitle("Extended shadcn/ui Components"),
+            CardDescription("1:1 ported Slider, Tooltip, Toggle, RadioGroup, Accordion & Popover.")
+        )),
+        CardContent(view_chain!(
+            // Slider & Toggle
+            div(view_chain!(
+                div(view_chain!(
+                    div(view_chain!(
+                        span("Volume Slider").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400")),
+                        span(rx!(move || format!("{:.0}%", slider_val.get()))).class(tw!("text-xs font-bold text-indigo-600 dark:text-indigo-400"))
+                    )).class(tw!("flex justify-between items-center mb-2")),
+                    Slider()
+                        .value(slider_val)
+                        .min(0.0)
+                        .max(100.0)
+                        .on_change(move |v| set_slider_val.set(v))
+                )).class(tw!("flex-1")),
+
+                div(view_chain!(
+                    span("Bold Toggle").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1 block")),
+                    Toggle(span("B").class(tw!("font-bold")))
+                        .variant("outline")
+                        .pressed(toggle_pressed)
+                        .on_change(move |p| set_toggle_pressed.set(p))
+                )).class(tw!("flex flex-col items-start"))
+            )).class(tw!("flex items-center gap-6 mb-6")),
+
+            // Tooltip & Popover
+            div(view_chain!(
+                Tooltip(move |ctx| view_chain!(
+                    TooltipTrigger(
+                        Button("Hover for Tooltip")
+                            .variant("outline")
+                            .size("sm")
+                            .on_click(move |_| {
+                                web_sys::console::log_1(&"Tooltip button clicked!".into());
+                            })
+                    )
+                    .ctx(ctx),
+                    TooltipContent(span("This tooltip was ported from shadcn/ui!"))
+                        .ctx(ctx)
+                        .side("top")
+                )),
+
+                Popover(move |ctx| view_chain!(
+                    PopoverTrigger(
+                        Button("Open Popover")
+                            .variant("default")
+                            .size("sm")
+                    )
+                    .ctx(ctx),
+                    PopoverContent(view_chain!(
+                        PopoverHeader(view_chain!(
+                            PopoverTitle("Dimensions"),
+                            PopoverDescription("Set the height and width for the layer.")
+                        )),
+                        div(view_chain!(
+                            Input().value("100%").placeholder("Width"),
+                            Input().value("300px").placeholder("Height")
+                        )).class(tw!("grid gap-2 py-2")),
+                        div(view_chain!(
+                            PopoverClose(
+                                Button("Close")
+                                    .variant("outline")
+                                    .size("sm")
+                            )
+                            .ctx(ctx)
+                        )).class(tw!("flex justify-end pt-2"))
+                    ))
+                    .ctx(ctx)
+                ))
+            )).class(tw!("flex items-center gap-4 mb-6")),
+
+            // RadioGroup & Accordion
+            div(view_chain!(
+                div(view_chain!(
+                    span("Theme Style").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 block")),
+                    RadioGroup(view_chain!(
+                        div(view_chain!(
+                            RadioGroupItem("option-1").selected_value(radio_val).on_select(move |v: &'static str| set_radio_val.set(v.to_string())),
+                            span("Default").class(tw!("text-xs font-medium text-slate-900 dark:text-slate-100"))
+                        )).class(tw!("flex items-center gap-2")),
+                        div(view_chain!(
+                            RadioGroupItem("option-2").selected_value(radio_val).on_select(move |v: &'static str| set_radio_val.set(v.to_string())),
+                            span("Comfortable").class(tw!("text-xs font-medium text-slate-900 dark:text-slate-100"))
+                        )).class(tw!("flex items-center gap-2"))
+                    ))
+                )).class(tw!("flex-1")),
+
+                div(view_chain!(
+                    span("Accordion").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 block")),
+                    Accordion(view_chain!(
+                        AccordionItem(view_chain!(
+                            AccordionTrigger("Is Silex 1:1 compatible?")
+                                .open(accordion_open)
+                                .on_click(move |_| set_accordion_open.update(|v| *v = !*v)),
+                            AccordionContent("Yes! Every layout, utility class and reactivity behavior matches shadcn/ui React components.")
+                                .open(accordion_open)
+                        ), "item-1")
+                    ))
+                )).class(tw!("flex-1"))
+            )).class(tw!("flex flex-col sm:flex-row gap-6 p-4 bg-slate-50 dark:bg-slate-900 rounded-lg border border-solid border-slate-200 dark:border-slate-800"))
+        ))
+    ))
+}
+
+#[component]
 fn App() -> impl View {
     let is_dark = Persistent::builder("silex-ui-dark")
         .local()
@@ -271,48 +389,47 @@ fn App() -> impl View {
     });
 
     div(view_chain!(
+        // Header
         div(view_chain!(
-            // Header
             div(view_chain!(
-                div(view_chain!(
-                    span("🎨 Silex UI Kit").class(tw!(
-                        "text-xs font-black uppercase tracking-widest px-3.5 py-1.5 bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 rounded-full border border-solid border-indigo-200 dark:border-indigo-800/60 shadow-sm"
-                    )),
-                    span("shadcn/ui v4 Ported Component Suite").class(tw!(
-                        "hidden sm:inline-block text-xs font-semibold text-slate-500 dark:text-slate-400"
-                    ))
-                )).class(tw!("flex items-center gap-3")),
+                span("🎨 Silex UI Kit").class(tw!(
+                    "text-xs font-black uppercase tracking-widest px-3.5 py-1.5 bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 rounded-full border border-solid border-indigo-200 dark:border-indigo-800/60 shadow-sm"
+                )),
+                span("shadcn/ui v4 Ported Component Suite").class(tw!(
+                    "hidden sm:inline-block text-xs font-semibold text-slate-500 dark:text-slate-400"
+                ))
+            )).class(tw!("flex items-center gap-3")),
 
-                button(rx!(if *$is_dark { "🌙 Dark Mode" } else { "☀️ Light Mode" }))
-                    .class(tw!(
-                        "flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-amber-300 font-bold text-xs rounded-full cursor-pointer border border-solid border-slate-300 dark:border-slate-700 transition-all duration-300 hover:scale-105 shadow-sm"
-                    ))
-                    .on_click(move |_| is_dark.update(|d| *d = !*d))
-            )).class(tw!("w-full flex items-center justify-between mb-8 max-w-6xl mx-auto")),
+            button(rx!(if *$is_dark { "🌙 Dark Mode" } else { "☀️ Light Mode" }))
+                .class(tw!(
+                    "flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-amber-300 font-bold text-xs rounded-full cursor-pointer border border-solid border-slate-300 dark:border-slate-700 transition-all duration-300 hover:scale-105 shadow-sm"
+                ))
+                .on_click(move |_| is_dark.update(|d| *d = !*d))
+        )).class(tw!("w-full flex items-center justify-between mb-8 max-w-6xl mx-auto")),
 
-            // Hero
+        // Hero
+        div(view_chain!(
+            h1("Pure Rust shadcn/ui Component Library")
+                .class(tw!("text-3xl sm:text-5xl font-black text-slate-900 dark:text-white tracking-tight mb-4 text-center")),
+            p("Zero-runtime overhead Tailwind CSS styling with fine-grained signal reactivity and type-safe Rust components.")
+                .class(tw!("text-sm sm:text-base text-slate-600 dark:text-slate-300 max-w-2xl text-center leading-relaxed mb-8"))
+        )).class(tw!("flex flex-col items-center max-w-6xl mx-auto mb-10")),
+
+        // Masonry Component Grid
+        div(view_chain!(
             div(view_chain!(
-                h1("Pure Rust shadcn/ui Component Library")
-                    .class(tw!("text-3xl sm:text-5xl font-black text-slate-900 dark:text-white tracking-tight mb-4 text-center")),
-                p("Zero-runtime overhead Tailwind CSS styling with fine-grained signal reactivity and type-safe Rust components.")
-                    .class(tw!("text-sm sm:text-base text-slate-600 dark:text-slate-300 max-w-2xl text-center leading-relaxed mb-8"))
-            )).class(tw!("flex flex-col items-center max-w-6xl mx-auto mb-10")),
+                ButtonShowcase(),
+                FormControlsShowcase()
+            )).class(tw!("flex flex-col gap-6 w-full")),
 
-            // Masonry Component Grid
             div(view_chain!(
-                div(view_chain!(
-                    ButtonShowcase(),
-                    FormControlsShowcase()
-                )).class(tw!("flex flex-col gap-6 w-full")),
-
-                div(view_chain!(
-                    TabsAndDialogShowcase(),
-                    FeedbackAndDataShowcase()
-                )).class(tw!("flex flex-col gap-6 w-full"))
-            )).class(tw!("grid grid-cols-1 md:grid-cols-2 gap-6 items-start w-full max-w-6xl mx-auto"))
-        ))
-        .class(tw!("min-h-screen p-4 sm:p-8 transition-colors duration-300 bg-slate-100 text-slate-900 dark:bg-slate-900 dark:text-slate-50"))
+                TabsAndDialogShowcase(),
+                FeedbackAndDataShowcase(),
+                NewComponentsShowcase()
+            )).class(tw!("flex flex-col gap-6 w-full"))
+        )).class(tw!("grid grid-cols-1 md:grid-cols-2 gap-6 items-start w-full max-w-6xl mx-auto"))
     ))
+    .class(tw!("min-h-screen p-4 sm:p-8 transition-colors duration-300 bg-slate-100 text-slate-900 dark:bg-slate-900 dark:text-slate-50"))
     .class(rx!(if *$is_dark { "dark" } else { "" }))
 }
 

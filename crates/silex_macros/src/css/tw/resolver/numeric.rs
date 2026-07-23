@@ -339,13 +339,69 @@ pub fn resolve_numeric_utility(
         "translate-x" => vec![make_rule(
             mods,
             "transform",
-            UtilityValue::ArbitraryLiteral(format!("translateX({}rem)", format_num_clean(rem_val))),
+            UtilityValue::ArbitraryLiteral(if rem_val == 0.0 {
+                "translateX(0px)".to_string()
+            } else {
+                format!("translateX({}rem)", format_num_clean(rem_val))
+            }),
             span,
         )],
         "translate-y" => vec![make_rule(
             mods,
             "transform",
-            UtilityValue::ArbitraryLiteral(format!("translateY({}rem)", format_num_clean(rem_val))),
+            UtilityValue::ArbitraryLiteral(if rem_val == 0.0 {
+                "translateY(0px)".to_string()
+            } else {
+                format!("translateY({}rem)", format_num_clean(rem_val))
+            }),
+            span,
+        )],
+        "fade-in" => vec![make_rule(
+            mods,
+            "--tw-enter-opacity",
+            num_unitless(val_num / 100.0),
+            span,
+        )],
+        "fade-out" => vec![make_rule(
+            mods,
+            "--tw-exit-opacity",
+            num_unitless(val_num / 100.0),
+            span,
+        )],
+        "zoom-in" => vec![make_rule(
+            mods,
+            "--tw-enter-scale",
+            num_unitless(val_num / 100.0),
+            span,
+        )],
+        "zoom-out" => vec![make_rule(
+            mods,
+            "--tw-exit-scale",
+            num_unitless(val_num / 100.0),
+            span,
+        )],
+        "slide-in-from-top" => vec![make_rule(
+            mods,
+            "--tw-enter-translate-y",
+            UtilityValue::ArbitraryLiteral(format!("-{}rem", format_num_clean(rem_val))),
+            span,
+        )],
+        "slide-in-from-bottom" => vec![make_rule(
+            mods,
+            "--tw-enter-translate-y",
+            UtilityValue::ArbitraryLiteral(format!("{}rem", format_num_clean(rem_val))),
+            span,
+        )],
+        "slide-in-from-left" => vec![make_rule(
+            mods,
+            "--tw-enter-translate-x",
+            UtilityValue::ArbitraryLiteral(format!("-{}rem", format_num_clean(rem_val))),
+            span,
+        )],
+        "slide-in-from-right" => vec![make_rule(
+            mods,
+            "--tw-enter-translate-x",
+            UtilityValue::ArbitraryLiteral(format!("{}rem", format_num_clean(rem_val))),
             span,
         )],
         _ => return None,

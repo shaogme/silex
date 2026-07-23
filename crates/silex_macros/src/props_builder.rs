@@ -458,11 +458,10 @@ impl BuilderContext {
                 where
                     __SilexValue: ::silex::dom::attribute::IntoStorable,
                 {
-                    let owned_target = ::silex::dom::attribute::OwnedApplyTarget::from(target);
                     self._pending_attrs.push(
                         ::silex::dom::attribute::PendingAttribute::build(
                             value.into_storable(),
-                            owned_target,
+                            target,
                         )
                     );
                     self

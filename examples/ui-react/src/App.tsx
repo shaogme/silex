@@ -20,6 +20,12 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
+import { Slider } from "@/components/ui/slider"
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
+import { Toggle } from "@/components/ui/toggle"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion"
+import { Popover, PopoverTrigger, PopoverContent, PopoverHeader, PopoverTitle, PopoverDescription } from "@/components/ui/popover"
 
 function ButtonShowcase() {
   return (
@@ -293,6 +299,131 @@ function FeedbackAndDataShowcase() {
   )
 }
 
+function NewComponentsShowcase() {
+  const [sliderVal, setSliderVal] = useState(65)
+  const [togglePressed, setTogglePressed] = useState(true)
+  const [radioVal, setRadioVal] = useState("option-1")
+  const [popoverOpen, setPopoverOpen] = useState(false)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Extended shadcn/ui Components</CardTitle>
+        <CardDescription>
+          1:1 ported Slider, Tooltip, Toggle, RadioGroup, Accordion & Popover.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {/* Slider & Toggle */}
+        <div className="flex items-center gap-6 mb-6">
+          <div className="flex-1">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                Volume Slider
+              </span>
+              <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                {sliderVal}%
+              </span>
+            </div>
+            <Slider
+              value={[sliderVal]}
+              min={0}
+              max={100}
+              onValueChange={(val: number[]) => setSliderVal(val[0])}
+            />
+          </div>
+
+          <div className="flex flex-col items-start">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1 block">
+              Bold Toggle
+            </span>
+            <Toggle
+              variant="outline"
+              pressed={togglePressed}
+              onPressedChange={setTogglePressed}
+            >
+              <span className="font-bold">B</span>
+            </Toggle>
+          </div>
+        </div>
+
+        {/* Tooltip & Popover */}
+        <div className="flex items-center gap-4 mb-6">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="sm">
+                  Hover for Tooltip
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <span>This tooltip was ported from shadcn/ui!</span>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="default" size="sm">
+                Open Popover
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent>
+              <PopoverHeader>
+                <PopoverTitle>Dimensions</PopoverTitle>
+                <PopoverDescription>
+                  Set the height and width for the layer.
+                </PopoverDescription>
+              </PopoverHeader>
+              <div className="grid gap-2 py-2">
+                <Input defaultValue="100%" placeholder="Width" />
+                <Input defaultValue="300px" placeholder="Height" />
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {/* RadioGroup & Accordion */}
+        <div className="flex flex-col sm:flex-row gap-6 p-4 bg-slate-50 dark:bg-slate-900 rounded-lg border border-solid border-slate-200 dark:border-slate-800">
+          <div className="flex-1">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 block">
+              Theme Style
+            </span>
+            <RadioGroup value={radioVal} onValueChange={setRadioVal}>
+              <div className="flex items-center gap-2">
+                <RadioGroupItem value="option-1" id="r1" />
+                <label htmlFor="r1" className="text-xs font-medium text-slate-900 dark:text-slate-100 cursor-pointer">
+                  Default
+                </label>
+              </div>
+              <div className="flex items-center gap-2">
+                <RadioGroupItem value="option-2" id="r2" />
+                <label htmlFor="r2" className="text-xs font-medium text-slate-900 dark:text-slate-100 cursor-pointer">
+                  Comfortable
+                </label>
+              </div>
+            </RadioGroup>
+          </div>
+
+          <div className="flex-1">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 block">
+              Accordion
+            </span>
+            <Accordion type="single" collapsible defaultValue="item-1">
+              <AccordionItem value="item-1">
+                <AccordionTrigger>Is Silex 1:1 compatible?</AccordionTrigger>
+                <AccordionContent>
+                  Yes! Every layout, utility class and reactivity behavior matches shadcn/ui React components.
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function App() {
   const [isDark, setIsDark] = useState(() => {
     const saved = localStorage.getItem("silex-ui-dark")
@@ -350,6 +481,7 @@ export default function App() {
           <div className="flex flex-col gap-6 w-full">
             <TabsAndDialogShowcase />
             <FeedbackAndDataShowcase />
+            <NewComponentsShowcase />
           </div>
         </div>
       </div>

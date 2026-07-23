@@ -115,15 +115,31 @@ pub fn inject_shadcn_base_styles() {
                 --ring: oklch(0.556 0 0);
             }
 
-            *, ::before, ::after {
+            html, :host {
+                line-height: 1.5;
+                -webkit-text-size-adjust: 100%;
+                tab-size: 4;
+                font-family: var(--default-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji");
+            }
+
+            body {
+                background-color: var(--background);
+                color: var(--foreground);
+                margin: 0;
+                padding: 0;
+            }
+
+            *, ::before, ::after, ::backdrop, ::file-selector-button {
                 box-sizing: border-box;
+                margin: 0;
+                padding: 0;
                 border-width: 0;
                 border-style: solid;
                 border-color: var(--border);
             }
 
-            body {
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+            h1, h2, h3, h4, h5, h6, p, figure, blockquote, dl, dd {
+                margin: 0;
             }
 
             button, input, optgroup, select, textarea {

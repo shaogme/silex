@@ -1,5 +1,6 @@
 //! Silex UI Component System (Ported from shadcn/ui)
 
+pub mod accordion;
 pub mod alert;
 pub mod avatar;
 pub mod badge;
@@ -8,14 +9,20 @@ pub mod card;
 pub mod checkbox;
 pub mod dialog;
 pub mod input;
+pub mod popover;
 pub mod progress;
+pub mod radio_group;
 pub mod separator;
 pub mod skeleton;
+pub mod slider;
 pub mod switch;
 pub mod tabs;
 pub mod textarea;
 pub mod theme;
+pub mod toggle;
+pub mod tooltip;
 
+pub use accordion::*;
 pub use alert::*;
 pub use avatar::*;
 pub use badge::*;
@@ -24,10 +31,15 @@ pub use card::*;
 pub use checkbox::*;
 pub use dialog::*;
 pub use input::*;
+pub use popover::*;
 pub use progress::*;
+pub use radio_group::*;
 pub use separator::*;
 pub use skeleton::*;
+pub use slider::*;
 pub use switch::*;
 pub use tabs::*;
 pub use textarea::*;
 pub use theme::*;
+pub use toggle::*;
+pub use tooltip::*;

@@ -474,7 +474,18 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
     for modifier in modifiers.into_iter().rev() {
         match modifier {
             Modifier::PseudoClass(pc) => {
-                let sel_str = format!("&:{}", pc);
+                let pseudo = match pc.as_str() {
+                    "first" => "first-child",
+                    "last" => "last-child",
+                    "only" => "only-child",
+                    "odd" => "nth-child(odd)",
+                    "even" => "nth-child(even)",
+                    "first-of-type" => "first-of-type",
+                    "last-of-type" => "last-of-type",
+                    "only-of-type" => "only-of-type",
+                    other => other,
+                };
+                let sel_str = format!("&:{}", pseudo);
                 let ts: TokenStream = sel_str.parse().unwrap();
                 current_block = CssBlock {
                     rules: vec![CssRule::Nested(CssNested {
