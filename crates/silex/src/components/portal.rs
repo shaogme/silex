@@ -23,10 +23,9 @@ pub fn Portal(
 
     let _ = target.append_child(&container_node);
 
-    let target_clone = target.clone();
     let container_clone = container_node.clone();
     on_cleanup(move || {
-        let _ = target_clone.remove_child(&container_clone);
+        let _ = target.remove_child(&container_clone);
     });
 
     children.mount_owned(&container_node, Vec::new());

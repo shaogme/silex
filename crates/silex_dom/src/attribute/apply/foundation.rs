@@ -87,9 +87,8 @@ pub trait ApplyToDom {
     where
         Self: Sized + 'static,
     {
-        let target_clone = target.clone();
         AttrOp::Custom(std::rc::Rc::new(move |el| {
-            self.apply(el, target_clone.clone());
+            self.apply(el, target.clone());
         }))
     }
 }

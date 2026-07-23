@@ -237,9 +237,8 @@ where
             op
         } else {
             let rx = self;
-            let target_fixed = target.clone();
             AttrOp::Custom(std::rc::Rc::new(move |el| {
-                apply_rx_internal(rx, el, target_fixed.clone());
+                apply_rx_internal(rx, el, target.clone());
             }))
         }
     }
@@ -388,13 +387,8 @@ impl ReactiveApply for Attr {
             }
             _ => {
                 let rx_inner = rx;
-                let target_clone = target.clone();
                 AttrOp::Custom(std::rc::Rc::new(move |el| {
-                    <Self as ReactiveApply>::apply_to_dom(
-                        rx_inner,
-                        el.clone(),
-                        target_clone.clone(),
-                    );
+                    <Self as ReactiveApply>::apply_to_dom(rx_inner, el.clone(), target.clone());
                 }))
             }
         };
@@ -435,9 +429,8 @@ impl ReactiveApply for bool {
             }
             _ => {
                 let rx_inner = rx;
-                let target_clone = target.clone();
                 AttrOp::Custom(std::rc::Rc::new(move |el| {
-                    apply_bool_reactive_internal(el.clone(), target_clone.clone(), rx_inner);
+                    apply_bool_reactive_internal(el.clone(), target.clone(), rx_inner);
                 }))
             }
         };
@@ -643,9 +636,8 @@ where
             }))
         } else {
             let rx_inner = rx;
-            let target_clone = target.clone();
             Some(AttrOp::Custom(std::rc::Rc::new(move |el| {
-                apply_option_reactive_internal(el.clone(), target_clone.clone(), rx_inner);
+                apply_option_reactive_internal(el.clone(), target.clone(), rx_inner);
             })))
         }
     }
