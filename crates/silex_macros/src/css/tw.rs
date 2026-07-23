@@ -195,6 +195,41 @@ mod tests {
         assert!(compile_result.static_css.contains("@keyframes ping"));
         assert!(compile_result.static_css.contains("@keyframes pulse"));
         assert!(compile_result.static_css.contains("@keyframes bounce"));
+        assert!(compile_result.static_css.contains("cubic-bezier(.8,0,1,1)"));
+        assert!(!compile_result.static_css.contains("cubic - bezier"));
+    }
+
+    #[test]
+    fn test_switch_translate_x_calc_no_spaces_and_modifiers() {
+        let input: TwInput = syn::parse2(quote!(
+            "pointer-events-none block size-4 rounded-full bg-background ring-0 transition-transform translate-x-[calc(100%-2px)] dark:bg-primary-foreground"
+        )).unwrap();
+        let css_block = build_css_block_from_tw(input).unwrap();
+        let block_ts = quote! { #css_block };
+        let compile_result = crate::css::compiler::CssCompiler::compile(
+            block_ts,
+            proc_macro2::Span::call_site(),
+            false,
+        )
+        .unwrap();
+
+        // 验证 1：不能包含带空格的错误函数调用 `translateX (` 或 `calc (`
+        assert!(
+            !compile_result.component_css.contains("translateX ("),
+            "translateX should not contain space before parenthesis"
+        );
+        assert!(
+            !compile_result.component_css.contains("calc ("),
+            "calc should not contain space before parenthesis"
+        );
+
+        // 验证 2：静态/组件 CSS 中生成的平移计算必须是语法合法的无空格函数调用 `translate(calc(100% - 2px))`
+        assert!(
+            compile_result.component_css.contains("translate(calc(100% - 2px))")
+                || compile_result.component_css.contains("translateX(calc(100% - 2px))"),
+            "Expected valid translate calc syntax, got: {}",
+            compile_result.component_css
+        );
     }
 
     #[test]

@@ -229,13 +229,17 @@ fn get_atomic_subproperties(prop: &str) -> Option<&'static [&'static str]> {
 pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
     let mut covered_subproperties = HashSet::new();
     let mut deduped_rev = Vec::new();
-    let mut transform_rules: Vec<UtilityRule> = Vec::new();
+    let mut transform_rules_by_modifier: std::collections::HashMap<Vec<Modifier>, Vec<UtilityRule>> =
+        std::collections::HashMap::new();
 
     for rule in rules.into_iter().rev() {
         let prop = rule.css_property.as_str();
 
         if prop == "transform" {
-            transform_rules.push(rule);
+            transform_rules_by_modifier
+                .entry(rule.modifiers.clone())
+                .or_default()
+                .push(rule);
             continue;
         }
 
@@ -257,24 +261,26 @@ pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityR
         }
     }
 
-    // 组合合并 transform 规则 (如 translateX(-50%) translateY(-50%))
-    if !transform_rules.is_empty() {
-        transform_rules.reverse(); // 恢复原始顺序
-        let first = transform_rules[0].clone();
+    // 按相同的修饰符组合并 transform 规则 (如 translateX(-50%) translateY(-50%))
+    for (modifiers, mut t_rules) in transform_rules_by_modifier {
+        if t_rules.is_empty() {
+            continue;
+        }
+        t_rules.reverse(); // 恢复原始顺序
+        let first = t_rules[0].clone();
         let mut combined_vals = Vec::new();
-        for r in &transform_rules {
+        for r in &t_rules {
             let val_str = utility_value_to_css_string(&r.value);
             if !val_str.is_empty() {
                 combined_vals.push(val_str);
             }
         }
         let merged_rule = UtilityRule {
-            modifiers: first.modifiers,
+            modifiers,
             css_property: "transform".to_string(),
             value: UtilityValue::ArbitraryLiteral(combined_vals.join(" ")),
             span: first.span,
         };
-        // 插入倒序 vector 的头部，翻转后保留在规则列表后方，维持正确的层叠覆盖顺序
         deduped_rev.insert(0, merged_rule);
     }
 
@@ -359,7 +365,7 @@ fn build_keyframe_at_rule(name: &str) -> Option<CssAtRule> {
                     ("transform", quote!(translateY(-25%))),
                     (
                         "animation-timing-function",
-                        quote!(cubic - bezier(0.8, 0, 1, 1)),
+                        "cubic-bezier(0.8, 0, 1, 1)".parse().unwrap(),
                     ),
                 ],
             ));
@@ -369,7 +375,7 @@ fn build_keyframe_at_rule(name: &str) -> Option<CssAtRule> {
                     ("transform", quote!(none)),
                     (
                         "animation-timing-function",
-                        quote!(cubic - bezier(0, 0, 0.2, 1)),
+                        "cubic-bezier(0, 0, 0.2, 1)".parse().unwrap(),
                     ),
                 ],
             ));
@@ -436,7 +442,10 @@ fn convert_rule_to_declaration(rule: &UtilityRule) -> CssRule {
             let lit = proc_macro2::Literal::string(&val_str);
             quote!(#lit)
         }
-        UtilityValue::ArbitraryLiteral(lit) => parse_css_literal_to_tokens(lit),
+        UtilityValue::ArbitraryLiteral(lit) => {
+            let lit_node = proc_macro2::Literal::string(lit);
+            quote!(#lit_node)
+        }
         UtilityValue::DynamicExpr(expr, _expr_span) => {
             // 包装为 Silex 动态表达式节点 `$ ( expr )`
             let mut ts = TokenStream::new();
@@ -831,14 +840,6 @@ fn format_group_peer_selector(is_group: bool, state: &str, name: Option<&str>) -
     }
 }
 
-fn parse_css_literal_to_tokens(lit: &str) -> TokenStream {
-    if let Ok(ts) = lit.parse::<TokenStream>() {
-        return ts;
-    }
-    let proc_lit = proc_macro2::Literal::string(lit);
-    quote::quote!(#proc_lit)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -869,15 +870,6 @@ mod tests {
         } else {
             panic!("Expected ArbitraryLiteral");
         }
-    }
-
-    #[test]
-    fn test_parse_css_literal_to_tokens_hex_and_functions() {
-        let hex_tokens = parse_css_literal_to_tokens("#ffffff");
-        assert_eq!(hex_tokens.to_string(), "# ffffff");
-
-        let fn_tokens = parse_css_literal_to_tokens("translateX(-50%)");
-        assert_eq!(fn_tokens.to_string(), "translateX (- 50 %)");
     }
 
     #[test]
@@ -933,5 +925,28 @@ mod tests {
         assert_eq!(deduped.len(), 2);
         assert_eq!(deduped[0].css_property, "inset-x");
         assert_eq!(deduped[1].css_property, "left");
+    }
+
+    #[test]
+    fn test_transform_rules_merging_respects_modifiers() {
+        let base_transform = UtilityRule {
+            modifiers: vec![],
+            css_property: "transform".to_string(),
+            value: UtilityValue::ArbitraryLiteral("translate-x-0".to_string()),
+            span: Span::call_site(),
+        };
+        let dark_transform = UtilityRule {
+            modifiers: vec![Modifier::Dark],
+            css_property: "transform".to_string(),
+            value: UtilityValue::ArbitraryLiteral("translate-x-full".to_string()),
+            span: Span::call_site(),
+        };
+
+        let deduped = deduplicate_utility_rules(vec![base_transform.clone(), dark_transform.clone()]);
+        assert_eq!(deduped.len(), 2, "Base transform and dark transform must NOT be merged together into one rule");
+        
+        let has_base = deduped.iter().any(|r| r.modifiers.is_empty() && r.css_property == "transform");
+        let has_dark = deduped.iter().any(|r| r.modifiers == vec![Modifier::Dark] && r.css_property == "transform");
+        assert!(has_base && has_dark);
     }
 }
