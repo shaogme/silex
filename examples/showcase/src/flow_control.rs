@@ -207,7 +207,7 @@ pub fn PortalDemo() -> impl View {
 }
 
 #[component]
-pub fn FlowPage(_ctx: RouterContext) -> impl View {
+pub fn FlowPage() -> impl View {
     div![
         h2("Control Flow"),
         ListDemo(),

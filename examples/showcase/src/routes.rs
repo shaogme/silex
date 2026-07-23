@@ -11,7 +11,7 @@ use silex::prelude::*;
 use silex::reexports::web_sys::{HtmlElement, MouseEvent};
 
 #[component]
-fn SelectDemo(_ctx: RouterContext) -> impl View {
+fn SelectDemo() -> impl View {
     div("Select a demo above.")
 }
 
@@ -21,7 +21,7 @@ pub enum AdvancedRoute {
     Index,
     #[route("/store", view = advanced::StoreDemo)]
     Store,
-    #[route("/query", view = advanced::QueryDemo, guard = advanced::AuthGuard)]
+    #[route("/query", view = advanced::QueryDemo, pass_ctx = true, guard = advanced::AuthGuard)]
     Query,
     #[route("/storage", view = advanced::StorageDemo)]
     Storage,
@@ -61,14 +61,14 @@ pub enum AppRoute {
     Flow,
     #[route("/net", view = net_demo::NetDemoPage)]
     Net,
-    #[route("/persistence", view = persistence::PersistencePage)]
+    #[route("/persistence", view = persistence::PersistencePage, pass_ctx = true)]
     Persistence,
-    #[route("/css/*", view = CssLayout)]
+    #[route("/css/*", view = CssLayout, pass_ctx = true)]
     Css {
         #[nested]
         route: CssRoute,
     },
-    #[route("/advanced/*", view = AdvancedLayout)]
+    #[route("/advanced/*", view = AdvancedLayout, pass_ctx = true)]
     Advanced {
         #[nested]
         route: AdvancedRoute,
@@ -259,12 +259,12 @@ fn CssLayout(ctx: RouterContext, route: CssRoute) -> impl View {
 }
 
 #[component]
-fn NotFoundPage(_ctx: RouterContext) -> impl View {
+fn NotFoundPage() -> impl View {
     div("404 - Page Not Found").style("color: red; padding: 20px;")
 }
 
 #[component]
-fn HomePage(_ctx: RouterContext) -> impl View {
+fn HomePage() -> impl View {
     div![
         h1("Welcome to Silex Showcase"),
         p("This example application demonstrates the core features of the Silex framework."),

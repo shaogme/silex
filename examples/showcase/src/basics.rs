@@ -226,7 +226,7 @@ pub fn EventDemo() -> impl View {
 }
 
 #[component]
-pub fn BasicsPage(_ctx: RouterContext) -> impl View {
+pub fn BasicsPage() -> impl View {
     let name_signal = RwSignal::new("Developer".to_string());
 
     div![

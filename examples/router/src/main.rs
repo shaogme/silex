@@ -22,7 +22,7 @@ fn NavLink<T: ToRoute + Clone + 'static>(to: T, #[chain] children: AnyView) -> i
 
 // ==========================================
 #[component]
-fn Home(_ctx: RouterContext) -> impl View {
+fn Home() -> impl View {
     div!(
         h2("🏠 Home Page"),
         p("Welcome to the Router Test Suite."),
@@ -65,7 +65,7 @@ fn SearchPage(ctx: RouterContext) -> impl View {
 // --- 用户模块 (嵌套路由测试) ---
 
 #[component]
-fn CreateUser(_ctx: RouterContext) -> impl View {
+fn CreateUser() -> impl View {
     Card(h3("🆕 Create New User Form"))
 }
 
@@ -85,7 +85,7 @@ fn UsersLayout(ctx: RouterContext, route: UsersRoute) -> impl View {
 }
 
 #[component]
-fn UserList(_ctx: RouterContext) -> impl View {
+fn UserList() -> impl View {
     let users = vec![
         (1, "Alice"),
         (2, "Bob"),
@@ -140,7 +140,7 @@ fn UserDetail(ctx: RouterContext, id: u32) -> impl View {
 }
 
 #[component]
-fn NotFound(_ctx: RouterContext) -> impl View {
+fn NotFound() -> impl View {
     div!(
         h1("404"),
         p("Page not found."),
@@ -188,7 +188,7 @@ enum UsersRoute {
     List,
     #[route("/new", view = CreateUser)]
     Create,
-    #[route("/:id", view = UserDetail)]
+    #[route("/:id", view = UserDetail, pass_ctx = true)]
     Detail { id: u32 },
 }
 
@@ -197,11 +197,11 @@ enum UsersRoute {
 enum AppRoute {
     #[route("/", view = Home)]
     Home,
-    #[route("/search", view = SearchPage)]
+    #[route("/search", view = SearchPage, pass_ctx = true)]
     Search,
 
     // 递归嵌套：所有以 /users 开头的路径交给 UsersRoute 处理
-    #[route("/users/*", view = UsersLayout)]
+    #[route("/users/*", view = UsersLayout, pass_ctx = true)]
     Users {
         #[nested]
         route: UsersRoute,

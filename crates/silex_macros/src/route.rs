@@ -14,6 +14,7 @@ struct RouteDef {
     // 如果存在嵌套路由字段，存储其成员标识符 (字段名或索引)
     nested_field: Option<Member>,
     view: Option<syn::Path>,
+    pass_ctx: bool,
     guards: Vec<syn::Path>,
 }
 
@@ -43,15 +44,16 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
             .iter()
             .find(|attr| attr.path().is_ident("route"));
 
-        let (route_path, view_component, guards, route_attr_span) = if let Some(attr) = route_attr {
-            let (p, v, g) = parse_route_attr(attr)?;
-            (p, v, g, attr.span())
-        } else {
-            return Err(Error::new_spanned(
-                &variant.ident,
-                "Missing #[route(\"...\")] attribute",
-            ));
-        };
+        let (route_path, view_component, pass_ctx, guards, route_attr_span) =
+            if let Some(attr) = route_attr {
+                let (p, v, pc, g) = parse_route_attr(attr)?;
+                (p, v, pc, g, attr.span())
+            } else {
+                return Err(Error::new_spanned(
+                    &variant.ident,
+                    "Missing #[route(\"...\")] attribute",
+                ));
+            };
 
         let (segments, is_wildcard) = parse_path_segments(&route_path);
 
@@ -66,6 +68,7 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
             is_wildcard,
             nested_field,
             view: view_component,
+            pass_ctx,
             guards,
         });
     }
@@ -112,12 +115,15 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
     Ok(expanded)
 }
 
-fn parse_route_attr(attr: &Attribute) -> syn::Result<(String, Option<syn::Path>, Vec<syn::Path>)> {
+fn parse_route_attr(
+    attr: &Attribute,
+) -> syn::Result<(String, Option<syn::Path>, bool, Vec<syn::Path>)> {
     attr.parse_args_with(|input: syn::parse::ParseStream| {
         let lit: syn::LitStr = input.parse()?;
         let path = lit.value();
 
         let mut view = None;
+        let mut pass_ctx = false;
         let mut guards = Vec::new();
 
         while input.peek(Token![,]) {
@@ -131,6 +137,9 @@ fn parse_route_attr(attr: &Attribute) -> syn::Result<(String, Option<syn::Path>,
 
             if key == "view" {
                 view = Some(input.parse()?);
+            } else if key == "pass_ctx" {
+                let lit: syn::LitBool = input.parse()?;
+                pass_ctx = lit.value;
             } else if key == "guard" {
                 if input.peek(syn::token::Bracket) {
                     let content;
@@ -143,12 +152,12 @@ fn parse_route_attr(attr: &Attribute) -> syn::Result<(String, Option<syn::Path>,
             } else {
                 return Err(Error::new_spanned(
                     &key,
-                    "Expected 'view' or 'guard' parameter",
+                    "Expected 'view', 'pass_ctx', or 'guard' parameter",
                 ));
             }
         }
 
-        Ok((path, view, guards))
+        Ok((path, view, pass_ctx, guards))
     })
 }
 
@@ -699,6 +708,7 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
         let variant_ident = &def.variant_ident;
 
         if let Some(view_component) = &def.view {
+            let pass_ctx = def.pass_ctx;
             let (pattern, mut view_expr) = match &def.fields {
                 Fields::Named(named) => {
                     let mut props_setters = Vec::new();
@@ -734,10 +744,19 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
                         }
                     }
 
-                    let expr = if let Some(arg) = first_prop_expr {
-                        quote! { #view_component(ctx, #arg) #(#props_setters)* .into_any() }
-                    } else {
-                        quote! { #view_component(ctx) #(#props_setters)* .into_any() }
+                    let expr = match (pass_ctx, first_prop_expr) {
+                        (true, Some(arg)) => {
+                            quote! { #view_component(ctx, #arg) #(#props_setters)* .into_any() }
+                        }
+                        (true, None) => {
+                            quote! { #view_component(ctx) #(#props_setters)* .into_any() }
+                        }
+                        (false, Some(arg)) => {
+                            quote! { #view_component(#arg) #(#props_setters)* .into_any() }
+                        }
+                        (false, None) => {
+                            quote! { #view_component() #(#props_setters)* .into_any() }
+                        }
                     };
 
                     (
@@ -745,21 +764,29 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
                         expr,
                     )
                 }
-                Fields::Unit => (
-                    quote! { #enum_name::#variant_ident },
-                    quote! { #view_component(ctx).into_any() },
-                ),
+                Fields::Unit => {
+                    let expr = if pass_ctx {
+                        quote! { #view_component(ctx).into_any() }
+                    } else {
+                        quote! { #view_component().into_any() }
+                    };
+                    (quote! { #enum_name::#variant_ident }, expr)
+                }
                 Fields::Unnamed(unnamed) => {
                     if unnamed.unnamed.is_empty() {
-                        (
-                            quote! { #enum_name::#variant_ident() },
-                            quote! { #view_component(ctx).into_any() },
-                        )
+                        let expr = if pass_ctx {
+                            quote! { #view_component(ctx).into_any() }
+                        } else {
+                            quote! { #view_component().into_any() }
+                        };
+                        (quote! { #enum_name::#variant_ident() }, expr)
                     } else {
-                        (
-                            quote! { #enum_name::#variant_ident(sub_route_val) },
-                            quote! { #view_component(ctx, sub_route_val.clone()).into_any() },
-                        )
+                        let expr = if pass_ctx {
+                            quote! { #view_component(ctx, sub_route_val.clone()).into_any() }
+                        } else {
+                            quote! { #view_component(sub_route_val.clone()).into_any() }
+                        };
+                        (quote! { #enum_name::#variant_ident(sub_route_val) }, expr)
                     }
                 }
             };
