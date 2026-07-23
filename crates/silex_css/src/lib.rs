@@ -1,4 +1,5 @@
 pub mod builder;
+pub mod class;
 pub mod properties;
 pub mod runtime;
 pub mod theme;
@@ -6,6 +7,8 @@ pub mod types;
 
 pub mod prelude {
     pub use crate::builder::{Style, sty};
+    pub use crate::class::IntoClass;
+    pub use crate::cx;
     pub use crate::runtime::{DynamicCss, DynamicStyleManager, inject_style};
     pub use crate::theme::{
         ThemePatchToCss, ThemeVariables, set_global_theme, theme_patch, theme_variables,
@@ -13,4 +16,6 @@ pub mod prelude {
     pub use crate::types::*;
 }
 
+pub use class::IntoClass;
 pub use runtime::{DynamicCss, DynamicStyleManager, inject_style, make_dynamic_val_for};
+

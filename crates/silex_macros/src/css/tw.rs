@@ -63,7 +63,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
 
     // 处理包含条件分支句段的情形
     let mut inits_tokens = Vec::new();
-    let mut reactive_body = Vec::new();
+    let mut cx_items = Vec::new();
     let mut compiled_cache = ::std::collections::HashMap::<u64, String>::new();
 
     let mut compile_rules_cached = |rules: Vec<ast::UtilityRule>| -> Result<String> {
@@ -92,10 +92,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
             TwSegment::Static(rules) => {
                 let cls_name = compile_rules_cached(rules)?;
                 if !cls_name.is_empty() {
-                    reactive_body.push(quote! {
-                        if !_slx_cls.is_empty() { _slx_cls.push(' '); }
-                        _slx_cls.push_str(#cls_name);
-                    });
+                    cx_items.push(quote! { #cls_name });
                 }
             }
             TwSegment::Conditional {
@@ -108,26 +105,9 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                 let else_cls = compile_rules_cached(else_rules)?;
 
                 if !else_cls.is_empty() {
-                    reactive_body.push(quote! {
-                        if #condition {
-                            if !#then_cls.is_empty() {
-                                if !_slx_cls.is_empty() { _slx_cls.push(' '); }
-                                _slx_cls.push_str(#then_cls);
-                            }
-                        } else {
-                            if !_slx_cls.is_empty() { _slx_cls.push(' '); }
-                            _slx_cls.push_str(#else_cls);
-                        }
-                    });
+                    cx_items.push(quote! { (#condition, #then_cls, #else_cls) });
                 } else {
-                    reactive_body.push(quote! {
-                        if #condition {
-                            if !#then_cls.is_empty() {
-                                if !_slx_cls.is_empty() { _slx_cls.push(' '); }
-                                _slx_cls.push_str(#then_cls);
-                            }
-                        }
-                    });
+                    cx_items.push(quote! { (#condition, #then_cls) });
                 }
             }
         }
@@ -135,19 +115,16 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
 
     if !extra_classes.is_empty() {
         let extra_str = extra_classes.join(" ");
-        reactive_body.push(quote! {
-            if !_slx_cls.is_empty() { _slx_cls.push(' '); }
-            _slx_cls.push_str(#extra_str);
-        });
+        cx_items.push(quote! { #extra_str });
     }
 
     Ok(quote! {
         {
             #(#inits_tokens)*
             ::silex::core::rx!(move || {
-                let mut _slx_cls = ::std::string::String::with_capacity(64);
-                #(#reactive_body)*
-                _slx_cls
+                ::silex::css::cx!(
+                    #(#cx_items),*
+                )
             })
         }
     })
