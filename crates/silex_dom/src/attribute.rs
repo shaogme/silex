@@ -410,3 +410,35 @@ impl AttributeBuilder for crate::view::AnyView {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use silex_core::reactivity::RwSignal;
+
+    #[test]
+    fn test_known_prop_reactive_bool_into_op() {
+        let signal = RwSignal::new(true);
+        let target = ApplyTarget::Known(KnownProp::Disabled);
+        let pending = PendingAttribute::build(signal.into_storable(), OwnedApplyTarget::from(target));
+        match pending.op {
+            AttrOp::Update(AttrUpdate { name, target, .. }) => {
+                assert_eq!(name, "disabled");
+                assert_eq!(target, AttrTarget::Known(KnownProp::Disabled));
+            }
+            _ => panic!("Expected AttrOp::Update for KnownProp reactive bool"),
+        }
+    }
+
+    #[test]
+    fn test_tuple_bool_class_into_op() {
+        let op_true = ("active", true).into_op(OwnedApplyTarget::Class);
+        assert_eq!(
+            op_true,
+            AttrOp::SetStaticClasses(vec![std::borrow::Cow::Borrowed("active")])
+        );
+
+        let op_false = ("active", false).into_op(OwnedApplyTarget::Class);
+        assert_eq!(op_false, AttrOp::Noop);
+    }
+}

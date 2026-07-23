@@ -116,6 +116,17 @@ pub enum AttrData {
     ReactiveJs(Rx<JsValue>),
 }
 
+impl std::fmt::Debug for AttrData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::StaticAttr(a) => f.debug_tuple("StaticAttr").field(a).finish(),
+            Self::StaticJs(js) => f.debug_tuple("StaticJs").field(js).finish(),
+            Self::ReactiveAttr(_) => f.write_str("ReactiveAttr(Rx)"),
+            Self::ReactiveJs(_) => f.write_str("ReactiveJs(Rx)"),
+        }
+    }
+}
+
 impl PartialEq for AttrData {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -130,7 +141,7 @@ impl PartialEq for AttrData {
 
 // --- AttrOp Variant Structs ---
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AttrUpdate {
     pub name: Cow<'static, str>,
     pub target: AttrTarget,
@@ -143,10 +154,28 @@ pub struct ClassToggle {
     pub rx: Rx<bool>,
 }
 
+impl std::fmt::Debug for ClassToggle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClassToggle")
+            .field("name", &self.name)
+            .field("rx", &"Rx<bool>")
+            .finish()
+    }
+}
+
 #[derive(Clone, PartialEq)]
 pub struct StyleProperty {
     pub name: Cow<'static, str>,
     pub rx: Rx<String>,
+}
+
+impl std::fmt::Debug for StyleProperty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StyleProperty")
+            .field("name", &self.name)
+            .field("rx", &"Rx<String>")
+            .finish()
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -156,11 +185,31 @@ pub struct CombinedClasses {
     pub reactives: Vec<Rx<String>>,
 }
 
+impl std::fmt::Debug for CombinedClasses {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CombinedClasses")
+            .field("statics", &self.statics)
+            .field("toggles_count", &self.toggles.len())
+            .field("reactives_count", &self.reactives.len())
+            .finish()
+    }
+}
+
 #[derive(Clone, PartialEq)]
 pub struct CombinedStyles {
     pub statics: Vec<(Cow<'static, str>, Cow<'static, str>)>,
     pub properties: Vec<(Cow<'static, str>, Rx<String>)>,
     pub sheets: Vec<Rx<String>>,
+}
+
+impl std::fmt::Debug for CombinedStyles {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CombinedStyles")
+            .field("statics", &self.statics)
+            .field("properties_count", &self.properties.len())
+            .field("sheets_count", &self.sheets.len())
+            .finish()
+    }
 }
 
 #[derive(Clone)]
@@ -188,6 +237,25 @@ pub enum AttrOp {
     // --- 逃逸舱与特殊指令 ---
     Custom(Rc<dyn Fn(&Element)>),
     Noop,
+}
+
+impl std::fmt::Debug for AttrOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Update(u) => f.debug_tuple("Update").field(u).finish(),
+            Self::SetStaticClasses(c) => f.debug_tuple("SetStaticClasses").field(c).finish(),
+            Self::AddClassToggle(ct) => f.debug_tuple("AddClassToggle").field(ct).finish(),
+            Self::AddReactiveClasses(_) => f.write_str("AddReactiveClasses(Rx)"),
+            Self::SetStaticStyles(s) => f.debug_tuple("SetStaticStyles").field(s).finish(),
+            Self::BindStyleProperty(sp) => f.debug_tuple("BindStyleProperty").field(sp).finish(),
+            Self::BindReactiveStyleSheet(_) => f.write_str("BindReactiveStyleSheet(Rx)"),
+            Self::CombinedClasses(cc) => f.debug_tuple("CombinedClasses").field(cc).finish(),
+            Self::CombinedStyles(cs) => f.debug_tuple("CombinedStyles").field(cs).finish(),
+            Self::Sequence(seq) => f.debug_tuple("Sequence").field(seq).finish(),
+            Self::Custom(_) => f.write_str("Custom(Rc<Fn>)"),
+            Self::Noop => f.write_str("Noop"),
+        }
+    }
 }
 
 impl PartialEq for AttrOp {
@@ -486,6 +554,9 @@ fn apply_combined_styles_internal(
 // --- Kernel Functions (Non-generic DOM operations) ---
 
 pub(crate) fn apply_attr_internal(el: &Element, name: &str, attr: &Attr) {
+    if name.is_empty() {
+        return;
+    }
     match attr {
         Attr::Removed => {
             let _ = el.remove_attribute(name);

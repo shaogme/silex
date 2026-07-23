@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::HashSet;
 use std::rc::Rc;
 
 use wasm_bindgen::JsValue;
@@ -135,6 +134,13 @@ pub(crate) fn apply_bool_reactive_internal(
             Effect::new(move |_| {
                 let val = rx.get();
                 apply_attr_with_target_internal(&el, &name, AttrTarget::Prop, &Attr::from(val));
+            });
+        }
+        OwnedApplyTarget::Known(kp) => {
+            Effect::new(move |_| {
+                use silex_core::traits::RxGet;
+                let val = rx.get();
+                apply_attr_with_target_internal(&el, kp.name(), AttrTarget::Known(kp), &Attr::from(val));
             });
         }
         _ => {}
@@ -408,6 +414,11 @@ impl ReactiveApply for bool {
                 target: AttrTarget::Prop,
                 data: AttrData::ReactiveAttr(derive_attr_rx(rx)),
             }),
+            OwnedApplyTarget::Known(kp) => AttrOp::Update(AttrUpdate {
+                name: Cow::Borrowed(kp.name()),
+                target: AttrTarget::Known(kp),
+                data: AttrData::ReactiveAttr(derive_attr_rx(rx)),
+            }),
             _ => {
                 let rx_inner = rx;
                 let target_clone = target.clone();
@@ -423,45 +434,42 @@ impl ReactiveApply for bool {
 // --- Option<T> ReactiveApply ---
 
 fn update_option_class_diff(el: &WebElem, prev: Option<&str>, new_val: Option<&str>) {
-    let list = el.class_list();
-    let prev_set: HashSet<&str> = prev.map(|p| p.split_whitespace().collect()).unwrap_or_default();
-    let new_set: HashSet<&str> = new_val.map(|n| n.split_whitespace().collect()).unwrap_or_default();
-
-    for c in prev_set.difference(&new_set) {
-        let _ = list.remove_1(c);
+    if prev == new_val {
+        return;
     }
-    for c in new_set.difference(&prev_set) {
-        let _ = list.add_1(c);
+    let list = el.class_list();
+    if let Some(p) = prev {
+        for c in p.split_whitespace() {
+            if new_val.map_or(true, |n| !n.split_whitespace().any(|t| t == c)) {
+                let _ = list.remove_1(c);
+            }
+        }
+    }
+    if let Some(n) = new_val {
+        for c in n.split_whitespace() {
+            if prev.map_or(true, |p| !p.split_whitespace().any(|t| t == c)) {
+                let _ = list.add_1(c);
+            }
+        }
     }
 }
 
 fn update_option_style_diff(el: &WebElem, prev: Option<&str>, new_val: Option<&str>) {
+    if prev == new_val {
+        return;
+    }
     if let Some(style) = get_style_decl(el) {
-        let prev_map: std::collections::HashMap<String, String> = prev
-            .map(|p| {
-                parse_style_str(p)
-                    .into_iter()
-                    .map(|(k, v)| (k.into_owned(), v.into_owned()))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let new_map: std::collections::HashMap<String, String> = new_val
-            .map(|n| {
-                parse_style_str(n)
-                    .into_iter()
-                    .map(|(k, v)| (k.into_owned(), v.into_owned()))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let prev_keys: HashSet<&str> = prev_map.keys().map(|k| k.as_str()).collect();
-        let new_keys: HashSet<&str> = new_map.keys().map(|k| k.as_str()).collect();
-
-        for k in prev_keys.difference(&new_keys) {
-            let _ = style.remove_property(k);
+        if let Some(p) = prev {
+            for (k, _) in parse_style_str(p) {
+                if new_val.map_or(true, |n| !parse_style_str(n).iter().any(|(nk, _)| nk == &k)) {
+                    let _ = style.remove_property(&k);
+                }
+            }
         }
-        for (k, v) in new_map {
-            let _ = style.set_property(&k, &v);
+        if let Some(n) = new_val {
+            for (k, v) in parse_style_str(n) {
+                let _ = style.set_property(&k, &v);
+            }
         }
     }
 }

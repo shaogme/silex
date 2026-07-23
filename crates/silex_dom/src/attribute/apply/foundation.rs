@@ -39,14 +39,8 @@ pub enum OwnedApplyTarget {
 impl<'a> From<ApplyTarget<'a>> for OwnedApplyTarget {
     fn from(target: ApplyTarget<'a>) -> Self {
         match target {
-            ApplyTarget::Attr(n) => OwnedApplyTarget::Attr(match n {
-                Cow::Borrowed(s) => Cow::Owned(s.to_string()),
-                Cow::Owned(s) => Cow::Owned(s),
-            }),
-            ApplyTarget::Prop(n) => OwnedApplyTarget::Prop(match n {
-                Cow::Borrowed(s) => Cow::Owned(s.to_string()),
-                Cow::Owned(s) => Cow::Owned(s),
-            }),
+            ApplyTarget::Attr(n) => OwnedApplyTarget::Attr(Cow::Owned(n.into_owned())),
+            ApplyTarget::Prop(n) => OwnedApplyTarget::Prop(Cow::Owned(n.into_owned())),
             ApplyTarget::Known(kp) => OwnedApplyTarget::Known(kp),
             ApplyTarget::Class => OwnedApplyTarget::Class,
             ApplyTarget::Style => OwnedApplyTarget::Style,
@@ -496,6 +490,24 @@ where
             _ => {
                 apply_immediate_bool(el, target, value);
             }
+        }
+    }
+
+    fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
+        let (key, value) = self;
+        let is_class = matches!(target, OwnedApplyTarget::Class)
+            || matches!(target, OwnedApplyTarget::Attr(ref n) if n == "class");
+
+        if is_class {
+            if value {
+                AttrOp::SetStaticClasses(vec![Cow::Owned(key.as_ref().to_string())])
+            } else {
+                AttrOp::Noop
+            }
+        } else {
+            AttrOp::Custom(std::rc::Rc::new(move |el| {
+                apply_immediate_bool(el, ApplyTarget::from(&target), value);
+            }))
         }
     }
 }
