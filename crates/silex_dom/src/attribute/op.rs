@@ -6,12 +6,47 @@ use std::rc::Rc;
 use wasm_bindgen::{JsCast, JsValue};
 use web_sys::{CssStyleDeclaration, Element, HtmlElement, SvgElement};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// 预定义的 DOM 强类型 Property (Fast-Path)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KnownProp {
+    Value,
+    Checked,
+    Disabled,
+    ReadOnly,
+    Required,
+}
+
+impl KnownProp {
+    pub fn name(self) -> &'static str {
+        match self {
+            KnownProp::Value => "value",
+            KnownProp::Checked => "checked",
+            KnownProp::Disabled => "disabled",
+            KnownProp::ReadOnly => "readOnly",
+            KnownProp::Required => "required",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "value" => Some(KnownProp::Value),
+            "checked" => Some(KnownProp::Checked),
+            "disabled" => Some(KnownProp::Disabled),
+            "readOnly" | "readonly" => Some(KnownProp::ReadOnly),
+            "required" => Some(KnownProp::Required),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AttrTarget {
     /// Standard DOM attributes (setAttribute/removeAttribute)
     Attr,
     /// Direct DOM properties (JS object properties)
     Prop,
+    /// Known strong-typed DOM property fast-path
+    Known(KnownProp),
 }
 
 /// 代表 HTML Attribute 的三种基元状态
@@ -198,21 +233,28 @@ impl AttrOp {
                 });
             }
             AttrOp::AddReactiveClasses(rx) => {
-                let prev_classes = Rc::new(RefCell::new(HashSet::new()));
+                let prev_classes = Rc::new(RefCell::new(HashSet::<String>::new()));
                 let list = el.class_list();
                 Effect::new(move |_| {
                     let value = rx.get();
-                    let new_classes: HashSet<String> =
-                        value.split_whitespace().map(|s| s.to_string()).collect();
                     let mut prev = prev_classes.borrow_mut();
+                    let new_tokens: HashSet<&str> = value.split_whitespace().collect();
 
-                    for c in prev.difference(&new_classes) {
-                        let _ = list.remove_1(c);
+                    prev.retain(|c| {
+                        if !new_tokens.contains(c.as_str()) {
+                            let _ = list.remove_1(c);
+                            false
+                        } else {
+                            true
+                        }
+                    });
+
+                    for token in new_tokens {
+                        if !prev.contains(token) {
+                            let _ = list.add_1(token);
+                            prev.insert(token.to_string());
+                        }
                     }
-                    for c in new_classes.difference(&prev) {
-                        let _ = list.add_1(c);
-                    }
-                    *prev = new_classes;
                 });
             }
             AttrOp::SetStaticStyles(styles) => {
@@ -237,16 +279,24 @@ impl AttrOp {
                     if let Some(style) = get_style_decl(&el) {
                         let mut prev = prev_keys.borrow_mut();
                         let params = parse_style_str(&value);
-                        let new_keys: HashSet<String> =
-                            params.iter().map(|(k, _)| k.to_string()).collect();
+                        let new_style_map: std::collections::HashMap<&str, &str> =
+                            params.iter().map(|(k, v)| (k.as_ref(), v.as_ref())).collect();
 
-                        for k in prev.difference(&new_keys) {
-                            let _ = style.remove_property(k);
+                        prev.retain(|k| {
+                            if !new_style_map.contains_key(k.as_str()) {
+                                let _ = style.remove_property(k);
+                                false
+                            } else {
+                                true
+                            }
+                        });
+
+                        for (k, v) in new_style_map {
+                            let _ = style.set_property(k, v);
+                            if !prev.contains(k) {
+                                prev.insert(k.to_string());
+                            }
                         }
-                        for (k, v) in params {
-                            let _ = style.set_property(&k, &v);
-                        }
-                        *prev = new_keys;
                     }
                 });
             }
@@ -341,23 +391,30 @@ fn apply_combined_classes_internal(
 
         // 处理所有响应式字符串类 (需要 Diff 算法以支持正确删除旧类)
         if !reactives.is_empty() {
+            let reactive_strings: Vec<String> = reactives.iter().map(|rx| rx.get()).collect();
             let mut new_tokens = HashSet::new();
-            for rx in &reactives {
-                for token in rx.get().split_whitespace() {
-                    new_tokens.insert(token.to_string());
+            for s in &reactive_strings {
+                for token in s.split_whitespace() {
+                    new_tokens.insert(token);
                 }
             }
 
             let mut prev = prev_reactive_tokens.borrow_mut();
-            // 移除已不存在的旧类
-            for c in prev.difference(&new_tokens) {
-                let _ = list.remove_1(c);
+            prev.retain(|c| {
+                if !new_tokens.contains(c.as_str()) {
+                    let _ = list.remove_1(c);
+                    false
+                } else {
+                    true
+                }
+            });
+
+            for token in new_tokens {
+                if !prev.contains(token) {
+                    let _ = list.add_1(token);
+                    prev.insert(token.to_string());
+                }
             }
-            // 添加新类
-            for c in new_tokens.difference(&prev) {
-                let _ = list.add_1(c);
-            }
-            *prev = new_tokens;
         }
     });
 }
@@ -395,25 +452,32 @@ fn apply_combined_styles_internal(
 
             // 处理整块响应式样式字符串 (Diff 处理)
             if !sheets.is_empty() {
+                let sheet_strings: Vec<String> = sheets.iter().map(|rx| rx.get()).collect();
                 let mut new_style_map = std::collections::HashMap::new();
-                for rx in &sheets {
-                    for (k, v) in parse_style_str(&rx.get()) {
-                        new_style_map.insert(k.to_string(), v.to_string());
+                for s in &sheet_strings {
+                    for (k, v) in parse_style_str(s) {
+                        new_style_map.insert(k.into_owned(), v.into_owned());
                     }
                 }
 
                 let mut prev = prev_sheet_keys.borrow_mut();
-                let new_keys: HashSet<_> = new_style_map.keys().cloned().collect();
+                let new_keys: HashSet<&str> = new_style_map.keys().map(|k| k.as_str()).collect();
 
-                // 移除旧键
-                for k in prev.difference(&new_keys) {
-                    let _ = style.remove_property(k);
-                }
-                // 设置新键/更新值
+                prev.retain(|k| {
+                    if !new_keys.contains(k.as_str()) {
+                        let _ = style.remove_property(k);
+                        false
+                    } else {
+                        true
+                    }
+                });
+
                 for (k, v) in new_style_map {
                     let _ = style.set_property(&k, &v);
+                    if !prev.contains(&k) {
+                        prev.insert(k);
+                    }
                 }
-                *prev = new_keys;
             }
         }
     });
@@ -449,10 +513,16 @@ pub(crate) fn apply_attr_with_target_internal(
     target: AttrTarget,
     attr: &Attr,
 ) {
-    if matches!(target, AttrTarget::Prop) {
+    let known_prop = match target {
+        AttrTarget::Known(kp) => Some(kp),
+        AttrTarget::Prop => KnownProp::parse(name),
+        AttrTarget::Attr => None,
+    };
+
+    if let Some(prop) = known_prop {
         if let Some(input) = el.dyn_ref::<web_sys::HtmlInputElement>() {
-            match name {
-                "value" => {
+            match prop {
+                KnownProp::Value => {
                     let val = match attr {
                         Attr::Removed | Attr::Empty => "",
                         Attr::String(s) => s.as_ref(),
@@ -460,31 +530,153 @@ pub(crate) fn apply_attr_with_target_internal(
                     input.set_value(val);
                     return;
                 }
-                "checked" => {
+                KnownProp::Checked => {
                     let is_checked = matches!(attr, Attr::Empty | Attr::String(_));
                     input.set_checked(is_checked);
                     return;
                 }
-                "disabled" => {
+                KnownProp::Disabled => {
                     let is_disabled = matches!(attr, Attr::Empty | Attr::String(_));
                     input.set_disabled(is_disabled);
                     if is_disabled {
-                        let _ = el.set_attribute(name, "");
+                        let _ = el.set_attribute("disabled", "");
                     } else {
-                        let _ = el.remove_attribute(name);
+                        let _ = el.remove_attribute("disabled");
+                    }
+                    return;
+                }
+                KnownProp::ReadOnly => {
+                    let is_readonly = matches!(attr, Attr::Empty | Attr::String(_));
+                    input.set_read_only(is_readonly);
+                    if is_readonly {
+                        let _ = el.set_attribute("readonly", "");
+                    } else {
+                        let _ = el.remove_attribute("readonly");
+                    }
+                    return;
+                }
+                KnownProp::Required => {
+                    let is_required = matches!(attr, Attr::Empty | Attr::String(_));
+                    input.set_required(is_required);
+                    if is_required {
+                        let _ = el.set_attribute("required", "");
+                    } else {
+                        let _ = el.remove_attribute("required");
+                    }
+                    return;
+                }
+            }
+        } else if let Some(textarea) = el.dyn_ref::<web_sys::HtmlTextAreaElement>() {
+            match prop {
+                KnownProp::Value => {
+                    let val = match attr {
+                        Attr::Removed | Attr::Empty => "",
+                        Attr::String(s) => s.as_ref(),
+                    };
+                    textarea.set_value(val);
+                    return;
+                }
+                KnownProp::Disabled => {
+                    let is_disabled = matches!(attr, Attr::Empty | Attr::String(_));
+                    textarea.set_disabled(is_disabled);
+                    if is_disabled {
+                        let _ = el.set_attribute("disabled", "");
+                    } else {
+                        let _ = el.remove_attribute("disabled");
+                    }
+                    return;
+                }
+                KnownProp::ReadOnly => {
+                    let is_readonly = matches!(attr, Attr::Empty | Attr::String(_));
+                    textarea.set_read_only(is_readonly);
+                    if is_readonly {
+                        let _ = el.set_attribute("readonly", "");
+                    } else {
+                        let _ = el.remove_attribute("readonly");
+                    }
+                    return;
+                }
+                KnownProp::Required => {
+                    let is_required = matches!(attr, Attr::Empty | Attr::String(_));
+                    textarea.set_required(is_required);
+                    if is_required {
+                        let _ = el.set_attribute("required", "");
+                    } else {
+                        let _ = el.remove_attribute("required");
                     }
                     return;
                 }
                 _ => {}
             }
-        } else if let Some(textarea) = el.dyn_ref::<web_sys::HtmlTextAreaElement>() {
-            if name == "value" {
-                let val = match attr {
-                    Attr::Removed | Attr::Empty => "",
-                    Attr::String(s) => s.as_ref(),
-                };
-                textarea.set_value(val);
+        } else if let Some(select) = el.dyn_ref::<web_sys::HtmlSelectElement>() {
+            match prop {
+                KnownProp::Value => {
+                    let val = match attr {
+                        Attr::Removed | Attr::Empty => "",
+                        Attr::String(s) => s.as_ref(),
+                    };
+                    select.set_value(val);
+                    return;
+                }
+                KnownProp::Disabled => {
+                    let is_disabled = matches!(attr, Attr::Empty | Attr::String(_));
+                    select.set_disabled(is_disabled);
+                    if is_disabled {
+                        let _ = el.set_attribute("disabled", "");
+                    } else {
+                        let _ = el.remove_attribute("disabled");
+                    }
+                    return;
+                }
+                KnownProp::Required => {
+                    let is_required = matches!(attr, Attr::Empty | Attr::String(_));
+                    select.set_required(is_required);
+                    if is_required {
+                        let _ = el.set_attribute("required", "");
+                    } else {
+                        let _ = el.remove_attribute("required");
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        } else if let Some(button) = el.dyn_ref::<web_sys::HtmlButtonElement>() {
+            if prop == KnownProp::Disabled {
+                let is_disabled = matches!(attr, Attr::Empty | Attr::String(_));
+                button.set_disabled(is_disabled);
+                if is_disabled {
+                    let _ = el.set_attribute("disabled", "");
+                } else {
+                    let _ = el.remove_attribute("disabled");
+                }
                 return;
+            }
+        } else if let Some(option) = el.dyn_ref::<web_sys::HtmlOptionElement>() {
+            match prop {
+                KnownProp::Value => {
+                    let val = match attr {
+                        Attr::Removed | Attr::Empty => "",
+                        Attr::String(s) => s.as_ref(),
+                    };
+                    option.set_value(val);
+                    return;
+                }
+                KnownProp::Checked => {
+                    let is_checked = matches!(attr, Attr::Empty | Attr::String(_));
+                    option.set_selected(is_checked);
+                    return;
+                }
+                KnownProp::Disabled => {
+                    let is_disabled = matches!(attr, Attr::Empty | Attr::String(_));
+                    option.set_disabled(is_disabled);
+                    if is_disabled {
+                        let _ = el.set_attribute("disabled", "");
+                    } else {
+                        let _ = el.remove_attribute("disabled");
+                    }
+                    return;
+                }
+                _ => {}
             }
         }
     }

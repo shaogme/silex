@@ -74,13 +74,13 @@ where
         .target()
         .ok_or_else(|| SilexError::Dom("Event target not found".into()))?;
 
-    if let Ok(element) = target.clone().dyn_into::<web_sys::HtmlInputElement>() {
+    if let Some(element) = target.dyn_ref::<web_sys::HtmlInputElement>() {
         return Ok(element.value());
     }
-    if let Ok(element) = target.clone().dyn_into::<web_sys::HtmlTextAreaElement>() {
+    if let Some(element) = target.dyn_ref::<web_sys::HtmlTextAreaElement>() {
         return Ok(element.value());
     }
-    if let Ok(element) = target.dyn_into::<web_sys::HtmlSelectElement>() {
+    if let Some(element) = target.dyn_ref::<web_sys::HtmlSelectElement>() {
         return Ok(element.value());
     }
 
@@ -150,13 +150,7 @@ impl WindowListenerHandle {
 // --- Timer & Animation Frame Helpers ---
 
 fn closure_once(cb: impl FnOnce() + 'static) -> JsValue {
-    let mut wrapped_cb: Option<Box<dyn FnOnce()>> = Some(Box::new(cb));
-    let closure = Closure::new(move || {
-        if let Some(cb) = wrapped_cb.take() {
-            cb()
-        }
-    });
-    closure.into_js_value()
+    Closure::once_into_js(cb)
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]

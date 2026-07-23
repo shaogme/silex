@@ -3,19 +3,21 @@ use wasm_bindgen::JsValue;
 use web_sys::Element as WebElem;
 
 use crate::attribute::op::{
-    Attr, AttrData, AttrOp, AttrTarget, AttrUpdate, apply_attr_internal,
+    Attr, AttrData, AttrOp, AttrTarget, AttrUpdate, KnownProp, apply_attr_internal,
     apply_attr_with_target_internal, apply_immediate_bool_internal, get_style_decl,
     parse_style_str, set_string_property_internal,
 };
 
 // --- Apply Target Enum ---
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ApplyTarget<'a> {
     /// Standard attributes: `id`, `href`, `src`. Also `class` and `style` when called as attributes.
-    Attr(&'a str),
+    Attr(Cow<'a, str>),
     /// Direct DOM Property (JS object property): `value`, `checked`, `muted` etc.
-    Prop(&'a str),
+    Prop(Cow<'a, str>),
+    /// Known strong-typed DOM Property (fast-path)
+    Known(KnownProp),
     /// Specialized `.class(...)` call
     Class,
     /// Specialized `.style(...)` call
@@ -28,6 +30,7 @@ pub enum ApplyTarget<'a> {
 pub enum OwnedApplyTarget {
     Attr(Cow<'static, str>),
     Prop(Cow<'static, str>),
+    Known(KnownProp),
     Class,
     Style,
     Apply,
@@ -36,8 +39,15 @@ pub enum OwnedApplyTarget {
 impl<'a> From<ApplyTarget<'a>> for OwnedApplyTarget {
     fn from(target: ApplyTarget<'a>) -> Self {
         match target {
-            ApplyTarget::Attr(n) => OwnedApplyTarget::Attr(Cow::Owned(n.to_string())),
-            ApplyTarget::Prop(n) => OwnedApplyTarget::Prop(Cow::Owned(n.to_string())),
+            ApplyTarget::Attr(n) => OwnedApplyTarget::Attr(match n {
+                Cow::Borrowed(s) => Cow::Owned(s.to_string()),
+                Cow::Owned(s) => Cow::Owned(s),
+            }),
+            ApplyTarget::Prop(n) => OwnedApplyTarget::Prop(match n {
+                Cow::Borrowed(s) => Cow::Owned(s.to_string()),
+                Cow::Owned(s) => Cow::Owned(s),
+            }),
+            ApplyTarget::Known(kp) => OwnedApplyTarget::Known(kp),
             ApplyTarget::Class => OwnedApplyTarget::Class,
             ApplyTarget::Style => OwnedApplyTarget::Style,
             ApplyTarget::Apply => OwnedApplyTarget::Apply,
@@ -48,8 +58,9 @@ impl<'a> From<ApplyTarget<'a>> for OwnedApplyTarget {
 impl<'a> From<&'a OwnedApplyTarget> for ApplyTarget<'a> {
     fn from(target: &'a OwnedApplyTarget) -> Self {
         match target {
-            OwnedApplyTarget::Attr(n) => ApplyTarget::Attr(n),
-            OwnedApplyTarget::Prop(n) => ApplyTarget::Prop(n),
+            OwnedApplyTarget::Attr(n) => ApplyTarget::Attr(Cow::Borrowed(n.as_ref())),
+            OwnedApplyTarget::Prop(n) => ApplyTarget::Prop(Cow::Borrowed(n.as_ref())),
+            OwnedApplyTarget::Known(kp) => ApplyTarget::Known(*kp),
             OwnedApplyTarget::Class => ApplyTarget::Class,
             OwnedApplyTarget::Style => ApplyTarget::Style,
             OwnedApplyTarget::Apply => ApplyTarget::Apply,
@@ -139,8 +150,16 @@ impl ApplyToDom for std::rc::Rc<dyn Fn(&WebElem)> {
 
 pub(crate) fn apply_immediate_string(el: &WebElem, target: ApplyTarget, value: &str) {
     match target {
-        ApplyTarget::Attr(n) => set_string_property_internal(el, n, value, false),
-        ApplyTarget::Prop(n) => set_string_property_internal(el, n, value, true),
+        ApplyTarget::Attr(ref n) => set_string_property_internal(el, n, value, false),
+        ApplyTarget::Prop(ref n) => set_string_property_internal(el, n, value, true),
+        ApplyTarget::Known(kp) => {
+            apply_attr_with_target_internal(
+                el,
+                kp.name(),
+                AttrTarget::Known(kp),
+                &Attr::from(value.to_string()),
+            );
+        }
         ApplyTarget::Class => set_string_property_internal(el, "class", value, false),
         ApplyTarget::Style => set_string_property_internal(el, "style", value, false),
         ApplyTarget::Apply => {}
@@ -148,10 +167,16 @@ pub(crate) fn apply_immediate_string(el: &WebElem, target: ApplyTarget, value: &
 }
 
 pub(crate) fn apply_immediate_bool(el: &WebElem, target: ApplyTarget, value: bool) {
-    if let ApplyTarget::Attr(name) = target {
-        apply_immediate_bool_internal(el, name, value, false);
-    } else if let ApplyTarget::Prop(name) = target {
-        apply_immediate_bool_internal(el, name, value, true);
+    match target {
+        ApplyTarget::Attr(ref name) => apply_immediate_bool_internal(el, name, value, false),
+        ApplyTarget::Prop(ref name) => apply_immediate_bool_internal(el, name, value, true),
+        ApplyTarget::Known(kp) => apply_attr_with_target_internal(
+            el,
+            kp.name(),
+            AttrTarget::Known(kp),
+            &Attr::from(value),
+        ),
+        _ => {}
     }
 }
 
@@ -162,7 +187,7 @@ pub(crate) fn apply_static_pair(el: &WebElem, target: ApplyTarget, key: &str, va
                 let _ = style.set_property(key, value);
             }
         }
-        ApplyTarget::Attr("style") => {
+        ApplyTarget::Attr(ref n) if n == "style" => {
             if let Some(style) = get_style_decl(el) {
                 let _ = style.set_property(key, value);
             }
@@ -183,6 +208,11 @@ impl ApplyToDom for &'static str {
     }
     fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
         match target {
+            OwnedApplyTarget::Known(kp) => AttrOp::Update(AttrUpdate {
+                name: Cow::Borrowed(kp.name()),
+                target: AttrTarget::Known(kp),
+                data: AttrData::StaticAttr(Attr::from(self)),
+            }),
             OwnedApplyTarget::Attr(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Attr,
@@ -211,6 +241,11 @@ impl ApplyToDom for String {
 
     fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
         match target {
+            OwnedApplyTarget::Known(kp) => AttrOp::Update(AttrUpdate {
+                name: Cow::Borrowed(kp.name()),
+                target: AttrTarget::Known(kp),
+                data: AttrData::StaticAttr(Attr::from(self)),
+            }),
             OwnedApplyTarget::Attr(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Attr,
@@ -249,14 +284,29 @@ impl ApplyToDom for &String {
     }
 }
 
+impl ApplyToDom for Cow<'static, str> {
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
+        apply_immediate_string(el, target, self.as_ref());
+    }
+
+    fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
+        match self {
+            Cow::Borrowed(s) => s.into_op(target),
+            Cow::Owned(s) => s.into_op(target),
+        }
+    }
+}
+
 impl ApplyToDom for Attr {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
         let owned_target = OwnedApplyTarget::from(target);
         let attr_target = match owned_target {
+            OwnedApplyTarget::Known(kp) => AttrTarget::Known(kp),
             OwnedApplyTarget::Prop(_) => AttrTarget::Prop,
             _ => AttrTarget::Attr,
         };
         let name = match owned_target {
+            OwnedApplyTarget::Known(kp) => kp.name(),
             OwnedApplyTarget::Attr(ref n) | OwnedApplyTarget::Prop(ref n) => n.as_ref(),
             _ => "",
         };
@@ -267,6 +317,11 @@ impl ApplyToDom for Attr {
 
     fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
         match target {
+            OwnedApplyTarget::Known(kp) => AttrOp::Update(AttrUpdate {
+                name: Cow::Borrowed(kp.name()),
+                target: AttrTarget::Known(kp),
+                data: AttrData::StaticAttr(self),
+            }),
             OwnedApplyTarget::Attr(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Attr,
@@ -331,7 +386,7 @@ impl<V: ApplyToDom + 'static> ApplyToDom for Option<V> {
 impl<V: ApplyToDom + 'static> ApplyToDom for Vec<V> {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
         for v in self {
-            v.apply(el, target);
+            v.apply(el, target.clone());
         }
     }
 
@@ -347,7 +402,7 @@ impl<V: ApplyToDom + 'static> ApplyToDom for Vec<V> {
 impl<V: ApplyToDom + 'static, const N: usize> ApplyToDom for [V; N] {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
         for v in self {
-            v.apply(el, target);
+            v.apply(el, target.clone());
         }
     }
 
@@ -420,7 +475,7 @@ where
 {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
         let (key, value) = self.clone();
-        let owned_target = OwnedApplyTarget::from(target);
+        let owned_target = OwnedApplyTarget::from(target.clone());
         match owned_target {
             OwnedApplyTarget::Class => {
                 let list = el.class_list();

@@ -45,56 +45,14 @@ fn create_erased_class_effect_internal(
     el: WebElem,
     rx: silex_core::Rx<String, silex_core::RxValueKind>,
 ) {
-    let prev_classes = Rc::new(RefCell::new(HashSet::new()));
-
-    Effect::new(move |_| {
-        use silex_core::traits::RxGet;
-        let value = rx.get();
-        let new_classes: HashSet<String> =
-            value.split_whitespace().map(|s| s.to_string()).collect();
-
-        let mut prev = prev_classes.borrow_mut();
-        let list = el.class_list();
-
-        for c in prev.difference(&new_classes) {
-            let _ = list.remove_1(c);
-        }
-
-        for c in new_classes.difference(&prev) {
-            let _ = list.add_1(c);
-        }
-
-        *prev = new_classes;
-    });
+    AttrOp::AddReactiveClasses(rx).apply(&el);
 }
 
 fn create_erased_style_effect_internal(
     el: WebElem,
     rx: silex_core::Rx<String, silex_core::RxValueKind>,
 ) {
-    let prev_keys = Rc::new(RefCell::new(HashSet::<String>::new()));
-
-    Effect::new(move |_| {
-        use silex_core::traits::RxGet;
-        let value = rx.get();
-        let new_style_str = value.as_str();
-
-        if let Some(style) = get_style_decl(&el) {
-            let mut prev = prev_keys.borrow_mut();
-            let params = parse_style_str(new_style_str);
-            let new_keys: HashSet<String> = params.iter().map(|(k, _)| k.to_string()).collect();
-
-            for k in prev.difference(&new_keys) {
-                let _ = style.remove_property(k);
-            }
-
-            for (k, v) in params {
-                let _ = style.set_property(&k, &v);
-            }
-
-            *prev = new_keys;
-        }
-    });
+    AttrOp::BindReactiveStyleSheet(rx).apply(&el);
 }
 
 pub(crate) fn apply_string_reactive_internal(
@@ -120,9 +78,19 @@ pub(crate) fn apply_string_reactive_internal(
         }
         OwnedApplyTarget::Prop(name) => {
             Effect::new(move |_| {
-                use silex_core::traits::RxGet;
                 let value = rx.get();
                 set_string_property_internal(&el, &name, &value, true);
+            });
+        }
+        OwnedApplyTarget::Known(kp) => {
+            Effect::new(move |_| {
+                let value = rx.get();
+                apply_attr_with_target_internal(
+                    &el,
+                    kp.name(),
+                    AttrTarget::Known(kp),
+                    &Attr::from(value),
+                );
             });
         }
         OwnedApplyTarget::Apply => {}
@@ -276,6 +244,11 @@ impl ReactiveApply for String {
                     })
                 }
             }
+            OwnedApplyTarget::Known(kp) => AttrOp::Update(AttrUpdate {
+                name: Cow::Borrowed(kp.name()),
+                target: AttrTarget::Known(kp),
+                data: AttrData::ReactiveAttr(derive_attr_rx(rx)),
+            }),
             OwnedApplyTarget::Prop(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Prop,
@@ -348,25 +321,29 @@ impl_reactive_apply_primitive!(
 impl ReactiveApply for Attr {
     fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: WebElem, target: OwnedApplyTarget) {
         let attr_target = match target {
+            OwnedApplyTarget::Known(kp) => AttrTarget::Known(kp),
             OwnedApplyTarget::Prop(_) => AttrTarget::Prop,
             _ => AttrTarget::Attr,
         };
         let name = match target {
+            OwnedApplyTarget::Known(kp) => Cow::Borrowed(kp.name()),
             OwnedApplyTarget::Attr(ref n) | OwnedApplyTarget::Prop(ref n) => n.clone(),
             _ => Cow::Borrowed(""),
         };
         if !name.is_empty() {
             Effect::new(move |_| {
-                apply_attr_with_target_internal(&el, &name, attr_target.clone(), &rx.get());
+                apply_attr_with_target_internal(&el, &name, attr_target, &rx.get());
             });
         }
     }
 
-    fn into_op_reactive(
-        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
-        target: OwnedApplyTarget,
-    ) -> Option<AttrOp> {
+    fn into_op_reactive(rx: Rx<Self, RxValueKind>, target: OwnedApplyTarget) -> Option<AttrOp> {
         let op = match target {
+            OwnedApplyTarget::Known(kp) => AttrOp::Update(AttrUpdate {
+                name: Cow::Borrowed(kp.name()),
+                target: AttrTarget::Known(kp),
+                data: AttrData::ReactiveAttr(rx),
+            }),
             OwnedApplyTarget::Attr(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Attr,
@@ -445,6 +422,52 @@ impl ReactiveApply for bool {
 
 // --- Option<T> ReactiveApply ---
 
+fn update_option_class_diff(el: &WebElem, prev: Option<&str>, new_val: Option<&str>) {
+    let list = el.class_list();
+    let prev_set: HashSet<&str> = prev.map(|p| p.split_whitespace().collect()).unwrap_or_default();
+    let new_set: HashSet<&str> = new_val.map(|n| n.split_whitespace().collect()).unwrap_or_default();
+
+    for c in prev_set.difference(&new_set) {
+        let _ = list.remove_1(c);
+    }
+    for c in new_set.difference(&prev_set) {
+        let _ = list.add_1(c);
+    }
+}
+
+fn update_option_style_diff(el: &WebElem, prev: Option<&str>, new_val: Option<&str>) {
+    if let Some(style) = get_style_decl(el) {
+        let prev_map: std::collections::HashMap<String, String> = prev
+            .map(|p| {
+                parse_style_str(p)
+                    .into_iter()
+                    .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let new_map: std::collections::HashMap<String, String> = new_val
+            .map(|n| {
+                parse_style_str(n)
+                    .into_iter()
+                    .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let prev_keys: HashSet<&str> = prev_map.keys().map(|k| k.as_str()).collect();
+        let new_keys: HashSet<&str> = new_map.keys().map(|k| k.as_str()).collect();
+
+        for k in prev_keys.difference(&new_keys) {
+            let _ = style.remove_property(k);
+        }
+        for (k, v) in new_map {
+            let _ = style.set_property(&k, &v);
+        }
+    }
+}
+
+// --- Option<T> ReactiveApply ---
+
 pub(crate) fn apply_option_reactive_internal<T>(
     el: WebElem,
     target: OwnedApplyTarget,
@@ -463,30 +486,9 @@ pub(crate) fn apply_option_reactive_internal<T>(
         match target {
             OwnedApplyTarget::Attr(ref name) => {
                 if name == "class" {
-                    let list = el.class_list();
-                    if let Some(ref p) = *prev {
-                        for c in p.split_whitespace() {
-                            let _ = list.remove_1(c);
-                        }
-                    }
-                    if let Some(ref n) = new_val {
-                        for c in n.split_whitespace() {
-                            let _ = list.add_1(c);
-                        }
-                    }
+                    update_option_class_diff(&el, prev.as_deref(), new_val.as_deref());
                 } else if name == "style" {
-                    if let Some(style) = get_style_decl(&el) {
-                        if let Some(ref p) = *prev {
-                            for (k, _) in parse_style_str(p) {
-                                let _ = style.remove_property(&k);
-                            }
-                        }
-                        if let Some(ref n) = new_val {
-                            for (k, v) in parse_style_str(n) {
-                                let _ = style.set_property(&k, &v);
-                            }
-                        }
-                    }
+                    update_option_style_diff(&el, prev.as_deref(), new_val.as_deref());
                 } else {
                     match new_val {
                         Some(ref v) => {
@@ -505,32 +507,18 @@ pub(crate) fn apply_option_reactive_internal<T>(
                 };
                 apply_attr_with_target_internal(&el, name, AttrTarget::Prop, &attr);
             }
+            OwnedApplyTarget::Known(kp) => {
+                let attr = match &new_val {
+                    Some(v) => Attr::from(v.clone()),
+                    None => Attr::Removed,
+                };
+                apply_attr_with_target_internal(&el, kp.name(), AttrTarget::Known(kp), &attr);
+            }
             OwnedApplyTarget::Class => {
-                let list = el.class_list();
-                if let Some(ref p) = *prev {
-                    for c in p.split_whitespace() {
-                        let _ = list.remove_1(c);
-                    }
-                }
-                if let Some(ref n) = new_val {
-                    for c in n.split_whitespace() {
-                        let _ = list.add_1(c);
-                    }
-                }
+                update_option_class_diff(&el, prev.as_deref(), new_val.as_deref());
             }
             OwnedApplyTarget::Style => {
-                if let Some(style) = get_style_decl(&el) {
-                    if let Some(ref p) = *prev {
-                        for (k, _) in parse_style_str(p) {
-                            let _ = style.remove_property(&k);
-                        }
-                    }
-                    if let Some(ref n) = new_val {
-                        for (k, v) in parse_style_str(n) {
-                            let _ = style.set_property(&k, &v);
-                        }
-                    }
-                }
+                update_option_style_diff(&el, prev.as_deref(), new_val.as_deref());
             }
             OwnedApplyTarget::Apply => {}
         }

@@ -90,11 +90,18 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
                         }
                     }
                 } else if name == "style" {
-                    static_styles.extend(
-                        parse_style_str(&value)
-                            .into_iter()
-                            .map(|(k, v)| (k.into_owned().into(), v.into_owned().into())),
-                    );
+                    match value {
+                        Cow::Borrowed(s) => {
+                            for (k, v) in parse_style_str(s) {
+                                static_styles.push((k, v));
+                            }
+                        }
+                        Cow::Owned(ref s) => {
+                            for (k, v) in parse_style_str(s) {
+                                static_styles.push((k.into_owned().into(), v.into_owned().into()));
+                            }
+                        }
+                    }
                 } else {
                     let attr = Attr::String(value);
                     consolidated.push(PendingAttribute {
@@ -134,35 +141,32 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
         }
     }
 
-    // 按需生成合并后的 Style 指令
-    if !static_styles.is_empty() || !style_props.is_empty() || !style_sheets.is_empty() {
-        consolidated.insert(
-            0,
-            PendingAttribute {
-                op: AttrOp::CombinedStyles(CombinedStyles {
-                    statics: static_styles,
-                    properties: style_props,
-                    sheets: style_sheets,
-                }),
-            },
-        );
-    }
+    let mut result = Vec::with_capacity(consolidated.len() + 2);
 
     // 按需生成合并后的 Class 指令
     if !static_classes.is_empty() || !class_toggles.is_empty() || !reactive_classes.is_empty() {
-        consolidated.insert(
-            0,
-            PendingAttribute {
-                op: AttrOp::CombinedClasses(CombinedClasses {
-                    statics: static_classes,
-                    toggles: class_toggles,
-                    reactives: reactive_classes,
-                }),
-            },
-        );
+        result.push(PendingAttribute {
+            op: AttrOp::CombinedClasses(CombinedClasses {
+                statics: static_classes,
+                toggles: class_toggles,
+                reactives: reactive_classes,
+            }),
+        });
     }
 
-    consolidated
+    // 按需生成合并后的 Style 指令
+    if !static_styles.is_empty() || !style_props.is_empty() || !style_sheets.is_empty() {
+        result.push(PendingAttribute {
+            op: AttrOp::CombinedStyles(CombinedStyles {
+                statics: static_styles,
+                properties: style_props,
+                sheets: style_sheets,
+            }),
+        });
+    }
+
+    result.extend(consolidated);
+    result
 }
 
 impl ApplyToDom for PendingAttribute {

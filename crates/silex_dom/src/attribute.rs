@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::event::{EventDescriptor, EventHandler};
 
 mod apply;
@@ -36,18 +38,24 @@ pub trait AttributeBuilder: Sized {
 
     // === Unified Mixins (Default Implementation) ===
 
-    fn attr<V>(self, name: &str, value: V) -> Self
+    fn attr<V>(self, name: impl Into<Cow<'static, str>>, value: V) -> Self
     where
         V: IntoStorable,
     {
-        self.build_attribute(ApplyTarget::Attr(name), value)
+        self.build_attribute(ApplyTarget::Attr(name.into()), value)
     }
 
-    fn prop<V>(self, name: &str, value: V) -> Self
+    fn prop<V>(self, name: impl Into<Cow<'static, str>>, value: V) -> Self
     where
         V: IntoStorable,
     {
-        self.build_attribute(ApplyTarget::Prop(name), value)
+        let name = name.into();
+        let target = if let Some(kp) = KnownProp::parse(&name) {
+            ApplyTarget::Known(kp)
+        } else {
+            ApplyTarget::Prop(name)
+        };
+        self.build_attribute(target, value)
     }
 
     fn on<E, F, M>(self, event: E, callback: F) -> Self

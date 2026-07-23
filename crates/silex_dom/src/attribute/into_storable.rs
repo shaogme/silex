@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use super::{ApplyToDom, Attr, AttrOp, AttributeGroup, PendingAttribute};
 use crate::view::Prop;
 // --- IntoStorable: 允许非 'static 类型转换为可存储类型 ---
@@ -31,6 +33,13 @@ impl IntoStorable for &String {
 
 impl IntoStorable for String {
     type Stored = String;
+    fn into_storable(self) -> Self::Stored {
+        self
+    }
+}
+
+impl IntoStorable for Cow<'static, str> {
+    type Stored = Cow<'static, str>;
     fn into_storable(self) -> Self::Stored {
         self
     }
