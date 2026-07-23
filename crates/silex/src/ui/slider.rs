@@ -233,11 +233,7 @@ pub fn Slider(
         ))
         .attr("data-slot", "slider-track")
         .attr("data-orientation", orient)
-        .class(tw!("relative grow overflow-hidden rounded-full bg-muted data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5 cursor-pointer"))
-        .on_pointer_down(handle_down)
-        .on_pointer_move(handle_move)
-        .on_pointer_up(handle_up.clone())
-        .on_pointer_cancel(handle_up),
+        .class(tw!("relative grow overflow-hidden rounded-full bg-muted data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5 cursor-pointer")),
         // Visual Thumb
         div(())
             .attr("data-slot", "slider-thumb")
@@ -249,4 +245,8 @@ pub fn Slider(
     .attr("data-orientation", orient)
     .attr("data-disabled", rx!(move || if disabled.get() { Some("") } else { None }))
     .class(root_cls)
+    .on_pointer_down(handle_down)
+    .on_pointer_move(handle_move)
+    .on_pointer_up(handle_up.clone())
+    .on_pointer_cancel(handle_up)
 }
