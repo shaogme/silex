@@ -27,27 +27,6 @@ pub fn document() -> Document {
     DOCUMENT.with(|d| d.clone())
 }
 
-// --- Property Helpers ---
-
-/// Sets a property on a DOM element.
-pub fn set_property(el: &web_sys::Element, prop_name: &str, value: &Option<JsValue>) {
-    let key = JsValue::from_str(prop_name);
-    match value {
-        Some(value) => {
-            let _ = js_sys::Reflect::set(el, &key, value);
-        }
-        None => {
-            let _ = js_sys::Reflect::delete_property(el, &key);
-        }
-    };
-}
-
-/// Gets the value of a property set on a DOM element.
-pub fn get_property(el: &web_sys::Element, prop_name: &str) -> Result<JsValue, JsValue> {
-    let key = JsValue::from_str(prop_name);
-    js_sys::Reflect::get(el, &key)
-}
-
 // --- Location Helpers ---
 
 /// Returns the current [`window.location`](web_sys::Location).

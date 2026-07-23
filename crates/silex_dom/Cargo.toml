@@ -25,6 +25,7 @@ web-sys = { workspace = true, features = [
     "Text",
     "Window",
     "Element",
+    "DomRect",
     "Comment",
     "DocumentFragment",
     "MouseEvent",

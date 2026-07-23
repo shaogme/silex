@@ -4,7 +4,7 @@ use web_sys::Element as WebElem;
 
 use super::foundation::{ApplyTarget, ApplyToDom, OwnedApplyTarget};
 use crate::attribute::op::{
-    AttrData, AttrOp, AttrTarget, AttrUpdate, ClassToggle, CombinedClasses, CombinedStyles,
+    Attr, AttrData, AttrOp, AttrTarget, AttrUpdate, ClassToggle, CombinedClasses, CombinedStyles,
     StyleProperty, parse_style_str,
 };
 
@@ -74,7 +74,7 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
             AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Attr,
-                data: AttrData::StaticString(value),
+                data: AttrData::StaticAttr(Attr::String(value)),
             }) => {
                 if name == "class" {
                     match value {
@@ -96,11 +96,12 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
                             .map(|(k, v)| (k.into_owned().into(), v.into_owned().into())),
                     );
                 } else {
+                    let attr = Attr::String(value);
                     consolidated.push(PendingAttribute {
                         op: AttrOp::Update(AttrUpdate {
                             name,
                             target: AttrTarget::Attr,
-                            data: AttrData::StaticString(value),
+                            data: AttrData::StaticAttr(attr),
                         }),
                     });
                 }

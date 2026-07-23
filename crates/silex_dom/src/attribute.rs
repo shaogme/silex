@@ -123,8 +123,76 @@ pub trait AriaAttributes: AttributeBuilder {
         self.attr("aria-label", value)
     }
 
+    fn aria_labelledby(self, value: impl IntoStorable) -> Self {
+        self.attr("aria-labelledby", value)
+    }
+
+    fn aria_describedby(self, value: impl IntoStorable) -> Self {
+        self.attr("aria-describedby", value)
+    }
+
     fn aria_hidden(self, value: impl IntoStorable) -> Self {
         self.attr("aria-hidden", value)
+    }
+
+    fn aria_expanded(self, value: impl IntoStorable) -> Self {
+        self.attr("aria-expanded", value)
+    }
+
+    fn aria_checked(self, value: impl IntoStorable) -> Self {
+        self.attr("aria-checked", value)
+    }
+
+    fn aria_selected(self, value: impl IntoStorable) -> Self {
+        self.attr("aria-selected", value)
+    }
+
+    fn aria_controls(self, value: impl IntoStorable) -> Self {
+        self.attr("aria-controls", value)
+    }
+
+    fn aria_disabled(self, value: impl IntoStorable) -> Self {
+        self.attr("aria-disabled", value)
+    }
+
+    fn aria_invalid(self, value: impl IntoStorable) -> Self {
+        self.attr("aria-invalid", value)
+    }
+
+    fn aria_required(self, value: impl IntoStorable) -> Self {
+        self.attr("aria-required", value)
+    }
+
+    fn aria_valuenow(self, value: impl IntoStorable) -> Self {
+        self.attr("aria-valuenow", value)
+    }
+
+    fn aria_valuemin(self, value: impl IntoStorable) -> Self {
+        self.attr("aria-valuemin", value)
+    }
+
+    fn aria_valuemax(self, value: impl IntoStorable) -> Self {
+        self.attr("aria-valuemax", value)
+    }
+
+    fn aria_orientation(self, value: impl IntoStorable) -> Self {
+        self.attr("aria-orientation", value)
+    }
+
+    fn aria_haspopup(self, value: impl IntoStorable) -> Self {
+        self.attr("aria-haspopup", value)
+    }
+
+    fn aria_live(self, value: impl IntoStorable) -> Self {
+        self.attr("aria-live", value)
+    }
+
+    fn aria_atomic(self, value: impl IntoStorable) -> Self {
+        self.attr("aria-atomic", value)
+    }
+
+    fn aria_modal(self, value: impl IntoStorable) -> Self {
+        self.attr("aria-modal", value)
     }
 }
 
@@ -172,6 +240,34 @@ pub trait GlobalEventAttributes: AttributeBuilder {
         self.build_event(crate::event::click, callback)
     }
 
+    fn on_pointer_down<F, M>(self, callback: F) -> Self
+    where
+        F: EventHandler<web_sys::PointerEvent, M> + Clone + 'static,
+    {
+        self.build_event(crate::event::pointerdown, callback)
+    }
+
+    fn on_pointer_move<F, M>(self, callback: F) -> Self
+    where
+        F: EventHandler<web_sys::PointerEvent, M> + Clone + 'static,
+    {
+        self.build_event(crate::event::pointermove, callback)
+    }
+
+    fn on_pointer_up<F, M>(self, callback: F) -> Self
+    where
+        F: EventHandler<web_sys::PointerEvent, M> + Clone + 'static,
+    {
+        self.build_event(crate::event::pointerup, callback)
+    }
+
+    fn on_pointer_cancel<F, M>(self, callback: F) -> Self
+    where
+        F: EventHandler<web_sys::PointerEvent, M> + Clone + 'static,
+    {
+        self.build_event(crate::event::pointercancel, callback)
+    }
+
     fn on_input<F, M>(self, callback: F) -> Self
     where
         F: EventHandler<String, M> + Clone + 'static,
@@ -188,6 +284,28 @@ pub trait GlobalEventAttributes: AttributeBuilder {
                                 Ok(value) => handler(value),
                                 Err(err) => silex_core::error::handle_error(err),
                             }
+                        }
+                    }),
+                );
+            },
+        ))
+    }
+
+    fn on_change<F, M>(self, callback: F) -> Self
+    where
+        F: EventHandler<String, M> + Clone + 'static,
+    {
+        self.apply(PendingAttribute::new_listener(
+            move |el: &web_sys::Element| {
+                crate::element::bind_event_impl(
+                    el,
+                    "change".to_string(),
+                    Box::new({
+                        let mut handler = callback.clone().into_handler();
+                        move |e: web_sys::Event| match crate::helpers::event_target_value_result(&e)
+                        {
+                            Ok(value) => handler(value),
+                            Err(err) => silex_core::error::handle_error(err),
                         }
                     }),
                 );

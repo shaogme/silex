@@ -3,7 +3,8 @@ use wasm_bindgen::JsValue;
 use web_sys::Element as WebElem;
 
 use crate::attribute::op::{
-    AttrData, AttrOp, AttrTarget, AttrUpdate, apply_immediate_bool_internal, get_style_decl,
+    Attr, AttrData, AttrOp, AttrTarget, AttrUpdate, apply_attr_internal,
+    apply_attr_with_target_internal, apply_immediate_bool_internal, get_style_decl,
     parse_style_str, set_string_property_internal,
 };
 
@@ -185,7 +186,7 @@ impl ApplyToDom for &'static str {
             OwnedApplyTarget::Attr(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Attr,
-                data: AttrData::StaticString(self.into()),
+                data: AttrData::StaticAttr(Attr::from(self)),
             }),
             OwnedApplyTarget::Prop(name) => AttrOp::Update(AttrUpdate {
                 name,
@@ -213,7 +214,7 @@ impl ApplyToDom for String {
             OwnedApplyTarget::Attr(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Attr,
-                data: AttrData::StaticString(self.into()),
+                data: AttrData::StaticAttr(Attr::from(self)),
             }),
             OwnedApplyTarget::Prop(name) => AttrOp::Update(AttrUpdate {
                 name,
@@ -248,9 +249,20 @@ impl ApplyToDom for &String {
     }
 }
 
-impl ApplyToDom for bool {
+impl ApplyToDom for Attr {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
-        apply_immediate_bool(el, target, *self);
+        let owned_target = OwnedApplyTarget::from(target);
+        let attr_target = match owned_target {
+            OwnedApplyTarget::Prop(_) => AttrTarget::Prop,
+            _ => AttrTarget::Attr,
+        };
+        let name = match owned_target {
+            OwnedApplyTarget::Attr(ref n) | OwnedApplyTarget::Prop(ref n) => n.as_ref(),
+            _ => "",
+        };
+        if !name.is_empty() {
+            apply_attr_with_target_internal(el, name, attr_target, self);
+        }
     }
 
     fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
@@ -258,12 +270,40 @@ impl ApplyToDom for bool {
             OwnedApplyTarget::Attr(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Attr,
-                data: AttrData::StaticBool(self),
+                data: AttrData::StaticAttr(self),
             }),
             OwnedApplyTarget::Prop(name) => AttrOp::Update(AttrUpdate {
                 name,
                 target: AttrTarget::Prop,
-                data: AttrData::StaticBool(self),
+                data: AttrData::StaticAttr(self),
+            }),
+            _ => {
+                let attr = self;
+                AttrOp::Custom(std::rc::Rc::new(move |el| {
+                    apply_attr_internal(el, "", &attr);
+                }))
+            }
+        }
+    }
+}
+
+impl ApplyToDom for bool {
+    fn apply(&self, el: &WebElem, target: ApplyTarget) {
+        apply_immediate_bool(el, target, *self);
+    }
+
+    fn into_op(self, target: OwnedApplyTarget) -> AttrOp {
+        let attr = Attr::from(self);
+        match target {
+            OwnedApplyTarget::Attr(name) => AttrOp::Update(AttrUpdate {
+                name,
+                target: AttrTarget::Attr,
+                data: AttrData::StaticAttr(attr),
+            }),
+            OwnedApplyTarget::Prop(name) => AttrOp::Update(AttrUpdate {
+                name,
+                target: AttrTarget::Prop,
+                data: AttrData::StaticAttr(attr),
             }),
             _ => AttrOp::Custom(std::rc::Rc::new(move |el| {
                 apply_immediate_bool(el, ApplyTarget::Apply, self);

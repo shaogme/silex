@@ -86,6 +86,34 @@ pub trait FormAttributes: AttributeBuilder {
     fn method(self, value: impl IntoStorable) -> Self {
         self.attr("method", value)
     }
+
+    fn form(self, value: impl IntoStorable) -> Self {
+        self.attr("form", value)
+    }
+
+    fn novalidate(self, value: impl IntoStorable) -> Self {
+        self.attr("novalidate", value)
+    }
+
+    fn formaction(self, value: impl IntoStorable) -> Self {
+        self.attr("formaction", value)
+    }
+
+    fn formenctype(self, value: impl IntoStorable) -> Self {
+        self.attr("formenctype", value)
+    }
+
+    fn formmethod(self, value: impl IntoStorable) -> Self {
+        self.attr("formmethod", value)
+    }
+
+    fn formnovalidate(self, value: impl IntoStorable) -> Self {
+        self.attr("formnovalidate", value)
+    }
+
+    fn formtarget(self, value: impl IntoStorable) -> Self {
+        self.attr("formtarget", value)
+    }
 }
 
 /// 标签属性：主要用于 label
@@ -156,6 +184,26 @@ pub trait MediaAttributes: AttributeBuilder {
     fn preload(self, value: impl IntoStorable) -> Self {
         self.attr("preload", value)
     }
+
+    fn srcset(self, value: impl IntoStorable) -> Self {
+        self.attr("srcset", value)
+    }
+
+    fn sizes(self, value: impl IntoStorable) -> Self {
+        self.attr("sizes", value)
+    }
+
+    fn loading(self, value: impl IntoStorable) -> Self {
+        self.attr("loading", value)
+    }
+
+    fn decoding(self, value: impl IntoStorable) -> Self {
+        self.attr("decoding", value)
+    }
+
+    fn crossorigin(self, value: impl IntoStorable) -> Self {
+        self.attr("crossorigin", value)
+    }
 }
 
 /// 交互属性：主要用于 dialog, details
@@ -190,6 +238,66 @@ pub trait TableHeaderAttributes: AttributeBuilder {
         self.attr("abbr", value)
     }
 }
+
+/// Data-* 自定义与状态属性：提供给所有元素使用，极大简化 UI 组件库中 data-slot, data-state, data-orientation 等构造
+pub trait DataAttributes: AttributeBuilder {
+    fn data_slot(self, value: impl IntoStorable) -> Self {
+        self.attr("data-slot", value)
+    }
+
+    fn data_state(self, value: impl IntoStorable) -> Self {
+        self.attr("data-state", value)
+    }
+
+    fn data_orientation(self, value: impl IntoStorable) -> Self {
+        self.attr("data-orientation", value)
+    }
+
+    fn data_disabled(self, value: impl IntoStorable) -> Self {
+        self.attr("data-disabled", value)
+    }
+
+    fn data_value(self, value: impl IntoStorable) -> Self {
+        self.attr("data-value", value)
+    }
+
+    fn data_side(self, value: impl IntoStorable) -> Self {
+        self.attr("data-side", value)
+    }
+
+    fn data_align(self, value: impl IntoStorable) -> Self {
+        self.attr("data-align", value)
+    }
+
+    fn data_active(self, value: impl IntoStorable) -> Self {
+        self.attr("data-active", value)
+    }
+
+    fn data_open(self, value: impl IntoStorable) -> Self {
+        self.attr("data-open", value)
+    }
+}
+
+// 自动为所有实现 AttributeBuilder 的类型实现 DataAttributes
+impl<T: AttributeBuilder> DataAttributes for T {}
+
+/// Popover 浮层属性：提供给按钮及 HTML Popover 规范元素使用
+pub trait PopoverAttributes: AttributeBuilder {
+    fn popover(self, value: impl IntoStorable) -> Self {
+        self.attr("popover", value)
+    }
+
+    fn popovertarget(self, value: impl IntoStorable) -> Self {
+        self.attr("popovertarget", value)
+    }
+
+    fn popovertargetaction(self, value: impl IntoStorable) -> Self {
+        self.attr("popovertargetaction", value)
+    }
+}
+
+// 自动为所有实现 AttributeBuilder 的类型实现 PopoverAttributes
+impl<T: AttributeBuilder> PopoverAttributes for T {}
 
 // --- Blanket Implementations for TypedElement<T> ---
 

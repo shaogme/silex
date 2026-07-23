@@ -1,4 +1,4 @@
-use super::{ApplyToDom, AttributeGroup};
+use super::{ApplyToDom, Attr, AttrOp, AttributeGroup, PendingAttribute};
 use crate::view::Prop;
 // --- IntoStorable: 允许非 'static 类型转换为可存储类型 ---
 
@@ -87,14 +87,21 @@ impl_into_storable_rx!((S, F, O) => silex_core::reactivity::SignalSlice<S, F, O>
 
 // --- 3. 静态载体与逃逸舱 ---
 
-impl IntoStorable for super::AttrOp {
+impl IntoStorable for Attr {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {
         self
     }
 }
 
-impl IntoStorable for super::PendingAttribute {
+impl IntoStorable for AttrOp {
+    type Stored = Self;
+    fn into_storable(self) -> Self::Stored {
+        self
+    }
+}
+
+impl IntoStorable for PendingAttribute {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {
         self

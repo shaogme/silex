@@ -14,27 +14,79 @@ pub enum AttrTarget {
     Prop,
 }
 
+/// 代表 HTML Attribute 的三种基元状态
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Attr {
+    /// 移除属性 (remove_attribute)
+    Removed,
+    /// 布尔标志/空值属性 (set_attribute(name, ""))
+    Empty,
+    /// 包含字符串值的属性 (set_attribute(name, value))
+    String(Cow<'static, str>),
+}
+
+impl From<bool> for Attr {
+    fn from(b: bool) -> Self {
+        if b { Attr::Empty } else { Attr::Removed }
+    }
+}
+
+impl From<&'static str> for Attr {
+    fn from(s: &'static str) -> Self {
+        if s.is_empty() {
+            Attr::Empty
+        } else {
+            Attr::String(Cow::Borrowed(s))
+        }
+    }
+}
+
+impl From<String> for Attr {
+    fn from(s: String) -> Self {
+        if s.is_empty() {
+            Attr::Empty
+        } else {
+            Attr::String(Cow::Owned(s))
+        }
+    }
+}
+
+impl From<Cow<'static, str>> for Attr {
+    fn from(s: Cow<'static, str>) -> Self {
+        if s.is_empty() {
+            Attr::Empty
+        } else {
+            Attr::String(s)
+        }
+    }
+}
+
+impl<T: Into<Attr>> From<Option<T>> for Attr {
+    fn from(opt: Option<T>) -> Self {
+        match opt {
+            Some(v) => v.into(),
+            None => Attr::Removed,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum AttrData {
     // --- Static Values ---
-    StaticString(Cow<'static, str>),
-    StaticBool(bool),
+    StaticAttr(Attr),
     StaticJs(JsValue),
 
     // --- Reactive Values ---
-    ReactiveString(Rx<String>),
-    ReactiveBool(Rx<bool>),
+    ReactiveAttr(Rx<Attr>),
     ReactiveJs(Rx<JsValue>),
 }
 
 impl PartialEq for AttrData {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::StaticString(a), Self::StaticString(b)) => a == b,
-            (Self::StaticBool(a), Self::StaticBool(b)) => a == b,
+            (Self::StaticAttr(a), Self::StaticAttr(b)) => a == b,
             (Self::StaticJs(a), Self::StaticJs(b)) => a == b,
-            (Self::ReactiveString(a), Self::ReactiveString(b)) => a == b,
-            (Self::ReactiveBool(a), Self::ReactiveBool(b)) => a == b,
+            (Self::ReactiveAttr(a), Self::ReactiveAttr(b)) => a == b,
             (Self::ReactiveJs(a), Self::ReactiveJs(b)) => a == b,
             _ => false,
         }
@@ -229,29 +281,18 @@ impl AttrOp {
 }
 
 fn apply_update_internal(el: &Element, name: &str, target: AttrTarget, data: AttrData) {
-    let is_prop = matches!(target, AttrTarget::Prop);
     match data {
-        AttrData::StaticString(value) => {
-            set_string_property_internal(el, name, &value, is_prop);
-        }
-        AttrData::StaticBool(value) => {
-            apply_immediate_bool_internal(el, name, value, is_prop);
+        AttrData::StaticAttr(attr) => {
+            apply_attr_with_target_internal(el, name, target, &attr);
         }
         AttrData::StaticJs(value) => {
             let _ = js_sys::Reflect::set(el, &JsValue::from_str(name), &value);
         }
-        AttrData::ReactiveString(rx) => {
+        AttrData::ReactiveAttr(rx) => {
             let el = el.clone();
             let name = name.to_string();
             Effect::new(move |_| {
-                set_string_property_internal(&el, &name, &rx.get(), is_prop);
-            });
-        }
-        AttrData::ReactiveBool(rx) => {
-            let el = el.clone();
-            let name = name.to_string();
-            Effect::new(move |_| {
-                apply_immediate_bool_internal(&el, &name, rx.get(), is_prop);
+                apply_attr_with_target_internal(&el, &name, target.clone(), &rx.get());
             });
         }
         AttrData::ReactiveJs(rx) => {
@@ -380,32 +421,93 @@ fn apply_combined_styles_internal(
 
 // --- Kernel Functions (Non-generic DOM operations) ---
 
-pub(crate) fn set_string_property_internal(el: &Element, name: &str, value: &str, is_prop: bool) {
-    if is_prop {
-        let _ = js_sys::Reflect::set(el, &JsValue::from_str(name), &JsValue::from_str(value));
-    } else {
-        match name {
-            "class" => el.set_class_name(value),
+pub(crate) fn apply_attr_internal(el: &Element, name: &str, attr: &Attr) {
+    match attr {
+        Attr::Removed => {
+            let _ = el.remove_attribute(name);
+        }
+        Attr::Empty => {
+            let _ = el.set_attribute(name, "");
+        }
+        Attr::String(val) => match name {
+            "class" => el.set_class_name(val),
             "style" => {
                 if let Some(style) = get_style_decl(el) {
-                    style.set_css_text(value);
+                    style.set_css_text(val);
                 }
             }
             _ => {
-                let _ = el.set_attribute(name, value);
+                let _ = el.set_attribute(name, val);
             }
-        }
+        },
     }
 }
 
-pub(crate) fn apply_immediate_bool_internal(el: &Element, name: &str, value: bool, is_prop: bool) {
-    if is_prop {
-        let _ = js_sys::Reflect::set(el, &JsValue::from_str(name), &JsValue::from_bool(value));
-    } else if value {
-        let _ = el.set_attribute(name, "");
-    } else {
-        let _ = el.remove_attribute(name);
+pub(crate) fn apply_attr_with_target_internal(
+    el: &Element,
+    name: &str,
+    target: AttrTarget,
+    attr: &Attr,
+) {
+    if matches!(target, AttrTarget::Prop) {
+        if let Some(input) = el.dyn_ref::<web_sys::HtmlInputElement>() {
+            match name {
+                "value" => {
+                    let val = match attr {
+                        Attr::Removed | Attr::Empty => "",
+                        Attr::String(s) => s.as_ref(),
+                    };
+                    input.set_value(val);
+                    return;
+                }
+                "checked" => {
+                    let is_checked = matches!(attr, Attr::Empty | Attr::String(_));
+                    input.set_checked(is_checked);
+                    return;
+                }
+                "disabled" => {
+                    let is_disabled = matches!(attr, Attr::Empty | Attr::String(_));
+                    input.set_disabled(is_disabled);
+                    if is_disabled {
+                        let _ = el.set_attribute(name, "");
+                    } else {
+                        let _ = el.remove_attribute(name);
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        } else if let Some(textarea) = el.dyn_ref::<web_sys::HtmlTextAreaElement>() {
+            if name == "value" {
+                let val = match attr {
+                    Attr::Removed | Attr::Empty => "",
+                    Attr::String(s) => s.as_ref(),
+                };
+                textarea.set_value(val);
+                return;
+            }
+        }
     }
+
+    apply_attr_internal(el, name, attr);
+}
+
+pub(crate) fn set_string_property_internal(el: &Element, name: &str, value: &str, is_prop: bool) {
+    let target = if is_prop {
+        AttrTarget::Prop
+    } else {
+        AttrTarget::Attr
+    };
+    apply_attr_with_target_internal(el, name, target, &Attr::from(value.to_string()));
+}
+
+pub(crate) fn apply_immediate_bool_internal(el: &Element, name: &str, value: bool, is_prop: bool) {
+    let target = if is_prop {
+        AttrTarget::Prop
+    } else {
+        AttrTarget::Attr
+    };
+    apply_attr_with_target_internal(el, name, target, &Attr::from(value));
 }
 
 pub(crate) fn get_style_decl(el: &Element) -> Option<CssStyleDeclaration> {
