@@ -64,23 +64,35 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     // 处理包含条件分支句段的情形
     let mut inits_tokens = Vec::new();
     let mut reactive_body = Vec::new();
+    let mut compiled_cache = ::std::collections::HashMap::<String, String>::new();
+
+    let mut compile_rules_cached = |rules: Vec<ast::UtilityRule>| -> Result<String> {
+        if rules.is_empty() {
+            return Ok(String::new());
+        }
+        let css_block = build_css_block_from_rules(rules)?;
+        let key = quote! { #css_block }.to_string();
+        if let Some(cls) = compiled_cache.get(&key) {
+            return Ok(cls.clone());
+        }
+        let compile_result =
+            crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)?;
+        let cls_name = compile_result.class_name.clone();
+        inits_tokens.push(compile_result.generate_inits());
+        compiled_cache.insert(key, cls_name.clone());
+        Ok(cls_name)
+    };
 
     for seg in input.segments {
         match seg {
             TwSegment::Static(rules) => {
-                if rules.is_empty() {
-                    continue;
+                let cls_name = compile_rules_cached(rules)?;
+                if !cls_name.is_empty() {
+                    reactive_body.push(quote! {
+                        if !_slx_cls.is_empty() { _slx_cls.push(' '); }
+                        _slx_cls.push_str(#cls_name);
+                    });
                 }
-                let css_block = build_css_block_from_rules(rules)?;
-                let compile_result =
-                    crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)?;
-                let cls_name = compile_result.class_name.clone();
-                inits_tokens.push(compile_result.generate_inits());
-
-                reactive_body.push(quote! {
-                    if !_slx_cls.is_empty() { _slx_cls.push(' '); }
-                    _slx_cls.push_str(#cls_name);
-                });
             }
             TwSegment::Conditional {
                 condition,
@@ -88,27 +100,8 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                 else_rules,
                 ..
             } => {
-                let then_cls = if then_rules.is_empty() {
-                    String::new()
-                } else {
-                    let css_block = build_css_block_from_rules(then_rules)?;
-                    let compile_result =
-                        crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)?;
-                    let cls = compile_result.class_name.clone();
-                    inits_tokens.push(compile_result.generate_inits());
-                    cls
-                };
-
-                let else_cls = if else_rules.is_empty() {
-                    String::new()
-                } else {
-                    let css_block = build_css_block_from_rules(else_rules)?;
-                    let compile_result =
-                        crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)?;
-                    let cls = compile_result.class_name.clone();
-                    inits_tokens.push(compile_result.generate_inits());
-                    cls
-                };
+                let then_cls = compile_rules_cached(then_rules)?;
+                let else_cls = compile_rules_cached(else_rules)?;
 
                 if !else_cls.is_empty() {
                     reactive_body.push(quote! {
@@ -444,6 +437,24 @@ mod tests {
         assert!(code.contains("is_active"));
         assert!(code.contains("is_dark"));
         assert!(code.contains("inject_style"));
+    }
+
+    #[test]
+    fn test_conditional_tw_macro_deduplication() {
+        let ts = quote!(
+            "p-4",
+            (is_active, "bg-red-500", "bg-red-500")
+        );
+        let output = tw_impl(ts).unwrap();
+        let code = output.to_string();
+        // 每个编译块的 generate_inits 生成 2 个 inject_style 调用 (static_css 和 component_css)
+        // 2 个不重复的规则块 (p-4 和 bg-red-500) 对应 4 个 inject_style 调用
+        let inject_count = code.matches("inject_style").count();
+        assert_eq!(
+            inject_count, 4,
+            "Expected exactly 4 inject_style calls (2 per unique CSS block for p-4 and bg-red-500), got {}",
+            inject_count
+        );
     }
 
     #[test]

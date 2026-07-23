@@ -4,6 +4,7 @@ pub mod compiler;
 pub mod config;
 pub mod error;
 pub mod styled;
+pub mod table;
 pub mod theme;
 #[cfg(feature = "tw")]
 pub mod tw;
@@ -13,88 +14,18 @@ use quote::{quote, quote_spanned};
 use syn::Result;
 
 use compiler::CssCompiler;
-
-macro_rules! define_properties {
-    ($($css_name:literal => $rust_type:ident),* $(,)?) => {
-        fn lookup_builtin_prop(prop: &str) -> Option<&'static str> {
-            match prop {
-                $($css_name => Some(stringify!($rust_type)),)*
-                _ => None,
-            }
-        }
-    };
-}
-
-// 核心属性映射表
-define_properties! {
-    "any" => Any,
-    "p" => Padding,
-    "px" => PaddingInline,
-    "py" => PaddingBlock,
-    "pt" => PaddingTop,
-    "pr" => PaddingRight,
-    "pb" => PaddingBottom,
-    "pl" => PaddingLeft,
-    "m" => Margin,
-    "mx" => MarginInline,
-    "my" => MarginBlock,
-    "mt" => MarginTop,
-    "mr" => MarginRight,
-    "mb" => MarginBottom,
-    "ml" => MarginLeft,
-    "w" => Width,
-    "h" => Height,
-    "bg" => BackgroundColor,
-    "text" => Color,
-    "border" => BorderColor,
-    "rounded" => BorderRadius,
-    "width" => Width,
-    "height" => Height,
-    "color" => Color,
-    "background-color" => BackgroundColor,
-    "margin" => Margin,
-    "padding" => Padding,
-    "padding-inline" => PaddingInline,
-    "padding-block" => PaddingBlock,
-    "padding-top" => PaddingTop,
-    "padding-right" => PaddingRight,
-    "padding-bottom" => PaddingBottom,
-    "padding-left" => PaddingLeft,
-    "margin-inline" => MarginInline,
-    "margin-block" => MarginBlock,
-    "margin-top" => MarginTop,
-    "margin-right" => MarginRight,
-    "margin-bottom" => MarginBottom,
-    "margin-left" => MarginLeft,
-    "display" => Display,
-    "position" => Position,
-    "z-index" => ZIndex,
-    "opacity" => Opacity,
-    "flex" => Flex,
-    "grid" => Grid,
-}
+use table::PropertyResolveResult;
 
 pub(crate) fn get_prop_type(prop: &str, span: Span) -> Result<TokenStream> {
-    // 1. 优先查表
-    if let Some(type_name) = lookup_builtin_prop(prop) {
-        let ident = syn::Ident::new(type_name, Span::call_site());
-        return Ok(quote_spanned! { span => ::silex::css::types::props::#ident });
+    match table::resolve_property_type(prop, span)? {
+        PropertyResolveResult::Builtin(type_name) => {
+            let ident = syn::Ident::new(type_name, Span::call_site());
+            Ok(quote_spanned! { span => ::silex::css::types::props::#ident })
+        }
+        PropertyResolveResult::CustomVar => {
+            Ok(quote_spanned! { span => ::silex::css::types::props::Any })
+        }
     }
-
-    // 2. 严谨按 PascalCase 规则映射到 silex_css::types::props 中对应的强类型 Struct (禁止回退到 Any)
-    let pascal: String = prop
-        .split('-')
-        .map(|part| {
-            let mut c = part.chars();
-            match c.next() {
-                None => String::new(),
-                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-            }
-        })
-        .collect();
-
-    let ident = syn::Ident::new(&pascal, Span::call_site());
-    Ok(quote_spanned! { span => ::silex::css::types::props::#ident })
 }
 
 pub fn inject_css_impl(ts: TokenStream) -> Result<TokenStream> {
@@ -198,5 +129,27 @@ pub(crate) fn generate_css_output(
                 }
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_prop_type_custom_variable_and_builtin() {
+        let span = Span::call_site();
+        let builtin = get_prop_type("p", span).unwrap().to_string();
+        assert!(builtin.contains("Padding"));
+
+        let standard = get_prop_type("grid-template-columns", span).unwrap().to_string();
+        assert!(standard.contains("GridTemplateColumns"));
+
+        let custom_var = get_prop_type("--my-custom-color", span).unwrap().to_string();
+        assert!(custom_var.contains("Any"));
+
+        let unknown_err = get_prop_type("invalid-unknown-prop", span);
+        assert!(unknown_err.is_err());
+        assert!(unknown_err.unwrap_err().to_string().contains("未知的 CSS 属性"));
     }
 }
