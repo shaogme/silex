@@ -12,7 +12,7 @@ use silex_core::{Rx, RxValueKind};
 
 use super::foundation::{ApplyTarget, ApplyToDom, ReactiveApply};
 use crate::attribute::op::{
-    Attr, AttrData, AttrOp, AttrTarget, AttrUpdate, apply_attr_with_target_internal,
+    Attr, AttrData, AttrOp, AttrUpdate, apply_attr_with_target_internal,
     get_style_decl, parse_style_str, set_string_property_internal,
 };
 
@@ -33,12 +33,48 @@ pub(crate) fn derive_attr_rx<T: Into<Attr> + Clone + 'static>(
     Rx::derive(Box::new(move || rx.get().into()))
 }
 
-pub(crate) fn apply_primitive_reactive_internal(
+pub(crate) fn apply_primitive_reactive_internal<T: std::fmt::Display + Clone + 'static>(
     el: WebElem,
     target: ApplyTarget,
-    rx_erased: silex_core::Rx<String, silex_core::RxValueKind>,
+    rx: silex_core::Rx<T, silex_core::RxValueKind>,
 ) {
-    apply_string_reactive_internal(el, target, rx_erased);
+    match target {
+        ApplyTarget::Class => create_erased_class_effect_internal(el, derive_string_rx_internal(rx)),
+        ApplyTarget::Style => create_erased_style_effect_internal(el, derive_string_rx_internal(rx)),
+        ApplyTarget::Attr(ref name) if name == "class" => {
+            create_erased_class_effect_internal(el, derive_string_rx_internal(rx));
+        }
+        ApplyTarget::Attr(ref name) if name == "style" => {
+            create_erased_style_effect_internal(el, derive_string_rx_internal(rx));
+        }
+        ApplyTarget::Attr(name) => {
+            Effect::new(move |_| {
+                use silex_core::traits::RxGet;
+                let value = rx.get().to_string();
+                set_string_property_internal(&el, &name, &value, false);
+            });
+        }
+        ApplyTarget::Prop(name) => {
+            Effect::new(move |_| {
+                use silex_core::traits::RxGet;
+                let value = rx.get().to_string();
+                set_string_property_internal(&el, &name, &value, true);
+            });
+        }
+        ApplyTarget::Known(kp) => {
+            Effect::new(move |_| {
+                use silex_core::traits::RxGet;
+                let value = rx.get().to_string();
+                apply_attr_with_target_internal(
+                    &el,
+                    kp.name(),
+                    ApplyTarget::Known(kp),
+                    &Attr::from(value),
+                );
+            });
+        }
+        ApplyTarget::Apply => {}
+    }
 }
 
 fn create_erased_class_effect_internal(
@@ -88,7 +124,7 @@ pub(crate) fn apply_string_reactive_internal(
                 apply_attr_with_target_internal(
                     &el,
                     kp.name(),
-                    AttrTarget::Known(kp),
+                    ApplyTarget::Known(kp),
                     &Attr::from(value),
                 );
             });
@@ -132,16 +168,17 @@ pub(crate) fn apply_bool_reactive_internal(
             });
         }
         ApplyTarget::Prop(name) => {
+            let target = ApplyTarget::Prop(name.clone());
             Effect::new(move |_| {
                 let val = rx.get();
-                apply_attr_with_target_internal(&el, &name, AttrTarget::Prop, &Attr::from(val));
+                apply_attr_with_target_internal(&el, &name, target.clone(), &Attr::from(val));
             });
         }
         ApplyTarget::Known(kp) => {
             Effect::new(move |_| {
                 use silex_core::traits::RxGet;
                 let val = rx.get();
-                apply_attr_with_target_internal(&el, kp.name(), AttrTarget::Known(kp), &Attr::from(val));
+                apply_attr_with_target_internal(&el, kp.name(), ApplyTarget::Known(kp), &Attr::from(val));
             });
         }
         _ => {}
@@ -244,20 +281,17 @@ impl ReactiveApply for String {
                     AttrOp::BindReactiveStyleSheet(rx)
                 } else {
                     AttrOp::Update(AttrUpdate {
-                        name,
-                        target: AttrTarget::Attr,
+                        target: ApplyTarget::Attr(name),
                         data: AttrData::ReactiveAttr(derive_attr_rx(rx)),
                     })
                 }
             }
             ApplyTarget::Known(kp) => AttrOp::Update(AttrUpdate {
-                name: Cow::Borrowed(kp.name()),
-                target: AttrTarget::Known(kp),
+                target: ApplyTarget::Known(kp),
                 data: AttrData::ReactiveAttr(derive_attr_rx(rx)),
             }),
             ApplyTarget::Prop(name) => AttrOp::Update(AttrUpdate {
-                name,
-                target: AttrTarget::Prop,
+                target: ApplyTarget::Prop(name),
                 data: AttrData::ReactiveJs({
                     silex_core::Rx::derive(Box::new(move || {
                         use silex_core::traits::RxGet;
@@ -300,8 +334,7 @@ impl ReactiveApply for &'static str {
         el: WebElem,
         target: ApplyTarget,
     ) {
-        let string_rx = derive_string_rx_internal(rx);
-        apply_primitive_reactive_internal(el, target, string_rx);
+        apply_primitive_reactive_internal(el, target, rx);
     }
 
     fn apply_pair(
@@ -329,8 +362,7 @@ macro_rules! impl_reactive_apply_primitive {
         $(
             impl ReactiveApply for $t {
                 fn apply_to_dom(rx: silex_core::Rx<Self, silex_core::RxValueKind>, el: WebElem, target: ApplyTarget) {
-                    let string_rx = derive_string_rx_internal(rx);
-                    apply_primitive_reactive_internal(el, target, string_rx);
+                    apply_primitive_reactive_internal(el, target, rx);
                 }
                 fn apply_pair(rx: silex_core::Rx<Self, silex_core::RxValueKind>, key: Cow<'static, str>, el: WebElem, target: ApplyTarget) {
                     let string_rx = derive_string_rx_internal(rx);
@@ -355,40 +387,21 @@ impl_reactive_apply_primitive!(
 
 impl ReactiveApply for Attr {
     fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: WebElem, target: ApplyTarget) {
-        let attr_target = match target {
-            ApplyTarget::Known(kp) => AttrTarget::Known(kp),
-            ApplyTarget::Prop(_) => AttrTarget::Prop,
-            _ => AttrTarget::Attr,
-        };
-        let name = match target {
-            ApplyTarget::Known(kp) => Cow::Borrowed(kp.name()),
-            ApplyTarget::Attr(ref n) | ApplyTarget::Prop(ref n) => n.clone(),
-            _ => Cow::Borrowed(""),
-        };
-        if !name.is_empty() {
+        if let Some(name) = target.name() {
             Effect::new(move |_| {
-                apply_attr_with_target_internal(&el, &name, attr_target, &rx.get());
+                apply_attr_with_target_internal(&el, &name, target.clone(), &rx.get());
             });
         }
     }
 
     fn into_op_reactive(rx: Rx<Self, RxValueKind>, target: ApplyTarget) -> Option<AttrOp> {
         let op = match target {
-            ApplyTarget::Known(kp) => AttrOp::Update(AttrUpdate {
-                name: Cow::Borrowed(kp.name()),
-                target: AttrTarget::Known(kp),
-                data: AttrData::ReactiveAttr(rx),
-            }),
-            ApplyTarget::Attr(name) => AttrOp::Update(AttrUpdate {
-                name,
-                target: AttrTarget::Attr,
-                data: AttrData::ReactiveAttr(rx),
-            }),
-            ApplyTarget::Prop(name) => AttrOp::Update(AttrUpdate {
-                name,
-                target: AttrTarget::Prop,
-                data: AttrData::ReactiveAttr(rx),
-            }),
+            ApplyTarget::Known(_) | ApplyTarget::Attr(_) | ApplyTarget::Prop(_) => {
+                AttrOp::Update(AttrUpdate {
+                    target,
+                    data: AttrData::ReactiveAttr(rx),
+                })
+            }
             _ => {
                 let rx_inner = rx;
                 let target_clone = target.clone();
@@ -433,21 +446,12 @@ impl ReactiveApply for bool {
         target: ApplyTarget,
     ) -> Option<AttrOp> {
         let op = match target {
-            ApplyTarget::Attr(name) => AttrOp::Update(AttrUpdate {
-                name,
-                target: AttrTarget::Attr,
-                data: AttrData::ReactiveAttr(derive_attr_rx(rx)),
-            }),
-            ApplyTarget::Prop(name) => AttrOp::Update(AttrUpdate {
-                name,
-                target: AttrTarget::Prop,
-                data: AttrData::ReactiveAttr(derive_attr_rx(rx)),
-            }),
-            ApplyTarget::Known(kp) => AttrOp::Update(AttrUpdate {
-                name: Cow::Borrowed(kp.name()),
-                target: AttrTarget::Known(kp),
-                data: AttrData::ReactiveAttr(derive_attr_rx(rx)),
-            }),
+            ApplyTarget::Attr(_) | ApplyTarget::Prop(_) | ApplyTarget::Known(_) => {
+                AttrOp::Update(AttrUpdate {
+                    target,
+                    data: AttrData::ReactiveAttr(derive_attr_rx(rx)),
+                })
+            }
             _ => {
                 let rx_inner = rx;
                 let target_clone = target.clone();
@@ -562,14 +566,14 @@ pub(crate) fn apply_option_reactive_internal<T>(
                     Some(v) => Attr::from(v.clone()),
                     None => Attr::Removed,
                 };
-                apply_attr_with_target_internal(&el, name, AttrTarget::Prop, &attr);
+                apply_attr_with_target_internal(&el, name, target.clone(), &attr);
             }
             ApplyTarget::Known(kp) => {
                 let attr = match &new_val {
                     Some(v) => Attr::from(v.clone()),
                     None => Attr::Removed,
                 };
-                apply_attr_with_target_internal(&el, kp.name(), AttrTarget::Known(kp), &attr);
+                apply_attr_with_target_internal(&el, kp.name(), ApplyTarget::Known(kp), &attr);
             }
             ApplyTarget::Class => {
                 update_option_class_diff(&el, prev.as_deref(), new_val.as_deref());

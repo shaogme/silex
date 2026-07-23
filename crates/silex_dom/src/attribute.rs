@@ -423,9 +423,8 @@ mod tests {
         let target = ApplyTarget::Known(KnownProp::Disabled);
         let pending = PendingAttribute::build(signal.into_storable(), target);
         match pending.op {
-            AttrOp::Update(AttrUpdate { name, target, .. }) => {
-                assert_eq!(name, "disabled");
-                assert_eq!(target, AttrTarget::Known(KnownProp::Disabled));
+            AttrOp::Update(AttrUpdate { target, .. }) => {
+                assert_eq!(target, ApplyTarget::Known(KnownProp::Disabled));
             }
             _ => panic!("Expected AttrOp::Update for KnownProp reactive bool"),
         }

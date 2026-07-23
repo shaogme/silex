@@ -4,7 +4,7 @@ use web_sys::Element as WebElem;
 
 use super::foundation::{ApplyTarget, ApplyToDom};
 use crate::attribute::op::{
-    Attr, AttrData, AttrOp, AttrTarget, AttrUpdate, ClassToggle, CombinedClasses, CombinedStyles,
+    Attr, AttrData, AttrOp, AttrUpdate, ClassToggle, CombinedClasses, CombinedStyles,
     StyleProperty, parse_style_str,
 };
 
@@ -72,47 +72,36 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
 
             // --- 通用属性指令 (检查是否为 class/style) ---
             AttrOp::Update(AttrUpdate {
-                name,
-                target: AttrTarget::Attr,
-                data: AttrData::StaticAttr(Attr::String(value)),
-            }) => {
-                if name == "class" {
-                    match value {
-                        Cow::Borrowed(s) => {
-                            for token in s.split_whitespace() {
-                                static_classes.push(Cow::Borrowed(token));
-                            }
-                        }
-                        Cow::Owned(s) => {
-                            for token in s.split_whitespace() {
-                                static_classes.push(Cow::Owned(token.to_string()));
-                            }
-                        }
+                target: ApplyTarget::Attr(ref name),
+                data: AttrData::StaticAttr(Attr::String(ref value)),
+            }) if name == "class" => match value {
+                Cow::Borrowed(s) => {
+                    for token in s.split_whitespace() {
+                        static_classes.push(Cow::Borrowed(token));
                     }
-                } else if name == "style" {
-                    match value {
-                        Cow::Borrowed(s) => {
-                            for (k, v) in parse_style_str(s) {
-                                static_styles.push((k, v));
-                            }
-                        }
-                        Cow::Owned(ref s) => {
-                            for (k, v) in parse_style_str(s) {
-                                static_styles.push((k.into_owned().into(), v.into_owned().into()));
-                            }
-                        }
-                    }
-                } else {
-                    let attr = Attr::String(value);
-                    consolidated.push(PendingAttribute {
-                        op: AttrOp::Update(AttrUpdate {
-                            name,
-                            target: AttrTarget::Attr,
-                            data: AttrData::StaticAttr(attr),
-                        }),
-                    });
                 }
-            }
+                Cow::Owned(s) => {
+                    for token in s.split_whitespace() {
+                        static_classes.push(Cow::Owned(token.to_string()));
+                    }
+                }
+            },
+
+            AttrOp::Update(AttrUpdate {
+                target: ApplyTarget::Attr(ref name),
+                data: AttrData::StaticAttr(Attr::String(ref value)),
+            }) if name == "style" => match value {
+                Cow::Borrowed(s) => {
+                    for (k, v) in parse_style_str(s) {
+                        static_styles.push((k, v));
+                    }
+                }
+                Cow::Owned(s) => {
+                    for (k, v) in parse_style_str(&s) {
+                        static_styles.push((k.into_owned().into(), v.into_owned().into()));
+                    }
+                }
+            },
 
             // --- 合并指令收集 (防止重复合并导致覆盖) ---
             AttrOp::CombinedClasses(CombinedClasses {
