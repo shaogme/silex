@@ -276,6 +276,22 @@ impl ReactiveApply for String {
         };
         Some(op)
     }
+
+    fn into_op_pair_reactive(
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        key: Cow<'static, str>,
+        target: ApplyTarget,
+    ) -> Option<AttrOp> {
+        let is_style = matches!(target, ApplyTarget::Style)
+            || matches!(target, ApplyTarget::Attr(ref n) if n == "style");
+        if is_style {
+            Some(AttrOp::BindStyleProperty(
+                crate::attribute::op::StyleProperty { name: key, rx },
+            ))
+        } else {
+            None
+        }
+    }
 }
 
 impl ReactiveApply for &'static str {
@@ -297,6 +313,15 @@ impl ReactiveApply for &'static str {
         let string_rx = derive_string_rx_internal(rx);
         apply_string_pair_reactive_internal(el, key, target, string_rx);
     }
+
+    fn into_op_pair_reactive(
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        key: Cow<'static, str>,
+        target: ApplyTarget,
+    ) -> Option<AttrOp> {
+        let string_rx = derive_string_rx_internal(rx);
+        <String as ReactiveApply>::into_op_pair_reactive(string_rx, key, target)
+    }
 }
 
 macro_rules! impl_reactive_apply_primitive {
@@ -314,6 +339,10 @@ macro_rules! impl_reactive_apply_primitive {
                 fn into_op_reactive(rx: silex_core::Rx<Self, silex_core::RxValueKind>, target: ApplyTarget) -> Option<AttrOp> {
                     let string_rx = derive_string_rx_internal(rx);
                     <String as ReactiveApply>::into_op_reactive(string_rx, target)
+                }
+                fn into_op_pair_reactive(rx: silex_core::Rx<Self, silex_core::RxValueKind>, key: Cow<'static, str>, target: ApplyTarget) -> Option<AttrOp> {
+                    let string_rx = derive_string_rx_internal(rx);
+                    <String as ReactiveApply>::into_op_pair_reactive(string_rx, key, target)
                 }
             }
         )*
@@ -428,6 +457,22 @@ impl ReactiveApply for bool {
             }
         };
         Some(op)
+    }
+
+    fn into_op_pair_reactive(
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        key: Cow<'static, str>,
+        target: ApplyTarget,
+    ) -> Option<AttrOp> {
+        let is_class = matches!(target, ApplyTarget::Class)
+            || matches!(target, ApplyTarget::Attr(ref n) if n == "class");
+        if is_class {
+            Some(AttrOp::AddClassToggle(
+                crate::attribute::op::ClassToggle { name: key, rx },
+            ))
+        } else {
+            None
+        }
     }
 }
 

@@ -73,6 +73,18 @@ pub trait ReactiveApply {
         let _ = (rx, target);
         None
     }
+
+    fn into_op_pair_reactive(
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        key: Cow<'static, str>,
+        target: ApplyTarget,
+    ) -> Option<AttrOp>
+    where
+        Self: Sized,
+    {
+        let _ = (rx, key, target);
+        None
+    }
 }
 
 // --- Basic Traits & Static Implementations ---
@@ -403,7 +415,7 @@ impl_apply_to_dom_for_primitive!(
 // 响应式元组归一化终点：(K, Rx<T>)
 impl<K, T> ApplyToDom for (K, silex_core::Rx<T, silex_core::RxValueKind>)
 where
-    K: Into<Cow<'static, str>> + Clone,
+    K: Into<Cow<'static, str>> + Clone + 'static,
     T: ReactiveApply + Clone + 'static,
 {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
@@ -411,24 +423,66 @@ where
         let el = el.clone();
         T::apply_pair(rx, key.into(), el, target);
     }
+
+    fn into_op(self, target: ApplyTarget) -> AttrOp {
+        let (key, rx) = self;
+        let key_cow: Cow<'static, str> = key.into();
+        if let Some(op) = T::into_op_pair_reactive(rx, key_cow.clone(), target.clone()) {
+            op
+        } else {
+            AttrOp::Custom(std::rc::Rc::new(move |el| {
+                T::apply_pair(rx, key_cow.clone(), el.clone(), target.clone());
+            }))
+        }
+    }
 }
 
 // 静态元组 (Key, StaticValue)
 impl<K> ApplyToDom for (K, String)
 where
-    K: AsRef<str>,
+    K: Into<Cow<'static, str>> + Clone + 'static,
 {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
-        apply_static_pair(el, &target, self.0.as_ref(), &self.1);
+        let key_cow: Cow<'static, str> = self.0.clone().into();
+        apply_static_pair(el, &target, key_cow.as_ref(), &self.1);
+    }
+
+    fn into_op(self, target: ApplyTarget) -> AttrOp {
+        let (key, value) = self;
+        let key_cow: Cow<'static, str> = key.into();
+        let is_style = matches!(target, ApplyTarget::Style)
+            || matches!(target, ApplyTarget::Attr(ref n) if n == "style");
+        if is_style {
+            AttrOp::SetStaticStyles(vec![(key_cow, Cow::Owned(value))])
+        } else {
+            AttrOp::Custom(std::rc::Rc::new(move |el| {
+                apply_static_pair(el, &target, key_cow.as_ref(), &value);
+            }))
+        }
     }
 }
 
 impl<K> ApplyToDom for (K, &'static str)
 where
-    K: AsRef<str>,
+    K: Into<Cow<'static, str>> + Clone + 'static,
 {
     fn apply(&self, el: &WebElem, target: ApplyTarget) {
-        apply_static_pair(el, &target, self.0.as_ref(), self.1);
+        let key_cow: Cow<'static, str> = self.0.clone().into();
+        apply_static_pair(el, &target, key_cow.as_ref(), self.1);
+    }
+
+    fn into_op(self, target: ApplyTarget) -> AttrOp {
+        let (key, value) = self;
+        let key_cow: Cow<'static, str> = key.into();
+        let is_style = matches!(target, ApplyTarget::Style)
+            || matches!(target, ApplyTarget::Attr(ref n) if n == "style");
+        if is_style {
+            AttrOp::SetStaticStyles(vec![(key_cow, Cow::Borrowed(value))])
+        } else {
+            AttrOp::Custom(std::rc::Rc::new(move |el| {
+                apply_static_pair(el, &target, key_cow.as_ref(), value);
+            }))
+        }
     }
 }
 

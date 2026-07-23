@@ -442,18 +442,24 @@ fn apply_combined_classes_internal(
     }
 
     // 2. 建立单 Effect 追踪所有响应式部分
+    let prev_toggles = Rc::new(RefCell::new(vec![None::<bool>; toggles.len()]));
     let prev_reactive_tokens = Rc::new(RefCell::new(HashSet::<String>::new()));
     let el_clone = el.clone();
 
     Effect::new(move |_| {
         let list = el_clone.class_list();
 
-        // 处理所有 Toggle (如 .class_toggle)
-        for (name, rx) in &toggles {
-            if rx.get() {
-                let _ = list.add_1(name);
-            } else {
-                let _ = list.remove_1(name);
+        // 处理所有 Toggle (如 .class_toggle)，仅在状态改变时才更新 DOM
+        let mut prev_t = prev_toggles.borrow_mut();
+        for (i, (name, rx)) in toggles.iter().enumerate() {
+            let val = rx.get();
+            if prev_t[i] != Some(val) {
+                if val {
+                    let _ = list.add_1(name);
+                } else {
+                    let _ = list.remove_1(name);
+                }
+                prev_t[i] = Some(val);
             }
         }
 
@@ -507,14 +513,20 @@ fn apply_combined_styles_internal(
     }
 
     // 2. 建立单 Effect 追踪所有响应式样式
+    let prev_props = Rc::new(RefCell::new(vec![None::<String>; properties.len()]));
     let prev_sheet_keys = Rc::new(RefCell::new(HashSet::<String>::new()));
     let el_clone = el.clone();
 
     Effect::new(move |_| {
         if let Some(style) = get_style_decl(&el_clone) {
-            // 处理单项 Property 绑定
-            for (name, rx) in &properties {
-                let _ = style.set_property(name, &rx.get());
+            // 处理单项 Property 绑定 (仅在值发生变化时更新 DOM)
+            let mut prev_p = prev_props.borrow_mut();
+            for (i, (name, rx)) in properties.iter().enumerate() {
+                let val = rx.get();
+                if prev_p[i].as_deref() != Some(&val) {
+                    let _ = style.set_property(name, &val);
+                    prev_p[i] = Some(val);
+                }
             }
 
             // 处理整块响应式样式字符串 (Diff 处理)

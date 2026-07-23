@@ -183,16 +183,15 @@ impl IdleCallbackHandle {
     }
 }
 
-pub fn request_idle_callback(cb: impl Fn() + 'static) {
+pub fn request_idle_callback(cb: impl FnOnce() + 'static) {
     let _ = request_idle_callback_with_handle(cb);
 }
 
 pub fn request_idle_callback_with_handle(
-    cb: impl Fn() + 'static,
+    cb: impl FnOnce() + 'static,
 ) -> Result<IdleCallbackHandle, JsValue> {
-    let cb = Closure::wrap(Box::new(cb) as Box<dyn Fn()>).into_js_value();
     window()
-        .request_idle_callback(cb.as_ref().unchecked_ref())
+        .request_idle_callback(closure_once(cb).as_ref().unchecked_ref())
         .map(IdleCallbackHandle)
 }
 

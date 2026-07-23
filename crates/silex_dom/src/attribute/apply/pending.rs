@@ -143,9 +143,10 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
 
     let mut result = Vec::with_capacity(consolidated.len() + 2);
 
-    // 静态类名去重逻辑，减少重复 DOM class_list 操作
+    // 静态类名去重逻辑，保持顺序剔除重复项，减少重复 DOM class_list 操作
     if static_classes.len() > 1 {
-        static_classes.dedup();
+        let mut seen = std::collections::HashSet::new();
+        static_classes.retain(|c| seen.insert(c.clone()));
     }
 
     // 按需生成合并后的 Class 指令

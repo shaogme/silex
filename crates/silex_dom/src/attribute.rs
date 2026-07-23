@@ -415,6 +415,7 @@ impl AttributeBuilder for crate::view::AnyView {
 mod tests {
     use super::*;
     use silex_core::reactivity::RwSignal;
+    use silex_core::traits::IntoRx;
 
     #[test]
     fn test_known_prop_reactive_bool_into_op() {
@@ -440,5 +441,67 @@ mod tests {
 
         let op_false = ("active", false).into_op(ApplyTarget::Class);
         assert_eq!(op_false, AttrOp::Noop);
+    }
+
+    #[test]
+    fn test_tuple_reactive_bool_class_into_op() {
+        let signal = RwSignal::new(true);
+        let rx = signal.into_rx();
+        let op = ("active", rx).into_op(ApplyTarget::Class);
+        assert_eq!(
+            op,
+            AttrOp::AddClassToggle(ClassToggle {
+                name: Cow::Borrowed("active"),
+                rx,
+            })
+        );
+    }
+
+    #[test]
+    fn test_tuple_reactive_string_style_into_op() {
+        let signal = RwSignal::new("10px".to_string());
+        let rx = signal.into_rx();
+        let op = ("margin", rx).into_op(ApplyTarget::Style);
+        assert_eq!(
+            op,
+            AttrOp::BindStyleProperty(StyleProperty {
+                name: Cow::Borrowed("margin"),
+                rx,
+            })
+        );
+    }
+
+    #[test]
+    fn test_tuple_static_string_style_into_op() {
+        let op = ("color", "red").into_op(ApplyTarget::Style);
+        assert_eq!(
+            op,
+            AttrOp::SetStaticStyles(vec![(Cow::Borrowed("color"), Cow::Borrowed("red"))])
+        );
+    }
+
+    #[test]
+    fn test_consolidate_attributes_dedup_and_combine() {
+        let signal = RwSignal::new(true);
+        let rx = signal.into_rx();
+
+        let attrs = vec![
+            PendingAttribute::build("btn", ApplyTarget::Class),
+            PendingAttribute::build("active", ApplyTarget::Class),
+            PendingAttribute::build("btn", ApplyTarget::Class), // 重复项 (非相邻)
+            PendingAttribute::build(("highlight", rx), ApplyTarget::Class),
+        ];
+
+        let consolidated = consolidate_attributes(attrs);
+        assert_eq!(consolidated.len(), 1);
+
+        match &consolidated[0].op {
+            AttrOp::CombinedClasses(cc) => {
+                assert_eq!(cc.statics, vec![Cow::Borrowed("btn"), Cow::Borrowed("active")]);
+                assert_eq!(cc.toggles.len(), 1);
+                assert_eq!(cc.toggles[0].0, "highlight");
+            }
+            _ => panic!("Expected AttrOp::CombinedClasses"),
+        }
     }
 }
