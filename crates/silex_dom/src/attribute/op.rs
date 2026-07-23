@@ -410,7 +410,7 @@ fn apply_update_internal(el: &Element, name: &str, target: AttrTarget, data: Att
             let el = el.clone();
             let name = name.to_string();
             Effect::new(move |_| {
-                apply_attr_with_target_internal(&el, &name, target.clone(), &rx.get());
+                apply_attr_with_target_internal(&el, &name, target, &rx.get());
             });
         }
         AttrData::ReactiveJs(rx) => {
@@ -493,9 +493,8 @@ fn apply_combined_styles_internal(
     properties: Vec<(Cow<'static, str>, Rx<String>)>,
     sheets: Vec<Rx<String>>,
 ) {
-    let style = match get_style_decl(el) {
-        Some(s) => s,
-        None => return,
+    let Some(style) = get_style_decl(el) else {
+        return;
     };
 
     // 1. 立即应用所有静态样式项

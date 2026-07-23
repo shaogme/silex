@@ -17,7 +17,7 @@ use silex_core::traits::{RxGet, RxWrite};
 macro_rules! group {
     ($($attr:expr),* $(,)?) => {
         $crate::attribute::AttributeGroup(vec![
-            $( $crate::attribute::ApplyToDom::into_op($attr, $crate::attribute::OwnedApplyTarget::Apply) ),*
+            $( $crate::attribute::ApplyToDom::into_op($attr, $crate::attribute::ApplyTarget::Apply) ),*
         ])
     };
 }
@@ -393,7 +393,7 @@ impl AttributeBuilder for crate::view::AnyView {
         use crate::view::ApplyAttributes;
         self.apply_attributes(vec![PendingAttribute::build(
             value.into_storable(),
-            OwnedApplyTarget::from(target),
+            target,
         )]);
         self
     }
@@ -420,7 +420,7 @@ mod tests {
     fn test_known_prop_reactive_bool_into_op() {
         let signal = RwSignal::new(true);
         let target = ApplyTarget::Known(KnownProp::Disabled);
-        let pending = PendingAttribute::build(signal.into_storable(), OwnedApplyTarget::from(target));
+        let pending = PendingAttribute::build(signal.into_storable(), target);
         match pending.op {
             AttrOp::Update(AttrUpdate { name, target, .. }) => {
                 assert_eq!(name, "disabled");
@@ -432,13 +432,13 @@ mod tests {
 
     #[test]
     fn test_tuple_bool_class_into_op() {
-        let op_true = ("active", true).into_op(OwnedApplyTarget::Class);
+        let op_true = ("active", true).into_op(ApplyTarget::Class);
         assert_eq!(
             op_true,
             AttrOp::SetStaticClasses(vec![std::borrow::Cow::Borrowed("active")])
         );
 
-        let op_false = ("active", false).into_op(OwnedApplyTarget::Class);
+        let op_false = ("active", false).into_op(ApplyTarget::Class);
         assert_eq!(op_false, AttrOp::Noop);
     }
 }

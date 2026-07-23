@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::rc::Rc;
 use web_sys::Element as WebElem;
 
-use super::foundation::{ApplyTarget, ApplyToDom, OwnedApplyTarget};
+use super::foundation::{ApplyTarget, ApplyToDom};
 use crate::attribute::op::{
     Attr, AttrData, AttrOp, AttrTarget, AttrUpdate, ClassToggle, CombinedClasses, CombinedStyles,
     StyleProperty, parse_style_str,
@@ -85,7 +85,7 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
                         }
                         Cow::Owned(s) => {
                             for token in s.split_whitespace() {
-                                static_classes.push(token.to_string().into());
+                                static_classes.push(Cow::Owned(token.to_string()));
                             }
                         }
                     }
@@ -143,6 +143,11 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
 
     let mut result = Vec::with_capacity(consolidated.len() + 2);
 
+    // 静态类名去重逻辑，减少重复 DOM class_list 操作
+    if static_classes.len() > 1 {
+        static_classes.dedup();
+    }
+
     // 按需生成合并后的 Class 指令
     if !static_classes.is_empty() || !class_toggles.is_empty() || !reactive_classes.is_empty() {
         result.push(PendingAttribute {
@@ -174,13 +179,13 @@ impl ApplyToDom for PendingAttribute {
         self.apply(el);
     }
 
-    fn into_op(self, _target: OwnedApplyTarget) -> AttrOp {
+    fn into_op(self, _target: ApplyTarget) -> AttrOp {
         self.op
     }
 }
 
 impl PendingAttribute {
-    pub fn build<V>(value: V, target: OwnedApplyTarget) -> Self
+    pub fn build<V>(value: V, target: ApplyTarget) -> Self
     where
         V: ApplyToDom + 'static,
     {
