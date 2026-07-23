@@ -278,11 +278,28 @@ impl_css_ops!(Rad, CssAngle, AngleMark);
 impl_css_ops!(Turn, CssAngle, AngleMark);
 impl_css_ops!(CalcValue<AngleMark>, CssAngle, AngleMark);
 
+pub trait CssProperty {
+    type Value;
+    const PROPERTY_NAME: &'static str;
+}
+
 macro_rules! define_props {
     ($( ($snake:ident, $kebab:expr, $pascal:ident, $group:ident) ),*) => {
         pub mod props {
             $( pub struct $pascal; )*
             pub struct Any;
+        }
+
+        $(
+            impl $crate::types::CssProperty for props::$pascal {
+                type Value = ();
+                const PROPERTY_NAME: &'static str = $kebab;
+            }
+        )*
+
+        impl $crate::types::CssProperty for props::Any {
+            type Value = ();
+            const PROPERTY_NAME: &'static str = "";
         }
 
         // 所有属性默认支持 CssUnsafe 和无类型限制的 CssVar<()>

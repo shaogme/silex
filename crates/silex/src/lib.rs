@@ -71,7 +71,9 @@ pub mod prelude {
     pub use crate::core::prelude::{Map, RxWrite};
     pub use crate::flow::Switch;
     pub use crate::router::Link;
-    pub use silex_css::prelude::{Style, VariantSchema, declare_variants, linear_gradient, radial_gradient};
+    pub use silex_css::prelude::{
+        Style, VariantSchema, declare_variants, linear_gradient, radial_gradient,
+    };
     pub use silex_dom::prelude::{ApplyAttributes, View, text};
     pub use silex_html::{Em, em};
     #[cfg(feature = "css")]

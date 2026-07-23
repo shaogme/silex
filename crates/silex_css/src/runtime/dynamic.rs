@@ -137,6 +137,33 @@ pub struct DynamicCss {
     pub rules: Vec<(&'static str, Vec<CssVariableGetter>)>,
 }
 
+impl DynamicCss {
+    pub fn new(class_name: &'static str) -> Self {
+        Self {
+            class_name,
+            vars: Vec::new(),
+            rules: Vec::new(),
+        }
+    }
+
+    pub fn with_var<P, S>(mut self, var_name: &'static str, source: S) -> Self
+    where
+        P: types::CssProperty,
+        S: IntoRx,
+        S::Value: Clone + Sized + types::ValidFor<P> + Display + 'static,
+        S::RxType: RxGet<Value = S::Value> + 'static,
+    {
+        self.vars
+            .push((var_name, make_property_val::<P, S>(source)));
+        self
+    }
+
+    pub fn with_rule(mut self, template: &'static str, exprs: Vec<CssVariableGetter>) -> Self {
+        self.rules.push((template, exprs));
+        self
+    }
+}
+
 impl ApplyToDom for DynamicCss {
     fn apply(&self, el: &Element, _target: ApplyTarget) {
         // 1. Apply class name
@@ -256,12 +283,52 @@ impl IntoStorable for DynamicCss {
     }
 }
 
-pub fn make_dynamic_val_for<P, S>(source: S) -> Rx<String>
+pub fn make_property_val<P, S>(source: S) -> Rx<String>
 where
+    P: types::CssProperty,
     S: IntoRx,
     S::Value: Clone + Sized + types::ValidFor<P> + Display + 'static,
     S::RxType: RxGet<Value = S::Value> + 'static,
 {
     let signal = source.into_rx();
     Rx::derive(Box::new(move || format!("{}", signal.get())))
+}
+
+pub fn make_dynamic_val_for<P, S>(source: S) -> Rx<String>
+where
+    P: types::CssProperty,
+    S: IntoRx,
+    S::Value: Clone + Sized + types::ValidFor<P> + Display + 'static,
+    S::RxType: RxGet<Value = S::Value> + 'static,
+{
+    make_property_val::<P, S>(source)
+}
+
+/// Helper function to inject managed dynamic style with reactive variable replacements.
+pub fn inject_managed_dynamic_style(
+    style_id: impl Into<String>,
+    template: String,
+    replacements: Vec<(String, CssVariableGetter)>,
+) {
+    let manager = Rc::new(RefCell::new(Some(DynamicStyleManager::new())));
+    let cleanup_mgr = manager.clone();
+    on_cleanup(move || {
+        if let Ok(mut opt) = cleanup_mgr.try_borrow_mut() {
+            let _ = opt.take();
+        }
+    });
+
+    let style_id_str = style_id.into();
+    Effect::new(move |_| {
+        let mut res = template.clone();
+        for (pattern, getter) in &replacements {
+            let val = getter.get();
+            res = res.replace(pattern, &val);
+        }
+        if let Ok(mut opt) = manager.try_borrow_mut()
+            && let Some(m) = opt.as_mut()
+        {
+            m.update(&style_id_str, &res);
+        }
+    });
 }

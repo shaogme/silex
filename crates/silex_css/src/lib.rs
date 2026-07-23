@@ -20,7 +20,9 @@ pub mod prelude {
 }
 
 pub use class::IntoClass;
-pub use runtime::{DynamicCss, DynamicStyleManager, inject_style, make_dynamic_val_for};
+pub use runtime::{
+    DynamicCss, DynamicStyleManager, inject_managed_dynamic_style, inject_style,
+    make_dynamic_val_for, make_property_val,
+};
+pub use types::CssProperty;
 pub use variants::VariantSchema;
-
-

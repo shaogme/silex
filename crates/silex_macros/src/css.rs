@@ -19,7 +19,7 @@ use table::PropertyResolveResult;
 pub(crate) fn get_prop_type(prop: &str, span: Span) -> Result<TokenStream> {
     match table::resolve_property_type(prop, span)? {
         PropertyResolveResult::Builtin(type_name) => {
-            let ident = syn::Ident::new(type_name, Span::call_site());
+            let ident = syn::Ident::new(&type_name, Span::call_site());
             Ok(quote_spanned! { span => ::silex::css::types::props::#ident })
         }
         PropertyResolveResult::CustomVar => {
@@ -93,40 +93,34 @@ pub(crate) fn generate_css_output(
         })
     } else {
         // Generate DynamicCss struct
-        let mut var_decls = Vec::new();
+        let mut var_calls = Vec::new();
         for (i, (prop, expr)) in expressions.iter().enumerate() {
             let var_name = format!("--{}-{}", class_name, i);
             let prop_type = get_prop_type(prop, span)?;
-            var_decls.push(quote! {
-                (#var_name, ::silex::css::make_dynamic_val_for::<#prop_type, _>(#expr))
+            var_calls.push(quote! {
+                .with_var::<#prop_type, _>(#var_name, #expr)
             });
         }
 
-        let mut rule_decls = Vec::new();
+        let mut rule_calls = Vec::new();
         for rule in &dynamic_rules {
             let template = &rule.template;
             let mut exprs = Vec::new();
             for (prop, expr) in &rule.expressions {
                 let prop_type = get_prop_type(prop, span)?;
-                exprs.push(quote! { ::silex::css::make_dynamic_val_for::<#prop_type, _>(#expr) });
+                exprs.push(quote! { ::silex::css::make_property_val::<#prop_type, _>(#expr) });
             }
-            rule_decls.push(quote! {
-                (#template, ::std::vec![ #(#exprs),* ])
+            rule_calls.push(quote! {
+                .with_rule(#template, ::std::vec![ #(#exprs),* ])
             });
         }
 
         Ok(quote! {
             {
                 #inits
-                ::silex::css::DynamicCss {
-                    class_name: #class_name,
-                    vars: ::std::vec![
-                        #(#var_decls),*
-                    ],
-                    rules: ::std::vec![
-                        #(#rule_decls),*
-                    ]
-                }
+                ::silex::css::DynamicCss::new(#class_name)
+                    #(#var_calls)*
+                    #(#rule_calls)*
             }
         })
     }
@@ -142,14 +136,21 @@ mod tests {
         let builtin = get_prop_type("p", span).unwrap().to_string();
         assert!(builtin.contains("Padding"));
 
-        let standard = get_prop_type("grid-template-columns", span).unwrap().to_string();
+        let standard = get_prop_type("grid-template-columns", span)
+            .unwrap()
+            .to_string();
         assert!(standard.contains("GridTemplateColumns"));
 
-        let custom_var = get_prop_type("--my-custom-color", span).unwrap().to_string();
+        let custom_var = get_prop_type("--my-custom-color", span)
+            .unwrap()
+            .to_string();
         assert!(custom_var.contains("Any"));
 
-        let unknown_err = get_prop_type("invalid-unknown-prop", span);
-        assert!(unknown_err.is_err());
-        assert!(unknown_err.unwrap_err().to_string().contains("未知的 CSS 属性"));
+        // 未知/不支持的标准属性名称将按 kebab-case 自动转为对应的 Ident（如 unsupported-custom-property => UnsupportedCustomProperty）
+        // 过程宏不再维持静态字典，未定义的类型将在编译生成的代码阶段由 Rust 编译器精确抛出 E0412 错误
+        let unsupported = get_prop_type("unsupported-custom-property", span)
+            .unwrap()
+            .to_string();
+        assert!(unsupported.contains("UnsupportedCustomProperty"));
     }
 }
