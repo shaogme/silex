@@ -4,7 +4,7 @@ use web_sys::Element as WebElem;
 
 use super::foundation::{ApplyTarget, ApplyToDom};
 use crate::attribute::op::{
-    Attr, AttrData, AttrOp, AttrUpdate, CombinedClasses, CombinedStyles, parse_style_str,
+    AttrOp, CombinedClasses, CombinedStyles,
 };
 
 // --- Attribute Forwarding Support ---
@@ -47,39 +47,6 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
 
     for op in flattened {
         match op {
-            // --- 通用属性指令 (检查是否为 class/style) ---
-            AttrOp::Update(AttrUpdate {
-                target: ApplyTarget::Attr(ref name),
-                data: AttrData::StaticAttr(Attr::String(ref value)),
-            }) if name == "class" => match value {
-                Cow::Borrowed(s) => {
-                    for token in s.split_whitespace() {
-                        static_classes.push(Cow::Borrowed(token));
-                    }
-                }
-                Cow::Owned(s) => {
-                    for token in s.split_whitespace() {
-                        static_classes.push(Cow::Owned(token.to_string()));
-                    }
-                }
-            },
-
-            AttrOp::Update(AttrUpdate {
-                target: ApplyTarget::Attr(ref name),
-                data: AttrData::StaticAttr(Attr::String(ref value)),
-            }) if name == "style" => match value {
-                Cow::Borrowed(s) => {
-                    for (k, v) in parse_style_str(s) {
-                        static_styles.push((k, v));
-                    }
-                }
-                Cow::Owned(s) => {
-                    for (k, v) in parse_style_str(&s) {
-                        static_styles.push((k.into_owned().into(), v.into_owned().into()));
-                    }
-                }
-            },
-
             // --- 合并指令收集 ---
             AttrOp::CombinedClasses(CombinedClasses {
                 statics,
@@ -113,6 +80,19 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
     if static_classes.len() > 1 {
         let mut seen = std::collections::HashSet::new();
         static_classes.retain(|c| seen.insert(c.clone()));
+    }
+
+    // 静态样式去重逻辑，按 key 保留最后覆盖项
+    if static_styles.len() > 1 {
+        let mut seen_keys = std::collections::HashSet::new();
+        let mut deduplicated = Vec::with_capacity(static_styles.len());
+        for (k, v) in static_styles.into_iter().rev() {
+            if seen_keys.insert(k.clone()) {
+                deduplicated.push((k, v));
+            }
+        }
+        deduplicated.reverse();
+        static_styles = deduplicated;
     }
 
     // 按需生成合并后的 Class 指令

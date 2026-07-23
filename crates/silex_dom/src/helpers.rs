@@ -113,7 +113,8 @@ where
         .unwrap_or_default()
 }
 
-/// Adds an event listener to the `Window`, returning a cancelable handle.
+/// Adds an event listener to the `Window`, returning a cancelable handle that automatically
+/// unbinds the listener when dropped (RAII). Call `.forget()` to keep it alive indefinitely.
 pub fn window_event_listener_untyped(
     event_name: &str,
     cb: impl FnMut(web_sys::Event) + 'static,
@@ -125,10 +126,10 @@ pub fn window_event_listener_untyped(
     let event_name = event_name.to_string();
     let cb_clone = cb.clone();
 
-    WindowListenerHandle(Box::new(move || {
+    WindowListenerHandle::new(move || {
         let _ = window()
             .remove_event_listener_with_callback(&event_name, cb_clone.as_ref().unchecked_ref());
-    }))
+    })
 }
 
 /// Adds a typed event listener to the `Window`, returning a cancelable handle.
@@ -142,11 +143,37 @@ where
     })
 }
 
-pub struct WindowListenerHandle(Box<dyn FnOnce()>);
+/// A RAII handle for window event listeners. Automatically unbinds the listener on `Drop`
+/// unless `.forget()` is explicitly called.
+pub struct WindowListenerHandle {
+    cleanup: Option<Box<dyn FnOnce()>>,
+}
 
 impl WindowListenerHandle {
-    pub fn remove(self) {
-        (self.0)()
+    pub fn new(cleanup: impl FnOnce() + 'static) -> Self {
+        Self {
+            cleanup: Some(Box::new(cleanup)),
+        }
+    }
+
+    /// Manually remove the event listener immediately.
+    pub fn remove(mut self) {
+        if let Some(f) = self.cleanup.take() {
+            f();
+        }
+    }
+
+    /// Disables automatic removal on Drop, keeping the listener active indefinitely.
+    pub fn forget(mut self) {
+        self.cleanup = None;
+    }
+}
+
+impl Drop for WindowListenerHandle {
+    fn drop(&mut self) {
+        if let Some(f) = self.cleanup.take() {
+            f();
+        }
     }
 }
 

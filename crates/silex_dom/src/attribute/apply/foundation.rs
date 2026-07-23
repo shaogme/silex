@@ -12,7 +12,7 @@ use crate::attribute::op::{
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ApplyTarget {
-    /// Standard attributes: `id`, `href`, `src`. Also `class` and `style` when called as attributes.
+    /// Standard attributes: `id`, `href`, `src` etc.
     Attr(Cow<'static, str>),
     /// Direct DOM Property (JS object property): `value`, `checked`, `muted` etc.
     Prop(Cow<'static, str>),
@@ -27,11 +27,41 @@ pub enum ApplyTarget {
 }
 
 impl ApplyTarget {
+    /// Factory for creating an Attribute target with canonical fast-path resolution.
+    pub fn attr(name: impl Into<Cow<'static, str>>) -> Self {
+        let name = name.into();
+        if name == "class" {
+            ApplyTarget::Class
+        } else if name == "style" {
+            ApplyTarget::Style
+        } else if let Some(kp) = KnownProp::parse(&name) {
+            ApplyTarget::Known(kp)
+        } else {
+            ApplyTarget::Attr(name)
+        }
+    }
+
+    /// Factory for creating a Property target with canonical fast-path resolution.
+    pub fn prop(name: impl Into<Cow<'static, str>>) -> Self {
+        let name = name.into();
+        if name == "class" {
+            ApplyTarget::Class
+        } else if name == "style" {
+            ApplyTarget::Style
+        } else if let Some(kp) = KnownProp::parse(&name) {
+            ApplyTarget::Known(kp)
+        } else {
+            ApplyTarget::Prop(name)
+        }
+    }
+
     pub fn name(&self) -> Option<Cow<'static, str>> {
         match self {
             ApplyTarget::Attr(n) | ApplyTarget::Prop(n) => Some(n.clone()),
             ApplyTarget::Known(kp) => Some(Cow::Borrowed(kp.name())),
-            _ => None,
+            ApplyTarget::Class => Some(Cow::Borrowed("class")),
+            ApplyTarget::Style => Some(Cow::Borrowed("style")),
+            ApplyTarget::Apply => None,
         }
     }
 
@@ -174,11 +204,6 @@ pub(crate) fn apply_immediate_bool(el: &WebElem, target: &ApplyTarget, value: bo
 pub(crate) fn apply_static_pair(el: &WebElem, target: &ApplyTarget, key: &str, value: &str) {
     match target {
         ApplyTarget::Style => {
-            if let Some(style) = get_style_decl(el) {
-                let _ = style.set_property(key, value);
-            }
-        }
-        ApplyTarget::Attr(n) if n == "style" => {
             if let Some(style) = get_style_decl(el) {
                 let _ = style.set_property(key, value);
             }
@@ -411,9 +436,18 @@ where
         if let Some(op) = T::into_op_pair_reactive(rx, key_cow.clone(), target.clone()) {
             op
         } else {
-            AttrOp::Custom(std::rc::Rc::new(move |el| {
-                T::apply_pair(rx, key_cow.clone(), el.clone(), target.clone());
-            }))
+            let target_effective = if target == ApplyTarget::Apply {
+                ApplyTarget::attr(key_cow.clone())
+            } else {
+                target
+            };
+            if let Some(op) = T::into_op_reactive(rx, target_effective.clone()) {
+                op
+            } else {
+                AttrOp::Custom(std::rc::Rc::new(move |el| {
+                    T::apply_pair(rx, key_cow.clone(), el.clone(), target_effective.clone());
+                }))
+            }
         }
     }
 }
@@ -431,14 +465,20 @@ where
     fn into_op(self, target: ApplyTarget) -> AttrOp {
         let (key, value) = self;
         let key_cow: Cow<'static, str> = key.into();
-        let is_style = matches!(target, ApplyTarget::Style)
-            || matches!(target, ApplyTarget::Attr(ref n) if n == "style");
-        if is_style {
-            AttrOp::static_styles(vec![(key_cow, Cow::Owned(value))])
-        } else {
-            AttrOp::Custom(std::rc::Rc::new(move |el| {
-                apply_static_pair(el, &target, key_cow.as_ref(), &value);
-            }))
+        match target {
+            ApplyTarget::Style => AttrOp::static_styles(vec![(key_cow, Cow::Owned(value))]),
+            ApplyTarget::Class => AttrOp::static_class(Cow::Owned(value)),
+            _ => {
+                let target_effective = if target == ApplyTarget::Apply {
+                    ApplyTarget::attr(key_cow)
+                } else {
+                    target
+                };
+                AttrOp::Update(AttrUpdate {
+                    target: target_effective,
+                    data: AttrData::StaticAttr(Attr::from(value)),
+                })
+            }
         }
     }
 }
@@ -455,14 +495,20 @@ where
     fn into_op(self, target: ApplyTarget) -> AttrOp {
         let (key, value) = self;
         let key_cow: Cow<'static, str> = key.into();
-        let is_style = matches!(target, ApplyTarget::Style)
-            || matches!(target, ApplyTarget::Attr(ref n) if n == "style");
-        if is_style {
-            AttrOp::static_styles(vec![(key_cow, Cow::Borrowed(value))])
-        } else {
-            AttrOp::Custom(std::rc::Rc::new(move |el| {
-                apply_static_pair(el, &target, key_cow.as_ref(), value);
-            }))
+        match target {
+            ApplyTarget::Style => AttrOp::static_styles(vec![(key_cow, Cow::Borrowed(value))]),
+            ApplyTarget::Class => AttrOp::static_class(Cow::Borrowed(value)),
+            _ => {
+                let target_effective = if target == ApplyTarget::Apply {
+                    ApplyTarget::attr(key_cow)
+                } else {
+                    target
+                };
+                AttrOp::Update(AttrUpdate {
+                    target: target_effective,
+                    data: AttrData::StaticAttr(Attr::from(value)),
+                })
+            }
         }
     }
 }
@@ -483,14 +529,6 @@ where
                     let _ = list.remove_1(key_cow.as_ref());
                 }
             }
-            ApplyTarget::Attr(ref n) if n == "class" => {
-                let list = el.class_list();
-                if value {
-                    let _ = list.add_1(key_cow.as_ref());
-                } else {
-                    let _ = list.remove_1(key_cow.as_ref());
-                }
-            }
             _ => {
                 apply_immediate_bool(el, &target, value);
             }
@@ -499,19 +537,27 @@ where
 
     fn into_op(self, target: ApplyTarget) -> AttrOp {
         let (key, value) = self;
-        let is_class = matches!(target, ApplyTarget::Class)
-            || matches!(target, ApplyTarget::Attr(ref n) if n == "class");
-
-        if is_class {
-            if value {
-                AttrOp::static_class(key.into())
-            } else {
-                AttrOp::Noop
+        let key_cow: Cow<'static, str> = key.into();
+        match target {
+            ApplyTarget::Class => {
+                if value {
+                    AttrOp::static_class(key_cow)
+                } else {
+                    AttrOp::Noop
+                }
             }
-        } else {
-            AttrOp::Custom(std::rc::Rc::new(move |el| {
-                apply_immediate_bool(el, &target, value);
-            }))
+            ApplyTarget::Style => AttrOp::Noop,
+            _ => {
+                let target_effective = if target == ApplyTarget::Apply {
+                    ApplyTarget::attr(key_cow)
+                } else {
+                    target
+                };
+                AttrOp::Update(AttrUpdate {
+                    target: target_effective,
+                    data: AttrData::StaticAttr(Attr::from(value)),
+                })
+            }
         }
     }
 }
@@ -555,3 +601,4 @@ impl ApplyToDom for AttributeGroup {
         }
     }
 }
+

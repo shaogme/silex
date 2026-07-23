@@ -561,7 +561,6 @@ pub(crate) fn apply_attr_with_target_internal(
 ) {
     let known_prop = match target {
         ApplyTarget::Known(kp) => Some(kp),
-        ApplyTarget::Prop(_) => KnownProp::parse(name),
         _ => None,
     };
 
@@ -630,18 +629,18 @@ pub(crate) fn apply_attr_with_target_internal(
 
 pub(crate) fn set_string_property_internal(el: &Element, name: &str, value: &str, is_prop: bool) {
     let target = if is_prop {
-        ApplyTarget::Prop(Cow::Owned(name.to_string()))
+        ApplyTarget::prop(name.to_string())
     } else {
-        ApplyTarget::Attr(Cow::Owned(name.to_string()))
+        ApplyTarget::attr(name.to_string())
     };
     apply_attr_with_target_internal(el, name, target, &Attr::from(value.to_string()));
 }
 
 pub(crate) fn apply_immediate_bool_internal(el: &Element, name: &str, value: bool, is_prop: bool) {
     let target = if is_prop {
-        ApplyTarget::Prop(Cow::Owned(name.to_string()))
+        ApplyTarget::prop(name.to_string())
     } else {
-        ApplyTarget::Attr(Cow::Owned(name.to_string()))
+        ApplyTarget::attr(name.to_string())
     };
     apply_attr_with_target_internal(el, name, target, &Attr::from(value));
 }

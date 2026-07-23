@@ -42,20 +42,14 @@ pub trait AttributeBuilder: Sized {
     where
         V: IntoStorable,
     {
-        self.build_attribute(ApplyTarget::Attr(name.into()), value)
+        self.build_attribute(ApplyTarget::attr(name), value)
     }
 
     fn prop<V>(self, name: impl Into<Cow<'static, str>>, value: V) -> Self
     where
         V: IntoStorable,
     {
-        let name = name.into();
-        let target = if let Some(kp) = KnownProp::parse(&name) {
-            ApplyTarget::Known(kp)
-        } else {
-            ApplyTarget::Prop(name)
-        };
-        self.build_attribute(target, value)
+        self.build_attribute(ApplyTarget::prop(name), value)
     }
 
     fn on<E, F, M>(self, event: E, callback: F) -> Self

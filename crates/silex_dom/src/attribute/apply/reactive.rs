@@ -94,17 +94,11 @@ pub(crate) fn apply_string_reactive_internal(
         ApplyTarget::Class => create_erased_class_effect_internal(el, rx),
         ApplyTarget::Style => create_erased_style_effect_internal(el, rx),
         ApplyTarget::Attr(name) => {
-            if name == "class" {
-                create_erased_class_effect_internal(el, rx);
-            } else if name == "style" {
-                create_erased_style_effect_internal(el, rx);
-            } else {
-                Effect::new(move |_| {
-                    use silex_core::traits::RxGet;
-                    let value = rx.get();
-                    set_string_property_internal(&el, &name, &value, false);
-                });
-            }
+            Effect::new(move |_| {
+                use silex_core::traits::RxGet;
+                let value = rx.get();
+                set_string_property_internal(&el, &name, &value, false);
+            });
         }
         ApplyTarget::Prop(name) => {
             Effect::new(move |_| {
@@ -133,10 +127,7 @@ pub(crate) fn apply_string_pair_reactive_internal(
     target: ApplyTarget,
     rx: silex_core::Rx<String, silex_core::RxValueKind>,
 ) {
-    let is_style = matches!(target, ApplyTarget::Style)
-        || matches!(target, ApplyTarget::Attr(ref n) if n == "style");
-
-    if is_style && let Some(style) = get_style_decl(&el) {
+    if matches!(target, ApplyTarget::Style) && let Some(style) = get_style_decl(&el) {
         Effect::new(move |_| {
             use silex_core::traits::RxGet;
             let _ = style.set_property(&key, &rx.get());
@@ -162,7 +153,7 @@ pub(crate) fn apply_bool_reactive_internal(
             });
         }
         ApplyTarget::Prop(name) => {
-            let target = ApplyTarget::Prop(name.clone());
+            let target = ApplyTarget::prop(name.clone());
             Effect::new(move |_| {
                 let val = rx.get();
                 apply_attr_with_target_internal(&el, &name, target.clone(), &Attr::from(val));
@@ -268,18 +259,10 @@ impl ReactiveApply for String {
         target: ApplyTarget,
     ) -> Option<AttrOp> {
         let op = match target {
-            ApplyTarget::Attr(name) => {
-                if name == "class" {
-                    AttrOp::reactive_classes(rx)
-                } else if name == "style" {
-                    AttrOp::reactive_stylesheet(rx)
-                } else {
-                    AttrOp::Update(AttrUpdate {
-                        target: ApplyTarget::Attr(name),
-                        data: AttrData::ReactiveString(rx),
-                    })
-                }
-            }
+            ApplyTarget::Attr(name) => AttrOp::Update(AttrUpdate {
+                target: ApplyTarget::Attr(name),
+                data: AttrData::ReactiveString(rx),
+            }),
             ApplyTarget::Known(kp) => AttrOp::Update(AttrUpdate {
                 target: ApplyTarget::Known(kp),
                 data: AttrData::ReactiveString(rx),
@@ -310,9 +293,7 @@ impl ReactiveApply for String {
         key: Cow<'static, str>,
         target: ApplyTarget,
     ) -> Option<AttrOp> {
-        let is_style = matches!(target, ApplyTarget::Style)
-            || matches!(target, ApplyTarget::Attr(ref n) if n == "style");
-        if is_style {
+        if matches!(target, ApplyTarget::Style) {
             Some(AttrOp::style_property(key, rx))
         } else {
             None
@@ -425,10 +406,7 @@ impl ReactiveApply for bool {
         el: WebElem,
         target: ApplyTarget,
     ) {
-        let is_class = matches!(target, ApplyTarget::Class)
-            || matches!(target, ApplyTarget::Attr(ref n) if n == "class");
-
-        if is_class {
+        if matches!(target, ApplyTarget::Class) {
             apply_bool_pair_reactive_internal(el, key, rx);
         }
     }
@@ -460,9 +438,7 @@ impl ReactiveApply for bool {
         key: Cow<'static, str>,
         target: ApplyTarget,
     ) -> Option<AttrOp> {
-        let is_class = matches!(target, ApplyTarget::Class)
-            || matches!(target, ApplyTarget::Attr(ref n) if n == "class");
-        if is_class {
+        if matches!(target, ApplyTarget::Class) {
             Some(AttrOp::class_toggle(key, rx))
         } else {
             None
@@ -536,18 +512,12 @@ pub(crate) fn apply_option_reactive_internal<T>(
 
         match target {
             ApplyTarget::Attr(ref name) => {
-                if name == "class" {
-                    update_option_class_diff(&el, prev.as_deref(), new_val.as_deref());
-                } else if name == "style" {
-                    update_option_style_diff(&el, prev.as_deref(), new_val.as_deref());
-                } else {
-                    match new_val {
-                        Some(ref v) => {
-                            set_string_property_internal(&el, name, v, false);
-                        }
-                        None => {
-                            let _ = el.remove_attribute(name);
-                        }
+                match new_val {
+                    Some(ref v) => {
+                        set_string_property_internal(&el, name, v, false);
+                    }
+                    None => {
+                        let _ = el.remove_attribute(name);
                     }
                 }
             }
@@ -586,12 +556,7 @@ pub(crate) fn apply_option_pair_reactive_internal<T>(
 ) where
     T: std::fmt::Display + Clone + 'static,
 {
-    let is_class = matches!(target, ApplyTarget::Class)
-        || matches!(target, ApplyTarget::Attr(ref n) if n == "class");
-    let is_style = matches!(target, ApplyTarget::Style)
-        || matches!(target, ApplyTarget::Attr(ref n) if n == "style");
-
-    if is_class {
+    if matches!(target, ApplyTarget::Class) {
         let list = el.class_list();
         Effect::new(move |_| {
             use silex_core::traits::RxGet;
@@ -606,7 +571,7 @@ pub(crate) fn apply_option_pair_reactive_internal<T>(
                 let _ = list.remove_1(&key);
             }
         });
-    } else if is_style && let Some(style) = get_style_decl(&el) {
+    } else if matches!(target, ApplyTarget::Style) && let Some(style) = get_style_decl(&el) {
         Effect::new(move |_| {
             use silex_core::traits::RxGet;
             if let Some(val) = rx.get() {
@@ -643,16 +608,11 @@ where
         rx: silex_core::Rx<Self, silex_core::RxValueKind>,
         target: ApplyTarget,
     ) -> Option<AttrOp> {
-        let is_class = matches!(target, ApplyTarget::Class)
-            || matches!(target, ApplyTarget::Attr(ref n) if n == "class");
-        let is_style = matches!(target, ApplyTarget::Style)
-            || matches!(target, ApplyTarget::Attr(ref n) if n == "style");
-
-        if is_class {
+        if matches!(target, ApplyTarget::Class) {
             Some(AttrOp::reactive_classes(silex_core::Rx::derive(Box::new(
                 move || rx.get().map(|v| v.to_string()).unwrap_or_default(),
             ))))
-        } else if is_style {
+        } else if matches!(target, ApplyTarget::Style) {
             Some(AttrOp::reactive_stylesheet(silex_core::Rx::derive(
                 Box::new(move || rx.get().map(|v| v.to_string()).unwrap_or_default()),
             )))
@@ -670,12 +630,7 @@ where
         key: Cow<'static, str>,
         target: ApplyTarget,
     ) -> Option<AttrOp> {
-        let is_class = matches!(target, ApplyTarget::Class)
-            || matches!(target, ApplyTarget::Attr(ref n) if n == "class");
-        let is_style = matches!(target, ApplyTarget::Style)
-            || matches!(target, ApplyTarget::Attr(ref n) if n == "style");
-
-        if is_class {
+        if matches!(target, ApplyTarget::Class) {
             Some(AttrOp::class_toggle(
                 key,
                 silex_core::Rx::derive(Box::new(move || {
@@ -687,7 +642,7 @@ where
                         .unwrap_or(false)
                 })),
             ))
-        } else if is_style {
+        } else if matches!(target, ApplyTarget::Style) {
             Some(AttrOp::style_property(
                 key,
                 silex_core::Rx::derive(Box::new(move || {
