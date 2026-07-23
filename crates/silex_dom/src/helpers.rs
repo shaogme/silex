@@ -14,7 +14,10 @@ use silex_core::reactivity::on_cleanup;
 
 thread_local! {
     static WINDOW: Window = web_sys::window().expect("Window not found");
-    static DOCUMENT: Document = WINDOW.with(|w| w.document().expect("Document not found"));
+    static DOCUMENT: Document = web_sys::window()
+        .expect("Window not found")
+        .document()
+        .expect("Document not found");
 }
 
 /// Returns the cached [`Window`](web_sys::Window).
@@ -274,7 +277,9 @@ pub fn debounce<T: 'static>(delay: Duration, cb: impl FnMut(T) + 'static) -> imp
         let handle = set_timeout_with_handle(
             {
                 let cb = Rc::clone(&cb);
+                let timer = Rc::clone(&timer);
                 move || {
+                    let _ = timer.borrow_mut().take();
                     cb.borrow_mut()(arg);
                 }
             },

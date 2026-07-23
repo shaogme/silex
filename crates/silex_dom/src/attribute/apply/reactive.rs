@@ -27,12 +27,6 @@ pub(crate) fn derive_string_rx_internal<T: std::fmt::Display + Clone + 'static>(
     }))
 }
 
-pub(crate) fn derive_attr_rx<T: Into<Attr> + Clone + 'static>(
-    rx: Rx<T, RxValueKind>,
-) -> Rx<Attr, RxValueKind> {
-    Rx::derive(Box::new(move || rx.get().into()))
-}
-
 pub(crate) fn apply_primitive_reactive_internal<T: std::fmt::Display + Clone + 'static>(
     el: WebElem,
     target: ApplyTarget,
@@ -81,14 +75,14 @@ fn create_erased_class_effect_internal(
     el: WebElem,
     rx: silex_core::Rx<String, silex_core::RxValueKind>,
 ) {
-    AttrOp::AddReactiveClasses(rx).apply(&el);
+    AttrOp::reactive_classes(rx).apply(&el);
 }
 
 fn create_erased_style_effect_internal(
     el: WebElem,
     rx: silex_core::Rx<String, silex_core::RxValueKind>,
 ) {
-    AttrOp::BindReactiveStyleSheet(rx).apply(&el);
+    AttrOp::reactive_stylesheet(rx).apply(&el);
 }
 
 pub(crate) fn apply_string_reactive_internal(
@@ -276,19 +270,19 @@ impl ReactiveApply for String {
         let op = match target {
             ApplyTarget::Attr(name) => {
                 if name == "class" {
-                    AttrOp::AddReactiveClasses(rx)
+                    AttrOp::reactive_classes(rx)
                 } else if name == "style" {
-                    AttrOp::BindReactiveStyleSheet(rx)
+                    AttrOp::reactive_stylesheet(rx)
                 } else {
                     AttrOp::Update(AttrUpdate {
                         target: ApplyTarget::Attr(name),
-                        data: AttrData::ReactiveAttr(derive_attr_rx(rx)),
+                        data: AttrData::ReactiveString(rx),
                     })
                 }
             }
             ApplyTarget::Known(kp) => AttrOp::Update(AttrUpdate {
                 target: ApplyTarget::Known(kp),
-                data: AttrData::ReactiveAttr(derive_attr_rx(rx)),
+                data: AttrData::ReactiveString(rx),
             }),
             ApplyTarget::Prop(name) => AttrOp::Update(AttrUpdate {
                 target: ApplyTarget::Prop(name),
@@ -299,8 +293,8 @@ impl ReactiveApply for String {
                     }))
                 }),
             }),
-            ApplyTarget::Class => AttrOp::AddReactiveClasses(rx),
-            ApplyTarget::Style => AttrOp::BindReactiveStyleSheet(rx),
+            ApplyTarget::Class => AttrOp::reactive_classes(rx),
+            ApplyTarget::Style => AttrOp::reactive_stylesheet(rx),
             ApplyTarget::Apply => {
                 let rx_inner = rx;
                 AttrOp::Custom(std::rc::Rc::new(move |el| {
@@ -319,9 +313,7 @@ impl ReactiveApply for String {
         let is_style = matches!(target, ApplyTarget::Style)
             || matches!(target, ApplyTarget::Attr(ref n) if n == "style");
         if is_style {
-            Some(AttrOp::BindStyleProperty(
-                crate::attribute::op::StyleProperty { name: key, rx },
-            ))
+            Some(AttrOp::style_property(key, rx))
         } else {
             None
         }
@@ -449,7 +441,7 @@ impl ReactiveApply for bool {
             ApplyTarget::Attr(_) | ApplyTarget::Prop(_) | ApplyTarget::Known(_) => {
                 AttrOp::Update(AttrUpdate {
                     target,
-                    data: AttrData::ReactiveAttr(derive_attr_rx(rx)),
+                    data: AttrData::ReactiveBool(rx),
                 })
             }
             _ => {
@@ -471,9 +463,7 @@ impl ReactiveApply for bool {
         let is_class = matches!(target, ApplyTarget::Class)
             || matches!(target, ApplyTarget::Attr(ref n) if n == "class");
         if is_class {
-            Some(AttrOp::AddClassToggle(
-                crate::attribute::op::ClassToggle { name: key, rx },
-            ))
+            Some(AttrOp::class_toggle(key, rx))
         } else {
             None
         }
@@ -647,5 +637,65 @@ where
         target: ApplyTarget,
     ) {
         apply_option_pair_reactive_internal(el, key, target, rx);
+    }
+
+    fn into_op_reactive(
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        target: ApplyTarget,
+    ) -> Option<AttrOp> {
+        let is_class = matches!(target, ApplyTarget::Class)
+            || matches!(target, ApplyTarget::Attr(ref n) if n == "class");
+        let is_style = matches!(target, ApplyTarget::Style)
+            || matches!(target, ApplyTarget::Attr(ref n) if n == "style");
+
+        if is_class {
+            Some(AttrOp::reactive_classes(silex_core::Rx::derive(Box::new(
+                move || rx.get().map(|v| v.to_string()).unwrap_or_default(),
+            ))))
+        } else if is_style {
+            Some(AttrOp::reactive_stylesheet(silex_core::Rx::derive(
+                Box::new(move || rx.get().map(|v| v.to_string()).unwrap_or_default()),
+            )))
+        } else {
+            let rx_inner = rx;
+            let target_clone = target.clone();
+            Some(AttrOp::Custom(std::rc::Rc::new(move |el| {
+                apply_option_reactive_internal(el.clone(), target_clone.clone(), rx_inner);
+            })))
+        }
+    }
+
+    fn into_op_pair_reactive(
+        rx: silex_core::Rx<Self, silex_core::RxValueKind>,
+        key: Cow<'static, str>,
+        target: ApplyTarget,
+    ) -> Option<AttrOp> {
+        let is_class = matches!(target, ApplyTarget::Class)
+            || matches!(target, ApplyTarget::Attr(ref n) if n == "class");
+        let is_style = matches!(target, ApplyTarget::Style)
+            || matches!(target, ApplyTarget::Attr(ref n) if n == "style");
+
+        if is_class {
+            Some(AttrOp::class_toggle(
+                key,
+                silex_core::Rx::derive(Box::new(move || {
+                    rx.get()
+                        .map(|v| {
+                            let s = v.to_string();
+                            s == "true" || !s.is_empty()
+                        })
+                        .unwrap_or(false)
+                })),
+            ))
+        } else if is_style {
+            Some(AttrOp::style_property(
+                key,
+                silex_core::Rx::derive(Box::new(move || {
+                    rx.get().map(|v| v.to_string()).unwrap_or_default()
+                })),
+            ))
+        } else {
+            None
+        }
     }
 }

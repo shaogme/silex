@@ -207,10 +207,8 @@ impl ApplyToDom for &'static str {
                 target,
                 data: AttrData::StaticJs(JsValue::from_str(self)),
             }),
-            ApplyTarget::Class => AttrOp::SetStaticClasses(vec![self.into()]),
-            ApplyTarget::Style => {
-                AttrOp::SetStaticStyles(parse_style_str(self).into_iter().collect())
-            }
+            ApplyTarget::Class => AttrOp::static_class(self.into()),
+            ApplyTarget::Style => AttrOp::static_styles(parse_style_str(self).into_iter().collect()),
             ApplyTarget::Apply => AttrOp::Custom(std::rc::Rc::new(move |el| {
                 apply_immediate_string(el, &ApplyTarget::Apply, self);
             })),
@@ -233,12 +231,12 @@ impl ApplyToDom for String {
                 target,
                 data: AttrData::StaticJs(JsValue::from_str(&self)),
             }),
-            ApplyTarget::Class => AttrOp::SetStaticClasses(
+            ApplyTarget::Class => AttrOp::static_classes(
                 self.split_whitespace()
                     .map(|s| Cow::Owned(s.to_string()))
                     .collect(),
             ),
-            ApplyTarget::Style => AttrOp::SetStaticStyles(
+            ApplyTarget::Style => AttrOp::static_styles(
                 parse_style_str(&self)
                     .into_iter()
                     .map(|(k, v)| (k.into_owned().into(), v.into_owned().into()))
@@ -436,7 +434,7 @@ where
         let is_style = matches!(target, ApplyTarget::Style)
             || matches!(target, ApplyTarget::Attr(ref n) if n == "style");
         if is_style {
-            AttrOp::SetStaticStyles(vec![(key_cow, Cow::Owned(value))])
+            AttrOp::static_styles(vec![(key_cow, Cow::Owned(value))])
         } else {
             AttrOp::Custom(std::rc::Rc::new(move |el| {
                 apply_static_pair(el, &target, key_cow.as_ref(), &value);
@@ -460,7 +458,7 @@ where
         let is_style = matches!(target, ApplyTarget::Style)
             || matches!(target, ApplyTarget::Attr(ref n) if n == "style");
         if is_style {
-            AttrOp::SetStaticStyles(vec![(key_cow, Cow::Borrowed(value))])
+            AttrOp::static_styles(vec![(key_cow, Cow::Borrowed(value))])
         } else {
             AttrOp::Custom(std::rc::Rc::new(move |el| {
                 apply_static_pair(el, &target, key_cow.as_ref(), value);
@@ -506,7 +504,7 @@ where
 
         if is_class {
             if value {
-                AttrOp::SetStaticClasses(vec![key.into()])
+                AttrOp::static_class(key.into())
             } else {
                 AttrOp::Noop
             }

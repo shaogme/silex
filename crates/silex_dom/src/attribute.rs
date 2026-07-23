@@ -435,7 +435,7 @@ mod tests {
         let op_true = ("active", true).into_op(ApplyTarget::Class);
         assert_eq!(
             op_true,
-            AttrOp::SetStaticClasses(vec![std::borrow::Cow::Borrowed("active")])
+            AttrOp::static_class(std::borrow::Cow::Borrowed("active"))
         );
 
         let op_false = ("active", false).into_op(ApplyTarget::Class);
@@ -449,10 +449,7 @@ mod tests {
         let op = ("active", rx).into_op(ApplyTarget::Class);
         assert_eq!(
             op,
-            AttrOp::AddClassToggle(ClassToggle {
-                name: Cow::Borrowed("active"),
-                rx,
-            })
+            AttrOp::class_toggle(Cow::Borrowed("active"), rx)
         );
     }
 
@@ -463,10 +460,7 @@ mod tests {
         let op = ("margin", rx).into_op(ApplyTarget::Style);
         assert_eq!(
             op,
-            AttrOp::BindStyleProperty(StyleProperty {
-                name: Cow::Borrowed("margin"),
-                rx,
-            })
+            AttrOp::style_property(Cow::Borrowed("margin"), rx)
         );
     }
 
@@ -475,7 +469,7 @@ mod tests {
         let op = ("color", "red").into_op(ApplyTarget::Style);
         assert_eq!(
             op,
-            AttrOp::SetStaticStyles(vec![(Cow::Borrowed("color"), Cow::Borrowed("red"))])
+            AttrOp::static_styles(vec![(Cow::Borrowed("color"), Cow::Borrowed("red"))])
         );
     }
 

@@ -105,6 +105,8 @@ pub enum AttrData {
 
     // --- Reactive Values ---
     ReactiveAttr(Rx<Attr>),
+    ReactiveString(Rx<String>),
+    ReactiveBool(Rx<bool>),
     ReactiveJs(Rx<JsValue>),
 }
 
@@ -114,6 +116,8 @@ impl std::fmt::Debug for AttrData {
             Self::StaticAttr(a) => f.debug_tuple("StaticAttr").field(a).finish(),
             Self::StaticJs(js) => f.debug_tuple("StaticJs").field(js).finish(),
             Self::ReactiveAttr(_) => f.write_str("ReactiveAttr(Rx)"),
+            Self::ReactiveString(_) => f.write_str("ReactiveString(Rx)"),
+            Self::ReactiveBool(_) => f.write_str("ReactiveBool(Rx)"),
             Self::ReactiveJs(_) => f.write_str("ReactiveJs(Rx)"),
         }
     }
@@ -125,6 +129,8 @@ impl PartialEq for AttrData {
             (Self::StaticAttr(a), Self::StaticAttr(b)) => a == b,
             (Self::StaticJs(a), Self::StaticJs(b)) => a == b,
             (Self::ReactiveAttr(a), Self::ReactiveAttr(b)) => a == b,
+            (Self::ReactiveString(a), Self::ReactiveString(b)) => a == b,
+            (Self::ReactiveBool(a), Self::ReactiveBool(b)) => a == b,
             (Self::ReactiveJs(a), Self::ReactiveJs(b)) => a == b,
             _ => false,
         }
@@ -208,25 +214,19 @@ pub enum AttrOp {
     /// Unified update for attributes and properties (Static or Reactive)
     Update(AttrUpdate),
 
-    // --- Class 专项优化（收敛意图） ---
-    SetStaticClasses(Vec<Cow<'static, str>>),
-    AddClassToggle(ClassToggle),
-    AddReactiveClasses(Rx<String>),
-
-    // --- Style 专项优化（收敛意图） ---
-    SetStaticStyles(Vec<(Cow<'static, str>, Cow<'static, str>)>),
-    BindStyleProperty(StyleProperty),
-    BindReactiveStyleSheet(Rx<String>),
-
-    // --- 阶段三：单 Effect 策略优化 (全面转向 AttrOp 的核心) ---
+    /// Consolidated class operations (statics, toggles, reactives)
     CombinedClasses(CombinedClasses),
+
+    /// Consolidated style operations (statics, properties, sheets)
     CombinedStyles(CombinedStyles),
 
-    // --- 集合处理优化（替代部分 Custom 闭包） ---
+    /// Sequence of operations
     Sequence(Vec<AttrOp>),
 
-    // --- 逃逸舱与特殊指令 ---
+    /// Custom closure execution
     Custom(Rc<dyn Fn(&Element)>),
+
+    /// No operation
     Noop,
 }
 
@@ -234,12 +234,6 @@ impl std::fmt::Debug for AttrOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Update(u) => f.debug_tuple("Update").field(u).finish(),
-            Self::SetStaticClasses(c) => f.debug_tuple("SetStaticClasses").field(c).finish(),
-            Self::AddClassToggle(ct) => f.debug_tuple("AddClassToggle").field(ct).finish(),
-            Self::AddReactiveClasses(_) => f.write_str("AddReactiveClasses(Rx)"),
-            Self::SetStaticStyles(s) => f.debug_tuple("SetStaticStyles").field(s).finish(),
-            Self::BindStyleProperty(sp) => f.debug_tuple("BindStyleProperty").field(sp).finish(),
-            Self::BindReactiveStyleSheet(_) => f.write_str("BindReactiveStyleSheet(Rx)"),
             Self::CombinedClasses(cc) => f.debug_tuple("CombinedClasses").field(cc).finish(),
             Self::CombinedStyles(cs) => f.debug_tuple("CombinedStyles").field(cs).finish(),
             Self::Sequence(seq) => f.debug_tuple("Sequence").field(seq).finish(),
@@ -253,12 +247,6 @@ impl PartialEq for AttrOp {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Update(a), Self::Update(b)) => a == b,
-            (Self::SetStaticClasses(a), Self::SetStaticClasses(b)) => a == b,
-            (Self::AddClassToggle(a), Self::AddClassToggle(b)) => a == b,
-            (Self::AddReactiveClasses(a), Self::AddReactiveClasses(b)) => a == b,
-            (Self::SetStaticStyles(a), Self::SetStaticStyles(b)) => a == b,
-            (Self::BindStyleProperty(a), Self::BindStyleProperty(b)) => a == b,
-            (Self::BindReactiveStyleSheet(a), Self::BindReactiveStyleSheet(b)) => a == b,
             (Self::CombinedClasses(a), Self::CombinedClasses(b)) => a == b,
             (Self::CombinedStyles(a), Self::CombinedStyles(b)) => a == b,
             (Self::Sequence(a), Self::Sequence(b)) => a == b,
@@ -270,107 +258,67 @@ impl PartialEq for AttrOp {
 }
 
 impl AttrOp {
+    pub fn static_class(c: Cow<'static, str>) -> Self {
+        AttrOp::CombinedClasses(CombinedClasses {
+            statics: vec![c],
+            toggles: Vec::new(),
+            reactives: Vec::new(),
+        })
+    }
+
+    pub fn static_classes(c: Vec<Cow<'static, str>>) -> Self {
+        AttrOp::CombinedClasses(CombinedClasses {
+            statics: c,
+            toggles: Vec::new(),
+            reactives: Vec::new(),
+        })
+    }
+
+    pub fn class_toggle(name: Cow<'static, str>, rx: Rx<bool>) -> Self {
+        AttrOp::CombinedClasses(CombinedClasses {
+            statics: Vec::new(),
+            toggles: vec![(name, rx)],
+            reactives: Vec::new(),
+        })
+    }
+
+    pub fn reactive_classes(rx: Rx<String>) -> Self {
+        AttrOp::CombinedClasses(CombinedClasses {
+            statics: Vec::new(),
+            toggles: Vec::new(),
+            reactives: vec![rx],
+        })
+    }
+
+    pub fn static_styles(styles: Vec<(Cow<'static, str>, Cow<'static, str>)>) -> Self {
+        AttrOp::CombinedStyles(CombinedStyles {
+            statics: styles,
+            properties: Vec::new(),
+            sheets: Vec::new(),
+        })
+    }
+
+    pub fn style_property(name: Cow<'static, str>, rx: Rx<String>) -> Self {
+        AttrOp::CombinedStyles(CombinedStyles {
+            statics: Vec::new(),
+            properties: vec![(name, rx)],
+            sheets: Vec::new(),
+        })
+    }
+
+    pub fn reactive_stylesheet(rx: Rx<String>) -> Self {
+        AttrOp::CombinedStyles(CombinedStyles {
+            statics: Vec::new(),
+            properties: Vec::new(),
+            sheets: vec![rx],
+        })
+    }
+
     pub fn apply(self, el: &Element) {
         match self {
             AttrOp::Update(AttrUpdate { target, data }) => {
                 apply_update_internal(el, target, data);
             }
-            AttrOp::SetStaticClasses(classes) => {
-                let list = el.class_list();
-                for c in classes {
-                    let _ = list.add_1(&c);
-                }
-            }
-            AttrOp::AddClassToggle(ClassToggle { name, rx }) => {
-                let list = el.class_list();
-                Effect::new(move |_| {
-                    if rx.get() {
-                        let _ = list.add_1(&name);
-                    } else {
-                        let _ = list.remove_1(&name);
-                    }
-                });
-            }
-            AttrOp::AddReactiveClasses(rx) => {
-                let prev_classes = Rc::new(RefCell::new(HashSet::<String>::new()));
-                let list = el.class_list();
-                Effect::new(move |_| {
-                    let value = rx.get();
-                    let mut prev = prev_classes.borrow_mut();
-                    let new_tokens: HashSet<&str> = value.split_whitespace().collect();
-
-                    prev.retain(|c| {
-                        if !new_tokens.contains(c.as_str()) {
-                            let _ = list.remove_1(c);
-                            false
-                        } else {
-                            true
-                        }
-                    });
-
-                    for token in new_tokens {
-                        if !prev.contains(token) {
-                            let _ = list.add_1(token);
-                            prev.insert(token.to_string());
-                        }
-                    }
-                });
-            }
-            AttrOp::SetStaticStyles(styles) => {
-                if let Some(style) = get_style_decl(el) {
-                    for (k, v) in styles {
-                        let _ = style.set_property(&k, &v);
-                    }
-                }
-            }
-            AttrOp::BindStyleProperty(StyleProperty { name, rx }) => {
-                if let Some(style) = get_style_decl(el) {
-                    Effect::new(move |_| {
-                        let _ = style.set_property(&name, &rx.get());
-                    });
-                }
-            }
-            AttrOp::BindReactiveStyleSheet(rx) => {
-                let prev_keys = Rc::new(RefCell::new(HashSet::<String>::new()));
-                let el = el.clone();
-                Effect::new(move |_| {
-                    let value = rx.get();
-                    if let Some(style) = get_style_decl(&el) {
-                        let mut prev = prev_keys.borrow_mut();
-                        let params = parse_style_str(&value);
-                        let new_style_map: std::collections::HashMap<&str, &str> =
-                            params.iter().map(|(k, v)| (k.as_ref(), v.as_ref())).collect();
-
-                        prev.retain(|k| {
-                            if !new_style_map.contains_key(k.as_str()) {
-                                let _ = style.remove_property(k);
-                                false
-                            } else {
-                                true
-                            }
-                        });
-
-                        for (k, v) in new_style_map {
-                            let _ = style.set_property(k, v);
-                            if !prev.contains(k) {
-                                prev.insert(k.to_string());
-                            }
-                        }
-                    }
-                });
-            }
-            AttrOp::Sequence(ops) => {
-                for op in ops {
-                    op.apply(el);
-                }
-            }
-
-            AttrOp::Custom(f) => {
-                f(el);
-            }
-            AttrOp::Noop => {}
-
-            // --- 阶段三：合并应用的深度优化 (分发到 Kernel 函数) ---
             AttrOp::CombinedClasses(CombinedClasses {
                 statics,
                 toggles,
@@ -385,6 +333,15 @@ impl AttrOp {
             }) => {
                 apply_combined_styles_internal(el, statics, properties, sheets);
             }
+            AttrOp::Sequence(ops) => {
+                for op in ops {
+                    op.apply(el);
+                }
+            }
+            AttrOp::Custom(f) => {
+                f(el);
+            }
+            AttrOp::Noop => {}
         }
     }
 }
@@ -403,6 +360,22 @@ fn apply_update_internal(el: &Element, target: ApplyTarget, data: AttrData) {
             Effect::new(move |_| {
                 let name = target.attr_name();
                 apply_attr_with_target_internal(&el, name, target.clone(), &rx.get());
+            });
+        }
+        AttrData::ReactiveString(rx) => {
+            let el = el.clone();
+            Effect::new(move |_| {
+                let name = target.attr_name();
+                let val = rx.get();
+                apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val));
+            });
+        }
+        AttrData::ReactiveBool(rx) => {
+            let el = el.clone();
+            Effect::new(move |_| {
+                let name = target.attr_name();
+                let val = rx.get();
+                apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val));
             });
         }
         AttrData::ReactiveJs(rx) => {

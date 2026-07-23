@@ -4,8 +4,7 @@ use web_sys::Element as WebElem;
 
 use super::foundation::{ApplyTarget, ApplyToDom};
 use crate::attribute::op::{
-    Attr, AttrData, AttrOp, AttrUpdate, ClassToggle, CombinedClasses, CombinedStyles,
-    StyleProperty, parse_style_str,
+    Attr, AttrData, AttrOp, AttrUpdate, CombinedClasses, CombinedStyles, parse_style_str,
 };
 
 // --- Attribute Forwarding Support ---
@@ -48,28 +47,6 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
 
     for op in flattened {
         match op {
-            // --- Class 指令收集 ---
-            AttrOp::SetStaticClasses(v) => {
-                static_classes.extend(v);
-            }
-            AttrOp::AddClassToggle(ClassToggle { name, rx }) => {
-                class_toggles.push((name, rx));
-            }
-            AttrOp::AddReactiveClasses(rx) => {
-                reactive_classes.push(rx);
-            }
-
-            // --- Style 指令收集 ---
-            AttrOp::SetStaticStyles(v) => {
-                static_styles.extend(v);
-            }
-            AttrOp::BindStyleProperty(StyleProperty { name, rx }) => {
-                style_props.push((name, rx));
-            }
-            AttrOp::BindReactiveStyleSheet(rx) => {
-                style_sheets.push(rx);
-            }
-
             // --- 通用属性指令 (检查是否为 class/style) ---
             AttrOp::Update(AttrUpdate {
                 target: ApplyTarget::Attr(ref name),
@@ -103,7 +80,7 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
                 }
             },
 
-            // --- 合并指令收集 (防止重复合并导致覆盖) ---
+            // --- 合并指令收集 ---
             AttrOp::CombinedClasses(CombinedClasses {
                 statics,
                 toggles,
