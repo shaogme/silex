@@ -500,7 +500,7 @@ mod tests {
         assert_eq!(rules[0].css_property, "grid-template-columns");
         assert_eq!(
             rules[0].value,
-            UtilityValue::ArbitraryLiteral("repeat(4, minmax(0, 1fr))".into())
+            UtilityValue::Keyword("repeat(4, minmax(0, 1fr))")
         );
 
         let rules = resolve_utility(vec![], "opacity-50", span).unwrap();
@@ -513,7 +513,7 @@ mod tests {
         assert_eq!(rules[0].css_property, "transform");
         assert_eq!(
             rules[0].value,
-            UtilityValue::ArbitraryLiteral("rotate(45deg)".into())
+            UtilityValue::Keyword("rotate(45deg)")
         );
 
         let rules = resolve_utility(vec![], "-rotate-90", span).unwrap();
@@ -521,7 +521,7 @@ mod tests {
         assert_eq!(rules[0].css_property, "transform");
         assert_eq!(
             rules[0].value,
-            UtilityValue::ArbitraryLiteral("rotate(-90deg)".into())
+            UtilityValue::Keyword("rotate(-90deg)")
         );
 
         let rules = resolve_utility(vec![], "bg-theme(primary)", span).unwrap();
@@ -643,7 +643,7 @@ mod tests {
         assert_eq!(rules[0].css_property, "transform");
         assert_eq!(
             rules[0].value,
-            UtilityValue::ArbitraryLiteral("translateX(-50%)".into())
+            UtilityValue::Keyword("translateX(-50%)")
         );
 
         // 定位与负 inset

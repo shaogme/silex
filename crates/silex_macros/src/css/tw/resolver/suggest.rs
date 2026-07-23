@@ -114,7 +114,7 @@ mod tests {
             find_best_suggestion("shadow-mdd"),
             Some("shadow-md".to_string())
         );
-        assert_eq!(find_best_suggestion("px-44"), Some("px-4".to_string()));
+        assert_eq!(find_best_suggestion("px-444"), Some("px-44".to_string()));
         assert_eq!(find_best_suggestion("completely_unknown_token"), None);
     }
 }

@@ -4,6 +4,7 @@ use std::path::Path;
 
 mod css;
 mod tags;
+mod tw;
 
 use tags::codegen::generate_module_content;
 
@@ -13,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 1. Determine paths
     let current_dir = std::env::current_dir()?;
-    let (mdn_compat_path, mdn_props_path, mdn_syntaxes_path, out_dir, css_out_dir) = if current_dir
+    let (mdn_compat_path, mdn_props_path, mdn_syntaxes_path, out_dir, css_out_dir, macro_resolver_dir) = if current_dir
         .join("crates/utils/silex_codegen")
         .exists()
     {
@@ -23,6 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             current_dir.join("crates/utils/silex_codegen/mdn_css_syntaxes.json"),
             current_dir.join("crates/silex_html/src/tags"),
             current_dir.join("crates/silex_css/src"),
+            current_dir.join("crates/silex_macros/src/css/tw/resolver"),
         )
     } else if current_dir.ends_with("silex_codegen") {
         (
@@ -31,6 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             current_dir.join("mdn_css_syntaxes.json"),
             current_dir.join("../../silex_html/src/tags"),
             current_dir.join("../../silex_css/src"),
+            current_dir.join("../../silex_macros/src/css/tw/resolver"),
         )
     } else {
         return Err(
@@ -44,6 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("MDN Syntax: {}", mdn_syntaxes_path.display());
     println!("Output dir: {}", out_dir.display());
     println!("CSS dir:    {}", css_out_dir.display());
+    println!("Macro dir:  {}", macro_resolver_dir.display());
 
     // 2. FETCH MODE: Raw data downloader
     if should_fetch {
@@ -136,6 +140,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let svg_code = generate_module_content(&gen_config.svg, true, &html_macros);
     fs::write(out_dir.join("svg.rs"), svg_code)?;
     println!("Generated svg.rs");
+
+    // Generate Tailwind Classes & Macro Table
+    let tw_json_path = current_dir.join("crates/utils/silex_codegen/tailwind-classes.json");
+    if tw_json_path.exists() {
+        let json_str = fs::read_to_string(&tw_json_path)?;
+
+        #[derive(serde::Deserialize)]
+        #[serde(untagged)]
+        enum TailwindJsonData {
+            Full {
+                classes: Vec<String>,
+                #[serde(default)]
+                dynamic_prefixes: std::collections::BTreeMap<String, Vec<String>>,
+            },
+            Legacy(Vec<String>),
+        }
+
+        let (classes, dynamic_prefixes) = match serde_json::from_str::<TailwindJsonData>(&json_str)? {
+            TailwindJsonData::Full {
+                classes,
+                dynamic_prefixes,
+            } => (classes, dynamic_prefixes),
+            TailwindJsonData::Legacy(classes) => (classes, std::collections::BTreeMap::new()),
+        };
+
+        let (table_code, table_unimplement_code) =
+            tw::generate_macro_tables(&classes, &dynamic_prefixes);
+        if !macro_resolver_dir.exists() {
+            fs::create_dir_all(&macro_resolver_dir)?;
+        }
+        fs::write(macro_resolver_dir.join("table.rs"), table_code)?;
+        fs::write(
+            macro_resolver_dir.join("table_unimplement.rs"),
+            table_unimplement_code,
+        )?;
+        println!("Generated table.rs and table_unimplement.rs for silex_macros");
+    }
 
     println!("\nSuccessfully completed!");
     Ok(())
