@@ -1,10 +1,9 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::rc::Rc;
 
 use wasm_bindgen_futures::spawn_local;
 
 use silex_core::{
-    error::{ErrorContext, SilexError, provide_context},
+    error::{ErrorContext, SilexError},
     log::console_error,
     reactivity::Signal,
     rx,
@@ -26,15 +25,15 @@ where
 {
     let (error, set_error) = Signal::<Option<SilexError>>::pair(None);
 
-    let error_ctx = ErrorContext(Rc::new(move |e| {
+    let error_ctx = ErrorContext::new(move |e| {
         console_error(format!("ErrorBoundary caught error: {}", e));
         // Defer update to avoid render-induced updates
         spawn_local(async move {
             set_error.set(Some(e));
         });
-    }));
+    });
 
-    provide_context(error_ctx);
+    error_ctx.push();
 
     render! {
         use scope;
