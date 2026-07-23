@@ -14,6 +14,110 @@ pub struct PendingAttribute {
     pub op: AttrOp,
 }
 
+#[derive(Default)]
+struct ClassAccumulator {
+    statics: Vec<Cow<'static, str>>,
+    toggles: Vec<(Cow<'static, str>, silex_core::Rx<bool>)>,
+    reactives: Vec<silex_core::Rx<String>>,
+}
+
+impl ClassAccumulator {
+    fn push_static(&mut self, c: Cow<'static, str>) {
+        if !self.statics.iter().any(|existing| existing == &c) {
+            self.statics.push(c);
+        }
+    }
+
+    fn push_toggle(&mut self, name: Cow<'static, str>, rx: silex_core::Rx<bool>) {
+        if let Some(idx) = self.toggles.iter().position(|(n, _)| n == &name) {
+            self.toggles[idx] = (name, rx);
+        } else {
+            self.toggles.push((name, rx));
+        }
+    }
+
+    fn push_reactive(&mut self, rx: silex_core::Rx<String>) {
+        self.reactives.push(rx);
+    }
+
+    fn extend_combined(&mut self, combined: CombinedClasses) {
+        for s in combined.statics {
+            self.push_static(s);
+        }
+        for (name, rx) in combined.toggles {
+            self.push_toggle(name, rx);
+        }
+        for rx in combined.reactives {
+            self.push_reactive(rx);
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.statics.is_empty() && self.toggles.is_empty() && self.reactives.is_empty()
+    }
+
+    fn into_op(self) -> AttrOp {
+        AttrOp::CombinedClasses(CombinedClasses {
+            statics: self.statics,
+            toggles: self.toggles,
+            reactives: self.reactives,
+        })
+    }
+}
+
+#[derive(Default)]
+struct StyleAccumulator {
+    statics: Vec<(Cow<'static, str>, Cow<'static, str>)>,
+    properties: Vec<(Cow<'static, str>, silex_core::Rx<String>)>,
+    sheets: Vec<silex_core::Rx<String>>,
+}
+
+impl StyleAccumulator {
+    fn push_static(&mut self, key: Cow<'static, str>, val: Cow<'static, str>) {
+        if let Some(idx) = self.statics.iter().position(|(k, _)| k == &key) {
+            self.statics[idx] = (key, val);
+        } else {
+            self.statics.push((key, val));
+        }
+    }
+
+    fn push_property(&mut self, key: Cow<'static, str>, rx: silex_core::Rx<String>) {
+        if let Some(idx) = self.properties.iter().position(|(k, _)| k == &key) {
+            self.properties[idx] = (key, rx);
+        } else {
+            self.properties.push((key, rx));
+        }
+    }
+
+    fn push_sheet(&mut self, rx: silex_core::Rx<String>) {
+        self.sheets.push(rx);
+    }
+
+    fn extend_combined(&mut self, combined: CombinedStyles) {
+        for (k, v) in combined.statics {
+            self.push_static(k, v);
+        }
+        for (k, rx) in combined.properties {
+            self.push_property(k, rx);
+        }
+        for rx in combined.sheets {
+            self.push_sheet(rx);
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.statics.is_empty() && self.properties.is_empty() && self.sheets.is_empty()
+    }
+
+    fn into_op(self) -> AttrOp {
+        AttrOp::CombinedStyles(CombinedStyles {
+            statics: self.statics,
+            properties: self.properties,
+            sheets: self.sheets,
+        })
+    }
+}
+
 pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttribute> {
     if attrs.is_empty() {
         return attrs;
@@ -27,105 +131,51 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
         }
     }
 
-    let mut consolidated = Vec::new();
-
-    // Class 收集器
-    let mut static_classes: Vec<Cow<'static, str>> = Vec::new();
-    let mut class_toggles: Vec<(Cow<'static, str>, silex_core::Rx<bool>)> = Vec::new();
-    let mut reactive_classes: Vec<silex_core::Rx<String>> = Vec::new();
-
-    // Style 收集器
-    let mut static_styles: Vec<(Cow<'static, str>, Cow<'static, str>)> = Vec::new();
-    let mut style_props: Vec<(Cow<'static, str>, silex_core::Rx<String>)> = Vec::new();
-    let mut style_sheets: Vec<silex_core::Rx<String>> = Vec::new();
+    let mut class_acc = ClassAccumulator::default();
+    let mut style_acc = StyleAccumulator::default();
+    let mut consolidated = Vec::with_capacity(attrs.len());
 
     // 递归打平函数
-    fn flatten_ops(op: AttrOp, acc: &mut Vec<AttrOp>) {
+    fn process_op(
+        op: AttrOp,
+        class_acc: &mut ClassAccumulator,
+        style_acc: &mut StyleAccumulator,
+        consolidated: &mut Vec<PendingAttribute>,
+    ) {
         match op {
             AttrOp::Sequence(ops) => {
                 for sub_op in ops {
-                    flatten_ops(sub_op, acc);
+                    process_op(sub_op, class_acc, style_acc, consolidated);
                 }
             }
+            AttrOp::CombinedClasses(cc) => {
+                class_acc.extend_combined(cc);
+            }
+            AttrOp::CombinedStyles(cs) => {
+                style_acc.extend_combined(cs);
+            }
             AttrOp::Noop => {}
-            _ => acc.push(op),
-        }
-    }
-
-    let mut flattened = Vec::with_capacity(attrs.len());
-    for attr in attrs {
-        flatten_ops(attr.op, &mut flattened);
-    }
-
-    for op in flattened {
-        match op {
-            // --- 合并指令收集 ---
-            AttrOp::CombinedClasses(CombinedClasses {
-                statics,
-                toggles,
-                reactives,
-            }) => {
-                static_classes.extend(statics);
-                class_toggles.extend(toggles);
-                reactive_classes.extend(reactives);
-            }
-            AttrOp::CombinedStyles(CombinedStyles {
-                statics,
-                properties,
-                sheets,
-            }) => {
-                static_styles.extend(statics);
-                style_props.extend(properties);
-                style_sheets.extend(sheets);
-            }
-
-            // --- 其它指令，原样保留 ---
             op => {
                 consolidated.push(PendingAttribute { op });
             }
         }
     }
 
+    for attr in attrs {
+        process_op(attr.op, &mut class_acc, &mut style_acc, &mut consolidated);
+    }
+
     let mut result = Vec::with_capacity(consolidated.len() + 2);
 
-    // 静态类名去重逻辑，保持顺序剔除重复项，减少重复 DOM class_list 操作
-    if static_classes.len() > 1 {
-        let mut seen = std::collections::HashSet::with_capacity(static_classes.len());
-        static_classes.retain(|c| seen.insert(c.clone()));
-    }
-
-    // 静态样式去重逻辑，按 key 保留最后覆盖项
-    if static_styles.len() > 1 {
-        let mut seen_keys = std::collections::HashSet::with_capacity(static_styles.len());
-        let mut deduplicated = Vec::with_capacity(static_styles.len());
-        for (k, v) in static_styles.into_iter().rev() {
-            if seen_keys.insert(k.clone()) {
-                deduplicated.push((k, v));
-            }
-        }
-        deduplicated.reverse();
-        static_styles = deduplicated;
-    }
-
-    // 按需生成合并后的 Class 指令
-    if !static_classes.is_empty() || !class_toggles.is_empty() || !reactive_classes.is_empty() {
+    if !class_acc.is_empty() {
         result.push(PendingAttribute {
-            op: AttrOp::CombinedClasses(CombinedClasses {
-                statics: static_classes,
-                toggles: class_toggles,
-                reactives: reactive_classes,
-            }),
+            op: class_acc.into_op(),
         });
     }
 
-    // 按需生成合并后的 Style 指令
-    if !static_styles.is_empty() || !style_props.is_empty() || !style_sheets.is_empty() {
+    if !style_acc.is_empty() {
         result.push(PendingAttribute {
-            op: AttrOp::CombinedStyles(CombinedStyles {
-                statics: static_styles,
-                properties: style_props,
-                sheets: style_sheets,
-            }),
+            op: style_acc.into_op(),
         });
     }
 

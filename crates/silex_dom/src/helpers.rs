@@ -101,11 +101,9 @@ where
         return false;
     };
 
-    if let Some(input) = target.dyn_ref::<web_sys::HtmlInputElement>() {
-        input.checked()
-    } else {
-        false
-    }
+    target
+        .dyn_ref::<web_sys::HtmlInputElement>()
+        .map_or(false, |input| input.checked())
 }
 
 /// Adds an event listener to the `Window`, returning a cancelable handle that automatically

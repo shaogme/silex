@@ -330,26 +330,14 @@ pub trait GlobalEventAttributes: AttributeBuilder {
                 let dom_element = el.clone();
                 let signal = signal.clone();
                 silex_core::reactivity::Effect::new(move |_| {
-                    use wasm_bindgen::JsCast;
                     let value = signal.get();
                     let str_val = value.as_ref();
-                    if let Some(input) = dom_element.dyn_ref::<web_sys::HtmlInputElement>() {
-                        if input.value() != str_val {
-                            input.set_value(str_val);
-                        }
-                    } else if let Some(area) = dom_element.dyn_ref::<web_sys::HtmlTextAreaElement>()
-                    {
-                        if area.value() != str_val {
-                            area.set_value(str_val);
-                        }
-                    } else if let Some(select) = dom_element.dyn_ref::<web_sys::HtmlSelectElement>()
-                    {
-                        if select.value() != str_val {
-                            select.set_value(str_val);
-                        }
-                    } else {
-                        let _ = dom_element.set_attribute("value", str_val);
-                    }
+                    apply_attr_with_target_internal(
+                        &dom_element,
+                        "value",
+                        ApplyTarget::Known(KnownProp::Value),
+                        &Attr::from(str_val.to_string()),
+                    );
                 });
             },
         ))

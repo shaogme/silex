@@ -2,7 +2,9 @@
 // This file defines the type-safe markers used by TypedElement<T>
 
 /// Root trait for all tag markers
-pub trait Tag {}
+pub trait Tag {
+    type DomElement: wasm_bindgen::JsCast + AsRef<web_sys::Element> + AsRef<web_sys::Node> + Clone + 'static;
+}
 
 // --- Group Traits (corresponding to props groups) ---
 
@@ -41,27 +43,35 @@ pub trait SvgTag: Tag {}
 
 #[macro_export]
 macro_rules! define_tag {
-    ($struct_name:ident, $tag_name:literal, $fn_name:ident, $constructor:ident, void, [$($traits:ident),*]) => {
+    ($struct_name:ident, $dom_elem:ty, $tag_name:literal, $fn_name:ident, $constructor:ident, void, [$($traits:ident),*]) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub struct $struct_name;
-        impl $crate::prelude::tags::Tag for $struct_name {}
-        $( impl $crate::prelude::tags::$traits for $struct_name {} )*
+        impl $crate::element::tags::Tag for $struct_name {
+            type DomElement = $dom_elem;
+        }
+        $( impl $crate::element::tags::$traits for $struct_name {} )*
 
-        pub fn $fn_name() -> $crate::prelude::TypedElement<$struct_name> {
-            $crate::prelude::TypedElement::$constructor($tag_name)
+        pub fn $fn_name() -> $crate::element::TypedElement<$struct_name> {
+            $crate::element::TypedElement::$constructor($tag_name)
         }
     };
 
-    ($struct_name:ident, $tag_name:literal, $fn_name:ident, $constructor:ident, non_void, [$($traits:ident),*]) => {
+    ($struct_name:ident, $dom_elem:ty, $tag_name:literal, $fn_name:ident, $constructor:ident, non_void, [$($traits:ident),*]) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub struct $struct_name;
-        impl $crate::prelude::tags::Tag for $struct_name {}
-        $( impl $crate::prelude::tags::$traits for $struct_name {} )*
+        impl $crate::element::tags::Tag for $struct_name {
+            type DomElement = $dom_elem;
+        }
+        $( impl $crate::element::tags::$traits for $struct_name {} )*
 
-        pub fn $fn_name<V: $crate::view::View>(child: V) -> $crate::prelude::TypedElement<$struct_name> {
-            let el = $crate::prelude::TypedElement::<$struct_name>::$constructor($tag_name);
-            $crate::view::View::mount_owned(child, &el.element.dom_element, Vec::new());
+        pub fn $fn_name<V: $crate::view::View>(child: V) -> $crate::element::TypedElement<$struct_name> {
+            let el = $crate::element::TypedElement::<$struct_name>::$constructor($tag_name);
+            $crate::view::View::mount_owned(child, el.dom_element.as_ref(), Vec::new());
             el
         }
+    };
+
+    ($struct_name:ident, $tag_name:literal, $fn_name:ident, $constructor:ident, $void_kind:ident, [$($traits:ident),*]) => {
+        $crate::define_tag!($struct_name, web_sys::HtmlElement, $tag_name, $fn_name, $constructor, $void_kind, [$($traits),*]);
     };
 }

@@ -156,7 +156,7 @@ where
 {
 }
 
-impl<T: 'static> AutoReactiveView for crate::element::TypedElement<T> {}
+impl<T: crate::element::tags::Tag + 'static> AutoReactiveView for crate::element::TypedElement<T> {}
 
 // --- Signal 自动支持宏 ---
 

@@ -1,6 +1,6 @@
 mod tags {
     pub mod html;
-    pub mod svg;
+        pub mod svg;
 }
 
 pub use silex_dom::view::{ViewCons, ViewNil};

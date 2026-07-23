@@ -17,4 +17,23 @@ workspace = true
 [dependencies]
 silex_dom.workspace = true
 wasm-bindgen.workspace = true
-web-sys.workspace = true
+web-sys = { workspace = true, features = [
+    "Element",
+    "HtmlElement",
+    "HtmlInputElement",
+    "HtmlTextAreaElement",
+    "HtmlSelectElement",
+    "HtmlButtonElement",
+    "HtmlOptionElement",
+    "HtmlOptGroupElement",
+    "HtmlAnchorElement",
+    "HtmlCanvasElement",
+    "HtmlFormElement",
+    "HtmlImageElement",
+    "HtmlAudioElement",
+    "HtmlVideoElement",
+    "HtmlDialogElement",
+    "HtmlDetailsElement",
+    "HtmlIFrameElement",
+    "SvgElement",
+] }

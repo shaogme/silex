@@ -135,35 +135,46 @@ impl std::ops::Deref for Element {
     }
 }
 
-/// Type-safe wrapper for DOM elements
-pub struct TypedElement<T> {
-    pub element: Element,
+/// Type-safe wrapper for DOM elements holding their actual native web_sys element type
+pub struct TypedElement<T: Tag> {
+    pub dom_element: T::DomElement,
     _marker: PhantomData<T>,
 }
 
-impl<T> Clone for TypedElement<T> {
+impl<T: Tag> Clone for TypedElement<T> {
     fn clone(&self) -> Self {
         Self {
-            element: self.element.clone(),
+            dom_element: self.dom_element.clone(),
             _marker: PhantomData,
         }
     }
 }
 
-impl<T> PartialEq for TypedElement<T> {
+impl<T: Tag> PartialEq for TypedElement<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.element == other.element
+        self.as_element() == other.as_element()
     }
 }
 
-impl<T> TypedElement<T> {
+impl<T: Tag> TypedElement<T> {
+    #[inline(always)]
+    pub fn as_element(&self) -> &web_sys::Element {
+        AsRef::<web_sys::Element>::as_ref(&self.dom_element)
+    }
+
+    #[inline(always)]
+    pub fn as_node(&self) -> &web_sys::Node {
+        AsRef::<web_sys::Node>::as_ref(&self.dom_element)
+    }
+
     pub fn new(tag: &str) -> Self {
         let document = crate::document();
         let dom_element = document
             .create_element(tag)
-            .expect("Failed to create element");
+            .expect("Failed to create element")
+            .unchecked_into::<T::DomElement>();
         Self {
-            element: Element { dom_element },
+            dom_element,
             _marker: PhantomData,
         }
     }
@@ -172,27 +183,27 @@ impl<T> TypedElement<T> {
         let document = crate::document();
         let dom_element = document
             .create_element_ns(Some("http://www.w3.org/2000/svg"), tag)
-            .expect("Failed to create SVG element");
+            .expect("Failed to create SVG element")
+            .unchecked_into::<T::DomElement>();
         Self {
-            element: Element { dom_element },
+            dom_element,
             _marker: PhantomData,
         }
     }
 
     pub fn into_untyped(self) -> Element {
-        self.element
+        Element {
+            dom_element: self.as_element().clone(),
+        }
     }
 }
 
-impl<T> AttributeBuilder for TypedElement<T> {
+impl<T: Tag> AttributeBuilder for TypedElement<T> {
     fn build_attribute<V>(self, target: ApplyTarget, value: V) -> Self
     where
         V: IntoStorable,
     {
-        // Convert to storable type, then apply to DOM
-        value
-            .into_storable()
-            .apply(&self.element.dom_element, target);
+        value.into_storable().apply(self.as_element(), target);
         self
     }
 
@@ -201,27 +212,48 @@ impl<T> AttributeBuilder for TypedElement<T> {
         E: EventDescriptor + 'static,
         F: EventHandler<E::EventType, M> + Clone + 'static,
     {
-        bind_event(&self.element.dom_element, event, callback);
+        bind_event(self.as_element(), event, callback);
         self
     }
 }
 
-impl<T> crate::view::ApplyAttributes for TypedElement<T> {
+impl<T: Tag> crate::view::ApplyAttributes for TypedElement<T> {
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute>) {
-        self.element.apply_attributes(attrs);
+        let consolidated = crate::attribute::consolidate_attributes(attrs);
+        for attr in consolidated {
+            attr.apply(self.as_element());
+        }
     }
 }
 
-impl<T: 'static> crate::view::View for TypedElement<T> {
+impl<T: Tag> crate::view::View for TypedElement<T> {
     fn mount(&self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>) {
-        self.element.mount(parent, attrs);
+        if !attrs.is_empty() {
+            let consolidated = crate::attribute::consolidate_attributes(attrs);
+            for attr in consolidated {
+                attr.apply(self.as_element());
+            }
+        }
+
+        if let Err(e) = parent.append_child(self.as_node()).map_err(SilexError::from) {
+            handle_error(e);
+        }
     }
 
     fn mount_owned(self, parent: &::web_sys::Node, attrs: Vec<PendingAttribute>)
     where
         Self: Sized,
     {
-        self.element.mount_owned(parent, attrs);
+        if !attrs.is_empty() {
+            let consolidated = crate::attribute::consolidate_attributes(attrs);
+            for attr in consolidated {
+                attr.apply(self.as_element());
+            }
+        }
+
+        if let Err(e) = parent.append_child(self.as_node()).map_err(SilexError::from) {
+            handle_error(e);
+        }
     }
 }
 
@@ -232,9 +264,9 @@ impl<T: Tag> From<TypedElement<T>> for Element {
 }
 
 impl<T: Tag> std::ops::Deref for TypedElement<T> {
-    type Target = Element;
+    type Target = WebElem;
     fn deref(&self) -> &Self::Target {
-        &self.element
+        self.dom_element.as_ref()
     }
 }
 
