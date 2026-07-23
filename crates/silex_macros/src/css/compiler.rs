@@ -942,12 +942,13 @@ mod tests {
 }
 
 fn get_compiler_targets() -> Targets {
-    let mut browsers = lightningcss::targets::Browsers::default();
-    browsers.chrome = Some(80 << 16);
-    browsers.safari = Some(13 << 16);
-    browsers.firefox = Some(75 << 16);
     Targets {
-        browsers: Some(browsers),
+        browsers: Some(lightningcss::targets::Browsers {
+            chrome: Some(80 << 16),
+            safari: Some(13 << 16),
+            firefox: Some(75 << 16),
+            ..Default::default()
+        }),
         ..Targets::default()
     }
 }

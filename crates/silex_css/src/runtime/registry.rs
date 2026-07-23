@@ -58,21 +58,21 @@ impl StaticStyleRegistry {
         self.all_chunks.push(trimmed.to_string());
         self.has_pending_chunks = true;
 
-        if self.shared_sheet.is_none() {
-            if let Ok(sheet) = CssStyleSheet::new() {
-                let init_content = self.build_full_content();
-                let _ = sheet.replace_sync(&init_content);
-                self.has_pending_chunks = false;
+        if self.shared_sheet.is_none()
+            && let Ok(sheet) = CssStyleSheet::new()
+        {
+            let init_content = self.build_full_content();
+            let _ = sheet.replace_sync(&init_content);
+            self.has_pending_chunks = false;
 
-                DOCUMENT_REGISTRY.with(|dr| {
-                    if let Ok(mut dr) = dr.try_borrow_mut() {
-                        dr.set_static_sheet(sheet.clone());
-                    }
-                });
+            DOCUMENT_REGISTRY.with(|dr| {
+                if let Ok(mut dr) = dr.try_borrow_mut() {
+                    dr.set_static_sheet(sheet.clone());
+                }
+            });
 
-                self.shared_sheet = Some(sheet);
-                return;
-            }
+            self.shared_sheet = Some(sheet);
+            return;
         }
 
         self.schedule_flush();

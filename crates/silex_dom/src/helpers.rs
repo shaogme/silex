@@ -107,7 +107,7 @@ where
 
     target
         .dyn_ref::<web_sys::HtmlInputElement>()
-        .map_or(false, |input| input.checked())
+        .is_some_and(|input| input.checked())
 }
 
 /// Adds an event listener to the `Window`, returning a cancelable handle that automatically

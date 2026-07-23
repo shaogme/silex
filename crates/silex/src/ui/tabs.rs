@@ -34,7 +34,7 @@ pub fn Tabs(
 
     div(children)
         .attr("data-slot", "tabs")
-        .attr("data-orientation", orient.clone())
+        .attr("data-orientation", orient)
         .attr("orientation", orient)
         .class(cls)
 }

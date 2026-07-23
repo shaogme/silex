@@ -143,7 +143,6 @@ pub fn Slider(
     let is_dragging = Rc::new(Cell::new(false));
 
     let handle_down = {
-        let on_change = on_change.clone();
         let is_dragging = is_dragging.clone();
         move |e: web_sys::PointerEvent| {
             if disabled.get() {
@@ -151,41 +150,38 @@ pub fn Slider(
             }
             if let Some(target) = e.current_target()
                 && let Ok(el) = target.dyn_into::<web_sys::Element>()
+                && el.set_pointer_capture(e.pointer_id()).is_ok()
             {
-                if el.set_pointer_capture(e.pointer_id()).is_ok() {
-                    is_dragging.set(true);
-                    let new_val = calculate_slider_value(
-                        &e,
-                        &el,
-                        is_vertical.get(),
-                        min_val.get(),
-                        max_val.get(),
-                        step_val.get(),
-                    );
-                    on_change.call(new_val);
-                }
+                is_dragging.set(true);
+                let new_val = calculate_slider_value(
+                    &e,
+                    &el,
+                    is_vertical.get(),
+                    min_val.get(),
+                    max_val.get(),
+                    step_val.get(),
+                );
+                on_change.call(new_val);
             }
         }
     };
 
     let handle_move = {
-        let on_change = on_change.clone();
         let is_dragging = is_dragging.clone();
         move |e: web_sys::PointerEvent| {
-            if is_dragging.get() {
-                if let Some(target) = e.current_target()
-                    && let Ok(el) = target.dyn_into::<web_sys::Element>()
-                {
-                    let new_val = calculate_slider_value(
-                        &e,
-                        &el,
-                        is_vertical.get(),
-                        min_val.get(),
-                        max_val.get(),
-                        step_val.get(),
-                    );
-                    on_change.call(new_val);
-                }
+            if is_dragging.get()
+                && let Some(target) = e.current_target()
+                && let Ok(el) = target.dyn_into::<web_sys::Element>()
+            {
+                let new_val = calculate_slider_value(
+                    &e,
+                    &el,
+                    is_vertical.get(),
+                    min_val.get(),
+                    max_val.get(),
+                    step_val.get(),
+                );
+                on_change.call(new_val);
             }
         }
     };
@@ -220,7 +216,7 @@ pub fn Slider(
             .step(step_val)
             .disabled(disabled)
             .class(tw!("sr-only absolute opacity-0 pointer-events-none"))
-            .on_input(handle_input.clone())
+            .on_input(handle_input)
             .on_change(handle_input),
         // Visual Track
         div(view_chain!(

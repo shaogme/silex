@@ -92,14 +92,10 @@ pub fn RadioGroupItem(
         }
     });
 
-    let handle_click = {
-        let on_select = on_select.clone();
-        let on_change = on_change.clone();
-        move |_| {
-            if !disabled.get() {
-                on_select.call(value);
-                on_change.call(value.to_string());
-            }
+    let handle_click = move |_| {
+        if !disabled.get() {
+            on_select.call(value);
+            on_change.call(value.to_string());
         }
     };
 
