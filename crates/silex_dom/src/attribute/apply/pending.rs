@@ -9,10 +9,8 @@ use crate::attribute::op::{
 
 // --- Attribute Forwarding Support ---
 
-#[derive(Clone, PartialEq)]
-pub struct PendingAttribute {
-    pub op: AttrOp,
-}
+/// `PendingAttribute` 是 `AttrOp` 的零成本别名，用于统一延迟属性指令。
+pub type PendingAttribute = AttrOp;
 
 #[derive(Default)]
 struct ClassAccumulator {
@@ -23,7 +21,7 @@ struct ClassAccumulator {
 
 impl ClassAccumulator {
     fn push_static(&mut self, c: Cow<'static, str>) {
-        if !self.statics.iter().any(|existing| existing == &c) {
+        if !self.statics.contains(&c) {
             self.statics.push(c);
         }
     }
@@ -118,14 +116,14 @@ impl StyleAccumulator {
     }
 }
 
-pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttribute> {
+pub fn consolidate_attributes(attrs: Vec<AttrOp>) -> Vec<AttrOp> {
     if attrs.is_empty() {
         return attrs;
     }
 
     // 快速路径：单属性且无需合并时直接返回
     if attrs.len() == 1 {
-        match &attrs[0].op {
+        match &attrs[0] {
             AttrOp::Sequence(_) | AttrOp::CombinedClasses(_) | AttrOp::CombinedStyles(_) => {}
             _ => return attrs,
         }
@@ -140,7 +138,7 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
         op: AttrOp,
         class_acc: &mut ClassAccumulator,
         style_acc: &mut StyleAccumulator,
-        consolidated: &mut Vec<PendingAttribute>,
+        consolidated: &mut Vec<AttrOp>,
     ) {
         match op {
             AttrOp::Sequence(ops) => {
@@ -156,59 +154,39 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
             }
             AttrOp::Noop => {}
             op => {
-                consolidated.push(PendingAttribute { op });
+                consolidated.push(op);
             }
         }
     }
 
-    for attr in attrs {
-        process_op(attr.op, &mut class_acc, &mut style_acc, &mut consolidated);
+    for op in attrs {
+        process_op(op, &mut class_acc, &mut style_acc, &mut consolidated);
     }
 
     let mut result = Vec::with_capacity(consolidated.len() + 2);
 
     if !class_acc.is_empty() {
-        result.push(PendingAttribute {
-            op: class_acc.into_op(),
-        });
+        result.push(class_acc.into_op());
     }
 
     if !style_acc.is_empty() {
-        result.push(PendingAttribute {
-            op: style_acc.into_op(),
-        });
+        result.push(style_acc.into_op());
     }
 
     result.extend(consolidated);
     result
 }
 
-impl ApplyToDom for PendingAttribute {
-    fn apply(&self, el: &WebElem, _target: ApplyTarget) {
-        self.apply(el);
-    }
-
-    fn into_op(self, _target: ApplyTarget) -> AttrOp {
-        self.op
-    }
-}
-
-impl PendingAttribute {
+impl AttrOp {
     pub fn build<V>(value: V, target: ApplyTarget) -> Self
     where
         V: ApplyToDom + 'static,
     {
-        let op = value.into_op(target);
-        Self { op }
-    }
-
-    pub fn apply(&self, el: &WebElem) {
-        self.op.clone().apply(el);
+        value.into_op(target)
     }
 
     pub fn new_listener(f: impl Fn(&WebElem) + 'static) -> Self {
-        Self {
-            op: AttrOp::Custom(Rc::new(f)),
-        }
+        AttrOp::Custom(Rc::new(f))
     }
 }
+

@@ -404,7 +404,7 @@ mod tests {
         let signal = RwSignal::new(true);
         let target = ApplyTarget::Known(KnownProp::Disabled);
         let pending = PendingAttribute::build(signal.into_storable(), target);
-        match pending.op {
+        match pending {
             AttrOp::Update(AttrUpdate { target, .. }) => {
                 assert_eq!(target, ApplyTarget::Known(KnownProp::Disabled));
             }
@@ -470,7 +470,7 @@ mod tests {
         let consolidated = consolidate_attributes(attrs);
         assert_eq!(consolidated.len(), 1);
 
-        match &consolidated[0].op {
+        match &consolidated[0] {
             AttrOp::CombinedClasses(cc) => {
                 assert_eq!(cc.statics, vec![Cow::Borrowed("btn"), Cow::Borrowed("active")]);
                 assert_eq!(cc.toggles.len(), 1);

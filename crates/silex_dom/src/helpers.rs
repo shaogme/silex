@@ -12,22 +12,26 @@ use silex_core::reactivity::on_cleanup;
 
 // --- Window & Document Access ---
 
-thread_local! {
-    static WINDOW: Window = web_sys::window().expect("Window not found");
-    static DOCUMENT: Document = web_sys::window()
-        .expect("Window not found")
-        .document()
-        .expect("Document not found");
+// --- Window & Document Access ---
+
+/// Try returning the current [`Window`](web_sys::Window) if available.
+pub fn try_window() -> Option<Window> {
+    web_sys::window()
 }
 
-/// Returns the cached [`Window`](web_sys::Window).
+/// Returns the current [`Window`](web_sys::Window).
 pub fn window() -> Window {
-    WINDOW.with(|w| w.clone())
+    web_sys::window().expect("Window not found")
 }
 
-/// Returns the cached [`Document`](web_sys::Document).
+/// Try returning the current [`Document`](web_sys::Document) if available.
+pub fn try_document() -> Option<Document> {
+    web_sys::window().and_then(|w| w.document())
+}
+
+/// Returns the current [`Document`](web_sys::Document).
 pub fn document() -> Document {
-    DOCUMENT.with(|d| d.clone())
+    try_document().expect("Document not found")
 }
 
 // --- Location Helpers ---

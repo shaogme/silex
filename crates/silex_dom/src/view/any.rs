@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn boxed_equality_includes_attributes() {
         let view = Rc::new(DummyView);
-        let attrs = vec![PendingAttribute { op: AttrOp::Noop }];
+        let attrs = vec![AttrOp::Noop];
 
         let left = AnyView::Boxed(view.clone(), attrs.clone());
         let right = AnyView::Boxed(view, attrs);
@@ -174,7 +174,7 @@ mod tests {
     fn boxed_equality_rejects_different_attributes() {
         let view = Rc::new(DummyView);
         let left = AnyView::Boxed(view.clone(), vec![]);
-        let right = AnyView::Boxed(view, vec![PendingAttribute { op: AttrOp::Noop }]);
+        let right = AnyView::Boxed(view, vec![AttrOp::Noop]);
 
         assert_ne!(left, right);
     }
