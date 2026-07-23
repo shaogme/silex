@@ -16,8 +16,10 @@ pub struct StaticStyleRegistry {
     injected_ids: HashSet<String>,
     /// The shared stylesheet for all static styles.
     shared_sheet: Option<CssStyleSheet>,
-    /// Queue of pending rules awaiting microtask flush.
-    pending_rules: Vec<String>,
+    /// All injected static CSS content chunks.
+    all_chunks: Vec<String>,
+    /// Whether there are new chunks awaiting microtask flush.
+    has_pending_chunks: bool,
     /// Whether a microtask flush has already been scheduled.
     is_flush_pending: bool,
 }
@@ -28,7 +30,8 @@ impl StaticStyleRegistry {
             static INSTANCE: RefCell<StaticStyleRegistry> = RefCell::new(StaticStyleRegistry {
                 injected_ids: HashSet::new(),
                 shared_sheet: None,
-                pending_rules: Vec::new(),
+                all_chunks: Vec::new(),
+                has_pending_chunks: false,
                 is_flush_pending: false,
             });
         }
@@ -45,21 +48,21 @@ impl StaticStyleRegistry {
         if self.injected_ids.contains(id) {
             return;
         }
-        self.injected_ids.insert(id.to_string());
 
-        let rules = split_rules(content);
-        for rule in rules {
-            self.pending_rules.push(rule.to_string());
+        let trimmed = content.trim();
+        if trimmed.is_empty() {
+            return;
         }
+
+        self.injected_ids.insert(id.to_string());
+        self.all_chunks.push(trimmed.to_string());
+        self.has_pending_chunks = true;
 
         if self.shared_sheet.is_none() {
             if let Ok(sheet) = CssStyleSheet::new() {
-                let mut init_content = String::from("@layer base, components, utilities;\n");
-                for r in self.pending_rules.drain(..) {
-                    init_content.push_str(&r);
-                    init_content.push('\n');
-                }
+                let init_content = self.build_full_content();
                 let _ = sheet.replace_sync(&init_content);
+                self.has_pending_chunks = false;
 
                 DOCUMENT_REGISTRY.with(|dr| {
                     if let Ok(mut dr) = dr.try_borrow_mut() {
@@ -76,7 +79,7 @@ impl StaticStyleRegistry {
     }
 
     fn schedule_flush(&mut self) {
-        if self.is_flush_pending || self.pending_rules.is_empty() {
+        if self.is_flush_pending || !self.has_pending_chunks {
             return;
         }
         self.is_flush_pending = true;
@@ -91,36 +94,63 @@ impl StaticStyleRegistry {
 
     pub fn flush(&mut self) {
         self.is_flush_pending = false;
-        if self.pending_rules.is_empty() {
+        if !self.has_pending_chunks {
             return;
         }
+        self.has_pending_chunks = false;
 
         if let Some(sheet) = &self.shared_sheet {
-            for rule in self.pending_rules.drain(..) {
-                if let Ok(rule_list) = sheet.css_rules() {
-                    let _ = sheet.insert_rule_with_index(&rule, rule_list.length());
-                }
-            }
-        } else {
-            self.pending_rules.clear();
+            let full_content = self.build_full_content();
+            let _ = sheet.replace_sync(&full_content);
         }
+    }
+
+    /// Pre-allocates string capacity and builds the full CSS stylesheet content.
+    fn build_full_content(&self) -> String {
+        const LAYER_HEADER: &str = "@layer base, components, utilities;\n";
+        let capacity =
+            LAYER_HEADER.len() + self.all_chunks.iter().map(|c| c.len() + 1).sum::<usize>();
+        let mut full_content = String::with_capacity(capacity);
+        full_content.push_str(LAYER_HEADER);
+        for chunk in &self.all_chunks {
+            full_content.push_str(chunk);
+            full_content.push('\n');
+        }
+        full_content
     }
 }
 
 /// Helper to split a CSS string into top-level rules.
-/// This is necessary because insert_rule only accepts a single rule.
+/// Handles nested blocks (`{}`), strings, escapes, and CSS comments (`/* ... */`).
 pub fn split_rules(css: &str) -> Vec<&str> {
     let mut rules = Vec::new();
     let mut start = 0;
     let mut depth = 0;
     let mut in_quote = None;
+    let mut in_comment = false;
     let bytes = css.as_bytes();
     let mut i = 0;
 
     while i < bytes.len() {
+        if in_comment {
+            if bytes[i] == b'*' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+                in_comment = false;
+                i += 2;
+                continue;
+            }
+            i += 1;
+            continue;
+        }
+
         match bytes[i] {
+            b'/' if in_quote.is_none() && i + 1 < bytes.len() && bytes[i + 1] == b'*' => {
+                in_comment = true;
+                i += 2;
+                continue;
+            }
             b'\\' => {
-                i += 1;
+                i += 2;
+                continue;
             }
             b'"' | b'\'' => {
                 let q = bytes[i];
