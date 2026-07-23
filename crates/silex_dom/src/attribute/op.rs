@@ -107,6 +107,7 @@ pub enum AttrData {
     ReactiveAttr(Rx<Attr>),
     ReactiveString(Rx<String>),
     ReactiveBool(Rx<bool>),
+    ReactiveOptionString(Rx<Option<String>>),
     ReactiveJs(Rx<JsValue>),
 }
 
@@ -118,6 +119,7 @@ impl std::fmt::Debug for AttrData {
             Self::ReactiveAttr(_) => f.write_str("ReactiveAttr(Rx)"),
             Self::ReactiveString(_) => f.write_str("ReactiveString(Rx)"),
             Self::ReactiveBool(_) => f.write_str("ReactiveBool(Rx)"),
+            Self::ReactiveOptionString(_) => f.write_str("ReactiveOptionString(Rx)"),
             Self::ReactiveJs(_) => f.write_str("ReactiveJs(Rx)"),
         }
     }
@@ -131,6 +133,7 @@ impl PartialEq for AttrData {
             (Self::ReactiveAttr(a), Self::ReactiveAttr(b)) => a == b,
             (Self::ReactiveString(a), Self::ReactiveString(b)) => a == b,
             (Self::ReactiveBool(a), Self::ReactiveBool(b)) => a == b,
+            (Self::ReactiveOptionString(a), Self::ReactiveOptionString(b)) => a == b,
             (Self::ReactiveJs(a), Self::ReactiveJs(b)) => a == b,
             _ => false,
         }
@@ -378,6 +381,18 @@ fn apply_update_internal(el: &Element, target: ApplyTarget, data: AttrData) {
                 apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val));
             });
         }
+        AttrData::ReactiveOptionString(rx) => {
+            let el = el.clone();
+            Effect::new(move |_| {
+                let name = target.attr_name();
+                let val = rx.get();
+                let attr = match val {
+                    Some(s) => Attr::from(s),
+                    None => Attr::Removed,
+                };
+                apply_attr_with_target_internal(&el, name, target.clone(), &attr);
+            });
+        }
         AttrData::ReactiveJs(rx) => {
             let el = el.clone();
             Effect::new(move |_| {
@@ -582,45 +597,63 @@ pub(crate) fn apply_attr_with_target_internal(
             }};
         }
 
-        if let Some(input) = el.dyn_ref::<web_sys::HtmlInputElement>() {
-            match prop {
-                KnownProp::Value => input.set_value(attr_str),
-                KnownProp::Checked => input.set_checked(is_truthy),
-                KnownProp::Disabled => set_bool_and_sync!("disabled", input.set_disabled(is_truthy)),
-                KnownProp::ReadOnly => set_bool_and_sync!("readonly", input.set_read_only(is_truthy)),
-                KnownProp::Required => set_bool_and_sync!("required", input.set_required(is_truthy)),
+        let tag = el.tag_name();
+        match tag.as_str() {
+            "INPUT" => {
+                if let Some(input) = el.dyn_ref::<web_sys::HtmlInputElement>() {
+                    match prop {
+                        KnownProp::Value => input.set_value(attr_str),
+                        KnownProp::Checked => input.set_checked(is_truthy),
+                        KnownProp::Disabled => set_bool_and_sync!("disabled", input.set_disabled(is_truthy)),
+                        KnownProp::ReadOnly => set_bool_and_sync!("readonly", input.set_read_only(is_truthy)),
+                        KnownProp::Required => set_bool_and_sync!("required", input.set_required(is_truthy)),
+                    }
+                    return;
+                }
             }
-            return;
-        } else if let Some(textarea) = el.dyn_ref::<web_sys::HtmlTextAreaElement>() {
-            match prop {
-                KnownProp::Value => textarea.set_value(attr_str),
-                KnownProp::Disabled => set_bool_and_sync!("disabled", textarea.set_disabled(is_truthy)),
-                KnownProp::ReadOnly => set_bool_and_sync!("readonly", textarea.set_read_only(is_truthy)),
-                KnownProp::Required => set_bool_and_sync!("required", textarea.set_required(is_truthy)),
-                _ => return,
+            "TEXTAREA" => {
+                if let Some(textarea) = el.dyn_ref::<web_sys::HtmlTextAreaElement>() {
+                    match prop {
+                        KnownProp::Value => textarea.set_value(attr_str),
+                        KnownProp::Disabled => set_bool_and_sync!("disabled", textarea.set_disabled(is_truthy)),
+                        KnownProp::ReadOnly => set_bool_and_sync!("readonly", textarea.set_read_only(is_truthy)),
+                        KnownProp::Required => set_bool_and_sync!("required", textarea.set_required(is_truthy)),
+                        _ => return,
+                    }
+                    return;
+                }
             }
-            return;
-        } else if let Some(select) = el.dyn_ref::<web_sys::HtmlSelectElement>() {
-            match prop {
-                KnownProp::Value => select.set_value(attr_str),
-                KnownProp::Disabled => set_bool_and_sync!("disabled", select.set_disabled(is_truthy)),
-                KnownProp::Required => set_bool_and_sync!("required", select.set_required(is_truthy)),
-                _ => return,
+            "SELECT" => {
+                if let Some(select) = el.dyn_ref::<web_sys::HtmlSelectElement>() {
+                    match prop {
+                        KnownProp::Value => select.set_value(attr_str),
+                        KnownProp::Disabled => set_bool_and_sync!("disabled", select.set_disabled(is_truthy)),
+                        KnownProp::Required => set_bool_and_sync!("required", select.set_required(is_truthy)),
+                        _ => return,
+                    }
+                    return;
+                }
             }
-            return;
-        } else if let Some(button) = el.dyn_ref::<web_sys::HtmlButtonElement>() {
-            if prop == KnownProp::Disabled {
-                set_bool_and_sync!("disabled", button.set_disabled(is_truthy));
+            "BUTTON" => {
+                if let Some(button) = el.dyn_ref::<web_sys::HtmlButtonElement>() {
+                    if prop == KnownProp::Disabled {
+                        set_bool_and_sync!("disabled", button.set_disabled(is_truthy));
+                    }
+                    return;
+                }
             }
-            return;
-        } else if let Some(option) = el.dyn_ref::<web_sys::HtmlOptionElement>() {
-            match prop {
-                KnownProp::Value => option.set_value(attr_str),
-                KnownProp::Checked => option.set_selected(is_truthy),
-                KnownProp::Disabled => set_bool_and_sync!("disabled", option.set_disabled(is_truthy)),
-                _ => return,
+            "OPTION" => {
+                if let Some(option) = el.dyn_ref::<web_sys::HtmlOptionElement>() {
+                    match prop {
+                        KnownProp::Value => option.set_value(attr_str),
+                        KnownProp::Checked => option.set_selected(is_truthy),
+                        KnownProp::Disabled => set_bool_and_sync!("disabled", option.set_disabled(is_truthy)),
+                        _ => return,
+                    }
+                    return;
+                }
             }
-            return;
+            _ => {}
         }
     }
 

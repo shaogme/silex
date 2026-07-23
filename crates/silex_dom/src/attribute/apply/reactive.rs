@@ -616,6 +616,18 @@ where
             Some(AttrOp::reactive_stylesheet(silex_core::Rx::derive(
                 Box::new(move || rx.get().map(|v| v.to_string()).unwrap_or_default()),
             )))
+        } else if matches!(
+            target,
+            ApplyTarget::Attr(_) | ApplyTarget::Known(_) | ApplyTarget::Prop(_)
+        ) {
+            let opt_rx = silex_core::Rx::derive(Box::new(move || {
+                use silex_core::traits::RxGet;
+                rx.get().map(|v| v.to_string())
+            }));
+            Some(AttrOp::Update(AttrUpdate {
+                target,
+                data: AttrData::ReactiveOptionString(opt_rx),
+            }))
         } else {
             let rx_inner = rx;
             let target_clone = target.clone();

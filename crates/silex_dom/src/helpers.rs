@@ -39,13 +39,8 @@ pub fn location() -> web_sys::Location {
 
 /// Current [`window.location.hash`](web_sys::Location::hash) without the beginning #.
 pub fn location_hash() -> Option<String> {
-    location().hash().ok().map(|hash| {
-        if let Some(stripped) = hash.strip_prefix('#') {
-            stripped.to_string()
-        } else {
-            hash
-        }
-    })
+    let hash = location().hash().ok()?;
+    Some(hash.strip_prefix('#').unwrap_or(&hash).to_string())
 }
 
 /// Current [`window.location.pathname`](web_sys::Location::pathname).
@@ -72,24 +67,21 @@ pub fn event_target_value_result<E>(event: &E) -> Result<String, SilexError>
 where
     E: AsRef<web_sys::Event>,
 {
-    let target = event
-        .as_ref()
-        .target()
-        .ok_or_else(|| SilexError::Dom("Event target not found".into()))?;
+    let Some(target) = event.as_ref().target() else {
+        return Err(SilexError::Dom("Event target not found".into()));
+    };
 
     if let Some(element) = target.dyn_ref::<web_sys::HtmlInputElement>() {
-        return Ok(element.value());
+        Ok(element.value())
+    } else if let Some(element) = target.dyn_ref::<web_sys::HtmlTextAreaElement>() {
+        Ok(element.value())
+    } else if let Some(element) = target.dyn_ref::<web_sys::HtmlSelectElement>() {
+        Ok(element.value())
+    } else {
+        Err(SilexError::Dom(
+            "Event target does not expose a value".into(),
+        ))
     }
-    if let Some(element) = target.dyn_ref::<web_sys::HtmlTextAreaElement>() {
-        return Ok(element.value());
-    }
-    if let Some(element) = target.dyn_ref::<web_sys::HtmlSelectElement>() {
-        return Ok(element.value());
-    }
-
-    Err(SilexError::Dom(
-        "Event target does not expose a value".into(),
-    ))
 }
 
 pub fn event_target_value<E>(event: &E) -> String
@@ -105,12 +97,15 @@ pub fn event_target_checked<E>(event: &E) -> bool
 where
     E: AsRef<web_sys::Event>,
 {
-    event
-        .as_ref()
-        .target()
-        .and_then(|t| t.dyn_into::<web_sys::HtmlInputElement>().ok())
-        .map(|input| input.checked())
-        .unwrap_or_default()
+    let Some(target) = event.as_ref().target() else {
+        return false;
+    };
+
+    if let Some(input) = target.dyn_ref::<web_sys::HtmlInputElement>() {
+        input.checked()
+    } else {
+        false
+    }
 }
 
 /// Adds an event listener to the `Window`, returning a cancelable handle that automatically

@@ -15,6 +15,18 @@ pub struct PendingAttribute {
 }
 
 pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttribute> {
+    if attrs.is_empty() {
+        return attrs;
+    }
+
+    // 快速路径：单属性且无需合并时直接返回
+    if attrs.len() == 1 {
+        match &attrs[0].op {
+            AttrOp::Sequence(_) | AttrOp::CombinedClasses(_) | AttrOp::CombinedStyles(_) => {}
+            _ => return attrs,
+        }
+    }
+
     let mut consolidated = Vec::new();
 
     // Class 收集器
@@ -40,7 +52,7 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
         }
     }
 
-    let mut flattened = Vec::new();
+    let mut flattened = Vec::with_capacity(attrs.len());
     for attr in attrs {
         flatten_ops(attr.op, &mut flattened);
     }
@@ -78,13 +90,13 @@ pub fn consolidate_attributes(attrs: Vec<PendingAttribute>) -> Vec<PendingAttrib
 
     // 静态类名去重逻辑，保持顺序剔除重复项，减少重复 DOM class_list 操作
     if static_classes.len() > 1 {
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = std::collections::HashSet::with_capacity(static_classes.len());
         static_classes.retain(|c| seen.insert(c.clone()));
     }
 
     // 静态样式去重逻辑，按 key 保留最后覆盖项
     if static_styles.len() > 1 {
-        let mut seen_keys = std::collections::HashSet::new();
+        let mut seen_keys = std::collections::HashSet::with_capacity(static_styles.len());
         let mut deduplicated = Vec::with_capacity(static_styles.len());
         for (k, v) in static_styles.into_iter().rev() {
             if seen_keys.insert(k.clone()) {
