@@ -34,7 +34,10 @@ pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, Strin
     // Brightness
     if let Some(rest) = target.strip_prefix("brightness-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![(prop_name, format!("brightness({})", n as f64 / 100.0))]);
+            return Some(vec![(
+                prop_name,
+                format!("brightness({})", n as f64 / 100.0),
+            )]);
         }
     }
 
@@ -99,7 +102,11 @@ pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, Strin
             (false, s)
         };
         if let Ok(n) = rest.parse::<u32>() {
-            Some(if neg { format!("hue-rotate(-{}deg)", n) } else { format!("hue-rotate({}deg)", n) })
+            Some(if neg {
+                format!("hue-rotate(-{}deg)", n)
+            } else {
+                format!("hue-rotate({}deg)", n)
+            })
         } else {
             None
         }
@@ -129,10 +136,18 @@ pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, Strin
     if let Some(rest) = target.strip_prefix("drop-shadow") {
         let val = match rest {
             "-sm" => "drop-shadow(0 1px 1px rgba(0, 0, 0, 0.05))",
-            "" => "drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1)) drop-shadow(0 1px 1px rgba(0, 0, 0, 0.06))",
-            "-md" => "drop-shadow(0 4px 3px rgba(0, 0, 0, 0.07)) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.06))",
-            "-lg" => "drop-shadow(0 10px 8px rgba(0, 0, 0, 0.04)) drop-shadow(0 4px 3px rgba(0, 0, 0, 0.1))",
-            "-xl" => "drop-shadow(0 20px 13px rgba(0, 0, 0, 0.03)) drop-shadow(0 8px 5px rgba(0, 0, 0, 0.08))",
+            "" => {
+                "drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1)) drop-shadow(0 1px 1px rgba(0, 0, 0, 0.06))"
+            }
+            "-md" => {
+                "drop-shadow(0 4px 3px rgba(0, 0, 0, 0.07)) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.06))"
+            }
+            "-lg" => {
+                "drop-shadow(0 10px 8px rgba(0, 0, 0, 0.04)) drop-shadow(0 4px 3px rgba(0, 0, 0, 0.1))"
+            }
+            "-xl" => {
+                "drop-shadow(0 20px 13px rgba(0, 0, 0, 0.03)) drop-shadow(0 8px 5px rgba(0, 0, 0, 0.08))"
+            }
             "-2xl" => "drop-shadow(0 25px 25px rgba(0, 0, 0, 0.15))",
             "-none" => "drop-shadow(0 0 #0000)",
             _ => return None,
@@ -144,7 +159,10 @@ pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, Strin
     if is_backdrop {
         if let Some(rest) = target.strip_prefix("opacity-") {
             if let Ok(n) = rest.parse::<u32>() {
-                return Some(vec![(prop_name, format!("opacity({})", (n as f64) / 100.0))]);
+                return Some(vec![(
+                    prop_name,
+                    format!("opacity({})", (n as f64) / 100.0),
+                )]);
             }
         }
     }

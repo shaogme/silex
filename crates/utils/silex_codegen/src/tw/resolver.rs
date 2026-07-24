@@ -49,4 +49,3 @@ pub fn resolve_css_rules(class_name: &str) -> Option<Vec<(&'static str, String)>
     // 7. 动态长度与位置匹配 (Spacing, Sizing, Offset, Z-index, Opacity)
     resolve_dynamic_rules(class_name)
 }
-

@@ -136,8 +136,14 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
         ("scroll-ml-", &["scroll-margin-left"]),
         ("scroll-ms-", &["scroll-margin-inline-start"]),
         ("scroll-me-", &["scroll-margin-inline-end"]),
-        ("scroll-px-", &["scroll-padding-left", "scroll-padding-right"]),
-        ("scroll-py-", &["scroll-padding-top", "scroll-padding-bottom"]),
+        (
+            "scroll-px-",
+            &["scroll-padding-left", "scroll-padding-right"],
+        ),
+        (
+            "scroll-py-",
+            &["scroll-padding-top", "scroll-padding-bottom"],
+        ),
         ("scroll-pt-", &["scroll-padding-top"]),
         ("scroll-pr-", &["scroll-padding-right"]),
         ("scroll-pb-", &["scroll-padding-bottom"]),
@@ -202,7 +208,6 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
         ("h-", &["height"]),
     ];
 
-
     for (p, props) in prefixes_map {
         if rest.starts_with(p) {
             let val_part = &rest[p.len()..];
@@ -224,7 +229,12 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
         "top" => Some(vec![("top", "0px")]),
         "left" => Some(vec![("left", "0px")]),
         "right" => Some(vec![("right", "0px")]),
-        "inset" => Some(vec![("top", "0px"), ("right", "0px"), ("bottom", "0px"), ("left", "0px")]),
+        "inset" => Some(vec![
+            ("top", "0px"),
+            ("right", "0px"),
+            ("bottom", "0px"),
+            ("left", "0px"),
+        ]),
         "m" => Some(vec![("margin", "0px")]),
         "p" => Some(vec![("padding", "0px")]),
         "mt" => Some(vec![("margin-top", "0px")]),
@@ -303,7 +313,16 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
 
     // Mask Stop Positions & Directions
     if let Some(rest) = class_name.strip_prefix("mask-") {
-        if rest.starts_with("conic-from-") || rest.starts_with("radial-from-") || rest.starts_with("linear-from-") || rest.starts_with("b-from-") || rest.starts_with("t-from-") || rest.starts_with("l-from-") || rest.starts_with("r-from-") || rest.starts_with("x-from-") || rest.starts_with("y-from-") {
+        if rest.starts_with("conic-from-")
+            || rest.starts_with("radial-from-")
+            || rest.starts_with("linear-from-")
+            || rest.starts_with("b-from-")
+            || rest.starts_with("t-from-")
+            || rest.starts_with("l-from-")
+            || rest.starts_with("r-from-")
+            || rest.starts_with("x-from-")
+            || rest.starts_with("y-from-")
+        {
             if let Some(idx) = rest.rfind("-from-") {
                 let pct_str = &rest[idx + 6..];
                 if let Some(pct) = parse_percent(pct_str) {
@@ -311,7 +330,16 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
                 }
             }
         }
-        if rest.starts_with("conic-to-") || rest.starts_with("radial-to-") || rest.starts_with("linear-to-") || rest.starts_with("b-to-") || rest.starts_with("t-to-") || rest.starts_with("l-to-") || rest.starts_with("r-to-") || rest.starts_with("x-to-") || rest.starts_with("y-to-") {
+        if rest.starts_with("conic-to-")
+            || rest.starts_with("radial-to-")
+            || rest.starts_with("linear-to-")
+            || rest.starts_with("b-to-")
+            || rest.starts_with("t-to-")
+            || rest.starts_with("l-to-")
+            || rest.starts_with("r-to-")
+            || rest.starts_with("x-to-")
+            || rest.starts_with("y-to-")
+        {
             if let Some(idx) = rest.rfind("-to-") {
                 let pct_str = &rest[idx + 4..];
                 if let Some(pct) = parse_percent(pct_str) {
@@ -350,26 +378,54 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
 
     if let Some(deg_str) = rest_name.strip_prefix("bg-linear-") {
         if let Ok(deg) = deg_str.parse::<u32>() {
-            let angle = if is_neg { format!("-{}deg", deg) } else { format!("{}deg", deg) };
-            return Some(vec![("background-image", format!("linear-gradient({}, var(--tw-gradient-stops))", angle))]);
+            let angle = if is_neg {
+                format!("-{}deg", deg)
+            } else {
+                format!("{}deg", deg)
+            };
+            return Some(vec![(
+                "background-image",
+                format!("linear-gradient({}, var(--tw-gradient-stops))", angle),
+            )]);
         }
     }
     if let Some(deg_str) = rest_name.strip_prefix("bg-conic-") {
         if let Ok(deg) = deg_str.parse::<u32>() {
-            let angle = if is_neg { format!("-{}deg", deg) } else { format!("{}deg", deg) };
-            return Some(vec![("background-image", format!("conic-gradient(from {}, var(--tw-gradient-stops))", angle))]);
+            let angle = if is_neg {
+                format!("-{}deg", deg)
+            } else {
+                format!("{}deg", deg)
+            };
+            return Some(vec![(
+                "background-image",
+                format!("conic-gradient(from {}, var(--tw-gradient-stops))", angle),
+            )]);
         }
     }
     if let Some(deg_str) = rest_name.strip_prefix("mask-linear-") {
         if let Ok(deg) = deg_str.parse::<u32>() {
-            let angle = if is_neg { format!("-{}deg", deg) } else { format!("{}deg", deg) };
-            return Some(vec![("mask-image", format!("linear-gradient({}, var(--tw-mask-stops))", angle))]);
+            let angle = if is_neg {
+                format!("-{}deg", deg)
+            } else {
+                format!("{}deg", deg)
+            };
+            return Some(vec![(
+                "mask-image",
+                format!("linear-gradient({}, var(--tw-mask-stops))", angle),
+            )]);
         }
     }
     if let Some(deg_str) = rest_name.strip_prefix("mask-conic-") {
         if let Ok(deg) = deg_str.parse::<u32>() {
-            let angle = if is_neg { format!("-{}deg", deg) } else { format!("{}deg", deg) };
-            return Some(vec![("mask-image", format!("conic-gradient(from {}, var(--tw-mask-stops))", angle))]);
+            let angle = if is_neg {
+                format!("-{}deg", deg)
+            } else {
+                format!("{}deg", deg)
+            };
+            return Some(vec![(
+                "mask-image",
+                format!("conic-gradient(from {}, var(--tw-mask-stops))", angle),
+            )]);
         }
     }
 

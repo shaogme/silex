@@ -56,35 +56,50 @@ pub fn find_best_suggestion(token: &str) -> Option<String> {
     let mut best_match = None;
     let mut min_dist = usize::MAX;
 
-    let mut candidates: Vec<String> = STATIC_CANDIDATE_UTILITIES
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let mut check_candidate = |cand: &str| {
+        let dist = levenshtein_distance(token, cand);
+        let max_allowed = if cand.len() <= 4 { 2 } else { 3 };
+        if dist <= max_allowed && dist < min_dist {
+            min_dist = dist;
+            best_match = Some(cand.to_string());
+        }
+    };
 
+    for &cand in STATIC_CANDIDATE_UTILITIES {
+        check_candidate(cand);
+    }
+
+    let mut dyn_buf = String::with_capacity(32);
     for (prefix, suffixes) in DYNAMIC_UTILITY_PREFIXES {
         for suffix in *suffixes {
-            candidates.push(format!("{}{}", prefix, suffix));
+            dyn_buf.clear();
+            dyn_buf.push_str(prefix);
+            dyn_buf.push_str(suffix);
+            check_candidate(&dyn_buf);
         }
     }
 
     if let Some(cfg) = crate::css::config::get_config() {
         for color_key in cfg.theme.colors.keys().chain(cfg.theme.dark_colors.keys()) {
-            candidates.push(color_key.clone());
-            candidates.push(format!("bg-{}", color_key));
-            candidates.push(format!("text-{}", color_key));
-            candidates.push(format!("border-{}", color_key));
+            check_candidate(color_key);
+
+            dyn_buf.clear();
+            dyn_buf.push_str("bg-");
+            dyn_buf.push_str(color_key);
+            check_candidate(&dyn_buf);
+
+            dyn_buf.clear();
+            dyn_buf.push_str("text-");
+            dyn_buf.push_str(color_key);
+            check_candidate(&dyn_buf);
+
+            dyn_buf.clear();
+            dyn_buf.push_str("border-");
+            dyn_buf.push_str(color_key);
+            check_candidate(&dyn_buf);
         }
         for bp_key in cfg.theme.breakpoints.keys() {
-            candidates.push(bp_key.clone());
-        }
-    }
-
-    for candidate in &candidates {
-        let dist = levenshtein_distance(token, candidate);
-        let max_allowed = if candidate.len() <= 4 { 2 } else { 3 };
-        if dist <= max_allowed && dist < min_dist {
-            min_dist = dist;
-            best_match = Some(candidate.clone());
+            check_candidate(bp_key);
         }
     }
 

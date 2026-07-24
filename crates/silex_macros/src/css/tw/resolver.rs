@@ -511,18 +511,12 @@ mod tests {
         let rules = resolve_utility(vec![], "rotate-45", span).unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].css_property, "transform");
-        assert_eq!(
-            rules[0].value,
-            UtilityValue::Keyword("rotate(45deg)")
-        );
+        assert_eq!(rules[0].value, UtilityValue::Keyword("rotate(45deg)"));
 
         let rules = resolve_utility(vec![], "-rotate-90", span).unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].css_property, "transform");
-        assert_eq!(
-            rules[0].value,
-            UtilityValue::Keyword("rotate(-90deg)")
-        );
+        assert_eq!(rules[0].value, UtilityValue::Keyword("rotate(-90deg)"));
 
         let rules = resolve_utility(vec![], "bg-theme(primary)", span).unwrap();
         assert_eq!(rules.len(), 1);
@@ -641,10 +635,7 @@ mod tests {
         let rules = resolve_utility(vec![], "-translate-x-1/2", span).unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].css_property, "transform");
-        assert_eq!(
-            rules[0].value,
-            UtilityValue::Keyword("translateX(-50%)")
-        );
+        assert_eq!(rules[0].value, UtilityValue::Keyword("translateX(-50%)"));
 
         // 定位与负 inset
         let rules = resolve_utility(vec![], "-top-4", span).unwrap();

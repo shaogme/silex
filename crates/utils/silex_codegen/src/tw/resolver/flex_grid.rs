@@ -9,7 +9,10 @@ pub fn resolve_flex_grid_rules(class_name: &str) -> Option<Vec<(&'static str, St
             return Some(vec![("grid-template-columns", "subgrid".to_string())]);
         }
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("grid-template-columns", format!("repeat({}, minmax(0, 1fr))", n))]);
+            return Some(vec![(
+                "grid-template-columns",
+                format!("repeat({}, minmax(0, 1fr))", n),
+            )]);
         }
     }
 
@@ -22,7 +25,10 @@ pub fn resolve_flex_grid_rules(class_name: &str) -> Option<Vec<(&'static str, St
             return Some(vec![("grid-template-rows", "subgrid".to_string())]);
         }
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("grid-template-rows", format!("repeat({}, minmax(0, 1fr))", n))]);
+            return Some(vec![(
+                "grid-template-rows",
+                format!("repeat({}, minmax(0, 1fr))", n),
+            )]);
         }
     }
 
@@ -226,4 +232,3 @@ pub fn resolve_flex_grid_rules(class_name: &str) -> Option<Vec<(&'static str, St
 
     None
 }
-

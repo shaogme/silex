@@ -4,10 +4,36 @@ use super::dynamic::resolve_length_val;
 pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'static str, String)>> {
     // Animations
     match class_name {
-        "animate" | "animate-spin" => return Some(vec![("animation", "spin 1s linear infinite".to_string()), ("will-change", "transform".to_string())]),
-        "animate-ping" => return Some(vec![("animation", "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite".to_string()), ("will-change", "transform, opacity".to_string())]),
-        "animate-pulse" => return Some(vec![("animation", "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite".to_string()), ("will-change", "opacity".to_string())]),
-        "animate-bounce" => return Some(vec![("animation", "bounce 1s infinite".to_string()), ("will-change", "transform".to_string())]),
+        "animate" | "animate-spin" => {
+            return Some(vec![
+                ("animation", "spin 1s linear infinite".to_string()),
+                ("will-change", "transform".to_string()),
+            ]);
+        }
+        "animate-ping" => {
+            return Some(vec![
+                (
+                    "animation",
+                    "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite".to_string(),
+                ),
+                ("will-change", "transform, opacity".to_string()),
+            ]);
+        }
+        "animate-pulse" => {
+            return Some(vec![
+                (
+                    "animation",
+                    "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite".to_string(),
+                ),
+                ("will-change", "opacity".to_string()),
+            ]);
+        }
+        "animate-bounce" => {
+            return Some(vec![
+                ("animation", "bounce 1s infinite".to_string()),
+                ("will-change", "transform".to_string()),
+            ]);
+        }
         "animate-none" => return Some(vec![("animation", "none".to_string())]),
         _ => {}
     }
@@ -54,7 +80,10 @@ pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'sta
             _ => None,
         };
         if let Some(d) = dir {
-            return Some(vec![("background-image", format!("linear-gradient({}, var(--tw-gradient-stops))", d))]);
+            return Some(vec![(
+                "background-image",
+                format!("linear-gradient({}, var(--tw-gradient-stops))", d),
+            )]);
         }
     }
     // Scale
@@ -66,7 +95,11 @@ pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'sta
         };
         if let Ok(n) = val.parse::<f64>() {
             let r = n / 100.0;
-            Some(if neg { format!("-{}", r) } else { format!("{}", r) })
+            Some(if neg {
+                format!("-{}", r)
+            } else {
+                format!("{}", r)
+            })
         } else {
             None
         }
@@ -127,7 +160,11 @@ pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'sta
             (false, s)
         };
         if val.parse::<u32>().is_ok() {
-            Some(if neg { format!("-{}deg", val) } else { format!("{}deg", val) })
+            Some(if neg {
+                format!("-{}deg", val)
+            } else {
+                format!("{}deg", val)
+            })
         } else {
             None
         }
@@ -236,7 +273,10 @@ pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'sta
         "transition-all" => {
             return Some(vec![
                 ("transition-property", "all".to_string()),
-                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)".to_string()),
+                (
+                    "transition-timing-function",
+                    "cubic-bezier(0.4, 0, 0.2, 1)".to_string(),
+                ),
                 ("transition-duration", "150ms".to_string()),
             ]);
         }
@@ -261,21 +301,33 @@ pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'sta
         "transition-opacity" => {
             return Some(vec![
                 ("transition-property", "opacity".to_string()),
-                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)".to_string()),
+                (
+                    "transition-timing-function",
+                    "cubic-bezier(0.4, 0, 0.2, 1)".to_string(),
+                ),
                 ("transition-duration", "150ms".to_string()),
             ]);
         }
         "transition-shadow" => {
             return Some(vec![
                 ("transition-property", "box-shadow".to_string()),
-                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)".to_string()),
+                (
+                    "transition-timing-function",
+                    "cubic-bezier(0.4, 0, 0.2, 1)".to_string(),
+                ),
                 ("transition-duration", "150ms".to_string()),
             ]);
         }
         "transition-transform" => {
             return Some(vec![
-                ("transition-property", "transform, translate, scale, rotate".to_string()),
-                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)".to_string()),
+                (
+                    "transition-property",
+                    "transform, translate, scale, rotate".to_string(),
+                ),
+                (
+                    "transition-timing-function",
+                    "cubic-bezier(0.4, 0, 0.2, 1)".to_string(),
+                ),
                 ("transition-duration", "150ms".to_string()),
             ]);
         }
@@ -315,7 +367,11 @@ pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'sta
             (false, s)
         };
         if val.parse::<u32>().is_ok() {
-            Some(if neg { format!("-{}deg", val) } else { format!("{}deg", val) })
+            Some(if neg {
+                format!("-{}deg", val)
+            } else {
+                format!("{}deg", val)
+            })
         } else {
             None
         }
@@ -411,5 +467,3 @@ pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'sta
 
     None
 }
-
-

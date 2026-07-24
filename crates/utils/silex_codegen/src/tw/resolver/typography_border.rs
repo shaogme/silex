@@ -1,5 +1,7 @@
 /// 排版、边框、圆角、阴影等
-pub fn resolve_typography_border_effect_rules(class_name: &str) -> Option<Vec<(&'static str, String)>> {
+pub fn resolve_typography_border_effect_rules(
+    class_name: &str,
+) -> Option<Vec<(&'static str, String)>> {
     // Font size
     let font_size = match class_name {
         "text-xs" => Some(vec![("font-size", "0.75rem"), ("line-height", "1rem")]),
@@ -21,7 +23,10 @@ pub fn resolve_typography_border_effect_rules(class_name: &str) -> Option<Vec<(&
         return Some(rules.into_iter().map(|(k, v)| (k, v.to_string())).collect());
     }
     if class_name == "text" {
-        return Some(vec![("font-size", "1rem".to_string()), ("line-height", "1.5rem".to_string())]);
+        return Some(vec![
+            ("font-size", "1rem".to_string()),
+            ("line-height", "1.5rem".to_string()),
+        ]);
     }
     if let Some(rest) = class_name.strip_prefix("text-") {
         if let Some(val) = super::dynamic::resolve_length_val(rest) {
@@ -134,7 +139,10 @@ pub fn resolve_typography_border_effect_rules(class_name: &str) -> Option<Vec<(&
             return Some(vec![("column-count", "auto".to_string())]);
         }
         if rest == "none" {
-            return Some(vec![("column-width", "auto".to_string()), ("column-count", "auto".to_string())]);
+            return Some(vec![
+                ("column-width", "auto".to_string()),
+                ("column-count", "auto".to_string()),
+            ]);
         }
         if let Ok(n) = rest.parse::<u32>() {
             return Some(vec![("column-count", n.to_string())]);
@@ -321,9 +329,25 @@ pub fn resolve_typography_border_effect_rules(class_name: &str) -> Option<Vec<(&
     }
     if let Some(rest) = class_name.strip_prefix("font-stretch-") {
         let stretches = [
-            "50%", "75%", "90%", "95%", "100%", "105%", "110%", "125%", "150%", "200%",
-            "ultra-condensed", "extra-condensed", "condensed", "semi-condensed", "normal",
-            "semi-expanded", "expanded", "extra-expanded", "ultra-expanded",
+            "50%",
+            "75%",
+            "90%",
+            "95%",
+            "100%",
+            "105%",
+            "110%",
+            "125%",
+            "150%",
+            "200%",
+            "ultra-condensed",
+            "extra-condensed",
+            "condensed",
+            "semi-condensed",
+            "normal",
+            "semi-expanded",
+            "expanded",
+            "extra-expanded",
+            "ultra-expanded",
         ];
         if stretches.contains(&rest) {
             return Some(vec![("font-stretch", rest.to_string())]);
@@ -332,10 +356,16 @@ pub fn resolve_typography_border_effect_rules(class_name: &str) -> Option<Vec<(&
 
     // Divide Utilities
     if class_name == "divide-x" {
-        return Some(vec![("border-right-width", "0px".to_string()), ("border-left-width", "1px".to_string())]);
+        return Some(vec![
+            ("border-right-width", "0px".to_string()),
+            ("border-left-width", "1px".to_string()),
+        ]);
     }
     if class_name == "divide-y" {
-        return Some(vec![("border-bottom-width", "0px".to_string()), ("border-top-width", "1px".to_string())]);
+        return Some(vec![
+            ("border-bottom-width", "0px".to_string()),
+            ("border-top-width", "1px".to_string()),
+        ]);
     }
     if class_name == "divide-x-reverse" {
         return Some(vec![("--tw-divide-x-reverse", "1".to_string())]);
@@ -345,12 +375,18 @@ pub fn resolve_typography_border_effect_rules(class_name: &str) -> Option<Vec<(&
     }
     if let Some(rest) = class_name.strip_prefix("divide-x-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("border-right-width", "0px".to_string()), ("border-left-width", format!("{}px", n))]);
+            return Some(vec![
+                ("border-right-width", "0px".to_string()),
+                ("border-left-width", format!("{}px", n)),
+            ]);
         }
     }
     if let Some(rest) = class_name.strip_prefix("divide-y-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("border-bottom-width", "0px".to_string()), ("border-top-width", format!("{}px", n))]);
+            return Some(vec![
+                ("border-bottom-width", "0px".to_string()),
+                ("border-top-width", format!("{}px", n)),
+            ]);
         }
     }
     let divide_style = match class_name {
@@ -367,17 +403,26 @@ pub fn resolve_typography_border_effect_rules(class_name: &str) -> Option<Vec<(&
 
     // Inset Ring
     if class_name == "inset-ring" {
-        return Some(vec![("outline-width", "1px".to_string()), ("outline-offset", "-1px".to_string())]);
+        return Some(vec![
+            ("outline-width", "1px".to_string()),
+            ("outline-offset", "-1px".to_string()),
+        ]);
     }
     if let Some(rest) = class_name.strip_prefix("inset-ring-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("outline-width", format!("{}px", n)), ("outline-offset", format!("-{}px", n))]);
+            return Some(vec![
+                ("outline-width", format!("{}px", n)),
+                ("outline-offset", format!("-{}px", n)),
+            ]);
         }
     }
 
     // Inset Shadow
     if class_name == "inset-shadow" {
-        return Some(vec![("box-shadow", "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)".to_string())]);
+        return Some(vec![(
+            "box-shadow",
+            "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)".to_string(),
+        )]);
     }
     if let Some(rest) = class_name.strip_prefix("inset-shadow-") {
         let val = match rest {
@@ -434,7 +479,6 @@ pub fn resolve_typography_border_effect_rules(class_name: &str) -> Option<Vec<(&
         return Some(rules);
     }
 
-
     // Outline
     if let Some(rules) = resolve_outline_rules(class_name) {
         return Some(rules);
@@ -450,7 +494,12 @@ pub fn resolve_typography_border_effect_rules(class_name: &str) -> Option<Vec<(&
 
 pub fn resolve_outline_rules(class_name: &str) -> Option<Vec<(&'static str, String)>> {
     match class_name {
-        "outline-none" => return Some(vec![("outline", "2px solid transparent".to_string()), ("outline-offset", "2px".to_string())]),
+        "outline-none" => {
+            return Some(vec![
+                ("outline", "2px solid transparent".to_string()),
+                ("outline-offset", "2px".to_string()),
+            ]);
+        }
         "outline" => return Some(vec![("outline-style", "solid".to_string())]),
         "outline-solid" => return Some(vec![("outline-style", "solid".to_string())]),
         "outline-hidden" => return Some(vec![("outline-style", "hidden".to_string())]),
@@ -473,7 +522,10 @@ pub fn resolve_outline_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
 
     if let Some(rest) = class_name.strip_prefix("outline-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("outline-style", "solid".to_string()), ("outline-width", format!("{}px", n))]);
+            return Some(vec![
+                ("outline-style", "solid".to_string()),
+                ("outline-width", format!("{}px", n)),
+            ]);
         }
     }
 
@@ -484,28 +536,39 @@ pub const RING_BOX_SHADOW: &str = "var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-of
 
 pub fn resolve_ring_rules(class_name: &str) -> Option<Vec<(&'static str, String)>> {
     if class_name == "ring" {
-        return Some(vec![("--tw-ring-width", "0.1875rem".to_string()), ("box-shadow", RING_BOX_SHADOW.to_string())]);
+        return Some(vec![
+            ("--tw-ring-width", "0.1875rem".to_string()),
+            ("box-shadow", RING_BOX_SHADOW.to_string()),
+        ]);
     }
     if class_name == "ring-inset" {
         return Some(vec![("--tw-ring-inset", "inset".to_string())]);
     }
     if let Some(rest) = class_name.strip_prefix("ring-") {
         if rest == "0" {
-            return Some(vec![("--tw-ring-width", "0px".to_string()), ("box-shadow", RING_BOX_SHADOW.to_string())]);
+            return Some(vec![
+                ("--tw-ring-width", "0px".to_string()),
+                ("box-shadow", RING_BOX_SHADOW.to_string()),
+            ]);
         }
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("--tw-ring-width", format!("{}px", n)), ("box-shadow", RING_BOX_SHADOW.to_string())]);
+            return Some(vec![
+                ("--tw-ring-width", format!("{}px", n)),
+                ("box-shadow", RING_BOX_SHADOW.to_string()),
+            ]);
         }
         if let Some(sub) = rest.strip_prefix("offset-") {
             if let Ok(n) = sub.parse::<u32>() {
-                return Some(vec![("--tw-ring-offset-width", format!("{}px", n)), ("box-shadow", RING_BOX_SHADOW.to_string())]);
+                return Some(vec![
+                    ("--tw-ring-offset-width", format!("{}px", n)),
+                    ("box-shadow", RING_BOX_SHADOW.to_string()),
+                ]);
             }
         }
     }
 
     None
 }
-
 
 pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, String)>> {
     let radius_val = |s: &str| -> Option<&'static str> {
@@ -535,55 +598,91 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             if let Some(val) = radius_val(s) {
                 return Some(vec![("border-radius", val.to_string())]);
             }
-            let sub_ss = if s == "ss" { Some("") } else { s.strip_prefix("ss-") };
+            let sub_ss = if s == "ss" {
+                Some("")
+            } else {
+                s.strip_prefix("ss-")
+            };
             if let Some(sub) = sub_ss {
                 if let Some(val) = radius_val(sub) {
                     return Some(vec![("border-start-start-radius", val.to_string())]);
                 }
             }
-            let sub_se = if s == "se" { Some("") } else { s.strip_prefix("se-") };
+            let sub_se = if s == "se" {
+                Some("")
+            } else {
+                s.strip_prefix("se-")
+            };
             if let Some(sub) = sub_se {
                 if let Some(val) = radius_val(sub) {
                     return Some(vec![("border-start-end-radius", val.to_string())]);
                 }
             }
-            let sub_es = if s == "es" { Some("") } else { s.strip_prefix("es-") };
+            let sub_es = if s == "es" {
+                Some("")
+            } else {
+                s.strip_prefix("es-")
+            };
             if let Some(sub) = sub_es {
                 if let Some(val) = radius_val(sub) {
                     return Some(vec![("border-end-start-radius", val.to_string())]);
                 }
             }
-            let sub_ee = if s == "ee" { Some("") } else { s.strip_prefix("ee-") };
+            let sub_ee = if s == "ee" {
+                Some("")
+            } else {
+                s.strip_prefix("ee-")
+            };
             if let Some(sub) = sub_ee {
                 if let Some(val) = radius_val(sub) {
                     return Some(vec![("border-end-end-radius", val.to_string())]);
                 }
             }
-            let sub_tl = if s == "tl" { Some("") } else { s.strip_prefix("tl-") };
+            let sub_tl = if s == "tl" {
+                Some("")
+            } else {
+                s.strip_prefix("tl-")
+            };
             if let Some(sub) = sub_tl {
                 if let Some(val) = radius_val(sub) {
                     return Some(vec![("border-top-left-radius", val.to_string())]);
                 }
             }
-            let sub_tr = if s == "tr" { Some("") } else { s.strip_prefix("tr-") };
+            let sub_tr = if s == "tr" {
+                Some("")
+            } else {
+                s.strip_prefix("tr-")
+            };
             if let Some(sub) = sub_tr {
                 if let Some(val) = radius_val(sub) {
                     return Some(vec![("border-top-right-radius", val.to_string())]);
                 }
             }
-            let sub_br = if s == "br" { Some("") } else { s.strip_prefix("br-") };
+            let sub_br = if s == "br" {
+                Some("")
+            } else {
+                s.strip_prefix("br-")
+            };
             if let Some(sub) = sub_br {
                 if let Some(val) = radius_val(sub) {
                     return Some(vec![("border-bottom-right-radius", val.to_string())]);
                 }
             }
-            let sub_bl = if s == "bl" { Some("") } else { s.strip_prefix("bl-") };
+            let sub_bl = if s == "bl" {
+                Some("")
+            } else {
+                s.strip_prefix("bl-")
+            };
             if let Some(sub) = sub_bl {
                 if let Some(val) = radius_val(sub) {
                     return Some(vec![("border-bottom-left-radius", val.to_string())]);
                 }
             }
-            let sub_t = if s == "t" { Some("") } else { s.strip_prefix("t-") };
+            let sub_t = if s == "t" {
+                Some("")
+            } else {
+                s.strip_prefix("t-")
+            };
             if let Some(sub) = sub_t {
                 if let Some(val) = radius_val(sub) {
                     return Some(vec![
@@ -592,7 +691,11 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
                     ]);
                 }
             }
-            let sub_r = if s == "r" { Some("") } else { s.strip_prefix("r-") };
+            let sub_r = if s == "r" {
+                Some("")
+            } else {
+                s.strip_prefix("r-")
+            };
             if let Some(sub) = sub_r {
                 if let Some(val) = radius_val(sub) {
                     return Some(vec![
@@ -601,7 +704,11 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
                     ]);
                 }
             }
-            let sub_b = if s == "b" { Some("") } else { s.strip_prefix("b-") };
+            let sub_b = if s == "b" {
+                Some("")
+            } else {
+                s.strip_prefix("b-")
+            };
             if let Some(sub) = sub_b {
                 if let Some(val) = radius_val(sub) {
                     return Some(vec![
@@ -610,7 +717,11 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
                     ]);
                 }
             }
-            let sub_l = if s == "l" { Some("") } else { s.strip_prefix("l-") };
+            let sub_l = if s == "l" {
+                Some("")
+            } else {
+                s.strip_prefix("l-")
+            };
             if let Some(sub) = sub_l {
                 if let Some(val) = radius_val(sub) {
                     return Some(vec![
@@ -619,7 +730,11 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
                     ]);
                 }
             }
-            let sub_s = if s == "s" { Some("") } else { s.strip_prefix("s-") };
+            let sub_s = if s == "s" {
+                Some("")
+            } else {
+                s.strip_prefix("s-")
+            };
             if let Some(sub) = sub_s {
                 if let Some(val) = radius_val(sub) {
                     return Some(vec![
@@ -628,7 +743,11 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
                     ]);
                 }
             }
-            let sub_e = if s == "e" { Some("") } else { s.strip_prefix("e-") };
+            let sub_e = if s == "e" {
+                Some("")
+            } else {
+                s.strip_prefix("e-")
+            };
             if let Some(sub) = sub_e {
                 if let Some(val) = radius_val(sub) {
                     return Some(vec![
@@ -777,4 +896,3 @@ pub fn resolve_border_rules(class_name: &str) -> Option<Vec<(&'static str, Strin
 
     None
 }
-

@@ -14,10 +14,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 1. Determine paths
     let current_dir = std::env::current_dir()?;
-    let (mdn_compat_path, mdn_props_path, mdn_syntaxes_path, out_dir, css_out_dir, macro_resolver_dir) = if current_dir
-        .join("crates/utils/silex_codegen")
-        .exists()
-    {
+    let (
+        mdn_compat_path,
+        mdn_props_path,
+        mdn_syntaxes_path,
+        out_dir,
+        css_out_dir,
+        macro_resolver_dir,
+    ) = if current_dir.join("crates/utils/silex_codegen").exists() {
         (
             current_dir.join("crates/utils/silex_codegen/mdn_compat_data.json"),
             current_dir.join("crates/utils/silex_codegen/mdn_css_properties.json"),
@@ -157,7 +161,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Legacy(Vec<String>),
         }
 
-        let (classes, dynamic_prefixes) = match serde_json::from_str::<TailwindJsonData>(&json_str)? {
+        let (classes, dynamic_prefixes) = match serde_json::from_str::<TailwindJsonData>(&json_str)?
+        {
             TailwindJsonData::Full {
                 classes,
                 dynamic_prefixes,
