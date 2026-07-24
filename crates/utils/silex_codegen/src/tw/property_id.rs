@@ -60,6 +60,7 @@ pub fn generate_property_id_code(
     palette: &BTreeMap<String, Vec<ColorShadeInfo>>,
     extra_props: &[String],
     property_aliases: &BTreeMap<String, Vec<String>>,
+    prefix_metadata: &BTreeMap<String, super::prefix_meta::PrefixMetaJson>,
 ) -> String {
     let mut props_set: BTreeSet<String> = BTreeSet::new();
 
@@ -93,6 +94,13 @@ pub fn generate_property_id_code(
     // 注入所有 Node 导出提取的 CSS 自定义变量与特殊前缀属性
     for v in extra_props {
         props_set.insert(v.clone());
+    }
+
+    // 注入所有 prefix_metadata 中的 target_props
+    for meta in prefix_metadata.values() {
+        for prop in &meta.target_props {
+            props_set.insert(prop.clone());
+        }
     }
 
     // 检测 Enum Variant 重复与碰撞
@@ -244,15 +252,12 @@ pub fn generate_property_id_code(
     code.push_str("// 自动生成的 CSS 属性 Enum 与 Bitmask 对照表（供 silex_macros 使用）\n");
     code.push_str("// 由 silex_codegen 自动生成，切勿手写修改！\n\n");
 
-    code.push_str("use std::borrow::Cow;\n\n");
-
-    code.push_str("#[derive(Debug, Clone, PartialEq, Eq, Hash)]\n");
+    code.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]\n");
     code.push_str("pub enum CssPropertyId {\n");
     for prop in &props_set {
         let variant = to_pascal_case(prop);
         let _ = writeln!(code, "    {},", variant);
     }
-    code.push_str("    Custom(Cow<'static, str>),\n");
     code.push_str("}\n\n");
 
     code.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
@@ -270,23 +275,6 @@ pub fn generate_property_id_code(
         let variant = to_pascal_case(prop);
         let _ = writeln!(code, "            Self::{} => \"{}\",", variant, prop);
     }
-    code.push_str("            Self::Custom(s) => s.as_ref(),\n");
-    code.push_str("        }\n");
-    code.push_str("    }\n\n");
-
-    code.push_str("    #[inline]\n");
-    code.push_str("    #[must_use]\n");
-    code.push_str("    pub fn to_cow(&self) -> Cow<'static, str> {\n");
-    code.push_str("        match self {\n");
-    for prop in &props_set {
-        let variant = to_pascal_case(prop);
-        let _ = writeln!(
-            code,
-            "            Self::{} => Cow::Borrowed(\"{}\"),",
-            variant, prop
-        );
-    }
-    code.push_str("            Self::Custom(s) => s.clone(),\n");
     code.push_str("        }\n");
     code.push_str("    }\n\n");
 
@@ -315,9 +303,6 @@ pub fn generate_property_id_code(
             variant, gid, mask
         );
     }
-    code.push_str(
-        "            Self::Custom(_) => PropertyBitmask { group_id: 0xffff, mask: 1 },\n",
-    );
     code.push_str("        }\n");
     code.push_str("    }\n");
     code.push_str("}\n\n");

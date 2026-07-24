@@ -504,6 +504,42 @@
     ],
     "unit_kind": "RemScale"
   },
+  "slide-out-to-bottom": {
+    "target_props": [
+      "--tw-exit-translate-y"
+    ],
+    "unit_kind": "RemScale"
+  },
+  "slide-out-to-left": {
+    "target_props": [
+      "--tw-exit-translate-x"
+    ],
+    "unit_kind": "RemScale"
+  },
+  "slide-out-to-right": {
+    "target_props": [
+      "--tw-exit-translate-x"
+    ],
+    "unit_kind": "RemScale"
+  },
+  "slide-out-to-top": {
+    "target_props": [
+      "--tw-exit-translate-y"
+    ],
+    "unit_kind": "RemScale"
+  },
+  "spin-in": {
+    "target_props": [
+      "--tw-enter-rotate"
+    ],
+    "unit_kind": "Degree"
+  },
+  "spin-out": {
+    "target_props": [
+      "--tw-exit-rotate"
+    ],
+    "unit_kind": "Degree"
+  },
   "underline-offset": {
     "target_props": [
       "text-underline-offset"

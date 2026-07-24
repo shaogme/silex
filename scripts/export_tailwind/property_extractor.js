@@ -1,6 +1,17 @@
+const { staticFallbackMap } = require('./metadata_probe');
+
 function extractProperties(classList, designSystem, batchSize = 3000) {
   console.log('正在从编译生成的 CSS 中提取自定义变量与特殊属性...');
   const extraPropsSet = new Set();
+
+  // 0. 从 staticFallbackMap 收集权威配置的所有 target_props
+  for (const meta of Object.values(staticFallbackMap)) {
+    if (Array.isArray(meta.target_props)) {
+      for (const prop of meta.target_props) {
+        extraPropsSet.add(prop);
+      }
+    }
+  }
 
   for (let i = 0; i < classList.length; i += batchSize) {
     const batch = classList.slice(i, i + batchSize);

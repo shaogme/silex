@@ -195,6 +195,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             &palette_data,
             &extra_properties,
             &property_aliases,
+            &prefix_metadata,
         );
         let prefix_metadata_code = generate_prefix_metadata_code(&prefix_metadata);
         let palette_code = generate_palette_code(&palette_data);

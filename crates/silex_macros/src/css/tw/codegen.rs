@@ -11,7 +11,6 @@ use crate::css::{
 };
 use proc_macro2::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
 use quote::quote;
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use syn::{Result, token::Semi};
 
@@ -122,26 +121,17 @@ fn modifier_group_sort_key(modifiers: &[SpannedModifier]) -> (u32, u32, usize) {
 /// 编译期 Tailwind Merge: 相同修饰符组下的实用类属性消解 (基于 Bitmask 的高速覆盖计算，支持简写属性与长写属性关联覆盖，Last-wins 覆盖先出者)
 pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
     let mut covered_masks: HashMap<(ModifierList, u16), u64> = HashMap::new();
-    let mut custom_covered: HashSet<(ModifierList, Cow<'static, str>)> = HashSet::new();
     let mut deduped_rev = Vec::new();
     let mut transform_rules_by_modifier: HashMap<ModifierList, Vec<UtilityRule>> = HashMap::new();
 
     for rule in rules.into_iter().rev() {
-        let prop = rule.css_property.clone();
+        let prop = rule.css_property;
 
         if prop == CssPropertyId::Transform {
             transform_rules_by_modifier
                 .entry(rule.modifiers.clone())
                 .or_default()
                 .push(rule);
-            continue;
-        }
-
-        if let CssPropertyId::Custom(ref name) = prop {
-            let key = (rule.modifiers.clone(), name.clone());
-            if custom_covered.insert(key) {
-                deduped_rev.push(rule);
-            }
             continue;
         }
 
