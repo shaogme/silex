@@ -1,0 +1,350 @@
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Write,
+};
+use serde_json::Value;
+
+use super::{palette::ColorShadeInfo, resolver::resolve_css_rules};
+
+pub fn to_pascal_case(s: &str) -> String {
+    s.split('-')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect()
+}
+
+fn flatten_prop(
+    prop: &str,
+    raw_map: &BTreeMap<String, Vec<String>>,
+    out: &mut BTreeSet<String>,
+    visited: &mut BTreeSet<String>,
+) {
+    if !visited.insert(prop.to_string()) {
+        return;
+    }
+    if let Some(subs) = raw_map.get(prop) {
+        for sub in subs {
+            if raw_map.contains_key(sub) {
+                flatten_prop(sub, raw_map, out, visited);
+            } else {
+                out.insert(sub.clone());
+            }
+        }
+    } else {
+        out.insert(prop.to_string());
+    }
+}
+
+/// 生成 `silex_macros/src/css/tw/resolver/codegen/property_id.rs` 产物代码
+pub fn generate_property_id_code(
+    props_json_str: &str,
+    classes: &[String],
+    test_cases: &[String],
+    palette: &BTreeMap<String, Vec<ColorShadeInfo>>,
+) -> String {
+    let mut props_set: BTreeSet<String> = BTreeSet::new();
+
+    // 0. 从所有的 Tailwind 静态类及测试用例解析结果中收集用到的全量 CSS 属性名
+    for class in classes.iter().chain(test_cases.iter()) {
+        if let Some(rules) = resolve_css_rules(class, palette) {
+            for (prop, _) in rules {
+                props_set.insert(prop.to_string());
+            }
+        }
+    }
+
+    // 1. 从 MDN JSON 中提取标准 CSS 属性
+    if let Ok(json_map) = serde_json::from_str::<BTreeMap<String, Value>>(props_json_str) {
+        for prop_name in json_map.keys() {
+            if prop_name.starts_with('-') || prop_name.starts_with("--") {
+                continue;
+            }
+            props_set.insert(prop_name.clone());
+        }
+    }
+
+    // 2. 注入所有 Tailwind / 补充别名与子属性
+    let custom_aliases: &[(&str, &[&str])] = &[
+        ("padding-inline", &["padding-left", "padding-right"]),
+        ("padding-block", &["padding-top", "padding-bottom"]),
+        ("margin-inline", &["margin-left", "margin-right"]),
+        ("margin-block", &["margin-top", "margin-bottom"]),
+        ("inset", &["top", "right", "bottom", "left"]),
+        ("inset-x", &["left", "right"]),
+        ("inset-y", &["top", "bottom"]),
+        ("border-x", &["border-left-width", "border-right-width"]),
+        ("border-y", &["border-top-width", "border-bottom-width"]),
+        ("border-x-width", &["border-left-width", "border-right-width"]),
+        ("border-y-width", &["border-top-width", "border-bottom-width"]),
+        ("border-x-style", &["border-left-style", "border-right-style"]),
+        ("border-y-style", &["border-top-style", "border-bottom-style"]),
+        ("border-x-color", &["border-left-color", "border-right-color"]),
+        ("border-y-color", &["border-top-color", "border-bottom-color"]),
+        ("scroll-margin-inline", &["scroll-margin-left", "scroll-margin-right"]),
+        ("scroll-margin-block", &["scroll-margin-top", "scroll-margin-bottom"]),
+        ("scroll-padding-inline", &["scroll-padding-left", "scroll-padding-right"]),
+        ("scroll-padding-block", &["scroll-padding-top", "scroll-padding-bottom"]),
+    ];
+
+    for &(k, subs) in custom_aliases {
+        props_set.insert(k.to_string());
+        for &s in subs {
+            props_set.insert(s.to_string());
+        }
+    }
+
+    // 确保 border、transform 及所有 Tailwind 内置扩展变量/前缀均在集合中
+    props_set.insert("border".to_string());
+    props_set.insert("transform".to_string());
+
+    let tw_vars = &[
+        "--tw-ring-color", "--tw-ring-offset-color", "--tw-ring-shadow", "--tw-ring-offset-shadow",
+        "--tw-shadow", "--tw-shadow-color", "--tw-gradient-from", "--tw-gradient-via", "--tw-gradient-to",
+        "--tw-gradient-stops", "--tw-blur", "--tw-brightness", "--tw-contrast", "--tw-grayscale",
+        "--tw-hue-rotate", "--tw-invert", "--tw-saturate", "--tw-sepia", "--tw-drop-shadow",
+        "--tw-backdrop-blur", "--tw-backdrop-brightness", "--tw-backdrop-contrast", "--tw-backdrop-grayscale",
+        "--tw-backdrop-hue-rotate", "--tw-backdrop-invert", "--tw-backdrop-opacity", "--tw-backdrop-saturate",
+        "--tw-backdrop-sepia", "--tw-translate-x", "--tw-translate-y", "--tw-rotate", "--tw-skew-x",
+        "--tw-skew-y", "--tw-scale-x", "--tw-scale-y", "--tw-mask-from", "--tw-mask-to", "--tw-contain-size",
+        "-webkit-line-clamp", "-webkit-box-orient", "-webkit-box",
+    ];
+
+    for &v in tw_vars {
+        props_set.insert(v.to_string());
+    }
+
+    // 构建 raw_map 以计算连通分量 (Bitmask Group)
+    let mut raw_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    if let Ok(json_map) = serde_json::from_str::<BTreeMap<String, Value>>(props_json_str) {
+        for (prop_name, prop_val) in json_map {
+            if prop_name.starts_with('-') || prop_name.starts_with("--") {
+                continue;
+            }
+            if let Some(comp_arr) = prop_val.get("computed").and_then(|v| v.as_array()) {
+                let subs: Vec<String> = comp_arr
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .filter(|s| s != &prop_name)
+                    .collect();
+                if !subs.is_empty() {
+                    raw_map.insert(prop_name.clone(), subs);
+                }
+            }
+        }
+    }
+    for &(k, subs) in custom_aliases {
+        raw_map.insert(k.to_string(), subs.iter().map(|s| s.to_string()).collect());
+    }
+    raw_map.entry("border".to_string()).or_insert_with(|| {
+        vec![
+            "border-top-width".to_string(),
+            "border-right-width".to_string(),
+            "border-bottom-width".to_string(),
+            "border-left-width".to_string(),
+            "border-top-style".to_string(),
+            "border-right-style".to_string(),
+            "border-bottom-style".to_string(),
+            "border-left-style".to_string(),
+            "border-top-color".to_string(),
+            "border-right-color".to_string(),
+            "border-bottom-color".to_string(),
+            "border-left-color".to_string(),
+        ]
+    });
+
+    // 展开所有 shorthand 映射 final_map: prop -> BTreeSet<atomic_subproperty>
+    let mut final_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for prop in raw_map.keys() {
+        let mut atomic_set = BTreeSet::new();
+        flatten_prop(prop, &raw_map, &mut atomic_set, &mut BTreeSet::new());
+        if !atomic_set.is_empty() {
+            let mut list: Vec<String> = atomic_set.into_iter().collect();
+            list.sort();
+            final_map.insert(prop.clone(), list);
+        }
+    }
+
+    // 确保所有在 final_map 中出现的 subproperties 也在 props_set 中
+    for (k, subs) in &final_map {
+        props_set.insert(k.clone());
+        for s in subs {
+            props_set.insert(s.clone());
+        }
+    }
+
+    // --- 计算连通分量 (Connected Components for Bitmask Groups) ---
+    let mut all_atomic_subprops: BTreeSet<String> = BTreeSet::new();
+    for subs in final_map.values() {
+        for s in subs {
+            all_atomic_subprops.insert(s.clone());
+        }
+    }
+
+    let atomic_list: Vec<String> = all_atomic_subprops.into_iter().collect();
+    let mut adj: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for a in &atomic_list {
+        adj.insert(a.clone(), BTreeSet::new());
+    }
+    for subs in final_map.values() {
+        for i in 0..subs.len() {
+            for j in (i + 1)..subs.len() {
+                adj.get_mut(&subs[i]).unwrap().insert(subs[j].clone());
+                adj.get_mut(&subs[j]).unwrap().insert(subs[i].clone());
+            }
+        }
+    }
+
+    let mut atomic_info: BTreeMap<String, (u16, u64)> = BTreeMap::new();
+    let mut visited: BTreeSet<String> = BTreeSet::new();
+    let mut current_group_id: u16 = 1;
+
+    for node in &atomic_list {
+        if visited.contains(node) {
+            continue;
+        }
+        let group_id = current_group_id;
+        current_group_id += 1;
+
+        let mut queue = vec![node.clone()];
+        visited.insert(node.clone());
+        let mut group_nodes = Vec::new();
+
+        while let Some(curr) = queue.pop() {
+            group_nodes.push(curr.clone());
+            if let Some(neighbors) = adj.get(&curr) {
+                for nbr in neighbors {
+                    if visited.insert(nbr.clone()) {
+                        queue.push(nbr.clone());
+                    }
+                }
+            }
+        }
+
+        for (bit_idx, name) in group_nodes.iter().enumerate() {
+            let mask = 1u64 << bit_idx;
+            atomic_info.insert(name.clone(), (group_id, mask));
+        }
+    }
+
+    let mut prop_bitmasks: BTreeMap<String, (u16, u64)> = BTreeMap::new();
+    for (prop, subs) in &final_map {
+        let mut combined_mask = 0u64;
+        let mut g_id = 0u16;
+        for s in subs {
+            if let Some(&(gid, m)) = atomic_info.get(s) {
+                g_id = gid;
+                combined_mask |= m;
+            }
+        }
+        if g_id != 0 {
+            prop_bitmasks.insert(prop.clone(), (g_id, combined_mask));
+        }
+    }
+    for (s, &(gid, m)) in &atomic_info {
+        prop_bitmasks.insert(s.clone(), (gid, m));
+    }
+
+    for p in &props_set {
+        if !prop_bitmasks.contains_key(p) {
+            let gid = current_group_id;
+            current_group_id += 1;
+            prop_bitmasks.insert(p.clone(), (gid, 1u64));
+        }
+    }
+
+    // 生成 Rust 代码
+    let mut code = String::with_capacity(64 * 1024);
+    code.push_str("// 自动生成的 CSS 属性 Enum 与 Bitmask 对照表（供 silex_macros 使用）\n");
+    code.push_str("// 由 silex_codegen 自动生成，切勿手写修改！\n\n");
+
+    code.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]\n");
+    code.push_str("pub enum CssPropertyId {\n");
+    for prop in &props_set {
+        let variant = to_pascal_case(prop);
+        let _ = writeln!(code, "    {},", variant);
+    }
+    code.push_str("    Custom(&'static str),\n");
+    code.push_str("}\n\n");
+
+    code.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    code.push_str("pub struct PropertyBitmask {\n");
+    code.push_str("    pub group_id: u16,\n");
+    code.push_str("    pub mask: u64,\n");
+    code.push_str("}\n\n");
+
+    code.push_str("impl CssPropertyId {\n");
+    code.push_str("    #[inline]\n");
+    code.push_str("    pub fn as_str(self) -> &'static str {\n");
+    code.push_str("        match self {\n");
+    for prop in &props_set {
+        let variant = to_pascal_case(prop);
+        let _ = writeln!(code, "            Self::{} => \"{}\",", variant, prop);
+    }
+    code.push_str("            Self::Custom(s) => s,\n");
+    code.push_str("        }\n");
+    code.push_str("    }\n\n");
+
+    code.push_str("    pub fn parse(s: &str) -> Self {\n");
+    code.push_str("        match s {\n");
+    for prop in &props_set {
+        let variant = to_pascal_case(prop);
+        let _ = writeln!(code, "            \"{}\" => Self::{},", prop, variant);
+    }
+    code.push_str("            _ => Self::Custom(Box::leak(s.to_string().into_boxed_str())),\n");
+    code.push_str("        }\n");
+    code.push_str("    }\n\n");
+
+    code.push_str("    #[inline]\n");
+    code.push_str("    pub fn bitmask(self) -> PropertyBitmask {\n");
+    code.push_str("        match self {\n");
+    for prop in &props_set {
+        let variant = to_pascal_case(prop);
+        let (gid, mask) = prop_bitmasks.get(prop).copied().unwrap_or((0xffff, 1));
+        let _ = writeln!(
+            code,
+            "            Self::{} => PropertyBitmask {{ group_id: {}, mask: {} }},",
+            variant, gid, mask
+        );
+    }
+    code.push_str(
+        "            Self::Custom(_) => PropertyBitmask { group_id: 0xffff, mask: 1 },\n",
+    );
+    code.push_str("        }\n");
+    code.push_str("    }\n");
+    code.push_str("}\n\n");
+
+    code.push_str("impl PartialEq<&str> for CssPropertyId {\n");
+    code.push_str("    #[inline]\n");
+    code.push_str("    fn eq(&self, other: &&str) -> bool {\n");
+    code.push_str("        self.as_str() == *other\n");
+    code.push_str("    }\n");
+    code.push_str("}\n\n");
+
+    code.push_str("impl PartialEq<CssPropertyId> for &str {\n");
+    code.push_str("    #[inline]\n");
+    code.push_str("    fn eq(&self, other: &CssPropertyId) -> bool {\n");
+    code.push_str("        *self == other.as_str()\n");
+    code.push_str("    }\n");
+    code.push_str("}\n\n");
+
+    code.push_str("impl PartialEq<str> for CssPropertyId {\n");
+    code.push_str("    #[inline]\n");
+    code.push_str("    fn eq(&self, other: &str) -> bool {\n");
+    code.push_str("        self.as_str() == other\n");
+    code.push_str("    }\n");
+    code.push_str("}\n\n");
+
+    code.push_str("impl std::fmt::Display for CssPropertyId {\n");
+    code.push_str("    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {\n");
+    code.push_str("        write!(f, \"{}\", self.as_str())\n");
+    code.push_str("    }\n");
+    code.push_str("}\n");
+
+    code
+}
