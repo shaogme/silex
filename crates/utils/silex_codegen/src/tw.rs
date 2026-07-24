@@ -1,15 +1,16 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+    fmt::Write,
+};
 
 pub mod resolver;
+
 pub use resolver::resolve_css_rules;
 
-/// 生成 `silex_macros/src/css/tw/resolver/table.rs` 与 `table_unimplement.rs` 代码
-pub fn generate_macro_tables(
-    classes: &[String],
-    dynamic_prefixes: &BTreeMap<String, Vec<String>>,
-) -> (String, String) {
-    use std::fmt::Write;
+type RuleEntries = Vec<(String, Vec<(&'static str, Cow<'static, str>)>)>;
 
+fn resolve_entries(classes: &[String]) -> (RuleEntries, Vec<String>) {
     let candidate_set: BTreeSet<String> = classes.iter().cloned().collect();
 
     let mut static_entries = Vec::with_capacity(candidate_set.len());
@@ -26,30 +27,81 @@ pub fn generate_macro_tables(
     static_entries.sort_by(|a, b| a.0.cmp(&b.0));
     unimplemented_entries.sort();
 
+    (static_entries, unimplemented_entries)
+}
+
+fn push_table_header(code: &mut String, doc_comment: &str) {
+    let _ = writeln!(code, "// {}", doc_comment);
+    code.push_str("// 避免手写硬编码，与 silex_codegen/resolver 保持 100% 规则对齐\n\n");
+    code.push_str("use super::make_rule;\n");
+    code.push_str("use crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};\n");
+    code.push_str("use proc_macro2::Span;\n\n");
+
+    code.push_str("#[allow(dead_code)]\n");
+    code.push_str("#[derive(Clone, Copy)]\n");
+    code.push_str("pub enum StaticVal {\n");
+    code.push_str("    Kw(&'static str),\n");
+    code.push_str("    Num(f64, &'static str),\n");
+    code.push_str("    Hex(&'static str),\n");
+    code.push_str("    Literal(&'static str),\n");
+    code.push_str("    RingShadow,\n");
+    code.push_str("}\n\n");
+}
+
+fn push_candidate_array(code: &mut String, var_name: &str, entries: &RuleEntries) {
+    code.push_str("#[rustfmt::skip]\n");
+    let _ = writeln!(code, "pub const {}: &[&str] = &[", var_name);
+    for (class, _) in entries {
+        let _ = writeln!(code, "    \"{}\",", class);
+    }
+    code.push_str("];\n\n");
+}
+
+fn push_unimplemented_array(code: &mut String, var_name: &str, entries: &[String]) {
+    if entries.is_empty() {
+        return;
+    }
+    code.push_str("#[rustfmt::skip]\n");
+    let _ = writeln!(code, "pub const {}: &[&str] = &[", var_name);
+    for class in entries {
+        let _ = writeln!(code, "    \"{}\",", class);
+    }
+    code.push_str("];\n\n");
+}
+
+fn push_rules_array(code: &mut String, var_name: &str, entries: &RuleEntries) {
+    code.push_str("#[rustfmt::skip]\n");
+    let _ = writeln!(
+        code,
+        "pub static {}: &[(&'static str, &'static [(&'static str, StaticVal)])] = &[",
+        var_name
+    );
+    for (class, rules) in entries {
+        let _ = writeln!(code, "    (\"{}\", &[", class);
+        for (prop, val) in rules {
+            let static_val_str = parse_val_to_static_val(val);
+            let _ = writeln!(code, "        (\"{}\", {}),", prop, static_val_str);
+        }
+        code.push_str("    ]),\n");
+    }
+    code.push_str("];\n\n");
+}
+
+/// 生成 `silex_macros/src/css/tw/resolver/table.rs` 与 `table_unimplement.rs` 代码
+pub fn generate_macro_tables(
+    classes: &[String],
+    dynamic_prefixes: &BTreeMap<String, Vec<String>>,
+) -> (String, String) {
+    let (static_entries, unimplemented_entries) = resolve_entries(classes);
+
     // 1. 生成 table.rs
     let mut table_code = String::with_capacity(512 * 1024);
-    table_code.push_str("// 自动生成的 Tailwind 静态规则表（供 silex_macros 使用）\n");
-    table_code.push_str("// 避免手写硬编码，与 silex_codegen/resolver 保持 100% 规则对齐\n\n");
-    table_code.push_str("use super::make_rule;\n");
-    table_code.push_str("use crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};\n");
-    table_code.push_str("use proc_macro2::Span;\n\n");
+    push_table_header(
+        &mut table_code,
+        "自动生成的 Tailwind 静态规则表（供 silex_macros 使用）",
+    );
 
-    table_code.push_str("#[allow(dead_code)]\n");
-    table_code.push_str("#[derive(Clone, Copy)]\n");
-    table_code.push_str("pub enum StaticVal {\n");
-    table_code.push_str("    Kw(&'static str),\n");
-    table_code.push_str("    Num(f64, &'static str),\n");
-    table_code.push_str("    Hex(&'static str),\n");
-    table_code.push_str("    Literal(&'static str),\n");
-    table_code.push_str("    RingShadow,\n");
-    table_code.push_str("}\n\n");
-
-    table_code.push_str("#[rustfmt::skip]\n");
-    table_code.push_str("pub const STATIC_CANDIDATE_UTILITIES: &[&str] = &[\n");
-    for (class, _) in &static_entries {
-        let _ = writeln!(table_code, "    \"{}\",", class);
-    }
-    table_code.push_str("];\n\n");
+    push_candidate_array(&mut table_code, "STATIC_CANDIDATE_UTILITIES", &static_entries);
 
     table_code.push_str("#[rustfmt::skip]\n");
     table_code.push_str("pub const DYNAMIC_UTILITY_PREFIXES: &[(&str, &[&str])] = &[\n");
@@ -65,19 +117,7 @@ pub fn generate_macro_tables(
     }
     table_code.push_str("];\n\n");
 
-    table_code.push_str("#[rustfmt::skip]\n");
-    table_code.push_str(
-        "pub static STATIC_RULES: &[(&'static str, &'static [(&'static str, StaticVal)])] = &[\n",
-    );
-    for (class, rules) in &static_entries {
-        let _ = writeln!(table_code, "    (\"{}\", &[", class);
-        for (prop, val) in rules {
-            let static_val_str = parse_val_to_static_val(val);
-            let _ = writeln!(table_code, "        (\"{}\", {}),", prop, static_val_str);
-        }
-        table_code.push_str("    ]),\n");
-    }
-    table_code.push_str("];\n\n");
+    push_rules_array(&mut table_code, "STATIC_RULES", &static_entries);
 
     table_code.push_str(
         r#"pub fn resolve_static_rule(
@@ -114,12 +154,11 @@ pub fn generate_macro_tables(
     table_unimplement_code
         .push_str("// 自动生成的 Tailwind 未匹配/未实现静态类名表（供 silex_macros 使用）\n");
     table_unimplement_code.push_str("// 记录已知但当前尚未在 resolver 中实现 CSS 规则的类名\n\n");
-    table_unimplement_code.push_str("#[rustfmt::skip]\n");
-    table_unimplement_code.push_str("pub const UNIMPLEMENTED_CANDIDATE_UTILITIES: &[&str] = &[\n");
-    for class in &unimplemented_entries {
-        let _ = writeln!(table_unimplement_code, "    \"{}\",", class);
-    }
-    table_unimplement_code.push_str("];\n");
+    push_unimplemented_array(
+        &mut table_unimplement_code,
+        "UNIMPLEMENTED_CANDIDATE_UTILITIES",
+        &unimplemented_entries,
+    );
 
     (table_code, table_unimplement_code)
 }
@@ -176,3 +215,31 @@ fn try_parse_numeric(val: &str) -> Option<(f64, &'static str)> {
     }
     None
 }
+
+/// 生成 `table_examples.rs` 产物（生成方式与 `table.rs` 100% 一致，用于验证 test-cases 的生成与规则解析正确性）
+pub fn generate_table_examples(test_cases: &[String]) -> String {
+    let (static_entries, unimplemented_entries) = resolve_entries(test_cases);
+
+    let mut table_code = String::with_capacity(64 * 1024);
+    push_table_header(
+        &mut table_code,
+        "自动生成的 Tailwind 测试用例规则表（用于验证 test-cases 的生成与 CSS 规则解析正确性）\n// 对应 tailwind-classes.json 中的 test_cases",
+    );
+
+    push_candidate_array(
+        &mut table_code,
+        "TEST_CASE_CANDIDATE_UTILITIES",
+        &static_entries,
+    );
+    push_unimplemented_array(
+        &mut table_code,
+        "UNIMPLEMENTED_TEST_CASE_UTILITIES",
+        &unimplemented_entries,
+    );
+    push_rules_array(&mut table_code, "TEST_CASE_RULES", &static_entries);
+
+    table_code
+}
+
+
+

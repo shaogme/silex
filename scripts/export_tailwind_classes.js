@@ -193,12 +193,36 @@ async function main() {
 
   const dynamicPrefixesObj = {};
   const sortedPrefixKeys = Array.from(validDynamicPrefixesMap.keys()).sort();
+  const testCasesSet = new Set();
+
   for (const key of sortedPrefixKeys) {
     const suffixes = Array.from(validDynamicPrefixesMap.get(key)).sort();
     if (suffixes.length > 0) {
       dynamicPrefixesObj[key] = suffixes;
+
+      // 选取多种代表性后缀用于验证表
+      const sampleIndices = new Set();
+      sampleIndices.add(0); // 头部后缀
+      sampleIndices.add(Math.floor(suffixes.length / 2)); // 中间后缀
+      sampleIndices.add(suffixes.length - 1); // 尾部后缀
+
+      // 额外的常用代表性后缀（如果存在）
+      ['0', '1', '4', 'full', 'auto', 'px', 'sm', 'md', 'lg', 'xl', '50', '100', 'none', 'DEFAULT'].forEach(s => {
+        const idx = suffixes.indexOf(s);
+        if (idx !== -1) sampleIndices.add(idx);
+      });
+
+      for (const idx of sampleIndices) {
+        const suf = suffixes[idx];
+        const testCls = `${key}${suf}`;
+        if (filteredClassSet.has(testCls)) {
+          testCasesSet.add(testCls);
+        }
+      }
     }
   }
+
+  const testCasesList = Array.from(testCasesSet).sort();
 
   // 5. 确保导出目录存在
   const outputFile = path.join(__dirname, '../crates/utils/silex_codegen/tailwind-classes.json');
@@ -210,6 +234,7 @@ async function main() {
   const exportData = {
     classes: classList,
     dynamic_prefixes: dynamicPrefixesObj,
+    test_cases: testCasesList,
   };
 
   fs.writeFileSync(outputFile, JSON.stringify(exportData, null, 2), 'utf-8');
@@ -217,6 +242,7 @@ async function main() {
   console.log(`导出成功！文件已保存至: ${outputFile}`);
   console.log(`共包含类名数量：${classList.length}`);
   console.log(`包含动态前缀数量：${Object.keys(dynamicPrefixesObj).length}`);
+  console.log(`包含验证测试用例数量：${testCasesList.length}`);
 }
 
 main().catch(err => {

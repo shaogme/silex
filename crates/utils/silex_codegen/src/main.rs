@@ -1,21 +1,33 @@
-use heck::AsSnakeCase;
-use std::fs;
-use std::path::Path;
-
 #[macro_use]
 mod utils;
 mod css;
 mod tags;
 mod tw;
 
-use tags::codegen::generate_module_content;
+use crate::{
+    css::{generate_keywords_code, generate_properties_macro, parse_css},
+    tags::{apply_memory_only_patches, codegen::generate_module_content, parse_tags},
+    tw::{generate_macro_tables, generate_table_examples},
+};
+use heck::AsSnakeCase;
+use reqwest::blocking::Client;
+use serde::Deserialize;
+use serde_json::{from_reader, from_str, to_writer_pretty, Value};
+use std::{
+    collections::BTreeMap,
+    env::{args, current_dir},
+    error::Error,
+    fs::{create_dir_all, read_to_string, write, File},
+    io::BufWriter,
+    path::Path,
+};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = std::env::args().collect();
+fn main() -> Result<(), Box<dyn Error>> {
+    let args: Vec<String> = args().collect();
     let should_fetch = args.contains(&"--fetch".to_string());
 
     // 1. Determine paths
-    let current_dir = std::env::current_dir()?;
+    let current_dir = current_dir()?;
     let (
         mdn_compat_path,
         mdn_props_path,
@@ -43,9 +55,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
     } else {
         return Err(
-                "Could not detect project root. Please run from workspace root or tools/silex_codegen directory."
-                    .into(),
-            );
+            "Could not detect project root. Please run from workspace root or tools/silex_codegen directory."
+                .into(),
+        );
     };
 
     println!("MDN Compat: {}", mdn_compat_path.display());
@@ -60,17 +72,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("\n[FETCH MODE] Fetching raw data from MDN...");
 
         // Simple synchronous fetch utility
-        let client = reqwest::blocking::Client::builder()
+        let client = Client::builder()
             .user_agent("silex-codegen")
             .build()?;
 
-        let fetch_and_save = |url: &str, path: &Path| -> Result<(), Box<dyn std::error::Error>> {
+        let fetch_and_save = |url: &str, path: &Path| -> Result<(), Box<dyn Error>> {
             println!("Downloading from {} ...", url);
             let response = client.get(url).send()?.error_for_status()?;
-            let value: serde_json::Value = serde_json::from_reader(response)?;
-            let file = fs::File::create(path)?;
-            let writer = std::io::BufWriter::new(file);
-            serde_json::to_writer_pretty(writer, &value)?;
+            let value: Value = from_reader(response)?;
+            let file = File::create(path)?;
+            let writer = BufWriter::new(file);
+            to_writer_pretty(writer, &value)?;
             println!("[FETCH MODE] Saved to {}", path.display());
             Ok(())
         };
@@ -98,37 +110,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("\n[CODEGEN MODE] Parsing data from local MDN files...");
-    let compat_str = fs::read_to_string(&mdn_compat_path)?;
-    let props_str = fs::read_to_string(&mdn_props_path)?;
-    let syntaxes_str = fs::read_to_string(&mdn_syntaxes_path)?;
+    let compat_str = read_to_string(&mdn_compat_path)?;
+    let props_str = read_to_string(&mdn_props_path)?;
+    let syntaxes_str = read_to_string(&mdn_syntaxes_path)?;
 
-    let config = tags::parse_tags(&compat_str)?;
-    let css_config = css::parse_css(&props_str, &syntaxes_str)?;
+    let config = parse_tags(&compat_str)?;
+    let css_config = parse_css(&props_str, &syntaxes_str)?;
 
     println!("[CODEGEN MODE] Applying in-memory patches...");
     let mut gen_config = config.clone();
-    tags::apply_memory_only_patches(&mut gen_config);
+    apply_memory_only_patches(&mut gen_config);
 
     // 4. Generate and Write Rust Code
     if !out_dir.exists() {
-        fs::create_dir_all(&out_dir)?;
+        create_dir_all(&out_dir)?;
     }
     if !css_out_dir.exists() {
-        fs::create_dir_all(&css_out_dir)?;
+        create_dir_all(&css_out_dir)?;
     }
 
     // --- CSS Codegen ---
-    let properties_code = css::generate_properties_macro(&css_config.properties);
-    fs::write(css_out_dir.join("properties.rs"), properties_code)?;
+    let properties_code = generate_properties_macro(&css_config.properties);
+    write(css_out_dir.join("properties.rs"), properties_code)?;
     println!("Generated properties.rs");
 
-    let keywords_code = css::generate_keywords_code(&css_config.properties);
-    fs::write(css_out_dir.join("keywords_gen.rs"), keywords_code)?;
+    let keywords_code = generate_keywords_code(&css_config.properties);
+    write(css_out_dir.join("keywords_gen.rs"), keywords_code)?;
     println!("Generated keywords_gen.rs");
 
     // Generate HTML module
     let html_code = generate_module_content(&gen_config.html, false, &[]);
-    fs::write(out_dir.join("html.rs"), html_code)?;
+    write(out_dir.join("html.rs"), html_code)?;
     println!("Generated html.rs");
 
     // Collect HTML macro names to avoid collisions in SVG
@@ -144,45 +156,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Generate SVG module
     let svg_code = generate_module_content(&gen_config.svg, true, &html_macros);
-    fs::write(out_dir.join("svg.rs"), svg_code)?;
+    write(out_dir.join("svg.rs"), svg_code)?;
     println!("Generated svg.rs");
 
     // Generate Tailwind Classes & Macro Table
     let tw_json_path = current_dir.join("crates/utils/silex_codegen/tailwind-classes.json");
     if tw_json_path.exists() {
-        let json_str = fs::read_to_string(&tw_json_path)?;
+        let json_str = read_to_string(&tw_json_path)?;
 
-        #[derive(serde::Deserialize)]
-        #[serde(untagged)]
-        enum TailwindJsonData {
-            Full {
-                classes: Vec<String>,
-                #[serde(default)]
-                dynamic_prefixes: std::collections::BTreeMap<String, Vec<String>>,
-            },
-            Legacy(Vec<String>),
+        #[derive(Deserialize)]
+        struct TailwindJsonData {
+            classes: Vec<String>,
+            #[serde(default)]
+            dynamic_prefixes: BTreeMap<String, Vec<String>>,
+            #[serde(default)]
+            test_cases: Vec<String>,
         }
 
-        let (classes, dynamic_prefixes) = match serde_json::from_str::<TailwindJsonData>(&json_str)?
-        {
-            TailwindJsonData::Full {
-                classes,
-                dynamic_prefixes,
-            } => (classes, dynamic_prefixes),
-            TailwindJsonData::Legacy(classes) => (classes, std::collections::BTreeMap::new()),
-        };
+        let TailwindJsonData {
+            classes,
+            dynamic_prefixes,
+            test_cases,
+        } = from_str::<TailwindJsonData>(&json_str)?;
 
         let (table_code, table_unimplement_code) =
-            tw::generate_macro_tables(&classes, &dynamic_prefixes);
+            generate_macro_tables(&classes, &dynamic_prefixes);
+        let table_examples_code = generate_table_examples(&test_cases);
+
         if !macro_resolver_dir.exists() {
-            fs::create_dir_all(&macro_resolver_dir)?;
+            create_dir_all(&macro_resolver_dir)?;
         }
-        fs::write(macro_resolver_dir.join("table.rs"), table_code)?;
-        fs::write(
+        write(macro_resolver_dir.join("table.rs"), table_code)?;
+        write(
             macro_resolver_dir.join("table_unimplement.rs"),
             table_unimplement_code,
         )?;
-        println!("Generated table.rs and table_unimplement.rs for silex_macros");
+        write(
+            macro_resolver_dir.join("table_examples.rs"),
+            table_examples_code,
+        )?;
+        println!("Generated table.rs, table_unimplement.rs and table_examples.rs for silex_macros");
     }
 
     println!("\nSuccessfully completed!");
