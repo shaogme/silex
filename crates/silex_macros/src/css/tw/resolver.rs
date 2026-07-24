@@ -1,8 +1,10 @@
 pub mod arbitrary;
 pub mod numeric;
 pub mod palette;
+pub mod shorthands;
 pub mod suggest;
 pub mod table;
+
 #[cfg(test)]
 pub mod table_examples;
 

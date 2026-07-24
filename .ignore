@@ -2,3 +2,4 @@
 /crates/silex_macros/src/css/tw/resolver/table_examples.rs
 /crates/silex_macros/src/css/tw/resolver/table_unimplement.rs
 /crates/silex_macros/src/css/tw/resolver/table.rs
+/crates/silex_macros/src/css/tw/resolver/shorthands.rs

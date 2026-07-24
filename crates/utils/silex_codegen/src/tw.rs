@@ -1,3 +1,4 @@
+use serde_json::Value;
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
@@ -240,6 +241,138 @@ pub fn generate_table_examples(test_cases: &[String]) -> String {
 
     table_code
 }
+
+/// 生成 `silex_macros/src/css/tw/resolver/shorthands.rs` 核心代码
+pub fn generate_shorthands_code(props_json_str: &str) -> String {
+    let mut raw_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
+    // 1. 从 MDN JSON 中提取简写/子属性列表
+    if let Ok(json_map) = serde_json::from_str::<BTreeMap<String, Value>>(props_json_str) {
+        for (prop_name, prop_val) in json_map {
+            if prop_name.starts_with('-') || prop_name.starts_with("--") {
+                continue;
+            }
+            if let Some(comp_arr) = prop_val.get("computed").and_then(|v| v.as_array()) {
+                let subs: Vec<String> = comp_arr
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .filter(|s| s != &prop_name)
+                    .collect();
+                if !subs.is_empty() {
+                    raw_map.insert(prop_name.clone(), subs);
+                }
+            }
+        }
+    }
+
+    // 2. 注入 Tailwind 专属 / CSS 扩展简写别名
+    let custom_aliases: &[(&str, &[&str])] = &[
+        ("padding-inline", &["padding-left", "padding-right"]),
+        ("padding-block", &["padding-top", "padding-bottom"]),
+        ("margin-inline", &["margin-left", "margin-right"]),
+        ("margin-block", &["margin-top", "margin-bottom"]),
+        ("inset", &["top", "right", "bottom", "left"]),
+        ("inset-x", &["left", "right"]),
+        ("inset-y", &["top", "bottom"]),
+        ("border-x", &["border-left-width", "border-right-width"]),
+        ("border-y", &["border-top-width", "border-bottom-width"]),
+        ("border-x-width", &["border-left-width", "border-right-width"]),
+        ("border-y-width", &["border-top-width", "border-bottom-width"]),
+        ("border-x-style", &["border-left-style", "border-right-style"]),
+        ("border-y-style", &["border-top-style", "border-bottom-style"]),
+        ("border-x-color", &["border-left-color", "border-right-color"]),
+        ("border-y-color", &["border-top-color", "border-bottom-color"]),
+        ("scroll-margin-inline", &["scroll-margin-left", "scroll-margin-right"]),
+        ("scroll-margin-block", &["scroll-margin-top", "scroll-margin-bottom"]),
+        ("scroll-padding-inline", &["scroll-padding-left", "scroll-padding-right"]),
+        ("scroll-padding-block", &["scroll-padding-top", "scroll-padding-bottom"]),
+    ];
+
+    for &(k, subs) in custom_aliases {
+        raw_map.insert(k.to_string(), subs.iter().map(|s| s.to_string()).collect());
+    }
+
+    // 补充 border 顶层简写，确保能够全覆盖宽、样、色
+    raw_map.entry("border".to_string()).or_insert_with(|| vec![
+        "border-top-width".to_string(),
+        "border-right-width".to_string(),
+        "border-bottom-width".to_string(),
+        "border-left-width".to_string(),
+        "border-top-style".to_string(),
+        "border-right-style".to_string(),
+        "border-bottom-style".to_string(),
+        "border-left-style".to_string(),
+        "border-top-color".to_string(),
+        "border-right-color".to_string(),
+        "border-bottom-color".to_string(),
+        "border-left-color".to_string(),
+    ]);
+
+    // 3. 多层简写递归解包为完全原子的 Longhand 属性
+    let mut final_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (prop, _) in &raw_map {
+        let mut atomic_set = BTreeSet::new();
+        flatten_prop(prop, &raw_map, &mut atomic_set, &mut BTreeSet::new());
+        if !atomic_set.is_empty() {
+            let mut list: Vec<String> = atomic_set.into_iter().collect();
+            list.sort();
+            final_map.insert(prop.clone(), list);
+        }
+    }
+
+    // 4. 生成 Rust 代码
+    let mut code = String::with_capacity(32 * 1024);
+    code.push_str("// 自动生成的 CSS / Tailwind 简写属性到原子子属性的静态对照表（供 silex_macros 使用）\n");
+    code.push_str("// 由 silex_codegen 自动提取，切勿手动修改！\n\n");
+
+    code.push_str("#[rustfmt::skip]\n");
+    code.push_str("pub static SHORTHAND_SUBPROPERTIES: &[(&'static str, &'static [&'static str])] = &[\n");
+    for (k, subs) in &final_map {
+        let _ = write!(code, "    (\"{}\", &[", k);
+        for (i, sub) in subs.iter().enumerate() {
+            if i > 0 {
+                code.push_str(", ");
+            }
+            let _ = write!(code, "\"{}\"", sub);
+        }
+        code.push_str("]),\n");
+    }
+    code.push_str("];\n\n");
+
+    code.push_str(
+        r#"/// 获取指定 CSS / Tailwind 简写属性拆解后的原子子属性集合
+pub fn get_atomic_subproperties(prop: &str) -> Option<&'static [&'static str]> {
+    let idx = SHORTHAND_SUBPROPERTIES.binary_search_by_key(&prop, |&(k, _)| k).ok()?;
+    Some(SHORTHAND_SUBPROPERTIES[idx].1)
+}
+"#,
+    );
+
+    code
+}
+
+fn flatten_prop(
+    prop: &str,
+    raw_map: &BTreeMap<String, Vec<String>>,
+    out: &mut BTreeSet<String>,
+    visited: &mut BTreeSet<String>,
+) {
+    if !visited.insert(prop.to_string()) {
+        return;
+    }
+    if let Some(subs) = raw_map.get(prop) {
+        for sub in subs {
+            if raw_map.contains_key(sub) {
+                flatten_prop(sub, raw_map, out, visited);
+            } else {
+                out.insert(sub.clone());
+            }
+        }
+    } else {
+        out.insert(prop.to_string());
+    }
+}
+
 
 
 

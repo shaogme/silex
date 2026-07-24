@@ -1,8 +1,14 @@
-use crate::css::ast::{CssAtRule, CssBlock, CssDeclaration, CssNested, CssRule};
-use crate::css::tw::ast::{Modifier, TwInput, UtilityRule, UtilityValue};
+use crate::css::{
+    ast::{CssAtRule, CssBlock, CssDeclaration, CssNested, CssRule},
+    config::get_config,
+    tw::{
+        ast::{Modifier, TwInput, TwSegment, UtilityRule, UtilityValue},
+        resolver::shorthands::get_atomic_subproperties,
+    },
+};
 use proc_macro2::{Delimiter, Group, Ident, Punct, Spacing, Span, TokenStream, TokenTree};
 use quote::quote;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use syn::Result;
 
 /// 将解析后的 `Vec<UtilityRule>` 归一化转换构建为 `silex_macros::css::ast::CssBlock`
@@ -63,8 +69,8 @@ pub fn build_css_block_from_tw(input: TwInput) -> Result<CssBlock> {
     let mut rules = Vec::new();
     for seg in input.segments {
         match seg {
-            crate::css::tw::ast::TwSegment::Static(r) => rules.extend(r),
-            crate::css::tw::ast::TwSegment::Conditional {
+            TwSegment::Static(r) => rules.extend(r),
+            TwSegment::Conditional {
                 then_rules,
                 else_rules,
                 ..
@@ -94,7 +100,7 @@ fn modifier_priority(m: &Modifier) -> u32 {
                 "lg" => 1024,
                 "xl" => 1280,
                 "2xl" => 1536,
-                _ => crate::css::config::get_config()
+                _ => get_config()
                     .and_then(|cfg| cfg.theme.breakpoints.get(bp.as_str()))
                     .and_then(|s| s.strip_suffix("px").and_then(|v| v.parse::<u32>().ok()))
                     .unwrap_or(640),
@@ -112,127 +118,13 @@ fn modifier_group_sort_key(modifiers: &[Modifier]) -> (u32, u32, usize) {
     (max_p, total_p, modifiers.len())
 }
 
-/// 获取指定 CSS 属性拆解后的原子子属性（用于简写属性与长写属性关联覆盖消解）
-fn get_atomic_subproperties(prop: &str) -> Option<&'static [&'static str]> {
-    match prop {
-        // --- Padding 边距类 ---
-        "padding" => Some(&[
-            "padding-top",
-            "padding-right",
-            "padding-bottom",
-            "padding-left",
-        ]),
-        "padding-inline" => Some(&["padding-left", "padding-right"]),
-        "padding-block" => Some(&["padding-top", "padding-bottom"]),
-
-        // --- Margin 外边距类 ---
-        "margin" => Some(&["margin-top", "margin-right", "margin-bottom", "margin-left"]),
-        "margin-inline" => Some(&["margin-left", "margin-right"]),
-        "margin-block" => Some(&["margin-top", "margin-bottom"]),
-
-        // --- Inset 定位类 ---
-        "inset" => Some(&["top", "right", "bottom", "left"]),
-        "inset-x" => Some(&["left", "right"]),
-        "inset-y" => Some(&["top", "bottom"]),
-
-        // --- Border 边框宽/样/色全覆盖简写 ---
-        "border" => Some(&[
-            "border-top-width",
-            "border-right-width",
-            "border-bottom-width",
-            "border-left-width",
-            "border-top-style",
-            "border-right-style",
-            "border-bottom-style",
-            "border-left-style",
-            "border-top-color",
-            "border-right-color",
-            "border-bottom-color",
-            "border-left-color",
-        ]),
-
-        // --- Border 边框宽度类 ---
-        "border-width" => Some(&[
-            "border-top-width",
-            "border-right-width",
-            "border-bottom-width",
-            "border-left-width",
-        ]),
-        "border-x-width" | "border-x" => Some(&["border-left-width", "border-right-width"]),
-        "border-y-width" | "border-y" => Some(&["border-top-width", "border-bottom-width"]),
-
-        // --- Border 边框样式类 ---
-        "border-style" => Some(&[
-            "border-top-style",
-            "border-right-style",
-            "border-bottom-style",
-            "border-left-style",
-        ]),
-        "border-x-style" => Some(&["border-left-style", "border-right-style"]),
-        "border-y-style" => Some(&["border-top-style", "border-bottom-style"]),
-
-        // --- Border 边框颜色类 ---
-        "border-color" => Some(&[
-            "border-top-color",
-            "border-right-color",
-            "border-bottom-color",
-            "border-left-color",
-        ]),
-        "border-x-color" => Some(&["border-left-color", "border-right-color"]),
-        "border-y-color" => Some(&["border-top-color", "border-bottom-color"]),
-
-        // --- Border Radius 圆角类 ---
-        "border-radius" => Some(&[
-            "border-top-left-radius",
-            "border-top-right-radius",
-            "border-bottom-right-radius",
-            "border-bottom-left-radius",
-        ]),
-
-        // --- Overflow 溢出类 ---
-        "overflow" => Some(&["overflow-x", "overflow-y"]),
-
-        // --- Gap 间距类 ---
-        "gap" => Some(&["row-gap", "column-gap"]),
-
-        // --- Flex 弹性盒子类 ---
-        "flex" => Some(&["flex-grow", "flex-shrink", "flex-basis"]),
-
-        // --- Columns 分栏类 ---
-        "columns" => Some(&["column-width", "column-count"]),
-
-        // --- Scroll Margin 类 ---
-        "scroll-margin" => Some(&[
-            "scroll-margin-top",
-            "scroll-margin-right",
-            "scroll-margin-bottom",
-            "scroll-margin-left",
-        ]),
-        "scroll-margin-inline" => Some(&["scroll-margin-left", "scroll-margin-right"]),
-        "scroll-margin-block" => Some(&["scroll-margin-top", "scroll-margin-bottom"]),
-
-        // --- Scroll Padding 类 ---
-        "scroll-padding" => Some(&[
-            "scroll-padding-top",
-            "scroll-padding-right",
-            "scroll-padding-bottom",
-            "scroll-padding-left",
-        ]),
-        "scroll-padding-inline" => Some(&["scroll-padding-left", "scroll-padding-right"]),
-        "scroll-padding-block" => Some(&["scroll-padding-top", "scroll-padding-bottom"]),
-
-        _ => None,
-    }
-}
 
 /// 编译期 Tailwind Merge: 相同修饰符组下的实用类属性消解 (支持简写属性与长写属性关联覆盖，Last-wins 覆盖先出者)
 pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
     let mut covered_subproperties = HashSet::new();
     let mut deduped_rev = Vec::new();
-    let mut transform_rules_by_modifier: std::collections::HashMap<
-        Vec<Modifier>,
-        Vec<UtilityRule>,
-    > = std::collections::HashMap::new();
+    let mut transform_rules_by_modifier: HashMap<Vec<Modifier>, Vec<UtilityRule>> =
+        HashMap::new();
 
     for rule in rules.into_iter().rev() {
         let prop = rule.css_property.as_str();
