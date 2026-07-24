@@ -1,8 +1,11 @@
 // 自动生成的 Tailwind 静态规则表（供 silex_macros 使用）
 // 避免手写硬编码，与 silex_codegen/resolver 保持 100% 规则对齐
 
+#[allow(unused_imports)]
 use super::make_rule;
+#[allow(unused_imports)]
 use crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};
+#[allow(unused_imports)]
 use proc_macro2::Span;
 
 #[allow(dead_code)]

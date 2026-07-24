@@ -33,9 +33,9 @@ fn resolve_entries(classes: &[String]) -> (RuleEntries, Vec<String>) {
 fn push_table_header(code: &mut String, doc_comment: &str) {
     let _ = writeln!(code, "// {}", doc_comment);
     code.push_str("// 避免手写硬编码，与 silex_codegen/resolver 保持 100% 规则对齐\n\n");
-    code.push_str("use super::make_rule;\n");
-    code.push_str("use crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};\n");
-    code.push_str("use proc_macro2::Span;\n\n");
+    code.push_str("#[allow(unused_imports)]\nuse super::make_rule;\n");
+    code.push_str("#[allow(unused_imports)]\nuse crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};\n");
+    code.push_str("#[allow(unused_imports)]\nuse proc_macro2::Span;\n\n");
 
     code.push_str("#[allow(dead_code)]\n");
     code.push_str("#[derive(Clone, Copy)]\n");

@@ -3,6 +3,8 @@ pub mod numeric;
 pub mod palette;
 pub mod suggest;
 pub mod table;
+#[cfg(test)]
+pub mod table_examples;
 
 use crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};
 use proc_macro2::Span;
