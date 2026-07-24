@@ -134,17 +134,17 @@ fn test_gradient_system_css() {
     assert!(
         compile_result
             .component_css
-            .contains("--tw-gradient-from:#6366f1")
+            .contains("--tw-gradient-from:#615fff")
     );
     assert!(
         compile_result
             .component_css
-            .contains("--tw-gradient-via:#a855f7")
+            .contains("--tw-gradient-via:#ad46ff")
     );
     assert!(
         compile_result
             .component_css
-            .contains("--tw-gradient-to:#ec4899")
+            .contains("--tw-gradient-to:#f6339a")
     );
 }
 

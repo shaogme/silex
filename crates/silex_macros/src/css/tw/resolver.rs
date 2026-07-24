@@ -587,14 +587,14 @@ mod tests {
         let rules = resolve_utility(vec![], "text-slate-900", span).unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].css_property, "color");
-        assert_eq!(rules[0].value, UtilityValue::HexColor("#0f172a".into()));
+        assert_eq!(rules[0].value, UtilityValue::HexColor("#0f172b".into()));
 
         let rules = resolve_utility(vec![], "bg-indigo-600/50", span).unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].css_property, "background-color");
         assert_eq!(
             rules[0].value,
-            UtilityValue::ArbitraryLiteral("rgba(79, 70, 229, 0.5)".into())
+            UtilityValue::ArbitraryLiteral("rgba(79, 57, 246, 0.5)".into())
         );
 
         let rules = resolve_utility(vec![], "border-emerald-500/25", span).unwrap();
@@ -602,13 +602,13 @@ mod tests {
         assert_eq!(rules[0].css_property, "border-color");
         assert_eq!(
             rules[0].value,
-            UtilityValue::ArbitraryLiteral("rgba(16, 185, 129, 0.25)".into())
+            UtilityValue::ArbitraryLiteral("rgba(0, 188, 125, 0.25)".into())
         );
 
         let rules = resolve_utility(vec![], "border-t-rose-500", span).unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].css_property, "border-top-color");
-        assert_eq!(rules[0].value, UtilityValue::HexColor("#f43f5e".into()));
+        assert_eq!(rules[0].value, UtilityValue::HexColor("#ff2056".into()));
 
         let rules = resolve_utility(vec![], "bg-white/50", span).unwrap();
         assert_eq!(rules.len(), 1);

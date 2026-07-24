@@ -169,20 +169,27 @@ fn main() -> Result<(), Box<dyn Error>> {
         let dynamic_prefixes_str = read_to_string(tw_data_dir.join("dynamic_prefixes.json"))?;
         let prefix_metadata_str = read_to_string(tw_data_dir.join("prefix_metadata.json"))?;
         let test_cases_str = read_to_string(tw_data_dir.join("test_cases.json"))?;
+        let palette_str = read_to_string(tw_data_dir.join("palette.json"))?;
+        let modifiers_str = read_to_string(tw_data_dir.join("modifiers.json"))?;
+        let keyframes_str = read_to_string(tw_data_dir.join("keyframes.json"))?;
 
         let classes: Vec<String> = from_str(&classes_str)?;
         let dynamic_prefixes: BTreeMap<String, Vec<String>> = from_str(&dynamic_prefixes_str)?;
         let prefix_metadata: BTreeMap<String, crate::tw::PrefixMetaJson> = from_str(&prefix_metadata_str)?;
         let test_cases: Vec<String> = from_str(&test_cases_str)?;
+        let palette_data: BTreeMap<String, Vec<crate::tw::ColorShadeInfo>> = from_str(&palette_str)?;
+        let modifiers_data: Vec<crate::tw::ModifierMetaJson> = from_str(&modifiers_str)?;
+        let keyframes_data: Vec<crate::tw::KeyframeMetaJson> = from_str(&keyframes_str)?;
 
         let (table_code, table_unimplement_code) =
-            generate_macro_tables(&classes, &dynamic_prefixes);
-        let table_examples_code = generate_table_examples(&test_cases);
+            generate_macro_tables(&classes, &dynamic_prefixes, &palette_data);
+        let table_examples_code = generate_table_examples(&test_cases, &palette_data);
         let shorthands_code = generate_shorthands_code(&props_str);
         let prefix_metadata_code = generate_prefix_metadata_code(&prefix_metadata);
-        let palette_code = generate_palette_code();
-        let modifiers_code = generate_modifiers_code();
-        let keyframes_code = generate_keyframes_code();
+        let palette_code = generate_palette_code(&palette_data);
+        let modifiers_code = generate_modifiers_code(&modifiers_data);
+        let keyframes_code = generate_keyframes_code(&keyframes_data);
+
 
         if !macro_resolver_dir.exists() {
             create_dir_all(&macro_resolver_dir)?;

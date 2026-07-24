@@ -1,0 +1,88 @@
+[
+  {
+    "name": "bounce",
+    "steps": [
+      {
+        "selector": "0%, 100%",
+        "declarations": [
+          [
+            "transform",
+            "translateY(-25%)"
+          ],
+          [
+            "animation-timing-function",
+            "cubic-bezier(0.8, 0, 1, 1)"
+          ]
+        ]
+      },
+      {
+        "selector": "50%",
+        "declarations": [
+          [
+            "transform",
+            "none"
+          ],
+          [
+            "animation-timing-function",
+            "cubic-bezier(0, 0, 0.2, 1)"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ping",
+    "steps": [
+      {
+        "selector": "75%, 100%",
+        "declarations": [
+          [
+            "transform",
+            "scale(2)"
+          ],
+          [
+            "opacity",
+            "0"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "name": "pulse",
+    "steps": [
+      {
+        "selector": "50%",
+        "declarations": [
+          [
+            "opacity",
+            "0.5"
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "name": "spin",
+    "steps": [
+      {
+        "selector": "from",
+        "declarations": [
+          [
+            "transform",
+            "rotate(0deg)"
+          ]
+        ]
+      },
+      {
+        "selector": "to",
+        "declarations": [
+          [
+            "transform",
+            "rotate(360deg)"
+          ]
+        ]
+      }
+    ]
+  }
+]

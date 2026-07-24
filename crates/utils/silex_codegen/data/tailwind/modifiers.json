@@ -1,0 +1,302 @@
+[
+  {
+    "key": "*",
+    "kind": "Child",
+    "priority": 10,
+    "css_selector": "& > *"
+  },
+  {
+    "key": "**",
+    "kind": "Descendant",
+    "priority": 10,
+    "css_selector": "& *"
+  },
+  {
+    "key": "2xl",
+    "kind": "MediaBreakpoint",
+    "priority": 2536,
+    "css_selector": "(min-width: 1536px)"
+  },
+  {
+    "key": "active",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:active"
+  },
+  {
+    "key": "after",
+    "kind": "PseudoElement",
+    "priority": 20,
+    "css_selector": "&::after"
+  },
+  {
+    "key": "autofill",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:autofill"
+  },
+  {
+    "key": "backdrop",
+    "kind": "PseudoElement",
+    "priority": 20,
+    "css_selector": "&::backdrop"
+  },
+  {
+    "key": "before",
+    "kind": "PseudoElement",
+    "priority": 20,
+    "css_selector": "&::before"
+  },
+  {
+    "key": "checked",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:checked"
+  },
+  {
+    "key": "dark",
+    "kind": "Dark",
+    "priority": 60,
+    "css_selector": ".dark &, &.dark"
+  },
+  {
+    "key": "default",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:default"
+  },
+  {
+    "key": "details-content",
+    "kind": "PseudoElement",
+    "priority": 20,
+    "css_selector": "&::details-content"
+  },
+  {
+    "key": "disabled",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:disabled"
+  },
+  {
+    "key": "empty",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:empty"
+  },
+  {
+    "key": "enabled",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:enabled"
+  },
+  {
+    "key": "even",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:nth-child(even)"
+  },
+  {
+    "key": "file",
+    "kind": "PseudoElement",
+    "priority": 20,
+    "css_selector": "&::file-selector-button"
+  },
+  {
+    "key": "first",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:first-child"
+  },
+  {
+    "key": "first-letter",
+    "kind": "PseudoElement",
+    "priority": 20,
+    "css_selector": "&::first-letter"
+  },
+  {
+    "key": "first-line",
+    "kind": "PseudoElement",
+    "priority": 20,
+    "css_selector": "&::first-line"
+  },
+  {
+    "key": "first-of-type",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:first-of-type"
+  },
+  {
+    "key": "focus",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:focus"
+  },
+  {
+    "key": "focus-visible",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:focus-visible"
+  },
+  {
+    "key": "focus-within",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:focus-within"
+  },
+  {
+    "key": "hover",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:hover"
+  },
+  {
+    "key": "in-range",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:in-range"
+  },
+  {
+    "key": "indeterminate",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:indeterminate"
+  },
+  {
+    "key": "invalid",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:invalid"
+  },
+  {
+    "key": "last",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:last-child"
+  },
+  {
+    "key": "last-of-type",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:last-of-type"
+  },
+  {
+    "key": "lg",
+    "kind": "MediaBreakpoint",
+    "priority": 2024,
+    "css_selector": "(min-width: 1024px)"
+  },
+  {
+    "key": "marker",
+    "kind": "PseudoElement",
+    "priority": 20,
+    "css_selector": "&::marker"
+  },
+  {
+    "key": "md",
+    "kind": "MediaBreakpoint",
+    "priority": 1768,
+    "css_selector": "(min-width: 768px)"
+  },
+  {
+    "key": "odd",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:nth-child(odd)"
+  },
+  {
+    "key": "only",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:only-child"
+  },
+  {
+    "key": "only-of-type",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:only-of-type"
+  },
+  {
+    "key": "optional",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:optional"
+  },
+  {
+    "key": "out-of-range",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:out-of-range"
+  },
+  {
+    "key": "placeholder",
+    "kind": "PseudoElement",
+    "priority": 20,
+    "css_selector": "&::placeholder"
+  },
+  {
+    "key": "placeholder-shown",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:placeholder-shown"
+  },
+  {
+    "key": "read-only",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:read-only"
+  },
+  {
+    "key": "required",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:required"
+  },
+  {
+    "key": "selection",
+    "kind": "PseudoElement",
+    "priority": 20,
+    "css_selector": "&::selection"
+  },
+  {
+    "key": "sm",
+    "kind": "MediaBreakpoint",
+    "priority": 1640,
+    "css_selector": "(min-width: 640px)"
+  },
+  {
+    "key": "target",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:target"
+  },
+  {
+    "key": "user-invalid",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:user-invalid"
+  },
+  {
+    "key": "user-valid",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:user-valid"
+  },
+  {
+    "key": "valid",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:valid"
+  },
+  {
+    "key": "visited",
+    "kind": "PseudoClass",
+    "priority": 20,
+    "css_selector": "&:visited"
+  },
+  {
+    "key": "xl",
+    "kind": "MediaBreakpoint",
+    "priority": 2280,
+    "css_selector": "(min-width: 1280px)"
+  }
+]

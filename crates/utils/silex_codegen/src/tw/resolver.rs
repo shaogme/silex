@@ -1,4 +1,6 @@
+use crate::tw::ColorShadeInfo;
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 
 pub mod colors;
 pub mod dynamic;
@@ -17,14 +19,17 @@ use transforms::resolve_transform_transition_rules;
 use typography_border::resolve_typography_border_effect_rules;
 
 /// 解析 Tailwind 类名对应的 CSS 规则对 `(property, value)`
-pub fn resolve_css_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'static, str>)>> {
+pub fn resolve_css_rules<'a>(
+    class_name: &str,
+    palette: &'a BTreeMap<String, Vec<ColorShadeInfo>>,
+) -> Option<Vec<(&'static str, Cow<'a, str>)>> {
     // 1. 静态精准匹配 (Layout, Interactivity, Mask, Tables/Lists/SVG)
     if let Some(rules) = resolve_exact_match(class_name) {
         return Some(rules.to_vec());
     }
 
     // 2. 色彩属性匹配 (bg-*, text-*, border-*, ring-*, fill-*, stroke-*, etc.)
-    if let Some(rules) = resolve_color_rules(class_name) {
+    if let Some(rules) = resolve_color_rules(class_name, palette) {
         return Some(rules);
     }
 

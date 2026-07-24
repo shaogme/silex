@@ -4,24 +4,36 @@ const { loadDesignSystem } = require('./export_tailwind/design_system');
 const { extractCandidates } = require('./export_tailwind/candidate_extractor');
 const { filterValidClasses } = require('./export_tailwind/validator');
 const { inferPrefixMetadata } = require('./export_tailwind/metadata_probe');
+const { extractPalette } = require('./export_tailwind/palette_extractor');
+const { extractModifiers } = require('./export_tailwind/modifier_extractor');
+const { extractKeyframes } = require('./export_tailwind/keyframe_extractor');
 
 async function main() {
   // 1. 加载设计系统
   const designSystem = await loadDesignSystem();
 
-  // 2. 提取候选类名与动态前缀-后缀对
+  // 2. 提取标准色板 (palette)
+  const paletteObj = extractPalette(designSystem);
+
+  // 3. 提取修饰符元数据 (modifiers)
+  const modifiersList = extractModifiers(designSystem);
+
+  // 4. 提取动画 Keyframes (keyframes)
+  const keyframesList = extractKeyframes(designSystem);
+
+  // 4. 提取候选类名与动态前缀-后缀对
   const { classSet, candidateDynamicPairs } = extractCandidates(designSystem);
 
-  // 3. 二次过滤，剔除合成了但 Tailwind 无法编译的非法类名（按每批 3000 个分批）
+  // 5. 二次过滤，剔除合成了但 Tailwind 无法编译的非法类名（按每批 3000 个分批）
   const filteredClassSet = await filterValidClasses(classSet, designSystem, 3000);
 
-  // 4. 清理并排序类名列表
+  // 6. 清理并排序类名列表
   const classList = Array.from(filteredClassSet)
     .filter(cls => typeof cls === 'string' && cls.trim().length > 0)
     .filter(cls => !cls.startsWith('space-') && !cls.startsWith('-space-') && !cls.startsWith('divide-') && !cls.startsWith('-divide-'))
     .sort();
 
-  // 5. 提取与验证动态前缀及测试用例
+  // 7. 提取与验证动态前缀及测试用例
   const validDynamicPrefixesMap = new Map();
   for (const { cls, prefixKey, suffix } of candidateDynamicPairs) {
     if (filteredClassSet.has(cls)) {
@@ -65,10 +77,10 @@ async function main() {
 
   const testCasesList = Array.from(testCasesSet).sort();
 
-  // 6. 探针分析并自动推导 Dynamic Prefix 元数据 (prefix_metadata)
+  // 8. 探针分析并自动推导 Dynamic Prefix 元数据 (prefix_metadata)
   const inferredMetadataObj = inferPrefixMetadata(sortedPrefixKeys, designSystem);
 
-  // 7. 导出 JSON 数据到 crates/utils/silex_codegen/data/tailwind 目录
+  // 9. 导出 JSON 数据到 crates/utils/silex_codegen/data/tailwind 目录
   const outputDir = path.join(__dirname, '../crates/utils/silex_codegen/data/tailwind');
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
@@ -78,12 +90,18 @@ async function main() {
   fs.writeFileSync(path.join(outputDir, 'dynamic_prefixes.json'), JSON.stringify(dynamicPrefixesObj, null, 2), 'utf-8');
   fs.writeFileSync(path.join(outputDir, 'prefix_metadata.json'), JSON.stringify(inferredMetadataObj, null, 2), 'utf-8');
   fs.writeFileSync(path.join(outputDir, 'test_cases.json'), JSON.stringify(testCasesList, null, 2), 'utf-8');
+  fs.writeFileSync(path.join(outputDir, 'palette.json'), JSON.stringify(paletteObj, null, 2), 'utf-8');
+  fs.writeFileSync(path.join(outputDir, 'modifiers.json'), JSON.stringify(modifiersList, null, 2), 'utf-8');
+  fs.writeFileSync(path.join(outputDir, 'keyframes.json'), JSON.stringify(keyframesList, null, 2), 'utf-8');
 
   console.log(`导出成功！文件已保存至: ${outputDir}`);
   console.log(`共包含类名数量：${classList.length}`);
   console.log(`包含动态前缀数量：${Object.keys(dynamicPrefixesObj).length}`);
   console.log(`包含前缀元数据数量：${Object.keys(inferredMetadataObj).length}`);
   console.log(`包含验证测试用例数量：${testCasesList.length}`);
+  console.log(`包含标准色板色系数量：${Object.keys(paletteObj).length}`);
+  console.log(`包含修饰符元数据数量：${modifiersList.length}`);
+  console.log(`包含动画 Keyframes 数量：${keyframesList.length}`);
 }
 
 main().catch(err => {

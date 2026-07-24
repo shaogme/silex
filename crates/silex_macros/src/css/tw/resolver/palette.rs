@@ -295,7 +295,7 @@ mod tests {
     fn test_lookup_palette_color_standard() {
         assert_eq!(
             lookup_palette_color("slate", "900").as_deref(),
-            Some("#0f172a")
+            Some("#0f172b")
         );
     }
 
@@ -303,7 +303,7 @@ mod tests {
     fn test_lookup_palette_color_interpolated() {
         let color_850 = lookup_palette_color("slate", "850");
         assert!(color_850.is_some());
-        assert_eq!(color_850.unwrap().as_ref(), "#172033");
+        assert_eq!(color_850.unwrap().as_ref(), "#162034");
 
         let color_25 = lookup_palette_color("indigo", "25");
         assert!(color_25.is_some());
@@ -348,11 +348,11 @@ mod tests {
         assert_eq!(prop, "background-color");
         assert_eq!(
             val,
-            UtilityValue::ArbitraryLiteral("rgba(79, 70, 229, 0.5)".to_string())
+            UtilityValue::ArbitraryLiteral("rgba(79, 57, 246, 0.5)".to_string())
         );
 
         let (prop2, val2) = parse_color_utility("border-t-red-500").unwrap();
         assert_eq!(prop2, "border-top-color");
-        assert_eq!(val2, UtilityValue::HexColor("#ef4444".to_string()));
+        assert_eq!(val2, UtilityValue::HexColor("#fb2c36".to_string()));
     }
 }
