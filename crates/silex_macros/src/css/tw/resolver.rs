@@ -1,6 +1,7 @@
 pub mod arbitrary;
 pub mod numeric;
 pub mod palette;
+pub mod prefix_metadata;
 pub mod shorthands;
 pub mod suggest;
 pub mod table;

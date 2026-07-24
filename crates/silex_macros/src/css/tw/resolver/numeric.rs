@@ -3,6 +3,8 @@ use proc_macro2::Span;
 
 use super::{kw, make_rule, num, num_unitless, px, rem};
 
+use super::prefix_metadata::{lookup_prefix_meta, UnitKind};
+
 #[inline]
 fn format_num_clean(v: f64) -> String {
     if v.fract() == 0.0 {
@@ -87,41 +89,11 @@ pub fn resolve_numeric_utility(
     let (prefix, val_str) = search_token.rsplit_once('-')?;
     let (val_num, is_fraction) = parse_num_or_fraction(val_str)?;
 
+    let meta = lookup_prefix_meta(prefix)?;
     let mods = modifiers.to_vec();
+    let sign = if is_negative { -1.0 } else { 1.0 };
 
-    // 1. 方向边框宽度 (border-t-2, border-x-4, border-2 等)
-    if prefix.starts_with("border") && !is_fraction {
-        let border_rules = match prefix {
-            "border" => vec![make_rule(mods, "border-width", px(val_num), span)],
-            "border-t" => vec![make_rule(mods, "border-top-width", px(val_num), span)],
-            "border-r" => vec![make_rule(mods, "border-right-width", px(val_num), span)],
-            "border-b" => vec![make_rule(mods, "border-bottom-width", px(val_num), span)],
-            "border-l" => vec![make_rule(mods, "border-left-width", px(val_num), span)],
-            "border-x" => vec![
-                make_rule(mods.clone(), "border-left-width", px(val_num), span),
-                make_rule(mods, "border-right-width", px(val_num), span),
-            ],
-            "border-y" => vec![
-                make_rule(mods.clone(), "border-top-width", px(val_num), span),
-                make_rule(mods, "border-bottom-width", px(val_num), span),
-            ],
-            _ => return None,
-        };
-        return Some(border_rules);
-    }
-
-    // 1.5 文本下划线偏移 (underline-offset-4, underline-offset-2 等)
-    if prefix == "underline-offset" && !is_fraction {
-        let px_val = if is_negative { -val_num } else { val_num };
-        return Some(vec![make_rule(
-            mods,
-            "text-underline-offset",
-            px(px_val),
-            span,
-        )]);
-    }
-
-    // 1.6 Outline 宽度 (outline-0, outline-1, outline-2, outline-4, outline-8 等)
+    // 1. Outline 特殊逻辑 (需追加 outline-style: solid)
     if prefix == "outline" && !is_fraction {
         return Some(vec![
             make_rule(mods.clone(), "outline-style", kw("solid"), span),
@@ -129,163 +101,9 @@ pub fn resolve_numeric_utility(
         ]);
     }
 
-    // 2. 定位与 Inset 系统 (top-4, -left-1/2, inset-x-0 等)
-    if matches!(
-        prefix,
-        "top" | "bottom" | "left" | "right" | "inset" | "inset-x" | "inset-y"
-    ) {
-        let sign = if is_negative { -1.0 } else { 1.0 };
-        let final_val = if is_fraction {
-            num(val_num * 100.0 * sign, "%")
-        } else {
-            rem(val_num * 0.25 * sign)
-        };
-
-        let pos_rules = match prefix {
-            "top" => vec![make_rule(mods, "top", final_val, span)],
-            "bottom" => vec![make_rule(mods, "bottom", final_val, span)],
-            "left" => vec![make_rule(mods, "left", final_val, span)],
-            "right" => vec![make_rule(mods, "right", final_val, span)],
-            "inset" => vec![
-                make_rule(mods.clone(), "top", final_val.clone(), span),
-                make_rule(mods.clone(), "right", final_val.clone(), span),
-                make_rule(mods.clone(), "bottom", final_val.clone(), span),
-                make_rule(mods, "left", final_val, span),
-            ],
-            "inset-x" => vec![
-                make_rule(mods.clone(), "left", final_val.clone(), span),
-                make_rule(mods, "right", final_val, span),
-            ],
-            "inset-y" => vec![
-                make_rule(mods.clone(), "top", final_val.clone(), span),
-                make_rule(mods, "bottom", final_val, span),
-            ],
-            _ => unreachable!(),
-        };
-        return Some(pos_rules);
-    }
-
-    // 3. 边距、尺寸与间距规则
-    let scale = if is_negative { -0.25 } else { 0.25 };
-    let rem_val = val_num * scale;
-    let rem_rule_val = rem(rem_val);
-
-    if is_fraction {
-        let pct_sign = if is_negative { -100.0 } else { 100.0 };
-        let pct_val = num(val_num * pct_sign, "%");
-
-        let frac_rules = match prefix {
-            "w" => vec![make_rule(mods, "width", pct_val, span)],
-            "h" => vec![make_rule(mods, "height", pct_val, span)],
-            "min-w" => vec![make_rule(mods, "min-width", pct_val, span)],
-            "min-h" => vec![make_rule(mods, "min-height", pct_val, span)],
-            "max-w" => vec![make_rule(mods, "max-width", pct_val, span)],
-            "max-h" => vec![make_rule(mods, "max-height", pct_val, span)],
-            "size" => vec![
-                make_rule(mods.clone(), "width", pct_val.clone(), span),
-                make_rule(mods, "height", pct_val, span),
-            ],
-            "translate-x" => vec![make_rule(
-                mods,
-                "transform",
-                UtilityValue::ArbitraryLiteral(format!(
-                    "translateX({}%)",
-                    format_num_clean(val_num * pct_sign)
-                )),
-                span,
-            )],
-            "translate-y" => vec![make_rule(
-                mods,
-                "transform",
-                UtilityValue::ArbitraryLiteral(format!(
-                    "translateY({}%)",
-                    format_num_clean(val_num * pct_sign)
-                )),
-                span,
-            )],
-            _ => return None,
-        };
-        return Some(frac_rules);
-    }
-
-    // 4. 标准数值规则映射
-    let rules = match prefix {
-        // 单属性边距 / 尺寸
-        "p" => vec![make_rule(mods, "padding", rem_rule_val, span)],
-        "pt" => vec![make_rule(mods, "padding-top", rem_rule_val, span)],
-        "pr" => vec![make_rule(mods, "padding-right", rem_rule_val, span)],
-        "pb" => vec![make_rule(mods, "padding-bottom", rem_rule_val, span)],
-        "pl" => vec![make_rule(mods, "padding-left", rem_rule_val, span)],
-        "m" => vec![make_rule(mods, "margin", rem_rule_val, span)],
-        "mt" => vec![make_rule(mods, "margin-top", rem_rule_val, span)],
-        "mr" => vec![make_rule(mods, "margin-right", rem_rule_val, span)],
-        "mb" => vec![make_rule(mods, "margin-bottom", rem_rule_val, span)],
-        "ml" => vec![make_rule(mods, "margin-left", rem_rule_val, span)],
-        "gap" => vec![make_rule(mods, "gap", rem_rule_val, span)],
-        "gap-x" => vec![make_rule(mods, "column-gap", rem_rule_val, span)],
-        "gap-y" => vec![make_rule(mods, "row-gap", rem_rule_val, span)],
-        "w" => vec![make_rule(mods, "width", rem_rule_val, span)],
-        "h" => vec![make_rule(mods, "height", rem_rule_val, span)],
-        "min-w" => vec![make_rule(mods, "min-width", rem_rule_val, span)],
-        "min-h" => vec![make_rule(mods, "min-height", rem_rule_val, span)],
-        "max-w" => vec![make_rule(mods, "max-width", rem_rule_val, span)],
-        "max-h" => vec![make_rule(mods, "max-height", rem_rule_val, span)],
-
-        // 对称双属性映射
-        "px" => vec![
-            make_rule(mods.clone(), "padding-left", rem_rule_val.clone(), span),
-            make_rule(mods, "padding-right", rem_rule_val, span),
-        ],
-        "py" => vec![
-            make_rule(mods.clone(), "padding-top", rem_rule_val.clone(), span),
-            make_rule(mods, "padding-bottom", rem_rule_val, span),
-        ],
-        "mx" => vec![
-            make_rule(mods.clone(), "margin-left", rem_rule_val.clone(), span),
-            make_rule(mods, "margin-right", rem_rule_val, span),
-        ],
-        "my" => vec![
-            make_rule(mods.clone(), "margin-top", rem_rule_val.clone(), span),
-            make_rule(mods, "margin-bottom", rem_rule_val, span),
-        ],
-        "size" => vec![
-            make_rule(mods.clone(), "width", rem_rule_val.clone(), span),
-            make_rule(mods, "height", rem_rule_val, span),
-        ],
-
-        // 复杂与转换规则
-        "z" => vec![make_rule(
-            mods,
-            "z-index",
-            num_unitless(if is_negative { -val_num } else { val_num }),
-            span,
-        )],
-        "columns" => vec![make_rule(mods, "column-count", num_unitless(val_num), span)],
-        "grid-cols" => vec![make_rule(
-            mods,
-            "grid-template-columns",
-            UtilityValue::ArbitraryLiteral(format!("repeat({}, minmax(0, 1fr))", val_num as usize)),
-            span,
-        )],
-        "grid-rows" => vec![make_rule(
-            mods,
-            "grid-template-rows",
-            UtilityValue::ArbitraryLiteral(format!("repeat({}, minmax(0, 1fr))", val_num as usize)),
-            span,
-        )],
-        "opacity" => vec![make_rule(
-            mods,
-            "opacity",
-            num_unitless(val_num / 100.0),
-            span,
-        )],
-        "duration" => vec![make_rule(
-            mods,
-            "transition-duration",
-            num(val_num, "ms"),
-            span,
-        )],
-        "rotate" => vec![make_rule(
+    // 2. Transform 变体 (rotate, scale, translate, skew)
+    if prefix == "rotate" {
+        return Some(vec![make_rule(
             mods,
             "transform",
             UtilityValue::ArbitraryLiteral(format!(
@@ -293,119 +111,95 @@ pub fn resolve_numeric_utility(
                 if is_negative { -val_num } else { val_num }
             )),
             span,
-        )],
-        "scale" => vec![make_rule(
+        )]);
+    }
+    if prefix == "scale" || prefix == "scale-x" || prefix == "scale-y" {
+        let fn_name = match prefix {
+            "scale-x" => "scaleX",
+            "scale-y" => "scaleY",
+            _ => "scale",
+        };
+        return Some(vec![make_rule(
             mods,
             "transform",
-            UtilityValue::ArbitraryLiteral(format!("scale({})", format_num_clean(val_num / 100.0))),
+            UtilityValue::ArbitraryLiteral(format!("{}({})", fn_name, format_num_clean(val_num / 100.0))),
             span,
-        )],
-        "scale-x" => vec![make_rule(
+        )]);
+    }
+    if prefix == "skew-x" || prefix == "skew-y" {
+        let fn_name = if prefix == "skew-x" { "skewX" } else { "skewY" };
+        return Some(vec![make_rule(
             mods,
             "transform",
             UtilityValue::ArbitraryLiteral(format!(
-                "scaleX({})",
-                format_num_clean(val_num / 100.0)
-            )),
-            span,
-        )],
-        "scale-y" => vec![make_rule(
-            mods,
-            "transform",
-            UtilityValue::ArbitraryLiteral(format!(
-                "scaleY({})",
-                format_num_clean(val_num / 100.0)
-            )),
-            span,
-        )],
-        "skew-x" => vec![make_rule(
-            mods,
-            "transform",
-            UtilityValue::ArbitraryLiteral(format!(
-                "skewX({}deg)",
+                "{}({}deg)",
+                fn_name,
                 if is_negative { -val_num } else { val_num }
             )),
             span,
-        )],
-        "skew-y" => vec![make_rule(
+        )]);
+    }
+    if prefix == "translate-x" || prefix == "translate-y" {
+        let fn_name = if prefix == "translate-x" { "translateX" } else { "translateY" };
+        let val_repr = if is_fraction {
+            format!("{}%", format_num_clean(val_num * 100.0 * sign))
+        } else if val_num == 0.0 {
+            "0px".to_string()
+        } else {
+            format!("{}rem", format_num_clean(val_num * 0.25 * sign))
+        };
+        return Some(vec![make_rule(
             mods,
             "transform",
-            UtilityValue::ArbitraryLiteral(format!(
-                "skewY({}deg)",
+            UtilityValue::ArbitraryLiteral(format!("{}({})", fn_name, val_repr)),
+            span,
+        )]);
+    }
+    if prefix.starts_with("slide-in-from-") {
+        let rem_val = val_num * 0.25;
+        let val_repr = if prefix.contains("-top") || prefix.contains("-left") {
+            format!("-{}rem", format_num_clean(rem_val))
+        } else {
+            format!("{}rem", format_num_clean(rem_val))
+        };
+        return Some(vec![make_rule(
+            mods,
+            meta.target_props[0],
+            UtilityValue::ArbitraryLiteral(val_repr),
+            span,
+        )]);
+    }
+
+    // 3. 通用单位元数据求值 (Generic Unit Evaluation)
+    let val = if is_fraction {
+        num(val_num * 100.0 * sign, "%")
+    } else {
+        match meta.unit_kind {
+            UnitKind::RemScale => rem(val_num * 0.25 * sign),
+            UnitKind::Pixel => px(val_num * sign),
+            UnitKind::Percentage => num_unitless(val_num / 100.0),
+            UnitKind::Milliseconds => num(val_num, "ms"),
+            UnitKind::Unitless => num_unitless(val_num * sign),
+            UnitKind::Degree => UtilityValue::ArbitraryLiteral(format!(
+                "{}deg",
                 if is_negative { -val_num } else { val_num }
             )),
-            span,
-        )],
-        "translate-x" => vec![make_rule(
-            mods,
-            "transform",
-            UtilityValue::ArbitraryLiteral(if rem_val == 0.0 {
-                "translateX(0px)".to_string()
-            } else {
-                format!("translateX({}rem)", format_num_clean(rem_val))
-            }),
-            span,
-        )],
-        "translate-y" => vec![make_rule(
-            mods,
-            "transform",
-            UtilityValue::ArbitraryLiteral(if rem_val == 0.0 {
-                "translateY(0px)".to_string()
-            } else {
-                format!("translateY({}rem)", format_num_clean(rem_val))
-            }),
-            span,
-        )],
-        "fade-in" => vec![make_rule(
-            mods,
-            "--tw-enter-opacity",
-            num_unitless(val_num / 100.0),
-            span,
-        )],
-        "fade-out" => vec![make_rule(
-            mods,
-            "--tw-exit-opacity",
-            num_unitless(val_num / 100.0),
-            span,
-        )],
-        "zoom-in" => vec![make_rule(
-            mods,
-            "--tw-enter-scale",
-            num_unitless(val_num / 100.0),
-            span,
-        )],
-        "zoom-out" => vec![make_rule(
-            mods,
-            "--tw-exit-scale",
-            num_unitless(val_num / 100.0),
-            span,
-        )],
-        "slide-in-from-top" => vec![make_rule(
-            mods,
-            "--tw-enter-translate-y",
-            UtilityValue::ArbitraryLiteral(format!("-{}rem", format_num_clean(rem_val))),
-            span,
-        )],
-        "slide-in-from-bottom" => vec![make_rule(
-            mods,
-            "--tw-enter-translate-y",
-            UtilityValue::ArbitraryLiteral(format!("{}rem", format_num_clean(rem_val))),
-            span,
-        )],
-        "slide-in-from-left" => vec![make_rule(
-            mods,
-            "--tw-enter-translate-x",
-            UtilityValue::ArbitraryLiteral(format!("-{}rem", format_num_clean(rem_val))),
-            span,
-        )],
-        "slide-in-from-right" => vec![make_rule(
-            mods,
-            "--tw-enter-translate-x",
-            UtilityValue::ArbitraryLiteral(format!("{}rem", format_num_clean(rem_val))),
-            span,
-        )],
-        _ => return None,
+            UnitKind::GridRepeat => UtilityValue::ArbitraryLiteral(format!(
+                "repeat({}, minmax(0, 1fr))",
+                val_num as usize
+            )),
+            UnitKind::GridSpan => UtilityValue::ArbitraryLiteral(format!(
+                "span {} / span {}",
+                val_num as usize, val_num as usize
+            )),
+        }
     };
+
+    let rules = meta
+        .target_props
+        .iter()
+        .map(|&p| make_rule(mods.clone(), p, val.clone(), span))
+        .collect();
 
     Some(rules)
 }

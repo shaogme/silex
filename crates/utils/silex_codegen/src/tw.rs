@@ -373,6 +373,137 @@ fn flatten_prop(
     }
 }
 
+/// 生成 `silex_macros/src/css/tw/resolver/prefix_metadata.rs` 产物代码
+pub fn generate_prefix_metadata_code() -> String {
+    let mut code = String::with_capacity(16 * 1024);
+    code.push_str("// 自动生成的 Utility 前缀与单位元数据表（供 silex_macros 使用）\n");
+    code.push_str("// 由 silex_codegen 自动生成，切勿手写修改！\n\n");
+
+    code.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    code.push_str("pub enum UnitKind {\n");
+    code.push_str("    RemScale,\n");
+    code.push_str("    Pixel,\n");
+    code.push_str("    Percentage,\n");
+    code.push_str("    Degree,\n");
+    code.push_str("    Milliseconds,\n");
+    code.push_str("    Unitless,\n");
+    code.push_str("    GridRepeat,\n");
+    code.push_str("    GridSpan,\n");
+    code.push_str("}\n\n");
+
+    code.push_str("pub struct PrefixMeta {\n");
+    code.push_str("    pub prefix: &'static str,\n");
+    code.push_str("    pub target_props: &'static [&'static str],\n");
+    code.push_str("    pub unit_kind: UnitKind,\n");
+    code.push_str("}\n\n");
+
+    let raw_entries: &[(&str, &[&str], &str)] = &[
+        ("auto-cols", &["grid-auto-columns"], "UnitKind::Unitless"),
+        ("auto-rows", &["grid-auto-rows"], "UnitKind::Unitless"),
+        ("backdrop-blur", &["backdrop-filter"], "UnitKind::Pixel"),
+        ("blur", &["filter"], "UnitKind::Pixel"),
+        ("border", &["border-width"], "UnitKind::Pixel"),
+        ("border-b", &["border-bottom-width"], "UnitKind::Pixel"),
+        ("border-l", &["border-left-width"], "UnitKind::Pixel"),
+        ("border-r", &["border-right-width"], "UnitKind::Pixel"),
+        ("border-t", &["border-top-width"], "UnitKind::Pixel"),
+        ("border-x", &["border-left-width", "border-right-width"], "UnitKind::Pixel"),
+        ("border-y", &["border-top-width", "border-bottom-width"], "UnitKind::Pixel"),
+        ("bottom", &["bottom"], "UnitKind::RemScale"),
+        ("col-end", &["grid-column-end"], "UnitKind::Unitless"),
+        ("col-span", &["grid-column"], "UnitKind::GridSpan"),
+        ("col-start", &["grid-column-start"], "UnitKind::Unitless"),
+        ("columns", &["column-count"], "UnitKind::Unitless"),
+        ("delay", &["transition-delay"], "UnitKind::Milliseconds"),
+        ("duration", &["transition-duration"], "UnitKind::Milliseconds"),
+        ("fade-in", &["--tw-enter-opacity"], "UnitKind::Percentage"),
+        ("fade-out", &["--tw-exit-opacity"], "UnitKind::Percentage"),
+        ("gap", &["gap"], "UnitKind::RemScale"),
+        ("gap-x", &["column-gap"], "UnitKind::RemScale"),
+        ("gap-y", &["row-gap"], "UnitKind::RemScale"),
+        ("grid-cols", &["grid-template-columns"], "UnitKind::GridRepeat"),
+        ("grid-rows", &["grid-template-rows"], "UnitKind::GridRepeat"),
+        ("h", &["height"], "UnitKind::RemScale"),
+        ("height", &["height"], "UnitKind::RemScale"),
+        ("inset", &["top", "right", "bottom", "left"], "UnitKind::RemScale"),
+        ("inset-x", &["left", "right"], "UnitKind::RemScale"),
+        ("inset-y", &["top", "bottom"], "UnitKind::RemScale"),
+        ("left", &["left"], "UnitKind::RemScale"),
+        ("line-clamp", &["-webkit-line-clamp"], "UnitKind::Unitless"),
+        ("m", &["margin"], "UnitKind::RemScale"),
+        ("margin", &["margin"], "UnitKind::RemScale"),
+        ("max-h", &["max-height"], "UnitKind::RemScale"),
+        ("max-w", &["max-width"], "UnitKind::RemScale"),
+        ("mb", &["margin-bottom"], "UnitKind::RemScale"),
+        ("min-h", &["min-height"], "UnitKind::RemScale"),
+        ("min-w", &["min-width"], "UnitKind::RemScale"),
+        ("ml", &["margin-left"], "UnitKind::RemScale"),
+        ("mr", &["margin-right"], "UnitKind::RemScale"),
+        ("mt", &["margin-top"], "UnitKind::RemScale"),
+        ("mx", &["margin-left", "margin-right"], "UnitKind::RemScale"),
+        ("my", &["margin-top", "margin-bottom"], "UnitKind::RemScale"),
+        ("opacity", &["opacity"], "UnitKind::Percentage"),
+        ("outline", &["outline-width"], "UnitKind::Pixel"),
+        ("p", &["padding"], "UnitKind::RemScale"),
+        ("padding", &["padding"], "UnitKind::RemScale"),
+        ("pb", &["padding-bottom"], "UnitKind::RemScale"),
+        ("pl", &["padding-left"], "UnitKind::RemScale"),
+        ("pr", &["padding-right"], "UnitKind::RemScale"),
+        ("pt", &["padding-top"], "UnitKind::RemScale"),
+        ("px", &["padding-left", "padding-right"], "UnitKind::RemScale"),
+        ("py", &["padding-top", "padding-bottom"], "UnitKind::RemScale"),
+        ("right", &["right"], "UnitKind::RemScale"),
+        ("rotate", &["transform"], "UnitKind::Degree"),
+        ("row-end", &["grid-row-end"], "UnitKind::Unitless"),
+        ("row-span", &["grid-row"], "UnitKind::GridSpan"),
+        ("row-start", &["grid-row-start"], "UnitKind::Unitless"),
+        ("scale", &["transform"], "UnitKind::Percentage"),
+        ("scale-x", &["transform"], "UnitKind::Percentage"),
+        ("scale-y", &["transform"], "UnitKind::Percentage"),
+        ("size", &["width", "height"], "UnitKind::RemScale"),
+        ("skew-x", &["transform"], "UnitKind::Degree"),
+        ("skew-y", &["transform"], "UnitKind::Degree"),
+        ("slide-in-from-bottom", &["--tw-enter-translate-y"], "UnitKind::RemScale"),
+        ("slide-in-from-left", &["--tw-enter-translate-x"], "UnitKind::RemScale"),
+        ("slide-in-from-right", &["--tw-enter-translate-x"], "UnitKind::RemScale"),
+        ("slide-in-from-top", &["--tw-enter-translate-y"], "UnitKind::RemScale"),
+        ("top", &["top"], "UnitKind::RemScale"),
+        ("translate-x", &["transform"], "UnitKind::RemScale"),
+        ("translate-y", &["transform"], "UnitKind::RemScale"),
+        ("underline-offset", &["text-underline-offset"], "UnitKind::Pixel"),
+        ("w", &["width"], "UnitKind::RemScale"),
+        ("width", &["width"], "UnitKind::RemScale"),
+        ("z", &["z-index"], "UnitKind::Unitless"),
+        ("zoom-in", &["--tw-enter-scale"], "UnitKind::Percentage"),
+        ("zoom-out", &["--tw-exit-scale"], "UnitKind::Percentage"),
+    ];
+
+    code.push_str("#[rustfmt::skip]\n");
+    code.push_str("pub static PREFIX_METADATA: &[PrefixMeta] = &[\n");
+    for &(prefix, props, unit) in raw_entries {
+        let _ = write!(code, "    PrefixMeta {{ prefix: \"{}\", target_props: &[", prefix);
+        for (i, p) in props.iter().enumerate() {
+            if i > 0 {
+                code.push_str(", ");
+            }
+            let _ = write!(code, "\"{}\"", p);
+        }
+        let _ = writeln!(code, "], unit_kind: {} }},", unit);
+    }
+    code.push_str("];\n\n");
+
+    code.push_str(
+        r#"/// 根据 Utility 前缀二分查找对应的元数据配置
+pub fn lookup_prefix_meta(prefix: &str) -> Option<&'static PrefixMeta> {
+    let idx = PREFIX_METADATA.binary_search_by_key(&prefix, |m| m.prefix).ok()?;
+    Some(&PREFIX_METADATA[idx])
+}
+"#,
+    );
+
+    code
+}
+
 
 
 

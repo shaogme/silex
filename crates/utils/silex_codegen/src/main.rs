@@ -7,7 +7,10 @@ mod tw;
 use crate::{
     css::{generate_keywords_code, generate_properties_macro, parse_css},
     tags::{apply_memory_only_patches, codegen::generate_module_content, parse_tags},
-    tw::{generate_macro_tables, generate_shorthands_code, generate_table_examples},
+    tw::{
+        generate_macro_tables, generate_prefix_metadata_code, generate_shorthands_code,
+        generate_table_examples,
+    },
 };
 use heck::AsSnakeCase;
 use reqwest::blocking::Client;
@@ -183,6 +186,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             generate_macro_tables(&classes, &dynamic_prefixes);
         let table_examples_code = generate_table_examples(&test_cases);
         let shorthands_code = generate_shorthands_code(&props_str);
+        let prefix_metadata_code = generate_prefix_metadata_code();
 
         if !macro_resolver_dir.exists() {
             create_dir_all(&macro_resolver_dir)?;
@@ -200,7 +204,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             macro_resolver_dir.join("shorthands.rs"),
             shorthands_code,
         )?;
-        println!("Generated table.rs, table_unimplement.rs, table_examples.rs and shorthands.rs for silex_macros");
+        write(
+            macro_resolver_dir.join("prefix_metadata.rs"),
+            prefix_metadata_code,
+        )?;
+        println!("Generated table.rs, table_unimplement.rs, table_examples.rs, shorthands.rs and prefix_metadata.rs for silex_macros");
     }
 
     println!("\nSuccessfully completed!");
