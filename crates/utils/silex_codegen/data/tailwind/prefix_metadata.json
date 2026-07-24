@@ -1,4 +1,10 @@
 {
+  "animate": {
+    "target_props": [
+      "animation"
+    ],
+    "unit_kind": "Unitless"
+  },
   "backdrop-blur": {
     "target_props": [
       "backdrop-filter"
@@ -103,7 +109,7 @@
   },
   "columns": {
     "target_props": [
-      "column-count"
+      "columns"
     ],
     "unit_kind": "Unitless"
   },
@@ -142,10 +148,7 @@
   },
   "leading": {
     "target_props": [
-      "--tw-leading",
-      "inherits",
-      "line-height",
-      "syntax"
+      "line-height"
     ],
     "unit_kind": "Unitless"
   },
@@ -283,13 +286,27 @@
     "target_props": [
       "transform"
     ],
-    "unit_kind": "Degree"
+    "unit_kind": "Degree",
+    "value_wrapper": "rotate({})"
+  },
+  "rounded": {
+    "target_props": [
+      "border-radius"
+    ],
+    "unit_kind": "RemScale"
   },
   "scale": {
     "target_props": [
       "transform"
     ],
-    "unit_kind": "Percentage"
+    "unit_kind": "Percentage",
+    "value_wrapper": "scale({})"
+  },
+  "shadow": {
+    "target_props": [
+      "box-shadow"
+    ],
+    "unit_kind": "Unitless"
   },
   "top": {
     "target_props": [
@@ -297,17 +314,25 @@
     ],
     "unit_kind": "RemScale"
   },
+  "tracking": {
+    "target_props": [
+      "letter-spacing"
+    ],
+    "unit_kind": "RemScale"
+  },
   "translate-x": {
     "target_props": [
       "transform"
     ],
-    "unit_kind": "RemScale"
+    "unit_kind": "RemScale",
+    "value_wrapper": "translateX({})"
   },
   "translate-y": {
     "target_props": [
       "transform"
     ],
-    "unit_kind": "RemScale"
+    "unit_kind": "RemScale",
+    "value_wrapper": "translateY({})"
   },
   "w": {
     "target_props": [
@@ -321,6 +346,12 @@
     ],
     "unit_kind": "Unitless"
   },
+  "aspect": {
+    "target_props": [
+      "aspect-ratio"
+    ],
+    "unit_kind": "Unitless"
+  },
   "auto-cols": {
     "target_props": [
       "grid-auto-columns"
@@ -330,6 +361,18 @@
   "auto-rows": {
     "target_props": [
       "grid-auto-rows"
+    ],
+    "unit_kind": "Unitless"
+  },
+  "basis": {
+    "target_props": [
+      "flex-basis"
+    ],
+    "unit_kind": "RemScale"
+  },
+  "col": {
+    "target_props": [
+      "grid-column"
     ],
     "unit_kind": "Unitless"
   },
@@ -348,6 +391,36 @@
   "col-start": {
     "target_props": [
       "grid-column-start"
+    ],
+    "unit_kind": "Unitless"
+  },
+  "container": {
+    "target_props": [
+      "container-name"
+    ],
+    "unit_kind": "Unitless"
+  },
+  "container-name": {
+    "target_props": [
+      "container-name"
+    ],
+    "unit_kind": "Unitless"
+  },
+  "content": {
+    "target_props": [
+      "content"
+    ],
+    "unit_kind": "Unitless"
+  },
+  "cursor": {
+    "target_props": [
+      "cursor"
+    ],
+    "unit_kind": "Unitless"
+  },
+  "ease": {
+    "target_props": [
+      "transition-timing-function"
     ],
     "unit_kind": "Unitless"
   },
@@ -387,6 +460,12 @@
     ],
     "unit_kind": "GridRepeat"
   },
+  "grow": {
+    "target_props": [
+      "flex-grow"
+    ],
+    "unit_kind": "Unitless"
+  },
   "height": {
     "target_props": [
       "height"
@@ -419,6 +498,24 @@
     ],
     "unit_kind": "RemScale"
   },
+  "object": {
+    "target_props": [
+      "object-fit"
+    ],
+    "unit_kind": "Unitless"
+  },
+  "order": {
+    "target_props": [
+      "order"
+    ],
+    "unit_kind": "Unitless"
+  },
+  "origin": {
+    "target_props": [
+      "transform-origin"
+    ],
+    "unit_kind": "Unitless"
+  },
   "outline": {
     "target_props": [
       "outline-width"
@@ -430,6 +527,12 @@
       "padding"
     ],
     "unit_kind": "RemScale"
+  },
+  "row": {
+    "target_props": [
+      "grid-row"
+    ],
+    "unit_kind": "Unitless"
   },
   "row-end": {
     "target_props": [
@@ -453,13 +556,21 @@
     "target_props": [
       "transform"
     ],
-    "unit_kind": "Percentage"
+    "unit_kind": "Percentage",
+    "value_wrapper": "scaleX({})"
   },
   "scale-y": {
     "target_props": [
       "transform"
     ],
-    "unit_kind": "Percentage"
+    "unit_kind": "Percentage",
+    "value_wrapper": "scaleY({})"
+  },
+  "shrink": {
+    "target_props": [
+      "flex-shrink"
+    ],
+    "unit_kind": "Unitless"
   },
   "size": {
     "target_props": [
@@ -472,13 +583,15 @@
     "target_props": [
       "transform"
     ],
-    "unit_kind": "Degree"
+    "unit_kind": "Degree",
+    "value_wrapper": "skewX({})"
   },
   "skew-y": {
     "target_props": [
       "transform"
     ],
-    "unit_kind": "Degree"
+    "unit_kind": "Degree",
+    "value_wrapper": "skewY({})"
   },
   "slide-in-from-bottom": {
     "target_props": [

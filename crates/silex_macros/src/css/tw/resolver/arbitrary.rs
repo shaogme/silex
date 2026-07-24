@@ -3,6 +3,7 @@ use proc_macro2::Span;
 use syn::{Error, Result};
 
 use super::{DIVIDE_SELECTOR, RING_BOX_SHADOW, kw, make_rule};
+use super::codegen::prefix_metadata::lookup_prefix_meta;
 
 /// 任意值与任意属性语法解析: `w-[12px]`, `bg-[red]`, `[--tw-ring-color:rgba(79,70,229,.2)]`, `[color:red]`
 pub fn parse_arbitrary_syntax(token: &str) -> Option<(&str, &str)> {
@@ -124,94 +125,26 @@ pub fn resolve_arbitrary(
     // 2. 处理带有前缀的任意值语法 `w-[12px]`, `ring-[rgba(79,70,229,.2)]`, `bg-[rgba(79,70,229,.2)]`
     let clean_prefix = prefix.strip_suffix('-').unwrap_or(prefix);
 
-    let (prop, is_divide) = if let Some(p) = super::color_prefix_to_prop(clean_prefix) {
-        (p, clean_prefix == "divide")
+    let (target_props, is_divide, value_wrapper) = if let Some(p) = super::color_prefix_to_prop(clean_prefix) {
+        (vec![p], clean_prefix == "divide", None)
+    } else if clean_prefix == "ring" {
+        let is_length = norm_val.ends_with("px")
+            || norm_val.ends_with("rem")
+            || norm_val.ends_with("em")
+            || norm_val.parse::<f64>().is_ok();
+        let prop = if is_length { "--tw-ring-width" } else { "--tw-ring-color" };
+        (vec![prop], false, None)
+    } else if clean_prefix == "ring-offset" {
+        let is_length = norm_val.ends_with("px")
+            || norm_val.ends_with("rem")
+            || norm_val.ends_with("em")
+            || norm_val.parse::<f64>().is_ok();
+        let prop = if is_length { "--tw-ring-offset-width" } else { "--tw-ring-offset-color" };
+        (vec![prop], false, None)
+    } else if let Some(meta) = lookup_prefix_meta(clean_prefix) {
+        (meta.target_props.to_vec(), false, meta.value_wrapper)
     } else {
-        match clean_prefix {
-            "p" | "padding" => ("padding", false),
-            "px" => ("padding-inline", false),
-            "py" => ("padding-block", false),
-            "pt" => ("padding-top", false),
-            "pr" => ("padding-right", false),
-            "pb" => ("padding-bottom", false),
-            "pl" => ("padding-left", false),
-            "m" | "margin" => ("margin", false),
-            "mx" => ("margin-inline", false),
-            "my" => ("margin-block", false),
-            "mt" => ("margin-top", false),
-            "mr" => ("margin-right", false),
-            "mb" => ("margin-bottom", false),
-            "ml" => ("margin-left", false),
-            "w" | "width" => ("width", false),
-            "h" | "height" => ("height", false),
-            "min-w" => ("min-width", false),
-            "max-w" => ("max-width", false),
-            "min-h" => ("min-height", false),
-            "max-h" => ("max-height", false),
-            "rounded" => ("border-radius", false),
-            "top" => ("top", false),
-            "right" => ("right", false),
-            "bottom" => ("bottom", false),
-            "left" => ("left", false),
-            "inset" => ("inset", false),
-            "inset-x" => ("inset-inline", false),
-            "inset-y" => ("inset-block", false),
-            "z" => ("z-index", false),
-            "opacity" => ("opacity", false),
-            "leading" => ("line-height", false),
-            "tracking" => ("letter-spacing", false),
-            "duration" => ("transition-duration", false),
-            "delay" => ("transition-delay", false),
-            "ease" => ("transition-timing-function", false),
-            "grow" => ("flex-grow", false),
-            "shrink" => ("flex-shrink", false),
-            "basis" => ("flex-basis", false),
-            "order" => ("order", false),
-            "columns" => ("columns", false),
-            "cursor" => ("cursor", false),
-            "content" => ("content", false),
-            "blur" => ("filter", false),
-            "backdrop-blur" => ("backdrop-filter", false),
-            "scale" | "scale-x" | "scale-y" | "rotate" | "translate-x" | "translate-y" => {
-                ("transform", false)
-            }
-            "animate" => ("animation", false),
-            "container" | "container-name" => ("container-name", false),
-            "grid-rows" => ("grid-template-rows", false),
-            "grid-cols" => ("grid-template-columns", false),
-            "auto-rows" => ("grid-auto-rows", false),
-            "auto-cols" => ("grid-auto-columns", false),
-            "ring" => {
-                if norm_val.ends_with("px")
-                    || norm_val.ends_with("rem")
-                    || norm_val.ends_with("em")
-                    || norm_val.parse::<f64>().is_ok()
-                {
-                    ("--tw-ring-width", false)
-                } else {
-                    ("--tw-ring-color", false)
-                }
-            }
-            "ring-offset" => {
-                if norm_val.ends_with("px")
-                    || norm_val.ends_with("rem")
-                    || norm_val.ends_with("em")
-                    || norm_val.parse::<f64>().is_ok()
-                {
-                    ("--tw-ring-offset-width", false)
-                } else {
-                    ("--tw-ring-offset-color", false)
-                }
-            }
-            "aspect" => ("aspect-ratio", false),
-            "object" => ("object-fit", false),
-            "col" => ("grid-column", false),
-            "row" => ("grid-row", false),
-            "line-clamp" => ("-webkit-line-clamp", false),
-            "shadow" => ("box-shadow", false),
-            "origin" => ("transform-origin", false),
-            _ => (clean_prefix, false),
-        }
+        (vec![clean_prefix], false, None)
     };
 
     let target_mods = if is_divide {
@@ -239,23 +172,12 @@ pub fn resolve_arbitrary(
             norm_val
         };
 
-        match clean_prefix {
-            "translate-x" => UtilityValue::ArbitraryLiteral(format!("translateX({})", val_str)),
-            "translate-y" => UtilityValue::ArbitraryLiteral(format!("translateY({})", val_str)),
-            "rotate" => UtilityValue::ArbitraryLiteral(format!("rotate({})", val_str)),
-            "scale" => UtilityValue::ArbitraryLiteral(format!("scale({})", val_str)),
-            "scale-x" => UtilityValue::ArbitraryLiteral(format!("scaleX({})", val_str)),
-            "scale-y" => UtilityValue::ArbitraryLiteral(format!("scaleY({})", val_str)),
-            _ => UtilityValue::ArbitraryLiteral(val_str),
+        if let Some(wrapper) = value_wrapper {
+            UtilityValue::ArbitraryLiteral(wrapper.replace("{}", &val_str))
+        } else {
+            UtilityValue::ArbitraryLiteral(val_str)
         }
     };
-
-    if clean_prefix == "size" {
-        return Ok(vec![
-            make_rule(target_mods.clone(), "width", value.clone(), span),
-            make_rule(target_mods, "height", value, span),
-        ]);
-    }
 
     if clean_prefix == "from" {
         return Ok(vec![
@@ -287,8 +209,16 @@ pub fn resolve_arbitrary(
         ]);
     }
 
-    let mut rules = vec![make_rule(target_mods.clone(), prop, value, span)];
-    if prop.starts_with("--tw-ring-") {
+    let mut rules = Vec::with_capacity(target_props.len() + 1);
+    let mut has_ring_prop = false;
+    for prop in target_props {
+        if prop.starts_with("--tw-ring-") {
+            has_ring_prop = true;
+        }
+        rules.push(make_rule(target_mods.clone(), prop, value.clone(), span));
+    }
+
+    if has_ring_prop {
         rules.push(make_rule(
             target_mods,
             "box-shadow",

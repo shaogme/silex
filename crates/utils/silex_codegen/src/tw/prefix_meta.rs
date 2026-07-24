@@ -4,6 +4,7 @@ use std::{collections::BTreeMap, fmt::Write};
 pub struct PrefixMetaJson {
     pub target_props: Vec<String>,
     pub unit_kind: String,
+    pub value_wrapper: Option<String>,
 }
 
 /// 生成 `silex_macros/src/css/tw/resolver/prefix_metadata.rs` 产物代码
@@ -27,6 +28,7 @@ pub fn generate_prefix_metadata_code(prefix_metadata: &BTreeMap<String, PrefixMe
     code.push_str("pub struct PrefixMeta {\n");
     code.push_str("    pub target_props: &'static [&'static str],\n");
     code.push_str("    pub unit_kind: UnitKind,\n");
+    code.push_str("    pub value_wrapper: Option<&'static str>,\n");
     code.push_str("}\n\n");
 
     code.push_str("#[rustfmt::skip]\n");
@@ -39,7 +41,15 @@ pub fn generate_prefix_metadata_code(prefix_metadata: &BTreeMap<String, PrefixMe
             }
             let _ = write!(code, "\"{}\"", p);
         }
-        let _ = writeln!(code, "], unit_kind: UnitKind::{} }},", meta.unit_kind);
+        let wrapper_expr = match &meta.value_wrapper {
+            Some(w) => format!("Some(\"{}\")", w),
+            None => "None".to_string(),
+        };
+        let _ = writeln!(
+            code,
+            "], unit_kind: UnitKind::{}, value_wrapper: {} }},",
+            meta.unit_kind, wrapper_expr
+        );
     }
     code.push_str("];\n\n");
 
