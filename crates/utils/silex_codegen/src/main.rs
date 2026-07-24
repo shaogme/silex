@@ -8,7 +8,8 @@ use crate::{
     css::{generate_keywords_code, generate_properties_macro, parse_css},
     tags::{apply_memory_only_patches, codegen::generate_module_content, parse_tags},
     tw::{
-        generate_macro_tables, generate_prefix_metadata_code, generate_shorthands_code,
+        generate_keyframes_code, generate_macro_tables, generate_modifiers_code,
+        generate_palette_code, generate_prefix_metadata_code, generate_shorthands_code,
         generate_table_examples,
     },
 };
@@ -173,12 +174,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             #[serde(default)]
             dynamic_prefixes: BTreeMap<String, Vec<String>>,
             #[serde(default)]
+            prefix_metadata: BTreeMap<String, crate::tw::PrefixMetaJson>,
+            #[serde(default)]
             test_cases: Vec<String>,
         }
 
         let TailwindJsonData {
             classes,
             dynamic_prefixes,
+            prefix_metadata,
             test_cases,
         } = from_str::<TailwindJsonData>(&json_str)?;
 
@@ -186,7 +190,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             generate_macro_tables(&classes, &dynamic_prefixes);
         let table_examples_code = generate_table_examples(&test_cases);
         let shorthands_code = generate_shorthands_code(&props_str);
-        let prefix_metadata_code = generate_prefix_metadata_code();
+        let prefix_metadata_code = generate_prefix_metadata_code(&prefix_metadata);
+        let palette_code = generate_palette_code();
+        let modifiers_code = generate_modifiers_code();
+        let keyframes_code = generate_keyframes_code();
 
         if !macro_resolver_dir.exists() {
             create_dir_all(&macro_resolver_dir)?;
@@ -208,7 +215,19 @@ fn main() -> Result<(), Box<dyn Error>> {
             macro_resolver_dir.join("prefix_metadata.rs"),
             prefix_metadata_code,
         )?;
-        println!("Generated table.rs, table_unimplement.rs, table_examples.rs, shorthands.rs and prefix_metadata.rs for silex_macros");
+        write(
+            macro_resolver_dir.join("palette_gen.rs"),
+            palette_code,
+        )?;
+        write(
+            macro_resolver_dir.join("modifiers_gen.rs"),
+            modifiers_code,
+        )?;
+        write(
+            macro_resolver_dir.join("keyframes_gen.rs"),
+            keyframes_code,
+        )?;
+        println!("Generated table.rs, table_unimplement.rs, table_examples.rs, shorthands.rs, prefix_metadata.rs, palette_gen.rs, modifiers_gen.rs and keyframes_gen.rs for silex_macros");
     }
 
     println!("\nSuccessfully completed!");

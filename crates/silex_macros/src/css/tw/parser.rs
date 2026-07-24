@@ -156,67 +156,65 @@ pub(crate) fn parse_modifiers_and_body(token: &str) -> (Vec<Modifier>, &str) {
                 name: c_name,
                 min_width,
             }
-        } else if prefix == "*" {
-            Modifier::Child
-        } else if prefix == "**" {
-            Modifier::Descendant
-        } else if is_custom_bp || matches!(prefix, "sm" | "md" | "lg" | "xl" | "2xl") {
+        } else if let Some(meta) =
+            crate::css::tw::resolver::modifiers_gen::lookup_modifier_meta(prefix)
+        {
+            use crate::css::tw::resolver::modifiers_gen::ModifierKind;
+            match meta.kind {
+                ModifierKind::Child => Modifier::Child,
+                ModifierKind::Descendant => Modifier::Descendant,
+                ModifierKind::MediaBreakpoint => Modifier::MediaBreakpoint(prefix.to_string()),
+                ModifierKind::PseudoClass => Modifier::PseudoClass(prefix.to_string()),
+                ModifierKind::PseudoElement => Modifier::PseudoElement(prefix.to_string()),
+                ModifierKind::Dark => Modifier::Dark,
+            }
+        } else if is_custom_bp {
             Modifier::MediaBreakpoint(prefix.to_string())
-        } else {
-            match prefix {
-                "hover" | "focus" | "active" | "disabled" | "visited" | "first" | "last"
-                | "odd" | "even" => Modifier::PseudoClass(prefix.to_string()),
-                "before" | "after" | "placeholder" => Modifier::PseudoElement(prefix.to_string()),
-                "dark" => Modifier::Dark,
-                _ => {
-                    if let Some(rest) = prefix.strip_prefix("group-") {
-                        let (state, name) = split_state_and_name(rest);
-                        Modifier::Group { state, name }
-                    } else if let Some(rest) = prefix.strip_prefix("peer-") {
-                        let (state, name) = split_state_and_name(rest);
-                        Modifier::Peer { state, name }
-                    } else if prefix.starts_with("data-[") && prefix.ends_with(']') {
-                        let inner = &prefix[6..prefix.len() - 1];
-                        if let Some((k, v)) = inner.split_once('=') {
-                            Modifier::DataAttribute {
-                                key: k.to_string(),
-                                value: Some(v.to_string()),
-                            }
-                        } else {
-                            Modifier::DataAttribute {
-                                key: inner.to_string(),
-                                value: None,
-                            }
-                        }
-                    } else if prefix.starts_with("aria-[") && prefix.ends_with(']') {
-                        let inner = &prefix[6..prefix.len() - 1];
-                        if let Some((k, v)) = inner.split_once('=') {
-                            Modifier::AriaAttribute {
-                                key: k.to_string(),
-                                value: Some(v.to_string()),
-                            }
-                        } else {
-                            Modifier::AriaAttribute {
-                                key: inner.to_string(),
-                                value: None,
-                            }
-                        }
-                    } else if let Some(rest) = prefix.strip_prefix("aria-") {
-                        Modifier::AriaAttribute {
-                            key: rest.to_string(),
-                            value: Some("true".to_string()),
-                        }
-                    } else if prefix.starts_with("has-[") && prefix.ends_with(']')
-                        || prefix.starts_with("has-data-[") && prefix.ends_with(']')
-                    {
-                        Modifier::Has(prefix.to_string())
-                    } else if prefix.starts_with('[') && prefix.ends_with(']') {
-                        Modifier::CustomSelector(prefix[1..prefix.len() - 1].to_string())
-                    } else {
-                        Modifier::PseudoClass(prefix.to_string())
-                    }
+        } else if let Some(rest) = prefix.strip_prefix("group-") {
+            let (state, name) = split_state_and_name(rest);
+            Modifier::Group { state, name }
+        } else if let Some(rest) = prefix.strip_prefix("peer-") {
+            let (state, name) = split_state_and_name(rest);
+            Modifier::Peer { state, name }
+        } else if prefix.starts_with("data-[") && prefix.ends_with(']') {
+            let inner = &prefix[6..prefix.len() - 1];
+            if let Some((k, v)) = inner.split_once('=') {
+                Modifier::DataAttribute {
+                    key: k.to_string(),
+                    value: Some(v.to_string()),
+                }
+            } else {
+                Modifier::DataAttribute {
+                    key: inner.to_string(),
+                    value: None,
                 }
             }
+        } else if prefix.starts_with("aria-[") && prefix.ends_with(']') {
+            let inner = &prefix[6..prefix.len() - 1];
+            if let Some((k, v)) = inner.split_once('=') {
+                Modifier::AriaAttribute {
+                    key: k.to_string(),
+                    value: Some(v.to_string()),
+                }
+            } else {
+                Modifier::AriaAttribute {
+                    key: inner.to_string(),
+                    value: None,
+                }
+            }
+        } else if let Some(rest) = prefix.strip_prefix("aria-") {
+            Modifier::AriaAttribute {
+                key: rest.to_string(),
+                value: Some("true".to_string()),
+            }
+        } else if prefix.starts_with("has-[") && prefix.ends_with(']')
+            || prefix.starts_with("has-data-[") && prefix.ends_with(']')
+        {
+            Modifier::Has(prefix.to_string())
+        } else if prefix.starts_with('[') && prefix.ends_with(']') {
+            Modifier::CustomSelector(prefix[1..prefix.len() - 1].to_string())
+        } else {
+            Modifier::PseudoClass(prefix.to_string())
         };
 
         modifiers.push(modifier);

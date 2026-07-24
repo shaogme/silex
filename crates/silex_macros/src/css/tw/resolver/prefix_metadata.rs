@@ -1,6 +1,7 @@
 // 自动生成的 Utility 前缀与单位元数据表（供 silex_macros 使用）
 // 由 silex_codegen 自动生成，切勿手写修改！
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnitKind {
     RemScale,
@@ -27,8 +28,12 @@ pub static PREFIX_METADATA: &[PrefixMeta] = &[
     PrefixMeta { prefix: "blur", target_props: &["filter"], unit_kind: UnitKind::Pixel },
     PrefixMeta { prefix: "border", target_props: &["border-width"], unit_kind: UnitKind::Pixel },
     PrefixMeta { prefix: "border-b", target_props: &["border-bottom-width"], unit_kind: UnitKind::Pixel },
+    PrefixMeta { prefix: "border-be", target_props: &["border-block-end-style", "border-block-end-width", "inherits", "initial-value", "syntax"], unit_kind: UnitKind::Pixel },
+    PrefixMeta { prefix: "border-bs", target_props: &["border-block-start-style", "border-block-start-width", "inherits", "initial-value", "syntax"], unit_kind: UnitKind::Pixel },
+    PrefixMeta { prefix: "border-e", target_props: &["border-inline-end-style", "border-inline-end-width", "inherits", "initial-value", "syntax"], unit_kind: UnitKind::Pixel },
     PrefixMeta { prefix: "border-l", target_props: &["border-left-width"], unit_kind: UnitKind::Pixel },
     PrefixMeta { prefix: "border-r", target_props: &["border-right-width"], unit_kind: UnitKind::Pixel },
+    PrefixMeta { prefix: "border-s", target_props: &["border-inline-start-style", "border-inline-start-width", "inherits", "initial-value", "syntax"], unit_kind: UnitKind::Pixel },
     PrefixMeta { prefix: "border-t", target_props: &["border-top-width"], unit_kind: UnitKind::Pixel },
     PrefixMeta { prefix: "border-x", target_props: &["border-left-width", "border-right-width"], unit_kind: UnitKind::Pixel },
     PrefixMeta { prefix: "border-y", target_props: &["border-top-width", "border-bottom-width"], unit_kind: UnitKind::Pixel },
@@ -51,6 +56,7 @@ pub static PREFIX_METADATA: &[PrefixMeta] = &[
     PrefixMeta { prefix: "inset", target_props: &["top", "right", "bottom", "left"], unit_kind: UnitKind::RemScale },
     PrefixMeta { prefix: "inset-x", target_props: &["left", "right"], unit_kind: UnitKind::RemScale },
     PrefixMeta { prefix: "inset-y", target_props: &["top", "bottom"], unit_kind: UnitKind::RemScale },
+    PrefixMeta { prefix: "leading", target_props: &["--tw-leading", "inherits", "line-height", "syntax"], unit_kind: UnitKind::Unitless },
     PrefixMeta { prefix: "left", target_props: &["left"], unit_kind: UnitKind::RemScale },
     PrefixMeta { prefix: "line-clamp", target_props: &["-webkit-line-clamp"], unit_kind: UnitKind::Unitless },
     PrefixMeta { prefix: "m", target_props: &["margin"], unit_kind: UnitKind::RemScale },

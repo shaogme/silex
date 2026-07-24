@@ -94,18 +94,17 @@ fn modifier_priority(m: &Modifier) -> u32 {
         Modifier::Dark => 60,
         Modifier::ContainerQuery { .. } => 70,
         Modifier::MediaBreakpoint(bp) => {
-            let px = match bp.as_str() {
-                "sm" => 640,
-                "md" => 768,
-                "lg" => 1024,
-                "xl" => 1280,
-                "2xl" => 1536,
-                _ => get_config()
+            if let Some(meta) =
+                crate::css::tw::resolver::modifiers_gen::lookup_modifier_meta(bp.as_str())
+            {
+                meta.priority
+            } else {
+                let px = get_config()
                     .and_then(|cfg| cfg.theme.breakpoints.get(bp.as_str()))
                     .and_then(|s| s.strip_suffix("px").and_then(|v| v.parse::<u32>().ok()))
-                    .unwrap_or(640),
-            };
-            1000 + px
+                    .unwrap_or(640);
+                1000 + px
+            }
         }
         Modifier::CustomSelector(_) => 5000,
     }
@@ -227,54 +226,22 @@ fn inject_keyframes_rules(root_rules: &mut Vec<CssRule>, keyframes: &HashSet<Str
 }
 
 fn build_keyframe_at_rule(name: &str) -> Option<CssAtRule> {
+    let meta = crate::css::tw::resolver::keyframes_gen::lookup_keyframe_meta(name)?;
+
     let at_name = Ident::new("keyframes", Span::call_site());
     let params: TokenStream = name.parse().ok()?;
 
     let mut keyframe_rules = Vec::new();
-
-    match name {
-        "spin" => {
-            keyframe_rules.push(make_nested_rule(
-                "from",
-                vec![("transform", quote!(rotate(0deg)))],
-            ));
-            keyframe_rules.push(make_nested_rule(
-                "to",
-                vec![("transform", quote!(rotate(360deg)))],
-            ));
-        }
-        "ping" => {
-            keyframe_rules.push(make_nested_rule(
-                "75%, 100%",
-                vec![("transform", quote!(scale(2))), ("opacity", quote!(0))],
-            ));
-        }
-        "pulse" => {
-            keyframe_rules.push(make_nested_rule("50%", vec![("opacity", quote!(0.5))]));
-        }
-        "bounce" => {
-            keyframe_rules.push(make_nested_rule(
-                "0%, 100%",
-                vec![
-                    ("transform", quote!(translateY(-25%))),
-                    (
-                        "animation-timing-function",
-                        "cubic-bezier(0.8, 0, 1, 1)".parse().unwrap(),
-                    ),
-                ],
-            ));
-            keyframe_rules.push(make_nested_rule(
-                "50%",
-                vec![
-                    ("transform", quote!(none)),
-                    (
-                        "animation-timing-function",
-                        "cubic-bezier(0, 0, 0.2, 1)".parse().unwrap(),
-                    ),
-                ],
-            ));
-        }
-        _ => return None,
+    for step in meta.steps {
+        let decls = step
+            .declarations
+            .iter()
+            .map(|&(prop, val)| {
+                let ts: TokenStream = val.parse().unwrap_or_else(|_| quote!(#val));
+                (prop, ts)
+            })
+            .collect();
+        keyframe_rules.push(make_nested_rule(step.selector, decls));
     }
 
     Some(CssAtRule {
@@ -554,19 +521,18 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                 };
             }
             Modifier::MediaBreakpoint(bp) => {
-                let custom_bp = crate::css::config::get_config()
-                    .and_then(|cfg| cfg.theme.breakpoints.get(bp.as_str()))
-                    .map(|s| s.as_str());
+                let query = if let Some(meta) =
+                    crate::css::tw::resolver::modifiers_gen::lookup_modifier_meta(bp.as_str())
+                {
+                    meta.css_selector.to_string()
+                } else {
+                    let custom_bp = crate::css::config::get_config()
+                        .and_then(|cfg| cfg.theme.breakpoints.get(bp.as_str()))
+                        .map(|s| s.as_str());
 
-                let min_width = custom_bp.unwrap_or(match bp.as_str() {
-                    "sm" => "640px",
-                    "md" => "768px",
-                    "lg" => "1024px",
-                    "xl" => "1280px",
-                    "2xl" => "1536px",
-                    _ => "640px",
-                });
-                let query = format!("(min-width: {})", min_width);
+                    let min_width = custom_bp.unwrap_or("640px");
+                    format!("(min-width: {})", min_width)
+                };
                 let at_rule_params: TokenStream = query.parse().unwrap();
                 let at_rule_name = Ident::new("media", Span::call_site());
 

@@ -1,6 +1,9 @@
 pub mod arbitrary;
+pub mod keyframes_gen;
+pub mod modifiers_gen;
 pub mod numeric;
 pub mod palette;
+pub mod palette_gen;
 pub mod prefix_metadata;
 pub mod shorthands;
 pub mod suggest;

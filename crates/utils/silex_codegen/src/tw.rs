@@ -373,12 +373,21 @@ fn flatten_prop(
     }
 }
 
+#[derive(serde::Deserialize, Debug)]
+pub struct PrefixMetaJson {
+    pub target_props: Vec<String>,
+    pub unit_kind: String,
+}
+
 /// 生成 `silex_macros/src/css/tw/resolver/prefix_metadata.rs` 产物代码
-pub fn generate_prefix_metadata_code() -> String {
+pub fn generate_prefix_metadata_code(
+    prefix_metadata: &BTreeMap<String, PrefixMetaJson>,
+) -> String {
     let mut code = String::with_capacity(16 * 1024);
     code.push_str("// 自动生成的 Utility 前缀与单位元数据表（供 silex_macros 使用）\n");
     code.push_str("// 由 silex_codegen 自动生成，切勿手写修改！\n\n");
 
+    code.push_str("#[allow(dead_code)]\n");
     code.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     code.push_str("pub enum UnitKind {\n");
     code.push_str("    RemScale,\n");
@@ -397,98 +406,17 @@ pub fn generate_prefix_metadata_code() -> String {
     code.push_str("    pub unit_kind: UnitKind,\n");
     code.push_str("}\n\n");
 
-    let raw_entries: &[(&str, &[&str], &str)] = &[
-        ("auto-cols", &["grid-auto-columns"], "UnitKind::Unitless"),
-        ("auto-rows", &["grid-auto-rows"], "UnitKind::Unitless"),
-        ("backdrop-blur", &["backdrop-filter"], "UnitKind::Pixel"),
-        ("blur", &["filter"], "UnitKind::Pixel"),
-        ("border", &["border-width"], "UnitKind::Pixel"),
-        ("border-b", &["border-bottom-width"], "UnitKind::Pixel"),
-        ("border-l", &["border-left-width"], "UnitKind::Pixel"),
-        ("border-r", &["border-right-width"], "UnitKind::Pixel"),
-        ("border-t", &["border-top-width"], "UnitKind::Pixel"),
-        ("border-x", &["border-left-width", "border-right-width"], "UnitKind::Pixel"),
-        ("border-y", &["border-top-width", "border-bottom-width"], "UnitKind::Pixel"),
-        ("bottom", &["bottom"], "UnitKind::RemScale"),
-        ("col-end", &["grid-column-end"], "UnitKind::Unitless"),
-        ("col-span", &["grid-column"], "UnitKind::GridSpan"),
-        ("col-start", &["grid-column-start"], "UnitKind::Unitless"),
-        ("columns", &["column-count"], "UnitKind::Unitless"),
-        ("delay", &["transition-delay"], "UnitKind::Milliseconds"),
-        ("duration", &["transition-duration"], "UnitKind::Milliseconds"),
-        ("fade-in", &["--tw-enter-opacity"], "UnitKind::Percentage"),
-        ("fade-out", &["--tw-exit-opacity"], "UnitKind::Percentage"),
-        ("gap", &["gap"], "UnitKind::RemScale"),
-        ("gap-x", &["column-gap"], "UnitKind::RemScale"),
-        ("gap-y", &["row-gap"], "UnitKind::RemScale"),
-        ("grid-cols", &["grid-template-columns"], "UnitKind::GridRepeat"),
-        ("grid-rows", &["grid-template-rows"], "UnitKind::GridRepeat"),
-        ("h", &["height"], "UnitKind::RemScale"),
-        ("height", &["height"], "UnitKind::RemScale"),
-        ("inset", &["top", "right", "bottom", "left"], "UnitKind::RemScale"),
-        ("inset-x", &["left", "right"], "UnitKind::RemScale"),
-        ("inset-y", &["top", "bottom"], "UnitKind::RemScale"),
-        ("left", &["left"], "UnitKind::RemScale"),
-        ("line-clamp", &["-webkit-line-clamp"], "UnitKind::Unitless"),
-        ("m", &["margin"], "UnitKind::RemScale"),
-        ("margin", &["margin"], "UnitKind::RemScale"),
-        ("max-h", &["max-height"], "UnitKind::RemScale"),
-        ("max-w", &["max-width"], "UnitKind::RemScale"),
-        ("mb", &["margin-bottom"], "UnitKind::RemScale"),
-        ("min-h", &["min-height"], "UnitKind::RemScale"),
-        ("min-w", &["min-width"], "UnitKind::RemScale"),
-        ("ml", &["margin-left"], "UnitKind::RemScale"),
-        ("mr", &["margin-right"], "UnitKind::RemScale"),
-        ("mt", &["margin-top"], "UnitKind::RemScale"),
-        ("mx", &["margin-left", "margin-right"], "UnitKind::RemScale"),
-        ("my", &["margin-top", "margin-bottom"], "UnitKind::RemScale"),
-        ("opacity", &["opacity"], "UnitKind::Percentage"),
-        ("outline", &["outline-width"], "UnitKind::Pixel"),
-        ("p", &["padding"], "UnitKind::RemScale"),
-        ("padding", &["padding"], "UnitKind::RemScale"),
-        ("pb", &["padding-bottom"], "UnitKind::RemScale"),
-        ("pl", &["padding-left"], "UnitKind::RemScale"),
-        ("pr", &["padding-right"], "UnitKind::RemScale"),
-        ("pt", &["padding-top"], "UnitKind::RemScale"),
-        ("px", &["padding-left", "padding-right"], "UnitKind::RemScale"),
-        ("py", &["padding-top", "padding-bottom"], "UnitKind::RemScale"),
-        ("right", &["right"], "UnitKind::RemScale"),
-        ("rotate", &["transform"], "UnitKind::Degree"),
-        ("row-end", &["grid-row-end"], "UnitKind::Unitless"),
-        ("row-span", &["grid-row"], "UnitKind::GridSpan"),
-        ("row-start", &["grid-row-start"], "UnitKind::Unitless"),
-        ("scale", &["transform"], "UnitKind::Percentage"),
-        ("scale-x", &["transform"], "UnitKind::Percentage"),
-        ("scale-y", &["transform"], "UnitKind::Percentage"),
-        ("size", &["width", "height"], "UnitKind::RemScale"),
-        ("skew-x", &["transform"], "UnitKind::Degree"),
-        ("skew-y", &["transform"], "UnitKind::Degree"),
-        ("slide-in-from-bottom", &["--tw-enter-translate-y"], "UnitKind::RemScale"),
-        ("slide-in-from-left", &["--tw-enter-translate-x"], "UnitKind::RemScale"),
-        ("slide-in-from-right", &["--tw-enter-translate-x"], "UnitKind::RemScale"),
-        ("slide-in-from-top", &["--tw-enter-translate-y"], "UnitKind::RemScale"),
-        ("top", &["top"], "UnitKind::RemScale"),
-        ("translate-x", &["transform"], "UnitKind::RemScale"),
-        ("translate-y", &["transform"], "UnitKind::RemScale"),
-        ("underline-offset", &["text-underline-offset"], "UnitKind::Pixel"),
-        ("w", &["width"], "UnitKind::RemScale"),
-        ("width", &["width"], "UnitKind::RemScale"),
-        ("z", &["z-index"], "UnitKind::Unitless"),
-        ("zoom-in", &["--tw-enter-scale"], "UnitKind::Percentage"),
-        ("zoom-out", &["--tw-exit-scale"], "UnitKind::Percentage"),
-    ];
-
     code.push_str("#[rustfmt::skip]\n");
     code.push_str("pub static PREFIX_METADATA: &[PrefixMeta] = &[\n");
-    for &(prefix, props, unit) in raw_entries {
+    for (prefix, meta) in prefix_metadata {
         let _ = write!(code, "    PrefixMeta {{ prefix: \"{}\", target_props: &[", prefix);
-        for (i, p) in props.iter().enumerate() {
+        for (i, p) in meta.target_props.iter().enumerate() {
             if i > 0 {
                 code.push_str(", ");
             }
             let _ = write!(code, "\"{}\"", p);
         }
-        let _ = writeln!(code, "], unit_kind: {} }},", unit);
+        let _ = writeln!(code, "], unit_kind: UnitKind::{} }},", meta.unit_kind);
     }
     code.push_str("];\n\n");
 
@@ -497,6 +425,194 @@ pub fn generate_prefix_metadata_code() -> String {
 pub fn lookup_prefix_meta(prefix: &str) -> Option<&'static PrefixMeta> {
     let idx = PREFIX_METADATA.binary_search_by_key(&prefix, |m| m.prefix).ok()?;
     Some(&PREFIX_METADATA[idx])
+}
+"#,
+    );
+
+    code
+}
+
+/// 生成 `silex_macros/src/css/tw/resolver/palette_gen.rs` 产物代码
+pub fn generate_palette_code() -> String {
+    let mut code = String::with_capacity(16 * 1024);
+    code.push_str("// 自动生成的 Tailwind 标准色板表（供 silex_macros 使用）\n");
+    code.push_str("// 由 silex_codegen 自动生成，切勿手写修改！\n\n");
+
+    let raw_palette: &[(&str, [&str; 11])] = &[
+        ("amber", ["#fffbeb", "#fef3c7", "#fde68a", "#fcd34d", "#fbbf24", "#f59e0b", "#d97706", "#b45309", "#92400e", "#78350f", "#451a03"]),
+        ("blue", ["#eff6ff", "#dbeafe", "#bfdbfe", "#93c5fd", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8", "#1e40af", "#1e3a8a", "#172554"]),
+        ("cyan", ["#ecfeff", "#cffafe", "#a5f3fc", "#67e8f9", "#22d3ee", "#06b6d4", "#0891b2", "#0e7490", "#155e75", "#164e63", "#083344"]),
+        ("emerald", ["#ecfdf5", "#d1fae5", "#a7f3d0", "#6ee7b7", "#34d399", "#10b981", "#059669", "#047857", "#065f46", "#064e3b", "#022c22"]),
+        ("fuchsia", ["#fdf4ff", "#fae8ff", "#f5d0fe", "#f0abfc", "#e879f9", "#d946ef", "#c026d3", "#a21caf", "#86198f", "#701a75", "#4a044e"]),
+        ("gray", ["#f9fafb", "#f3f4f6", "#e5e7eb", "#d1d5db", "#9ca3af", "#6b7280", "#4b5563", "#374151", "#1f2937", "#111827", "#030712"]),
+        ("green", ["#f0fdf4", "#dcfce7", "#bbf7d0", "#86efac", "#4ade80", "#22c55e", "#16a34a", "#15803d", "#166534", "#14532d", "#052e16"]),
+        ("indigo", ["#eef2ff", "#e0e7ff", "#c7d2fe", "#a5b4fc", "#818cf8", "#6366f1", "#4f46e5", "#4338ca", "#3730a3", "#312e81", "#1e1b4b"]),
+        ("lime", ["#f7fee7", "#ecfccb", "#d9f99d", "#bef264", "#a3e635", "#84cc16", "#65a30d", "#4d7c0f", "#3f6212", "#365314", "#1a2e05"]),
+        ("neutral", ["#fafafa", "#f5f5f5", "#e5e5e5", "#d4d4d4", "#a3a3a3", "#737373", "#525252", "#404040", "#262626", "#171717", "#0a0a0a"]),
+        ("orange", ["#fff7ed", "#ffedd5", "#fed7aa", "#fdba74", "#fb923c", "#f97316", "#ea580c", "#c2410c", "#9a3412", "#7c2d12", "#431407"]),
+        ("pink", ["#fdf2f8", "#fce7f3", "#fbcfe8", "#f9a8d4", "#f472b6", "#ec4899", "#db2777", "#be185d", "#9d174d", "#831843", "#500724"]),
+        ("purple", ["#faf5ff", "#f3e8ff", "#e9d5ff", "#d8b4fe", "#c084fc", "#a855f7", "#9333ea", "#7e22ce", "#6b21a8", "#581c87", "#3b0764"]),
+        ("red", ["#fef2f2", "#fee2e2", "#fecaca", "#fca5a5", "#f87171", "#ef4444", "#dc2626", "#b91c1c", "#991b1b", "#7f1d1d", "#450a0a"]),
+        ("rose", ["#fff1f2", "#ffe4e6", "#fecdd3", "#fda4af", "#fb7185", "#f43f5e", "#e11d48", "#be123c", "#9f1239", "#881337", "#4c0519"]),
+        ("sky", ["#f0f9ff", "#e0f2fe", "#bae6fd", "#7dd3fc", "#38bdf8", "#0ea5e9", "#0284c7", "#0369a1", "#075985", "#0c4a6e", "#082f49"]),
+        ("slate", ["#f8fafc", "#f1f5f9", "#e2e8f0", "#cbd5e1", "#94a3b8", "#64748b", "#475569", "#334155", "#1e293b", "#0f172a", "#020617"]),
+        ("stone", ["#fafaf9", "#f5f5f4", "#e7e5e4", "#d6d3d1", "#a8a29e", "#78716c", "#57534e", "#44403c", "#292524", "#1c1917", "#0c0a09"]),
+        ("teal", ["#f0fdfa", "#ccfbf1", "#99f6e4", "#5eead4", "#2dd4bf", "#14b8a6", "#0d9488", "#0f766e", "#115e59", "#134e4a", "#042f2e"]),
+        ("violet", ["#f5f3ff", "#ede9fe", "#ddd6fe", "#c4b5fd", "#a78bfa", "#8b5cf6", "#7c3aed", "#6d28d9", "#5b21b6", "#4c1d95", "#2e1065"]),
+        ("yellow", ["#fefce8", "#fef9c3", "#fef08a", "#fde047", "#facc15", "#eab308", "#ca8a04", "#a16207", "#854d0e", "#713f12", "#422006"]),
+        ("zinc", ["#fafafa", "#f4f4f5", "#e4e4e7", "#d4d4d8", "#a1a1aa", "#71717a", "#52525b", "#3f3f46", "#27272a", "#18181b", "#09090b"]),
+    ];
+
+    code.push_str("#[rustfmt::skip]\n");
+    code.push_str("pub static PALETTE_TABLE: &[(&'static str, [&'static str; 11])] = &[\n");
+    for &(name, shades) in raw_palette {
+        let _ = write!(code, "    (\"{}\", [", name);
+        for (i, hex) in shades.iter().enumerate() {
+            if i > 0 {
+                code.push_str(", ");
+            }
+            let _ = write!(code, "\"{}\"", hex);
+        }
+        code.push_str("]),\n");
+    }
+    code.push_str("];\n\n");
+
+    code.push_str(
+        r#"/// 根据色系名称获取标准的 11 阶梯 Hex 阵列
+pub fn get_raw_palette(color_name: &str) -> Option<[&'static str; 11]> {
+    let idx = PALETTE_TABLE.binary_search_by_key(&color_name, |&(k, _)| k).ok()?;
+    Some(PALETTE_TABLE[idx].1)
+}
+"#,
+    );
+
+    code
+}
+
+/// 生成 `silex_macros/src/css/tw/resolver/modifiers_gen.rs` 产物代码
+pub fn generate_modifiers_code() -> String {
+    let mut code = String::with_capacity(16 * 1024);
+    code.push_str("// 自动生成的 Tailwind 修饰符与断点规则表（供 silex_macros 使用）\n");
+    code.push_str("// 由 silex_codegen 自动生成，切勿手写修改！\n\n");
+
+    code.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
+    code.push_str("pub enum ModifierKind {\n");
+    code.push_str("    PseudoClass,\n");
+    code.push_str("    PseudoElement,\n");
+    code.push_str("    MediaBreakpoint,\n");
+    code.push_str("    Child,\n");
+    code.push_str("    Descendant,\n");
+    code.push_str("    Dark,\n");
+    code.push_str("}\n\n");
+
+    code.push_str("pub struct ModifierMeta {\n");
+    code.push_str("    pub key: &'static str,\n");
+    code.push_str("    pub kind: ModifierKind,\n");
+    code.push_str("    pub priority: u32,\n");
+    code.push_str("    pub css_selector: &'static str,\n");
+    code.push_str("}\n\n");
+
+    let raw_modifiers: &[(&str, &str, u32, &str)] = &[
+        ("*", "ModifierKind::Child", 10, "& > *"),
+        ("**", "ModifierKind::Descendant", 10, "& *"),
+        ("2xl", "ModifierKind::MediaBreakpoint", 2536, "(min-width: 1536px)"),
+        ("active", "ModifierKind::PseudoClass", 20, "&:active"),
+        ("after", "ModifierKind::PseudoElement", 20, "&::after"),
+        ("before", "ModifierKind::PseudoElement", 20, "&::before"),
+        ("dark", "ModifierKind::Dark", 60, ".dark &, &.dark"),
+        ("disabled", "ModifierKind::PseudoClass", 20, "&:disabled"),
+        ("even", "ModifierKind::PseudoClass", 20, "&:nth-child(even)"),
+        ("first", "ModifierKind::PseudoClass", 20, "&:first-child"),
+        ("first-of-type", "ModifierKind::PseudoClass", 20, "&:first-of-type"),
+        ("focus", "ModifierKind::PseudoClass", 20, "&:focus"),
+        ("hover", "ModifierKind::PseudoClass", 20, "&:hover"),
+        ("last", "ModifierKind::PseudoClass", 20, "&:last-child"),
+        ("last-of-type", "ModifierKind::PseudoClass", 20, "&:last-of-type"),
+        ("lg", "ModifierKind::MediaBreakpoint", 2024, "(min-width: 1024px)"),
+        ("md", "ModifierKind::MediaBreakpoint", 1768, "(min-width: 768px)"),
+        ("odd", "ModifierKind::PseudoClass", 20, "&:nth-child(odd)"),
+        ("only", "ModifierKind::PseudoClass", 20, "&:only-child"),
+        ("only-of-type", "ModifierKind::PseudoClass", 20, "&:only-of-type"),
+        ("placeholder", "ModifierKind::PseudoElement", 20, "&::placeholder"),
+        ("sm", "ModifierKind::MediaBreakpoint", 1640, "(min-width: 640px)"),
+        ("visited", "ModifierKind::PseudoClass", 20, "&:visited"),
+        ("xl", "ModifierKind::MediaBreakpoint", 2280, "(min-width: 1280px)"),
+    ];
+
+    code.push_str("#[rustfmt::skip]\n");
+    code.push_str("pub static MODIFIER_TABLE: &[ModifierMeta] = &[\n");
+    for &(key, kind, p, sel) in raw_modifiers {
+        let _ = writeln!(
+            code,
+            "    ModifierMeta {{ key: \"{}\", kind: {}, priority: {}, css_selector: \"{}\" }},",
+            key, kind, p, sel
+        );
+    }
+    code.push_str("];\n\n");
+
+    code.push_str(
+        r#"/// 根据修饰符 key 二分查找对应的元数据配置
+pub fn lookup_modifier_meta(key: &str) -> Option<&'static ModifierMeta> {
+    let idx = MODIFIER_TABLE.binary_search_by_key(&key, |m| m.key).ok()?;
+    Some(&MODIFIER_TABLE[idx])
+}
+"#,
+    );
+
+    code
+}
+
+/// 生成 `silex_macros/src/css/tw/resolver/keyframes_gen.rs` 产物代码
+pub fn generate_keyframes_code() -> String {
+    let mut code = String::with_capacity(16 * 1024);
+    code.push_str("// 自动生成的动画 Keyframes 规则表（供 silex_macros 使用）\n");
+    code.push_str("// 由 silex_codegen 自动生成，切勿手写修改！\n\n");
+
+    code.push_str("pub struct KeyframeStep {\n");
+    code.push_str("    pub selector: &'static str,\n");
+    code.push_str("    pub declarations: &'static [(&'static str, &'static str)],\n");
+    code.push_str("}\n\n");
+
+    code.push_str("pub struct KeyframeMeta {\n");
+    code.push_str("    pub name: &'static str,\n");
+    code.push_str("    pub steps: &'static [KeyframeStep],\n");
+    code.push_str("}\n\n");
+
+    code.push_str("#[rustfmt::skip]\n");
+    code.push_str("pub static KEYFRAME_TABLE: &[KeyframeMeta] = &[\n");
+    code.push_str("    KeyframeMeta {\n");
+    code.push_str("        name: \"bounce\",\n");
+    code.push_str("        steps: &[\n");
+    code.push_str("            KeyframeStep { selector: \"0%, 100%\", declarations: &[(\"transform\", \"translateY(-25%)\"), (\"animation-timing-function\", \"cubic-bezier(0.8, 0, 1, 1)\")] },\n");
+    code.push_str("            KeyframeStep { selector: \"50%\", declarations: &[(\"transform\", \"none\"), (\"animation-timing-function\", \"cubic-bezier(0, 0, 0.2, 1)\")] },\n");
+    code.push_str("        ],\n");
+    code.push_str("    },\n");
+    code.push_str("    KeyframeMeta {\n");
+    code.push_str("        name: \"ping\",\n");
+    code.push_str("        steps: &[\n");
+    code.push_str("            KeyframeStep { selector: \"75%, 100%\", declarations: &[(\"transform\", \"scale(2)\"), (\"opacity\", \"0\")] },\n");
+    code.push_str("        ],\n");
+    code.push_str("    },\n");
+    code.push_str("    KeyframeMeta {\n");
+    code.push_str("        name: \"pulse\",\n");
+    code.push_str("        steps: &[\n");
+    code.push_str("            KeyframeStep { selector: \"50%\", declarations: &[(\"opacity\", \"0.5\")] },\n");
+    code.push_str("        ],\n");
+    code.push_str("    },\n");
+    code.push_str("    KeyframeMeta {\n");
+    code.push_str("        name: \"spin\",\n");
+    code.push_str("        steps: &[\n");
+    code.push_str("            KeyframeStep { selector: \"from\", declarations: &[(\"transform\", \"rotate(0deg)\")] },\n");
+    code.push_str("            KeyframeStep { selector: \"to\", declarations: &[(\"transform\", \"rotate(360deg)\")] },\n");
+    code.push_str("        ],\n");
+    code.push_str("    },\n");
+    code.push_str("];\n\n");
+
+    code.push_str(
+        r#"/// 根据动画 keyframe 名称二分查找关键帧元数据配置
+pub fn lookup_keyframe_meta(name: &str) -> Option<&'static KeyframeMeta> {
+    let idx = KEYFRAME_TABLE.binary_search_by_key(&name, |k| k.name).ok()?;
+    Some(&KEYFRAME_TABLE[idx])
 }
 "#,
     );

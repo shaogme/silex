@@ -24527,6 +24527,537 @@
       "auto"
     ]
   },
+  "prefix_metadata": {
+    "backdrop-blur": {
+      "target_props": [
+        "backdrop-filter"
+      ],
+      "unit_kind": "Pixel"
+    },
+    "blur": {
+      "target_props": [
+        "filter"
+      ],
+      "unit_kind": "Pixel"
+    },
+    "border": {
+      "target_props": [
+        "border-width"
+      ],
+      "unit_kind": "Pixel"
+    },
+    "border-b": {
+      "target_props": [
+        "border-bottom-width"
+      ],
+      "unit_kind": "Pixel"
+    },
+    "border-be": {
+      "target_props": [
+        "border-block-end-style",
+        "border-block-end-width",
+        "inherits",
+        "initial-value",
+        "syntax"
+      ],
+      "unit_kind": "Pixel"
+    },
+    "border-bs": {
+      "target_props": [
+        "border-block-start-style",
+        "border-block-start-width",
+        "inherits",
+        "initial-value",
+        "syntax"
+      ],
+      "unit_kind": "Pixel"
+    },
+    "border-e": {
+      "target_props": [
+        "border-inline-end-style",
+        "border-inline-end-width",
+        "inherits",
+        "initial-value",
+        "syntax"
+      ],
+      "unit_kind": "Pixel"
+    },
+    "border-l": {
+      "target_props": [
+        "border-left-width"
+      ],
+      "unit_kind": "Pixel"
+    },
+    "border-r": {
+      "target_props": [
+        "border-right-width"
+      ],
+      "unit_kind": "Pixel"
+    },
+    "border-s": {
+      "target_props": [
+        "border-inline-start-style",
+        "border-inline-start-width",
+        "inherits",
+        "initial-value",
+        "syntax"
+      ],
+      "unit_kind": "Pixel"
+    },
+    "border-t": {
+      "target_props": [
+        "border-top-width"
+      ],
+      "unit_kind": "Pixel"
+    },
+    "border-x": {
+      "target_props": [
+        "border-left-width",
+        "border-right-width"
+      ],
+      "unit_kind": "Pixel"
+    },
+    "border-y": {
+      "target_props": [
+        "border-top-width",
+        "border-bottom-width"
+      ],
+      "unit_kind": "Pixel"
+    },
+    "bottom": {
+      "target_props": [
+        "bottom"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "columns": {
+      "target_props": [
+        "column-count"
+      ],
+      "unit_kind": "Unitless"
+    },
+    "delay": {
+      "target_props": [
+        "transition-delay"
+      ],
+      "unit_kind": "Milliseconds"
+    },
+    "duration": {
+      "target_props": [
+        "transition-duration"
+      ],
+      "unit_kind": "Milliseconds"
+    },
+    "gap": {
+      "target_props": [
+        "gap"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "h": {
+      "target_props": [
+        "height"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "inset": {
+      "target_props": [
+        "top",
+        "right",
+        "bottom",
+        "left"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "leading": {
+      "target_props": [
+        "--tw-leading",
+        "inherits",
+        "line-height",
+        "syntax"
+      ],
+      "unit_kind": "Unitless"
+    },
+    "left": {
+      "target_props": [
+        "left"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "m": {
+      "target_props": [
+        "margin"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "max-h": {
+      "target_props": [
+        "max-height"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "max-w": {
+      "target_props": [
+        "max-width"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "mb": {
+      "target_props": [
+        "margin-bottom"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "min-h": {
+      "target_props": [
+        "min-height"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "min-w": {
+      "target_props": [
+        "min-width"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "ml": {
+      "target_props": [
+        "margin-left"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "mr": {
+      "target_props": [
+        "margin-right"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "mt": {
+      "target_props": [
+        "margin-top"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "mx": {
+      "target_props": [
+        "margin-left",
+        "margin-right"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "my": {
+      "target_props": [
+        "margin-top",
+        "margin-bottom"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "opacity": {
+      "target_props": [
+        "opacity"
+      ],
+      "unit_kind": "Percentage"
+    },
+    "p": {
+      "target_props": [
+        "padding"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "pb": {
+      "target_props": [
+        "padding-bottom"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "pl": {
+      "target_props": [
+        "padding-left"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "pr": {
+      "target_props": [
+        "padding-right"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "pt": {
+      "target_props": [
+        "padding-top"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "px": {
+      "target_props": [
+        "padding-left",
+        "padding-right"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "py": {
+      "target_props": [
+        "padding-top",
+        "padding-bottom"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "right": {
+      "target_props": [
+        "right"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "rotate": {
+      "target_props": [
+        "transform"
+      ],
+      "unit_kind": "Degree"
+    },
+    "scale": {
+      "target_props": [
+        "transform"
+      ],
+      "unit_kind": "Percentage"
+    },
+    "top": {
+      "target_props": [
+        "top"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "translate-x": {
+      "target_props": [
+        "transform"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "translate-y": {
+      "target_props": [
+        "transform"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "w": {
+      "target_props": [
+        "width"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "z": {
+      "target_props": [
+        "z-index"
+      ],
+      "unit_kind": "Unitless"
+    },
+    "auto-cols": {
+      "target_props": [
+        "grid-auto-columns"
+      ],
+      "unit_kind": "Unitless"
+    },
+    "auto-rows": {
+      "target_props": [
+        "grid-auto-rows"
+      ],
+      "unit_kind": "Unitless"
+    },
+    "col-end": {
+      "target_props": [
+        "grid-column-end"
+      ],
+      "unit_kind": "Unitless"
+    },
+    "col-span": {
+      "target_props": [
+        "grid-column"
+      ],
+      "unit_kind": "GridSpan"
+    },
+    "col-start": {
+      "target_props": [
+        "grid-column-start"
+      ],
+      "unit_kind": "Unitless"
+    },
+    "fade-in": {
+      "target_props": [
+        "--tw-enter-opacity"
+      ],
+      "unit_kind": "Percentage"
+    },
+    "fade-out": {
+      "target_props": [
+        "--tw-exit-opacity"
+      ],
+      "unit_kind": "Percentage"
+    },
+    "gap-x": {
+      "target_props": [
+        "column-gap"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "gap-y": {
+      "target_props": [
+        "row-gap"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "grid-cols": {
+      "target_props": [
+        "grid-template-columns"
+      ],
+      "unit_kind": "GridRepeat"
+    },
+    "grid-rows": {
+      "target_props": [
+        "grid-template-rows"
+      ],
+      "unit_kind": "GridRepeat"
+    },
+    "height": {
+      "target_props": [
+        "height"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "inset-x": {
+      "target_props": [
+        "left",
+        "right"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "inset-y": {
+      "target_props": [
+        "top",
+        "bottom"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "line-clamp": {
+      "target_props": [
+        "-webkit-line-clamp"
+      ],
+      "unit_kind": "Unitless"
+    },
+    "margin": {
+      "target_props": [
+        "margin"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "outline": {
+      "target_props": [
+        "outline-width"
+      ],
+      "unit_kind": "Pixel"
+    },
+    "padding": {
+      "target_props": [
+        "padding"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "row-end": {
+      "target_props": [
+        "grid-row-end"
+      ],
+      "unit_kind": "Unitless"
+    },
+    "row-span": {
+      "target_props": [
+        "grid-row"
+      ],
+      "unit_kind": "GridSpan"
+    },
+    "row-start": {
+      "target_props": [
+        "grid-row-start"
+      ],
+      "unit_kind": "Unitless"
+    },
+    "scale-x": {
+      "target_props": [
+        "transform"
+      ],
+      "unit_kind": "Percentage"
+    },
+    "scale-y": {
+      "target_props": [
+        "transform"
+      ],
+      "unit_kind": "Percentage"
+    },
+    "size": {
+      "target_props": [
+        "width",
+        "height"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "skew-x": {
+      "target_props": [
+        "transform"
+      ],
+      "unit_kind": "Degree"
+    },
+    "skew-y": {
+      "target_props": [
+        "transform"
+      ],
+      "unit_kind": "Degree"
+    },
+    "slide-in-from-bottom": {
+      "target_props": [
+        "--tw-enter-translate-y"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "slide-in-from-left": {
+      "target_props": [
+        "--tw-enter-translate-x"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "slide-in-from-right": {
+      "target_props": [
+        "--tw-enter-translate-x"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "slide-in-from-top": {
+      "target_props": [
+        "--tw-enter-translate-y"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "underline-offset": {
+      "target_props": [
+        "text-underline-offset"
+      ],
+      "unit_kind": "Pixel"
+    },
+    "width": {
+      "target_props": [
+        "width"
+      ],
+      "unit_kind": "RemScale"
+    },
+    "zoom-in": {
+      "target_props": [
+        "--tw-enter-scale"
+      ],
+      "unit_kind": "Percentage"
+    },
+    "zoom-out": {
+      "target_props": [
+        "--tw-exit-scale"
+      ],
+      "unit_kind": "Percentage"
+    }
+  },
   "test_cases": [
     "animate-bounce",
     "animate-none",
