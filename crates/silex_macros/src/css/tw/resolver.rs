@@ -4,7 +4,7 @@ pub mod numeric;
 pub mod palette;
 pub mod suggest;
 
-use crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};
+use crate::css::tw::ast::{Modifier, SpannedModifier, UtilityRule, UtilityValue};
 use proc_macro2::Span;
 use syn::{Error, Result};
 
@@ -43,7 +43,7 @@ pub fn hex(s: &str) -> UtilityValue {
 }
 
 pub fn make_rule(
-    modifiers: Vec<Modifier>,
+    modifiers: Vec<SpannedModifier>,
     prop: &str,
     value: UtilityValue,
     span: Span,
@@ -68,7 +68,7 @@ pub fn is_marker_class(token: &str) -> bool {
 
 /// 将基础的 Utility 词条（如 `p-4`, `hover:bg-primary`, `w-[12px]`）解析为标准的 `UtilityRule`
 pub fn resolve_utility(
-    modifiers: Vec<Modifier>,
+    modifiers: Vec<SpannedModifier>,
     utility_token: &str,
     span: Span,
 ) -> Result<Vec<UtilityRule>> {
@@ -116,7 +116,7 @@ pub(crate) fn color_prefix_to_prop(prefix: &str) -> Option<&'static str> {
 
 /// 解析前缀规律型 Utility (如 `p-4`, `mt-2`, `w-16`, `bg-theme(primary)`, `text-slate-900`, `bg-indigo-600/50`, `w-[12px]`)
 fn resolve_pattern_utility(
-    modifiers: Vec<Modifier>,
+    modifiers: Vec<SpannedModifier>,
     token: &str,
     span: Span,
 ) -> Result<Vec<UtilityRule>> {
@@ -141,7 +141,10 @@ fn resolve_pattern_utility(
         if prefix == "divide" {
             let c_mods = [
                 modifiers.clone(),
-                vec![Modifier::CustomSelector(DIVIDE_SELECTOR.into())],
+                vec![SpannedModifier::new(
+                    Modifier::CustomSelector(DIVIDE_SELECTOR.into()),
+                    span,
+                )],
             ]
             .concat();
             return Ok(vec![make_rule(
@@ -223,7 +226,10 @@ fn resolve_pattern_utility(
     if let Some(rest) = token.strip_prefix("divide-") {
         let c_mods = [
             modifiers.clone(),
-            vec![Modifier::CustomSelector(DIVIDE_SELECTOR.into())],
+            vec![SpannedModifier::new(
+                Modifier::CustomSelector(DIVIDE_SELECTOR.into()),
+                span,
+            )],
         ]
         .concat();
 
@@ -275,7 +281,10 @@ fn resolve_pattern_utility(
     if let Some(rest) = search_token.strip_prefix("space-") {
         let c_mods = [
             modifiers.clone(),
-            vec![Modifier::CustomSelector(DIVIDE_SELECTOR.into())],
+            vec![SpannedModifier::new(
+                Modifier::CustomSelector(DIVIDE_SELECTOR.into()),
+                span,
+            )],
         ]
         .concat();
 

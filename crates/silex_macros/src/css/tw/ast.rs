@@ -95,10 +95,65 @@ impl std::hash::Hash for UtilityValue {
 /// 归一化的 Utility 规则
 #[derive(Debug, Clone)]
 pub struct UtilityRule {
-    pub modifiers: Vec<Modifier>,
+    pub modifiers: Vec<SpannedModifier>,
     pub css_property: String,
     pub value: UtilityValue,
     pub span: Span,
+}
+
+/// 关联源码 Span 的修饰符包装，按 modifier 比较与 Hash
+#[derive(Debug, Clone)]
+pub struct SpannedModifier {
+    pub modifier: Modifier,
+    span: Span,
+}
+
+impl SpannedModifier {
+    #[inline]
+    pub fn new(modifier: Modifier, span: Span) -> Self {
+        Self { modifier, span }
+    }
+
+    #[inline]
+    pub fn span(&self) -> Span {
+        self.span
+    }
+}
+
+
+impl PartialEq for SpannedModifier {
+    fn eq(&self, other: &Self) -> bool {
+        self.modifier == other.modifier
+    }
+}
+
+impl PartialEq<Modifier> for SpannedModifier {
+    fn eq(&self, other: &Modifier) -> bool {
+        &self.modifier == other
+    }
+}
+
+impl PartialEq<SpannedModifier> for Modifier {
+    fn eq(&self, other: &SpannedModifier) -> bool {
+        self == &other.modifier
+    }
+}
+
+impl From<Modifier> for SpannedModifier {
+    fn from(modifier: Modifier) -> Self {
+        Self {
+            modifier,
+            span: Span::call_site(),
+        }
+    }
+}
+
+impl Eq for SpannedModifier {}
+
+impl std::hash::Hash for SpannedModifier {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.modifier.hash(state);
+    }
 }
 
 impl std::hash::Hash for UtilityRule {

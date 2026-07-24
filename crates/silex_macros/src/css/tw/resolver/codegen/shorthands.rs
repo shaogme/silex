@@ -97,8 +97,6 @@ pub static SHORTHAND_SUBPROPERTIES: &[(&str, &[&str])] = &[
 
 /// 获取指定 CSS / Tailwind 简写属性拆解后的原子子属性集合
 pub fn get_atomic_subproperties(prop: &str) -> Option<&'static [&'static str]> {
-    let idx = SHORTHAND_SUBPROPERTIES
-        .binary_search_by_key(&prop, |&(k, _)| k)
-        .ok()?;
+    let idx = SHORTHAND_SUBPROPERTIES.binary_search_by_key(&prop, |&(k, _)| k).ok()?;
     Some(SHORTHAND_SUBPROPERTIES[idx].1)
 }

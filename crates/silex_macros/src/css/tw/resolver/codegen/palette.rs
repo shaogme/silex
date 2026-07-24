@@ -33,8 +33,6 @@ pub static PALETTE_TABLE: &[(&str, [&str; 11])] = &[
 
 /// 根据色系名称获取标准的 11 阶梯 Hex 阵列
 pub fn get_raw_palette(color_name: &str) -> Option<[&'static str; 11]> {
-    let idx = PALETTE_TABLE
-        .binary_search_by_key(&color_name, |&(k, _)| k)
-        .ok()?;
+    let idx = PALETTE_TABLE.binary_search_by_key(&color_name, |&(k, _)| k).ok()?;
     Some(PALETTE_TABLE[idx].1)
 }

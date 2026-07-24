@@ -37,7 +37,7 @@ fn resolve_entries<'a>(
 fn push_table_header(code: &mut String, doc_comment: &str) {
     let _ = writeln!(code, "// {}", doc_comment);
     code.push_str("// 避免手写硬编码，与 silex_codegen/resolver 保持 100% 规则对齐\n\n");
-    code.push_str("#[allow(unused_imports)]\nuse crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};\n");
+    code.push_str("#[allow(unused_imports)]\nuse crate::css::tw::ast::{Modifier, SpannedModifier, UtilityRule, UtilityValue};\n");
     code.push_str("#[allow(unused_imports)]\nuse crate::css::tw::resolver::make_rule;\n");
     code.push_str("#[allow(unused_imports)]\nuse proc_macro2::Span;\n\n");
 
@@ -130,7 +130,7 @@ pub fn generate_macro_tables(
 
     table_code.push_str(
         r#"pub fn resolve_static_rule(
-    modifiers: &[Modifier],
+    modifiers: &[SpannedModifier],
     utility_token: &str,
     span: Span,
 ) -> Option<Vec<UtilityRule>> {
@@ -532,6 +532,7 @@ pub fn generate_modifiers_code(modifiers: &[ModifierMetaJson]) -> String {
     let mut code = String::with_capacity(16 * 1024);
     code.push_str("// 自动生成的 Tailwind 修饰符与断点规则表（供 silex_macros 使用）\n");
     code.push_str("// 由 silex_codegen 自动生成，切勿手写修改！\n\n");
+    code.push_str("use crate::css::tw::ast::Modifier;\n\n");
 
     code.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     code.push_str("pub enum ModifierKind {\n");
@@ -548,6 +549,20 @@ pub fn generate_modifiers_code(modifiers: &[ModifierMetaJson]) -> String {
     code.push_str("    pub kind: ModifierKind,\n");
     code.push_str("    pub priority: u32,\n");
     code.push_str("    pub css_selector: &'static str,\n");
+    code.push_str("}\n\n");
+
+    code.push_str("impl ModifierMeta {\n");
+    code.push_str("    #[inline]\n");
+    code.push_str("    pub fn to_modifier(&self, key: &str) -> Modifier {\n");
+    code.push_str("        match self.kind {\n");
+    code.push_str("            ModifierKind::Child => Modifier::Child,\n");
+    code.push_str("            ModifierKind::Descendant => Modifier::Descendant,\n");
+    code.push_str("            ModifierKind::MediaBreakpoint => Modifier::MediaBreakpoint(key.to_string()),\n");
+    code.push_str("            ModifierKind::PseudoClass => Modifier::PseudoClass(key.to_string()),\n");
+    code.push_str("            ModifierKind::PseudoElement => Modifier::PseudoElement(key.to_string()),\n");
+    code.push_str("            ModifierKind::Dark => Modifier::Dark,\n");
+    code.push_str("        }\n");
+    code.push_str("    }\n");
     code.push_str("}\n\n");
 
     code.push_str("#[rustfmt::skip]\n");

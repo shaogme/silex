@@ -2,7 +2,7 @@
 // 避免手写硬编码，与 silex_codegen/resolver 保持 100% 规则对齐
 
 #[allow(unused_imports)]
-use crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};
+use crate::css::tw::ast::{Modifier, SpannedModifier, UtilityRule, UtilityValue};
 #[allow(unused_imports)]
 use crate::css::tw::resolver::make_rule;
 #[allow(unused_imports)]
@@ -92896,13 +92896,11 @@ pub static STATIC_RULES: &[(&str, &[(&str, StaticVal)])] = &[
 ];
 
 pub fn resolve_static_rule(
-    modifiers: &[Modifier],
+    modifiers: &[SpannedModifier],
     utility_token: &str,
     span: Span,
 ) -> Option<Vec<UtilityRule>> {
-    let idx = STATIC_RULES
-        .binary_search_by_key(&utility_token, |&(k, _)| k)
-        .ok()?;
+    let idx = STATIC_RULES.binary_search_by_key(&utility_token, |&(k, _)| k).ok()?;
     let entries = STATIC_RULES[idx].1;
 
     let mut rules = Vec::with_capacity(entries.len());
@@ -92912,16 +92910,10 @@ pub fn resolve_static_rule(
             StaticVal::Num(v, u) => UtilityValue::Numeric(v, u),
             StaticVal::Hex(s) => crate::css::tw::resolver::hex(s),
             StaticVal::Literal(s) => UtilityValue::ArbitraryLiteral(s.to_string()),
-            StaticVal::RingShadow => {
-                UtilityValue::Keyword(crate::css::tw::resolver::RING_BOX_SHADOW)
-            }
+            StaticVal::RingShadow => UtilityValue::Keyword(crate::css::tw::resolver::RING_BOX_SHADOW),
         };
         rules.push(make_rule(
-            if modifiers.is_empty() {
-                Vec::new()
-            } else {
-                modifiers.to_vec()
-            },
+            if modifiers.is_empty() { Vec::new() } else { modifiers.to_vec() },
             prop,
             uval,
             span,

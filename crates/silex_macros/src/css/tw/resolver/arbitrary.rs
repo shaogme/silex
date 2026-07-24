@@ -1,8 +1,8 @@
-use crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};
+use crate::css::tw::ast::{Modifier, SpannedModifier, UtilityRule, UtilityValue};
 use proc_macro2::Span;
 use syn::{Error, Result};
 
-use super::{DIVIDE_SELECTOR, RING_BOX_SHADOW, kw, make_rule};
+use super::{kw, make_rule, DIVIDE_SELECTOR, RING_BOX_SHADOW};
 
 /// 任意值与任意属性语法解析: `w-[12px]`, `bg-[red]`, `[--tw-ring-color:rgba(79,70,229,.2)]`, `[color:red]`
 pub fn parse_arbitrary_syntax(token: &str) -> Option<(&str, &str)> {
@@ -85,7 +85,7 @@ fn normalize_arbitrary_val(raw_val: &str) -> String {
 
 /// 解析任意值到 UtilityRule
 pub fn resolve_arbitrary(
-    modifiers: Vec<Modifier>,
+    modifiers: Vec<SpannedModifier>,
     prefix: &str,
     raw_val: &str,
     span: Span,
@@ -198,7 +198,10 @@ pub fn resolve_arbitrary(
     let target_mods = if is_divide {
         [
             modifiers.clone(),
-            vec![Modifier::CustomSelector(DIVIDE_SELECTOR.into())],
+            vec![SpannedModifier::new(
+                Modifier::CustomSelector(DIVIDE_SELECTOR.into()),
+                span,
+            )],
         ]
         .concat()
     } else {

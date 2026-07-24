@@ -3,7 +3,7 @@
 // 避免手写硬编码，与 silex_codegen/resolver 保持 100% 规则对齐
 
 #[allow(unused_imports)]
-use crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};
+use crate::css::tw::ast::{Modifier, SpannedModifier, UtilityRule, UtilityValue};
 #[allow(unused_imports)]
 use crate::css::tw::resolver::make_rule;
 #[allow(unused_imports)]
@@ -1907,3 +1907,4 @@ pub static TEST_CASE_RULES: &[(&str, &[(&str, StaticVal)])] = &[
         ("z-index", StaticVal::Kw("auto")),
     ]),
 ];
+

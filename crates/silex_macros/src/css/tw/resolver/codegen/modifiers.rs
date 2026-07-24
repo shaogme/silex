@@ -1,6 +1,8 @@
 // 自动生成的 Tailwind 修饰符与断点规则表（供 silex_macros 使用）
 // 由 silex_codegen 自动生成，切勿手写修改！
 
+use crate::css::tw::ast::Modifier;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModifierKind {
     PseudoClass,
@@ -16,6 +18,20 @@ pub struct ModifierMeta {
     pub kind: ModifierKind,
     pub priority: u32,
     pub css_selector: &'static str,
+}
+
+impl ModifierMeta {
+    #[inline]
+    pub fn to_modifier(&self, key: &str) -> Modifier {
+        match self.kind {
+            ModifierKind::Child => Modifier::Child,
+            ModifierKind::Descendant => Modifier::Descendant,
+            ModifierKind::MediaBreakpoint => Modifier::MediaBreakpoint(key.to_string()),
+            ModifierKind::PseudoClass => Modifier::PseudoClass(key.to_string()),
+            ModifierKind::PseudoElement => Modifier::PseudoElement(key.to_string()),
+            ModifierKind::Dark => Modifier::Dark,
+        }
+    }
 }
 
 #[rustfmt::skip]

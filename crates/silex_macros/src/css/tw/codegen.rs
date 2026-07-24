@@ -2,19 +2,22 @@ use crate::css::{
     ast::{CssAtRule, CssBlock, CssDeclaration, CssNested, CssRule},
     config::get_config,
     tw::{
-        ast::{Modifier, TwInput, TwSegment, UtilityRule, UtilityValue},
-        resolver::codegen::shorthands::get_atomic_subproperties,
+        ast::{Modifier, SpannedModifier, TwInput, TwSegment, UtilityRule, UtilityValue},
+        resolver::codegen::{
+            keyframes::lookup_keyframe_meta, modifiers::lookup_modifier_meta,
+            shorthands::get_atomic_subproperties,
+        },
     },
 };
-use proc_macro2::{Delimiter, Group, Ident, Punct, Spacing, Span, TokenStream, TokenTree};
+use proc_macro2::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
 use quote::quote;
 use std::collections::{HashMap, HashSet};
-use syn::Result;
+use syn::{token::Semi, Result};
 
 /// 将解析后的 `Vec<UtilityRule>` 归一化转换构建为 `silex_macros::css::ast::CssBlock`
 pub fn build_css_block_from_rules(rules: Vec<UtilityRule>) -> Result<CssBlock> {
     let mut root_raw_rules = Vec::new();
-    let mut modifier_groups: Vec<(Vec<Modifier>, Vec<UtilityRule>)> = Vec::new();
+    let mut modifier_groups: Vec<(Vec<SpannedModifier>, Vec<UtilityRule>)> = Vec::new();
     let mut detected_keyframes: HashSet<String> = HashSet::new();
 
     for rule in rules {
@@ -84,8 +87,8 @@ pub fn build_css_block_from_tw(input: TwInput) -> Result<CssBlock> {
 }
 
 /// 计算单修饰符的分类权重
-fn modifier_priority(m: &Modifier) -> u32 {
-    match m {
+fn modifier_priority(m: &SpannedModifier) -> u32 {
+    match &m.modifier {
         Modifier::Child | Modifier::Descendant => 10,
         Modifier::PseudoClass(_) | Modifier::PseudoElement(_) => 20,
         Modifier::DataAttribute { .. } | Modifier::AriaAttribute { .. } => 30,
@@ -94,9 +97,7 @@ fn modifier_priority(m: &Modifier) -> u32 {
         Modifier::Dark => 60,
         Modifier::ContainerQuery { .. } => 70,
         Modifier::MediaBreakpoint(bp) => {
-            if let Some(meta) =
-                crate::css::tw::resolver::codegen::modifiers::lookup_modifier_meta(bp.as_str())
-            {
+            if let Some(meta) = lookup_modifier_meta(bp.as_str()) {
                 meta.priority
             } else {
                 let px = get_config()
@@ -111,7 +112,7 @@ fn modifier_priority(m: &Modifier) -> u32 {
 }
 
 /// 计算修饰符组的综合排序 Key
-fn modifier_group_sort_key(modifiers: &[Modifier]) -> (u32, u32, usize) {
+fn modifier_group_sort_key(modifiers: &[SpannedModifier]) -> (u32, u32, usize) {
     let max_p = modifiers.iter().map(modifier_priority).max().unwrap_or(0);
     let total_p: u32 = modifiers.iter().map(modifier_priority).sum();
     (max_p, total_p, modifiers.len())
@@ -121,7 +122,8 @@ fn modifier_group_sort_key(modifiers: &[Modifier]) -> (u32, u32, usize) {
 pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
     let mut covered_subproperties = HashSet::new();
     let mut deduped_rev = Vec::new();
-    let mut transform_rules_by_modifier: HashMap<Vec<Modifier>, Vec<UtilityRule>> = HashMap::new();
+    let mut transform_rules_by_modifier: HashMap<Vec<SpannedModifier>, Vec<UtilityRule>> =
+        HashMap::new();
 
     for rule in rules.into_iter().rev() {
         let prop = rule.css_property.as_str();
@@ -224,7 +226,7 @@ fn inject_keyframes_rules(root_rules: &mut Vec<CssRule>, keyframes: &HashSet<Str
 }
 
 fn build_keyframe_at_rule(name: &str) -> Option<CssAtRule> {
-    let meta = crate::css::tw::resolver::codegen::keyframes::lookup_keyframe_meta(name)?;
+    let meta = lookup_keyframe_meta(name)?;
 
     let at_name = Ident::new("keyframes", Span::call_site());
     let params: TokenStream = name.parse().ok()?;
@@ -259,7 +261,7 @@ fn make_nested_rule(selector: &str, declarations: Vec<(&str, TokenStream)>) -> C
         decl_rules.push(CssRule::Declaration(CssDeclaration {
             property: prop.to_string(),
             values: vals,
-            semi_token: Some(syn::token::Semi(Span::call_site())),
+            semi_token: Some(Semi(Span::call_site())),
         }));
     }
 
@@ -278,16 +280,16 @@ fn convert_rule_to_declaration(rule: &UtilityRule) -> CssRule {
         }
         UtilityValue::Numeric(val, unit) => {
             if unit.is_empty() {
-                let lit = proc_macro2::Literal::f64_unsuffixed(*val);
+                let lit = Literal::f64_unsuffixed(*val);
                 quote!(#lit)
             } else {
                 let val_str = format!("{}{}", val, unit);
-                let lit = proc_macro2::Literal::string(&val_str);
+                let lit = Literal::string(&val_str);
                 quote!(#lit)
             }
         }
         UtilityValue::HexColor(hex) => {
-            let lit = proc_macro2::Literal::string(hex);
+            let lit = Literal::string(hex);
             quote!(#lit)
         }
         UtilityValue::ThemeVar(var, opacity) => {
@@ -298,11 +300,11 @@ fn convert_rule_to_declaration(rule: &UtilityRule) -> CssRule {
                 ),
                 None => format!("var(--slx-theme-{})", var),
             };
-            let lit = proc_macro2::Literal::string(&val_str);
+            let lit = Literal::string(&val_str);
             quote!(#lit)
         }
         UtilityValue::ArbitraryLiteral(lit) => {
-            let lit_node = proc_macro2::Literal::string(lit);
+            let lit_node = Literal::string(lit);
             quote!(#lit_node)
         }
         UtilityValue::DynamicExpr(expr, _expr_span) => {
@@ -323,11 +325,14 @@ fn convert_rule_to_declaration(rule: &UtilityRule) -> CssRule {
     CssRule::Declaration(CssDeclaration {
         property: prop,
         values,
-        semi_token: Some(syn::token::Semi(rule.span)),
+        semi_token: Some(Semi(rule.span)),
     })
 }
 
-fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Result<CssRule> {
+fn build_modifier_rule(
+    modifiers: Vec<SpannedModifier>,
+    rules: Vec<UtilityRule>,
+) -> Result<CssRule> {
     let mut inner_declarations = Vec::new();
     for rule in rules {
         inner_declarations.push(convert_rule_to_declaration(&rule));
@@ -339,8 +344,9 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
     // 从右往左递归组装修饰符块
     let mut current_block = inner_block;
 
-    for modifier in modifiers.into_iter().rev() {
-        match modifier {
+    for spanned in modifiers.into_iter().rev() {
+        let mod_span = spanned.span();
+        match spanned.modifier {
             Modifier::PseudoClass(pc) => {
                 let pseudo = match pc.as_str() {
                     "first" => "first-child",
@@ -373,14 +379,14 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                 };
             }
             Modifier::Dark => {
-                let dark_mode = crate::css::config::get_config()
+                let dark_mode = get_config()
                     .and_then(|cfg| cfg.theme.dark_mode.as_deref())
                     .unwrap_or("class");
 
                 if dark_mode == "media" {
                     let query = "(prefers-color-scheme: dark)";
                     let at_rule_params: TokenStream = query.parse().unwrap();
-                    let at_rule_name = Ident::new("media", Span::call_site());
+                    let at_rule_name = Ident::new("media", mod_span);
 
                     let selector_ts: TokenStream = "&".parse().unwrap();
                     let nested_block = CssBlock {
@@ -412,8 +418,8 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
             }
             Modifier::Group { state, name } => {
                 let sel_str = format_group_peer_selector(true, &state, name.as_deref());
-                let lit = proc_macro2::Literal::string(&sel_str);
-                let ts = quote::quote!(#lit);
+                let lit = Literal::string(&sel_str);
+                let ts = quote!(#lit);
                 current_block = CssBlock {
                     rules: vec![CssRule::Nested(CssNested {
                         selectors: ts,
@@ -423,8 +429,8 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
             }
             Modifier::Peer { state, name } => {
                 let sel_str = format_group_peer_selector(false, &state, name.as_deref());
-                let lit = proc_macro2::Literal::string(&sel_str);
-                let ts = quote::quote!(#lit);
+                let lit = Literal::string(&sel_str);
+                let ts = quote!(#lit);
                 current_block = CssBlock {
                     rules: vec![CssRule::Nested(CssNested {
                         selectors: ts,
@@ -457,8 +463,8 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                     Some(v) => format!("&[data-{}=\"{}\"]", key, v),
                     None => format!("&[data-{}]", key),
                 };
-                let lit = proc_macro2::Literal::string(&sel_str);
-                let ts = quote::quote!(#lit);
+                let lit = Literal::string(&sel_str);
+                let ts = quote!(#lit);
                 current_block = CssBlock {
                     rules: vec![CssRule::Nested(CssNested {
                         selectors: ts,
@@ -471,8 +477,8 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                     Some(v) => format!("&[aria-{}=\"{}\"]", key, v),
                     None => format!("&[aria-{}]", key),
                 };
-                let lit = proc_macro2::Literal::string(&sel_str);
-                let ts = quote::quote!(#lit);
+                let lit = Literal::string(&sel_str);
+                let ts = quote!(#lit);
                 current_block = CssBlock {
                     rules: vec![CssRule::Nested(CssNested {
                         selectors: ts,
@@ -499,8 +505,8 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                 };
                 let sel_str = format!("&:has({})", has_target);
                 let ts: TokenStream = sel_str.parse().unwrap_or_else(|_| {
-                    let lit = proc_macro2::Literal::string(&sel_str);
-                    quote::quote!(#lit)
+                    let lit = Literal::string(&sel_str);
+                    quote!(#lit)
                 });
                 current_block = CssBlock {
                     rules: vec![CssRule::Nested(CssNested {
@@ -519,12 +525,10 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                 };
             }
             Modifier::MediaBreakpoint(bp) => {
-                let query = if let Some(meta) =
-                    crate::css::tw::resolver::codegen::modifiers::lookup_modifier_meta(bp.as_str())
-                {
+                let query = if let Some(meta) = lookup_modifier_meta(bp.as_str()) {
                     meta.css_selector.to_string()
                 } else {
-                    let custom_bp = crate::css::config::get_config()
+                    let custom_bp = get_config()
                         .and_then(|cfg| cfg.theme.breakpoints.get(bp.as_str()))
                         .map(|s| s.as_str());
 
@@ -532,7 +536,7 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                     format!("(min-width: {})", min_width)
                 };
                 let at_rule_params: TokenStream = query.parse().unwrap();
-                let at_rule_name = Ident::new("media", Span::call_site());
+                let at_rule_name = Ident::new("media", mod_span);
 
                 let selector_ts: TokenStream = "&".parse().unwrap();
                 let nested_block = CssBlock {
@@ -557,9 +561,9 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
                     Some(n) => format!("{} (min-width: {})", n, min_width),
                     None => format!("(min-width: {})", min_width),
                 };
-                let lit = proc_macro2::Literal::string(&query_str);
-                let at_rule_params: TokenStream = quote::quote!(#lit);
-                let at_rule_name = Ident::new("container", Span::call_site());
+                let lit = Literal::string(&query_str);
+                let at_rule_params: TokenStream = quote!(#lit);
+                let at_rule_name = Ident::new("container", mod_span);
 
                 let selector_ts: TokenStream = "&".parse().unwrap();
                 let nested_block = CssBlock {
@@ -722,13 +726,13 @@ mod tests {
     #[test]
     fn test_responsive_breakpoint_sorting() {
         let lg_rule = UtilityRule {
-            modifiers: vec![Modifier::MediaBreakpoint("lg".to_string())],
+            modifiers: vec![Modifier::MediaBreakpoint("lg".to_string()).into()],
             css_property: "padding".to_string(),
             value: UtilityValue::Numeric(2.0, "rem"),
             span: Span::call_site(),
         };
         let sm_rule = UtilityRule {
-            modifiers: vec![Modifier::MediaBreakpoint("sm".to_string())],
+            modifiers: vec![Modifier::MediaBreakpoint("sm".to_string()).into()],
             css_property: "padding".to_string(),
             value: UtilityValue::Numeric(0.5, "rem"),
             span: Span::call_site(),
@@ -783,7 +787,7 @@ mod tests {
             span: Span::call_site(),
         };
         let dark_transform = UtilityRule {
-            modifiers: vec![Modifier::Dark],
+            modifiers: vec![Modifier::Dark.into()],
             css_property: "transform".to_string(),
             value: UtilityValue::ArbitraryLiteral("translate-x-full".to_string()),
             span: Span::call_site(),

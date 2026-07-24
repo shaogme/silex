@@ -64,16 +64,19 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     // 处理包含条件分支句段的情形
     let mut inits_tokens = Vec::new();
     let mut cx_items = Vec::new();
-    let mut compiled_cache = ::std::collections::HashMap::<u64, String>::new();
+    let mut compiled_cache = ::std::collections::HashMap::<u128, String>::new();
 
     let mut compile_rules_cached = |rules: Vec<ast::UtilityRule>| -> Result<String> {
         if rules.is_empty() {
             return Ok(String::new());
         }
-        use ::std::hash::{Hash, Hasher};
-        let mut hasher = ::std::collections::hash_map::DefaultHasher::new();
-        rules.hash(&mut hasher);
-        let key = hasher.finish();
+        use std::hash::{Hash, Hasher};
+        use silex_hash::css::CssHasher;
+        let mut hasher1 = CssHasher::with_seed(0x9e3779b97f4a7c15);
+        let mut hasher2 = CssHasher::with_seed(0xbf58476d1ce4e5b9);
+        rules.hash(&mut hasher1);
+        rules.hash(&mut hasher2);
+        let key = ((hasher1.finish() as u128) << 64) | (hasher2.finish() as u128);
 
         if let Some(cls) = compiled_cache.get(&key) {
             return Ok(cls.clone());

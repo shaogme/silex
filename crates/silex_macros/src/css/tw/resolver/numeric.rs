@@ -1,9 +1,9 @@
-use crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};
+use crate::css::tw::ast::{SpannedModifier, UtilityRule, UtilityValue};
 use proc_macro2::Span;
 
 use super::{kw, make_rule, num, num_unitless, px, rem};
 
-use super::codegen::prefix_metadata::{UnitKind, lookup_prefix_meta};
+use super::codegen::prefix_metadata::{lookup_prefix_meta, UnitKind};
 
 #[inline]
 fn format_num_clean(v: f64) -> String {
@@ -19,7 +19,7 @@ fn format_num_clean(v: f64) -> String {
 
 /// 解析方向与各角 Rounded 规则 (例: `rounded-tl-3xl`, `rounded-t-lg`, `rounded-tr-4`)
 pub fn resolve_rounded_utility(
-    modifiers: &[Modifier],
+    modifiers: &[SpannedModifier],
     token: &str,
     span: Span,
 ) -> Option<Vec<UtilityRule>> {
@@ -75,7 +75,7 @@ pub fn resolve_rounded_utility(
 
 /// 解析数值与分数开头的规则 (例: `p-4`, `w-1/2`, `-top-4`, `border-t-2`, `rounded-tr-lg`)
 pub fn resolve_numeric_utility(
-    modifiers: &[Modifier],
+    modifiers: &[SpannedModifier],
     token: &str,
     span: Span,
 ) -> Option<Vec<UtilityRule>> {

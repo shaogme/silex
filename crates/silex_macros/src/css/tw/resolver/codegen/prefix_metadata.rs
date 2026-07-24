@@ -109,8 +109,6 @@ pub static PREFIX_METADATA: &[PrefixMeta] = &[
 
 /// 根据 Utility 前缀二分查找对应的元数据配置
 pub fn lookup_prefix_meta(prefix: &str) -> Option<&'static PrefixMeta> {
-    let idx = PREFIX_METADATA
-        .binary_search_by_key(&prefix, |m| m.prefix)
-        .ok()?;
+    let idx = PREFIX_METADATA.binary_search_by_key(&prefix, |m| m.prefix).ok()?;
     Some(&PREFIX_METADATA[idx])
 }

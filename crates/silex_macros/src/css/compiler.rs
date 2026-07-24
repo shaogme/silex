@@ -277,7 +277,7 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                     let mut rules = Vec::new();
                     for token in raw_str.split_whitespace() {
                         let (modifiers, body_token) =
-                            crate::css::tw::parser::parse_modifiers_and_body(token);
+                            crate::css::tw::parser::parse_modifiers_and_body(token, ap.span);
                         let mut resolved = crate::css::tw::resolver::resolve_utility(
                             modifiers, body_token, ap.span,
                         )?;
@@ -471,7 +471,7 @@ fn build_dynamic_block_recursive(
                     let mut rules = Vec::new();
                     for token in raw_str.split_whitespace() {
                         let (modifiers, body_token) =
-                            crate::css::tw::parser::parse_modifiers_and_body(token);
+                            crate::css::tw::parser::parse_modifiers_and_body(token, ap.span);
                         let mut resolved = crate::css::tw::resolver::resolve_utility(
                             modifiers, body_token, ap.span,
                         )?;
