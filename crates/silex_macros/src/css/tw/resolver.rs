@@ -4,13 +4,22 @@ pub mod numeric;
 pub mod palette;
 pub mod suggest;
 
-use crate::css::tw::{
-    ast::{Modifier, ModifierList, SpannedModifier, UtilityRule, UtilityValue},
-    resolver::codegen::property_id::CssPropertyId,
-};
+use std::{fmt::Display, result::Result as StdResult};
+
 use proc_macro2::Span;
 use smallvec::SmallVec;
 use syn::{Error, Result};
+
+use crate::css::tw::{
+    ast::{Modifier, ModifierList, SpannedModifier, UtilityRule, UtilityValue},
+    resolver::{
+        arbitrary::{parse_arbitrary_syntax, resolve_arbitrary},
+        codegen::{property_id::CssPropertyId, table::resolve_static_rule},
+        numeric::resolve_numeric_utility,
+        palette::{parse_color_utility, parse_color_value},
+        suggest::find_best_suggestion,
+    },
+};
 
 pub const RING_BOX_SHADOW: &str = "var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width, 0px) var(--tw-ring-offset-color, #0000), 0 0 0 var(--tw-ring-width, 0px) var(--tw-ring-color, rgba(59, 130, 246, 0.5)), var(--tw-shadow, 0 0 #0000)";
 
@@ -46,28 +55,28 @@ pub fn hex(s: &str) -> UtilityValue {
     UtilityValue::HexColor(s.to_string())
 }
 
-pub trait IntoCssPropertyId {
-    fn into_css_property_id(self) -> CssPropertyId;
+pub trait IntoCssPropertyId: Sized {
+    fn into_css_property_id(self) -> StdResult<CssPropertyId, Self>;
 }
 
 impl IntoCssPropertyId for CssPropertyId {
     #[inline]
-    fn into_css_property_id(self) -> CssPropertyId {
-        self
+    fn into_css_property_id(self) -> StdResult<CssPropertyId, Self> {
+        Ok(self)
     }
 }
 
-impl IntoCssPropertyId for &str {
+impl<'a> IntoCssPropertyId for &'a str {
     #[inline]
-    fn into_css_property_id(self) -> CssPropertyId {
-        CssPropertyId::parse(self)
+    fn into_css_property_id(self) -> StdResult<CssPropertyId, Self> {
+        CssPropertyId::parse(self).ok_or(self)
     }
 }
 
-impl IntoCssPropertyId for &&str {
+impl<'a> IntoCssPropertyId for &'a &'a str {
     #[inline]
-    fn into_css_property_id(self) -> CssPropertyId {
-        CssPropertyId::parse(*self)
+    fn into_css_property_id(self) -> StdResult<CssPropertyId, Self> {
+        CssPropertyId::parse(*self).ok_or(self)
     }
 }
 
@@ -96,15 +105,24 @@ impl IntoModifierList for Vec<SpannedModifier> {
     }
 }
 
-pub fn make_rule(
+pub fn make_rule<P>(
     modifiers: impl IntoModifierList,
-    prop: impl IntoCssPropertyId,
+    prop: P,
     value: UtilityValue,
     span: Span,
-) -> UtilityRule {
+) -> UtilityRule
+where
+    P: IntoCssPropertyId + Display,
+{
+    let css_property = prop
+        .into_css_property_id()
+        .unwrap_or_else(|unsupported| {
+            panic!("CSS Property '{}' is not registered in CssPropertyId table", unsupported);
+        });
+
     UtilityRule {
         modifiers: modifiers.into_modifier_list(),
-        css_property: prop.into_css_property_id(),
+        css_property,
         value,
         span,
     }
@@ -135,7 +153,7 @@ pub fn resolve_utility(
     }
 
     // 1. 尝试匹配静态表规则 (static rules table)
-    if let Some(rules) = codegen::table::resolve_static_rule(&modifiers, utility_token, span) {
+    if let Some(rules) = resolve_static_rule(&modifiers, utility_token, span) {
         return Ok(rules);
     }
 
@@ -272,7 +290,7 @@ fn resolve_pattern_utility(
     }
 
     // 2. Standard Palette 色系与零分配 Hex / /alpha 颜色换算
-    if let Some((prop, val)) = palette::parse_color_utility(token) {
+    if let Some((prop, val)) = parse_color_utility(token) {
         return Ok(vec![make_rule(modifiers, prop, val, span)]);
     }
 
@@ -323,7 +341,7 @@ fn resolve_pattern_utility(
             ]);
         }
 
-        if let Some(color_val) = palette::parse_color_value(rest) {
+        if let Some(color_val) = parse_color_value(rest) {
             return Ok(vec![make_rule(c_mods, "border-color", color_val, span)]);
         }
     }
@@ -363,14 +381,14 @@ fn resolve_pattern_utility(
 
     // 5. Ring Colors: ring-offset-indigo-500, ring-indigo-500, ring-indigo-500/20
     if let Some(rest) = token.strip_prefix("ring-offset-") {
-        if let Some(color_val) = palette::parse_color_value(rest) {
+        if let Some(color_val) = parse_color_value(rest) {
             return Ok(vec![
                 make_rule(modifiers.clone(), "--tw-ring-offset-color", color_val, span),
                 make_rule(modifiers, "box-shadow", kw(RING_BOX_SHADOW), span),
             ]);
         }
     } else if let Some(rest) = token.strip_prefix("ring-")
-        && let Some(color_val) = palette::parse_color_value(rest)
+        && let Some(color_val) = parse_color_value(rest)
     {
         return Ok(vec![
             make_rule(modifiers.clone(), "--tw-ring-color", color_val, span),
@@ -380,7 +398,7 @@ fn resolve_pattern_utility(
 
     // 6. Gradient Stops: from-indigo-500, via-purple-500, to-pink-500
     if let Some(rest) = token.strip_prefix("from-") {
-        if let Some(val) = palette::parse_color_value(rest) {
+        if let Some(val) = parse_color_value(rest) {
             return Ok(vec![
                 make_rule(modifiers.clone(), "--tw-gradient-from", val, span),
                 make_rule(
@@ -398,7 +416,7 @@ fn resolve_pattern_utility(
             ]);
         }
     } else if let Some(rest) = token.strip_prefix("via-") {
-        if let Some(val) = palette::parse_color_value(rest) {
+        if let Some(val) = parse_color_value(rest) {
             return Ok(vec![
                 make_rule(modifiers.clone(), "--tw-gradient-via", val, span),
                 make_rule(
@@ -410,7 +428,7 @@ fn resolve_pattern_utility(
             ]);
         }
     } else if let Some(rest) = token.strip_prefix("to-")
-        && let Some(val) = palette::parse_color_value(rest)
+        && let Some(val) = parse_color_value(rest)
     {
         return Ok(vec![make_rule(modifiers, "--tw-gradient-to", val, span)]);
     }
@@ -487,17 +505,17 @@ fn resolve_pattern_utility(
     }
 
     // 8. 任意值与动态表达式语法, 如 `w-[100px]` 或 `p-[$(pad_val)]`
-    if let Some((prefix, raw_val)) = arbitrary::parse_arbitrary_syntax(token) {
-        return arbitrary::resolve_arbitrary(modifiers, prefix, raw_val, span);
+    if let Some((prefix, raw_val)) = parse_arbitrary_syntax(token) {
+        return resolve_arbitrary(modifiers, prefix, raw_val, span);
     }
 
     // 9. 数值、分数 (1/2, 1/3) 与方向边距/定位 Utility 解析
-    if let Some(rules) = numeric::resolve_numeric_utility(&modifiers, token, span) {
+    if let Some(rules) = resolve_numeric_utility(&modifiers, token, span) {
         return Ok(rules);
     }
 
     // 10. Levenshtein 智能纠错与建议
-    let suggestion = suggest::find_best_suggestion(token);
+    let suggestion = find_best_suggestion(token);
     let msg = match suggestion {
         Some(s) => format!(
             "Unknown or unsupported Utility class '{}'. Did you mean '{}'?",

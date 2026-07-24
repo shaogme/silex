@@ -11,6 +11,7 @@ use crate::css::{
 };
 use proc_macro2::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
 use quote::quote;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use syn::{Result, token::Semi};
 
@@ -120,13 +121,13 @@ fn modifier_group_sort_key(modifiers: &[SpannedModifier]) -> (u32, u32, usize) {
 
 /// 编译期 Tailwind Merge: 相同修饰符组下的实用类属性消解 (基于 Bitmask 的高速覆盖计算，支持简写属性与长写属性关联覆盖，Last-wins 覆盖先出者)
 pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
-    let mut covered_masks: HashMap<u16, u64> = HashMap::new();
-    let mut custom_covered: HashSet<&'static str> = HashSet::new();
+    let mut covered_masks: HashMap<(ModifierList, u16), u64> = HashMap::new();
+    let mut custom_covered: HashSet<(ModifierList, Cow<'static, str>)> = HashSet::new();
     let mut deduped_rev = Vec::new();
     let mut transform_rules_by_modifier: HashMap<ModifierList, Vec<UtilityRule>> = HashMap::new();
 
     for rule in rules.into_iter().rev() {
-        let prop = rule.css_property;
+        let prop = rule.css_property.clone();
 
         if prop == CssPropertyId::Transform {
             transform_rules_by_modifier
@@ -136,16 +137,17 @@ pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityR
             continue;
         }
 
-        if let CssPropertyId::Custom(name) = prop {
-            if !custom_covered.contains(name) {
-                custom_covered.insert(name);
+        if let CssPropertyId::Custom(ref name) = prop {
+            let key = (rule.modifiers.clone(), name.clone());
+            if custom_covered.insert(key) {
                 deduped_rev.push(rule);
             }
             continue;
         }
 
         let bitmask = prop.bitmask();
-        let current_covered = covered_masks.entry(bitmask.group_id).or_insert(0);
+        let key = (rule.modifiers.clone(), bitmask.group_id);
+        let current_covered = covered_masks.entry(key).or_insert(0);
 
         let all_covered = (*current_covered & bitmask.mask) == bitmask.mask;
 
@@ -810,5 +812,39 @@ mod tests {
             .iter()
             .any(|r| r.modifiers.len() == 1 && r.modifiers[0] == Modifier::Dark && r.css_property == CssPropertyId::Transform);
         assert!(has_base && has_dark);
+    }
+
+    #[test]
+    fn test_deduplicate_respects_modifiers_for_general_properties() {
+        let base_padding = UtilityRule {
+            modifiers: smallvec![],
+            css_property: CssPropertyId::Padding,
+            value: UtilityValue::Numeric(1.0, "rem"),
+            span: Span::call_site(),
+        };
+        let hover_padding = UtilityRule {
+            modifiers: smallvec![Modifier::PseudoClass("hover".to_string()).into()],
+            css_property: CssPropertyId::Padding,
+            value: UtilityValue::Numeric(2.0, "rem"),
+            span: Span::call_site(),
+        };
+        let override_padding = UtilityRule {
+            modifiers: smallvec![],
+            css_property: CssPropertyId::Padding,
+            value: UtilityValue::Numeric(1.5, "rem"),
+            span: Span::call_site(),
+        };
+
+        // 输入顺序：p-4 (base), hover:p-8 (hover), p-6 (override)
+        let deduped = deduplicate_utility_rules(vec![
+            base_padding,
+            hover_padding.clone(),
+            override_padding.clone(),
+        ]);
+
+        // 应该保留 2 条：hover:p-8 和最后覆盖的 p-6 (override)，而最早的 base p-4 被 override 覆盖
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(deduped[0].modifiers, hover_padding.modifiers);
+        assert_eq!(deduped[1].modifiers, override_padding.modifiers);
     }
 }

@@ -63,7 +63,7 @@ fn test_e2e_table_examples_individual_rules() {
             compile_result.component_css, compile_result.static_css
         );
 
-        for &(prop, _val) in expected_rules {
+        for &(ref prop, _val) in expected_rules {
             assert!(
                 prop_matches_generated_css(prop.as_str(), &generated_css),
                 "Generated CSS for '{class_name}' should contain property or shorthand for '{prop}'. Full generated CSS:\n{generated_css}"
@@ -172,7 +172,7 @@ fn test_e2e_table_examples_rule_values_precision() {
             compile_result.component_css, compile_result.static_css
         );
 
-        for &(_prop, val) in expected_rules {
+        for &(ref _prop, val) in expected_rules {
             match val {
                 StaticVal::Kw(k) => {
                     assert!(

@@ -1330,7 +1330,7 @@ pub static TEST_CASE_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::Right, StaticVal::Num(1.0, "px")),
     ]),
     ("ring", &[
-        (CssPropertyId::TwRingWidth, StaticVal::Num(0.1875, "rem")),
+        (CssPropertyId::VarTwRingWidth, StaticVal::Num(0.1875, "rem")),
         (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("rotate-0", &[
@@ -1784,7 +1784,7 @@ pub static TEST_CASE_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::BoxShadow, StaticVal::Literal("0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)")),
     ]),
     ("shadow-xs", &[
-        (CssPropertyId::TwShadow, StaticVal::Literal("0 1px 2px 0 rgba(0, 0, 0, 0.05)")),
+        (CssPropertyId::VarTwShadow, StaticVal::Literal("0 1px 2px 0 rgba(0, 0, 0, 0.05)")),
         (CssPropertyId::BoxShadow, StaticVal::Literal("var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow, 0 1px 2px 0 rgba(0, 0, 0, 0.05))")),
     ]),
     ("text-2xl", &[

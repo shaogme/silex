@@ -1,4 +1,24 @@
 {
+  "animation": [
+    "animation-name",
+    "animation-duration",
+    "animation-timing-function",
+    "animation-delay",
+    "animation-iteration-count",
+    "animation-direction",
+    "animation-fill-mode",
+    "animation-play-state"
+  ],
+  "background": [
+    "background-image",
+    "background-position",
+    "background-size",
+    "background-repeat",
+    "background-attachment",
+    "background-clip",
+    "background-origin",
+    "background-color"
+  ],
   "border": [
     "border-top-width",
     "border-right-width",
@@ -45,6 +65,12 @@
     "border-left-width",
     "border-right-width"
   ],
+  "border-radius": [
+    "border-top-left-radius",
+    "border-top-right-radius",
+    "border-bottom-right-radius",
+    "border-bottom-left-radius"
+  ],
   "border-x": [
     "border-left",
     "border-right"
@@ -77,6 +103,32 @@
     "border-top-width",
     "border-bottom-width"
   ],
+  "flex": [
+    "flex-grow",
+    "flex-shrink",
+    "flex-basis"
+  ],
+  "font": [
+    "font-style",
+    "font-variant",
+    "font-weight",
+    "font-stretch",
+    "font-size",
+    "line-height",
+    "font-family"
+  ],
+  "gap": [
+    "row-gap",
+    "column-gap"
+  ],
+  "grid-column": [
+    "grid-column-start",
+    "grid-column-end"
+  ],
+  "grid-row": [
+    "grid-row-start",
+    "grid-row-end"
+  ],
   "inset": [
     "top",
     "right",
@@ -106,6 +158,19 @@
   "margin-y": [
     "margin-top",
     "margin-bottom"
+  ],
+  "outline": [
+    "outline-width",
+    "outline-style",
+    "outline-color"
+  ],
+  "overflow": [
+    "overflow-x",
+    "overflow-y"
+  ],
+  "overscroll-behavior": [
+    "overscroll-behavior-x",
+    "overscroll-behavior-y"
   ],
   "padding-block": [
     "padding-top",
@@ -154,5 +219,17 @@
   "scroll-padding-y": [
     "scroll-padding-top",
     "scroll-padding-bottom"
+  ],
+  "text-decoration": [
+    "text-decoration-line",
+    "text-decoration-style",
+    "text-decoration-color",
+    "text-decoration-thickness"
+  ],
+  "transition": [
+    "transition-property",
+    "transition-duration",
+    "transition-timing-function",
+    "transition-delay"
   ]
 }

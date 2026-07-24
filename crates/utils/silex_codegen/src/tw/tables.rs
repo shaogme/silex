@@ -128,7 +128,7 @@ pub fn push_resolve_static_rule_fn(code: &mut String, rules_var_name: &str, used
     let entries = {rules_var_name}[idx].1;
 
     let mut rules = Vec::with_capacity(entries.len());
-    for &(prop, val) in entries {{
+    for &(ref prop, val) in entries {{
         let uval = match val {{"#
     );
 
@@ -154,7 +154,7 @@ pub fn push_resolve_static_rule_fn(code: &mut String, rules_var_name: &str, used
         r#"        };
         rules.push(make_rule(
             if modifiers.is_empty() { smallvec::SmallVec::new() } else { modifiers.iter().cloned().collect() },
-            prop,
+            prop.clone(),
             uval,
             span,
         ));

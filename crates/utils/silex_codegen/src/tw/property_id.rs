@@ -7,7 +7,16 @@ use serde_json::Value;
 use super::{palette::ColorShadeInfo, resolver::resolve_css_rules};
 
 pub fn to_pascal_case(s: &str) -> String {
-    s.split('-')
+    let (prefix, rest) = if let Some(stripped) = s.strip_prefix("--") {
+        ("Var", stripped)
+    } else if let Some(stripped) = s.strip_prefix('-') {
+        ("Neg", stripped)
+    } else {
+        ("", s)
+    };
+
+    let pascal: String = rest
+        .split('-')
         .filter(|part| !part.is_empty())
         .map(|part| {
             let mut chars = part.chars();
@@ -16,7 +25,9 @@ pub fn to_pascal_case(s: &str) -> String {
                 Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
             }
         })
-        .collect()
+        .collect();
+
+    format!("{}{}", prefix, pascal)
 }
 
 fn flatten_prop(
@@ -82,6 +93,18 @@ pub fn generate_property_id_code(
     // 注入所有 Node 导出提取的 CSS 自定义变量与特殊前缀属性
     for v in extra_props {
         props_set.insert(v.clone());
+    }
+
+    // 检测 Enum Variant 重复与碰撞
+    let mut variant_map: BTreeMap<String, String> = BTreeMap::new();
+    for prop in &props_set {
+        let variant = to_pascal_case(prop);
+        if let Some(existing) = variant_map.insert(variant.clone(), prop.clone()) {
+            panic!(
+                "CssPropertyId enum variant collision detected: '{}' and '{}' both map to variant '{}'",
+                existing, prop, variant
+            );
+        }
     }
 
     // 构建 raw_map 以计算连通分量 (Bitmask Group)
@@ -177,6 +200,13 @@ pub fn generate_property_id_code(
             }
         }
 
+        assert!(
+            group_nodes.len() <= 64,
+            "Bitmask group {} size overflow: contains {} nodes (max 64 supported)",
+            group_id,
+            group_nodes.len()
+        );
+
         for (bit_idx, name) in group_nodes.iter().enumerate() {
             let mask = 1u64 << bit_idx;
             atomic_info.insert(name.clone(), (group_id, mask));
@@ -214,13 +244,15 @@ pub fn generate_property_id_code(
     code.push_str("// 自动生成的 CSS 属性 Enum 与 Bitmask 对照表（供 silex_macros 使用）\n");
     code.push_str("// 由 silex_codegen 自动生成，切勿手写修改！\n\n");
 
-    code.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]\n");
+    code.push_str("use std::borrow::Cow;\n\n");
+
+    code.push_str("#[derive(Debug, Clone, PartialEq, Eq, Hash)]\n");
     code.push_str("pub enum CssPropertyId {\n");
     for prop in &props_set {
         let variant = to_pascal_case(prop);
         let _ = writeln!(code, "    {},", variant);
     }
-    code.push_str("    Custom(&'static str),\n");
+    code.push_str("    Custom(Cow<'static, str>),\n");
     code.push_str("}\n\n");
 
     code.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
@@ -231,28 +263,48 @@ pub fn generate_property_id_code(
 
     code.push_str("impl CssPropertyId {\n");
     code.push_str("    #[inline]\n");
-    code.push_str("    pub fn as_str(self) -> &'static str {\n");
+    code.push_str("    #[must_use]\n");
+    code.push_str("    pub fn as_str(&self) -> &str {\n");
     code.push_str("        match self {\n");
     for prop in &props_set {
         let variant = to_pascal_case(prop);
         let _ = writeln!(code, "            Self::{} => \"{}\",", variant, prop);
     }
-    code.push_str("            Self::Custom(s) => s,\n");
-    code.push_str("        }\n");
-    code.push_str("    }\n\n");
-
-    code.push_str("    pub fn parse(s: &str) -> Self {\n");
-    code.push_str("        match s {\n");
-    for prop in &props_set {
-        let variant = to_pascal_case(prop);
-        let _ = writeln!(code, "            \"{}\" => Self::{},", prop, variant);
-    }
-    code.push_str("            _ => Self::Custom(Box::leak(s.to_string().into_boxed_str())),\n");
+    code.push_str("            Self::Custom(s) => s.as_ref(),\n");
     code.push_str("        }\n");
     code.push_str("    }\n\n");
 
     code.push_str("    #[inline]\n");
-    code.push_str("    pub fn bitmask(self) -> PropertyBitmask {\n");
+    code.push_str("    #[must_use]\n");
+    code.push_str("    pub fn to_cow(&self) -> Cow<'static, str> {\n");
+    code.push_str("        match self {\n");
+    for prop in &props_set {
+        let variant = to_pascal_case(prop);
+        let _ = writeln!(
+            code,
+            "            Self::{} => Cow::Borrowed(\"{}\"),",
+            variant, prop
+        );
+    }
+    code.push_str("            Self::Custom(s) => s.clone(),\n");
+    code.push_str("        }\n");
+    code.push_str("    }\n\n");
+
+    code.push_str("    #[inline]\n");
+    code.push_str("    #[must_use]\n");
+    code.push_str("    pub fn parse(s: &str) -> Option<Self> {\n");
+    code.push_str("        match s {\n");
+    for prop in &props_set {
+        let variant = to_pascal_case(prop);
+        let _ = writeln!(code, "            \"{}\" => Some(Self::{}),", prop, variant);
+    }
+    code.push_str("            _ => None,\n");
+    code.push_str("        }\n");
+    code.push_str("    }\n\n");
+
+    code.push_str("    #[inline]\n");
+    code.push_str("    #[must_use]\n");
+    code.push_str("    pub fn bitmask(&self) -> PropertyBitmask {\n");
     code.push_str("        match self {\n");
     for prop in &props_set {
         let variant = to_pascal_case(prop);

@@ -76,6 +76,39 @@ function extractPropertyAliases(classList, designSystem) {
     'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color'
   ];
 
+  // 更多常见 CSS 简写属性与原子属性映射
+  aliasesObj['overflow'] = ['overflow-x', 'overflow-y'];
+  aliasesObj['overscroll-behavior'] = ['overscroll-behavior-x', 'overscroll-behavior-y'];
+  aliasesObj['flex'] = ['flex-grow', 'flex-shrink', 'flex-basis'];
+  aliasesObj['gap'] = ['row-gap', 'column-gap'];
+  aliasesObj['grid-column'] = ['grid-column-start', 'grid-column-end'];
+  aliasesObj['grid-row'] = ['grid-row-start', 'grid-row-end'];
+  aliasesObj['border-radius'] = [
+    'border-top-left-radius', 'border-top-right-radius',
+    'border-bottom-right-radius', 'border-bottom-left-radius'
+  ];
+  aliasesObj['outline'] = ['outline-width', 'outline-style', 'outline-color'];
+  aliasesObj['background'] = [
+    'background-image', 'background-position', 'background-size',
+    'background-repeat', 'background-attachment', 'background-clip',
+    'background-origin', 'background-color'
+  ];
+  aliasesObj['font'] = [
+    'font-style', 'font-variant', 'font-weight', 'font-stretch',
+    'font-size', 'line-height', 'font-family'
+  ];
+  aliasesObj['transition'] = [
+    'transition-property', 'transition-duration', 'transition-timing-function', 'transition-delay'
+  ];
+  aliasesObj['animation'] = [
+    'animation-name', 'animation-duration', 'animation-timing-function',
+    'animation-delay', 'animation-iteration-count', 'animation-direction',
+    'animation-fill-mode', 'animation-play-state'
+  ];
+  aliasesObj['text-decoration'] = [
+    'text-decoration-line', 'text-decoration-style', 'text-decoration-color', 'text-decoration-thickness'
+  ];
+
   // 对所有的 key 和 subProps 进行排序与规范化
   const sortedKeys = Object.keys(aliasesObj).sort();
   const sortedResult = {};

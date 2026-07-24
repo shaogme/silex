@@ -2,7 +2,10 @@ use crate::css::tw::ast::{Modifier, SpannedModifier, UtilityRule, UtilityValue};
 use proc_macro2::Span;
 use syn::{Error, Result};
 
-use super::{DIVIDE_SELECTOR, RING_BOX_SHADOW, kw, make_rule};
+use super::{
+    DIVIDE_SELECTOR, IntoCssPropertyId, RING_BOX_SHADOW, codegen::property_id::CssPropertyId, kw,
+    make_rule,
+};
 
 /// 任意值与任意属性语法解析: `w-[12px]`, `bg-[red]`, `[--tw-ring-color:rgba(79,70,229,.2)]`, `[color:red]`
 pub fn parse_arbitrary_syntax(token: &str) -> Option<(&str, &str)> {
@@ -104,7 +107,10 @@ pub fn resolve_arbitrary(
                 UtilityValue::ArbitraryLiteral(val_str.to_string())
             };
 
-            let mut rules = vec![make_rule(modifiers.clone(), prop, value, span)];
+            let prop_id = prop
+                .into_css_property_id()
+                .unwrap_or_else(|p| CssPropertyId::Custom(std::borrow::Cow::Owned(p.to_string())));
+            let mut rules = vec![make_rule(modifiers.clone(), prop_id, value, span)];
             if prop == "--tw-ring-color" {
                 rules.push(make_rule(
                     modifiers,
