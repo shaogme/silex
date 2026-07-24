@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         mdn_syntaxes_path,
         out_dir,
         css_out_dir,
-        macro_resolver_dir,
+        macro_codegen_dir,
     ) = if current_dir.join("crates/utils/silex_codegen").exists() {
         (
             current_dir.join("crates/utils/silex_codegen/data/mdn_compat_data.json"),
@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             current_dir.join("crates/utils/silex_codegen/data/mdn_css_syntaxes.json"),
             current_dir.join("crates/silex_html/src/tags"),
             current_dir.join("crates/silex_css/src"),
-            current_dir.join("crates/silex_macros/src/css/tw/resolver"),
+            current_dir.join("crates/silex_macros/src/css/tw/resolver/codegen"),
         )
     } else if current_dir.ends_with("silex_codegen") {
         (
@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             current_dir.join("data/mdn_css_syntaxes.json"),
             current_dir.join("../../silex_html/src/tags"),
             current_dir.join("../../silex_css/src"),
-            current_dir.join("../../silex_macros/src/css/tw/resolver"),
+            current_dir.join("../../silex_macros/src/css/tw/resolver/codegen"),
         )
     } else {
         return Err(
@@ -68,7 +68,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("MDN Syntax: {}", mdn_syntaxes_path.display());
     println!("Output dir: {}", out_dir.display());
     println!("CSS dir:    {}", css_out_dir.display());
-    println!("Macro dir:  {}", macro_resolver_dir.display());
+    println!("Macro Codegen dir: {}", macro_codegen_dir.display());
 
     // 2. FETCH MODE: Raw data downloader
     if should_fetch {
@@ -191,39 +191,39 @@ fn main() -> Result<(), Box<dyn Error>> {
         let keyframes_code = generate_keyframes_code(&keyframes_data);
 
 
-        if !macro_resolver_dir.exists() {
-            create_dir_all(&macro_resolver_dir)?;
+        if !macro_codegen_dir.exists() {
+            create_dir_all(&macro_codegen_dir)?;
         }
-        write(macro_resolver_dir.join("table.rs"), table_code)?;
+        write(macro_codegen_dir.join("table.rs"), table_code)?;
         write(
-            macro_resolver_dir.join("table_unimplement.rs"),
+            macro_codegen_dir.join("table_unimplement.rs"),
             table_unimplement_code,
         )?;
         write(
-            macro_resolver_dir.join("table_examples.rs"),
+            macro_codegen_dir.join("table_examples.rs"),
             table_examples_code,
         )?;
         write(
-            macro_resolver_dir.join("shorthands.rs"),
+            macro_codegen_dir.join("shorthands.rs"),
             shorthands_code,
         )?;
         write(
-            macro_resolver_dir.join("prefix_metadata.rs"),
+            macro_codegen_dir.join("prefix_metadata.rs"),
             prefix_metadata_code,
         )?;
         write(
-            macro_resolver_dir.join("palette_gen.rs"),
+            macro_codegen_dir.join("palette.rs"),
             palette_code,
         )?;
         write(
-            macro_resolver_dir.join("modifiers_gen.rs"),
+            macro_codegen_dir.join("modifiers.rs"),
             modifiers_code,
         )?;
         write(
-            macro_resolver_dir.join("keyframes_gen.rs"),
+            macro_codegen_dir.join("keyframes.rs"),
             keyframes_code,
         )?;
-        println!("Generated table.rs, table_unimplement.rs, table_examples.rs, shorthands.rs, prefix_metadata.rs, palette_gen.rs, modifiers_gen.rs and keyframes_gen.rs for silex_macros");
+        println!("Generated table.rs, table_unimplement.rs, table_examples.rs, shorthands.rs, prefix_metadata.rs, palette.rs, modifiers.rs and keyframes.rs for silex_macros in resolver/codegen");
     }
 
     println!("\nSuccessfully completed!");

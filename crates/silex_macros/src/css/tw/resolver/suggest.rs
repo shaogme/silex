@@ -1,4 +1,4 @@
-use super::table::{DYNAMIC_UTILITY_PREFIXES, STATIC_CANDIDATE_UTILITIES};
+use super::codegen::table::{DYNAMIC_UTILITY_PREFIXES, STATIC_CANDIDATE_UTILITIES};
 
 fn levenshtein_distance_slice<T: PartialEq>(s1: &[T], s2: &[T]) -> usize {
     let len1 = s1.len();

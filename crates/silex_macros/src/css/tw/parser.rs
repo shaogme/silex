@@ -157,9 +157,9 @@ pub(crate) fn parse_modifiers_and_body(token: &str) -> (Vec<Modifier>, &str) {
                 min_width,
             }
         } else if let Some(meta) =
-            crate::css::tw::resolver::modifiers_gen::lookup_modifier_meta(prefix)
+            crate::css::tw::resolver::codegen::modifiers::lookup_modifier_meta(prefix)
         {
-            use crate::css::tw::resolver::modifiers_gen::ModifierKind;
+            use crate::css::tw::resolver::codegen::modifiers::ModifierKind;
             match meta.kind {
                 ModifierKind::Child => Modifier::Child,
                 ModifierKind::Descendant => Modifier::Descendant,

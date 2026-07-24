@@ -1,22 +1,14 @@
 pub mod arbitrary;
-pub mod keyframes_gen;
-pub mod modifiers_gen;
+pub mod codegen;
 pub mod numeric;
 pub mod palette;
-pub mod palette_gen;
-pub mod prefix_metadata;
-pub mod shorthands;
 pub mod suggest;
-pub mod table;
-
-#[cfg(test)]
-pub mod table_examples;
 
 use crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};
 use proc_macro2::Span;
 use syn::{Error, Result};
 
-pub(super) const RING_BOX_SHADOW: &str = "var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width, 0px) var(--tw-ring-offset-color, #0000), 0 0 0 var(--tw-ring-width, 0px) var(--tw-ring-color, rgba(59, 130, 246, 0.5)), var(--tw-shadow, 0 0 #0000)";
+pub const RING_BOX_SHADOW: &str = "var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width, 0px) var(--tw-ring-offset-color, #0000), 0 0 0 var(--tw-ring-width, 0px) var(--tw-ring-color, rgba(59, 130, 246, 0.5)), var(--tw-shadow, 0 0 #0000)";
 
 pub(super) const DIVIDE_SELECTOR: &str = "& > :not([hidden]) ~ :not([hidden])";
 
@@ -46,11 +38,11 @@ pub(super) fn px(v: f64) -> UtilityValue {
 }
 
 #[inline]
-pub(super) fn hex(s: &str) -> UtilityValue {
+pub fn hex(s: &str) -> UtilityValue {
     UtilityValue::HexColor(s.to_string())
 }
 
-pub(super) fn make_rule(
+pub fn make_rule(
     modifiers: Vec<Modifier>,
     prop: &str,
     value: UtilityValue,
@@ -89,7 +81,7 @@ pub fn resolve_utility(
     }
 
     // 1. 尝试匹配静态表规则 (static rules table)
-    if let Some(rules) = table::resolve_static_rule(&modifiers, utility_token, span) {
+    if let Some(rules) = codegen::table::resolve_static_rule(&modifiers, utility_token, span) {
         return Ok(rules);
     }
 

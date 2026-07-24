@@ -33,7 +33,7 @@ fn prop_matches_generated_css(prop: &str, css: &str) -> bool {
 
 #[test]
 fn test_e2e_table_examples_individual_rules() {
-    use resolver::table_examples::TEST_CASE_RULES;
+    use resolver::codegen::table_examples::TEST_CASE_RULES;
 
     let span = proc_macro2::Span::call_site();
 
@@ -70,7 +70,7 @@ fn test_e2e_table_examples_individual_rules() {
 
 #[test]
 fn test_e2e_table_examples_batch_candidates() {
-    use resolver::table_examples::TEST_CASE_CANDIDATE_UTILITIES;
+    use resolver::codegen::table_examples::TEST_CASE_CANDIDATE_UTILITIES;
 
     let span = proc_macro2::Span::call_site();
 
@@ -146,7 +146,7 @@ fn literal_matches_generated_css(l: &str, css: &str) -> bool {
 
 #[test]
 fn test_e2e_table_examples_rule_values_precision() {
-    use resolver::table_examples::{TEST_CASE_RULES, StaticVal};
+    use resolver::codegen::table_examples::{TEST_CASE_RULES, StaticVal};
 
     let span = proc_macro2::Span::call_site();
 

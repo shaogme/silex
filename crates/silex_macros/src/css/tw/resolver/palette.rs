@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use crate::css::tw::ast::UtilityValue;
-use super::palette_gen::get_raw_palette;
+use super::codegen::palette::get_raw_palette;
 
 /// 解析 Hex 色值为 (r, g, b)（支持 3, 4, 6, 8 位 Hex）
 fn parse_hex_rgb(hex: &str) -> (u8, u8, u8) {

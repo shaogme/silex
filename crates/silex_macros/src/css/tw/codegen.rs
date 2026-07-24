@@ -3,7 +3,7 @@ use crate::css::{
     config::get_config,
     tw::{
         ast::{Modifier, TwInput, TwSegment, UtilityRule, UtilityValue},
-        resolver::shorthands::get_atomic_subproperties,
+        resolver::codegen::shorthands::get_atomic_subproperties,
     },
 };
 use proc_macro2::{Delimiter, Group, Ident, Punct, Spacing, Span, TokenStream, TokenTree};
@@ -95,7 +95,7 @@ fn modifier_priority(m: &Modifier) -> u32 {
         Modifier::ContainerQuery { .. } => 70,
         Modifier::MediaBreakpoint(bp) => {
             if let Some(meta) =
-                crate::css::tw::resolver::modifiers_gen::lookup_modifier_meta(bp.as_str())
+                crate::css::tw::resolver::codegen::modifiers::lookup_modifier_meta(bp.as_str())
             {
                 meta.priority
             } else {
@@ -226,7 +226,7 @@ fn inject_keyframes_rules(root_rules: &mut Vec<CssRule>, keyframes: &HashSet<Str
 }
 
 fn build_keyframe_at_rule(name: &str) -> Option<CssAtRule> {
-    let meta = crate::css::tw::resolver::keyframes_gen::lookup_keyframe_meta(name)?;
+    let meta = crate::css::tw::resolver::codegen::keyframes::lookup_keyframe_meta(name)?;
 
     let at_name = Ident::new("keyframes", Span::call_site());
     let params: TokenStream = name.parse().ok()?;
@@ -522,7 +522,7 @@ fn build_modifier_rule(modifiers: Vec<Modifier>, rules: Vec<UtilityRule>) -> Res
             }
             Modifier::MediaBreakpoint(bp) => {
                 let query = if let Some(meta) =
-                    crate::css::tw::resolver::modifiers_gen::lookup_modifier_meta(bp.as_str())
+                    crate::css::tw::resolver::codegen::modifiers::lookup_modifier_meta(bp.as_str())
                 {
                     meta.css_selector.to_string()
                 } else {

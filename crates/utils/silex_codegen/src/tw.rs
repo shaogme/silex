@@ -37,7 +37,7 @@ fn resolve_entries<'a>(
 fn push_table_header(code: &mut String, doc_comment: &str) {
     let _ = writeln!(code, "// {}", doc_comment);
     code.push_str("// 避免手写硬编码，与 silex_codegen/resolver 保持 100% 规则对齐\n\n");
-    code.push_str("#[allow(unused_imports)]\nuse super::make_rule;\n");
+    code.push_str("#[allow(unused_imports)]\nuse crate::css::tw::resolver::make_rule;\n");
     code.push_str("#[allow(unused_imports)]\nuse crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};\n");
     code.push_str("#[allow(unused_imports)]\nuse proc_macro2::Span;\n\n");
 
@@ -91,7 +91,7 @@ fn push_rules_array(code: &mut String, var_name: &str, entries: &RuleEntries) {
     code.push_str("];\n\n");
 }
 
-/// 生成 `silex_macros/src/css/tw/resolver/table.rs` 与 `table_unimplement.rs` 代码
+/// 生成 `silex_macros/src/css/tw/resolver/codegen/table.rs` 与 `table_unimplement.rs` 代码
 pub fn generate_macro_tables(
     classes: &[String],
     dynamic_prefixes: &BTreeMap<String, Vec<String>>,
@@ -138,9 +138,9 @@ pub fn generate_macro_tables(
         let uval = match val {
             StaticVal::Kw(s) => UtilityValue::Keyword(s),
             StaticVal::Num(v, u) => UtilityValue::Numeric(v, u),
-            StaticVal::Hex(s) => super::hex(s),
+            StaticVal::Hex(s) => crate::css::tw::resolver::hex(s),
             StaticVal::Literal(s) => UtilityValue::ArbitraryLiteral(s.to_string()),
-            StaticVal::RingShadow => UtilityValue::Keyword(super::RING_BOX_SHADOW),
+            StaticVal::RingShadow => UtilityValue::Keyword(crate::css::tw::resolver::RING_BOX_SHADOW),
         };
         rules.push(make_rule(
             if modifiers.is_empty() { Vec::new() } else { modifiers.to_vec() },
