@@ -1,5 +1,101 @@
 /// Flexbox & Grid
 pub fn resolve_flex_grid_rules(class_name: &str) -> Option<Vec<(&'static str, String)>> {
+    // 静态 Flexbox & Grid 规则匹配
+    let static_rules: Option<&'static [(&'static str, &'static str)]> = match class_name {
+        // Flex Direction / Wrap / Flex / Grow / Shrink
+        "flex-row" => Some(&[("flex-direction", "row")]),
+        "flex-row-reverse" => Some(&[("flex-direction", "row-reverse")]),
+        "flex-col" => Some(&[("flex-direction", "column")]),
+        "flex-col-reverse" => Some(&[("flex-direction", "column-reverse")]),
+        "flex-wrap" => Some(&[("flex-wrap", "wrap")]),
+        "flex-wrap-reverse" => Some(&[("flex-wrap", "wrap-reverse")]),
+        "flex-nowrap" => Some(&[("flex-wrap", "nowrap")]),
+        "flex-1" => Some(&[("flex", "1 1 0%")]),
+        "flex-auto" => Some(&[("flex", "1 1 auto")]),
+        "flex-initial" => Some(&[("flex", "0 1 auto")]),
+        "flex-none" => Some(&[("flex", "none")]),
+        "grow" => Some(&[("flex-grow", "1")]),
+        "grow-0" => Some(&[("flex-grow", "0")]),
+        "shrink" => Some(&[("flex-shrink", "1")]),
+        "shrink-0" => Some(&[("flex-shrink", "0")]),
+
+        // Justify Content & Items & Self
+        "justify-start" => Some(&[("justify-content", "flex-start")]),
+        "justify-end" => Some(&[("justify-content", "flex-end")]),
+        "justify-center" => Some(&[("justify-content", "center")]),
+        "justify-between" => Some(&[("justify-content", "space-between")]),
+        "justify-around" => Some(&[("justify-content", "space-around")]),
+        "justify-evenly" => Some(&[("justify-content", "space-evenly")]),
+        "justify-stretch" => Some(&[("justify-content", "stretch")]),
+        "justify-normal" => Some(&[("justify-content", "normal")]),
+        "justify-baseline" => Some(&[("justify-content", "baseline")]),
+        "justify-center-safe" => Some(&[("justify-content", "safe center")]),
+        "justify-end-safe" => Some(&[("justify-content", "safe end")]),
+
+        "justify-items-start" => Some(&[("justify-items", "start")]),
+        "justify-items-end" => Some(&[("justify-items", "end")]),
+        "justify-items-center" => Some(&[("justify-items", "center")]),
+        "justify-items-stretch" => Some(&[("justify-items", "stretch")]),
+        "justify-items-normal" => Some(&[("justify-items", "normal")]),
+        "justify-items-center-safe" => Some(&[("justify-items", "safe center")]),
+        "justify-items-end-safe" => Some(&[("justify-items", "safe end")]),
+
+        "justify-self-auto" => Some(&[("justify-self", "auto")]),
+        "justify-self-start" => Some(&[("justify-self", "start")]),
+        "justify-self-end" => Some(&[("justify-self", "end")]),
+        "justify-self-center" => Some(&[("justify-self", "center")]),
+        "justify-self-stretch" => Some(&[("justify-self", "stretch")]),
+        "justify-self-center-safe" => Some(&[("justify-self", "safe center")]),
+        "justify-self-end-safe" => Some(&[("justify-self", "safe end")]),
+
+        // Align Items & Align Self
+        "items-start" => Some(&[("align-items", "flex-start")]),
+        "items-end" => Some(&[("align-items", "flex-end")]),
+        "items-center" => Some(&[("align-items", "center")]),
+        "items-baseline" => Some(&[("align-items", "baseline")]),
+        "items-stretch" => Some(&[("align-items", "stretch")]),
+        "items-baseline-last" => Some(&[("align-items", "last baseline")]),
+        "items-center-safe" => Some(&[("align-items", "safe center")]),
+        "items-end-safe" => Some(&[("align-items", "safe end")]),
+
+        "self-auto" => Some(&[("align-self", "auto")]),
+        "self-start" => Some(&[("align-self", "flex-start")]),
+        "self-end" => Some(&[("align-self", "flex-end")]),
+        "self-center" => Some(&[("align-self", "center")]),
+        "self-stretch" => Some(&[("align-self", "stretch")]),
+        "self-baseline" => Some(&[("align-self", "baseline")]),
+        "self-baseline-last" => Some(&[("align-self", "last baseline")]),
+        "self-center-safe" => Some(&[("align-self", "safe center")]),
+        "self-end-safe" => Some(&[("align-self", "safe end")]),
+
+        // Align Content
+        "content-normal" => Some(&[("align-content", "normal")]),
+        "content-center" => Some(&[("align-content", "center")]),
+        "content-start" => Some(&[("align-content", "flex-start")]),
+        "content-end" => Some(&[("align-content", "flex-end")]),
+        "content-between" => Some(&[("align-content", "space-between")]),
+        "content-around" => Some(&[("align-content", "space-around")]),
+        "content-evenly" => Some(&[("align-content", "space-evenly")]),
+        "content-baseline" => Some(&[("align-content", "baseline")]),
+        "content-stretch" => Some(&[("align-content", "stretch")]),
+        "content-center-safe" => Some(&[("align-content", "safe center")]),
+        "content-end-safe" => Some(&[("align-content", "safe end")]),
+
+        // Place Extensions Safe
+        "place-content-center-safe" => Some(&[("place-content", "safe center")]),
+        "place-content-end-safe" => Some(&[("place-content", "safe end")]),
+        "place-items-center-safe" => Some(&[("place-items", "safe center")]),
+        "place-items-end-safe" => Some(&[("place-items", "safe end")]),
+        "place-self-center-safe" => Some(&[("place-self", "safe center")]),
+        "place-self-end-safe" => Some(&[("place-self", "safe end")]),
+
+        _ => None,
+    };
+
+    if let Some(r) = static_rules {
+        return Some(r.iter().map(|&(k, v)| (k, v.to_string())).collect());
+    }
+
     // Grid Cols
     if let Some(rest) = class_name.strip_prefix("grid-cols-") {
         if rest == "none" {

@@ -2,6 +2,65 @@ use super::dynamic::resolve_length_val;
 
 /// Transform & Transition & Animation & Gradients
 pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'static str, String)>> {
+    // 静态 Transform & Transition & Animation 规则匹配
+    let static_rules: Option<&'static [(&'static str, &'static str)]> = match class_name {
+        // Backface
+        "backface-visible" => Some(&[("backface-visibility", "visible")]),
+        "backface-hidden" => Some(&[("backface-visibility", "hidden")]),
+
+        // Animate in/out
+        "animate-in" => Some(&[("animation-name", "enter"), ("animation-duration", "150ms")]),
+        "animate-out" => Some(&[("animation-name", "exit"), ("animation-duration", "150ms")]),
+
+        // Transitions & Duration/Ease Initial
+        "transition-none" => Some(&[("transition-property", "none")]),
+        "transition-all" => Some(&[("transition-property", "all")]),
+        "transition" => Some(&[(
+            "transition-property",
+            "color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, backdrop-filter",
+        )]),
+        "transition-colors" => Some(&[(
+            "transition-property",
+            "color, background-color, border-color, text-decoration-color, fill, stroke",
+        )]),
+        "transition-opacity" => Some(&[("transition-property", "opacity")]),
+        "transition-shadow" => Some(&[("transition-property", "box-shadow")]),
+        "transition-transform" => {
+            Some(&[("transition-property", "transform, translate, scale, rotate")])
+        }
+        "transition-discrete" => Some(&[("transition-behavior", "allow-discrete")]),
+        "duration-initial" => Some(&[("transition-duration", "initial")]),
+        "ease-initial" => Some(&[("transition-timing-function", "initial")]),
+        "transition-normal" => Some(&[("transition-timing-function", "normal")]),
+
+        // Transform Utilities
+        "transform" => Some(&[(
+            "transform",
+            "var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y)",
+        )]),
+        "transform-none" => Some(&[("transform", "none")]),
+        "transform-gpu" => Some(&[(
+            "transform",
+            "translate3d(var(--tw-translate-x), var(--tw-translate-y), 0) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))",
+        )]),
+        "transform-cpu" => Some(&[(
+            "transform",
+            "translateX(var(--tw-translate-x)) translateY(var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))",
+        )]),
+        "transform-flat" => Some(&[("transform-style", "flat")]),
+        "transform-3d" => Some(&[("transform-style", "preserve-3d")]),
+        "transform-border" => Some(&[("transform-box", "border-box")]),
+        "transform-content" => Some(&[("transform-box", "content-box")]),
+        "transform-fill" => Some(&[("transform-box", "fill-box")]),
+        "transform-stroke" => Some(&[("transform-box", "stroke-box")]),
+        "transform-view" => Some(&[("transform-box", "view-box")]),
+
+        _ => None,
+    };
+    if let Some(r) = static_rules {
+        return Some(r.iter().map(|&(k, v)| (k, v.to_string())).collect());
+    }
+
     // Animations
     match class_name {
         "animate" | "animate-spin" => {

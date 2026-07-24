@@ -1,5 +1,55 @@
 /// Filter & Backdrop-Filter 规则解析
 pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, String)>> {
+    // 静态 Blend Mode & Shadow 规则匹配
+    let static_filter: Option<&'static [(&'static str, &'static str)]> = match class_name {
+        // Blend Modes
+        "mix-blend-normal" => Some(&[("mix-blend-mode", "normal")]),
+        "mix-blend-multiply" => Some(&[("mix-blend-mode", "multiply")]),
+        "mix-blend-screen" => Some(&[("mix-blend-mode", "screen")]),
+        "mix-blend-overlay" => Some(&[("mix-blend-mode", "overlay")]),
+        "mix-blend-darken" => Some(&[("mix-blend-mode", "darken")]),
+        "mix-blend-lighten" => Some(&[("mix-blend-mode", "lighten")]),
+        "mix-blend-color-dodge" => Some(&[("mix-blend-mode", "color-dodge")]),
+        "mix-blend-color-burn" => Some(&[("mix-blend-mode", "color-burn")]),
+        "mix-blend-hard-light" => Some(&[("mix-blend-mode", "hard-light")]),
+        "mix-blend-soft-light" => Some(&[("mix-blend-mode", "soft-light")]),
+        "mix-blend-difference" => Some(&[("mix-blend-mode", "difference")]),
+        "mix-blend-exclusion" => Some(&[("mix-blend-mode", "exclusion")]),
+        "mix-blend-hue" => Some(&[("mix-blend-mode", "hue")]),
+        "mix-blend-saturation" => Some(&[("mix-blend-mode", "saturation")]),
+        "mix-blend-color" => Some(&[("mix-blend-mode", "color")]),
+        "mix-blend-luminosity" => Some(&[("mix-blend-mode", "luminosity")]),
+        "mix-blend-plus-lighter" => Some(&[("mix-blend-mode", "plus-lighter")]),
+        "mix-blend-plus-darker" => Some(&[("mix-blend-mode", "plus-darker")]),
+
+        "bg-blend-normal" => Some(&[("background-blend-mode", "normal")]),
+        "bg-blend-multiply" => Some(&[("background-blend-mode", "multiply")]),
+        "bg-blend-screen" => Some(&[("background-blend-mode", "screen")]),
+        "bg-blend-overlay" => Some(&[("background-blend-mode", "overlay")]),
+        "bg-blend-darken" => Some(&[("background-blend-mode", "darken")]),
+        "bg-blend-lighten" => Some(&[("background-blend-mode", "lighten")]),
+        "bg-blend-color-dodge" => Some(&[("background-blend-mode", "color-dodge")]),
+        "bg-blend-color-burn" => Some(&[("background-blend-mode", "color-burn")]),
+        "bg-blend-hard-light" => Some(&[("background-blend-mode", "hard-light")]),
+        "bg-blend-soft-light" => Some(&[("background-blend-mode", "soft-light")]),
+        "bg-blend-difference" => Some(&[("background-blend-mode", "difference")]),
+        "bg-blend-exclusion" => Some(&[("background-blend-mode", "exclusion")]),
+        "bg-blend-hue" => Some(&[("background-blend-mode", "hue")]),
+        "bg-blend-saturation" => Some(&[("background-blend-mode", "saturation")]),
+        "bg-blend-color" => Some(&[("background-blend-mode", "color")]),
+        "bg-blend-luminosity" => Some(&[("background-blend-mode", "luminosity")]),
+
+        // Shadow Initial
+        "shadow-initial" => Some(&[("box-shadow", "initial")]),
+        "text-shadow-initial" => Some(&[("text-shadow", "initial")]),
+        "text-shadow-none" => Some(&[("text-shadow", "none")]),
+
+        _ => None,
+    };
+    if let Some(r) = static_filter {
+        return Some(r.iter().map(|&(k, v)| (k, v.to_string())).collect());
+    }
+
     let (is_backdrop, target) = if let Some(rest) = class_name.strip_prefix("backdrop-") {
         (true, rest)
     } else {

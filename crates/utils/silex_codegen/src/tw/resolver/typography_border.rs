@@ -2,6 +2,93 @@
 pub fn resolve_typography_border_effect_rules(
     class_name: &str,
 ) -> Option<Vec<(&'static str, String)>> {
+    // 静态 Typography & Border 规则匹配
+    let static_typo: Option<&'static [(&'static str, &'static str)]> = match class_name {
+        // Typography Alignment & Decoration & Case & Truncate
+        "text-left" => Some(&[("text-align", "left")]),
+        "text-center" => Some(&[("text-align", "center")]),
+        "text-right" => Some(&[("text-align", "right")]),
+        "text-justify" => Some(&[("text-align", "justify")]),
+        "text-start" => Some(&[("text-align", "start")]),
+        "text-end" => Some(&[("text-align", "end")]),
+        "text-clip" => Some(&[("text-overflow", "clip")]),
+        "text-ellipsis" => Some(&[("text-overflow", "ellipsis")]),
+
+        "italic" => Some(&[("font-style", "italic")]),
+        "not-italic" => Some(&[("font-style", "normal")]),
+        "underline" => Some(&[("text-decoration-line", "underline")]),
+        "overline" => Some(&[("text-decoration-line", "overline")]),
+        "line-through" => Some(&[("text-decoration-line", "line-through")]),
+        "no-underline" => Some(&[("text-decoration-line", "none")]),
+
+        "uppercase" => Some(&[("text-transform", "uppercase")]),
+        "lowercase" => Some(&[("text-transform", "lowercase")]),
+        "capitalize" => Some(&[("text-transform", "capitalize")]),
+        "normal-case" => Some(&[("text-transform", "none")]),
+        "truncate" => Some(&[
+            ("overflow", "hidden"),
+            ("text-overflow", "ellipsis"),
+            ("white-space", "nowrap"),
+        ]),
+
+        // Font stretch & variant numeric
+        "font-stretch-normal" => Some(&[("font-stretch", "normal")]),
+        "font-stretch-condensed" => Some(&[("font-stretch", "condensed")]),
+        "font-stretch-expanded" => Some(&[("font-stretch", "expanded")]),
+        "font-stretch-ultra-condensed" => Some(&[("font-stretch", "ultra-condensed")]),
+        "font-stretch-extra-condensed" => Some(&[("font-stretch", "extra-condensed")]),
+        "font-stretch-semi-condensed" => Some(&[("font-stretch", "semi-condensed")]),
+        "font-stretch-semi-expanded" => Some(&[("font-stretch", "semi-expanded")]),
+        "font-stretch-extra-expanded" => Some(&[("font-stretch", "extra-expanded")]),
+        "font-stretch-ultra-expanded" => Some(&[("font-stretch", "ultra-expanded")]),
+        "ordinal" => Some(&[("font-variant-numeric", "ordinal")]),
+        "slashed-zero" => Some(&[("font-variant-numeric", "slashed-zero")]),
+        "lining-nums" => Some(&[("font-variant-numeric", "lining-nums")]),
+        "oldstyle-nums" => Some(&[("font-variant-numeric", "oldstyle-nums")]),
+        "proportional-nums" => Some(&[("font-variant-numeric", "proportional-nums")]),
+        "tabular-nums" => Some(&[("font-variant-numeric", "tabular-nums")]),
+        "diagonal-fractions" => Some(&[("font-variant-numeric", "diagonal-fractions")]),
+        "stacked-fractions" => Some(&[("font-variant-numeric", "stacked-fractions")]),
+        "normal-nums" => Some(&[("font-variant-numeric", "normal")]),
+
+        // Text decoration style & thickness & offset
+        "decoration-solid" => Some(&[("text-decoration-style", "solid")]),
+        "decoration-double" => Some(&[("text-decoration-style", "double")]),
+        "decoration-dotted" => Some(&[("text-decoration-style", "dotted")]),
+        "decoration-dashed" => Some(&[("text-decoration-style", "dashed")]),
+        "decoration-wavy" => Some(&[("text-decoration-style", "wavy")]),
+        "decoration-auto" => Some(&[("text-decoration-thickness", "auto")]),
+        "decoration-from-font" => Some(&[("text-decoration-thickness", "from-font")]),
+        "underline-offset-auto" => Some(&[("text-underline-offset", "auto")]),
+
+        // Whitespace & Word Break & Hyphens
+        "whitespace-normal" => Some(&[("white-space", "normal")]),
+        "whitespace-nowrap" => Some(&[("white-space", "nowrap")]),
+        "whitespace-pre" => Some(&[("white-space", "pre")]),
+        "whitespace-pre-line" => Some(&[("white-space", "pre-line")]),
+        "whitespace-pre-wrap" => Some(&[("white-space", "pre-wrap")]),
+        "whitespace-break-spaces" => Some(&[("white-space", "break-spaces")]),
+        "break-all" => Some(&[("word-break", "break-all")]),
+        "break-keep" => Some(&[("word-break", "keep-all")]),
+        "break-normal" => Some(&[("overflow-wrap", "normal"), ("word-break", "normal")]),
+        "hyphens-none" => Some(&[("hyphens", "none")]),
+        "hyphens-manual" => Some(&[("hyphens", "manual")]),
+        "hyphens-auto" => Some(&[("hyphens", "auto")]),
+
+        // Antialiased
+        "antialiased" => Some(&[("-webkit-font-smoothing", "antialiased")]),
+        "subpixel-antialiased" => Some(&[("-webkit-font-smoothing", "auto")]),
+
+        // Border Base & Hidden
+        "border" => Some(&[("border-style", "solid"), ("border-width", "1px")]),
+        "border-hidden" => Some(&[("border-style", "hidden")]),
+
+        _ => None,
+    };
+    if let Some(r) = static_typo {
+        return Some(r.iter().map(|&(k, v)| (k, v.to_string())).collect());
+    }
+
     // Font size
     let font_size = match class_name {
         "text-xs" => Some(vec![("font-size", "0.75rem"), ("line-height", "1rem")]),

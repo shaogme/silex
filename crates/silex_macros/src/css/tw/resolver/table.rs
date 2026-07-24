@@ -74979,7 +74979,7 @@ pub static STATIC_RULES: &[(&'static str, &'static [(&'static str, StaticVal)])]
         ("object-fit", StaticVal::Kw("cover")),
     ]),
     ("object-fill", &[
-        ("object-fit", StaticVal::Kw("fill")),
+        ("object-fill", StaticVal::Kw("fill")),
     ]),
     ("object-left", &[
         ("object-position", StaticVal::Kw("left")),
