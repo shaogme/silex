@@ -15,7 +15,6 @@ use crate::{
 };
 use heck::AsSnakeCase;
 use reqwest::blocking::Client;
-use serde::Deserialize;
 use serde_json::{from_reader, from_str, to_writer_pretty, Value};
 use std::{
     collections::BTreeMap,
@@ -41,18 +40,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         macro_resolver_dir,
     ) = if current_dir.join("crates/utils/silex_codegen").exists() {
         (
-            current_dir.join("crates/utils/silex_codegen/mdn_compat_data.json"),
-            current_dir.join("crates/utils/silex_codegen/mdn_css_properties.json"),
-            current_dir.join("crates/utils/silex_codegen/mdn_css_syntaxes.json"),
+            current_dir.join("crates/utils/silex_codegen/data/mdn_compat_data.json"),
+            current_dir.join("crates/utils/silex_codegen/data/mdn_css_properties.json"),
+            current_dir.join("crates/utils/silex_codegen/data/mdn_css_syntaxes.json"),
             current_dir.join("crates/silex_html/src/tags"),
             current_dir.join("crates/silex_css/src"),
             current_dir.join("crates/silex_macros/src/css/tw/resolver"),
         )
     } else if current_dir.ends_with("silex_codegen") {
         (
-            current_dir.join("mdn_compat_data.json"),
-            current_dir.join("mdn_css_properties.json"),
-            current_dir.join("mdn_css_syntaxes.json"),
+            current_dir.join("data/mdn_compat_data.json"),
+            current_dir.join("data/mdn_css_properties.json"),
+            current_dir.join("data/mdn_css_syntaxes.json"),
             current_dir.join("../../silex_html/src/tags"),
             current_dir.join("../../silex_css/src"),
             current_dir.join("../../silex_macros/src/css/tw/resolver"),
@@ -164,27 +163,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Generated svg.rs");
 
     // Generate Tailwind Classes & Macro Table
-    let tw_json_path = current_dir.join("crates/utils/silex_codegen/tailwind-classes.json");
-    if tw_json_path.exists() {
-        let json_str = read_to_string(&tw_json_path)?;
+    let tw_data_dir = current_dir.join("crates/utils/silex_codegen/data/tailwind");
+    if tw_data_dir.exists() {
+        let classes_str = read_to_string(tw_data_dir.join("classes.json"))?;
+        let dynamic_prefixes_str = read_to_string(tw_data_dir.join("dynamic_prefixes.json"))?;
+        let prefix_metadata_str = read_to_string(tw_data_dir.join("prefix_metadata.json"))?;
+        let test_cases_str = read_to_string(tw_data_dir.join("test_cases.json"))?;
 
-        #[derive(Deserialize)]
-        struct TailwindJsonData {
-            classes: Vec<String>,
-            #[serde(default)]
-            dynamic_prefixes: BTreeMap<String, Vec<String>>,
-            #[serde(default)]
-            prefix_metadata: BTreeMap<String, crate::tw::PrefixMetaJson>,
-            #[serde(default)]
-            test_cases: Vec<String>,
-        }
-
-        let TailwindJsonData {
-            classes,
-            dynamic_prefixes,
-            prefix_metadata,
-            test_cases,
-        } = from_str::<TailwindJsonData>(&json_str)?;
+        let classes: Vec<String> = from_str(&classes_str)?;
+        let dynamic_prefixes: BTreeMap<String, Vec<String>> = from_str(&dynamic_prefixes_str)?;
+        let prefix_metadata: BTreeMap<String, crate::tw::PrefixMetaJson> = from_str(&prefix_metadata_str)?;
+        let test_cases: Vec<String> = from_str(&test_cases_str)?;
 
         let (table_code, table_unimplement_code) =
             generate_macro_tables(&classes, &dynamic_prefixes);

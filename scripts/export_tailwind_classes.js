@@ -368,22 +368,17 @@ async function main() {
   }
 
   // 5. 确保导出目录存在
-  const outputFile = path.join(__dirname, '../crates/utils/silex_codegen/tailwind-classes.json');
-  const outputDir = path.dirname(outputFile);
+  const outputDir = path.join(__dirname, '../crates/utils/silex_codegen/data/tailwind');
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  const exportData = {
-    classes: classList,
-    dynamic_prefixes: dynamicPrefixesObj,
-    prefix_metadata: inferredMetadataObj,
-    test_cases: testCasesList,
-  };
+  fs.writeFileSync(path.join(outputDir, 'classes.json'), JSON.stringify(classList, null, 2), 'utf-8');
+  fs.writeFileSync(path.join(outputDir, 'dynamic_prefixes.json'), JSON.stringify(dynamicPrefixesObj, null, 2), 'utf-8');
+  fs.writeFileSync(path.join(outputDir, 'prefix_metadata.json'), JSON.stringify(inferredMetadataObj, null, 2), 'utf-8');
+  fs.writeFileSync(path.join(outputDir, 'test_cases.json'), JSON.stringify(testCasesList, null, 2), 'utf-8');
 
-  fs.writeFileSync(outputFile, JSON.stringify(exportData, null, 2), 'utf-8');
-
-  console.log(`导出成功！文件已保存至: ${outputFile}`);
+  console.log(`导出成功！文件已保存至: ${outputDir}`);
   console.log(`共包含类名数量：${classList.length}`);
   console.log(`包含动态前缀数量：${Object.keys(dynamicPrefixesObj).length}`);
   console.log(`包含前缀元数据数量：${Object.keys(inferredMetadataObj).length}`);
