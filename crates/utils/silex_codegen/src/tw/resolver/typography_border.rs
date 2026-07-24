@@ -1,192 +1,241 @@
+use std::borrow::Cow;
+
 /// 排版、边框、圆角、阴影等
 pub fn resolve_typography_border_effect_rules(
     class_name: &str,
-) -> Option<Vec<(&'static str, String)>> {
+) -> Option<Vec<(&'static str, Cow<'static, str>)>> {
     // 静态 Typography & Border 规则匹配
-    let static_typo: Option<&'static [(&'static str, &'static str)]> = match class_name {
+    let static_typo: Option<&'static [(&'static str, Cow<'static, str>)]> = match class_name {
         // Typography Alignment & Decoration & Case & Truncate
-        "text-left" => Some(&[("text-align", "left")]),
-        "text-center" => Some(&[("text-align", "center")]),
-        "text-right" => Some(&[("text-align", "right")]),
-        "text-justify" => Some(&[("text-align", "justify")]),
-        "text-start" => Some(&[("text-align", "start")]),
-        "text-end" => Some(&[("text-align", "end")]),
-        "text-clip" => Some(&[("text-overflow", "clip")]),
-        "text-ellipsis" => Some(&[("text-overflow", "ellipsis")]),
+        "text-left" => Some(cow![("text-align", "left")]),
+        "text-center" => Some(cow![("text-align", "center")]),
+        "text-right" => Some(cow![("text-align", "right")]),
+        "text-justify" => Some(cow![("text-align", "justify")]),
+        "text-start" => Some(cow![("text-align", "start")]),
+        "text-end" => Some(cow![("text-align", "end")]),
+        "text-clip" => Some(cow![("text-overflow", "clip")]),
+        "text-ellipsis" => Some(cow![("text-overflow", "ellipsis")]),
 
-        "italic" => Some(&[("font-style", "italic")]),
-        "not-italic" => Some(&[("font-style", "normal")]),
-        "underline" => Some(&[("text-decoration-line", "underline")]),
-        "overline" => Some(&[("text-decoration-line", "overline")]),
-        "line-through" => Some(&[("text-decoration-line", "line-through")]),
-        "no-underline" => Some(&[("text-decoration-line", "none")]),
+        "italic" => Some(cow![("font-style", "italic")]),
+        "not-italic" => Some(cow![("font-style", "normal")]),
+        "underline" => Some(cow![("text-decoration-line", "underline")]),
+        "overline" => Some(cow![("text-decoration-line", "overline")]),
+        "line-through" => Some(cow![("text-decoration-line", "line-through")]),
+        "no-underline" => Some(cow![("text-decoration-line", "none")]),
 
-        "uppercase" => Some(&[("text-transform", "uppercase")]),
-        "lowercase" => Some(&[("text-transform", "lowercase")]),
-        "capitalize" => Some(&[("text-transform", "capitalize")]),
-        "normal-case" => Some(&[("text-transform", "none")]),
-        "truncate" => Some(&[
+        "uppercase" => Some(cow![("text-transform", "uppercase")]),
+        "lowercase" => Some(cow![("text-transform", "lowercase")]),
+        "capitalize" => Some(cow![("text-transform", "capitalize")]),
+        "normal-case" => Some(cow![("text-transform", "none")]),
+        "truncate" => Some(cow![
             ("overflow", "hidden"),
             ("text-overflow", "ellipsis"),
             ("white-space", "nowrap"),
         ]),
 
         // Font stretch & variant numeric
-        "font-stretch-normal" => Some(&[("font-stretch", "normal")]),
-        "font-stretch-condensed" => Some(&[("font-stretch", "condensed")]),
-        "font-stretch-expanded" => Some(&[("font-stretch", "expanded")]),
-        "font-stretch-ultra-condensed" => Some(&[("font-stretch", "ultra-condensed")]),
-        "font-stretch-extra-condensed" => Some(&[("font-stretch", "extra-condensed")]),
-        "font-stretch-semi-condensed" => Some(&[("font-stretch", "semi-condensed")]),
-        "font-stretch-semi-expanded" => Some(&[("font-stretch", "semi-expanded")]),
-        "font-stretch-extra-expanded" => Some(&[("font-stretch", "extra-expanded")]),
-        "font-stretch-ultra-expanded" => Some(&[("font-stretch", "ultra-expanded")]),
-        "ordinal" => Some(&[("font-variant-numeric", "ordinal")]),
-        "slashed-zero" => Some(&[("font-variant-numeric", "slashed-zero")]),
-        "lining-nums" => Some(&[("font-variant-numeric", "lining-nums")]),
-        "oldstyle-nums" => Some(&[("font-variant-numeric", "oldstyle-nums")]),
-        "proportional-nums" => Some(&[("font-variant-numeric", "proportional-nums")]),
-        "tabular-nums" => Some(&[("font-variant-numeric", "tabular-nums")]),
-        "diagonal-fractions" => Some(&[("font-variant-numeric", "diagonal-fractions")]),
-        "stacked-fractions" => Some(&[("font-variant-numeric", "stacked-fractions")]),
-        "normal-nums" => Some(&[("font-variant-numeric", "normal")]),
+        "font-stretch-normal" => Some(cow![("font-stretch", "normal")]),
+        "font-stretch-condensed" => Some(cow![("font-stretch", "condensed")]),
+        "font-stretch-expanded" => Some(cow![("font-stretch", "expanded")]),
+        "font-stretch-ultra-condensed" => Some(cow![("font-stretch", "ultra-condensed")]),
+        "font-stretch-extra-condensed" => Some(cow![("font-stretch", "extra-condensed")]),
+        "font-stretch-semi-condensed" => Some(cow![("font-stretch", "semi-condensed")]),
+        "font-stretch-semi-expanded" => Some(cow![("font-stretch", "semi-expanded")]),
+        "font-stretch-extra-expanded" => Some(cow![("font-stretch", "extra-expanded")]),
+        "font-stretch-ultra-expanded" => Some(cow![("font-stretch", "ultra-expanded")]),
+        "font-condensed" => Some(cow![("font-stretch", "condensed")]),
+        "font-expanded" => Some(cow![("font-stretch", "expanded")]),
+        "font-extra-condensed" => Some(cow![("font-stretch", "extra-condensed")]),
+        "font-extra-expanded" => Some(cow![("font-stretch", "extra-expanded")]),
+        "font-semi-condensed" => Some(cow![("font-stretch", "semi-condensed")]),
+        "font-semi-expanded" => Some(cow![("font-stretch", "semi-expanded")]),
+        "font-ultra-condensed" => Some(cow![("font-stretch", "ultra-condensed")]),
+        "font-ultra-expanded" => Some(cow![("font-stretch", "ultra-expanded")]),
+
+        "ordinal" => Some(cow![("font-variant-numeric", "ordinal")]),
+        "slashed-zero" => Some(cow![("font-variant-numeric", "slashed-zero")]),
+        "lining-nums" => Some(cow![("font-variant-numeric", "lining-nums")]),
+        "oldstyle-nums" => Some(cow![("font-variant-numeric", "oldstyle-nums")]),
+        "proportional-nums" => Some(cow![("font-variant-numeric", "proportional-nums")]),
+        "tabular-nums" => Some(cow![("font-variant-numeric", "tabular-nums")]),
+        "diagonal-fractions" => Some(cow![("font-variant-numeric", "diagonal-fractions")]),
+        "stacked-fractions" => Some(cow![("font-variant-numeric", "stacked-fractions")]),
+        "normal-nums" => Some(cow![("font-variant-numeric", "normal")]),
 
         // Text decoration style & thickness & offset
-        "decoration-solid" => Some(&[("text-decoration-style", "solid")]),
-        "decoration-double" => Some(&[("text-decoration-style", "double")]),
-        "decoration-dotted" => Some(&[("text-decoration-style", "dotted")]),
-        "decoration-dashed" => Some(&[("text-decoration-style", "dashed")]),
-        "decoration-wavy" => Some(&[("text-decoration-style", "wavy")]),
-        "decoration-auto" => Some(&[("text-decoration-thickness", "auto")]),
-        "decoration-from-font" => Some(&[("text-decoration-thickness", "from-font")]),
-        "underline-offset-auto" => Some(&[("text-underline-offset", "auto")]),
+        "decoration-solid" => Some(cow![("text-decoration-style", "solid")]),
+        "decoration-double" => Some(cow![("text-decoration-style", "double")]),
+        "decoration-dotted" => Some(cow![("text-decoration-style", "dotted")]),
+        "decoration-dashed" => Some(cow![("text-decoration-style", "dashed")]),
+        "decoration-wavy" => Some(cow![("text-decoration-style", "wavy")]),
+        "decoration-auto" => Some(cow![("text-decoration-thickness", "auto")]),
+        "decoration-from-font" => Some(cow![("text-decoration-thickness", "from-font")]),
+        "underline-offset-auto" => Some(cow![("text-underline-offset", "auto")]),
 
-        // Whitespace & Word Break & Hyphens
-        "whitespace-normal" => Some(&[("white-space", "normal")]),
-        "whitespace-nowrap" => Some(&[("white-space", "nowrap")]),
-        "whitespace-pre" => Some(&[("white-space", "pre")]),
-        "whitespace-pre-line" => Some(&[("white-space", "pre-line")]),
-        "whitespace-pre-wrap" => Some(&[("white-space", "pre-wrap")]),
-        "whitespace-break-spaces" => Some(&[("white-space", "break-spaces")]),
-        "break-all" => Some(&[("word-break", "break-all")]),
-        "break-keep" => Some(&[("word-break", "keep-all")]),
-        "break-normal" => Some(&[("overflow-wrap", "normal"), ("word-break", "normal")]),
-        "hyphens-none" => Some(&[("hyphens", "none")]),
-        "hyphens-manual" => Some(&[("hyphens", "manual")]),
-        "hyphens-auto" => Some(&[("hyphens", "auto")]),
+        // Whitespace & Word Break & Hyphens & Text Wrap
+        "whitespace-normal" => Some(cow![("white-space", "normal")]),
+        "whitespace-nowrap" => Some(cow![("white-space", "nowrap")]),
+        "whitespace-pre" => Some(cow![("white-space", "pre")]),
+        "whitespace-pre-line" => Some(cow![("white-space", "pre-line")]),
+        "whitespace-pre-wrap" => Some(cow![("white-space", "pre-wrap")]),
+        "whitespace-break-spaces" => Some(cow![("white-space", "break-spaces")]),
+        "break-all" => Some(cow![("word-break", "break-all")]),
+        "break-keep" => Some(cow![("word-break", "keep-all")]),
+        "break-normal" => Some(cow![("overflow-wrap", "normal"), ("word-break", "normal")]),
+        "hyphens-none" => Some(cow![("hyphens", "none")]),
+        "hyphens-manual" => Some(cow![("hyphens", "manual")]),
+        "hyphens-auto" => Some(cow![("hyphens", "auto")]),
+        "text-wrap" => Some(cow![("text-wrap", "wrap")]),
+        "text-nowrap" => Some(cow![("text-wrap", "nowrap")]),
+        "text-balance" => Some(cow![("text-wrap", "balance")]),
+        "text-pretty" => Some(cow![("text-wrap", "pretty")]),
+        "wrap-normal" => Some(cow![("overflow-wrap", "normal")]),
+        "wrap-break-word" => Some(cow![("overflow-wrap", "break-word")]),
+        "wrap-anywhere" => Some(cow![("overflow-wrap", "anywhere")]),
 
         // Antialiased
-        "antialiased" => Some(&[("-webkit-font-smoothing", "antialiased")]),
-        "subpixel-antialiased" => Some(&[("-webkit-font-smoothing", "auto")]),
+        "antialiased" => Some(cow![("-webkit-font-smoothing", "antialiased")]),
+        "subpixel-antialiased" => Some(cow![("-webkit-font-smoothing", "auto")]),
 
-        // Border Base & Hidden
-        "border" => Some(&[("border-style", "solid"), ("border-width", "1px")]),
-        "border-hidden" => Some(&[("border-style", "hidden")]),
+        // Border Base & Hidden & Style
+        "border" => Some(cow![("border-style", "solid"), ("border-width", "1px")]),
+        "border-hidden" => Some(cow![("border-style", "hidden")]),
+        "border-solid" => Some(cow![("border-style", "solid")]),
+        "border-dashed" => Some(cow![("border-style", "dashed")]),
+        "border-dotted" => Some(cow![("border-style", "dotted")]),
+        "border-double" => Some(cow![("border-style", "double")]),
+        "border-none" => Some(cow![("border-style", "none")]),
+
+        // Font size presets
+        "text-xs" => Some(cow![("font-size", "0.75rem"), ("line-height", "1rem")]),
+        "text-sm" => Some(cow![("font-size", "0.875rem"), ("line-height", "1.25rem")]),
+        "text-base" | "text" => Some(cow![("font-size", "1rem"), ("line-height", "1.5rem")]),
+        "text-lg" => Some(cow![("font-size", "1.125rem"), ("line-height", "1.75rem")]),
+        "text-xl" => Some(cow![("font-size", "1.25rem"), ("line-height", "1.75rem")]),
+        "text-2xl" => Some(cow![("font-size", "1.5rem"), ("line-height", "2rem")]),
+        "text-3xl" => Some(cow![("font-size", "1.875rem"), ("line-height", "2.25rem")]),
+        "text-4xl" => Some(cow![("font-size", "2.25rem"), ("line-height", "2.5rem")]),
+        "text-5xl" => Some(cow![("font-size", "3rem"), ("line-height", "1")]),
+        "text-6xl" => Some(cow![("font-size", "3.75rem"), ("line-height", "1")]),
+        "text-7xl" => Some(cow![("font-size", "4.5rem"), ("line-height", "1")]),
+        "text-8xl" => Some(cow![("font-size", "6rem"), ("line-height", "1")]),
+        "text-9xl" => Some(cow![("font-size", "8rem"), ("line-height", "1")]),
+
+        // Font family presets
+        "font" | "font-sans" => Some(cow![("font-family", "ui-sans-serif, system-ui, sans-serif")]),
+        "font-serif" => Some(cow![("font-family", "ui-serif, Georgia, Cambria, Times New Roman, Times, serif")]),
+        "font-mono" => Some(cow![("font-family", "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace")]),
+
+        // Font weight presets
+        "font-thin" => Some(cow![("font-weight", "100")]),
+        "font-extralight" => Some(cow![("font-weight", "200")]),
+        "font-light" => Some(cow![("font-weight", "300")]),
+        "font-normal" => Some(cow![("font-weight", "400")]),
+        "font-medium" => Some(cow![("font-weight", "500")]),
+        "font-semibold" => Some(cow![("font-weight", "600")]),
+        "font-bold" => Some(cow![("font-weight", "700")]),
+        "font-extrabold" => Some(cow![("font-weight", "800")]),
+        "font-black" => Some(cow![("font-weight", "900")]),
+
+        // Line height presets
+        "leading-none" => Some(cow![("line-height", "1")]),
+        "leading-tight" => Some(cow![("line-height", "1.25")]),
+        "leading-snug" => Some(cow![("line-height", "1.375")]),
+        "leading" | "leading-normal" => Some(cow![("line-height", "1.5")]),
+        "leading-relaxed" => Some(cow![("line-height", "1.625")]),
+        "leading-loose" => Some(cow![("line-height", "2")]),
+        "leading-px" => Some(cow![("line-height", "1px")]),
+
+        // Letter spacing presets
+        "tracking-tighter" => Some(cow![("letter-spacing", "-0.05em")]),
+        "tracking-tight" => Some(cow![("letter-spacing", "-0.025em")]),
+        "tracking" | "tracking-normal" => Some(cow![("letter-spacing", "0em")]),
+        "tracking-wide" => Some(cow![("letter-spacing", "0.025em")]),
+        "tracking-wider" => Some(cow![("letter-spacing", "0.05em")]),
+        "tracking-widest" => Some(cow![("letter-spacing", "0.1em")]),
+        "-tracking-tighter" => Some(cow![("letter-spacing", "0.05em")]),
+        "-tracking-tight" => Some(cow![("letter-spacing", "0.025em")]),
+        "-tracking-normal" => Some(cow![("letter-spacing", "0em")]),
+        "-tracking-wide" => Some(cow![("letter-spacing", "-0.025em")]),
+        "-tracking-wider" => Some(cow![("letter-spacing", "-0.05em")]),
+        "-tracking-widest" => Some(cow![("letter-spacing", "-0.1em")]),
+
+        // Shadows & Drop Shadows & Text Shadows
+        "shadow-2xs" => Some(cow![("box-shadow", "0 1px 1px 0 rgba(0, 0, 0, 0.05)")]),
+        "shadow-xs" => Some(cow![
+            ("--tw-shadow", "0 1px 2px 0 rgba(0, 0, 0, 0.05)"),
+            ("box-shadow", "var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow, 0 1px 2px 0 rgba(0, 0, 0, 0.05))")
+        ]),
+        "shadow-sm" | "shadow" => Some(cow![("box-shadow", "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1)")]),
+        "shadow-md" => Some(cow![("box-shadow", "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)")]),
+        "shadow-lg" => Some(cow![("box-shadow", "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)")]),
+        "shadow-xl" => Some(cow![("box-shadow", "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)")]),
+        "shadow-2xl" => Some(cow![("box-shadow", "0 25px 50px -12px rgba(0, 0, 0, 0.25)")]),
+        "shadow-inner" => Some(cow![("box-shadow", "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)")]),
+        "shadow-none" => Some(cow![("box-shadow", "none")]),
+
+        "drop-shadow-xs" => Some(cow![
+            ("--tw-drop-shadow", "drop-shadow(0 1px 1px rgba(0, 0, 0, 0.05))"),
+            ("filter", "var(--tw-drop-shadow)")
+        ]),
+
+        "text-shadow-2xs" => Some(cow![("text-shadow", "0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1))")]),
+        "text-shadow-xs" => Some(cow![("text-shadow", "0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.2))")]),
+        "text-shadow-sm" => Some(cow![("text-shadow", "0px 1px 0px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.075)), 0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.075)), 0px 2px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.075))")]),
+        "text-shadow-md" => Some(cow![("text-shadow", "0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 1px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 2px 4px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1))")]),
+        "text-shadow-lg" => Some(cow![("text-shadow", "0px 1px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 3px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 4px 8px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1))")]),
+
+        // Divide Utilities
+        "divide-x" => Some(cow![("border-right-width", "0px"), ("border-left-width", "1px")]),
+        "divide-y" => Some(cow![("border-bottom-width", "0px"), ("border-top-width", "1px")]),
+        "divide-x-reverse" => Some(cow![("--tw-divide-x-reverse", "1")]),
+        "divide-y-reverse" => Some(cow![("--tw-divide-y-reverse", "1")]),
+        "divide-solid" => Some(cow![("border-style", "solid")]),
+        "divide-dashed" => Some(cow![("border-style", "dashed")]),
+        "divide-dotted" => Some(cow![("border-style", "dotted")]),
+        "divide-double" => Some(cow![("border-style", "double")]),
+        "divide-none" => Some(cow![("border-style", "none")]),
+
+        // Inset Ring & Inset Shadow
+        "inset-ring" => Some(cow![("outline-width", "1px"), ("outline-offset", "-1px")]),
+        "inset-shadow" | "inset-shadow-inner" => Some(cow![("box-shadow", "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)")]),
+        "inset-shadow-2xs" => Some(cow![("box-shadow", "inset 0 1px 1px 0 rgba(0, 0, 0, 0.05)")]),
+        "inset-shadow-xs" => Some(cow![("box-shadow", "inset 0 1px 2px 0 rgba(0, 0, 0, 0.05)")]),
+        "inset-shadow-sm" => Some(cow![("box-shadow", "inset 0 1px 3px 0 rgba(0, 0, 0, 0.1)")]),
+        "inset-shadow-md" => Some(cow![("box-shadow", "inset 0 4px 6px -1px rgba(0, 0, 0, 0.1)")]),
+        "inset-shadow-lg" => Some(cow![("box-shadow", "inset 0 10px 15px -3px rgba(0, 0, 0, 0.1)")]),
+        "inset-shadow-xl" => Some(cow![("box-shadow", "inset 0 20px 25px -5px rgba(0, 0, 0, 0.1)")]),
+        "inset-shadow-2xl" => Some(cow![("box-shadow", "inset 0 25px 50px -12px rgba(0, 0, 0, 0.25)")]),
+        "inset-shadow-none" => Some(cow![("box-shadow", "inset 0 0 #0000")]),
+        "inset-shadow-initial" => Some(cow![("box-shadow", "initial")]),
+
+        // Blur Filter
+        "blur" => Some(cow![("filter", "blur(8px)")]),
+
+        // Line Clamp
+        "line-clamp-none" => Some(cow![
+            ("overflow", "visible"),
+            ("display", "block"),
+            ("-webkit-box-orient", "horizontal"),
+            ("-webkit-line-clamp", "none"),
+        ]),
 
         _ => None,
     };
     if let Some(r) = static_typo {
-        return Some(r.iter().map(|&(k, v)| (k, v.to_string())).collect());
+        return Some(r.to_vec());
     }
 
-    // Font size
-    let font_size = match class_name {
-        "text-xs" => Some(vec![("font-size", "0.75rem"), ("line-height", "1rem")]),
-        "text-sm" => Some(vec![("font-size", "0.875rem"), ("line-height", "1.25rem")]),
-        "text-base" => Some(vec![("font-size", "1rem"), ("line-height", "1.5rem")]),
-        "text-lg" => Some(vec![("font-size", "1.125rem"), ("line-height", "1.75rem")]),
-        "text-xl" => Some(vec![("font-size", "1.25rem"), ("line-height", "1.75rem")]),
-        "text-2xl" => Some(vec![("font-size", "1.5rem"), ("line-height", "2rem")]),
-        "text-3xl" => Some(vec![("font-size", "1.875rem"), ("line-height", "2.25rem")]),
-        "text-4xl" => Some(vec![("font-size", "2.25rem"), ("line-height", "2.5rem")]),
-        "text-5xl" => Some(vec![("font-size", "3rem"), ("line-height", "1")]),
-        "text-6xl" => Some(vec![("font-size", "3.75rem"), ("line-height", "1")]),
-        "text-7xl" => Some(vec![("font-size", "4.5rem"), ("line-height", "1")]),
-        "text-8xl" => Some(vec![("font-size", "6rem"), ("line-height", "1")]),
-        "text-9xl" => Some(vec![("font-size", "8rem"), ("line-height", "1")]),
-        _ => None,
-    };
-    if let Some(rules) = font_size {
-        return Some(rules.into_iter().map(|(k, v)| (k, v.to_string())).collect());
-    }
-    if class_name == "text" {
-        return Some(vec![
-            ("font-size", "1rem".to_string()),
-            ("line-height", "1.5rem".to_string()),
-        ]);
-    }
     if let Some(rest) = class_name.strip_prefix("text-") {
         if let Some(val) = super::dynamic::resolve_length_val(rest) {
-            return Some(vec![("font-size", val)]);
+            return Some(cow!(vec[("font-size", val)]));
         }
     }
 
-    // Font family
-    let font_family = match class_name {
-        "font" | "font-sans" => Some("ui-sans-serif, system-ui, sans-serif"),
-        "font-serif" => Some("ui-serif, Georgia, Cambria, Times New Roman, Times, serif"),
-        "font-mono" => Some("ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"),
-        _ => None,
-    };
-    if let Some(family) = font_family {
-        return Some(vec![("font-family", family.to_string())]);
-    }
-
-    // Font weight
-    let font_weight = match class_name {
-        "font-thin" => Some("100"),
-        "font-extralight" => Some("200"),
-        "font-light" => Some("300"),
-        "font-normal" => Some("400"),
-        "font-medium" => Some("500"),
-        "font-semibold" => Some("600"),
-        "font-bold" => Some("700"),
-        "font-extrabold" => Some("800"),
-        "font-black" => Some("900"),
-        _ => None,
-    };
-    if let Some(weight) = font_weight {
-        return Some(vec![("font-weight", weight.to_string())]);
-    }
-
-    // Line height (leading)
-    let leading = match class_name {
-        "leading-none" => Some("1"),
-        "leading-tight" => Some("1.25"),
-        "leading-snug" => Some("1.375"),
-        "leading" | "leading-normal" => Some("1.5"),
-        "leading-relaxed" => Some("1.625"),
-        "leading-loose" => Some("2"),
-        "leading-px" => Some("1px"),
-        _ => None,
-    };
-    if let Some(ld) = leading {
-        return Some(vec![("line-height", ld.to_string())]);
-    }
     if let Some(rest) = class_name.strip_prefix("leading-") {
         if let Some(val) = super::dynamic::resolve_length_val(rest) {
-            return Some(vec![("line-height", val)]);
+            return Some(cow!(vec[("line-height", val)]));
         }
-    }
-
-    // Letter spacing (tracking)
-    let tracking = match class_name {
-        "tracking-tighter" => Some("-0.05em"),
-        "tracking-tight" => Some("-0.025em"),
-        "tracking" | "tracking-normal" => Some("0em"),
-        "tracking-wide" => Some("0.025em"),
-        "tracking-wider" => Some("0.05em"),
-        "tracking-widest" => Some("0.1em"),
-        "-tracking-tighter" => Some("0.05em"),
-        "-tracking-tight" => Some("0.025em"),
-        "-tracking-normal" => Some("0em"),
-        "-tracking-wide" => Some("-0.025em"),
-        "-tracking-wider" => Some("-0.05em"),
-        "-tracking-widest" => Some("-0.1em"),
-        _ => None,
-    };
-    if let Some(tr) = tracking {
-        return Some(vec![("letter-spacing", tr.to_string())]);
     }
 
     // Border radius (rounded)
@@ -199,50 +248,26 @@ pub fn resolve_typography_border_effect_rules(
         return Some(rules);
     }
 
-    // Shadow & Text Shadow & Drop Shadow
-    match class_name {
-        "shadow-2xs" => return Some(vec![("box-shadow", "0 1px 1px 0 rgba(0, 0, 0, 0.05)".to_string())]),
-        "shadow-xs" => return Some(vec![("--tw-shadow", "0 1px 2px 0 rgba(0, 0, 0, 0.05)".to_string()), ("box-shadow", "var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow, 0 1px 2px 0 rgba(0, 0, 0, 0.05))".to_string())]),
-        "shadow-sm" | "shadow" => return Some(vec![("box-shadow", "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1)".to_string())]),
-        "shadow-md" => return Some(vec![("box-shadow", "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)".to_string())]),
-        "shadow-lg" => return Some(vec![("box-shadow", "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)".to_string())]),
-        "shadow-xl" => return Some(vec![("box-shadow", "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)".to_string())]),
-        "shadow-2xl" => return Some(vec![("box-shadow", "0 25px 50px -12px rgba(0, 0, 0, 0.25)".to_string())]),
-        "shadow-inner" => return Some(vec![("box-shadow", "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)".to_string())]),
-        "shadow-none" => return Some(vec![("box-shadow", "none".to_string())]),
-
-        "drop-shadow-xs" => return Some(vec![("--tw-drop-shadow", "drop-shadow(0 1px 1px rgba(0, 0, 0, 0.05))".to_string()), ("filter", "var(--tw-drop-shadow)".to_string())]),
-
-        "text-shadow-2xs" => return Some(vec![("text-shadow", "0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1))".to_string())]),
-        "text-shadow-xs" => return Some(vec![("text-shadow", "0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.2))".to_string())]),
-        "text-shadow-sm" => return Some(vec![("text-shadow", "0px 1px 0px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.075)), 0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.075)), 0px 2px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.075))".to_string())]),
-        "text-shadow-md" => return Some(vec![("text-shadow", "0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 1px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 2px 4px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1))".to_string())]),
-        "text-shadow-lg" => return Some(vec![("text-shadow", "0px 1px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 3px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 4px 8px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1))".to_string())]),
-        _ => {}
-    }
     // Columns
     if let Some(rest) = class_name.strip_prefix("columns-") {
         if rest == "auto" {
-            return Some(vec![("column-count", "auto".to_string())]);
+            return Some(cow!(vec[("column-count", "auto")]));
         }
         if rest == "none" {
-            return Some(vec![
-                ("column-width", "auto".to_string()),
-                ("column-count", "auto".to_string()),
-            ]);
+            return Some(cow!(vec![
+                ("column-width", "auto"),
+                ("column-count", "auto"),
+            ]));
         }
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("column-count", n.to_string())]);
+            return Some(cow!(vec[("column-count", n.to_string())]));
         }
         if let Some(val) = super::dynamic::resolve_length_val(rest) {
-            return Some(vec![("column-width", val)]);
+            return Some(cow!(vec[("column-width", val)]));
         }
     }
 
     // Blur Filters
-    if class_name == "blur" {
-        return Some(vec![("filter", "blur(8px)".to_string())]);
-    }
     if let Some(rest) = class_name.strip_prefix("blur-") {
         let val = match rest {
             "none" => Some("none"),
@@ -256,7 +281,7 @@ pub fn resolve_typography_border_effect_rules(
             _ => None,
         };
         if let Some(b) = val {
-            return Some(vec![("filter", b.to_string())]);
+            return Some(cow!(vec[("filter", b)]));
         }
     }
 
@@ -286,134 +311,80 @@ pub fn resolve_typography_border_effect_rules(
             _ => None,
         };
         if let Some(w) = val {
-            return Some(vec![("max-width", w.to_string())]);
+            return Some(cow!(vec[("max-width", w)]));
         }
     }
 
     // Break Inside / Before / After
     if let Some(rest) = class_name.strip_prefix("break-inside") {
         if rest.is_empty() {
-            return Some(vec![("break-inside", "auto".to_string())]);
+            return Some(cow!(vec[("break-inside", "auto")]));
         }
         if let Some(sub) = rest.strip_prefix('-') {
-            return Some(vec![("break-inside", sub.to_string())]);
+            return Some(cow!(vec[("break-inside", sub.to_string())]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("break-after") {
         if rest.is_empty() {
-            return Some(vec![("break-after", "auto".to_string())]);
+            return Some(cow!(vec[("break-after", "auto")]));
         }
         if let Some(sub) = rest.strip_prefix('-') {
-            return Some(vec![("break-after", sub.to_string())]);
+            return Some(cow!(vec[("break-after", sub.to_string())]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("break-before") {
         if rest.is_empty() {
-            return Some(vec![("break-before", "auto".to_string())]);
+            return Some(cow!(vec[("break-before", "auto")]));
         }
         if let Some(sub) = rest.strip_prefix('-') {
-            return Some(vec![("break-before", sub.to_string())]);
+            return Some(cow!(vec[("break-before", sub.to_string())]));
         }
     }
 
     // Text Indent
     if let Some(rest) = class_name.strip_prefix("indent-") {
         if let Some(val) = super::dynamic::resolve_length_val(rest) {
-            return Some(vec![("text-indent", val)]);
+            return Some(cow!(vec[("text-indent", val)]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-indent-") {
         if let Some(val) = super::dynamic::resolve_length_val(&format!("-{}", rest)) {
-            return Some(vec![("text-indent", val)]);
+            return Some(cow!(vec[("text-indent", val)]));
         }
     }
 
     // Text Underline Offset
     if let Some(rest) = class_name.strip_prefix("underline-offset-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("text-underline-offset", format!("{}px", n))]);
+            return Some(cow!(vec[("text-underline-offset", format!("{}px", n))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-underline-offset-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("text-underline-offset", format!("-{}px", n))]);
+            return Some(cow!(vec[("text-underline-offset", format!("-{}px", n))]));
         }
     }
 
     // Text Decoration Thickness
     if let Some(rest) = class_name.strip_prefix("decoration-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("text-decoration-thickness", format!("{}px", n))]);
+            return Some(cow!(vec[("text-decoration-thickness", format!("{}px", n))]));
         }
     }
 
-    // Font Variant Numeric
-    let font_numeric = match class_name {
-        "lining-nums" => Some("lining-nums"),
-        "oldstyle-nums" => Some("oldstyle-nums"),
-        "proportional-nums" => Some("proportional-nums"),
-        "tabular-nums" => Some("tabular-nums"),
-        "diagonal-fractions" => Some("diagonal-fractions"),
-        "stacked-fractions" => Some("stacked-fractions"),
-        "ordinal" => Some("ordinal"),
-        "slashed-zero" => Some("slashed-zero"),
-        "normal-nums" => Some("normal"),
-        _ => None,
-    };
-    if let Some(num) = font_numeric {
-        return Some(vec![("font-variant-numeric", num.to_string())]);
-    }
-
-    // Text Wrap & Word Break
-    let text_wrap = match class_name {
-        "text-wrap" => Some(("text-wrap", "wrap")),
-        "text-nowrap" => Some(("text-wrap", "nowrap")),
-        "text-balance" => Some(("text-wrap", "balance")),
-        "text-pretty" => Some(("text-wrap", "pretty")),
-        "wrap-normal" => Some(("overflow-wrap", "normal")),
-        "wrap-break-word" => Some(("overflow-wrap", "break-word")),
-        "wrap-anywhere" => Some(("overflow-wrap", "anywhere")),
-        _ => None,
-    };
-    if let Some((prop, val)) = text_wrap {
-        return Some(vec![(prop, val.to_string())]);
-    }
-
     // Line Clamp
-    if class_name == "line-clamp-none" {
-        return Some(vec![
-            ("overflow", "visible".to_string()),
-            ("display", "block".to_string()),
-            ("-webkit-box-orient", "horizontal".to_string()),
-            ("-webkit-line-clamp", "none".to_string()),
-        ]);
-    }
     if let Some(rest) = class_name.strip_prefix("line-clamp-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![
-                ("overflow", "hidden".to_string()),
-                ("display", "-webkit-box".to_string()),
-                ("-webkit-box-orient", "vertical".to_string()),
+            return Some(cow!(vec![
+                ("overflow", "hidden"),
+                ("display", "-webkit-box"),
+                ("-webkit-box-orient", "vertical"),
                 ("-webkit-line-clamp", n.to_string()),
-            ]);
+            ]));
         }
     }
 
     // Font Stretch
-    let font_stretch = match class_name {
-        "font-condensed" => Some("condensed"),
-        "font-expanded" => Some("expanded"),
-        "font-extra-condensed" => Some("extra-condensed"),
-        "font-extra-expanded" => Some("extra-expanded"),
-        "font-semi-condensed" => Some("semi-condensed"),
-        "font-semi-expanded" => Some("semi-expanded"),
-        "font-ultra-condensed" => Some("ultra-condensed"),
-        "font-ultra-expanded" => Some("ultra-expanded"),
-        _ => None,
-    };
-    if let Some(st) = font_stretch {
-        return Some(vec![("font-stretch", st.to_string())]);
-    }
     if let Some(rest) = class_name.strip_prefix("font-stretch-") {
         let stretches = [
             "50%",
@@ -436,81 +407,40 @@ pub fn resolve_typography_border_effect_rules(
             "extra-expanded",
             "ultra-expanded",
         ];
-        if stretches.contains(&rest) {
-            return Some(vec![("font-stretch", rest.to_string())]);
+        if let Some(&matched) = stretches.iter().find(|&&s| s == rest) {
+            return Some(cow!(vec[("font-stretch", matched)]));
         }
     }
 
     // Divide Utilities
-    if class_name == "divide-x" {
-        return Some(vec![
-            ("border-right-width", "0px".to_string()),
-            ("border-left-width", "1px".to_string()),
-        ]);
-    }
-    if class_name == "divide-y" {
-        return Some(vec![
-            ("border-bottom-width", "0px".to_string()),
-            ("border-top-width", "1px".to_string()),
-        ]);
-    }
-    if class_name == "divide-x-reverse" {
-        return Some(vec![("--tw-divide-x-reverse", "1".to_string())]);
-    }
-    if class_name == "divide-y-reverse" {
-        return Some(vec![("--tw-divide-y-reverse", "1".to_string())]);
-    }
     if let Some(rest) = class_name.strip_prefix("divide-x-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![
-                ("border-right-width", "0px".to_string()),
+            return Some(cow!(vec![
+                ("border-right-width", "0px"),
                 ("border-left-width", format!("{}px", n)),
-            ]);
+            ]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("divide-y-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![
-                ("border-bottom-width", "0px".to_string()),
+            return Some(cow!(vec![
+                ("border-bottom-width", "0px"),
                 ("border-top-width", format!("{}px", n)),
-            ]);
+            ]));
         }
-    }
-    let divide_style = match class_name {
-        "divide-solid" => Some("solid"),
-        "divide-dashed" => Some("dashed"),
-        "divide-dotted" => Some("dotted"),
-        "divide-double" => Some("double"),
-        "divide-none" => Some("none"),
-        _ => None,
-    };
-    if let Some(ds) = divide_style {
-        return Some(vec![("border-style", ds.to_string())]);
     }
 
     // Inset Ring
-    if class_name == "inset-ring" {
-        return Some(vec![
-            ("outline-width", "1px".to_string()),
-            ("outline-offset", "-1px".to_string()),
-        ]);
-    }
     if let Some(rest) = class_name.strip_prefix("inset-ring-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![
+            return Some(cow!(vec![
                 ("outline-width", format!("{}px", n)),
                 ("outline-offset", format!("-{}px", n)),
-            ]);
+            ]));
         }
     }
 
     // Inset Shadow
-    if class_name == "inset-shadow" {
-        return Some(vec![(
-            "box-shadow",
-            "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)".to_string(),
-        )]);
-    }
     if let Some(rest) = class_name.strip_prefix("inset-shadow-") {
         let val = match rest {
             "2xs" => Some("inset 0 1px 1px 0 rgba(0, 0, 0, 0.05)"),
@@ -526,37 +456,37 @@ pub fn resolve_typography_border_effect_rules(
             _ => None,
         };
         if let Some(v) = val {
-            return Some(vec![("box-shadow", v.to_string())]);
+            return Some(cow!(vec[("box-shadow", v)]));
         }
     }
 
     // Tab Size
     if let Some(rest) = class_name.strip_prefix("tab-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("tab-size", n.to_string())]);
+            return Some(cow!(vec[("tab-size", n.to_string())]));
         }
     }
 
     // Zoom
     if let Some(rest) = class_name.strip_prefix("zoom-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("zoom", format!("{}%", n))]);
+            return Some(cow!(vec[("zoom", format!("{}%", n))]));
         }
     }
 
     // Border Spacing
     if let Some(rest) = class_name.strip_prefix("border-spacing-") {
         if let Some(val) = super::dynamic::resolve_length_val(rest) {
-            return Some(vec![("border-spacing", val)]);
+            return Some(cow!(vec[("border-spacing", val)]));
         }
         if let Some(sub) = rest.strip_prefix("x-") {
             if let Some(val) = super::dynamic::resolve_length_val(sub) {
-                return Some(vec![("border-spacing", format!("{} 0px", val))]);
+                return Some(cow!(vec[("border-spacing", format!("{} 0px", val))]));
             }
         }
         if let Some(sub) = rest.strip_prefix("y-") {
             if let Some(val) = super::dynamic::resolve_length_val(sub) {
-                return Some(vec![("border-spacing", format!("0px {}", val))]);
+                return Some(cow!(vec[("border-spacing", format!("0px {}", val))]));
             }
         }
     }
@@ -579,40 +509,40 @@ pub fn resolve_typography_border_effect_rules(
     None
 }
 
-pub fn resolve_outline_rules(class_name: &str) -> Option<Vec<(&'static str, String)>> {
-    match class_name {
-        "outline-none" => {
-            return Some(vec![
-                ("outline", "2px solid transparent".to_string()),
-                ("outline-offset", "2px".to_string()),
-            ]);
-        }
-        "outline" => return Some(vec![("outline-style", "solid".to_string())]),
-        "outline-solid" => return Some(vec![("outline-style", "solid".to_string())]),
-        "outline-hidden" => return Some(vec![("outline-style", "hidden".to_string())]),
-        "outline-dashed" => return Some(vec![("outline-style", "dashed".to_string())]),
-        "outline-dotted" => return Some(vec![("outline-style", "dotted".to_string())]),
-        "outline-double" => return Some(vec![("outline-style", "double".to_string())]),
-        _ => {}
+pub fn resolve_outline_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'static, str>)>> {
+    let static_rules: Option<&'static [(&'static str, Cow<'static, str>)]> = match class_name {
+        "outline-none" => Some(cow![
+            ("outline", "2px solid transparent"),
+            ("outline-offset", "2px")
+        ]),
+        "outline" | "outline-solid" => Some(cow![("outline-style", "solid")]),
+        "outline-hidden" => Some(cow![("outline-style", "hidden")]),
+        "outline-dashed" => Some(cow![("outline-style", "dashed")]),
+        "outline-dotted" => Some(cow![("outline-style", "dotted")]),
+        "outline-double" => Some(cow![("outline-style", "double")]),
+        _ => None,
+    };
+    if let Some(r) = static_rules {
+        return Some(r.to_vec());
     }
 
     if let Some(rest) = class_name.strip_prefix("outline-offset-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("outline-offset", format!("{}px", n))]);
+            return Some(cow!(vec[("outline-offset", format!("{}px", n))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-outline-offset-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("outline-offset", format!("-{}px", n))]);
+            return Some(cow!(vec[("outline-offset", format!("-{}px", n))]));
         }
     }
 
     if let Some(rest) = class_name.strip_prefix("outline-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![
-                ("outline-style", "solid".to_string()),
+            return Some(cow!(vec![
+                ("outline-style", "solid"),
                 ("outline-width", format!("{}px", n)),
-            ]);
+            ]));
         }
     }
 
@@ -621,35 +551,38 @@ pub fn resolve_outline_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
 
 pub const RING_BOX_SHADOW: &str = "var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width, 0px) var(--tw-ring-offset-color, #0000), 0 0 0 var(--tw-ring-width, 0px) var(--tw-ring-color, rgba(59, 130, 246, 0.5)), var(--tw-shadow, 0 0 #0000)";
 
-pub fn resolve_ring_rules(class_name: &str) -> Option<Vec<(&'static str, String)>> {
-    if class_name == "ring" {
-        return Some(vec![
-            ("--tw-ring-width", "0.1875rem".to_string()),
-            ("box-shadow", RING_BOX_SHADOW.to_string()),
-        ]);
+pub fn resolve_ring_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'static, str>)>> {
+    let static_rules: Option<&'static [(&'static str, Cow<'static, str>)]> = match class_name {
+        "ring" => Some(cow![
+            ("--tw-ring-width", "0.1875rem"),
+            ("box-shadow", RING_BOX_SHADOW)
+        ]),
+        "ring-inset" => Some(cow![("--tw-ring-inset", "inset")]),
+        _ => None,
+    };
+    if let Some(r) = static_rules {
+        return Some(r.to_vec());
     }
-    if class_name == "ring-inset" {
-        return Some(vec![("--tw-ring-inset", "inset".to_string())]);
-    }
+
     if let Some(rest) = class_name.strip_prefix("ring-") {
         if rest == "0" {
-            return Some(vec![
-                ("--tw-ring-width", "0px".to_string()),
-                ("box-shadow", RING_BOX_SHADOW.to_string()),
-            ]);
+            return Some(cow!(vec![
+                ("--tw-ring-width", "0px"),
+                ("box-shadow", RING_BOX_SHADOW),
+            ]));
         }
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![
+            return Some(cow!(vec![
                 ("--tw-ring-width", format!("{}px", n)),
-                ("box-shadow", RING_BOX_SHADOW.to_string()),
-            ]);
+                ("box-shadow", RING_BOX_SHADOW),
+            ]));
         }
         if let Some(sub) = rest.strip_prefix("offset-") {
             if let Ok(n) = sub.parse::<u32>() {
-                return Some(vec![
+                return Some(cow!(vec![
                     ("--tw-ring-offset-width", format!("{}px", n)),
-                    ("box-shadow", RING_BOX_SHADOW.to_string()),
-                ]);
+                    ("box-shadow", RING_BOX_SHADOW),
+                ]));
             }
         }
     }
@@ -657,7 +590,7 @@ pub fn resolve_ring_rules(class_name: &str) -> Option<Vec<(&'static str, String)
     None
 }
 
-pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, String)>> {
+pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'static, str>)>> {
     let radius_val = |s: &str| -> Option<&'static str> {
         match s {
             "none" => Some("0px"),
@@ -679,11 +612,11 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
 
     if let Some(rest) = class_name.strip_prefix("rounded") {
         if rest.is_empty() {
-            return Some(vec![("border-radius", "0.25rem".to_string())]);
+            return Some(cow!(vec[("border-radius", "0.25rem")]));
         }
         if let Some(s) = rest.strip_prefix('-') {
             if let Some(val) = radius_val(s) {
-                return Some(vec![("border-radius", val.to_string())]);
+                return Some(cow!(vec[("border-radius", val)]));
             }
             let sub_ss = if s == "ss" {
                 Some("")
@@ -692,7 +625,7 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             };
             if let Some(sub) = sub_ss {
                 if let Some(val) = radius_val(sub) {
-                    return Some(vec![("border-start-start-radius", val.to_string())]);
+                    return Some(cow!(vec[("border-start-start-radius", val)]));
                 }
             }
             let sub_se = if s == "se" {
@@ -702,7 +635,7 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             };
             if let Some(sub) = sub_se {
                 if let Some(val) = radius_val(sub) {
-                    return Some(vec![("border-start-end-radius", val.to_string())]);
+                    return Some(cow!(vec[("border-start-end-radius", val)]));
                 }
             }
             let sub_es = if s == "es" {
@@ -712,7 +645,7 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             };
             if let Some(sub) = sub_es {
                 if let Some(val) = radius_val(sub) {
-                    return Some(vec![("border-end-start-radius", val.to_string())]);
+                    return Some(cow!(vec[("border-end-start-radius", val)]));
                 }
             }
             let sub_ee = if s == "ee" {
@@ -722,7 +655,7 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             };
             if let Some(sub) = sub_ee {
                 if let Some(val) = radius_val(sub) {
-                    return Some(vec![("border-end-end-radius", val.to_string())]);
+                    return Some(cow!(vec[("border-end-end-radius", val)]));
                 }
             }
             let sub_tl = if s == "tl" {
@@ -732,7 +665,7 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             };
             if let Some(sub) = sub_tl {
                 if let Some(val) = radius_val(sub) {
-                    return Some(vec![("border-top-left-radius", val.to_string())]);
+                    return Some(cow!(vec[("border-top-left-radius", val)]));
                 }
             }
             let sub_tr = if s == "tr" {
@@ -742,7 +675,7 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             };
             if let Some(sub) = sub_tr {
                 if let Some(val) = radius_val(sub) {
-                    return Some(vec![("border-top-right-radius", val.to_string())]);
+                    return Some(cow!(vec[("border-top-right-radius", val)]));
                 }
             }
             let sub_br = if s == "br" {
@@ -752,7 +685,7 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             };
             if let Some(sub) = sub_br {
                 if let Some(val) = radius_val(sub) {
-                    return Some(vec![("border-bottom-right-radius", val.to_string())]);
+                    return Some(cow!(vec[("border-bottom-right-radius", val)]));
                 }
             }
             let sub_bl = if s == "bl" {
@@ -762,7 +695,7 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             };
             if let Some(sub) = sub_bl {
                 if let Some(val) = radius_val(sub) {
-                    return Some(vec![("border-bottom-left-radius", val.to_string())]);
+                    return Some(cow!(vec[("border-bottom-left-radius", val)]));
                 }
             }
             let sub_t = if s == "t" {
@@ -772,10 +705,10 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             };
             if let Some(sub) = sub_t {
                 if let Some(val) = radius_val(sub) {
-                    return Some(vec![
-                        ("border-top-left-radius", val.to_string()),
-                        ("border-top-right-radius", val.to_string()),
-                    ]);
+                    return Some(cow!(vec![
+                        ("border-top-left-radius", val),
+                        ("border-top-right-radius", val),
+                    ]));
                 }
             }
             let sub_r = if s == "r" {
@@ -785,10 +718,10 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             };
             if let Some(sub) = sub_r {
                 if let Some(val) = radius_val(sub) {
-                    return Some(vec![
-                        ("border-top-right-radius", val.to_string()),
-                        ("border-bottom-right-radius", val.to_string()),
-                    ]);
+                    return Some(cow!(vec![
+                        ("border-top-right-radius", val),
+                        ("border-bottom-right-radius", val),
+                    ]));
                 }
             }
             let sub_b = if s == "b" {
@@ -798,10 +731,10 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             };
             if let Some(sub) = sub_b {
                 if let Some(val) = radius_val(sub) {
-                    return Some(vec![
-                        ("border-bottom-left-radius", val.to_string()),
-                        ("border-bottom-right-radius", val.to_string()),
-                    ]);
+                    return Some(cow!(vec![
+                        ("border-bottom-left-radius", val),
+                        ("border-bottom-right-radius", val),
+                    ]));
                 }
             }
             let sub_l = if s == "l" {
@@ -811,10 +744,10 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             };
             if let Some(sub) = sub_l {
                 if let Some(val) = radius_val(sub) {
-                    return Some(vec![
-                        ("border-top-left-radius", val.to_string()),
-                        ("border-bottom-left-radius", val.to_string()),
-                    ]);
+                    return Some(cow!(vec![
+                        ("border-top-left-radius", val),
+                        ("border-bottom-left-radius", val),
+                    ]));
                 }
             }
             let sub_s = if s == "s" {
@@ -824,10 +757,10 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             };
             if let Some(sub) = sub_s {
                 if let Some(val) = radius_val(sub) {
-                    return Some(vec![
-                        ("border-start-start-radius", val.to_string()),
-                        ("border-end-start-radius", val.to_string()),
-                    ]);
+                    return Some(cow!(vec![
+                        ("border-start-start-radius", val),
+                        ("border-end-start-radius", val),
+                    ]));
                 }
             }
             let sub_e = if s == "e" {
@@ -837,10 +770,10 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             };
             if let Some(sub) = sub_e {
                 if let Some(val) = radius_val(sub) {
-                    return Some(vec![
-                        ("border-start-end-radius", val.to_string()),
-                        ("border-end-end-radius", val.to_string()),
-                    ]);
+                    return Some(cow!(vec![
+                        ("border-start-end-radius", val),
+                        ("border-end-end-radius", val),
+                    ]));
                 }
             }
         }
@@ -848,17 +781,17 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
     None
 }
 
-pub fn resolve_border_rules(class_name: &str) -> Option<Vec<(&'static str, String)>> {
-    let width_val = |s: &str| -> Option<String> {
+pub fn resolve_border_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'static, str>)>> {
+    let width_val = |s: &str| -> Option<Cow<'static, str>> {
         match s {
-            "0" => Some("0px".to_string()),
-            "" => Some("1px".to_string()),
-            "2" => Some("2px".to_string()),
-            "4" => Some("4px".to_string()),
-            "8" => Some("8px".to_string()),
+            "0" => Some(Cow::Borrowed("0px")),
+            "" => Some(Cow::Borrowed("1px")),
+            "2" => Some(Cow::Borrowed("2px")),
+            "4" => Some(Cow::Borrowed("4px")),
+            "8" => Some(Cow::Borrowed("8px")),
             _ => {
                 if let Ok(n) = s.parse::<u32>() {
-                    Some(format!("{}px", n))
+                    Some(Cow::Owned(format!("{}px", n)))
                 } else {
                     None
                 }
@@ -866,13 +799,16 @@ pub fn resolve_border_rules(class_name: &str) -> Option<Vec<(&'static str, Strin
         }
     };
 
-    match class_name {
-        "border-solid" => return Some(vec![("border-style", "solid".to_string())]),
-        "border-dashed" => return Some(vec![("border-style", "dashed".to_string())]),
-        "border-dotted" => return Some(vec![("border-style", "dotted".to_string())]),
-        "border-double" => return Some(vec![("border-style", "double".to_string())]),
-        "border-none" => return Some(vec![("border-style", "none".to_string())]),
-        _ => {}
+    let static_rules: Option<&'static [(&'static str, Cow<'static, str>)]> = match class_name {
+        "border-solid" => Some(cow![("border-style", "solid")]),
+        "border-dashed" => Some(cow![("border-style", "dashed")]),
+        "border-dotted" => Some(cow![("border-style", "dotted")]),
+        "border-double" => Some(cow![("border-style", "double")]),
+        "border-none" => Some(cow![("border-style", "none")]),
+        _ => None,
+    };
+    if let Some(r) = static_rules {
+        return Some(r.to_vec());
     }
 
     let border_style_prefixes = &[
@@ -899,14 +835,14 @@ pub fn resolve_border_rules(class_name: &str) -> Option<Vec<(&'static str, Strin
                 _ => None,
             };
             if let Some(st) = style {
-                return Some(vec![(prop, st.to_string())]);
+                return Some(cow!(vec[(prop, st)]));
             }
         }
     }
 
     if let Some(rest) = class_name.strip_prefix("border") {
         if rest.is_empty() {
-            return Some(vec![("border-width", "1px".to_string())]);
+            return Some(cow!(vec[("border-width", "1px")]));
         }
         if let Some(s) = rest.strip_prefix('-') {
             if let Some(w) = width_val(s) {

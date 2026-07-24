@@ -1,111 +1,114 @@
+use std::borrow::Cow;
 use super::dynamic::resolve_length_val;
 
 /// Transform & Transition & Animation & Gradients
-pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'static str, String)>> {
+pub fn resolve_transform_transition_rules(
+    class_name: &str,
+) -> Option<Vec<(&'static str, Cow<'static, str>)>> {
     // 静态 Transform & Transition & Animation 规则匹配
-    let static_rules: Option<&'static [(&'static str, &'static str)]> = match class_name {
+    let static_rules: Option<&'static [(&'static str, Cow<'static, str>)]> = match class_name {
         // Backface
-        "backface-visible" => Some(&[("backface-visibility", "visible")]),
-        "backface-hidden" => Some(&[("backface-visibility", "hidden")]),
+        "backface-visible" => Some(cow![("backface-visibility", "visible")]),
+        "backface-hidden" => Some(cow![("backface-visibility", "hidden")]),
 
         // Animate in/out
-        "animate-in" => Some(&[("animation-name", "enter"), ("animation-duration", "150ms")]),
-        "animate-out" => Some(&[("animation-name", "exit"), ("animation-duration", "150ms")]),
+        "animate-in" => Some(cow![("animation-name", "enter"), ("animation-duration", "150ms")]),
+        "animate-out" => Some(cow![("animation-name", "exit"), ("animation-duration", "150ms")]),
 
         // Transitions & Duration/Ease Initial
-        "transition-none" => Some(&[("transition-property", "none")]),
-        "transition-all" => Some(&[("transition-property", "all")]),
-        "transition" => Some(&[(
+        "transition-none" => Some(cow![("transition-property", "none")]),
+        "transition-all" => Some(cow![("transition-property", "all")]),
+        "transition" => Some(cow![(
             "transition-property",
             "color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, backdrop-filter",
         )]),
-        "transition-colors" => Some(&[(
+        "transition-colors" => Some(cow![(
             "transition-property",
             "color, background-color, border-color, text-decoration-color, fill, stroke",
         )]),
-        "transition-opacity" => Some(&[("transition-property", "opacity")]),
-        "transition-shadow" => Some(&[("transition-property", "box-shadow")]),
+        "transition-opacity" => Some(cow![("transition-property", "opacity")]),
+        "transition-shadow" => Some(cow![("transition-property", "box-shadow")]),
         "transition-transform" => {
-            Some(&[("transition-property", "transform, translate, scale, rotate")])
+            Some(cow![("transition-property", "transform, translate, scale, rotate")])
         }
-        "transition-discrete" => Some(&[("transition-behavior", "allow-discrete")]),
-        "duration-initial" => Some(&[("transition-duration", "initial")]),
-        "ease-initial" => Some(&[("transition-timing-function", "initial")]),
-        "transition-normal" => Some(&[("transition-timing-function", "normal")]),
+        "transition-discrete" => Some(cow![("transition-behavior", "allow-discrete")]),
+        "duration-initial" => Some(cow![("transition-duration", "initial")]),
+        "ease-initial" => Some(cow![("transition-timing-function", "initial")]),
+        "transition-normal" => Some(cow![("transition-timing-function", "normal")]),
 
         // Transform Utilities
-        "transform" => Some(&[(
+        "transform" => Some(cow![(
             "transform",
             "var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y)",
         )]),
-        "transform-none" => Some(&[("transform", "none")]),
-        "transform-gpu" => Some(&[(
+        "transform-none" => Some(cow![("transform", "none")]),
+        "transform-gpu" => Some(cow![(
             "transform",
             "translate3d(var(--tw-translate-x), var(--tw-translate-y), 0) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))",
         )]),
-        "transform-cpu" => Some(&[(
+        "transform-cpu" => Some(cow![(
             "transform",
             "translateX(var(--tw-translate-x)) translateY(var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))",
         )]),
-        "transform-flat" => Some(&[("transform-style", "flat")]),
-        "transform-3d" => Some(&[("transform-style", "preserve-3d")]),
-        "transform-border" => Some(&[("transform-box", "border-box")]),
-        "transform-content" => Some(&[("transform-box", "content-box")]),
-        "transform-fill" => Some(&[("transform-box", "fill-box")]),
-        "transform-stroke" => Some(&[("transform-box", "stroke-box")]),
-        "transform-view" => Some(&[("transform-box", "view-box")]),
+        "transform-flat" => Some(cow![("transform-style", "flat")]),
+        "transform-3d" => Some(cow![("transform-style", "preserve-3d")]),
+        "transform-border" => Some(cow![("transform-box", "border-box")]),
+        "transform-content" => Some(cow![("transform-box", "content-box")]),
+        "transform-fill" => Some(cow![("transform-box", "fill-box")]),
+        "transform-stroke" => Some(cow![("transform-box", "stroke-box")]),
+        "transform-view" => Some(cow![("transform-box", "view-box")]),
 
         _ => None,
     };
     if let Some(r) = static_rules {
-        return Some(r.iter().map(|&(k, v)| (k, v.to_string())).collect());
+        return Some(r.to_vec());
     }
 
     // Animations
     match class_name {
         "animate" | "animate-spin" => {
-            return Some(vec![
-                ("animation", "spin 1s linear infinite".to_string()),
-                ("will-change", "transform".to_string()),
-            ]);
+            return Some(cow!(vec![
+                ("animation", "spin 1s linear infinite"),
+                ("will-change", "transform"),
+            ]));
         }
         "animate-ping" => {
-            return Some(vec![
+            return Some(cow!(vec![
                 (
                     "animation",
-                    "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite".to_string(),
+                    "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite",
                 ),
-                ("will-change", "transform, opacity".to_string()),
-            ]);
+                ("will-change", "transform, opacity"),
+            ]));
         }
         "animate-pulse" => {
-            return Some(vec![
+            return Some(cow!(vec![
                 (
                     "animation",
-                    "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite".to_string(),
+                    "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
                 ),
-                ("will-change", "opacity".to_string()),
-            ]);
+                ("will-change", "opacity"),
+            ]));
         }
         "animate-bounce" => {
-            return Some(vec![
-                ("animation", "bounce 1s infinite".to_string()),
-                ("will-change", "transform".to_string()),
-            ]);
+            return Some(cow!(vec![
+                ("animation", "bounce 1s infinite"),
+                ("will-change", "transform"),
+            ]));
         }
-        "animate-none" => return Some(vec![("animation", "none".to_string())]),
+        "animate-none" => return Some(cow!(vec![("animation", "none")])),
         _ => {}
     }
 
     // Transition duration / delay / ease
     if let Some(rest) = class_name.strip_prefix("duration-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("transition-duration", format!("{}ms", n))]);
+            return Some(cow!(vec![("transition-duration", format!("{}ms", n))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("delay-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("transition-delay", format!("{}ms", n))]);
+            return Some(cow!(vec![("transition-delay", format!("{}ms", n))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("ease-") {
@@ -118,13 +121,13 @@ pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'sta
             _ => None,
         };
         if let Some(t) = timing {
-            return Some(vec![("transition-timing-function", t.to_string())]);
+            return Some(cow!(vec![("transition-timing-function", t)]));
         }
     }
 
     // Gradients
     if class_name == "bg-none" {
-        return Some(vec![("background-image", "none".to_string())]);
+        return Some(cow!(vec![("background-image", "none")]));
     }
     if let Some(rest) = class_name.strip_prefix("bg-gradient-to-") {
         let dir = match rest {
@@ -139,10 +142,10 @@ pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'sta
             _ => None,
         };
         if let Some(d) = dir {
-            return Some(vec![(
+            return Some(cow!(vec![(
                 "background-image",
                 format!("linear-gradient({}, var(--tw-gradient-stops))", d),
-            )]);
+            )]));
         }
     }
     // Scale
@@ -165,49 +168,49 @@ pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'sta
     };
 
     if class_name == "scale-none" {
-        return Some(vec![("scale", "none".to_string())]);
+        return Some(cow!(vec![("scale", "none")]));
     }
     if class_name == "scale-3d" {
-        return Some(vec![("transform-style", "preserve-3d".to_string())]);
+        return Some(cow!(vec![("transform-style", "preserve-3d")]));
     }
     if let Some(rest) = class_name.strip_prefix("scale-x-") {
         if let Some(r) = scale_ratio(rest) {
-            return Some(vec![("scale", format!("{} 1", r))]);
+            return Some(cow!(vec![("scale", format!("{} 1", r))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-scale-x-") {
         if let Some(r) = scale_ratio(&format!("-{}", rest)) {
-            return Some(vec![("scale", format!("{} 1", r))]);
+            return Some(cow!(vec![("scale", format!("{} 1", r))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("scale-y-") {
         if let Some(r) = scale_ratio(rest) {
-            return Some(vec![("scale", format!("1 {}", r))]);
+            return Some(cow!(vec![("scale", format!("1 {}", r))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-scale-y-") {
         if let Some(r) = scale_ratio(&format!("-{}", rest)) {
-            return Some(vec![("scale", format!("1 {}", r))]);
+            return Some(cow!(vec![("scale", format!("1 {}", r))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("scale-z-") {
         if let Some(r) = scale_ratio(rest) {
-            return Some(vec![("scale", format!("1 1 {}", r))]);
+            return Some(cow!(vec![("scale", format!("1 1 {}", r))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-scale-z-") {
         if let Some(r) = scale_ratio(&format!("-{}", rest)) {
-            return Some(vec![("scale", format!("1 1 {}", r))]);
+            return Some(cow!(vec![("scale", format!("1 1 {}", r))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("scale-") {
         if let Some(r) = scale_ratio(rest) {
-            return Some(vec![("scale", r)]);
+            return Some(cow!(vec![("scale", r)]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-scale-") {
         if let Some(r) = scale_ratio(&format!("-{}", rest)) {
-            return Some(vec![("scale", r)]);
+            return Some(cow!(vec![("scale", r)]));
         }
     }
 
@@ -229,166 +232,166 @@ pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'sta
         }
     };
     if class_name == "rotate-none" {
-        return Some(vec![("rotate", "none".to_string())]);
+        return Some(cow!(vec![("rotate", "none")]));
     }
     if let Some(rest) = class_name.strip_prefix("rotate-x-") {
         if let Some(deg) = deg_val(rest) {
-            return Some(vec![("transform", format!("rotateX({})", deg))]);
+            return Some(cow!(vec![("transform", format!("rotateX({})", deg))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-rotate-x-") {
         if let Some(deg) = deg_val(&format!("-{}", rest)) {
-            return Some(vec![("transform", format!("rotateX({})", deg))]);
+            return Some(cow!(vec![("transform", format!("rotateX({})", deg))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("rotate-y-") {
         if let Some(deg) = deg_val(rest) {
-            return Some(vec![("transform", format!("rotateY({})", deg))]);
+            return Some(cow!(vec![("transform", format!("rotateY({})", deg))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-rotate-y-") {
         if let Some(deg) = deg_val(&format!("-{}", rest)) {
-            return Some(vec![("transform", format!("rotateY({})", deg))]);
+            return Some(cow!(vec![("transform", format!("rotateY({})", deg))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("rotate-z-") {
         if let Some(deg) = deg_val(rest) {
-            return Some(vec![("rotate", deg)]);
+            return Some(cow!(vec![("rotate", deg)]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-rotate-z-") {
         if let Some(deg) = deg_val(&format!("-{}", rest)) {
-            return Some(vec![("rotate", deg)]);
+            return Some(cow!(vec![("rotate", deg)]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("rotate-") {
         if let Some(deg) = deg_val(rest) {
-            return Some(vec![("transform", format!("rotate({})", deg))]);
+            return Some(cow!(vec![("transform", format!("rotate({})", deg))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-rotate-") {
         if let Some(deg) = deg_val(&format!("-{}", rest)) {
-            return Some(vec![("transform", format!("rotate({})", deg))]);
+            return Some(cow!(vec![("transform", format!("rotate({})", deg))]));
         }
     }
 
     // Translate
     if class_name == "translate-none" {
-        return Some(vec![("translate", "none".to_string())]);
+        return Some(cow!(vec![("translate", "none")]));
     }
     if class_name == "translate-3d" {
-        return Some(vec![("transform-style", "preserve-3d".to_string())]);
+        return Some(cow!(vec![("transform-style", "preserve-3d")]));
     }
     if let Some(rest) = class_name.strip_prefix("translate-x-") {
         if let Some(val) = resolve_length_val(rest) {
-            return Some(vec![("transform", format!("translateX({})", val))]);
+            return Some(cow!(vec![("transform", format!("translateX({})", val))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-translate-x-") {
         if let Some(val) = resolve_length_val(&format!("-{}", rest)) {
-            return Some(vec![("transform", format!("translateX({})", val))]);
+            return Some(cow!(vec![("transform", format!("translateX({})", val))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("translate-y-") {
         if let Some(val) = resolve_length_val(rest) {
-            return Some(vec![("transform", format!("translateY({})", val))]);
+            return Some(cow!(vec![("transform", format!("translateY({})", val))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-translate-y-") {
         if let Some(val) = resolve_length_val(&format!("-{}", rest)) {
-            return Some(vec![("transform", format!("translateY({})", val))]);
+            return Some(cow!(vec![("transform", format!("translateY({})", val))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("translate-z-") {
         if let Some(val) = resolve_length_val(rest) {
-            return Some(vec![("translate", format!("0 0 {}", val))]);
+            return Some(cow!(vec![("translate", format!("0 0 {}", val))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-translate-z-") {
         if let Some(val) = resolve_length_val(&format!("-{}", rest)) {
-            return Some(vec![("translate", format!("0 0 {}", val))]);
+            return Some(cow!(vec![("translate", format!("0 0 {}", val))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("translate-") {
         if let Some(val) = resolve_length_val(rest) {
-            return Some(vec![("translate", val)]);
+            return Some(cow!(vec![("translate", val)]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-translate-") {
         if let Some(val) = resolve_length_val(&format!("-{}", rest)) {
-            return Some(vec![("translate", val)]);
+            return Some(cow!(vec![("translate", val)]));
         }
     }
 
     // Transition Properties
     match class_name {
         "transition" | "transition-normal" => {
-            return Some(vec![
-                ("transition-property", "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, backdrop-filter".to_string()),
-                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)".to_string()),
-                ("transition-duration", "150ms".to_string()),
-            ]);
+            return Some(cow!(vec![
+                ("transition-property", "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, backdrop-filter"),
+                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
+                ("transition-duration", "150ms"),
+            ]));
         }
         "transition-all" => {
-            return Some(vec![
-                ("transition-property", "all".to_string()),
+            return Some(cow!(vec![
+                ("transition-property", "all"),
                 (
                     "transition-timing-function",
-                    "cubic-bezier(0.4, 0, 0.2, 1)".to_string(),
+                    "cubic-bezier(0.4, 0, 0.2, 1)",
                 ),
-                ("transition-duration", "150ms".to_string()),
-            ]);
+                ("transition-duration", "150ms"),
+            ]));
         }
         "transition-colors" => {
-            return Some(vec![
-                ("transition-property", "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke".to_string()),
-                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)".to_string()),
-                ("transition-duration", "150ms".to_string()),
-            ]);
+            return Some(cow!(vec![
+                ("transition-property", "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke"),
+                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
+                ("transition-duration", "150ms"),
+            ]));
         }
         "transition-discrete" => {
-            return Some(vec![
-                ("transition-behavior", "discrete".to_string()),
-                ("transition-property", "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, backdrop-filter".to_string()),
-                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)".to_string()),
-                ("transition-duration", "150ms".to_string()),
-            ]);
+            return Some(cow!(vec![
+                ("transition-behavior", "discrete"),
+                ("transition-property", "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, backdrop-filter"),
+                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
+                ("transition-duration", "150ms"),
+            ]));
         }
         "transition-none" => {
-            return Some(vec![("transition-property", "none".to_string())]);
+            return Some(cow!(vec![("transition-property", "none")]));
         }
         "transition-opacity" => {
-            return Some(vec![
-                ("transition-property", "opacity".to_string()),
+            return Some(cow!(vec![
+                ("transition-property", "opacity"),
                 (
                     "transition-timing-function",
-                    "cubic-bezier(0.4, 0, 0.2, 1)".to_string(),
+                    "cubic-bezier(0.4, 0, 0.2, 1)",
                 ),
-                ("transition-duration", "150ms".to_string()),
-            ]);
+                ("transition-duration", "150ms"),
+            ]));
         }
         "transition-shadow" => {
-            return Some(vec![
-                ("transition-property", "box-shadow".to_string()),
+            return Some(cow!(vec![
+                ("transition-property", "box-shadow"),
                 (
                     "transition-timing-function",
-                    "cubic-bezier(0.4, 0, 0.2, 1)".to_string(),
+                    "cubic-bezier(0.4, 0, 0.2, 1)",
                 ),
-                ("transition-duration", "150ms".to_string()),
-            ]);
+                ("transition-duration", "150ms"),
+            ]));
         }
         "transition-transform" => {
-            return Some(vec![
+            return Some(cow!(vec![
                 (
                     "transition-property",
-                    "transform, translate, scale, rotate".to_string(),
+                    "transform, translate, scale, rotate",
                 ),
                 (
                     "transition-timing-function",
-                    "cubic-bezier(0.4, 0, 0.2, 1)".to_string(),
+                    "cubic-bezier(0.4, 0, 0.2, 1)",
                 ),
-                ("transition-duration", "150ms".to_string()),
-            ]);
+                ("transition-duration", "150ms"),
+            ]));
         }
         _ => {}
     }
@@ -396,14 +399,14 @@ pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'sta
     // Duration
     if let Some(rest) = class_name.strip_prefix("duration-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("transition-duration", format!("{}ms", n))]);
+            return Some(cow!(vec![("transition-duration", format!("{}ms", n))]));
         }
     }
 
     // Delay
     if let Some(rest) = class_name.strip_prefix("delay-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![("transition-delay", format!("{}ms", n))]);
+            return Some(cow!(vec![("transition-delay", format!("{}ms", n))]));
         }
     }
 
@@ -416,7 +419,7 @@ pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'sta
         _ => None,
     };
     if let Some(es) = ease {
-        return Some(vec![("transition-timing-function", es.to_string())]);
+        return Some(cow!(vec![("transition-timing-function", es)]));
     }
     // Skew
     let skew_deg = |s: &str| -> Option<String> {
@@ -437,32 +440,32 @@ pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'sta
     };
     if let Some(rest) = class_name.strip_prefix("skew-x-") {
         if let Some(deg) = skew_deg(rest) {
-            return Some(vec![("skew-x", deg)]);
+            return Some(cow!(vec![("skew-x", deg)]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-skew-x-") {
         if let Some(deg) = skew_deg(&format!("-{}", rest)) {
-            return Some(vec![("skew-x", deg)]);
+            return Some(cow!(vec![("skew-x", deg)]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("skew-y-") {
         if let Some(deg) = skew_deg(rest) {
-            return Some(vec![("skew-y", deg)]);
+            return Some(cow!(vec![("skew-y", deg)]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-skew-y-") {
         if let Some(deg) = skew_deg(&format!("-{}", rest)) {
-            return Some(vec![("skew-y", deg)]);
+            return Some(cow!(vec![("skew-y", deg)]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("skew-") {
         if let Some(deg) = skew_deg(rest) {
-            return Some(vec![("transform", format!("skew({})", deg))]);
+            return Some(cow!(vec![("transform", format!("skew({})", deg))]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-skew-") {
         if let Some(deg) = skew_deg(&format!("-{}", rest)) {
-            return Some(vec![("transform", format!("skew({})", deg))]);
+            return Some(cow!(vec![("transform", format!("skew({})", deg))]));
         }
     }
 
@@ -480,26 +483,26 @@ pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'sta
         _ => None,
     };
     if let Some(org) = origin {
-        return Some(vec![("transform-origin", org.to_string())]);
+        return Some(cow!(vec![("transform-origin", org)]));
     }
 
     // Perspective & Perspective Origin
     let perspective = match class_name {
-        "perspective-none" => Some("none".to_string()),
-        "perspective-distant" => Some("1250px".to_string()),
-        "perspective-dramatic" => Some("100px".to_string()),
-        "perspective-midrange" => Some("800px".to_string()),
-        "perspective-near" => Some("300px".to_string()),
-        "perspective-normal" => Some("500px".to_string()),
+        "perspective-none" => Some("none"),
+        "perspective-distant" => Some("1250px"),
+        "perspective-dramatic" => Some("100px"),
+        "perspective-midrange" => Some("800px"),
+        "perspective-near" => Some("300px"),
+        "perspective-normal" => Some("500px"),
         _ => None,
     };
     if let Some(p) = perspective {
-        return Some(vec![("perspective", p)]);
+        return Some(cow!(vec![("perspective", p)]));
     }
     if let Some(rest) = class_name.strip_prefix("perspective-") {
         if !rest.starts_with("origin-") {
             if let Some(val) = resolve_length_val(rest) {
-                return Some(vec![("perspective", val)]);
+                return Some(cow!(vec![("perspective", val)]));
             }
         }
     }
@@ -516,7 +519,7 @@ pub fn resolve_transform_transition_rules(class_name: &str) -> Option<Vec<(&'sta
         _ => None,
     };
     if let Some(po) = pers_origin {
-        return Some(vec![("perspective-origin", po.to_string())]);
+        return Some(cow!(vec![("perspective-origin", po)]));
     }
 
     // Filter & Backdrop Filter Utilities

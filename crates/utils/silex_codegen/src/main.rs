@@ -2,6 +2,8 @@ use heck::AsSnakeCase;
 use std::fs;
 use std::path::Path;
 
+#[macro_use]
+mod utils;
 mod css;
 mod tags;
 mod tw;

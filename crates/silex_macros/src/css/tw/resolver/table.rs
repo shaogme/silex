@@ -92897,9 +92897,7 @@ pub fn resolve_static_rule(
     utility_token: &str,
     span: Span,
 ) -> Option<Vec<UtilityRule>> {
-    let idx = STATIC_RULES
-        .binary_search_by_key(&utility_token, |&(k, _)| k)
-        .ok()?;
+    let idx = STATIC_RULES.binary_search_by_key(&utility_token, |&(k, _)| k).ok()?;
     let entries = STATIC_RULES[idx].1;
 
     let mut rules = Vec::with_capacity(entries.len());
@@ -92912,11 +92910,7 @@ pub fn resolve_static_rule(
             StaticVal::RingShadow => UtilityValue::Keyword(super::RING_BOX_SHADOW),
         };
         rules.push(make_rule(
-            if modifiers.is_empty() {
-                Vec::new()
-            } else {
-                modifiers.to_vec()
-            },
+            if modifiers.is_empty() { Vec::new() } else { modifiers.to_vec() },
             prop,
             uval,
             span,

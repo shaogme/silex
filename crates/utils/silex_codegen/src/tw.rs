@@ -12,8 +12,7 @@ pub fn generate_macro_tables(
 
     let candidate_set: BTreeSet<String> = classes.iter().cloned().collect();
 
-    let mut static_entries: Vec<(String, Vec<(&'static str, String)>)> =
-        Vec::with_capacity(candidate_set.len());
+    let mut static_entries = Vec::with_capacity(candidate_set.len());
     let mut unimplemented_entries: Vec<String> = Vec::with_capacity(candidate_set.len() / 4);
 
     for class in candidate_set {

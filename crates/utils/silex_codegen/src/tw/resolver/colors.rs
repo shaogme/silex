@@ -1,5 +1,7 @@
+use std::borrow::Cow;
+
 /// 颜色规则表解析
-pub fn resolve_color_rules(class_name: &str) -> Option<Vec<(&'static str, String)>> {
+pub fn resolve_color_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'static, str>)>> {
     let color_prefixes = &[
         ("scrollbar-thumb-", "scrollbar-color"),
         ("scrollbar-track-", "scrollbar-color"),
@@ -39,7 +41,7 @@ pub fn resolve_color_rules(class_name: &str) -> Option<Vec<(&'static str, String
     for &(prefix, prop) in color_prefixes {
         if let Some(color_name) = class_name.strip_prefix(prefix) {
             if let Some(hex) = resolve_color_hex(color_name) {
-                return Some(vec![(prop, hex.to_string())]);
+                return Some(cow!(vec[(prop, hex)]));
             }
         }
     }
@@ -48,19 +50,19 @@ pub fn resolve_color_rules(class_name: &str) -> Option<Vec<(&'static str, String
         if let Some(idx) = rest.rfind("-from-") {
             let val_name = &rest[idx + 6..];
             if let Some(hex) = resolve_color_hex(val_name) {
-                return Some(vec![("--tw-mask-from", hex.to_string())]);
+                return Some(cow!(vec![("--tw-mask-from", hex)]));
             }
             if let Some(len) = super::dynamic::resolve_length_val(val_name) {
-                return Some(vec![("--tw-mask-from-position", len)]);
+                return Some(cow!(vec![("--tw-mask-from-position", len)]));
             }
         }
         if let Some(idx) = rest.rfind("-to-") {
             let val_name = &rest[idx + 4..];
             if let Some(hex) = resolve_color_hex(val_name) {
-                return Some(vec![("--tw-mask-to", hex.to_string())]);
+                return Some(cow!(vec![("--tw-mask-to", hex)]));
             }
             if let Some(len) = super::dynamic::resolve_length_val(val_name) {
-                return Some(vec![("--tw-mask-to-position", len)]);
+                return Some(cow!(vec![("--tw-mask-to-position", len)]));
             }
         }
     }

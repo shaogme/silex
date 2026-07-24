@@ -1,53 +1,55 @@
-/// Filter & Backdrop-Filter 规则解析
-pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, String)>> {
-    // 静态 Blend Mode & Shadow 规则匹配
-    let static_filter: Option<&'static [(&'static str, &'static str)]> = match class_name {
-        // Blend Modes
-        "mix-blend-normal" => Some(&[("mix-blend-mode", "normal")]),
-        "mix-blend-multiply" => Some(&[("mix-blend-mode", "multiply")]),
-        "mix-blend-screen" => Some(&[("mix-blend-mode", "screen")]),
-        "mix-blend-overlay" => Some(&[("mix-blend-mode", "overlay")]),
-        "mix-blend-darken" => Some(&[("mix-blend-mode", "darken")]),
-        "mix-blend-lighten" => Some(&[("mix-blend-mode", "lighten")]),
-        "mix-blend-color-dodge" => Some(&[("mix-blend-mode", "color-dodge")]),
-        "mix-blend-color-burn" => Some(&[("mix-blend-mode", "color-burn")]),
-        "mix-blend-hard-light" => Some(&[("mix-blend-mode", "hard-light")]),
-        "mix-blend-soft-light" => Some(&[("mix-blend-mode", "soft-light")]),
-        "mix-blend-difference" => Some(&[("mix-blend-mode", "difference")]),
-        "mix-blend-exclusion" => Some(&[("mix-blend-mode", "exclusion")]),
-        "mix-blend-hue" => Some(&[("mix-blend-mode", "hue")]),
-        "mix-blend-saturation" => Some(&[("mix-blend-mode", "saturation")]),
-        "mix-blend-color" => Some(&[("mix-blend-mode", "color")]),
-        "mix-blend-luminosity" => Some(&[("mix-blend-mode", "luminosity")]),
-        "mix-blend-plus-lighter" => Some(&[("mix-blend-mode", "plus-lighter")]),
-        "mix-blend-plus-darker" => Some(&[("mix-blend-mode", "plus-darker")]),
+use std::borrow::Cow;
 
-        "bg-blend-normal" => Some(&[("background-blend-mode", "normal")]),
-        "bg-blend-multiply" => Some(&[("background-blend-mode", "multiply")]),
-        "bg-blend-screen" => Some(&[("background-blend-mode", "screen")]),
-        "bg-blend-overlay" => Some(&[("background-blend-mode", "overlay")]),
-        "bg-blend-darken" => Some(&[("background-blend-mode", "darken")]),
-        "bg-blend-lighten" => Some(&[("background-blend-mode", "lighten")]),
-        "bg-blend-color-dodge" => Some(&[("background-blend-mode", "color-dodge")]),
-        "bg-blend-color-burn" => Some(&[("background-blend-mode", "color-burn")]),
-        "bg-blend-hard-light" => Some(&[("background-blend-mode", "hard-light")]),
-        "bg-blend-soft-light" => Some(&[("background-blend-mode", "soft-light")]),
-        "bg-blend-difference" => Some(&[("background-blend-mode", "difference")]),
-        "bg-blend-exclusion" => Some(&[("background-blend-mode", "exclusion")]),
-        "bg-blend-hue" => Some(&[("background-blend-mode", "hue")]),
-        "bg-blend-saturation" => Some(&[("background-blend-mode", "saturation")]),
-        "bg-blend-color" => Some(&[("background-blend-mode", "color")]),
-        "bg-blend-luminosity" => Some(&[("background-blend-mode", "luminosity")]),
+/// Filter & Backdrop-Filter 规则解析
+pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'static, str>)>> {
+    // 静态 Blend Mode & Shadow 规则匹配
+    let static_filter: Option<&'static [(&'static str, Cow<'static, str>)]> = match class_name {
+        // Blend Modes
+        "mix-blend-normal" => Some(cow![("mix-blend-mode", "normal")]),
+        "mix-blend-multiply" => Some(cow![("mix-blend-mode", "multiply")]),
+        "mix-blend-screen" => Some(cow![("mix-blend-mode", "screen")]),
+        "mix-blend-overlay" => Some(cow![("mix-blend-mode", "overlay")]),
+        "mix-blend-darken" => Some(cow![("mix-blend-mode", "darken")]),
+        "mix-blend-lighten" => Some(cow![("mix-blend-mode", "lighten")]),
+        "mix-blend-color-dodge" => Some(cow![("mix-blend-mode", "color-dodge")]),
+        "mix-blend-color-burn" => Some(cow![("mix-blend-mode", "color-burn")]),
+        "mix-blend-hard-light" => Some(cow![("mix-blend-mode", "hard-light")]),
+        "mix-blend-soft-light" => Some(cow![("mix-blend-mode", "soft-light")]),
+        "mix-blend-difference" => Some(cow![("mix-blend-mode", "difference")]),
+        "mix-blend-exclusion" => Some(cow![("mix-blend-mode", "exclusion")]),
+        "mix-blend-hue" => Some(cow![("mix-blend-mode", "hue")]),
+        "mix-blend-saturation" => Some(cow![("mix-blend-mode", "saturation")]),
+        "mix-blend-color" => Some(cow![("mix-blend-mode", "color")]),
+        "mix-blend-luminosity" => Some(cow![("mix-blend-mode", "luminosity")]),
+        "mix-blend-plus-lighter" => Some(cow![("mix-blend-mode", "plus-lighter")]),
+        "mix-blend-plus-darker" => Some(cow![("mix-blend-mode", "plus-darker")]),
+
+        "bg-blend-normal" => Some(cow![("background-blend-mode", "normal")]),
+        "bg-blend-multiply" => Some(cow![("background-blend-mode", "multiply")]),
+        "bg-blend-screen" => Some(cow![("background-blend-mode", "screen")]),
+        "bg-blend-overlay" => Some(cow![("background-blend-mode", "overlay")]),
+        "bg-blend-darken" => Some(cow![("background-blend-mode", "darken")]),
+        "bg-blend-lighten" => Some(cow![("background-blend-mode", "lighten")]),
+        "bg-blend-color-dodge" => Some(cow![("background-blend-mode", "color-dodge")]),
+        "bg-blend-color-burn" => Some(cow![("background-blend-mode", "color-burn")]),
+        "bg-blend-hard-light" => Some(cow![("background-blend-mode", "hard-light")]),
+        "bg-blend-soft-light" => Some(cow![("background-blend-mode", "soft-light")]),
+        "bg-blend-difference" => Some(cow![("background-blend-mode", "difference")]),
+        "bg-blend-exclusion" => Some(cow![("background-blend-mode", "exclusion")]),
+        "bg-blend-hue" => Some(cow![("background-blend-mode", "hue")]),
+        "bg-blend-saturation" => Some(cow![("background-blend-mode", "saturation")]),
+        "bg-blend-color" => Some(cow![("background-blend-mode", "color")]),
+        "bg-blend-luminosity" => Some(cow![("background-blend-mode", "luminosity")]),
 
         // Shadow Initial
-        "shadow-initial" => Some(&[("box-shadow", "initial")]),
-        "text-shadow-initial" => Some(&[("text-shadow", "initial")]),
-        "text-shadow-none" => Some(&[("text-shadow", "none")]),
+        "shadow-initial" => Some(cow![("box-shadow", "initial")]),
+        "text-shadow-initial" => Some(cow![("text-shadow", "initial")]),
+        "text-shadow-none" => Some(cow![("text-shadow", "none")]),
 
         _ => None,
     };
     if let Some(r) = static_filter {
-        return Some(r.iter().map(|&(k, v)| (k, v.to_string())).collect());
+        return Some(r.to_vec());
     }
 
     let (is_backdrop, target) = if let Some(rest) = class_name.strip_prefix("backdrop-") {
@@ -64,7 +66,7 @@ pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, Strin
 
     // Blur
     if target == "blur" {
-        return Some(vec![(prop_name, "blur(8px)".to_string())]);
+        return Some(cow!(vec![(prop_name, "blur(8px)")]));
     }
     if let Some(rest) = target.strip_prefix("blur-") {
         let val = match rest {
@@ -78,69 +80,75 @@ pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, Strin
             "3xl" | "4xl" | "5xl" => "blur(64px)",
             _ => return None,
         };
-        return Some(vec![(prop_name, val.to_string())]);
+        return Some(cow!(vec![(prop_name, val)]));
     }
 
     // Brightness
     if let Some(rest) = target.strip_prefix("brightness-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![(
+            return Some(cow!(vec![(
                 prop_name,
                 format!("brightness({})", n as f64 / 100.0),
-            )]);
+            )]));
         }
     }
 
     // Contrast
     if let Some(rest) = target.strip_prefix("contrast-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![(prop_name, format!("contrast({})", n as f64 / 100.0))]);
+            return Some(cow!(vec![(
+                prop_name,
+                format!("contrast({})", n as f64 / 100.0),
+            )]));
         }
     }
 
     // Grayscale
     if target == "grayscale" {
-        return Some(vec![(prop_name, "grayscale(100%)".to_string())]);
+        return Some(cow!(vec![(prop_name, "grayscale(100%)")]));
     }
     if target == "grayscale-0" {
-        return Some(vec![(prop_name, "grayscale(0%)".to_string())]);
+        return Some(cow!(vec![(prop_name, "grayscale(0%)")]));
     }
     if let Some(rest) = target.strip_prefix("grayscale-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![(prop_name, format!("grayscale({}%)", n))]);
+            return Some(cow!(vec![(prop_name, format!("grayscale({}%)", n))]));
         }
     }
 
     // Invert
     if target == "invert" {
-        return Some(vec![(prop_name, "invert(100%)".to_string())]);
+        return Some(cow!(vec![(prop_name, "invert(100%)")]));
     }
     if target == "invert-0" {
-        return Some(vec![(prop_name, "invert(0%)".to_string())]);
+        return Some(cow!(vec![(prop_name, "invert(0%)")]));
     }
     if let Some(rest) = target.strip_prefix("invert-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![(prop_name, format!("invert({}%)", n))]);
+            return Some(cow!(vec![(prop_name, format!("invert({}%)", n))]));
         }
     }
 
     // Saturate
     if let Some(rest) = target.strip_prefix("saturate-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![(prop_name, format!("saturate({})", n as f64 / 100.0))]);
+            return Some(cow!(vec![(
+                prop_name,
+                format!("saturate({})", n as f64 / 100.0),
+            )]));
         }
     }
 
     // Sepia
     if target == "sepia" {
-        return Some(vec![(prop_name, "sepia(100%)".to_string())]);
+        return Some(cow!(vec![(prop_name, "sepia(100%)")]));
     }
     if target == "sepia-0" {
-        return Some(vec![(prop_name, "sepia(0%)".to_string())]);
+        return Some(cow!(vec![(prop_name, "sepia(0%)")]));
     }
     if let Some(rest) = target.strip_prefix("sepia-") {
         if let Ok(n) = rest.parse::<u32>() {
-            return Some(vec![(prop_name, format!("sepia({}%)", n))]);
+            return Some(cow!(vec![(prop_name, format!("sepia({}%)", n))]));
         }
     }
 
@@ -163,22 +171,22 @@ pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, Strin
     };
     if let Some(rest) = target.strip_prefix("hue-rotate-") {
         if let Some(h) = parse_hue(rest) {
-            return Some(vec![(prop_name, h)]);
+            return Some(cow!(vec![(prop_name, h)]));
         }
     }
     if let Some(rest) = target.strip_prefix("-hue-rotate-") {
         if let Some(h) = parse_hue(&format!("-{}", rest)) {
-            return Some(vec![(prop_name, h)]);
+            return Some(cow!(vec![(prop_name, h)]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-hue-rotate-") {
         if let Some(h) = parse_hue(&format!("-{}", rest)) {
-            return Some(vec![("filter", h)]);
+            return Some(cow!(vec![("filter", h)]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("-backdrop-hue-rotate-") {
         if let Some(h) = parse_hue(&format!("-{}", rest)) {
-            return Some(vec![("backdrop-filter", h)]);
+            return Some(cow!(vec![("backdrop-filter", h)]));
         }
     }
 
@@ -202,17 +210,17 @@ pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, Strin
             "-none" => "drop-shadow(0 0 #0000)",
             _ => return None,
         };
-        return Some(vec![(prop_name, val.to_string())]);
+        return Some(cow!(vec![(prop_name, val)]));
     }
 
     // Opacity
     if is_backdrop {
         if let Some(rest) = target.strip_prefix("opacity-") {
             if let Ok(n) = rest.parse::<u32>() {
-                return Some(vec![(
+                return Some(cow!(vec![(
                     prop_name,
                     format!("opacity({})", (n as f64) / 100.0),
-                )]);
+                )]));
             }
         }
     }

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 pub mod colors;
 pub mod dynamic;
 pub mod exact;
@@ -15,10 +17,10 @@ use transforms::resolve_transform_transition_rules;
 use typography_border::resolve_typography_border_effect_rules;
 
 /// 解析 Tailwind 类名对应的 CSS 规则对 `(property, value)`
-pub fn resolve_css_rules(class_name: &str) -> Option<Vec<(&'static str, String)>> {
+pub fn resolve_css_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'static, str>)>> {
     // 1. 静态精准匹配 (Layout, Interactivity, Mask, Tables/Lists/SVG)
     if let Some(rules) = resolve_exact_match(class_name) {
-        return Some(rules);
+        return Some(rules.to_vec());
     }
 
     // 2. 色彩属性匹配 (bg-*, text-*, border-*, ring-*, fill-*, stroke-*, etc.)

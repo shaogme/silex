@@ -1,4 +1,7 @@
 /// 解析数值与长度（rem, %, px, auto等），并正确处理负号
+use std::borrow::Cow;
+
+/// 解析数值与长度（rem, %, px, auto等），并正确处理负号
 pub fn resolve_length_val(val_str: &str) -> Option<String> {
     let (is_negative, s) = if let Some(stripped) = val_str.strip_prefix('-') {
         (true, stripped)
@@ -116,7 +119,54 @@ pub fn resolve_length_val(val_str: &str) -> Option<String> {
 }
 
 /// 动态内边距、外边距、定位、定位逻辑属性、尺寸、Z-index、透明度
-pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, String)>> {
+pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'static, str>)>> {
+    // 静态匹配
+    let static_rules: Option<&'static [(&'static str, Cow<'static, str>)]> = match class_name {
+        "bottom" => Some(cow![("bottom", "0px")]),
+        "top" => Some(cow![("top", "0px")]),
+        "left" => Some(cow![("left", "0px")]),
+        "right" => Some(cow![("right", "0px")]),
+        "inset" => Some(cow![
+            ("top", "0px"),
+            ("right", "0px"),
+            ("bottom", "0px"),
+            ("left", "0px"),
+        ]),
+        "m" => Some(cow![("margin", "0px")]),
+        "p" => Some(cow![("padding", "0px")]),
+        "mt" => Some(cow![("margin-top", "0px")]),
+        "mr" => Some(cow![("margin-right", "0px")]),
+        "mb" => Some(cow![("margin-bottom", "0px")]),
+        "ml" => Some(cow![("margin-left", "0px")]),
+        "mx" => Some(cow![("margin-left", "0px"), ("margin-right", "0px")]),
+        "my" => Some(cow![("margin-top", "0px"), ("margin-bottom", "0px")]),
+        "pt" => Some(cow![("padding-top", "0px")]),
+        "pr" => Some(cow![("padding-right", "0px")]),
+        "pb" => Some(cow![("padding-bottom", "0px")]),
+        "pl" => Some(cow![("padding-left", "0px")]),
+        "px" => Some(cow![("padding-left", "0px"), ("padding-right", "0px")]),
+        "py" => Some(cow![("padding-top", "0px"), ("padding-bottom", "0px")]),
+        "w" => Some(cow![("width", "100%")]),
+        "h" => Some(cow![("height", "100%")]),
+        "min-w" => Some(cow![("min-width", "0px")]),
+        "max-w" => Some(cow![("max-width", "none")]),
+        "min-h" => Some(cow![("min-height", "0px")]),
+        "max-h" => Some(cow![("max-height", "none")]),
+        "gap" => Some(cow![("gap", "0px")]),
+        "columns" => Some(cow![("column-count", "auto")]),
+        "space-x-reverse" => Some(cow![("--tw-space-x-reverse", "1")]),
+        "space-y-reverse" => Some(cow![("--tw-space-y-reverse", "1")]),
+        "max-w-none" => Some(cow![("max-width", "none")]),
+        "max-h-none" => Some(cow![("max-height", "none")]),
+        "max-block-none" => Some(cow![("max-block-size", "none")]),
+        "max-inline-none" => Some(cow![("max-inline-size", "none")]),
+        _ => None,
+    };
+
+    if let Some(r) = static_rules {
+        return Some(r.to_vec());
+    }
+
     let (prefix, rest) = if let Some(r) = class_name.strip_prefix('-') {
         ("-", r)
     } else {
@@ -217,72 +267,10 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
                 val_part.to_string()
             };
             if let Some(val) = resolve_length_val(&full_val_str) {
-                let rules = props.iter().map(|&pr| (pr, val.clone())).collect();
+                let rules = props.iter().map(|&pr| cow!(pr, val.clone())).collect();
                 return Some(rules);
             }
         }
-    }
-
-    // Standalone defaults (bottom, top, left, right, inset, m, p, w, h, gap, etc.)
-    let standalone = match class_name {
-        "bottom" => Some(vec![("bottom", "0px")]),
-        "top" => Some(vec![("top", "0px")]),
-        "left" => Some(vec![("left", "0px")]),
-        "right" => Some(vec![("right", "0px")]),
-        "inset" => Some(vec![
-            ("top", "0px"),
-            ("right", "0px"),
-            ("bottom", "0px"),
-            ("left", "0px"),
-        ]),
-        "m" => Some(vec![("margin", "0px")]),
-        "p" => Some(vec![("padding", "0px")]),
-        "mt" => Some(vec![("margin-top", "0px")]),
-        "mr" => Some(vec![("margin-right", "0px")]),
-        "mb" => Some(vec![("margin-bottom", "0px")]),
-        "ml" => Some(vec![("margin-left", "0px")]),
-        "mx" => Some(vec![("margin-left", "0px"), ("margin-right", "0px")]),
-        "my" => Some(vec![("margin-top", "0px"), ("margin-bottom", "0px")]),
-        "pt" => Some(vec![("padding-top", "0px")]),
-        "pr" => Some(vec![("padding-right", "0px")]),
-        "pb" => Some(vec![("padding-bottom", "0px")]),
-        "pl" => Some(vec![("padding-left", "0px")]),
-        "px" => Some(vec![("padding-left", "0px"), ("padding-right", "0px")]),
-        "py" => Some(vec![("padding-top", "0px"), ("padding-bottom", "0px")]),
-        "w" => Some(vec![("width", "100%")]),
-        "h" => Some(vec![("height", "100%")]),
-        "min-w" => Some(vec![("min-width", "0px")]),
-        "max-w" => Some(vec![("max-width", "none")]),
-        "min-h" => Some(vec![("min-height", "0px")]),
-        "max-h" => Some(vec![("max-height", "none")]),
-        "gap" => Some(vec![("gap", "0px")]),
-        "columns" => Some(vec![("column-count", "auto")]),
-        _ => None,
-    };
-    if let Some(rules) = standalone {
-        return Some(rules.into_iter().map(|(k, v)| (k, v.to_string())).collect());
-    }
-
-    // Space Reverse
-    if class_name == "space-x-reverse" {
-        return Some(vec![("--tw-space-x-reverse", "1".to_string())]);
-    }
-    if class_name == "space-y-reverse" {
-        return Some(vec![("--tw-space-y-reverse", "1".to_string())]);
-    }
-
-    // Max Size None
-    if class_name == "max-w-none" {
-        return Some(vec![("max-width", "none".to_string())]);
-    }
-    if class_name == "max-h-none" {
-        return Some(vec![("max-height", "none".to_string())]);
-    }
-    if class_name == "max-block-none" {
-        return Some(vec![("max-block-size", "none".to_string())]);
-    }
-    if class_name == "max-inline-none" {
-        return Some(vec![("max-inline-size", "none".to_string())]);
     }
 
     // Gradient Stop Positions (from-0%, via-50%, to-100%, etc.)
@@ -297,17 +285,17 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
 
     if let Some(rest) = class_name.strip_prefix("from-") {
         if let Some(pct) = parse_percent(rest) {
-            return Some(vec![("--tw-gradient-from-position", pct)]);
+            return Some(cow!(vec![("--tw-gradient-from-position", pct)]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("via-") {
         if let Some(pct) = parse_percent(rest) {
-            return Some(vec![("--tw-gradient-via-position", pct)]);
+            return Some(cow!(vec![("--tw-gradient-via-position", pct)]));
         }
     }
     if let Some(rest) = class_name.strip_prefix("to-") {
         if let Some(pct) = parse_percent(rest) {
-            return Some(vec![("--tw-gradient-to-position", pct)]);
+            return Some(cow!(vec![("--tw-gradient-to-position", pct)]));
         }
     }
 
@@ -326,7 +314,7 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             if let Some(idx) = rest.rfind("-from-") {
                 let pct_str = &rest[idx + 6..];
                 if let Some(pct) = parse_percent(pct_str) {
-                    return Some(vec![("--tw-mask-from-position", pct)]);
+                    return Some(cow!(vec![("--tw-mask-from-position", pct)]));
                 }
             }
         }
@@ -343,7 +331,7 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             if let Some(idx) = rest.rfind("-to-") {
                 let pct_str = &rest[idx + 4..];
                 if let Some(pct) = parse_percent(pct_str) {
-                    return Some(vec![("--tw-mask-to-position", pct)]);
+                    return Some(cow!(vec![("--tw-mask-to-position", pct)]));
                 }
             }
         }
@@ -351,13 +339,16 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
 
     // Z-index
     if let Some(val_str) = class_name.strip_prefix("z-") {
-        if val_str == "auto" || val_str.parse::<i32>().is_ok() {
-            return Some(vec![("z-index", val_str.to_string())]);
+        if val_str == "auto" {
+            return Some(cow!(vec![("z-index", "auto")]));
+        }
+        if val_str.parse::<i32>().is_ok() {
+            return Some(cow!(vec![("z-index", val_str.to_string())]));
         }
     }
     if let Some(val_str) = class_name.strip_prefix("-z-") {
         if let Ok(num) = val_str.parse::<i32>() {
-            return Some(vec![("z-index", format!("-{}", num))]);
+            return Some(cow!(vec![("z-index", format!("-{}", num))]));
         }
     }
 
@@ -365,7 +356,7 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
     if let Some(val_str) = class_name.strip_prefix("opacity-") {
         if let Ok(num) = val_str.parse::<u32>() {
             let op = (num as f64) / 100.0;
-            return Some(vec![("opacity", op.to_string())]);
+            return Some(cow!(vec![("opacity", op.to_string())]));
         }
     }
 
@@ -383,10 +374,10 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             } else {
                 format!("{}deg", deg)
             };
-            return Some(vec![(
+            return Some(cow!(vec![(
                 "background-image",
                 format!("linear-gradient({}, var(--tw-gradient-stops))", angle),
-            )]);
+            )]));
         }
     }
     if let Some(deg_str) = rest_name.strip_prefix("bg-conic-") {
@@ -396,10 +387,10 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             } else {
                 format!("{}deg", deg)
             };
-            return Some(vec![(
+            return Some(cow!(vec![(
                 "background-image",
                 format!("conic-gradient(from {}, var(--tw-gradient-stops))", angle),
-            )]);
+            )]));
         }
     }
     if let Some(deg_str) = rest_name.strip_prefix("mask-linear-") {
@@ -409,10 +400,10 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             } else {
                 format!("{}deg", deg)
             };
-            return Some(vec![(
+            return Some(cow!(vec![(
                 "mask-image",
                 format!("linear-gradient({}, var(--tw-mask-stops))", angle),
-            )]);
+            )]));
         }
     }
     if let Some(deg_str) = rest_name.strip_prefix("mask-conic-") {
@@ -422,12 +413,13 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Stri
             } else {
                 format!("{}deg", deg)
             };
-            return Some(vec![(
+            return Some(cow!(vec![(
                 "mask-image",
                 format!("conic-gradient(from {}, var(--tw-mask-stops))", angle),
-            )]);
+            )]));
         }
     }
 
     None
 }
+
