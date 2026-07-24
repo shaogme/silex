@@ -679,21 +679,10 @@ fn collect_used_animations(rules: &[CssRule], used: &mut HashSet<String>) {
 }
 
 fn format_group_peer_selector(is_group: bool, state: &str, name: Option<&str>) -> String {
+    let prefix = if is_group { ".group" } else { ".peer" };
     let base = match name {
-        Some(n) => {
-            if is_group {
-                format!(".group\\/{}", n)
-            } else {
-                format!(".peer\\/{}", n)
-            }
-        }
-        None => {
-            if is_group {
-                ".group".to_string()
-            } else {
-                ".peer".to_string()
-            }
-        }
+        Some(n) => format!("{}\\/{}", prefix, n),
+        None => prefix.to_string(),
     };
     let connector = if is_group { "&" } else { "~ &" };
 

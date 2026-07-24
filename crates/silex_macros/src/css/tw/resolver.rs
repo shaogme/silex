@@ -94,7 +94,7 @@ pub fn resolve_utility(
 }
 
 #[inline]
-fn color_prefix_to_prop(prefix: &str) -> Option<&'static str> {
+pub(crate) fn color_prefix_to_prop(prefix: &str) -> Option<&'static str> {
     match prefix {
         "bg" => Some("background-color"),
         "text" => Some("color"),

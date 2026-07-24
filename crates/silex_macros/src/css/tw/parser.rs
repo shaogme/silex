@@ -227,18 +227,13 @@ pub(crate) fn parse_modifiers_and_body(token: &str) -> (Vec<Modifier>, &str) {
 }
 
 fn split_modifier(s: &str) -> Option<(&str, &str)> {
-    if let Some(colon_idx) = s.find(':') {
-        let prefix = &s[..colon_idx];
-        if prefix.contains('[') && !prefix.contains(']') {
-            if let Some(close_idx) = s.find(']')
-                && let Some(next_colon) = s[close_idx..].find(':')
-            {
-                let real_colon = close_idx + next_colon;
-                return Some((&s[..real_colon], &s[real_colon + 1..]));
-            }
-            return None;
-        }
-        return Some((prefix, &s[colon_idx + 1..]));
+    let colon_idx = s.find(':')?;
+    let prefix = &s[..colon_idx];
+    if prefix.contains('[') && !prefix.contains(']') {
+        let close_idx = s.find(']')?;
+        let next_colon = s[close_idx..].find(':')?;
+        let real_colon = close_idx + next_colon;
+        return Some((&s[..real_colon], &s[real_colon + 1..]));
     }
-    None
+    Some((prefix, &s[colon_idx + 1..]))
 }

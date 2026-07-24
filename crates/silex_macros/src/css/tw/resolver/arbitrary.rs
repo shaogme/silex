@@ -124,87 +124,75 @@ pub fn resolve_arbitrary(
     // 2. 处理带有前缀的任意值语法 `w-[12px]`, `ring-[rgba(79,70,229,.2)]`, `bg-[rgba(79,70,229,.2)]`
     let clean_prefix = prefix.strip_suffix('-').unwrap_or(prefix);
 
-    let (prop, is_divide) = match clean_prefix {
-        "p" | "padding" => ("padding", false),
-        "px" => ("padding-inline", false),
-        "py" => ("padding-block", false),
-        "pt" => ("padding-top", false),
-        "pr" => ("padding-right", false),
-        "pb" => ("padding-bottom", false),
-        "pl" => ("padding-left", false),
-        "m" | "margin" => ("margin", false),
-        "mx" => ("margin-inline", false),
-        "my" => ("margin-block", false),
-        "mt" => ("margin-top", false),
-        "mr" => ("margin-right", false),
-        "mb" => ("margin-bottom", false),
-        "ml" => ("margin-left", false),
-        "w" | "width" => ("width", false),
-        "h" | "height" => ("height", false),
-        "bg" => ("background-color", false),
-        "text" => ("color", false),
-        "border" => ("border-color", false),
-        "border-t" => ("border-top-color", false),
-        "border-r" => ("border-right-color", false),
-        "border-b" => ("border-bottom-color", false),
-        "border-l" => ("border-left-color", false),
-        "outline" => ("outline-color", false),
-        "rounded" => ("border-radius", false),
-        "top" => ("top", false),
-        "right" => ("right", false),
-        "bottom" => ("bottom", false),
-        "left" => ("left", false),
-        "z" => ("z-index", false),
-        "opacity" => ("opacity", false),
-        "blur" => ("filter", false),
-        "backdrop-blur" => ("backdrop-filter", false),
-        "scale" | "scale-x" | "scale-y" | "rotate" | "translate-x" | "translate-y" => {
-            ("transform", false)
-        }
-        "animate" => ("animation", false),
-        "container" | "container-name" => ("container-name", false),
-        "grid-rows" => ("grid-template-rows", false),
-        "grid-cols" => ("grid-template-columns", false),
-        "auto-rows" => ("grid-auto-rows", false),
-        "auto-cols" => ("grid-auto-columns", false),
-        "ring" => {
-            if norm_val.ends_with("px")
-                || norm_val.ends_with("rem")
-                || norm_val.ends_with("em")
-                || norm_val.parse::<f64>().is_ok()
-            {
-                ("--tw-ring-width", false)
-            } else {
-                ("--tw-ring-color", false)
+    let (prop, is_divide) = if let Some(p) = super::color_prefix_to_prop(clean_prefix) {
+        (p, clean_prefix == "divide")
+    } else {
+        match clean_prefix {
+            "p" | "padding" => ("padding", false),
+            "px" => ("padding-inline", false),
+            "py" => ("padding-block", false),
+            "pt" => ("padding-top", false),
+            "pr" => ("padding-right", false),
+            "pb" => ("padding-bottom", false),
+            "pl" => ("padding-left", false),
+            "m" | "margin" => ("margin", false),
+            "mx" => ("margin-inline", false),
+            "my" => ("margin-block", false),
+            "mt" => ("margin-top", false),
+            "mr" => ("margin-right", false),
+            "mb" => ("margin-bottom", false),
+            "ml" => ("margin-left", false),
+            "w" | "width" => ("width", false),
+            "h" | "height" => ("height", false),
+            "rounded" => ("border-radius", false),
+            "top" => ("top", false),
+            "right" => ("right", false),
+            "bottom" => ("bottom", false),
+            "left" => ("left", false),
+            "z" => ("z-index", false),
+            "opacity" => ("opacity", false),
+            "blur" => ("filter", false),
+            "backdrop-blur" => ("backdrop-filter", false),
+            "scale" | "scale-x" | "scale-y" | "rotate" | "translate-x" | "translate-y" => {
+                ("transform", false)
             }
-        }
-        "ring-offset" => {
-            if norm_val.ends_with("px")
-                || norm_val.ends_with("rem")
-                || norm_val.ends_with("em")
-                || norm_val.parse::<f64>().is_ok()
-            {
-                ("--tw-ring-offset-width", false)
-            } else {
-                ("--tw-ring-offset-color", false)
+            "animate" => ("animation", false),
+            "container" | "container-name" => ("container-name", false),
+            "grid-rows" => ("grid-template-rows", false),
+            "grid-cols" => ("grid-template-columns", false),
+            "auto-rows" => ("grid-auto-rows", false),
+            "auto-cols" => ("grid-auto-columns", false),
+            "ring" => {
+                if norm_val.ends_with("px")
+                    || norm_val.ends_with("rem")
+                    || norm_val.ends_with("em")
+                    || norm_val.parse::<f64>().is_ok()
+                {
+                    ("--tw-ring-width", false)
+                } else {
+                    ("--tw-ring-color", false)
+                }
             }
+            "ring-offset" => {
+                if norm_val.ends_with("px")
+                    || norm_val.ends_with("rem")
+                    || norm_val.ends_with("em")
+                    || norm_val.parse::<f64>().is_ok()
+                {
+                    ("--tw-ring-offset-width", false)
+                } else {
+                    ("--tw-ring-offset-color", false)
+                }
+            }
+            "aspect" => ("aspect-ratio", false),
+            "object" => ("object-fit", false),
+            "col" => ("grid-column", false),
+            "row" => ("grid-row", false),
+            "line-clamp" => ("-webkit-line-clamp", false),
+            "shadow" => ("box-shadow", false),
+            "origin" => ("transform-origin", false),
+            _ => (clean_prefix, false),
         }
-        "aspect" => ("aspect-ratio", false),
-        "object" => ("object-fit", false),
-        "col" => ("grid-column", false),
-        "row" => ("grid-row", false),
-        "line-clamp" => ("-webkit-line-clamp", false),
-        "accent" => ("accent-color", false),
-        "caret" => ("caret-color", false),
-        "fill" => ("fill", false),
-        "stroke" => ("stroke", false),
-        "shadow" => ("box-shadow", false),
-        "from" => ("--tw-gradient-from", false),
-        "via" => ("--tw-gradient-via", false),
-        "to" => ("--tw-gradient-to", false),
-        "divide" => ("border-color", true),
-        "origin" => ("transform-origin", false),
-        _ => (clean_prefix, false),
     };
 
     let target_mods = if is_divide {

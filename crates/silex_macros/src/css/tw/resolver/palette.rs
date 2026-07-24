@@ -314,25 +314,16 @@ pub fn parse_color_value(color_token: &str) -> Option<UtilityValue> {
 
 /// 解析颜色相关的 Utility 类 (如 `text-slate-900`, `bg-indigo-600/50`, `bg-[#1e293b]`)
 pub fn parse_color_utility(token: &str) -> Option<(&'static str, UtilityValue)> {
-    const PREFIXES: &[(&str, &str)] = &[
-        ("border-t", "border-top-color"),
-        ("border-r", "border-right-color"),
-        ("border-b", "border-bottom-color"),
-        ("border-l", "border-left-color"),
-        ("border", "border-color"),
-        ("outline", "outline-color"),
-        ("accent", "accent-color"),
-        ("caret", "caret-color"),
-        ("bg", "background-color"),
-        ("text", "color"),
-        ("fill", "fill"),
-        ("stroke", "stroke"),
+    const ORDERED_PREFIXES: &[&str] = &[
+        "border-t", "border-r", "border-b", "border-l", "border",
+        "outline", "accent", "caret", "bg", "text", "fill", "stroke",
     ];
 
-    for &(prefix, prop) in PREFIXES {
+    for &prefix in ORDERED_PREFIXES {
         if let Some(rest) = token.strip_prefix(prefix)
             && let Some(rest) = rest.strip_prefix('-')
             && let Some(val) = parse_color_value(rest)
+            && let Some(prop) = super::color_prefix_to_prop(prefix)
         {
             return Some((prop, val));
         }
