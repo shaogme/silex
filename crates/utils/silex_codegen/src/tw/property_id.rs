@@ -47,6 +47,7 @@ pub fn generate_property_id_code(
     classes: &[String],
     test_cases: &[String],
     palette: &BTreeMap<String, Vec<ColorShadeInfo>>,
+    extra_props: &[String],
 ) -> String {
     let mut props_set: BTreeSet<String> = BTreeSet::new();
 
@@ -99,24 +100,12 @@ pub fn generate_property_id_code(
         }
     }
 
-    // 确保 border、transform 及所有 Tailwind 内置扩展变量/前缀均在集合中
+    // 确保 border、transform 及所有 Node 导出提取的 CSS 自定义变量与前缀属性在集合中
     props_set.insert("border".to_string());
     props_set.insert("transform".to_string());
 
-    let tw_vars = &[
-        "--tw-ring-color", "--tw-ring-offset-color", "--tw-ring-shadow", "--tw-ring-offset-shadow",
-        "--tw-shadow", "--tw-shadow-color", "--tw-gradient-from", "--tw-gradient-via", "--tw-gradient-to",
-        "--tw-gradient-stops", "--tw-blur", "--tw-brightness", "--tw-contrast", "--tw-grayscale",
-        "--tw-hue-rotate", "--tw-invert", "--tw-saturate", "--tw-sepia", "--tw-drop-shadow",
-        "--tw-backdrop-blur", "--tw-backdrop-brightness", "--tw-backdrop-contrast", "--tw-backdrop-grayscale",
-        "--tw-backdrop-hue-rotate", "--tw-backdrop-invert", "--tw-backdrop-opacity", "--tw-backdrop-saturate",
-        "--tw-backdrop-sepia", "--tw-translate-x", "--tw-translate-y", "--tw-rotate", "--tw-skew-x",
-        "--tw-skew-y", "--tw-scale-x", "--tw-scale-y", "--tw-mask-from", "--tw-mask-to", "--tw-contain-size",
-        "-webkit-line-clamp", "-webkit-box-orient", "-webkit-box",
-    ];
-
-    for &v in tw_vars {
-        props_set.insert(v.to_string());
+    for v in extra_props {
+        props_set.insert(v.clone());
     }
 
     // 构建 raw_map 以计算连通分量 (Bitmask Group)
