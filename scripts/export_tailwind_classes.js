@@ -7,7 +7,7 @@ const { inferPrefixMetadata } = require('./export_tailwind/metadata_probe');
 const { extractPalette } = require('./export_tailwind/palette_extractor');
 const { extractModifiers } = require('./export_tailwind/modifier_extractor');
 const { extractKeyframes } = require('./export_tailwind/keyframe_extractor');
-const { extractProperties } = require('./export_tailwind/property_extractor');
+const { extractProperties, extractPropertyAliases } = require('./export_tailwind/property_extractor');
 
 async function main() {
   // 1. 加载设计系统
@@ -85,8 +85,9 @@ async function main() {
   // 8. 探针分析并自动推导 Dynamic Prefix 元数据 (prefix_metadata)
   const inferredMetadataObj = inferPrefixMetadata(sortedPrefixKeys, designSystem);
 
-  // 8.5. 自动提取自定义 CSS 变量与特殊前缀属性
+  // 8.5. 自动提取自定义 CSS 变量与特殊前缀属性及属性别名
   const extraPropertiesList = extractProperties(classList, designSystem);
+  const propertyAliasesObj = extractPropertyAliases(classList, designSystem);
 
   // 9. 导出 JSON 数据到 crates/utils/silex_codegen/data/tailwind 目录
   const outputDir = path.join(__dirname, '../crates/utils/silex_codegen/data/tailwind');
@@ -102,6 +103,7 @@ async function main() {
   fs.writeFileSync(path.join(outputDir, 'modifiers.json'), JSON.stringify(modifiersList, null, 2), 'utf-8');
   fs.writeFileSync(path.join(outputDir, 'keyframes.json'), JSON.stringify(keyframesList, null, 2), 'utf-8');
   fs.writeFileSync(path.join(outputDir, 'extra_properties.json'), JSON.stringify(extraPropertiesList, null, 2), 'utf-8');
+  fs.writeFileSync(path.join(outputDir, 'property_aliases.json'), JSON.stringify(propertyAliasesObj, null, 2), 'utf-8');
 
   console.log(`导出成功！文件已保存至: ${outputDir}`);
   console.log(`共包含类名数量：${classList.length}`);
@@ -112,6 +114,7 @@ async function main() {
   console.log(`包含修饰符元数据数量：${modifiersList.length}`);
   console.log(`包含动画 Keyframes 数量：${keyframesList.length}`);
   console.log(`包含自定义变量与特殊属性数量：${extraPropertiesList.length}`);
+  console.log(`包含属性别名映射数量：${Object.keys(propertyAliasesObj).length}`);
 }
 
 main().catch(err => {

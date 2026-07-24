@@ -48,6 +48,7 @@ pub fn generate_property_id_code(
     test_cases: &[String],
     palette: &BTreeMap<String, Vec<ColorShadeInfo>>,
     extra_props: &[String],
+    property_aliases: &BTreeMap<String, Vec<String>>,
 ) -> String {
     let mut props_set: BTreeSet<String> = BTreeSet::new();
 
@@ -70,40 +71,15 @@ pub fn generate_property_id_code(
         }
     }
 
-    // 2. 注入所有 Tailwind / 补充别名与子属性
-    let custom_aliases: &[(&str, &[&str])] = &[
-        ("padding-inline", &["padding-left", "padding-right"]),
-        ("padding-block", &["padding-top", "padding-bottom"]),
-        ("margin-inline", &["margin-left", "margin-right"]),
-        ("margin-block", &["margin-top", "margin-bottom"]),
-        ("inset", &["top", "right", "bottom", "left"]),
-        ("inset-x", &["left", "right"]),
-        ("inset-y", &["top", "bottom"]),
-        ("border-x", &["border-left-width", "border-right-width"]),
-        ("border-y", &["border-top-width", "border-bottom-width"]),
-        ("border-x-width", &["border-left-width", "border-right-width"]),
-        ("border-y-width", &["border-top-width", "border-bottom-width"]),
-        ("border-x-style", &["border-left-style", "border-right-style"]),
-        ("border-y-style", &["border-top-style", "border-bottom-style"]),
-        ("border-x-color", &["border-left-color", "border-right-color"]),
-        ("border-y-color", &["border-top-color", "border-bottom-color"]),
-        ("scroll-margin-inline", &["scroll-margin-left", "scroll-margin-right"]),
-        ("scroll-margin-block", &["scroll-margin-top", "scroll-margin-bottom"]),
-        ("scroll-padding-inline", &["scroll-padding-left", "scroll-padding-right"]),
-        ("scroll-padding-block", &["scroll-padding-top", "scroll-padding-bottom"]),
-    ];
-
-    for &(k, subs) in custom_aliases {
-        props_set.insert(k.to_string());
-        for &s in subs {
-            props_set.insert(s.to_string());
+    // 2. 动态注入从 Node.js 自动推导导出的 Tailwind / 简写与别名映射关系
+    for (k, subs) in property_aliases {
+        props_set.insert(k.clone());
+        for s in subs {
+            props_set.insert(s.clone());
         }
     }
 
-    // 确保 border、transform 及所有 Node 导出提取的 CSS 自定义变量与前缀属性在集合中
-    props_set.insert("border".to_string());
-    props_set.insert("transform".to_string());
-
+    // 注入所有 Node 导出提取的 CSS 自定义变量与特殊前缀属性
     for v in extra_props {
         props_set.insert(v.clone());
     }
@@ -127,25 +103,11 @@ pub fn generate_property_id_code(
             }
         }
     }
-    for &(k, subs) in custom_aliases {
-        raw_map.insert(k.to_string(), subs.iter().map(|s| s.to_string()).collect());
+
+    // 载入自动推导出的简写属性关联
+    for (k, subs) in property_aliases {
+        raw_map.insert(k.clone(), subs.clone());
     }
-    raw_map.entry("border".to_string()).or_insert_with(|| {
-        vec![
-            "border-top-width".to_string(),
-            "border-right-width".to_string(),
-            "border-bottom-width".to_string(),
-            "border-left-width".to_string(),
-            "border-top-style".to_string(),
-            "border-right-style".to_string(),
-            "border-bottom-style".to_string(),
-            "border-left-style".to_string(),
-            "border-top-color".to_string(),
-            "border-right-color".to_string(),
-            "border-bottom-color".to_string(),
-            "border-left-color".to_string(),
-        ]
-    });
 
     // 展开所有 shorthand 映射 final_map: prop -> BTreeSet<atomic_subproperty>
     let mut final_map: BTreeMap<String, Vec<String>> = BTreeMap::new();

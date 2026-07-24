@@ -171,6 +171,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let modifiers_str = read_to_string(tw_data_dir.join("modifiers.json"))?;
         let keyframes_str = read_to_string(tw_data_dir.join("keyframes.json"))?;
         let extra_properties_str = read_to_string(tw_data_dir.join("extra_properties.json"))?;
+        let property_aliases_str = read_to_string(tw_data_dir.join("property_aliases.json"))?;
 
         let classes: Vec<String> = from_str(&classes_str)?;
         let dynamic_prefixes: BTreeMap<String, Vec<String>> = from_str(&dynamic_prefixes_str)?;
@@ -182,12 +183,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         let modifiers_data: Vec<crate::tw::ModifierMetaJson> = from_str(&modifiers_str)?;
         let keyframes_data: Vec<crate::tw::KeyframeMetaJson> = from_str(&keyframes_str)?;
         let extra_properties: Vec<String> = from_str(&extra_properties_str)?;
+        let property_aliases: BTreeMap<String, Vec<String>> = from_str(&property_aliases_str)?;
 
         let (table_code, table_unimplement_code) =
             generate_macro_tables(&classes, &dynamic_prefixes, &palette_data);
         let table_examples_code = generate_table_examples(&test_cases, &palette_data);
-        let property_id_code =
-            generate_property_id_code(&props_str, &classes, &test_cases, &palette_data, &extra_properties);
+        let property_id_code = generate_property_id_code(
+            &props_str,
+            &classes,
+            &test_cases,
+            &palette_data,
+            &extra_properties,
+            &property_aliases,
+        );
         let prefix_metadata_code = generate_prefix_metadata_code(&prefix_metadata);
         let palette_code = generate_palette_code(&palette_data);
         let modifiers_code = generate_modifiers_code(&modifiers_data);

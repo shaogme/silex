@@ -1,0 +1,158 @@
+{
+  "border": [
+    "border-top-width",
+    "border-right-width",
+    "border-bottom-width",
+    "border-left-width",
+    "border-top-style",
+    "border-right-style",
+    "border-bottom-style",
+    "border-left-style",
+    "border-top-color",
+    "border-right-color",
+    "border-bottom-color",
+    "border-left-color"
+  ],
+  "border-block": [
+    "border-top",
+    "border-bottom"
+  ],
+  "border-block-color": [
+    "border-top-color",
+    "border-bottom-color"
+  ],
+  "border-block-style": [
+    "border-top-style",
+    "border-bottom-style"
+  ],
+  "border-block-width": [
+    "border-top-width",
+    "border-bottom-width"
+  ],
+  "border-inline": [
+    "border-left",
+    "border-right"
+  ],
+  "border-inline-color": [
+    "border-left-color",
+    "border-right-color"
+  ],
+  "border-inline-style": [
+    "border-left-style",
+    "border-right-style"
+  ],
+  "border-inline-width": [
+    "border-left-width",
+    "border-right-width"
+  ],
+  "border-x": [
+    "border-left",
+    "border-right"
+  ],
+  "border-x-color": [
+    "border-left-color",
+    "border-right-color"
+  ],
+  "border-x-style": [
+    "border-left-style",
+    "border-right-style"
+  ],
+  "border-x-width": [
+    "border-left-width",
+    "border-right-width"
+  ],
+  "border-y": [
+    "border-top",
+    "border-bottom"
+  ],
+  "border-y-color": [
+    "border-top-color",
+    "border-bottom-color"
+  ],
+  "border-y-style": [
+    "border-top-style",
+    "border-bottom-style"
+  ],
+  "border-y-width": [
+    "border-top-width",
+    "border-bottom-width"
+  ],
+  "inset": [
+    "top",
+    "right",
+    "bottom",
+    "left"
+  ],
+  "inset-x": [
+    "left",
+    "right"
+  ],
+  "inset-y": [
+    "top",
+    "bottom"
+  ],
+  "margin-block": [
+    "margin-top",
+    "margin-bottom"
+  ],
+  "margin-inline": [
+    "margin-left",
+    "margin-right"
+  ],
+  "margin-x": [
+    "margin-left",
+    "margin-right"
+  ],
+  "margin-y": [
+    "margin-top",
+    "margin-bottom"
+  ],
+  "padding-block": [
+    "padding-top",
+    "padding-bottom"
+  ],
+  "padding-inline": [
+    "padding-left",
+    "padding-right"
+  ],
+  "padding-x": [
+    "padding-left",
+    "padding-right"
+  ],
+  "padding-y": [
+    "padding-top",
+    "padding-bottom"
+  ],
+  "scroll-margin-block": [
+    "scroll-margin-top",
+    "scroll-margin-bottom"
+  ],
+  "scroll-margin-inline": [
+    "scroll-margin-left",
+    "scroll-margin-right"
+  ],
+  "scroll-margin-x": [
+    "scroll-margin-left",
+    "scroll-margin-right"
+  ],
+  "scroll-margin-y": [
+    "scroll-margin-top",
+    "scroll-margin-bottom"
+  ],
+  "scroll-padding-block": [
+    "scroll-padding-top",
+    "scroll-padding-bottom"
+  ],
+  "scroll-padding-inline": [
+    "scroll-padding-left",
+    "scroll-padding-right"
+  ],
+  "scroll-padding-x": [
+    "scroll-padding-left",
+    "scroll-padding-right"
+  ],
+  "scroll-padding-y": [
+    "scroll-padding-top",
+    "scroll-padding-bottom"
+  ]
+}

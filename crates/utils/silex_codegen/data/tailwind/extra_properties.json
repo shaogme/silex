@@ -127,5 +127,7 @@
   "-webkit-font-smoothing",
   "-webkit-hyphens",
   "-webkit-line-clamp",
-  "-webkit-user-select"
+  "-webkit-user-select",
+  "border",
+  "transform"
 ]
