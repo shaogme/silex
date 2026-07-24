@@ -1,6 +1,6 @@
+use crate::tw::ColorShadeInfo;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
-use crate::tw::ColorShadeInfo;
 
 /// 颜色规则表解析
 pub fn resolve_color_rules<'a>(
@@ -44,10 +44,10 @@ pub fn resolve_color_rules<'a>(
     ];
 
     for &(prefix, prop) in color_prefixes {
-        if let Some(color_name) = class_name.strip_prefix(prefix) {
-            if let Some(hex) = resolve_color_hex(color_name, palette) {
-                return Some(cow!(vec[(prop, hex)]));
-            }
+        if let Some(color_name) = class_name.strip_prefix(prefix)
+            && let Some(hex) = resolve_color_hex(color_name, palette)
+        {
+            return Some(cow!(vec[(prop, hex)]));
         }
     }
 
@@ -94,4 +94,3 @@ pub fn resolve_color_hex<'a>(
         }
     }
 }
-

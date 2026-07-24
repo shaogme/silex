@@ -24,9 +24,7 @@ fn prop_matches_generated_css(prop: &str, css: &str) -> bool {
         "padding-left" | "padding-right" | "padding-top" | "padding-bottom" => {
             css.contains("padding")
         }
-        "margin-left" | "margin-right" | "margin-top" | "margin-bottom" => {
-            css.contains("margin")
-        }
+        "margin-left" | "margin-right" | "margin-top" | "margin-bottom" => css.contains("margin"),
         _ => false,
     }
 }
@@ -47,17 +45,23 @@ fn test_e2e_table_examples_individual_rules() {
             panic!("Failed to build CssBlock for table example class '{class_name}': {e}");
         });
 
-        let compile_result = crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)
-            .unwrap_or_else(|e| {
-                panic!("Failed to compile CssBlock for table example class '{class_name}': {e}");
-            });
+        let compile_result =
+            crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to compile CssBlock for table example class '{class_name}': {e}"
+                    );
+                });
 
         assert!(
             !compile_result.class_name.is_empty(),
             "Compiled class_name should not be empty for '{class_name}'"
         );
 
-        let generated_css = format!("{}\n{}", compile_result.component_css, compile_result.static_css);
+        let generated_css = format!(
+            "{}\n{}",
+            compile_result.component_css, compile_result.static_css
+        );
 
         for &(prop, _val) in expected_rules {
             assert!(
@@ -87,17 +91,23 @@ fn test_e2e_table_examples_batch_candidates() {
             panic!("Failed to build CssBlock for batch utilities: {batch_str}\nError: {e}");
         });
 
-        let compile_result = crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)
-            .unwrap_or_else(|e| {
-                panic!("Failed to compile CssBlock for batch utilities: {batch_str}\nError: {e}");
-            });
+        let compile_result =
+            crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to compile CssBlock for batch utilities: {batch_str}\nError: {e}"
+                    );
+                });
 
         assert!(
             !compile_result.class_name.is_empty(),
             "Batch compiled class_name should not be empty"
         );
 
-        let combined_css = format!("{}\n{}", compile_result.component_css, compile_result.static_css);
+        let combined_css = format!(
+            "{}\n{}",
+            compile_result.component_css, compile_result.static_css
+        );
         assert!(
             !combined_css.trim().is_empty(),
             "Batch compiled CSS should not be empty for chunk starting with '{}'",
@@ -117,7 +127,8 @@ fn kw_matches_generated_css(k: &str, css: &str) -> bool {
     if css.contains(&k_deg_clean) {
         return true;
     }
-    if (k.starts_with("translateX(") || k.starts_with("translateY(")) && css.contains("translate(") {
+    if (k.starts_with("translateX(") || k.starts_with("translateY(")) && css.contains("translate(")
+    {
         return true;
     }
     let clean_k: String = k.chars().filter(|c| !c.is_whitespace()).collect();
@@ -146,7 +157,7 @@ fn literal_matches_generated_css(l: &str, css: &str) -> bool {
 
 #[test]
 fn test_e2e_table_examples_rule_values_precision() {
-    use resolver::codegen::table_examples::{TEST_CASE_RULES, StaticVal};
+    use resolver::codegen::table_examples::{StaticVal, TEST_CASE_RULES};
 
     let span = proc_macro2::Span::call_site();
 
@@ -154,8 +165,12 @@ fn test_e2e_table_examples_rule_values_precision() {
         let ts = quote::quote!(#class_name);
         let input: TwInput = syn::parse2(ts).unwrap();
         let css_block = build_css_block_from_tw(input).unwrap();
-        let compile_result = crate::css::compiler::CssCompiler::compile_block(&css_block, span, false).unwrap();
-        let css = format!("{}\n{}", compile_result.component_css, compile_result.static_css);
+        let compile_result =
+            crate::css::compiler::CssCompiler::compile_block(&css_block, span, false).unwrap();
+        let css = format!(
+            "{}\n{}",
+            compile_result.component_css, compile_result.static_css
+        );
 
         for &(_prop, val) in expected_rules {
             match val {

@@ -117,13 +117,11 @@ fn modifier_group_sort_key(modifiers: &[Modifier]) -> (u32, u32, usize) {
     (max_p, total_p, modifiers.len())
 }
 
-
 /// 编译期 Tailwind Merge: 相同修饰符组下的实用类属性消解 (支持简写属性与长写属性关联覆盖，Last-wins 覆盖先出者)
 pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
     let mut covered_subproperties = HashSet::new();
     let mut deduped_rev = Vec::new();
-    let mut transform_rules_by_modifier: HashMap<Vec<Modifier>, Vec<UtilityRule>> =
-        HashMap::new();
+    let mut transform_rules_by_modifier: HashMap<Vec<Modifier>, Vec<UtilityRule>> = HashMap::new();
 
     for rule in rules.into_iter().rev() {
         let prop = rule.css_property.as_str();

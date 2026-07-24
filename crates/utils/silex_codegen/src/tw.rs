@@ -37,8 +37,8 @@ fn resolve_entries<'a>(
 fn push_table_header(code: &mut String, doc_comment: &str) {
     let _ = writeln!(code, "// {}", doc_comment);
     code.push_str("// 避免手写硬编码，与 silex_codegen/resolver 保持 100% 规则对齐\n\n");
-    code.push_str("#[allow(unused_imports)]\nuse crate::css::tw::resolver::make_rule;\n");
     code.push_str("#[allow(unused_imports)]\nuse crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};\n");
+    code.push_str("#[allow(unused_imports)]\nuse crate::css::tw::resolver::make_rule;\n");
     code.push_str("#[allow(unused_imports)]\nuse proc_macro2::Span;\n\n");
 
     code.push_str("#[allow(dead_code)]\n");
@@ -77,7 +77,7 @@ fn push_rules_array(code: &mut String, var_name: &str, entries: &RuleEntries) {
     code.push_str("#[rustfmt::skip]\n");
     let _ = writeln!(
         code,
-        "pub static {}: &[(&'static str, &'static [(&'static str, StaticVal)])] = &[",
+        "pub static {}: &[(&str, &[(&str, StaticVal)])] = &[",
         var_name
     );
     for (class, rules) in entries {
@@ -106,7 +106,11 @@ pub fn generate_macro_tables(
         "自动生成的 Tailwind 静态规则表（供 silex_macros 使用）",
     );
 
-    push_candidate_array(&mut table_code, "STATIC_CANDIDATE_UTILITIES", &static_entries);
+    push_candidate_array(
+        &mut table_code,
+        "STATIC_CANDIDATE_UTILITIES",
+        &static_entries,
+    );
 
     table_code.push_str("#[rustfmt::skip]\n");
     table_code.push_str("pub const DYNAMIC_UTILITY_PREFIXES: &[(&str, &[&str])] = &[\n");
@@ -212,10 +216,10 @@ fn try_parse_numeric(val: &str) -> Option<(f64, &'static str)> {
     }
     let units = ["rem", "px", "%", "vw", "vh", "em", "deg", "ms", "s"];
     for &unit in &units {
-        if let Some(prefix) = val.strip_suffix(unit) {
-            if let Ok(v) = prefix.parse::<f64>() {
-                return Some((v, unit));
-            }
+        if let Some(prefix) = val.strip_suffix(unit)
+            && let Ok(v) = prefix.parse::<f64>()
+        {
+            return Some((v, unit));
         }
     }
     None
@@ -283,16 +287,46 @@ pub fn generate_shorthands_code(props_json_str: &str) -> String {
         ("inset-y", &["top", "bottom"]),
         ("border-x", &["border-left-width", "border-right-width"]),
         ("border-y", &["border-top-width", "border-bottom-width"]),
-        ("border-x-width", &["border-left-width", "border-right-width"]),
-        ("border-y-width", &["border-top-width", "border-bottom-width"]),
-        ("border-x-style", &["border-left-style", "border-right-style"]),
-        ("border-y-style", &["border-top-style", "border-bottom-style"]),
-        ("border-x-color", &["border-left-color", "border-right-color"]),
-        ("border-y-color", &["border-top-color", "border-bottom-color"]),
-        ("scroll-margin-inline", &["scroll-margin-left", "scroll-margin-right"]),
-        ("scroll-margin-block", &["scroll-margin-top", "scroll-margin-bottom"]),
-        ("scroll-padding-inline", &["scroll-padding-left", "scroll-padding-right"]),
-        ("scroll-padding-block", &["scroll-padding-top", "scroll-padding-bottom"]),
+        (
+            "border-x-width",
+            &["border-left-width", "border-right-width"],
+        ),
+        (
+            "border-y-width",
+            &["border-top-width", "border-bottom-width"],
+        ),
+        (
+            "border-x-style",
+            &["border-left-style", "border-right-style"],
+        ),
+        (
+            "border-y-style",
+            &["border-top-style", "border-bottom-style"],
+        ),
+        (
+            "border-x-color",
+            &["border-left-color", "border-right-color"],
+        ),
+        (
+            "border-y-color",
+            &["border-top-color", "border-bottom-color"],
+        ),
+        (
+            "scroll-margin-inline",
+            &["scroll-margin-left", "scroll-margin-right"],
+        ),
+        (
+            "scroll-margin-block",
+            &["scroll-margin-top", "scroll-margin-bottom"],
+        ),
+        (
+            "scroll-padding-inline",
+            &["scroll-padding-left", "scroll-padding-right"],
+        ),
+        (
+            "scroll-padding-block",
+            &["scroll-padding-top", "scroll-padding-bottom"],
+        ),
     ];
 
     for &(k, subs) in custom_aliases {
@@ -300,24 +334,26 @@ pub fn generate_shorthands_code(props_json_str: &str) -> String {
     }
 
     // 补充 border 顶层简写，确保能够全覆盖宽、样、色
-    raw_map.entry("border".to_string()).or_insert_with(|| vec![
-        "border-top-width".to_string(),
-        "border-right-width".to_string(),
-        "border-bottom-width".to_string(),
-        "border-left-width".to_string(),
-        "border-top-style".to_string(),
-        "border-right-style".to_string(),
-        "border-bottom-style".to_string(),
-        "border-left-style".to_string(),
-        "border-top-color".to_string(),
-        "border-right-color".to_string(),
-        "border-bottom-color".to_string(),
-        "border-left-color".to_string(),
-    ]);
+    raw_map.entry("border".to_string()).or_insert_with(|| {
+        vec![
+            "border-top-width".to_string(),
+            "border-right-width".to_string(),
+            "border-bottom-width".to_string(),
+            "border-left-width".to_string(),
+            "border-top-style".to_string(),
+            "border-right-style".to_string(),
+            "border-bottom-style".to_string(),
+            "border-left-style".to_string(),
+            "border-top-color".to_string(),
+            "border-right-color".to_string(),
+            "border-bottom-color".to_string(),
+            "border-left-color".to_string(),
+        ]
+    });
 
     // 3. 多层简写递归解包为完全原子的 Longhand 属性
     let mut final_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for (prop, _) in &raw_map {
+    for prop in raw_map.keys() {
         let mut atomic_set = BTreeSet::new();
         flatten_prop(prop, &raw_map, &mut atomic_set, &mut BTreeSet::new());
         if !atomic_set.is_empty() {
@@ -329,11 +365,13 @@ pub fn generate_shorthands_code(props_json_str: &str) -> String {
 
     // 4. 生成 Rust 代码
     let mut code = String::with_capacity(32 * 1024);
-    code.push_str("// 自动生成的 CSS / Tailwind 简写属性到原子子属性的静态对照表（供 silex_macros 使用）\n");
+    code.push_str(
+        "// 自动生成的 CSS / Tailwind 简写属性到原子子属性的静态对照表（供 silex_macros 使用）\n",
+    );
     code.push_str("// 由 silex_codegen 自动提取，切勿手动修改！\n\n");
 
     code.push_str("#[rustfmt::skip]\n");
-    code.push_str("pub static SHORTHAND_SUBPROPERTIES: &[(&'static str, &'static [&'static str])] = &[\n");
+    code.push_str("pub static SHORTHAND_SUBPROPERTIES: &[(&str, &[&str])] = &[\n");
     for (k, subs) in &final_map {
         let _ = write!(code, "    (\"{}\", &[", k);
         for (i, sub) in subs.iter().enumerate() {
@@ -387,9 +425,7 @@ pub struct PrefixMetaJson {
 }
 
 /// 生成 `silex_macros/src/css/tw/resolver/prefix_metadata.rs` 产物代码
-pub fn generate_prefix_metadata_code(
-    prefix_metadata: &BTreeMap<String, PrefixMetaJson>,
-) -> String {
+pub fn generate_prefix_metadata_code(prefix_metadata: &BTreeMap<String, PrefixMetaJson>) -> String {
     let mut code = String::with_capacity(16 * 1024);
     code.push_str("// 自动生成的 Utility 前缀与单位元数据表（供 silex_macros 使用）\n");
     code.push_str("// 由 silex_codegen 自动生成，切勿手写修改！\n\n");
@@ -416,7 +452,11 @@ pub fn generate_prefix_metadata_code(
     code.push_str("#[rustfmt::skip]\n");
     code.push_str("pub static PREFIX_METADATA: &[PrefixMeta] = &[\n");
     for (prefix, meta) in prefix_metadata {
-        let _ = write!(code, "    PrefixMeta {{ prefix: \"{}\", target_props: &[", prefix);
+        let _ = write!(
+            code,
+            "    PrefixMeta {{ prefix: \"{}\", target_props: &[",
+            prefix
+        );
         for (i, p) in meta.target_props.iter().enumerate() {
             if i > 0 {
                 code.push_str(", ");
@@ -454,7 +494,7 @@ pub fn generate_palette_code(palette: &BTreeMap<String, Vec<ColorShadeInfo>>) ->
     code.push_str("// 由 silex_codegen 自动生成，切勿手写修改！\n\n");
 
     code.push_str("#[rustfmt::skip]\n");
-    code.push_str("pub static PALETTE_TABLE: &[(&'static str, [&'static str; 11])] = &[\n");
+    code.push_str("pub static PALETTE_TABLE: &[(&str, [&str; 11])] = &[\n");
     for (name, shades) in palette {
         let _ = write!(code, "    (\"{}\", [", name);
         for (i, info) in shades.iter().enumerate() {
@@ -610,8 +650,3 @@ pub fn lookup_keyframe_meta(name: &str) -> Option<&'static KeyframeMeta> {
 
     code
 }
-
-
-
-
-

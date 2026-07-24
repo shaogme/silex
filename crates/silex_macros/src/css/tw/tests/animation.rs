@@ -7,12 +7,9 @@ fn test_animate_spin_css() {
     let input: TwInput = syn::parse2(quote!("animate-spin")).unwrap();
     let css_block = build_css_block_from_tw(input).unwrap();
     let block_ts = quote! { #css_block };
-    let compile_result = crate::css::compiler::CssCompiler::compile(
-        block_ts,
-        proc_macro2::Span::call_site(),
-        false,
-    )
-    .unwrap();
+    let compile_result =
+        crate::css::compiler::CssCompiler::compile(block_ts, proc_macro2::Span::call_site(), false)
+            .unwrap();
     assert!(compile_result.static_css.contains("@keyframes spin"));
     assert!(
         compile_result
@@ -26,12 +23,9 @@ fn test_animate_ping_pulse_bounce_css() {
     let input: TwInput = syn::parse2(quote!("animate-ping animate-pulse animate-bounce")).unwrap();
     let css_block = build_css_block_from_tw(input).unwrap();
     let block_ts = quote! { #css_block };
-    let compile_result = crate::css::compiler::CssCompiler::compile(
-        block_ts,
-        proc_macro2::Span::call_site(),
-        false,
-    )
-    .unwrap();
+    let compile_result =
+        crate::css::compiler::CssCompiler::compile(block_ts, proc_macro2::Span::call_site(), false)
+            .unwrap();
     assert!(compile_result.static_css.contains("@keyframes ping"));
     assert!(compile_result.static_css.contains("@keyframes pulse"));
     assert!(compile_result.static_css.contains("@keyframes bounce"));

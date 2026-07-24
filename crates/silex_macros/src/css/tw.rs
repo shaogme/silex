@@ -132,4 +132,3 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
 
 #[cfg(test)]
 mod tests;
-

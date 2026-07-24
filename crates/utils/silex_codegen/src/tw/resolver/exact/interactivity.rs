@@ -1,7 +1,9 @@
 use std::borrow::Cow;
 
 /// 交互、滚动与可访问性规则解析
-pub fn resolve_interactivity_rules(class_name: &str) -> Option<&'static [(&'static str, Cow<'static, str>)]> {
+pub fn resolve_interactivity_rules(
+    class_name: &str,
+) -> Option<&'static [(&'static str, Cow<'static, str>)]> {
     match class_name {
         // Accessibility
         "sr-only" => Some(cow![
@@ -106,9 +108,18 @@ pub fn resolve_interactivity_rules(class_name: &str) -> Option<&'static [(&'stat
 
         // Scroll Snap
         "snap-none" => Some(cow![("scroll-snap-type", "none")]),
-        "snap-x" => Some(cow![("scroll-snap-type", "x var(--tw-scroll-snap-strictness)")]),
-        "snap-y" => Some(cow![("scroll-snap-type", "y var(--tw-scroll-snap-strictness)")]),
-        "snap-both" => Some(cow![("scroll-snap-type", "both var(--tw-scroll-snap-strictness)")]),
+        "snap-x" => Some(cow![(
+            "scroll-snap-type",
+            "x var(--tw-scroll-snap-strictness)"
+        )]),
+        "snap-y" => Some(cow![(
+            "scroll-snap-type",
+            "y var(--tw-scroll-snap-strictness)"
+        )]),
+        "snap-both" => Some(cow![(
+            "scroll-snap-type",
+            "both var(--tw-scroll-snap-strictness)"
+        )]),
         "snap-mandatory" => Some(cow![("--tw-scroll-snap-strictness", "mandatory")]),
         "snap-proximity" => Some(cow![("--tw-scroll-snap-strictness", "proximity")]),
         "snap-start" => Some(cow![("scroll-snap-align", "start")]),

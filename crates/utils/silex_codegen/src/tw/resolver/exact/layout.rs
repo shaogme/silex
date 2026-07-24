@@ -1,7 +1,9 @@
 use std::borrow::Cow;
 
 /// 布局、定位与容器规则解析
-pub fn resolve_layout_rules(class_name: &str) -> Option<&'static [(&'static str, Cow<'static, str>)]> {
+pub fn resolve_layout_rules(
+    class_name: &str,
+) -> Option<&'static [(&'static str, Cow<'static, str>)]> {
     match class_name {
         // Layout & Display
         "block" => Some(cow![("display", "block")]),

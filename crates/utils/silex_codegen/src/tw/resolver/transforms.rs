@@ -1,5 +1,5 @@
-use std::borrow::Cow;
 use super::dynamic::resolve_length_val;
+use std::borrow::Cow;
 
 /// Transform & Transition & Animation & Gradients
 pub fn resolve_transform_transition_rules(
@@ -12,8 +12,14 @@ pub fn resolve_transform_transition_rules(
         "backface-hidden" => Some(cow![("backface-visibility", "hidden")]),
 
         // Animate in/out
-        "animate-in" => Some(cow![("animation-name", "enter"), ("animation-duration", "150ms")]),
-        "animate-out" => Some(cow![("animation-name", "exit"), ("animation-duration", "150ms")]),
+        "animate-in" => Some(cow![
+            ("animation-name", "enter"),
+            ("animation-duration", "150ms")
+        ]),
+        "animate-out" => Some(cow![
+            ("animation-name", "exit"),
+            ("animation-duration", "150ms")
+        ]),
 
         // Transitions & Duration/Ease Initial
         "transition-none" => Some(cow![("transition-property", "none")]),
@@ -28,9 +34,10 @@ pub fn resolve_transform_transition_rules(
         )]),
         "transition-opacity" => Some(cow![("transition-property", "opacity")]),
         "transition-shadow" => Some(cow![("transition-property", "box-shadow")]),
-        "transition-transform" => {
-            Some(cow![("transition-property", "transform, translate, scale, rotate")])
-        }
+        "transition-transform" => Some(cow![(
+            "transition-property",
+            "transform, translate, scale, rotate"
+        )]),
         "transition-discrete" => Some(cow![("transition-behavior", "allow-discrete")]),
         "duration-initial" => Some(cow![("transition-duration", "initial")]),
         "ease-initial" => Some(cow![("transition-timing-function", "initial")]),
@@ -74,10 +81,7 @@ pub fn resolve_transform_transition_rules(
         }
         "animate-ping" => {
             return Some(cow!(vec![
-                (
-                    "animation",
-                    "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite",
-                ),
+                ("animation", "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite",),
                 ("will-change", "transform, opacity"),
             ]));
         }
@@ -101,15 +105,15 @@ pub fn resolve_transform_transition_rules(
     }
 
     // Transition duration / delay / ease
-    if let Some(rest) = class_name.strip_prefix("duration-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec![("transition-duration", format!("{}ms", n))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("duration-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec![("transition-duration", format!("{}ms", n))]));
     }
-    if let Some(rest) = class_name.strip_prefix("delay-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec![("transition-delay", format!("{}ms", n))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("delay-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec![("transition-delay", format!("{}ms", n))]));
     }
     if let Some(rest) = class_name.strip_prefix("ease-") {
         let timing = match rest {
@@ -173,45 +177,45 @@ pub fn resolve_transform_transition_rules(
     if class_name == "scale-3d" {
         return Some(cow!(vec![("transform-style", "preserve-3d")]));
     }
-    if let Some(rest) = class_name.strip_prefix("scale-x-") {
-        if let Some(r) = scale_ratio(rest) {
-            return Some(cow!(vec![("scale", format!("{} 1", r))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("scale-x-")
+        && let Some(r) = scale_ratio(rest)
+    {
+        return Some(cow!(vec![("scale", format!("{} 1", r))]));
     }
-    if let Some(rest) = class_name.strip_prefix("-scale-x-") {
-        if let Some(r) = scale_ratio(&format!("-{}", rest)) {
-            return Some(cow!(vec![("scale", format!("{} 1", r))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-scale-x-")
+        && let Some(r) = scale_ratio(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![("scale", format!("{} 1", r))]));
     }
-    if let Some(rest) = class_name.strip_prefix("scale-y-") {
-        if let Some(r) = scale_ratio(rest) {
-            return Some(cow!(vec![("scale", format!("1 {}", r))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("scale-y-")
+        && let Some(r) = scale_ratio(rest)
+    {
+        return Some(cow!(vec![("scale", format!("1 {}", r))]));
     }
-    if let Some(rest) = class_name.strip_prefix("-scale-y-") {
-        if let Some(r) = scale_ratio(&format!("-{}", rest)) {
-            return Some(cow!(vec![("scale", format!("1 {}", r))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-scale-y-")
+        && let Some(r) = scale_ratio(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![("scale", format!("1 {}", r))]));
     }
-    if let Some(rest) = class_name.strip_prefix("scale-z-") {
-        if let Some(r) = scale_ratio(rest) {
-            return Some(cow!(vec![("scale", format!("1 1 {}", r))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("scale-z-")
+        && let Some(r) = scale_ratio(rest)
+    {
+        return Some(cow!(vec![("scale", format!("1 1 {}", r))]));
     }
-    if let Some(rest) = class_name.strip_prefix("-scale-z-") {
-        if let Some(r) = scale_ratio(&format!("-{}", rest)) {
-            return Some(cow!(vec![("scale", format!("1 1 {}", r))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-scale-z-")
+        && let Some(r) = scale_ratio(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![("scale", format!("1 1 {}", r))]));
     }
-    if let Some(rest) = class_name.strip_prefix("scale-") {
-        if let Some(r) = scale_ratio(rest) {
-            return Some(cow!(vec![("scale", r)]));
-        }
+    if let Some(rest) = class_name.strip_prefix("scale-")
+        && let Some(r) = scale_ratio(rest)
+    {
+        return Some(cow!(vec![("scale", r)]));
     }
-    if let Some(rest) = class_name.strip_prefix("-scale-") {
-        if let Some(r) = scale_ratio(&format!("-{}", rest)) {
-            return Some(cow!(vec![("scale", r)]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-scale-")
+        && let Some(r) = scale_ratio(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![("scale", r)]));
     }
 
     // Rotate
@@ -234,45 +238,45 @@ pub fn resolve_transform_transition_rules(
     if class_name == "rotate-none" {
         return Some(cow!(vec![("rotate", "none")]));
     }
-    if let Some(rest) = class_name.strip_prefix("rotate-x-") {
-        if let Some(deg) = deg_val(rest) {
-            return Some(cow!(vec![("transform", format!("rotateX({})", deg))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("rotate-x-")
+        && let Some(deg) = deg_val(rest)
+    {
+        return Some(cow!(vec![("transform", format!("rotateX({})", deg))]));
     }
-    if let Some(rest) = class_name.strip_prefix("-rotate-x-") {
-        if let Some(deg) = deg_val(&format!("-{}", rest)) {
-            return Some(cow!(vec![("transform", format!("rotateX({})", deg))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-rotate-x-")
+        && let Some(deg) = deg_val(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![("transform", format!("rotateX({})", deg))]));
     }
-    if let Some(rest) = class_name.strip_prefix("rotate-y-") {
-        if let Some(deg) = deg_val(rest) {
-            return Some(cow!(vec![("transform", format!("rotateY({})", deg))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("rotate-y-")
+        && let Some(deg) = deg_val(rest)
+    {
+        return Some(cow!(vec![("transform", format!("rotateY({})", deg))]));
     }
-    if let Some(rest) = class_name.strip_prefix("-rotate-y-") {
-        if let Some(deg) = deg_val(&format!("-{}", rest)) {
-            return Some(cow!(vec![("transform", format!("rotateY({})", deg))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-rotate-y-")
+        && let Some(deg) = deg_val(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![("transform", format!("rotateY({})", deg))]));
     }
-    if let Some(rest) = class_name.strip_prefix("rotate-z-") {
-        if let Some(deg) = deg_val(rest) {
-            return Some(cow!(vec![("rotate", deg)]));
-        }
+    if let Some(rest) = class_name.strip_prefix("rotate-z-")
+        && let Some(deg) = deg_val(rest)
+    {
+        return Some(cow!(vec![("rotate", deg)]));
     }
-    if let Some(rest) = class_name.strip_prefix("-rotate-z-") {
-        if let Some(deg) = deg_val(&format!("-{}", rest)) {
-            return Some(cow!(vec![("rotate", deg)]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-rotate-z-")
+        && let Some(deg) = deg_val(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![("rotate", deg)]));
     }
-    if let Some(rest) = class_name.strip_prefix("rotate-") {
-        if let Some(deg) = deg_val(rest) {
-            return Some(cow!(vec![("transform", format!("rotate({})", deg))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("rotate-")
+        && let Some(deg) = deg_val(rest)
+    {
+        return Some(cow!(vec![("transform", format!("rotate({})", deg))]));
     }
-    if let Some(rest) = class_name.strip_prefix("-rotate-") {
-        if let Some(deg) = deg_val(&format!("-{}", rest)) {
-            return Some(cow!(vec![("transform", format!("rotate({})", deg))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-rotate-")
+        && let Some(deg) = deg_val(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![("transform", format!("rotate({})", deg))]));
     }
 
     // Translate
@@ -282,52 +286,55 @@ pub fn resolve_transform_transition_rules(
     if class_name == "translate-3d" {
         return Some(cow!(vec![("transform-style", "preserve-3d")]));
     }
-    if let Some(rest) = class_name.strip_prefix("translate-x-") {
-        if let Some(val) = resolve_length_val(rest) {
-            return Some(cow!(vec![("transform", format!("translateX({})", val))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("translate-x-")
+        && let Some(val) = resolve_length_val(rest)
+    {
+        return Some(cow!(vec![("transform", format!("translateX({})", val))]));
     }
-    if let Some(rest) = class_name.strip_prefix("-translate-x-") {
-        if let Some(val) = resolve_length_val(&format!("-{}", rest)) {
-            return Some(cow!(vec![("transform", format!("translateX({})", val))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-translate-x-")
+        && let Some(val) = resolve_length_val(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![("transform", format!("translateX({})", val))]));
     }
-    if let Some(rest) = class_name.strip_prefix("translate-y-") {
-        if let Some(val) = resolve_length_val(rest) {
-            return Some(cow!(vec![("transform", format!("translateY({})", val))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("translate-y-")
+        && let Some(val) = resolve_length_val(rest)
+    {
+        return Some(cow!(vec![("transform", format!("translateY({})", val))]));
     }
-    if let Some(rest) = class_name.strip_prefix("-translate-y-") {
-        if let Some(val) = resolve_length_val(&format!("-{}", rest)) {
-            return Some(cow!(vec![("transform", format!("translateY({})", val))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-translate-y-")
+        && let Some(val) = resolve_length_val(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![("transform", format!("translateY({})", val))]));
     }
-    if let Some(rest) = class_name.strip_prefix("translate-z-") {
-        if let Some(val) = resolve_length_val(rest) {
-            return Some(cow!(vec![("translate", format!("0 0 {}", val))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("translate-z-")
+        && let Some(val) = resolve_length_val(rest)
+    {
+        return Some(cow!(vec![("translate", format!("0 0 {}", val))]));
     }
-    if let Some(rest) = class_name.strip_prefix("-translate-z-") {
-        if let Some(val) = resolve_length_val(&format!("-{}", rest)) {
-            return Some(cow!(vec![("translate", format!("0 0 {}", val))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-translate-z-")
+        && let Some(val) = resolve_length_val(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![("translate", format!("0 0 {}", val))]));
     }
-    if let Some(rest) = class_name.strip_prefix("translate-") {
-        if let Some(val) = resolve_length_val(rest) {
-            return Some(cow!(vec![("translate", val)]));
-        }
+    if let Some(rest) = class_name.strip_prefix("translate-")
+        && let Some(val) = resolve_length_val(rest)
+    {
+        return Some(cow!(vec![("translate", val)]));
     }
-    if let Some(rest) = class_name.strip_prefix("-translate-") {
-        if let Some(val) = resolve_length_val(&format!("-{}", rest)) {
-            return Some(cow!(vec![("translate", val)]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-translate-")
+        && let Some(val) = resolve_length_val(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![("translate", val)]));
     }
 
     // Transition Properties
     match class_name {
         "transition" | "transition-normal" => {
             return Some(cow!(vec![
-                ("transition-property", "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, backdrop-filter"),
+                (
+                    "transition-property",
+                    "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, backdrop-filter"
+                ),
                 ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
                 ("transition-duration", "150ms"),
             ]));
@@ -335,16 +342,16 @@ pub fn resolve_transform_transition_rules(
         "transition-all" => {
             return Some(cow!(vec![
                 ("transition-property", "all"),
-                (
-                    "transition-timing-function",
-                    "cubic-bezier(0.4, 0, 0.2, 1)",
-                ),
+                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)",),
                 ("transition-duration", "150ms"),
             ]));
         }
         "transition-colors" => {
             return Some(cow!(vec![
-                ("transition-property", "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke"),
+                (
+                    "transition-property",
+                    "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke"
+                ),
                 ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
                 ("transition-duration", "150ms"),
             ]));
@@ -352,7 +359,10 @@ pub fn resolve_transform_transition_rules(
         "transition-discrete" => {
             return Some(cow!(vec![
                 ("transition-behavior", "discrete"),
-                ("transition-property", "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, backdrop-filter"),
+                (
+                    "transition-property",
+                    "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, backdrop-filter"
+                ),
                 ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
                 ("transition-duration", "150ms"),
             ]));
@@ -363,33 +373,21 @@ pub fn resolve_transform_transition_rules(
         "transition-opacity" => {
             return Some(cow!(vec![
                 ("transition-property", "opacity"),
-                (
-                    "transition-timing-function",
-                    "cubic-bezier(0.4, 0, 0.2, 1)",
-                ),
+                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)",),
                 ("transition-duration", "150ms"),
             ]));
         }
         "transition-shadow" => {
             return Some(cow!(vec![
                 ("transition-property", "box-shadow"),
-                (
-                    "transition-timing-function",
-                    "cubic-bezier(0.4, 0, 0.2, 1)",
-                ),
+                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)",),
                 ("transition-duration", "150ms"),
             ]));
         }
         "transition-transform" => {
             return Some(cow!(vec![
-                (
-                    "transition-property",
-                    "transform, translate, scale, rotate",
-                ),
-                (
-                    "transition-timing-function",
-                    "cubic-bezier(0.4, 0, 0.2, 1)",
-                ),
+                ("transition-property", "transform, translate, scale, rotate",),
+                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)",),
                 ("transition-duration", "150ms"),
             ]));
         }
@@ -397,17 +395,17 @@ pub fn resolve_transform_transition_rules(
     }
 
     // Duration
-    if let Some(rest) = class_name.strip_prefix("duration-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec![("transition-duration", format!("{}ms", n))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("duration-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec![("transition-duration", format!("{}ms", n))]));
     }
 
     // Delay
-    if let Some(rest) = class_name.strip_prefix("delay-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec![("transition-delay", format!("{}ms", n))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("delay-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec![("transition-delay", format!("{}ms", n))]));
     }
 
     // Ease
@@ -438,35 +436,35 @@ pub fn resolve_transform_transition_rules(
             None
         }
     };
-    if let Some(rest) = class_name.strip_prefix("skew-x-") {
-        if let Some(deg) = skew_deg(rest) {
-            return Some(cow!(vec![("skew-x", deg)]));
-        }
+    if let Some(rest) = class_name.strip_prefix("skew-x-")
+        && let Some(deg) = skew_deg(rest)
+    {
+        return Some(cow!(vec![("skew-x", deg)]));
     }
-    if let Some(rest) = class_name.strip_prefix("-skew-x-") {
-        if let Some(deg) = skew_deg(&format!("-{}", rest)) {
-            return Some(cow!(vec![("skew-x", deg)]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-skew-x-")
+        && let Some(deg) = skew_deg(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![("skew-x", deg)]));
     }
-    if let Some(rest) = class_name.strip_prefix("skew-y-") {
-        if let Some(deg) = skew_deg(rest) {
-            return Some(cow!(vec![("skew-y", deg)]));
-        }
+    if let Some(rest) = class_name.strip_prefix("skew-y-")
+        && let Some(deg) = skew_deg(rest)
+    {
+        return Some(cow!(vec![("skew-y", deg)]));
     }
-    if let Some(rest) = class_name.strip_prefix("-skew-y-") {
-        if let Some(deg) = skew_deg(&format!("-{}", rest)) {
-            return Some(cow!(vec![("skew-y", deg)]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-skew-y-")
+        && let Some(deg) = skew_deg(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![("skew-y", deg)]));
     }
-    if let Some(rest) = class_name.strip_prefix("skew-") {
-        if let Some(deg) = skew_deg(rest) {
-            return Some(cow!(vec![("transform", format!("skew({})", deg))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("skew-")
+        && let Some(deg) = skew_deg(rest)
+    {
+        return Some(cow!(vec![("transform", format!("skew({})", deg))]));
     }
-    if let Some(rest) = class_name.strip_prefix("-skew-") {
-        if let Some(deg) = skew_deg(&format!("-{}", rest)) {
-            return Some(cow!(vec![("transform", format!("skew({})", deg))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-skew-")
+        && let Some(deg) = skew_deg(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![("transform", format!("skew({})", deg))]));
     }
 
     // Transform Origin
@@ -499,12 +497,11 @@ pub fn resolve_transform_transition_rules(
     if let Some(p) = perspective {
         return Some(cow!(vec![("perspective", p)]));
     }
-    if let Some(rest) = class_name.strip_prefix("perspective-") {
-        if !rest.starts_with("origin-") {
-            if let Some(val) = resolve_length_val(rest) {
-                return Some(cow!(vec![("perspective", val)]));
-            }
-        }
+    if let Some(rest) = class_name.strip_prefix("perspective-")
+        && !rest.starts_with("origin-")
+        && let Some(val) = resolve_length_val(rest)
+    {
+        return Some(cow!(vec![("perspective", val)]));
     }
     let pers_origin = match class_name {
         "perspective-origin-center" => Some("center"),

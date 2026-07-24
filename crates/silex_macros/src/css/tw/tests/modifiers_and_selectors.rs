@@ -7,12 +7,9 @@ fn test_hover_blur_css() {
     let input: TwInput = syn::parse2(quote!("blur-sm hover:blur-none")).unwrap();
     let css_block = build_css_block_from_tw(input).unwrap();
     let block_ts = quote! { #css_block };
-    let compile_result = crate::css::compiler::CssCompiler::compile(
-        block_ts,
-        proc_macro2::Span::call_site(),
-        false,
-    )
-    .unwrap();
+    let compile_result =
+        crate::css::compiler::CssCompiler::compile(block_ts, proc_macro2::Span::call_site(), false)
+            .unwrap();
     println!("component_css: {}", compile_result.component_css);
     let cls = &compile_result.class_name;
     assert!(
@@ -32,12 +29,9 @@ fn test_group_hover_css() {
     let input: TwInput = syn::parse2(quote!("group-hover:rotate-180 peer-focus:block")).unwrap();
     let css_block = build_css_block_from_tw(input).unwrap();
     let block_ts = quote! { #css_block };
-    let compile_result = crate::css::compiler::CssCompiler::compile(
-        block_ts,
-        proc_macro2::Span::call_site(),
-        false,
-    )
-    .unwrap();
+    let compile_result =
+        crate::css::compiler::CssCompiler::compile(block_ts, proc_macro2::Span::call_site(), false)
+            .unwrap();
     println!(
         "group_hover component_css: {}",
         compile_result.component_css

@@ -2,7 +2,7 @@
 // 由 silex_codegen 自动生成，切勿手写修改！
 
 #[rustfmt::skip]
-pub static PALETTE_TABLE: &[(&'static str, [&'static str; 11])] = &[
+pub static PALETTE_TABLE: &[(&str, [&str; 11])] = &[
     ("amber", ["#fffbeb", "#fef3c6", "#fee685", "#ffd230", "#ffb900", "#fe9a00", "#e17100", "#bb4d00", "#973c00", "#7b3306", "#461901"]),
     ("blue", ["#eff6ff", "#dbeafe", "#bedbff", "#8ec5ff", "#51a2ff", "#2b7fff", "#155dfc", "#1447e6", "#193cb8", "#1c398e", "#162456"]),
     ("cyan", ["#ecfeff", "#cefafe", "#a2f4fd", "#53eafd", "#00d3f2", "#00b8db", "#0092b8", "#007595", "#005f78", "#104e64", "#053345"]),
@@ -33,6 +33,8 @@ pub static PALETTE_TABLE: &[(&'static str, [&'static str; 11])] = &[
 
 /// 根据色系名称获取标准的 11 阶梯 Hex 阵列
 pub fn get_raw_palette(color_name: &str) -> Option<[&'static str; 11]> {
-    let idx = PALETTE_TABLE.binary_search_by_key(&color_name, |&(k, _)| k).ok()?;
+    let idx = PALETTE_TABLE
+        .binary_search_by_key(&color_name, |&(k, _)| k)
+        .ok()?;
     Some(PALETTE_TABLE[idx].1)
 }

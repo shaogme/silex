@@ -15,12 +15,12 @@ use crate::{
 };
 use heck::AsSnakeCase;
 use reqwest::blocking::Client;
-use serde_json::{from_reader, from_str, to_writer_pretty, Value};
+use serde_json::{Value, from_reader, from_str, to_writer_pretty};
 use std::{
     collections::BTreeMap,
     env::{args, current_dir},
     error::Error,
-    fs::{create_dir_all, read_to_string, write, File},
+    fs::{File, create_dir_all, read_to_string, write},
     io::BufWriter,
     path::Path,
 };
@@ -75,9 +75,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("\n[FETCH MODE] Fetching raw data from MDN...");
 
         // Simple synchronous fetch utility
-        let client = Client::builder()
-            .user_agent("silex-codegen")
-            .build()?;
+        let client = Client::builder().user_agent("silex-codegen").build()?;
 
         let fetch_and_save = |url: &str, path: &Path| -> Result<(), Box<dyn Error>> {
             println!("Downloading from {} ...", url);
@@ -175,9 +173,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         let classes: Vec<String> = from_str(&classes_str)?;
         let dynamic_prefixes: BTreeMap<String, Vec<String>> = from_str(&dynamic_prefixes_str)?;
-        let prefix_metadata: BTreeMap<String, crate::tw::PrefixMetaJson> = from_str(&prefix_metadata_str)?;
+        let prefix_metadata: BTreeMap<String, crate::tw::PrefixMetaJson> =
+            from_str(&prefix_metadata_str)?;
         let test_cases: Vec<String> = from_str(&test_cases_str)?;
-        let palette_data: BTreeMap<String, Vec<crate::tw::ColorShadeInfo>> = from_str(&palette_str)?;
+        let palette_data: BTreeMap<String, Vec<crate::tw::ColorShadeInfo>> =
+            from_str(&palette_str)?;
         let modifiers_data: Vec<crate::tw::ModifierMetaJson> = from_str(&modifiers_str)?;
         let keyframes_data: Vec<crate::tw::KeyframeMetaJson> = from_str(&keyframes_str)?;
 
@@ -189,7 +189,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         let palette_code = generate_palette_code(&palette_data);
         let modifiers_code = generate_modifiers_code(&modifiers_data);
         let keyframes_code = generate_keyframes_code(&keyframes_data);
-
 
         if !macro_codegen_dir.exists() {
             create_dir_all(&macro_codegen_dir)?;
@@ -203,27 +202,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             macro_codegen_dir.join("table_examples.rs"),
             table_examples_code,
         )?;
-        write(
-            macro_codegen_dir.join("shorthands.rs"),
-            shorthands_code,
-        )?;
+        write(macro_codegen_dir.join("shorthands.rs"), shorthands_code)?;
         write(
             macro_codegen_dir.join("prefix_metadata.rs"),
             prefix_metadata_code,
         )?;
-        write(
-            macro_codegen_dir.join("palette.rs"),
-            palette_code,
-        )?;
-        write(
-            macro_codegen_dir.join("modifiers.rs"),
-            modifiers_code,
-        )?;
-        write(
-            macro_codegen_dir.join("keyframes.rs"),
-            keyframes_code,
-        )?;
-        println!("Generated table.rs, table_unimplement.rs, table_examples.rs, shorthands.rs, prefix_metadata.rs, palette.rs, modifiers.rs and keyframes.rs for silex_macros in resolver/codegen");
+        write(macro_codegen_dir.join("palette.rs"), palette_code)?;
+        write(macro_codegen_dir.join("modifiers.rs"), modifiers_code)?;
+        write(macro_codegen_dir.join("keyframes.rs"), keyframes_code)?;
+        println!(
+            "Generated table.rs, table_unimplement.rs, table_examples.rs, shorthands.rs, prefix_metadata.rs, palette.rs, modifiers.rs and keyframes.rs for silex_macros in resolver/codegen"
+        );
     }
 
     println!("\nSuccessfully completed!");

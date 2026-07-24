@@ -7,12 +7,9 @@ fn test_container_query_css() {
     let input: TwInput = syn::parse2(quote!("@container @sm:p-4 @[400px]:flex")).unwrap();
     let css_block = build_css_block_from_tw(input).unwrap();
     let block_ts = quote! { #css_block };
-    let compile_result = crate::css::compiler::CssCompiler::compile(
-        block_ts,
-        proc_macro2::Span::call_site(),
-        false,
-    )
-    .unwrap();
+    let compile_result =
+        crate::css::compiler::CssCompiler::compile(block_ts, proc_macro2::Span::call_site(), false)
+            .unwrap();
     println!("container component_css: {}", compile_result.component_css);
     assert!(
         compile_result
@@ -36,16 +33,12 @@ fn test_container_query_css() {
 
 #[test]
 fn test_named_container_query_css() {
-    let input: TwInput =
-        syn::parse2(quote!("@container/card-header @card-header/sm:p-4")).unwrap();
+    let input: TwInput = syn::parse2(quote!("@container/card-header @card-header/sm:p-4")).unwrap();
     let css_block = build_css_block_from_tw(input).unwrap();
     let block_ts = quote! { #css_block };
-    let compile_result = crate::css::compiler::CssCompiler::compile(
-        block_ts,
-        proc_macro2::Span::call_site(),
-        false,
-    )
-    .unwrap();
+    let compile_result =
+        crate::css::compiler::CssCompiler::compile(block_ts, proc_macro2::Span::call_site(), false)
+            .unwrap();
     println!(
         "named container component_css: {}",
         compile_result.component_css
@@ -74,12 +67,9 @@ fn test_multiple_at_rules_css() {
     let input: TwInput = syn::parse2(quote!("md:@sm:p-4")).unwrap();
     let css_block = build_css_block_from_tw(input).unwrap();
     let block_ts = quote! { #css_block };
-    let compile_result = crate::css::compiler::CssCompiler::compile(
-        block_ts,
-        proc_macro2::Span::call_site(),
-        false,
-    )
-    .unwrap();
+    let compile_result =
+        crate::css::compiler::CssCompiler::compile(block_ts, proc_macro2::Span::call_site(), false)
+            .unwrap();
     println!(
         "multiple_at_rules component_css: {}",
         compile_result.component_css

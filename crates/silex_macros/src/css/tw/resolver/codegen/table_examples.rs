@@ -3,9 +3,9 @@
 // 避免手写硬编码，与 silex_codegen/resolver 保持 100% 规则对齐
 
 #[allow(unused_imports)]
-use crate::css::tw::resolver::make_rule;
-#[allow(unused_imports)]
 use crate::css::tw::ast::{Modifier, UtilityRule, UtilityValue};
+#[allow(unused_imports)]
+use crate::css::tw::resolver::make_rule;
 #[allow(unused_imports)]
 use proc_macro2::Span;
 
@@ -467,7 +467,7 @@ pub const TEST_CASE_CANDIDATE_UTILITIES: &[&str] = &[
 ];
 
 #[rustfmt::skip]
-pub static TEST_CASE_RULES: &[(&'static str, &'static [(&'static str, StaticVal)])] = &[
+pub static TEST_CASE_RULES: &[(&str, &[(&str, StaticVal)])] = &[
     ("animate-bounce", &[
         ("animation", StaticVal::Literal("bounce 1s infinite")),
         ("will-change", StaticVal::Kw("transform")),
@@ -1907,4 +1907,3 @@ pub static TEST_CASE_RULES: &[(&'static str, &'static [(&'static str, StaticVal)
         ("z-index", StaticVal::Kw("auto")),
     ]),
 ];
-

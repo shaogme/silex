@@ -3,7 +3,7 @@ use proc_macro2::Span;
 
 use super::{kw, make_rule, num, num_unitless, px, rem};
 
-use super::codegen::prefix_metadata::{lookup_prefix_meta, UnitKind};
+use super::codegen::prefix_metadata::{UnitKind, lookup_prefix_meta};
 
 #[inline]
 fn format_num_clean(v: f64) -> String {
@@ -122,7 +122,11 @@ pub fn resolve_numeric_utility(
         return Some(vec![make_rule(
             mods,
             "transform",
-            UtilityValue::ArbitraryLiteral(format!("{}({})", fn_name, format_num_clean(val_num / 100.0))),
+            UtilityValue::ArbitraryLiteral(format!(
+                "{}({})",
+                fn_name,
+                format_num_clean(val_num / 100.0)
+            )),
             span,
         )]);
     }
@@ -140,7 +144,11 @@ pub fn resolve_numeric_utility(
         )]);
     }
     if prefix == "translate-x" || prefix == "translate-y" {
-        let fn_name = if prefix == "translate-x" { "translateX" } else { "translateY" };
+        let fn_name = if prefix == "translate-x" {
+            "translateX"
+        } else {
+            "translateY"
+        };
         let val_repr = if is_fraction {
             format!("{}%", format_num_clean(val_num * 100.0 * sign))
         } else if val_num == 0.0 {

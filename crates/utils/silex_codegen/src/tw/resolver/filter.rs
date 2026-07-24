@@ -84,23 +84,23 @@ pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'
     }
 
     // Brightness
-    if let Some(rest) = target.strip_prefix("brightness-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec![(
-                prop_name,
-                format!("brightness({})", n as f64 / 100.0),
-            )]));
-        }
+    if let Some(rest) = target.strip_prefix("brightness-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec![(
+            prop_name,
+            format!("brightness({})", n as f64 / 100.0),
+        )]));
     }
 
     // Contrast
-    if let Some(rest) = target.strip_prefix("contrast-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec![(
-                prop_name,
-                format!("contrast({})", n as f64 / 100.0),
-            )]));
-        }
+    if let Some(rest) = target.strip_prefix("contrast-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec![(
+            prop_name,
+            format!("contrast({})", n as f64 / 100.0),
+        )]));
     }
 
     // Grayscale
@@ -110,10 +110,10 @@ pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'
     if target == "grayscale-0" {
         return Some(cow!(vec![(prop_name, "grayscale(0%)")]));
     }
-    if let Some(rest) = target.strip_prefix("grayscale-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec![(prop_name, format!("grayscale({}%)", n))]));
-        }
+    if let Some(rest) = target.strip_prefix("grayscale-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec![(prop_name, format!("grayscale({}%)", n))]));
     }
 
     // Invert
@@ -123,20 +123,20 @@ pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'
     if target == "invert-0" {
         return Some(cow!(vec![(prop_name, "invert(0%)")]));
     }
-    if let Some(rest) = target.strip_prefix("invert-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec![(prop_name, format!("invert({}%)", n))]));
-        }
+    if let Some(rest) = target.strip_prefix("invert-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec![(prop_name, format!("invert({}%)", n))]));
     }
 
     // Saturate
-    if let Some(rest) = target.strip_prefix("saturate-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec![(
-                prop_name,
-                format!("saturate({})", n as f64 / 100.0),
-            )]));
-        }
+    if let Some(rest) = target.strip_prefix("saturate-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec![(
+            prop_name,
+            format!("saturate({})", n as f64 / 100.0),
+        )]));
     }
 
     // Sepia
@@ -146,10 +146,10 @@ pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'
     if target == "sepia-0" {
         return Some(cow!(vec![(prop_name, "sepia(0%)")]));
     }
-    if let Some(rest) = target.strip_prefix("sepia-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec![(prop_name, format!("sepia({}%)", n))]));
-        }
+    if let Some(rest) = target.strip_prefix("sepia-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec![(prop_name, format!("sepia({}%)", n))]));
     }
 
     // Hue-Rotate (supports positive and negative e.g. -hue-rotate-90, -backdrop-hue-rotate-90)
@@ -169,25 +169,25 @@ pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'
             None
         }
     };
-    if let Some(rest) = target.strip_prefix("hue-rotate-") {
-        if let Some(h) = parse_hue(rest) {
-            return Some(cow!(vec![(prop_name, h)]));
-        }
+    if let Some(rest) = target.strip_prefix("hue-rotate-")
+        && let Some(h) = parse_hue(rest)
+    {
+        return Some(cow!(vec![(prop_name, h)]));
     }
-    if let Some(rest) = target.strip_prefix("-hue-rotate-") {
-        if let Some(h) = parse_hue(&format!("-{}", rest)) {
-            return Some(cow!(vec![(prop_name, h)]));
-        }
+    if let Some(rest) = target.strip_prefix("-hue-rotate-")
+        && let Some(h) = parse_hue(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![(prop_name, h)]));
     }
-    if let Some(rest) = class_name.strip_prefix("-hue-rotate-") {
-        if let Some(h) = parse_hue(&format!("-{}", rest)) {
-            return Some(cow!(vec![("filter", h)]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-hue-rotate-")
+        && let Some(h) = parse_hue(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![("filter", h)]));
     }
-    if let Some(rest) = class_name.strip_prefix("-backdrop-hue-rotate-") {
-        if let Some(h) = parse_hue(&format!("-{}", rest)) {
-            return Some(cow!(vec![("backdrop-filter", h)]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-backdrop-hue-rotate-")
+        && let Some(h) = parse_hue(&format!("-{}", rest))
+    {
+        return Some(cow!(vec![("backdrop-filter", h)]));
     }
 
     // Drop Shadow
@@ -214,15 +214,14 @@ pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'
     }
 
     // Opacity
-    if is_backdrop {
-        if let Some(rest) = target.strip_prefix("opacity-") {
-            if let Ok(n) = rest.parse::<u32>() {
-                return Some(cow!(vec![(
-                    prop_name,
-                    format!("opacity({})", (n as f64) / 100.0),
-                )]));
-            }
-        }
+    if is_backdrop
+        && let Some(rest) = target.strip_prefix("opacity-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec![(
+            prop_name,
+            format!("opacity({})", (n as f64) / 100.0),
+        )]));
     }
 
     None

@@ -160,10 +160,10 @@ pub fn resolve_flex_grid_rules(class_name: &str) -> Option<Vec<(&'static str, Co
             return Some(cow!(vec[("grid-column-start", n.to_string())]));
         }
     }
-    if let Some(rest) = class_name.strip_prefix("-col-start-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec[("grid-column-start", format!("-{}", n))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-col-start-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec[("grid-column-start", format!("-{}", n))]));
     }
     if let Some(rest) = class_name.strip_prefix("col-end-") {
         if rest == "auto" {
@@ -173,10 +173,10 @@ pub fn resolve_flex_grid_rules(class_name: &str) -> Option<Vec<(&'static str, Co
             return Some(cow!(vec[("grid-column-end", n.to_string())]));
         }
     }
-    if let Some(rest) = class_name.strip_prefix("-col-end-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec[("grid-column-end", format!("-{}", n))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-col-end-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec[("grid-column-end", format!("-{}", n))]));
     }
 
     // Row Span / Start / End
@@ -196,10 +196,10 @@ pub fn resolve_flex_grid_rules(class_name: &str) -> Option<Vec<(&'static str, Co
             return Some(cow!(vec[("grid-row-start", n.to_string())]));
         }
     }
-    if let Some(rest) = class_name.strip_prefix("-row-start-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec[("grid-row-start", format!("-{}", n))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-row-start-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec[("grid-row-start", format!("-{}", n))]));
     }
     if let Some(rest) = class_name.strip_prefix("row-end-") {
         if rest == "auto" {
@@ -209,10 +209,10 @@ pub fn resolve_flex_grid_rules(class_name: &str) -> Option<Vec<(&'static str, Co
             return Some(cow!(vec[("grid-row-end", n.to_string())]));
         }
     }
-    if let Some(rest) = class_name.strip_prefix("-row-end-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec[("grid-row-end", format!("-{}", n))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-row-end-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec[("grid-row-end", format!("-{}", n))]));
     }
 
     // Flex fractions & numbers (flex-1/2, flex-2, etc.)
@@ -237,10 +237,10 @@ pub fn resolve_flex_grid_rules(class_name: &str) -> Option<Vec<(&'static str, Co
             return Some(cow!(vec[("order", ord.to_string())]));
         }
     }
-    if let Some(rest) = class_name.strip_prefix("-order-") {
-        if let Ok(n) = rest.parse::<i32>() {
-            return Some(cow!(vec[("order", format!("-{}", n))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-order-")
+        && let Ok(n) = rest.parse::<i32>()
+    {
+        return Some(cow!(vec[("order", format!("-{}", n))]));
     }
 
     // Grid Auto Cols

@@ -1,7 +1,9 @@
 use std::borrow::Cow;
 
 /// SVG、列表与表格静态规则解析
-pub fn resolve_tables_lists_svg_rules(class_name: &str) -> Option<&'static [(&'static str, Cow<'static, str>)]> {
+pub fn resolve_tables_lists_svg_rules(
+    class_name: &str,
+) -> Option<&'static [(&'static str, Cow<'static, str>)]> {
     match class_name {
         // SVG
         "fill-none" => Some(cow![("fill", "none")]),

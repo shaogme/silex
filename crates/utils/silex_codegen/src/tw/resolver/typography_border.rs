@@ -122,9 +122,18 @@ pub fn resolve_typography_border_effect_rules(
         "text-9xl" => Some(cow![("font-size", "8rem"), ("line-height", "1")]),
 
         // Font family presets
-        "font" | "font-sans" => Some(cow![("font-family", "ui-sans-serif, system-ui, sans-serif")]),
-        "font-serif" => Some(cow![("font-family", "ui-serif, Georgia, Cambria, Times New Roman, Times, serif")]),
-        "font-mono" => Some(cow![("font-family", "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace")]),
+        "font" | "font-sans" => Some(cow![(
+            "font-family",
+            "ui-sans-serif, system-ui, sans-serif"
+        )]),
+        "font-serif" => Some(cow![(
+            "font-family",
+            "ui-serif, Georgia, Cambria, Times New Roman, Times, serif"
+        )]),
+        "font-mono" => Some(cow![(
+            "font-family",
+            "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+        )]),
 
         // Font weight presets
         "font-thin" => Some(cow![("font-weight", "100")]),
@@ -164,30 +173,75 @@ pub fn resolve_typography_border_effect_rules(
         "shadow-2xs" => Some(cow![("box-shadow", "0 1px 1px 0 rgba(0, 0, 0, 0.05)")]),
         "shadow-xs" => Some(cow![
             ("--tw-shadow", "0 1px 2px 0 rgba(0, 0, 0, 0.05)"),
-            ("box-shadow", "var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow, 0 1px 2px 0 rgba(0, 0, 0, 0.05))")
+            (
+                "box-shadow",
+                "var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow, 0 1px 2px 0 rgba(0, 0, 0, 0.05))"
+            )
         ]),
-        "shadow-sm" | "shadow" => Some(cow![("box-shadow", "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1)")]),
-        "shadow-md" => Some(cow![("box-shadow", "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)")]),
-        "shadow-lg" => Some(cow![("box-shadow", "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)")]),
-        "shadow-xl" => Some(cow![("box-shadow", "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)")]),
-        "shadow-2xl" => Some(cow![("box-shadow", "0 25px 50px -12px rgba(0, 0, 0, 0.25)")]),
-        "shadow-inner" => Some(cow![("box-shadow", "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)")]),
+        "shadow-sm" | "shadow" => Some(cow![(
+            "box-shadow",
+            "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1)"
+        )]),
+        "shadow-md" => Some(cow![(
+            "box-shadow",
+            "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)"
+        )]),
+        "shadow-lg" => Some(cow![(
+            "box-shadow",
+            "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)"
+        )]),
+        "shadow-xl" => Some(cow![(
+            "box-shadow",
+            "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)"
+        )]),
+        "shadow-2xl" => Some(cow![(
+            "box-shadow",
+            "0 25px 50px -12px rgba(0, 0, 0, 0.25)"
+        )]),
+        "shadow-inner" => Some(cow![(
+            "box-shadow",
+            "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)"
+        )]),
         "shadow-none" => Some(cow![("box-shadow", "none")]),
 
         "drop-shadow-xs" => Some(cow![
-            ("--tw-drop-shadow", "drop-shadow(0 1px 1px rgba(0, 0, 0, 0.05))"),
+            (
+                "--tw-drop-shadow",
+                "drop-shadow(0 1px 1px rgba(0, 0, 0, 0.05))"
+            ),
             ("filter", "var(--tw-drop-shadow)")
         ]),
 
-        "text-shadow-2xs" => Some(cow![("text-shadow", "0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1))")]),
-        "text-shadow-xs" => Some(cow![("text-shadow", "0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.2))")]),
-        "text-shadow-sm" => Some(cow![("text-shadow", "0px 1px 0px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.075)), 0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.075)), 0px 2px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.075))")]),
-        "text-shadow-md" => Some(cow![("text-shadow", "0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 1px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 2px 4px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1))")]),
-        "text-shadow-lg" => Some(cow![("text-shadow", "0px 1px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 3px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 4px 8px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1))")]),
+        "text-shadow-2xs" => Some(cow![(
+            "text-shadow",
+            "0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1))"
+        )]),
+        "text-shadow-xs" => Some(cow![(
+            "text-shadow",
+            "0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.2))"
+        )]),
+        "text-shadow-sm" => Some(cow![(
+            "text-shadow",
+            "0px 1px 0px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.075)), 0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.075)), 0px 2px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.075))"
+        )]),
+        "text-shadow-md" => Some(cow![(
+            "text-shadow",
+            "0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 1px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 2px 4px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1))"
+        )]),
+        "text-shadow-lg" => Some(cow![(
+            "text-shadow",
+            "0px 1px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 3px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 4px 8px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1))"
+        )]),
 
         // Divide Utilities
-        "divide-x" => Some(cow![("border-right-width", "0px"), ("border-left-width", "1px")]),
-        "divide-y" => Some(cow![("border-bottom-width", "0px"), ("border-top-width", "1px")]),
+        "divide-x" => Some(cow![
+            ("border-right-width", "0px"),
+            ("border-left-width", "1px")
+        ]),
+        "divide-y" => Some(cow![
+            ("border-bottom-width", "0px"),
+            ("border-top-width", "1px")
+        ]),
         "divide-x-reverse" => Some(cow![("--tw-divide-x-reverse", "1")]),
         "divide-y-reverse" => Some(cow![("--tw-divide-y-reverse", "1")]),
         "divide-solid" => Some(cow![("border-style", "solid")]),
@@ -198,14 +252,35 @@ pub fn resolve_typography_border_effect_rules(
 
         // Inset Ring & Inset Shadow
         "inset-ring" => Some(cow![("outline-width", "1px"), ("outline-offset", "-1px")]),
-        "inset-shadow" | "inset-shadow-inner" => Some(cow![("box-shadow", "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)")]),
-        "inset-shadow-2xs" => Some(cow![("box-shadow", "inset 0 1px 1px 0 rgba(0, 0, 0, 0.05)")]),
-        "inset-shadow-xs" => Some(cow![("box-shadow", "inset 0 1px 2px 0 rgba(0, 0, 0, 0.05)")]),
+        "inset-shadow" | "inset-shadow-inner" => Some(cow![(
+            "box-shadow",
+            "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)"
+        )]),
+        "inset-shadow-2xs" => Some(cow![(
+            "box-shadow",
+            "inset 0 1px 1px 0 rgba(0, 0, 0, 0.05)"
+        )]),
+        "inset-shadow-xs" => Some(cow![(
+            "box-shadow",
+            "inset 0 1px 2px 0 rgba(0, 0, 0, 0.05)"
+        )]),
         "inset-shadow-sm" => Some(cow![("box-shadow", "inset 0 1px 3px 0 rgba(0, 0, 0, 0.1)")]),
-        "inset-shadow-md" => Some(cow![("box-shadow", "inset 0 4px 6px -1px rgba(0, 0, 0, 0.1)")]),
-        "inset-shadow-lg" => Some(cow![("box-shadow", "inset 0 10px 15px -3px rgba(0, 0, 0, 0.1)")]),
-        "inset-shadow-xl" => Some(cow![("box-shadow", "inset 0 20px 25px -5px rgba(0, 0, 0, 0.1)")]),
-        "inset-shadow-2xl" => Some(cow![("box-shadow", "inset 0 25px 50px -12px rgba(0, 0, 0, 0.25)")]),
+        "inset-shadow-md" => Some(cow![(
+            "box-shadow",
+            "inset 0 4px 6px -1px rgba(0, 0, 0, 0.1)"
+        )]),
+        "inset-shadow-lg" => Some(cow![(
+            "box-shadow",
+            "inset 0 10px 15px -3px rgba(0, 0, 0, 0.1)"
+        )]),
+        "inset-shadow-xl" => Some(cow![(
+            "box-shadow",
+            "inset 0 20px 25px -5px rgba(0, 0, 0, 0.1)"
+        )]),
+        "inset-shadow-2xl" => Some(cow![(
+            "box-shadow",
+            "inset 0 25px 50px -12px rgba(0, 0, 0, 0.25)"
+        )]),
         "inset-shadow-none" => Some(cow![("box-shadow", "inset 0 0 #0000")]),
         "inset-shadow-initial" => Some(cow![("box-shadow", "initial")]),
 
@@ -226,16 +301,16 @@ pub fn resolve_typography_border_effect_rules(
         return Some(r.to_vec());
     }
 
-    if let Some(rest) = class_name.strip_prefix("text-") {
-        if let Some(val) = super::dynamic::resolve_length_val(rest) {
-            return Some(cow!(vec[("font-size", val)]));
-        }
+    if let Some(rest) = class_name.strip_prefix("text-")
+        && let Some(val) = super::dynamic::resolve_length_val(rest)
+    {
+        return Some(cow!(vec[("font-size", val)]));
     }
 
-    if let Some(rest) = class_name.strip_prefix("leading-") {
-        if let Some(val) = super::dynamic::resolve_length_val(rest) {
-            return Some(cow!(vec[("line-height", val)]));
-        }
+    if let Some(rest) = class_name.strip_prefix("leading-")
+        && let Some(val) = super::dynamic::resolve_length_val(rest)
+    {
+        return Some(cow!(vec[("line-height", val)]));
     }
 
     // Border radius (rounded)
@@ -342,46 +417,46 @@ pub fn resolve_typography_border_effect_rules(
     }
 
     // Text Indent
-    if let Some(rest) = class_name.strip_prefix("indent-") {
-        if let Some(val) = super::dynamic::resolve_length_val(rest) {
-            return Some(cow!(vec[("text-indent", val)]));
-        }
+    if let Some(rest) = class_name.strip_prefix("indent-")
+        && let Some(val) = super::dynamic::resolve_length_val(rest)
+    {
+        return Some(cow!(vec[("text-indent", val)]));
     }
-    if let Some(rest) = class_name.strip_prefix("-indent-") {
-        if let Some(val) = super::dynamic::resolve_length_val(&format!("-{}", rest)) {
-            return Some(cow!(vec[("text-indent", val)]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-indent-")
+        && let Some(val) = super::dynamic::resolve_length_val(&format!("-{}", rest))
+    {
+        return Some(cow!(vec[("text-indent", val)]));
     }
 
     // Text Underline Offset
-    if let Some(rest) = class_name.strip_prefix("underline-offset-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec[("text-underline-offset", format!("{}px", n))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("underline-offset-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec[("text-underline-offset", format!("{}px", n))]));
     }
-    if let Some(rest) = class_name.strip_prefix("-underline-offset-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec[("text-underline-offset", format!("-{}px", n))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-underline-offset-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec[("text-underline-offset", format!("-{}px", n))]));
     }
 
     // Text Decoration Thickness
-    if let Some(rest) = class_name.strip_prefix("decoration-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec[("text-decoration-thickness", format!("{}px", n))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("decoration-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec[("text-decoration-thickness", format!("{}px", n))]));
     }
 
     // Line Clamp
-    if let Some(rest) = class_name.strip_prefix("line-clamp-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec![
-                ("overflow", "hidden"),
-                ("display", "-webkit-box"),
-                ("-webkit-box-orient", "vertical"),
-                ("-webkit-line-clamp", n.to_string()),
-            ]));
-        }
+    if let Some(rest) = class_name.strip_prefix("line-clamp-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec![
+            ("overflow", "hidden"),
+            ("display", "-webkit-box"),
+            ("-webkit-box-orient", "vertical"),
+            ("-webkit-line-clamp", n.to_string()),
+        ]));
     }
 
     // Font Stretch
@@ -413,31 +488,31 @@ pub fn resolve_typography_border_effect_rules(
     }
 
     // Divide Utilities
-    if let Some(rest) = class_name.strip_prefix("divide-x-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec![
-                ("border-right-width", "0px"),
-                ("border-left-width", format!("{}px", n)),
-            ]));
-        }
+    if let Some(rest) = class_name.strip_prefix("divide-x-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec![
+            ("border-right-width", "0px"),
+            ("border-left-width", format!("{}px", n)),
+        ]));
     }
-    if let Some(rest) = class_name.strip_prefix("divide-y-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec![
-                ("border-bottom-width", "0px"),
-                ("border-top-width", format!("{}px", n)),
-            ]));
-        }
+    if let Some(rest) = class_name.strip_prefix("divide-y-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec![
+            ("border-bottom-width", "0px"),
+            ("border-top-width", format!("{}px", n)),
+        ]));
     }
 
     // Inset Ring
-    if let Some(rest) = class_name.strip_prefix("inset-ring-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec![
-                ("outline-width", format!("{}px", n)),
-                ("outline-offset", format!("-{}px", n)),
-            ]));
-        }
+    if let Some(rest) = class_name.strip_prefix("inset-ring-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec![
+            ("outline-width", format!("{}px", n)),
+            ("outline-offset", format!("-{}px", n)),
+        ]));
     }
 
     // Inset Shadow
@@ -461,17 +536,17 @@ pub fn resolve_typography_border_effect_rules(
     }
 
     // Tab Size
-    if let Some(rest) = class_name.strip_prefix("tab-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec[("tab-size", n.to_string())]));
-        }
+    if let Some(rest) = class_name.strip_prefix("tab-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec[("tab-size", n.to_string())]));
     }
 
     // Zoom
-    if let Some(rest) = class_name.strip_prefix("zoom-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec[("zoom", format!("{}%", n))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("zoom-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec[("zoom", format!("{}%", n))]));
     }
 
     // Border Spacing
@@ -479,15 +554,15 @@ pub fn resolve_typography_border_effect_rules(
         if let Some(val) = super::dynamic::resolve_length_val(rest) {
             return Some(cow!(vec[("border-spacing", val)]));
         }
-        if let Some(sub) = rest.strip_prefix("x-") {
-            if let Some(val) = super::dynamic::resolve_length_val(sub) {
-                return Some(cow!(vec[("border-spacing", format!("{} 0px", val))]));
-            }
+        if let Some(sub) = rest.strip_prefix("x-")
+            && let Some(val) = super::dynamic::resolve_length_val(sub)
+        {
+            return Some(cow!(vec[("border-spacing", format!("{} 0px", val))]));
         }
-        if let Some(sub) = rest.strip_prefix("y-") {
-            if let Some(val) = super::dynamic::resolve_length_val(sub) {
-                return Some(cow!(vec[("border-spacing", format!("0px {}", val))]));
-            }
+        if let Some(sub) = rest.strip_prefix("y-")
+            && let Some(val) = super::dynamic::resolve_length_val(sub)
+        {
+            return Some(cow!(vec[("border-spacing", format!("0px {}", val))]));
         }
     }
 
@@ -526,24 +601,24 @@ pub fn resolve_outline_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<
         return Some(r.to_vec());
     }
 
-    if let Some(rest) = class_name.strip_prefix("outline-offset-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec[("outline-offset", format!("{}px", n))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("outline-offset-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec[("outline-offset", format!("{}px", n))]));
     }
-    if let Some(rest) = class_name.strip_prefix("-outline-offset-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec[("outline-offset", format!("-{}px", n))]));
-        }
+    if let Some(rest) = class_name.strip_prefix("-outline-offset-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec[("outline-offset", format!("-{}px", n))]));
     }
 
-    if let Some(rest) = class_name.strip_prefix("outline-") {
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec![
-                ("outline-style", "solid"),
-                ("outline-width", format!("{}px", n)),
-            ]));
-        }
+    if let Some(rest) = class_name.strip_prefix("outline-")
+        && let Ok(n) = rest.parse::<u32>()
+    {
+        return Some(cow!(vec![
+            ("outline-style", "solid"),
+            ("outline-width", format!("{}px", n)),
+        ]));
     }
 
     None
@@ -577,13 +652,13 @@ pub fn resolve_ring_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'st
                 ("box-shadow", RING_BOX_SHADOW),
             ]));
         }
-        if let Some(sub) = rest.strip_prefix("offset-") {
-            if let Ok(n) = sub.parse::<u32>() {
-                return Some(cow!(vec![
-                    ("--tw-ring-offset-width", format!("{}px", n)),
-                    ("box-shadow", RING_BOX_SHADOW),
-                ]));
-            }
+        if let Some(sub) = rest.strip_prefix("offset-")
+            && let Ok(n) = sub.parse::<u32>()
+        {
+            return Some(cow!(vec![
+                ("--tw-ring-offset-width", format!("{}px", n)),
+                ("box-shadow", RING_BOX_SHADOW),
+            ]));
         }
     }
 
@@ -623,158 +698,158 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<
             } else {
                 s.strip_prefix("ss-")
             };
-            if let Some(sub) = sub_ss {
-                if let Some(val) = radius_val(sub) {
-                    return Some(cow!(vec[("border-start-start-radius", val)]));
-                }
+            if let Some(sub) = sub_ss
+                && let Some(val) = radius_val(sub)
+            {
+                return Some(cow!(vec[("border-start-start-radius", val)]));
             }
             let sub_se = if s == "se" {
                 Some("")
             } else {
                 s.strip_prefix("se-")
             };
-            if let Some(sub) = sub_se {
-                if let Some(val) = radius_val(sub) {
-                    return Some(cow!(vec[("border-start-end-radius", val)]));
-                }
+            if let Some(sub) = sub_se
+                && let Some(val) = radius_val(sub)
+            {
+                return Some(cow!(vec[("border-start-end-radius", val)]));
             }
             let sub_es = if s == "es" {
                 Some("")
             } else {
                 s.strip_prefix("es-")
             };
-            if let Some(sub) = sub_es {
-                if let Some(val) = radius_val(sub) {
-                    return Some(cow!(vec[("border-end-start-radius", val)]));
-                }
+            if let Some(sub) = sub_es
+                && let Some(val) = radius_val(sub)
+            {
+                return Some(cow!(vec[("border-end-start-radius", val)]));
             }
             let sub_ee = if s == "ee" {
                 Some("")
             } else {
                 s.strip_prefix("ee-")
             };
-            if let Some(sub) = sub_ee {
-                if let Some(val) = radius_val(sub) {
-                    return Some(cow!(vec[("border-end-end-radius", val)]));
-                }
+            if let Some(sub) = sub_ee
+                && let Some(val) = radius_val(sub)
+            {
+                return Some(cow!(vec[("border-end-end-radius", val)]));
             }
             let sub_tl = if s == "tl" {
                 Some("")
             } else {
                 s.strip_prefix("tl-")
             };
-            if let Some(sub) = sub_tl {
-                if let Some(val) = radius_val(sub) {
-                    return Some(cow!(vec[("border-top-left-radius", val)]));
-                }
+            if let Some(sub) = sub_tl
+                && let Some(val) = radius_val(sub)
+            {
+                return Some(cow!(vec[("border-top-left-radius", val)]));
             }
             let sub_tr = if s == "tr" {
                 Some("")
             } else {
                 s.strip_prefix("tr-")
             };
-            if let Some(sub) = sub_tr {
-                if let Some(val) = radius_val(sub) {
-                    return Some(cow!(vec[("border-top-right-radius", val)]));
-                }
+            if let Some(sub) = sub_tr
+                && let Some(val) = radius_val(sub)
+            {
+                return Some(cow!(vec[("border-top-right-radius", val)]));
             }
             let sub_br = if s == "br" {
                 Some("")
             } else {
                 s.strip_prefix("br-")
             };
-            if let Some(sub) = sub_br {
-                if let Some(val) = radius_val(sub) {
-                    return Some(cow!(vec[("border-bottom-right-radius", val)]));
-                }
+            if let Some(sub) = sub_br
+                && let Some(val) = radius_val(sub)
+            {
+                return Some(cow!(vec[("border-bottom-right-radius", val)]));
             }
             let sub_bl = if s == "bl" {
                 Some("")
             } else {
                 s.strip_prefix("bl-")
             };
-            if let Some(sub) = sub_bl {
-                if let Some(val) = radius_val(sub) {
-                    return Some(cow!(vec[("border-bottom-left-radius", val)]));
-                }
+            if let Some(sub) = sub_bl
+                && let Some(val) = radius_val(sub)
+            {
+                return Some(cow!(vec[("border-bottom-left-radius", val)]));
             }
             let sub_t = if s == "t" {
                 Some("")
             } else {
                 s.strip_prefix("t-")
             };
-            if let Some(sub) = sub_t {
-                if let Some(val) = radius_val(sub) {
-                    return Some(cow!(vec![
-                        ("border-top-left-radius", val),
-                        ("border-top-right-radius", val),
-                    ]));
-                }
+            if let Some(sub) = sub_t
+                && let Some(val) = radius_val(sub)
+            {
+                return Some(cow!(vec![
+                    ("border-top-left-radius", val),
+                    ("border-top-right-radius", val),
+                ]));
             }
             let sub_r = if s == "r" {
                 Some("")
             } else {
                 s.strip_prefix("r-")
             };
-            if let Some(sub) = sub_r {
-                if let Some(val) = radius_val(sub) {
-                    return Some(cow!(vec![
-                        ("border-top-right-radius", val),
-                        ("border-bottom-right-radius", val),
-                    ]));
-                }
+            if let Some(sub) = sub_r
+                && let Some(val) = radius_val(sub)
+            {
+                return Some(cow!(vec![
+                    ("border-top-right-radius", val),
+                    ("border-bottom-right-radius", val),
+                ]));
             }
             let sub_b = if s == "b" {
                 Some("")
             } else {
                 s.strip_prefix("b-")
             };
-            if let Some(sub) = sub_b {
-                if let Some(val) = radius_val(sub) {
-                    return Some(cow!(vec![
-                        ("border-bottom-left-radius", val),
-                        ("border-bottom-right-radius", val),
-                    ]));
-                }
+            if let Some(sub) = sub_b
+                && let Some(val) = radius_val(sub)
+            {
+                return Some(cow!(vec![
+                    ("border-bottom-left-radius", val),
+                    ("border-bottom-right-radius", val),
+                ]));
             }
             let sub_l = if s == "l" {
                 Some("")
             } else {
                 s.strip_prefix("l-")
             };
-            if let Some(sub) = sub_l {
-                if let Some(val) = radius_val(sub) {
-                    return Some(cow!(vec![
-                        ("border-top-left-radius", val),
-                        ("border-bottom-left-radius", val),
-                    ]));
-                }
+            if let Some(sub) = sub_l
+                && let Some(val) = radius_val(sub)
+            {
+                return Some(cow!(vec![
+                    ("border-top-left-radius", val),
+                    ("border-bottom-left-radius", val),
+                ]));
             }
             let sub_s = if s == "s" {
                 Some("")
             } else {
                 s.strip_prefix("s-")
             };
-            if let Some(sub) = sub_s {
-                if let Some(val) = radius_val(sub) {
-                    return Some(cow!(vec![
-                        ("border-start-start-radius", val),
-                        ("border-end-start-radius", val),
-                    ]));
-                }
+            if let Some(sub) = sub_s
+                && let Some(val) = radius_val(sub)
+            {
+                return Some(cow!(vec![
+                    ("border-start-start-radius", val),
+                    ("border-end-start-radius", val),
+                ]));
             }
             let sub_e = if s == "e" {
                 Some("")
             } else {
                 s.strip_prefix("e-")
             };
-            if let Some(sub) = sub_e {
-                if let Some(val) = radius_val(sub) {
-                    return Some(cow!(vec![
-                        ("border-start-end-radius", val),
-                        ("border-end-end-radius", val),
-                    ]));
-                }
+            if let Some(sub) = sub_e
+                && let Some(val) = radius_val(sub)
+            {
+                return Some(cow!(vec![
+                    ("border-start-end-radius", val),
+                    ("border-end-end-radius", val),
+                ]));
             }
         }
     }

@@ -2,7 +2,7 @@
 // 由 silex_codegen 自动提取，切勿手动修改！
 
 #[rustfmt::skip]
-pub static SHORTHAND_SUBPROPERTIES: &[(&'static str, &'static [&'static str])] = &[
+pub static SHORTHAND_SUBPROPERTIES: &[(&str, &[&str])] = &[
     ("animation", &["animation-delay", "animation-direction", "animation-duration", "animation-fill-mode", "animation-iteration-count", "animation-name", "animation-play-state", "animation-timeline", "animation-timing-function"]),
     ("animation-range", &["animation-range-end", "animation-range-start"]),
     ("background", &["background-attachment", "background-clip", "background-color", "background-image", "background-origin", "background-position-x", "background-position-y", "background-repeat", "background-size"]),
@@ -97,6 +97,8 @@ pub static SHORTHAND_SUBPROPERTIES: &[(&'static str, &'static [&'static str])] =
 
 /// 获取指定 CSS / Tailwind 简写属性拆解后的原子子属性集合
 pub fn get_atomic_subproperties(prop: &str) -> Option<&'static [&'static str]> {
-    let idx = SHORTHAND_SUBPROPERTIES.binary_search_by_key(&prop, |&(k, _)| k).ok()?;
+    let idx = SHORTHAND_SUBPROPERTIES
+        .binary_search_by_key(&prop, |&(k, _)| k)
+        .ok()?;
     Some(SHORTHAND_SUBPROPERTIES[idx].1)
 }

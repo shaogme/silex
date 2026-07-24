@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use crate::css::tw::ast::UtilityValue;
 use super::codegen::palette::get_raw_palette;
+use crate::css::tw::ast::UtilityValue;
 
 /// 解析 Hex 色值为 (r, g, b)（支持 3, 4, 6, 8 位 Hex）
 fn parse_hex_rgb(hex: &str) -> (u8, u8, u8) {
@@ -270,8 +270,8 @@ pub fn parse_color_value(color_token: &str) -> Option<UtilityValue> {
 /// 解析颜色相关的 Utility 类 (如 `text-slate-900`, `bg-indigo-600/50`, `bg-[#1e293b]`)
 pub fn parse_color_utility(token: &str) -> Option<(&'static str, UtilityValue)> {
     const ORDERED_PREFIXES: &[&str] = &[
-        "border-t", "border-r", "border-b", "border-l", "border",
-        "outline", "accent", "caret", "bg", "text", "fill", "stroke",
+        "border-t", "border-r", "border-b", "border-l", "border", "outline", "accent", "caret",
+        "bg", "text", "fill", "stroke",
     ];
 
     for &prefix in ORDERED_PREFIXES {

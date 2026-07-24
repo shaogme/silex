@@ -9,12 +9,9 @@ fn test_switch_translate_x_calc_no_spaces_and_modifiers() {
     )).unwrap();
     let css_block = build_css_block_from_tw(input).unwrap();
     let block_ts = quote! { #css_block };
-    let compile_result = crate::css::compiler::CssCompiler::compile(
-        block_ts,
-        proc_macro2::Span::call_site(),
-        false,
-    )
-    .unwrap();
+    let compile_result =
+        crate::css::compiler::CssCompiler::compile(block_ts, proc_macro2::Span::call_site(), false)
+            .unwrap();
 
     // 验证 1：不能包含带空格的错误函数调用 `translateX (` 或 `calc (`
     assert!(
@@ -45,12 +42,9 @@ fn test_shorthand_longhand_deduplication() {
     let input: TwInput = syn::parse2(quote!("pt-2 p-4")).unwrap();
     let css_block = build_css_block_from_tw(input).unwrap();
     let block_ts = quote! { #css_block };
-    let compile_result = crate::css::compiler::CssCompiler::compile(
-        block_ts,
-        proc_macro2::Span::call_site(),
-        false,
-    )
-    .unwrap();
+    let compile_result =
+        crate::css::compiler::CssCompiler::compile(block_ts, proc_macro2::Span::call_site(), false)
+            .unwrap();
     assert!(
         !compile_result.component_css.contains("padding-top"),
         "Expected padding-top to be overridden by later p-4 shorthand, got: {}",
@@ -67,12 +61,9 @@ fn test_shorthand_longhand_deduplication() {
     let input: TwInput = syn::parse2(quote!("p-4 pt-2")).unwrap();
     let css_block = build_css_block_from_tw(input).unwrap();
     let block_ts = quote! { #css_block };
-    let compile_result = crate::css::compiler::CssCompiler::compile(
-        block_ts,
-        proc_macro2::Span::call_site(),
-        false,
-    )
-    .unwrap();
+    let compile_result =
+        crate::css::compiler::CssCompiler::compile(block_ts, proc_macro2::Span::call_site(), false)
+            .unwrap();
     assert!(
         compile_result
             .component_css
@@ -89,8 +80,7 @@ fn test_shorthand_longhand_deduplication() {
 
 #[test]
 fn test_ring_system_css() {
-    let input: TwInput =
-        syn::parse2(quote!("ring-2 ring-indigo-500/20 ring-offset-2")).unwrap();
+    let input: TwInput = syn::parse2(quote!("ring-2 ring-indigo-500/20 ring-offset-2")).unwrap();
     let css_block = build_css_block_from_tw(input).unwrap();
     let compile_result = crate::css::compiler::CssCompiler::compile(
         quote! { #css_block },

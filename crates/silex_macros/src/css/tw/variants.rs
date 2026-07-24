@@ -169,7 +169,7 @@ fn to_pascal_case(s: &str, span: Span) -> Ident {
         }
     }
     let mut res = parts.join("");
-    if res.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+    if res.chars().next().is_some_and(|c| c.is_ascii_digit()) {
         res = format!("Val{}", res);
     }
     Ident::new(&res, span)
