@@ -9,7 +9,7 @@ use crate::{
     tags::{apply_memory_only_patches, codegen::generate_module_content, parse_tags},
     tw::{
         generate_keyframes_code, generate_macro_tables, generate_modifiers_code,
-        generate_palette_code, generate_prefix_metadata_code, generate_shorthands_code,
+        generate_palette_code, generate_prefix_metadata_code, generate_property_id_code,
         generate_table_examples,
     },
 };
@@ -184,7 +184,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         let (table_code, table_unimplement_code) =
             generate_macro_tables(&classes, &dynamic_prefixes, &palette_data);
         let table_examples_code = generate_table_examples(&test_cases, &palette_data);
-        let shorthands_code = generate_shorthands_code(&props_str);
+        let property_id_code =
+            generate_property_id_code(&props_str, &classes, &test_cases, &palette_data);
         let prefix_metadata_code = generate_prefix_metadata_code(&prefix_metadata);
         let palette_code = generate_palette_code(&palette_data);
         let modifiers_code = generate_modifiers_code(&modifiers_data);
@@ -202,7 +203,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             macro_codegen_dir.join("table_examples.rs"),
             table_examples_code,
         )?;
-        write(macro_codegen_dir.join("shorthands.rs"), shorthands_code)?;
+        write(macro_codegen_dir.join("property_id.rs"), property_id_code)?;
         write(
             macro_codegen_dir.join("prefix_metadata.rs"),
             prefix_metadata_code,
@@ -211,7 +212,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         write(macro_codegen_dir.join("modifiers.rs"), modifiers_code)?;
         write(macro_codegen_dir.join("keyframes.rs"), keyframes_code)?;
         println!(
-            "Generated table.rs, table_unimplement.rs, table_examples.rs, shorthands.rs, prefix_metadata.rs, palette.rs, modifiers.rs and keyframes.rs for silex_macros in resolver/codegen"
+            "Generated table.rs, table_unimplement.rs, table_examples.rs, property_id.rs, prefix_metadata.rs, palette.rs, modifiers.rs and keyframes.rs for silex_macros in resolver/codegen"
         );
     }
 

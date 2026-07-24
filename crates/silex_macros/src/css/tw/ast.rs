@@ -1,4 +1,11 @@
+use crate::css::tw::resolver::codegen::property_id::CssPropertyId;
 use proc_macro2::Span;
+use quote::quote;
+use smallvec::SmallVec;
+use std::{
+    hash::{Hash, Hasher},
+    mem::discriminant,
+};
 use syn::Expr;
 
 /// 状态修饰符与响应式断点
@@ -61,16 +68,16 @@ impl PartialEq for UtilityValue {
             (Self::ThemeVar(v1, o1), Self::ThemeVar(v2, o2)) => v1 == v2 && o1 == o2,
             (Self::ArbitraryLiteral(a), Self::ArbitraryLiteral(b)) => a == b,
             (Self::DynamicExpr(e1, _), Self::DynamicExpr(e2, _)) => {
-                quote::quote!(#e1).to_string() == quote::quote!(#e2).to_string()
+                quote!(#e1).to_string() == quote!(#e2).to_string()
             }
             _ => false,
         }
     }
 }
 
-impl std::hash::Hash for UtilityValue {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        std::mem::discriminant(self).hash(state);
+impl Hash for UtilityValue {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        discriminant(self).hash(state);
         match self {
             Self::Keyword(k) => k.hash(state),
             Self::Numeric(v, u) => {
@@ -86,17 +93,19 @@ impl std::hash::Hash for UtilityValue {
             }
             Self::ArbitraryLiteral(a) => a.hash(state),
             Self::DynamicExpr(e, _) => {
-                quote::quote!(#e).to_string().hash(state);
+                quote!(#e).to_string().hash(state);
             }
         }
     }
 }
 
+pub type ModifierList = SmallVec<[SpannedModifier; 2]>;
+
 /// 归一化的 Utility 规则
 #[derive(Debug, Clone)]
 pub struct UtilityRule {
-    pub modifiers: Vec<SpannedModifier>,
-    pub css_property: String,
+    pub modifiers: ModifierList,
+    pub css_property: CssPropertyId,
     pub value: UtilityValue,
     pub span: Span,
 }
@@ -149,14 +158,14 @@ impl From<Modifier> for SpannedModifier {
 
 impl Eq for SpannedModifier {}
 
-impl std::hash::Hash for SpannedModifier {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl Hash for SpannedModifier {
+    fn hash<H: Hasher>(&self, state: &mut H) {
         self.modifier.hash(state);
     }
 }
 
-impl std::hash::Hash for UtilityRule {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl Hash for UtilityRule {
+    fn hash<H: Hasher>(&self, state: &mut H) {
         self.modifiers.hash(state);
         self.css_property.hash(state);
         self.value.hash(state);

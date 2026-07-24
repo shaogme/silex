@@ -65,7 +65,7 @@ fn test_e2e_table_examples_individual_rules() {
 
         for &(prop, _val) in expected_rules {
             assert!(
-                prop_matches_generated_css(prop, &generated_css),
+                prop_matches_generated_css(prop.as_str(), &generated_css),
                 "Generated CSS for '{class_name}' should contain property or shorthand for '{prop}'. Full generated CSS:\n{generated_css}"
             );
         }

@@ -2,10 +2,10 @@ use crate::css::{
     ast::{CssAtRule, CssBlock, CssDeclaration, CssNested, CssRule},
     config::get_config,
     tw::{
-        ast::{Modifier, SpannedModifier, TwInput, TwSegment, UtilityRule, UtilityValue},
+        ast::{Modifier, ModifierList, SpannedModifier, TwInput, TwSegment, UtilityRule, UtilityValue},
         resolver::codegen::{
             keyframes::lookup_keyframe_meta, modifiers::lookup_modifier_meta,
-            shorthands::get_atomic_subproperties,
+            property_id::CssPropertyId,
         },
     },
 };
@@ -17,12 +17,12 @@ use syn::{Result, token::Semi};
 /// 将解析后的 `Vec<UtilityRule>` 归一化转换构建为 `silex_macros::css::ast::CssBlock`
 pub fn build_css_block_from_rules(rules: Vec<UtilityRule>) -> Result<CssBlock> {
     let mut root_raw_rules = Vec::new();
-    let mut modifier_groups: Vec<(Vec<SpannedModifier>, Vec<UtilityRule>)> = Vec::new();
+    let mut modifier_groups: Vec<(ModifierList, Vec<UtilityRule>)> = Vec::new();
     let mut detected_keyframes: HashSet<String> = HashSet::new();
 
     for rule in rules {
         // 收集所需 keyframes 动画
-        if rule.css_property == "animation" {
+        if rule.css_property == CssPropertyId::Animation {
             check_and_collect_keyframes(&rule.value, &mut detected_keyframes);
         }
 
@@ -118,17 +118,17 @@ fn modifier_group_sort_key(modifiers: &[SpannedModifier]) -> (u32, u32, usize) {
     (max_p, total_p, modifiers.len())
 }
 
-/// 编译期 Tailwind Merge: 相同修饰符组下的实用类属性消解 (支持简写属性与长写属性关联覆盖，Last-wins 覆盖先出者)
+/// 编译期 Tailwind Merge: 相同修饰符组下的实用类属性消解 (基于 Bitmask 的高速覆盖计算，支持简写属性与长写属性关联覆盖，Last-wins 覆盖先出者)
 pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
-    let mut covered_subproperties = HashSet::new();
+    let mut covered_masks: HashMap<u16, u64> = HashMap::new();
+    let mut custom_covered: HashSet<&'static str> = HashSet::new();
     let mut deduped_rev = Vec::new();
-    let mut transform_rules_by_modifier: HashMap<Vec<SpannedModifier>, Vec<UtilityRule>> =
-        HashMap::new();
+    let mut transform_rules_by_modifier: HashMap<ModifierList, Vec<UtilityRule>> = HashMap::new();
 
     for rule in rules.into_iter().rev() {
-        let prop = rule.css_property.as_str();
+        let prop = rule.css_property;
 
-        if prop == "transform" {
+        if prop == CssPropertyId::Transform {
             transform_rules_by_modifier
                 .entry(rule.modifiers.clone())
                 .or_default()
@@ -136,20 +136,21 @@ pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityR
             continue;
         }
 
-        let subprops: &[&str] = match get_atomic_subproperties(prop) {
-            Some(subs) => subs,
-            None => std::slice::from_ref(&prop),
-        };
+        if let CssPropertyId::Custom(name) = prop {
+            if !custom_covered.contains(name) {
+                custom_covered.insert(name);
+                deduped_rev.push(rule);
+            }
+            continue;
+        }
 
-        // 检查该规则包含的所有原子子属性在相同的修饰符组下是否已被完全覆盖
-        let all_covered = subprops
-            .iter()
-            .all(|p| covered_subproperties.contains(&(rule.modifiers.clone(), p.to_string())));
+        let bitmask = prop.bitmask();
+        let current_covered = covered_masks.entry(bitmask.group_id).or_insert(0);
+
+        let all_covered = (*current_covered & bitmask.mask) == bitmask.mask;
 
         if !all_covered {
-            for &p in subprops {
-                covered_subproperties.insert((rule.modifiers.clone(), p.to_string()));
-            }
+            *current_covered |= bitmask.mask;
             deduped_rev.push(rule);
         }
     }
@@ -170,7 +171,7 @@ pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityR
         }
         let merged_rule = UtilityRule {
             modifiers,
-            css_property: "transform".to_string(),
+            css_property: CssPropertyId::Transform,
             value: UtilityValue::ArbitraryLiteral(combined_vals.join(" ")),
             span: first.span,
         };
@@ -272,7 +273,7 @@ fn make_nested_rule(selector: &str, declarations: Vec<(&str, TokenStream)>) -> C
 }
 
 fn convert_rule_to_declaration(rule: &UtilityRule) -> CssRule {
-    let prop = rule.css_property.clone();
+    let prop = rule.css_property.as_str().to_string();
     let values = match &rule.value {
         UtilityValue::Keyword(kw) => {
             let ts: TokenStream = kw.parse().unwrap_or_else(|_| quote!(#kw));
@@ -330,7 +331,7 @@ fn convert_rule_to_declaration(rule: &UtilityRule) -> CssRule {
 }
 
 fn build_modifier_rule(
-    modifiers: Vec<SpannedModifier>,
+    modifiers: ModifierList,
     rules: Vec<UtilityRule>,
 ) -> Result<CssRule> {
     let mut inner_declarations = Vec::new();
@@ -695,19 +696,20 @@ fn format_group_peer_selector(is_group: bool, state: &str, name: Option<&str>) -
 mod tests {
     use super::*;
     use proc_macro2::Span;
+    use smallvec::smallvec;
 
     #[test]
     fn test_transform_rules_merging() {
         let rules = vec![
             UtilityRule {
-                modifiers: vec![],
-                css_property: "transform".to_string(),
+                modifiers: smallvec![],
+                css_property: CssPropertyId::Transform,
                 value: UtilityValue::ArbitraryLiteral("translateX(-50%)".to_string()),
                 span: Span::call_site(),
             },
             UtilityRule {
-                modifiers: vec![],
-                css_property: "transform".to_string(),
+                modifiers: smallvec![],
+                css_property: CssPropertyId::Transform,
                 value: UtilityValue::ArbitraryLiteral("translateY(-50%)".to_string()),
                 span: Span::call_site(),
             },
@@ -715,7 +717,7 @@ mod tests {
 
         let deduped = deduplicate_utility_rules(rules);
         assert_eq!(deduped.len(), 1);
-        assert_eq!(deduped[0].css_property, "transform");
+        assert_eq!(deduped[0].css_property, CssPropertyId::Transform);
         if let UtilityValue::ArbitraryLiteral(ref s) = deduped[0].value {
             assert_eq!(s, "translateX(-50%) translateY(-50%)");
         } else {
@@ -726,14 +728,14 @@ mod tests {
     #[test]
     fn test_responsive_breakpoint_sorting() {
         let lg_rule = UtilityRule {
-            modifiers: vec![Modifier::MediaBreakpoint("lg".to_string()).into()],
-            css_property: "padding".to_string(),
+            modifiers: smallvec![Modifier::MediaBreakpoint("lg".to_string()).into()],
+            css_property: CssPropertyId::Padding,
             value: UtilityValue::Numeric(2.0, "rem"),
             span: Span::call_site(),
         };
         let sm_rule = UtilityRule {
-            modifiers: vec![Modifier::MediaBreakpoint("sm".to_string()).into()],
-            css_property: "padding".to_string(),
+            modifiers: smallvec![Modifier::MediaBreakpoint("sm".to_string()).into()],
+            css_property: CssPropertyId::Padding,
             value: UtilityValue::Numeric(0.5, "rem"),
             span: Span::call_site(),
         };
@@ -759,14 +761,14 @@ mod tests {
     #[test]
     fn test_extended_atomic_deduplication() {
         let inset_x = UtilityRule {
-            modifiers: vec![],
-            css_property: "inset-x".to_string(),
+            modifiers: smallvec![],
+            css_property: CssPropertyId::InsetX,
             value: UtilityValue::Numeric(0.0, "px"),
             span: Span::call_site(),
         };
         let left_override = UtilityRule {
-            modifiers: vec![],
-            css_property: "left".to_string(),
+            modifiers: smallvec![],
+            css_property: CssPropertyId::Left,
             value: UtilityValue::Numeric(1.0, "rem"),
             span: Span::call_site(),
         };
@@ -774,21 +776,21 @@ mod tests {
         let deduped = deduplicate_utility_rules(vec![inset_x, left_override]);
         // inset-x 生成了 left 和 right 的覆盖，后续的 left 将正确覆盖 inset-x 中的 left
         assert_eq!(deduped.len(), 2);
-        assert_eq!(deduped[0].css_property, "inset-x");
-        assert_eq!(deduped[1].css_property, "left");
+        assert_eq!(deduped[0].css_property, CssPropertyId::InsetX);
+        assert_eq!(deduped[1].css_property, CssPropertyId::Left);
     }
 
     #[test]
     fn test_transform_rules_merging_respects_modifiers() {
         let base_transform = UtilityRule {
-            modifiers: vec![],
-            css_property: "transform".to_string(),
+            modifiers: smallvec![],
+            css_property: CssPropertyId::Transform,
             value: UtilityValue::ArbitraryLiteral("translate-x-0".to_string()),
             span: Span::call_site(),
         };
         let dark_transform = UtilityRule {
-            modifiers: vec![Modifier::Dark.into()],
-            css_property: "transform".to_string(),
+            modifiers: smallvec![Modifier::Dark.into()],
+            css_property: CssPropertyId::Transform,
             value: UtilityValue::ArbitraryLiteral("translate-x-full".to_string()),
             span: Span::call_site(),
         };
@@ -803,10 +805,10 @@ mod tests {
 
         let has_base = deduped
             .iter()
-            .any(|r| r.modifiers.is_empty() && r.css_property == "transform");
+            .any(|r| r.modifiers.is_empty() && r.css_property == CssPropertyId::Transform);
         let has_dark = deduped
             .iter()
-            .any(|r| r.modifiers == vec![Modifier::Dark] && r.css_property == "transform");
+            .any(|r| r.modifiers.len() == 1 && r.modifiers[0] == Modifier::Dark && r.css_property == CssPropertyId::Transform);
         assert!(has_base && has_dark);
     }
 }

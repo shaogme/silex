@@ -2,7 +2,7 @@ pub mod keyframes;
 pub mod modifiers;
 pub mod palette;
 pub mod prefix_metadata;
-pub mod shorthands;
+pub mod property_id;
 pub mod table;
 pub mod table_unimplement;
 

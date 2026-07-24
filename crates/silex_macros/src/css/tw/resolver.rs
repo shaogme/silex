@@ -4,8 +4,12 @@ pub mod numeric;
 pub mod palette;
 pub mod suggest;
 
-use crate::css::tw::ast::{Modifier, SpannedModifier, UtilityRule, UtilityValue};
+use crate::css::tw::{
+    ast::{Modifier, ModifierList, SpannedModifier, UtilityRule, UtilityValue},
+    resolver::codegen::property_id::CssPropertyId,
+};
 use proc_macro2::Span;
+use smallvec::SmallVec;
 use syn::{Error, Result};
 
 pub const RING_BOX_SHADOW: &str = "var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width, 0px) var(--tw-ring-offset-color, #0000), 0 0 0 var(--tw-ring-width, 0px) var(--tw-ring-color, rgba(59, 130, 246, 0.5)), var(--tw-shadow, 0 0 #0000)";
@@ -42,15 +46,65 @@ pub fn hex(s: &str) -> UtilityValue {
     UtilityValue::HexColor(s.to_string())
 }
 
+pub trait IntoCssPropertyId {
+    fn into_css_property_id(self) -> CssPropertyId;
+}
+
+impl IntoCssPropertyId for CssPropertyId {
+    #[inline]
+    fn into_css_property_id(self) -> CssPropertyId {
+        self
+    }
+}
+
+impl IntoCssPropertyId for &str {
+    #[inline]
+    fn into_css_property_id(self) -> CssPropertyId {
+        CssPropertyId::parse(self)
+    }
+}
+
+impl IntoCssPropertyId for &&str {
+    #[inline]
+    fn into_css_property_id(self) -> CssPropertyId {
+        CssPropertyId::parse(*self)
+    }
+}
+
+pub trait IntoModifierList {
+    fn into_modifier_list(self) -> ModifierList;
+}
+
+impl IntoModifierList for ModifierList {
+    #[inline]
+    fn into_modifier_list(self) -> ModifierList {
+        self
+    }
+}
+
+impl IntoModifierList for &[SpannedModifier] {
+    #[inline]
+    fn into_modifier_list(self) -> ModifierList {
+        self.iter().cloned().collect()
+    }
+}
+
+impl IntoModifierList for Vec<SpannedModifier> {
+    #[inline]
+    fn into_modifier_list(self) -> ModifierList {
+        SmallVec::from_vec(self)
+    }
+}
+
 pub fn make_rule(
-    modifiers: Vec<SpannedModifier>,
-    prop: &str,
+    modifiers: impl IntoModifierList,
+    prop: impl IntoCssPropertyId,
     value: UtilityValue,
     span: Span,
 ) -> UtilityRule {
     UtilityRule {
-        modifiers,
-        css_property: prop.to_string(),
+        modifiers: modifiers.into_modifier_list(),
+        css_property: prop.into_css_property_id(),
         value,
         span,
     }
