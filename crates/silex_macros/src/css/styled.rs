@@ -106,7 +106,9 @@ impl Parse for StyledComponent {
                                     let mut rules = Vec::new();
                                     for token in raw_str.split_whitespace() {
                                         let (modifiers, body_token) =
-                                            crate::css::tw::parser::parse_modifiers_and_body(token, span);
+                                            crate::css::tw::parser::parse_modifiers_and_body(
+                                                token, span,
+                                            );
                                         let mut resolved =
                                             crate::css::tw::resolver::resolve_utility(
                                                 modifiers, body_token, span,

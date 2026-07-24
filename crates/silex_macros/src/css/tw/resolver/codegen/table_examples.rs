@@ -9,16 +9,6 @@ use crate::css::tw::resolver::make_rule;
 #[allow(unused_imports)]
 use proc_macro2::Span;
 
-#[allow(dead_code)]
-#[derive(Clone, Copy)]
-pub enum StaticVal {
-    Kw(&'static str),
-    Num(f64, &'static str),
-    Hex(&'static str),
-    Literal(&'static str),
-    RingShadow,
-}
-
 #[rustfmt::skip]
 pub const TEST_CASE_CANDIDATE_UTILITIES: &[&str] = &[
     "animate-bounce",
@@ -36,6 +26,7 @@ pub const TEST_CASE_CANDIDATE_UTILITIES: &[&str] = &[
     "bg-linear-to-b",
     "bg-none",
     "bg-radial",
+    "bg-slate-900",
     "blur-2xl",
     "blur-lg",
     "blur-md",
@@ -291,6 +282,7 @@ pub const TEST_CASE_CANDIDATE_UTILITIES: &[&str] = &[
     "right-auto",
     "right-full",
     "right-px",
+    "ring",
     "rotate-0",
     "rotate-45",
     "rotate-90",
@@ -515,6 +507,9 @@ pub static TEST_CASE_RULES: &[(&str, &[(&str, StaticVal)])] = &[
     ]),
     ("bg-radial", &[
         ("background-image", StaticVal::Kw("radial-gradient(var(--tw-gradient-stops))")),
+    ]),
+    ("bg-slate-900", &[
+        ("background-color", StaticVal::Hex("#0f172b")),
     ]),
     ("blur-2xl", &[
         ("filter", StaticVal::Kw("blur(40px)")),
@@ -1332,6 +1327,10 @@ pub static TEST_CASE_RULES: &[(&str, &[(&str, StaticVal)])] = &[
     ("right-px", &[
         ("right", StaticVal::Num(1.0, "px")),
     ]),
+    ("ring", &[
+        ("--tw-ring-width", StaticVal::Num(0.1875, "rem")),
+        ("box-shadow", StaticVal::RingShadow),
+    ]),
     ("rotate-0", &[
         ("transform", StaticVal::Kw("rotate(0deg)")),
     ]),
@@ -1907,4 +1906,13 @@ pub static TEST_CASE_RULES: &[(&str, &[(&str, StaticVal)])] = &[
         ("z-index", StaticVal::Kw("auto")),
     ]),
 ];
+
+#[derive(Clone, Copy)]
+pub enum StaticVal {
+    Kw(&'static str),
+    Num(f64, &'static str),
+    Hex(&'static str),
+    Literal(&'static str),
+    RingShadow,
+}
 

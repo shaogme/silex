@@ -34,22 +34,21 @@ fn resolve_entries<'a>(
     (static_entries, unimplemented_entries)
 }
 
+#[derive(Default, Debug)]
+struct UsedStaticValKinds {
+    kw: bool,
+    num: bool,
+    hex: bool,
+    literal: bool,
+    ring_shadow: bool,
+}
+
 fn push_table_header(code: &mut String, doc_comment: &str) {
     let _ = writeln!(code, "// {}", doc_comment);
     code.push_str("// 避免手写硬编码，与 silex_codegen/resolver 保持 100% 规则对齐\n\n");
     code.push_str("#[allow(unused_imports)]\nuse crate::css::tw::ast::{Modifier, SpannedModifier, UtilityRule, UtilityValue};\n");
     code.push_str("#[allow(unused_imports)]\nuse crate::css::tw::resolver::make_rule;\n");
     code.push_str("#[allow(unused_imports)]\nuse proc_macro2::Span;\n\n");
-
-    code.push_str("#[allow(dead_code)]\n");
-    code.push_str("#[derive(Clone, Copy)]\n");
-    code.push_str("pub enum StaticVal {\n");
-    code.push_str("    Kw(&'static str),\n");
-    code.push_str("    Num(f64, &'static str),\n");
-    code.push_str("    Hex(&'static str),\n");
-    code.push_str("    Literal(&'static str),\n");
-    code.push_str("    RingShadow,\n");
-    code.push_str("}\n\n");
 }
 
 fn push_candidate_array(code: &mut String, var_name: &str, entries: &RuleEntries) {
@@ -73,7 +72,12 @@ fn push_unimplemented_array(code: &mut String, var_name: &str, entries: &[String
     code.push_str("];\n\n");
 }
 
-fn push_rules_array(code: &mut String, var_name: &str, entries: &RuleEntries) {
+fn push_rules_array(
+    code: &mut String,
+    var_name: &str,
+    entries: &RuleEntries,
+) -> UsedStaticValKinds {
+    let mut used = UsedStaticValKinds::default();
     code.push_str("#[rustfmt::skip]\n");
     let _ = writeln!(
         code,
@@ -83,12 +87,83 @@ fn push_rules_array(code: &mut String, var_name: &str, entries: &RuleEntries) {
     for (class, rules) in entries {
         let _ = writeln!(code, "    (\"{}\", &[", class);
         for (prop, val) in rules {
-            let static_val_str = parse_val_to_static_val(val);
+            let static_val_str = parse_val_to_static_val(val, &mut used);
             let _ = writeln!(code, "        (\"{}\", {}),", prop, static_val_str);
         }
         code.push_str("    ]),\n");
     }
     code.push_str("];\n\n");
+    used
+}
+
+fn push_static_val_enum(code: &mut String, used: &UsedStaticValKinds) {
+    code.push_str("#[derive(Clone, Copy)]\n");
+    code.push_str("pub enum StaticVal {\n");
+    if used.kw {
+        code.push_str("    Kw(&'static str),\n");
+    }
+    if used.num {
+        code.push_str("    Num(f64, &'static str),\n");
+    }
+    if used.hex {
+        code.push_str("    Hex(&'static str),\n");
+    }
+    if used.literal {
+        code.push_str("    Literal(&'static str),\n");
+    }
+    if used.ring_shadow {
+        code.push_str("    RingShadow,\n");
+    }
+    code.push_str("}\n\n");
+}
+
+fn push_resolve_static_rule_fn(code: &mut String, rules_var_name: &str, used: &UsedStaticValKinds) {
+    let _ = writeln!(
+        code,
+        r#"pub fn resolve_static_rule(
+    modifiers: &[SpannedModifier],
+    utility_token: &str,
+    span: Span,
+) -> Option<Vec<UtilityRule>> {{
+    let idx = {rules_var_name}.binary_search_by_key(&utility_token, |&(k, _)| k).ok()?;
+    let entries = {rules_var_name}[idx].1;
+
+    let mut rules = Vec::with_capacity(entries.len());
+    for &(prop, val) in entries {{
+        let uval = match val {{"#
+    );
+
+    if used.kw {
+        code.push_str("            StaticVal::Kw(s) => UtilityValue::Keyword(s),\n");
+    }
+    if used.num {
+        code.push_str("            StaticVal::Num(v, u) => UtilityValue::Numeric(v, u),\n");
+    }
+    if used.hex {
+        code.push_str("            StaticVal::Hex(s) => crate::css::tw::resolver::hex(s),\n");
+    }
+    if used.literal {
+        code.push_str(
+            "            StaticVal::Literal(s) => UtilityValue::ArbitraryLiteral(s.to_string()),\n",
+        );
+    }
+    if used.ring_shadow {
+        code.push_str("            StaticVal::RingShadow => UtilityValue::Keyword(crate::css::tw::resolver::RING_BOX_SHADOW),\n");
+    }
+
+    code.push_str(
+        r#"        };
+        rules.push(make_rule(
+            if modifiers.is_empty() { Vec::new() } else { modifiers.to_vec() },
+            prop,
+            uval,
+            span,
+        ));
+    }
+    Some(rules)
+}
+"#,
+    );
 }
 
 /// 生成 `silex_macros/src/css/tw/resolver/codegen/table.rs` 与 `table_unimplement.rs` 代码
@@ -126,37 +201,9 @@ pub fn generate_macro_tables(
     }
     table_code.push_str("];\n\n");
 
-    push_rules_array(&mut table_code, "STATIC_RULES", &static_entries);
-
-    table_code.push_str(
-        r#"pub fn resolve_static_rule(
-    modifiers: &[SpannedModifier],
-    utility_token: &str,
-    span: Span,
-) -> Option<Vec<UtilityRule>> {
-    let idx = STATIC_RULES.binary_search_by_key(&utility_token, |&(k, _)| k).ok()?;
-    let entries = STATIC_RULES[idx].1;
-
-    let mut rules = Vec::with_capacity(entries.len());
-    for &(prop, val) in entries {
-        let uval = match val {
-            StaticVal::Kw(s) => UtilityValue::Keyword(s),
-            StaticVal::Num(v, u) => UtilityValue::Numeric(v, u),
-            StaticVal::Hex(s) => crate::css::tw::resolver::hex(s),
-            StaticVal::Literal(s) => UtilityValue::ArbitraryLiteral(s.to_string()),
-            StaticVal::RingShadow => UtilityValue::Keyword(crate::css::tw::resolver::RING_BOX_SHADOW),
-        };
-        rules.push(make_rule(
-            if modifiers.is_empty() { Vec::new() } else { modifiers.to_vec() },
-            prop,
-            uval,
-            span,
-        ));
-    }
-    Some(rules)
-}
-"#,
-    );
+    let used = push_rules_array(&mut table_code, "STATIC_RULES", &static_entries);
+    push_static_val_enum(&mut table_code, &used);
+    push_resolve_static_rule_fn(&mut table_code, "STATIC_RULES", &used);
 
     // 2. 生成 table_unimplement.rs
     let mut table_unimplement_code = String::with_capacity(128 * 1024);
@@ -172,14 +219,17 @@ pub fn generate_macro_tables(
     (table_code, table_unimplement_code)
 }
 
-fn parse_val_to_static_val(val: &str) -> String {
+fn parse_val_to_static_val(val: &str, used: &mut UsedStaticValKinds) -> String {
     if val.contains("var(--tw-ring-inset") || val.contains("0 0 0 var(--tw-ring-offset-width") {
+        used.ring_shadow = true;
         return "StaticVal::RingShadow".to_string();
     }
     if val.starts_with('#') {
+        used.hex = true;
         return format!("StaticVal::Hex(\"{}\")", val);
     }
     if let Some((v, unit)) = try_parse_numeric(val) {
+        used.num = true;
         return format!("StaticVal::Num({:?}, \"{}\")", v, unit);
     }
     if val.contains('(') || val.contains(' ') || val.contains('/') || val.contains(',') {
@@ -194,16 +244,19 @@ fn parse_val_to_static_val(val: &str) -> String {
             || val.starts_with("minmax(")
             || val.starts_with("repeat(")
         {
+            used.kw = true;
             return format!(
                 "StaticVal::Kw(\"{}\")",
                 val.replace('\\', "\\\\").replace('"', "\\\"")
             );
         }
+        used.literal = true;
         return format!(
             "StaticVal::Literal(\"{}\")",
             val.replace('\\', "\\\\").replace('"', "\\\"")
         );
     }
+    used.kw = true;
     format!(
         "StaticVal::Kw(\"{}\")",
         val.replace('\\', "\\\\").replace('"', "\\\"")
@@ -248,7 +301,8 @@ pub fn generate_table_examples(
         "UNIMPLEMENTED_TEST_CASE_UTILITIES",
         &unimplemented_entries,
     );
-    push_rules_array(&mut table_code, "TEST_CASE_RULES", &static_entries);
+    let used = push_rules_array(&mut table_code, "TEST_CASE_RULES", &static_entries);
+    push_static_val_enum(&mut table_code, &used);
 
     table_code
 }
@@ -430,7 +484,6 @@ pub fn generate_prefix_metadata_code(prefix_metadata: &BTreeMap<String, PrefixMe
     code.push_str("// 自动生成的 Utility 前缀与单位元数据表（供 silex_macros 使用）\n");
     code.push_str("// 由 silex_codegen 自动生成，切勿手写修改！\n\n");
 
-    code.push_str("#[allow(dead_code)]\n");
     code.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
     code.push_str("pub enum UnitKind {\n");
     code.push_str("    RemScale,\n");
@@ -444,19 +497,14 @@ pub fn generate_prefix_metadata_code(prefix_metadata: &BTreeMap<String, PrefixMe
     code.push_str("}\n\n");
 
     code.push_str("pub struct PrefixMeta {\n");
-    code.push_str("    pub prefix: &'static str,\n");
     code.push_str("    pub target_props: &'static [&'static str],\n");
     code.push_str("    pub unit_kind: UnitKind,\n");
     code.push_str("}\n\n");
 
     code.push_str("#[rustfmt::skip]\n");
     code.push_str("pub static PREFIX_METADATA: &[PrefixMeta] = &[\n");
-    for (prefix, meta) in prefix_metadata {
-        let _ = write!(
-            code,
-            "    PrefixMeta {{ prefix: \"{}\", target_props: &[",
-            prefix
-        );
+    for meta in prefix_metadata.values() {
+        let _ = write!(code, "    PrefixMeta {{ target_props: &[");
         for (i, p) in meta.target_props.iter().enumerate() {
             if i > 0 {
                 code.push_str(", ");
@@ -467,14 +515,19 @@ pub fn generate_prefix_metadata_code(prefix_metadata: &BTreeMap<String, PrefixMe
     }
     code.push_str("];\n\n");
 
-    code.push_str(
-        r#"/// 根据 Utility 前缀二分查找对应的元数据配置
-pub fn lookup_prefix_meta(prefix: &str) -> Option<&'static PrefixMeta> {
-    let idx = PREFIX_METADATA.binary_search_by_key(&prefix, |m| m.prefix).ok()?;
-    Some(&PREFIX_METADATA[idx])
-}
-"#,
-    );
+    code.push_str("/// 根据 Utility 前缀静态匹配对应的元数据配置\n");
+    code.push_str("pub fn lookup_prefix_meta(prefix: &str) -> Option<&'static PrefixMeta> {\n");
+    code.push_str("    match prefix {\n");
+    for (i, (prefix, _)) in prefix_metadata.iter().enumerate() {
+        let _ = writeln!(
+            code,
+            "        \"{}\" => Some(&PREFIX_METADATA[{}]),",
+            prefix, i
+        );
+    }
+    code.push_str("        _ => None,\n");
+    code.push_str("    }\n");
+    code.push_str("}\n");
 
     code
 }
@@ -489,7 +542,7 @@ pub struct ColorShadeInfo {
 
 /// 生成 `silex_macros/src/css/tw/resolver/palette_gen.rs` 产物代码
 pub fn generate_palette_code(palette: &BTreeMap<String, Vec<ColorShadeInfo>>) -> String {
-    let mut code = String::with_capacity(16 * 1024);
+    let mut code = String::with_capacity(32 * 1024);
     code.push_str("// 自动生成的 Tailwind 标准色板表（供 silex_macros 使用）\n");
     code.push_str("// 由 silex_codegen 自动生成，切勿手写修改！\n\n");
 
@@ -513,8 +566,57 @@ pub fn get_raw_palette(color_name: &str) -> Option<[&'static str; 11]> {
     let idx = PALETTE_TABLE.binary_search_by_key(&color_name, |&(k, _)| k).ok()?;
     Some(PALETTE_TABLE[idx].1)
 }
+
 "#,
     );
+
+    code.push_str("/// 编译期生成的 O(1) 静态色板 Hex 匹配器\n");
+    code.push_str("pub fn lookup_palette_color_fast(color_name: &str, shade: &str) -> Option<&'static str> {\n");
+    code.push_str("    match (color_name, shade) {\n");
+    for (name, shades) in palette {
+        for info in shades {
+            let _ = writeln!(
+                code,
+                "        (\"{}\", \"{}\") => Some(\"{}\"),",
+                name, info.shade, info.hex
+            );
+        }
+    }
+    code.push_str("        _ => None,\n");
+    code.push_str("    }\n");
+    code.push_str("}\n\n");
+
+    let standard_opacities: &[u32] = &[
+        0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90, 95, 100,
+    ];
+    code.push_str("/// 编译期预计算的标准 Alpha RGBA 静态匹配器 (消除运行时 hex_to_rgba 格式化)\n");
+    code.push_str("pub fn lookup_palette_rgba_fast(color_name: &str, shade: &str, opacity: u32) -> Option<&'static str> {\n");
+    code.push_str("    match (color_name, shade, opacity) {\n");
+    for (name, shades) in palette {
+        for info in shades {
+            let [r, g, b] = info.rgb;
+            for &op in standard_opacities {
+                let alpha = op as f64 / 100.0;
+                let alpha_str = if op % 10 == 0 || op % 25 == 0 || op == 5 || op == 15 || op == 95 {
+                    format!("{:.2}", alpha)
+                        .trim_end_matches('0')
+                        .trim_end_matches('.')
+                        .to_string()
+                } else {
+                    format!("{:.3}", alpha)
+                };
+                let rgba_str = format!("rgba({}, {}, {}, {})", r, g, b, alpha_str);
+                let _ = writeln!(
+                    code,
+                    "        (\"{}\", \"{}\", {}) => Some(\"{}\"),",
+                    name, info.shade, op, rgba_str
+                );
+            }
+        }
+    }
+    code.push_str("        _ => None,\n");
+    code.push_str("    }\n");
+    code.push_str("}\n");
 
     code
 }
@@ -529,40 +631,15 @@ pub struct ModifierMetaJson {
 
 /// 生成 `silex_macros/src/css/tw/resolver/modifiers_gen.rs` 产物代码
 pub fn generate_modifiers_code(modifiers: &[ModifierMetaJson]) -> String {
-    let mut code = String::with_capacity(16 * 1024);
+    let mut code = String::with_capacity(32 * 1024);
     code.push_str("// 自动生成的 Tailwind 修饰符与断点规则表（供 silex_macros 使用）\n");
     code.push_str("// 由 silex_codegen 自动生成，切勿手写修改！\n\n");
     code.push_str("use crate::css::tw::ast::Modifier;\n\n");
 
-    code.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n");
-    code.push_str("pub enum ModifierKind {\n");
-    code.push_str("    PseudoClass,\n");
-    code.push_str("    PseudoElement,\n");
-    code.push_str("    MediaBreakpoint,\n");
-    code.push_str("    Child,\n");
-    code.push_str("    Descendant,\n");
-    code.push_str("    Dark,\n");
-    code.push_str("}\n\n");
-
     code.push_str("pub struct ModifierMeta {\n");
     code.push_str("    pub key: &'static str,\n");
-    code.push_str("    pub kind: ModifierKind,\n");
     code.push_str("    pub priority: u32,\n");
     code.push_str("    pub css_selector: &'static str,\n");
-    code.push_str("}\n\n");
-
-    code.push_str("impl ModifierMeta {\n");
-    code.push_str("    #[inline]\n");
-    code.push_str("    pub fn to_modifier(&self, key: &str) -> Modifier {\n");
-    code.push_str("        match self.kind {\n");
-    code.push_str("            ModifierKind::Child => Modifier::Child,\n");
-    code.push_str("            ModifierKind::Descendant => Modifier::Descendant,\n");
-    code.push_str("            ModifierKind::MediaBreakpoint => Modifier::MediaBreakpoint(key.to_string()),\n");
-    code.push_str("            ModifierKind::PseudoClass => Modifier::PseudoClass(key.to_string()),\n");
-    code.push_str("            ModifierKind::PseudoElement => Modifier::PseudoElement(key.to_string()),\n");
-    code.push_str("            ModifierKind::Dark => Modifier::Dark,\n");
-    code.push_str("        }\n");
-    code.push_str("    }\n");
     code.push_str("}\n\n");
 
     code.push_str("#[rustfmt::skip]\n");
@@ -570,9 +647,8 @@ pub fn generate_modifiers_code(modifiers: &[ModifierMetaJson]) -> String {
     for meta in modifiers {
         let _ = writeln!(
             code,
-            "    ModifierMeta {{ key: \"{}\", kind: ModifierKind::{}, priority: {}, css_selector: \"{}\" }},",
+            "    ModifierMeta {{ key: \"{}\", priority: {}, css_selector: \"{}\" }},",
             meta.key,
-            meta.kind,
             meta.priority,
             meta.css_selector.replace('\\', "\\\\").replace('"', "\\\"")
         );
@@ -584,6 +660,133 @@ pub fn generate_modifiers_code(modifiers: &[ModifierMetaJson]) -> String {
 pub fn lookup_modifier_meta(key: &str) -> Option<&'static ModifierMeta> {
     let idx = MODIFIER_TABLE.binary_search_by_key(&key, |m| m.key).ok()?;
     Some(&MODIFIER_TABLE[idx])
+}
+
+fn split_state_and_name_fast(rest: &str) -> (String, Option<String>) {
+    if let Some(slash_idx) = rest.rfind('/') {
+        let name_part = &rest[slash_idx + 1..];
+        let state_part = &rest[..slash_idx];
+        if !name_part.is_empty()
+            && name_part
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
+            let open_brackets = state_part.chars().filter(|&c| c == '[').count();
+            let close_brackets = state_part.chars().filter(|&c| c == ']').count();
+            if open_brackets == close_brackets {
+                return (state_part.to_string(), Some(name_part.to_string()));
+            }
+        }
+    }
+    (rest.to_string(), None)
+}
+
+fn parse_bracket_kv_fast(rest: &str) -> (String, Option<String>) {
+    if rest.starts_with('[') && rest.ends_with(']') {
+        let inner = &rest[1..rest.len() - 1];
+        if let Some((k, v)) = inner.split_once('=') {
+            (k.to_string(), Some(v.to_string()))
+        } else {
+            (inner.to_string(), None)
+        }
+    } else {
+        (rest.to_string(), None)
+    }
+}
+
+fn parse_container_query_fast(container_spec: &str) -> Modifier {
+    let (c_name, spec) = if let Some((name, rest)) = container_spec.split_once('/') {
+        (Some(name.to_string()), rest)
+    } else {
+        (None, container_spec)
+    };
+
+    let min_width = match spec {
+        "sm" => "640px".to_string(),
+        "md" => "768px".to_string(),
+        "lg" => "1024px".to_string(),
+        "xl" => "1280px".to_string(),
+        "2xl" => "1536px".to_string(),
+        _ => {
+            let cleaned = spec.strip_prefix("min-").unwrap_or(spec);
+            let cleaned = cleaned.strip_prefix('-').unwrap_or(cleaned);
+            if cleaned.starts_with('[') && cleaned.ends_with(']') {
+                cleaned[1..cleaned.len() - 1].to_string()
+            } else {
+                cleaned.to_string()
+            }
+        }
+    };
+
+    Modifier::ContainerQuery {
+        name: c_name,
+        min_width,
+    }
+}
+
+/// 编译期生成的 Modifier 状态机/快速匹配器
+pub fn parse_modifier_fast(prefix: &str) -> Option<Modifier> {
+    // 1. 编译期静态 match 确切 Modifier (比二分查找更快的 Match DFA)
+    match prefix {
+"#,
+    );
+
+    for meta in modifiers {
+        let arm_expr = match meta.kind.as_str() {
+            "Child" => "Modifier::Child".to_string(),
+            "Descendant" => "Modifier::Descendant".to_string(),
+            "Dark" => "Modifier::Dark".to_string(),
+            "MediaBreakpoint" => format!("Modifier::MediaBreakpoint(\"{}\".to_string())", meta.key),
+            "PseudoClass" => format!("Modifier::PseudoClass(\"{}\".to_string())", meta.key),
+            "PseudoElement" => format!("Modifier::PseudoElement(\"{}\".to_string())", meta.key),
+            _ => continue,
+        };
+        let _ = writeln!(
+            code,
+            "        \"{}\" => return Some({}),",
+            meta.key, arm_expr
+        );
+    }
+
+    code.push_str(
+        r#"        _ => {}
+    }
+
+    // 2. 前缀状态匹配 (Prefix Dispatcher)
+    if let Some(spec) = prefix.strip_prefix('@') {
+        return Some(parse_container_query_fast(spec));
+    }
+
+    if let Some(rest) = prefix.strip_prefix("group-") {
+        let (state, name) = split_state_and_name_fast(rest);
+        return Some(Modifier::Group { state, name });
+    }
+
+    if let Some(rest) = prefix.strip_prefix("peer-") {
+        let (state, name) = split_state_and_name_fast(rest);
+        return Some(Modifier::Peer { state, name });
+    }
+
+    if let Some(rest) = prefix.strip_prefix("data-") {
+        let (key, value) = parse_bracket_kv_fast(rest);
+        return Some(Modifier::DataAttribute { key, value });
+    }
+
+    if let Some(rest) = prefix.strip_prefix("aria-") {
+        let (key, value) = parse_bracket_kv_fast(rest);
+        let value = value.or_else(|| Some("true".to_string()));
+        return Some(Modifier::AriaAttribute { key, value });
+    }
+
+    if let Some(rest) = prefix.strip_prefix("has-") {
+        return Some(Modifier::Has(format!("has-{}", rest)));
+    }
+
+    if prefix.starts_with('[') && prefix.ends_with(']') {
+        return Some(Modifier::CustomSelector(prefix[1..prefix.len() - 1].to_string()));
+    }
+
+    None
 }
 "#,
     );

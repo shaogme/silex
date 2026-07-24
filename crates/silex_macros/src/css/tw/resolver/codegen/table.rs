@@ -8,16 +8,6 @@ use crate::css::tw::resolver::make_rule;
 #[allow(unused_imports)]
 use proc_macro2::Span;
 
-#[allow(dead_code)]
-#[derive(Clone, Copy)]
-pub enum StaticVal {
-    Kw(&'static str),
-    Num(f64, &'static str),
-    Hex(&'static str),
-    Literal(&'static str),
-    RingShadow,
-}
-
 #[rustfmt::skip]
 pub const STATIC_CANDIDATE_UTILITIES: &[&str] = &[
     "-bg-conic-0",
@@ -92894,6 +92884,15 @@ pub static STATIC_RULES: &[(&str, &[(&str, StaticVal)])] = &[
         ("zoom", StaticVal::Num(95.0, "%")),
     ]),
 ];
+
+#[derive(Clone, Copy)]
+pub enum StaticVal {
+    Kw(&'static str),
+    Num(f64, &'static str),
+    Hex(&'static str),
+    Literal(&'static str),
+    RingShadow,
+}
 
 pub fn resolve_static_rule(
     modifiers: &[SpannedModifier],

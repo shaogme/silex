@@ -50,23 +50,12 @@ pub fn lookup_palette_color(color_name: &str, shade: &str) -> Option<Cow<'static
         }
     }
 
-    let shades_array = get_raw_palette(color_name)?;
-
-    // 1. 精准匹配标准 11 个预设阶梯
-    match shade {
-        "50" => return Some(Cow::Borrowed(shades_array[0])),
-        "100" => return Some(Cow::Borrowed(shades_array[1])),
-        "200" => return Some(Cow::Borrowed(shades_array[2])),
-        "300" => return Some(Cow::Borrowed(shades_array[3])),
-        "400" => return Some(Cow::Borrowed(shades_array[4])),
-        "500" => return Some(Cow::Borrowed(shades_array[5])),
-        "600" => return Some(Cow::Borrowed(shades_array[6])),
-        "700" => return Some(Cow::Borrowed(shades_array[7])),
-        "800" => return Some(Cow::Borrowed(shades_array[8])),
-        "900" => return Some(Cow::Borrowed(shades_array[9])),
-        "950" => return Some(Cow::Borrowed(shades_array[10])),
-        _ => {}
+    // 1. 精准匹配标准预设阶梯 (编译期 O(1) Match)
+    if let Some(hex) = super::codegen::palette::lookup_palette_color_fast(color_name, shade) {
+        return Some(Cow::Borrowed(hex));
     }
+
+    let shades_array = get_raw_palette(color_name)?;
 
     // 2. 解析为数字 (1~1000) 尝试 RGB 线性插值
     let target_shade = shade.parse::<u32>().ok()?;
@@ -222,13 +211,21 @@ pub fn parse_color_value(color_token: &str) -> Option<UtilityValue> {
     }
 
     // 4. Standard Palette colors: slate-900, indigo-600, etc. (Supports interpolation for non-standard shades like slate-850)
-    if let Some((color_name, shade)) = base.rsplit_once('-')
-        && let Some(hex_str) = lookup_palette_color(color_name, shade)
-    {
-        return match opacity {
-            Some(op) => Some(UtilityValue::ArbitraryLiteral(hex_to_rgba(&hex_str, op))),
-            None => Some(UtilityValue::HexColor(hex_str.into_owned())),
-        };
+    if let Some((color_name, shade)) = base.rsplit_once('-') {
+        if let Some(op) = opacity
+            && op.fract() == 0.0
+            && let Some(rgba) =
+                super::codegen::palette::lookup_palette_rgba_fast(color_name, shade, op as u32)
+        {
+            return Some(UtilityValue::ArbitraryLiteral(rgba.to_string()));
+        }
+
+        if let Some(hex_str) = lookup_palette_color(color_name, shade) {
+            return match opacity {
+                Some(op) => Some(UtilityValue::ArbitraryLiteral(hex_to_rgba(&hex_str, op))),
+                None => Some(UtilityValue::HexColor(hex_str.into_owned())),
+            };
+        }
     }
 
     // 5. Semantic CSS variable tokens: card, card-foreground, primary, border, etc.

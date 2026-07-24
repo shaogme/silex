@@ -2,7 +2,7 @@ use crate::css::tw::ast::{Modifier, SpannedModifier, UtilityRule, UtilityValue};
 use proc_macro2::Span;
 use syn::{Error, Result};
 
-use super::{kw, make_rule, DIVIDE_SELECTOR, RING_BOX_SHADOW};
+use super::{DIVIDE_SELECTOR, RING_BOX_SHADOW, kw, make_rule};
 
 /// 任意值与任意属性语法解析: `w-[12px]`, `bg-[red]`, `[--tw-ring-color:rgba(79,70,229,.2)]`, `[color:red]`
 pub fn parse_arbitrary_syntax(token: &str) -> Option<(&str, &str)> {

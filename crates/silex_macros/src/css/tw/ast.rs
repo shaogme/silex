@@ -120,7 +120,6 @@ impl SpannedModifier {
     }
 }
 
-
 impl PartialEq for SpannedModifier {
     fn eq(&self, other: &Self) -> bool {
         self.modifier == other.modifier

@@ -60,7 +60,7 @@ async function main() {
       sampleIndices.add(suffixes.length - 1); // 尾部后缀
 
       // 额外的常用代表性后缀（如果存在）
-      ['0', '1', '4', 'full', 'auto', 'px', 'sm', 'md', 'lg', 'xl', '50', '100', 'none', 'DEFAULT'].forEach(s => {
+      ['0', '1', '4', 'full', 'auto', 'px', 'sm', 'md', 'lg', 'xl', '50', '100', '900', 'none', 'DEFAULT'].forEach(s => {
         const idx = suffixes.indexOf(s);
         if (idx !== -1) sampleIndices.add(idx);
       });
@@ -74,6 +74,10 @@ async function main() {
       }
     }
   }
+
+  // 显式保证全类型代表性测试类名（如 ring 变量与特定 Hex 色阶）存在于测试集中
+  if (filteredClassSet.has('ring')) testCasesSet.add('ring');
+  if (filteredClassSet.has('bg-slate-900')) testCasesSet.add('bg-slate-900');
 
   const testCasesList = Array.from(testCasesSet).sort();
 

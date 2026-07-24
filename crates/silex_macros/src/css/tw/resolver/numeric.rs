@@ -3,7 +3,7 @@ use proc_macro2::Span;
 
 use super::{kw, make_rule, num, num_unitless, px, rem};
 
-use super::codegen::prefix_metadata::{lookup_prefix_meta, UnitKind};
+use super::codegen::prefix_metadata::{UnitKind, lookup_prefix_meta};
 
 #[inline]
 fn format_num_clean(v: f64) -> String {

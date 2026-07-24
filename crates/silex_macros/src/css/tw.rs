@@ -70,8 +70,8 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
         if rules.is_empty() {
             return Ok(String::new());
         }
-        use std::hash::{Hash, Hasher};
         use silex_hash::css::CssHasher;
+        use std::hash::{Hash, Hasher};
         let mut hasher1 = CssHasher::with_seed(0x9e3779b97f4a7c15);
         let mut hasher2 = CssHasher::with_seed(0xbf58476d1ce4e5b9);
         rules.hash(&mut hasher1);

@@ -864,6 +864,18 @@ fn extract_dynamic_value(
     })
 }
 
+fn get_compiler_targets() -> Targets {
+    Targets {
+        browsers: Some(lightningcss::targets::Browsers {
+            chrome: Some(80 << 16),
+            safari: Some(13 << 16),
+            firefox: Some(75 << 16),
+            ..Default::default()
+        }),
+        ..Targets::default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -938,17 +950,5 @@ mod tests {
                 .message
                 .contains("Potentially ambiguous token '?'")
         );
-    }
-}
-
-fn get_compiler_targets() -> Targets {
-    Targets {
-        browsers: Some(lightningcss::targets::Browsers {
-            chrome: Some(80 << 16),
-            safari: Some(13 << 16),
-            firefox: Some(75 << 16),
-            ..Default::default()
-        }),
-        ..Targets::default()
     }
 }

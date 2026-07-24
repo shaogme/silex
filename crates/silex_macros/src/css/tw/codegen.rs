@@ -12,7 +12,7 @@ use crate::css::{
 use proc_macro2::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
 use quote::quote;
 use std::collections::{HashMap, HashSet};
-use syn::{token::Semi, Result};
+use syn::{Result, token::Semi};
 
 /// 将解析后的 `Vec<UtilityRule>` 归一化转换构建为 `silex_macros::css::ast::CssBlock`
 pub fn build_css_block_from_rules(rules: Vec<UtilityRule>) -> Result<CssBlock> {
