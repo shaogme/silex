@@ -731,8 +731,8 @@ pub struct PropertyBitmask {
 }
 
 impl CssPropertyId {
+    #[rustfmt::skip]
     #[inline]
-    #[must_use]
     pub fn as_str(&self) -> &str {
         match self {
             Self::VarTwBackdropBlur => "--tw-backdrop-blur",
@@ -1457,7 +1457,7 @@ impl CssPropertyId {
         }
     }
 
-    #[inline]
+    #[rustfmt::skip]
     #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s {
@@ -2184,8 +2184,8 @@ impl CssPropertyId {
         }
     }
 
+    #[rustfmt::skip]
     #[inline]
-    #[must_use]
     pub fn bitmask(&self) -> PropertyBitmask {
         match self {
             Self::VarTwBackdropBlur => PropertyBitmask { group_id: 45, mask: 1 },

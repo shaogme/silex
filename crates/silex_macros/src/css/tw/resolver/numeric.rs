@@ -106,16 +106,18 @@ pub fn resolve_numeric_utility(
 
     // 2. Transform 变体 (rotate, scale, translate, skew)
     if prefix == "rotate" {
-        return Some(vec![make_rule(
-            mods,
-            "transform",
-            UtilityValue::ArbitraryLiteral(format!(
-                "rotate({}deg)",
-                if is_negative { -val_num } else { val_num }
-            )),
-            span,
-        )
-        .ok()?]);
+        return Some(vec![
+            make_rule(
+                mods,
+                "transform",
+                UtilityValue::ArbitraryLiteral(format!(
+                    "rotate({}deg)",
+                    if is_negative { -val_num } else { val_num }
+                )),
+                span,
+            )
+            .ok()?,
+        ]);
     }
     if prefix == "scale" || prefix == "scale-x" || prefix == "scale-y" {
         let fn_name = match prefix {
@@ -123,31 +125,35 @@ pub fn resolve_numeric_utility(
             "scale-y" => "scaleY",
             _ => "scale",
         };
-        return Some(vec![make_rule(
-            mods,
-            "transform",
-            UtilityValue::ArbitraryLiteral(format!(
-                "{}({})",
-                fn_name,
-                format_num_clean(val_num / 100.0)
-            )),
-            span,
-        )
-        .ok()?]);
+        return Some(vec![
+            make_rule(
+                mods,
+                "transform",
+                UtilityValue::ArbitraryLiteral(format!(
+                    "{}({})",
+                    fn_name,
+                    format_num_clean(val_num / 100.0)
+                )),
+                span,
+            )
+            .ok()?,
+        ]);
     }
     if prefix == "skew-x" || prefix == "skew-y" {
         let fn_name = if prefix == "skew-x" { "skewX" } else { "skewY" };
-        return Some(vec![make_rule(
-            mods,
-            "transform",
-            UtilityValue::ArbitraryLiteral(format!(
-                "{}({}deg)",
-                fn_name,
-                if is_negative { -val_num } else { val_num }
-            )),
-            span,
-        )
-        .ok()?]);
+        return Some(vec![
+            make_rule(
+                mods,
+                "transform",
+                UtilityValue::ArbitraryLiteral(format!(
+                    "{}({}deg)",
+                    fn_name,
+                    if is_negative { -val_num } else { val_num }
+                )),
+                span,
+            )
+            .ok()?,
+        ]);
     }
     if prefix == "translate-x" || prefix == "translate-y" {
         let fn_name = if prefix == "translate-x" {
@@ -162,13 +168,15 @@ pub fn resolve_numeric_utility(
         } else {
             format!("{}rem", format_num_clean(val_num * 0.25 * sign))
         };
-        return Some(vec![make_rule(
-            mods,
-            "transform",
-            UtilityValue::ArbitraryLiteral(format!("{}({})", fn_name, val_repr)),
-            span,
-        )
-        .ok()?]);
+        return Some(vec![
+            make_rule(
+                mods,
+                "transform",
+                UtilityValue::ArbitraryLiteral(format!("{}({})", fn_name, val_repr)),
+                span,
+            )
+            .ok()?,
+        ]);
     }
     if prefix.starts_with("slide-in-from-") {
         let rem_val = val_num * 0.25;
@@ -177,13 +185,15 @@ pub fn resolve_numeric_utility(
         } else {
             format!("{}rem", format_num_clean(rem_val))
         };
-        return Some(vec![make_rule(
-            mods,
-            meta.target_props[0],
-            UtilityValue::ArbitraryLiteral(val_repr),
-            span,
-        )
-        .ok()?]);
+        return Some(vec![
+            make_rule(
+                mods,
+                meta.target_props[0],
+                UtilityValue::ArbitraryLiteral(val_repr),
+                span,
+            )
+            .ok()?,
+        ]);
     }
 
     // 3. 通用单位元数据求值 (Generic Unit Evaluation)

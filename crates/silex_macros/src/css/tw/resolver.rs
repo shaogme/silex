@@ -66,7 +66,7 @@ impl IntoCssPropertyId for CssPropertyId {
     }
 }
 
-impl<'a> IntoCssPropertyId for &'a str {
+impl IntoCssPropertyId for &str {
     #[inline]
     fn into_css_property_id(self) -> StdResult<CssPropertyId, Self> {
         CssPropertyId::parse(self).ok_or(self)
@@ -76,7 +76,7 @@ impl<'a> IntoCssPropertyId for &'a str {
 impl<'a> IntoCssPropertyId for &'a &'a str {
     #[inline]
     fn into_css_property_id(self) -> StdResult<CssPropertyId, Self> {
-        CssPropertyId::parse(*self).ok_or(self)
+        CssPropertyId::parse(self).ok_or(self)
     }
 }
 
@@ -114,14 +114,15 @@ pub fn make_rule<P>(
 where
     P: IntoCssPropertyId + Display,
 {
-    let css_property = prop
-        .into_css_property_id()
-        .map_err(|unsupported| {
-            Error::new(
-                span,
-                format!("CSS Property '{}' is not registered in CssPropertyId table", unsupported),
-            )
-        })?;
+    let css_property = prop.into_css_property_id().map_err(|unsupported| {
+        Error::new(
+            span,
+            format!(
+                "CSS Property '{}' is not registered in CssPropertyId table",
+                unsupported
+            ),
+        )
+    })?;
 
     Ok(UtilityRule {
         modifiers: modifiers.into_modifier_list(),

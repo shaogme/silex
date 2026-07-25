@@ -2,7 +2,9 @@ use crate::css::{
     ast::{CssAtRule, CssBlock, CssDeclaration, CssNested, CssRule},
     config::get_config,
     tw::{
-        ast::{Modifier, ModifierList, SpannedModifier, TwInput, TwSegment, UtilityRule, UtilityValue},
+        ast::{
+            Modifier, ModifierList, SpannedModifier, TwInput, TwSegment, UtilityRule, UtilityValue,
+        },
         resolver::codegen::{
             keyframes::lookup_keyframe_meta, modifiers::lookup_modifier_meta,
             property_id::CssPropertyId,
@@ -322,10 +324,7 @@ fn convert_rule_to_declaration(rule: &UtilityRule) -> CssRule {
     })
 }
 
-fn build_modifier_rule(
-    modifiers: ModifierList,
-    rules: Vec<UtilityRule>,
-) -> Result<CssRule> {
+fn build_modifier_rule(modifiers: ModifierList, rules: Vec<UtilityRule>) -> Result<CssRule> {
     let mut inner_declarations = Vec::new();
     for rule in rules {
         inner_declarations.push(convert_rule_to_declaration(&rule));
@@ -798,9 +797,11 @@ mod tests {
         let has_base = deduped
             .iter()
             .any(|r| r.modifiers.is_empty() && r.css_property == CssPropertyId::Transform);
-        let has_dark = deduped
-            .iter()
-            .any(|r| r.modifiers.len() == 1 && r.modifiers[0] == Modifier::Dark && r.css_property == CssPropertyId::Transform);
+        let has_dark = deduped.iter().any(|r| {
+            r.modifiers.len() == 1
+                && r.modifiers[0] == Modifier::Dark
+                && r.css_property == CssPropertyId::Transform
+        });
         assert!(has_base && has_dark);
     }
 

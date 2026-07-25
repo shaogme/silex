@@ -87,7 +87,11 @@ pub fn push_rules_array(
         for (prop, val) in rules {
             let static_val_str = parse_val_to_static_val(val, &mut used);
             let prop_variant = to_pascal_case(prop);
-            let _ = writeln!(code, "        (CssPropertyId::{}, {}),", prop_variant, static_val_str);
+            let _ = writeln!(
+                code,
+                "        (CssPropertyId::{}, {}),",
+                prop_variant, static_val_str
+            );
         }
         code.push_str("    ]),\n");
     }
@@ -116,7 +120,11 @@ pub fn push_static_val_enum(code: &mut String, used: &UsedStaticValKinds) {
     code.push_str("}\n\n");
 }
 
-pub fn push_resolve_static_rule_fn(code: &mut String, rules_var_name: &str, used: &UsedStaticValKinds) {
+pub fn push_resolve_static_rule_fn(
+    code: &mut String,
+    rules_var_name: &str,
+    used: &UsedStaticValKinds,
+) {
     let _ = writeln!(
         code,
         r#"pub fn resolve_static_rule(
@@ -154,7 +162,7 @@ pub fn push_resolve_static_rule_fn(code: &mut String, rules_var_name: &str, used
         r#"        };
         rules.push(make_rule(
             if modifiers.is_empty() { smallvec::SmallVec::new() } else { modifiers.iter().cloned().collect() },
-            prop.clone(),
+            *prop,
             uval,
             span,
         ).ok()?);

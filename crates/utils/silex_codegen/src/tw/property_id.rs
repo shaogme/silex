@@ -1,8 +1,8 @@
+use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write,
 };
-use serde_json::Value;
 
 use super::{palette::ColorShadeInfo, resolver::resolve_css_rules};
 
@@ -267,8 +267,8 @@ pub fn generate_property_id_code(
     code.push_str("}\n\n");
 
     code.push_str("impl CssPropertyId {\n");
+    code.push_str("    #[rustfmt::skip]\n");
     code.push_str("    #[inline]\n");
-    code.push_str("    #[must_use]\n");
     code.push_str("    pub fn as_str(&self) -> &str {\n");
     code.push_str("        match self {\n");
     for prop in &props_set {
@@ -278,7 +278,7 @@ pub fn generate_property_id_code(
     code.push_str("        }\n");
     code.push_str("    }\n\n");
 
-    code.push_str("    #[inline]\n");
+    code.push_str("    #[rustfmt::skip]\n");
     code.push_str("    #[must_use]\n");
     code.push_str("    pub fn parse(s: &str) -> Option<Self> {\n");
     code.push_str("        match s {\n");
@@ -290,8 +290,8 @@ pub fn generate_property_id_code(
     code.push_str("        }\n");
     code.push_str("    }\n\n");
 
+    code.push_str("    #[rustfmt::skip]\n");
     code.push_str("    #[inline]\n");
-    code.push_str("    #[must_use]\n");
     code.push_str("    pub fn bitmask(&self) -> PropertyBitmask {\n");
     code.push_str("        match self {\n");
     for prop in &props_set {

@@ -219,7 +219,9 @@ pub fn parse_modifier_fast(prefix: &str) -> Option<Modifier> {
     }
 
     if prefix.starts_with('[') && prefix.ends_with(']') {
-        return Some(Modifier::CustomSelector(prefix[1..prefix.len() - 1].to_string()));
+        return Some(Modifier::CustomSelector(
+            prefix[1..prefix.len() - 1].to_string(),
+        ));
     }
 
     None

@@ -2,8 +2,8 @@ use crate::css::tw::ast::{Modifier, SpannedModifier, UtilityRule, UtilityValue};
 use proc_macro2::Span;
 use syn::{Error, Result};
 
-use super::{DIVIDE_SELECTOR, RING_BOX_SHADOW, kw, make_rule};
 use super::codegen::prefix_metadata::lookup_prefix_meta;
+use super::{DIVIDE_SELECTOR, RING_BOX_SHADOW, kw, make_rule};
 
 /// 任意值与任意属性语法解析: `w-[12px]`, `bg-[red]`, `[--tw-ring-color:rgba(79,70,229,.2)]`, `[color:red]`
 pub fn parse_arbitrary_syntax(token: &str) -> Option<(&str, &str)> {
@@ -125,27 +125,36 @@ pub fn resolve_arbitrary(
     // 2. 处理带有前缀的任意值语法 `w-[12px]`, `ring-[rgba(79,70,229,.2)]`, `bg-[rgba(79,70,229,.2)]`
     let clean_prefix = prefix.strip_suffix('-').unwrap_or(prefix);
 
-    let (target_props, is_divide, value_wrapper) = if let Some(p) = super::color_prefix_to_prop(clean_prefix) {
-        (vec![p], clean_prefix == "divide", None)
-    } else if clean_prefix == "ring" {
-        let is_length = norm_val.ends_with("px")
-            || norm_val.ends_with("rem")
-            || norm_val.ends_with("em")
-            || norm_val.parse::<f64>().is_ok();
-        let prop = if is_length { "--tw-ring-width" } else { "--tw-ring-color" };
-        (vec![prop], false, None)
-    } else if clean_prefix == "ring-offset" {
-        let is_length = norm_val.ends_with("px")
-            || norm_val.ends_with("rem")
-            || norm_val.ends_with("em")
-            || norm_val.parse::<f64>().is_ok();
-        let prop = if is_length { "--tw-ring-offset-width" } else { "--tw-ring-offset-color" };
-        (vec![prop], false, None)
-    } else if let Some(meta) = lookup_prefix_meta(clean_prefix) {
-        (meta.target_props.to_vec(), false, meta.value_wrapper)
-    } else {
-        (vec![clean_prefix], false, None)
-    };
+    let (target_props, is_divide, value_wrapper) =
+        if let Some(p) = super::color_prefix_to_prop(clean_prefix) {
+            (vec![p], clean_prefix == "divide", None)
+        } else if clean_prefix == "ring" {
+            let is_length = norm_val.ends_with("px")
+                || norm_val.ends_with("rem")
+                || norm_val.ends_with("em")
+                || norm_val.parse::<f64>().is_ok();
+            let prop = if is_length {
+                "--tw-ring-width"
+            } else {
+                "--tw-ring-color"
+            };
+            (vec![prop], false, None)
+        } else if clean_prefix == "ring-offset" {
+            let is_length = norm_val.ends_with("px")
+                || norm_val.ends_with("rem")
+                || norm_val.ends_with("em")
+                || norm_val.parse::<f64>().is_ok();
+            let prop = if is_length {
+                "--tw-ring-offset-width"
+            } else {
+                "--tw-ring-offset-color"
+            };
+            (vec![prop], false, None)
+        } else if let Some(meta) = lookup_prefix_meta(clean_prefix) {
+            (meta.target_props.to_vec(), false, meta.value_wrapper)
+        } else {
+            (vec![clean_prefix], false, None)
+        };
 
     let target_mods = if is_divide {
         [
