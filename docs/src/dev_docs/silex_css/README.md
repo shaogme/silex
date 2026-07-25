@@ -36,7 +36,7 @@ src/
 ├── runtime/
 │   ├── registry.rs     // 全局样式表注册表 (Static & Document Registry)
 │   └── dynamic.rs      // 动态样式状态管理与弱引用 GC
-└── properties.rs       // 自动生成的属性宏定义 (由编译工具产出)
+└── codegen.rs          // 自动生成的代码产物入口 (codegen/ 子模块)
 ```
 
 ### 核心组件关系

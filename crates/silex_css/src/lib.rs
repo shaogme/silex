@@ -1,6 +1,6 @@
 pub mod builder;
 pub mod class;
-pub mod properties;
+pub mod codegen;
 pub mod runtime;
 pub mod theme;
 #[cfg(feature = "tw")]
@@ -22,6 +22,8 @@ pub mod prelude {
     pub use crate::types::*;
 }
 
+pub use types::CssProperty;
+pub use codegen::properties;
 pub use class::IntoClass;
 pub use runtime::{
     DynamicCss, DynamicStyleManager, inject_managed_dynamic_style, inject_style,
@@ -29,5 +31,3 @@ pub use runtime::{
 };
 #[cfg(feature = "tw")]
 pub use tw::VariantSchema;
-pub use types::CssProperty;
-

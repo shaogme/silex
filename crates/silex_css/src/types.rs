@@ -182,6 +182,7 @@ pub fn css_var(name: impl Display) -> CssVar<()> {
 // 关键字 Enum 自动化
 // ==========================================
 
+#[macro_export]
 macro_rules! define_css_enum {
     (ColorKeyword ($($prop:path),*) $rest:tt) => {
         define_css_enum!(@base ColorKeyword $rest);
@@ -202,7 +203,7 @@ macro_rules! define_css_enum {
     };
 }
 
-include!("keywords_gen.rs");
+pub use crate::codegen::keywords_gen::*;
 
 // ==========================================
 // 属性定义与基础约束自动化
@@ -494,4 +495,4 @@ impl_into_rx_for_css!(
     GradientValue
 );
 
-register_generated_keywords!(impl_into_rx_for_css);
+crate::register_generated_keywords!(impl_into_rx_for_css);

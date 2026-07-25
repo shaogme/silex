@@ -32,6 +32,9 @@ pub fn generate_properties_macro(props: &[ProcessedProp]) -> String {
 pub fn generate_keywords_code(props: &[ProcessedProp]) -> String {
     let mut code = String::new();
     code.push_str("// 自动生成的 CSS 关键字 Enums\n\n");
+    code.push_str("use crate::define_css_enum;\n");
+    code.push_str("use crate::types::{Auto, ValidFor, props};\n");
+    code.push_str("use std::fmt::{Display, Formatter, Result};\n\n");
 
     let mut keyword_types = Vec::new();
 
@@ -72,6 +75,7 @@ pub fn generate_keywords_code(props: &[ProcessedProp]) -> String {
     }
 
     // Generate a helper macro to implement traits for all keywords
+    code.push_str("#[macro_export]\n");
     code.push_str("macro_rules! register_generated_keywords {\n");
     code.push_str("    ($callback:ident) => {\n");
     code.push_str("        $callback! {\n");

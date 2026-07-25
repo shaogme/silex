@@ -1917,3 +1917,4 @@ pub enum StaticVal {
     Literal(&'static str),
     RingShadow,
 }
+
