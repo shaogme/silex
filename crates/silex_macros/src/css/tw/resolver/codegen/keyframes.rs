@@ -43,8 +43,6 @@ pub static KEYFRAME_TABLE: &[KeyframeMeta] = &[
 
 /// 根据动画 keyframe 名称二分查找关键帧元数据配置
 pub fn lookup_keyframe_meta(name: &str) -> Option<&'static KeyframeMeta> {
-    let idx = KEYFRAME_TABLE
-        .binary_search_by_key(&name, |k| k.name)
-        .ok()?;
+    let idx = KEYFRAME_TABLE.binary_search_by_key(&name, |k| k.name).ok()?;
     Some(&KEYFRAME_TABLE[idx])
 }

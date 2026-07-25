@@ -1,5 +1,9 @@
 // 自动生成的 CSS 关键字 Enums
 
+use crate::define_css_enum;
+use crate::types::{Auto, ValidFor, props};
+use std::fmt::{Display, Formatter, Result};
+
 define_css_enum!(WebkitLineClampKeyword (props::WebkitLineClamp) {
     None => "none",
 });
@@ -8731,6 +8735,7 @@ define_css_enum!(ZoomKeyword (props::Zoom) {
     Reset => "reset",
 });
 
+#[macro_export]
 macro_rules! register_generated_keywords {
     ($callback:ident) => {
         $callback! {

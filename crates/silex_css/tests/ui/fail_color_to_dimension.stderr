@@ -448,7 +448,7 @@ note: required by a bound in `silex_css::builder::Style::border_left_width`
   | for_all_properties!(generate_builder_methods);
   | --------------------------------------------- in this macro invocation
   |
- ::: src/properties.rs
+ ::: src/codegen/properties.rs
   |
   |             (border_left_width, "border-left-width", BorderLeftWidth, Dimension),
   |              ----------------- required by a bound in this associated function

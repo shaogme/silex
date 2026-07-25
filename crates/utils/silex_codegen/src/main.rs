@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             current_dir.join("crates/utils/silex_codegen/data/mdn_css_properties.json"),
             current_dir.join("crates/utils/silex_codegen/data/mdn_css_syntaxes.json"),
             current_dir.join("crates/silex_html/src/tags"),
-            current_dir.join("crates/silex_css/src"),
+            current_dir.join("crates/silex_css/src/codegen"),
             current_dir.join("crates/silex_macros/src/css/tw/resolver/codegen"),
         )
     } else if current_dir.ends_with("silex_codegen") {
@@ -53,7 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             current_dir.join("data/mdn_css_properties.json"),
             current_dir.join("data/mdn_css_syntaxes.json"),
             current_dir.join("../../silex_html/src/tags"),
-            current_dir.join("../../silex_css/src"),
+            current_dir.join("../../silex_css/src/codegen"),
             current_dir.join("../../silex_macros/src/css/tw/resolver/codegen"),
         )
     } else {

@@ -13,7 +13,7 @@
 | `src/theme.rs` | 提供主题变量注入、全局主题管理及增量更新。支持宏驱动的主题结构体与常量生成。 |
 | `src/types/` | 模块化的类型系统，包含单位 (`units.rs`)、计算 (`calc.rs`)、复合属性 (`shorthands.rs`)、渐变 (`gradients.rs`) 及**复杂 DSL (`complex.rs`)**。 |
 | `src/types.rs` | 类型系统入口，定义核心验证 Trait `ValidFor` 并整合属性注册。**包含泛型 `CssVar<T>` 与响应式绑定**。 |
-| `src/properties.rs` | 自动生成的 CSS 全量属性定义与方法宏映射。 |
+| `src/codegen/` | 自动生成的 CSS 全量属性定义与关键字枚举产物。 |
 | `src/macros/` | 提供 `theme!` 等核心宏，用于生成主题结构体、补丁及强类型变量。 |
 
 ## 2. 核心验证系统 (Type-Safe Validation)
