@@ -72,8 +72,10 @@ pub mod prelude {
     pub use crate::flow::Switch;
     pub use crate::router::Link;
     pub use silex_css::prelude::{
-        Style, VariantSchema, declare_variants, linear_gradient, radial_gradient,
+        Style, linear_gradient, radial_gradient,
     };
+    #[cfg(feature = "tw")]
+    pub use silex_css::prelude::{VariantSchema, declare_variants};
     pub use silex_dom::prelude::{ApplyAttributes, View, text};
     pub use silex_html::{Em, em};
     #[cfg(feature = "css")]
@@ -81,3 +83,4 @@ pub mod prelude {
     #[cfg(feature = "tw")]
     pub use silex_macros::{tw, tw_variants, tw_verbose};
 }
+

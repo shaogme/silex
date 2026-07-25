@@ -38,7 +38,7 @@ ref_str = "0.2"
 [features]
 default = ["css", "tw"]
 css = ["silex_macros/css"]
-tw = ["css", "silex_macros/tw"]
+tw = ["css", "silex_macros/tw", "silex_css/tw"]
 persistence = ["web-sys/Storage", "web-sys/StorageEvent"]
 json = ["dep:serde", "dep:serde_json"]
 net = [

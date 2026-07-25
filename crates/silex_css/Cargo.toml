@@ -24,5 +24,8 @@ web-sys = { workspace = true, features = ["CssStyleSheet", "CssRuleList"] }
 js-sys.workspace = true
 wasm-bindgen-futures.workspace = true
 
+[features]
+tw = []
+
 [dev-dependencies]
 trybuild = "1.0"

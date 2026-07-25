@@ -3,20 +3,23 @@ pub mod class;
 pub mod properties;
 pub mod runtime;
 pub mod theme;
+#[cfg(feature = "tw")]
+pub mod tw;
 pub mod types;
-pub mod variants;
 
 pub mod prelude {
     pub use crate::builder::{Style, sty};
     pub use crate::class::IntoClass;
     pub use crate::cx;
+    #[cfg(feature = "tw")]
     pub use crate::declare_variants;
     pub use crate::runtime::{DynamicCss, DynamicStyleManager, inject_style};
     pub use crate::theme::{
         ThemePatchToCss, ThemeVariables, set_global_theme, theme_patch, theme_variables,
     };
+    #[cfg(feature = "tw")]
+    pub use crate::tw::VariantSchema;
     pub use crate::types::*;
-    pub use crate::variants::VariantSchema;
 }
 
 pub use class::IntoClass;
@@ -24,5 +27,7 @@ pub use runtime::{
     DynamicCss, DynamicStyleManager, inject_managed_dynamic_style, inject_style,
     make_dynamic_val_for, make_property_val,
 };
+#[cfg(feature = "tw")]
+pub use tw::VariantSchema;
 pub use types::CssProperty;
-pub use variants::VariantSchema;
+

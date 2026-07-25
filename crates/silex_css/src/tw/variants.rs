@@ -153,7 +153,7 @@ macro_rules! declare_variants {
         }
 
         // D. 实现 VariantSchema Trait
-        impl $crate::variants::VariantSchema for $struct_name {
+        impl $crate::tw::variants::VariantSchema for $struct_name {
             type Config = Self;
 
             fn base(&self) -> &'static str {
@@ -222,3 +222,4 @@ mod tests {
         assert_eq!(v2, TestButtonVariant::Primary); // default
     }
 }
+
