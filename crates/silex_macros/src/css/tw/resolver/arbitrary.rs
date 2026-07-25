@@ -105,14 +105,14 @@ pub fn resolve_arbitrary(
                 UtilityValue::ArbitraryLiteral(val_str.to_string())
             };
 
-            let mut rules = vec![make_rule(modifiers.clone(), prop, value, span)];
+            let mut rules = vec![make_rule(modifiers.clone(), prop, value, span)?];
             if prop == "--tw-ring-color" {
                 rules.push(make_rule(
                     modifiers,
                     "box-shadow",
                     kw(RING_BOX_SHADOW),
                     span,
-                ));
+                )?);
             }
             return Ok(rules);
         }
@@ -181,31 +181,31 @@ pub fn resolve_arbitrary(
 
     if clean_prefix == "from" {
         return Ok(vec![
-            make_rule(target_mods.clone(), "--tw-gradient-from", value, span),
+            make_rule(target_mods.clone(), "--tw-gradient-from", value, span)?,
             make_rule(
                 target_mods.clone(),
                 "--tw-gradient-to",
                 kw("rgb(255 255 255 / 0)"),
                 span,
-            ),
+            )?,
             make_rule(
                 target_mods,
                 "--tw-gradient-stops",
                 kw("var(--tw-gradient-from), var(--tw-gradient-to)"),
                 span,
-            ),
+            )?,
         ]);
     }
 
     if clean_prefix == "via" {
         return Ok(vec![
-            make_rule(target_mods.clone(), "--tw-gradient-via", value, span),
+            make_rule(target_mods.clone(), "--tw-gradient-via", value, span)?,
             make_rule(
                 target_mods,
                 "--tw-gradient-stops",
                 kw("var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to)"),
                 span,
-            ),
+            )?,
         ]);
     }
 
@@ -215,7 +215,7 @@ pub fn resolve_arbitrary(
         if prop.starts_with("--tw-ring-") {
             has_ring_prop = true;
         }
-        rules.push(make_rule(target_mods.clone(), prop, value.clone(), span));
+        rules.push(make_rule(target_mods.clone(), prop, value.clone(), span)?);
     }
 
     if has_ring_prop {
@@ -224,7 +224,7 @@ pub fn resolve_arbitrary(
             "box-shadow",
             kw(RING_BOX_SHADOW),
             span,
-        ));
+        )?);
     }
 
     Ok(rules)

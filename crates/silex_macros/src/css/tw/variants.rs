@@ -184,33 +184,36 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
 
     let base_str = &input.base_str;
 
-    let var_decls: Vec<_> = input
-        .variants
-        .iter()
-        .map(|(var_name, opts)| {
-            let var_name_ident = format_ident!("{}", var_name);
-            let var_type_ident = format_ident!("TwVariant_{}", var_name);
-            let def_opt_str = input
-                .default_variants
-                .get(var_name)
-                .cloned()
-                .unwrap_or_else(|| opts.first().map(|(k, _)| k.clone()).unwrap_or_default());
-            let def_opt_ident = to_pascal_case(&def_opt_str, span);
+    let mut var_decls = Vec::with_capacity(input.variants.len());
+    for (var_name, opts) in &input.variants {
+        if opts.is_empty() {
+            return Err(syn::Error::new(
+                span,
+                format!("Variant '{}' must contain at least one option", var_name),
+            ));
+        }
+        let var_name_ident = format_ident!("{}", var_name);
+        let var_type_ident = format_ident!("TwVariant_{}", var_name);
+        let def_opt_str = input
+            .default_variants
+            .get(var_name)
+            .cloned()
+            .unwrap_or_else(|| opts.first().map(|(k, _)| k.clone()).unwrap_or_default());
+        let def_opt_ident = to_pascal_case(&def_opt_str, span);
 
-            let opt_entries = opts.iter().map(|(opt_name, opt_cls)| {
-                let opt_ident = to_pascal_case(opt_name, span);
-                quote! {
-                    #opt_ident => ::silex::macros::tw!(#opt_cls)
-                }
-            });
-
+        let opt_entries = opts.iter().map(|(opt_name, opt_cls)| {
+            let opt_ident = to_pascal_case(opt_name, span);
             quote! {
-                pub #var_name_ident : #var_type_ident [default = #def_opt_ident] = {
-                    #(#opt_entries),*
-                }
+                #opt_ident => ::silex::macros::tw!(#opt_cls)
             }
-        })
-        .collect();
+        });
+
+        var_decls.push(quote! {
+            pub #var_name_ident : #var_type_ident [default = #def_opt_ident] = {
+                #(#opt_entries),*
+            }
+        });
+    }
 
     let compound_entries: Vec<_> = input
         .compound_variants
@@ -315,3 +318,25 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
         }
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_empty_variant_options_error() {
+        let input = quote! {
+            base: "p-4",
+            variants: {
+                color: {}
+            }
+        };
+        let err = tw_variants_impl(input).unwrap_err();
+        assert!(
+            err.to_string().contains("must contain at least one option"),
+            "Unexpected error message: {}",
+            err
+        );
+    }
+}
+

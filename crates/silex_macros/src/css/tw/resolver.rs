@@ -110,22 +110,25 @@ pub fn make_rule<P>(
     prop: P,
     value: UtilityValue,
     span: Span,
-) -> UtilityRule
+) -> Result<UtilityRule>
 where
     P: IntoCssPropertyId + Display,
 {
     let css_property = prop
         .into_css_property_id()
-        .unwrap_or_else(|unsupported| {
-            panic!("CSS Property '{}' is not registered in CssPropertyId table", unsupported);
-        });
+        .map_err(|unsupported| {
+            Error::new(
+                span,
+                format!("CSS Property '{}' is not registered in CssPropertyId table", unsupported),
+            )
+        })?;
 
-    UtilityRule {
+    Ok(UtilityRule {
         modifiers: modifiers.into_modifier_list(),
         css_property,
         value,
         span,
-    }
+    })
 }
 
 /// 判断是否为 Marker Class（如 group, peer, @container, container 或 group/name, peer/name, @container/name, container/name）
@@ -203,8 +206,8 @@ fn resolve_pattern_utility(
                 "container-name",
                 UtilityValue::ArbitraryLiteral(c_name.to_string()),
                 span,
-            ),
-            make_rule(modifiers, "container-type", kw("inline-size"), span),
+            )?,
+            make_rule(modifiers, "container-type", kw("inline-size"), span)?,
         ]);
     }
 
@@ -224,7 +227,7 @@ fn resolve_pattern_utility(
                 "border-color",
                 UtilityValue::ThemeVar(theme_var.to_string(), opacity),
                 span,
-            )]);
+            )?]);
         }
         if prefix == "ring" {
             return Ok(vec![
@@ -233,8 +236,8 @@ fn resolve_pattern_utility(
                     "--tw-ring-color",
                     UtilityValue::ThemeVar(theme_var.to_string(), opacity),
                     span,
-                ),
-                make_rule(modifiers, "box-shadow", kw(RING_BOX_SHADOW), span),
+                )?,
+                make_rule(modifiers, "box-shadow", kw(RING_BOX_SHADOW), span)?,
             ]);
         }
         if prefix == "from" {
@@ -244,19 +247,19 @@ fn resolve_pattern_utility(
                     "--tw-gradient-from",
                     UtilityValue::ThemeVar(theme_var.to_string(), opacity),
                     span,
-                ),
+                )?,
                 make_rule(
                     modifiers.clone(),
                     "--tw-gradient-to",
                     kw("rgb(255 255 255 / 0)"),
                     span,
-                ),
+                )?,
                 make_rule(
                     modifiers,
                     "--tw-gradient-stops",
                     kw("var(--tw-gradient-from), var(--tw-gradient-to)"),
                     span,
-                ),
+                )?,
             ]);
         }
         if prefix == "via" {
@@ -266,13 +269,13 @@ fn resolve_pattern_utility(
                     "--tw-gradient-via",
                     UtilityValue::ThemeVar(theme_var.to_string(), opacity),
                     span,
-                ),
+                )?,
                 make_rule(
                     modifiers,
                     "--tw-gradient-stops",
                     kw("var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to)"),
                     span,
-                ),
+                )?,
             ]);
         }
         if let Some(prop) = color_prefix_to_prop(prefix) {
@@ -281,7 +284,7 @@ fn resolve_pattern_utility(
                 prop,
                 UtilityValue::ThemeVar(theme_var.to_string(), opacity),
                 span,
-            )]);
+            )?]);
         }
         return Err(Error::new(
             span,
@@ -291,7 +294,7 @@ fn resolve_pattern_utility(
 
     // 2. Standard Palette 色系与零分配 Hex / /alpha 颜色换算
     if let Some((prop, val)) = parse_color_utility(token) {
-        return Ok(vec![make_rule(modifiers, prop, val, span)]);
+        return Ok(vec![make_rule(modifiers, prop, val, span)?]);
     }
 
     // 3. Divide System: divide-x, divide-y, divide-x-2, divide-y-4, divide-solid, divide-dashed, divide-slate-200
@@ -308,41 +311,41 @@ fn resolve_pattern_utility(
         match rest {
             "x" => {
                 return Ok(vec![
-                    make_rule(c_mods.clone(), "border-left-width", px(1.0), span),
-                    make_rule(c_mods, "border-right-width", px(0.0), span),
+                    make_rule(c_mods.clone(), "border-left-width", px(1.0), span)?,
+                    make_rule(c_mods, "border-right-width", px(0.0), span)?,
                 ]);
             }
             "y" => {
                 return Ok(vec![
-                    make_rule(c_mods.clone(), "border-top-width", px(1.0), span),
-                    make_rule(c_mods, "border-bottom-width", px(0.0), span),
+                    make_rule(c_mods.clone(), "border-top-width", px(1.0), span)?,
+                    make_rule(c_mods, "border-bottom-width", px(0.0), span)?,
                 ]);
             }
-            "solid" => return Ok(vec![make_rule(c_mods, "border-style", kw("solid"), span)]),
-            "dashed" => return Ok(vec![make_rule(c_mods, "border-style", kw("dashed"), span)]),
-            "dotted" => return Ok(vec![make_rule(c_mods, "border-style", kw("dotted"), span)]),
-            "none" => return Ok(vec![make_rule(c_mods, "border-style", kw("none"), span)]),
+            "solid" => return Ok(vec![make_rule(c_mods, "border-style", kw("solid"), span)?]),
+            "dashed" => return Ok(vec![make_rule(c_mods, "border-style", kw("dashed"), span)?]),
+            "dotted" => return Ok(vec![make_rule(c_mods, "border-style", kw("dotted"), span)?]),
+            "none" => return Ok(vec![make_rule(c_mods, "border-style", kw("none"), span)?]),
             _ => {}
         }
 
         if let Some(val_str) = rest.strip_prefix("x-") {
             if let Ok(n) = val_str.parse::<f64>() {
                 return Ok(vec![
-                    make_rule(c_mods.clone(), "border-left-width", px(n), span),
-                    make_rule(c_mods, "border-right-width", px(0.0), span),
+                    make_rule(c_mods.clone(), "border-left-width", px(n), span)?,
+                    make_rule(c_mods, "border-right-width", px(0.0), span)?,
                 ]);
             }
         } else if let Some(val_str) = rest.strip_prefix("y-")
             && let Ok(n) = val_str.parse::<f64>()
         {
             return Ok(vec![
-                make_rule(c_mods.clone(), "border-top-width", px(n), span),
-                make_rule(c_mods, "border-bottom-width", px(0.0), span),
+                make_rule(c_mods.clone(), "border-top-width", px(n), span)?,
+                make_rule(c_mods, "border-bottom-width", px(0.0), span)?,
             ]);
         }
 
         if let Some(color_val) = parse_color_value(rest) {
-            return Ok(vec![make_rule(c_mods, "border-color", color_val, span)]);
+            return Ok(vec![make_rule(c_mods, "border-color", color_val, span)?]);
         }
     }
 
@@ -364,8 +367,8 @@ fn resolve_pattern_utility(
             if let Ok(n) = val_str.parse::<f64>() {
                 let rem_val = n * if is_negative { -0.25 } else { 0.25 };
                 return Ok(vec![
-                    make_rule(c_mods.clone(), "margin-left", rem(rem_val), span),
-                    make_rule(c_mods, "margin-right", px(0.0), span),
+                    make_rule(c_mods.clone(), "margin-left", rem(rem_val), span)?,
+                    make_rule(c_mods, "margin-right", px(0.0), span)?,
                 ]);
             }
         } else if let Some(val_str) = rest.strip_prefix("y-")
@@ -373,8 +376,8 @@ fn resolve_pattern_utility(
         {
             let rem_val = n * if is_negative { -0.25 } else { 0.25 };
             return Ok(vec![
-                make_rule(c_mods.clone(), "margin-top", rem(rem_val), span),
-                make_rule(c_mods, "margin-bottom", px(0.0), span),
+                make_rule(c_mods.clone(), "margin-top", rem(rem_val), span)?,
+                make_rule(c_mods, "margin-bottom", px(0.0), span)?,
             ]);
         }
     }
@@ -383,16 +386,16 @@ fn resolve_pattern_utility(
     if let Some(rest) = token.strip_prefix("ring-offset-") {
         if let Some(color_val) = parse_color_value(rest) {
             return Ok(vec![
-                make_rule(modifiers.clone(), "--tw-ring-offset-color", color_val, span),
-                make_rule(modifiers, "box-shadow", kw(RING_BOX_SHADOW), span),
+                make_rule(modifiers.clone(), "--tw-ring-offset-color", color_val, span)?,
+                make_rule(modifiers, "box-shadow", kw(RING_BOX_SHADOW), span)?,
             ]);
         }
     } else if let Some(rest) = token.strip_prefix("ring-")
         && let Some(color_val) = parse_color_value(rest)
     {
         return Ok(vec![
-            make_rule(modifiers.clone(), "--tw-ring-color", color_val, span),
-            make_rule(modifiers, "box-shadow", kw(RING_BOX_SHADOW), span),
+            make_rule(modifiers.clone(), "--tw-ring-color", color_val, span)?,
+            make_rule(modifiers, "box-shadow", kw(RING_BOX_SHADOW), span)?,
         ]);
     }
 
@@ -400,37 +403,37 @@ fn resolve_pattern_utility(
     if let Some(rest) = token.strip_prefix("from-") {
         if let Some(val) = parse_color_value(rest) {
             return Ok(vec![
-                make_rule(modifiers.clone(), "--tw-gradient-from", val, span),
+                make_rule(modifiers.clone(), "--tw-gradient-from", val, span)?,
                 make_rule(
                     modifiers.clone(),
                     "--tw-gradient-to",
                     kw("rgb(255 255 255 / 0)"),
                     span,
-                ),
+                )?,
                 make_rule(
                     modifiers,
                     "--tw-gradient-stops",
                     kw("var(--tw-gradient-from), var(--tw-gradient-to)"),
                     span,
-                ),
+                )?,
             ]);
         }
     } else if let Some(rest) = token.strip_prefix("via-") {
         if let Some(val) = parse_color_value(rest) {
             return Ok(vec![
-                make_rule(modifiers.clone(), "--tw-gradient-via", val, span),
+                make_rule(modifiers.clone(), "--tw-gradient-via", val, span)?,
                 make_rule(
                     modifiers,
                     "--tw-gradient-stops",
                     kw("var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to)"),
                     span,
-                ),
+                )?,
             ]);
         }
     } else if let Some(rest) = token.strip_prefix("to-")
         && let Some(val) = parse_color_value(rest)
     {
-        return Ok(vec![make_rule(modifiers, "--tw-gradient-to", val, span)]);
+        return Ok(vec![make_rule(modifiers, "--tw-gradient-to", val, span)?]);
     }
 
     // 7. Grid Spans & Line Clamp: col-span-2, col-start-3, col-end-4, row-span-2, line-clamp-2
@@ -441,7 +444,7 @@ fn resolve_pattern_utility(
                 "grid-column",
                 UtilityValue::ArbitraryLiteral(format!("span {} / span {}", n, n)),
                 span,
-            )]);
+            )?]);
         }
     } else if let Some(rest) = token.strip_prefix("col-start-") {
         if let Ok(n) = rest.parse::<f64>() {
@@ -450,7 +453,7 @@ fn resolve_pattern_utility(
                 "grid-column-start",
                 num_unitless(n),
                 span,
-            )]);
+            )?]);
         }
     } else if let Some(rest) = token.strip_prefix("col-end-") {
         if let Ok(n) = rest.parse::<f64>() {
@@ -459,7 +462,7 @@ fn resolve_pattern_utility(
                 "grid-column-end",
                 num_unitless(n),
                 span,
-            )]);
+            )?]);
         }
     } else if let Some(rest) = token.strip_prefix("row-span-") {
         if let Ok(n) = rest.parse::<usize>() {
@@ -468,7 +471,7 @@ fn resolve_pattern_utility(
                 "grid-row",
                 UtilityValue::ArbitraryLiteral(format!("span {} / span {}", n, n)),
                 span,
-            )]);
+            )?]);
         }
     } else if let Some(rest) = token.strip_prefix("row-start-") {
         if let Ok(n) = rest.parse::<f64>() {
@@ -477,7 +480,7 @@ fn resolve_pattern_utility(
                 "grid-row-start",
                 num_unitless(n),
                 span,
-            )]);
+            )?]);
         }
     } else if let Some(rest) = token.strip_prefix("row-end-") {
         if let Ok(n) = rest.parse::<f64>() {
@@ -486,21 +489,21 @@ fn resolve_pattern_utility(
                 "grid-row-end",
                 num_unitless(n),
                 span,
-            )]);
+            )?]);
         }
     } else if let Some(rest) = token.strip_prefix("line-clamp-")
         && let Ok(n) = rest.parse::<f64>()
     {
         return Ok(vec![
-            make_rule(modifiers.clone(), "overflow", kw("hidden"), span),
-            make_rule(modifiers.clone(), "display", kw("-webkit-box"), span),
+            make_rule(modifiers.clone(), "overflow", kw("hidden"), span)?,
+            make_rule(modifiers.clone(), "display", kw("-webkit-box"), span)?,
             make_rule(
                 modifiers.clone(),
                 "-webkit-box-orient",
                 kw("vertical"),
                 span,
-            ),
-            make_rule(modifiers, "-webkit-line-clamp", num_unitless(n), span),
+            )?,
+            make_rule(modifiers, "-webkit-line-clamp", num_unitless(n), span)?,
         ]);
     }
 

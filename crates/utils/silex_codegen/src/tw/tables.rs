@@ -157,7 +157,7 @@ pub fn push_resolve_static_rule_fn(code: &mut String, rules_var_name: &str, used
             prop.clone(),
             uval,
             span,
-        ));
+        ).ok()?);
     }
     Some(rules)
 }

@@ -92918,7 +92918,7 @@ pub fn resolve_static_rule(
             prop.clone(),
             uval,
             span,
-        ));
+        ).ok()?);
     }
     Some(rules)
 }

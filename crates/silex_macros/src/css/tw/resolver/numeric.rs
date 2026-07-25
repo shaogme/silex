@@ -1,6 +1,8 @@
 use crate::css::tw::ast::{SpannedModifier, UtilityRule, UtilityValue};
 use proc_macro2::Span;
 
+use syn::Result;
+
 use super::{kw, make_rule, num, num_unitless, px, rem};
 
 use super::codegen::prefix_metadata::{UnitKind, lookup_prefix_meta};
@@ -69,7 +71,8 @@ pub fn resolve_rounded_utility(
     let rules = props
         .iter()
         .map(|p| make_rule(mods.clone(), p, val.clone(), span))
-        .collect();
+        .collect::<Result<Vec<_>>>()
+        .ok()?;
     Some(rules)
 }
 
@@ -96,8 +99,8 @@ pub fn resolve_numeric_utility(
     // 1. Outline 特殊逻辑 (需追加 outline-style: solid)
     if prefix == "outline" && !is_fraction {
         return Some(vec![
-            make_rule(mods.clone(), "outline-style", kw("solid"), span),
-            make_rule(mods, "outline-width", px(val_num), span),
+            make_rule(mods.clone(), "outline-style", kw("solid"), span).ok()?,
+            make_rule(mods, "outline-width", px(val_num), span).ok()?,
         ]);
     }
 
@@ -111,7 +114,8 @@ pub fn resolve_numeric_utility(
                 if is_negative { -val_num } else { val_num }
             )),
             span,
-        )]);
+        )
+        .ok()?]);
     }
     if prefix == "scale" || prefix == "scale-x" || prefix == "scale-y" {
         let fn_name = match prefix {
@@ -128,7 +132,8 @@ pub fn resolve_numeric_utility(
                 format_num_clean(val_num / 100.0)
             )),
             span,
-        )]);
+        )
+        .ok()?]);
     }
     if prefix == "skew-x" || prefix == "skew-y" {
         let fn_name = if prefix == "skew-x" { "skewX" } else { "skewY" };
@@ -141,7 +146,8 @@ pub fn resolve_numeric_utility(
                 if is_negative { -val_num } else { val_num }
             )),
             span,
-        )]);
+        )
+        .ok()?]);
     }
     if prefix == "translate-x" || prefix == "translate-y" {
         let fn_name = if prefix == "translate-x" {
@@ -161,7 +167,8 @@ pub fn resolve_numeric_utility(
             "transform",
             UtilityValue::ArbitraryLiteral(format!("{}({})", fn_name, val_repr)),
             span,
-        )]);
+        )
+        .ok()?]);
     }
     if prefix.starts_with("slide-in-from-") {
         let rem_val = val_num * 0.25;
@@ -175,7 +182,8 @@ pub fn resolve_numeric_utility(
             meta.target_props[0],
             UtilityValue::ArbitraryLiteral(val_repr),
             span,
-        )]);
+        )
+        .ok()?]);
     }
 
     // 3. 通用单位元数据求值 (Generic Unit Evaluation)
@@ -207,7 +215,8 @@ pub fn resolve_numeric_utility(
         .target_props
         .iter()
         .map(|&p| make_rule(mods.clone(), p, val.clone(), span))
-        .collect();
+        .collect::<Result<Vec<_>>>()
+        .ok()?;
 
     Some(rules)
 }
