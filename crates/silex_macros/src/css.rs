@@ -17,18 +17,20 @@ use compiler::CssCompiler;
 use table::PropertyResolveResult;
 
 pub(crate) fn get_prop_type(prop: &str, span: Span) -> Result<TokenStream> {
+    let __silex = crate::crate_path::silex();
     match table::resolve_property_type(prop, span)? {
         PropertyResolveResult::Builtin(type_name) => {
             let ident = syn::Ident::new(&type_name, Span::call_site());
-            Ok(quote_spanned! { span => ::silex::css::types::props::#ident })
+            Ok(quote_spanned! { span => #__silex::css::types::props::#ident })
         }
         PropertyResolveResult::CustomVar => {
-            Ok(quote_spanned! { span => ::silex::css::types::props::Any })
+            Ok(quote_spanned! { span => #__silex::css::types::props::Any })
         }
     }
 }
 
 pub fn inject_css_impl(ts: TokenStream) -> Result<TokenStream> {
+    let __silex = crate::crate_path::silex();
     let span = Span::call_site();
     let compile_result = CssCompiler::compile_global(ts, span, false)?;
     let static_id = &compile_result.static_id;
@@ -42,10 +44,10 @@ pub fn inject_css_impl(ts: TokenStream) -> Result<TokenStream> {
             const __COMPONENT_CSS: &str = #component_css;
 
             if !__STATIC_CSS.is_empty() {
-                ::silex::css::inject_style(#static_id, __STATIC_CSS);
+                #__silex::css::inject_style(#static_id, __STATIC_CSS);
             }
             if !__COMPONENT_CSS.is_empty() {
-                ::silex::css::inject_style(#style_id, __COMPONENT_CSS);
+                #__silex::css::inject_style(#style_id, __COMPONENT_CSS);
             }
         }
     })
@@ -61,6 +63,7 @@ pub(crate) fn generate_css_output(
     compile_result: compiler::CssCompileResult,
     span: Span,
 ) -> Result<TokenStream> {
+    let __silex = crate::crate_path::silex();
     let style_inits = compile_result.generate_inits();
     let class_name = compile_result.class_name;
     let expressions = compile_result.expressions;
@@ -108,7 +111,7 @@ pub(crate) fn generate_css_output(
             let mut exprs = Vec::new();
             for (prop, expr) in &rule.expressions {
                 let prop_type = get_prop_type(prop, span)?;
-                exprs.push(quote! { ::silex::css::make_property_val::<#prop_type, _>(#expr) });
+                exprs.push(quote! { #__silex::css::make_property_val::<#prop_type, _>(#expr) });
             }
             rule_calls.push(quote! {
                 .with_rule(#template, ::std::vec![ #(#exprs),* ])
@@ -118,7 +121,7 @@ pub(crate) fn generate_css_output(
         Ok(quote! {
             {
                 #inits
-                ::silex::css::DynamicCss::new(#class_name)
+                #__silex::css::DynamicCss::new(#class_name)
                     #(#var_calls)*
                     #(#rule_calls)*
             }

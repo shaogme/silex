@@ -12,7 +12,7 @@ use smallvec::SmallVec;
 use syn::{Error, Result};
 
 use crate::css::tw::{
-    ast::{Modifier, ModifierList, SpannedModifier, UtilityRule, UtilityValue},
+    ast::{ModifierList, SpannedModifier, UtilityRule, UtilityValue},
     resolver::{
         arbitrary::{parse_arbitrary_syntax, resolve_arbitrary},
         codegen::{property_id::CssPropertyId, table::resolve_static_rule},
@@ -25,9 +25,9 @@ use crate::css::tw::{
 
 use silex_tw_core::prefix::{ColorPrefixRule, lookup_color_prefix};
 
-// ring 的 box-shadow 载体与 divide 的伴生选择器都由 `silex_tw_core` 定义，
-// 这里只是转出常量，避免宏侧再抄一份字面量。
-pub use silex_tw_core::{DIVIDE_SELECTOR, RING_BOX_SHADOW};
+// ring 的 box-shadow 载体由 `silex_tw_core` 定义，这里只是转出常量，
+// 避免宏侧再抄一份字面量。
+pub use silex_tw_core::RING_BOX_SHADOW;
 
 #[inline]
 pub(super) fn kw(s: &'static str) -> UtilityValue {
@@ -239,165 +239,12 @@ fn resolve_pattern_utility(
         return rules;
     }
 
-    // 3. Divide System 的尺寸与线型部分: divide-x, divide-y, divide-x-2, divide-y-4, divide-solid …
-    //    （`divide-<颜色>` 已由上一步统一处理）
-    if let Some(rest) = token.strip_prefix("divide-") {
-        let c_mods = [
-            modifiers.clone(),
-            vec![SpannedModifier::new(
-                Modifier::CustomSelector(DIVIDE_SELECTOR.into()),
-                span,
-            )],
-        ]
-        .concat();
-
-        match rest {
-            "x" => {
-                return Ok(vec![
-                    make_rule(c_mods.clone(), "border-left-width", px(1.0), span)?,
-                    make_rule(c_mods, "border-right-width", px(0.0), span)?,
-                ]);
-            }
-            "y" => {
-                return Ok(vec![
-                    make_rule(c_mods.clone(), "border-top-width", px(1.0), span)?,
-                    make_rule(c_mods, "border-bottom-width", px(0.0), span)?,
-                ]);
-            }
-            "solid" => return Ok(vec![make_rule(c_mods, "border-style", kw("solid"), span)?]),
-            "dashed" => return Ok(vec![make_rule(c_mods, "border-style", kw("dashed"), span)?]),
-            "dotted" => return Ok(vec![make_rule(c_mods, "border-style", kw("dotted"), span)?]),
-            "none" => return Ok(vec![make_rule(c_mods, "border-style", kw("none"), span)?]),
-            _ => {}
-        }
-
-        if let Some(val_str) = rest.strip_prefix("x-") {
-            if let Ok(n) = val_str.parse::<f64>() {
-                return Ok(vec![
-                    make_rule(c_mods.clone(), "border-left-width", px(n), span)?,
-                    make_rule(c_mods, "border-right-width", px(0.0), span)?,
-                ]);
-            }
-        } else if let Some(val_str) = rest.strip_prefix("y-")
-            && let Ok(n) = val_str.parse::<f64>()
-        {
-            return Ok(vec![
-                make_rule(c_mods.clone(), "border-top-width", px(n), span)?,
-                make_rule(c_mods, "border-bottom-width", px(0.0), span)?,
-            ]);
-        }
-    }
-
-    // 4. Space System: space-x-2, space-y-4, -space-x-2, -space-y-4
-    let is_negative = token.starts_with('-');
-    let search_token = if is_negative { &token[1..] } else { token };
-
-    if let Some(rest) = search_token.strip_prefix("space-") {
-        let c_mods = [
-            modifiers.clone(),
-            vec![SpannedModifier::new(
-                Modifier::CustomSelector(DIVIDE_SELECTOR.into()),
-                span,
-            )],
-        ]
-        .concat();
-
-        if let Some(val_str) = rest.strip_prefix("x-") {
-            if let Ok(n) = val_str.parse::<f64>() {
-                let rem_val = n * if is_negative { -0.25 } else { 0.25 };
-                return Ok(vec![
-                    make_rule(c_mods.clone(), "margin-left", rem(rem_val), span)?,
-                    make_rule(c_mods, "margin-right", px(0.0), span)?,
-                ]);
-            }
-        } else if let Some(val_str) = rest.strip_prefix("y-")
-            && let Ok(n) = val_str.parse::<f64>()
-        {
-            let rem_val = n * if is_negative { -0.25 } else { 0.25 };
-            return Ok(vec![
-                make_rule(c_mods.clone(), "margin-top", rem(rem_val), span)?,
-                make_rule(c_mods, "margin-bottom", px(0.0), span)?,
-            ]);
-        }
-    }
-
-    // 5. Grid Spans & Line Clamp: col-span-2, col-start-3, col-end-4, row-span-2, line-clamp-2
-    if let Some(rest) = token.strip_prefix("col-span-") {
-        if let Ok(n) = rest.parse::<usize>() {
-            return Ok(vec![make_rule(
-                modifiers,
-                "grid-column",
-                UtilityValue::ArbitraryLiteral(format!("span {} / span {}", n, n)),
-                span,
-            )?]);
-        }
-    } else if let Some(rest) = token.strip_prefix("col-start-") {
-        if let Ok(n) = rest.parse::<f64>() {
-            return Ok(vec![make_rule(
-                modifiers,
-                "grid-column-start",
-                num_unitless(n),
-                span,
-            )?]);
-        }
-    } else if let Some(rest) = token.strip_prefix("col-end-") {
-        if let Ok(n) = rest.parse::<f64>() {
-            return Ok(vec![make_rule(
-                modifiers,
-                "grid-column-end",
-                num_unitless(n),
-                span,
-            )?]);
-        }
-    } else if let Some(rest) = token.strip_prefix("row-span-") {
-        if let Ok(n) = rest.parse::<usize>() {
-            return Ok(vec![make_rule(
-                modifiers,
-                "grid-row",
-                UtilityValue::ArbitraryLiteral(format!("span {} / span {}", n, n)),
-                span,
-            )?]);
-        }
-    } else if let Some(rest) = token.strip_prefix("row-start-") {
-        if let Ok(n) = rest.parse::<f64>() {
-            return Ok(vec![make_rule(
-                modifiers,
-                "grid-row-start",
-                num_unitless(n),
-                span,
-            )?]);
-        }
-    } else if let Some(rest) = token.strip_prefix("row-end-") {
-        if let Ok(n) = rest.parse::<f64>() {
-            return Ok(vec![make_rule(
-                modifiers,
-                "grid-row-end",
-                num_unitless(n),
-                span,
-            )?]);
-        }
-    } else if let Some(rest) = token.strip_prefix("line-clamp-")
-        && let Ok(n) = rest.parse::<f64>()
-    {
-        return Ok(vec![
-            make_rule(modifiers.clone(), "overflow", kw("hidden"), span)?,
-            make_rule(modifiers.clone(), "display", kw("-webkit-box"), span)?,
-            make_rule(
-                modifiers.clone(),
-                "-webkit-box-orient",
-                kw("vertical"),
-                span,
-            )?,
-            make_rule(modifiers, "-webkit-line-clamp", num_unitless(n), span)?,
-        ]);
-    }
-
-    // 6. 任意值与动态表达式语法, 如 `w-[100px]` 或 `p-[$(pad_val)]`
+    // 3. 任意值与动态表达式语法, 如 `w-[100px]` 或 `p-[$(pad_val)]`
     if let Some((prefix, raw_val)) = parse_arbitrary_syntax(token) {
         return resolve_arbitrary(modifiers, prefix, raw_val, span);
     }
 
-    // 7. 交给 `silex_tw_core` 的完整解析器。
+    // 4. 交给 `silex_tw_core` 的完整解析器。
     //
     //    静态表只预计算了 `classes.json` 里那 22 879 个类名；`rounded-t-7`、`p-97`
     //    这类同样有规律、只是没被 Tailwind 列举出来的词条不在表里，但 core 解析得了。
@@ -408,12 +255,12 @@ fn resolve_pattern_utility(
         return rule_sets_to_rules(&modifiers, sets, span);
     }
 
-    // 8. 数值、分数 (1/2, 1/3) 与方向边距/定位 Utility 解析（core 未覆盖的规律）
+    // 5. 数值、分数 (1/2, 1/3) 与方向边距/定位 Utility 解析（core 未覆盖的规律）
     if let Some(rules) = resolve_numeric_utility(&modifiers, token, span) {
         return Ok(rules);
     }
 
-    // 9. Levenshtein 智能纠错与建议
+    // 6. Levenshtein 智能纠错与建议
     let suggestion = find_best_suggestion(token);
     let msg = match suggestion {
         Some(s) => format!(
@@ -665,14 +512,15 @@ mod tests {
         assert_eq!(rules[0].value, UtilityValue::Keyword("italic"));
 
         // 多列与分栏 Break 规则测试
+        // 列数与列宽都走 `columns` 简写，与 Tailwind 一致
         let rules = resolve_utility(vec![], "columns-4xl", span).unwrap();
         assert_eq!(rules.len(), 1);
-        assert_eq!(rules[0].css_property, "column-width");
+        assert_eq!(rules[0].css_property, "columns");
         assert_eq!(rules[0].value, UtilityValue::Numeric(56.0, "rem"));
 
         let rules = resolve_utility(vec![], "columns-2", span).unwrap();
         assert_eq!(rules.len(), 1);
-        assert_eq!(rules[0].css_property, "column-count");
+        assert_eq!(rules[0].css_property, "columns");
         assert_eq!(rules[0].value, UtilityValue::Numeric(2.0, ""));
 
         let rules = resolve_utility(vec![], "break-inside-avoid-flex", span).unwrap();

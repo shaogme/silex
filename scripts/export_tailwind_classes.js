@@ -30,9 +30,14 @@ async function main() {
   const filteredClassSet = await filterValidClasses(classSet, designSystem, 3000);
 
   // 6. 清理并排序类名列表
+  //
+  // 这里曾经整族剔除 `divide-*` / `space-*`：它们的产物落在伴生选择器上，
+  // 而当年的静态表只能表达"作用在元素自身的一串声明"。代价是这一族既不进静态表、
+  // 也不被 codegen 的属性登记与 lint 覆盖，`--tw-divide-x-reverse` 因此从未被登记进
+  // `CssPropertyId`，用户写 `divide-x-reverse` 会撞上 "not registered" 的内部错误。
+  // 静态表行现在带 `Option<&str>` 选择器字段（`placeholder-*` 已在用），不必再剔除。
   const classList = Array.from(filteredClassSet)
     .filter(cls => typeof cls === 'string' && cls.trim().length > 0)
-    .filter(cls => !cls.startsWith('space-') && !cls.startsWith('-space-') && !cls.startsWith('divide-') && !cls.startsWith('-divide-'))
     .sort();
 
   // 7. 提取与验证动态前缀及测试用例

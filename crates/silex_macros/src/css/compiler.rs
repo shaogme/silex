@@ -33,6 +33,7 @@ pub struct CssCompileResult {
 impl CssCompileResult {
     /// Generates TokenStream for injecting static and component CSS styles
     pub fn generate_inits(&self) -> TokenStream {
+        let __silex = crate::crate_path::silex();
         let static_id = &self.static_id;
         let static_css = &self.static_css;
         let style_id = &self.style_id;
@@ -40,10 +41,10 @@ impl CssCompileResult {
 
         quote::quote! {
             if !#static_css.is_empty() {
-                ::silex::css::inject_style(#static_id, #static_css);
+                #__silex::css::inject_style(#static_id, #static_css);
             }
             if !#component_css.is_empty() {
-                ::silex::css::inject_style(#style_id, #component_css);
+                #__silex::css::inject_style(#style_id, #component_css);
             }
         }
     }

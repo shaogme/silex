@@ -179,6 +179,7 @@ fn to_pascal_case(s: &str, span: Span) -> Ident {
 ///
 /// 解析 CVA 风格 DSL 并展开为对 `declare_variants!` 声明式宏的调用及兼容 helper 方法。
 pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
+    let __silex = crate::crate_path::silex();
     let span = Span::call_site();
     let input: TwVariantsMacroInput = syn::parse2(ts)?;
 
@@ -204,7 +205,7 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
         let opt_entries = opts.iter().map(|(opt_name, opt_cls)| {
             let opt_ident = to_pascal_case(opt_name, span);
             quote! {
-                #opt_ident => ::silex::macros::tw!(#opt_cls)
+                #opt_ident => #__silex::macros::tw!(#opt_cls)
             }
         });
 
@@ -230,7 +231,7 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
 
             let cmp_cls = &cv.class_str;
             quote! {
-                ( #(#cond_checks),* ) => ::silex::macros::tw!(#cmp_cls)
+                ( #(#cond_checks),* ) => #__silex::macros::tw!(#cmp_cls)
             }
         })
         .collect();
@@ -287,9 +288,9 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
 
     Ok(quote! {
         {
-            ::silex::css::declare_variants! {
+            #__silex::css::declare_variants! {
                 pub struct TwVariantsHelper {
-                    base: ::silex::macros::tw!(#base_str),
+                    base: #__silex::macros::tw!(#base_str),
                     variants: {
                         #(#var_decls),*
                     },
@@ -303,14 +304,14 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
                     let config = Self {
                         #(#get_inits),*
                     };
-                    ::silex::css::cx!(config)
+                    #__silex::css::cx!(config)
                 }
 
                 pub fn get_opt(&self, #(#get_opt_params),*) -> ::std::string::String {
                     let config = Self {
                         #(#get_opt_inits),*
                     };
-                    ::silex::css::cx!(config)
+                    #__silex::css::cx!(config)
                 }
             }
 

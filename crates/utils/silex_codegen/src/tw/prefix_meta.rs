@@ -5,6 +5,13 @@ pub struct PrefixMetaJson {
     pub target_props: Vec<String>,
     pub unit_kind: String,
     pub value_wrapper: Option<String>,
+    /// 命中该前缀时附带产出的固定声明 `[属性, 值]`（`outline-*` 的 `outline-style: solid`）。
+    ///
+    /// 报告 §3.2 点名的"需要附带固定伴生声明、只能硬编码"就是这一项：
+    /// 此前 `numeric.rs` 里有一条 `if prefix == "outline"` 的特判，任意值路径
+    /// （`outline-[3px]`）还漏了它。现在降级成数据，两条路径共读。
+    #[serde(default)]
+    pub companions: Vec<[String; 2]>,
 }
 
 /// `@property` 描述符成员，永远不应作为工具类的目标属性出现
@@ -29,6 +36,26 @@ pub fn validate_prefix_metadata(
     for (prefix, meta) in prefix_metadata {
         if meta.target_props.is_empty() {
             errors.push(format!("'{}': target_props 为空", prefix));
+        }
+
+        for [prop, val] in &meta.companions {
+            if FORBIDDEN_TARGET_PROPS.contains(&prop.as_str()) {
+                errors.push(format!(
+                    "'{}': companions 含 at-rule 描述符 '{}'",
+                    prefix, prop
+                ));
+            }
+            if val.trim().is_empty() {
+                errors.push(format!("'{}': companion '{}' 的值为空", prefix, prop));
+            }
+            // Tailwind 的恒定伴生声明基本都是 `var(--tw-*)` 内部管道，silex 用 preflight
+            // 与自有的组合型属性机制覆盖了；照搬会产出解析不出值的声明。
+            if val.contains("var(--tw-") {
+                errors.push(format!(
+                    "'{}': companion '{}' 的值 '{}' 引用了 Tailwind 内部变量，不能直接照搬",
+                    prefix, prop, val
+                ));
+            }
         }
 
         for prop in &meta.target_props {
@@ -97,6 +124,10 @@ pub fn generate_prefix_metadata_code(prefix_metadata: &BTreeMap<String, PrefixMe
     code.push_str("    pub target_props: &'static [&'static str],\n");
     code.push_str("    pub unit_kind: UnitKind,\n");
     code.push_str("    pub value_wrapper: Option<&'static str>,\n");
+    code.push_str(
+        "    /// 命中该前缀时附带产出的固定声明（`outline-*` 的 `outline-style: solid`）\n",
+    );
+    code.push_str("    pub companions: &'static [(&'static str, &'static str)],\n");
     code.push_str("}\n\n");
 
     code.push_str("#[rustfmt::skip]\n");
@@ -113,10 +144,18 @@ pub fn generate_prefix_metadata_code(prefix_metadata: &BTreeMap<String, PrefixMe
             Some(w) => format!("Some(\"{}\")", w),
             None => "None".to_string(),
         };
+        let mut companions_expr = String::from("&[");
+        for (i, [prop, val]) in meta.companions.iter().enumerate() {
+            if i > 0 {
+                companions_expr.push_str(", ");
+            }
+            let _ = write!(companions_expr, "(\"{}\", \"{}\")", prop, val);
+        }
+        companions_expr.push(']');
         let _ = writeln!(
             code,
-            "], unit_kind: UnitKind::{}, value_wrapper: {} }},",
-            meta.unit_kind, wrapper_expr
+            "], unit_kind: UnitKind::{}, value_wrapper: {}, companions: {} }},",
+            meta.unit_kind, wrapper_expr, companions_expr
         );
     }
     code.push_str("];\n\n");

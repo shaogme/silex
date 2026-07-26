@@ -24,9 +24,10 @@ impl Parse for ClassItem {
 }
 
 pub fn classes_impl(input: TokenStream) -> Result<TokenStream> {
+    let __silex = crate::crate_path::silex();
     let items = Punctuated::<ClassItem, Token![,]>::parse_terminated.parse2(input)?;
     if items.is_empty() {
-        return Ok(quote! { ::silex::dom::attribute::AttributeGroup::default() });
+        return Ok(quote! { #__silex::dom::attribute::AttributeGroup::default() });
     }
 
     let expanded = items.into_iter().map(|item| {
@@ -34,8 +35,8 @@ pub fn classes_impl(input: TokenStream) -> Result<TokenStream> {
             ClassItem::Simple(e) => quote! { #e },
             ClassItem::Conditional(cls, cond) => quote! { (#cls, #cond) },
         };
-        quote! { ::silex::dom::attribute::ApplyToDom::into_op(#val, ::silex::dom::attribute::ApplyTarget::Class) }
+        quote! { #__silex::dom::attribute::ApplyToDom::into_op(#val, #__silex::dom::attribute::ApplyTarget::Class) }
     });
 
-    Ok(quote! { ::silex::dom::attribute::AttributeGroup(vec![ #(#expanded),* ]) })
+    Ok(quote! { #__silex::dom::attribute::AttributeGroup(vec![ #(#expanded),* ]) })
 }

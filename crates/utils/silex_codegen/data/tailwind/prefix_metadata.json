@@ -604,7 +604,13 @@
     "target_props": [
       "outline-width"
     ],
-    "unit_kind": "Pixel"
+    "unit_kind": "Pixel",
+    "companions": [
+      [
+        "outline-style",
+        "solid"
+      ]
+    ]
   },
   "padding": {
     "target_props": [
@@ -701,7 +707,8 @@
     "target_props": [
       "--tw-enter-translate-x"
     ],
-    "unit_kind": "RemScale"
+    "unit_kind": "RemScale",
+    "value_wrapper": "-{}"
   },
   "slide-in-from-right": {
     "target_props": [
@@ -713,7 +720,8 @@
     "target_props": [
       "--tw-enter-translate-y"
     ],
-    "unit_kind": "RemScale"
+    "unit_kind": "RemScale",
+    "value_wrapper": "-{}"
   },
   "slide-out-to-bottom": {
     "target_props": [

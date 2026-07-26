@@ -57,34 +57,7 @@ pub fn resolve_numeric_utility(
     let mods = modifiers.to_vec();
     let sign = if is_negative { -1.0 } else { 1.0 };
 
-    // 1. Outline 特殊逻辑 (需追加 outline-style: solid)
-    if prefix == "outline" && !is_fraction {
-        return Some(vec![
-            make_rule(mods.clone(), "outline-style", kw("solid"), span).ok()?,
-            make_rule(mods, "outline-width", px(val_num), span).ok()?,
-        ]);
-    }
-
-    // 2. Enter/Exit 动画位移 (方向决定符号，无法由 UnitKind 表达)
-    if prefix.starts_with("slide-in-from-") {
-        let rem_val = val_num * 0.25;
-        let val_repr = if prefix.contains("-top") || prefix.contains("-left") {
-            format!("-{}rem", format_num_clean(rem_val))
-        } else {
-            format!("{}rem", format_num_clean(rem_val))
-        };
-        return Some(vec![
-            make_rule(
-                mods,
-                meta.target_props[0],
-                UtilityValue::ArbitraryLiteral(val_repr),
-                span,
-            )
-            .ok()?,
-        ]);
-    }
-
-    // 3. 通用单位元数据求值 (Generic Unit Evaluation)
+    // 1. 通用单位元数据求值 (Generic Unit Evaluation)
     let val = if is_fraction {
         num(val_num * 100.0 * sign, "%")
     } else {
@@ -108,8 +81,9 @@ pub fn resolve_numeric_utility(
         }
     };
 
-    // 4. 应用元数据声明的 value_wrapper（如 `transform: rotate({})`、`filter: blur({})`）
-    //    这是 wrapper 的唯一消费点，禁止再为个别前缀写硬编码特判。
+    // 2. 应用元数据声明的 value_wrapper（如 `transform: rotate({})`、`filter: blur({})`、
+    //    `slide-in-from-top` 的取反 `-{}`）。这是 wrapper 的唯一消费点，
+    //    禁止再为个别前缀写硬编码特判。
     let val = match meta.value_wrapper {
         Some(wrapper) => {
             UtilityValue::ArbitraryLiteral(wrapper.replace("{}", &utility_value_to_literal(&val)))
@@ -117,10 +91,16 @@ pub fn resolve_numeric_utility(
         None => val,
     };
 
+    // 3. 伴生声明（`outline-*` 的 `outline-style: solid`）同样来自元数据
     let rules = meta
         .target_props
         .iter()
         .map(|&p| make_rule(mods.clone(), p, val.clone(), span))
+        .chain(
+            meta.companions
+                .iter()
+                .map(|&(p, v)| make_rule(mods.clone(), p, kw(v), span)),
+        )
         .collect::<Result<Vec<_>>>()
         .ok()?;
 

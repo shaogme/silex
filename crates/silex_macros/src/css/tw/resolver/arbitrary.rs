@@ -168,13 +168,23 @@ pub fn resolve_arbitrary(
     };
     let size_path = |modifiers: &[SpannedModifier]| -> Option<Result<Vec<UtilityRule>>> {
         let meta = size_meta?;
-        Some(emit(
-            modifiers,
-            meta.target_props,
-            &norm_val,
-            meta.value_wrapper,
-            span,
-        ))
+        Some(
+            emit(
+                modifiers,
+                meta.target_props,
+                &norm_val,
+                meta.value_wrapper,
+                span,
+            )
+            // 伴生声明与数值路径共用同一份元数据——此前 `outline-[3px]` 漏了
+            // `outline-style: solid`，因为那条特判只写在 `numeric.rs` 里
+            .and_then(|mut rules| {
+                for &(prop, val) in meta.companions {
+                    rules.push(make_rule(modifiers.to_vec(), prop, kw(val), span)?);
+                }
+                Ok(rules)
+            }),
+        )
     };
 
     if color_first && let Some(rules) = color_path(&modifiers) {

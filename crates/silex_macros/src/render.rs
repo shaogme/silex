@@ -34,13 +34,14 @@ impl Parse for RenderInput {
 }
 
 pub fn render_impl(input: TokenStream2) -> Result<TokenStream2> {
+    let __silex = crate::crate_path::silex();
     let RenderInput { directives, body } = parse2(input)?;
     let mut result = quote! { move || { #(#body)* } };
     for directive in directives.into_iter().rev() {
         match directive {
             Directive::Scope => {
                 result = quote! {
-                    ::silex::dom::view::logic::ScopeView::new(#result)
+                    #__silex::dom::view::logic::ScopeView::new(#result)
                 };
             }
         }
