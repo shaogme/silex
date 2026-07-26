@@ -12,9 +12,10 @@ pub fn resolve_flex_grid_rules(class_name: &str) -> Option<Vec<(&'static str, Co
         "flex-wrap" => Some(cow![("flex-wrap", "wrap")]),
         "flex-wrap-reverse" => Some(cow![("flex-wrap", "wrap-reverse")]),
         "flex-nowrap" => Some(cow![("flex-wrap", "nowrap")]),
-        "flex-1" => Some(cow![("flex", "1 1 0%")]),
-        "flex-auto" => Some(cow![("flex", "1 1 auto")]),
-        "flex-initial" => Some(cow![("flex", "0 1 auto")]),
+        // `flex-1` 不在这里——它是 `flex-<数字>` 的一个实例，统一由下方数值分支求值，
+        // 免得同一语义又有两份定义（报告 §3.1 的同类隐患）
+        "flex-auto" => Some(cow![("flex", "auto")]),
+        "flex-initial" => Some(cow![("flex", "0 auto")]),
         "flex-none" => Some(cow![("flex", "none")]),
         "grow" => Some(cow![("flex-grow", "1")]),
         "grow-0" => Some(cow![("flex-grow", "0")]),
@@ -216,12 +217,15 @@ pub fn resolve_flex_grid_rules(class_name: &str) -> Option<Vec<(&'static str, Co
     }
 
     // Flex fractions & numbers (flex-1/2, flex-2, etc.)
+    //
+    // 数值必须先于长度判定：`flex-<数字>` 是无单位的 flex 简写（`flex-4` → `flex:4`），
+    // 而 `resolve_length_val` 会把 `4` 当成间距档位求成 `1rem`，产出 `flex:1 1 1rem`。
     if let Some(rest) = class_name.strip_prefix("flex-") {
+        if rest.parse::<u32>().is_ok() {
+            return Some(cow!(vec[("flex", rest.to_string())]));
+        }
         if let Some(val) = super::dynamic::resolve_length_val(rest) {
             return Some(cow!(vec[("flex", format!("1 1 {}", val))]));
-        }
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec[("flex", format!("{} {} 0%", n, n))]));
         }
     }
 

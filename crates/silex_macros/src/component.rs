@@ -3,6 +3,7 @@ use quote::{format_ident, quote};
 use syn::{FnArg, ItemFn, Pat};
 
 pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
+    let __silex = crate::crate_path::silex();
     let fn_name = input_fn.sig.ident.clone();
     let props_name = format_ident!("{}Props", fn_name);
     let hidden_name = format_ident!("__silex_render_{}", fn_name);
@@ -65,7 +66,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     hidden_fn.block.stmts = hidden_stmts;
 
     Ok(quote! {
-        #[derive(::silex::macros::PropsBuilder)]
+        #[derive(#__silex::macros::PropsBuilder)]
         #vis struct #props_name #impl_generics #where_clause {
             #(#field_defs,)*
         }

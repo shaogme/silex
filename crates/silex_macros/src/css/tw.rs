@@ -23,6 +23,7 @@ pub fn tw_verbose_impl(ts: TokenStream) -> Result<TokenStream> {
 }
 
 fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
+    let __silex = crate::crate_path::silex();
     let input_str = if verbose {
         ts.to_string()
     } else {
@@ -124,8 +125,8 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     Ok(quote! {
         {
             #(#inits_tokens)*
-            ::silex::core::rx!(move || {
-                ::silex::css::cx!(
+            #__silex::core::rx!(move || {
+                #__silex::css::cx!(
                     #(#cx_items),*
                 )
             })

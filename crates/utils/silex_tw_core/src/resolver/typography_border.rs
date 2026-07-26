@@ -233,22 +233,8 @@ pub fn resolve_typography_border_effect_rules(
             "0px 1px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 3px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1)), 0px 4px 8px var(--tw-text-shadow-color, rgba(0, 0, 0, 0.1))"
         )]),
 
-        // Divide Utilities
-        "divide-x" => Some(cow![
-            ("border-right-width", "0px"),
-            ("border-left-width", "1px")
-        ]),
-        "divide-y" => Some(cow![
-            ("border-bottom-width", "0px"),
-            ("border-top-width", "1px")
-        ]),
-        "divide-x-reverse" => Some(cow![("--tw-divide-x-reverse", "1")]),
-        "divide-y-reverse" => Some(cow![("--tw-divide-y-reverse", "1")]),
-        "divide-solid" => Some(cow![("border-style", "solid")]),
-        "divide-dashed" => Some(cow![("border-style", "dashed")]),
-        "divide-dotted" => Some(cow![("border-style", "dotted")]),
-        "divide-double" => Some(cow![("border-style", "double")]),
-        "divide-none" => Some(cow![("border-style", "none")]),
+        // `divide-*` 见 `resolver::between`——它的声明必须落在伴生选择器上，
+        // 这里的 `(属性, 值)` 表达不了，放在这儿就是一份不带选择器的错误副本
 
         // Inset Ring & Inset Shadow
         "inset-ring" => Some(cow![("outline-width", "1px"), ("outline-offset", "-1px")]),
@@ -324,21 +310,21 @@ pub fn resolve_typography_border_effect_rules(
     }
 
     // Columns
+    //
+    // 两种后缀都写进 `columns` 简写，由浏览器按值的形态区分列数与列宽——这正是
+    // Tailwind 的做法。此前分派到 `column-count` / `column-width` 两个长写属性，
+    // `columns-lg` 因而产出 `column-count:32rem` 这样的非法 CSS（报告 §11.5）。
     if let Some(rest) = class_name.strip_prefix("columns-") {
-        if rest == "auto" {
-            return Some(cow!(vec[("column-count", "auto")]));
+        // 数值先判：`resolve_length_val("3")` 会按间距档位求成 `0.75rem`
+        if rest.parse::<u32>().is_ok() {
+            return Some(cow!(vec[("columns", rest.to_string())]));
         }
+        // `columns-none` 不是 Tailwind 类名，但历来解释为"不施加列约束"，等价于 auto
         if rest == "none" {
-            return Some(cow!(vec![
-                ("column-width", "auto"),
-                ("column-count", "auto"),
-            ]));
-        }
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec[("column-count", n.to_string())]));
+            return Some(cow!(vec[("columns", "auto")]));
         }
         if let Some(val) = super::dynamic::resolve_length_val(rest) {
-            return Some(cow!(vec[("column-width", val)]));
+            return Some(cow!(vec[("columns", val)]));
         }
     }
 

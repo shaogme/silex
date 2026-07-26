@@ -24,6 +24,7 @@ enum Segment {
 }
 
 pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
+    let __silex = crate::crate_path::silex();
     let name = &input.ident;
 
     let variants = match input.data {
@@ -78,7 +79,7 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
     let render_arms = generate_render_arms(name, &route_defs)?;
 
     let expanded = quote! {
-        impl ::silex::router::Routable for #name {
+        impl #__silex::router::Routable for #name {
             fn match_path(path: &str) -> Option<Self> {
                 // 预处理路径：去除两端斜杠，分割
                 let clean_path = path.trim_matches('/');
@@ -102,9 +103,9 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
             }
         }
 
-        impl ::silex::router::RouteView for #name {
-            fn render(&self, ctx: ::silex::router::RouterContext) -> ::silex::dom::view::AnyView {
-                use ::silex::dom::view::View;
+        impl #__silex::router::RouteView for #name {
+            fn render(&self, ctx: #__silex::router::RouterContext) -> #__silex::dom::view::AnyView {
+                use #__silex::dom::view::View;
                 match self {
                     #render_arms
                 }
@@ -451,6 +452,7 @@ fn generate_node_logic(
 }
 
 fn generate_route_handler(def: &RouteDef, enum_name: &syn::Ident) -> syn::Result<TokenStream> {
+    let __silex = crate::crate_path::silex();
     let variant_ident = &def.variant_ident;
     let expected_len = def.path_segments.len();
 
@@ -533,7 +535,7 @@ fn generate_route_handler(def: &RouteDef, enum_name: &syn::Ident) -> syn::Result
         quote! {
             let remaining_segments = &segments[#expected_len..];
             let remaining_path = remaining_segments.join("/");
-            if let Some(sub_route) = <#nested_ty as ::silex::router::Routable>::match_path(&remaining_path) {
+            if let Some(sub_route) = <#nested_ty as #__silex::router::Routable>::match_path(&remaining_path) {
                 #construct_variant
             } else {
                 None
@@ -702,6 +704,7 @@ fn find_field_type<'a>(fields: &'a Fields, name: &str) -> Option<&'a syn::Type> 
 }
 
 fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Result<TokenStream> {
+    let __silex = crate::crate_path::silex();
     let mut arms = Vec::new();
 
     for def in defs {
@@ -814,7 +817,7 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
             };
 
             arms.push(quote! {
-                #pattern => ::silex::dom::view::AnyView::new(())
+                #pattern => #__silex::dom::view::AnyView::new(())
             });
         }
     }

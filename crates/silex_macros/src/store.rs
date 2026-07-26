@@ -10,6 +10,7 @@ struct PersistFieldConfig {
 }
 
 pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
+    let __silex = crate::crate_path::silex();
     let name = &input.ident;
     let store_name = format_ident!("{}Store", name);
     let vis = &input.vis;
@@ -91,8 +92,8 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
             let name = &field.ident;
             let ty = &field.ty;
             match parse_field_persist(field)? {
-                Some(_) => Ok(quote! { pub #name: ::silex::prelude::Persistent<#ty> }),
-                None => Ok(quote! { pub #name: ::silex::prelude::RwSignal<#ty> }),
+                Some(_) => Ok(quote! { pub #name: #__silex::prelude::Persistent<#ty> }),
+                None => Ok(quote! { pub #name: #__silex::prelude::RwSignal<#ty> }),
             }
         })
         .collect::<Result<Vec<_>>>()?;
@@ -135,7 +136,7 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
             }
         }
 
-        impl ::silex::store::Store for #store_name {
+        impl #__silex::store::Store for #store_name {
             fn get() -> Self {
                 Self::try_get().expect(#panic_msg)
             }
@@ -153,12 +154,13 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
         }
 
         #vis fn #hook_fn_name() -> #store_name {
-            <#store_name as ::silex::store::Store>::get()
+            <#store_name as #__silex::store::Store>::get()
         }
     })
 }
 
 fn build_field_initializer(field: &Field, persist_prefix: Option<&str>) -> Result<TokenStream> {
+    let __silex = crate::crate_path::silex();
     let name = field.ident.as_ref().expect("named field");
     let ty = &field.ty;
 
@@ -172,7 +174,7 @@ fn build_field_initializer(field: &Field, persist_prefix: Option<&str>) -> Resul
         let backend_method = config.backend;
         let codec_tokens = codec_builder_tokens(ty, &config.codec)?;
         Ok(quote! {
-            #name: ::silex::prelude::Persistent::builder(#full_key)
+            #name: #__silex::prelude::Persistent::builder(#full_key)
                 .#backend_method()
                 #codec_tokens
                 .default(source.#name)
@@ -180,7 +182,7 @@ fn build_field_initializer(field: &Field, persist_prefix: Option<&str>) -> Resul
         })
     } else {
         Ok(quote! {
-            #name: ::silex::prelude::RwSignal::new(source.#name)
+            #name: #__silex::prelude::RwSignal::new(source.#name)
         })
     }
 }

@@ -768,34 +768,34 @@ pub static TEST_CASE_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::BreakInside, StaticVal::Kw("avoid-page")),
     ]),
     ("columns-0", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(0.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(0.0, "")),
     ]),
     ("columns-1", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(1.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(1.0, "")),
     ]),
     ("columns-4", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(4.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(4.0, "")),
     ]),
     ("columns-4xl", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(56.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(56.0, "rem")),
     ]),
     ("columns-auto", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Kw("auto")),
+        (CssPropertyId::Columns, StaticVal::Kw("auto")),
     ]),
     ("columns-lg", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(32.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(32.0, "rem")),
     ]),
     ("columns-md", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(28.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(28.0, "rem")),
     ]),
     ("columns-sm", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(24.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(24.0, "rem")),
     ]),
     ("columns-xl", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(36.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(36.0, "rem")),
     ]),
     ("columns-xs", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(20.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(20.0, "rem")),
     ]),
     ("delay-100", None, &[
         (CssPropertyId::TransitionDelay, StaticVal::Num(100.0, "ms")),

@@ -1648,6 +1648,76 @@ pub const STATIC_CANDIDATE_UTILITIES: &[&str] = &[
     "-skew-y-2",
     "-skew-y-3",
     "-skew-y-6",
+    "-space-x-0",
+    "-space-x-0.5",
+    "-space-x-1",
+    "-space-x-1.5",
+    "-space-x-10",
+    "-space-x-11",
+    "-space-x-12",
+    "-space-x-14",
+    "-space-x-16",
+    "-space-x-2",
+    "-space-x-2.5",
+    "-space-x-20",
+    "-space-x-24",
+    "-space-x-28",
+    "-space-x-3",
+    "-space-x-3.5",
+    "-space-x-32",
+    "-space-x-36",
+    "-space-x-4",
+    "-space-x-40",
+    "-space-x-44",
+    "-space-x-48",
+    "-space-x-5",
+    "-space-x-52",
+    "-space-x-56",
+    "-space-x-6",
+    "-space-x-60",
+    "-space-x-64",
+    "-space-x-7",
+    "-space-x-72",
+    "-space-x-8",
+    "-space-x-80",
+    "-space-x-9",
+    "-space-x-96",
+    "-space-x-px",
+    "-space-y-0",
+    "-space-y-0.5",
+    "-space-y-1",
+    "-space-y-1.5",
+    "-space-y-10",
+    "-space-y-11",
+    "-space-y-12",
+    "-space-y-14",
+    "-space-y-16",
+    "-space-y-2",
+    "-space-y-2.5",
+    "-space-y-20",
+    "-space-y-24",
+    "-space-y-28",
+    "-space-y-3",
+    "-space-y-3.5",
+    "-space-y-32",
+    "-space-y-36",
+    "-space-y-4",
+    "-space-y-40",
+    "-space-y-44",
+    "-space-y-48",
+    "-space-y-5",
+    "-space-y-52",
+    "-space-y-56",
+    "-space-y-6",
+    "-space-y-60",
+    "-space-y-64",
+    "-space-y-7",
+    "-space-y-72",
+    "-space-y-8",
+    "-space-y-80",
+    "-space-y-9",
+    "-space-y-96",
+    "-space-y-px",
     "-start-full",
     "-start-px",
     "-top-0",
@@ -7130,6 +7200,314 @@ pub const STATIC_CANDIDATE_UTILITIES: &[&str] = &[
     "delay-700",
     "delay-75",
     "diagonal-fractions",
+    "divide-amber-100",
+    "divide-amber-200",
+    "divide-amber-300",
+    "divide-amber-400",
+    "divide-amber-50",
+    "divide-amber-500",
+    "divide-amber-600",
+    "divide-amber-700",
+    "divide-amber-800",
+    "divide-amber-900",
+    "divide-amber-950",
+    "divide-black",
+    "divide-blue-100",
+    "divide-blue-200",
+    "divide-blue-300",
+    "divide-blue-400",
+    "divide-blue-50",
+    "divide-blue-500",
+    "divide-blue-600",
+    "divide-blue-700",
+    "divide-blue-800",
+    "divide-blue-900",
+    "divide-blue-950",
+    "divide-current",
+    "divide-cyan-100",
+    "divide-cyan-200",
+    "divide-cyan-300",
+    "divide-cyan-400",
+    "divide-cyan-50",
+    "divide-cyan-500",
+    "divide-cyan-600",
+    "divide-cyan-700",
+    "divide-cyan-800",
+    "divide-cyan-900",
+    "divide-cyan-950",
+    "divide-dashed",
+    "divide-dotted",
+    "divide-double",
+    "divide-emerald-100",
+    "divide-emerald-200",
+    "divide-emerald-300",
+    "divide-emerald-400",
+    "divide-emerald-50",
+    "divide-emerald-500",
+    "divide-emerald-600",
+    "divide-emerald-700",
+    "divide-emerald-800",
+    "divide-emerald-900",
+    "divide-emerald-950",
+    "divide-fuchsia-100",
+    "divide-fuchsia-200",
+    "divide-fuchsia-300",
+    "divide-fuchsia-400",
+    "divide-fuchsia-50",
+    "divide-fuchsia-500",
+    "divide-fuchsia-600",
+    "divide-fuchsia-700",
+    "divide-fuchsia-800",
+    "divide-fuchsia-900",
+    "divide-fuchsia-950",
+    "divide-gray-100",
+    "divide-gray-200",
+    "divide-gray-300",
+    "divide-gray-400",
+    "divide-gray-50",
+    "divide-gray-500",
+    "divide-gray-600",
+    "divide-gray-700",
+    "divide-gray-800",
+    "divide-gray-900",
+    "divide-gray-950",
+    "divide-green-100",
+    "divide-green-200",
+    "divide-green-300",
+    "divide-green-400",
+    "divide-green-50",
+    "divide-green-500",
+    "divide-green-600",
+    "divide-green-700",
+    "divide-green-800",
+    "divide-green-900",
+    "divide-green-950",
+    "divide-indigo-100",
+    "divide-indigo-200",
+    "divide-indigo-300",
+    "divide-indigo-400",
+    "divide-indigo-50",
+    "divide-indigo-500",
+    "divide-indigo-600",
+    "divide-indigo-700",
+    "divide-indigo-800",
+    "divide-indigo-900",
+    "divide-indigo-950",
+    "divide-inherit",
+    "divide-lime-100",
+    "divide-lime-200",
+    "divide-lime-300",
+    "divide-lime-400",
+    "divide-lime-50",
+    "divide-lime-500",
+    "divide-lime-600",
+    "divide-lime-700",
+    "divide-lime-800",
+    "divide-lime-900",
+    "divide-lime-950",
+    "divide-mauve-100",
+    "divide-mauve-200",
+    "divide-mauve-300",
+    "divide-mauve-400",
+    "divide-mauve-50",
+    "divide-mauve-500",
+    "divide-mauve-600",
+    "divide-mauve-700",
+    "divide-mauve-800",
+    "divide-mauve-900",
+    "divide-mauve-950",
+    "divide-mist-100",
+    "divide-mist-200",
+    "divide-mist-300",
+    "divide-mist-400",
+    "divide-mist-50",
+    "divide-mist-500",
+    "divide-mist-600",
+    "divide-mist-700",
+    "divide-mist-800",
+    "divide-mist-900",
+    "divide-mist-950",
+    "divide-neutral-100",
+    "divide-neutral-200",
+    "divide-neutral-300",
+    "divide-neutral-400",
+    "divide-neutral-50",
+    "divide-neutral-500",
+    "divide-neutral-600",
+    "divide-neutral-700",
+    "divide-neutral-800",
+    "divide-neutral-900",
+    "divide-neutral-950",
+    "divide-none",
+    "divide-olive-100",
+    "divide-olive-200",
+    "divide-olive-300",
+    "divide-olive-400",
+    "divide-olive-50",
+    "divide-olive-500",
+    "divide-olive-600",
+    "divide-olive-700",
+    "divide-olive-800",
+    "divide-olive-900",
+    "divide-olive-950",
+    "divide-orange-100",
+    "divide-orange-200",
+    "divide-orange-300",
+    "divide-orange-400",
+    "divide-orange-50",
+    "divide-orange-500",
+    "divide-orange-600",
+    "divide-orange-700",
+    "divide-orange-800",
+    "divide-orange-900",
+    "divide-orange-950",
+    "divide-pink-100",
+    "divide-pink-200",
+    "divide-pink-300",
+    "divide-pink-400",
+    "divide-pink-50",
+    "divide-pink-500",
+    "divide-pink-600",
+    "divide-pink-700",
+    "divide-pink-800",
+    "divide-pink-900",
+    "divide-pink-950",
+    "divide-purple-100",
+    "divide-purple-200",
+    "divide-purple-300",
+    "divide-purple-400",
+    "divide-purple-50",
+    "divide-purple-500",
+    "divide-purple-600",
+    "divide-purple-700",
+    "divide-purple-800",
+    "divide-purple-900",
+    "divide-purple-950",
+    "divide-red-100",
+    "divide-red-200",
+    "divide-red-300",
+    "divide-red-400",
+    "divide-red-50",
+    "divide-red-500",
+    "divide-red-600",
+    "divide-red-700",
+    "divide-red-800",
+    "divide-red-900",
+    "divide-red-950",
+    "divide-rose-100",
+    "divide-rose-200",
+    "divide-rose-300",
+    "divide-rose-400",
+    "divide-rose-50",
+    "divide-rose-500",
+    "divide-rose-600",
+    "divide-rose-700",
+    "divide-rose-800",
+    "divide-rose-900",
+    "divide-rose-950",
+    "divide-sky-100",
+    "divide-sky-200",
+    "divide-sky-300",
+    "divide-sky-400",
+    "divide-sky-50",
+    "divide-sky-500",
+    "divide-sky-600",
+    "divide-sky-700",
+    "divide-sky-800",
+    "divide-sky-900",
+    "divide-sky-950",
+    "divide-slate-100",
+    "divide-slate-200",
+    "divide-slate-300",
+    "divide-slate-400",
+    "divide-slate-50",
+    "divide-slate-500",
+    "divide-slate-600",
+    "divide-slate-700",
+    "divide-slate-800",
+    "divide-slate-900",
+    "divide-slate-950",
+    "divide-solid",
+    "divide-stone-100",
+    "divide-stone-200",
+    "divide-stone-300",
+    "divide-stone-400",
+    "divide-stone-50",
+    "divide-stone-500",
+    "divide-stone-600",
+    "divide-stone-700",
+    "divide-stone-800",
+    "divide-stone-900",
+    "divide-stone-950",
+    "divide-taupe-100",
+    "divide-taupe-200",
+    "divide-taupe-300",
+    "divide-taupe-400",
+    "divide-taupe-50",
+    "divide-taupe-500",
+    "divide-taupe-600",
+    "divide-taupe-700",
+    "divide-taupe-800",
+    "divide-taupe-900",
+    "divide-taupe-950",
+    "divide-teal-100",
+    "divide-teal-200",
+    "divide-teal-300",
+    "divide-teal-400",
+    "divide-teal-50",
+    "divide-teal-500",
+    "divide-teal-600",
+    "divide-teal-700",
+    "divide-teal-800",
+    "divide-teal-900",
+    "divide-teal-950",
+    "divide-transparent",
+    "divide-violet-100",
+    "divide-violet-200",
+    "divide-violet-300",
+    "divide-violet-400",
+    "divide-violet-50",
+    "divide-violet-500",
+    "divide-violet-600",
+    "divide-violet-700",
+    "divide-violet-800",
+    "divide-violet-900",
+    "divide-violet-950",
+    "divide-white",
+    "divide-x",
+    "divide-x-0",
+    "divide-x-2",
+    "divide-x-4",
+    "divide-x-8",
+    "divide-x-reverse",
+    "divide-y",
+    "divide-y-0",
+    "divide-y-2",
+    "divide-y-4",
+    "divide-y-8",
+    "divide-y-reverse",
+    "divide-yellow-100",
+    "divide-yellow-200",
+    "divide-yellow-300",
+    "divide-yellow-400",
+    "divide-yellow-50",
+    "divide-yellow-500",
+    "divide-yellow-600",
+    "divide-yellow-700",
+    "divide-yellow-800",
+    "divide-yellow-900",
+    "divide-yellow-950",
+    "divide-zinc-100",
+    "divide-zinc-200",
+    "divide-zinc-300",
+    "divide-zinc-400",
+    "divide-zinc-50",
+    "divide-zinc-500",
+    "divide-zinc-600",
+    "divide-zinc-700",
+    "divide-zinc-800",
+    "divide-zinc-900",
+    "divide-zinc-950",
     "drop-shadow-2xl",
     "drop-shadow-amber-100",
     "drop-shadow-amber-200",
@@ -20885,6 +21263,78 @@ pub const STATIC_CANDIDATE_UTILITIES: &[&str] = &[
     "snap-start",
     "snap-x",
     "snap-y",
+    "space-x-0",
+    "space-x-0.5",
+    "space-x-1",
+    "space-x-1.5",
+    "space-x-10",
+    "space-x-11",
+    "space-x-12",
+    "space-x-14",
+    "space-x-16",
+    "space-x-2",
+    "space-x-2.5",
+    "space-x-20",
+    "space-x-24",
+    "space-x-28",
+    "space-x-3",
+    "space-x-3.5",
+    "space-x-32",
+    "space-x-36",
+    "space-x-4",
+    "space-x-40",
+    "space-x-44",
+    "space-x-48",
+    "space-x-5",
+    "space-x-52",
+    "space-x-56",
+    "space-x-6",
+    "space-x-60",
+    "space-x-64",
+    "space-x-7",
+    "space-x-72",
+    "space-x-8",
+    "space-x-80",
+    "space-x-9",
+    "space-x-96",
+    "space-x-px",
+    "space-x-reverse",
+    "space-y-0",
+    "space-y-0.5",
+    "space-y-1",
+    "space-y-1.5",
+    "space-y-10",
+    "space-y-11",
+    "space-y-12",
+    "space-y-14",
+    "space-y-16",
+    "space-y-2",
+    "space-y-2.5",
+    "space-y-20",
+    "space-y-24",
+    "space-y-28",
+    "space-y-3",
+    "space-y-3.5",
+    "space-y-32",
+    "space-y-36",
+    "space-y-4",
+    "space-y-40",
+    "space-y-44",
+    "space-y-48",
+    "space-y-5",
+    "space-y-52",
+    "space-y-56",
+    "space-y-6",
+    "space-y-60",
+    "space-y-64",
+    "space-y-7",
+    "space-y-72",
+    "space-y-8",
+    "space-y-80",
+    "space-y-9",
+    "space-y-96",
+    "space-y-px",
+    "space-y-reverse",
     "sr-only",
     "stacked-fractions",
     "start-auto",
@@ -28337,6 +28787,286 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
     ]),
     ("-skew-y-6", None, &[
         (CssPropertyId::Transform, StaticVal::Literal("skewY(-6deg)")),
+    ]),
+    ("-space-x-0", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(0.0, "px")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-0.5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-0.125, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-1", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-0.25, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-1.5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-0.375, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-10", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-2.5, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-11", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-2.75, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-12", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-3.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-14", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-3.5, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-16", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-4.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-2", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-0.5, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-2.5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-0.625, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-20", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-5.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-24", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-6.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-28", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-7.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-3", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-0.75, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-3.5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-0.875, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-32", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-8.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-36", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-9.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-4", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-1.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-40", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-10.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-44", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-11.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-48", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-12.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-1.25, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-52", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-13.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-56", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-14.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-6", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-1.5, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-60", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-15.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-64", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-16.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-7", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-1.75, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-72", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-18.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-8", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-2.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-80", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-20.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-9", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-2.25, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-96", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-24.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-x-px", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(-1.0, "px")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-0", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(0.0, "px")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-0.5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-0.125, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-1", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-0.25, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-1.5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-0.375, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-10", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-2.5, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-11", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-2.75, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-12", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-3.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-14", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-3.5, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-16", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-4.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-2", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-0.5, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-2.5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-0.625, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-20", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-5.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-24", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-6.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-28", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-7.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-3", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-0.75, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-3.5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-0.875, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-32", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-8.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-36", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-9.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-4", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-1.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-40", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-10.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-44", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-11.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-48", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-12.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-1.25, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-52", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-13.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-56", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-14.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-6", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-1.5, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-60", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-15.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-64", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-16.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-7", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-1.75, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-72", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-18.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-8", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-2.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-80", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-20.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-9", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-2.25, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-96", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-24.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("-space-y-px", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(-1.0, "px")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
     ]),
     ("-start-full", None, &[
         (CssPropertyId::InsetInlineStart, StaticVal::Num(-100.0, "%")),
@@ -43548,136 +44278,136 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::Visibility, StaticVal::Kw("collapse")),
     ]),
     ("columns-0", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(0.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(0.0, "")),
     ]),
     ("columns-1", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(1.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(1.0, "")),
     ]),
     ("columns-10", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(10.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(10.0, "")),
     ]),
     ("columns-11", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(11.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(11.0, "")),
     ]),
     ("columns-12", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(12.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(12.0, "")),
     ]),
     ("columns-14", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(14.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(14.0, "")),
     ]),
     ("columns-16", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(16.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(16.0, "")),
     ]),
     ("columns-2", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(2.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(2.0, "")),
     ]),
     ("columns-20", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(20.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(20.0, "")),
     ]),
     ("columns-24", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(24.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(24.0, "")),
     ]),
     ("columns-28", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(28.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(28.0, "")),
     ]),
     ("columns-2xl", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(42.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(42.0, "rem")),
     ]),
     ("columns-2xs", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(18.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(18.0, "rem")),
     ]),
     ("columns-3", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(3.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(3.0, "")),
     ]),
     ("columns-32", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(32.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(32.0, "")),
     ]),
     ("columns-36", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(36.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(36.0, "")),
     ]),
     ("columns-3xl", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(48.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(48.0, "rem")),
     ]),
     ("columns-3xs", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(16.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(16.0, "rem")),
     ]),
     ("columns-4", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(4.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(4.0, "")),
     ]),
     ("columns-40", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(40.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(40.0, "")),
     ]),
     ("columns-44", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(44.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(44.0, "")),
     ]),
     ("columns-48", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(48.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(48.0, "")),
     ]),
     ("columns-4xl", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(56.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(56.0, "rem")),
     ]),
     ("columns-5", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(5.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(5.0, "")),
     ]),
     ("columns-52", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(52.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(52.0, "")),
     ]),
     ("columns-56", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(56.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(56.0, "")),
     ]),
     ("columns-5xl", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(64.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(64.0, "rem")),
     ]),
     ("columns-6", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(6.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(6.0, "")),
     ]),
     ("columns-60", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(60.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(60.0, "")),
     ]),
     ("columns-64", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(64.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(64.0, "")),
     ]),
     ("columns-6xl", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(72.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(72.0, "rem")),
     ]),
     ("columns-7", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(7.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(7.0, "")),
     ]),
     ("columns-72", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(72.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(72.0, "")),
     ]),
     ("columns-7xl", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(80.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(80.0, "rem")),
     ]),
     ("columns-8", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(8.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(8.0, "")),
     ]),
     ("columns-80", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(80.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(80.0, "")),
     ]),
     ("columns-9", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(9.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(9.0, "")),
     ]),
     ("columns-96", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Num(96.0, "")),
+        (CssPropertyId::Columns, StaticVal::Num(96.0, "")),
     ]),
     ("columns-auto", None, &[
-        (CssPropertyId::ColumnCount, StaticVal::Kw("auto")),
+        (CssPropertyId::Columns, StaticVal::Kw("auto")),
     ]),
     ("columns-lg", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(32.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(32.0, "rem")),
     ]),
     ("columns-md", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(28.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(28.0, "rem")),
     ]),
     ("columns-sm", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(24.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(24.0, "rem")),
     ]),
     ("columns-xl", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(36.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(36.0, "rem")),
     ]),
     ("columns-xs", None, &[
-        (CssPropertyId::ColumnWidth, StaticVal::Num(20.0, "rem")),
+        (CssPropertyId::Columns, StaticVal::Num(20.0, "rem")),
     ]),
     ("contain-content", None, &[
         (CssPropertyId::Contain, StaticVal::Kw("content")),
@@ -44803,6 +45533,940 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
     ]),
     ("diagonal-fractions", None, &[
         (CssPropertyId::FontVariantNumeric, StaticVal::Kw("diagonal-fractions")),
+    ]),
+    ("divide-amber-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fef3c6")),
+    ]),
+    ("divide-amber-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fee685")),
+    ]),
+    ("divide-amber-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ffd230")),
+    ]),
+    ("divide-amber-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ffb900")),
+    ]),
+    ("divide-amber-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fffbeb")),
+    ]),
+    ("divide-amber-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fe9a00")),
+    ]),
+    ("divide-amber-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#e17100")),
+    ]),
+    ("divide-amber-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#bb4d00")),
+    ]),
+    ("divide-amber-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#973c00")),
+    ]),
+    ("divide-amber-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#7b3306")),
+    ]),
+    ("divide-amber-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#461901")),
+    ]),
+    ("divide-black", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#000000")),
+    ]),
+    ("divide-blue-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#dbeafe")),
+    ]),
+    ("divide-blue-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#bedbff")),
+    ]),
+    ("divide-blue-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#8ec5ff")),
+    ]),
+    ("divide-blue-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#51a2ff")),
+    ]),
+    ("divide-blue-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#eff6ff")),
+    ]),
+    ("divide-blue-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#2b7fff")),
+    ]),
+    ("divide-blue-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#155dfc")),
+    ]),
+    ("divide-blue-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#1447e6")),
+    ]),
+    ("divide-blue-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#193cb8")),
+    ]),
+    ("divide-blue-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#1c398e")),
+    ]),
+    ("divide-blue-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#162456")),
+    ]),
+    ("divide-current", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Kw("currentColor")),
+    ]),
+    ("divide-cyan-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#cefafe")),
+    ]),
+    ("divide-cyan-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#a2f4fd")),
+    ]),
+    ("divide-cyan-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#53eafd")),
+    ]),
+    ("divide-cyan-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#00d3f2")),
+    ]),
+    ("divide-cyan-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ecfeff")),
+    ]),
+    ("divide-cyan-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#00b8db")),
+    ]),
+    ("divide-cyan-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#0092b8")),
+    ]),
+    ("divide-cyan-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#007595")),
+    ]),
+    ("divide-cyan-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#005f78")),
+    ]),
+    ("divide-cyan-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#104e64")),
+    ]),
+    ("divide-cyan-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#053345")),
+    ]),
+    ("divide-dashed", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderStyle, StaticVal::Kw("dashed")),
+    ]),
+    ("divide-dotted", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderStyle, StaticVal::Kw("dotted")),
+    ]),
+    ("divide-double", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderStyle, StaticVal::Kw("double")),
+    ]),
+    ("divide-emerald-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#d0fae5")),
+    ]),
+    ("divide-emerald-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#a4f4cf")),
+    ]),
+    ("divide-emerald-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#5ee9b5")),
+    ]),
+    ("divide-emerald-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#00d492")),
+    ]),
+    ("divide-emerald-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ecfdf5")),
+    ]),
+    ("divide-emerald-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#00bc7d")),
+    ]),
+    ("divide-emerald-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#009966")),
+    ]),
+    ("divide-emerald-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#007a55")),
+    ]),
+    ("divide-emerald-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#006045")),
+    ]),
+    ("divide-emerald-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#004f3b")),
+    ]),
+    ("divide-emerald-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#002c22")),
+    ]),
+    ("divide-fuchsia-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fae8ff")),
+    ]),
+    ("divide-fuchsia-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f6cfff")),
+    ]),
+    ("divide-fuchsia-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f4a8ff")),
+    ]),
+    ("divide-fuchsia-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ed6aff")),
+    ]),
+    ("divide-fuchsia-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fdf4ff")),
+    ]),
+    ("divide-fuchsia-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#e12afb")),
+    ]),
+    ("divide-fuchsia-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#c800de")),
+    ]),
+    ("divide-fuchsia-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#a800b7")),
+    ]),
+    ("divide-fuchsia-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#8a0194")),
+    ]),
+    ("divide-fuchsia-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#721378")),
+    ]),
+    ("divide-fuchsia-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#4b004f")),
+    ]),
+    ("divide-gray-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f3f4f6")),
+    ]),
+    ("divide-gray-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#e5e7eb")),
+    ]),
+    ("divide-gray-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#d1d5dc")),
+    ]),
+    ("divide-gray-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#99a1af")),
+    ]),
+    ("divide-gray-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f9fafb")),
+    ]),
+    ("divide-gray-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#6a7282")),
+    ]),
+    ("divide-gray-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#4a5565")),
+    ]),
+    ("divide-gray-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#364153")),
+    ]),
+    ("divide-gray-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#1e2939")),
+    ]),
+    ("divide-gray-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#101828")),
+    ]),
+    ("divide-gray-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#030712")),
+    ]),
+    ("divide-green-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#dcfce7")),
+    ]),
+    ("divide-green-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#b9f8cf")),
+    ]),
+    ("divide-green-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#7bf1a8")),
+    ]),
+    ("divide-green-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#05df72")),
+    ]),
+    ("divide-green-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f0fdf4")),
+    ]),
+    ("divide-green-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#00c950")),
+    ]),
+    ("divide-green-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#00a63e")),
+    ]),
+    ("divide-green-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#008236")),
+    ]),
+    ("divide-green-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#016630")),
+    ]),
+    ("divide-green-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#0d542b")),
+    ]),
+    ("divide-green-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#032e15")),
+    ]),
+    ("divide-indigo-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#e0e7ff")),
+    ]),
+    ("divide-indigo-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#c6d2ff")),
+    ]),
+    ("divide-indigo-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#a3b3ff")),
+    ]),
+    ("divide-indigo-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#7c86ff")),
+    ]),
+    ("divide-indigo-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#eef2ff")),
+    ]),
+    ("divide-indigo-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#615fff")),
+    ]),
+    ("divide-indigo-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#4f39f6")),
+    ]),
+    ("divide-indigo-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#432dd7")),
+    ]),
+    ("divide-indigo-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#372aac")),
+    ]),
+    ("divide-indigo-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#312c85")),
+    ]),
+    ("divide-indigo-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#1e1a4d")),
+    ]),
+    ("divide-inherit", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Kw("inherit")),
+    ]),
+    ("divide-lime-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ecfcca")),
+    ]),
+    ("divide-lime-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#d8f999")),
+    ]),
+    ("divide-lime-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#bbf451")),
+    ]),
+    ("divide-lime-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#9ae600")),
+    ]),
+    ("divide-lime-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f7fee7")),
+    ]),
+    ("divide-lime-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#7ccf00")),
+    ]),
+    ("divide-lime-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#5ea500")),
+    ]),
+    ("divide-lime-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#497d00")),
+    ]),
+    ("divide-lime-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#3c6300")),
+    ]),
+    ("divide-lime-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#35530e")),
+    ]),
+    ("divide-lime-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#192e03")),
+    ]),
+    ("divide-mauve-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f3f1f3")),
+    ]),
+    ("divide-mauve-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#e7e4e7")),
+    ]),
+    ("divide-mauve-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#d7d0d7")),
+    ]),
+    ("divide-mauve-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#a89ea9")),
+    ]),
+    ("divide-mauve-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fafafa")),
+    ]),
+    ("divide-mauve-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#79697b")),
+    ]),
+    ("divide-mauve-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#594c5b")),
+    ]),
+    ("divide-mauve-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#463947")),
+    ]),
+    ("divide-mauve-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#2a212c")),
+    ]),
+    ("divide-mauve-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#1d161e")),
+    ]),
+    ("divide-mauve-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#0c090c")),
+    ]),
+    ("divide-mist-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f1f3f3")),
+    ]),
+    ("divide-mist-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#e3e7e8")),
+    ]),
+    ("divide-mist-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#d0d6d8")),
+    ]),
+    ("divide-mist-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#9ca8ab")),
+    ]),
+    ("divide-mist-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f9fbfb")),
+    ]),
+    ("divide-mist-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#67787c")),
+    ]),
+    ("divide-mist-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#4b585b")),
+    ]),
+    ("divide-mist-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#394447")),
+    ]),
+    ("divide-mist-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#22292b")),
+    ]),
+    ("divide-mist-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#161b1d")),
+    ]),
+    ("divide-mist-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#090b0c")),
+    ]),
+    ("divide-neutral-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f5f5f5")),
+    ]),
+    ("divide-neutral-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#e5e5e5")),
+    ]),
+    ("divide-neutral-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#d4d4d4")),
+    ]),
+    ("divide-neutral-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#a1a1a1")),
+    ]),
+    ("divide-neutral-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fafafa")),
+    ]),
+    ("divide-neutral-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#737373")),
+    ]),
+    ("divide-neutral-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#525252")),
+    ]),
+    ("divide-neutral-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#404040")),
+    ]),
+    ("divide-neutral-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#262626")),
+    ]),
+    ("divide-neutral-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#171717")),
+    ]),
+    ("divide-neutral-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#0a0a0a")),
+    ]),
+    ("divide-none", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderStyle, StaticVal::Kw("none")),
+    ]),
+    ("divide-olive-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f4f4f0")),
+    ]),
+    ("divide-olive-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#e8e8e3")),
+    ]),
+    ("divide-olive-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#d8d8d0")),
+    ]),
+    ("divide-olive-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#abab9c")),
+    ]),
+    ("divide-olive-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fbfbf9")),
+    ]),
+    ("divide-olive-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#7c7c67")),
+    ]),
+    ("divide-olive-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#5b5b4b")),
+    ]),
+    ("divide-olive-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#474739")),
+    ]),
+    ("divide-olive-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#2b2b22")),
+    ]),
+    ("divide-olive-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#1d1d16")),
+    ]),
+    ("divide-olive-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#0c0c09")),
+    ]),
+    ("divide-orange-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ffedd4")),
+    ]),
+    ("divide-orange-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ffd6a7")),
+    ]),
+    ("divide-orange-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ffb86a")),
+    ]),
+    ("divide-orange-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ff8904")),
+    ]),
+    ("divide-orange-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fff7ed")),
+    ]),
+    ("divide-orange-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ff6900")),
+    ]),
+    ("divide-orange-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f54900")),
+    ]),
+    ("divide-orange-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ca3500")),
+    ]),
+    ("divide-orange-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#9f2d00")),
+    ]),
+    ("divide-orange-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#7e2a0c")),
+    ]),
+    ("divide-orange-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#441306")),
+    ]),
+    ("divide-pink-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fce7f3")),
+    ]),
+    ("divide-pink-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fccee8")),
+    ]),
+    ("divide-pink-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fda5d5")),
+    ]),
+    ("divide-pink-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fb64b6")),
+    ]),
+    ("divide-pink-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fdf2f8")),
+    ]),
+    ("divide-pink-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f6339a")),
+    ]),
+    ("divide-pink-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#e60076")),
+    ]),
+    ("divide-pink-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#c6005c")),
+    ]),
+    ("divide-pink-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#a3004c")),
+    ]),
+    ("divide-pink-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#861043")),
+    ]),
+    ("divide-pink-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#510424")),
+    ]),
+    ("divide-purple-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f3e8ff")),
+    ]),
+    ("divide-purple-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#e9d4ff")),
+    ]),
+    ("divide-purple-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#dab2ff")),
+    ]),
+    ("divide-purple-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#c27aff")),
+    ]),
+    ("divide-purple-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#faf5ff")),
+    ]),
+    ("divide-purple-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ad46ff")),
+    ]),
+    ("divide-purple-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#9810fa")),
+    ]),
+    ("divide-purple-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#8200db")),
+    ]),
+    ("divide-purple-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#6e11b0")),
+    ]),
+    ("divide-purple-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#59168b")),
+    ]),
+    ("divide-purple-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#3c0366")),
+    ]),
+    ("divide-red-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ffe2e2")),
+    ]),
+    ("divide-red-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ffc9c9")),
+    ]),
+    ("divide-red-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ffa2a2")),
+    ]),
+    ("divide-red-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ff6467")),
+    ]),
+    ("divide-red-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fef2f2")),
+    ]),
+    ("divide-red-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fb2c36")),
+    ]),
+    ("divide-red-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#e7000b")),
+    ]),
+    ("divide-red-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#c10007")),
+    ]),
+    ("divide-red-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#9f0712")),
+    ]),
+    ("divide-red-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#82181a")),
+    ]),
+    ("divide-red-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#460809")),
+    ]),
+    ("divide-rose-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ffe4e6")),
+    ]),
+    ("divide-rose-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ffccd3")),
+    ]),
+    ("divide-rose-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ffa1ad")),
+    ]),
+    ("divide-rose-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ff637e")),
+    ]),
+    ("divide-rose-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fff1f2")),
+    ]),
+    ("divide-rose-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ff2056")),
+    ]),
+    ("divide-rose-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ec003f")),
+    ]),
+    ("divide-rose-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#c70036")),
+    ]),
+    ("divide-rose-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#a50036")),
+    ]),
+    ("divide-rose-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#8b0836")),
+    ]),
+    ("divide-rose-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#4d0218")),
+    ]),
+    ("divide-sky-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#dff2fe")),
+    ]),
+    ("divide-sky-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#b8e6fe")),
+    ]),
+    ("divide-sky-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#74d4ff")),
+    ]),
+    ("divide-sky-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#00bcff")),
+    ]),
+    ("divide-sky-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f0f9ff")),
+    ]),
+    ("divide-sky-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#00a6f4")),
+    ]),
+    ("divide-sky-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#0084d1")),
+    ]),
+    ("divide-sky-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#0069a8")),
+    ]),
+    ("divide-sky-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#00598a")),
+    ]),
+    ("divide-sky-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#024a70")),
+    ]),
+    ("divide-sky-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#052f4a")),
+    ]),
+    ("divide-slate-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f1f5f9")),
+    ]),
+    ("divide-slate-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#e2e8f0")),
+    ]),
+    ("divide-slate-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#cad5e2")),
+    ]),
+    ("divide-slate-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#90a1b9")),
+    ]),
+    ("divide-slate-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f8fafc")),
+    ]),
+    ("divide-slate-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#62748e")),
+    ]),
+    ("divide-slate-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#45556c")),
+    ]),
+    ("divide-slate-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#314158")),
+    ]),
+    ("divide-slate-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#1d293d")),
+    ]),
+    ("divide-slate-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#0f172b")),
+    ]),
+    ("divide-slate-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#020618")),
+    ]),
+    ("divide-solid", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderStyle, StaticVal::Kw("solid")),
+    ]),
+    ("divide-stone-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f5f5f4")),
+    ]),
+    ("divide-stone-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#e7e5e4")),
+    ]),
+    ("divide-stone-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#d6d3d1")),
+    ]),
+    ("divide-stone-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#a6a09b")),
+    ]),
+    ("divide-stone-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fafaf9")),
+    ]),
+    ("divide-stone-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#79716b")),
+    ]),
+    ("divide-stone-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#57534d")),
+    ]),
+    ("divide-stone-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#44403b")),
+    ]),
+    ("divide-stone-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#292524")),
+    ]),
+    ("divide-stone-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#1c1917")),
+    ]),
+    ("divide-stone-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#0c0a09")),
+    ]),
+    ("divide-taupe-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f3f1f1")),
+    ]),
+    ("divide-taupe-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#e8e4e3")),
+    ]),
+    ("divide-taupe-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#d8d2d0")),
+    ]),
+    ("divide-taupe-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#aba09c")),
+    ]),
+    ("divide-taupe-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fbfaf9")),
+    ]),
+    ("divide-taupe-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#7c6d67")),
+    ]),
+    ("divide-taupe-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#5b4f4b")),
+    ]),
+    ("divide-taupe-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#473c39")),
+    ]),
+    ("divide-taupe-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#2b2422")),
+    ]),
+    ("divide-taupe-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#1d1816")),
+    ]),
+    ("divide-taupe-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#0c0a09")),
+    ]),
+    ("divide-teal-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#cbfbf1")),
+    ]),
+    ("divide-teal-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#96f7e4")),
+    ]),
+    ("divide-teal-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#46ecd5")),
+    ]),
+    ("divide-teal-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#00d5be")),
+    ]),
+    ("divide-teal-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f0fdfa")),
+    ]),
+    ("divide-teal-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#00bba7")),
+    ]),
+    ("divide-teal-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#009689")),
+    ]),
+    ("divide-teal-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#00786f")),
+    ]),
+    ("divide-teal-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#005f5a")),
+    ]),
+    ("divide-teal-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#0b4f4a")),
+    ]),
+    ("divide-teal-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#022f2e")),
+    ]),
+    ("divide-transparent", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Kw("transparent")),
+    ]),
+    ("divide-violet-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ede9fe")),
+    ]),
+    ("divide-violet-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ddd6ff")),
+    ]),
+    ("divide-violet-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#c4b4ff")),
+    ]),
+    ("divide-violet-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#a684ff")),
+    ]),
+    ("divide-violet-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f5f3ff")),
+    ]),
+    ("divide-violet-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#8e51ff")),
+    ]),
+    ("divide-violet-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#7f22fe")),
+    ]),
+    ("divide-violet-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#7008e7")),
+    ]),
+    ("divide-violet-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#5d0ec0")),
+    ]),
+    ("divide-violet-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#4d179a")),
+    ]),
+    ("divide-violet-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#2f0d68")),
+    ]),
+    ("divide-white", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ffffff")),
+    ]),
+    ("divide-x", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderLeftWidth, StaticVal::Num(1.0, "px")),
+        (CssPropertyId::BorderRightWidth, StaticVal::Num(0.0, "px")),
+    ]),
+    ("divide-x-0", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderLeftWidth, StaticVal::Num(0.0, "px")),
+        (CssPropertyId::BorderRightWidth, StaticVal::Num(0.0, "px")),
+    ]),
+    ("divide-x-2", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderLeftWidth, StaticVal::Num(2.0, "px")),
+        (CssPropertyId::BorderRightWidth, StaticVal::Num(0.0, "px")),
+    ]),
+    ("divide-x-4", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderLeftWidth, StaticVal::Num(4.0, "px")),
+        (CssPropertyId::BorderRightWidth, StaticVal::Num(0.0, "px")),
+    ]),
+    ("divide-x-8", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderLeftWidth, StaticVal::Num(8.0, "px")),
+        (CssPropertyId::BorderRightWidth, StaticVal::Num(0.0, "px")),
+    ]),
+    ("divide-x-reverse", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::VarTwDivideXReverse, StaticVal::Num(1.0, "")),
+    ]),
+    ("divide-y", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderTopWidth, StaticVal::Num(1.0, "px")),
+        (CssPropertyId::BorderBottomWidth, StaticVal::Num(0.0, "px")),
+    ]),
+    ("divide-y-0", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderTopWidth, StaticVal::Num(0.0, "px")),
+        (CssPropertyId::BorderBottomWidth, StaticVal::Num(0.0, "px")),
+    ]),
+    ("divide-y-2", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderTopWidth, StaticVal::Num(2.0, "px")),
+        (CssPropertyId::BorderBottomWidth, StaticVal::Num(0.0, "px")),
+    ]),
+    ("divide-y-4", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderTopWidth, StaticVal::Num(4.0, "px")),
+        (CssPropertyId::BorderBottomWidth, StaticVal::Num(0.0, "px")),
+    ]),
+    ("divide-y-8", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderTopWidth, StaticVal::Num(8.0, "px")),
+        (CssPropertyId::BorderBottomWidth, StaticVal::Num(0.0, "px")),
+    ]),
+    ("divide-y-reverse", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::VarTwDivideYReverse, StaticVal::Num(1.0, "")),
+    ]),
+    ("divide-yellow-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fef9c2")),
+    ]),
+    ("divide-yellow-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fff085")),
+    ]),
+    ("divide-yellow-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#ffdf20")),
+    ]),
+    ("divide-yellow-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fdc700")),
+    ]),
+    ("divide-yellow-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fefce8")),
+    ]),
+    ("divide-yellow-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f0b100")),
+    ]),
+    ("divide-yellow-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#d08700")),
+    ]),
+    ("divide-yellow-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#a65f00")),
+    ]),
+    ("divide-yellow-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#894b00")),
+    ]),
+    ("divide-yellow-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#733e0a")),
+    ]),
+    ("divide-yellow-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#432004")),
+    ]),
+    ("divide-zinc-100", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#f4f4f5")),
+    ]),
+    ("divide-zinc-200", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#e4e4e7")),
+    ]),
+    ("divide-zinc-300", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#d4d4d8")),
+    ]),
+    ("divide-zinc-400", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#9f9fa9")),
+    ]),
+    ("divide-zinc-50", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#fafafa")),
+    ]),
+    ("divide-zinc-500", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#71717b")),
+    ]),
+    ("divide-zinc-600", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#52525c")),
+    ]),
+    ("divide-zinc-700", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#3f3f46")),
+    ]),
+    ("divide-zinc-800", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#27272a")),
+    ]),
+    ("divide-zinc-900", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#18181b")),
+    ]),
+    ("divide-zinc-950", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::BorderColor, StaticVal::Hex("#09090b")),
     ]),
     ("drop-shadow-2xl", None, &[
         (CssPropertyId::Filter, StaticVal::Literal("drop-shadow(0 25px 25px rgba(0, 0, 0, 0.15))")),
@@ -46639,7 +48303,7 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::Display, StaticVal::Kw("flex")),
     ]),
     ("flex-1", None, &[
-        (CssPropertyId::Flex, StaticVal::Literal("1 1 0%")),
+        (CssPropertyId::Flex, StaticVal::Num(1.0, "")),
     ]),
     ("flex-1/12", None, &[
         (CssPropertyId::Flex, StaticVal::Literal("1 1 8.333333%")),
@@ -46660,22 +48324,22 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::Flex, StaticVal::Literal("1 1 16.666667%")),
     ]),
     ("flex-10", None, &[
-        (CssPropertyId::Flex, StaticVal::Literal("1 1 2.5rem")),
+        (CssPropertyId::Flex, StaticVal::Num(10.0, "")),
     ]),
     ("flex-10/12", None, &[
         (CssPropertyId::Flex, StaticVal::Literal("1 1 83.333333%")),
     ]),
     ("flex-11", None, &[
-        (CssPropertyId::Flex, StaticVal::Literal("1 1 2.75rem")),
+        (CssPropertyId::Flex, StaticVal::Num(11.0, "")),
     ]),
     ("flex-11/12", None, &[
         (CssPropertyId::Flex, StaticVal::Literal("1 1 91.666667%")),
     ]),
     ("flex-12", None, &[
-        (CssPropertyId::Flex, StaticVal::Literal("1 1 3rem")),
+        (CssPropertyId::Flex, StaticVal::Num(12.0, "")),
     ]),
     ("flex-2", None, &[
-        (CssPropertyId::Flex, StaticVal::Literal("1 1 0.5rem")),
+        (CssPropertyId::Flex, StaticVal::Num(2.0, "")),
     ]),
     ("flex-2/12", None, &[
         (CssPropertyId::Flex, StaticVal::Literal("1 1 16.666667%")),
@@ -46693,7 +48357,7 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::Flex, StaticVal::Literal("1 1 33.333333%")),
     ]),
     ("flex-3", None, &[
-        (CssPropertyId::Flex, StaticVal::Literal("1 1 0.75rem")),
+        (CssPropertyId::Flex, StaticVal::Num(3.0, "")),
     ]),
     ("flex-3/12", None, &[
         (CssPropertyId::Flex, StaticVal::Literal("1 1 25%")),
@@ -46708,7 +48372,7 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::Flex, StaticVal::Literal("1 1 50%")),
     ]),
     ("flex-4", None, &[
-        (CssPropertyId::Flex, StaticVal::Literal("1 1 1rem")),
+        (CssPropertyId::Flex, StaticVal::Num(4.0, "")),
     ]),
     ("flex-4/12", None, &[
         (CssPropertyId::Flex, StaticVal::Literal("1 1 33.333333%")),
@@ -46720,7 +48384,7 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::Flex, StaticVal::Literal("1 1 66.666667%")),
     ]),
     ("flex-5", None, &[
-        (CssPropertyId::Flex, StaticVal::Literal("1 1 1.25rem")),
+        (CssPropertyId::Flex, StaticVal::Num(5.0, "")),
     ]),
     ("flex-5/12", None, &[
         (CssPropertyId::Flex, StaticVal::Literal("1 1 41.666667%")),
@@ -46729,31 +48393,31 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::Flex, StaticVal::Literal("1 1 83.333333%")),
     ]),
     ("flex-6", None, &[
-        (CssPropertyId::Flex, StaticVal::Literal("1 1 1.5rem")),
+        (CssPropertyId::Flex, StaticVal::Num(6.0, "")),
     ]),
     ("flex-6/12", None, &[
         (CssPropertyId::Flex, StaticVal::Literal("1 1 50%")),
     ]),
     ("flex-7", None, &[
-        (CssPropertyId::Flex, StaticVal::Literal("1 1 1.75rem")),
+        (CssPropertyId::Flex, StaticVal::Num(7.0, "")),
     ]),
     ("flex-7/12", None, &[
         (CssPropertyId::Flex, StaticVal::Literal("1 1 58.333333%")),
     ]),
     ("flex-8", None, &[
-        (CssPropertyId::Flex, StaticVal::Literal("1 1 2rem")),
+        (CssPropertyId::Flex, StaticVal::Num(8.0, "")),
     ]),
     ("flex-8/12", None, &[
         (CssPropertyId::Flex, StaticVal::Literal("1 1 66.666667%")),
     ]),
     ("flex-9", None, &[
-        (CssPropertyId::Flex, StaticVal::Literal("1 1 2.25rem")),
+        (CssPropertyId::Flex, StaticVal::Num(9.0, "")),
     ]),
     ("flex-9/12", None, &[
         (CssPropertyId::Flex, StaticVal::Literal("1 1 75%")),
     ]),
     ("flex-auto", None, &[
-        (CssPropertyId::Flex, StaticVal::Literal("1 1 auto")),
+        (CssPropertyId::Flex, StaticVal::Kw("auto")),
     ]),
     ("flex-col", None, &[
         (CssPropertyId::FlexDirection, StaticVal::Kw("column")),
@@ -46762,7 +48426,7 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::FlexDirection, StaticVal::Kw("column-reverse")),
     ]),
     ("flex-initial", None, &[
-        (CssPropertyId::Flex, StaticVal::Literal("0 1 auto")),
+        (CssPropertyId::Flex, StaticVal::Literal("0 auto")),
     ]),
     ("flex-none", None, &[
         (CssPropertyId::Flex, StaticVal::Kw("none")),
@@ -88014,6 +89678,292 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
     ]),
     ("snap-y", None, &[
         (CssPropertyId::ScrollSnapType, StaticVal::Literal("y var(--tw-scroll-snap-strictness)")),
+    ]),
+    ("space-x-0", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(0.0, "px")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-0.5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(0.125, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-1", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(0.25, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-1.5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(0.375, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-10", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(2.5, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-11", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(2.75, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-12", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(3.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-14", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(3.5, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-16", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(4.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-2", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(0.5, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-2.5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(0.625, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-20", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(5.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-24", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(6.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-28", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(7.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-3", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(0.75, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-3.5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(0.875, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-32", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(8.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-36", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(9.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-4", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(1.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-40", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(10.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-44", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(11.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-48", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(12.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(1.25, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-52", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(13.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-56", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(14.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-6", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(1.5, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-60", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(15.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-64", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(16.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-7", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(1.75, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-72", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(18.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-8", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(2.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-80", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(20.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-9", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(2.25, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-96", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(24.0, "rem")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-px", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginLeft, StaticVal::Num(1.0, "px")),
+        (CssPropertyId::MarginRight, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-x-reverse", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::VarTwSpaceXReverse, StaticVal::Num(1.0, "")),
+    ]),
+    ("space-y-0", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(0.0, "px")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-0.5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(0.125, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-1", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(0.25, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-1.5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(0.375, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-10", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(2.5, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-11", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(2.75, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-12", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(3.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-14", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(3.5, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-16", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(4.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-2", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(0.5, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-2.5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(0.625, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-20", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(5.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-24", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(6.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-28", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(7.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-3", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(0.75, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-3.5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(0.875, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-32", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(8.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-36", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(9.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-4", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(1.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-40", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(10.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-44", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(11.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-48", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(12.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-5", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(1.25, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-52", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(13.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-56", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(14.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-6", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(1.5, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-60", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(15.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-64", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(16.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-7", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(1.75, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-72", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(18.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-8", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(2.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-80", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(20.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-9", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(2.25, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-96", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(24.0, "rem")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-px", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::MarginTop, StaticVal::Num(1.0, "px")),
+        (CssPropertyId::MarginBottom, StaticVal::Num(0.0, "px")),
+    ]),
+    ("space-y-reverse", Some("& > :not([hidden]) ~ :not([hidden])"), &[
+        (CssPropertyId::VarTwSpaceYReverse, StaticVal::Num(1.0, "")),
     ]),
     ("sr-only", None, &[
         (CssPropertyId::Position, StaticVal::Kw("absolute")),

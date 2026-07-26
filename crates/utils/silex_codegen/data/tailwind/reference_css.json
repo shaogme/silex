@@ -587,6 +587,62 @@
       "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
     ]
   ],
+  "-space-x-0": [
+    [
+      "--tw-space-x-reverse",
+      "0"
+    ],
+    [
+      "margin-inline-start",
+      "0"
+    ],
+    [
+      "margin-inline-end",
+      "0"
+    ]
+  ],
+  "-space-x-52": [
+    [
+      "--tw-space-x-reverse",
+      "0"
+    ],
+    [
+      "margin-inline-start",
+      "calc(-13rem * var(--tw-space-x-reverse))"
+    ],
+    [
+      "margin-inline-end",
+      "calc(-13rem * calc(1 - var(--tw-space-x-reverse)))"
+    ]
+  ],
+  "-space-y-20": [
+    [
+      "--tw-space-y-reverse",
+      "0"
+    ],
+    [
+      "margin-block-start",
+      "calc(-5rem * var(--tw-space-y-reverse))"
+    ],
+    [
+      "margin-block-end",
+      "calc(-5rem * calc(1 - var(--tw-space-y-reverse)))"
+    ]
+  ],
+  "-space-y-px": [
+    [
+      "--tw-space-y-reverse",
+      "0"
+    ],
+    [
+      "margin-block-start",
+      "calc(-1px * var(--tw-space-y-reverse))"
+    ],
+    [
+      "margin-block-end",
+      "calc(-1px * calc(1 - var(--tw-space-y-reverse)))"
+    ]
+  ],
   "-start-full": [
     [
       "inset-inline-start",
@@ -2769,6 +2825,42 @@
     [
       "font-variant-numeric",
       "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+    ]
+  ],
+  "divide-amber-100": [
+    [
+      "border-color",
+      "#fef3c6"
+    ]
+  ],
+  "divide-fuchsia-300": [
+    [
+      "border-color",
+      "#f4a8ff"
+    ]
+  ],
+  "divide-lime-800": [
+    [
+      "border-color",
+      "#3c6300"
+    ]
+  ],
+  "divide-orange-400": [
+    [
+      "border-color",
+      "#ff8904"
+    ]
+  ],
+  "divide-rose-950": [
+    [
+      "border-color",
+      "#4d0218"
+    ]
+  ],
+  "divide-teal-500": [
+    [
+      "border-color",
+      "#00bba7"
     ]
   ],
   "divide-x-2": [
@@ -8007,6 +8099,34 @@
     [
       "margin-inline-end",
       "calc(1rem * calc(1 - var(--tw-space-x-reverse)))"
+    ]
+  ],
+  "space-x-5": [
+    [
+      "--tw-space-x-reverse",
+      "0"
+    ],
+    [
+      "margin-inline-start",
+      "calc(1.25rem * var(--tw-space-x-reverse))"
+    ],
+    [
+      "margin-inline-end",
+      "calc(1.25rem * calc(1 - var(--tw-space-x-reverse)))"
+    ]
+  ],
+  "space-y-2": [
+    [
+      "--tw-space-y-reverse",
+      "0"
+    ],
+    [
+      "margin-block-start",
+      "calc(0.5rem * var(--tw-space-y-reverse))"
+    ],
+    [
+      "margin-block-end",
+      "calc(0.5rem * calc(1 - var(--tw-space-y-reverse)))"
     ]
   ],
   "sr-only": [

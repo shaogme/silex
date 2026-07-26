@@ -1,3 +1,14 @@
+/// 前缀元数据的**权威**配置。
+///
+/// 自动探针只能推导出"值随输入变化"的目标属性；三类信息它永远推不出来，必须写在这里：
+///
+/// 1. `value_wrapper`——Tailwind 走 `--tw-*` 变量 + `@property` 组合出 filter/transform，
+///    探针看到的是变量赋值，看不到 silex 编译期直接求值所需的函数外壳；
+/// 2. `companions`——命中该前缀时要附带产出的**固定**声明。探针的双值差分会把这类
+///    恒定声明当作噪声剔除（那是 §10.3 的必要行为），于是它们只能在这里登记。
+///    注意 Tailwind 自己的恒定声明几乎都是 `var(--tw-border-style)` 这类内部管道，
+///    silex 用 preflight / 自有机制覆盖了，**不应**照搬；这里只登记语义上真正必需的；
+/// 3. Tailwind 里根本不存在的类名（`tailwindcss-animate` 的 `slide-in-from-*` 等）。
 const staticFallbackMap = {
   "animate": { target_props: ["animation"], unit_kind: "Unitless" },
   "aspect": { target_props: ["aspect-ratio"], unit_kind: "Unitless" },
@@ -72,7 +83,10 @@ const staticFallbackMap = {
   "opacity": { target_props: ["opacity"], unit_kind: "Percentage" },
   "order": { target_props: ["order"], unit_kind: "Unitless" },
   "origin": { target_props: ["transform-origin"], unit_kind: "Unitless" },
-  "outline": { target_props: ["outline-width"], unit_kind: "Pixel" },
+  // outline 宽度必须连带线型，否则 `outline-2` 画不出来：CSS 的 outline-style 默认是 none，
+  // 而 silex 的 preflight 只兜底了 border-style。Tailwind 靠 `@property --tw-outline-style`
+  // 的 initial-value 达成同样效果，那是探针看不见的信息。
+  "outline": { target_props: ["outline-width"], unit_kind: "Pixel", companions: [["outline-style", "solid"]] },
   "p": { target_props: ["padding"], unit_kind: "RemScale" },
   "padding": { target_props: ["padding"], unit_kind: "RemScale" },
   "pb": { target_props: ["padding-bottom"], unit_kind: "RemScale" },
@@ -99,9 +113,11 @@ const staticFallbackMap = {
   "skew-x": { target_props: ["transform"], unit_kind: "Degree", value_wrapper: "skewX({})" },
   "skew-y": { target_props: ["transform"], unit_kind: "Degree", value_wrapper: "skewY({})" },
   "slide-in-from-bottom": { target_props: ["--tw-enter-translate-y"], unit_kind: "RemScale" },
-  "slide-in-from-left": { target_props: ["--tw-enter-translate-x"], unit_kind: "RemScale" },
+  // from-top / from-left 的位移方向为负——用 wrapper 表达符号，免得在 resolver 里
+  // 按前缀名硬编码判方向（报告 §3.2）
+  "slide-in-from-left": { target_props: ["--tw-enter-translate-x"], unit_kind: "RemScale", value_wrapper: "-{}" },
   "slide-in-from-right": { target_props: ["--tw-enter-translate-x"], unit_kind: "RemScale" },
-  "slide-in-from-top": { target_props: ["--tw-enter-translate-y"], unit_kind: "RemScale" },
+  "slide-in-from-top": { target_props: ["--tw-enter-translate-y"], unit_kind: "RemScale", value_wrapper: "-{}" },
   "slide-out-to-bottom": { target_props: ["--tw-exit-translate-y"], unit_kind: "RemScale" },
   "slide-out-to-left": { target_props: ["--tw-exit-translate-x"], unit_kind: "RemScale" },
   "slide-out-to-right": { target_props: ["--tw-exit-translate-x"], unit_kind: "RemScale" },

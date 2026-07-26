@@ -30,6 +30,7 @@ impl Parse for ThemeDefinition {
 }
 
 pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
+    let __silex = crate::crate_path::silex();
     let def: ThemeDefinition = parse2(input)?;
     let name = &def.name;
     let vis = &def.vis;
@@ -126,9 +127,9 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
         let var_expr = format!("var({})", css_var_name);
 
         const_impl_items.push(quote! {
-            pub const #const_name: ::silex::css::types::CssVar<#f_ty> =
-                ::silex::css::types::CssVar(
-                    ::silex::css::types::CssVarValue::Static(#var_expr),
+            pub const #const_name: #__silex::css::types::CssVar<#f_ty> =
+                #__silex::css::types::CssVar(
+                    #__silex::css::types::CssVarValue::Static(#var_expr),
                     ::std::marker::PhantomData
                 );
         });
@@ -177,9 +178,9 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
         #[allow(non_camel_case_types)]
         impl #trait_name for #name { #(#trait_impl_items)* }
 
-        impl ::silex::css::theme::ThemeType for #name {}
+        impl #__silex::css::theme::ThemeType for #name {}
 
-        impl ::silex::css::theme::ThemeToCss for #name {
+        impl #__silex::css::theme::ThemeToCss for #name {
             fn to_css_variables(&self) -> String {
                 let mut s = String::new();
                 #( s.push_str(&#to_css_items); )*
@@ -191,7 +192,7 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
 
         impl ::std::fmt::Display for #name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                write!(f, "{}", ::silex::css::theme::ThemeToCss::to_css_variables(self))
+                write!(f, "{}", #__silex::css::theme::ThemeToCss::to_css_variables(self))
             }
         }
 
@@ -204,7 +205,7 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
 
         #is_main_tokens
 
-        impl ::silex::css::theme::ThemePatchToCss for #patch_name {
+        impl #__silex::css::theme::ThemePatchToCss for #patch_name {
             fn get_patch_entries(&self) -> Vec<(&'static str, Option<String>)> {
                 vec![ #(#patch_entries),* ]
             }

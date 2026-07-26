@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+pub mod between;
 pub mod colors;
 pub mod dynamic;
 pub mod exact;
@@ -8,6 +9,7 @@ pub mod flex_grid;
 pub mod transforms;
 pub mod typography_border;
 
+use between::resolve_between_rules;
 use colors::resolve_mask_color_rules;
 use dynamic::resolve_dynamic_rules;
 use exact::resolve_exact_match;
@@ -52,26 +54,31 @@ pub fn resolve_class(class_name: &str, ctx: &dyn TwContext) -> Option<Vec<TwRule
         return Some(plain(rules));
     }
 
-    // 4. 边框、圆角、阴影、字体尺寸/字重/行高/字距等匹配
+    // 4. divide-* / space-* 的尺寸与线型：声明落在相邻子元素之间
+    if let Some(sets) = resolve_between_rules(class_name) {
+        return Some(sets);
+    }
+
+    // 5. 边框、圆角、阴影、字体尺寸/字重/行高/字距等匹配
     if let Some(rules) = resolve_typography_border_effect_rules(class_name) {
         return Some(plain(rules));
     }
 
-    // 5. Flexbox & Grid 匹配 (grid-cols, flex-row, justify-*, items-*, etc.)
+    // 6. Flexbox & Grid 匹配 (grid-cols, flex-row, justify-*, items-*, etc.)
     if let Some(rules) = resolve_flex_grid_rules(class_name) {
         return Some(plain(rules));
     }
 
-    // 6. Transform & Transition & Animation 匹配 (scale, rotate, duration, transform, etc.)
+    // 7. Transform & Transition & Animation 匹配 (scale, rotate, duration, transform, etc.)
     if let Some(rules) = resolve_transform_transition_rules(class_name) {
         return Some(plain(rules));
     }
 
-    // 7. Filter & Backdrop Filter 匹配 (blur, brightness, grayscale, mix-blend-*, etc.)
+    // 8. Filter & Backdrop Filter 匹配 (blur, brightness, grayscale, mix-blend-*, etc.)
     if let Some(rules) = resolve_filter_rules(class_name) {
         return Some(plain(rules));
     }
 
-    // 8. 动态长度与位置匹配 (Spacing, Sizing, Offset, Z-index, Opacity)
+    // 9. 动态长度与位置匹配 (Spacing, Sizing, Offset, Z-index, Opacity)
     resolve_dynamic_rules(class_name).map(plain)
 }

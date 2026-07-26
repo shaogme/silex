@@ -168,6 +168,7 @@ impl Parse for StyledComponent {
 }
 
 pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
+    let __silex = crate::crate_path::silex();
     let parsed: StyledComponent = syn::parse2(input)?;
     let tag = &parsed.tag;
     let name = &parsed.name;
@@ -216,7 +217,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         let prop = &group.prop_name;
         let sig_ident = quote::format_ident!("{}_sig", prop);
         prop_sig_bindings.push(quote! {
-            let #sig_ident = ::silex::prelude::IntoRx::into_rx(#prop.clone());
+            let #sig_ident = #__silex::prelude::IntoRx::into_rx(#prop.clone());
         });
 
         let mut match_arms = Vec::new();
@@ -258,7 +259,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         }
 
         variant_class_bindings.push(quote! {
-            .class(::silex::prelude::rx! {
+            .class(#__silex::prelude::rx! {
                 match #sig_ident.get() {
                     #(#match_arms)*
                     _ => "",
@@ -285,7 +286,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     for v in &parsed.variants {
         if !existing_props.contains(&v.prop_name) {
             let p = &v.prop_name;
-            all_fn_args.push(syn::parse_quote! { #[prop(into)] #[chain(default)] #p: ::silex::core::reactivity::Signal<::std::string::String> });
+            all_fn_args.push(syn::parse_quote! { #[prop(into)] #[chain(default)] #p: #__silex::core::reactivity::Signal<::std::string::String> });
         }
     }
 
@@ -332,9 +333,9 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let static_id = &compile_result.static_id;
 
     let node_init = if is_void_tag(&tag_str) {
-        quote! { ::silex::html::#tag() }
+        quote! { #__silex::html::#tag() }
     } else {
-        quote! { ::silex::html::#tag(#children_binding) }
+        quote! { #__silex::html::#tag(#children_binding) }
     };
 
     let fn_body: syn::Block = syn::parse_quote! {
@@ -346,10 +347,10 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             #(#prop_sig_bindings)*
 
             if !__STATIC_CSS.is_empty() {
-                ::silex::css::inject_style(#static_id, __STATIC_CSS);
+                #__silex::css::inject_style(#static_id, __STATIC_CSS);
             }
             if !__COMPONENT_CSS.is_empty() {
-                ::silex::css::inject_style(#style_id, __COMPONENT_CSS);
+                #__silex::css::inject_style(#style_id, __COMPONENT_CSS);
             }
 
             #(#variant_injections)*
@@ -358,7 +359,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             #node_init
                 .class(#class_name)
                 #style_prop_binding
-                .apply(::silex::dom::attribute::AttrOp::CombinedStyles(::silex::dom::attribute::CombinedStyles {
+                .apply(#__silex::dom::attribute::AttrOp::CombinedStyles(#__silex::dom::attribute::CombinedStyles {
                     statics: ::std::vec![],
                     properties: ::std::vec![ #(#style_bindings),* ],
                     sheets: ::std::vec![],
@@ -406,11 +407,12 @@ fn process_dynamic_entries(
     style_bindings: &mut Vec<TokenStream>,
     suffix: &str,
 ) -> Result<()> {
+    let __silex = crate::crate_path::silex();
     for (i, (prop, expr)) in entries.iter().enumerate() {
         let var_ident = quote::format_ident!("dyn_var{}_{}", suffix, i);
         let prop_type = crate::css::get_prop_type(prop, span)?;
         var_decls.push(quote! {
-            let #var_ident = ::silex::css::make_dynamic_val_for::<#prop_type, _>((#expr).clone());
+            let #var_ident = #__silex::css::make_dynamic_val_for::<#prop_type, _>((#expr).clone());
         });
         let var_name = format!("--{}-{}", class_name, i);
         style_bindings.push(quote! { (::std::borrow::Cow::Borrowed(#var_name), #var_ident) });
@@ -427,6 +429,7 @@ fn expand_dynamic_rule(
     classes: &mut Vec<TokenStream>,
     variant_info: Option<(&Ident, &str)>, // (sig_ident, name_lower)
 ) -> Result<()> {
+    let __silex = crate::crate_path::silex();
     let template = &rule.template;
     let mut eval_vars = Vec::new();
     let mut rule_var_decls = Vec::new();
@@ -441,7 +444,7 @@ fn expand_dynamic_rule(
         let var_id = quote::format_ident!("rule_var{}_{}_{}", suffix, idx, expr_idx);
         let prop_ty = crate::css::get_prop_type(prop, span)?;
         rule_var_decls.push(
-            quote! { let #var_id = ::silex::css::make_dynamic_val_for::<#prop_ty, _>(#expr); },
+            quote! { let #var_id = #__silex::css::make_dynamic_val_for::<#prop_ty, _>(#expr); },
         );
         eval_vars.push(var_id);
     }
@@ -449,9 +452,9 @@ fn expand_dynamic_rule(
     let mgr_id = quote::format_ident!("mgr{}_{}", suffix, idx);
     inits.push(quote! {
         #(#rule_var_decls)*
-        let #mgr_id = ::std::rc::Rc::new(::std::cell::RefCell::new(Some(::silex::css::DynamicStyleManager::new())));
+        let #mgr_id = ::std::rc::Rc::new(::std::cell::RefCell::new(Some(#__silex::css::DynamicStyleManager::new())));
         let cleanup = #mgr_id.clone();
-        ::silex::core::reactivity::on_cleanup(move || { if let Ok(mut o) = cleanup.try_borrow_mut() { o.take(); } });
+        #__silex::core::reactivity::on_cleanup(move || { if let Ok(mut o) = cleanup.try_borrow_mut() { o.take(); } });
     });
 
     let rx_body = if let Some((sig, val)) = variant_info {
@@ -459,9 +462,9 @@ fn expand_dynamic_rule(
             if #sig.get() != #val { return "".to_string(); }
             let mut res = ::std::string::ToString::to_string(#template);
             #( if let Some(p) = res.find("{}") { res.replace_range(p..p+2, &#eval_vars.get()); } )*
-            let hash = ::silex::hash::css::hash_one(&res);
+            let hash = #__silex::hash::css::hash_one(&res);
             let mut buf = [0u8; 13];
-            let dyn_class = format!("{}-dyn-{}", #class_name, ::silex::hash::css::encode_base36(hash, &mut buf));
+            let dyn_class = format!("{}-dyn-{}", #class_name, #__silex::hash::css::encode_base36(hash, &mut buf));
             if let Ok(mut o) = #mgr_id.try_borrow_mut() {
                 if let Some(m) = o.as_mut() { m.update(&dyn_class, &res.replace(#class_name, &dyn_class)); }
             }
@@ -471,9 +474,9 @@ fn expand_dynamic_rule(
         quote! {
             let mut res = ::std::string::ToString::to_string(#template);
             #( if let Some(p) = res.find("{}") { res.replace_range(p..p+2, &#eval_vars.get()); } )*
-            let hash = ::silex::hash::css::hash_one(&res);
+            let hash = #__silex::hash::css::hash_one(&res);
             let mut buf = [0u8; 13];
-            let dyn_class = format!("{}-dyn-{}", #class_name, ::silex::hash::css::encode_base36(hash, &mut buf));
+            let dyn_class = format!("{}-dyn-{}", #class_name, #__silex::hash::css::encode_base36(hash, &mut buf));
             if let Ok(mut o) = #mgr_id.try_borrow_mut() {
                 if let Some(m) = o.as_mut() { m.update(&dyn_class, &res.replace(#class_name, &dyn_class)); }
             }
@@ -482,7 +485,7 @@ fn expand_dynamic_rule(
     };
 
     classes.push(
-        quote! { .class({ let manager = #mgr_id.clone(); ::silex::prelude::rx! { #rx_body } }) },
+        quote! { .class({ let manager = #mgr_id.clone(); #__silex::prelude::rx! { #rx_body } }) },
     );
     Ok(())
 }
@@ -492,6 +495,7 @@ fn get_tag_return_type(
     span: Span,
     where_clause: Option<&syn::WhereClause>,
 ) -> TokenStream {
+    let __silex = crate::crate_path::silex();
     if tag.chars().next().is_some_and(|c| c.is_ascii_lowercase()) {
         let name = match tag {
             "a" => "A".to_string(),
@@ -505,13 +509,14 @@ fn get_tag_return_type(
             }
         };
         let ident = Ident::new(&name, span);
-        quote! { ::silex::dom::element::TypedElement<::silex::html::#ident> }
+        quote! { #__silex::dom::element::TypedElement<#__silex::html::#ident> }
     } else {
-        quote! { impl ::silex::dom::attribute::AttributeBuilder + ::silex::dom::view::View + ::silex::dom::view::ApplyAttributes + 'static #where_clause }
+        quote! { impl #__silex::dom::attribute::AttributeBuilder + #__silex::dom::view::View + #__silex::dom::view::ApplyAttributes + 'static #where_clause }
     }
 }
 
 fn get_extra_tag_impls(tag: &str, name: &Ident, generics: &Generics) -> TokenStream {
+    let __silex = crate::crate_path::silex();
     let mut items = TokenStream::new();
     let comp = quote::format_ident!("{}Component", name);
     let (impl_gen, ty_gen, where_c) = generics.split_for_impl();
@@ -537,7 +542,7 @@ fn get_extra_tag_impls(tag: &str, name: &Ident, generics: &Generics) -> TokenStr
 
     for t in traits {
         let tid = quote::format_ident!("{}", t);
-        items.extend(quote! { impl #impl_gen ::silex::html::#tid for #comp #ty_gen #where_c {} });
+        items.extend(quote! { impl #impl_gen #__silex::html::#tid for #comp #ty_gen #where_c {} });
     }
     items
 }
@@ -580,11 +585,12 @@ impl Parse for GlobalStyle {
 }
 
 pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
+    let __silex = crate::crate_path::silex();
     let parsed: GlobalStyle = syn::parse2(input)?;
 
     let filtered_attrs: Vec<_> = parsed.attrs.iter().collect();
 
-    let component_attr = quote! { #[::silex::macros::component] };
+    let component_attr = quote! { #[#__silex::macros::component] };
 
     let c_name = parsed
         .name
@@ -600,7 +606,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         for (i, (prop, expr)) in res.expressions.iter().enumerate() {
             let vid = quote::format_ident!("global_var_{}", i);
             let pty = crate::css::get_prop_type(prop, c_name.span())?;
-            r_decls.push(quote! { let #vid = ::silex::css::make_property_val::<#pty, _>(#expr); });
+            r_decls.push(quote! { let #vid = #__silex::css::make_property_val::<#pty, _>(#expr); });
             let pattern = format!("var(--slx-dyn-{})", i);
             replacements.push(quote! { (#pattern.to_string(), #vid) });
         }
@@ -611,7 +617,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
 
         inits.push(quote! {
             #(#r_decls)*
-            ::silex::css::inject_managed_dynamic_style(
+            #__silex::css::inject_managed_dynamic_style(
                 #sid,
                 #template.to_string(),
                 ::std::vec![ #(#replacements),* ],
@@ -630,7 +636,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         for (ei, (p, ex)) in rule.expressions.iter().enumerate() {
             let vid = quote::format_ident!("dyn_var_{}_{}", idx, ei);
             let pty = crate::css::get_prop_type(p, c_name.span())?;
-            r_decls.push(quote! { let #vid = ::silex::css::make_property_val::<#pty, _>(#ex); });
+            r_decls.push(quote! { let #vid = #__silex::css::make_property_val::<#pty, _>(#ex); });
             let pattern_val = format!("var(--slx-dyn-{})", ei);
             let pattern_sel = format!("._slx_dyn_{}", ei);
             replacements.push(quote! { (#pattern_val.to_string(), #vid.clone()) });
@@ -640,7 +646,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         let rid = format!("{}-dyn-{}", sid, idx);
         inits.push(quote! {
             #(#r_decls)*
-            ::silex::css::inject_managed_dynamic_style(
+            #__silex::css::inject_managed_dynamic_style(
                 #rid,
                 #template.to_string(),
                 ::std::vec![ #(#replacements),* ],
@@ -651,10 +657,10 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     Ok(quote! {
         #(#filtered_attrs)*
         #component_attr
-        pub fn #c_name() -> impl ::silex::dom::view::View + ::silex::dom::view::ApplyAttributes + 'static {
+        pub fn #c_name() -> impl #__silex::dom::view::View + #__silex::dom::view::ApplyAttributes + 'static {
             #(#inits)*
-            use ::silex::dom::view::View;
-            ::silex::dom::view::View::into_any(())
+            use #__silex::dom::view::View;
+            #__silex::dom::view::View::into_any(())
         }
     })
 }

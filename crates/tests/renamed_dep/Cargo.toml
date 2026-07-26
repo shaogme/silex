@@ -1,0 +1,13 @@
+# 回归夹具：验证宏展开不再硬编码 `::silex::` 绝对路径（报告 §3.4 / 路线图第 14 项）。
+#
+# 这个 crate 唯一的作用就是**把 silex 换个名字依赖**。此前所有宏都展开成
+# `::silex::…`，重命名后这些路径全部找不到；现在路径由 `proc-macro-crate`
+# 从调用方的 Cargo.toml 解析，本 crate 能编译过就等于该缺陷不会复发。
+[package]
+name = "silex_renamed_dep_test"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+my_silex = { package = "silex", path = "../../silex", version = "0.1.0-beta.9" }

@@ -4,6 +4,7 @@ use syn::{DeriveInput, parse_macro_input};
 
 #[cfg(feature = "component")]
 mod component;
+mod crate_path;
 #[cfg(feature = "css")]
 mod css;
 #[cfg(feature = "component")]

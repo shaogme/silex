@@ -344,3 +344,109 @@ fn extended_color_prefixes_resolve_to_their_own_properties() {
     assert_contains("decoration-red-500", "text-decoration-color:#fb2c36");
     assert_contains("inset-ring-red-500", "--tw-inset-ring-color:#fb2c36");
 }
+
+// ---------------------------------------------------------------------------
+// §11.5 多义后缀的非任意值路径（路线图第 13 项）
+// ---------------------------------------------------------------------------
+
+/// `columns-<数字>` 是列数、`columns-<容器档位>` 是列宽，二者都写进 `columns` 简写。
+///
+/// 此前按后缀形态分派到 `column-count` / `column-width` 两个长写属性，
+/// 而档位表是共用的：`columns-lg` 于是产出 `column-count:32rem` 这样的非法 CSS。
+#[test]
+fn columns_always_uses_the_shorthand() {
+    assert_contains("columns-4", "columns:4");
+    assert_contains("columns-lg", "columns:32rem");
+    assert_contains("columns-auto", "columns:auto");
+    // 静态表未覆盖的档位走宏兜底路径，结论必须一致
+    assert_contains("columns-13", "columns:13");
+    assert_contains("columns-9xl", "columns:128rem");
+
+    for src in ["columns-4", "columns-lg", "columns-13"] {
+        let css = css_of(src);
+        assert!(
+            !css.contains("column-count") && !css.contains("column-width"),
+            "`{src}` should not emit the longhand properties, got:\n{css}"
+        );
+    }
+}
+
+/// `flex-<数字>` 是无单位的 flex 简写，不是间距档位。
+///
+/// `resolve_length_val` 此前先于数值判定命中，把 `flex-4` 求成 `flex:1 1 1rem`。
+#[test]
+fn numeric_flex_is_unitless() {
+    assert_contains("flex-4", "flex:4");
+    assert_contains("flex-1", "flex:1");
+    // 静态表未覆盖的档位走宏兜底路径
+    assert_contains("flex-13", "flex:13");
+    // 分数形态仍是 flex-basis 百分比，不能被数值分支吞掉
+    // （`1 1 50%` 被 LightningCSS 压成等价的 `50%`）
+    assert_contains("flex-1/2", "flex:50%");
+
+    let css = css_of("flex-4");
+    assert!(
+        !css.contains("rem"),
+        "`flex-4` must not be evaluated on the spacing scale, got:\n{css}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// §3.2 divide / space 的伴生选择器（路线图第 12 项）
+// ---------------------------------------------------------------------------
+
+/// `divide-*` / `space-*` 的声明落在**相邻子元素之间**，绝不能落在元素自身。
+///
+/// 这一族此前有两份实现：宏侧一条带 `DIVIDE_SELECTOR` 的 80 行硬编码长链，
+/// core 侧另有一份**不带选择器**的 `(属性, 值)` 映射。宏那份排在前面，
+/// core 那份是永不命中的死代码——一旦顺序变动，边框就会画到容器自己身上。
+#[test]
+fn divide_and_space_declarations_land_between_children() {
+    // LightningCSS 会压掉组合符两侧的空格
+    let sep = ">:not([hidden])~:not([hidden])";
+    for src in [
+        "divide-x",
+        "divide-y-4",
+        "divide-dashed",
+        "divide-x-reverse",
+        "space-x-4",
+        "-space-y-2",
+        "space-y-reverse",
+    ] {
+        let css = css_of(src);
+        assert!(
+            css.contains(sep),
+            "`{src}` must be scoped to the child separator, got:\n{css}"
+        );
+    }
+
+    assert_contains("divide-x", "border-left-width:1px");
+    assert_contains("divide-x", "border-right-width:0");
+    assert_contains("divide-y-4", "border-top-width:4px");
+    assert_contains("divide-dashed", "border-style:dashed");
+    assert_contains("space-x-4", "margin-left:1rem");
+    assert_contains("space-x-4", "margin-right:0");
+    assert_contains("-space-y-2", "margin-top:-.5rem");
+}
+
+/// 伴生声明与取反都由 `prefix_metadata` 承载，不再是 `numeric.rs` 里的 `if prefix == …`。
+///
+/// 回归点：`outline-style: solid` 此前只写在数值分支里，任意值路径 `outline-[3px]`
+/// 漏掉它——CSS 的 `outline-style` 默认是 `none`，漏掉就等于这条 outline 画不出来。
+#[test]
+fn prefix_companions_apply_to_both_fallback_paths() {
+    // 静态表未覆盖的档位，走宏兜底
+    assert_contains("outline-7", "outline-style:solid");
+    assert_contains("outline-7", "outline-width:7px");
+    assert_contains("outline-[3px]", "outline-style:solid");
+    assert_contains("outline-[3px]", "outline-width:3px");
+}
+
+/// `slide-in-from-top/left` 的位移方向为负，由 `value_wrapper: "-{}"` 表达
+#[test]
+fn slide_in_direction_comes_from_the_value_wrapper() {
+    assert_contains("slide-in-from-top-4", "--tw-enter-translate-y:-1rem");
+    assert_contains("slide-in-from-left-4", "--tw-enter-translate-x:-1rem");
+    assert_contains("slide-in-from-bottom-4", "--tw-enter-translate-y:1rem");
+    assert_contains("slide-in-from-right-4", "--tw-enter-translate-x:1rem");
+}

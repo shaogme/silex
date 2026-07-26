@@ -41,28 +41,6 @@ enum Divergence {
 /// 台账是"已知且已决定暂不处理"的清单，不是"跑不过就往里塞"的垃圾桶。
 #[rustfmt::skip]
 const KNOWN_DIVERGENCES: &[(&str, Divergence, &str)] = &[
-    // --- 缺陷：数值型 flex 被当作长度（本轮对拍新发现）-----------------------
-    ("flex-4",  Divergence::ValueOnly, "flex-<数字> 应为 `flex:4`，当前按 RemScale 求值成 `flex:1rem`"),
-    ("flex-10", Divergence::ValueOnly, "同 flex-4"),
-
-    // --- 缺陷：columns 映射到了 column-count（本轮对拍新发现）----------------
-    // `columns-lg` 这类值是宽度（32rem），赋给 column-count 是非法 CSS。
-    ("columns-0",   Divergence::Mechanism, "应产出 columns 简写，当前产出 column-count"),
-    ("columns-1",   Divergence::Mechanism, "同 columns-0"),
-    ("columns-2",   Divergence::Mechanism, "同 columns-0"),
-    ("columns-4",   Divergence::Mechanism, "同 columns-0"),
-    ("columns-32",  Divergence::Mechanism, "同 columns-0"),
-    ("columns-48",  Divergence::Mechanism, "同 columns-0"),
-    ("columns-60",  Divergence::Mechanism, "同 columns-0"),
-    ("columns-80",  Divergence::Mechanism, "同 columns-0"),
-    ("columns-auto",Divergence::Mechanism, "同 columns-0"),
-    ("columns-xs",  Divergence::Mechanism, "宽度档位赋给 column-count，是非法 CSS"),
-    ("columns-sm",  Divergence::Mechanism, "同 columns-xs"),
-    ("columns-md",  Divergence::Mechanism, "同 columns-xs"),
-    ("columns-lg",  Divergence::Mechanism, "同 columns-xs"),
-    ("columns-xl",  Divergence::Mechanism, "同 columns-xs"),
-    ("columns-4xl", Divergence::Mechanism, "同 columns-xs"),
-
     // --- 缺陷：outline-none / outline-hidden 语义互换（报告 §2.10）-----------
     ("outline-none",   Divergence::Mechanism, "v4 中应为 outline-style:none，当前产出 outline:2px solid transparent"),
     ("outline-hidden", Divergence::Mechanism, "v4 中 outline-hidden 才是 2px solid transparent + outline-offset"),
@@ -88,10 +66,19 @@ const KNOWN_DIVERGENCES: &[(&str, Divergence, &str)] = &[
     ("not-sr-only", Divergence::Mechanism, "缺 clip-path:none"),
 
     // --- 设计取舍：divide / space 的 reverse 变量体系（报告 §3.2）------------
+    // Tailwind 把值乘进 `calc(X * var(--tw-*-reverse))` 与 `calc(X * calc(1 - var(...)))`
+    // 两条声明，靠一个变量在运行时切换方向，落点也是逻辑属性；silex 编译期就定死方向，
+    // 产出物理属性。视觉结果相同（LTR 下），差别是 `*-reverse` 只对 silex 的
+    // 独立类名生效，不能反转已经写好的 `space-x-4`。
     ("divide-x-2", Divergence::Mechanism,
      "Tailwind 用 --tw-divide-x-reverse 支持 divide-x-reverse；silex 直接产出固定方向的边框"),
-    ("space-x-4", Divergence::Mechanism,
-     "同 divide-x-2，Tailwind 用 --tw-space-x-reverse 走 margin-inline-start/end"),
+    ("space-x-4",   Divergence::Mechanism, "同 divide-x-2，Tailwind 走 margin-inline-start/end"),
+    ("space-x-5",   Divergence::Mechanism, "同 space-x-4"),
+    ("space-y-2",   Divergence::Mechanism, "同 space-x-4"),
+    ("-space-x-0",  Divergence::Mechanism, "同 space-x-4"),
+    ("-space-x-52", Divergence::Mechanism, "同 space-x-4"),
+    ("-space-y-20", Divergence::Mechanism, "同 space-x-4"),
+    ("-space-y-px", Divergence::Mechanism, "同 space-x-4"),
 
     // --- 设计取舍：字号与行高解耦（报告 §3.2）--------------------------------
     // Tailwind 用 `var(--tw-leading, var(--text-sm--line-height))` 让 `leading-*` 能单独覆盖行高，
