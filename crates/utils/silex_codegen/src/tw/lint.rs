@@ -78,3 +78,134 @@ pub fn validate_resolver_properties(
         detail
     ))
 }
+
+/// 值必须写成函数调用（或 `none`）的组合型属性——裸值塞进去就是非法 CSS
+const COMPOSITE_PROPS: &[&str] = &["filter", "backdrop-filter", "transform"];
+
+/// 校验 codegen resolver 产出的 CSS **值**本身合法。
+///
+/// 属性名对了值仍可能是垃圾——报告 §2.2 的 `filter: 4px`、§2.3 的
+/// `border-inline-start-style: 3px` 都是属性名合法、值荒谬的例子，
+/// 只查属性名的 lint 拦不住它们。
+pub fn validate_resolver_values(
+    classes: &[String],
+    test_cases: &[String],
+    palette: &BTreeMap<String, Vec<ColorShadeInfo>>,
+) -> Result<(), String> {
+    let mut errors: BTreeMap<String, String> = BTreeMap::new();
+    let mut record = |key: String, detail: String| {
+        errors.entry(key).or_insert(detail);
+    };
+
+    for class in classes.iter().chain(test_cases.iter()) {
+        let Some(rules) = resolve_css_rules(class, palette) else {
+            continue;
+        };
+        for (prop, value) in rules {
+            let value = value.trim();
+
+            if value.is_empty() {
+                record(
+                    format!("{prop}/empty"),
+                    format!("'{class}' 让 '{prop}' 取到了空值"),
+                );
+                continue;
+            }
+
+            if !parens_balanced(value) {
+                record(
+                    format!("{prop}/parens"),
+                    format!("'{class}' 的 '{prop}: {value}' 括号不配对"),
+                );
+            }
+
+            // 组合型属性只接受函数调用列表或 `none`
+            if COMPOSITE_PROPS.contains(&prop)
+                && value != "none"
+                && !value.contains('(')
+                && !value.starts_with("var(")
+            {
+                record(
+                    format!("{prop}/bare"),
+                    format!(
+                        "'{class}' 的 '{prop}: {value}' 是裸值——组合型属性必须写成函数调用（缺 value_wrapper？）"
+                    ),
+                );
+            }
+
+            // 关键字属性不能收到长度/角度值
+            if (prop.ends_with("-style") || prop.ends_with("-fit") || prop.ends_with("-repeat"))
+                && looks_numeric(value)
+            {
+                record(
+                    format!("{prop}/numeric"),
+                    format!("'{class}' 给关键字属性 '{prop}' 赋了数值 '{value}'"),
+                );
+            }
+        }
+    }
+
+    if errors.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "codegen resolver 产出了 {} 类非法 CSS 值:\n  - {}",
+        errors.len(),
+        errors.values().cloned().collect::<Vec<_>>().join("\n  - ")
+    ))
+}
+
+fn parens_balanced(value: &str) -> bool {
+    let mut depth = 0i32;
+    for c in value.chars() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth < 0 {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+    }
+    depth == 0
+}
+
+/// 是否形如 `3px` / `1.5rem` / `45deg` / `10` —— 关键字属性不该收到这种值
+fn looks_numeric(value: &str) -> bool {
+    let trimmed = value.trim_start_matches('-');
+    let digits = trimmed
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .count();
+    digits > 0
+        && trimmed[digits..]
+            .chars()
+            .all(|c| c.is_ascii_alphabetic() || c == '%')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parens_balance_check() {
+        assert!(parens_balanced("blur(4px)"));
+        assert!(parens_balanced("repeat(3, minmax(0, 1fr))"));
+        assert!(!parens_balanced("blur(4px"));
+        assert!(!parens_balanced("blur4px)"));
+    }
+
+    #[test]
+    fn numeric_detection_only_fires_on_numbers() {
+        assert!(looks_numeric("3px"));
+        assert!(looks_numeric("1.5rem"));
+        assert!(looks_numeric("-45deg"));
+        assert!(looks_numeric("10"));
+        assert!(looks_numeric("50%"));
+        assert!(!looks_numeric("solid"));
+        assert!(!looks_numeric("var(--tw-border-style)"));
+        assert!(!looks_numeric("cover"));
+    }
+}

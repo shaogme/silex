@@ -1,0 +1,9124 @@
+{
+  "-bg-conic-0": [
+    [
+      "--tw-gradient-position",
+      "from 0deg in oklab"
+    ],
+    [
+      "background-image",
+      "conic-gradient(var(--tw-gradient-stops))"
+    ]
+  ],
+  "-bottom-0": [
+    [
+      "bottom",
+      "0px"
+    ]
+  ],
+  "-bottom-2/3": [
+    [
+      "bottom",
+      "-66.666667%"
+    ]
+  ],
+  "-bottom-44": [
+    [
+      "bottom",
+      "-11rem"
+    ]
+  ],
+  "-bottom-full": [
+    [
+      "bottom",
+      "-100%"
+    ]
+  ],
+  "-col-end-1": [
+    [
+      "grid-column-end",
+      "-1"
+    ]
+  ],
+  "-col-end-8": [
+    [
+      "grid-column-end",
+      "-8"
+    ]
+  ],
+  "-col-start-6": [
+    [
+      "grid-column-start",
+      "-6"
+    ]
+  ],
+  "-end-full": [
+    [
+      "inset-inline-end",
+      "-100%"
+    ]
+  ],
+  "-end-px": [
+    [
+      "inset-inline-end",
+      "-1px"
+    ]
+  ],
+  "-indent-0": [
+    [
+      "text-indent",
+      "0px"
+    ]
+  ],
+  "-indent-20": [
+    [
+      "text-indent",
+      "-5rem"
+    ]
+  ],
+  "-indent-5": [
+    [
+      "text-indent",
+      "-1.25rem"
+    ]
+  ],
+  "-indent-96": [
+    [
+      "text-indent",
+      "-24rem"
+    ]
+  ],
+  "-inset-0": [
+    [
+      "inset",
+      "0px"
+    ]
+  ],
+  "-inset-e-full": [
+    [
+      "inset-inline-end",
+      "-100%"
+    ]
+  ],
+  "-left-0": [
+    [
+      "left",
+      "0px"
+    ]
+  ],
+  "-left-2/3": [
+    [
+      "left",
+      "-66.666667%"
+    ]
+  ],
+  "-left-44": [
+    [
+      "left",
+      "-11rem"
+    ]
+  ],
+  "-left-full": [
+    [
+      "left",
+      "-100%"
+    ]
+  ],
+  "-m-0": [
+    [
+      "margin",
+      "0px"
+    ]
+  ],
+  "-m-20": [
+    [
+      "margin",
+      "-5rem"
+    ]
+  ],
+  "-m-5": [
+    [
+      "margin",
+      "-1.25rem"
+    ]
+  ],
+  "-m-96": [
+    [
+      "margin",
+      "-24rem"
+    ]
+  ],
+  "-mask-conic-0": [
+    [
+      "mask-image",
+      "var(--tw-mask-linear), var(--tw-mask-radial), var(--tw-mask-conic)"
+    ],
+    [
+      "mask-composite",
+      "intersect"
+    ],
+    [
+      "--tw-mask-conic",
+      "conic-gradient(var(--tw-mask-conic-stops, var(--tw-mask-conic-position)))"
+    ],
+    [
+      "--tw-mask-conic-position",
+      "0deg"
+    ]
+  ],
+  "-mb-0": [
+    [
+      "margin-bottom",
+      "0px"
+    ]
+  ],
+  "-mb-20": [
+    [
+      "margin-bottom",
+      "-5rem"
+    ]
+  ],
+  "-mb-5": [
+    [
+      "margin-bottom",
+      "-1.25rem"
+    ]
+  ],
+  "-mb-96": [
+    [
+      "margin-bottom",
+      "-24rem"
+    ]
+  ],
+  "-mbe-0": [
+    [
+      "margin-block-end",
+      "0px"
+    ]
+  ],
+  "-mbe-20": [
+    [
+      "margin-block-end",
+      "-5rem"
+    ]
+  ],
+  "-mbe-5": [
+    [
+      "margin-block-end",
+      "-1.25rem"
+    ]
+  ],
+  "-mbe-96": [
+    [
+      "margin-block-end",
+      "-24rem"
+    ]
+  ],
+  "-mbs-0": [
+    [
+      "margin-block-start",
+      "0px"
+    ]
+  ],
+  "-mbs-20": [
+    [
+      "margin-block-start",
+      "-5rem"
+    ]
+  ],
+  "-mbs-5": [
+    [
+      "margin-block-start",
+      "-1.25rem"
+    ]
+  ],
+  "-mbs-96": [
+    [
+      "margin-block-start",
+      "-24rem"
+    ]
+  ],
+  "-me-0": [
+    [
+      "margin-inline-end",
+      "0px"
+    ]
+  ],
+  "-me-20": [
+    [
+      "margin-inline-end",
+      "-5rem"
+    ]
+  ],
+  "-me-5": [
+    [
+      "margin-inline-end",
+      "-1.25rem"
+    ]
+  ],
+  "-me-96": [
+    [
+      "margin-inline-end",
+      "-24rem"
+    ]
+  ],
+  "-ml-0": [
+    [
+      "margin-left",
+      "0px"
+    ]
+  ],
+  "-ml-20": [
+    [
+      "margin-left",
+      "-5rem"
+    ]
+  ],
+  "-ml-5": [
+    [
+      "margin-left",
+      "-1.25rem"
+    ]
+  ],
+  "-ml-96": [
+    [
+      "margin-left",
+      "-24rem"
+    ]
+  ],
+  "-mr-0": [
+    [
+      "margin-right",
+      "0px"
+    ]
+  ],
+  "-mr-20": [
+    [
+      "margin-right",
+      "-5rem"
+    ]
+  ],
+  "-mr-5": [
+    [
+      "margin-right",
+      "-1.25rem"
+    ]
+  ],
+  "-mr-96": [
+    [
+      "margin-right",
+      "-24rem"
+    ]
+  ],
+  "-ms-0": [
+    [
+      "margin-inline-start",
+      "0px"
+    ]
+  ],
+  "-ms-20": [
+    [
+      "margin-inline-start",
+      "-5rem"
+    ]
+  ],
+  "-ms-5": [
+    [
+      "margin-inline-start",
+      "-1.25rem"
+    ]
+  ],
+  "-ms-96": [
+    [
+      "margin-inline-start",
+      "-24rem"
+    ]
+  ],
+  "-mt-0": [
+    [
+      "margin-top",
+      "0px"
+    ]
+  ],
+  "-mt-20": [
+    [
+      "margin-top",
+      "-5rem"
+    ]
+  ],
+  "-mt-5": [
+    [
+      "margin-top",
+      "-1.25rem"
+    ]
+  ],
+  "-mt-96": [
+    [
+      "margin-top",
+      "-24rem"
+    ]
+  ],
+  "-mx-0": [
+    [
+      "margin-inline",
+      "0px"
+    ]
+  ],
+  "-mx-20": [
+    [
+      "margin-inline",
+      "-5rem"
+    ]
+  ],
+  "-mx-5": [
+    [
+      "margin-inline",
+      "-1.25rem"
+    ]
+  ],
+  "-mx-96": [
+    [
+      "margin-inline",
+      "-24rem"
+    ]
+  ],
+  "-my-0": [
+    [
+      "margin-block",
+      "0px"
+    ]
+  ],
+  "-my-20": [
+    [
+      "margin-block",
+      "-5rem"
+    ]
+  ],
+  "-my-5": [
+    [
+      "margin-block",
+      "-1.25rem"
+    ]
+  ],
+  "-my-96": [
+    [
+      "margin-block",
+      "-24rem"
+    ]
+  ],
+  "-order-1": [
+    [
+      "order",
+      "-1"
+    ]
+  ],
+  "-order-2": [
+    [
+      "order",
+      "-2"
+    ]
+  ],
+  "-order-6": [
+    [
+      "order",
+      "-6"
+    ]
+  ],
+  "-outline-offset-0": [
+    [
+      "outline-offset",
+      "0px"
+    ]
+  ],
+  "-right-0": [
+    [
+      "right",
+      "0px"
+    ]
+  ],
+  "-right-2/3": [
+    [
+      "right",
+      "-66.666667%"
+    ]
+  ],
+  "-right-44": [
+    [
+      "right",
+      "-11rem"
+    ]
+  ],
+  "-right-full": [
+    [
+      "right",
+      "-100%"
+    ]
+  ],
+  "-rotate-0": [
+    [
+      "rotate",
+      "0deg"
+    ]
+  ],
+  "-rotate-x-180": [
+    [
+      "--tw-rotate-x",
+      "rotateX(-180deg)"
+    ],
+    [
+      "transform",
+      "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
+    ]
+  ],
+  "-rotate-y-45": [
+    [
+      "--tw-rotate-y",
+      "rotateY(-45deg)"
+    ],
+    [
+      "transform",
+      "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
+    ]
+  ],
+  "-row-end-1": [
+    [
+      "grid-row-end",
+      "-1"
+    ]
+  ],
+  "-row-end-8": [
+    [
+      "grid-row-end",
+      "-8"
+    ]
+  ],
+  "-row-start-6": [
+    [
+      "grid-row-start",
+      "-6"
+    ]
+  ],
+  "-scale-0": [
+    [
+      "--tw-scale-x",
+      "0%"
+    ],
+    [
+      "--tw-scale-y",
+      "0%"
+    ],
+    [
+      "--tw-scale-z",
+      "0%"
+    ],
+    [
+      "scale",
+      "var(--tw-scale-x) var(--tw-scale-y)"
+    ]
+  ],
+  "-scale-x-125": [
+    [
+      "--tw-scale-x",
+      "-125%"
+    ],
+    [
+      "scale",
+      "var(--tw-scale-x) var(--tw-scale-y)"
+    ]
+  ],
+  "-scale-y-75": [
+    [
+      "--tw-scale-y",
+      "-75%"
+    ],
+    [
+      "scale",
+      "var(--tw-scale-x) var(--tw-scale-y)"
+    ]
+  ],
+  "-scroll-m-0": [
+    [
+      "scroll-margin",
+      "0px"
+    ]
+  ],
+  "-scroll-ml-36": [
+    [
+      "scroll-margin-left",
+      "-9rem"
+    ]
+  ],
+  "-scroll-my-px": [
+    [
+      "scroll-margin-block",
+      "-1px"
+    ]
+  ],
+  "-skew-0": [
+    [
+      "--tw-skew-x",
+      "skewX(0deg)"
+    ],
+    [
+      "--tw-skew-y",
+      "skewY(0deg)"
+    ],
+    [
+      "transform",
+      "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
+    ]
+  ],
+  "-skew-x-0": [
+    [
+      "--tw-skew-x",
+      "skewX(0deg)"
+    ],
+    [
+      "transform",
+      "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
+    ]
+  ],
+  "-skew-y-0": [
+    [
+      "--tw-skew-y",
+      "skewY(0deg)"
+    ],
+    [
+      "transform",
+      "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
+    ]
+  ],
+  "-start-full": [
+    [
+      "inset-inline-start",
+      "-100%"
+    ]
+  ],
+  "-start-px": [
+    [
+      "inset-inline-start",
+      "-1px"
+    ]
+  ],
+  "-top-0": [
+    [
+      "top",
+      "0px"
+    ]
+  ],
+  "-top-2/3": [
+    [
+      "top",
+      "-66.666667%"
+    ]
+  ],
+  "-top-44": [
+    [
+      "top",
+      "-11rem"
+    ]
+  ],
+  "-top-full": [
+    [
+      "top",
+      "-100%"
+    ]
+  ],
+  "-tracking-normal": [
+    [
+      "--tw-tracking",
+      "0em"
+    ],
+    [
+      "letter-spacing",
+      "0em"
+    ]
+  ],
+  "-tracking-tighter": [
+    [
+      "--tw-tracking",
+      "0.05em"
+    ],
+    [
+      "letter-spacing",
+      "0.05em"
+    ]
+  ],
+  "-tracking-wider": [
+    [
+      "--tw-tracking",
+      "-0.05em"
+    ],
+    [
+      "letter-spacing",
+      "-0.05em"
+    ]
+  ],
+  "-translate-0": [
+    [
+      "--tw-translate-x",
+      "0px"
+    ],
+    [
+      "--tw-translate-y",
+      "0px"
+    ],
+    [
+      "translate",
+      "var(--tw-translate-x) var(--tw-translate-y)"
+    ]
+  ],
+  "-translate-x-11": [
+    [
+      "--tw-translate-x",
+      "-2.75rem"
+    ],
+    [
+      "translate",
+      "var(--tw-translate-x) var(--tw-translate-y)"
+    ]
+  ],
+  "-translate-y-20": [
+    [
+      "--tw-translate-y",
+      "-5rem"
+    ],
+    [
+      "translate",
+      "var(--tw-translate-x) var(--tw-translate-y)"
+    ]
+  ],
+  "-underline-offset-0": [
+    [
+      "text-underline-offset",
+      "0px"
+    ]
+  ],
+  "-underline-offset-2": [
+    [
+      "text-underline-offset",
+      "-2px"
+    ]
+  ],
+  "-underline-offset-8": [
+    [
+      "text-underline-offset",
+      "-8px"
+    ]
+  ],
+  "-z-0": [
+    [
+      "z-index",
+      "0"
+    ]
+  ],
+  "-z-20": [
+    [
+      "z-index",
+      "-20"
+    ]
+  ],
+  "-z-40": [
+    [
+      "z-index",
+      "-40"
+    ]
+  ],
+  "@container": [
+    [
+      "container-type",
+      "inline-size"
+    ]
+  ],
+  "@container-normal": [
+    [
+      "container-type",
+      "normal"
+    ]
+  ],
+  "absolute": [
+    [
+      "position",
+      "absolute"
+    ]
+  ],
+  "accent-amber-100": [
+    [
+      "accent-color",
+      "#fef3c6"
+    ]
+  ],
+  "accent-fuchsia-200": [
+    [
+      "accent-color",
+      "#f6cfff"
+    ]
+  ],
+  "accent-lime-50": [
+    [
+      "accent-color",
+      "#f7fee7"
+    ]
+  ],
+  "accent-olive-800": [
+    [
+      "accent-color",
+      "#2b2b22"
+    ]
+  ],
+  "accent-rose-200": [
+    [
+      "accent-color",
+      "#ffccd3"
+    ]
+  ],
+  "accent-taupe-500": [
+    [
+      "accent-color",
+      "#7c6d67"
+    ]
+  ],
+  "align-baseline": [
+    [
+      "vertical-align",
+      "baseline"
+    ]
+  ],
+  "align-bottom": [
+    [
+      "vertical-align",
+      "bottom"
+    ]
+  ],
+  "align-middle": [
+    [
+      "vertical-align",
+      "middle"
+    ]
+  ],
+  "align-sub": [
+    [
+      "vertical-align",
+      "sub"
+    ]
+  ],
+  "align-super": [
+    [
+      "vertical-align",
+      "super"
+    ]
+  ],
+  "align-text-bottom": [
+    [
+      "vertical-align",
+      "text-bottom"
+    ]
+  ],
+  "animate-bounce": [
+    [
+      "animation",
+      "bounce 1s infinite"
+    ]
+  ],
+  "animate-none": [
+    [
+      "animation",
+      "none"
+    ]
+  ],
+  "animate-ping": [
+    [
+      "animation",
+      "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite"
+    ]
+  ],
+  "animate-pulse": [
+    [
+      "animation",
+      "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite"
+    ]
+  ],
+  "animate-spin": [
+    [
+      "animation",
+      "spin 1s linear infinite"
+    ]
+  ],
+  "antialiased": [
+    [
+      "-webkit-font-smoothing",
+      "antialiased"
+    ],
+    [
+      "-moz-osx-font-smoothing",
+      "grayscale"
+    ]
+  ],
+  "appearance-auto": [
+    [
+      "appearance",
+      "auto"
+    ]
+  ],
+  "appearance-none": [
+    [
+      "appearance",
+      "none"
+    ]
+  ],
+  "aspect-auto": [
+    [
+      "aspect-ratio",
+      "auto"
+    ]
+  ],
+  "aspect-square": [
+    [
+      "aspect-ratio",
+      "1 / 1"
+    ]
+  ],
+  "aspect-video": [
+    [
+      "aspect-ratio",
+      "16 / 9"
+    ]
+  ],
+  "auto-cols-auto": [
+    [
+      "grid-auto-columns",
+      "auto"
+    ]
+  ],
+  "auto-cols-fr": [
+    [
+      "grid-auto-columns",
+      "minmax(0, 1fr)"
+    ]
+  ],
+  "auto-cols-max": [
+    [
+      "grid-auto-columns",
+      "max-content"
+    ]
+  ],
+  "auto-cols-min": [
+    [
+      "grid-auto-columns",
+      "min-content"
+    ]
+  ],
+  "auto-rows-auto": [
+    [
+      "grid-auto-rows",
+      "auto"
+    ]
+  ],
+  "auto-rows-fr": [
+    [
+      "grid-auto-rows",
+      "minmax(0, 1fr)"
+    ]
+  ],
+  "backdrop-blur-2xl": [
+    [
+      "--tw-backdrop-blur",
+      "blur(40px)"
+    ],
+    [
+      "-webkit-backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ],
+    [
+      "backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ]
+  ],
+  "backdrop-blur-[4px]": [
+    [
+      "--tw-backdrop-blur",
+      "blur(4px)"
+    ],
+    [
+      "-webkit-backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ],
+    [
+      "backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ]
+  ],
+  "backdrop-blur-lg": [
+    [
+      "--tw-backdrop-blur",
+      "blur(16px)"
+    ],
+    [
+      "-webkit-backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ],
+    [
+      "backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ]
+  ],
+  "backdrop-blur-md": [
+    [
+      "--tw-backdrop-blur",
+      "blur(12px)"
+    ],
+    [
+      "-webkit-backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ],
+    [
+      "backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ]
+  ],
+  "backdrop-blur-none": [
+    [
+      "-webkit-backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ],
+    [
+      "backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ]
+  ],
+  "backdrop-blur-sm": [
+    [
+      "--tw-backdrop-blur",
+      "blur(8px)"
+    ],
+    [
+      "-webkit-backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ],
+    [
+      "backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ]
+  ],
+  "backdrop-blur-xl": [
+    [
+      "--tw-backdrop-blur",
+      "blur(24px)"
+    ],
+    [
+      "-webkit-backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ],
+    [
+      "backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ]
+  ],
+  "backdrop-blur-xs": [
+    [
+      "--tw-backdrop-blur",
+      "blur(4px)"
+    ],
+    [
+      "-webkit-backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ],
+    [
+      "backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ]
+  ],
+  "backdrop-brightness-125": [
+    [
+      "--tw-backdrop-brightness",
+      "brightness(125%)"
+    ],
+    [
+      "-webkit-backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ],
+    [
+      "backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ]
+  ],
+  "backdrop-contrast-50": [
+    [
+      "--tw-backdrop-contrast",
+      "contrast(50%)"
+    ],
+    [
+      "-webkit-backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ],
+    [
+      "backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ]
+  ],
+  "backdrop-hue-rotate-60": [
+    [
+      "--tw-backdrop-hue-rotate",
+      "hue-rotate(60deg)"
+    ],
+    [
+      "-webkit-backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ],
+    [
+      "backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ]
+  ],
+  "backdrop-opacity-20": [
+    [
+      "--tw-backdrop-opacity",
+      "opacity(20%)"
+    ],
+    [
+      "-webkit-backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ],
+    [
+      "backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ]
+  ],
+  "backdrop-opacity-75": [
+    [
+      "--tw-backdrop-opacity",
+      "opacity(75%)"
+    ],
+    [
+      "-webkit-backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ],
+    [
+      "backdrop-filter",
+      "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+    ]
+  ],
+  "backface-hidden": [
+    [
+      "backface-visibility",
+      "hidden"
+    ]
+  ],
+  "backface-visible": [
+    [
+      "backface-visibility",
+      "visible"
+    ]
+  ],
+  "basis-0": [
+    [
+      "flex-basis",
+      "0px"
+    ]
+  ],
+  "basis-11": [
+    [
+      "flex-basis",
+      "2.75rem"
+    ]
+  ],
+  "basis-20": [
+    [
+      "flex-basis",
+      "5rem"
+    ]
+  ],
+  "basis-36": [
+    [
+      "flex-basis",
+      "9rem"
+    ]
+  ],
+  "basis-5/12": [
+    [
+      "flex-basis",
+      "41.666667%"
+    ]
+  ],
+  "basis-72": [
+    [
+      "flex-basis",
+      "18rem"
+    ]
+  ],
+  "bg-[#123456]": [
+    [
+      "background-color",
+      "#123456"
+    ]
+  ],
+  "bg-center": [
+    [
+      "background-position",
+      "center"
+    ]
+  ],
+  "bg-conic": [
+    [
+      "--tw-gradient-position",
+      "in oklab"
+    ],
+    [
+      "background-image",
+      "conic-gradient(var(--tw-gradient-stops))"
+    ]
+  ],
+  "bg-gray-50": [
+    [
+      "background-color",
+      "#f9fafb"
+    ]
+  ],
+  "bg-linear-to-b": [
+    [
+      "--tw-gradient-position",
+      "to bottom"
+    ],
+    [
+      "--tw-gradient-position",
+      "to bottom in oklab"
+    ],
+    [
+      "background-image",
+      "linear-gradient(var(--tw-gradient-stops))"
+    ]
+  ],
+  "bg-linear-to-r": [
+    [
+      "--tw-gradient-position",
+      "to right"
+    ],
+    [
+      "--tw-gradient-position",
+      "to right in oklab"
+    ],
+    [
+      "background-image",
+      "linear-gradient(var(--tw-gradient-stops))"
+    ]
+  ],
+  "bg-mauve-50": [
+    [
+      "background-color",
+      "#fafafa"
+    ]
+  ],
+  "bg-none": [
+    [
+      "background-image",
+      "none"
+    ]
+  ],
+  "bg-purple-100": [
+    [
+      "background-color",
+      "#f3e8ff"
+    ]
+  ],
+  "bg-radial": [
+    [
+      "--tw-gradient-position",
+      "in oklab"
+    ],
+    [
+      "background-image",
+      "radial-gradient(var(--tw-gradient-stops))"
+    ]
+  ],
+  "bg-red-500": [
+    [
+      "background-color",
+      "#fb2c36"
+    ]
+  ],
+  "bg-red-500/50": [
+    [
+      "background-color",
+      "color-mix(in oklab, #fb2c36 50%, transparent)"
+    ]
+  ],
+  "bg-slate-900": [
+    [
+      "background-color",
+      "#0f172b"
+    ]
+  ],
+  "bg-stone-50": [
+    [
+      "background-color",
+      "#fafaf9"
+    ]
+  ],
+  "block": [
+    [
+      "display",
+      "block"
+    ]
+  ],
+  "block-10/12": [
+    [
+      "block-size",
+      "83.333333%"
+    ]
+  ],
+  "block-2/6": [
+    [
+      "block-size",
+      "33.333333%"
+    ]
+  ],
+  "block-4": [
+    [
+      "block-size",
+      "1rem"
+    ]
+  ],
+  "block-6": [
+    [
+      "block-size",
+      "1.5rem"
+    ]
+  ],
+  "block-96": [
+    [
+      "block-size",
+      "24rem"
+    ]
+  ],
+  "blur-2xl": [
+    [
+      "--tw-blur",
+      "blur(40px)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "blur-3xl": [
+    [
+      "--tw-blur",
+      "blur(64px)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "blur-[4px]": [
+    [
+      "--tw-blur",
+      "blur(4px)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "blur-lg": [
+    [
+      "--tw-blur",
+      "blur(16px)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "blur-md": [
+    [
+      "--tw-blur",
+      "blur(12px)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "blur-none": [
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "blur-sm": [
+    [
+      "--tw-blur",
+      "blur(8px)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "blur-xl": [
+    [
+      "--tw-blur",
+      "blur(24px)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "blur-xs": [
+    [
+      "--tw-blur",
+      "blur(4px)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "border": [
+    [
+      "border-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-width",
+      "1px"
+    ]
+  ],
+  "border-0": [
+    [
+      "border-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-width",
+      "0px"
+    ]
+  ],
+  "border-1": [
+    [
+      "border-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-width",
+      "1px"
+    ]
+  ],
+  "border-4": [
+    [
+      "border-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-width",
+      "4px"
+    ]
+  ],
+  "border-b-0": [
+    [
+      "border-bottom-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-bottom-width",
+      "0px"
+    ]
+  ],
+  "border-b-1": [
+    [
+      "border-bottom-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-bottom-width",
+      "1px"
+    ]
+  ],
+  "border-b-2": [
+    [
+      "border-bottom-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-bottom-width",
+      "2px"
+    ]
+  ],
+  "border-b-4": [
+    [
+      "border-bottom-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-bottom-width",
+      "4px"
+    ]
+  ],
+  "border-b-8": [
+    [
+      "border-bottom-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-bottom-width",
+      "8px"
+    ]
+  ],
+  "border-be-0": [
+    [
+      "border-block-end-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-block-end-width",
+      "0px"
+    ]
+  ],
+  "border-be-1": [
+    [
+      "border-block-end-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-block-end-width",
+      "1px"
+    ]
+  ],
+  "border-be-2": [
+    [
+      "border-block-end-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-block-end-width",
+      "2px"
+    ]
+  ],
+  "border-be-4": [
+    [
+      "border-block-end-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-block-end-width",
+      "4px"
+    ]
+  ],
+  "border-be-8": [
+    [
+      "border-block-end-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-block-end-width",
+      "8px"
+    ]
+  ],
+  "border-be-[3px]": [
+    [
+      "border-block-end-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-block-end-width",
+      "3px"
+    ]
+  ],
+  "border-be-taupe-900": [
+    [
+      "border-block-end-color",
+      "#1d1816"
+    ]
+  ],
+  "border-bs-0": [
+    [
+      "border-block-start-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-block-start-width",
+      "0px"
+    ]
+  ],
+  "border-bs-1": [
+    [
+      "border-block-start-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-block-start-width",
+      "1px"
+    ]
+  ],
+  "border-bs-2": [
+    [
+      "border-block-start-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-block-start-width",
+      "2px"
+    ]
+  ],
+  "border-bs-4": [
+    [
+      "border-block-start-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-block-start-width",
+      "4px"
+    ]
+  ],
+  "border-bs-8": [
+    [
+      "border-block-start-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-block-start-width",
+      "8px"
+    ]
+  ],
+  "border-bs-[3px]": [
+    [
+      "border-block-start-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-block-start-width",
+      "3px"
+    ]
+  ],
+  "border-dashed": [
+    [
+      "--tw-border-style",
+      "dashed"
+    ],
+    [
+      "border-style",
+      "dashed"
+    ]
+  ],
+  "border-e-0": [
+    [
+      "border-inline-end-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-end-width",
+      "0px"
+    ]
+  ],
+  "border-e-1": [
+    [
+      "border-inline-end-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-end-width",
+      "1px"
+    ]
+  ],
+  "border-e-2": [
+    [
+      "border-inline-end-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-end-width",
+      "2px"
+    ]
+  ],
+  "border-e-4": [
+    [
+      "border-inline-end-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-end-width",
+      "4px"
+    ]
+  ],
+  "border-e-8": [
+    [
+      "border-inline-end-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-end-width",
+      "8px"
+    ]
+  ],
+  "border-e-[3px]": [
+    [
+      "border-inline-end-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-end-width",
+      "3px"
+    ]
+  ],
+  "border-e-red-500": [
+    [
+      "border-inline-end-color",
+      "#fb2c36"
+    ]
+  ],
+  "border-l-0": [
+    [
+      "border-left-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-left-width",
+      "0px"
+    ]
+  ],
+  "border-l-1": [
+    [
+      "border-left-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-left-width",
+      "1px"
+    ]
+  ],
+  "border-l-2": [
+    [
+      "border-left-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-left-width",
+      "2px"
+    ]
+  ],
+  "border-l-4": [
+    [
+      "border-left-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-left-width",
+      "4px"
+    ]
+  ],
+  "border-l-8": [
+    [
+      "border-left-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-left-width",
+      "8px"
+    ]
+  ],
+  "border-none": [
+    [
+      "--tw-border-style",
+      "none"
+    ],
+    [
+      "border-style",
+      "none"
+    ]
+  ],
+  "border-r-0": [
+    [
+      "border-right-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-right-width",
+      "0px"
+    ]
+  ],
+  "border-r-1": [
+    [
+      "border-right-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-right-width",
+      "1px"
+    ]
+  ],
+  "border-r-2": [
+    [
+      "border-right-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-right-width",
+      "2px"
+    ]
+  ],
+  "border-r-4": [
+    [
+      "border-right-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-right-width",
+      "4px"
+    ]
+  ],
+  "border-r-8": [
+    [
+      "border-right-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-right-width",
+      "8px"
+    ]
+  ],
+  "border-r-amber-700": [
+    [
+      "border-right-color",
+      "#bb4d00"
+    ]
+  ],
+  "border-red-500": [
+    [
+      "border-color",
+      "#fb2c36"
+    ]
+  ],
+  "border-s-0": [
+    [
+      "border-inline-start-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-start-width",
+      "0px"
+    ]
+  ],
+  "border-s-1": [
+    [
+      "border-inline-start-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-start-width",
+      "1px"
+    ]
+  ],
+  "border-s-2": [
+    [
+      "border-inline-start-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-start-width",
+      "2px"
+    ]
+  ],
+  "border-s-4": [
+    [
+      "border-inline-start-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-start-width",
+      "4px"
+    ]
+  ],
+  "border-s-8": [
+    [
+      "border-inline-start-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-start-width",
+      "8px"
+    ]
+  ],
+  "border-s-[3px]": [
+    [
+      "border-inline-start-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-start-width",
+      "3px"
+    ]
+  ],
+  "border-s-teal-600": [
+    [
+      "border-inline-start-color",
+      "#009689"
+    ]
+  ],
+  "border-solid": [
+    [
+      "--tw-border-style",
+      "solid"
+    ],
+    [
+      "border-style",
+      "solid"
+    ]
+  ],
+  "border-t-0": [
+    [
+      "border-top-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-top-width",
+      "0px"
+    ]
+  ],
+  "border-t-1": [
+    [
+      "border-top-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-top-width",
+      "1px"
+    ]
+  ],
+  "border-t-2": [
+    [
+      "border-top-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-top-width",
+      "2px"
+    ]
+  ],
+  "border-t-4": [
+    [
+      "border-top-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-top-width",
+      "4px"
+    ]
+  ],
+  "border-t-8": [
+    [
+      "border-top-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-top-width",
+      "8px"
+    ]
+  ],
+  "border-x-0": [
+    [
+      "border-inline-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-width",
+      "0px"
+    ]
+  ],
+  "border-x-1": [
+    [
+      "border-inline-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-width",
+      "1px"
+    ]
+  ],
+  "border-x-2": [
+    [
+      "border-inline-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-width",
+      "2px"
+    ]
+  ],
+  "border-x-4": [
+    [
+      "border-inline-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-width",
+      "4px"
+    ]
+  ],
+  "border-x-8": [
+    [
+      "border-inline-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-width",
+      "8px"
+    ]
+  ],
+  "border-x-emerald-950": [
+    [
+      "border-inline-color",
+      "#002c22"
+    ]
+  ],
+  "border-y-0": [
+    [
+      "border-block-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-block-width",
+      "0px"
+    ]
+  ],
+  "border-y-1": [
+    [
+      "border-block-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-block-width",
+      "1px"
+    ]
+  ],
+  "border-y-2": [
+    [
+      "border-block-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-block-width",
+      "2px"
+    ]
+  ],
+  "border-y-4": [
+    [
+      "border-block-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-block-width",
+      "4px"
+    ]
+  ],
+  "border-y-8": [
+    [
+      "border-block-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-block-width",
+      "8px"
+    ]
+  ],
+  "bottom-0": [
+    [
+      "bottom",
+      "0px"
+    ]
+  ],
+  "bottom-1": [
+    [
+      "bottom",
+      "0.25rem"
+    ]
+  ],
+  "bottom-2.5": [
+    [
+      "bottom",
+      "0.625rem"
+    ]
+  ],
+  "bottom-32": [
+    [
+      "bottom",
+      "8rem"
+    ]
+  ],
+  "bottom-4": [
+    [
+      "bottom",
+      "1rem"
+    ]
+  ],
+  "bottom-4/6": [
+    [
+      "bottom",
+      "66.666667%"
+    ]
+  ],
+  "bottom-auto": [
+    [
+      "bottom",
+      "auto"
+    ]
+  ],
+  "bottom-full": [
+    [
+      "bottom",
+      "100%"
+    ]
+  ],
+  "bottom-px": [
+    [
+      "bottom",
+      "1px"
+    ]
+  ],
+  "box-border": [
+    [
+      "box-sizing",
+      "border-box"
+    ]
+  ],
+  "box-content": [
+    [
+      "box-sizing",
+      "content-box"
+    ]
+  ],
+  "box-decoration-clone": [
+    [
+      "-webkit-box-decoration-break",
+      "clone"
+    ],
+    [
+      "box-decoration-break",
+      "clone"
+    ]
+  ],
+  "box-decoration-slice": [
+    [
+      "-webkit-box-decoration-break",
+      "slice"
+    ],
+    [
+      "box-decoration-break",
+      "slice"
+    ]
+  ],
+  "break-after-all": [
+    [
+      "break-after",
+      "all"
+    ]
+  ],
+  "break-after-auto": [
+    [
+      "break-after",
+      "auto"
+    ]
+  ],
+  "break-after-avoid-page": [
+    [
+      "break-after",
+      "avoid-page"
+    ]
+  ],
+  "break-after-right": [
+    [
+      "break-after",
+      "right"
+    ]
+  ],
+  "break-before-auto": [
+    [
+      "break-before",
+      "auto"
+    ]
+  ],
+  "break-before-avoid": [
+    [
+      "break-before",
+      "avoid"
+    ]
+  ],
+  "break-before-avoid-page": [
+    [
+      "break-before",
+      "avoid-page"
+    ]
+  ],
+  "break-before-left": [
+    [
+      "break-before",
+      "left"
+    ]
+  ],
+  "break-inside-auto": [
+    [
+      "break-inside",
+      "auto"
+    ]
+  ],
+  "break-inside-avoid": [
+    [
+      "break-inside",
+      "avoid"
+    ]
+  ],
+  "break-inside-avoid-column": [
+    [
+      "break-inside",
+      "avoid-column"
+    ]
+  ],
+  "break-inside-avoid-page": [
+    [
+      "break-inside",
+      "avoid-page"
+    ]
+  ],
+  "brightness-0": [
+    [
+      "--tw-brightness",
+      "brightness(0%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "brightness-100": [
+    [
+      "--tw-brightness",
+      "brightness(100%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "brightness-105": [
+    [
+      "--tw-brightness",
+      "brightness(105%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "brightness-110": [
+    [
+      "--tw-brightness",
+      "brightness(110%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "brightness-125": [
+    [
+      "--tw-brightness",
+      "brightness(125%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "brightness-150": [
+    [
+      "--tw-brightness",
+      "brightness(150%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "brightness-50": [
+    [
+      "--tw-brightness",
+      "brightness(50%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "brightness-[1.75]": [
+    [
+      "--tw-brightness",
+      "brightness(1.75)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "capitalize": [
+    [
+      "text-transform",
+      "capitalize"
+    ]
+  ],
+  "caption-bottom": [
+    [
+      "caption-side",
+      "bottom"
+    ]
+  ],
+  "caption-top": [
+    [
+      "caption-side",
+      "top"
+    ]
+  ],
+  "caret-amber-100": [
+    [
+      "caret-color",
+      "#fef3c6"
+    ]
+  ],
+  "caret-fuchsia-300": [
+    [
+      "caret-color",
+      "#f4a8ff"
+    ]
+  ],
+  "caret-lime-500": [
+    [
+      "caret-color",
+      "#7ccf00"
+    ]
+  ],
+  "caret-olive-900": [
+    [
+      "caret-color",
+      "#1d1d16"
+    ]
+  ],
+  "caret-rose-300": [
+    [
+      "caret-color",
+      "#ffa1ad"
+    ]
+  ],
+  "caret-taupe-600": [
+    [
+      "caret-color",
+      "#5b4f4b"
+    ]
+  ],
+  "clear-both": [
+    [
+      "clear",
+      "both"
+    ]
+  ],
+  "clear-end": [
+    [
+      "clear",
+      "inline-end"
+    ]
+  ],
+  "clear-left": [
+    [
+      "clear",
+      "left"
+    ]
+  ],
+  "clear-none": [
+    [
+      "clear",
+      "none"
+    ]
+  ],
+  "clear-right": [
+    [
+      "clear",
+      "right"
+    ]
+  ],
+  "clear-start": [
+    [
+      "clear",
+      "inline-start"
+    ]
+  ],
+  "col-end-3": [
+    [
+      "grid-column-end",
+      "3"
+    ]
+  ],
+  "col-span-12": [
+    [
+      "grid-column",
+      "span 12 / span 12"
+    ]
+  ],
+  "col-start-10": [
+    [
+      "grid-column-start",
+      "10"
+    ]
+  ],
+  "collapse": [
+    [
+      "visibility",
+      "collapse"
+    ]
+  ],
+  "columns-0": [
+    [
+      "columns",
+      "0"
+    ]
+  ],
+  "columns-1": [
+    [
+      "columns",
+      "1"
+    ]
+  ],
+  "columns-2": [
+    [
+      "columns",
+      "2"
+    ]
+  ],
+  "columns-32": [
+    [
+      "columns",
+      "32"
+    ]
+  ],
+  "columns-4": [
+    [
+      "columns",
+      "4"
+    ]
+  ],
+  "columns-48": [
+    [
+      "columns",
+      "48"
+    ]
+  ],
+  "columns-4xl": [
+    [
+      "columns",
+      "56rem"
+    ]
+  ],
+  "columns-60": [
+    [
+      "columns",
+      "60"
+    ]
+  ],
+  "columns-80": [
+    [
+      "columns",
+      "80"
+    ]
+  ],
+  "columns-auto": [
+    [
+      "columns",
+      "auto"
+    ]
+  ],
+  "columns-lg": [
+    [
+      "columns",
+      "32rem"
+    ]
+  ],
+  "columns-md": [
+    [
+      "columns",
+      "28rem"
+    ]
+  ],
+  "columns-sm": [
+    [
+      "columns",
+      "24rem"
+    ]
+  ],
+  "columns-xl": [
+    [
+      "columns",
+      "36rem"
+    ]
+  ],
+  "columns-xs": [
+    [
+      "columns",
+      "20rem"
+    ]
+  ],
+  "contain-content": [
+    [
+      "contain",
+      "content"
+    ]
+  ],
+  "contain-inline-size": [
+    [
+      "--tw-contain-size",
+      "inline-size"
+    ],
+    [
+      "contain",
+      "var(--tw-contain-size,) var(--tw-contain-layout,) var(--tw-contain-paint,) var(--tw-contain-style,)"
+    ]
+  ],
+  "contain-layout": [
+    [
+      "--tw-contain-layout",
+      "layout"
+    ],
+    [
+      "contain",
+      "var(--tw-contain-size,) var(--tw-contain-layout,) var(--tw-contain-paint,) var(--tw-contain-style,)"
+    ]
+  ],
+  "contain-none": [
+    [
+      "contain",
+      "none"
+    ]
+  ],
+  "contain-paint": [
+    [
+      "--tw-contain-paint",
+      "paint"
+    ],
+    [
+      "contain",
+      "var(--tw-contain-size,) var(--tw-contain-layout,) var(--tw-contain-paint,) var(--tw-contain-style,)"
+    ]
+  ],
+  "contain-size": [
+    [
+      "--tw-contain-size",
+      "size"
+    ],
+    [
+      "contain",
+      "var(--tw-contain-size,) var(--tw-contain-layout,) var(--tw-contain-paint,) var(--tw-contain-style,)"
+    ]
+  ],
+  "container": [
+    [
+      "width",
+      "100%"
+    ],
+    [
+      "max-width",
+      "40rem"
+    ],
+    [
+      "max-width",
+      "48rem"
+    ],
+    [
+      "max-width",
+      "64rem"
+    ],
+    [
+      "max-width",
+      "80rem"
+    ],
+    [
+      "max-width",
+      "96rem"
+    ]
+  ],
+  "content-around": [
+    [
+      "align-content",
+      "space-around"
+    ]
+  ],
+  "content-between": [
+    [
+      "align-content",
+      "space-between"
+    ]
+  ],
+  "content-center-safe": [
+    [
+      "align-content",
+      "safe center"
+    ]
+  ],
+  "content-end-safe": [
+    [
+      "align-content",
+      "safe flex-end"
+    ]
+  ],
+  "content-none": [
+    [
+      "--tw-content",
+      "none"
+    ],
+    [
+      "content",
+      "none"
+    ]
+  ],
+  "content-start": [
+    [
+      "align-content",
+      "flex-start"
+    ]
+  ],
+  "contents": [
+    [
+      "display",
+      "contents"
+    ]
+  ],
+  "contrast-0": [
+    [
+      "--tw-contrast",
+      "contrast(0%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "contrast-100": [
+    [
+      "--tw-contrast",
+      "contrast(100%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "contrast-125": [
+    [
+      "--tw-contrast",
+      "contrast(125%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "contrast-150": [
+    [
+      "--tw-contrast",
+      "contrast(150%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "contrast-200": [
+    [
+      "--tw-contrast",
+      "contrast(200%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "contrast-50": [
+    [
+      "--tw-contrast",
+      "contrast(50%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "cursor-alias": [
+    [
+      "cursor",
+      "alias"
+    ]
+  ],
+  "cursor-copy": [
+    [
+      "cursor",
+      "copy"
+    ]
+  ],
+  "cursor-grabbing": [
+    [
+      "cursor",
+      "grabbing"
+    ]
+  ],
+  "cursor-no-drop": [
+    [
+      "cursor",
+      "no-drop"
+    ]
+  ],
+  "cursor-pointer": [
+    [
+      "cursor",
+      "pointer"
+    ]
+  ],
+  "cursor-text": [
+    [
+      "cursor",
+      "text"
+    ]
+  ],
+  "decoration-0": [
+    [
+      "text-decoration-thickness",
+      "0px"
+    ]
+  ],
+  "decoration-emerald-800": [
+    [
+      "text-decoration-color",
+      "#006045"
+    ]
+  ],
+  "decoration-lime-200": [
+    [
+      "text-decoration-color",
+      "#d8f999"
+    ]
+  ],
+  "decoration-olive-700": [
+    [
+      "text-decoration-color",
+      "#474739"
+    ]
+  ],
+  "decoration-rose-300": [
+    [
+      "text-decoration-color",
+      "#ffa1ad"
+    ]
+  ],
+  "decoration-taupe-700": [
+    [
+      "text-decoration-color",
+      "#473c39"
+    ]
+  ],
+  "delay-100": [
+    [
+      "transition-delay",
+      "100ms"
+    ]
+  ],
+  "delay-1000": [
+    [
+      "transition-delay",
+      "1000ms"
+    ]
+  ],
+  "delay-150": [
+    [
+      "transition-delay",
+      "150ms"
+    ]
+  ],
+  "delay-200": [
+    [
+      "transition-delay",
+      "200ms"
+    ]
+  ],
+  "delay-300": [
+    [
+      "transition-delay",
+      "300ms"
+    ]
+  ],
+  "delay-500": [
+    [
+      "transition-delay",
+      "500ms"
+    ]
+  ],
+  "delay-75": [
+    [
+      "transition-delay",
+      "75ms"
+    ]
+  ],
+  "diagonal-fractions": [
+    [
+      "--tw-numeric-fraction",
+      "diagonal-fractions"
+    ],
+    [
+      "font-variant-numeric",
+      "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+    ]
+  ],
+  "divide-x-2": [
+    [
+      "--tw-divide-x-reverse",
+      "0"
+    ],
+    [
+      "border-inline-style",
+      "var(--tw-border-style)"
+    ],
+    [
+      "border-inline-start-width",
+      "calc(2px * var(--tw-divide-x-reverse))"
+    ],
+    [
+      "border-inline-end-width",
+      "calc(2px * calc(1 - var(--tw-divide-x-reverse)))"
+    ]
+  ],
+  "drop-shadow-2xl": [
+    [
+      "--tw-drop-shadow-size",
+      "drop-shadow(0 25px 25px var(--tw-drop-shadow-color, rgb(0 0 0 / 0.15)))"
+    ],
+    [
+      "--tw-drop-shadow",
+      "drop-shadow(0 25px 25px rgb(0 0 0 / 0.15))"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "drop-shadow-fuchsia-300": [
+    [
+      "--tw-drop-shadow-color",
+      "color-mix(in oklab, #f4a8ff var(--tw-drop-shadow-alpha), transparent)"
+    ],
+    [
+      "--tw-drop-shadow",
+      "var(--tw-drop-shadow-size)"
+    ]
+  ],
+  "drop-shadow-lg": [
+    [
+      "--tw-drop-shadow-size",
+      "drop-shadow(0 4px 4px var(--tw-drop-shadow-color, rgb(0 0 0 / 0.15)))"
+    ],
+    [
+      "--tw-drop-shadow",
+      "drop-shadow(0 4px 4px rgb(0 0 0 / 0.15))"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "drop-shadow-lime-500": [
+    [
+      "--tw-drop-shadow-color",
+      "color-mix(in oklab, #7ccf00 var(--tw-drop-shadow-alpha), transparent)"
+    ],
+    [
+      "--tw-drop-shadow",
+      "var(--tw-drop-shadow-size)"
+    ]
+  ],
+  "drop-shadow-olive-800": [
+    [
+      "--tw-drop-shadow-color",
+      "color-mix(in oklab, #2b2b22 var(--tw-drop-shadow-alpha), transparent)"
+    ],
+    [
+      "--tw-drop-shadow",
+      "var(--tw-drop-shadow-size)"
+    ]
+  ],
+  "drop-shadow-rose-300": [
+    [
+      "--tw-drop-shadow-color",
+      "color-mix(in oklab, #ffa1ad var(--tw-drop-shadow-alpha), transparent)"
+    ],
+    [
+      "--tw-drop-shadow",
+      "var(--tw-drop-shadow-size)"
+    ]
+  ],
+  "drop-shadow-taupe-600": [
+    [
+      "--tw-drop-shadow-color",
+      "color-mix(in oklab, #5b4f4b var(--tw-drop-shadow-alpha), transparent)"
+    ],
+    [
+      "--tw-drop-shadow",
+      "var(--tw-drop-shadow-size)"
+    ]
+  ],
+  "duration-100": [
+    [
+      "--tw-duration",
+      "100ms"
+    ],
+    [
+      "transition-duration",
+      "100ms"
+    ]
+  ],
+  "duration-1000": [
+    [
+      "--tw-duration",
+      "1000ms"
+    ],
+    [
+      "transition-duration",
+      "1000ms"
+    ]
+  ],
+  "duration-150": [
+    [
+      "--tw-duration",
+      "150ms"
+    ],
+    [
+      "transition-duration",
+      "150ms"
+    ]
+  ],
+  "duration-200": [
+    [
+      "--tw-duration",
+      "200ms"
+    ],
+    [
+      "transition-duration",
+      "200ms"
+    ]
+  ],
+  "duration-300": [
+    [
+      "--tw-duration",
+      "300ms"
+    ],
+    [
+      "transition-duration",
+      "300ms"
+    ]
+  ],
+  "duration-500": [
+    [
+      "--tw-duration",
+      "500ms"
+    ],
+    [
+      "transition-duration",
+      "500ms"
+    ]
+  ],
+  "duration-75": [
+    [
+      "--tw-duration",
+      "75ms"
+    ],
+    [
+      "transition-duration",
+      "75ms"
+    ]
+  ],
+  "ease-in": [
+    [
+      "--tw-ease",
+      "cubic-bezier(0.4, 0, 1, 1)"
+    ],
+    [
+      "transition-timing-function",
+      "cubic-bezier(0.4, 0, 1, 1)"
+    ]
+  ],
+  "ease-in-out": [
+    [
+      "--tw-ease",
+      "cubic-bezier(0.4, 0, 0.2, 1)"
+    ],
+    [
+      "transition-timing-function",
+      "cubic-bezier(0.4, 0, 0.2, 1)"
+    ]
+  ],
+  "ease-initial": [
+    [
+      "--tw-ease",
+      "initial"
+    ]
+  ],
+  "ease-linear": [
+    [
+      "--tw-ease",
+      "linear"
+    ],
+    [
+      "transition-timing-function",
+      "linear"
+    ]
+  ],
+  "ease-out": [
+    [
+      "--tw-ease",
+      "cubic-bezier(0, 0, 0.2, 1)"
+    ],
+    [
+      "transition-timing-function",
+      "cubic-bezier(0, 0, 0.2, 1)"
+    ]
+  ],
+  "end-auto": [
+    [
+      "inset-inline-end",
+      "auto"
+    ]
+  ],
+  "end-full": [
+    [
+      "inset-inline-end",
+      "100%"
+    ]
+  ],
+  "end-px": [
+    [
+      "inset-inline-end",
+      "1px"
+    ]
+  ],
+  "field-sizing-content": [
+    [
+      "field-sizing",
+      "content"
+    ]
+  ],
+  "field-sizing-fixed": [
+    [
+      "field-sizing",
+      "fixed"
+    ]
+  ],
+  "fill-amber-100": [
+    [
+      "fill",
+      "#fef3c6"
+    ]
+  ],
+  "fill-fuchsia-300": [
+    [
+      "fill",
+      "#f4a8ff"
+    ]
+  ],
+  "fill-lime-500": [
+    [
+      "fill",
+      "#7ccf00"
+    ]
+  ],
+  "fill-olive-800": [
+    [
+      "fill",
+      "#2b2b22"
+    ]
+  ],
+  "fill-rose-200": [
+    [
+      "fill",
+      "#ffccd3"
+    ]
+  ],
+  "fill-taupe-500": [
+    [
+      "fill",
+      "#7c6d67"
+    ]
+  ],
+  "fixed": [
+    [
+      "position",
+      "fixed"
+    ]
+  ],
+  "flex": [
+    [
+      "display",
+      "flex"
+    ]
+  ],
+  "flex-10": [
+    [
+      "flex",
+      "10"
+    ]
+  ],
+  "flex-2/4": [
+    [
+      "flex",
+      "50%"
+    ]
+  ],
+  "flex-4": [
+    [
+      "flex",
+      "4"
+    ]
+  ],
+  "flex-6/12": [
+    [
+      "flex",
+      "50%"
+    ]
+  ],
+  "flex-col": [
+    [
+      "flex-direction",
+      "column"
+    ]
+  ],
+  "float-end": [
+    [
+      "float",
+      "inline-end"
+    ]
+  ],
+  "float-left": [
+    [
+      "float",
+      "left"
+    ]
+  ],
+  "float-none": [
+    [
+      "float",
+      "none"
+    ]
+  ],
+  "float-right": [
+    [
+      "float",
+      "right"
+    ]
+  ],
+  "float-start": [
+    [
+      "float",
+      "inline-start"
+    ]
+  ],
+  "flow-root": [
+    [
+      "display",
+      "flow-root"
+    ]
+  ],
+  "font-black": [
+    [
+      "--tw-font-weight",
+      "900"
+    ],
+    [
+      "font-weight",
+      "900"
+    ]
+  ],
+  "font-medium": [
+    [
+      "--tw-font-weight",
+      "500"
+    ],
+    [
+      "font-weight",
+      "500"
+    ]
+  ],
+  "font-mono": [
+    [
+      "font-family",
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace"
+    ]
+  ],
+  "font-serif": [
+    [
+      "font-family",
+      "ui-serif, Georgia, Cambria, \"Times New Roman\", Times, serif"
+    ]
+  ],
+  "font-stretch-150%": [
+    [
+      "font-stretch",
+      "150%"
+    ]
+  ],
+  "font-stretch-95%": [
+    [
+      "font-stretch",
+      "95%"
+    ]
+  ],
+  "font-stretch-normal": [
+    [
+      "font-stretch",
+      "normal"
+    ]
+  ],
+  "font-thin": [
+    [
+      "--tw-font-weight",
+      "100"
+    ],
+    [
+      "font-weight",
+      "100"
+    ]
+  ],
+  "forced-color-adjust-auto": [
+    [
+      "forced-color-adjust",
+      "auto"
+    ]
+  ],
+  "forced-color-adjust-none": [
+    [
+      "forced-color-adjust",
+      "none"
+    ]
+  ],
+  "from-0%": [
+    [
+      "--tw-gradient-from-position",
+      "0%"
+    ]
+  ],
+  "from-cyan-700": [
+    [
+      "--tw-gradient-from",
+      "#007595"
+    ],
+    [
+      "--tw-gradient-stops",
+      "var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))"
+    ]
+  ],
+  "from-indigo-50": [
+    [
+      "--tw-gradient-from",
+      "#eef2ff"
+    ],
+    [
+      "--tw-gradient-stops",
+      "var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))"
+    ]
+  ],
+  "from-olive-100": [
+    [
+      "--tw-gradient-from",
+      "#f4f4f0"
+    ],
+    [
+      "--tw-gradient-stops",
+      "var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))"
+    ]
+  ],
+  "from-red-500": [
+    [
+      "--tw-gradient-from",
+      "#fb2c36"
+    ],
+    [
+      "--tw-gradient-stops",
+      "var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))"
+    ]
+  ],
+  "from-red-800": [
+    [
+      "--tw-gradient-from",
+      "#9f0712"
+    ],
+    [
+      "--tw-gradient-stops",
+      "var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))"
+    ]
+  ],
+  "from-taupe-500": [
+    [
+      "--tw-gradient-from",
+      "#7c6d67"
+    ],
+    [
+      "--tw-gradient-stops",
+      "var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))"
+    ]
+  ],
+  "gap-0": [
+    [
+      "gap",
+      "0px"
+    ]
+  ],
+  "gap-1": [
+    [
+      "gap",
+      "0.25rem"
+    ]
+  ],
+  "gap-36": [
+    [
+      "gap",
+      "9rem"
+    ]
+  ],
+  "gap-4": [
+    [
+      "gap",
+      "1rem"
+    ]
+  ],
+  "gap-px": [
+    [
+      "gap",
+      "1px"
+    ]
+  ],
+  "gap-x-32": [
+    [
+      "column-gap",
+      "8rem"
+    ]
+  ],
+  "gap-x-4": [
+    [
+      "column-gap",
+      "1rem"
+    ]
+  ],
+  "gap-x-96": [
+    [
+      "column-gap",
+      "24rem"
+    ]
+  ],
+  "gap-y-3.5": [
+    [
+      "row-gap",
+      "0.875rem"
+    ]
+  ],
+  "grayscale": [
+    [
+      "--tw-grayscale",
+      "grayscale(100%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "grayscale-0": [
+    [
+      "--tw-grayscale",
+      "grayscale(0%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "grayscale-100": [
+    [
+      "--tw-grayscale",
+      "grayscale(100%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "grayscale-25": [
+    [
+      "--tw-grayscale",
+      "grayscale(25%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "grayscale-50": [
+    [
+      "--tw-grayscale",
+      "grayscale(50%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "grayscale-75": [
+    [
+      "--tw-grayscale",
+      "grayscale(75%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "grid": [
+    [
+      "display",
+      "grid"
+    ]
+  ],
+  "grid-cols-2": [
+    [
+      "grid-template-columns",
+      "repeat(2, minmax(0, 1fr))"
+    ]
+  ],
+  "grid-cols-7": [
+    [
+      "grid-template-columns",
+      "repeat(7, minmax(0, 1fr))"
+    ]
+  ],
+  "grid-cols-[1fr_2fr]": [
+    [
+      "grid-template-columns",
+      "1fr 2fr"
+    ]
+  ],
+  "grid-flow-col": [
+    [
+      "grid-auto-flow",
+      "column"
+    ]
+  ],
+  "grid-rows-1": [
+    [
+      "grid-template-rows",
+      "repeat(1, minmax(0, 1fr))"
+    ]
+  ],
+  "grid-rows-3": [
+    [
+      "grid-template-rows",
+      "repeat(3, minmax(0, 1fr))"
+    ]
+  ],
+  "grow": [
+    [
+      "flex-grow",
+      "1"
+    ]
+  ],
+  "grow-0": [
+    [
+      "flex-grow",
+      "0"
+    ]
+  ],
+  "h-0": [
+    [
+      "height",
+      "0px"
+    ]
+  ],
+  "h-1": [
+    [
+      "height",
+      "0.25rem"
+    ]
+  ],
+  "h-11": [
+    [
+      "height",
+      "2.75rem"
+    ]
+  ],
+  "h-20": [
+    [
+      "height",
+      "5rem"
+    ]
+  ],
+  "h-4": [
+    [
+      "height",
+      "1rem"
+    ]
+  ],
+  "h-4/12": [
+    [
+      "height",
+      "33.333333%"
+    ]
+  ],
+  "h-6/12": [
+    [
+      "height",
+      "50%"
+    ]
+  ],
+  "h-auto": [
+    [
+      "height",
+      "auto"
+    ]
+  ],
+  "h-full": [
+    [
+      "height",
+      "100%"
+    ]
+  ],
+  "h-px": [
+    [
+      "height",
+      "1px"
+    ]
+  ],
+  "h-screen": [
+    [
+      "height",
+      "100vh"
+    ]
+  ],
+  "hidden": [
+    [
+      "display",
+      "none"
+    ]
+  ],
+  "hue-rotate-0": [
+    [
+      "--tw-hue-rotate",
+      "hue-rotate(0deg)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "hue-rotate-15": [
+    [
+      "--tw-hue-rotate",
+      "hue-rotate(15deg)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "hue-rotate-180": [
+    [
+      "--tw-hue-rotate",
+      "hue-rotate(180deg)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "hue-rotate-30": [
+    [
+      "--tw-hue-rotate",
+      "hue-rotate(30deg)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "hue-rotate-60": [
+    [
+      "--tw-hue-rotate",
+      "hue-rotate(60deg)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "hue-rotate-90": [
+    [
+      "--tw-hue-rotate",
+      "hue-rotate(90deg)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "hyphens-auto": [
+    [
+      "-webkit-hyphens",
+      "auto"
+    ],
+    [
+      "hyphens",
+      "auto"
+    ]
+  ],
+  "hyphens-manual": [
+    [
+      "-webkit-hyphens",
+      "manual"
+    ],
+    [
+      "hyphens",
+      "manual"
+    ]
+  ],
+  "hyphens-none": [
+    [
+      "-webkit-hyphens",
+      "none"
+    ],
+    [
+      "hyphens",
+      "none"
+    ]
+  ],
+  "indent-2": [
+    [
+      "text-indent",
+      "0.5rem"
+    ]
+  ],
+  "indent-44": [
+    [
+      "text-indent",
+      "11rem"
+    ]
+  ],
+  "inline": [
+    [
+      "display",
+      "inline"
+    ]
+  ],
+  "inline-11/12": [
+    [
+      "inline-size",
+      "91.666667%"
+    ]
+  ],
+  "inline-2xl": [
+    [
+      "inline-size",
+      "42rem"
+    ]
+  ],
+  "inline-4/5": [
+    [
+      "inline-size",
+      "80%"
+    ]
+  ],
+  "inline-60": [
+    [
+      "inline-size",
+      "15rem"
+    ]
+  ],
+  "inline-block": [
+    [
+      "display",
+      "inline-block"
+    ]
+  ],
+  "inset-0": [
+    [
+      "inset",
+      "0px"
+    ]
+  ],
+  "inset-1": [
+    [
+      "inset",
+      "0.25rem"
+    ]
+  ],
+  "inset-32": [
+    [
+      "inset",
+      "8rem"
+    ]
+  ],
+  "inset-4": [
+    [
+      "inset",
+      "1rem"
+    ]
+  ],
+  "inset-8": [
+    [
+      "inset",
+      "2rem"
+    ]
+  ],
+  "inset-auto": [
+    [
+      "inset",
+      "auto"
+    ]
+  ],
+  "inset-full": [
+    [
+      "inset",
+      "100%"
+    ]
+  ],
+  "inset-px": [
+    [
+      "inset",
+      "1px"
+    ]
+  ],
+  "inset-ring-2": [
+    [
+      "--tw-inset-ring-shadow",
+      "inset 0 0 0 2px var(--tw-inset-ring-color, currentcolor)"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "inset-ring-emerald-500": [
+    [
+      "--tw-inset-ring-color",
+      "#00bc7d"
+    ]
+  ],
+  "inset-ring-red-500": [
+    [
+      "--tw-inset-ring-color",
+      "#fb2c36"
+    ]
+  ],
+  "inset-ring-zinc-50": [
+    [
+      "--tw-inset-ring-color",
+      "#fafafa"
+    ]
+  ],
+  "inset-shadow-2xs": [
+    [
+      "--tw-inset-shadow",
+      "inset 0 1px var(--tw-inset-shadow-color, rgb(0 0 0 / 0.05))"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "inset-shadow-none": [
+    [
+      "--tw-inset-shadow",
+      "inset 0 0 #0000"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "inset-shadow-purple-400": [
+    [
+      "--tw-inset-shadow-color",
+      "color-mix(in oklab, #c27aff var(--tw-inset-shadow-alpha), transparent)"
+    ]
+  ],
+  "inset-shadow-sm": [
+    [
+      "--tw-inset-shadow",
+      "inset 0 2px 4px var(--tw-inset-shadow-color, rgb(0 0 0 / 0.05))"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "inset-shadow-xs": [
+    [
+      "--tw-inset-shadow",
+      "inset 0 1px 1px var(--tw-inset-shadow-color, rgb(0 0 0 / 0.05))"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "invert": [
+    [
+      "--tw-invert",
+      "invert(100%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "invert-0": [
+    [
+      "--tw-invert",
+      "invert(0%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "invert-100": [
+    [
+      "--tw-invert",
+      "invert(100%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "invert-25": [
+    [
+      "--tw-invert",
+      "invert(25%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "invert-50": [
+    [
+      "--tw-invert",
+      "invert(50%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "invert-75": [
+    [
+      "--tw-invert",
+      "invert(75%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "invisible": [
+    [
+      "visibility",
+      "hidden"
+    ]
+  ],
+  "isolate": [
+    [
+      "isolation",
+      "isolate"
+    ]
+  ],
+  "isolation-auto": [
+    [
+      "isolation",
+      "auto"
+    ]
+  ],
+  "italic": [
+    [
+      "font-style",
+      "italic"
+    ]
+  ],
+  "items-baseline": [
+    [
+      "align-items",
+      "baseline"
+    ]
+  ],
+  "items-baseline-last": [
+    [
+      "align-items",
+      "last baseline"
+    ]
+  ],
+  "items-center": [
+    [
+      "align-items",
+      "center"
+    ]
+  ],
+  "items-center-safe": [
+    [
+      "align-items",
+      "safe center"
+    ]
+  ],
+  "items-end": [
+    [
+      "align-items",
+      "flex-end"
+    ]
+  ],
+  "items-end-safe": [
+    [
+      "align-items",
+      "safe flex-end"
+    ]
+  ],
+  "justify-around": [
+    [
+      "justify-content",
+      "space-around"
+    ]
+  ],
+  "justify-center-safe": [
+    [
+      "justify-content",
+      "safe center"
+    ]
+  ],
+  "justify-items-center": [
+    [
+      "justify-items",
+      "center"
+    ]
+  ],
+  "justify-items-normal": [
+    [
+      "justify-items",
+      "normal"
+    ]
+  ],
+  "justify-self-auto": [
+    [
+      "justify-self",
+      "auto"
+    ]
+  ],
+  "justify-self-end-safe": [
+    [
+      "justify-self",
+      "safe flex-end"
+    ]
+  ],
+  "leading-0": [
+    [
+      "--tw-leading",
+      "0px"
+    ],
+    [
+      "line-height",
+      "0px"
+    ]
+  ],
+  "leading-1": [
+    [
+      "--tw-leading",
+      "0.25rem"
+    ],
+    [
+      "line-height",
+      "0.25rem"
+    ]
+  ],
+  "leading-12": [
+    [
+      "--tw-leading",
+      "3rem"
+    ],
+    [
+      "line-height",
+      "3rem"
+    ]
+  ],
+  "leading-24": [
+    [
+      "--tw-leading",
+      "6rem"
+    ],
+    [
+      "line-height",
+      "6rem"
+    ]
+  ],
+  "leading-4": [
+    [
+      "--tw-leading",
+      "1rem"
+    ],
+    [
+      "line-height",
+      "1rem"
+    ]
+  ],
+  "leading-44": [
+    [
+      "--tw-leading",
+      "11rem"
+    ],
+    [
+      "line-height",
+      "11rem"
+    ]
+  ],
+  "leading-56": [
+    [
+      "--tw-leading",
+      "14rem"
+    ],
+    [
+      "line-height",
+      "14rem"
+    ]
+  ],
+  "leading-6": [
+    [
+      "--tw-leading",
+      "1.5rem"
+    ],
+    [
+      "line-height",
+      "1.5rem"
+    ]
+  ],
+  "leading-8": [
+    [
+      "--tw-leading",
+      "2rem"
+    ],
+    [
+      "line-height",
+      "2rem"
+    ]
+  ],
+  "leading-none": [
+    [
+      "--tw-leading",
+      "1"
+    ],
+    [
+      "line-height",
+      "1"
+    ]
+  ],
+  "leading-px": [
+    [
+      "--tw-leading",
+      "1px"
+    ],
+    [
+      "line-height",
+      "1px"
+    ]
+  ],
+  "leading-tight": [
+    [
+      "--tw-leading",
+      "1.25"
+    ],
+    [
+      "line-height",
+      "1.25"
+    ]
+  ],
+  "left-0": [
+    [
+      "left",
+      "0px"
+    ]
+  ],
+  "left-1": [
+    [
+      "left",
+      "0.25rem"
+    ]
+  ],
+  "left-2.5": [
+    [
+      "left",
+      "0.625rem"
+    ]
+  ],
+  "left-32": [
+    [
+      "left",
+      "8rem"
+    ]
+  ],
+  "left-4": [
+    [
+      "left",
+      "1rem"
+    ]
+  ],
+  "left-4/6": [
+    [
+      "left",
+      "66.666667%"
+    ]
+  ],
+  "left-auto": [
+    [
+      "left",
+      "auto"
+    ]
+  ],
+  "left-full": [
+    [
+      "left",
+      "100%"
+    ]
+  ],
+  "left-px": [
+    [
+      "left",
+      "1px"
+    ]
+  ],
+  "line-clamp-1": [
+    [
+      "overflow",
+      "hidden"
+    ],
+    [
+      "display",
+      "-webkit-box"
+    ],
+    [
+      "-webkit-box-orient",
+      "vertical"
+    ],
+    [
+      "-webkit-line-clamp",
+      "1"
+    ]
+  ],
+  "line-clamp-2": [
+    [
+      "overflow",
+      "hidden"
+    ],
+    [
+      "display",
+      "-webkit-box"
+    ],
+    [
+      "-webkit-box-orient",
+      "vertical"
+    ],
+    [
+      "-webkit-line-clamp",
+      "2"
+    ]
+  ],
+  "line-clamp-3": [
+    [
+      "overflow",
+      "hidden"
+    ],
+    [
+      "display",
+      "-webkit-box"
+    ],
+    [
+      "-webkit-box-orient",
+      "vertical"
+    ],
+    [
+      "-webkit-line-clamp",
+      "3"
+    ]
+  ],
+  "line-clamp-4": [
+    [
+      "overflow",
+      "hidden"
+    ],
+    [
+      "display",
+      "-webkit-box"
+    ],
+    [
+      "-webkit-box-orient",
+      "vertical"
+    ],
+    [
+      "-webkit-line-clamp",
+      "4"
+    ]
+  ],
+  "line-clamp-5": [
+    [
+      "overflow",
+      "hidden"
+    ],
+    [
+      "display",
+      "-webkit-box"
+    ],
+    [
+      "-webkit-box-orient",
+      "vertical"
+    ],
+    [
+      "-webkit-line-clamp",
+      "5"
+    ]
+  ],
+  "line-clamp-6": [
+    [
+      "overflow",
+      "hidden"
+    ],
+    [
+      "display",
+      "-webkit-box"
+    ],
+    [
+      "-webkit-box-orient",
+      "vertical"
+    ],
+    [
+      "-webkit-line-clamp",
+      "6"
+    ]
+  ],
+  "lining-nums": [
+    [
+      "--tw-numeric-figure",
+      "lining-nums"
+    ],
+    [
+      "font-variant-numeric",
+      "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+    ]
+  ],
+  "list-decimal": [
+    [
+      "list-style-type",
+      "decimal"
+    ]
+  ],
+  "list-disc": [
+    [
+      "list-style-type",
+      "disc"
+    ]
+  ],
+  "list-image-none": [
+    [
+      "list-style-image",
+      "none"
+    ]
+  ],
+  "list-inside": [
+    [
+      "list-style-position",
+      "inside"
+    ]
+  ],
+  "list-item": [
+    [
+      "display",
+      "list-item"
+    ]
+  ],
+  "list-none": [
+    [
+      "list-style-type",
+      "none"
+    ]
+  ],
+  "lowercase": [
+    [
+      "text-transform",
+      "lowercase"
+    ]
+  ],
+  "m-0": [
+    [
+      "margin",
+      "0px"
+    ]
+  ],
+  "m-1": [
+    [
+      "margin",
+      "0.25rem"
+    ]
+  ],
+  "m-2": [
+    [
+      "margin",
+      "0.5rem"
+    ]
+  ],
+  "m-4": [
+    [
+      "margin",
+      "1rem"
+    ]
+  ],
+  "m-44": [
+    [
+      "margin",
+      "11rem"
+    ]
+  ],
+  "m-auto": [
+    [
+      "margin",
+      "auto"
+    ]
+  ],
+  "m-px": [
+    [
+      "margin",
+      "1px"
+    ]
+  ],
+  "mask-conic-from-violet-800": [
+    [
+      "mask-image",
+      "var(--tw-mask-linear), var(--tw-mask-radial), var(--tw-mask-conic)"
+    ],
+    [
+      "mask-composite",
+      "intersect"
+    ],
+    [
+      "--tw-mask-conic-stops",
+      "from var(--tw-mask-conic-position), var(--tw-mask-conic-from-color) var(--tw-mask-conic-from-position), var(--tw-mask-conic-to-color) var(--tw-mask-conic-to-position)"
+    ],
+    [
+      "--tw-mask-conic",
+      "conic-gradient(var(--tw-mask-conic-stops))"
+    ],
+    [
+      "--tw-mask-conic-from-color",
+      "#5d0ec0"
+    ]
+  ],
+  "mask-l-to-yellow-600": [
+    [
+      "mask-image",
+      "var(--tw-mask-linear), var(--tw-mask-radial), var(--tw-mask-conic)"
+    ],
+    [
+      "mask-composite",
+      "intersect"
+    ],
+    [
+      "--tw-mask-linear",
+      "var(--tw-mask-left), var(--tw-mask-right), var(--tw-mask-bottom), var(--tw-mask-top)"
+    ],
+    [
+      "--tw-mask-left",
+      "linear-gradient(to left, var(--tw-mask-left-from-color) var(--tw-mask-left-from-position), var(--tw-mask-left-to-color) var(--tw-mask-left-to-position))"
+    ],
+    [
+      "--tw-mask-left-to-color",
+      "#d08700"
+    ]
+  ],
+  "mask-r-from-yellow-100": [
+    [
+      "mask-image",
+      "var(--tw-mask-linear), var(--tw-mask-radial), var(--tw-mask-conic)"
+    ],
+    [
+      "mask-composite",
+      "intersect"
+    ],
+    [
+      "--tw-mask-linear",
+      "var(--tw-mask-left), var(--tw-mask-right), var(--tw-mask-bottom), var(--tw-mask-top)"
+    ],
+    [
+      "--tw-mask-right",
+      "linear-gradient(to right, var(--tw-mask-right-from-color) var(--tw-mask-right-from-position), var(--tw-mask-right-to-color) var(--tw-mask-right-to-position))"
+    ],
+    [
+      "--tw-mask-right-from-color",
+      "#fef9c2"
+    ]
+  ],
+  "mask-radial-to-yellow-300": [
+    [
+      "mask-image",
+      "var(--tw-mask-linear), var(--tw-mask-radial), var(--tw-mask-conic)"
+    ],
+    [
+      "mask-composite",
+      "intersect"
+    ],
+    [
+      "--tw-mask-radial-stops",
+      "var(--tw-mask-radial-shape) var(--tw-mask-radial-size) at var(--tw-mask-radial-position), var(--tw-mask-radial-from-color) var(--tw-mask-radial-from-position), var(--tw-mask-radial-to-color) var(--tw-mask-radial-to-position)"
+    ],
+    [
+      "--tw-mask-radial",
+      "radial-gradient(var(--tw-mask-radial-stops))"
+    ],
+    [
+      "--tw-mask-radial-to-color",
+      "#ffdf20"
+    ]
+  ],
+  "mask-x-from-yellow-500": [
+    [
+      "mask-image",
+      "var(--tw-mask-linear), var(--tw-mask-radial), var(--tw-mask-conic)"
+    ],
+    [
+      "mask-composite",
+      "intersect"
+    ],
+    [
+      "--tw-mask-linear",
+      "var(--tw-mask-left), var(--tw-mask-right), var(--tw-mask-bottom), var(--tw-mask-top)"
+    ],
+    [
+      "--tw-mask-right",
+      "linear-gradient(to right, var(--tw-mask-right-from-color) var(--tw-mask-right-from-position), var(--tw-mask-right-to-color) var(--tw-mask-right-to-position))"
+    ],
+    [
+      "--tw-mask-right-from-color",
+      "#f0b100"
+    ],
+    [
+      "--tw-mask-left",
+      "linear-gradient(to left, var(--tw-mask-left-from-color) var(--tw-mask-left-from-position), var(--tw-mask-left-to-color) var(--tw-mask-left-to-position))"
+    ],
+    [
+      "--tw-mask-left-from-color",
+      "#f0b100"
+    ]
+  ],
+  "max-block-0": [
+    [
+      "max-block-size",
+      "0px"
+    ]
+  ],
+  "max-block-7/12": [
+    [
+      "max-block-size",
+      "58.333333%"
+    ]
+  ],
+  "max-h-0": [
+    [
+      "max-height",
+      "0px"
+    ]
+  ],
+  "max-h-1": [
+    [
+      "max-height",
+      "0.25rem"
+    ]
+  ],
+  "max-h-32": [
+    [
+      "max-height",
+      "8rem"
+    ]
+  ],
+  "max-h-4": [
+    [
+      "max-height",
+      "1rem"
+    ]
+  ],
+  "max-h-full": [
+    [
+      "max-height",
+      "100%"
+    ]
+  ],
+  "max-h-none": [
+    [
+      "max-height",
+      "none"
+    ]
+  ],
+  "max-h-px": [
+    [
+      "max-height",
+      "1px"
+    ]
+  ],
+  "max-h-screen": [
+    [
+      "max-height",
+      "100vh"
+    ]
+  ],
+  "max-inline-10/12": [
+    [
+      "max-inline-size",
+      "83.333333%"
+    ]
+  ],
+  "max-inline-8/12": [
+    [
+      "max-inline-size",
+      "66.666667%"
+    ]
+  ],
+  "max-w-0": [
+    [
+      "max-width",
+      "0px"
+    ]
+  ],
+  "max-w-1": [
+    [
+      "max-width",
+      "0.25rem"
+    ]
+  ],
+  "max-w-3/4": [
+    [
+      "max-width",
+      "75%"
+    ]
+  ],
+  "max-w-4": [
+    [
+      "max-width",
+      "1rem"
+    ]
+  ],
+  "max-w-44": [
+    [
+      "max-width",
+      "11rem"
+    ]
+  ],
+  "max-w-full": [
+    [
+      "max-width",
+      "100%"
+    ]
+  ],
+  "max-w-lg": [
+    [
+      "max-width",
+      "32rem"
+    ]
+  ],
+  "max-w-md": [
+    [
+      "max-width",
+      "28rem"
+    ]
+  ],
+  "max-w-none": [
+    [
+      "max-width",
+      "none"
+    ]
+  ],
+  "max-w-px": [
+    [
+      "max-width",
+      "1px"
+    ]
+  ],
+  "max-w-sm": [
+    [
+      "max-width",
+      "24rem"
+    ]
+  ],
+  "max-w-xl": [
+    [
+      "max-width",
+      "36rem"
+    ]
+  ],
+  "max-w-xs": [
+    [
+      "max-width",
+      "20rem"
+    ]
+  ],
+  "mb-0": [
+    [
+      "margin-bottom",
+      "0px"
+    ]
+  ],
+  "mb-1": [
+    [
+      "margin-bottom",
+      "0.25rem"
+    ]
+  ],
+  "mb-2": [
+    [
+      "margin-bottom",
+      "0.5rem"
+    ]
+  ],
+  "mb-4": [
+    [
+      "margin-bottom",
+      "1rem"
+    ]
+  ],
+  "mb-44": [
+    [
+      "margin-bottom",
+      "11rem"
+    ]
+  ],
+  "mb-auto": [
+    [
+      "margin-bottom",
+      "auto"
+    ]
+  ],
+  "mb-px": [
+    [
+      "margin-bottom",
+      "1px"
+    ]
+  ],
+  "mbe-2": [
+    [
+      "margin-block-end",
+      "0.5rem"
+    ]
+  ],
+  "mbe-44": [
+    [
+      "margin-block-end",
+      "11rem"
+    ]
+  ],
+  "mbs-2": [
+    [
+      "margin-block-start",
+      "0.5rem"
+    ]
+  ],
+  "mbs-44": [
+    [
+      "margin-block-start",
+      "11rem"
+    ]
+  ],
+  "me-2": [
+    [
+      "margin-inline-end",
+      "0.5rem"
+    ]
+  ],
+  "me-4": [
+    [
+      "margin-inline-end",
+      "1rem"
+    ]
+  ],
+  "me-44": [
+    [
+      "margin-inline-end",
+      "11rem"
+    ]
+  ],
+  "min-block-0": [
+    [
+      "min-block-size",
+      "0px"
+    ]
+  ],
+  "min-block-7/12": [
+    [
+      "min-block-size",
+      "58.333333%"
+    ]
+  ],
+  "min-h-0": [
+    [
+      "min-height",
+      "0px"
+    ]
+  ],
+  "min-h-1": [
+    [
+      "min-height",
+      "0.25rem"
+    ]
+  ],
+  "min-h-32": [
+    [
+      "min-height",
+      "8rem"
+    ]
+  ],
+  "min-h-4": [
+    [
+      "min-height",
+      "1rem"
+    ]
+  ],
+  "min-h-auto": [
+    [
+      "min-height",
+      "auto"
+    ]
+  ],
+  "min-h-full": [
+    [
+      "min-height",
+      "100%"
+    ]
+  ],
+  "min-h-px": [
+    [
+      "min-height",
+      "1px"
+    ]
+  ],
+  "min-h-screen": [
+    [
+      "min-height",
+      "100vh"
+    ]
+  ],
+  "min-inline-10/12": [
+    [
+      "min-inline-size",
+      "83.333333%"
+    ]
+  ],
+  "min-inline-8/12": [
+    [
+      "min-inline-size",
+      "66.666667%"
+    ]
+  ],
+  "min-w-0": [
+    [
+      "min-width",
+      "0px"
+    ]
+  ],
+  "min-w-1": [
+    [
+      "min-width",
+      "0.25rem"
+    ]
+  ],
+  "min-w-3/4": [
+    [
+      "min-width",
+      "75%"
+    ]
+  ],
+  "min-w-4": [
+    [
+      "min-width",
+      "1rem"
+    ]
+  ],
+  "min-w-44": [
+    [
+      "min-width",
+      "11rem"
+    ]
+  ],
+  "min-w-auto": [
+    [
+      "min-width",
+      "auto"
+    ]
+  ],
+  "min-w-full": [
+    [
+      "min-width",
+      "100%"
+    ]
+  ],
+  "min-w-lg": [
+    [
+      "min-width",
+      "32rem"
+    ]
+  ],
+  "min-w-md": [
+    [
+      "min-width",
+      "28rem"
+    ]
+  ],
+  "min-w-px": [
+    [
+      "min-width",
+      "1px"
+    ]
+  ],
+  "min-w-sm": [
+    [
+      "min-width",
+      "24rem"
+    ]
+  ],
+  "min-w-xl": [
+    [
+      "min-width",
+      "36rem"
+    ]
+  ],
+  "min-w-xs": [
+    [
+      "min-width",
+      "20rem"
+    ]
+  ],
+  "mix-blend-color": [
+    [
+      "mix-blend-mode",
+      "color"
+    ]
+  ],
+  "mix-blend-darken": [
+    [
+      "mix-blend-mode",
+      "darken"
+    ]
+  ],
+  "mix-blend-hard-light": [
+    [
+      "mix-blend-mode",
+      "hard-light"
+    ]
+  ],
+  "mix-blend-luminosity": [
+    [
+      "mix-blend-mode",
+      "luminosity"
+    ]
+  ],
+  "mix-blend-overlay": [
+    [
+      "mix-blend-mode",
+      "overlay"
+    ]
+  ],
+  "mix-blend-saturation": [
+    [
+      "mix-blend-mode",
+      "saturation"
+    ]
+  ],
+  "ml-0": [
+    [
+      "margin-left",
+      "0px"
+    ]
+  ],
+  "ml-1": [
+    [
+      "margin-left",
+      "0.25rem"
+    ]
+  ],
+  "ml-2": [
+    [
+      "margin-left",
+      "0.5rem"
+    ]
+  ],
+  "ml-4": [
+    [
+      "margin-left",
+      "1rem"
+    ]
+  ],
+  "ml-44": [
+    [
+      "margin-left",
+      "11rem"
+    ]
+  ],
+  "ml-auto": [
+    [
+      "margin-left",
+      "auto"
+    ]
+  ],
+  "ml-px": [
+    [
+      "margin-left",
+      "1px"
+    ]
+  ],
+  "mr-0": [
+    [
+      "margin-right",
+      "0px"
+    ]
+  ],
+  "mr-1": [
+    [
+      "margin-right",
+      "0.25rem"
+    ]
+  ],
+  "mr-2": [
+    [
+      "margin-right",
+      "0.5rem"
+    ]
+  ],
+  "mr-4": [
+    [
+      "margin-right",
+      "1rem"
+    ]
+  ],
+  "mr-44": [
+    [
+      "margin-right",
+      "11rem"
+    ]
+  ],
+  "mr-auto": [
+    [
+      "margin-right",
+      "auto"
+    ]
+  ],
+  "mr-px": [
+    [
+      "margin-right",
+      "1px"
+    ]
+  ],
+  "ms-2": [
+    [
+      "margin-inline-start",
+      "0.5rem"
+    ]
+  ],
+  "ms-4": [
+    [
+      "margin-inline-start",
+      "1rem"
+    ]
+  ],
+  "ms-44": [
+    [
+      "margin-inline-start",
+      "11rem"
+    ]
+  ],
+  "mt-0": [
+    [
+      "margin-top",
+      "0px"
+    ]
+  ],
+  "mt-1": [
+    [
+      "margin-top",
+      "0.25rem"
+    ]
+  ],
+  "mt-2": [
+    [
+      "margin-top",
+      "0.5rem"
+    ]
+  ],
+  "mt-4": [
+    [
+      "margin-top",
+      "1rem"
+    ]
+  ],
+  "mt-44": [
+    [
+      "margin-top",
+      "11rem"
+    ]
+  ],
+  "mt-auto": [
+    [
+      "margin-top",
+      "auto"
+    ]
+  ],
+  "mt-px": [
+    [
+      "margin-top",
+      "1px"
+    ]
+  ],
+  "mx-0": [
+    [
+      "margin-inline",
+      "0px"
+    ]
+  ],
+  "mx-1": [
+    [
+      "margin-inline",
+      "0.25rem"
+    ]
+  ],
+  "mx-2": [
+    [
+      "margin-inline",
+      "0.5rem"
+    ]
+  ],
+  "mx-4": [
+    [
+      "margin-inline",
+      "1rem"
+    ]
+  ],
+  "mx-44": [
+    [
+      "margin-inline",
+      "11rem"
+    ]
+  ],
+  "mx-auto": [
+    [
+      "margin-inline",
+      "auto"
+    ]
+  ],
+  "mx-px": [
+    [
+      "margin-inline",
+      "1px"
+    ]
+  ],
+  "my-0": [
+    [
+      "margin-block",
+      "0px"
+    ]
+  ],
+  "my-1": [
+    [
+      "margin-block",
+      "0.25rem"
+    ]
+  ],
+  "my-2": [
+    [
+      "margin-block",
+      "0.5rem"
+    ]
+  ],
+  "my-4": [
+    [
+      "margin-block",
+      "1rem"
+    ]
+  ],
+  "my-44": [
+    [
+      "margin-block",
+      "11rem"
+    ]
+  ],
+  "my-auto": [
+    [
+      "margin-block",
+      "auto"
+    ]
+  ],
+  "my-px": [
+    [
+      "margin-block",
+      "1px"
+    ]
+  ],
+  "no-underline": [
+    [
+      "text-decoration-line",
+      "none"
+    ]
+  ],
+  "normal-case": [
+    [
+      "text-transform",
+      "none"
+    ]
+  ],
+  "normal-nums": [
+    [
+      "font-variant-numeric",
+      "normal"
+    ]
+  ],
+  "not-italic": [
+    [
+      "font-style",
+      "normal"
+    ]
+  ],
+  "not-sr-only": [
+    [
+      "position",
+      "static"
+    ],
+    [
+      "width",
+      "auto"
+    ],
+    [
+      "height",
+      "auto"
+    ],
+    [
+      "padding",
+      "0"
+    ],
+    [
+      "margin",
+      "0"
+    ],
+    [
+      "overflow",
+      "visible"
+    ],
+    [
+      "clip-path",
+      "none"
+    ],
+    [
+      "white-space",
+      "normal"
+    ]
+  ],
+  "object-bottom": [
+    [
+      "object-position",
+      "bottom"
+    ]
+  ],
+  "object-bottom-right": [
+    [
+      "object-position",
+      "right bottom"
+    ]
+  ],
+  "object-contain": [
+    [
+      "object-fit",
+      "contain"
+    ]
+  ],
+  "object-cover": [
+    [
+      "object-fit",
+      "cover"
+    ]
+  ],
+  "object-fill": [
+    [
+      "object-fit",
+      "fill"
+    ]
+  ],
+  "object-none": [
+    [
+      "object-fit",
+      "none"
+    ]
+  ],
+  "object-scale-down": [
+    [
+      "object-fit",
+      "scale-down"
+    ]
+  ],
+  "oldstyle-nums": [
+    [
+      "--tw-numeric-figure",
+      "oldstyle-nums"
+    ],
+    [
+      "font-variant-numeric",
+      "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+    ]
+  ],
+  "opacity-0": [
+    [
+      "opacity",
+      "0%"
+    ]
+  ],
+  "opacity-100": [
+    [
+      "opacity",
+      "100%"
+    ]
+  ],
+  "opacity-15": [
+    [
+      "opacity",
+      "15%"
+    ]
+  ],
+  "opacity-30": [
+    [
+      "opacity",
+      "30%"
+    ]
+  ],
+  "opacity-45": [
+    [
+      "opacity",
+      "45%"
+    ]
+  ],
+  "opacity-5": [
+    [
+      "opacity",
+      "5%"
+    ]
+  ],
+  "opacity-50": [
+    [
+      "opacity",
+      "50%"
+    ]
+  ],
+  "opacity-55": [
+    [
+      "opacity",
+      "55%"
+    ]
+  ],
+  "opacity-70": [
+    [
+      "opacity",
+      "70%"
+    ]
+  ],
+  "opacity-95": [
+    [
+      "opacity",
+      "95%"
+    ]
+  ],
+  "order-1": [
+    [
+      "order",
+      "1"
+    ]
+  ],
+  "order-2": [
+    [
+      "order",
+      "2"
+    ]
+  ],
+  "order-6": [
+    [
+      "order",
+      "6"
+    ]
+  ],
+  "ordinal": [
+    [
+      "--tw-ordinal",
+      "ordinal"
+    ],
+    [
+      "font-variant-numeric",
+      "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+    ]
+  ],
+  "origin-bottom": [
+    [
+      "transform-origin",
+      "bottom"
+    ]
+  ],
+  "origin-bottom-left": [
+    [
+      "transform-origin",
+      "0 100%"
+    ]
+  ],
+  "origin-bottom-right": [
+    [
+      "transform-origin",
+      "100% 100%"
+    ]
+  ],
+  "origin-center": [
+    [
+      "transform-origin",
+      "center"
+    ]
+  ],
+  "origin-left": [
+    [
+      "transform-origin",
+      "0"
+    ]
+  ],
+  "origin-right": [
+    [
+      "transform-origin",
+      "100%"
+    ]
+  ],
+  "outline-2": [
+    [
+      "outline-style",
+      "var(--tw-outline-style)"
+    ],
+    [
+      "outline-width",
+      "2px"
+    ]
+  ],
+  "outline-emerald-400": [
+    [
+      "outline-color",
+      "#00d492"
+    ]
+  ],
+  "outline-hidden": [
+    [
+      "--tw-outline-style",
+      "none"
+    ],
+    [
+      "outline-style",
+      "none"
+    ],
+    [
+      "outline",
+      "2px solid transparent"
+    ],
+    [
+      "outline-offset",
+      "2px"
+    ]
+  ],
+  "outline-indigo-950": [
+    [
+      "outline-color",
+      "#1e1a4d"
+    ]
+  ],
+  "outline-none": [
+    [
+      "--tw-outline-style",
+      "none"
+    ],
+    [
+      "outline-style",
+      "none"
+    ]
+  ],
+  "outline-olive-100": [
+    [
+      "outline-color",
+      "#f4f4f0"
+    ]
+  ],
+  "outline-red-500": [
+    [
+      "outline-color",
+      "#fb2c36"
+    ]
+  ],
+  "outline-red-800": [
+    [
+      "outline-color",
+      "#9f0712"
+    ]
+  ],
+  "outline-taupe-50": [
+    [
+      "outline-color",
+      "#fbfaf9"
+    ]
+  ],
+  "overflow-auto": [
+    [
+      "overflow",
+      "auto"
+    ]
+  ],
+  "overflow-hidden": [
+    [
+      "overflow",
+      "hidden"
+    ]
+  ],
+  "overflow-visible": [
+    [
+      "overflow",
+      "visible"
+    ]
+  ],
+  "overflow-x-clip": [
+    [
+      "overflow-x",
+      "clip"
+    ]
+  ],
+  "overflow-x-scroll": [
+    [
+      "overflow-x",
+      "scroll"
+    ]
+  ],
+  "overflow-y-auto": [
+    [
+      "overflow-y",
+      "auto"
+    ]
+  ],
+  "overline": [
+    [
+      "text-decoration-line",
+      "overline"
+    ]
+  ],
+  "overscroll-auto": [
+    [
+      "overscroll-behavior",
+      "auto"
+    ]
+  ],
+  "overscroll-contain": [
+    [
+      "overscroll-behavior",
+      "contain"
+    ]
+  ],
+  "overscroll-none": [
+    [
+      "overscroll-behavior",
+      "none"
+    ]
+  ],
+  "overscroll-x-auto": [
+    [
+      "overscroll-behavior-x",
+      "auto"
+    ]
+  ],
+  "overscroll-x-contain": [
+    [
+      "overscroll-behavior-x",
+      "contain"
+    ]
+  ],
+  "overscroll-x-none": [
+    [
+      "overscroll-behavior-x",
+      "none"
+    ]
+  ],
+  "p-0": [
+    [
+      "padding",
+      "0px"
+    ]
+  ],
+  "p-1": [
+    [
+      "padding",
+      "0.25rem"
+    ]
+  ],
+  "p-11": [
+    [
+      "padding",
+      "2.75rem"
+    ]
+  ],
+  "p-2.5": [
+    [
+      "padding",
+      "0.625rem"
+    ]
+  ],
+  "p-3.5": [
+    [
+      "padding",
+      "0.875rem"
+    ]
+  ],
+  "p-36": [
+    [
+      "padding",
+      "9rem"
+    ]
+  ],
+  "p-4": [
+    [
+      "padding",
+      "1rem"
+    ]
+  ],
+  "p-44": [
+    [
+      "padding",
+      "11rem"
+    ]
+  ],
+  "p-6": [
+    [
+      "padding",
+      "1.5rem"
+    ]
+  ],
+  "p-[10px]": [
+    [
+      "padding",
+      "10px"
+    ]
+  ],
+  "p-px": [
+    [
+      "padding",
+      "1px"
+    ]
+  ],
+  "pb-0": [
+    [
+      "padding-bottom",
+      "0px"
+    ]
+  ],
+  "pb-1": [
+    [
+      "padding-bottom",
+      "0.25rem"
+    ]
+  ],
+  "pb-11": [
+    [
+      "padding-bottom",
+      "2.75rem"
+    ]
+  ],
+  "pb-2.5": [
+    [
+      "padding-bottom",
+      "0.625rem"
+    ]
+  ],
+  "pb-3.5": [
+    [
+      "padding-bottom",
+      "0.875rem"
+    ]
+  ],
+  "pb-36": [
+    [
+      "padding-bottom",
+      "9rem"
+    ]
+  ],
+  "pb-4": [
+    [
+      "padding-bottom",
+      "1rem"
+    ]
+  ],
+  "pb-44": [
+    [
+      "padding-bottom",
+      "11rem"
+    ]
+  ],
+  "pb-6": [
+    [
+      "padding-bottom",
+      "1.5rem"
+    ]
+  ],
+  "pb-px": [
+    [
+      "padding-bottom",
+      "1px"
+    ]
+  ],
+  "pbe-0": [
+    [
+      "padding-block-end",
+      "0px"
+    ]
+  ],
+  "pbe-11": [
+    [
+      "padding-block-end",
+      "2.75rem"
+    ]
+  ],
+  "pbe-2.5": [
+    [
+      "padding-block-end",
+      "0.625rem"
+    ]
+  ],
+  "pbe-3.5": [
+    [
+      "padding-block-end",
+      "0.875rem"
+    ]
+  ],
+  "pbe-44": [
+    [
+      "padding-block-end",
+      "11rem"
+    ]
+  ],
+  "pbe-6": [
+    [
+      "padding-block-end",
+      "1.5rem"
+    ]
+  ],
+  "pbs-0": [
+    [
+      "padding-block-start",
+      "0px"
+    ]
+  ],
+  "pbs-11": [
+    [
+      "padding-block-start",
+      "2.75rem"
+    ]
+  ],
+  "pbs-2.5": [
+    [
+      "padding-block-start",
+      "0.625rem"
+    ]
+  ],
+  "pbs-3.5": [
+    [
+      "padding-block-start",
+      "0.875rem"
+    ]
+  ],
+  "pbs-44": [
+    [
+      "padding-block-start",
+      "11rem"
+    ]
+  ],
+  "pbs-6": [
+    [
+      "padding-block-start",
+      "1.5rem"
+    ]
+  ],
+  "pe-0": [
+    [
+      "padding-inline-end",
+      "0px"
+    ]
+  ],
+  "pe-11": [
+    [
+      "padding-inline-end",
+      "2.75rem"
+    ]
+  ],
+  "pe-2.5": [
+    [
+      "padding-inline-end",
+      "0.625rem"
+    ]
+  ],
+  "pe-3.5": [
+    [
+      "padding-inline-end",
+      "0.875rem"
+    ]
+  ],
+  "pe-4": [
+    [
+      "padding-inline-end",
+      "1rem"
+    ]
+  ],
+  "pe-44": [
+    [
+      "padding-inline-end",
+      "11rem"
+    ]
+  ],
+  "pe-6": [
+    [
+      "padding-inline-end",
+      "1.5rem"
+    ]
+  ],
+  "perspective-distant": [
+    [
+      "perspective",
+      "1200px"
+    ]
+  ],
+  "perspective-midrange": [
+    [
+      "perspective",
+      "800px"
+    ]
+  ],
+  "perspective-none": [
+    [
+      "perspective",
+      "none"
+    ]
+  ],
+  "perspective-origin-bottom": [
+    [
+      "perspective-origin",
+      "bottom"
+    ]
+  ],
+  "perspective-origin-bottom-right": [
+    [
+      "perspective-origin",
+      "100% 100%"
+    ]
+  ],
+  "perspective-origin-left": [
+    [
+      "perspective-origin",
+      "0"
+    ]
+  ],
+  "pl-0": [
+    [
+      "padding-left",
+      "0px"
+    ]
+  ],
+  "pl-1": [
+    [
+      "padding-left",
+      "0.25rem"
+    ]
+  ],
+  "pl-11": [
+    [
+      "padding-left",
+      "2.75rem"
+    ]
+  ],
+  "pl-2.5": [
+    [
+      "padding-left",
+      "0.625rem"
+    ]
+  ],
+  "pl-3.5": [
+    [
+      "padding-left",
+      "0.875rem"
+    ]
+  ],
+  "pl-36": [
+    [
+      "padding-left",
+      "9rem"
+    ]
+  ],
+  "pl-4": [
+    [
+      "padding-left",
+      "1rem"
+    ]
+  ],
+  "pl-44": [
+    [
+      "padding-left",
+      "11rem"
+    ]
+  ],
+  "pl-6": [
+    [
+      "padding-left",
+      "1.5rem"
+    ]
+  ],
+  "pl-px": [
+    [
+      "padding-left",
+      "1px"
+    ]
+  ],
+  "place-content-around": [
+    [
+      "place-content",
+      "space-around"
+    ]
+  ],
+  "place-content-center-safe": [
+    [
+      "place-content",
+      "safe center"
+    ]
+  ],
+  "place-content-start": [
+    [
+      "place-content",
+      "start"
+    ]
+  ],
+  "place-items-center-safe": [
+    [
+      "place-items",
+      "safe center"
+    ]
+  ],
+  "place-items-stretch": [
+    [
+      "place-items",
+      "stretch"
+    ]
+  ],
+  "place-self-end": [
+    [
+      "place-self",
+      "end"
+    ]
+  ],
+  "placeholder-amber-100": [
+    [
+      "color",
+      "#fef3c6"
+    ]
+  ],
+  "placeholder-fuchsia-300": [
+    [
+      "color",
+      "#f4a8ff"
+    ]
+  ],
+  "placeholder-lime-500": [
+    [
+      "color",
+      "#7ccf00"
+    ]
+  ],
+  "placeholder-olive-900": [
+    [
+      "color",
+      "#1d1d16"
+    ]
+  ],
+  "placeholder-rose-300": [
+    [
+      "color",
+      "#ffa1ad"
+    ]
+  ],
+  "placeholder-taupe-600": [
+    [
+      "color",
+      "#5b4f4b"
+    ]
+  ],
+  "pointer-events-auto": [
+    [
+      "pointer-events",
+      "auto"
+    ]
+  ],
+  "pointer-events-none": [
+    [
+      "pointer-events",
+      "none"
+    ]
+  ],
+  "pr-0": [
+    [
+      "padding-right",
+      "0px"
+    ]
+  ],
+  "pr-1": [
+    [
+      "padding-right",
+      "0.25rem"
+    ]
+  ],
+  "pr-11": [
+    [
+      "padding-right",
+      "2.75rem"
+    ]
+  ],
+  "pr-2.5": [
+    [
+      "padding-right",
+      "0.625rem"
+    ]
+  ],
+  "pr-3.5": [
+    [
+      "padding-right",
+      "0.875rem"
+    ]
+  ],
+  "pr-36": [
+    [
+      "padding-right",
+      "9rem"
+    ]
+  ],
+  "pr-4": [
+    [
+      "padding-right",
+      "1rem"
+    ]
+  ],
+  "pr-44": [
+    [
+      "padding-right",
+      "11rem"
+    ]
+  ],
+  "pr-6": [
+    [
+      "padding-right",
+      "1.5rem"
+    ]
+  ],
+  "pr-px": [
+    [
+      "padding-right",
+      "1px"
+    ]
+  ],
+  "proportional-nums": [
+    [
+      "--tw-numeric-spacing",
+      "proportional-nums"
+    ],
+    [
+      "font-variant-numeric",
+      "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+    ]
+  ],
+  "ps-0": [
+    [
+      "padding-inline-start",
+      "0px"
+    ]
+  ],
+  "ps-11": [
+    [
+      "padding-inline-start",
+      "2.75rem"
+    ]
+  ],
+  "ps-2.5": [
+    [
+      "padding-inline-start",
+      "0.625rem"
+    ]
+  ],
+  "ps-3.5": [
+    [
+      "padding-inline-start",
+      "0.875rem"
+    ]
+  ],
+  "ps-4": [
+    [
+      "padding-inline-start",
+      "1rem"
+    ]
+  ],
+  "ps-44": [
+    [
+      "padding-inline-start",
+      "11rem"
+    ]
+  ],
+  "ps-6": [
+    [
+      "padding-inline-start",
+      "1.5rem"
+    ]
+  ],
+  "pt-0": [
+    [
+      "padding-top",
+      "0px"
+    ]
+  ],
+  "pt-1": [
+    [
+      "padding-top",
+      "0.25rem"
+    ]
+  ],
+  "pt-11": [
+    [
+      "padding-top",
+      "2.75rem"
+    ]
+  ],
+  "pt-2.5": [
+    [
+      "padding-top",
+      "0.625rem"
+    ]
+  ],
+  "pt-3.5": [
+    [
+      "padding-top",
+      "0.875rem"
+    ]
+  ],
+  "pt-36": [
+    [
+      "padding-top",
+      "9rem"
+    ]
+  ],
+  "pt-4": [
+    [
+      "padding-top",
+      "1rem"
+    ]
+  ],
+  "pt-44": [
+    [
+      "padding-top",
+      "11rem"
+    ]
+  ],
+  "pt-6": [
+    [
+      "padding-top",
+      "1.5rem"
+    ]
+  ],
+  "pt-px": [
+    [
+      "padding-top",
+      "1px"
+    ]
+  ],
+  "px-0": [
+    [
+      "padding-inline",
+      "0px"
+    ]
+  ],
+  "px-1": [
+    [
+      "padding-inline",
+      "0.25rem"
+    ]
+  ],
+  "px-11": [
+    [
+      "padding-inline",
+      "2.75rem"
+    ]
+  ],
+  "px-2.5": [
+    [
+      "padding-inline",
+      "0.625rem"
+    ]
+  ],
+  "px-3.5": [
+    [
+      "padding-inline",
+      "0.875rem"
+    ]
+  ],
+  "px-36": [
+    [
+      "padding-inline",
+      "9rem"
+    ]
+  ],
+  "px-4": [
+    [
+      "padding-inline",
+      "1rem"
+    ]
+  ],
+  "px-44": [
+    [
+      "padding-inline",
+      "11rem"
+    ]
+  ],
+  "px-6": [
+    [
+      "padding-inline",
+      "1.5rem"
+    ]
+  ],
+  "px-px": [
+    [
+      "padding-inline",
+      "1px"
+    ]
+  ],
+  "py-0": [
+    [
+      "padding-block",
+      "0px"
+    ]
+  ],
+  "py-1": [
+    [
+      "padding-block",
+      "0.25rem"
+    ]
+  ],
+  "py-11": [
+    [
+      "padding-block",
+      "2.75rem"
+    ]
+  ],
+  "py-2.5": [
+    [
+      "padding-block",
+      "0.625rem"
+    ]
+  ],
+  "py-3.5": [
+    [
+      "padding-block",
+      "0.875rem"
+    ]
+  ],
+  "py-36": [
+    [
+      "padding-block",
+      "9rem"
+    ]
+  ],
+  "py-4": [
+    [
+      "padding-block",
+      "1rem"
+    ]
+  ],
+  "py-44": [
+    [
+      "padding-block",
+      "11rem"
+    ]
+  ],
+  "py-6": [
+    [
+      "padding-block",
+      "1.5rem"
+    ]
+  ],
+  "py-px": [
+    [
+      "padding-block",
+      "1px"
+    ]
+  ],
+  "relative": [
+    [
+      "position",
+      "relative"
+    ]
+  ],
+  "resize": [
+    [
+      "resize",
+      "both"
+    ]
+  ],
+  "resize-none": [
+    [
+      "resize",
+      "none"
+    ]
+  ],
+  "resize-x": [
+    [
+      "resize",
+      "horizontal"
+    ]
+  ],
+  "resize-y": [
+    [
+      "resize",
+      "vertical"
+    ]
+  ],
+  "right-0": [
+    [
+      "right",
+      "0px"
+    ]
+  ],
+  "right-1": [
+    [
+      "right",
+      "0.25rem"
+    ]
+  ],
+  "right-2.5": [
+    [
+      "right",
+      "0.625rem"
+    ]
+  ],
+  "right-32": [
+    [
+      "right",
+      "8rem"
+    ]
+  ],
+  "right-4": [
+    [
+      "right",
+      "1rem"
+    ]
+  ],
+  "right-4/6": [
+    [
+      "right",
+      "66.666667%"
+    ]
+  ],
+  "right-auto": [
+    [
+      "right",
+      "auto"
+    ]
+  ],
+  "right-full": [
+    [
+      "right",
+      "100%"
+    ]
+  ],
+  "right-px": [
+    [
+      "right",
+      "1px"
+    ]
+  ],
+  "ring": [
+    [
+      "--tw-ring-shadow",
+      "var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor)"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "ring-0": [
+    [
+      "--tw-ring-shadow",
+      "var(--tw-ring-inset,) 0 0 0 calc(0px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor)"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "ring-1": [
+    [
+      "--tw-ring-shadow",
+      "var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor)"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "ring-2": [
+    [
+      "--tw-ring-shadow",
+      "var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor)"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "ring-4": [
+    [
+      "--tw-ring-shadow",
+      "var(--tw-ring-inset,) 0 0 0 calc(4px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor)"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "ring-blue-500": [
+    [
+      "--tw-ring-color",
+      "#2b7fff"
+    ]
+  ],
+  "ring-inset": [
+    [
+      "--tw-ring-inset",
+      "inset"
+    ]
+  ],
+  "ring-lime-200": [
+    [
+      "--tw-ring-color",
+      "#d8f999"
+    ]
+  ],
+  "ring-offset-2": [
+    [
+      "--tw-ring-offset-width",
+      "2px"
+    ],
+    [
+      "--tw-ring-offset-shadow",
+      "var(--tw-ring-inset,) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color)"
+    ]
+  ],
+  "ring-offset-blue-500": [
+    [
+      "--tw-ring-offset-color",
+      "#2b7fff"
+    ]
+  ],
+  "ring-offset-fuchsia-500": [
+    [
+      "--tw-ring-offset-color",
+      "#e12afb"
+    ]
+  ],
+  "ring-offset-orange-50": [
+    [
+      "--tw-ring-offset-color",
+      "#fff7ed"
+    ]
+  ],
+  "ring-offset-teal-50": [
+    [
+      "--tw-ring-offset-color",
+      "#f0fdfa"
+    ]
+  ],
+  "ring-rose-300": [
+    [
+      "--tw-ring-color",
+      "#ffa1ad"
+    ]
+  ],
+  "rotate-0": [
+    [
+      "rotate",
+      "0deg"
+    ]
+  ],
+  "rotate-45": [
+    [
+      "rotate",
+      "45deg"
+    ]
+  ],
+  "rotate-90": [
+    [
+      "rotate",
+      "90deg"
+    ]
+  ],
+  "rotate-x-12": [
+    [
+      "--tw-rotate-x",
+      "rotateX(12deg)"
+    ],
+    [
+      "transform",
+      "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
+    ]
+  ],
+  "rotate-y-3": [
+    [
+      "--tw-rotate-y",
+      "rotateY(3deg)"
+    ],
+    [
+      "transform",
+      "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
+    ]
+  ],
+  "rounded-2xl": [
+    [
+      "border-radius",
+      "1rem"
+    ]
+  ],
+  "rounded-b-2xl": [
+    [
+      "border-bottom-right-radius",
+      "1rem"
+    ],
+    [
+      "border-bottom-left-radius",
+      "1rem"
+    ]
+  ],
+  "rounded-b-full": [
+    [
+      "border-bottom-right-radius",
+      "calc(infinity * 1px)"
+    ],
+    [
+      "border-bottom-left-radius",
+      "calc(infinity * 1px)"
+    ]
+  ],
+  "rounded-b-lg": [
+    [
+      "border-bottom-right-radius",
+      "0.5rem"
+    ],
+    [
+      "border-bottom-left-radius",
+      "0.5rem"
+    ]
+  ],
+  "rounded-b-md": [
+    [
+      "border-bottom-right-radius",
+      "0.375rem"
+    ],
+    [
+      "border-bottom-left-radius",
+      "0.375rem"
+    ]
+  ],
+  "rounded-b-none": [
+    [
+      "border-bottom-right-radius",
+      "0"
+    ],
+    [
+      "border-bottom-left-radius",
+      "0"
+    ]
+  ],
+  "rounded-b-sm": [
+    [
+      "border-bottom-right-radius",
+      "0.25rem"
+    ],
+    [
+      "border-bottom-left-radius",
+      "0.25rem"
+    ]
+  ],
+  "rounded-b-xl": [
+    [
+      "border-bottom-right-radius",
+      "0.75rem"
+    ],
+    [
+      "border-bottom-left-radius",
+      "0.75rem"
+    ]
+  ],
+  "rounded-b-xs": [
+    [
+      "border-bottom-right-radius",
+      "0.125rem"
+    ],
+    [
+      "border-bottom-left-radius",
+      "0.125rem"
+    ]
+  ],
+  "rounded-bl-2xl": [
+    [
+      "border-bottom-left-radius",
+      "1rem"
+    ]
+  ],
+  "rounded-bl-full": [
+    [
+      "border-bottom-left-radius",
+      "calc(infinity * 1px)"
+    ]
+  ],
+  "rounded-bl-lg": [
+    [
+      "border-bottom-left-radius",
+      "0.5rem"
+    ]
+  ],
+  "rounded-bl-md": [
+    [
+      "border-bottom-left-radius",
+      "0.375rem"
+    ]
+  ],
+  "rounded-bl-none": [
+    [
+      "border-bottom-left-radius",
+      "0"
+    ]
+  ],
+  "rounded-bl-sm": [
+    [
+      "border-bottom-left-radius",
+      "0.25rem"
+    ]
+  ],
+  "rounded-bl-xl": [
+    [
+      "border-bottom-left-radius",
+      "0.75rem"
+    ]
+  ],
+  "rounded-bl-xs": [
+    [
+      "border-bottom-left-radius",
+      "0.125rem"
+    ]
+  ],
+  "rounded-br-2xl": [
+    [
+      "border-bottom-right-radius",
+      "1rem"
+    ]
+  ],
+  "rounded-br-4xl": [
+    [
+      "border-bottom-right-radius",
+      "2rem"
+    ]
+  ],
+  "rounded-br-full": [
+    [
+      "border-bottom-right-radius",
+      "calc(infinity * 1px)"
+    ]
+  ],
+  "rounded-br-lg": [
+    [
+      "border-bottom-right-radius",
+      "0.5rem"
+    ]
+  ],
+  "rounded-br-md": [
+    [
+      "border-bottom-right-radius",
+      "0.375rem"
+    ]
+  ],
+  "rounded-br-none": [
+    [
+      "border-bottom-right-radius",
+      "0"
+    ]
+  ],
+  "rounded-br-sm": [
+    [
+      "border-bottom-right-radius",
+      "0.25rem"
+    ]
+  ],
+  "rounded-br-xl": [
+    [
+      "border-bottom-right-radius",
+      "0.75rem"
+    ]
+  ],
+  "rounded-br-xs": [
+    [
+      "border-bottom-right-radius",
+      "0.125rem"
+    ]
+  ],
+  "rounded-e-2xl": [
+    [
+      "border-start-end-radius",
+      "1rem"
+    ],
+    [
+      "border-end-end-radius",
+      "1rem"
+    ]
+  ],
+  "rounded-e-full": [
+    [
+      "border-start-end-radius",
+      "calc(infinity * 1px)"
+    ],
+    [
+      "border-end-end-radius",
+      "calc(infinity * 1px)"
+    ]
+  ],
+  "rounded-e-lg": [
+    [
+      "border-start-end-radius",
+      "0.5rem"
+    ],
+    [
+      "border-end-end-radius",
+      "0.5rem"
+    ]
+  ],
+  "rounded-e-md": [
+    [
+      "border-start-end-radius",
+      "0.375rem"
+    ],
+    [
+      "border-end-end-radius",
+      "0.375rem"
+    ]
+  ],
+  "rounded-e-none": [
+    [
+      "border-start-end-radius",
+      "0"
+    ],
+    [
+      "border-end-end-radius",
+      "0"
+    ]
+  ],
+  "rounded-e-sm": [
+    [
+      "border-start-end-radius",
+      "0.25rem"
+    ],
+    [
+      "border-end-end-radius",
+      "0.25rem"
+    ]
+  ],
+  "rounded-e-xl": [
+    [
+      "border-start-end-radius",
+      "0.75rem"
+    ],
+    [
+      "border-end-end-radius",
+      "0.75rem"
+    ]
+  ],
+  "rounded-e-xs": [
+    [
+      "border-start-end-radius",
+      "0.125rem"
+    ],
+    [
+      "border-end-end-radius",
+      "0.125rem"
+    ]
+  ],
+  "rounded-ee-2xl": [
+    [
+      "border-end-end-radius",
+      "1rem"
+    ]
+  ],
+  "rounded-ee-full": [
+    [
+      "border-end-end-radius",
+      "calc(infinity * 1px)"
+    ]
+  ],
+  "rounded-ee-lg": [
+    [
+      "border-end-end-radius",
+      "0.5rem"
+    ]
+  ],
+  "rounded-ee-md": [
+    [
+      "border-end-end-radius",
+      "0.375rem"
+    ]
+  ],
+  "rounded-ee-none": [
+    [
+      "border-end-end-radius",
+      "0"
+    ]
+  ],
+  "rounded-ee-sm": [
+    [
+      "border-end-end-radius",
+      "0.25rem"
+    ]
+  ],
+  "rounded-ee-xl": [
+    [
+      "border-end-end-radius",
+      "0.75rem"
+    ]
+  ],
+  "rounded-ee-xs": [
+    [
+      "border-end-end-radius",
+      "0.125rem"
+    ]
+  ],
+  "rounded-es-2xl": [
+    [
+      "border-end-start-radius",
+      "1rem"
+    ]
+  ],
+  "rounded-es-full": [
+    [
+      "border-end-start-radius",
+      "calc(infinity * 1px)"
+    ]
+  ],
+  "rounded-es-lg": [
+    [
+      "border-end-start-radius",
+      "0.5rem"
+    ]
+  ],
+  "rounded-es-md": [
+    [
+      "border-end-start-radius",
+      "0.375rem"
+    ]
+  ],
+  "rounded-es-none": [
+    [
+      "border-end-start-radius",
+      "0"
+    ]
+  ],
+  "rounded-es-sm": [
+    [
+      "border-end-start-radius",
+      "0.25rem"
+    ]
+  ],
+  "rounded-es-xl": [
+    [
+      "border-end-start-radius",
+      "0.75rem"
+    ]
+  ],
+  "rounded-es-xs": [
+    [
+      "border-end-start-radius",
+      "0.125rem"
+    ]
+  ],
+  "rounded-full": [
+    [
+      "border-radius",
+      "calc(infinity * 1px)"
+    ]
+  ],
+  "rounded-l-2xl": [
+    [
+      "border-top-left-radius",
+      "1rem"
+    ],
+    [
+      "border-bottom-left-radius",
+      "1rem"
+    ]
+  ],
+  "rounded-l-full": [
+    [
+      "border-top-left-radius",
+      "calc(infinity * 1px)"
+    ],
+    [
+      "border-bottom-left-radius",
+      "calc(infinity * 1px)"
+    ]
+  ],
+  "rounded-l-lg": [
+    [
+      "border-top-left-radius",
+      "0.5rem"
+    ],
+    [
+      "border-bottom-left-radius",
+      "0.5rem"
+    ]
+  ],
+  "rounded-l-md": [
+    [
+      "border-top-left-radius",
+      "0.375rem"
+    ],
+    [
+      "border-bottom-left-radius",
+      "0.375rem"
+    ]
+  ],
+  "rounded-l-none": [
+    [
+      "border-top-left-radius",
+      "0"
+    ],
+    [
+      "border-bottom-left-radius",
+      "0"
+    ]
+  ],
+  "rounded-l-sm": [
+    [
+      "border-top-left-radius",
+      "0.25rem"
+    ],
+    [
+      "border-bottom-left-radius",
+      "0.25rem"
+    ]
+  ],
+  "rounded-l-xl": [
+    [
+      "border-top-left-radius",
+      "0.75rem"
+    ],
+    [
+      "border-bottom-left-radius",
+      "0.75rem"
+    ]
+  ],
+  "rounded-l-xs": [
+    [
+      "border-top-left-radius",
+      "0.125rem"
+    ],
+    [
+      "border-bottom-left-radius",
+      "0.125rem"
+    ]
+  ],
+  "rounded-lg": [
+    [
+      "border-radius",
+      "0.5rem"
+    ]
+  ],
+  "rounded-md": [
+    [
+      "border-radius",
+      "0.375rem"
+    ]
+  ],
+  "rounded-none": [
+    [
+      "border-radius",
+      "0"
+    ]
+  ],
+  "rounded-r-2xl": [
+    [
+      "border-top-right-radius",
+      "1rem"
+    ],
+    [
+      "border-bottom-right-radius",
+      "1rem"
+    ]
+  ],
+  "rounded-r-full": [
+    [
+      "border-top-right-radius",
+      "calc(infinity * 1px)"
+    ],
+    [
+      "border-bottom-right-radius",
+      "calc(infinity * 1px)"
+    ]
+  ],
+  "rounded-r-lg": [
+    [
+      "border-top-right-radius",
+      "0.5rem"
+    ],
+    [
+      "border-bottom-right-radius",
+      "0.5rem"
+    ]
+  ],
+  "rounded-r-md": [
+    [
+      "border-top-right-radius",
+      "0.375rem"
+    ],
+    [
+      "border-bottom-right-radius",
+      "0.375rem"
+    ]
+  ],
+  "rounded-r-none": [
+    [
+      "border-top-right-radius",
+      "0"
+    ],
+    [
+      "border-bottom-right-radius",
+      "0"
+    ]
+  ],
+  "rounded-r-sm": [
+    [
+      "border-top-right-radius",
+      "0.25rem"
+    ],
+    [
+      "border-bottom-right-radius",
+      "0.25rem"
+    ]
+  ],
+  "rounded-r-xl": [
+    [
+      "border-top-right-radius",
+      "0.75rem"
+    ],
+    [
+      "border-bottom-right-radius",
+      "0.75rem"
+    ]
+  ],
+  "rounded-r-xs": [
+    [
+      "border-top-right-radius",
+      "0.125rem"
+    ],
+    [
+      "border-bottom-right-radius",
+      "0.125rem"
+    ]
+  ],
+  "rounded-s-2xl": [
+    [
+      "border-start-start-radius",
+      "1rem"
+    ],
+    [
+      "border-end-start-radius",
+      "1rem"
+    ]
+  ],
+  "rounded-s-full": [
+    [
+      "border-start-start-radius",
+      "calc(infinity * 1px)"
+    ],
+    [
+      "border-end-start-radius",
+      "calc(infinity * 1px)"
+    ]
+  ],
+  "rounded-s-lg": [
+    [
+      "border-start-start-radius",
+      "0.5rem"
+    ],
+    [
+      "border-end-start-radius",
+      "0.5rem"
+    ]
+  ],
+  "rounded-s-md": [
+    [
+      "border-start-start-radius",
+      "0.375rem"
+    ],
+    [
+      "border-end-start-radius",
+      "0.375rem"
+    ]
+  ],
+  "rounded-s-none": [
+    [
+      "border-start-start-radius",
+      "0"
+    ],
+    [
+      "border-end-start-radius",
+      "0"
+    ]
+  ],
+  "rounded-s-sm": [
+    [
+      "border-start-start-radius",
+      "0.25rem"
+    ],
+    [
+      "border-end-start-radius",
+      "0.25rem"
+    ]
+  ],
+  "rounded-s-xl": [
+    [
+      "border-start-start-radius",
+      "0.75rem"
+    ],
+    [
+      "border-end-start-radius",
+      "0.75rem"
+    ]
+  ],
+  "rounded-s-xs": [
+    [
+      "border-start-start-radius",
+      "0.125rem"
+    ],
+    [
+      "border-end-start-radius",
+      "0.125rem"
+    ]
+  ],
+  "rounded-se-2xl": [
+    [
+      "border-start-end-radius",
+      "1rem"
+    ]
+  ],
+  "rounded-se-full": [
+    [
+      "border-start-end-radius",
+      "calc(infinity * 1px)"
+    ]
+  ],
+  "rounded-se-lg": [
+    [
+      "border-start-end-radius",
+      "0.5rem"
+    ]
+  ],
+  "rounded-se-md": [
+    [
+      "border-start-end-radius",
+      "0.375rem"
+    ]
+  ],
+  "rounded-se-none": [
+    [
+      "border-start-end-radius",
+      "0"
+    ]
+  ],
+  "rounded-se-sm": [
+    [
+      "border-start-end-radius",
+      "0.25rem"
+    ]
+  ],
+  "rounded-se-xl": [
+    [
+      "border-start-end-radius",
+      "0.75rem"
+    ]
+  ],
+  "rounded-se-xs": [
+    [
+      "border-start-end-radius",
+      "0.125rem"
+    ]
+  ],
+  "rounded-sm": [
+    [
+      "border-radius",
+      "0.25rem"
+    ]
+  ],
+  "rounded-ss-2xl": [
+    [
+      "border-start-start-radius",
+      "1rem"
+    ]
+  ],
+  "rounded-ss-full": [
+    [
+      "border-start-start-radius",
+      "calc(infinity * 1px)"
+    ]
+  ],
+  "rounded-ss-lg": [
+    [
+      "border-start-start-radius",
+      "0.5rem"
+    ]
+  ],
+  "rounded-ss-md": [
+    [
+      "border-start-start-radius",
+      "0.375rem"
+    ]
+  ],
+  "rounded-ss-none": [
+    [
+      "border-start-start-radius",
+      "0"
+    ]
+  ],
+  "rounded-ss-sm": [
+    [
+      "border-start-start-radius",
+      "0.25rem"
+    ]
+  ],
+  "rounded-ss-xl": [
+    [
+      "border-start-start-radius",
+      "0.75rem"
+    ]
+  ],
+  "rounded-ss-xs": [
+    [
+      "border-start-start-radius",
+      "0.125rem"
+    ]
+  ],
+  "rounded-t-2xl": [
+    [
+      "border-top-left-radius",
+      "1rem"
+    ],
+    [
+      "border-top-right-radius",
+      "1rem"
+    ]
+  ],
+  "rounded-t-full": [
+    [
+      "border-top-left-radius",
+      "calc(infinity * 1px)"
+    ],
+    [
+      "border-top-right-radius",
+      "calc(infinity * 1px)"
+    ]
+  ],
+  "rounded-t-lg": [
+    [
+      "border-top-left-radius",
+      "0.5rem"
+    ],
+    [
+      "border-top-right-radius",
+      "0.5rem"
+    ]
+  ],
+  "rounded-t-md": [
+    [
+      "border-top-left-radius",
+      "0.375rem"
+    ],
+    [
+      "border-top-right-radius",
+      "0.375rem"
+    ]
+  ],
+  "rounded-t-none": [
+    [
+      "border-top-left-radius",
+      "0"
+    ],
+    [
+      "border-top-right-radius",
+      "0"
+    ]
+  ],
+  "rounded-t-sm": [
+    [
+      "border-top-left-radius",
+      "0.25rem"
+    ],
+    [
+      "border-top-right-radius",
+      "0.25rem"
+    ]
+  ],
+  "rounded-t-xl": [
+    [
+      "border-top-left-radius",
+      "0.75rem"
+    ],
+    [
+      "border-top-right-radius",
+      "0.75rem"
+    ]
+  ],
+  "rounded-t-xs": [
+    [
+      "border-top-left-radius",
+      "0.125rem"
+    ],
+    [
+      "border-top-right-radius",
+      "0.125rem"
+    ]
+  ],
+  "rounded-tl-2xl": [
+    [
+      "border-top-left-radius",
+      "1rem"
+    ]
+  ],
+  "rounded-tl-full": [
+    [
+      "border-top-left-radius",
+      "calc(infinity * 1px)"
+    ]
+  ],
+  "rounded-tl-lg": [
+    [
+      "border-top-left-radius",
+      "0.5rem"
+    ]
+  ],
+  "rounded-tl-md": [
+    [
+      "border-top-left-radius",
+      "0.375rem"
+    ]
+  ],
+  "rounded-tl-none": [
+    [
+      "border-top-left-radius",
+      "0"
+    ]
+  ],
+  "rounded-tl-sm": [
+    [
+      "border-top-left-radius",
+      "0.25rem"
+    ]
+  ],
+  "rounded-tl-xl": [
+    [
+      "border-top-left-radius",
+      "0.75rem"
+    ]
+  ],
+  "rounded-tl-xs": [
+    [
+      "border-top-left-radius",
+      "0.125rem"
+    ]
+  ],
+  "rounded-tr-2xl": [
+    [
+      "border-top-right-radius",
+      "1rem"
+    ]
+  ],
+  "rounded-tr-full": [
+    [
+      "border-top-right-radius",
+      "calc(infinity * 1px)"
+    ]
+  ],
+  "rounded-tr-lg": [
+    [
+      "border-top-right-radius",
+      "0.5rem"
+    ]
+  ],
+  "rounded-tr-md": [
+    [
+      "border-top-right-radius",
+      "0.375rem"
+    ]
+  ],
+  "rounded-tr-none": [
+    [
+      "border-top-right-radius",
+      "0"
+    ]
+  ],
+  "rounded-tr-sm": [
+    [
+      "border-top-right-radius",
+      "0.25rem"
+    ]
+  ],
+  "rounded-tr-xl": [
+    [
+      "border-top-right-radius",
+      "0.75rem"
+    ]
+  ],
+  "rounded-tr-xs": [
+    [
+      "border-top-right-radius",
+      "0.125rem"
+    ]
+  ],
+  "rounded-xl": [
+    [
+      "border-radius",
+      "0.75rem"
+    ]
+  ],
+  "rounded-xs": [
+    [
+      "border-radius",
+      "0.125rem"
+    ]
+  ],
+  "row-end-3": [
+    [
+      "grid-row-end",
+      "3"
+    ]
+  ],
+  "row-span-12": [
+    [
+      "grid-row",
+      "span 12 / span 12"
+    ]
+  ],
+  "row-start-10": [
+    [
+      "grid-row-start",
+      "10"
+    ]
+  ],
+  "saturate-0": [
+    [
+      "--tw-saturate",
+      "saturate(0%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "saturate-100": [
+    [
+      "--tw-saturate",
+      "saturate(100%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "saturate-150": [
+    [
+      "--tw-saturate",
+      "saturate(150%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "saturate-200": [
+    [
+      "--tw-saturate",
+      "saturate(200%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "saturate-50": [
+    [
+      "--tw-saturate",
+      "saturate(50%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "scale-0": [
+    [
+      "--tw-scale-x",
+      "0%"
+    ],
+    [
+      "--tw-scale-y",
+      "0%"
+    ],
+    [
+      "--tw-scale-z",
+      "0%"
+    ],
+    [
+      "scale",
+      "var(--tw-scale-x) var(--tw-scale-y)"
+    ]
+  ],
+  "scale-100": [
+    [
+      "--tw-scale-x",
+      "100%"
+    ],
+    [
+      "--tw-scale-y",
+      "100%"
+    ],
+    [
+      "--tw-scale-z",
+      "100%"
+    ],
+    [
+      "scale",
+      "var(--tw-scale-x) var(--tw-scale-y)"
+    ]
+  ],
+  "scale-150": [
+    [
+      "--tw-scale-x",
+      "150%"
+    ],
+    [
+      "--tw-scale-y",
+      "150%"
+    ],
+    [
+      "--tw-scale-z",
+      "150%"
+    ],
+    [
+      "scale",
+      "var(--tw-scale-x) var(--tw-scale-y)"
+    ]
+  ],
+  "scale-50": [
+    [
+      "--tw-scale-x",
+      "50%"
+    ],
+    [
+      "--tw-scale-y",
+      "50%"
+    ],
+    [
+      "--tw-scale-z",
+      "50%"
+    ],
+    [
+      "scale",
+      "var(--tw-scale-x) var(--tw-scale-y)"
+    ]
+  ],
+  "scale-95": [
+    [
+      "--tw-scale-x",
+      "95%"
+    ],
+    [
+      "--tw-scale-y",
+      "95%"
+    ],
+    [
+      "--tw-scale-z",
+      "95%"
+    ],
+    [
+      "scale",
+      "var(--tw-scale-x) var(--tw-scale-y)"
+    ]
+  ],
+  "scale-x-110": [
+    [
+      "--tw-scale-x",
+      "110%"
+    ],
+    [
+      "scale",
+      "var(--tw-scale-x) var(--tw-scale-y)"
+    ]
+  ],
+  "scale-y-50": [
+    [
+      "--tw-scale-y",
+      "50%"
+    ],
+    [
+      "scale",
+      "var(--tw-scale-x) var(--tw-scale-y)"
+    ]
+  ],
+  "scheme-dark": [
+    [
+      "color-scheme",
+      "dark"
+    ]
+  ],
+  "scheme-light": [
+    [
+      "color-scheme",
+      "light"
+    ]
+  ],
+  "scheme-light-dark": [
+    [
+      "color-scheme",
+      "light dark"
+    ]
+  ],
+  "scheme-normal": [
+    [
+      "color-scheme",
+      "normal"
+    ]
+  ],
+  "scheme-only-dark": [
+    [
+      "color-scheme",
+      "only dark"
+    ]
+  ],
+  "scheme-only-light": [
+    [
+      "color-scheme",
+      "only light"
+    ]
+  ],
+  "scroll-ml-3.5": [
+    [
+      "scroll-margin-left",
+      "0.875rem"
+    ]
+  ],
+  "scroll-my-9": [
+    [
+      "scroll-margin-block",
+      "2.25rem"
+    ]
+  ],
+  "scroll-pl-3": [
+    [
+      "scroll-padding-left",
+      "0.75rem"
+    ]
+  ],
+  "scrollbar-auto": [
+    [
+      "scrollbar-width",
+      "auto"
+    ]
+  ],
+  "scrollbar-thumb-lime-200": [
+    [
+      "--tw-scrollbar-thumb",
+      "#d8f999"
+    ],
+    [
+      "scrollbar-color",
+      "var(--tw-scrollbar-thumb) var(--tw-scrollbar-track)"
+    ]
+  ],
+  "scrollbar-thumb-rose-100": [
+    [
+      "--tw-scrollbar-thumb",
+      "#ffe4e6"
+    ],
+    [
+      "scrollbar-color",
+      "var(--tw-scrollbar-thumb) var(--tw-scrollbar-track)"
+    ]
+  ],
+  "scrollbar-thumb-zinc-800": [
+    [
+      "--tw-scrollbar-thumb",
+      "#27272a"
+    ],
+    [
+      "scrollbar-color",
+      "var(--tw-scrollbar-thumb) var(--tw-scrollbar-track)"
+    ]
+  ],
+  "scrollbar-track-lime-50": [
+    [
+      "--tw-scrollbar-track",
+      "#f7fee7"
+    ],
+    [
+      "scrollbar-color",
+      "var(--tw-scrollbar-thumb) var(--tw-scrollbar-track)"
+    ]
+  ],
+  "scrollbar-track-rose-400": [
+    [
+      "--tw-scrollbar-track",
+      "#ff637e"
+    ],
+    [
+      "scrollbar-color",
+      "var(--tw-scrollbar-thumb) var(--tw-scrollbar-track)"
+    ]
+  ],
+  "select-all": [
+    [
+      "-webkit-user-select",
+      "all"
+    ],
+    [
+      "user-select",
+      "all"
+    ]
+  ],
+  "select-auto": [
+    [
+      "-webkit-user-select",
+      "auto"
+    ],
+    [
+      "user-select",
+      "auto"
+    ]
+  ],
+  "select-none": [
+    [
+      "-webkit-user-select",
+      "none"
+    ],
+    [
+      "user-select",
+      "none"
+    ]
+  ],
+  "select-text": [
+    [
+      "-webkit-user-select",
+      "text"
+    ],
+    [
+      "user-select",
+      "text"
+    ]
+  ],
+  "self-auto": [
+    [
+      "align-self",
+      "auto"
+    ]
+  ],
+  "self-baseline": [
+    [
+      "align-self",
+      "baseline"
+    ]
+  ],
+  "self-baseline-last": [
+    [
+      "align-self",
+      "last baseline"
+    ]
+  ],
+  "self-center": [
+    [
+      "align-self",
+      "center"
+    ]
+  ],
+  "self-center-safe": [
+    [
+      "align-self",
+      "safe center"
+    ]
+  ],
+  "self-end": [
+    [
+      "align-self",
+      "flex-end"
+    ]
+  ],
+  "sepia": [
+    [
+      "--tw-sepia",
+      "sepia(100%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "sepia-0": [
+    [
+      "--tw-sepia",
+      "sepia(0%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "sepia-100": [
+    [
+      "--tw-sepia",
+      "sepia(100%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "sepia-50": [
+    [
+      "--tw-sepia",
+      "sepia(50%)"
+    ],
+    [
+      "filter",
+      "var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+    ]
+  ],
+  "shadow": [
+    [
+      "--tw-shadow",
+      "0 1px 3px 0 var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 1px 2px -1px var(--tw-shadow-color, rgb(0 0 0 / 0.1))"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "shadow-2xl": [
+    [
+      "--tw-shadow",
+      "0 25px 50px -12px var(--tw-shadow-color, rgb(0 0 0 / 0.25))"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "shadow-fuchsia-200": [
+    [
+      "--tw-shadow-color",
+      "color-mix(in oklab, #f6cfff var(--tw-shadow-alpha), transparent)"
+    ]
+  ],
+  "shadow-lg": [
+    [
+      "--tw-shadow",
+      "0 10px 15px -3px var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 4px 6px -4px var(--tw-shadow-color, rgb(0 0 0 / 0.1))"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "shadow-lime-400": [
+    [
+      "--tw-shadow-color",
+      "color-mix(in oklab, #9ae600 var(--tw-shadow-alpha), transparent)"
+    ]
+  ],
+  "shadow-md": [
+    [
+      "--tw-shadow",
+      "0 4px 6px -1px var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 2px 4px -2px var(--tw-shadow-color, rgb(0 0 0 / 0.1))"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "shadow-none": [
+    [
+      "--tw-shadow",
+      "0 0 #0000"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "shadow-olive-700": [
+    [
+      "--tw-shadow-color",
+      "color-mix(in oklab, #474739 var(--tw-shadow-alpha), transparent)"
+    ]
+  ],
+  "shadow-rose-300": [
+    [
+      "--tw-shadow-color",
+      "color-mix(in oklab, #ffa1ad var(--tw-shadow-alpha), transparent)"
+    ]
+  ],
+  "shadow-sm": [
+    [
+      "--tw-shadow",
+      "0 1px 3px 0 var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 1px 2px -1px var(--tw-shadow-color, rgb(0 0 0 / 0.1))"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "shadow-taupe-700": [
+    [
+      "--tw-shadow-color",
+      "color-mix(in oklab, #473c39 var(--tw-shadow-alpha), transparent)"
+    ]
+  ],
+  "shadow-xl": [
+    [
+      "--tw-shadow",
+      "0 20px 25px -5px var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 8px 10px -6px var(--tw-shadow-color, rgb(0 0 0 / 0.1))"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "shadow-xs": [
+    [
+      "--tw-shadow",
+      "0 1px 2px 0 var(--tw-shadow-color, rgb(0 0 0 / 0.05))"
+    ],
+    [
+      "box-shadow",
+      "var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow)"
+    ]
+  ],
+  "shrink": [
+    [
+      "flex-shrink",
+      "1"
+    ]
+  ],
+  "shrink-0": [
+    [
+      "flex-shrink",
+      "0"
+    ]
+  ],
+  "size-0": [
+    [
+      "width",
+      "0px"
+    ],
+    [
+      "height",
+      "0px"
+    ]
+  ],
+  "size-11": [
+    [
+      "width",
+      "2.75rem"
+    ],
+    [
+      "height",
+      "2.75rem"
+    ]
+  ],
+  "size-20": [
+    [
+      "width",
+      "5rem"
+    ],
+    [
+      "height",
+      "5rem"
+    ]
+  ],
+  "size-4/12": [
+    [
+      "width",
+      "33.333333%"
+    ],
+    [
+      "height",
+      "33.333333%"
+    ]
+  ],
+  "size-6/12": [
+    [
+      "width",
+      "50%"
+    ],
+    [
+      "height",
+      "50%"
+    ]
+  ],
+  "size-auto": [
+    [
+      "width",
+      "auto"
+    ],
+    [
+      "height",
+      "auto"
+    ]
+  ],
+  "skew-0": [
+    [
+      "--tw-skew-x",
+      "skewX(0deg)"
+    ],
+    [
+      "--tw-skew-y",
+      "skewY(0deg)"
+    ],
+    [
+      "transform",
+      "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
+    ]
+  ],
+  "skew-x-0": [
+    [
+      "--tw-skew-x",
+      "skewX(0deg)"
+    ],
+    [
+      "transform",
+      "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
+    ]
+  ],
+  "skew-x-6": [
+    [
+      "--tw-skew-x",
+      "skewX(6deg)"
+    ],
+    [
+      "transform",
+      "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
+    ]
+  ],
+  "skew-y-0": [
+    [
+      "--tw-skew-y",
+      "skewY(0deg)"
+    ],
+    [
+      "transform",
+      "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
+    ]
+  ],
+  "skew-y-6": [
+    [
+      "--tw-skew-y",
+      "skewY(6deg)"
+    ],
+    [
+      "transform",
+      "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
+    ]
+  ],
+  "slashed-zero": [
+    [
+      "--tw-slashed-zero",
+      "slashed-zero"
+    ],
+    [
+      "font-variant-numeric",
+      "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+    ]
+  ],
+  "snap-align-none": [
+    [
+      "scroll-snap-align",
+      "none"
+    ]
+  ],
+  "snap-both": [
+    [
+      "scroll-snap-type",
+      "both var(--tw-scroll-snap-strictness)"
+    ]
+  ],
+  "snap-end": [
+    [
+      "scroll-snap-align",
+      "end"
+    ]
+  ],
+  "snap-none": [
+    [
+      "scroll-snap-type",
+      "none"
+    ]
+  ],
+  "snap-proximity": [
+    [
+      "--tw-scroll-snap-strictness",
+      "proximity"
+    ]
+  ],
+  "snap-x": [
+    [
+      "scroll-snap-type",
+      "x var(--tw-scroll-snap-strictness)"
+    ]
+  ],
+  "space-x-4": [
+    [
+      "--tw-space-x-reverse",
+      "0"
+    ],
+    [
+      "margin-inline-start",
+      "calc(1rem * var(--tw-space-x-reverse))"
+    ],
+    [
+      "margin-inline-end",
+      "calc(1rem * calc(1 - var(--tw-space-x-reverse)))"
+    ]
+  ],
+  "sr-only": [
+    [
+      "position",
+      "absolute"
+    ],
+    [
+      "width",
+      "1px"
+    ],
+    [
+      "height",
+      "1px"
+    ],
+    [
+      "padding",
+      "0"
+    ],
+    [
+      "margin",
+      "-1px"
+    ],
+    [
+      "overflow",
+      "hidden"
+    ],
+    [
+      "clip-path",
+      "inset(50%)"
+    ],
+    [
+      "white-space",
+      "nowrap"
+    ],
+    [
+      "border-width",
+      "0"
+    ]
+  ],
+  "stacked-fractions": [
+    [
+      "--tw-numeric-fraction",
+      "stacked-fractions"
+    ],
+    [
+      "font-variant-numeric",
+      "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+    ]
+  ],
+  "start-auto": [
+    [
+      "inset-inline-start",
+      "auto"
+    ]
+  ],
+  "start-full": [
+    [
+      "inset-inline-start",
+      "100%"
+    ]
+  ],
+  "start-px": [
+    [
+      "inset-inline-start",
+      "1px"
+    ]
+  ],
+  "static": [
+    [
+      "position",
+      "static"
+    ]
+  ],
+  "sticky": [
+    [
+      "position",
+      "sticky"
+    ]
+  ],
+  "stroke-0": [
+    [
+      "stroke-width",
+      "0"
+    ]
+  ],
+  "stroke-emerald-950": [
+    [
+      "stroke",
+      "#002c22"
+    ]
+  ],
+  "stroke-lime-400": [
+    [
+      "stroke",
+      "#9ae600"
+    ]
+  ],
+  "stroke-olive-700": [
+    [
+      "stroke",
+      "#474739"
+    ]
+  ],
+  "stroke-rose-200": [
+    [
+      "stroke",
+      "#ffccd3"
+    ]
+  ],
+  "stroke-taupe-600": [
+    [
+      "stroke",
+      "#5b4f4b"
+    ]
+  ],
+  "subpixel-antialiased": [
+    [
+      "-webkit-font-smoothing",
+      "auto"
+    ],
+    [
+      "-moz-osx-font-smoothing",
+      "auto"
+    ]
+  ],
+  "tab-2": [
+    [
+      "tab-size",
+      "2"
+    ]
+  ],
+  "tab-4": [
+    [
+      "tab-size",
+      "4"
+    ]
+  ],
+  "tab-8": [
+    [
+      "tab-size",
+      "8"
+    ]
+  ],
+  "table": [
+    [
+      "display",
+      "table"
+    ]
+  ],
+  "table-auto": [
+    [
+      "table-layout",
+      "auto"
+    ]
+  ],
+  "table-caption": [
+    [
+      "display",
+      "table-caption"
+    ]
+  ],
+  "table-cell": [
+    [
+      "display",
+      "table-cell"
+    ]
+  ],
+  "table-column": [
+    [
+      "display",
+      "table-column"
+    ]
+  ],
+  "table-column-group": [
+    [
+      "display",
+      "table-column-group"
+    ]
+  ],
+  "tabular-nums": [
+    [
+      "--tw-numeric-spacing",
+      "tabular-nums"
+    ],
+    [
+      "font-variant-numeric",
+      "var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,)"
+    ]
+  ],
+  "text-2xl": [
+    [
+      "font-size",
+      "1.5rem"
+    ],
+    [
+      "line-height",
+      "var(--tw-leading, var(--text-2xl--line-height))"
+    ]
+  ],
+  "text-8xl": [
+    [
+      "font-size",
+      "6rem"
+    ],
+    [
+      "line-height",
+      "var(--tw-leading, var(--text-8xl--line-height))"
+    ]
+  ],
+  "text-[14px]": [
+    [
+      "font-size",
+      "14px"
+    ]
+  ],
+  "text-indigo-900": [
+    [
+      "color",
+      "#312c85"
+    ]
+  ],
+  "text-lg": [
+    [
+      "font-size",
+      "1.125rem"
+    ],
+    [
+      "line-height",
+      "var(--tw-leading, var(--text-lg--line-height))"
+    ]
+  ],
+  "text-red-500": [
+    [
+      "color",
+      "#fb2c36"
+    ]
+  ],
+  "text-red-600": [
+    [
+      "color",
+      "#e7000b"
+    ]
+  ],
+  "text-shadow-indigo-500": [
+    [
+      "--tw-text-shadow-color",
+      "color-mix(in oklab, #615fff var(--tw-text-shadow-alpha), transparent)"
+    ]
+  ],
+  "text-shadow-red-400": [
+    [
+      "--tw-text-shadow-color",
+      "color-mix(in oklab, #ff6467 var(--tw-text-shadow-alpha), transparent)"
+    ]
+  ],
+  "text-shadow-zinc-300": [
+    [
+      "--tw-text-shadow-color",
+      "color-mix(in oklab, #d4d4d8 var(--tw-text-shadow-alpha), transparent)"
+    ]
+  ],
+  "text-sm": [
+    [
+      "font-size",
+      "0.875rem"
+    ],
+    [
+      "line-height",
+      "var(--tw-leading, var(--text-sm--line-height))"
+    ]
+  ],
+  "text-xl": [
+    [
+      "font-size",
+      "1.25rem"
+    ],
+    [
+      "line-height",
+      "var(--tw-leading, var(--text-xl--line-height))"
+    ]
+  ],
+  "text-xs": [
+    [
+      "font-size",
+      "0.75rem"
+    ],
+    [
+      "line-height",
+      "var(--tw-leading, var(--text-xs--line-height))"
+    ]
+  ],
+  "to-0%": [
+    [
+      "--tw-gradient-to-position",
+      "0%"
+    ]
+  ],
+  "to-cyan-700": [
+    [
+      "--tw-gradient-to",
+      "#007595"
+    ],
+    [
+      "--tw-gradient-stops",
+      "var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))"
+    ]
+  ],
+  "to-green-500": [
+    [
+      "--tw-gradient-to",
+      "#00c950"
+    ],
+    [
+      "--tw-gradient-stops",
+      "var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))"
+    ]
+  ],
+  "to-indigo-50": [
+    [
+      "--tw-gradient-to",
+      "#eef2ff"
+    ],
+    [
+      "--tw-gradient-stops",
+      "var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))"
+    ]
+  ],
+  "to-olive-100": [
+    [
+      "--tw-gradient-to",
+      "#f4f4f0"
+    ],
+    [
+      "--tw-gradient-stops",
+      "var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))"
+    ]
+  ],
+  "to-red-800": [
+    [
+      "--tw-gradient-to",
+      "#9f0712"
+    ],
+    [
+      "--tw-gradient-stops",
+      "var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))"
+    ]
+  ],
+  "to-taupe-500": [
+    [
+      "--tw-gradient-to",
+      "#7c6d67"
+    ],
+    [
+      "--tw-gradient-stops",
+      "var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))"
+    ]
+  ],
+  "top-0": [
+    [
+      "top",
+      "0px"
+    ]
+  ],
+  "top-1": [
+    [
+      "top",
+      "0.25rem"
+    ]
+  ],
+  "top-2.5": [
+    [
+      "top",
+      "0.625rem"
+    ]
+  ],
+  "top-32": [
+    [
+      "top",
+      "8rem"
+    ]
+  ],
+  "top-4": [
+    [
+      "top",
+      "1rem"
+    ]
+  ],
+  "top-4/6": [
+    [
+      "top",
+      "66.666667%"
+    ]
+  ],
+  "top-auto": [
+    [
+      "top",
+      "auto"
+    ]
+  ],
+  "top-full": [
+    [
+      "top",
+      "100%"
+    ]
+  ],
+  "top-px": [
+    [
+      "top",
+      "1px"
+    ]
+  ],
+  "touch-auto": [
+    [
+      "touch-action",
+      "auto"
+    ]
+  ],
+  "touch-manipulation": [
+    [
+      "touch-action",
+      "manipulation"
+    ]
+  ],
+  "touch-none": [
+    [
+      "touch-action",
+      "none"
+    ]
+  ],
+  "touch-pan-down": [
+    [
+      "--tw-pan-y",
+      "pan-down"
+    ],
+    [
+      "touch-action",
+      "var(--tw-pan-x,) var(--tw-pan-y,) var(--tw-pinch-zoom,)"
+    ]
+  ],
+  "touch-pan-left": [
+    [
+      "--tw-pan-x",
+      "pan-left"
+    ],
+    [
+      "touch-action",
+      "var(--tw-pan-x,) var(--tw-pan-y,) var(--tw-pinch-zoom,)"
+    ]
+  ],
+  "touch-pan-right": [
+    [
+      "--tw-pan-x",
+      "pan-right"
+    ],
+    [
+      "touch-action",
+      "var(--tw-pan-x,) var(--tw-pan-y,) var(--tw-pinch-zoom,)"
+    ]
+  ],
+  "tracking-normal": [
+    [
+      "--tw-tracking",
+      "0em"
+    ],
+    [
+      "letter-spacing",
+      "0em"
+    ]
+  ],
+  "tracking-tight": [
+    [
+      "--tw-tracking",
+      "-0.025em"
+    ],
+    [
+      "letter-spacing",
+      "-0.025em"
+    ]
+  ],
+  "tracking-tighter": [
+    [
+      "--tw-tracking",
+      "-0.05em"
+    ],
+    [
+      "letter-spacing",
+      "-0.05em"
+    ]
+  ],
+  "tracking-wide": [
+    [
+      "--tw-tracking",
+      "0.025em"
+    ],
+    [
+      "letter-spacing",
+      "0.025em"
+    ]
+  ],
+  "tracking-wider": [
+    [
+      "--tw-tracking",
+      "0.05em"
+    ],
+    [
+      "letter-spacing",
+      "0.05em"
+    ]
+  ],
+  "tracking-widest": [
+    [
+      "--tw-tracking",
+      "0.1em"
+    ],
+    [
+      "letter-spacing",
+      "0.1em"
+    ]
+  ],
+  "transform": [
+    [
+      "transform",
+      "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
+    ]
+  ],
+  "transform-3d": [
+    [
+      "transform-style",
+      "preserve-3d"
+    ]
+  ],
+  "transform-border": [
+    [
+      "transform-box",
+      "border-box"
+    ]
+  ],
+  "transform-content": [
+    [
+      "transform-box",
+      "content-box"
+    ]
+  ],
+  "transform-cpu": [
+    [
+      "transform",
+      "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
+    ]
+  ],
+  "transform-fill": [
+    [
+      "transform-box",
+      "fill-box"
+    ]
+  ],
+  "transition": [
+    [
+      "transition-property",
+      "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to, opacity, box-shadow, transform, translate, scale, rotate, filter, -webkit-backdrop-filter, backdrop-filter, display, content-visibility, overlay, pointer-events"
+    ],
+    [
+      "transition-timing-function",
+      "var(--tw-ease, var(--default-transition-timing-function))"
+    ],
+    [
+      "transition-duration",
+      "var(--tw-duration, var(--default-transition-duration))"
+    ]
+  ],
+  "transition-all": [
+    [
+      "transition-property",
+      "all"
+    ],
+    [
+      "transition-timing-function",
+      "var(--tw-ease, var(--default-transition-timing-function))"
+    ],
+    [
+      "transition-duration",
+      "var(--tw-duration, var(--default-transition-duration))"
+    ]
+  ],
+  "transition-colors": [
+    [
+      "transition-property",
+      "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to"
+    ],
+    [
+      "transition-timing-function",
+      "var(--tw-ease, var(--default-transition-timing-function))"
+    ],
+    [
+      "transition-duration",
+      "var(--tw-duration, var(--default-transition-duration))"
+    ]
+  ],
+  "transition-discrete": [
+    [
+      "transition-behavior",
+      "allow-discrete"
+    ]
+  ],
+  "transition-none": [
+    [
+      "transition-property",
+      "none"
+    ]
+  ],
+  "transition-normal": [
+    [
+      "transition-behavior",
+      "normal"
+    ]
+  ],
+  "translate-0.5": [
+    [
+      "--tw-translate-x",
+      "0.125rem"
+    ],
+    [
+      "--tw-translate-y",
+      "0.125rem"
+    ],
+    [
+      "translate",
+      "var(--tw-translate-x) var(--tw-translate-y)"
+    ]
+  ],
+  "translate-x-0": [
+    [
+      "--tw-translate-x",
+      "0px"
+    ],
+    [
+      "translate",
+      "var(--tw-translate-x) var(--tw-translate-y)"
+    ]
+  ],
+  "translate-x-1/2": [
+    [
+      "--tw-translate-x",
+      "50%"
+    ],
+    [
+      "translate",
+      "var(--tw-translate-x) var(--tw-translate-y)"
+    ]
+  ],
+  "translate-x-10/12": [
+    [
+      "--tw-translate-x",
+      "83.333333%"
+    ],
+    [
+      "translate",
+      "var(--tw-translate-x) var(--tw-translate-y)"
+    ]
+  ],
+  "translate-x-2": [
+    [
+      "--tw-translate-x",
+      "0.5rem"
+    ],
+    [
+      "translate",
+      "var(--tw-translate-x) var(--tw-translate-y)"
+    ]
+  ],
+  "translate-x-full": [
+    [
+      "--tw-translate-x",
+      "100%"
+    ],
+    [
+      "translate",
+      "var(--tw-translate-x) var(--tw-translate-y)"
+    ]
+  ],
+  "translate-y-0": [
+    [
+      "--tw-translate-y",
+      "0px"
+    ],
+    [
+      "translate",
+      "var(--tw-translate-x) var(--tw-translate-y)"
+    ]
+  ],
+  "translate-y-1/2": [
+    [
+      "--tw-translate-y",
+      "50%"
+    ],
+    [
+      "translate",
+      "var(--tw-translate-x) var(--tw-translate-y)"
+    ]
+  ],
+  "translate-y-2": [
+    [
+      "--tw-translate-y",
+      "0.5rem"
+    ],
+    [
+      "translate",
+      "var(--tw-translate-x) var(--tw-translate-y)"
+    ]
+  ],
+  "translate-y-2/6": [
+    [
+      "--tw-translate-y",
+      "33.333333%"
+    ],
+    [
+      "translate",
+      "var(--tw-translate-x) var(--tw-translate-y)"
+    ]
+  ],
+  "translate-y-full": [
+    [
+      "--tw-translate-y",
+      "100%"
+    ],
+    [
+      "translate",
+      "var(--tw-translate-x) var(--tw-translate-y)"
+    ]
+  ],
+  "truncate": [
+    [
+      "overflow",
+      "hidden"
+    ],
+    [
+      "text-overflow",
+      "ellipsis"
+    ],
+    [
+      "white-space",
+      "nowrap"
+    ]
+  ],
+  "underline-offset-0": [
+    [
+      "text-underline-offset",
+      "0px"
+    ]
+  ],
+  "underline-offset-2": [
+    [
+      "text-underline-offset",
+      "2px"
+    ]
+  ],
+  "underline-offset-8": [
+    [
+      "text-underline-offset",
+      "8px"
+    ]
+  ],
+  "uppercase": [
+    [
+      "text-transform",
+      "uppercase"
+    ]
+  ],
+  "via-0%": [
+    [
+      "--tw-gradient-via-position",
+      "0%"
+    ]
+  ],
+  "via-blue-500": [
+    [
+      "--tw-gradient-via",
+      "#2b7fff"
+    ],
+    [
+      "--tw-gradient-via-stops",
+      "var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-via) var(--tw-gradient-via-position), var(--tw-gradient-to) var(--tw-gradient-to-position)"
+    ],
+    [
+      "--tw-gradient-stops",
+      "var(--tw-gradient-via-stops)"
+    ]
+  ],
+  "via-cyan-700": [
+    [
+      "--tw-gradient-via",
+      "#007595"
+    ],
+    [
+      "--tw-gradient-via-stops",
+      "var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-via) var(--tw-gradient-via-position), var(--tw-gradient-to) var(--tw-gradient-to-position)"
+    ],
+    [
+      "--tw-gradient-stops",
+      "var(--tw-gradient-via-stops)"
+    ]
+  ],
+  "via-indigo-50": [
+    [
+      "--tw-gradient-via",
+      "#eef2ff"
+    ],
+    [
+      "--tw-gradient-via-stops",
+      "var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-via) var(--tw-gradient-via-position), var(--tw-gradient-to) var(--tw-gradient-to-position)"
+    ],
+    [
+      "--tw-gradient-stops",
+      "var(--tw-gradient-via-stops)"
+    ]
+  ],
+  "via-none": [
+    [
+      "--tw-gradient-via-stops",
+      "initial"
+    ]
+  ],
+  "via-red-700": [
+    [
+      "--tw-gradient-via",
+      "#c10007"
+    ],
+    [
+      "--tw-gradient-via-stops",
+      "var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-via) var(--tw-gradient-via-position), var(--tw-gradient-to) var(--tw-gradient-to-position)"
+    ],
+    [
+      "--tw-gradient-stops",
+      "var(--tw-gradient-via-stops)"
+    ]
+  ],
+  "via-taupe-50": [
+    [
+      "--tw-gradient-via",
+      "#fbfaf9"
+    ],
+    [
+      "--tw-gradient-via-stops",
+      "var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-via) var(--tw-gradient-via-position), var(--tw-gradient-to) var(--tw-gradient-to-position)"
+    ],
+    [
+      "--tw-gradient-stops",
+      "var(--tw-gradient-via-stops)"
+    ]
+  ],
+  "visible": [
+    [
+      "visibility",
+      "visible"
+    ]
+  ],
+  "w-0": [
+    [
+      "width",
+      "0px"
+    ]
+  ],
+  "w-1": [
+    [
+      "width",
+      "0.25rem"
+    ]
+  ],
+  "w-12": [
+    [
+      "width",
+      "3rem"
+    ]
+  ],
+  "w-2xs": [
+    [
+      "width",
+      "18rem"
+    ]
+  ],
+  "w-4": [
+    [
+      "width",
+      "1rem"
+    ]
+  ],
+  "w-4/6": [
+    [
+      "width",
+      "66.666667%"
+    ]
+  ],
+  "w-44": [
+    [
+      "width",
+      "11rem"
+    ]
+  ],
+  "w-64": [
+    [
+      "width",
+      "16rem"
+    ]
+  ],
+  "w-[50%]": [
+    [
+      "width",
+      "50%"
+    ]
+  ],
+  "w-auto": [
+    [
+      "width",
+      "auto"
+    ]
+  ],
+  "w-dvw": [
+    [
+      "width",
+      "100dvw"
+    ]
+  ],
+  "w-full": [
+    [
+      "width",
+      "100%"
+    ]
+  ],
+  "w-lg": [
+    [
+      "width",
+      "32rem"
+    ]
+  ],
+  "w-md": [
+    [
+      "width",
+      "28rem"
+    ]
+  ],
+  "w-px": [
+    [
+      "width",
+      "1px"
+    ]
+  ],
+  "w-sm": [
+    [
+      "width",
+      "24rem"
+    ]
+  ],
+  "w-xl": [
+    [
+      "width",
+      "36rem"
+    ]
+  ],
+  "w-xs": [
+    [
+      "width",
+      "20rem"
+    ]
+  ],
+  "whitespace-break-spaces": [
+    [
+      "white-space",
+      "break-spaces"
+    ]
+  ],
+  "whitespace-normal": [
+    [
+      "white-space",
+      "normal"
+    ]
+  ],
+  "whitespace-nowrap": [
+    [
+      "white-space",
+      "nowrap"
+    ]
+  ],
+  "whitespace-pre": [
+    [
+      "white-space",
+      "pre"
+    ]
+  ],
+  "whitespace-pre-line": [
+    [
+      "white-space",
+      "pre-line"
+    ]
+  ],
+  "whitespace-pre-wrap": [
+    [
+      "white-space",
+      "pre-wrap"
+    ]
+  ],
+  "will-change-auto": [
+    [
+      "will-change",
+      "auto"
+    ]
+  ],
+  "will-change-contents": [
+    [
+      "will-change",
+      "contents"
+    ]
+  ],
+  "will-change-scroll": [
+    [
+      "will-change",
+      "scroll-position"
+    ]
+  ],
+  "will-change-transform": [
+    [
+      "will-change",
+      "transform"
+    ]
+  ],
+  "wrap-anywhere": [
+    [
+      "overflow-wrap",
+      "anywhere"
+    ]
+  ],
+  "wrap-break-word": [
+    [
+      "overflow-wrap",
+      "break-word"
+    ]
+  ],
+  "wrap-normal": [
+    [
+      "overflow-wrap",
+      "normal"
+    ]
+  ],
+  "z-0": [
+    [
+      "z-index",
+      "0"
+    ]
+  ],
+  "z-20": [
+    [
+      "z-index",
+      "20"
+    ]
+  ],
+  "z-30": [
+    [
+      "z-index",
+      "30"
+    ]
+  ],
+  "z-40": [
+    [
+      "z-index",
+      "40"
+    ]
+  ],
+  "z-50": [
+    [
+      "z-index",
+      "50"
+    ]
+  ],
+  "z-auto": [
+    [
+      "z-index",
+      "auto"
+    ]
+  ],
+  "zoom-100": [
+    [
+      "zoom",
+      "100%"
+    ]
+  ],
+  "zoom-105": [
+    [
+      "zoom",
+      "105%"
+    ]
+  ],
+  "zoom-110": [
+    [
+      "zoom",
+      "110%"
+    ]
+  ],
+  "zoom-125": [
+    [
+      "zoom",
+      "125%"
+    ]
+  ],
+  "zoom-150": [
+    [
+      "zoom",
+      "150%"
+    ]
+  ],
+  "zoom-200": [
+    [
+      "zoom",
+      "200%"
+    ]
+  ]
+}

@@ -1,208 +1,223 @@
-use crate::css::tw::ast::TwInput;
-use crate::css::tw::codegen::build_css_block_from_tw;
-use crate::css::tw::resolver;
+//! 端到端测试：`table_examples.rs` 里的每条期望规则都必须**精确**出现在编译产物中。
+//!
+//! 分析报告 §6.1 指出旧版断言几乎恒真——`border-*` 系列只要 CSS 里出现 `"border"` 就算通过，
+//! `StaticVal::Num` 分支干脆不校验数值，`rgba`/`shadow` 字样直接放行。于是
+//! `border-s-[3px]` 产出 `syntax:3px` 这样的垃圾也能绿灯。
+//!
+//! 现在改为：把产物解析成声明表，逐条断言"期望的属性存在，且值等价"。
+//! 值的比较复用 [`super::css_probe`] 的规范化器（只抹平 LightningCSS 的无损改写）。
+//!
+//! 注意本文件的夹具与被测数据同源（都由 codegen 从同一份 JSON 生成，见报告 §6.2），
+//! 它守护的是"解析 → 生成 → 编译"这条链路不退化；**语义**是否符合 Tailwind
+//! 由 [`super::differential`] 用真实 tailwindcss 的产物来守护。
 
-fn prop_matches_generated_css(prop: &str, css: &str) -> bool {
-    if css.contains(prop) {
-        return true;
-    }
-    match prop {
-        "top" | "bottom" | "left" | "right" => css.contains("inset") || css.contains("position"),
-        "border-top-width"
-        | "border-bottom-width"
-        | "border-left-width"
-        | "border-right-width"
-        | "border-block-start-width"
-        | "border-block-end-width"
-        | "border-inline-start-width"
-        | "border-inline-end-width" => {
-            css.contains("border-width")
-                || css.contains("border-block-width")
-                || css.contains("border-inline-width")
-                || css.contains("border")
-        }
-        "padding-left" | "padding-right" | "padding-top" | "padding-bottom" => {
-            css.contains("padding")
-        }
-        "margin-left" | "margin-right" | "margin-top" | "margin-bottom" => css.contains("margin"),
-        _ => false,
+use super::css_probe::{
+    class_declarations, compile_class, decls_to_map, normalize_value, values_equivalent,
+};
+use crate::css::tw::resolver::codegen::table_examples::{
+    StaticVal, TEST_CASE_CANDIDATE_UTILITIES, TEST_CASE_RULES,
+};
+
+/// silex 与 LightningCSS 会把等价的属性写法互换，这些是**无损**的合并/展开。
+///
+/// 与 §6.1 批评的旧断言的区别：旧版是"出现 `border` 子串即通过"，
+/// 这里是"该属性缺失时，允许由列出的等价属性以**相同的值**代为满足"——
+/// 值仍然逐条校验，写错值照样失败。
+#[rustfmt::skip]
+const SHORTHAND_FALLBACKS: &[(&str, &[&str])] = &[
+    ("padding-top",    &["padding-block", "padding"]),
+    ("padding-bottom", &["padding-block", "padding"]),
+    ("padding-left",   &["padding-inline", "padding"]),
+    ("padding-right",  &["padding-inline", "padding"]),
+    ("margin-top",     &["margin-block", "margin"]),
+    ("margin-bottom",  &["margin-block", "margin"]),
+    ("margin-left",    &["margin-inline", "margin"]),
+    ("margin-right",   &["margin-inline", "margin"]),
+    ("top",    &["inset-block", "inset"]),
+    ("bottom", &["inset-block", "inset"]),
+    ("left",   &["inset-inline", "inset"]),
+    ("right",  &["inset-inline", "inset"]),
+    ("border-top-width",    &["border-block-width", "border-width"]),
+    ("border-bottom-width", &["border-block-width", "border-width"]),
+    ("border-left-width",   &["border-inline-width", "border-width"]),
+    ("border-right-width",  &["border-inline-width", "border-width"]),
+    ("border-block-start-width",  &["border-block-width", "border-width"]),
+    ("border-block-end-width",    &["border-block-width", "border-width"]),
+    ("border-inline-start-width", &["border-inline-width", "border-width"]),
+    ("border-inline-end-width",   &["border-inline-width", "border-width"]),
+    ("scroll-margin-top",    &["scroll-margin-block", "scroll-margin"]),
+    ("scroll-margin-bottom", &["scroll-margin-block", "scroll-margin"]),
+    ("scroll-margin-left",   &["scroll-margin-inline", "scroll-margin"]),
+    ("scroll-margin-right",  &["scroll-margin-inline", "scroll-margin"]),
+    ("scroll-padding-top",    &["scroll-padding-block", "scroll-padding"]),
+    ("scroll-padding-bottom", &["scroll-padding-block", "scroll-padding"]),
+    ("scroll-padding-left",   &["scroll-padding-inline", "scroll-padding"]),
+    ("scroll-padding-right",  &["scroll-padding-inline", "scroll-padding"]),
+    ("row-gap",    &["gap"]),
+    ("column-gap", &["gap"]),
+    ("width",  &["inline-size"]),
+    ("height", &["block-size"]),
+];
+
+/// 把夹具里的期望值渲染成待比较的字符串。
+///
+/// `RingShadow` 是唯一无法用字面量表达的情况——它是一长串 `var(--tw-ring-*)` 组合，
+/// 只断言 ring 变量体系被启用。
+fn expected_value(val: &StaticVal) -> Option<String> {
+    match val {
+        StaticVal::Kw(k) => Some(normalize_value(k)),
+        StaticVal::Literal(l) => Some(normalize_value(l)),
+        StaticVal::Hex(h) => Some(normalize_value(h)),
+        StaticVal::Num(v, unit) => Some(normalize_value(&format!("{v}{unit}"))),
+        StaticVal::RingShadow => None,
     }
 }
 
 #[test]
-fn test_e2e_table_examples_individual_rules() {
-    use resolver::codegen::table_examples::TEST_CASE_RULES;
-
-    let span = proc_macro2::Span::call_site();
+fn table_examples_compile_to_exactly_the_expected_declarations() {
+    let mut failures = Vec::new();
 
     for &(class_name, expected_rules) in TEST_CASE_RULES {
-        let ts = quote::quote!(#class_name);
-        let input: TwInput = syn::parse2(ts).unwrap_or_else(|e| {
-            panic!("Failed to parse TwInput for table example class '{class_name}': {e}");
-        });
+        let decls = match class_declarations(class_name) {
+            Ok(d) => d,
+            Err(e) => {
+                failures.push(format!("  {class_name}: 编译失败 — {e}"));
+                continue;
+            }
+        };
+        let actual = decls_to_map(decls.iter().map(|(p, v)| (p.as_str(), v.as_str())));
 
-        let css_block = build_css_block_from_tw(input).unwrap_or_else(|e| {
-            panic!("Failed to build CssBlock for table example class '{class_name}': {e}");
-        });
+        for (prop_id, val) in expected_rules {
+            let prop = prop_id.as_str();
 
-        let compile_result =
-            crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)
-                .unwrap_or_else(|e| {
-                    panic!(
-                        "Failed to compile CssBlock for table example class '{class_name}': {e}"
-                    );
-                });
+            // ring 的 box-shadow 是变量组合，只断言体系被启用
+            let Some(expected) = expected_value(val) else {
+                if !decls
+                    .iter()
+                    .any(|(p, v)| p.starts_with("--tw-ring") || v.contains("--tw-ring"))
+                {
+                    failures.push(format!(
+                        "  {class_name}: 期望启用 ring 变量体系，产物里没有任何 --tw-ring-*\n    产物: {decls:?}"
+                    ));
+                }
+                continue;
+            };
 
-        assert!(
-            !compile_result.class_name.is_empty(),
-            "Compiled class_name should not be empty for '{class_name}'"
-        );
+            let satisfied_by = |candidate: &str| {
+                actual.get(candidate).is_some_and(|vals| {
+                    vals.iter()
+                        .any(|a| values_equivalent(candidate, &expected, a))
+                })
+            };
 
-        let generated_css = format!(
-            "{}\n{}",
-            compile_result.component_css, compile_result.static_css
-        );
+            if satisfied_by(prop) {
+                continue;
+            }
+            let fallback = SHORTHAND_FALLBACKS
+                .iter()
+                .find(|(p, _)| *p == prop)
+                .is_some_and(|(_, alts)| alts.iter().any(|alt| satisfied_by(alt)));
+            if fallback {
+                continue;
+            }
 
-        for &(ref prop, _val) in expected_rules {
-            assert!(
-                prop_matches_generated_css(prop.as_str(), &generated_css),
-                "Generated CSS for '{class_name}' should contain property or shorthand for '{prop}'. Full generated CSS:\n{generated_css}"
-            );
+            failures.push(match actual.get(prop) {
+                Some(vals) => format!("  {class_name}: {prop} 期望 `{expected}`，实得 {vals:?}"),
+                None => format!(
+                    "  {class_name}: 缺少属性 {prop}（期望 `{expected}`）\n    产物: {decls:?}"
+                ),
+            });
         }
     }
+
+    assert!(
+        failures.is_empty(),
+        "{} 条期望规则未被产物满足：\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
 }
 
 #[test]
-fn test_e2e_table_examples_batch_candidates() {
-    use resolver::codegen::table_examples::TEST_CASE_CANDIDATE_UTILITIES;
+fn table_examples_never_emit_at_rule_descriptors() {
+    // 回归点（报告 §2.3）：探针曾把 `@property` 块里的描述符当成 target_props，
+    // 于是 `border-s-[3px]` 产出 `syntax:3px`。旧断言对此完全无感。
+    let mut offenders = Vec::new();
+    for &class_name in TEST_CASE_CANDIDATE_UTILITIES {
+        let Ok(decls) = class_declarations(class_name) else {
+            continue;
+        };
+        for (prop, value) in &decls {
+            if matches!(prop.as_str(), "syntax" | "inherits" | "initial-value") {
+                offenders.push(format!("  {class_name}: {prop}:{value}"));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "产物中混入了 at-rule 描述符声明：\n{}",
+        offenders.join("\n")
+    );
+}
 
-    let span = proc_macro2::Span::call_site();
-
-    // 拆分为每 40 个 class 一组进行批量端到端编译
+#[test]
+fn batch_compilation_is_deterministic() {
+    // 报告 §2.10：`deduplicate_utility_rules` 曾遍历 `HashMap`，跨修饰符组调用会产出
+    // **不确定的 CSS 与类名哈希**。批量路径正是触发去重的地方，这里锁定它的确定性。
+    //
+    // 批量产物无法逐条断言——40 个类名合并后 LightningCSS 会合成简写
+    // （`border-top-width`+`border-bottom-width` → `border-width: 4px 4px 8px`），
+    // 与单独编译的声明不再一一对应。精确的值断言由上面的逐类名测试负责。
     for chunk in TEST_CASE_CANDIDATE_UTILITIES.chunks(40) {
-        let batch_str = chunk.join(" ");
-        let ts = quote::quote!(#batch_str);
-
-        let input: TwInput = syn::parse2(ts).unwrap_or_else(|e| {
-            panic!("Failed to parse batch input for utilities: {batch_str}\nError: {e}");
-        });
-
-        let css_block = build_css_block_from_tw(input).unwrap_or_else(|e| {
-            panic!("Failed to build CssBlock for batch utilities: {batch_str}\nError: {e}");
-        });
-
-        let compile_result =
-            crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)
-                .unwrap_or_else(|e| {
-                    panic!(
-                        "Failed to compile CssBlock for batch utilities: {batch_str}\nError: {e}"
-                    );
-                });
-
-        assert!(
-            !compile_result.class_name.is_empty(),
-            "Batch compiled class_name should not be empty"
-        );
-
-        let combined_css = format!(
-            "{}\n{}",
-            compile_result.component_css, compile_result.static_css
+        let batch = chunk.join(" ");
+        let first = compile_class(&batch).unwrap_or_else(|e| panic!("批量编译失败: {batch}\n{e}"));
+        let second = compile_class(&batch).expect("第二次编译同样应当成功");
+        assert_eq!(
+            first, second,
+            "同一批词条两次编译产出不同的 CSS（批次起始于 {}）",
+            chunk[0]
         );
         assert!(
-            !combined_css.trim().is_empty(),
-            "Batch compiled CSS should not be empty for chunk starting with '{}'",
+            !super::css_probe::extract_declarations(&first).is_empty(),
+            "批量编译产出了不含任何声明的 CSS（批次起始于 {}）",
             chunk[0]
         );
     }
 }
 
-fn kw_matches_generated_css(k: &str, css: &str) -> bool {
-    if css.contains(k) {
-        return true;
-    }
-    if k == "blur(0px)" && (css.contains("blur()") || css.contains("blur(0)")) {
-        return true;
-    }
-    let k_deg_clean = k.replace("0deg", "0").replace("0px", "0");
-    if css.contains(&k_deg_clean) {
-        return true;
-    }
-    if (k.starts_with("translateX(") || k.starts_with("translateY(")) && css.contains("translate(")
-    {
-        return true;
-    }
-    let clean_k: String = k.chars().filter(|c| !c.is_whitespace()).collect();
-    let clean_css: String = css.chars().filter(|c| !c.is_whitespace()).collect();
-    clean_css.contains(&clean_k)
-}
-
-fn literal_matches_generated_css(l: &str, css: &str) -> bool {
-    if css.contains(l) {
-        return true;
-    }
-    let clean_l: String = l.chars().filter(|c| !c.is_whitespace()).collect();
-    let clean_css: String = css.chars().filter(|c| !c.is_whitespace()).collect();
-    if clean_css.contains(&clean_l) {
-        return true;
-    }
-    if l.split_whitespace().all(|token| css.contains(token)) {
-        return true;
-    }
-    // 处理 LightningCSS 色值与阴影格式化（如 rgba(0, 0, 0, 0.05) 优化为 #0000000d）
-    if l.contains("rgba") || l.contains("rgb") || l.contains("shadow") || l.contains("inset") {
-        return !css.is_empty();
-    }
-    false
-}
-
 #[test]
-fn test_e2e_table_examples_rule_values_precision() {
-    use resolver::codegen::table_examples::{StaticVal, TEST_CASE_RULES};
+fn tw_merge_keeps_the_last_writer_of_a_property() {
+    // tw-merge 的核心契约：同一属性后写覆盖先写，且覆盖是在**编译期**完成的
+    // （产物里只留一条），而不是靠运行时层叠。用小而明确的冲突组断言精确结果。
+    #[rustfmt::skip]
+    let cases: &[(&str, &str, &str)] = &[
+        ("p-4 p-8",                 "padding",     "2rem"),
+        ("text-red-500 text-blue-500", "color",    "#2b7fff"),
+        ("inset-x-0 left-4",        "left",        "1rem"),
+        ("blur-sm blur-lg",         "filter",      "blur(16px)"),
+        // `none` 是整个属性的关键字取值，会清空前面累积的函数
+        ("blur-sm blur-none",       "filter",      "none"),
+        // 不同函数互不覆盖，仍然拼接（LightningCSS 会压掉函数之间可省的空格）
+        ("blur-sm brightness-50",   "filter",      "blur(4px)brightness(.5)"),
+    ];
 
-    let span = proc_macro2::Span::call_site();
-
-    for &(class_name, expected_rules) in TEST_CASE_RULES {
-        let ts = quote::quote!(#class_name);
-        let input: TwInput = syn::parse2(ts).unwrap();
-        let css_block = build_css_block_from_tw(input).unwrap();
-        let compile_result =
-            crate::css::compiler::CssCompiler::compile_block(&css_block, span, false).unwrap();
-        let css = format!(
-            "{}\n{}",
-            compile_result.component_css, compile_result.static_css
+    for &(src, prop, expected) in cases {
+        let decls = class_declarations(src).unwrap_or_else(|e| panic!("{src}: {e}"));
+        let values: Vec<&str> = decls
+            .iter()
+            .filter(|(p, _)| p == prop)
+            .map(|(_, v)| v.as_str())
+            .collect();
+        assert_eq!(
+            values.len(),
+            1,
+            "`{src}` 应当只留下一条 {prop} 声明，实得 {values:?}"
         );
-
-        for &(ref _prop, val) in expected_rules {
-            match val {
-                StaticVal::Kw(k) => {
-                    assert!(
-                        kw_matches_generated_css(k, &css),
-                        "E2E CSS for '{class_name}' missing keyword snippet '{k}'. CSS:\n{css}"
-                    );
-                }
-                StaticVal::Literal(l) => {
-                    assert!(
-                        literal_matches_generated_css(l, &css),
-                        "E2E CSS for '{class_name}' missing literal tokens from '{l}'. CSS:\n{css}"
-                    );
-                }
-                StaticVal::Hex(h) => {
-                    assert!(
-                        css.contains(h),
-                        "E2E CSS for '{class_name}' missing hex snippet '{h}'. CSS:\n{css}"
-                    );
-                }
-                StaticVal::Num(_v, _unit) => {
-                    // 数值可能会经过 LightningCSS 的格式美化/压缩，只需确保 CSS 不为空
-                    assert!(!css.is_empty());
-                }
-                StaticVal::RingShadow => {
-                    assert!(
-                        css.contains("--tw-ring"),
-                        "E2E CSS for '{class_name}' missing ring shadow variables. CSS:\n{css}"
-                    );
-                }
-            }
-        }
+        let expected = normalize_value(expected);
+        let actual = normalize_value(values[0]);
+        assert!(
+            values_equivalent(prop, &expected, &actual),
+            "`{src}` 的 {prop} 期望 `{expected}`，实得 `{actual}`"
+        );
     }
 }

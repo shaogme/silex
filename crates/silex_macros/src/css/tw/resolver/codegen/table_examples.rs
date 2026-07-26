@@ -1366,8 +1366,8 @@ pub static TEST_CASE_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::BorderBottomRightRadius, StaticVal::Num(0.0, "px")),
     ]),
     ("rounded-b-sm", &[
-        (CssPropertyId::BorderBottomLeftRadius, StaticVal::Num(0.125, "rem")),
-        (CssPropertyId::BorderBottomRightRadius, StaticVal::Num(0.125, "rem")),
+        (CssPropertyId::BorderBottomLeftRadius, StaticVal::Num(0.25, "rem")),
+        (CssPropertyId::BorderBottomRightRadius, StaticVal::Num(0.25, "rem")),
     ]),
     ("rounded-b-xl", &[
         (CssPropertyId::BorderBottomLeftRadius, StaticVal::Num(0.75, "rem")),
@@ -1393,7 +1393,7 @@ pub static TEST_CASE_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::BorderBottomLeftRadius, StaticVal::Num(0.0, "px")),
     ]),
     ("rounded-bl-sm", &[
-        (CssPropertyId::BorderBottomLeftRadius, StaticVal::Num(0.125, "rem")),
+        (CssPropertyId::BorderBottomLeftRadius, StaticVal::Num(0.25, "rem")),
     ]),
     ("rounded-bl-xl", &[
         (CssPropertyId::BorderBottomLeftRadius, StaticVal::Num(0.75, "rem")),
@@ -1417,7 +1417,7 @@ pub static TEST_CASE_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::BorderBottomRightRadius, StaticVal::Num(0.0, "px")),
     ]),
     ("rounded-br-sm", &[
-        (CssPropertyId::BorderBottomRightRadius, StaticVal::Num(0.125, "rem")),
+        (CssPropertyId::BorderBottomRightRadius, StaticVal::Num(0.25, "rem")),
     ]),
     ("rounded-br-xl", &[
         (CssPropertyId::BorderBottomRightRadius, StaticVal::Num(0.75, "rem")),
@@ -1446,8 +1446,8 @@ pub static TEST_CASE_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::BorderEndEndRadius, StaticVal::Num(0.0, "px")),
     ]),
     ("rounded-e-sm", &[
-        (CssPropertyId::BorderStartEndRadius, StaticVal::Num(0.125, "rem")),
-        (CssPropertyId::BorderEndEndRadius, StaticVal::Num(0.125, "rem")),
+        (CssPropertyId::BorderStartEndRadius, StaticVal::Num(0.25, "rem")),
+        (CssPropertyId::BorderEndEndRadius, StaticVal::Num(0.25, "rem")),
     ]),
     ("rounded-e-xl", &[
         (CssPropertyId::BorderStartEndRadius, StaticVal::Num(0.75, "rem")),
@@ -1473,7 +1473,7 @@ pub static TEST_CASE_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::BorderEndEndRadius, StaticVal::Num(0.0, "px")),
     ]),
     ("rounded-ee-sm", &[
-        (CssPropertyId::BorderEndEndRadius, StaticVal::Num(0.125, "rem")),
+        (CssPropertyId::BorderEndEndRadius, StaticVal::Num(0.25, "rem")),
     ]),
     ("rounded-ee-xl", &[
         (CssPropertyId::BorderEndEndRadius, StaticVal::Num(0.75, "rem")),
@@ -1497,7 +1497,7 @@ pub static TEST_CASE_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::BorderEndStartRadius, StaticVal::Num(0.0, "px")),
     ]),
     ("rounded-es-sm", &[
-        (CssPropertyId::BorderEndStartRadius, StaticVal::Num(0.125, "rem")),
+        (CssPropertyId::BorderEndStartRadius, StaticVal::Num(0.25, "rem")),
     ]),
     ("rounded-es-xl", &[
         (CssPropertyId::BorderEndStartRadius, StaticVal::Num(0.75, "rem")),
@@ -1529,8 +1529,8 @@ pub static TEST_CASE_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::BorderBottomLeftRadius, StaticVal::Num(0.0, "px")),
     ]),
     ("rounded-l-sm", &[
-        (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(0.125, "rem")),
-        (CssPropertyId::BorderBottomLeftRadius, StaticVal::Num(0.125, "rem")),
+        (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(0.25, "rem")),
+        (CssPropertyId::BorderBottomLeftRadius, StaticVal::Num(0.25, "rem")),
     ]),
     ("rounded-l-xl", &[
         (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(0.75, "rem")),
@@ -1570,8 +1570,8 @@ pub static TEST_CASE_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::BorderBottomRightRadius, StaticVal::Num(0.0, "px")),
     ]),
     ("rounded-r-sm", &[
-        (CssPropertyId::BorderTopRightRadius, StaticVal::Num(0.125, "rem")),
-        (CssPropertyId::BorderBottomRightRadius, StaticVal::Num(0.125, "rem")),
+        (CssPropertyId::BorderTopRightRadius, StaticVal::Num(0.25, "rem")),
+        (CssPropertyId::BorderBottomRightRadius, StaticVal::Num(0.25, "rem")),
     ]),
     ("rounded-r-xl", &[
         (CssPropertyId::BorderTopRightRadius, StaticVal::Num(0.75, "rem")),
@@ -1602,8 +1602,8 @@ pub static TEST_CASE_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::BorderEndStartRadius, StaticVal::Num(0.0, "px")),
     ]),
     ("rounded-s-sm", &[
-        (CssPropertyId::BorderStartStartRadius, StaticVal::Num(0.125, "rem")),
-        (CssPropertyId::BorderEndStartRadius, StaticVal::Num(0.125, "rem")),
+        (CssPropertyId::BorderStartStartRadius, StaticVal::Num(0.25, "rem")),
+        (CssPropertyId::BorderEndStartRadius, StaticVal::Num(0.25, "rem")),
     ]),
     ("rounded-s-xl", &[
         (CssPropertyId::BorderStartStartRadius, StaticVal::Num(0.75, "rem")),
@@ -1629,7 +1629,7 @@ pub static TEST_CASE_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::BorderStartEndRadius, StaticVal::Num(0.0, "px")),
     ]),
     ("rounded-se-sm", &[
-        (CssPropertyId::BorderStartEndRadius, StaticVal::Num(0.125, "rem")),
+        (CssPropertyId::BorderStartEndRadius, StaticVal::Num(0.25, "rem")),
     ]),
     ("rounded-se-xl", &[
         (CssPropertyId::BorderStartEndRadius, StaticVal::Num(0.75, "rem")),
@@ -1638,7 +1638,7 @@ pub static TEST_CASE_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::BorderStartEndRadius, StaticVal::Num(0.125, "rem")),
     ]),
     ("rounded-sm", &[
-        (CssPropertyId::BorderRadius, StaticVal::Num(0.125, "rem")),
+        (CssPropertyId::BorderRadius, StaticVal::Num(0.25, "rem")),
     ]),
     ("rounded-ss-2xl", &[
         (CssPropertyId::BorderStartStartRadius, StaticVal::Num(1.0, "rem")),
@@ -1656,7 +1656,7 @@ pub static TEST_CASE_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::BorderStartStartRadius, StaticVal::Num(0.0, "px")),
     ]),
     ("rounded-ss-sm", &[
-        (CssPropertyId::BorderStartStartRadius, StaticVal::Num(0.125, "rem")),
+        (CssPropertyId::BorderStartStartRadius, StaticVal::Num(0.25, "rem")),
     ]),
     ("rounded-ss-xl", &[
         (CssPropertyId::BorderStartStartRadius, StaticVal::Num(0.75, "rem")),
@@ -1685,8 +1685,8 @@ pub static TEST_CASE_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::BorderTopRightRadius, StaticVal::Num(0.0, "px")),
     ]),
     ("rounded-t-sm", &[
-        (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(0.125, "rem")),
-        (CssPropertyId::BorderTopRightRadius, StaticVal::Num(0.125, "rem")),
+        (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(0.25, "rem")),
+        (CssPropertyId::BorderTopRightRadius, StaticVal::Num(0.25, "rem")),
     ]),
     ("rounded-t-xl", &[
         (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(0.75, "rem")),
@@ -1712,7 +1712,7 @@ pub static TEST_CASE_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(0.0, "px")),
     ]),
     ("rounded-tl-sm", &[
-        (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(0.125, "rem")),
+        (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(0.25, "rem")),
     ]),
     ("rounded-tl-xl", &[
         (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(0.75, "rem")),
@@ -1736,7 +1736,7 @@ pub static TEST_CASE_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::BorderTopRightRadius, StaticVal::Num(0.0, "px")),
     ]),
     ("rounded-tr-sm", &[
-        (CssPropertyId::BorderTopRightRadius, StaticVal::Num(0.125, "rem")),
+        (CssPropertyId::BorderTopRightRadius, StaticVal::Num(0.25, "rem")),
     ]),
     ("rounded-tr-xl", &[
         (CssPropertyId::BorderTopRightRadius, StaticVal::Num(0.75, "rem")),

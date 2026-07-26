@@ -8,9 +8,11 @@ use crate::{
     css::{generate_keywords_code, generate_properties_macro, parse_css},
     tags::{apply_memory_only_patches, codegen::generate_module_content, parse_tags},
     tw::{
+        CodegenBaseline, ReferenceCssJson, check_drift, fingerprint_tw_datasets,
         generate_keyframes_code, generate_macro_tables, generate_modifiers_code,
         generate_palette_code, generate_prefix_metadata_code, generate_property_id_code,
-        generate_table_examples, validate_prefix_metadata, validate_resolver_properties,
+        generate_reference_css_code, generate_table_examples, validate_prefix_metadata,
+        validate_resolver_properties, validate_resolver_values,
     },
 };
 use heck::AsSnakeCase;
@@ -28,6 +30,8 @@ use std::{
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = args().collect();
     let should_fetch = args.contains(&"--fetch".to_string());
+    // 大规模上游数据漂移需要显式确认一次，避免 Tailwind 升版本导致静默的批量语义变更
+    let accept_drift = args.contains(&"--accept-drift".to_string());
 
     // 1. Determine paths
     let current_dir = current_dir()?;
@@ -172,6 +176,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let keyframes_str = read_to_string(tw_data_dir.join("keyframes.json"))?;
         let extra_properties_str = read_to_string(tw_data_dir.join("extra_properties.json"))?;
         let property_aliases_str = read_to_string(tw_data_dir.join("property_aliases.json"))?;
+        let reference_css_str = read_to_string(tw_data_dir.join("reference_css.json"))?;
 
         let classes: Vec<String> = from_str(&classes_str)?;
         let dynamic_prefixes: BTreeMap<String, Vec<String>> = from_str(&dynamic_prefixes_str)?;
@@ -184,10 +189,34 @@ fn main() -> Result<(), Box<dyn Error>> {
         let keyframes_data: Vec<crate::tw::KeyframeMetaJson> = from_str(&keyframes_str)?;
         let extra_properties: Vec<String> = from_str(&extra_properties_str)?;
         let property_aliases: BTreeMap<String, Vec<String>> = from_str(&property_aliases_str)?;
+        let reference_css: ReferenceCssJson = from_str(&reference_css_str)?;
 
         // 生成前置校验闸门：任何非法元数据都必须让构建失败，而不是静默生成垃圾 CSS
         validate_prefix_metadata(&prefix_metadata)?;
         validate_resolver_properties(&classes, &test_cases, &palette_data, &props_str)?;
+        validate_resolver_values(&classes, &test_cases, &palette_data)?;
+
+        // 上游数据漂移闸门：大规模变更必须人工确认一次，不能静默生成
+        let baseline_path = tw_data_dir.join("codegen_baseline.json");
+        let baseline: CodegenBaseline = if baseline_path.exists() {
+            from_str(&read_to_string(&baseline_path)?)?
+        } else {
+            CodegenBaseline::new()
+        };
+        let current = fingerprint_tw_datasets(
+            &classes,
+            &dynamic_prefixes,
+            &prefix_metadata,
+            &test_cases,
+            &palette_data,
+            &modifiers_data,
+            &keyframes_data,
+            &reference_css,
+        );
+        for notice in check_drift(&baseline, &current, accept_drift)? {
+            println!("{notice}");
+        }
+        write(&baseline_path, serde_json::to_string_pretty(&current)?)?;
 
         let (table_code, table_unimplement_code) =
             generate_macro_tables(&classes, &dynamic_prefixes, &palette_data);
@@ -205,6 +234,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let palette_code = generate_palette_code(&palette_data);
         let modifiers_code = generate_modifiers_code(&modifiers_data);
         let keyframes_code = generate_keyframes_code(&keyframes_data);
+        let reference_css_code = generate_reference_css_code(&reference_css);
 
         if !macro_codegen_dir.exists() {
             create_dir_all(&macro_codegen_dir)?;
@@ -226,8 +256,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         write(macro_codegen_dir.join("palette.rs"), palette_code)?;
         write(macro_codegen_dir.join("modifiers.rs"), modifiers_code)?;
         write(macro_codegen_dir.join("keyframes.rs"), keyframes_code)?;
+        write(
+            macro_codegen_dir.join("reference_css.rs"),
+            reference_css_code,
+        )?;
         println!(
-            "Generated table.rs, table_unimplement.rs, table_examples.rs, property_id.rs, prefix_metadata.rs, palette.rs, modifiers.rs and keyframes.rs for silex_macros in resolver/codegen"
+            "Generated table.rs, table_unimplement.rs, table_examples.rs, property_id.rs, prefix_metadata.rs, palette.rs, modifiers.rs, keyframes.rs and reference_css.rs for silex_macros in resolver/codegen"
         );
     }
 

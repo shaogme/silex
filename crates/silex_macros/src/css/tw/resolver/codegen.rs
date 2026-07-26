@@ -7,4 +7,6 @@ pub mod table;
 pub mod table_unimplement;
 
 #[cfg(test)]
+pub mod reference_css;
+#[cfg(test)]
 pub mod table_examples;

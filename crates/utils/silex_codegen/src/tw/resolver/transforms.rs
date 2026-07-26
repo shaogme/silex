@@ -487,7 +487,7 @@ pub fn resolve_transform_transition_rules(
     // Perspective & Perspective Origin
     let perspective = match class_name {
         "perspective-none" => Some("none"),
-        "perspective-distant" => Some("1250px"),
+        "perspective-distant" => Some("1200px"),
         "perspective-dramatic" => Some("100px"),
         "perspective-midrange" => Some("800px"),
         "perspective-near" => Some("300px"),
