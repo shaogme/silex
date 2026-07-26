@@ -7,6 +7,26 @@ use std::sync::OnceLock;
 pub struct SilexConfig {
     #[serde(default)]
     pub theme: ThemeConfig,
+    #[serde(default)]
+    pub css: CssConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct CssConfig {
+    /// 编译产物的浏览器基线，形如：
+    ///
+    /// ```toml
+    /// [css.targets]
+    /// chrome = "111"
+    /// safari = "16.4"
+    /// firefox = "113"
+    /// ```
+    ///
+    /// 不写则用内置默认值（见 `compiler::DEFAULT_TARGETS`）。此前这三个版本号
+    /// 是硬编码的、且与运行时真正需要的能力（adoptedStyleSheets、`@layer`、
+    /// `color-mix()`）对不上——声明的 Safari 13 根本跑不起来。
+    #[serde(default)]
+    pub targets: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

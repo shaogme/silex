@@ -8,10 +8,77 @@ use std::ops::Range;
 use std::rc::Rc;
 use syn::Result;
 
+/// 级联层的名字。
+///
+/// 这四个常量必须与 `silex_css::layers` 里的同名常量保持一致——proc-macro
+/// crate 不能依赖运行时 crate，只能各写一份。层序的完整说明在
+/// `silex_css/src/layers.rs`。
+pub(crate) const LAYER_BASE: &str = "base";
+pub(crate) const LAYER_COMPONENTS: &str = "components";
+pub(crate) const LAYER_UTILITIES: &str = "utilities";
+
 #[derive(Debug, Clone)]
 pub struct DynamicRule {
+    /// 结构化模板：`\u{1}` 是组件类名占位，`\u{2}` 是第 n 个运行时取值占位
+    /// （按出现顺序）。见 [`template_parts`]。
     pub template: String,
     pub expressions: Vec<(String, TokenStream)>,
+}
+
+/// 动态模板里的占位符。
+///
+/// 用控制字符而不是 `{}` / 类名文本，是为了让「哪里要填东西」这件事在编译期
+/// 就确定下来：运行时只做拼接，不再做模式匹配，也就不会误伤 `.foo-bar` 这种
+/// 以基类名开头的选择器，或值内容里恰好出现的 `{}`。
+/// [`escape_css_string`] 会把用户字符串里的控制字符转义掉，所以这两个字符
+/// 不可能来自源码。
+pub(crate) const PLACEHOLDER_CLASS: char = '\u{1}';
+pub(crate) const PLACEHOLDER_VALUE: char = '\u{2}';
+
+/// 模板的一个片段，与 `silex_css::runtime::template::CssPart` 一一对应。
+#[derive(Debug, Clone, PartialEq)]
+pub enum TemplatePart {
+    Lit(String),
+    Class,
+    Val(usize),
+}
+
+/// 把带占位符的模板切成片段。
+pub fn template_parts(template: &str) -> Vec<TemplatePart> {
+    let mut parts = Vec::new();
+    let mut lit = String::new();
+    let mut next_val = 0;
+    for ch in template.chars() {
+        match ch {
+            PLACEHOLDER_CLASS | PLACEHOLDER_VALUE => {
+                if !lit.is_empty() {
+                    parts.push(TemplatePart::Lit(std::mem::take(&mut lit)));
+                }
+                if ch == PLACEHOLDER_CLASS {
+                    parts.push(TemplatePart::Class);
+                } else {
+                    parts.push(TemplatePart::Val(next_val));
+                    next_val += 1;
+                }
+            }
+            c => lit.push(c),
+        }
+    }
+    if !lit.is_empty() {
+        parts.push(TemplatePart::Lit(lit));
+    }
+    parts
+}
+
+/// 把片段展开成 `&'static [silex::css::CssPart]`。
+pub fn template_parts_tokens(template: &str) -> TokenStream {
+    let __silex = crate::crate_path::silex();
+    let items = template_parts(template).into_iter().map(|p| match p {
+        TemplatePart::Lit(s) => quote::quote! { #__silex::css::CssPart::Lit(#s) },
+        TemplatePart::Class => quote::quote! { #__silex::css::CssPart::Class },
+        TemplatePart::Val(i) => quote::quote! { #__silex::css::CssPart::Val(#i) },
+    });
+    quote::quote! { &[ #(#items),* ] }
 }
 
 #[derive(Debug, Clone)]
@@ -171,6 +238,29 @@ impl CssCompiler {
         )
     }
 
+    /// 同上，但可以指定前缀（前缀决定落进哪个 layer）。
+    #[cfg(test)]
+    pub fn compile_with_source_and_prefix(
+        source: &str,
+        prefix: &str,
+        span: Span,
+    ) -> Result<CssCompileResult> {
+        let ts: TokenStream = source.parse().map_err(|e| syn::Error::new(span, e))?;
+        let block: CssBlock = syn::parse2(ts.clone())?;
+        Self::compile_block_internal(
+            &block,
+            ts.to_string(),
+            CompileOptions {
+                span,
+                wrap_in_class: true,
+                is_unsafe: false,
+                prefix,
+                region: Some(Rc::from(source)),
+                validate: true,
+            },
+        )
+    }
+
     /// 同上，但走全局模式（不包 `.class { }`）。
     #[cfg(test)]
     pub fn compile_global_with_source(
@@ -300,8 +390,8 @@ impl CssCompiler {
 
         let final_component_css = if wrap_in_class && !state.static_css.trim().is_empty() {
             let layer_name = match prefix {
-                "slx-twv-" | "slx-st-" => "components",
-                _ => "utilities",
+                "slx-twv-" | "slx-st-" => LAYER_COMPONENTS,
+                _ => LAYER_UTILITIES,
             };
             let wrapped = format!(
                 "@layer {} {{ .{} {{ {} }} }}",
@@ -332,10 +422,17 @@ impl CssCompiler {
                 .code
         } else if !wrap_in_class && !state.static_css.trim().is_empty() {
             // Run global styles through lightningcss for consistency (flattens nesting, minifies)
-            match StyleSheet::parse(&state.static_css, ParserOptions::default()) {
+            //
+            // `global!` 的产出此前**不带 layer**。规范里无层规则的优先级高于所有
+            // 具名层，于是全局重置无条件压过每一个组件样式——恰好和「重置垫在
+            // 最底下」的直觉相反。`base` 这一层从层序声明出现起就一直空着，
+            // 它本来就是留给这里的。
+            let wrapped = format!("@layer {} {{ {} }}", LAYER_BASE, state.static_css);
+            match StyleSheet::parse(&wrapped, ParserOptions::default()) {
                 Ok(stylesheet) => stylesheet
                     .to_css(PrinterOptions {
                         minify: true,
+                        targets: get_compiler_targets(),
                         ..Default::default()
                     })
                     .map(|o| o.code)
@@ -965,6 +1062,12 @@ pub(crate) fn escape_css_string(value: &str) -> String {
             // CSS 字符串里不允许裸换行，必须写成 Unicode 转义
             '\n' => out.push_str("\\A "),
             '\r' => out.push_str("\\D "),
+            // 其余控制字符也一律转义。除了本来就该这么写，这还保证了
+            // `PLACEHOLDER_CLASS` / `PLACEHOLDER_VALUE` 这两个占位符
+            // 不可能从用户的字符串字面量里冒出来
+            c if (c as u32) < 0x20 || c as u32 == 0x7f => {
+                out.push_str(&format!("\\{:X} ", c as u32))
+            }
             c => out.push(c),
         }
     }
@@ -1129,7 +1232,7 @@ fn extract_dynamic_selector(
                         if space_before {
                             out.push(' ');
                         }
-                        out.push_str("{}");
+                        out.push(PLACEHOLDER_VALUE);
                         exprs.push(("any".to_string(), g.stream()));
                         iter.next();
                         return Ok(true);
@@ -1139,7 +1242,7 @@ fn extract_dynamic_selector(
                         if space_before {
                             out.push(' ');
                         }
-                        out.push_str("{}");
+                        out.push(PLACEHOLDER_VALUE);
                         exprs.push(("any".to_string(), path));
                         return Ok(true);
                     }
@@ -1151,7 +1254,11 @@ fn extract_dynamic_selector(
                     if space_before {
                         out.push(' ');
                     }
-                    out.push_str(&format!(".{}", ctx.class_name));
+                    // 类名留成占位符：运行时那一轮用的是带哈希后缀的动态类名，
+                    // 此前是先写基类名、再 `res.replace(基类名, 动态类名)`——
+                    // 规则里同时存在 `.foo` 与 `.foo-bar` 时后者会被一起改掉
+                    out.push('.');
+                    out.push(PLACEHOLDER_CLASS);
                     return Ok(true);
                 }
             }
@@ -1301,16 +1408,118 @@ fn classify_static_value(value: &str) -> Option<&'static str> {
     }
 }
 
+/// 默认浏览器基线。
+///
+/// 此前硬编码的是 chrome 80 / safari 13 / firefox 75，而运行时实际要求高得多：
+///
+/// | 依赖 | 最低版本 |
+/// | --- | --- |
+/// | `document.adoptedStyleSheets` + `new CSSStyleSheet()`（主注入路径） | Chrome 73 / Safari 16.4 / Firefox 101 |
+/// | `@layer`（层序声明无条件输出） | Chrome 99 / Safari 15.4 / Firefox 97 |
+/// | `color-mix()`（`CssVar::alpha`） | Chrome 111 / Safari 16.2 / Firefox 113 |
+///
+/// 声明的 Safari 13 目标根本跑不起来，lightningcss 为此做的降级（`::before`
+/// → `:before` 之类）全是无用功。默认值现在取上表的上界。
+const DEFAULT_TARGETS: &[(&str, u32)] = &[
+    ("chrome", 111 << 16),
+    ("safari", (16 << 16) | (4 << 8)),
+    ("firefox", 113 << 16),
+];
+
 fn get_compiler_targets() -> Targets {
-    Targets {
-        browsers: Some(lightningcss::targets::Browsers {
-            chrome: Some(80 << 16),
-            safari: Some(13 << 16),
-            firefox: Some(75 << 16),
-            ..Default::default()
-        }),
-        ..Targets::default()
+    static CACHE: std::sync::OnceLock<Targets> = std::sync::OnceLock::new();
+    *CACHE.get_or_init(|| {
+        let configured = crate::css::config::get_config()
+            .map(|c| &c.css.targets)
+            .filter(|t| !t.is_empty());
+
+        let browsers = match configured {
+            Some(t) => match parse_browsers(t) {
+                Ok(b) => b,
+                // 配置写错了不能静默退回默认值——那等于把用户写的基线当没看见
+                Err(msg) => panic!("silex.toml `[css.targets]`：{msg}"),
+            },
+            None => {
+                let mut b = lightningcss::targets::Browsers::default();
+                for (name, version) in DEFAULT_TARGETS {
+                    set_browser(&mut b, name, *version).expect("默认基线的浏览器名是合法的");
+                }
+                b
+            }
+        };
+
+        Targets {
+            browsers: Some(browsers),
+            // 基线抬到 Chrome 111 / Safari 16.4 之后，媒体查询的区间语法
+            // （`(width >= 768px)`）就在支持范围内了，lightningcss 会按那种
+            // 形式打印。它不比 `(min-width: 768px)` 做得更多，却让产物与
+            // Tailwind 的写法对不上——tw 的差分测试正是靠这个对齐的。
+            // `include` = 无论目标是否支持都降级成 `min-`/`max-` 形式。
+            include: lightningcss::targets::Features::MediaRangeSyntax
+                | lightningcss::targets::Features::MediaIntervalSyntax,
+            ..Targets::default()
+        }
+    })
+}
+
+/// 把 `[css.targets]` 解析成 lightningcss 的 `Browsers`。
+fn parse_browsers(
+    table: &std::collections::HashMap<String, String>,
+) -> std::result::Result<lightningcss::targets::Browsers, String> {
+    let mut browsers = lightningcss::targets::Browsers::default();
+    let mut names: Vec<&String> = table.keys().collect();
+    names.sort();
+    for name in names {
+        let raw = &table[name];
+        let version = parse_version(raw)
+            .ok_or_else(|| format!("`{name} = \"{raw}\"` 不是合法的版本号（形如 `16` 或 `16.4`）"))?;
+        set_browser(&mut browsers, name, version)?;
     }
+    Ok(browsers)
+}
+
+/// `"16.4"` → `16 << 16 | 4 << 8`，这是 lightningcss 的版本编码。
+fn parse_version(raw: &str) -> Option<u32> {
+    let mut parts = raw.trim().split('.');
+    let major: u32 = parts.next()?.parse().ok()?;
+    let minor: u32 = match parts.next() {
+        Some(p) => p.parse().ok()?,
+        None => 0,
+    };
+    let patch: u32 = match parts.next() {
+        Some(p) => p.parse().ok()?,
+        None => 0,
+    };
+    if parts.next().is_some() || major > 0xffff || minor > 0xff || patch > 0xff {
+        return None;
+    }
+    Some((major << 16) | (minor << 8) | patch)
+}
+
+fn set_browser(
+    browsers: &mut lightningcss::targets::Browsers,
+    name: &str,
+    version: u32,
+) -> std::result::Result<(), String> {
+    let slot = match name {
+        "android" => &mut browsers.android,
+        "chrome" => &mut browsers.chrome,
+        "edge" => &mut browsers.edge,
+        "firefox" => &mut browsers.firefox,
+        "ie" => &mut browsers.ie,
+        "ios_saf" | "ios_safari" => &mut browsers.ios_saf,
+        "opera" => &mut browsers.opera,
+        "safari" => &mut browsers.safari,
+        "samsung" => &mut browsers.samsung,
+        other => {
+            return Err(format!(
+                "`{other}` 不是可识别的浏览器名（可用：android、chrome、edge、\
+                 firefox、ie、ios_saf、opera、safari、samsung）"
+            ));
+        }
+    };
+    *slot = Some(version);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1327,6 +1536,104 @@ mod tests {
         CssCompiler::compile_with_source(src, Span::call_site(), false)
             .unwrap_err()
             .to_string()
+    }
+
+    // --- P2-3：层级归属 ---
+    //
+    // 这条优先级链此前既没写进文档，也没有任何断言保护：`base` 一条规则都没有，
+    // 而 `sty()`（在 `silex_css::builder`）与 `global!` 完全不带 layer——按规范
+    // 无层规则压过所有具名层，于是全局重置反而盖过每一个组件样式。
+
+    #[test]
+    fn css_lands_in_the_utilities_layer() {
+        let css = compile_all("color: red;");
+        assert!(css.contains("@layer utilities{"), "{css}");
+    }
+
+    #[test]
+    fn styled_lands_in_the_components_layer() {
+        let res =
+            CssCompiler::compile_with_source_and_prefix("color: red;", "slx-st-", Span::call_site())
+                .unwrap();
+        assert!(res.component_css.contains("@layer components{"), "{res:?}");
+    }
+
+    /// 变体（`declare_variants!`）与 `styled!` 同层
+    #[test]
+    fn variant_classes_land_in_the_components_layer() {
+        let res = CssCompiler::compile_with_source_and_prefix(
+            "color: red;",
+            "slx-twv-",
+            Span::call_site(),
+        )
+        .unwrap();
+        assert!(res.component_css.contains("@layer components{"), "{res:?}");
+    }
+
+    #[test]
+    fn global_lands_in_the_base_layer() {
+        let res =
+            CssCompiler::compile_global_with_source("body { color: red; }", Span::call_site(), false)
+                .unwrap();
+        assert!(res.component_css.contains("@layer base{"), "{res:?}");
+        assert!(res.component_css.contains("body"), "{res:?}");
+    }
+
+    /// 从组件里提升出来的 `@font-face` / `@keyframes` 不套 layer——它们本来就
+    /// 不属于那个组件，套进 `components` 只会让同名字体/动画的解析多一层层序
+    #[test]
+    fn lifted_at_rules_stay_outside_any_layer() {
+        let res = CssCompiler::compile_with_source(
+            "@font-face { font-family: \"X\"; } color: red;",
+            Span::call_site(),
+            false,
+        )
+        .unwrap();
+        assert!(res.static_css.contains("@font-face"), "{res:?}");
+        assert!(!res.static_css.contains("@layer"), "{res:?}");
+        assert!(res.component_css.contains("@layer utilities{"), "{res:?}");
+    }
+
+    // --- P2-4：浏览器基线 ---
+
+    #[test]
+    fn version_strings_parse_into_lightningcss_encoding() {
+        assert_eq!(parse_version("111"), Some(111 << 16));
+        assert_eq!(parse_version("16.4"), Some((16 << 16) | (4 << 8)));
+        assert_eq!(parse_version("1.2.3"), Some((1 << 16) | (2 << 8) | 3));
+        assert_eq!(parse_version(" 16.4 "), Some((16 << 16) | (4 << 8)));
+        assert_eq!(parse_version("16.4.5.6"), None);
+        assert_eq!(parse_version("latest"), None);
+        assert_eq!(parse_version(""), None);
+    }
+
+    #[test]
+    fn unknown_browser_names_are_rejected_instead_of_ignored() {
+        let mut table = std::collections::HashMap::new();
+        table.insert("chorme".to_string(), "111".to_string());
+        let err = parse_browsers(&table).unwrap_err();
+        assert!(err.contains("chorme"), "{err}");
+    }
+
+    #[test]
+    fn configured_targets_land_in_the_right_slots() {
+        let mut table = std::collections::HashMap::new();
+        table.insert("safari".to_string(), "16.4".to_string());
+        table.insert("ios_safari".to_string(), "16.4".to_string());
+        let b = parse_browsers(&table).unwrap();
+        assert_eq!(b.safari, Some((16 << 16) | (4 << 8)));
+        assert_eq!(b.ios_saf, Some((16 << 16) | (4 << 8)));
+        assert_eq!(b.chrome, None);
+    }
+
+    /// 默认基线必须真的能跑起来：`adoptedStyleSheets` 是唯一注入路径，
+    /// Safari 要到 16.4 才有；此前声明的是 Safari 13。
+    #[test]
+    fn the_default_baseline_can_actually_run_the_runtime() {
+        let browsers = get_compiler_targets().browsers.unwrap();
+        assert!(browsers.safari.unwrap() >= (16 << 16) | (4 << 8));
+        assert!(browsers.chrome.unwrap() >= 111 << 16);
+        assert!(browsers.firefox.unwrap() >= 113 << 16);
     }
 
     // --- P0-1：选择器与媒体查询必须按原文的空白还原 ---
@@ -1449,10 +1756,11 @@ mod tests {
             CssCompiler::compile_with_source(".x $sel { color: red; }", Span::call_site(), false)
                 .unwrap();
         assert_eq!(res.dynamic_rules.len(), 1);
-        assert!(
-            res.dynamic_rules[0].template.contains("{}"),
-            "{:?}",
-            res.dynamic_rules[0]
+        let parts = template_parts(&res.dynamic_rules[0].template);
+        assert_eq!(
+            parts[..2],
+            [TemplatePart::Lit(".x ".into()), TemplatePart::Val(0)],
+            "{parts:?}"
         );
     }
 
@@ -1463,11 +1771,51 @@ mod tests {
             CssCompiler::compile_with_source("$sel .x { color: red; }", Span::call_site(), false)
                 .unwrap();
         assert_eq!(res.dynamic_rules.len(), 1);
+        let parts = template_parts(&res.dynamic_rules[0].template);
+        assert_eq!(parts[0], TemplatePart::Val(0), "{parts:?}");
         assert!(
-            res.dynamic_rules[0].template.contains("{} .x"),
-            "{:?}",
-            res.dynamic_rules[0]
+            matches!(&parts[1], TemplatePart::Lit(s) if s.starts_with(" .x")),
+            "{parts:?}"
         );
+    }
+
+    /// 模板里的类名是**占位符**，不是基类名文本。
+    ///
+    /// 报告 P2-8：此前 `&` 展开成 `.slx-st-xxx`，运行时再
+    /// `res.replace(".slx-st-xxx", ".slx-st-xxx-dyn-h")`——规则里同时存在
+    /// `.foo` 与 `.foo-bar` 时，后者会被改成 `.foo-dyn-h-bar`。
+    #[test]
+    fn the_component_class_is_a_placeholder_not_literal_text() {
+        let res = CssCompiler::compile_with_source(
+            "& $sel .foo-bar { color: red; }",
+            Span::call_site(),
+            false,
+        )
+        .unwrap();
+        assert_eq!(res.dynamic_rules.len(), 1);
+        let template = &res.dynamic_rules[0].template;
+        assert!(
+            !template.contains(&res.class_name),
+            "模板里不该出现基类名文本：{template:?}"
+        );
+        let parts = template_parts(template);
+        assert_eq!(
+            parts[..3],
+            [
+                TemplatePart::Lit(".".into()),
+                TemplatePart::Class,
+                TemplatePart::Lit(" ".into())
+            ],
+            "{parts:?}"
+        );
+    }
+
+    /// 用户字符串里的控制字符会被转义，占位符不可能被伪造出来
+    #[test]
+    fn control_characters_in_string_literals_cannot_forge_a_placeholder() {
+        let css = compile_all("content: \"a\\u{1}b\\u{2}c\";");
+        assert!(!css.contains(PLACEHOLDER_CLASS), "{css:?}");
+        assert!(!css.contains(PLACEHOLDER_VALUE), "{css:?}");
     }
 
     /// 紧贴的 `.` 仍然是字段访问，必须写成 `$(…)`
@@ -1512,10 +1860,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(res.dynamic_rules.len(), 1);
-        assert!(
-            res.dynamic_rules[0].template.contains(".x {}"),
-            "{:?}",
-            res.dynamic_rules[0].template
+        let parts = template_parts(&res.dynamic_rules[0].template);
+        assert_eq!(
+            parts[..2],
+            [TemplatePart::Lit(".x ".into()), TemplatePart::Val(0)],
+            "{parts:?}"
         );
     }
 

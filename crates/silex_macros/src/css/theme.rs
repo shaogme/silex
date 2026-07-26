@@ -312,18 +312,16 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
         impl #__silex::css::theme::ThemeType for #name {}
 
         impl #__silex::css::theme::ThemeToCss for #name {
-            fn to_css_variables(&self) -> String {
-                let mut s = String::new();
-                #( s.push_str(&#to_css_items); )*
-                s
-            }
             fn get_variable_values(&self) -> Vec<String> { vec![ #( self.#field_idents.to_string() ),* ] }
             fn get_variable_names() -> &'static [&'static str] { &[ #( #css_vars ),* ] }
         }
 
+        // `Display` 就是「这个主题的 CSS 变量声明」。此前中间还隔了一个
+        // `ThemeToCss::to_css_variables()`，而那个方法的唯一调用方就是这里
         impl ::std::fmt::Display for #name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                write!(f, "{}", #__silex::css::theme::ThemeToCss::to_css_variables(self))
+                #( ::std::write!(f, "{}", #to_css_items)?; )*
+                ::std::result::Result::Ok(())
             }
         }
 

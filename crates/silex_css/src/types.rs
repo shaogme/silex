@@ -34,6 +34,20 @@ pub trait ValidFor<Prop> {}
 pub trait CssValue: Display {}
 impl<T: Display> CssValue for T {}
 
+/// 可以「取消」的属性值。
+///
+/// `None` 渲染成 CSS 宽关键字 `unset`——即该属性回到继承值（可继承属性）或
+/// 初始值（不可继承属性）。
+///
+/// 此前 `None` 渲染成**空串**，注释写的是「在 CSS 中不输出（实现响应式移除）」，
+/// 而两条路的实际行为既不一致、也都不是那个意思：
+///
+/// - 静态路径产出 `prop: ;`——无效声明，浏览器丢弃，碰巧接近「不输出」；
+/// - 动态路径产出 `prop: var(--x)` 且 `--x` 被设成空串，触发
+///   *invalid at computed-value time*，属性取继承值或初始值。
+///
+/// 真正的「不输出」在动态路径上做不到（声明写在类规则里，能改的只有变量的值），
+/// 所以两边统一到动态路径本来就会落到的那个语义上，并把它写清楚。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum CssOption<T> {
     #[default]
@@ -63,7 +77,7 @@ impl<T: Display> Display for CssOption<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Self::Some(val) => write!(f, "{}", val),
-            Self::None => Ok(()),
+            Self::None => write!(f, "unset"),
         }
     }
 }
@@ -305,7 +319,7 @@ macro_rules! define_props {
             impl ValidFor<props::$pascal> for CssWide {}
             // 核心：强类型 CssVar<T> 继承 T 的校验规则
             impl<T> ValidFor<props::$pascal> for CssVar<T> where T: ValidFor<props::$pascal> {}
-            // 支持 CssOption<T> 作为合法属性值类型，当为 None 时在 CSS 中不输出（实现响应式移除）
+            // 支持 CssOption<T> 作为合法属性值类型，当为 None 时渲染成 `unset`
             impl<T> ValidFor<props::$pascal> for CssOption<T> where T: ValidFor<props::$pascal> {}
 
             $( define_props!(@cap $pascal, $cap); )*
@@ -528,6 +542,23 @@ mod tests {
         let _ = Style::new().width(AUTO).transform(NONE);
         assert_eq!(AUTO.to_string(), "auto");
         assert_eq!(NONE.to_string(), "none");
+    }
+
+    /// 报告 P2-11：`None` 此前渲染成空串，静态路径产出 `prop: ;`、动态路径
+    /// 产出 `prop: var(--x)` 且 `--x` 为空，两条路行为不同，也都不等于注释
+    /// 里写的「不输出」。现在统一成 `unset`，两条路一致且语义明确。
+    #[test]
+    fn css_option_none_renders_as_unset() {
+        assert_eq!(css_none::<Px>().to_string(), "unset");
+        assert_eq!(css_some(px(4)).to_string(), "4px");
+        assert_eq!(CssOption::<Hex>::default().to_string(), "unset");
+    }
+
+    /// 静态路径不再产出 `width: ;` 这种无效声明
+    #[test]
+    fn css_option_none_produces_a_valid_declaration() {
+        let css = Style::new().width(css_none::<Px>()).render().css;
+        assert!(css.contains("width: unset;"), "{css}");
     }
 
     /// 值类型现在按属性的实际语法约束，而不是一刀切

@@ -12,7 +12,7 @@
 
 *   **设计背景**：传统的样式更新方案（如修改 `className` 或内联 `style` 字符串）会触发大规模的重计算（Recalculate Style）和解析压力。同时，动态样式的生命周期管理一直是前端框架的难点，容易导致内存泄漏。
 *   **核心思想**：
-    *   **零 DOM 压力**：彻底放弃 `<style>` 标签，完全基于 `adoptedStyleSheets` 实现样式注入。
+    *   **零 DOM 压力**：样式注入走 `adoptedStyleSheets`，不往 DOM 里塞 `<style>` 标签。仅当 `new CSSStyleSheet()` 不可用时才退回一个 `<style>` 兜底——那条路只保证「样式不丢」，不保证性能。
     *   **极简更新路径**：对于动态样式，优先使用 CSS 变量（CSS Variables）进行占位，更新时仅触发轻量级的 `element.style.setProperty`。
     *   **编译时安全**：利用 Rust 的 ZST (Zero-Sized Types) 和 Trait 系统，在编译期拦截非法的属性赋值（如将 `Color` 传给 `Width`）。
     *   **自动化生命周期**：结合弱引用（Weak References）和 LRU 缓存，实现样式的自动注入与销毁。
@@ -33,8 +33,12 @@ src/
 │   └── complex.rs      // 复杂属性 DSL (Transform, GridAreas等)
 ├── types.rs            // 类型系统入口，定义 ValidFor trait 并整合响应式绑定
 ├── theme.rs            // 主题上下文集成、增量补丁 (Partial Patching) 与变量同步逻辑
+├── layers.rs           // 级联层 (@layer) 的层序——优先级的唯一约定处
+├── escape.rs           // 静态值写入 CSS 文本前的净化
 ├── runtime/
 │   ├── registry.rs     // 全局样式表注册表 (Static & Document Registry)
+│   ├── sheet.rs        // 样式表载体：构造式样式表 + <style> 兜底
+│   ├── template.rs     // 动态规则的结构化模板（编译期切片，运行时拼接）
 │   └── dynamic.rs      // 动态样式状态管理与弱引用 GC
 └── codegen.rs          // 自动生成的代码产物入口 (codegen/ 子模块)
 ```
@@ -100,16 +104,82 @@ fn sync(&mut self) {
     self.is_pending = true;
     wasm_bindgen_futures::spawn_local(async {
         // 在微任务中合并所有变更，一次性调用 set_adopted_style_sheets
-        DOCUMENT_REGISTRY.with(|dr| dr.borrow_mut().perform_sync());
+        with_document_registry(|dr| dr.perform_sync());
     });
 }
 ```
-通过比较 `last_sync_ids`（记录样式表指针地址），我们能跳过 99% 的冗余同步调用。
+微任务里再比一次表的清单：只有当**样式表的 JS 对象标识**这一批真的变了，才调用
+`set_adopted_style_sheets`。同一微任务内增删抵消（组件卸载又立刻挂载同一份样式）
+时，这一步能整个跳过。
 
-### 4.5 动态样式 GC 策略 (`runtime/dynamic.rs`)
+> 这里一定要按 JS 对象标识比，而不是 Rust 侧那个 `CssStyleSheet` 值的内存地址。
+> 后者是 `Vec` 元素的地址：扩容会让它整批变化（明明没换表却重同步），而增删数量
+> 相等时新元素又可能落回同一批槽位（明明换了表却判定没变，于是**新样式永不生效、
+> 被移除的永不摘除**）。
+
+**静态表是增量写入的。** `StaticStyleRegistry` 只把新增的 chunk 切成顶层规则、
+`insertRule` 到表尾，而不是每次 flush 都把所有 chunk 重新拼一遍再 `replaceSync`
+——后者会让浏览器整表重新解析，组件在不同 tick 陆续挂载时总成本是 O(n²)。
+只有 `<style>` 兜底或某条 `insertRule` 抛错时才退回整表重建。
+
+**失败不再静默。** 借用冲突时注入与摘除都会排进延迟队列、在下一个微任务补做；
+建表失败会退到 `<style>`；debug 构建下这些情况都会打到 `console.error`。
+
+### 4.5 级联层 (`layers.rs`)
+优先级从低到高共四层，声明为 `@layer base, components, utilities, overrides;`
+（静态样式表的第一条规则）：
+
+| 层 | 谁写进来 | 用途 |
+| --- | --- | --- |
+| `base` | `global!` | 全局重置、元素默认样式 |
+| `components` | `styled!` / `declare_variants!` | 组件自身的样式 |
+| `utilities` | `css!` / `tw!` | 工具类，按设计就该压过组件默认值 |
+| `overrides` | `sty()` | 针对单个元素实例的就地覆盖，优先级最高 |
+
+从组件里提升出来的 `@font-face` / `@keyframes` 不套任何层——它们不属于那个组件。
+`set_global_theme` 注入的 `:root{}` 也不套层（无层规则优先级最高），这样主题变量
+总能压住 `base` 里的默认值。
+
+### 4.6 浏览器基线
+编译产物的降级目标默认对齐运行时真正需要的能力：
+
+| 依赖 | 最低版本 |
+| --- | --- |
+| `adoptedStyleSheets` + `new CSSStyleSheet()`（主注入路径） | Chrome 73 / Safari 16.4 / Firefox 101 |
+| `@layer` | Chrome 99 / Safari 15.4 / Firefox 97 |
+| `color-mix()`（`CssVar::alpha`） | Chrome 111 / Safari 16.2 / Firefox 113 |
+
+取上界即 **Chrome 111 / Safari 16.4 / Firefox 113**。可以在 `silex.toml` 里改：
+
+```toml
+[css.targets]
+chrome = "111"
+safari = "16.4"
+firefox = "113"
+```
+
+可用的键：`android`、`chrome`、`edge`、`firefox`、`ie`、`ios_saf`、`opera`、
+`safari`、`samsung`。写错浏览器名或版本号会直接编译报错，不会静默退回默认值。
+
+### 4.7 动态样式 GC 策略 (`runtime/dynamic.rs`)
 `DynamicStyleState` 实现了 `Drop`：
-- 当一个样式不再被任何组件引用，且超出 `RETIRED_STYLES` 的 LRU 限制（当前为 128）时，它会从全局 `DocumentStyleRegistry` 中自动移除。
-- `DYNAMIC_STYLE_REGISTRY` 内部维护 `Weak<DynamicStyleState>`，确保如果同一个组件或相同样式的组件重新挂载，可以立即复用现有的 StyleSheet 对象，避免重复解析。
+- 一个样式不再被任何组件引用时立即**退休**：从 `document.adoptedStyleSheets` 摘出去，
+  但保留已解析好的样式表对象。退休表不再参与样式匹配，复用时也不必重新解析 CSS。
+- 退休队列是 LRU，上限 32；超出后最老的那个才真正 `Drop`。
+- `DYNAMIC_STYLE_REGISTRY` 内部维护 `Weak<DynamicStyleState>`，确保如果同一个组件或
+  相同样式的组件重新挂载，可以立即复用现有的 StyleSheet 对象。
+
+### 4.8 动态规则的结构化模板 (`runtime/template.rs`)
+带运行时片段的规则（`.x $theme { … }`、`& $sel { color: $c; }`）在**编译期**就被切成
+`CssPart::{Lit, Class, Val}` 的序列，运行时只做拼接。
+
+这样做是因为事后文本替换会误伤：`res.replace(基类名, 动态类名)` 会把
+`.foo-bar` 一起改成 `.foo-dyn-h-bar`；按顺序逐个 `String::replace` 会让前一个替换
+写进去的**值内容**被后一个 pattern 二次命中；`{}` 占位符则与 CSS 里真实出现的 `{}` 冲突。
+
+唯一还靠文本替换的是全局样式里的 `var(--slx-dyn-N)`：那段模板要先过一遍
+lightningcss，位置信息在那之后不复存在。但替换是一遍扫描完成的，写进去的值不会
+再被当成占位符。
 
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 

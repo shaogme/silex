@@ -10,7 +10,7 @@ use crate::{
 };
 use silex_core::{
     Rx, RxValueKind,
-    reactivity::Effect,
+    reactivity::{Effect, on_cleanup},
     traits::{IntoRx, RxGet, RxValue},
 };
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable, ReactiveApply};
@@ -211,8 +211,19 @@ impl ApplyToDom for Style {
     }
 }
 
+/// `Style` 编译出的产物：类名、要注入的 CSS、以及待建立的动态绑定。
+///
+/// 单独拆出来是为了让「生成什么 CSS」这件事能脱离 DOM 被断言——`@layer` 的
+/// 归属、嵌套选择器的展开此前都只能靠读代码确认。
+pub(crate) struct RenderedStyle {
+    pub class_base: String,
+    pub css: String,
+    pub dyn_bindings: Vec<(String, DynamicValue)>,
+}
+
 impl Style {
-    pub fn apply_to_element(&self, el: &Element) -> String {
+    /// 只生成，不碰 DOM。
+    pub(crate) fn render(&self) -> RenderedStyle {
         // 1. 生成稳定哈希（忽略动态值，递归所有嵌套规则）
         let mut hasher = css_hasher!();
         hash_recursive(self, &mut hasher);
@@ -228,28 +239,72 @@ impl Style {
 
         generate_css_recursive(self, &base_sel, hash_str, &mut css_str, &mut dyn_bindings);
 
-        // 3. 注入样式并添加类名
-        inject_style(&class_base, &css_str);
+        // 3. 归入 `overrides` 层。`sty()` 是针对单个元素实例的就地覆盖，
+        //    优先级理应最高；此前它**不带任何 layer**，靠「无层规则压过所有
+        //    具名层」这条规范侧效达到同样效果——顺带也压过了 `global!`，
+        //    而两者之间只能靠注入先后决定胜负。
+        let css = if css_str.trim().is_empty() {
+            String::new()
+        } else {
+            crate::layers::wrap(crate::layers::OVERRIDES, &css_str)
+        };
+
+        RenderedStyle {
+            class_base,
+            css,
+            dyn_bindings,
+        }
+    }
+
+    pub fn apply_to_element(&self, el: &Element) -> String {
+        let RenderedStyle {
+            class_base,
+            css,
+            dyn_bindings,
+        } = self.render();
+
+        if !css.is_empty() {
+            inject_style(&class_base, &css);
+        }
         let _ = el.class_list().add_1(&class_base);
 
-        // 4. 建立极轻量更新 Effect (只有 style.setProperty)
+        // 建立极轻量更新 Effect (只有 style.setProperty)
+        //
+        // 这些 Effect 是当前 owner 的子节点，owner 重跑时会被一并回收；但它们
+        // **写在元素行内样式上的自定义属性**不会跟着消失。变量名带样式哈希，
+        // 换一份 `Style` 就是另一批名字，旧的会永远留在 `style` 属性里。
+        let mut owned_vars = Vec::with_capacity(dyn_bindings.len());
         for (var_name, getter) in dyn_bindings {
+            owned_vars.push(var_name.clone());
             let el_clone = el.clone();
             Effect::new(move |prev: Option<String>| {
                 let current = getter();
                 if prev.as_ref() != Some(&current)
-                    && let Some(style) = el_clone
-                        .dyn_ref::<HtmlElement>()
-                        .map(|e| e.style())
-                        .or_else(|| el_clone.dyn_ref::<SvgElement>().map(|e| e.style()))
+                    && let Some(style) = element_style(&el_clone)
                 {
                     let _ = style.set_property(&var_name, &current);
                 }
                 current
             });
         }
+        if !owned_vars.is_empty() {
+            let el_clone = el.clone();
+            on_cleanup(move || {
+                if let Some(style) = element_style(&el_clone) {
+                    for name in &owned_vars {
+                        let _ = style.remove_property(name);
+                    }
+                }
+            });
+        }
         class_base
     }
+}
+
+fn element_style(el: &Element) -> Option<web_sys::CssStyleDeclaration> {
+    el.dyn_ref::<HtmlElement>()
+        .map(|e| e.style())
+        .or_else(|| el.dyn_ref::<SvgElement>().map(|e| e.style()))
 }
 
 /// 递归计算样式的稳定哈希
@@ -347,5 +402,119 @@ impl IntoStorable for Style {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layers;
+    use crate::types::{hex, px};
+
+    fn css_of(style: Style) -> String {
+        style.render().css
+    }
+
+    /// 报告 P2-3：`sty()` 的产出此前**不带任何 layer**，靠「无层规则压过所有
+    /// 具名层」的规范侧效获得最高优先级——顺带压过了 `global!`，而两者之间
+    /// 只能靠注入先后决定胜负。
+    #[test]
+    fn sty_lands_in_the_overrides_layer() {
+        let css = css_of(Style::new().color(hex("#fff")));
+        assert!(
+            css.starts_with(&format!("@layer {} {{", layers::OVERRIDES)),
+            "{css}"
+        );
+        assert!(css.contains("color: #fff;"), "{css}");
+    }
+
+    /// 空样式不该注入一个空的 layer 块
+    #[test]
+    fn an_empty_style_produces_no_css_at_all() {
+        assert_eq!(css_of(Style::new()), "");
+    }
+
+    /// 类名只由静态结构决定：同样的声明必须给出同一个类名，
+    /// 否则每次渲染都会往静态表里塞一份新副本
+    #[test]
+    fn the_class_name_is_stable_across_renders() {
+        let a = Style::new().color(hex("#fff")).width(px(10)).render();
+        let b = Style::new().color(hex("#fff")).width(px(10)).render();
+        assert_eq!(a.class_base, b.class_base);
+        assert!(a.class_base.starts_with("slx-"));
+    }
+
+    /// 值来自用户输入时必须挡在声明边界内（报告 P0-8 的回归）。
+    ///
+    /// 产物里只该有两层花括号：`@layer` 块与那条规则本身。多出来的就是被
+    /// 用户字符串撑开的新规则。
+    #[test]
+    fn a_static_value_cannot_break_out_of_its_declaration() {
+        let css = css_of(Style::new().grid_template_areas("red; } body { display: none"));
+        assert_eq!(css.matches('{').count(), 2, "{css}");
+        assert_eq!(css.matches('}').count(), 2, "{css}");
+        assert_eq!(css.matches(';').count(), 1, "{css}");
+    }
+
+    /// 嵌套选择器：带 `&` 的替换到位，不带 `&` 的按后缀拼接
+    #[test]
+    fn nested_selectors_expand_against_the_base_class() {
+        let rendered = Style::new()
+            .nest("& > div", |s| s.color(hex("#000")))
+            .render();
+        let base = format!(".{}", rendered.class_base);
+        assert!(
+            rendered.css.contains(&format!("{base} > div {{")),
+            "{}",
+            rendered.css
+        );
+    }
+
+    /// `apply_to_element` 每次调用都为每个动态绑定新建一个 `Effect`，而
+    /// `ReactiveApply::apply_to_dom` 会在一个外层 `Effect` 里反复调用它。
+    /// 这里成立的前提是：内层 `Effect` 是外层的子节点，外层重跑时随之回收。
+    ///
+    /// 这条不变量在 `silex_reactivity` 里（`run_effect` → `run_cleanups` →
+    /// `dispose_node_internal(child)`），但 `builder.rs` 依赖它，所以在这里
+    /// 钉一根桩：哪天所有权模型变了，先坏在这儿而不是坏成线上的 Effect 泄漏。
+    #[test]
+    fn inner_effects_are_reclaimed_when_the_outer_effect_reruns() {
+        use silex_core::{reactivity::RwSignal, traits::RxWrite};
+        use std::{cell::Cell, rc::Rc};
+
+        let outer = RwSignal::new(0);
+        let inner_dep = RwSignal::new(0);
+        let inner_runs = Rc::new(Cell::new(0));
+
+        let counter = inner_runs.clone();
+        Effect::new(move |_| {
+            outer.get();
+            let counter = counter.clone();
+            Effect::new(move |_| {
+                inner_dep.get();
+                counter.set(counter.get() + 1);
+            });
+        });
+
+        assert_eq!(inner_runs.get(), 1, "首轮内层 Effect 跑一次");
+        outer.set(1);
+        assert_eq!(inner_runs.get(), 2, "外层重跑，新内层 Effect 跑一次");
+        inner_dep.set(1);
+        assert_eq!(
+            inner_runs.get(),
+            3,
+            "只有存活的那个内层 Effect 响应；上一轮的若没回收会多跑一次"
+        );
+    }
+
+    /// 动态值走行内 CSS 变量，规则里只留一个 `var()` 引用
+    #[test]
+    fn dynamic_values_become_a_css_variable_reference() {
+        let signal = silex_core::reactivity::RwSignal::new(px(1));
+        let rendered = Style::new().width(signal).render();
+        assert_eq!(rendered.dyn_bindings.len(), 1);
+        let var_name = &rendered.dyn_bindings[0].0;
+        assert!(var_name.starts_with("--sb-"), "{var_name}");
+        assert!(rendered.css.contains(&format!("width: var({var_name});")));
     }
 }

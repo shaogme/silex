@@ -144,14 +144,14 @@ pub(crate) fn generate_css_output(
 
         let mut rule_calls = Vec::new();
         for rule in &dynamic_rules {
-            let template = &rule.template;
+            let parts = compiler::template_parts_tokens(&rule.template);
             let mut exprs = Vec::new();
             for (prop, expr) in &rule.expressions {
                 let prop_type = get_prop_type(prop, span)?;
                 exprs.push(quote! { #__silex::css::make_property_val::<#prop_type, _>(#expr) });
             }
             rule_calls.push(quote! {
-                .with_rule(#template, ::std::vec![ #(#exprs),* ])
+                .with_rule(#parts, ::std::vec![ #(#exprs),* ])
             });
         }
 

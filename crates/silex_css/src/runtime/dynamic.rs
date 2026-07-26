@@ -1,7 +1,13 @@
-use crate::{runtime::registry::DOCUMENT_REGISTRY, types};
+use crate::{
+    runtime::{
+        registry::{queue_removal, with_document_registry},
+        sheet::{Sheet, report},
+        template::{CssPart, dynamic_class, render, replace_placeholders},
+    },
+    types,
+};
 use silex_core::{prelude::*, traits::RxGet};
 use silex_dom::prelude::*;
-use silex_hash::css::{Normalized, encode_base36, hash_one};
 use std::{
     cell::RefCell,
     collections::{HashMap, VecDeque},
@@ -9,38 +15,94 @@ use std::{
     rc::{Rc, Weak},
 };
 use wasm_bindgen::JsCast;
-use web_sys::{CssStyleSheet, Element, HtmlElement, SvgElement};
+use web_sys::{Element, HtmlElement, SvgElement};
 
 pub type CssVariableGetter = Rx<String>;
 
-const CACHE_LIMIT: usize = 128;
+/// 退休样式表的缓存上限。
+///
+/// 此前是 128，且退休状态仍以 `Rc` 留在队列里 → `Drop` 不触发 → `remove_sheet`
+/// 不执行 → 这些表**始终留在 `document.adoptedStyleSheets` 上**，每一张都参与
+/// 样式匹配。现在退休即摘出文档（只保留已解析好的表对象供复用），常驻成本降到
+/// 零，上限本身也随之收小。
+const CACHE_LIMIT: usize = 32;
 
 thread_local! {
     static DYNAMIC_STYLE_REGISTRY: RefCell<HashMap<String, Weak<DynamicStyleState>>> = RefCell::new(HashMap::new());
     static RETIRED_STYLES: RefCell<VecDeque<Rc<DynamicStyleState>>> = const { RefCell::new(VecDeque::new()) };
+    /// `DYNAMIC_STYLE_REGISTRY` 正被借用时来不及注销的 id
+    static PENDING_UNREGISTER: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Manages an injected stylesheet uniquely for a component instance.
 pub(crate) struct DynamicStyleState {
     pub id: String,
-    pub sheet: CssStyleSheet,
+    pub sheet: Sheet,
+    /// 当前是否挂在 `document.adoptedStyleSheets` 上
+    attached: std::cell::Cell<bool>,
+}
+
+impl DynamicStyleState {
+    fn attach(&self) {
+        if self.attached.get() {
+            return;
+        }
+        if let Some(adopted) = self.sheet.adopted() {
+            let adopted = adopted.clone();
+            if with_document_registry(|dr| dr.add_sheet(adopted)).is_none() {
+                report("挂载动态样式表时借用冲突");
+                return;
+            }
+        }
+        self.attached.set(true);
+    }
+
+    fn detach(&self) {
+        if !self.attached.get() {
+            return;
+        }
+        self.attached.set(false);
+        let Some(adopted) = self.sheet.adopted() else {
+            return;
+        };
+        if with_document_registry(|dr| dr.remove_sheet(adopted)).is_none() {
+            // 借不到就排队，微任务里补做——不再静默跳过
+            queue_removal(adopted.clone());
+        }
+    }
 }
 
 impl Drop for DynamicStyleState {
     fn drop(&mut self) {
         // 1. Remove from document stylesheets
-        DOCUMENT_REGISTRY.with(|dr| {
-            if let Ok(mut dr) = dr.try_borrow_mut() {
-                dr.remove_sheet(&self.sheet);
-            }
-        });
+        self.detach();
+        self.sheet.detach();
         // 2. Remove from registry map
-        DYNAMIC_STYLE_REGISTRY.with(|reg| {
-            if let Ok(mut reg) = reg.try_borrow_mut() {
+        let removed = DYNAMIC_STYLE_REGISTRY.with(|reg| match reg.try_borrow_mut() {
+            Ok(mut reg) => {
                 reg.remove(&self.id);
+                true
             }
+            Err(_) => false,
         });
+        if !removed {
+            PENDING_UNREGISTER.with(|p| p.borrow_mut().push(self.id.clone()));
+        }
     }
+}
+
+/// 拿到动态样式注册表，顺带把欠下的注销补上。
+fn with_dynamic_registry<R>(f: impl FnOnce(&mut HashMap<String, Weak<DynamicStyleState>>) -> R) -> Option<R> {
+    DYNAMIC_STYLE_REGISTRY.with(|reg| {
+        let Ok(mut reg) = reg.try_borrow_mut() else {
+            return None;
+        };
+        let owed = PENDING_UNREGISTER.with(|p| p.borrow_mut().drain(..).collect::<Vec<_>>());
+        for id in &owed {
+            reg.remove(id);
+        }
+        Some(f(&mut reg))
+    })
 }
 
 /// Manages an injected <style> block uniquely for a component instance.
@@ -60,17 +122,14 @@ impl DynamicStyleManager {
         Self { state: None }
     }
 
-    pub fn new_with_id(id: &str) -> Self {
-        let mut mgr = Self::new();
-        mgr.update(id, "");
-        mgr
-    }
-
     /// Moves the current style state to the retired cache if it's the last active reference.
     fn take_and_retire(&mut self) {
         if let Some(state) = self.state.take() {
             // If strong_count is 1, it means this manager was the only one holding the style.
             if Rc::strong_count(&state) == 1 {
+                // 退休 = 保留内容、移出 adoptedStyleSheets。表对象还在（复用时
+                // 不必重新解析 CSS），但不再参与样式匹配。
+                state.detach();
                 RETIRED_STYLES.with(|retired| {
                     let mut r = retired.borrow_mut();
                     r.push_back(state);
@@ -87,13 +146,11 @@ impl DynamicStyleManager {
         if let Some(state) = &self.state
             && state.id == id
         {
-            let _ = state.sheet.replace_sync(content);
+            state.sheet.replace(content);
             return;
         }
 
-        let new_state = DYNAMIC_STYLE_REGISTRY.with(|registry| {
-            let mut reg = registry.borrow_mut();
-
+        let Some(new_state) = with_dynamic_registry(|reg| {
             if let Some(weak) = reg.get(id)
                 && let Some(state) = weak.upgrade()
             {
@@ -103,20 +160,27 @@ impl DynamicStyleManager {
                         r.remove(pos);
                     }
                 });
-                let _ = state.sheet.replace_sync(content);
-                return state;
+                state.sheet.replace(content);
+                // 复用一张退休的表：内容还在，但已经被摘出文档，得挂回去
+                state.attach();
+                return Some(state);
             }
-            let sheet = CssStyleSheet::new().expect("Failed to create CssStyleSheet");
-            let _ = sheet.replace_sync(content);
-            DOCUMENT_REGISTRY.with(|dr| dr.borrow_mut().add_sheet(sheet.clone()));
+            let sheet = Sheet::new()?;
+            sheet.replace(content);
 
             let state = Rc::new(DynamicStyleState {
                 id: id.to_string(),
                 sheet,
+                attached: std::cell::Cell::new(false),
             });
+            state.attach();
             reg.insert(id.to_string(), Rc::downgrade(&state));
-            state
-        });
+            Some(state)
+        })
+        .flatten() else {
+            report(&format!("无法建立动态样式表 `{id}`，该规则不会生效"));
+            return;
+        };
 
         self.take_and_retire();
         self.state = Some(new_state);
@@ -134,7 +198,7 @@ impl Drop for DynamicStyleManager {
 pub struct DynamicCss {
     pub class_name: &'static str,
     pub vars: Vec<(&'static str, CssVariableGetter)>,
-    pub rules: Vec<(&'static str, Vec<CssVariableGetter>)>,
+    pub rules: Vec<(&'static [CssPart], Vec<CssVariableGetter>)>,
 }
 
 impl DynamicCss {
@@ -158,8 +222,12 @@ impl DynamicCss {
         self
     }
 
-    pub fn with_rule(mut self, template: &'static str, exprs: Vec<CssVariableGetter>) -> Self {
-        self.rules.push((template, exprs));
+    pub fn with_rule(
+        mut self,
+        parts: &'static [CssPart],
+        exprs: Vec<CssVariableGetter>,
+    ) -> Self {
+        self.rules.push((parts, exprs));
         self
     }
 }
@@ -205,7 +273,7 @@ impl ApplyToDom for DynamicCss {
         }
 
         // 3. Apply isolated component dynamic rules
-        for (template, getters) in self.rules.clone() {
+        for (parts, getters) in self.rules.clone() {
             let manager = Rc::new(RefCell::new(Some(DynamicStyleManager::new())));
             let manager_cleanup = manager.clone();
             on_cleanup(move || {
@@ -225,32 +293,7 @@ impl ApplyToDom for DynamicCss {
                     return prev.unwrap();
                 }
 
-                let mut resolved_rule = String::with_capacity(
-                    template.len() + current_vals.iter().map(|v| v.len()).sum::<usize>(),
-                );
-                let mut last_pos = 0;
-                let mut vals_iter = current_vals.iter();
-
-                while let Some(pos) = template[last_pos..].find("{}") {
-                    if let Some(val) = vals_iter.next() {
-                        let actual_pos = last_pos + pos;
-                        resolved_rule.push_str(&template[last_pos..actual_pos]);
-                        resolved_rule.push_str(val);
-                        last_pos = actual_pos + 2;
-                    } else {
-                        break;
-                    }
-                }
-                resolved_rule.push_str(&template[last_pos..]);
-
-                let hash_val = hash_one((
-                    b"silex-dyn-v3",
-                    Normalized(template),
-                    Normalized(&resolved_rule),
-                ));
-                let mut hash_buf = [0u8; 13];
-                let hash_str = encode_base36(hash_val, &mut hash_buf);
-                let dyn_class = format!("{}-d{}", base_class, hash_str);
+                let dyn_class = dynamic_class(base_class, parts, &current_vals);
 
                 let prev_class = prev.as_ref().map(|(_, c)| c);
                 if Some(&dyn_class) != prev_class {
@@ -259,14 +302,11 @@ impl ApplyToDom for DynamicCss {
                     }
                     let _ = el_clone.class_list().add_1(&dyn_class);
 
-                    let dot_base = format!(".{}", base_class);
-                    let dot_dyn = format!(".{}", dyn_class);
-                    let rule_with_dyn_class = resolved_rule.replace(&dot_base, &dot_dyn);
-
+                    let rule = render(parts, &dyn_class, &current_vals);
                     if let Ok(mut opt) = manager.try_borrow_mut()
                         && let Some(mgr) = opt.as_mut()
                     {
-                        mgr.update(&dyn_class, &rule_with_dyn_class);
+                        mgr.update(&dyn_class, &rule);
                     }
                 }
 
@@ -294,29 +334,39 @@ where
     Rx::derive(Box::new(move || format!("{}", signal.get())))
 }
 
-pub fn make_dynamic_val_for<P, S>(source: S) -> Rx<String>
-where
-    P: types::CssProperty,
-    S: IntoRx,
-    S::Value: Clone + Sized + types::ValidFor<P> + Display + 'static,
-    S::RxType: RxGet<Value = S::Value> + 'static,
-{
-    make_property_val::<P, S>(source)
+/// 一条带动态选择器的组件规则：算出本轮类名、把规则写进独占样式表、返回类名。
+///
+/// `styled!` 此前把这段逻辑整个展开在宏产物里（而且为变体分支复制了一份），
+/// 中间还夹着 `res.replace(class_name, &dyn_class)` 这种子串替换。
+pub fn dynamic_rule_class(
+    manager: &Rc<RefCell<Option<DynamicStyleManager>>>,
+    base_class: &str,
+    parts: &'static [CssPart],
+    getters: &[CssVariableGetter],
+) -> String {
+    let vals: Vec<String> = getters.iter().map(|g| g.get()).collect();
+    let dyn_class = dynamic_class(base_class, parts, &vals);
+    let rule = render(parts, &dyn_class, &vals);
+    if let Ok(mut opt) = manager.try_borrow_mut()
+        && let Some(m) = opt.as_mut()
+    {
+        m.update(&dyn_class, &rule);
+    }
+    dyn_class
 }
 
 /// Helper function to inject managed dynamic style with reactive variable replacements.
 ///
-/// 模板里有两类占位符：
+/// 模板里有两类运行时片段：
 ///
-/// - `positional`：按出现顺序填回的 `{}`，用于**选择器**里的运行时片段
-///   （`.x $theme { … }`）。全局样式没有可挂 CSS 变量的元素，只能做文本替换。
-/// - `replacements`：具名的 `var(--slx-dyn-N)`，用于**声明值**里的运行时片段。
-///
-/// 先填 `{}` 再填具名的：`{}` 的位置是按序消费的，一旦被别的替换结果打乱就再也
-/// 对不上了。
+/// - `parts` 里的 `CssPart::Val(i)`：**选择器**里的片段（`.x $theme { … }`）。
+///   全局样式没有可挂 CSS 变量的元素，只能把值拼进规则文本。
+/// - `replacements`：具名的 `var(--slx-dyn-N)`，用于**声明值**里的片段。这段
+///   模板要先过一遍 lightningcss，位置信息在那之后不复存在，只能按文本找；但
+///   替换是一遍扫描完成的，写进去的值不会再被当成占位符。
 pub fn inject_managed_dynamic_style(
     style_id: impl Into<String>,
-    template: String,
+    parts: &'static [CssPart],
     positional: Vec<CssVariableGetter>,
     replacements: Vec<(String, CssVariableGetter)>,
 ) {
@@ -330,15 +380,14 @@ pub fn inject_managed_dynamic_style(
 
     let style_id_str = style_id.into();
     Effect::new(move |_| {
-        let mut res = template.clone();
-        for getter in &positional {
-            let Some(at) = res.find("{}") else { break };
-            res.replace_range(at..at + 2, &getter.get());
-        }
-        for (pattern, getter) in &replacements {
-            let val = getter.get();
-            res = res.replace(pattern, &val);
-        }
+        let vals: Vec<String> = positional.iter().map(|g| g.get()).collect();
+        // 全局样式没有组件类名，`CssPart::Class` 不会出现在这类模板里
+        let res = render(parts, "", &vals);
+        let pairs: Vec<(String, String)> = replacements
+            .iter()
+            .map(|(pattern, getter)| (pattern.clone(), getter.get()))
+            .collect();
+        let res = replace_placeholders(&res, &pairs);
         if let Ok(mut opt) = manager.try_borrow_mut()
             && let Some(m) = opt.as_mut()
         {

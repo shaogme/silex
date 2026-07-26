@@ -20,7 +20,15 @@ silex_core.workspace = true
 silex_dom.workspace = true
 silex_hash.workspace = true
 wasm-bindgen.workspace = true
-web-sys = { workspace = true, features = ["CssStyleSheet", "CssRuleList"] }
+web-sys = { workspace = true, features = [
+    "CssStyleSheet",
+    "CssRuleList",
+    # `<style>` 兜底：`new CSSStyleSheet()` 不可用时的退路
+    "HtmlStyleElement",
+    "HtmlHeadElement",
+    # 注入/清理失败时的诊断出口（仅 debug 构建产生调用）
+    "console",
+] }
 js-sys.workspace = true
 wasm-bindgen-futures.workspace = true
 

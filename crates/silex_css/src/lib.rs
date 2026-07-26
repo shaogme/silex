@@ -2,6 +2,7 @@ pub mod builder;
 pub mod class;
 pub mod codegen;
 pub mod escape;
+pub mod layers;
 pub mod runtime;
 pub mod theme;
 #[cfg(feature = "tw")]
@@ -28,8 +29,8 @@ pub mod prelude {
 pub use class::IntoClass;
 pub use codegen::properties;
 pub use runtime::{
-    DynamicCss, DynamicStyleManager, inject_managed_dynamic_style, inject_style,
-    make_dynamic_val_for, make_property_val,
+    CssPart, DynamicCss, DynamicStyleManager, dynamic_rule_class, inject_managed_dynamic_style,
+    inject_style, make_property_val,
 };
 #[cfg(feature = "tw")]
 pub use tw::VariantSchema;

@@ -411,7 +411,7 @@ fn process_dynamic_entries(
         let var_ident = quote::format_ident!("dyn_var{}_{}", suffix, i);
         let prop_type = crate::css::get_prop_type(prop, span)?;
         var_decls.push(quote! {
-            let #var_ident = #__silex::css::make_dynamic_val_for::<#prop_type, _>((#expr).clone());
+            let #var_ident = #__silex::css::make_property_val::<#prop_type, _>((#expr).clone());
         });
         let var_name = format!("--{}-{}", class_name, i);
         style_bindings.push(quote! { (::std::borrow::Cow::Borrowed(#var_name), #var_ident) });
@@ -429,7 +429,7 @@ fn expand_dynamic_rule(
     variant_info: Option<(&Ident, &str)>, // (sig_ident, name_lower)
 ) -> Result<()> {
     let __silex = crate::crate_path::silex();
-    let template = &rule.template;
+    let parts = crate::css::compiler::template_parts_tokens(&rule.template);
     let mut eval_vars = Vec::new();
     let mut rule_var_decls = Vec::new();
 
@@ -442,9 +442,8 @@ fn expand_dynamic_rule(
     for (expr_idx, (prop, expr)) in rule.expressions.iter().enumerate() {
         let var_id = quote::format_ident!("rule_var{}_{}_{}", suffix, idx, expr_idx);
         let prop_ty = crate::css::get_prop_type(prop, span)?;
-        rule_var_decls.push(
-            quote! { let #var_id = #__silex::css::make_dynamic_val_for::<#prop_ty, _>(#expr); },
-        );
+        rule_var_decls
+            .push(quote! { let #var_id = #__silex::css::make_property_val::<#prop_ty, _>(#expr); });
         eval_vars.push(var_id);
     }
 
@@ -456,36 +455,29 @@ fn expand_dynamic_rule(
         #__silex::core::reactivity::on_cleanup(move || { if let Ok(mut o) = cleanup.try_borrow_mut() { o.take(); } });
     });
 
-    let rx_body = if let Some((sig, val)) = variant_info {
-        quote! {
-            if #sig.get() != #val { return "".to_string(); }
-            let mut res = ::std::string::ToString::to_string(#template);
-            #( if let Some(p) = res.find("{}") { res.replace_range(p..p+2, &#eval_vars.get()); } )*
-            let hash = #__silex::hash::css::hash_one(&res);
-            let mut buf = [0u8; 13];
-            let dyn_class = format!("{}-dyn-{}", #class_name, #__silex::hash::css::encode_base36(hash, &mut buf));
-            if let Ok(mut o) = #mgr_id.try_borrow_mut() {
-                if let Some(m) = o.as_mut() { m.update(&dyn_class, &res.replace(#class_name, &dyn_class)); }
-            }
-            dyn_class
-        }
-    } else {
-        quote! {
-            let mut res = ::std::string::ToString::to_string(#template);
-            #( if let Some(p) = res.find("{}") { res.replace_range(p..p+2, &#eval_vars.get()); } )*
-            let hash = #__silex::hash::css::hash_one(&res);
-            let mut buf = [0u8; 13];
-            let dyn_class = format!("{}-dyn-{}", #class_name, #__silex::hash::css::encode_base36(hash, &mut buf));
-            if let Ok(mut o) = #mgr_id.try_borrow_mut() {
-                if let Some(m) = o.as_mut() { m.update(&dyn_class, &res.replace(#class_name, &dyn_class)); }
-            }
-            dyn_class
-        }
+    // 拼装、哈希、写表这几步都在运行时的 `dynamic_rule_class` 里，宏产物只负责
+    // 把「模板结构 + 取值来源」递进去。此前这段逻辑整个展开在宏里（变体分支还
+    // 复制了一份），中间夹着 `res.replace(class_name, &dyn_class)` 这种子串替换。
+    let render = quote! {
+        #__silex::css::dynamic_rule_class(
+            &#mgr_id,
+            #class_name,
+            #parts,
+            // `Rx` 是 `Copy`，这里不必也不该 clone
+            &[ #(#eval_vars),* ],
+        )
     };
 
-    classes.push(
-        quote! { .class({ let manager = #mgr_id.clone(); #__silex::prelude::rx! { #rx_body } }) },
-    );
+    let rx_body = if let Some((sig, val)) = variant_info {
+        quote! {
+            if #sig.get() != #val { return ::std::string::String::new(); }
+            #render
+        }
+    } else {
+        render
+    };
+
+    classes.push(quote! { .class(#__silex::prelude::rx! { #rx_body }) });
     Ok(())
 }
 
@@ -619,10 +611,11 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         let template = format!("{}\n{}", res.static_css, res.component_css);
         let sid = &res.style_id;
 
+        let parts = crate::css::compiler::template_parts_tokens(&template);
         inits.push(quote! {
             #__silex::css::inject_managed_dynamic_style(
                 #sid,
-                #template.to_string(),
+                #parts,
                 ::std::vec![],
                 ::std::vec![ #(#value_replacements),* ],
             );
@@ -638,7 +631,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     // （后者属于 `res.expressions`，与上面同一批）。此前这里替换的 pattern 是
     // `._slx_dyn_N`，而编译器从来没产出过这种形状，两边永不匹配。
     for (idx, rule) in res.dynamic_rules.iter().enumerate() {
-        let template = &rule.template;
+        let parts = crate::css::compiler::template_parts_tokens(&rule.template);
         let mut positional = Vec::new();
         let mut r_decls = Vec::new();
         for (ei, (p, ex)) in rule.expressions.iter().enumerate() {
@@ -653,7 +646,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
             #(#r_decls)*
             #__silex::css::inject_managed_dynamic_style(
                 #rid,
-                #template.to_string(),
+                #parts,
                 ::std::vec![ #(#positional),* ],
                 ::std::vec![ #(#value_replacements),* ],
             );
