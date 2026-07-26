@@ -3,7 +3,10 @@ use std::{
     fmt::Write,
 };
 
-use silex_tw_core::{ColorShadeInfo, JsonPalette, TwRuleSet, TwValueKind, classify, resolve_class};
+use silex_tw_core::{
+    ColorShadeInfo, JsonPalette, TwRuleSet, TwValueKind, classify, lookup_at_rule_utility,
+    resolve_class,
+};
 
 use super::property_id::to_pascal_case;
 
@@ -51,6 +54,13 @@ pub fn resolve_entries(
     let mut unimplemented_entries: Vec<String> = Vec::with_capacity(candidate_set.len() / 4);
 
     for class in candidate_set {
+        // 由 at-rule 路径承载的类名（`container` / `outline-hidden`）静态表表达不了：
+        // 一行只能挂一个选择器、挂不了 `@media`。它们在宏层展开，读的是 core 里的同一张
+        // `AT_RULE_UTILITIES`——这里从同一张表判断，两侧不会对"哪些归那条路径"产生分歧。
+        // 不能落进 unimplemented：那是"没人实现"的名单，混进已实现的类名就失去意义了。
+        if lookup_at_rule_utility(class).is_some() {
+            continue;
+        }
         match resolve_class(class, &ctx) {
             Some(sets) => static_entries.push(flatten(class, sets)),
             None => unimplemented_entries.push(class.clone()),

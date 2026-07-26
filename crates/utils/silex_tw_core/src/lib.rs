@@ -18,6 +18,7 @@
 #[macro_use]
 mod macros;
 
+pub mod at_rule;
 pub mod color;
 pub mod context;
 pub mod kind;
@@ -26,6 +27,7 @@ pub mod prefix;
 pub mod resolver;
 pub mod value;
 
+pub use at_rule::{AT_RULE_UTILITIES, AtRuleUtility, CONTAINER_TIERS, lookup_at_rule_utility};
 pub use color::{hex_to_rgba, lookup_palette_color, parse_color_value, resolve_color_utility};
 pub use context::TwContext;
 pub use kind::{ValueKind, arbitrary_dispatch, classify_arbitrary_value};

@@ -241,7 +241,15 @@ pub fn resolve_typography_border_effect_rules(
         // 这里的 `(属性, 值)` 表达不了，放在这儿就是一份不带选择器的错误副本
 
         // Inset Ring & Inset Shadow
-        "inset-ring" => Some(cow![("outline-width", "1px"), ("outline-offset", "-1px")]),
+        //
+        // `inset-ring-*` 与 `ring-*` 是同一套体系的内外两侧，必须共用 `box-shadow` 载体：
+        // 此前宽度走 `outline-width` + `outline-offset`（而且没有 `outline-style`，
+        // 默认 `none`，等于画不出来）、颜色走 `--tw-inset-ring-color`（没人消费），
+        // 两条路径互不相干，`inset-ring-2 inset-ring-red-500` 什么都不显示。
+        "inset-ring" => Some(cow![
+            ("--tw-inset-ring-width", "1px"),
+            ("box-shadow", RING_BOX_SHADOW)
+        ]),
         "inset-shadow" | "inset-shadow-inner" => Some(cow![(
             "box-shadow",
             "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)"
@@ -495,15 +503,7 @@ pub fn resolve_typography_border_effect_rules(
         ]));
     }
 
-    // Inset Ring
-    if let Some(rest) = class_name.strip_prefix("inset-ring-")
-        && let Ok(n) = rest.parse::<u32>()
-    {
-        return Some(cow!(vec![
-            ("outline-width", format!("{}px", n)),
-            ("outline-offset", format!("-{}px", n)),
-        ]));
-    }
+    // `inset-ring-<n>` 与 `ring-<n>` / `ring-offset-<n>` 一起由 `resolve_ring_rules` 处理
 
     // Inset Shadow
     if let Some(rest) = class_name.strip_prefix("inset-shadow-") {
@@ -576,12 +576,10 @@ pub fn resolve_typography_border_effect_rules(
 
 pub fn resolve_outline_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'static, str>)>> {
     let static_rules: Option<&'static [(&'static str, Cow<'static, str>)]> = match class_name {
-        "outline-none" => Some(cow![
-            ("outline", "2px solid transparent"),
-            ("outline-offset", "2px")
-        ]),
+        // v4 里 `outline-none` 就是"没有描边"，`2px solid transparent` 那套是
+        // `outline-hidden` 的语义（见 `crate::at_rule`）。两者此前是互换的。
+        "outline-none" => Some(cow![("outline-style", "none")]),
         "outline" | "outline-solid" => Some(cow![("outline-style", "solid")]),
-        "outline-hidden" => Some(cow![("outline-style", "hidden")]),
         "outline-dashed" => Some(cow![("outline-style", "dashed")]),
         "outline-dotted" => Some(cow![("outline-style", "dotted")]),
         "outline-double" => Some(cow![("outline-style", "double")]),
@@ -614,7 +612,12 @@ pub fn resolve_outline_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<
     None
 }
 
-pub const RING_BOX_SHADOW: &str = "var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width, 0px) var(--tw-ring-offset-color, #0000), 0 0 0 var(--tw-ring-width, 0px) var(--tw-ring-color, rgba(59, 130, 246, 0.5)), var(--tw-shadow, 0 0 #0000)";
+/// ring 体系的 `box-shadow` 载体。
+///
+/// 这里只是把 [`crate::prefix::RING_BOX_SHADOW`] 换个名字用——此前这两处各写了一份
+/// 逐字符相同的字面量，正是报告 §3.1 说的"同一语义两份实现"，
+/// 只要有人改其中一份，颜色路径与宽度路径铺出来的 `box-shadow` 就会不一致。
+pub use crate::prefix::RING_BOX_SHADOW;
 
 pub fn resolve_ring_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'static, str>)>> {
     let static_rules: Option<&'static [(&'static str, Cow<'static, str>)]> = match class_name {
@@ -629,24 +632,16 @@ pub fn resolve_ring_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'st
         return Some(r.to_vec());
     }
 
-    if let Some(rest) = class_name.strip_prefix("ring-") {
-        if rest == "0" {
-            return Some(cow!(vec![
-                ("--tw-ring-width", "0px"),
-                ("box-shadow", RING_BOX_SHADOW),
-            ]));
-        }
-        if let Ok(n) = rest.parse::<u32>() {
-            return Some(cow!(vec![
-                ("--tw-ring-width", format!("{}px", n)),
-                ("box-shadow", RING_BOX_SHADOW),
-            ]));
-        }
-        if let Some(sub) = rest.strip_prefix("offset-")
-            && let Ok(n) = sub.parse::<u32>()
+    // 前缀 → 宽度变量的映射是 `prefix::RING_WIDTH_PREFIXES`，
+    // 与任意值路径（`ring-[3px]`）共用，不再各写一份字面量
+    for &(prefix, prop) in crate::prefix::RING_WIDTH_PREFIXES {
+        if let Some(rest) = class_name
+            .strip_prefix(prefix)
+            .and_then(|r| r.strip_prefix('-'))
+            && let Ok(n) = rest.parse::<u32>()
         {
             return Some(cow!(vec![
-                ("--tw-ring-offset-width", format!("{}px", n)),
+                (prop, format!("{}px", n)),
                 ("box-shadow", RING_BOX_SHADOW),
             ]));
         }

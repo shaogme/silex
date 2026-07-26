@@ -144,7 +144,9 @@ pub fn resolve_layout_rules(
         "contain-layout" => Some(cow![("contain", "layout")]),
         "contain-paint" => Some(cow![("contain", "paint")]),
         "contain-style" => Some(cow![("contain", "style")]),
-        "container" | "@container" => Some(cow![("container-type", "inline-size")]),
+        // 只有 `@container` 是容器查询上下文。不带 `@` 的 `container` 是断点宽度工具类，
+        // 产出多个 `@media` 分组，静态表挂不了 at-rule，见 `crate::at_rule`。
+        "@container" => Some(cow![("container-type", "inline-size")]),
         "@container-normal" => Some(cow![("container-type", "normal")]),
         "content-none" => Some(cow![("content", "none")]),
 

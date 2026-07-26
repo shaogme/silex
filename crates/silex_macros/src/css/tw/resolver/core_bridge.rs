@@ -71,6 +71,116 @@ pub fn with_selector(
     mods
 }
 
+/// 把 at-rule 条件挂成一个额外的修饰符
+fn with_media(
+    modifiers: &[SpannedModifier],
+    condition: &str,
+    priority: u32,
+    span: Span,
+) -> Vec<SpannedModifier> {
+    let mut mods = modifiers.to_vec();
+    mods.push(SpannedModifier::new(
+        Modifier::AtRuleCondition {
+            at_rule: "media",
+            condition: condition.to_string(),
+            priority,
+        },
+        span,
+    ));
+    mods
+}
+
+/// 非宽度类媒体特性的权重，与 [`Modifier::MediaQuery`] 同级
+const MEDIA_FEATURE_PRIORITY: u32 = 65;
+
+/// `container` 的档位：core 里的默认五档 + `silex.toml` 里额外配置的断点。
+///
+/// 额外断点按宽度升序追加，与默认档位一起构成一条单调递增的链——
+/// 顺序不能依赖 `HashMap` 的迭代顺序，那会让类名哈希不可复现（§11.5 踩过一次）。
+fn container_tiers() -> Vec<(String, u32)> {
+    let mut tiers: Vec<(String, u32)> = silex_tw_core::CONTAINER_TIERS
+        .iter()
+        .map(|(_, width)| ((*width).to_string(), css_length_px(width)))
+        .collect();
+
+    if let Some(cfg) = crate::css::config::get_config() {
+        let builtin: std::collections::BTreeSet<&str> = silex_tw_core::CONTAINER_TIERS
+            .iter()
+            .map(|(name, _)| *name)
+            .collect();
+        let mut extra: Vec<(String, u32)> = cfg
+            .theme
+            .breakpoints
+            .iter()
+            .filter(|(name, _)| !builtin.contains(name.as_str()))
+            .map(|(_, width)| (width.clone(), css_length_px(width)))
+            .collect();
+        extra.sort();
+        tiers.extend(extra);
+    }
+
+    tiers.sort_by_key(|(_, px)| *px);
+    tiers.dedup_by(|a, b| a.1 == b.1);
+    tiers
+}
+
+/// 取 CSS 长度的像素值，仅用于排序权重（`rem` 按 16px 折算）
+fn css_length_px(s: &str) -> u32 {
+    let s = s.trim();
+    let parsed = s
+        .strip_suffix("px")
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .or_else(|| {
+            s.strip_suffix("rem")
+                .and_then(|v| v.trim().parse::<f64>().ok())
+                .map(|v| v * 16.0)
+        });
+    parsed.unwrap_or(640.0).round() as u32
+}
+
+/// 展开一个 at-rule 分组型工具类（`container` / `outline-hidden`）。
+///
+/// 规则数据全在 core 的 [`silex_tw_core::AT_RULE_UTILITIES`]，这里只负责把
+/// "条件 + 声明"翻译成带 `AtRuleCondition` 修饰符的 `UtilityRule`。
+pub fn at_rule_utility_to_rules(
+    modifiers: &[SpannedModifier],
+    meta: &'static silex_tw_core::AtRuleUtility,
+    span: Span,
+) -> Result<Vec<UtilityRule>> {
+    let mut rules = Vec::new();
+
+    for group in meta.groups {
+        let mods = match group.media {
+            Some(cond) => with_media(modifiers, cond, MEDIA_FEATURE_PRIORITY, span),
+            None => modifiers.to_vec(),
+        };
+        for &(prop, val) in group.decls {
+            rules.push(make_rule(
+                mods.clone(),
+                prop,
+                to_utility_value(Cow::Borrowed(val)),
+                span,
+            )?);
+        }
+    }
+
+    if let Some(prop) = meta.per_breakpoint {
+        for (width, px) in container_tiers() {
+            // 边界与 `min-[…]:` 同源：范围语法而不是 `min-width`，
+            // 权重 `1000 + px` 让各档位按宽度升序层叠
+            let mods = with_media(modifiers, &format!("(width >= {width})"), 1000 + px, span);
+            rules.push(make_rule(
+                mods,
+                prop,
+                to_utility_value(Cow::Owned(width)),
+                span,
+            )?);
+        }
+    }
+
+    Ok(rules)
+}
+
 /// 把 core 的解析结果翻译成 `UtilityRule` 列表
 pub fn rule_sets_to_rules(
     modifiers: &[SpannedModifier],

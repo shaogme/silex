@@ -5,6 +5,7 @@ pub mod merge;
 pub mod parser;
 pub mod resolver;
 pub mod variants;
+pub mod verbose;
 
 pub use variants::tw_variants_impl;
 
@@ -60,13 +61,15 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
 
         if verbose {
             let block_ts = quote! { #css_block };
-            eprintln!("========== [Silex tw_verbose! Compile-Time Diagnostics] ==========");
-            eprintln!("Macro Input: {}", input_str);
-            eprintln!("Generated CssBlock AST:\n  {}", block_ts);
-            eprintln!("Compiled Class Name: {}", compile_result.class_name);
-            eprintln!("Static CSS:\n  {}", compile_result.static_css);
-            eprintln!("Component CSS:\n  {}", compile_result.component_css);
-            eprintln!("====================================================================");
+            verbose::emit(
+                &input_str,
+                &[
+                    ("Generated CssBlock AST", block_ts.to_string()),
+                    ("Compiled Class Name", compile_result.class_name.clone()),
+                    ("Static CSS", compile_result.static_css.clone()),
+                    ("Component CSS", compile_result.component_css.clone()),
+                ],
+            );
         }
 
         return crate::css::generate_css_output(compile_result, span);
@@ -76,6 +79,9 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     let mut inits_tokens = Vec::new();
     let mut cx_items = Vec::new();
     let mut compiled_cache = ::std::collections::HashMap::<u128, String>::new();
+    // 条件分支路径此前完全不产出 `tw_verbose!` 诊断——而这条路径恰恰是最需要看
+    // "到底编出了哪几个类"的地方（一个簇会展开成 2^k 个组合）
+    let mut verbose_sections: Vec<(String, String)> = Vec::new();
 
     let mut compile_rules_cached = |rules: Vec<UtilityRule>| -> Result<String> {
         if rules.is_empty() {
@@ -96,6 +102,15 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
         let compile_result =
             crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)?;
         let cls_name = compile_result.class_name.clone();
+        if verbose {
+            verbose_sections.push((
+                format!("Compiled Class `{cls_name}`"),
+                format!(
+                    "{}\n{}",
+                    compile_result.component_css, compile_result.static_css
+                ),
+            ));
+        }
         inits_tokens.push(compile_result.generate_inits());
         compiled_cache.insert(key, cls_name.clone());
         Ok(cls_name)
@@ -217,6 +232,14 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     if !extra_classes.is_empty() {
         let extra_str = extra_classes.join(" ");
         cx_items.push(quote! { #extra_str });
+    }
+
+    if verbose {
+        let sections: Vec<verbose::Section<'_>> = verbose_sections
+            .iter()
+            .map(|(title, body)| (title.as_str(), body.clone()))
+            .collect();
+        verbose::emit(&input_str, &sections);
     }
 
     Ok(quote! {
