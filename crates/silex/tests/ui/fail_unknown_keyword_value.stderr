@@ -1,0 +1,15 @@
+error: `centre` 不是 CSS 属性 `align-items` 的合法取值，是否想写 `center`？
+       注：`align-items` 接受 anchor-center / baseline / center / end / flex-end / flex-start / normal / self-end 等 11 个关键字。
+       实验特性等表外的取值请放进 `unsafe { … }` 块里原样透传。
+ --> tests/ui/fail_unknown_keyword_value.rs:7:22
+  |
+7 |         align-items: centre;
+  |                      ^^^^^^
+
+error: `reed` 不是 CSS 属性 `color` 的合法取值，是否想写 `red`？
+       注：`color` 只接受颜色。
+       实验特性等表外的取值请放进 `unsafe { … }` 块里原样透传。
+  --> tests/ui/fail_unknown_keyword_value.rs:13:16
+   |
+13 |         color: reed;
+   |                ^^^^

@@ -75,6 +75,43 @@ pub fn resolve_property_type(prop: &str, span: Span) -> Result<PropertyResolveRe
     Err(syn::Error::new(span, unknown_property_message(prop)))
 }
 
+/// 取值校验用的规范属性名：短别名与真实属性名统一成 MDN 的 kebab 名字。
+///
+/// `property_keywords` / `property_caps` 两张表都以 MDN 的属性名为键，而
+/// `css!` 里写的可能是短别名（`bg: red`）。这里把它们对齐。
+///
+/// 返回 `None` 表示**没有语法数据**，取值校验一律跳过：自定义变量（`--*`）、
+/// 注册表之外的厂商前缀属性、以及 `unsafe` 通道用的 `any`。
+pub fn canonical_property_name(prop: &str) -> Option<&'static str> {
+    if let Ok(i) = CSS_PROPERTY_NAMES.binary_search(&prop) {
+        return Some(CSS_PROPERTY_NAMES[i]);
+    }
+    // 别名表里存的是 Pascal 类型名，绕一趟回 kebab 再查注册表。`any` 在注册表
+    // 里查不到，正好落到 `None`——`unsafe` 块里的声明本来就不该被校验
+    let pascal = SHORT_ALIAS_MAP.get(prop)?;
+    let kebab = pascal_to_kebab(pascal);
+    CSS_PROPERTY_NAMES
+        .binary_search(&kebab.as_str())
+        .ok()
+        .map(|i| CSS_PROPERTY_NAMES[i])
+}
+
+/// PascalCase → kebab-case（如 BackgroundColor => background-color）
+fn pascal_to_kebab(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 2);
+    for (i, ch) in name.char_indices() {
+        if ch.is_ascii_uppercase() {
+            if i != 0 {
+                out.push('-');
+            }
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 /// kebab-case → PascalCase（如 margin-top => MarginTop）
 fn to_pascal_case(prop: &str) -> String {
     let mut pascal = String::with_capacity(prop.len());
@@ -99,19 +136,32 @@ fn unknown_property_message(prop: &str) -> String {
 
 /// 找出编辑距离最近的候选属性名。
 fn closest_property(prop: &str) -> Option<&'static str> {
+    closest_match(
+        prop,
+        CSS_PROPERTY_NAMES
+            .iter()
+            .copied()
+            .chain(SHORT_ALIAS_MAP.keys().copied()),
+    )
+}
+
+/// 在候选里找出编辑距离最近的一个，找不到足够近的就返回 `None`。
+///
+/// 属性名（`colr` → `color`）与取值关键字（`centre` → `center`）共用这一套
+/// 判据——猜得太远的建议比不给建议更误导人。
+pub fn closest_match<'a, I>(needle: &str, candidates: I) -> Option<&'a str>
+where
+    I: IntoIterator<Item = &'a str>,
+{
     // 距离上限随名字长度放宽一点，但始终不超过 3——再远就不像「拼错了」
-    let limit = (prop.len() / 4 + 1).min(3);
-    let mut best: Option<(usize, &'static str)> = None;
-    let candidates = CSS_PROPERTY_NAMES
-        .iter()
-        .copied()
-        .chain(SHORT_ALIAS_MAP.keys().copied());
+    let limit = (needle.len() / 4 + 1).min(3);
+    let mut best: Option<(usize, &'a str)> = None;
     for name in candidates {
         // 长度差已经超过上限就不用算了
-        if name.len().abs_diff(prop.len()) > limit {
+        if name.len().abs_diff(needle.len()) > limit {
             continue;
         }
-        let d = edit_distance(prop, name, limit);
+        let d = edit_distance(needle, name, limit);
         if d <= limit && best.is_none_or(|(bd, _)| d < bd) {
             best = Some((d, name));
         }

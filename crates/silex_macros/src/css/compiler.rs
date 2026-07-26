@@ -506,18 +506,32 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                     &ctx,
                 )?;
 
-                // 取值里没有插值、且整条取值就是一个能定型的字面量时，生成一条
-                // 编译期断言。定不了型的（关键字、函数、多分量）保持放行——
-                // 宏侧没有 CSS 取值解析器，宁可漏也不能误报
-                if validate
-                    && state.expressions.len() == expr_count_before
-                    && let Some(value_type) = classify_static_value(&val)
-                {
-                    state.assertions.push(StaticAssertion {
-                        property: decl.property.clone(),
-                        value_type,
-                        span: decl.span,
-                    });
+                // 取值里没有插值时才校验：有插值的取值文本里只剩
+                // `var(--cls-0)` 占位符，没什么可查的，插值本身的类型由
+                // `ValidFor` 在展开产物里管
+                if validate && state.expressions.len() == expr_count_before {
+                    // 裸关键字 / 函数式取值 / 分量个数三层判据。放在定型断言
+                    // **之前**：`width: 1 0px` 的分量个数不对，但下面那一步会
+                    // 先把空白折掉、再把它认成一个合法的 `10px`
+                    crate::css::value_check::check_static_value(
+                        &decl.property,
+                        &val,
+                        // 取值的错误要指到取值上。`decl.span` 是属性名的位置，
+                        // 拿它报「`centre` 不是合法取值」会把箭头画在
+                        // `align-items` 底下，读者第一反应是属性名写错了
+                        value_span(&decl.values).unwrap_or(decl.span),
+                        &mut state.warnings,
+                    )?;
+
+                    // 整条取值就是一个能定型的字面量时，生成一条编译期断言，
+                    // 交给 `ValidFor` 回答「这个值类型对这个属性合法吗」
+                    if let Some(value_type) = classify_static_value(&val) {
+                        state.assertions.push(StaticAssertion {
+                            property: decl.property.clone(),
+                            value_type,
+                            span: decl.span,
+                        });
+                    }
                 }
 
                 state.static_css.push_str(&val);
@@ -1343,6 +1357,14 @@ fn extract_dynamic_value(
     Ok(value)
 }
 
+/// 取值的第一个 token 的位置。
+///
+/// `Span::join` 只在 nightly 可用，拿不到「整条取值」的范围，所以取第一个
+/// token——箭头落在取值的开头，比落在属性名上准得多。
+fn value_span(values: &TokenStream) -> Option<Span> {
+    values.clone().into_iter().next().map(|tt| tt.span())
+}
+
 /// 块内装的是描述符而不是 CSS 属性的 at-rule。
 ///
 /// `@font-face { src: … }` 里的 `src` 不是属性，`@property { inherits: … }`
@@ -1363,9 +1385,12 @@ fn is_descriptor_at_rule(name: &str) -> bool {
 
 /// 判断一条静态取值是否是「一眼能定型」的字面量，是则给出对应的 CSS 值类型名。
 ///
-/// 只认三类：带单位的数值、百分比、十六进制颜色。关键字（`red`、`auto`）、
-/// 函数（`rgb(…)`、`calc(…)`）、多分量取值（`1px solid red`）一律返回 `None`
-/// ——宏侧没有 CSS 取值解析器，宁可漏报也不能误报，把合法 CSS 拒之门外。
+/// 只认三类：带单位的数值、百分比、十六进制颜色——这三类能直接对上
+/// `silex_css::types` 里的一个类型，交给 `ValidFor` 判定即可。
+///
+/// 关键字（`red`、`auto`）、函数（`rgb(…)`）、多分量取值（`1px solid red`）
+/// 返回 `None`：它们在 Rust 侧没有单一的对应类型，改由 `css::value_check` 拿
+/// MDN 语法表直接判（见那里的三层判据）。
 ///
 /// 特意不认裸数字：`0` 在 CSS 里是合法长度，但 `i32` 并不是 `ValidFor<Width>`，
 /// 认了就会把 `width: 0` 这种正常写法判成错误。
@@ -1989,5 +2014,64 @@ mod tests {
                 .message
                 .contains("Potentially ambiguous token '?'")
         );
+    }
+
+    // --- 缺口 A：静态取值的三层校验（判据本身在 `css::value_check`）---
+    //
+    // 这里测的是「判据接进了编译流程」，而不是判据本身对不对：`value_check`
+    // 的单测直接调 `check_static_value`，证明不了 `compile` 真的会因此失败。
+
+    #[test]
+    fn a_misspelled_keyword_fails_compilation() {
+        assert!(compile_err("align-items: centre;").contains("`center`"));
+    }
+
+    #[test]
+    fn a_color_function_on_a_keyword_property_fails_compilation() {
+        assert!(compile_err("align-items: rgb(0 0 0);").contains("`rgb()`"));
+    }
+
+    #[test]
+    fn a_multi_component_value_on_a_single_value_property_fails_compilation() {
+        assert!(compile_err("color: 1px solid red;").contains("只接受单个取值"));
+    }
+
+    /// **逃生口**：`unsafe { … }` 块必须绕过全部三层。
+    ///
+    /// 这是 MDN 数据滞后时用户唯一不需要改配置就能用的出口，一旦失效，
+    /// 收紧校验就变成了「有些合法 CSS 再也写不出来」
+    #[test]
+    fn an_unsafe_block_bypasses_all_three_layers() {
+        let css = compile_all(
+            "unsafe { align-items: centre; color: 1px solid red; z-index: rgb(0 0 0); }",
+        );
+        assert!(css.contains("centre"), "{css}");
+        assert!(css.contains("1px solid red"), "{css}");
+    }
+
+    /// 插值取值不参与静态校验：取值文本里只剩 `var(--…)` 占位符。
+    ///
+    /// `$(…)` 本身的类型由展开产物里的 `ValidFor` 管——这里要确认的是三层
+    /// 判据不会先一步把它判成「不认识的函数 `var()`」或「多分量」
+    #[test]
+    fn interpolated_values_skip_the_static_layers() {
+        let ts = syn::parse_str("align-items: $(v);").unwrap();
+        assert!(CssCompiler::compile(ts, Span::call_site(), false).is_ok());
+        let ts = syn::parse_str("color: $(a) $(b);").unwrap();
+        assert!(CssCompiler::compile(ts, Span::call_site(), false).is_ok());
+    }
+
+    /// 描述符 at-rule 的块里装的不是 CSS 属性，整块不校验
+    #[test]
+    fn descriptor_at_rules_are_not_value_checked() {
+        let css = compile_all("@font-face { font-family: MyFont; src: url(a.woff2); }");
+        assert!(css.contains("@font-face"), "{css}");
+    }
+
+    /// `!important` 是优先级标记，不能被数成一个取值分量
+    #[test]
+    fn important_survives_the_arity_check() {
+        let css = compile_all("color: red !important;");
+        assert!(css.contains("important"), "{css}");
     }
 }

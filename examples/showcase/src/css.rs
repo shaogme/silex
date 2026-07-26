@@ -57,7 +57,10 @@ global! {
         color: $AppTheme::TEXT;
         font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
         transition: background-color 0.3s, color 0.3s;
-        letter-spacing: -0.05 em;
+        // 用 `rem` 而不是 `em`：`-0.05em` 写不成 token——Rust 的词法会把
+        // `0.05e` 当成浮点指数，报「expected at least one digit in exponent」。
+        // 这条声明此前写作 `-0.05 em`，中间那个空格让浏览器整条丢弃了它。
+        letter-spacing: -0.05rem;
     }
 
     @keyframes fade_in {

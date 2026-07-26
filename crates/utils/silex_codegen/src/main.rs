@@ -4,7 +4,8 @@ mod tw;
 
 use crate::{
     css::{
-        generate_keywords_code, generate_properties_macro, generate_property_names_code, parse_css,
+        generate_keywords_code, generate_properties_macro, generate_property_caps_code,
+        generate_property_keywords_code, generate_property_names_code, parse_css,
     },
     tags::{apply_memory_only_patches, codegen::generate_module_content, parse_tags},
     tw::{
@@ -149,6 +150,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     let property_names_code = generate_property_names_code(&css_config.properties);
     write(macro_css_dir.join("property_names.rs"), property_names_code)?;
     println!("Generated property_names.rs");
+
+    // 宏侧静态取值校验的两张判据表（裸关键字 / 函数式取值 / 多分量）
+    let property_keywords_code =
+        generate_property_keywords_code(&css_config.properties, &css_config.color_keywords);
+    write(
+        macro_css_dir.join("property_keywords.rs"),
+        property_keywords_code,
+    )?;
+    println!("Generated property_keywords.rs");
+
+    let property_caps_code = generate_property_caps_code(&css_config.properties);
+    write(macro_css_dir.join("property_caps.rs"), property_caps_code)?;
+    println!("Generated property_caps.rs");
 
     // Generate HTML module
     let html_code = generate_module_content(&gen_config.html, false, &[]);

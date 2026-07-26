@@ -290,18 +290,63 @@ firefox = "113"
 lightningcss，位置信息在那之后不复存在。但替换是一遍扫描完成的，写进去的值不会
 再被当成占位符。
 
+### 4.11 静态取值的校验
+
+`css!` / `styled!` 里**不含插值**的静态声明会过五道判据，全部在宏展开期完成，
+按下表的先后顺序：
+
+| # | 判据 | 拦住的写法 | 实现 |
+| --- | --- | --- | --- |
+| 1 | 属性名在注册表里 | `colr: red` | `css::table::resolve_property_type` |
+| 2 | 分量个数属性吃得下 | `color: 1px solid red`、`z-index: 1 2` | `css::value_check`（A-3） |
+| 3 | 裸关键字在该属性的关键字表里 | `align-items: centre`、`color: reed` | 同上（A-1） |
+| 4 | 函数产出的能力属性收得下 | `align-items: rgb(0 0 0)` | 同上（A-2） |
+| 5 | 取值定得了型 | `color: 10px`、`width: #fff` | `compiler::classify_static_value` + `ValidFor` |
+
+第 2 道必须排在第 5 道之前：`width: 1 0px` 的分量个数是错的，但
+`classify_static_value` 会先把空白折掉、再把它认成一个合法的 `10px`。
+
+第 2～4 道的判据表由 `silex_codegen` 从 MDN 值定义语法生成，与 `silex_css` 的
+`for_all_properties!` / `keywords_gen.rs` 同源：
+
+*   `silex_macros/src/css/property_keywords.rs` —— 每个属性可以**单独**取的关键字，
+    外加全局具名颜色表与 CSS 全局关键字。
+*   `silex_macros/src/css/property_caps.rs` —— 每个属性的能力位掩码，另带
+    `MULTI`（可由多个顶层分量拼成）与 `OPEN`（语法里有裸标识符/字符串，能取什么
+    无法穷举）两位。
+
+**不误报优先**：`OPEN` 的属性（`animation-name`、`font-family`、`grid-area` …）、
+关键字表为空的属性、以 `-` 开头的厂商关键字、不认识的函数一律放行。
+
+逃生口三层：
+
+1.  `unsafe { … }` 块 —— 单条声明原样透传，不改配置。
+2.  `silex.toml` 逐层降级：
+
+    ```toml
+    [css.validation]
+    keywords  = "error"   # error | warn | off，默认 error
+    functions = "error"
+    arity     = "error"
+    ```
+
+    `warn` 走 `CssWarning` 通道，展开成 `#[deprecated]` 触发的警告，不中断编译。
+3.  `Style::raw(name, value)` —— 完全绕开注册表。
+
+`@apply` 展开出来的声明是机器生成的（含 `--tw-*` 与厂商前缀），不走这套判据。
+
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 
 *   **已知限制**：
     *   首次注入大型复杂样式树时，在 Rust 端构建 CSS 字符串会有一定的毫秒级开销。
     *   `silex_css` 无条件依赖 `web-sys` / `wasm-bindgen`，没有非 wasm 路径，因此
         还不支持 SSR。
-    *   宏里静态声明的**值**只在「一眼能定型」时才过类型系统（`10px` → `Px`、
-        `#fff` → `Hex`）；`color: rgb(0 0 0)` 这类函数式取值仍然只做文本透传。
+    *   静态取值的校验以 MDN 的值定义语法为判据（见 §4.11），**MDN 数据滞后的
+        属性会漏报**：关键字表为空、或者语法里有 `<custom-ident>` 的属性一律放行。
     *   `min()` / `max()` 收的是同型迭代器，混用不同单位要先各自 `.into_calc()`。
 *   **性能瓶颈**：当页面存在数千个不同的动态 `Style` 对象时，虽然 DOM 压力小，但 Rust 端的 `Effect` 闭包管理会有一定的内存开销。
 *   **TODO**：
     1.  [ ] 实现样式的跨组件去重（目前仅在单组件多次渲染间去重）。
-    2.  [ ] 让静态声明里的函数式取值（`rgb(…)`、`clamp(…)`）也参与类型校验。
-    3.  [ ] 为 `silex_css` 加一条非 wasm 路径，打通 SSR。
+    2.  [ ] 为 `silex_css` 加一条非 wasm 路径，打通 SSR。
+
 

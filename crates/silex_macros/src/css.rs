@@ -3,6 +3,8 @@ pub mod classes;
 pub mod compiler;
 pub mod config;
 pub mod error;
+pub mod property_caps;
+pub mod property_keywords;
 pub mod property_names;
 pub mod spacing;
 pub mod styled;
@@ -10,6 +12,7 @@ pub mod table;
 pub mod theme;
 #[cfg(feature = "tw")]
 pub mod tw;
+pub mod value_check;
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};

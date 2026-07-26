@@ -60,14 +60,16 @@ pub fn parse_css(
             continue;
         }
 
-        let (caps, keywords) = classify_property(prop, &resolver);
+        let c = classify_property(prop, &resolver);
 
         properties.push(ProcessedProp {
             name: name.clone(),
             method_name,
             struct_name,
-            caps,
-            keywords,
+            caps: c.caps,
+            keywords: c.keywords,
+            multi: c.multi,
+            open: c.open,
         });
     }
 
@@ -113,12 +115,24 @@ fn is_usable_keyword(s: &str) -> bool {
     s.chars().all(|c| c.is_alphanumeric() || c == '-')
 }
 
+/// `classify_property` 的产出。
+///
+/// `caps` / `keywords` 供 `silex_css` 的类型系统与关键字枚举使用；`multi` /
+/// `open` 供**宏侧**的静态取值校验使用（见 `property_caps.rs`）——它们在
+/// `caps` 里都被压成了同一个 `Str`，不单独留一份就无法还原。
+struct Classified {
+    caps: Vec<ValueCap>,
+    keywords: Vec<String>,
+    multi: bool,
+    open: bool,
+}
+
 /// 把一条属性语法翻译成「允许哪些 Rust 值类型」。
 ///
 /// 旧实现只有一条判据：`syntax.contains(' ')` 就是 `Shorthand`（什么都收）。
 /// MDN 的语法几乎都带空格，于是 78% 的属性退化成无类型约束。现在改成真正
 /// 解析语法，问「哪些值可以单独构成完整取值」。
-fn classify_property(prop: &MdnCssProperty, resolver: &Resolver) -> (Vec<ValueCap>, Vec<String>) {
+fn classify_property(prop: &MdnCssProperty, resolver: &Resolver) -> Classified {
     let analysis = resolver.analyze_syntax(&prop.syntax);
 
     let has = |k: Kind| analysis.singles.contains(&k);
@@ -156,14 +170,21 @@ fn classify_property(prop: &MdnCssProperty, resolver: &Resolver) -> (Vec<ValueCa
         caps.push(ValueCap::Url);
     }
 
+    // `open`：语法里有裸标识符/字符串，或者有解析不出来的引用。这两种情况下
+    // 「这个属性接受哪些词」在编译期无法穷举，宏侧的取值校验必须整条放行。
+    //
+    // `Kind::Func` 特意**不**算 open：`width` 的语法里有 `fit-content()` 与
+    // `<calc-size()>`，但这不意味着 `width: atuo` 该被放过——不认识的函数由
+    // 宏侧的函数表兜底放行，不需要在这里一刀切。
+    let open = has(Kind::Textual) || has(Kind::Opaque) || prop.syntax.trim().is_empty();
+
     // 裸字符串是最后的兜底：只要这个属性的取值可能由多个分量拼成、或者含有
     // 我们没有对应 Rust 类型的东西（`<custom-ident>`、解析不出来的引用），
     // 就必须放行字符串，否则这些属性在 builder 里根本没法写。
     //
     // `<time>` 曾经也在这份兜底名单里——那是因为当时压根没有时间单位类型，
     // 于是 `transition-duration` 只能写 `"0.3s"`。现在有 `Sec` / `Ms` 了。
-    let needs_string =
-        analysis.multi || has(Kind::Textual) || has(Kind::Opaque) || prop.syntax.trim().is_empty();
+    let needs_string = analysis.multi || open;
     if needs_string {
         caps.push(ValueCap::Str);
     }
@@ -185,7 +206,12 @@ fn classify_property(prop: &MdnCssProperty, resolver: &Resolver) -> (Vec<ValueCa
     caps.sort_by_key(|c| c.as_str());
     caps.dedup();
 
-    (caps, keywords)
+    Classified {
+        caps,
+        keywords,
+        multi: analysis.multi,
+        open,
+    }
 }
 
 /// `ColorKeyword` 是全局共享的具名颜色表，需要穿透 `<color>` 收集。
@@ -227,11 +253,16 @@ mod tests {
         )
     }
 
-    fn caps_of(name: &str) -> (Vec<ValueCap>, Vec<String>) {
+    fn classify(name: &str) -> Classified {
         let (props, syntaxes) = resolver_data();
         let resolver = Resolver::new(&syntaxes, &props);
         let prop = props.get(name).unwrap_or_else(|| panic!("{name} 不存在"));
         classify_property(prop, &resolver)
+    }
+
+    fn caps_of(name: &str) -> (Vec<ValueCap>, Vec<String>) {
+        let c = classify(name);
+        (c.caps, c.keywords)
     }
 
     /// 报告 P1-1 的三个招牌反例
@@ -323,12 +354,87 @@ mod tests {
         let (props, syntaxes) = resolver_data();
         let resolver = Resolver::new(&syntaxes, &props);
         for (name, prop) in &props {
-            let (caps, _) = classify_property(prop, &resolver);
+            let caps = classify_property(prop, &resolver).caps;
             assert!(
                 !(caps.contains(&ValueCap::Num) && caps.contains(&ValueCap::Int)),
                 "{name}: {caps:?}"
             );
         }
+    }
+
+    /// 宏侧的关键字校验只在「关键字表非空 ∧ 属性不是 open」时生效。
+    /// 招牌反例 `align-items: centre` 必须落在生效的那一侧。
+    #[test]
+    fn align_items_is_a_closed_keyword_set() {
+        let c = classify("align-items");
+        assert!(!c.open, "align-items 的语法里没有裸标识符，不该是 open");
+        assert!(c.keywords.contains(&"center".to_string()));
+        assert!(!c.keywords.contains(&"red".to_string()), "{:?}", c.keywords);
+        // `safe center` 是两个分量，`multi` 必须为真，否则 A-3 会误伤它
+        assert!(c.multi);
+    }
+
+    /// `<custom-ident>` 一族必须是 open：它们的关键字表只有 `none` / `auto`，
+    /// 照表判错会把 `animation-name: fadeIn` 这种正常写法拒掉。
+    #[test]
+    fn custom_ident_properties_are_open() {
+        for name in [
+            "animation-name",
+            "font-family",
+            "grid-area",
+            "will-change",
+            "view-transition-name",
+            "counter-reset",
+        ] {
+            assert!(classify(name).open, "{name} 应当是 open");
+        }
+    }
+
+    /// 单值属性不能被判成 multi，否则 A-3 一条也拦不住
+    #[test]
+    fn single_value_properties_are_not_multi() {
+        // `align-self` 之类特意不在这里：`safe center` 是合法取值，它确实是 multi
+        for name in ["color", "z-index", "opacity", "width", "float", "position"] {
+            assert!(!classify(name).multi, "{name} 不该是 multi");
+        }
+    }
+
+    /// 真正的复合属性必须是 multi，否则 A-3 会把合法写法拦下来
+    #[test]
+    fn shorthands_are_multi() {
+        for name in [
+            "margin",
+            "padding",
+            "border",
+            "background",
+            "transition",
+            "font",
+            "box-shadow",
+            "border-radius",
+            "grid-template-columns",
+            "inset",
+        ] {
+            assert!(classify(name).multi, "{name} 应当是 multi");
+        }
+    }
+
+    /// `width` 的语法里有 `fit-content()` / `<calc-size()>`，但那不该让它变成
+    /// open——否则 `width: atuo` 与 `width: rgb(0 0 0)` 都会被放过
+    #[test]
+    fn a_function_in_the_syntax_does_not_open_a_property() {
+        let c = classify("width");
+        assert!(!c.open, "width 不该因为 fit-content() 而变成 open");
+        assert!(c.keywords.contains(&"auto".to_string()), "{:?}", c.keywords);
+    }
+
+    /// `caret-color: red` 必须能过：它的关键字表只有 `auto`，颜色关键字得靠
+    /// `Color` 能力 + 全局颜色表放行
+    #[test]
+    fn color_capable_properties_keep_their_color_cap() {
+        let c = classify("caret-color");
+        assert!(c.caps.contains(&ValueCap::Color));
+        assert!(c.keywords.contains(&"auto".to_string()));
+        assert!(!c.keywords.contains(&"red".to_string()));
     }
 
     /// 具名颜色表必须来自 `<color>`，且不能泄漏进普通属性的关键字枚举

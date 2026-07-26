@@ -1,0 +1,15 @@
+error: `rgb()` 产出的是颜色，而 CSS 属性 `align-items` 不接受颜色
+       注：`align-items` 只接受关键字。
+       实验特性等表外的取值请放进 `unsafe { … }` 块里原样透传。
+ --> tests/ui/fail_color_function_on_a_keyword_property.rs:8:22
+  |
+8 |         align-items: rgb(0 0 0);
+  |                      ^^^
+
+error: `linear-gradient()` 产出的是渐变图像，而 CSS 属性 `z-index` 不接受渐变图像
+       注：`z-index` 只接受关键字、数字。
+       实验特性等表外的取值请放进 `unsafe { … }` 块里原样透传。
+  --> tests/ui/fail_color_function_on_a_keyword_property.rs:13:18
+   |
+13 |         z-index: linear-gradient(red, blue);
+   |                  ^^^^^^

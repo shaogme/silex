@@ -1,0 +1,15 @@
+error: CSS 属性 `color` 只接受单个取值，这里写了 3 个：`1px solid red`
+       注：分量之间的空格在 CSS 里是有意义的；`color` 的语法里没有多分量形式，浏览器会整条丢弃这条声明。
+       确实需要原样透传时请放进 `unsafe { … }` 块里。
+ --> tests/ui/fail_multi_component_on_a_single_value_property.rs:8:16
+  |
+8 |         color: 1px solid red;
+  |                ^^^
+
+error: CSS 属性 `z-index` 只接受单个取值，这里写了 2 个：`1 2`
+       注：分量之间的空格在 CSS 里是有意义的；`z-index` 的语法里没有多分量形式，浏览器会整条丢弃这条声明。
+       确实需要原样透传时请放进 `unsafe { … }` 块里。
+  --> tests/ui/fail_multi_component_on_a_single_value_property.rs:13:18
+   |
+13 |         z-index: 1 2;
+   |                  ^

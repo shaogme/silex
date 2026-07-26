@@ -71,6 +71,18 @@ pub struct ProcessedProp {
     pub caps: Vec<ValueCap>,
     /// 该属性可以单独取的字面关键字
     pub keywords: Vec<String>,
+    /// 取值可以由多个顶层分量拼成（`<length>{1,4}`、`a && b`、`<x>#`）。
+    ///
+    /// `caps` 里的 `Str` 有一部分正是从这里来的（复合属性得能写裸字符串），
+    /// 所以宏侧不能拿 `Str` 反推「分量个数不限」——必须单独知道这一位。
+    pub multi: bool,
+    /// 语法里有 `<custom-ident>` / `<string>` / 解析不出来的引用：这个属性能取
+    /// 什么在编译期无法穷举。
+    ///
+    /// `animation-name: fadeIn`、`font-family: Inter`、`grid-area: header` 都
+    /// 落在这一类里——它们的关键字表只有 `none` / `auto`，照表判错会把完全
+    /// 合法的写法拒掉。宏侧对这些属性一律放行。
+    pub open: bool,
 }
 
 use std::collections::HashMap;
