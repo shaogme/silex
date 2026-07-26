@@ -1,4 +1,4 @@
-use crate::core::FuncPtr;
+use crate::internal::FuncPtr;
 use silex_vtable::{AnyBox, InlineStorage, OnceBox, ThunkBox, ThunkBoxVTable};
 use std::{any::TypeId, marker::PhantomData, mem, ptr};
 
@@ -35,24 +35,12 @@ impl AnyValue {
         }
     }
 
-    /// 一个零大小、无析构、不可克隆也不可比较的占位值。
-    ///
-    /// 用于“把值移出节点 → 交给用户闭包 → 放回”期间临时填充节点，
-    /// 使运行时不必在用户代码执行期间持有指向节点的 `&mut`（AUDIT P5）。
-    ///
-    /// 直接构造而不是走 `Self::new(())`：后者要算一次 `Layout`、比一次大小与
-    /// 对齐、再走一遍内联/装箱的分派，而每一次 signal 写入与 memo 重算都要
-    /// 构造一个占位值（AUDIT 二轮 §1.3 末段）。这里是 `const fn`，
-    /// 编译期就折叠成一个零缓冲区加一个 vtable 指针。
-    pub(crate) const fn placeholder() -> Self {
-        AnyValue {
-            inner: AnyBox {
-                data: InlineStorage::zeroed(),
-                // `()` 是零大小的，必然走内联表示；它没有析构函数也没有比较函数。
-                vtable: &InlineVTable::<()>::VTABLE,
-            },
-        }
-    }
+    // 这里曾经有一个 `placeholder()`：把值移出节点交给用户闭包期间，节点里得
+    // 填一个东西，于是每一次 signal 写入、每一次 memo 重算都要现造一个零大小的
+    // `AnyValue`。阶段三把载荷改成 `Option<AnyValue>` 之后，“借出中”就是一个
+    // `None` —— 既省掉了这次构造，也让“重入”和“类型写错”这两种失败在读取侧
+    // 天然可分（从前两者都表现为 downcast 失败，要靠一个 `#[cold]` 的分类函数
+    // 事后追查）。
 
     /// 创建一个带相等性比较能力的类型擦除值（memo 的重算结果走这里）。
     pub(crate) fn new_reactive<T: Clone + PartialEq + 'static>(value: T) -> Self {
@@ -347,13 +335,6 @@ mod tests {
         assert!(AnyValue::new_reactive(true).try_eq(&AnyValue::new_reactive(true)));
         assert!(!AnyValue::new_reactive(true).try_eq(&AnyValue::new_reactive(false)));
         assert!(AnyValue::new_reactive('x').try_eq(&AnyValue::new_reactive('x')));
-    }
-
-    #[test]
-    fn the_placeholder_matches_nothing() {
-        let p = AnyValue::placeholder();
-        assert!(p.downcast_ref::<i32>().is_none());
-        assert!(!p.try_eq(&AnyValue::new_reactive(0i32)));
     }
 
     struct DropSpy(Rc<Cell<usize>>);

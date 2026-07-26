@@ -4,11 +4,19 @@
 //! 裸写法在用户代码 panic 时会让标志永远卡住：`running_queue` 卡在 `true` 会让
 //! 整个响应式系统静默停摆，`batch_depth` 卡在非零会让所有更新被永久挂起，
 //! 被 `take()` 出来的计算闭包则会永久丢失（AUDIT P2）。
+//!
+//! 另一类守卫（[`SignalValueGuard`] / [`PayloadGuard`] / [`NodeRunGuard`]）管的是
+//! **借出**：把值或闭包整个移出节点再交给用户代码。阶段三之后这条纪律的收益
+//! 更明确了 —— 节点里剩下的是一个 `None`，因此“闭包执行期间这个节点被销毁”
+//! 只会让守卫在归还时查无此节点（值随守卫析构），而不会写进一块已经释放的槽位。
 
 use crate::{
     ReactiveError, ReactiveResult,
-    core::{algorithm::NodeState, arena::Index as NodeId, value::AnyValue, value::ThunkValue},
-    runtime::{Runtime, scheduler::WorkSpace, storage::Payload},
+    internal::{
+        arena::Index as NodeId,
+        value::{AnyValue, ThunkValue},
+    },
+    runtime::{Runtime, graph::EvalFrame, graph::NodeState, scheduler::WorkSpace},
 };
 use std::{
     cell::{Cell, RefCell},
@@ -124,76 +132,68 @@ impl Drop for QueueGuard<'_> {
     }
 }
 
-/// 求值 DFS 用的两个工作栈，析构时归还池子。
+/// 求值 DFS 的工作栈，析构时归还池子。
 ///
 /// 之前是手写的 `borrow_vec` / `return_vec` 配对：`evaluate` 在依赖成环时会
-/// panic（`algorithm.rs`），借出的容器就那样被丢弃了。只损失池化容量、不影响
-/// 正确性，但与 lib.rs 里“所有借出的东西都由 RAII 守卫恢复”的承诺不符，
-/// 也和 crate 里其它地方一律用守卫的风格不一致（AUDIT P2 / 二轮 §2.5）。
-pub(crate) struct EvalBuffers<'a> {
+/// panic，借出的容器就那样被丢弃了。只损失池化容量、不影响正确性，但与 lib.rs
+/// 里“所有借出的东西都由 RAII 守卫恢复”的承诺不符（AUDIT P2 / 二轮 §2.5）。
+///
+/// 阶段三之后这里只剩一个容器：依赖表改成原地遍历，`temp_deps` 那个 `Vec`
+/// 连同它的池子一起没有了（审计报告 §3.3）。
+pub(crate) struct EvalStack<'a> {
     ws: &'a RefCell<WorkSpace>,
-    stack: Vec<NodeId>,
-    deps: Vec<NodeId>,
+    stack: Vec<EvalFrame>,
 }
 
-impl<'a> EvalBuffers<'a> {
+impl<'a> EvalStack<'a> {
     pub(crate) fn acquire(ws: &'a RefCell<WorkSpace>) -> Self {
-        let (stack, deps) = {
-            let mut w = ws.borrow_mut();
-            (w.borrow_vec(), w.borrow_vec())
-        };
-        Self { ws, stack, deps }
+        let stack = ws.borrow_mut().borrow_stack();
+        Self { ws, stack }
     }
 
-    pub(crate) fn split(&mut self) -> (&mut Vec<NodeId>, &mut Vec<NodeId>) {
-        (&mut self.stack, &mut self.deps)
+    pub(crate) fn get(&mut self) -> &mut Vec<EvalFrame> {
+        &mut self.stack
     }
 }
 
-impl Drop for EvalBuffers<'_> {
+impl Drop for EvalStack<'_> {
     fn drop(&mut self) {
         // 展开途中池子可能正被外层借着；这时宁可丢掉这点容量，也不能在
         // panic 里再 panic（那会直接 abort）。
         if let Ok(mut w) = self.ws.try_borrow_mut() {
-            w.return_vec(mem::take(&mut self.stack));
-            w.return_vec(mem::take(&mut self.deps));
+            w.return_stack(mem::take(&mut self.stack));
         }
     }
 }
 
-/// 传播 BFS 用的队列与订阅者暂存区，析构时归还池子。理由同 [`EvalBuffers`]。
-pub(crate) struct PropagateBuffers<'a> {
+/// 传播 BFS 的工作队列，析构时归还池子。理由同 [`EvalStack`]。
+pub(crate) struct PropagateQueue<'a> {
     ws: &'a RefCell<WorkSpace>,
     queue: VecDeque<NodeId>,
-    subs: Vec<NodeId>,
 }
 
-impl<'a> PropagateBuffers<'a> {
+impl<'a> PropagateQueue<'a> {
     pub(crate) fn acquire(ws: &'a RefCell<WorkSpace>) -> Self {
-        let (queue, subs) = {
-            let mut w = ws.borrow_mut();
-            (w.borrow_deque(), w.borrow_vec())
-        };
-        Self { ws, queue, subs }
+        let queue = ws.borrow_mut().borrow_deque();
+        Self { ws, queue }
     }
 
-    pub(crate) fn split(&mut self) -> (&mut VecDeque<NodeId>, &mut Vec<NodeId>) {
-        (&mut self.queue, &mut self.subs)
+    pub(crate) fn get(&mut self) -> &mut VecDeque<NodeId> {
+        &mut self.queue
     }
 }
 
-impl Drop for PropagateBuffers<'_> {
+impl Drop for PropagateQueue<'_> {
     fn drop(&mut self) {
         if let Ok(mut w) = self.ws.try_borrow_mut() {
             w.return_deque(mem::take(&mut self.queue));
-            w.return_vec(mem::take(&mut self.subs));
         }
     }
 }
 
 /// 节点运行期间“借出”计算闭包。
 ///
-/// 闭包必须先从节点里取出来才能在不持有 `&mut ReactiveNode` 的情况下调用，
+/// 闭包必须先从节点里取出来才能在不持有节点载荷借用的情况下调用，
 /// 但 `computation == None` 是一个语义上会导致静默破坏的中间态：本守卫保证
 /// 它一定会被放回去（正常返回或 panic 展开都一样），同时清除重入标记。
 pub(crate) struct NodeRunGuard<'a> {
@@ -219,43 +219,40 @@ impl Drop for NodeRunGuard<'_> {
         // panic，节点却是“干净”的，而依赖表里只有 panic 点之前读到的那几条
         // （二轮 §2.5 第 2 条）。
         //
-        // 对**惰性拉取**的节点（memo / derived，既有 signal 也有 effect）可以直接
-        // 标回 `Dirty`：它们没有队列，下一次被读到时自然会重算一遍、把依赖补全。
+        // 对**惰性拉取**的节点（memo / derived，既有值又有计算）可以直接标回
+        // `Dirty`：它们没有队列，下一次被读到时自然会重算一遍、把依赖补全。
         //
         // 对**推送调度**的 effect 则不能这么做。`propagate` 有一条优化 ——
-        // 已经是 `Dirty` 的订阅者不再重复入队（"脏了就说明已经排过队了"）。
+        // 已经是 `Dirty` 的订阅者不再重复入队（“脏了就说明已经排过队了”）。
         // 一个 panic 之后停在 `Dirty` 却不在队列里的 effect 会命中这条短路，
         // 从此**再也不会被任何写入唤醒**，比留在 `Clean` 还糟。
         //
-        // 那为什么不顺手把它重新入队？因为那等于"panic 的 effect 自动重试"：
+        // 那为什么不顺手把它重新入队？因为那等于“panic 的 effect 自动重试”：
         // 它会在紧接着的每一次 flush 里被重跑、再 panic 一次，把一个局部错误
         // 放大成每次写入都炸。所以这里保持现状，并把代价写在文档里：
         // 被 panic 打断的 effect 只对它**已经登记过**的依赖有反应，对 panic 点
-        // 之后本该读到的那些没有。彻底的修法要求依赖收集本身是事务性的
-        // （新依赖集合先攒在一边、跑完才整体换上），那是阶段三的事。
+        // 之后本该读到的那些没有。
         let interrupted = std::thread::panicking();
         let computation = self.computation.take();
 
-        self.rt.storage.reactive.with_mut(self.id, |node| {
-            let is_lazy = node.signal.is_some();
-            if interrupted && is_lazy {
-                node.state = NodeState::Dirty;
-            }
-            if let Some(effect) = node.effect.as_mut() {
-                effect.running = false;
-                if let Some(f) = computation {
-                    effect.computation = Some(f);
-                }
-            }
-        });
         // 节点在自己的运行期间被销毁时走到这里：`computation` 随守卫一起析构。
+        let Some(node) = self.rt.storage.node(self.id) else {
+            return;
+        };
+        if interrupted && node.has_value() {
+            node.state.set(NodeState::Dirty);
+        }
+        node.set_running(false);
+        if let Some(f) = computation {
+            node.effect.borrow_mut().computation = Some(f);
+        }
     }
 }
 
 /// signal 值在用户闭包执行期间的“借出”状态。
 ///
-/// 值被移出节点、放在守卫里交给用户闭包，节点内暂时是一个占位值。
-/// 这样运行时在用户代码执行期间不持有任何指向该节点的 `&mut`（AUDIT P5）。
+/// 值被移出节点、放在守卫里交给用户闭包，节点里暂时是 `None`。
+/// 这样运行时在用户代码执行期间不持有任何指向该节点载荷的借用（AUDIT P5）。
 pub(crate) struct SignalValueGuard<'a> {
     rt: &'a Runtime,
     id: NodeId,
@@ -263,8 +260,6 @@ pub(crate) struct SignalValueGuard<'a> {
     /// 归还值的时候是否顺带把版本号递增掉。
     ///
     /// 版本号意味着“值真的变了”，只有写入落到值上之后才该递增（AUDIT P12）。
-    /// 之所以挂在守卫上，是因为守卫归还值时**本来就要**查一次 `reactive` 表 ——
-    /// 让它顺手把版本号也改了，写路径就整整少一次查表（AUDIT 二轮 §1.3 末段）。
     bump_version: bool,
 }
 
@@ -295,24 +290,16 @@ impl<'a> SignalValueGuard<'a> {
 
 impl Drop for SignalValueGuard<'_> {
     fn drop(&mut self) {
-        // 闭包按**可变借用**捕获 `self.value`，而不是先 `take()` 出来再搬进去：
-        // `AnyValue` 是 32 字节，写路径上每一次多余的按值搬运都要真的 memcpy
-        // 一遍。这样值只被搬一次（从守卫直接回到节点）。
-        let rt = self.rt;
-        let bump = self.bump_version;
-        let slot = &mut self.value;
-        rt.storage.reactive.with_mut(self.id, |node| {
-            if let Some(signal) = node.signal.as_mut() {
-                signal.updating = false;
-                if bump {
-                    signal.version = signal.version.wrapping_add(1);
-                }
-                if let Some(value) = slot.take() {
-                    signal.value = value;
-                }
-            }
-        });
         // 节点在闭包执行期间被销毁时走到这里：值随守卫一起析构。
+        let Some(node) = self.rt.storage.node(self.id) else {
+            return;
+        };
+        if self.bump_version {
+            node.bump_version();
+        }
+        if let Some(value) = self.value.take() {
+            node.signal.borrow_mut().value = Some(value);
+        }
     }
 }
 
@@ -330,8 +317,8 @@ impl Drop for SignalValueGuard<'_> {
 /// });                                                      // ← 之后用 c 即 UB
 /// ```
 ///
-/// 现在值在闭包执行期间被整个移出节点（节点里放占位值），运行时不再持有任何指向
-/// 该条目的引用；重入访问同一个节点会拿到
+/// 现在值在闭包执行期间被整个移出节点（节点里是 `None`），运行时不再持有任何
+/// 指向该条目的借用；重入访问同一个节点会拿到
 /// [`ReactiveError::Reentrant`] 而不是静默的 UB（审计报告 §2.1）。
 pub(crate) struct PayloadGuard<'a> {
     rt: &'a Runtime,
@@ -340,19 +327,16 @@ pub(crate) struct PayloadGuard<'a> {
 }
 
 impl<'a> PayloadGuard<'a> {
-    /// 把载荷移出节点，节点里换成占位值。
+    /// 把载荷移出节点，节点里换成 `None`。
     pub(crate) fn acquire(rt: &'a Runtime, id: NodeId) -> ReactiveResult<Self> {
-        let taken = rt
-            .storage
-            .extras
-            .with_mut(id, |payload: &mut Payload| {
-                if payload.borrowed {
-                    return Err(ReactiveError::Reentrant);
-                }
-                payload.borrowed = true;
-                Ok(mem::replace(&mut payload.value, AnyValue::placeholder()))
-            })
-            .ok_or(ReactiveError::NoSuchNode)??;
+        let slot = rt.storage.extras.get(id).ok_or(ReactiveError::NoSuchNode)?;
+        // `try_borrow_mut` 而不是 `borrow_mut`：外层闭包正握着它时给一句
+        // 明确的诊断，而不是一句 `already borrowed` 的 panic。
+        let taken = slot
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::Reentrant)?
+            .take()
+            .ok_or(ReactiveError::Reentrant)?;
         Ok(Self {
             rt,
             id,
@@ -371,13 +355,12 @@ impl<'a> PayloadGuard<'a> {
 
 impl Drop for PayloadGuard<'_> {
     fn drop(&mut self) {
-        let value = self.value.take();
-        self.rt.storage.extras.with_mut(self.id, |payload| {
-            payload.borrowed = false;
-            if let Some(value) = value {
-                payload.value = value;
-            }
-        });
         // 节点在闭包执行期间被销毁时走到这里：值随守卫一起析构。
+        let Some(slot) = self.rt.storage.extras.get(self.id) else {
+            return;
+        };
+        if let Some(value) = self.value.take() {
+            *slot.borrow_mut() = Some(value);
+        }
     }
 }

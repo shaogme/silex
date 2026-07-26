@@ -5,7 +5,7 @@
 
 use crate::{
     DerivedId, MemoId,
-    core::{FuncPtr, value::AnyValue},
+    internal::{FuncPtr, value::AnyValue},
     runtime::{MemoVTable, RUNTIME, Runtime},
 };
 use silex_vtable::InlineStorage;
@@ -51,7 +51,7 @@ fn build_memo_payload<F: 'static>(
 /// # 契约
 ///
 /// 不允许在 `f` 内部读取这个 memo 自己：旧值在 `f` 执行期间被移出了节点，
-/// 此时节点里放的是占位值。旧值请从参数拿。
+/// 此时节点里是空的，读它拿到的是 `Reentrant`。旧值请从参数拿。
 #[track_caller]
 pub fn create<T, F>(f: F) -> MemoId
 where

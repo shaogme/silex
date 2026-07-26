@@ -2,7 +2,7 @@
 
 use crate::{
     EffectId,
-    core::value::ThunkValue,
+    internal::value::ThunkValue,
     runtime::{RUNTIME, Runtime},
 };
 

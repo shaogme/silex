@@ -6,8 +6,8 @@
 
 use crate::{
     ReactiveError, ReactiveResult, Readable, SignalId,
-    core::{arena::Index as NodeId, value::AnyValue},
     handle::RawNodeId,
+    internal::{arena::Index as NodeId, value::AnyValue},
     runtime::{RUNTIME, Runtime},
 };
 
@@ -53,14 +53,16 @@ pub fn create<T: 'static>(value: T) -> SignalId {
 pub fn try_get<T: Clone + 'static>(id: impl Readable) -> ReactiveResult<T> {
     let rt = RUNTIME.get().ok_or(ReactiveError::NoRuntime)?;
     let raw = id.to_raw();
-    downcast_cloned::<T>(rt, raw, rt.get_signal_value(raw)?)
+    let value = rt.get_signal_value(raw)?;
+    downcast_cloned::<T>(&value)
 }
 
 /// 同 [`try_get`]，但**不**登记依赖。
 pub fn try_get_untracked<T: Clone + 'static>(id: impl Readable) -> ReactiveResult<T> {
     let rt = RUNTIME.get().ok_or(ReactiveError::NoRuntime)?;
     let raw = id.to_raw();
-    downcast_cloned::<T>(rt, raw, rt.get_signal_value_untracked(raw)?)
+    let value = rt.get_signal_value_untracked(raw)?;
+    downcast_cloned::<T>(&value)
 }
 
 /// [`try_get`] 的便捷形式：把任何失败折叠成 `None`。
@@ -76,7 +78,7 @@ pub fn get<T: Clone + 'static>(id: impl Readable) -> Option<T> {
 ///
 /// # 契约
 ///
-/// 值在 `f` 执行期间被**移出**节点（节点里放的是占位值），运行时因此不必在用户
+/// 值在 `f` 执行期间被**移出**节点（节点里暂时是空的），运行时因此不必在用户
 /// 代码执行期间持有任何指向该节点的引用（审计报告 §2.1）。代价是：
 /// **不允许在 `f` 内部访问同一个节点**，那样会拿到
 /// [`Reentrant`](ReactiveError::Reentrant)。
@@ -114,7 +116,7 @@ pub fn try_with_untracked<T: 'static, R>(
 /// # 契约
 ///
 /// 不允许在 `f` 内部访问同一个 signal（读或写都不行）：值在 `f` 执行期间被移出
-/// 了节点，此时节点里放的是占位值。
+/// 了节点，此时节点里是空的。
 pub fn try_update<T: 'static>(id: SignalId, f: impl FnOnce(&mut T)) -> ReactiveResult<()> {
     let mut f = Some(f);
     // 只读、或只写既有节点的路径一律用 `get()`：没有运行时就没有节点，
@@ -257,7 +259,7 @@ pub fn track_batch(ids: &[RawNodeId]) {
 ///
 /// - [`dispose`](crate::scope::dispose) 该节点或它的任一祖先（释放 arena 槽位）；
 /// - [`try_update`] / [`try_update_silent`] / [`try_with`]：它们会把值**移出**
-///   节点交给用户闭包，期间节点里放的是占位值；
+///   节点交给用户闭包，期间节点里是空的；
 /// - memo 重算后的提交会整体替换掉这个值；
 /// - 值从内联存储升级到堆上（`AnyValue` 的 SOO）；
 /// - **任何会重入运行时并执行用户代码的调用** —— effect 体、cleanup、
@@ -267,25 +269,28 @@ pub fn track_batch(ids: &[RawNodeId]) {
 /// 也就是说**在返回之前**就已经跑过用户代码了。拿到引用之后请立刻用掉。
 pub unsafe fn try_value_ref<T: 'static>(id: impl Readable) -> Option<&'static T> {
     let rt = RUNTIME.get()?;
-    rt.get_signal_value_untracked(id.to_raw())
-        .ok()?
-        .downcast_ref::<T>()
+    let raw = id.to_raw();
+    rt.prepare_read_untracked(raw);
+    // SAFETY: 契约（引用不得跨越上面列出的任何一种操作）由本函数的调用方承担，
+    // 原样转嫁给 `signal_value_unchecked`。
+    unsafe { rt.signal_value_unchecked(raw) }?.downcast_ref::<T>()
 }
 
 // --- 内部辅助 ---
 
-/// 读路径的 downcast：成功时直接克隆，失败才去问原因（见
-/// [`Runtime::classify_value_failure`] —— 值被借出与类型写错是两回事）。
+/// 读路径的 downcast：成功就克隆一份。
+///
+/// 这里从前还要调一个 `#[cold]` 的 `classify_value_failure` 去分辨“值正被借出”
+/// 与“类型写错了”—— 因为借出期间节点里放的是一个占位 `AnyValue`，两种失败在
+/// downcast 层面长得一模一样。阶段三之后借出就是一个 `None`，
+/// [`Runtime::signal_value`] 直接报 [`ReactiveError::Reentrant`]，
+/// 走到这里的失败只剩类型不符一种。
 #[inline]
-fn downcast_cloned<T: Clone + 'static>(
-    rt: &Runtime,
-    raw: NodeId,
-    value: &AnyValue,
-) -> ReactiveResult<T> {
-    match value.downcast_ref::<T>() {
-        Some(v) => Ok(v.clone()),
-        None => Err(rt.classify_value_failure(raw)),
-    }
+fn downcast_cloned<T: Clone + 'static>(value: &AnyValue) -> ReactiveResult<T> {
+    value
+        .downcast_ref::<T>()
+        .cloned()
+        .ok_or(ReactiveError::TypeMismatch)
 }
 
 /// 把值移出节点、downcast、交给用户闭包、放回。

@@ -1,49 +1,203 @@
+//! 节点的存储表示。
+//!
+//! # 阶段三：冷热分离
+//!
+//! 这个 crate 从前建立在“`&self` + `UnsafeCell` 的裸内部可变性”上：独占性只靠
+//! 注释维系，而每一个用户回调边界都是一次潜在的别名违规（审计报告 §4 阶段三）。
+//! 现在借用检查交回给类型系统与运行时：
+//!
+//! | 分类 | 存法 | 为什么 |
+//! |---|---|---|
+//! | **元数据**（状态、版本、标志） | [`Cell`] | 这是 `propagate` / `evaluate` 99% 的访问。`Cell` 只要共享引用就能写，因此“持有一个节点的引用去改另一个节点的状态”是合法的 —— 订阅表与依赖表得以**原地遍历**，`Vec` 物化与配套池化一并消失（§3.3） |
+//! | **载荷**（值、闭包、依赖表、订阅表） | [`RefCell`] | 今天静默的 UB 变成一句明确的诊断，而且直接说得出“你在闭包里重入了同一个节点” |
+//!
+//! 两个“借出中”的布尔标志（`SignalData::updating` / `EffectData::computation`
+//! 的 `None` 语义）也随之收敛：值与闭包都用 `Option` 表示借出，
+//! 借出期间节点里是 `None` 而不再是一个现造的 `AnyValue::placeholder()`。
+
 use crate::{
     DependencyList, NodeList,
-    core::{
-        algorithm::{GraphStorage, NodeState},
+    internal::{
         arena::{Arena, Index as NodeId, SparseSecondaryMap},
         value::{AnyValue, OnceThunk, ThunkValue},
     },
+    runtime::graph::NodeState,
 };
-#[cfg(debug_assertions)]
-use std::cell::Cell;
-use std::{mem, vec::IntoIter};
+use std::{
+    cell::{Cell, RefCell},
+    mem,
+    vec::IntoIter,
+};
+
+/// 一个节点的种类与运行状态，打包进一个字节。
+///
+/// 这些位从前分散成 `Option<SignalData>` / `Option<EffectData>` 的存在性、
+/// 外加 `SignalData::updating` 与 `EffectData::running` 两个 `bool`。判定种类
+/// 因此要去看载荷 —— 而载荷现在藏在 `RefCell` 后面，热路径不该为了问一句
+/// “这是不是 effect”去借一次。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct NodeFlags(u8);
+
+impl NodeFlags {
+    /// 带一个可读的值：signal / memo / derived。
+    pub(crate) const VALUE: Self = Self(1 << 0);
+    /// 带一个计算闭包：effect / memo / derived。
+    pub(crate) const COMPUTATION: Self = Self(1 << 1);
+    /// 计算正在执行中。
+    ///
+    /// 重入守卫：正在运行的节点绝不能被重复执行 —— 否则会第二次执行破坏性的
+    /// 前置阶段（清空依赖列表、提前跑 cleanup、把自己从所有依赖的订阅者表里
+    /// 摘除），而重建订阅的那一步却因为闭包已被借出而被跳过，结果是该节点
+    /// 永久丢失全部订阅（AUDIT P1）。
+    pub(crate) const RUNNING: Self = Self(1 << 2);
+
+    #[inline(always)]
+    pub(crate) const fn with(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    #[inline(always)]
+    pub(crate) const fn without(self, other: Self) -> Self {
+        Self(self.0 & !other.0)
+    }
+
+    #[inline(always)]
+    pub(crate) const fn has(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
+}
+
+/// signal 载荷：值与订阅者表。
+///
+/// `value == None` 表示值正被某个用户闭包借出（见
+/// [`crate::runtime::guard::SignalValueGuard`]）。从前这是
+/// `updating: bool` 加一个塞进节点的 `AnyValue::placeholder()`；用 `Option`
+/// 表达同一件事，既少一个字段，也省掉每次写入现造一个占位值。
+#[derive(Default)]
+pub(crate) struct SignalSlot {
+    pub(crate) value: Option<AnyValue>,
+    pub(crate) subscribers: NodeList,
+}
+
+/// 计算载荷：计算闭包与依赖表。
+///
+/// `computation == None` 表示闭包正被借出（节点正在运行，见
+/// [`crate::runtime::guard::NodeRunGuard`]）。
+#[derive(Default)]
+pub(crate) struct EffectSlot {
+    pub(crate) computation: Option<ThunkValue>,
+    pub(crate) dependencies: DependencyList,
+}
 
 pub(crate) struct ReactiveNode {
-    pub(crate) state: NodeState,
-    pub(crate) signal: Option<SignalData>,
-    pub(crate) effect: Option<EffectData>,
+    // --- 热元数据：`Cell`，共享引用就能读写，不作废任何别的引用 ---
+    pub(crate) state: Cell<NodeState>,
+    pub(crate) flags: Cell<NodeFlags>,
+    /// signal 值的版本号，只在值**真的变了**时递增（AUDIT P12）。
+    pub(crate) version: Cell<u32>,
+    /// 本节点作为 observer 的运行代次，用于 `last_tracked_by` 的去重。
+    pub(crate) effect_version: Cell<u32>,
+    /// 按 signal 存的单条去重缓存：本次运行是否已经把某个 observer 登记过。
+    pub(crate) last_tracked_by: Cell<Option<(NodeId, u32)>>,
+
+    // --- 载荷：`RefCell`，重入即诊断 ---
+    pub(crate) signal: RefCell<SignalSlot>,
+    pub(crate) effect: RefCell<EffectSlot>,
 }
 
-/// 非响应式节点（stored value / callback / node-ref）的载荷。
-///
-/// 这里曾经是一个五变体的枚举 `ExtraData { Callback, NodeRef, StoredValue,
-/// Closure, Op }`，五套几乎一模一样的“取出—downcast—用”的代码，外加五个
-/// `is_*_valid` 探测函数（审计报告 §3.1 / §3.2）。变体的**唯一**作用是当运行时的
-/// 种类 tag —— 而种类现在写在句柄的类型里（[`crate::Handle`]），这个 tag 就是
-/// 纯粹的重复。
-///
-/// 于是全部收敛成一个 [`AnyValue`]：它自带 SOO、`TypeId` 检查与正确的析构。
-/// 连带解决的问题：
-///
-/// - `ExtraData::Op(RawOpBuffer)` 是 `[MaybeUninit<u8>; 64] + Copy`，节点销毁时
-///   只是丢掉 64 字节原始内存，**载荷的析构函数永远不会运行**（§2.4）；
-/// - `ExtraData::Closure(Box<dyn Any>)` 装的是一个 `Box<dyn Fn() -> T>`，
-///   也就是**双重装箱**，读的时候还要多一次 `Box` 解引用。
-pub(crate) struct Payload {
-    pub(crate) value: AnyValue,
-    /// 值当前是否被借出给某个用户闭包（此时 `value` 是占位值）。
-    /// 见 [`crate::runtime::guard::PayloadGuard`]。
-    pub(crate) borrowed: bool,
-}
-
-impl Payload {
-    pub(crate) fn new(value: AnyValue) -> Self {
+impl ReactiveNode {
+    pub(crate) fn new(
+        state: NodeState,
+        flags: NodeFlags,
+        signal: SignalSlot,
+        effect: EffectSlot,
+    ) -> Self {
         Self {
-            value,
-            borrowed: false,
+            state: Cell::new(state),
+            flags: Cell::new(flags),
+            version: Cell::new(0),
+            effect_version: Cell::new(0),
+            last_tracked_by: Cell::new(None),
+            signal: RefCell::new(signal),
+            effect: RefCell::new(effect),
         }
+    }
+
+    pub(crate) fn new_signal(value: AnyValue) -> Self {
+        Self::new(
+            NodeState::Clean,
+            NodeFlags::VALUE,
+            SignalSlot {
+                value: Some(value),
+                subscribers: NodeList::Empty,
+            },
+            EffectSlot::default(),
+        )
+    }
+
+    pub(crate) fn new_effect(computation: ThunkValue) -> Self {
+        Self::new(
+            NodeState::Clean,
+            NodeFlags::COMPUTATION,
+            SignalSlot::default(),
+            EffectSlot {
+                computation: Some(computation),
+                dependencies: DependencyList::default(),
+            },
+        )
+    }
+
+    /// memo / derived：既有值又有计算，且从 `Dirty` 起步（首次读取时才算）。
+    pub(crate) fn new_memo(computation: ThunkValue) -> Self {
+        Self::new(
+            NodeState::Dirty,
+            NodeFlags::VALUE.with(NodeFlags::COMPUTATION),
+            // 首算之前没有值；`None` 同时也是“借出中”的表示，而首算恰好就是
+            // 一次“把旧值借出去”的过程，两者天然一致。
+            SignalSlot::default(),
+            EffectSlot {
+                computation: Some(computation),
+                dependencies: DependencyList::default(),
+            },
+        )
+    }
+
+    #[inline(always)]
+    pub(crate) fn has_value(&self) -> bool {
+        self.flags.get().has(NodeFlags::VALUE)
+    }
+
+    #[inline(always)]
+    pub(crate) fn is_computation(&self) -> bool {
+        self.flags.get().has(NodeFlags::COMPUTATION)
+    }
+
+    /// 是不是一个**纯**副作用节点（有计算、没有值）——
+    /// 也就是传播时该被推进队列、而不是继续往下走的那种。
+    #[inline(always)]
+    pub(crate) fn is_effect(&self) -> bool {
+        let flags = self.flags.get();
+        flags.has(NodeFlags::COMPUTATION) && !flags.has(NodeFlags::VALUE)
+    }
+
+    #[inline(always)]
+    pub(crate) fn is_running(&self) -> bool {
+        self.flags.get().has(NodeFlags::RUNNING)
+    }
+
+    #[inline(always)]
+    pub(crate) fn set_running(&self, running: bool) {
+        let flags = self.flags.get();
+        self.flags.set(if running {
+            flags.with(NodeFlags::RUNNING)
+        } else {
+            flags.without(NodeFlags::RUNNING)
+        });
+    }
+
+    #[inline(always)]
+    pub(crate) fn bump_version(&self) {
+        self.version.set(self.version.get().wrapping_add(1));
     }
 }
 
@@ -57,9 +211,15 @@ pub(crate) const MAX_DEAD_NODE_LABELS: usize = 1024;
 
 pub(crate) struct Storage {
     pub(crate) graph: Arena<Node>,
-    pub(crate) node_aux: SparseSecondaryMap<NodeAux, 32>,
+    pub(crate) node_aux: SparseSecondaryMap<RefCell<NodeAux>, 32>,
     pub(crate) reactive: SparseSecondaryMap<ReactiveNode, 64>,
-    pub(crate) extras: SparseSecondaryMap<Payload, 32>,
+    /// 非响应式节点（stored value / callback / node-ref）的载荷。
+    ///
+    /// 这里曾经是一个五变体的枚举 `ExtraData { Callback, NodeRef, StoredValue,
+    /// Closure, Op }`（审计报告 §3.1 / §3.2 / §2.4），阶段二收敛成一个
+    /// `Payload { value: AnyValue, borrowed: bool }`。阶段三连那个 `borrowed`
+    /// 也去掉了：`None` 就是“正被某个用户闭包借出”，与 signal 的表示一致。
+    pub(crate) extras: SparseSecondaryMap<RefCell<Option<AnyValue>>, 32>,
 
     #[cfg(debug_assertions)]
     pub(crate) dead_node_labels: SparseSecondaryMap<String>,
@@ -93,6 +253,16 @@ impl Storage {
         self.dead_node_labels.insert(id, label);
     }
 
+    /// 借一个响应式节点。
+    ///
+    /// 返回的引用只带共享权限 —— 改状态用 `Cell`、改载荷用 `RefCell`。
+    /// 它唯一的规则是不得跨越**本节点自己**的销毁（见
+    /// [`crate::internal::arena`] 的模块文档）。
+    #[inline(always)]
+    pub(crate) fn node(&self, id: NodeId) -> Option<&ReactiveNode> {
+        self.reactive.get(id)
+    }
+
     /// 在闭包作用域内可变地访问一个节点的冷数据，必要时先建出来。
     ///
     /// 节点不在 `graph` 里（已销毁 / 伪造的句柄）时返回 `None` 且不建任何条目。
@@ -103,18 +273,15 @@ impl Storage {
     ) -> Option<R> {
         if !self.node_aux.contains_key(id) {
             self.graph.get(id)?;
-            self.node_aux.insert(id, NodeAux::default());
+            self.node_aux.insert(id, RefCell::new(NodeAux::default()));
         }
-        self.node_aux.with_mut(id, f)
+        let aux = self.node_aux.get(id)?;
+        Some(f(&mut aux.borrow_mut()))
     }
-}
 
-impl GraphStorage for Storage {
-    fn get_state(&self, id: NodeId) -> NodeState {
-        self.reactive
-            .get(id)
-            .map(|n| n.state)
-            .unwrap_or(NodeState::Clean)
+    #[inline(always)]
+    pub(crate) fn get_state(&self, id: NodeId) -> NodeState {
+        self.node(id).map_or(NodeState::Clean, |n| n.state.get())
     }
 
     /// 只更新已存在的节点。
@@ -126,40 +293,19 @@ impl GraphStorage for Storage {
     ///
     /// 忽略掉是安全的：`get_state` 对不存在的节点返回 `Clean`，
     /// 传播与求值都会把它当成“无需处理”。
-    fn set_state(&self, id: NodeId, state: NodeState) {
-        self.reactive.with_mut(id, |n| n.state = state);
-    }
-
-    fn fill_subscribers(&self, id: NodeId, dest: &mut Vec<NodeId>) {
-        if let Some(n) = self.reactive.get(id)
-            && let Some(signal) = &n.signal
-        {
-            signal.subscribers.for_each(|&n| dest.push(n));
+    #[inline(always)]
+    pub(crate) fn set_state(&self, id: NodeId, state: NodeState) {
+        if let Some(node) = self.node(id) {
+            node.state.set(state);
         }
     }
 
-    fn fill_dependencies(&self, id: NodeId, dest: &mut Vec<NodeId>) {
-        if let Some(n) = self.reactive.get(id)
-            && let Some(eff) = &n.effect
-        {
-            eff.dependencies.for_each(|(n, _)| dest.push(*n));
-        }
+    #[inline(always)]
+    pub(crate) fn is_running(&self, id: NodeId) -> bool {
+        self.node(id).is_some_and(ReactiveNode::is_running)
     }
 
-    fn is_effect(&self, id: NodeId) -> bool {
-        self.reactive
-            .get(id)
-            .is_some_and(|n| n.effect.is_some() && n.signal.is_none())
-    }
-
-    fn is_running(&self, id: NodeId) -> bool {
-        self.reactive
-            .get(id)
-            .and_then(|n| n.effect.as_ref())
-            .is_some_and(|eff| eff.running)
-    }
-
-    fn describe(&self, id: NodeId) -> String {
+    pub(crate) fn describe(&self, id: NodeId) -> String {
         // release 构建下既没有调试标签也没有定义位置，只剩下编号。
         #[allow(unused_mut)]
         let mut out = format!("节点 #{}", id.slot());
@@ -168,7 +314,7 @@ impl GraphStorage for Storage {
             if let Some(label) = self
                 .node_aux
                 .get(id)
-                .and_then(|aux| aux.debug_label.as_ref())
+                .and_then(|aux| aux.borrow().debug_label.clone())
             {
                 out.push_str(&format!(" “{label}”"));
             }
@@ -177,31 +323,6 @@ impl GraphStorage for Storage {
             }
         }
         out
-    }
-
-    fn check_dependencies_changed(&self, id: NodeId) -> bool {
-        if let Some(n) = self.reactive.get(id)
-            && let Some(eff) = &n.effect
-        {
-            let mut found_change = false;
-            eff.dependencies.for_each(|(dep_id, expected_ver)| {
-                if found_change {
-                    return;
-                }
-                if let Some(dep_node) = self.reactive.get(*dep_id)
-                    && let Some(s) = &dep_node.signal
-                {
-                    if s.version != *expected_ver {
-                        found_change = true;
-                    }
-                } else {
-                    found_change = true;
-                }
-            });
-            found_change
-        } else {
-            false
-        }
     }
 }
 
@@ -286,33 +407,10 @@ impl Iterator for CleanupListIntoIter {
     }
 }
 
-pub(crate) struct SignalData {
-    pub(crate) value: AnyValue,
-    pub(crate) subscribers: NodeList,
-    pub(crate) last_tracked_by: Option<(NodeId, u32)>,
-    pub(crate) version: u32,
-    /// 值当前是否被借出给某个 update 闭包（此时 `value` 是占位值）。
-    /// 见 [`crate::runtime::guard::SignalValueGuard`]。
-    pub(crate) updating: bool,
-}
-
-pub(crate) struct EffectData {
-    pub(crate) computation: Option<ThunkValue>,
-    pub(crate) dependencies: DependencyList,
-    pub(crate) effect_version: u32,
-    /// 该节点的计算是否正在执行中。
-    ///
-    /// 重入守卫：正在运行的节点绝不能被重复执行 —— 否则会第二次执行破坏性的
-    /// 前置阶段（清空依赖列表、提前跑 cleanup、把自己从所有依赖的订阅者表里摘除），
-    /// 而重建订阅的那一步却因为 `computation` 已被借出而被跳过，
-    /// 结果是该节点永久丢失全部订阅（AUDIT P1）。
-    pub(crate) running: bool,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{core::value::ThunkValue, runtime::Runtime};
+    use crate::{internal::value::ThunkValue, runtime::Runtime};
 
     #[test]
     fn set_state_never_inserts_a_ghost_node() {
@@ -323,7 +421,7 @@ mod tests {
         storage.set_state(id, NodeState::Dirty);
 
         assert!(
-            storage.reactive.get(id).is_none(),
+            storage.node(id).is_none(),
             "不得为不存在的节点插入永远不会被回收的幽灵条目（AUDIT P14）"
         );
         assert_eq!(storage.get_state(id), NodeState::Clean);
@@ -337,19 +435,21 @@ mod tests {
 
         let dead = rt.create_effect(ThunkValue::new_mut(|| {}));
         rt.dispose(dead);
-        assert!(rt.storage.reactive.get(dead).is_none());
+        assert!(rt.storage.node(dead).is_none());
 
         // 手工模拟“订阅者表里残留了一个已销毁的 id”。
-        rt.storage.reactive.with_mut(s, |node| {
-            if let Some(signal) = node.signal.as_mut() {
-                signal.subscribers.push(dead);
-            }
-        });
+        rt.storage
+            .node(s)
+            .expect("signal 还活着")
+            .signal
+            .borrow_mut()
+            .subscribers
+            .push(dead);
 
         rt.notify_update(s);
 
         assert!(
-            rt.storage.reactive.get(dead).is_none(),
+            rt.storage.node(dead).is_none(),
             "传播到已销毁的订阅者时不得复活它（AUDIT P14）"
         );
     }
@@ -366,5 +466,21 @@ mod tests {
             rt.dispose(id);
         }
         assert_eq!(rt.storage.dead_label_count.get(), MAX_DEAD_NODE_LABELS);
+    }
+
+    /// 元数据是 `Cell`：持有一个节点的引用时改**另一个**节点的状态是合法的。
+    /// 这正是订阅表 / 依赖表得以原地遍历的前提（审计报告 §3.3）。
+    #[test]
+    fn metadata_is_writable_through_a_shared_borrow() {
+        let rt = Runtime::new();
+        let a = rt.create_signal(AnyValue::new(1i32));
+        let b = rt.create_signal(AnyValue::new(2i32));
+
+        let node_a = rt.storage.node(a).expect("a 活着");
+        rt.storage.set_state(b, NodeState::Dirty);
+        node_a.state.set(NodeState::Check);
+
+        assert_eq!(rt.storage.get_state(a), NodeState::Check);
+        assert_eq!(rt.storage.get_state(b), NodeState::Dirty);
     }
 }

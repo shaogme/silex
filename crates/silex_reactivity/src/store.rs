@@ -14,7 +14,7 @@
 
 use crate::{
     RawNodeId, ReactiveError, ReactiveResult, StoredId,
-    core::value::AnyValue,
+    internal::value::AnyValue,
     runtime::{RUNTIME, Runtime},
 };
 
@@ -30,7 +30,7 @@ pub fn create<T: 'static>(value: T) -> StoredId {
 ///
 /// # 契约
 ///
-/// 值在 `f` 执行期间被**移出**节点（节点里放的是占位值），运行时因此不必在
+/// 值在 `f` 执行期间被**移出**节点（节点里暂时是空的），运行时因此不必在
 /// 用户代码执行期间持有任何指向该条目的引用 —— 从前这里直接把
 /// `SparseSecondaryMap::get_mut` 交出来的引用递给 `f`，`f` 里碰一下任何别的
 /// 节点就会在 Stacked Borrows 下作废它（审计报告 §2.1）。
@@ -55,7 +55,7 @@ pub fn try_update<T: 'static, R>(id: StoredId, f: impl FnOnce(&mut T) -> R) -> R
 /// 不发生 —— 任何一条都会让引用悬垂，读它即为未定义行为（AUDIT P6）：
 ///
 /// - [`dispose`](crate::scope::dispose) 该节点或它的任一祖先（释放 arena 槽位）；
-/// - [`try_update`] / [`try_with`]：它们会把值**移出**节点，期间节点里是占位值；
+/// - [`try_update`] / [`try_with`]：它们会把值**移出**节点，期间节点里是空的；
 /// - 任何会重入运行时并执行用户代码的调用（effect 体、cleanup、`batch` 收尾），
 ///   因为用户代码可以做上面两件事中的任意一件。
 ///
@@ -63,7 +63,9 @@ pub fn try_update<T: 'static, R>(id: StoredId, f: impl FnOnce(&mut T) -> R) -> R
 /// 借用来用。需要更长的存活期就改用 [`try_with`] 或克隆一份出来。
 pub unsafe fn try_value_ref<T: 'static>(id: StoredId) -> Option<&'static T> {
     let rt = RUNTIME.get()?;
-    rt.payload_value(id.raw())?.downcast_ref::<T>()
+    // SAFETY: 契约（引用不得跨越上面列出的任何一种操作）由本函数的调用方承担，
+    // 原样转嫁给 `payload_value_unchecked`。
+    unsafe { rt.payload_value_unchecked(id.raw()) }?.downcast_ref::<T>()
 }
 
 // --- 供 `callback` / `node_ref` 复用的泛型底座 ---

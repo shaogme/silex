@@ -50,14 +50,17 @@
 //!
 //! - **不要在接受用户闭包的 API 里访问同一个节点**。[`signal::try_update`]、
 //!   [`signal::try_with`]、[`store::try_with`]、[`store::try_update`]、
-//!   memo 的计算闭包 —— 这些都会把值**移出**节点再交给闭包（节点里暂时是占位
-//!   值），这样运行时在用户代码执行期间不持有任何指向该节点的引用
+//!   memo 的计算闭包 —— 这些都会把值**移出**节点再交给闭包（节点里暂时是空的），
+//!   这样运行时在用户代码执行期间不持有任何指向该节点的引用
 //!   （AUDIT P5、审计报告 §2.1）。重入访问会拿到
 //!   [`ReactiveError::Reentrant`]，而不是从前那种静默的别名违规。
-//! - **`T: Clone` 的实现不得重入运行时**。[`signal::try_get`] 这条最热的读路径
-//!   仍然在运行时持有节点引用的情况下调用 `T::clone`；把它也改成“移出—克隆—
-//!   放回”会让每次读多付两次查表。一个会反过来改响应式图的 `Clone` 实现是病态
-//!   用法，需要在读的时候跑任意用户代码请改用 [`signal::try_with`]。
+//! - **`T: Clone` 的实现不要在读的时候销毁这个节点**。[`signal::try_get`] 这条
+//!   最热的读路径会在借着节点值的情况下调用 `T::clone`。重入**写**同一个节点
+//!   现在是安全的（值住在 `RefCell` 里，那次写入拿到
+//!   [`ReactiveError::Reentrant`]，debug 构建下断言失败）；剩下的唯一禁区是在
+//!   `clone` 里 [`dispose`](scope::dispose) 掉这个节点或它的祖先 —— 那会把整个
+//!   槽位从表里移走。需要在读的时候跑任意用户代码请改用 [`signal::try_with`]，
+//!   那条路径会先把值移出节点。
 //! - **依赖成环会 panic**，报错里带上环上节点的调试标签与定义位置；effect 队列
 //!   长时间不收敛（互相触发）同样 panic 而不是把线程挂死（AUDIT P13）。
 //! - **同级 effect 的执行顺序不作承诺**：订阅者表用 swap-remove 维护，退订会打乱
@@ -80,14 +83,26 @@
 //! （[`try_get_any_raw_untracked`]、[`store::try_value_ref`]、
 //! [`signal::try_value_ref`]），它们各自的 `# Safety` 段写明了什么操作会让
 //! 返回的指针/引用失效。CI 里跑 `cargo miri test` 看着这条线。
+//!
+//! 节点本身**不再**属于这个范围。阶段三之后，节点的元数据是 [`std::cell::Cell`]、
+//! 载荷是 [`std::cell::RefCell`]，两张存储表对外只交出共享引用；每块 chunk 是
+//! 一次独立分配，因此引用的 provenance 与承载它的 `Vec` 无关（见
+//! `internal::arena` 的模块文档）。剩下的规则只有一条，而且窄到可以逐点审读：
+//!
+//! > 从表里借出的引用不得跨越**这个节点自己**的销毁。
+//!
+//! 运行时里每一条会跨越用户代码的路径都由守卫把值整个移出了节点，
+//! 因此这条规则在内部是被结构性满足的。
 
-// `mod runtime` / `mod core` 都是私有的，里面的 `pub` 等价于 `pub(crate)` ——
+// `mod runtime` / `mod internal` 都是私有的，里面的 `pub` 等价于 `pub(crate)` ——
 // 读代码的人却会以为那是对外接口。开这条 lint 把两者区分开（审计报告 §3.4）。
 #![deny(unreachable_pub)]
 
-mod core;
 mod error;
 mod handle;
+// 从前叫 `mod core`，于是 crate 内部写 `core::mem::...` 会解析到它自己而不是
+// 标准库（审计报告 §3.4）。
+mod internal;
 mod runtime;
 
 pub mod callback;
@@ -106,7 +121,7 @@ pub use crate::{
     },
 };
 
-pub(crate) use crate::core::list::List;
+pub(crate) use crate::internal::list::List;
 use runtime::RUNTIME;
 pub(crate) use runtime::Runtime;
 use std::panic::Location;
@@ -127,7 +142,7 @@ pub(crate) type DependencyList = List<(RawNodeId, u32)>;
 ///    未定义行为：
 ///    - [`scope::dispose`] 该节点或它的任一祖先（arena 槽位被释放）；
 ///    - 写入该节点：[`signal::try_update`] / [`signal::try_update_silent`] /
-///      [`store::try_update`] 会把值移出节点（期间里面是占位值），
+///      [`store::try_update`] 会把值移出节点（期间里面是空的），
 ///      memo 重算后的提交会整体替换掉值；
 ///    - 借用该节点：[`signal::try_with`] / [`store::try_with`] 同样会把值移出去；
 ///    - 值从内联存储升级到堆上（`AnyValue` 的 SOO：小值直接放在节点里，
@@ -187,9 +202,9 @@ pub fn get_debug_label(_id: impl AnyHandle) -> Option<String> {
         let rt = RUNTIME.get()?;
         let raw = _id.to_raw();
         if let Some(aux) = rt.storage.node_aux.get(raw)
-            && let Some(label) = &aux.debug_label
+            && let Some(label) = aux.borrow().debug_label.clone()
         {
-            return Some(label.clone());
+            return Some(label);
         }
         // Check dead labels
         rt.storage.dead_node_labels.get(raw).cloned()

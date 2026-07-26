@@ -1,4 +1,4 @@
-use std::any::{Any, type_name};
+use std::any::Any;
 use std::marker::PhantomData;
 
 use silex_reactivity::{CallbackId, callback};
@@ -47,7 +47,10 @@ impl<T: 'static> Callback<T> {
             } else {
                 #[cfg(debug_assertions)]
                 {
-                    let type_name = type_name::<T>();
+                    // `type_name` 只在 debug 构建下用得到，import 放在这里，
+                    // 否则 release 构建下它是一个未使用的导入（工作区 lint 是
+                    // `warnings = "deny"`，直接编译失败）。
+                    let type_name = std::any::type_name::<T>();
                     console_error(
                         format!("Callback: type mismatch, expected {}", type_name).as_str(),
                     );

@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use core::{alloc::Layout, mem, mem::MaybeUninit, ptr};
+use core::{alloc::Layout, cell::UnsafeCell, mem, mem::MaybeUninit, ptr};
 
 pub const SOO_CAPACITY: usize = 3 * mem::size_of::<usize>();
 
@@ -10,6 +10,23 @@ pub const SOO_CAPACITY: usize = 3 * mem::size_of::<usize>();
 /// 再按值搬运，之后当指针解引用即为未定义行为（Miri 可直接复现）。
 /// 字节数组的移动是逐字节的，provenance 得以保留。
 ///
+/// # 为什么字节数组还要再包一层 `UnsafeCell`
+///
+/// 内联进来的 `T` 自己可以带内部可变性 —— 最直接的例子是
+/// `silex_reactivity` 的 `ThunkValue::new_mut`：它把 `FnMut` 装进一个
+/// `RefCell` 再内联到这里，于是 `ThunkBox::call(&self)` 那条路径上，
+/// 调用闭包会**写**缓冲区里的借用标志。
+///
+/// 没有这层 `UnsafeCell` 时，`as_ptr(&self)` 会先取一个 `&[MaybeUninit<u8>]`：
+/// 那是一次 `SharedReadOnly` 重标记，等于宣布这段字节在引用存活期间**只读**。
+/// 之后由它派生出的 `&F` 一旦写进去（`RefCell` 的借用计数、`Cell` 的值），
+/// 在 Stacked Borrows 下就是未定义行为 —— Miri 报
+/// “trying to retag for SharedReadWrite, but that tag only grants
+/// SharedReadOnly”。这条路径是**每一个 effect 的每一次执行**都会走的。
+///
+/// `UnsafeCell` 把这段字节标记成“可能被共享地写”，`as_ptr` 从
+/// `UnsafeCell::get` 出来的指针因此带 `SharedReadWrite` 权限，写入合法。
+///
 /// # 不变量
 ///
 /// 缓冲区在构造时**整体零初始化**。`AnyValue` 的按位比较 / 按位克隆路径
@@ -19,7 +36,8 @@ pub const SOO_CAPACITY: usize = 3 * mem::size_of::<usize>();
 pub struct InlineStorage {
     /// 零长度数组，仅用于把对齐提升到 `align_of::<usize>()`，不占用任何空间。
     _align: [usize; 0],
-    bytes: [MaybeUninit<u8>; SOO_CAPACITY],
+    /// `UnsafeCell` 是 `repr(transparent)` 的，布局与裸字节数组完全一致。
+    bytes: UnsafeCell<[MaybeUninit<u8>; SOO_CAPACITY]>,
 }
 
 impl InlineStorage {
@@ -28,18 +46,23 @@ impl InlineStorage {
     pub const fn zeroed() -> Self {
         Self {
             _align: [],
-            bytes: [MaybeUninit::new(0); SOO_CAPACITY],
+            bytes: UnsafeCell::new([MaybeUninit::new(0); SOO_CAPACITY]),
         }
     }
 
+    /// 缓冲区起始处的指针。
+    ///
+    /// 返回 `*const u8` 只是为了表达“调用方通常只是要读”，它实际带的是
+    /// `SharedReadWrite` 权限（见类型文档）—— 内联的 `T` 若自带内部可变性，
+    /// 由它派生出的引用可以合法地写。
     #[inline(always)]
     pub const fn as_ptr(&self) -> *const u8 {
-        self.bytes.as_ptr().cast()
+        self.bytes.get().cast_const().cast()
     }
 
     #[inline(always)]
     pub const fn as_mut_ptr(&mut self) -> *mut u8 {
-        self.bytes.as_mut_ptr().cast()
+        self.bytes.get().cast()
     }
 
     /// 判断 `T` 是否能内联存放在偏移 `offset` 处。

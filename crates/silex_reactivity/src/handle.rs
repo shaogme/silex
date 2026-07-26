@@ -38,7 +38,7 @@ use std::{
 /// （下游框架用运行时 tag 自己分发时需要它）。它自己**不带种类信息**，
 /// 因此用它调用的每一个 API 都退回到“类型错了就返回
 /// [`WrongKind`](crate::ReactiveError::WrongKind)”的运行时检查。
-pub use crate::core::arena::Index as RawNodeId;
+pub use crate::internal::arena::Index as RawNodeId;
 
 mod sealed {
     pub trait Sealed {}

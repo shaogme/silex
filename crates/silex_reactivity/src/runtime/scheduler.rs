@@ -1,6 +1,6 @@
-use crate::core::{
-    algorithm::GraphScheduler,
-    arena::{Index as NodeId, SparseSecondaryMap},
+use crate::{
+    internal::arena::{Index as NodeId, SparseSecondaryMap},
+    runtime::graph::EvalFrame,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -39,10 +39,8 @@ impl Scheduler {
             evaluating: Cell::new(0),
         }
     }
-}
 
-impl GraphScheduler for Scheduler {
-    fn queue_effect(&self, id: NodeId) {
+    pub(crate) fn queue_effect(&self, id: NodeId) {
         if self.queued_observers.get(id).is_none() {
             self.queued_observers.insert(id, ());
             self.observer_queue.borrow_mut().push_back(id);
@@ -50,27 +48,40 @@ impl GraphScheduler for Scheduler {
     }
 }
 
+/// 求值栈与传播队列的复用池。
+///
+/// 这里曾经还有一个 `vec_pool: Vec<Vec<NodeId>>`，专门用来接
+/// `fill_subscribers` / `fill_dependencies` 物化出来的订阅表和依赖表 ——
+/// 一个纯粹由 `ReactiveGraph` 抽象层引入的问题，然后又用一层机制去缓解它
+/// （审计报告 §3.3）。算法改成原地遍历之后，那两个 `Vec` 连同它的池子
+/// 一起没有了；剩下的两个容器（DFS 的栈、BFS 的队列）是算法本身需要的。
+///
+/// 池子仍然必要，因为求值可以重入：memo 的计算闭包里再读一个脏 memo，
+/// 就会在外层还没走完时开始新的一轮 DFS。
 pub(crate) struct WorkSpace {
-    pub(crate) vec_pool: Vec<Vec<NodeId>>,
-    pub(crate) deque_pool: Vec<VecDeque<NodeId>>,
+    stack_pool: Vec<Vec<EvalFrame>>,
+    deque_pool: Vec<VecDeque<NodeId>>,
 }
+
+/// 每个池子最多留几个容器。嵌套深度在真实代码里是个位数。
+const MAX_POOLED: usize = 32;
 
 impl WorkSpace {
     pub(crate) fn new() -> Self {
         Self {
-            vec_pool: Vec::new(),
+            stack_pool: Vec::new(),
             deque_pool: Vec::new(),
         }
     }
 
-    pub(crate) fn borrow_vec(&mut self) -> Vec<NodeId> {
-        self.vec_pool.pop().unwrap_or_default()
+    pub(crate) fn borrow_stack(&mut self) -> Vec<EvalFrame> {
+        self.stack_pool.pop().unwrap_or_default()
     }
 
-    pub(crate) fn return_vec(&mut self, mut v: Vec<NodeId>) {
-        v.clear();
-        if self.vec_pool.len() < 32 {
-            self.vec_pool.push(v);
+    pub(crate) fn return_stack(&mut self, mut stack: Vec<EvalFrame>) {
+        stack.clear();
+        if self.stack_pool.len() < MAX_POOLED {
+            self.stack_pool.push(stack);
         }
     }
 
@@ -78,10 +89,10 @@ impl WorkSpace {
         self.deque_pool.pop().unwrap_or_default()
     }
 
-    pub(crate) fn return_deque(&mut self, mut d: VecDeque<NodeId>) {
-        d.clear();
-        if self.deque_pool.len() < 32 {
-            self.deque_pool.push(d);
+    pub(crate) fn return_deque(&mut self, mut deque: VecDeque<NodeId>) {
+        deque.clear();
+        if self.deque_pool.len() < MAX_POOLED {
+            self.deque_pool.push(deque);
         }
     }
 }

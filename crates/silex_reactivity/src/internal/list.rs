@@ -369,18 +369,19 @@ impl<T> List<T> {
         }
     }
 
-    pub(crate) fn for_each<F>(&self, mut f: F)
-    where
-        F: FnMut(&T),
-    {
+    /// 就地借出全部元素。
+    ///
+    /// 订阅者表与依赖表的遍历走这里：`propagate` / `evaluate` 现在直接在这个
+    /// 切片上走，不再把它拷进一个 `Vec`。从前那套 `fill_subscribers(&self,
+    /// dest: &mut Vec<NodeId>)` 是 `ReactiveGraph` 抽象层的产物 —— trait 没法
+    /// 表达“借用内部的 `List<NodeId>`”，于是每访问一个节点就得整表拷贝一次，
+    /// 再拿一个 `vec_pool` 去缓解这个由抽象引入的问题（审计报告 §3.3）。
+    #[inline]
+    pub(crate) fn as_slice(&self) -> &[T] {
         match self {
-            Self::Empty => {}
-            Self::Single(val) => f(val),
-            Self::Many(vec) => {
-                for item in vec.as_slice() {
-                    f(item);
-                }
-            }
+            Self::Empty => &[],
+            Self::Single(val) => std::slice::from_ref(val),
+            Self::Many(vec) => vec.as_slice(),
         }
     }
 }
@@ -444,7 +445,7 @@ mod tests {
 
     fn collect<T: Clone>(list: &List<T>) -> Vec<T> {
         let mut out = Vec::new();
-        list.for_each(|v| out.push(v.clone()));
+        out.extend_from_slice(list.as_slice());
         out
     }
 
@@ -555,7 +556,7 @@ mod tests {
         }
         let copy = list.clone();
         let mut seen = 0;
-        copy.for_each(|_| seen += 1);
+        seen += copy.as_slice().len();
         assert_eq!(seen, 5);
         drop(copy);
         assert_eq!(counter.get(), 5);

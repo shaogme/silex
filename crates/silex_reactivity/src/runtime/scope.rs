@@ -1,6 +1,6 @@
 use crate::{
     DependencyList,
-    core::{arena::Index as NodeId, value::OnceThunk},
+    internal::{arena::Index as NodeId, value::OnceThunk},
     runtime::{
         Runtime,
         guard::{ObserverGuard, OwnerGuard},
@@ -161,23 +161,19 @@ impl Runtime {
 
     /// 摘下一个节点的子节点列表与 cleanup 列表。
     pub(crate) fn take_scope_state(&self, id: NodeId) -> (Vec<NodeId>, CleanupList) {
-        self.storage
-            .node_aux
-            .with_mut(id, |aux| {
-                (mem::take(&mut aux.children), mem::take(&mut aux.cleanups))
-            })
-            .unwrap_or_default()
+        let Some(aux) = self.storage.node_aux.get(id) else {
+            return (Vec::new(), CleanupList::Empty);
+        };
+        let mut aux = aux.borrow_mut();
+        (mem::take(&mut aux.children), mem::take(&mut aux.cleanups))
     }
 
     /// 摘下一个计算节点的依赖列表。
     fn take_dependencies(&self, id: NodeId) -> DependencyList {
-        self.storage
-            .reactive
-            .with_mut(id, |n| match &mut n.effect {
-                Some(effect_data) => mem::take(&mut effect_data.dependencies),
-                None => DependencyList::default(),
-            })
-            .unwrap_or_default()
+        let Some(node) = self.storage.node(id) else {
+            return DependencyList::default();
+        };
+        mem::take(&mut node.effect.borrow_mut().dependencies)
     }
 
     pub(crate) fn run_cleanups(
@@ -199,11 +195,9 @@ impl Runtime {
     /// 把 `self_id` 从它所有依赖的订阅者表里摘掉。
     fn unsubscribe(&self, self_id: NodeId, dependencies: DependencyList) {
         for (dep_id, _) in dependencies {
-            self.storage.reactive.with_mut(dep_id, |n| {
-                if let Some(signal_data) = &mut n.signal {
-                    signal_data.subscribers.remove(&self_id);
-                }
-            });
+            if let Some(dep) = self.storage.node(dep_id) {
+                dep.signal.borrow_mut().subscribers.remove(&self_id);
+            }
         }
     }
 
@@ -282,8 +276,8 @@ impl Runtime {
             let label = self
                 .storage
                 .node_aux
-                .with_mut(id, |aux| aux.debug_label.take())
-                .flatten();
+                .get(id)
+                .and_then(|aux| aux.borrow_mut().debug_label.take());
             if let Some(label) = label {
                 self.storage.remember_dead_label(id, label);
             }
@@ -305,12 +299,12 @@ impl Runtime {
 
         if remove_from_parent
             && let Some(parent_id) = self.storage.graph.get(id).and_then(|n| n.parent)
+            && let Some(parent_aux) = self.storage.node_aux.get(parent_id)
         {
-            self.storage.node_aux.with_mut(parent_id, |parent_aux| {
-                if let Some(idx) = parent_aux.children.iter().position(|&x| x == id) {
-                    parent_aux.children.swap_remove(idx);
-                }
-            });
+            let mut parent_aux = parent_aux.borrow_mut();
+            if let Some(idx) = parent_aux.children.iter().position(|&x| x == id) {
+                parent_aux.children.swap_remove(idx);
+            }
         }
 
         self.forget_node(id);
@@ -319,7 +313,7 @@ impl Runtime {
 
 #[cfg(test)]
 mod tests {
-    use crate::{core::arena::Index as NodeId, runtime::Runtime};
+    use crate::{internal::arena::Index as NodeId, runtime::Runtime};
     use std::{cell::RefCell, rc::Rc};
 
     /// 在 `owner` 之下注册一个节点，并把 owner 切到它身上。
