@@ -22,14 +22,9 @@ pub fn build_css_block_from_rules(rules: Vec<UtilityRule>) -> Result<CssBlock> {
     let mut modifier_groups: Vec<(ModifierList, Vec<UtilityRule>)> = Vec::new();
     // BTreeSet 而非 HashSet：注入顺序直接进入产物文本与类名哈希，
     // HashSet 的迭代顺序每次构造都不同，同一份输入会编译出不同的 CSS 与类名。
-    let mut detected_keyframes: BTreeSet<String> = BTreeSet::new();
+    let mut detected_keyframes: BTreeSet<&'static str> = BTreeSet::new();
 
     for rule in rules {
-        // 收集所需 keyframes 动画
-        if rule.css_property == CssPropertyId::Animation {
-            check_and_collect_keyframes(&rule.value, &mut detected_keyframes);
-        }
-
         if rule.modifiers.is_empty() {
             root_raw_rules.push(rule);
         } else {
@@ -56,6 +51,15 @@ pub fn build_css_block_from_rules(rules: Vec<UtilityRule>) -> Result<CssBlock> {
     let mut root_rules = Vec::new();
     for (modifiers, rules) in all_groups {
         let deduped = deduplicate_utility_rules(rules);
+        // keyframes 只按**去重之后**真正留下的声明收集。放在去重之前收集时，
+        // `animate-spin animate-[pulsar_1s]` 里那条已经被覆盖掉的 `animate-spin`
+        // 照样会把 `@keyframes spin` 注入产物——而 DCE 的起点就是这个集合，
+        // 它永远剪不掉自己带进来的东西。
+        for rule in &deduped {
+            if rule.css_property == CssPropertyId::Animation {
+                collect_keyframes(&rule.value, &mut detected_keyframes);
+            }
+        }
         if modifiers.is_empty() {
             root_rules.extend(deduped.iter().map(convert_rule_to_declaration));
         } else {
@@ -63,11 +67,8 @@ pub fn build_css_block_from_rules(rules: Vec<UtilityRule>) -> Result<CssBlock> {
         }
     }
 
-    // 3. 自动注入 Keyframes 规则
+    // 按需注入 @keyframes：只有实际留在产物里的动画才有对应规则
     inject_keyframes_rules(&mut root_rules, &detected_keyframes);
-
-    // 4. 零冗余 DCE 剪裁 Pass (Prune Unused Keyframes)
-    prune_unused_keyframes(&mut root_rules, &detected_keyframes);
 
     Ok(CssBlock { rules: root_rules })
 }
@@ -345,21 +346,28 @@ fn utility_value_to_css_string(val: &UtilityValue) -> String {
     }
 }
 
-fn check_and_collect_keyframes(value: &UtilityValue, keyframes: &mut BTreeSet<String>) {
+/// 从一条 `animation` 声明里挑出需要随产物一起注入的 `@keyframes` 名字。
+///
+/// 按**空白/逗号切出的完整 token** 与 `KEYFRAME_TABLE` 精确比对，
+/// 而不是在整条值上 `contains("spin")`：后者会让 `animate-[spinner_2s_linear_infinite]`
+/// 注入一份用不上的 `@keyframes spin`、`animate-[my-ping_1s]` 注入 `@keyframes ping`。
+/// 候选名字也来自 `KEYFRAME_TABLE` 本身，不再硬编码那四个动画——
+/// 表里新增动画时这里自动跟上。
+fn collect_keyframes(value: &UtilityValue, keyframes: &mut BTreeSet<&'static str>) {
     let anim_str = match value {
         UtilityValue::Keyword(kw) => *kw,
         UtilityValue::ArbitraryLiteral(s) => s.as_str(),
         _ => return,
     };
 
-    for name in &["spin", "ping", "pulse", "bounce"] {
-        if anim_str.starts_with(name) || anim_str.contains(name) {
-            keyframes.insert((*name).to_string());
+    for token in anim_str.split([' ', ',', '\t']).filter(|t| !t.is_empty()) {
+        if let Some(meta) = lookup_keyframe_meta(token) {
+            keyframes.insert(meta.name);
         }
     }
 }
 
-fn inject_keyframes_rules(root_rules: &mut Vec<CssRule>, keyframes: &BTreeSet<String>) {
+fn inject_keyframes_rules(root_rules: &mut Vec<CssRule>, keyframes: &BTreeSet<&'static str>) {
     for name in keyframes {
         if let Some(at_rule) = build_keyframe_at_rule(name) {
             root_rules.push(CssRule::AtRule(at_rule));
@@ -675,55 +683,6 @@ fn build_modifier_rule(modifiers: ModifierList, rules: Vec<UtilityRule>) -> Resu
             selectors: ts,
             block: current_block,
         }))
-    }
-}
-
-/// 零冗余死代码剪裁 (DCE): 递归收集 block 中所有实际引用的 animation 名称，剔除多余的 @keyframes 规则
-pub fn prune_unused_keyframes(rules: &mut Vec<CssRule>, detected_keyframes: &BTreeSet<String>) {
-    let mut used = detected_keyframes.clone();
-    collect_used_animations(rules, &mut used);
-
-    rules.retain(|rule| {
-        if let CssRule::AtRule(at_rule) = rule
-            && at_rule.name == "keyframes"
-        {
-            let name_param = at_rule.params.to_string();
-            return used.iter().any(|u| name_param.contains(u));
-        }
-        true
-    });
-}
-
-fn collect_used_animations(rules: &[CssRule], used: &mut BTreeSet<String>) {
-    for rule in rules {
-        match rule {
-            CssRule::Declaration(decl) => {
-                if decl.property == "animation" || decl.property == "animation-name" {
-                    let val_str = decl.values.to_string();
-                    for name in &["spin", "ping", "pulse", "bounce"] {
-                        if val_str.contains(name) {
-                            used.insert((*name).to_string());
-                        }
-                    }
-                }
-            }
-            CssRule::Nested(nested) => {
-                collect_used_animations(&nested.block.rules, used);
-            }
-            CssRule::AtRule(at_rule) => {
-                if at_rule.name != "keyframes" {
-                    collect_used_animations(&at_rule.block.rules, used);
-                }
-            }
-            CssRule::Unsafe(_) => {}
-            CssRule::Apply(ap) => {
-                for name in &["spin", "ping", "pulse", "bounce"] {
-                    if ap.classes.contains(name) {
-                        used.insert((*name).to_string());
-                    }
-                }
-            }
-        }
     }
 }
 

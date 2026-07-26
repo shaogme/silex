@@ -207,8 +207,9 @@ pub fn normalize_value(value: &str) -> String {
 /// 同一个颜色在两侧可能写成 `rgba(0, 0, 0, 0.05)`、`#0000000d`、`#fff`——
 /// LightningCSS 按最短形式输出，夹具里保留的是源码里的写法。
 fn canonicalize_colors(s: &str) -> String {
+    let s = &expand_transparent_keyword(s);
     let mut out = String::with_capacity(s.len());
-    let mut rest = s;
+    let mut rest = s.as_str();
 
     loop {
         let hash = rest.find('#');
@@ -257,6 +258,33 @@ fn canonicalize_colors(s: &str) -> String {
             }
         }
     }
+}
+
+/// `transparent` 关键字展开成 `#00000000`。
+///
+/// 规范里 `transparent` 就是 `rgba(0, 0, 0, 0)`，LightningCSS 会把它压成 `#0000`；
+/// 夹具里保留的是 Tailwind 源码的关键字写法。这是无损改写，两种写法必须视作同一个值。
+/// 只替换独立 token——`transparent-ish` 这种自定义标识符不能被吃掉。
+fn expand_transparent_keyword(s: &str) -> String {
+    const KW: &str = "transparent";
+    let is_word = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find(KW) {
+        let before_ok = rest[..i].chars().next_back().is_none_or(|c| !is_word(c));
+        let after = &rest[i + KW.len()..];
+        let after_ok = after.chars().next().is_none_or(|c| !is_word(c));
+        out.push_str(&rest[..i]);
+        out.push_str(if before_ok && after_ok {
+            "#00000000"
+        } else {
+            KW
+        });
+        rest = after;
+    }
+    out.push_str(rest);
+    out
 }
 
 /// 3/4/6/8 位 hex 一律展开成 8 位；不透明时省略 alpha
@@ -505,6 +533,15 @@ mod tests {
         );
         assert_eq!(normalize_value("#FFF"), normalize_value("#ffffff"));
         assert_eq!(normalize_value("0px"), normalize_value("0"));
+        assert_eq!(
+            normalize_value("2px solid transparent"),
+            normalize_value("2px solid #0000")
+        );
+        // 只吃独立 token
+        assert_ne!(
+            normalize_value("var(--transparent-bg)"),
+            normalize_value("var(--#00000000-bg)")
+        );
         // 真实差异必须保留
         assert_ne!(normalize_value("1rem"), normalize_value("1px"));
         assert_ne!(normalize_value("#fb2c36"), normalize_value("#fb2c37"));

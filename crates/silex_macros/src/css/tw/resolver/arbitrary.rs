@@ -1,7 +1,8 @@
 use crate::css::tw::ast::{SpannedModifier, UtilityRule, UtilityValue};
 use proc_macro2::Span;
 use silex_tw_core::{
-    ValueKind, arbitrary_dispatch, classify_arbitrary_value, prefix::lookup_color_prefix,
+    ValueKind, arbitrary_dispatch, classify_arbitrary_value,
+    prefix::{lookup_color_prefix, ring_width_prop},
 };
 use syn::{Error, Result};
 
@@ -148,14 +149,10 @@ pub fn resolve_arbitrary(
     // `border-s-[3px]` 是宽度、`border-s-[red]` 是颜色，二者只能靠值区分。
     let kind = classify_arbitrary_value(&norm_val);
 
-    // `ring-[…]` / `ring-offset-[…]` 的宽度形态还要额外铺 box-shadow 载体
+    // `ring-[…]` / `inset-ring-[…]` / `ring-offset-[…]` 的宽度形态还要额外铺 box-shadow 载体。
+    // 前缀到宽度变量的映射是 core 的数据，与数值路径（`ring-2`）同一张表。
     let is_sized = matches!(kind, ValueKind::Length | ValueKind::Number);
-    let ring_width_prop = match clean_prefix {
-        "ring" if is_sized => Some("--tw-ring-width"),
-        "ring-offset" if is_sized => Some("--tw-ring-offset-width"),
-        _ => None,
-    };
-    if let Some(prop) = ring_width_prop {
+    if let Some(prop) = is_sized.then(|| ring_width_prop(clean_prefix)).flatten() {
         let value = build_value(&norm_val, negation, span)?;
         return Ok(vec![
             make_rule(modifiers.clone(), prop, value, span)?,

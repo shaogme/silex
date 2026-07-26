@@ -695,3 +695,105 @@ fn filter_none_clears_previously_accumulated_filter_components() {
     // 反过来：filter-none 在前，后面的分量照常累积
     assert_contains("filter-none blur-sm", "filter:blur(4px)");
 }
+
+// ---------------------------------------------------------------------------
+// §14.3 / §2.10 第六阶段收口
+// ---------------------------------------------------------------------------
+
+/// `inset-ring-*` 此前是三重静默失效：宽度落在 `outline-width` + `outline-offset`
+/// 上（而且没有 `outline-style`，默认 `none`，画不出来）、颜色落在
+/// `--tw-inset-ring-color` 上（没人消费）、任意值因为宽度分派表漏了这个前缀
+/// 被判成颜色，产出 `--tw-inset-ring-color: 3px` 这种非法 CSS。
+#[test]
+fn inset_ring_width_and_color_share_one_box_shadow_carrier() {
+    for (src, needle) in [
+        ("inset-ring", "--tw-inset-ring-width:1px"),
+        ("inset-ring-2", "--tw-inset-ring-width:2px"),
+        // 静态表没有的档位，走 core 兜底
+        ("inset-ring-7", "--tw-inset-ring-width:7px"),
+        // 任意值：长度归宽度
+        ("inset-ring-[3px]", "--tw-inset-ring-width:3px"),
+        // 任意值：颜色归颜色
+        ("inset-ring-[red]", "--tw-inset-ring-color:red"),
+        ("inset-ring-red-500", "--tw-inset-ring-color:#fb2c36"),
+    ] {
+        assert_contains(src, needle);
+        // 无论宽度还是颜色，都必须铺同一条 box-shadow 载体，否则写进变量的值没人读
+        assert_contains(
+            src,
+            "var(--tw-inset-ring-width,0px) var(--tw-inset-ring-color",
+        );
+    }
+
+    // 宽度 + 颜色一起写才是常见用法，两者必须落在同一条 box-shadow 上
+    let css = css_of("inset-ring-2 inset-ring-red-500");
+    assert!(
+        css.contains("--tw-inset-ring-width:2px") && css.contains("--tw-inset-ring-color:#fb2c36"),
+        "实得:\n{css}"
+    );
+    assert!(
+        !css.contains("outline-width"),
+        "inset-ring 不该再动 outline:\n{css}"
+    );
+}
+
+/// v4 里 `outline-none` 是"没有描边"，`outline-hidden` 才是
+/// "视觉上去掉、但强制配色模式下保留一条透明描边"。此前两者的语义是互换的，
+/// 而且 `outline-hidden` 产出的是 `outline-style: hidden`。
+#[test]
+fn outline_none_and_outline_hidden_have_v4_semantics() {
+    let none = css_of("outline-none");
+    assert!(none.contains("outline-style:none"), "实得:\n{none}");
+    assert!(
+        !none.contains("2px solid"),
+        "outline-none 不该再画透明描边:\n{none}"
+    );
+
+    let hidden = css_of("outline-hidden");
+    assert!(hidden.contains("outline-style:none"), "实得:\n{hidden}");
+    assert!(
+        hidden.contains("forced-colors") && hidden.contains("2px solid"),
+        "outline-hidden 的透明描边必须落在 forced-colors 里:\n{hidden}"
+    );
+}
+
+/// `container` 与 `@container` 此前产出完全相同的 CSS。
+/// Tailwind 里前者是"宽度撑满、到断点为止"的容器工具类，后者才是容器查询上下文。
+#[test]
+fn container_is_a_breakpoint_width_utility_not_a_container_query_context() {
+    let css = css_of("container");
+    assert!(css.contains("width:100%"), "实得:\n{css}");
+    assert!(
+        !css.contains("container-type"),
+        "container 不是容器查询上下文:\n{css}"
+    );
+    for width in ["40rem", "48rem", "64rem", "80rem", "96rem"] {
+        assert!(
+            css.contains(&format!("max-width:{width}")),
+            "缺 {width} 档位:\n{css}"
+        );
+    }
+
+    // `@container` 不受影响
+    assert_contains("@container", "container-type:inline-size");
+}
+
+/// marker class 的定义是"必须以字面类名出现在 DOM 上，好让别的选择器引用它"。
+/// 容器查询的 `container-type` / `container-name` 都是声明，落在哈希类上就够了；
+/// 此前 `@container` / `container/side` 这种连合法类名都不是的字符串会被塞进 class 属性。
+#[test]
+fn only_group_and_peer_land_in_the_class_attribute() {
+    use crate::css::tw::ast::TwInput;
+
+    let extra_of = |src: &str| -> Vec<String> {
+        let input: TwInput = syn::parse2(quote!(#src)).unwrap();
+        input.extra_classes
+    };
+
+    assert_eq!(extra_of("group p-4"), vec!["group".to_string()]);
+    assert_eq!(extra_of("peer/x p-4"), vec!["peer/x".to_string()]);
+    assert!(extra_of("@container @sm:p-4").is_empty());
+    assert!(extra_of("@container/card p-4").is_empty());
+    assert!(extra_of("container p-4").is_empty());
+    assert!(extra_of("container/side p-4").is_empty());
+}

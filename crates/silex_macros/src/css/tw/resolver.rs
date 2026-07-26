@@ -16,14 +16,17 @@ use crate::css::tw::{
     resolver::{
         arbitrary::{parse_arbitrary_syntax, resolve_arbitrary},
         codegen::{property_id::CssPropertyId, table::resolve_static_rule},
-        core_bridge::{MacroCtx, rule_sets_to_rules, with_selector},
+        core_bridge::{MacroCtx, at_rule_utility_to_rules, rule_sets_to_rules, with_selector},
         numeric::resolve_numeric_utility,
         palette::resolve_color_rules,
         suggest::find_best_suggestion,
     },
 };
 
-use silex_tw_core::prefix::{ColorPrefixRule, lookup_color_prefix};
+use silex_tw_core::{
+    lookup_at_rule_utility,
+    prefix::{ColorPrefixRule, lookup_color_prefix},
+};
 
 // ring 的 box-shadow 载体由 `silex_tw_core` 定义，这里只是转出常量，
 // 避免宏侧再抄一份字面量。
@@ -138,14 +141,22 @@ where
     })
 }
 
-/// 判断是否为 Marker Class（如 group, peer, @container, container 或 group/name, peer/name, @container/name, container/name）
+/// 判断是否为 Marker Class（`group` / `peer`，含 `group/name` 这类命名形式）。
+///
+/// Marker class 的定义是"必须以**字面类名**出现在 DOM 上，好让别的选择器引用它"——
+/// `group-hover:` 生成的选择器里写死了 `.group`，那个类名不进 `class` 属性就永远匹配不上。
+///
+/// 容器查询不属于这一类：`@container` / `@container/card` 的 `container-type` 与
+/// `container-name` 都是**声明**，落在 `tw!` 生成的哈希类上就够了。此前它们也被塞进
+/// `extra_classes`，于是 `class` 属性里会出现 `@container`、`container/side` 这种
+/// 连合法 CSS 类名都不是的字符串（`@` 与 `/` 在选择器里必须转义）。
 #[inline]
 pub fn is_marker_class(token: &str) -> bool {
     let base = match token.split_once('/') {
         Some((prefix, _)) => prefix,
         None => token,
     };
-    matches!(base, "group" | "peer" | "@container" | "container")
+    matches!(base, "group" | "peer")
 }
 
 /// 将基础的 Utility 词条（如 `p-4`, `hover:bg-primary`, `w-[12px]`）解析为标准的 `UtilityRule`
@@ -162,12 +173,19 @@ pub fn resolve_utility(
         return Ok(vec![]);
     }
 
-    // 1. 尝试匹配静态表规则 (static rules table)
+    // 1. at-rule 分组型工具类（`container` / `outline-hidden`）。
+    //    必须排在静态表之前：静态表一行挂不了 `@media`，真让它先命中就等于
+    //    永远拿不到条件分组——那正是报告 §3.1 说的"另一份实现是死代码"。
+    if let Some(meta) = lookup_at_rule_utility(utility_token) {
+        return at_rule_utility_to_rules(&modifiers, meta, span);
+    }
+
+    // 2. 尝试匹配静态表规则 (static rules table)
     if let Some(rules) = resolve_static_rule(&modifiers, utility_token, span) {
         return Ok(rules);
     }
 
-    // 2. 模式与规律型 Utility 解析
+    // 3. 模式与规律型 Utility 解析
     resolve_pattern_utility(modifiers, utility_token, span)
 }
 

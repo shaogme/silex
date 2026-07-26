@@ -7,7 +7,7 @@
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
-use silex_tw_core::{ColorShadeInfo, JsonPalette, resolve_class};
+use silex_tw_core::{ColorShadeInfo, JsonPalette, lookup_at_rule_utility, resolve_class};
 
 /// 把一个类名解析成扁平的 `(属性, 值)` 序列，丢掉伴生选择器——
 /// 属性名/值级别的校验不关心声明落在哪个选择器上。
@@ -15,6 +15,26 @@ fn flat_rules(
     class: &str,
     palette: &BTreeMap<String, Vec<ColorShadeInfo>>,
 ) -> Option<Vec<(&'static str, String)>> {
+    // at-rule 路径的类名走不到 `resolve_class`，但它们产出的声明同样要过属性/值闸门——
+    // 否则这条路径就成了 lint 的盲区
+    if let Some(u) = lookup_at_rule_utility(class) {
+        return Some(
+            u.groups
+                .iter()
+                .flat_map(|g| g.decls)
+                .map(|&(prop, val)| (prop, val.to_string()))
+                .chain(u.per_breakpoint.map(|prop| {
+                    (
+                        prop,
+                        silex_tw_core::CONTAINER_TIERS
+                            .first()
+                            .map(|(_, w)| (*w).to_string())
+                            .unwrap_or_default(),
+                    )
+                }))
+                .collect(),
+        );
+    }
     let sets = resolve_class(class, &JsonPalette(palette))?;
     Some(
         sets.into_iter()

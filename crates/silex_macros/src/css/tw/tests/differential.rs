@@ -41,14 +41,6 @@ enum Divergence {
 /// 台账是"已知且已决定暂不处理"的清单，不是"跑不过就往里塞"的垃圾桶。
 #[rustfmt::skip]
 const KNOWN_DIVERGENCES: &[(&str, Divergence, &str)] = &[
-    // --- 缺陷：outline-none / outline-hidden 语义互换（报告 §2.10）-----------
-    ("outline-none",   Divergence::Mechanism, "v4 中应为 outline-style:none，当前产出 outline:2px solid transparent"),
-    ("outline-hidden", Divergence::Mechanism, "v4 中 outline-hidden 才是 2px solid transparent + outline-offset"),
-
-    // --- 缺陷：container 被当成 container-type（报告 §2.10）------------------
-    ("container", Divergence::Mechanism,
-     "Tailwind 的 container 是 width:100% + 各断点 max-width 的容器工具类，不是 container-type"),
-
     // --- 功能缺口：transition 家族不完整（第四阶段）--------------------------
     ("transition",        Divergence::Mechanism, "缺 transition-duration / timing-function；property 列表停留在 v3"),
     ("transition-all",    Divergence::Mechanism, "同 transition"),

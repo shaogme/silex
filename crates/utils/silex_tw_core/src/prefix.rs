@@ -12,8 +12,36 @@
 /// `divide-*` 的伴生选择器：声明落在相邻子元素之间，而不是元素自身
 pub const DIVIDE_SELECTOR: &str = "& > :not([hidden]) ~ :not([hidden])";
 
-/// ring 体系的 `box-shadow` 载体
-pub const RING_BOX_SHADOW: &str = "var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width, 0px) var(--tw-ring-offset-color, #0000), 0 0 0 var(--tw-ring-width, 0px) var(--tw-ring-color, rgba(59, 130, 246, 0.5)), var(--tw-shadow, 0 0 #0000)";
+/// ring 体系的 `box-shadow` 载体。
+///
+/// 四段依次是：内描边（`inset-ring-*`）、ring 偏移、ring 本体、以及用户自己的 `shadow-*`。
+/// 每一段的宽度默认 `0px`，未使用的段渲染出来是空的，因此可以无条件铺这一条声明。
+///
+/// 内描边段是必须的：`inset-ring-<color>` 写进 `--tw-inset-ring-color` 之后
+/// 得有人消费它，否则就是 §2.4 那个 ring 缺陷的翻版——颜色写进了一个没人读的变量，
+/// 用户看到的是"什么都没发生"。
+pub const RING_BOX_SHADOW: &str = "inset 0 0 0 var(--tw-inset-ring-width, 0px) var(--tw-inset-ring-color, currentcolor), var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width, 0px) var(--tw-ring-offset-color, #0000), 0 0 0 var(--tw-ring-width, 0px) var(--tw-ring-color, rgba(59, 130, 246, 0.5)), var(--tw-shadow, 0 0 #0000)";
+
+/// ring 体系里"值是尺寸"时落到哪个宽度变量。
+///
+/// 顺序即优先级（`ring-offset-` 必须先于 `ring-`）。
+/// 数值路径（`ring-2`）与任意值路径（`ring-[3px]`）都读这张表——此前任意值那边是
+/// `match clean_prefix { "ring" => …, "ring-offset" => … }` 的硬编码，
+/// 漏了 `inset-ring`，于是 `inset-ring-[3px]` 掉进颜色前缀表，产出
+/// `--tw-inset-ring-color: 3px` 这种非法 CSS。
+pub const RING_WIDTH_PREFIXES: &[(&str, &str)] = &[
+    ("ring-offset", "--tw-ring-offset-width"),
+    ("inset-ring", "--tw-inset-ring-width"),
+    ("ring", "--tw-ring-width"),
+];
+
+/// 该前缀在"值是尺寸"时对应的 ring 宽度变量
+pub fn ring_width_prop(prefix: &str) -> Option<&'static str> {
+    RING_WIDTH_PREFIXES
+        .iter()
+        .find(|(p, _)| *p == prefix)
+        .map(|(_, prop)| *prop)
+}
 
 /// 颜色前缀命中后需要附带产出的固定声明。
 ///
@@ -120,7 +148,11 @@ pub static COLOR_PREFIX_RULES: &[ColorPrefixRule] = &[
     rule("text-shadow-", &["--tw-text-shadow-color"]),
     rule_scoped("placeholder-", &["color"], "&::placeholder"),
     rule("decoration-", &["text-decoration-color"]),
-    rule("inset-ring-", &["--tw-inset-ring-color"]),
+    rule_with(
+        "inset-ring-",
+        &["--tw-inset-ring-color"],
+        ColorCompanion::RingShadow,
+    ),
     rule("border-bs-", &["border-block-start-color"]),
     rule("border-be-", &["border-block-end-color"]),
     rule("border-b-", &["border-bottom-color"]),
