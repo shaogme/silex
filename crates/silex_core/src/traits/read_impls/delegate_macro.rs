@@ -53,15 +53,21 @@ macro_rules! impl_rx_delegate {
         impl<T: $crate::traits::RxData> $crate::traits::RxBase for $target<T> {
             #[inline(always)]
             fn id(&self) -> Option<$crate::reactivity::NodeId> {
-                Some(self.id)
+                Some(::silex_reactivity::AnyHandle::to_raw(self.id))
             }
             #[inline(always)]
             fn track(&self) {
-                ::silex_reactivity::track_signal(self.id);
+                ::silex_reactivity::signal::track(self.id);
             }
             #[inline(always)]
             fn is_disposed(&self) -> bool {
-                !::silex_reactivity::is_signal_valid(self.id)
+                // 六个 `is_*_valid` 已经收敛成 `Handle::<K>::is_alive`（审计报告 §3.1）；
+                // 这个宏同时服务于擦除句柄（`ReadSignal`）与带种类句柄（`Memo`），
+                // 所以在这里统一按“可读节点”断言回去。
+                !::silex_reactivity::SignalId::from_raw_unchecked(
+                    ::silex_reactivity::AnyHandle::to_raw(self.id),
+                )
+                .is_alive()
             }
             #[inline(always)]
             fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> {
@@ -77,7 +83,7 @@ macro_rules! impl_rx_delegate {
             type RxType = $crate::Rx<T, $crate::RxValueKind>;
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
-                $crate::Rx::new_signal(self.id)
+                $crate::Rx::new_signal(::silex_reactivity::AnyHandle::to_raw(self.id))
             }
             #[inline(always)]
             fn is_constant(&self) -> bool {
@@ -89,7 +95,7 @@ macro_rules! impl_rx_delegate {
             #[inline(always)]
             fn into_signal(self) -> $crate::reactivity::Signal<T> {
                 $crate::reactivity::Signal::Read($crate::reactivity::ReadSignal {
-                    id: self.id,
+                    id: ::silex_reactivity::AnyHandle::to_raw(self.id),
                     marker: ::core::marker::PhantomData,
                 })
             }
@@ -104,16 +110,22 @@ macro_rules! impl_rx_delegate {
             #[inline(always)]
             fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
                 let id = self.id;
-                let val = ::silex_reactivity::try_get_signal_value_ref::<T>(id)?;
+                // SAFETY: 借用被立刻收窄回 `RxGuard<'_, T, T>`，其生命周期挂在
+                // `&self` 上，不会逃逸出调用方的表达式作用域。
+                //
+                // 残留风险（AUDIT P6 未闭环的部分）：句柄是 `Copy` 的，它的存活与
+                // 节点的存活无关 —— 调用方若在持有 guard 期间 `dispose` 这个节点，
+                // 仍会读到已释放的内存。彻底修复需要运行时级别的借用计数。
+                let val = unsafe { ::silex_reactivity::signal::try_value_ref::<T>(id)? };
                 Some($crate::traits::RxGuard::Borrowed {
                     value: val,
-                    token: Some($crate::NodeRef::from_id(id)),
+                    token: Some(::silex_reactivity::AnyHandle::to_raw(id)),
                 })
             }
 
             #[inline(always)]
             fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-                ::silex_reactivity::try_with_signal_untracked(self.id, fun)
+                ::silex_reactivity::signal::try_with_untracked(self.id, fun).ok()
             }
 
             #[inline(always)]

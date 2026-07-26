@@ -122,9 +122,12 @@
 ### `clean_node`
 *   **Signature**: `fn clean_node(&self, id: NodeId)`
 *   **Logic**:
-    1.  从 `graph` 中获取并移除所有 `children` (递归)。
-    2.  执行所有 `cleanups`。
+    1.  摘下 `children` / `cleanups` / `dependencies`，交给 `run_cleanups`。
+    2.  `run_cleanups` 先销毁全部子树，再执行自身的 `cleanups`。
     3.  从所有 `dependencies` 的 `subscribers` 列表中移除自身 (断开反向引用)。
+*   **Note**: 子树销毁走 `dispose_subtrees` 的**显式工作栈**（`DisposeStep::Enter/Exit`
+    的后序遍历），**不是递归** —— 运行时栈深度与组件树深度无关（AUDIT P19.8）。
+    遍历顺序仍是「孙子 → 儿子 → 自身」、同级按注册顺序。
 
 ---
 

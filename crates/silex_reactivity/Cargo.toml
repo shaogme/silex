@@ -4,7 +4,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description.workspace = true
+# 工作区的 description 是整个框架的介绍（"Next Generation High-Performance Rust
+# Web Framework..."），挂在一个子 crate 上是错的，发到 docs.rs 会误导人（AUDIT P17）。
+description = "Silex 的单线程细粒度响应式运行时：signal / memo / effect 与它们背后的图算法"
 repository.workspace = true
 homepage.workspace = true
 keywords.workspace = true

@@ -19,7 +19,8 @@ pub fn create_tuple_n_rx<const N: usize, V: RxCloneData + 'static>(
     is_constant: bool,
 ) -> Rx<V> {
     let ids_vec = ids.to_vec();
-    let meta_id = silex_reactivity::untrack(|| silex_reactivity::store_value(ids_vec));
+    let meta_id =
+        silex_reactivity::scope::untrack(|| silex_reactivity::store::create(ids_vec)).raw();
     // Important: for TupleN we need track_tuple_meta_slice as track trampoline
     let op = StaticMapPayload::<V>::new1_with_track(
         meta_id,

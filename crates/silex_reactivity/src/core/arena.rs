@@ -8,10 +8,55 @@ use std::{
 const CHUNK_SIZE: usize = 128;
 
 /// Strong typed index with generation counter to detect ABA problems.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// # 代数回绕
+///
+/// `generation` 是 `u32` 且用 `wrapping_add` 递增（插入 +1、移除 +1），因此同一个
+/// 槽位被复用 2³¹ 次之后，一个早已失效的 `Index` 会重新变得“有效”，读到的是
+/// 另一个节点的数据（AUDIT P19.4）。按每秒创建并销毁 10 万个节点算，需要连续
+/// 运行约 6 小时才会绕回同一个槽位一次 —— 对 Web 前端的实际负载有足够余量，
+/// 而把它升到 `u64` 会让句柄从 8 字节变成 16 字节，订阅者表、依赖表、
+/// 各类句柄全都要跟着变大。这里选择记下这个上限，而不是为它加倍内存开销。
+///
+/// # 字段为什么是私有的
+///
+/// 曾经这两个字段是 `pub` 的，安全代码因此可以凭空捏造任意句柄。所有读取路径
+/// 都做了代数校验所以不会读到别人的数据，但 [`SparseSecondaryMap::insert`] 对一个
+/// 伪造的巨大 index 会 `resize_with` 出巨量内存（审计报告 §3.4）。现在唯一能拿到
+/// 的常量句柄是 [`Index::DANGLING`]，而它对每一张表都恒为“查无此项”。
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Index {
-    pub index: u32,
-    pub generation: u32,
+    index: u32,
+    generation: u32,
+}
+
+impl Index {
+    /// 一个永远不指向任何节点的句柄。
+    ///
+    /// 用于需要一个“空句柄”占位的场合（下游框架的 `Default` 实现等）。
+    /// 它的 index 大于任何真实节点，因此在 `Arena` 与 `SparseSecondaryMap` 里
+    /// 一律查无此项，也不会触发任何分配。
+    pub const DANGLING: Self = Self {
+        index: u32::MAX,
+        generation: 0,
+    };
+
+    #[inline(always)]
+    pub(crate) const fn new(index: u32, generation: u32) -> Self {
+        Self { index, generation }
+    }
+
+    /// 槽位编号，只用于诊断信息。
+    #[inline(always)]
+    pub(crate) const fn slot(self) -> u32 {
+        self.index
+    }
+}
+
+impl std::fmt::Debug for Index {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "#{}v{}", self.index, self.generation)
+    }
 }
 
 union SlotUnion<T> {
@@ -79,14 +124,14 @@ impl<T> Chunk<T> {
     }
 }
 
-pub struct Arena<T> {
+pub(crate) struct Arena<T> {
     chunks: UnsafeCell<Vec<Chunk<T>>>,
     free_head: UnsafeCell<Option<u32>>,
     len: UnsafeCell<usize>,
 }
 
 impl<T> Arena<T> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             chunks: UnsafeCell::new(Vec::new()),
             free_head: UnsafeCell::new(None),
@@ -95,11 +140,16 @@ impl<T> Arena<T> {
     }
 
     /// Insert a value into the arena, returning its Index.
-    pub fn insert(&self, value: T) -> Index {
-        // SAFETY:
-        // We acquire pointers to internal state.
-        // This is safe provided we follow single-threaded (thread_local) rules or
-        // ensure no other concurrent mutable access exists (which RefCell/logic should ensure).
+    ///
+    /// # 内部可变性的契约
+    ///
+    /// arena 用 `UnsafeCell` 实现内部可变性，`&self` 就能改内部状态。这要求
+    /// **同一时刻只能有一个操作在动这些状态**：本 crate 是单线程的（运行时挂在
+    /// thread-local 上），而 `insert` / `remove` / `get` 都不会调用任何用户代码，
+    /// 因此不存在重入。往这里加任何会回调出去的逻辑都会破坏这条契约。
+    pub(crate) fn insert(&self, value: T) -> Index {
+        // SAFETY: 见上面的契约 —— 单线程 + 本函数内部不会重入，
+        // 因此这几个由 `UnsafeCell` 派生的 `&mut` 在其存活期间是独占的。
 
         let chunks_ptr = self.chunks.get();
         let free_head_ptr = self.free_head.get();
@@ -133,10 +183,7 @@ impl<T> Arena<T> {
                 // Increment generation (Even -> Odd)
                 slot.generation = slot.generation.wrapping_add(1);
 
-                return Index {
-                    index: free_idx,
-                    generation: slot.generation,
-                };
+                return Index::new(free_idx, slot.generation);
             }
 
             // Priority 2: Append new slot
@@ -158,17 +205,16 @@ impl<T> Arena<T> {
 
             *len_ptr += 1;
 
-            Index {
-                index: current_len as u32,
-                generation: slot.generation,
-            }
+            Index::new(current_len as u32, slot.generation)
         }
     }
 
     /// Access element by Index.
-    pub fn get(&self, id: Index) -> Option<&T> {
+    pub(crate) fn get(&self, id: Index) -> Option<&T> {
         let (chunk_idx, offset) = self.get_chunk_offset(id.index);
 
+        // SAFETY: 单线程且本函数不重入（契约见 `insert`）。代数相符即说明槽位
+        // 里存的就是这个 `Index` 对应的那个值，返回的引用绑定在 `&self` 上。
         unsafe {
             let chunks = &*self.chunks.get();
             if chunk_idx >= chunks.len() {
@@ -195,41 +241,19 @@ impl<T> Arena<T> {
         }
     }
 
-    /// Access mutable element by Index.
-    /// Warning: This takes &self to allow interior mutability patterns (e.g. inside Reacitivity Runtime).
-    /// CALLER MUST ENSURE EXCLUSIVE ACCESS to the specific 'T' being mutated.
-    /// Creating multiple &mut T to the same Index is Undefined Behavior.
-    #[allow(clippy::mut_from_ref)]
-    pub fn get_mut(&self, id: Index) -> Option<&mut T> {
-        let (chunk_idx, offset) = self.get_chunk_offset(id.index);
-        unsafe {
-            let chunks = &mut *self.chunks.get();
-            if chunk_idx >= chunks.len() {
-                return None;
-            }
-
-            if id.index as usize >= *self.len.get() {
-                return None;
-            }
-
-            let slot = &mut *chunks[chunk_idx].slots[offset].get();
-            if slot.generation != id.generation {
-                return None;
-            }
-
-            if slot.occupied() {
-                Some(&mut slot.u.value)
-            } else {
-                None
-            }
-        }
-    }
+    // 这里曾经有一个 `pub fn get_mut(&self, id) -> Option<&mut T>`：
+    // 它取 `&self` 却交出 `&mut T`，安全代码两行就能造出两个同时存活的 `&mut`
+    // （AUDIT P7）。实测 crate 内部一处都没用到 —— `graph` 只做 insert/get/remove，
+    // 真正需要内部可变的是 `SparseSecondaryMap`。既然没有用户，直接删掉，
+    // 而不是把一个无法由类型系统表达的契约继续留在这里。
 
     /// Remove element.
     /// Returns true if removed, false if not found/already removed.
-    pub fn remove(&self, id: Index) -> bool {
+    pub(crate) fn remove(&self, id: Index) -> bool {
         let (chunk_idx, offset) = self.get_chunk_offset(id.index);
 
+        // SAFETY: 单线程且本函数不重入（契约见 `insert`）。`ManuallyDrop::drop`
+        // 只在槽位确实被占用时调用一次，随后代数 +1 让所有旧 `Index` 失效。
         unsafe {
             let chunks = &mut *self.chunks.get();
             if chunk_idx >= chunks.len() {
@@ -286,7 +310,7 @@ impl<T> Default for Arena<T> {
 
 type ChunkArray<T> = Box<[UnsafeCell<Option<(u32, T)>>]>;
 
-pub struct SparseSecondaryMap<T, const N: usize = 16> {
+pub(crate) struct SparseSecondaryMap<T, const N: usize = 16> {
     chunks: UnsafeCell<Vec<Option<ChunkArray<T>>>>,
 }
 
@@ -297,15 +321,21 @@ impl<T, const N: usize> Default for SparseSecondaryMap<T, N> {
 }
 
 impl<T, const N: usize> SparseSecondaryMap<T, N> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             chunks: UnsafeCell::new(Vec::new()),
         }
     }
 
-    pub fn insert(&self, key: Index, value: T) {
+    /// 写入一个条目。
+    ///
+    /// 返回是否真的写进去了：用一个**比槽位里存着的还旧**的代数写入会被拒绝
+    /// （ABA 防护，见 `test_secondary_map_aba_protection`）。之前这个拒绝是完全
+    /// 静默的，调用方连失败都不知道（AUDIT P19.5）。
+    pub(crate) fn insert(&self, key: Index, value: T) -> bool {
         let (chunk_idx, offset) = self.get_chunk_offset(key.index);
 
+        // SAFETY: 与 `Arena` 相同的契约 —— 单线程、本函数内不执行用户代码。
         unsafe {
             let chunks = &mut *self.chunks.get();
             if chunk_idx >= chunks.len() {
@@ -334,12 +364,16 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
                 if can_write {
                     *slot = Some((key.generation, value));
                 }
+                return can_write;
             }
+            false
         }
     }
 
-    pub fn get(&self, key: Index) -> Option<&T> {
+    #[inline]
+    pub(crate) fn get(&self, key: Index) -> Option<&T> {
         let (chunk_idx, offset) = self.get_chunk_offset(key.index);
+        // SAFETY: 同上；代数相符才返回，引用绑定在 `&self` 上。
         unsafe {
             let chunks = &*self.chunks.get();
             if chunk_idx >= chunks.len() {
@@ -357,9 +391,25 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
         }
     }
 
-    #[allow(clippy::mut_from_ref)]
-    pub fn get_mut(&self, key: Index) -> Option<&mut T> {
+    /// 在一个**闭包作用域内**可变地访问一个条目。
+    ///
+    /// 这里曾经是 `get_mut(&self) -> Option<&mut T>`：它取 `&self` 却交出 `&mut T`，
+    /// 独占性只能靠注释约定维系，而这条约定在公开 API 里被系统性地违反 ——
+    /// `try_update_stored_value` / `try_with_signal` 直接把这个引用交给**用户闭包**，
+    /// 用户在闭包里碰一下任何别的 signal 就会让它作废（审计报告 §2.1）。
+    ///
+    /// 换成闭包形态之后，借用**在类型上**就无法逃逸出这次调用，剩下的唯一风险
+    /// 收窄成一条可以逐点审读的规则：
+    ///
+    /// > `f` 内部不得再访问**同一张表**（本 crate 内所有调用点都只做几行纯数据
+    /// > 搬运，不执行任何用户代码）。需要跨越用户代码时，先把值整个移出去 ——
+    /// > 这正是 [`crate::runtime::guard::SignalValueGuard`] 与
+    /// > [`crate::runtime::guard::PayloadGuard`] 干的事（AUDIT P5、§2.1）。
+    #[inline]
+    pub(crate) fn with_mut<R>(&self, key: Index, f: impl FnOnce(&mut T) -> R) -> Option<R> {
         let (chunk_idx, offset) = self.get_chunk_offset(key.index);
+        // SAFETY: 单线程；`f` 不重入本表（见上面的规则），因此这个 `&mut` 在其
+        // 存活期间是独占的，而且它随本次调用一起结束，无法逃逸。
         unsafe {
             let chunks = &mut *self.chunks.get();
             if chunk_idx >= chunks.len() {
@@ -370,15 +420,22 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
                 if let Some((stored_gen, val)) = slot
                     && *stored_gen == key.generation
                 {
-                    return Some(val);
+                    return Some(f(val));
                 }
             }
             None
         }
     }
 
-    pub fn remove(&self, key: Index) -> Option<T> {
+    /// 这个 key 是否有条目（不借出任何引用）。
+    #[inline]
+    pub(crate) fn contains_key(&self, key: Index) -> bool {
+        self.get(key).is_some()
+    }
+
+    pub(crate) fn remove(&self, key: Index) -> Option<T> {
         let (chunk_idx, offset) = self.get_chunk_offset(key.index);
+        // SAFETY: 同 `get`；代数不符时不动任何东西。
         unsafe {
             let chunks = &mut *self.chunks.get();
             if chunk_idx >= chunks.len() {
@@ -394,10 +451,6 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
             }
             None
         }
-    }
-
-    pub fn contains_key(&self, key: Index) -> bool {
-        self.get(key).is_some()
     }
 
     /// Remove logic if ID is just u32 (for direct internal usage if needed)
@@ -525,5 +578,57 @@ mod tests {
             Some("Data2"),
             "Old ID removal should not affect new node"
         );
+    }
+
+    /// 用一个过时的代数写入会被拒绝，而且**说得出来**被拒绝了（AUDIT P19.5）。
+    #[test]
+    fn insert_reports_whether_it_actually_wrote() {
+        let arena = Arena::<()>::new();
+        let map = SparseSecondaryMap::<String>::new();
+
+        let old = arena.insert(());
+        arena.remove(old);
+        let new = arena.insert(());
+        assert_eq!(old.index, new.index);
+        assert!(new.generation > old.generation);
+
+        assert!(map.insert(new, "new".to_string()), "新代数写入应当成功");
+        assert!(
+            !map.insert(old, "stale".to_string()),
+            "旧代数的写入必须被拒绝，并且返回 false"
+        );
+        assert_eq!(map.get(new).map(String::as_str), Some("new"));
+    }
+
+    #[test]
+    fn dropping_the_arena_drops_every_live_value() {
+        use std::{cell::Cell, rc::Rc};
+
+        struct DropSpy(Rc<Cell<usize>>);
+        impl Drop for DropSpy {
+            fn drop(&mut self) {
+                self.0.set(self.0.get() + 1);
+            }
+        }
+
+        let hits = Rc::new(Cell::new(0));
+        {
+            let arena = Arena::<DropSpy>::new();
+            let a = arena.insert(DropSpy(hits.clone()));
+            arena.insert(DropSpy(hits.clone()));
+            arena.remove(a); // 显式移除的那个立刻析构
+            assert_eq!(hits.get(), 1);
+        }
+        assert_eq!(hits.get(), 2, "剩下的值应随 arena 一起析构");
+    }
+
+    /// 空槽位不该被当成有值（`Slot::drop` 只析构占用中的槽位）。
+    #[test]
+    fn removing_twice_is_a_noop() {
+        let arena = Arena::<String>::new();
+        let id = arena.insert("x".to_string());
+        assert!(arena.remove(id));
+        assert!(!arena.remove(id), "重复移除必须返回 false，且不得重复析构");
+        assert_eq!(arena.get(id), None);
     }
 }

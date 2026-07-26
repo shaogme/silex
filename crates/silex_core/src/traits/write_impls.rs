@@ -7,12 +7,12 @@ macro_rules! impl_rx_write_delegate {
                 &self,
                 fun: impl FnOnce(&mut Self::Value) -> URet,
             ) -> Option<URet> {
-                ::silex_reactivity::try_update_signal_untracked(self.id, fun)
+                ::silex_reactivity::signal::try_update_silent(self.id, fun).ok()
             }
 
             #[inline(always)]
             fn rx_notify(&self) {
-                ::silex_reactivity::notify_signal(self.id);
+                ::silex_reactivity::signal::notify(self.id);
             }
         }
     };

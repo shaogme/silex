@@ -1,8 +1,7 @@
 use std::any::{Any, type_name};
 use std::marker::PhantomData;
 
-pub use silex_reactivity::NodeId;
-use silex_reactivity::{invoke_callback, register_callback};
+use silex_reactivity::{CallbackId, callback};
 
 #[cfg(debug_assertions)]
 use crate::log::console_error;
@@ -24,7 +23,7 @@ use crate::log::console_error;
 /// ```
 #[derive(Debug)]
 pub struct Callback<T = ()> {
-    id: NodeId,
+    id: CallbackId,
     marker: PhantomData<T>,
 }
 
@@ -42,7 +41,7 @@ impl<T: 'static> Callback<T> {
     where
         F: Fn(T) + 'static,
     {
-        let id = register_callback(move |any: Box<dyn Any>| {
+        let id = callback::create(move |any: Box<dyn Any>| {
             if let Ok(arg) = any.downcast::<T>() {
                 f(*arg);
             } else {
@@ -63,11 +62,11 @@ impl<T: 'static> Callback<T> {
 
     /// Call the callback with the given argument.
     pub fn call(&self, arg: T) {
-        invoke_callback(self.id, Box::new(arg));
+        let _ = callback::invoke(self.id, Box::new(arg));
     }
 
-    /// Returns the underlying `NodeId` for this callback.
-    pub fn id(&self) -> NodeId {
+    /// Returns the underlying handle for this callback.
+    pub fn id(&self) -> CallbackId {
         self.id
     }
 }

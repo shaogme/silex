@@ -1,4 +1,7 @@
-use crate::{any_box::AnyBox, func_ptr::FuncPtr};
+use crate::{
+    any_box::{AnyBox, InlineStorage},
+    func_ptr::FuncPtr,
+};
 use alloc::boxed::Box;
 use core::{
     marker::PhantomData,
@@ -38,7 +41,13 @@ impl<Args: 'static, R: 'static> ThunkBox<Args, R> {
         }
     }
 
-    pub fn from_raw(data: [usize; 3], vtable: &'static ThunkBoxVTable<Args, R>) -> Self {
+    /// 从已经手工填好的内联缓冲区构造。
+    ///
+    /// # Safety
+    ///
+    /// `data` 的内容必须与 `vtable` 约定的布局一致，且其所有权（含析构责任）
+    /// 由此 `ThunkBox` 接管。
+    pub unsafe fn from_raw(data: InlineStorage, vtable: &'static ThunkBoxVTable<Args, R>) -> Self {
         Self {
             inner: AnyBox { data, vtable },
         }

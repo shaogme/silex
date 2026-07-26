@@ -1,6 +1,6 @@
 use std::{any::Any, cell::Cell, future::Future, panic::Location, rc::Rc};
 
-use silex_reactivity::on_cleanup;
+use silex_reactivity::scope::on_cleanup;
 use wasm_bindgen_futures::spawn_local;
 
 use super::{

@@ -1,6 +1,6 @@
-pub mod algorithm;
-pub mod arena;
-pub mod list;
-pub mod value;
+pub(crate) mod algorithm;
+pub(crate) mod arena;
+pub(crate) mod list;
+pub(crate) mod value;
 
-pub use silex_vtable::func_ptr::FuncPtr;
+pub(crate) use silex_vtable::func_ptr::FuncPtr;

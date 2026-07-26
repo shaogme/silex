@@ -25,22 +25,23 @@ pub struct Rx<T, M = RxValueKind> {
 impl<T: 'static> Rx<T, RxValueKind> {
     /// 从已包装的闭包创建一个派生计算节点 (池化存储)。
     /// 宏 `rx!` 的核心后端逻辑。通过接受 Box 来最小化单态化膨胀。
+    ///
+    /// 保管的类型就是 `Box<dyn Fn() -> T>` 本身。从前是把它再包一层
+    /// `Box<dyn Any>` 交给 `register_closure`，读的时候多一次装箱与一次解引用
+    /// （审计报告 §2.6 —— `ExtraData::Closure` 已随之删除）。
     pub fn derive(f: Box<dyn Fn() -> T>) -> Self {
-        let id = silex_reactivity::untrack(|| {
-            silex_reactivity::register_closure(Box::new(f) as Box<dyn std::any::Any>)
-        });
-        Self {
-            inner: RxInner::Closure(id),
-            _marker: ::core::marker::PhantomData,
-        }
+        Self::from_closure(f)
     }
 
     /// 从纯函数指针创建一个派生计算节点。
     /// 相比 `derive`，它不涉及闭包类型生成的代码膨胀。
     pub fn derive_fn(f: fn() -> T) -> Self {
-        let id = silex_reactivity::untrack(|| {
-            silex_reactivity::register_closure(Box::new(f) as Box<dyn std::any::Any>)
-        });
+        Self::from_closure(Box::new(f))
+    }
+
+    fn from_closure(f: Box<dyn Fn() -> T>) -> Self {
+        // `untrack` 只关依赖追踪，不动所有权（AUDIT 二轮 §1.1）。
+        let id = silex_reactivity::scope::untrack(|| silex_reactivity::store::create(f)).raw();
         Self {
             inner: RxInner::Closure(id),
             _marker: ::core::marker::PhantomData,
@@ -51,7 +52,7 @@ impl<T: 'static> Rx<T, RxValueKind> {
 impl<T: 'static> Rx<T, RxEffectKind> {
     /// 存储一个响应式值或回调（直接存储）。
     pub fn effect(val: T) -> Self {
-        let id = silex_reactivity::untrack(|| silex_reactivity::store_value(val));
+        let id = silex_reactivity::scope::untrack(|| silex_reactivity::store::create(val)).raw();
         Self::new_stored(id)
     }
 }
@@ -91,26 +92,24 @@ impl RxInner {
 }
 
 impl<T: 'static, M> Rx<T, M> {
+    /// 保管一段类型擦除的操作载荷。
+    ///
+    /// 从前这里走的是 `silex_reactivity::register_op` 与一个 64 字节的
+    /// `RawOpBuffer`：`[MaybeUninit<u8>; 64] + Copy`，节点销毁时只是丢掉 64 字节
+    /// 原始内存，**载荷自己的析构函数永远不会运行**。今天不出事是因为所有载荷
+    /// 恰好都是 POD，但那从来没有被强制过，而且既然是 `Copy`，安全代码可以把
+    /// 借到的缓冲区复制出任意份 —— 一旦将来支持析构就直接是 double-free
+    /// （审计报告 §2.4）。
+    ///
+    /// 现在直接用 `store_value`：`AnyValue` 自带 SOO（小载荷同样内联，不进堆）、
+    /// 类型检查与正确的析构，代价只是读的时候多一次 `TypeId` 比较。
+    /// 64 字节 / 16 对齐 / `!needs_drop` 三条限制随之一起消失。
     pub fn new_op<P: 'static>(op: P) -> Self {
-        const {
-            assert!(
-                std::mem::size_of::<P>() <= 64,
-                "Op payload exceeds 64 bytes"
-            );
-            assert!(
-                std::mem::align_of::<P>() <= 16,
-                "Op payload requires > 16-byte alignment"
-            );
-        };
-        let id = silex_reactivity::untrack(|| {
-            let mut buffer = silex_reactivity::RawOpBuffer::new();
-            unsafe {
-                std::ptr::write(buffer.data.as_mut_ptr() as *mut P, op);
-            }
-            silex_reactivity::register_op(buffer)
-        });
+        // `untrack` 只关依赖追踪，不动所有权：节点照旧挂在当前 owner 下面，
+        // 随它一起销毁（AUDIT 二轮 §1.1）。
+        let id = silex_reactivity::scope::untrack(|| silex_reactivity::store::create(op));
         Self {
-            inner: RxInner::Op(id),
+            inner: RxInner::Op(id.raw()),
             _marker: ::core::marker::PhantomData,
         }
     }
@@ -134,7 +133,8 @@ impl<T: 'static, M> Rx<T, M> {
                 }
             }
         } else {
-            let id = silex_reactivity::untrack(|| silex_reactivity::store_value(val));
+            let id =
+                silex_reactivity::scope::untrack(|| silex_reactivity::store::create(val)).raw();
             Self {
                 inner: RxInner::Stored(id),
                 _marker: ::core::marker::PhantomData,
@@ -271,20 +271,19 @@ macro_rules! batch_read_untracked {
 mod tests {
     use super::*;
 
+    /// `Rx` 的相等性看的是内部句柄，不是 `T`。
+    ///
+    /// 从前这个用例直接捏造 `NodeId { index: 1, generation: 1 }` —— 字段现在
+    /// 是私有的（审计报告 §3.4：伪造的巨大 index 会让二级表 `resize_with` 出
+    /// 巨量内存），所以改成用真实创建的句柄。
     #[test]
     fn rx_equality_tracks_inner_identity() {
-        let a = Rx::<(), RxValueKind>::new_signal(NodeId {
-            index: 1,
-            generation: 1,
-        });
-        let b = Rx::<(), RxValueKind>::new_signal(NodeId {
-            index: 1,
-            generation: 1,
-        });
-        let c = Rx::<(), RxValueKind>::new_signal(NodeId {
-            index: 2,
-            generation: 1,
-        });
+        let one = silex_reactivity::signal::create(0u8).raw();
+        let two = silex_reactivity::signal::create(0u8).raw();
+
+        let a = Rx::<(), RxValueKind>::new_signal(one);
+        let b = Rx::<(), RxValueKind>::new_signal(one);
+        let c = Rx::<(), RxValueKind>::new_signal(two);
 
         assert!(a == b);
         assert!(a != c);

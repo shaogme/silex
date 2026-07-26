@@ -5,7 +5,7 @@ use crate::{
 use js_sys::Object;
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    reactivity::{Effect, Memo, NodeId, create_scope, dispose},
+    reactivity::{Effect, Memo, ScopeId, create_scope, dispose},
     traits::RxGet,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
@@ -176,7 +176,7 @@ impl PersistenceBackend for QueryBackend {
     ) -> Result<BackendSubscription, PersistenceError> {
         let key = key.into();
         let query_map = self.query_map()?;
-        let scope_id: NodeId = create_scope(move || {
+        let scope_id: ScopeId = create_scope(move || {
             Effect::new(move |prev: Option<Option<String>>| {
                 let current = query_map.get().get(key.as_ref()).cloned();
                 if let Some(previous) = prev

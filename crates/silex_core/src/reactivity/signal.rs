@@ -9,8 +9,7 @@ use std::{
 };
 
 use silex_reactivity::{
-    NodeId, get_debug_label, get_node_defined_at, register_derived, set_debug_label, signal,
-    store_value,
+    RawNodeId as NodeId, get_debug_label, get_node_defined_at, memo, set_debug_label, signal, store,
 };
 
 use crate::{
@@ -48,10 +47,10 @@ pub enum Signal<T> {
 
 impl<T: 'static> Signal<T> {
     pub fn pair(value: T) -> (ReadSignal<T>, WriteSignal<T>) {
-        let id = signal(value);
+        let id = signal::create(value);
         (
             ReadSignal {
-                id,
+                id: id.raw(),
                 marker: PhantomData,
             },
             WriteSignal {
@@ -244,8 +243,8 @@ impl<T> Hash for Signal<T> {
 impl<T: RxData> Signal<T> {
     #[track_caller]
     pub fn derive(f: Box<dyn Fn() -> T>) -> Self {
-        let id = register_derived(f);
-        Signal::Derived(id, RxNodeKind::Closure, PhantomData)
+        let id = memo::derived(f);
+        Signal::Derived(id.raw(), RxNodeKind::Signal, PhantomData)
     }
 
     /// Internal helper to try inlining a value
@@ -296,7 +295,7 @@ impl<T: RxData> Signal<T> {
             Signal::StoredConstant(id, _) => *id,
             Signal::InlineConstant(storage, _) => {
                 let value = unsafe { Self::unpack_inline(*storage) };
-                store_value(value)
+                store::create(value).raw()
             }
         }
     }
@@ -342,7 +341,7 @@ impl<T: RxCloneData> From<T> for Signal<T> {
         if let Some(inline) = Self::try_inline(value.clone()) {
             return inline;
         }
-        let id = store_value(value);
+        let id = store::create(value).raw();
         Signal::StoredConstant(id, PhantomData)
     }
 }
