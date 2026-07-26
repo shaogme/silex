@@ -1,3 +1,46 @@
+use core::fmt;
+
+/// 选项名解析失败：写错的选项名不应静默回退到默认值
+///
+/// `tw_variants!` 生成的 `get()` 为了配合运行时字符串（`Signal<String>`）仍然宽容，
+/// 但 `try_from_str` / `FromStr` / `get_checked` 这几条路径会把错误如实交回调用方。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownVariantOption {
+    /// 用户实际传入的字符串
+    pub input: String,
+    /// 该变体的全部合法选项名
+    pub options: &'static [&'static str],
+}
+
+impl fmt::Display for UnknownVariantOption {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "unknown variant option '{}'; expected one of {:?}",
+            self.input, self.options
+        )
+    }
+}
+
+impl core::error::Error for UnknownVariantOption {}
+
+/// 选项名匹配：忽略大小写与 `-` / `_` 分隔符
+///
+/// 生成的枚举变体名是 PascalCase（`icon-xs` → `IconXs`），但用户在运行时传进来的
+/// 是源码里写的那个字符串 `"icon-xs"`。此前的比较只做了"忽略大小写"与
+/// "把下划线换成连字符"两种尝试，`IconXs` 与 `icon-xs` 因此永远匹配不上——
+/// 于是 `size="icon-xs"` 静默拿到了默认档位的样式。
+pub fn variant_key_eq(variant_ident: &str, input: &str) -> bool {
+    let norm = |s: &str| -> String {
+        s.trim()
+            .chars()
+            .filter(|c| *c != '-' && *c != '_')
+            .flat_map(|c| c.to_lowercase())
+            .collect()
+    };
+    norm(variant_ident) == norm(input)
+}
+
 /// 定义组件 CSS 变体 Schema 的 Trait
 pub trait VariantSchema {
     type Config;
@@ -99,17 +142,46 @@ macro_rules! declare_variants {
                 }
             }
 
-            impl<S: AsRef<str>> From<S> for $var_type {
-                fn from(s: S) -> Self {
-                    let str_ref = s.as_ref();
-                    let clean = str_ref.trim();
+            impl $var_type {
+                /// 该变体的全部合法选项名（生成的 PascalCase 形式）
+                ///
+                /// 解析时忽略大小写与 `-` / `_`，所以源码里写的 `icon-xs` 与这里的
+                /// `IconXs` 是同一个选项。
+                pub const OPTIONS: &'static [&'static str] = &[$(stringify!($val_name)),*];
+
+                /// 严格解析：未知选项名返回 `Err`，不静默回退默认值
+                ///
+                /// 空字符串视为"未指定"，返回默认值——运行时用 `Signal<String>` 驱动的
+                /// 组件在未设置该 prop 时拿到的就是空串，那不是拼写错误。
+                pub fn try_from_str(
+                    s: &str,
+                ) -> ::core::result::Result<Self, $crate::tw::variants::UnknownVariantOption> {
+                    let clean = s.trim();
+                    if clean.is_empty() {
+                        return ::core::result::Result::Ok(<Self as ::core::default::Default>::default());
+                    }
                     $(
-                        if clean.eq_ignore_ascii_case(stringify!($val_name))
-                            || clean.eq_ignore_ascii_case(stringify!($val_name).replace('_', "-").as_str()) {
-                            return $var_type::$val_name;
+                        if $crate::tw::variants::variant_key_eq(stringify!($val_name), clean) {
+                            return ::core::result::Result::Ok($var_type::$val_name);
                         }
                     )*
-                    Self::default()
+                    ::core::result::Result::Err($crate::tw::variants::UnknownVariantOption {
+                        input: ::std::string::String::from(clean),
+                        options: Self::OPTIONS,
+                    })
+                }
+            }
+
+            impl ::core::str::FromStr for $var_type {
+                type Err = $crate::tw::variants::UnknownVariantOption;
+                fn from_str(s: &str) -> ::core::result::Result<Self, Self::Err> {
+                    Self::try_from_str(s)
+                }
+            }
+
+            impl<S: AsRef<str>> From<S> for $var_type {
+                fn from(s: S) -> Self {
+                    Self::try_from_str(s.as_ref()).unwrap_or_default()
                 }
             }
         )*
@@ -220,5 +292,44 @@ mod tests {
 
         let v2 = TestButtonVariant::from("unknown");
         assert_eq!(v2, TestButtonVariant::Primary); // default
+    }
+
+    declare_variants! {
+        pub struct TestSizeVariants {
+            base: "box",
+            variants: {
+                pub size: TestSizeOption [default = Md] = {
+                    Md => "box-md",
+                    IconXs => "box-icon-xs",
+                },
+            }
+        }
+    }
+
+    /// 回归点：源码里写 `icon-xs`，生成的枚举变体是 `IconXs`。
+    /// 旧的 `From<S>` 只试了"忽略大小写"与"下划线换连字符"，两者都匹配不上，
+    /// 于是 `size="icon-xs"` 静默拿到了 `Md` 的样式。
+    #[test]
+    fn kebab_case_option_names_match_their_pascal_case_variant() {
+        assert_eq!(
+            TestSizeOption::try_from_str("icon-xs"),
+            Ok(TestSizeOption::IconXs)
+        );
+        assert_eq!(TestSizeOption::from("icon-xs"), TestSizeOption::IconXs);
+        assert_eq!(
+            "icon_xs".parse::<TestSizeOption>(),
+            Ok(TestSizeOption::IconXs)
+        );
+    }
+
+    #[test]
+    fn strict_parsing_reports_unknown_options() {
+        let err = TestSizeOption::try_from_str("icon-xxl").unwrap_err();
+        assert_eq!(err.input, "icon-xxl");
+        assert_eq!(err.options, &["Md", "IconXs"]);
+        assert!(err.to_string().contains("unknown variant option"));
+        // 空串是"未指定"，不是拼写错误
+        assert_eq!(TestSizeOption::try_from_str(""), Ok(TestSizeOption::Md));
+        assert_eq!(TestSizeOption::try_from_str("  "), Ok(TestSizeOption::Md));
     }
 }

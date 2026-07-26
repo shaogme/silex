@@ -185,13 +185,16 @@ const MUST_FAIL: &[(&str, &str)] = &[
     ("mdd:flex",                   "Unknown variant prefix"),
     ("hoveer:flex",                "Unknown variant prefix"),
     ("focuss:text-red-500",        "Unknown variant prefix"),
-    // §2.5 Tailwind 有、本实现尚未支持的函数式变体，要给出"该家族未支持"的明确提示
-    ("max-md:flex",                "not supported yet"),
-    ("min-[600px]:flex",           "not supported yet"),
-    ("supports-[display:grid]:grid", "not supported yet"),
-    ("not-hover:flex",             "not supported yet"),
-    ("in-focus:flex",              "not supported yet"),
-    ("nth-3:flex",                 "not supported yet"),
+    // §13.1 函数式变体已支持，但参数写坏了仍必须报错——支持一个家族不等于
+    // 放弃校验它的参数，否则又回到"静默产出永不匹配的选择器"
+    ("supports-grid:flex",         "brackets"),
+    ("supports-[]:flex",           "empty feature query"),
+    ("max-notabreakpoint:flex",    "unknown breakpoint"),
+    ("min-[]:flex",                "empty width"),
+    ("nth-abc:flex",               "invalid"),
+    ("not-before:flex",            "cannot be negated"),
+    ("not-notavariant:flex",       "unknown variant"),
+    ("in-print:flex",              "needs a variant that"),
     // §7 尚未支持的工具类语法，必须报错而不是产出错误 CSS
     ("p-44x",                      "p-4"),
     ("bg-notacolor-500",           ""),
@@ -219,11 +222,97 @@ fn unsupported_syntax_is_rejected_not_silently_downgraded() {
 fn rejected_variants_never_become_pseudo_classes() {
     // 回归点：兜底分支曾把任意未知前缀原样拼成 `:xxx`，产出永不匹配的选择器。
     // 这里从产物侧再钉一次——即便将来有人加回兜底，也会被抓住。
-    for src in ["mdd:flex", "max-md:flex", "nth-3:flex"] {
+    for src in ["mdd:flex", "maxx-md:flex", "nthh-3:flex"] {
         if let Ok(css) = compile_class(src) {
             panic!("`{src}` 不应编译成功，产物: {css}");
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// 函数式变体（第四阶段第 15 项）：期望值取自真实 `tailwindcss@4.3.3` 的
+// `designSystem.candidatesToCss()`，逐字符相等比较
+// ---------------------------------------------------------------------------
+
+/// `(源码, 期望产物)`。`CLASS` 占位生成的类名；`@media`/`@supports` 的条件按
+/// LightningCSS 对当前 targets 的降级结果书写（范围语法 → `min-width` / `not`）。
+#[rustfmt::skip]
+const FUNCTIONAL_VARIANTS: &[(&str, &str)] = &[
+    // supports-[…]：带值的探测按原样，只给属性名的用 Tailwind 自己的哑值写法
+    ("supports-[display:grid]:flex",     "@supports (display:grid){CLASS{display:flex}}"),
+    ("supports-[display:_grid]:flex",    "@supports (display: grid){CLASS{display:flex}}"),
+    ("supports-[backdrop-filter]:flex",  "@supports (backdrop-filter:var(--tw)){CLASS{display:flex}}"),
+    ("not-supports-[display:grid]:flex", "@supports not (display:grid){CLASS{display:flex}}"),
+    // min-* / max-*：源码写的是范围语法，LightningCSS 按 targets 降级
+    ("min-[600px]:flex",                 "@media (min-width:600px){CLASS{display:flex}}"),
+    ("min-md:flex",                      "@media (min-width:768px){CLASS{display:flex}}"),
+    ("max-md:flex",                      "@media not (min-width:768px){CLASS{display:flex}}"),
+    ("max-[600px]:flex",                 "@media not (min-width:600px){CLASS{display:flex}}"),
+    // not-*：选择器类取 :not()，媒体类取 @media not
+    ("not-hover:flex",                   "CLASS:not(:hover){display:flex}"),
+    ("not-first:flex",                   "CLASS:not(:first-child){display:flex}"),
+    ("not-open:flex",                    "CLASS:not(:is([open],:popover-open,:open)){display:flex}"),
+    ("not-data-[state=open]:flex",       "CLASS:not([data-state=open]){display:flex}"),
+    ("not-md:flex",                      "@media not (min-width:768px){CLASS{display:flex}}"),
+    ("not-print:flex",                   "@media not print{CLASS{display:flex}}"),
+    // in-*：祖先无需 marker 类
+    ("in-focus:flex",                    ":where(:focus) CLASS{display:flex}"),
+    ("in-[.card]:flex",                  ":where(.card) CLASS{display:flex}"),
+    ("in-data-[state=open]:flex",        ":where([data-state=open]) CLASS{display:flex}"),
+    // nth-*
+    ("nth-3:flex",                       "CLASS:nth-child(3){display:flex}"),
+    ("nth-last-3:flex",                  "CLASS:nth-last-child(3){display:flex}"),
+    ("nth-of-type-3:flex",               "CLASS:nth-of-type(3){display:flex}"),
+    ("nth-last-of-type-3:flex",          "CLASS:nth-last-of-type(3){display:flex}"),
+    ("nth-[2n+1]:flex",                  "CLASS:nth-child(odd){display:flex}"),
+    // @starting-style
+    ("starting:opacity-0",               "@starting-style{CLASS{opacity:0}}"),
+    // has-*：`has-not-` 此前会退化成 `:has(has-not-[.x])`
+    ("has-checked:flex",                 "CLASS:has(:checked){display:flex}"),
+    ("has-not-[.x]:flex",                "CLASS:has(:not(.x)){display:flex}"),
+    ("has-not-checked:flex",             "CLASS:has(:not(:checked)){display:flex}"),
+];
+
+#[test]
+fn functional_variants_produce_exactly_tailwinds_selectors() {
+    let mut failures = Vec::new();
+    for &(src, expected_body) in FUNCTIONAL_VARIANTS {
+        let css = match compile_class(src) {
+            Ok(c) => c,
+            Err(e) => {
+                failures.push(format!("  {src}: 编译失败 — {e}"));
+                continue;
+            }
+        };
+        let class = generated_class(&css);
+        let expected = normalize_css(&format!(
+            "@layer utilities{{{}}}",
+            expected_body.replace("CLASS", &class)
+        ));
+        let actual = normalize_css(&css);
+        if expected != actual {
+            failures.push(format!("  {src}\n    期望 {expected}\n    实得 {actual}"));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} 个函数式变体的产物与预期不符：\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
+#[test]
+fn overlapping_max_width_variants_sort_from_wide_to_narrow() {
+    // `max-lg` 与 `max-md` 在 700px 处同时命中，窄的必须写在后面才能覆盖宽的。
+    // 关键是这个顺序**不依赖源码书写顺序**——这里故意把 max-md 写在前面。
+    let css = compile_class("max-md:p-4 max-lg:p-2").expect("应当编译成功");
+    let lg = css.find("1024px").expect("产物里应有 max-lg 的条件");
+    let md = css.find("768px").expect("产物里应有 max-md 的条件");
+    assert!(
+        lg < md,
+        "max-lg 必须排在 max-md 之前（窄的覆盖宽的），实得:\n{css}"
+    );
 }
 
 #[test]

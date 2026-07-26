@@ -19,6 +19,20 @@ pub enum Modifier {
     MediaBreakpoint(String),
     /// 非断点媒体特性查询，持有完整查询串: print, (prefers-reduced-motion: reduce), (orientation: portrait)
     MediaQuery(String),
+    /// 条件块变体：持有 at-rule 名、完整条件与显式排序权重
+    ///
+    /// 与 `MediaQuery` 的区别只在于「权重不是常量」——`max-md:` 与 `max-lg:` 的作用区间
+    /// 相互重叠，谁覆盖谁取决于宽度而非源码顺序，所以必须把宽度编码进权重。
+    ///
+    /// * `min-[600px]` → `@media (width >= 600px)`
+    /// * `max-md` / `not-md` → `@media (width < 768px)` / `@media not (min-width: 768px)`
+    /// * `supports-[display:grid]` → `@supports (display: grid)`
+    /// * `starting` → `@starting-style`（condition 为空）
+    AtRuleCondition {
+        at_rule: &'static str,
+        condition: String,
+        priority: u32,
+    },
     /// 暗黑模式: dark
     Dark,
     /// 自定义任意选择器修饰符: [&>svg]
@@ -59,8 +73,23 @@ pub enum UtilityValue {
     ThemeVar(String, Option<f64>),
     /// 任意值字面量: p-[12px] -> "12px"
     ArbitraryLiteral(String),
+    /// 组合型属性合并后的多分量值：`transform: translateX(…) rotate(…)`
+    ///
+    /// 合并时**不能**把分量渲染成一个字符串：`DynamicExpr` 只能在 token 层展开，
+    /// 提前 `to_string()` 会把 `$(signal)` 压成裸标识符 `signal`，
+    /// `blur-[$(v)] brightness-50` 于是产出 `filter: blur(v) …` 这种非法 CSS。
+    Composed(Vec<UtilityValue>),
     /// 动态 Rust 信号/表达式: p-[$(signal_val)]
-    DynamicExpr(Expr, Span),
+    ///
+    /// `wrapper` 是可选的值包裹模板（`blur({})` / `calc({} * -1)`）。表达式的值要嵌进
+    /// CSS 函数时，包裹必须发生在 **token 层**——字面量那条路径是先把 wrapper 套成字符串，
+    /// 动态值套不了。此前这条路径直接把 wrapper 丢掉，`blur-[$(x)]` 会产出
+    /// `filter: var(--slx-…)` 这种缺了 `blur()` 的非法 CSS。
+    DynamicExpr {
+        expr: Expr,
+        span: Span,
+        wrapper: Option<String>,
+    },
 }
 
 impl PartialEq for UtilityValue {
@@ -71,9 +100,19 @@ impl PartialEq for UtilityValue {
             (Self::HexColor(a), Self::HexColor(b)) => a == b,
             (Self::ThemeVar(v1, o1), Self::ThemeVar(v2, o2)) => v1 == v2 && o1 == o2,
             (Self::ArbitraryLiteral(a), Self::ArbitraryLiteral(b)) => a == b,
-            (Self::DynamicExpr(e1, _), Self::DynamicExpr(e2, _)) => {
-                quote!(#e1).to_string() == quote!(#e2).to_string()
-            }
+            (Self::Composed(a), Self::Composed(b)) => a == b,
+            (
+                Self::DynamicExpr {
+                    expr: e1,
+                    wrapper: w1,
+                    ..
+                },
+                Self::DynamicExpr {
+                    expr: e2,
+                    wrapper: w2,
+                    ..
+                },
+            ) => quote!(#e1).to_string() == quote!(#e2).to_string() && w1 == w2,
             _ => false,
         }
     }
@@ -96,8 +135,10 @@ impl Hash for UtilityValue {
                 }
             }
             Self::ArbitraryLiteral(a) => a.hash(state),
-            Self::DynamicExpr(e, _) => {
-                quote!(#e).to_string().hash(state);
+            Self::Composed(parts) => parts.hash(state),
+            Self::DynamicExpr { expr, wrapper, .. } => {
+                quote!(#expr).to_string().hash(state);
+                wrapper.hash(state);
             }
         }
     }
@@ -111,6 +152,8 @@ pub struct UtilityRule {
     pub modifiers: ModifierList,
     pub css_property: CssPropertyId,
     pub value: UtilityValue,
+    /// `p-4!` / `!p-4` 的 `!important` 标记
+    pub important: bool,
     pub span: Span,
 }
 
@@ -173,6 +216,9 @@ impl Hash for UtilityRule {
         self.modifiers.hash(state);
         self.css_property.hash(state);
         self.value.hash(state);
+        // important 进哈希：`p-4` 与 `p-4!` 是不同的声明，条件分支的编译缓存
+        // 若把两者视为同一条会张冠李戴
+        self.important.hash(state);
     }
 }
 

@@ -102,19 +102,13 @@ impl Parse for StyledComponent {
                                 #[cfg(feature = "tw")]
                                 {
                                     let raw_str = lit.value();
-                                    let span = lit.span();
-                                    let mut rules = Vec::new();
-                                    for token in raw_str.split_whitespace() {
-                                        let (modifiers, body_token) =
-                                            crate::css::tw::parser::parse_modifiers_and_body(
-                                                token, span,
-                                            )?;
-                                        let mut resolved =
-                                            crate::css::tw::resolver::resolve_utility(
-                                                modifiers, body_token, span,
-                                            )?;
-                                        rules.append(&mut resolved);
-                                    }
+                                    let anchor = crate::css::tw::parser::TokenAnchor::from_lit_str(
+                                        &raw_str, &lit,
+                                    );
+                                    let rules = crate::css::tw::parser::parse_class_list(
+                                        &anchor,
+                                        &mut Vec::new(),
+                                    )?;
                                     let css_block =
                                         crate::css::tw::codegen::build_css_block_from_rules(rules)?;
                                     let ts = quote::quote! { #css_block };

@@ -132,6 +132,8 @@ where
         modifiers: modifiers.into_modifier_list(),
         css_property,
         value,
+        // `!important` 是词条级别的标记，由 `parser.rs` 在解析完整个词条后统一打上
+        important: false,
         span,
     })
 }
@@ -232,19 +234,32 @@ fn resolve_pattern_utility(
         );
     }
 
-    // 2. 颜色型 Utility：色板色阶、`/透明度`、`[#hex]`、语义 token，
+    // 2. 字号 / 行高简写 `text-sm/6`、`text-[14px]/[1.5]`
+    //    必须排在颜色路径之前：`text-red-500/50` 与 `text-sm/6` 形状完全相同，
+    //    唯一的区别是斜杠前那段解析出来是颜色还是字号。
+    if let Some(rules) = resolve_font_size_with_leading(&modifiers, token, span) {
+        return rules;
+    }
+
+    // 3. 颜色型 Utility：色板色阶、`/透明度`、`[#hex]`、语义 token，
     //    以及 ring / 渐变色标 / divide / placeholder 的伴生声明与伴生选择器。
     //    前缀表与展开规则全在 `silex_tw_core`，与静态表同源。
     if let Some(rules) = resolve_color_rules(&modifiers, token, span) {
         return rules;
     }
 
-    // 3. 任意值与动态表达式语法, 如 `w-[100px]` 或 `p-[$(pad_val)]`
+    // 4. 任意值与动态表达式语法, 如 `w-[100px]`、`-mt-[10px]` 或 `p-[$(pad_val)]`
     if let Some((prefix, raw_val)) = parse_arbitrary_syntax(token) {
-        return resolve_arbitrary(modifiers, prefix, raw_val, span);
+        // 负号必须在查前缀**之前**剥掉：此前 `-mt-[10px]` 会拿 `-mt` 去查
+        // `CssPropertyId`，报的是"属性 '-mt' 未注册"这种内部错误（报告 §2.7）
+        let (prefix, negate) = match prefix.strip_prefix('-') {
+            Some(rest) if !rest.is_empty() => (rest, true),
+            _ => (prefix, false),
+        };
+        return resolve_arbitrary(modifiers, prefix, raw_val, negate, span);
     }
 
-    // 4. 交给 `silex_tw_core` 的完整解析器。
+    // 5. 交给 `silex_tw_core` 的完整解析器。
     //
     //    静态表只预计算了 `classes.json` 里那 22 879 个类名；`rounded-t-7`、`p-97`
     //    这类同样有规律、只是没被 Tailwind 列举出来的词条不在表里，但 core 解析得了。
@@ -255,12 +270,12 @@ fn resolve_pattern_utility(
         return rule_sets_to_rules(&modifiers, sets, span);
     }
 
-    // 5. 数值、分数 (1/2, 1/3) 与方向边距/定位 Utility 解析（core 未覆盖的规律）
+    // 6. 数值、分数 (1/2, 1/3) 与方向边距/定位 Utility 解析（core 未覆盖的规律）
     if let Some(rules) = resolve_numeric_utility(&modifiers, token, span) {
         return Ok(rules);
     }
 
-    // 6. Levenshtein 智能纠错与建议
+    // 7. Levenshtein 智能纠错与建议
     let suggestion = find_best_suggestion(token);
     let msg = match suggestion {
         Some(s) => format!(
@@ -271,6 +286,64 @@ fn resolve_pattern_utility(
     };
 
     Err(Error::new(span, msg))
+}
+
+/// `text-<字号>/<行高>`：Tailwind 的字号与行高简写（`text-sm/6`、`text-[14px]/[1.5]`）
+///
+/// 与 `text-red-500/50`（颜色 + 不透明度）形状完全相同，只能靠**斜杠前那段解析出来是不是
+/// 字号**来区分，所以这里直接复用 `resolve_utility` 求值再看属性，而不是另写一套
+/// "什么样的后缀算字号"的判别——后者一定会与静态表和 core 漂移。
+/// 行高同理：`leading-6` / `leading-[1.5]` 已经有唯一实现，拼出词条交给它即可。
+fn resolve_font_size_with_leading(
+    modifiers: &[SpannedModifier],
+    token: &str,
+    span: Span,
+) -> Option<Result<Vec<UtilityRule>>> {
+    let (head, leading) = token.rsplit_once('/')?;
+    if !head.starts_with("text-") {
+        return None;
+    }
+    // 斜杠落在任意值内部（`text-[calc(10px/2)]`）时括号不成对，不是简写语法
+    if head.matches('[').count() != head.matches(']').count() {
+        return None;
+    }
+    if leading.is_empty() {
+        return None;
+    }
+
+    let head_rules = resolve_utility(modifiers.to_vec(), head, span).ok()?;
+    if !head_rules
+        .iter()
+        .any(|r| r.css_property == CssPropertyId::FontSize)
+    {
+        return None;
+    }
+
+    let leading_token = format!("leading-{}", leading);
+    let leading_rules = match resolve_utility(modifiers.to_vec(), &leading_token, span) {
+        Ok(rules) => rules,
+        Err(_) => {
+            return Some(Err(Error::new(
+                span,
+                format!(
+                    "Unknown line-height '{}' in '{}'. The part after `/` must be a valid `leading-*` value, e.g. `text-sm/6` or `text-[14px]/[1.5]`.",
+                    leading, token
+                ),
+            )));
+        }
+    };
+
+    // 字号档位自带的行高（`text-sm` → `line-height: 1.25rem`）被显式写出的那个替换掉
+    let mut rules: Vec<UtilityRule> = head_rules
+        .into_iter()
+        .filter(|r| r.css_property != CssPropertyId::LineHeight)
+        .collect();
+    rules.extend(
+        leading_rules
+            .into_iter()
+            .filter(|r| r.css_property == CssPropertyId::LineHeight),
+    );
+    Some(Ok(rules))
 }
 
 fn parse_theme_var(token: &str) -> Option<(&str, &str, Option<f64>)> {

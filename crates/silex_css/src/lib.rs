@@ -19,6 +19,8 @@ pub mod prelude {
     };
     #[cfg(feature = "tw")]
     pub use crate::tw::VariantSchema;
+    #[cfg(feature = "tw")]
+    pub use crate::tw::variants::UnknownVariantOption;
     pub use crate::types::*;
 }
 
