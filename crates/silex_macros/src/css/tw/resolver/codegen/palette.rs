@@ -33,7 +33,9 @@ pub static PALETTE_TABLE: &[(&str, [&str; 11])] = &[
 
 /// 根据色系名称获取标准的 11 阶梯 Hex 阵列
 pub fn get_raw_palette(color_name: &str) -> Option<[&'static str; 11]> {
-    let idx = PALETTE_TABLE.binary_search_by_key(&color_name, |&(k, _)| k).ok()?;
+    let idx = PALETTE_TABLE
+        .binary_search_by_key(&color_name, |&(k, _)| k)
+        .ok()?;
     Some(PALETTE_TABLE[idx].1)
 }
 
@@ -331,7 +333,11 @@ pub fn lookup_palette_color_fast(color_name: &str, shade: &str) -> Option<&'stat
 }
 
 /// 编译期预计算的标准 Alpha RGBA 静态匹配器 (消除运行时 hex_to_rgba 格式化)
-pub fn lookup_palette_rgba_fast(color_name: &str, shade: &str, opacity: u32) -> Option<&'static str> {
+pub fn lookup_palette_rgba_fast(
+    color_name: &str,
+    shade: &str,
+    opacity: u32,
+) -> Option<&'static str> {
     match (color_name, shade, opacity) {
         ("amber", "50", 0) => Some("rgba(255, 251, 235, 0)"),
         ("amber", "50", 5) => Some("rgba(255, 251, 235, 0.05)"),

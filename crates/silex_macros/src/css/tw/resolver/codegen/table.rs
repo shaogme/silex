@@ -28296,40 +28296,40 @@ pub static STATIC_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::Transform, StaticVal::Literal("skew(-6deg)")),
     ]),
     ("-skew-x-0", &[
-        (CssPropertyId::SkewX, StaticVal::Num(-0.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewX(-0deg)")),
     ]),
     ("-skew-x-1", &[
-        (CssPropertyId::SkewX, StaticVal::Num(-1.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewX(-1deg)")),
     ]),
     ("-skew-x-12", &[
-        (CssPropertyId::SkewX, StaticVal::Num(-12.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewX(-12deg)")),
     ]),
     ("-skew-x-2", &[
-        (CssPropertyId::SkewX, StaticVal::Num(-2.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewX(-2deg)")),
     ]),
     ("-skew-x-3", &[
-        (CssPropertyId::SkewX, StaticVal::Num(-3.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewX(-3deg)")),
     ]),
     ("-skew-x-6", &[
-        (CssPropertyId::SkewX, StaticVal::Num(-6.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewX(-6deg)")),
     ]),
     ("-skew-y-0", &[
-        (CssPropertyId::SkewY, StaticVal::Num(-0.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewY(-0deg)")),
     ]),
     ("-skew-y-1", &[
-        (CssPropertyId::SkewY, StaticVal::Num(-1.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewY(-1deg)")),
     ]),
     ("-skew-y-12", &[
-        (CssPropertyId::SkewY, StaticVal::Num(-12.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewY(-12deg)")),
     ]),
     ("-skew-y-2", &[
-        (CssPropertyId::SkewY, StaticVal::Num(-2.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewY(-2deg)")),
     ]),
     ("-skew-y-3", &[
-        (CssPropertyId::SkewY, StaticVal::Num(-3.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewY(-3deg)")),
     ]),
     ("-skew-y-6", &[
-        (CssPropertyId::SkewY, StaticVal::Num(-6.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewY(-6deg)")),
     ]),
     ("-start-full", &[
         (CssPropertyId::InsetInlineStart, StaticVal::Num(-100.0, "%")),
@@ -74974,7 +74974,7 @@ pub static STATIC_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::ObjectFit, StaticVal::Kw("cover")),
     ]),
     ("object-fill", &[
-        (CssPropertyId::ObjectFill, StaticVal::Kw("fill")),
+        (CssPropertyId::ObjectFit, StaticVal::Kw("fill")),
     ]),
     ("object-left", &[
         (CssPropertyId::ObjectPosition, StaticVal::Kw("left")),
@@ -78593,412 +78593,547 @@ pub static STATIC_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-amber-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fef3c6")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fef3c6")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-amber-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fee685")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fee685")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-amber-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ffd230")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ffd230")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-amber-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ffb900")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ffb900")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-amber-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fffbeb")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fffbeb")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-amber-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fe9a00")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fe9a00")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-amber-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#e17100")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#e17100")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-amber-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#bb4d00")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#bb4d00")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-amber-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#973c00")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#973c00")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-amber-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#7b3306")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#7b3306")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-amber-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#461901")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#461901")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-black", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#000000")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#000000")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-blue-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#dbeafe")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#dbeafe")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-blue-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#bedbff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#bedbff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-blue-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#8ec5ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#8ec5ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-blue-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#51a2ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#51a2ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-blue-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#eff6ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#eff6ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-blue-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#2b7fff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#2b7fff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-blue-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#155dfc")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#155dfc")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-blue-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#1447e6")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#1447e6")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-blue-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#193cb8")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#193cb8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-blue-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#1c398e")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#1c398e")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-blue-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#162456")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#162456")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-current", &[
-        (CssPropertyId::OutlineColor, StaticVal::Kw("currentColor")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Kw("currentColor")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-cyan-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#cefafe")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#cefafe")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-cyan-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#a2f4fd")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#a2f4fd")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-cyan-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#53eafd")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#53eafd")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-cyan-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#00d3f2")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#00d3f2")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-cyan-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ecfeff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ecfeff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-cyan-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#00b8db")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#00b8db")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-cyan-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#0092b8")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#0092b8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-cyan-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#007595")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#007595")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-cyan-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#005f78")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#005f78")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-cyan-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#104e64")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#104e64")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-cyan-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#053345")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#053345")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-emerald-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#d0fae5")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#d0fae5")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-emerald-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#a4f4cf")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#a4f4cf")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-emerald-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#5ee9b5")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#5ee9b5")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-emerald-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#00d492")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#00d492")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-emerald-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ecfdf5")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ecfdf5")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-emerald-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#00bc7d")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#00bc7d")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-emerald-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#009966")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#009966")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-emerald-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#007a55")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#007a55")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-emerald-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#006045")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#006045")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-emerald-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#004f3b")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#004f3b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-emerald-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#002c22")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#002c22")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-fuchsia-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fae8ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fae8ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-fuchsia-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f6cfff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f6cfff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-fuchsia-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f4a8ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f4a8ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-fuchsia-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ed6aff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ed6aff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-fuchsia-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fdf4ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fdf4ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-fuchsia-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#e12afb")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#e12afb")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-fuchsia-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#c800de")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#c800de")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-fuchsia-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#a800b7")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#a800b7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-fuchsia-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#8a0194")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#8a0194")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-fuchsia-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#721378")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#721378")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-fuchsia-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#4b004f")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#4b004f")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-gray-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f3f4f6")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f3f4f6")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-gray-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#e5e7eb")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#e5e7eb")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-gray-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#d1d5dc")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#d1d5dc")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-gray-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#99a1af")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#99a1af")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-gray-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f9fafb")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f9fafb")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-gray-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#6a7282")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#6a7282")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-gray-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#4a5565")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#4a5565")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-gray-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#364153")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#364153")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-gray-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#1e2939")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#1e2939")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-gray-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#101828")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#101828")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-gray-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#030712")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#030712")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-green-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#dcfce7")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#dcfce7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-green-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#b9f8cf")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#b9f8cf")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-green-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#7bf1a8")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#7bf1a8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-green-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#05df72")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#05df72")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-green-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f0fdf4")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f0fdf4")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-green-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#00c950")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#00c950")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-green-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#00a63e")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#00a63e")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-green-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#008236")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#008236")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-green-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#016630")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#016630")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-green-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#0d542b")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#0d542b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-green-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#032e15")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#032e15")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-indigo-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#e0e7ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#e0e7ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-indigo-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#c6d2ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#c6d2ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-indigo-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#a3b3ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#a3b3ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-indigo-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#7c86ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#7c86ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-indigo-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#eef2ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#eef2ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-indigo-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#615fff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#615fff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-indigo-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#4f39f6")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#4f39f6")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-indigo-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#432dd7")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#432dd7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-indigo-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#372aac")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#372aac")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-indigo-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#312c85")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#312c85")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-indigo-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#1e1a4d")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#1e1a4d")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-inherit", &[
-        (CssPropertyId::OutlineColor, StaticVal::Kw("inherit")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Kw("inherit")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-inset", &[
         (CssPropertyId::VarTwRingInset, StaticVal::Kw("inset")),
     ]),
     ("ring-lime-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ecfcca")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ecfcca")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-lime-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#d8f999")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#d8f999")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-lime-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#bbf451")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#bbf451")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-lime-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#9ae600")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#9ae600")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-lime-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f7fee7")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f7fee7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-lime-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#7ccf00")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#7ccf00")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-lime-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#5ea500")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#5ea500")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-lime-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#497d00")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#497d00")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-lime-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#3c6300")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#3c6300")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-lime-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#35530e")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#35530e")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-lime-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#192e03")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#192e03")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mauve-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f3f1f3")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f3f1f3")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mauve-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#e7e4e7")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#e7e4e7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mauve-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#d7d0d7")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#d7d0d7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mauve-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#a89ea9")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#a89ea9")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mauve-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fafafa")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fafafa")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mauve-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#79697b")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#79697b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mauve-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#594c5b")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#594c5b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mauve-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#463947")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#463947")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mauve-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#2a212c")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#2a212c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mauve-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#1d161e")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#1d161e")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mauve-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#0c090c")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#0c090c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mist-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f1f3f3")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f1f3f3")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mist-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#e3e7e8")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#e3e7e8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mist-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#d0d6d8")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#d0d6d8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mist-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#9ca8ab")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#9ca8ab")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mist-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f9fbfb")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f9fbfb")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mist-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#67787c")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#67787c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mist-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#4b585b")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#4b585b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mist-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#394447")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#394447")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mist-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#22292b")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#22292b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mist-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#161b1d")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#161b1d")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-mist-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#090b0c")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#090b0c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-neutral-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f5f5f5")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f5f5f5")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-neutral-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#e5e5e5")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#e5e5e5")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-neutral-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#d4d4d4")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#d4d4d4")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-neutral-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#a1a1a1")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#a1a1a1")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-neutral-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fafafa")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fafafa")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-neutral-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#737373")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#737373")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-neutral-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#525252")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#525252")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-neutral-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#404040")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#404040")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-neutral-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#262626")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#262626")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-neutral-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#171717")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#171717")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-neutral-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#0a0a0a")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#0a0a0a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-0", &[
         (CssPropertyId::VarTwRingOffsetWidth, StaticVal::Num(0.0, "px")),
@@ -79022,1344 +79157,1791 @@ pub static STATIC_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
     ]),
     ("ring-offset-amber-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fef3c6")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-amber-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fee685")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-amber-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ffd230")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-amber-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ffb900")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-amber-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fffbeb")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-amber-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fe9a00")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-amber-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#e17100")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-amber-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#bb4d00")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-amber-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#973c00")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-amber-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#7b3306")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-amber-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#461901")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-black", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#000000")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-blue-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#dbeafe")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-blue-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#bedbff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-blue-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#8ec5ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-blue-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#51a2ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-blue-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#eff6ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-blue-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#2b7fff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-blue-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#155dfc")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-blue-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#1447e6")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-blue-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#193cb8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-blue-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#1c398e")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-blue-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#162456")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-current", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Kw("currentColor")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-cyan-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#cefafe")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-cyan-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#a2f4fd")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-cyan-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#53eafd")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-cyan-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#00d3f2")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-cyan-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ecfeff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-cyan-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#00b8db")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-cyan-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#0092b8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-cyan-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#007595")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-cyan-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#005f78")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-cyan-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#104e64")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-cyan-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#053345")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-emerald-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#d0fae5")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-emerald-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#a4f4cf")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-emerald-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#5ee9b5")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-emerald-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#00d492")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-emerald-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ecfdf5")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-emerald-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#00bc7d")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-emerald-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#009966")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-emerald-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#007a55")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-emerald-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#006045")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-emerald-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#004f3b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-emerald-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#002c22")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-fuchsia-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fae8ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-fuchsia-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f6cfff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-fuchsia-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f4a8ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-fuchsia-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ed6aff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-fuchsia-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fdf4ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-fuchsia-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#e12afb")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-fuchsia-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#c800de")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-fuchsia-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#a800b7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-fuchsia-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#8a0194")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-fuchsia-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#721378")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-fuchsia-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#4b004f")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-gray-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f3f4f6")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-gray-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#e5e7eb")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-gray-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#d1d5dc")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-gray-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#99a1af")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-gray-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f9fafb")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-gray-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#6a7282")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-gray-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#4a5565")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-gray-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#364153")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-gray-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#1e2939")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-gray-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#101828")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-gray-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#030712")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-green-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#dcfce7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-green-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#b9f8cf")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-green-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#7bf1a8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-green-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#05df72")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-green-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f0fdf4")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-green-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#00c950")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-green-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#00a63e")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-green-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#008236")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-green-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#016630")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-green-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#0d542b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-green-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#032e15")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-indigo-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#e0e7ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-indigo-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#c6d2ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-indigo-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#a3b3ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-indigo-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#7c86ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-indigo-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#eef2ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-indigo-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#615fff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-indigo-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#4f39f6")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-indigo-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#432dd7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-indigo-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#372aac")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-indigo-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#312c85")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-indigo-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#1e1a4d")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-inherit", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Kw("inherit")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-lime-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ecfcca")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-lime-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#d8f999")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-lime-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#bbf451")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-lime-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#9ae600")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-lime-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f7fee7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-lime-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#7ccf00")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-lime-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#5ea500")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-lime-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#497d00")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-lime-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#3c6300")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-lime-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#35530e")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-lime-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#192e03")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mauve-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f3f1f3")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mauve-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#e7e4e7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mauve-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#d7d0d7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mauve-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#a89ea9")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mauve-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fafafa")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mauve-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#79697b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mauve-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#594c5b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mauve-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#463947")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mauve-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#2a212c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mauve-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#1d161e")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mauve-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#0c090c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mist-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f1f3f3")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mist-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#e3e7e8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mist-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#d0d6d8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mist-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#9ca8ab")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mist-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f9fbfb")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mist-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#67787c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mist-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#4b585b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mist-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#394447")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mist-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#22292b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mist-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#161b1d")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-mist-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#090b0c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-neutral-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f5f5f5")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-neutral-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#e5e5e5")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-neutral-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#d4d4d4")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-neutral-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#a1a1a1")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-neutral-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fafafa")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-neutral-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#737373")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-neutral-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#525252")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-neutral-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#404040")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-neutral-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#262626")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-neutral-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#171717")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-neutral-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#0a0a0a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-olive-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f4f4f0")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-olive-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#e8e8e3")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-olive-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#d8d8d0")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-olive-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#abab9c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-olive-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fbfbf9")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-olive-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#7c7c67")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-olive-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#5b5b4b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-olive-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#474739")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-olive-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#2b2b22")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-olive-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#1d1d16")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-olive-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#0c0c09")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-orange-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ffedd4")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-orange-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ffd6a7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-orange-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ffb86a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-orange-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ff8904")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-orange-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fff7ed")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-orange-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ff6900")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-orange-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f54900")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-orange-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ca3500")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-orange-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#9f2d00")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-orange-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#7e2a0c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-orange-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#441306")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-pink-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fce7f3")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-pink-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fccee8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-pink-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fda5d5")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-pink-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fb64b6")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-pink-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fdf2f8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-pink-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f6339a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-pink-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#e60076")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-pink-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#c6005c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-pink-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#a3004c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-pink-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#861043")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-pink-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#510424")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-purple-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f3e8ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-purple-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#e9d4ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-purple-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#dab2ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-purple-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#c27aff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-purple-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#faf5ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-purple-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ad46ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-purple-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#9810fa")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-purple-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#8200db")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-purple-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#6e11b0")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-purple-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#59168b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-purple-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#3c0366")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-red-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ffe2e2")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-red-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ffc9c9")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-red-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ffa2a2")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-red-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ff6467")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-red-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fef2f2")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-red-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fb2c36")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-red-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#e7000b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-red-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#c10007")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-red-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#9f0712")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-red-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#82181a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-red-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#460809")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-rose-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ffe4e6")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-rose-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ffccd3")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-rose-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ffa1ad")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-rose-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ff637e")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-rose-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fff1f2")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-rose-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ff2056")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-rose-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ec003f")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-rose-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#c70036")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-rose-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#a50036")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-rose-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#8b0836")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-rose-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#4d0218")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-sky-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#dff2fe")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-sky-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#b8e6fe")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-sky-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#74d4ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-sky-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#00bcff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-sky-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f0f9ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-sky-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#00a6f4")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-sky-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#0084d1")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-sky-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#0069a8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-sky-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#00598a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-sky-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#024a70")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-sky-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#052f4a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-slate-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f1f5f9")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-slate-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#e2e8f0")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-slate-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#cad5e2")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-slate-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#90a1b9")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-slate-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f8fafc")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-slate-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#62748e")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-slate-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#45556c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-slate-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#314158")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-slate-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#1d293d")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-slate-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#0f172b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-slate-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#020618")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-stone-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f5f5f4")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-stone-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#e7e5e4")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-stone-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#d6d3d1")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-stone-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#a6a09b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-stone-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fafaf9")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-stone-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#79716b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-stone-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#57534d")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-stone-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#44403b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-stone-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#292524")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-stone-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#1c1917")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-stone-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#0c0a09")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-taupe-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f3f1f1")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-taupe-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#e8e4e3")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-taupe-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#d8d2d0")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-taupe-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#aba09c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-taupe-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fbfaf9")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-taupe-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#7c6d67")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-taupe-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#5b4f4b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-taupe-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#473c39")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-taupe-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#2b2422")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-taupe-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#1d1816")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-taupe-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#0c0a09")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-teal-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#cbfbf1")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-teal-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#96f7e4")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-teal-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#46ecd5")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-teal-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#00d5be")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-teal-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f0fdfa")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-teal-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#00bba7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-teal-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#009689")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-teal-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#00786f")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-teal-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#005f5a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-teal-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#0b4f4a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-teal-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#022f2e")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-transparent", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Kw("transparent")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-violet-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ede9fe")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-violet-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ddd6ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-violet-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#c4b4ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-violet-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#a684ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-violet-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f5f3ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-violet-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#8e51ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-violet-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#7f22fe")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-violet-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#7008e7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-violet-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#5d0ec0")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-violet-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#4d179a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-violet-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#2f0d68")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-white", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ffffff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-yellow-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fef9c2")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-yellow-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fff085")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-yellow-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#ffdf20")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-yellow-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fdc700")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-yellow-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fefce8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-yellow-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f0b100")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-yellow-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#d08700")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-yellow-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#a65f00")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-yellow-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#894b00")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-yellow-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#733e0a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-yellow-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#432004")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-zinc-100", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#f4f4f5")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-zinc-200", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#e4e4e7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-zinc-300", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#d4d4d8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-zinc-400", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#9f9fa9")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-zinc-50", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#fafafa")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-zinc-500", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#71717b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-zinc-600", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#52525c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-zinc-700", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#3f3f46")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-zinc-800", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#27272a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-zinc-900", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#18181b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-offset-zinc-950", &[
         (CssPropertyId::VarTwRingOffsetColor, StaticVal::Hex("#09090b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-olive-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f4f4f0")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f4f4f0")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-olive-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#e8e8e3")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#e8e8e3")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-olive-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#d8d8d0")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#d8d8d0")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-olive-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#abab9c")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#abab9c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-olive-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fbfbf9")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fbfbf9")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-olive-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#7c7c67")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#7c7c67")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-olive-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#5b5b4b")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#5b5b4b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-olive-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#474739")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#474739")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-olive-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#2b2b22")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#2b2b22")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-olive-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#1d1d16")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#1d1d16")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-olive-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#0c0c09")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#0c0c09")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-orange-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ffedd4")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ffedd4")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-orange-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ffd6a7")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ffd6a7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-orange-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ffb86a")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ffb86a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-orange-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ff8904")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ff8904")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-orange-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fff7ed")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fff7ed")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-orange-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ff6900")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ff6900")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-orange-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f54900")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f54900")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-orange-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ca3500")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ca3500")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-orange-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#9f2d00")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#9f2d00")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-orange-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#7e2a0c")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#7e2a0c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-orange-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#441306")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#441306")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-pink-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fce7f3")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fce7f3")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-pink-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fccee8")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fccee8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-pink-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fda5d5")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fda5d5")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-pink-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fb64b6")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fb64b6")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-pink-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fdf2f8")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fdf2f8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-pink-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f6339a")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f6339a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-pink-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#e60076")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#e60076")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-pink-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#c6005c")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#c6005c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-pink-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#a3004c")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#a3004c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-pink-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#861043")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#861043")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-pink-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#510424")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#510424")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-purple-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f3e8ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f3e8ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-purple-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#e9d4ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#e9d4ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-purple-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#dab2ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#dab2ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-purple-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#c27aff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#c27aff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-purple-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#faf5ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#faf5ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-purple-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ad46ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ad46ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-purple-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#9810fa")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#9810fa")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-purple-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#8200db")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#8200db")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-purple-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#6e11b0")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#6e11b0")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-purple-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#59168b")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#59168b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-purple-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#3c0366")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#3c0366")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-red-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ffe2e2")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ffe2e2")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-red-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ffc9c9")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ffc9c9")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-red-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ffa2a2")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ffa2a2")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-red-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ff6467")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ff6467")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-red-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fef2f2")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fef2f2")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-red-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fb2c36")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fb2c36")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-red-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#e7000b")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#e7000b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-red-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#c10007")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#c10007")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-red-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#9f0712")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#9f0712")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-red-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#82181a")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#82181a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-red-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#460809")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#460809")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-rose-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ffe4e6")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ffe4e6")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-rose-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ffccd3")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ffccd3")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-rose-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ffa1ad")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ffa1ad")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-rose-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ff637e")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ff637e")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-rose-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fff1f2")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fff1f2")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-rose-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ff2056")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ff2056")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-rose-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ec003f")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ec003f")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-rose-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#c70036")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#c70036")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-rose-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#a50036")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#a50036")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-rose-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#8b0836")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#8b0836")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-rose-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#4d0218")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#4d0218")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-sky-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#dff2fe")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#dff2fe")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-sky-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#b8e6fe")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#b8e6fe")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-sky-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#74d4ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#74d4ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-sky-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#00bcff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#00bcff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-sky-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f0f9ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f0f9ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-sky-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#00a6f4")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#00a6f4")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-sky-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#0084d1")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#0084d1")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-sky-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#0069a8")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#0069a8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-sky-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#00598a")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#00598a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-sky-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#024a70")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#024a70")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-sky-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#052f4a")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#052f4a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-slate-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f1f5f9")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f1f5f9")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-slate-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#e2e8f0")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#e2e8f0")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-slate-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#cad5e2")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#cad5e2")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-slate-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#90a1b9")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#90a1b9")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-slate-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f8fafc")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f8fafc")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-slate-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#62748e")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#62748e")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-slate-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#45556c")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#45556c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-slate-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#314158")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#314158")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-slate-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#1d293d")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#1d293d")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-slate-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#0f172b")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#0f172b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-slate-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#020618")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#020618")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-stone-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f5f5f4")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f5f5f4")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-stone-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#e7e5e4")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#e7e5e4")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-stone-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#d6d3d1")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#d6d3d1")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-stone-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#a6a09b")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#a6a09b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-stone-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fafaf9")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fafaf9")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-stone-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#79716b")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#79716b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-stone-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#57534d")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#57534d")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-stone-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#44403b")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#44403b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-stone-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#292524")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#292524")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-stone-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#1c1917")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#1c1917")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-stone-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#0c0a09")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#0c0a09")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-taupe-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f3f1f1")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f3f1f1")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-taupe-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#e8e4e3")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#e8e4e3")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-taupe-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#d8d2d0")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#d8d2d0")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-taupe-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#aba09c")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#aba09c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-taupe-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fbfaf9")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fbfaf9")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-taupe-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#7c6d67")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#7c6d67")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-taupe-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#5b4f4b")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#5b4f4b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-taupe-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#473c39")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#473c39")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-taupe-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#2b2422")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#2b2422")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-taupe-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#1d1816")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#1d1816")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-taupe-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#0c0a09")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#0c0a09")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-teal-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#cbfbf1")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#cbfbf1")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-teal-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#96f7e4")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#96f7e4")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-teal-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#46ecd5")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#46ecd5")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-teal-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#00d5be")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#00d5be")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-teal-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f0fdfa")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f0fdfa")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-teal-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#00bba7")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#00bba7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-teal-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#009689")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#009689")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-teal-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#00786f")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#00786f")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-teal-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#005f5a")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#005f5a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-teal-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#0b4f4a")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#0b4f4a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-teal-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#022f2e")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#022f2e")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-transparent", &[
-        (CssPropertyId::OutlineColor, StaticVal::Kw("transparent")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Kw("transparent")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-violet-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ede9fe")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ede9fe")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-violet-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ddd6ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ddd6ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-violet-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#c4b4ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#c4b4ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-violet-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#a684ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#a684ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-violet-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f5f3ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f5f3ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-violet-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#8e51ff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#8e51ff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-violet-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#7f22fe")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#7f22fe")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-violet-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#7008e7")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#7008e7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-violet-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#5d0ec0")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#5d0ec0")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-violet-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#4d179a")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#4d179a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-violet-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#2f0d68")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#2f0d68")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-white", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ffffff")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ffffff")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-yellow-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fef9c2")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fef9c2")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-yellow-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fff085")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fff085")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-yellow-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#ffdf20")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#ffdf20")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-yellow-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fdc700")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fdc700")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-yellow-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fefce8")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fefce8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-yellow-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f0b100")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f0b100")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-yellow-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#d08700")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#d08700")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-yellow-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#a65f00")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#a65f00")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-yellow-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#894b00")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#894b00")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-yellow-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#733e0a")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#733e0a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-yellow-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#432004")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#432004")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-zinc-100", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#f4f4f5")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#f4f4f5")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-zinc-200", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#e4e4e7")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#e4e4e7")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-zinc-300", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#d4d4d8")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#d4d4d8")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-zinc-400", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#9f9fa9")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#9f9fa9")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-zinc-50", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#fafafa")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#fafafa")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-zinc-500", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#71717b")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#71717b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-zinc-600", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#52525c")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#52525c")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-zinc-700", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#3f3f46")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#3f3f46")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-zinc-800", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#27272a")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#27272a")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-zinc-900", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#18181b")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#18181b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("ring-zinc-950", &[
-        (CssPropertyId::OutlineColor, StaticVal::Hex("#09090b")),
+        (CssPropertyId::VarTwRingColor, StaticVal::Hex("#09090b")),
+        (CssPropertyId::BoxShadow, StaticVal::RingShadow),
     ]),
     ("rotate-0", &[
         (CssPropertyId::Transform, StaticVal::Kw("rotate(0deg)")),
@@ -86770,40 +87352,40 @@ pub static STATIC_RULES: &[(&str, &[(CssPropertyId, StaticVal)])] = &[
         (CssPropertyId::Transform, StaticVal::Literal("skew(6deg)")),
     ]),
     ("skew-x-0", &[
-        (CssPropertyId::SkewX, StaticVal::Num(0.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewX(0deg)")),
     ]),
     ("skew-x-1", &[
-        (CssPropertyId::SkewX, StaticVal::Num(1.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewX(1deg)")),
     ]),
     ("skew-x-12", &[
-        (CssPropertyId::SkewX, StaticVal::Num(12.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewX(12deg)")),
     ]),
     ("skew-x-2", &[
-        (CssPropertyId::SkewX, StaticVal::Num(2.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewX(2deg)")),
     ]),
     ("skew-x-3", &[
-        (CssPropertyId::SkewX, StaticVal::Num(3.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewX(3deg)")),
     ]),
     ("skew-x-6", &[
-        (CssPropertyId::SkewX, StaticVal::Num(6.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewX(6deg)")),
     ]),
     ("skew-y-0", &[
-        (CssPropertyId::SkewY, StaticVal::Num(0.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewY(0deg)")),
     ]),
     ("skew-y-1", &[
-        (CssPropertyId::SkewY, StaticVal::Num(1.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewY(1deg)")),
     ]),
     ("skew-y-12", &[
-        (CssPropertyId::SkewY, StaticVal::Num(12.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewY(12deg)")),
     ]),
     ("skew-y-2", &[
-        (CssPropertyId::SkewY, StaticVal::Num(2.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewY(2deg)")),
     ]),
     ("skew-y-3", &[
-        (CssPropertyId::SkewY, StaticVal::Num(3.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewY(3deg)")),
     ]),
     ("skew-y-6", &[
-        (CssPropertyId::SkewY, StaticVal::Num(6.0, "deg")),
+        (CssPropertyId::Transform, StaticVal::Literal("skewY(6deg)")),
     ]),
     ("slashed-zero", &[
         (CssPropertyId::FontVariantNumeric, StaticVal::Kw("slashed-zero")),
@@ -92901,7 +93483,9 @@ pub fn resolve_static_rule(
     utility_token: &str,
     span: Span,
 ) -> Option<Vec<UtilityRule>> {
-    let idx = STATIC_RULES.binary_search_by_key(&utility_token, |&(k, _)| k).ok()?;
+    let idx = STATIC_RULES
+        .binary_search_by_key(&utility_token, |&(k, _)| k)
+        .ok()?;
     let entries = STATIC_RULES[idx].1;
 
     let mut rules = Vec::with_capacity(entries.len());
@@ -92911,14 +93495,23 @@ pub fn resolve_static_rule(
             StaticVal::Num(v, u) => UtilityValue::Numeric(v, u),
             StaticVal::Hex(s) => crate::css::tw::resolver::hex(s),
             StaticVal::Literal(s) => UtilityValue::ArbitraryLiteral(s.to_string()),
-            StaticVal::RingShadow => UtilityValue::Keyword(crate::css::tw::resolver::RING_BOX_SHADOW),
+            StaticVal::RingShadow => {
+                UtilityValue::Keyword(crate::css::tw::resolver::RING_BOX_SHADOW)
+            }
         };
-        rules.push(make_rule(
-            if modifiers.is_empty() { smallvec::SmallVec::new() } else { modifiers.iter().cloned().collect() },
-            *prop,
-            uval,
-            span,
-        ).ok()?);
+        rules.push(
+            make_rule(
+                if modifiers.is_empty() {
+                    smallvec::SmallVec::new()
+                } else {
+                    modifiers.iter().cloned().collect()
+                },
+                *prop,
+                uval,
+                span,
+            )
+            .ok()?,
+        );
     }
     Some(rules)
 }

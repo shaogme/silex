@@ -51,6 +51,34 @@ pub fn levenshtein_distance(s1: &str, s2: &str) -> usize {
     }
 }
 
+/// 在变体前缀候选集中寻找与给定前缀最相近的建议
+///
+/// 候选集为 `MODIFIER_TABLE` 全表 + 配置中的自定义断点 + 内建的函数式变体前缀。
+pub fn find_best_modifier_suggestion(prefix: &str) -> Option<String> {
+    let mut best_match = None;
+    let mut min_dist = usize::MAX;
+
+    let mut check_candidate = |cand: &str| {
+        let dist = levenshtein_distance(prefix, cand);
+        let max_allowed = if cand.len() <= 4 { 2 } else { 3 };
+        if dist <= max_allowed && dist < min_dist {
+            min_dist = dist;
+            best_match = Some(cand.to_string());
+        }
+    };
+
+    for meta in super::codegen::modifiers::MODIFIER_TABLE {
+        check_candidate(meta.key);
+    }
+    if let Some(cfg) = crate::css::config::get_config() {
+        for bp_key in cfg.theme.breakpoints.keys() {
+            check_candidate(bp_key);
+        }
+    }
+
+    best_match
+}
+
 /// 在候选词列表中寻找与给定 token 最相近的 Utility 建议
 pub fn find_best_suggestion(token: &str) -> Option<String> {
     let mut best_match = None;

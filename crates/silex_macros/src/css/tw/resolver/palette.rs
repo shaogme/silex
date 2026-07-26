@@ -136,16 +136,18 @@ pub fn hex_to_rgba(hex: &str, alpha_pct: f64) -> String {
 
 /// 解析颜色值词条（支持色板名如 `slate-900`, `indigo-600/50`, `white`, `black`, `transparent`, `[#1e293b]`, `rgba(...)`, `rgb(...)`, `hsl(...)`）
 pub fn parse_color_value(color_token: &str) -> Option<UtilityValue> {
+    // Tailwind 语义：`/<number>` 一律为百分比（`/1` = 1%，而非 100%）。
+    // 小数不透明度需写作任意值形式 `/[0.5]`。
     let (base, opacity) = if let Some((b, op_str)) = color_token.split_once('/') {
-        if let Ok(op) = op_str.parse::<f64>() {
-            let pct = if (0.0..=1.0).contains(&op) {
-                op * 100.0
-            } else {
-                op
-            };
-            (b, Some(pct))
-        } else {
-            (color_token, None)
+        let (raw, is_arbitrary) = match op_str.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+            Some(inner) => (inner, true),
+            None => (op_str, false),
+        };
+        match raw.parse::<f64>() {
+            // `/[0.5]` 形式按 0..=1 的小数解释
+            Ok(op) if is_arbitrary && (0.0..=1.0).contains(&op) => (b, Some(op * 100.0)),
+            Ok(op) => (b, Some(op)),
+            Err(_) => (color_token, None),
         }
     } else {
         (color_token, None)

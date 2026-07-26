@@ -439,22 +439,22 @@ pub fn resolve_transform_transition_rules(
     if let Some(rest) = class_name.strip_prefix("skew-x-")
         && let Some(deg) = skew_deg(rest)
     {
-        return Some(cow!(vec![("skew-x", deg)]));
+        return Some(cow!(vec![("transform", format!("skewX({})", deg))]));
     }
     if let Some(rest) = class_name.strip_prefix("-skew-x-")
         && let Some(deg) = skew_deg(&format!("-{}", rest))
     {
-        return Some(cow!(vec![("skew-x", deg)]));
+        return Some(cow!(vec![("transform", format!("skewX({})", deg))]));
     }
     if let Some(rest) = class_name.strip_prefix("skew-y-")
         && let Some(deg) = skew_deg(rest)
     {
-        return Some(cow!(vec![("skew-y", deg)]));
+        return Some(cow!(vec![("transform", format!("skewY({})", deg))]));
     }
     if let Some(rest) = class_name.strip_prefix("-skew-y-")
         && let Some(deg) = skew_deg(&format!("-{}", rest))
     {
-        return Some(cow!(vec![("skew-y", deg)]));
+        return Some(cow!(vec![("transform", format!("skewY({})", deg))]));
     }
     if let Some(rest) = class_name.strip_prefix("skew-")
         && let Some(deg) = skew_deg(rest)

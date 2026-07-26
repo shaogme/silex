@@ -54,28 +54,40 @@ function extractModifiers(ds) {
       continue;
     }
 
-    // 2. Pseudo Elements & Pseudo Classes
+    // 2. 选择器型变体：伪元素、伪类，以及 rtl/ltr/open/inert 之类的复合 `:where(...)` 选择器。
+    //    优先于媒体特性判定——Tailwind 会把 `hover:` 包进 `@media (hover: hover)`，
+    //    但它的本质仍是伪类变体。
     const escapedKey = key.replace(/[*+?^${}()|[\]\\]/g, '\\$&');
-    const ruleMatch = css.match(new RegExp(`(?:\\.${escapedKey}\\\\:block)(\\S+)\\s*\\{`));
-    if (ruleMatch) {
-      const selectorSuffix = ruleMatch[1];
-      if (selectorSuffix.startsWith('::')) {
-        modifiers.push({
-          key,
-          kind: 'PseudoElement',
-          priority: 20,
-          css_selector: `&${selectorSuffix}`
-        });
-        continue;
-      } else if (selectorSuffix.startsWith(':')) {
-        modifiers.push({
-          key,
-          kind: 'PseudoClass',
-          priority: 20,
-          css_selector: `&${selectorSuffix}`
-        });
+    const ruleMatch = css.match(new RegExp(`\\.${escapedKey}\\\\:block([^{]*)\\{`));
+    const selectorSuffix = ruleMatch ? ruleMatch[1].trim() : '';
+
+    if (selectorSuffix) {
+      // 简单伪元素 `::before`
+      if (/^::[a-zA-Z-]+$/.test(selectorSuffix)) {
+        modifiers.push({ key, kind: 'PseudoElement', priority: 20, css_selector: `&${selectorSuffix}` });
         continue;
       }
+      // 简单伪类 `:hover` 与仅含简单参数的函数式伪类 `:nth-child(even)`
+      if (/^:[a-zA-Z-]+(\([a-zA-Z0-9+\-\s]*\))?$/.test(selectorSuffix)) {
+        modifiers.push({ key, kind: 'PseudoClass', priority: 20, css_selector: `&${selectorSuffix}` });
+        continue;
+      }
+      // 复合选择器 `:where(:dir(rtl), [dir="rtl"], ...)` / `:is([open], :popover-open, :open)`
+      modifiers.push({ key, kind: 'SelectorVariant', priority: 25, css_selector: `&${selectorSuffix}` });
+      continue;
+    }
+
+    // 3. 纯媒体特性变体 (print / motion-reduce / motion-safe / forced-colors /
+    //    contrast-more / portrait / landscape / pointer-* ...)。这些变体此前被整段丢弃，
+    //    导致宏侧兜底成 `:print` 之类永不匹配的伪类。
+    const mediaMatch = css.match(/@media\s+([^{]+?)\s*\{/);
+    if (mediaMatch) {
+      modifiers.push({
+        key,
+        kind: 'MediaFeature',
+        priority: 65,
+        css_selector: mediaMatch[1].trim()
+      });
     }
   }
 

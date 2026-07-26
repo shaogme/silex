@@ -9,13 +9,15 @@
     "target_props": [
       "backdrop-filter"
     ],
-    "unit_kind": "Pixel"
+    "unit_kind": "Pixel",
+    "value_wrapper": "blur({})"
   },
   "blur": {
     "target_props": [
       "filter"
     ],
-    "unit_kind": "Pixel"
+    "unit_kind": "Pixel",
+    "value_wrapper": "blur({})"
   },
   "border": {
     "target_props": [
@@ -31,31 +33,19 @@
   },
   "border-be": {
     "target_props": [
-      "border-block-end-style",
-      "border-block-end-width",
-      "inherits",
-      "initial-value",
-      "syntax"
+      "border-block-end-width"
     ],
     "unit_kind": "Pixel"
   },
   "border-bs": {
     "target_props": [
-      "border-block-start-style",
-      "border-block-start-width",
-      "inherits",
-      "initial-value",
-      "syntax"
+      "border-block-start-width"
     ],
     "unit_kind": "Pixel"
   },
   "border-e": {
     "target_props": [
-      "border-inline-end-style",
-      "border-inline-end-width",
-      "inherits",
-      "initial-value",
-      "syntax"
+      "border-inline-end-width"
     ],
     "unit_kind": "Pixel"
   },
@@ -73,11 +63,7 @@
   },
   "border-s": {
     "target_props": [
-      "border-inline-start-style",
-      "border-inline-start-width",
-      "inherits",
-      "initial-value",
-      "syntax"
+      "border-inline-start-width"
     ],
     "unit_kind": "Pixel"
   },
@@ -364,11 +350,74 @@
     ],
     "unit_kind": "Unitless"
   },
+  "backdrop-brightness": {
+    "target_props": [
+      "backdrop-filter"
+    ],
+    "unit_kind": "Percentage",
+    "value_wrapper": "brightness({})"
+  },
+  "backdrop-contrast": {
+    "target_props": [
+      "backdrop-filter"
+    ],
+    "unit_kind": "Percentage",
+    "value_wrapper": "contrast({})"
+  },
+  "backdrop-grayscale": {
+    "target_props": [
+      "backdrop-filter"
+    ],
+    "unit_kind": "Percentage",
+    "value_wrapper": "grayscale({})"
+  },
+  "backdrop-hue-rotate": {
+    "target_props": [
+      "backdrop-filter"
+    ],
+    "unit_kind": "Degree",
+    "value_wrapper": "hue-rotate({})"
+  },
+  "backdrop-invert": {
+    "target_props": [
+      "backdrop-filter"
+    ],
+    "unit_kind": "Percentage",
+    "value_wrapper": "invert({})"
+  },
+  "backdrop-opacity": {
+    "target_props": [
+      "backdrop-filter"
+    ],
+    "unit_kind": "Percentage",
+    "value_wrapper": "opacity({})"
+  },
+  "backdrop-saturate": {
+    "target_props": [
+      "backdrop-filter"
+    ],
+    "unit_kind": "Percentage",
+    "value_wrapper": "saturate({})"
+  },
+  "backdrop-sepia": {
+    "target_props": [
+      "backdrop-filter"
+    ],
+    "unit_kind": "Percentage",
+    "value_wrapper": "sepia({})"
+  },
   "basis": {
     "target_props": [
       "flex-basis"
     ],
     "unit_kind": "RemScale"
+  },
+  "brightness": {
+    "target_props": [
+      "filter"
+    ],
+    "unit_kind": "Percentage",
+    "value_wrapper": "brightness({})"
   },
   "col": {
     "target_props": [
@@ -412,11 +461,25 @@
     ],
     "unit_kind": "Unitless"
   },
+  "contrast": {
+    "target_props": [
+      "filter"
+    ],
+    "unit_kind": "Percentage",
+    "value_wrapper": "contrast({})"
+  },
   "cursor": {
     "target_props": [
       "cursor"
     ],
     "unit_kind": "Unitless"
+  },
+  "drop-shadow": {
+    "target_props": [
+      "filter"
+    ],
+    "unit_kind": "Unitless",
+    "value_wrapper": "drop-shadow({})"
   },
   "ease": {
     "target_props": [
@@ -454,6 +517,13 @@
     ],
     "unit_kind": "GridRepeat"
   },
+  "grayscale": {
+    "target_props": [
+      "filter"
+    ],
+    "unit_kind": "Percentage",
+    "value_wrapper": "grayscale({})"
+  },
   "grid-rows": {
     "target_props": [
       "grid-template-rows"
@@ -472,6 +542,13 @@
     ],
     "unit_kind": "RemScale"
   },
+  "hue-rotate": {
+    "target_props": [
+      "filter"
+    ],
+    "unit_kind": "Degree",
+    "value_wrapper": "hue-rotate({})"
+  },
   "inset-x": {
     "target_props": [
       "left",
@@ -485,6 +562,13 @@
       "bottom"
     ],
     "unit_kind": "RemScale"
+  },
+  "invert": {
+    "target_props": [
+      "filter"
+    ],
+    "unit_kind": "Percentage",
+    "value_wrapper": "invert({})"
   },
   "line-clamp": {
     "target_props": [
@@ -552,6 +636,13 @@
     ],
     "unit_kind": "Unitless"
   },
+  "saturate": {
+    "target_props": [
+      "filter"
+    ],
+    "unit_kind": "Percentage",
+    "value_wrapper": "saturate({})"
+  },
   "scale-x": {
     "target_props": [
       "transform"
@@ -565,6 +656,13 @@
     ],
     "unit_kind": "Percentage",
     "value_wrapper": "scaleY({})"
+  },
+  "sepia": {
+    "target_props": [
+      "filter"
+    ],
+    "unit_kind": "Percentage",
+    "value_wrapper": "sepia({})"
   },
   "shrink": {
     "target_props": [

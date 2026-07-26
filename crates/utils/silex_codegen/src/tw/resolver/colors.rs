@@ -1,19 +1,41 @@
 use crate::tw::ColorShadeInfo;
+use crate::tw::resolver::typography_border::RING_BOX_SHADOW;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+
+/// ring 体系的颜色前缀：颜色写入 CSS 变量，并同时铺设 `box-shadow` 载体。
+///
+/// 这些前缀**必须**与 `silex_macros` 侧 `color_prefix_to_prop` 保持一致：
+/// 静态表优先于模式解析，若此处映射错误（例如曾经的 `ring-` → `outline-color`），
+/// macro 侧的正确映射会变成永远不会命中的死代码。
+const RING_COLOR_PREFIXES: &[(&str, &str)] = &[
+    ("ring-offset-", "--tw-ring-offset-color"),
+    ("ring-", "--tw-ring-color"),
+];
 
 /// 颜色规则表解析
 pub fn resolve_color_rules<'a>(
     class_name: &str,
     palette: &'a BTreeMap<String, Vec<ColorShadeInfo>>,
 ) -> Option<Vec<(&'static str, Cow<'a, str>)>> {
+    // ring 颜色优先于通用颜色前缀表处理（需附带 box-shadow 载体声明）
+    for &(prefix, var_prop) in RING_COLOR_PREFIXES {
+        if let Some(color_name) = class_name.strip_prefix(prefix)
+            && let Some(hex) = resolve_color_hex(color_name, palette)
+        {
+            return Some(vec![
+                (var_prop, Cow::Borrowed(hex)),
+                ("box-shadow", Cow::Borrowed(RING_BOX_SHADOW)),
+            ]);
+        }
+    }
+
     let color_prefixes = &[
         ("scrollbar-thumb-", "scrollbar-color"),
         ("scrollbar-track-", "scrollbar-color"),
         ("inset-shadow-", "--tw-inset-shadow-color"),
         ("drop-shadow-", "--tw-drop-shadow-color"),
         ("text-shadow-", "--tw-text-shadow-color"),
-        ("ring-offset-", "--tw-ring-offset-color"),
         ("placeholder-", "color"),
         ("decoration-", "text-decoration-color"),
         ("inset-ring-", "--tw-inset-ring-color"),
@@ -37,7 +59,6 @@ pub fn resolve_color_rules<'a>(
         ("text-", "color"),
         ("fill-", "fill"),
         ("from-", "--tw-gradient-from"),
-        ("ring-", "outline-color"),
         ("via-", "--tw-gradient-via"),
         ("bg-", "background-color"),
         ("to-", "--tw-gradient-to"),

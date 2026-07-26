@@ -19,6 +19,24 @@ fn format_num_clean(v: f64) -> String {
     }
 }
 
+/// 将求值结果渲染为可嵌入 `value_wrapper` 的 CSS 字面量
+fn utility_value_to_literal(val: &UtilityValue) -> String {
+    match val {
+        UtilityValue::Numeric(v, unit) => format!("{}{}", format_num_clean(*v), unit),
+        UtilityValue::Keyword(k) => (*k).to_string(),
+        UtilityValue::HexColor(hex) => hex.clone(),
+        UtilityValue::ArbitraryLiteral(s) => s.clone(),
+        UtilityValue::ThemeVar(var, opacity) => match opacity {
+            Some(op) => format!(
+                "color-mix(in srgb, var(--slx-theme-{}) {}%, transparent)",
+                var, op
+            ),
+            None => format!("var(--slx-theme-{})", var),
+        },
+        UtilityValue::DynamicExpr(expr, _) => quote::quote!(#expr).to_string(),
+    }
+}
+
 /// 解析方向与各角 Rounded 规则 (例: `rounded-tl-3xl`, `rounded-t-lg`, `rounded-tr-4`)
 pub fn resolve_rounded_utility(
     modifiers: &[SpannedModifier],
@@ -104,80 +122,7 @@ pub fn resolve_numeric_utility(
         ]);
     }
 
-    // 2. Transform 变体 (rotate, scale, translate, skew)
-    if prefix == "rotate" {
-        return Some(vec![
-            make_rule(
-                mods,
-                "transform",
-                UtilityValue::ArbitraryLiteral(format!(
-                    "rotate({}deg)",
-                    if is_negative { -val_num } else { val_num }
-                )),
-                span,
-            )
-            .ok()?,
-        ]);
-    }
-    if prefix == "scale" || prefix == "scale-x" || prefix == "scale-y" {
-        let fn_name = match prefix {
-            "scale-x" => "scaleX",
-            "scale-y" => "scaleY",
-            _ => "scale",
-        };
-        return Some(vec![
-            make_rule(
-                mods,
-                "transform",
-                UtilityValue::ArbitraryLiteral(format!(
-                    "{}({})",
-                    fn_name,
-                    format_num_clean(val_num / 100.0)
-                )),
-                span,
-            )
-            .ok()?,
-        ]);
-    }
-    if prefix == "skew-x" || prefix == "skew-y" {
-        let fn_name = if prefix == "skew-x" { "skewX" } else { "skewY" };
-        return Some(vec![
-            make_rule(
-                mods,
-                "transform",
-                UtilityValue::ArbitraryLiteral(format!(
-                    "{}({}deg)",
-                    fn_name,
-                    if is_negative { -val_num } else { val_num }
-                )),
-                span,
-            )
-            .ok()?,
-        ]);
-    }
-    if prefix == "translate-x" || prefix == "translate-y" {
-        let fn_name = if prefix == "translate-x" {
-            "translateX"
-        } else {
-            "translateY"
-        };
-        let val_repr = if is_fraction {
-            format!("{}%", format_num_clean(val_num * 100.0 * sign))
-        } else if val_num == 0.0 {
-            "0px".to_string()
-        } else {
-            format!("{}rem", format_num_clean(val_num * 0.25 * sign))
-        };
-        return Some(vec![
-            make_rule(
-                mods,
-                "transform",
-                UtilityValue::ArbitraryLiteral(format!("{}({})", fn_name, val_repr)),
-                span,
-            )
-            .ok()?,
-        ]);
-    }
+    // 2. Enter/Exit 动画位移 (方向决定符号，无法由 UnitKind 表达)
     if prefix.starts_with("slide-in-from-") {
         let rem_val = val_num * 0.25;
         let val_repr = if prefix.contains("-top") || prefix.contains("-left") {
@@ -203,13 +148,12 @@ pub fn resolve_numeric_utility(
         match meta.unit_kind {
             UnitKind::RemScale => rem(val_num * 0.25 * sign),
             UnitKind::Pixel => px(val_num * sign),
-            UnitKind::Percentage => num_unitless(val_num / 100.0),
+            UnitKind::Percentage => num_unitless(val_num / 100.0 * sign),
             UnitKind::Milliseconds => num(val_num, "ms"),
             UnitKind::Unitless => num_unitless(val_num * sign),
-            UnitKind::Degree => UtilityValue::ArbitraryLiteral(format!(
-                "{}deg",
-                if is_negative { -val_num } else { val_num }
-            )),
+            UnitKind::Degree => {
+                UtilityValue::ArbitraryLiteral(format!("{}deg", format_num_clean(val_num * sign)))
+            }
             UnitKind::GridRepeat => UtilityValue::ArbitraryLiteral(format!(
                 "repeat({}, minmax(0, 1fr))",
                 val_num as usize
@@ -219,6 +163,15 @@ pub fn resolve_numeric_utility(
                 val_num as usize, val_num as usize
             )),
         }
+    };
+
+    // 4. 应用元数据声明的 value_wrapper（如 `transform: rotate({})`、`filter: blur({})`）
+    //    这是 wrapper 的唯一消费点，禁止再为个别前缀写硬编码特判。
+    let val = match meta.value_wrapper {
+        Some(wrapper) => {
+            UtilityValue::ArbitraryLiteral(wrapper.replace("{}", &utility_value_to_literal(&val)))
+        }
+        None => val,
     };
 
     let rules = meta

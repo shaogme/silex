@@ -17,10 +17,14 @@ pub enum Modifier {
     PseudoElement(String),
     /// 响应式媒体查询断点: sm (640px), md (768px), lg (1024px), xl (1280px), 2xl (1536px)
     MediaBreakpoint(String),
+    /// 非断点媒体特性查询，持有完整查询串: print, (prefers-reduced-motion: reduce), (orientation: portrait)
+    MediaQuery(String),
     /// 暗黑模式: dark
     Dark,
     /// 自定义任意选择器修饰符: [&>svg]
     CustomSelector(String),
+    /// 内建的复合选择器变体，持有完整选择器: rtl (`&:where(:dir(rtl), ...)`), open, inert
+    SelectorVariant(String),
     /// 复合 Group 状态修饰符 (例: group-hover -> state="hover", name=None; group-data-[size=sm]/avatar -> state="data-[size=sm]", name=Some("avatar"))
     Group { state: String, name: Option<String> },
     /// 复合 Peer 状态修饰符 (例: peer-focus -> state="focus", name=None; peer-data-[state=open]/sidebar -> state="focus", name=Some("sidebar"))
