@@ -17,6 +17,16 @@ pub struct ThemeConfig {
     pub dark_mode: Option<String>,
     #[serde(default)]
     pub colors: HashMap<String, String>,
+    /// `theme!` 从配色表补出字段时，用哪个 Rust 类型。
+    ///
+    /// 键与 `[theme.colors]` 相同，值是 CSS 值类型名（`Hex`、`Px`、`String` …）。
+    /// 不写则按取值猜：像十六进制颜色的用 `Hex`，其余用 `String`。
+    ///
+    /// 这一项存在的原因是：字段类型此前被硬编码成 `String`，而 `CssVar<String>`
+    /// 不是 `ValidFor<props::Color>`——配置驱动的主题色恰恰**不能**用在
+    /// `color()` / `background_color()` 上。
+    #[serde(default)]
+    pub field_types: HashMap<String, String>,
     #[serde(default)]
     pub dark_colors: HashMap<String, String>,
     #[serde(default)]

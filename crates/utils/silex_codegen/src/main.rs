@@ -3,7 +3,9 @@ mod tags;
 mod tw;
 
 use crate::{
-    css::{generate_keywords_code, generate_properties_macro, parse_css},
+    css::{
+        generate_keywords_code, generate_properties_macro, generate_property_names_code, parse_css,
+    },
     tags::{apply_memory_only_patches, codegen::generate_module_content, parse_tags},
     tw::{
         CodegenBaseline, ReferenceCssJson, check_drift, fingerprint_tw_datasets,
@@ -40,6 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         out_dir,
         css_out_dir,
         macro_codegen_dir,
+        macro_css_dir,
     ) = if current_dir.join("crates/utils/silex_codegen").exists() {
         (
             current_dir.join("crates/utils/silex_codegen/data/mdn_compat_data.json"),
@@ -48,6 +51,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             current_dir.join("crates/silex_html/src/tags"),
             current_dir.join("crates/silex_css/src/codegen"),
             current_dir.join("crates/silex_macros/src/css/tw/resolver/codegen"),
+            current_dir.join("crates/silex_macros/src/css"),
         )
     } else if current_dir.ends_with("silex_codegen") {
         (
@@ -57,6 +61,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             current_dir.join("../../silex_html/src/tags"),
             current_dir.join("../../silex_css/src/codegen"),
             current_dir.join("../../silex_macros/src/css/tw/resolver/codegen"),
+            current_dir.join("../../silex_macros/src/css"),
         )
     } else {
         return Err(
@@ -137,9 +142,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     write(css_out_dir.join("properties.rs"), properties_code)?;
     println!("Generated properties.rs");
 
-    let keywords_code = generate_keywords_code(&css_config.properties);
+    let keywords_code = generate_keywords_code(&css_config.properties, &css_config.color_keywords);
     write(css_out_dir.join("keywords_gen.rs"), keywords_code)?;
     println!("Generated keywords_gen.rs");
+
+    let property_names_code = generate_property_names_code(&css_config.properties);
+    write(macro_css_dir.join("property_names.rs"), property_names_code)?;
+    println!("Generated property_names.rs");
 
     // Generate HTML module
     let html_code = generate_module_content(&gen_config.html, false, &[]);

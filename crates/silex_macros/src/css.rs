@@ -3,6 +3,7 @@ pub mod classes;
 pub mod compiler;
 pub mod config;
 pub mod error;
+pub mod property_names;
 pub mod spacing;
 pub mod styled;
 pub mod table;
@@ -24,16 +25,47 @@ pub(crate) fn get_prop_type(prop: &str, span: Span) -> Result<TokenStream> {
             let ident = syn::Ident::new(&type_name, Span::call_site());
             Ok(quote_spanned! { span => #__silex::css::types::props::#ident })
         }
-        PropertyResolveResult::CustomVar => {
+        PropertyResolveResult::Untyped => {
             Ok(quote_spanned! { span => #__silex::css::types::props::Any })
         }
     }
+}
+
+/// 把静态声明的类型断言展开成代码。
+///
+/// 每条断言就是一次「这个值类型对这个属性合法吗」的实例化，不合法时由
+/// `ValidFor` 的 `#[diagnostic::on_unimplemented]` 给出可读报错，位置指向
+/// 源码里那条声明。
+pub(crate) fn generate_static_assertions(
+    assertions: &[compiler::StaticAssertion],
+) -> Result<TokenStream> {
+    let __silex = crate::crate_path::silex();
+    let mut out = TokenStream::new();
+    for a in assertions {
+        let prop_ty = get_prop_type(&a.property, a.span)?;
+        let value_ty = syn::Ident::new(a.value_type, a.span);
+        let span = a.span;
+        out.extend(quote_spanned! { span =>
+            const _: () = {
+                fn __silex_css_assert_valid<
+                    __P,
+                    __T: #__silex::css::types::ValidFor<__P>,
+                >() {}
+                let _ = __silex_css_assert_valid::<
+                    #prop_ty,
+                    #__silex::css::types::#value_ty,
+                >;
+            };
+        });
+    }
+    Ok(out)
 }
 
 pub fn inject_css_impl(ts: TokenStream) -> Result<TokenStream> {
     let __silex = crate::crate_path::silex();
     let span = Span::call_site();
     let compile_result = CssCompiler::compile_global(ts, span, false)?;
+    let assertions = generate_static_assertions(&compile_result.assertions)?;
     let static_id = &compile_result.static_id;
     let static_css = &compile_result.static_css;
     let style_id = &compile_result.style_id;
@@ -41,6 +73,7 @@ pub fn inject_css_impl(ts: TokenStream) -> Result<TokenStream> {
 
     Ok(quote! {
         {
+            #assertions
             const __STATIC_CSS: &str = #static_css;
             const __COMPONENT_CSS: &str = #component_css;
 
@@ -82,8 +115,11 @@ pub(crate) fn generate_css_output(
         }
     });
 
+    let assertions = generate_static_assertions(&compile_result.assertions)?;
+
     let inits = quote! {
         #(#warning_tokens)*
+        #assertions
         #style_inits
     };
 
@@ -150,11 +186,61 @@ mod tests {
             .to_string();
         assert!(custom_var.contains("Any"));
 
-        // 未知/不支持的标准属性名称将按 kebab-case 自动转为对应的 Ident（如 unsupported-custom-property => UnsupportedCustomProperty）
-        // 过程宏不再维持静态字典，未定义的类型将在编译生成的代码阶段由 Rust 编译器精确抛出 E0412 错误
-        let unsupported = get_prop_type("unsupported-custom-property", span)
+        // 注册表之外的属性名不再被静默放行（此前会生成一个不存在的类型名，
+        // 把问题推迟成宏展开产物里的 E0412），而是在宏里就报错并给出建议
+        let unsupported = get_prop_type("unsupported-custom-property", span).unwrap_err();
+        assert!(unsupported.to_string().contains("不存在"));
+
+        // 厂商前缀属性 MDN 没有语法数据，仍按 `props::Any` 放行
+        let vendor = get_prop_type("-webkit-font-smoothing", span)
             .unwrap()
             .to_string();
-        assert!(unsupported.contains("UnsupportedCustomProperty"));
+        assert!(vendor.contains("Any"));
+    }
+
+    /// 报告 P0-8：`css!{ colr: red }` 此前编译通过、无警告、浏览器丢弃
+    #[test]
+    fn misspelled_static_property_is_a_compile_error() {
+        let err = css_impl(quote! { colr: red; }).unwrap_err().to_string();
+        assert!(err.contains("`colr` 不存在"), "{err}");
+        assert!(err.contains("`color`"), "{err}");
+    }
+
+    /// `unsafe { … }` 仍然原样透传，不做属性名校验
+    #[test]
+    fn unsafe_blocks_bypass_property_validation() {
+        let out = css_impl(quote! { unsafe { colr: red; } });
+        assert!(
+            out.is_ok(),
+            "{:?}",
+            out.map(|_| ()).unwrap_err().to_string()
+        );
+    }
+
+    /// `color: 10px` 此前也是静默通过：`ValidFor` 只在 `$expr` 分支起作用
+    #[test]
+    fn typed_static_values_are_checked_against_the_property() {
+        let out = css_impl(quote! { color: 10px; }).unwrap().to_string();
+        // 断言本身是编译期的，这里只验证它确实被生成了出来
+        assert!(out.contains("__silex_css_assert_valid"), "{out}");
+        assert!(out.contains("Px"), "{out}");
+        assert!(out.contains("props :: Color"), "{out}");
+    }
+
+    /// 定不了型的取值不生成断言——宁可漏报也不能把合法 CSS 拒之门外
+    #[test]
+    fn untypable_static_values_produce_no_assertion() {
+        for src in [
+            quote! { color: red; },
+            quote! { width: calc(100% - 10px); },
+            quote! { margin: 1px 2px; },
+            quote! { width: 0; },
+        ] {
+            let out = css_impl(src.clone()).unwrap().to_string();
+            assert!(
+                !out.contains("__silex_css_assert_valid"),
+                "{src} 不该生成断言：{out}"
+            );
+        }
     }
 }

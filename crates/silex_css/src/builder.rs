@@ -187,7 +187,7 @@ pub fn sty() -> Style {
 }
 
 macro_rules! generate_builder_methods {
-    ($( ($snake:ident, $kebab:expr, $pascal:ident, $group:ident) ),*) => {
+    ($( ($snake:ident, $kebab:expr, $pascal:ident, [$($cap:ident)*]) ),*) => {
         impl Style {
             $(
                 pub fn $snake<V>(self, value: V) -> Self

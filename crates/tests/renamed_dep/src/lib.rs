@@ -12,7 +12,7 @@ pub fn Badge(#[prop(into)] label: String, #[chain(default)] wide: bool) -> impl 
         "inline-flex items-center px-2 py-1 rounded-sm",
         (wide, "w-full", "w-auto")
     );
-    span!(label).class(cls).style(css! { line_height: 1.25; })
+    span!(label).class(cls).style(css! { line-height: 1.25; })
 }
 
 /// `tw_variants!` 表达式形式：展开出 `declare_variants!` 与每个选项的 `tw!`
@@ -84,7 +84,7 @@ styled! {
         children: AnyView,
     ) {
         display: flex;
-        flex_direction: column;
+        flex-direction: column;
         padding: 1rem;
     }
 }

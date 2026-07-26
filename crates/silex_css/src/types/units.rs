@@ -32,6 +32,10 @@ macro_rules! impl_string_value_wrapper {
     (@no_display $t:ident) => {
         impl_string_value_wrapper!(@methods $t);
     };
+    // 只读访问。这里曾经还有 `set_value` / `with_value`：
+    // `hex("#fff").with_value("javascript:alert(1)")` 能把工厂函数刚建立起来
+    // 的不变量一行抹掉——`Hex` 的十六进制校验、`grid_template_areas` 的引号
+    // 转义、`border()` 的三段式结构，全都形同虚设。要改值就重新构造一个。
     (@methods $t:ident) => {
         impl $t {
             #[inline]
@@ -41,15 +45,6 @@ macro_rules! impl_string_value_wrapper {
             #[inline]
             pub fn into_inner(self) -> String {
                 self.0
-            }
-            #[inline]
-            pub fn set_value(&mut self, val: impl Into<String>) {
-                self.0 = val.into();
-            }
-            #[inline]
-            pub fn with_value(mut self, val: impl Into<String>) -> Self {
-                self.0 = val.into();
-                self
             }
         }
     };
@@ -200,6 +195,40 @@ impl Display for Auto {
 }
 
 pub const AUTO: Auto = Auto;
+
+/// CSS 宽关键字（CSS-wide keywords）。
+///
+/// 规范规定这五个词对**任何**属性都合法，但此前 361 个关键字枚举里 `inherit`
+/// 只出现过 2 次，也没有任何一个类型对所有属性有效。结果是 12 个真正做了颜色
+/// 约束的属性反而连 `color: inherit` 都写不出来——`sty().color("inherit")`
+/// 编译失败，只能退到 `css_unsafe("inherit")`。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum CssWide {
+    #[default]
+    Inherit,
+    Initial,
+    Unset,
+    Revert,
+    RevertLayer,
+}
+
+impl Display for CssWide {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        f.write_str(match self {
+            Self::Inherit => "inherit",
+            Self::Initial => "initial",
+            Self::Unset => "unset",
+            Self::Revert => "revert",
+            Self::RevertLayer => "revert-layer",
+        })
+    }
+}
+
+pub const INHERIT: CssWide = CssWide::Inherit;
+pub const INITIAL: CssWide = CssWide::Initial;
+pub const UNSET: CssWide = CssWide::Unset;
+pub const REVERT: CssWide = CssWide::Revert;
+pub const REVERT_LAYER: CssWide = CssWide::RevertLayer;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct NoneValue;

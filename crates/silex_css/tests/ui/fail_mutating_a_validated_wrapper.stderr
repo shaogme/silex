@@ -1,0 +1,5 @@
+error[E0599]: no method named `with_value` found for struct `Hex` in the current scope
+ --> tests/ui/fail_mutating_a_validated_wrapper.rs:6:28
+  |
+6 |     let _ = hex("#ffffff").with_value("javascript:alert(1)");
+  |                            ^^^^^^^^^^ method not found in `Hex`

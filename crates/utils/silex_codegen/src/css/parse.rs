@@ -1,4 +1,5 @@
-use super::types::{CssConfig, MdnCssProperty, MdnCssSyntax, ProcessedProp, PropGroup};
+use super::syntax::{Kind, Resolver};
+use super::types::{CssConfig, MdnCssProperty, MdnCssSyntax, ProcessedProp, ValueCap};
 use heck::{AsPascalCase, AsSnakeCase};
 use std::collections::HashMap;
 
@@ -16,7 +17,7 @@ pub fn parse_css(
 
     let raw_props: HashMap<String, MdnCssProperty> = serde_json::from_str(props_str)?;
     let syntaxes: HashMap<String, MdnCssSyntax> = serde_json::from_str(syntaxes_str)?;
-    let resolver = SyntaxResolver::new(&syntaxes);
+    let resolver = Resolver::new(&syntaxes, &raw_props);
 
     let mut properties = Vec::new();
 
@@ -34,14 +35,13 @@ pub fn parse_css(
             continue;
         }
 
-        // Purely derive from MDN syntax
-        let (group, keywords) = classify_property(name, prop, &resolver);
+        let (caps, keywords) = classify_property(prop, &resolver);
 
         properties.push(ProcessedProp {
             name: name.clone(),
             method_name,
             struct_name,
-            group,
+            caps,
             keywords,
         });
     }
@@ -49,9 +49,12 @@ pub fn parse_css(
     // Sort for deterministic output
     properties.sort_by(|a, b| a.name.cmp(&b.name));
 
+    let color_keywords = collect_color_keywords(&resolver, &syntaxes);
+
     Ok(CssConfig {
         properties,
         syntaxes,
+        color_keywords,
     })
 }
 
@@ -72,137 +75,244 @@ fn is_valid_identifier(s: &str) -> bool {
     true
 }
 
-fn classify_property(
-    name: &str,
-    prop: &MdnCssProperty,
-    resolver: &SyntaxResolver,
-) -> (PropGroup, Vec<String>) {
-    // 0. Explicitly handle Complex properties
-    if name == "transform" || name == "grid-template-areas" || name == "font-variation-settings" {
-        let syntax = &prop.syntax;
-        let keywords = resolver.resolve_keywords(syntax);
-        return (PropGroup::Complex, keywords);
+/// 关键字必须能变成一个 Rust 变体名，且不能是语法记号的残渣。
+fn is_usable_keyword(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
     }
-
-    let syntax = &prop.syntax;
-
-    // 1. Determine Keywords (Recursively)
-    let keywords = resolver.resolve_keywords(syntax);
-
-    // 2. Automate Group Determination based on Syntax Patterns
-    // Patterns for Shorthand/Multi-value properties:
-    // - "||" (Double bar): multiple options in any order
-    // - "&&" (Double ampersand): all options in any order
-    // - "[ ... ]+" or "[ ... ]#" or "{1,4}": repeating components
-    // - Space-separated components (e.g. "<length> <color>")
-
-    let is_complex = syntax.contains("||")
-        || syntax.contains("&&")
-        || syntax.contains('{')
-        || syntax.contains('+')
-        || syntax.contains('#')
-        || syntax.contains(' ') && !syntax.trim().is_empty();
-
-    let group = if is_complex {
-        PropGroup::Shorthand
-    } else if syntax.contains("<alpha-value>") || name.ends_with("-opacity") || name == "opacity" {
-        PropGroup::Alpha
-    } else if syntax.contains("<length")
-        || syntax.contains("<percentage")
-        || (name.contains("width") && !name.contains("stroke"))
-        || name.contains("height")
-        || syntax.contains("radius>")
-        || name.contains("radius")
-        || name == "zoom"
-    {
-        PropGroup::Dimension
-    } else if syntax.contains("<color") || syntax.contains("color>") {
-        PropGroup::Color
-    } else if syntax.contains("<number") || syntax.contains("<integer") || name == "font-weight" {
-        PropGroup::Number
-    } else if name == "display" || (!keywords.is_empty() && keywords.len() < 50) {
-        PropGroup::Keyword
-    } else {
-        PropGroup::Custom
-    };
-
-    (group, keywords)
+    let mut chars = s.chars();
+    let first = chars.next().unwrap();
+    if !first.is_alphabetic() {
+        return false;
+    }
+    s.chars().all(|c| c.is_alphanumeric() || c == '-')
 }
 
-pub struct SyntaxResolver<'a> {
-    pub syntaxes: &'a HashMap<String, MdnCssSyntax>,
+/// 把一条属性语法翻译成「允许哪些 Rust 值类型」。
+///
+/// 旧实现只有一条判据：`syntax.contains(' ')` 就是 `Shorthand`（什么都收）。
+/// MDN 的语法几乎都带空格，于是 78% 的属性退化成无类型约束。现在改成真正
+/// 解析语法，问「哪些值可以单独构成完整取值」。
+fn classify_property(prop: &MdnCssProperty, resolver: &Resolver) -> (Vec<ValueCap>, Vec<String>) {
+    let analysis = resolver.analyze_syntax(&prop.syntax);
+
+    let has = |k: Kind| analysis.singles.contains(&k);
+    let mut caps: Vec<ValueCap> = Vec::new();
+
+    if has(Kind::Length) {
+        caps.push(ValueCap::Length);
+    }
+    if has(Kind::Percentage) {
+        caps.push(ValueCap::Percent);
+    }
+    if has(Kind::Length) || has(Kind::Percentage) {
+        caps.push(ValueCap::LenCalc);
+    }
+    if has(Kind::Number) {
+        // `<number>` 也接受整数字面量，所以数值组直接覆盖整数组，
+        // 两者同时出现会产生重复 impl
+        caps.push(ValueCap::Num);
+    } else if has(Kind::Integer) {
+        caps.push(ValueCap::Int);
+    }
+    if has(Kind::Angle) {
+        caps.push(ValueCap::Angle);
+    }
+    if has(Kind::Color) {
+        caps.push(ValueCap::Color);
+    }
+    if has(Kind::Url) {
+        caps.push(ValueCap::Url);
+    }
+
+    // 裸字符串是最后的兜底：只要这个属性的取值可能由多个分量拼成、或者含有
+    // 我们没有对应 Rust 类型的东西（`<custom-ident>`、`<time>`、解析不出来的
+    // 引用），就必须放行字符串，否则这些属性在 builder 里根本没法写。
+    let needs_string = analysis.multi
+        || has(Kind::Textual)
+        || has(Kind::Opaque)
+        || has(Kind::Time)
+        || prop.syntax.trim().is_empty();
+    if needs_string {
+        caps.push(ValueCap::Str);
+    }
+
+    let mut keywords: Vec<String> = analysis
+        .keywords
+        .iter()
+        .filter(|k| is_usable_keyword(k))
+        .cloned()
+        .collect();
+    keywords.sort();
+    keywords.dedup();
+
+    // 一个能力都没有、关键字也没有的属性在 builder 里将完全不可用，兜底放行字符串
+    if caps.is_empty() && keywords.is_empty() {
+        caps.push(ValueCap::Str);
+    }
+
+    caps.sort_by_key(|c| c.as_str());
+    caps.dedup();
+
+    (caps, keywords)
 }
 
-impl<'a> SyntaxResolver<'a> {
-    pub fn new(syntaxes: &'a HashMap<String, MdnCssSyntax>) -> Self {
-        Self { syntaxes }
-    }
+/// `ColorKeyword` 是全局共享的具名颜色表，需要穿透 `<color>` 收集。
+///
+/// 属性侧的分析把 `<color>` 当作终点（否则每个接受颜色的属性都会复制一份
+/// 148 个具名颜色 + 31 个系统颜色的枚举——`keywords_gen.rs` 的 9 105 行有
+/// 很大一部分正是这么来的），所以这份表在这里单独取一次。
+fn collect_color_keywords(
+    resolver: &Resolver,
+    syntaxes: &HashMap<String, MdnCssSyntax>,
+) -> Vec<String> {
+    let color_syntax = syntaxes
+        .get("color")
+        .map(|s| s.syntax.clone())
+        .unwrap_or_else(|| "<named-color> | currentcolor | transparent".to_string());
+    let mut out: Vec<String> = resolver
+        .harvest_keywords(&color_syntax)
+        .into_iter()
+        .filter(|k| is_usable_keyword(k))
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
 
-    pub fn resolve_keywords(&self, syntax: &str) -> Vec<String> {
-        let mut keywords = Vec::new();
-        let mut visited = std::collections::HashSet::new();
-        self.collect_keywords_recursive(syntax, &mut keywords, &mut visited);
-        keywords.sort();
-        keywords.dedup();
-        keywords
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    fn collect_keywords_recursive(
-        &self,
-        syntax: &str,
-        keywords: &mut Vec<String>,
-        visited: &mut std::collections::HashSet<String>,
+    fn resolver_data() -> (
+        HashMap<String, MdnCssProperty>,
+        HashMap<String, MdnCssSyntax>,
     ) {
-        // Simple regex-like extraction of tokens
-        let tokens = syntax.replace(['[', ']', '{', '}', '*', '+', '?', '#', ',', '(', ')'], " ");
-        for part in tokens.split('|') {
-            for subpart in part.split_whitespace() {
-                let trimmed = subpart.trim().trim_matches('\'').trim_matches('\"');
-                if trimmed.is_empty() {
-                    continue;
-                }
+        let props_str = include_str!("../../data/mdn_css_properties.json");
+        let syntaxes_str = include_str!("../../data/mdn_css_syntaxes.json");
+        (
+            serde_json::from_str(props_str).unwrap(),
+            serde_json::from_str(syntaxes_str).unwrap(),
+        )
+    }
 
-                // If it's a reference to another syntax <foo>
-                if trimmed.starts_with('<') && trimmed.ends_with('>') {
-                    let ref_name = &trimmed[1..trimmed.len() - 1];
-                    if visited.insert(ref_name.to_string())
-                        && let Some(ref_syntax) = self.syntaxes.get(ref_name)
-                    {
-                        self.collect_keywords_recursive(&ref_syntax.syntax, keywords, visited);
-                    }
-                } else if self.is_literal_keyword(trimmed) {
-                    keywords.push(trimmed.to_string());
-                }
-            }
+    fn caps_of(name: &str) -> (Vec<ValueCap>, Vec<String>) {
+        let (props, syntaxes) = resolver_data();
+        let resolver = Resolver::new(&syntaxes, &props);
+        let prop = props.get(name).unwrap_or_else(|| panic!("{name} 不存在"));
+        classify_property(prop, &resolver)
+    }
+
+    /// 报告 P1-1 的三个招牌反例
+    #[test]
+    fn align_items_does_not_accept_colors() {
+        let (caps, keywords) = caps_of("align-items");
+        assert!(!caps.contains(&ValueCap::Color), "{caps:?}");
+        assert!(!caps.contains(&ValueCap::Length), "{caps:?}");
+        assert!(keywords.contains(&"center".to_string()), "{keywords:?}");
+    }
+
+    #[test]
+    fn animation_delay_does_not_accept_lengths() {
+        let (caps, _) = caps_of("animation-delay");
+        assert!(!caps.contains(&ValueCap::Length), "{caps:?}");
+        assert!(!caps.contains(&ValueCap::Color), "{caps:?}");
+    }
+
+    #[test]
+    fn z_index_does_not_accept_strings_or_colors() {
+        let (caps, _) = caps_of("z-index");
+        assert!(caps.contains(&ValueCap::Int), "{caps:?}");
+        assert!(!caps.contains(&ValueCap::Str), "{caps:?}");
+        assert!(!caps.contains(&ValueCap::Color), "{caps:?}");
+    }
+
+    /// 最核心的尺寸属性必须有维度约束（旧实现里它们也是 `Shorthand`）
+    #[test]
+    fn width_is_a_dimension_not_a_free_for_all() {
+        let (caps, keywords) = caps_of("width");
+        assert!(caps.contains(&ValueCap::Length), "{caps:?}");
+        assert!(caps.contains(&ValueCap::Percent), "{caps:?}");
+        assert!(!caps.contains(&ValueCap::Color), "{caps:?}");
+        assert!(!caps.contains(&ValueCap::Str), "{caps:?}");
+        assert!(keywords.contains(&"auto".to_string()), "{keywords:?}");
+    }
+
+    #[test]
+    fn color_accepts_colors_only() {
+        let (caps, _) = caps_of("color");
+        assert!(caps.contains(&ValueCap::Color), "{caps:?}");
+        assert!(!caps.contains(&ValueCap::Length), "{caps:?}");
+        assert!(!caps.contains(&ValueCap::Str), "{caps:?}");
+    }
+
+    /// 真正的复合属性仍然要能写裸字符串
+    #[test]
+    fn real_shorthands_still_accept_strings() {
+        for name in ["margin", "border", "background", "transition", "font"] {
+            let (caps, _) = caps_of(name);
+            assert!(caps.contains(&ValueCap::Str), "{name}: {caps:?}");
         }
     }
 
-    fn is_literal_keyword(&self, s: &str) -> bool {
-        if s.is_empty() {
-            return false;
-        }
-        let mut chars = s.chars();
-        let first = chars.next().unwrap();
+    /// `margin: 4px` 这类单值写法不能因为收紧而丢掉
+    #[test]
+    fn margin_still_takes_a_single_length() {
+        let (caps, _) = caps_of("margin");
+        assert!(caps.contains(&ValueCap::Length), "{caps:?}");
+        assert!(caps.contains(&ValueCap::Percent), "{caps:?}");
+    }
 
-        // Must start with alphabet, and contain only alphanumeric or hyphen
-        // Also exclude common CSS units/values types
-        if !first.is_alphabetic() {
-            return false;
-        }
+    /// `background(AppTheme::SURFACE)`（`CssVar<Hex>`）必须还能用
+    #[test]
+    fn background_still_accepts_colors_and_images() {
+        let (caps, _) = caps_of("background");
+        assert!(caps.contains(&ValueCap::Color), "{caps:?}");
+        assert!(caps.contains(&ValueCap::Url), "{caps:?}");
+        assert!(caps.contains(&ValueCap::Str), "{caps:?}");
+    }
 
-        if s == "inherit" || s == "initial" || s == "unset" || s == "revert" || s == "none" {
-            return true;
-        }
+    #[test]
+    fn opacity_takes_numbers_and_percentages() {
+        let (caps, _) = caps_of("opacity");
+        assert!(caps.contains(&ValueCap::Num), "{caps:?}");
+        assert!(caps.contains(&ValueCap::Percent), "{caps:?}");
+        assert!(!caps.contains(&ValueCap::Color), "{caps:?}");
+    }
 
-        if s.chars().all(|c| c.is_alphanumeric() || c == '-')
-            && !s.contains('<')
-            && !s.contains('>')
-        {
-            // Filter out some garbage or too abstract things
-            let blacklisted = ["u", "v", "x", "y", "number", "integer", "string", "ident"];
-            !blacklisted.contains(&s)
-        } else {
-            false
+    #[test]
+    fn rotate_takes_angles() {
+        let (caps, _) = caps_of("rotate");
+        assert!(caps.contains(&ValueCap::Angle), "{caps:?}");
+    }
+
+    /// 数值组与整数组不能同时出现，否则会生成两份 `impl ValidFor<…> for i32`
+    #[test]
+    fn number_and_integer_caps_are_mutually_exclusive() {
+        let (props, syntaxes) = resolver_data();
+        let resolver = Resolver::new(&syntaxes, &props);
+        for (name, prop) in &props {
+            let (caps, _) = classify_property(prop, &resolver);
+            assert!(
+                !(caps.contains(&ValueCap::Num) && caps.contains(&ValueCap::Int)),
+                "{name}: {caps:?}"
+            );
         }
+    }
+
+    /// 具名颜色表必须来自 `<color>`，且不能泄漏进普通属性的关键字枚举
+    #[test]
+    fn color_keywords_are_collected_once_and_globally() {
+        let (props, syntaxes) = resolver_data();
+        let resolver = Resolver::new(&syntaxes, &props);
+        let kws = collect_color_keywords(&resolver, &syntaxes);
+        assert!(kws.contains(&"red".to_string()));
+        assert!(kws.contains(&"transparent".to_string()));
+
+        let (_, bg_keywords) = caps_of("background-color");
+        assert!(
+            !bg_keywords.contains(&"red".to_string()),
+            "具名颜色不该复制进属性关键字枚举：{bg_keywords:?}"
+        );
     }
 }

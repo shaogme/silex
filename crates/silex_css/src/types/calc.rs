@@ -10,16 +10,14 @@ use std::marker::PhantomData;
 pub struct LengthMark;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AngleMark;
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct NumberMark;
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ColorMark;
+
+// `NumberMark` / `ColorMark` / `CssNumber` / `CssPercentage` 曾在这里声明，
+// 但全仓零使用、零实现——它们只是让「量纲标记」这套说法看起来更完整。
+// 真正在用的只有长度和角度两种量纲。
 
 pub trait CssLength: Display {}
 pub trait CssAngle: Display {}
 pub trait CssColor: Display {}
-pub trait CssNumber: Display {}
-pub trait CssPercentage: Display {}
 
 /// 一个 CSS 数学表达式或数值。
 ///
@@ -230,29 +228,31 @@ where
     ))
 }
 
+/// 把一个成品值放进某个量纲的数学上下文。
+///
+/// 此前长度那一侧是一条 blanket impl：`impl<T: Display> IntoCalc<LengthMark> for T`。
+/// 任何能打印的东西——颜色、角度、裸字符串——都能变成长度，量纲标记等于没有。
+/// 现在两侧都只对本量纲的具体类型开放。
 pub trait IntoCalc<Mark> {
     fn into_calc(self) -> CalcValue<Mark>;
 }
 
-impl<T: Display> IntoCalc<LengthMark> for T {
-    fn into_calc(self) -> CalcValue<LengthMark> {
-        CalcValue::new(self.to_string())
-    }
+macro_rules! impl_into_calc {
+    ($mark:ident: $($t:ty),* $(,)?) => {
+        $(impl IntoCalc<$mark> for $t {
+            fn into_calc(self) -> CalcValue<$mark> {
+                CalcValue::new(self.to_string())
+            }
+        })*
+    };
 }
 
-impl IntoCalc<AngleMark> for Deg {
-    fn into_calc(self) -> CalcValue<AngleMark> {
-        CalcValue::new(self.to_string())
-    }
-}
-impl IntoCalc<AngleMark> for Rad {
-    fn into_calc(self) -> CalcValue<AngleMark> {
-        CalcValue::new(self.to_string())
-    }
-}
-impl IntoCalc<AngleMark> for Turn {
-    fn into_calc(self) -> CalcValue<AngleMark> {
-        CalcValue::new(self.to_string())
+impl_into_calc!(LengthMark: Px, Percent, Rem, Em, Vw, Vh);
+impl_into_calc!(AngleMark: Deg, Rad, Turn);
+
+impl IntoCalc<LengthMark> for CalcValue<LengthMark> {
+    fn into_calc(self) -> CalcValue<LengthMark> {
+        self
     }
 }
 impl IntoCalc<AngleMark> for CalcValue<AngleMark> {

@@ -209,18 +209,6 @@ pub use crate::codegen::keywords_gen::*;
 // 属性定义与基础约束自动化
 // ==========================================
 
-macro_rules! impl_valid_for_dimension {
-    ($prop:ty) => {
-        impl ValidFor<$prop> for Px {}
-        impl ValidFor<$prop> for Percent {}
-        impl ValidFor<$prop> for Rem {}
-        impl ValidFor<$prop> for Em {}
-        impl ValidFor<$prop> for Vw {}
-        impl ValidFor<$prop> for Vh {}
-        impl ValidFor<$prop> for CalcValue<LengthMark> {}
-    };
-}
-
 macro_rules! impl_css_ops {
     ($t:ty, $trait:ident, $mark:ident) => {
         impl<R: $trait + CalcOperand> Add<R> for $t {
@@ -284,8 +272,14 @@ pub trait CssProperty {
     const PROPERTY_NAME: &'static str;
 }
 
+/// 把注册表里的能力标记展开成 `ValidFor` 实现。
+///
+/// 能力集合来自对 MDN 值定义语法的真实解析（`silex_codegen::css::syntax`），
+/// 每个能力对应的类型集合必须**互不重叠**——重叠会直接编译失败（E0119），
+/// 所以 `Num` 覆盖整数、`Int` 只在没有 `Num` 时出现，`LenCalc` 只在有长度或
+/// 百分比时出现。
 macro_rules! define_props {
-    ($( ($snake:ident, $kebab:expr, $pascal:ident, $group:ident) ),*) => {
+    ($( ($snake:ident, $kebab:expr, $pascal:ident, [$($cap:ident)*]) ),*) => {
         pub mod props {
             $( pub struct $pascal; )*
             pub struct Any;
@@ -303,78 +297,72 @@ macro_rules! define_props {
             const PROPERTY_NAME: &'static str = "";
         }
 
-        // 所有属性默认支持 CssUnsafe 和无类型限制的 CssVar<()>
         $(
+            // 所有属性默认支持 CssUnsafe 和无类型限制的 CssVar<()>
             impl ValidFor<props::$pascal> for CssUnsafe {}
             impl ValidFor<props::$pascal> for CssVar<()> {}
+            // CSS 宽关键字对**每一个**属性都合法，这是规范的一部分
+            impl ValidFor<props::$pascal> for CssWide {}
             // 核心：强类型 CssVar<T> 继承 T 的校验规则
             impl<T> ValidFor<props::$pascal> for CssVar<T> where T: ValidFor<props::$pascal> {}
             // 支持 CssOption<T> 作为合法属性值类型，当为 None 时在 CSS 中不输出（实现响应式移除）
             impl<T> ValidFor<props::$pascal> for CssOption<T> where T: ValidFor<props::$pascal> {}
-        )*
 
-        $(
-            define_props!(@group $pascal, $group);
+            $( define_props!(@cap $pascal, $cap); )*
         )*
     };
-    // 维度分组 (px, rem, vh 等)
-    (@group $pascal:ident, Dimension) => {
-        impl_valid_for_dimension!(props::$pascal);
+    // `<length>`
+    (@cap $pascal:ident, Length) => {
+        impl ValidFor<props::$pascal> for Px {}
+        impl ValidFor<props::$pascal> for Rem {}
+        impl ValidFor<props::$pascal> for Em {}
+        impl ValidFor<props::$pascal> for Vw {}
+        impl ValidFor<props::$pascal> for Vh {}
     };
-    // 颜色分组 (rgba, hex, hsl)
-    (@group $pascal:ident, Color) => {
-        impl ValidFor<props::$pascal> for Rgba {}
-        impl ValidFor<props::$pascal> for Hex {}
-        impl ValidFor<props::$pascal> for Hsl {}
-        impl ValidFor<props::$pascal> for ColorKeyword {}
+    // `<percentage>`
+    (@cap $pascal:ident, Percent) => {
+        impl ValidFor<props::$pascal> for Percent {}
     };
-    // 数字分组 (z-index, opacity 等)
-    (@group $pascal:ident, Number) => {
+    // 只要接受长度或百分比，就接受长度算式
+    (@cap $pascal:ident, LenCalc) => {
+        impl ValidFor<props::$pascal> for CalcValue<LengthMark> {}
+    };
+    // `<number>`：同时覆盖整数字面量
+    (@cap $pascal:ident, Num) => {
+        impl ValidFor<props::$pascal> for f64 {}
+        impl ValidFor<props::$pascal> for f32 {}
+        define_props!(@cap $pascal, Int);
+    };
+    // `<integer>`
+    (@cap $pascal:ident, Int) => {
         impl ValidFor<props::$pascal> for i32 {}
         impl ValidFor<props::$pascal> for u32 {}
         impl ValidFor<props::$pascal> for i64 {}
         impl ValidFor<props::$pascal> for u64 {}
         impl ValidFor<props::$pascal> for isize {}
         impl ValidFor<props::$pascal> for usize {}
-        impl ValidFor<props::$pascal> for f64 {}
-        impl ValidFor<props::$pascal> for f32 {}
     };
-    // 复杂/自定义分组 (background, border, transform)
-    (@group $pascal:ident, Custom) => {
-        impl ValidFor<props::$pascal> for String {}
-        impl ValidFor<props::$pascal> for &'static str {}
-        impl_valid_for_dimension!(props::$pascal);
+    // `<angle>`
+    (@cap $pascal:ident, Angle) => {
+        impl ValidFor<props::$pascal> for Deg {}
+        impl ValidFor<props::$pascal> for Rad {}
+        impl ValidFor<props::$pascal> for Turn {}
+        impl ValidFor<props::$pascal> for CalcValue<AngleMark> {}
+    };
+    // `<color>`
+    (@cap $pascal:ident, Color) => {
         impl ValidFor<props::$pascal> for Rgba {}
         impl ValidFor<props::$pascal> for Hex {}
         impl ValidFor<props::$pascal> for Hsl {}
         impl ValidFor<props::$pascal> for ColorKeyword {}
-        impl ValidFor<props::$pascal> for NoneValue {}
     };
-    // 复合属性专用 (如 border, margin)
-    (@group $pascal:ident, Shorthand) => {
-        impl ValidFor<props::$pascal> for String {}
-        impl ValidFor<props::$pascal> for &'static str {}
-        impl_valid_for_dimension!(props::$pascal);
-        impl ValidFor<props::$pascal> for Rgba {}
-        impl ValidFor<props::$pascal> for Hex {}
-        impl ValidFor<props::$pascal> for Hsl {}
-        impl ValidFor<props::$pascal> for ColorKeyword {}
-        impl ValidFor<props::$pascal> for NoneValue {}
-        impl ValidFor<props::$pascal> for i32 {}
-        impl ValidFor<props::$pascal> for f64 {}
+    // `<url>` / `<image>`
+    (@cap $pascal:ident, Url) => {
+        impl ValidFor<props::$pascal> for Url {}
     };
-    // 关键字分组 (由 define_css_enum 补充)
-    (@group $pascal:ident, Keyword) => {};
-    // 复杂属性分组 (transform, grid-template-areas 等)
-    (@group $pascal:ident, Complex) => {
-        impl ValidFor<props::$pascal> for String {}
-        impl ValidFor<props::$pascal> for &'static str {}
-    };
-    // 透明度分组
-    (@group $pascal:ident, Alpha) => {
-        impl ValidFor<props::$pascal> for f64 {}
-        impl ValidFor<props::$pascal> for f32 {}
-        impl ValidFor<props::$pascal> for Percent {}
+    // 取值可能由多个分量拼成，或者含有 Rust 侧没有对应类型的东西
+    // （`<custom-ident>`、`<time>`、解析不出来的引用）——只能写裸字符串
+    (@cap $pascal:ident, Str) => {
         impl ValidFor<props::$pascal> for String {}
         impl ValidFor<props::$pascal> for &'static str {}
     };
@@ -394,8 +382,8 @@ impl ValidFor<props::BorderInlineStart> for BorderValue {}
 impl ValidFor<props::BorderInlineEnd> for BorderValue {}
 impl ValidFor<props::BorderBlockStart> for BorderValue {}
 impl ValidFor<props::BorderBlockEnd> for BorderValue {}
-impl ValidFor<props::Background> for Url {}
-impl ValidFor<props::BackgroundImage> for Url {}
+// `Url` 对 `background` / `background-image` 的合法性现在由注册表的 `Url`
+// 能力自动生成（这两个属性的语法里确实有 `<image>`），不再手写。
 impl<T: Display> ValidFor<props::Any> for T {}
 
 // 响应式集成后的注册
@@ -475,6 +463,7 @@ impl_into_rx_for_css!(
     Hex,
     Hsl,
     NoneValue,
+    CssWide,
     Url,
     BorderValue,
     MarginValue,
@@ -496,3 +485,63 @@ impl_into_rx_for_css!(
 );
 
 crate::register_generated_keywords!(impl_into_rx_for_css);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::builder::Style;
+
+    /// 规范里这五个词对任何属性都合法。此前 `inherit` 在 361 个关键字枚举里
+    /// 只出现过 2 次，`sty().color("inherit")` 直接编译失败。
+    #[test]
+    fn css_wide_keywords_render_themselves() {
+        assert_eq!(INHERIT.to_string(), "inherit");
+        assert_eq!(INITIAL.to_string(), "initial");
+        assert_eq!(UNSET.to_string(), "unset");
+        assert_eq!(REVERT.to_string(), "revert");
+        assert_eq!(REVERT_LAYER.to_string(), "revert-layer");
+    }
+
+    /// 编译得过就说明 `CssWide` 对这几类互不相干的属性都有效
+    #[test]
+    fn css_wide_is_valid_for_every_kind_of_property() {
+        let _ = Style::new()
+            .color(INHERIT)
+            .align_items(INITIAL)
+            .z_index(UNSET)
+            .width(REVERT)
+            .transform(REVERT_LAYER);
+    }
+
+    /// 关键字集合相同的属性现在共用同一个枚举：
+    /// `AlignItemsKeyword::Center` 与 `PlaceItemsKeyword::Center` 是同一个值
+    #[test]
+    fn properties_with_the_same_keyword_set_share_one_enum() {
+        let a: AlignItemsKeyword = AlignItemsKeyword::Center;
+        let b: PlaceItemsKeyword = PlaceItemsKeyword::Center;
+        assert_eq!(a, b);
+    }
+
+    /// 纯 `auto` / 纯 `none` 的属性直接复用全局类型，不再各生成一个枚举
+    #[test]
+    fn bare_auto_and_none_reuse_the_global_types() {
+        let _ = Style::new().width(AUTO).transform(NONE);
+        assert_eq!(AUTO.to_string(), "auto");
+        assert_eq!(NONE.to_string(), "none");
+    }
+
+    /// 值类型现在按属性的实际语法约束，而不是一刀切
+    #[test]
+    fn typed_values_land_on_the_right_properties() {
+        let _ = Style::new()
+            .width(px(10))
+            .color(hex("#fff"))
+            .opacity(0.5)
+            .z_index(3)
+            .rotate(deg(90))
+            .background_image(url("a.png"))
+            // 真正的复合属性仍然收裸字符串
+            .transition("all 0.3s")
+            .margin("0 auto");
+    }
+}

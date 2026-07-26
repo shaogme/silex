@@ -1,4 +1,4 @@
-use proc_macro2::{Delimiter, TokenStream, TokenTree};
+use proc_macro2::{Delimiter, Span, TokenStream, TokenTree};
 use quote::ToTokens;
 use syn::ext::IdentExt;
 use syn::parse::{Parse, ParseStream};
@@ -102,19 +102,24 @@ pub struct CssDeclaration {
     pub property: String,
     pub values: TokenStream,
     pub semi_token: Option<Token![;]>,
+    /// 属性名所在的位置，用于把「属性名不存在 / 值类型不对」的报错指到源码上
+    pub span: Span,
 }
 
 impl Parse for CssDeclaration {
     fn parse(input: ParseStream) -> Result<Self> {
         let mut prop_str = String::new();
+        let mut prop_span: Option<Span> = None;
 
         // Parse property name (idents and hyphens)
         while input.peek(Ident::peek_any) || input.peek(Token![-]) {
             if input.peek(Ident::peek_any) {
                 let id = Ident::parse_any(input)?;
+                prop_span.get_or_insert_with(|| id.span());
                 prop_str.push_str(&id.to_string());
             } else {
-                let _: Token![-] = input.parse()?;
+                let dash: Token![-] = input.parse()?;
+                prop_span.get_or_insert_with(|| dash.span);
                 prop_str.push('-');
             }
         }
@@ -141,6 +146,7 @@ impl Parse for CssDeclaration {
             property: prop_str,
             values: value_tokens,
             semi_token,
+            span: prop_span.unwrap_or_else(Span::call_site),
         })
     }
 }

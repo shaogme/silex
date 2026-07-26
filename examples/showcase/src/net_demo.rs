@@ -241,7 +241,7 @@ pub fn EventStreamDemo() -> impl View {
                 let change = change_sig.get();
                 li(div![
                     span(format!("[{}] ", change.wiki)).style("font-weight: bold; opacity: 0.6;"),
-                    span(format!("{} ", change.title)).style(sty().color(AppTheme::PRIMARY).font_weight("bold")),
+                    span(format!("{} ", change.title)).style(sty().color(AppTheme::PRIMARY).font_weight(FontWeightKeyword::Bold)),
                     span(format!("by {}", change.user)).style("opacity: 0.8; font-style: italic;"),
                     span(format!(" ({})", change.change_type)).style("font-size: 0.85em; opacity: 0.5;")
                 ]).style(sty().font_family("sans-serif").font_size(em_unit(0.9)).margin_bottom(px(6)).border_bottom(border(px(1), BorderStyleKeyword::Solid, AppTheme::SURFACE_ALT)).padding_bottom(px(4)))

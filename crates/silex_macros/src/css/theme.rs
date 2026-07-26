@@ -29,6 +29,86 @@ impl Parse for ThemeDefinition {
     }
 }
 
+/// `#RGB` / `#RGBA` / `#RRGGBB` / `#RRGGBBAA`，`#` 可省略。
+///
+/// 与 `silex_css::types::Hex::try_new` 的判据保持一致；宏侧用不上运行时那份，
+/// 只能照抄一遍判据。
+fn looks_like_hex(value: &str) -> bool {
+    let digits = value.trim().trim_start_matches('#');
+    matches!(digits.len(), 3 | 4 | 6 | 8) && digits.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// 没有在 `[theme.field_types]` 里指定类型时，按取值猜一个。
+fn infer_field_type(value: &str) -> &'static str {
+    if looks_like_hex(value) {
+        "Hex"
+    } else {
+        "String"
+    }
+}
+
+/// 把配置里写的类型名解析成一个 Rust 类型。
+///
+/// 裸标识符按 CSS 值类型解析（`Hex` → `silex::css::types::Hex`），带 `::`
+/// 的路径原样使用，`String` 特判成 `std::string::String`。
+fn resolve_field_type(
+    name: &str,
+    silex: &TokenStream,
+    key: &str,
+    span_src: &Ident,
+) -> Result<syn::Type> {
+    let name = name.trim();
+    if name == "String" {
+        return Ok(syn::parse_quote!(::std::string::String));
+    }
+    if name.contains("::") || name.contains('<') {
+        return syn::parse_str::<syn::Type>(name).map_err(|e| {
+            syn::Error::new_spanned(
+                span_src,
+                format!("`[theme.field_types].{key}` 不是一个合法的 Rust 类型：{e}"),
+            )
+        });
+    }
+    let ident = syn::parse_str::<Ident>(name).map_err(|_| {
+        syn::Error::new_spanned(
+            span_src,
+            format!("`[theme.field_types].{key}` 不是一个合法的类型名：`{name}`"),
+        )
+    })?;
+    Ok(syn::parse_quote!(#silex::css::types::#ident))
+}
+
+/// 配置驱动的主题里，字段的初值。
+///
+/// 补出了字段却拿不到配好的颜色，等于把 `silex.toml` 里那张配色表白写了：
+/// `Default` 会给出 `Hex::default()`（黑）而不是配置里的值。
+fn default_expr_for(
+    ty_name: &str,
+    raw_value: &str,
+    silex: &TokenStream,
+    key: &str,
+    span_src: &Ident,
+) -> Result<TokenStream> {
+    match ty_name.trim() {
+        "Hex" => {
+            if !looks_like_hex(raw_value) {
+                return Err(syn::Error::new_spanned(
+                    span_src,
+                    format!(
+                        "`[theme.colors].{key}` 的值 `{raw_value}` 不是合法的十六进制颜色，\
+                         但字段类型被指定为 `Hex`；请改用 `#RRGGBB` 形式，\
+                         或在 `[theme.field_types]` 里换一个类型"
+                    ),
+                ));
+            }
+            Ok(quote! { #silex::css::types::hex(#raw_value) })
+        }
+        "String" => Ok(quote! { #raw_value.to_string() }),
+        // 其余类型没有统一的「从字符串构造」入口，退回该类型自己的默认值
+        _ => Ok(quote! { ::core::default::Default::default() }),
+    }
+}
+
 pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
     let __silex = crate::crate_path::silex();
     let def: ThemeDefinition = parse2(input)?;
@@ -74,17 +154,34 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
     let mut css_vars = Vec::new();
     let mut const_impl_items = Vec::new();
 
-    // 没有显式声明字段时，从 `silex.toml` 的配色表补出来
+    // 没有显式声明字段时，从 `silex.toml` 的配色表补出来。
+    //
+    // 字段类型此前被硬编码成 `String`，于是生成 `CssVar<String>`；而
+    // `CssVar<T>` 的校验靠 `T: ValidFor<props::X>` 转发，`String` 不是
+    // `ValidFor<props::Color>`——配置驱动的主题色恰恰不能用在 `color()` 上，
+    // 与文档承诺的正好相反。现在类型由 `[theme.field_types]` 指定，
+    // 不写就按取值猜（像十六进制颜色的用 `Hex`）。
     let mut fields = def.fields.clone();
+    // 配置驱动时，各字段的初值表达式（与 `fields` 一一对应）
+    let mut config_defaults: Vec<TokenStream> = Vec::new();
     if fields.is_empty()
         && let Some(cfg) = &config
     {
         let mut keys: Vec<&String> = cfg.theme.colors.keys().collect();
         keys.sort();
         for k in keys {
+            let raw_value = cfg.theme.colors.get(k).map(String::as_str).unwrap_or("");
+            let ty_name = match cfg.theme.field_types.get(k) {
+                Some(t) => t.clone(),
+                None => infer_field_type(raw_value).to_string(),
+            };
+            let field_ty = resolve_field_type(&ty_name, &__silex, k, &def.name)?;
+            config_defaults.push(default_expr_for(
+                &ty_name, raw_value, &__silex, k, &def.name,
+            )?);
+
             let rust_name = k.replace('-', "_");
             let field_ident = syn::Ident::new(&rust_name, proc_macro2::Span::call_site());
-            let field_ty: syn::Type = syn::parse_quote!(String);
             let field_ast: Field = syn::Field {
                 attrs: Vec::new(),
                 vis: syn::Visibility::Inherited,
@@ -175,10 +272,32 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
         .filter(|a| !a.path().is_ident("theme"))
         .collect();
 
+    // 配置驱动时用配置里的取值当默认值，而不是 `#[derive(Default)]` 的全零值
+    let (derives, default_impl) = if config_defaults.is_empty() {
+        (quote! { #[derive(Clone, Debug, Default)] }, quote! {})
+    } else {
+        let inits = field_idents
+            .iter()
+            .zip(config_defaults.iter())
+            .map(|(f, v)| quote! { #f: #v });
+        (
+            quote! { #[derive(Clone, Debug)] },
+            quote! {
+                impl ::core::default::Default for #name {
+                    fn default() -> Self {
+                        Self { #(#inits),* }
+                    }
+                }
+            },
+        )
+    };
+
     Ok(quote! {
-        #[derive(Clone, Debug, Default)]
+        #derives
         #(#filtered_attrs)*
         #vis struct #name { #(#struct_fields),* }
+
+        #default_impl
 
         impl #name {
             #(#const_impl_items)*
@@ -265,6 +384,50 @@ mod tests {
             .unwrap()
             .to_string();
         assert!(out.contains("--slx-theme-primary"), "{out}");
+    }
+
+    /// 配置驱动的字段类型此前被硬编码成 `String`，于是生成 `CssVar<String>`；
+    /// 而 `String` 不是 `ValidFor<props::Color>`——配置里的主题色恰恰不能用在
+    /// `color()` 上。现在像颜色的取值默认给 `Hex`。
+    #[test]
+    fn config_driven_color_fields_are_typed_as_hex() {
+        if !config_colors_available() {
+            return;
+        }
+        let out = bridge_theme_impl(quote! { pub struct T {} })
+            .unwrap()
+            .to_string();
+        assert!(out.contains("types :: Hex"), "{out}");
+        assert!(
+            !out.contains("brand_primary : :: std :: string :: String"),
+            "{out}"
+        );
+    }
+
+    /// 补出了字段却拿不到配好的颜色，等于 `silex.toml` 里那张配色表白写
+    #[test]
+    fn config_driven_theme_defaults_to_the_configured_colors() {
+        if !config_colors_available() {
+            return;
+        }
+        let out = bridge_theme_impl(quote! { pub struct T {} })
+            .unwrap()
+            .to_string();
+        assert!(out.contains("\"#6366f1\""), "{out}");
+        assert!(
+            out.contains("impl :: core :: default :: Default for T"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn hex_detection_only_accepts_real_hex_colors() {
+        assert!(looks_like_hex("#6366f1"));
+        assert!(looks_like_hex("fff"));
+        assert!(!looks_like_hex("rgb(1,2,3)"));
+        assert!(!looks_like_hex("#12345"));
+        assert_eq!(infer_field_type("#6366f1"), "Hex");
+        assert_eq!(infer_field_type("var(--x)"), "String");
     }
 
     /// `#[theme(prefix = …)]` 优先于配置

@@ -174,6 +174,9 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         "slx-st-",
     )?;
 
+    // 静态声明的编译期类型断言：属性名与「一眼能定型」的字面量取值
+    let mut assertions = crate::css::generate_static_assertions(&compile_result.assertions)?;
+
     let mut var_decls = Vec::new();
     let mut style_bindings = Vec::new();
     let mut dynamic_rule_inits = Vec::new();
@@ -223,6 +226,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
                 "slx-st-",
             )?;
             let v_class = res.class_name.clone();
+            assertions.extend(crate::css::generate_static_assertions(&res.assertions)?);
             variant_injections.push(res.generate_inits());
 
             process_dynamic_entries(
@@ -334,6 +338,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
 
     let fn_body: syn::Block = syn::parse_quote! {
         {
+            #assertions
             const __STATIC_CSS: &str = #static_css;
             const __COMPONENT_CSS: &str = #component_css;
 
@@ -591,7 +596,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         .unwrap_or_else(|| quote::format_ident!("GlobalStyles"));
     let res = CssCompiler::compile_global(parsed.css_block, c_name.span(), parsed.is_unsafe)?;
 
-    let mut inits = Vec::new();
+    let mut inits = vec![crate::css::generate_static_assertions(&res.assertions)?];
 
     // 声明值里的运行时片段：编译器在全局模式下统一吐 `var(--slx-dyn-N)`，
     // 这里按名字替换。`$(expr)` 与 `$path` 走同一套占位符——此前 `$(expr)`

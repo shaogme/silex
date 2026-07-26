@@ -20,6 +20,20 @@ pub struct CssWarning {
     pub span: Span,
 }
 
+/// 一条静态声明的编译期类型断言。
+///
+/// `css!{ color: 10px }` 这样的写法此前完全不经过类型系统——`ValidFor` 只在
+/// `$expr` 分支起作用，静态声明是纯字符串拼接。这里把「取值一眼能定型」的
+/// 静态声明也接回类型系统。
+#[derive(Debug, Clone)]
+pub struct StaticAssertion {
+    /// CSS 属性名（kebab-case 或短别名）
+    pub property: String,
+    /// 取值对应的 CSS 值类型名（`silex::css::types::` 下的类型）
+    pub value_type: &'static str,
+    pub span: Span,
+}
+
 #[derive(Debug, Clone)]
 pub struct CssCompileResult {
     pub class_name: String,
@@ -30,6 +44,7 @@ pub struct CssCompileResult {
     pub expressions: Vec<(String, TokenStream)>,
     pub dynamic_rules: Vec<DynamicRule>,
     pub warnings: Vec<CssWarning>,
+    pub assertions: Vec<StaticAssertion>,
 }
 
 impl CssCompileResult {
@@ -58,8 +73,12 @@ struct ParserState {
     expressions: Vec<(String, TokenStream)>,
     dynamic_rules: Vec<DynamicRule>,
     warnings: Vec<CssWarning>,
+    assertions: Vec<StaticAssertion>,
     class_name: String,
     is_unsafe: bool,
+    /// 是否校验属性名与静态取值。`@apply` 展开出来的声明是机器生成的
+    /// （含 `--tw-*` 与厂商前缀），不走这套判据。
+    validate: bool,
     /// 整个宏调用的源码，用于恢复 token 之间的空白（见 [`crate::css::spacing`]）
     region: Option<Rc<str>>,
 }
@@ -69,6 +88,21 @@ struct DynamicContext<'a> {
     class_name: &'a str,
     is_unsafe: bool,
     region: Option<Rc<str>>,
+}
+
+/// `compile_block_internal` 的入参。
+///
+/// 这些开关组合起来决定「谁在编译、编译给谁用」，散成一长串位置参数极易接错。
+struct CompileOptions<'a> {
+    span: Span,
+    /// 是否把产物包进 `.class { }`（`global!` 不包）
+    wrap_in_class: bool,
+    is_unsafe: bool,
+    prefix: &'a str,
+    /// 宏调用点的源码，用于恢复 token 之间的空白
+    region: Option<Rc<str>>,
+    /// 是否校验属性名与静态取值（机器生成的 CSS 不校验）
+    validate: bool,
 }
 
 pub struct CssCompiler;
@@ -89,14 +123,20 @@ impl CssCompiler {
         prefix: &str,
     ) -> Result<CssCompileResult> {
         let ts_string = quote::quote!(#block).to_string();
+        // 这条入口只服务 `tw!` —— 传进来的 `CssBlock` 是 resolver 生成的，
+        // 里头有 `--tw-*` 与 `clip` 这类注册表之外的属性名，不该拿用户书写
+        // 的那套判据去卡
         Self::compile_block_internal(
             block,
             ts_string,
-            span,
-            true,
-            is_unsafe,
-            prefix,
-            macro_region(),
+            CompileOptions {
+                span,
+                wrap_in_class: true,
+                is_unsafe,
+                prefix,
+                region: macro_region(),
+                validate: false,
+            },
         )
     }
 
@@ -120,11 +160,14 @@ impl CssCompiler {
         Self::compile_block_internal(
             &block,
             ts.to_string(),
-            span,
-            true,
-            is_unsafe,
-            "slx-tw-",
-            Some(Rc::from(source)),
+            CompileOptions {
+                span,
+                wrap_in_class: true,
+                is_unsafe,
+                prefix: "slx-tw-",
+                region: Some(Rc::from(source)),
+                validate: true,
+            },
         )
     }
 
@@ -140,11 +183,14 @@ impl CssCompiler {
         Self::compile_block_internal(
             &block,
             ts.to_string(),
-            span,
-            false,
-            is_unsafe,
-            "slx-",
-            Some(Rc::from(source)),
+            CompileOptions {
+                span,
+                wrap_in_class: false,
+                is_unsafe,
+                prefix: "slx-",
+                region: Some(Rc::from(source)),
+                validate: true,
+            },
         )
     }
 
@@ -158,11 +204,14 @@ impl CssCompiler {
         Self::compile_block_internal(
             &block,
             ts.to_string(),
-            span,
-            true,
-            is_unsafe,
-            prefix,
-            macro_region(),
+            CompileOptions {
+                span,
+                wrap_in_class: true,
+                is_unsafe,
+                prefix,
+                region: macro_region(),
+                validate: true,
+            },
         )
     }
 
@@ -175,23 +224,30 @@ impl CssCompiler {
         Self::compile_block_internal(
             &block,
             ts.to_string(),
-            span,
-            false,
-            is_unsafe,
-            "slx-",
-            macro_region(),
+            CompileOptions {
+                span,
+                wrap_in_class: false,
+                is_unsafe,
+                prefix: "slx-",
+                region: macro_region(),
+                validate: true,
+            },
         )
     }
 
     fn compile_block_internal(
         block: &CssBlock,
         ts_string: String,
-        span: Span,
-        wrap_in_class: bool,
-        is_unsafe: bool,
-        prefix: &str,
-        region: Option<Rc<str>>,
+        opts: CompileOptions<'_>,
     ) -> Result<CssCompileResult> {
+        let CompileOptions {
+            span,
+            wrap_in_class,
+            is_unsafe,
+            prefix,
+            region,
+            validate,
+        } = opts;
         let hash = silex_hash::css::hash_one(&ts_string);
         let mut buf = [0u8; 13];
         let class_base = silex_hash::css::encode_base36(hash, &mut buf);
@@ -204,12 +260,14 @@ impl CssCompiler {
             expressions: Vec::new(),
             dynamic_rules: Vec::new(),
             warnings: Vec::new(),
+            assertions: Vec::new(),
             class_name: if wrap_in_class {
                 class_name.clone()
             } else {
                 "".to_string()
             },
             is_unsafe,
+            validate,
             region,
         };
 
@@ -313,6 +371,7 @@ impl CssCompiler {
             expressions: state.expressions,
             dynamic_rules: state.dynamic_rules,
             warnings: state.warnings,
+            assertions: state.assertions,
         })
     }
 }
@@ -326,6 +385,13 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
         };
         match rule {
             CssRule::Declaration(decl) => {
+                // 属性名与静态取值都要过一遍校验：此前静态声明完全绕开类型系统，
+                // `colr: red`、`color: 10px` 都是编译通过、无警告、产物错误
+                let validate = state.validate && !state.is_unsafe;
+                if validate {
+                    crate::css::table::resolve_property_type(&decl.property, decl.span)?;
+                }
+
                 state.static_css.push_str(&decl.property);
                 state.static_css.push_str(": ");
 
@@ -334,6 +400,7 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                 } else {
                     &decl.property
                 };
+                let expr_count_before = state.expressions.len();
                 let val = extract_dynamic_value(
                     &decl.values,
                     &mut state.expressions,
@@ -341,6 +408,21 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                     prop_for_expr,
                     &ctx,
                 )?;
+
+                // 取值里没有插值、且整条取值就是一个能定型的字面量时，生成一条
+                // 编译期断言。定不了型的（关键字、函数、多分量）保持放行——
+                // 宏侧没有 CSS 取值解析器，宁可漏也不能误报
+                if validate
+                    && state.expressions.len() == expr_count_before
+                    && let Some(value_type) = classify_static_value(&val)
+                {
+                    state.assertions.push(StaticAssertion {
+                        property: decl.property.clone(),
+                        value_type,
+                        span: decl.span,
+                    });
+                }
+
                 state.static_css.push_str(&val);
 
                 if decl.semi_token.is_some() {
@@ -354,7 +436,13 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                     let anchor = crate::css::tw::parser::TokenAnchor::whole(raw_str, ap.span);
                     let rules = crate::css::tw::parser::parse_class_list(&anchor, &mut Vec::new())?;
                     let apply_block = crate::css::tw::codegen::build_css_block_from_rules(rules)?;
-                    process_css_block(&apply_block, state)?;
+                    // `@apply` 展开出来的声明是机器生成的（含 `--tw-*` 与厂商前缀），
+                    // 不该拿用户书写的那套判据去卡
+                    let old = state.validate;
+                    state.validate = false;
+                    let result = process_css_block(&apply_block, state);
+                    state.validate = old;
+                    result?;
                 }
                 #[cfg(not(feature = "tw"))]
                 {
@@ -429,8 +517,13 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                     expressions: state.expressions.clone(),
                     dynamic_rules: Vec::new(),
                     warnings: state.warnings.clone(),
+                    assertions: Vec::new(),
                     class_name: state.class_name.clone(),
                     is_unsafe: state.is_unsafe,
+                    // 这几条 at-rule 的块里装的是**描述符**（`src`、`system`、
+                    // `inherits`），不是 CSS 属性，拿属性注册表去卡它们只会
+                    // 把合法写法判成拼写错误
+                    validate: state.validate && !is_descriptor_at_rule(&at.name),
                     region: state.region.clone(),
                 };
 
@@ -439,6 +532,7 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                 // Sync back state
                 state.expressions = inner_state.expressions;
                 state.warnings = inner_state.warnings;
+                state.assertions.extend(inner_state.assertions);
                 // Dynamic rules inside @-rules is collected
                 for dr in inner_state.dynamic_rules {
                     state.dynamic_rules.push(dr);
@@ -1087,7 +1181,8 @@ fn extract_dynamic_value(
             format!("var(--{}-{})", ctx.class_name, idx)
         }
     };
-    process_tokens(
+    let first_expr = exprs.len();
+    let value = process_tokens(
         ts,
         ctx.region.clone(),
         warnings,
@@ -1124,7 +1219,86 @@ fn extract_dynamic_value(
             }
             Ok(false)
         },
+    )?;
+
+    // 只有当插值**就是整条取值**时，它才能按该属性的类型来校验。
+    // `grid-template-columns: repeat($(columns), minmax(0, 1fr))` 里的
+    // `$(columns)` 是取值里的一个片段，它的类型跟属性本身的取值类型没有关系，
+    // 拿属性去卡它只会报出无从下手的错误。片段一律按 `props::Any` 处理。
+    let sole_value =
+        exprs.len() == first_expr + 1 && value.trim() == placeholder(first_expr).as_str();
+    if !sole_value {
+        for (prop, _) in exprs.iter_mut().skip(first_expr) {
+            "any".clone_into(prop);
+        }
+    }
+
+    Ok(value)
+}
+
+/// 块内装的是描述符而不是 CSS 属性的 at-rule。
+///
+/// `@font-face { src: … }` 里的 `src` 不是属性，`@property { inherits: … }`
+/// 的 `inherits` 也不是；属性注册表对它们一无所知。
+fn is_descriptor_at_rule(name: &str) -> bool {
+    matches!(
+        name,
+        "font-face"
+            | "font-palette-values"
+            | "font-feature-values"
+            | "counter-style"
+            | "property"
+            | "page"
+            | "viewport"
+            | "position-try"
     )
+}
+
+/// 判断一条静态取值是否是「一眼能定型」的字面量，是则给出对应的 CSS 值类型名。
+///
+/// 只认三类：带单位的数值、百分比、十六进制颜色。关键字（`red`、`auto`）、
+/// 函数（`rgb(…)`、`calc(…)`）、多分量取值（`1px solid red`）一律返回 `None`
+/// ——宏侧没有 CSS 取值解析器，宁可漏报也不能误报，把合法 CSS 拒之门外。
+///
+/// 特意不认裸数字：`0` 在 CSS 里是合法长度，但 `i32` 并不是 `ValidFor<Width>`，
+/// 认了就会把 `width: 0` 这种正常写法判成错误。
+fn classify_static_value(value: &str) -> Option<&'static str> {
+    let compact: String = value.chars().filter(|c| !c.is_whitespace()).collect();
+    if compact.is_empty() {
+        return None;
+    }
+
+    if let Some(digits) = compact.strip_prefix('#') {
+        return if matches!(digits.len(), 3 | 4 | 6 | 8)
+            && digits.chars().all(|c| c.is_ascii_hexdigit())
+        {
+            Some("Hex")
+        } else {
+            None
+        };
+    }
+
+    // 数值前缀 + 单位后缀
+    let split = compact
+        .char_indices()
+        .find(|(_, c)| !(c.is_ascii_digit() || *c == '.' || *c == '-' || *c == '+'))
+        .map(|(i, _)| i)?;
+    let (num, unit) = compact.split_at(split);
+    if num.is_empty() || num.parse::<f64>().is_err() {
+        return None;
+    }
+    match unit {
+        "px" => Some("Px"),
+        "rem" => Some("Rem"),
+        "em" => Some("Em"),
+        "vw" => Some("Vw"),
+        "vh" => Some("Vh"),
+        "%" => Some("Percent"),
+        "deg" => Some("Deg"),
+        "rad" => Some("Rad"),
+        "turn" => Some("Turn"),
+        _ => None,
+    }
 }
 
 fn get_compiler_targets() -> Targets {

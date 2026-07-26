@@ -412,6 +412,7 @@ fn make_nested_rule(selector: &str, declarations: Vec<(&str, TokenStream)>) -> C
             property: prop.to_string(),
             values: vals,
             semi_token: Some(Semi(Span::call_site())),
+            span: Span::call_site(),
         }));
     }
 
@@ -435,6 +436,7 @@ fn convert_rule_to_declaration(rule: &UtilityRule) -> CssRule {
         property: prop,
         values,
         semi_token: Some(Semi(rule.span)),
+        span: rule.span,
     })
 }
 
