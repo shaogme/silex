@@ -294,3 +294,183 @@ fn downstream_effects_run_after_the_update_closure_returns() {
         "下游 effect 必须在 update 闭包返回之后才执行"
     );
 }
+
+// --- P11: `#[track_caller]` 必须一路传到用户的调用点 ---
+
+/// 每个公开构造函数记录的 `defined_at` 都必须落在**本测试文件**里，
+/// 而不是框架内部某一行。修复前它们指向 `runtime.rs` 的若干行，
+/// 于是全工作区 7 处消费 `get_node_defined_at` 的调试信息基本上都是错的。
+#[test]
+fn defined_at_points_at_user_code_not_at_the_framework() {
+    let first_line = line!();
+    let cases: Vec<(&str, NodeId)> = vec![
+        ("signal", signal(0i32)),
+        ("effect", effect(|| {})),
+        ("memo", memo(|_: Option<&i32>| 1i32)),
+        ("register_derived", register_derived(Box::new(|| 1i32))),
+        ("store_value", store_value(1i32)),
+        ("register_closure", register_closure(Box::new(1i32))),
+        ("register_op", register_op(RawOpBuffer::new())),
+        ("register_callback", register_callback(|_| {})),
+        ("register_node_ref", register_node_ref()),
+        ("create_scope", create_scope(|| {})),
+    ];
+    let last_line = line!();
+
+    for (name, id) in cases {
+        let Some(location) = get_node_defined_at(id) else {
+            // release 构建下不记录定义位置。
+            if cfg!(debug_assertions) {
+                panic!("{name}: debug 构建必须记录定义位置");
+            }
+            continue;
+        };
+
+        assert!(
+            location.file().ends_with("regression.rs"),
+            "{name}: 定义位置指向了框架内部 {}:{}，应指向用户调用点",
+            location.file(),
+            location.line()
+        );
+        assert!(
+            (first_line..last_line).contains(&location.line()),
+            "{name}: 定义位置落在第 {} 行，不在上面那张表里",
+            location.line()
+        );
+    }
+}
+
+// --- P12: 类型不匹配的写入不得产生任何失效 ---
+
+#[test]
+fn a_type_mismatched_update_changes_nothing_and_notifies_nobody() {
+    let s = signal(1i32);
+    let runs = Rc::new(Cell::new(0));
+
+    let runs_c = runs.clone();
+    effect(move || {
+        let _ = try_get_signal::<i32>(s);
+        runs_c.set(runs_c.get() + 1);
+    });
+    let before = runs.get();
+
+    // `s` 里放的是 i32，这里按 String 写 —— 闭包不会执行。
+    let outcome = try_update_signal(s, |v: &mut String| v.push('x'));
+
+    assert_eq!(outcome, UpdateOutcome::TypeMismatch);
+    assert_eq!(try_get_signal::<i32>(s), Some(1), "值不该被改动");
+    assert_eq!(
+        runs.get(),
+        before,
+        "什么都没改，下游不该被重跑（版本号也不该被递增）"
+    );
+}
+
+/// 失败的写入不得沿着 memo 链把失效传下去。
+#[test]
+fn a_failed_update_does_not_invalidate_downstream_memos() {
+    let s = signal(1i32);
+    let recomputes = Rc::new(Cell::new(0));
+
+    let recomputes_c = recomputes.clone();
+    let m = memo(move |_: Option<&i32>| {
+        recomputes_c.set(recomputes_c.get() + 1);
+        try_get_signal::<i32>(s).unwrap_or(0) * 10
+    });
+    let after_first = recomputes.get();
+
+    assert_eq!(
+        try_update_signal(s, |v: &mut String| v.push('x')),
+        UpdateOutcome::TypeMismatch
+    );
+
+    assert_eq!(try_get_signal::<i32>(m), Some(10));
+    assert_eq!(
+        recomputes.get(),
+        after_first,
+        "失败的写入不该让下游 memo 重算"
+    );
+}
+
+#[test]
+fn update_outcomes_are_distinguishable() {
+    let s = signal(1i32);
+    assert_eq!(
+        try_update_signal(s, |v: &mut i32| *v += 1),
+        UpdateOutcome::Updated
+    );
+    assert_eq!(try_get_signal::<i32>(s), Some(2));
+
+    // 节点不存在与类型不对是两回事。
+    let missing = signal(0i32);
+    dispose(missing);
+    assert_eq!(
+        try_update_signal(missing, |v: &mut i32| *v += 1),
+        UpdateOutcome::NoSuchSignal
+    );
+    assert_eq!(
+        try_update_signal(s, |v: &mut u8| *v += 1),
+        UpdateOutcome::TypeMismatch
+    );
+
+    // 在 update 闭包内重写同一个 signal 是被禁止的：
+    // debug 构建下断言失败，release 下报告为 `Reentrant`。
+    let inner: Rc<Cell<Option<UpdateOutcome>>> = Rc::new(Cell::new(None));
+    let inner_c = inner.clone();
+    let outer = silently(move || {
+        try_update_signal(s, move |v: &mut i32| {
+            *v += 1;
+            inner_c.set(Some(try_update_signal(s, |w: &mut i32| *w += 100)));
+        })
+    });
+
+    if cfg!(debug_assertions) {
+        assert!(outer.is_err(), "debug 构建下重入必须触发断言");
+    } else {
+        assert_eq!(outer.ok(), Some(UpdateOutcome::Updated));
+        assert_eq!(inner.get(), Some(UpdateOutcome::Reentrant));
+    }
+}
+
+/// `try_update_signal_silent` 走的是另一条路径（silex_core 的写入入口），
+/// 同样不该在类型不匹配时递增版本号。
+///
+/// 版本号是 `Check` 阶段判断“依赖变没变”的唯一依据，所以要观察它必须把 `m`
+/// 逼进 `Check` 状态：由 `t` 触发一条**值不变**的 memo 链（`mid` 恒为 0，
+/// 因此 `commit_update` 不会动它的版本号），`m` 随之被标成 `Check` 并逐个
+/// 核对依赖版本。此时 `s` 的版本号只要被误增一次，`m` 就会白白重算。
+#[test]
+fn a_type_mismatched_silent_update_does_not_bump_the_version() {
+    let s = signal(1i32);
+    let t = signal(0i32);
+
+    let mid = memo(move |_: Option<&i32>| {
+        let _ = try_get_signal::<i32>(t);
+        0i32
+    });
+
+    let recomputes = Rc::new(Cell::new(0));
+    let recomputes_c = recomputes.clone();
+    let m = memo(move |_: Option<&i32>| {
+        recomputes_c.set(recomputes_c.get() + 1);
+        let _ = try_get_signal::<i32>(mid);
+        try_get_signal::<i32>(s).unwrap_or(0)
+    });
+
+    effect(move || {
+        let _ = try_get_signal::<i32>(m);
+    });
+    let before = recomputes.get();
+
+    assert!(try_update_signal_silent(s, |v: &mut String| v.push('x')).is_none());
+    assert_eq!(try_get_signal::<i32>(s), Some(1), "值不该被改动");
+
+    // 从另一条边把 m 标成 Check。
+    update_signal(t, |v: &mut i32| *v += 1);
+
+    assert_eq!(
+        recomputes.get(),
+        before,
+        "`mid` 的值没变、`s` 的版本号也不该变，`m` 不该重算"
+    );
+}

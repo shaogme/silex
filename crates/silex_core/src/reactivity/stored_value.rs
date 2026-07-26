@@ -115,7 +115,13 @@ impl<T: RxData> RxInternal for StoredValue<T> {
 
     #[inline(always)]
     fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-        let val = try_get_stored_value_ref::<T>(self.id)?;
+        // SAFETY: 借用被立刻收窄回 `RxGuard<'_, T, T>`，其生命周期挂在 `&self` 上，
+        // 因此它不会逃逸出调用方的表达式作用域。
+        //
+        // 残留风险（AUDIT P6 未闭环的部分）：句柄是 `Copy` 的，它的存活与节点的
+        // 存活无关 —— 调用方若在持有 guard 期间 `dispose` 这个节点，仍会读到已释放
+        // 的内存。彻底修复需要运行时级别的借用计数，见审查报告 P6。
+        let val = unsafe { try_get_stored_value_ref::<T>(self.id)? };
         Some(RxGuard::Borrowed {
             value: val,
             token: Some(NodeRef::from_id(self.id)),

@@ -7,7 +7,7 @@ use crate::{
         storage::{CleanupList, Node},
     },
 };
-use std::{cell::Cell, mem, panic::Location};
+use std::{cell::Cell, mem};
 
 pub(crate) struct Scopes {
     pub(crate) current_owner: Cell<Option<NodeId>>,
@@ -37,6 +37,7 @@ impl Runtime {
         f()
     }
 
+    #[track_caller]
     pub fn create_scope<F>(&self, f: F) -> NodeId
     where
         F: FnOnce(),
@@ -71,7 +72,7 @@ impl Runtime {
 
         #[cfg(debug_assertions)]
         {
-            node.defined_at = Some(Location::caller());
+            node.defined_at = Some(std::panic::Location::caller());
         }
 
         let id = self.storage.graph.insert(node);

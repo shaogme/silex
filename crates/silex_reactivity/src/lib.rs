@@ -3,10 +3,14 @@ mod primitive;
 mod runtime;
 
 pub(crate) use crate::core::list::List;
-pub use crate::core::{
-    algorithm::NodeState,
-    arena::{Arena, Index as NodeId, SparseSecondaryMap},
-};
+
+/// 响应式节点的句柄。这是本 crate 唯一对外暴露的容器相关类型。
+///
+/// `Arena` / `SparseSecondaryMap` / `NodeState` 曾经也是 `pub` 的，但它们的
+/// `get_mut(&self) -> Option<&mut T>` 允许安全代码两行就造出两个同时存活的
+/// `&mut`（AUDIT P7）。用注释约束的契约必须由类型系统或 `unsafe` 表达，
+/// 在此之前它们只能留在 crate 内部，由运行时自己保证独占访问。
+pub use crate::core::arena::Index as NodeId;
 
 use runtime::RUNTIME;
 pub(crate) use runtime::Runtime;
@@ -61,6 +65,7 @@ pub fn batch<R>(f: impl FnOnce() -> R) -> R {
     RUNTIME.get_or(Runtime::new).batch(f)
 }
 
+#[track_caller]
 pub fn create_scope<F>(f: F) -> NodeId
 where
     F: FnOnce(),

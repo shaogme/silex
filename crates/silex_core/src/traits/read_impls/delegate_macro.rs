@@ -104,7 +104,13 @@ macro_rules! impl_rx_delegate {
             #[inline(always)]
             fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
                 let id = self.id;
-                let val = ::silex_reactivity::try_get_signal_value_ref::<T>(id)?;
+                // SAFETY: 借用被立刻收窄回 `RxGuard<'_, T, T>`，其生命周期挂在
+                // `&self` 上，不会逃逸出调用方的表达式作用域。
+                //
+                // 残留风险（AUDIT P6 未闭环的部分）：句柄是 `Copy` 的，它的存活与
+                // 节点的存活无关 —— 调用方若在持有 guard 期间 `dispose` 这个节点，
+                // 仍会读到已释放的内存。彻底修复需要运行时级别的借用计数。
+                let val = unsafe { ::silex_reactivity::try_get_signal_value_ref::<T>(id)? };
                 Some($crate::traits::RxGuard::Borrowed {
                     value: val,
                     token: Some($crate::NodeRef::from_id(id)),

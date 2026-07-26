@@ -195,35 +195,11 @@ impl<T> Arena<T> {
         }
     }
 
-    /// Access mutable element by Index.
-    /// Warning: This takes &self to allow interior mutability patterns (e.g. inside Reacitivity Runtime).
-    /// CALLER MUST ENSURE EXCLUSIVE ACCESS to the specific 'T' being mutated.
-    /// Creating multiple &mut T to the same Index is Undefined Behavior.
-    #[allow(clippy::mut_from_ref)]
-    pub fn get_mut(&self, id: Index) -> Option<&mut T> {
-        let (chunk_idx, offset) = self.get_chunk_offset(id.index);
-        unsafe {
-            let chunks = &mut *self.chunks.get();
-            if chunk_idx >= chunks.len() {
-                return None;
-            }
-
-            if id.index as usize >= *self.len.get() {
-                return None;
-            }
-
-            let slot = &mut *chunks[chunk_idx].slots[offset].get();
-            if slot.generation != id.generation {
-                return None;
-            }
-
-            if slot.occupied() {
-                Some(&mut slot.u.value)
-            } else {
-                None
-            }
-        }
-    }
+    // 这里曾经有一个 `pub fn get_mut(&self, id) -> Option<&mut T>`：
+    // 它取 `&self` 却交出 `&mut T`，安全代码两行就能造出两个同时存活的 `&mut`
+    // （AUDIT P7）。实测 crate 内部一处都没用到 —— `graph` 只做 insert/get/remove，
+    // 真正需要内部可变的是 `SparseSecondaryMap`。既然没有用户，直接删掉，
+    // 而不是把一个无法由类型系统表达的契约继续留在这里。
 
     /// Remove element.
     /// Returns true if removed, false if not found/already removed.
@@ -357,8 +333,9 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
         }
     }
 
+    /// 与 [`Arena::get_mut`] 相同的契约：调用方必须保证独占访问。
     #[allow(clippy::mut_from_ref)]
-    pub fn get_mut(&self, key: Index) -> Option<&mut T> {
+    pub(crate) fn get_mut(&self, key: Index) -> Option<&mut T> {
         let (chunk_idx, offset) = self.get_chunk_offset(key.index);
         unsafe {
             let chunks = &mut *self.chunks.get();
@@ -394,10 +371,6 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
             }
             None
         }
-    }
-
-    pub fn contains_key(&self, key: Index) -> bool {
-        self.get(key).is_some()
     }
 
     /// Remove logic if ID is just u32 (for direct internal usage if needed)

@@ -31,6 +31,18 @@ pub struct Runtime {
 pub(crate) static RUNTIME: silex_thread_local::ThreadLocal<Runtime> =
     silex_thread_local::ThreadLocal::new();
 
+/// [`Runtime::with_signal_value_mut`] 借不到值时的原因。
+///
+/// 两种失败必须区分开：节点不存在是调用方常见且合法的情况（销毁之后继续写），
+/// 而重入则是违反契约的编程错误。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SignalBorrowError {
+    /// 节点不存在、已销毁，或根本不是一个 signal。
+    Missing,
+    /// 值正被外层的 update 闭包借出（不允许重入）。
+    Reentrant,
+}
+
 impl Runtime {
     pub(crate) fn new() -> Self {
         Self {
@@ -40,6 +52,7 @@ impl Runtime {
         }
     }
 
+    #[track_caller]
     pub fn create_signal(&self, value: AnyValue) -> NodeId {
         let id = self.register_node();
         self.storage.reactive.insert(
@@ -59,6 +72,7 @@ impl Runtime {
         id
     }
 
+    #[track_caller]
     pub(crate) fn create_effect(&self, f: ThunkValue) -> NodeId {
         let id = self.register_node();
         self.storage.reactive.insert(
@@ -259,43 +273,67 @@ impl Runtime {
     /// 与之重叠的引用，这是实打实的 UB（AUDIT P5）。
     ///
     /// 代价是一条明确的契约：**不允许在 update 闭包内访问同一个 signal**。
-    /// debug 构建下会断言失败，release 下该次访问返回 `None`。
+    /// debug 构建下会断言失败，release 下该次访问返回 [`SignalBorrowError::Reentrant`]。
+    ///
+    /// 本方法**不碰版本号** —— 版本号意味着“值变了”，只有在写入真的落到值上之后
+    /// 才该由调用方通过 [`Runtime::bump_signal_version`] 递增（AUDIT P12）。
     pub(crate) fn with_signal_value_mut<R>(
         &self,
         id: NodeId,
         f: impl FnOnce(&mut AnyValue) -> R,
-    ) -> Option<R> {
+    ) -> Result<R, SignalBorrowError> {
         let taken = {
-            let node = self.storage.reactive.get_mut(id)?;
-            let signal = node.signal.as_mut()?;
+            let Some(node) = self.storage.reactive.get_mut(id) else {
+                return Err(SignalBorrowError::Missing);
+            };
+            let Some(signal) = node.signal.as_mut() else {
+                return Err(SignalBorrowError::Missing);
+            };
             if signal.updating {
                 debug_assert!(
                     !signal.updating,
                     "在 update 闭包内重入访问同一个 signal 是不被支持的"
                 );
-                return None;
+                return Err(SignalBorrowError::Reentrant);
             }
             signal.updating = true;
-            signal.version = signal.version.wrapping_add(1);
             mem::replace(&mut signal.value, AnyValue::placeholder())
             // 借用在此结束 —— 用户闭包在借用作用域之外执行。
         };
 
         // 守卫保证值一定会被放回（panic 展开时也一样）。
         let mut borrowed = SignalValueGuard::new(self, id, taken);
-        Some(f(borrowed.value_mut()))
+        Ok(f(borrowed.value_mut()))
     }
 
-    #[inline(never)]
-    pub(crate) fn update_signal_untyped(&self, id: NodeId, updater: &mut dyn FnMut(&mut AnyValue)) {
-        if self
-            .with_signal_value_mut(id, |value| updater(value))
-            .is_some()
+    /// 递增 signal 的版本号，使下游在下一次 `Check` 时判定“依赖已变”。
+    pub(crate) fn bump_signal_version(&self, id: NodeId) {
+        if let Some(node) = self.storage.reactive.get_mut(id)
+            && let Some(signal) = node.signal.as_mut()
         {
+            signal.version = signal.version.wrapping_add(1);
+        }
+    }
+
+    /// 写入 signal 并在写入真的发生时失效下游。
+    ///
+    /// `updater` 返回 `false` 表示它没有改动这个值（典型情况是类型不匹配）：
+    /// 此时既不递增版本号也不通知下游 —— 之前的写法无条件递增并通知，
+    /// 于是一次什么都没做的更新会静默地把全部下游重跑一遍（AUDIT P12）。
+    #[inline(never)]
+    pub(crate) fn update_signal_untyped(
+        &self,
+        id: NodeId,
+        updater: &mut dyn FnMut(&mut AnyValue) -> bool,
+    ) -> Result<bool, SignalBorrowError> {
+        let applied = self.with_signal_value_mut(id, |value| updater(value))?;
+        if applied {
+            self.bump_signal_version(id);
             // 通知必须发生在借用作用域之外：`notify_update` 会同步执行下游 effect，
             // 那些 effect 会重新访问本节点（AUDIT P5）。
             self.notify_update(id);
         }
+        Ok(applied)
     }
 
     pub(crate) fn get_signal_value(&self, id: NodeId) -> Option<&AnyValue> {
@@ -385,6 +423,7 @@ impl Runtime {
         id
     }
 
+    #[track_caller]
     pub fn create_op(&self, data: RawOpBuffer) -> NodeId {
         let id = self.register_node();
         self.storage.extras.insert(id, ExtraData::Op(OpData(data)));
@@ -409,6 +448,7 @@ impl Runtime {
         self.run_node(id, true);
     }
 
+    #[track_caller]
     pub fn store_value(&self, value: AnyValue) -> NodeId {
         let id = self.register_node();
         self.storage
@@ -435,6 +475,7 @@ impl Runtime {
         }
     }
 
+    #[track_caller]
     pub fn register_callback_untyped(&self, f: Rc<dyn Fn(Box<dyn Any>)>) -> NodeId {
         let id = self.register_node();
         self.storage
@@ -443,6 +484,7 @@ impl Runtime {
         id
     }
 
+    #[track_caller]
     pub fn register_node_ref(&self) -> NodeId {
         let id = self.register_node();
         self.storage

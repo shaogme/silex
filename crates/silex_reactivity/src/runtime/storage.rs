@@ -6,7 +6,7 @@ use crate::{
         value::{AnyValue, OnceThunk, ThunkValue},
     },
 };
-use std::{any::Any, mem, panic::Location, rc::Rc, vec::IntoIter};
+use std::{any::Any, mem, rc::Rc, vec::IntoIter};
 
 pub(crate) struct ReactiveNode {
     pub(crate) state: NodeState,
@@ -145,7 +145,7 @@ pub(crate) struct NodeAux {
 pub(crate) struct Node {
     pub(crate) parent: Option<NodeId>,
     #[cfg(debug_assertions)]
-    pub(crate) defined_at: Option<&'static Location<'static>>,
+    pub(crate) defined_at: Option<&'static std::panic::Location<'static>>,
 }
 
 impl Node {
