@@ -4,7 +4,7 @@ use std::{
     fmt::Write,
 };
 
-use super::{palette::ColorShadeInfo, resolver::resolve_css_rules};
+use silex_tw_core::{ColorShadeInfo, JsonPalette, resolve_class};
 
 pub fn to_pascal_case(s: &str) -> String {
     let (prefix, rest) = if let Some(stripped) = s.strip_prefix("--") {
@@ -66,9 +66,9 @@ pub fn generate_property_id_code(
 
     // 0. 从所有的 Tailwind 静态类及测试用例解析结果中收集用到的全量 CSS 属性名
     for class in classes.iter().chain(test_cases.iter()) {
-        if let Some(rules) = resolve_css_rules(class, palette) {
-            for (prop, _) in rules {
-                props_set.insert(prop.to_string());
+        if let Some(sets) = resolve_class(class, &JsonPalette(palette)) {
+            for decl in sets.iter().flat_map(|s| &s.decls) {
+                props_set.insert(decl.prop.to_string());
             }
         }
     }

@@ -13,6 +13,7 @@ readme.workspace = true
 publish = false
 
 [dependencies]
+silex_tw_core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 heck = "0.5" # For snake_case/CamelCase conversion

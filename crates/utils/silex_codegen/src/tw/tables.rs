@@ -1,31 +1,63 @@
 use std::{
-    borrow::Cow,
     collections::{BTreeMap, BTreeSet},
     fmt::Write,
 };
 
-use super::{palette::ColorShadeInfo, property_id::to_pascal_case, resolver::resolve_css_rules};
+use silex_tw_core::{ColorShadeInfo, JsonPalette, TwRuleSet, TwValueKind, classify, resolve_class};
 
-pub type RuleEntries<'a> = Vec<(String, Vec<(&'static str, Cow<'a, str>)>)>;
+use super::property_id::to_pascal_case;
 
-pub fn resolve_entries<'a>(
+/// 一条静态表记录：类名 + 伴生选择器 + 声明列表
+pub struct RuleEntry {
+    pub class: String,
+    pub selector: Option<&'static str>,
+    pub decls: Vec<(&'static str, String)>,
+}
+
+pub type RuleEntries = Vec<RuleEntry>;
+
+/// 把 core 的解析结果压成一条静态表记录。
+///
+/// 静态表的每一行只能挂一个选择器；真出现一个类名同时产出多个选择器分组，
+/// 说明表结构需要升级，此时直接让构建失败，而不是悄悄丢掉其中一组。
+fn flatten(class: &str, sets: Vec<TwRuleSet>) -> RuleEntry {
+    let selectors: BTreeSet<Option<&'static str>> = sets.iter().map(|s| s.selector).collect();
+    assert!(
+        selectors.len() <= 1,
+        "类名 '{}' 产出了多个不同的伴生选择器 {:?}——静态表每行只能承载一个，请升级表结构",
+        class,
+        selectors
+    );
+
+    RuleEntry {
+        class: class.to_string(),
+        selector: sets.first().and_then(|s| s.selector),
+        decls: sets
+            .into_iter()
+            .flat_map(|s| s.decls)
+            .map(|d| (d.prop, d.value.into_owned()))
+            .collect(),
+    }
+}
+
+pub fn resolve_entries(
     classes: &[String],
-    palette: &'a BTreeMap<String, Vec<ColorShadeInfo>>,
-) -> (RuleEntries<'a>, Vec<String>) {
-    let candidate_set: BTreeSet<String> = classes.iter().cloned().collect();
+    palette: &BTreeMap<String, Vec<ColorShadeInfo>>,
+) -> (RuleEntries, Vec<String>) {
+    let ctx = JsonPalette(palette);
+    let candidate_set: BTreeSet<&String> = classes.iter().collect();
 
     let mut static_entries = Vec::with_capacity(candidate_set.len());
     let mut unimplemented_entries: Vec<String> = Vec::with_capacity(candidate_set.len() / 4);
 
     for class in candidate_set {
-        if let Some(rules) = resolve_css_rules(&class, palette) {
-            static_entries.push((class, rules));
-        } else {
-            unimplemented_entries.push(class);
+        match resolve_class(class, &ctx) {
+            Some(sets) => static_entries.push(flatten(class, sets)),
+            None => unimplemented_entries.push(class.clone()),
         }
     }
 
-    static_entries.sort_by(|a, b| a.0.cmp(&b.0));
+    static_entries.sort_by(|a, b| a.class.cmp(&b.class));
     unimplemented_entries.sort();
 
     (static_entries, unimplemented_entries)
@@ -42,7 +74,7 @@ pub struct UsedStaticValKinds {
 
 pub fn push_table_header(code: &mut String, doc_comment: &str) {
     let _ = writeln!(code, "// {}", doc_comment);
-    code.push_str("// 避免手写硬编码，与 silex_codegen/resolver 保持 100% 规则对齐\n\n");
+    code.push_str("// 避免手写硬编码，与 silex_tw_core 的 resolver 保持 100% 规则对齐\n\n");
     code.push_str("#[allow(unused_imports)]\nuse crate::css::tw::ast::{Modifier, SpannedModifier, UtilityRule, UtilityValue};\n");
     code.push_str("#[allow(unused_imports)]\nuse crate::css::tw::resolver::codegen::property_id::CssPropertyId;\n");
     code.push_str("#[allow(unused_imports)]\nuse crate::css::tw::resolver::make_rule;\n");
@@ -52,8 +84,8 @@ pub fn push_table_header(code: &mut String, doc_comment: &str) {
 pub fn push_candidate_array(code: &mut String, var_name: &str, entries: &RuleEntries) {
     code.push_str("#[rustfmt::skip]\n");
     let _ = writeln!(code, "pub const {}: &[&str] = &[", var_name);
-    for (class, _) in entries {
-        let _ = writeln!(code, "    \"{}\",", class);
+    for entry in entries {
+        let _ = writeln!(code, "    \"{}\",", entry.class);
     }
     code.push_str("];\n\n");
 }
@@ -76,21 +108,27 @@ pub fn push_rules_array(
     entries: &RuleEntries,
 ) -> UsedStaticValKinds {
     let mut used = UsedStaticValKinds::default();
-    code.push_str("#[rustfmt::skip]\n");
-    let _ = writeln!(
-        code,
-        "pub static {}: &[(&str, &[(CssPropertyId, StaticVal)])] = &[",
-        var_name
+    code.push_str(
+        "/// 静态表的一行：类名 + 伴生选择器（`divide-*` / `placeholder-*` 等）+ 声明列表\n",
     );
-    for (class, rules) in entries {
-        let _ = writeln!(code, "    (\"{}\", &[", class);
-        for (prop, val) in rules {
+    code.push_str(
+        "pub type StaticRuleRow = (&'static str, Option<&'static str>, &'static [(CssPropertyId, StaticVal)]);\n\n",
+    );
+    code.push_str("#[rustfmt::skip]\n");
+    let _ = writeln!(code, "pub static {}: &[StaticRuleRow] = &[", var_name);
+    for entry in entries {
+        let selector = match entry.selector {
+            Some(s) => format!("Some(\"{}\")", escape(s)),
+            None => "None".to_string(),
+        };
+        let _ = writeln!(code, "    (\"{}\", {}, &[", entry.class, selector);
+        for (prop, val) in &entry.decls {
             let static_val_str = parse_val_to_static_val(val, &mut used);
-            let prop_variant = to_pascal_case(prop);
             let _ = writeln!(
                 code,
                 "        (CssPropertyId::{}, {}),",
-                prop_variant, static_val_str
+                to_pascal_case(prop),
+                static_val_str
             );
         }
         code.push_str("    ]),\n");
@@ -132,8 +170,15 @@ pub fn push_resolve_static_rule_fn(
     utility_token: &str,
     span: Span,
 ) -> Option<Vec<UtilityRule>> {{
-    let idx = {rules_var_name}.binary_search_by_key(&utility_token, |&(k, _)| k).ok()?;
-    let entries = {rules_var_name}[idx].1;
+    let idx = {rules_var_name}.binary_search_by_key(&utility_token, |&(k, _, _)| k).ok()?;
+    let (_, selector, entries) = {rules_var_name}[idx];
+
+    // 伴生选择器（`divide-*` 的相邻子元素、`placeholder-*` 的 `::placeholder`）
+    // 以额外修饰符的形式挂上去，与模式解析路径的表达方式保持一致。
+    let mut mods: smallvec::SmallVec<[SpannedModifier; 2]> = modifiers.iter().cloned().collect();
+    if let Some(sel) = selector {{
+        mods.push(SpannedModifier::new(Modifier::CustomSelector(sel.to_string()), span));
+    }}
 
     let mut rules = Vec::with_capacity(entries.len());
     for &(ref prop, val) in entries {{
@@ -160,12 +205,7 @@ pub fn push_resolve_static_rule_fn(
 
     code.push_str(
         r#"        };
-        rules.push(make_rule(
-            if modifiers.is_empty() { smallvec::SmallVec::new() } else { modifiers.iter().cloned().collect() },
-            *prop,
-            uval,
-            span,
-        ).ok()?);
+        rules.push(make_rule(mods.clone(), *prop, uval, span).ok()?);
     }
     Some(rules)
 }
@@ -226,63 +266,37 @@ pub fn generate_macro_tables(
     (table_code, table_unimplement_code)
 }
 
-pub fn parse_val_to_static_val(val: &str, used: &mut UsedStaticValKinds) -> String {
-    if val.contains("var(--tw-ring-inset") || val.contains("0 0 0 var(--tw-ring-offset-width") {
-        used.ring_shadow = true;
-        return "StaticVal::RingShadow".to_string();
-    }
-    if val.starts_with('#') {
-        used.hex = true;
-        return format!("StaticVal::Hex(\"{}\")", val);
-    }
-    if let Some((v, unit)) = try_parse_numeric(val) {
-        used.num = true;
-        return format!("StaticVal::Num({:?}, \"{}\")", v, unit);
-    }
-    if val.contains('(') || val.contains(' ') || val.contains('/') || val.contains(',') {
-        if val.starts_with("linear-gradient(")
-            || val.starts_with("radial-gradient(")
-            || val.starts_with("conic-gradient(")
-            || val.starts_with("calc(")
-            || val.starts_with("rotate(")
-            || val.starts_with("translateX(")
-            || val.starts_with("translateY(")
-            || val.starts_with("blur(")
-            || val.starts_with("minmax(")
-            || val.starts_with("repeat(")
-        {
-            used.kw = true;
-            return format!(
-                "StaticVal::Kw(\"{}\")",
-                val.replace('\\', "\\\\").replace('"', "\\\"")
-            );
-        }
-        used.literal = true;
-        return format!(
-            "StaticVal::Literal(\"{}\")",
-            val.replace('\\', "\\\\").replace('"', "\\\"")
-        );
-    }
-    used.kw = true;
-    format!(
-        "StaticVal::Kw(\"{}\")",
-        val.replace('\\', "\\\\").replace('"', "\\\"")
-    )
+fn escape(val: &str) -> String {
+    val.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-pub fn try_parse_numeric(val: &str) -> Option<(f64, &'static str)> {
-    if let Ok(v) = val.parse::<f64>() {
-        return Some((v, ""));
-    }
-    let units = ["rem", "px", "%", "vw", "vh", "em", "deg", "ms", "s"];
-    for &unit in &units {
-        if let Some(prefix) = val.strip_suffix(unit)
-            && let Ok(v) = prefix.parse::<f64>()
-        {
-            return Some((v, unit));
+/// 把 CSS 值文本渲染成静态表里的 `StaticVal` 字面量。
+///
+/// 分类判定复用 `silex_tw_core::classify`——**同一个函数**也被 macro 侧的模式解析路径使用，
+/// 两条路径因此不可能对同一个值给出不同的变体（报告 §3.1 的漂移根因之一）。
+pub fn parse_val_to_static_val(val: &str, used: &mut UsedStaticValKinds) -> String {
+    match classify(val) {
+        TwValueKind::RingShadow => {
+            used.ring_shadow = true;
+            "StaticVal::RingShadow".to_string()
+        }
+        TwValueKind::Hex => {
+            used.hex = true;
+            format!("StaticVal::Hex(\"{}\")", escape(val))
+        }
+        TwValueKind::Numeric(v, unit) => {
+            used.num = true;
+            format!("StaticVal::Num({:?}, \"{}\")", v, unit)
+        }
+        TwValueKind::Literal => {
+            used.literal = true;
+            format!("StaticVal::Literal(\"{}\")", escape(val))
+        }
+        TwValueKind::Keyword => {
+            used.kw = true;
+            format!("StaticVal::Kw(\"{}\")", escape(val))
         }
     }
-    None
 }
 
 /// 生成 `table_examples.rs` 产物（生成方式与 `table.rs` 100% 一致，用于验证 test-cases 的生成与规则解析正确性）

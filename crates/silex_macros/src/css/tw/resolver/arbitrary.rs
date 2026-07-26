@@ -1,9 +1,12 @@
-use crate::css::tw::ast::{Modifier, SpannedModifier, UtilityRule, UtilityValue};
+use crate::css::tw::ast::{SpannedModifier, UtilityRule, UtilityValue};
 use proc_macro2::Span;
+use silex_tw_core::{
+    ValueKind, arbitrary_dispatch, classify_arbitrary_value, prefix::lookup_color_prefix,
+};
 use syn::{Error, Result};
 
 use super::codegen::prefix_metadata::lookup_prefix_meta;
-use super::{DIVIDE_SELECTOR, RING_BOX_SHADOW, kw, make_rule};
+use super::{RING_BOX_SHADOW, expand_color_prefix_rule, kw, make_rule};
 
 /// 任意值与任意属性语法解析: `w-[12px]`, `bg-[red]`, `[--tw-ring-color:rgba(79,70,229,.2)]`, `[color:red]`
 pub fn parse_arbitrary_syntax(token: &str) -> Option<(&str, &str)> {
@@ -125,118 +128,116 @@ pub fn resolve_arbitrary(
     // 2. 处理带有前缀的任意值语法 `w-[12px]`, `ring-[rgba(79,70,229,.2)]`, `bg-[rgba(79,70,229,.2)]`
     let clean_prefix = prefix.strip_suffix('-').unwrap_or(prefix);
 
-    let (target_props, is_divide, value_wrapper) =
-        if let Some(p) = super::color_prefix_to_prop(clean_prefix) {
-            (vec![p], clean_prefix == "divide", None)
-        } else if clean_prefix == "ring" {
-            let is_length = norm_val.ends_with("px")
-                || norm_val.ends_with("rem")
-                || norm_val.ends_with("em")
-                || norm_val.parse::<f64>().is_ok();
-            let prop = if is_length {
-                "--tw-ring-width"
-            } else {
-                "--tw-ring-color"
-            };
-            (vec![prop], false, None)
-        } else if clean_prefix == "ring-offset" {
-            let is_length = norm_val.ends_with("px")
-                || norm_val.ends_with("rem")
-                || norm_val.ends_with("em")
-                || norm_val.parse::<f64>().is_ok();
-            let prop = if is_length {
-                "--tw-ring-offset-width"
-            } else {
-                "--tw-ring-offset-color"
-            };
-            (vec![prop], false, None)
-        } else if let Some(meta) = lookup_prefix_meta(clean_prefix) {
-            (meta.target_props.to_vec(), false, meta.value_wrapper)
-        } else {
-            (vec![clean_prefix], false, None)
-        };
+    // 多义前缀按**值的类型**分派，而不是靠"先查哪张表"的隐式顺序（报告 §2.8）。
+    // `border-s-[3px]` 是宽度、`border-s-[red]` 是颜色，二者只能靠值区分。
+    let kind = classify_arbitrary_value(&norm_val);
 
-    let target_mods = if is_divide {
-        [
-            modifiers.clone(),
-            vec![SpannedModifier::new(
-                Modifier::CustomSelector(DIVIDE_SELECTOR.into()),
-                span,
-            )],
-        ]
-        .concat()
-    } else {
-        modifiers.clone()
+    // `ring-[…]` / `ring-offset-[…]` 的宽度形态还要额外铺 box-shadow 载体
+    let is_sized = matches!(kind, ValueKind::Length | ValueKind::Number);
+    let ring_width_prop = match clean_prefix {
+        "ring" if is_sized => Some("--tw-ring-width"),
+        "ring-offset" if is_sized => Some("--tw-ring-offset-width"),
+        _ => None,
+    };
+    if let Some(prop) = ring_width_prop {
+        let value = build_value(&norm_val, None, span)?;
+        return Ok(vec![
+            make_rule(modifiers.clone(), prop, value, span)?,
+            make_rule(modifiers, "box-shadow", kw(RING_BOX_SHADOW), span)?,
+        ]);
+    }
+
+    // 1. 显式登记的多义分派（`bg-[url(…)]` → background-image、`text-[14px]` → font-size）
+    if let Some(props) = arbitrary_dispatch(clean_prefix, kind) {
+        return emit(&modifiers, props, &norm_val, None, span);
+    }
+
+    // 2. 值确实是颜色时才让颜色前缀表接管。
+    //    反过来（颜色表优先）会把 `border-s-[3px]` 判成 `border-inline-start-color`、
+    //    把 `shadow-[0_0_0_1px_red]` 判成 `--tw-shadow-color`。
+    let size_meta = lookup_prefix_meta(clean_prefix);
+    let color_rule = lookup_color_prefix(clean_prefix);
+
+    let color_first = kind == ValueKind::Color;
+    let color_path = |modifiers: &[SpannedModifier]| -> Option<Result<Vec<UtilityRule>>> {
+        let rule = color_rule?;
+        Some(
+            build_value(&norm_val, None, span)
+                .and_then(|value| expand_color_prefix_rule(modifiers, rule, value, span)),
+        )
+    };
+    let size_path = |modifiers: &[SpannedModifier]| -> Option<Result<Vec<UtilityRule>>> {
+        let meta = size_meta?;
+        Some(emit(
+            modifiers,
+            meta.target_props,
+            &norm_val,
+            meta.value_wrapper,
+            span,
+        ))
     };
 
-    let value = if norm_val.starts_with("$(") && norm_val.ends_with(')') {
-        let expr_inner = &norm_val[2..norm_val.len() - 1];
+    if color_first && let Some(rules) = color_path(&modifiers) {
+        return rules;
+    }
+    if let Some(rules) = size_path(&modifiers) {
+        return rules;
+    }
+    // 类型判不出来（`bg-[var(--x)]` 之类）且没有尺寸元数据时，仍按颜色前缀解释
+    if let Some(rules) = color_path(&modifiers) {
+        return rules;
+    }
+
+    // 3. 兜底：把前缀本身当作 CSS 属性名（`[mask-type]-[luminance]` 之类）
+    emit(
+        &modifiers,
+        std::slice::from_ref(&clean_prefix),
+        &norm_val,
+        None,
+        span,
+    )
+}
+
+/// 把一个任意值写进一组目标属性
+fn emit(
+    modifiers: &[SpannedModifier],
+    props: &[&str],
+    norm_val: &str,
+    value_wrapper: Option<&'static str>,
+    span: Span,
+) -> Result<Vec<UtilityRule>> {
+    let value = build_value(norm_val, value_wrapper, span)?;
+    props
+        .iter()
+        .map(|&prop| make_rule(modifiers.to_vec(), prop, value.clone(), span))
+        .collect()
+}
+
+/// 把规范化后的任意值构造成 `UtilityValue`
+fn build_value(
+    norm_val: &str,
+    value_wrapper: Option<&'static str>,
+    span: Span,
+) -> Result<UtilityValue> {
+    if let Some(expr_inner) = norm_val
+        .strip_prefix("$(")
+        .and_then(|s| s.strip_suffix(')'))
+    {
         let expr: syn::Expr =
             syn::parse_str(expr_inner).map_err(|e| Error::new(span, e.to_string()))?;
-        UtilityValue::DynamicExpr(expr, span)
-    } else {
-        let val_str = if norm_val.starts_with("--") {
-            format!("var({})", norm_val)
-        } else {
-            norm_val
-        };
+        return Ok(UtilityValue::DynamicExpr(expr, span));
+    }
 
-        if let Some(wrapper) = value_wrapper {
-            UtilityValue::ArbitraryLiteral(wrapper.replace("{}", &val_str))
-        } else {
-            UtilityValue::ArbitraryLiteral(val_str)
-        }
+    let val_str = if norm_val.starts_with("--") {
+        format!("var({})", norm_val)
+    } else {
+        norm_val.to_string()
     };
 
-    if clean_prefix == "from" {
-        return Ok(vec![
-            make_rule(target_mods.clone(), "--tw-gradient-from", value, span)?,
-            make_rule(
-                target_mods.clone(),
-                "--tw-gradient-to",
-                kw("rgb(255 255 255 / 0)"),
-                span,
-            )?,
-            make_rule(
-                target_mods,
-                "--tw-gradient-stops",
-                kw("var(--tw-gradient-from), var(--tw-gradient-to)"),
-                span,
-            )?,
-        ]);
-    }
-
-    if clean_prefix == "via" {
-        return Ok(vec![
-            make_rule(target_mods.clone(), "--tw-gradient-via", value, span)?,
-            make_rule(
-                target_mods,
-                "--tw-gradient-stops",
-                kw("var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to)"),
-                span,
-            )?,
-        ]);
-    }
-
-    let mut rules = Vec::with_capacity(target_props.len() + 1);
-    let mut has_ring_prop = false;
-    for prop in target_props {
-        if prop.starts_with("--tw-ring-") {
-            has_ring_prop = true;
-        }
-        rules.push(make_rule(target_mods.clone(), prop, value.clone(), span)?);
-    }
-
-    if has_ring_prop {
-        rules.push(make_rule(
-            target_mods,
-            "box-shadow",
-            kw(RING_BOX_SHADOW),
-            span,
-        )?);
-    }
-
-    Ok(rules)
+    Ok(UtilityValue::ArbitraryLiteral(match value_wrapper {
+        Some(wrapper) => wrapper.replace("{}", &val_str),
+        None => val_str,
+    }))
 }
 
 #[cfg(test)]

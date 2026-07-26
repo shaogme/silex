@@ -37,73 +37,16 @@ fn utility_value_to_literal(val: &UtilityValue) -> String {
     }
 }
 
-/// 解析方向与各角 Rounded 规则 (例: `rounded-tl-3xl`, `rounded-t-lg`, `rounded-tr-4`)
-pub fn resolve_rounded_utility(
-    modifiers: &[SpannedModifier],
-    token: &str,
-    span: Span,
-) -> Option<Vec<UtilityRule>> {
-    let rest = token.strip_prefix("rounded-")?;
-
-    let (props, size_str): (&[&str], &str) = if let Some(s) = rest.strip_prefix("tl-") {
-        (&["border-top-left-radius"], s)
-    } else if let Some(s) = rest.strip_prefix("tr-") {
-        (&["border-top-right-radius"], s)
-    } else if let Some(s) = rest.strip_prefix("br-") {
-        (&["border-bottom-right-radius"], s)
-    } else if let Some(s) = rest.strip_prefix("bl-") {
-        (&["border-bottom-left-radius"], s)
-    } else if let Some(s) = rest.strip_prefix("t-") {
-        (&["border-top-left-radius", "border-top-right-radius"], s)
-    } else if let Some(s) = rest.strip_prefix("r-") {
-        (
-            &["border-top-right-radius", "border-bottom-right-radius"],
-            s,
-        )
-    } else if let Some(s) = rest.strip_prefix("b-") {
-        (
-            &["border-bottom-right-radius", "border-bottom-left-radius"],
-            s,
-        )
-    } else {
-        let s = rest.strip_prefix("l-")?;
-        (&["border-top-left-radius", "border-bottom-left-radius"], s)
-    };
-
-    let val = match size_str {
-        "none" => px(0.0),
-        "sm" => rem(0.125),
-        "" | "md" => rem(0.375),
-        "lg" => rem(0.5),
-        "xl" => rem(0.75),
-        "2xl" => rem(1.0),
-        "3xl" => rem(1.5),
-        "full" => px(9999.0),
-        s => {
-            let n: f64 = s.parse().ok()?;
-            rem(n * 0.25)
-        }
-    };
-
-    let mods = modifiers.to_vec();
-    let rules = props
-        .iter()
-        .map(|p| make_rule(mods.clone(), p, val.clone(), span))
-        .collect::<Result<Vec<_>>>()
-        .ok()?;
-    Some(rules)
-}
-
-/// 解析数值与分数开头的规则 (例: `p-4`, `w-1/2`, `-top-4`, `border-t-2`, `rounded-tr-lg`)
+/// 解析数值与分数开头的规则 (例: `p-4`, `w-1/2`, `-top-4`, `border-t-2`)
+///
+/// 注意这里**不再**处理 `rounded-*`：圆角档位由 `silex_tw_core` 统一解析。
+/// 此前本模块自带一份档位表，`sm` 停留在 Tailwind v3 的 `0.125rem`，
+/// 而 core 侧早已修正为 v4 的 `0.25rem`——只因静态表优先命中才一直没暴露（报告 §3.1）。
 pub fn resolve_numeric_utility(
     modifiers: &[SpannedModifier],
     token: &str,
     span: Span,
 ) -> Option<Vec<UtilityRule>> {
-    if let Some(rules) = resolve_rounded_utility(modifiers, token, span) {
-        return Some(rules);
-    }
-
     let is_negative = token.starts_with('-');
     let search_token = if is_negative { &token[1..] } else { token };
 

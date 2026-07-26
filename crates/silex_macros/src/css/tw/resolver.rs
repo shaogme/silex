@@ -1,5 +1,6 @@
 pub mod arbitrary;
 pub mod codegen;
+pub mod core_bridge;
 pub mod numeric;
 pub mod palette;
 pub mod suggest;
@@ -15,15 +16,18 @@ use crate::css::tw::{
     resolver::{
         arbitrary::{parse_arbitrary_syntax, resolve_arbitrary},
         codegen::{property_id::CssPropertyId, table::resolve_static_rule},
+        core_bridge::{MacroCtx, rule_sets_to_rules, with_selector},
         numeric::resolve_numeric_utility,
-        palette::{parse_color_utility, parse_color_value},
+        palette::resolve_color_rules,
         suggest::find_best_suggestion,
     },
 };
 
-pub const RING_BOX_SHADOW: &str = "var(--tw-ring-inset, ) 0 0 0 var(--tw-ring-offset-width, 0px) var(--tw-ring-offset-color, #0000), 0 0 0 var(--tw-ring-width, 0px) var(--tw-ring-color, rgba(59, 130, 246, 0.5)), var(--tw-shadow, 0 0 #0000)";
+use silex_tw_core::prefix::{ColorPrefixRule, lookup_color_prefix};
 
-pub(super) const DIVIDE_SELECTOR: &str = "& > :not([hidden]) ~ :not([hidden])";
+// ring 的 box-shadow 载体与 divide 的伴生选择器都由 `silex_tw_core` 定义，
+// 这里只是转出常量，避免宏侧再抄一份字面量。
+pub use silex_tw_core::{DIVIDE_SELECTOR, RING_BOX_SHADOW};
 
 #[inline]
 pub(super) fn kw(s: &'static str) -> UtilityValue {
@@ -165,29 +169,29 @@ pub fn resolve_utility(
     resolve_pattern_utility(modifiers, utility_token, span)
 }
 
-#[inline]
-pub(crate) fn color_prefix_to_prop(prefix: &str) -> Option<&'static str> {
-    match prefix {
-        "bg" => Some("background-color"),
-        "text" => Some("color"),
-        "border" => Some("border-color"),
-        "border-t" => Some("border-top-color"),
-        "border-r" => Some("border-right-color"),
-        "border-b" => Some("border-bottom-color"),
-        "border-l" => Some("border-left-color"),
-        "outline" => Some("outline-color"),
-        "ring" => Some("--tw-ring-color"),
-        "ring-offset" => Some("--tw-ring-offset-color"),
-        "from" => Some("--tw-gradient-from"),
-        "via" => Some("--tw-gradient-via"),
-        "to" => Some("--tw-gradient-to"),
-        "divide" => Some("border-color"),
-        "accent" => Some("accent-color"),
-        "caret" => Some("caret-color"),
-        "fill" => Some("fill"),
-        "stroke" => Some("stroke"),
-        _ => None,
+/// 用共享的颜色前缀规则展开一个「值已经算好」的颜色声明。
+///
+/// 供 `theme()` 与任意值两条路径复用：它们的**值**是 Silex 特有的
+/// （`ThemeVar` / `DynamicExpr`），但"前缀映射到哪些属性、要不要补 `box-shadow`、
+/// 声明落在哪个选择器上"这三件事必须与普通颜色路径完全一致，所以统一读 core 的表。
+pub(crate) fn expand_color_prefix_rule(
+    modifiers: &[SpannedModifier],
+    rule: &ColorPrefixRule,
+    value: UtilityValue,
+    span: Span,
+) -> Result<Vec<UtilityRule>> {
+    let mods = with_selector(modifiers, rule.selector, span);
+
+    let mut rules = Vec::with_capacity(rule.props.len() + 2);
+    for &prop in rule.props {
+        rules.push(make_rule(mods.clone(), prop, value.clone(), span)?);
     }
+    if let Some(companion) = rule.companion {
+        for &(prop, val) in companion.decls() {
+            rules.push(make_rule(mods.clone(), prop, kw(val), span)?);
+        }
+    }
+    Ok(rules)
 }
 
 /// 解析前缀规律型 Utility (如 `p-4`, `mt-2`, `w-16`, `bg-theme(primary)`, `text-slate-900`, `bg-indigo-600/50`, `w-[12px]`)
@@ -214,91 +218,29 @@ fn resolve_pattern_utility(
 
     // 1. Theme 变量, 如 `bg-theme(primary)` / `text-theme(border)` / `bg-theme(primary/50)`
     if let Some((prefix, theme_var, opacity)) = parse_theme_var(token) {
-        if prefix == "divide" {
-            let c_mods = [
-                modifiers.clone(),
-                vec![SpannedModifier::new(
-                    Modifier::CustomSelector(DIVIDE_SELECTOR.into()),
-                    span,
-                )],
-            ]
-            .concat();
-            return Ok(vec![make_rule(
-                c_mods,
-                "border-color",
-                UtilityValue::ThemeVar(theme_var.to_string(), opacity),
+        let Some(rule) = lookup_color_prefix(prefix) else {
+            return Err(Error::new(
                 span,
-            )?]);
-        }
-        if prefix == "ring" {
-            return Ok(vec![
-                make_rule(
-                    modifiers.clone(),
-                    "--tw-ring-color",
-                    UtilityValue::ThemeVar(theme_var.to_string(), opacity),
-                    span,
-                )?,
-                make_rule(modifiers, "box-shadow", kw(RING_BOX_SHADOW), span)?,
-            ]);
-        }
-        if prefix == "from" {
-            return Ok(vec![
-                make_rule(
-                    modifiers.clone(),
-                    "--tw-gradient-from",
-                    UtilityValue::ThemeVar(theme_var.to_string(), opacity),
-                    span,
-                )?,
-                make_rule(
-                    modifiers.clone(),
-                    "--tw-gradient-to",
-                    kw("rgb(255 255 255 / 0)"),
-                    span,
-                )?,
-                make_rule(
-                    modifiers,
-                    "--tw-gradient-stops",
-                    kw("var(--tw-gradient-from), var(--tw-gradient-to)"),
-                    span,
-                )?,
-            ]);
-        }
-        if prefix == "via" {
-            return Ok(vec![
-                make_rule(
-                    modifiers.clone(),
-                    "--tw-gradient-via",
-                    UtilityValue::ThemeVar(theme_var.to_string(), opacity),
-                    span,
-                )?,
-                make_rule(
-                    modifiers,
-                    "--tw-gradient-stops",
-                    kw("var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to)"),
-                    span,
-                )?,
-            ]);
-        }
-        if let Some(prop) = color_prefix_to_prop(prefix) {
-            return Ok(vec![make_rule(
-                modifiers,
-                prop,
-                UtilityValue::ThemeVar(theme_var.to_string(), opacity),
-                span,
-            )?]);
-        }
-        return Err(Error::new(
+                format!("Unsupported theme prefix: '{}'", prefix),
+            ));
+        };
+        return expand_color_prefix_rule(
+            &modifiers,
+            rule,
+            UtilityValue::ThemeVar(theme_var.to_string(), opacity),
             span,
-            format!("Unsupported theme prefix: '{}'", prefix),
-        ));
+        );
     }
 
-    // 2. Standard Palette 色系与零分配 Hex / /alpha 颜色换算
-    if let Some((prop, val)) = parse_color_utility(token) {
-        return Ok(vec![make_rule(modifiers, prop, val, span)?]);
+    // 2. 颜色型 Utility：色板色阶、`/透明度`、`[#hex]`、语义 token，
+    //    以及 ring / 渐变色标 / divide / placeholder 的伴生声明与伴生选择器。
+    //    前缀表与展开规则全在 `silex_tw_core`，与静态表同源。
+    if let Some(rules) = resolve_color_rules(&modifiers, token, span) {
+        return rules;
     }
 
-    // 3. Divide System: divide-x, divide-y, divide-x-2, divide-y-4, divide-solid, divide-dashed, divide-slate-200
+    // 3. Divide System 的尺寸与线型部分: divide-x, divide-y, divide-x-2, divide-y-4, divide-solid …
+    //    （`divide-<颜色>` 已由上一步统一处理）
     if let Some(rest) = token.strip_prefix("divide-") {
         let c_mods = [
             modifiers.clone(),
@@ -344,10 +286,6 @@ fn resolve_pattern_utility(
                 make_rule(c_mods, "border-bottom-width", px(0.0), span)?,
             ]);
         }
-
-        if let Some(color_val) = parse_color_value(rest) {
-            return Ok(vec![make_rule(c_mods, "border-color", color_val, span)?]);
-        }
     }
 
     // 4. Space System: space-x-2, space-y-4, -space-x-2, -space-y-4
@@ -383,61 +321,7 @@ fn resolve_pattern_utility(
         }
     }
 
-    // 5. Ring Colors: ring-offset-indigo-500, ring-indigo-500, ring-indigo-500/20
-    if let Some(rest) = token.strip_prefix("ring-offset-") {
-        if let Some(color_val) = parse_color_value(rest) {
-            return Ok(vec![
-                make_rule(modifiers.clone(), "--tw-ring-offset-color", color_val, span)?,
-                make_rule(modifiers, "box-shadow", kw(RING_BOX_SHADOW), span)?,
-            ]);
-        }
-    } else if let Some(rest) = token.strip_prefix("ring-")
-        && let Some(color_val) = parse_color_value(rest)
-    {
-        return Ok(vec![
-            make_rule(modifiers.clone(), "--tw-ring-color", color_val, span)?,
-            make_rule(modifiers, "box-shadow", kw(RING_BOX_SHADOW), span)?,
-        ]);
-    }
-
-    // 6. Gradient Stops: from-indigo-500, via-purple-500, to-pink-500
-    if let Some(rest) = token.strip_prefix("from-") {
-        if let Some(val) = parse_color_value(rest) {
-            return Ok(vec![
-                make_rule(modifiers.clone(), "--tw-gradient-from", val, span)?,
-                make_rule(
-                    modifiers.clone(),
-                    "--tw-gradient-to",
-                    kw("rgb(255 255 255 / 0)"),
-                    span,
-                )?,
-                make_rule(
-                    modifiers,
-                    "--tw-gradient-stops",
-                    kw("var(--tw-gradient-from), var(--tw-gradient-to)"),
-                    span,
-                )?,
-            ]);
-        }
-    } else if let Some(rest) = token.strip_prefix("via-") {
-        if let Some(val) = parse_color_value(rest) {
-            return Ok(vec![
-                make_rule(modifiers.clone(), "--tw-gradient-via", val, span)?,
-                make_rule(
-                    modifiers,
-                    "--tw-gradient-stops",
-                    kw("var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to)"),
-                    span,
-                )?,
-            ]);
-        }
-    } else if let Some(rest) = token.strip_prefix("to-")
-        && let Some(val) = parse_color_value(rest)
-    {
-        return Ok(vec![make_rule(modifiers, "--tw-gradient-to", val, span)?]);
-    }
-
-    // 7. Grid Spans & Line Clamp: col-span-2, col-start-3, col-end-4, row-span-2, line-clamp-2
+    // 5. Grid Spans & Line Clamp: col-span-2, col-start-3, col-end-4, row-span-2, line-clamp-2
     if let Some(rest) = token.strip_prefix("col-span-") {
         if let Ok(n) = rest.parse::<usize>() {
             return Ok(vec![make_rule(
@@ -508,17 +392,28 @@ fn resolve_pattern_utility(
         ]);
     }
 
-    // 8. 任意值与动态表达式语法, 如 `w-[100px]` 或 `p-[$(pad_val)]`
+    // 6. 任意值与动态表达式语法, 如 `w-[100px]` 或 `p-[$(pad_val)]`
     if let Some((prefix, raw_val)) = parse_arbitrary_syntax(token) {
         return resolve_arbitrary(modifiers, prefix, raw_val, span);
     }
 
-    // 9. 数值、分数 (1/2, 1/3) 与方向边距/定位 Utility 解析
+    // 7. 交给 `silex_tw_core` 的完整解析器。
+    //
+    //    静态表只预计算了 `classes.json` 里那 22 879 个类名；`rounded-t-7`、`p-97`
+    //    这类同样有规律、只是没被 Tailwind 列举出来的词条不在表里，但 core 解析得了。
+    //    过去它们落到下面的 `resolve_numeric_utility`——那是一份与 core 平行的实现，
+    //    `rounded-*-sm` 在 core 侧早已修正为 v4 的 0.25rem，宏这份却还留着 v3 的
+    //    0.125rem，只因静态表优先命中才没暴露。走 core 之后这类分叉不可能再出现。
+    if let Some(sets) = silex_tw_core::resolve_class(token, &MacroCtx) {
+        return rule_sets_to_rules(&modifiers, sets, span);
+    }
+
+    // 8. 数值、分数 (1/2, 1/3) 与方向边距/定位 Utility 解析（core 未覆盖的规律）
     if let Some(rules) = resolve_numeric_utility(&modifiers, token, span) {
         return Ok(rules);
     }
 
-    // 10. Levenshtein 智能纠错与建议
+    // 9. Levenshtein 智能纠错与建议
     let suggestion = find_best_suggestion(token);
     let msg = match suggestion {
         Some(s) => format!(

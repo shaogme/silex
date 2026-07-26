@@ -28,6 +28,7 @@ phf = { version = "0.11", features = ["macros"] }
 lightningcss = { version = "1.0.0-alpha.71", optional = true , default-features = false }
 
 silex_hash = { workspace = true, optional = true }
+silex_tw_core = { workspace = true, optional = true }
 
 [dev-dependencies]
 # silex.workspace = true
@@ -36,6 +37,6 @@ silex_hash = { workspace = true, optional = true }
 default = ["component", "css", "tw", "store", "route"]
 component = []
 css = ["dep:lightningcss", "dep:silex_hash"]
-tw = ["css"]
+tw = ["css", "dep:silex_tw_core"]
 store = []
 route = []

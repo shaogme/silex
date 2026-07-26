@@ -1,0 +1,19 @@
+[package]
+name = "silex_tw_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Shared compile-time Tailwind utility resolution core for Silex: the single source of truth behind both the `tw!` macro and the static rule-table generator."
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }

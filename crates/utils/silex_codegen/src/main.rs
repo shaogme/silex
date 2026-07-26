@@ -1,5 +1,3 @@
-#[macro_use]
-mod utils;
 mod css;
 mod tags;
 mod tw;
