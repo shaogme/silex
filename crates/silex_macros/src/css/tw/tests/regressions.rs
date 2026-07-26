@@ -227,32 +227,120 @@ fn arbitrary_pseudo_class_passthrough_still_works() {
 
 #[test]
 fn opacity_suffix_is_always_a_percentage() {
-    use crate::css::tw::ast::UtilityValue;
-    use crate::css::tw::resolver::palette::parse_color_value;
-
-    // `/1` = 1%，不是 100%
-    assert_eq!(
-        parse_color_value("red-500/1"),
-        Some(UtilityValue::ArbitraryLiteral(
-            "rgba(251, 44, 54, 0.01)".to_string()
-        ))
-    );
-    assert_eq!(
-        parse_color_value("red-500/50"),
-        Some(UtilityValue::ArbitraryLiteral(
-            "rgba(251, 44, 54, 0.5)".to_string()
-        ))
-    );
+    // `/1` = 1%，不是 100%。断言编译产物而不是内部函数，
+    // 这样无论解析走静态表还是模式兜底都能拦住。
+    assert_contains("bg-red-500/1", "background-color:#fb2c3603");
+    assert_contains("bg-red-500/50", "background-color:#fb2c3680");
     // 小数不透明度走任意值语法 `/[0.5]`
-    assert_eq!(
-        parse_color_value("red-500/[0.5]"),
-        Some(UtilityValue::ArbitraryLiteral(
-            "rgba(251, 44, 54, 0.5)".to_string()
-        ))
-    );
+    assert_contains("bg-red-500/[0.5]", "background-color:#fb2c3680");
 }
 
 #[test]
 fn fractional_opacity_arbitrary_syntax_compiles() {
     assert_contains("text-red-500/[0.5]", "color:#fb2c3680");
+}
+
+// ---------------------------------------------------------------------------
+// §3.1 双 resolver 合并后修掉的漂移
+// ---------------------------------------------------------------------------
+
+/// Silex 把渐变方向内联进了 `linear-gradient(to right, var(--tw-gradient-stops))`，
+/// 所以 `--tw-gradient-stops` 必须由色标工具类自己拼出来。
+///
+/// 合并前静态表里的 `from-*` 只写 `--tw-gradient-from`，宏兜底路径那份"会拼 stops"的
+/// 实现因为静态表优先命中而成了死代码——结果 `bg-linear-to-r from-… to-…` 产出的
+/// `linear-gradient(to right, )` 是无效声明，渐变整个不显示，且无任何报错。
+#[test]
+fn gradient_color_stops_define_the_stops_variable() {
+    let css = css_of("bg-linear-to-r from-blue-500 to-pink-500");
+    assert!(
+        css.contains("--tw-gradient-stops:var(--tw-gradient-from), var(--tw-gradient-to)"),
+        "渐变必须定义 --tw-gradient-stops，否则 background-image 整条失效，实得:\n{css}"
+    );
+    assert!(css.contains("--tw-gradient-from:#2b7fff"), "{css}");
+    assert!(css.contains("--tw-gradient-to:#f6339a"), "{css}");
+
+    assert_contains(
+        "via-purple-500",
+        "--tw-gradient-stops:var(--tw-gradient-from), var(--tw-gradient-via), var(--tw-gradient-to)",
+    );
+}
+
+/// `placeholder-*` 的颜色落在 `::placeholder` 上，不是元素自身。
+/// 合并前静态表没有承载伴生选择器的位置，291 个 `placeholder-*` 全都把颜色写在了元素上。
+#[test]
+fn placeholder_color_targets_the_placeholder_pseudo_element() {
+    let css = css_of("placeholder-red-500");
+    assert!(
+        css.contains("::placeholder{color:#fb2c36}"),
+        "placeholder-* 必须作用于 ::placeholder，实得:\n{css}"
+    );
+}
+
+/// `divide-*` 的颜色落在相邻子元素之间。静态表与模式解析两条路径必须给出同一个选择器。
+#[test]
+fn divide_color_targets_adjacent_children() {
+    let css = css_of("divide-red-500");
+    assert!(
+        css.contains(">:not([hidden])~:not([hidden]){border-color:#fb2c36}"),
+        "divide-* 必须作用于相邻子元素，实得:\n{css}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// §2.8 多义前缀按值类型分派
+// ---------------------------------------------------------------------------
+
+/// 同一个前缀接长度和接颜色必须落到不同属性。
+/// 此前靠"先查哪张表"的隐式顺序决定，只能有一种解释。
+#[test]
+fn ambiguous_prefixes_dispatch_on_the_value_kind() {
+    // text-<长度> 是字号，不是颜色 —— 此前产出 `color:14px` 这种非法 CSS
+    assert_contains("text-[14px]", "font-size:14px");
+    assert_contains("text-[#818cf8]", "color:#818cf8");
+
+    // 逻辑方向边框：长度走宽度，颜色走颜色
+    assert_contains("border-s-[3px]", "border-inline-start-width:3px");
+    assert_contains("border-s-[red]", "border-inline-start-color:red");
+    assert_contains("border-[3px]", "border-width:3px");
+    assert_contains("border-[red]", "border-color:red");
+
+    // bg- 按值类型分派到 image / position / size
+    assert_contains(
+        "bg-[url(https://a.com/b.png)]",
+        "background-image:url(https://a.com/b.png)",
+    );
+    assert_contains("bg-[#1e293b]", "background-color:#1e293b");
+
+    // 非颜色、非尺寸的复合值仍应落到尺寸前缀的目标属性上
+    assert_contains("shadow-[0_0_0_1px_red]", "box-shadow:0 0 0 1px red");
+}
+
+/// `ring-[…]` 的宽度形态要连带铺 box-shadow 载体，颜色形态走 `--tw-ring-color`
+#[test]
+fn ring_arbitrary_values_split_by_kind() {
+    assert_contains("ring-[3px]", "--tw-ring-width:3px");
+    assert_contains("ring-[rgba(79,70,229,.2)]", "--tw-ring-color:");
+}
+
+/// 宏兜底路径与静态表必须用同一份圆角档位表。
+///
+/// 第二阶段的对拍把 `rounded-*-sm` 从 v3 的 0.125rem 修正为 v4 的 0.25rem，
+/// 但只改了 codegen 那一份；宏侧 `numeric.rs` 里的副本一直留着旧值，
+/// 靠"静态表优先命中"才没暴露。现在两条路径共用 core 的实现。
+#[test]
+fn rounded_scale_has_a_single_source() {
+    assert_contains("rounded-sm", "border-radius:.25rem");
+    assert_contains("rounded-t-sm", "border-top-left-radius:.25rem");
+    assert_contains("rounded-tl-sm", "border-top-left-radius:.25rem");
+}
+
+/// 颜色前缀表是唯一真值：这批前缀此前只有 codegen 侧认识，
+/// macro 侧的 `ORDERED_PREFIXES` 只有 12 条，两侧覆盖范围不一致。
+#[test]
+fn extended_color_prefixes_resolve_to_their_own_properties() {
+    assert_contains("text-shadow-red-500", "--tw-text-shadow-color:#fb2c36");
+    assert_contains("shadow-red-500", "--tw-shadow-color:#fb2c36");
+    assert_contains("decoration-red-500", "text-decoration-color:#fb2c36");
+    assert_contains("inset-ring-red-500", "--tw-inset-ring-color:#fb2c36");
 }

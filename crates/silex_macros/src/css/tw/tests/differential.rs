@@ -41,10 +41,6 @@ enum Divergence {
 /// 台账是"已知且已决定暂不处理"的清单，不是"跑不过就往里塞"的垃圾桶。
 #[rustfmt::skip]
 const KNOWN_DIVERGENCES: &[(&str, Divergence, &str)] = &[
-    // --- 缺陷：多义前缀盲映射（报告 §2.8，第三阶段第 13 项）-------------------
-    ("text-[14px]", Divergence::Mechanism,
-     "text-<长度> 应映射到 font-size，当前 color_prefix_to_prop 无条件返回 color，产出 `color:14px`"),
-
     // --- 缺陷：数值型 flex 被当作长度（本轮对拍新发现）-----------------------
     ("flex-4",  Divergence::ValueOnly, "flex-<数字> 应为 `flex:4`，当前按 RemScale 求值成 `flex:1rem`"),
     ("flex-10", Divergence::ValueOnly, "同 flex-4"),

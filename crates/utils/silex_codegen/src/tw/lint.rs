@@ -7,7 +7,22 @@
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::{palette::ColorShadeInfo, resolver::resolve_css_rules};
+use silex_tw_core::{ColorShadeInfo, JsonPalette, resolve_class};
+
+/// 把一个类名解析成扁平的 `(属性, 值)` 序列，丢掉伴生选择器——
+/// 属性名/值级别的校验不关心声明落在哪个选择器上。
+fn flat_rules(
+    class: &str,
+    palette: &BTreeMap<String, Vec<ColorShadeInfo>>,
+) -> Option<Vec<(&'static str, String)>> {
+    let sets = resolve_class(class, &JsonPalette(palette))?;
+    Some(
+        sets.into_iter()
+            .flat_map(|s| s.decls)
+            .map(|d| (d.prop, d.value.into_owned()))
+            .collect(),
+    )
+}
 
 /// MDN 属性表未收录、但确实合法/项目自定义的属性白名单
 const PROPERTY_ALLOWLIST: &[&str] = &[
@@ -50,7 +65,7 @@ pub fn validate_resolver_properties(
     let mut offenders: BTreeMap<String, String> = BTreeMap::new();
 
     for class in classes.iter().chain(test_cases.iter()) {
-        let Some(rules) = resolve_css_rules(class, palette) else {
+        let Some(rules) = flat_rules(class, palette) else {
             continue;
         };
         for (prop, _) in rules {
@@ -98,7 +113,7 @@ pub fn validate_resolver_values(
     };
 
     for class in classes.iter().chain(test_cases.iter()) {
-        let Some(rules) = resolve_css_rules(class, palette) else {
+        let Some(rules) = flat_rules(class, palette) else {
             continue;
         };
         for (prop, value) in rules {

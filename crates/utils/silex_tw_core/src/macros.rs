@@ -1,5 +1,6 @@
 /// 快捷宏：用于构造 `Cow<'static, str>` 静态规则切片、Vector 或单个 Cow/Tuple
-#[macro_export]
+///
+/// 仅在 crate 内部通过 `#[macro_use]` 的文本作用域可见，不对外导出。
 macro_rules! cow {
     () => {
         &[] as &[(&'static str, ::std::borrow::Cow<'static, str>)]

@@ -77,7 +77,9 @@ fn expected_value(val: &StaticVal) -> Option<String> {
 fn table_examples_compile_to_exactly_the_expected_declarations() {
     let mut failures = Vec::new();
 
-    for &(class_name, expected_rules) in TEST_CASE_RULES {
+    // 伴生选择器（`placeholder-*` 的 `::placeholder` 等）在这里不参与断言——
+    // 声明落在哪个选择器上由 `variant_matrix` 的选择器精确断言守护。
+    for &(class_name, _selector, expected_rules) in TEST_CASE_RULES {
         let decls = match class_declarations(class_name) {
             Ok(d) => d,
             Err(e) => {
