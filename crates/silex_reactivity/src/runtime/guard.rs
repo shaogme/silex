@@ -6,8 +6,9 @@
 //! 被 `take()` 出来的计算闭包则会永久丢失（AUDIT P2）。
 
 use crate::{
+    ReactiveError, ReactiveResult,
     core::{algorithm::NodeState, arena::Index as NodeId, value::AnyValue, value::ThunkValue},
-    runtime::{Runtime, scheduler::WorkSpace},
+    runtime::{Runtime, scheduler::WorkSpace, storage::Payload},
 };
 use std::{
     cell::{Cell, RefCell},
@@ -233,19 +234,20 @@ impl Drop for NodeRunGuard<'_> {
         // 之后本该读到的那些没有。彻底的修法要求依赖收集本身是事务性的
         // （新依赖集合先攒在一边、跑完才整体换上），那是阶段三的事。
         let interrupted = std::thread::panicking();
+        let computation = self.computation.take();
 
-        if let Some(node) = self.rt.storage.reactive.get_mut(self.id) {
+        self.rt.storage.reactive.with_mut(self.id, |node| {
             let is_lazy = node.signal.is_some();
             if interrupted && is_lazy {
                 node.state = NodeState::Dirty;
             }
             if let Some(effect) = node.effect.as_mut() {
                 effect.running = false;
-                if let Some(f) = self.computation.take() {
+                if let Some(f) = computation {
                     effect.computation = Some(f);
                 }
             }
-        }
+        });
         // 节点在自己的运行期间被销毁时走到这里：`computation` 随守卫一起析构。
     }
 }
@@ -293,17 +295,89 @@ impl<'a> SignalValueGuard<'a> {
 
 impl Drop for SignalValueGuard<'_> {
     fn drop(&mut self) {
-        if let Some(node) = self.rt.storage.reactive.get_mut(self.id)
-            && let Some(signal) = node.signal.as_mut()
-        {
-            signal.updating = false;
-            if self.bump_version {
-                signal.version = signal.version.wrapping_add(1);
+        // 闭包按**可变借用**捕获 `self.value`，而不是先 `take()` 出来再搬进去：
+        // `AnyValue` 是 32 字节，写路径上每一次多余的按值搬运都要真的 memcpy
+        // 一遍。这样值只被搬一次（从守卫直接回到节点）。
+        let rt = self.rt;
+        let bump = self.bump_version;
+        let slot = &mut self.value;
+        rt.storage.reactive.with_mut(self.id, |node| {
+            if let Some(signal) = node.signal.as_mut() {
+                signal.updating = false;
+                if bump {
+                    signal.version = signal.version.wrapping_add(1);
+                }
+                if let Some(value) = slot.take() {
+                    signal.value = value;
+                }
             }
-            if let Some(value) = self.value.take() {
-                signal.value = value;
+        });
+        // 节点在闭包执行期间被销毁时走到这里：值随守卫一起析构。
+    }
+}
+
+/// 非响应式载荷（stored value / callback / node-ref）在用户闭包执行期间的
+/// “借出”状态 —— [`SignalValueGuard`] 那套纪律在 `extras` 表上的对应物。
+///
+/// 从前这条路径上根本没有守卫：`try_update_stored_value` 直接把
+/// `SparseSecondaryMap::get_mut` 交出来的 `&mut AnyValue` 递给用户闭包。
+/// 用户在闭包里读写**任何别的** stored value 或 signal 都会再动一次同一张表，
+/// 在 Stacked Borrows 下这就作废了手里那个 `&mut` —— 而这是一段完全普通的用法：
+///
+/// ```ignore
+/// store::try_update::<Config, _>(cfg, |c| {
+///     c.theme = signal::try_get::<Theme>(theme).unwrap();  // ← 作废了 c
+/// });                                                      // ← 之后用 c 即 UB
+/// ```
+///
+/// 现在值在闭包执行期间被整个移出节点（节点里放占位值），运行时不再持有任何指向
+/// 该条目的引用；重入访问同一个节点会拿到
+/// [`ReactiveError::Reentrant`] 而不是静默的 UB（审计报告 §2.1）。
+pub(crate) struct PayloadGuard<'a> {
+    rt: &'a Runtime,
+    id: NodeId,
+    value: Option<AnyValue>,
+}
+
+impl<'a> PayloadGuard<'a> {
+    /// 把载荷移出节点，节点里换成占位值。
+    pub(crate) fn acquire(rt: &'a Runtime, id: NodeId) -> ReactiveResult<Self> {
+        let taken = rt
+            .storage
+            .extras
+            .with_mut(id, |payload: &mut Payload| {
+                if payload.borrowed {
+                    return Err(ReactiveError::Reentrant);
+                }
+                payload.borrowed = true;
+                Ok(mem::replace(&mut payload.value, AnyValue::placeholder()))
+            })
+            .ok_or(ReactiveError::NoSuchNode)??;
+        Ok(Self {
+            rt,
+            id,
+            value: Some(taken),
+        })
+    }
+
+    pub(crate) fn value(&self) -> &AnyValue {
+        self.value.as_ref().expect("payload is borrowed out")
+    }
+
+    pub(crate) fn value_mut(&mut self) -> &mut AnyValue {
+        self.value.as_mut().expect("payload is borrowed out")
+    }
+}
+
+impl Drop for PayloadGuard<'_> {
+    fn drop(&mut self) {
+        let value = self.value.take();
+        self.rt.storage.extras.with_mut(self.id, |payload| {
+            payload.borrowed = false;
+            if let Some(value) = value {
+                payload.value = value;
             }
-        }
+        });
         // 节点在闭包执行期间被销毁时走到这里：值随守卫一起析构。
     }
 }

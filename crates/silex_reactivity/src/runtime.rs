@@ -1,4 +1,4 @@
-use std::{any::Any, mem, rc::Rc};
+use std::mem;
 
 pub(crate) mod guard;
 pub(crate) mod scheduler;
@@ -7,15 +7,15 @@ pub(crate) mod storage;
 
 use self::{
     guard::{
-        ComputationGuard, DepthGuard, EvalBuffers, NodeRunGuard, PropagateBuffers, QueueGuard,
-        SignalValueGuard,
+        ComputationGuard, DepthGuard, EvalBuffers, NodeRunGuard, PayloadGuard, PropagateBuffers,
+        QueueGuard, SignalValueGuard,
     },
     scheduler::*,
     scope::Scopes,
     storage::*,
 };
 use crate::{
-    DependencyList, NodeList, RawOpBuffer,
+    DependencyList, NodeList, ReactiveError, ReactiveResult,
     core::{
         FuncPtr,
         algorithm::{
@@ -42,16 +42,34 @@ pub(crate) static RUNTIME: silex_thread_local::ThreadLocal<Runtime> =
 /// 的真实调用点一次登记的 signal 数是个位数到十几个。
 const TRACK_BATCH: usize = 16;
 
-/// [`Runtime::with_signal_value_mut`] 借不到值时的原因。
-///
-/// 两种失败必须区分开：节点不存在是调用方常见且合法的情况（销毁之后继续写），
-/// 而重入则是违反契约的编程错误。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SignalBorrowError {
-    /// 节点不存在、已销毁，或根本不是一个 signal。
-    Missing,
-    /// 值正被外层的 update 闭包借出（不允许重入）。
-    Reentrant,
+impl Runtime {
+    // --- 种类判定：为 `Handle::<K>::is_alive` 提供依据 ---
+
+    /// 节点存在（不问种类）。
+    pub(crate) fn node_exists(&self, id: NodeId) -> bool {
+        self.storage.graph.get(id).is_some()
+    }
+
+    /// 节点带一个可读的值（signal / memo / derived 三者共用这条）。
+    pub(crate) fn node_has_value(&self, id: NodeId) -> bool {
+        self.storage
+            .reactive
+            .get(id)
+            .is_some_and(|n| n.signal.is_some())
+    }
+
+    /// 节点是一个 effect（有计算、没有值）。
+    pub(crate) fn node_is_effect(&self, id: NodeId) -> bool {
+        self.storage
+            .reactive
+            .get(id)
+            .is_some_and(|n| n.effect.is_some() && n.signal.is_none())
+    }
+
+    /// 节点带一个非响应式载荷（stored value / callback / node-ref）。
+    pub(crate) fn node_has_payload(&self, id: NodeId) -> bool {
+        self.storage.extras.contains_key(id)
+    }
 }
 
 impl Runtime {
@@ -138,17 +156,18 @@ impl Runtime {
     /// 借用严格限制在本函数内：调用方**不得**在调用它时还持有指向 `reactive`
     /// 表里任何条目的引用。
     fn subscribe(&self, target_id: NodeId, observer: NodeId, observer_version: u32) -> Option<u32> {
-        let target_node = self.storage.reactive.get_mut(target_id)?;
-        let signal_data = target_node.signal.as_mut()?;
-        if let Some((last_observer, last_version)) = signal_data.last_tracked_by
-            && last_observer == observer
-            && last_version == observer_version
-        {
-            return None;
-        }
-        signal_data.subscribers.push(observer);
-        signal_data.last_tracked_by = Some((observer, observer_version));
-        Some(signal_data.version)
+        self.storage.reactive.with_mut(target_id, |target_node| {
+            let signal_data = target_node.signal.as_mut()?;
+            if let Some((last_observer, last_version)) = signal_data.last_tracked_by
+                && last_observer == observer
+                && last_version == observer_version
+            {
+                return None;
+            }
+            signal_data.subscribers.push(observer);
+            signal_data.last_tracked_by = Some((observer, observer_version));
+            Some(signal_data.version)
+        })?
     }
 
     /// 把若干条 `(target, version)` 依赖边一次性写进 observer 的依赖表。
@@ -156,13 +175,13 @@ impl Runtime {
         if edges.is_empty() {
             return;
         }
-        if let Some(observer_node) = self.storage.reactive.get_mut(observer)
-            && let Some(eff) = &mut observer_node.effect
-        {
-            for &edge in edges {
-                eff.dependencies.push(edge);
+        self.storage.reactive.with_mut(observer, |observer_node| {
+            if let Some(eff) = &mut observer_node.effect {
+                for &edge in edges {
+                    eff.dependencies.push(edge);
+                }
             }
-        }
+        });
     }
 
     pub(crate) fn track_dependency(&self, target_id: NodeId) {
@@ -184,10 +203,14 @@ impl Runtime {
     /// 每 [`TRACK_BATCH`] 个 target 一次。
     ///
     /// 这里**不能**图省事，在整个循环期间一直握着 observer 节点的 `&mut`：
-    /// 循环体内反复调用 `reactive.get_mut(target_id)`，只要某个 target 的
-    /// arena 下标与 observer 相同（句柄被回收复用之后就会这样），那次 `get_mut`
-    /// 就会在 Stacked Borrows 下把外层的 `&mut` 作废 —— 之后再往依赖表里 push
-    /// 即为未定义行为。`tests/aliasing.rs` 里有对应的 Miri 探针。
+    /// 循环体内反复访问 `reactive` 表，只要某个 target 的 arena 下标与 observer
+    /// 相同（句柄被回收复用之后就会这样），那次访问就会在 Stacked Borrows 下把
+    /// 外层的 `&mut` 作废 —— 之后再往依赖表里 push 即为未定义行为。
+    /// `tests/aliasing.rs` 里有对应的 Miri 探针。
+    ///
+    /// 现在这已经是**结构上**不可能了：`SparseSecondaryMap` 只提供闭包作用域的
+    /// `with_mut`，借用无法逃逸出一次调用（审计报告 §2.1）。下面攒批再写回的
+    /// 写法保留下来，是因为它顺带把 observer 的查表摊薄了。
     pub(crate) fn track_dependencies(&self, target_ids: &[NodeId]) {
         if target_ids.is_empty() {
             return;
@@ -324,7 +347,7 @@ impl Runtime {
     /// 与之重叠的引用，这是实打实的 UB（AUDIT P5）。
     ///
     /// 代价是一条明确的契约：**不允许在 update 闭包内访问同一个 signal**。
-    /// debug 构建下会断言失败，release 下该次访问返回 [`SignalBorrowError::Reentrant`]。
+    /// debug 构建下会断言失败，release 下该次访问返回 [`ReactiveError::Reentrant`]。
     ///
     /// 版本号由 `f` 的第二个返回值决定：`true` 表示“值真的被改写了”，
     /// 此时版本号在**归还值的那一次查表里**顺带递增，写路径不必为它再查一次表
@@ -333,25 +356,31 @@ impl Runtime {
         &self,
         id: NodeId,
         f: impl FnOnce(&mut AnyValue) -> (R, bool),
-    ) -> Result<R, SignalBorrowError> {
-        let taken = {
-            let Some(node) = self.storage.reactive.get_mut(id) else {
-                return Err(SignalBorrowError::Missing);
-            };
-            let Some(signal) = node.signal.as_mut() else {
-                return Err(SignalBorrowError::Missing);
-            };
-            if signal.updating {
-                debug_assert!(
-                    !signal.updating,
-                    "在 update 闭包内重入访问同一个 signal 是不被支持的"
-                );
-                return Err(SignalBorrowError::Reentrant);
-            }
-            signal.updating = true;
-            mem::replace(&mut signal.value, AnyValue::placeholder())
-            // 借用在此结束 —— 用户闭包在借用作用域之外执行。
-        };
+    ) -> ReactiveResult<R> {
+        // 取值的借用严格关在 `with_mut` 里；用户闭包在它之外执行。
+        //
+        // 值走**出参**而不是闭包的返回值：`Result<AnyValue, _>` 是 40 字节，
+        // 让它穿过 `with_mut` 的泛型返回位置会多两次 memcpy，而这是写路径。
+        let mut taken = None;
+        self.storage
+            .reactive
+            .with_mut(id, |node| {
+                let Some(signal) = node.signal.as_mut() else {
+                    return Err(ReactiveError::WrongKind);
+                };
+                if signal.updating {
+                    debug_assert!(
+                        !signal.updating,
+                        "在 update 闭包内重入访问同一个 signal 是不被支持的"
+                    );
+                    return Err(ReactiveError::Reentrant);
+                }
+                signal.updating = true;
+                taken = Some(mem::replace(&mut signal.value, AnyValue::placeholder()));
+                Ok(())
+            })
+            .ok_or(ReactiveError::NoSuchNode)??;
+        let taken = taken.expect("借出成功时值一定在手里");
 
         // 守卫保证值一定会被放回（panic 展开时也一样）。
         let mut borrowed = SignalValueGuard::new(self, id, taken);
@@ -372,7 +401,7 @@ impl Runtime {
         &self,
         id: NodeId,
         updater: &mut dyn FnMut(&mut AnyValue) -> bool,
-    ) -> Result<bool, SignalBorrowError> {
+    ) -> ReactiveResult<bool> {
         let applied = self.with_signal_value_mut(id, |value| {
             let applied = updater(value);
             // 第二个分量即“请递增版本号”，与“写入真的发生了”是同一件事。
@@ -386,24 +415,88 @@ impl Runtime {
         Ok(applied)
     }
 
-    pub(crate) fn get_signal_value(&self, id: NodeId) -> Option<&AnyValue> {
-        self.prepare_read(id);
-        self.storage
+    /// 借用一个节点的当前值，不做求值也不建立依赖。
+    ///
+    /// **返回的引用不得跨越任何会执行用户代码的调用** —— 需要把它交给用户闭包时
+    /// 请改用 [`Runtime::with_signal_value`]，那条路径会先把值移出节点。
+    /// 这里唯一被允许的“用户代码”是 `T::clone`（见 crate 文档里的残留契约）。
+    pub(crate) fn signal_value(&self, id: NodeId) -> ReactiveResult<&AnyValue> {
+        match self
+            .storage
             .reactive
-            .get(id)?
-            .signal
-            .as_ref()
-            .map(|s| &s.value)
+            .get(id)
+            .and_then(|n| n.signal.as_ref())
+        {
+            Some(s) => Ok(&s.value),
+            // 节点还在图里，只是它没有值（是个 effect、或者是个 stored value）。
+            None if self.node_exists(id) => Err(ReactiveError::WrongKind),
+            None => Err(ReactiveError::NoSuchNode),
+        }
     }
 
-    pub(crate) fn get_signal_value_untracked(&self, id: NodeId) -> Option<&AnyValue> {
-        self.prepare_read_untracked(id);
-        self.storage
+    /// 一次 downcast 失败到底是什么原因。
+    ///
+    /// 值正被某个 update / with 闭包借出时，节点里放的是占位值，downcast 必然
+    /// 失败 —— 不加区分的话，调用方会拿到一个把“你重入了”说成“你类型写错了”的
+    /// 诊断。但这个判定**不能**放在读路径上：读是这个 crate 最热的操作，而重入
+    /// 是异常情况。所以它待在这里，只有 downcast 真的失败时才会被调用，
+    /// 而且标了 `#[cold]` 让它不占用热路径的指令缓存。
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn classify_value_failure(&self, id: NodeId) -> ReactiveError {
+        let borrowed = self
+            .storage
             .reactive
-            .get(id)?
-            .signal
-            .as_ref()
-            .map(|s| &s.value)
+            .get(id)
+            .and_then(|n| n.signal.as_ref())
+            .is_some_and(|s| s.updating);
+        if borrowed {
+            ReactiveError::Reentrant
+        } else {
+            ReactiveError::TypeMismatch
+        }
+    }
+
+    pub(crate) fn get_signal_value(&self, id: NodeId) -> ReactiveResult<&AnyValue> {
+        self.prepare_read(id);
+        self.signal_value(id)
+    }
+
+    pub(crate) fn get_signal_value_untracked(&self, id: NodeId) -> ReactiveResult<&AnyValue> {
+        self.prepare_read_untracked(id);
+        self.signal_value(id)
+    }
+
+    /// 把 signal 的值移出节点、交给**用户闭包**、再放回去（只读版本）。
+    ///
+    /// 只读也要移出：闭包是用户代码，它可以写任何别的节点，那一次写入会在
+    /// Stacked Borrows 下作废运行时手里这个从同一张表派生出来的引用
+    /// （审计报告 §2.1 违反 #3）。代价是与写入侧一致的一条契约 ——
+    /// **不允许在闭包内访问同一个 signal**，否则拿到
+    /// [`ReactiveError::Reentrant`]。
+    pub(crate) fn with_signal_value<R>(
+        &self,
+        id: NodeId,
+        f: impl FnOnce(&AnyValue) -> R,
+    ) -> ReactiveResult<R> {
+        let taken = self
+            .storage
+            .reactive
+            .with_mut(id, |node| {
+                let Some(signal) = node.signal.as_mut() else {
+                    return Err(ReactiveError::WrongKind);
+                };
+                if signal.updating {
+                    return Err(ReactiveError::Reentrant);
+                }
+                signal.updating = true;
+                Ok(mem::replace(&mut signal.value, AnyValue::placeholder()))
+            })
+            .ok_or(ReactiveError::NoSuchNode)??;
+
+        // 守卫保证值一定会被放回（闭包 panic 时也一样），且不递增版本号。
+        let borrowed = SignalValueGuard::new(self, id, taken);
+        Ok(f(borrowed.value().expect("just moved in")))
     }
 
     pub(crate) fn prepare_memo_node(&self, id: NodeId, computation: ThunkValue) {
@@ -430,12 +523,12 @@ impl Runtime {
 
     pub(crate) fn commit_update(&self, id: NodeId, value: AnyValue, changed: bool) {
         if changed {
-            if let Some(n) = self.storage.reactive.get_mut(id)
-                && let Some(signal) = &mut n.signal
-            {
-                signal.version = signal.version.wrapping_add(1);
-                signal.value = value;
-            }
+            self.storage.reactive.with_mut(id, |n| {
+                if let Some(signal) = &mut n.signal {
+                    signal.version = signal.version.wrapping_add(1);
+                    signal.value = value;
+                }
+            });
             self.notify_update(id);
         }
     }
@@ -481,22 +574,6 @@ impl Runtime {
         }
     }
 
-    #[track_caller]
-    pub(crate) fn create_closure(&self, f: Box<dyn Any>) -> NodeId {
-        let id = self.register_node();
-        self.storage
-            .extras
-            .insert(id, ExtraData::Closure(ClosureData { f }));
-        id
-    }
-
-    #[track_caller]
-    pub(crate) fn create_op(&self, data: RawOpBuffer) -> NodeId {
-        let id = self.register_node();
-        self.storage.extras.insert(id, ExtraData::Op(OpData(data)));
-        id
-    }
-
     /// 用给定的载荷初始化一个 memo / derived 节点，并立即完成首次计算。
     ///
     /// 计算闭包先被装进节点，再由统一的 [`Runtime::run_node`] 驱动首跑：
@@ -515,49 +592,42 @@ impl Runtime {
         self.run_node(id);
     }
 
+    /// 建一个带非响应式载荷的节点（stored value / callback / node-ref 共用）。
     #[track_caller]
-    pub(crate) fn store_value(&self, value: AnyValue) -> NodeId {
+    pub(crate) fn store_payload(&self, value: AnyValue) -> NodeId {
         let id = self.register_node();
-        self.storage
-            .extras
-            .insert(id, ExtraData::StoredValue(StoredValueData { value }));
+        self.storage.extras.insert(id, Payload::new(value));
         id
     }
 
-    pub(crate) fn get_stored_value(&self, id: NodeId) -> Option<&AnyValue> {
-        let extra = self.storage.extras.get(id)?;
-        if let ExtraData::StoredValue(sv) = extra {
-            Some(&sv.value)
-        } else {
-            None
-        }
+    /// 只读地借用一个载荷。
+    ///
+    /// **返回的引用不得跨越任何会执行用户代码的调用** —— 需要把它交给用户闭包时
+    /// 请改用 [`Runtime::with_payload`]，那条路径会先把值移出节点。
+    pub(crate) fn payload_value(&self, id: NodeId) -> Option<&AnyValue> {
+        self.storage.extras.get(id).map(|p| &p.value)
     }
 
-    pub(crate) fn get_stored_value_mut(&self, id: NodeId) -> Option<&mut AnyValue> {
-        let extra = self.storage.extras.get_mut(id)?;
-        if let ExtraData::StoredValue(sv) = extra {
-            Some(&mut sv.value)
-        } else {
-            None
-        }
+    /// 把载荷移出节点、交给**用户闭包**、再放回去。
+    ///
+    /// 这是所有会执行用户代码的载荷访问的唯一入口（审计报告 §2.1）。
+    pub(crate) fn with_payload<R>(
+        &self,
+        id: NodeId,
+        f: impl FnOnce(&AnyValue) -> R,
+    ) -> ReactiveResult<R> {
+        let borrowed = PayloadGuard::acquire(self, id)?;
+        Ok(f(borrowed.value()))
     }
 
-    #[track_caller]
-    pub(crate) fn register_callback_untyped(&self, f: Rc<dyn Fn(Box<dyn Any>)>) -> NodeId {
-        let id = self.register_node();
-        self.storage
-            .extras
-            .insert(id, ExtraData::Callback(CallbackData { f }));
-        id
-    }
-
-    #[track_caller]
-    pub(crate) fn register_node_ref(&self) -> NodeId {
-        let id = self.register_node();
-        self.storage
-            .extras
-            .insert(id, ExtraData::NodeRef(NodeRefData { element: None }));
-        id
+    /// 同上，可变版本。
+    pub(crate) fn with_payload_mut<R>(
+        &self,
+        id: NodeId,
+        f: impl FnOnce(&mut AnyValue) -> R,
+    ) -> ReactiveResult<R> {
+        let mut borrowed = PayloadGuard::acquire(self, id)?;
+        Ok(f(borrowed.value_mut()))
     }
 
     /// 取出节点内部值的裸指针（signal 与 stored value 都支持）。
@@ -567,19 +637,23 @@ impl Runtime {
     /// 契约见 [`crate::try_get_any_raw_untracked`]：调用方负责类型正确，
     /// 并保证在使用期间不发生任何会让该地址失效的操作。
     pub(crate) unsafe fn get_any_raw_ptr_untracked(&self, id: NodeId) -> Option<*const ()> {
+        // 先把节点算干净，**再**取指针。少了这一步，读一个脏 memo / derived 会
+        // 安静地拿到上一轮的值 —— 上层框架的类型擦除读取路径正是走这里，
+        // 而它读到的可能是任何一种可读节点。干净节点（普通 signal、stored value）
+        // 会在 `update_if_necessary` 的入口直接返回，不额外付钱（AUDIT 二轮 §1.3）。
+        //
+        // 顺序不能反：求值会执行用户代码（memo 闭包、被冲掉的 effect 队列），
+        // 那正是本函数的 `# Safety` 段里说的“会让指针失效”的操作。
+        self.update_if_necessary(id);
+
         if let Some(n) = self.storage.reactive.get(id)
             && let Some(s) = &n.signal
         {
             // SAFETY: 契约转嫁给调用方（见本函数的 `# Safety`）。
             return Some(unsafe { s.value.as_ptr() });
         }
-        if let Some(extra) = self.storage.extras.get(id)
-            && let ExtraData::StoredValue(sv) = extra
-        {
-            // SAFETY: 同上。
-            return Some(unsafe { sv.value.as_ptr() });
-        }
-        None
+        // SAFETY: 同上。
+        self.payload_value(id).map(|v| unsafe { v.as_ptr() })
     }
 
     pub(crate) fn batch<R>(&self, f: impl FnOnce() -> R) -> R {
@@ -607,22 +681,19 @@ impl Runtime {
         // 重入检查必须发生在任何破坏性操作之前 —— 一旦第二次执行前置阶段，
         // 节点的依赖列表会被清空、订阅关系被摘除，而重建订阅的那一步却因为
         // `computation` 已被借出而被跳过，该节点从此永久失联（AUDIT P1）。
-        let (computation, dependencies) = {
-            let Some(node) = self.storage.reactive.get_mut(id) else {
-                return false;
-            };
-            let Some(effect) = node.effect.as_mut() else {
-                return false;
-            };
+        let Some(Some((computation, dependencies))) = self.storage.reactive.with_mut(id, |node| {
+            let effect = node.effect.as_mut()?;
             if effect.running {
-                return false;
+                return None;
             }
             effect.running = true;
             effect.effect_version = effect.effect_version.wrapping_add(1);
-            (
+            Some((
                 effect.computation.take(),
                 mem::take(&mut effect.dependencies),
-            )
+            ))
+        }) else {
+            return false;
         };
 
         // 从这里开始，闭包的归还与重入锁的释放由守卫接管（panic 展开时同样生效）。
@@ -642,9 +713,9 @@ impl Runtime {
         //
         // 这里曾经有一个 `set_clean: bool` 参数，三个调用点全都传 `true`
         // —— 一个只会让读者以为“还存在另一种状态转换”的死参数，已删除。
-        if let Some(node) = self.storage.reactive.get_mut(id) {
-            node.state = NodeState::Clean;
-        }
+        self.storage
+            .reactive
+            .with_mut(id, |node| node.state = NodeState::Clean);
 
         let _ctx = ComputationGuard::enter(self, id);
         // SAFETY: 传给 thunk 的指针就是当前运行时本身，其生命周期覆盖整个调用。
@@ -671,20 +742,20 @@ impl Runtime {
         id: NodeId,
         compute_any: &mut dyn FnMut(Option<&AnyValue>) -> AnyValue,
     ) {
-        let taken = match self
+        let taken = self
             .storage
             .reactive
-            .get_mut(id)
-            .and_then(|n| n.signal.as_mut())
-        {
-            Some(signal) if !signal.updating => {
-                signal.updating = true;
-                Some(mem::replace(&mut signal.value, AnyValue::placeholder()))
-            }
-            // 节点不存在，或它的值正被某个 update 闭包借出：没有可用的旧值，
-            // 一律按“变了”处理，`commit_update` 自己会跳过不存在的节点。
-            _ => None,
-        };
+            .with_mut(id, |n| match n.signal.as_mut() {
+                Some(signal) if !signal.updating => {
+                    signal.updating = true;
+                    Some(mem::replace(&mut signal.value, AnyValue::placeholder()))
+                }
+                // 节点存在但它的值正被某个 update 闭包借出：没有可用的旧值。
+                _ => None,
+            })
+            // 节点不存在时同样没有旧值 —— 一律按“变了”处理，
+            // `commit_update` 自己会跳过不存在的节点。
+            .flatten();
 
         // 守卫保证旧值一定会被放回（计算闭包 panic 时也一样）。
         let borrowed = taken.map(|value| SignalValueGuard::new(self, id, value));

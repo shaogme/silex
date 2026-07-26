@@ -1,13 +1,26 @@
 use crate::{
-    NodeRef, RxNodeKind,
+    RxNodeKind,
     reactivity::{NodeId, OpPayloadHeader},
     traits::{RxData, RxGuard},
 };
-use silex_reactivity::{
-    is_closure_valid, is_op_valid, is_signal_valid, is_stored_value_valid, track_signal,
-    try_get_any_raw_untracked, try_with_closure, try_with_op,
-};
+use silex_reactivity::{SignalId, StoredId, signal, store, try_get_any_raw_untracked};
 use std::{mem::MaybeUninit, panic::Location};
+
+/// Op 载荷在运行时里的实际存储类型。
+///
+/// 从前是一个 64 字节的 `RawOpBuffer`（`Copy` + 永不析构，审计报告 §2.4）；
+/// 现在就是一个普通的 stored value，只是这一层仍然用裸指针去读它的头部 ——
+/// 具体的载荷类型 `P` 在这里已经被擦掉了，只剩下 `OpPayloadHeader` 这份布局约定。
+///
+/// # Safety
+///
+/// 读取者必须保证节点里存的确实是一个以 [`OpPayloadHeader`] 开头的载荷。
+/// 这条契约由 `Rx::new_op` 的调用方维持（`silex_rx` 宏生成的代码）。
+unsafe fn with_op_ptr<R>(id: NodeId, f: impl FnOnce(*const u8) -> R) -> Option<R> {
+    // SAFETY: 契约转嫁给调用方；指针在本表达式内立刻用掉，其间不重入运行时。
+    let ptr = unsafe { try_get_any_raw_untracked(id)? };
+    Some(f(ptr as *const u8))
+}
 
 /// 非泛型的 track 逻辑实现 (Dispatcher)。
 /// 剥离了泛型分发，使所有类型的 Rx 共享相同的机器码。
@@ -15,13 +28,18 @@ use std::{mem::MaybeUninit, panic::Location};
 pub fn track(id: NodeId, kind: RxNodeKind) {
     match kind {
         RxNodeKind::Signal | RxNodeKind::Stored | RxNodeKind::Closure => {
-            track_signal(id);
+            // 这里用的是 `RawNodeId` 这条**类型擦除的逃生出口**：本层的种类信息
+            // 在 `RxNodeKind` 里，不在句柄类型里。不是 signal 的条目会被静默跳过。
+            signal::track(id);
         }
         RxNodeKind::Op => {
-            let _ = try_with_op(id, |buffer| {
-                let header = unsafe { &*(buffer.as_ptr() as *const OpPayloadHeader) };
-                (header.track)(buffer.as_ptr());
-            });
+            // SAFETY: `RxNodeKind::Op` 保证载荷以 `OpPayloadHeader` 开头。
+            let _ = unsafe {
+                with_op_ptr(id, |ptr| {
+                    let header = &*(ptr as *const OpPayloadHeader);
+                    (header.track)(ptr);
+                })
+            };
         }
     }
 }
@@ -29,11 +47,13 @@ pub fn track(id: NodeId, kind: RxNodeKind) {
 /// 非泛型的销毁状态检查 (Dispatcher)。
 #[inline(always)]
 pub fn is_disposed(id: NodeId, kind: RxNodeKind) -> bool {
+    // 六个 `is_*_valid` 自由函数已经收敛成一个 `Handle::<K>::is_alive()`
+    // （审计报告 §3.1）。这一层的种类在 `RxNodeKind` 里，所以在这里断言回去。
     match kind {
-        RxNodeKind::Signal => !is_signal_valid(id),
-        RxNodeKind::Closure => !is_closure_valid(id),
-        RxNodeKind::Op => !is_op_valid(id),
-        RxNodeKind::Stored => !is_stored_value_valid(id),
+        RxNodeKind::Signal => !SignalId::from_raw_unchecked(id).is_alive(),
+        RxNodeKind::Closure | RxNodeKind::Op | RxNodeKind::Stored => {
+            !StoredId::from_raw_unchecked(id).is_alive()
+        }
     }
 }
 
@@ -79,11 +99,15 @@ pub fn report_disposed(
 pub unsafe fn read_to_ptr(id: NodeId, kind: RxNodeKind, out: *mut u8) -> bool {
     match kind {
         RxNodeKind::Signal | RxNodeKind::Stored => false,
-        RxNodeKind::Op => try_with_op(id, |buffer| {
-            let header = unsafe { &*(buffer.as_ptr() as *const OpPayloadHeader) };
-            unsafe { (header.read_to_ptr)(buffer.as_ptr(), out) }
-        })
-        .unwrap_or(false),
+        // SAFETY: `RxNodeKind::Op` 保证载荷以 `OpPayloadHeader` 开头；
+        // `out` 的容量由本函数的调用方保证。
+        RxNodeKind::Op => unsafe {
+            with_op_ptr(id, |ptr| {
+                let header = &*(ptr as *const OpPayloadHeader);
+                (header.read_to_ptr)(ptr, out)
+            })
+            .unwrap_or(false)
+        },
         RxNodeKind::Closure => {
             // 闭包目前不支持 read_to_ptr，因为它通常返回 T 的所有权。
             // 由调用者通过 try_with_closure 处理。
@@ -106,7 +130,7 @@ pub unsafe fn rx_read_node_untracked<'a, T: RxData>(
         RxNodeKind::Signal | RxNodeKind::Stored => unsafe {
             try_get_any_raw_untracked(id).map(|ptr| RxGuard::Borrowed {
                 value: &*(ptr as *const T),
-                token: Some(NodeRef::from_id(id)),
+                token: Some(id),
             })
         },
         RxNodeKind::Op => {
@@ -118,7 +142,10 @@ pub unsafe fn rx_read_node_untracked<'a, T: RxData>(
             }
         }
         RxNodeKind::Closure => {
-            try_with_closure::<Box<dyn Fn() -> T>, _>(id, |f| RxGuard::Owned(f()))
+            store::try_with::<Box<dyn Fn() -> T>, _>(StoredId::from_raw_unchecked(id), |f| {
+                RxGuard::Owned(f())
+            })
+            .ok()
         }
     }
 }
@@ -142,8 +169,10 @@ pub fn rx_try_with_node_untracked<T: RxData, U>(
                 None
             }
         }
-        RxNodeKind::Closure => {
-            silex_reactivity::try_with_closure::<Box<dyn Fn() -> T>, _>(id, |f| fun(&f()))
-        }
+        RxNodeKind::Closure => store::try_with::<Box<dyn Fn() -> T>, _>(
+            StoredId::from_raw_unchecked(id),
+            |f| fun(&f()),
+        )
+        .ok(),
     }
 }

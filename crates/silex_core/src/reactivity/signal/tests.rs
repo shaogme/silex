@@ -1,7 +1,7 @@
 use super::*;
 use crate::reactivity::RwSignal;
 use crate::traits::{RxGet, RxWrite};
-use silex_reactivity::create_scope;
+use silex_reactivity::scope::create as create_scope;
 use std::rc::Rc;
 
 #[test]
@@ -14,14 +14,14 @@ fn test_signal_derive_basic() {
         // derived signals use register_derived which uses initialize_memo_raw,
         // and we can read them natively as if they are reactive values.
         assert_eq!(
-            silex_reactivity::try_get_signal::<i32>(derived.node_id().unwrap()),
-            Some(20)
+            silex_reactivity::signal::try_get::<i32>(derived.node_id().unwrap()),
+            Ok(20)
         );
 
         rw.set(15);
         assert_eq!(
-            silex_reactivity::try_get_signal::<i32>(derived.node_id().unwrap()),
-            Some(30)
+            silex_reactivity::signal::try_get::<i32>(derived.node_id().unwrap()),
+            Ok(30)
         );
     });
 }
@@ -60,7 +60,11 @@ fn test_signal_ensure_node_id() {
         assert_eq!(inline_sig.node_id(), None);
 
         let node_id = inline_sig.ensure_node_id();
-        let stored_val = silex_reactivity::try_with_stored_value(node_id, |v: &u32| *v).unwrap();
+        let stored_val = silex_reactivity::store::try_with(
+            silex_reactivity::StoredId::from_raw_unchecked(node_id),
+            |v: &u32| *v,
+        )
+        .unwrap();
         assert_eq!(stored_val, 42u32);
     });
 }
@@ -132,7 +136,7 @@ fn test_ensure_node_id() {
         let id2 = inline.ensure_node_id();
         // The original inline signal still doesn't have an ID conceptually,
         // but ensure_node_id allocates one in the runtime graph
-        assert!(id2.index > 0);
+        assert_ne!(id2, id1, "提升出来的常量节点必须是一个新句柄");
     });
 }
 
@@ -147,8 +151,8 @@ fn test_derive() {
         // Ensure evaluating the derived value directly evaluates to 42
         // We'll read the node untracked using standard core routines:
         assert_eq!(
-            silex_reactivity::try_get_signal::<i32>(d.ensure_node_id()),
-            Some(42)
+            silex_reactivity::signal::try_get::<i32>(d.ensure_node_id()),
+            Ok(42)
         );
     });
 }
@@ -172,5 +176,45 @@ fn test_rw_signal_new() {
         let (r, w) = rw.split();
         assert_eq!(r, read);
         assert_eq!(w, write);
+    });
+}
+
+/// `Signal::derive` 必须能通过**普通的读取 trait** 读出来。
+///
+/// 它从前被标成 `RxNodeKind::Closure`，而 `register_derived` 建的是一个响应式
+/// 节点（住在 `reactive` 表里），`Closure` 那条分支去查的却是 `extras` 表 ——
+/// 于是 `RxRead::get()` 恒为 `None`。整个 crate 里唯一覆盖它的用例是直接调
+/// `silex_reactivity` 的底层读取绕过了这条分发，所以没被发现。
+#[test]
+fn a_derived_signal_reads_through_the_normal_trait() {
+    create_scope(|| {
+        let rw = RwSignal::new(10);
+        let derived = Signal::derive(Box::new(move || rw.get() * 2));
+
+        assert_eq!(derived.get(), 20, "派生值必须能通过 RxRead 读出来");
+
+        rw.set(15);
+        assert_eq!(derived.get(), 30, "上游变化后必须读到重算之后的值");
+    });
+}
+
+/// `StoredValue` 转成 `Rx` 之后不能被误判成“已销毁”。
+///
+/// 从前 `into_rx` 走的是 `Rx::new_signal(...)`，于是 `dispatch::is_disposed`
+/// 拿一个 stored value 的句柄去查 `is_signal_valid` —— stored value 根本不在
+/// `reactive` 表里，永远返回 false，句柄因此永远被报成已销毁。
+#[test]
+fn a_stored_value_turned_into_an_rx_is_not_reported_as_disposed() {
+    use crate::traits::IntoRx;
+
+    create_scope(|| {
+        let sv = crate::reactivity::StoredValue::new(7i32);
+        let rx = sv.into_rx();
+        let (id, kind) = rx.inner.as_node_parts().expect("有节点");
+
+        assert!(
+            !crate::reactivity::dispatch::is_disposed(id, kind),
+            "刚建出来的 stored value 不该被报成已销毁"
+        );
     });
 }

@@ -227,8 +227,25 @@ pub(crate) type ThunkVTable = ThunkBoxVTable<*const (), ()>;
 pub(crate) struct ThunkValue(pub(crate) ThunkBox<*const (), ()>);
 
 impl ThunkValue {
-    pub(crate) fn new_simple<F: Fn() + 'static>(f: F) -> Self {
-        Self(ThunkBox::new(move |_| f()))
+    /// 从一个 `FnMut` 构造。
+    ///
+    /// effect 从前只接受 `Fn()`，想在 effect 里维护一点状态就得自己套
+    /// `Cell` / `RefCell`（审计报告 §3.4）。`FnMut` 在这个模型下是安全的：
+    /// 同一个节点在同一时刻只可能有一次执行 —— `run_node` 的 `running` 标志
+    /// 会让重入的那次直接返回 false（AUDIT P1）。
+    ///
+    /// 这里仍然用 `RefCell` 而不是 `UnsafeCell`：`running` 标志是运行时的不变量，
+    /// 而这段代码在 `ThunkBox` 里，离那个不变量很远。真出现重入时 `RefCell`
+    /// 给的是一句明确的 panic，`UnsafeCell` 给的是 UB —— 这正是本轮审计要消除的
+    /// “靠注释维系独占性”。开销是一次标志检查，effect 不是热路径。
+    pub(crate) fn new_mut<F: FnMut() + 'static>(f: F) -> Self {
+        let cell = std::cell::RefCell::new(f);
+        Self(ThunkBox::new(move |_| {
+            let mut f = cell
+                .try_borrow_mut()
+                .expect("effect 在自己的执行过程中被重入了：这是运行时的 bug");
+            f()
+        }))
     }
 
     /// 从手工填好的内联缓冲区构造。

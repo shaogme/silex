@@ -5,12 +5,12 @@ use crate::{
     reactivity::{ReadSignal, Signal},
     traits::{RxCloneData, RxData},
 };
-use silex_reactivity::{NodeId, memo, set_debug_label};
+use silex_reactivity::{MemoId, memo, set_debug_label};
 
 // --- Memo ---
 
 pub struct Memo<T> {
-    pub(crate) id: NodeId,
+    pub(crate) id: MemoId,
     pub(crate) marker: PhantomData<T>,
 }
 
@@ -21,7 +21,7 @@ impl<T: RxCloneData + PartialEq> Memo<T> {
     where
         F: Fn(Option<&T>) -> T + 'static,
     {
-        let id = memo(f);
+        let id = memo::create(f);
         Memo {
             id,
             marker: PhantomData,
@@ -41,7 +41,7 @@ impl<T> Memo<T> {
 impl<T: RxData> From<Memo<T>> for Signal<T> {
     fn from(m: Memo<T>) -> Self {
         Signal::Read(ReadSignal {
-            id: m.id,
+            id: m.id.raw(),
             marker: PhantomData,
         })
     }

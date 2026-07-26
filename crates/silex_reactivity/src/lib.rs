@@ -1,20 +1,38 @@
 //! Silex 的响应式运行时：signal / memo / effect 三件套，以及它们背后的图算法。
 //!
 //! 这是一个**单线程**（每个线程一份运行时）、**基于句柄**的实现：所有节点都住在
-//! 运行时的 arena 里，对外只交出一个 8 字节的 [`NodeId`]。上层框架（`silex_core`）
-//! 在它之上包出带类型的 `Signal<T>` / `Memo<T>` 等门面。
+//! 运行时的 arena 里，对外只交出一个 8 字节的带种类句柄（[`SignalId`]、
+//! [`MemoId`]、[`StoredId`] …）。上层框架（`silex_core`）在它之上包出带类型的
+//! `Signal<T>` / `Memo<T>` 等门面。
 //!
 //! # 三类节点
 //!
 //! | 构造函数 | 是什么 | 何时重算 | 何时通知下游 |
 //! |---|---|---|---|
-//! | [`signal`] | 图的根，存一个值 | —— | **每一次成功的写入** |
-//! | [`memo`] | 派生值，`T: Clone + PartialEq` | 惰性：被读时 | 仅当新值 `!=` 旧值 |
-//! | [`register_derived`] | 派生值，`T: 'static` | 惰性：被读时 | **每一次重算** |
-//! | [`effect`] | 副作用，无值 | 依赖变化后由队列调度 | —— |
+//! | [`signal::create`] | 图的根，存一个值 | —— | **每一次成功的写入** |
+//! | [`memo::create`] | 派生值，`T: Clone + PartialEq` | 惰性：被读时 | 仅当新值 `!=` 旧值 |
+//! | [`memo::derived`] | 派生值，`T: 'static` | 惰性：被读时 | **每一次重算** |
+//! | [`effect::create`] | 副作用，无值 | 依赖变化后由队列调度 | —— |
 //!
 //! 相等性门控只有这一张表，别处不再有隐藏规则（AUDIT P10）。想要“值没变就别
-//! 惊动下游”，要么用 [`memo`]，要么在写入侧用 [`set_signal_if_changed`]。
+//! 惊动下游”，要么用 [`memo::create`]，要么在写入侧用
+//! [`signal::set_if_changed`]。
+//!
+//! # 模块地图
+//!
+//! | 模块 | 管什么 |
+//! |---|---|
+//! | [`signal`] | 创建 / 读 / 写 / 追踪 |
+//! | [`memo`] | 两种派生节点 |
+//! | [`effect`] | 副作用 |
+//! | [`scope`] | 所有权、销毁、`on_cleanup`、`untrack`、`batch` |
+//! | [`store`] | 非响应式的保管值 |
+//! | [`callback`] | 类型擦除的回调 |
+//! | [`node_ref`] | “稍后填充”的宿主元素引用 |
+//!
+//! 从前这里是 `pub use primitive::*` 把 40 个自由函数摊在 crate 根上，
+//! 命名与错误语义各不相同（审计报告 §3.2）。现在按语义分模块，
+//! 所有 `try_*` 一律返回 [`ReactiveResult`]。
 //!
 //! # 更新是怎么跑起来的
 //!
@@ -30,24 +48,37 @@
 //!
 //! # 调用方需要知道的几条契约
 //!
-//! - **不要在 [`update_signal`] 的闭包里访问同一个 signal**：值在闭包执行期间被
-//!   移出了节点。同理，不要在 [`memo`] 的计算闭包里读这个 memo 自己 —— 旧值请从
-//!   闭包参数拿，它是借给你的，不是克隆给你的。
+//! - **不要在接受用户闭包的 API 里访问同一个节点**。[`signal::try_update`]、
+//!   [`signal::try_with`]、[`store::try_with`]、[`store::try_update`]、
+//!   memo 的计算闭包 —— 这些都会把值**移出**节点再交给闭包（节点里暂时是占位
+//!   值），这样运行时在用户代码执行期间不持有任何指向该节点的引用
+//!   （AUDIT P5、审计报告 §2.1）。重入访问会拿到
+//!   [`ReactiveError::Reentrant`]，而不是从前那种静默的别名违规。
+//! - **`T: Clone` 的实现不得重入运行时**。[`signal::try_get`] 这条最热的读路径
+//!   仍然在运行时持有节点引用的情况下调用 `T::clone`；把它也改成“移出—克隆—
+//!   放回”会让每次读多付两次查表。一个会反过来改响应式图的 `Clone` 实现是病态
+//!   用法，需要在读的时候跑任意用户代码请改用 [`signal::try_with`]。
 //! - **依赖成环会 panic**，报错里带上环上节点的调试标签与定义位置；effect 队列
 //!   长时间不收敛（互相触发）同样 panic 而不是把线程挂死（AUDIT P13）。
 //! - **同级 effect 的执行顺序不作承诺**：订阅者表用 swap-remove 维护，退订会打乱
 //!   顺序（AUDIT P19.6）。有顺序要求请显式建立依赖关系。
 //! - 用户代码 panic 之后运行时仍然可用：所有调度标志、借出的闭包与值都由 RAII
 //!   守卫恢复（AUDIT P2）。
-//! - 句柄可以随便复制和传递，但**它不保证节点还活着**。节点销毁后，读返回
-//!   `None`，写是静默的 no-op。
+//! - 句柄可以随便复制和传递，但**它不保证节点还活着**，用
+//!   [`Handle::is_alive`] 查。
+//!
+//! # 种类安全
+//!
+//! 句柄带种类标记（见 [`handle`]）：`signal::try_get::<i32>(stored_id)` 是编译
+//! 错误，不再是运行时的一个静默 `None`。需要跨种类传递时用 [`RawNodeId`] 显式
+//! 擦除 —— 那是唯一的逃生出口，也因此是唯一需要人工审查的地方。
 //!
 //! # `unsafe` 的边界
 //!
 //! 本 crate 内部大量使用类型擦除与裸指针（arena、`ThinVec`、`AnyValue`）。
-//! 这些都是 crate 私有的：对外只有 [`NodeId`] 和几个显式标了 `unsafe` 的
-//! 逃生出口（[`try_get_any_raw_untracked`]、[`try_get_stored_value_ref`]、
-//! [`try_get_signal_value_ref`]），它们各自的 `# Safety` 段写明了什么操作会让
+//! 这些都是 crate 私有的：对外只有句柄和几个显式标了 `unsafe` 的逃生出口
+//! （[`try_get_any_raw_untracked`]、[`store::try_value_ref`]、
+//! [`signal::try_value_ref`]），它们各自的 `# Safety` 段写明了什么操作会让
 //! 返回的指针/引用失效。CI 里跑 `cargo miri test` 看着这条线。
 
 // `mod runtime` / `mod core` 都是私有的，里面的 `pub` 等价于 `pub(crate)` ——
@@ -55,133 +86,50 @@
 #![deny(unreachable_pub)]
 
 mod core;
-mod primitive;
+mod error;
+mod handle;
 mod runtime;
 
+pub mod callback;
+pub mod effect;
+pub mod memo;
+pub mod node_ref;
+pub mod scope;
+pub mod signal;
+pub mod store;
+
+pub use crate::{
+    error::{ReactiveError, ReactiveResult},
+    handle::{
+        AnyHandle, CallbackId, DerivedId, EffectId, Handle, MemoId, NodeKind, NodeRefId, RawNodeId,
+        Readable, ScopeId, SignalId, StoredId, kind,
+    },
+};
+
 pub(crate) use crate::core::list::List;
-
-/// 响应式节点的句柄。这是本 crate 唯一对外暴露的容器相关类型。
-///
-/// `Arena` / `SparseSecondaryMap` / `NodeState` 曾经也是 `pub` 的，但它们的
-/// `get_mut(&self) -> Option<&mut T>` 允许安全代码两行就造出两个同时存活的
-/// `&mut`（AUDIT P7）。用注释约束的契约必须由类型系统或 `unsafe` 表达，
-/// 在此之前它们只能留在 crate 内部，由运行时自己保证独占访问。
-pub use crate::core::arena::Index as NodeId;
-
 use runtime::RUNTIME;
 pub(crate) use runtime::Runtime;
 use std::panic::Location;
 
-pub use primitive::*;
-
-pub(crate) type NodeList = List<NodeId>;
-pub(crate) type DependencyList = List<(NodeId, u32)>;
-
-/// 具有 16 字节对齐要求的 64 字节固定宽度缓冲区。
-/// 用于跨 crate 安全地传递和存储类型擦除后的 Payload。
-///
-/// 缓冲区用 `MaybeUninit<u8>` 而不是 `u8`：Payload 里通常含有函数指针和数据指针，
-/// 而整数类型的读写会擦除指针 provenance，按值搬运 `[u8; 64]` 之后再把这些字节
-/// 当指针解引用即为未定义行为（AUDIT P3）。字节级复制则保留 provenance。
-///
-/// # 契约：载荷必须是 POD
-///
-/// 本类型是 `Copy` 的，运行时对它一无所知 —— [`register_op`] 保管的载荷在节点
-/// 销毁时只是丢掉 64 字节原始内存，**载荷自己的析构函数永远不会运行**。因此存进
-/// 来的类型必须满足 `!std::mem::needs_drop::<P>()`，否则就是一个静默的泄漏；
-/// 而且既然是 `Copy`，安全代码可以把 [`try_with_op`] 借到的缓冲区复制出任意份，
-/// 一旦将来支持析构就直接是 double-free（审计报告 §2.4）。
-///
-/// `silex_core::Rx::new_op` 用 `const assert` 把这条契约钉成了编译错误。
-/// 需要带析构函数的载荷请改用 [`store_value`]：`AnyValue` 自带 SOO、类型检查
-/// 与正确的析构，代价只是多一次 `TypeId` 比较。
-#[repr(C, align(16))]
-#[derive(Clone, Copy)]
-pub struct RawOpBuffer {
-    data: [std::mem::MaybeUninit<u8>; 64],
-}
-
-impl Default for RawOpBuffer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl RawOpBuffer {
-    pub const CAPACITY: usize = 64;
-    pub const ALIGNMENT: usize = 16;
-
-    /// 全零初始化的缓冲区。
-    pub fn new() -> Self {
-        Self {
-            data: [std::mem::MaybeUninit::new(0); Self::CAPACITY],
-        }
-    }
-
-    #[inline(always)]
-    pub fn as_ptr(&self) -> *const u8 {
-        self.data.as_ptr().cast()
-    }
-
-    #[inline(always)]
-    pub fn as_mut_ptr(&mut self) -> *mut u8 {
-        self.data.as_mut_ptr().cast()
-    }
-}
-
-/// 把 `f` 里的所有写入合成一次调度：effect 队列直到最外层 `batch` 结束才执行。
-///
-/// 嵌套是允许的，只有最外层那次结束时才 flush。`f` panic 时深度由守卫恢复，
-/// 不会把后续所有更新永久挂起（AUDIT P2）。
-pub fn batch<R>(f: impl FnOnce() -> R) -> R {
-    RUNTIME.get_or(Runtime::new).batch(f)
-}
-
-/// 建一个所有权 scope：`f` 里创建的节点都成为它的子节点，
-/// [`dispose`] 这个 scope 会连带销毁它们（先子后父，同级按注册顺序）。
-#[track_caller]
-pub fn create_scope<F>(f: F) -> NodeId
-where
-    F: FnOnce(),
-{
-    RUNTIME.get_or(Runtime::new).create_scope(f)
-}
-
-/// 销毁一个节点：跑它的清理函数、递归销毁子节点、退订它的全部依赖、
-/// 释放它占用的存储。已经销毁过的句柄再传进来是 no-op。
-pub fn dispose(id: NodeId) {
-    if let Some(rt) = RUNTIME.get() {
-        rt.dispose(id);
-    }
-}
-
-/// 注册一个清理函数，在当前节点被销毁或（对 effect 而言）下次重跑之前执行。
-///
-/// 当前没有正在运行的节点时什么都不做。
-pub fn on_cleanup(f: impl FnOnce() + 'static) {
-    RUNTIME.get_or(Runtime::new).on_cleanup(f);
-}
-
-/// 在 `f` 执行期间关闭依赖追踪：里面读到的 signal 不会成为当前节点的依赖。
-pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
-    RUNTIME.get_or(Runtime::new).untrack(f)
-}
+pub(crate) type NodeList = List<RawNodeId>;
+pub(crate) type DependencyList = List<(RawNodeId, u32)>;
 
 /// 获取任何响应式节点内部值的原始指针（signal 与 stored value 都行），
-/// 供 `silex_core` 做去泛型化优化用。返回的指针指向 `T` 本身，不含任何类型信息。
+/// 供上层框架做去泛型化优化用。返回的指针指向 `T` 本身，不含任何类型信息。
 ///
 /// # Safety
 ///
 /// 调用方必须自己保证两件事：
 ///
 /// 1. **类型对得上**：把它转成 `*const T` 时，`T` 必须就是当初存进去的类型。
-///    本函数不做任何检查（这正是它比 `try_with_signal` 快的原因）。
+///    本函数不做任何检查（这正是它比 [`signal::try_with`] 快的原因）。
 /// 2. **指针还没失效**。下列操作**任意一条**都会让它悬垂，之后再解引用即为
 ///    未定义行为：
-///    - [`dispose`] 该节点或它的任一祖先（arena 槽位被释放）；
-///    - 写入该节点：[`update_signal`] / [`try_update_signal_silent`] 会把值移出
-///      节点（期间里面是占位值），memo 重算后的提交会整体替换掉值，
-///      [`try_update_stored_value`] 写入新值会 drop 掉旧值；
+///    - [`scope::dispose`] 该节点或它的任一祖先（arena 槽位被释放）；
+///    - 写入该节点：[`signal::try_update`] / [`signal::try_update_silent`] /
+///      [`store::try_update`] 会把值移出节点（期间里面是占位值），
+///      memo 重算后的提交会整体替换掉值；
+///    - 借用该节点：[`signal::try_with`] / [`store::try_with`] 同样会把值移出去；
 ///    - 值从内联存储升级到堆上（`AnyValue` 的 SOO：小值直接放在节点里，
 ///      节点一旦被移动或替换，内联值的地址就变了）；
 ///    - **任何会重入运行时并执行用户代码的调用** —— effect 体、cleanup、
@@ -189,11 +137,11 @@ pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
 ///      上面任意一件事。
 ///
 /// 简而言之：拿到之后立刻用掉，不要跨越任何可能回到运行时的调用。
-pub unsafe fn try_get_any_raw_untracked(id: NodeId) -> Option<*const ()> {
+pub unsafe fn try_get_any_raw_untracked(id: impl AnyHandle) -> Option<*const ()> {
     let rt = RUNTIME.get()?;
     // SAFETY: 上面 `# Safety` 段里的两条契约（类型对得上、指针还没失效）
     // 原样转嫁给本函数的调用方，这里只是把节点里那个值的地址取出来。
-    unsafe { rt.get_any_raw_ptr_untracked(id) }
+    unsafe { rt.get_any_raw_ptr_untracked(id.to_raw()) }
 }
 
 /// 节点是在哪一行被创建的。
@@ -201,14 +149,11 @@ pub unsafe fn try_get_any_raw_untracked(id: NodeId) -> Option<*const ()> {
 /// 只在 debug 构建下记录（release 恒为 `None`）。整条构造链路都带了
 /// `#[track_caller]`，因此这里给出的是**用户的调用点**，不是框架内部
 /// 某一行（AUDIT P11）。
-pub fn get_node_defined_at(_id: NodeId) -> Option<&'static Location<'static>> {
+pub fn get_node_defined_at(_id: impl AnyHandle) -> Option<&'static Location<'static>> {
     #[cfg(debug_assertions)]
     {
         let rt = RUNTIME.get()?;
-        if let Some(node) = rt.storage.graph.get(_id) {
-            return node.defined_at;
-        }
-        None
+        rt.storage.graph.get(_id.to_raw())?.defined_at
     }
     #[cfg(not(debug_assertions))]
     {
@@ -221,14 +166,13 @@ pub fn get_node_defined_at(_id: NodeId) -> Option<&'static Location<'static>> {
 /// 给节点起一个便于排查问题的名字（只在 debug 构建下保存）。
 ///
 /// 它会出现在依赖环、队列不收敛等诊断信息里。
-pub fn set_debug_label(_id: NodeId, _label: impl Into<String>) {
+pub fn set_debug_label(_id: impl AnyHandle, _label: impl Into<String>) {
     #[cfg(debug_assertions)]
     {
         let label = _label.into();
         let rt = RUNTIME.get_or(Runtime::new);
-        if let Some(aux) = rt.storage.try_aux_mut(_id) {
-            aux.debug_label = Some(label);
-        }
+        rt.storage
+            .with_aux_mut(_id.to_raw(), |aux| aux.debug_label = Some(label));
     }
 }
 
@@ -237,20 +181,21 @@ pub fn set_debug_label(_id: NodeId, _label: impl Into<String>) {
 /// 节点销毁之后仍然能查到（运行时为最近若干个已销毁节点保留“墓碑”标签，
 /// 数量有上限，见 AUDIT P14），这样“读一个已经销毁的节点”的报错才说得出
 /// 它原来是谁。
-pub fn get_debug_label(_id: NodeId) -> Option<String> {
+pub fn get_debug_label(_id: impl AnyHandle) -> Option<String> {
     #[cfg(debug_assertions)]
     {
         let rt = RUNTIME.get()?;
-        if let Some(aux) = rt.storage.node_aux.get(_id)
+        let raw = _id.to_raw();
+        if let Some(aux) = rt.storage.node_aux.get(raw)
             && let Some(label) = &aux.debug_label
         {
             return Some(label.clone());
         }
         // Check dead labels
-        rt.storage.dead_node_labels.get(_id).cloned()
+        rt.storage.dead_node_labels.get(raw).cloned()
     }
     #[cfg(not(debug_assertions))]
     {
-        return None;
+        None
     }
 }

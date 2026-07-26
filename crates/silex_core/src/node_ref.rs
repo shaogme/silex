@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-pub use silex_reactivity::NodeId;
+use silex_reactivity::{NodeRefId, node_ref};
 
 /// `NodeRef` 用于获取对底层 DOM 节点的直接引用。
 ///
@@ -27,7 +27,7 @@ pub use silex_reactivity::NodeId;
 /// ```
 #[derive(Debug)]
 pub struct NodeRef<T = ()> {
-    id: NodeId,
+    id: NodeRefId,
     marker: PhantomData<T>,
 }
 
@@ -45,20 +45,12 @@ impl<T: Clone + 'static> Default for NodeRef<T> {
     }
 }
 
-impl<T> NodeRef<T> {
-    /// 从已有的 `NodeId` 创建 `NodeRef`。
-    pub(crate) fn from_id(id: NodeId) -> Self {
-        Self {
-            id,
-            marker: PhantomData,
-        }
-    }
-}
+impl<T> NodeRef<T> {}
 
 impl<T: Clone + 'static> NodeRef<T> {
     /// 创建一个新的空 `NodeRef`。
     pub fn new() -> Self {
-        let id = silex_reactivity::register_node_ref();
+        let id = node_ref::create::<T>();
         Self {
             id,
             marker: PhantomData,
@@ -67,16 +59,16 @@ impl<T: Clone + 'static> NodeRef<T> {
 
     /// 获取存储的节点引用。如果节点尚未加载，返回 `None`。
     pub fn get(&self) -> Option<T> {
-        silex_reactivity::get_node_ref(self.id)
+        node_ref::get(self.id)
     }
 
     /// 加载（设置）节点引用。通常由框架内部调用。
     pub fn load(&self, node: T) {
-        silex_reactivity::set_node_ref(self.id, node);
+        let _ = node_ref::set(self.id, node);
     }
 
-    /// 返回此 `NodeRef` 的底层 `NodeId`。
-    pub fn id(&self) -> NodeId {
+    /// 返回此 `NodeRef` 的底层句柄。
+    pub fn id(&self) -> NodeRefId {
         self.id
     }
 }

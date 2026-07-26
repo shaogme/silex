@@ -1,5 +1,5 @@
 use crate::{
-    DependencyList, NodeList, RawOpBuffer,
+    DependencyList, NodeList,
     core::{
         algorithm::{GraphStorage, NodeState},
         arena::{Arena, Index as NodeId, SparseSecondaryMap},
@@ -8,7 +8,7 @@ use crate::{
 };
 #[cfg(debug_assertions)]
 use std::cell::Cell;
-use std::{any::Any, mem, rc::Rc, vec::IntoIter};
+use std::{mem, vec::IntoIter};
 
 pub(crate) struct ReactiveNode {
     pub(crate) state: NodeState,
@@ -16,12 +16,35 @@ pub(crate) struct ReactiveNode {
     pub(crate) effect: Option<EffectData>,
 }
 
-pub(crate) enum ExtraData {
-    Callback(CallbackData),
-    NodeRef(NodeRefData),
-    StoredValue(StoredValueData),
-    Closure(ClosureData),
-    Op(OpData),
+/// 非响应式节点（stored value / callback / node-ref）的载荷。
+///
+/// 这里曾经是一个五变体的枚举 `ExtraData { Callback, NodeRef, StoredValue,
+/// Closure, Op }`，五套几乎一模一样的“取出—downcast—用”的代码，外加五个
+/// `is_*_valid` 探测函数（审计报告 §3.1 / §3.2）。变体的**唯一**作用是当运行时的
+/// 种类 tag —— 而种类现在写在句柄的类型里（[`crate::Handle`]），这个 tag 就是
+/// 纯粹的重复。
+///
+/// 于是全部收敛成一个 [`AnyValue`]：它自带 SOO、`TypeId` 检查与正确的析构。
+/// 连带解决的问题：
+///
+/// - `ExtraData::Op(RawOpBuffer)` 是 `[MaybeUninit<u8>; 64] + Copy`，节点销毁时
+///   只是丢掉 64 字节原始内存，**载荷的析构函数永远不会运行**（§2.4）；
+/// - `ExtraData::Closure(Box<dyn Any>)` 装的是一个 `Box<dyn Fn() -> T>`，
+///   也就是**双重装箱**，读的时候还要多一次 `Box` 解引用。
+pub(crate) struct Payload {
+    pub(crate) value: AnyValue,
+    /// 值当前是否被借出给某个用户闭包（此时 `value` 是占位值）。
+    /// 见 [`crate::runtime::guard::PayloadGuard`]。
+    pub(crate) borrowed: bool,
+}
+
+impl Payload {
+    pub(crate) fn new(value: AnyValue) -> Self {
+        Self {
+            value,
+            borrowed: false,
+        }
+    }
 }
 
 /// 最多为多少个已销毁节点保留调试标签。
@@ -36,7 +59,7 @@ pub(crate) struct Storage {
     pub(crate) graph: Arena<Node>,
     pub(crate) node_aux: SparseSecondaryMap<NodeAux, 32>,
     pub(crate) reactive: SparseSecondaryMap<ReactiveNode, 64>,
-    pub(crate) extras: SparseSecondaryMap<ExtraData, 32>,
+    pub(crate) extras: SparseSecondaryMap<Payload, 32>,
 
     #[cfg(debug_assertions)]
     pub(crate) dead_node_labels: SparseSecondaryMap<String>,
@@ -70,12 +93,19 @@ impl Storage {
         self.dead_node_labels.insert(id, label);
     }
 
-    pub(crate) fn try_aux_mut(&self, id: NodeId) -> Option<&mut NodeAux> {
-        if self.node_aux.get(id).is_none() {
+    /// 在闭包作用域内可变地访问一个节点的冷数据，必要时先建出来。
+    ///
+    /// 节点不在 `graph` 里（已销毁 / 伪造的句柄）时返回 `None` 且不建任何条目。
+    pub(crate) fn with_aux_mut<R>(
+        &self,
+        id: NodeId,
+        f: impl FnOnce(&mut NodeAux) -> R,
+    ) -> Option<R> {
+        if !self.node_aux.contains_key(id) {
             self.graph.get(id)?;
             self.node_aux.insert(id, NodeAux::default());
         }
-        self.node_aux.get_mut(id)
+        self.node_aux.with_mut(id, f)
     }
 }
 
@@ -97,9 +127,7 @@ impl GraphStorage for Storage {
     /// 忽略掉是安全的：`get_state` 对不存在的节点返回 `Clean`，
     /// 传播与求值都会把它当成“无需处理”。
     fn set_state(&self, id: NodeId, state: NodeState) {
-        if let Some(n) = self.reactive.get_mut(id) {
-            n.state = state;
-        }
+        self.reactive.with_mut(id, |n| n.state = state);
     }
 
     fn fill_subscribers(&self, id: NodeId, dest: &mut Vec<NodeId>) {
@@ -134,7 +162,7 @@ impl GraphStorage for Storage {
     fn describe(&self, id: NodeId) -> String {
         // release 构建下既没有调试标签也没有定义位置，只剩下编号。
         #[allow(unused_mut)]
-        let mut out = format!("节点 #{}", id.index);
+        let mut out = format!("节点 #{}", id.slot());
         #[cfg(debug_assertions)]
         {
             if let Some(label) = self
@@ -281,24 +309,6 @@ pub(crate) struct EffectData {
     pub(crate) running: bool,
 }
 
-pub(crate) struct CallbackData {
-    pub(crate) f: Rc<dyn Fn(Box<dyn Any>)>,
-}
-
-pub(crate) struct NodeRefData {
-    pub(crate) element: Option<Box<dyn Any>>,
-}
-
-pub(crate) struct StoredValueData {
-    pub(crate) value: AnyValue,
-}
-
-pub(crate) struct ClosureData {
-    pub(crate) f: Box<dyn Any>,
-}
-
-pub(crate) struct OpData(pub(crate) RawOpBuffer);
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,16 +335,16 @@ mod tests {
         let rt = Runtime::new();
         let s = rt.create_signal(AnyValue::new(1i32));
 
-        let dead = rt.create_effect(ThunkValue::new_simple(|| {}));
+        let dead = rt.create_effect(ThunkValue::new_mut(|| {}));
         rt.dispose(dead);
         assert!(rt.storage.reactive.get(dead).is_none());
 
         // 手工模拟“订阅者表里残留了一个已销毁的 id”。
-        if let Some(node) = rt.storage.reactive.get_mut(s)
-            && let Some(signal) = node.signal.as_mut()
-        {
-            signal.subscribers.push(dead);
-        }
+        rt.storage.reactive.with_mut(s, |node| {
+            if let Some(signal) = node.signal.as_mut() {
+                signal.subscribers.push(dead);
+            }
+        });
 
         rt.notify_update(s);
 
@@ -351,9 +361,8 @@ mod tests {
         let rt = Runtime::new();
         for i in 0..(MAX_DEAD_NODE_LABELS + 16) {
             let id = rt.create_signal(AnyValue::new(i));
-            if let Some(aux) = rt.storage.try_aux_mut(id) {
-                aux.debug_label = Some(format!("node-{i}"));
-            }
+            rt.storage
+                .with_aux_mut(id, |aux| aux.debug_label = Some(format!("node-{i}")));
             rt.dispose(id);
         }
         assert_eq!(rt.storage.dead_label_count.get(), MAX_DEAD_NODE_LABELS);

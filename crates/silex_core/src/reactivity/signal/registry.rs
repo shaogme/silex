@@ -1,7 +1,7 @@
 use crate::{prelude::Signal, reactivity::SignalSlice, traits::*};
 use silex_reactivity::{
-    NodeId, get_debug_label, get_node_defined_at, is_signal_valid, notify_signal, set_debug_label,
-    track_signal, try_update_signal_silent, untrack as untrack_scoped,
+    RawNodeId as NodeId, SignalId, get_debug_label, get_node_defined_at,
+    scope::untrack as untrack_scoped, set_debug_label, signal,
 };
 use std::{
     hash::{Hash, Hasher},
@@ -11,6 +11,11 @@ use std::{
 
 // --- ReadSignal ---
 
+/// 只读句柄。
+///
+/// id 是**擦除**的：`ReadSignal` 是“可读节点”的联合体 —— signal、memo、
+/// derived 都能塞进来（`From<Memo<T>> for Signal<T>` 就是这么用的）。
+/// 写入侧的 [`WriteSignal`] 才有静态种类可言，它拿的是 `SignalId`。
 pub struct ReadSignal<T> {
     pub(crate) id: NodeId,
     pub(crate) marker: PhantomData<T>,
@@ -77,7 +82,7 @@ impl_signal_core_traits!(ReadSignal);
 // --- WriteSignal ---
 
 pub struct WriteSignal<T> {
-    pub(crate) id: NodeId,
+    pub(crate) id: SignalId,
     pub(crate) marker: PhantomData<T>,
 }
 
@@ -97,15 +102,15 @@ impl<T: RxData> RxValue for WriteSignal<T> {
 impl<T: RxData> RxBase for WriteSignal<T> {
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
-        Some(self.id)
+        Some(self.id.raw())
     }
     #[inline(always)]
     fn track(&self) {
-        track_signal(self.id);
+        signal::track(self.id);
     }
     #[inline(always)]
     fn is_disposed(&self) -> bool {
-        !is_signal_valid(self.id)
+        !self.id.is_alive()
     }
     #[inline(always)]
     fn defined_at(&self) -> Option<&'static Location<'static>> {
@@ -123,12 +128,12 @@ impl<T: RxData> RxWrite for WriteSignal<T> {
         &self,
         fun: impl FnOnce(&mut Self::Value) -> URet,
     ) -> Option<URet> {
-        try_update_signal_silent(self.id, fun)
+        signal::try_update_silent(self.id, fun).ok()
     }
 
     #[inline(always)]
     fn rx_notify(&self) {
-        notify_signal(self.id);
+        signal::notify(self.id);
     }
 }
 

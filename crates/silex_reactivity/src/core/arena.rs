@@ -15,12 +15,48 @@ const CHUNK_SIZE: usize = 128;
 /// 槽位被复用 2³¹ 次之后，一个早已失效的 `Index` 会重新变得“有效”，读到的是
 /// 另一个节点的数据（AUDIT P19.4）。按每秒创建并销毁 10 万个节点算，需要连续
 /// 运行约 6 小时才会绕回同一个槽位一次 —— 对 Web 前端的实际负载有足够余量，
-/// 而把它升到 `u64` 会让 `NodeId` 从 8 字节变成 16 字节，订阅者表、依赖表、
+/// 而把它升到 `u64` 会让句柄从 8 字节变成 16 字节，订阅者表、依赖表、
 /// 各类句柄全都要跟着变大。这里选择记下这个上限，而不是为它加倍内存开销。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+///
+/// # 字段为什么是私有的
+///
+/// 曾经这两个字段是 `pub` 的，安全代码因此可以凭空捏造任意句柄。所有读取路径
+/// 都做了代数校验所以不会读到别人的数据，但 [`SparseSecondaryMap::insert`] 对一个
+/// 伪造的巨大 index 会 `resize_with` 出巨量内存（审计报告 §3.4）。现在唯一能拿到
+/// 的常量句柄是 [`Index::DANGLING`]，而它对每一张表都恒为“查无此项”。
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Index {
-    pub index: u32,
-    pub generation: u32,
+    index: u32,
+    generation: u32,
+}
+
+impl Index {
+    /// 一个永远不指向任何节点的句柄。
+    ///
+    /// 用于需要一个“空句柄”占位的场合（下游框架的 `Default` 实现等）。
+    /// 它的 index 大于任何真实节点，因此在 `Arena` 与 `SparseSecondaryMap` 里
+    /// 一律查无此项，也不会触发任何分配。
+    pub const DANGLING: Self = Self {
+        index: u32::MAX,
+        generation: 0,
+    };
+
+    #[inline(always)]
+    pub(crate) const fn new(index: u32, generation: u32) -> Self {
+        Self { index, generation }
+    }
+
+    /// 槽位编号，只用于诊断信息。
+    #[inline(always)]
+    pub(crate) const fn slot(self) -> u32 {
+        self.index
+    }
+}
+
+impl std::fmt::Debug for Index {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "#{}v{}", self.index, self.generation)
+    }
 }
 
 union SlotUnion<T> {
@@ -147,10 +183,7 @@ impl<T> Arena<T> {
                 // Increment generation (Even -> Odd)
                 slot.generation = slot.generation.wrapping_add(1);
 
-                return Index {
-                    index: free_idx,
-                    generation: slot.generation,
-                };
+                return Index::new(free_idx, slot.generation);
             }
 
             // Priority 2: Append new slot
@@ -172,10 +205,7 @@ impl<T> Arena<T> {
 
             *len_ptr += 1;
 
-            Index {
-                index: current_len as u32,
-                generation: slot.generation,
-            }
+            Index::new(current_len as u32, slot.generation)
         }
     }
 
@@ -340,6 +370,7 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
         }
     }
 
+    #[inline]
     pub(crate) fn get(&self, key: Index) -> Option<&T> {
         let (chunk_idx, offset) = self.get_chunk_offset(key.index);
         // SAFETY: 同上；代数相符才返回，引用绑定在 `&self` 上。
@@ -360,19 +391,25 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
         }
     }
 
-    /// 取 `&self` 却交出 `&mut T`。
+    /// 在一个**闭包作用域内**可变地访问一个条目。
     ///
-    /// **调用方必须保证独占访问**：返回的引用存活期间，不能再对同一个 key 调用
-    /// `get` / `get_mut` / `remove`，也不能执行任何可能这么做的用户代码。
-    /// 运行时里的做法是把这类借用限制在不调用用户代码的短作用域内，需要跨越
-    /// 用户代码时先把值移出去（见 `SignalValueGuard`、AUDIT P5）。
+    /// 这里曾经是 `get_mut(&self) -> Option<&mut T>`：它取 `&self` 却交出 `&mut T`，
+    /// 独占性只能靠注释约定维系，而这条约定在公开 API 里被系统性地违反 ——
+    /// `try_update_stored_value` / `try_with_signal` 直接把这个引用交给**用户闭包**，
+    /// 用户在闭包里碰一下任何别的 signal 就会让它作废（审计报告 §2.1）。
     ///
-    /// 这个契约无法由类型系统表达，所以这个方法是 `pub(crate)` 的；同样签名的
-    /// `Arena::get_mut` 因为一个用户都没有，已经直接删掉了（AUDIT P7）。
-    #[allow(clippy::mut_from_ref)]
-    pub(crate) fn get_mut(&self, key: Index) -> Option<&mut T> {
+    /// 换成闭包形态之后，借用**在类型上**就无法逃逸出这次调用，剩下的唯一风险
+    /// 收窄成一条可以逐点审读的规则：
+    ///
+    /// > `f` 内部不得再访问**同一张表**（本 crate 内所有调用点都只做几行纯数据
+    /// > 搬运，不执行任何用户代码）。需要跨越用户代码时，先把值整个移出去 ——
+    /// > 这正是 [`crate::runtime::guard::SignalValueGuard`] 与
+    /// > [`crate::runtime::guard::PayloadGuard`] 干的事（AUDIT P5、§2.1）。
+    #[inline]
+    pub(crate) fn with_mut<R>(&self, key: Index, f: impl FnOnce(&mut T) -> R) -> Option<R> {
         let (chunk_idx, offset) = self.get_chunk_offset(key.index);
-        // SAFETY: 独占性由上面的契约转嫁给调用方；其余同 `get`。
+        // SAFETY: 单线程；`f` 不重入本表（见上面的规则），因此这个 `&mut` 在其
+        // 存活期间是独占的，而且它随本次调用一起结束，无法逃逸。
         unsafe {
             let chunks = &mut *self.chunks.get();
             if chunk_idx >= chunks.len() {
@@ -383,11 +420,17 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
                 if let Some((stored_gen, val)) = slot
                     && *stored_gen == key.generation
                 {
-                    return Some(val);
+                    return Some(f(val));
                 }
             }
             None
         }
+    }
+
+    /// 这个 key 是否有条目（不借出任何引用）。
+    #[inline]
+    pub(crate) fn contains_key(&self, key: Index) -> bool {
+        self.get(key).is_some()
     }
 
     pub(crate) fn remove(&self, key: Index) -> Option<T> {

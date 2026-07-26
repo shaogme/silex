@@ -13,7 +13,7 @@ use silex_core::{
     Rx, RxValueKind, SilexError, SilexResult,
     error::handle_error,
     logic::Map,
-    reactivity::{Effect, NodeId, Signal, create_scope, dispose},
+    reactivity::{Effect, ScopeId, Signal, create_scope, dispose},
     traits::{IntoRx, IntoSignal, RxCloneData, RxData, RxValue},
 };
 use std::{
@@ -489,7 +489,7 @@ pub fn mount_dynamic_view_cached<K, KeyFn, RenderFn>(
         return;
     }
 
-    let active_state = Rc::new(RefCell::new(None::<(K, NodeId)>));
+    let active_state = Rc::new(RefCell::new(None::<(K, ScopeId)>));
 
     Effect::new(move |_| {
         let start_node = start_node.clone();

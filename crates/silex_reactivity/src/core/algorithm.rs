@@ -286,10 +286,7 @@ mod tests {
     use std::collections::HashMap;
 
     fn id(n: u32) -> NodeId {
-        Index {
-            index: n,
-            generation: 1,
-        }
+        Index::new(n, 1)
     }
 
     #[derive(Default)]
@@ -330,36 +327,36 @@ mod tests {
     impl ReactiveGraph for TestGraph {
         fn get_state(&self, id: NodeId) -> NodeState {
             self.nodes
-                .get(&id.index)
+                .get(&id.slot())
                 .and_then(|n| n.state)
                 .unwrap_or(NodeState::Clean)
         }
 
         fn set_state(&mut self, id: NodeId, state: NodeState) {
             // 与真实存储一致：不存在的节点直接忽略，绝不新建（AUDIT P14）。
-            if let Some(n) = self.nodes.get_mut(&id.index) {
+            if let Some(n) = self.nodes.get_mut(&id.slot()) {
                 n.state = Some(state);
             }
         }
 
         fn fill_subscribers(&self, id: NodeId, dest: &mut Vec<NodeId>) {
-            if let Some(n) = self.nodes.get(&id.index) {
+            if let Some(n) = self.nodes.get(&id.slot()) {
                 dest.extend_from_slice(&n.subscribers);
             }
         }
 
         fn fill_dependencies(&self, id: NodeId, dest: &mut Vec<NodeId>) {
-            if let Some(n) = self.nodes.get(&id.index) {
+            if let Some(n) = self.nodes.get(&id.slot()) {
                 dest.extend_from_slice(&n.dependencies);
             }
         }
 
         fn is_effect(&self, id: NodeId) -> bool {
-            self.nodes.get(&id.index).is_some_and(|n| n.is_effect)
+            self.nodes.get(&id.slot()).is_some_and(|n| n.is_effect)
         }
 
         fn is_running(&self, id: NodeId) -> bool {
-            self.nodes.get(&id.index).is_some_and(|n| n.running)
+            self.nodes.get(&id.slot()).is_some_and(|n| n.running)
         }
 
         fn queue_effect(&mut self, id: NodeId) {
@@ -367,7 +364,7 @@ mod tests {
         }
 
         fn run_computation(&mut self, id: NodeId) -> bool {
-            let computes = self.nodes.get(&id.index).is_some_and(|n| n.computes);
+            let computes = self.nodes.get(&id.slot()).is_some_and(|n| n.computes);
             if !computes {
                 return false;
             }
@@ -378,11 +375,11 @@ mod tests {
         }
 
         fn check_dependencies_changed(&mut self, id: NodeId) -> bool {
-            self.nodes.get(&id.index).is_some_and(|n| n.deps_changed)
+            self.nodes.get(&id.slot()).is_some_and(|n| n.deps_changed)
         }
 
         fn describe(&self, id: NodeId) -> String {
-            format!("#{}", id.index)
+            format!("#{}", id.slot())
         }
     }
 

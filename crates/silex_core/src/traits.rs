@@ -65,9 +65,9 @@ pub use read_impls::{create_tuple_n_rx, create_tuple2_rx};
 use std::{fmt::Debug, panic::Location, rc::Rc};
 
 use crate::{
-    NodeRef, SilexError,
+    SilexError,
     error::SilexResult,
-    reactivity::{Memo, NodeId, Signal, is_signal_valid},
+    reactivity::{Memo, NodeId, Signal},
     traits::adaptive::{AdaptiveFallback, AdaptiveWrapper},
 };
 
@@ -101,7 +101,10 @@ pub trait RxBase: RxValue {
 
     /// 检查该值是否已被销毁。
     fn is_disposed(&self) -> bool {
-        self.id().map(|id| !is_signal_valid(id)).unwrap_or(false)
+        // 默认实现只知道“这是一个可读节点”，种类信息在各实现者手里。
+        self.id()
+            .map(|id| !::silex_reactivity::SignalId::from_raw_unchecked(id).is_alive())
+            .unwrap_or(false)
     }
 
     /// 源码定义位置，用于调试模式下的错误追踪。
@@ -131,7 +134,10 @@ pub enum RxGuard<'a, T: ?Sized, S = ()> {
     /// 借用变体：可以是来自 Arena 的信号引用，也可以是来自 Constant 的静态引用。
     Borrowed {
         value: &'a T,
-        token: Option<NodeRef>,
+        /// 只是一个来源标记（防止把 guard 的生命周期跟丢），不参与任何解引用。
+        /// 从前这里放的是 `NodeRef<()>` —— 一个把**任意**节点 id 装进
+        /// “node-ref 句柄” 里的类型混淆（审计报告 §3.1）。
+        token: Option<NodeId>,
     },
     /// 所有权变体：持有计算结果或内联值。
     Owned(S),

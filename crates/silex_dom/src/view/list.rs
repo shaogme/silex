@@ -2,7 +2,7 @@ use crate::attribute::PendingAttribute;
 use crate::view::{AnyView, ApplyAttributes, View};
 use silex_core::SilexError;
 use silex_core::reactivity::{
-    Effect, NodeId, ReadSignal, Signal, WriteSignal, batch, create_scope, dispose, untrack,
+    Effect, ReadSignal, ScopeId, Signal, WriteSignal, batch, create_scope, dispose, untrack,
 };
 use silex_core::traits::{ForErrorHandler, ForLoopSource, RxRead, RxWrite};
 use std::collections::{HashMap, HashSet};
@@ -57,7 +57,7 @@ where
 struct KeyedLoopRow<T> {
     item_setter: WriteSignal<T>,
     index_setter: WriteSignal<usize>,
-    scope_id: NodeId,
+    scope_id: ScopeId,
     nodes: Vec<Node>,
 }
 
@@ -246,7 +246,7 @@ where
 struct IndexedLoopRow<T> {
     item_setter: WriteSignal<T>,
     index_setter: WriteSignal<usize>,
-    scope_id: NodeId,
+    scope_id: ScopeId,
     nodes: Vec<Node>,
 }
 

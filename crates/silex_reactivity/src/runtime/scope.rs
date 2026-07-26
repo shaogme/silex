@@ -119,10 +119,9 @@ impl Runtime {
     }
 
     pub(crate) fn internal_on_cleanup(&self, thunk: OnceThunk) {
-        if let Some(owner) = self.current_owner()
-            && let Some(aux) = self.storage.try_aux_mut(owner)
-        {
-            aux.cleanups.push(thunk);
+        if let Some(owner) = self.current_owner() {
+            self.storage
+                .with_aux_mut(owner, |aux| aux.cleanups.push(thunk));
         }
     }
 
@@ -143,10 +142,9 @@ impl Runtime {
 
         let id = self.storage.graph.insert(node);
 
-        if let Some(parent_id) = parent
-            && let Some(aux) = self.storage.try_aux_mut(parent_id)
-        {
-            aux.children.push(id);
+        if let Some(parent_id) = parent {
+            self.storage
+                .with_aux_mut(parent_id, |aux| aux.children.push(id));
         }
         id
     }
@@ -163,21 +161,23 @@ impl Runtime {
 
     /// 摘下一个节点的子节点列表与 cleanup 列表。
     pub(crate) fn take_scope_state(&self, id: NodeId) -> (Vec<NodeId>, CleanupList) {
-        match self.storage.node_aux.get_mut(id) {
-            Some(aux) => (mem::take(&mut aux.children), mem::take(&mut aux.cleanups)),
-            None => (Vec::new(), CleanupList::default()),
-        }
+        self.storage
+            .node_aux
+            .with_mut(id, |aux| {
+                (mem::take(&mut aux.children), mem::take(&mut aux.cleanups))
+            })
+            .unwrap_or_default()
     }
 
     /// 摘下一个计算节点的依赖列表。
     fn take_dependencies(&self, id: NodeId) -> DependencyList {
-        if let Some(n) = self.storage.reactive.get_mut(id)
-            && let Some(effect_data) = &mut n.effect
-        {
-            mem::take(&mut effect_data.dependencies)
-        } else {
-            DependencyList::default()
-        }
+        self.storage
+            .reactive
+            .with_mut(id, |n| match &mut n.effect {
+                Some(effect_data) => mem::take(&mut effect_data.dependencies),
+                None => DependencyList::default(),
+            })
+            .unwrap_or_default()
     }
 
     pub(crate) fn run_cleanups(
@@ -199,11 +199,11 @@ impl Runtime {
     /// 把 `self_id` 从它所有依赖的订阅者表里摘掉。
     fn unsubscribe(&self, self_id: NodeId, dependencies: DependencyList) {
         for (dep_id, _) in dependencies {
-            if let Some(n) = self.storage.reactive.get_mut(dep_id)
-                && let Some(signal_data) = &mut n.signal
-            {
-                signal_data.subscribers.remove(&self_id);
-            }
+            self.storage.reactive.with_mut(dep_id, |n| {
+                if let Some(signal_data) = &mut n.signal {
+                    signal_data.subscribers.remove(&self_id);
+                }
+            });
         }
     }
 
@@ -277,9 +277,14 @@ impl Runtime {
     fn forget_node(&self, id: NodeId) {
         #[cfg(debug_assertions)]
         {
-            if let Some(aux) = self.storage.node_aux.get_mut(id)
-                && let Some(label) = aux.debug_label.take()
-            {
+            // 标签先摘出来再登记墓碑：`remember_dead_label` 要写另一张表，
+            // 不该在 `node_aux` 的借用还活着的时候进行。
+            let label = self
+                .storage
+                .node_aux
+                .with_mut(id, |aux| aux.debug_label.take())
+                .flatten();
+            if let Some(label) = label {
                 self.storage.remember_dead_label(id, label);
             }
         }
@@ -300,10 +305,12 @@ impl Runtime {
 
         if remove_from_parent
             && let Some(parent_id) = self.storage.graph.get(id).and_then(|n| n.parent)
-            && let Some(parent_aux) = self.storage.node_aux.get_mut(parent_id)
-            && let Some(idx) = parent_aux.children.iter().position(|&x| x == id)
         {
-            parent_aux.children.swap_remove(idx);
+            self.storage.node_aux.with_mut(parent_id, |parent_aux| {
+                if let Some(idx) = parent_aux.children.iter().position(|&x| x == id) {
+                    parent_aux.children.swap_remove(idx);
+                }
+            });
         }
 
         self.forget_node(id);

@@ -6,7 +6,7 @@ use crate::{
         *,
     },
 };
-use silex_reactivity::NodeId;
+use silex_reactivity::RawNodeId as NodeId;
 use std::{
     fmt::{Debug, Formatter, Result},
     panic::Location,

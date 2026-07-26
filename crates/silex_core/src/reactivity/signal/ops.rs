@@ -1,5 +1,5 @@
 use crate::traits::*;
-use silex_reactivity::{NodeId, track_signals_batch};
+use silex_reactivity::{RawNodeId as NodeId, StoredId, signal, store};
 use std::marker::PhantomData;
 
 #[repr(C)]
@@ -41,17 +41,7 @@ impl<OT: RxData> UnifiedStaticMapPayload<OT> {
                 is_constant,
                 input_count: 1,
             },
-            inputs: [
-                input_id,
-                NodeId {
-                    index: 0,
-                    generation: 0,
-                },
-                NodeId {
-                    index: 0,
-                    generation: 0,
-                },
-            ],
+            inputs: [input_id, NodeId::DANGLING, NodeId::DANGLING],
             compute: op_trampolines::compute_map_1::<IT, OT>,
             mapper_ptr: mapper as *const (),
             _marker: PhantomData,
@@ -71,17 +61,7 @@ impl<OT: RxData> UnifiedStaticMapPayload<OT> {
                 is_constant,
                 input_count: 1,
             },
-            inputs: [
-                input_id,
-                NodeId {
-                    index: 0,
-                    generation: 0,
-                },
-                NodeId {
-                    index: 0,
-                    generation: 0,
-                },
-            ],
+            inputs: [input_id, NodeId::DANGLING, NodeId::DANGLING],
             compute: op_trampolines::compute_map_1::<IT, OT>,
             mapper_ptr: mapper as *const (),
             _marker: PhantomData,
@@ -100,14 +80,7 @@ impl<OT: RxData> UnifiedStaticMapPayload<OT> {
                 is_constant,
                 input_count: 2,
             },
-            inputs: [
-                inputs[0],
-                inputs[1],
-                NodeId {
-                    index: 0,
-                    generation: 0,
-                },
-            ],
+            inputs: [inputs[0], inputs[1], NodeId::DANGLING],
             compute: op_trampolines::compute_map_2::<I1, I2, OT>,
             mapper_ptr: mapper as *const (),
             _marker: PhantomData,
@@ -164,7 +137,7 @@ pub mod op_trampolines {
 
     pub fn unified_track(this: *const u8) {
         let payload = unsafe { &*(this as *const UnifiedStaticMapPayload<()>) };
-        track_signals_batch(&payload.inputs[..payload.header.input_count as usize]);
+        signal::track_batch(&payload.inputs[..payload.header.input_count as usize]);
     }
 
     /// # Safety
@@ -222,15 +195,18 @@ pub mod op_trampolines {
     }
 
     pub fn track_inputs(inputs: &[NodeId]) {
-        track_signals_batch(inputs);
+        signal::track_batch(inputs);
     }
 
     pub fn track_tuple_meta_slice(this: *const u8) {
         let payload = unsafe { &*(this as *const UnifiedStaticMapPayload<()>) };
         let meta_id = payload.inputs[0];
-        let _ = silex_reactivity::try_with_stored_value(meta_id, |ids: &Vec<NodeId>| {
-            track_signals_batch(ids);
-        });
+        let _ = store::try_with(
+            StoredId::from_raw_unchecked(meta_id),
+            |ids: &Vec<NodeId>| {
+                signal::track_batch(ids);
+            },
+        );
     }
 
     pub fn track_tuple_meta<const N: usize>(this: *const u8) {

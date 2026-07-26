@@ -4,13 +4,10 @@ use std::{
     panic::Location,
 };
 
-use silex_reactivity::{
-    NodeId, get_debug_label, is_stored_value_valid, set_debug_label, store_value,
-    try_get_stored_value_ref, try_update_stored_value, try_with_stored_value,
-};
+use silex_reactivity::{RawNodeId as NodeId, StoredId, get_debug_label, set_debug_label, store};
 
 use crate::{
-    NodeRef, Rx, RxValueKind,
+    Rx, RxValueKind,
     reactivity::Signal,
     traits::{
         IntoSignal, RxData,
@@ -22,7 +19,7 @@ use crate::{
 // --- StoredValue ---
 
 pub struct StoredValue<T> {
-    pub(crate) id: NodeId,
+    pub(crate) id: StoredId,
     pub(crate) marker: PhantomData<T>,
 }
 
@@ -49,7 +46,7 @@ impl<T> Eq for StoredValue<T> {}
 
 impl<T: RxData> StoredValue<T> {
     pub fn new(value: T) -> Self {
-        let id = store_value(value);
+        let id = store::create(value);
         Self {
             id,
             marker: PhantomData,
@@ -83,7 +80,7 @@ impl<T: RxData> RxValue for StoredValue<T> {
 impl<T: RxData> RxBase for StoredValue<T> {
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
-        Some(self.id)
+        Some(self.id.raw())
     }
 
     #[inline(always)]
@@ -93,7 +90,7 @@ impl<T: RxData> RxBase for StoredValue<T> {
 
     #[inline(always)]
     fn is_disposed(&self) -> bool {
-        !is_stored_value_valid(self.id)
+        !self.id.is_alive()
     }
 
     #[inline(always)]
@@ -121,16 +118,16 @@ impl<T: RxData> RxInternal for StoredValue<T> {
         // 残留风险（AUDIT P6 未闭环的部分）：句柄是 `Copy` 的，它的存活与节点的
         // 存活无关 —— 调用方若在持有 guard 期间 `dispose` 这个节点，仍会读到已释放
         // 的内存。彻底修复需要运行时级别的借用计数，见审查报告 P6。
-        let val = unsafe { try_get_stored_value_ref::<T>(self.id)? };
+        let val = unsafe { store::try_value_ref::<T>(self.id)? };
         Some(RxGuard::Borrowed {
             value: val,
-            token: Some(NodeRef::from_id(self.id)),
+            token: Some(self.id.raw()),
         })
     }
 
     #[inline(always)]
     fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        try_with_stored_value(self.id, fun)
+        store::try_with(self.id, fun).ok()
     }
 
     #[inline(always)]
@@ -152,7 +149,7 @@ impl<T: RxData + 'static> IntoRx for StoredValue<T> {
     type RxType = Rx<T, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        Rx::new_signal(self.id)
+        Rx::new_stored(self.id.raw())
     }
     #[inline(always)]
     fn is_constant(&self) -> bool {
@@ -163,7 +160,7 @@ impl<T: RxData + 'static> IntoRx for StoredValue<T> {
 impl<T: RxData> IntoSignal for StoredValue<T> {
     #[inline(always)]
     fn into_signal(self) -> Signal<T> {
-        Signal::StoredConstant(self.id, PhantomData)
+        Signal::StoredConstant(self.id.raw(), PhantomData)
     }
 }
 
@@ -173,7 +170,7 @@ impl<T: RxData> RxWrite for StoredValue<T> {
         &self,
         fun: impl FnOnce(&mut Self::Value) -> URet,
     ) -> Option<URet> {
-        try_update_stored_value(self.id, fun)
+        store::try_update(self.id, fun).ok()
     }
 
     #[inline(always)]
