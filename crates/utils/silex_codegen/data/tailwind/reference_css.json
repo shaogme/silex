@@ -1111,10 +1111,10 @@
       "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
     ]
   ],
-  "backdrop-hue-rotate-60": [
+  "backdrop-hue-rotate-30": [
     [
       "--tw-backdrop-hue-rotate",
-      "hue-rotate(60deg)"
+      "hue-rotate(30deg)"
     ],
     [
       "-webkit-backdrop-filter",
@@ -1125,10 +1125,10 @@
       "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
     ]
   ],
-  "backdrop-opacity-20": [
+  "backdrop-opacity-15": [
     [
       "--tw-backdrop-opacity",
-      "opacity(20%)"
+      "opacity(15%)"
     ],
     [
       "-webkit-backdrop-filter",
@@ -1139,10 +1139,10 @@
       "var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
     ]
   ],
-  "backdrop-opacity-75": [
+  "backdrop-opacity-70": [
     [
       "--tw-backdrop-opacity",
-      "opacity(75%)"
+      "opacity(70%)"
     ],
     [
       "-webkit-backdrop-filter",
@@ -1257,10 +1257,10 @@
       "linear-gradient(var(--tw-gradient-stops))"
     ]
   ],
-  "bg-mauve-50": [
+  "bg-mauve-300": [
     [
       "background-color",
-      "#fafafa"
+      "#d7d0d7"
     ]
   ],
   "bg-none": [
@@ -1269,10 +1269,10 @@
       "none"
     ]
   ],
-  "bg-purple-100": [
+  "bg-pink-900": [
     [
       "background-color",
-      "#f3e8ff"
+      "#861043"
     ]
   ],
   "bg-radial": [
@@ -1303,10 +1303,10 @@
       "#0f172b"
     ]
   ],
-  "bg-stone-50": [
+  "bg-stone-100": [
     [
       "background-color",
-      "#fafaf9"
+      "#f5f5f4"
     ]
   ],
   "block": [
@@ -2745,34 +2745,34 @@
       "0px"
     ]
   ],
-  "decoration-emerald-800": [
+  "decoration-emerald-700": [
     [
       "text-decoration-color",
-      "#006045"
+      "#007a55"
     ]
   ],
-  "decoration-lime-200": [
+  "decoration-lime-100": [
     [
       "text-decoration-color",
-      "#d8f999"
+      "#ecfcca"
     ]
   ],
-  "decoration-olive-700": [
+  "decoration-olive-600": [
     [
       "text-decoration-color",
-      "#474739"
+      "#5b5b4b"
     ]
   ],
-  "decoration-rose-300": [
+  "decoration-rose-200": [
     [
       "text-decoration-color",
-      "#ffa1ad"
+      "#ffccd3"
     ]
   ],
-  "decoration-taupe-700": [
+  "decoration-taupe-500": [
     [
       "text-decoration-color",
-      "#473c39"
+      "#7c6d67"
     ]
   ],
   "delay-100": [
@@ -3139,6 +3139,12 @@
     [
       "fill",
       "#7c6d67"
+    ]
+  ],
+  "filter-none": [
+    [
+      "filter",
+      "none"
     ]
   ],
   "fixed": [
@@ -5219,16 +5225,10 @@
       "bottom"
     ]
   ],
-  "object-bottom-right": [
+  "object-center": [
     [
       "object-position",
-      "right bottom"
-    ]
-  ],
-  "object-contain": [
-    [
-      "object-fit",
-      "contain"
+      "center"
     ]
   ],
   "object-cover": [
@@ -5243,16 +5243,22 @@
       "fill"
     ]
   ],
-  "object-none": [
+  "object-left-top": [
     [
-      "object-fit",
-      "none"
+      "object-position",
+      "left top"
     ]
   ],
-  "object-scale-down": [
+  "object-right-bottom": [
     [
-      "object-fit",
-      "scale-down"
+      "object-position",
+      "right bottom"
+    ]
+  ],
+  "object-top": [
+    [
+      "object-position",
+      "top"
     ]
   ],
   "oldstyle-nums": [
@@ -5469,34 +5475,34 @@
       "auto"
     ]
   ],
-  "overflow-hidden": [
+  "overflow-ellipsis": [
+    [
+      "text-overflow",
+      "ellipsis"
+    ]
+  ],
+  "overflow-scroll": [
     [
       "overflow",
-      "hidden"
-    ]
-  ],
-  "overflow-visible": [
-    [
-      "overflow",
-      "visible"
-    ]
-  ],
-  "overflow-x-clip": [
-    [
-      "overflow-x",
-      "clip"
-    ]
-  ],
-  "overflow-x-scroll": [
-    [
-      "overflow-x",
       "scroll"
     ]
   ],
-  "overflow-y-auto": [
+  "overflow-x-auto": [
     [
-      "overflow-y",
+      "overflow-x",
       "auto"
+    ]
+  ],
+  "overflow-x-hidden": [
+    [
+      "overflow-x",
+      "hidden"
+    ]
+  ],
+  "overflow-x-visible": [
+    [
+      "overflow-x",
+      "visible"
     ]
   ],
   "overline": [

@@ -1,17 +1,26 @@
 pub mod ast;
 pub mod codegen;
 pub mod functional;
+pub mod merge;
 pub mod parser;
 pub mod resolver;
 pub mod variants;
 
 pub use variants::tw_variants_impl;
 
-use ast::{TwInput, TwSegment};
+use ast::{TwInput, TwSegment, UtilityRule};
 use codegen::{build_css_block_from_rules, build_css_block_from_tw};
+use merge::{WriteSet, cluster};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::Result;
+use syn::{Error, Expr, Result};
+
+/// 一个簇里最多允许的条件分支数。
+///
+/// 每多一个条件分支，需要预编译的组合数就翻一倍。6 个 ⇒ 64 个类，
+/// 已经远超真实写法（实测仓库里最大的簇是 1）。超过就报错而不是悄悄退回
+/// 不确定的老行为——那正是这项修复要消灭的东西。
+const MAX_CONDITIONS_PER_CLUSTER: u32 = 6;
 
 /// `tw!` 过程宏核心实现
 pub fn tw_impl(ts: TokenStream) -> Result<TokenStream> {
@@ -68,7 +77,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     let mut cx_items = Vec::new();
     let mut compiled_cache = ::std::collections::HashMap::<u128, String>::new();
 
-    let mut compile_rules_cached = |rules: Vec<ast::UtilityRule>| -> Result<String> {
+    let mut compile_rules_cached = |rules: Vec<UtilityRule>| -> Result<String> {
         if rules.is_empty() {
             return Ok(String::new());
         }
@@ -92,30 +101,117 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
         Ok(cls_name)
     };
 
-    for seg in input.segments {
-        match seg {
-            TwSegment::Static(rules) => {
-                let cls_name = compile_rules_cached(rules)?;
-                if !cls_name.is_empty() {
-                    cx_items.push(quote! { #cls_name });
-                }
-            }
-            TwSegment::Conditional {
-                condition,
-                then_rules,
-                else_rules,
-                ..
-            } => {
-                let then_cls = compile_rules_cached(then_rules)?;
-                let else_cls = compile_rules_cached(else_rules)?;
+    // 报告 §3.5：段与段之间没有编译期 tw-merge，谁覆盖谁只能由注入顺序（= 首次渲染
+    // 顺序）决定。把**会互相覆盖**的段并成一簇，簇内按条件分支展开成若干"完整合并后"
+    // 的类，冲突就交回给编译期裁决；互不覆盖的段照旧各自成类，类的数量不变。
+    let segments: Vec<TwSegment> = input.segments;
+    let write_sets: Vec<WriteSet> = segments.iter().map(segment_write_set).collect();
 
-                if !else_cls.is_empty() {
-                    cx_items.push(quote! { (#condition, #then_cls, #else_cls) });
-                } else {
-                    cx_items.push(quote! { (#condition, #then_cls) });
+    for group in cluster(&write_sets) {
+        let conds: Vec<&Expr> = group
+            .iter()
+            .filter_map(|&i| match &segments[i] {
+                TwSegment::Conditional { condition, .. } => Some(condition),
+                TwSegment::Static(_) => None,
+            })
+            .collect();
+
+        // 单段的簇：与今天的产出逐字节一致，没必要绕一圈 match
+        if group.len() == 1 {
+            match &segments[group[0]] {
+                TwSegment::Static(rules) => {
+                    let cls = compile_rules_cached(rules.clone())?;
+                    if !cls.is_empty() {
+                        cx_items.push(quote! { #cls });
+                    }
+                }
+                TwSegment::Conditional {
+                    condition,
+                    then_rules,
+                    else_rules,
+                } => {
+                    let then_cls = compile_rules_cached(then_rules.clone())?;
+                    let else_cls = compile_rules_cached(else_rules.clone())?;
+                    if !else_cls.is_empty() {
+                        cx_items.push(quote! { (#condition, #then_cls, #else_cls) });
+                    } else {
+                        cx_items.push(quote! { (#condition, #then_cls) });
+                    }
                 }
             }
+            continue;
         }
+
+        // 纯静态的簇：合并成一个类即可，没有需要展开的自由度
+        if conds.is_empty() {
+            let mut merged = Vec::new();
+            for &i in &group {
+                if let TwSegment::Static(rules) = &segments[i] {
+                    merged.extend(rules.iter().cloned());
+                }
+            }
+            let cls = compile_rules_cached(merged)?;
+            if !cls.is_empty() {
+                cx_items.push(quote! { #cls });
+            }
+            continue;
+        }
+
+        let k = conds.len() as u32;
+        if k > MAX_CONDITIONS_PER_CLUSTER {
+            return Err(Error::new(
+                span,
+                format!(
+                    "这个 `tw!` 里有 {k} 个条件分支写到了同一组 CSS 属性，\
+                     要让它们的覆盖关系在编译期确定下来需要预编译 2^{k} 个类名，\
+                     超过了 {MAX_CONDITIONS_PER_CLUSTER} 个条件分支的上限。\
+                     请把互不相干的属性拆到多个 `tw!` 调用里。"
+                ),
+            ));
+        }
+
+        // 位 j = 第 j 个条件分支取 then 分支
+        let mut arms = Vec::with_capacity(1usize << k);
+        for combo in 0..(1u32 << k) {
+            let mut merged = Vec::new();
+            let mut cond_seen = 0usize;
+            for &i in &group {
+                match &segments[i] {
+                    TwSegment::Static(rules) => merged.extend(rules.iter().cloned()),
+                    TwSegment::Conditional {
+                        then_rules,
+                        else_rules,
+                        ..
+                    } => {
+                        let taken = combo & (1 << cond_seen) != 0;
+                        cond_seen += 1;
+                        merged.extend(if taken { then_rules } else { else_rules }.iter().cloned());
+                    }
+                }
+            }
+            let cls = compile_rules_cached(merged)?;
+            let idx = combo as usize;
+            arms.push(quote! { #idx => #cls });
+        }
+
+        let bindings = conds.iter().enumerate().map(|(j, cond)| {
+            let name = quote::format_ident!("__slx_cond_{}", j);
+            quote! { let #name: bool = #cond; }
+        });
+        let index_terms = (0..conds.len()).map(|j| {
+            let name = quote::format_ident!("__slx_cond_{}", j);
+            quote! { ((#name as usize) << #j) }
+        });
+
+        cx_items.push(quote! {
+            {
+                #(#bindings)*
+                match #(#index_terms)|* {
+                    #(#arms,)*
+                    _ => "",
+                }
+            }
+        });
     }
 
     if !extra_classes.is_empty() {
@@ -133,6 +229,22 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
             })
         }
     })
+}
+
+/// 一个段可能写到的属性覆盖面：条件分支要把两条分支都算进来
+fn segment_write_set(seg: &TwSegment) -> WriteSet {
+    match seg {
+        TwSegment::Static(rules) => WriteSet::of(rules),
+        TwSegment::Conditional {
+            then_rules,
+            else_rules,
+            ..
+        } => {
+            let mut set = WriteSet::of(then_rules);
+            set.merge_from(&WriteSet::of(else_rules));
+            set
+        }
+    }
 }
 
 #[cfg(test)]

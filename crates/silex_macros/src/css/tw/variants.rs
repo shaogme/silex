@@ -1,8 +1,18 @@
+use crate::css::tw::{
+    merge::{WriteSet, cluster},
+    parser::{TokenAnchor, parse_class_list},
+};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use syn::parse::{Parse, ParseStream};
 use syn::{Ident, LitStr, Result, Token, Visibility, braced, bracketed};
+
+/// 一个合并簇最多允许预编译的组合数
+///
+/// 只有**真的互相覆盖**的槽位才会进同一个簇，所以这个上限在实践中够用得多：
+/// 仓库里 6 个组件（Button 是 6 × 8 两槽）一个簇都不会形成。
+const MAX_VARIANT_COMBINATIONS: usize = 256;
 
 /// 复合变体结构输入
 #[derive(Debug, Clone)]
@@ -186,6 +196,165 @@ impl Parse for TwVariantsMacroInput {
     }
 }
 
+/// 跨槽位层叠顺序的消解方案（报告 §3.5 / §5.4）
+///
+/// `base` **不参与**：`declare_variants!` 生成的 `write_class` 恒定先写 base、
+/// 再写各个变体槽位、最后写 compound（见 `silex_css` 的 `test_declare_variants_basic`
+/// 与 `test_declare_variants_compound` 两个顺序断言）。类名是在求值 `tw!(…)` 时
+/// 注入样式表的，于是 base 的样式**必然**先于任何选项落盘，选项覆盖 base 是确定的——
+/// 这也正是 CVA 语义要的先后。真正不确定的是**槽位与槽位之间**、
+/// **槽位与 compound 之间**：谁先落盘取决于用户先渲染了哪个组合，换一次渲染顺序就翻盘。
+#[derive(Default)]
+struct MergePlan {
+    /// 类名改由合并项承载、自身置空的变体槽位
+    silenced_variants: BTreeSet<usize>,
+    /// 内容已折进合并项、需要从 `compound_variants` 移除的下标
+    silenced_compounds: BTreeSet<usize>,
+    /// 追加的合并项：`(每个驱动槽位的 (变体名, 选项名), 合并后的词条串)`
+    merged: Vec<(Vec<(String, String)>, String)>,
+}
+
+/// 把一串词条解析成规则；解析失败时交回 `None`，让后续既有的 `tw!` 去报那份错误
+fn rules_of(class_str: &str, span: Span) -> Option<Vec<crate::css::tw::ast::UtilityRule>> {
+    let mut extra = Vec::new();
+    parse_class_list(&TokenAnchor::whole(class_str, span), &mut extra).ok()
+}
+
+fn write_set_of(class_str: &str, span: Span) -> WriteSet {
+    rules_of(class_str, span)
+        .map(|r| WriteSet::of(&r))
+        .unwrap_or_default()
+}
+
+fn plan_merges(input: &TwVariantsMacroInput, span: Span) -> Result<MergePlan> {
+    let n = input.variants.len();
+    let m = input.compound_variants.len();
+    if n + m < 2 {
+        return Ok(MergePlan::default());
+    }
+
+    let variant_index = |name: &str| input.variants.iter().position(|(v, _)| v == name);
+
+    // compound 引用了不存在的变体时不在这里报错：让既有的校验去给出那条更贴切的信息
+    for cv in &input.compound_variants {
+        if cv.conditions.keys().any(|k| variant_index(k).is_none()) {
+            return Ok(MergePlan::default());
+        }
+    }
+
+    let mut sets: Vec<WriteSet> = Vec::with_capacity(n + m);
+    for (_, opts) in &input.variants {
+        let mut set = WriteSet::default();
+        for (_, cls) in opts {
+            set.merge_from(&write_set_of(cls, span));
+        }
+        sets.push(set);
+    }
+    for cv in &input.compound_variants {
+        sets.push(write_set_of(&cv.class_str, span));
+    }
+
+    let mut plan = MergePlan::default();
+    for group in cluster(&sets) {
+        if group.len() < 2 {
+            continue;
+        }
+        let clustered_variants: Vec<usize> = group.iter().copied().filter(|&i| i < n).collect();
+        let clustered_compounds: Vec<usize> = group
+            .iter()
+            .copied()
+            .filter(|&i| i >= n)
+            .map(|i| i - n)
+            .collect();
+
+        // 驱动槽位 = 簇里的变体槽位 + 被簇内 compound 的条件引用到的变体槽位
+        let mut drivers: BTreeSet<usize> = clustered_variants.iter().copied().collect();
+        for &c in &clustered_compounds {
+            for key in input.compound_variants[c].conditions.keys() {
+                drivers.insert(variant_index(key).expect("已在上面校验过"));
+            }
+        }
+        let drivers: Vec<usize> = drivers.into_iter().collect();
+
+        let combinations: usize = drivers
+            .iter()
+            .map(|&d| input.variants[d].1.len())
+            .product::<usize>();
+        if combinations > MAX_VARIANT_COMBINATIONS {
+            let names: Vec<&str> = drivers
+                .iter()
+                .map(|&d| input.variants[d].0.as_str())
+                .collect();
+            return Err(syn::Error::new(
+                span,
+                format!(
+                    "变体 {} 写到了同一组 CSS 属性，要让它们的覆盖关系在编译期确定下来\
+                     需要预编译 {} 个组合，超过了 {} 的上限。\
+                     请让这些变体各自负责互不相干的属性，或把冲突的部分收进 base。",
+                    names.join(" / "),
+                    combinations,
+                    MAX_VARIANT_COMBINATIONS
+                ),
+            ));
+        }
+
+        // 枚举驱动槽位的取值组合（把组合序号按各槽位的选项数逐位拆开）
+        for combo in 0..combinations {
+            let mut rem = combo;
+            let mut choice = vec![0usize; drivers.len()];
+            for (at, &d) in drivers.iter().enumerate().rev() {
+                let len = input.variants[d].1.len();
+                choice[at] = rem % len;
+                rem /= len;
+            }
+
+            let picked: Vec<(String, String)> = drivers
+                .iter()
+                .zip(&choice)
+                .map(|(&d, &c)| {
+                    (
+                        input.variants[d].0.clone(),
+                        input.variants[d].1[c].0.clone(),
+                    )
+                })
+                .collect();
+
+            let mut parts: Vec<&str> = Vec::new();
+            // 先写簇内变体槽位（按声明顺序），再写命中的 compound——与 `write_class` 同序
+            for &v in &clustered_variants {
+                let at = drivers.iter().position(|&d| d == v).expect("必是驱动槽位");
+                parts.push(input.variants[v].1[choice[at]].1.as_str());
+            }
+            for &c in &clustered_compounds {
+                let cv = &input.compound_variants[c];
+                let hit = cv.conditions.iter().try_fold(true, |acc, (var, opt)| {
+                    let chosen = &picked
+                        .iter()
+                        .find(|(v, _)| v == var)
+                        .expect("条件引用的变体必在驱动集里")
+                        .1;
+                    // 按 PascalCase 比较：生成的代码比的是枚举变体，
+                    // `icon-lg` 与 `icon_lg` 在那边本就是同一个 `IconLg`
+                    Ok::<bool, syn::Error>(
+                        acc && to_pascal_case(chosen, span)? == to_pascal_case(opt, span)?,
+                    )
+                })?;
+                if hit {
+                    parts.push(cv.class_str.as_str());
+                }
+            }
+
+            parts.retain(|p| !p.trim().is_empty());
+            plan.merged.push((picked, parts.join(" ")));
+        }
+
+        plan.silenced_variants.extend(clustered_variants);
+        plan.silenced_compounds.extend(clustered_compounds);
+    }
+
+    Ok(plan)
+}
+
 /// 把选项名/变体名转成 PascalCase 标识符
 ///
 /// 非法字符不再 `panic`：proc-macro panic 只会给出 `proc macro panicked` 这种
@@ -286,8 +455,10 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
         Ok(Ident::new(&name, span))
     };
 
+    let plan = plan_merges(&input, span)?;
+
     let mut var_decls = Vec::with_capacity(input.variants.len());
-    for (var_name, opts) in &input.variants {
+    for (var_idx, (var_name, opts)) in input.variants.iter().enumerate() {
         if opts.is_empty() {
             return Err(syn::Error::new(
                 span,
@@ -335,10 +506,16 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
         }
         let def_opt_ident = to_pascal_case(&def_opt_str, span)?;
 
+        // 被并进合并项的槽位自身不再产出类名：它的样式已经写进那张组合表，
+        // 留在这里就成了同一份声明的第二个类，覆盖关系又交还给注入顺序
+        let is_silenced = plan.silenced_variants.contains(&var_idx);
         let opt_entries = opts
             .iter()
             .map(|(opt_name, opt_cls)| {
                 let opt_ident = to_pascal_case(opt_name, span)?;
+                if is_silenced {
+                    return Ok(quote! { #opt_ident => "" });
+                }
                 Ok(quote! {
                     #opt_ident => #__silex::macros::tw!(#opt_cls)
                 })
@@ -352,10 +529,12 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
         });
     }
 
-    let compound_entries: Vec<_> = input
+    let mut compound_entries: Vec<_> = input
         .compound_variants
         .iter()
-        .map(|cv| {
+        .enumerate()
+        .filter(|(i, _)| !plan.silenced_compounds.contains(i))
+        .map(|(_, cv)| {
             let cond_checks = cv
                 .conditions
                 .iter()
@@ -384,6 +563,24 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
             })
         })
         .collect::<Result<Vec<_>>>()?;
+
+    // 合并项：把互相覆盖的槽位/compound 折成一张"组合 → 完整合并后的类名"表。
+    // 借用 compound_variants 这条既有通道，`declare_variants!` 不必为此改一行——
+    // compound 本来就是"条件全部命中时追加一个类"，合并项就是它的一般形式。
+    for (picked, merged_cls) in &plan.merged {
+        let cond_checks = picked
+            .iter()
+            .map(|(var_name, opt_name)| {
+                let var_ident = field_ident(var_name, span)?;
+                let var_type_ident = type_ident(var_name)?;
+                let opt_ident = to_pascal_case(opt_name, span)?;
+                Ok(quote! { #var_ident == #var_type_ident :: #opt_ident })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        compound_entries.push(quote! {
+            ( #(#cond_checks),* ) => #__silex::macros::tw!(#merged_cls)
+        });
+    }
 
     // --- 字符串驱动的兼容接口（运行时 `Signal<String>` 场景） ---
     let mut get_params = Vec::new();
@@ -593,6 +790,100 @@ mod tests {
             default_variants: { size: "lg" },
         });
         assert!(err.contains("not one of its options"), "{err}");
+    }
+
+    // -----------------------------------------------------------------
+    // §3.5 / §5.4 跨槽位层叠顺序
+    // -----------------------------------------------------------------
+
+    fn expand(ts: TokenStream) -> String {
+        tw_variants_impl(ts).unwrap().to_string()
+    }
+
+    /// 互不覆盖的槽位**不合并**——仓库里 6 个 UI 组件都属于这一类，
+    /// 产物必须与修复前一模一样，不能因为这项修复膨胀出组合表
+    #[test]
+    fn independent_variant_slots_are_not_combined() {
+        let out = expand(quote! {
+            base: "inline-flex rounded-md text-sm",
+            variants: {
+                variant: { default: "bg-primary text-primary-foreground", ghost: "hover:bg-accent" },
+                size: { default: "h-9 px-4 py-2", sm: "h-8 px-3" },
+            },
+        });
+        // 每个选项照旧各自 `tw!`，没有 compound_variants 段
+        assert!(
+            out.contains(r#"tw ! ("bg-primary text-primary-foreground")"#),
+            "{out}"
+        );
+        assert!(out.contains(r#"tw ! ("h-9 px-4 py-2")"#), "{out}");
+        assert!(!out.contains("compound_variants"), "{out}");
+    }
+
+    /// 两个槽位写到同一个属性时，谁覆盖谁此前取决于用户先渲染了哪个组合。
+    /// 现在展开成"组合 → 完整合并后的类名"，覆盖关系回到编译期。
+    #[test]
+    fn conflicting_variant_slots_expand_into_a_combination_table() {
+        let out = expand(quote! {
+            base: "rounded",
+            variants: {
+                tone: { light: "bg-white", dark: "bg-black" },
+                state: { on: "bg-blue-500", off: "" },
+            },
+        });
+
+        // 2 × 2 四个组合，每个都是合并后的完整词条串
+        assert!(out.contains(r#"tw ! ("bg-white bg-blue-500")"#), "{out}");
+        assert!(out.contains(r#"tw ! ("bg-black bg-blue-500")"#), "{out}");
+        assert!(out.contains(r#"tw ! ("bg-white")"#), "{out}");
+        assert!(out.contains(r#"tw ! ("bg-black")"#), "{out}");
+
+        // 槽位自身不再产出类名，否则同一份声明会有第二个类
+        assert!(!out.contains(r#"tw ! ("bg-blue-500")"#), "{out}");
+        assert!(out.contains(r#"Light => """#), "{out}");
+        assert!(out.contains(r#"On => """#), "{out}");
+
+        // base 不参与：它恒定先于任何选项写入，覆盖关系本来就是确定的
+        assert!(out.contains(r#"tw ! ("rounded")"#), "{out}");
+    }
+
+    /// compound 与它所覆盖的槽位同理：折进组合表，而不是留成第三个类
+    #[test]
+    fn a_compound_that_overrides_a_slot_is_folded_in() {
+        let out = expand(quote! {
+            base: "border",
+            variants: {
+                size: { sm: "p-2", lg: "p-6" },
+            },
+            compound_variants: [ { size: "lg", class: "p-8" } ],
+        });
+        assert!(out.contains(r#"tw ! ("p-6 p-8")"#), "{out}");
+        assert!(out.contains(r#"tw ! ("p-2")"#), "{out}");
+        assert!(!out.contains(r#"tw ! ("p-8")"#), "{out}");
+        assert!(out.contains(r#"Lg => """#), "{out}");
+    }
+
+    /// 组合数按各槽位选项数相乘，超过上限时报错而不是悄悄退回不确定的老行为
+    #[test]
+    fn too_many_conflicting_combinations_are_rejected() {
+        let mut opts_a = TokenStream::new();
+        let mut opts_b = TokenStream::new();
+        for i in 0..20u32 {
+            let name = format_ident!("o{}", i);
+            let cls = format!("p-{}", i);
+            opts_a.extend(quote! { #name: #cls, });
+            let cls2 = format!("px-{}", i);
+            opts_b.extend(quote! { #name: #cls2, });
+        }
+        let err = err_of(quote! {
+            base: "border",
+            variants: {
+                a: { #opts_a },
+                b: { #opts_b },
+            },
+        });
+        assert!(err.contains("上限"), "{err}");
+        assert!(err.contains("a / b"), "{err}");
     }
 
     #[test]

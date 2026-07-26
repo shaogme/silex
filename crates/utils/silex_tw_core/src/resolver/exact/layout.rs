@@ -75,6 +75,11 @@ pub fn resolve_layout_rules(
         "object-top-right" => Some(cow![("object-position", "top right")]),
         "object-bottom-left" => Some(cow![("object-position", "bottom left")]),
         "object-bottom-right" => Some(cow![("object-position", "bottom right")]),
+        // v3 的轴序写法，v4 仍然保留为别名
+        "object-left-top" => Some(cow![("object-position", "top left")]),
+        "object-right-top" => Some(cow![("object-position", "top right")]),
+        "object-left-bottom" => Some(cow![("object-position", "bottom left")]),
+        "object-right-bottom" => Some(cow![("object-position", "bottom right")]),
 
         // Aspect ratio
         "aspect-auto" => Some(cow![("aspect-ratio", "auto")]),
@@ -86,6 +91,9 @@ pub fn resolve_layout_rules(
         "box-content" => Some(cow![("box-sizing", "content-box")]),
         "box-decoration-clone" => Some(cow![("box-decoration-break", "clone")]),
         "box-decoration-slice" => Some(cow![("box-decoration-break", "slice")]),
+        // v3 写法的别名（注意与 `decoration-<颜色/粗细>` 不冲突：那两族没有 slice/clone 档位）
+        "decoration-clone" => Some(cow![("box-decoration-break", "clone")]),
+        "decoration-slice" => Some(cow![("box-decoration-break", "slice")]),
 
         // Clear & Float
         "clear-left" => Some(cow![("clear", "left")]),

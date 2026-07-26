@@ -653,3 +653,45 @@ fn long_class_strings_are_windowed_around_the_error() {
         assert!(msg.contains("p-44x"), "{msg}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// §13.7 抽取脚本漏列的工具类
+// ---------------------------------------------------------------------------
+
+/// `getClassList()` 是给编辑器补全用的，只覆盖"能从 theme 展开出取值"的部分。
+/// 取值不来自 theme 的 `filter-none` / `backdrop-filter-none`，以及静态工具类里的
+/// 一批 v3 兼容别名，整条不在里面——它们此前一律报"未知类"。
+/// 抽取脚本改以 `designSystem.utilities.keys()`（Tailwind 自己的注册表）兜底。
+#[test]
+fn utilities_missing_from_get_class_list_now_resolve() {
+    assert_contains("filter-none", "filter:none");
+    assert_contains("backdrop-filter-none", "backdrop-filter:none");
+
+    // v3 轴序写法的位置别名（LightningCSS 会把关键字压成等价的百分比）
+    assert_contains("bg-left-top", "background-position:0 0");
+    assert_contains("bg-right-bottom", "background-position:100% 100%");
+    assert_contains("object-left-top", "object-position:top left");
+    assert_contains("object-right-bottom", "object-position:bottom right");
+
+    // 其余 v3 兼容别名
+    assert_contains("overflow-ellipsis", "text-overflow:ellipsis");
+    assert_contains("break-words", "overflow-wrap:break-word");
+    assert_contains("decoration-slice", "box-decoration-break:slice");
+    assert_contains("decoration-clone", "box-decoration-break:clone");
+    assert_contains("order-none", "order:0");
+}
+
+/// `none` 是整条属性的关键字取值，不能与函数分量并列——
+/// `filter: blur(4px) none` 是非法 CSS。组合型属性的合并逻辑必须让它清空此前累积的分量。
+#[test]
+fn filter_none_clears_previously_accumulated_filter_components() {
+    assert_contains("blur-sm brightness-50 filter-none", "filter:none");
+    let css = css_of("blur-sm brightness-50 filter-none");
+    assert!(
+        !css.contains("blur(") && !css.contains("brightness("),
+        "filter-none 之后不该还留着函数分量:\n{css}"
+    );
+
+    // 反过来：filter-none 在前，后面的分量照常累积
+    assert_contains("filter-none blur-sm", "filter:blur(4px)");
+}

@@ -15,6 +15,8 @@ pub fn resolve_typography_border_effect_rules(
         "text-end" => Some(cow![("text-align", "end")]),
         "text-clip" => Some(cow![("text-overflow", "clip")]),
         "text-ellipsis" => Some(cow![("text-overflow", "ellipsis")]),
+        // v3 写法的别名
+        "overflow-ellipsis" => Some(cow![("text-overflow", "ellipsis")]),
 
         "italic" => Some(cow![("font-style", "italic")]),
         "not-italic" => Some(cow![("font-style", "normal")]),
@@ -91,6 +93,8 @@ pub fn resolve_typography_border_effect_rules(
         "text-pretty" => Some(cow![("text-wrap", "pretty")]),
         "wrap-normal" => Some(cow![("overflow-wrap", "normal")]),
         "wrap-break-word" => Some(cow![("overflow-wrap", "break-word")]),
+        // v3 写法的别名
+        "break-words" => Some(cow![("overflow-wrap", "break-word")]),
         "wrap-anywhere" => Some(cow![("overflow-wrap", "anywhere")]),
 
         // Antialiased
