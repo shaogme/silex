@@ -223,28 +223,28 @@ macro_rules! impl_valid_for_dimension {
 
 macro_rules! impl_css_ops {
     ($t:ty, $trait:ident, $mark:ident) => {
-        impl<R: $trait> Add<R> for $t {
+        impl<R: $trait + CalcOperand> Add<R> for $t {
             type Output = CalcValue<$mark>;
             fn add(self, rhs: R) -> Self::Output {
-                CalcValue::binary(self, " + ", rhs)
+                CalcValue::binary(self, "+", rhs)
             }
         }
-        impl<R: $trait> Sub<R> for $t {
+        impl<R: $trait + CalcOperand> Sub<R> for $t {
             type Output = CalcValue<$mark>;
             fn sub(self, rhs: R) -> Self::Output {
-                CalcValue::binary(self, " - ", rhs)
+                CalcValue::binary(self, "-", rhs)
             }
         }
         impl Mul<f64> for $t {
             type Output = CalcValue<$mark>;
             fn mul(self, rhs: f64) -> Self::Output {
-                CalcValue::binary(self, " * ", rhs)
+                CalcValue::binary(self, "*", rhs)
             }
         }
         impl Div<f64> for $t {
             type Output = CalcValue<$mark>;
             fn div(self, rhs: f64) -> Self::Output {
-                CalcValue::binary(self, " / ", rhs)
+                CalcValue::binary(self, "/", rhs)
             }
         }
     };

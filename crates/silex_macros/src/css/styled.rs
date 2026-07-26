@@ -593,28 +593,33 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
 
     let mut inits = Vec::new();
 
+    // 声明值里的运行时片段：编译器在全局模式下统一吐 `var(--slx-dyn-N)`，
+    // 这里按名字替换。`$(expr)` 与 `$path` 走同一套占位符——此前 `$(expr)`
+    // 吐的是 `{}`，永远匹配不上，`global!{ body { color: $(c); } }` 直接编译失败。
+    let mut value_decls = Vec::new();
+    let mut value_replacements = Vec::new();
+    for (i, (prop, expr)) in res.expressions.iter().enumerate() {
+        let vid = quote::format_ident!("global_var_{}", i);
+        let pty = crate::css::get_prop_type(prop, c_name.span())?;
+        value_decls.push(quote! { let #vid = #__silex::css::make_property_val::<#pty, _>(#expr); });
+        let pattern = format!("var(--slx-dyn-{})", i);
+        value_replacements.push(quote! { (#pattern.to_string(), #vid.clone()) });
+    }
+    // 只求值一次，两处（顶层模板与各条动态规则）共用
+    inits.push(quote! { #(#value_decls)* });
+
     // 1. Process top-level expressions using template replacement (eliminates --dyn-N proxy)
     if !res.expressions.is_empty() {
-        let mut replacements = Vec::new();
-        let mut r_decls = Vec::new();
-        for (i, (prop, expr)) in res.expressions.iter().enumerate() {
-            let vid = quote::format_ident!("global_var_{}", i);
-            let pty = crate::css::get_prop_type(prop, c_name.span())?;
-            r_decls.push(quote! { let #vid = #__silex::css::make_property_val::<#pty, _>(#expr); });
-            let pattern = format!("var(--slx-dyn-{})", i);
-            replacements.push(quote! { (#pattern.to_string(), #vid) });
-        }
-
         // Combine static (at-rules) and component (rules) CSS into one template
         let template = format!("{}\n{}", res.static_css, res.component_css);
         let sid = &res.style_id;
 
         inits.push(quote! {
-            #(#r_decls)*
             #__silex::css::inject_managed_dynamic_style(
                 #sid,
                 #template.to_string(),
-                ::std::vec![ #(#replacements),* ],
+                ::std::vec![],
+                ::std::vec![ #(#value_replacements),* ],
             );
         });
     } else {
@@ -623,18 +628,19 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     }
 
     // 2. Process nested dynamic rules (selectors with $)
+    //
+    // 规则模板里选择器片段是按序的 `{}`，声明值片段是具名的 `var(--slx-dyn-N)`
+    // （后者属于 `res.expressions`，与上面同一批）。此前这里替换的 pattern 是
+    // `._slx_dyn_N`，而编译器从来没产出过这种形状，两边永不匹配。
     for (idx, rule) in res.dynamic_rules.iter().enumerate() {
         let template = &rule.template;
-        let mut replacements = Vec::new();
+        let mut positional = Vec::new();
         let mut r_decls = Vec::new();
         for (ei, (p, ex)) in rule.expressions.iter().enumerate() {
             let vid = quote::format_ident!("dyn_var_{}_{}", idx, ei);
             let pty = crate::css::get_prop_type(p, c_name.span())?;
             r_decls.push(quote! { let #vid = #__silex::css::make_property_val::<#pty, _>(#ex); });
-            let pattern_val = format!("var(--slx-dyn-{})", ei);
-            let pattern_sel = format!("._slx_dyn_{}", ei);
-            replacements.push(quote! { (#pattern_val.to_string(), #vid.clone()) });
-            replacements.push(quote! { (#pattern_sel.to_string(), #vid) });
+            positional.push(quote! { #vid });
         }
         let sid = &res.style_id;
         let rid = format!("{}-dyn-{}", sid, idx);
@@ -643,7 +649,8 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
             #__silex::css::inject_managed_dynamic_style(
                 #rid,
                 #template.to_string(),
-                ::std::vec![ #(#replacements),* ],
+                ::std::vec![ #(#positional),* ],
+                ::std::vec![ #(#value_replacements),* ],
             );
         });
     }

@@ -291,7 +291,9 @@ fn generate_css_recursive(
         css_out.push_str(base_selector);
         css_out.push_str(" {\n");
         for (k, v) in &style.static_rules {
-            let _ = writeln!(css_out, "  {}: {};", k, v);
+            // 属性名来自注册表（`&'static str`），值可能来自用户输入：
+            // 必须挡在声明边界内，否则一个 `;` 就能注入新规则
+            let _ = writeln!(css_out, "  {}: {};", k, crate::escape::declaration_value(v));
         }
         for (prop, getter) in &style.dynamic_rules {
             let var_name = format!("--sb-{}-{}", hash_str, dyn_bindings.len());

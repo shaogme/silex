@@ -106,7 +106,18 @@ impl LinearGradientBuilder {
         self.repeating = true;
         self
     }
+    /// 至少要有一个色标：`linear-gradient()` 不是合法的 CSS 函数，
+    /// 浏览器会整条声明丢掉。调试构建下直接 panic，发布构建下退化为 `none`
+    /// （合法且语义中性）。
+    #[track_caller]
     pub fn build(self) -> GradientValue {
+        debug_assert!(
+            !self.stops.is_empty(),
+            "linear_gradient() 至少需要一个 .stop(...)，否则产出的是无效 CSS"
+        );
+        if self.stops.is_empty() {
+            return GradientValue("none".to_string());
+        }
         let name = if self.repeating {
             "repeating-linear-gradient"
         } else {
@@ -186,7 +197,15 @@ impl RadialGradientBuilder {
         self.repeating = true;
         self
     }
+    #[track_caller]
     pub fn build(self) -> GradientValue {
+        debug_assert!(
+            !self.stops.is_empty(),
+            "radial_gradient() 至少需要一个 .stop(...)，否则产出的是无效 CSS"
+        );
+        if self.stops.is_empty() {
+            return GradientValue("none".to_string());
+        }
         let name = if self.repeating {
             "repeating-radial-gradient"
         } else {

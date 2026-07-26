@@ -35,7 +35,17 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
     let name = &def.name;
     let vis = &def.vis;
 
+    let config = crate::css::config::get_config();
+
+    // 前缀的来源，从低到高：内置默认 → `silex.toml` 的 `[theme].prefix`
+    // → `#[theme(prefix = "…")]`。配置那一层此前只在「字段为空、从配置补全」
+    // 的分支里读，显式声明了字段的主题拿不到 `[theme].prefix`。
     let mut prefix = "slx-theme".to_string();
+    if let Some(cfg) = &config
+        && let Some(p) = &cfg.theme.prefix
+    {
+        prefix = p.clone();
+    }
     let mut is_main = false;
     for attr in &def.attrs {
         if attr.path().is_ident("theme") {
@@ -64,13 +74,11 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
     let mut css_vars = Vec::new();
     let mut const_impl_items = Vec::new();
 
+    // 没有显式声明字段时，从 `silex.toml` 的配色表补出来
     let mut fields = def.fields.clone();
     if fields.is_empty()
-        && let Some(cfg) = crate::css::config::get_config()
+        && let Some(cfg) = &config
     {
-        if let Some(p) = &cfg.theme.prefix {
-            prefix = p.clone();
-        }
         let mut keys: Vec<&String> = cfg.theme.colors.keys().collect();
         keys.sort();
         for k in keys {
@@ -141,7 +149,11 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
     let mut patch_entries = Vec::new();
     let mut patch_setters = Vec::new();
 
-    for (field_idx, field) in def.fields.iter().enumerate() {
+    // 用补全后的 `fields`，不是 `def.fields`：配置驱动的主题
+    // （`theme!{ struct T {} }` + `silex.toml` 配色）在 `def.fields` 里是空的，
+    // 于是 `TPatch` 一个字段都没有、`get_patch_entries()` 返回空 vec，
+    // `theme_patch()` 静默无效
+    for (field_idx, field) in fields.iter().enumerate() {
         let f_name = field_idents[field_idx].clone();
         let f_ty = &field.ty;
         let css_var_name = &css_vars[field_idx];
@@ -213,4 +225,57 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
 
         #dep_tokens
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 工作区根目录的 `silex.toml` 里有 `brand-primary` / `brand-accent`，
+    /// `get_config` 会一路向上找到它，所以这里能覆盖「配置驱动」这条路。
+    fn config_colors_available() -> bool {
+        crate::css::config::get_config()
+            .map(|c| c.theme.colors.contains_key("brand-primary"))
+            .unwrap_or(false)
+    }
+
+    /// 配置驱动的主题此前 Patch 结构体是空的：补全字段用的是 `fields`，
+    /// 而 Patch 那一段读的是 `def.fields`（空）。于是 `get_patch_entries()`
+    /// 返回空 vec，`theme_patch()` 静默无效。
+    #[test]
+    fn config_driven_theme_gets_patch_fields() {
+        if !config_colors_available() {
+            return;
+        }
+        let out = bridge_theme_impl(quote! { pub struct T {} })
+            .unwrap()
+            .to_string();
+        assert!(out.contains("struct TPatch"), "{out}");
+        assert!(out.contains("brand_primary"), "{out}");
+        assert!(out.contains("brand_accent"), "{out}");
+    }
+
+    /// 显式声明字段的主题也要读到 `[theme].prefix`
+    #[test]
+    fn explicit_fields_still_read_the_configured_prefix() {
+        if !config_colors_available() {
+            return;
+        }
+        let out = bridge_theme_impl(quote! { pub struct T { primary: Hex } })
+            .unwrap()
+            .to_string();
+        assert!(out.contains("--slx-theme-primary"), "{out}");
+    }
+
+    /// `#[theme(prefix = …)]` 优先于配置
+    #[test]
+    fn attribute_prefix_wins_over_config() {
+        let out = bridge_theme_impl(quote! {
+            #[theme(prefix = "custom")]
+            pub struct T { primary: Hex }
+        })
+        .unwrap()
+        .to_string();
+        assert!(out.contains("--custom-primary"), "{out}");
+    }
 }

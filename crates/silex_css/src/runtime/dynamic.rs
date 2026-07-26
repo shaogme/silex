@@ -305,9 +305,19 @@ where
 }
 
 /// Helper function to inject managed dynamic style with reactive variable replacements.
+///
+/// 模板里有两类占位符：
+///
+/// - `positional`：按出现顺序填回的 `{}`，用于**选择器**里的运行时片段
+///   （`.x $theme { … }`）。全局样式没有可挂 CSS 变量的元素，只能做文本替换。
+/// - `replacements`：具名的 `var(--slx-dyn-N)`，用于**声明值**里的运行时片段。
+///
+/// 先填 `{}` 再填具名的：`{}` 的位置是按序消费的，一旦被别的替换结果打乱就再也
+/// 对不上了。
 pub fn inject_managed_dynamic_style(
     style_id: impl Into<String>,
     template: String,
+    positional: Vec<CssVariableGetter>,
     replacements: Vec<(String, CssVariableGetter)>,
 ) {
     let manager = Rc::new(RefCell::new(Some(DynamicStyleManager::new())));
@@ -321,6 +331,10 @@ pub fn inject_managed_dynamic_style(
     let style_id_str = style_id.into();
     Effect::new(move |_| {
         let mut res = template.clone();
+        for getter in &positional {
+            let Some(at) = res.find("{}") else { break };
+            res.replace_range(at..at + 2, &getter.get());
+        }
         for (pattern, getter) in &replacements {
             let val = getter.get();
             res = res.replace(pattern, &val);

@@ -84,6 +84,18 @@ impl Parse for CssRule {
     }
 }
 
+/// 构造一段**逐字 CSS 文本**的 token。
+///
+/// 代码生成器（`tw`）需要把 `1rem`、`blur(4px)`、`var(--x)` 这类片段原样送进声明值，
+/// 既不能让 Rust 词法重排、也不能被当成 CSS 字符串加引号。普通字符串字面量做不到
+/// 这件事——`content: "hello"` 里的引号是有语义的，必须保留。
+///
+/// 所以这里用**字节串字面量**（`b"…"`）作为「逐字文本」的显式标记：CSS 里不存在
+/// 这种写法，用户不会误写，而生成器可以精确表达自己的意图。
+pub fn verbatim_literal(text: &str) -> proc_macro2::Literal {
+    proc_macro2::Literal::byte_string(text.as_bytes())
+}
+
 /// A CSS declaration like `background-color: red;`
 #[derive(Clone)]
 pub struct CssDeclaration {
@@ -188,16 +200,22 @@ impl Parse for CssNested {
 /// cannot. Parsing `@font-face` as a single `Ident` used to stop at `font`, leaving
 /// `-face` in `params` — which silently broke both the `is_lifted` check in the
 /// compiler and the emitted CSS.
+///
+/// `block` 是 `Option`：`@import url(…);`、`@charset "utf-8";`、`@layer a, b;`
+/// 这类语句式 at-rule 没有块。此前 `Parse` 强制要求 `{}`，所以编译器里那条
+/// `at.name == "import"` 的分支永远走不到，`@import` 实际上根本写不出来。
 #[derive(Clone)]
 pub struct CssAtRule {
     pub name: String,
     pub params: TokenStream,
-    pub block: CssBlock,
+    pub block: Option<CssBlock>,
+    pub span: proc_macro2::Span,
 }
 
 impl Parse for CssAtRule {
     fn parse(input: ParseStream) -> Result<Self> {
-        let _at_token: Token![@] = input.parse()?;
+        let at_token: Token![@] = input.parse()?;
+        let span = at_token.span;
 
         let mut name = String::new();
         loop {
@@ -214,9 +232,20 @@ impl Parse for CssAtRule {
         }
 
         let mut params = TokenStream::new();
-        while !input.peek(token::Brace) && !input.is_empty() {
+        while !input.peek(token::Brace) && !input.peek(Token![;]) && !input.is_empty() {
             let tt: TokenTree = input.parse()?;
             params.extend(std::iter::once(tt));
+        }
+
+        // 语句式 at-rule：以 `;` 结束，没有块
+        if input.peek(Token![;]) {
+            let _: Token![;] = input.parse()?;
+            return Ok(CssAtRule {
+                name,
+                params,
+                block: None,
+                span,
+            });
         }
 
         let content;
@@ -226,7 +255,8 @@ impl Parse for CssAtRule {
         Ok(CssAtRule {
             name,
             params,
-            block,
+            block: Some(block),
+            span,
         })
     }
 }
@@ -388,12 +418,14 @@ impl ToTokens for CssAtRule {
         // `Parse` 原样收回；直接 `Ident::new` 会因名字含 `-` 而 panic
         let name: TokenStream = self.name.parse().unwrap_or_default();
         let params = &self.params;
-        let block = &self.block;
-        tokens.extend(quote::quote! {
-            @ #name #params {
-                #block
-            }
-        });
+        match &self.block {
+            Some(block) => tokens.extend(quote::quote! {
+                @ #name #params {
+                    #block
+                }
+            }),
+            None => tokens.extend(quote::quote! { @ #name #params ; }),
+        }
     }
 }
 

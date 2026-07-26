@@ -66,7 +66,14 @@ impl TransformBuilder {
         self
     }
 
+    /// 没有任何变换函数时产出 `none`，而不是空串。
+    ///
+    /// 空串会渲染成 `transform: ;`——无效声明，浏览器直接丢弃；`none` 是
+    /// `transform` 的初始值，语义上正是「不做变换」。
     pub fn build(self) -> TransformValue {
+        if self.parts.is_empty() {
+            return TransformValue("none".to_string());
+        }
         let mut val = String::new();
         for (i, part) in self.parts.iter().enumerate() {
             if i > 0 {
@@ -113,7 +120,9 @@ where
         if i > 0 {
             val.push(' ');
         }
-        write!(val, "\"{}\"", s.as_ref()).unwrap();
+        // 用户串里的 `"` 必须转义，否则 `a"; color:red; x:"` 这种输入会闭合
+        // 当前字符串、越出声明边界，把任意 CSS 注入进来
+        val.push_str(&crate::escape::css_string(s.as_ref()));
     }
     GridTemplateAreasValue(val)
 }
@@ -136,7 +145,42 @@ where
         if i > 0 {
             val.push_str(", ");
         }
-        write!(val, "\"{}\" {}", k, v).unwrap();
+        val.push_str(&crate::escape::css_string(&k.to_string()));
+        write!(val, " {}", v).unwrap();
     }
     FontVariationSettingsValue(val)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 报告里的注入用例：值里的 `"` 曾能闭合当前字符串、越出声明边界
+    #[test]
+    fn grid_template_areas_cannot_break_out_of_the_declaration() {
+        let v = grid_template_areas(["a\"; color:red; x:\""]).to_string();
+        assert_eq!(v, r#""a\"; color:red; x:\"""#);
+        // 只有首尾两个引号是“裸”的，中间那对已被转义 —— 值出不去声明边界
+        let bare_quotes = v
+            .char_indices()
+            .filter(|&(i, c)| c == '"' && (i == 0 || v.as_bytes()[i - 1] != b'\\'))
+            .count();
+        assert_eq!(bare_quotes, 2, "{v}");
+    }
+
+    #[test]
+    fn font_variation_settings_escapes_its_axis_names() {
+        let v = font_variation_settings([("wght\"", 700)]).to_string();
+        assert_eq!(v, r#""wght\"" 700"#);
+    }
+
+    #[test]
+    fn empty_transform_builds_a_valid_value() {
+        // 曾产出空串 → `transform: ;`
+        assert_eq!(transform().build().to_string(), "none");
+        assert_eq!(
+            transform().translate_x("1px").build().to_string(),
+            "translateX(1px)"
+        );
+    }
 }

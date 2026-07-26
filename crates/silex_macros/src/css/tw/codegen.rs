@@ -396,9 +396,10 @@ fn build_keyframe_at_rule(name: &str) -> Option<CssAtRule> {
     Some(CssAtRule {
         name: "keyframes".to_string(),
         params,
-        block: CssBlock {
+        block: Some(CssBlock {
             rules: keyframe_rules,
-        },
+        }),
+        span: Span::call_site(),
     })
 }
 
@@ -440,18 +441,23 @@ fn convert_rule_to_declaration(rule: &UtilityRule) -> CssRule {
 /// 把一个 `UtilityValue` 渲染为声明值的 token 流
 fn utility_value_to_tokens(value: &UtilityValue) -> TokenStream {
     match value {
-        UtilityValue::Keyword(kw) => kw.parse().unwrap_or_else(|_| quote!(#kw)),
+        // 表里的关键字是成品 CSS 文本（`linear-gradient(to right, var(--x))`），
+        // 走 `TokenStream::parse` 会把空白交给重建逻辑去猜，这里直接逐字送出
+        UtilityValue::Keyword(kw) => {
+            let lit = crate::css::ast::verbatim_literal(kw);
+            quote!(#lit)
+        }
         UtilityValue::Numeric(val, unit) => {
             if unit.is_empty() {
                 let lit = Literal::f64_unsuffixed(*val);
                 quote!(#lit)
             } else {
-                let lit = Literal::string(&format!("{}{}", val, unit));
+                let lit = crate::css::ast::verbatim_literal(&format!("{}{}", val, unit));
                 quote!(#lit)
             }
         }
         UtilityValue::HexColor(hex) => {
-            let lit = Literal::string(hex);
+            let lit = crate::css::ast::verbatim_literal(hex);
             quote!(#lit)
         }
         UtilityValue::ThemeVar(var, opacity) => {
@@ -462,11 +468,11 @@ fn utility_value_to_tokens(value: &UtilityValue) -> TokenStream {
                 ),
                 None => format!("var(--slx-theme-{})", var),
             };
-            let lit = Literal::string(&val_str);
+            let lit = crate::css::ast::verbatim_literal(&val_str);
             quote!(#lit)
         }
         UtilityValue::ArbitraryLiteral(lit) => {
-            let lit_node = Literal::string(lit);
+            let lit_node = crate::css::ast::verbatim_literal(lit);
             quote!(#lit_node)
         }
         // 分量之间靠 token 类型自然分隔：两个相邻字面量会被序列化成 `a b`
@@ -547,7 +553,8 @@ fn wrap_in_at_rule(name: &str, condition: &str, block: CssBlock, span: Span) -> 
         rules: vec![CssRule::AtRule(CssAtRule {
             name: name.to_string(),
             params,
-            block: nested_block,
+            block: Some(nested_block),
+            span,
         })],
     }
 }

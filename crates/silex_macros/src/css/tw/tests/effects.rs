@@ -116,10 +116,12 @@ fn test_gradient_system_css() {
         false,
     )
     .unwrap();
+    // 值逐字来自 tw 参照表（`linear-gradient(to right, var(--tw-gradient-stops))`），
+    // 不再经过「按 token 类型猜空白」的重建，所以逗号后的空格与 Tailwind 一致
     assert!(
         compile_result
             .component_css
-            .contains("background-image:linear-gradient(to right,var(--tw-gradient-stops))")
+            .contains("background-image:linear-gradient(to right, var(--tw-gradient-stops))")
     );
     assert!(
         compile_result

@@ -3,6 +3,7 @@ pub mod classes;
 pub mod compiler;
 pub mod config;
 pub mod error;
+pub mod spacing;
 pub mod styled;
 pub mod table;
 pub mod theme;

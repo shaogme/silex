@@ -1,6 +1,7 @@
 pub mod builder;
 pub mod class;
 pub mod codegen;
+pub mod escape;
 pub mod runtime;
 pub mod theme;
 #[cfg(feature = "tw")]
