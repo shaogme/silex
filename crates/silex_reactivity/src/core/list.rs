@@ -9,7 +9,7 @@ use std::{
 /// A specialized, memory-efficient vector for `T`.
 /// Is stores length and capacity in a heap header to keep the stack size small (1 word).
 /// This is similar to `ThinVec`.
-pub struct ThinVec<T> {
+pub(crate) struct ThinVec<T> {
     /// Pointer to the allocation.
     /// Layout: [Header][padding?][Data...]
     /// If None, it's empty/unallocated.
@@ -274,7 +274,7 @@ impl<T: Clone> Clone for ThinVec<T> {
     }
 }
 
-pub struct ThinVecIntoIter<T> {
+pub(crate) struct ThinVecIntoIter<T> {
     ptr: Option<NonNull<u8>>,
     idx: usize,
     len: usize,
@@ -345,7 +345,7 @@ impl<T> IntoIterator for ThinVec<T> {
 // --- List Wrapper ---
 
 #[derive(Clone, Default)]
-pub enum List<T> {
+pub(crate) enum List<T> {
     #[default]
     Empty,
     Single(T),
@@ -353,7 +353,7 @@ pub enum List<T> {
 }
 
 impl<T> List<T> {
-    pub fn push(&mut self, elem: T) {
+    pub(crate) fn push(&mut self, elem: T) {
         match replace(self, Self::Empty) {
             Self::Empty => *self = Self::Single(elem),
             Self::Single(val) => {
@@ -369,7 +369,7 @@ impl<T> List<T> {
         }
     }
 
-    pub fn for_each<F>(&self, mut f: F)
+    pub(crate) fn for_each<F>(&self, mut f: F)
     where
         F: FnMut(&T),
     {
@@ -386,7 +386,7 @@ impl<T> List<T> {
 }
 
 impl<T: PartialEq> List<T> {
-    pub fn remove(&mut self, elem: &T) {
+    pub(crate) fn remove(&mut self, elem: &T) {
         match self {
             Self::Empty => {}
             Self::Single(existing) => {
@@ -420,7 +420,7 @@ impl<T> IntoIterator for List<T> {
     }
 }
 
-pub enum ListIntoIter<T> {
+pub(crate) enum ListIntoIter<T> {
     Empty,
     Single(Option<T>),
     Many(ThinVecIntoIter<T>),

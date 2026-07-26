@@ -179,7 +179,13 @@ impl<T: 'static> DerivedVTable<T> {
 
 /// 读取一个 [`register_derived`] 节点的当前值（必要时先重算），并追踪依赖。
 ///
-/// 与 [`try_get_signal`] 完全等价，只是名字表达了“这是个派生节点”。
+/// 与 [`try_get_signal`] **完全等价** —— 函数体就是一行转发。名字暗示的
+/// “运行一个派生计算” 也是误导：读取只在节点确实变脏时才驱动重算，
+/// 干净的节点直接返回缓存值。请改用 [`try_get_signal`]。
+#[deprecated(
+    since = "0.1.0-beta.10",
+    note = "改用 `try_get_signal`：两者行为完全相同，`run_derived` 只是一个别名"
+)]
 pub fn run_derived<T: Clone + 'static>(id: NodeId) -> Option<T> {
     try_get_signal(id)
 }
@@ -425,19 +431,14 @@ pub fn try_update_signal_silent<T: 'static, R>(
 ) -> Option<R> {
     let rt = RUNTIME.get()?;
     let mut out = None;
-    let applied = rt
-        .with_signal_value_mut(id, |value| match value.downcast_mut::<T>() {
-            Some(typed) => {
-                out = Some(f(typed));
-                true
-            }
-            None => false,
-        })
-        .unwrap_or(false);
-
-    if applied {
-        rt.bump_signal_version(id);
-    }
+    // 第二个分量即“请递增版本号”：只有类型相符、闭包真的跑过才递增。
+    let _ = rt.with_signal_value_mut(id, |value| match value.downcast_mut::<T>() {
+        Some(typed) => {
+            out = Some(f(typed));
+            ((), true)
+        }
+        None => ((), false),
+    });
     out
 }
 

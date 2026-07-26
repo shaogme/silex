@@ -101,6 +101,15 @@ impl<T: 'static, M> Rx<T, M> {
                 std::mem::align_of::<P>() <= silex_reactivity::RawOpBuffer::ALIGNMENT,
                 "Op payload requires > 16-byte alignment"
             );
+            // `RawOpBuffer` 是 `[MaybeUninit<u8>; 64]` + `Copy`：节点销毁时只是丢掉
+            // 64 字节原始内存，载荷自己的析构函数**永远不会运行**。今天不出事是因为
+            // 所有载荷恰好都是 POD，但那从来没有被强制过 —— 哪天有人往里放个 `Rc` /
+            // `Box` / `String`，就是一个完全静默的泄漏（审计报告 §2.4）。
+            // 在这里把它变成编译错误。需要带析构函数的载荷请改用 `store_value`。
+            assert!(
+                !std::mem::needs_drop::<P>(),
+                "Op payload must not need drop: RawOpBuffer never runs destructors"
+            );
         };
         let id = silex_reactivity::untrack(|| {
             let mut buffer = silex_reactivity::RawOpBuffer::new();

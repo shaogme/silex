@@ -14,13 +14,13 @@ fn test_signal_derive_basic() {
         // derived signals use register_derived which uses initialize_memo_raw,
         // and we can read them natively as if they are reactive values.
         assert_eq!(
-            silex_reactivity::run_derived::<i32>(derived.node_id().unwrap()),
+            silex_reactivity::try_get_signal::<i32>(derived.node_id().unwrap()),
             Some(20)
         );
 
         rw.set(15);
         assert_eq!(
-            silex_reactivity::run_derived::<i32>(derived.node_id().unwrap()),
+            silex_reactivity::try_get_signal::<i32>(derived.node_id().unwrap()),
             Some(30)
         );
     });
@@ -147,7 +147,7 @@ fn test_derive() {
         // Ensure evaluating the derived value directly evaluates to 42
         // We'll read the node untracked using standard core routines:
         assert_eq!(
-            silex_reactivity::run_derived::<i32>(d.ensure_node_id()),
+            silex_reactivity::try_get_signal::<i32>(d.ensure_node_id()),
             Some(42)
         );
     });

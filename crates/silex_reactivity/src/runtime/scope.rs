@@ -3,7 +3,7 @@ use crate::{
     core::{arena::Index as NodeId, value::OnceThunk},
     runtime::{
         Runtime,
-        guard::OwnerGuard,
+        guard::{ObserverGuard, OwnerGuard},
         storage::{CleanupList, Node},
     },
 };
@@ -18,8 +18,20 @@ use std::{
 /// （cleanup 闭包里再调 `dispose`），但嵌套层数在真实代码里是个位数。
 const MAX_POOLED_DISPOSE_STACKS: usize = 32;
 
+/// 当前的**所有权**上下文与**依赖追踪**上下文。
+///
+/// 这是两件正交的事，此前被绑在同一个 `current_owner` 上，于是 `untrack`
+/// 一清就把所有权也清掉了 —— 在 `untrack` 里创建的节点没有父节点、不在任何
+/// scope 的 children 里、永远不会被 `dispose` 回收（AUDIT 二轮 §1.1）。
+/// SolidJS 把这两个分成 `Owner` 与 `Listener`，`untrack` 只清 `Listener`。
+///
+/// | 变量 | 含义 | 谁读它 |
+/// |---|---|---|
+/// | `current_owner` | 新节点挂在谁下面、`on_cleanup` 注册给谁 | `register_node`、`internal_on_cleanup` |
+/// | `current_observer` | 读 signal 时把谁登记为订阅者 | `track_dependency` / `track_dependencies` |
 pub(crate) struct Scopes {
     pub(crate) current_owner: Cell<Option<NodeId>>,
+    pub(crate) current_observer: Cell<Option<NodeId>>,
     /// 销毁工作栈的复用池，避免每次销毁子树都新分配一个 `Vec`。
     dispose_stacks: RefCell<Vec<Vec<DisposeStep>>>,
 }
@@ -28,6 +40,7 @@ impl Scopes {
     pub(crate) fn new() -> Self {
         Self {
             current_owner: Cell::new(None),
+            current_observer: Cell::new(None),
             dispose_stacks: RefCell::new(Vec::new()),
         }
     }
@@ -63,25 +76,45 @@ impl Runtime {
         self.scopes.current_owner.set(owner);
     }
 
-    pub fn untrack<T>(&self, f: impl FnOnce() -> T) -> T {
-        // 守卫保证 owner 一定会被恢复：裸写法在 f panic 时会让 owner 永久错位，
-        // 之后创建的所有节点都会挂到错误的父节点上（AUDIT P2）。
-        let _owner = OwnerGuard::set(self, None);
+    pub(crate) fn current_observer(&self) -> Option<NodeId> {
+        self.scopes.current_observer.get()
+    }
+
+    pub(crate) fn set_observer(&self, observer: Option<NodeId>) {
+        self.scopes.current_observer.set(observer);
+    }
+
+    /// 在 `f` 执行期间关闭依赖追踪 —— **只关追踪**。
+    ///
+    /// 所有权上下文原封不动：`f` 里创建的节点照旧挂在当前 owner 下面，随它一起
+    /// 销毁。之前这里连 owner 一起清掉，于是 `untrack(|| store_value(v))` 这种
+    /// “只是想避免建立依赖” 的写法会造出一个永远回收不掉的孤儿节点，而
+    /// `silex_core` 的每一个 `Rx::new_op` / `new_constant` 都是这么写的
+    /// （AUDIT 二轮 §1.1）。
+    pub(crate) fn untrack<T>(&self, f: impl FnOnce() -> T) -> T {
+        // 守卫保证 observer 一定会被恢复：裸写法在 f panic 时会让追踪永久关闭
+        // （AUDIT P2）。
+        let _observer = ObserverGuard::set(self, None);
         f()
     }
 
     #[track_caller]
-    pub fn create_scope<F>(&self, f: F) -> NodeId
+    pub(crate) fn create_scope<F>(&self, f: F) -> NodeId
     where
         F: FnOnce(),
     {
         let id = self.register_node();
         let _owner = OwnerGuard::set(self, Some(id));
+        // scope 只是一个所有权容器，它自己不是计算节点，没有“重跑”这回事，
+        // 因此不能成为 observer。里面的读取一律不建立依赖 —— 这与拆分之前的
+        // 行为一致（那时靠 `track_dependency` 检查 owner 有没有 `effect` 来兜底
+        // 过滤，现在由类型之外的这一行显式表达）。
+        let _observer = ObserverGuard::set(self, None);
         f();
         id
     }
 
-    pub fn on_cleanup(&self, f: impl FnOnce() + 'static) {
+    pub(crate) fn on_cleanup(&self, f: impl FnOnce() + 'static) {
         self.internal_on_cleanup(OnceThunk::new(f))
     }
 
@@ -93,7 +126,7 @@ impl Runtime {
         }
     }
 
-    pub fn dispose(&self, id: NodeId) {
+    pub(crate) fn dispose(&self, id: NodeId) {
         self.dispose_node_internal(id, true);
     }
 

@@ -2,14 +2,14 @@ use crate::core::arena::Index as NodeId;
 use std::collections::VecDeque;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum NodeState {
+pub(crate) enum NodeState {
     Clean,
     Check,
     Dirty,
 }
 
 /// Abstraction over the storage part of the reactive graph.
-pub trait GraphStorage {
+pub(crate) trait GraphStorage {
     fn get_state(&self, id: NodeId) -> NodeState;
     fn set_state(&self, id: NodeId, state: NodeState);
     fn fill_subscribers(&self, id: NodeId, dest: &mut Vec<NodeId>);
@@ -22,17 +22,17 @@ pub trait GraphStorage {
 }
 
 /// Abstraction over the scheduler part of the reactive graph.
-pub trait GraphScheduler {
+pub(crate) trait GraphScheduler {
     fn queue_effect(&self, id: NodeId);
 }
 
 /// Abstraction over the computation execution part (e.g. running user logic).
-pub trait GraphExecutor {
+pub(crate) trait GraphExecutor {
     fn run_computation(&self, id: NodeId) -> bool;
 }
 
 /// A generic adapter that connects storage, scheduler, and executor to implement [ReactiveGraph].
-pub struct RuntimeAdapter<'a, S, SCHED, E> {
+pub(crate) struct RuntimeAdapter<'a, S, SCHED, E> {
     pub storage: &'a S,
     pub scheduler: &'a SCHED,
     pub executor: &'a E,
@@ -86,7 +86,7 @@ where
 }
 
 /// Abstraction over the reactive graph to decouple algorithms from the runtime.
-pub trait ReactiveGraph {
+pub(crate) trait ReactiveGraph {
     /// Get the current state of a node.
     fn get_state(&self, id: NodeId) -> NodeState;
 
@@ -130,7 +130,7 @@ pub trait ReactiveGraph {
 
 /// Phase 1: Propagation (BFS)
 /// Marks downstream nodes as Dirty/Check and queues effects.
-pub fn propagate(
+pub(crate) fn propagate(
     graph: &mut impl ReactiveGraph,
     start_node: NodeId,
     queue: &mut VecDeque<NodeId>,
@@ -199,7 +199,7 @@ fn describe_cycle(graph: &impl ReactiveGraph, stack: &[NodeId], repeated: NodeId
 /// 依赖成环时 panic。`stack` 保存的是一条从目标节点出发的**简单路径**，
 /// 一个节点第二次出现就意味着环 —— 之前没有任何检测，`A -> B -> A` 会让
 /// 这个循环一直压栈直到 OOM（AUDIT P13）。
-pub fn evaluate(
+pub(crate) fn evaluate(
     graph: &mut impl ReactiveGraph,
     target_node: NodeId,
     stack: &mut Vec<NodeId>,

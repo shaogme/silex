@@ -57,8 +57,8 @@ fn test_derived_signal() {
         val * 3
     }));
 
-    assert_eq!(run_derived::<i32>(d), Some(3));
+    assert_eq!(try_get_signal::<i32>(d), Some(3));
 
     update_signal(s, |v: &mut i32| *v = 2);
-    assert_eq!(run_derived::<i32>(d), Some(6));
+    assert_eq!(try_get_signal::<i32>(d), Some(6));
 }

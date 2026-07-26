@@ -50,6 +50,10 @@
 //! [`try_get_signal_value_ref`]），它们各自的 `# Safety` 段写明了什么操作会让
 //! 返回的指针/引用失效。CI 里跑 `cargo miri test` 看着这条线。
 
+// `mod runtime` / `mod core` 都是私有的，里面的 `pub` 等价于 `pub(crate)` ——
+// 读代码的人却会以为那是对外接口。开这条 lint 把两者区分开（审计报告 §3.4）。
+#![deny(unreachable_pub)]
+
 mod core;
 mod primitive;
 mod runtime;
@@ -79,6 +83,18 @@ pub(crate) type DependencyList = List<(NodeId, u32)>;
 /// 缓冲区用 `MaybeUninit<u8>` 而不是 `u8`：Payload 里通常含有函数指针和数据指针，
 /// 而整数类型的读写会擦除指针 provenance，按值搬运 `[u8; 64]` 之后再把这些字节
 /// 当指针解引用即为未定义行为（AUDIT P3）。字节级复制则保留 provenance。
+///
+/// # 契约：载荷必须是 POD
+///
+/// 本类型是 `Copy` 的，运行时对它一无所知 —— [`register_op`] 保管的载荷在节点
+/// 销毁时只是丢掉 64 字节原始内存，**载荷自己的析构函数永远不会运行**。因此存进
+/// 来的类型必须满足 `!std::mem::needs_drop::<P>()`，否则就是一个静默的泄漏；
+/// 而且既然是 `Copy`，安全代码可以把 [`try_with_op`] 借到的缓冲区复制出任意份，
+/// 一旦将来支持析构就直接是 double-free（审计报告 §2.4）。
+///
+/// `silex_core::Rx::new_op` 用 `const assert` 把这条契约钉成了编译错误。
+/// 需要带析构函数的载荷请改用 [`store_value`]：`AnyValue` 自带 SOO、类型检查
+/// 与正确的析构，代价只是多一次 `TypeId` 比较。
 #[repr(C, align(16))]
 #[derive(Clone, Copy)]
 pub struct RawOpBuffer {

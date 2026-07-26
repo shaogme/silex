@@ -39,8 +39,19 @@ impl AnyValue {
     ///
     /// 用于“把值移出节点 → 交给用户闭包 → 放回”期间临时填充节点，
     /// 使运行时不必在用户代码执行期间持有指向节点的 `&mut`（AUDIT P5）。
-    pub(crate) fn placeholder() -> Self {
-        Self::new(())
+    ///
+    /// 直接构造而不是走 `Self::new(())`：后者要算一次 `Layout`、比一次大小与
+    /// 对齐、再走一遍内联/装箱的分派，而每一次 signal 写入与 memo 重算都要
+    /// 构造一个占位值（AUDIT 二轮 §1.3 末段）。这里是 `const fn`，
+    /// 编译期就折叠成一个零缓冲区加一个 vtable 指针。
+    pub(crate) const fn placeholder() -> Self {
+        AnyValue {
+            inner: AnyBox {
+                data: InlineStorage::zeroed(),
+                // `()` 是零大小的，必然走内联表示；它没有析构函数也没有比较函数。
+                vtable: &InlineVTable::<()>::VTABLE,
+            },
+        }
     }
 
     /// 创建一个带相等性比较能力的类型擦除值（memo 的重算结果走这里）。

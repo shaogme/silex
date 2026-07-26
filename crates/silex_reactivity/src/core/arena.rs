@@ -88,14 +88,14 @@ impl<T> Chunk<T> {
     }
 }
 
-pub struct Arena<T> {
+pub(crate) struct Arena<T> {
     chunks: UnsafeCell<Vec<Chunk<T>>>,
     free_head: UnsafeCell<Option<u32>>,
     len: UnsafeCell<usize>,
 }
 
 impl<T> Arena<T> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             chunks: UnsafeCell::new(Vec::new()),
             free_head: UnsafeCell::new(None),
@@ -111,7 +111,7 @@ impl<T> Arena<T> {
     /// **同一时刻只能有一个操作在动这些状态**：本 crate 是单线程的（运行时挂在
     /// thread-local 上），而 `insert` / `remove` / `get` 都不会调用任何用户代码，
     /// 因此不存在重入。往这里加任何会回调出去的逻辑都会破坏这条契约。
-    pub fn insert(&self, value: T) -> Index {
+    pub(crate) fn insert(&self, value: T) -> Index {
         // SAFETY: 见上面的契约 —— 单线程 + 本函数内部不会重入，
         // 因此这几个由 `UnsafeCell` 派生的 `&mut` 在其存活期间是独占的。
 
@@ -180,7 +180,7 @@ impl<T> Arena<T> {
     }
 
     /// Access element by Index.
-    pub fn get(&self, id: Index) -> Option<&T> {
+    pub(crate) fn get(&self, id: Index) -> Option<&T> {
         let (chunk_idx, offset) = self.get_chunk_offset(id.index);
 
         // SAFETY: 单线程且本函数不重入（契约见 `insert`）。代数相符即说明槽位
@@ -219,7 +219,7 @@ impl<T> Arena<T> {
 
     /// Remove element.
     /// Returns true if removed, false if not found/already removed.
-    pub fn remove(&self, id: Index) -> bool {
+    pub(crate) fn remove(&self, id: Index) -> bool {
         let (chunk_idx, offset) = self.get_chunk_offset(id.index);
 
         // SAFETY: 单线程且本函数不重入（契约见 `insert`）。`ManuallyDrop::drop`
@@ -280,7 +280,7 @@ impl<T> Default for Arena<T> {
 
 type ChunkArray<T> = Box<[UnsafeCell<Option<(u32, T)>>]>;
 
-pub struct SparseSecondaryMap<T, const N: usize = 16> {
+pub(crate) struct SparseSecondaryMap<T, const N: usize = 16> {
     chunks: UnsafeCell<Vec<Option<ChunkArray<T>>>>,
 }
 
@@ -291,7 +291,7 @@ impl<T, const N: usize> Default for SparseSecondaryMap<T, N> {
 }
 
 impl<T, const N: usize> SparseSecondaryMap<T, N> {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             chunks: UnsafeCell::new(Vec::new()),
         }
@@ -302,7 +302,7 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
     /// 返回是否真的写进去了：用一个**比槽位里存着的还旧**的代数写入会被拒绝
     /// （ABA 防护，见 `test_secondary_map_aba_protection`）。之前这个拒绝是完全
     /// 静默的，调用方连失败都不知道（AUDIT P19.5）。
-    pub fn insert(&self, key: Index, value: T) -> bool {
+    pub(crate) fn insert(&self, key: Index, value: T) -> bool {
         let (chunk_idx, offset) = self.get_chunk_offset(key.index);
 
         // SAFETY: 与 `Arena` 相同的契约 —— 单线程、本函数内不执行用户代码。
@@ -340,7 +340,7 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
         }
     }
 
-    pub fn get(&self, key: Index) -> Option<&T> {
+    pub(crate) fn get(&self, key: Index) -> Option<&T> {
         let (chunk_idx, offset) = self.get_chunk_offset(key.index);
         // SAFETY: 同上；代数相符才返回，引用绑定在 `&self` 上。
         unsafe {
@@ -390,7 +390,7 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
         }
     }
 
-    pub fn remove(&self, key: Index) -> Option<T> {
+    pub(crate) fn remove(&self, key: Index) -> Option<T> {
         let (chunk_idx, offset) = self.get_chunk_offset(key.index);
         // SAFETY: 同 `get`；代数不符时不动任何东西。
         unsafe {

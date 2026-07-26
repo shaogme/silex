@@ -6,12 +6,16 @@
 //! 被 `take()` 出来的计算闭包则会永久丢失（AUDIT P2）。
 
 use crate::{
-    core::{arena::Index as NodeId, value::AnyValue, value::ThunkValue},
-    runtime::Runtime,
+    core::{algorithm::NodeState, arena::Index as NodeId, value::AnyValue, value::ThunkValue},
+    runtime::{Runtime, scheduler::WorkSpace},
 };
-use std::cell::Cell;
+use std::{
+    cell::{Cell, RefCell},
+    collections::VecDeque,
+    mem,
+};
 
-/// 恢复 `current_owner`。
+/// 恢复 `current_owner`（**所有权**：新节点挂在谁下面、`on_cleanup` 注册给谁）。
 pub(crate) struct OwnerGuard<'a> {
     rt: &'a Runtime,
     prev: Option<NodeId>,
@@ -28,6 +32,47 @@ impl<'a> OwnerGuard<'a> {
 impl Drop for OwnerGuard<'_> {
     fn drop(&mut self) {
         self.rt.set_owner(self.prev);
+    }
+}
+
+/// 恢复 `current_observer`（**依赖追踪**：读 signal 时把谁登记为订阅者）。
+///
+/// 与所有权是两件正交的事，所以是两个独立的变量：`untrack` 只清这一个，
+/// 它里面创建的节点照样挂在当前 owner 下面（AUDIT 二轮 §1.1）。
+pub(crate) struct ObserverGuard<'a> {
+    rt: &'a Runtime,
+    prev: Option<NodeId>,
+}
+
+impl<'a> ObserverGuard<'a> {
+    pub(crate) fn set(rt: &'a Runtime, observer: Option<NodeId>) -> Self {
+        let prev = rt.current_observer();
+        rt.set_observer(observer);
+        Self { rt, prev }
+    }
+}
+
+impl Drop for ObserverGuard<'_> {
+    fn drop(&mut self) {
+        self.rt.set_observer(self.prev);
+    }
+}
+
+/// 进入一个计算节点（effect / memo）的执行上下文。
+///
+/// 计算节点同时扮演两个角色：它是本次运行中新建节点的 **owner**，也是本次
+/// 运行中读到的 signal 的 **observer**。这是**唯一**会把两者设成同一个 id 的地方。
+pub(crate) struct ComputationGuard<'a> {
+    _owner: OwnerGuard<'a>,
+    _observer: ObserverGuard<'a>,
+}
+
+impl<'a> ComputationGuard<'a> {
+    pub(crate) fn enter(rt: &'a Runtime, id: NodeId) -> Self {
+        Self {
+            _owner: OwnerGuard::set(rt, Some(id)),
+            _observer: ObserverGuard::set(rt, Some(id)),
+        }
     }
 }
 
@@ -78,6 +123,73 @@ impl Drop for QueueGuard<'_> {
     }
 }
 
+/// 求值 DFS 用的两个工作栈，析构时归还池子。
+///
+/// 之前是手写的 `borrow_vec` / `return_vec` 配对：`evaluate` 在依赖成环时会
+/// panic（`algorithm.rs`），借出的容器就那样被丢弃了。只损失池化容量、不影响
+/// 正确性，但与 lib.rs 里“所有借出的东西都由 RAII 守卫恢复”的承诺不符，
+/// 也和 crate 里其它地方一律用守卫的风格不一致（AUDIT P2 / 二轮 §2.5）。
+pub(crate) struct EvalBuffers<'a> {
+    ws: &'a RefCell<WorkSpace>,
+    stack: Vec<NodeId>,
+    deps: Vec<NodeId>,
+}
+
+impl<'a> EvalBuffers<'a> {
+    pub(crate) fn acquire(ws: &'a RefCell<WorkSpace>) -> Self {
+        let (stack, deps) = {
+            let mut w = ws.borrow_mut();
+            (w.borrow_vec(), w.borrow_vec())
+        };
+        Self { ws, stack, deps }
+    }
+
+    pub(crate) fn split(&mut self) -> (&mut Vec<NodeId>, &mut Vec<NodeId>) {
+        (&mut self.stack, &mut self.deps)
+    }
+}
+
+impl Drop for EvalBuffers<'_> {
+    fn drop(&mut self) {
+        // 展开途中池子可能正被外层借着；这时宁可丢掉这点容量，也不能在
+        // panic 里再 panic（那会直接 abort）。
+        if let Ok(mut w) = self.ws.try_borrow_mut() {
+            w.return_vec(mem::take(&mut self.stack));
+            w.return_vec(mem::take(&mut self.deps));
+        }
+    }
+}
+
+/// 传播 BFS 用的队列与订阅者暂存区，析构时归还池子。理由同 [`EvalBuffers`]。
+pub(crate) struct PropagateBuffers<'a> {
+    ws: &'a RefCell<WorkSpace>,
+    queue: VecDeque<NodeId>,
+    subs: Vec<NodeId>,
+}
+
+impl<'a> PropagateBuffers<'a> {
+    pub(crate) fn acquire(ws: &'a RefCell<WorkSpace>) -> Self {
+        let (queue, subs) = {
+            let mut w = ws.borrow_mut();
+            (w.borrow_deque(), w.borrow_vec())
+        };
+        Self { ws, queue, subs }
+    }
+
+    pub(crate) fn split(&mut self) -> (&mut VecDeque<NodeId>, &mut Vec<NodeId>) {
+        (&mut self.queue, &mut self.subs)
+    }
+}
+
+impl Drop for PropagateBuffers<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut w) = self.ws.try_borrow_mut() {
+            w.return_deque(mem::take(&mut self.queue));
+            w.return_vec(mem::take(&mut self.subs));
+        }
+    }
+}
+
 /// 节点运行期间“借出”计算闭包。
 ///
 /// 闭包必须先从节点里取出来才能在不持有 `&mut ReactiveNode` 的情况下调用，
@@ -101,12 +213,37 @@ impl<'a> NodeRunGuard<'a> {
 
 impl Drop for NodeRunGuard<'_> {
     fn drop(&mut self) {
-        if let Some(node) = self.rt.storage.reactive.get_mut(self.id)
-            && let Some(effect) = node.effect.as_mut()
-        {
-            effect.running = false;
-            if let Some(f) = self.computation.take() {
-                effect.computation = Some(f);
+        // 被 panic 打断的运行留下的是一份**不完整**的依赖集合：`run_node` 在调用
+        // 用户闭包之前就把状态置成了 `Clean`（AUDIT P8 的要求），闭包跑到一半
+        // panic，节点却是“干净”的，而依赖表里只有 panic 点之前读到的那几条
+        // （二轮 §2.5 第 2 条）。
+        //
+        // 对**惰性拉取**的节点（memo / derived，既有 signal 也有 effect）可以直接
+        // 标回 `Dirty`：它们没有队列，下一次被读到时自然会重算一遍、把依赖补全。
+        //
+        // 对**推送调度**的 effect 则不能这么做。`propagate` 有一条优化 ——
+        // 已经是 `Dirty` 的订阅者不再重复入队（"脏了就说明已经排过队了"）。
+        // 一个 panic 之后停在 `Dirty` 却不在队列里的 effect 会命中这条短路，
+        // 从此**再也不会被任何写入唤醒**，比留在 `Clean` 还糟。
+        //
+        // 那为什么不顺手把它重新入队？因为那等于"panic 的 effect 自动重试"：
+        // 它会在紧接着的每一次 flush 里被重跑、再 panic 一次，把一个局部错误
+        // 放大成每次写入都炸。所以这里保持现状，并把代价写在文档里：
+        // 被 panic 打断的 effect 只对它**已经登记过**的依赖有反应，对 panic 点
+        // 之后本该读到的那些没有。彻底的修法要求依赖收集本身是事务性的
+        // （新依赖集合先攒在一边、跑完才整体换上），那是阶段三的事。
+        let interrupted = std::thread::panicking();
+
+        if let Some(node) = self.rt.storage.reactive.get_mut(self.id) {
+            let is_lazy = node.signal.is_some();
+            if interrupted && is_lazy {
+                node.state = NodeState::Dirty;
+            }
+            if let Some(effect) = node.effect.as_mut() {
+                effect.running = false;
+                if let Some(f) = self.computation.take() {
+                    effect.computation = Some(f);
+                }
             }
         }
         // 节点在自己的运行期间被销毁时走到这里：`computation` 随守卫一起析构。
@@ -121,6 +258,12 @@ pub(crate) struct SignalValueGuard<'a> {
     rt: &'a Runtime,
     id: NodeId,
     value: Option<AnyValue>,
+    /// 归还值的时候是否顺带把版本号递增掉。
+    ///
+    /// 版本号意味着“值真的变了”，只有写入落到值上之后才该递增（AUDIT P12）。
+    /// 之所以挂在守卫上，是因为守卫归还值时**本来就要**查一次 `reactive` 表 ——
+    /// 让它顺手把版本号也改了，写路径就整整少一次查表（AUDIT 二轮 §1.3 末段）。
+    bump_version: bool,
 }
 
 impl<'a> SignalValueGuard<'a> {
@@ -129,6 +272,7 @@ impl<'a> SignalValueGuard<'a> {
             rt,
             id,
             value: Some(value),
+            bump_version: false,
         }
     }
 
@@ -140,6 +284,11 @@ impl<'a> SignalValueGuard<'a> {
     pub(crate) fn value(&self) -> Option<&AnyValue> {
         self.value.as_ref()
     }
+
+    /// 声明“这次写入真的改了值”，值归还时一并递增版本号。
+    pub(crate) fn bump_version_on_release(&mut self) {
+        self.bump_version = true;
+    }
 }
 
 impl Drop for SignalValueGuard<'_> {
@@ -148,6 +297,9 @@ impl Drop for SignalValueGuard<'_> {
             && let Some(signal) = node.signal.as_mut()
         {
             signal.updating = false;
+            if self.bump_version {
+                signal.version = signal.version.wrapping_add(1);
+            }
             if let Some(value) = self.value.take() {
                 signal.value = value;
             }
