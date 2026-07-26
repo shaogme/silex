@@ -581,10 +581,7 @@ impl Runtime {
         let run_guard = NodeRunGuard::new(self, id, computation);
 
         // 阶段二：清理上一次运行留下的子节点、cleanup 与订阅关系。
-        let (children, cleanups) = match self.storage.node_aux.get_mut(id) {
-            Some(aux) => (mem::take(&mut aux.children), mem::take(&mut aux.cleanups)),
-            None => (Vec::new(), CleanupList::default()),
-        };
+        let (children, cleanups) = self.take_scope_state(id);
         self.run_cleanups(id, children, cleanups, dependencies);
 
         let Some(f) = run_guard.computation.as_ref() else {
