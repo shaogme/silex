@@ -672,7 +672,9 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<
             "3xs" => Some("0.0625rem"),
             "2xs" => Some("0.125rem"),
             "xs" => Some("0.125rem"),
-            "sm" => Some("0.125rem"),
+            // Tailwind v4 的 `--radius-sm` 是 0.25rem（v3 里才是 0.125rem）。
+            // 对拍测试抓到这条陈旧值影响了全部 30 个 rounded-*-sm 类名。
+            "sm" => Some("0.25rem"),
             "" => Some("0.25rem"),
             "md" => Some("0.375rem"),
             "lg" => Some("0.5rem"),

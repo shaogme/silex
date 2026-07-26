@@ -120,57 +120,12 @@ const staticFallbackMap = {
   "zoom-out": { target_props: ["--tw-exit-scale"], unit_kind: "Percentage" },
 };
 
-/// 永远不应出现在 target_props 中的 at-rule 描述符（`@property` 块的成员）
-const FORBIDDEN_PROPS = new Set(['syntax', 'inherits', 'initial-value']);
-
-/// 剥离 `@property {...}` / `@keyframes {...}` 声明块。
-/// 这些 at-rule 的内部声明（syntax/inherits/initial-value、动画关键帧）不是工具类的目标属性，
-/// 直接对整段 CSS 做裸正则匹配会把它们误当作 target_props（旧实现即因此污染了 border-s/e/bs/be）。
-function stripDescriptorAtRules(css) {
-  let out = '';
-  let i = 0;
-  while (i < css.length) {
-    const at = css.indexOf('@', i);
-    if (at === -1) {
-      out += css.slice(i);
-      break;
-    }
-    const kwMatch = /^@(property|keyframes|font-face|counter-style)\b/.exec(css.slice(at));
-    if (!kwMatch) {
-      out += css.slice(i, at + 1);
-      i = at + 1;
-      continue;
-    }
-    const open = css.indexOf('{', at);
-    if (open === -1) {
-      out += css.slice(i);
-      break;
-    }
-    // 平衡括号扫描，跳过整个块
-    let depth = 0;
-    let j = open;
-    for (; j < css.length; j++) {
-      if (css[j] === '{') depth++;
-      else if (css[j] === '}') {
-        depth--;
-        if (depth === 0) { j++; break; }
-      }
-    }
-    out += css.slice(i, at);
-    i = j;
-  }
-  return out;
-}
+const { parseDeclarationList } = require('./css_utils');
 
 /// 解析一段工具类 CSS 为 `Map<property, value>`（已剥离描述符 at-rule 与非法属性）
 function parseDeclarations(cssStr) {
   const map = new Map();
-  const cleaned = stripDescriptorAtRules(cssStr);
-  const re = /(--[a-zA-Z0-9_-]+|[a-zA-Z-][a-zA-Z0-9_-]*)\s*:\s*([^;{}]+);/g;
-  for (const m of cleaned.matchAll(re)) {
-    const prop = m[1];
-    const val = m[2].trim();
-    if (FORBIDDEN_PROPS.has(prop)) continue;
+  for (const [prop, val] of parseDeclarationList(cssStr)) {
     if (prop.startsWith('--tw-rotate') || prop.startsWith('--tw-scale') || prop.startsWith('--tw-skew') || prop.startsWith('--tw-translate')) {
       continue;
     }

@@ -1,8 +1,11 @@
 mod animation;
 mod config;
 mod container;
+mod css_probe;
+mod differential;
 mod e2e;
 mod effects;
 mod macro_integration;
 mod modifiers_and_selectors;
 mod regressions;
+mod variant_matrix;

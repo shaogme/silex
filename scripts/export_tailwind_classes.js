@@ -8,6 +8,7 @@ const { extractPalette } = require('./export_tailwind/palette_extractor');
 const { extractModifiers } = require('./export_tailwind/modifier_extractor');
 const { extractKeyframes } = require('./export_tailwind/keyframe_extractor');
 const { extractProperties, extractPropertyAliases } = require('./export_tailwind/property_extractor');
+const { extractReferenceCss, selectReferenceCandidates } = require('./export_tailwind/reference_css');
 
 async function main() {
   // 1. 加载设计系统
@@ -89,6 +90,10 @@ async function main() {
   const extraPropertiesList = extractProperties(classList, designSystem);
   const propertyAliasesObj = extractPropertyAliases(classList, designSystem);
 
+  // 8.6. 导出对拍测试参考 CSS（真实 Tailwind 的编译结果，作为语义真值）
+  const referenceCandidates = selectReferenceCandidates(classList, testCasesList);
+  const referenceCssObj = extractReferenceCss(designSystem, referenceCandidates);
+
   // 9. 导出 JSON 数据到 crates/utils/silex_codegen/data/tailwind 目录
   const outputDir = path.join(__dirname, '../crates/utils/silex_codegen/data/tailwind');
   if (!fs.existsSync(outputDir)) {
@@ -104,6 +109,7 @@ async function main() {
   fs.writeFileSync(path.join(outputDir, 'keyframes.json'), JSON.stringify(keyframesList, null, 2), 'utf-8');
   fs.writeFileSync(path.join(outputDir, 'extra_properties.json'), JSON.stringify(extraPropertiesList, null, 2), 'utf-8');
   fs.writeFileSync(path.join(outputDir, 'property_aliases.json'), JSON.stringify(propertyAliasesObj, null, 2), 'utf-8');
+  fs.writeFileSync(path.join(outputDir, 'reference_css.json'), JSON.stringify(referenceCssObj, null, 2), 'utf-8');
 
   console.log(`导出成功！文件已保存至: ${outputDir}`);
   console.log(`共包含类名数量：${classList.length}`);
@@ -115,6 +121,7 @@ async function main() {
   console.log(`包含动画 Keyframes 数量：${keyframesList.length}`);
   console.log(`包含自定义变量与特殊属性数量：${extraPropertiesList.length}`);
   console.log(`包含属性别名映射数量：${Object.keys(propertyAliasesObj).length}`);
+  console.log(`包含对拍参考 CSS 类名数量：${Object.keys(referenceCssObj).length} / ${referenceCandidates.length}`);
 }
 
 main().catch(err => {

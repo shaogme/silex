@@ -13,14 +13,16 @@ use crate::css::{
 };
 use proc_macro2::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
 use quote::quote;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use syn::{Result, token::Semi};
 
 /// 将解析后的 `Vec<UtilityRule>` 归一化转换构建为 `silex_macros::css::ast::CssBlock`
 pub fn build_css_block_from_rules(rules: Vec<UtilityRule>) -> Result<CssBlock> {
     let mut root_raw_rules = Vec::new();
     let mut modifier_groups: Vec<(ModifierList, Vec<UtilityRule>)> = Vec::new();
-    let mut detected_keyframes: HashSet<String> = HashSet::new();
+    // BTreeSet 而非 HashSet：注入顺序直接进入产物文本与类名哈希，
+    // HashSet 的迭代顺序每次构造都不同，同一份输入会编译出不同的 CSS 与类名。
+    let mut detected_keyframes: BTreeSet<String> = BTreeSet::new();
 
     for rule in rules {
         // 收集所需 keyframes 动画
@@ -172,11 +174,35 @@ pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityR
             continue;
         };
         group.reverse(); // 恢复原始顺序
-        let combined_vals: Vec<String> = group
+        // 组合型属性内部同样遵守 last-wins：`blur-sm blur-lg` 必须只留 `blur(16px)`，
+        // 拼成 `blur(4px) blur(16px)` 会叠加两次模糊，是错误结果。
+        // 覆盖以**函数名**为单位——`blur` 与 `brightness` 互不影响。
+        let mut combined_vals: Vec<String> = Vec::new();
+        for rendered in group
             .iter()
             .map(|r| utility_value_to_css_string(&r.value))
             .filter(|s| !s.is_empty())
-            .collect();
+        {
+            // `none` 是整个属性的关键字取值，不能与函数并列
+            // （`filter: blur(2px) none` 是非法 CSS），它会清空此前累积的全部分量。
+            if rendered == "none" {
+                combined_vals.clear();
+                combined_vals.push(rendered);
+                continue;
+            }
+            if combined_vals.first().is_some_and(|v| v == "none") {
+                combined_vals.clear();
+            }
+
+            let name = composable_function_name(&rendered);
+            match combined_vals
+                .iter()
+                .position(|prev| composable_function_name(prev) == name)
+            {
+                Some(idx) => combined_vals[idx] = rendered,
+                None => combined_vals.push(rendered),
+            }
+        }
 
         deduped_rev.insert(
             0,
@@ -190,6 +216,15 @@ pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityR
     }
 
     deduped_rev.into_iter().rev().collect()
+}
+
+/// 取组合型属性中单个分量的函数名（`blur(4px)` → `blur`）。
+/// 不是函数调用形式时（`none`）以整串作为标识。
+fn composable_function_name(rendered: &str) -> &str {
+    match rendered.find('(') {
+        Some(idx) => &rendered[..idx],
+        None => rendered,
+    }
 }
 
 fn utility_value_to_css_string(val: &UtilityValue) -> String {
@@ -215,7 +250,7 @@ fn utility_value_to_css_string(val: &UtilityValue) -> String {
     }
 }
 
-fn check_and_collect_keyframes(value: &UtilityValue, keyframes: &mut HashSet<String>) {
+fn check_and_collect_keyframes(value: &UtilityValue, keyframes: &mut BTreeSet<String>) {
     let anim_str = match value {
         UtilityValue::Keyword(kw) => *kw,
         UtilityValue::ArbitraryLiteral(s) => s.as_str(),
@@ -229,7 +264,7 @@ fn check_and_collect_keyframes(value: &UtilityValue, keyframes: &mut HashSet<Str
     }
 }
 
-fn inject_keyframes_rules(root_rules: &mut Vec<CssRule>, keyframes: &HashSet<String>) {
+fn inject_keyframes_rules(root_rules: &mut Vec<CssRule>, keyframes: &BTreeSet<String>) {
     for name in keyframes {
         if let Some(at_rule) = build_keyframe_at_rule(name) {
             root_rules.push(CssRule::AtRule(at_rule));
@@ -357,18 +392,12 @@ fn build_modifier_rule(modifiers: ModifierList, rules: Vec<UtilityRule>) -> Resu
         let mod_span = spanned.span();
         match spanned.modifier {
             Modifier::PseudoClass(pc) => {
-                let pseudo = match pc.as_str() {
-                    "first" => "first-child",
-                    "last" => "last-child",
-                    "only" => "only-child",
-                    "odd" => "nth-child(odd)",
-                    "even" => "nth-child(even)",
-                    "first-of-type" => "first-of-type",
-                    "last-of-type" => "last-of-type",
-                    "only-of-type" => "only-of-type",
-                    other => other,
-                };
-                let sel_str = format!("&:{}", pseudo);
+                // 变体 key 与伪类名不总是一致（`first` → `first-child`、`even` → `nth-child(even)`）。
+                // 真值只有 `MODIFIER_TABLE.css_selector` 一份——此处曾另有一张硬编码映射表，
+                // 漏掉的条目（如 `file` → `::file-selector-button`）会静默产出非法伪类。
+                let sel_str = lookup_modifier_meta(pc.as_str())
+                    .map(|meta| meta.css_selector.to_string())
+                    .unwrap_or_else(|| format!("&:{pc}"));
                 let ts: TokenStream = sel_str.parse().unwrap();
                 current_block = CssBlock {
                     rules: vec![CssRule::Nested(CssNested {
@@ -378,7 +407,10 @@ fn build_modifier_rule(modifiers: ModifierList, rules: Vec<UtilityRule>) -> Resu
                 };
             }
             Modifier::PseudoElement(pe) => {
-                let sel_str = format!("&::{}", pe);
+                // 同 PseudoClass：`file` 的伪元素是 `::file-selector-button`，不是 `::file`
+                let sel_str = lookup_modifier_meta(pe.as_str())
+                    .map(|meta| meta.css_selector.to_string())
+                    .unwrap_or_else(|| format!("&::{pe}"));
                 let ts: TokenStream = sel_str.parse().unwrap();
                 current_block = CssBlock {
                     rules: vec![CssRule::Nested(CssNested {
@@ -458,11 +490,12 @@ fn build_modifier_rule(modifiers: ModifierList, rules: Vec<UtilityRule>) -> Resu
                 };
             }
             Modifier::Descendant => {
-                let sel_str = "& *";
-                let ts: TokenStream = sel_str.parse().unwrap();
+                // 必须以字符串字面量传递：`& *` 的后代组合符是一个空格，
+                // 走 TokenStream 会被吃掉，退化成 `&*`（作用在元素自身的复合选择器）。
+                let lit = Literal::string("& *");
                 current_block = CssBlock {
                     rules: vec![CssRule::Nested(CssNested {
-                        selectors: ts,
+                        selectors: quote!(#lit),
                         block: current_block,
                     })],
                 };
@@ -641,7 +674,7 @@ fn build_modifier_rule(modifiers: ModifierList, rules: Vec<UtilityRule>) -> Resu
 }
 
 /// 零冗余死代码剪裁 (DCE): 递归收集 block 中所有实际引用的 animation 名称，剔除多余的 @keyframes 规则
-pub fn prune_unused_keyframes(rules: &mut Vec<CssRule>, detected_keyframes: &HashSet<String>) {
+pub fn prune_unused_keyframes(rules: &mut Vec<CssRule>, detected_keyframes: &BTreeSet<String>) {
     let mut used = detected_keyframes.clone();
     collect_used_animations(rules, &mut used);
 
@@ -656,7 +689,7 @@ pub fn prune_unused_keyframes(rules: &mut Vec<CssRule>, detected_keyframes: &Has
     });
 }
 
-fn collect_used_animations(rules: &[CssRule], used: &mut HashSet<String>) {
+fn collect_used_animations(rules: &[CssRule], used: &mut BTreeSet<String>) {
     for rule in rules {
         match rule {
             CssRule::Declaration(decl) => {
