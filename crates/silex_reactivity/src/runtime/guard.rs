@@ -135,6 +135,11 @@ impl<'a> SignalValueGuard<'a> {
     pub(crate) fn value_mut(&mut self) -> &mut AnyValue {
         self.value.as_mut().expect("signal value is borrowed out")
     }
+
+    /// 借出期间只读地看一眼这个值（memo 重算时把旧值借给计算闭包用，AUDIT P9）。
+    pub(crate) fn value(&self) -> Option<&AnyValue> {
+        self.value.as_ref()
+    }
 }
 
 impl Drop for SignalValueGuard<'_> {

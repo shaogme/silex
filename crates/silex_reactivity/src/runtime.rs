@@ -15,7 +15,9 @@ use crate::{
     DependencyList, NodeList, RawOpBuffer,
     core::{
         FuncPtr,
-        algorithm::{self, GraphExecutor, NodeState, RuntimeAdapter as AbstractAdapter},
+        algorithm::{
+            self, GraphExecutor, GraphStorage, NodeState, RuntimeAdapter as AbstractAdapter,
+        },
         arena::Index as NodeId,
         value::{AnyValue, ThunkVTable, ThunkValue},
     },
@@ -390,6 +392,13 @@ impl Runtime {
         }
     }
 
+    /// 执行 effect 队列直到清空。
+    ///
+    /// # Panics
+    ///
+    /// 单次执行超过 [`MAX_QUEUE_ITERATIONS`] 次迭代时 panic。互相写入对方依赖的
+    /// 两个 effect 会让队列永远不空，之前既没有上限也没有诊断，表现就是浏览器
+    /// 标签页直接冻死（AUDIT P13）。
     pub(crate) fn run_queue(&self) {
         // 守卫保证标志一定会被恢复：裸写法在 effect panic 时会让 `running_queue`
         // 永久卡在 true，此后 `run_queue` 每次入口直接返回，整个响应式系统静默停摆
@@ -398,9 +407,19 @@ impl Runtime {
             return;
         };
 
+        let mut iterations = 0usize;
         loop {
             let next_to_run = self.scheduler.observer_queue.borrow_mut().pop_front();
             let Some(id) = next_to_run else { break };
+
+            iterations += 1;
+            if iterations > MAX_QUEUE_ITERATIONS {
+                panic!(
+                    "silex_reactivity: effect 队列执行超过 {MAX_QUEUE_ITERATIONS} 次仍未清空，\
+                     大概率是若干 effect 在互相触发对方的依赖。最后一个被调度的是 {}。",
+                    self.storage.describe(id)
+                );
+            }
 
             self.scheduler.queued_observers.remove(id);
             if self
@@ -493,15 +512,23 @@ impl Runtime {
         id
     }
 
+    /// 取出节点内部值的裸指针（signal 与 stored value 都支持）。
+    ///
+    /// # Safety
+    ///
+    /// 契约见 [`crate::try_get_any_raw_untracked`]：调用方负责类型正确，
+    /// 并保证在使用期间不发生任何会让该地址失效的操作。
     pub(crate) unsafe fn get_any_raw_ptr_untracked(&self, id: NodeId) -> Option<*const ()> {
         if let Some(n) = self.storage.reactive.get(id)
             && let Some(s) = &n.signal
         {
+            // SAFETY: 契约转嫁给调用方（见本函数的 `# Safety`）。
             return Some(unsafe { s.value.as_ptr() });
         }
         if let Some(extra) = self.storage.extras.get(id)
             && let ExtraData::StoredValue(sv) = extra
         {
+            // SAFETY: 同上。
             return Some(unsafe { sv.value.as_ptr() });
         }
         None
@@ -579,27 +606,55 @@ impl Runtime {
 }
 
 impl Runtime {
+    /// 重算一个 memo：借出旧值 → 调用计算闭包 → 与旧值比较 → 提交。
+    ///
+    /// 旧值是**借**给计算闭包的，不是克隆给它的。之前这里为一次重算克隆旧值三次
+    /// （节点里克隆一份、再克隆一份传给 vtable、vtable 里再 `cloned()` 一次），
+    /// 而且闭包用不用 `old` 都要付这个代价 —— 对持有 `Vec` / `String` 的 memo
+    /// 就是每次重算三次深拷贝（AUDIT P9）。
+    ///
+    /// 旧值在计算期间被**移出**节点（节点里放占位值），理由与 `update_signal`
+    /// 相同：计算闭包是用户代码，运行时不能在它执行期间持有指向节点的引用
+    /// （AUDIT P5）。因此“在 memo 的计算闭包里读它自己”读到的是占位值（`None`），
+    /// 旧值只能从闭包参数拿 —— 这本来也是 `Fn(Option<&T>) -> T` 这个签名的用途。
     #[inline(never)]
     pub(crate) fn update_memo_core(
         &self,
         id: NodeId,
-        compute_any: &mut dyn FnMut(Option<AnyValue>) -> AnyValue,
+        compute_any: &mut dyn FnMut(Option<&AnyValue>) -> AnyValue,
     ) {
-        let old_any = self
+        let taken = match self
             .storage
             .reactive
-            .get(id)
-            .and_then(|n| n.signal.as_ref())
-            .and_then(|s| s.value.try_clone());
-        let new_any = {
-            let _owner = OwnerGuard::set(self, Some(id));
-            compute_any(old_any.as_ref().and_then(|any| any.try_clone()))
+            .get_mut(id)
+            .and_then(|n| n.signal.as_mut())
+        {
+            Some(signal) if !signal.updating => {
+                signal.updating = true;
+                Some(mem::replace(&mut signal.value, AnyValue::placeholder()))
+            }
+            // 节点不存在，或它的值正被某个 update 闭包借出：没有可用的旧值，
+            // 一律按“变了”处理，`commit_update` 自己会跳过不存在的节点。
+            _ => None,
         };
 
-        let changed = match &old_any {
+        // 守卫保证旧值一定会被放回（计算闭包 panic 时也一样）。
+        let borrowed = taken.map(|value| SignalValueGuard::new(self, id, value));
+
+        let new_any = {
+            let _owner = OwnerGuard::set(self, Some(id));
+            compute_any(borrowed.as_ref().and_then(SignalValueGuard::value))
+        };
+
+        // 比较也在旧值还被借出时进行：`try_eq` 会调用用户的 `PartialEq`，
+        // 同样不该在运行时持有节点引用的情况下运行。
+        let changed = match borrowed.as_ref().and_then(SignalValueGuard::value) {
             Some(old) => !new_any.try_eq(old),
             None => true,
         };
+
+        // 旧值先回到节点（并清除借出标记），随后 `commit_update` 才可能覆盖它。
+        drop(borrowed);
         self.commit_update(id, new_any, changed);
     }
 
@@ -607,20 +662,34 @@ impl Runtime {
     ///
     /// vtable 指针以**指针**形式从缓冲区读回（而不是先读成 `usize` 再转回指针），
     /// 否则 provenance 会被擦除（AUDIT P3）。
+    /// # Safety
+    ///
+    /// `ptr` 必须指向一个合法的 memo 载荷（偏移 0 处是 `*const MemoVTable`），
+    /// `rt_ptr` 必须是有效的 `*const Runtime`。两者都由 `run_node` 提供。
     pub(crate) unsafe fn universal_memo_runner(ptr: *const u8, rt_ptr: *const ()) {
+        // SAFETY: `run_node` 传进来的就是当前运行时，其生命周期覆盖整个调用。
         let rt = unsafe { &*(rt_ptr as *const Runtime) };
         let id = rt
             .current_owner()
             .expect("memo runner must be invoked with the memo node as the current owner");
+        // SAFETY: 载荷布局由 `build_memo_payload` / `internal_init_derived` 保证：
+        // 偏移 0 是一个真正的 `*const MemoVTable`（不是 usize 往返，AUDIT P3），
+        // 其后是该 vtable 约定的闭包表示。
         let vtable = unsafe { &*(*(ptr as *const *const MemoVTable)) };
         let data_ptr = unsafe { ptr.add(MEMO_PAYLOAD_OFFSET) };
 
+        // SAFETY: `data_ptr` 指向的正是这张 vtable 约定的闭包表示。
         rt.update_memo_core(id, &mut |old| unsafe {
             (vtable.compute.as_fn())(data_ptr, old)
         });
     }
 
+    /// # Safety
+    ///
+    /// `ptr` 必须指向一个尚未析构过的合法 memo 载荷；调用后载荷即失效。
     pub(crate) unsafe fn universal_memo_drop(ptr: *mut u8) {
+        // SAFETY: 布局同 `universal_memo_runner`；析构只会发生一次
+        // （`ThunkBox` 的 drop 路径）。
         let vtable = unsafe { &*(*(ptr as *const *const MemoVTable)) };
         let data_ptr = unsafe { ptr.add(MEMO_PAYLOAD_OFFSET) };
         unsafe { (vtable.drop.as_fn())(data_ptr) };
@@ -631,7 +700,9 @@ impl Runtime {
 pub(crate) const MEMO_PAYLOAD_OFFSET: usize = mem::size_of::<usize>();
 
 pub(crate) struct MemoVTable {
-    pub(crate) compute: FuncPtr<unsafe fn(*const u8, Option<AnyValue>) -> AnyValue>,
+    /// `old` 是**借**给计算闭包的旧值（首算时是占位值，`downcast_ref` 会得到
+    /// `None`）。绝不要在这里克隆它 —— 是否需要一份拷贝由用户闭包自己决定。
+    pub(crate) compute: FuncPtr<unsafe fn(*const u8, Option<&AnyValue>) -> AnyValue>,
     pub(crate) drop: FuncPtr<unsafe fn(*mut u8)>,
 }
 

@@ -145,7 +145,7 @@ impl Runtime {
             if let Some(aux) = self.storage.node_aux.get_mut(id)
                 && let Some(label) = aux.debug_label.take()
             {
-                self.storage.dead_node_labels.insert(id, label);
+                self.storage.remember_dead_label(id, label);
             }
         }
 

@@ -6,6 +6,8 @@ use crate::{
         value::{AnyValue, OnceThunk, ThunkValue},
     },
 };
+#[cfg(debug_assertions)]
+use std::cell::Cell;
 use std::{any::Any, mem, rc::Rc, vec::IntoIter};
 
 pub(crate) struct ReactiveNode {
@@ -22,6 +24,14 @@ pub(crate) enum ExtraData {
     Op(OpData),
 }
 
+/// 最多为多少个已销毁节点保留调试标签。
+///
+/// 这张表只增不减，长跑的应用会一直往里堆（AUDIT P14）。它纯粹是为了让
+/// “读一个已销毁节点”的报错能说出这个节点原来叫什么，超过上限之后新的标签
+/// 直接不记，报错退化成节点编号 —— 比无界增长划算。
+#[cfg(debug_assertions)]
+pub(crate) const MAX_DEAD_NODE_LABELS: usize = 1024;
+
 pub(crate) struct Storage {
     pub(crate) graph: Arena<Node>,
     pub(crate) node_aux: SparseSecondaryMap<NodeAux, 32>,
@@ -30,6 +40,9 @@ pub(crate) struct Storage {
 
     #[cfg(debug_assertions)]
     pub(crate) dead_node_labels: SparseSecondaryMap<String>,
+    /// 已记下的墓碑标签数量的上界（同一个槽位被覆盖时会多算，只用于封顶）。
+    #[cfg(debug_assertions)]
+    dead_label_count: Cell<usize>,
 }
 
 impl Storage {
@@ -41,7 +54,20 @@ impl Storage {
             extras: SparseSecondaryMap::new(),
             #[cfg(debug_assertions)]
             dead_node_labels: SparseSecondaryMap::new(),
+            #[cfg(debug_assertions)]
+            dead_label_count: Cell::new(0),
         }
+    }
+
+    /// 为一个即将被销毁的节点留一个墓碑标签，数量封顶（见 [`MAX_DEAD_NODE_LABELS`]）。
+    #[cfg(debug_assertions)]
+    pub(crate) fn remember_dead_label(&self, id: NodeId, label: String) {
+        let count = self.dead_label_count.get();
+        if count >= MAX_DEAD_NODE_LABELS {
+            return;
+        }
+        self.dead_label_count.set(count + 1);
+        self.dead_node_labels.insert(id, label);
     }
 
     pub(crate) fn try_aux_mut(&self, id: NodeId) -> Option<&mut NodeAux> {
@@ -61,18 +87,18 @@ impl GraphStorage for Storage {
             .unwrap_or(NodeState::Clean)
     }
 
+    /// 只更新已存在的节点。
+    ///
+    /// 之前这里会为不存在的节点**插入**一个空的 `ReactiveNode`：订阅者表里只要
+    /// 残留了一个已销毁的 id（`propagate` 遍历时就会遇到），就会为它造出一个
+    /// 既不在 `graph` 里、也不会被任何 dispose 路径清理的幽灵条目 —— 长跑的
+    /// 应用会一直泄漏下去（AUDIT P14）。
+    ///
+    /// 忽略掉是安全的：`get_state` 对不存在的节点返回 `Clean`，
+    /// 传播与求值都会把它当成“无需处理”。
     fn set_state(&self, id: NodeId, state: NodeState) {
         if let Some(n) = self.reactive.get_mut(id) {
             n.state = state;
-        } else {
-            self.reactive.insert(
-                id,
-                ReactiveNode {
-                    state,
-                    signal: None,
-                    effect: None,
-                },
-            );
         }
     }
 
@@ -103,6 +129,26 @@ impl GraphStorage for Storage {
             .get(id)
             .and_then(|n| n.effect.as_ref())
             .is_some_and(|eff| eff.running)
+    }
+
+    fn describe(&self, id: NodeId) -> String {
+        // release 构建下既没有调试标签也没有定义位置，只剩下编号。
+        #[allow(unused_mut)]
+        let mut out = format!("节点 #{}", id.index);
+        #[cfg(debug_assertions)]
+        {
+            if let Some(label) = self
+                .node_aux
+                .get(id)
+                .and_then(|aux| aux.debug_label.as_ref())
+            {
+                out.push_str(&format!(" “{label}”"));
+            }
+            if let Some(at) = self.graph.get(id).and_then(|n| n.defined_at) {
+                out.push_str(&format!("（定义于 {}:{}）", at.file(), at.line()));
+            }
+        }
+        out
     }
 
     fn check_dependencies_changed(&self, id: NodeId) -> bool {
@@ -252,3 +298,64 @@ pub(crate) struct ClosureData {
 }
 
 pub(crate) struct OpData(pub(crate) RawOpBuffer);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{core::value::ThunkValue, runtime::Runtime};
+
+    #[test]
+    fn set_state_never_inserts_a_ghost_node() {
+        let storage = Storage::new();
+        let id = storage.graph.insert(Node::new());
+
+        // 这个节点还没有 `reactive` 条目。
+        storage.set_state(id, NodeState::Dirty);
+
+        assert!(
+            storage.reactive.get(id).is_none(),
+            "不得为不存在的节点插入永远不会被回收的幽灵条目（AUDIT P14）"
+        );
+        assert_eq!(storage.get_state(id), NodeState::Clean);
+    }
+
+    /// 订阅者表里残留一个已销毁的 id 时，传播不得为它造出条目。
+    #[test]
+    fn propagating_to_a_disposed_subscriber_leaves_nothing_behind() {
+        let rt = Runtime::new();
+        let s = rt.create_signal(AnyValue::new(1i32));
+
+        let dead = rt.create_effect(ThunkValue::new_simple(|| {}));
+        rt.dispose(dead);
+        assert!(rt.storage.reactive.get(dead).is_none());
+
+        // 手工模拟“订阅者表里残留了一个已销毁的 id”。
+        if let Some(node) = rt.storage.reactive.get_mut(s)
+            && let Some(signal) = node.signal.as_mut()
+        {
+            signal.subscribers.push(dead);
+        }
+
+        rt.notify_update(s);
+
+        assert!(
+            rt.storage.reactive.get(dead).is_none(),
+            "传播到已销毁的订阅者时不得复活它（AUDIT P14）"
+        );
+    }
+
+    /// 墓碑标签只在 debug 构建下存在。
+    #[cfg(debug_assertions)]
+    #[test]
+    fn dead_node_labels_are_capped() {
+        let rt = Runtime::new();
+        for i in 0..(MAX_DEAD_NODE_LABELS + 16) {
+            let id = rt.create_signal(AnyValue::new(i));
+            if let Some(aux) = rt.storage.try_aux_mut(id) {
+                aux.debug_label = Some(format!("node-{i}"));
+            }
+            rt.dispose(id);
+        }
+        assert_eq!(rt.storage.dead_label_count.get(), MAX_DEAD_NODE_LABELS);
+    }
+}

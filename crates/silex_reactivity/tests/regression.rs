@@ -432,6 +432,384 @@ fn update_outcomes_are_distinguishable() {
     }
 }
 
+// --- P18: 审查中实测“工作正常”的行为，固化下来防止回归 ---
+
+/// 菱形依赖不得出现 glitch：effect 看到的两个上游值必须始终自洽，
+/// 且一次更新只重跑一次。
+#[test]
+fn a_diamond_dependency_never_shows_an_intermediate_state() {
+    let s = signal(1i32);
+    let double = memo(move |_: Option<&i32>| try_get_signal::<i32>(s).unwrap_or(0) * 2);
+    let triple = memo(move |_: Option<&i32>| try_get_signal::<i32>(s).unwrap_or(0) * 3);
+
+    let seen: Rc<RefCell<Vec<(i32, i32)>>> = Rc::new(RefCell::new(Vec::new()));
+    let seen_c = seen.clone();
+    effect(move || {
+        let d = try_get_signal::<i32>(double).unwrap_or(0);
+        let t = try_get_signal::<i32>(triple).unwrap_or(0);
+        seen_c.borrow_mut().push((d, t));
+    });
+
+    update_signal(s, |v: &mut i32| *v = 5);
+
+    let seen = seen.borrow();
+    assert_eq!(seen.len(), 2, "一次更新只该重跑一次，实际：{seen:?}");
+    for &(d, t) in seen.iter() {
+        assert_eq!(d * 3, t * 2, "两个上游必须来自同一个 s，实际：{seen:?}");
+    }
+    assert_eq!(seen.last(), Some(&(10, 15)));
+}
+
+/// 条件分支里不再读取的 signal 必须被退订。
+#[test]
+fn dependencies_are_re_collected_on_every_run() {
+    let switch = signal(true);
+    let a = signal(0i32);
+    let b = signal(0i32);
+    let runs = Rc::new(Cell::new(0));
+
+    let runs_c = runs.clone();
+    effect(move || {
+        runs_c.set(runs_c.get() + 1);
+        if try_get_signal::<bool>(switch).unwrap_or(false) {
+            let _ = try_get_signal::<i32>(a);
+        } else {
+            let _ = try_get_signal::<i32>(b);
+        }
+    });
+    assert_eq!(runs.get(), 1);
+
+    update_signal(b, |v: &mut i32| *v += 1);
+    assert_eq!(runs.get(), 1, "当前分支没读 b，写 b 不该触发");
+
+    update_signal(switch, |v: &mut bool| *v = false);
+    assert_eq!(runs.get(), 2);
+
+    update_signal(a, |v: &mut i32| *v += 1);
+    assert_eq!(runs.get(), 2, "切换分支后必须已经退订 a");
+
+    update_signal(b, |v: &mut i32| *v += 1);
+    assert_eq!(runs.get(), 3, "新分支的依赖必须已经建立");
+}
+
+/// `untrack` 读到的值不建立依赖，但重跑时能看到最新值。
+#[test]
+fn untracked_reads_do_not_subscribe_but_still_see_fresh_values() {
+    let tracked = signal(0i32);
+    let hidden = signal(10i32);
+    let seen = Rc::new(Cell::new(0));
+    let runs = Rc::new(Cell::new(0));
+
+    let seen_c = seen.clone();
+    let runs_c = runs.clone();
+    effect(move || {
+        runs_c.set(runs_c.get() + 1);
+        let _ = try_get_signal::<i32>(tracked);
+        seen_c.set(untrack(|| try_get_signal::<i32>(hidden).unwrap_or(0)));
+    });
+    assert_eq!((runs.get(), seen.get()), (1, 10));
+
+    update_signal(hidden, |v: &mut i32| *v = 20);
+    assert_eq!(runs.get(), 1, "untrack 读过的 signal 不该成为依赖");
+
+    update_signal(tracked, |v: &mut i32| *v += 1);
+    assert_eq!(
+        (runs.get(), seen.get()),
+        (2, 20),
+        "重跑时 untrack 必须读到最新值"
+    );
+}
+
+/// 销毁链条中间的 memo：下游会静默冻结在旧值上。这是当前的**既有行为**，
+/// 写下来是为了让它变成一个决定，而不是一个意外。
+#[test]
+fn disposing_a_node_in_the_middle_freezes_its_downstream() {
+    let s = signal(1i32);
+    let mid = memo(move |_: Option<&i32>| try_get_signal::<i32>(s).unwrap_or(0) * 10);
+    let tail = memo(move |_: Option<&i32>| try_get_signal::<i32>(mid).unwrap_or(-1));
+
+    assert_eq!(try_get_signal::<i32>(tail), Some(10));
+
+    dispose(mid);
+    update_signal(s, |v: &mut i32| *v = 2);
+
+    assert!(!is_signal_valid(mid));
+    assert_eq!(
+        try_get_signal::<i32>(tail),
+        Some(10),
+        "上游被销毁后，下游冻结在最后一个已知值上"
+    );
+}
+
+/// 销毁一个 effect 之后，它既不再运行，写它原来的依赖也不再有任何开销。
+#[test]
+fn a_disposed_effect_unsubscribes_from_everything() {
+    let s = signal(0i32);
+    let runs = Rc::new(Cell::new(0));
+
+    let runs_c = runs.clone();
+    let e = effect(move || {
+        let _ = try_get_signal::<i32>(s);
+        runs_c.set(runs_c.get() + 1);
+    });
+    assert_eq!(runs.get(), 1);
+
+    dispose(e);
+    update_signal(s, |v: &mut i32| *v += 1);
+    assert_eq!(runs.get(), 1);
+}
+
+// --- P13: 环与自喂养队列必须是可诊断的报错，而不是挂死 ---
+
+/// 两个互相依赖的 memo：修复前 `evaluate` 的 DFS 栈会一直增长到 OOM。
+#[test]
+fn a_dependency_cycle_panics_instead_of_growing_the_stack_forever() {
+    let s = signal(0i32);
+    // memo 只能在创建后才拿得到自己的 id，用一个格子把环接上。
+    let second: Rc<Cell<Option<NodeId>>> = Rc::new(Cell::new(None));
+
+    let second_c = second.clone();
+    let first = memo(move |_: Option<&i32>| {
+        let _ = try_get_signal::<i32>(s);
+        match second_c.get() {
+            Some(other) => try_get_signal::<i32>(other).unwrap_or(0),
+            None => 0,
+        }
+    });
+
+    let other = memo(move |_: Option<&i32>| try_get_signal::<i32>(first).unwrap_or(0) + 1);
+    second.set(Some(other));
+
+    // 第一次重算时 `first` 才会真的去读 `other`，环在这一步接上
+    // （此时 `other` 的依赖 `first` 正在运行，会被跳过，所以还不会报错）。
+    update_signal(s, |v: &mut i32| *v += 1);
+    assert_eq!(try_get_signal::<i32>(first), Some(1));
+
+    // 环已经成型：再失效一次，求值 DFS 就会沿着 first -> other -> first 走回来。
+    let result = silently(|| {
+        update_signal(s, |v: &mut i32| *v += 1);
+        try_get_signal::<i32>(first)
+    });
+
+    let err = result.expect_err("成环时必须 panic，而不是无限压栈");
+    let msg = err
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .unwrap_or_default();
+    assert!(
+        msg.contains("依赖环"),
+        "报错信息里必须说明是依赖环，实际是：{msg}"
+    );
+    // 定义位置只在 debug 构建下记录（release 下 `defined_at` 恒为 None）。
+    if cfg!(debug_assertions) {
+        assert!(
+            msg.contains("regression.rs"),
+            "报错信息里必须带上环上节点的定义位置，实际是：{msg}"
+        );
+    }
+}
+
+/// 两个互相写对方依赖的 effect：修复前浏览器标签页直接冻死。
+///
+/// 这个用例要真的跑满十万次迭代才会触发上限，在 Miri 下慢得没有意义，
+/// 而它考察的是调度逻辑、不涉及任何 `unsafe` 边界，因此 Miri 下跳过。
+#[test]
+#[cfg_attr(miri, ignore)]
+fn a_self_feeding_effect_queue_panics_instead_of_hanging() {
+    let a = signal(0i32);
+    let b = signal(0i32);
+
+    effect(move || {
+        let _ = try_get_signal::<i32>(a);
+        update_signal(b, |v: &mut i32| *v += 1);
+    });
+
+    let result = silently(move || {
+        effect(move || {
+            let _ = try_get_signal::<i32>(b);
+            update_signal(a, |v: &mut i32| *v += 1);
+        });
+    });
+
+    let err = result.expect_err("自我喂养的队列必须 panic，而不是挂死");
+    let msg = err
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .unwrap_or_default();
+    assert!(
+        msg.contains("effect 队列执行超过"),
+        "报错信息必须指出是队列没有收敛，实际是：{msg}"
+    );
+}
+
+// --- P10: 相等性门控策略必须是明确且稳定的 ---
+
+/// signal 不做门控：写入相同的值照样重跑下游。这是**有意的**设计
+/// （`update_signal` 交出 `&mut T`，运行时无从比较），固化在这里防止它
+/// 在某次重构里被悄悄改掉。
+#[test]
+fn writing_an_equal_value_to_a_signal_still_notifies() {
+    let s = signal(1i32);
+    let runs = Rc::new(Cell::new(0));
+
+    let runs_c = runs.clone();
+    effect(move || {
+        let _ = try_get_signal::<i32>(s);
+        runs_c.set(runs_c.get() + 1);
+    });
+    assert_eq!(runs.get(), 1);
+
+    update_signal(s, |v: &mut i32| *v = 1); // 值没变
+    assert_eq!(runs.get(), 2, "signal 是无门控的");
+}
+
+/// 需要门控的调用方用 `set_signal_if_changed` 显式付费。
+#[test]
+fn set_signal_if_changed_gates_on_equality() {
+    let s = signal(1i32);
+    let runs = Rc::new(Cell::new(0));
+
+    let runs_c = runs.clone();
+    effect(move || {
+        let _ = try_get_signal::<i32>(s);
+        runs_c.set(runs_c.get() + 1);
+    });
+    assert_eq!(runs.get(), 1);
+
+    assert_eq!(set_signal_if_changed(s, 1i32), UpdateOutcome::Unchanged);
+    assert_eq!(runs.get(), 1, "值相等时下游不该动");
+
+    assert_eq!(set_signal_if_changed(s, 2i32), UpdateOutcome::Updated);
+    assert_eq!(runs.get(), 2);
+    assert_eq!(try_get_signal::<i32>(s), Some(2));
+
+    // 失败分支与 `try_update_signal` 保持一致。
+    assert_eq!(
+        set_signal_if_changed(s, String::new()),
+        UpdateOutcome::TypeMismatch
+    );
+    let gone = signal(0i32);
+    dispose(gone);
+    assert_eq!(
+        set_signal_if_changed(gone, 1i32),
+        UpdateOutcome::NoSuchSignal
+    );
+}
+
+/// memo 做门控：上游变了但 memo 的值没变时，下游不该被重跑。
+#[test]
+fn a_memo_absorbs_updates_that_do_not_change_its_value() {
+    let s = signal(1i32);
+    let m = memo(move |_: Option<&i32>| try_get_signal::<i32>(s).unwrap_or(0) / 10);
+
+    let runs = Rc::new(Cell::new(0));
+    let runs_c = runs.clone();
+    effect(move || {
+        let _ = try_get_signal::<i32>(m);
+        runs_c.set(runs_c.get() + 1);
+    });
+    assert_eq!(runs.get(), 1);
+
+    update_signal(s, |v: &mut i32| *v = 2); // 2 / 10 仍是 0
+    assert_eq!(runs.get(), 1, "memo 的值没变，下游不该被重跑");
+
+    update_signal(s, |v: &mut i32| *v = 20); // 20 / 10 = 2
+    assert_eq!(runs.get(), 2);
+}
+
+/// `register_derived` 不做门控：它的 `T` 连 `PartialEq` 都没有，每次重算都
+/// 通知下游。这条同样是**有意的**契约，写下来免得下次有人当成 bug “修掉”。
+#[test]
+fn a_derived_node_never_gates_on_equality() {
+    let s = signal(1i32);
+    let d = register_derived(Box::new(move || try_get_signal::<i32>(s).unwrap_or(0) / 10));
+
+    let runs = Rc::new(Cell::new(0));
+    let runs_c = runs.clone();
+    effect(move || {
+        let _ = try_get_signal::<i32>(d);
+        runs_c.set(runs_c.get() + 1);
+    });
+    assert_eq!(runs.get(), 1);
+
+    update_signal(s, |v: &mut i32| *v = 2); // 派生值仍是 0，但下游照样重跑
+    assert_eq!(runs.get(), 2, "derived 是无门控的");
+}
+
+// --- P9: memo 重算不得克隆旧值 ---
+
+/// 记录自己被克隆过多少次。
+#[derive(Debug)]
+struct CloneCounted {
+    v: i32,
+    clones: Rc<Cell<usize>>,
+}
+
+impl Clone for CloneCounted {
+    fn clone(&self) -> Self {
+        self.clones.set(self.clones.get() + 1);
+        Self {
+            v: self.v,
+            clones: self.clones.clone(),
+        }
+    }
+}
+
+impl PartialEq for CloneCounted {
+    fn eq(&self, other: &Self) -> bool {
+        self.v == other.v
+    }
+}
+
+/// 修复前：一次重算克隆旧值 **3 次**（运行时两次 + vtable 里 `cloned()` 一次），
+/// 而且闭包用不用 `old` 都要付这个代价。现在旧值是借给闭包的。
+#[test]
+fn recomputing_a_memo_never_clones_the_old_value() {
+    let clones = Rc::new(Cell::new(0));
+    let s = signal(1i32);
+
+    let clones_c = clones.clone();
+    let m = memo(move |old: Option<&CloneCounted>| {
+        let prev = old.map_or(0, |t| t.v);
+        CloneCounted {
+            v: prev + try_get_signal::<i32>(s).unwrap_or(0),
+            clones: clones_c.clone(),
+        }
+    });
+
+    // memo 是惰性的：每次写完都读一下，逼它真的重算。
+    // 用 `try_with_signal` 读，避免读取本身产生的（正当的）克隆混进计数。
+    update_signal(s, |v: &mut i32| *v = 10);
+    assert_eq!(try_with_signal::<CloneCounted, _>(m, |t| t.v), Some(11));
+    update_signal(s, |v: &mut i32| *v = 100);
+    assert_eq!(try_with_signal::<CloneCounted, _>(m, |t| t.v), Some(111));
+    assert_eq!(
+        clones.get(),
+        0,
+        "旧值必须按引用传给计算闭包，运行时一次也不该克隆它"
+    );
+}
+
+/// 闭包不使用 `old` 时同样不该有任何克隆开销。
+#[test]
+fn a_memo_that_ignores_its_old_value_pays_nothing_for_it() {
+    let clones = Rc::new(Cell::new(0));
+    let s = signal(1i32);
+
+    let clones_c = clones.clone();
+    let m = memo(move |_: Option<&CloneCounted>| CloneCounted {
+        v: try_get_signal::<i32>(s).unwrap_or(0),
+        clones: clones_c.clone(),
+    });
+
+    for i in 2..6 {
+        update_signal(s, |v: &mut i32| *v = i);
+    }
+
+    assert_eq!(try_with_signal::<CloneCounted, _>(m, |t| t.v), Some(5));
+    assert_eq!(clones.get(), 0);
+}
+
 /// `try_update_signal_silent` 走的是另一条路径（silex_core 的写入入口），
 /// 同样不该在类型不匹配时递增版本号。
 ///

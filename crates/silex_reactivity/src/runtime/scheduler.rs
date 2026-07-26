@@ -7,6 +7,13 @@ use std::{
     collections::VecDeque,
 };
 
+/// 单次 `run_queue` 允许执行的最大 effect 数。
+///
+/// 超过就意味着队列在自我喂养（两个 effect 互相写对方的依赖），继续跑下去只会
+/// 冻死整个线程。上限的作用是把死循环换成一条带节点位置的报错（AUDIT P13）。
+/// 取值参考 SolidJS 的同类保护（~1e5），远高于任何正常应用的一轮更新规模。
+pub(crate) const MAX_QUEUE_ITERATIONS: usize = 100_000;
+
 pub(crate) struct Scheduler {
     pub(crate) workspace: RefCell<WorkSpace>,
     pub(crate) observer_queue: RefCell<VecDeque<NodeId>>,
