@@ -2370,6 +2370,7 @@ pub const STATIC_CANDIDATE_UTILITIES: &[&str] = &[
     "backdrop-contrast-200",
     "backdrop-contrast-50",
     "backdrop-contrast-75",
+    "backdrop-filter-none",
     "backdrop-grayscale",
     "backdrop-grayscale-0",
     "backdrop-grayscale-100",
@@ -2637,6 +2638,8 @@ pub const STATIC_CANDIDATE_UTILITIES: &[&str] = &[
     "bg-indigo-950",
     "bg-inherit",
     "bg-left",
+    "bg-left-bottom",
+    "bg-left-top",
     "bg-lime-100",
     "bg-lime-200",
     "bg-lime-300",
@@ -2769,6 +2772,8 @@ pub const STATIC_CANDIDATE_UTILITIES: &[&str] = &[
     "bg-repeat-x",
     "bg-repeat-y",
     "bg-right",
+    "bg-right-bottom",
+    "bg-right-top",
     "bg-rose-100",
     "bg-rose-200",
     "bg-rose-300",
@@ -6427,6 +6432,7 @@ pub const STATIC_CANDIDATE_UTILITIES: &[&str] = &[
     "break-inside-avoid-page",
     "break-keep",
     "break-normal",
+    "break-words",
     "brightness-0",
     "brightness-100",
     "brightness-105",
@@ -6917,6 +6923,7 @@ pub const STATIC_CANDIDATE_UTILITIES: &[&str] = &[
     "decoration-blue-800",
     "decoration-blue-900",
     "decoration-blue-950",
+    "decoration-clone",
     "decoration-current",
     "decoration-cyan-100",
     "decoration-cyan-200",
@@ -7121,6 +7128,7 @@ pub const STATIC_CANDIDATE_UTILITIES: &[&str] = &[
     "decoration-slate-800",
     "decoration-slate-900",
     "decoration-slate-950",
+    "decoration-slice",
     "decoration-solid",
     "decoration-stone-100",
     "decoration-stone-200",
@@ -8117,6 +8125,7 @@ pub const STATIC_CANDIDATE_UTILITIES: &[&str] = &[
     "fill-zinc-800",
     "fill-zinc-900",
     "fill-zinc-950",
+    "filter-none",
     "fixed",
     "flex",
     "flex-1",
@@ -17428,8 +17437,12 @@ pub const STATIC_CANDIDATE_UTILITIES: &[&str] = &[
     "object-cover",
     "object-fill",
     "object-left",
+    "object-left-bottom",
+    "object-left-top",
     "object-none",
     "object-right",
+    "object-right-bottom",
+    "object-right-top",
     "object-scale-down",
     "object-top",
     "object-top-left",
@@ -17470,6 +17483,7 @@ pub const STATIC_CANDIDATE_UTILITIES: &[&str] = &[
     "order-9",
     "order-first",
     "order-last",
+    "order-none",
     "ordinal",
     "origin-bottom",
     "origin-bottom-left",
@@ -17790,6 +17804,7 @@ pub const STATIC_CANDIDATE_UTILITIES: &[&str] = &[
     "outline-zinc-950",
     "overflow-auto",
     "overflow-clip",
+    "overflow-ellipsis",
     "overflow-hidden",
     "overflow-scroll",
     "overflow-visible",
@@ -31030,6 +31045,9 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
     ("backdrop-contrast-75", None, &[
         (CssPropertyId::BackdropFilter, StaticVal::Literal("contrast(0.75)")),
     ]),
+    ("backdrop-filter-none", None, &[
+        (CssPropertyId::BackdropFilter, StaticVal::Kw("none")),
+    ]),
     ("backdrop-grayscale", None, &[
         (CssPropertyId::BackdropFilter, StaticVal::Literal("grayscale(100%)")),
     ]),
@@ -31831,6 +31849,12 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
     ("bg-left", None, &[
         (CssPropertyId::BackgroundPosition, StaticVal::Kw("left")),
     ]),
+    ("bg-left-bottom", None, &[
+        (CssPropertyId::BackgroundPosition, StaticVal::Literal("bottom left")),
+    ]),
+    ("bg-left-top", None, &[
+        (CssPropertyId::BackgroundPosition, StaticVal::Literal("top left")),
+    ]),
     ("bg-lime-100", None, &[
         (CssPropertyId::BackgroundColor, StaticVal::Hex("#ecfcca")),
     ]),
@@ -32226,6 +32250,12 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
     ]),
     ("bg-right", None, &[
         (CssPropertyId::BackgroundPosition, StaticVal::Kw("right")),
+    ]),
+    ("bg-right-bottom", None, &[
+        (CssPropertyId::BackgroundPosition, StaticVal::Literal("bottom right")),
+    ]),
+    ("bg-right-top", None, &[
+        (CssPropertyId::BackgroundPosition, StaticVal::Literal("top right")),
     ]),
     ("bg-rose-100", None, &[
         (CssPropertyId::BackgroundColor, StaticVal::Hex("#ffe4e6")),
@@ -43215,6 +43245,9 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::OverflowWrap, StaticVal::Kw("normal")),
         (CssPropertyId::WordBreak, StaticVal::Kw("normal")),
     ]),
+    ("break-words", None, &[
+        (CssPropertyId::OverflowWrap, StaticVal::Kw("break-word")),
+    ]),
     ("brightness-0", None, &[
         (CssPropertyId::Filter, StaticVal::Literal("brightness(0)")),
     ]),
@@ -44685,6 +44718,9 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
     ("decoration-blue-950", None, &[
         (CssPropertyId::TextDecorationColor, StaticVal::Hex("#162456")),
     ]),
+    ("decoration-clone", None, &[
+        (CssPropertyId::BoxDecorationBreak, StaticVal::Kw("clone")),
+    ]),
     ("decoration-current", None, &[
         (CssPropertyId::TextDecorationColor, StaticVal::Kw("currentColor")),
     ]),
@@ -45296,6 +45332,9 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
     ]),
     ("decoration-slate-950", None, &[
         (CssPropertyId::TextDecorationColor, StaticVal::Hex("#020618")),
+    ]),
+    ("decoration-slice", None, &[
+        (CssPropertyId::BoxDecorationBreak, StaticVal::Kw("slice")),
     ]),
     ("decoration-solid", None, &[
         (CssPropertyId::TextDecorationStyle, StaticVal::Kw("solid")),
@@ -48295,6 +48334,9 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
     ]),
     ("fill-zinc-950", None, &[
         (CssPropertyId::Fill, StaticVal::Hex("#09090b")),
+    ]),
+    ("filter-none", None, &[
+        (CssPropertyId::Filter, StaticVal::Kw("none")),
     ]),
     ("fixed", None, &[
         (CssPropertyId::Position, StaticVal::Kw("fixed")),
@@ -77232,11 +77274,23 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
     ("object-left", None, &[
         (CssPropertyId::ObjectPosition, StaticVal::Kw("left")),
     ]),
+    ("object-left-bottom", None, &[
+        (CssPropertyId::ObjectPosition, StaticVal::Literal("bottom left")),
+    ]),
+    ("object-left-top", None, &[
+        (CssPropertyId::ObjectPosition, StaticVal::Literal("top left")),
+    ]),
     ("object-none", None, &[
         (CssPropertyId::ObjectFit, StaticVal::Kw("none")),
     ]),
     ("object-right", None, &[
         (CssPropertyId::ObjectPosition, StaticVal::Kw("right")),
+    ]),
+    ("object-right-bottom", None, &[
+        (CssPropertyId::ObjectPosition, StaticVal::Literal("bottom right")),
+    ]),
+    ("object-right-top", None, &[
+        (CssPropertyId::ObjectPosition, StaticVal::Literal("top right")),
     ]),
     ("object-scale-down", None, &[
         (CssPropertyId::ObjectFit, StaticVal::Kw("scale-down")),
@@ -77357,6 +77411,9 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
     ]),
     ("order-last", None, &[
         (CssPropertyId::Order, StaticVal::Num(9999.0, "")),
+    ]),
+    ("order-none", None, &[
+        (CssPropertyId::Order, StaticVal::Num(0.0, "")),
     ]),
     ("ordinal", None, &[
         (CssPropertyId::FontVariantNumeric, StaticVal::Kw("ordinal")),
@@ -78323,6 +78380,9 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
     ]),
     ("overflow-clip", None, &[
         (CssPropertyId::Overflow, StaticVal::Kw("clip")),
+    ]),
+    ("overflow-ellipsis", None, &[
+        (CssPropertyId::TextOverflow, StaticVal::Kw("ellipsis")),
     ]),
     ("overflow-hidden", None, &[
         (CssPropertyId::Overflow, StaticVal::Kw("hidden")),

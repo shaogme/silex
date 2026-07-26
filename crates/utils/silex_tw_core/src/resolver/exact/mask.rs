@@ -79,6 +79,11 @@ pub fn resolve_mask_rules(
         "bg-top-right" => Some(cow![("background-position", "top right")]),
         "bg-bottom-left" => Some(cow![("background-position", "bottom left")]),
         "bg-bottom-right" => Some(cow![("background-position", "bottom right")]),
+        // v3 的轴序写法，v4 仍然保留为别名
+        "bg-left-top" => Some(cow![("background-position", "top left")]),
+        "bg-right-top" => Some(cow![("background-position", "top right")]),
+        "bg-left-bottom" => Some(cow![("background-position", "bottom left")]),
+        "bg-right-bottom" => Some(cow![("background-position", "bottom right")]),
 
         // Mask Base & Position & Mode
         "mask-none" => Some(cow![("mask-image", "none")]),

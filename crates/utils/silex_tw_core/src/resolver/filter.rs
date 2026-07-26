@@ -64,6 +64,16 @@ pub fn resolve_filter_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<'
         "filter"
     };
 
+    // 整条属性取 none：`filter-none` / `backdrop-filter-none`
+    //
+    // Tailwind 里这两条的取值不来自任何 theme 命名空间，`getClassList()` 因此完全不列举它们，
+    // 抽取脚本改由 `utilities.keys()` 兜底后才进得来（报告 §13.7）。
+    // 组合型属性的合并逻辑认得 `none` 这个整属性关键字：它会清空此前累积的全部函数分量，
+    // 所以 `blur-sm filter-none` 正确产出 `filter: none` 而不是 `blur(4px) none`。
+    if target == "filter-none" {
+        return Some(cow!(vec![(prop_name, "none")]));
+    }
+
     // Blur
     if target == "blur" {
         return Some(cow!(vec![(prop_name, "blur(8px)")]));
