@@ -36,8 +36,11 @@ src/
 ├── layers.rs           // 级联层 (@layer) 的层序——优先级的唯一约定处
 ├── escape.rs           // 属性名与值写入 CSS 文本前的净化
 ├── runtime/
+│   ├── backend.rs      // 「对样式表做什么」与「样式表是什么」的分界（SheetBackend）
+│   ├── platform.rs     // 与宿主的另两处接缝：诊断输出与微任务调度
 │   ├── registry.rs     // 全局样式表注册表 (Static & Document Registry)
-│   ├── sheet.rs        // 样式表载体：构造式样式表 + <style> 兜底
+│   ├── sheet.rs        // 浏览器后端：构造式样式表 + <style> 兜底（仅 wasm）
+│   ├── fake.rs         // 非 wasm 后端：状态机测试用的观察窗
 │   ├── template.rs     // 动态规则的结构化模板（编译期切片，运行时拼接）
 │   └── dynamic.rs      // 动态样式状态管理与弱引用 GC
 └── codegen.rs          // 自动生成的代码产物入口 (codegen/ 子模块)
@@ -343,17 +346,66 @@ lightningcss，位置信息在那之后不复存在。但替换是一遍扫描�
 
 `@apply` 展开出来的声明是机器生成的（含 `--tw-*` 与厂商前缀），不走这套判据。
 
+### 4.12 运行时的三处宿主接缝 (`runtime/backend.rs`、`runtime/platform.rs`)
+
+运行时被切成三层，只有最下面一层认识浏览器：
+
+| 层 | 内容 | 认识 web-sys 吗 |
+| --- | --- | --- |
+| 1 纯计算 | `builder.rs::render`、`types/*`、`escape.rs`、`layers.rs`、`runtime/template.rs` | 否 |
+| 2 状态机 | `runtime/registry.rs`、`runtime/dynamic.rs`：谁进文档、何时进、退休与复用 | 否 |
+| 3 后端 | `runtime/sheet.rs`（wasm）、`runtime/fake.rs`（其它） | 是 |
+
+接缝有三处，都是 type alias + 静态分发，**没有 `dyn`、没有运行时开销**：
+
+*   `SheetBackend`——建表、整表替换、追加顶层规则、拿 `adoptedStyleSheets` 句柄、摘除。
+    句柄的 `PartialEq` 必须是**对象标识**：`DocumentStyleRegistry` 靠它判断这一批
+    表和上一批是不是同一批，此前拿 Rust 侧内存地址当身份，`Vec` 一扩容身份就全变，
+    反过来同一微任务内增删数量相等时新元素又可能落回原槽位，于是「没变化」被误判。
+*   `DocumentBackend`——`document.adoptedStyleSheets = [...]` 那一次写入。
+*   `platform::schedule_microtask`——「借不到注册表 → 排队 → 下一个微任务补做」里的
+    那个微任务，wasm 下是 `spawn_local`。
+
+分层不是为了多态（运行时只有一个实现在用），而是为了**第 2 层能脱离浏览器被断言**：
+退休 LRU、延迟队列、增删时序这些最容易改坏的判断，没有一条需要浏览器在场。
+`runtime/tests.rs` 里的 15 个用例覆盖的就是这一层，`cargo test` 一把跑完，不需要
+headless 浏览器。「我们对 CSSOM API 的理解对不对」不由它们保证——那是另一回事。
+
+同一个接缝也是 SSR 的地基：第 1、2 层已经与平台无关，服务端形态缺的是第 3 层的一个
+新后端（以及框架其余部分的服务端形态，见 §5）。
+
+### 4.13 借不到注册表时的补做
+
+`DOCUMENT_REGISTRY` / `STATIC_REGISTRY` / `DYNAMIC_STYLE_REGISTRY` 都是
+`RefCell`，而注入过程中触发注入、`Drop` 里回头动注册表都会撞上重入借用。
+这类冲突一律**排队 + 约一个微任务补做**，不再「借不到就算了」：
+
+| 场景 | 队列 | 此前的后果 |
+| --- | --- | --- |
+| 静态样式注入 | `DEFERRED_INJECTIONS` | 那段 CSS 静默消失 |
+| 文档增删（挂载/摘除/注册静态表） | `PENDING_OPS`（增删共用一个队列以保序） | 摘不掉的表永久留在文档上；挂不上的表要等退休复用才重试 |
+| 动态表注销 | `PENDING_UNREGISTER` | 注册表里留下悬空条目 |
+
+`DynamicStyleState` 的 `attached` 记的是**意图**而不是结果：排进队列的增删一定会发生，
+所以先记状态再排队。
+
 ## 5. 存在的问题和 TODO (Issues and TODOs)
 
 *   **已知限制**：
     *   首次注入大型复杂样式树时，在 Rust 端构建 CSS 字符串会有一定的毫秒级开销。
-    *   `silex_css` 无条件依赖 `web-sys` / `wasm-bindgen`，没有非 wasm 路径，因此
-        还不支持 SSR。
+    *   还不支持 SSR。运行时的状态机（§4.12 的第 1、2 层）已经与平台无关，非 wasm
+        目标上有一个空转后端；但 `builder.rs` 的 `apply_to_element` 与 `theme.rs`
+        仍直接收 `web_sys` 类型，且 `silex_core` / `silex_dom` 都只有 wasm 形态——
+        **SSR 是框架级立项，不是 CSS 模块的 TODO**，缺的是服务端后端 + 那两个 crate
+        的服务端形态。
     *   静态取值的校验以 MDN 的值定义语法为判据（见 §4.11），**MDN 数据滞后的
         属性会漏报**：关键字表为空、或者语法里有 `<custom-ident>` 的属性一律放行。
 *   **性能瓶颈**：当页面存在数千个不同的动态 `Style` 对象时，虽然 DOM 压力小，但 Rust 端的 `Effect` 闭包管理会有一定的内存开销。
 *   **TODO**：
     1.  [ ] 实现样式的跨组件去重（目前仅在单组件多次渲染间去重）。
-    2.  [ ] 为 `silex_css` 加一条非 wasm 路径，打通 SSR。
+    2.  [ ] 打通 SSR：给 `runtime/backend.rs` 加一个累积 CSS 文本的服务端后端，并等
+        `silex_core` / `silex_dom` 有服务端形态。
+    3.  [ ] 补一组 `wasm-bindgen-test` 冒烟用例，验证「我们对 CSSOM API 的理解」——
+        `runtime/tests.rs` 覆盖的是状态机，覆盖不到这一层。
 
 

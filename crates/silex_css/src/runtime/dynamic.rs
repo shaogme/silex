@@ -1,7 +1,8 @@
 use crate::{
     runtime::{
-        registry::{queue_removal, with_document_registry},
-        sheet::{Sheet, report},
+        backend::{ActiveSheet, SheetBackend},
+        platform::report,
+        registry::{DocOp, apply_doc_op},
         template::{CssPart, dynamic_class, render, replace_placeholders},
     },
     types,
@@ -25,7 +26,7 @@ pub type CssVariableGetter = Rx<String>;
 /// 不执行 → 这些表**始终留在 `document.adoptedStyleSheets` 上**，每一张都参与
 /// 样式匹配。现在退休即摘出文档（只保留已解析好的表对象供复用），常驻成本降到
 /// 零，上限本身也随之收小。
-const CACHE_LIMIT: usize = 32;
+pub(crate) const CACHE_LIMIT: usize = 32;
 
 thread_local! {
     static DYNAMIC_STYLE_REGISTRY: RefCell<HashMap<String, Weak<DynamicStyleState>>> = RefCell::new(HashMap::new());
@@ -37,7 +38,7 @@ thread_local! {
 /// Manages an injected stylesheet uniquely for a component instance.
 pub(crate) struct DynamicStyleState {
     pub id: String,
-    pub sheet: Sheet,
+    pub sheet: ActiveSheet,
     /// 当前是否挂在 `document.adoptedStyleSheets` 上
     attached: std::cell::Cell<bool>,
 }
@@ -47,14 +48,13 @@ impl DynamicStyleState {
         if self.attached.get() {
             return;
         }
-        if let Some(adopted) = self.sheet.adopted() {
-            let adopted = adopted.clone();
-            if with_document_registry(|dr| dr.add_sheet(adopted)).is_none() {
-                report("挂载动态样式表时借用冲突");
-                return;
-            }
-        }
+        // 先记状态再排队：`attached` 记的是**意图**，排进队列的增删一定会发生，
+        // 于是「挂上了没有」不再取决于这一刻借不借得到注册表。此前借用冲突时
+        // 直接 return，这张表就一直不在文档里，只有等它退休又被复用才会重试。
         self.attached.set(true);
+        if let Some(adopted) = self.sheet.adopted() {
+            apply_doc_op(DocOp::Add(adopted));
+        }
     }
 
     fn detach(&self) {
@@ -62,12 +62,9 @@ impl DynamicStyleState {
             return;
         }
         self.attached.set(false);
-        let Some(adopted) = self.sheet.adopted() else {
-            return;
-        };
-        if with_document_registry(|dr| dr.remove_sheet(adopted)).is_none() {
+        if let Some(adopted) = self.sheet.adopted() {
             // 借不到就排队，微任务里补做——不再静默跳过
-            queue_removal(adopted.clone());
+            apply_doc_op(DocOp::Remove(adopted));
         }
     }
 }
@@ -78,17 +75,33 @@ impl Drop for DynamicStyleState {
         self.detach();
         self.sheet.detach();
         // 2. Remove from registry map
-        let removed = DYNAMIC_STYLE_REGISTRY.with(|reg| match reg.try_borrow_mut() {
-            Ok(mut reg) => {
-                reg.remove(&self.id);
-                true
-            }
-            Err(_) => false,
-        });
+        //
+        // `try_with`：线程退出时 TLS 析构器会来 `Drop` 退休队列里的状态，那时
+        // 注册表本身可能已经没了——在析构器里 panic 会直接 abort 进程。
+        let removed = DYNAMIC_STYLE_REGISTRY
+            .try_with(|reg| match reg.try_borrow_mut() {
+                Ok(mut reg) => {
+                    reg.remove(&self.id);
+                    true
+                }
+                Err(_) => false,
+            })
+            .unwrap_or(true);
         if !removed {
-            PENDING_UNREGISTER.with(|p| p.borrow_mut().push(self.id.clone()));
+            let _ = PENDING_UNREGISTER.try_with(|p| p.borrow_mut().push(self.id.clone()));
         }
     }
+}
+
+/// 清空退休队列与注册表。测试用，见 `registry::reset_for_test`。
+#[cfg(all(test, not(target_arch = "wasm32")))]
+pub(crate) fn reset_for_test() {
+    // 先把退休队列放干净：`Drop` 会回头去动另外两张表，不能在借用里做
+    let retired: Vec<Rc<DynamicStyleState>> =
+        RETIRED_STYLES.with(|r| r.borrow_mut().drain(..).collect());
+    drop(retired);
+    DYNAMIC_STYLE_REGISTRY.with(|reg| reg.borrow_mut().clear());
+    PENDING_UNREGISTER.with(|p| p.borrow_mut().clear());
 }
 
 /// 拿到动态样式注册表，顺带把欠下的注销补上。
@@ -167,7 +180,7 @@ impl DynamicStyleManager {
                 state.attach();
                 return Some(state);
             }
-            let sheet = Sheet::new()?;
+            let sheet = ActiveSheet::create()?;
             sheet.replace(content);
 
             let state = Rc::new(DynamicStyleState {

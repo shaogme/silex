@@ -10,6 +10,8 @@
 | `src/runtime/registry.rs` | **DocumentStyleRegistry**: 样式单一事实来源，管理 `adoptedStyleSheets`。 |
 | `src/runtime/registry.rs` | **StaticStyleRegistry**: 全局静态样式合并与原子的 `insert_rule` 注入。 |
 | `src/runtime/dynamic.rs` | **DynamicStyleManager**: 实例级样式管理，支持基于弱引用的 GC 与 LRU 缓存。 |
+| `src/runtime/backend.rs` | **SheetBackend / DocumentBackend**: 样式表后端的接缝，`ActiveSheet` 按目标平台静态分发（wasm → `sheet.rs`，其它 → `fake.rs`）。上面两层状态机因此可以脱离浏览器测试。 |
+| `src/runtime/platform.rs` | 诊断输出与微任务调度的接缝（wasm 下是 `console.error` 与 `spawn_local`）。 |
 | `src/theme.rs` | 提供主题变量注入、全局主题管理及增量更新。支持宏驱动的主题结构体与常量生成。 |
 | `src/types/` | 模块化的类型系统，包含单位 (`units.rs`)、计算 (`calc.rs`)、复合属性 (`shorthands.rs`)、渐变 (`gradients.rs`) 及**复杂 DSL (`complex.rs`)**。 |
 | `src/types.rs` | 类型系统入口，定义核心验证 Trait `ValidFor` 并整合属性注册。**包含泛型 `CssVar<T>` 与响应式绑定**。 |

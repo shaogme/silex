@@ -1,42 +1,81 @@
 use crate::layers;
-use crate::runtime::sheet::{Sheet, report};
-use js_sys::Array;
-use silex_dom::prelude::*;
+use crate::runtime::backend::{self, ActiveSheet, SheetBackend, SheetHandle};
+use crate::runtime::platform::{report, schedule_microtask};
 use std::{cell::RefCell, collections::HashSet};
-use wasm_bindgen::{JsCast, prelude::*};
-use wasm_bindgen_futures::spawn_local;
-use web_sys::CssStyleSheet;
+
+/// 一次文档增删。
+#[derive(Debug)]
+pub(crate) enum DocOp {
+    /// 静态表只有一张，且必须排在最前面（层序声明在它里面）
+    SetStatic(SheetHandle),
+    Add(SheetHandle),
+    Remove(SheetHandle),
+}
 
 thread_local! {
     pub(crate) static DOCUMENT_REGISTRY: RefCell<DocumentStyleRegistry> = RefCell::new(DocumentStyleRegistry::new());
-    /// `DOCUMENT_REGISTRY` 正被借用时来不及做的摘除。
+    /// `DOCUMENT_REGISTRY` 正被借用时来不及做的增删。
     ///
     /// `DynamicStyleState::drop` 此前是 `if let Ok(mut dr) = try_borrow_mut()`，
     /// 借不到就直接跳过 `remove_sheet`——那张样式表就**永久**留在
     /// `document.adoptedStyleSheets` 上了，且没有任何提示。
-    static PENDING_REMOVALS: RefCell<Vec<CssStyleSheet>> = const { RefCell::new(Vec::new()) };
+    ///
+    /// 增与删共用一个队列而不是各排各的：同一张表可能先被摘、后被挂回（退休后
+    /// 复用），两个队列各自 drain 就丢了它们之间的先后。
+    static PENDING_OPS: RefCell<Vec<DocOp>> = const { RefCell::new(Vec::new()) };
 }
 
-/// 拿到文档级注册表，顺带把欠下的摘除补上。
+/// 拿到文档级注册表，顺带把欠下的增删补上。
 pub(crate) fn with_document_registry<R>(
     f: impl FnOnce(&mut DocumentStyleRegistry) -> R,
 ) -> Option<R> {
-    DOCUMENT_REGISTRY.with(|dr| {
-        let Ok(mut dr) = dr.try_borrow_mut() else {
-            return None;
-        };
-        let owed = PENDING_REMOVALS.with(|p| p.borrow_mut().drain(..).collect::<Vec<_>>());
-        for sheet in &owed {
-            dr.remove_sheet(sheet);
-        }
-        Some(f(&mut dr))
-    })
+    // `try_with` 而不是 `with`：这条路会被 `Drop` 走到，而 `Drop` 可能发生在
+    // 线程退出时的 TLS 析构里——那时注册表本身可能已经没了。做不了就当作
+    // 「借不到」，由调用方排队；排不上也无所谓，进程都要结束了。
+    DOCUMENT_REGISTRY
+        .try_with(|dr| {
+            let Ok(mut dr) = dr.try_borrow_mut() else {
+                return None;
+            };
+            let owed = PENDING_OPS
+                .try_with(|p| p.borrow_mut().drain(..).collect::<Vec<_>>())
+                .unwrap_or_default();
+            for op in owed {
+                dr.apply(op);
+            }
+            Some(f(&mut dr))
+        })
+        .ok()
+        .flatten()
 }
 
-/// 借不到注册表时把摘除排进队列，并约一个微任务回来补做。
-pub(crate) fn queue_removal(sheet: CssStyleSheet) {
-    PENDING_REMOVALS.with(|p| p.borrow_mut().push(sheet));
-    spawn_local(async {
+/// 做一笔文档增删：拿得到注册表就地做，借不到就排进队列、约一个微任务回来补做。
+///
+/// 走同一个入口是为了不再有「借不到就算了」的分支——此前 `attach` 是直接
+/// `return`，那张表要等到退休之后又被复用才会重试，在那之前它的样式一直不生效。
+pub(crate) fn apply_doc_op(op: DocOp) {
+    let mut pending = Some(op);
+    // 借不到时闭包根本没被调用，`pending` 里的那笔操作还在
+    let applied = with_document_registry(|dr| {
+        if let Some(op) = pending.take() {
+            dr.apply(op);
+        }
+    })
+    .is_some();
+
+    if applied {
+        return;
+    }
+    let Some(op) = pending else { return };
+    report(match &op {
+        DocOp::SetStatic(_) => "注册静态样式表时借用冲突，已排入下一个微任务",
+        DocOp::Add(_) => "挂载动态样式表时借用冲突，已排入下一个微任务",
+        DocOp::Remove(_) => "摘除动态样式表时借用冲突，已排入下一个微任务",
+    });
+    if PENDING_OPS.try_with(|p| p.borrow_mut().push(op)).is_err() {
+        return;
+    }
+    schedule_microtask(|| {
         with_document_registry(|dr| dr.sync());
     });
 }
@@ -47,7 +86,7 @@ pub struct StaticStyleRegistry {
     /// Set of already injected style IDs.
     injected_ids: HashSet<String>,
     /// The shared stylesheet for all static styles.
-    shared_sheet: Option<Sheet>,
+    shared_sheet: Option<ActiveSheet>,
     /// 已经进表的 chunk。只在需要整表重建（`<style>` 兜底 / `insertRule` 失败）
     /// 时才会被读到。
     all_chunks: Vec<String>,
@@ -70,6 +109,26 @@ thread_local! {
     /// 此前 `StaticStyleRegistry::with` 借不到就返回 `None`，而 `inject_style`
     /// 根本不看返回值——那段 CSS 就**静默消失**了。
     static DEFERRED_INJECTIONS: RefCell<Vec<(String, String)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// 把注册表恢复成刚启动的样子。
+///
+/// 测试用。`--test-threads=1` 时 libtest 会在同一个线程上跑多个测试，thread_local
+/// 里的状态会串场，所以每个状态机测试都要先从这里开一张白纸。
+#[cfg(all(test, not(target_arch = "wasm32")))]
+pub(crate) fn reset_for_test() {
+    DEFERRED_INJECTIONS.with(|d| d.borrow_mut().clear());
+    PENDING_OPS.with(|p| p.borrow_mut().clear());
+    STATIC_REGISTRY.with(|r| {
+        *r.borrow_mut() = StaticStyleRegistry {
+            injected_ids: HashSet::new(),
+            shared_sheet: None,
+            all_chunks: Vec::new(),
+            pending_chunks: Vec::new(),
+            is_flush_pending: false,
+        }
+    });
+    DOCUMENT_REGISTRY.with(|dr| *dr.borrow_mut() = DocumentStyleRegistry::new());
 }
 
 impl StaticStyleRegistry {
@@ -101,17 +160,14 @@ impl StaticStyleRegistry {
         self.pending_chunks.push(trimmed.to_string());
 
         if self.shared_sheet.is_none() {
-            let Some(sheet) = Sheet::new() else {
+            let Some(sheet) = ActiveSheet::create() else {
                 report("无法创建静态样式表，静态样式将不会生效");
                 return;
             };
             // 层序声明必须是表里的第一条规则，后续 chunk 一律追加在它后面
             sheet.replace(layers::ORDER_STATEMENT);
             if let Some(adopted) = sheet.adopted() {
-                let adopted = adopted.clone();
-                if with_document_registry(|dr| dr.set_static_sheet(adopted)).is_none() {
-                    report("注册静态样式表时借用冲突，已排入下一个微任务");
-                }
+                apply_doc_op(DocOp::SetStatic(adopted));
             }
             self.shared_sheet = Some(sheet);
         }
@@ -125,7 +181,7 @@ impl StaticStyleRegistry {
         }
         self.is_flush_pending = true;
 
-        spawn_local(async {
+        schedule_microtask(|| {
             if StaticStyleRegistry::with(|r| r.flush()).is_none() {
                 report("刷新静态样式表时借用冲突");
             }
@@ -258,7 +314,7 @@ pub fn inject_style(id: &str, content: &str) {
         // 借用冲突（注入过程中又触发了注入）：排队，下一个微任务补做。
         // 此前这里是直接丢弃。
         DEFERRED_INJECTIONS.with(|d| d.borrow_mut().push((id.to_string(), content.to_string())));
-        spawn_local(async {
+        schedule_microtask(|| {
             StaticStyleRegistry::with(|r| r.flush());
         });
     }
@@ -267,8 +323,8 @@ pub fn inject_style(id: &str, content: &str) {
 /// Registry to manage the list of adopted stylesheets in the document.
 /// This is the single source of truth for document.adoptedStyleSheets.
 pub(crate) struct DocumentStyleRegistry {
-    static_sheet: Option<CssStyleSheet>,
-    dynamic_sheets: Vec<CssStyleSheet>,
+    static_sheet: Option<SheetHandle>,
+    dynamic_sheets: Vec<SheetHandle>,
     /// 上次真正写进 `document.adoptedStyleSheets` 的那一批表。
     ///
     /// 此前这里存的是 `sheet.unchecked_ref::<JsValue>() as *const _ as usize`
@@ -276,7 +332,9 @@ pub(crate) struct DocumentStyleRegistry {
     /// `dynamic_sheets` 是 `Vec`，元素地址随扩容而变；反过来，同一微任务内
     /// 增删数量相等时新元素可能正好落在同一批槽位上，于是得到完全相同的地址
     /// 集合 → 判定「没变化」→ 跳过同步 → 新样式表永不生效、被移除的永不摘除。
-    last_synced: Vec<CssStyleSheet>,
+    ///
+    /// 现在比的是 `SheetHandle` 的 `PartialEq`，也就是后端定义的对象标识。
+    last_synced: Vec<SheetHandle>,
     is_pending: bool,
 }
 
@@ -290,22 +348,26 @@ impl DocumentStyleRegistry {
         }
     }
 
-    pub fn set_static_sheet(&mut self, sheet: CssStyleSheet) {
+    fn apply(&mut self, op: DocOp) {
+        match op {
+            DocOp::SetStatic(sheet) => self.set_static_sheet(sheet),
+            DocOp::Add(sheet) => self.add_sheet(sheet),
+            DocOp::Remove(sheet) => self.remove_sheet(&sheet),
+        }
+    }
+
+    pub fn set_static_sheet(&mut self, sheet: SheetHandle) {
         self.static_sheet = Some(sheet);
         self.sync();
     }
 
-    pub fn add_sheet(&mut self, sheet: CssStyleSheet) {
+    pub fn add_sheet(&mut self, sheet: SheetHandle) {
         self.dynamic_sheets.push(sheet);
         self.sync();
     }
 
-    pub fn remove_sheet(&mut self, sheet: &CssStyleSheet) {
-        let sheet_val: &JsValue = sheet.unchecked_ref();
-        self.dynamic_sheets.retain(|s| {
-            let s_val: &JsValue = s.unchecked_ref();
-            s_val != sheet_val
-        });
+    pub fn remove_sheet(&mut self, sheet: &SheetHandle) {
+        self.dynamic_sheets.retain(|s| s != sheet);
         self.sync();
     }
 
@@ -316,7 +378,7 @@ impl DocumentStyleRegistry {
 
         self.is_pending = true;
 
-        spawn_local(async {
+        schedule_microtask(|| {
             if with_document_registry(|dr| dr.perform_sync()).is_none() {
                 report("同步 adoptedStyleSheets 时借用冲突");
             }
@@ -326,30 +388,21 @@ impl DocumentStyleRegistry {
     fn perform_sync(&mut self) {
         self.is_pending = false;
 
-        let current: Vec<&CssStyleSheet> = self
+        // 静态表永远排在最前：层序声明在它里面，后面的表都靠它定优先级
+        let current: Vec<SheetHandle> = self
             .static_sheet
             .iter()
             .chain(self.dynamic_sheets.iter())
+            .cloned()
             .collect();
 
-        // 按 JS 对象标识逐个比对；一致就跳过浏览器侧的整表替换。
-        if current.len() == self.last_synced.len()
-            && current.iter().zip(self.last_synced.iter()).all(|(a, b)| {
-                let a: &JsValue = a.unchecked_ref();
-                let b: &JsValue = b.unchecked_ref();
-                a == b
-            })
-        {
+        // 按后端定义的对象标识逐个比对；一致就跳过宿主侧的整表替换。
+        if current == self.last_synced {
             return;
         }
 
-        let arr: Array = current
-            .iter()
-            .map(|s| JsValue::from((*s).clone()))
-            .collect();
-        document().set_adopted_style_sheets(&arr);
-
-        self.last_synced = current.into_iter().cloned().collect();
+        backend::set_adopted(&current);
+        self.last_synced = current;
     }
 }
 

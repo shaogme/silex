@@ -93,9 +93,9 @@ styled! {
 mod tests {
     use super::*;
 
-    // 注意：`.class()` 会触发 `inject_style`（web-sys），非 wasm 目标上跑不了，
-    // 所以这里只测**不渲染类名**的部分；类名渲染由 `silex_css` 的
-    // `declare_variants!` 单元测试覆盖。
+    // 注意：这里只测**不渲染类名**的部分；类名渲染由 `silex_css` 的
+    // `declare_variants!` 单元测试覆盖。（`.class()` 会触发 `inject_style`，
+    // 那条路现在在非 wasm 目标上有个空转后端，不再 panic，但也断言不了什么。）
 
     /// item 形式生成的枚举可以在调用方作用域里直接命名与解析
     #[test]
