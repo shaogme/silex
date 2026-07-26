@@ -14,7 +14,7 @@ use crate::css::{
 use proc_macro2::{Delimiter, Group, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
 use quote::quote;
 use std::collections::{BTreeSet, HashMap};
-use syn::{Result, token::Semi};
+use syn::Result;
 
 /// 将解析后的 `Vec<UtilityRule>` 归一化转换构建为 `silex_macros::css::ast::CssBlock`
 pub fn build_css_block_from_rules(rules: Vec<UtilityRule>) -> Result<CssBlock> {
@@ -411,7 +411,6 @@ fn make_nested_rule(selector: &str, declarations: Vec<(&str, TokenStream)>) -> C
         decl_rules.push(CssRule::Declaration(CssDeclaration {
             property: prop.to_string(),
             values: vals,
-            semi_token: Some(Semi(Span::call_site())),
             span: Span::call_site(),
         }));
     }
@@ -435,7 +434,6 @@ fn convert_rule_to_declaration(rule: &UtilityRule) -> CssRule {
     CssRule::Declaration(CssDeclaration {
         property: prop,
         values,
-        semi_token: Some(Semi(rule.span)),
         span: rule.span,
     })
 }

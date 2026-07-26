@@ -35,6 +35,16 @@ pub struct DynamicRule {
 pub(crate) const PLACEHOLDER_CLASS: char = '\u{1}';
 pub(crate) const PLACEHOLDER_VALUE: char = '\u{2}';
 
+/// 类名在编译期的占位。
+///
+/// 类名要写进产物（`.slx-xxx { … }`、`var(--slx-xxx-0)`），而产物又要用来算类名，
+/// 这是个环。解法是先用这个占位符跑完整个生成过程，拿产物取哈希得到真正的类名，
+/// 再把占位符逐字换回去。见 [`CssCompiler::compile_block_internal`]。
+///
+/// 和上面两个占位符同理，用控制字符是为了让它不可能来自源码——[`escape_css_string`]
+/// 会把用户字符串里的控制字符转义掉。
+const PLACEHOLDER_PENDING_CLASS: &str = "\u{3}";
+
 /// 模板的一个片段，与 `silex_css::runtime::template::CssPart` 一一对应。
 #[derive(Debug, Clone, PartialEq)]
 pub enum TemplatePart {
@@ -189,13 +199,11 @@ impl CssCompiler {
         is_unsafe: bool,
         prefix: &str,
     ) -> Result<CssCompileResult> {
-        let ts_string = quote::quote!(#block).to_string();
         // 这条入口只服务 `tw!` —— 传进来的 `CssBlock` 是 resolver 生成的，
         // 里头有 `--tw-*` 与 `clip` 这类注册表之外的属性名，不该拿用户书写
         // 的那套判据去卡
         Self::compile_block_internal(
             block,
-            ts_string,
             CompileOptions {
                 span,
                 wrap_in_class: true,
@@ -226,7 +234,6 @@ impl CssCompiler {
         let block: CssBlock = syn::parse2(ts.clone())?;
         Self::compile_block_internal(
             &block,
-            ts.to_string(),
             CompileOptions {
                 span,
                 wrap_in_class: true,
@@ -249,7 +256,6 @@ impl CssCompiler {
         let block: CssBlock = syn::parse2(ts.clone())?;
         Self::compile_block_internal(
             &block,
-            ts.to_string(),
             CompileOptions {
                 span,
                 wrap_in_class: true,
@@ -272,7 +278,6 @@ impl CssCompiler {
         let block: CssBlock = syn::parse2(ts.clone())?;
         Self::compile_block_internal(
             &block,
-            ts.to_string(),
             CompileOptions {
                 span,
                 wrap_in_class: false,
@@ -293,7 +298,6 @@ impl CssCompiler {
         let block: CssBlock = syn::parse2(ts.clone())?;
         Self::compile_block_internal(
             &block,
-            ts.to_string(),
             CompileOptions {
                 span,
                 wrap_in_class: true,
@@ -313,7 +317,6 @@ impl CssCompiler {
         let block: CssBlock = syn::parse2(ts.clone())?;
         Self::compile_block_internal(
             &block,
-            ts.to_string(),
             CompileOptions {
                 span,
                 wrap_in_class: false,
@@ -325,9 +328,22 @@ impl CssCompiler {
         )
     }
 
+    /// 类名从**产物**取哈希，不从宏输入的源码文本取。
+    ///
+    /// 从前哈希的是 `TokenStream` 的文本，于是 `css!{ color: red }` 与
+    /// `css!{ color: red; }` 落到两个类名、注入两份一模一样的规则。同一个 crate 里
+    /// `static_id` 那一侧一直是对的（`format!("static-{}", hash_one(&final_static_css))`
+    /// 哈希的就是产物），组件 CSS 只是没跟上。
+    ///
+    /// 挡在中间的是个环：类名要写进产物（`.slx-xxx { … }`、`var(--slx-xxx-0)`），
+    /// 产物又要用来算类名。解法是先拿 [`PLACEHOLDER_PENDING_CLASS`] 跑完整个生成
+    /// 过程，对产物取哈希算出类名，再把占位符换回真名——`Style::render` 那一侧
+    /// 早就是这么解的（`runtime/template.rs`：哈希模板结构而不是渲染结果）。
+    ///
+    /// 哈希的是**最小化之前**的中间产物而不是最终 CSS：最小化必须先有类名，
+    /// 而且中间产物相等一定蕴含最终 CSS 相等，所以这个口径只会少合、不会错合。
     fn compile_block_internal(
         block: &CssBlock,
-        ts_string: String,
         opts: CompileOptions<'_>,
     ) -> Result<CssCompileResult> {
         let CompileOptions {
@@ -338,11 +354,6 @@ impl CssCompiler {
             region,
             validate,
         } = opts;
-        let hash = silex_hash::css::hash_one(&ts_string);
-        let mut buf = [0u8; 13];
-        let class_base = silex_hash::css::encode_base36(hash, &mut buf);
-        let class_name = format!("{}{}", prefix, class_base);
-        let style_id = format!("style-{}", class_name);
 
         let mut state = ParserState {
             static_css: String::new(),
@@ -352,8 +363,9 @@ impl CssCompiler {
             warnings: Vec::new(),
             assertions: Vec::new(),
             class_name: if wrap_in_class {
-                class_name.clone()
+                PLACEHOLDER_PENDING_CLASS.to_string()
             } else {
+                // `global!` 不包 `.class { }`，产物里根本没有类名，也就没有环
                 "".to_string()
             },
             is_unsafe,
@@ -362,6 +374,22 @@ impl CssCompiler {
         };
 
         process_css_block(block, &mut state)?;
+
+        let class_name = format!("{}{}", prefix, fingerprint(prefix, &state));
+        let style_id = format!("style-{}", class_name);
+        if wrap_in_class {
+            state.static_css = state
+                .static_css
+                .replace(PLACEHOLDER_PENDING_CLASS, &class_name);
+            state.lifted_css = state
+                .lifted_css
+                .replace(PLACEHOLDER_PENDING_CLASS, &class_name);
+            for rule in &mut state.dynamic_rules {
+                rule.template = rule
+                    .template
+                    .replace(PLACEHOLDER_PENDING_CLASS, &class_name);
+            }
+        }
 
         let final_static_css = if state.lifted_css.is_empty() {
             "".to_string()
@@ -473,6 +501,31 @@ impl CssCompiler {
     }
 }
 
+/// 产物的指纹，Base36 编码后就是类名的后缀。
+///
+/// 喂进去的是「这次编译会产出什么」的全部：静态 CSS、提升出去的 CSS、每条动态
+/// 规则的模板。三者里的类名此时都还是占位符，所以指纹与类名之间没有循环。
+///
+/// **不喂**插值表达式的文本。`css!{ color: $(a) }` 与 `css!{ color: $(b) }` 的产物
+/// 都是 `.slx-x { color: var(--slx-x-0) }`——差别由各自元素上的行内自定义属性承担，
+/// 共用一个类名是对的，也正是这条口径能省下最多的重复注入。
+///
+/// `prefix` 参与哈希：它决定产物落进哪个 `@layer`（见 `compile_block_internal`
+/// 里的 `layer_name`），同样的声明在 components 层和 utilities 层不是一回事。
+fn fingerprint(prefix: &str, state: &ParserState) -> String {
+    use core::hash::{Hash, Hasher};
+
+    let mut hasher = silex_hash::css::CssHasher::new();
+    prefix.hash(&mut hasher);
+    state.static_css.hash(&mut hasher);
+    state.lifted_css.hash(&mut hasher);
+    for rule in &state.dynamic_rules {
+        rule.template.hash(&mut hasher);
+    }
+    let mut buf = [0u8; 13];
+    silex_hash::css::encode_base36(hasher.finish(), &mut buf).to_string()
+}
+
 fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
     for rule in &block.rules {
         let ctx = DynamicContext {
@@ -535,10 +588,11 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                 }
 
                 state.static_css.push_str(&val);
-
-                if decl.semi_token.is_some() {
-                    state.static_css.push_str("; ");
-                }
+                // 分号无条件补上，不看源码里写没写。块内最后一条声明的分号
+                // 在 CSS 里可有可无，产物经 lightningcss 最小化后完全一样；
+                // 但它此前会留在中间产物里，让 `color: red` 与 `color: red;`
+                // 落到两个类名。这是「按产物去重」的另一半。
+                state.static_css.push_str("; ");
             }
             CssRule::Apply(ap) => {
                 #[cfg(feature = "tw")]
@@ -721,9 +775,8 @@ fn build_dynamic_block_recursive(
                     ctx,
                 )?;
                 template.push_str(&val);
-                if decl.semi_token.is_some() {
-                    template.push_str("; ");
-                }
+                // 与静态那一侧同理，见 `process_css_block`
+                template.push_str("; ");
             }
             CssRule::Nested(nested) => {
                 let sel = extract_dynamic_selector(
@@ -1077,8 +1130,9 @@ pub(crate) fn escape_css_string(value: &str) -> String {
             '\n' => out.push_str("\\A "),
             '\r' => out.push_str("\\D "),
             // 其余控制字符也一律转义。除了本来就该这么写，这还保证了
-            // `PLACEHOLDER_CLASS` / `PLACEHOLDER_VALUE` 这两个占位符
-            // 不可能从用户的字符串字面量里冒出来
+            // `PLACEHOLDER_CLASS` / `PLACEHOLDER_VALUE` /
+            // `PLACEHOLDER_PENDING_CLASS` 这几个占位符不可能从用户的
+            // 字符串字面量里冒出来
             c if (c as u32) < 0x20 || c as u32 == 0x7f => {
                 out.push_str(&format!("\\{:X} ", c as u32))
             }
@@ -2073,5 +2127,142 @@ mod tests {
     fn important_survives_the_arity_check() {
         let css = compile_all("color: red !important;");
         assert!(css.contains("important"), "{css}");
+    }
+
+    // --- 缺口 E：类名按产物去重，不按源码文本 ---
+
+    fn class_of(src: &str) -> String {
+        CssCompiler::compile_with_source(src, Span::call_site(), false)
+            .unwrap()
+            .class_name
+    }
+
+    /// 写法不同、产物相同 → 同一个类名。
+    ///
+    /// 否则产物里会有两条一模一样的规则，各占一个类名各注入一次。
+    #[test]
+    fn writing_style_does_not_change_the_class_name() {
+        let canonical = class_of("color: red;");
+        for src in [
+            "color:red;",
+            "color: red",
+            "  color : red ; ",
+            "color:red",
+            "color:\n    red;\n",
+        ] {
+            assert_eq!(
+                canonical,
+                class_of(src),
+                "{src:?} 应当与 `color: red;` 同名"
+            );
+        }
+    }
+
+    /// 但声明顺序仍然区分——CSS 里后写的赢，那是两段不同的样式
+    #[test]
+    fn declaration_order_still_changes_the_class_name() {
+        assert_ne!(
+            class_of("color: red; width: 1px;"),
+            class_of("width: 1px; color: red;")
+        );
+    }
+
+    /// 字符串字面量逐字参与身份：大小写、内部空白都不能被折掉。
+    ///
+    /// 这正是「哈希产物」而不是「哈希规范化后的源码」的理由——按空白折叠去哈希
+    /// 会把 `"a  b"` 和 `"a b"` 判成同一段，于是两段不同的 CSS 抢同一个类名，
+    /// 后注入的那份被 `inject_style` 按 id 丢掉，其中一处直接显示错的内容。
+    #[test]
+    fn string_literals_participate_in_the_identity_verbatim() {
+        assert_ne!(class_of("content: \"A\";"), class_of("content: \"a\";"));
+        assert_ne!(
+            class_of("content: \"a  b\";"),
+            class_of("content: \"a b\";")
+        );
+    }
+
+    /// 嵌套块与 at-rule 一样按产物去重
+    #[test]
+    fn nested_rules_and_at_rules_dedupe_by_product_too() {
+        assert_eq!(
+            class_of("&:hover { color: red; }"),
+            class_of("&:hover{color:red}")
+        );
+        assert_eq!(
+            class_of("@media (min-width: 600px) { color: red; }"),
+            class_of("@media (min-width: 600px){color:red}")
+        );
+    }
+
+    /// 插值表达式不参与身份：产物都是 `var(--<cls>-0)`，差别由元素上的
+    /// 行内自定义属性承担，共用一个类名是对的
+    #[test]
+    fn interpolated_expressions_do_not_change_the_class_name() {
+        assert_eq!(class_of("color: $(a);"), class_of("color: $(b);"));
+        // 但插值的**位置**变了就是另一段 CSS
+        assert_ne!(class_of("color: $(a);"), class_of("width: $(a);"));
+    }
+
+    /// 层不同就是两段不同的样式：同样的声明落进 components 与 utilities
+    /// 的优先级不一样，不能共用类名
+    #[test]
+    fn the_layer_is_part_of_the_identity() {
+        let utilities = CssCompiler::compile_with_source("color: red;", Span::call_site(), false)
+            .unwrap()
+            .class_name;
+        let components = CssCompiler::compile_with_source_and_prefix(
+            "color: red;",
+            "slx-st-",
+            Span::call_site(),
+        )
+        .unwrap()
+        .class_name;
+        assert_ne!(
+            utilities.trim_start_matches("slx-tw-"),
+            components.trim_start_matches("slx-st-")
+        );
+    }
+
+    /// 类名占位符必须被逐字换回真名，一个都不能漏进产物
+    #[test]
+    fn the_pending_class_placeholder_never_reaches_the_product() {
+        let res = CssCompiler::compile_with_source(
+            "color: $v; &:hover { color: red; } @keyframes k { 0% { top: $t; } } $sel & { left: 0; }",
+            Span::call_site(),
+            false,
+        )
+        .unwrap();
+        for css in [&res.static_css, &res.component_css] {
+            assert!(!css.contains(PLACEHOLDER_PENDING_CLASS), "{css:?}");
+        }
+        for rule in &res.dynamic_rules {
+            assert!(
+                !rule.template.contains(PLACEHOLDER_PENDING_CLASS),
+                "{:?}",
+                rule.template
+            );
+        }
+        // 换回去的确实是这次算出来的类名
+        assert!(
+            res.component_css.contains(&format!(".{}", res.class_name)),
+            "{:?}",
+            res.component_css
+        );
+        assert!(
+            res.static_css
+                .contains(&format!("var(--{}-", res.class_name)),
+            "{:?}",
+            res.static_css
+        );
+    }
+
+    /// 同一段产物 → 同一个注入 id。`inject_style` 按 id 去重，这是
+    /// 「少注入一次」真正生效的地方
+    #[test]
+    fn the_same_product_lands_on_the_same_style_id() {
+        let a = CssCompiler::compile_with_source("color: red", Span::call_site(), false).unwrap();
+        let b = CssCompiler::compile_with_source("color:red;", Span::call_site(), false).unwrap();
+        assert_eq!(a.style_id, b.style_id);
+        assert_eq!(a.component_css, b.component_css);
     }
 }

@@ -98,10 +98,13 @@ pub fn verbatim_literal(text: &str) -> proc_macro2::Literal {
 
 /// A CSS declaration like `background-color: red;`
 #[derive(Clone)]
+///
+/// 结尾的 `;` 写不写不记录：编译器无条件给每条声明补分号（见
+/// `compiler.rs` 的 `process_css_block`），源码里的有无既不影响产物、
+/// 也就不该影响按产物取的类名哈希。
 pub struct CssDeclaration {
     pub property: String,
     pub values: TokenStream,
-    pub semi_token: Option<Token![;]>,
     /// 属性名所在的位置，用于把「属性名不存在 / 值类型不对」的报错指到源码上
     pub span: Span,
 }
@@ -136,16 +139,13 @@ impl Parse for CssDeclaration {
             value_tokens.extend(std::iter::once(input.parse::<TokenTree>()?));
         }
 
-        let semi_token = if input.peek(Token![;]) {
-            Some(input.parse()?)
-        } else {
-            None
-        };
+        if input.peek(Token![;]) {
+            let _: Token![;] = input.parse()?;
+        }
 
         Ok(CssDeclaration {
             property: prop_str,
             values: value_tokens,
-            semi_token,
             span: prop_span.unwrap_or_else(Span::call_site),
         })
     }
