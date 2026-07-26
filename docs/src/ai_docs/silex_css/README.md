@@ -32,6 +32,8 @@ Silex CSS 的类型安全基石。通过为不同属性定义专有的零大小�
     - **Color**: 支持 `Rgba`, `Hex`, `Hsl`, `ColorKeyword`。
     - **Number**: 支持各类型数字 (`i32`, `f64` 等)。
     - **Calculation**: 支持 `CalcValue` 及其相关的 `calc()`, `min()`, `max()`, `clamp()` 函数。
+      `min()` / `max()` 的函数版收同型迭代器；混用不同单位用宏版 `css_min!` /
+      `css_max!`（变长参数，逐个过 `IntoCalc`），另有等价的 `css_clamp!`。
     - **Keyword**: 自动生成的枚举类 (如 `TextAlignKeyword`) 会自动实现对应属性的 `ValidFor`。
     - **Complex**: 专为 `transform`, `grid-template-areas` 等属性设计的强类型 DSL (参见 `complex.rs`)。
 

@@ -173,10 +173,18 @@ prelude 里同名，所以叫 `qmm`。
   不是合法 CSS；嵌套算式补括号而不是套第二层 `calc()`。
 - **计算函数**：支持 `calc()`, `min()`, `max()`, `clamp()`。
     - `clamp(px(100), pct(50), px(500))` → `clamp(100px, 50%, 500px)`。三个参数
-      各有各的类型参数，只要同量纲即可；`min()` / `max()` 收的是迭代器，元素需同型，
-      混用时先各自 `.into_calc()`。
+      各有各的类型参数，只要同量纲即可。
+    - `min()` / `max()` 有**两个形态**，分工明确：
+        - 函数版收迭代器，元素必须同型——`min(vec_of_px)` 这种参数本来就来自
+          运行时集合的场合用它；
+        - 宏版 `css_min!` / `css_max!` 收变长参数，**每个参数各自过一次
+          `IntoCalc`**，所以类型可以不同：`css_min!(px(10), pct(50))` →
+          `min(10px, 50%)`。参数在编译期就写死时用它。
+        - `css_clamp!` 与函数版 `clamp` 完全等价，只为让三个数学函数写法一致。
+        - 三个宏都在 prelude 里。命名带 `css_` 前缀是为了不和 `std::cmp::min`
+          撞心智，与 `css_unsafe` / `css_some` / `css_none` 一致。
 - **数学安全**：`LengthMark` / `AngleMark` / `TimeMark` 三个量纲标记挡住跨量纲运算
-  （`px(1) + sec(1)` 编译失败）。`<length>` 与 `<length-percentage>` 是两个不同的
+  （`px(1) + sec(1)` 编译失败，`css_min!(px(1), sec(1))` 同样失败）。`<length>` 与 `<length-percentage>` 是两个不同的
   trait：`translateZ()` 与 `perspective()` 只收前者，而算术运算符收后者
   （`calc(100% - 10px)` 本来就合法）。
 
@@ -343,7 +351,6 @@ lightningcss，位置信息在那之后不复存在。但替换是一遍扫描�
         还不支持 SSR。
     *   静态取值的校验以 MDN 的值定义语法为判据（见 §4.11），**MDN 数据滞后的
         属性会漏报**：关键字表为空、或者语法里有 `<custom-ident>` 的属性一律放行。
-    *   `min()` / `max()` 收的是同型迭代器，混用不同单位要先各自 `.into_calc()`。
 *   **性能瓶颈**：当页面存在数千个不同的动态 `Style` 对象时，虽然 DOM 压力小，但 Rust 端的 `Effect` 闭包管理会有一定的内存开销。
 *   **TODO**：
     1.  [ ] 实现样式的跨组件去重（目前仅在单组件多次渲染间去重）。

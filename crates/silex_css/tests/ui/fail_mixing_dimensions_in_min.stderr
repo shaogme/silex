@@ -1,0 +1,9 @@
+error[E0308]: mismatched types
+ --> tests/ui/fail_mixing_dimensions_in_min.rs:6:13
+  |
+6 |     let _ = css_min!(px(1), sec(1));
+  |             ^^^^^^^^^^^^^^^^^^^^^^^ expected `CalcValue<LengthMark>`, found `CalcValue<TimeMark>`
+  |
+  = note: expected struct `CalcValue<LengthMark>`
+             found struct `CalcValue<TimeMark>`
+  = note: this error originates in the macro `css_min` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -161,6 +161,21 @@ sty().width(clamp(px(200), pct(50), px(800)))
      .margin_top(calc(px(100) - rem(1)));
 ```
 
+`min()` / `max()` 的函数版收的是迭代器，元素必须同型。要混用不同单位，用宏版
+`css_min!` / `css_max!`——它们收变长参数，每个参数各自转进同一个量纲：
+
+```rust
+use silex::css::prelude::*;
+
+sty().width(css_min!(px(600), pct(100)))       // min(600px, 100%)
+     .height(css_max!(vh(50), px(320)))        // max(50vh, 320px)
+     .font_size(css_clamp!(rem(1), vw(4), rem(2)));
+```
+
+两个形态并存：参数在编译期写死时用宏，参数来自运行时集合（`Vec` / 迭代器）时用
+函数。量纲校验对两者一样严——`css_min!(px(1), sec(1))` 编译失败。
+`css_clamp!` 与函数版 `clamp` 完全等价，只是让三个数学函数写法一致。
+
 ---
 
 ## 6. 主题系统 (Theme System)

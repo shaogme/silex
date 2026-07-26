@@ -24,6 +24,9 @@ pub mod prelude {
     #[cfg(feature = "tw")]
     pub use crate::tw::variants::UnknownVariantOption;
     pub use crate::types::*;
+    // `#[macro_export]` 把这三个宏放在了 crate 根，所以上面那句 `types::*`
+    // 只带得走函数版的 `min` / `max` / `clamp`，宏版要单独 re-export。
+    pub use crate::{css_clamp, css_max, css_min};
 }
 
 pub use class::IntoClass;

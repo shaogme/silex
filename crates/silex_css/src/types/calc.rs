@@ -218,6 +218,11 @@ where
     }
 }
 
+/// `min(a, b, …)`，参数来自一个**同型**集合。
+///
+/// 迭代器只有一个 `Item` 类型，所以 `min([px(10), pct(50)])` 编译不过。混用不同
+/// 单位请用 [`css_min!`](crate::css_min)；这个函数留给 `min(vec_of_px)` 这种参数
+/// 本来就来自运行时集合、元素本来就同型的场合。
 pub fn min<Mark, T, I>(args: I) -> CalcValue<Mark>
 where
     I: IntoIterator<Item = T>,
@@ -226,12 +231,40 @@ where
     math_fn("min", args)
 }
 
+/// `max(a, b, …)`，参数来自一个**同型**集合。
+///
+/// 与 [`min`] 同样的取舍——混用不同单位请用 [`css_max!`](crate::css_max)。
 pub fn max<Mark, T, I>(args: I) -> CalcValue<Mark>
 where
     I: IntoIterator<Item = T>,
     T: Into<CalcValue<Mark>>,
 {
     math_fn("max", args)
+}
+
+/// `css_min!(px(10), pct(50))` → `min(10px, 50%)`。
+///
+/// 与函数版 [`min`](crate::types::min) 的分工：参数在编译期就写死、且类型可能
+/// 不同时用宏；参数来自运行时集合时用函数。
+///
+/// 每个参数各自过一次 [`IntoCalc`](crate::types::IntoCalc) 落到
+/// `CalcValue<Mark>`，数组元素因此同型；`Mark` 由参数自己的量纲反推——跨量纲
+/// 混用（`css_min!(px(1), sec(1))`）仍然编译失败，这正是量纲标记要挡住的。
+#[macro_export]
+macro_rules! css_min {
+    ($($arg:expr),+ $(,)?) => {
+        $crate::types::min([$( $crate::types::IntoCalc::into_calc($arg) ),+])
+    };
+}
+
+/// `css_max!(rem(1), px(16), pct(5))` → `max(1rem, 16px, 5%)`。
+///
+/// 见 [`css_min!`](crate::css_min)。
+#[macro_export]
+macro_rules! css_max {
+    ($($arg:expr),+ $(,)?) => {
+        $crate::types::max([$( $crate::types::IntoCalc::into_calc($arg) ),+])
+    };
 }
 
 /// `clamp(<min>, <val>, <max>)`。
@@ -255,6 +288,21 @@ where
         val.calc_operand(),
         max_v.calc_operand()
     ))
+}
+
+/// `css_clamp!(px(100), pct(50), px(500))` → `clamp(100px, 50%, 500px)`。
+///
+/// 纯粹为了让三个数学函数写法一致——函数版 [`clamp`](crate::types::clamp) 早就
+/// 是三个独立类型参数，本来就能混用单位，两者完全等价。
+#[macro_export]
+macro_rules! css_clamp {
+    ($lo:expr, $val:expr, $hi:expr $(,)?) => {
+        $crate::types::clamp(
+            $crate::types::IntoCalc::into_calc($lo),
+            $crate::types::IntoCalc::into_calc($val),
+            $crate::types::IntoCalc::into_calc($hi),
+        )
+    };
 }
 
 /// 把一个成品值放进某个量纲的数学上下文。
@@ -385,6 +433,74 @@ mod tests {
     fn lengths_and_percentages_mix_freely() {
         use crate::types::units::pct;
         assert_eq!((pct(100) - px(10)).to_string(), "calc(100% - 10px)");
+    }
+
+    /// `min([px(10), pct(50)])` 编译不过——迭代器只有一个 `Item` 类型。
+    /// 宏版把每个参数各自落到 `CalcValue<Mark>`，数组元素这才同型
+    #[test]
+    fn the_macro_form_of_min_takes_mixed_units() {
+        use crate::types::units::pct;
+        let m: CalcValue<LengthMark> = css_min!(px(10), pct(50));
+        assert_eq!(m.to_string(), "min(10px, 50%)");
+    }
+
+    #[test]
+    fn the_macro_form_of_max_takes_any_number_of_arguments() {
+        use crate::types::units::{pct, rem};
+        let one: CalcValue<LengthMark> = css_max!(px(16));
+        assert_eq!(one.to_string(), "max(16px)");
+        let three: CalcValue<LengthMark> = css_max!(rem(1), px(16), pct(5));
+        assert_eq!(three.to_string(), "max(1rem, 16px, 5%)");
+        // 尾逗号
+        let trailing: CalcValue<LengthMark> = css_max!(px(1), px(2),);
+        assert_eq!(trailing.to_string(), "max(1px, 2px)");
+    }
+
+    /// 宏版与函数版对同型参数必须给出同一个结果
+    #[test]
+    fn the_macro_and_the_function_agree_on_homogeneous_arguments() {
+        let by_macro: CalcValue<LengthMark> = css_min!(px(10), px(20));
+        let by_fn: CalcValue<LengthMark> = min([px(10), px(20)]);
+        assert_eq!(by_macro, by_fn);
+    }
+
+    /// 参数本身是算式时要补括号，不能套出 `min(calc(…))`
+    #[test]
+    fn the_macro_keeps_nested_expressions_as_operands() {
+        use crate::types::units::pct;
+        let m: CalcValue<LengthMark> = css_min!(px(10) + px(5), pct(50));
+        assert_eq!(m.to_string(), "min((10px + 5px), 50%)");
+        assert!(!m.to_string().contains("calc("));
+    }
+
+    /// 时间与角度也走同一条路——`Mark` 由参数自己反推，不需要标注
+    #[test]
+    fn the_macro_infers_the_dimension_from_its_arguments() {
+        use crate::types::units::{deg, ms, sec, turn};
+        assert_eq!(css_min!(ms(100), sec(1)).to_string(), "min(100ms, 1s)");
+        assert_eq!(css_max!(deg(90), turn(1)).to_string(), "max(90deg, 1turn)");
+    }
+
+    /// 在属性调用点上没有类型标注可写，`Mark` 必须完全由参数反推出来
+    #[test]
+    fn the_macro_needs_no_annotation_at_a_property_call_site() {
+        use crate::builder::Style;
+        use crate::types::units::{pct, rem, vw};
+        let css = Style::new()
+            .width(css_min!(px(600), pct(100)))
+            .font_size(css_max!(rem(1), vw(4)))
+            .render()
+            .css;
+        assert!(css.contains("width: min(600px, 100%)"), "{css}");
+        assert!(css.contains("font-size: max(1rem, 4vw)"), "{css}");
+    }
+
+    #[test]
+    fn the_macro_form_of_clamp_matches_the_function() {
+        use crate::types::units::pct;
+        let by_macro: CalcValue<LengthMark> = css_clamp!(px(100), pct(50), px(500));
+        assert_eq!(by_macro.to_string(), "clamp(100px, 50%, 500px)");
+        assert_eq!(by_macro, clamp(px(100), pct(50), px(500)));
     }
 
     /// 开发文档里的 `clamp(px(100), pct(50), px(500))` 曾编译不过：
