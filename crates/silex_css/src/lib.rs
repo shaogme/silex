@@ -22,12 +22,12 @@ pub mod prelude {
     pub use crate::types::*;
 }
 
-pub use types::CssProperty;
-pub use codegen::properties;
 pub use class::IntoClass;
+pub use codegen::properties;
 pub use runtime::{
     DynamicCss, DynamicStyleManager, inject_managed_dynamic_style, inject_style,
     make_dynamic_val_for, make_property_val,
 };
 #[cfg(feature = "tw")]
 pub use tw::VariantSchema;
+pub use types::CssProperty;

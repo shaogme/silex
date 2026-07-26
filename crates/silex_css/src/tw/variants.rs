@@ -222,4 +222,3 @@ mod tests {
         assert_eq!(v2, TestButtonVariant::Primary); // default
     }
 }
-

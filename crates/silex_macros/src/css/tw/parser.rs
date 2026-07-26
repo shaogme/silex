@@ -2,12 +2,15 @@ use crate::css::{
     config::get_config,
     tw::{
         ast::{Modifier, SpannedModifier, TwInput, TwSegment, UtilityRule},
-        resolver::{codegen::modifiers::parse_modifier_fast, is_marker_class, resolve_utility},
+        resolver::{
+            codegen::modifiers::parse_modifier_fast, is_marker_class, resolve_utility,
+            suggest::find_best_modifier_suggestion,
+        },
     },
 };
 use proc_macro2::Span;
 use syn::{
-    Expr, LitStr, Result, Token, parenthesized,
+    Error, Expr, LitStr, Result, Token, parenthesized,
     parse::{Parse, ParseStream},
     token::Paren,
 };
@@ -19,7 +22,7 @@ fn parse_class_string(
 ) -> Result<Vec<UtilityRule>> {
     let mut rules = Vec::new();
     for token in raw_str.split_whitespace() {
-        let (modifiers, body_token) = parse_modifiers_and_body(token, span);
+        let (modifiers, body_token) = parse_modifiers_and_body(token, span)?;
         if modifiers.is_empty()
             && is_marker_class(body_token)
             && !extra_classes.contains(&body_token.to_string())
@@ -109,10 +112,14 @@ impl Parse for TwInput {
 }
 
 /// 解析单个修饰符前缀字符串为 `Modifier`
-pub(crate) fn parse_single_modifier(prefix: &str) -> Modifier {
+///
+/// 未知前缀会**报编译错误**并给出 Levenshtein 建议，绝不静默降级为伪类：
+/// LightningCSS 不会拒绝未知伪类，`mdd:flex` 之类的拼写错误会一路生成
+/// 永远不匹配任何元素的 `:mdd` 规则。若确需透传自定义伪类，请写作 `[&:my-pseudo]:`。
+pub(crate) fn parse_single_modifier(prefix: &str, span: Span) -> Result<Modifier> {
     // 1. 调用 Codegen 生成的 0-alloc Match DFA / 状态机快速解析
     if let Some(m) = parse_modifier_fast(prefix) {
-        return m;
+        return Ok(m);
     }
 
     // 2. 自定义断点响应式匹配
@@ -120,25 +127,75 @@ pub(crate) fn parse_single_modifier(prefix: &str) -> Modifier {
         .map(|cfg| cfg.theme.breakpoints.contains_key(prefix))
         .unwrap_or(false);
     if is_custom_bp {
-        return Modifier::MediaBreakpoint(prefix.to_string());
+        return Ok(Modifier::MediaBreakpoint(prefix.to_string()));
     }
 
-    // 3. 兜底伪类
-    Modifier::PseudoClass(prefix.to_string())
+    // 3. Tailwind 已定义但本实现尚未支持的函数式变体：给出明确的“未支持”提示，
+    //    避免退化成毫无帮助的拼写建议
+    if let Some(family) = unsupported_functional_family(prefix) {
+        return Err(Error::new(
+            span,
+            format!(
+                "Variant '{}:' uses the Tailwind functional variant '{}-*', which is not supported yet. \
+                 Use an arbitrary variant such as `[&:...]:` instead.",
+                prefix, family
+            ),
+        ));
+    }
+
+    // 4. 未知前缀：报错并给出建议
+    let msg = match find_best_modifier_suggestion(prefix) {
+        Some(s) => format!(
+            "Unknown variant prefix '{}:'. Did you mean '{}:'? \
+             (use `[&:{}]:` to pass an arbitrary pseudo-class through)",
+            prefix, s, prefix
+        ),
+        None => format!(
+            "Unknown variant prefix '{}:'. \
+             Use `[&:{}]:` if you intend to emit an arbitrary pseudo-class.",
+            prefix, prefix
+        ),
+    };
+    Err(Error::new(span, msg))
+}
+
+/// 识别 Tailwind v4 中存在、但本实现尚未支持的函数式变体家族
+fn unsupported_functional_family(prefix: &str) -> Option<&'static str> {
+    const FAMILIES: &[&str] = &[
+        "not-",
+        "in-",
+        "nth-",
+        "nth-last-",
+        "nth-of-type-",
+        "nth-last-of-type-",
+        "supports-",
+        "min-",
+        "max-",
+        "describedby-",
+        "details-content-",
+    ];
+    FAMILIES
+        .iter()
+        .copied()
+        .find(|f| prefix.starts_with(f))
+        .map(|f| f.trim_end_matches('-'))
 }
 
 /// 剥离修饰符前缀（如 `hover:`, `md:`, `dark:`）与基础 Utility Token，并附加细粒度 Span
-pub(crate) fn parse_modifiers_and_body(token: &str, span: Span) -> (Vec<SpannedModifier>, &str) {
+pub(crate) fn parse_modifiers_and_body(
+    token: &str,
+    span: Span,
+) -> Result<(Vec<SpannedModifier>, &str)> {
     let mut modifiers = Vec::new();
     let mut current = token;
 
     while let Some((prefix, rest)) = split_modifier(current) {
-        let modifier = parse_single_modifier(prefix);
+        let modifier = parse_single_modifier(prefix, span)?;
         modifiers.push(SpannedModifier::new(modifier, span));
         current = rest;
     }
 
-    (modifiers, current)
+    Ok((modifiers, current))
 }
 
 fn split_modifier(s: &str) -> Option<(&str, &str)> {

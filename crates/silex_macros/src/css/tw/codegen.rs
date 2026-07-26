@@ -93,10 +93,12 @@ fn modifier_priority(m: &SpannedModifier) -> u32 {
     match &m.modifier {
         Modifier::Child | Modifier::Descendant => 10,
         Modifier::PseudoClass(_) | Modifier::PseudoElement(_) => 20,
+        Modifier::SelectorVariant(_) => 25,
         Modifier::DataAttribute { .. } | Modifier::AriaAttribute { .. } => 30,
         Modifier::Group { .. } | Modifier::Peer { .. } => 40,
         Modifier::Has(_) => 50,
         Modifier::Dark => 60,
+        Modifier::MediaQuery(_) => 65,
         Modifier::ContainerQuery { .. } => 70,
         Modifier::MediaBreakpoint(bp) => {
             if let Some(meta) = lookup_modifier_meta(bp.as_str()) {
@@ -120,20 +122,35 @@ fn modifier_group_sort_key(modifiers: &[SpannedModifier]) -> (u32, u32, usize) {
     (max_p, total_p, modifiers.len())
 }
 
+/// 值可空格拼接叠加的组合型属性：同一修饰符组内的多条声明应合并而非互相覆盖
+///
+/// 例：`translate-x-2 translate-y-2` → `transform: translateX(.5rem) translateY(.5rem)`；
+/// `blur-4 brightness-50` → `filter: blur(4px) brightness(.5)`。
+#[inline]
+fn is_composable_property(prop: CssPropertyId) -> bool {
+    matches!(
+        prop,
+        CssPropertyId::Transform | CssPropertyId::Filter | CssPropertyId::BackdropFilter
+    )
+}
+
 /// 编译期 Tailwind Merge: 相同修饰符组下的实用类属性消解 (基于 Bitmask 的高速覆盖计算，支持简写属性与长写属性关联覆盖，Last-wins 覆盖先出者)
 pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
     let mut covered_masks: HashMap<(ModifierList, u16), u64> = HashMap::new();
     let mut deduped_rev = Vec::new();
-    let mut transform_rules_by_modifier: HashMap<ModifierList, Vec<UtilityRule>> = HashMap::new();
+    // 用 Vec 而非 HashMap 保存：迭代顺序直接决定产出 CSS 的声明顺序与类名哈希，
+    // HashMap 的随机迭代顺序会让同一份输入产生不确定的输出。
+    let mut composable_groups: Vec<((ModifierList, CssPropertyId), Vec<UtilityRule>)> = Vec::new();
 
     for rule in rules.into_iter().rev() {
         let prop = rule.css_property;
 
-        if prop == CssPropertyId::Transform {
-            transform_rules_by_modifier
-                .entry(rule.modifiers.clone())
-                .or_default()
-                .push(rule);
+        if is_composable_property(prop) {
+            let key = (rule.modifiers.clone(), prop);
+            match composable_groups.iter_mut().find(|(k, _)| *k == key) {
+                Some((_, group)) => group.push(rule),
+                None => composable_groups.push((key, vec![rule])),
+            }
             continue;
         }
 
@@ -149,27 +166,27 @@ pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityR
         }
     }
 
-    // 按相同的修饰符组合并 transform 规则 (如 translateX(-50%) translateY(-50%))
-    for (modifiers, mut t_rules) in transform_rules_by_modifier {
-        if t_rules.is_empty() {
+    // 按 (修饰符组, 属性) 合并组合型规则
+    for ((modifiers, prop), mut group) in composable_groups {
+        let Some(first_span) = group.last().map(|r| r.span) else {
             continue;
-        }
-        t_rules.reverse(); // 恢复原始顺序
-        let first = t_rules[0].clone();
-        let mut combined_vals = Vec::new();
-        for r in &t_rules {
-            let val_str = utility_value_to_css_string(&r.value);
-            if !val_str.is_empty() {
-                combined_vals.push(val_str);
-            }
-        }
-        let merged_rule = UtilityRule {
-            modifiers,
-            css_property: CssPropertyId::Transform,
-            value: UtilityValue::ArbitraryLiteral(combined_vals.join(" ")),
-            span: first.span,
         };
-        deduped_rev.insert(0, merged_rule);
+        group.reverse(); // 恢复原始顺序
+        let combined_vals: Vec<String> = group
+            .iter()
+            .map(|r| utility_value_to_css_string(&r.value))
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        deduped_rev.insert(
+            0,
+            UtilityRule {
+                modifiers,
+                css_property: prop,
+                value: UtilityValue::ArbitraryLiteral(combined_vals.join(" ")),
+                span: first_span,
+            },
+        );
     }
 
     deduped_rev.into_iter().rev().collect()
@@ -516,6 +533,17 @@ fn build_modifier_rule(modifiers: ModifierList, rules: Vec<UtilityRule>) -> Resu
                     })],
                 };
             }
+            Modifier::SelectorVariant(cs) => {
+                // 以字符串字面量原样传递：这些选择器含有空格（后代组合符）与嵌套括号，
+                // 走 TokenStream 会丢失空白，`&:where(..., [dir="rtl"] *)` 会退化成 `[dir=rtl]*`
+                let lit = Literal::string(&cs);
+                current_block = CssBlock {
+                    rules: vec![CssRule::Nested(CssNested {
+                        selectors: quote!(#lit),
+                        block: current_block,
+                    })],
+                };
+            }
             Modifier::MediaBreakpoint(bp) => {
                 let query = if let Some(meta) = lookup_modifier_meta(bp.as_str()) {
                     meta.css_selector.to_string()
@@ -546,6 +574,29 @@ fn build_modifier_rule(modifiers: ModifierList, rules: Vec<UtilityRule>) -> Resu
 
                 current_block = CssBlock {
                     rules: vec![CssRule::AtRule(at_rule)],
+                };
+            }
+            Modifier::MediaQuery(query) => {
+                let at_rule_params: TokenStream = query.parse().unwrap_or_else(|_| {
+                    let lit = Literal::string(&query);
+                    quote!(#lit)
+                });
+                let at_rule_name = Ident::new("media", mod_span);
+
+                let selector_ts: TokenStream = "&".parse().unwrap();
+                let nested_block = CssBlock {
+                    rules: vec![CssRule::Nested(CssNested {
+                        selectors: selector_ts,
+                        block: current_block,
+                    })],
+                };
+
+                current_block = CssBlock {
+                    rules: vec![CssRule::AtRule(CssAtRule {
+                        name: at_rule_name,
+                        params: at_rule_params,
+                        block: nested_block,
+                    })],
                 };
             }
             Modifier::ContainerQuery { name, min_width } => {
@@ -638,6 +689,56 @@ fn collect_used_animations(rules: &[CssRule], used: &mut HashSet<String>) {
     }
 }
 
+/// 将 `data-[k=v]` / `data-[k]` 形式的内容转换为属性选择器片段
+fn bracket_attr_selector(kind: &str, inner: &str) -> String {
+    match inner.split_once('=') {
+        Some((k, v)) => format!("[{}-{}=\"{}\"]", kind, k, v.trim_matches('"')),
+        None => format!("[{}-{}]", kind, inner),
+    }
+}
+
+/// 计算 group/peer 状态在 marker 元素自身上的复合选择器后缀（不含组合符）
+fn group_peer_state_compound(state: &str) -> String {
+    if let Some(inner) = state
+        .strip_prefix("data-[")
+        .and_then(|s| s.strip_suffix(']'))
+    {
+        bracket_attr_selector("data", inner)
+    } else if let Some(inner) = state
+        .strip_prefix("aria-[")
+        .and_then(|s| s.strip_suffix(']'))
+    {
+        bracket_attr_selector("aria", inner)
+    } else if let Some(inner) = state
+        .strip_prefix("has-data-[")
+        .and_then(|s| s.strip_suffix(']'))
+    {
+        format!(":has({})", bracket_attr_selector("data", inner))
+    } else if let Some(inner) = state
+        .strip_prefix("has-[")
+        .and_then(|s| s.strip_suffix(']'))
+    {
+        format!(":has({})", inner)
+    } else if let Some(inner) = state
+        .strip_prefix("not-[")
+        .and_then(|s| s.strip_suffix(']'))
+    {
+        format!(":not({})", inner.strip_prefix('&').unwrap_or(inner))
+    } else if state.starts_with('[') && state.ends_with(']') {
+        // 任意选择器形式 `[&:hover]` / `[&.foo]` / `[.foo]`
+        let inner = &state[1..state.len() - 1];
+        inner.strip_prefix('&').unwrap_or(inner).to_string()
+    } else {
+        // 普通状态：伪类（含 aria-xxx / data-xxx 的无括号简写由上游转成 state 原样透传）
+        format!(":{}", state)
+    }
+}
+
+/// 拼接 group/peer 变体选择器。
+///
+/// 复合部分（`:hover`、`[data-x="y"]`、`:has(...)`）永远作用在 marker 元素自身上，
+/// 随后**必须**跟一个组合符才能指向被修饰元素：group 为后代组合符 `" &"`，
+/// peer 为兄弟组合符 `" ~ &"`。各分支一律不得自行拼接 connector。
 fn format_group_peer_selector(is_group: bool, state: &str, name: Option<&str>) -> String {
     let prefix = if is_group { ".group" } else { ".peer" };
     let base = match name {
@@ -646,41 +747,7 @@ fn format_group_peer_selector(is_group: bool, state: &str, name: Option<&str>) -
     };
     let connector = if is_group { "&" } else { "~ &" };
 
-    if let Some(inner) = state
-        .strip_prefix("data-[")
-        .and_then(|s| s.strip_suffix(']'))
-    {
-        let attr = match inner.split_once('=') {
-            Some((k, v)) => format!("[data-{}=\"{}\"]", k, v),
-            None => format!("[data-{}]", inner),
-        };
-        format!("{}{}{}", base, attr, connector)
-    } else if let Some(inner) = state
-        .strip_prefix("has-data-[")
-        .and_then(|s| s.strip_suffix(']'))
-    {
-        let attr = match inner.split_once('=') {
-            Some((k, v)) => format!("[data-{}=\"{}\"]", k, v),
-            None => format!("[data-{}]", inner),
-        };
-        format!("{}:has({}){}", base, attr, connector)
-    } else if let Some(inner) = state
-        .strip_prefix("has-[")
-        .and_then(|s| s.strip_suffix(']'))
-    {
-        format!("{}:has({}){}", base, inner, connector)
-    } else if state.starts_with('[') && state.ends_with(']') {
-        let inner = &state[1..state.len() - 1];
-        if let Some(rest) = inner.strip_prefix("&:") {
-            format!("{}:{} {}", base, rest, connector)
-        } else if let Some(rest) = inner.strip_prefix('&') {
-            format!("{}{}{}", base, rest, connector)
-        } else {
-            format!("{}{} {}", base, inner, connector)
-        }
-    } else {
-        format!("{}:{} {}", base, state, connector)
-    }
+    format!("{}{} {}", base, group_peer_state_compound(state), connector)
 }
 
 #[cfg(test)]
@@ -688,6 +755,57 @@ mod tests {
     use super::*;
     use proc_macro2::Span;
     use smallvec::smallvec;
+
+    #[test]
+    fn test_format_group_peer_selector_exact() {
+        // group：复合部分作用在 .group 自身，其后必须是后代组合符
+        assert_eq!(
+            format_group_peer_selector(true, "hover", None),
+            ".group:hover &"
+        );
+        assert_eq!(
+            format_group_peer_selector(true, "data-[state=open]", None),
+            ".group[data-state=\"open\"] &"
+        );
+        assert_eq!(
+            format_group_peer_selector(true, "data-[disabled]", None),
+            ".group[data-disabled] &"
+        );
+        assert_eq!(
+            format_group_peer_selector(true, "aria-[expanded=true]", None),
+            ".group[aria-expanded=\"true\"] &"
+        );
+        assert_eq!(
+            format_group_peer_selector(true, "has-[.x]", None),
+            ".group:has(.x) &"
+        );
+        assert_eq!(
+            format_group_peer_selector(true, "has-data-[size=lg]", None),
+            ".group:has([data-size=\"lg\"]) &"
+        );
+        assert_eq!(
+            format_group_peer_selector(true, "[&:focus-visible]", None),
+            ".group:focus-visible &"
+        );
+        assert_eq!(
+            format_group_peer_selector(true, "[.foo]", None),
+            ".group.foo &"
+        );
+        assert_eq!(
+            format_group_peer_selector(true, "data-[size=sm]", Some("avatar")),
+            ".group\\/avatar[data-size=\"sm\"] &"
+        );
+
+        // peer：兄弟组合符
+        assert_eq!(
+            format_group_peer_selector(false, "focus", None),
+            ".peer:focus ~ &"
+        );
+        assert_eq!(
+            format_group_peer_selector(false, "data-[state=open]", Some("sidebar")),
+            ".peer\\/sidebar[data-state=\"open\"] ~ &"
+        );
+    }
 
     #[test]
     fn test_transform_rules_merging() {

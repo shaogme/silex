@@ -108,7 +108,7 @@ impl Parse for StyledComponent {
                                         let (modifiers, body_token) =
                                             crate::css::tw::parser::parse_modifiers_and_body(
                                                 token, span,
-                                            );
+                                            )?;
                                         let mut resolved =
                                             crate::css::tw::resolver::resolve_utility(
                                                 modifiers, body_token, span,

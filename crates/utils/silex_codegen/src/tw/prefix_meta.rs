@@ -7,6 +7,74 @@ pub struct PrefixMetaJson {
     pub value_wrapper: Option<String>,
 }
 
+/// `@property` 描述符成员，永远不应作为工具类的目标属性出现
+const FORBIDDEN_TARGET_PROPS: &[&str] = &["syntax", "inherits", "initial-value"];
+
+/// 必须配套 `value_wrapper` 的组合型属性（裸值写进去就是非法 CSS）
+const WRAPPER_REQUIRED_PROPS: &[&str] = &["filter", "backdrop-filter", "transform"];
+
+/// 数值单位种类（会给属性赋长度/角度值）
+const NUMERIC_UNIT_KINDS: &[&str] = &["RemScale", "Pixel", "Degree", "Milliseconds"];
+
+/// 校验 `prefix_metadata.json` 的合法性。
+///
+/// 这条链路（JS 探针 → JSON → 生成代码 → 宏）此前没有任何断言，
+/// 探针把 `@property` 块里的 `syntax`/`inherits`/`initial-value` 当作 target_props
+/// 一路生成到最终产物，用户侧表现为 `border-s-[3px]` 产出 `syntax:3px`。
+pub fn validate_prefix_metadata(
+    prefix_metadata: &BTreeMap<String, PrefixMetaJson>,
+) -> Result<(), String> {
+    let mut errors = Vec::new();
+
+    for (prefix, meta) in prefix_metadata {
+        if meta.target_props.is_empty() {
+            errors.push(format!("'{}': target_props 为空", prefix));
+        }
+
+        for prop in &meta.target_props {
+            if FORBIDDEN_TARGET_PROPS.contains(&prop.as_str()) {
+                errors.push(format!(
+                    "'{}': target_props 含 at-rule 描述符 '{}'（探针污染，应剥离 @property 块）",
+                    prefix, prop
+                ));
+            }
+
+            if WRAPPER_REQUIRED_PROPS.contains(&prop.as_str()) && meta.value_wrapper.is_none() {
+                errors.push(format!(
+                    "'{}': 目标属性 '{}' 为组合型属性，必须提供 value_wrapper（否则产出裸值的非法 CSS）",
+                    prefix, prop
+                ));
+            }
+
+            if prop.ends_with("-style") && NUMERIC_UNIT_KINDS.contains(&meta.unit_kind.as_str()) {
+                errors.push(format!(
+                    "'{}': 属性 '{}' 是关键字属性，不能配数值单位 UnitKind::{}",
+                    prefix, prop, meta.unit_kind
+                ));
+            }
+        }
+
+        if let Some(w) = &meta.value_wrapper
+            && !w.contains("{}")
+        {
+            errors.push(format!(
+                "'{}': value_wrapper '{}' 缺少 '{{}}' 占位符",
+                prefix, w
+            ));
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "prefix_metadata.json 校验失败（{} 项）:\n  - {}",
+            errors.len(),
+            errors.join("\n  - ")
+        ))
+    }
+}
+
 /// 生成 `silex_macros/src/css/tw/resolver/prefix_metadata.rs` 产物代码
 pub fn generate_prefix_metadata_code(prefix_metadata: &BTreeMap<String, PrefixMetaJson>) -> String {
     let mut code = String::with_capacity(16 * 1024);

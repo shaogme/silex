@@ -63,7 +63,7 @@ pub fn resolve_layout_rules(
         // Object fit & position
         "object-contain" => Some(cow![("object-fit", "contain")]),
         "object-cover" => Some(cow![("object-fit", "cover")]),
-        "object-fill" => Some(cow![("object-fill", "fill")]),
+        "object-fill" => Some(cow![("object-fit", "fill")]),
         "object-none" => Some(cow![("object-fit", "none")]),
         "object-scale-down" => Some(cow![("object-fit", "scale-down")]),
         "object-bottom" => Some(cow![("object-position", "bottom")]),

@@ -30,6 +30,24 @@
     "css_selector": "&::after"
   },
   {
+    "key": "any-pointer-coarse",
+    "kind": "MediaFeature",
+    "priority": 65,
+    "css_selector": "(any-pointer: coarse)"
+  },
+  {
+    "key": "any-pointer-fine",
+    "kind": "MediaFeature",
+    "priority": 65,
+    "css_selector": "(any-pointer: fine)"
+  },
+  {
+    "key": "any-pointer-none",
+    "kind": "MediaFeature",
+    "priority": 65,
+    "css_selector": "(any-pointer: none)"
+  },
+  {
     "key": "autofill",
     "kind": "PseudoClass",
     "priority": 20,
@@ -52,6 +70,18 @@
     "kind": "PseudoClass",
     "priority": 20,
     "css_selector": "&:checked"
+  },
+  {
+    "key": "contrast-less",
+    "kind": "MediaFeature",
+    "priority": 65,
+    "css_selector": "(prefers-contrast: less)"
+  },
+  {
+    "key": "contrast-more",
+    "kind": "MediaFeature",
+    "priority": 65,
+    "css_selector": "(prefers-contrast: more)"
   },
   {
     "key": "dark",
@@ -144,6 +174,12 @@
     "css_selector": "&:focus-within"
   },
   {
+    "key": "forced-colors",
+    "kind": "MediaFeature",
+    "priority": 65,
+    "css_selector": "(forced-colors: active)"
+  },
+  {
     "key": "hover",
     "kind": "PseudoClass",
     "priority": 20,
@@ -162,10 +198,28 @@
     "css_selector": "&:indeterminate"
   },
   {
+    "key": "inert",
+    "kind": "SelectorVariant",
+    "priority": 25,
+    "css_selector": "&:is([inert], [inert] *)"
+  },
+  {
     "key": "invalid",
     "kind": "PseudoClass",
     "priority": 20,
     "css_selector": "&:invalid"
+  },
+  {
+    "key": "inverted-colors",
+    "kind": "MediaFeature",
+    "priority": 65,
+    "css_selector": "(inverted-colors: inverted)"
+  },
+  {
+    "key": "landscape",
+    "kind": "MediaFeature",
+    "priority": 65,
+    "css_selector": "(orientation: landscape)"
   },
   {
     "key": "last",
@@ -186,6 +240,12 @@
     "css_selector": "(min-width: 1024px)"
   },
   {
+    "key": "ltr",
+    "kind": "SelectorVariant",
+    "priority": 25,
+    "css_selector": "&:where(:dir(ltr), [dir=\"ltr\"], [dir=\"ltr\"] *)"
+  },
+  {
     "key": "marker",
     "kind": "PseudoElement",
     "priority": 20,
@@ -196,6 +256,24 @@
     "kind": "MediaBreakpoint",
     "priority": 1768,
     "css_selector": "(min-width: 768px)"
+  },
+  {
+    "key": "motion-reduce",
+    "kind": "MediaFeature",
+    "priority": 65,
+    "css_selector": "(prefers-reduced-motion: reduce)"
+  },
+  {
+    "key": "motion-safe",
+    "kind": "MediaFeature",
+    "priority": 65,
+    "css_selector": "(prefers-reduced-motion: no-preference)"
+  },
+  {
+    "key": "noscript",
+    "kind": "MediaFeature",
+    "priority": 65,
+    "css_selector": "(scripting: none)"
   },
   {
     "key": "odd",
@@ -214,6 +292,12 @@
     "kind": "PseudoClass",
     "priority": 20,
     "css_selector": "&:only-of-type"
+  },
+  {
+    "key": "open",
+    "kind": "SelectorVariant",
+    "priority": 25,
+    "css_selector": "&:is([open], :popover-open, :open)"
   },
   {
     "key": "optional",
@@ -240,6 +324,36 @@
     "css_selector": "&:placeholder-shown"
   },
   {
+    "key": "pointer-coarse",
+    "kind": "MediaFeature",
+    "priority": 65,
+    "css_selector": "(pointer: coarse)"
+  },
+  {
+    "key": "pointer-fine",
+    "kind": "MediaFeature",
+    "priority": 65,
+    "css_selector": "(pointer: fine)"
+  },
+  {
+    "key": "pointer-none",
+    "kind": "MediaFeature",
+    "priority": 65,
+    "css_selector": "(pointer: none)"
+  },
+  {
+    "key": "portrait",
+    "kind": "MediaFeature",
+    "priority": 65,
+    "css_selector": "(orientation: portrait)"
+  },
+  {
+    "key": "print",
+    "kind": "MediaFeature",
+    "priority": 65,
+    "css_selector": "print"
+  },
+  {
     "key": "read-only",
     "kind": "PseudoClass",
     "priority": 20,
@@ -250,6 +364,12 @@
     "kind": "PseudoClass",
     "priority": 20,
     "css_selector": "&:required"
+  },
+  {
+    "key": "rtl",
+    "kind": "SelectorVariant",
+    "priority": 25,
+    "css_selector": "&:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *)"
   },
   {
     "key": "selection",

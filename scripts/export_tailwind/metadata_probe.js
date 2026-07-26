@@ -3,9 +3,17 @@ const staticFallbackMap = {
   "aspect": { target_props: ["aspect-ratio"], unit_kind: "Unitless" },
   "auto-cols": { target_props: ["grid-auto-columns"], unit_kind: "Unitless" },
   "auto-rows": { target_props: ["grid-auto-rows"], unit_kind: "Unitless" },
-  "backdrop-blur": { target_props: ["backdrop-filter"], unit_kind: "Pixel" },
+  "backdrop-blur": { target_props: ["backdrop-filter"], unit_kind: "Pixel", value_wrapper: "blur({})" },
+  "backdrop-brightness": { target_props: ["backdrop-filter"], unit_kind: "Percentage", value_wrapper: "brightness({})" },
+  "backdrop-contrast": { target_props: ["backdrop-filter"], unit_kind: "Percentage", value_wrapper: "contrast({})" },
+  "backdrop-grayscale": { target_props: ["backdrop-filter"], unit_kind: "Percentage", value_wrapper: "grayscale({})" },
+  "backdrop-hue-rotate": { target_props: ["backdrop-filter"], unit_kind: "Degree", value_wrapper: "hue-rotate({})" },
+  "backdrop-invert": { target_props: ["backdrop-filter"], unit_kind: "Percentage", value_wrapper: "invert({})" },
+  "backdrop-opacity": { target_props: ["backdrop-filter"], unit_kind: "Percentage", value_wrapper: "opacity({})" },
+  "backdrop-saturate": { target_props: ["backdrop-filter"], unit_kind: "Percentage", value_wrapper: "saturate({})" },
+  "backdrop-sepia": { target_props: ["backdrop-filter"], unit_kind: "Percentage", value_wrapper: "sepia({})" },
   "basis": { target_props: ["flex-basis"], unit_kind: "RemScale" },
-  "blur": { target_props: ["filter"], unit_kind: "Pixel" },
+  "blur": { target_props: ["filter"], unit_kind: "Pixel", value_wrapper: "blur({})" },
   "border": { target_props: ["border-width"], unit_kind: "Pixel" },
   "border-b": { target_props: ["border-bottom-width"], unit_kind: "Pixel" },
   "border-l": { target_props: ["border-left-width"], unit_kind: "Pixel" },
@@ -14,6 +22,7 @@ const staticFallbackMap = {
   "border-x": { target_props: ["border-left-width", "border-right-width"], unit_kind: "Pixel" },
   "border-y": { target_props: ["border-top-width", "border-bottom-width"], unit_kind: "Pixel" },
   "bottom": { target_props: ["bottom"], unit_kind: "RemScale" },
+  "brightness": { target_props: ["filter"], unit_kind: "Percentage", value_wrapper: "brightness({})" },
   "col": { target_props: ["grid-column"], unit_kind: "Unitless" },
   "col-end": { target_props: ["grid-column-end"], unit_kind: "Unitless" },
   "col-span": { target_props: ["grid-column"], unit_kind: "GridSpan" },
@@ -22,8 +31,10 @@ const staticFallbackMap = {
   "container": { target_props: ["container-name"], unit_kind: "Unitless" },
   "container-name": { target_props: ["container-name"], unit_kind: "Unitless" },
   "content": { target_props: ["content"], unit_kind: "Unitless" },
+  "contrast": { target_props: ["filter"], unit_kind: "Percentage", value_wrapper: "contrast({})" },
   "cursor": { target_props: ["cursor"], unit_kind: "Unitless" },
   "delay": { target_props: ["transition-delay"], unit_kind: "Milliseconds" },
+  "drop-shadow": { target_props: ["filter"], unit_kind: "Unitless", value_wrapper: "drop-shadow({})" },
   "duration": { target_props: ["transition-duration"], unit_kind: "Milliseconds" },
   "ease": { target_props: ["transition-timing-function"], unit_kind: "Unitless" },
   "fade-in": { target_props: ["--tw-enter-opacity"], unit_kind: "Percentage" },
@@ -32,13 +43,16 @@ const staticFallbackMap = {
   "gap-x": { target_props: ["column-gap"], unit_kind: "RemScale" },
   "gap-y": { target_props: ["row-gap"], unit_kind: "RemScale" },
   "grid-cols": { target_props: ["grid-template-columns"], unit_kind: "GridRepeat" },
+  "grayscale": { target_props: ["filter"], unit_kind: "Percentage", value_wrapper: "grayscale({})" },
   "grid-rows": { target_props: ["grid-template-rows"], unit_kind: "GridRepeat" },
   "grow": { target_props: ["flex-grow"], unit_kind: "Unitless" },
   "h": { target_props: ["height"], unit_kind: "RemScale" },
   "height": { target_props: ["height"], unit_kind: "RemScale" },
+  "hue-rotate": { target_props: ["filter"], unit_kind: "Degree", value_wrapper: "hue-rotate({})" },
   "inset": { target_props: ["top", "right", "bottom", "left"], unit_kind: "RemScale" },
   "inset-x": { target_props: ["left", "right"], unit_kind: "RemScale" },
   "inset-y": { target_props: ["top", "bottom"], unit_kind: "RemScale" },
+  "invert": { target_props: ["filter"], unit_kind: "Percentage", value_wrapper: "invert({})" },
   "leading": { target_props: ["line-height"], unit_kind: "Unitless" },
   "left": { target_props: ["left"], unit_kind: "RemScale" },
   "line-clamp": { target_props: ["-webkit-line-clamp"], unit_kind: "Unitless" },
@@ -74,9 +88,11 @@ const staticFallbackMap = {
   "row-end": { target_props: ["grid-row-end"], unit_kind: "Unitless" },
   "row-span": { target_props: ["grid-row"], unit_kind: "GridSpan" },
   "row-start": { target_props: ["grid-row-start"], unit_kind: "Unitless" },
+  "saturate": { target_props: ["filter"], unit_kind: "Percentage", value_wrapper: "saturate({})" },
   "scale": { target_props: ["transform"], unit_kind: "Percentage", value_wrapper: "scale({})" },
   "scale-x": { target_props: ["transform"], unit_kind: "Percentage", value_wrapper: "scaleX({})" },
   "scale-y": { target_props: ["transform"], unit_kind: "Percentage", value_wrapper: "scaleY({})" },
+  "sepia": { target_props: ["filter"], unit_kind: "Percentage", value_wrapper: "sepia({})" },
   "shadow": { target_props: ["box-shadow"], unit_kind: "Unitless" },
   "shrink": { target_props: ["flex-shrink"], unit_kind: "Unitless" },
   "size": { target_props: ["width", "height"], unit_kind: "RemScale" },
@@ -104,52 +120,113 @@ const staticFallbackMap = {
   "zoom-out": { target_props: ["--tw-exit-scale"], unit_kind: "Percentage" },
 };
 
+/// 永远不应出现在 target_props 中的 at-rule 描述符（`@property` 块的成员）
+const FORBIDDEN_PROPS = new Set(['syntax', 'inherits', 'initial-value']);
+
+/// 剥离 `@property {...}` / `@keyframes {...}` 声明块。
+/// 这些 at-rule 的内部声明（syntax/inherits/initial-value、动画关键帧）不是工具类的目标属性，
+/// 直接对整段 CSS 做裸正则匹配会把它们误当作 target_props（旧实现即因此污染了 border-s/e/bs/be）。
+function stripDescriptorAtRules(css) {
+  let out = '';
+  let i = 0;
+  while (i < css.length) {
+    const at = css.indexOf('@', i);
+    if (at === -1) {
+      out += css.slice(i);
+      break;
+    }
+    const kwMatch = /^@(property|keyframes|font-face|counter-style)\b/.exec(css.slice(at));
+    if (!kwMatch) {
+      out += css.slice(i, at + 1);
+      i = at + 1;
+      continue;
+    }
+    const open = css.indexOf('{', at);
+    if (open === -1) {
+      out += css.slice(i);
+      break;
+    }
+    // 平衡括号扫描，跳过整个块
+    let depth = 0;
+    let j = open;
+    for (; j < css.length; j++) {
+      if (css[j] === '{') depth++;
+      else if (css[j] === '}') {
+        depth--;
+        if (depth === 0) { j++; break; }
+      }
+    }
+    out += css.slice(i, at);
+    i = j;
+  }
+  return out;
+}
+
+/// 解析一段工具类 CSS 为 `Map<property, value>`（已剥离描述符 at-rule 与非法属性）
+function parseDeclarations(cssStr) {
+  const map = new Map();
+  const cleaned = stripDescriptorAtRules(cssStr);
+  const re = /(--[a-zA-Z0-9_-]+|[a-zA-Z-][a-zA-Z0-9_-]*)\s*:\s*([^;{}]+);/g;
+  for (const m of cleaned.matchAll(re)) {
+    const prop = m[1];
+    const val = m[2].trim();
+    if (FORBIDDEN_PROPS.has(prop)) continue;
+    if (prop.startsWith('--tw-rotate') || prop.startsWith('--tw-scale') || prop.startsWith('--tw-skew') || prop.startsWith('--tw-translate')) {
+      continue;
+    }
+    if (!map.has(prop)) map.set(prop, val);
+  }
+  return map;
+}
+
+function inferUnitKind(propVal) {
+  if (propVal.includes('span ')) return 'GridSpan';
+  if (propVal.includes('repeat(')) return 'GridRepeat';
+  if (propVal.includes('deg')) return 'Degree';
+  if (propVal.includes('ms') || propVal.endsWith('s')) return 'Milliseconds';
+  if (propVal.includes('rem')) return 'RemScale';
+  if (propVal.includes('px')) return 'Pixel';
+  if (propVal.includes('%') || (propVal.startsWith('0.') && !isNaN(parseFloat(propVal)))) return 'Percentage';
+  return null;
+}
+
 function inferPrefixMetadata(sortedPrefixKeys, designSystem) {
   const inferredMetadataObj = {};
 
   for (const prefixKey of sortedPrefixKeys) {
     const pKey = prefixKey.endsWith('-') ? prefixKey.slice(0, -1) : prefixKey;
-    
-    // 自动探针测试
+
+    // 自动探针测试：用两个不同数值探测，只保留“值随输入变化”的声明。
+    // 固定不变的声明（如 `border-inline-start-style: var(--tw-border-style)`）是伴生声明，
+    // 不是数值目标属性，若混入 target_props 会导致 `border-s-[3px]` 产出 `*-style: 3px`。
     let inferred = null;
-    const probeCandidates = [`${prefixKey}4`, `${prefixKey}2`, `${prefixKey}50`, `${prefixKey}150`, `${prefixKey}45`, `${prefixKey}1`].filter(Boolean);
-    
-    if (probeCandidates.length > 0) {
-      const probeCss = designSystem.candidatesToCss(probeCandidates);
-      for (let i = 0; i < probeCandidates.length; i++) {
-        const cssStr = probeCss[i];
-        if (cssStr && typeof cssStr === 'string' && cssStr.trim().length > 0) {
-          // 解析 CSS 声明
-          const declMatches = Array.from(cssStr.matchAll(/([a-zA-Z0-9_\-]+)\s*:\s*([^;]+);/g));
-          const props = [];
-          let unitKind = null;
+    const probeCandidates = [`${prefixKey}4`, `${prefixKey}2`, `${prefixKey}50`, `${prefixKey}150`, `${prefixKey}45`, `${prefixKey}1`];
+    const probeCss = designSystem.candidatesToCss(probeCandidates);
+    const parsed = probeCandidates.map((_, i) => {
+      const cssStr = probeCss[i];
+      if (!cssStr || typeof cssStr !== 'string' || cssStr.trim().length === 0) return null;
+      const decls = parseDeclarations(cssStr);
+      return decls.size > 0 ? decls : null;
+    });
 
-          for (const match of declMatches) {
-            const propName = match[1];
-            const propVal = match[2].trim();
+    const primaryIdx = parsed.findIndex(Boolean);
+    if (primaryIdx !== -1) {
+      const primary = parsed[primaryIdx];
+      const other = parsed.find((d, i) => d && i !== primaryIdx && [...d].some(([p, v]) => primary.get(p) !== v));
 
-            if (propName.startsWith('--tw-rotate') || propName.startsWith('--tw-scale') || propName.startsWith('--tw-skew') || propName.startsWith('--tw-translate')) {
-              continue;
-            }
-            props.push(propName);
-
-            if (!unitKind) {
-              if (propVal.includes('span ')) unitKind = 'GridSpan';
-              else if (propVal.includes('repeat(')) unitKind = 'GridRepeat';
-              else if (propVal.includes('deg')) unitKind = 'Degree';
-              else if (propVal.includes('ms') || propVal.endsWith('s')) unitKind = 'Milliseconds';
-              else if (propVal.includes('rem')) unitKind = 'RemScale';
-              else if (propVal.includes('px')) unitKind = 'Pixel';
-              else if (propVal.includes('%') || (propVal.startsWith('0.') && !isNaN(parseFloat(propVal)))) unitKind = 'Percentage';
-            }
-          }
-
-          if (props.length > 0) {
-            inferred = { target_props: Array.from(new Set(props)).sort(), unit_kind: unitKind || 'Unitless' };
-            break;
-          }
-        }
+      let props = [...primary.keys()];
+      if (other) {
+        const varying = props.filter(p => other.has(p) && other.get(p) !== primary.get(p));
+        if (varying.length > 0) props = varying;
       }
+
+      let unitKind = null;
+      for (const p of props) {
+        unitKind = inferUnitKind(primary.get(p));
+        if (unitKind) break;
+      }
+
+      inferred = { target_props: Array.from(new Set(props)).sort(), unit_kind: unitKind || 'Unitless' };
     }
 
     // 优先采用 staticFallbackMap 权威配置，若无则使用自动探针推导结果

@@ -16,10 +16,15 @@ pub static MODIFIER_TABLE: &[ModifierMeta] = &[
     ModifierMeta { key: "2xl", priority: 2536, css_selector: "(min-width: 1536px)" },
     ModifierMeta { key: "active", priority: 20, css_selector: "&:active" },
     ModifierMeta { key: "after", priority: 20, css_selector: "&::after" },
+    ModifierMeta { key: "any-pointer-coarse", priority: 65, css_selector: "(any-pointer: coarse)" },
+    ModifierMeta { key: "any-pointer-fine", priority: 65, css_selector: "(any-pointer: fine)" },
+    ModifierMeta { key: "any-pointer-none", priority: 65, css_selector: "(any-pointer: none)" },
     ModifierMeta { key: "autofill", priority: 20, css_selector: "&:autofill" },
     ModifierMeta { key: "backdrop", priority: 20, css_selector: "&::backdrop" },
     ModifierMeta { key: "before", priority: 20, css_selector: "&::before" },
     ModifierMeta { key: "checked", priority: 20, css_selector: "&:checked" },
+    ModifierMeta { key: "contrast-less", priority: 65, css_selector: "(prefers-contrast: less)" },
+    ModifierMeta { key: "contrast-more", priority: 65, css_selector: "(prefers-contrast: more)" },
     ModifierMeta { key: "dark", priority: 60, css_selector: ".dark &, &.dark" },
     ModifierMeta { key: "default", priority: 20, css_selector: "&:default" },
     ModifierMeta { key: "details-content", priority: 20, css_selector: "&::details-content" },
@@ -35,24 +40,39 @@ pub static MODIFIER_TABLE: &[ModifierMeta] = &[
     ModifierMeta { key: "focus", priority: 20, css_selector: "&:focus" },
     ModifierMeta { key: "focus-visible", priority: 20, css_selector: "&:focus-visible" },
     ModifierMeta { key: "focus-within", priority: 20, css_selector: "&:focus-within" },
+    ModifierMeta { key: "forced-colors", priority: 65, css_selector: "(forced-colors: active)" },
     ModifierMeta { key: "hover", priority: 20, css_selector: "&:hover" },
     ModifierMeta { key: "in-range", priority: 20, css_selector: "&:in-range" },
     ModifierMeta { key: "indeterminate", priority: 20, css_selector: "&:indeterminate" },
+    ModifierMeta { key: "inert", priority: 25, css_selector: "&:is([inert], [inert] *)" },
     ModifierMeta { key: "invalid", priority: 20, css_selector: "&:invalid" },
+    ModifierMeta { key: "inverted-colors", priority: 65, css_selector: "(inverted-colors: inverted)" },
+    ModifierMeta { key: "landscape", priority: 65, css_selector: "(orientation: landscape)" },
     ModifierMeta { key: "last", priority: 20, css_selector: "&:last-child" },
     ModifierMeta { key: "last-of-type", priority: 20, css_selector: "&:last-of-type" },
     ModifierMeta { key: "lg", priority: 2024, css_selector: "(min-width: 1024px)" },
+    ModifierMeta { key: "ltr", priority: 25, css_selector: "&:where(:dir(ltr), [dir=\"ltr\"], [dir=\"ltr\"] *)" },
     ModifierMeta { key: "marker", priority: 20, css_selector: "&::marker" },
     ModifierMeta { key: "md", priority: 1768, css_selector: "(min-width: 768px)" },
+    ModifierMeta { key: "motion-reduce", priority: 65, css_selector: "(prefers-reduced-motion: reduce)" },
+    ModifierMeta { key: "motion-safe", priority: 65, css_selector: "(prefers-reduced-motion: no-preference)" },
+    ModifierMeta { key: "noscript", priority: 65, css_selector: "(scripting: none)" },
     ModifierMeta { key: "odd", priority: 20, css_selector: "&:nth-child(odd)" },
     ModifierMeta { key: "only", priority: 20, css_selector: "&:only-child" },
     ModifierMeta { key: "only-of-type", priority: 20, css_selector: "&:only-of-type" },
+    ModifierMeta { key: "open", priority: 25, css_selector: "&:is([open], :popover-open, :open)" },
     ModifierMeta { key: "optional", priority: 20, css_selector: "&:optional" },
     ModifierMeta { key: "out-of-range", priority: 20, css_selector: "&:out-of-range" },
     ModifierMeta { key: "placeholder", priority: 20, css_selector: "&::placeholder" },
     ModifierMeta { key: "placeholder-shown", priority: 20, css_selector: "&:placeholder-shown" },
+    ModifierMeta { key: "pointer-coarse", priority: 65, css_selector: "(pointer: coarse)" },
+    ModifierMeta { key: "pointer-fine", priority: 65, css_selector: "(pointer: fine)" },
+    ModifierMeta { key: "pointer-none", priority: 65, css_selector: "(pointer: none)" },
+    ModifierMeta { key: "portrait", priority: 65, css_selector: "(orientation: portrait)" },
+    ModifierMeta { key: "print", priority: 65, css_selector: "print" },
     ModifierMeta { key: "read-only", priority: 20, css_selector: "&:read-only" },
     ModifierMeta { key: "required", priority: 20, css_selector: "&:required" },
+    ModifierMeta { key: "rtl", priority: 25, css_selector: "&:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *)" },
     ModifierMeta { key: "selection", priority: 20, css_selector: "&::selection" },
     ModifierMeta { key: "sm", priority: 1640, css_selector: "(min-width: 640px)" },
     ModifierMeta { key: "target", priority: 20, css_selector: "&:target" },
@@ -140,10 +160,21 @@ pub fn parse_modifier_fast(prefix: &str) -> Option<Modifier> {
         "2xl" => return Some(Modifier::MediaBreakpoint("2xl".to_string())),
         "active" => return Some(Modifier::PseudoClass("active".to_string())),
         "after" => return Some(Modifier::PseudoElement("after".to_string())),
+        "any-pointer-coarse" => {
+            return Some(Modifier::MediaQuery("(any-pointer: coarse)".to_string()));
+        }
+        "any-pointer-fine" => return Some(Modifier::MediaQuery("(any-pointer: fine)".to_string())),
+        "any-pointer-none" => return Some(Modifier::MediaQuery("(any-pointer: none)".to_string())),
         "autofill" => return Some(Modifier::PseudoClass("autofill".to_string())),
         "backdrop" => return Some(Modifier::PseudoElement("backdrop".to_string())),
         "before" => return Some(Modifier::PseudoElement("before".to_string())),
         "checked" => return Some(Modifier::PseudoClass("checked".to_string())),
+        "contrast-less" => {
+            return Some(Modifier::MediaQuery("(prefers-contrast: less)".to_string()));
+        }
+        "contrast-more" => {
+            return Some(Modifier::MediaQuery("(prefers-contrast: more)".to_string()));
+        }
         "dark" => return Some(Modifier::Dark),
         "default" => return Some(Modifier::PseudoClass("default".to_string())),
         "details-content" => return Some(Modifier::PseudoElement("details-content".to_string())),
@@ -159,24 +190,69 @@ pub fn parse_modifier_fast(prefix: &str) -> Option<Modifier> {
         "focus" => return Some(Modifier::PseudoClass("focus".to_string())),
         "focus-visible" => return Some(Modifier::PseudoClass("focus-visible".to_string())),
         "focus-within" => return Some(Modifier::PseudoClass("focus-within".to_string())),
+        "forced-colors" => {
+            return Some(Modifier::MediaQuery("(forced-colors: active)".to_string()));
+        }
         "hover" => return Some(Modifier::PseudoClass("hover".to_string())),
         "in-range" => return Some(Modifier::PseudoClass("in-range".to_string())),
         "indeterminate" => return Some(Modifier::PseudoClass("indeterminate".to_string())),
+        "inert" => {
+            return Some(Modifier::SelectorVariant(
+                "&:is([inert], [inert] *)".to_string(),
+            ));
+        }
         "invalid" => return Some(Modifier::PseudoClass("invalid".to_string())),
+        "inverted-colors" => {
+            return Some(Modifier::MediaQuery(
+                "(inverted-colors: inverted)".to_string(),
+            ));
+        }
+        "landscape" => return Some(Modifier::MediaQuery("(orientation: landscape)".to_string())),
         "last" => return Some(Modifier::PseudoClass("last".to_string())),
         "last-of-type" => return Some(Modifier::PseudoClass("last-of-type".to_string())),
         "lg" => return Some(Modifier::MediaBreakpoint("lg".to_string())),
+        "ltr" => {
+            return Some(Modifier::SelectorVariant(
+                "&:where(:dir(ltr), [dir=\"ltr\"], [dir=\"ltr\"] *)".to_string(),
+            ));
+        }
         "marker" => return Some(Modifier::PseudoElement("marker".to_string())),
         "md" => return Some(Modifier::MediaBreakpoint("md".to_string())),
+        "motion-reduce" => {
+            return Some(Modifier::MediaQuery(
+                "(prefers-reduced-motion: reduce)".to_string(),
+            ));
+        }
+        "motion-safe" => {
+            return Some(Modifier::MediaQuery(
+                "(prefers-reduced-motion: no-preference)".to_string(),
+            ));
+        }
+        "noscript" => return Some(Modifier::MediaQuery("(scripting: none)".to_string())),
         "odd" => return Some(Modifier::PseudoClass("odd".to_string())),
         "only" => return Some(Modifier::PseudoClass("only".to_string())),
         "only-of-type" => return Some(Modifier::PseudoClass("only-of-type".to_string())),
+        "open" => {
+            return Some(Modifier::SelectorVariant(
+                "&:is([open], :popover-open, :open)".to_string(),
+            ));
+        }
         "optional" => return Some(Modifier::PseudoClass("optional".to_string())),
         "out-of-range" => return Some(Modifier::PseudoClass("out-of-range".to_string())),
         "placeholder" => return Some(Modifier::PseudoElement("placeholder".to_string())),
         "placeholder-shown" => return Some(Modifier::PseudoClass("placeholder-shown".to_string())),
+        "pointer-coarse" => return Some(Modifier::MediaQuery("(pointer: coarse)".to_string())),
+        "pointer-fine" => return Some(Modifier::MediaQuery("(pointer: fine)".to_string())),
+        "pointer-none" => return Some(Modifier::MediaQuery("(pointer: none)".to_string())),
+        "portrait" => return Some(Modifier::MediaQuery("(orientation: portrait)".to_string())),
+        "print" => return Some(Modifier::MediaQuery("print".to_string())),
         "read-only" => return Some(Modifier::PseudoClass("read-only".to_string())),
         "required" => return Some(Modifier::PseudoClass("required".to_string())),
+        "rtl" => {
+            return Some(Modifier::SelectorVariant(
+                "&:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *)".to_string(),
+            ));
+        }
         "selection" => return Some(Modifier::PseudoElement("selection".to_string())),
         "sm" => return Some(Modifier::MediaBreakpoint("sm".to_string())),
         "target" => return Some(Modifier::PseudoClass("target".to_string())),
@@ -219,7 +295,9 @@ pub fn parse_modifier_fast(prefix: &str) -> Option<Modifier> {
     }
 
     if prefix.starts_with('[') && prefix.ends_with(']') {
-        return Some(Modifier::CustomSelector(prefix[1..prefix.len() - 1].to_string()));
+        return Some(Modifier::CustomSelector(
+            prefix[1..prefix.len() - 1].to_string(),
+        ));
     }
 
     None

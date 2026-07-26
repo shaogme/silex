@@ -8,6 +8,11 @@ pub struct ModifierMetaJson {
     pub css_selector: String,
 }
 
+/// 转义为可嵌入 Rust 字符串字面量的形式
+fn escape_rust_str(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 /// 生成 `silex_macros/src/css/tw/resolver/modifiers_gen.rs` 产物代码
 pub fn generate_modifiers_code(modifiers: &[ModifierMetaJson]) -> String {
     let mut code = String::with_capacity(32 * 1024);
@@ -29,7 +34,7 @@ pub fn generate_modifiers_code(modifiers: &[ModifierMetaJson]) -> String {
             "    ModifierMeta {{ key: \"{}\", priority: {}, css_selector: \"{}\" }},",
             meta.key,
             meta.priority,
-            meta.css_selector.replace('\\', "\\\\").replace('"', "\\\"")
+            escape_rust_str(&meta.css_selector)
         );
     }
     code.push_str("];\n\n");
@@ -116,6 +121,14 @@ pub fn parse_modifier_fast(prefix: &str) -> Option<Modifier> {
             "Descendant" => "Modifier::Descendant".to_string(),
             "Dark" => "Modifier::Dark".to_string(),
             "MediaBreakpoint" => format!("Modifier::MediaBreakpoint(\"{}\".to_string())", meta.key),
+            "MediaFeature" => format!(
+                "Modifier::MediaQuery(\"{}\".to_string())",
+                escape_rust_str(&meta.css_selector)
+            ),
+            "SelectorVariant" => format!(
+                "Modifier::SelectorVariant(\"{}\".to_string())",
+                escape_rust_str(&meta.css_selector)
+            ),
             "PseudoClass" => format!("Modifier::PseudoClass(\"{}\".to_string())", meta.key),
             "PseudoElement" => format!("Modifier::PseudoElement(\"{}\".to_string())", meta.key),
             _ => continue,

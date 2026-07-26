@@ -10,7 +10,7 @@ use crate::{
     tw::{
         generate_keyframes_code, generate_macro_tables, generate_modifiers_code,
         generate_palette_code, generate_prefix_metadata_code, generate_property_id_code,
-        generate_table_examples,
+        generate_table_examples, validate_prefix_metadata, validate_resolver_properties,
     },
 };
 use heck::AsSnakeCase;
@@ -184,6 +184,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         let keyframes_data: Vec<crate::tw::KeyframeMetaJson> = from_str(&keyframes_str)?;
         let extra_properties: Vec<String> = from_str(&extra_properties_str)?;
         let property_aliases: BTreeMap<String, Vec<String>> = from_str(&property_aliases_str)?;
+
+        // 生成前置校验闸门：任何非法元数据都必须让构建失败，而不是静默生成垃圾 CSS
+        validate_prefix_metadata(&prefix_metadata)?;
+        validate_resolver_properties(&classes, &test_cases, &palette_data, &props_str)?;
 
         let (table_code, table_unimplement_code) =
             generate_macro_tables(&classes, &dynamic_prefixes, &palette_data);
