@@ -189,13 +189,24 @@ fn unknown_variant_prefix_is_rejected_with_suggestion() {
 }
 
 #[test]
-fn unsupported_functional_variant_reports_the_family() {
-    let msg = err_of("max-md:flex");
-    assert!(msg.contains("max-*"), "{msg}");
-    assert!(msg.contains("not supported yet"), "{msg}");
+fn malformed_functional_variants_report_what_is_wrong() {
+    // 函数式变体现已支持（§13.1），但**写坏了**仍必须报错而不是静默产出垃圾选择器
+    let msg = err_of("supports-grid:flex");
+    assert!(msg.contains("Write the feature query in brackets"), "{msg}");
 
-    let msg = err_of("supports-[display:grid]:grid");
-    assert!(msg.contains("supports-*"), "{msg}");
+    let msg = err_of("max-notabreakpoint:flex");
+    assert!(msg.contains("unknown breakpoint"), "{msg}");
+
+    let msg = err_of("nth-abc:flex");
+    assert!(msg.contains("invalid"), "{msg}");
+
+    // 伪元素没有"非此状态"的说法
+    let msg = err_of("not-before:flex");
+    assert!(msg.contains("cannot be negated"), "{msg}");
+
+    // `in-*` 需要一个能选中元素的变体，媒体查询没有"祖先"可言
+    let msg = err_of("in-print:flex");
+    assert!(msg.contains("needs a variant that"), "{msg}");
 }
 
 #[test]
@@ -449,4 +460,196 @@ fn slide_in_direction_comes_from_the_value_wrapper() {
     assert_contains("slide-in-from-left-4", "--tw-enter-translate-x:-1rem");
     assert_contains("slide-in-from-bottom-4", "--tw-enter-translate-y:1rem");
     assert_contains("slide-in-from-right-4", "--tw-enter-translate-x:1rem");
+}
+
+// ---------------------------------------------------------------------------
+// §13.2 `!important`、负数任意值、字号/行高简写（第四阶段第 16 项）
+// ---------------------------------------------------------------------------
+
+#[test]
+fn important_marker_is_accepted_in_both_positions() {
+    // v4 的后置写法与 v3 的前置写法都支持
+    assert_contains("p-4!", "padding:1rem!important");
+    assert_contains("!p-4", "padding:1rem!important");
+    // 变体前缀之后仍然识别
+    assert_contains("hover:p-4!", "padding:1rem!important");
+    assert_contains("hover:!p-4", "padding:1rem!important");
+    // 任意值与颜色路径同样生效
+    assert_contains("w-[3px]!", "width:3px!important");
+    assert_contains("text-red-500!", "color:#fb2c36!important");
+}
+
+#[test]
+fn important_participates_in_tw_merge_as_last_wins() {
+    // 编译期 tw-merge 的语义始终是 last-wins，`!` 不改变谁赢——
+    // 否则 `p-4! p-8` 会留下两条声明，反而回到运行时靠优先级打架
+    let css = css_of("p-4! p-8");
+    assert!(css.contains("padding:2rem"), "{css}");
+    assert!(!css.contains("!important"), "{css}");
+}
+
+#[test]
+fn negative_arbitrary_values_are_negated_not_rejected() {
+    // 回归点：`-mt-[10px]` 此前拿 `-mt` 去查 CssPropertyId，报的是内部错误
+    assert_contains("-mt-[10px]", "margin-top:-10px");
+    assert_contains("-m-[10px]", "margin:-10px");
+    // 取反在内层：`rotate(calc(45deg * -1))`，不是 `calc(rotate(45deg) * -1)`
+    assert_contains("-rotate-[45deg]", "transform:rotate(-45deg)");
+    // `var()` / `calc()` 只能靠 calc 取反，加个负号会产出非法值
+    assert_contains("-w-[var(--x)]", "width:calc(var(--x) * -1)");
+    // 值里自带负号的写法保持原样
+    assert_contains("mt-[-10px]", "margin-top:-10px");
+}
+
+#[test]
+fn arbitrary_value_with_unknown_prefix_reports_the_utility_not_the_property_table() {
+    // 报告 §2.7：不得把 "CssPropertyId 表里没有 'foo'" 这种内部细节抛给用户
+    let msg = err_of("foo-[3px]");
+    assert!(msg.contains("Unknown utility prefix 'foo'"), "{msg}");
+    assert!(!msg.contains("CssPropertyId"), "{msg}");
+}
+
+#[test]
+fn font_size_slash_leading_shorthand() {
+    assert_contains("text-[14px]/[1.5]", "font-size:14px");
+    assert_contains("text-[14px]/[1.5]", "line-height:1.5");
+    assert_contains("text-sm/6", "line-height:1.5rem");
+    assert_contains("text-sm/loose", "line-height:2");
+    // 字号档位自带的行高必须被显式写出的那个替换，而不是两条都留下
+    let css = css_of("text-sm/6");
+    assert_eq!(css.matches("line-height").count(), 1, "{css}");
+    // 同形的颜色 + 不透明度不能被这条路径截走
+    assert_contains("text-red-500/50", "color:#fb2c3680");
+    let msg = err_of("text-sm/nope");
+    assert!(msg.contains("Unknown line-height 'nope'"), "{msg}");
+}
+
+/// 组合型属性合并时**不能**把分量提前渲染成字符串
+///
+/// 回归点：合并逻辑曾对每条分量 `to_string()` 再拼接，`$(signal)` 于是被压成裸标识符
+/// `signal`，`blur-[$(v)]` 产出 `filter: blur(v)`——CSS 里没有这个值，静默失效。
+#[test]
+fn composable_merge_keeps_dynamic_expressions_at_token_level() {
+    let css = css_of("blur-[$(my_signal)]");
+    assert!(css.contains("filter:blur(var(--"), "{css}");
+    let css = css_of("blur-[$(a)] brightness-50");
+    assert!(css.contains("blur(var(--"), "{css}");
+    assert!(css.contains("brightness(.5)"), "{css}");
+}
+
+/// `value_wrapper` 必须同样作用在动态表达式上
+#[test]
+fn value_wrapper_applies_to_dynamic_expressions() {
+    // 回归点：`build_value` 遇到 `$(…)` 时直接 return，把 wrapper 丢了
+    let css = css_of("blur-[$(v)]");
+    assert!(css.contains("blur("), "wrapper 丢失: {css}");
+    let css = css_of("-mt-[$(v)]");
+    assert!(css.contains("calc(var("), "取反 wrapper 丢失: {css}");
+}
+
+// ---------------------------------------------------------------------------
+// §13.3 组合型属性跨修饰符组叠加（第四阶段第 19 项）
+// ---------------------------------------------------------------------------
+
+/// 回归点：`transform` 在 CSS 里是单一属性，`hover:` 那条会**整条**盖掉基础那条。
+/// 修复前 `hover:translate-x-2 translate-y-2` 在 hover 时 Y 位移凭空消失。
+#[test]
+fn composable_properties_stack_across_modifier_groups() {
+    let css = css_of("hover:translate-x-2 translate-y-2");
+    // 基础组只有 Y
+    assert!(css.contains("transform:translateY(.5rem)}"), "{css}");
+    // hover 组必须同时带上继承来的 Y 与自己的 X
+    let hover = css
+        .split(":hover")
+        .nth(1)
+        .unwrap_or_else(|| panic!("产物里没有 hover 规则:\n{css}"));
+    assert!(
+        hover.contains("translateY(.5rem)") && hover.contains("translate(.5rem)"),
+        "hover 组丢了基础组的分量:\n{css}"
+    );
+
+    // 书写顺序不影响结果
+    assert_eq!(
+        css_of("hover:translate-x-2 translate-y-2"),
+        css_of("translate-y-2 hover:translate-x-2")
+    );
+}
+
+#[test]
+fn composable_inheritance_follows_the_subset_relation() {
+    // `md:hover:` 生效时 `md:` 必然也生效，因此要继承 `md:` 的分量
+    let css = css_of("md:translate-x-2 md:hover:translate-y-2");
+    let hover = css.split(":hover").nth(1).unwrap();
+    assert!(
+        hover.contains("translate(.5rem)") && hover.contains("translateY(.5rem)"),
+        "md:hover 应继承 md: 的分量:\n{css}"
+    );
+
+    // 同名函数仍然 last-wins，不是叠加两次
+    let css = css_of("translate-x-2 hover:translate-x-4");
+    let hover = css.split(":hover").nth(1).unwrap();
+    assert!(hover.contains("translate(1rem)"), "{css}");
+    assert!(!hover.contains(".5rem"), "同名函数不应叠加:\n{css}");
+}
+
+#[test]
+fn composable_inheritance_never_invents_declarations() {
+    // 本组没用到 transform 时不得凭空长出一条
+    let css = css_of("hover:flex translate-y-2");
+    let hover = css.split(":hover").nth(1).unwrap();
+    assert!(
+        !hover.contains("transform"),
+        "hover:flex 不该凭空获得 transform:\n{css}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// §13.4 细粒度错误 Span（第四阶段第 17 项）
+// ---------------------------------------------------------------------------
+
+/// 报告 §4.1：错误此前把整个字符串字面量标红。
+///
+/// stable 上 `proc_macro::Literal::subspan` 仍未稳定（`proc_macro2` 恒返回 `None`），
+/// 拿不到真正的子 span，于是退一步在错误信息里画插入符指出是哪个词条。
+/// nightly 上 subspan 生效，rustc 的箭头直接指到位，这段上下文就不再附加。
+#[test]
+fn errors_point_at_the_offending_token_not_the_whole_string() {
+    let msg = err_of("flex items-center p-44x rounded-lg");
+    assert!(msg.contains("Did you mean 'p-44'?"), "{msg}");
+    if msg.contains("in `tw!` string:") {
+        // 插入符必须落在 `p-44x` 上：前面 18 个字符是 "flex items-center "
+        let caret_line = msg.lines().last().unwrap();
+        assert_eq!(
+            caret_line.trim_end(),
+            format!("    {}{}", " ".repeat(18), "^".repeat(5)),
+            "插入符位置不对:\n{msg}"
+        );
+    }
+}
+
+#[test]
+fn errors_on_a_variant_prefix_point_at_that_prefix_only() {
+    let msg = err_of("md:hoveer:flex");
+    assert!(msg.contains("Did you mean 'hover:'"), "{msg}");
+    if msg.contains("in `tw!` string:") {
+        // 只出现一次上下文：内层变体已经画得更精确，外层不该再叠一遍整词条的
+        assert_eq!(msg.matches("in `tw!` string:").count(), 1, "{msg}");
+        let caret_line = msg.lines().last().unwrap();
+        assert_eq!(
+            caret_line.trim_end(),
+            format!("    {}{}", " ".repeat(3), "^".repeat(6)),
+            "插入符应只覆盖 `hoveer`:\n{msg}"
+        );
+    }
+}
+
+#[test]
+fn long_class_strings_are_windowed_around_the_error() {
+    let long = "flex p-4 mt-2 mb-3 ml-4 mr-5 gap-2 rounded-lg shadow-md border text-sm font-bold p-44x uppercase";
+    let msg = err_of(long);
+    if msg.contains("in `tw!` string:") {
+        assert!(msg.contains('…'), "超长字符串应被截断成窗口:\n{msg}");
+        // 出错词条本身必须在窗口内
+        assert!(msg.contains("p-44x"), "{msg}");
+    }
 }

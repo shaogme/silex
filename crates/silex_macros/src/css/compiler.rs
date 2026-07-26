@@ -275,15 +275,8 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
                 #[cfg(feature = "tw")]
                 {
                     let raw_str = ap.classes.trim().trim_matches('"');
-                    let mut rules = Vec::new();
-                    for token in raw_str.split_whitespace() {
-                        let (modifiers, body_token) =
-                            crate::css::tw::parser::parse_modifiers_and_body(token, ap.span)?;
-                        let mut resolved = crate::css::tw::resolver::resolve_utility(
-                            modifiers, body_token, ap.span,
-                        )?;
-                        rules.append(&mut resolved);
-                    }
+                    let anchor = crate::css::tw::parser::TokenAnchor::whole(raw_str, ap.span);
+                    let rules = crate::css::tw::parser::parse_class_list(&anchor, &mut Vec::new())?;
                     let apply_block = crate::css::tw::codegen::build_css_block_from_rules(rules)?;
                     process_css_block(&apply_block, state)?;
                 }
@@ -341,7 +334,7 @@ fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
 
                 let mut rule_str = String::new();
                 rule_str.push('@');
-                rule_str.push_str(&at.name.to_string());
+                rule_str.push_str(&at.name);
                 rule_str.push(' ');
                 rule_str.push_str(&params);
                 rule_str.push_str(" { ");
@@ -451,7 +444,7 @@ fn build_dynamic_block_recursive(
             }
             CssRule::AtRule(at) => {
                 template.push('@');
-                template.push_str(&at.name.to_string());
+                template.push_str(&at.name);
                 template.push(' ');
                 template.push_str(&append_token_stream_strings(&at.params, warnings)?);
                 template.push_str(" { ");
@@ -469,15 +462,8 @@ fn build_dynamic_block_recursive(
                 #[cfg(feature = "tw")]
                 {
                     let raw_str = ap.classes.trim().trim_matches('"');
-                    let mut rules = Vec::new();
-                    for token in raw_str.split_whitespace() {
-                        let (modifiers, body_token) =
-                            crate::css::tw::parser::parse_modifiers_and_body(token, ap.span)?;
-                        let mut resolved = crate::css::tw::resolver::resolve_utility(
-                            modifiers, body_token, ap.span,
-                        )?;
-                        rules.append(&mut resolved);
-                    }
+                    let anchor = crate::css::tw::parser::TokenAnchor::whole(raw_str, ap.span);
+                    let rules = crate::css::tw::parser::parse_class_list(&anchor, &mut Vec::new())?;
                     let apply_block = crate::css::tw::codegen::build_css_block_from_rules(rules)?;
                     build_dynamic_block_recursive(
                         &apply_block,
@@ -939,6 +925,25 @@ mod tests {
         assert!(res.component_css.contains("display:flex"));
         assert!(res.component_css.contains("align-items:center"));
         assert!(res.component_css.contains("padding:.5rem 1rem"));
+    }
+
+    /// at-rule 名可以带连字符（`@font-face` / `@starting-style`）。
+    ///
+    /// 这类名字不是合法的 Rust 标识符，`name: Ident` 只能吃到 `font`，剩下的 `-face`
+    /// 会漂到 params 里，产出 `@font -face { … }`；`is_lifted` 里那句
+    /// `at.name == "font-face"` 也因此永远不成立，`@font-face` 不会被提到全局 CSS。
+    #[test]
+    fn hyphenated_at_rule_names_survive_parsing() {
+        let ts = syn::parse_str(
+            "@font-face { font-family: \"X\"; } @starting-style { opacity: 0; } @media (min-width: 600px) { color: red; }",
+        )
+        .unwrap();
+        let res = CssCompiler::compile(ts, Span::call_site(), false).unwrap();
+        let all = format!("{}{}", res.static_css, res.component_css);
+        assert!(all.contains("@font-face"), "{all}");
+        assert!(all.contains("@starting-style"), "{all}");
+        // `@media` 的参数里也有 `-`（`min-width`），不能被当成名字的一部分
+        assert!(all.contains("@media (min-width:600px)"), "{all}");
     }
 
     #[test]

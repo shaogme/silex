@@ -87,26 +87,42 @@ fn normalize_arbitrary_val(raw_val: &str) -> String {
     out
 }
 
+/// 任意值取反的包裹模板。
+///
+/// 与 Tailwind 一致（`-mt-[10px]` → `margin-top: calc(10px * -1)`）：不去猜值的形态，
+/// `calc(… * -1)` 对长度、百分比、`var()`、`calc()` 一律成立，而"给字面量加个负号"
+/// 只对纯数值+单位成立，对 `var(--x)` 会产出 `-var(--x)` 这种非法值。
+/// 常量折叠交给 LightningCSS。
+const NEGATE_WRAPPER: &str = "calc({} * -1)";
+
+/// 把两层包裹模板叠起来：`rotate({})` 套在 `calc({} * -1)` 外面 →
+/// `rotate(calc({} * -1))`。`-rotate-[45deg]` 需要的正是这个组合。
+fn compose_wrapper(outer: Option<&str>, inner: Option<&str>) -> Option<String> {
+    match (outer, inner) {
+        (Some(o), Some(i)) => Some(o.replace("{}", i)),
+        (Some(o), None) => Some(o.to_string()),
+        (None, Some(i)) => Some(i.to_string()),
+        (None, None) => None,
+    }
+}
+
 /// 解析任意值到 UtilityRule
+///
+/// `negate` 对应 `-mt-[10px]` 这类前导负号的写法。
 pub fn resolve_arbitrary(
     modifiers: Vec<SpannedModifier>,
     prefix: &str,
     raw_val: &str,
+    negate: bool,
     span: Span,
 ) -> Result<Vec<UtilityRule>> {
     let norm_val = normalize_arbitrary_val(raw_val);
+    let negation = negate.then_some(NEGATE_WRAPPER);
 
     // 1. 处理任意属性语法 `[property:value]`, 如 `[--tw-ring-color:rgba(79,70,229,.2)]` 或 `[color:red]`
     if prefix.is_empty() {
         if let Some((prop, val_str)) = norm_val.split_once(':') {
-            let value = if val_str.starts_with("$(") && val_str.ends_with(')') {
-                let expr_inner = &val_str[2..val_str.len() - 1];
-                let expr: syn::Expr =
-                    syn::parse_str(expr_inner).map_err(|e| Error::new(span, e.to_string()))?;
-                UtilityValue::DynamicExpr(expr, span)
-            } else {
-                UtilityValue::ArbitraryLiteral(val_str.to_string())
-            };
+            let value = build_value(val_str, negation, span)?;
 
             let mut rules = vec![make_rule(modifiers.clone(), prop, value, span)?];
             if prop == "--tw-ring-color" {
@@ -140,7 +156,7 @@ pub fn resolve_arbitrary(
         _ => None,
     };
     if let Some(prop) = ring_width_prop {
-        let value = build_value(&norm_val, None, span)?;
+        let value = build_value(&norm_val, negation, span)?;
         return Ok(vec![
             make_rule(modifiers.clone(), prop, value, span)?,
             make_rule(modifiers, "box-shadow", kw(RING_BOX_SHADOW), span)?,
@@ -149,7 +165,7 @@ pub fn resolve_arbitrary(
 
     // 1. 显式登记的多义分派（`bg-[url(…)]` → background-image、`text-[14px]` → font-size）
     if let Some(props) = arbitrary_dispatch(clean_prefix, kind) {
-        return emit(&modifiers, props, &norm_val, None, span);
+        return emit(&modifiers, props, &norm_val, negation, span);
     }
 
     // 2. 值确实是颜色时才让颜色前缀表接管。
@@ -162,7 +178,7 @@ pub fn resolve_arbitrary(
     let color_path = |modifiers: &[SpannedModifier]| -> Option<Result<Vec<UtilityRule>>> {
         let rule = color_rule?;
         Some(
-            build_value(&norm_val, None, span)
+            build_value(&norm_val, negation, span)
                 .and_then(|value| expand_color_prefix_rule(modifiers, rule, value, span)),
         )
     };
@@ -173,7 +189,9 @@ pub fn resolve_arbitrary(
                 modifiers,
                 meta.target_props,
                 &norm_val,
-                meta.value_wrapper,
+                // 取反在**内层**：`-rotate-[45deg]` 是 `rotate(calc(45deg * -1))`，
+                // 不是 `calc(rotate(45deg) * -1)`
+                compose_wrapper(meta.value_wrapper, negation).as_deref(),
                 span,
             )
             // 伴生声明与数值路径共用同一份元数据——此前 `outline-[3px]` 漏了
@@ -198,14 +216,25 @@ pub fn resolve_arbitrary(
         return rules;
     }
 
-    // 3. 兜底：把前缀本身当作 CSS 属性名（`[mask-type]-[luminance]` 之类）
+    // 3. 兜底：把前缀本身当作 CSS 属性名（`mask-type-[luminance]` 之类）。
+    //    前缀不是已知属性时要给出**任意值语法**层面的诊断，而不是把
+    //    "CssPropertyId 表里没有 'foo'" 这种内部实现细节抛给用户（报告 §2.7）。
     emit(
         &modifiers,
         std::slice::from_ref(&clean_prefix),
         &norm_val,
-        None,
+        negation,
         span,
     )
+    .map_err(|_| {
+        Error::new(
+            span,
+            format!(
+                "Unknown utility prefix '{}' in arbitrary value '{}-[{}]'.",
+                clean_prefix, clean_prefix, raw_val
+            ),
+        )
+    })
 }
 
 /// 把一个任意值写进一组目标属性
@@ -213,7 +242,7 @@ fn emit(
     modifiers: &[SpannedModifier],
     props: &[&str],
     norm_val: &str,
-    value_wrapper: Option<&'static str>,
+    value_wrapper: Option<&str>,
     span: Span,
 ) -> Result<Vec<UtilityRule>> {
     let value = build_value(norm_val, value_wrapper, span)?;
@@ -224,18 +253,20 @@ fn emit(
 }
 
 /// 把规范化后的任意值构造成 `UtilityValue`
-fn build_value(
-    norm_val: &str,
-    value_wrapper: Option<&'static str>,
-    span: Span,
-) -> Result<UtilityValue> {
+fn build_value(norm_val: &str, value_wrapper: Option<&str>, span: Span) -> Result<UtilityValue> {
     if let Some(expr_inner) = norm_val
         .strip_prefix("$(")
         .and_then(|s| s.strip_suffix(')'))
     {
         let expr: syn::Expr =
             syn::parse_str(expr_inner).map_err(|e| Error::new(span, e.to_string()))?;
-        return Ok(UtilityValue::DynamicExpr(expr, span));
+        // wrapper 随值一起带走，由 codegen 在 token 层套上——此前这里直接
+        // `return`，`blur-[$(x)]` 会丢掉 `blur()` 产出非法 CSS
+        return Ok(UtilityValue::DynamicExpr {
+            expr,
+            span,
+            wrapper: value_wrapper.map(str::to_string),
+        });
     }
 
     let val_str = if norm_val.starts_with("--") {
@@ -274,16 +305,22 @@ mod tests {
 
     #[test]
     fn test_resolve_arbitrary_dynamic_expr_with_underscores() {
-        let rules = resolve_arbitrary(vec![], "p", "$(pad_val)", Span::call_site()).unwrap();
+        let rules = resolve_arbitrary(vec![], "p", "$(pad_val)", false, Span::call_site()).unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].css_property, "padding");
-        assert!(matches!(rules[0].value, UtilityValue::DynamicExpr(_, _)));
+        assert!(matches!(rules[0].value, UtilityValue::DynamicExpr { .. }));
     }
 
     #[test]
     fn test_resolve_arbitrary_translate_x_calc() {
-        let rules =
-            resolve_arbitrary(vec![], "translate-x", "calc(100%-2px)", Span::call_site()).unwrap();
+        let rules = resolve_arbitrary(
+            vec![],
+            "translate-x",
+            "calc(100%-2px)",
+            false,
+            Span::call_site(),
+        )
+        .unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].css_property, "transform");
         if let UtilityValue::ArbitraryLiteral(s) = &rules[0].value {

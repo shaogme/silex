@@ -1,5 +1,6 @@
 pub mod ast;
 pub mod codegen;
+pub mod functional;
 pub mod parser;
 pub mod resolver;
 pub mod variants;

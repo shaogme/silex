@@ -26,6 +26,13 @@ fn utility_value_to_literal(val: &UtilityValue) -> String {
         UtilityValue::Keyword(k) => (*k).to_string(),
         UtilityValue::HexColor(hex) => hex.clone(),
         UtilityValue::ArbitraryLiteral(s) => s.clone(),
+        // 数值求值路径产不出 Composed（那是 codegen 合并组合型属性时才有的形态），
+        // 但真出现了也要拼得对，不能静默丢分量
+        UtilityValue::Composed(parts) => parts
+            .iter()
+            .map(utility_value_to_literal)
+            .collect::<Vec<_>>()
+            .join(" "),
         UtilityValue::ThemeVar(var, opacity) => match opacity {
             Some(op) => format!(
                 "color-mix(in srgb, var(--slx-theme-{}) {}%, transparent)",
@@ -33,7 +40,13 @@ fn utility_value_to_literal(val: &UtilityValue) -> String {
             ),
             None => format!("var(--slx-theme-{})", var),
         },
-        UtilityValue::DynamicExpr(expr, _) => quote::quote!(#expr).to_string(),
+        UtilityValue::DynamicExpr { expr, wrapper, .. } => {
+            let rendered = quote::quote!(#expr).to_string();
+            match wrapper {
+                Some(w) => w.replace("{}", &rendered),
+                None => rendered,
+            }
+        }
     }
 }
 

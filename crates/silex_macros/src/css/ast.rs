@@ -182,9 +182,15 @@ impl Parse for CssNested {
 }
 
 /// An @-rule like `@media (max-width: 600px) { ... }`
+///
+/// The name is a `String` rather than an `Ident` because at-rule names may contain
+/// hyphens (`@font-face`, `@starting-style`, `@counter-style`) and Rust identifiers
+/// cannot. Parsing `@font-face` as a single `Ident` used to stop at `font`, leaving
+/// `-face` in `params` — which silently broke both the `is_lifted` check in the
+/// compiler and the emitted CSS.
 #[derive(Clone)]
 pub struct CssAtRule {
-    pub name: Ident,
+    pub name: String,
     pub params: TokenStream,
     pub block: CssBlock,
 }
@@ -192,7 +198,20 @@ pub struct CssAtRule {
 impl Parse for CssAtRule {
     fn parse(input: ParseStream) -> Result<Self> {
         let _at_token: Token![@] = input.parse()?;
-        let name: Ident = input.parse()?;
+
+        let mut name = String::new();
+        loop {
+            let id = Ident::parse_any(input)?;
+            name.push_str(&id.to_string());
+            // 只有紧跟标识符的 `-` 才是名字的一部分（`@font-face`），
+            // `@media (min-width: 1px)` 的参数里不会出现这种形状
+            if input.peek(Token![-]) && input.peek2(Ident::peek_any) {
+                let _: Token![-] = input.parse()?;
+                name.push('-');
+                continue;
+            }
+            break;
+        }
 
         let mut params = TokenStream::new();
         while !input.peek(token::Brace) && !input.is_empty() {
@@ -365,7 +384,9 @@ impl ToTokens for CssNested {
 
 impl ToTokens for CssAtRule {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let name = &self.name;
+        // `starting-style` 拆成 `starting - style` 三个 token，由上面的 hyphen-aware
+        // `Parse` 原样收回；直接 `Ident::new` 会因名字含 `-` 而 panic
+        let name: TokenStream = self.name.parse().unwrap_or_default();
         let params = &self.params;
         let block = &self.block;
         tokens.extend(quote::quote! {
