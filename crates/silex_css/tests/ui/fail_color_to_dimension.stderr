@@ -8,51 +8,13 @@ error[E0277]: 类型 `Hex` 无法作为有效的 CSS `BorderLeftWidth` 属性值
   |
   = help: the trait `ValidFor<BorderLeftWidth>` is not implemented for `Hex`
   = note: 请检查是否传入了错误的类型（例如将 Px 传给了 Color）。如果必须传入复杂的动态表达式，可以使用 `css_unsafe(...)` 显式绕过。
-  = help: `Hex` implements trait `ValidFor<Prop>`:
-            ValidFor<BackgroundColor>
-            ValidFor<Border>
-            ValidFor<BorderBlock>
-            ValidFor<BorderBlockColor>
-            ValidFor<BorderBlockEnd>
-            ValidFor<BorderBlockEndColor>
-            ValidFor<BorderBlockStart>
-            ValidFor<BorderBlockStartColor>
-            ValidFor<BorderBottom>
-            ValidFor<BorderBottomColor>
-            ValidFor<BorderColor>
-            ValidFor<BorderInline>
-            ValidFor<BorderInlineColor>
-            ValidFor<BorderInlineEnd>
-            ValidFor<BorderInlineEndColor>
-            ValidFor<BorderInlineStart>
-            ValidFor<BorderInlineStartColor>
-            ValidFor<BorderLeft>
-            ValidFor<BorderLeftColor>
-            ValidFor<BorderRight>
-            ValidFor<BorderRightColor>
-            ValidFor<BorderTop>
-            ValidFor<BorderTopColor>
-            ValidFor<Caret>
-            ValidFor<CaretColor>
-            ValidFor<ColumnRule>
-            ValidFor<ColumnRuleColor>
-            ValidFor<FloodColor>
-            ValidFor<LightingColor>
-            ValidFor<Outline>
-            ValidFor<OutlineColor>
-            ValidFor<StopColor>
-            ValidFor<TextDecoration>
-            ValidFor<TextDecorationColor>
-            ValidFor<TextEmphasis>
-            ValidFor<TextEmphasisColor>
-            ValidFor<WebkitTextFillColor>
-            ValidFor<WebkitTextStroke>
-            ValidFor<WebkitTextStrokeColor>
-            ValidFor<silex_css::types::props::AccentColor>
-            ValidFor<silex_css::types::props::Background>
-            ValidFor<silex_css::types::props::Color>
-            ValidFor<silex_css::types::props::Fill>
-            ValidFor<silex_css::types::props::Stroke>
+  = help: the following other types implement trait `ValidFor<Prop>`:
+            BorderBlockEndWidthKeyword
+            CssOption<T>
+            CssUnsafe
+            CssVar
+            CssVar<T>
+            CssWide
 note: required by a bound in `silex_css::builder::Style::border_left_width`
  --> src/builder.rs
   |

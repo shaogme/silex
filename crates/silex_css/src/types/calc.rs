@@ -1,4 +1,11 @@
-use crate::types::units::{Deg, Em, Percent, Px, Rad, Rem, Turn, Vh, Vw};
+//! 数学表达式、量纲标记，以及运算符重载。
+
+// 各单位的具体类型名由下面三个 `for_all_*_units!` 宏展开引用
+use crate::types::units::{
+    Ch, Cm, Deg, Dvh, Dvw, Em, Ex, In, Lvh, Lvw, Mm, Ms, Pc, Percent, Pt, Px, Qmm, Rad, Rem, Sec,
+    Svh, Svw, Turn, Vh, Vmax, Vmin, Vw, for_all_angle_units, for_all_length_units,
+    for_all_time_units,
+};
 use std::fmt::{Display, Formatter, Result};
 use std::marker::PhantomData;
 
@@ -10,13 +17,24 @@ use std::marker::PhantomData;
 pub struct LengthMark;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AngleMark;
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TimeMark;
 
 // `NumberMark` / `ColorMark` / `CssNumber` / `CssPercentage` 曾在这里声明，
 // 但全仓零使用、零实现——它们只是让「量纲标记」这套说法看起来更完整。
-// 真正在用的只有长度和角度两种量纲。
+// 真正在用的是长度、角度、时间三种量纲。
 
+/// CSS 的 `<length>`：带长度单位的值，**不含**百分比。
+///
+/// 区分它和 `<length-percentage>` 是有实际用处的：`translateZ()` 与
+/// `perspective()` 只接受 `<length>`，给百分比是无效的。
 pub trait CssLength: Display {}
+/// CSS 的 `<length-percentage>`：长度、百分比，以及两者的算式。
+///
+/// 算术运算符收的是这一个——`calc(100% - 10px)` 本来就是合法的。
+pub trait CssLengthPercentage: Display {}
 pub trait CssAngle: Display {}
+pub trait CssTime: Display {}
 pub trait CssColor: Display {}
 
 /// 一个 CSS 数学表达式或数值。
@@ -61,7 +79,10 @@ macro_rules! impl_calc_operand_via_display {
         })*
     };
 }
-impl_calc_operand_via_display!(Px, Percent, Rem, Em, Vw, Vh, Deg, Rad, Turn, f64, f32, i32);
+for_all_length_units!(impl_calc_operand_via_display);
+for_all_angle_units!(impl_calc_operand_via_display);
+for_all_time_units!(impl_calc_operand_via_display);
+impl_calc_operand_via_display!(Percent, f64, f32, i32);
 
 impl<Mark> CalcOperand for CalcValue<Mark> {
     fn calc_operand(&self) -> String {
@@ -148,8 +169,8 @@ impl<Mark> Display for CalcValue<Mark> {
     }
 }
 
-impl CssLength for CalcValue<LengthMark> {}
-impl CssAngle for CalcValue<AngleMark> {}
+// `CalcValue<Mark>` 的量纲标记与算术运算符和各单位一起，在 `types.rs` 的
+// `impl_dimension_family!` 里统一展开。
 
 impl<Mark> From<CalcValue<Mark>> for String {
     fn from(v: CalcValue<Mark>) -> Self {
@@ -213,9 +234,17 @@ where
     math_fn("max", args)
 }
 
-pub fn clamp<Mark, T>(min_v: T, val: T, max_v: T) -> CalcValue<Mark>
+/// `clamp(<min>, <val>, <max>)`。
+///
+/// 三个参数各有各的类型参数——只要都属于同一个量纲就行。此前是
+/// `clamp<Mark, T>(min_v: T, val: T, max_v: T)`，要求三参**同型**，于是
+/// 开发文档里那句 `clamp(px(100), pct(50), px(500))` 根本编译不过
+/// （`E0308 expected Px, found Percent`）。而这恰恰是 `clamp` 最典型的用法。
+pub fn clamp<Mark, Lo, Val, Hi>(min_v: Lo, val: Val, max_v: Hi) -> CalcValue<Mark>
 where
-    T: Into<CalcValue<Mark>>,
+    Lo: Into<CalcValue<Mark>>,
+    Val: Into<CalcValue<Mark>>,
+    Hi: Into<CalcValue<Mark>>,
 {
     let min_v: CalcValue<Mark> = min_v.into();
     let val: CalcValue<Mark> = val.into();
@@ -247,66 +276,58 @@ macro_rules! impl_into_calc {
     };
 }
 
-impl_into_calc!(LengthMark: Px, Percent, Rem, Em, Vw, Vh);
-impl_into_calc!(AngleMark: Deg, Rad, Turn);
-
-impl IntoCalc<LengthMark> for CalcValue<LengthMark> {
-    fn into_calc(self) -> CalcValue<LengthMark> {
-        self
-    }
+macro_rules! impl_into_calc_length {
+    ($($t:ty),* $(,)?) => { impl_into_calc!(LengthMark: $($t),*); };
 }
-impl IntoCalc<AngleMark> for CalcValue<AngleMark> {
-    fn into_calc(self) -> CalcValue<AngleMark> {
-        self
-    }
+macro_rules! impl_into_calc_angle {
+    ($($t:ty),* $(,)?) => { impl_into_calc!(AngleMark: $($t),*); };
+}
+macro_rules! impl_into_calc_time {
+    ($($t:ty),* $(,)?) => { impl_into_calc!(TimeMark: $($t),*); };
 }
 
-impl From<Deg> for CalcValue<AngleMark> {
-    fn from(v: Deg) -> Self {
-        v.into_calc()
-    }
+for_all_length_units!(impl_into_calc_length);
+impl_into_calc!(LengthMark: Percent);
+for_all_angle_units!(impl_into_calc_angle);
+for_all_time_units!(impl_into_calc_time);
+
+macro_rules! impl_calc_identity {
+    ($($mark:ident),* $(,)?) => {
+        $(impl IntoCalc<$mark> for CalcValue<$mark> {
+            fn into_calc(self) -> CalcValue<$mark> {
+                self
+            }
+        })*
+    };
 }
-impl From<Rad> for CalcValue<AngleMark> {
-    fn from(v: Rad) -> Self {
-        v.into_calc()
-    }
+impl_calc_identity!(LengthMark, AngleMark, TimeMark);
+
+/// `min()` / `max()` / `clamp()` 收的是 `impl Into<CalcValue<Mark>>`，所以每个
+/// 单位都要能转进自己的量纲——但**只能**转进自己的量纲：这正是量纲标记要挡住
+/// 的东西。
+macro_rules! impl_from_unit_for_calc {
+    ($mark:ident: $($t:ty),* $(,)?) => {
+        $(impl From<$t> for CalcValue<$mark> {
+            fn from(v: $t) -> Self {
+                v.into_calc()
+            }
+        })*
+    };
 }
-impl From<Turn> for CalcValue<AngleMark> {
-    fn from(v: Turn) -> Self {
-        v.into_calc()
-    }
+macro_rules! impl_from_length_for_calc {
+    ($($t:ty),* $(,)?) => { impl_from_unit_for_calc!(LengthMark: $($t),*); };
+}
+macro_rules! impl_from_angle_for_calc {
+    ($($t:ty),* $(,)?) => { impl_from_unit_for_calc!(AngleMark: $($t),*); };
+}
+macro_rules! impl_from_time_for_calc {
+    ($($t:ty),* $(,)?) => { impl_from_unit_for_calc!(TimeMark: $($t),*); };
 }
 
-impl From<Px> for CalcValue<LengthMark> {
-    fn from(v: Px) -> Self {
-        v.into_calc()
-    }
-}
-impl From<Percent> for CalcValue<LengthMark> {
-    fn from(v: Percent) -> Self {
-        v.into_calc()
-    }
-}
-impl From<Rem> for CalcValue<LengthMark> {
-    fn from(v: Rem) -> Self {
-        v.into_calc()
-    }
-}
-impl From<Em> for CalcValue<LengthMark> {
-    fn from(v: Em) -> Self {
-        v.into_calc()
-    }
-}
-impl From<Vw> for CalcValue<LengthMark> {
-    fn from(v: Vw) -> Self {
-        v.into_calc()
-    }
-}
-impl From<Vh> for CalcValue<LengthMark> {
-    fn from(v: Vh) -> Self {
-        v.into_calc()
-    }
-}
+for_all_length_units!(impl_from_length_for_calc);
+impl_from_unit_for_calc!(LengthMark: Percent);
+for_all_angle_units!(impl_from_angle_for_calc);
+for_all_time_units!(impl_from_time_for_calc);
 
 #[cfg(test)]
 mod tests {
@@ -347,5 +368,32 @@ mod tests {
         assert_eq!(m.to_string(), "min(10px, 20px)");
         let c: CalcValue<LengthMark> = clamp(px(1), px(2), px(3));
         assert_eq!(c.to_string(), "clamp(1px, 2px, 3px)");
+    }
+
+    /// 时间也是一个完整的量纲，不只是「能打印的东西」
+    #[test]
+    fn time_arithmetic_stays_in_its_own_dimension() {
+        use crate::types::units::{ms, sec};
+        assert_eq!((sec(1) - ms(200)).to_string(), "calc(1s - 200ms)");
+        let c: CalcValue<TimeMark> = clamp(ms(100), sec(1), sec(2));
+        assert_eq!(c.to_string(), "clamp(100ms, 1s, 2s)");
+    }
+
+    /// 长度与百分比可以混算——`calc(100% - 10px)` 本来就是合法 CSS。
+    /// 跨量纲的组合由 `trybuild` 反例负责证明编译失败。
+    #[test]
+    fn lengths_and_percentages_mix_freely() {
+        use crate::types::units::pct;
+        assert_eq!((pct(100) - px(10)).to_string(), "calc(100% - 10px)");
+    }
+
+    /// 开发文档里的 `clamp(px(100), pct(50), px(500))` 曾编译不过：
+    /// `clamp<Mark, T>` 要求三参同型（`E0308 expected Px, found Percent`），
+    /// 而这恰恰是 `clamp` 最典型的用法
+    #[test]
+    fn clamp_takes_three_different_types_from_one_dimension() {
+        use crate::types::units::pct;
+        let c: CalcValue<LengthMark> = clamp(px(100), pct(50), px(500));
+        assert_eq!(c.to_string(), "clamp(100px, 50%, 500px)");
     }
 }

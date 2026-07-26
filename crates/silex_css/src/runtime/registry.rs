@@ -18,7 +18,9 @@ thread_local! {
 }
 
 /// 拿到文档级注册表，顺带把欠下的摘除补上。
-pub(crate) fn with_document_registry<R>(f: impl FnOnce(&mut DocumentStyleRegistry) -> R) -> Option<R> {
+pub(crate) fn with_document_registry<R>(
+    f: impl FnOnce(&mut DocumentStyleRegistry) -> R,
+) -> Option<R> {
     DOCUMENT_REGISTRY.with(|dr| {
         let Ok(mut dr) = dr.try_borrow_mut() else {
             return None;
@@ -77,8 +79,7 @@ impl StaticStyleRegistry {
             let Ok(mut reg) = i.try_borrow_mut() else {
                 return None;
             };
-            let owed =
-                DEFERRED_INJECTIONS.with(|d| d.borrow_mut().drain(..).collect::<Vec<_>>());
+            let owed = DEFERRED_INJECTIONS.with(|d| d.borrow_mut().drain(..).collect::<Vec<_>>());
             for (id, content) in &owed {
                 reg.inject(id, content);
             }
@@ -370,7 +371,10 @@ mod tests {
     fn split_rules_keeps_nested_blocks_together() {
         assert_eq!(
             split_rules("@media (min-width:1px){.a{color:red}.b{color:blue}}.c{}"),
-            vec!["@media (min-width:1px){.a{color:red}.b{color:blue}}", ".c{}"]
+            vec![
+                "@media (min-width:1px){.a{color:red}.b{color:blue}}",
+                ".c{}"
+            ]
         );
     }
 

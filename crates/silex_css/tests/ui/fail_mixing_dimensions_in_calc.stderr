@@ -1,0 +1,17 @@
+error[E0277]: the trait bound `Sec: CssLengthPercentage` is not satisfied
+ --> tests/ui/fail_mixing_dimensions_in_calc.rs:5:20
+  |
+5 |     let _ = px(10) + sec(1);
+  |                    ^ the trait `CssLengthPercentage` is not implemented for `Sec`
+  |
+  = help: the following other types implement trait `CssLengthPercentage`:
+            CalcValue<LengthMark>
+            Ch
+            Cm
+            Dvh
+            Dvw
+            Em
+            In
+            Lvh
+          and $N others
+  = note: required for `Px` to implement `std::ops::Add<Sec>`

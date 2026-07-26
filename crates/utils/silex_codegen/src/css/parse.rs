@@ -7,12 +7,37 @@ pub fn parse_css(
     props_str: &str,
     syntaxes_str: &str,
 ) -> Result<CssConfig, Box<dyn std::error::Error>> {
+    // MDN 把这些标成 `nonstandard`，但它们在真实页面里绕不开：没有它们，
+    // `sty()` 连「关掉 select 的原生外观」「去掉移动端点按高亮」都写不出来。
+    //
+    // 注意这份白名单只能收录 **MDN 数据里存在** 的属性。`-webkit-font-smoothing`、
+    // `-moz-osx-font-smoothing`、`-webkit-backdrop-filter` 根本不在 MDN 的
+    // properties.json 里，加进来也不会生成任何东西——那一类只能走
+    // `Style::raw(name, value)` 逃生舱。
     let whitelist = [
         "-webkit-line-clamp",
         "-webkit-text-fill-color",
         "-webkit-text-stroke",
         "-webkit-text-stroke-color",
         "-webkit-text-stroke-width",
+        "-webkit-appearance",
+        "-moz-appearance",
+        "-webkit-user-select",
+        "-webkit-user-modify",
+        "-webkit-tap-highlight-color",
+        "-webkit-touch-callout",
+        "-webkit-overflow-scrolling",
+        "-webkit-box-reflect",
+        "-webkit-mask",
+        "-webkit-mask-image",
+        "-webkit-mask-position",
+        "-webkit-mask-repeat",
+        "-webkit-mask-size",
+        "-webkit-mask-clip",
+        "-webkit-mask-origin",
+        "-webkit-mask-composite",
+        "-moz-context-properties",
+        "-moz-orient",
     ];
 
     let raw_props: HashMap<String, MdnCssProperty> = serde_json::from_str(props_str)?;
@@ -118,6 +143,12 @@ fn classify_property(prop: &MdnCssProperty, resolver: &Resolver) -> (Vec<ValueCa
     if has(Kind::Angle) {
         caps.push(ValueCap::Angle);
     }
+    if has(Kind::Time) {
+        caps.push(ValueCap::Time);
+    }
+    if has(Kind::Flex) {
+        caps.push(ValueCap::Flex);
+    }
     if has(Kind::Color) {
         caps.push(ValueCap::Color);
     }
@@ -126,13 +157,13 @@ fn classify_property(prop: &MdnCssProperty, resolver: &Resolver) -> (Vec<ValueCa
     }
 
     // 裸字符串是最后的兜底：只要这个属性的取值可能由多个分量拼成、或者含有
-    // 我们没有对应 Rust 类型的东西（`<custom-ident>`、`<time>`、解析不出来的
-    // 引用），就必须放行字符串，否则这些属性在 builder 里根本没法写。
-    let needs_string = analysis.multi
-        || has(Kind::Textual)
-        || has(Kind::Opaque)
-        || has(Kind::Time)
-        || prop.syntax.trim().is_empty();
+    // 我们没有对应 Rust 类型的东西（`<custom-ident>`、解析不出来的引用），
+    // 就必须放行字符串，否则这些属性在 builder 里根本没法写。
+    //
+    // `<time>` 曾经也在这份兜底名单里——那是因为当时压根没有时间单位类型，
+    // 于是 `transition-duration` 只能写 `"0.3s"`。现在有 `Sec` / `Ms` 了。
+    let needs_string =
+        analysis.multi || has(Kind::Textual) || has(Kind::Opaque) || prop.syntax.trim().is_empty();
     if needs_string {
         caps.push(ValueCap::Str);
     }

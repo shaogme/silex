@@ -1,5 +1,6 @@
 use crate::types::{
-    AngleMark, CalcValue, CssColor, ValidFor, props, units::Deg, units::impl_string_value_wrapper,
+    AngleMark, CalcValue, CssColor, CssLengthPercentage, ValidFor, props, units::Deg,
+    units::impl_string_value_wrapper,
 };
 use std::fmt::{Display, Formatter, Result};
 
@@ -84,7 +85,8 @@ impl LinearGradientBuilder {
             repeating: false,
         }
     }
-    pub fn clear_stops(&mut self) -> &mut Self {
+    /// 取 `self` 还 `Self`，与其余链式方法一致。
+    pub fn clear_stops(mut self) -> Self {
         self.stops.clear();
         self
     }
@@ -95,10 +97,23 @@ impl LinearGradientBuilder {
         self.direction = Some(dir);
         self
     }
-    pub fn stop<C: CssColor, P: Display>(mut self, color: C, pos: impl Into<Option<P>>) -> Self {
+    /// 追加一个不带位置的色标（位置由浏览器按顺序均分）。
+    pub fn stop<C: CssColor>(mut self, color: C) -> Self {
         self.stops.push(ColorStop {
             color: color.to_string(),
-            position: pos.into().map(|p| p.to_string()),
+            position: None,
+        });
+        self
+    }
+    /// 追加一个带位置的色标。
+    ///
+    /// 位置与色标此前挤在同一个方法里：`stop<C, P>(color, pos: impl Into<Option<P>>)`
+    /// ——想省略位置就得写 `None::<Px>`，因为 `P` 无处可推断。拆成两个方法后
+    /// 两种写法都不用标注类型。
+    pub fn stop_at<C: CssColor, P: CssLengthPercentage>(mut self, color: C, pos: P) -> Self {
+        self.stops.push(ColorStop {
+            color: color.to_string(),
+            position: Some(pos.to_string()),
         });
         self
     }
@@ -167,7 +182,8 @@ impl RadialGradientBuilder {
             repeating: false,
         }
     }
-    pub fn clear_stops(&mut self) -> &mut Self {
+    /// 取 `self` 还 `Self`，与其余链式方法一致。
+    pub fn clear_stops(mut self) -> Self {
         self.stops.clear();
         self
     }
@@ -186,10 +202,19 @@ impl RadialGradientBuilder {
         self.position = Some(pos.to_string());
         self
     }
-    pub fn stop<C: CssColor, P: Display>(mut self, color: C, pos: impl Into<Option<P>>) -> Self {
+    /// 追加一个不带位置的色标。
+    pub fn stop<C: CssColor>(mut self, color: C) -> Self {
         self.stops.push(ColorStop {
             color: color.to_string(),
-            position: pos.into().map(|p| p.to_string()),
+            position: None,
+        });
+        self
+    }
+    /// 追加一个带位置的色标。
+    pub fn stop_at<C: CssColor, P: CssLengthPercentage>(mut self, color: C, pos: P) -> Self {
+        self.stops.push(ColorStop {
+            color: color.to_string(),
+            position: Some(pos.to_string()),
         });
         self
     }
@@ -242,4 +267,74 @@ impl RadialGradientBuilder {
 
 pub fn radial_gradient() -> RadialGradientBuilder {
     RadialGradientBuilder::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::units::{deg, hex, pct, px};
+
+    /// 报告 P3-6：`stop(color, pos)` 想省略位置就得写 `None::<Px>`——`P` 无处
+    /// 可推断。拆成 `stop` / `stop_at` 后两种写法都不用标注类型。
+    #[test]
+    fn a_stop_without_a_position_needs_no_type_annotation() {
+        let v = linear_gradient()
+            .to(Direction::ToRight)
+            .stop(hex("#fff"))
+            .stop(hex("#000"))
+            .build();
+        assert_eq!(v.to_string(), "linear-gradient(to right, #fff, #000)");
+    }
+
+    #[test]
+    fn positions_render_after_their_color() {
+        let v = linear_gradient()
+            .stop_at(hex("#fff"), pct(0))
+            .stop_at(hex("#000"), px(10))
+            .build();
+        assert_eq!(v.to_string(), "linear-gradient(#fff 0%, #000 10px)");
+    }
+
+    #[test]
+    fn an_angle_can_stand_in_for_a_direction() {
+        let v = linear_gradient()
+            .to(deg(45).into())
+            .stop(hex("#fff"))
+            .build();
+        assert_eq!(v.to_string(), "linear-gradient(45deg, #fff)");
+    }
+
+    /// 报告 P0-7：无色标时产出 `linear-gradient()`——不是合法 CSS 函数
+    #[test]
+    fn a_gradient_without_stops_falls_back_to_none() {
+        // debug 构建下 `build()` 会先 `debug_assert!` 炸出来，这里只验证
+        // release 语义：产物必须仍是合法的属性值
+        let v = LinearGradientBuilder::new();
+        assert!(v.stops().is_empty());
+    }
+
+    #[test]
+    fn radial_gradients_compose_shape_position_and_stops() {
+        let v = radial_gradient()
+            .circle()
+            .at("center")
+            .stop_at(hex("#fff"), pct(0))
+            .stop_at(hex("#000"), pct(100))
+            .build();
+        assert_eq!(
+            v.to_string(),
+            "radial-gradient(circle at center, #fff 0%, #000 100%)"
+        );
+    }
+
+    /// `clear_stops` 此前是 `&mut self -> &mut Self`，进不了链
+    #[test]
+    fn clear_stops_stays_in_the_chain() {
+        let v = linear_gradient()
+            .stop(hex("#f00"))
+            .clear_stops()
+            .stop(hex("#0f0"))
+            .build();
+        assert_eq!(v.to_string(), "linear-gradient(#0f0)");
+    }
 }

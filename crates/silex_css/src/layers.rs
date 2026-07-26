@@ -58,6 +58,9 @@ mod tests {
 
     #[test]
     fn wrap_nests_the_css_in_the_named_layer() {
-        assert_eq!(wrap(OVERRIDES, ".a{color:red}\n"), "@layer overrides {\n.a{color:red}\n}\n");
+        assert_eq!(
+            wrap(OVERRIDES, ".a{color:red}\n"),
+            "@layer overrides {\n.a{color:red}\n}\n"
+        );
     }
 }

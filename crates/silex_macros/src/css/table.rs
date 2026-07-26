@@ -50,14 +50,20 @@ pub fn resolve_property_type(prop: &str, span: Span) -> Result<PropertyResolveRe
         return Ok(PropertyResolveResult::Untyped);
     }
 
-    // 2. 短别名优先 PHF 查表
-    if let Some(&type_name) = SHORT_ALIAS_MAP.get(prop) {
-        return Ok(PropertyResolveResult::Builtin(type_name.to_string()));
-    }
-
-    // 3. 注册表里有就用注册表里的强类型
+    // 2. 真实的 CSS 属性名优先——短别名只能补充注册表，不能改写它。
+    //
+    //    这两步此前是反的，而别名表里有 `"border" => "BorderColor"`：于是
+    //    `styled!` 里一句 `border: $(border_style)` 会拿 `props::BorderColor`
+    //    去校验，而 `border` 明明是个真实属性，语法是 `<width> <style> <color>`。
+    //    名字写的是 `border`，类型系统查的是 `border-color`——与 P3-2 的
+    //    `margin::top` 同一类问题。别名表里只有 `border` 与真实属性重名。
     if CSS_PROPERTY_NAMES.binary_search(&prop).is_ok() {
         return Ok(PropertyResolveResult::Builtin(to_pascal_case(prop)));
+    }
+
+    // 3. 短别名（`p` / `m` / `bg` / `text` …）：这些都不是真实的 CSS 属性名
+    if let Some(&type_name) = SHORT_ALIAS_MAP.get(prop) {
+        return Ok(PropertyResolveResult::Builtin(type_name.to_string()));
     }
 
     // 4. 厂商前缀属性：MDN 数据里没有它们的语法，定不了型也拼不出建议，
@@ -154,6 +160,29 @@ mod tests {
             resolve_property_type("--my-var", span).unwrap(),
             PropertyResolveResult::Untyped
         );
+    }
+
+    /// 别名表只能补充注册表，不能改写它。
+    ///
+    /// `"border" => "BorderColor"` 曾排在注册表查找之前，于是 `border: …`
+    /// 会拿 `props::BorderColor` 去校验——名字写的是 `border`，类型系统查的
+    /// 却是 `border-color`。别名表里只有 `border` 与真实属性重名。
+    #[test]
+    fn a_short_alias_never_shadows_a_real_property() {
+        let span = Span::call_site();
+        assert_eq!(
+            resolve_property_type("border", span).unwrap(),
+            PropertyResolveResult::Builtin("Border".into())
+        );
+        for alias in SHORT_ALIAS_MAP.keys() {
+            if *alias == "any" {
+                continue;
+            }
+            assert!(
+                CSS_PROPERTY_NAMES.binary_search(alias).is_err() || *alias == "border",
+                "别名 `{alias}` 与真实属性重名，会遮住注册表里的强类型"
+            );
+        }
     }
 
     /// 报告 P0-8 的招牌反例：`colr: red` 此前静默通过

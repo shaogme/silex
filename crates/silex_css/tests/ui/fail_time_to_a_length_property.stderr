@@ -1,31 +1,32 @@
-error[E0277]: 类型 `String` 无法作为有效的 CSS `ZIndex` 属性值使用
- --> tests/ui/fail_string_to_z_index.rs:5:34
+error[E0277]: 类型 `Sec` 无法作为有效的 CSS `Width` 属性值使用
+ --> tests/ui/fail_time_to_a_length_property.rs:5:32
   |
-5 |     let _ = Style::new().z_index("abc");
-  |                          ------- ^^^^^ 无效的 CSS 属性类型
+5 |     let _ = Style::new().width(sec(1));
+  |                          ----- ^^^^^^ 无效的 CSS 属性类型
   |                          |
   |                          required by a bound introduced by this call
   |
-  = help: the trait `ValidFor<ZIndex>` is not implemented for `String`
+  = help: the trait `ValidFor<Width>` is not implemented for `Sec`
   = note: 请检查是否传入了错误的类型（例如将 Px 传给了 Color）。如果必须传入复杂的动态表达式，可以使用 `css_unsafe(...)` 显式绕过。
   = help: the following other types implement trait `ValidFor<Prop>`:
+            BlockSizeKeyword
             CssOption<T>
             CssUnsafe
             CssVar
             CssVar<T>
             CssWide
             silex_css::types::Auto
-note: required by a bound in `silex_css::builder::Style::z_index`
+note: required by a bound in `silex_css::builder::Style::width`
  --> src/builder.rs
   |
   |                     V::Value: ValidFor<props::$pascal> + Display + Clone + Sized + 'static,
-  |                               ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Style::z_index`
+  |                               ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Style::width`
 ...
   | for_all_properties!(generate_builder_methods);
   | --------------------------------------------- in this macro invocation
   |
  ::: src/codegen/properties.rs
   |
-  |             (z_index, "z-index", ZIndex, [Int]),
-  |              ------- required by a bound in this associated function
+  |             (width, "width", Width, [LenCalc Length Percent]),
+  |              ----- required by a bound in this associated function
   = note: this error originates in the macro `generate_builder_methods` which comes from the expansion of the macro `for_all_properties` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -33,21 +33,49 @@ fn apply_var_diff(
     entries: &[(&'static str, Option<String>)],
     prev: Option<&Vec<Option<String>>>,
 ) -> Vec<Option<String>> {
-    let mut current = Vec::with_capacity(entries.len());
-    for (i, (name, value)) in entries.iter().enumerate() {
-        if prev.and_then(|p| p.get(i)) != Some(value) {
-            match value {
-                Some(v) => {
-                    let _ = style.set_property(name, v);
-                }
-                None => {
-                    let _ = style.remove_property(name);
-                }
+    for write in var_writes(entries, prev) {
+        match write {
+            VarWrite::Set(name, value) => {
+                let _ = style.set_property(name, value);
+            }
+            VarWrite::Remove(name) => {
+                let _ = style.remove_property(name);
             }
         }
-        current.push(value.clone());
     }
-    current
+    entries.iter().map(|(_, v)| v.clone()).collect()
+}
+
+/// 一次变量写入。
+///
+/// 「写什么」与「写到哪」分开，是为了让前者能脱离 `CssStyleDeclaration`（也就
+/// 是脱离浏览器）被断言——这段 diff 逻辑此前在三个地方各抄了一遍，一个测试也
+/// 没有。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VarWrite<'a> {
+    Set(&'a str, &'a str),
+    Remove(&'a str),
+}
+
+/// 与上一轮取值比较，给出这一轮真正需要落到 DOM 上的写入。
+///
+/// 没变的变量不写——每个变量的 `setProperty` 都会让浏览器重算受它影响的那棵
+/// 子树，主题里几十个变量一起重写是实打实的开销。
+fn var_writes<'a>(
+    entries: &'a [(&'static str, Option<String>)],
+    prev: Option<&Vec<Option<String>>>,
+) -> Vec<VarWrite<'a>> {
+    let mut out = Vec::new();
+    for (i, (name, value)) in entries.iter().enumerate() {
+        if prev.and_then(|p| p.get(i)) == Some(value) {
+            continue;
+        }
+        out.push(match value {
+            Some(v) => VarWrite::Set(name, v),
+            None => VarWrite::Remove(name),
+        });
+    }
+    out
 }
 
 /// 元素上可写的 style 对象（HTML 与 SVG 两条路）。
@@ -201,5 +229,115 @@ where
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entries(pairs: &[(&'static str, Option<&str>)]) -> Vec<(&'static str, Option<String>)> {
+        pairs
+            .iter()
+            .map(|(n, v)| (*n, v.map(str::to_string)))
+            .collect()
+    }
+
+    fn prev_of(pairs: &[Option<&str>]) -> Vec<Option<String>> {
+        pairs.iter().map(|v| v.map(str::to_string)).collect()
+    }
+
+    /// 首轮没有上一轮取值，所有变量都要写
+    #[test]
+    fn the_first_round_writes_everything() {
+        let e = entries(&[("--a", Some("1")), ("--b", Some("2"))]);
+        assert_eq!(
+            var_writes(&e, None),
+            vec![VarWrite::Set("--a", "1"), VarWrite::Set("--b", "2")]
+        );
+    }
+
+    /// 没变的变量不写：每个 `setProperty` 都会让浏览器重算受影响的子树
+    #[test]
+    fn unchanged_variables_are_not_rewritten() {
+        let e = entries(&[("--a", Some("1")), ("--b", Some("9"))]);
+        let prev = prev_of(&[Some("1"), Some("2")]);
+        assert_eq!(var_writes(&e, Some(&prev)), vec![VarWrite::Set("--b", "9")]);
+    }
+
+    /// `None` 是「移除」，不是「设成空串」——设成空串会触发
+    /// *invalid at computed-value time*，取到的是初始值而不是继承来的值
+    #[test]
+    fn a_none_value_removes_the_variable() {
+        let e = entries(&[("--a", None)]);
+        let prev = prev_of(&[Some("1")]);
+        assert_eq!(var_writes(&e, Some(&prev)), vec![VarWrite::Remove("--a")]);
+    }
+
+    /// 上一轮就已经是「不存在」，这一轮还是——不必再 remove 一次
+    #[test]
+    fn an_already_absent_variable_is_left_alone() {
+        let e = entries(&[("--a", None)]);
+        let prev = prev_of(&[None]);
+        assert!(var_writes(&e, Some(&prev)).is_empty());
+    }
+
+    /// 变量数量变多时，多出来的那几个必须被写进去。
+    ///
+    /// 这一条盯的是「静默截断」：此前两处 diff 用的是
+    /// `names.iter().zip(values.iter())`，两个列表长度不一致时短的那个说了算，
+    /// 多出来的变量不会有任何提示。
+    #[test]
+    fn a_longer_entry_list_is_not_truncated_against_a_shorter_previous_round() {
+        let e = entries(&[("--a", Some("1")), ("--b", Some("2")), ("--c", Some("3"))]);
+        let prev = prev_of(&[Some("1")]);
+        assert_eq!(
+            var_writes(&e, Some(&prev)),
+            vec![VarWrite::Set("--b", "2"), VarWrite::Set("--c", "3")]
+        );
+    }
+
+    /// 变量名与取值的配对必须一一对应
+    #[test]
+    fn theme_entries_pairs_names_with_values_in_order() {
+        struct T;
+        impl Display for T {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("--a:1;--b:2;")
+            }
+        }
+        impl ThemeToCss for T {
+            fn get_variable_values(&self) -> Vec<String> {
+                vec!["1".into(), "2".into()]
+            }
+            fn get_variable_names() -> &'static [&'static str] {
+                &["--a", "--b"]
+            }
+        }
+        assert_eq!(
+            theme_entries(&T),
+            entries(&[("--a", Some("1")), ("--b", Some("2"))])
+        );
+    }
+
+    /// 名字与取值数量对不上时，debug 构建下必须炸出来而不是静默丢弃
+    #[test]
+    #[should_panic(expected = "变量名与取值数量不一致")]
+    fn a_mismatched_theme_is_caught_in_debug_builds() {
+        struct Broken;
+        impl Display for Broken {
+            fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                Ok(())
+            }
+        }
+        impl ThemeToCss for Broken {
+            fn get_variable_values(&self) -> Vec<String> {
+                vec!["1".into()]
+            }
+            fn get_variable_names() -> &'static [&'static str] {
+                &["--a", "--b"]
+            }
+        }
+        let _ = theme_entries(&Broken);
     }
 }

@@ -152,7 +152,10 @@ mod tests {
     #[test]
     fn replacement_output_is_not_rescanned() {
         let pairs = [
-            ("var(--slx-dyn-0)".to_string(), "var(--slx-dyn-1)".to_string()),
+            (
+                "var(--slx-dyn-0)".to_string(),
+                "var(--slx-dyn-1)".to_string(),
+            ),
             ("var(--slx-dyn-1)".to_string(), "red".to_string()),
         ];
         let out = replace_placeholders("a:var(--slx-dyn-0);b:var(--slx-dyn-1)", &pairs);

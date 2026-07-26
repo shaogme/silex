@@ -207,6 +207,13 @@ define_css_enum!(ColorKeyword (props::Color) {
     Yellowgreen => "yellowgreen",
 });
 
+define_css_enum!(WebkitBoxReflectKeyword (props::WebkitBoxReflect) {
+    Above => "above",
+    Below => "below",
+    Left => "left",
+    Right => "right",
+});
+
 define_css_enum!(PositionKeyword (props::Position) {
     Absolute => "absolute",
     Fixed => "fixed",
@@ -354,7 +361,7 @@ define_css_enum!(TextDecorationSkipInkKeyword (props::TextDecorationSkipInk) {
     None => "none",
 });
 
-define_css_enum!(UserSelectKeyword (props::UserSelect) {
+define_css_enum!(WebkitUserSelectKeyword (props::WebkitUserSelect, props::UserSelect) {
     All => "all",
     Auto => "auto",
     None => "none",
@@ -756,7 +763,7 @@ define_css_enum!(OverflowKeyword (props::Overflow, props::OverflowBlock, props::
     Visible => "visible",
 });
 
-define_css_enum!(BackgroundSizeKeyword (props::BackgroundSize, props::MaskSize) {
+define_css_enum!(WebkitMaskSizeKeyword (props::WebkitMaskSize, props::BackgroundSize, props::MaskSize) {
     Auto => "auto",
     Contain => "contain",
     Cover => "cover",
@@ -1005,6 +1012,11 @@ define_css_enum!(ScrollbarGutterKeyword (props::ScrollbarGutter) {
     Stable => "stable",
 });
 
+define_css_enum!(WebkitOverflowScrollingKeyword (props::WebkitOverflowScrolling) {
+    Auto => "auto",
+    Touch => "touch",
+});
+
 define_css_enum!(MathDepthKeyword (props::MathDepth) {
     AutoAdd => "auto-add",
 });
@@ -1133,11 +1145,66 @@ define_css_enum!(DisplayKeyword (props::Display) {
     TableRowGroup => "table-row-group",
 });
 
+define_css_enum!(MozOrientKeyword (props::MozOrient) {
+    Block => "block",
+    Horizontal => "horizontal",
+    Inline => "inline",
+    Vertical => "vertical",
+});
+
 define_css_enum!(FontWeightKeyword (props::FontWeight) {
     Bold => "bold",
     Bolder => "bolder",
     Lighter => "lighter",
     Normal => "normal",
+});
+
+define_css_enum!(WebkitMaskKeyword (props::WebkitMask) {
+    Border => "border",
+    BorderBox => "border-box",
+    Bottom => "bottom",
+    Center => "center",
+    Content => "content",
+    ContentBox => "content-box",
+    Left => "left",
+    NoRepeat => "no-repeat",
+    None => "none",
+    Padding => "padding",
+    PaddingBox => "padding-box",
+    Repeat => "repeat",
+    RepeatX => "repeat-x",
+    RepeatY => "repeat-y",
+    Right => "right",
+    Round => "round",
+    Space => "space",
+    Text => "text",
+    Top => "top",
+});
+
+define_css_enum!(WebkitMaskClipKeyword (props::WebkitMaskClip) {
+    Border => "border",
+    BorderBox => "border-box",
+    Content => "content",
+    ContentBox => "content-box",
+    FillBox => "fill-box",
+    NoClip => "no-clip",
+    Padding => "padding",
+    PaddingBox => "padding-box",
+    StrokeBox => "stroke-box",
+    Text => "text",
+    ViewBox => "view-box",
+});
+
+define_css_enum!(WebkitMaskOriginKeyword (props::WebkitMaskOrigin) {
+    Border => "border",
+    BorderBox => "border-box",
+    Content => "content",
+    ContentBox => "content-box",
+    FillBox => "fill-box",
+    Padding => "padding",
+    PaddingBox => "padding-box",
+    StrokeBox => "stroke-box",
+    ViewBox => "view-box",
 });
 
 define_css_enum!(BackgroundClipKeyword (props::BackgroundClip) {
@@ -1245,7 +1312,7 @@ define_css_enum!(ClearKeyword (props::Clear) {
     Right => "right",
 });
 
-define_css_enum!(BackgroundPositionKeyword (props::BackgroundPosition, props::MaskPosition, props::ObjectPosition, props::PerspectiveOrigin, props::TransformOrigin) {
+define_css_enum!(WebkitMaskPositionKeyword (props::WebkitMaskPosition, props::BackgroundPosition, props::MaskPosition, props::ObjectPosition, props::PerspectiveOrigin, props::TransformOrigin) {
     Bottom => "bottom",
     Center => "center",
     Left => "left",
@@ -1297,6 +1364,150 @@ define_css_enum!(StrokeLinecapKeyword (props::StrokeLinecap) {
     Butt => "butt",
     Round => "round",
     Square => "square",
+});
+
+define_css_enum!(MozAppearanceKeyword (props::MozAppearance) {
+    Button => "button",
+    ButtonArrowDown => "button-arrow-down",
+    ButtonArrowNext => "button-arrow-next",
+    ButtonArrowPrevious => "button-arrow-previous",
+    ButtonArrowUp => "button-arrow-up",
+    ButtonBevel => "button-bevel",
+    ButtonFocus => "button-focus",
+    Caret => "caret",
+    Checkbox => "checkbox",
+    CheckboxContainer => "checkbox-container",
+    CheckboxLabel => "checkbox-label",
+    Checkmenuitem => "checkmenuitem",
+    Dualbutton => "dualbutton",
+    Groupbox => "groupbox",
+    Listbox => "listbox",
+    Listitem => "listitem",
+    Menuarrow => "menuarrow",
+    Menubar => "menubar",
+    Menucheckbox => "menucheckbox",
+    Menuimage => "menuimage",
+    Menuitem => "menuitem",
+    Menuitemtext => "menuitemtext",
+    Menulist => "menulist",
+    MenulistButton => "menulist-button",
+    MenulistText => "menulist-text",
+    MenulistTextfield => "menulist-textfield",
+    Menupopup => "menupopup",
+    Menuradio => "menuradio",
+    Menuseparator => "menuseparator",
+    Meterbar => "meterbar",
+    Meterchunk => "meterchunk",
+    None => "none",
+    Progressbar => "progressbar",
+    ProgressbarVertical => "progressbar-vertical",
+    Progresschunk => "progresschunk",
+    ProgresschunkVertical => "progresschunk-vertical",
+    Radio => "radio",
+    RadioContainer => "radio-container",
+    RadioLabel => "radio-label",
+    Radiomenuitem => "radiomenuitem",
+    Range => "range",
+    RangeThumb => "range-thumb",
+    Resizer => "resizer",
+    Resizerpanel => "resizerpanel",
+    ScaleHorizontal => "scale-horizontal",
+    ScaleVertical => "scale-vertical",
+    ScalethumbHorizontal => "scalethumb-horizontal",
+    ScalethumbVertical => "scalethumb-vertical",
+    Scalethumbend => "scalethumbend",
+    Scalethumbstart => "scalethumbstart",
+    Scalethumbtick => "scalethumbtick",
+    ScrollbarbuttonDown => "scrollbarbutton-down",
+    ScrollbarbuttonLeft => "scrollbarbutton-left",
+    ScrollbarbuttonRight => "scrollbarbutton-right",
+    ScrollbarbuttonUp => "scrollbarbutton-up",
+    ScrollbarthumbHorizontal => "scrollbarthumb-horizontal",
+    ScrollbarthumbVertical => "scrollbarthumb-vertical",
+    ScrollbartrackHorizontal => "scrollbartrack-horizontal",
+    ScrollbartrackVertical => "scrollbartrack-vertical",
+    Searchfield => "searchfield",
+    Separator => "separator",
+    Sheet => "sheet",
+    Spinner => "spinner",
+    SpinnerDownbutton => "spinner-downbutton",
+    SpinnerTextfield => "spinner-textfield",
+    SpinnerUpbutton => "spinner-upbutton",
+    Splitter => "splitter",
+    Statusbar => "statusbar",
+    Statusbarpanel => "statusbarpanel",
+    Tab => "tab",
+    TabScrollArrowBack => "tab-scroll-arrow-back",
+    TabScrollArrowForward => "tab-scroll-arrow-forward",
+    Tabpanel => "tabpanel",
+    Tabpanels => "tabpanels",
+    Textfield => "textfield",
+    TextfieldMultiline => "textfield-multiline",
+    Toolbar => "toolbar",
+    Toolbarbutton => "toolbarbutton",
+    ToolbarbuttonDropdown => "toolbarbutton-dropdown",
+    Toolbargripper => "toolbargripper",
+    Toolbox => "toolbox",
+    Tooltip => "tooltip",
+    Treeheader => "treeheader",
+    Treeheadercell => "treeheadercell",
+    Treeheadersortarrow => "treeheadersortarrow",
+    Treeitem => "treeitem",
+    Treeline => "treeline",
+    Treetwisty => "treetwisty",
+    Treetwistyopen => "treetwistyopen",
+    Treeview => "treeview",
+});
+
+define_css_enum!(WebkitAppearanceKeyword (props::WebkitAppearance) {
+    Button => "button",
+    ButtonBevel => "button-bevel",
+    Caret => "caret",
+    Checkbox => "checkbox",
+    DefaultButton => "default-button",
+    InnerSpinButton => "inner-spin-button",
+    Listbox => "listbox",
+    Listitem => "listitem",
+    MediaControlsBackground => "media-controls-background",
+    MediaControlsFullscreenBackground => "media-controls-fullscreen-background",
+    MediaCurrentTimeDisplay => "media-current-time-display",
+    MediaEnterFullscreenButton => "media-enter-fullscreen-button",
+    MediaExitFullscreenButton => "media-exit-fullscreen-button",
+    MediaFullscreenButton => "media-fullscreen-button",
+    MediaMuteButton => "media-mute-button",
+    MediaOverlayPlayButton => "media-overlay-play-button",
+    MediaPlayButton => "media-play-button",
+    MediaSeekBackButton => "media-seek-back-button",
+    MediaSeekForwardButton => "media-seek-forward-button",
+    MediaSlider => "media-slider",
+    MediaSliderthumb => "media-sliderthumb",
+    MediaTimeRemainingDisplay => "media-time-remaining-display",
+    MediaToggleClosedCaptionsButton => "media-toggle-closed-captions-button",
+    MediaVolumeSlider => "media-volume-slider",
+    MediaVolumeSliderContainer => "media-volume-slider-container",
+    MediaVolumeSliderthumb => "media-volume-sliderthumb",
+    Menulist => "menulist",
+    MenulistButton => "menulist-button",
+    MenulistText => "menulist-text",
+    MenulistTextfield => "menulist-textfield",
+    Meter => "meter",
+    None => "none",
+    ProgressBar => "progress-bar",
+    ProgressBarValue => "progress-bar-value",
+    PushButton => "push-button",
+    Radio => "radio",
+    Searchfield => "searchfield",
+    SearchfieldCancelButton => "searchfield-cancel-button",
+    SearchfieldDecoration => "searchfield-decoration",
+    SearchfieldResultsButton => "searchfield-results-button",
+    SearchfieldResultsDecoration => "searchfield-results-decoration",
+    SliderHorizontal => "slider-horizontal",
+    SliderVertical => "slider-vertical",
+    SliderthumbHorizontal => "sliderthumb-horizontal",
+    SliderthumbVertical => "sliderthumb-vertical",
+    SquareButton => "square-button",
+    Textarea => "textarea",
+    Textfield => "textfield",
 });
 
 define_css_enum!(TextTransformKeyword (props::TextTransform) {
@@ -1374,6 +1585,20 @@ define_css_enum!(TextEmphasisKeyword (props::TextEmphasis, props::TextEmphasisSt
     Open => "open",
     Sesame => "sesame",
     Triangle => "triangle",
+});
+
+define_css_enum!(WebkitMaskCompositeKeyword (props::WebkitMaskComposite) {
+    Clear => "clear",
+    Copy => "copy",
+    DestinationAtop => "destination-atop",
+    DestinationIn => "destination-in",
+    DestinationOut => "destination-out",
+    DestinationOver => "destination-over",
+    SourceAtop => "source-atop",
+    SourceIn => "source-in",
+    SourceOut => "source-out",
+    SourceOver => "source-over",
+    Xor => "xor",
 });
 
 define_css_enum!(TextOverflowKeyword (props::TextOverflow) {
@@ -1587,6 +1812,11 @@ define_css_enum!(TextDecorationStyleKeyword (props::TextDecorationStyle) {
     Wavy => "wavy",
 });
 
+define_css_enum!(WebkitTouchCalloutKeyword (props::WebkitTouchCallout) {
+    Default_ => "default",
+    None => "none",
+});
+
 define_css_enum!(FontVariantNumericKeyword (props::FontVariantNumeric) {
     DiagonalFractions => "diagonal-fractions",
     LiningNums => "lining-nums",
@@ -1630,6 +1860,14 @@ define_css_enum!(TextAnchorKeyword (props::TextAnchor) {
 define_css_enum!(ClipRuleKeyword (props::ClipRule, props::FillRule) {
     Evenodd => "evenodd",
     Nonzero => "nonzero",
+});
+
+define_css_enum!(MozContextPropertiesKeyword (props::MozContextProperties) {
+    Fill => "fill",
+    FillOpacity => "fill-opacity",
+    None => "none",
+    Stroke => "stroke",
+    StrokeOpacity => "stroke-opacity",
 });
 
 define_css_enum!(PaintOrderKeyword (props::PaintOrder) {
@@ -1801,7 +2039,7 @@ define_css_enum!(TextOrientationKeyword (props::TextOrientation) {
     Upright => "upright",
 });
 
-define_css_enum!(BackgroundRepeatKeyword (props::BackgroundRepeat, props::MaskRepeat) {
+define_css_enum!(WebkitMaskRepeatKeyword (props::WebkitMaskRepeat, props::BackgroundRepeat, props::MaskRepeat) {
     NoRepeat => "no-repeat",
     Repeat => "repeat",
     RepeatX => "repeat-x",
@@ -1864,6 +2102,12 @@ define_css_enum!(AnimationPlayStateKeyword (props::AnimationPlayState) {
     Running => "running",
 });
 
+define_css_enum!(WebkitUserModifyKeyword (props::WebkitUserModify) {
+    ReadOnly => "read-only",
+    ReadWrite => "read-write",
+    ReadWritePlaintextOnly => "read-write-plaintext-only",
+});
+
 define_css_enum!(BorderImageRepeatKeyword (props::BorderImageRepeat, props::MaskBorderRepeat) {
     Repeat => "repeat",
     Round => "round",
@@ -1873,6 +2117,7 @@ define_css_enum!(BorderImageRepeatKeyword (props::BorderImageRepeat, props::Mask
 
 // --- 关键字集合相同的属性共用同一个枚举 ---
 pub type BreakBeforeKeyword = BreakAfterKeyword;
+pub type UserSelectKeyword = WebkitUserSelectKeyword;
 pub type TransitionPropertyKeyword = ColumnSpanKeyword;
 pub type TriggerScopeKeyword = ColumnSpanKeyword;
 pub type MaskTypeKeyword = MaskBorderModeKeyword;
@@ -1882,7 +2127,8 @@ pub type OverflowBlockKeyword = OverflowKeyword;
 pub type OverflowInlineKeyword = OverflowKeyword;
 pub type OverflowXKeyword = OverflowKeyword;
 pub type OverflowYKeyword = OverflowKeyword;
-pub type MaskSizeKeyword = BackgroundSizeKeyword;
+pub type BackgroundSizeKeyword = WebkitMaskSizeKeyword;
+pub type MaskSizeKeyword = WebkitMaskSizeKeyword;
 pub type TimelineTriggerExitRangeEndKeyword = TimelineTriggerExitRangeKeyword;
 pub type TimelineTriggerExitRangeStartKeyword = TimelineTriggerExitRangeKeyword;
 pub type OverscrollBehaviorBlockKeyword = OverscrollBehaviorKeyword;
@@ -1924,10 +2170,11 @@ pub type CornerTopLeftShapeKeyword = CornerBlockEndShapeKeyword;
 pub type CornerTopRightShapeKeyword = CornerBlockEndShapeKeyword;
 pub type CornerTopShapeKeyword = CornerBlockEndShapeKeyword;
 pub type OverflowClipMarginKeyword = BackgroundOriginKeyword;
-pub type MaskPositionKeyword = BackgroundPositionKeyword;
-pub type ObjectPositionKeyword = BackgroundPositionKeyword;
-pub type PerspectiveOriginKeyword = BackgroundPositionKeyword;
-pub type TransformOriginKeyword = BackgroundPositionKeyword;
+pub type BackgroundPositionKeyword = WebkitMaskPositionKeyword;
+pub type MaskPositionKeyword = WebkitMaskPositionKeyword;
+pub type ObjectPositionKeyword = WebkitMaskPositionKeyword;
+pub type PerspectiveOriginKeyword = WebkitMaskPositionKeyword;
+pub type TransformOriginKeyword = WebkitMaskPositionKeyword;
 pub type TextEmphasisStyleKeyword = TextEmphasisKeyword;
 pub type TimelineTriggerRangeEndKeyword = TimelineTriggerRangeKeyword;
 pub type TimelineTriggerRangeStartKeyword = TimelineTriggerRangeKeyword;
@@ -1972,7 +2219,8 @@ pub type BorderTopWidthKeyword = BorderBlockEndWidthKeyword;
 pub type BorderWidthKeyword = BorderBlockEndWidthKeyword;
 pub type ColumnRuleWidthKeyword = BorderBlockEndWidthKeyword;
 pub type OutlineWidthKeyword = BorderBlockEndWidthKeyword;
-pub type MaskRepeatKeyword = BackgroundRepeatKeyword;
+pub type BackgroundRepeatKeyword = WebkitMaskRepeatKeyword;
+pub type MaskRepeatKeyword = WebkitMaskRepeatKeyword;
 pub type FontFeatureSettingsKeyword = ColumnGapKeyword;
 pub type FontLanguageOverrideKeyword = ColumnGapKeyword;
 pub type FontVariationSettingsKeyword = ColumnGapKeyword;
@@ -1999,6 +2247,8 @@ impl ValidFor<props::PointerEvents> for Auto {}
 impl ValidFor<props::PointerEvents> for NoneValue {}
 impl ValidFor<props::TextDecorationSkipInk> for Auto {}
 impl ValidFor<props::TextDecorationSkipInk> for NoneValue {}
+impl ValidFor<props::WebkitUserSelect> for Auto {}
+impl ValidFor<props::WebkitUserSelect> for NoneValue {}
 impl ValidFor<props::UserSelect> for Auto {}
 impl ValidFor<props::UserSelect> for NoneValue {}
 impl ValidFor<props::TextCombineUpright> for NoneValue {}
@@ -2096,6 +2346,7 @@ impl ValidFor<props::OverflowBlock> for Auto {}
 impl ValidFor<props::OverflowInline> for Auto {}
 impl ValidFor<props::OverflowX> for Auto {}
 impl ValidFor<props::OverflowY> for Auto {}
+impl ValidFor<props::WebkitMaskSize> for Auto {}
 impl ValidFor<props::BackgroundSize> for Auto {}
 impl ValidFor<props::MaskSize> for Auto {}
 impl ValidFor<props::TimelineTriggerExitRange> for Auto {}
@@ -2181,16 +2432,20 @@ impl ValidFor<props::TextEmphasisPosition> for Auto {}
 impl ValidFor<props::OffsetRotate> for Auto {}
 impl ValidFor<props::ScrollBehavior> for Auto {}
 impl ValidFor<props::ScrollbarGutter> for Auto {}
+impl ValidFor<props::WebkitOverflowScrolling> for Auto {}
 impl ValidFor<props::AnimationFillMode> for NoneValue {}
 impl ValidFor<props::TextDecorationLine> for NoneValue {}
 impl ValidFor<props::Resize> for NoneValue {}
 impl ValidFor<props::ScrollSnapType> for NoneValue {}
 impl ValidFor<props::Display> for NoneValue {}
+impl ValidFor<props::WebkitMask> for NoneValue {}
 impl ValidFor<props::Background> for NoneValue {}
 impl ValidFor<props::ClipPath> for NoneValue {}
 impl ValidFor<props::OffsetPath> for NoneValue {}
 impl ValidFor<props::ShapeOutside> for NoneValue {}
 impl ValidFor<props::Clear> for NoneValue {}
+impl ValidFor<props::MozAppearance> for NoneValue {}
+impl ValidFor<props::WebkitAppearance> for NoneValue {}
 impl ValidFor<props::TextTransform> for NoneValue {}
 impl ValidFor<props::ScrollSnapAlign> for NoneValue {}
 impl ValidFor<props::TextEmphasis> for NoneValue {}
@@ -2225,6 +2480,8 @@ impl ValidFor<props::BorderRightStyle> for NoneValue {}
 impl ValidFor<props::BorderStyle> for NoneValue {}
 impl ValidFor<props::BorderTopStyle> for NoneValue {}
 impl ValidFor<props::ColumnRuleStyle> for NoneValue {}
+impl ValidFor<props::WebkitTouchCallout> for NoneValue {}
+impl ValidFor<props::MozContextProperties> for NoneValue {}
 impl ValidFor<props::MaxBlockSize> for NoneValue {}
 impl ValidFor<props::MaxHeight> for NoneValue {}
 impl ValidFor<props::MaxInlineSize> for NoneValue {}
@@ -2235,6 +2492,7 @@ impl ValidFor<props::Float> for NoneValue {}
 impl ValidFor<props::ListStyle> for NoneValue {}
 impl ValidFor<props::ViewTransitionName> for NoneValue {}
 impl ValidFor<props::WebkitLineClamp> for NoneValue {}
+impl ValidFor<props::WebkitMaskImage> for NoneValue {}
 impl ValidFor<props::AnimationName> for NoneValue {}
 impl ValidFor<props::AnimationTrigger> for NoneValue {}
 impl ValidFor<props::BackdropFilter> for NoneValue {}
@@ -2302,11 +2560,8 @@ macro_rules! register_generated_keywords {
             BackgroundClipKeyword,
             BackgroundKeyword,
             BackgroundOriginKeyword,
-            BackgroundPositionKeyword,
             BackgroundPositionXKeyword,
             BackgroundPositionYKeyword,
-            BackgroundRepeatKeyword,
-            BackgroundSizeKeyword,
             BaselineShiftKeyword,
             BaselineSourceKeyword,
             BlockSizeKeyword,
@@ -2396,6 +2651,9 @@ macro_rules! register_generated_keywords {
             MathStyleKeyword,
             MaxBlockSizeKeyword,
             MixBlendModeKeyword,
+            MozAppearanceKeyword,
+            MozContextPropertiesKeyword,
+            MozOrientKeyword,
             ObjectFitKeyword,
             OffsetAnchorKeyword,
             OffsetKeyword,
@@ -2459,11 +2717,23 @@ macro_rules! register_generated_keywords {
             TransitionBehaviorKeyword,
             TransitionKeyword,
             UnicodeBidiKeyword,
-            UserSelectKeyword,
             VectorEffectKeyword,
             VerticalAlignKeyword,
             ViewTransitionNameKeyword,
             VisibilityKeyword,
+            WebkitAppearanceKeyword,
+            WebkitBoxReflectKeyword,
+            WebkitMaskClipKeyword,
+            WebkitMaskCompositeKeyword,
+            WebkitMaskKeyword,
+            WebkitMaskOriginKeyword,
+            WebkitMaskPositionKeyword,
+            WebkitMaskRepeatKeyword,
+            WebkitMaskSizeKeyword,
+            WebkitOverflowScrollingKeyword,
+            WebkitTouchCalloutKeyword,
+            WebkitUserModifyKeyword,
+            WebkitUserSelectKeyword,
             WhiteSpaceCollapseKeyword,
             WhiteSpaceKeyword,
             WillChangeKeyword,

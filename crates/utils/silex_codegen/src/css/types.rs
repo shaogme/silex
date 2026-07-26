@@ -33,7 +33,11 @@ pub enum ValueCap {
     Int,
     /// `Deg` / `Rad` / `Turn` / `CalcValue<AngleMark>`
     Angle,
-    /// `Rgba` / `Hex` / `Hsl` / `ColorKeyword`
+    /// `Sec` / `Ms` / `CalcValue<TimeMark>`
+    Time,
+    /// `Fr`——网格轨道的 `<flex>`，不与长度互通
+    Flex,
+    /// `Rgba` / `Hex` / `Hsl` / `ColorFn` / `ColorKeyword`
     Color,
     /// `Url`
     Url,
@@ -50,6 +54,8 @@ impl ValueCap {
             Self::Num => "Num",
             Self::Int => "Int",
             Self::Angle => "Angle",
+            Self::Time => "Time",
+            Self::Flex => "Flex",
             Self::Color => "Color",
             Self::Url => "Url",
             Self::Str => "Str",

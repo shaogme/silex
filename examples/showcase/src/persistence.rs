@@ -161,12 +161,12 @@ fn ManualFlushDemo() -> impl View {
                     .on(event::click, move |_| {
                         let _ = draft.flush();
                     })
-                    .style(sty().background(AppTheme::PRIMARY).color(hex("white")).border(NONE).padding(padding::x_y(px(8), px(16))).border_radius(px(6)).cursor(CursorKeyword::Pointer).transition("opacity 0.2s")),
+                    .style(sty().background(AppTheme::PRIMARY).color(hex("white")).border(NONE).padding(padding::block_inline(px(8), px(16))).border_radius(px(6)).cursor(CursorKeyword::Pointer).transition("opacity 0.2s")),
                 button("🔄 Reload from Storage")
                     .on(event::click, move |_| {
                         let _ = draft.reload();
                     })
-                    .style(sty().background(AppTheme::SURFACE).color(AppTheme::TEXT).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).padding(padding::x_y(px(8), px(16))).border_radius(px(6)).cursor(CursorKeyword::Pointer)),
+                    .style(sty().background(AppTheme::SURFACE).color(AppTheme::TEXT).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).padding(padding::block_inline(px(8), px(16))).border_radius(px(6)).cursor(CursorKeyword::Pointer)),
                 button("🗑️ Forget")
                     .on(event::click, move |_| {
                         let _ = draft.remove();
@@ -282,7 +282,7 @@ fn ErrorHandlingDemo() -> impl View {
             },
             button("Reset to Factory Defaults")
                 .on(event::click, move |_| settings.reset())
-                .style(sty().margin_top(px(15)).background(ColorKeyword::Transparent).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).padding(padding::x_y(px(6), px(12))).border_radius(px(4)).cursor(CursorKeyword::Pointer).color(AppTheme::TEXT))
+                .style(sty().margin_top(px(15)).background(ColorKeyword::Transparent).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).padding(padding::block_inline(px(6), px(12))).border_radius(px(4)).cursor(CursorKeyword::Pointer).color(AppTheme::TEXT))
         ].style(sty().margin_top(px(25)).padding(px(15)).background(AppTheme::SURFACE_ALT).border_radius(px(8)).border(border(px(1), BorderStyleKeyword::Dashed, AppTheme::BORDER)))
     )).title("4. Error Handling & JSON")
 }

@@ -92,7 +92,9 @@ impl Drop for DynamicStyleState {
 }
 
 /// 拿到动态样式注册表，顺带把欠下的注销补上。
-fn with_dynamic_registry<R>(f: impl FnOnce(&mut HashMap<String, Weak<DynamicStyleState>>) -> R) -> Option<R> {
+fn with_dynamic_registry<R>(
+    f: impl FnOnce(&mut HashMap<String, Weak<DynamicStyleState>>) -> R,
+) -> Option<R> {
     DYNAMIC_STYLE_REGISTRY.with(|reg| {
         let Ok(mut reg) = reg.try_borrow_mut() else {
             return None;
@@ -222,11 +224,7 @@ impl DynamicCss {
         self
     }
 
-    pub fn with_rule(
-        mut self,
-        parts: &'static [CssPart],
-        exprs: Vec<CssVariableGetter>,
-    ) -> Self {
+    pub fn with_rule(mut self, parts: &'static [CssPart], exprs: Vec<CssVariableGetter>) -> Self {
         self.rules.push((parts, exprs));
         self
     }

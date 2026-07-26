@@ -11,7 +11,7 @@
 //!
 //! 这里把值挡在声明边界内。同一个值来源不该因为走静态还是动态而有不同的安全性质。
 
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt::Write as _};
 
 /// 把任意字符串写成一个 CSS `<string>`（含引号）。
 pub fn css_string(value: &str) -> String {
@@ -29,6 +29,36 @@ pub fn css_string(value: &str) -> String {
     }
     out.push('"');
     out
+}
+
+/// 净化一个属性名，保证它不会越出 `<prop>: value;` 的左半边。
+///
+/// 注册表里的属性名是 `&'static str` 常量，天然安全；但 `Style::var()` 与
+/// `Style::raw()` 的名字来自调用方，一个 `:` 就能把一条声明劈成两条。
+///
+/// 合法的名字原样返回（`Cow::Borrowed`），不产生额外分配。不合法的字符按 CSS
+/// 的标识符转义写成 `\<hex> `——转义后的名字仍然是一个**单一**标识符，浏览器
+/// 认不出这个属性会整条丢弃，而不会执行它。
+pub fn property_name(name: &str) -> Cow<'_, str> {
+    fn is_name_char(c: char) -> bool {
+        c.is_ascii_alphanumeric() || c == '-' || c == '_' || !c.is_ascii()
+    }
+
+    let leading_digit = name.starts_with(|c: char| c.is_ascii_digit());
+    if !leading_digit && name.chars().all(is_name_char) {
+        return Cow::Borrowed(name);
+    }
+
+    let mut out = String::with_capacity(name.len() + 4);
+    for (i, ch) in name.chars().enumerate() {
+        if is_name_char(ch) && !(i == 0 && ch.is_ascii_digit()) {
+            out.push(ch);
+        } else {
+            // `\<hex> ` 是 CSS 的标识符转义，尾随空格是转义序列的终止符
+            let _ = write!(out, "\\{:x} ", ch as u32);
+        }
+    }
+    Cow::Owned(out)
 }
 
 /// 净化一条声明的值，保证它不会越出 `prop: <value>;` 的边界。
@@ -181,5 +211,31 @@ mod tests {
     #[test]
     fn css_string_escapes_quotes() {
         assert_eq!(css_string("a\"; x:\""), "\"a\\\"; x:\\\"\"");
+    }
+
+    #[test]
+    fn ordinary_property_names_are_untouched() {
+        for n in [
+            "color",
+            "--brand-primary",
+            "-webkit-font-smoothing",
+            "_private",
+        ] {
+            assert!(matches!(property_name(n), Cow::Borrowed(_)), "{n}");
+        }
+    }
+
+    /// 名字来自调用方时，一个 `:` 就能把一条声明劈成两条
+    #[test]
+    fn a_property_name_cannot_open_a_second_declaration() {
+        let n = property_name("color: red; background");
+        assert!(!n.contains(':'), "{n}");
+        assert!(!n.contains(';'), "{n}");
+        assert!(!n.contains(' ') || n.contains('\\'), "{n}");
+    }
+
+    #[test]
+    fn a_leading_digit_is_escaped() {
+        assert_eq!(property_name("1x"), "\\31 x");
     }
 }

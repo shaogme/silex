@@ -104,9 +104,93 @@ fn default_expr_for(
             Ok(quote! { #silex::css::types::hex(#raw_value) })
         }
         "String" => Ok(quote! { #raw_value.to_string() }),
+        // 量纲类型：`radius = "8px"` + `field_types.radius = "Px"` 必须真的给出
+        // `8px`。走 `Default::default()` 的话是 `0px`——配置里写的值被静默丢掉，
+        // 和当初 `def.fields` 那个空 Patch 是同一类问题。
+        ty if unit_ctor(ty).is_some() => {
+            let ctor = unit_ctor(ty).unwrap();
+            let Some(num) = parse_unit_value(raw_value, ty) else {
+                return Err(syn::Error::new_spanned(
+                    span_src,
+                    format!(
+                        "`[theme.colors].{key}` 的值 `{raw_value}` 不是一个 `{ty}` \
+                         取值（期望形如 `8{}`）；请改写取值，或在 \
+                         `[theme.field_types]` 里换一个类型",
+                        unit_suffix(ty).unwrap_or("")
+                    ),
+                ));
+            };
+            let ctor = syn::Ident::new(ctor, proc_macro2::Span::call_site());
+            Ok(quote! { #silex::css::types::#ctor(#num) })
+        }
         // 其余类型没有统一的「从字符串构造」入口，退回该类型自己的默认值
         _ => Ok(quote! { ::core::default::Default::default() }),
     }
+}
+
+/// 量纲类型名 → (工厂函数, CSS 后缀)。
+///
+/// 与 `silex_css::types::units` 里 `define_dimension!` 的清单对应。
+fn unit_table(ty: &str) -> Option<(&'static str, &'static str)> {
+    Some(match ty {
+        "Px" => ("px", "px"),
+        "Rem" => ("rem", "rem"),
+        "Em" => ("em_unit", "em"),
+        "Ch" => ("ch", "ch"),
+        "Ex" => ("ex", "ex"),
+        "Vw" => ("vw", "vw"),
+        "Vh" => ("vh", "vh"),
+        "Vmin" => ("vmin", "vmin"),
+        "Vmax" => ("vmax", "vmax"),
+        "Dvw" => ("dvw", "dvw"),
+        "Dvh" => ("dvh", "dvh"),
+        "Svw" => ("svw", "svw"),
+        "Svh" => ("svh", "svh"),
+        "Lvw" => ("lvw", "lvw"),
+        "Lvh" => ("lvh", "lvh"),
+        "Pt" => ("pt", "pt"),
+        "Pc" => ("pc", "pc"),
+        "Cm" => ("cm", "cm"),
+        "Mm" => ("mm", "mm"),
+        "In" => ("inch", "in"),
+        "Qmm" => ("qmm", "Q"),
+        "Percent" => ("pct", "%"),
+        "Fr" => ("fr", "fr"),
+        "Deg" => ("deg", "deg"),
+        "Rad" => ("rad", "rad"),
+        "Turn" => ("turn", "turn"),
+        "Sec" => ("sec", "s"),
+        "Ms" => ("ms", "ms"),
+        _ => return None,
+    })
+}
+
+fn unit_ctor(ty: &str) -> Option<&'static str> {
+    unit_table(ty).map(|(ctor, _)| ctor)
+}
+
+fn unit_suffix(ty: &str) -> Option<&'static str> {
+    unit_table(ty).map(|(_, suffix)| suffix)
+}
+
+/// 从 `"8px"` 里取出 `8.0`。后缀可以省略（`"8"` 也接受），但不能写错：
+/// `"8rem"` 配 `Px` 会返回 `None`，进而变成一条编译错误，而不是静默取 `8px`。
+fn parse_unit_value(raw: &str, ty: &str) -> Option<f64> {
+    let suffix = unit_suffix(ty)?;
+    let raw = raw.trim();
+    let num = match raw.strip_suffix(suffix) {
+        Some(n) => n,
+        // 没有后缀时只接受纯数值
+        None if raw
+            .chars()
+            .all(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | '+')) =>
+        {
+            raw
+        }
+        None => return None,
+    };
+    let v: f64 = num.trim().parse().ok()?;
+    v.is_finite().then_some(v)
 }
 
 pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
@@ -400,6 +484,26 @@ mod tests {
             !out.contains("brand_primary : :: std :: string :: String"),
             "{out}"
         );
+    }
+
+    /// `[theme.field_types]` 指定量纲类型时，配置里的取值必须真的落进初值。
+    /// 走 `Default::default()` 的话 `radius = "8px"` 会变成 `0px`——配置被
+    /// 静默丢掉。
+    #[test]
+    fn a_dimension_field_keeps_the_configured_value() {
+        assert_eq!(parse_unit_value("8px", "Px"), Some(8.0));
+        assert_eq!(parse_unit_value(" 1.5rem ", "Rem"), Some(1.5));
+        assert_eq!(parse_unit_value("50%", "Percent"), Some(50.0));
+        assert_eq!(parse_unit_value("300ms", "Ms"), Some(300.0));
+        assert_eq!(parse_unit_value("8", "Px"), Some(8.0), "后缀可以省略");
+    }
+
+    /// 后缀写错了不能当没看见——`"8rem"` 配 `Px` 静默取 8px 是最坏的结果
+    #[test]
+    fn a_mismatched_unit_suffix_is_rejected() {
+        assert_eq!(parse_unit_value("8rem", "Px"), None);
+        assert_eq!(parse_unit_value("#fff", "Px"), None);
+        assert_eq!(parse_unit_value("8px 16px", "Px"), None);
     }
 
     /// 补出了字段却拿不到配好的颜色，等于 `silex.toml` 里那张配色表白写

@@ -168,7 +168,7 @@ pub fn NavBar() -> impl View {
                 .cursor(CursorKeyword::Pointer)
                 .background(AppTheme::BORDER)
                 .border(NONE)
-                .padding(padding::x_y(px(8), px(12)))
+                .padding(padding::block_inline(px(8), px(12)))
                 .border_radius(pct(50))
                 .font_size(em_unit(1.2))
                 .transition("all 0.3s")

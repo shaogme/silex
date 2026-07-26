@@ -1,0 +1,29 @@
+error[E0277]: the trait bound `&str: CssAngle` is not satisfied
+ --> tests/ui/fail_untyped_transform_argument.rs:7:32
+  |
+7 |     let _ = transform().rotate("banana");
+  |                         ------ ^^^^^^^^ the trait `CssAngle` is not implemented for `&str`
+  |                         |
+  |                         required by a bound introduced by this call
+  |
+help: the following other types implement trait `CssAngle`
+ --> src/types.rs
+  |
+  |         $( impl $first for $t {} )*
+  |            ^^^^^^^^^^^^^^^^^^
+  |            |
+  |            `CalcValue<AngleMark>`
+  |            `Deg`
+  |            `Rad`
+  |            `Turn`
+...
+  | for_all_angle_units!(impl_angle_family);
+  | --------------------------------------- in this macro invocation
+  | impl_angle_family!(CalcValue<AngleMark>);
+  | ---------------------------------------- in this macro invocation
+note: required by a bound in `TransformBuilder::rotate`
+ --> src/types/complex.rs
+  |
+  |     pub fn rotate<A: CssAngle>(self, angle: A) -> Self {
+  |                      ^^^^^^^^ required by this bound in `TransformBuilder::rotate`
+  = note: this error originates in the macro `impl_dimension_family` which comes from the expansion of the macro `for_all_angle_units` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -168,7 +168,7 @@ styled! {
         background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
         color: $(color);
         border: $(border_style);
-        margin: $(margin::x_y(px(8), px(0)));
+        margin: $(margin::block_inline(px(8), px(0)));
         padding: $(padding_val);
         border-radius: 10px;
         font-weight: 600;
@@ -285,7 +285,7 @@ pub fn StylingBasics() -> impl View {
         BorderStyleKeyword::Solid,
         ColorKeyword::Transparent,
     ));
-    let (padding_state, set_padding_state) = Signal::pair(padding::x_y(px(12), px(24)));
+    let (padding_state, set_padding_state) = Signal::pair(padding::block_inline(px(12), px(24)));
 
     div![
         div![
@@ -344,7 +344,7 @@ pub fn StylingBasics() -> impl View {
                         *b = border(px(2), BorderStyleKeyword::Dashed, hex("#f472b6"));
                     });
                     set_padding_state.update(|p| {
-                        *p = padding::x_y(px(16), px(32));
+                        *p = padding::block_inline(px(16), px(32));
                     });
                     set_hover_color.update(|c| {
                         *c = if c.0 == "var(--slx-theme-primary)" { hex("#ec4899").into() } else { AppTheme::PRIMARY };
@@ -392,7 +392,7 @@ pub fn StylingBasics() -> impl View {
                 span("Hover to Reveal Effects").style(
                     sty()
                         .display(DisplayKeyword::InlineBlock)
-                        .padding(padding::x_y(px(24), px(40)))
+                        .padding(padding::block_inline(px(24), px(40)))
                         .background_color(AppTheme::SURFACE)
                         .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
                         .border_radius(AppTheme::RADIUS)
@@ -482,11 +482,11 @@ pub fn Theming() -> impl View {
                 .on(event::click, move |_| global_settings.theme.set("Light".to_string()))
                 .style(
                     sty()
-                        .padding(padding::x_y(px(8), px(16)))
+                        .padding(padding::block_inline(px(8), px(16)))
                         .border_radius(px(6))
                         .cursor(CursorKeyword::Pointer)
                         .transition("all 0.2s")
-                        .margin(margin::right(px(12)))
+                        .margin_right(px(12))
                         .background_color(rx!(if !is_dark.get() { AppTheme::PRIMARY } else { hex("#f3f4f6").into() }))
                         .color(rx!(if !is_dark.get() { hex("#ffffff") } else { hex("#374151") }))
                         .border(rx!(if !is_dark.get() { border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) }))
@@ -495,7 +495,7 @@ pub fn Theming() -> impl View {
                 .on(event::click, move |_| global_settings.theme.set("Dark".to_string()))
                 .style(
                     sty()
-                        .padding(padding::x_y(px(8), px(16)))
+                        .padding(padding::block_inline(px(8), px(16)))
                         .border_radius(px(6))
                         .cursor(CursorKeyword::Pointer)
                         .transition("all 0.2s")
@@ -577,7 +577,7 @@ pub fn AdvancedStyling() -> impl View {
                             .border_radius(px(8))
                             .display(DisplayKeyword::Flex)
                             .align_items(AlignItemsKeyword::Center)
-                            .padding(padding::left(px(12)))
+                            .padding_left(px(12))
                     ),
                     div("Clamp (15% | 50% | 85%)").style(
                         sty()
@@ -587,7 +587,7 @@ pub fn AdvancedStyling() -> impl View {
                             .border_radius(px(8))
                             .display(DisplayKeyword::Flex)
                             .align_items(AlignItemsKeyword::Center)
-                            .padding(padding::left(px(12)))
+                            .padding_left(px(12))
                     ),
                 )).gap(12)
             )),
@@ -597,19 +597,19 @@ pub fn AdvancedStyling() -> impl View {
                 Grid(view_chain!(
                     div![
                         p("Linear").style("margin-bottom: 8px; font-size: 0.8em;"),
-                        div(()).style(sty().height(px(100)).border_radius(px(12)).background_image(linear_gradient().to(Direction::ToRight).stop(hex("#6366f1"), pct(0)).stop(hex("#a855f7"), pct(100)).build()))
+                        div(()).style(sty().height(px(100)).border_radius(px(12)).background_image(linear_gradient().to(Direction::ToRight).stop_at(hex("#6366f1"), pct(0)).stop_at(hex("#a855f7"), pct(100)).build()))
                     ],
                     div![
                         p("Radial").style("margin-bottom: 8px; font-size: 0.8em;"),
-                        div(()).style(sty().height(px(100)).border_radius(px(12)).background_image(radial_gradient().circle().at(ObjectPositionKeyword::Center).stop(hex("#818cf8"), pct(0)).stop(hex("#1e1e24"), pct(100)).build()))
+                        div(()).style(sty().height(px(100)).border_radius(px(12)).background_image(radial_gradient().circle().at(ObjectPositionKeyword::Center).stop_at(hex("#818cf8"), pct(0)).stop_at(hex("#1e1e24"), pct(100)).build()))
                     ],
                     div![
                         p("Angled (45deg)").style("margin-bottom: 8px; font-size: 0.8em;"),
-                        div(()).style(sty().height(px(100)).border_radius(px(12)).background_image(linear_gradient().to(deg(45).into()).stop(hex("#f43f5e"), pct(0)).stop(hex("#fb923c"), pct(100)).build()))
+                        div(()).style(sty().height(px(100)).border_radius(px(12)).background_image(linear_gradient().to(deg(45).into()).stop_at(hex("#f43f5e"), pct(0)).stop_at(hex("#fb923c"), pct(100)).build()))
                     ],
                     div![
                         p("Repeating").style("margin-bottom: 8px; font-size: 0.8em;"),
-                        div(()).style(sty().height(px(100)).border_radius(px(12)).background_image(linear_gradient().repeating().to(Direction::ToBottomRight).stop(hex("#1e1e24"), pct(0)).stop(hex("#1e1e24"), px(10)).stop(hex("#312e81"), px(10)).stop(hex("#312e81"), px(20)).build()))
+                        div(()).style(sty().height(px(100)).border_radius(px(12)).background_image(linear_gradient().repeating().to(Direction::ToBottomRight).stop_at(hex("#1e1e24"), pct(0)).stop_at(hex("#1e1e24"), px(10)).stop_at(hex("#312e81"), px(10)).stop_at(hex("#312e81"), px(20)).build()))
                     ],
                 )).columns(2).gap(16)
             )),
@@ -631,7 +631,7 @@ pub fn AdvancedStyling() -> impl View {
                             .border_radius(px(16))
                             .transition("all 0.3s")
                             .nest("& > .child-box", |s| s
-                                .padding(padding::x_y(px(12), px(20)))
+                                .padding(padding::block_inline(px(12), px(20)))
                                 .background(AppTheme::PRIMARY)
                                 .border_radius(px(8))
                                 .transition("all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55)")

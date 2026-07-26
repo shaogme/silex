@@ -76,13 +76,13 @@ pub fn HttpClientDemo() -> impl View {
                         set_post_id.set(id);
                     }
                 })
-                .style(sty().margin_right(px(10)).padding(padding::x_y(px(4), px(8))).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).background(AppTheme::SURFACE).color(AppTheme::TEXT)),
+                .style(sty().margin_right(px(10)).padding(padding::block_inline(px(4), px(8))).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).background(AppTheme::SURFACE).color(AppTheme::TEXT)),
 
             span("Optional Filter Query: ").style("margin-left: 10px;"),
             input()
                 .placeholder("Type query...")
                 .bind_value(search_query)
-                .style(sty().margin_right(px(10)).padding(padding::x_y(px(4), px(8))).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).background(AppTheme::SURFACE).color(AppTheme::TEXT)),
+                .style(sty().margin_right(px(10)).padding(padding::block_inline(px(4), px(8))).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).background(AppTheme::SURFACE).color(AppTheme::TEXT)),
 
             button("Refresh").on(event::click, move |_| post_resource.refetch()),
         ].style("margin-bottom: 20px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px;"),
@@ -112,18 +112,18 @@ pub fn HttpClientDemo() -> impl View {
                 input()
                     .placeholder("Post Title")
                     .bind_value(new_title)
-                    .style(sty().margin_right(px(10)).padding(padding::x_y(px(6), px(10))).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).background(AppTheme::SURFACE).color(AppTheme::TEXT).width(px(200))),
+                    .style(sty().margin_right(px(10)).padding(padding::block_inline(px(6), px(10))).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).background(AppTheme::SURFACE).color(AppTheme::TEXT).width(px(200))),
                 input()
                     .placeholder("Post Body")
                     .bind_value(new_body)
-                    .style(sty().margin_right(px(10)).padding(padding::x_y(px(6), px(10))).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).background(AppTheme::SURFACE).color(AppTheme::TEXT).width(px(300))),
+                    .style(sty().margin_right(px(10)).padding(padding::block_inline(px(6), px(10))).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).background(AppTheme::SURFACE).color(AppTheme::TEXT).width(px(300))),
                 button("Submit Custom Post")
                     .on(event::click, move |_| create_post_mutation.mutate(CreatePostInput {
                         title: new_title.get(),
                         body: new_body.get(),
                     }))
                     .attr("disabled", create_post_mutation.loading())
-                    .style(sty().padding(padding::x_y(px(10), px(20))).background(AppTheme::PRIMARY).color(hex("white")).border(NONE).border_radius(px(6)).cursor(CursorKeyword::Pointer)),
+                    .style(sty().padding(padding::block_inline(px(10), px(20))).background(AppTheme::PRIMARY).color(hex("white")).border(NONE).border_radius(px(6)).cursor(CursorKeyword::Pointer)),
             ].style("display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px;"),
 
             move || if create_post_mutation.loading() {

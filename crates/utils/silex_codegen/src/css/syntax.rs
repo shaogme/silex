@@ -407,6 +407,8 @@ pub enum Kind {
     Color,
     Angle,
     Time,
+    /// `<flex>`：网格轨道的 `fr`
+    Flex,
     Url,
     /// `<string>` / `<custom-ident>` / `<*-name>`：只能用裸字符串表达
     Textual,
@@ -460,6 +462,9 @@ fn primitive_kinds(name: &str) -> Option<&'static [Kind]> {
         "angle-percentage" => &[Kind::Angle, Kind::Percentage],
         "time" => &[Kind::Time],
         "time-percentage" => &[Kind::Time, Kind::Percentage],
+        // `<flex>` 在 MDN 的 syntaxes.json 里没有定义，不特判就会落到
+        // `Opaque` → 只能写裸字符串，`fr` 单位便无处可用
+        "flex" => &[Kind::Flex],
         "color"
         | "color-base"
         | "absolute-color-base"

@@ -1,0 +1,23 @@
+error[E0277]: the trait bound `Percent: CssLength` is not satisfied
+ --> tests/ui/fail_percentage_to_translate_z.rs:6:37
+  |
+6 |     let _ = transform().translate_z(pct(50));
+  |                         ----------- ^^^^^^^ the trait `CssLength` is not implemented for `Percent`
+  |                         |
+  |                         required by a bound introduced by this call
+  |
+  = help: the following other types implement trait `CssLength`:
+            Ch
+            Cm
+            Dvh
+            Dvw
+            Em
+            In
+            Lvh
+            Lvw
+          and $N others
+note: required by a bound in `TransformBuilder::translate_z`
+ --> src/types/complex.rs
+  |
+  |     pub fn translate_z<V: CssLength>(self, v: V) -> Self {
+  |                           ^^^^^^^^^ required by this bound in `TransformBuilder::translate_z`

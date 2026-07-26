@@ -16,6 +16,8 @@ mod gradients;
 mod shorthands;
 mod units;
 
+use units::{for_all_angle_units, for_all_length_units, for_all_time_units};
+
 pub use calc::*;
 pub use complex::*;
 pub use gradients::*;
@@ -252,34 +254,50 @@ macro_rules! impl_css_ops {
     };
 }
 
-impl CssLength for Px {}
-impl CssLength for Percent {}
-impl CssLength for Rem {}
-impl CssLength for Em {}
-impl CssLength for Vw {}
-impl CssLength for Vh {}
+/// 一个量纲家族：所有成员都实现列出的标记 trait，并获得四则运算符。
+///
+/// 运算符的右操作数被约束为该量纲的**操作数 trait**，所以 `px(1) + deg(1)`
+/// 不成立——量纲标记要挡住的就是这个。长度这一族的操作数 trait 是
+/// `CssLengthPercentage` 而不是 `CssLength`，因为 `calc(100% - 10px)` 合法。
+macro_rules! impl_dimension_family {
+    // 标记 trait 逐个消耗——`$trait` 与 `$t` 都是深度 1 的重复，嵌套写不出来
+    ([], $operand:ident, $mark:ident: $($t:ty),* $(,)?) => {
+        $( impl_css_ops!($t, $operand, $mark); )*
+    };
+    ([$first:ident $(, $rest:ident)* $(,)?], $operand:ident, $mark:ident: $($t:ty),* $(,)?) => {
+        $( impl $first for $t {} )*
+        impl_dimension_family!([$($rest),*], $operand, $mark: $($t),*);
+    };
+}
+macro_rules! impl_length_family {
+    ($($t:ty),* $(,)?) => {
+        impl_dimension_family!(
+            [CssLength, CssLengthPercentage], CssLengthPercentage, LengthMark: $($t),*
+        );
+    };
+}
+macro_rules! impl_angle_family {
+    ($($t:ty),* $(,)?) => { impl_dimension_family!([CssAngle], CssAngle, AngleMark: $($t),*); };
+}
+macro_rules! impl_time_family {
+    ($($t:ty),* $(,)?) => { impl_dimension_family!([CssTime], CssTime, TimeMark: $($t),*); };
+}
 
-impl CssAngle for Deg {}
-impl CssAngle for Rad {}
-impl CssAngle for Turn {}
+for_all_length_units!(impl_length_family);
+// 百分比与长度算式属于 `<length-percentage>` 而**不属于** `<length>`
+impl_dimension_family!(
+    [CssLengthPercentage], CssLengthPercentage, LengthMark: Percent, CalcValue<LengthMark>
+);
+for_all_angle_units!(impl_angle_family);
+impl_angle_family!(CalcValue<AngleMark>);
+for_all_time_units!(impl_time_family);
+impl_time_family!(CalcValue<TimeMark>);
 
 impl CssColor for Rgba {}
 impl CssColor for Hex {}
 impl CssColor for Hsl {}
+impl CssColor for ColorFn {}
 impl CssColor for ColorKeyword {}
-
-impl_css_ops!(Px, CssLength, LengthMark);
-impl_css_ops!(Percent, CssLength, LengthMark);
-impl_css_ops!(Rem, CssLength, LengthMark);
-impl_css_ops!(Em, CssLength, LengthMark);
-impl_css_ops!(Vw, CssLength, LengthMark);
-impl_css_ops!(Vh, CssLength, LengthMark);
-impl_css_ops!(CalcValue<LengthMark>, CssLength, LengthMark);
-
-impl_css_ops!(Deg, CssAngle, AngleMark);
-impl_css_ops!(Rad, CssAngle, AngleMark);
-impl_css_ops!(Turn, CssAngle, AngleMark);
-impl_css_ops!(CalcValue<AngleMark>, CssAngle, AngleMark);
 
 pub trait CssProperty {
     type Value;
@@ -325,60 +343,69 @@ macro_rules! define_props {
             $( define_props!(@cap $pascal, $cap); )*
         )*
     };
-    // `<length>`
+    // `<length>`：单位清单由 `units::for_all_length_units!` 展开，
+    // 与 `CssLength` / 算术运算符 / `calc()` 操作数共用同一份事实
     (@cap $pascal:ident, Length) => {
-        impl ValidFor<props::$pascal> for Px {}
-        impl ValidFor<props::$pascal> for Rem {}
-        impl ValidFor<props::$pascal> for Em {}
-        impl ValidFor<props::$pascal> for Vw {}
-        impl ValidFor<props::$pascal> for Vh {}
+        for_all_length_units!(define_props, @valid, $pascal);
+    };
+    // 所有具体值类型的 `ValidFor` 都从这里出去。
+    //
+    // `#[diagnostic::do_not_recommend]` 是为了错误信息：不加它，一条
+    // `align_items(hex(…))` 会让 rustc 附上一张「`Hex` 还实现了
+    // ValidFor<BackgroundColor> / ValidFor<Border> / …」的清单——40 多行，
+    // 讲的全是**别的**属性，而用户的问题是「AlignItems 能收什么」。
+    // trybuild 快照曾因此长到 455 行、其中 433 行是这张清单，人工无法审阅 diff。
+    // `on_unimplemented` 里的定制说明已经把该说的说清楚了。
+    (@valid, $pascal:ident, $($t:ty),* $(,)?) => {
+        $(
+            #[diagnostic::do_not_recommend]
+            impl ValidFor<props::$pascal> for $t {}
+        )*
     };
     // `<percentage>`
     (@cap $pascal:ident, Percent) => {
-        impl ValidFor<props::$pascal> for Percent {}
+        define_props!(@valid, $pascal, Percent);
     };
     // 只要接受长度或百分比，就接受长度算式
     (@cap $pascal:ident, LenCalc) => {
-        impl ValidFor<props::$pascal> for CalcValue<LengthMark> {}
+        define_props!(@valid, $pascal, CalcValue<LengthMark>);
+    };
+    // `<time>`：此前 `<time>` 只被算作「需要裸字符串」，于是
+    // `transition-duration` / `animation-delay` 只能写 `"0.3s"`
+    (@cap $pascal:ident, Time) => {
+        for_all_time_units!(define_props, @valid, $pascal);
+        define_props!(@valid, $pascal, CalcValue<TimeMark>);
+    };
+    // `<flex>`：网格轨道的 `fr`，不与长度互通
+    (@cap $pascal:ident, Flex) => {
+        define_props!(@valid, $pascal, Fr);
     };
     // `<number>`：同时覆盖整数字面量
     (@cap $pascal:ident, Num) => {
-        impl ValidFor<props::$pascal> for f64 {}
-        impl ValidFor<props::$pascal> for f32 {}
+        define_props!(@valid, $pascal, f64, f32);
         define_props!(@cap $pascal, Int);
     };
     // `<integer>`
     (@cap $pascal:ident, Int) => {
-        impl ValidFor<props::$pascal> for i32 {}
-        impl ValidFor<props::$pascal> for u32 {}
-        impl ValidFor<props::$pascal> for i64 {}
-        impl ValidFor<props::$pascal> for u64 {}
-        impl ValidFor<props::$pascal> for isize {}
-        impl ValidFor<props::$pascal> for usize {}
+        define_props!(@valid, $pascal, i32, u32, i64, u64, isize, usize);
     };
     // `<angle>`
     (@cap $pascal:ident, Angle) => {
-        impl ValidFor<props::$pascal> for Deg {}
-        impl ValidFor<props::$pascal> for Rad {}
-        impl ValidFor<props::$pascal> for Turn {}
-        impl ValidFor<props::$pascal> for CalcValue<AngleMark> {}
+        for_all_angle_units!(define_props, @valid, $pascal);
+        define_props!(@valid, $pascal, CalcValue<AngleMark>);
     };
     // `<color>`
     (@cap $pascal:ident, Color) => {
-        impl ValidFor<props::$pascal> for Rgba {}
-        impl ValidFor<props::$pascal> for Hex {}
-        impl ValidFor<props::$pascal> for Hsl {}
-        impl ValidFor<props::$pascal> for ColorKeyword {}
+        define_props!(@valid, $pascal, Rgba, Hex, Hsl, ColorFn, ColorKeyword);
     };
     // `<url>` / `<image>`
     (@cap $pascal:ident, Url) => {
-        impl ValidFor<props::$pascal> for Url {}
+        define_props!(@valid, $pascal, Url);
     };
     // 取值可能由多个分量拼成，或者含有 Rust 侧没有对应类型的东西
-    // （`<custom-ident>`、`<time>`、解析不出来的引用）——只能写裸字符串
+    // （`<custom-ident>`、解析不出来的引用）——只能写裸字符串
     (@cap $pascal:ident, Str) => {
-        impl ValidFor<props::$pascal> for String {}
-        impl ValidFor<props::$pascal> for &'static str {}
+        define_props!(@valid, $pascal, String, &'static str);
     };
 }
 
@@ -386,8 +413,13 @@ macro_rules! define_props {
 for_all_properties!(define_props);
 
 // --- 手动补充跨组约束 ---
+//
+// `border()` 产出的是 `<width> <style> <color>` 三段式，所以它只对**简写**属性
+// 合法。这里曾经还有一条 `impl ValidFor<props::BorderColor> for BorderValue`
+// ——`border_color(border(px(1), Solid, red))` 会产出
+// `border-color: 1px solid red;`，浏览器整条丢弃。与 P3-2 的 `margin::top`
+// 是同一类问题：名字对得上，语义对不上。
 impl ValidFor<props::Border> for BorderValue {}
-impl ValidFor<props::BorderColor> for BorderValue {}
 impl ValidFor<props::BorderTop> for BorderValue {}
 impl ValidFor<props::BorderRight> for BorderValue {}
 impl ValidFor<props::BorderBottom> for BorderValue {}
@@ -465,17 +497,18 @@ impl<T: Display + Clone + 'static> IntoSignal for CssOption<T> {
     }
 }
 
+for_all_length_units!(impl_into_rx_for_css);
+for_all_angle_units!(impl_into_rx_for_css);
+for_all_time_units!(impl_into_rx_for_css);
+
 impl_into_rx_for_css!(
-    Px,
     Percent,
+    Fr,
     Rgba,
     Auto,
-    Rem,
-    Em,
-    Vw,
-    Vh,
     Hex,
     Hsl,
+    ColorFn,
     NoneValue,
     CssWide,
     Url,
@@ -492,9 +525,7 @@ impl_into_rx_for_css!(
     FontVariationSettingsValue,
     CalcValue<LengthMark>,
     CalcValue<AngleMark>,
-    Deg,
-    Rad,
-    Turn,
+    CalcValue<TimeMark>,
     GradientValue
 );
 
@@ -574,5 +605,77 @@ mod tests {
             // 真正的复合属性仍然收裸字符串
             .transition("all 0.3s")
             .margin("0 auto");
+    }
+
+    /// 报告 P3-8：没有时间单位，`transition_duration` / `animation_delay`
+    /// 只能吃字符串
+    #[test]
+    fn time_units_land_on_time_properties() {
+        let css = Style::new()
+            .transition_duration(sec(0.3))
+            .animation_delay(ms(150))
+            .render()
+            .css;
+        assert!(css.contains("transition-duration: 0.3s;"), "{css}");
+        assert!(css.contains("animation-delay: 150ms;"), "{css}");
+    }
+
+    /// `fr` 只在网格轨道尺寸里合法
+    #[test]
+    fn fr_lands_on_grid_track_properties() {
+        let css = Style::new().grid_auto_columns(fr(1)).render().css;
+        assert!(css.contains("grid-auto-columns: 1fr;"), "{css}");
+    }
+
+    /// 现代颜色语法能用在任何接受 `<color>` 的属性上
+    #[test]
+    fn modern_color_functions_land_on_color_properties() {
+        let css = Style::new()
+            .color(oklch(0.7, 0.15, 250))
+            .background_color(color_mix(ColorSpace::Oklch, hex("#fff"), hex("#000")))
+            .render()
+            .css;
+        assert!(css.contains("color: oklch(0.7 0.15 250);"), "{css}");
+        assert!(css.contains("color-mix(in oklch, #fff, #000)"), "{css}");
+    }
+
+    /// `for_all_length_units!` 是长度量纲的唯一事实来源：这条测试同时钉住
+    /// `ValidFor<接受 <length> 的属性>`（`width`）与 `CssLengthPercentage`
+    /// （算术运算符）两份展开——任何一份漏掉某个单位都会在这里编译失败
+    #[test]
+    fn every_length_unit_reaches_both_the_property_table_and_the_operators() {
+        macro_rules! check {
+            ($($t:ident),* $(,)?) => {$(
+                let v = $t::from(1);
+                let _ = Style::new().width(v);
+                let _ = v + px(1);
+                let _ = px(1) + v;
+            )*};
+        }
+        for_all_length_units!(check);
+        let _ = Style::new().width(pct(50));
+        let _ = pct(50) + px(1);
+    }
+
+    /// 角度与时间同理
+    #[test]
+    fn every_angle_and_time_unit_reaches_its_properties() {
+        macro_rules! check_angle {
+            ($($t:ident),* $(,)?) => {$(
+                let v = $t::from(1);
+                let _ = Style::new().rotate(v);
+                let _ = v + deg(1);
+            )*};
+        }
+        for_all_angle_units!(check_angle);
+
+        macro_rules! check_time {
+            ($($t:ident),* $(,)?) => {$(
+                let v = $t::from(1);
+                let _ = Style::new().transition_duration(v);
+                let _ = v + sec(1);
+            )*};
+        }
+        for_all_time_units!(check_time);
     }
 }

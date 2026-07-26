@@ -1394,16 +1394,41 @@ fn classify_static_value(value: &str) -> Option<&'static str> {
     if num.is_empty() || num.parse::<f64>().is_err() {
         return None;
     }
+    // 与 `silex_css::types::units` 里的单位一一对应。少一个不会出错，只是
+    // 那种写法退回「不定型、不校验」——所以加新单位时记得同步这里。
     match unit {
+        // 长度
         "px" => Some("Px"),
         "rem" => Some("Rem"),
         "em" => Some("Em"),
+        "ch" => Some("Ch"),
+        "ex" => Some("Ex"),
         "vw" => Some("Vw"),
         "vh" => Some("Vh"),
+        "vmin" => Some("Vmin"),
+        "vmax" => Some("Vmax"),
+        "dvw" => Some("Dvw"),
+        "dvh" => Some("Dvh"),
+        "svw" => Some("Svw"),
+        "svh" => Some("Svh"),
+        "lvw" => Some("Lvw"),
+        "lvh" => Some("Lvh"),
+        "pt" => Some("Pt"),
+        "pc" => Some("Pc"),
+        "cm" => Some("Cm"),
+        "mm" => Some("Mm"),
+        "in" => Some("In"),
+        "Q" => Some("Qmm"),
         "%" => Some("Percent"),
+        // 网格轨道
+        "fr" => Some("Fr"),
+        // 角度
         "deg" => Some("Deg"),
         "rad" => Some("Rad"),
         "turn" => Some("Turn"),
+        // 时间
+        "s" => Some("Sec"),
+        "ms" => Some("Ms"),
         _ => None,
     }
 }
@@ -1471,8 +1496,9 @@ fn parse_browsers(
     names.sort();
     for name in names {
         let raw = &table[name];
-        let version = parse_version(raw)
-            .ok_or_else(|| format!("`{name} = \"{raw}\"` 不是合法的版本号（形如 `16` 或 `16.4`）"))?;
+        let version = parse_version(raw).ok_or_else(|| {
+            format!("`{name} = \"{raw}\"` 不是合法的版本号（形如 `16` 或 `16.4`）")
+        })?;
         set_browser(&mut browsers, name, version)?;
     }
     Ok(browsers)
@@ -1552,9 +1578,12 @@ mod tests {
 
     #[test]
     fn styled_lands_in_the_components_layer() {
-        let res =
-            CssCompiler::compile_with_source_and_prefix("color: red;", "slx-st-", Span::call_site())
-                .unwrap();
+        let res = CssCompiler::compile_with_source_and_prefix(
+            "color: red;",
+            "slx-st-",
+            Span::call_site(),
+        )
+        .unwrap();
         assert!(res.component_css.contains("@layer components{"), "{res:?}");
     }
 
@@ -1572,9 +1601,12 @@ mod tests {
 
     #[test]
     fn global_lands_in_the_base_layer() {
-        let res =
-            CssCompiler::compile_global_with_source("body { color: red; }", Span::call_site(), false)
-                .unwrap();
+        let res = CssCompiler::compile_global_with_source(
+            "body { color: red; }",
+            Span::call_site(),
+            false,
+        )
+        .unwrap();
         assert!(res.component_css.contains("@layer base{"), "{res:?}");
         assert!(res.component_css.contains("body"), "{res:?}");
     }
