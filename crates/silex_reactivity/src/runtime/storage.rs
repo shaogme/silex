@@ -98,6 +98,13 @@ impl GraphStorage for Storage {
             .is_some_and(|n| n.effect.is_some() && n.signal.is_none())
     }
 
+    fn is_running(&self, id: NodeId) -> bool {
+        self.reactive
+            .get(id)
+            .and_then(|n| n.effect.as_ref())
+            .is_some_and(|eff| eff.running)
+    }
+
     fn check_dependencies_changed(&self, id: NodeId) -> bool {
         if let Some(n) = self.reactive.get(id)
             && let Some(eff) = &n.effect
@@ -210,12 +217,22 @@ pub(crate) struct SignalData {
     pub(crate) subscribers: NodeList,
     pub(crate) last_tracked_by: Option<(NodeId, u32)>,
     pub(crate) version: u32,
+    /// 值当前是否被借出给某个 update 闭包（此时 `value` 是占位值）。
+    /// 见 [`crate::runtime::guard::SignalValueGuard`]。
+    pub(crate) updating: bool,
 }
 
 pub(crate) struct EffectData {
     pub(crate) computation: Option<ThunkValue>,
     pub(crate) dependencies: DependencyList,
     pub(crate) effect_version: u32,
+    /// 该节点的计算是否正在执行中。
+    ///
+    /// 重入守卫：正在运行的节点绝不能被重复执行 —— 否则会第二次执行破坏性的
+    /// 前置阶段（清空依赖列表、提前跑 cleanup、把自己从所有依赖的订阅者表里摘除），
+    /// 而重建订阅的那一步却因为 `computation` 已被借出而被跳过，
+    /// 结果是该节点永久丢失全部订阅（AUDIT P1）。
+    pub(crate) running: bool,
 }
 
 pub(crate) struct CallbackData {

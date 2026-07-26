@@ -1,5 +1,5 @@
 use crate::core::FuncPtr;
-use silex_vtable::{AnyBox, OnceBox, SOO_CAPACITY, ThunkBox, ThunkBoxVTable};
+use silex_vtable::{AnyBox, InlineStorage, OnceBox, SOO_CAPACITY, ThunkBox, ThunkBoxVTable};
 use std::{any::TypeId, marker::PhantomData, mem, ptr, slice::from_raw_parts};
 
 /// A type-erased value with Small Object Optimization (SOO).
@@ -24,6 +24,14 @@ impl AnyValue {
         AnyValue {
             inner: AnyBox::new(value, &InlineVTable::<T>::VTABLE, &BoxedVTable::<T>::VTABLE),
         }
+    }
+
+    /// 一个零大小、无析构、不可克隆也不可比较的占位值。
+    ///
+    /// 用于“把值移出节点 → 交给用户闭包 → 放回”期间临时填充节点，
+    /// 使运行时不必在用户代码执行期间持有指向节点的 `&mut`（AUDIT P5）。
+    pub(crate) fn placeholder() -> Self {
+        Self::new(())
     }
 
     /// 创建一个支持响应式操作（克隆、比较）的类型擦除值。
@@ -96,9 +104,17 @@ impl Drop for AnyValue {
 
 unsafe fn shared_drop_noop(_: *mut u8) {}
 
+/// 按位克隆。
+///
+/// # Safety
+///
+/// 只能用于满足以下条件的 `T`：无析构、无填充字节、且内联存储
+/// （见 [`is_bitwise_equatable`]）。它按完整的 `SOO_CAPACITY` 长度复制字节，
+/// 依赖 [`silex_vtable::InlineStorage`] “构造时整体零初始化”的不变量，
+/// 否则会读到未初始化内存（AUDIT P19.1）。
 unsafe fn shared_clone_bitwise(ptr: *const u8, vtable: &'static AnyValueVTable) -> AnyValue {
     let mut inner = AnyBox {
-        data: [0usize; 3],
+        data: InlineStorage::zeroed(),
         vtable,
     };
     unsafe {
@@ -107,6 +123,7 @@ unsafe fn shared_clone_bitwise(ptr: *const u8, vtable: &'static AnyValueVTable) 
     AnyValue { inner }
 }
 
+/// 按位比较。安全性契约同 [`shared_clone_bitwise`]。
 unsafe fn shared_eq_bitwise(p1: *const u8, p2: *const u8) -> bool {
     let (s1, s2) = unsafe {
         (
@@ -233,8 +250,13 @@ impl ThunkValue {
         Self(ThunkBox::new(move |_| f()))
     }
 
-    pub(crate) fn new_raw(data: [usize; 3], vtable: &'static ThunkVTable) -> Self {
-        Self(ThunkBox::from_raw(data, vtable))
+    /// 从手工填好的内联缓冲区构造。
+    ///
+    /// # Safety
+    ///
+    /// `data` 的布局必须与 `vtable` 约定一致，其所有权由返回的 `ThunkValue` 接管。
+    pub(crate) unsafe fn new_raw(data: InlineStorage, vtable: &'static ThunkVTable) -> Self {
+        Self(unsafe { ThunkBox::from_raw(data, vtable) })
     }
 
     pub(crate) unsafe fn call(&self, rt: *const ()) {

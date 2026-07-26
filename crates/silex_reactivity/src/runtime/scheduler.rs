@@ -13,6 +13,12 @@ pub(crate) struct Scheduler {
     pub(crate) queued_observers: SparseSecondaryMap<()>,
     pub(crate) running_queue: Cell<bool>,
     pub(crate) batch_depth: Cell<usize>,
+    /// 正在进行的 `evaluate`（求值 DFS）嵌套深度。
+    ///
+    /// DFS 期间禁止 flush effect 队列：memo 重算会 `commit_update` → `notify_update`，
+    /// 如果就地把整个队列跑完，effect 可能销毁节点，而 `evaluate` 的栈里还留着
+    /// 这些 id（AUDIT P15）。改为等 DFS 结束后再统一 flush。
+    pub(crate) evaluating: Cell<usize>,
 }
 
 impl Scheduler {
@@ -23,6 +29,7 @@ impl Scheduler {
             queued_observers: SparseSecondaryMap::new(),
             running_queue: Cell::new(false),
             batch_depth: Cell::new(0),
+            evaluating: Cell::new(0),
         }
     }
 }

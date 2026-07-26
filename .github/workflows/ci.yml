@@ -63,9 +63,38 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+  miri:
+    name: Miri (UB detection)
+    runs-on: ubuntu-latest
+    env:
+      # 严格 provenance：把“指针 → 整数 → 指针”往返也当作错误。
+      # 类型擦除容器是本仓库 unsafe 代码的核心，这类往返正是它最容易出的问题。
+      MIRIFLAGS: -Zmiri-strict-provenance
+      # 本任务钉在滚动的 nightly 上，lint 集合会随之变化。
+      # 这里只负责检测未定义行为，lint 由 stable 上的 clippy / test 任务把关，
+      # 避免 nightly 新增的 lint 让 UB 检测任务无端变红。
+      RUSTFLAGS: --cap-lints=warn
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Nightly Toolchain with Miri
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri, rust-src
+
+      - name: Setup Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: miri
+          cache-on-failure: true
+
+      # 只跑含大量 unsafe 的底层 crate：它们不依赖 wasm-bindgen，可以在 Miri 下执行。
+      - name: Run Miri
+        run: cargo miri test -p silex_reactivity -p silex_vtable -p silex_thread_local
+
   ci-success:
     name: CI Success
-    needs: [test, fmt, clippy]
+    needs: [test, fmt, clippy, miri]
     if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-latest
     steps:

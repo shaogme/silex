@@ -19,10 +19,14 @@ pub(crate) type DependencyList = List<(NodeId, u32)>;
 
 /// 具有 16 字节对齐要求的 64 字节固定宽度缓冲区。
 /// 用于跨 crate 安全地传递和存储类型擦除后的 Payload。
+///
+/// 缓冲区用 `MaybeUninit<u8>` 而不是 `u8`：Payload 里通常含有函数指针和数据指针，
+/// 而整数类型的读写会擦除指针 provenance，按值搬运 `[u8; 64]` 之后再把这些字节
+/// 当指针解引用即为未定义行为（AUDIT P3）。字节级复制则保留 provenance。
 #[repr(C, align(16))]
 #[derive(Clone, Copy)]
 pub struct RawOpBuffer {
-    pub data: [u8; 64],
+    data: [std::mem::MaybeUninit<u8>; 64],
 }
 
 impl Default for RawOpBuffer {
@@ -32,8 +36,24 @@ impl Default for RawOpBuffer {
 }
 
 impl RawOpBuffer {
+    pub const CAPACITY: usize = 64;
+    pub const ALIGNMENT: usize = 16;
+
+    /// 全零初始化的缓冲区。
     pub fn new() -> Self {
-        Self { data: [0u8; 64] }
+        Self {
+            data: [std::mem::MaybeUninit::new(0); Self::CAPACITY],
+        }
+    }
+
+    #[inline(always)]
+    pub fn as_ptr(&self) -> *const u8 {
+        self.data.as_ptr().cast()
+    }
+
+    #[inline(always)]
+    pub fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.data.as_mut_ptr().cast()
     }
 }
 

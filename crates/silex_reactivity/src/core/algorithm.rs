@@ -15,6 +15,7 @@ pub trait GraphStorage {
     fn fill_subscribers(&self, id: NodeId, dest: &mut Vec<NodeId>);
     fn fill_dependencies(&self, id: NodeId, dest: &mut Vec<NodeId>);
     fn is_effect(&self, id: NodeId) -> bool;
+    fn is_running(&self, id: NodeId) -> bool;
     fn check_dependencies_changed(&self, id: NodeId) -> bool;
 }
 
@@ -61,6 +62,10 @@ where
         self.storage.is_effect(id)
     }
 
+    fn is_running(&self, id: NodeId) -> bool {
+        self.storage.is_running(id)
+    }
+
     fn queue_effect(&mut self, id: NodeId) {
         self.scheduler.queue_effect(id);
     }
@@ -91,11 +96,22 @@ pub trait ReactiveGraph {
     /// Check if a node is an effect (observer) that should be queued for execution.
     fn is_effect(&self, id: NodeId) -> bool;
 
+    /// Check if a node's computation is currently executing.
+    ///
+    /// 正在运行的节点不能被重新求值（重入），也不应该被等待变干净 ——
+    /// 它自身的重跑由调度队列负责。
+    fn is_running(&self, id: NodeId) -> bool;
+
     /// Queue a specific effect for later execution.
     fn queue_effect(&mut self, id: NodeId);
 
     /// Run the computation for the node.
-    /// Should update the node's value and return true if it changed.
+    ///
+    /// 返回值表示**是否真的执行了计算闭包**（节点不存在或不是计算节点时为 false），
+    /// 而不是“值有没有变化” —— 变更检测发生在 `commit_update` 里。
+    ///
+    /// 节点状态的所有权属于实现方：它必须在调用用户闭包**之前**把状态置为
+    /// `Clean`，这样运行期间产生的失效标记才能保留下来（AUDIT P8）。
     fn run_computation(&mut self, id: NodeId) -> bool;
 
     /// Check if dependencies have changed versions relative to the last run.
@@ -168,7 +184,8 @@ pub fn evaluate(
         // Peek state
         let state = graph.get_state(current);
 
-        if state == NodeState::Clean {
+        // 正在运行中的节点不能在这里重新求值：它的重跑由调度队列负责。
+        if state == NodeState::Clean || graph.is_running(current) {
             stack.pop();
             continue;
         }
@@ -179,7 +196,8 @@ pub fn evaluate(
         let mut found_non_clean = false;
 
         for &dep_id in temp_deps.iter() {
-            if graph.get_state(dep_id) != NodeState::Clean {
+            // 跳过正在运行的依赖：等它变干净会导致死循环（它不可能在本次 DFS 中变干净）。
+            if graph.get_state(dep_id) != NodeState::Clean && !graph.is_running(dep_id) {
                 stack.push(dep_id);
                 found_non_clean = true;
                 break; // DFS: Process dependency first
@@ -193,26 +211,25 @@ pub fn evaluate(
         // Step B: All dependencies are Clean (or we are at a leaf/signal).
         // Try to update current node.
 
-        let mut needs_computation = true;
-
-        if state == NodeState::Check {
-            // Optimization: check versions
-            if !graph.check_dependencies_changed(current) {
-                needs_computation = false;
-                graph.set_state(current, NodeState::Clean);
-            }
+        if state == NodeState::Check && !graph.check_dependencies_changed(current) {
+            // Optimization: 版本号没变，无需重算。
+            graph.set_state(current, NodeState::Clean);
+            stack.pop();
+            continue;
         }
 
-        if needs_computation {
-            // If Dirty or (Check and changed), we run computation.
-            // run_computation should update value and return if changed.
-            let _changed = graph.run_computation(current);
-
-            // After computation, strictly set to Clean
+        // If Dirty or (Check and changed), we run computation.
+        // 状态转换由 run_computation 负责（运行前置 Clean）。这里**不能**再无条件
+        // 写一次 Clean —— 那会把节点在自己运行期间产生的失效标记抹掉，
+        // 使得队列里的重跑条目被当作“已干净”跳过，更新静默丢失（AUDIT P8）。
+        if !graph.run_computation(current) {
+            // 不是计算节点（例如已销毁节点残留的幽灵条目）：必须置 Clean，
+            // 否则上游会反复把它压栈。
             graph.set_state(current, NodeState::Clean);
         }
 
-        // Don't pop yet, let the next loop iteration see it's Clean and pop it.
-        // This maintains the invariant that we only pop Clean nodes.
+        // 无论本次是否重新变脏都要出栈：重新变脏意味着它已经被重新入队，
+        // 由调度队列负责重跑；留在栈上只会死循环。
+        stack.pop();
     }
 }

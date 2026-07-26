@@ -7,14 +7,36 @@ use crate::{
     },
     runtime::{MemoVTable, RUNTIME, Runtime, storage::ExtraData},
 };
-use std::{
-    alloc::Layout,
-    any::Any,
-    marker::PhantomData,
-    mem::{align_of, size_of},
-    ptr::{drop_in_place, write},
-    rc::Rc,
-};
+use silex_vtable::InlineStorage;
+use std::{any::Any, marker::PhantomData, mem::size_of, ptr::drop_in_place, rc::Rc};
+
+/// memo 内联载荷的布局：`[&'static MemoVTable][F 或 Box<F>]`。
+///
+/// vtable 以真正的指针形式写入缓冲区，**不做** `as usize` 往返 ——
+/// 整数往返会擦除 provenance，之后再解引用即为未定义行为（AUDIT P3）。
+const MEMO_PAYLOAD_OFFSET: usize = size_of::<usize>();
+
+/// 把 vtable 指针与闭包打包进内联缓冲区。
+/// 闭包放不下时改为存放 `Box<F>`，由对应的 vtable 分支负责解引用与析构。
+fn build_memo_payload<F: 'static>(
+    inline_vtable: &'static MemoVTable,
+    boxed_vtable: &'static MemoVTable,
+    f: F,
+) -> InlineStorage {
+    let mut data = InlineStorage::zeroed();
+    // SAFETY: 偏移 0 处写入一个指针必然放得下；载荷写在 MEMO_PAYLOAD_OFFSET 处，
+    // 由 `InlineStorage::fits` 判定是否内联，放不下则退化为一个 `Box<F>` 指针。
+    unsafe {
+        if InlineStorage::fits::<F>(MEMO_PAYLOAD_OFFSET) {
+            data.write(0, inline_vtable as *const MemoVTable);
+            data.write(MEMO_PAYLOAD_OFFSET, f);
+        } else {
+            data.write(0, boxed_vtable as *const MemoVTable);
+            data.write(MEMO_PAYLOAD_OFFSET, Box::new(f));
+        }
+    }
+    data
+}
 
 // --- Effect ---
 
@@ -47,21 +69,14 @@ where
     T: Clone + PartialEq + 'static,
     F: Fn(Option<&T>) -> T + 'static,
 {
-    let layout = Layout::new::<F>();
-    let fits_inline =
-        layout.size() <= 2 * size_of::<usize>() && layout.align() <= align_of::<usize>();
+    let data = build_memo_payload(
+        &MemoInlineVTable::<T, F>::VTABLE,
+        &MemoBoxedVTable::<T, F>::VTABLE,
+        f,
+    );
 
-    let mut data = [0usize; 3];
-    if fits_inline {
-        data[0] = &MemoInlineVTable::<T, F>::VTABLE as *const _ as usize;
-        unsafe { write(data.as_mut_ptr().add(1) as *mut F, f) };
-    } else {
-        data[0] = &MemoBoxedVTable::<T, F>::VTABLE as *const _ as usize;
-        let boxed = Box::new(f);
-        unsafe { write(data.as_mut_ptr().add(1) as *mut Box<F>, boxed) };
-    }
-
-    unsafe { RUNTIME.get_or(Runtime::new).initialize_memo_raw(id, data) };
+    // SAFETY: 载荷由 `build_memo_payload` 按 `MemoVTable` 约定的布局构造。
+    unsafe { RUNTIME.get_or(Runtime::new).initialize_memo(id, data) };
 }
 
 #[track_caller]
@@ -73,11 +88,23 @@ pub fn register_derived<T: 'static>(f: Box<dyn Fn() -> T>) -> NodeId {
 
 #[inline(never)]
 fn internal_init_derived<T: 'static>(id: NodeId, f: Box<dyn Fn() -> T>) {
-    let mut data = [0usize; 3];
-    data[0] = &DerivedVTable::<T>::VTABLE as *const _ as usize;
-    unsafe { write(data.as_mut_ptr().add(1) as *mut Box<dyn Fn() -> T>, f) };
+    // `Box<dyn Fn() -> T>` 是两个机器字的胖指针，恰好放得下；
+    // `DerivedVTable` 只有内联这一种布局，所以这里必须真的内联。
+    const {
+        assert!(
+            InlineStorage::fits::<Box<dyn Fn()>>(MEMO_PAYLOAD_OFFSET),
+            "derived payload must fit inline"
+        );
+    }
+    let mut data = InlineStorage::zeroed();
+    // SAFETY: 上面的 const 断言保证了胖指针放得下；布局与 `DerivedVTable` 一致。
+    unsafe {
+        data.write(0, &DerivedVTable::<T>::VTABLE as *const MemoVTable);
+        data.write(MEMO_PAYLOAD_OFFSET, f);
+    }
 
-    unsafe { RUNTIME.get_or(Runtime::new).initialize_memo_raw(id, data) };
+    // SAFETY: 载荷按 `DerivedVTable` 约定的布局构造。
+    unsafe { RUNTIME.get_or(Runtime::new).initialize_memo(id, data) };
 }
 
 struct MemoInlineVTable<T, F>(PhantomData<(T, F)>);
@@ -205,9 +232,13 @@ pub fn try_update_signal_silent<T: 'static, R>(
     f: impl FnOnce(&mut T) -> R,
 ) -> Option<R> {
     let rt = RUNTIME.get_or(Runtime::new);
-    let val = rt.get_signal_value_mut_silent(id)?;
-    let val = val.downcast_mut::<T>()?;
-    Some(f(val))
+    let mut out = None;
+    rt.with_signal_value_mut(id, |value| {
+        if let Some(typed) = value.downcast_mut::<T>() {
+            out = Some(f(typed));
+        }
+    });
+    out
 }
 
 // --- Storage ---

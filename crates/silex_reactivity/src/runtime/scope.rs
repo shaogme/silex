@@ -3,6 +3,7 @@ use crate::{
     core::{arena::Index as NodeId, value::OnceThunk},
     runtime::{
         Runtime,
+        guard::OwnerGuard,
         storage::{CleanupList, Node},
     },
 };
@@ -30,11 +31,10 @@ impl Runtime {
     }
 
     pub fn untrack<T>(&self, f: impl FnOnce() -> T) -> T {
-        let prev_owner = self.current_owner();
-        self.set_owner(None);
-        let t = f();
-        self.set_owner(prev_owner);
-        t
+        // 守卫保证 owner 一定会被恢复：裸写法在 f panic 时会让 owner 永久错位，
+        // 之后创建的所有节点都会挂到错误的父节点上（AUDIT P2）。
+        let _owner = OwnerGuard::set(self, None);
+        f()
     }
 
     pub fn create_scope<F>(&self, f: F) -> NodeId
@@ -42,10 +42,8 @@ impl Runtime {
         F: FnOnce(),
     {
         let id = self.register_node();
-        let prev_owner = self.current_owner();
-        self.set_owner(Some(id));
+        let _owner = OwnerGuard::set(self, Some(id));
         f();
-        self.set_owner(prev_owner);
         id
     }
 

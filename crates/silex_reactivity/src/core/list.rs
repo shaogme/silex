@@ -1,7 +1,7 @@
 use std::{
     alloc::{self, Layout},
     marker::PhantomData,
-    mem::{needs_drop, replace, size_of},
+    mem::{align_of, needs_drop, replace, size_of},
     ptr::{self, NonNull},
     slice,
 };
@@ -11,7 +11,7 @@ use std::{
 /// This is similar to `ThinVec`.
 pub struct ThinVec<T> {
     /// Pointer to the allocation.
-    /// Layout: [Header][Data...]
+    /// Layout: [Header][padding?][Data...]
     /// If None, it's empty/unallocated.
     ptr: Option<NonNull<u8>>,
     _marker: PhantomData<T>,
@@ -23,14 +23,68 @@ struct Header {
     cap: usize,
 }
 
-impl Header {
-    fn data_ptr<T>(&self) -> *const T {
-        unsafe { (self as *const Header).add(1) as *const T }
-    }
+// --- 分配布局辅助 ---
+//
+// 所有指向分配内部的指针都必须从 `ThinVec::ptr` 派生 —— 它的 provenance 覆盖整块
+// 分配。绝不能从 `&Header` / `&mut Header` 派生数据区指针：那种引用只授权了 Header
+// 自己的 16 字节，用它写数据区在 Stacked Borrows 下是越界写（AUDIT P4）。
+// 同理，Header 字段一律通过裸指针读写，避免在同一块分配上同时存在
+// 覆盖范围不同的引用。
 
-    fn data_ptr_mut<T>(&mut self) -> *mut T {
-        unsafe { (self as *mut Header).add(1) as *mut T }
-    }
+/// 数据区相对于分配起始处的偏移。
+///
+/// 与 `Layout::new::<Header>().extend(Layout::array::<T>(..))` 返回的偏移一致：
+/// 把 `size_of::<Header>()` 向上对齐到 `align_of::<T>()`。旧实现把数据区硬编码为
+/// 紧邻 Header 之后，当 `align_of::<T>() > align_of::<Header>()`（如 `u128`）时
+/// 会漏掉 `extend` 插入的 padding（AUDIT P19.3）。
+#[inline(always)]
+const fn data_offset<T>() -> usize {
+    let align = align_of::<T>();
+    // align 一定是 2 的幂，因此可以用掩码向上取整。
+    (size_of::<Header>() + align - 1) & !(align - 1)
+}
+
+/// `[Header][padding?][T; cap]` 的完整布局。
+#[inline]
+fn layout_of<T>(cap: usize) -> Layout {
+    let (layout, offset) = Layout::new::<Header>()
+        .extend(Layout::array::<T>(cap).expect("ThinVec: invalid array layout"))
+        .expect("ThinVec: invalid allocation layout");
+    debug_assert_eq!(offset, data_offset::<T>());
+    layout
+}
+
+#[inline(always)]
+fn header_ptr(base: NonNull<u8>) -> *mut Header {
+    base.as_ptr().cast::<Header>()
+}
+
+/// # Safety
+/// `base` 必须指向一个按 `layout_of::<T>` 分配、且 Header 已初始化的块。
+#[inline(always)]
+unsafe fn data_ptr<T>(base: NonNull<u8>) -> *mut T {
+    unsafe { base.as_ptr().add(data_offset::<T>()).cast::<T>() }
+}
+
+/// # Safety
+/// 同 [`data_ptr`]。
+#[inline(always)]
+unsafe fn len_of(base: NonNull<u8>) -> usize {
+    unsafe { (*header_ptr(base)).len }
+}
+
+/// # Safety
+/// 同 [`data_ptr`]。
+#[inline(always)]
+unsafe fn cap_of(base: NonNull<u8>) -> usize {
+    unsafe { (*header_ptr(base)).cap }
+}
+
+/// # Safety
+/// 同 [`data_ptr`]；调用者必须保证 `len` 个元素确实已初始化。
+#[inline(always)]
+unsafe fn set_len(base: NonNull<u8>, len: usize) {
+    unsafe { (*header_ptr(base)).len = len };
 }
 
 impl<T> ThinVec<T> {
@@ -44,111 +98,98 @@ impl<T> ThinVec<T> {
     }
 
     fn push(&mut self, elem: T) {
-        if let Some(ptr) = self.ptr {
-            unsafe {
-                let header = ptr.cast::<Header>().as_mut();
-                if header.len == header.cap {
-                    self.grow();
-                    // ptr might have changed
-                    let header = self
-                        .ptr
-                        .expect("ThinVec::ptr should be Some after grow")
-                        .cast::<Header>()
-                        .as_mut();
-                    self.write_at(header, header.len, elem);
-                } else {
-                    self.write_at(header, header.len, elem);
-                }
+        let base = match self.ptr {
+            // SAFETY: `self.ptr` 为 Some 时分配与 Header 均已初始化。
+            Some(base) if unsafe { len_of(base) } < unsafe { cap_of(base) } => base,
+            Some(_) => {
+                self.grow();
+                self.ptr.expect("ThinVec::ptr should be Some after grow")
             }
-        } else {
-            self.grow_from_zero();
-            let header = unsafe {
+            None => {
+                self.grow_from_zero();
                 self.ptr
                     .expect("ThinVec::ptr should be Some after grow_from_zero")
-                    .cast::<Header>()
-                    .as_mut()
-            };
-            unsafe { self.write_at(header, 0, elem) };
-        }
-    }
+            }
+        };
 
-    fn len(&self) -> usize {
-        self.ptr
-            .map_or(0, |p| unsafe { p.cast::<Header>().as_ref().len })
-    }
-
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    unsafe fn write_at(&mut self, header: &mut Header, idx: usize, elem: T) {
-        let data_ptr = header.data_ptr_mut::<T>();
+        // SAFETY: 上面保证了 base 有效且 len < cap；数据指针从覆盖整块分配的
+        // base 派生，写入位置在容量之内。
         unsafe {
-            ptr::write(data_ptr.add(idx), elem);
+            let len = len_of(base);
+            ptr::write(data_ptr::<T>(base).add(len), elem);
+            set_len(base, len + 1);
         }
-        header.len += 1;
     }
 
     #[cold]
     fn grow_from_zero(&mut self) {
-        let (layout, _) = Layout::new::<Header>()
-            .extend(Layout::array::<T>(Self::MIN_CAP).expect("Failed to create array layout"))
-            .expect("Failed to extend layout");
+        let layout = layout_of::<T>(Self::MIN_CAP);
 
+        // SAFETY: layout 的 size 非零（至少包含 Header）。
         let ptr = unsafe { alloc::alloc(layout) };
         if ptr.is_null() {
             alloc::handle_alloc_error(layout);
         }
 
+        // SAFETY: 分配成功，Header 位于偏移 0 且对齐正确。
         unsafe {
-            let header_ptr = ptr as *mut Header;
+            let base = NonNull::new_unchecked(ptr);
             ptr::write(
-                header_ptr,
+                header_ptr(base),
                 Header {
                     len: 0,
                     cap: Self::MIN_CAP,
                 },
             );
-            self.ptr = Some(NonNull::new_unchecked(ptr));
+            self.ptr = Some(base);
         }
     }
 
     #[cold]
     fn grow(&mut self) {
-        let old_ptr = self.ptr.expect("ThinVec::grow called on an empty ThinVec");
-        let unsafe_header = unsafe { old_ptr.cast::<Header>().as_ref() };
-        let old_cap = unsafe_header.cap;
+        let old_base = self.ptr.expect("ThinVec::grow called on an empty ThinVec");
+        // SAFETY: `self.ptr` 为 Some 时 Header 已初始化。
+        let old_cap = unsafe { cap_of(old_base) };
         let new_cap = old_cap * 2;
 
-        let (old_layout, _) = Layout::new::<Header>()
-            .extend(Layout::array::<T>(old_cap).expect("Failed to create array layout"))
-            .expect("Failed to extend layout");
+        let old_layout = layout_of::<T>(old_cap);
+        let new_layout = layout_of::<T>(new_cap);
 
-        let (new_layout, _) = Layout::new::<Header>()
-            .extend(Layout::array::<T>(new_cap).expect("Failed to create array layout"))
-            .expect("Failed to extend layout");
-
-        let new_ptr = unsafe { alloc::realloc(old_ptr.as_ptr(), old_layout, new_layout.size()) };
-
+        // SAFETY: old_base 由同一个 old_layout 分配而来。
+        let new_ptr = unsafe { alloc::realloc(old_base.as_ptr(), old_layout, new_layout.size()) };
         if new_ptr.is_null() {
             alloc::handle_alloc_error(new_layout);
         }
 
+        // SAFETY: realloc 成功，数据区偏移只依赖 `align_of::<T>()`，扩容不会改变它。
         unsafe {
-            let header_ptr = new_ptr as *mut Header;
-            (*header_ptr).cap = new_cap;
-            self.ptr = Some(NonNull::new_unchecked(new_ptr));
+            let base = NonNull::new_unchecked(new_ptr);
+            (*header_ptr(base)).cap = new_cap;
+            self.ptr = Some(base);
         }
     }
 
     fn as_slice(&self) -> &[T] {
-        if let Some(ptr) = self.ptr {
-            unsafe {
-                let header = ptr.cast::<Header>().as_ref();
-                slice::from_raw_parts(header.data_ptr(), header.len)
+        match self.ptr {
+            // SAFETY: 前 len 个元素已初始化，指针从整块分配的 base 派生。
+            Some(base) => unsafe { slice::from_raw_parts(data_ptr::<T>(base), len_of(base)) },
+            None => &[],
+        }
+    }
+
+    /// 取出唯一剩余的元素并把长度清零（保留分配）。
+    /// 供 [`List`] 做 `Many -> Single` 降级使用，避免调用方越层操作内部布局。
+    fn take_only(&mut self) -> Option<T> {
+        let base = self.ptr?;
+        // SAFETY: len == 1 时 index 0 的元素已初始化；读出后把 len 置 0，
+        // 所有权转移给调用方，后续 Drop 不会重复析构。
+        unsafe {
+            if len_of(base) != 1 {
+                return None;
             }
-        } else {
-            &[]
+            let only = data_ptr::<T>(base).read();
+            set_len(base, 0);
+            Some(only)
         }
     }
 }
@@ -157,93 +198,78 @@ impl<T: PartialEq> ThinVec<T> {
     /// Removes the first occurrence of `elem`.
     /// Returns true if removed.
     fn remove(&mut self, elem: &T) -> bool {
-        if let Some(ptr) = self.ptr {
-            unsafe {
-                let header = ptr.cast::<Header>().as_mut();
-                let data_ptr = header.data_ptr_mut::<T>();
-                let slice = slice::from_raw_parts_mut(data_ptr, header.len);
+        let Some(base) = self.ptr else { return false };
 
-                if let Some(pos) = slice.iter().position(|x| x == elem) {
-                    let len = header.len;
-                    // Move the last element to current position
-                    ptr::swap(
-                        slice.get_unchecked_mut(pos),
-                        slice.get_unchecked_mut(len - 1),
-                    );
+        // SAFETY: 切片覆盖已初始化的 len 个元素，指针从整块分配的 base 派生。
+        unsafe {
+            let len = len_of(base);
+            let items = slice::from_raw_parts_mut(data_ptr::<T>(base), len);
+            let Some(pos) = items.iter().position(|x| x == elem) else {
+                return false;
+            };
 
-                    // Drop the removed element (now at the end) if necessary
-                    if needs_drop::<T>() {
-                        ptr::drop_in_place(slice.get_unchecked_mut(len - 1));
-                    }
+            // 注意：用 `slice::swap` 而不是从同一个切片取两个 `&mut` 再 `ptr::swap`
+            // —— 后者是 Stacked Borrows 违规模式（AUDIT P4 附注）。
+            items.swap(pos, len - 1);
 
-                    header.len -= 1;
-                    return true;
-                }
+            if needs_drop::<T>() {
+                ptr::drop_in_place(&raw mut items[len - 1]);
             }
+            set_len(base, len - 1);
+            true
         }
-        false
     }
 }
 
 impl<T> Drop for ThinVec<T> {
     fn drop(&mut self) {
-        if let Some(ptr) = self.ptr {
-            unsafe {
-                let header = ptr.cast::<Header>().as_mut();
-
-                if needs_drop::<T>() {
-                    let data_ptr = header.data_ptr_mut::<T>();
-                    let slice = slice::from_raw_parts_mut(data_ptr, header.len);
-                    for item in slice {
-                        ptr::drop_in_place(item);
-                    }
-                }
-
-                let (layout, _) = Layout::new::<Header>()
-                    .extend(Layout::array::<T>(header.cap).expect("Failed to create array layout"))
-                    .expect("Failed to extend layout");
-                alloc::dealloc(ptr.as_ptr(), layout);
+        let Some(base) = self.ptr else { return };
+        // SAFETY: base 由 layout_of::<T>(cap) 分配，前 len 个元素已初始化。
+        unsafe {
+            if needs_drop::<T>() {
+                ptr::drop_in_place(ptr::slice_from_raw_parts_mut(
+                    data_ptr::<T>(base),
+                    len_of(base),
+                ));
             }
+            alloc::dealloc(base.as_ptr(), layout_of::<T>(cap_of(base)));
         }
     }
 }
 
 impl<T: Clone> Clone for ThinVec<T> {
     fn clone(&self) -> Self {
-        if let Some(ptr) = self.ptr {
-            unsafe {
-                let header: &Header = ptr.cast::<Header>().as_ref();
-                let (layout, _) = Layout::new::<Header>()
-                    .extend(Layout::array::<T>(header.cap).expect("Failed to create array layout"))
-                    .expect("Failed to extend layout");
+        let Some(base) = self.ptr else {
+            return Self::new();
+        };
 
-                let new_ptr = alloc::alloc(layout);
-                if new_ptr.is_null() {
-                    alloc::handle_alloc_error(layout);
-                }
+        // SAFETY: 新分配使用与源相同的 layout；先把 len 置 0 再逐个写入并递增，
+        // 使得 `clone` panic 时已写入的元素能被 `out` 的 Drop 正确析构。
+        unsafe {
+            let len = len_of(base);
+            let cap = cap_of(base);
+            let layout = layout_of::<T>(cap);
 
-                ptr::copy_nonoverlapping(ptr.as_ptr(), new_ptr, size_of::<Header>());
-
-                let new_header = &mut *new_ptr.cast::<Header>();
-                new_header.len = 0; // for exception safety
-
-                let src_data = header.data_ptr::<T>();
-                let dst_data = new_header.data_ptr_mut::<T>();
-
-                for i in 0..header.len {
-                    let src = &*src_data.add(i);
-                    let cloned = src.clone();
-                    ptr::write(dst_data.add(i), cloned);
-                    new_header.len += 1;
-                }
-
-                Self {
-                    ptr: Some(NonNull::new_unchecked(new_ptr)),
-                    _marker: PhantomData,
-                }
+            let raw = alloc::alloc(layout);
+            if raw.is_null() {
+                alloc::handle_alloc_error(layout);
             }
-        } else {
-            Self::new()
+            let new_base = NonNull::new_unchecked(raw);
+            ptr::write(header_ptr(new_base), Header { len: 0, cap });
+
+            let out = Self {
+                ptr: Some(new_base),
+                _marker: PhantomData,
+            };
+
+            let src = data_ptr::<T>(base);
+            let dst = data_ptr::<T>(new_base);
+            for i in 0..len {
+                ptr::write(dst.add(i), (*src.add(i)).clone());
+                set_len(new_base, i + 1);
+            }
+
+            out
         }
     }
 }
@@ -259,40 +285,31 @@ pub struct ThinVecIntoIter<T> {
 impl<T> Iterator for ThinVecIntoIter<T> {
     type Item = T;
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(ptr) = self.ptr
-            && self.idx < self.len
-        {
-            unsafe {
-                let header_ptr = ptr.as_ptr() as *const Header;
-                let data_ptr = (*header_ptr).data_ptr::<T>();
-                let data = data_ptr.add(self.idx).read();
-                self.idx += 1;
-                return Some(data);
-            }
+        let base = self.ptr?;
+        if self.idx >= self.len {
+            return None;
         }
-        None
+        // SAFETY: idx < len，该元素尚未被移出；读出后 idx 前进，不会重复读取。
+        unsafe {
+            let item = data_ptr::<T>(base).add(self.idx).read();
+            self.idx += 1;
+            Some(item)
+        }
     }
 }
 
 impl<T> Drop for ThinVecIntoIter<T> {
     fn drop(&mut self) {
-        if let Some(ptr) = self.ptr {
-            unsafe {
-                // Drop remaining elements
-                if needs_drop::<T>() {
-                    let header_ptr = ptr.as_ptr() as *mut Header;
-                    let data_ptr = (*header_ptr).data_ptr_mut::<T>();
-                    for i in self.idx..self.len {
-                        ptr::drop_in_place(data_ptr.add(i));
-                    }
+        let Some(base) = self.ptr else { return };
+        // SAFETY: [idx, len) 是尚未被 `next` 移出的元素。
+        unsafe {
+            if needs_drop::<T>() {
+                let data = data_ptr::<T>(base);
+                for i in self.idx..self.len {
+                    ptr::drop_in_place(data.add(i));
                 }
-
-                // Deallocate
-                let (layout, _) = Layout::new::<Header>()
-                    .extend(Layout::array::<T>(self.cap).expect("Failed to create array layout"))
-                    .expect("Failed to extend layout");
-                alloc::dealloc(ptr.as_ptr(), layout);
             }
+            alloc::dealloc(base.as_ptr(), layout_of::<T>(self.cap));
         }
     }
 }
@@ -302,25 +319,25 @@ impl<T> IntoIterator for ThinVec<T> {
     type IntoIter = ThinVecIntoIter<T>;
 
     fn into_iter(mut self) -> Self::IntoIter {
-        if let Some(ptr) = self.ptr.take() {
-            unsafe {
-                let header = ptr.cast::<Header>().as_ref();
+        match self.ptr.take() {
+            // SAFETY: 所有权（含释放责任）随 `ptr` 一起转交给迭代器，
+            // `self.ptr` 已被 take 为 None，`ThinVec::drop` 不会再碰这块分配。
+            Some(base) => unsafe {
                 ThinVecIntoIter {
-                    ptr: Some(ptr),
+                    ptr: Some(base),
                     idx: 0,
-                    len: header.len,
-                    cap: header.cap,
+                    len: len_of(base),
+                    cap: cap_of(base),
                     _marker: PhantomData,
                 }
-            }
-        } else {
-            ThinVecIntoIter {
+            },
+            None => ThinVecIntoIter {
                 ptr: None,
                 idx: 0,
                 len: 0,
                 cap: 0,
                 _marker: PhantomData,
-            }
+            },
         }
     }
 }
@@ -378,26 +395,12 @@ impl<T: PartialEq> List<T> {
                 }
             }
             Self::Many(vec) => {
-                if vec.remove(elem) {
-                    if vec.len() == 1 {
-                        unsafe {
-                            let header = vec
-                                .ptr
-                                .expect("ThinVec::ptr should be Some if len is 1")
-                                .cast::<Header>()
-                                .as_mut();
-                            // Read the remaining element (at index 0)
-                            let first = header.data_ptr::<T>().read();
-
-                            // Important: Set len to 0 before vec is dropped when `*self` is overwritten
-                            // This prevents double-drop of the element we just read out.
-                            header.len = 0;
-
-                            *self = Self::Single(first);
-                        }
-                    } else if vec.is_empty() {
-                        *self = Self::Empty;
-                    }
+                if vec.remove(elem)
+                    && let Some(only) = vec.take_only()
+                {
+                    // `Many` 至少有 2 个元素，移除一个之后不可能为空，
+                    // 因此只有 `Many -> Single` 一种降级（AUDIT P19.7）。
+                    *self = Self::Single(only);
                 }
             }
         }
@@ -431,5 +434,149 @@ impl<T> Iterator for ListIntoIter<T> {
             Self::Single(opt) => opt.take(),
             Self::Many(iter) => iter.next(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{cell::Cell, rc::Rc};
+
+    fn collect<T: Clone>(list: &List<T>) -> Vec<T> {
+        let mut out = Vec::new();
+        list.for_each(|v| out.push(v.clone()));
+        out
+    }
+
+    #[test]
+    fn thin_vec_grows_past_initial_capacity() {
+        let mut list = List::Empty;
+        for i in 0..64u32 {
+            list.push(i);
+        }
+        assert_eq!(collect(&list), (0..64).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn list_downgrades_many_to_single() {
+        let mut list = List::Empty;
+        list.push(1u32);
+        list.push(2);
+        list.push(3);
+        assert!(matches!(list, List::Many(_)));
+
+        list.remove(&2);
+        // swap-remove：3 被换到 2 的位置
+        assert_eq!(collect(&list), vec![1, 3]);
+
+        list.remove(&3);
+        assert!(matches!(list, List::Single(1)));
+
+        list.remove(&1);
+        assert!(matches!(list, List::Empty));
+    }
+
+    #[test]
+    fn list_remove_missing_element_is_a_noop() {
+        let mut list = List::Empty;
+        list.push(1u32);
+        list.push(2);
+        list.remove(&99);
+        assert_eq!(collect(&list), vec![1, 2]);
+    }
+
+    /// `align_of::<T>() > align_of::<Header>()` 时数据区前会有 padding，
+    /// 指针推导必须用 `Layout::extend` 给出的偏移（AUDIT P19.3）。
+    #[test]
+    fn thin_vec_handles_over_aligned_elements() {
+        #[derive(Clone, PartialEq, Debug)]
+        #[repr(align(32))]
+        struct OverAligned(u64);
+
+        let mut list = List::Empty;
+        for i in 0..10u64 {
+            list.push(OverAligned(i));
+        }
+        assert_eq!(collect(&list), (0..10).map(OverAligned).collect::<Vec<_>>());
+
+        list.remove(&OverAligned(5));
+        assert_eq!(collect(&list).len(), 9);
+    }
+
+    #[derive(Clone)]
+    struct DropCounter(Rc<Cell<usize>>);
+
+    impl Drop for DropCounter {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+
+    impl PartialEq for DropCounter {
+        fn eq(&self, other: &Self) -> bool {
+            Rc::ptr_eq(&self.0, &other.0)
+        }
+    }
+
+    #[test]
+    fn thin_vec_drops_every_element_exactly_once() {
+        let counter = Rc::new(Cell::new(0));
+        {
+            let mut list = List::Empty;
+            for _ in 0..10 {
+                list.push(DropCounter(counter.clone()));
+            }
+            assert_eq!(counter.get(), 0);
+        }
+        assert_eq!(counter.get(), 10);
+    }
+
+    #[test]
+    fn many_to_single_downgrade_does_not_double_drop() {
+        let counter = Rc::new(Cell::new(0));
+        {
+            let mut list = List::Empty;
+            let a = DropCounter(Rc::new(Cell::new(0)));
+            list.push(a.clone());
+            list.push(DropCounter(counter.clone()));
+            list.remove(&a);
+            drop(a);
+            assert_eq!(counter.get(), 0, "剩下的元素不应在降级时被析构");
+        }
+        assert_eq!(counter.get(), 1);
+    }
+
+    #[test]
+    fn clone_is_a_deep_copy() {
+        let counter = Rc::new(Cell::new(0));
+        let mut list = List::Empty;
+        for _ in 0..5 {
+            list.push(DropCounter(counter.clone()));
+        }
+        let copy = list.clone();
+        let mut seen = 0;
+        copy.for_each(|_| seen += 1);
+        assert_eq!(seen, 5);
+        drop(copy);
+        assert_eq!(counter.get(), 5);
+        drop(list);
+        assert_eq!(counter.get(), 10);
+    }
+
+    #[test]
+    fn into_iter_drops_the_unconsumed_tail() {
+        let counter = Rc::new(Cell::new(0));
+        let mut list = List::Empty;
+        for _ in 0..6 {
+            list.push(DropCounter(counter.clone()));
+        }
+        {
+            let mut iter = list.into_iter();
+            let first = iter.next().expect("first element");
+            drop(first);
+            assert_eq!(counter.get(), 1);
+            // iter 在此处被 drop，剩余 5 个元素应被析构
+        }
+        assert_eq!(counter.get(), 6);
     }
 }
