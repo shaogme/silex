@@ -206,8 +206,76 @@ fn is_proper_subset(a: &ModifierList, b: &ModifierList) -> bool {
     a.len() < b.len() && a.iter().all(|m| b.contains(m))
 }
 
+/// 编译期 Space/Divide 物理方向消解：
+///
+/// 当同一个修饰符链/伴生选择器下同时存在 `space-x-*` 与 `space-x-reverse`
+/// （或 `space-y`, `divide-x`, `divide-y`）时，在编译期将对侧物理属性的方向值直接互换，
+/// 并移除 `--tw-*-reverse` 变量。保持零 CSS 运行时变量与极致渲染开销。
+fn collapse_between_reversals(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
+    if !rules.iter().any(|r| {
+        matches!(
+            r.css_property,
+            CssPropertyId::VarTwSpaceXReverse
+                | CssPropertyId::VarTwSpaceYReverse
+                | CssPropertyId::VarTwDivideXReverse
+                | CssPropertyId::VarTwDivideYReverse
+        )
+    }) {
+        return rules;
+    }
+
+    let mut rules = rules;
+    let mut to_remove = Vec::new();
+
+    let n = rules.len();
+    for i in 0..n {
+        let rev_prop = rules[i].css_property;
+        let (first_target, second_target) = match rev_prop {
+            CssPropertyId::VarTwSpaceXReverse => (CssPropertyId::MarginLeft, CssPropertyId::MarginRight),
+            CssPropertyId::VarTwSpaceYReverse => (CssPropertyId::MarginTop, CssPropertyId::MarginBottom),
+            CssPropertyId::VarTwDivideXReverse => (CssPropertyId::BorderLeftWidth, CssPropertyId::BorderRightWidth),
+            CssPropertyId::VarTwDivideYReverse => (CssPropertyId::BorderTopWidth, CssPropertyId::BorderBottomWidth),
+            _ => continue,
+        };
+
+        let mods = &rules[i].modifiers;
+
+        let mut first_idx = None;
+        let mut second_idx = None;
+        for j in 0..n {
+            if rules[j].modifiers == *mods {
+                if rules[j].css_property == first_target {
+                    first_idx = Some(j);
+                } else if rules[j].css_property == second_target {
+                    second_idx = Some(j);
+                }
+            }
+        }
+
+        if let (Some(f_idx), Some(s_idx)) = (first_idx, second_idx) {
+            let val_f = rules[f_idx].value.clone();
+            let val_s = rules[s_idx].value.clone();
+            rules[f_idx].value = val_s;
+            rules[s_idx].value = val_f;
+
+            to_remove.push(i);
+        }
+    }
+
+    if !to_remove.is_empty() {
+        to_remove.sort_unstable();
+        to_remove.dedup();
+        for idx in to_remove.into_iter().rev() {
+            rules.remove(idx);
+        }
+    }
+
+    rules
+}
+
 /// 编译期 Tailwind Merge: 相同修饰符组下的实用类属性消解 (基于 Bitmask 的高速覆盖计算，支持简写属性与长写属性关联覆盖，Last-wins 覆盖先出者)
 pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
+    let rules = collapse_between_reversals(rules);
     let mut covered_masks: HashMap<(ModifierList, u16), u64> = HashMap::new();
     let mut deduped_rev = Vec::new();
     // 用 Vec 而非 HashMap 保存：迭代顺序直接决定产出 CSS 的声明顺序与类名哈希，

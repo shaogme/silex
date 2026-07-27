@@ -13,7 +13,9 @@
 //! 关键在于**只对有冲突的段**做笛卡尔展开：互不覆盖的段留在各自的类里，
 //! 类的数量与今天一样。实测仓库里 6 个 `tw_variants!` 组件一个簇都不会形成。
 
-use crate::css::tw::ast::UtilityRule;
+use crate::css::tw::{
+    ast::UtilityRule, resolver::codegen::property_id::CssPropertyId,
+};
 
 /// 一个段写到的属性覆盖面：按 `bitmask` 的组号聚合出的掩码
 ///
@@ -28,11 +30,39 @@ pub(crate) struct WriteSet {
 impl WriteSet {
     pub(crate) fn of(rules: &[UtilityRule]) -> Self {
         let mut groups: Vec<(u16, u64)> = Vec::new();
+        let mut add_mask = |group_id: u16, mask: u64| {
+            match groups.iter_mut().find(|(g, _)| *g == group_id) {
+                Some((_, m)) => *m |= mask,
+                None => groups.push((group_id, mask)),
+            }
+        };
+
         for rule in rules {
             let bm = rule.css_property.bitmask();
-            match groups.iter_mut().find(|(g, _)| *g == bm.group_id) {
-                Some((_, mask)) => *mask |= bm.mask,
-                None => groups.push((bm.group_id, bm.mask)),
+            add_mask(bm.group_id, bm.mask);
+
+            match rule.css_property {
+                CssPropertyId::VarTwSpaceXReverse => {
+                    let l_bm = CssPropertyId::MarginLeft.bitmask();
+                    let r_bm = CssPropertyId::MarginRight.bitmask();
+                    add_mask(l_bm.group_id, l_bm.mask | r_bm.mask);
+                }
+                CssPropertyId::VarTwSpaceYReverse => {
+                    let t_bm = CssPropertyId::MarginTop.bitmask();
+                    let b_bm = CssPropertyId::MarginBottom.bitmask();
+                    add_mask(t_bm.group_id, t_bm.mask | b_bm.mask);
+                }
+                CssPropertyId::VarTwDivideXReverse => {
+                    let l_bm = CssPropertyId::BorderLeftWidth.bitmask();
+                    let r_bm = CssPropertyId::BorderRightWidth.bitmask();
+                    add_mask(l_bm.group_id, l_bm.mask | r_bm.mask);
+                }
+                CssPropertyId::VarTwDivideYReverse => {
+                    let t_bm = CssPropertyId::BorderTopWidth.bitmask();
+                    let b_bm = CssPropertyId::BorderBottomWidth.bitmask();
+                    add_mask(t_bm.group_id, t_bm.mask | b_bm.mask);
+                }
+                _ => {}
             }
         }
         groups.sort_unstable_by_key(|(g, _)| *g);

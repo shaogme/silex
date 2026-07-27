@@ -641,3 +641,196 @@ fn font_mono_utility_emits_full_fallback_stack() {
         "font-mono 产出的 font-family 必须包含完整的跨平台回退字体栈"
     );
 }
+
+/// 验证 `space-*` 与 `divide-*` 的编译期物理属性化与反转变量碰撞消解 (方案 A)
+#[test]
+fn space_and_divide_reversal_collision_collapses_in_compile_time() {
+    // 1. 单独 space-x-4
+    let css_space_x = css_of_static("space-x-4");
+    let decls_space_x = extract_declarations(&css_space_x);
+    let map_space_x: std::collections::BTreeMap<&str, &str> = decls_space_x
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(map_space_x.get("margin-left"), Some(&"1rem"));
+    assert_eq!(map_space_x.get("margin-right"), Some(&"0"));
+
+    // 2. 静态组合 space-x-4 space-x-reverse
+    let css_space_x_rev = css_of_static("space-x-4 space-x-reverse");
+    let decls_space_x_rev = extract_declarations(&css_space_x_rev);
+    let map_space_x_rev: std::collections::BTreeMap<&str, &str> = decls_space_x_rev
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(
+        map_space_x_rev.get("margin-left"),
+        Some(&"0"),
+        "space-x-reverse 必须将 margin-left 反转为 0"
+    );
+    assert_eq!(
+        map_space_x_rev.get("margin-right"),
+        Some(&"1rem"),
+        "space-x-reverse 必须将 margin-right 反转为 1rem"
+    );
+    assert_eq!(
+        map_space_x_rev.get("--tw-space-x-reverse"),
+        None,
+        "编译期物理消解不应残留 --tw-space-x-reverse 变量"
+    );
+
+    // 3. 静态组合 space-y-4 space-y-reverse
+    let css_space_y_rev = css_of_static("space-y-4 space-y-reverse");
+    let decls_space_y_rev = extract_declarations(&css_space_y_rev);
+    let map_space_y_rev: std::collections::BTreeMap<&str, &str> = decls_space_y_rev
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(map_space_y_rev.get("margin-top"), Some(&"0"));
+    assert_eq!(map_space_y_rev.get("margin-bottom"), Some(&"1rem"));
+
+    // 4. 静态组合 divide-x-2 divide-x-reverse
+    let css_divide_x_rev = css_of_static("divide-x-2 divide-x-reverse");
+    let decls_divide_x_rev = extract_declarations(&css_divide_x_rev);
+    let map_divide_x_rev: std::collections::BTreeMap<&str, &str> = decls_divide_x_rev
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(map_divide_x_rev.get("border-left-width"), Some(&"0"));
+    assert_eq!(map_divide_x_rev.get("border-right-width"), Some(&"2px"));
+
+    // 5. 跨段条件提升 Cluster 碰撞：tw!("space-x-4", cond && "space-x-reverse")
+    let ts_cond = quote!("space-x-4", (reverse, "space-x-reverse"));
+    let css_cond = css_of_tw(ts_cond);
+    assert!(!css_cond.is_empty());
+    let true_branch_css = css_of_static("space-x-4 space-x-reverse");
+    assert!(
+        css_cond.contains(&true_branch_css),
+        "条件为真时 'space-x-4 space-x-reverse' Cluster 提升合并后的产出必须被编译期反转"
+    );
+}
+
+/// 验证负间距（`-space-x-*` / `-space-y-*`）与 reverse 组合的物理方向反转测试
+#[test]
+fn space_negative_values_with_reverse_collision() {
+    // 1. -space-x-4 space-x-reverse
+    let css = css_of_static("-space-x-4 space-x-reverse");
+    let decls = extract_declarations(&css);
+    let map: std::collections::BTreeMap<&str, &str> = decls
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(
+        map.get("margin-left"),
+        Some(&"0"),
+        "-space-x-4 经 reverse 物理互换后 margin-left 应为 0"
+    );
+    assert_eq!(
+        map.get("margin-right"),
+        Some(&"-1rem"),
+        "-space-x-4 经 reverse 物理互换后 margin-right 应为 -1rem"
+    );
+
+    // 2. -space-y-6 space-y-reverse
+    let css_y = css_of_static("-space-y-6 space-y-reverse");
+    let decls_y = extract_declarations(&css_y);
+    let map_y: std::collections::BTreeMap<&str, &str> = decls_y
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(map_y.get("margin-top"), Some(&"0"));
+    assert_eq!(map_y.get("margin-bottom"), Some(&"-1.5rem"));
+}
+
+/// 验证带有修饰符（如媒体查询 `md:`, 伪类 `hover:`）的隔离性与翻转正确性
+#[test]
+fn space_and_divide_with_modifiers_and_breakpoints() {
+    // 1. md:space-x-8 md:space-x-reverse
+    let css_md = css_of_static("md:space-x-8 md:space-x-reverse");
+    let decls_md = extract_declarations(&css_md);
+    let map_md: std::collections::BTreeMap<&str, &str> = decls_md
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(
+        map_md.get("margin-left"),
+        Some(&"0"),
+        "md: 下的 space-x-reverse 应将 margin-left 翻转为 0"
+    );
+    assert_eq!(
+        map_md.get("margin-right"),
+        Some(&"2rem"),
+        "md: 下的 space-x-reverse 应将 margin-right 翻转为 2rem"
+    );
+
+    // 2. hover:divide-y-4 hover:divide-y-reverse
+    let css_hover = css_of_static("hover:divide-y-4 hover:divide-y-reverse");
+    let decls_hover = extract_declarations(&css_hover);
+    let map_hover: std::collections::BTreeMap<&str, &str> = decls_hover
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(map_hover.get("border-top-width"), Some(&"0"));
+    assert_eq!(map_hover.get("border-bottom-width"), Some(&"4px"));
+
+    // 3. 修饰符隔离测试：hover:space-x-4 与无修饰符的 space-x-reverse
+    // 无修饰符的 space-x-reverse 不该影响 hover:space-x-4 的 margin 属性
+    let css_isolated = css_of_static("hover:space-x-4 space-x-reverse");
+    let decls_isolated = extract_declarations(&css_isolated);
+    let map_isolated: std::collections::BTreeMap<&str, &str> = decls_isolated
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(
+        map_isolated.get("margin-left"),
+        Some(&"1rem"),
+        "hover: 上的 space-x-4 不会被无修饰符的 space-x-reverse 错杀反转"
+    );
+    assert_eq!(map_isolated.get("margin-right"), Some(&"0"));
+}
+
+/// 验证书写顺序无关性、双轴同时反转及复合 divide 工具类
+#[test]
+fn space_and_divide_dual_axis_and_order_invariance() {
+    // 1. 反转修饰符在前的顺序无关性测试：space-x-reverse space-x-4
+    let css_order = css_of_static("space-x-reverse space-x-4");
+    let decls_order = extract_declarations(&css_order);
+    let map_order: std::collections::BTreeMap<&str, &str> = decls_order
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(
+        map_order.get("margin-left"),
+        Some(&"0"),
+        "space-x-reverse 放在前时仍需精准反转 margin-left 为 0"
+    );
+    assert_eq!(
+        map_order.get("margin-right"),
+        Some(&"1rem"),
+        "space-x-reverse 放在前时仍需精准反转 margin-right 为 1rem"
+    );
+
+    // 2. 双轴同时反转：space-x-4 space-y-6 space-x-reverse space-y-reverse
+    // LightningCSS 会自动将四边 margin 合并压缩为简写格式 `margin: top right bottom left`
+    let css_dual = css_of_static("space-x-4 space-y-6 space-x-reverse space-y-reverse");
+    let decls_dual = extract_declarations(&css_dual);
+    let map_dual: std::collections::BTreeMap<&str, &str> = decls_dual
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(
+        map_dual.get("margin"),
+        Some(&"0 1rem 1.5rem 0"),
+        "四边 margin 经反转消解后应被编译器精准压缩为 margin: 0 1rem 1.5rem 0"
+    );
+
+    // 3. 复合 divide 工具类（带线型与颜色）：divide-x-4 divide-x-reverse divide-dashed
+    let css_divide_comp = css_of_static("divide-x-4 divide-x-reverse divide-dashed");
+    let decls_divide_comp = extract_declarations(&css_divide_comp);
+    let map_divide_comp: std::collections::BTreeMap<&str, &str> = decls_divide_comp
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(map_divide_comp.get("border-left-width"), Some(&"0"));
+    assert_eq!(map_divide_comp.get("border-right-width"), Some(&"4px"));
+    assert_eq!(map_divide_comp.get("border-style"), Some(&"dashed"));
+}
