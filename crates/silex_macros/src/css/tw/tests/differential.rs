@@ -41,10 +41,6 @@ enum Divergence {
 /// 台账是"已知且已决定暂不处理"的清单，不是"跑不过就往里塞"的垃圾桶。
 #[rustfmt::skip]
 const KNOWN_DIVERGENCES: &[(&str, Divergence, &str)] = &[
-    // --- 功能缺口：mask / sr-only 的现代属性（第四阶段）----------------------
-    ("sr-only",     Divergence::Mechanism, "只产出了旧的 clip:rect()，缺现代的 clip-path:inset(50%)"),
-    ("not-sr-only", Divergence::Mechanism, "缺 clip-path:none"),
-
     // --- 设计取舍：divide / space 的 reverse 变量体系（报告 §3.2）------------
     // Tailwind 把值乘进 `calc(X * var(--tw-*-reverse))` 与 `calc(X * calc(1 - var(...)))`
     // 两条声明，靠一个变量在运行时切换方向，落点也是逻辑属性；silex 编译期就定死方向，

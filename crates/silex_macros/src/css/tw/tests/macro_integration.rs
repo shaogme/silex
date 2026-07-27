@@ -511,3 +511,112 @@ fn mask_utilities_emit_mask_composite() {
         "mask-l-to-yellow-600 必须包含 mask-composite: intersect，实际: {decls_color:?}"
     );
 }
+
+/// 验证 `sr-only` 与 `not-sr-only` 产生现代 Web accessibility 规范中推荐的 `clip-path` 属性及全量属性集合。
+#[test]
+fn sr_only_utilities_emit_modern_clip_path() {
+    // 1. 验证 `sr-only` 严格产出 9 个实体声明全集
+    let css_sr = css_of_tw(quote!("sr-only"));
+    assert_eq!(css_sr.len(), 1);
+    let decls_sr = extract_declarations(&css_sr[0]);
+    let decl_map_sr: std::collections::BTreeMap<&str, &str> = decls_sr
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.as_str()))
+        .collect();
+
+    assert_eq!(decl_map_sr.get("clip-path"), Some(&"inset(50%)"));
+    assert_eq!(decl_map_sr.get("position"), Some(&"absolute"));
+    assert_eq!(decl_map_sr.get("width"), Some(&"1px"));
+    assert_eq!(decl_map_sr.get("height"), Some(&"1px"));
+    assert_eq!(decl_map_sr.get("padding"), Some(&"0"));
+    assert_eq!(decl_map_sr.get("margin"), Some(&"-1px"));
+    assert_eq!(decl_map_sr.get("overflow"), Some(&"hidden"));
+    assert_eq!(decl_map_sr.get("white-space"), Some(&"nowrap"));
+    assert_eq!(decl_map_sr.get("border-width"), Some(&"0"));
+    assert!(
+        !decl_map_sr.contains_key("clip"),
+        "sr-only 严禁产出已被现代 CSS 标准废弃的 clip 属性"
+    );
+
+    // 2. 验证 `not-sr-only` 严格产出 8 个实体声明全集
+    let css_not_sr = css_of_tw(quote!("not-sr-only"));
+    assert_eq!(css_not_sr.len(), 1);
+    let decls_not_sr = extract_declarations(&css_not_sr[0]);
+    let decl_map_not_sr: std::collections::BTreeMap<&str, &str> = decls_not_sr
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.as_str()))
+        .collect();
+
+    assert_eq!(decl_map_not_sr.get("clip-path"), Some(&"none"));
+    assert_eq!(decl_map_not_sr.get("position"), Some(&"static"));
+    assert_eq!(decl_map_not_sr.get("width"), Some(&"auto"));
+    assert_eq!(decl_map_not_sr.get("height"), Some(&"auto"));
+    assert_eq!(decl_map_not_sr.get("padding"), Some(&"0"));
+    assert_eq!(decl_map_not_sr.get("margin"), Some(&"0"));
+    assert_eq!(decl_map_not_sr.get("overflow"), Some(&"visible"));
+    assert_eq!(decl_map_not_sr.get("white-space"), Some(&"normal"));
+    assert!(
+        !decl_map_not_sr.contains_key("clip"),
+        "not-sr-only 严禁产出已被现代 CSS 标准废弃的 clip 属性"
+    );
+}
+
+/// 验证 `sr-only` / `not-sr-only` 配合 Modifier (如 `focus:not-sr-only`) 与条件分支 (如 `tw!("sr-only", (is_focus, "not-sr-only"))`) 的正确展开与覆写。
+#[test]
+fn sr_only_utilities_with_modifiers_and_conditionals() {
+    // 1. 验证 `focus:not-sr-only` 伪类变体正确绑定到 :focus 选择器且包含 clip-path: none
+    let css_focus = css_of_tw(quote!("focus:not-sr-only"));
+    assert_eq!(css_focus.len(), 1);
+    assert!(
+        css_focus[0].contains(":focus"),
+        "focus:not-sr-only 必须产生包含 :focus 的选择器，实际: {}",
+        css_focus[0]
+    );
+    let decls_focus = extract_declarations(&css_focus[0]);
+    let decl_map_focus: std::collections::BTreeMap<&str, &str> = decls_focus
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(decl_map_focus.get("clip-path"), Some(&"none"));
+    assert_eq!(decl_map_focus.get("position"), Some(&"static"));
+
+    // 2. 验证真实无障碍 Skip Link 模式：`sr-only focus:not-sr-only` 在同一元素上无缝共存
+    let css_skip_link = css_of_tw(quote!("sr-only focus:not-sr-only"));
+    assert!(!css_skip_link.is_empty());
+    let static_decls = extract_declarations(&css_skip_link[0]);
+    let clip_sr = static_decls
+        .iter()
+        .find(|(p, _)| p == "clip-path")
+        .map(|(_, v)| v.as_str());
+    assert_eq!(
+        clip_sr,
+        Some("inset(50%)"),
+        "基础状态依然为 sr-only (clip-path: inset(50%))"
+    );
+
+    // 3. 验证条件分支表达式中 `not-sr-only` 在条件为真时成功覆写 `sr-only`
+    let css_cond = css_of_tw(quote!("sr-only", (is_focused, "not-sr-only")));
+    assert_eq!(css_cond.len(), 2, "应该有两个条件组合的 CSS Class");
+
+    // 找到包含 `not-sr-only` 覆写（组合为 "sr-only not-sr-only"）的真分支产出
+    let true_branch_css = css_of_static("sr-only not-sr-only");
+    assert!(
+        css_cond.contains(&true_branch_css),
+        "条件为真时 'sr-only not-sr-only' 合并后的 CSS 产物必须与静态写出的相同"
+    );
+    let decls_merged = extract_declarations(&true_branch_css);
+    let decl_map_merged: std::collections::BTreeMap<&str, &str> = decls_merged
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.as_str()))
+        .collect();
+    assert_eq!(
+        decl_map_merged.get("clip-path"),
+        Some(&"none"),
+        "tw-merge 后 not-sr-only 的 clip-path: none 应胜出"
+    );
+    assert_eq!(
+        decl_map_merged.get("position"),
+        Some(&"static"),
+        "tw-merge 后 not-sr-only 的 position: static 应胜出"
+    );
+}

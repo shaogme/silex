@@ -83812,7 +83812,7 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::Padding, StaticVal::Num(0.0, "")),
         (CssPropertyId::Margin, StaticVal::Num(0.0, "")),
         (CssPropertyId::Overflow, StaticVal::Kw("visible")),
-        (CssPropertyId::Clip, StaticVal::Kw("auto")),
+        (CssPropertyId::ClipPath, StaticVal::Kw("none")),
         (CssPropertyId::WhiteSpace, StaticVal::Kw("normal")),
     ]),
     ("object-bottom", None, &[
@@ -96593,7 +96593,7 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::Padding, StaticVal::Num(0.0, "")),
         (CssPropertyId::Margin, StaticVal::Num(-1.0, "px")),
         (CssPropertyId::Overflow, StaticVal::Kw("hidden")),
-        (CssPropertyId::Clip, StaticVal::Literal("rect(0, 0, 0, 0)")),
+        (CssPropertyId::ClipPath, StaticVal::Literal("inset(50%)")),
         (CssPropertyId::WhiteSpace, StaticVal::Kw("nowrap")),
         (CssPropertyId::BorderWidth, StaticVal::Num(0.0, "")),
     ]),
