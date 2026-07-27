@@ -165,7 +165,7 @@ Silex 的“智能指针”，持有 `RxInner` 变体：
 源码路径: `silex_core/src/reactivity/memo.rs`
 
 *   **作用**: 缓存计算结果。仅在依赖项变化且产生的新值与旧值不等（`PartialEq`）时才通知下游更新。
-*   **约束**: `T: Clone + PartialEq + 'static`。
+*   **约束**: `T: PartialEq + 'static`。
 *   **内部机制**: 依赖 `silex_reactivity::memo`。支持 `.with_name()` 调试。
 
 ### 3.5 `StoredValue<T>` (非响应式存储)

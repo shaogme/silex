@@ -92,7 +92,7 @@ impl<T: RxCloneData, E: RxError> Resource<T, E> {
     ) -> Self
     where
         R: RxGet<Value = S> + 'static,
-        S: PartialEq + RxCloneData,
+        S: PartialEq + 'static,
         Fetcher: ResourceFetcher<S, Data = T, Error = E> + RxData,
     {
         let suspense_ctx = suspense_ctx.into();
@@ -238,20 +238,17 @@ impl<T: RxCloneData, E: RxError> Resource<T, E> {
         self.state.with(|s| s.as_option().cloned())
     }
 
-    pub fn map<U: RxCloneData + PartialEq>(
-        &self,
-        f: impl Fn(Option<&T>) -> U + 'static,
-    ) -> Memo<U> {
+    pub fn map<U: RxData + PartialEq>(&self, f: impl Fn(Option<&T>) -> U + 'static) -> Memo<U> {
         let state = self.state;
         Memo::new(move |_| state.with(|s| f(s.as_option())))
     }
 }
 
-impl<T: RxCloneData, E: RxError> RxValue for Resource<T, E> {
+impl<T: RxData, E: RxError> RxValue for Resource<T, E> {
     type Value = Option<T>;
 }
 
-impl<T: RxCloneData, E: RxError> RxBase for Resource<T, E> {
+impl<T: RxData, E: RxError> RxBase for Resource<T, E> {
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
         self.state.id()

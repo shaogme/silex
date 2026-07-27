@@ -35,15 +35,8 @@ impl AnyValue {
         }
     }
 
-    // 这里曾经有一个 `placeholder()`：把值移出节点交给用户闭包期间，节点里得
-    // 填一个东西，于是每一次 signal 写入、每一次 memo 重算都要现造一个零大小的
-    // `AnyValue`。阶段三把载荷改成 `Option<AnyValue>` 之后，“借出中”就是一个
-    // `None` —— 既省掉了这次构造，也让“重入”和“类型写错”这两种失败在读取侧
-    // 天然可分（从前两者都表现为 downcast 失败，要靠一个 `#[cold]` 的分类函数
-    // 事后追查）。
-
     /// 创建一个带相等性比较能力的类型擦除值（memo 的重算结果走这里）。
-    pub(crate) fn new_reactive<T: Clone + PartialEq + 'static>(value: T) -> Self {
+    pub(crate) fn new_reactive<T: PartialEq + 'static>(value: T) -> Self {
         AnyValue {
             inner: AnyBox::new(
                 value,
@@ -164,7 +157,7 @@ impl<T: 'static> InlineVTable<T> {
 }
 
 struct InlineReactiveVTable<T>(PhantomData<T>);
-impl<T: Clone + PartialEq + 'static> InlineReactiveVTable<T> {
+impl<T: PartialEq + 'static> InlineReactiveVTable<T> {
     const VTABLE: AnyValueVTable = AnyValueVTable {
         type_id: TypeId::of::<T>(),
         as_ptr: FuncPtr::new(|ptr| ptr as *const T as *const ()),
@@ -194,7 +187,7 @@ impl<T: 'static> BoxedVTable<T> {
 }
 
 struct BoxedReactiveVTable<T>(PhantomData<T>);
-impl<T: Clone + PartialEq + 'static> BoxedReactiveVTable<T> {
+impl<T: PartialEq + 'static> BoxedReactiveVTable<T> {
     const VTABLE: AnyValueVTable = AnyValueVTable {
         type_id: TypeId::of::<T>(),
         as_ptr: FuncPtr::new(|ptr| unsafe { (&**(ptr as *const Box<T>)) as *const T as *const () }),
@@ -276,7 +269,7 @@ impl MemoThunk {
     /// 带相等性门控的 memo（`memo::create`）。
     pub(crate) fn new<T, F>(f: F) -> Self
     where
-        T: Clone + PartialEq + 'static,
+        T: PartialEq + 'static,
         F: Fn(Option<&T>) -> T + 'static,
     {
         Self(ThunkBox::new(move |old: Option<*const AnyValue>| {

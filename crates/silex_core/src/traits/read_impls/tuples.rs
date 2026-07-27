@@ -13,7 +13,7 @@ pub fn create_tuple2_rx<I1: RxData, I2: RxData>(
     Rx::new_op(op)
 }
 
-pub fn create_tuple_n_rx<const N: usize, V: RxCloneData + 'static>(
+pub fn create_tuple_n_rx<const N: usize, V: RxCloneData>(
     ids: [NodeId; N],
     mapper: fn(&[NodeId; N]) -> V,
     is_constant: bool,
@@ -44,7 +44,7 @@ macro_rules! impl_tuple_into_rx {
 
         impl<$T0> IntoRx for ($T0,)
         where
-            $T0: IntoRx + IntoSignal + Clone + $crate::traits::RxData,
+            $T0: IntoRx + IntoSignal + $crate::traits::RxCloneData,
             $T0::Value: $crate::traits::RxCloneData,
         {
             type RxType = Rx<Self::Value, RxValueKind>;
@@ -65,7 +65,7 @@ macro_rules! impl_tuple_into_rx {
 
         impl<$T0> IntoSignal for ($T0,)
         where
-            $T0: IntoRx + IntoSignal + Clone + $crate::traits::RxData,
+            $T0: IntoRx + IntoSignal + $crate::traits::RxCloneData,
             $T0::Value: $crate::traits::RxCloneData,
         {
             #[inline(always)]
@@ -102,7 +102,6 @@ macro_rules! impl_tuple_into_rx {
         impl<$T0> RxInternal for ($T0,)
         where
             $T0: RxInternal + $crate::traits::RxData,
-            $T0: IntoRx,
             $T0::Value: Sized + $crate::traits::RxCloneData,
         {
             type ReadOutput<'a> = RxGuard<'a, Self::Value, Self::Value>
@@ -137,8 +136,8 @@ macro_rules! impl_tuple_into_rx {
 
         impl<$T0, $T1> IntoRx for ($T0, $T1)
         where
-            $T0: IntoRx + IntoSignal + Clone + $crate::traits::RxData,
-            $T1: IntoRx + IntoSignal + Clone + $crate::traits::RxData,
+            $T0: IntoRx + IntoSignal + $crate::traits::RxCloneData,
+            $T1: IntoRx + IntoSignal + $crate::traits::RxCloneData,
             $T0::Value: $crate::traits::RxCloneData,
             $T1::Value: $crate::traits::RxCloneData,
         {
@@ -166,8 +165,10 @@ macro_rules! impl_tuple_into_rx {
 
         impl<$T0, $T1> IntoSignal for ($T0, $T1)
         where
-            $T0: IntoRx + IntoSignal + Clone + $crate::traits::RxData, $T1: IntoRx + IntoSignal + Clone + $crate::traits::RxData,
-            $T0::Value: $crate::traits::RxCloneData, $T1::Value: $crate::traits::RxCloneData
+            $T0: IntoRx + IntoSignal + $crate::traits::RxCloneData,
+            $T0::Value: $crate::traits::RxCloneData,
+            $T1: IntoRx + IntoSignal + $crate::traits::RxCloneData,
+            $T1::Value: $crate::traits::RxCloneData,
         {
             #[inline(always)]
             fn into_signal(self) -> Signal<Self::Value> where Self: 'static {
@@ -187,9 +188,10 @@ macro_rules! impl_tuple_into_rx {
 
         impl<$T0, $T1> RxInternal for ($T0, $T1)
         where
-            $T0: RxInternal + $crate::traits::RxData, $T1: RxInternal + $crate::traits::RxData,
-            $T0: IntoRx, $T1: IntoRx,
-            $T0::Value: Sized + $crate::traits::RxCloneData, $T1::Value: Sized + $crate::traits::RxCloneData
+            $T0: RxInternal + $crate::traits::RxData + IntoRx,
+            $T1: RxInternal + $crate::traits::RxData + IntoRx,
+            $T0::Value: $crate::traits::RxCloneData,
+            $T1::Value: $crate::traits::RxCloneData,
         {
             type ReadOutput<'a> = RxGuard<'a, Self::Value, Self::Value> where Self: 'a;
             fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> { Some(RxGuard::Owned(self.rx_get_adaptive()?)) }
@@ -202,14 +204,14 @@ macro_rules! impl_tuple_into_rx {
     // 多元元组分支 (N > 2)
     ($len:expr, $trap:ident, $($T:ident : $idx:tt),+) => {
         impl<$($T),+> $crate::traits::RxValue for ($($T,)+)
-        where $($T: $crate::traits::RxValue),+, $($T::Value: core::marker::Sized),+
+        where $($T: $crate::traits::RxValue),+, $($T::Value: Sized),+
         {
             type Value = ($($T::Value,)+);
         }
 
         impl<$($T),+> IntoRx for ($($T,)+)
         where
-            $($T: IntoRx + IntoSignal + Clone + $crate::traits::RxData),+,
+            $($T: IntoRx + IntoSignal + $crate::traits::RxCloneData),+,
             $($T::Value: $crate::traits::RxCloneData),+
         {
             type RxType = Rx<Self::Value, RxValueKind>;
@@ -230,7 +232,7 @@ macro_rules! impl_tuple_into_rx {
 
         impl<$($T),+> IntoSignal for ($($T,)+)
         where
-            $($T: IntoRx + IntoSignal + Clone + $crate::traits::RxData),+,
+            $($T: IntoRx + IntoSignal + $crate::traits::RxCloneData),+,
             $($T::Value: $crate::traits::RxCloneData),+
         {
             #[inline(always)]
@@ -252,7 +254,7 @@ macro_rules! impl_tuple_into_rx {
         impl<$($T),+> RxInternal for ($($T,)+)
         where
             $($T: RxInternal + $crate::traits::RxData),+, $($T: IntoRx),+,
-            $($T::Value: Sized + $crate::traits::RxCloneData),+
+            $($T::Value: $crate::traits::RxCloneData),+
         {
             type ReadOutput<'a> = RxGuard<'a, Self::Value, Self::Value> where Self: 'a;
             fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> { Some(RxGuard::Owned(self.rx_get_adaptive()?)) }

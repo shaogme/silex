@@ -118,7 +118,7 @@ impl<T: RxData> RxInternal for Constant<T> {
     }
 }
 
-impl<T: RxCloneData> IntoRx for Constant<T> {
+impl<T: RxData> IntoRx for Constant<T> {
     type RxType = Rx<T, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
@@ -239,7 +239,7 @@ where
 
 impl<S, F, U> IntoRx for DerivedPayload<S, F>
 where
-    S: RxInternal + Clone + 'static,
+    S: RxInternal + 'static,
     F: Fn(&S::Value) -> U + 'static,
     U: RxCloneData,
 {
@@ -258,7 +258,7 @@ where
 
 impl<S, F, U> IntoSignal for DerivedPayload<S, F>
 where
-    S: RxRead + Clone + 'static,
+    S: RxRead + 'static,
     F: Fn(&S::Value) -> U + 'static,
     U: RxCloneData,
 {

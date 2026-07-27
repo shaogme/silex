@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use crate::{
     impl_reactive_ops, impl_rx_delegate, impl_signal_core_traits,
     reactivity::{ReadSignal, Signal},
-    traits::{RxCloneData, RxData},
+    traits::RxData,
 };
 use silex_reactivity::{MemoId, memo, set_debug_label};
 
@@ -16,7 +16,7 @@ pub struct Memo<T> {
 
 impl_signal_core_traits!(Memo);
 
-impl<T: RxCloneData + PartialEq> Memo<T> {
+impl<T: RxData + PartialEq> Memo<T> {
     pub fn new<F>(f: F) -> Self
     where
         F: Fn(Option<&T>) -> T + 'static,

@@ -56,13 +56,15 @@ std::thread_local! {
 pub(crate) fn with_rt<R>(f: impl FnOnce(&mut Runtime) -> R) -> ReactiveResult<R> {
     // 只读、或只写既有节点的路径一律检查 Option：没有运行时就没有节点，
     // 不该仅仅为了报告“查无此节点”而把整个运行时建起来（AUDIT P19.9）。
-    RUNTIME.with(|cell| {
-        let mut opt = cell
-            .try_borrow_mut()
-            .map_err(|_| ReactiveError::Reentrant)?;
-        let rt = opt.as_mut().ok_or(ReactiveError::NoRuntime)?;
-        Ok(f(rt))
-    })
+    RUNTIME
+        .try_with(|cell| {
+            let mut opt = cell
+                .try_borrow_mut()
+                .map_err(|_| ReactiveError::Reentrant)?;
+            let rt = opt.as_mut().ok_or(ReactiveError::NoRuntime)?;
+            Ok(f(rt))
+        })
+        .unwrap_or(Err(ReactiveError::NoRuntime))
 }
 
 /// 同 [`with_rt`]，但运行时不存在时先把它建出来。
@@ -70,13 +72,15 @@ pub(crate) fn with_rt<R>(f: impl FnOnce(&mut Runtime) -> R) -> ReactiveResult<R>
 /// 只有真正会**创建**节点的入口才该用它。
 #[inline]
 pub(crate) fn with_rt_or_init<R>(f: impl FnOnce(&mut Runtime) -> R) -> ReactiveResult<R> {
-    RUNTIME.with(|cell| {
-        let mut opt = cell
-            .try_borrow_mut()
-            .map_err(|_| ReactiveError::Reentrant)?;
-        let rt = opt.get_or_insert_with(Runtime::new);
-        Ok(f(rt))
-    })
+    RUNTIME
+        .try_with(|cell| {
+            let mut opt = cell
+                .try_borrow_mut()
+                .map_err(|_| ReactiveError::Reentrant)?;
+            let rt = opt.get_or_insert_with(Runtime::new);
+            Ok(f(rt))
+        })
+        .unwrap_or(Err(ReactiveError::NoRuntime))
 }
 
 /// [`Runtime::track_dependencies`] 一次攒多少条依赖边再写回 observer。

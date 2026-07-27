@@ -220,7 +220,7 @@ impl<T: silex_core::traits::RxCloneData> IntoRx for Persistent<T> {
     }
 }
 
-impl<T: silex_core::traits::RxCloneData> IntoSignal for Persistent<T> {
+impl<T: silex_core::traits::RxData> IntoSignal for Persistent<T> {
     fn into_signal(self) -> silex_core::reactivity::Signal<T> {
         self.value.into_signal()
     }
@@ -273,14 +273,14 @@ impl<T: Clone + PartialEq + 'static> From<Persistent<T>> for RwSignal<T> {
 
 impl<T> ApplyAttributes for Persistent<T>
 where
-    T: silex_core::traits::RxCloneData + Sized + 'static,
+    T: silex_core::traits::RxCloneData,
     Rx<T, RxValueKind>: ApplyAttributes,
 {
 }
 
 impl<T> View for Persistent<T>
 where
-    T: silex_core::traits::RxCloneData + Sized + 'static,
+    T: silex_core::traits::RxCloneData,
     Rx<T, RxValueKind>: View,
 {
     fn mount(&self, parent: &web_sys::Node, attrs: Vec<silex_dom::attribute::PendingAttribute>) {

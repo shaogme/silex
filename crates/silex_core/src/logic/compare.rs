@@ -11,7 +11,7 @@ macro_rules! reactive_compare_method {
                 + $crate::traits::IntoSignal
                 + $crate::traits::RxValue<Value = Self::Value>
                 + 'static,
-            Self::Value: $bound + Sized + $crate::traits::RxCloneData + 'static,
+            Self::Value: $bound + $crate::traits::RxCloneData,
         {
             use $crate::traits::RxGet;
             let lhs = self.clone().into_signal();
@@ -37,7 +37,7 @@ macro_rules! reactive_compare_method {
 /// Provides a fluent API for checking equality on reactive values.
 pub trait ReactivePartialEq: RxRead + Clone + 'static
 where
-    Self::Value: PartialEq + Sized + 'static,
+    Self::Value: PartialEq + 'static,
 {
     reactive_compare_method!(equals, eq, ==, PartialEq);
     reactive_compare_method!(not_equals, ne, !=, PartialEq);
@@ -46,7 +46,7 @@ where
 /// Provides a fluent API for checking ordering on reactive values.
 pub trait ReactivePartialOrd: RxRead + Clone + 'static
 where
-    Self::Value: PartialOrd + Sized + 'static,
+    Self::Value: PartialOrd + 'static,
 {
     reactive_compare_method!(greater_than, gt, >, PartialOrd);
     reactive_compare_method!(less_than, lt, <, PartialOrd);
@@ -57,13 +57,13 @@ where
 impl<S> ReactivePartialEq for S
 where
     S: RxRead + Clone + 'static,
-    S::Value: PartialEq + Sized + 'static,
+    S::Value: PartialEq + 'static,
 {
 }
 
 impl<S> ReactivePartialOrd for S
 where
     S: RxRead + Clone + 'static,
-    S::Value: PartialOrd + Sized + 'static,
+    S::Value: PartialOrd + 'static,
 {
 }

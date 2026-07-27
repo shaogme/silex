@@ -89,7 +89,7 @@ impl WebSocketConnection {
     #[cfg(feature = "json")]
     pub fn message<T>(&self) -> Memo<Option<T>>
     where
-        T: serde::de::DeserializeOwned + Clone + PartialEq + 'static,
+        T: serde::de::DeserializeOwned + PartialEq + 'static,
     {
         let message = self.message;
         Memo::new(move |_| {

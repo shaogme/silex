@@ -51,7 +51,7 @@ where
 
 impl<S, F, O> RxBase for SignalSlice<S, F, O>
 where
-    S: RxRead + RxCloneData,
+    S: RxRead,
     F: Fn(&S::Value) -> &O + 'static,
     O: ?Sized + RxData,
 {
@@ -86,7 +86,7 @@ where
     S: RxRead + RxCloneData,
     for<'a> S::ReadOutput<'a>: Deref<Target = S::Value>,
     F: Fn(&S::Value) -> &O + 'static,
-    O: ?Sized + RxData,
+    O: ?Sized + 'static,
 {
     type ReadOutput<'a>
         = SliceGuard<S::ReadOutput<'a>, O>
@@ -121,10 +121,10 @@ where
 
 impl<S, F, O> IntoRx for SignalSlice<S, F, O>
 where
-    S: RxRead + RxCloneData + 'static,
+    S: RxRead + RxCloneData,
     for<'a> S::ReadOutput<'a>: Deref<Target = S::Value>,
     F: Fn(&S::Value) -> &O + 'static,
-    O: RxCloneData + 'static,
+    O: RxCloneData,
 {
     type RxType = Rx<O, RxValueKind>;
 
@@ -144,7 +144,7 @@ where
     S: RxRead + RxCloneData,
     for<'a> S::ReadOutput<'a>: Deref<Target = S::Value>,
     F: Fn(&S::Value) -> &O + 'static,
-    O: Clone + RxData,
+    O: RxCloneData,
 {
     #[inline(always)]
     fn into_signal(self) -> Signal<Self::Value>

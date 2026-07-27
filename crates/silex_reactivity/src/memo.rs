@@ -34,7 +34,7 @@ use crate::{DerivedId, MemoId, internal::value::MemoThunk, runtime::drive};
 #[track_caller]
 pub fn create<T, F>(f: F) -> MemoId
 where
-    T: Clone + PartialEq + 'static,
+    T: PartialEq + 'static,
     F: Fn(Option<&T>) -> T + 'static,
 {
     MemoId::from_raw(drive::create_memo(MemoThunk::new::<T, F>(f)).expect("刚建出来的运行时可用"))

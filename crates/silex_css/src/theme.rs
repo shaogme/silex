@@ -106,7 +106,7 @@ fn theme_entries<T: ThemeToCss>(theme: &T) -> Vec<(&'static str, Option<String>)
 /// Usage: `div(children).apply(theme_variables(theme))`
 pub fn theme_variables<T>(theme: impl IntoSignal<Value = T> + 'static) -> ThemeVariables<T>
 where
-    T: ThemeType + ThemeToCss + RxCloneData + 'static,
+    T: ThemeType + ThemeToCss + RxCloneData,
 {
     ThemeVariables(theme.into_signal())
 }
@@ -116,7 +116,7 @@ pub struct ThemeVariables<T>(pub Signal<T>);
 
 impl<T> ApplyToDom for ThemeVariables<T>
 where
-    T: ThemeType + ThemeToCss + RxCloneData + 'static,
+    T: ThemeType + ThemeToCss + RxCloneData,
 {
     fn apply(&self, el: &Element, _target: ApplyTarget) {
         let theme = self.0;
@@ -133,7 +133,7 @@ where
 
 impl<T> IntoStorable for ThemeVariables<T>
 where
-    T: ThemeType + ThemeToCss + RxCloneData + 'static,
+    T: ThemeType + ThemeToCss + RxCloneData,
 {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {
@@ -156,7 +156,7 @@ const GLOBAL_THEME_STYLE_ID: &str = "slx-global-theme";
 /// 默认变量——但这是**规则之间**的较量，而不是行内样式的碾压。
 pub fn set_global_theme<T>(theme: impl IntoSignal<Value = T> + 'static)
 where
-    T: ThemeType + ThemeToCss + RxCloneData + 'static,
+    T: ThemeType + ThemeToCss + RxCloneData,
 {
     let signal = theme.into_signal();
 
@@ -197,7 +197,7 @@ pub trait ThemePatchToCss {
 /// This allows for granular overrides while relying on CSS variable inheritance for the rest.
 pub fn theme_patch<P>(patch: impl IntoSignal<Value = P> + 'static) -> ThemePatchVariables<P>
 where
-    P: ThemePatchToCss + RxCloneData + 'static,
+    P: ThemePatchToCss + RxCloneData,
 {
     ThemePatchVariables(patch.into_signal())
 }
@@ -207,7 +207,7 @@ pub struct ThemePatchVariables<P>(pub Signal<P>);
 
 impl<P> ApplyToDom for ThemePatchVariables<P>
 where
-    P: ThemePatchToCss + RxCloneData + 'static,
+    P: ThemePatchToCss + RxCloneData,
 {
     fn apply(&self, el: &Element, _target: ApplyTarget) {
         let patch = self.0;
@@ -224,7 +224,7 @@ where
 
 impl<P> IntoStorable for ThemePatchVariables<P>
 where
-    P: ThemePatchToCss + RxCloneData + 'static,
+    P: ThemePatchToCss + RxCloneData,
 {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {

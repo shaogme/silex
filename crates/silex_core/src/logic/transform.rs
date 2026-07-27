@@ -5,7 +5,7 @@ use crate::{
 };
 
 /// 允许从当前信号创建一个衍生信号。
-pub trait Map: RxBase + Sized {
+pub trait Map: RxBase {
     /// 基于当前信号派生出一个新信号。
     fn map<U, F>(self, f: F) -> Rx<U, RxValueKind>
     where
@@ -55,27 +55,19 @@ where
 }
 
 /// 允许将一个信号转换为自带缓存的记忆化 (Memoize) 信号。
-///
-/// 要求 `Value: Clone + Sized`，因为记忆化需要克隆并存储缓存值。
-pub trait Memoize: RxRead + Clone + 'static
-where
-    Self::Value: Sized,
-{
+pub trait Memoize: RxRead {
     /// 对该信号的值进行记忆化缓存。
     fn memo(self) -> Memo<Self::Value>
     where
-        Self::Value: Clone + PartialEq + 'static;
+        Self::Value: PartialEq + Sized + 'static;
 }
 
 impl<T, M> Memoize for Rx<T, M>
 where
-    T: Clone + Sized + 'static,
+    T: PartialEq + Clone + 'static,
     M: 'static,
 {
-    fn memo(self) -> Memo<T>
-    where
-        T: PartialEq + 'static,
-    {
+    fn memo(self) -> Memo<T> {
         Memo::new(move |_| self.with(Clone::clone))
     }
 }

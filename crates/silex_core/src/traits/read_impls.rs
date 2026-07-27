@@ -5,10 +5,7 @@ use silex_reactivity::{get_debug_label, get_node_defined_at};
 use crate::{
     Rx, RxInner,
     reactivity::{NodeId, Signal, dispatch},
-    traits::{
-        IntoRx, IntoSignal, RxBase, RxCloneData, RxData, RxGet, RxGuard, RxInternal, RxRead,
-        RxValue,
-    },
+    traits::{IntoRx, IntoSignal, RxBase, RxData, RxGet, RxGuard, RxInternal, RxRead, RxValue},
     unwrap_rx,
 };
 
@@ -20,7 +17,7 @@ pub use tuples::{create_tuple_n_rx, create_tuple2_rx};
 
 impl<T: ?Sized + RxRead> RxGet for T
 where
-    T::Value: Clone + Sized,
+    T::Value: Clone,
     for<'a> T::ReadOutput<'a>: Deref<Target = T::Value>,
 {
     #[track_caller]
@@ -117,7 +114,7 @@ impl<T: RxData, M> RxInternal for Rx<T, M> {
 
 impl<T: RxData, M> IntoRx for Rx<T, M>
 where
-    T: RxCloneData,
+    T: RxData,
 {
     type RxType = Self;
 
@@ -130,11 +127,7 @@ where
     }
 }
 
-impl<T: RxData, M> IntoSignal for Rx<T, M>
-where
-    T: RxCloneData,
-    M: 'static,
-{
+impl<T: RxData, M: 'static> IntoSignal for Rx<T, M> {
     fn into_signal(self) -> Signal<Self::Value>
     where
         Self: Sized,

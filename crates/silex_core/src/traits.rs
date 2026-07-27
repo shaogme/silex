@@ -162,7 +162,7 @@ pub trait IntoSignal: RxValue {
     fn into_signal(self) -> Signal<Self::Value>
     where
         Self: Sized + RxData,
-        Self::Value: Sized + RxCloneData;
+        Self::Value: Sized + RxData;
 }
 
 /// A trait used internally by `Rx` to delegate calls to either a closure or a reactive primitive.
@@ -373,7 +373,7 @@ impl<S, T> RxOptionExt<T> for S where S: RxRead<Value = Option<T>> {}
 /// 从而简化了用户在使用该 Trait 作为约束时的书写负担。
 pub trait RxGet: RxRead
 where
-    Self::Value: Clone + Sized,
+    Self::Value: Sized,
 {
     /// 非响应式地克隆和返回值。如果是被销毁的，返回 None。
     fn try_get_untracked(&self) -> Option<Self::Value>;

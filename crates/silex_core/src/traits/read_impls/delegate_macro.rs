@@ -5,7 +5,7 @@ macro_rules! impl_rx_delegate {
             type Value = T;
         }
 
-        impl<T: $crate::traits::RxCloneData> $crate::traits::RxBase for $target<T> {
+        impl<T: $crate::traits::RxData> $crate::traits::RxBase for $target<T> {
             fn id(&self) -> Option<$crate::reactivity::NodeId> {
                 None
             }
@@ -21,7 +21,7 @@ macro_rules! impl_rx_delegate {
             }
         }
 
-        impl<T: $crate::traits::RxCloneData> $crate::traits::IntoRx for $target<T> {
+        impl<T: $crate::traits::RxData> $crate::traits::IntoRx for $target<T> {
             type RxType = $crate::Rx<T, $crate::RxValueKind>;
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
@@ -36,7 +36,7 @@ macro_rules! impl_rx_delegate {
             }
         }
 
-        impl<T: $crate::traits::RxCloneData> $crate::traits::IntoSignal for $target<T> {
+        impl<T: $crate::traits::RxData> $crate::traits::IntoSignal for $target<T> {
             #[inline(always)]
             fn into_signal(self) -> $crate::reactivity::Signal<T> {
                 $crate::reactivity::Signal::derive(Box::new(move || {
@@ -79,7 +79,7 @@ macro_rules! impl_rx_delegate {
             }
         }
 
-        impl<T: $crate::traits::RxCloneData> $crate::traits::IntoRx for $target<T> {
+        impl<T: $crate::traits::RxData> $crate::traits::IntoRx for $target<T> {
             type RxType = $crate::Rx<T, $crate::RxValueKind>;
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
@@ -91,7 +91,7 @@ macro_rules! impl_rx_delegate {
             }
         }
 
-        impl<T: $crate::traits::RxCloneData> $crate::traits::IntoSignal for $target<T> {
+        impl<T: $crate::traits::RxData> $crate::traits::IntoSignal for $target<T> {
             #[inline(always)]
             fn into_signal(self) -> $crate::reactivity::Signal<T> {
                 $crate::reactivity::Signal::Read($crate::reactivity::ReadSignal {
@@ -129,10 +129,7 @@ macro_rules! impl_rx_delegate {
             }
 
             #[inline(always)]
-            fn rx_get_adaptive(&self) -> Option<Self::Value>
-            where
-                Self::Value: Sized,
-            {
+            fn rx_get_adaptive(&self) -> Option<Self::Value> {
                 self.rx_try_with_untracked(|v| {
                     use $crate::traits::adaptive::{AdaptiveFallback, AdaptiveWrapper};
                     AdaptiveWrapper(v).maybe_clone()
@@ -174,7 +171,7 @@ macro_rules! impl_rx_delegate {
             }
         }
 
-        impl<T: $crate::traits::RxCloneData> $crate::traits::IntoRx for $target<T> {
+        impl<T: $crate::traits::RxData> $crate::traits::IntoRx for $target<T> {
             type RxType = $crate::Rx<T, $crate::RxValueKind>;
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
@@ -186,7 +183,7 @@ macro_rules! impl_rx_delegate {
             }
         }
 
-        impl<T: $crate::traits::RxCloneData> $crate::traits::IntoSignal for $target<T> {
+        impl<T: $crate::traits::RxData> $crate::traits::IntoSignal for $target<T> {
             #[inline(always)]
             fn into_signal(self) -> $crate::reactivity::Signal<T> {
                 $crate::traits::IntoSignal::into_signal(self.$field)
@@ -210,10 +207,7 @@ macro_rules! impl_rx_delegate {
             }
 
             #[inline(always)]
-            fn rx_get_adaptive(&self) -> Option<Self::Value>
-            where
-                Self::Value: Sized,
-            {
+            fn rx_get_adaptive(&self) -> Option<Self::Value> {
                 self.$field.rx_get_adaptive()
             }
 

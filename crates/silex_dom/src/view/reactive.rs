@@ -21,7 +21,7 @@ use web_sys::Node;
 /// 泛型内核函数：负责将任何响应式类型转换为文本视图。
 pub(crate) fn mount_reactive_text<T, M>(parent: &Node, rx: Rx<T, M>)
 where
-    T: Display + RxCloneData + 'static,
+    T: Display + RxCloneData,
     M: 'static,
 {
     let document = crate::document();
@@ -61,7 +61,7 @@ where
 
 impl<V, M> ApplyAttributes for Rx<V, M>
 where
-    V: RxCloneData + Sized + 'static,
+    V: RxCloneData,
     M: 'static,
     Self: RxViewDispatcher,
 {
@@ -70,7 +70,7 @@ where
 
 impl<V, M> View for Rx<V, M>
 where
-    V: Sized + 'static,
+    V: Sized,
     M: 'static,
     Self: RxViewDispatcher,
 {
@@ -175,15 +175,15 @@ macro_rules! impl_view_forward_to_rx {
         $(
             impl<T> ApplyAttributes for $ty<T>
             where
-                T: RxCloneData + Sized + 'static,
-                Self: IntoRx<RxType = Rx<T, RxValueKind>> + Clone + 'static,
+                T: RxCloneData,
+                Self: IntoRx<RxType = Rx<T, RxValueKind>> + Clone,
                 Rx<T, RxValueKind>: ApplyAttributes,
             {}
 
             impl<T> View for $ty<T>
             where
-                T: RxCloneData + Sized + 'static,
-                Self: IntoRx<RxType = Rx<T, RxValueKind>> + Clone + 'static,
+                T: RxCloneData,
+                Self: IntoRx<RxType = Rx<T, RxValueKind>> + Clone,
                 Rx<T, RxValueKind>: View,
             {
                 fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
@@ -205,16 +205,16 @@ impl_view_forward_to_rx!(ReadSignal, RwSignal, Constant, Memo, Signal);
 
 impl<S, F, V> ApplyAttributes for DerivedPayload<S, F>
 where
-    Self: IntoRx<RxType = Rx<V, RxValueKind>> + Clone + 'static,
-    V: RxCloneData + Sized + 'static,
+    Self: IntoRx<RxType = Rx<V, RxValueKind>> + Clone,
+    V: RxCloneData,
     Rx<V, RxValueKind>: ApplyAttributes,
 {
 }
 
 impl<S, F, V> View for DerivedPayload<S, F>
 where
-    Self: IntoRx<RxType = Rx<V, RxValueKind>> + Clone + 'static,
-    V: RxCloneData + Sized + 'static,
+    Self: IntoRx<RxType = Rx<V, RxValueKind>> + Clone,
+    V: RxCloneData,
     Rx<V, RxValueKind>: View,
 {
     fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
@@ -231,16 +231,16 @@ where
 
 impl<S, F, V> ApplyAttributes for Rc<DerivedPayload<S, F>>
 where
-    Self: IntoRx<RxType = Rx<V, RxValueKind>> + 'static,
-    V: RxCloneData + Sized + 'static,
+    Self: IntoRx<RxType = Rx<V, RxValueKind>>,
+    V: RxCloneData,
     Rx<V, RxValueKind>: ApplyAttributes,
 {
 }
 
 impl<S, F, V> View for Rc<DerivedPayload<S, F>>
 where
-    Self: IntoRx<RxType = Rx<V, RxValueKind>> + 'static,
-    V: RxCloneData + Sized + 'static,
+    Self: IntoRx<RxType = Rx<V, RxValueKind>>,
+    V: RxCloneData,
     Rx<V, RxValueKind>: View,
 {
     fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
@@ -257,16 +257,16 @@ where
 
 impl<S, F, O> ApplyAttributes for SignalSlice<S, F, O>
 where
-    Self: IntoRx<RxType = Rx<O, RxValueKind>> + Clone + 'static,
-    O: RxCloneData + Sized + 'static,
+    Self: IntoRx<RxType = Rx<O, RxValueKind>> + Clone,
+    O: RxCloneData,
     Rx<O, RxValueKind>: ApplyAttributes,
 {
 }
 
 impl<S, F, O> View for SignalSlice<S, F, O>
 where
-    Self: IntoRx<RxType = Rx<O, RxValueKind>> + Clone + 'static,
-    O: RxCloneData + Sized + 'static,
+    Self: IntoRx<RxType = Rx<O, RxValueKind>> + Clone,
+    O: RxCloneData,
     Rx<O, RxValueKind>: View,
 {
     fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {

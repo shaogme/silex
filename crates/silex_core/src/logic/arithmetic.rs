@@ -113,7 +113,7 @@ macro_rules! impl_rx_op {
         impl<R, T> std::ops::$trait<R> for $crate::Rx<T, $crate::RxValueKind>
         where
             for<'a> &'a T: std::ops::$trait<&'a T, Output = T>,
-            T: $crate::traits::RxCloneData + 'static,
+            T: $crate::traits::RxCloneData,
             R: $crate::traits::IntoRx<Value = T> + $crate::traits::IntoSignal + 'static,
         {
             type Output = $crate::Rx<T, $crate::RxValueKind>;
@@ -131,7 +131,7 @@ macro_rules! impl_rx_op {
 
 pub fn apply_binary_op<T, R>(lhs: Rx<T>, rhs: R, f: fn(&T, &T) -> T) -> Rx<T>
 where
-    T: RxCloneData + 'static,
+    T: RxCloneData,
     R: IntoSignal<Value = T> + 'static,
 {
     let lhs_s = lhs.into_signal();
@@ -151,7 +151,7 @@ macro_rules! impl_rx_unary_op {
         impl<T> std::ops::$trait for $crate::Rx<T, $crate::RxValueKind>
         where
             for<'a> &'a T: std::ops::$trait<Output = T>,
-            T: $crate::traits::RxCloneData + 'static,
+            T: $crate::traits::RxCloneData,
         {
             type Output = $crate::Rx<T, $crate::RxValueKind>;
 
@@ -167,7 +167,7 @@ macro_rules! impl_rx_unary_op {
 
 pub fn apply_unary_op<T>(val: Rx<T>, f: fn(&T) -> T) -> Rx<T>
 where
-    T: RxCloneData + 'static,
+    T: RxCloneData,
 {
     let val_s = val.into_signal();
 

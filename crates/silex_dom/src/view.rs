@@ -14,7 +14,7 @@ use silex_core::{
     error::handle_error,
     logic::Map,
     reactivity::{Effect, ScopeId, Signal, create_scope, dispose},
-    traits::{IntoRx, IntoSignal, RxCloneData, RxData, RxValue},
+    traits::{IntoRx, IntoSignal, RxData, RxValue},
 };
 use std::{
     borrow::Cow,
@@ -159,7 +159,7 @@ where
     fn into_signal(self) -> Signal<Self::Value>
     where
         Self: Sized + RxData,
-        Self::Value: Sized + RxCloneData,
+        Self::Value: Sized + RxData,
     {
         self.into_owned().into_signal()
     }

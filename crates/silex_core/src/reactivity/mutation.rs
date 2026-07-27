@@ -69,7 +69,7 @@ impl<Arg, T, E> Clone for Mutation<Arg, T, E> {
 
 impl<Arg, T, E> Copy for Mutation<Arg, T, E> {}
 
-impl<Arg: RxData, T: RxCloneData, E: RxCloneData> Mutation<Arg, T, E> {
+impl<Arg: RxData, T: RxData, E: RxData> Mutation<Arg, T, E> {
     /// Create a new Mutation with the given async handler.
     ///
     /// The handler `f` takes an argument `Arg` and returns a Future resolving to `Result<T, E>`.
@@ -158,13 +158,17 @@ impl<Arg: RxData, T: RxCloneData, E: RxCloneData> Mutation<Arg, T, E> {
     pub fn loading(&self) -> bool {
         self.state.with(|s: &MutationState<T, E>| s.is_loading())
     }
+}
 
+impl<Arg: RxData, T: RxCloneData, E: RxData> Mutation<Arg, T, E> {
     /// Helper to get the last successful value, if any.
     pub fn value(&self) -> Option<T> {
         self.state
             .with(|s: &MutationState<T, E>| s.value().cloned())
     }
+}
 
+impl<Arg: RxData, T: RxData, E: RxCloneData> Mutation<Arg, T, E> {
     /// Helper to get the last error, if any.
     pub fn error(&self) -> Option<E> {
         self.state.with(|s: &MutationState<T, E>| match s {
@@ -174,11 +178,11 @@ impl<Arg: RxData, T: RxCloneData, E: RxCloneData> Mutation<Arg, T, E> {
     }
 }
 
-impl<Arg: RxData, T: RxCloneData, E: RxCloneData> RxValue for Mutation<Arg, T, E> {
+impl<Arg: RxData, T: RxData, E: RxData> RxValue for Mutation<Arg, T, E> {
     type Value = Option<T>;
 }
 
-impl<Arg: RxData, T: RxCloneData, E: RxCloneData> RxBase for Mutation<Arg, T, E> {
+impl<Arg: RxData, T: RxData, E: RxData> RxBase for Mutation<Arg, T, E> {
     #[inline(always)]
     fn id(&self) -> Option<NodeId> {
         self.state.id()
@@ -205,7 +209,7 @@ impl<Arg: RxData, T: RxCloneData, E: RxCloneData> RxBase for Mutation<Arg, T, E>
     }
 }
 
-impl<Arg: RxData, T: RxCloneData, E: RxCloneData> RxInternal for Mutation<Arg, T, E> {
+impl<Arg: RxData, T: RxCloneData, E: RxData> RxInternal for Mutation<Arg, T, E> {
     type ReadOutput<'a>
         = RxGuard<'a, Option<T>, Option<T>>
     where
@@ -240,7 +244,7 @@ impl<Arg: RxData, T: RxCloneData, E: RxCloneData> RxInternal for Mutation<Arg, T
     }
 }
 
-impl<Arg: RxData, T: RxCloneData, E: RxCloneData> IntoRx for Mutation<Arg, T, E> {
+impl<Arg: RxData, T: RxCloneData, E: RxData> IntoRx for Mutation<Arg, T, E> {
     type RxType = Rx<Option<T>, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
@@ -252,12 +256,11 @@ impl<Arg: RxData, T: RxCloneData, E: RxCloneData> IntoRx for Mutation<Arg, T, E>
     }
 }
 
-impl<Arg: RxData, T: RxCloneData, E: RxCloneData> IntoSignal for Mutation<Arg, T, E> {
+impl<Arg: RxData, T: RxCloneData, E: RxData> IntoSignal for Mutation<Arg, T, E> {
     #[inline(always)]
     fn into_signal(self) -> Signal<Option<T>>
     where
         Self: 'static,
-        T: Clone,
     {
         Signal::derive(Box::new(move || self.get()))
     }

@@ -314,7 +314,7 @@ impl<T: Default + RxCloneData> Default for Signal<T> {
     }
 }
 
-impl<T: RxCloneData> Signal<T> {
+impl<T: RxData> Signal<T> {
     pub fn with_name(self, name: impl Into<String>) -> Self {
         match self {
             Signal::Read(s) => {

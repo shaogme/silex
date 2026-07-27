@@ -89,7 +89,7 @@ impl EventStreamConnection {
     #[cfg(feature = "json")]
     pub fn messages<T>(&self) -> Memo<Vec<T>>
     where
-        T: serde::de::DeserializeOwned + Clone + PartialEq + 'static,
+        T: serde::de::DeserializeOwned + PartialEq + 'static,
     {
         let messages = self.messages;
         Memo::new(move |_| {
@@ -104,7 +104,7 @@ impl EventStreamConnection {
     #[cfg(feature = "json")]
     pub fn last_message<T>(&self) -> Memo<Option<T>>
     where
-        T: serde::de::DeserializeOwned + Clone + PartialEq + 'static,
+        T: serde::de::DeserializeOwned + PartialEq + 'static,
     {
         let messages = self.messages;
         Memo::new(move |_| {
@@ -118,7 +118,7 @@ impl EventStreamConnection {
     #[cfg(feature = "json")]
     pub fn latest_messages<T>(&self, limit: usize) -> Memo<Vec<T>>
     where
-        T: serde::de::DeserializeOwned + Clone + PartialEq + 'static,
+        T: serde::de::DeserializeOwned + PartialEq + 'static,
     {
         let messages = self.messages;
         Memo::new(move |_| {

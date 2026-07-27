@@ -66,9 +66,8 @@ impl RouterContext {
 
     /// 获取解析后的查询参数 Memo
     pub fn query_map(self) -> Memo<HashMap<String, String>> {
-        let search_signal = self.search;
         Memo::new(move |_| {
-            let s = search_signal.get();
+            let s = self.search.get();
             let mut map = HashMap::new();
 
             if let Ok(params) = web_sys::UrlSearchParams::new_with_str(&s)
