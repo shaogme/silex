@@ -1,27 +1,18 @@
-use std::{cell::Ref, mem};
+use std::{cell::Ref, mem, panic::Location};
 
+pub(crate) mod drive;
 pub(crate) mod graph;
 pub(crate) mod guard;
 pub(crate) mod scheduler;
 pub(crate) mod scope;
 pub(crate) mod storage;
 
-use self::{
-    graph::NodeState,
-    guard::{
-        ComputationGuard, DepthGuard, NodeRunGuard, PayloadGuard, PropagateQueue, QueueGuard,
-        SignalValueGuard,
-    },
-    scheduler::*,
-    scope::Scopes,
-    storage::Debris,
-    storage::*,
-};
+use self::{graph::NodeState, scheduler::*, scope::Scopes, storage::*};
 use crate::{
     DependencyList, ReactiveError, ReactiveResult,
     internal::{
         arena::Index as NodeId,
-        value::{AnyValue, Computation, EffectThunk, MemoThunk},
+        value::{AnyValue, Computation, MemoThunk},
     },
 };
 
@@ -31,14 +22,74 @@ pub(crate) struct Runtime {
     pub(crate) scopes: Scopes,
 }
 
-pub(crate) static RUNTIME: silex_thread_local::ThreadLocal<Runtime> =
+/// 线程本地的运行时。
+///
+/// # 为什么外面包了一层 `RefCell`
+///
+/// 从前这里直接是 `ThreadLocal<Runtime>`，`RUNTIME.get()` 交出一个 `&Runtime`，
+/// 于是运行时内部的一切可变性都得靠 `Cell` / `RefCell` / `UnsafeCell` 自己扛，
+/// 而“执行用户代码时不得持有指向节点的引用”这条不变量只能靠逐点审读维系
+/// （审计报告 §2.1、§4 阶段三）。
+///
+/// 现在访问入口收成 [`with_rt`] 一个函数，它交出的是 `&mut Runtime` ——
+/// **独占**的。后果有三：
+///
+/// 1. 存储层不再需要内部可变性，可以退回成普通的安全容器（这是整条路线的
+///    全部收益所在）；
+/// 2. 用户代码只可能在两次借用**之间**执行，因为借用出不了 `with_rt` 的闭包 ——
+///    见 [`drive`] 模块；
+/// 3. 万一哪条路径不小心在借用之内跑了用户代码，那次重入拿到的是一句
+///    [`ReactiveError::Reentrant`]，而不是一次静默的别名违规。
+pub(crate) static RUNTIME: silex_thread_local::ThreadLocal<std::cell::RefCell<Runtime>> =
     silex_thread_local::ThreadLocal::new();
+
+/// 触碰运行时的**唯一**方式。
+///
+/// `f` 只能是运行时内部代码，**绝不能是用户代码** —— 用户代码一律由 [`drive`]
+/// 里的驱动循环在两次 `with_rt` 之间执行。
+///
+/// 这条纪律不由类型系统直接强制（闭包里当然写得出对公开 API 的调用），
+/// 但它的**后果**由类型系统兜住了：`&mut Runtime` 是独占的，因此违反纪律的
+/// 代价是一句清晰的 `Reentrant`，而不是从前那种要靠 Miri 才看得见的 UB。
+#[inline]
+pub(crate) fn with_rt<R>(f: impl FnOnce(&mut Runtime) -> R) -> ReactiveResult<R> {
+    // 只读、或只写既有节点的路径一律用 `get()`：没有运行时就没有节点，
+    // 不该仅仅为了报告“查无此节点”而把整个运行时建起来（AUDIT P19.9）。
+    let cell = RUNTIME.get().ok_or(ReactiveError::NoRuntime)?;
+    let mut rt = cell
+        .try_borrow_mut()
+        .map_err(|_| ReactiveError::Reentrant)?;
+    Ok(f(&mut rt))
+}
+
+/// 同 [`with_rt`]，但运行时不存在时先把它建出来。
+///
+/// 只有真正会**创建**节点的入口才该用它。
+#[inline]
+pub(crate) fn with_rt_or_init<R>(f: impl FnOnce(&mut Runtime) -> R) -> ReactiveResult<R> {
+    let cell = RUNTIME.get_or(|| std::cell::RefCell::new(Runtime::new()));
+    let mut rt = cell
+        .try_borrow_mut()
+        .map_err(|_| ReactiveError::Reentrant)?;
+    Ok(f(&mut rt))
+}
 
 /// [`Runtime::track_dependencies`] 一次攒多少条依赖边再写回 observer。
 ///
-/// 只影响“observer 查表被摊薄多少倍”，不影响语义。取 16：`track_signals_batch`
+/// 只影响“observer 查表被摊薄多少倍”，不影响语义。取 16：`signal::track_batch`
 /// 的真实调用点一次登记的 signal 数是个位数到十几个。
 const TRACK_BATCH: usize = 16;
+
+/// 一次计算的“待办”：所有载荷都已按值移出节点。
+///
+/// 它的存在就是为了让执行用户代码的那一层不必再向运行时要任何东西 ——
+/// 取票（[`Runtime::begin_run`]）与执行（[`drive::run_node`]）分处两次不同的借用。
+pub(crate) struct RunTicket {
+    pub(crate) computation: Option<Computation>,
+    pub(crate) children: Vec<NodeId>,
+    pub(crate) cleanups: CleanupList,
+    pub(crate) dependencies: DependencyList,
+}
 
 impl Runtime {
     // --- 种类判定：为 `Handle::<K>::is_alive` 提供依据 ---
@@ -73,38 +124,38 @@ impl Runtime {
         }
     }
 
-    #[track_caller]
-    pub(crate) fn create_signal(&self, value: AnyValue) -> NodeId {
-        let id = self.register_node();
+    pub(crate) fn create_signal_at(
+        &mut self,
+        at: &'static Location<'static>,
+        value: AnyValue,
+    ) -> NodeId {
+        let id = self.register_node_at(at);
         self.storage
             .reactive
             .insert(id, ReactiveNode::new_signal(value));
         id
     }
 
-    #[track_caller]
-    pub(crate) fn create_effect(&self, f: EffectThunk) -> NodeId {
-        let id = self.register_node();
+    /// 建一个带非响应式载荷的节点（stored value / callback / node-ref 共用）。
+    pub(crate) fn store_payload_at(
+        &mut self,
+        at: &'static Location<'static>,
+        value: AnyValue,
+    ) -> NodeId {
+        let id = self.register_node_at(at);
         self.storage
-            .reactive
-            .insert(id, ReactiveNode::new_effect(f));
-
-        // 首跑必须与重跑走同一条调度路径：先占住 `running_queue`，
-        // 让 effect 体内的写入只入队、不在体内嵌套 flush，运行结束后统一 flush。
-        // 否则同一段用户代码的执行顺序会取决于它是首跑还是重跑（AUDIT P15），
-        // 而嵌套 flush 更会重入到这个正在运行的 effect 上（AUDIT P1）。
-        let is_outermost = {
-            let queue_guard = QueueGuard::acquire(&self.scheduler.running_queue);
-            let is_outermost = queue_guard.is_some();
-            self.run_node(id);
-            is_outermost
-        };
-
-        if is_outermost {
-            self.flush_if_idle();
-        }
+            .extras
+            .insert(id, std::cell::RefCell::new(Some(value)));
         id
     }
+
+    pub(crate) fn prepare_memo_node(&mut self, id: NodeId, computation: MemoThunk) {
+        self.storage
+            .reactive
+            .insert(id, ReactiveNode::new_memo(computation));
+    }
+
+    // --- 依赖追踪 ---
 
     /// 当前 observer 的运行代次，同时兼作“它确实是个还活着的计算节点”的判定。
     ///
@@ -208,83 +259,43 @@ impl Runtime {
         self.record_dependencies(observer, &pending[..len]);
     }
 
-    pub(crate) fn queue_dependents(&self, source_id: NodeId) {
-        let mut queue = PropagateQueue::acquire(&self.scheduler.workspace);
-        self.propagate(source_id, queue.get());
+    // --- 传播 ---
+
+    /// 把下游标记为脏并把其中的 effect 推进队列。
+    ///
+    /// 全程不执行一行用户代码，所以整个跑在一次借用之内；工作队列从池子里借、
+    /// 用完还回去，无需守卫（传播路径上没有 panic）。
+    pub(crate) fn queue_dependents(&mut self, source_id: NodeId) {
+        let mut queue = self.scheduler.workspace.borrow_deque();
+        self.propagate(source_id, &mut queue);
+        self.scheduler.workspace.return_deque(queue);
     }
 
-    /// 必要时把一个节点算干净。
-    ///
-    /// 绝大多数读取的目标是一个**永远干净的普通 signal**，而整套求值机制对它们
-    /// 是纯粹的浪费：借出工作栈、进 `evaluate` 看一眼状态就返回、再还回去，
-    /// 外加一个深度守卫和一次空队列的 `run_queue`。实测这条提前返回让无 owner
-    /// 上下文的 signal 读取从 20.5 ns 降到 11.6 ns（−43%），effect 内的追踪读取
-    /// 从 24.6 ns 降到 17.4 ns（AUDIT 二轮 §1.3）。
+    // --- 读 ---
+
+    /// 这次读取能不能在**一次借用**里走完：目标已经干净，且队列里没有待办。
     ///
     /// `observer_queue` 那半个条件是为了保住“读取也是一个 flush 出口”这条现有
     /// 语义：队列里还有待办时照旧走完整路径，让这次读取把它们冲掉。
-    pub(crate) fn update_if_necessary(&self, node_id: NodeId) {
-        if self.storage.get_state(node_id) == NodeState::Clean
-            && self.scheduler.observer_queue.borrow().is_empty()
-        {
-            return;
-        }
-
-        let was_outermost = {
-            // DFS 期间禁止 flush effect 队列（AUDIT P15）。
-            let eval_guard = DepthGuard::enter(&self.scheduler.evaluating);
-            self.drive_eval(node_id);
-            eval_guard.is_outermost()
-        };
-
-        // DFS 期间被推迟的更新在这里统一 flush。
-        // 若本次求值本身就发生在队列执行中，`run_queue` 的守卫会让这次调用直接返回，
-        // 由外层的队列循环继续消费。
-        if was_outermost {
-            self.flush_if_idle();
-        }
-    }
-
-    pub(crate) fn notify_update(&self, id: NodeId) {
-        self.queue_dependents(id);
-        self.flush_if_idle();
-    }
-
-    /// 在没有 batch、也没有正在进行的求值 DFS 时执行 effect 队列。
-    ///
-    /// 这是 effect 的**唯一**调度出口：所有会产生失效的路径都汇聚到这里，
-    /// 执行时机不再取决于调用方走的是哪条入口（AUDIT P15）。
     #[inline]
-    pub(crate) fn flush_if_idle(&self) {
-        if self.scheduler.batch_depth.get() == 0 && self.scheduler.evaluating.get() == 0 {
-            self.run_queue();
-        }
+    pub(crate) fn is_settled(&self, id: NodeId) -> bool {
+        self.storage.get_state(id) == NodeState::Clean && self.scheduler.observer_queue.is_empty()
     }
 
-    /// 读取一个节点之前：先把它算干净，**然后**才建立依赖边。
+    /// effect 队列现在该不该跑。
     ///
-    /// 顺序不能反过来。之前是先 `track_dependency` 再 `update_if_necessary`，
-    /// 于是当一个 memo 在自己的计算过程中第一次读到一个正处于 `Dirty` 的上游时：
+    /// 这是 effect 的唯一调度判据（AUDIT P15）：不在 batch 里、不在求值 DFS 里、
+    /// 没有别的 `run_queue` 正在跑 —— 外加“队列里确实有东西”。
     ///
-    /// 1. 它先把自己登记进上游的订阅者表；
-    /// 2. 上游随即重算、值变了、`commit_update` → `propagate` 把订阅者标脏 ——
-    ///    而本节点刚刚才登记进去，且此刻**正在运行**；
-    /// 3. 本节点在运行前置的 `Clean` 被覆盖成 `Dirty`，跑完出栈时状态仍是 `Dirty`；
-    /// 4. 下游读它时看到 `Dirty`，再算一遍。
-    ///
-    /// 实测每层恒定 2 倍（不随链长放大），用户的计算闭包被白跑一次。
-    /// 先求值再追踪之后，上游提交时本节点还不是它的订阅者，标不到自己头上；
-    /// 顺带把登记的版本号从“重算前”修正成“重算后”的正确值（AUDIT 二轮 §1.2）。
-    ///
-    /// 代价：依赖边晚一步建立，因此依赖环要多绕一轮才会被 `evaluate` 检测到 ——
-    /// 仍然会被检测到，只是路径长一点。
-    pub(crate) fn prepare_read(&self, id: NodeId) {
-        self.update_if_necessary(id);
-        self.track_dependency(id);
-    }
-
-    pub(crate) fn prepare_read_untracked(&self, id: NodeId) {
-        self.update_if_necessary(id);
+    /// 最后那一条是纯粹的短路：队列空时 `run_queue` 进去也只是抢一次标志、
+    /// 弹一次空队列、再放掉标志，而在方案 B 之下那是**三次**线程本地查表。
+    /// 0 订阅者的写入是最常见的写入形态，这一条把它从 7 次借用降到 2 次。
+    #[inline]
+    pub(crate) fn should_flush(&self) -> bool {
+        self.scheduler.batch_depth == 0
+            && self.scheduler.evaluating == 0
+            && !self.scheduler.running_queue
+            && !self.scheduler.observer_queue.is_empty()
     }
 
     /// 一个节点没有 `reactive` 条目时，到底是“查无此节点”还是“种类不对”。
@@ -303,10 +314,10 @@ impl Runtime {
 
     /// 把 signal 的值移出节点。失败原因见 [`ReactiveError`]。
     ///
-    /// `None` 就是“正被某个用户闭包借出”—— 阶段三之前这是一个 `updating: bool`
+    /// `None` 就是“正被某个用户闭包借出”—— 从前这是一个 `updating: bool`
     /// 加一个现造的 `AnyValue::placeholder()` 填进节点，读的时候还要靠一个
     /// `#[cold]` 的分类函数把“你重入了”和“你类型写错了”分开。
-    fn take_signal_value(&self, id: NodeId) -> ReactiveResult<AnyValue> {
+    pub(crate) fn take_signal_value(&self, id: NodeId) -> ReactiveResult<AnyValue> {
         let node = self
             .storage
             .node(id)
@@ -322,75 +333,13 @@ impl Runtime {
             .ok_or(ReactiveError::Reentrant)
     }
 
-    /// 以“取出 → 交给用户闭包 → 放回”的方式修改 signal 的值。
-    ///
-    /// 用户闭包执行期间，节点里的值是 `None`，运行时不再持有任何指向该节点载荷
-    /// 的借用 —— 否则闭包内一旦重入访问同一个节点（哪怕只是读一下），就会构造出
-    /// 与之重叠的引用，这是实打实的 UB（AUDIT P5）。
-    ///
-    /// 代价是一条明确的契约：**不允许在 update 闭包内访问同一个 signal**。
-    /// debug 构建下会断言失败，release 下该次访问返回 [`ReactiveError::Reentrant`]。
-    ///
-    /// 版本号由 `f` 的第二个返回值决定：`true` 表示“值真的被改写了”，
-    /// 此时版本号在**归还值的那一次查表里**顺带递增（AUDIT P12 定下语义）。
-    pub(crate) fn with_signal_value_mut<R>(
-        &self,
-        id: NodeId,
-        f: impl FnOnce(&mut AnyValue) -> (R, bool),
-    ) -> ReactiveResult<R> {
-        let taken = match self.take_signal_value(id) {
-            Ok(value) => value,
-            Err(e) => {
-                debug_assert!(
-                    e != ReactiveError::Reentrant,
-                    "在 update 闭包内重入访问同一个 signal 是不被支持的"
-                );
-                return Err(e);
-            }
-        };
-
-        // 守卫保证值一定会被放回（panic 展开时也一样）。
-        let mut borrowed = SignalValueGuard::new(self, id, taken);
-        let (result, changed) = f(borrowed.value_mut());
-        if changed {
-            borrowed.bump_version_on_release();
-        }
-        Ok(result)
-    }
-
-    /// 写入 signal 并在写入真的发生时失效下游。
-    ///
-    /// `updater` 返回 `false` 表示它没有改动这个值（典型情况是类型不匹配）：
-    /// 此时既不递增版本号也不通知下游 —— 之前的写法无条件递增并通知，
-    /// 于是一次什么都没做的更新会静默地把全部下游重跑一遍（AUDIT P12）。
-    #[inline(never)]
-    pub(crate) fn update_signal_untyped(
-        &self,
-        id: NodeId,
-        updater: &mut dyn FnMut(&mut AnyValue) -> bool,
-    ) -> ReactiveResult<bool> {
-        let applied = self.with_signal_value_mut(id, |value| {
-            let applied = updater(value);
-            // 第二个分量即“请递增版本号”，与“写入真的发生了”是同一件事。
-            (applied, applied)
-        })?;
-        if applied {
-            // 通知必须发生在借用作用域之外：`notify_update` 会同步执行下游 effect，
-            // 那些 effect 会重新访问本节点（AUDIT P5）。
-            self.notify_update(id);
-        }
-        Ok(applied)
-    }
-
     /// 借用一个节点的当前值，不做求值也不建立依赖。
     ///
-    /// 返回的是一个 [`Ref`]：值本身住在节点的 `RefCell` 里，借用计数由它自己
-    /// 维护。因此“在读的过程中写同一个 signal”现在拿到的是一句
-    /// [`ReactiveError::Reentrant`]，而不是从前那种静默的别名违规。
-    ///
-    /// 仍然剩下的契约：这个借用不得跨越对**同一个节点的销毁**（销毁会把整个
-    /// `RefCell` 从表里移走）。crate 内部唯一会在借用期间执行用户代码的地方是
-    /// `T::clone`，见 crate 文档里的残留契约。
+    /// 返回的 [`Ref`] 只在**这一次借用**之内有效 —— 它出不了 `with_rt` 的闭包，
+    /// 因此“借用跨越用户代码”这件事在类型层面就发生不了。crate 里唯一会在它
+    /// 存活期间执行用户代码的地方是读路径上的 `T::clone`，而那次重入拿到的是
+    /// [`ReactiveError::Reentrant`]（`with_rt` 的 `try_borrow_mut` 失败），
+    /// 不再是从前那条“`clone` 不得销毁这个节点”的手工契约。
     pub(crate) fn signal_value(&self, id: NodeId) -> ReactiveResult<Ref<'_, AnyValue>> {
         let node = self
             .storage
@@ -423,233 +372,19 @@ impl Runtime {
         unsafe { (*node.signal.as_ptr()).value.as_ref() }
     }
 
-    pub(crate) fn get_signal_value(&self, id: NodeId) -> ReactiveResult<Ref<'_, AnyValue>> {
-        self.prepare_read(id);
-        self.signal_value(id)
-    }
-
-    pub(crate) fn get_signal_value_untracked(
-        &self,
-        id: NodeId,
-    ) -> ReactiveResult<Ref<'_, AnyValue>> {
-        self.prepare_read_untracked(id);
-        self.signal_value(id)
-    }
-
-    /// 把 signal 的值移出节点、交给**用户闭包**、再放回去（只读版本）。
-    ///
-    /// 只读也要移出：闭包是用户代码，它可以销毁任何节点 —— 包括这一个。
-    /// 代价是与写入侧一致的一条契约：**不允许在闭包内访问同一个 signal**，
-    /// 否则拿到 [`ReactiveError::Reentrant`]。
-    pub(crate) fn with_signal_value<R>(
-        &self,
-        id: NodeId,
-        f: impl FnOnce(&AnyValue) -> R,
-    ) -> ReactiveResult<R> {
-        let taken = self.take_signal_value(id)?;
-        // 守卫保证值一定会被放回（闭包 panic 时也一样），且不递增版本号。
-        let borrowed = SignalValueGuard::new(self, id, taken);
-        Ok(f(borrowed.value().expect("just moved in")))
-    }
-
-    pub(crate) fn prepare_memo_node(&self, id: NodeId, computation: MemoThunk) {
-        self.storage
-            .reactive
-            .insert(id, ReactiveNode::new_memo(computation));
-    }
-
-    /// 把重算出来的新值写进节点并失效下游。
-    ///
-    /// 被覆盖掉的旧值走墓园，而不是在 `borrow_mut` 成立期间就地析构 ——
-    /// 一个会读自己所在 memo 的 `T::drop` 从前会在这里撞上 `already borrowed`
-    /// （偏门，但确实存在）。排空点就在写入之后、通知之前，与从前析构的时机
-    /// 完全一致。
-    pub(crate) fn commit_update(&self, id: NodeId, value: AnyValue, changed: bool) {
-        if !changed {
-            return;
-        }
-        if let Some(node) = self.storage.node(id) {
-            node.bump_version();
-            if let Some(old) = node.signal.borrow_mut().value.replace(value) {
-                self.storage.bury(Debris::Payload(old));
-            }
-        }
-        self.storage.drain_graveyard();
-        self.notify_update(id);
-    }
-
-    /// 执行 effect 队列直到清空。
-    ///
-    /// # Panics
-    ///
-    /// 单次执行超过 [`MAX_QUEUE_ITERATIONS`] 次迭代时 panic。互相写入对方依赖的
-    /// 两个 effect 会让队列永远不空，之前既没有上限也没有诊断，表现就是浏览器
-    /// 标签页直接冻死（AUDIT P13）。
-    pub(crate) fn run_queue(&self) {
-        // 守卫保证标志一定会被恢复：裸写法在 effect panic 时会让 `running_queue`
-        // 永久卡在 true，此后 `run_queue` 每次入口直接返回，整个响应式系统静默停摆
-        // （AUDIT P2）。`acquire` 返回 None 表示外层已经在跑队列。
-        let Some(_queue_guard) = QueueGuard::acquire(&self.scheduler.running_queue) else {
-            return;
-        };
-
-        let mut iterations = 0usize;
-        loop {
-            let next_to_run = self.scheduler.observer_queue.borrow_mut().pop_front();
-            let Some(id) = next_to_run else { break };
-
-            iterations += 1;
-            if iterations > MAX_QUEUE_ITERATIONS {
-                panic!(
-                    "silex_reactivity: effect 队列执行超过 {MAX_QUEUE_ITERATIONS} 次仍未清空，\
-                     大概率是若干 effect 在互相触发对方的依赖。最后一个被调度的是 {}。",
-                    self.storage.describe(id)
-                );
-            }
-
-            self.scheduler.queued_observers.remove(id);
-            if self
-                .storage
-                .node(id)
-                .is_some_and(ReactiveNode::is_computation)
-            {
-                self.update_if_necessary(id);
-            }
-        }
-    }
-
-    /// 装上计算闭包并立即完成首次计算。
-    ///
-    /// 闭包先被装进节点，再由统一的 [`Runtime::run_node`] 驱动首跑：
-    /// 这样首跑与后续重算走同一条路径，也不存在“闭包尚未被节点接管就提前返回”
-    /// 导致析构函数永不运行的窗口（AUDIT P19.10）。
-    #[inline(never)]
-    pub(crate) fn initialize_memo(&self, id: NodeId, thunk: MemoThunk) {
-        self.prepare_memo_node(id, thunk);
-        self.run_node(id);
-    }
-
-    /// 建一个带非响应式载荷的节点（stored value / callback / node-ref 共用）。
-    #[track_caller]
-    pub(crate) fn store_payload(&self, value: AnyValue) -> NodeId {
-        let id = self.register_node();
-        self.storage
-            .extras
-            .insert(id, std::cell::RefCell::new(Some(value)));
-        id
-    }
-
     /// 不经借用计数地借用一个载荷。
     ///
     /// # Safety
     ///
     /// 契约见公开的逃生出口 [`crate::store::try_value_ref`]。需要把值交给用户
-    /// 闭包时请改用 [`Runtime::with_payload`]，那条路径会先把值移出节点。
+    /// 闭包时请改用 [`drive::with_payload`]，那条路径会先把值移出节点。
     pub(crate) unsafe fn payload_value_unchecked(&self, id: NodeId) -> Option<&AnyValue> {
         let slot = self.storage.extras.get(id)?;
         // SAFETY: `RefCell::as_ptr` 绕过借用计数，契约转嫁给调用方（见上）。
         unsafe { (*slot.as_ptr()).as_ref() }
     }
 
-    /// 把载荷移出节点、交给**用户闭包**、再放回去。
-    ///
-    /// 这是所有会执行用户代码的载荷访问的唯一入口（审计报告 §2.1）。
-    pub(crate) fn with_payload<R>(
-        &self,
-        id: NodeId,
-        f: impl FnOnce(&AnyValue) -> R,
-    ) -> ReactiveResult<R> {
-        let borrowed = PayloadGuard::acquire(self, id)?;
-        Ok(f(borrowed.value()))
-    }
-
-    /// 同上，可变版本。
-    pub(crate) fn with_payload_mut<R>(
-        &self,
-        id: NodeId,
-        f: impl FnOnce(&mut AnyValue) -> R,
-    ) -> ReactiveResult<R> {
-        let mut borrowed = PayloadGuard::acquire(self, id)?;
-        Ok(f(borrowed.value_mut()))
-    }
-
-    /// 取出节点内部值的裸指针（signal 与 stored value 都支持）。
-    ///
-    /// # Safety
-    ///
-    /// 契约见 [`crate::try_get_any_raw_untracked`]：调用方负责类型正确，
-    /// 并保证在使用期间不发生任何会让该地址失效的操作。
-    pub(crate) unsafe fn get_any_raw_ptr_untracked(&self, id: NodeId) -> Option<*const ()> {
-        // 先把节点算干净，**再**取指针。少了这一步，读一个脏 memo / derived 会
-        // 安静地拿到上一轮的值 —— 上层框架的类型擦除读取路径正是走这里，
-        // 而它读到的可能是任何一种可读节点。干净节点（普通 signal、stored value）
-        // 会在 `update_if_necessary` 的入口直接返回，不额外付钱（AUDIT 二轮 §1.3）。
-        //
-        // 顺序不能反：求值会执行用户代码（memo 闭包、被冲掉的 effect 队列），
-        // 那正是本函数的 `# Safety` 段里说的“会让指针失效”的操作。
-        self.update_if_necessary(id);
-
-        // SAFETY: 契约转嫁给调用方（见本函数的 `# Safety`）。
-        unsafe {
-            if let Some(value) = self.signal_value_unchecked(id) {
-                return Some(value.as_ptr());
-            }
-            self.payload_value_unchecked(id).map(|v| v.as_ptr())
-        }
-    }
-
-    pub(crate) fn batch<R>(&self, f: impl FnOnce() -> R) -> R {
-        // 守卫保证深度一定会被恢复：裸写法在 f panic 时会让 `batch_depth` 卡在非零，
-        // 此后所有更新被永久挂起（AUDIT P2）。
-        let result = {
-            let _batch_guard = DepthGuard::enter(&self.scheduler.batch_depth);
-            f()
-        };
-
-        self.flush_if_idle();
-        result
-    }
-
-    /// 运行一个计算节点（effect 或 memo）的计算闭包。
-    ///
-    /// 这是**唯一**执行用户计算的入口 —— effect 首跑、effect 重跑、memo 首算、
-    /// memo 重算全部走这里。之前 `run_effect` 与 `run_computation` 是同一段逻辑的
-    /// 两份拷贝，各自演化出不同的状态转换，正是 P1 / P8 得以存在的土壤（AUDIT P16）。
-    ///
-    /// 它同时也是一个**驱动**：所有会执行用户代码的步骤（cleanup、计算闭包）
-    /// 都发生在这一层，而它们需要的载荷（闭包、cleanup 列表、依赖表）已经由
-    /// [`Runtime::begin_run`] 整个移出了节点。方案 B 之下这一层会拆成若干次
-    /// `with_rt`，用户代码落在两次借用之间。
-    ///
-    /// 返回值表示是否真的执行了计算闭包。以下情况返回 `false`：
-    /// 节点不存在、不是计算节点、或**正在运行中**。
-    pub(crate) fn run_node(&self, id: NodeId) -> bool {
-        let Some(ticket) = self.begin_run(id) else {
-            return false;
-        };
-
-        // 从这里开始，闭包的归还与重入锁的释放由守卫接管（panic 展开时同样生效）。
-        let run_guard = NodeRunGuard::new(self, id, ticket.computation);
-
-        // 清理上一次运行留下的子节点、cleanup 与订阅关系。
-        self.run_cleanups(id, ticket.children, ticket.cleanups, ticket.dependencies);
-
-        let Some(computation) = run_guard.computation.as_ref() else {
-            return false;
-        };
-
-        // 状态在调用用户闭包**之前**置 Clean。运行期间产生的失效标记
-        // （例如 effect 写了自己的依赖）因此得以保留，不会被“运行完再无条件置
-        // Clean”抹掉（AUDIT P8）。
-        self.storage.set_state(id, NodeState::Clean);
-
-        let _ctx = ComputationGuard::enter(self, id);
-        match computation {
-            Computation::Effect(f) => f.call(),
-            Computation::Memo(f) => self.recompute_memo(id, f),
-        }
-        true
-    }
+    // --- 运行 ---
 
     /// 运行的前置阶段：加重入锁，把计算闭包与上一次运行的残留整个移出节点。
     ///
@@ -658,7 +393,12 @@ impl Runtime {
     /// 计算闭包已被借出而被跳过，该节点从此永久失联（AUDIT P1）。
     ///
     /// 返回 `None` 表示不该运行：节点不存在、不是计算节点、或正在运行中。
-    fn begin_run(&self, id: NodeId) -> Option<RunTicket> {
+    ///
+    /// 上一次运行的残留里，只有**子节点**与 **cleanup** 需要执行用户代码；
+    /// 退订不需要。所以在没有子节点也没有 cleanup 的常见情形（memo 重算、
+    /// 不建子节点的 effect 重跑）里，退订就在这一次借用里顺手做掉，票据带回去的
+    /// 是一张空依赖表 —— 省掉驱动层的一次往返。
+    pub(crate) fn begin_run(&mut self, id: NodeId) -> Option<RunTicket> {
         let node = self.storage.node(id)?;
         if !node.is_computation() || node.is_running() {
             return None;
@@ -666,11 +406,16 @@ impl Runtime {
         node.set_running(true);
         node.effect_version
             .set(node.effect_version.get().wrapping_add(1));
-        let (computation, dependencies) = {
+        let (computation, mut dependencies) = {
             let mut slot = node.effect.borrow_mut();
             (slot.computation.take(), mem::take(&mut slot.dependencies))
         };
         let (children, cleanups) = self.take_scope_state(id);
+
+        if children.is_empty() && matches!(cleanups, CleanupList::Empty) {
+            self.unsubscribe(id, mem::take(&mut dependencies));
+        }
+
         Some(RunTicket {
             computation,
             children,
@@ -678,55 +423,4 @@ impl Runtime {
             dependencies,
         })
     }
-
-    /// 重算一个 memo：借出旧值 → 调用计算闭包 → 与旧值比较 → 提交。
-    ///
-    /// 旧值是**借**给计算闭包的，不是克隆给它的。之前这里为一次重算克隆旧值三次
-    /// （节点里克隆一份、再克隆一份传给 vtable、vtable 里再 `cloned()` 一次），
-    /// 而且闭包用不用 `old` 都要付这个代价 —— 对持有 `Vec` / `String` 的 memo
-    /// 就是每次重算三次深拷贝（AUDIT P9）。
-    ///
-    /// 旧值在计算期间被**移出**节点，理由与 `update_signal` 相同：计算闭包是用户
-    /// 代码，运行时不能在它执行期间持有指向节点载荷的借用（AUDIT P5）。因此
-    /// “在 memo 的计算闭包里读它自己”读到的是 [`ReactiveError::Reentrant`]，
-    /// 旧值只能从闭包参数拿 —— 这本来也是 `Fn(Option<&T>) -> T` 这个签名的用途。
-    ///
-    /// 这里从前隔着一层“通用 runner”：memo 的闭包被打包成一个 `ThunkValue`，
-    /// 运行时把 `*const Runtime` 传进去，runner 再从 `current_owner()` 反查自己是
-    /// 哪个节点、把 vtable 从载荷偏移 0 处读回来、回调进 `update_memo_core`。
-    /// 驱动本来就知道 id、也拿得到旧值，那一层因此整个删掉了（方案 B §5.2）。
-    #[inline(never)]
-    fn recompute_memo(&self, id: NodeId, thunk: &MemoThunk) {
-        // 首算时节点里本来就没有值；节点不存在、或值正被某个 update 闭包借出时
-        // 同样没有可用的旧值 —— 一律按“变了”处理，`commit_update` 自己会跳过
-        // 不存在的节点。
-        let taken = self.take_signal_value(id).ok();
-
-        // 守卫保证旧值一定会被放回（计算闭包 panic 时也一样）。
-        let borrowed = taken.map(|value| SignalValueGuard::new(self, id, value));
-
-        let new_any = thunk.compute(borrowed.as_ref().and_then(SignalValueGuard::value));
-
-        // 比较也在旧值还被借出时进行：`try_eq` 会调用用户的 `PartialEq`，
-        // 同样不该在运行时持有节点借用的情况下运行。
-        let changed = match borrowed.as_ref().and_then(SignalValueGuard::value) {
-            Some(old) => !new_any.try_eq(old),
-            None => true,
-        };
-
-        // 旧值先回到节点（并解除借出状态），随后 `commit_update` 才可能覆盖它。
-        drop(borrowed);
-        self.commit_update(id, new_any, changed);
-    }
-}
-
-/// 一次计算的“待办”：所有载荷都已按值移出节点。
-///
-/// 它的存在就是为了让执行用户代码的那一层不必再向运行时要任何东西 ——
-/// 方案 B 之下取票与执行分处两次不同的借用。
-struct RunTicket {
-    computation: Option<Computation>,
-    children: Vec<NodeId>,
-    cleanups: crate::runtime::storage::CleanupList,
-    dependencies: DependencyList,
 }

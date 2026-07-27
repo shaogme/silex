@@ -25,7 +25,7 @@
 //! - 需要跨种类传递时（下游框架的类型擦除分发）用 [`RawNodeId`] 显式擦除，
 //!   这是唯一的逃生出口，也因此是唯一需要人工审查的地方。
 
-use crate::runtime::RUNTIME;
+use crate::runtime::with_rt;
 use std::{
     fmt,
     hash::{Hash, Hasher},
@@ -85,7 +85,7 @@ macro_rules! define_kinds {
                 #[inline]
                 fn alive(raw: RawNodeId) -> bool {
                     let alive: fn(&crate::Runtime, RawNodeId) -> bool = $alive;
-                    RUNTIME.get().is_some_and(|rt| alive(rt, raw))
+                    with_rt(|rt| alive(rt, raw)).unwrap_or(false)
                 }
             }
             #[doc = concat!("指向一个 ", $name, " 的句柄。")]

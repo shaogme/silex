@@ -16,11 +16,7 @@
 //! [`Computation`](crate::internal::value::Computation) 一个两变体的枚举就够了，
 //! memo 的闭包交给 `MemoThunk`（也就是一个普通的 `ThunkBox`）自己装。
 
-use crate::{
-    DerivedId, MemoId,
-    internal::value::MemoThunk,
-    runtime::{RUNTIME, Runtime},
-};
+use crate::{DerivedId, MemoId, internal::value::MemoThunk, runtime::drive};
 
 /// 创建一个惰性求值、带相等性门控的派生节点。
 ///
@@ -41,7 +37,7 @@ where
     T: Clone + PartialEq + 'static,
     F: Fn(Option<&T>) -> T + 'static,
 {
-    MemoId::from_raw(init(MemoThunk::new::<T, F>(f)))
+    MemoId::from_raw(drive::create_memo(MemoThunk::new::<T, F>(f)).expect("刚建出来的运行时可用"))
 }
 
 /// 创建一个惰性求值但**不做相等性门控**的派生节点。
@@ -54,19 +50,7 @@ where
 /// 值本身仍然是缓存的：没有依赖变化时读它不会重新执行闭包。
 #[track_caller]
 pub fn derived<T: 'static>(f: Box<dyn Fn() -> T>) -> DerivedId {
-    DerivedId::from_raw(init(MemoThunk::new_derived(f)))
-}
-
-/// 建节点、装闭包、立即完成首算。
-///
-/// 计算闭包先被装进节点，再由统一的驱动路径跑首算：这样首算与后续重算走
-/// 同一条路径，也不存在“闭包尚未被节点接管就提前返回”导致析构函数永不运行的
-/// 窗口（AUDIT P19.10）。
-#[track_caller]
-#[inline(never)]
-fn init(thunk: MemoThunk) -> crate::RawNodeId {
-    let rt = RUNTIME.get_or(Runtime::new);
-    let id = rt.register_node();
-    rt.initialize_memo(id, thunk);
-    id
+    DerivedId::from_raw(
+        drive::create_memo(MemoThunk::new_derived(f)).expect("刚建出来的运行时可用"),
+    )
 }

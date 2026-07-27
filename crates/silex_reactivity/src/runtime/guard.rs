@@ -6,9 +6,19 @@
 //! 被 `take()` 出来的计算闭包则会永久丢失（AUDIT P2）。
 //!
 //! 另一类守卫（[`SignalValueGuard`] / [`PayloadGuard`] / [`NodeRunGuard`]）管的是
-//! **借出**：把值或闭包整个移出节点再交给用户代码。阶段三之后这条纪律的收益
-//! 更明确了 —— 节点里剩下的是一个 `None`，因此“闭包执行期间这个节点被销毁”
-//! 只会让守卫在归还时查无此节点（值随守卫析构），而不会写进一块已经释放的槽位。
+//! **借出**：把值或闭包整个移出节点再交给用户代码。节点里剩下的是一个 `None`，
+//! 因此“闭包执行期间这个节点被销毁”只会让守卫在归还时查无此节点（值随守卫
+//! 析构），而不会写进一块已经释放的槽位。
+//!
+//! # 守卫为什么一个 `&Runtime` 都不拿
+//!
+//! 每一个守卫的存活期都**横跨用户代码**（这正是它存在的理由），而方案 B 之下
+//! 用户代码只可能在两次 [`with_rt`] 之间执行 —— 借用出不了那个闭包。所以守卫
+//! 只能存下恢复现场所需的**数据**（前一个 owner 是谁、借出的值本身、
+//! 节点 id），用的时候现取一次借用。
+//!
+//! 析构里的那次 `with_rt` 用的是不会 panic 的形式：展开途中拿不到借用时宁可
+//! 少恢复一次，也不能在 panic 里再 panic（那会直接 abort）。
 
 use crate::{
     ReactiveError, ReactiveResult,
@@ -16,31 +26,27 @@ use crate::{
         arena::Index as NodeId,
         value::{AnyValue, Computation},
     },
-    runtime::{Runtime, graph::EvalFrame, graph::NodeState, scheduler::WorkSpace},
+    runtime::{Runtime, graph::EvalFrame, graph::NodeState, with_rt},
 };
-use std::{
-    cell::{Cell, RefCell},
-    collections::VecDeque,
-    mem,
-};
+use std::mem;
 
 /// 恢复 `current_owner`（**所有权**：新节点挂在谁下面、`on_cleanup` 注册给谁）。
-pub(crate) struct OwnerGuard<'a> {
-    rt: &'a Runtime,
+pub(crate) struct OwnerGuard {
     prev: Option<NodeId>,
 }
 
-impl<'a> OwnerGuard<'a> {
-    pub(crate) fn set(rt: &'a Runtime, owner: Option<NodeId>) -> Self {
+impl OwnerGuard {
+    /// 在一次已经拿到的借用里切换 owner。
+    pub(crate) fn set(rt: &mut Runtime, owner: Option<NodeId>) -> Self {
         let prev = rt.current_owner();
         rt.set_owner(owner);
-        Self { rt, prev }
+        Self { prev }
     }
 }
 
-impl Drop for OwnerGuard<'_> {
+impl Drop for OwnerGuard {
     fn drop(&mut self) {
-        self.rt.set_owner(self.prev);
+        let _ = with_rt(|rt| rt.set_owner(self.prev));
     }
 }
 
@@ -48,22 +54,21 @@ impl Drop for OwnerGuard<'_> {
 ///
 /// 与所有权是两件正交的事，所以是两个独立的变量：`untrack` 只清这一个，
 /// 它里面创建的节点照样挂在当前 owner 下面（AUDIT 二轮 §1.1）。
-pub(crate) struct ObserverGuard<'a> {
-    rt: &'a Runtime,
+pub(crate) struct ObserverGuard {
     prev: Option<NodeId>,
 }
 
-impl<'a> ObserverGuard<'a> {
-    pub(crate) fn set(rt: &'a Runtime, observer: Option<NodeId>) -> Self {
+impl ObserverGuard {
+    pub(crate) fn set(rt: &mut Runtime, observer: Option<NodeId>) -> Self {
         let prev = rt.current_observer();
         rt.set_observer(observer);
-        Self { rt, prev }
+        Self { prev }
     }
 }
 
-impl Drop for ObserverGuard<'_> {
+impl Drop for ObserverGuard {
     fn drop(&mut self) {
-        self.rt.set_observer(self.prev);
+        let _ = with_rt(|rt| rt.set_observer(self.prev));
     }
 }
 
@@ -71,31 +76,79 @@ impl Drop for ObserverGuard<'_> {
 ///
 /// 计算节点同时扮演两个角色：它是本次运行中新建节点的 **owner**，也是本次
 /// 运行中读到的 signal 的 **observer**。这是**唯一**会把两者设成同一个 id 的地方。
-pub(crate) struct ComputationGuard<'a> {
-    _owner: OwnerGuard<'a>,
-    _observer: ObserverGuard<'a>,
+///
+/// 它自己存两个 prev 而不是套一个 [`OwnerGuard`] 加一个 [`ObserverGuard`]：
+/// 那样析构时要取**两次**借用，而这里两件事之间什么都没有。每一次 memo 重算、
+/// 每一次 effect 执行都会付这一笔。
+pub(crate) struct ComputationGuard {
+    prev_owner: Option<NodeId>,
+    prev_observer: Option<NodeId>,
+    released: bool,
 }
 
-impl<'a> ComputationGuard<'a> {
-    pub(crate) fn enter(rt: &'a Runtime, id: NodeId) -> Self {
-        Self {
-            _owner: OwnerGuard::set(rt, Some(id)),
-            _observer: ObserverGuard::set(rt, Some(id)),
-        }
+impl ComputationGuard {
+    pub(crate) fn enter(rt: &mut Runtime, id: NodeId) -> Self {
+        let guard = Self {
+            prev_owner: rt.current_owner(),
+            prev_observer: rt.current_observer(),
+            released: false,
+        };
+        rt.set_owner(Some(id));
+        rt.set_observer(Some(id));
+        guard
     }
 }
 
-/// 维护一个嵌套深度计数（`batch_depth` / `evaluating`）。
-pub(crate) struct DepthGuard<'a> {
-    depth: &'a Cell<usize>,
+impl ComputationGuard {
+    /// 用一次**已经拿到的**借用提前退出，此后守卫是惰性的。
+    pub(crate) fn release(&mut self, rt: &mut Runtime) {
+        if self.released {
+            return;
+        }
+        self.released = true;
+        rt.set_owner(self.prev_owner);
+        rt.set_observer(self.prev_observer);
+    }
+}
+
+impl Drop for ComputationGuard {
+    fn drop(&mut self) {
+        if self.released {
+            return;
+        }
+        let (owner, observer) = (self.prev_owner, self.prev_observer);
+        let _ = with_rt(|rt| {
+            rt.set_owner(owner);
+            rt.set_observer(observer);
+        });
+    }
+}
+
+/// 调度器里的两个嵌套深度计数。
+#[derive(Clone, Copy)]
+pub(crate) enum Depth {
+    /// `batch` 的嵌套层数：非零时所有 effect 只入队不执行。
+    Batch,
+    /// 正在进行的求值 DFS 的嵌套层数：非零时禁止 flush effect 队列（AUDIT P15）。
+    Evaluating,
+}
+
+/// 维护一个嵌套深度计数。
+pub(crate) struct DepthGuard {
+    which: Depth,
     prev: usize,
 }
 
-impl<'a> DepthGuard<'a> {
-    pub(crate) fn enter(depth: &'a Cell<usize>) -> Self {
-        let prev = depth.get();
-        depth.set(prev + 1);
-        Self { depth, prev }
+impl DepthGuard {
+    pub(crate) fn enter(which: Depth) -> Self {
+        let prev = with_rt(|rt| {
+            let depth = rt.scheduler.depth(which);
+            let prev = *depth;
+            *depth = prev + 1;
+            prev
+        })
+        .unwrap_or(0);
+        Self { which, prev }
     }
 
     /// 本次进入是否是最外层的一次。
@@ -104,9 +157,10 @@ impl<'a> DepthGuard<'a> {
     }
 }
 
-impl Drop for DepthGuard<'_> {
+impl Drop for DepthGuard {
     fn drop(&mut self) {
-        self.depth.set(self.prev);
+        let (which, prev) = (self.which, self.prev);
+        let _ = with_rt(|rt| *rt.scheduler.depth(which) = prev);
     }
 }
 
@@ -114,41 +168,49 @@ impl Drop for DepthGuard<'_> {
 ///
 /// [`QueueGuard::acquire`] 返回 `None` 表示外层已经在跑队列 ——
 /// 此时调用方既不该重入执行，也不负责最终的 flush。
-pub(crate) struct QueueGuard<'a>(&'a Cell<bool>);
+pub(crate) struct QueueGuard(());
 
-impl<'a> QueueGuard<'a> {
-    pub(crate) fn acquire(flag: &'a Cell<bool>) -> Option<Self> {
-        if flag.get() {
-            return None;
-        }
-        flag.set(true);
-        Some(Self(flag))
+impl QueueGuard {
+    pub(crate) fn acquire() -> Option<Self> {
+        let taken = with_rt(|rt| {
+            if rt.scheduler.running_queue {
+                return false;
+            }
+            rt.scheduler.running_queue = true;
+            true
+        })
+        .unwrap_or(false);
+        // `then` 而不是 `then_some`：后者会**先把 `Self(())` 造出来**再按条件
+        // 丢弃，而丢弃一个 `QueueGuard` 就是跑一次它的 `Drop` —— 也就是在
+        // “没抢到”的那条路径上，把**外层**持有的标志清成了 false。表现是队列
+        // 执行开始互相嵌套，两个互相喂食的 effect 从“十万次之后报错”变成爆栈。
+        taken.then(|| Self(()))
     }
 }
 
-impl Drop for QueueGuard<'_> {
+impl Drop for QueueGuard {
     fn drop(&mut self) {
-        self.0.set(false);
+        let _ = with_rt(|rt| rt.scheduler.running_queue = false);
     }
 }
 
 /// 求值 DFS 的工作栈，析构时归还池子。
 ///
-/// 之前是手写的 `borrow_vec` / `return_vec` 配对：`evaluate` 在依赖成环时会
+/// 之前是手写的 `borrow_vec` / `return_vec` 配对：`eval_step` 在依赖成环时会
 /// panic，借出的容器就那样被丢弃了。只损失池化容量、不影响正确性，但与 lib.rs
 /// 里“所有借出的东西都由 RAII 守卫恢复”的承诺不符（AUDIT P2 / 二轮 §2.5）。
 ///
-/// 阶段三之后这里只剩一个容器：依赖表改成原地遍历，`temp_deps` 那个 `Vec`
-/// 连同它的池子一起没有了（审计报告 §3.3）。
-pub(crate) struct EvalStack<'a> {
-    ws: &'a RefCell<WorkSpace>,
+/// 栈本身住在**驱动帧上**，不是运行时里的一块状态 —— 求值可以重入（memo 的
+/// 计算闭包里再读一个脏 memo），每一层驱动各自持有自己的栈。
+pub(crate) struct EvalStack {
     stack: Vec<EvalFrame>,
 }
 
-impl<'a> EvalStack<'a> {
-    pub(crate) fn acquire(ws: &'a RefCell<WorkSpace>) -> Self {
-        let stack = ws.borrow_mut().borrow_stack();
-        Self { ws, stack }
+impl EvalStack {
+    pub(crate) fn acquire(rt: &mut Runtime) -> Self {
+        Self {
+            stack: rt.scheduler.workspace.borrow_stack(),
+        }
     }
 
     pub(crate) fn get(&mut self) -> &mut Vec<EvalFrame> {
@@ -156,63 +218,59 @@ impl<'a> EvalStack<'a> {
     }
 }
 
-impl Drop for EvalStack<'_> {
+impl Drop for EvalStack {
     fn drop(&mut self) {
-        // 展开途中池子可能正被外层借着；这时宁可丢掉这点容量，也不能在
-        // panic 里再 panic（那会直接 abort）。
-        if let Ok(mut w) = self.ws.try_borrow_mut() {
-            w.return_stack(mem::take(&mut self.stack));
-        }
+        let stack = mem::take(&mut self.stack);
+        // 展开途中拿不到借用时宁可丢掉这点容量，也不能在 panic 里再 panic。
+        let _ = with_rt(|rt| rt.scheduler.workspace.return_stack(stack));
     }
 }
 
-/// 传播 BFS 的工作队列，析构时归还池子。理由同 [`EvalStack`]。
-pub(crate) struct PropagateQueue<'a> {
-    ws: &'a RefCell<WorkSpace>,
-    queue: VecDeque<NodeId>,
-}
-
-impl<'a> PropagateQueue<'a> {
-    pub(crate) fn acquire(ws: &'a RefCell<WorkSpace>) -> Self {
-        let queue = ws.borrow_mut().borrow_deque();
-        Self { ws, queue }
-    }
-
-    pub(crate) fn get(&mut self) -> &mut VecDeque<NodeId> {
-        &mut self.queue
-    }
-}
-
-impl Drop for PropagateQueue<'_> {
-    fn drop(&mut self) {
-        if let Ok(mut w) = self.ws.try_borrow_mut() {
-            w.return_deque(mem::take(&mut self.queue));
-        }
-    }
-}
+// 传播 BFS 的工作队列这里曾经也有一个守卫。它没有了：传播整个跑在**一次
+// 借用**之内（BFS 不执行一行用户代码，也没有 panic 路径），队列因此只是
+// `queue_dependents` 里的一个局部变量，借出与归还紧挨着两行，中间没有任何
+// 可能提前返回的东西。守卫在这里除了多一次 `with_rt` 什么也不提供。
 
 /// 节点运行期间“借出”计算闭包。
 ///
-/// 闭包必须先从节点里取出来才能在不持有节点载荷借用的情况下调用，
+/// 闭包必须先从节点里取出来才能在不持有任何运行时借用的情况下调用，
 /// 但 `computation == None` 是一个语义上会导致静默破坏的中间态：本守卫保证
 /// 它一定会被放回去（正常返回或 panic 展开都一样），同时清除重入标记。
-pub(crate) struct NodeRunGuard<'a> {
-    rt: &'a Runtime,
+pub(crate) struct NodeRunGuard {
     id: NodeId,
+    released: bool,
     pub(crate) computation: Option<Computation>,
 }
 
-impl<'a> NodeRunGuard<'a> {
-    pub(crate) fn new(rt: &'a Runtime, id: NodeId, computation: Option<Computation>) -> Self {
+impl NodeRunGuard {
+    pub(crate) fn new(id: NodeId, computation: Option<Computation>) -> Self {
         Self {
-            rt,
             id,
+            released: false,
             computation,
+        }
+    }
+
+    /// 用一次**已经拿到的**借用提前归还，此后守卫是惰性的。
+    ///
+    /// 正常收尾时它与 [`ComputationGuard::release`] 合成同一次借用 ——
+    /// 每一次 memo 重算、每一次 effect 执行都会走这里，两次拆开写就是白付
+    /// 一次借用。panic 展开时走的仍然是 `Drop`（那条路径要多做一件事：
+    /// 把被打断的惰性节点标回 `Dirty`）。
+    pub(crate) fn release(&mut self, rt: &mut Runtime) {
+        self.released = true;
+        // 节点在自己的运行期间被销毁了：闭包随守卫一起析构。
+        let Some(node) = rt.storage.node(self.id) else {
+            return;
+        };
+        node.set_running(false);
+        if let Some(f) = self.computation.take() {
+            node.effect.borrow_mut().computation = Some(f);
         }
     }
 }
 
-impl Drop for NodeRunGuard<'_> {
+impl Drop for NodeRunGuard {
     fn drop(&mut self) {
         // 被 panic 打断的运行留下的是一份**不完整**的依赖集合：`run_node` 在调用
         // 用户闭包之前就把状态置成了 `Clean`（AUDIT P8 的要求），闭包跑到一半
@@ -232,20 +290,26 @@ impl Drop for NodeRunGuard<'_> {
         // 放大成每次写入都炸。所以这里保持现状，并把代价写在文档里：
         // 被 panic 打断的 effect 只对它**已经登记过**的依赖有反应，对 panic 点
         // 之后本该读到的那些没有。
+        if self.released {
+            return;
+        }
         let interrupted = std::thread::panicking();
         let computation = self.computation.take();
+        let id = self.id;
 
-        // 节点在自己的运行期间被销毁时走到这里：`computation` 随守卫一起析构。
-        let Some(node) = self.rt.storage.node(self.id) else {
-            return;
-        };
-        if interrupted && node.has_value() {
-            node.state.set(NodeState::Dirty);
-        }
-        node.set_running(false);
-        if let Some(f) = computation {
-            node.effect.borrow_mut().computation = Some(f);
-        }
+        let _ = with_rt(|rt| {
+            // 节点在自己的运行期间被销毁时走到这里：`computation` 随守卫一起析构。
+            let Some(node) = rt.storage.node(id) else {
+                return;
+            };
+            if interrupted && node.has_value() {
+                node.state.set(NodeState::Dirty);
+            }
+            node.set_running(false);
+            if let Some(f) = computation {
+                node.effect.borrow_mut().computation = Some(f);
+            }
+        });
     }
 }
 
@@ -253,8 +317,7 @@ impl Drop for NodeRunGuard<'_> {
 ///
 /// 值被移出节点、放在守卫里交给用户闭包，节点里暂时是 `None`。
 /// 这样运行时在用户代码执行期间不持有任何指向该节点载荷的借用（AUDIT P5）。
-pub(crate) struct SignalValueGuard<'a> {
-    rt: &'a Runtime,
+pub(crate) struct SignalValueGuard {
     id: NodeId,
     value: Option<AnyValue>,
     /// 归还值的时候是否顺带把版本号递增掉。
@@ -263,10 +326,9 @@ pub(crate) struct SignalValueGuard<'a> {
     bump_version: bool,
 }
 
-impl<'a> SignalValueGuard<'a> {
-    pub(crate) fn new(rt: &'a Runtime, id: NodeId, value: AnyValue) -> Self {
+impl SignalValueGuard {
+    pub(crate) fn new(id: NodeId, value: AnyValue) -> Self {
         Self {
-            rt,
             id,
             value: Some(value),
             bump_version: false,
@@ -286,20 +348,42 @@ impl<'a> SignalValueGuard<'a> {
     pub(crate) fn bump_version_on_release(&mut self) {
         self.bump_version = true;
     }
+
+    /// 用一次**已经拿到的**借用提前归还，此后守卫是惰性的。
+    ///
+    /// 写路径靠它把“归还值”和“失效下游”合成同一次 `with_rt`：用户闭包这时
+    /// 已经跑完了，两件事之间没有任何会重入运行时的东西，分成两次借用纯粹是
+    /// 白付一次线程本地查表。
+    pub(crate) fn release(&mut self, rt: &mut Runtime) {
+        if self.value.is_none() {
+            return;
+        }
+        put_back(rt, self.id, self.value.take(), self.bump_version);
+    }
 }
 
-impl Drop for SignalValueGuard<'_> {
+/// 把借出的值放回节点。节点已经不在了就让值随之析构（它在调用方的栈上）。
+fn put_back(rt: &mut Runtime, id: NodeId, value: Option<AnyValue>, bump: bool) {
+    let Some(node) = rt.storage.node(id) else {
+        return;
+    };
+    if bump {
+        node.bump_version();
+    }
+    if let Some(value) = value {
+        node.signal.borrow_mut().value = Some(value);
+    }
+}
+
+impl Drop for SignalValueGuard {
     fn drop(&mut self) {
-        // 节点在闭包执行期间被销毁时走到这里：值随守卫一起析构。
-        let Some(node) = self.rt.storage.node(self.id) else {
+        // 已经被 `release` 显式归还过了。
+        if self.value.is_none() {
             return;
-        };
-        if self.bump_version {
-            node.bump_version();
         }
-        if let Some(value) = self.value.take() {
-            node.signal.borrow_mut().value = Some(value);
-        }
+        let (id, value, bump) = (self.id, self.value.take(), self.bump_version);
+        // 节点在闭包执行期间被销毁时走到这里：值随守卫一起析构。
+        let _ = with_rt(|rt| put_back(rt, id, value, bump));
     }
 }
 
@@ -320,15 +404,14 @@ impl Drop for SignalValueGuard<'_> {
 /// 现在值在闭包执行期间被整个移出节点（节点里是 `None`），运行时不再持有任何
 /// 指向该条目的借用；重入访问同一个节点会拿到
 /// [`ReactiveError::Reentrant`] 而不是静默的 UB（审计报告 §2.1）。
-pub(crate) struct PayloadGuard<'a> {
-    rt: &'a Runtime,
+pub(crate) struct PayloadGuard {
     id: NodeId,
     value: Option<AnyValue>,
 }
 
-impl<'a> PayloadGuard<'a> {
+impl PayloadGuard {
     /// 把载荷移出节点，节点里换成 `None`。
-    pub(crate) fn acquire(rt: &'a Runtime, id: NodeId) -> ReactiveResult<Self> {
+    pub(crate) fn acquire(rt: &mut Runtime, id: NodeId) -> ReactiveResult<Self> {
         let slot = rt.storage.extras.get(id).ok_or(ReactiveError::NoSuchNode)?;
         // `try_borrow_mut` 而不是 `borrow_mut`：外层闭包正握着它时给一句
         // 明确的诊断，而不是一句 `already borrowed` 的 panic。
@@ -338,7 +421,6 @@ impl<'a> PayloadGuard<'a> {
             .take()
             .ok_or(ReactiveError::Reentrant)?;
         Ok(Self {
-            rt,
             id,
             value: Some(taken),
         })
@@ -353,14 +435,18 @@ impl<'a> PayloadGuard<'a> {
     }
 }
 
-impl Drop for PayloadGuard<'_> {
+impl Drop for PayloadGuard {
     fn drop(&mut self) {
-        // 节点在闭包执行期间被销毁时走到这里：值随守卫一起析构。
-        let Some(slot) = self.rt.storage.extras.get(self.id) else {
-            return;
-        };
-        if let Some(value) = self.value.take() {
-            *slot.borrow_mut() = Some(value);
-        }
+        let value = self.value.take();
+        let id = self.id;
+        let _ = with_rt(|rt| {
+            // 节点在闭包执行期间被销毁时走到这里：值随守卫一起析构。
+            let Some(slot) = rt.storage.extras.get(id) else {
+                return;
+            };
+            if let Some(value) = value {
+                *slot.borrow_mut() = Some(value);
+            }
+        });
     }
 }

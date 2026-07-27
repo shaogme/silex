@@ -222,7 +222,7 @@ pub(crate) struct Storage {
     pub(crate) extras: SparseSecondaryMap<RefCell<Option<AnyValue>>, 32>,
 
     /// 已经离开图、等着在**借用之外**析构的残骸。见 [`Debris`]。
-    graveyard: RefCell<Vec<Debris>>,
+    graveyard: Vec<Debris>,
 
     #[cfg(debug_assertions)]
     pub(crate) dead_node_labels: SparseSecondaryMap<String>,
@@ -266,7 +266,7 @@ impl Storage {
             node_aux: SparseSecondaryMap::new(),
             reactive: SparseSecondaryMap::new(),
             extras: SparseSecondaryMap::new(),
-            graveyard: RefCell::new(Vec::new()),
+            graveyard: Vec::new(),
             #[cfg(debug_assertions)]
             dead_node_labels: SparseSecondaryMap::new(),
             #[cfg(debug_assertions)]
@@ -287,24 +287,17 @@ impl Storage {
 
     /// 把一件残骸交给墓园，等驱动循环在借用之外析构它。
     #[inline]
-    pub(crate) fn bury(&self, debris: Debris) {
-        self.graveyard.borrow_mut().push(debris);
+    pub(crate) fn bury(&mut self, debris: Debris) {
+        self.graveyard.push(debris);
     }
 
-    /// 析构墓园里的一切。
+    /// 取一件残骸出来。
     ///
-    /// **只能在不持有任何运行时借用的地方调用** —— 这里跑的是用户的 `Drop`，
-    /// 它可以回头做任何事，包括再往墓园里推东西（于是循环多转几圈）
-    /// 或者自己调一次排空（于是本次循环发现墓园已空）。
-    ///
-    /// 借用严格限制在 `pop` 那一行：`while let` 的临时量存活期在不同版本的
-    /// Rust 里有过变化，所以这里把它写成显式两步，不给歧义留余地。
-    pub(crate) fn drain_graveyard(&self) {
-        loop {
-            let debris = self.graveyard.borrow_mut().pop();
-            let Some(debris) = debris else { break };
-            drop(debris);
-        }
+    /// 析构**不在这里发生** —— 那是用户的 `Drop`，只能跑在借用之外。
+    /// 排空循环见 [`drain_graveyard`](crate::runtime::drive::drain_graveyard)。
+    #[inline]
+    pub(crate) fn take_debris(&mut self) -> Option<Debris> {
+        self.graveyard.pop()
     }
 
     /// 借一个响应式节点。
@@ -464,7 +457,16 @@ impl Iterator for CleanupListIntoIter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{internal::value::EffectThunk, runtime::Runtime};
+    use crate::{
+        internal::value::EffectThunk,
+        runtime::{drive, with_rt_or_init},
+    };
+
+    /// 在一条**新线程**上跑用例：运行时是线程本地的，而这些用例要在一张
+    /// 干净的图上断言。
+    fn on_a_fresh_runtime(f: impl FnOnce() + Send + 'static) {
+        std::thread::spawn(f).join().expect("用例线程不应 panic");
+    }
 
     #[test]
     fn set_state_never_inserts_a_ghost_node() {
@@ -484,57 +486,71 @@ mod tests {
     /// 订阅者表里残留一个已销毁的 id 时，传播不得为它造出条目。
     #[test]
     fn propagating_to_a_disposed_subscriber_leaves_nothing_behind() {
-        let rt = Runtime::new();
-        let s = rt.create_signal(AnyValue::new(1i32));
+        on_a_fresh_runtime(|| {
+            let s = drive::create_signal(AnyValue::new(1i32)).expect("运行时可用");
+            let dead = drive::create_effect(EffectThunk::new(|| {})).expect("运行时可用");
+            drive::dispose(dead);
 
-        let dead = rt.create_effect(EffectThunk::new(|| {}));
-        rt.dispose(dead);
-        assert!(rt.storage.node(dead).is_none());
+            with_rt_or_init(|rt| {
+                assert!(rt.storage.node(dead).is_none());
+                // 手工模拟“订阅者表里残留了一个已销毁的 id”。
+                rt.storage
+                    .node(s)
+                    .expect("signal 还活着")
+                    .signal
+                    .borrow_mut()
+                    .subscribers
+                    .push(dead);
+            })
+            .expect("运行时可用");
 
-        // 手工模拟“订阅者表里残留了一个已销毁的 id”。
-        rt.storage
-            .node(s)
-            .expect("signal 还活着")
-            .signal
-            .borrow_mut()
-            .subscribers
-            .push(dead);
+            drive::notify_update(s);
 
-        rt.notify_update(s);
-
-        assert!(
-            rt.storage.node(dead).is_none(),
-            "传播到已销毁的订阅者时不得复活它（AUDIT P14）"
-        );
+            assert!(
+                with_rt_or_init(|rt| rt.storage.node(dead).is_none()).expect("运行时可用"),
+                "传播到已销毁的订阅者时不得复活它（AUDIT P14）"
+            );
+        });
     }
 
     /// 墓碑标签只在 debug 构建下存在。
     #[cfg(debug_assertions)]
     #[test]
     fn dead_node_labels_are_capped() {
-        let rt = Runtime::new();
-        for i in 0..(MAX_DEAD_NODE_LABELS + 16) {
-            let id = rt.create_signal(AnyValue::new(i));
-            rt.storage
-                .with_aux_mut(id, |aux| aux.debug_label = Some(format!("node-{i}")));
-            rt.dispose(id);
-        }
-        assert_eq!(rt.storage.dead_label_count.get(), MAX_DEAD_NODE_LABELS);
+        on_a_fresh_runtime(|| {
+            for i in 0..(MAX_DEAD_NODE_LABELS + 16) {
+                let id = drive::create_signal(AnyValue::new(i)).expect("运行时可用");
+                with_rt_or_init(|rt| {
+                    rt.storage
+                        .with_aux_mut(id, |aux| aux.debug_label = Some(format!("node-{i}")));
+                })
+                .expect("运行时可用");
+                drive::dispose(id);
+            }
+            assert_eq!(
+                with_rt_or_init(|rt| rt.storage.dead_label_count.get()).expect("运行时可用"),
+                MAX_DEAD_NODE_LABELS
+            );
+        });
     }
 
     /// 元数据是 `Cell`：持有一个节点的引用时改**另一个**节点的状态是合法的。
     /// 这正是订阅表 / 依赖表得以原地遍历的前提（审计报告 §3.3）。
     #[test]
     fn metadata_is_writable_through_a_shared_borrow() {
-        let rt = Runtime::new();
-        let a = rt.create_signal(AnyValue::new(1i32));
-        let b = rt.create_signal(AnyValue::new(2i32));
+        on_a_fresh_runtime(|| {
+            let a = drive::create_signal(AnyValue::new(1i32)).expect("运行时可用");
+            let b = drive::create_signal(AnyValue::new(2i32)).expect("运行时可用");
 
-        let node_a = rt.storage.node(a).expect("a 活着");
-        rt.storage.set_state(b, NodeState::Dirty);
-        node_a.state.set(NodeState::Check);
+            with_rt_or_init(|rt| {
+                let node_a = rt.storage.node(a).expect("a 活着");
+                rt.storage.set_state(b, NodeState::Dirty);
+                node_a.state.set(NodeState::Check);
 
-        assert_eq!(rt.storage.get_state(a), NodeState::Check);
-        assert_eq!(rt.storage.get_state(b), NodeState::Dirty);
+                assert_eq!(rt.storage.get_state(a), NodeState::Check);
+                assert_eq!(rt.storage.get_state(b), NodeState::Dirty);
+            })
+            .expect("运行时可用");
+        });
     }
 }

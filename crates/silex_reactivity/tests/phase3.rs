@@ -14,27 +14,25 @@
 use silex_reactivity::*;
 use std::{
     cell::{Cell, RefCell},
-    panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
 
-fn silently<R>(f: impl FnOnce() -> R) -> std::thread::Result<R> {
-    let prev = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
-    let result = catch_unwind(AssertUnwindSafe(f));
-    std::panic::set_hook(prev);
-    result
-}
-
 // --- 1. 读路径上的重入现在说得出话 ---
 
-/// `signal::try_get` 会在持有节点值借用的情况下调用 `T::clone`（crate 文档里
-/// 唯一剩下的“靠约定维系”的规则）。阶段三把值放进 `RefCell` 之后，一个会
-/// 反过来**写同一个 signal** 的 `Clone` 实现拿到的是一句明确的诊断：
-/// debug 构建下断言失败，release 下 [`ReactiveError::Reentrant`]。
+/// `signal::try_get` 会在持有运行时借用的情况下调用 `T::clone`。
 ///
-/// 从前它是静默的：写入走 `SparseSecondaryMap::with_mut`，在 Stacked Borrows
-/// 下直接作废读取侧手里那个引用，然后接着 `clone` 下去。
+/// 这条规则的演变值得记一笔：
+///
+/// | 阶段 | 在 `clone` 里重入会怎样 |
+/// |---|---|
+/// | 阶段三之前 | **静默的别名违规**：写入作废读取侧手里那个引用，然后接着 clone 下去 |
+/// | 阶段三方案 A | 写：debug 断言 / release `Reentrant`；读：允许；`dispose`：仍是 UB（文档里的残留契约 §9.8.1） |
+/// | 方案 B（现在） | **一律** [`ReactiveError::Reentrant`]，没有例外，也没有残留契约 |
+///
+/// 访问运行时的唯一入口是一次独占借用，而 `clone` 跑在那次借用之内 ——
+/// 于是“`clone` 里能做什么”不再需要一张表来说明：什么都做不了，
+/// 每一次尝试都拿到一句明确的诊断。需要在读的时候执行任意用户代码请用
+/// [`signal::try_with`]，那条路径会先把值移出节点。
 #[test]
 fn a_clone_that_writes_the_same_signal_is_reported_not_silently_aliased() {
     thread_local! {
@@ -57,26 +55,28 @@ fn a_clone_that_writes_the_same_signal_is_reported_not_silently_aliased() {
     let s = signal::create(Nosy(1));
     TARGET.with(|slot| slot.set(Some(s)));
 
-    let outer = silently(|| signal::try_get::<Nosy>(s));
+    // 读取本身照常完成；重入的那次写入被拒绝，debug 与 release 行为一致。
+    assert_eq!(signal::try_get::<Nosy>(s), Ok(Nosy(1)));
+    assert_eq!(INNER.with(Cell::take), Some(Err(ReactiveError::Reentrant)));
 
-    if cfg!(debug_assertions) {
-        assert!(outer.is_err(), "debug 构建下重入写入必须触发断言");
-    } else {
-        // 读取本身照常完成，重入的那次写入被拒绝。
-        assert_eq!(outer.unwrap(), Ok(Nosy(1)));
-        assert_eq!(INNER.with(Cell::take), Some(Err(ReactiveError::Reentrant)));
-    }
-
-    // 无论哪条分支，运行时都还活着，值也没有被改坏。
+    // 运行时还活着，值也没有被改坏。
     assert_eq!(signal::try_get::<Nosy>(s), Ok(Nosy(1)));
 }
 
-/// 在 `T::clone` 里**读**同一个 signal 是允许的 —— 借用是共享的。
+/// 在 `T::clone` 里**读**也一样被拒绝。
+///
+/// 方案 A 之下这是允许的（值住在 `RefCell` 里，嵌套读只是又一次共享借用）。
+/// 方案 B 把访问入口收成一次**独占**借用之后，读与写不再有区别 —— 这是一次
+/// 有意的收窄：换来的是那条“`clone` 里不得 `dispose` 这个节点，否则 UB”的
+/// 残留契约彻底消失，以及一条统一到不需要解释的规则。
+///
+/// 代价的另一条路是把读路径也改成“移出—克隆—放回”，那会让最热的读取多付
+/// 两次查表（实测约 +2 ns / 15%）—— 为了支持一个本来就被文档劝阻的用法。
 #[test]
-fn a_clone_that_reads_the_same_signal_is_fine() {
+fn a_clone_may_not_reenter_the_runtime_at_all() {
     thread_local! {
         static TARGET: Cell<Option<SignalId>> = const { Cell::new(None) };
-        static SEEN: Cell<bool> = const { Cell::new(false) };
+        static INNER: Cell<Option<ReactiveResult<Curious>>> = const { Cell::new(None) };
     }
 
     #[derive(PartialEq, Debug)]
@@ -85,7 +85,7 @@ fn a_clone_that_reads_the_same_signal_is_fine() {
     impl Clone for Curious {
         fn clone(&self) -> Self {
             if let Some(id) = TARGET.with(Cell::take) {
-                SEEN.with(|slot| slot.set(signal::try_get::<Curious>(id).is_ok()));
+                INNER.with(|slot| slot.set(Some(signal::try_get::<Curious>(id))));
             }
             Self(self.0)
         }
@@ -94,8 +94,13 @@ fn a_clone_that_reads_the_same_signal_is_fine() {
     let s = signal::create(Curious(5));
     TARGET.with(|slot| slot.set(Some(s)));
 
+    // 外层读取照常成功。
     assert_eq!(signal::try_get::<Curious>(s), Ok(Curious(5)));
-    assert!(SEEN.with(Cell::get), "嵌套的只读读取应当成功");
+    assert_eq!(
+        INNER.with(Cell::take),
+        Some(Err(ReactiveError::Reentrant)),
+        "嵌套读取拿到的是一句诊断，而不是一次静默的别名违规"
+    );
 }
 
 // --- 2. 依赖扫描的游标（§2.2） ---

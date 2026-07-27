@@ -15,7 +15,7 @@
 use crate::{
     RawNodeId, ReactiveError, ReactiveResult, StoredId,
     internal::value::AnyValue,
-    runtime::{RUNTIME, Runtime},
+    runtime::{drive, with_rt},
 };
 
 /// 把一个值交给运行时保管，返回它的句柄。
@@ -62,35 +62,34 @@ pub fn try_update<T: 'static, R>(id: StoredId, f: impl FnOnce(&mut T) -> R) -> R
 /// 换句话说：把返回值当作一个只在“紧接着的、不重入运行时的表达式”里有效的
 /// 借用来用。需要更长的存活期就改用 [`try_with`] 或克隆一份出来。
 pub unsafe fn try_value_ref<T: 'static>(id: StoredId) -> Option<&'static T> {
-    let rt = RUNTIME.get()?;
     // SAFETY: 契约（引用不得跨越上面列出的任何一种操作）由本函数的调用方承担，
-    // 原样转嫁给 `payload_value_unchecked`。
-    unsafe { rt.payload_value_unchecked(id.raw()) }?.downcast_ref::<T>()
+    // 原样转嫁给 `payload_value_unchecked`。指针要走出 `with_rt` 的借用再解引用，
+    // 而“伪造出来的 `'static` 有多久有效”正是上面那份契约的内容。
+    let ptr = with_rt(|rt| unsafe { rt.payload_value_unchecked(id.raw()) }.map(std::ptr::from_ref))
+        .ok()
+        .flatten()?;
+    unsafe { &*ptr }.downcast_ref::<T>()
 }
 
 // --- 供 `callback` / `node_ref` 复用的泛型底座 ---
 
 #[track_caller]
 pub(crate) fn create_raw<T: 'static>(value: T) -> RawNodeId {
-    RUNTIME
-        .get_or(Runtime::new)
-        .store_payload(AnyValue::new(value))
+    drive::store_payload(AnyValue::new(value)).expect("刚建出来的运行时可用")
 }
 
 pub(crate) fn with_raw<T: 'static, R>(
     raw: RawNodeId,
     f: impl FnOnce(&T) -> R,
 ) -> ReactiveResult<R> {
-    let rt = RUNTIME.get().ok_or(ReactiveError::NoRuntime)?;
-    rt.with_payload(raw, |value| downcast(value, f))?
+    drive::with_payload(raw, |value| downcast(value, f))?
 }
 
 pub(crate) fn with_raw_mut<T: 'static, R>(
     raw: RawNodeId,
     f: impl FnOnce(&mut T) -> R,
 ) -> ReactiveResult<R> {
-    let rt = RUNTIME.get().ok_or(ReactiveError::NoRuntime)?;
-    rt.with_payload_mut(raw, |value| {
+    drive::with_payload_mut(raw, |value| {
         value
             .downcast_mut::<T>()
             .map(f)

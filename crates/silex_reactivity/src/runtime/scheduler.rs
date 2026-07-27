@@ -1,49 +1,64 @@
 use crate::{
     internal::arena::{Index as NodeId, SparseSecondaryMap},
-    runtime::graph::EvalFrame,
+    runtime::{graph::EvalFrame, guard::Depth},
 };
-use std::{
-    cell::{Cell, RefCell},
-    collections::VecDeque,
-};
+use std::collections::VecDeque;
 
-/// 单次 `run_queue` 允许执行的最大 effect 数。
+/// 单次调度允许执行的最大计算次数。
 ///
-/// 超过就意味着队列在自我喂养（两个 effect 互相写对方的依赖），继续跑下去只会
-/// 冻死整个线程。上限的作用是把死循环换成一条带节点位置的报错（AUDIT P13）。
+/// 超过就意味着有东西在自我喂养 —— 两个 effect 互相写对方的依赖，或者一个
+/// 节点在自己的运行过程中写回自己的上游。继续跑下去只会冻死整个线程。
+/// 上限的作用是把死循环换成一条带节点位置的报错（AUDIT P13）。
 /// 取值参考 SolidJS 的同类保护（~1e5），远高于任何正常应用的一轮更新规模。
+///
+/// 两条路径各自计数：effect 队列见 [`crate::runtime::drive::run_queue`]，
+/// 求值 DFS 见 [`crate::runtime::drive::drive_eval`]。P13 当初只盖住了前者，
+/// 而后者同样会不收敛且**一次都碰不到队列的计数器**。
 pub(crate) const MAX_QUEUE_ITERATIONS: usize = 100_000;
 
+/// 调度器的字段现在全是**普通字段**。
+///
+/// 从前它们是 `Cell` / `RefCell`：`RUNTIME.get()` 只交出 `&Runtime`，想改任何
+/// 东西都得靠内部可变性。访问入口收成 `&mut Runtime`（[`with_rt`](crate::runtime::with_rt)）
+/// 之后这一层全部消失，热路径上的借用计数也随之归零。
 pub(crate) struct Scheduler {
-    pub(crate) workspace: RefCell<WorkSpace>,
-    pub(crate) observer_queue: RefCell<VecDeque<NodeId>>,
+    pub(crate) workspace: WorkSpace,
+    pub(crate) observer_queue: VecDeque<NodeId>,
     pub(crate) queued_observers: SparseSecondaryMap<()>,
-    pub(crate) running_queue: Cell<bool>,
-    pub(crate) batch_depth: Cell<usize>,
-    /// 正在进行的 `evaluate`（求值 DFS）嵌套深度。
+    pub(crate) running_queue: bool,
+    pub(crate) batch_depth: usize,
+    /// 正在进行的求值 DFS 的嵌套深度。
     ///
     /// DFS 期间禁止 flush effect 队列：memo 重算会 `commit_update` → `notify_update`，
-    /// 如果就地把整个队列跑完，effect 可能销毁节点，而 `evaluate` 的栈里还留着
-    /// 这些 id（AUDIT P15）。改为等 DFS 结束后再统一 flush。
-    pub(crate) evaluating: Cell<usize>,
+    /// 如果就地把整个队列跑完，effect 可能销毁节点，而求值栈里还留着这些 id
+    /// （AUDIT P15）。改为等 DFS 结束后再统一 flush。
+    pub(crate) evaluating: usize,
 }
 
 impl Scheduler {
     pub(crate) fn new() -> Self {
         Self {
-            workspace: RefCell::new(WorkSpace::new()),
-            observer_queue: RefCell::new(VecDeque::new()),
+            workspace: WorkSpace::new(),
+            observer_queue: VecDeque::new(),
             queued_observers: SparseSecondaryMap::new(),
-            running_queue: Cell::new(false),
-            batch_depth: Cell::new(0),
-            evaluating: Cell::new(0),
+            running_queue: false,
+            batch_depth: 0,
+            evaluating: 0,
         }
     }
 
-    pub(crate) fn queue_effect(&self, id: NodeId) {
+    pub(crate) fn queue_effect(&mut self, id: NodeId) {
         if self.queued_observers.get(id).is_none() {
             self.queued_observers.insert(id, ());
-            self.observer_queue.borrow_mut().push_back(id);
+            self.observer_queue.push_back(id);
+        }
+    }
+
+    /// 两个嵌套深度计数的统一入口，供 [`DepthGuard`](crate::runtime::guard::DepthGuard) 用。
+    pub(crate) fn depth(&mut self, which: Depth) -> &mut usize {
+        match which {
+            Depth::Batch => &mut self.batch_depth,
+            Depth::Evaluating => &mut self.evaluating,
         }
     }
 }

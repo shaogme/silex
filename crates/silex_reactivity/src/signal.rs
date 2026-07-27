@@ -7,8 +7,8 @@
 use crate::{
     ReactiveError, ReactiveResult, Readable, SignalId,
     handle::RawNodeId,
-    internal::{arena::Index as NodeId, value::AnyValue},
-    runtime::{RUNTIME, Runtime},
+    internal::value::AnyValue,
+    runtime::{drive, with_rt},
 };
 
 /// 创建一个 signal（响应式图的根）。
@@ -28,11 +28,7 @@ use crate::{
 /// [`memo`](crate::memo::create) —— memo 会把重复的值挡在自己这一层。
 #[track_caller]
 pub fn create<T: 'static>(value: T) -> SignalId {
-    SignalId::from_raw(
-        RUNTIME
-            .get_or(Runtime::new)
-            .create_signal(AnyValue::new(value)),
-    )
+    SignalId::from_raw(drive::create_signal(AnyValue::new(value)).expect("刚建出来的运行时可用"))
 }
 
 // --- 读 ---
@@ -45,24 +41,46 @@ pub fn create<T: 'static>(value: T) -> SignalId {
 ///
 /// # 契约
 ///
-/// `T::clone` 在运行时持有该节点引用的期间执行 —— 它**不得重入运行时**去写或
-/// 销毁任何节点。这是本 crate 唯一剩下的“靠约定维系”的别名规则，之所以保留，
-/// 是因为把它也改成“移出—克隆—放回”会让最热的读路径多付两次查表，而一个会
-/// 反过来改响应式图的 `Clone` 实现是病态用法。需要在读的时候执行任意用户代码
-/// 请用 [`try_with`]，那条路径是安全的。
+/// `T::clone` 在运行时的借用之内执行。这条从前是一句只能靠人工遵守的约定
+/// （“`clone` 里不得销毁这个节点，否则 UB”）；访问入口收成 `&mut Runtime`
+/// 之后它变成了**做不到**的事 —— `clone` 里对运行时的任何调用都拿不到借用，
+/// 一律返回 [`Reentrant`](ReactiveError::Reentrant)。需要在读的时候执行任意
+/// 用户代码请用 [`try_with`]，那条路径会先把值移出节点。
 pub fn try_get<T: Clone + 'static>(id: impl Readable) -> ReactiveResult<T> {
-    let rt = RUNTIME.get().ok_or(ReactiveError::NoRuntime)?;
-    let raw = id.to_raw();
-    let value = rt.get_signal_value(raw)?;
-    downcast_cloned::<T>(&value)
+    read(id.to_raw(), true)
 }
 
 /// 同 [`try_get`]，但**不**登记依赖。
 pub fn try_get_untracked<T: Clone + 'static>(id: impl Readable) -> ReactiveResult<T> {
-    let rt = RUNTIME.get().ok_or(ReactiveError::NoRuntime)?;
-    let raw = id.to_raw();
-    let value = rt.get_signal_value_untracked(raw)?;
-    downcast_cloned::<T>(&value)
+    read::<T>(id.to_raw(), false)
+}
+
+/// 读取的公共实现。
+///
+/// 快路径（节点已经干净、队列里也没有待办 —— 普通 signal 恒是这样）在
+/// **一次借用**里把求值判定、依赖追踪、取值、克隆全做完，因此读一次 signal
+/// 仍然只付一次线程本地查表 + 一次借用计数。
+fn read<T: Clone + 'static>(raw: RawNodeId, track: bool) -> ReactiveResult<T> {
+    let fast = with_rt(|rt| {
+        if !rt.is_settled(raw) {
+            return None;
+        }
+        if track {
+            rt.track_dependency(raw);
+        }
+        Some(rt.signal_value(raw).and_then(|v| downcast_cloned::<T>(&v)))
+    })?;
+    if let Some(result) = fast {
+        return result;
+    }
+
+    // 慢路径：要驱动求值，那可能同步执行用户代码，因此必须在借用之外。
+    if track {
+        drive::prepare_read(raw);
+    } else {
+        drive::prepare_read_untracked(raw);
+    }
+    with_rt(|rt| rt.signal_value(raw).and_then(|v| downcast_cloned::<T>(&v)))?
 }
 
 /// [`try_get`] 的便捷形式：把任何失败折叠成 `None`。
@@ -83,10 +101,9 @@ pub fn get<T: Clone + 'static>(id: impl Readable) -> Option<T> {
 /// **不允许在 `f` 内部访问同一个节点**，那样会拿到
 /// [`Reentrant`](ReactiveError::Reentrant)。
 pub fn try_with<T: 'static, R>(id: impl Readable, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
-    let rt = RUNTIME.get().ok_or(ReactiveError::NoRuntime)?;
     let raw = id.to_raw();
-    rt.prepare_read(raw);
-    with_typed(rt, raw, f)
+    drive::prepare_read(raw);
+    with_typed(raw, f)
 }
 
 /// 同 [`try_with`]，但**不**登记依赖。
@@ -94,10 +111,9 @@ pub fn try_with_untracked<T: 'static, R>(
     id: impl Readable,
     f: impl FnOnce(&T) -> R,
 ) -> ReactiveResult<R> {
-    let rt = RUNTIME.get().ok_or(ReactiveError::NoRuntime)?;
     let raw = id.to_raw();
-    rt.prepare_read_untracked(raw);
-    with_typed(rt, raw, f)
+    drive::prepare_read_untracked(raw);
+    with_typed(raw, f)
 }
 
 // --- 写 ---
@@ -119,11 +135,8 @@ pub fn try_with_untracked<T: 'static, R>(
 /// 了节点，此时节点里是空的。
 pub fn try_update<T: 'static>(id: SignalId, f: impl FnOnce(&mut T)) -> ReactiveResult<()> {
     let mut f = Some(f);
-    // 只读、或只写既有节点的路径一律用 `get()`：没有运行时就没有节点，
-    // 不该仅仅为了报告“查无此节点”而把整个运行时建起来（AUDIT P19.9）。
-    let rt = RUNTIME.get().ok_or(ReactiveError::NoRuntime)?;
     let mut mismatch = false;
-    let applied = rt.update_signal_untyped(id.raw(), &mut |any_val| {
+    let applied = drive::update_signal_untyped(id.raw(), &mut |any_val| {
         let Some(val) = any_val.downcast_mut::<T>() else {
             mismatch = true;
             return false;
@@ -172,8 +185,7 @@ pub fn update<T: 'static>(id: SignalId, f: impl FnOnce(&mut T)) {
 pub fn set_if_changed<T: PartialEq + 'static>(id: SignalId, value: T) -> ReactiveResult<bool> {
     let mut incoming = Some(value);
     let mut equal = false;
-    let rt = RUNTIME.get().ok_or(ReactiveError::NoRuntime)?;
-    let applied = rt.update_signal_untyped(id.raw(), &mut |any_val| {
+    let applied = drive::update_signal_untyped(id.raw(), &mut |any_val| {
         let Some(slot) = any_val.downcast_mut::<T>() else {
             return false;
         };
@@ -204,10 +216,9 @@ pub fn try_update_silent<T: 'static, R>(
     id: SignalId,
     f: impl FnOnce(&mut T) -> R,
 ) -> ReactiveResult<R> {
-    let rt = RUNTIME.get().ok_or(ReactiveError::NoRuntime)?;
     let mut out = None;
     // 第二个分量即“请递增版本号”：只有类型相符、闭包真的跑过才递增。
-    rt.with_signal_value_mut(id.raw(), |value| match value.downcast_mut::<T>() {
+    drive::with_signal_value_mut(id.raw(), |value| match value.downcast_mut::<T>() {
         Some(typed) => {
             out = Some(f(typed));
             ((), true)
@@ -221,9 +232,7 @@ pub fn try_update_silent<T: 'static, R>(
 ///
 /// 配合 [`try_update_silent`]：先静默写入若干次，最后统一通知一次。
 pub fn notify(id: SignalId) {
-    if let Some(rt) = RUNTIME.get() {
-        rt.notify_update(id.raw());
-    }
+    drive::notify_update(id.raw());
 }
 
 // --- 依赖追踪 ---
@@ -232,9 +241,7 @@ pub fn notify(id: SignalId) {
 ///
 /// 用于“只关心变化、不关心值”的场景。当前没有正在运行的节点时什么都不做。
 pub fn track(id: impl Readable) {
-    if let Some(rt) = RUNTIME.get() {
-        rt.track_dependency(id.to_raw());
-    }
+    let _ = with_rt(|rt| rt.track_dependency(id.to_raw()));
 }
 
 /// [`track`] 的批量版本，只走一遍当前节点的查找。
@@ -242,9 +249,7 @@ pub fn track(id: impl Readable) {
 /// 取 [`RawNodeId`] 而不是带种类的句柄：调用方（上层框架的类型擦除分发）
 /// 手里本来就是一个混种类的 id 数组。不是 signal 的条目会被静默跳过。
 pub fn track_batch(ids: &[RawNodeId]) {
-    if let Some(rt) = RUNTIME.get() {
-        rt.track_dependencies(ids);
-    }
+    let _ = with_rt(|rt| rt.track_dependencies(ids));
 }
 
 // --- 逃生出口 ---
@@ -268,12 +273,15 @@ pub fn track_batch(ids: &[RawNodeId]) {
 /// 本函数自身还会驱动一次惰性求值，这条路径上可能同步执行下游 effect ——
 /// 也就是说**在返回之前**就已经跑过用户代码了。拿到引用之后请立刻用掉。
 pub unsafe fn try_value_ref<T: 'static>(id: impl Readable) -> Option<&'static T> {
-    let rt = RUNTIME.get()?;
     let raw = id.to_raw();
-    rt.prepare_read_untracked(raw);
+    drive::prepare_read_untracked(raw);
     // SAFETY: 契约（引用不得跨越上面列出的任何一种操作）由本函数的调用方承担，
-    // 原样转嫁给 `signal_value_unchecked`。
-    unsafe { rt.signal_value_unchecked(raw) }?.downcast_ref::<T>()
+    // 原样转嫁给 `signal_value_unchecked`。指针要走出 `with_rt` 的借用再解引用，
+    // 而“伪造出来的 `'static` 有多久有效”正是上面那份契约的内容。
+    let ptr = with_rt(|rt| unsafe { rt.signal_value_unchecked(raw) }.map(std::ptr::from_ref))
+        .ok()
+        .flatten()?;
+    unsafe { &*ptr }.downcast_ref::<T>()
 }
 
 // --- 内部辅助 ---
@@ -297,12 +305,8 @@ fn downcast_cloned<T: Clone + 'static>(value: &AnyValue) -> ReactiveResult<T> {
 ///
 /// 类型不符时也要先移出再放回：判定类型需要看一眼值，而“看一眼”本身就是那个
 /// 不能跨越用户代码的借用。这样写的好处是失败路径与成功路径共用同一条纪律。
-fn with_typed<T: 'static, R>(
-    rt: &Runtime,
-    raw: NodeId,
-    f: impl FnOnce(&T) -> R,
-) -> ReactiveResult<R> {
-    rt.with_signal_value(raw, |value| {
+fn with_typed<T: 'static, R>(raw: RawNodeId, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
+    drive::with_signal_value(raw, |value| {
         value
             .downcast_ref::<T>()
             .map(f)

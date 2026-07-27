@@ -1,10 +1,6 @@
 //! 副作用节点。
 
-use crate::{
-    EffectId,
-    internal::value::EffectThunk,
-    runtime::{RUNTIME, Runtime},
-};
+use crate::{EffectId, internal::value::EffectThunk, runtime::drive};
 
 /// 创建一个 effect：立即运行一次 `f`，之后每当它读过的任一 signal 变化就重跑。
 ///
@@ -28,9 +24,5 @@ use crate::{
 /// 传一个会捕获可变状态的闭包现在能编译过了，从前编译不过。
 #[track_caller]
 pub fn create<F: FnMut() + 'static>(f: F) -> EffectId {
-    EffectId::from_raw(
-        RUNTIME
-            .get_or(Runtime::new)
-            .create_effect(EffectThunk::new(f)),
-    )
+    EffectId::from_raw(drive::create_effect(EffectThunk::new(f)).expect("刚建出来的运行时可用"))
 }

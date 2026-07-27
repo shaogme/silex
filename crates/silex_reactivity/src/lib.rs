@@ -122,7 +122,6 @@ pub use crate::{
 };
 
 pub(crate) use crate::internal::list::List;
-use runtime::RUNTIME;
 pub(crate) use runtime::Runtime;
 use std::panic::Location;
 
@@ -153,10 +152,9 @@ pub(crate) type DependencyList = List<(RawNodeId, u32)>;
 ///
 /// 简而言之：拿到之后立刻用掉，不要跨越任何可能回到运行时的调用。
 pub unsafe fn try_get_any_raw_untracked(id: impl AnyHandle) -> Option<*const ()> {
-    let rt = RUNTIME.get()?;
     // SAFETY: 上面 `# Safety` 段里的两条契约（类型对得上、指针还没失效）
     // 原样转嫁给本函数的调用方，这里只是把节点里那个值的地址取出来。
-    unsafe { rt.get_any_raw_ptr_untracked(id.to_raw()) }
+    unsafe { runtime::drive::get_any_raw_ptr_untracked(id.to_raw()) }
 }
 
 /// 节点是在哪一行被创建的。
@@ -167,8 +165,9 @@ pub unsafe fn try_get_any_raw_untracked(id: impl AnyHandle) -> Option<*const ()>
 pub fn get_node_defined_at(_id: impl AnyHandle) -> Option<&'static Location<'static>> {
     #[cfg(debug_assertions)]
     {
-        let rt = RUNTIME.get()?;
-        rt.storage.graph.get(_id.to_raw())?.defined_at
+        runtime::with_rt(|rt| rt.storage.graph.get(_id.to_raw())?.defined_at)
+            .ok()
+            .flatten()
     }
     #[cfg(not(debug_assertions))]
     {
@@ -185,9 +184,10 @@ pub fn set_debug_label(_id: impl AnyHandle, _label: impl Into<String>) {
     #[cfg(debug_assertions)]
     {
         let label = _label.into();
-        let rt = RUNTIME.get_or(Runtime::new);
-        rt.storage
-            .with_aux_mut(_id.to_raw(), |aux| aux.debug_label = Some(label));
+        let _ = runtime::with_rt_or_init(|rt| {
+            rt.storage
+                .with_aux_mut(_id.to_raw(), |aux| aux.debug_label = Some(label))
+        });
     }
 }
 
@@ -199,15 +199,18 @@ pub fn set_debug_label(_id: impl AnyHandle, _label: impl Into<String>) {
 pub fn get_debug_label(_id: impl AnyHandle) -> Option<String> {
     #[cfg(debug_assertions)]
     {
-        let rt = RUNTIME.get()?;
         let raw = _id.to_raw();
-        if let Some(aux) = rt.storage.node_aux.get(raw)
-            && let Some(label) = aux.borrow().debug_label.clone()
-        {
-            return Some(label);
-        }
-        // Check dead labels
-        rt.storage.dead_node_labels.get(raw).cloned()
+        runtime::with_rt(|rt| {
+            if let Some(aux) = rt.storage.node_aux.get(raw)
+                && let Some(label) = aux.borrow().debug_label.clone()
+            {
+                return Some(label);
+            }
+            // Check dead labels
+            rt.storage.dead_node_labels.get(raw).cloned()
+        })
+        .ok()
+        .flatten()
     }
     #[cfg(not(debug_assertions))]
     {

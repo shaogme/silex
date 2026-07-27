@@ -271,6 +271,15 @@ fn probe_effect_fanout_cost() {
 ///
 /// 量的是后序工作栈本身的成本 —— AUDIT P19.8 把它从调用栈搬到了堆上，
 /// 这里是它唯一的性能刻度。
+///
+/// # 深度为什么是 500 而不是 2000
+///
+/// 受限的是**建树**那一侧，不是销毁：`nest` 是真的在原生栈上递归，而嵌套一层
+/// `scope::create` 现在要吃约 1.3 KB 原生栈（方案 B 之前约 0.4 KB —— 公开调用
+/// 多了驱动层几个函数帧）。2 MB 的默认测试线程栈因此在约 1600 层就满了。
+/// 销毁这一侧的栈深度仍然是**常数**，那条不变量由
+/// `runtime::scope` 里的 `disposing_a_deep_tree_does_not_overflow_the_stack`
+/// 覆盖 —— 它用迭代的方式建五万层，正是为了不受这一条影响。
 #[test]
 #[cfg_attr(miri, ignore)]
 fn probe_deep_dispose_cost() {
@@ -283,7 +292,7 @@ fn probe_deep_dispose_cost() {
         }
     }
 
-    let (depth, rounds) = if DEBUG { (200, 20) } else { (2_000, 200) };
+    let (depth, rounds) = if DEBUG { (200, 20) } else { (500, 400) };
     let hits = Rc::new(Cell::new(0usize));
     let mut total = Duration::ZERO;
 
