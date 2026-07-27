@@ -94,8 +94,6 @@ const KNOWN_DIVERGENCES: &[(&str, Divergence, &str)] = &[
     ("rounded-ee-full", Divergence::ValueOnly, "同 rounded-full"),
 
     // --- 其余零散差异 --------------------------------------------------------
-    ("font-mono", Divergence::ValueOnly,
-     "字体栈少了 \"Liberation Mono\" / \"Courier New\" 两个回退项"),
     ("font-stretch-normal", Divergence::ValueOnly, "产出 100%，Tailwind 产出关键字 normal（等价）"),
     ("place-items-stretch", Divergence::ValueOnly, "产出双值 `stretch stretch`，Tailwind 用单值简写（等价）"),
 ];

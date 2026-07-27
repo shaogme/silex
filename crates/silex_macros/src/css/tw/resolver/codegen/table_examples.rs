@@ -819,7 +819,7 @@ pub static TEST_CASE_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::FontWeight, StaticVal::Num(900.0, "")),
     ]),
     ("font-mono", None, &[
-        (CssPropertyId::FontFamily, StaticVal::Literal("ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace")),
+        (CssPropertyId::FontFamily, StaticVal::Literal("ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace")),
     ]),
     ("font-thin", None, &[
         (CssPropertyId::FontWeight, StaticVal::Num(100.0, "")),

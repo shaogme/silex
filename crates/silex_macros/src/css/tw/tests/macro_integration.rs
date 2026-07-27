@@ -620,3 +620,24 @@ fn sr_only_utilities_with_modifiers_and_conditionals() {
         "tw-merge 后 not-sr-only 的 position: static 应胜出"
     );
 }
+
+/// 验证 `font-mono` 工具类包含完整的跨平台回退字体栈（包含 Liberation Mono 与 Courier New）
+#[test]
+fn font_mono_utility_emits_full_fallback_stack() {
+    let css = css_of_tw(quote!("font-mono"));
+    assert!(!css.is_empty(), "font-mono 必须生成有效的 CSS 规则");
+
+    let decls = extract_declarations(&css[0]);
+    let font_family_decl = decls
+        .iter()
+        .find(|(p, _)| p == "font-family")
+        .map(|(_, v)| v.as_str());
+
+    assert_eq!(
+        font_family_decl,
+        Some(
+            "ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace"
+        ),
+        "font-mono 产出的 font-family 必须包含完整的跨平台回退字体栈"
+    );
+}

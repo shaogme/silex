@@ -136,7 +136,7 @@ pub fn resolve_typography_border_effect_rules(
         )]),
         "font-mono" => Some(cow![(
             "font-family",
-            "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+            "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace"
         )]),
 
         // Font weight presets

@@ -48538,7 +48538,7 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::FontWeight, StaticVal::Num(500.0, "")),
     ]),
     ("font-mono", None, &[
-        (CssPropertyId::FontFamily, StaticVal::Literal("ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace")),
+        (CssPropertyId::FontFamily, StaticVal::Literal("ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace")),
     ]),
     ("font-normal", None, &[
         (CssPropertyId::FontWeight, StaticVal::Num(400.0, "")),
