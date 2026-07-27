@@ -4,6 +4,10 @@
 
 运行时通过 `with_rt` 交出独占的 `&mut Runtime`。内部方法只计算状态、改图和准备驱动步骤，不执行用户代码；effect、memo、cleanup、析构和 `PartialEq` 都在两次运行时借用之间执行。
 
+业务字段和公开入口保存具体句柄；只有 owner/observer、订阅边、依赖边、工作队列以及
+非泛型 trampoline 这类异构结构使用 `RawId`。`Handle::into_raw()` 是显式擦除入口，
+`from_raw_unchecked()` 只能出现在已有运行时种类证明的 dispatcher、适配器和测试探针中。
+
 ### 当前模块
 
 ```text
@@ -34,7 +38,7 @@ extras         SparseSecondaryMap<Option<AnyValue>>
 
 传播只借用 `links` 并修改 `meta`，所以不需要节点内 `Cell`/`RefCell`。值或闭包在调用用户代码前通过 `take` 移出，守卫在正常返回或 panic 时放回。
 
-`NodeLinks.subscribers` 是 `Vec<NodeId>`。依赖边保存 `(target, version, subscriber_index)`，退订使用 `swap_remove`，并更新被搬移订阅者依赖列表里的反向索引。这避免了一个 signal 有 `k` 个 memo 时逐个线性查找订阅者造成的 O(k²)。
+`NodeLinks.subscribers` 是 `Vec<RawId>`。依赖边保存 `(target, version, subscriber_index)`，退订使用 `swap_remove`，并更新被搬移订阅者依赖列表里的反向索引。这避免了一个 signal 有 `k` 个 memo 时逐个线性查找订阅者造成的 O(k²)。
 
 ## 图算法
 
@@ -53,6 +57,8 @@ arena 之外的 unsafe 仍集中在 `internal/list.rs`、`internal/value.rs`、v
 ```text
 cargo test -p silex_reactivity
 cargo test -p silex_reactivity --release
+cargo bench -p silex_reactivity --bench reactivity
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo +nightly miri test -p silex_reactivity -p silex_vtable
 ```

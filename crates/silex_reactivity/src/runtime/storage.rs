@@ -16,7 +16,7 @@
 use crate::{
     DependencyList,
     internal::{
-        arena::{Arena, Index as NodeId, SparseSecondaryMap},
+        arena::{Arena, RawId, SparseSecondaryMap},
         value::{AnyValue, Computation, OnceThunk},
     },
     runtime::graph::NodeState,
@@ -65,7 +65,7 @@ pub(crate) struct NodeMeta {
     pub(crate) flags: NodeFlags,
     pub(crate) version: u32,
     pub(crate) effect_version: u32,
-    pub(crate) last_tracked_by: Option<(NodeId, u32)>,
+    pub(crate) last_tracked_by: Option<(RawId, u32)>,
 }
 
 impl NodeMeta {
@@ -117,7 +117,7 @@ impl NodeMeta {
 /// 节点的图边。订阅者和依赖关系与值、闭包分开存放。
 #[derive(Default)]
 pub(crate) struct NodeLinks {
-    pub(crate) subscribers: Vec<NodeId>,
+    pub(crate) subscribers: Vec<RawId>,
     pub(crate) dependencies: DependencyList,
 }
 
@@ -211,7 +211,7 @@ impl Storage {
 
     /// 为一个即将被销毁的节点留一个墓碑标签，数量封顶（见 [`MAX_DEAD_NODE_LABELS`]）。
     #[cfg(debug_assertions)]
-    pub(crate) fn remember_dead_label(&mut self, id: NodeId, label: String) {
+    pub(crate) fn remember_dead_label(&mut self, id: RawId, label: String) {
         let count = self.dead_label_count;
         if count >= MAX_DEAD_NODE_LABELS {
             return;
@@ -237,7 +237,7 @@ impl Storage {
 
     pub(crate) fn insert_reactive(
         &mut self,
-        id: NodeId,
+        id: RawId,
         meta: NodeMeta,
         links: NodeLinks,
         value: Option<AnyValue>,
@@ -253,7 +253,7 @@ impl Storage {
         debug_assert!(computation_inserted);
     }
 
-    pub(crate) fn remove_reactive(&mut self, id: NodeId) -> Option<NodeParts> {
+    pub(crate) fn remove_reactive(&mut self, id: RawId) -> Option<NodeParts> {
         let meta = self.meta.remove(id)?;
         let links = self.links.remove(id).unwrap_or_default();
         let value = self.values.remove(id).unwrap_or(None);
@@ -267,27 +267,27 @@ impl Storage {
     }
 
     #[inline(always)]
-    pub(crate) fn meta(&self, id: NodeId) -> Option<&NodeMeta> {
+    pub(crate) fn meta(&self, id: RawId) -> Option<&NodeMeta> {
         self.meta.get(id)
     }
 
     #[inline(always)]
-    pub(crate) fn meta_mut(&mut self, id: NodeId) -> Option<&mut NodeMeta> {
+    pub(crate) fn meta_mut(&mut self, id: RawId) -> Option<&mut NodeMeta> {
         self.meta.get_mut(id)
     }
 
     #[inline(always)]
-    pub(crate) fn value(&self, id: NodeId) -> Option<&AnyValue> {
+    pub(crate) fn value(&self, id: RawId) -> Option<&AnyValue> {
         self.values.get(id)?.as_ref()
     }
 
     #[inline(always)]
-    pub(crate) fn value_mut(&mut self, id: NodeId) -> Option<&mut Option<AnyValue>> {
+    pub(crate) fn value_mut(&mut self, id: RawId) -> Option<&mut Option<AnyValue>> {
         self.values.get_mut(id)
     }
 
     #[inline(always)]
-    pub(crate) fn computation_mut(&mut self, id: NodeId) -> Option<&mut Option<Computation>> {
+    pub(crate) fn computation_mut(&mut self, id: RawId) -> Option<&mut Option<Computation>> {
         self.computations.get_mut(id)
     }
 
@@ -296,7 +296,7 @@ impl Storage {
     /// 节点不在 `graph` 里（已销毁 / 伪造的句柄）时返回 `None` 且不建任何条目。
     pub(crate) fn with_aux_mut<R>(
         &mut self,
-        id: NodeId,
+        id: RawId,
         f: impl FnOnce(&mut NodeAux) -> R,
     ) -> Option<R> {
         if !self.node_aux.contains_key(id) {
@@ -308,7 +308,7 @@ impl Storage {
     }
 
     #[inline(always)]
-    pub(crate) fn get_state(&self, id: NodeId) -> NodeState {
+    pub(crate) fn get_state(&self, id: RawId) -> NodeState {
         self.meta(id).map_or(NodeState::Clean, |node| node.state)
     }
 
@@ -322,18 +322,18 @@ impl Storage {
     /// 忽略掉是安全的：`get_state` 对不存在的节点返回 `Clean`，
     /// 传播与求值都会把它当成“无需处理”。
     #[inline(always)]
-    pub(crate) fn set_state(&mut self, id: NodeId, state: NodeState) {
+    pub(crate) fn set_state(&mut self, id: RawId, state: NodeState) {
         if let Some(node) = self.meta_mut(id) {
             node.state = state;
         }
     }
 
     #[inline(always)]
-    pub(crate) fn is_running(&self, id: NodeId) -> bool {
+    pub(crate) fn is_running(&self, id: RawId) -> bool {
         self.meta(id).is_some_and(NodeMeta::is_running)
     }
 
-    pub(crate) fn describe(&self, id: NodeId) -> String {
+    pub(crate) fn describe(&self, id: RawId) -> String {
         // release 构建下既没有调试标签也没有定义位置，只剩下编号。
         #[allow(unused_mut)]
         let mut out = format!("节点 #{}", id.slot());
@@ -357,7 +357,7 @@ impl Storage {
 /// 辅助数据结构，存储“冷数据” (Cold Data)
 #[derive(Default)]
 pub(crate) struct NodeAux {
-    pub(crate) children: Vec<NodeId>,
+    pub(crate) children: Vec<RawId>,
     pub(crate) cleanups: CleanupList,
     #[cfg(debug_assertions)]
     pub(crate) debug_label: Option<String>,
@@ -366,7 +366,7 @@ pub(crate) struct NodeAux {
 /// 响应式节点通用结构体 (Metadata)。
 /// 仅保留最核心的“热数据”以减小体积。
 pub(crate) struct Node {
-    pub(crate) parent: Option<NodeId>,
+    pub(crate) parent: Option<RawId>,
     #[cfg(debug_assertions)]
     pub(crate) defined_at: Option<&'static std::panic::Location<'static>>,
 }
@@ -470,7 +470,7 @@ mod tests {
         on_a_fresh_runtime(|| {
             let s = drive::create_signal(AnyValue::new(1i32)).expect("运行时可用");
             let dead = drive::create_effect(EffectThunk::new(|| {})).expect("运行时可用");
-            drive::dispose(dead);
+            drive::dispose_raw(dead);
 
             with_rt_or_init(|rt| {
                 assert!(rt.storage.meta(dead).is_none());
@@ -505,7 +505,7 @@ mod tests {
                         .with_aux_mut(id, |aux| aux.debug_label = Some(format!("node-{i}")));
                 })
                 .expect("运行时可用");
-                drive::dispose(id);
+                drive::dispose_raw(id);
             }
             assert_eq!(
                 with_rt_or_init(|rt| rt.storage.dead_label_count).expect("运行时可用"),

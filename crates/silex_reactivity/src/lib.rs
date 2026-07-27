@@ -70,7 +70,7 @@
 //! # 种类安全
 //!
 //! 句柄带种类标记（见 `handle`）：`signal::try_get::<i32>(stored_id)` 是编译
-//! 错误，不再是运行时的一个静默 `None`。需要跨种类传递时用 [`RawNodeId`] 显式
+//! 错误，不再是运行时的一个静默 `None`。需要跨种类传递时用 [`RawId`] 显式
 //! 擦除 —— 那是唯一的逃生出口，也因此是唯一需要人工审查的地方。
 //!
 //! # `unsafe` 的边界
@@ -104,7 +104,7 @@ pub mod store;
 pub use crate::{
     error::{ReactiveError, ReactiveResult},
     handle::{
-        AnyHandle, CallbackId, DerivedId, EffectId, Handle, MemoId, NodeKind, NodeRefId, RawNodeId,
+        AnyHandle, CallbackId, DerivedId, EffectId, Handle, MemoId, NodeKind, NodeRefId, RawId,
         Readable, ScopeId, SignalId, StoredId, kind,
     },
 };
@@ -113,9 +113,9 @@ pub(crate) use crate::internal::list::List;
 pub(crate) use runtime::Runtime;
 use std::panic::Location;
 
-pub(crate) type DependencyList = List<(RawNodeId, u32, usize)>;
+pub(crate) type DependencyList = List<(RawId, u32, usize)>;
 
-/// 获取任何响应式节点内部值的原始指针（signal 与 stored value 都行），
+/// 获取一个已擦除种类的节点内部值的原始指针（signal 与 stored value 都行），
 /// 供上层框架做去泛型化优化用。返回的指针指向 `T` 本身，不含任何类型信息。
 ///
 /// # Safety
@@ -138,10 +138,10 @@ pub(crate) type DependencyList = List<(RawNodeId, u32, usize)>;
 ///      上面任意一件事。
 ///
 /// 简而言之：拿到之后立刻用掉，不要跨越任何可能回到运行时的调用。
-pub unsafe fn try_get_any_raw_untracked(id: impl AnyHandle) -> Option<*const ()> {
+pub unsafe fn try_get_any_raw_untracked(id: RawId) -> Option<*const ()> {
     // SAFETY: 上面 `# Safety` 段里的两条契约（类型对得上、指针还没失效）
     // 原样转嫁给本函数的调用方，这里只是把节点里那个值的地址取出来。
-    unsafe { runtime::drive::get_any_raw_ptr_untracked(id.to_raw()) }
+    unsafe { runtime::drive::get_any_raw_ptr_untracked(id) }
 }
 
 /// 节点是在哪一行被创建的。
@@ -152,7 +152,7 @@ pub unsafe fn try_get_any_raw_untracked(id: impl AnyHandle) -> Option<*const ()>
 pub fn get_node_defined_at(_id: impl AnyHandle) -> Option<&'static Location<'static>> {
     #[cfg(debug_assertions)]
     {
-        runtime::with_rt(|rt| rt.storage.graph.get(_id.to_raw())?.defined_at)
+        runtime::with_rt(|rt| rt.storage.graph.get(_id.into_raw())?.defined_at)
             .ok()
             .flatten()
     }
@@ -173,7 +173,7 @@ pub fn set_debug_label(_id: impl AnyHandle, _label: impl Into<String>) {
         let label = _label.into();
         let _ = runtime::with_rt_or_init(|rt| {
             rt.storage
-                .with_aux_mut(_id.to_raw(), |aux| aux.debug_label = Some(label))
+                .with_aux_mut(_id.into_raw(), |aux| aux.debug_label = Some(label))
         });
     }
 }
@@ -186,7 +186,7 @@ pub fn set_debug_label(_id: impl AnyHandle, _label: impl Into<String>) {
 pub fn get_debug_label(_id: impl AnyHandle) -> Option<String> {
     #[cfg(debug_assertions)]
     {
-        let raw = _id.to_raw();
+        let raw = _id.into_raw();
         runtime::with_rt(|rt| {
             if let Some(aux) = rt.storage.node_aux.get(raw)
                 && let Some(label) = aux.debug_label.clone()

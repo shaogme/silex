@@ -30,7 +30,7 @@ where
     I2::Value: Sized + 'static,
     U: 'static,
 {
-    if let (Some(id1), Some(id2)) = (i1.id(), i2.id()) {
+    if let (Some(id1), Some(id2)) = (i1.raw_id(), i2.raw_id()) {
         let op = StaticMap2Payload::new2([id1, id2], f, false);
         Rx::new_op(op)
     } else {
@@ -57,7 +57,7 @@ where
     I3::Value: Sized + 'static,
     U: 'static,
 {
-    if let (Some(id1), Some(id2), Some(id3)) = (i1.id(), i2.id(), i3.id()) {
+    if let (Some(id1), Some(id2), Some(id3)) = (i1.raw_id(), i2.raw_id(), i3.raw_id()) {
         let op = StaticMap3Payload::new3([id1, id2, id3], f, false);
         Rx::new_op(op)
     } else {

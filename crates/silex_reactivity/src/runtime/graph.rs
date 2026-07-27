@@ -7,9 +7,9 @@
 //! 加一个 `RuntimeAdapter`，一共约 120 行纯转发代码。生产实现者只有一个，
 //! 抽象的**唯一**收益是让底部那批单元测试能用一个 `TestGraph` 跑（AUDIT P18）。
 //!
-//! 代价却是实打实的：`fill_subscribers(&self, id, dest: &mut Vec<NodeId>)` 这个
+//! 代价却是实打实的：`fill_subscribers(&self, id, dest: &mut Vec<RawId>)` 这个
 //! 签名**强制把订阅表和依赖表物化进一个 `Vec`**（trait 没法表达“借用内部的
-//! `List<NodeId>`”），于是 BFS 每访问一个节点就要整表拷贝一次，还得配一套
+//! `List<RawId>`”），于是 BFS 每访问一个节点就要整表拷贝一次，还得配一套
 //! `vec_pool` / `deque_pool` 去缓解这个由抽象自己引入的问题（审计报告 §3.3）。
 //!
 //! B4 把节点拆成独立的 meta / links / value / computation 表之后，
@@ -22,7 +22,7 @@
 //!   替身行为一致”从假设变成了事实。
 
 use crate::{
-    internal::arena::Index as NodeId,
+    internal::arena::RawId,
     runtime::{
         Runtime,
         scheduler::Scheduler,
@@ -47,7 +47,7 @@ pub(crate) enum Step {
     /// 本次 DFS 走完了。
     Done,
     /// 该跑这个节点的计算了。
-    Run(NodeId),
+    Run(RawId),
 }
 
 /// 求值 DFS 的一帧。
@@ -57,13 +57,13 @@ pub(crate) enum Step {
 /// 脏依赖的节点会被扫 k+1 遍，总代价 O(k²) 外加 k+1 次整表拷贝。
 #[derive(Clone, Copy)]
 pub(crate) struct EvalFrame {
-    node: NodeId,
+    node: RawId,
     cursor: usize,
 }
 
 impl EvalFrame {
     #[inline]
-    pub(crate) fn new(node: NodeId) -> Self {
+    pub(crate) fn new(node: RawId) -> Self {
         Self { node, cursor: 0 }
     }
 }
@@ -85,8 +85,8 @@ impl Runtime {
     #[inline]
     fn for_each_subscriber(
         links: &crate::internal::arena::SparseSecondaryMap<NodeLinks, 64>,
-        id: NodeId,
-        mut f: impl FnMut(NodeId),
+        id: RawId,
+        mut f: impl FnMut(RawId),
     ) {
         let Some(node_links) = links.get(id) else {
             return;
@@ -100,7 +100,7 @@ impl Runtime {
     ///
     /// 返回它以及它在依赖表里的下标。跳过正在运行的依赖：等它变干净会死循环
     /// （它不可能在本次 DFS 中变干净）。
-    fn next_unclean_dependency(&self, id: NodeId, from: usize) -> Option<(NodeId, usize)> {
+    fn next_unclean_dependency(&self, id: RawId, from: usize) -> Option<(RawId, usize)> {
         let deps = self.storage.links.get(id)?.dependencies.as_slice();
         let start = from.min(deps.len());
         for (offset, &(dep_id, _, _)) in deps.iter().enumerate().skip(start) {
@@ -114,7 +114,7 @@ impl Runtime {
     }
 
     /// 依赖的版本号相对上一次运行有没有变过 —— `Check -> Clean` 的快路径。
-    fn dependencies_changed(&self, id: NodeId) -> bool {
+    fn dependencies_changed(&self, id: RawId) -> bool {
         let Some(dependencies) = self.storage.links.get(id) else {
             return false;
         };
@@ -132,7 +132,7 @@ impl Runtime {
     // --- Phase 1: 传播（BFS） ---
 
     /// 把下游标记为 `Dirty` / `Check`，并把其中的 effect 推进队列。
-    pub(crate) fn propagate(&mut self, start_node: NodeId, queue: &mut VecDeque<NodeId>) {
+    pub(crate) fn propagate(&mut self, start_node: RawId, queue: &mut VecDeque<RawId>) {
         queue.clear();
 
         // links 与 meta 是两张不相交的表：传播可以遍历前者，同时修改后者。
@@ -175,8 +175,8 @@ impl Runtime {
     fn schedule_or_walk(
         meta: &crate::internal::arena::SparseSecondaryMap<NodeMeta, 64>,
         scheduler: &mut Scheduler,
-        id: NodeId,
-        queue: &mut VecDeque<NodeId>,
+        id: RawId,
+        queue: &mut VecDeque<RawId>,
     ) {
         if meta.get(id).is_some_and(NodeMeta::is_effect) {
             scheduler.queue_effect(id);
@@ -272,7 +272,7 @@ impl Runtime {
     /// `stack` 是当前的 DFS 路径（栈顶是最近压入的节点），`repeated` 是又一次
     /// 出现在这条路径上的节点。返回的字符串按“依赖方 → 被依赖方”的顺序列出
     /// 这个环。
-    fn describe_cycle(&self, stack: &[EvalFrame], repeated: NodeId) -> String {
+    fn describe_cycle(&self, stack: &[EvalFrame], repeated: RawId) -> String {
         let start = stack
             .iter()
             .position(|frame| frame.node == repeated)
@@ -314,7 +314,7 @@ mod tests {
     /// 手工搭图的脚手架：节点的种类、状态、依赖边都由用例直接指定，
     /// 计算闭包只记录“我被跑过了”。
     struct Graph {
-        ran: Rc<RefCell<Vec<NodeId>>>,
+        ran: Rc<RefCell<Vec<RawId>>>,
     }
 
     impl Graph {
@@ -325,7 +325,7 @@ mod tests {
         }
 
         /// 只有值、没有计算：一个普通 signal。
-        fn signal(&self) -> NodeId {
+        fn signal(&self) -> RawId {
             drive::create_signal(AnyValue::new(0i32)).expect("运行时可用")
         }
 
@@ -335,7 +335,7 @@ mod tests {
         /// `recompute_memo` 提交进节点，因此这里恒返回同一个常量：
         /// 首算时没有旧值，一律算“变了”；之后每次都与旧值相等，不再惊动下游。
         /// 用例只看 `ran`，这个选择让它们不受提交语义干扰。
-        fn computation(&self, flags: NodeFlags) -> NodeId {
+        fn computation(&self, flags: NodeFlags) -> RawId {
             let ran = self.ran.clone();
             with_rt_or_init(|rt| {
                 let id = rt.register_node_at(std::panic::Location::caller());
@@ -360,17 +360,17 @@ mod tests {
         }
 
         /// 既有值又有计算：memo / derived。
-        fn memo(&self) -> NodeId {
+        fn memo(&self) -> RawId {
             self.computation(NodeFlags::VALUE.with(NodeFlags::COMPUTATION))
         }
 
         /// 只有计算：effect。
-        fn effect(&self) -> NodeId {
+        fn effect(&self) -> RawId {
             self.computation(NodeFlags::COMPUTATION)
         }
 
         /// `from` 的变化会传播到 `to`（即 `to` 依赖 `from`）。
-        fn edge(&self, from: NodeId, to: NodeId) {
+        fn edge(&self, from: RawId, to: RawId) {
             with_rt_or_init(|rt| {
                 let version = rt.storage.meta(from).map_or(0, |node| node.version);
                 let subscribers = &mut rt
@@ -391,15 +391,15 @@ mod tests {
             .expect("运行时可用");
         }
 
-        fn state(&self, id: NodeId) -> NodeState {
+        fn state(&self, id: RawId) -> NodeState {
             with_rt_or_init(|rt| rt.storage.get_state(id)).expect("运行时可用")
         }
 
-        fn set_state(&self, id: NodeId, state: NodeState) {
+        fn set_state(&self, id: RawId, state: NodeState) {
             with_rt_or_init(|rt| rt.storage.set_state(id, state)).expect("运行时可用");
         }
 
-        fn set_running(&self, id: NodeId, running: bool) {
+        fn set_running(&self, id: RawId, running: bool) {
             with_rt_or_init(|rt| {
                 rt.storage
                     .meta_mut(id)
@@ -409,15 +409,15 @@ mod tests {
             .expect("运行时可用");
         }
 
-        fn alive(&self, id: NodeId) -> bool {
+        fn alive(&self, id: RawId) -> bool {
             with_rt_or_init(|rt| rt.storage.meta(id).is_some()).expect("运行时可用")
         }
 
-        fn ran(&self) -> Vec<NodeId> {
+        fn ran(&self) -> Vec<RawId> {
             self.ran.borrow().clone()
         }
 
-        fn propagate_from(&self, start: NodeId) -> Vec<NodeId> {
+        fn propagate_from(&self, start: RawId) -> Vec<RawId> {
             with_rt_or_init(|rt| {
                 let mut queue = VecDeque::new();
                 rt.propagate(start, &mut queue);
@@ -426,7 +426,7 @@ mod tests {
             .expect("运行时可用")
         }
 
-        fn evaluate_node(&self, target: NodeId) {
+        fn evaluate_node(&self, target: RawId) {
             drive::drive_eval(target);
         }
     }
@@ -492,7 +492,7 @@ mod tests {
             let a = g.signal();
             let dead = g.memo();
             g.edge(a, dead);
-            drive::dispose(dead);
+            drive::dispose_raw(dead);
 
             g.propagate_from(a);
 
@@ -668,7 +668,7 @@ mod tests {
         on_a_fresh_runtime(|| {
             let g = Graph::new();
             let sink = g.memo();
-            let deps: Vec<NodeId> = (0..16).map(|_| g.memo()).collect();
+            let deps: Vec<RawId> = (0..16).map(|_| g.memo()).collect();
             for &dep in &deps {
                 g.edge(dep, sink);
                 g.set_state(dep, NodeState::Dirty);

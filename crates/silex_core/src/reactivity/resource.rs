@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     Rx, RxValueKind, SilexError,
-    reactivity::{Memo, NodeId, StoredValue},
+    reactivity::{Memo, RawId, StoredValue},
     traits::{IntoSignal, RxCloneData, RxData, RxError, RxGet, adaptive::AdaptiveWrapper, *},
 };
 
@@ -250,8 +250,8 @@ impl<T: RxData, E: RxError> RxValue for Resource<T, E> {
 
 impl<T: RxData, E: RxError> RxBase for Resource<T, E> {
     #[inline(always)]
-    fn id(&self) -> Option<NodeId> {
-        self.state.id()
+    fn raw_id(&self) -> Option<RawId> {
+        self.state.raw_id()
     }
 
     #[inline(always)]

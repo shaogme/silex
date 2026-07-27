@@ -13,7 +13,7 @@
 //! 两层薄封装。
 
 use crate::{
-    RawNodeId, ReactiveError, ReactiveResult, StoredId,
+    RawId, ReactiveError, ReactiveResult, StoredId,
     internal::value::AnyValue,
     runtime::{drive, with_rt},
 };
@@ -74,19 +74,16 @@ pub unsafe fn try_value_ref<T: 'static>(id: StoredId) -> Option<&'static T> {
 // --- 供 `callback` / `node_ref` 复用的泛型底座 ---
 
 #[track_caller]
-pub(crate) fn create_raw<T: 'static>(value: T) -> RawNodeId {
+pub(crate) fn create_raw<T: 'static>(value: T) -> RawId {
     drive::store_payload(AnyValue::new(value)).expect("刚建出来的运行时可用")
 }
 
-pub(crate) fn with_raw<T: 'static, R>(
-    raw: RawNodeId,
-    f: impl FnOnce(&T) -> R,
-) -> ReactiveResult<R> {
+pub(crate) fn with_raw<T: 'static, R>(raw: RawId, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
     drive::with_payload(raw, |value| downcast(value, f))?
 }
 
 pub(crate) fn with_raw_mut<T: 'static, R>(
-    raw: RawNodeId,
+    raw: RawId,
     f: impl FnOnce(&mut T) -> R,
 ) -> ReactiveResult<R> {
     drive::with_payload_mut(raw, |value| {

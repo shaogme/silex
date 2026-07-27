@@ -3,7 +3,7 @@
 use crate::{CallbackId, ReactiveResult, store};
 use std::{any::Any, rc::Rc};
 
-type Erased = Rc<dyn Fn(Box<dyn Any>)>;
+type Raw = Rc<dyn Fn(Box<dyn Any>)>;
 
 /// 注册一个类型擦除的回调，返回可以到处传递的句柄。
 ///
@@ -14,7 +14,7 @@ pub fn create<F>(f: F) -> CallbackId
 where
     F: Fn(Box<dyn Any>) + 'static,
 {
-    CallbackId::from_raw(store::create_raw::<Erased>(Rc::new(f)))
+    CallbackId::from_raw(store::create_raw::<Raw>(Rc::new(f)))
 }
 
 /// 调用一个已注册的回调。
@@ -27,7 +27,7 @@ where
 /// 这条路径也因此**允许重入**：回调里再 `invoke` 同一个回调是可以的
 /// （由用户自己保证不会无限递归）。
 pub fn invoke(id: CallbackId, arg: Box<dyn Any>) -> ReactiveResult<()> {
-    let f: Erased = store::with_raw::<Erased, _>(id.raw(), Rc::clone)?;
+    let f: Raw = store::with_raw::<Raw, _>(id.raw(), Rc::clone)?;
     f(arg);
     Ok(())
 }

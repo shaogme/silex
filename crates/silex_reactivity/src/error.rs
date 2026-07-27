@@ -26,7 +26,7 @@ pub enum ReactiveError {
     /// 去读 signal。
     ///
     /// 带种类的句柄（[`Handle<K>`](crate::Handle)）已经在编译期挡掉了绝大多数
-    /// 这类错误，因此它现在基本只出现在用 [`RawNodeId`](crate::RawNodeId)
+    /// 这类错误，因此它现在基本只出现在用 [`RawId`](crate::RawId)
     /// 显式擦除种类的逃生路径上。
     WrongKind,
     /// 种类对了，但里面存放的不是 `T`。**这是编程错误**，不是运行时状态。

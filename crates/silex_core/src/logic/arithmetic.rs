@@ -141,7 +141,7 @@ where
         return Rx::new_constant(f(&lhs_s.get(), &rhs_s.get()));
     }
 
-    let op = StaticMap2Payload::new2([lhs_s.ensure_node_id(), rhs_s.ensure_node_id()], f, false);
+    let op = StaticMap2Payload::new2([lhs_s.ensure_raw_id(), rhs_s.ensure_raw_id()], f, false);
     Rx::new_op(op)
 }
 
@@ -175,7 +175,7 @@ where
         return Rx::new_constant(f(&val_s.get()));
     }
 
-    let op = StaticMapPayload::new1(val_s.ensure_node_id(), f, false);
+    let op = StaticMapPayload::new1(val_s.ensure_raw_id(), f, false);
     Rx::new_op(op)
 }
 

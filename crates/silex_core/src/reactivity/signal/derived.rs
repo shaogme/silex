@@ -6,7 +6,7 @@ use crate::{
         *,
     },
 };
-use silex_reactivity::RawNodeId as NodeId;
+use silex_reactivity::RawId;
 use std::{
     fmt::{Debug, Formatter, Result},
     panic::Location,
@@ -65,7 +65,7 @@ impl<T: RxData> RxValue for Constant<T> {
 
 impl<T: RxData> RxBase for Constant<T> {
     #[inline(always)]
-    fn id(&self) -> Option<NodeId> {
+    fn raw_id(&self) -> Option<RawId> {
         None
     }
     #[inline(always)]
@@ -176,8 +176,8 @@ where
     U: 'static,
 {
     #[inline(always)]
-    fn id(&self) -> Option<NodeId> {
-        self.deps.id()
+    fn raw_id(&self) -> Option<RawId> {
+        self.deps.raw_id()
     }
     #[inline(always)]
     fn track(&self) {

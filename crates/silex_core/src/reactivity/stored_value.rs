@@ -4,7 +4,7 @@ use std::{
     panic::Location,
 };
 
-use silex_reactivity::{RawNodeId as NodeId, StoredId, get_debug_label, set_debug_label, store};
+use silex_reactivity::{RawId, StoredId, get_debug_label, set_debug_label, store};
 
 use crate::{
     Rx, RxValueKind,
@@ -79,7 +79,7 @@ impl<T: RxData> RxValue for StoredValue<T> {
 
 impl<T: RxData> RxBase for StoredValue<T> {
     #[inline(always)]
-    fn id(&self) -> Option<NodeId> {
+    fn raw_id(&self) -> Option<RawId> {
         Some(self.id.raw())
     }
 
@@ -149,7 +149,7 @@ impl<T: RxData + 'static> IntoRx for StoredValue<T> {
     type RxType = Rx<T, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        Rx::new_stored(self.id.raw())
+        Rx::new_stored(self.id)
     }
     #[inline(always)]
     fn is_constant(&self) -> bool {
@@ -160,7 +160,7 @@ impl<T: RxData + 'static> IntoRx for StoredValue<T> {
 impl<T: RxData> IntoSignal for StoredValue<T> {
     #[inline(always)]
     fn into_signal(self) -> Signal<T> {
-        Signal::StoredConstant(self.id.raw(), PhantomData)
+        Signal::StoredConstant(self.id, PhantomData)
     }
 }
 

@@ -11,7 +11,7 @@
 //!
 //! 种类安全（§3.1）本身是**编译期**性质，没法用运行时断言表达 ——
 //! `signal::try_get::<i32>(stored_id)` 现在压根编译不过。这里只固化那部分
-//! 仍然发生在运行时的：用 `RawNodeId` 显式擦除之后的 `WrongKind`。
+//! 仍然发生在运行时的：用 `RawId` 显式擦除之后的 `WrongKind`。
 
 use silex_reactivity::*;
 use std::{cell::Cell, rc::Rc};
@@ -87,6 +87,15 @@ fn a_callback_may_invoke_itself() {
 // --- 2. 失败原因可区分 ---
 
 #[test]
+fn typed_handles_round_trip_through_erasure() {
+    let signal_id = signal::create(1i32);
+    let stored_id = store::create(2i32);
+
+    assert_eq!(SignalId::from_raw_unchecked(signal_id.raw()), signal_id);
+    assert_eq!(StoredId::from_raw_unchecked(stored_id.raw()), stored_id);
+}
+
+#[test]
 fn every_failure_reason_is_distinguishable() {
     let s = signal::create(1i32);
     let sv = store::create(1i32);
@@ -105,8 +114,8 @@ fn every_failure_reason_is_distinguishable() {
     );
 
     // 节点不存在。
-    let gone = signal::create(0i32);
-    scope::dispose(gone);
+    let (gone_owner, gone) = scope::create_detached(|| signal::create(0i32));
+    scope::dispose(gone_owner);
     assert_eq!(signal::try_get::<i32>(gone), Err(ReactiveError::NoSuchNode));
 
     // effect 没有值可读，同样是种类不对而不是“查无此节点”。
@@ -121,8 +130,8 @@ fn every_failure_reason_is_distinguishable() {
 /// 确实正确的那些调用点。
 #[test]
 fn the_convenience_form_folds_every_failure_into_none() {
-    let gone = signal::create(0i32);
-    scope::dispose(gone);
+    let (gone_owner, gone) = scope::create_detached(|| signal::create(0i32));
+    scope::dispose(gone_owner);
 
     assert_eq!(signal::get::<i32>(gone), None);
     assert_eq!(signal::try_get::<i32>(gone), Err(ReactiveError::NoSuchNode));
@@ -158,7 +167,7 @@ fn a_payload_with_a_destructor_is_actually_dropped() {
 /// node-ref 就是一个存 `Option<T>` 的保管节点，里面的元素同样要被析构。
 #[test]
 fn a_node_ref_round_trips_and_is_disposed() {
-    let nr = node_ref::create::<String>();
+    let (nr_owner, nr) = scope::create_detached(node_ref::create::<String>);
     assert_eq!(node_ref::try_get::<String>(nr), Ok(None), "尚未填充");
 
     node_ref::set(nr, "hello".to_string()).expect("填充");
@@ -170,7 +179,7 @@ fn a_node_ref_round_trips_and_is_disposed() {
         Err(ReactiveError::TypeMismatch)
     );
 
-    scope::dispose(nr);
+    scope::dispose(nr_owner);
     assert!(!nr.is_alive());
     assert_eq!(
         node_ref::try_get::<String>(nr),
@@ -208,14 +217,14 @@ fn an_effect_may_capture_mutable_state() {
 /// 所以“把 memo 的 id 当 signal 的 id 比”这种事在类型层面就不存在了。
 #[test]
 fn handles_compare_by_identity_and_survive_disposal() {
-    let a = signal::create(1i32);
+    let (a_owner, a) = scope::create_detached(|| signal::create(1i32));
     let b = signal::create(1i32);
 
     assert_eq!(a, a);
     assert_ne!(a, b);
     assert!(a.is_alive());
 
-    scope::dispose(a);
+    scope::dispose(a_owner);
     assert!(!a.is_alive());
     // 句柄是 `Copy` 的，销毁之后它仍然可以传递，只是不再指向任何东西。
     assert_eq!(a, a);

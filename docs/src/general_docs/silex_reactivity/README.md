@@ -2,6 +2,11 @@
 
 `silex_reactivity` 是 Silex 的类型擦除、细粒度响应式运行时，提供 signal、memo、effect、scope 和非响应式载荷管理。
 
+句柄分成两个明确层次：业务 API 使用 `SignalId`、`MemoId`、`DerivedId`、`EffectId`、
+`ScopeId`、`StoredId`、`CallbackId` 和 `NodeRefId`；动态图、动态可读联合体以及
+dispatcher/trampoline 使用不带种类的 `RawId`。只有确实跨种类的边界才允许显式调用
+`.raw()`，不能用 `RawId` 代替已知业务种类。
+
 ## 核心架构
 
 运行时通过线程局部的 `RefCell<Runtime>` 提供唯一的 `&mut Runtime` 入口。用户闭包在两次运行时借用之间执行，驱动层负责求值、队列、cleanup 和墓园析构。
@@ -28,7 +33,7 @@
 
 ## 安全容器
 
-`internal/arena.rs` 使用安全的 `Vec` 槽位和分块 `Vec` 旁路表，文件级 `#![forbid(unsafe_code)]` 保证 arena 本身零 unsafe。`Index` 仍是 `{u32 index, u32 generation}`，支持槽位复用、ABA 防护和 `DANGLING` 句柄。
+`internal/arena.rs` 使用安全的 `Vec` 槽位和分块 `Vec` 旁路表，文件级 `#![forbid(unsafe_code)]` 保证 arena 本身零 unsafe。`RawId` 仍是 `{u32 index, u32 generation}`，支持槽位复用、ABA 防护和 `DANGLING` 句柄。
 
 容器的读取使用共享借用，插入、删除和可变访问使用 `&mut self`。因此 Rust 借用检查器会阻止同一张表的引用跨越写操作；旧代数写入会被拒绝。
 
@@ -45,4 +50,6 @@
 ```text
 cargo test -p silex_reactivity
 cargo test -p silex_reactivity --test graph_cost --release -- --nocapture
+cargo bench -p silex_reactivity --bench reactivity
+cargo +nightly miri test -p silex_reactivity -p silex_vtable
 ```

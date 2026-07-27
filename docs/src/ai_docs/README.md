@@ -38,7 +38,7 @@
 
 ### 6. 语言规范
 *   **正文**：中文 (Chinese)。
-*   **术语/代码**：保留英文原文 (English)，如 `Runtime`, `NodeId`, `Signal`。
+*   **术语/代码**：保留英文原文 (English)，如 `Runtime`, `RawId`, `Signal`。
 
 ## 目录结构
 *   `silex_core/`: 对应 `silex_core` crate 的高密度文档。

@@ -12,14 +12,14 @@ Silex 采用了一种独特的“委托与擦除”架构来平衡易用性与�
 
 1.  **Rx 包装器 (`Rx<T, M>`)**: 用户面对的统一接口层。它持有逻辑负载并通过宏和 Trait 为各种类型（常量、信号、闭包、元组）提供一致的开发体验。**关键优化**：其内部闭包现在通过 `Box<dyn Fn() -> T>` 进行类型擦除并存储在池中，确保相同返回类型的不同闭包共享同一个 `Rx<T>`，极大缩减了单态化膨胀。
 2.  **响应式规范化 (Signal Canonicalization)**: 通过 `into_signal()` 方法，系统将各种实现背景的 `Rx<T>`（跨池化闭包、算子组合、常量等）统一规范化为轻量级的 `Signal<T>` 句柄。由于 `Signal<T>` 满足 `Copy` 且屏蔽了具体的实现载体差异，它成为了静态映射载体之间进行无缝互操作的通用“原子句柄”。
-3.  **静态映射载体**: 当前实现统一采用 `UnifiedStaticMapPayload` 作为 `StaticMapPayload` / `StaticMap2Payload` / `StaticMap3Payload` 的底层实现。它通过固定大小的 `NodeId` 数组和函数指针承载 1 到 3 路输入的映射逻辑，并配合 `StoredValue` 为更高元数的元组聚合托管输入 ID。
+3.  **静态映射载体**: 当前实现统一采用 `UnifiedStaticMapPayload` 作为 `StaticMapPayload` / `StaticMap2Payload` / `StaticMap3Payload` 的底层实现。它通过固定大小的 `RawId` 数组和函数指针承载 1 到 3 路输入的映射逻辑，并配合 `StoredValue` 为更高元数的元组聚合托管输入 ID。
 4.  **静态映射与常量传播 (Static Mapping & Constant Propagation)**：所有响应式算子（算术、比较、映射等）在执行前均会进行**常量检测**：若所有输入均为常量，直接在编译期或初始化期计算结果并返回 `Rx::new_constant`，彻底跳过响应式节点创建。
 5. **自适应读取 (Adaptive Read)**: 通过 `RxRead` 和 `RxGet` ，系统自动提供最优读取路径：
     *   **Borrowed**: 直接借用 Arena 内的数据，零拷贝 (`RxRead::read`)。
     *   **Adaptive**: 在不强制 `Clone` 约束的前提下尝试获取副本 (`RxRead::try_get_cloned`)。
     *   **Owned**: 用于强制克隆导出 (`RxGet::get`，仅针对 `Clone` 类型)。
 6. **读获取严格分离 (Read & Get Separation)**: 取代了原有的自适应克隆探测，系统现将读取能力严格分解为 `RxRead`（提供引用守卫、闭包读取及**自适应克隆**，支持任何类型）和 `RxGet`（执行强力克隆导出，仅在 `Value: Clone + Sized` 时开放）。这在类型级别彻底切断了意外隐式克隆的可能性。
-7. **非泛型分发器 (Non-generic Dispatcher)**：核心响应式操作（`track`、`is_disposed`、`read_to_ptr`）由 `dispatch.rs` 内的非泛型函数驱动。通过将泛型负载转化为 `NodeId` + `RxNodeKind` 枚举，系统极大程度地收拢了机器码体积，避免了在每个泛型实例中生成冗长的调度逻辑。
+7. **非泛型分发器 (Non-generic Dispatcher)**：核心响应式操作（`track`、`is_disposed`、`read_to_ptr`）由 `dispatch.rs` 内的非泛型函数驱动。通过将泛型负载转化为 `RawId` + `RxNodeKind` 枚举，系统极大程度地收拢了机器码体积，避免了在每个泛型实例中生成冗长的调度逻辑。
 8. **受限的响应式投影与元组安全 (Restricted Slicing & Tuple Safety)**: `.slice()` 方法被设计为 `Signal` 和 `ReadSignal` 的特化接口。对于元组，不支持直接 `map`，必须通过 `$tuple.0` 精确分段零拷贝借用。
 9. **流畅化 API (Fluent API)**: 基于 `Map`、`Memoize`、`ReactivePartialEq` 等 Trait 提供的 Blanket Implementation，为所有 `Rx` 对象注入了 `.map()`、`.map_fn()`、`.equals()`、`.greater_than()` 等原生链式调用能力。这些接口内部均优先走常量传播路径，随后走 `UnifiedStaticMapPayload` / `StaticMapPayload` 路径。
 
@@ -36,7 +36,7 @@ Silex 采用了一种独特的“委托与擦除”架构来平衡易用性与�
 | `RxCloneData` | `trait RxCloneData: Clone + RxData` | 满足克隆能力的数据约束，用于 `RxGet`。 |
 | `RxError` | `trait RxError: Clone + Debug + RxData` | 异步资源错误类型的标准约束。 |
 | `RxValue` | `type Value: ?Sized` | **系统基石**。定义节点托管的数据类型，支持 `str` 等 DST。 |
-| `RxBase` | `fn track(&self)` | 提供 `id()`, `track()`, `is_disposed()`, `defined_at()`, `debug_name()`。 |
+| `RxBase` | `fn track(&self)` | 提供 `raw_id()`, `track()`, `is_disposed()`, `defined_at()`, `debug_name()`。 |
 
 ### 1.2 内部实现 Trait
 源码路径: `silex_core/src/traits/read.rs`
@@ -110,10 +110,10 @@ Silex 通过 `RxGuard` 实现了透明的借用/所有权切换。
 
 Silex 的“智能指针”，持有 `RxInner` 变体：
 *   `Constant(T)`: 静态常量。
-*   `Signal(NodeId)`: 可选信号。
-*   `Closure(NodeId)`: 经过池化和类型擦除的闭包计算。
-*   `Op(NodeId)`: 去泛型化的运算符节点。
-*   `Stored(NodeId)`: 在 StoredValue 中直接借用的外部对象。
+*   `Signal(RawId)`: 动态可读信号联合体。
+*   `Closure(StoredId)`: 经过池化和类型擦除的闭包计算。
+*   `Op(StoredId)`: 去泛型化的运算符节点。
+*   `Stored(StoredId)`: 在 StoredValue 中直接借用的外部对象。
 
 **特化创建**:
 *   `Rx::derive(Box<dyn Fn() -> T>)`: 创建响应式派生计算。
@@ -128,15 +128,15 @@ Silex 的“智能指针”，持有 `RxInner` 变体：
 
 | 变体 | 内部数据 | 描述 |
 | :--- | :--- | :--- |
-| `Read(ReadSignal<T>)` | `NodeId` | 后端为 `Signal::pair(v)` 的可变信号。 |
-| `Derived(NodeId, ...)` | `NodeId` | 后端为池化闭包、算子或 `rx!` 产生的派生节点。 |
-| `StoredConstant(NodeId, ...)` | `NodeId`| 存储在 Arena 中但不可变的常量，不触发依赖追踪。 |
+| `Read(ReadSignal<T>)` | `RawId` | 动态可读的 signal/memo/derived 联合体。 |
+| `Derived(RawId, ...)` | `RawId` | 后端为池化闭包、算子或 `rx!` 产生的派生节点，并带 `RxNodeKind`。 |
+| `StoredConstant(StoredId, ...)` | `StoredId` | 存储在 Arena 中但不可变的常量，不触发依赖追踪。 |
 | `InlineConstant(u64, ...)` | `u64` | **内联优化**：直接在枚举内存储 <= 64bit 且 `!needs_drop` 的类型，无需 Arena 分配。 |
 
 **核心方法**:
 *   `Signal::derive(f)`: 从池化闭包创建派生信号。
 *   `Signal::from(value)`: 将普通值转化为 `Signal`，优先触发 `try_inline` 优化。
-*   `.ensure_node_id() -> NodeId`: 确保其在 Arena 中拥有标识符。若为 `InlineConstant`，则会将其“提升”为 `StoredConstant`。
+*   `.ensure_raw_id() -> RawId`: 确保其在 Arena 中拥有擦除句柄。若为 `InlineConstant`，则会将其“提升”为 `StoredConstant`。
 *   `.is_constant()`: 判断该信号是否为常量变体（`StoredConstant` 或 `InlineConstant`）。
 *   `.slice(getter)`: 创建细粒度投影。
 
@@ -187,7 +187,7 @@ Silex 的“智能指针”，持有 `RxInner` 变体：
 Silex 通过将计算逻辑“展开”至非泛型函数指针来规避膨胀：
 *   **Header**: 包含 `read_to_ptr` 和 `track` 两个核心函数指针。
 *   **Trampoline (蹦床)**: 静态映射通过 `op_trampolines` 执行，利用 `std::mem::transmute` 将存储在特定布局中的数据还原并执行计算。
-*   **静态映射层级**: `StaticMapPayload`、`StaticMap2Payload`、`StaticMap3Payload` 目前都别名到 `UnifiedStaticMapPayload`。它直接在内存中持有 `NodeId` 数组和对应的原始函数指针，实现了**零闭包、零单次单态化分配**的高频转换（如 CSS 单位转换）。
+*   **静态映射层级**: `StaticMapPayload`、`StaticMap2Payload`、`StaticMap3Payload` 目前都别名到 `UnifiedStaticMapPayload`。它直接在内存中持有 `RawId` 数组和对应的原始函数指针，实现了**零闭包、零单次单态化分配**的高频转换（如 CSS 单位转换）。
 
 ---
 
@@ -215,7 +215,7 @@ Silex 通过将计算逻辑“展开”至非泛型函数指针来规避膨胀�
 
 源码路径: `silex_core/src/node_ref.rs`, `callback.rs`
 
-由于返回的是 `NodeId` 句柄，这些类型在 UI 树中分发时**无需 Clone**：
+由于返回的是具体的 `NodeRefId`/`CallbackId` 句柄，这些类型在 UI 树中分发时**无需 Clone**：
 *   **`NodeRef<T>`**: 绑定 DOM 节点引用，用于命令式操作 (如 `.focus()`)。
 *   **`Callback<T>`**: 响应式回调包装器。支持跨闭包捕获而无需显式 `clone`，通过运行时动态派发。
 

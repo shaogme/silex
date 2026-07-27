@@ -25,7 +25,7 @@ macro_rules! reactive_compare_method {
             }
 
             let op = $crate::reactivity::StaticMap2Payload::new2(
-                [lhs.ensure_node_id(), rhs.ensure_node_id()],
+                [lhs.ensure_raw_id(), rhs.ensure_raw_id()],
                 $crate::logic::arithmetic::ops_impl::$fn_impl::<Self::Value>,
                 false,
             );

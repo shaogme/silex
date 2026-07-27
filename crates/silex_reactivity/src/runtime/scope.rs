@@ -6,7 +6,7 @@
 
 use crate::{
     DependencyList,
-    internal::{arena::Index as NodeId, value::OnceThunk},
+    internal::{arena::RawId, value::OnceThunk},
     runtime::{Runtime, storage::CleanupList, storage::Debris, storage::Node},
 };
 use std::{mem, panic::Location};
@@ -23,8 +23,8 @@ use std::{mem, panic::Location};
 /// | `current_owner` | 新节点挂在谁下面、`on_cleanup` 注册给谁 | `register_node_at`、`internal_on_cleanup` |
 /// | `current_observer` | 读 signal 时把谁登记为订阅者 | `track_dependency` / `track_dependencies` |
 pub(crate) struct Scopes {
-    pub(crate) current_owner: Option<NodeId>,
-    pub(crate) current_observer: Option<NodeId>,
+    pub(crate) current_owner: Option<RawId>,
+    pub(crate) current_observer: Option<RawId>,
 }
 
 impl Scopes {
@@ -37,19 +37,19 @@ impl Scopes {
 }
 
 impl Runtime {
-    pub(crate) fn current_owner(&self) -> Option<NodeId> {
+    pub(crate) fn current_owner(&self) -> Option<RawId> {
         self.scopes.current_owner
     }
 
-    pub(crate) fn set_owner(&mut self, owner: Option<NodeId>) {
+    pub(crate) fn set_owner(&mut self, owner: Option<RawId>) {
         self.scopes.current_owner = owner;
     }
 
-    pub(crate) fn current_observer(&self) -> Option<NodeId> {
+    pub(crate) fn current_observer(&self) -> Option<RawId> {
         self.scopes.current_observer
     }
 
-    pub(crate) fn set_observer(&mut self, observer: Option<NodeId>) {
+    pub(crate) fn set_observer(&mut self, observer: Option<RawId>) {
         self.scopes.current_observer = observer;
     }
 
@@ -66,7 +66,7 @@ impl Runtime {
     /// 建节点的入口现在都隔着一层 `with_rt` 的闭包，而 `#[track_caller]`
     /// 穿不过闭包边界，就地取会得到运行时内部的某一行，而不是用户的调用点
     /// （AUDIT P11）。
-    pub(crate) fn register_node_at(&mut self, _at: &'static Location<'static>) -> NodeId {
+    pub(crate) fn register_node_at(&mut self, _at: &'static Location<'static>) -> RawId {
         let parent = self.current_owner();
         let mut node = Node::new();
         node.parent = parent;
@@ -86,7 +86,7 @@ impl Runtime {
     }
 
     /// 摘下一个节点的子节点列表与 cleanup 列表。
-    pub(crate) fn take_scope_state(&mut self, id: NodeId) -> (Vec<NodeId>, CleanupList) {
+    pub(crate) fn take_scope_state(&mut self, id: RawId) -> (Vec<RawId>, CleanupList) {
         let Some(aux) = self.storage.node_aux.get_mut(id) else {
             return (Vec::new(), CleanupList::Empty);
         };
@@ -94,7 +94,7 @@ impl Runtime {
     }
 
     /// 摘下一个计算节点的依赖列表。
-    pub(crate) fn take_dependencies(&mut self, id: NodeId) -> DependencyList {
+    pub(crate) fn take_dependencies(&mut self, id: RawId) -> DependencyList {
         let Some(links) = self.storage.links.get_mut(id) else {
             return DependencyList::default();
         };
@@ -102,7 +102,7 @@ impl Runtime {
     }
 
     /// 把 `self_id` 从它所有依赖的订阅者表里摘掉。
-    pub(crate) fn unsubscribe(&mut self, self_id: NodeId, dependencies: DependencyList) {
+    pub(crate) fn unsubscribe(&mut self, self_id: RawId, dependencies: DependencyList) {
         for (dep_id, _, subscriber_index) in dependencies {
             let Some((moved_id, last_index)) =
                 self.storage.links.get_mut(dep_id).and_then(|links| {
@@ -136,7 +136,7 @@ impl Runtime {
     /// 它们装的是用户数据，析构就是执行用户的 `Drop`，而用户的 `Drop` 可以
     /// 回头访问响应式图。一律推进墓园，由调用方在借用之外排空
     /// （见 [`Debris`] 与 [`drain_graveyard`](crate::runtime::drive::drain_graveyard)）。
-    pub(crate) fn forget_node(&mut self, id: NodeId) {
+    pub(crate) fn forget_node(&mut self, id: RawId) {
         #[cfg(debug_assertions)]
         {
             // 标签先摘出来再登记墓碑：`remember_dead_label` 要写另一张表，
@@ -171,13 +171,13 @@ impl Runtime {
 #[cfg(test)]
 mod tests {
     use crate::{
-        internal::arena::Index as NodeId,
+        internal::arena::RawId,
         runtime::{drive, with_rt_or_init},
     };
     use std::{cell::RefCell, rc::Rc};
 
     /// 在 `owner` 之下注册一个节点，并把 owner 切到它身上。
-    fn child_of(owner: NodeId) -> NodeId {
+    fn child_of(owner: RawId) -> RawId {
         with_rt_or_init(|rt| {
             rt.set_owner(Some(owner));
             rt.register_node_at(std::panic::Location::caller())
@@ -185,21 +185,21 @@ mod tests {
         .expect("运行时可用")
     }
 
-    fn root_node() -> NodeId {
+    fn root_node() -> RawId {
         with_rt_or_init(|rt| rt.register_node_at(std::panic::Location::caller())).expect("可用")
     }
 
-    fn set_owner(owner: Option<NodeId>) {
+    fn set_owner(owner: Option<RawId>) {
         let _ = with_rt_or_init(|rt| rt.set_owner(owner));
     }
 
-    fn record(owner: NodeId, log: &Rc<RefCell<Vec<&'static str>>>, tag: &'static str) {
+    fn record(owner: RawId, log: &Rc<RefCell<Vec<&'static str>>>, tag: &'static str) {
         set_owner(Some(owner));
         let log = log.clone();
         drive::on_cleanup(move || log.borrow_mut().push(tag));
     }
 
-    fn alive(id: NodeId) -> bool {
+    fn alive(id: RawId) -> bool {
         with_rt_or_init(|rt| rt.storage.graph.get(id).is_some()).unwrap_or(false)
     }
 
@@ -228,7 +228,7 @@ mod tests {
                 }
                 set_owner(None);
 
-                drive::dispose(root);
+                drive::dispose_raw(root);
 
                 for id in ids {
                     assert!(!alive(id));
@@ -265,7 +265,7 @@ mod tests {
             record(b, &log, "b");
             set_owner(None);
 
-            drive::dispose(root);
+            drive::dispose_raw(root);
 
             assert_eq!(*log.borrow(), vec!["a1", "a2", "a", "b", "root"]);
         })
@@ -292,12 +292,12 @@ mod tests {
                 let log = log.clone();
                 drive::on_cleanup(move || {
                     log.borrow_mut().push("a");
-                    drive::dispose(b);
+                    drive::dispose_raw(b);
                 });
             }
             set_owner(None);
 
-            drive::dispose(root);
+            drive::dispose_raw(root);
 
             assert_eq!(*log.borrow(), vec!["a", "b"]);
             assert!(!alive(b));

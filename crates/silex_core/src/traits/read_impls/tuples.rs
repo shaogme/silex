@@ -1,11 +1,11 @@
 use crate::{
     Rx, RxValueKind,
-    reactivity::{NodeId, Signal, StaticMap2Payload, StaticMapPayload, op_trampolines},
+    reactivity::{RawId, Signal, StaticMap2Payload, StaticMapPayload, op_trampolines},
     traits::{IntoRx, IntoSignal, RxBase, RxCloneData, RxData, RxGet, RxGuard, RxInternal},
 };
 
 pub fn create_tuple2_rx<I1: RxData, I2: RxData>(
-    ids: [NodeId; 2],
+    ids: [RawId; 2],
     mapper: fn(&I1, &I2) -> (I1, I2),
     is_constant: bool,
 ) -> Rx<(I1, I2)> {
@@ -14,17 +14,18 @@ pub fn create_tuple2_rx<I1: RxData, I2: RxData>(
 }
 
 pub fn create_tuple_n_rx<const N: usize, V: RxCloneData>(
-    ids: [NodeId; N],
-    mapper: fn(&[NodeId; N]) -> V,
+    ids: [RawId; N],
+    mapper: fn(&[RawId; N]) -> V,
     is_constant: bool,
 ) -> Rx<V> {
     let ids_vec = ids.to_vec();
     let meta_id =
         silex_reactivity::scope::untrack(|| silex_reactivity::store::create(ids_vec)).raw();
     // Important: for TupleN we need track_tuple_meta_slice as track trampoline
-    let op = StaticMapPayload::<V>::new1_with_track(
+    let op = StaticMapPayload::<V>::new1_with_track_and_compute(
         meta_id,
-        mapper,
+        mapper as *const (),
+        op_trampolines::compute_tuple_meta::<N, V>,
         op_trampolines::track_tuple_meta_slice,
         is_constant,
     );
@@ -82,8 +83,8 @@ macro_rules! impl_tuple_into_rx {
             $T0: RxBase,
             $T0::Value: Sized,
         {
-            fn id(&self) -> Option<NodeId> {
-                self.$idx0.id()
+            fn raw_id(&self) -> Option<RawId> {
+                self.$idx0.raw_id()
             }
             fn track(&self) {
                 self.$idx0.track();
@@ -145,8 +146,8 @@ macro_rules! impl_tuple_into_rx {
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
                 let ids = [
-                    self.$idx0.clone().into_signal().ensure_node_id(),
-                    self.$idx1.clone().into_signal().ensure_node_id(),
+                    self.$idx0.clone().into_signal().ensure_raw_id(),
+                    self.$idx1.clone().into_signal().ensure_raw_id(),
                 ];
                 $crate::traits::read_impls::create_tuple2_rx::<
                     $T0::Value,
@@ -179,7 +180,7 @@ macro_rules! impl_tuple_into_rx {
         impl<$T0, $T1> RxBase for ($T0, $T1)
         where $T0: RxBase, $T1: RxBase, $T0::Value: Sized, $T1::Value: Sized
         {
-            fn id(&self) -> Option<NodeId> { None }
+            fn raw_id(&self) -> Option<RawId> { None }
             fn track(&self) { self.$idx0.track(); self.$idx1.track(); }
             fn is_disposed(&self) -> bool { self.$idx0.is_disposed() || self.$idx1.is_disposed() }
             fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> { None }
@@ -217,7 +218,7 @@ macro_rules! impl_tuple_into_rx {
             type RxType = Rx<Self::Value, RxValueKind>;
             #[inline(always)]
             fn into_rx(self) -> Self::RxType {
-                let ids = [$(self.$idx.clone().into_signal().ensure_node_id()),+];
+                let ids = [$(self.$idx.clone().into_signal().ensure_raw_id()),+];
                 $crate::traits::read_impls::create_tuple_n_rx::<$len, Self::Value>(
                     ids,
                     $crate::reactivity::op_trampolines::$trap::<$($T::Value),+>,
@@ -244,7 +245,7 @@ macro_rules! impl_tuple_into_rx {
         impl<$($T),+> RxBase for ($($T,)+)
         where $($T: RxBase),+, $($T::Value: Sized),+
         {
-            fn id(&self) -> Option<NodeId> { None }
+            fn raw_id(&self) -> Option<RawId> { None }
             fn track(&self) { $(self.$idx.track();)+ }
             fn is_disposed(&self) -> bool { $(self.$idx.is_disposed() || )+ false }
             fn defined_at(&self) -> Option<&'static ::std::panic::Location<'static>> { None }

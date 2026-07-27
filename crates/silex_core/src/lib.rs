@@ -10,7 +10,7 @@ pub mod traits;
 pub use callback::Callback;
 pub use error::{SilexError, SilexResult};
 pub use node_ref::NodeRef;
-use reactivity::NodeId;
+use reactivity::{RawId, StoredId};
 
 pub struct RxValueKind;
 pub struct RxEffectKind;
@@ -41,7 +41,7 @@ impl<T: 'static> Rx<T, RxValueKind> {
 
     fn from_closure(f: Box<dyn Fn() -> T>) -> Self {
         // `untrack` 只关依赖追踪，不动所有权（AUDIT 二轮 §1.1）。
-        let id = silex_reactivity::scope::untrack(|| silex_reactivity::store::create(f)).raw();
+        let id = silex_reactivity::scope::untrack(|| silex_reactivity::store::create(f));
         Self {
             inner: RxInner::Closure(id),
             _marker: ::core::marker::PhantomData,
@@ -52,7 +52,7 @@ impl<T: 'static> Rx<T, RxValueKind> {
 impl<T: 'static> Rx<T, RxEffectKind> {
     /// 存储一个响应式值或回调（直接存储）。
     pub fn effect(val: T) -> Self {
-        let id = silex_reactivity::scope::untrack(|| silex_reactivity::store::create(val)).raw();
+        let id = silex_reactivity::scope::untrack(|| silex_reactivity::store::create(val));
         Self::new_stored(id)
     }
 }
@@ -60,11 +60,11 @@ impl<T: 'static> Rx<T, RxEffectKind> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RxInner {
     InlineConstant(u64),
-    Signal(NodeId),
-    Closure(NodeId),
-    Op(NodeId),
+    Signal(RawId),
+    Closure(StoredId),
+    Op(StoredId),
     /// 直接存储的值（不通过工厂函数，直接借用）
-    Stored(NodeId),
+    Stored(StoredId),
 }
 
 /// 非泛型的响应式节点类型，用于 Trampoline 模式优化。
@@ -77,16 +77,16 @@ pub enum RxNodeKind {
 }
 
 impl RxInner {
-    /// 将泛型枚举转换为非泛型的 NodeId 和类型标识。
+    /// 将泛型枚举转换为非泛型的擦除句柄和类型标识。
     /// 用于将逻辑分发到非泛型函数中。
     #[inline(always)]
-    pub fn as_node_parts(&self) -> Option<(NodeId, RxNodeKind)> {
+    pub fn as_raw_parts(&self) -> Option<(RawId, RxNodeKind)> {
         match self {
             Self::InlineConstant(_) => None,
             Self::Signal(id) => Some((*id, RxNodeKind::Signal)),
-            Self::Closure(id) => Some((*id, RxNodeKind::Closure)),
-            Self::Op(id) => Some((*id, RxNodeKind::Op)),
-            Self::Stored(id) => Some((*id, RxNodeKind::Stored)),
+            Self::Closure(id) => Some((id.raw(), RxNodeKind::Closure)),
+            Self::Op(id) => Some((id.raw(), RxNodeKind::Op)),
+            Self::Stored(id) => Some((id.raw(), RxNodeKind::Stored)),
         }
     }
 }
@@ -109,7 +109,7 @@ impl<T: 'static, M> Rx<T, M> {
         // 随它一起销毁（AUDIT 二轮 §1.1）。
         let id = silex_reactivity::scope::untrack(|| silex_reactivity::store::create(op));
         Self {
-            inner: RxInner::Op(id.raw()),
+            inner: RxInner::Op(id),
             _marker: ::core::marker::PhantomData,
         }
     }
@@ -133,8 +133,7 @@ impl<T: 'static, M> Rx<T, M> {
                 }
             }
         } else {
-            let id =
-                silex_reactivity::scope::untrack(|| silex_reactivity::store::create(val)).raw();
+            let id = silex_reactivity::scope::untrack(|| silex_reactivity::store::create(val));
             Self {
                 inner: RxInner::Stored(id),
                 _marker: ::core::marker::PhantomData,
@@ -155,14 +154,14 @@ impl<T: 'static, M> Rx<T, M> {
         }
     }
 
-    pub const fn new_signal(id: NodeId) -> Self {
+    pub const fn new_signal(id: RawId) -> Self {
         Self {
             inner: RxInner::Signal(id),
             _marker: ::core::marker::PhantomData,
         }
     }
 
-    pub const fn new_pooled(id: NodeId) -> Self {
+    pub const fn new_pooled(id: StoredId) -> Self {
         // We assume new_pooled is used for Closure, as it was previously for Pooled
         Self {
             inner: RxInner::Closure(id),
@@ -170,7 +169,7 @@ impl<T: 'static, M> Rx<T, M> {
         }
     }
 
-    pub const fn new_stored(id: NodeId) -> Self {
+    pub const fn new_stored(id: StoredId) -> Self {
         Self {
             inner: RxInner::Stored(id),
             _marker: ::core::marker::PhantomData,
@@ -273,7 +272,7 @@ mod tests {
 
     /// `Rx` 的相等性看的是内部句柄，不是 `T`。
     ///
-    /// 从前这个用例直接捏造 `NodeId { index: 1, generation: 1 }` —— 字段现在
+    /// 从前这个用例直接捏造擦除句柄 —— 字段现在
     /// 是私有的（审计报告 §3.4：伪造的巨大 index 会让二级表 `resize_with` 出
     /// 巨量内存），所以改成用真实创建的句柄。
     #[test]

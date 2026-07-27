@@ -1,6 +1,6 @@
 use super::*;
-use crate::reactivity::RwSignal;
-use crate::traits::{RxGet, RxWrite};
+use crate::reactivity::{RwSignal, dispatch};
+use crate::traits::{IntoRx, RxGet, RxWrite};
 use silex_reactivity::scope::create as create_scope;
 use std::rc::Rc;
 
@@ -14,13 +14,13 @@ fn test_signal_derive_basic() {
         // derived signals use register_derived which uses initialize_memo_raw,
         // and we can read them natively as if they are reactive values.
         assert_eq!(
-            silex_reactivity::signal::try_get::<i32>(derived.node_id().unwrap()),
+            silex_reactivity::signal::try_get::<i32>(derived.raw_id().unwrap()),
             Ok(20)
         );
 
         rw.set(15);
         assert_eq!(
-            silex_reactivity::signal::try_get::<i32>(derived.node_id().unwrap()),
+            silex_reactivity::signal::try_get::<i32>(derived.raw_id().unwrap()),
             Ok(30)
         );
     });
@@ -34,7 +34,7 @@ fn test_signal_inline_constant_creation() {
         assert!(matches!(inline_sig, Signal::InlineConstant(_, _)));
         assert_eq!(inline_sig.get(), 42u32);
         assert!(inline_sig.is_constant());
-        assert_eq!(inline_sig.node_id(), None);
+        assert_eq!(inline_sig.raw_id(), None);
     });
 }
 
@@ -47,21 +47,21 @@ fn test_signal_stored_constant_creation() {
         assert!(matches!(stored_sig, Signal::StoredConstant(_, _)));
         assert_eq!(stored_sig.get(), "hello".to_string());
         assert!(stored_sig.is_constant());
-        assert!(stored_sig.node_id().is_some());
+        assert!(stored_sig.raw_id().is_some());
     });
 }
 
 #[test]
-fn test_signal_ensure_node_id() {
+fn test_signal_ensure_raw_id() {
     create_scope(|| {
         let inline_sig = Signal::from(42u32);
 
         assert!(matches!(inline_sig, Signal::InlineConstant(_, _)));
-        assert_eq!(inline_sig.node_id(), None);
+        assert_eq!(inline_sig.raw_id(), None);
 
-        let node_id = inline_sig.ensure_node_id();
+        let raw_id = inline_sig.ensure_raw_id();
         let stored_val = silex_reactivity::store::try_with(
-            silex_reactivity::StoredId::from_raw_unchecked(node_id),
+            silex_reactivity::StoredId::from_raw_unchecked(raw_id),
             |v: &u32| *v,
         )
         .unwrap();
@@ -123,19 +123,19 @@ fn test_is_constant() {
 }
 
 #[test]
-fn test_ensure_node_id() {
+fn test_ensure_raw_id() {
     create_scope(|| {
         // Stored constant already has an ID
         let stored = Signal::from(String::from("test"));
-        let id1 = stored.ensure_node_id();
-        assert_eq!(stored.id(), Some(id1));
+        let id1 = stored.ensure_raw_id();
+        assert_eq!(stored.raw_id(), Some(id1));
 
         // Inline constant gets converted/promoted to have an ID
         let inline = Signal::from(42);
-        assert_eq!(inline.id(), None);
-        let id2 = inline.ensure_node_id();
+        assert_eq!(inline.raw_id(), None);
+        let id2 = inline.ensure_raw_id();
         // The original inline signal still doesn't have an ID conceptually,
-        // but ensure_node_id allocates one in the runtime graph
+        // but ensure_raw_id allocates one in the runtime graph
         assert_ne!(id2, id1, "提升出来的常量节点必须是一个新句柄");
     });
 }
@@ -151,7 +151,7 @@ fn test_derive() {
         // Ensure evaluating the derived value directly evaluates to 42
         // We'll read the node untracked using standard core routines:
         assert_eq!(
-            silex_reactivity::signal::try_get::<i32>(d.ensure_node_id()),
+            silex_reactivity::signal::try_get::<i32>(d.ensure_raw_id()),
             Ok(42)
         );
     });
@@ -210,11 +210,162 @@ fn a_stored_value_turned_into_an_rx_is_not_reported_as_disposed() {
     create_scope(|| {
         let sv = crate::reactivity::StoredValue::new(7i32);
         let rx = sv.into_rx();
-        let (id, kind) = rx.inner.as_node_parts().expect("有节点");
+        let (id, kind) = rx.inner.as_raw_parts().expect("有节点");
 
         assert!(
             !crate::reactivity::dispatch::is_disposed(id, kind),
             "刚建出来的 stored value 不该被报成已销毁"
         );
+    });
+}
+
+#[test]
+fn dispatcher_restores_the_handle_kind_before_reading() {
+    fn increment(value: &i32) -> i32 {
+        *value + 1
+    }
+
+    create_scope(|| {
+        let signal_id = silex_reactivity::signal::create(7i32);
+        let stored_id = silex_reactivity::store::create(9i32);
+        let closure_id =
+            silex_reactivity::store::create(Box::new(|| 11i32) as Box<dyn Fn() -> i32>);
+        let op = StaticMapPayload::<i32>::new1(signal_id.raw(), increment, false);
+        let op_rx: Rx<i32> = Rx::new_op(op);
+        let (op_id, op_kind) = op_rx.inner.as_raw_parts().expect("op has an id");
+
+        assert_eq!(
+            dispatch::rx_try_with_node_untracked::<i32, _>(
+                signal_id.raw(),
+                RxNodeKind::Signal,
+                |value| *value,
+            ),
+            Some(7)
+        );
+        assert_eq!(
+            dispatch::rx_try_with_node_untracked::<i32, _>(
+                signal_id.raw(),
+                RxNodeKind::Stored,
+                |value| *value,
+            ),
+            None
+        );
+        assert_eq!(
+            dispatch::rx_try_with_node_untracked::<i32, _>(
+                stored_id.raw(),
+                RxNodeKind::Stored,
+                |value| *value,
+            ),
+            Some(9)
+        );
+        assert_eq!(
+            dispatch::rx_try_with_node_untracked::<i32, _>(
+                stored_id.raw(),
+                RxNodeKind::Signal,
+                |value| *value,
+            ),
+            None
+        );
+        assert_eq!(
+            dispatch::rx_try_with_node_untracked::<i32, _>(
+                closure_id.raw(),
+                RxNodeKind::Closure,
+                |value| *value,
+            ),
+            Some(11)
+        );
+        assert_eq!(
+            dispatch::rx_try_with_node_untracked::<i32, _>(op_id, op_kind, |value| *value,),
+            Some(8)
+        );
+        assert_eq!(
+            dispatch::rx_try_with_node_untracked::<i32, _>(op_id, RxNodeKind::Stored, |value| {
+                *value
+            },),
+            None
+        );
+    });
+}
+
+#[test]
+fn dispatcher_disposed_checks_follow_the_runtime_tag() {
+    create_scope(|| {
+        let signal_id = silex_reactivity::signal::create(1u8);
+        let stored_id = silex_reactivity::store::create(2u8);
+        let closure_id = silex_reactivity::store::create(Box::new(|| 3u8) as Box<dyn Fn() -> u8>);
+        let op: Rx<u8> = Rx::new_op(StaticMapPayload::<u8>::new1(
+            signal_id.raw(),
+            |value: &u8| *value,
+            false,
+        ));
+        let (op_id, _) = op.inner.as_raw_parts().expect("op has an id");
+
+        assert!(!dispatch::is_disposed(signal_id.raw(), RxNodeKind::Signal));
+        assert!(dispatch::is_disposed(signal_id.raw(), RxNodeKind::Stored));
+        assert!(!dispatch::is_disposed(stored_id.raw(), RxNodeKind::Stored));
+        assert!(dispatch::is_disposed(stored_id.raw(), RxNodeKind::Signal));
+        assert!(!dispatch::is_disposed(
+            closure_id.raw(),
+            RxNodeKind::Closure
+        ));
+        assert!(dispatch::is_disposed(closure_id.raw(), RxNodeKind::Signal));
+        assert!(!dispatch::is_disposed(op_id, RxNodeKind::Op));
+        assert!(dispatch::is_disposed(op_id, RxNodeKind::Signal));
+    });
+}
+
+#[test]
+fn raw_op_payload_layout_is_stable() {
+    assert_eq!(std::mem::size_of::<silex_reactivity::RawId>(), 8);
+    assert_eq!(std::mem::align_of::<silex_reactivity::RawId>(), 4);
+    assert_eq!(std::mem::size_of::<silex_reactivity::SignalId>(), 8);
+    assert_eq!(std::mem::align_of::<silex_reactivity::SignalId>(), 4);
+    assert_eq!(std::mem::size_of::<silex_reactivity::StoredId>(), 8);
+    assert_eq!(std::mem::align_of::<silex_reactivity::StoredId>(), 4);
+    assert_eq!(std::mem::size_of::<UnifiedStaticMapPayload<()>>(), 64);
+    assert_eq!(std::mem::align_of::<UnifiedStaticMapPayload<()>>(), 8);
+}
+
+#[test]
+fn tuple_n_mapper_reads_raw_metadata_without_reinterpreting_vec() {
+    create_scope(|| {
+        let first = RwSignal::new(1i32);
+        let second = RwSignal::new(2i32);
+        let third = RwSignal::new(3i32);
+        let rx = (
+            first.read_signal(),
+            second.read_signal(),
+            third.read_signal(),
+        )
+            .into_rx();
+
+        assert_eq!(rx.get(), (1, 2, 3));
+        first.set(4);
+        assert_eq!(rx.get(), (4, 2, 3));
+    });
+}
+
+#[test]
+fn tuple_six_mapper_keeps_all_raw_inputs() {
+    create_scope(|| {
+        let first = RwSignal::new(1i32);
+        let second = RwSignal::new(2i32);
+        let third = RwSignal::new(3i32);
+        let fourth = RwSignal::new(4i32);
+        let fifth = RwSignal::new(5i32);
+        let sixth = RwSignal::new(6i32);
+        let rx = (
+            first.read_signal(),
+            second.read_signal(),
+            third.read_signal(),
+            fourth.read_signal(),
+            fifth.read_signal(),
+            sixth.read_signal(),
+        )
+            .into_rx();
+
+        assert_eq!(rx.get(), (1, 2, 3, 4, 5, 6));
+        sixth.set(7);
+        assert_eq!(rx.get(), (1, 2, 3, 4, 5, 7));
     });
 }

@@ -37,6 +37,9 @@ jobs:
       - name: Run Tests
         run: cargo test --workspace
 
+      - name: Check Reactivity Benchmarks
+        run: cargo bench -p silex_reactivity --bench reactivity --no-run
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
@@ -88,7 +91,7 @@ jobs:
           key: miri
           cache-on-failure: true
 
-      # 只跑含大量 unsafe 的底层 crate：它们不依赖 wasm-bindgen，可以在 Miri 下执行。
+      # 只跑可在 Miri 下执行的底层 crate；依赖 wasm-bindgen 的 core/DOM 路径由普通测试覆盖。
       - name: Run Miri
         run: cargo miri test -p silex_reactivity -p silex_vtable
 

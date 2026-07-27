@@ -191,12 +191,11 @@ fn a_scope_never_becomes_an_observer() {
     assert_eq!(runs.get(), 1, "scope 内的读取不该让外层 effect 重跑");
 }
 
-/// 顶层（没有 owner）的 `untrack` 仍然不会 panic，节点也确实是孤立的 ——
-/// 这是没有 scope 可挂时唯一合理的行为。
+/// detached scope 里的 `untrack` 仍然不会 panic，节点也确实归属于该 scope。
 #[test]
-fn untrack_at_the_top_level_creates_a_root_node() {
-    let sv = scope::untrack(|| store::create(7i32));
+fn untrack_in_a_detached_scope_creates_a_owned_node() {
+    let (owner, sv) = scope::create_detached(|| scope::untrack(|| store::create(7i32)));
     assert!(sv.is_alive());
-    scope::dispose(sv);
+    scope::dispose(owner);
     assert!(!sv.is_alive());
 }

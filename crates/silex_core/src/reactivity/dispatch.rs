@@ -1,6 +1,6 @@
 use crate::{
     RxNodeKind,
-    reactivity::{NodeId, OpPayloadHeader},
+    reactivity::{OpPayloadHeader, RawId},
     traits::{RxData, RxGuard},
 };
 use silex_reactivity::{SignalId, StoredId, signal, store, try_get_any_raw_untracked};
@@ -16,26 +16,23 @@ use std::{mem::MaybeUninit, panic::Location};
 ///
 /// 读取者必须保证节点里存的确实是一个以 [`OpPayloadHeader`] 开头的载荷。
 /// 这条契约由 `Rx::new_op` 的调用方维持（`silex_rx` 宏生成的代码）。
-unsafe fn with_op_ptr<R>(id: NodeId, f: impl FnOnce(*const u8) -> R) -> Option<R> {
+unsafe fn with_op_ptr<R>(id: StoredId, f: impl FnOnce(*const u8) -> R) -> Option<R> {
     // SAFETY: 契约转嫁给调用方；指针在本表达式内立刻用掉，其间不重入运行时。
-    let ptr = unsafe { try_get_any_raw_untracked(id)? };
+    let ptr = unsafe { try_get_any_raw_untracked(id.raw()) }?;
     Some(f(ptr as *const u8))
 }
 
 /// 非泛型的 track 逻辑实现 (Dispatcher)。
 /// 剥离了泛型分发，使所有类型的 Rx 共享相同的机器码。
 #[inline(always)]
-pub fn track(id: NodeId, kind: RxNodeKind) {
+pub fn track(id: RawId, kind: RxNodeKind) {
     match kind {
-        RxNodeKind::Signal | RxNodeKind::Stored | RxNodeKind::Closure => {
-            // 这里用的是 `RawNodeId` 这条**类型擦除的逃生出口**：本层的种类信息
-            // 在 `RxNodeKind` 里，不在句柄类型里。不是 signal 的条目会被静默跳过。
-            signal::track(id);
-        }
+        RxNodeKind::Signal => signal::track(SignalId::from_raw_unchecked(id)),
+        RxNodeKind::Stored | RxNodeKind::Closure => {}
         RxNodeKind::Op => {
             // SAFETY: `RxNodeKind::Op` 保证载荷以 `OpPayloadHeader` 开头。
             let _ = unsafe {
-                with_op_ptr(id, |ptr| {
+                with_op_ptr(StoredId::from_raw_unchecked(id), |ptr| {
                     let header = &*(ptr as *const OpPayloadHeader);
                     (header.track)(ptr);
                 })
@@ -46,7 +43,7 @@ pub fn track(id: NodeId, kind: RxNodeKind) {
 
 /// 非泛型的销毁状态检查 (Dispatcher)。
 #[inline(always)]
-pub fn is_disposed(id: NodeId, kind: RxNodeKind) -> bool {
+pub fn is_disposed(id: RawId, kind: RxNodeKind) -> bool {
     // 六个 `is_*_valid` 自由函数已经收敛成一个 `Handle::<K>::is_alive()`
     // （审计报告 §3.1）。这一层的种类在 `RxNodeKind` 里，所以在这里断言回去。
     match kind {
@@ -96,13 +93,13 @@ pub fn report_disposed(
 /// # Safety
 ///
 /// 调用者必须确保 out 指向的内存有足够的空间存储 T，且 id 对应的类型确实是 T。
-pub unsafe fn read_to_ptr(id: NodeId, kind: RxNodeKind, out: *mut u8) -> bool {
+pub unsafe fn read_to_ptr(id: RawId, kind: RxNodeKind, out: *mut u8) -> bool {
     match kind {
         RxNodeKind::Signal | RxNodeKind::Stored => false,
         // SAFETY: `RxNodeKind::Op` 保证载荷以 `OpPayloadHeader` 开头；
         // `out` 的容量由本函数的调用方保证。
         RxNodeKind::Op => unsafe {
-            with_op_ptr(id, |ptr| {
+            with_op_ptr(StoredId::from_raw_unchecked(id), |ptr| {
                 let header = &*(ptr as *const OpPayloadHeader);
                 (header.read_to_ptr)(ptr, out)
             })
@@ -123,14 +120,24 @@ pub unsafe fn read_to_ptr(id: NodeId, kind: RxNodeKind, out: *mut u8) -> bool {
 ///
 /// 调用者必须确保 `id` 对应的节点确实存储了类型 `T`。
 pub unsafe fn rx_read_node_untracked<'a, T: RxData>(
-    id: NodeId,
+    id: RawId,
     kind: RxNodeKind,
 ) -> Option<RxGuard<'a, T, T>> {
     match kind {
-        RxNodeKind::Signal | RxNodeKind::Stored => unsafe {
-            try_get_any_raw_untracked(id).map(|ptr| RxGuard::Borrowed {
-                value: &*(ptr as *const T),
-                token: Some(id),
+        RxNodeKind::Signal => unsafe {
+            signal::try_value_ref::<T>(SignalId::from_raw_unchecked(id)).map(|value| {
+                RxGuard::Borrowed {
+                    value,
+                    token: Some(id),
+                }
+            })
+        },
+        RxNodeKind::Stored => unsafe {
+            store::try_value_ref::<T>(StoredId::from_raw_unchecked(id)).map(|value| {
+                RxGuard::Borrowed {
+                    value,
+                    token: Some(id),
+                }
             })
         },
         RxNodeKind::Op => {
@@ -152,14 +159,15 @@ pub unsafe fn rx_read_node_untracked<'a, T: RxData>(
 
 /// 泛型助手：将节点访问逻辑收拢。
 pub fn rx_try_with_node_untracked<T: RxData, U>(
-    id: NodeId,
+    id: RawId,
     kind: RxNodeKind,
     fun: impl FnOnce(&T) -> U,
 ) -> Option<U> {
     match kind {
-        RxNodeKind::Signal | RxNodeKind::Stored => unsafe {
-            try_get_any_raw_untracked(id).map(|ptr| fun(&*(ptr as *const T)))
-        },
+        RxNodeKind::Signal => {
+            signal::try_with_untracked::<T, U>(SignalId::from_raw_unchecked(id), fun).ok()
+        }
+        RxNodeKind::Stored => store::try_with::<T, U>(StoredId::from_raw_unchecked(id), fun).ok(),
         RxNodeKind::Op => {
             let mut out = MaybeUninit::<T>::uninit();
             if unsafe { read_to_ptr(id, kind, out.as_mut_ptr() as *mut u8) } {

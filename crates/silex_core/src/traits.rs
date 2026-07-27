@@ -67,7 +67,7 @@ use std::{fmt::Debug, panic::Location, rc::Rc};
 use crate::{
     SilexError,
     error::SilexResult,
-    reactivity::{Memo, NodeId, Signal},
+    reactivity::{Memo, RawId, Signal},
     traits::adaptive::{AdaptiveFallback, AdaptiveWrapper},
 };
 
@@ -93,8 +93,8 @@ pub trait RxValue {
 
 /// 响应式系统的基础层级，统一了标识、追踪、生命周期监测和源码定位。
 pub trait RxBase: RxValue {
-    /// 获取底层节点 ID。常量或非节点组件可能返回 None。
-    fn id(&self) -> Option<NodeId>;
+    /// 获取底层擦除句柄。常量或非节点组件可能返回 None。
+    fn raw_id(&self) -> Option<RawId>;
 
     /// 建立响应式追踪（将其设为当前 Effect/Memo 的依赖）。
     fn track(&self);
@@ -102,7 +102,7 @@ pub trait RxBase: RxValue {
     /// 检查该值是否已被销毁。
     fn is_disposed(&self) -> bool {
         // 默认实现只知道“这是一个可读节点”，种类信息在各实现者手里。
-        self.id()
+        self.raw_id()
             .map(|id| !::silex_reactivity::SignalId::from_raw_unchecked(id).is_alive())
             .unwrap_or(false)
     }
@@ -137,7 +137,7 @@ pub enum RxGuard<'a, T: ?Sized, S = ()> {
         /// 只是一个来源标记（防止把 guard 的生命周期跟丢），不参与任何解引用。
         /// 从前这里放的是 `NodeRef<()>` —— 一个把**任意**节点 id 装进
         /// “node-ref 句柄” 里的类型混淆（审计报告 §3.1）。
-        token: Option<NodeId>,
+        token: Option<RawId>,
     },
     /// 所有权变体：持有计算结果或内联值。
     Owned(S),

@@ -170,9 +170,9 @@ fn destroying_a_node_from_inside_its_own_update_closure_drops_the_value() {
         }
     }
 
-    let s = signal::create(Spy(drops.clone()));
+    let (owner, s) = scope::create_detached(|| signal::create(Spy(drops.clone())));
     let result = signal::try_update(s, |_: &mut Spy| {
-        scope::dispose(s);
+        scope::dispose(owner);
     });
 
     assert_eq!(result, Ok(()));
@@ -195,9 +195,9 @@ fn destroying_a_stored_value_from_inside_its_own_closure_drops_the_payload() {
         }
     }
 
-    let sv = store::create(Spy(drops.clone()));
+    let (owner, sv) = scope::create_detached(|| store::create(Spy(drops.clone())));
     let result = store::try_update(sv, |_: &mut Spy| {
-        scope::dispose(sv);
+        scope::dispose(owner);
     });
 
     assert_eq!(result, Ok(()));
@@ -217,24 +217,26 @@ fn an_effect_may_dispose_itself_from_its_own_body() {
         }
     }
 
-    let slot: Rc<Cell<Option<EffectId>>> = Rc::new(Cell::new(None));
+    let slot: Rc<Cell<Option<ScopeId>>> = Rc::new(Cell::new(None));
     let slot_c = slot.clone();
     let spy = Spy(dropped.clone());
+    let trigger = signal::create(0i32);
 
-    let e = effect::create(move || {
-        // 捕获 `spy`，这样闭包被析构时我们看得见。
-        let _ = &spy;
-        if let Some(me) = slot_c.get() {
-            scope::dispose(me);
-        }
+    let (owner, e) = scope::create_detached(move || {
+        effect::create(move || {
+            // 捕获 `spy`，这样闭包被析构时我们看得见。
+            let _ = &spy;
+            let _ = signal::try_get::<i32>(trigger);
+            if let Some(me) = slot_c.get() {
+                scope::dispose(me);
+            }
+        })
     });
-    slot.set(Some(e));
+    slot.set(Some(owner));
     assert!(!dropped.get());
 
     // 再触发一次运行：这次它会把自己销毁。
-    let trigger = signal::create(0i32);
-    let _ = signal::try_get::<i32>(trigger);
-    scope::dispose(e);
+    signal::update::<i32>(trigger, |v| *v += 1);
 
     assert!(!e.is_alive());
     assert!(dropped.get(), "effect 的计算闭包必须被析构");

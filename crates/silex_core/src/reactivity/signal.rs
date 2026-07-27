@@ -9,7 +9,7 @@ use std::{
 };
 
 use silex_reactivity::{
-    RawNodeId as NodeId, get_debug_label, get_node_defined_at, memo, set_debug_label, signal, store,
+    RawId, StoredId, get_debug_label, get_node_defined_at, memo, set_debug_label, signal, store,
 };
 
 use crate::{
@@ -39,8 +39,8 @@ mod tests;
 
 pub enum Signal<T> {
     Read(ReadSignal<T>),
-    Derived(NodeId, RxNodeKind, PhantomData<T>),
-    StoredConstant(NodeId, PhantomData<T>),
+    Derived(RawId, RxNodeKind, PhantomData<T>),
+    StoredConstant(StoredId, PhantomData<T>),
     #[allow(missing_docs)] // Internal optimization detail
     InlineConstant(u64, PhantomData<T>),
 }
@@ -105,11 +105,11 @@ impl<T: RxData> RxValue for Signal<T> {
 
 impl<T: RxData> RxBase for Signal<T> {
     #[inline(always)]
-    fn id(&self) -> Option<NodeId> {
+    fn raw_id(&self) -> Option<RawId> {
         match self {
             Signal::Read(s) => Some(s.id),
             Signal::Derived(id, _, _) => Some(*id),
-            Signal::StoredConstant(id, _) => Some(*id),
+            Signal::StoredConstant(id, _) => Some(id.raw()),
             Signal::InlineConstant(_, _) => None,
         }
     }
@@ -118,7 +118,7 @@ impl<T: RxData> RxBase for Signal<T> {
         match self {
             Signal::Read(s) => track(s.id, RxNodeKind::Signal),
             Signal::Derived(id, kind, _) => track(*id, *kind),
-            Signal::StoredConstant(id, _) => track(*id, RxNodeKind::Stored),
+            Signal::StoredConstant(id, _) => track(id.raw(), RxNodeKind::Stored),
             Signal::InlineConstant(_, _) => {}
         }
     }
@@ -127,18 +127,18 @@ impl<T: RxData> RxBase for Signal<T> {
         match self {
             Signal::Read(s) => is_disposed(s.id, RxNodeKind::Signal),
             Signal::Derived(id, kind, _) => is_disposed(*id, *kind),
-            Signal::StoredConstant(id, _) => is_disposed(*id, RxNodeKind::Stored),
+            Signal::StoredConstant(id, _) => is_disposed(id.raw(), RxNodeKind::Stored),
             Signal::InlineConstant(_, _) => false,
         }
     }
 
     #[inline(always)]
     fn defined_at(&self) -> Option<&'static Location<'static>> {
-        self.id().and_then(get_node_defined_at)
+        self.raw_id().and_then(get_node_defined_at)
     }
 
     fn debug_name(&self) -> Option<String> {
-        let name = self.id().and_then(get_debug_label);
+        let name = self.raw_id().and_then(get_debug_label);
         if name.is_none() && self.is_constant() {
             Some("Constant".to_string())
         } else {
@@ -159,7 +159,7 @@ impl<T: RxData> RxInternal for Signal<T> {
             Signal::Read(s) => s.rx_read_untracked(),
             Signal::Derived(id, kind, _) => unsafe { rx_read_node_untracked(*id, *kind) },
             Signal::StoredConstant(id, _) => unsafe {
-                rx_read_node_untracked(*id, RxNodeKind::Stored)
+                rx_read_node_untracked(id.raw(), RxNodeKind::Stored)
             },
             Signal::InlineConstant(val, _) => {
                 let val = unsafe { Self::unpack_inline(*val) };
@@ -174,7 +174,7 @@ impl<T: RxData> RxInternal for Signal<T> {
             Signal::Read(s) => s.rx_try_with_untracked(fun),
             Signal::Derived(id, kind, _) => rx_try_with_node_untracked(*id, *kind, fun),
             Signal::StoredConstant(id, _) => {
-                rx_try_with_node_untracked(*id, RxNodeKind::Stored, fun)
+                rx_try_with_node_untracked(id.raw(), RxNodeKind::Stored, fun)
             }
             Signal::InlineConstant(storage, _) => {
                 let val = unsafe { Self::unpack_inline(*storage) };
@@ -210,7 +210,7 @@ impl<T: RxData> IntoRx for Signal<T> {
     type RxType = Rx<T, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        Rx::new_signal(self.ensure_node_id())
+        Rx::new_signal(self.ensure_raw_id())
     }
     fn is_constant(&self) -> bool {
         self.is_constant()
@@ -277,22 +277,22 @@ impl<T: RxData> Signal<T> {
         }
     }
 
-    pub fn node_id(&self) -> Option<NodeId> {
+    pub fn raw_id(&self) -> Option<RawId> {
         match self {
             Signal::Read(s) => Some(s.id),
             Signal::Derived(id, _, _) => Some(*id),
-            Signal::StoredConstant(id, _) => Some(*id),
+            Signal::StoredConstant(id, _) => Some(id.raw()),
             Signal::InlineConstant(_, _) => None,
         }
     }
 
-    /// 确保信号具有 NodeId。
+    /// 确保信号具有擦除句柄。
     /// 如果是内联常量，则会将其提升为存储常量。
-    pub fn ensure_node_id(&self) -> NodeId {
+    pub fn ensure_raw_id(&self) -> RawId {
         match self {
             Signal::Read(s) => s.id,
             Signal::Derived(id, _, _) => *id,
-            Signal::StoredConstant(id, _) => *id,
+            Signal::StoredConstant(id, _) => id.raw(),
             Signal::InlineConstant(storage, _) => {
                 let value = unsafe { Self::unpack_inline(*storage) };
                 store::create(value).raw()
@@ -341,7 +341,7 @@ impl<T: RxCloneData> From<T> for Signal<T> {
         if let Some(inline) = Self::try_inline(value.clone()) {
             return inline;
         }
-        let id = store::create(value).raw();
+        let id = store::create(value);
         Signal::StoredConstant(id, PhantomData)
     }
 }

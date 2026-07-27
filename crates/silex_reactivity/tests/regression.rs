@@ -240,21 +240,26 @@ fn scheduling_order_is_the_same_on_the_first_run_and_on_re_runs() {
 
 #[test]
 fn many_subscribers_and_many_dependencies() {
-    let sources: Vec<SignalId> = (0..8).map(signal::create).collect();
+    let (source_owner, sources) =
+        scope::create_detached(|| (0..8).map(signal::create).collect::<Vec<SignalId>>());
     let hits = Rc::new(Cell::new(0));
 
     // 8 个 effect × 8 个依赖：依赖列表走 `ThinVec`，订阅者表覆盖多槽位退订。
-    for _ in 0..8 {
-        let sources = sources.clone();
-        let hits_c = hits.clone();
-        effect::create(move || {
-            let sum: i32 = sources
-                .iter()
-                .map(|&id| signal::try_get::<i32>(id).unwrap_or(0))
-                .sum();
-            hits_c.set(hits_c.get() + sum as usize + 1);
-        });
-    }
+    let sources_for_effects = sources.clone();
+    let hits_for_effects = hits.clone();
+    let (effect_owner, ()) = scope::create_detached(move || {
+        for _ in 0..8 {
+            let sources = sources_for_effects.clone();
+            let hits_c = hits_for_effects.clone();
+            effect::create(move || {
+                let sum: i32 = sources
+                    .iter()
+                    .map(|&id| signal::try_get::<i32>(id).unwrap_or(0))
+                    .sum();
+                hits_c.set(hits_c.get() + sum as usize + 1);
+            });
+        }
+    });
 
     for &id in &sources {
         signal::update(id, |v: &mut i32| *v += 1);
@@ -263,9 +268,8 @@ fn many_subscribers_and_many_dependencies() {
     assert!(hits.get() > 0);
 
     // 逐个退订：覆盖 swap-remove 与反向槽位修正。
-    for &id in &sources {
-        scope::dispose(id);
-    }
+    scope::dispose(effect_owner);
+    scope::dispose(source_owner);
 }
 
 // --- P5: update 闭包在借用作用域之外通知下游 ---
@@ -303,7 +307,7 @@ fn downstream_effects_run_after_the_update_closure_returns() {
 #[test]
 fn defined_at_points_at_user_code_not_at_the_framework() {
     let first_line = line!();
-    let cases: Vec<(&str, RawNodeId)> = vec![
+    let cases: Vec<(&str, RawId)> = vec![
         ("signal", signal::create(0i32).raw()),
         ("effect", effect::create(|| {}).raw()),
         ("memo", memo::create(|_: Option<&i32>| 1i32).raw()),
@@ -398,8 +402,8 @@ fn update_outcomes_are_distinguishable() {
     assert_eq!(signal::try_get::<i32>(s), Ok(2));
 
     // 节点不存在与类型不对是两回事。
-    let missing = signal::create(0i32);
-    scope::dispose(missing);
+    let (missing_owner, missing) = scope::create_detached(|| signal::create(0i32));
+    scope::dispose(missing_owner);
     assert_eq!(
         signal::try_update(missing, |v: &mut i32| *v += 1),
         Err(ReactiveError::NoSuchNode)
@@ -523,12 +527,14 @@ fn untracked_reads_do_not_subscribe_but_still_see_fresh_values() {
 #[test]
 fn disposing_a_node_in_the_middle_freezes_its_downstream() {
     let s = signal::create(1i32);
-    let mid = memo::create(move |_: Option<&i32>| signal::try_get::<i32>(s).unwrap_or(0) * 10);
+    let (mid_owner, mid) = scope::create_detached(move || {
+        memo::create(move |_: Option<&i32>| signal::try_get::<i32>(s).unwrap_or(0) * 10)
+    });
     let tail = memo::create(move |_: Option<&i32>| signal::try_get::<i32>(mid).unwrap_or(-1));
 
     assert_eq!(signal::try_get::<i32>(tail), Ok(10));
 
-    scope::dispose(mid);
+    scope::dispose(mid_owner);
     signal::update(s, |v: &mut i32| *v = 2);
 
     assert!(!mid.is_alive());
@@ -546,13 +552,15 @@ fn a_disposed_effect_unsubscribes_from_everything() {
     let runs = Rc::new(Cell::new(0));
 
     let runs_c = runs.clone();
-    let e = effect::create(move || {
-        let _ = signal::try_get::<i32>(s);
-        runs_c.set(runs_c.get() + 1);
+    let (effect_owner, _e) = scope::create_detached(move || {
+        effect::create(move || {
+            let _ = signal::try_get::<i32>(s);
+            runs_c.set(runs_c.get() + 1);
+        })
     });
     assert_eq!(runs.get(), 1);
 
-    scope::dispose(e);
+    scope::dispose(effect_owner);
     signal::update(s, |v: &mut i32| *v += 1);
     assert_eq!(runs.get(), 1);
 }
@@ -745,8 +753,8 @@ fn set_signal_if_changed_gates_on_equality() {
         signal::set_if_changed(s, String::new()),
         Err(ReactiveError::TypeMismatch)
     );
-    let gone = signal::create(0i32);
-    scope::dispose(gone);
+    let (gone_owner, gone) = scope::create_detached(|| signal::create(0i32));
+    scope::dispose(gone_owner);
     assert_eq!(
         signal::set_if_changed(gone, 1i32),
         Err(ReactiveError::NoSuchNode)

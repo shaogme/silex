@@ -33,14 +33,12 @@ pub(crate) fn apply_primitive_reactive_internal<T: Display + Clone + 'static>(
         ApplyTarget::Class => {
             create_erased_class_effect_internal(el, derive_string_rx_internal(rx))
         }
-        ApplyTarget::Style => {
-            create_erased_style_effect_internal(el, derive_string_rx_internal(rx))
-        }
+        ApplyTarget::Style => create_raw_style_effect_internal(el, derive_string_rx_internal(rx)),
         ApplyTarget::Attr(ref name) if name == "class" => {
             create_erased_class_effect_internal(el, derive_string_rx_internal(rx));
         }
         ApplyTarget::Attr(ref name) if name == "style" => {
-            create_erased_style_effect_internal(el, derive_string_rx_internal(rx));
+            create_raw_style_effect_internal(el, derive_string_rx_internal(rx));
         }
         ApplyTarget::Attr(name) => {
             Effect::new(move |_| {
@@ -73,7 +71,7 @@ fn create_erased_class_effect_internal(el: WebElem, rx: Rx<String, RxValueKind>)
     AttrOp::reactive_classes(rx).apply(&el);
 }
 
-fn create_erased_style_effect_internal(el: WebElem, rx: Rx<String, RxValueKind>) {
+fn create_raw_style_effect_internal(el: WebElem, rx: Rx<String, RxValueKind>) {
     AttrOp::reactive_stylesheet(rx).apply(&el);
 }
 
@@ -84,7 +82,7 @@ pub(crate) fn apply_string_reactive_internal(
 ) {
     match target {
         ApplyTarget::Class => create_erased_class_effect_internal(el, rx),
-        ApplyTarget::Style => create_erased_style_effect_internal(el, rx),
+        ApplyTarget::Style => create_raw_style_effect_internal(el, rx),
         ApplyTarget::Attr(name) => {
             Effect::new(move |_| {
                 let value = rx.get();

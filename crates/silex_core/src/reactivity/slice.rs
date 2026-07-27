@@ -2,7 +2,7 @@ use std::{marker::PhantomData, ops::Deref, panic::Location};
 
 use crate::{
     Rx, RxValueKind, impl_reactive_ops,
-    reactivity::{NodeId, Signal},
+    reactivity::{RawId, Signal},
     traits::*,
 };
 
@@ -56,8 +56,8 @@ where
     O: ?Sized + RxData,
 {
     #[inline(always)]
-    fn id(&self) -> Option<NodeId> {
-        self.source.id()
+    fn raw_id(&self) -> Option<RawId> {
+        self.source.raw_id()
     }
 
     #[inline(always)]

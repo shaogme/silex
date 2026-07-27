@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+ --> tests/ui/dispose_signal.rs:5:20
+  |
+5 |     scope::dispose(id);
+  |     -------------- ^^ expected `Handle<Scope>`, found `Handle<Signal>`
+  |     |
+  |     arguments to this function are incorrect
+  |
+  = note: expected struct `Handle<silex_reactivity::kind::Scope>`
+             found struct `Handle<Signal>`
+note: function defined here
+ --> src/scope.rs
+  |
+  | pub fn dispose(id: ScopeId) {
+  |        ^^^^^^^

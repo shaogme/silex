@@ -1,5 +1,5 @@
 use crate::traits::*;
-use silex_reactivity::{RawNodeId as NodeId, StoredId, signal, store};
+use silex_reactivity::{RawId, StoredId, signal, store};
 use std::marker::PhantomData;
 
 #[repr(C)]
@@ -16,7 +16,7 @@ pub struct UnifiedStaticMapPayload<OT> {
     pub header: OpPayloadHeader,
     pub compute: unsafe fn(inputs: *const *const (), out_ptr: *mut (), mapper_ptr: *const ()),
     pub mapper_ptr: *const (),
-    pub inputs: [NodeId; 3],
+    pub inputs: [RawId; 3],
     pub _marker: PhantomData<OT>,
 }
 
@@ -33,24 +33,35 @@ pub type StaticMap2Payload<OT> = UnifiedStaticMapPayload<OT>;
 pub type StaticMap3Payload<OT> = UnifiedStaticMapPayload<OT>;
 
 impl<OT: RxData> UnifiedStaticMapPayload<OT> {
-    pub fn new1<IT: RxData>(input_id: NodeId, mapper: fn(&IT) -> OT, is_constant: bool) -> Self {
-        Self {
-            header: OpPayloadHeader {
-                read_to_ptr: op_trampolines::unified_map_read_to_ptr,
-                track: op_trampolines::unified_track,
-                is_constant,
-                input_count: 1,
-            },
-            inputs: [input_id, NodeId::DANGLING, NodeId::DANGLING],
-            compute: op_trampolines::compute_map_1::<IT, OT>,
-            mapper_ptr: mapper as *const (),
-            _marker: PhantomData,
-        }
+    pub fn new1<IT: RxData>(input_id: RawId, mapper: fn(&IT) -> OT, is_constant: bool) -> Self {
+        Self::new1_with_track_and_compute(
+            input_id,
+            mapper as *const (),
+            op_trampolines::compute_map_1::<IT, OT>,
+            op_trampolines::unified_track,
+            is_constant,
+        )
     }
 
     pub fn new1_with_track<IT: RxData>(
-        input_id: NodeId,
+        input_id: RawId,
         mapper: fn(&IT) -> OT,
+        track_fn: fn(this: *const u8),
+        is_constant: bool,
+    ) -> Self {
+        Self::new1_with_track_and_compute(
+            input_id,
+            mapper as *const (),
+            op_trampolines::compute_map_1::<IT, OT>,
+            track_fn,
+            is_constant,
+        )
+    }
+
+    pub fn new1_with_track_and_compute(
+        input_id: RawId,
+        mapper_ptr: *const (),
+        compute: unsafe fn(inputs: *const *const (), out_ptr: *mut (), mapper_ptr: *const ()),
         track_fn: fn(this: *const u8),
         is_constant: bool,
     ) -> Self {
@@ -61,15 +72,15 @@ impl<OT: RxData> UnifiedStaticMapPayload<OT> {
                 is_constant,
                 input_count: 1,
             },
-            inputs: [input_id, NodeId::DANGLING, NodeId::DANGLING],
-            compute: op_trampolines::compute_map_1::<IT, OT>,
-            mapper_ptr: mapper as *const (),
+            inputs: [input_id, RawId::DANGLING, RawId::DANGLING],
+            compute,
+            mapper_ptr,
             _marker: PhantomData,
         }
     }
 
     pub fn new2<I1: RxData, I2: RxData>(
-        inputs: [NodeId; 2],
+        inputs: [RawId; 2],
         mapper: fn(&I1, &I2) -> OT,
         is_constant: bool,
     ) -> Self {
@@ -80,7 +91,7 @@ impl<OT: RxData> UnifiedStaticMapPayload<OT> {
                 is_constant,
                 input_count: 2,
             },
-            inputs: [inputs[0], inputs[1], NodeId::DANGLING],
+            inputs: [inputs[0], inputs[1], RawId::DANGLING],
             compute: op_trampolines::compute_map_2::<I1, I2, OT>,
             mapper_ptr: mapper as *const (),
             _marker: PhantomData,
@@ -88,7 +99,7 @@ impl<OT: RxData> UnifiedStaticMapPayload<OT> {
     }
 
     pub fn new3<I1: RxData, I2: RxData, I3: RxData>(
-        inputs: [NodeId; 3],
+        inputs: [RawId; 3],
         mapper: fn(&I1, &I2, &I3) -> OT,
         is_constant: bool,
     ) -> Self {
@@ -159,6 +170,26 @@ pub mod op_trampolines {
 
     /// # Safety
     ///
+    /// The caller must ensure that the first input points to a stored
+    /// `Vec<RawId>` with exactly `N` entries, `out_ptr` points to valid
+    /// storage for `OT`, and `mapper` is a `fn(&[RawId; N]) -> OT`.
+    pub unsafe fn compute_tuple_meta<const N: usize, OT: RxData>(
+        inputs: *const *const (),
+        out_ptr: *mut (),
+        mapper: *const (),
+    ) {
+        let mapper: fn(&[RawId; N]) -> OT = unsafe { std::mem::transmute(mapper) };
+        let ids = unsafe { &*(*inputs as *const Vec<RawId>) };
+        let ids: &[RawId; N] = ids
+            .as_slice()
+            .try_into()
+            .expect("tuple metadata length must match its mapper");
+        let val = mapper(ids);
+        unsafe { std::ptr::write(out_ptr as *mut OT, val) };
+    }
+
+    /// # Safety
+    ///
     /// The caller must ensure that:
     /// - `inputs` points to an array of at least 2 valid pointers to `I1` and `I2`.
     /// - `out_ptr` points to a valid memory location for `OT`.
@@ -194,19 +225,16 @@ pub mod op_trampolines {
         unsafe { std::ptr::write(out_ptr as *mut OT, val) };
     }
 
-    pub fn track_inputs(inputs: &[NodeId]) {
+    pub fn track_inputs(inputs: &[RawId]) {
         signal::track_batch(inputs);
     }
 
     pub fn track_tuple_meta_slice(this: *const u8) {
         let payload = unsafe { &*(this as *const UnifiedStaticMapPayload<()>) };
         let meta_id = payload.inputs[0];
-        let _ = store::try_with(
-            StoredId::from_raw_unchecked(meta_id),
-            |ids: &Vec<NodeId>| {
-                signal::track_batch(ids);
-            },
-        );
+        let _ = store::try_with(StoredId::from_raw_unchecked(meta_id), |ids: &Vec<RawId>| {
+            signal::track_batch(ids);
+        });
     }
 
     pub fn track_tuple_meta<const N: usize>(this: *const u8) {
@@ -218,7 +246,7 @@ pub mod op_trampolines {
     }
 
     pub fn tuple_3_mapper<T0: Clone + 'static, T1: Clone + 'static, T2: Clone + 'static>(
-        ids: &[NodeId; 3],
+        ids: &[RawId; 3],
     ) -> (T0, T1, T2) {
         unsafe {
             (
@@ -238,7 +266,7 @@ pub mod op_trampolines {
         T2: Clone + 'static,
         T3: Clone + 'static,
     >(
-        ids: &[NodeId; 4],
+        ids: &[RawId; 4],
     ) -> (T0, T1, T2, T3) {
         unsafe {
             (
@@ -261,7 +289,7 @@ pub mod op_trampolines {
         T3: Clone + 'static,
         T4: Clone + 'static,
     >(
-        ids: &[NodeId; 5],
+        ids: &[RawId; 5],
     ) -> (T0, T1, T2, T3, T4) {
         unsafe {
             (
@@ -287,7 +315,7 @@ pub mod op_trampolines {
         T4: Clone + 'static,
         T5: Clone + 'static,
     >(
-        ids: &[NodeId; 6],
+        ids: &[RawId; 6],
     ) -> (T0, T1, T2, T3, T4, T5) {
         unsafe {
             (

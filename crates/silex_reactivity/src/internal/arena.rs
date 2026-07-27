@@ -9,18 +9,18 @@
 const CHUNK_SIZE: usize = 128;
 const NO_FREE_SLOT: u32 = u32::MAX;
 
-/// Strong typed index with generation counter to detect ABA problems.
+/// Raw handle with a generation counter to detect ABA problems.
 ///
 /// `generation` 是 `u32` 且用 `wrapping_add` 递增（插入 +1、移除 +1）。同一个槽位
 /// 被复用 2³¹ 次之后，旧句柄可能再次有效；这里保留 8 字节句柄，不为这个极端边界
 /// 把所有订阅者与句柄扩大到 16 字节。
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Index {
+pub struct RawId {
     index: u32,
     generation: u32,
 }
 
-impl Index {
+impl RawId {
     /// 一个永远不指向任何节点的句柄。
     pub const DANGLING: Self = Self {
         index: u32::MAX,
@@ -38,7 +38,7 @@ impl Index {
     }
 }
 
-impl std::fmt::Debug for Index {
+impl std::fmt::Debug for RawId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "#{}v{}", self.index, self.generation)
     }
@@ -65,8 +65,8 @@ impl<T> Arena<T> {
         }
     }
 
-    /// Insert a value into the arena, returning its Index.
-    pub(crate) fn insert(&mut self, value: T) -> Index {
+    /// Insert a value into the arena, returning its raw handle.
+    pub(crate) fn insert(&mut self, value: T) -> RawId {
         if self.free_head != NO_FREE_SLOT {
             let index = self.free_head;
             let slot = self
@@ -80,7 +80,7 @@ impl<T> Arena<T> {
             debug_assert!(slot.generation % 2 == 1);
             slot.value = Some(value);
             self.len += 1;
-            return Index::new(index, slot.generation);
+            return RawId::new(index, slot.generation);
         }
 
         let index = u32::try_from(self.slots.len()).expect("Arena: 槽位数超出 u32");
@@ -90,12 +90,12 @@ impl<T> Arena<T> {
             next_free: NO_FREE_SLOT,
         });
         self.len += 1;
-        Index::new(index, 1)
+        RawId::new(index, 1)
     }
 
-    /// Access element by Index.
+    /// Access element by raw handle.
     #[inline]
-    pub(crate) fn get(&self, id: Index) -> Option<&T> {
+    pub(crate) fn get(&self, id: RawId) -> Option<&T> {
         let slot = self.slots.get(id.index as usize)?;
         (slot.generation == id.generation && slot.value.is_some())
             .then(|| slot.value.as_ref().expect("占用槽位必须有值"))
@@ -103,7 +103,7 @@ impl<T> Arena<T> {
 
     /// Access element through an exclusive borrow.
     #[cfg(test)]
-    pub(crate) fn get_mut(&mut self, id: Index) -> Option<&mut T> {
+    pub(crate) fn get_mut(&mut self, id: RawId) -> Option<&mut T> {
         let slot = self.slots.get_mut(id.index as usize)?;
         if slot.generation != id.generation {
             return None;
@@ -112,7 +112,7 @@ impl<T> Arena<T> {
     }
 
     /// Remove element. Returns true if removed, false if not found/already removed.
-    pub(crate) fn remove(&mut self, id: Index) -> bool {
+    pub(crate) fn remove(&mut self, id: RawId) -> bool {
         let Some(slot) = self.slots.get_mut(id.index as usize) else {
             return false;
         };
@@ -137,7 +137,7 @@ impl<T> Default for Arena<T> {
 
 type Entry<T> = Option<(u32, T)>;
 
-/// Sparse secondary storage keyed by an [`Index`].
+/// Sparse secondary storage keyed by an [`RawId`].
 pub(crate) struct SparseSecondaryMap<T, const N: usize = 16> {
     chunks: Vec<Option<Vec<Entry<T>>>>,
 }
@@ -183,7 +183,7 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
     }
 
     /// Write an entry. A stale generation is rejected without changing the map.
-    pub(crate) fn insert(&mut self, key: Index, value: T) -> bool {
+    pub(crate) fn insert(&mut self, key: RawId, value: T) -> bool {
         let Some(entry) = self.entry_mut_growing(key.index) else {
             return false;
         };
@@ -199,7 +199,7 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
 
     /// Read an entry.
     #[inline]
-    pub(crate) fn get(&self, key: Index) -> Option<&T> {
+    pub(crate) fn get(&self, key: RawId) -> Option<&T> {
         match self.entry(key.index)? {
             Some((stored_generation, value)) if *stored_generation == key.generation => Some(value),
             _ => None,
@@ -208,7 +208,7 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
 
     /// Mutably access an entry through an exclusive borrow.
     #[inline]
-    pub(crate) fn get_mut(&mut self, key: Index) -> Option<&mut T> {
+    pub(crate) fn get_mut(&mut self, key: RawId) -> Option<&mut T> {
         let (chunk_index, offset) = Self::split(key.index);
         let entry = self
             .chunks
@@ -223,12 +223,12 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
 
     /// Whether an entry exists for this key and generation.
     #[inline]
-    pub(crate) fn contains_key(&self, key: Index) -> bool {
+    pub(crate) fn contains_key(&self, key: RawId) -> bool {
         self.get(key).is_some()
     }
 
     /// Remove an entry and return its value.
-    pub(crate) fn remove(&mut self, key: Index) -> Option<T> {
+    pub(crate) fn remove(&mut self, key: RawId) -> Option<T> {
         let (chunk_index, offset) = Self::split(key.index);
         let entry = self
             .chunks

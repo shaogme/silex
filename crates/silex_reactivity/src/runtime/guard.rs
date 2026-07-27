@@ -23,7 +23,7 @@
 use crate::{
     ReactiveError, ReactiveResult,
     internal::{
-        arena::Index as NodeId,
+        arena::RawId,
         value::{AnyValue, Computation},
     },
     runtime::{Runtime, graph::EvalFrame, graph::NodeState, with_rt},
@@ -32,12 +32,12 @@ use std::mem;
 
 /// 恢复 `current_owner`（**所有权**：新节点挂在谁下面、`on_cleanup` 注册给谁）。
 pub(crate) struct OwnerGuard {
-    prev: Option<NodeId>,
+    prev: Option<RawId>,
 }
 
 impl OwnerGuard {
     /// 在一次已经拿到的借用里切换 owner。
-    pub(crate) fn set(rt: &mut Runtime, owner: Option<NodeId>) -> Self {
+    pub(crate) fn set(rt: &mut Runtime, owner: Option<RawId>) -> Self {
         let prev = rt.current_owner();
         rt.set_owner(owner);
         Self { prev }
@@ -55,11 +55,11 @@ impl Drop for OwnerGuard {
 /// 与所有权是两件正交的事，所以是两个独立的变量：`untrack` 只清这一个，
 /// 它里面创建的节点照样挂在当前 owner 下面（AUDIT 二轮 §1.1）。
 pub(crate) struct ObserverGuard {
-    prev: Option<NodeId>,
+    prev: Option<RawId>,
 }
 
 impl ObserverGuard {
-    pub(crate) fn set(rt: &mut Runtime, observer: Option<NodeId>) -> Self {
+    pub(crate) fn set(rt: &mut Runtime, observer: Option<RawId>) -> Self {
         let prev = rt.current_observer();
         rt.set_observer(observer);
         Self { prev }
@@ -81,13 +81,13 @@ impl Drop for ObserverGuard {
 /// 那样析构时要取**两次**借用，而这里两件事之间什么都没有。每一次 memo 重算、
 /// 每一次 effect 执行都会付这一笔。
 pub(crate) struct ComputationGuard {
-    prev_owner: Option<NodeId>,
-    prev_observer: Option<NodeId>,
+    prev_owner: Option<RawId>,
+    prev_observer: Option<RawId>,
     released: bool,
 }
 
 impl ComputationGuard {
-    pub(crate) fn enter(rt: &mut Runtime, id: NodeId) -> Self {
+    pub(crate) fn enter(rt: &mut Runtime, id: RawId) -> Self {
         let guard = Self {
             prev_owner: rt.current_owner(),
             prev_observer: rt.current_observer(),
@@ -237,13 +237,13 @@ impl Drop for EvalStack {
 /// 但 `computation == None` 是一个语义上会导致静默破坏的中间态：本守卫保证
 /// 它一定会被放回去（正常返回或 panic 展开都一样），同时清除重入标记。
 pub(crate) struct NodeRunGuard {
-    id: NodeId,
+    id: RawId,
     released: bool,
     pub(crate) computation: Option<Computation>,
 }
 
 impl NodeRunGuard {
-    pub(crate) fn new(id: NodeId, computation: Option<Computation>) -> Self {
+    pub(crate) fn new(id: RawId, computation: Option<Computation>) -> Self {
         Self {
             id,
             released: false,
@@ -322,7 +322,7 @@ impl Drop for NodeRunGuard {
 /// 值被移出节点、放在守卫里交给用户闭包，节点里暂时是 `None`。
 /// 这样运行时在用户代码执行期间不持有任何指向该节点载荷的借用（AUDIT P5）。
 pub(crate) struct SignalValueGuard {
-    id: NodeId,
+    id: RawId,
     value: Option<AnyValue>,
     /// 归还值的时候是否顺带把版本号递增掉。
     ///
@@ -331,7 +331,7 @@ pub(crate) struct SignalValueGuard {
 }
 
 impl SignalValueGuard {
-    pub(crate) fn new(id: NodeId, value: AnyValue) -> Self {
+    pub(crate) fn new(id: RawId, value: AnyValue) -> Self {
         Self {
             id,
             value: Some(value),
@@ -367,7 +367,7 @@ impl SignalValueGuard {
 }
 
 /// 把借出的值放回节点。节点已经不在了就让值随之析构（它在调用方的栈上）。
-fn put_back(rt: &mut Runtime, id: NodeId, value: Option<AnyValue>, bump: bool) {
+fn put_back(rt: &mut Runtime, id: RawId, value: Option<AnyValue>, bump: bool) {
     if bump {
         let Some(node) = rt.storage.meta_mut(id) else {
             return;
@@ -411,13 +411,13 @@ impl Drop for SignalValueGuard {
 /// 指向该条目的借用；重入访问同一个节点会拿到
 /// [`ReactiveError::Reentrant`] 而不是静默的 UB（审计报告 §2.1）。
 pub(crate) struct PayloadGuard {
-    id: NodeId,
+    id: RawId,
     value: Option<AnyValue>,
 }
 
 impl PayloadGuard {
     /// 把载荷移出节点，节点里换成 `None`。
-    pub(crate) fn acquire(rt: &mut Runtime, id: NodeId) -> ReactiveResult<Self> {
+    pub(crate) fn acquire(rt: &mut Runtime, id: RawId) -> ReactiveResult<Self> {
         let slot = rt
             .storage
             .extras

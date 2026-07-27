@@ -11,7 +11,7 @@ use self::{graph::NodeState, scheduler::*, scope::Scopes, storage::*};
 use crate::{
     DependencyList, ReactiveError, ReactiveResult,
     internal::{
-        arena::Index as NodeId,
+        arena::RawId,
         value::{AnyValue, Computation, MemoThunk},
     },
 };
@@ -95,7 +95,7 @@ const TRACK_BATCH: usize = 16;
 /// 取票（[`Runtime::begin_run`]）与执行（[`drive::run_node`]）分处两次不同的借用。
 pub(crate) struct RunTicket {
     pub(crate) computation: Option<Computation>,
-    pub(crate) children: Vec<NodeId>,
+    pub(crate) children: Vec<RawId>,
     pub(crate) cleanups: CleanupList,
     pub(crate) dependencies: DependencyList,
 }
@@ -104,22 +104,22 @@ impl Runtime {
     // --- 种类判定：为 `Handle::<K>::is_alive` 提供依据 ---
 
     /// 节点存在（不问种类）。
-    pub(crate) fn node_exists(&self, id: NodeId) -> bool {
+    pub(crate) fn node_exists(&self, id: RawId) -> bool {
         self.storage.graph.get(id).is_some()
     }
 
     /// 节点带一个可读的值（signal / memo / derived 三者共用这条）。
-    pub(crate) fn node_has_value(&self, id: NodeId) -> bool {
+    pub(crate) fn node_has_value(&self, id: RawId) -> bool {
         self.storage.meta(id).is_some_and(NodeMeta::has_value)
     }
 
     /// 节点是一个 effect（有计算、没有值）。
-    pub(crate) fn node_is_effect(&self, id: NodeId) -> bool {
+    pub(crate) fn node_is_effect(&self, id: RawId) -> bool {
         self.storage.meta(id).is_some_and(NodeMeta::is_effect)
     }
 
     /// 节点带一个非响应式载荷（stored value / callback / node-ref）。
-    pub(crate) fn node_has_payload(&self, id: NodeId) -> bool {
+    pub(crate) fn node_has_payload(&self, id: RawId) -> bool {
         self.storage.extras.contains_key(id)
     }
 }
@@ -137,7 +137,7 @@ impl Runtime {
         &mut self,
         at: &'static Location<'static>,
         value: AnyValue,
-    ) -> NodeId {
+    ) -> RawId {
         let id = self.register_node_at(at);
         self.storage.insert_reactive(
             id,
@@ -154,13 +154,13 @@ impl Runtime {
         &mut self,
         at: &'static Location<'static>,
         value: AnyValue,
-    ) -> NodeId {
+    ) -> RawId {
         let id = self.register_node_at(at);
         self.storage.extras.insert(id, Some(value));
         id
     }
 
-    pub(crate) fn prepare_memo_node(&mut self, id: NodeId, computation: MemoThunk) {
+    pub(crate) fn prepare_memo_node(&mut self, id: RawId, computation: MemoThunk) {
         self.storage.insert_reactive(
             id,
             NodeMeta::new(
@@ -179,7 +179,7 @@ impl Runtime {
     ///
     /// 返回 `None` 表示不该建立任何依赖：没有 observer（顶层读取 / `untrack`）、
     /// observer 已被销毁，或它不是计算节点。
-    fn observer_version(&self, observer: NodeId) -> Option<u32> {
+    fn observer_version(&self, observer: RawId) -> Option<u32> {
         let node = self.storage.meta(observer)?;
         node.is_computation().then_some(node.effect_version)
     }
@@ -190,8 +190,8 @@ impl Runtime {
     /// 它（`last_tracked_by` 这条按 signal 存的单条去重缓存）。
     fn subscribe(
         &mut self,
-        target_id: NodeId,
-        observer: NodeId,
+        target_id: RawId,
+        observer: RawId,
         observer_version: u32,
     ) -> Option<(u32, usize)> {
         let target = self.storage.meta(target_id)?;
@@ -213,7 +213,7 @@ impl Runtime {
     }
 
     /// 把若干条 `(target, version)` 依赖边一次性写进 observer 的依赖表。
-    fn record_dependencies(&mut self, observer: NodeId, edges: &[(NodeId, u32, usize)]) {
+    fn record_dependencies(&mut self, observer: RawId, edges: &[(RawId, u32, usize)]) {
         if edges.is_empty() {
             return;
         }
@@ -236,7 +236,7 @@ impl Runtime {
         }
     }
 
-    pub(crate) fn track_dependency(&mut self, target_id: NodeId) {
+    pub(crate) fn track_dependency(&mut self, target_id: RawId) {
         let Some(observer) = self.current_observer() else {
             return;
         };
@@ -261,7 +261,7 @@ impl Runtime {
     /// 节点（句柄被回收复用之后就会这样）—— 那就是一次 `RefCell` 双重借用。
     /// 阶段三之前这个错误更严重：它是一次静默的别名违规，
     /// `tests/aliasing.rs` 里有对应的 Miri 探针。
-    pub(crate) fn track_dependencies(&mut self, target_ids: &[NodeId]) {
+    pub(crate) fn track_dependencies(&mut self, target_ids: &[RawId]) {
         if target_ids.is_empty() {
             return;
         }
@@ -300,7 +300,7 @@ impl Runtime {
     ///
     /// 全程不执行一行用户代码，所以整个跑在一次借用之内；工作队列从池子里借、
     /// 用完还回去，无需守卫（传播路径上没有 panic）。
-    pub(crate) fn queue_dependents(&mut self, source_id: NodeId) {
+    pub(crate) fn queue_dependents(&mut self, source_id: RawId) {
         let mut queue = self.scheduler.workspace.borrow_deque();
         self.propagate(source_id, &mut queue);
         self.scheduler.workspace.return_deque(queue);
@@ -313,7 +313,7 @@ impl Runtime {
     /// `observer_queue` 那半个条件是为了保住“读取也是一个 flush 出口”这条现有
     /// 语义：队列里还有待办时照旧走完整路径，让这次读取把它们冲掉。
     #[inline]
-    pub(crate) fn is_settled(&self, id: NodeId) -> bool {
+    pub(crate) fn is_settled(&self, id: RawId) -> bool {
         self.storage.get_state(id) == NodeState::Clean && self.scheduler.observer_queue.is_empty()
     }
 
@@ -336,10 +336,10 @@ impl Runtime {
     /// 一个节点没有 `reactive` 条目时，到底是“查无此节点”还是“种类不对”。
     ///
     /// stored value / callback / node-ref 的载荷住在 `extras` 表里，它们在
-    /// `reactive` 表里根本没有条目 —— 拿这样一个（经 `RawNodeId` 擦除的）句柄
+    /// `reactive` 表里根本没有条目 —— 拿这样一个（经 `RawId` 擦除的）句柄
     /// 去读 signal，报的应当是 `WrongKind`。只在失败路径上问，标 `#[cold]`。
     #[cold]
-    fn missing_value_reason(&self, id: NodeId) -> ReactiveError {
+    fn missing_value_reason(&self, id: RawId) -> ReactiveError {
         if self.node_exists(id) {
             ReactiveError::WrongKind
         } else {
@@ -352,7 +352,7 @@ impl Runtime {
     /// `None` 就是“正被某个用户闭包借出”—— 从前这是一个 `updating: bool`
     /// 加一个现造的 `AnyValue::placeholder()` 填进节点，读的时候还要靠一个
     /// `#[cold]` 的分类函数把“你重入了”和“你类型写错了”分开。
-    pub(crate) fn take_signal_value(&mut self, id: NodeId) -> ReactiveResult<AnyValue> {
+    pub(crate) fn take_signal_value(&mut self, id: RawId) -> ReactiveResult<AnyValue> {
         let node = self
             .storage
             .meta(id)
@@ -367,7 +367,7 @@ impl Runtime {
     }
 
     /// 借用一个节点的当前值，不做求值也不建立依赖。
-    pub(crate) fn signal_value(&self, id: NodeId) -> ReactiveResult<&AnyValue> {
+    pub(crate) fn signal_value(&self, id: RawId) -> ReactiveResult<&AnyValue> {
         let node = self
             .storage
             .meta(id)
@@ -386,7 +386,7 @@ impl Runtime {
     /// 契约见公开的逃生出口 [`crate::signal::try_value_ref`] 与
     /// [`crate::try_get_any_raw_untracked`]：调用方负责保证在使用期间不发生
     /// 任何会写这个槽位、移动这个值或销毁这个节点的操作。
-    pub(crate) unsafe fn signal_value_unchecked(&self, id: NodeId) -> Option<&AnyValue> {
+    pub(crate) unsafe fn signal_value_unchecked(&self, id: RawId) -> Option<&AnyValue> {
         let node = self.storage.meta(id)?;
         node.has_value().then(|| self.storage.value(id)).flatten()
     }
@@ -397,7 +397,7 @@ impl Runtime {
     ///
     /// 契约见公开的逃生出口 [`crate::store::try_value_ref`]。需要把值交给用户
     /// 闭包时请改用 [`drive::with_payload`]，那条路径会先把值移出节点。
-    pub(crate) unsafe fn payload_value_unchecked(&self, id: NodeId) -> Option<&AnyValue> {
+    pub(crate) unsafe fn payload_value_unchecked(&self, id: RawId) -> Option<&AnyValue> {
         self.storage.extras.get(id).and_then(Option::as_ref)
     }
 
@@ -415,7 +415,7 @@ impl Runtime {
     /// 退订不需要。所以在没有子节点也没有 cleanup 的常见情形（memo 重算、
     /// 不建子节点的 effect 重跑）里，退订就在这一次借用里顺手做掉，票据带回去的
     /// 是一张空依赖表 —— 省掉驱动层的一次往返。
-    pub(crate) fn begin_run(&mut self, id: NodeId) -> Option<RunTicket> {
+    pub(crate) fn begin_run(&mut self, id: RawId) -> Option<RunTicket> {
         let node = self.storage.meta_mut(id)?;
         if !node.is_computation() || node.is_running() {
             return None;

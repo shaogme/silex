@@ -1,7 +1,7 @@
 use crate::{prelude::Signal, reactivity::SignalSlice, traits::*};
 use silex_reactivity::{
-    RawNodeId as NodeId, SignalId, get_debug_label, get_node_defined_at,
-    scope::untrack as untrack_scoped, set_debug_label, signal,
+    RawId, SignalId, get_debug_label, get_node_defined_at, scope::untrack as untrack_scoped,
+    set_debug_label, signal,
 };
 use std::{
     hash::{Hash, Hasher},
@@ -17,7 +17,7 @@ use std::{
 /// derived 都能塞进来（`From<Memo<T>> for Signal<T>` 就是这么用的）。
 /// 写入侧的 [`WriteSignal`] 才有静态种类可言，它拿的是 `SignalId`。
 pub struct ReadSignal<T> {
-    pub(crate) id: NodeId,
+    pub(crate) id: RawId,
     pub(crate) marker: PhantomData<T>,
 }
 
@@ -101,7 +101,7 @@ impl<T: RxData> RxValue for WriteSignal<T> {
 
 impl<T: RxData> RxBase for WriteSignal<T> {
     #[inline(always)]
-    fn id(&self) -> Option<NodeId> {
+    fn raw_id(&self) -> Option<RawId> {
         Some(self.id.raw())
     }
     #[inline(always)]

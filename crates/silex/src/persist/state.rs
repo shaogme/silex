@@ -187,8 +187,8 @@ impl<T: RxData> RxValue for Persistent<T> {
 }
 
 impl<T: RxData> RxBase for Persistent<T> {
-    fn id(&self) -> Option<silex_core::reactivity::NodeId> {
-        self.value.id()
+    fn raw_id(&self) -> Option<silex_core::reactivity::RawId> {
+        self.value.raw_id()
     }
 
     fn track(&self) {

@@ -1,6 +1,6 @@
 //! 所有权与执行上下文：scope、销毁、清理函数、`untrack`、`batch`。
 
-use crate::{AnyHandle, ScopeId, runtime::drive};
+use crate::{ScopeId, runtime::drive};
 
 /// 建一个所有权 scope：`f` 里创建的节点都成为它的子节点，
 /// [`dispose`] 这个 scope 会连带销毁它们（先子后父，同级按注册顺序）。
@@ -19,13 +19,9 @@ pub fn create_detached<R, F: FnOnce() -> R>(f: F) -> (ScopeId, R) {
     (ScopeId::from_raw(id), res)
 }
 
-
-/// 销毁一个节点：跑它的清理函数、递归销毁子节点、退订它的全部依赖、
-/// 释放它占用的存储。已经销毁过的句柄再传进来是 no-op。
-///
-/// 接受任何种类的句柄 —— 销毁对所有节点是同一件事。
-pub fn dispose(id: impl AnyHandle) {
-    drive::dispose(id.to_raw());
+/// 销毁一个 scope 及其所有子节点。
+pub fn dispose(id: ScopeId) {
+    drive::dispose_raw(id.raw());
 }
 
 /// 注册一个清理函数，在当前节点被销毁或（对 effect 而言）下次重跑之前执行。

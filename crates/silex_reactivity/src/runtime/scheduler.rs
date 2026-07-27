@@ -1,5 +1,5 @@
 use crate::{
-    internal::arena::{Index as NodeId, SparseSecondaryMap},
+    internal::arena::{RawId, SparseSecondaryMap},
     runtime::{graph::EvalFrame, guard::Depth},
 };
 use std::collections::VecDeque;
@@ -23,7 +23,7 @@ pub(crate) const MAX_QUEUE_ITERATIONS: usize = 100_000;
 /// 之后这一层全部消失，热路径上的借用计数也随之归零。
 pub(crate) struct Scheduler {
     pub(crate) workspace: WorkSpace,
-    pub(crate) observer_queue: VecDeque<NodeId>,
+    pub(crate) observer_queue: VecDeque<RawId>,
     pub(crate) queued_observers: SparseSecondaryMap<()>,
     pub(crate) running_queue: bool,
     pub(crate) batch_depth: usize,
@@ -47,7 +47,7 @@ impl Scheduler {
         }
     }
 
-    pub(crate) fn queue_effect(&mut self, id: NodeId) {
+    pub(crate) fn queue_effect(&mut self, id: RawId) {
         if self.queued_observers.get(id).is_none() {
             self.queued_observers.insert(id, ());
             self.observer_queue.push_back(id);
@@ -65,7 +65,7 @@ impl Scheduler {
 
 /// 求值栈与传播队列的复用池。
 ///
-/// 这里曾经还有一个 `vec_pool: Vec<Vec<NodeId>>`，专门用来接
+/// 这里曾经还有一个 `vec_pool: Vec<Vec<RawId>>`，专门用来接
 /// `fill_subscribers` / `fill_dependencies` 物化出来的订阅表和依赖表 ——
 /// 一个纯粹由 `ReactiveGraph` 抽象层引入的问题，然后又用一层机制去缓解它
 /// （审计报告 §3.3）。算法改成原地遍历之后，那两个 `Vec` 连同它的池子
@@ -75,7 +75,7 @@ impl Scheduler {
 /// 就会在外层还没走完时开始新的一轮 DFS。
 pub(crate) struct WorkSpace {
     stack_pool: Vec<Vec<EvalFrame>>,
-    deque_pool: Vec<VecDeque<NodeId>>,
+    deque_pool: Vec<VecDeque<RawId>>,
 }
 
 /// 每个池子最多留几个容器。嵌套深度在真实代码里是个位数。
@@ -100,11 +100,11 @@ impl WorkSpace {
         }
     }
 
-    pub(crate) fn borrow_deque(&mut self) -> VecDeque<NodeId> {
+    pub(crate) fn borrow_deque(&mut self) -> VecDeque<RawId> {
         self.deque_pool.pop().unwrap_or_default()
     }
 
-    pub(crate) fn return_deque(&mut self, mut deque: VecDeque<NodeId>) {
+    pub(crate) fn return_deque(&mut self, mut deque: VecDeque<RawId>) {
         deque.clear();
         if self.deque_pool.len() < MAX_POOLED {
             self.deque_pool.push(deque);

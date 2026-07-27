@@ -36,7 +36,7 @@ silex_core/src/
 │   └── guards.rs       // 定义 RxGuard (Borrowed/Owned) 及其内存安全守卫实现
 ├── reactivity.rs       // 响应式系统顶层模块
 ├── reactivity/         // 响应式核心组件实现
-│   ├── dispatch.rs     // 非泛型分发器：将泛型操作转发至 NodeId + Kind 的非泛型路径
+│   ├── dispatch.rs     // 非泛型分发器：将泛型操作转发至 RawId + Kind 的非泛型路径
 │   ├── signal.rs       // 核心 Signal<T> 枚举定义与原子句柄操作
 │   ├── signal/         // 信号细分实现
 │   │   ├── ops.rs      // 核心算子擦除 UnifiedStaticMapPayload 与静态分发实现
@@ -66,7 +66,7 @@ graph TD
     Normalized -- RxRead --> Guard[RxGuard]
     Guard -- Deref --> Ref[&T / T]
     
-    Op[运算符 a + b] --> OpNode[Op 节点: new_op + RawOpBuffer]
+    Op[运算符 a + b] --> OpNode[Op 节点: new_op + StoredId]
     OpNode --> Rx
     Tuple[元组 (Rx, Rx)] -- into_rx --> StaticMap[StaticMapPayload]
     StaticMap --> Rx
@@ -92,12 +92,12 @@ Silex 通过三层抽象实现了“底层灵活实现，高层统一 API”，�
 
 *   **内部变体 (RxInner)**:
     *   `Constant(T)`: 静态常量。
-    *   `Signal(NodeId)`: 生命周期托管在 Arena 中的信号。
-    *   `Closure(NodeId)`: 派生计算（由 `rx!` 或 `derive` 产生，后台由池化闭包驱动）。
-    *   `Op(NodeId)`: 运算载体（由 `new_op` 注册的原始算子负载产生）。
-    *   `Stored(NodeId)`: 直接存储在 Arena 中的非响应式对象。
+    *   `Signal(RawId)`: 动态可读信号联合体。
+    *   `Closure(StoredId)`: 派生计算（由 `rx!` 或 `derive` 产生，后台由池化闭包驱动）。
+    *   `Op(StoredId)`: 运算载体（由 `store::create` 保存的算子负载产生）。
+    *   `Stored(StoredId)`: 直接存储在 Arena 中的非响应式对象。
 *   **编译体积优化**:
-    `Rx::derive` 接受 `Box<dyn Fn() -> T>` 并通过 `register_closure` 在底层实现类型擦除。这意味着不同位置的逻辑可以在 `Rx<T>` 这一层级统一，有效缓解了 Rust 闭包导致的单态化膨胀。
+    `Rx::derive` 接受 `Box<dyn Fn() -> T>` 并通过 `store::create` 在底层实现类型擦除。这意味着不同位置的逻辑可以在 `Rx<T>` 这一层级统一，有效缓解了 Rust 闭包导致的单态化膨胀。
 
 ### 4.3 归一化原子：Signal<T> 与内联优化
 
@@ -107,11 +107,11 @@ Silex 通过三层抽象实现了“底层灵活实现，高层统一 API”，�
 
 *   **变体结构**:
     - `Read(ReadSignal<T>)`: 基础信号句柄。
-    - `Derived(NodeId, ...)`: 派生计算节点。
-    - `StoredConstant(NodeId, ...)`: 存储在 Arena 中的常量。
+    - `Derived(RawId, ...)`: 派生计算节点，并由 `RxNodeKind` 证明具体种类。
+    - `StoredConstant(StoredId, ...)`: 存储在 Arena 中的常量。
     - `InlineConstant(u64, ...)`: **零分配优化**。针对尺寸 `<= 8` 字节且 `!needs_drop` 的类型，直接通过位拷贝存入 `u64`。
-*   **NodeId 提升**:
-    调用 `.ensure_node_id()` 时，内联常量会通过 `unpack_inline` 还原并提升（Promote）为 `StoredConstant`，以获取稳定的 `NodeId`。
+*   **RawId 提升**:
+    调用 `.ensure_raw_id()` 时，内联常量会通过 `unpack_inline` 还原并提升（Promote）为 `StoredConstant`，以获取稳定的擦除句柄。
 
 ### 4.4 基础信号：ReadSignal / WriteSignal / RwSignal
 
@@ -127,7 +127,7 @@ Silex 通过三层抽象实现了“底层灵活实现，高层统一 API”，�
 
 为了解决算术运算的泛型灾难，Silex 使用了“固定尺寸负载 + 静态函数指针”的技术：
 
-*   **`UnifiedStaticMapPayload`**: 针对 1 到 3 个信号映射的转换快径。它是 `StaticMapPayload` / `StaticMap2Payload` / `StaticMap3Payload` 的统一实现，直接持有 `[NodeId; 3]` 数组，有效减少了寻址开销。
+*   **`UnifiedStaticMapPayload`**: 针对 1 到 3 个信号映射的转换快径。它是 `StaticMapPayload` / `StaticMap2Payload` / `StaticMap3Payload` 的统一实现，直接持有 `[RawId; 3]` 数组，有效减少了寻址开销。
 *   **蹦床模式 (Trampoline)**: 算子通过 `op_trampolines` 蹦床机制执行。它利用 `transmute` 在运行时将非泛型存储还原为真实类型并执行 `compute` 回调。
 *   **常量传播**: 算术运算符（`+`, `-` 等）会优先探测输入。若均为常量，则直接在初始化期静态计算并返回 `Rx::new_constant`。
 
@@ -163,7 +163,7 @@ pub enum RxGuard<'a, T, S = ()> {
 
 ## 5. 安全性考量 (Safety Considerations)
 
-*   **生命周期转换**: `traits/read.rs` 中存在 `transmute::<&T, &'static T>`。其安全性由 `RxGuard` 所持有的 `NodeRef`（NodeId + Generation）保证，它在运行时维持了 Arena 节点的引用计数及地址稳定性。
+*   **生命周期转换**: `traits/read.rs` 中存在 `transmute::<&T, &'static T>`。其安全性由 `RxGuard` 所持有的 `RawId`（槽位 + generation）保证，它在运行时维持了 Arena 节点的代数校验及地址稳定性。
 
 ## 6. 存在的问题和 TODO (Issues and TODOs)
 

@@ -18,3 +18,13 @@ workspace = true
 
 [dependencies]
 silex_vtable.workspace = true
+
+[dev-dependencies]
+trybuild = "1.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "reactivity"
+harness = false

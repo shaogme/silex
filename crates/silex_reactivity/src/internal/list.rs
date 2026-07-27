@@ -383,8 +383,8 @@ impl<T> List<T> {
     ///
     /// 订阅者表与依赖表的遍历走这里：`propagate` / `evaluate` 现在直接在这个
     /// 切片上走，不再把它拷进一个 `Vec`。从前那套 `fill_subscribers(&self,
-    /// dest: &mut Vec<NodeId>)` 是 `ReactiveGraph` 抽象层的产物 —— trait 没法
-    /// 表达“借用内部的 `List<NodeId>`”，于是每访问一个节点就得整表拷贝一次，
+    /// dest: &mut Vec<RawId>)` 是 `ReactiveGraph` 抽象层的产物 —— trait 没法
+    /// 表达“借用内部的 `List<RawId>`”，于是每访问一个节点就得整表拷贝一次，
     /// 再拿一个 `vec_pool` 去缓解这个由抽象引入的问题（审计报告 §3.3）。
     #[inline]
     pub(crate) fn as_slice(&self) -> &[T] {

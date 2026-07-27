@@ -4,7 +4,7 @@ use silex_reactivity::{get_debug_label, get_node_defined_at};
 
 use crate::{
     Rx, RxInner,
-    reactivity::{NodeId, Signal, dispatch},
+    reactivity::{RawId, Signal, dispatch},
     traits::{IntoRx, IntoSignal, RxBase, RxData, RxGet, RxGuard, RxInternal, RxRead, RxValue},
     unwrap_rx,
 };
@@ -49,18 +49,18 @@ impl<T: RxData, M> RxValue for Rx<T, M> {
 }
 
 impl<T: RxData, M> RxBase for Rx<T, M> {
-    fn id(&self) -> Option<NodeId> {
-        self.inner.as_node_parts().map(|(id, _)| id)
+    fn raw_id(&self) -> Option<RawId> {
+        self.inner.as_raw_parts().map(|(id, _)| id)
     }
 
     fn track(&self) {
-        if let Some((id, kind)) = self.inner.as_node_parts() {
+        if let Some((id, kind)) = self.inner.as_raw_parts() {
             dispatch::track(id, kind);
         }
     }
 
     fn is_disposed(&self) -> bool {
-        if let Some((id, kind)) = self.inner.as_node_parts() {
+        if let Some((id, kind)) = self.inner.as_raw_parts() {
             dispatch::is_disposed(id, kind)
         } else {
             false
@@ -68,11 +68,11 @@ impl<T: RxData, M> RxBase for Rx<T, M> {
     }
 
     fn defined_at(&self) -> Option<&'static Location<'static>> {
-        self.id().and_then(get_node_defined_at)
+        self.raw_id().and_then(get_node_defined_at)
     }
 
     fn debug_name(&self) -> Option<String> {
-        self.id().and_then(get_debug_label)
+        self.raw_id().and_then(get_debug_label)
     }
 }
 
@@ -88,7 +88,7 @@ impl<T: RxData, M> RxInternal for Rx<T, M> {
                 Some(RxGuard::Owned(Rx::<T, M>::unpack_inline(*storage)))
             },
             _ => {
-                let (id, kind) = self.inner.as_node_parts()?;
+                let (id, kind) = self.inner.as_raw_parts()?;
                 unsafe { dispatch::rx_read_node_untracked(id, kind) }
             }
         }
@@ -101,7 +101,7 @@ impl<T: RxData, M> RxInternal for Rx<T, M> {
                 Some(fun(&val))
             },
             _ => {
-                let (id, kind) = self.inner.as_node_parts()?;
+                let (id, kind) = self.inner.as_raw_parts()?;
                 dispatch::rx_try_with_node_untracked(id, kind, fun)
             }
         }
@@ -135,8 +135,10 @@ impl<T: RxData, M: 'static> IntoSignal for Rx<T, M> {
         match self.inner {
             RxInner::InlineConstant(storage) => Signal::InlineConstant(storage, PhantomData),
             RxInner::Signal(id) => Signal::Derived(id, crate::RxNodeKind::Signal, PhantomData),
-            RxInner::Closure(id) => Signal::Derived(id, crate::RxNodeKind::Closure, PhantomData),
-            RxInner::Op(id) => Signal::Derived(id, crate::RxNodeKind::Op, PhantomData),
+            RxInner::Closure(id) => {
+                Signal::Derived(id.raw(), crate::RxNodeKind::Closure, PhantomData)
+            }
+            RxInner::Op(id) => Signal::Derived(id.raw(), crate::RxNodeKind::Op, PhantomData),
             RxInner::Stored(id) => Signal::StoredConstant(id, PhantomData),
         }
     }

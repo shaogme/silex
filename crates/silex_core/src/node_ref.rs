@@ -4,7 +4,7 @@ use silex_reactivity::{NodeRefId, node_ref};
 
 /// `NodeRef` 用于获取对底层 DOM 节点的直接引用。
 ///
-/// 此类型使用 `NodeId` 句柄引用存储在响应式运行时中的元素，
+/// 此类型使用类型化句柄引用存储在响应式运行时中的元素，
 /// 实现了 `Copy` 语义，与 `Signal` 和 `Memo` 风格一致。
 ///
 /// 这在需要使用命令式 DOM API（如 `.focus()`, `.show_modal()`, Canvas 绘图等）时非常有用。

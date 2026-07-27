@@ -69,13 +69,12 @@ fn scoped<T: 'static>(f: impl FnOnce() -> T + 'static) -> (ScopeId, T) {
 /// 每个 memo 都在上游基础上 +1，因此源头一变整条链的值都会变 ——
 /// 相等性门控不会把传播挡在中途，链上每个节点每轮恰好重算一次。
 /// 这条不变量由本文件的 `a_chain_recomputes_each_node_once_per_write` 钉住。
-fn memo_chain(source: SignalId, len: usize) -> RawNodeId {
+fn memo_chain(source: SignalId, len: usize) -> RawId {
     assert!(len >= 1);
-    let mut prev = source.to_raw();
+    let mut prev = source.raw();
     for _ in 0..len {
         let upstream = prev;
-        prev =
-            memo::create::<u64, _>(move |_| signal::get::<u64>(upstream).unwrap_or(0) + 1).to_raw();
+        prev = memo::create::<u64, _>(move |_| signal::get::<u64>(upstream).unwrap_or(0) + 1).raw();
     }
     prev
 }
@@ -86,14 +85,14 @@ fn probe_memo_recompute_cost() {
     let n = if DEBUG { 2_000 } else { 200_000 };
 
     let sample = |len: usize| -> Duration {
-        let source = signal::create(0u64);
+        let (source_owner, source) = scope::create_detached(|| signal::create(0u64));
         let (scope, tail) = scoped(move || memo_chain(source, len));
         let d = measure(n, || {
             signal::update::<u64>(source, |v| *v = v.wrapping_add(1));
             black_box(signal::get::<u64>(tail));
         });
         scope::dispose(scope);
-        scope::dispose(source);
+        scope::dispose(source_owner);
         d
     };
 
@@ -112,10 +111,10 @@ fn probe_memo_recompute_cost() {
 fn a_chain_recomputes_each_node_once_per_write() {
     const LEN: usize = 8;
 
-    let source = signal::create(0u64);
+    let (source_owner, source) = scope::create_detached(|| signal::create(0u64));
     let runs = Rc::new(Cell::new(0usize));
 
-    let mut prev = source.to_raw();
+    let mut prev = source.raw();
     for _ in 0..LEN {
         let upstream = prev;
         let r = runs.clone();
@@ -123,7 +122,7 @@ fn a_chain_recomputes_each_node_once_per_write() {
             r.set(r.get() + 1);
             signal::get::<u64>(upstream).unwrap_or(0) + 1
         })
-        .to_raw();
+        .raw();
     }
     let tail = prev;
 
@@ -138,6 +137,7 @@ fn a_chain_recomputes_each_node_once_per_write() {
     signal::update::<u64>(source, |v| *v += 1);
     assert_eq!(signal::get::<u64>(tail), Some(LEN as u64 + 1));
     assert_eq!(runs.get(), 2 * LEN, "一次写入让链上每个节点恰好重算一次");
+    scope::dispose(source_owner);
 }
 
 // --- 扇出 ---
@@ -155,11 +155,11 @@ fn probe_memo_fanout_cost() {
         } else {
             (2_000_000 / k).max(200)
         };
-        let source = signal::create(0u64);
+        let (source_owner, source) = scope::create_detached(|| signal::create(0u64));
         let (scope, subs) = scoped(move || {
             (0..k)
                 .map(|_| memo_chain(source, 1))
-                .collect::<Vec<RawNodeId>>()
+                .collect::<Vec<RawId>>()
         });
         let d = measure(n, || {
             signal::update::<u64>(source, |v| *v = v.wrapping_add(1));
@@ -168,7 +168,7 @@ fn probe_memo_fanout_cost() {
             }
         });
         scope::dispose(scope);
-        scope::dispose(source);
+        scope::dispose(source_owner);
         d
     };
 
@@ -194,12 +194,16 @@ fn probe_memo_fanout_cost_with_disjoint_sources() {
         } else {
             (2_000_000 / k).max(200)
         };
-        let sources: Vec<SignalId> = (0..k).map(|_| signal::create(0u64)).collect();
+        let (source_owner, sources) = scoped(move || {
+            (0..k)
+                .map(|_| signal::create(0u64))
+                .collect::<Vec<SignalId>>()
+        });
         let srcs = sources.clone();
         let (scope, subs) = scoped(move || {
             srcs.iter()
                 .map(|&s| memo_chain(s, 1))
-                .collect::<Vec<RawNodeId>>()
+                .collect::<Vec<RawId>>()
         });
         let d = measure(n, || {
             scope::batch(|| {
@@ -212,9 +216,7 @@ fn probe_memo_fanout_cost_with_disjoint_sources() {
             }
         });
         scope::dispose(scope);
-        for s in sources {
-            scope::dispose(s);
-        }
+        scope::dispose(source_owner);
         d
     };
 
@@ -235,7 +237,7 @@ fn probe_effect_fanout_cost() {
         } else {
             (1_000_000 / k).max(200)
         };
-        let source = signal::create(0u64);
+        let (source_owner, source) = scope::create_detached(|| signal::create(0u64));
         let hits = Rc::new(Cell::new(0u64));
         let h0 = hits.clone();
         let (scope, ()) = scoped(move || {
@@ -254,7 +256,7 @@ fn probe_effect_fanout_cost() {
         });
         black_box(hits.get());
         scope::dispose(scope);
-        scope::dispose(source);
+        scope::dispose(source_owner);
         d
     };
 

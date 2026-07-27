@@ -1,6 +1,6 @@
 # Crate: `silex_reactivity`
 
-`silex_reactivity` 是 Silex 的底层、类型擦除、细粒度响应式引擎。公共 API 按 signal、memo、effect、scope、store、callback 和 node-ref 分模块；句柄带静态种类，跨种类操作需要显式转换为 `RawNodeId`。
+`silex_reactivity` 是 Silex 的底层、类型擦除、细粒度响应式引擎。公共 API 按 signal、memo、effect、scope、store、callback 和 node-ref 分模块；句柄带静态种类，跨种类操作需要显式擦除为 `RawId`。
 
 ## Runtime
 
@@ -21,15 +21,17 @@
 
 ## Arena
 
-`Arena<T>` 和 `SparseSecondaryMap<T>` 位于 `internal/arena.rs`，使用安全 `Vec`/分块 `Vec`，文件级 `#![forbid(unsafe_code)]`。`Index` 保持 `u32` 槽位号与 generation，支持复用、旧句柄失效和 stale-generation 写入拒绝。修改入口需要 `&mut self`，因此同表引用不能跨越写操作。
+`Arena<T>` 和 `SparseSecondaryMap<T>` 位于 `internal/arena.rs`，使用安全 `Vec`/分块 `Vec`，文件级 `#![forbid(unsafe_code)]`。`RawId` 保持 `u32` 槽位号与 generation，支持复用、旧句柄失效和 stale-generation 写入拒绝。修改入口需要 `&mut self`，因此同表引用不能跨越写操作。
 
 ## Remaining Unsafe
 
-arena 已零 unsafe。剩余 unsafe 位于 `ThinVec`、`AnyValue`、vtable 和三个显式 raw-reference API。raw API 的调用者必须遵守各自 `# Safety` 契约，不得跨越节点销毁、值替换或再次运行时调用。
+arena 已零 unsafe。剩余 unsafe 位于 `ThinVec`、`AnyValue`、vtable 和三个显式原始引用 API。原始引用 API 的调用者必须遵守各自 `# Safety` 契约，不得跨越节点销毁、值替换或再次运行时调用。
 
 ## Key Commands
 
 ```text
 cargo test -p silex_reactivity
 cargo test -p silex_reactivity --test graph_cost --release -- --nocapture
+cargo bench -p silex_reactivity --bench reactivity
+cargo +nightly miri test -p silex_reactivity -p silex_vtable
 ```

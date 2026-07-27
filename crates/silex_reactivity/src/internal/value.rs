@@ -2,7 +2,7 @@ use crate::internal::FuncPtr;
 use silex_vtable::{AnyBox, OnceBox, ThunkBox};
 use std::{any::TypeId, marker::PhantomData, mem, ptr};
 
-/// A type-erased value with Small Object Optimization (SOO).
+/// A raw value with Small Object Optimization (SOO).
 ///
 /// # 不变量
 ///

@@ -179,7 +179,7 @@ fn mount_keyed_loop_logic<IF, IS, T, K>(
                         let effective_cursor = cursor.as_ref().unwrap_or(&end_node);
                         let is_already_correct = last_node
                             .next_sibling()
-                            .map_or(false, |next| &next == effective_cursor);
+                            .is_some_and(|next| &next == effective_cursor);
 
                         if is_already_correct {
                             cursor = nodes.first().cloned();
@@ -295,8 +295,7 @@ fn mount_indexed_loop_logic<IF, T, IS>(
                                 let (get, item_setter) = Signal::pair(item_val);
                                 let (index_get, index_setter) = Signal::pair(real_index);
 
-                                (view_fn)(get, index_get)
-                                    .mount_owned(&fragment_node, Vec::new());
+                                (view_fn)(get, index_get).mount_owned(&fragment_node, Vec::new());
 
                                 let nodes_list = fragment.child_nodes();
                                 let len = nodes_list.length();

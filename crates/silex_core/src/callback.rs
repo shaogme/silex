@@ -8,7 +8,7 @@ use crate::log::console_error;
 
 /// A `Copy`-able wrapper for callbacks/event handlers.
 ///
-/// This type uses a `NodeId` handle to reference a callback stored in the
+/// This type uses a typed handle to reference a callback stored in the
 /// reactive runtime, enabling `Copy` semantics similar to `Signal` and `Memo`.
 ///
 /// # Example

@@ -36,7 +36,7 @@
 use crate::{
     DependencyList, ReactiveError, ReactiveResult,
     internal::{
-        arena::Index as NodeId,
+        arena::RawId,
         value::{AnyValue, Computation, EffectThunk, MemoThunk},
     },
     runtime::{
@@ -72,7 +72,7 @@ use std::panic::Location;
 /// 代价：依赖边晚一步建立，因此依赖环要多绕一轮才会被求值检测到 ——
 /// 仍然会被检测到，只是路径长一点。
 #[inline]
-pub(crate) fn prepare_read(id: NodeId) {
+pub(crate) fn prepare_read(id: RawId) {
     // 快路径：节点已经干净、队列里也没有待办，求值与追踪在**同一次借用**里
     // 做完。绝大多数读取走的是这条（普通 signal 恒为干净）。
     let settled = with_rt(|rt| {
@@ -90,7 +90,7 @@ pub(crate) fn prepare_read(id: NodeId) {
 }
 
 #[inline]
-pub(crate) fn prepare_read_untracked(id: NodeId) {
+pub(crate) fn prepare_read_untracked(id: RawId) {
     update_if_necessary(id);
 }
 
@@ -100,7 +100,7 @@ pub(crate) fn prepare_read_untracked(id: NodeId) {
 /// 是纯粹的浪费：借出工作栈、看一眼状态就返回、再还回去，外加一个深度守卫和
 /// 一次空队列的 `run_queue`。实测这条提前返回让无 owner 上下文的 signal 读取
 /// 从 20.5 ns 降到 11.6 ns（−43%）（AUDIT 二轮 §1.3）。
-pub(crate) fn update_if_necessary(id: NodeId) {
+pub(crate) fn update_if_necessary(id: RawId) {
     if matches!(with_rt(|rt| rt.is_settled(id)), Ok(true)) {
         return;
     }
@@ -130,7 +130,7 @@ pub(crate) fn update_if_necessary(id: NodeId) {
 /// 的旧值的 `Drop` 里）写回自己的上游，就会被立刻重新标脏，DFS 于是原地重跑它，
 /// 永不收敛 —— 而这个循环从头到尾没有碰过 effect 队列，`run_queue` 的计数器
 /// 一次都不会加。表现就是浏览器标签页直接冻死，正是 P13 要消灭的那种失败。
-pub(crate) fn drive_eval(target_node: NodeId) {
+pub(crate) fn drive_eval(target_node: RawId) {
     let held = with_rt(|rt| {
         if rt.storage.get_state(target_node) == NodeState::Clean {
             return None;
@@ -184,7 +184,7 @@ pub(crate) fn drive_eval(target_node: NodeId) {
 ///
 /// 返回值表示是否真的执行了计算闭包。以下情况返回 `false`：
 /// 节点不存在、不是计算节点、或**正在运行中**。
-pub(crate) fn run_node(id: NodeId) -> bool {
+pub(crate) fn run_node(id: RawId) -> bool {
     let Ok(Some(ticket)) = with_rt(|rt| rt.begin_run(id)) else {
         return false;
     };
@@ -244,7 +244,7 @@ pub(crate) fn run_node(id: NodeId) -> bool {
 /// 不能在它执行期间持有指向节点载荷的借用（AUDIT P5）。因此“在 memo 的计算
 /// 闭包里读它自己”读到的是 [`ReactiveError::Reentrant`]，旧值只能从闭包参数拿
 /// —— 这本来也是 `Fn(Option<&T>) -> T` 这个签名的用途。
-fn recompute_memo(id: NodeId, thunk: &MemoThunk, old: Option<AnyValue>) {
+fn recompute_memo(id: RawId, thunk: &MemoThunk, old: Option<AnyValue>) {
     // 守卫保证旧值一定会被放回（计算闭包 panic 时也一样）。
     let mut borrowed = old.map(|value| SignalValueGuard::new(id, value));
 
@@ -305,7 +305,7 @@ fn recompute_memo(id: NodeId, thunk: &MemoThunk, old: Option<AnyValue>) {
 
 // --- 写与调度 ---
 
-pub(crate) fn notify_update(id: NodeId) {
+pub(crate) fn notify_update(id: RawId) {
     // 传播与“该不该 flush”的判定合成一次借用 —— 两者之间不执行任何用户代码。
     let should_flush = with_rt(|rt| {
         rt.queue_dependents(id);
@@ -375,7 +375,7 @@ pub(crate) fn run_queue() {
 /// 版本号由 `f` 的第二个返回值决定：`true` 表示“值真的被改写了”，
 /// 此时版本号在**归还值的那一次查表里**顺带递增（AUDIT P12 定下语义）。
 pub(crate) fn with_signal_value_mut<R>(
-    id: NodeId,
+    id: RawId,
     f: impl FnOnce(&mut AnyValue) -> (R, bool),
 ) -> ReactiveResult<R> {
     let taken = take_for_update(id)?;
@@ -394,10 +394,7 @@ pub(crate) fn with_signal_value_mut<R>(
 /// 只读也要移出：闭包是用户代码，它可以销毁任何节点 —— 包括这一个。
 /// 代价是与写入侧一致的一条契约：**不允许在闭包内访问同一个 signal**，
 /// 否则拿到 [`ReactiveError::Reentrant`]。
-pub(crate) fn with_signal_value<R>(
-    id: NodeId,
-    f: impl FnOnce(&AnyValue) -> R,
-) -> ReactiveResult<R> {
+pub(crate) fn with_signal_value<R>(id: RawId, f: impl FnOnce(&AnyValue) -> R) -> ReactiveResult<R> {
     let taken = with_rt(|rt| rt.take_signal_value(id))??;
     // 守卫保证值一定会被放回（闭包 panic 时也一样），且不递增版本号。
     let borrowed = SignalValueGuard::new(id, taken);
@@ -411,7 +408,7 @@ pub(crate) fn with_signal_value<R>(
 /// 于是一次什么都没做的更新会静默地把全部下游重跑一遍（AUDIT P12）。
 #[inline(never)]
 pub(crate) fn update_signal_untyped(
-    id: NodeId,
+    id: RawId,
     updater: &mut dyn FnMut(&mut AnyValue) -> bool,
 ) -> ReactiveResult<bool> {
     let taken = take_for_update(id)?;
@@ -443,7 +440,7 @@ pub(crate) fn update_signal_untyped(
 }
 
 /// 把值移出节点，并在“重入了同一个 signal”这条编程错误上给出断言。
-fn take_for_update(id: NodeId) -> ReactiveResult<AnyValue> {
+fn take_for_update(id: RawId) -> ReactiveResult<AnyValue> {
     match with_rt(|rt| rt.take_signal_value(id))? {
         Ok(value) => Ok(value),
         Err(e) => {
@@ -461,14 +458,14 @@ fn take_for_update(id: NodeId) -> ReactiveResult<AnyValue> {
 /// 把载荷移出节点、交给**用户闭包**、再放回去。
 ///
 /// 这是所有会执行用户代码的载荷访问的唯一入口（审计报告 §2.1）。
-pub(crate) fn with_payload<R>(id: NodeId, f: impl FnOnce(&AnyValue) -> R) -> ReactiveResult<R> {
+pub(crate) fn with_payload<R>(id: RawId, f: impl FnOnce(&AnyValue) -> R) -> ReactiveResult<R> {
     let borrowed = with_rt(|rt| PayloadGuard::acquire(rt, id))??;
     Ok(f(borrowed.value()))
 }
 
 /// 同上，可变版本。
 pub(crate) fn with_payload_mut<R>(
-    id: NodeId,
+    id: RawId,
     f: impl FnOnce(&mut AnyValue) -> R,
 ) -> ReactiveResult<R> {
     let mut borrowed = with_rt(|rt| PayloadGuard::acquire(rt, id))??;
@@ -478,19 +475,19 @@ pub(crate) fn with_payload_mut<R>(
 // --- 建节点 ---
 
 #[track_caller]
-pub(crate) fn create_signal(value: AnyValue) -> ReactiveResult<NodeId> {
+pub(crate) fn create_signal(value: AnyValue) -> ReactiveResult<RawId> {
     let at = Location::caller();
     with_rt_or_init(|rt| rt.create_signal_at(at, value))
 }
 
 #[track_caller]
-pub(crate) fn store_payload(value: AnyValue) -> ReactiveResult<NodeId> {
+pub(crate) fn store_payload(value: AnyValue) -> ReactiveResult<RawId> {
     let at = Location::caller();
     with_rt_or_init(|rt| rt.store_payload_at(at, value))
 }
 
 #[track_caller]
-pub(crate) fn create_effect(f: EffectThunk) -> ReactiveResult<NodeId> {
+pub(crate) fn create_effect(f: EffectThunk) -> ReactiveResult<RawId> {
     let at = Location::caller();
     let id = with_rt_or_init(|rt| {
         let id = rt.register_node_at(at);
@@ -527,7 +524,7 @@ pub(crate) fn create_effect(f: EffectThunk) -> ReactiveResult<NodeId> {
 /// 同一条路径，也不存在“闭包尚未被节点接管就提前返回”导致析构函数永不运行的
 /// 窗口（AUDIT P19.10）。
 #[track_caller]
-pub(crate) fn create_memo(thunk: MemoThunk) -> ReactiveResult<NodeId> {
+pub(crate) fn create_memo(thunk: MemoThunk) -> ReactiveResult<RawId> {
     let at = Location::caller();
     let id = with_rt_or_init(|rt| {
         let id = rt.register_node_at(at);
@@ -545,7 +542,7 @@ pub(crate) fn create_memo(thunk: MemoThunk) -> ReactiveResult<NodeId> {
 /// scope 只是一个所有权容器，它自己不是计算节点，没有“重跑”这回事，
 /// 因此不能成为 observer —— 里面的读取一律不建立依赖。
 #[track_caller]
-pub(crate) fn create_scope(f: impl FnOnce()) -> ReactiveResult<NodeId> {
+pub(crate) fn create_scope(f: impl FnOnce()) -> ReactiveResult<RawId> {
     let at = Location::caller();
     let (id, guards) = with_rt_or_init(|rt| {
         let id = rt.register_node_at(at);
@@ -562,7 +559,7 @@ pub(crate) fn create_scope(f: impl FnOnce()) -> ReactiveResult<NodeId> {
 
 /// 建一个独立的 (detached) 所有权 scope，其父节点为 None。
 #[track_caller]
-pub(crate) fn create_detached_scope<R, F: FnOnce() -> R>(f: F) -> ReactiveResult<(NodeId, R)> {
+pub(crate) fn create_detached_scope<R, F: FnOnce() -> R>(f: F) -> ReactiveResult<(RawId, R)> {
     let at = Location::caller();
     let (id, prev_owner_guard, inner_owner_guard, observer_guard) = with_rt_or_init(|rt| {
         let prev_owner = OwnerGuard::set(rt, None);
@@ -578,7 +575,6 @@ pub(crate) fn create_detached_scope<R, F: FnOnce() -> R>(f: F) -> ReactiveResult
     drop(prev_owner_guard);
     Ok((id, res))
 }
-
 
 /// 在 `f` 执行期间关闭依赖追踪 —— **只关追踪**。
 ///
@@ -625,14 +621,14 @@ pub(crate) fn on_cleanup(f: impl FnOnce() + 'static) {
 /// `Exit` 负责上升（跑 cleanup、退订、抹除节点）。
 pub(crate) enum DisposeStep {
     /// 下降：摘下节点的 children / cleanups / dependencies，把子树排进工作栈。
-    Enter(NodeId),
+    Enter(RawId),
     /// 上升：子树已经全部销毁，轮到节点自己。
     ///
     /// cleanups 与 dependencies 在 `Enter` 阶段就已经摘下来随帧带走 —— 这一点很
     /// 关键：cleanup 闭包可能反过来销毁本节点，届时它读到的是一份空列表，
     /// 不会把同一批 cleanup 跑第二遍。
     Exit {
-        id: NodeId,
+        id: RawId,
         cleanups: CleanupList,
         dependencies: DependencyList,
     },
@@ -640,7 +636,7 @@ pub(crate) enum DisposeStep {
 
 /// 销毁一个节点：跑它的清理函数、递归销毁子节点、退订它的全部依赖、
 /// 释放它占用的存储。已经销毁过的句柄再传进来是 no-op。
-pub(crate) fn dispose(id: NodeId) {
+pub(crate) fn dispose_raw(id: RawId) {
     if matches!(
         with_rt(|rt| rt.storage.graph.get(id).is_none()),
         Ok(true) | Err(_)
@@ -663,7 +659,7 @@ pub(crate) fn dispose(id: NodeId) {
 }
 
 /// 跑一个节点的清理，但**保留节点本身**（effect 重跑之前走这条）。
-pub(crate) fn clean_node(id: NodeId) {
+pub(crate) fn clean_node(id: RawId) {
     let taken = with_rt(|rt| {
         rt.storage.graph.get(id)?;
         let (children, cleanups) = rt.take_scope_state(id);
@@ -678,8 +674,8 @@ pub(crate) fn clean_node(id: NodeId) {
 /// 顺序与原先的递归实现完全一致：子树先于自身，同级按注册顺序，
 /// 自身的 cleanup 跑完之后才解除订阅。
 pub(crate) fn run_cleanups(
-    self_id: NodeId,
-    children: Vec<NodeId>,
+    self_id: RawId,
+    children: Vec<RawId>,
     cleanups: CleanupList,
     dependencies: DependencyList,
 ) {
@@ -699,7 +695,7 @@ pub(crate) fn run_cleanups(
 /// 再跑自己的 cleanup、退订、抹除自身。注意“摘下 children”这一步也是**惰性**的
 /// —— 只有轮到某个节点被 `Enter` 时才去读它的 children，因此前一个兄弟的 cleanup
 /// 闭包对后一个兄弟做的任何改动都仍然可见，和递归时一模一样。
-fn dispose_subtrees(roots: Vec<NodeId>) {
+fn dispose_subtrees(roots: Vec<RawId>) {
     if roots.is_empty() {
         // 绝大多数节点没有子节点（effect 每次重跑都会走到这里），什么都不做。
         return;
@@ -766,7 +762,7 @@ pub(crate) fn drain_graveyard() {
 ///
 /// 契约见 [`crate::try_get_any_raw_untracked`]：调用方负责类型正确，
 /// 并保证在使用期间不发生任何会让该地址失效的操作。
-pub(crate) unsafe fn get_any_raw_ptr_untracked(id: NodeId) -> Option<*const ()> {
+pub(crate) unsafe fn get_any_raw_ptr_untracked(id: RawId) -> Option<*const ()> {
     // 先把节点算干净，**再**取指针。少了这一步，读一个脏 memo / derived 会
     // 安静地拿到上一轮的值 —— 上层框架的类型擦除读取路径正是走这里，
     // 而它读到的可能是任何一种可读节点（AUDIT 二轮 §1.3）。

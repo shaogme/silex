@@ -1,4 +1,4 @@
-use crate::reactivity::NodeId;
+use crate::reactivity::RawId;
 use crate::traits::{RxBase, RxValue};
 
 impl RxValue for () {
@@ -6,7 +6,7 @@ impl RxValue for () {
 }
 
 impl RxBase for () {
-    fn id(&self) -> Option<NodeId> {
+    fn raw_id(&self) -> Option<RawId> {
         None
     }
     fn track(&self) {}
@@ -19,7 +19,7 @@ macro_rules! impl_rx_base_for_constant {
     ($($t:ty),*) => {
         $(
             impl RxBase for $t {
-                fn id(&self) -> Option<NodeId> { None }
+                fn raw_id(&self) -> Option<RawId> { None }
                 fn track(&self) {}
                 fn defined_at(&self) -> Option<&'static std::panic::Location<'static>> { None }
             }

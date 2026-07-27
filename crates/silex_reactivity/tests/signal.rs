@@ -17,9 +17,9 @@ fn test_signal_untracked() {
 
 #[test]
 fn test_signal_validity() {
-    let s = signal::create(1);
+    let (owner, s) = scope::create_detached(|| signal::create(1));
     assert!(s.is_alive());
-    scope::dispose(s);
+    scope::dispose(owner);
     // After dispose, it should be invalid
     // Note: depending on the implementation of dispose, it might be removed from reactive map
     assert!(!s.is_alive());

@@ -86,17 +86,19 @@ fn an_effect_closure_destructor_may_read_the_graph() {
     let counter = signal::create(0usize);
     let source = signal::create(1i32);
 
-    let e = effect::create({
+    let (effect_owner, _e) = scope::create_detached({
         let held = spy("captured", &log, Some(counter));
         move || {
-            // 让闭包真的捕获 `held`（否则它会被优化掉/提前析构）。
-            let _ = &held;
-            let _ = signal::get::<i32>(source);
+            effect::create(move || {
+                // 让闭包真的捕获 `held`（否则它会被优化掉/提前析构）。
+                let _ = &held;
+                let _ = signal::get::<i32>(source);
+            })
         }
     });
 
     assert!(taken(&log).is_empty(), "effect 还活着，闭包不该被析构");
-    scope::dispose(e);
+    scope::dispose(effect_owner);
 
     assert_eq!(taken(&log), vec!["drop-captured"]);
     assert_eq!(signal::get::<usize>(counter), Some(1));
@@ -244,7 +246,8 @@ fn destruction_order_is_unchanged_by_the_graveyard() {
 fn a_destructor_may_dispose_another_node() {
     let log = log();
 
-    let victim = store::create(spy("victim", &log, None));
+    let (victim_owner, victim) =
+        scope::create_detached(|| store::create(spy("victim", &log, None)));
 
     let root = scope::create({
         let log = log.clone();
@@ -254,7 +257,7 @@ fn a_destructor_may_dispose_another_node() {
             store::create(Killer {
                 tag: "killer",
                 log: l,
-                victim,
+                victim_owner,
             });
         }
     });
@@ -262,12 +265,12 @@ fn a_destructor_may_dispose_another_node() {
     struct Killer {
         tag: &'static str,
         log: Log,
-        victim: StoredId,
+        victim_owner: ScopeId,
     }
     impl Drop for Killer {
         fn drop(&mut self) {
             self.log.borrow_mut().push(format!("drop-{}", self.tag));
-            scope::dispose(self.victim);
+            scope::dispose(self.victim_owner);
         }
     }
 

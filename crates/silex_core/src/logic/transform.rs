@@ -45,7 +45,7 @@ where
         {
             return res;
         }
-        if let Some(id) = self.id() {
+        if let Some(id) = self.raw_id() {
             let op = StaticMapPayload::new1(id, f, false);
             Rx::new_op(op)
         } else {

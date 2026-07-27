@@ -44,8 +44,8 @@ fn batch_tracking_does_not_alias_the_owner_node() {
 #[test]
 fn batch_tracking_tolerates_self_and_dead_handles() {
     let alive = signal::create(1i32);
-    let dead = signal::create(2i32);
-    scope::dispose(dead);
+    let (dead_owner, dead) = scope::create_detached(|| signal::create(2i32));
+    scope::dispose(dead_owner);
 
     let runs = Rc::new(Cell::new(0));
     let r = runs.clone();

@@ -5,7 +5,7 @@ use wasm_bindgen_futures::spawn_local;
 use crate::{
     Rx, RxValueKind, SilexError,
     reactivity::{
-        NodeId,
+        RawId,
         signal::{ReadSignal, Signal, WriteSignal},
         stored_value::StoredValue,
     },
@@ -184,8 +184,8 @@ impl<Arg: RxData, T: RxData, E: RxData> RxValue for Mutation<Arg, T, E> {
 
 impl<Arg: RxData, T: RxData, E: RxData> RxBase for Mutation<Arg, T, E> {
     #[inline(always)]
-    fn id(&self) -> Option<NodeId> {
-        self.state.id()
+    fn raw_id(&self) -> Option<RawId> {
+        self.state.raw_id()
     }
 
     #[inline(always)]
