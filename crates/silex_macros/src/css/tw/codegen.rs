@@ -273,9 +273,41 @@ fn collapse_between_reversals(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
     rules
 }
 
+/// 编译期字号与行高解耦消解：
+///
+/// 在同一修饰符组（`ModifierList`）下，如果显式声明了独立的 `leading-*` 行高
+/// （即 `is_default_line_height == false`），则压制并丢弃同组内由 `text-*` 字号工具类
+/// 附带的默认行高声明（`is_default_line_height == true`），使显式行高不受类名书写顺序影响。
+fn collapse_text_leading_defaults(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
+    use std::collections::HashSet;
+
+    let mut explicit_leading_modifiers: HashSet<ModifierList> = HashSet::new();
+    for rule in &rules {
+        if rule.css_property == CssPropertyId::LineHeight && !rule.is_default_line_height {
+            explicit_leading_modifiers.insert(rule.modifiers.clone());
+        }
+    }
+
+    if explicit_leading_modifiers.is_empty() {
+        return rules;
+    }
+
+    rules
+        .into_iter()
+        .filter(|rule| {
+            if rule.css_property == CssPropertyId::LineHeight && rule.is_default_line_height {
+                !explicit_leading_modifiers.contains(&rule.modifiers)
+            } else {
+                true
+            }
+        })
+        .collect()
+}
+
 /// 编译期 Tailwind Merge: 相同修饰符组下的实用类属性消解 (基于 Bitmask 的高速覆盖计算，支持简写属性与长写属性关联覆盖，Last-wins 覆盖先出者)
 pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
     let rules = collapse_between_reversals(rules);
+    let rules = collapse_text_leading_defaults(rules);
     let mut covered_masks: HashMap<(ModifierList, u16), u64> = HashMap::new();
     let mut deduped_rev = Vec::new();
     // 用 Vec 而非 HashMap 保存：迭代顺序直接决定产出 CSS 的声明顺序与类名哈希，
@@ -363,6 +395,7 @@ pub(crate) fn deduplicate_utility_rules(rules: Vec<UtilityRule>) -> Vec<UtilityR
                 value,
                 // 合并后只剩一条声明，任一分量带 `!` 整条就得带
                 important,
+                is_default_line_height: false,
                 span: first_span,
             },
         );
@@ -924,6 +957,7 @@ mod tests {
                 css_property: CssPropertyId::Transform,
                 value: UtilityValue::ArbitraryLiteral("translateX(-50%)".to_string()),
                 important: false,
+                is_default_line_height: false,
                 span: Span::call_site(),
             },
             UtilityRule {
@@ -931,6 +965,7 @@ mod tests {
                 css_property: CssPropertyId::Transform,
                 value: UtilityValue::ArbitraryLiteral("translateY(-50%)".to_string()),
                 important: false,
+                is_default_line_height: false,
                 span: Span::call_site(),
             },
         ];
@@ -956,6 +991,7 @@ mod tests {
             css_property: CssPropertyId::Padding,
             value: UtilityValue::Numeric(2.0, "rem"),
             important: false,
+            is_default_line_height: false,
             span: Span::call_site(),
         };
         let sm_rule = UtilityRule {
@@ -963,6 +999,7 @@ mod tests {
             css_property: CssPropertyId::Padding,
             value: UtilityValue::Numeric(0.5, "rem"),
             important: false,
+            is_default_line_height: false,
             span: Span::call_site(),
         };
 
@@ -991,6 +1028,7 @@ mod tests {
             css_property: CssPropertyId::InsetX,
             value: UtilityValue::Numeric(0.0, "px"),
             important: false,
+            is_default_line_height: false,
             span: Span::call_site(),
         };
         let left_override = UtilityRule {
@@ -998,6 +1036,7 @@ mod tests {
             css_property: CssPropertyId::Left,
             value: UtilityValue::Numeric(1.0, "rem"),
             important: false,
+            is_default_line_height: false,
             span: Span::call_site(),
         };
 
@@ -1015,6 +1054,7 @@ mod tests {
             css_property: CssPropertyId::Transform,
             value: UtilityValue::ArbitraryLiteral("translate-x-0".to_string()),
             important: false,
+            is_default_line_height: false,
             span: Span::call_site(),
         };
         let dark_transform = UtilityRule {
@@ -1022,6 +1062,7 @@ mod tests {
             css_property: CssPropertyId::Transform,
             value: UtilityValue::ArbitraryLiteral("translate-x-full".to_string()),
             important: false,
+            is_default_line_height: false,
             span: Span::call_site(),
         };
 
@@ -1051,6 +1092,7 @@ mod tests {
             css_property: CssPropertyId::Padding,
             value: UtilityValue::Numeric(1.0, "rem"),
             important: false,
+            is_default_line_height: false,
             span: Span::call_site(),
         };
         let hover_padding = UtilityRule {
@@ -1058,6 +1100,7 @@ mod tests {
             css_property: CssPropertyId::Padding,
             value: UtilityValue::Numeric(2.0, "rem"),
             important: false,
+            is_default_line_height: false,
             span: Span::call_site(),
         };
         let override_padding = UtilityRule {
@@ -1065,6 +1108,7 @@ mod tests {
             css_property: CssPropertyId::Padding,
             value: UtilityValue::Numeric(1.5, "rem"),
             important: false,
+            is_default_line_height: false,
             span: Span::call_site(),
         };
 

@@ -56,16 +56,6 @@ const KNOWN_DIVERGENCES: &[(&str, Divergence, &str)] = &[
     ("-space-y-20", Divergence::Mechanism, "同 space-x-4"),
     ("-space-y-px", Divergence::Mechanism, "同 space-x-4"),
 
-    // --- 设计取舍：字号与行高解耦（报告 §3.2）--------------------------------
-    // Tailwind 用 `var(--tw-leading, var(--text-sm--line-height))` 让 `leading-*` 能单独覆盖行高，
-    // silex 在编译期把行高求成字面量。视觉结果相同，但 `text-sm leading-8` 的覆盖依赖声明顺序。
-    ("text-xs",  Divergence::ValueOnly, "line-height 求值为字面量而非 --tw-leading 变量链"),
-    ("text-sm",  Divergence::ValueOnly, "同 text-xs"),
-    ("text-lg",  Divergence::ValueOnly, "同 text-xs"),
-    ("text-xl",  Divergence::ValueOnly, "同 text-xs"),
-    ("text-2xl", Divergence::ValueOnly, "同 text-xs"),
-    ("text-8xl", Divergence::ValueOnly, "同 text-xs"),
-
     // --- 设计取舍：渐变方向内联而非走 --tw-gradient-position ------------------
     ("bg-linear-to-r", Divergence::ValueOnly, "方向内联进 linear-gradient()，Tailwind 放在 --tw-gradient-position"),
     ("bg-linear-to-b", Divergence::ValueOnly, "同 bg-linear-to-r"),
@@ -131,8 +121,8 @@ fn is_plumbing_value(value: &str) -> bool {
 
     while let Some(idx) = rest.find("var(--tw-") {
         residue.push_str(&rest[..idx]);
-        let after = &rest[idx + 4..];
-        let mut depth = 0i32;
+        let after = &rest[idx + 9..];
+        let mut depth = 1i32;
         let mut end = after.len();
         for (i, c) in after.char_indices() {
             match c {

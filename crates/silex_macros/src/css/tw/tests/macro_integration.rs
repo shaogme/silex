@@ -834,3 +834,70 @@ fn space_and_divide_dual_axis_and_order_invariance() {
     assert_eq!(map_divide_comp.get("border-right-width"), Some(&"4px"));
     assert_eq!(map_divide_comp.get("border-style"), Some(&"dashed"));
 }
+
+/// 验证 `text-*` 字号与 `leading-*` 行高在编译期的解耦消解机制（问题 6）
+#[test]
+fn text_and_leading_decoupling() {
+    // Helper: 将 CSS 声明转化为 BTreeMap
+    let to_map = |css: &str| {
+        let decls = extract_declarations(css);
+        let mut map = std::collections::BTreeMap::new();
+        for (p, v) in decls {
+            map.insert(p, v);
+        }
+        map
+    };
+
+    // 1. 顺序反转：leading-8 text-sm（显式 leading 在前，text-sm 在后）
+    // 必须胜出：leading-8 的 2rem 压制 text-sm 自带的 1.25rem 默认行高
+    let css_rev = css_of_static("leading-8 text-sm");
+    let map_rev = to_map(&css_rev);
+    assert_eq!(map_rev.get("font-size"), Some(&".875rem".to_string()));
+    assert_eq!(map_rev.get("line-height"), Some(&"2rem".to_string()));
+
+    // 2. 标准顺序：text-sm leading-8
+    let css_std = css_of_static("text-sm leading-8");
+    let map_std = to_map(&css_std);
+    assert_eq!(map_std.get("font-size"), Some(&".875rem".to_string()));
+    assert_eq!(map_std.get("line-height"), Some(&"2rem".to_string()));
+
+    // 3. 无显式行高：text-sm text-lg（后写的 text-lg 全覆盖）
+    let css_double_text = css_of_static("text-sm text-lg");
+    let map_double_text = to_map(&css_double_text);
+    assert_eq!(map_double_text.get("font-size"), Some(&"1.125rem".to_string()));
+    assert_eq!(map_double_text.get("line-height"), Some(&"1.75rem".to_string()));
+
+    // 4. 带斜杠简写：text-sm/6 leading-8（leading-8 在后）
+    let css_slash_1 = css_of_static("text-sm/6 leading-8");
+    let map_slash_1 = to_map(&css_slash_1);
+    assert_eq!(map_slash_1.get("font-size"), Some(&".875rem".to_string()));
+    assert_eq!(map_slash_1.get("line-height"), Some(&"2rem".to_string()));
+
+    // 5. 带斜杠简写：leading-8 text-sm/6（text-sm/6 的 /6 在后）
+    let css_slash_2 = css_of_static("leading-8 text-sm/6");
+    let map_slash_2 = to_map(&css_slash_2);
+    assert_eq!(map_slash_2.get("font-size"), Some(&".875rem".to_string()));
+    assert_eq!(map_slash_2.get("line-height"), Some(&"1.5rem".to_string()));
+
+    // 6. 多字号工具类与显式行高组合：leading-8 text-sm text-lg
+    let css_multi = css_of_static("leading-8 text-sm text-lg");
+    let map_multi = to_map(&css_multi);
+    assert_eq!(map_multi.get("font-size"), Some(&"1.125rem".to_string()));
+    assert_eq!(map_multi.get("line-height"), Some(&"2rem".to_string()));
+
+    // 7. 修饰符隔离测试：hover:leading-8 text-sm
+    let css_mod = css_of_static("hover:leading-8 text-sm");
+    let decls_mod = extract_declarations(&css_mod);
+    assert!(
+        decls_mod.iter().any(|(p, v)| p == "font-size" && (v == ".875rem" || v == "0.875rem")),
+        "基础修饰符应包含 text-sm 的 font-size: .875rem"
+    );
+    assert!(
+        decls_mod.iter().any(|(p, v)| p == "line-height" && v == "1.25rem"),
+        "无修饰符的基础组应保留 text-sm 自带的 1.25rem 默认行高"
+    );
+    assert!(
+        decls_mod.iter().any(|(p, v)| p == "line-height" && v == "2rem"),
+        "hover: 伪类下应独立包含 hover:leading-8 的 2rem 行高"
+    );
+}

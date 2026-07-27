@@ -154,6 +154,8 @@ pub struct UtilityRule {
     pub value: UtilityValue,
     /// `p-4!` / `!p-4` 的 `!important` 标记
     pub important: bool,
+    /// 该行高规则是否为 `text-*` 字号工具类附带的默认行高
+    pub is_default_line_height: bool,
     pub span: Span,
 }
 
@@ -219,6 +221,7 @@ impl Hash for UtilityRule {
         // important 进哈希：`p-4` 与 `p-4!` 是不同的声明，条件分支的编译缓存
         // 若把两者视为同一条会张冠李戴
         self.important.hash(state);
+        self.is_default_line_height.hash(state);
     }
 }
 

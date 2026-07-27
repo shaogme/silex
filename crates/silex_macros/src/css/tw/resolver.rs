@@ -137,6 +137,7 @@ where
         value,
         // `!important` 是词条级别的标记，由 `parser.rs` 在解析完整个词条后统一打上
         important: false,
+        is_default_line_height: false,
         span,
     })
 }
@@ -176,17 +177,31 @@ pub fn resolve_utility(
     // 1. at-rule 分组型工具类（`container` / `outline-hidden`）。
     //    必须排在静态表之前：静态表一行挂不了 `@media`，真让它先命中就等于
     //    永远拿不到条件分组——那正是报告 §3.1 说的"另一份实现是死代码"。
-    if let Some(meta) = lookup_at_rule_utility(utility_token) {
-        return at_rule_utility_to_rules(&modifiers, meta, span);
+    let mut rules = if let Some(meta) = lookup_at_rule_utility(utility_token) {
+        at_rule_utility_to_rules(&modifiers, meta, span)?
+    } else if let Some(rules) = resolve_static_rule(&modifiers, utility_token, span) {
+        rules
+    } else {
+        resolve_pattern_utility(modifiers, utility_token, span)?
+    };
+
+    // 若当前词条同时展开出了 FontSize 与 LineHeight（如 `text-sm`），
+    // 且不是显式指定行高的斜杠简写（如 `text-sm/6`），
+    // 则该 LineHeight 是字号档位自带的默认行高，标注 is_default_line_height = true。
+    let is_slash_shorthand = utility_token.contains('/') && utility_token.starts_with("text-");
+    if !is_slash_shorthand {
+        let has_font_size = rules.iter().any(|r| r.css_property == CssPropertyId::FontSize);
+        let has_line_height = rules.iter().any(|r| r.css_property == CssPropertyId::LineHeight);
+        if has_font_size && has_line_height {
+            for rule in rules.iter_mut() {
+                if rule.css_property == CssPropertyId::LineHeight {
+                    rule.is_default_line_height = true;
+                }
+            }
+        }
     }
 
-    // 2. 尝试匹配静态表规则 (static rules table)
-    if let Some(rules) = resolve_static_rule(&modifiers, utility_token, span) {
-        return Ok(rules);
-    }
-
-    // 3. 模式与规律型 Utility 解析
-    resolve_pattern_utility(modifiers, utility_token, span)
+    Ok(rules)
 }
 
 /// 用共享的颜色前缀规则展开一个「值已经算好」的颜色声明。
