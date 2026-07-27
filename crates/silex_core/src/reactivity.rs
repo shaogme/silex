@@ -9,7 +9,7 @@ pub use silex_reactivity::RawNodeId as NodeId;
 pub use silex_reactivity::{
     CallbackId, EffectId, MemoId, NodeRefId, RawNodeId, ReactiveError, ReactiveResult, ScopeId,
     SignalId, StoredId,
-    scope::{batch, create as create_scope, dispose, on_cleanup},
+    scope::{batch, create as create_scope, create_detached as create_detached_scope, dispose, on_cleanup},
     store::create as store_value,
 };
 

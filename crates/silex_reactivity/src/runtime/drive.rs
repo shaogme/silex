@@ -560,6 +560,26 @@ pub(crate) fn create_scope(f: impl FnOnce()) -> ReactiveResult<NodeId> {
     Ok(id)
 }
 
+/// 建一个独立的 (detached) 所有权 scope，其父节点为 None。
+#[track_caller]
+pub(crate) fn create_detached_scope<R, F: FnOnce() -> R>(f: F) -> ReactiveResult<(NodeId, R)> {
+    let at = Location::caller();
+    let (id, prev_owner_guard, inner_owner_guard, observer_guard) = with_rt_or_init(|rt| {
+        let prev_owner = OwnerGuard::set(rt, None);
+        let id = rt.register_node_at(at);
+        let inner_owner = OwnerGuard::set(rt, Some(id));
+        let observer = ObserverGuard::set(rt, None);
+        (id, prev_owner, inner_owner, observer)
+    })?;
+
+    let res = f();
+    drop(observer_guard);
+    drop(inner_owner_guard);
+    drop(prev_owner_guard);
+    Ok((id, res))
+}
+
+
 /// 在 `f` 执行期间关闭依赖追踪 —— **只关追踪**。
 ///
 /// 所有权上下文原封不动：`f` 里创建的节点照旧挂在当前 owner 下面，随它一起

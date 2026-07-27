@@ -11,6 +11,15 @@ pub fn create<F: FnOnce()>(f: F) -> ScopeId {
     ScopeId::from_raw(drive::create_scope(f).expect("刚建出来的运行时可用"))
 }
 
+/// 建一个独立的 (detached) 所有权 scope：它的父节点是 `None`，不挂在当前 owner 下面。
+/// 销毁外层 owner 时不会自动销毁它，调用者必须手动保存返回的 [`ScopeId`] 并由其掌控生命周期。
+#[track_caller]
+pub fn create_detached<R, F: FnOnce() -> R>(f: F) -> (ScopeId, R) {
+    let (id, res) = drive::create_detached_scope(f).expect("刚建出来的运行时可用");
+    (ScopeId::from_raw(id), res)
+}
+
+
 /// 销毁一个节点：跑它的清理函数、递归销毁子节点、退订它的全部依赖、
 /// 释放它占用的存储。已经销毁过的句柄再传进来是 no-op。
 ///

@@ -2,7 +2,7 @@ use crate::attribute::PendingAttribute;
 use crate::view::{AnyView, ApplyAttributes, View};
 use silex_core::SilexError;
 use silex_core::reactivity::{
-    Effect, ReadSignal, ScopeId, Signal, WriteSignal, batch, create_scope, dispose, untrack,
+    Effect, ReadSignal, ScopeId, Signal, WriteSignal, batch, create_detached_scope, dispose,
 };
 use silex_core::traits::{ForErrorHandler, ForLoopSource, RxRead, RxWrite};
 use std::collections::{HashMap, HashSet};
@@ -59,6 +59,12 @@ struct KeyedLoopRow<T> {
     index_setter: WriteSignal<usize>,
     scope_id: ScopeId,
     nodes: Vec<Node>,
+}
+
+impl<T> Drop for KeyedLoopRow<T> {
+    fn drop(&mut self) {
+        dispose(self.scope_id);
+    }
 }
 
 fn mount_keyed_loop_logic<IF, IS, T, K>(
@@ -119,18 +125,18 @@ fn mount_keyed_loop_logic<IF, IS, T, K>(
                         new_rows_order.push((key, row.nodes.clone(), row.scope_id, None));
                     } else {
                         // 新项逻辑
-                        let (nodes, scope_id, fragment, item_setter, index_setter) =
-                            untrack(|| {
-                                let fragment = document.create_document_fragment();
-                                let fragment_node: Node = fragment.clone().into();
-                                let (item_get, item_setter) = Signal::pair(item_ref.clone());
+                        let item_val = item_ref.clone();
+                        let view_fn = view_fn.clone();
+                        let fragment = document.create_document_fragment();
+                        let fragment_node: Node = fragment.clone().into();
+
+                        let (scope_id, (item_setter, index_setter, nodes, fragment_node_out)) =
+                            create_detached_scope(move || {
+                                let (item_get, item_setter) = Signal::pair(item_val);
                                 let (index_get, index_setter) = Signal::pair(index);
 
-                                let view_fn = view_fn.clone();
-                                let scope_id = create_scope(move || {
-                                    let view = (view_fn)(item_get, index_get);
-                                    view.mount_owned(&fragment_node, Vec::new());
-                                });
+                                let view = (view_fn)(item_get, index_get);
+                                view.mount_owned(&fragment_node, Vec::new());
 
                                 let nodes_list = fragment.child_nodes();
                                 let len = nodes_list.length();
@@ -140,7 +146,7 @@ fn mount_keyed_loop_logic<IF, IS, T, K>(
                                         nodes.push(n);
                                     }
                                 }
-                                (nodes, scope_id, fragment, item_setter, index_setter)
+                                (item_setter, index_setter, nodes, fragment_node)
                             });
 
                         rows_map.insert(
@@ -152,59 +158,40 @@ fn mount_keyed_loop_logic<IF, IS, T, K>(
                                 nodes: nodes.clone(),
                             },
                         );
-                        new_rows_order.push((key, nodes, scope_id, Some(fragment)));
+                        new_rows_order.push((key, nodes, scope_id, Some(fragment_node_out)));
                     };
                 }
 
                 // 清理旧项
-                rows_map.retain(|k, row| {
-                    if !new_keys.contains(k) {
-                        for node in &row.nodes {
-                            if let Some(p) = node.parent_node() {
-                                let _ = p.remove_child(node);
-                            }
-                        }
-                        dispose(row.scope_id);
-                        false
-                    } else {
-                        true
-                    }
-                });
+                rows_map.retain(|k, _| new_keys.contains(k));
 
-                // 物理协调 DOM 顺序
-                let mut cursor = start_node.next_sibling();
-
-                for (_key, nodes, _id, fragment_opt) in new_rows_order {
+                // 2. DOM 节点重排 (Reordering)
+                let mut cursor: Option<Node> = None;
+                for (_key, nodes, _scope_id, fragment_opt) in new_rows_order.iter().rev() {
                     if let Some(frag) = fragment_opt {
-                        // 如果是新创建的 Fragment，插入到 cursor 前面
                         let effective_cursor = cursor.as_ref().unwrap_or(&end_node);
                         if let Some(parent) = effective_cursor.parent_node() {
-                            let _ = parent.insert_before(&frag, Some(effective_cursor));
+                            let _ = parent.insert_before(frag, Some(effective_cursor));
                         }
-                    } else {
-                        // 如果是已有项，检查其 DOM 位置
-                        if nodes.is_empty() {
-                            continue;
-                        }
+                        cursor = nodes.first().cloned();
+                    } else if !nodes.is_empty() {
+                        let last_node = nodes.last().unwrap();
+                        let effective_cursor = cursor.as_ref().unwrap_or(&end_node);
+                        let is_already_correct = last_node
+                            .next_sibling()
+                            .map_or(false, |next| &next == effective_cursor);
 
-                        let first_node = &nodes[0];
-                        let is_in_place = cursor
-                            .as_ref()
-                            .is_some_and(|c| c.is_same_node(Some(first_node)));
-
-                        if is_in_place {
-                            // 已经在正确位置，跳过这组节点
-                            for _ in 0..nodes.len() {
-                                cursor = cursor.and_then(|c| c.next_sibling());
-                            }
+                        if is_already_correct {
+                            cursor = nodes.first().cloned();
                         } else {
                             // 不在正确位置，移动到 cursor 前面
                             let effective_cursor = cursor.as_ref().unwrap_or(&end_node);
                             if let Some(parent) = effective_cursor.parent_node() {
-                                for node in &nodes {
+                                for node in nodes {
                                     let _ = parent.insert_before(node, Some(effective_cursor));
                                 }
                             }
+                            cursor = nodes.first().cloned();
                         }
                     }
                 }
@@ -250,6 +237,12 @@ struct IndexedLoopRow<T> {
     nodes: Vec<Node>,
 }
 
+impl<T> Drop for IndexedLoopRow<T> {
+    fn drop(&mut self) {
+        dispose(self.scope_id);
+    }
+}
+
 fn mount_indexed_loop_logic<IF, T, IS>(
     items_fn: IF,
     view_fn: Rc<dyn Fn(ReadSignal<T>, ReadSignal<usize>) -> AnyView + 'static>,
@@ -291,20 +284,19 @@ fn mount_indexed_loop_logic<IF, T, IS>(
                 // 添加新增项
                 if new_len > old_len {
                     for (i, item) in items_slice[common_len..].iter().enumerate() {
-                        let (item_setter, index_setter, scope_id, nodes, fragment_node) =
-                            untrack(|| {
-                                let real_index = common_len + i;
-                                let (get, item_setter) = Signal::pair(item.clone());
-                                let (index_get, index_setter) = Signal::pair(real_index);
-                                let fragment = document.create_document_fragment();
-                                let fragment_node: Node = fragment.clone().into();
-                                let fragment_node_clone = fragment_node.clone();
-                                let view_fn = view_fn.clone();
+                        let real_index = common_len + i;
+                        let item_val = item.clone();
+                        let view_fn = view_fn.clone();
+                        let fragment = document.create_document_fragment();
+                        let fragment_node: Node = fragment.clone().into();
 
-                                let scope_id = create_scope(move || {
-                                    (view_fn)(get, index_get)
-                                        .mount_owned(&fragment_node_clone, Vec::new());
-                                });
+                        let (scope_id, (item_setter, index_setter, nodes, fragment_node_out)) =
+                            create_detached_scope(move || {
+                                let (get, item_setter) = Signal::pair(item_val);
+                                let (index_get, index_setter) = Signal::pair(real_index);
+
+                                (view_fn)(get, index_get)
+                                    .mount_owned(&fragment_node, Vec::new());
 
                                 let nodes_list = fragment.child_nodes();
                                 let len = nodes_list.length();
@@ -314,12 +306,12 @@ fn mount_indexed_loop_logic<IF, T, IS>(
                                         nodes.push(n);
                                     }
                                 }
-                                (item_setter, index_setter, scope_id, nodes, fragment_node)
+                                (item_setter, index_setter, nodes, fragment_node)
                             });
 
                         // 插入到 end_node 之前
                         if let Some(p) = end_node.parent_node() {
-                            let _ = p.insert_before(&fragment_node, Some(&end_node));
+                            let _ = p.insert_before(&fragment_node_out, Some(&end_node));
                         }
 
                         rows_list.push(IndexedLoopRow {
@@ -335,10 +327,9 @@ fn mount_indexed_loop_logic<IF, T, IS>(
                 if old_len > new_len {
                     let to_remove = rows_list.split_off(new_len);
                     for row in to_remove {
-                        dispose(row.scope_id);
-                        for node in row.nodes {
+                        for node in &row.nodes {
                             if let Some(p) = node.parent_node() {
-                                let _ = p.remove_child(&node);
+                                let _ = p.remove_child(node);
                             }
                         }
                     }
