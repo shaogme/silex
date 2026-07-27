@@ -12,10 +12,10 @@
 //! `List<NodeId>`”），于是 BFS 每访问一个节点就要整表拷贝一次，还得配一套
 //! `vec_pool` / `deque_pool` 去缓解这个由抽象自己引入的问题（审计报告 §3.3）。
 //!
-//! 阶段三把 `ReactiveNode` 的元数据换成 `Cell` 之后，“持有一个节点的引用去改
-//! 另一个节点的状态”成了合法操作，原地遍历才第一次成为可能。于是：
+//! B4 把节点拆成独立的 meta / links / value / computation 表之后，
+//! “遍历一张表、修改另一张表”由借用检查器直接保证，于是：
 //!
-//! - 两个算法变成 [`Runtime`] 上的方法，直接在 `List<NodeId>` 上走；
+//! - 两个算法变成 [`Runtime`] 上的方法，直接在 links 表上走；
 //! - `Vec` 物化与 `vec_pool` 一并删除（求值 DFS 的工作栈仍然池化）；
 //! - `evaluate` 的依赖扫描带上游标，不再对同一个节点反复全量重扫（§2.2）；
 //! - 那批单元测试改在**真实的** `Runtime` 上搭图 —— 顺带把“真实存储与测试
@@ -26,7 +26,7 @@ use crate::{
     runtime::{
         Runtime,
         scheduler::Scheduler,
-        storage::{ReactiveNode, Storage},
+        storage::{NodeLinks, NodeMeta, Storage},
     },
 };
 use std::collections::VecDeque;
@@ -80,17 +80,18 @@ impl Runtime {
     ///
     /// # `f` 里能做什么
     ///
-    /// 遍历期间本节点的 signal 载荷处于**共享借用**状态，因此 `f` 不得改动
-    /// **本节点自己**的订阅者表。传播只写 `Cell` 元数据、effect 队列与调度器
-    /// 的旁路表，而且一个节点不可能订阅自己（`track_dependency` 在
-    /// `observer == target` 时直接返回），这条约束是被结构性满足的。
+    /// 遍历期间 links 表只读借用，因此 `f` 只修改不相交的 meta 表、effect 队列
+    /// 与调度器旁路表；一个节点不可能订阅自己。
     #[inline]
-    fn for_each_subscriber(storage: &Storage, id: NodeId, mut f: impl FnMut(NodeId)) {
-        let Some(node) = storage.node(id) else {
+    fn for_each_subscriber(
+        links: &crate::internal::arena::SparseSecondaryMap<NodeLinks, 64>,
+        id: NodeId,
+        mut f: impl FnMut(NodeId),
+    ) {
+        let Some(node_links) = links.get(id) else {
             return;
         };
-        let slot = node.signal.borrow();
-        for &sub_id in slot.subscribers.as_slice() {
+        for &sub_id in node_links.subscribers.as_slice() {
             f(sub_id);
         }
     }
@@ -100,11 +101,9 @@ impl Runtime {
     /// 返回它以及它在依赖表里的下标。跳过正在运行的依赖：等它变干净会死循环
     /// （它不可能在本次 DFS 中变干净）。
     fn next_unclean_dependency(&self, id: NodeId, from: usize) -> Option<(NodeId, usize)> {
-        let node = self.storage.node(id)?;
-        let slot = node.effect.borrow();
-        let deps = slot.dependencies.as_slice();
+        let deps = self.storage.links.get(id)?.dependencies.as_slice();
         let start = from.min(deps.len());
-        for (offset, &(dep_id, _)) in deps.iter().enumerate().skip(start) {
+        for (offset, &(dep_id, _, _)) in deps.iter().enumerate().skip(start) {
             if self.storage.get_state(dep_id) != NodeState::Clean
                 && !self.storage.is_running(dep_id)
             {
@@ -116,15 +115,15 @@ impl Runtime {
 
     /// 依赖的版本号相对上一次运行有没有变过 —— `Check -> Clean` 的快路径。
     fn dependencies_changed(&self, id: NodeId) -> bool {
-        let Some(node) = self.storage.node(id) else {
+        let Some(dependencies) = self.storage.links.get(id) else {
             return false;
         };
-        let slot = node.effect.borrow();
-        slot.dependencies
+        dependencies
+            .dependencies
             .as_slice()
             .iter()
-            .any(|&(dep_id, expected)| match self.storage.node(dep_id) {
-                Some(dep) if dep.has_value() => dep.version.get() != expected,
+            .any(|&(dep_id, expected, _)| match self.storage.meta(dep_id) {
+                Some(dep) if dep.has_value() => dep.version != expected,
                 // 依赖已经没了（或者根本没有值）：一律当作变了。
                 _ => true,
             })
@@ -136,28 +135,36 @@ impl Runtime {
     pub(crate) fn propagate(&mut self, start_node: NodeId, queue: &mut VecDeque<NodeId>) {
         queue.clear();
 
-        // 显式解构出两个**不相交**的字段借用：订阅者表来自 `storage`（共享借用
-        // 就够，状态是 `Cell`），而入队要改 `scheduler`。少了这一步，
-        // “借着 A 的订阅者表去改 B 的状态”根本写不出来 —— 借用检查器只看得见
-        // 整个 `self`（设计文档 §4.3）。
+        // links 与 meta 是两张不相交的表：传播可以遍历前者，同时修改后者。
         let Runtime {
             storage, scheduler, ..
         } = self;
+        let Storage { meta, links, .. } = storage;
 
         // 直接订阅者一律 Dirty。
-        Self::for_each_subscriber(storage, start_node, |sub_id| {
-            if storage.get_state(sub_id) != NodeState::Dirty {
-                storage.set_state(sub_id, NodeState::Dirty);
-                Self::schedule_or_walk(storage, scheduler, sub_id, queue);
+        Self::for_each_subscriber(links, start_node, |sub_id| {
+            if meta
+                .get(sub_id)
+                .is_some_and(|node| node.state != NodeState::Dirty)
+            {
+                if let Some(node) = meta.get_mut(sub_id) {
+                    node.state = NodeState::Dirty;
+                }
+                Self::schedule_or_walk(meta, scheduler, sub_id, queue);
             }
         });
 
         while let Some(current_id) = queue.pop_front() {
-            Self::for_each_subscriber(storage, current_id, |sub_id| {
+            Self::for_each_subscriber(links, current_id, |sub_id| {
                 // 只把 Clean 提升到 Check —— 绝不把已经 Dirty 的节点降级。
-                if storage.get_state(sub_id) == NodeState::Clean {
-                    storage.set_state(sub_id, NodeState::Check);
-                    Self::schedule_or_walk(storage, scheduler, sub_id, queue);
+                if meta
+                    .get(sub_id)
+                    .is_some_and(|node| node.state == NodeState::Clean)
+                {
+                    if let Some(node) = meta.get_mut(sub_id) {
+                        node.state = NodeState::Check;
+                    }
+                    Self::schedule_or_walk(meta, scheduler, sub_id, queue);
                 }
             });
         }
@@ -166,12 +173,12 @@ impl Runtime {
     /// effect 进队列（它没有订阅者语义上的下游，传播到它为止），其余继续走 BFS。
     #[inline]
     fn schedule_or_walk(
-        storage: &Storage,
+        meta: &crate::internal::arena::SparseSecondaryMap<NodeMeta, 64>,
         scheduler: &mut Scheduler,
         id: NodeId,
         queue: &mut VecDeque<NodeId>,
     ) {
-        if storage.node(id).is_some_and(ReactiveNode::is_effect) {
+        if meta.get(id).is_some_and(NodeMeta::is_effect) {
             scheduler.queue_effect(id);
         } else {
             queue.push_back(id);
@@ -203,7 +210,7 @@ impl Runtime {
     /// 依赖成环时 panic。`stack` 保存的是一条从目标节点出发的**简单路径**，
     /// 一个节点第二次出现就意味着环 —— 之前没有任何检测，`A -> B -> A` 会让
     /// 这个循环一直压栈直到 OOM（AUDIT P13）。
-    pub(crate) fn eval_step(&self, stack: &mut Vec<EvalFrame>) -> Step {
+    pub(crate) fn eval_step(&mut self, stack: &mut Vec<EvalFrame>) -> Step {
         while let Some(&EvalFrame {
             node: current,
             cursor,
@@ -289,7 +296,7 @@ mod tests {
         internal::value::{AnyValue, Computation, EffectThunk, MemoThunk},
         runtime::{
             drive,
-            storage::{EffectSlot, NodeFlags, ReactiveNode, SignalSlot},
+            storage::{NodeFlags, NodeLinks, NodeMeta},
             with_rt_or_init,
         },
     };
@@ -340,17 +347,12 @@ mod tests {
                 } else {
                     Computation::Effect(EffectThunk::new(move || ran.borrow_mut().push(id)))
                 };
-                rt.storage.reactive.insert(
+                rt.storage.insert_reactive(
                     id,
-                    ReactiveNode::new(
-                        NodeState::Clean,
-                        flags,
-                        SignalSlot::default(),
-                        EffectSlot {
-                            computation: Some(thunk),
-                            dependencies: Default::default(),
-                        },
-                    ),
+                    NodeMeta::new(NodeState::Clean, flags),
+                    NodeLinks::default(),
+                    flags.has(NodeFlags::VALUE).then(|| AnyValue::new(0i32)),
+                    Some(thunk),
                 );
                 id
             })
@@ -370,21 +372,21 @@ mod tests {
         /// `from` 的变化会传播到 `to`（即 `to` 依赖 `from`）。
         fn edge(&self, from: NodeId, to: NodeId) {
             with_rt_or_init(|rt| {
-                let version = rt.storage.node(from).map_or(0, |n| n.version.get());
-                rt.storage
-                    .node(from)
+                let version = rt.storage.meta(from).map_or(0, |node| node.version);
+                let subscribers = &mut rt
+                    .storage
+                    .links
+                    .get_mut(from)
                     .expect("from 必须存在")
-                    .signal
-                    .borrow_mut()
-                    .subscribers
-                    .push(to);
+                    .subscribers;
+                let subscriber_index = subscribers.len();
+                subscribers.push(to);
                 rt.storage
-                    .node(to)
+                    .links
+                    .get_mut(to)
                     .expect("to 必须存在")
-                    .effect
-                    .borrow_mut()
                     .dependencies
-                    .push((from, version));
+                    .push((from, version, subscriber_index));
             })
             .expect("运行时可用");
         }
@@ -400,7 +402,7 @@ mod tests {
         fn set_running(&self, id: NodeId, running: bool) {
             with_rt_or_init(|rt| {
                 rt.storage
-                    .node(id)
+                    .meta_mut(id)
                     .expect("节点必须存在")
                     .set_running(running);
             })
@@ -408,7 +410,7 @@ mod tests {
         }
 
         fn alive(&self, id: NodeId) -> bool {
-            with_rt_or_init(|rt| rt.storage.node(id).is_some()).expect("运行时可用")
+            with_rt_or_init(|rt| rt.storage.meta(id).is_some()).expect("运行时可用")
         }
 
         fn ran(&self) -> Vec<NodeId> {
@@ -554,7 +556,7 @@ mod tests {
             let g = Graph::new();
             let (a, b) = (g.signal(), g.memo());
             g.edge(a, b);
-            with_rt_or_init(|rt| rt.storage.node(a).expect("a 活着").bump_version())
+            with_rt_or_init(|rt| rt.storage.meta_mut(a).expect("a 活着").bump_version())
                 .expect("运行时可用");
             g.set_state(b, NodeState::Check);
 

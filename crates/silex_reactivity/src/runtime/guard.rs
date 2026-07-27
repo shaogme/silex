@@ -260,12 +260,14 @@ impl NodeRunGuard {
     pub(crate) fn release(&mut self, rt: &mut Runtime) {
         self.released = true;
         // 节点在自己的运行期间被销毁了：闭包随守卫一起析构。
-        let Some(node) = rt.storage.node(self.id) else {
+        let Some(node) = rt.storage.meta_mut(self.id) else {
             return;
         };
         node.set_running(false);
-        if let Some(f) = self.computation.take() {
-            node.effect.borrow_mut().computation = Some(f);
+        if let Some(f) = self.computation.take()
+            && let Some(computation) = rt.storage.computation_mut(self.id)
+        {
+            *computation = Some(f);
         }
     }
 }
@@ -299,15 +301,17 @@ impl Drop for NodeRunGuard {
 
         let _ = with_rt(|rt| {
             // 节点在自己的运行期间被销毁时走到这里：`computation` 随守卫一起析构。
-            let Some(node) = rt.storage.node(id) else {
+            let Some(node) = rt.storage.meta_mut(id) else {
                 return;
             };
             if interrupted && node.has_value() {
-                node.state.set(NodeState::Dirty);
+                node.state = NodeState::Dirty;
             }
             node.set_running(false);
-            if let Some(f) = computation {
-                node.effect.borrow_mut().computation = Some(f);
+            if let Some(f) = computation
+                && let Some(slot) = rt.storage.computation_mut(id)
+            {
+                *slot = Some(f);
             }
         });
     }
@@ -364,14 +368,16 @@ impl SignalValueGuard {
 
 /// 把借出的值放回节点。节点已经不在了就让值随之析构（它在调用方的栈上）。
 fn put_back(rt: &mut Runtime, id: NodeId, value: Option<AnyValue>, bump: bool) {
-    let Some(node) = rt.storage.node(id) else {
-        return;
-    };
     if bump {
+        let Some(node) = rt.storage.meta_mut(id) else {
+            return;
+        };
         node.bump_version();
     }
-    if let Some(value) = value {
-        node.signal.borrow_mut().value = Some(value);
+    if let Some(value) = value
+        && let Some(slot) = rt.storage.value_mut(id)
+    {
+        *slot = Some(value);
     }
 }
 
@@ -412,14 +418,12 @@ pub(crate) struct PayloadGuard {
 impl PayloadGuard {
     /// 把载荷移出节点，节点里换成 `None`。
     pub(crate) fn acquire(rt: &mut Runtime, id: NodeId) -> ReactiveResult<Self> {
-        let slot = rt.storage.extras.get(id).ok_or(ReactiveError::NoSuchNode)?;
-        // `try_borrow_mut` 而不是 `borrow_mut`：外层闭包正握着它时给一句
-        // 明确的诊断，而不是一句 `already borrowed` 的 panic。
-        let taken = slot
-            .try_borrow_mut()
-            .map_err(|_| ReactiveError::Reentrant)?
-            .take()
-            .ok_or(ReactiveError::Reentrant)?;
+        let slot = rt
+            .storage
+            .extras
+            .get_mut(id)
+            .ok_or(ReactiveError::NoSuchNode)?;
+        let taken = slot.take().ok_or(ReactiveError::Reentrant)?;
         Ok(Self {
             id,
             value: Some(taken),
@@ -441,11 +445,11 @@ impl Drop for PayloadGuard {
         let id = self.id;
         let _ = with_rt(|rt| {
             // 节点在闭包执行期间被销毁时走到这里：值随守卫一起析构。
-            let Some(slot) = rt.storage.extras.get(id) else {
+            let Some(slot) = rt.storage.extras.get_mut(id) else {
                 return;
             };
             if let Some(value) = value {
-                *slot.borrow_mut() = Some(value);
+                *slot = Some(value);
             }
         });
     }

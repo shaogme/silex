@@ -90,7 +90,7 @@ jobs:
 
       # 只跑含大量 unsafe 的底层 crate：它们不依赖 wasm-bindgen，可以在 Miri 下执行。
       - name: Run Miri
-        run: cargo miri test -p silex_reactivity -p silex_vtable -p silex_thread_local
+        run: cargo miri test -p silex_reactivity -p silex_vtable
 
   ci-success:
     name: CI Success

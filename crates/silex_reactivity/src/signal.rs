@@ -41,10 +41,8 @@ pub fn create<T: 'static>(value: T) -> SignalId {
 ///
 /// # 契约
 ///
-/// `T::clone` 在运行时的借用之内执行。这条从前是一句只能靠人工遵守的约定
-/// （“`clone` 里不得销毁这个节点，否则 UB”）；访问入口收成 `&mut Runtime`
-/// 之后它变成了**做不到**的事 —— `clone` 里对运行时的任何调用都拿不到借用，
-/// 一律返回 [`Reentrant`](ReactiveError::Reentrant)。需要在读的时候执行任意
+/// `T::clone` 在运行时的独占借用之内执行。`clone` 里对运行时的调用会拿不到
+/// 借用并返回 [`Reentrant`](ReactiveError::Reentrant)。需要在读的时候执行任意
 /// 用户代码请用 [`try_with`]，那条路径会先把值移出节点。
 pub fn try_get<T: Clone + 'static>(id: impl Readable) -> ReactiveResult<T> {
     read(id.to_raw(), true)
@@ -68,7 +66,7 @@ fn read<T: Clone + 'static>(raw: RawNodeId, track: bool) -> ReactiveResult<T> {
         if track {
             rt.track_dependency(raw);
         }
-        Some(rt.signal_value(raw).and_then(|v| downcast_cloned::<T>(&v)))
+        Some(rt.signal_value(raw).and_then(|v| downcast_cloned::<T>(v)))
     })?;
     if let Some(result) = fast {
         return result;
@@ -80,7 +78,7 @@ fn read<T: Clone + 'static>(raw: RawNodeId, track: bool) -> ReactiveResult<T> {
     } else {
         drive::prepare_read_untracked(raw);
     }
-    with_rt(|rt| rt.signal_value(raw).and_then(|v| downcast_cloned::<T>(&v)))?
+    with_rt(|rt| rt.signal_value(raw).and_then(|v| downcast_cloned::<T>(v)))?
 }
 
 /// [`try_get`] 的便捷形式：把任何失败折叠成 `None`。

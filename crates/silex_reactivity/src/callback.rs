@@ -8,7 +8,7 @@ type Erased = Rc<dyn Fn(Box<dyn Any>)>;
 /// 注册一个类型擦除的回调，返回可以到处传递的句柄。
 ///
 /// 回调的生命周期与所属 scope 绑定：scope 销毁后 [`invoke`] 变成一个
-/// [`NoSuchNode`](ReactiveError::NoSuchNode)。
+/// [`NoSuchNode`](crate::ReactiveError::NoSuchNode)。
 #[track_caller]
 pub fn create<F>(f: F) -> CallbackId
 where

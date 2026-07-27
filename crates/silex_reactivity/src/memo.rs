@@ -13,7 +13,7 @@
 //! effect 是 `FnMut()`、memo 是 `Fn(Option<&T>) -> T`，签名对不上，就用一层
 //! 类型擦除硬凑成一个。阶段三方案 B 把用户代码从运行时内部提到驱动循环之后，
 //! 驱动本来就知道节点 id、也拿得到旧值，于是可以直接分派 ——
-//! [`Computation`](crate::internal::value::Computation) 一个两变体的枚举就够了，
+//! `Computation` 一个两变体的枚举就够了，
 //! memo 的闭包交给 `MemoThunk`（也就是一个普通的 `ThunkBox`）自己装。
 
 use crate::{DerivedId, MemoId, internal::value::MemoThunk, runtime::drive};

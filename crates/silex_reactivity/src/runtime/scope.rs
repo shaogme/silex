@@ -86,27 +86,46 @@ impl Runtime {
     }
 
     /// 摘下一个节点的子节点列表与 cleanup 列表。
-    pub(crate) fn take_scope_state(&self, id: NodeId) -> (Vec<NodeId>, CleanupList) {
-        let Some(aux) = self.storage.node_aux.get(id) else {
+    pub(crate) fn take_scope_state(&mut self, id: NodeId) -> (Vec<NodeId>, CleanupList) {
+        let Some(aux) = self.storage.node_aux.get_mut(id) else {
             return (Vec::new(), CleanupList::Empty);
         };
-        let mut aux = aux.borrow_mut();
         (mem::take(&mut aux.children), mem::take(&mut aux.cleanups))
     }
 
     /// 摘下一个计算节点的依赖列表。
-    pub(crate) fn take_dependencies(&self, id: NodeId) -> DependencyList {
-        let Some(node) = self.storage.node(id) else {
+    pub(crate) fn take_dependencies(&mut self, id: NodeId) -> DependencyList {
+        let Some(links) = self.storage.links.get_mut(id) else {
             return DependencyList::default();
         };
-        mem::take(&mut node.effect.borrow_mut().dependencies)
+        mem::take(&mut links.dependencies)
     }
 
     /// 把 `self_id` 从它所有依赖的订阅者表里摘掉。
-    pub(crate) fn unsubscribe(&self, self_id: NodeId, dependencies: DependencyList) {
-        for (dep_id, _) in dependencies {
-            if let Some(dep) = self.storage.node(dep_id) {
-                dep.signal.borrow_mut().subscribers.remove(&self_id);
+    pub(crate) fn unsubscribe(&mut self, self_id: NodeId, dependencies: DependencyList) {
+        for (dep_id, _, subscriber_index) in dependencies {
+            let Some((moved_id, last_index)) =
+                self.storage.links.get_mut(dep_id).and_then(|links| {
+                    let index = if links.subscribers.get(subscriber_index) == Some(&self_id) {
+                        subscriber_index
+                    } else {
+                        links.subscribers.iter().position(|&id| id == self_id)?
+                    };
+                    let last_index = links.subscribers.len() - 1;
+                    links.subscribers.swap_remove(index);
+                    (index < last_index).then(|| (links.subscribers[index], last_index))
+                })
+            else {
+                continue;
+            };
+
+            if let Some(moved_links) = self.storage.links.get_mut(moved_id) {
+                for edge in moved_links.dependencies.as_mut_slice() {
+                    if edge.0 == dep_id && edge.2 == last_index {
+                        edge.2 = subscriber_index;
+                        break;
+                    }
+                }
             }
         }
     }
@@ -125,8 +144,8 @@ impl Runtime {
             let label = self
                 .storage
                 .node_aux
-                .get(id)
-                .and_then(|aux| aux.borrow_mut().debug_label.take());
+                .get_mut(id)
+                .and_then(|aux| aux.debug_label.take());
             if let Some(label) = label {
                 self.storage.remember_dead_label(id, label);
             }
@@ -135,13 +154,13 @@ impl Runtime {
         // `Node` 自己只有 parent 与定义位置，不含用户数据，可以就地析构。
         self.storage.graph.remove(id);
         if let Some(aux) = self.storage.node_aux.remove(id) {
-            self.storage.bury(Debris::Aux(aux.into_inner()));
+            self.storage.bury(Debris::Aux(aux));
         }
-        if let Some(node) = self.storage.reactive.remove(id) {
+        if let Some(node) = self.storage.remove_reactive(id) {
             self.storage.bury(Debris::Node(node));
         }
         if let Some(payload) = self.storage.extras.remove(id)
-            && let Some(value) = payload.into_inner()
+            && let Some(value) = payload
         {
             self.storage.bury(Debris::Payload(value));
         }

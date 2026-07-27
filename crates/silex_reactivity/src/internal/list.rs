@@ -177,8 +177,17 @@ impl<T> ThinVec<T> {
         }
     }
 
+    fn as_mut_slice(&mut self) -> &mut [T] {
+        match self.ptr {
+            // SAFETY: 前 len 个元素已初始化，独占借用保证返回的切片不会别名。
+            Some(base) => unsafe { slice::from_raw_parts_mut(data_ptr::<T>(base), len_of(base)) },
+            None => &mut [],
+        }
+    }
+
     /// 取出唯一剩余的元素并把长度清零（保留分配）。
     /// 供 [`List`] 做 `Many -> Single` 降级使用，避免调用方越层操作内部布局。
+    #[cfg(test)]
     fn take_only(&mut self) -> Option<T> {
         let base = self.ptr?;
         // SAFETY: len == 1 时 index 0 的元素已初始化；读出后把 len 置 0，
@@ -197,6 +206,7 @@ impl<T> ThinVec<T> {
 impl<T: PartialEq> ThinVec<T> {
     /// Removes the first occurrence of `elem`.
     /// Returns true if removed.
+    #[cfg(test)]
     fn remove(&mut self, elem: &T) -> bool {
         let Some(base) = self.ptr else { return false };
 
@@ -384,9 +394,19 @@ impl<T> List<T> {
             Self::Many(vec) => vec.as_slice(),
         }
     }
+
+    #[inline]
+    pub(crate) fn as_mut_slice(&mut self) -> &mut [T] {
+        match self {
+            Self::Empty => &mut [],
+            Self::Single(val) => std::slice::from_mut(val),
+            Self::Many(vec) => vec.as_mut_slice(),
+        }
+    }
 }
 
 impl<T: PartialEq> List<T> {
+    #[cfg(test)]
     pub(crate) fn remove(&mut self, elem: &T) {
         match self {
             Self::Empty => {}

@@ -1,7 +1,7 @@
 //! “稍后填充”的宿主元素引用（DOM 节点等）。
 //!
-//! 就是一个存着 `Option<T>` 的 [`store`](crate::store) 节点，只是句柄的种类不同
-//! —— 这样 [`set`] 与 [`store::try_update`](crate::store::try_update) 不会互相
+//! 就是一个存着 `Option<T>` 的 [`store`] 节点，只是句柄的种类不同
+//! —— 这样 [`set`] 与 [`store::try_update`] 不会互相
 //! 串门。
 
 use crate::{NodeRefId, ReactiveResult, store};

@@ -46,7 +46,7 @@ use crate::{
             OwnerGuard, PayloadGuard, QueueGuard, SignalValueGuard,
         },
         scheduler::MAX_QUEUE_ITERATIONS,
-        storage::{CleanupList, Debris, ReactiveNode},
+        storage::{CleanupList, Debris, NodeFlags, NodeLinks, NodeMeta},
         with_rt, with_rt_or_init,
     },
 };
@@ -271,16 +271,17 @@ fn recompute_memo(id: NodeId, thunk: &MemoThunk, old: Option<AnyValue>) {
             return (false, false);
         }
         // 节点已经没了：新值原样留在 `new_any` 里，在借用之外析构。
-        let Some(node) = rt.storage.node(id) else {
+        if rt.storage.meta(id).is_none() {
             return (false, false);
-        };
-        node.bump_version();
-        let old = node
-            .signal
-            .borrow_mut()
-            .value
-            .replace(new_any.take().expect("每次重算只提交一次"));
-        // 节点的借用到此为止，下一行才能拿 `&mut storage` 去推墓园。
+        }
+        rt.storage
+            .meta_mut(id)
+            .expect("节点刚刚确认存在")
+            .bump_version();
+        let old = rt
+            .storage
+            .value_mut(id)
+            .and_then(|slot| slot.replace(new_any.take().expect("每次重算只提交一次")));
         let buried = old.is_some();
         if let Some(old) = old {
             rt.storage.bury(Debris::Payload(old));
@@ -354,9 +355,7 @@ pub(crate) fn run_queue() {
 
         let runnable = with_rt(|rt| {
             rt.scheduler.queued_observers.remove(id);
-            rt.storage
-                .node(id)
-                .is_some_and(ReactiveNode::is_computation)
+            rt.storage.meta(id).is_some_and(NodeMeta::is_computation)
         });
         if matches!(runnable, Ok(true)) {
             update_if_necessary(id);
@@ -495,7 +494,13 @@ pub(crate) fn create_effect(f: EffectThunk) -> ReactiveResult<NodeId> {
     let at = Location::caller();
     let id = with_rt_or_init(|rt| {
         let id = rt.register_node_at(at);
-        rt.storage.reactive.insert(id, ReactiveNode::new_effect(f));
+        rt.storage.insert_reactive(
+            id,
+            NodeMeta::new(NodeState::Clean, NodeFlags::COMPUTATION),
+            NodeLinks::default(),
+            None,
+            Some(crate::internal::value::Computation::Effect(f)),
+        );
         id
     })?;
 
@@ -625,13 +630,12 @@ pub(crate) fn dispose(id: NodeId) {
     clean_node(id);
 
     let _ = with_rt(|rt| {
-        if let Some(parent_id) = rt.storage.graph.get(id).and_then(|n| n.parent)
-            && let Some(parent_aux) = rt.storage.node_aux.get(parent_id)
+        let parent_id = rt.storage.graph.get(id).and_then(|n| n.parent);
+        if let Some(parent_id) = parent_id
+            && let Some(parent_aux) = rt.storage.node_aux.get_mut(parent_id)
+            && let Some(idx) = parent_aux.children.iter().position(|&x| x == id)
         {
-            let mut parent_aux = parent_aux.borrow_mut();
-            if let Some(idx) = parent_aux.children.iter().position(|&x| x == id) {
-                parent_aux.children.swap_remove(idx);
-            }
+            parent_aux.children.swap_remove(idx);
         }
         rt.forget_node(id);
     });

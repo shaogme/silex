@@ -18,4 +18,3 @@ workspace = true
 
 [dependencies]
 silex_vtable.workspace = true
-silex_thread_local.workspace = true

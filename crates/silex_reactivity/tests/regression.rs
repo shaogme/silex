@@ -236,14 +236,14 @@ fn scheduling_order_is_the_same_on_the_first_run_and_on_re_runs() {
     );
 }
 
-// --- P4: `List::Many` 路径（≥2 个订阅者 / 依赖）在 Miri 下必须干净 ---
+// --- P4: 多订阅者 / 多依赖路径在 Miri 下必须干净 ---
 
 #[test]
 fn many_subscribers_and_many_dependencies() {
     let sources: Vec<SignalId> = (0..8).map(signal::create).collect();
     let hits = Rc::new(Cell::new(0));
 
-    // 8 个 effect × 8 个依赖：订阅者列表与依赖列表都会走 `ThinVec` 分支。
+    // 8 个 effect × 8 个依赖：依赖列表走 `ThinVec`，订阅者表覆盖多槽位退订。
     for _ in 0..8 {
         let sources = sources.clone();
         let hits_c = hits.clone();
@@ -262,7 +262,7 @@ fn many_subscribers_and_many_dependencies() {
 
     assert!(hits.get() > 0);
 
-    // 逐个退订：触发 `Many -> Single -> Empty` 的降级路径。
+    // 逐个退订：覆盖 swap-remove 与反向槽位修正。
     for &id in &sources {
         scope::dispose(id);
     }
