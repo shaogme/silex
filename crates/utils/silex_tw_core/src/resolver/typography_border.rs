@@ -667,7 +667,7 @@ pub fn resolve_rounded_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<
             "2xl" => Some("1rem"),
             "3xl" => Some("1.5rem"),
             "4xl" => Some("2rem"),
-            "full" => Some("9999px"),
+            "full" => Some("calc(infinity * 1px)"),
             _ => None,
         }
     };

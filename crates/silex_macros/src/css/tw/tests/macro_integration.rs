@@ -1,4 +1,4 @@
-use crate::css::tw::tests::css_probe::extract_declarations;
+use crate::css::tw::tests::css_probe::{extract_declarations, values_equivalent};
 use crate::css::tw::tw_impl;
 use proc_macro2::{TokenStream, TokenTree};
 use quote::quote;
@@ -864,8 +864,14 @@ fn text_and_leading_decoupling() {
     // 3. 无显式行高：text-sm text-lg（后写的 text-lg 全覆盖）
     let css_double_text = css_of_static("text-sm text-lg");
     let map_double_text = to_map(&css_double_text);
-    assert_eq!(map_double_text.get("font-size"), Some(&"1.125rem".to_string()));
-    assert_eq!(map_double_text.get("line-height"), Some(&"1.75rem".to_string()));
+    assert_eq!(
+        map_double_text.get("font-size"),
+        Some(&"1.125rem".to_string())
+    );
+    assert_eq!(
+        map_double_text.get("line-height"),
+        Some(&"1.75rem".to_string())
+    );
 
     // 4. 带斜杠简写：text-sm/6 leading-8（leading-8 在后）
     let css_slash_1 = css_of_static("text-sm/6 leading-8");
@@ -889,15 +895,41 @@ fn text_and_leading_decoupling() {
     let css_mod = css_of_static("hover:leading-8 text-sm");
     let decls_mod = extract_declarations(&css_mod);
     assert!(
-        decls_mod.iter().any(|(p, v)| p == "font-size" && (v == ".875rem" || v == "0.875rem")),
+        decls_mod
+            .iter()
+            .any(|(p, v)| p == "font-size" && (v == ".875rem" || v == "0.875rem")),
         "基础修饰符应包含 text-sm 的 font-size: .875rem"
     );
     assert!(
-        decls_mod.iter().any(|(p, v)| p == "line-height" && v == "1.25rem"),
+        decls_mod
+            .iter()
+            .any(|(p, v)| p == "line-height" && v == "1.25rem"),
         "无修饰符的基础组应保留 text-sm 自带的 1.25rem 默认行高"
     );
     assert!(
-        decls_mod.iter().any(|(p, v)| p == "line-height" && v == "2rem"),
+        decls_mod
+            .iter()
+            .any(|(p, v)| p == "line-height" && v == "2rem"),
         "hover: 伪类下应独立包含 hover:leading-8 的 2rem 行高"
     );
 }
+
+/// 验证 `rounded-full` 及其方向变体产出现代 CSS Values Level 4 `calc(infinity * 1px)` / 规范化无穷大值
+#[test]
+fn rounded_full_emits_calc_infinity_or_equivalent() {
+    let css = css_of_static("rounded-full");
+    let decls = extract_declarations(&css);
+    let map: std::collections::BTreeMap<&str, &str> = decls
+        .iter()
+        .map(|(p, v)| (p.as_str(), v.as_str()))
+        .collect();
+
+    let radius_val = map
+        .get("border-radius")
+        .expect("rounded-full 必须包含 border-radius 声明");
+    assert!(
+        values_equivalent("border-radius", "calc(infinity * 1px)", radius_val),
+        "rounded-full 的 border-radius 声明 `{radius_val}` 必须等价于 `calc(infinity * 1px)`"
+    );
+}
+

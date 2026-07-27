@@ -190,8 +190,12 @@ pub fn resolve_utility(
     // 则该 LineHeight 是字号档位自带的默认行高，标注 is_default_line_height = true。
     let is_slash_shorthand = utility_token.contains('/') && utility_token.starts_with("text-");
     if !is_slash_shorthand {
-        let has_font_size = rules.iter().any(|r| r.css_property == CssPropertyId::FontSize);
-        let has_line_height = rules.iter().any(|r| r.css_property == CssPropertyId::LineHeight);
+        let has_font_size = rules
+            .iter()
+            .any(|r| r.css_property == CssPropertyId::FontSize);
+        let has_line_height = rules
+            .iter()
+            .any(|r| r.css_property == CssPropertyId::LineHeight);
         if has_font_size && has_line_height {
             for rule in rules.iter_mut() {
                 if rule.css_property == CssPropertyId::LineHeight {

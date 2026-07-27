@@ -231,10 +231,20 @@ fn collapse_between_reversals(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
     for i in 0..n {
         let rev_prop = rules[i].css_property;
         let (first_target, second_target) = match rev_prop {
-            CssPropertyId::VarTwSpaceXReverse => (CssPropertyId::MarginLeft, CssPropertyId::MarginRight),
-            CssPropertyId::VarTwSpaceYReverse => (CssPropertyId::MarginTop, CssPropertyId::MarginBottom),
-            CssPropertyId::VarTwDivideXReverse => (CssPropertyId::BorderLeftWidth, CssPropertyId::BorderRightWidth),
-            CssPropertyId::VarTwDivideYReverse => (CssPropertyId::BorderTopWidth, CssPropertyId::BorderBottomWidth),
+            CssPropertyId::VarTwSpaceXReverse => {
+                (CssPropertyId::MarginLeft, CssPropertyId::MarginRight)
+            }
+            CssPropertyId::VarTwSpaceYReverse => {
+                (CssPropertyId::MarginTop, CssPropertyId::MarginBottom)
+            }
+            CssPropertyId::VarTwDivideXReverse => (
+                CssPropertyId::BorderLeftWidth,
+                CssPropertyId::BorderRightWidth,
+            ),
+            CssPropertyId::VarTwDivideYReverse => (
+                CssPropertyId::BorderTopWidth,
+                CssPropertyId::BorderBottomWidth,
+            ),
             _ => continue,
         };
 

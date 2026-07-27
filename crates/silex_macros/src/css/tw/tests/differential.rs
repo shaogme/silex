@@ -65,24 +65,6 @@ const KNOWN_DIVERGENCES: &[(&str, Divergence, &str)] = &[
     ("bg-red-500/50", Divergence::ValueOnly,
      "silex 产出 #fb2c3680（sRGB 预乘），Tailwind 产出 color-mix(in oklab,…)——色域不同，视觉有极小差异"),
 
-    // --- 设计取舍：无穷大圆角写成 9999px --------------------------------------
-    // Tailwind v4 用 `calc(infinity * 1px)`，silex 用 9999px。两者在任何实际尺寸下等效。
-    ("rounded-full",    Divergence::ValueOnly, "9999px 代替 calc(infinity * 1px)"),
-    ("rounded-b-full",  Divergence::ValueOnly, "同 rounded-full"),
-    ("rounded-t-full",  Divergence::ValueOnly, "同 rounded-full"),
-    ("rounded-l-full",  Divergence::ValueOnly, "同 rounded-full"),
-    ("rounded-r-full",  Divergence::ValueOnly, "同 rounded-full"),
-    ("rounded-s-full",  Divergence::ValueOnly, "同 rounded-full"),
-    ("rounded-e-full",  Divergence::ValueOnly, "同 rounded-full"),
-    ("rounded-bl-full", Divergence::ValueOnly, "同 rounded-full"),
-    ("rounded-br-full", Divergence::ValueOnly, "同 rounded-full"),
-    ("rounded-tl-full", Divergence::ValueOnly, "同 rounded-full"),
-    ("rounded-tr-full", Divergence::ValueOnly, "同 rounded-full"),
-    ("rounded-ss-full", Divergence::ValueOnly, "同 rounded-full"),
-    ("rounded-se-full", Divergence::ValueOnly, "同 rounded-full"),
-    ("rounded-es-full", Divergence::ValueOnly, "同 rounded-full"),
-    ("rounded-ee-full", Divergence::ValueOnly, "同 rounded-full"),
-
     // --- 其余零散差异 --------------------------------------------------------
     ("font-stretch-normal", Divergence::ValueOnly, "产出 100%，Tailwind 产出关键字 normal（等价）"),
     ("place-items-stretch", Divergence::ValueOnly, "产出双值 `stretch stretch`，Tailwind 用单值简写（等价）"),

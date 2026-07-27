@@ -89950,8 +89950,8 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::BorderBottomRightRadius, StaticVal::Num(2.0, "rem")),
     ]),
     ("rounded-b-full", None, &[
-        (CssPropertyId::BorderBottomLeftRadius, StaticVal::Num(9999.0, "px")),
-        (CssPropertyId::BorderBottomRightRadius, StaticVal::Num(9999.0, "px")),
+        (CssPropertyId::BorderBottomLeftRadius, StaticVal::Kw("calc(infinity * 1px)")),
+        (CssPropertyId::BorderBottomRightRadius, StaticVal::Kw("calc(infinity * 1px)")),
     ]),
     ("rounded-b-lg", None, &[
         (CssPropertyId::BorderBottomLeftRadius, StaticVal::Num(0.5, "rem")),
@@ -89987,7 +89987,7 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::BorderBottomLeftRadius, StaticVal::Num(2.0, "rem")),
     ]),
     ("rounded-bl-full", None, &[
-        (CssPropertyId::BorderBottomLeftRadius, StaticVal::Num(9999.0, "px")),
+        (CssPropertyId::BorderBottomLeftRadius, StaticVal::Kw("calc(infinity * 1px)")),
     ]),
     ("rounded-bl-lg", None, &[
         (CssPropertyId::BorderBottomLeftRadius, StaticVal::Num(0.5, "rem")),
@@ -90017,7 +90017,7 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::BorderBottomRightRadius, StaticVal::Num(2.0, "rem")),
     ]),
     ("rounded-br-full", None, &[
-        (CssPropertyId::BorderBottomRightRadius, StaticVal::Num(9999.0, "px")),
+        (CssPropertyId::BorderBottomRightRadius, StaticVal::Kw("calc(infinity * 1px)")),
     ]),
     ("rounded-br-lg", None, &[
         (CssPropertyId::BorderBottomRightRadius, StaticVal::Num(0.5, "rem")),
@@ -90050,8 +90050,8 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::BorderEndEndRadius, StaticVal::Num(2.0, "rem")),
     ]),
     ("rounded-e-full", None, &[
-        (CssPropertyId::BorderStartEndRadius, StaticVal::Num(9999.0, "px")),
-        (CssPropertyId::BorderEndEndRadius, StaticVal::Num(9999.0, "px")),
+        (CssPropertyId::BorderStartEndRadius, StaticVal::Kw("calc(infinity * 1px)")),
+        (CssPropertyId::BorderEndEndRadius, StaticVal::Kw("calc(infinity * 1px)")),
     ]),
     ("rounded-e-lg", None, &[
         (CssPropertyId::BorderStartEndRadius, StaticVal::Num(0.5, "rem")),
@@ -90087,7 +90087,7 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::BorderEndEndRadius, StaticVal::Num(2.0, "rem")),
     ]),
     ("rounded-ee-full", None, &[
-        (CssPropertyId::BorderEndEndRadius, StaticVal::Num(9999.0, "px")),
+        (CssPropertyId::BorderEndEndRadius, StaticVal::Kw("calc(infinity * 1px)")),
     ]),
     ("rounded-ee-lg", None, &[
         (CssPropertyId::BorderEndEndRadius, StaticVal::Num(0.5, "rem")),
@@ -90117,7 +90117,7 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::BorderEndStartRadius, StaticVal::Num(2.0, "rem")),
     ]),
     ("rounded-es-full", None, &[
-        (CssPropertyId::BorderEndStartRadius, StaticVal::Num(9999.0, "px")),
+        (CssPropertyId::BorderEndStartRadius, StaticVal::Kw("calc(infinity * 1px)")),
     ]),
     ("rounded-es-lg", None, &[
         (CssPropertyId::BorderEndStartRadius, StaticVal::Num(0.5, "rem")),
@@ -90138,7 +90138,7 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::BorderEndStartRadius, StaticVal::Num(0.125, "rem")),
     ]),
     ("rounded-full", None, &[
-        (CssPropertyId::BorderRadius, StaticVal::Num(9999.0, "px")),
+        (CssPropertyId::BorderRadius, StaticVal::Kw("calc(infinity * 1px)")),
     ]),
     ("rounded-l-2xl", None, &[
         (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(1.0, "rem")),
@@ -90153,8 +90153,8 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::BorderBottomLeftRadius, StaticVal::Num(2.0, "rem")),
     ]),
     ("rounded-l-full", None, &[
-        (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(9999.0, "px")),
-        (CssPropertyId::BorderBottomLeftRadius, StaticVal::Num(9999.0, "px")),
+        (CssPropertyId::BorderTopLeftRadius, StaticVal::Kw("calc(infinity * 1px)")),
+        (CssPropertyId::BorderBottomLeftRadius, StaticVal::Kw("calc(infinity * 1px)")),
     ]),
     ("rounded-l-lg", None, &[
         (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(0.5, "rem")),
@@ -90202,8 +90202,8 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::BorderBottomRightRadius, StaticVal::Num(2.0, "rem")),
     ]),
     ("rounded-r-full", None, &[
-        (CssPropertyId::BorderTopRightRadius, StaticVal::Num(9999.0, "px")),
-        (CssPropertyId::BorderBottomRightRadius, StaticVal::Num(9999.0, "px")),
+        (CssPropertyId::BorderTopRightRadius, StaticVal::Kw("calc(infinity * 1px)")),
+        (CssPropertyId::BorderBottomRightRadius, StaticVal::Kw("calc(infinity * 1px)")),
     ]),
     ("rounded-r-lg", None, &[
         (CssPropertyId::BorderTopRightRadius, StaticVal::Num(0.5, "rem")),
@@ -90242,8 +90242,8 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::BorderEndStartRadius, StaticVal::Num(2.0, "rem")),
     ]),
     ("rounded-s-full", None, &[
-        (CssPropertyId::BorderStartStartRadius, StaticVal::Num(9999.0, "px")),
-        (CssPropertyId::BorderEndStartRadius, StaticVal::Num(9999.0, "px")),
+        (CssPropertyId::BorderStartStartRadius, StaticVal::Kw("calc(infinity * 1px)")),
+        (CssPropertyId::BorderEndStartRadius, StaticVal::Kw("calc(infinity * 1px)")),
     ]),
     ("rounded-s-lg", None, &[
         (CssPropertyId::BorderStartStartRadius, StaticVal::Num(0.5, "rem")),
@@ -90279,7 +90279,7 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::BorderStartEndRadius, StaticVal::Num(2.0, "rem")),
     ]),
     ("rounded-se-full", None, &[
-        (CssPropertyId::BorderStartEndRadius, StaticVal::Num(9999.0, "px")),
+        (CssPropertyId::BorderStartEndRadius, StaticVal::Kw("calc(infinity * 1px)")),
     ]),
     ("rounded-se-lg", None, &[
         (CssPropertyId::BorderStartEndRadius, StaticVal::Num(0.5, "rem")),
@@ -90312,7 +90312,7 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::BorderStartStartRadius, StaticVal::Num(2.0, "rem")),
     ]),
     ("rounded-ss-full", None, &[
-        (CssPropertyId::BorderStartStartRadius, StaticVal::Num(9999.0, "px")),
+        (CssPropertyId::BorderStartStartRadius, StaticVal::Kw("calc(infinity * 1px)")),
     ]),
     ("rounded-ss-lg", None, &[
         (CssPropertyId::BorderStartStartRadius, StaticVal::Num(0.5, "rem")),
@@ -90345,8 +90345,8 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::BorderTopRightRadius, StaticVal::Num(2.0, "rem")),
     ]),
     ("rounded-t-full", None, &[
-        (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(9999.0, "px")),
-        (CssPropertyId::BorderTopRightRadius, StaticVal::Num(9999.0, "px")),
+        (CssPropertyId::BorderTopLeftRadius, StaticVal::Kw("calc(infinity * 1px)")),
+        (CssPropertyId::BorderTopRightRadius, StaticVal::Kw("calc(infinity * 1px)")),
     ]),
     ("rounded-t-lg", None, &[
         (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(0.5, "rem")),
@@ -90382,7 +90382,7 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(2.0, "rem")),
     ]),
     ("rounded-tl-full", None, &[
-        (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(9999.0, "px")),
+        (CssPropertyId::BorderTopLeftRadius, StaticVal::Kw("calc(infinity * 1px)")),
     ]),
     ("rounded-tl-lg", None, &[
         (CssPropertyId::BorderTopLeftRadius, StaticVal::Num(0.5, "rem")),
@@ -90412,7 +90412,7 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::BorderTopRightRadius, StaticVal::Num(2.0, "rem")),
     ]),
     ("rounded-tr-full", None, &[
-        (CssPropertyId::BorderTopRightRadius, StaticVal::Num(9999.0, "px")),
+        (CssPropertyId::BorderTopRightRadius, StaticVal::Kw("calc(infinity * 1px)")),
     ]),
     ("rounded-tr-lg", None, &[
         (CssPropertyId::BorderTopRightRadius, StaticVal::Num(0.5, "rem")),

@@ -434,6 +434,19 @@ pub fn values_equivalent(prop: &str, expected: &str, actual: &str) -> bool {
         }
     }
 
+    // 无穷大圆角半径 / 长度（Tailwind v4 产出 calc(infinity * 1px)，LightningCSS 求值化简为 3.4028e38px，旧值 9999px）
+    let is_infinity_length = |v: &str| -> bool {
+        let s = v.trim();
+        s == "calc(infinity * 1px)"
+            || s == "calc(infinity*1px)"
+            || s == "9999px"
+            || (s.starts_with("3.4028") && s.ends_with("px"))
+            || s.starts_with("calc(3.4028")
+    };
+    if is_infinity_length(expected) && is_infinity_length(actual) {
+        return true;
+    }
+
     false
 }
 
