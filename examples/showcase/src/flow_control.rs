@@ -72,7 +72,7 @@ pub fn ShowDemo() -> impl View {
             .children(
                 div("✅ Content is visible!").style(
                     sty()
-                        .color(hex("green"))
+                        .color(ColorName::Green)
                         .padding(px(10))
                         .background(hex("#e8f5e9"))
                 )
@@ -80,7 +80,7 @@ pub fn ShowDemo() -> impl View {
             .fallback(
                 div("❌ Content is hidden").style(
                     sty()
-                        .color(hex("red"))
+                        .color(ColorName::Red)
                         .padding(px(10))
                         .background(hex("#ffebee"))
                 )

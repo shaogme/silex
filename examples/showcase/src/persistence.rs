@@ -161,7 +161,7 @@ fn ManualFlushDemo() -> impl View {
                     .on(event::click, move |_| {
                         let _ = draft.flush();
                     })
-                    .style(sty().background(AppTheme::PRIMARY).color(hex("white")).border(NONE).padding(padding::block_inline(px(8), px(16))).border_radius(px(6)).cursor(CursorKeyword::Pointer).transition("opacity 0.2s")),
+                    .style(sty().background(AppTheme::PRIMARY).color(ColorName::White).border(NONE).padding(padding::block_inline(px(8), px(16))).border_radius(px(6)).cursor(CursorKeyword::Pointer).transition("opacity 0.2s")),
                 button("🔄 Reload from Storage")
                     .on(event::click, move |_| {
                         let _ = draft.reload();

@@ -11,6 +11,7 @@ use std::{
 };
 
 mod calc;
+mod colors;
 mod complex;
 mod gradients;
 mod shorthands;
@@ -19,6 +20,7 @@ mod units;
 use units::{for_all_angle_units, for_all_length_units, for_all_time_units};
 
 pub use calc::*;
+pub use colors::*;
 pub use complex::*;
 pub use gradients::*;
 pub use shorthands::*;
@@ -298,6 +300,7 @@ impl CssColor for Hex {}
 impl CssColor for Hsl {}
 impl CssColor for ColorFn {}
 impl CssColor for ColorKeyword {}
+impl CssColor for ColorName {}
 
 pub trait CssProperty {
     type Value;
@@ -396,7 +399,7 @@ macro_rules! define_props {
     };
     // `<color>`
     (@cap $pascal:ident, Color) => {
-        define_props!(@valid, $pascal, Rgba, Hex, Hsl, ColorFn, ColorKeyword);
+        define_props!(@valid, $pascal, Rgba, Hex, Hsl, ColorFn, ColorKeyword, ColorName);
     };
     // `<url>` / `<image>`
     (@cap $pascal:ident, Url) => {
@@ -509,6 +512,7 @@ impl_into_rx_for_css!(
     Hex,
     Hsl,
     ColorFn,
+    ColorName,
     NoneValue,
     CssWide,
     Url,

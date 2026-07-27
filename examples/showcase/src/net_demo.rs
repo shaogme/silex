@@ -123,7 +123,7 @@ pub fn HttpClientDemo() -> impl View {
                         body: new_body.get(),
                     }))
                     .attr("disabled", create_post_mutation.loading())
-                    .style(sty().padding(padding::block_inline(px(10), px(20))).background(AppTheme::PRIMARY).color(hex("white")).border(NONE).border_radius(px(6)).cursor(CursorKeyword::Pointer)),
+                    .style(sty().padding(padding::block_inline(px(10), px(20))).background(AppTheme::PRIMARY).color(ColorName::White).border(NONE).border_radius(px(6)).cursor(CursorKeyword::Pointer)),
             ].style("display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px;"),
 
             move || if create_post_mutation.loading() {
@@ -182,7 +182,7 @@ pub fn WebSocketDemo() -> impl View {
         div![
             span("Status: "),
             strong(state_text)
-                .style(rx!(@fn if is_connected.get() { sty().color(hex("green")) } else { sty().color(hex("red")) })),
+                .style(rx!(@fn if is_connected.get() { sty().color(ColorName::Green) } else { sty().color(ColorName::Red) })),
         ].style("margin-bottom: 15px;"),
 
         Show(is_connected).children(
