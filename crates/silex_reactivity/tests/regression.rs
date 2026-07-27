@@ -640,6 +640,61 @@ fn a_self_feeding_effect_queue_panics_instead_of_hanging() {
     );
 }
 
+/// P13 漏掉的另一半：**求值 DFS** 也会不收敛，而它一次都碰不到 effect 队列。
+///
+/// 一个节点只要在自己的运行过程中写回自己的上游，就会被立刻重新标脏，
+/// 求值 DFS 于是原地把它重跑一遍，永不收敛。这条路径整个发生在
+/// `drive_eval` 的循环里，`run_queue` 的迭代计数器一次都不会加 ——
+/// 所以从前的表现是**真的挂死**（release 下跑满 90 秒仍不退出），
+/// 而不是 P13 承诺的那句报错。
+///
+/// 这里用「被覆盖的旧值在析构里写回上游」来触发，因为它是纯安全代码，
+/// 而且不需要用户显式写一个自我喂养的闭包 —— 只要 memo 的值类型带一个
+/// 会碰响应式图的 `Drop` 就够了。
+#[test]
+#[cfg_attr(miri, ignore)]
+fn a_self_feeding_evaluation_panics_instead_of_hanging() {
+    use std::rc::Rc;
+
+    let source = signal::create(0i32);
+
+    #[derive(Clone)]
+    struct WritesBack(Rc<Poke>);
+    impl PartialEq for WritesBack {
+        fn eq(&self, other: &Self) -> bool {
+            Rc::ptr_eq(&self.0, &other.0)
+        }
+    }
+    struct Poke(SignalId);
+    impl Drop for Poke {
+        fn drop(&mut self) {
+            signal::update::<i32>(self.0, |v| *v += 1);
+        }
+    }
+
+    let m = memo::create::<WritesBack, _>(move |_| {
+        let _ = signal::get::<i32>(source);
+        WritesBack(Rc::new(Poke(source)))
+    });
+    effect::create(move || {
+        let _ = signal::get::<WritesBack>(m);
+    });
+
+    let result = silently(move || {
+        signal::update::<i32>(source, |v| *v += 1);
+    });
+
+    let err = result.expect_err("不收敛的求值必须 panic，而不是挂死");
+    let msg = err
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .unwrap_or_default();
+    assert!(
+        msg.contains("单次求值执行了超过"),
+        "报错信息必须指出是求值没有收敛，实际是：{msg}"
+    );
+}
+
 // --- P10: 相等性门控策略必须是明确且稳定的 ---
 
 /// signal 不做门控：写入相同的值照样重跑下游。这是**有意的**设计

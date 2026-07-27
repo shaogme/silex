@@ -23,7 +23,7 @@
 
 use crate::{
     internal::arena::Index as NodeId,
-    runtime::{Runtime, guard::EvalStack, storage::ReactiveNode},
+    runtime::{Runtime, guard::EvalStack, scheduler::MAX_QUEUE_ITERATIONS, storage::ReactiveNode},
 };
 use std::collections::VecDeque;
 
@@ -171,7 +171,8 @@ impl Runtime {
     ///
     /// # Panics
     ///
-    /// 依赖成环时 panic（见 [`Runtime::eval_step`]）。
+    /// 依赖成环时 panic（见 [`Runtime::eval_step`]）；单次求值执行的计算次数
+    /// 超过 [`MAX_QUEUE_ITERATIONS`] 时同样 panic（见下）。
     pub(crate) fn drive_eval(&self, target_node: NodeId) {
         if self.storage.get_state(target_node) == NodeState::Clean {
             return;
@@ -183,7 +184,24 @@ impl Runtime {
         stack.clear();
         stack.push(EvalFrame::new(target_node));
 
+        // AUDIT P13 给 effect 队列设了上限，却漏掉了求值 DFS 这一半：一个节点
+        // 只要在自己的运行过程中（计算闭包里、或者被覆盖的旧值的 `Drop` 里）
+        // 写回自己的上游，就会被立刻重新标脏，DFS 于是原地重跑它，永不收敛。
+        // 而这个循环从头到尾没有碰过 effect 队列，`run_queue` 的计数器一次都
+        // 不会加 —— 表现就是浏览器标签页直接冻死，正是 P13 要消灭的那种失败。
+        let mut iterations = 0usize;
+
         while let Step::Run(id) = self.eval_step(stack) {
+            iterations += 1;
+            if iterations > MAX_QUEUE_ITERATIONS {
+                panic!(
+                    "silex_reactivity: 单次求值执行了超过 {MAX_QUEUE_ITERATIONS} 次计算仍未收敛，\
+                     大概率是某个节点在自己的运行过程中写回了自己的上游。\
+                     最后一个被求值的是 {}。",
+                    self.storage.describe(id)
+                );
+            }
+
             // 状态转换由 `run_node` 负责（运行前置 Clean）。这里**不能**再无条件
             // 写一次 Clean —— 那会把节点在自己运行期间产生的失效标记抹掉，
             // 使得队列里的重跑条目被当作“已干净”跳过，更新静默丢失（AUDIT P8）。

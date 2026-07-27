@@ -221,11 +221,42 @@ pub(crate) struct Storage {
     /// 也去掉了：`None` 就是“正被某个用户闭包借出”，与 signal 的表示一致。
     pub(crate) extras: SparseSecondaryMap<RefCell<Option<AnyValue>>, 32>,
 
+    /// 已经离开图、等着在**借用之外**析构的残骸。见 [`Debris`]。
+    graveyard: RefCell<Vec<Debris>>,
+
     #[cfg(debug_assertions)]
     pub(crate) dead_node_labels: SparseSecondaryMap<String>,
     /// 已记下的墓碑标签数量的上界（同一个槽位被覆盖时会多算，只用于封顶）。
     #[cfg(debug_assertions)]
     dead_label_count: Cell<usize>,
+}
+
+/// 一件已经从图里摘下来、但**还没有析构**的东西。
+///
+/// 这三种残骸里装的都是用户的数据：signal / memo 的值、effect 与 memo 的
+/// 计算闭包、尚未执行的 cleanup。析构它们就是执行用户的 `Drop`，而用户的
+/// `Drop` 完全可以回头访问响应式图 —— 销毁别的节点、写一个 signal、
+/// 甚至再建一个 effect。
+///
+/// 就地析构意味着那段用户代码运行在运行时的借用之内。今天这只在一个偏门角落
+/// 出事（`commit_update` 覆盖旧值时握着节点的 `borrow_mut`，一个会读自己所在
+/// memo 的 `T::drop` 会撞上 `already borrowed`）；方案 B 把访问入口收成
+/// `&mut Runtime` 之后，**每一处**就地析构都会变成一次借用冲突。
+///
+/// 所以规则改成：让值离开图的地方一律把它推进墓园，由驱动循环在释放借用之后
+/// 调 [`Storage::drain_graveyard`]。排空点选在与从前析构时机**相同**的位置上，
+/// 因此用户可观察的顺序不变。
+#[expect(
+    dead_code,
+    reason = "载荷只为了『在墓园里、而不是在借用之内被析构』而存在，没有读取者"
+)]
+pub(crate) enum Debris {
+    /// 一个响应式节点的全部载荷：值 + 计算闭包 + 两张边表。
+    Node(ReactiveNode),
+    /// 冷数据：尚未执行的 cleanup（子节点列表里只有 id，不带用户数据）。
+    Aux(NodeAux),
+    /// 非响应式载荷（stored value / callback / node-ref），以及被覆盖掉的旧值。
+    Payload(AnyValue),
 }
 
 impl Storage {
@@ -235,6 +266,7 @@ impl Storage {
             node_aux: SparseSecondaryMap::new(),
             reactive: SparseSecondaryMap::new(),
             extras: SparseSecondaryMap::new(),
+            graveyard: RefCell::new(Vec::new()),
             #[cfg(debug_assertions)]
             dead_node_labels: SparseSecondaryMap::new(),
             #[cfg(debug_assertions)]
@@ -251,6 +283,28 @@ impl Storage {
         }
         self.dead_label_count.set(count + 1);
         self.dead_node_labels.insert(id, label);
+    }
+
+    /// 把一件残骸交给墓园，等驱动循环在借用之外析构它。
+    #[inline]
+    pub(crate) fn bury(&self, debris: Debris) {
+        self.graveyard.borrow_mut().push(debris);
+    }
+
+    /// 析构墓园里的一切。
+    ///
+    /// **只能在不持有任何运行时借用的地方调用** —— 这里跑的是用户的 `Drop`，
+    /// 它可以回头做任何事，包括再往墓园里推东西（于是循环多转几圈）
+    /// 或者自己调一次排空（于是本次循环发现墓园已空）。
+    ///
+    /// 借用严格限制在 `pop` 那一行：`while let` 的临时量存活期在不同版本的
+    /// Rust 里有过变化，所以这里把它写成显式两步，不给歧义留余地。
+    pub(crate) fn drain_graveyard(&self) {
+        loop {
+            let debris = self.graveyard.borrow_mut().pop();
+            let Some(debris) = debris else { break };
+            drop(debris);
+        }
     }
 
     /// 借一个响应式节点。

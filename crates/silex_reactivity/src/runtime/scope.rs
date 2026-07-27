@@ -4,7 +4,7 @@ use crate::{
     runtime::{
         Runtime,
         guard::{ObserverGuard, OwnerGuard},
-        storage::{CleanupList, Node},
+        storage::{CleanupList, Debris, Node},
     },
 };
 use std::{
@@ -65,6 +65,35 @@ enum DisposeStep {
         cleanups: CleanupList,
         dependencies: DependencyList,
     },
+}
+
+/// 销毁工作栈，析构时清空内容并归还池子。
+///
+/// 理由与 [`EvalStack`](crate::runtime::guard::EvalStack) 相同，只是多一条：
+/// 展开途中栈里可能还留着尚未执行的 `Exit` 帧，里面装着用户的 cleanup 闭包。
+/// 清空必须发生在碰池子**之前**，见 [`Runtime::return_dispose_stack`]。
+struct DisposeStack<'a> {
+    rt: &'a Runtime,
+    stack: Vec<DisposeStep>,
+}
+
+impl<'a> DisposeStack<'a> {
+    fn acquire(rt: &'a Runtime) -> Self {
+        Self {
+            rt,
+            stack: rt.borrow_dispose_stack(),
+        }
+    }
+
+    fn get(&mut self) -> &mut Vec<DisposeStep> {
+        &mut self.stack
+    }
+}
+
+impl Drop for DisposeStack<'_> {
+    fn drop(&mut self) {
+        self.rt.return_dispose_stack(mem::take(&mut self.stack));
+    }
 }
 
 impl Runtime {
@@ -213,7 +242,13 @@ impl Runtime {
             return;
         }
 
-        let mut stack = self.borrow_dispose_stack();
+        // 守卫保证工作栈一定会被归还，且残留的 cleanup 闭包一定会被析构 ——
+        // cleanup 是用户代码，跑到一半 panic 时栈里还留着若干个尚未执行的
+        // `Exit` 帧。裸写法在展开时直接丢掉整个 `Vec`：闭包确实会被析构，
+        // 但池化容量白丢，而且与 lib.rs 里“借出的东西一律由守卫恢复”的承诺
+        // 不符（AUDIT P2 / 二轮 §2.5 第 1 条）。
+        let mut held = DisposeStack::acquire(self);
+        let stack = held.get();
         // 逆序压栈，弹出时才是注册顺序。
         stack.extend(roots.into_iter().rev().map(DisposeStep::Enter));
 
@@ -244,11 +279,12 @@ impl Runtime {
                     // 子节点不需要从父节点的 children 里摘除：父节点的那份列表
                     // 早在 `Enter` 阶段就被整体 take 走了。
                     self.forget_node(id);
+                    // 载荷的析构（用户的 `Drop`）就在这里，与从前就地析构的时机
+                    // 相同：本节点处理完、下一个节点开始之前。
+                    self.storage.drain_graveyard();
                 }
             }
         }
-
-        self.return_dispose_stack(stack);
     }
 
     fn borrow_dispose_stack(&self) -> Vec<DisposeStep> {
@@ -260,14 +296,24 @@ impl Runtime {
     }
 
     fn return_dispose_stack(&self, mut stack: Vec<DisposeStep>) {
+        // 先清空再碰池子：栈里残留的 `Exit` 帧带着用户的 cleanup 闭包，
+        // 析构它们就是跑用户的 `Drop`，不能发生在池子的借用之内。
         stack.clear();
-        let mut pool = self.scopes.dispose_stacks.borrow_mut();
-        if pool.len() < MAX_POOLED_DISPOSE_STACKS {
+        // 展开途中池子可能正被外层借着；这时宁可丢掉这点容量，
+        // 也不能在 panic 里再 panic（那会直接 abort）。
+        if let Ok(mut pool) = self.scopes.dispose_stacks.try_borrow_mut()
+            && pool.len() < MAX_POOLED_DISPOSE_STACKS
+        {
             pool.push(stack);
         }
     }
 
     /// 把节点本身从所有存储中抹掉（cleanup 已经跑过、订阅已经解除）。
+    ///
+    /// 摘下来的载荷（值、计算闭包、尚未执行的 cleanup）**不在这里析构** ——
+    /// 它们装的是用户数据，析构就是执行用户的 `Drop`，而用户的 `Drop` 可以
+    /// 回头访问响应式图。一律推进墓园，由调用方在借用之外排空
+    /// （见 [`Debris`]）。
     fn forget_node(&self, id: NodeId) {
         #[cfg(debug_assertions)]
         {
@@ -283,10 +329,19 @@ impl Runtime {
             }
         }
 
+        // `Node` 自己只有 parent 与定义位置，不含用户数据，可以就地析构。
         self.storage.graph.remove(id);
-        self.storage.node_aux.remove(id);
-        self.storage.reactive.remove(id);
-        self.storage.extras.remove(id);
+        if let Some(aux) = self.storage.node_aux.remove(id) {
+            self.storage.bury(Debris::Aux(aux.into_inner()));
+        }
+        if let Some(node) = self.storage.reactive.remove(id) {
+            self.storage.bury(Debris::Node(node));
+        }
+        if let Some(payload) = self.storage.extras.remove(id)
+            && let Some(value) = payload.into_inner()
+        {
+            self.storage.bury(Debris::Payload(value));
+        }
         self.scheduler.queued_observers.remove(id);
     }
 
@@ -308,6 +363,7 @@ impl Runtime {
         }
 
         self.forget_node(id);
+        self.storage.drain_graveyard();
     }
 }
 

@@ -14,6 +14,7 @@ use self::{
     },
     scheduler::*,
     scope::Scopes,
+    storage::Debris,
     storage::*,
 };
 use crate::{
@@ -457,14 +458,23 @@ impl Runtime {
             .insert(id, ReactiveNode::new_memo(computation));
     }
 
+    /// 把重算出来的新值写进节点并失效下游。
+    ///
+    /// 被覆盖掉的旧值走墓园，而不是在 `borrow_mut` 成立期间就地析构 ——
+    /// 一个会读自己所在 memo 的 `T::drop` 从前会在这里撞上 `already borrowed`
+    /// （偏门，但确实存在）。排空点就在写入之后、通知之前，与从前析构的时机
+    /// 完全一致。
     pub(crate) fn commit_update(&self, id: NodeId, value: AnyValue, changed: bool) {
         if !changed {
             return;
         }
         if let Some(node) = self.storage.node(id) {
             node.bump_version();
-            node.signal.borrow_mut().value = Some(value);
+            if let Some(old) = node.signal.borrow_mut().value.replace(value) {
+                self.storage.bury(Debris::Payload(old));
+            }
         }
+        self.storage.drain_graveyard();
         self.notify_update(id);
     }
 
