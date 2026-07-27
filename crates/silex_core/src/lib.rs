@@ -133,7 +133,10 @@ impl<T: 'static, M> Rx<T, M> {
                 }
             }
         } else {
-            let id = silex_reactivity::scope::untrack(|| silex_reactivity::store::create(val));
+            let id = silex_reactivity::scope::create_detached(|| {
+                silex_reactivity::store::create(val)
+            })
+            .1;
             Self {
                 inner: RxInner::Stored(id),
                 _marker: ::core::marker::PhantomData,
@@ -172,6 +175,27 @@ impl<T: 'static, M> Rx<T, M> {
     pub const fn new_stored(id: StoredId) -> Self {
         Self {
             inner: RxInner::Stored(id),
+            _marker: ::core::marker::PhantomData,
+        }
+    }
+
+    pub const fn new_inline_constant(storage: u64) -> Self {
+        Self {
+            inner: RxInner::InlineConstant(storage),
+            _marker: ::core::marker::PhantomData,
+        }
+    }
+
+    pub const fn new_closure(id: StoredId) -> Self {
+        Self {
+            inner: RxInner::Closure(id),
+            _marker: ::core::marker::PhantomData,
+        }
+    }
+
+    pub const fn new_op_raw(id: RawId) -> Self {
+        Self {
+            inner: RxInner::Op(StoredId::from_raw_unchecked(id)),
             _marker: ::core::marker::PhantomData,
         }
     }

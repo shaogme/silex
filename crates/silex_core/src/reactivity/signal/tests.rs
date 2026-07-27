@@ -141,6 +141,28 @@ fn test_ensure_raw_id() {
 }
 
 #[test]
+fn test_ensure_raw_id_survives_child_scope_dispose() {
+    create_scope(|| {
+        let inline = Signal::from(42);
+        let mut raw_id = None;
+        let child_scope = silex_reactivity::scope::create(|| {
+            raw_id = Some(inline.ensure_raw_id());
+        });
+        silex_reactivity::scope::dispose(child_scope);
+        let rx = Rx::<i32, RxValueKind>::new_stored(silex_reactivity::StoredId::from_raw_unchecked(raw_id.unwrap()));
+        assert_eq!(rx.get(), 42);
+
+        let mut stored_rx = None;
+        let child_scope2 = silex_reactivity::scope::create(|| {
+            let sig = Signal::from("detached_test".to_string());
+            stored_rx = Some(sig.into_rx());
+        });
+        silex_reactivity::scope::dispose(child_scope2);
+        assert_eq!(stored_rx.unwrap().get(), "detached_test".to_string());
+    });
+}
+
+#[test]
 fn test_derive() {
     create_scope(|| {
         // Simple derived signal

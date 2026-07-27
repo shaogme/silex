@@ -210,7 +210,17 @@ impl<T: RxData> IntoRx for Signal<T> {
     type RxType = Rx<T, RxValueKind>;
     #[inline(always)]
     fn into_rx(self) -> Self::RxType {
-        Rx::new_signal(self.ensure_raw_id())
+        match self {
+            Signal::Read(s) => Rx::new_signal(s.id),
+            Signal::Derived(id, kind, _) => match kind {
+                RxNodeKind::Signal => Rx::new_signal(id),
+                RxNodeKind::Closure => Rx::new_closure(silex_reactivity::StoredId::from_raw_unchecked(id)),
+                RxNodeKind::Op => Rx::new_op_raw(id),
+                RxNodeKind::Stored => Rx::new_stored(silex_reactivity::StoredId::from_raw_unchecked(id)),
+            },
+            Signal::StoredConstant(id, _) => Rx::new_stored(id),
+            Signal::InlineConstant(storage, _) => Rx::new_inline_constant(storage),
+        }
     }
     fn is_constant(&self) -> bool {
         self.is_constant()
@@ -295,7 +305,9 @@ impl<T: RxData> Signal<T> {
             Signal::StoredConstant(id, _) => id.raw(),
             Signal::InlineConstant(storage, _) => {
                 let value = unsafe { Self::unpack_inline(*storage) };
-                store::create(value).raw()
+                silex_reactivity::scope::create_detached(|| store::create(value))
+                    .1
+                    .raw()
             }
         }
     }
@@ -341,7 +353,7 @@ impl<T: RxCloneData> From<T> for Signal<T> {
         if let Some(inline) = Self::try_inline(value.clone()) {
             return inline;
         }
-        let id = store::create(value);
+        let id = silex_reactivity::scope::create_detached(|| store::create(value)).1;
         Signal::StoredConstant(id, PhantomData)
     }
 }
