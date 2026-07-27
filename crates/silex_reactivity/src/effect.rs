@@ -2,7 +2,7 @@
 
 use crate::{
     EffectId,
-    internal::value::ThunkValue,
+    internal::value::EffectThunk,
     runtime::{RUNTIME, Runtime},
 };
 
@@ -31,6 +31,6 @@ pub fn create<F: FnMut() + 'static>(f: F) -> EffectId {
     EffectId::from_raw(
         RUNTIME
             .get_or(Runtime::new)
-            .create_effect(ThunkValue::new_mut(f)),
+            .create_effect(EffectThunk::new(f)),
     )
 }

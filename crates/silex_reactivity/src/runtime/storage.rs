@@ -19,7 +19,7 @@ use crate::{
     DependencyList, NodeList,
     internal::{
         arena::{Arena, Index as NodeId, SparseSecondaryMap},
-        value::{AnyValue, OnceThunk, ThunkValue},
+        value::{AnyValue, Computation, EffectThunk, MemoThunk, OnceThunk},
     },
     runtime::graph::NodeState,
 };
@@ -85,7 +85,7 @@ pub(crate) struct SignalSlot {
 /// [`crate::runtime::guard::NodeRunGuard`]）。
 #[derive(Default)]
 pub(crate) struct EffectSlot {
-    pub(crate) computation: Option<ThunkValue>,
+    pub(crate) computation: Option<Computation>,
     pub(crate) dependencies: DependencyList,
 }
 
@@ -135,20 +135,20 @@ impl ReactiveNode {
         )
     }
 
-    pub(crate) fn new_effect(computation: ThunkValue) -> Self {
+    pub(crate) fn new_effect(computation: EffectThunk) -> Self {
         Self::new(
             NodeState::Clean,
             NodeFlags::COMPUTATION,
             SignalSlot::default(),
             EffectSlot {
-                computation: Some(computation),
+                computation: Some(Computation::Effect(computation)),
                 dependencies: DependencyList::default(),
             },
         )
     }
 
     /// memo / derived：既有值又有计算，且从 `Dirty` 起步（首次读取时才算）。
-    pub(crate) fn new_memo(computation: ThunkValue) -> Self {
+    pub(crate) fn new_memo(computation: MemoThunk) -> Self {
         Self::new(
             NodeState::Dirty,
             NodeFlags::VALUE.with(NodeFlags::COMPUTATION),
@@ -156,7 +156,7 @@ impl ReactiveNode {
             // 一次“把旧值借出去”的过程，两者天然一致。
             SignalSlot::default(),
             EffectSlot {
-                computation: Some(computation),
+                computation: Some(Computation::Memo(computation)),
                 dependencies: DependencyList::default(),
             },
         )
@@ -410,7 +410,7 @@ impl Iterator for CleanupListIntoIter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{internal::value::ThunkValue, runtime::Runtime};
+    use crate::{internal::value::EffectThunk, runtime::Runtime};
 
     #[test]
     fn set_state_never_inserts_a_ghost_node() {
@@ -433,7 +433,7 @@ mod tests {
         let rt = Runtime::new();
         let s = rt.create_signal(AnyValue::new(1i32));
 
-        let dead = rt.create_effect(ThunkValue::new_mut(|| {}));
+        let dead = rt.create_effect(EffectThunk::new(|| {}));
         rt.dispose(dead);
         assert!(rt.storage.node(dead).is_none());
 

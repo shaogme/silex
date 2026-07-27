@@ -14,7 +14,7 @@ use crate::{
     ReactiveError, ReactiveResult,
     internal::{
         arena::Index as NodeId,
-        value::{AnyValue, ThunkValue},
+        value::{AnyValue, Computation},
     },
     runtime::{Runtime, graph::EvalFrame, graph::NodeState, scheduler::WorkSpace},
 };
@@ -199,11 +199,11 @@ impl Drop for PropagateQueue<'_> {
 pub(crate) struct NodeRunGuard<'a> {
     rt: &'a Runtime,
     id: NodeId,
-    pub(crate) computation: Option<ThunkValue>,
+    pub(crate) computation: Option<Computation>,
 }
 
 impl<'a> NodeRunGuard<'a> {
-    pub(crate) fn new(rt: &'a Runtime, id: NodeId, computation: Option<ThunkValue>) -> Self {
+    pub(crate) fn new(rt: &'a Runtime, id: NodeId, computation: Option<Computation>) -> Self {
         Self {
             rt,
             id,

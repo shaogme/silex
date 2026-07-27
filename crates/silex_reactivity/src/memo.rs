@@ -2,42 +2,25 @@
 //!
 //! 两者的读取都走 [`signal`](crate::signal) 模块 —— [`MemoId`] 与 [`DerivedId`]
 //! 都实现了 [`Readable`](crate::Readable)。
+//!
+//! # 这里为什么不再有手写 vtable
+//!
+//! 这个模块从前有三张手写的 `MemoVTable`（内联 / 装箱 / derived）加一个
+//! `build_memo_payload`：把 vtable 指针写进 `InlineStorage` 的偏移 0、闭包写在
+//! 其后，再由 `runtime.rs` 里的一个“通用 runner”在运行时读回来分派。
+//!
+//! 那一层间接存在的唯一理由是“`run_node` 只想认识一种 thunk 类型”——
+//! effect 是 `FnMut()`、memo 是 `Fn(Option<&T>) -> T`，签名对不上，就用一层
+//! 类型擦除硬凑成一个。阶段三方案 B 把用户代码从运行时内部提到驱动循环之后，
+//! 驱动本来就知道节点 id、也拿得到旧值，于是可以直接分派 ——
+//! [`Computation`](crate::internal::value::Computation) 一个两变体的枚举就够了，
+//! memo 的闭包交给 `MemoThunk`（也就是一个普通的 `ThunkBox`）自己装。
 
 use crate::{
     DerivedId, MemoId,
-    internal::{FuncPtr, value::AnyValue},
-    runtime::{MemoVTable, RUNTIME, Runtime},
+    internal::value::MemoThunk,
+    runtime::{RUNTIME, Runtime},
 };
-use silex_vtable::InlineStorage;
-use std::{marker::PhantomData, mem::size_of, ptr::drop_in_place};
-
-/// memo 内联载荷的布局：`[&'static MemoVTable][F 或 Box<F>]`。
-///
-/// vtable 以真正的指针形式写入缓冲区，**不做** `as usize` 往返 ——
-/// 整数往返会擦除 provenance，之后再解引用即为未定义行为（AUDIT P3）。
-const MEMO_PAYLOAD_OFFSET: usize = size_of::<usize>();
-
-/// 把 vtable 指针与闭包打包进内联缓冲区。
-/// 闭包放不下时改为存放 `Box<F>`，由对应的 vtable 分支负责解引用与析构。
-fn build_memo_payload<F: 'static>(
-    inline_vtable: &'static MemoVTable,
-    boxed_vtable: &'static MemoVTable,
-    f: F,
-) -> InlineStorage {
-    let mut data = InlineStorage::zeroed();
-    // SAFETY: 偏移 0 处写入一个指针必然放得下；载荷写在 MEMO_PAYLOAD_OFFSET 处，
-    // 由 `InlineStorage::fits` 判定是否内联，放不下则退化为一个 `Box<F>` 指针。
-    unsafe {
-        if InlineStorage::fits::<F>(MEMO_PAYLOAD_OFFSET) {
-            data.write(0, inline_vtable as *const MemoVTable);
-            data.write(MEMO_PAYLOAD_OFFSET, f);
-        } else {
-            data.write(0, boxed_vtable as *const MemoVTable);
-            data.write(MEMO_PAYLOAD_OFFSET, Box::new(f));
-        }
-    }
-    data
-}
 
 /// 创建一个惰性求值、带相等性门控的派生节点。
 ///
@@ -58,25 +41,7 @@ where
     T: Clone + PartialEq + 'static,
     F: Fn(Option<&T>) -> T + 'static,
 {
-    let id = RUNTIME.get_or(Runtime::new).register_node();
-    internal_init_memo::<T, F>(id, f);
-    MemoId::from_raw(id)
-}
-
-#[inline(never)]
-fn internal_init_memo<T, F>(id: crate::RawNodeId, f: F)
-where
-    T: Clone + PartialEq + 'static,
-    F: Fn(Option<&T>) -> T + 'static,
-{
-    let data = build_memo_payload(
-        &MemoInlineVTable::<T, F>::VTABLE,
-        &MemoBoxedVTable::<T, F>::VTABLE,
-        f,
-    );
-
-    // SAFETY: 载荷由 `build_memo_payload` 按 `MemoVTable` 约定的布局构造。
-    unsafe { RUNTIME.get_or(Runtime::new).initialize_memo(id, data) };
+    MemoId::from_raw(init(MemoThunk::new::<T, F>(f)))
 }
 
 /// 创建一个惰性求值但**不做相等性门控**的派生节点。
@@ -89,64 +54,19 @@ where
 /// 值本身仍然是缓存的：没有依赖变化时读它不会重新执行闭包。
 #[track_caller]
 pub fn derived<T: 'static>(f: Box<dyn Fn() -> T>) -> DerivedId {
-    let id = RUNTIME.get_or(Runtime::new).register_node();
-    internal_init_derived::<T>(id, f);
-    DerivedId::from_raw(id)
+    DerivedId::from_raw(init(MemoThunk::new_derived(f)))
 }
 
+/// 建节点、装闭包、立即完成首算。
+///
+/// 计算闭包先被装进节点，再由统一的驱动路径跑首算：这样首算与后续重算走
+/// 同一条路径，也不存在“闭包尚未被节点接管就提前返回”导致析构函数永不运行的
+/// 窗口（AUDIT P19.10）。
+#[track_caller]
 #[inline(never)]
-fn internal_init_derived<T: 'static>(id: crate::RawNodeId, f: Box<dyn Fn() -> T>) {
-    // `Box<dyn Fn() -> T>` 是两个机器字的胖指针，恰好放得下；
-    // `DerivedVTable` 只有内联这一种布局，所以这里必须真的内联。
-    const {
-        assert!(
-            InlineStorage::fits::<Box<dyn Fn()>>(MEMO_PAYLOAD_OFFSET),
-            "derived payload must fit inline"
-        );
-    }
-    let mut data = InlineStorage::zeroed();
-    // SAFETY: 上面的 const 断言保证了胖指针放得下；布局与 `DerivedVTable` 一致。
-    unsafe {
-        data.write(0, &DerivedVTable::<T>::VTABLE as *const MemoVTable);
-        data.write(MEMO_PAYLOAD_OFFSET, f);
-    }
-
-    // SAFETY: 载荷按 `DerivedVTable` 约定的布局构造。
-    unsafe { RUNTIME.get_or(Runtime::new).initialize_memo(id, data) };
-}
-
-struct MemoInlineVTable<T, F>(PhantomData<(T, F)>);
-impl<T: Clone + PartialEq + 'static, F: Fn(Option<&T>) -> T + 'static> MemoInlineVTable<T, F> {
-    const VTABLE: MemoVTable = MemoVTable {
-        // 旧值按引用透传给用户闭包，绝不在这里克隆（AUDIT P9）。
-        compute: FuncPtr::new(|ptr, old| {
-            let f = unsafe { &*(ptr as *const F) };
-            let new_t = f(old.and_then(|any| any.downcast_ref::<T>()));
-            AnyValue::new_reactive(new_t)
-        }),
-        drop: FuncPtr::new(|ptr| unsafe { drop_in_place(ptr as *mut F) }),
-    };
-}
-
-struct MemoBoxedVTable<T, F>(PhantomData<(T, F)>);
-impl<T: Clone + PartialEq + 'static, F: Fn(Option<&T>) -> T + 'static> MemoBoxedVTable<T, F> {
-    const VTABLE: MemoVTable = MemoVTable {
-        compute: FuncPtr::new(|ptr, old| {
-            let f = unsafe { &**(ptr as *const Box<F>) };
-            let new_t = f(old.and_then(|any| any.downcast_ref::<T>()));
-            AnyValue::new_reactive(new_t)
-        }),
-        drop: FuncPtr::new(|ptr| unsafe { drop_in_place(ptr as *mut Box<F>) }),
-    };
-}
-
-struct DerivedVTable<T>(PhantomData<T>);
-impl<T: 'static> DerivedVTable<T> {
-    const VTABLE: MemoVTable = MemoVTable {
-        compute: FuncPtr::new(|ptr, _| {
-            let f = unsafe { &**(ptr as *const Box<dyn Fn() -> T>) };
-            AnyValue::new(f())
-        }),
-        drop: FuncPtr::new(|ptr| unsafe { drop_in_place(ptr as *mut Box<dyn Fn() -> T>) }),
-    };
+fn init(thunk: MemoThunk) -> crate::RawNodeId {
+    let rt = RUNTIME.get_or(Runtime::new);
+    let id = rt.register_node();
+    rt.initialize_memo(id, thunk);
+    id
 }

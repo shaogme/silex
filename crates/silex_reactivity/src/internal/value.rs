@@ -1,5 +1,5 @@
 use crate::internal::FuncPtr;
-use silex_vtable::{AnyBox, InlineStorage, OnceBox, ThunkBox, ThunkBoxVTable};
+use silex_vtable::{AnyBox, OnceBox, ThunkBox};
 use std::{any::TypeId, marker::PhantomData, mem, ptr};
 
 /// A type-erased value with Small Object Optimization (SOO).
@@ -208,27 +208,44 @@ impl<T: Clone + PartialEq + 'static> BoxedReactiveVTable<T> {
     };
 }
 
-// --- ThunkValue for Closures ---
+// --- 计算闭包 ---
 
-pub(crate) type ThunkVTable = ThunkBoxVTable<*const (), ()>;
+/// 一个节点的计算闭包。
+///
+/// 两种计算的**签名本来就不一样** —— effect 是 `FnMut()`，memo 是
+/// `Fn(Option<&T>) -> T`。阶段三方案 B 之前，运行时强行让它们共用一个
+/// `ThunkBox<*const (), ()>`：memo 的闭包被手工打包进 `InlineStorage`
+/// （偏移 0 处塞一个 `*const MemoVTable`，其后才是闭包），由一个
+/// “通用 runner” 在运行时把 vtable 读回来、从 `current_owner()` 反查自己是谁、
+/// 再回调进运行时提交结果。整整一层间接，外加十来处 `unsafe`。
+///
+/// 那层间接存在的唯一理由是“`run_node` 只想认识一种 thunk 类型”。
+/// 驱动循环把用户代码从运行时内部提到外面之后，**驱动本来就知道 id、
+/// 也拿得到旧值**，于是可以直接分派 —— 一个两变体的枚举就够了。
+pub(crate) enum Computation {
+    /// 副作用：跑就完了，没有返回值。
+    Effect(EffectThunk),
+    /// 派生值：拿上一次的结果（首算时没有），算出新的一份。
+    Memo(MemoThunk),
+}
 
-pub(crate) struct ThunkValue(pub(crate) ThunkBox<*const (), ()>);
+pub(crate) struct EffectThunk(ThunkBox<(), ()>);
 
-impl ThunkValue {
+impl EffectThunk {
     /// 从一个 `FnMut` 构造。
     ///
     /// effect 从前只接受 `Fn()`，想在 effect 里维护一点状态就得自己套
     /// `Cell` / `RefCell`（审计报告 §3.4）。`FnMut` 在这个模型下是安全的：
-    /// 同一个节点在同一时刻只可能有一次执行 —— `run_node` 的 `running` 标志
+    /// 同一个节点在同一时刻只可能有一次执行 —— 运行前置的 `running` 标志
     /// 会让重入的那次直接返回 false（AUDIT P1）。
     ///
     /// 这里仍然用 `RefCell` 而不是 `UnsafeCell`：`running` 标志是运行时的不变量，
     /// 而这段代码在 `ThunkBox` 里，离那个不变量很远。真出现重入时 `RefCell`
     /// 给的是一句明确的 panic，`UnsafeCell` 给的是 UB —— 这正是本轮审计要消除的
     /// “靠注释维系独占性”。开销是一次标志检查，effect 不是热路径。
-    pub(crate) fn new_mut<F: FnMut() + 'static>(f: F) -> Self {
+    pub(crate) fn new<F: FnMut() + 'static>(f: F) -> Self {
         let cell = std::cell::RefCell::new(f);
-        Self(ThunkBox::new(move |_| {
+        Self(ThunkBox::new(move |()| {
             let mut f = cell
                 .try_borrow_mut()
                 .expect("effect 在自己的执行过程中被重入了：这是运行时的 bug");
@@ -236,25 +253,51 @@ impl ThunkValue {
         }))
     }
 
-    /// 从手工填好的内联缓冲区构造。
+    /// 执行这个 effect。
     ///
-    /// # Safety
-    ///
-    /// `data` 的布局必须与 `vtable` 约定一致，其所有权由返回的 `ThunkValue` 接管。
-    pub(crate) unsafe fn new_raw(data: InlineStorage, vtable: &'static ThunkVTable) -> Self {
-        Self(unsafe { ThunkBox::from_raw(data, vtable) })
+    /// 不再需要一个 `*const Runtime` 参数：从前 memo 的 thunk 要靠它把运行时
+    /// 转回来提交结果，而现在提交由驱动循环负责，effect 体本身通过
+    /// 线程本地的运行时访问一切。
+    #[inline]
+    pub(crate) fn call(&self) {
+        self.0.call(());
+    }
+}
+
+/// memo / derived 的计算闭包：`Option<&AnyValue> -> AnyValue`。
+///
+/// 参数走裸指针而不是引用，因为 [`ThunkBox`] 的 `Args` 必须是 `'static`，
+/// 装不下一个带生命周期的 `&'a AnyValue`。这是本类型仅有的一处 `unsafe`，
+/// 而它顶替掉的是从前 `memo.rs` 里那三张手写 vtable 加 `runtime.rs` 里的
+/// 通用 runner，一共十几处。
+pub(crate) struct MemoThunk(ThunkBox<Option<*const AnyValue>, AnyValue>);
+
+impl MemoThunk {
+    /// 带相等性门控的 memo（`memo::create`）。
+    pub(crate) fn new<T, F>(f: F) -> Self
+    where
+        T: Clone + PartialEq + 'static,
+        F: Fn(Option<&T>) -> T + 'static,
+    {
+        Self(ThunkBox::new(move |old: Option<*const AnyValue>| {
+            // SAFETY: `old` 要么是 `None`，要么来自 `compute` 里一个当场还活着的
+            // `&AnyValue`（旧值住在驱动循环的栈上），其存活期覆盖整个调用。
+            let old_t = old.and_then(|p| unsafe { (*p).downcast_ref::<T>() });
+            // 旧值按引用透传给用户闭包，绝不在这里克隆（AUDIT P9）。
+            AnyValue::new_reactive(f(old_t))
+        }))
     }
 
-    /// 执行这个计算闭包。
-    ///
-    /// # Safety
-    ///
-    /// `rt` 必须是一个指向当前 [`crate::runtime::Runtime`] 的有效指针，
-    /// 并且在整个调用期间保持有效 —— memo 的 thunk 会把它转回 `&Runtime`。
-    pub(crate) unsafe fn call(&self, rt: *const ()) {
-        // `ThunkBox::call` 自己是安全的（载荷与 vtable 的配对由它保证），
-        // 本方法之所以是 `unsafe`，是因为 `rt` 的有效性只能由调用方保证。
-        self.0.call(rt);
+    /// 不做门控的派生节点（`memo::derived`）：`T` 只有 `'static`，没有
+    /// `PartialEq` 可用，因此每一次重算都通知下游（AUDIT P10）。
+    pub(crate) fn new_derived<T: 'static>(f: Box<dyn Fn() -> T>) -> Self {
+        Self(ThunkBox::new(move |_| AnyValue::new(f())))
+    }
+
+    /// 算一份新值。`old` 是上一次的结果（首算时为 `None`）。
+    #[inline]
+    pub(crate) fn compute(&self, old: Option<&AnyValue>) -> AnyValue {
+        self.0.call(old.map(std::ptr::from_ref))
     }
 }
 

@@ -9,22 +9,20 @@ pub(crate) mod storage;
 use self::{
     graph::NodeState,
     guard::{
-        ComputationGuard, DepthGuard, EvalStack, NodeRunGuard, PayloadGuard, PropagateQueue,
-        QueueGuard, SignalValueGuard,
+        ComputationGuard, DepthGuard, NodeRunGuard, PayloadGuard, PropagateQueue, QueueGuard,
+        SignalValueGuard,
     },
     scheduler::*,
     scope::Scopes,
     storage::*,
 };
 use crate::{
-    ReactiveError, ReactiveResult,
+    DependencyList, ReactiveError, ReactiveResult,
     internal::{
-        FuncPtr,
         arena::Index as NodeId,
-        value::{AnyValue, ThunkVTable, ThunkValue},
+        value::{AnyValue, Computation, EffectThunk, MemoThunk},
     },
 };
-use silex_vtable::InlineStorage;
 
 pub(crate) struct Runtime {
     pub(crate) storage: Storage,
@@ -84,7 +82,7 @@ impl Runtime {
     }
 
     #[track_caller]
-    pub(crate) fn create_effect(&self, f: ThunkValue) -> NodeId {
+    pub(crate) fn create_effect(&self, f: EffectThunk) -> NodeId {
         let id = self.register_node();
         self.storage
             .reactive
@@ -234,13 +232,7 @@ impl Runtime {
         let was_outermost = {
             // DFS 期间禁止 flush effect 队列（AUDIT P15）。
             let eval_guard = DepthGuard::enter(&self.scheduler.evaluating);
-
-            {
-                // `evaluate` 在依赖成环时 panic；工作栈由守卫归还。
-                let mut stack = EvalStack::acquire(&self.scheduler.workspace);
-                self.evaluate(node_id, stack.get());
-            }
-
+            self.drive_eval(node_id);
             eval_guard.is_outermost()
         };
 
@@ -459,7 +451,7 @@ impl Runtime {
         Ok(f(borrowed.value().expect("just moved in")))
     }
 
-    pub(crate) fn prepare_memo_node(&self, id: NodeId, computation: ThunkValue) {
+    pub(crate) fn prepare_memo_node(&self, id: NodeId, computation: MemoThunk) {
         self.storage
             .reactive
             .insert(id, ReactiveNode::new_memo(computation));
@@ -516,20 +508,13 @@ impl Runtime {
         }
     }
 
-    /// 用给定的载荷初始化一个 memo / derived 节点，并立即完成首次计算。
+    /// 装上计算闭包并立即完成首次计算。
     ///
-    /// 计算闭包先被装进节点，再由统一的 [`Runtime::run_node`] 驱动首跑：
-    /// 这样首跑与后续重算走同一条路径，也不存在“闭包尚未被 `ThunkValue` 接管
-    /// 就提前返回”导致析构函数永不运行的窗口（AUDIT P19.10）。
-    ///
-    /// # Safety
-    ///
-    /// `data` 的内容必须是一个合法的 memo 载荷：偏移 0 处是 `*const MemoVTable`，
-    /// 其后是该 vtable 所约定的闭包表示。
+    /// 闭包先被装进节点，再由统一的 [`Runtime::run_node`] 驱动首跑：
+    /// 这样首跑与后续重算走同一条路径，也不存在“闭包尚未被节点接管就提前返回”
+    /// 导致析构函数永不运行的窗口（AUDIT P19.10）。
     #[inline(never)]
-    pub(crate) unsafe fn initialize_memo(&self, id: NodeId, data: InlineStorage) {
-        // SAFETY: 由调用方保证载荷布局与 `UNIVERSAL_MEMO_THUNK_VTABLE` 一致。
-        let thunk = unsafe { ThunkValue::new_raw(data, &UNIVERSAL_MEMO_THUNK_VTABLE) };
+    pub(crate) fn initialize_memo(&self, id: NodeId, thunk: MemoThunk) {
         self.prepare_memo_node(id, thunk);
         self.run_node(id);
     }
@@ -621,51 +606,69 @@ impl Runtime {
     /// memo 重算全部走这里。之前 `run_effect` 与 `run_computation` 是同一段逻辑的
     /// 两份拷贝，各自演化出不同的状态转换，正是 P1 / P8 得以存在的土壤（AUDIT P16）。
     ///
+    /// 它同时也是一个**驱动**：所有会执行用户代码的步骤（cleanup、计算闭包）
+    /// 都发生在这一层，而它们需要的载荷（闭包、cleanup 列表、依赖表）已经由
+    /// [`Runtime::begin_run`] 整个移出了节点。方案 B 之下这一层会拆成若干次
+    /// `with_rt`，用户代码落在两次借用之间。
+    ///
     /// 返回值表示是否真的执行了计算闭包。以下情况返回 `false`：
     /// 节点不存在、不是计算节点、或**正在运行中**。
     pub(crate) fn run_node(&self, id: NodeId) -> bool {
-        // 阶段一：加重入锁并借出计算闭包。
-        // 重入检查必须发生在任何破坏性操作之前 —— 一旦第二次执行前置阶段，
-        // 节点的依赖列表会被清空、订阅关系被摘除，而重建订阅的那一步却因为
-        // 计算闭包已被借出而被跳过，该节点从此永久失联（AUDIT P1）。
-        let (computation, dependencies) = {
-            let Some(node) = self.storage.node(id) else {
-                return false;
-            };
-            if !node.is_computation() || node.is_running() {
-                return false;
-            }
-            node.set_running(true);
-            node.effect_version
-                .set(node.effect_version.get().wrapping_add(1));
-            let mut slot = node.effect.borrow_mut();
-            (slot.computation.take(), mem::take(&mut slot.dependencies))
-        };
-
-        // 从这里开始，闭包的归还与重入锁的释放由守卫接管（panic 展开时同样生效）。
-        let run_guard = NodeRunGuard::new(self, id, computation);
-
-        // 阶段二：清理上一次运行留下的子节点、cleanup 与订阅关系。
-        let (children, cleanups) = self.take_scope_state(id);
-        self.run_cleanups(id, children, cleanups, dependencies);
-
-        let Some(f) = run_guard.computation.as_ref() else {
+        let Some(ticket) = self.begin_run(id) else {
             return false;
         };
 
-        // 阶段三：状态在调用用户闭包**之前**置 Clean。
-        // 运行期间产生的失效标记（例如 effect 写了自己的依赖）因此得以保留，
-        // 不会被“运行完再无条件置 Clean”抹掉（AUDIT P8）。
+        // 从这里开始，闭包的归还与重入锁的释放由守卫接管（panic 展开时同样生效）。
+        let run_guard = NodeRunGuard::new(self, id, ticket.computation);
+
+        // 清理上一次运行留下的子节点、cleanup 与订阅关系。
+        self.run_cleanups(id, ticket.children, ticket.cleanups, ticket.dependencies);
+
+        let Some(computation) = run_guard.computation.as_ref() else {
+            return false;
+        };
+
+        // 状态在调用用户闭包**之前**置 Clean。运行期间产生的失效标记
+        // （例如 effect 写了自己的依赖）因此得以保留，不会被“运行完再无条件置
+        // Clean”抹掉（AUDIT P8）。
         self.storage.set_state(id, NodeState::Clean);
 
         let _ctx = ComputationGuard::enter(self, id);
-        // SAFETY: 传给 thunk 的指针就是当前运行时本身，其生命周期覆盖整个调用。
-        unsafe { f.call(self as *const Runtime as *const ()) };
+        match computation {
+            Computation::Effect(f) => f.call(),
+            Computation::Memo(f) => self.recompute_memo(id, f),
+        }
         true
     }
-}
 
-impl Runtime {
+    /// 运行的前置阶段：加重入锁，把计算闭包与上一次运行的残留整个移出节点。
+    ///
+    /// 重入检查必须发生在任何破坏性操作之前 —— 一旦第二次执行前置阶段，
+    /// 节点的依赖列表会被清空、订阅关系被摘除，而重建订阅的那一步却因为
+    /// 计算闭包已被借出而被跳过，该节点从此永久失联（AUDIT P1）。
+    ///
+    /// 返回 `None` 表示不该运行：节点不存在、不是计算节点、或正在运行中。
+    fn begin_run(&self, id: NodeId) -> Option<RunTicket> {
+        let node = self.storage.node(id)?;
+        if !node.is_computation() || node.is_running() {
+            return None;
+        }
+        node.set_running(true);
+        node.effect_version
+            .set(node.effect_version.get().wrapping_add(1));
+        let (computation, dependencies) = {
+            let mut slot = node.effect.borrow_mut();
+            (slot.computation.take(), mem::take(&mut slot.dependencies))
+        };
+        let (children, cleanups) = self.take_scope_state(id);
+        Some(RunTicket {
+            computation,
+            children,
+            cleanups,
+            dependencies,
+        })
+    }
+
     /// 重算一个 memo：借出旧值 → 调用计算闭包 → 与旧值比较 → 提交。
     ///
     /// 旧值是**借**给计算闭包的，不是克隆给它的。之前这里为一次重算克隆旧值三次
@@ -677,12 +680,13 @@ impl Runtime {
     /// 代码，运行时不能在它执行期间持有指向节点载荷的借用（AUDIT P5）。因此
     /// “在 memo 的计算闭包里读它自己”读到的是 [`ReactiveError::Reentrant`]，
     /// 旧值只能从闭包参数拿 —— 这本来也是 `Fn(Option<&T>) -> T` 这个签名的用途。
+    ///
+    /// 这里从前隔着一层“通用 runner”：memo 的闭包被打包成一个 `ThunkValue`，
+    /// 运行时把 `*const Runtime` 传进去，runner 再从 `current_owner()` 反查自己是
+    /// 哪个节点、把 vtable 从载荷偏移 0 处读回来、回调进 `update_memo_core`。
+    /// 驱动本来就知道 id、也拿得到旧值，那一层因此整个删掉了（方案 B §5.2）。
     #[inline(never)]
-    pub(crate) fn update_memo_core(
-        &self,
-        id: NodeId,
-        compute_any: &mut dyn FnMut(Option<&AnyValue>) -> AnyValue,
-    ) {
+    fn recompute_memo(&self, id: NodeId, thunk: &MemoThunk) {
         // 首算时节点里本来就没有值；节点不存在、或值正被某个 update 闭包借出时
         // 同样没有可用的旧值 —— 一律按“变了”处理，`commit_update` 自己会跳过
         // 不存在的节点。
@@ -691,10 +695,7 @@ impl Runtime {
         // 守卫保证旧值一定会被放回（计算闭包 panic 时也一样）。
         let borrowed = taken.map(|value| SignalValueGuard::new(self, id, value));
 
-        let new_any = {
-            let _ctx = ComputationGuard::enter(self, id);
-            compute_any(borrowed.as_ref().and_then(SignalValueGuard::value))
-        };
+        let new_any = thunk.compute(borrowed.as_ref().and_then(SignalValueGuard::value));
 
         // 比较也在旧值还被借出时进行：`try_eq` 会调用用户的 `PartialEq`，
         // 同样不该在运行时持有节点借用的情况下运行。
@@ -707,56 +708,15 @@ impl Runtime {
         drop(borrowed);
         self.commit_update(id, new_any, changed);
     }
-
-    /// memo 载荷的统一入口。
-    ///
-    /// vtable 指针以**指针**形式从缓冲区读回（而不是先读成 `usize` 再转回指针），
-    /// 否则 provenance 会被擦除（AUDIT P3）。
-    /// # Safety
-    ///
-    /// `ptr` 必须指向一个合法的 memo 载荷（偏移 0 处是 `*const MemoVTable`），
-    /// `rt_ptr` 必须是有效的 `*const Runtime`。两者都由 `run_node` 提供。
-    pub(crate) unsafe fn universal_memo_runner(ptr: *const u8, rt_ptr: *const ()) {
-        // SAFETY: `run_node` 传进来的就是当前运行时，其生命周期覆盖整个调用。
-        let rt = unsafe { &*(rt_ptr as *const Runtime) };
-        let id = rt
-            .current_owner()
-            .expect("memo runner must be invoked with the memo node as the current owner");
-        // SAFETY: 载荷布局由 `build_memo_payload` / `internal_init_derived` 保证：
-        // 偏移 0 是一个真正的 `*const MemoVTable`（不是 usize 往返，AUDIT P3），
-        // 其后是该 vtable 约定的闭包表示。
-        let vtable = unsafe { &*(*(ptr as *const *const MemoVTable)) };
-        let data_ptr = unsafe { ptr.add(MEMO_PAYLOAD_OFFSET) };
-
-        // SAFETY: `data_ptr` 指向的正是这张 vtable 约定的闭包表示。
-        rt.update_memo_core(id, &mut |old| unsafe {
-            (vtable.compute.as_fn())(data_ptr, old)
-        });
-    }
-
-    /// # Safety
-    ///
-    /// `ptr` 必须指向一个尚未析构过的合法 memo 载荷；调用后载荷即失效。
-    pub(crate) unsafe fn universal_memo_drop(ptr: *mut u8) {
-        // SAFETY: 布局同 `universal_memo_runner`；析构只会发生一次
-        // （`ThunkBox` 的 drop 路径）。
-        let vtable = unsafe { &*(*(ptr as *const *const MemoVTable)) };
-        let data_ptr = unsafe { ptr.add(MEMO_PAYLOAD_OFFSET) };
-        unsafe { (vtable.drop.as_fn())(data_ptr) };
-    }
 }
 
-/// memo 内联载荷中闭包相对于缓冲区起始处的偏移（前面是 `*const MemoVTable`）。
-pub(crate) const MEMO_PAYLOAD_OFFSET: usize = mem::size_of::<usize>();
-
-pub(crate) struct MemoVTable {
-    /// `old` 是**借**给计算闭包的旧值（首算时没有旧值，这里是 `None`）。
-    /// 绝不要在这里克隆它 —— 是否需要一份拷贝由用户闭包自己决定。
-    pub(crate) compute: FuncPtr<unsafe fn(*const u8, Option<&AnyValue>) -> AnyValue>,
-    pub(crate) drop: FuncPtr<unsafe fn(*mut u8)>,
+/// 一次计算的“待办”：所有载荷都已按值移出节点。
+///
+/// 它的存在就是为了让执行用户代码的那一层不必再向运行时要任何东西 ——
+/// 方案 B 之下取票与执行分处两次不同的借用。
+struct RunTicket {
+    computation: Option<Computation>,
+    children: Vec<NodeId>,
+    cleanups: crate::runtime::storage::CleanupList,
+    dependencies: DependencyList,
 }
-
-pub(crate) static UNIVERSAL_MEMO_THUNK_VTABLE: ThunkVTable = ThunkVTable {
-    drop: FuncPtr::new(Runtime::universal_memo_drop),
-    call: FuncPtr::new(Runtime::universal_memo_runner),
-};

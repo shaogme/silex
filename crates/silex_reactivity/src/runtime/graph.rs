@@ -23,7 +23,7 @@
 
 use crate::{
     internal::arena::Index as NodeId,
-    runtime::{Runtime, storage::ReactiveNode},
+    runtime::{Runtime, guard::EvalStack, storage::ReactiveNode},
 };
 use std::collections::VecDeque;
 
@@ -32,6 +32,18 @@ pub(crate) enum NodeState {
     Clean,
     Check,
     Dirty,
+}
+
+/// [`Runtime::eval_step`] 交还给驱动循环的东西。
+///
+/// 求值 DFS 本身不跑一行用户代码；每当它走到“该跑一次计算了”，就把节点 id
+/// 交还给驱动，由驱动在不持有任何运行时内部借用的情况下执行。
+#[derive(Clone, Copy)]
+pub(crate) enum Step {
+    /// 本次 DFS 走完了。
+    Done,
+    /// 该跑这个节点的计算了。
+    Run(NodeId),
 }
 
 /// 求值 DFS 的一帧。
@@ -148,19 +160,57 @@ impl Runtime {
 
     /// 必要时沿依赖向上把一个节点算干净。
     ///
+    /// 这是求值的**驱动循环**：DFS 本身由 [`Runtime::eval_step`] 一步步推进，
+    /// 而每当它走到“该跑一次计算了”，控制权就回到这里，由驱动在**不持有任何
+    /// 运行时内部借用**的情况下调用 [`Runtime::run_node`]。
+    ///
+    /// 工作栈是驱动帧上的一个局部 `Vec`（从池子里借出来的），不是运行时里的
+    /// 一块状态 —— 这一点是整个设计成立的关键：求值可以重入（memo 的计算闭包
+    /// 里再读一个脏 memo），每一层驱动各自持有自己的栈，互不干扰。方案 B 之下
+    /// `eval_step` 会变成一次 `with_rt`，而 `run_node` 落在两次借用之间。
+    ///
+    /// # Panics
+    ///
+    /// 依赖成环时 panic（见 [`Runtime::eval_step`]）。
+    pub(crate) fn drive_eval(&self, target_node: NodeId) {
+        if self.storage.get_state(target_node) == NodeState::Clean {
+            return;
+        }
+
+        // 成环时 `eval_step` 会 panic；工作栈由守卫归还。
+        let mut held = EvalStack::acquire(&self.scheduler.workspace);
+        let stack = held.get();
+        stack.clear();
+        stack.push(EvalFrame::new(target_node));
+
+        while let Step::Run(id) = self.eval_step(stack) {
+            // 状态转换由 `run_node` 负责（运行前置 Clean）。这里**不能**再无条件
+            // 写一次 Clean —— 那会把节点在自己运行期间产生的失效标记抹掉，
+            // 使得队列里的重跑条目被当作“已干净”跳过，更新静默丢失（AUDIT P8）。
+            if !self.run_node(id) {
+                // 不是计算节点（例如一个被标脏的普通 signal）：必须置 Clean，
+                // 否则上游会反复把它压栈。
+                self.storage.set_state(id, NodeState::Clean);
+            }
+
+            // 无论本次是否重新变脏都要出栈：重新变脏意味着它已经被重新入队，
+            // 由调度队列负责重跑；留在栈上只会死循环。
+            stack.pop();
+        }
+    }
+
+    /// 推进 DFS，直到走完（[`Step::Done`]）或撞上一次需要执行用户代码的计算
+    /// （[`Step::Run`]）。
+    ///
+    /// 本方法自己**不执行任何用户代码** —— 这正是它与从前那个一路跑到底的
+    /// `evaluate` 的全部区别。
+    ///
     /// # Panics
     ///
     /// 依赖成环时 panic。`stack` 保存的是一条从目标节点出发的**简单路径**，
     /// 一个节点第二次出现就意味着环 —— 之前没有任何检测，`A -> B -> A` 会让
     /// 这个循环一直压栈直到 OOM（AUDIT P13）。
-    pub(crate) fn evaluate(&self, target_node: NodeId, stack: &mut Vec<EvalFrame>) {
-        if self.storage.get_state(target_node) == NodeState::Clean {
-            return;
-        }
-
-        stack.clear();
-        stack.push(EvalFrame::new(target_node));
-
+    fn eval_step(&self, stack: &mut Vec<EvalFrame>) -> Step {
         while let Some(&EvalFrame {
             node: current,
             cursor,
@@ -210,21 +260,11 @@ impl Runtime {
                 continue;
             }
 
-            // Dirty，或者 Check 且依赖确实变了：跑计算。
-            //
-            // 状态转换由 `run_node` 负责（运行前置 Clean）。这里**不能**再无条件
-            // 写一次 Clean —— 那会把节点在自己运行期间产生的失效标记抹掉，
-            // 使得队列里的重跑条目被当作“已干净”跳过，更新静默丢失（AUDIT P8）。
-            if !self.run_node(current) {
-                // 不是计算节点（例如一个被标脏的普通 signal）：必须置 Clean，
-                // 否则上游会反复把它压栈。
-                self.storage.set_state(current, NodeState::Clean);
-            }
-
-            // 无论本次是否重新变脏都要出栈：重新变脏意味着它已经被重新入队，
-            // 由调度队列负责重跑；留在栈上只会死循环。
-            stack.pop();
+            // Dirty，或者 Check 且依赖确实变了：把控制权交还给驱动。
+            return Step::Run(current);
         }
+
+        Step::Done
     }
 
     /// 依赖环的诊断信息。
@@ -253,7 +293,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        internal::value::{AnyValue, ThunkValue},
+        internal::value::{AnyValue, Computation, EffectThunk, MemoThunk},
         runtime::storage::{EffectSlot, NodeFlags, ReactiveNode, SignalSlot},
     };
     use std::{cell::RefCell, rc::Rc};
@@ -278,10 +318,23 @@ mod tests {
             self.rt.create_signal(AnyValue::new(0i32))
         }
 
+        /// 计算闭包只记录“我被跑过了”。
+        ///
+        /// 带值的节点（memo）必须装一个 `MemoThunk` —— 它的返回值会被
+        /// `recompute_memo` 提交进节点，因此这里恒返回同一个常量：
+        /// 首算时没有旧值，一律算“变了”；之后每次都与旧值相等，不再惊动下游。
+        /// 用例只看 `ran`，这个选择让它们不受提交语义干扰。
         fn computation(&self, flags: NodeFlags) -> NodeId {
             let id = self.rt.register_node();
             let ran = self.ran.clone();
-            let thunk = ThunkValue::new_mut(move || ran.borrow_mut().push(id));
+            let thunk = if flags.has(NodeFlags::VALUE) {
+                Computation::Memo(MemoThunk::new::<i32, _>(move |_| {
+                    ran.borrow_mut().push(id);
+                    0
+                }))
+            } else {
+                Computation::Effect(EffectThunk::new(move || ran.borrow_mut().push(id)))
+            };
             self.rt.storage.reactive.insert(
                 id,
                 ReactiveNode::new(
@@ -363,8 +416,7 @@ mod tests {
         }
 
         fn evaluate_node(&self, target: NodeId) {
-            let mut stack = Vec::new();
-            self.rt.evaluate(target, &mut stack);
+            self.rt.drive_eval(target);
         }
     }
 
