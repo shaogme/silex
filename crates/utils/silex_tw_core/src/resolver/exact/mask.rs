@@ -92,14 +92,20 @@ pub fn resolve_mask_rules(
         "mask-type-luminance" => Some(cow![("mask-type", "luminance")]),
         "mask-luminance" => Some(cow![("mask-type", "luminance")]),
         "mask-match" => Some(cow![("mask-mode", "match-source")]),
-        "mask-circle" => Some(cow![(
-            "mask-image",
-            "radial-gradient(circle, var(--tw-mask-stops))",
-        )]),
-        "mask-ellipse" => Some(cow![(
-            "mask-image",
-            "radial-gradient(ellipse, var(--tw-mask-stops))",
-        )]),
+        "mask-circle" => Some(cow![
+            ("mask-composite", "intersect"),
+            (
+                "mask-image",
+                "radial-gradient(circle, var(--tw-mask-stops))",
+            ),
+        ]),
+        "mask-ellipse" => Some(cow![
+            ("mask-composite", "intersect"),
+            (
+                "mask-image",
+                "radial-gradient(ellipse, var(--tw-mask-stops))",
+            ),
+        ]),
         "mask-contain" => Some(cow![("mask-size", "contain")]),
         "mask-cover" => Some(cow![("mask-size", "cover")]),
         "mask-auto" => Some(cow![("mask-size", "auto")]),
@@ -135,58 +141,97 @@ pub fn resolve_mask_rules(
         "mask-subtract" => Some(cow![("mask-composite", "subtract")]),
         "mask-intersect" => Some(cow![("mask-composite", "intersect")]),
         "mask-exclude" => Some(cow![("mask-composite", "exclude")]),
-        "mask-radial-at-bottom" => Some(cow![(
-            "mask-image",
-            "radial-gradient(at bottom, var(--tw-mask-stops))",
-        )]),
-        "mask-radial-at-bottom-left" => Some(cow![(
-            "mask-image",
-            "radial-gradient(at bottom left, var(--tw-mask-stops))",
-        )]),
-        "mask-radial-at-bottom-right" => Some(cow![(
-            "mask-image",
-            "radial-gradient(at bottom right, var(--tw-mask-stops))",
-        )]),
-        "mask-radial-at-center" => Some(cow![(
-            "mask-image",
-            "radial-gradient(at center, var(--tw-mask-stops))",
-        )]),
-        "mask-radial-at-left" => Some(cow![(
-            "mask-image",
-            "radial-gradient(at left, var(--tw-mask-stops))",
-        )]),
-        "mask-radial-at-right" => Some(cow![(
-            "mask-image",
-            "radial-gradient(at right, var(--tw-mask-stops))",
-        )]),
-        "mask-radial-at-top" => Some(cow![(
-            "mask-image",
-            "radial-gradient(at top, var(--tw-mask-stops))",
-        )]),
-        "mask-radial-at-top-left" => Some(cow![(
-            "mask-image",
-            "radial-gradient(at top left, var(--tw-mask-stops))",
-        )]),
-        "mask-radial-at-top-right" => Some(cow![(
-            "mask-image",
-            "radial-gradient(at top right, var(--tw-mask-stops))",
-        )]),
-        "mask-radial-closest-corner" => Some(cow![(
-            "mask-image",
-            "radial-gradient(closest-corner, var(--tw-mask-stops))",
-        )]),
-        "mask-radial-closest-side" => Some(cow![(
-            "mask-image",
-            "radial-gradient(closest-side, var(--tw-mask-stops))",
-        )]),
-        "mask-radial-farthest-corner" => Some(cow![(
-            "mask-image",
-            "radial-gradient(farthest-corner, var(--tw-mask-stops))",
-        )]),
-        "mask-radial-farthest-side" => Some(cow![(
-            "mask-image",
-            "radial-gradient(farthest-side, var(--tw-mask-stops))",
-        )]),
+        "mask-radial-at-bottom" => Some(cow![
+            ("mask-composite", "intersect"),
+            (
+                "mask-image",
+                "radial-gradient(at bottom, var(--tw-mask-stops))",
+            ),
+        ]),
+        "mask-radial-at-bottom-left" => Some(cow![
+            ("mask-composite", "intersect"),
+            (
+                "mask-image",
+                "radial-gradient(at bottom left, var(--tw-mask-stops))",
+            ),
+        ]),
+        "mask-radial-at-bottom-right" => Some(cow![
+            ("mask-composite", "intersect"),
+            (
+                "mask-image",
+                "radial-gradient(at bottom right, var(--tw-mask-stops))",
+            ),
+        ]),
+        "mask-radial-at-center" => Some(cow![
+            ("mask-composite", "intersect"),
+            (
+                "mask-image",
+                "radial-gradient(at center, var(--tw-mask-stops))",
+            ),
+        ]),
+        "mask-radial-at-left" => Some(cow![
+            ("mask-composite", "intersect"),
+            (
+                "mask-image",
+                "radial-gradient(at left, var(--tw-mask-stops))",
+            ),
+        ]),
+        "mask-radial-at-right" => Some(cow![
+            ("mask-composite", "intersect"),
+            (
+                "mask-image",
+                "radial-gradient(at right, var(--tw-mask-stops))",
+            ),
+        ]),
+        "mask-radial-at-top" => Some(cow![
+            ("mask-composite", "intersect"),
+            (
+                "mask-image",
+                "radial-gradient(at top, var(--tw-mask-stops))",
+            ),
+        ]),
+        "mask-radial-at-top-left" => Some(cow![
+            ("mask-composite", "intersect"),
+            (
+                "mask-image",
+                "radial-gradient(at top left, var(--tw-mask-stops))",
+            ),
+        ]),
+        "mask-radial-at-top-right" => Some(cow![
+            ("mask-composite", "intersect"),
+            (
+                "mask-image",
+                "radial-gradient(at top right, var(--tw-mask-stops))",
+            ),
+        ]),
+        "mask-radial-closest-corner" => Some(cow![
+            ("mask-composite", "intersect"),
+            (
+                "mask-image",
+                "radial-gradient(closest-corner, var(--tw-mask-stops))",
+            ),
+        ]),
+        "mask-radial-closest-side" => Some(cow![
+            ("mask-composite", "intersect"),
+            (
+                "mask-image",
+                "radial-gradient(closest-side, var(--tw-mask-stops))",
+            ),
+        ]),
+        "mask-radial-farthest-corner" => Some(cow![
+            ("mask-composite", "intersect"),
+            (
+                "mask-image",
+                "radial-gradient(farthest-corner, var(--tw-mask-stops))",
+            ),
+        ]),
+        "mask-radial-farthest-side" => Some(cow![
+            ("mask-composite", "intersect"),
+            (
+                "mask-image",
+                "radial-gradient(farthest-side, var(--tw-mask-stops))",
+            ),
+        ]),
 
         _ => None,
     }

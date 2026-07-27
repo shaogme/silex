@@ -25,10 +25,16 @@ pub fn resolve_mask_color_rules(
         let val_name = &rest[idx + marker.len()..];
 
         if let Some(color) = parse_color_value(ctx, val_name) {
-            return Some(vec![(color_prop, color)]);
+            return Some(vec![
+                ("mask-composite", Cow::Borrowed("intersect")),
+                (color_prop, color),
+            ]);
         }
         if let Some(len) = super::dynamic::resolve_length_val(val_name) {
-            return Some(vec![(position_prop, Cow::Owned(len))]);
+            return Some(vec![
+                ("mask-composite", Cow::Borrowed("intersect")),
+                (position_prop, Cow::Owned(len)),
+            ]);
         }
     }
 

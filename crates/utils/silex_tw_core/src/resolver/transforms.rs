@@ -25,44 +25,80 @@ pub fn resolve_transform_transition_rules(
         "transition-none" => Some(cow![("transition-property", "none")]),
         "transition-all" => Some(cow![
             ("transition-property", "all"),
-            ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
-            ("transition-duration", "150ms"),
+            (
+                "transition-timing-function",
+                "var(--tw-ease, var(--default-transition-timing-function))",
+            ),
+            (
+                "transition-duration",
+                "var(--tw-duration, var(--default-transition-duration))",
+            ),
         ]),
         "transition" => Some(cow![
             (
                 "transition-property",
-                "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, backdrop-filter",
+                "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to, opacity, box-shadow, transform, translate, scale, rotate, filter, -webkit-backdrop-filter, backdrop-filter, display, content-visibility, overlay, pointer-events",
             ),
-            ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
-            ("transition-duration", "150ms"),
+            (
+                "transition-timing-function",
+                "var(--tw-ease, var(--default-transition-timing-function))",
+            ),
+            (
+                "transition-duration",
+                "var(--tw-duration, var(--default-transition-duration))",
+            ),
         ]),
         "transition-colors" => Some(cow![
             (
                 "transition-property",
-                "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke",
+                "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to",
             ),
-            ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
-            ("transition-duration", "150ms"),
+            (
+                "transition-timing-function",
+                "var(--tw-ease, var(--default-transition-timing-function))",
+            ),
+            (
+                "transition-duration",
+                "var(--tw-duration, var(--default-transition-duration))",
+            ),
         ]),
         "transition-opacity" => Some(cow![
             ("transition-property", "opacity"),
-            ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
-            ("transition-duration", "150ms"),
+            (
+                "transition-timing-function",
+                "var(--tw-ease, var(--default-transition-timing-function))",
+            ),
+            (
+                "transition-duration",
+                "var(--tw-duration, var(--default-transition-duration))",
+            ),
         ]),
         "transition-shadow" => Some(cow![
             ("transition-property", "box-shadow"),
-            ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
-            ("transition-duration", "150ms"),
+            (
+                "transition-timing-function",
+                "var(--tw-ease, var(--default-transition-timing-function))",
+            ),
+            (
+                "transition-duration",
+                "var(--tw-duration, var(--default-transition-duration))",
+            ),
         ]),
         "transition-transform" => Some(cow![
             ("transition-property", "transform, translate, scale, rotate"),
-            ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
-            ("transition-duration", "150ms"),
+            (
+                "transition-timing-function",
+                "var(--tw-ease, var(--default-transition-timing-function))",
+            ),
+            (
+                "transition-duration",
+                "var(--tw-duration, var(--default-transition-duration))",
+            ),
         ]),
         "transition-discrete" => Some(cow![("transition-behavior", "allow-discrete")]),
         "duration-initial" => Some(cow![("transition-duration", "initial")]),
         "ease-initial" => Some(cow![("transition-timing-function", "initial")]),
-        "transition-normal" => Some(cow![("transition-timing-function", "normal")]),
+        "transition-normal" => Some(cow![("transition-behavior", "normal")]),
 
         // Transform Utilities
         "transform" => Some(cow![(
@@ -346,73 +382,6 @@ pub fn resolve_transform_transition_rules(
         && let Some(val) = resolve_length_val(&format!("-{}", rest))
     {
         return Some(cow!(vec![("translate", val)]));
-    }
-
-    // Transition Properties
-    match class_name {
-        "transition" | "transition-normal" => {
-            return Some(cow!(vec![
-                (
-                    "transition-property",
-                    "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, backdrop-filter"
-                ),
-                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
-                ("transition-duration", "150ms"),
-            ]));
-        }
-        "transition-all" => {
-            return Some(cow!(vec![
-                ("transition-property", "all"),
-                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)",),
-                ("transition-duration", "150ms"),
-            ]));
-        }
-        "transition-colors" => {
-            return Some(cow!(vec![
-                (
-                    "transition-property",
-                    "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke"
-                ),
-                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
-                ("transition-duration", "150ms"),
-            ]));
-        }
-        "transition-discrete" => {
-            return Some(cow!(vec![
-                ("transition-behavior", "discrete"),
-                (
-                    "transition-property",
-                    "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, backdrop-filter"
-                ),
-                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
-                ("transition-duration", "150ms"),
-            ]));
-        }
-        "transition-none" => {
-            return Some(cow!(vec![("transition-property", "none")]));
-        }
-        "transition-opacity" => {
-            return Some(cow!(vec![
-                ("transition-property", "opacity"),
-                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)",),
-                ("transition-duration", "150ms"),
-            ]));
-        }
-        "transition-shadow" => {
-            return Some(cow!(vec![
-                ("transition-property", "box-shadow"),
-                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)",),
-                ("transition-duration", "150ms"),
-            ]));
-        }
-        "transition-transform" => {
-            return Some(cow!(vec![
-                ("transition-property", "transform, translate, scale, rotate",),
-                ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)",),
-                ("transition-duration", "150ms"),
-            ]));
-        }
-        _ => {}
     }
 
     // Duration

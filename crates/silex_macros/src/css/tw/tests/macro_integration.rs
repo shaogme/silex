@@ -1,3 +1,4 @@
+use crate::css::tw::tests::css_probe::extract_declarations;
 use crate::css::tw::tw_impl;
 use proc_macro2::{TokenStream, TokenTree};
 use quote::quote;
@@ -169,7 +170,7 @@ fn too_many_conflicting_conditionals_are_rejected() {
 }
 
 /// 验证未显式指定 duration/ease 的 transition 工具类（如 `transition-all` 与 `transition-transform`）
-/// 静态规则被提升为独立 Class 时，自动解出 table.rs 预置的 150ms (.15s) 动画时长。
+/// 静态规则被提升为独立 Class 时，自动解出 table.rs 预置的 Tailwind v4 var(--tw-duration, ...) 默认变量声明。
 #[test]
 fn unspecified_duration_transition_utilities_hoist_with_default_duration() {
     // 1. 测试静态 `transition-all` 在条件 Cluster 碰撞下的独立提升与默认 duration 属性
@@ -179,16 +180,25 @@ fn unspecified_duration_transition_utilities_hoist_with_default_duration() {
     );
     let all_css = css_of_tw(all_ts);
     assert!(!all_css.is_empty());
-    let all_hoisted_css = &all_css[0];
-    assert!(
-        all_hoisted_css.contains("transition-property:all")
-            || all_hoisted_css.contains("transition-property: all"),
-        "应该提升出 transition-property: all 静态类，实际: {all_hoisted_css}"
+    let decls = extract_declarations(&all_css[0]);
+    let prop_decl = decls
+        .iter()
+        .find(|(p, _)| p == "transition-property")
+        .map(|(_, v)| v.as_str());
+    assert_eq!(
+        prop_decl,
+        Some("all"),
+        "transition-all 提升必须精准产生 transition-property: all，实际声明: {decls:?}"
     );
+
+    let dur_decl = decls
+        .iter()
+        .find(|(p, _)| p == "transition-duration")
+        .map(|(_, v)| v.as_str());
     assert!(
-        all_hoisted_css.contains("transition-duration:.15s")
-            || all_hoisted_css.contains("transition-duration:150ms"),
-        "底层由 codegen 产生的 table.rs 应为 transition-all 补全默认 .15s duration，实际: {all_hoisted_css}"
+        dur_decl == Some("var(--tw-duration,var(--default-transition-duration))")
+            || dur_decl == Some("var(--tw-duration, var(--default-transition-duration))"),
+        "transition-all 必须产出默认 var(--tw-duration, ...) 声明，实际声明: {decls:?}"
     );
 
     // 2. 测试静态 `transition-transform` 在条件 Cluster 碰撞下的独立提升与默认 duration 属性
@@ -202,15 +212,24 @@ fn unspecified_duration_transition_utilities_hoist_with_default_duration() {
     );
     let transform_css = css_of_tw(transform_ts);
     assert!(!transform_css.is_empty());
-    let transform_hoisted_css = &transform_css[0];
-    assert!(
-        transform_hoisted_css.contains("transition-property:transform"),
-        "应该提升出 transition-property: transform 静态类，实际: {transform_hoisted_css}"
+    let transform_decls = extract_declarations(&transform_css[0]);
+    let transform_prop = transform_decls
+        .iter()
+        .find(|(p, _)| p == "transition-property")
+        .map(|(_, v)| v.as_str());
+    assert_eq!(
+        transform_prop,
+        Some("transform,translate,scale,rotate").or(Some("transform, translate, scale, rotate")),
+        "transition-transform 必须精准产生动画展开属性，实际声明: {transform_decls:?}"
     );
+    let transform_dur = transform_decls
+        .iter()
+        .find(|(p, _)| p == "transition-duration")
+        .map(|(_, v)| v.as_str());
     assert!(
-        transform_hoisted_css.contains("transition-duration:.15s")
-            || transform_hoisted_css.contains("transition-duration:150ms"),
-        "底层由 codegen 产生的 table.rs 应为 transition-transform 补全默认 .15s duration，实际: {transform_hoisted_css}"
+        transform_dur == Some("var(--tw-duration,var(--default-transition-duration))")
+            || transform_dur == Some("var(--tw-duration, var(--default-transition-duration))"),
+        "transition-transform 必须产出默认 var(--tw-duration, ...) 声明，实际声明: {transform_decls:?}"
     );
 }
 
@@ -225,15 +244,23 @@ fn explicit_duration_and_ease_transition_utilities_hoist_with_custom_values() {
     );
     let colors_css = css_of_tw(colors_ts);
     assert!(!colors_css.is_empty());
-    let colors_hoisted_css = &colors_css[0];
+    let decls = extract_declarations(&colors_css[0]);
+    let dur_decl = decls
+        .iter()
+        .find(|(p, _)| p == "transition-duration")
+        .map(|(_, v)| v.as_str());
     assert!(
-        colors_hoisted_css.contains("transition-property:") && colors_hoisted_css.contains("color"),
-        "应该提升出 transition-colors 规则，实际: {colors_hoisted_css}"
+        dur_decl == Some("200ms") || dur_decl == Some(".2s"),
+        "必须精准包含 200ms / .2s duration，实际声明: {decls:?}"
     );
+    let ease_decl = decls
+        .iter()
+        .find(|(p, _)| p == "transition-timing-function")
+        .map(|(_, v)| v.as_str());
     assert!(
-        colors_hoisted_css.contains("transition-duration:.2s")
-            || colors_hoisted_css.contains("transition-duration:200ms"),
-        "包含显式 duration-200，应解析出 .2s duration，实际: {colors_hoisted_css}"
+        ease_decl == Some("cubic-bezier(.4,0,.2,1)")
+            || ease_decl == Some("cubic-bezier(0.4, 0, 0.2, 1)"),
+        "ease-in-out 必须精准解析为 cubic-bezier(0.4, 0, 0.2, 1)，实际声明: {decls:?}"
     );
 
     // 2. 测试显式包含 duration-200 ease-in-out 的 `transition-transform` 静态类提升
@@ -247,14 +274,240 @@ fn explicit_duration_and_ease_transition_utilities_hoist_with_custom_values() {
     );
     let transform_css = css_of_tw(transform_ts);
     assert!(!transform_css.is_empty());
-    let transform_hoisted_css = &transform_css[0];
+    let transform_decls = extract_declarations(&transform_css[0]);
+    let transform_dur = transform_decls
+        .iter()
+        .find(|(p, _)| p == "transition-duration")
+        .map(|(_, v)| v.as_str());
     assert!(
-        transform_hoisted_css.contains("transition-property:transform"),
-        "应该提升出 transition-property: transform 规则，实际: {transform_hoisted_css}"
+        transform_dur == Some("200ms") || transform_dur == Some(".2s"),
+        "必须精准包含 200ms / .2s duration，实际声明: {transform_decls:?}"
     );
+}
+
+/// 验证 `transition-discrete` 与 `transition-normal` 独立提升出正确的 `transition-behavior` 规则
+#[test]
+fn transition_discrete_and_normal_utilities_hoist_correct_behavior_declarations() {
+    // 1. 测试 transition-discrete 提升 allow-discrete
+    let discrete_css = css_of_tw(quote!(
+        "relative transition-discrete overflow-hidden",
+        (is_visible, "block", "hidden")
+    ));
+    assert!(!discrete_css.is_empty());
+    let discrete_decls = extract_declarations(&discrete_css[0]);
+    let behavior_decl = discrete_decls
+        .iter()
+        .find(|(p, _)| p == "transition-behavior")
+        .map(|(_, v)| v.as_str());
+    assert_eq!(
+        behavior_decl,
+        Some("allow-discrete"),
+        "transition-discrete 必须精准产生声明 transition-behavior: allow-discrete，实际声明: {discrete_decls:?}"
+    );
+
+    // 2. 测试 transition-normal 提升 normal
+    let normal_css = css_of_tw(quote!(
+        "relative transition-normal overflow-hidden",
+        (is_visible, "block", "hidden")
+    ));
+    assert!(!normal_css.is_empty());
+    let normal_decls = extract_declarations(&normal_css[0]);
+    let normal_behavior = normal_decls
+        .iter()
+        .find(|(p, _)| p == "transition-behavior")
+        .map(|(_, v)| v.as_str());
+    assert_eq!(
+        normal_behavior,
+        Some("normal"),
+        "transition-normal 必须精准产生声明 transition-behavior: normal，实际声明: {normal_decls:?}"
+    );
+}
+
+/// 验证 `transition` 产出的完整展开 CSS 属性全集与 Tailwind v4 默认变量表达式
+#[test]
+fn full_transition_expanded_properties_and_variables_hoisting() {
+    let css = css_of_tw(quote!(
+        "transition flex items-center p-4",
+        (active, "bg-blue-500", "bg-transparent")
+    ));
+    assert!(!css.is_empty());
+    let decls = extract_declarations(&css[0]);
+
+    let prop_decl = decls
+        .iter()
+        .find(|(p, _)| p == "transition-property")
+        .map(|(_, v)| v.as_str());
     assert!(
-        transform_hoisted_css.contains("transition-duration:.2s")
-            || transform_hoisted_css.contains("transition-duration:200ms"),
-        "包含显式 duration-200，应解析出 .2s duration，实际: {transform_hoisted_css}"
+        prop_decl.is_some(),
+        "必须产生 transition-property 属性，实际声明: {decls:?}"
+    );
+    let prop_val = prop_decl.unwrap();
+
+    // 严格校验 transition-property 是否精准包含了 Tailind v4 要求的全集展开项（包含渐变/现代属性）
+    let expected_props = [
+        "color",
+        "background-color",
+        "border-color",
+        "outline-color",
+        "text-decoration-color",
+        "fill",
+        "stroke",
+        "--tw-gradient-from",
+        "--tw-gradient-via",
+        "--tw-gradient-to",
+        "opacity",
+        "box-shadow",
+        "transform",
+        "translate",
+        "scale",
+        "rotate",
+        "filter",
+        "-webkit-backdrop-filter",
+        "backdrop-filter",
+        "display",
+        "content-visibility",
+        "overlay",
+        "pointer-events",
+    ];
+    let actual_props: Vec<&str> = prop_val.split(',').map(|s| s.trim()).collect();
+    for expected in expected_props {
+        assert!(
+            actual_props.contains(&expected),
+            "transition-property 必须精准包含子属性 '{expected}'，实际列表: {actual_props:?}"
+        );
+    }
+
+    // 严格校验 transition-timing-function 与 transition-duration 的变量表达式
+    let timing_decl = decls
+        .iter()
+        .find(|(p, _)| p == "transition-timing-function")
+        .map(|(_, v)| v.as_str());
+    assert!(
+        timing_decl == Some("var(--tw-ease,var(--default-transition-timing-function))")
+            || timing_decl == Some("var(--tw-ease, var(--default-transition-timing-function))"),
+        "必须精准产生 var(--tw-ease...) 声明，实际声明: {decls:?}"
+    );
+
+    let dur_decl = decls
+        .iter()
+        .find(|(p, _)| p == "transition-duration")
+        .map(|(_, v)| v.as_str());
+    assert!(
+        dur_decl == Some("var(--tw-duration,var(--default-transition-duration))")
+            || dur_decl == Some("var(--tw-duration, var(--default-transition-duration))"),
+        "必须精准产生 var(--tw-duration...) 声明，实际声明: {decls:?}"
+    );
+}
+
+/// 验证包含 `transition-discrete`, `duration-300`, `delay-100`, `ease-out` 的复合动画控制规则提升与条件 Cluster 的隔离
+#[test]
+fn transition_control_rules_isolation_in_conditional_clusters() {
+    let css = css_of_tw(quote!(
+        "transition-all transition-discrete duration-300 delay-100 ease-out",
+        (is_open, "opacity-100 scale-100", "opacity-0 scale-95")
+    ));
+    assert!(!css.is_empty());
+    assert_eq!(
+        css.len(),
+        3,
+        "静态提升段 1 个 + 2 个条件分支组 = 3 个 CSS 规则组"
+    );
+
+    // 1. 严格提取并校验第 0 组（静态提升的纯动画控制属性）
+    let hoisted_decls = extract_declarations(&css[0]);
+    let behavior = hoisted_decls
+        .iter()
+        .find(|(p, _)| p == "transition-behavior")
+        .map(|(_, v)| v.as_str());
+    assert_eq!(
+        behavior,
+        Some("allow-discrete"),
+        "静态提升段必须包含 transition-behavior: allow-discrete"
+    );
+
+    let transition_val = hoisted_decls
+        .iter()
+        .find(|(p, _)| p == "transition" || p == "transition-property")
+        .map(|(_, v)| v.as_str());
+    assert!(
+        transition_val.is_some(),
+        "必须产生 transition 简写或 longhand 声明，实际: {hoisted_decls:?}"
+    );
+
+    // 2. 严格提取并校验第 1 组（then 条件分支 opacity-100 scale-100）
+    let cond1_decls = extract_declarations(&css[1]);
+    assert_eq!(
+        cond1_decls,
+        vec![
+            ("opacity".to_string(), "1".to_string()),
+            ("scale".to_string(), "1".to_string())
+        ],
+        "then 分支只能精准包含 opacity: 1 和 scale: 1 声明"
+    );
+
+    // 3. 严格提取并校验第 2 组（else 条件分支 opacity-0 scale-95）
+    let cond2_decls = extract_declarations(&css[2]);
+    assert_eq!(
+        cond2_decls,
+        vec![
+            ("opacity".to_string(), "0".to_string()),
+            ("scale".to_string(), ".95".to_string())
+        ],
+        "else 分支只能精准包含 opacity: 0 和 scale: .95 声明"
+    );
+}
+
+/// 验证 `mask` 渐变与方向工具类精准产出 `mask-composite: intersect`
+#[test]
+fn mask_utilities_emit_mask_composite() {
+    // 1. 验证静态 mask 渐变工具类 (如 mask-circle)
+    let css_circle = css_of_tw(quote!("mask-circle"));
+    assert_eq!(css_circle.len(), 1);
+    let decls_circle = extract_declarations(&css_circle[0]);
+    let composite_circle = decls_circle
+        .iter()
+        .find(|(p, _)| p == "mask-composite")
+        .map(|(_, v)| v.as_str());
+    assert_eq!(
+        composite_circle,
+        Some("intersect"),
+        "mask-circle 必须包含 mask-composite: intersect，实际: {decls_circle:?}"
+    );
+
+    // 2. 验证动态 mask 角度工具类 (如 -mask-conic-0)
+    let css_conic = css_of_tw(quote!("-mask-conic-0"));
+    assert_eq!(css_conic.len(), 1);
+    let decls_conic = extract_declarations(&css_conic[0]);
+    let composite_conic = decls_conic
+        .iter()
+        .find(|(p, _)| p == "mask-composite")
+        .map(|(_, v)| v.as_str());
+    assert_eq!(
+        composite_conic,
+        Some("intersect"),
+        "-mask-conic-0 必须包含 mask-composite: intersect，实际: {decls_conic:?}"
+    );
+    let image_conic = decls_conic
+        .iter()
+        .find(|(p, _)| p == "mask-image")
+        .map(|(_, v)| v.as_str());
+    assert_eq!(
+        image_conic,
+        Some("conic-gradient(from 0deg, var(--tw-mask-stops))"),
+        "-mask-conic-0 必须格式化为 0deg，实际: {decls_conic:?}"
+    );
+
+    // 3. 验证 mask 颜色与 stop 方向工具类 (如 mask-l-to-yellow-600)
+    let css_color = css_of_tw(quote!("mask-l-to-yellow-600"));
+    assert_eq!(css_color.len(), 1);
+    let decls_color = extract_declarations(&css_color[0]);
+    let composite_color = decls_color
+        .iter()
+        .find(|(p, _)| p == "mask-composite")
+        .map(|(_, v)| v.as_str());
+    assert_eq!(
+        composite_color,
+        Some("intersect"),
+        "mask-l-to-yellow-600 必须包含 mask-composite: intersect，实际: {decls_color:?}"
     );
 }

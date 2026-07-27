@@ -41,19 +41,7 @@ enum Divergence {
 /// 台账是"已知且已决定暂不处理"的清单，不是"跑不过就往里塞"的垃圾桶。
 #[rustfmt::skip]
 const KNOWN_DIVERGENCES: &[(&str, Divergence, &str)] = &[
-    // --- 功能缺口：transition 家族不完整（第四阶段）--------------------------
-    ("transition",        Divergence::ValueOnly, "property 列表在 Tailwind v4 中包含更多扩展属性，已提供 duration 和 timing-function"),
-    ("transition-all",    Divergence::ValueOnly, "同 transition"),
-    ("transition-colors", Divergence::ValueOnly, "同 transition"),
-    ("transition-normal", Divergence::Mechanism, "未支持 transition-behavior"),
-
     // --- 功能缺口：mask / sr-only 的现代属性（第四阶段）----------------------
-    ("-mask-conic-0",              Divergence::Mechanism, "未产出 mask-composite"),
-    ("mask-conic-from-violet-800", Divergence::Mechanism, "未产出 mask-composite"),
-    ("mask-l-to-yellow-600",       Divergence::Mechanism, "未产出 mask-composite"),
-    ("mask-r-from-yellow-100",     Divergence::Mechanism, "未产出 mask-composite"),
-    ("mask-radial-to-yellow-300",  Divergence::Mechanism, "未产出 mask-composite"),
-    ("mask-x-from-yellow-500",     Divergence::Mechanism, "未产出 mask-composite"),
     ("sr-only",     Divergence::Mechanism, "只产出了旧的 clip:rect()，缺现代的 clip-path:inset(50%)"),
     ("not-sr-only", Divergence::Mechanism, "缺 clip-path:none"),
 
