@@ -149,7 +149,9 @@ fn test_ensure_raw_id_survives_child_scope_dispose() {
             raw_id = Some(inline.ensure_raw_id());
         });
         silex_reactivity::scope::dispose(child_scope);
-        let rx = Rx::<i32, RxValueKind>::new_stored(silex_reactivity::StoredId::from_raw_unchecked(raw_id.unwrap()));
+        let rx = Rx::<i32, RxValueKind>::new_stored(
+            silex_reactivity::StoredId::from_raw_unchecked(raw_id.unwrap()),
+        );
         assert_eq!(rx.get(), 42);
 
         let mut stored_rx = None;

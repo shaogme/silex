@@ -94334,13 +94334,19 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::TransformBox, StaticVal::Kw("view-box")),
     ]),
     ("transition", None, &[
-        (CssPropertyId::TransitionProperty, StaticVal::Literal("color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, backdrop-filter")),
+        (CssPropertyId::TransitionProperty, StaticVal::Literal("color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, backdrop-filter")),
+        (CssPropertyId::TransitionTimingFunction, StaticVal::Literal("cubic-bezier(0.4, 0, 0.2, 1)")),
+        (CssPropertyId::TransitionDuration, StaticVal::Num(150.0, "ms")),
     ]),
     ("transition-all", None, &[
         (CssPropertyId::TransitionProperty, StaticVal::Kw("all")),
+        (CssPropertyId::TransitionTimingFunction, StaticVal::Literal("cubic-bezier(0.4, 0, 0.2, 1)")),
+        (CssPropertyId::TransitionDuration, StaticVal::Num(150.0, "ms")),
     ]),
     ("transition-colors", None, &[
-        (CssPropertyId::TransitionProperty, StaticVal::Literal("color, background-color, border-color, text-decoration-color, fill, stroke")),
+        (CssPropertyId::TransitionProperty, StaticVal::Literal("color, background-color, border-color, outline-color, text-decoration-color, fill, stroke")),
+        (CssPropertyId::TransitionTimingFunction, StaticVal::Literal("cubic-bezier(0.4, 0, 0.2, 1)")),
+        (CssPropertyId::TransitionDuration, StaticVal::Num(150.0, "ms")),
     ]),
     ("transition-discrete", None, &[
         (CssPropertyId::TransitionBehavior, StaticVal::Kw("allow-discrete")),
@@ -94353,12 +94359,18 @@ pub static STATIC_RULES: &[StaticRuleRow] = &[
     ]),
     ("transition-opacity", None, &[
         (CssPropertyId::TransitionProperty, StaticVal::Kw("opacity")),
+        (CssPropertyId::TransitionTimingFunction, StaticVal::Literal("cubic-bezier(0.4, 0, 0.2, 1)")),
+        (CssPropertyId::TransitionDuration, StaticVal::Num(150.0, "ms")),
     ]),
     ("transition-shadow", None, &[
         (CssPropertyId::TransitionProperty, StaticVal::Kw("box-shadow")),
+        (CssPropertyId::TransitionTimingFunction, StaticVal::Literal("cubic-bezier(0.4, 0, 0.2, 1)")),
+        (CssPropertyId::TransitionDuration, StaticVal::Num(150.0, "ms")),
     ]),
     ("transition-transform", None, &[
         (CssPropertyId::TransitionProperty, StaticVal::Literal("transform, translate, scale, rotate")),
+        (CssPropertyId::TransitionTimingFunction, StaticVal::Literal("cubic-bezier(0.4, 0, 0.2, 1)")),
+        (CssPropertyId::TransitionDuration, StaticVal::Num(150.0, "ms")),
     ]),
     ("translate-0", None, &[
         (CssPropertyId::Translate, StaticVal::Num(0.0, "px")),

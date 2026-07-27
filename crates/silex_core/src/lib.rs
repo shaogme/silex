@@ -133,10 +133,8 @@ impl<T: 'static, M> Rx<T, M> {
                 }
             }
         } else {
-            let id = silex_reactivity::scope::create_detached(|| {
-                silex_reactivity::store::create(val)
-            })
-            .1;
+            let id =
+                silex_reactivity::scope::create_detached(|| silex_reactivity::store::create(val)).1;
             Self {
                 inner: RxInner::Stored(id),
                 _marker: ::core::marker::PhantomData,

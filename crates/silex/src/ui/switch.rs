@@ -25,7 +25,7 @@ pub fn Switch(
 
         let base_cls = if is_sm {
             tw!(
-                "peer inline-flex h-3.5 w-6 shrink-0 cursor-pointer items-center rounded-full border border-transparent p-0 shadow-xs transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
+                "peer inline-flex h-3.5 w-6 shrink-0 cursor-pointer items-center rounded-full border border-transparent p-0 shadow-xs transition-colors duration-200 ease-in-out outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
                 (
                     is_checked,
                     "bg-primary",
@@ -34,7 +34,7 @@ pub fn Switch(
             ).get()
         } else {
             tw!(
-                "peer inline-flex h-[1.15rem] w-8 shrink-0 cursor-pointer items-center rounded-full border border-transparent p-0 shadow-xs transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
+                "peer inline-flex h-[1.15rem] w-8 shrink-0 cursor-pointer items-center rounded-full border border-transparent p-0 shadow-xs transition-colors duration-200 ease-in-out outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
                 (
                     is_checked,
                     "bg-primary",
@@ -58,7 +58,7 @@ pub fn Switch(
 
         if is_sm {
             tw!(
-                "pointer-events-none block size-3 rounded-full bg-background ring-0 transition-transform",
+                "pointer-events-none block size-3 rounded-full bg-background ring-0 transition-transform duration-200 ease-in-out",
                 (
                     is_checked,
                     "translate-x-[calc(100%-2px)] dark:bg-primary-foreground",
@@ -67,7 +67,7 @@ pub fn Switch(
             ).get()
         } else {
             tw!(
-                "pointer-events-none block size-4 rounded-full bg-background ring-0 transition-transform",
+                "pointer-events-none block size-4 rounded-full bg-background ring-0 transition-transform duration-200 ease-in-out",
                 (
                     is_checked,
                     "translate-x-[calc(100%-2px)] dark:bg-primary-foreground",

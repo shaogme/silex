@@ -167,3 +167,94 @@ fn too_many_conflicting_conditionals_are_rejected() {
     assert!(err.contains("条件分支"), "{err}");
     assert!(err.contains("上限"), "{err}");
 }
+
+/// 验证未显式指定 duration/ease 的 transition 工具类（如 `transition-all` 与 `transition-transform`）
+/// 静态规则被提升为独立 Class 时，自动解出 table.rs 预置的 150ms (.15s) 动画时长。
+#[test]
+fn unspecified_duration_transition_utilities_hoist_with_default_duration() {
+    // 1. 测试静态 `transition-all` 在条件 Cluster 碰撞下的独立提升与默认 duration 属性
+    let all_ts = quote!(
+        "peer inline-flex h-3.5 w-6 shrink-0 cursor-pointer items-center rounded-full border border-transparent p-0 shadow-xs transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
+        (is_checked, "bg-primary", "bg-input dark:bg-input/80")
+    );
+    let all_css = css_of_tw(all_ts);
+    assert!(!all_css.is_empty());
+    let all_hoisted_css = &all_css[0];
+    assert!(
+        all_hoisted_css.contains("transition-property:all")
+            || all_hoisted_css.contains("transition-property: all"),
+        "应该提升出 transition-property: all 静态类，实际: {all_hoisted_css}"
+    );
+    assert!(
+        all_hoisted_css.contains("transition-duration:.15s")
+            || all_hoisted_css.contains("transition-duration:150ms"),
+        "底层由 codegen 产生的 table.rs 应为 transition-all 补全默认 .15s duration，实际: {all_hoisted_css}"
+    );
+
+    // 2. 测试静态 `transition-transform` 在条件 Cluster 碰撞下的独立提升与默认 duration 属性
+    let transform_ts = quote!(
+        "pointer-events-none block size-3 rounded-full bg-background ring-0 transition-transform",
+        (
+            is_checked,
+            "translate-x-[calc(100%-2px)] dark:bg-primary-foreground",
+            "translate-x-0 dark:bg-foreground"
+        )
+    );
+    let transform_css = css_of_tw(transform_ts);
+    assert!(!transform_css.is_empty());
+    let transform_hoisted_css = &transform_css[0];
+    assert!(
+        transform_hoisted_css.contains("transition-property:transform"),
+        "应该提升出 transition-property: transform 静态类，实际: {transform_hoisted_css}"
+    );
+    assert!(
+        transform_hoisted_css.contains("transition-duration:.15s")
+            || transform_hoisted_css.contains("transition-duration:150ms"),
+        "底层由 codegen 产生的 table.rs 应为 transition-transform 补全默认 .15s duration，实际: {transform_hoisted_css}"
+    );
+}
+
+/// 验证显式指定 duration-* 与 ease-* 的 transition 工具类（如 `transition-colors duration-200 ease-in-out`）
+/// 静态规则被提升为独立 Class 时，正确解出自定义的动画时长与缓动函数。
+#[test]
+fn explicit_duration_and_ease_transition_utilities_hoist_with_custom_values() {
+    // 1. 测试显式包含 duration-200 ease-in-out 的 `transition-colors` 静态类提升
+    let colors_ts = quote!(
+        "peer inline-flex h-3.5 w-6 shrink-0 cursor-pointer items-center rounded-full border border-transparent p-0 shadow-xs transition-colors duration-200 ease-in-out outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
+        (is_checked, "bg-primary", "bg-input dark:bg-input/80")
+    );
+    let colors_css = css_of_tw(colors_ts);
+    assert!(!colors_css.is_empty());
+    let colors_hoisted_css = &colors_css[0];
+    assert!(
+        colors_hoisted_css.contains("transition-property:") && colors_hoisted_css.contains("color"),
+        "应该提升出 transition-colors 规则，实际: {colors_hoisted_css}"
+    );
+    assert!(
+        colors_hoisted_css.contains("transition-duration:.2s")
+            || colors_hoisted_css.contains("transition-duration:200ms"),
+        "包含显式 duration-200，应解析出 .2s duration，实际: {colors_hoisted_css}"
+    );
+
+    // 2. 测试显式包含 duration-200 ease-in-out 的 `transition-transform` 静态类提升
+    let transform_ts = quote!(
+        "pointer-events-none block size-3 rounded-full bg-background ring-0 transition-transform duration-200 ease-in-out",
+        (
+            is_checked,
+            "translate-x-[calc(100%-2px)] dark:bg-primary-foreground",
+            "translate-x-0 dark:bg-foreground"
+        )
+    );
+    let transform_css = css_of_tw(transform_ts);
+    assert!(!transform_css.is_empty());
+    let transform_hoisted_css = &transform_css[0];
+    assert!(
+        transform_hoisted_css.contains("transition-property:transform"),
+        "应该提升出 transition-property: transform 规则，实际: {transform_hoisted_css}"
+    );
+    assert!(
+        transform_hoisted_css.contains("transition-duration:.2s")
+            || transform_hoisted_css.contains("transition-duration:200ms"),
+        "包含显式 duration-200，应解析出 .2s duration，实际: {transform_hoisted_css}"
+    );
+}

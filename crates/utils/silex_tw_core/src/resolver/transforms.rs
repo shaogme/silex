@@ -23,21 +23,42 @@ pub fn resolve_transform_transition_rules(
 
         // Transitions & Duration/Ease Initial
         "transition-none" => Some(cow![("transition-property", "none")]),
-        "transition-all" => Some(cow![("transition-property", "all")]),
-        "transition" => Some(cow![(
-            "transition-property",
-            "color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, backdrop-filter",
-        )]),
-        "transition-colors" => Some(cow![(
-            "transition-property",
-            "color, background-color, border-color, text-decoration-color, fill, stroke",
-        )]),
-        "transition-opacity" => Some(cow![("transition-property", "opacity")]),
-        "transition-shadow" => Some(cow![("transition-property", "box-shadow")]),
-        "transition-transform" => Some(cow![(
-            "transition-property",
-            "transform, translate, scale, rotate"
-        )]),
+        "transition-all" => Some(cow![
+            ("transition-property", "all"),
+            ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
+            ("transition-duration", "150ms"),
+        ]),
+        "transition" => Some(cow![
+            (
+                "transition-property",
+                "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, translate, scale, rotate, filter, backdrop-filter",
+            ),
+            ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
+            ("transition-duration", "150ms"),
+        ]),
+        "transition-colors" => Some(cow![
+            (
+                "transition-property",
+                "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke",
+            ),
+            ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
+            ("transition-duration", "150ms"),
+        ]),
+        "transition-opacity" => Some(cow![
+            ("transition-property", "opacity"),
+            ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
+            ("transition-duration", "150ms"),
+        ]),
+        "transition-shadow" => Some(cow![
+            ("transition-property", "box-shadow"),
+            ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
+            ("transition-duration", "150ms"),
+        ]),
+        "transition-transform" => Some(cow![
+            ("transition-property", "transform, translate, scale, rotate"),
+            ("transition-timing-function", "cubic-bezier(0.4, 0, 0.2, 1)"),
+            ("transition-duration", "150ms"),
+        ]),
         "transition-discrete" => Some(cow![("transition-behavior", "allow-discrete")]),
         "duration-initial" => Some(cow![("transition-duration", "initial")]),
         "ease-initial" => Some(cow![("transition-timing-function", "initial")]),

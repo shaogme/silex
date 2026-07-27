@@ -453,6 +453,15 @@ fn apply_combined_classes_internal(
             }
 
             let mut prev = prev_reactive_tokens.borrow_mut();
+
+            // 1. 先添加新增加的 Class，确保样式/过渡声明（transition）无缝连接，不因无类中间态产生闪烁/动画打断
+            for token in &new_tokens {
+                if !prev.contains(*token) {
+                    let _ = list.add_1(token);
+                }
+            }
+
+            // 2. 后移除已不在新集合里的旧 Class
             prev.retain(|c| {
                 if !new_tokens.contains(c.as_str()) {
                     let _ = list.remove_1(c);
@@ -462,11 +471,9 @@ fn apply_combined_classes_internal(
                 }
             });
 
+            // 3. 将新集合中的所有项同步至 prev 记录集合中
             for token in new_tokens {
-                if !prev.contains(token) {
-                    let _ = list.add_1(token);
-                    prev.insert(token.to_string());
-                }
+                prev.insert(token.to_string());
             }
         }
     });

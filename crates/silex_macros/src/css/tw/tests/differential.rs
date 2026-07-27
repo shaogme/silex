@@ -42,9 +42,9 @@ enum Divergence {
 #[rustfmt::skip]
 const KNOWN_DIVERGENCES: &[(&str, Divergence, &str)] = &[
     // --- 功能缺口：transition 家族不完整（第四阶段）--------------------------
-    ("transition",        Divergence::Mechanism, "缺 transition-duration / timing-function；property 列表停留在 v3"),
-    ("transition-all",    Divergence::Mechanism, "同 transition"),
-    ("transition-colors", Divergence::Mechanism, "同 transition"),
+    ("transition",        Divergence::ValueOnly, "property 列表在 Tailwind v4 中包含更多扩展属性，已提供 duration 和 timing-function"),
+    ("transition-all",    Divergence::ValueOnly, "同 transition"),
+    ("transition-colors", Divergence::ValueOnly, "同 transition"),
     ("transition-normal", Divergence::Mechanism, "未支持 transition-behavior"),
 
     // --- 功能缺口：mask / sr-only 的现代属性（第四阶段）----------------------

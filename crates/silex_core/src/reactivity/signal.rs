@@ -214,9 +214,13 @@ impl<T: RxData> IntoRx for Signal<T> {
             Signal::Read(s) => Rx::new_signal(s.id),
             Signal::Derived(id, kind, _) => match kind {
                 RxNodeKind::Signal => Rx::new_signal(id),
-                RxNodeKind::Closure => Rx::new_closure(silex_reactivity::StoredId::from_raw_unchecked(id)),
+                RxNodeKind::Closure => {
+                    Rx::new_closure(silex_reactivity::StoredId::from_raw_unchecked(id))
+                }
                 RxNodeKind::Op => Rx::new_op_raw(id),
-                RxNodeKind::Stored => Rx::new_stored(silex_reactivity::StoredId::from_raw_unchecked(id)),
+                RxNodeKind::Stored => {
+                    Rx::new_stored(silex_reactivity::StoredId::from_raw_unchecked(id))
+                }
             },
             Signal::StoredConstant(id, _) => Rx::new_stored(id),
             Signal::InlineConstant(storage, _) => Rx::new_inline_constant(storage),

@@ -119,7 +119,33 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     // 报告 §3.5：段与段之间没有编译期 tw-merge，谁覆盖谁只能由注入顺序（= 首次渲染
     // 顺序）决定。把**会互相覆盖**的段并成一簇，簇内按条件分支展开成若干"完整合并后"
     // 的类，冲突就交回给编译期裁决；互不覆盖的段照旧各自成类，类的数量不变。
-    let segments: Vec<TwSegment> = input.segments;
+
+    // 从静态段中提升纯过渡/动画控制规则（transition-property, duration, timing, delay），
+    // 避免其因为属性碰撞（如 bg-background 与 bg-primary 碰撞）被错误打包进互斥的 conditional 组合类中，
+    // 确保静态 transition 属性永远单独常驻，从底层保障 DOM 节点类名切换时的 CSS 动画连续性。
+    let mut hoisted_transition_rules = Vec::new();
+    let segments: Vec<TwSegment> = input
+        .segments
+        .into_iter()
+        .map(|seg| match seg {
+            TwSegment::Static(rules) => {
+                let (trans_rules, other_rules): (Vec<_>, Vec<_>) = rules
+                    .into_iter()
+                    .partition(|r| is_pure_transition_control_rule(r));
+                hoisted_transition_rules.extend(trans_rules);
+                TwSegment::Static(other_rules)
+            }
+            other => other,
+        })
+        .collect();
+
+    if !hoisted_transition_rules.is_empty() {
+        let trans_cls = compile_rules_cached(hoisted_transition_rules)?;
+        if !trans_cls.is_empty() {
+            cx_items.push(quote! { #trans_cls });
+        }
+    }
+
     let write_sets: Vec<WriteSet> = segments.iter().map(segment_write_set).collect();
 
     for group in cluster(&write_sets) {
@@ -268,6 +294,27 @@ fn segment_write_set(seg: &TwSegment) -> WriteSet {
             set
         }
     }
+}
+
+/// 判断是否为纯过渡/动画控制相关的 CSS 属性（不受具体尺寸/颜色状态变动影响）
+fn is_pure_transition_control_rule(rule: &UtilityRule) -> bool {
+    use crate::css::tw::resolver::codegen::property_id::CssPropertyId;
+    matches!(
+        rule.css_property,
+        CssPropertyId::TransitionProperty
+            | CssPropertyId::TransitionDuration
+            | CssPropertyId::TransitionTimingFunction
+            | CssPropertyId::TransitionDelay
+            | CssPropertyId::TransitionBehavior
+            | CssPropertyId::Transition
+            | CssPropertyId::VarTwDuration
+            | CssPropertyId::VarTwEase
+            | CssPropertyId::Animation
+            | CssPropertyId::AnimationName
+            | CssPropertyId::AnimationDuration
+            | CssPropertyId::AnimationTimingFunction
+            | CssPropertyId::WillChange
+    )
 }
 
 #[cfg(test)]
