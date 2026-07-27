@@ -932,4 +932,3 @@ fn rounded_full_emits_calc_infinity_or_equivalent() {
         "rounded-full 的 border-radius 声明 `{radius_val}` 必须等价于 `calc(infinity * 1px)`"
     );
 }
-
