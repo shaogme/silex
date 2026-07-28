@@ -1,25 +1,4 @@
-//! 图算法：传播（BFS）与求值（DFS）。
-//!
-//! # 这里为什么不再有抽象层
-//!
-//! 从前这两个算法住在 `core::algorithm` 里，隔着四个 trait
-//! （`GraphStorage` / `GraphScheduler` / `GraphExecutor` / `ReactiveGraph`）
-//! 加一个 `RuntimeAdapter`，一共约 120 行纯转发代码。生产实现者只有一个，
-//! 抽象的**唯一**收益是让底部那批单元测试能用一个 `TestGraph` 跑（AUDIT P18）。
-//!
-//! 代价却是实打实的：`fill_subscribers(&self, id, dest: &mut Vec<RawId>)` 这个
-//! 签名**强制把订阅表和依赖表物化进一个 `Vec`**（trait 没法表达“借用内部的
-//! `List<RawId>`”），于是 BFS 每访问一个节点就要整表拷贝一次，还得配一套
-//! `vec_pool` / `deque_pool` 去缓解这个由抽象自己引入的问题（审计报告 §3.3）。
-//!
-//! B4 把节点拆成独立的 meta / links / value / computation 表之后，
-//! “遍历一张表、修改另一张表”由借用检查器直接保证，于是：
-//!
-//! - 两个算法变成 [`Runtime`] 上的方法，直接在 links 表上走；
-//! - `Vec` 物化与 `vec_pool` 一并删除（求值 DFS 的工作栈仍然池化）；
-//! - `evaluate` 的依赖扫描带上游标，不再对同一个节点反复全量重扫（§2.2）；
-//! - 那批单元测试改在**真实的** `Runtime` 上搭图 —— 顺带把“真实存储与测试
-//!   替身行为一致”从假设变成了事实。
+//! 响应式图算法：通知传播（BFS）与增量求值（DFS）。
 
 use crate::{
     internal::arena::RawId,
@@ -31,33 +10,34 @@ use crate::{
 };
 use std::collections::VecDeque;
 
+/// 节点在计算求值过程中的状态。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum NodeState {
+    /// 节点已是最新的，无需重新计算。
     Clean,
+    /// 依赖的节点已被标记为变更，需检查上游版本号确定是否需要重算。
     Check,
+    /// 节点已被直接标脏，必须重新计算。
     Dirty,
 }
 
-/// [`Runtime::eval_step`] 交还给驱动循环的东西。
+/// [`Runtime::eval_step`] 步进求值返回的结果指示。
 ///
-/// 求值 DFS 本身不跑一行用户代码；每当它走到“该跑一次计算了”，就把节点 id
-/// 交还给驱动，由驱动在不持有任何运行时内部借用的情况下执行。
+/// 求值 DFS 仅负责状态推导与遍历，不直接执行用户闭包。
+/// 遇到需计算的节点时，交还节点句柄由外部驱动层在释放 Runtime 借用后执行。
 #[derive(Clone, Copy)]
 pub(crate) enum Step {
-    /// 本次 DFS 走完了。
+    /// 目标节点的 DFS 求值遍历已全部完成。
     Done,
-    /// 该跑这个节点的计算了。
+    /// 需在 Runtime 借用之外执行指定节点的计算闭包。
     Run(RawId),
 }
 
-/// 求值 DFS 的一帧。
-///
-/// `cursor` 是这个节点的依赖表里下一个待检查的下标 —— §2.2 的修复：从前每次
-/// 回到同一个节点都要把整张依赖表重新填进一个 `Vec` 再从头扫一遍，一个有 k 个
-/// 脏依赖的节点会被扫 k+1 遍，总代价 O(k²) 外加 k+1 次整表拷贝。
+/// 增量求值 DFS 栈帧。
 #[derive(Clone, Copy)]
 pub(crate) struct EvalFrame {
     node: RawId,
+    /// 当前节点依赖列表中下一个待扫描的下标索引（避免重复扫描全量依赖表）。
     cursor: usize,
 }
 
@@ -69,19 +49,9 @@ impl EvalFrame {
 }
 
 impl Runtime {
-    // --- 就地遍历 ---
+    // --- 拓扑遍历辅助 ---
 
-    /// 就地遍历一个节点的订阅者表。
-    ///
-    /// 取 `&Storage` 而不是 `&self`：调用方要一边遍历订阅者表、一边改**别的**
-    /// 节点的状态和调度器，而借用检查器只看得见整个 `self`。把参数收窄到真正
-    /// 用到的那张表，调用方就能显式解构出两个不相交的字段借用（见
-    /// [`Runtime::propagate`]）。
-    ///
-    /// # `f` 里能做什么
-    ///
-    /// 遍历期间 links 表只读借用，因此 `f` 只修改不相交的 meta 表、effect 队列
-    /// 与调度器旁路表；一个节点不可能订阅自己。
+    /// 就地遍历指定节点的直接订阅者列表 (`subscribers`)。
     #[inline]
     fn for_each_subscriber(
         links: &crate::internal::arena::SparseSecondaryMap<NodeLinks, 64>,
@@ -96,10 +66,7 @@ impl Runtime {
         }
     }
 
-    /// 从下标 `from` 起，找 `id` 的依赖表里第一个既不干净、又不在运行中的依赖。
-    ///
-    /// 返回它以及它在依赖表里的下标。跳过正在运行的依赖：等它变干净会死循环
-    /// （它不可能在本次 DFS 中变干净）。
+    /// 从 `from` 下标开始寻找 `id` 的依赖表中第一个非 `Clean` 且不在运行中的依赖节点。
     fn next_unclean_dependency(&self, id: RawId, from: usize) -> Option<(RawId, usize)> {
         let deps = self.storage.links.get(id)?.dependencies.as_slice();
         let start = from.min(deps.len());
@@ -113,7 +80,7 @@ impl Runtime {
         None
     }
 
-    /// 依赖的版本号相对上一次运行有没有变过 —— `Check -> Clean` 的快路径。
+    /// 检查节点的上游依赖版本号自上次计算后是否发生变动。
     fn dependencies_changed(&self, id: RawId) -> bool {
         let Some(dependencies) = self.storage.links.get(id) else {
             return false;
@@ -124,24 +91,23 @@ impl Runtime {
             .iter()
             .any(|&(dep_id, expected, _)| match self.storage.meta(dep_id) {
                 Some(dep) if dep.has_value() => dep.version != expected,
-                // 依赖已经没了（或者根本没有值）：一律当作变了。
                 _ => true,
             })
     }
 
-    // --- Phase 1: 传播（BFS） ---
+    // --- 第一阶段：BFS 传播 (Propagation) ---
 
-    /// 把下游标记为 `Dirty` / `Check`，并把其中的 effect 推进队列。
+    /// 从 `start_node` 开始执行 BFS 传播：
+    /// - 将直接订阅者标记为 `Dirty`，间接订阅者标记为 `Check`。
+    /// - 将途经的副作用节点 (Effect) 放入调度器队列，终止对 Effect 下游的推演。
     pub(crate) fn propagate(&mut self, start_node: RawId, queue: &mut VecDeque<RawId>) {
         queue.clear();
 
-        // links 与 meta 是两张不相交的表：传播可以遍历前者，同时修改后者。
         let Runtime {
             storage, scheduler, ..
         } = self;
         let Storage { meta, links, .. } = storage;
 
-        // 直接订阅者一律 Dirty。
         Self::for_each_subscriber(links, start_node, |sub_id| {
             if meta
                 .get(sub_id)
@@ -156,7 +122,6 @@ impl Runtime {
 
         while let Some(current_id) = queue.pop_front() {
             Self::for_each_subscriber(links, current_id, |sub_id| {
-                // 只把 Clean 提升到 Check —— 绝不把已经 Dirty 的节点降级。
                 if meta
                     .get(sub_id)
                     .is_some_and(|node| node.state == NodeState::Clean)
@@ -170,7 +135,6 @@ impl Runtime {
         }
     }
 
-    /// effect 进队列（它没有订阅者语义上的下游，传播到它为止），其余继续走 BFS。
     #[inline]
     fn schedule_or_walk(
         meta: &crate::internal::arena::SparseSecondaryMap<NodeMeta, 64>,
@@ -185,31 +149,18 @@ impl Runtime {
         }
     }
 
-    // --- Phase 2: 求值（迭代式 DFS） ---
+    // --- 第二阶段：DFS 增量求值 (Evaluation) ---
 
-    /// 必要时沿依赖向上把一个节点算干净。
+    /// 推进单步求值 DFS。
     ///
-    /// 这是求值的**驱动循环**：DFS 本身由 [`Runtime::eval_step`] 一步步推进，
-    /// 而每当它走到“该跑一次计算了”，控制权就回到这里，由驱动在**不持有任何
-    /// 运行时内部借用**的情况下调用 [`Runtime::run_node`]。
-    ///
-    /// 工作栈是驱动帧上的一个局部 `Vec`（从池子里借出来的），不是运行时里的
-    /// 一块状态 —— 这一点是整个设计成立的关键：求值可以重入（memo 的计算闭包
-    /// 里再读一个脏 memo），每一层驱动各自持有自己的栈，互不干扰。方案 B 之下
-    /// `eval_step` 会变成一次 `with_rt`，而 `run_node` 落在两次借用之间。
-    ///
-    /// 推进 DFS，直到走完（[`Step::Done`]）或撞上一次需要执行用户代码的计算
-    /// （[`Step::Run`]）。
-    ///
-    /// 本方法自己**不执行任何用户代码** —— 这正是它与从前那个一路跑到底的
-    /// `evaluate` 的全部区别，也是它能整个跑在一次借用之内的原因。
-    /// 驱动循环见 [`drive_eval`](crate::runtime::drive::drive_eval)。
+    /// 沿着依赖关系向上搜索未计算上游：
+    /// - 若发现未 Clean 上游，压入栈中并继续推导。
+    /// - 若发现循环依赖，触发 panic。
+    /// - 若上游均已 Clean，检查版本号：变动则返回 `Step::Run(id)` 交由驱动层计算，未变动则设为 `Clean` 并弹栈。
     ///
     /// # Panics
     ///
-    /// 依赖成环时 panic。`stack` 保存的是一条从目标节点出发的**简单路径**，
-    /// 一个节点第二次出现就意味着环 —— 之前没有任何检测，`A -> B -> A` 会让
-    /// 这个循环一直压栈直到 OOM（AUDIT P13）。
+    /// 当检测到响应式依赖图中存在环路 (Cycle) 时抛出 panic。
     pub(crate) fn eval_step(&mut self, stack: &mut Vec<EvalFrame>) -> Step {
         while let Some(&EvalFrame {
             node: current,
@@ -218,17 +169,11 @@ impl Runtime {
         {
             let state = self.storage.get_state(current);
 
-            // 正在运行中的节点不能在这里重新求值：它的重跑由调度队列负责。
             if state == NodeState::Clean || self.storage.is_running(current) {
                 stack.pop();
                 continue;
             }
 
-            // Step A：找一个还不干净的依赖，先把它算掉。
-            //
-            // 增量扫描扫到末尾之后再从头全量复查一遍：DFS 期间可能有用户代码
-            // 重入运行时、把一个已经扫过的依赖重新标脏。全量复查每个节点至多
-            // 发生一次，因此总代价仍是 O(k)，而行为与“每次都全量重扫”等价。
             let found = match self.next_unclean_dependency(current, cursor) {
                 hit @ Some(_) => hit,
                 None if cursor > 0 => self.next_unclean_dependency(current, 0),
@@ -236,8 +181,6 @@ impl Runtime {
             };
 
             if let Some((dep_id, at)) = found {
-                // 这条 DFS 路径上已经有它了 —— 依赖成环。继续压栈只会让 `stack`
-                // 一直长到 OOM，所以在这里带着环上的节点报错（AUDIT P13）。
                 if stack.iter().any(|frame| frame.node == dep_id) {
                     panic!(
                         "silex_reactivity: 检测到依赖环，无法求值。环上的节点：\n    {}",
@@ -251,27 +194,19 @@ impl Runtime {
                 continue;
             }
 
-            // Step B：依赖全都干净了（或者本来就是叶子），轮到自己。
-
             if state == NodeState::Check && !self.dependencies_changed(current) {
-                // 版本号没变，无需重算。
                 self.storage.set_state(current, NodeState::Clean);
                 stack.pop();
                 continue;
             }
 
-            // Dirty，或者 Check 且依赖确实变了：把控制权交还给驱动。
             return Step::Run(current);
         }
 
         Step::Done
     }
 
-    /// 依赖环的诊断信息。
-    ///
-    /// `stack` 是当前的 DFS 路径（栈顶是最近压入的节点），`repeated` 是又一次
-    /// 出现在这条路径上的节点。返回的字符串按“依赖方 → 被依赖方”的顺序列出
-    /// 这个环。
+    /// 格式化输出依赖环路的诊断信息。
     fn describe_cycle(&self, stack: &[EvalFrame], repeated: RawId) -> String {
         let start = stack
             .iter()

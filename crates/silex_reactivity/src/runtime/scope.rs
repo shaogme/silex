@@ -1,8 +1,4 @@
-//! 所有权上下文与销毁的**纯操作**部分。
-//!
-//! 会执行用户代码的那一半（`create_scope` / `untrack` / `batch` / `dispose` /
-//! cleanup 的驱动循环）住在 [`drive`](crate::runtime::drive) 里 —— 它们必须在
-//! 两次借用之间跑用户代码，因此不可能是 `Runtime` 上的方法。
+//! 运行时所有权层级与节点销毁的基础操作。
 
 use crate::{
     DependencyList,
@@ -11,17 +7,11 @@ use crate::{
 };
 use std::{mem, panic::Location};
 
-/// 当前的**所有权**上下文与**依赖追踪**上下文。
+/// 记录当前线程上下文中的**所有权所有者 (Owner)** 与 **依赖观察者 (Observer)**。
 ///
-/// 这是两件正交的事，此前被绑在同一个 `current_owner` 上，于是 `untrack`
-/// 一清就把所有权也清掉了 —— 在 `untrack` 里创建的节点没有父节点、不在任何
-/// scope 的 children 里、永远不会被 `dispose` 回收（AUDIT 二轮 §1.1）。
-/// SolidJS 把这两个分成 `Owner` 与 `Listener`，`untrack` 只清 `Listener`。
-///
-/// | 变量 | 含义 | 谁读它 |
-/// |---|---|---|
-/// | `current_owner` | 新节点挂在谁下面、`on_cleanup` 注册给谁 | `register_node_at`、`internal_on_cleanup` |
-/// | `current_observer` | 读 signal 时把谁登记为订阅者 | `track_dependency` / `track_dependencies` |
+/// 所有权与依赖追踪完全正交：
+/// - `current_owner`: 决定新建节点挂载在哪个父 Scope 之下，以及 `on_cleanup` 回调注册给谁。
+/// - `current_observer`: 决定读取 Signal 时将哪个计算节点登记为订阅者。
 pub(crate) struct Scopes {
     pub(crate) current_owner: Option<RawId>,
     pub(crate) current_observer: Option<RawId>,
@@ -60,12 +50,9 @@ impl Runtime {
         }
     }
 
-    /// 建一个新节点并挂到当前 owner 下面。
+    /// 在当前所有权节点下注册并创建新节点。
     ///
-    /// `at` 由调用方显式传进来，而不是靠 `#[track_caller]` 在这里取 ——
-    /// 建节点的入口现在都隔着一层 `with_rt` 的闭包，而 `#[track_caller]`
-    /// 穿不过闭包边界，就地取会得到运行时内部的某一行，而不是用户的调用点
-    /// （AUDIT P11）。
+    /// `at` 为用户代码所在位置的 `Location`。
     pub(crate) fn register_node_at(&mut self, _at: &'static Location<'static>) -> RawId {
         let parent = self.current_owner();
         let mut node = Node::new();
@@ -85,7 +72,7 @@ impl Runtime {
         id
     }
 
-    /// 摘下一个节点的子节点列表与 cleanup 列表。
+    /// 提取并清空指定节点的子节点列表与 Cleanup 清理函数列表。
     pub(crate) fn take_scope_state(&mut self, id: RawId) -> (Vec<RawId>, CleanupList) {
         let Some(aux) = self.storage.node_aux.get_mut(id) else {
             return (Vec::new(), CleanupList::Empty);
@@ -93,7 +80,7 @@ impl Runtime {
         (mem::take(&mut aux.children), mem::take(&mut aux.cleanups))
     }
 
-    /// 摘下一个计算节点的依赖列表。
+    /// 提取并清空指定计算节点的依赖节点列表。
     pub(crate) fn take_dependencies(&mut self, id: RawId) -> DependencyList {
         let Some(links) = self.storage.links.get_mut(id) else {
             return DependencyList::default();
@@ -101,7 +88,7 @@ impl Runtime {
         mem::take(&mut links.dependencies)
     }
 
-    /// 把 `self_id` 从它所有依赖的订阅者表里摘掉。
+    /// 将 `self_id` 从其所有依赖节点的订阅者列表 (`subscribers`) 中移除。
     pub(crate) fn unsubscribe(&mut self, self_id: RawId, dependencies: DependencyList) {
         for (dep_id, _, subscriber_index) in dependencies {
             let Some((moved_id, last_index)) =
@@ -130,17 +117,13 @@ impl Runtime {
         }
     }
 
-    /// 把节点本身从所有存储中抹掉（cleanup 已经跑过、订阅已经解除）。
+    /// 从存储中注销并抹除指定节点及其载荷。
     ///
-    /// 摘下来的载荷（值、计算闭包、尚未执行的 cleanup）**不在这里析构** ——
-    /// 它们装的是用户数据，析构就是执行用户的 `Drop`，而用户的 `Drop` 可以
-    /// 回头访问响应式图。一律推进墓园，由调用方在借用之外排空
-    /// （见 [`Debris`] 与 [`drain_graveyard`](crate::runtime::drive::drain_graveyard)）。
+    /// 包含用户自定义类型的载荷（值、闭包、Cleanup 等）将被转移入墓园 ([`Debris`])，
+    /// 延后至 Runtime 独占借用释放之后统一析构，防止析构过程重入访问 Runtime。
     pub(crate) fn forget_node(&mut self, id: RawId) {
         #[cfg(debug_assertions)]
         {
-            // 标签先摘出来再登记墓碑：`remember_dead_label` 要写另一张表，
-            // 不该在 `node_aux` 的借用还活着的时候进行。
             let label = self
                 .storage
                 .node_aux
@@ -151,7 +134,6 @@ impl Runtime {
             }
         }
 
-        // `Node` 自己只有 parent 与定义位置，不含用户数据，可以就地析构。
         self.storage.graph.remove(id);
         if let Some(aux) = self.storage.node_aux.remove(id) {
             self.storage.bury(Debris::Aux(aux));

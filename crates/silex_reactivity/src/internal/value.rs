@@ -2,7 +2,7 @@ use crate::internal::FuncPtr;
 use silex_vtable::{AnyBox, OnceBox, ThunkBox};
 use std::{any::TypeId, marker::PhantomData, mem, ptr};
 
-/// A raw value with Small Object Optimization (SOO).
+/// 支持小对象优化 (SOO) 的类型擦除值容器。
 ///
 /// # 不变量
 ///
@@ -21,10 +21,9 @@ struct AnyValueVTable {
     as_ptr: FuncPtr<unsafe fn(*const u8) -> *const ()>,
     as_mut_ptr: FuncPtr<unsafe fn(*mut u8) -> *mut ()>,
     drop: FuncPtr<unsafe fn(*mut u8)>,
-    /// `None` 表示这个值不参与相等性比较 —— [`AnyValue::try_eq`] 一律返回 `false`，
-    /// 也就是“每次写入都算变化”。signal 与 `register_derived` 走的就是这条路
-    /// （它们的 `T` 只有 `'static` 约束，根本没有 `PartialEq`），memo 则用
-    /// [`AnyValue::new_reactive`] 带上真正的比较函数（AUDIT P10）。
+    /// `None` 表示该值不参与相等性比较 —— [`AnyValue::try_eq`] 一律返回 `false`（视为变更）。
+    /// Signal 与无 `PartialEq` 约束的 Derived 节点使用该类型；
+    /// 带比较能力的 Memo 节点则使用 [`AnyValue::new_reactive`] 注入真正的比较逻辑。
     eq: Option<FuncPtr<EqFn>>,
 }
 
@@ -35,7 +34,7 @@ impl AnyValue {
         }
     }
 
-    /// 创建一个带相等性比较能力的类型擦除值（memo 的重算结果走这里）。
+    /// 创建带相等性比较能力的类型擦除值（供 Memo 节点的计算结果使用）。
     pub(crate) fn new_reactive<T: PartialEq + 'static>(value: T) -> Self {
         AnyValue {
             inner: AnyBox::new(
@@ -46,14 +45,12 @@ impl AnyValue {
         }
     }
 
-    /// 两个值是否相等。类型不同、或任一方不带比较函数时一律返回 `false`
-    /// （即“当作变化处理”）。
+    /// 比较两个擦除值是否相等。若 TypeId 不匹配或任一方缺少比较函数则返回 `false`。
     pub(crate) fn try_eq(&self, other: &Self) -> bool {
         if self.inner.vtable.type_id != other.inner.vtable.type_id {
             return false;
         }
-        // SAFETY: 两侧的 type_id 已经比对过，因此 `eq` 拿到的两个指针指向的
-        // 确实是同一个类型；指针由各自的 `AnyBox` 提供，在本表达式期间有效。
+        // SAFETY: type_id 已经比对，`eq` 函数接收的两个指针类型保证一致。
         self.inner
             .vtable
             .eq
@@ -62,9 +59,6 @@ impl AnyValue {
 
     pub(crate) fn downcast_ref<T: 'static>(&self) -> Option<&T> {
         if self.inner.vtable.type_id == TypeId::of::<T>() {
-            // SAFETY: type_id 相符即说明缓冲区里存的就是 `T`（见类型的不变量）；
-            // `as_ptr` 会替我们区分内联表示与 `Box` 表示，返回指向 `T` 本身的指针。
-            // 返回的引用绑定在 `&self` 上，不会比 `AnyValue` 活得更久。
             unsafe {
                 let val_ptr = self.inner.vtable.as_ptr.as_fn()(self.inner.as_ptr());
                 Some(&*(val_ptr as *const T))
@@ -76,7 +70,6 @@ impl AnyValue {
 
     pub(crate) fn downcast_mut<T: 'static>(&mut self) -> Option<&mut T> {
         if self.inner.vtable.type_id == TypeId::of::<T>() {
-            // SAFETY: 同 `downcast_ref`，独占性由 `&mut self` 保证。
             unsafe {
                 let val_ptr = self.inner.vtable.as_mut_ptr.as_fn()(self.inner.as_mut_ptr());
                 Some(&mut *(val_ptr as *mut T))
@@ -86,60 +79,27 @@ impl AnyValue {
         }
     }
 
-    /// 直接交出内部值的裸指针，不做任何类型检查。
+    /// 获取内部底层数据的裸指针。
     ///
     /// # Safety
     ///
-    /// 调用方必须自己知道里面存的是什么类型，并且保证在使用该指针期间这个
-    /// `AnyValue` 既不被移动也不被写入（内联表示的地址随 `AnyValue` 一起移动）。
+    /// 调用方需保证类型匹配，且使用期间 `AnyValue` 不发生移动或改写。
     pub(crate) unsafe fn as_ptr(&self) -> *const () {
-        // SAFETY: 缓冲区与 vtable 是配对的，`as_ptr` 只是按存储形式解一次引用。
         unsafe { self.inner.vtable.as_ptr.as_fn()(self.inner.as_ptr()) }
     }
 }
 
 impl Drop for AnyValue {
     fn drop(&mut self) {
-        // SAFETY: 值只在这里析构一次（`AnyValue` 不是 `Copy`，也没有别的路径
-        // 会调用 vtable 的 drop），且 vtable 与缓冲区里的表示配对。
         unsafe {
             self.inner.vtable.drop.as_fn()(self.inner.as_mut_ptr());
         }
     }
 }
 
-// --- Shared VTable Functions ---
+// --- 虚表生成助手 ---
 
-/// `!needs_drop::<T>()` 时用它顶替真正的析构函数，省掉一次单态化。
 unsafe fn shared_drop_noop(_: *mut u8) {}
-
-// 这里曾经有一条“按位”快路径：对 14 个原始类型用 `TypeId` 比对选中一组共享的
-// clone/eq 函数，它们按固定的 `SOO_CAPACITY`（24 字节）整体复制/比较字节。
-//
-// 三个问题一并去掉了：
-// 1. 按位比较 `bool` 这种 1 字节类型时会读到值以外的 23 个字节，正确性完全
-//    依赖 `InlineStorage` “构造时整体零初始化”这条没有被任何地方强制的不变量
-//    （AUDIT P19.1）；
-// 2. 类型判定是**运行时**最多 14 次 `TypeId` 比较，每次 `new_reactive` 都要跑
-//    一遍（AUDIT P19.2）；
-// 3. 按位克隆随 AUDIT P9 一起失去了最后一个调用者 —— memo 不再克隆旧值。
-//
-// 而它换来的东西是负的：单态化出来的 `*(p as *const T) == *(p as *const T)`
-// 比 24 字节 memcmp 更快，drop 也照样是 no-op。
-
-// --- VTable Generators ---
-//
-// 下面四张表里的每一个闭包都是 vtable 的一项，它们收到的 `ptr` 永远是
-// `AnyBox` 的数据区起始处。
-//
-// # Safety（对四张表统一成立）
-//
-// - `Inline*` 只会被装着 `T` 本体的 `AnyBox` 选中，`Boxed*` 只会被装着
-//   `Box<T>` 的选中 —— 这是 `AnyBox::new` 按 `InlineStorage::fits::<T>()`
-//   分派的结果，也是 `AnyValue` 的类型不变量；
-// - 因此把 `ptr` 转成 `*mut T` / `*mut Box<T>` 再解引用是合法的；
-// - 每张表的 `type_id` 就是 `T` 的 `TypeId`，调用方（`downcast_*` / `try_eq`）
-//   必须先比对它才能使用这些函数。
 
 struct InlineVTable<T>(PhantomData<T>);
 impl<T: 'static> InlineVTable<T> {
@@ -201,88 +161,57 @@ impl<T: PartialEq + 'static> BoxedReactiveVTable<T> {
     };
 }
 
-// --- 计算闭包 ---
+// --- 计算闭包容器 ---
 
-/// 一个节点的计算闭包。
-///
-/// 两种计算的**签名本来就不一样** —— effect 是 `FnMut()`，memo 是
-/// `Fn(Option<&T>) -> T`。阶段三方案 B 之前，运行时强行让它们共用一个
-/// `ThunkBox<*const (), ()>`：memo 的闭包被手工打包进 `InlineStorage`
-/// （偏移 0 处塞一个 `*const MemoVTable`，其后才是闭包），由一个
-/// “通用 runner” 在运行时把 vtable 读回来、从 `current_owner()` 反查自己是谁、
-/// 再回调进运行时提交结果。整整一层间接，外加十来处 `unsafe`。
-///
-/// 那层间接存在的唯一理由是“`run_node` 只想认识一种 thunk 类型”。
-/// 驱动循环把用户代码从运行时内部提到外面之后，**驱动本来就知道 id、
-/// 也拿得到旧值**，于是可以直接分派 —— 一个两变体的枚举就够了。
+/// 节点的计算闭包包装。
 pub(crate) enum Computation {
-    /// 副作用：跑就完了，没有返回值。
+    /// 副作用计算闭包 (Effect)。
     Effect(EffectThunk),
-    /// 派生值：拿上一次的结果（首算时没有），算出新的一份。
+    /// 派生与缓存计算闭包 (Memo)。
     Memo(MemoThunk),
 }
 
 pub(crate) struct EffectThunk(ThunkBox<(), ()>);
 
 impl EffectThunk {
-    /// 从一个 `FnMut` 构造。
+    /// 从 `FnMut` 构造 Effect 计算闭包。
     ///
-    /// effect 从前只接受 `Fn()`，想在 effect 里维护一点状态就得自己套
-    /// `Cell` / `RefCell`（审计报告 §3.4）。`FnMut` 在这个模型下是安全的：
-    /// 同一个节点在同一时刻只可能有一次执行 —— 运行前置的 `running` 标志
-    /// 会让重入的那次直接返回 false（AUDIT P1）。
-    ///
-    /// 这里仍然用 `RefCell` 而不是 `UnsafeCell`：`running` 标志是运行时的不变量，
-    /// 而这段代码在 `ThunkBox` 里，离那个不变量很远。真出现重入时 `RefCell`
-    /// 给的是一句明确的 panic，`UnsafeCell` 给的是 UB —— 这正是本轮审计要消除的
-    /// “靠注释维系独占性”。开销是一次标志检查，effect 不是热路径。
+    /// 内部采用 `RefCell` 保护，若同节点内部发生意外重入借用将抛出明确的 panic。
     pub(crate) fn new<F: FnMut() + 'static>(f: F) -> Self {
         let cell = std::cell::RefCell::new(f);
         Self(ThunkBox::new(move |()| {
             let mut f = cell
                 .try_borrow_mut()
-                .expect("effect 在自己的执行过程中被重入了：这是运行时的 bug");
+                .expect("effect 在自己的执行过程中被重入了");
             f()
         }))
     }
 
-    /// 执行这个 effect。
-    ///
-    /// 不再需要一个 `*const Runtime` 参数：从前 memo 的 thunk 要靠它把运行时
-    /// 转回来提交结果，而现在提交由驱动循环负责，effect 体本身通过
-    /// 线程本地的运行时访问一切。
+    /// 执行 Effect 计算。
     #[inline]
     pub(crate) fn call(&self) {
         self.0.call(());
     }
 }
 
-/// memo / derived 的计算闭包：`Option<&AnyValue> -> AnyValue`。
-///
-/// 参数走裸指针而不是引用，因为 [`ThunkBox`] 的 `Args` 必须是 `'static`，
-/// 装不下一个带生命周期的 `&'a AnyValue`。这是本类型仅有的一处 `unsafe`，
-/// 而它顶替掉的是从前 `memo.rs` 里那三张手写 vtable 加 `runtime.rs` 里的
-/// 通用 runner，一共十几处。
+/// Memo/Derived 计算闭包容器：接受上一次计算旧值的只读指针并返回新值。
 pub(crate) struct MemoThunk(ThunkBox<Option<*const AnyValue>, AnyValue>);
 
 impl MemoThunk {
-    /// 带相等性门控的 memo（`memo::create`）。
+    /// 构造带相等性门控的 Memo 计算闭包。
     pub(crate) fn new<T, F>(f: F) -> Self
     where
         T: PartialEq + 'static,
         F: Fn(Option<&T>) -> T + 'static,
     {
         Self(ThunkBox::new(move |old: Option<*const AnyValue>| {
-            // SAFETY: `old` 要么是 `None`，要么来自 `compute` 里一个当场还活着的
-            // `&AnyValue`（旧值住在驱动循环的栈上），其存活期覆盖整个调用。
+            // SAFETY: `old` 来自驱动循环栈帧上的合法引用，在调用期间持续有效。
             let old_t = old.and_then(|p| unsafe { (*p).downcast_ref::<T>() });
-            // 旧值按引用透传给用户闭包，绝不在这里克隆（AUDIT P9）。
             AnyValue::new_reactive(f(old_t))
         }))
     }
 
-    /// 不做门控的派生节点（`memo::derived`）：`T` 只有 `'static`，没有
-    /// `PartialEq` 可用，因此每一次重算都通知下游（AUDIT P10）。
+    /// 构造无相等性门控的 Derived 派生闭包。
     pub(crate) fn new_derived<T: 'static>(f: Box<dyn Fn() -> T>) -> Self {
         Self(ThunkBox::new(move |_| AnyValue::new(f())))
     }

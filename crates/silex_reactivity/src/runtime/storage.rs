@@ -1,17 +1,4 @@
-//! 节点的存储表示。
-//!
-//! # 阶段三：SoA 与独占访问
-//!
-//! 响应式节点按元数据、图边、值和计算闭包拆成独立表。运行时入口交出
-//! `&mut Runtime`，因此普通内部路径不再依赖节点内的内部可变性：
-//!
-//! | 分类 | 存法 | 为什么 |
-//! |---|---|---|
-//! | **元数据**（状态、版本、标志） | 独立表 | 传播只借用元数据表，能同时遍历另一张 links 表 |
-//! | **载荷**（值、闭包、依赖表、订阅表） | 独立表 | 用户代码执行前统一移出载荷，普通内部路径只使用独占借用 |
-//!
-//! 两个“借出中”的布尔标志也随之收敛：值与闭包都用 `Option` 表示借出，
-//! 借出期间节点里是 `None` 而不再是一个现造的 `AnyValue::placeholder()`。
+//! 响应式节点的 SoA (Structure of Arrays) 分离存储表示。
 
 use crate::{
     DependencyList,
@@ -23,24 +10,16 @@ use crate::{
 };
 use std::{mem, vec::IntoIter};
 
-/// 一个节点的种类与运行状态，打包进一个字节。
-///
-/// 这些位从前分散成不同载荷表的存在性，判定种类因此要扫描载荷；现在状态与
-/// 种类位集中在独立的热元数据表中。
+/// 一个节点的种类与运行状态标志，压缩存放在单字节中。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct NodeFlags(u8);
 
 impl NodeFlags {
-    /// 带一个可读的值：signal / memo / derived。
+    /// 包含可读值（Signal / Memo / Derived）。
     pub(crate) const VALUE: Self = Self(1 << 0);
-    /// 带一个计算闭包：effect / memo / derived。
+    /// 包含计算闭包（Effect / Memo / Derived）。
     pub(crate) const COMPUTATION: Self = Self(1 << 1);
-    /// 计算正在执行中。
-    ///
-    /// 重入守卫：正在运行的节点绝不能被重复执行 —— 否则会第二次执行破坏性的
-    /// 前置阶段（清空依赖列表、提前跑 cleanup、把自己从所有依赖的订阅者表里
-    /// 摘除），而重建订阅的那一步却因为闭包已被借出而被跳过，结果是该节点
-    /// 永久丢失全部订阅（AUDIT P1）。
+    /// 节点计算正在执行中（防止递归重入破坏依赖图关系）。
     pub(crate) const RUNNING: Self = Self(1 << 2);
 
     #[inline(always)]
@@ -59,7 +38,7 @@ impl NodeFlags {
     }
 }
 
-/// 节点的热元数据。它与所有可变载荷分离，传播可以只借用这张表。
+/// 节点的热元数据表条目。
 pub(crate) struct NodeMeta {
     pub(crate) state: NodeState,
     pub(crate) flags: NodeFlags,
@@ -114,15 +93,15 @@ impl NodeMeta {
     }
 }
 
-/// 节点的图边。订阅者和依赖关系与值、闭包分开存放。
+/// 节点的图拓扑边（订阅者列表与依赖关系列表）。
 #[derive(Default)]
 pub(crate) struct NodeLinks {
     pub(crate) subscribers: Vec<RawId>,
     pub(crate) dependencies: DependencyList,
 }
 
-/// 从响应式存储中移出的完整节点载荷。
-#[expect(dead_code, reason = "墓园只负责持有并析构完整节点载荷")]
+/// 从存储集中提取出的完整节点载荷组合。
+#[expect(dead_code, reason = "用于在墓园中持有并延后析构完整节点载荷")]
 pub(crate) struct NodeParts {
     pub(crate) meta: NodeMeta,
     pub(crate) links: NodeLinks,
@@ -130,14 +109,11 @@ pub(crate) struct NodeParts {
     pub(crate) computation: Option<Computation>,
 }
 
-/// 最多为多少个已销毁节点保留调试标签。
-///
-/// 这张表只增不减，长跑的应用会一直往里堆（AUDIT P14）。它纯粹是为了让
-/// “读一个已销毁节点”的报错能说出这个节点原来叫什么，超过上限之后新的标签
-/// 直接不记，报错退化成节点编号 —— 比无界增长划算。
+/// 最多为多少个已销毁节点保留调试标签上限（仅 Debug 构建）。
 #[cfg(debug_assertions)]
 pub(crate) const MAX_DEAD_NODE_LABELS: usize = 1024;
 
+/// 运行时集中存储所有响应式节点数据的 SoA 结构体。
 pub(crate) struct Storage {
     pub(crate) graph: Arena<Node>,
     pub(crate) node_aux: SparseSecondaryMap<NodeAux, 32>,
@@ -145,49 +121,32 @@ pub(crate) struct Storage {
     pub(crate) links: SparseSecondaryMap<NodeLinks, 64>,
     pub(crate) values: SparseSecondaryMap<Option<AnyValue>, 64>,
     pub(crate) computations: SparseSecondaryMap<Option<Computation>, 64>,
-    /// 非响应式节点（stored value / callback / node-ref）的载荷。
-    ///
-    /// 这里曾经是一个五变体的枚举 `ExtraData { Callback, NodeRef, StoredValue,
-    /// Closure, Op }`（审计报告 §3.1 / §3.2 / §2.4），阶段二收敛成一个
-    /// `Payload { value: AnyValue, borrowed: bool }`。阶段三连那个 `borrowed`
-    /// 也去掉了：`None` 就是“正被某个用户闭包借出”，与 signal 的表示一致。
+    /// 非响应式节点（stored value / callback / node-ref）的载荷存储。
     pub(crate) extras: SparseSecondaryMap<Option<AnyValue>, 32>,
 
-    /// 已经离开图、等着在**借用之外**析构的残骸。见 [`Debris`]。
+    /// 延后析构墓园：存放已被从图解构、但等待在 Runtime 借用之外析构的用户残骸。
     graveyard: Vec<Debris>,
 
     #[cfg(debug_assertions)]
     pub(crate) dead_node_labels: SparseSecondaryMap<String>,
-    /// 已记下的墓碑标签数量的上界（同一个槽位被覆盖时会多算，只用于封顶）。
     #[cfg(debug_assertions)]
     dead_label_count: usize,
 }
 
-/// 一件已经从图里摘下来、但**还没有析构**的东西。
+/// 已经被从响应式图中摘除、但等待在 Runtime 借用之外执行用户 `Drop` 的残骸。
 ///
-/// 这三种残骸里装的都是用户的数据：signal / memo 的值、effect 与 memo 的
-/// 计算闭包、尚未执行的 cleanup。析构它们就是执行用户的 `Drop`，而用户的
-/// `Drop` 完全可以回头访问响应式图 —— 销毁别的节点、写一个 signal、
-/// 甚至再建一个 effect。
-///
-/// 就地析构意味着那段用户代码运行在运行时的借用之内。今天这只在一个偏门角落
-/// 出事（`commit_update` 覆盖旧值时握着节点的 `borrow_mut`，一个会读自己所在
-/// memo 的 `T::drop` 会撞上 `already borrowed`）；方案 B 把访问入口收成
-/// `&mut Runtime` 之后，**每一处**就地析构都会变成一次借用冲突。
-///
-/// 所以规则改成：让值离开图的地方一律把它推进墓园，由驱动循环在释放借用之后
-/// 调 [`Storage::drain_graveyard`]。排空点选在与从前析构时机**相同**的位置上，
-/// 因此用户可观察的顺序不变。
+/// 包含用户自定义类型的值、计算闭包及 Cleanup。将其放入墓园可保障用户 `Drop` 代码在
+/// Runtime 借用之外被安全调用，防止 `Drop` 重入触发借用冲突。
 #[expect(
     dead_code,
     reason = "载荷只为了『在墓园里、而不是在借用之内被析构』而存在，没有读取者"
 )]
 pub(crate) enum Debris {
-    /// 一个响应式节点的全部载荷：元数据、值、计算闭包与两张边表。
+    /// 包含元数据、值、闭包与边表在内的完整响应式节点。
     Node(NodeParts),
-    /// 冷数据：尚未执行的 cleanup（子节点列表里只有 id，不带用户数据）。
+    /// 尚未执行的 Cleanup 及 Scope 冷数据。
     Aux(NodeAux),
-    /// 非响应式载荷（stored value / callback / node-ref），以及被覆盖掉的旧值。
+    /// 非响应式载荷或被覆盖更新掉的旧值。
     Payload(AnyValue),
 }
 
@@ -209,7 +168,7 @@ impl Storage {
         }
     }
 
-    /// 为一个即将被销毁的节点留一个墓碑标签，数量封顶（见 [`MAX_DEAD_NODE_LABELS`]）。
+    /// 记录已销毁节点的调试标签（Debug 模式下受到上限控制）。
     #[cfg(debug_assertions)]
     pub(crate) fn remember_dead_label(&mut self, id: RawId, label: String) {
         let count = self.dead_label_count;
@@ -220,16 +179,13 @@ impl Storage {
         self.dead_node_labels.insert(id, label);
     }
 
-    /// 把一件残骸交给墓园，等驱动循环在借用之外析构它。
+    /// 将残骸入列墓园，以便稍后在 Runtime 借用释放后排空析构。
     #[inline]
     pub(crate) fn bury(&mut self, debris: Debris) {
         self.graveyard.push(debris);
     }
 
-    /// 取一件残骸出来。
-    ///
-    /// 析构**不在这里发生** —— 那是用户的 `Drop`，只能跑在借用之外。
-    /// 排空循环见 [`drain_graveyard`](crate::runtime::drive::drain_graveyard)。
+    /// 提取一件待析构的墓园残骸。
     #[inline]
     pub(crate) fn take_debris(&mut self) -> Option<Debris> {
         self.graveyard.pop()
@@ -291,9 +247,7 @@ impl Storage {
         self.computations.get_mut(id)
     }
 
-    /// 在闭包作用域内可变地访问一个节点的冷数据，必要时先建出来。
-    ///
-    /// 节点不在 `graph` 里（已销毁 / 伪造的句柄）时返回 `None` 且不建任何条目。
+    /// 在闭包作用域内访问节点的辅助冷数据，必要时自动创建默认项。
     pub(crate) fn with_aux_mut<R>(
         &mut self,
         id: RawId,
@@ -312,15 +266,7 @@ impl Storage {
         self.meta(id).map_or(NodeState::Clean, |node| node.state)
     }
 
-    /// 只更新已存在的节点。
-    ///
-    /// 之前这里会为不存在的节点**插入**一个空的响应式条目：订阅者表里只要
-    /// 残留了一个已销毁的 id（`propagate` 遍历时就会遇到），就会为它造出一个
-    /// 既不在 `graph` 里、也不会被任何 dispose 路径清理的幽灵条目 —— 长跑的
-    /// 应用会一直泄漏下去（AUDIT P14）。
-    ///
-    /// 忽略掉是安全的：`get_state` 对不存在的节点返回 `Clean`，
-    /// 传播与求值都会把它当成“无需处理”。
+    /// 更新已知节点的计算求值状态（已销毁节点将安全忽略，防止插入孤立内存）。
     #[inline(always)]
     pub(crate) fn set_state(&mut self, id: RawId, state: NodeState) {
         if let Some(node) = self.meta_mut(id) {
@@ -334,7 +280,6 @@ impl Storage {
     }
 
     pub(crate) fn describe(&self, id: RawId) -> String {
-        // release 构建下既没有调试标签也没有定义位置，只剩下编号。
         #[allow(unused_mut)]
         let mut out = format!("节点 #{}", id.slot());
         #[cfg(debug_assertions)]

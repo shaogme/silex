@@ -1,15 +1,13 @@
-//! 两个基础容器：[`Arena`]（节点主表）与 [`SparseSecondaryMap`]（旁路表）。
+//! 基础容器：[`Arena`]（主节点存储竞技场）与 [`SparseSecondaryMap`]（稀疏旁路块状映射表）。
 //!
-//! 这两个容器只通过独占借用修改。句柄的代数仍然由容器维护，因此旧句柄不会
-//! 读到槽位复用后的新值；而 Rust 的借用规则保证从 `get` 得到的引用不能跨越
-//! 同一张表的写操作。B5 把这层从手写指针容器改成普通安全数据结构。
+//! 容器通过句柄的代数 (Generation) 防范 ABA 槽位复用问题，配合 Rust 的借用规则保证安全并发与无别名引用。
 #![forbid(unsafe_code)]
 
 #[cfg(test)]
 const CHUNK_SIZE: usize = 128;
 const NO_FREE_SLOT: u32 = u32::MAX;
 
-/// Raw handle with a generation counter to detect ABA problems.
+/// 带代数计数器 (Generation Counter) 的原始句柄，用于解决 ABA 问题。
 ///
 /// `generation` 是 `u32` 且用 `wrapping_add` 递增（插入 +1、移除 +1）。同一个槽位
 /// 被复用 2³¹ 次之后，旧句柄可能再次有效；这里保留 8 字节句柄，不为这个极端边界
@@ -21,7 +19,7 @@ pub struct RawId {
 }
 
 impl RawId {
-    /// 一个永远不指向任何节点的句柄。
+    /// 一个永远不指向任何节点的悬空句柄。
     pub const DANGLING: Self = Self {
         index: u32::MAX,
         generation: 0,
@@ -65,7 +63,7 @@ impl<T> Arena<T> {
         }
     }
 
-    /// Insert a value into the arena, returning its raw handle.
+    /// 向 Arena 插入一个值，返回其分配的原始句柄 [`RawId`]。
     pub(crate) fn insert(&mut self, value: T) -> RawId {
         if self.free_head != NO_FREE_SLOT {
             let index = self.free_head;
@@ -93,7 +91,7 @@ impl<T> Arena<T> {
         RawId::new(index, 1)
     }
 
-    /// Access element by raw handle.
+    /// 通过原始句柄读取元素的共享引用。若句柄已过期或槽位为空则返回 `None`。
     #[inline]
     pub(crate) fn get(&self, id: RawId) -> Option<&T> {
         let slot = self.slots.get(id.index as usize)?;
@@ -101,7 +99,7 @@ impl<T> Arena<T> {
             .then(|| slot.value.as_ref().expect("占用槽位必须有值"))
     }
 
-    /// Access element through an exclusive borrow.
+    /// 通过独占借用访问元素。若句柄已过期或槽位为空则返回 `None`。
     #[cfg(test)]
     pub(crate) fn get_mut(&mut self, id: RawId) -> Option<&mut T> {
         let slot = self.slots.get_mut(id.index as usize)?;
@@ -111,7 +109,7 @@ impl<T> Arena<T> {
         slot.value.as_mut()
     }
 
-    /// Remove element. Returns true if removed, false if not found/already removed.
+    /// 移除句柄对应的元素。移除成功返回 `true`，若不存在或已被移除则返回 `false`。
     pub(crate) fn remove(&mut self, id: RawId) -> bool {
         let Some(slot) = self.slots.get_mut(id.index as usize) else {
             return false;
@@ -137,7 +135,7 @@ impl<T> Default for Arena<T> {
 
 type Entry<T> = Option<(u32, T)>;
 
-/// Sparse secondary storage keyed by an [`RawId`].
+/// 以 [`RawId`] 为键的稀疏旁路块状存储表。
 pub(crate) struct SparseSecondaryMap<T, const N: usize = 16> {
     chunks: Vec<Option<Vec<Entry<T>>>>,
 }
@@ -182,7 +180,7 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
         self.chunks.get(chunk_index)?.as_ref()?.get(offset)
     }
 
-    /// Write an entry. A stale generation is rejected without changing the map.
+    /// 写入一个条目。如果键的代数小于已存储条目的代数（陈旧句柄），则拒绝写入并返回 `false`。
     pub(crate) fn insert(&mut self, key: RawId, value: T) -> bool {
         let Some(entry) = self.entry_mut_growing(key.index) else {
             return false;
@@ -197,7 +195,7 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
         can_write
     }
 
-    /// Read an entry.
+    /// 读取一个条目。仅在代数完全匹配时返回引用。
     #[inline]
     pub(crate) fn get(&self, key: RawId) -> Option<&T> {
         match self.entry(key.index)? {
@@ -206,7 +204,7 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
         }
     }
 
-    /// Mutably access an entry through an exclusive borrow.
+    /// 可变借用读取一个条目。仅在代数完全匹配时返回可变引用。
     #[inline]
     pub(crate) fn get_mut(&mut self, key: RawId) -> Option<&mut T> {
         let (chunk_index, offset) = Self::split(key.index);
@@ -221,13 +219,13 @@ impl<T, const N: usize> SparseSecondaryMap<T, N> {
         }
     }
 
-    /// Whether an entry exists for this key and generation.
+    /// 检查指定键及其代数对应条目是否存在。
     #[inline]
     pub(crate) fn contains_key(&self, key: RawId) -> bool {
         self.get(key).is_some()
     }
 
-    /// Remove an entry and return its value.
+    /// 移除一个条目并返回其值。若句柄已过期或不存在则返回 `None`。
     pub(crate) fn remove(&mut self, key: RawId) -> Option<T> {
         let (chunk_index, offset) = Self::split(key.index);
         let entry = self

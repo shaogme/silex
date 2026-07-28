@@ -6,13 +6,14 @@ use std::{
     slice,
 };
 
-/// A specialized, memory-efficient vector for `T`.
-/// Is stores length and capacity in a heap header to keep the stack size small (1 word).
-/// This is similar to `ThinVec`.
+/// 为 `T` 定制的紧凑型堆动态数组。
+///
+/// 将长度与容量保存在堆内存的头部 (Header) 中，使得栈空间占用最小化（仅 1 个指针大小/单字）。
+/// 类似于 `ThinVec`。
 pub(crate) struct ThinVec<T> {
-    /// Pointer to the allocation.
-    /// Layout: [Header][padding?][Data...]
-    /// If None, it's empty/unallocated.
+    /// 指向分配内存块的指针。
+    /// 内存布局：`[Header][padding?][Data...]`
+    /// 若为 `None`，表示尚未分配内存或为空。
     ptr: Option<NonNull<u8>>,
     _marker: PhantomData<T>,
 }
@@ -23,20 +24,11 @@ struct Header {
     cap: usize,
 }
 
-// --- 分配布局辅助 ---
-//
-// 所有指向分配内部的指针都必须从 `ThinVec::ptr` 派生 —— 它的 provenance 覆盖整块
-// 分配。绝不能从 `&Header` / `&mut Header` 派生数据区指针：那种引用只授权了 Header
-// 自己的 16 字节，用它写数据区在 Stacked Borrows 下是越界写（AUDIT P4）。
-// 同理，Header 字段一律通过裸指针读写，避免在同一块分配上同时存在
-// 覆盖范围不同的引用。
-
 /// 数据区相对于分配起始处的偏移。
 ///
-/// 与 `Layout::new::<Header>().extend(Layout::array::<T>(..))` 返回的偏移一致：
-/// 把 `size_of::<Header>()` 向上对齐到 `align_of::<T>()`。旧实现把数据区硬编码为
-/// 紧邻 Header 之后，当 `align_of::<T>() > align_of::<Header>()`（如 `u128`）时
-/// 会漏掉 `extend` 插入的 padding（AUDIT P19.3）。
+/// 计算与 `Layout::new::<Header>().extend(Layout::array::<T>(..))` 导出的偏移一致，
+/// 将 `size_of::<Header>()` 向上对齐到 `align_of::<T>()`。
+/// 当 `align_of::<T>() > align_of::<Header>()` 时自动包含必要的 Padding 填充。
 #[inline(always)]
 const fn data_offset<T>() -> usize {
     let align = align_of::<T>();
@@ -204,8 +196,8 @@ impl<T> ThinVec<T> {
 }
 
 impl<T: PartialEq> ThinVec<T> {
-    /// Removes the first occurrence of `elem`.
-    /// Returns true if removed.
+    /// 移除第一个等于 `elem` 的元素。
+    /// 若成功移除则返回 `true`。
     #[cfg(test)]
     fn remove(&mut self, elem: &T) -> bool {
         let Some(base) = self.ptr else { return false };
@@ -222,10 +214,12 @@ impl<T: PartialEq> ThinVec<T> {
             // —— 后者是 Stacked Borrows 违规模式（AUDIT P4 附注）。
             items.swap(pos, len - 1);
 
+            // 异常安全性：必须先递减长度，再执行 `drop_in_place`。
+            // 避免 `T::drop()` 在 panic 时由于 len 尚未更新导致 `ThinVec::drop` 重复析构末尾元素（Double Drop UB）。
+            set_len(base, len - 1);
             if needs_drop::<T>() {
                 ptr::drop_in_place(&raw mut items[len - 1]);
             }
-            set_len(base, len - 1);
             true
         }
     }
@@ -379,13 +373,7 @@ impl<T> List<T> {
         }
     }
 
-    /// 就地借出全部元素。
-    ///
-    /// 订阅者表与依赖表的遍历走这里：`propagate` / `evaluate` 现在直接在这个
-    /// 切片上走，不再把它拷进一个 `Vec`。从前那套 `fill_subscribers(&self,
-    /// dest: &mut Vec<RawId>)` 是 `ReactiveGraph` 抽象层的产物 —— trait 没法
-    /// 表达“借用内部的 `List<RawId>`”，于是每访问一个节点就得整表拷贝一次，
-    /// 再拿一个 `vec_pool` 去缓解这个由抽象引入的问题（审计报告 §3.3）。
+    /// 就地借出全部元素切片。
     #[inline]
     pub(crate) fn as_slice(&self) -> &[T] {
         match self {
@@ -419,8 +407,7 @@ impl<T: PartialEq> List<T> {
                 if vec.remove(elem)
                     && let Some(only) = vec.take_only()
                 {
-                    // `Many` 至少有 2 个元素，移除一个之后不可能为空，
-                    // 因此只有 `Many -> Single` 一种降级（AUDIT P19.7）。
+                    // `Many` 移除元素后剩 1 个元素时降级为 `Single`。
                     *self = Self::Single(only);
                 }
             }

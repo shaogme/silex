@@ -1,37 +1,33 @@
+//! 响应式系统的调度器与工作空间复用池。
+
 use crate::{
     internal::arena::{RawId, SparseSecondaryMap},
     runtime::{graph::EvalFrame, guard::Depth},
 };
 use std::collections::VecDeque;
 
-/// 单次调度允许执行的最大计算次数。
+/// 单次调度或单次求值中允许的最大迭代计算次数。
 ///
-/// 超过就意味着有东西在自我喂养 —— 两个 effect 互相写对方的依赖，或者一个
-/// 节点在自己的运行过程中写回自己的上游。继续跑下去只会冻死整个线程。
-/// 上限的作用是把死循环换成一条带节点位置的报错（AUDIT P13）。
-/// 取值参考 SolidJS 的同类保护（~1e5），远高于任何正常应用的一轮更新规模。
-///
-/// 两条路径各自计数：effect 队列见 [`crate::runtime::drive::run_queue`]，
-/// 求值 DFS 见 [`crate::runtime::drive::drive_eval`]。P13 当初只盖住了前者，
-/// 而后者同样会不收敛且**一次都碰不到队列的计数器**。
+/// 用于防止节点在运行期间循环更新自身依赖导致死循环冻结线程。
+/// 触发该限制时系统将抛出包含具体节点位置的清晰 panic 信息。
+/// 详见 [`crate::runtime::drive::run_queue`] 与 [`crate::runtime::drive::drive_eval`]。
 pub(crate) const MAX_QUEUE_ITERATIONS: usize = 100_000;
 
-/// 调度器的字段现在全是**普通字段**。
-///
-/// 从前它们是 `Cell` / `RefCell`：`RUNTIME.get()` 只交出 `&Runtime`，想改任何
-/// 东西都得靠内部可变性。访问入口收成 `&mut Runtime`（[`with_rt`](crate::runtime::with_rt)）
-/// 之后这一层全部消失，热路径上的借用计数也随之归零。
+/// 调度器状态，管理待执行的副作用队列与嵌套深度标记。
 pub(crate) struct Scheduler {
+    /// 工作空间对象池（用于复用求值栈与队列缓冲区）。
     pub(crate) workspace: WorkSpace,
+    /// 待执行的副作用 (Observer/Effect) 节点 FIFO 双端队列。
     pub(crate) observer_queue: VecDeque<RawId>,
+    /// 记录已入队副作用节点的稀疏集合（防止重复入队）。
     pub(crate) queued_observers: SparseSecondaryMap<()>,
+    /// 标记当前是否正在消费执行副作用队列。
     pub(crate) running_queue: bool,
+    /// 批量更新 (`batch`) 的嵌套深度计数。
     pub(crate) batch_depth: usize,
-    /// 正在进行的求值 DFS 的嵌套深度。
+    /// 正在进行的惰性求值 DFS 的嵌套深度计数。
     ///
-    /// DFS 期间禁止 flush effect 队列：memo 重算会 `commit_update` → `notify_update`，
-    /// 如果就地把整个队列跑完，effect 可能销毁节点，而求值栈里还留着这些 id
-    /// （AUDIT P15）。改为等 DFS 结束后再统一 flush。
+    /// DFS 求值期间暂停刷新副作用队列，确保在递归求值完成后统一刷新。
     pub(crate) evaluating: usize,
 }
 
@@ -47,6 +43,7 @@ impl Scheduler {
         }
     }
 
+    /// 将一个副作用节点放入待执行队列中（若尚未入队）。
     pub(crate) fn queue_effect(&mut self, id: RawId) {
         if self.queued_observers.get(id).is_none() {
             self.queued_observers.insert(id, ());
@@ -54,7 +51,7 @@ impl Scheduler {
         }
     }
 
-    /// 两个嵌套深度计数的统一入口，供 [`DepthGuard`](crate::runtime::guard::DepthGuard) 用。
+    /// 获取指定嵌套深度的可变引用，供 [`DepthGuard`](crate::runtime::guard::DepthGuard) 使用。
     pub(crate) fn depth(&mut self, which: Depth) -> &mut usize {
         match which {
             Depth::Batch => &mut self.batch_depth,
@@ -63,22 +60,15 @@ impl Scheduler {
     }
 }
 
-/// 求值栈与传播队列的复用池。
+/// 求值栈 (`Vec<EvalFrame>`) 与传播队列 (`VecDeque<RawId>`) 的对象复用池。
 ///
-/// 这里曾经还有一个 `vec_pool: Vec<Vec<RawId>>`，专门用来接
-/// `fill_subscribers` / `fill_dependencies` 物化出来的订阅表和依赖表 ——
-/// 一个纯粹由 `ReactiveGraph` 抽象层引入的问题，然后又用一层机制去缓解它
-/// （审计报告 §3.3）。算法改成原地遍历之后，那两个 `Vec` 连同它的池子
-/// 一起没有了；剩下的两个容器（DFS 的栈、BFS 的队列）是算法本身需要的。
-///
-/// 池子仍然必要，因为求值可以重入：memo 的计算闭包里再读一个脏 memo，
-/// 就会在外层还没走完时开始新的一轮 DFS。
+/// 在递归或重入求值时允许动态借用与归还容器，减少堆内存分配开销。
 pub(crate) struct WorkSpace {
     stack_pool: Vec<Vec<EvalFrame>>,
     deque_pool: Vec<VecDeque<RawId>>,
 }
 
-/// 每个池子最多留几个容器。嵌套深度在真实代码里是个位数。
+/// 容器池保留的最大对象数量。
 const MAX_POOLED: usize = 32;
 
 impl WorkSpace {
@@ -89,10 +79,12 @@ impl WorkSpace {
         }
     }
 
+    /// 借出一个求值栈缓冲区。
     pub(crate) fn borrow_stack(&mut self) -> Vec<EvalFrame> {
         self.stack_pool.pop().unwrap_or_default()
     }
 
+    /// 归还一个求值栈缓冲区。
     pub(crate) fn return_stack(&mut self, mut stack: Vec<EvalFrame>) {
         stack.clear();
         if self.stack_pool.len() < MAX_POOLED {
@@ -100,10 +92,12 @@ impl WorkSpace {
         }
     }
 
+    /// 借出一个双端队列缓冲区。
     pub(crate) fn borrow_deque(&mut self) -> VecDeque<RawId> {
         self.deque_pool.pop().unwrap_or_default()
     }
 
+    /// 归还一个双端队列缓冲区。
     pub(crate) fn return_deque(&mut self, mut deque: VecDeque<RawId>) {
         deque.clear();
         if self.deque_pool.len() < MAX_POOLED {
