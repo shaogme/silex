@@ -367,14 +367,18 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<
         (false, class_name)
     };
 
-    if let Some(deg_str) = rest_name.strip_prefix("bg-linear-")
-        && let Ok(deg) = deg_str.parse::<u32>()
-    {
-        let angle = if is_neg && deg != 0 {
+    let format_angle = |deg: u32| -> String {
+        if is_neg && deg != 0 {
             format!("-{}deg", deg)
         } else {
             format!("{}deg", deg)
-        };
+        }
+    };
+
+    if let Some(deg_str) = rest_name.strip_prefix("bg-linear-")
+        && let Ok(deg) = deg_str.parse::<u32>()
+    {
+        let angle = format_angle(deg);
         return Some(cow!(vec![(
             "background-image",
             format!("linear-gradient({}, var(--tw-gradient-stops))", angle),
@@ -383,11 +387,7 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<
     if let Some(deg_str) = rest_name.strip_prefix("bg-conic-")
         && let Ok(deg) = deg_str.parse::<u32>()
     {
-        let angle = if is_neg && deg != 0 {
-            format!("-{}deg", deg)
-        } else {
-            format!("{}deg", deg)
-        };
+        let angle = format_angle(deg);
         return Some(cow!(vec![(
             "background-image",
             format!("conic-gradient(from {}, var(--tw-gradient-stops))", angle),
@@ -396,11 +396,7 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<
     if let Some(deg_str) = rest_name.strip_prefix("mask-linear-")
         && let Ok(deg) = deg_str.parse::<u32>()
     {
-        let angle = if is_neg && deg != 0 {
-            format!("-{}deg", deg)
-        } else {
-            format!("{}deg", deg)
-        };
+        let angle = format_angle(deg);
         return Some(cow!(vec![
             ("mask-composite", "intersect"),
             (
@@ -412,11 +408,7 @@ pub fn resolve_dynamic_rules(class_name: &str) -> Option<Vec<(&'static str, Cow<
     if let Some(deg_str) = rest_name.strip_prefix("mask-conic-")
         && let Ok(deg) = deg_str.parse::<u32>()
     {
-        let angle = if is_neg && deg != 0 {
-            format!("-{}deg", deg)
-        } else {
-            format!("{}deg", deg)
-        };
+        let angle = format_angle(deg);
         return Some(cow!(vec![
             ("mask-composite", "intersect"),
             (

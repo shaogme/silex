@@ -932,3 +932,52 @@ fn rounded_full_emits_calc_infinity_or_equivalent() {
         "rounded-full 的 border-radius 声明 `{radius_val}` 必须等价于 `calc(infinity * 1px)`"
     );
 }
+
+/// 验证渐变工具类（`-bg-conic-0`, `bg-linear-to-r`, `-bg-linear-0`, `mask-conic-0`）角度归一化（无 `-0deg`）与语法空格正确性
+#[test]
+fn gradient_angle_and_syntax_formatting() {
+    // 1. 验证 `-bg-conic-0` 零度归一化产出 `conic-gradient(from 0deg, var(--tw-gradient-stops))`
+    let css_neg_conic_0 = css_of_static("-bg-conic-0");
+    let decls_neg_conic_0 = extract_declarations(&css_neg_conic_0);
+    let bg_img_conic = decls_neg_conic_0
+        .iter()
+        .find(|(p, _)| p == "background-image")
+        .map(|(_, v)| v.as_str())
+        .expect("-bg-conic-0 必须产出 background-image");
+
+    assert_eq!(
+        bg_img_conic,
+        "conic-gradient(from 0deg, var(--tw-gradient-stops))",
+        "-bg-conic-0 严禁产出带负零的 `-0deg` 或缺失空格的 `from0deg`，实际为: {bg_img_conic}"
+    );
+
+    // 2. 验证 `-bg-linear-0` 零度归一化产出 `linear-gradient(0deg, var(--tw-gradient-stops))`
+    let css_neg_linear_0 = css_of_static("-bg-linear-0");
+    let decls_neg_linear_0 = extract_declarations(&css_neg_linear_0);
+    let bg_img_linear = decls_neg_linear_0
+        .iter()
+        .find(|(p, _)| p == "background-image")
+        .map(|(_, v)| v.as_str())
+        .expect("-bg-linear-0 必须产出 background-image");
+
+    assert_eq!(
+        bg_img_linear,
+        "linear-gradient(0deg, var(--tw-gradient-stops))",
+        "-bg-linear-0 严禁产出 `-0deg`，实际为: {bg_img_linear}"
+    );
+
+    // 3. 验证方向性内联渐变 `bg-linear-to-r` 产出 `linear-gradient(to right, var(--tw-gradient-stops))`
+    let css_linear_r = css_of_static("bg-linear-to-r");
+    let decls_linear_r = extract_declarations(&css_linear_r);
+    let bg_img_r = decls_linear_r
+        .iter()
+        .find(|(p, _)| p == "background-image")
+        .map(|(_, v)| v.as_str())
+        .expect("bg-linear-to-r 必须产出 background-image");
+
+    assert_eq!(
+        bg_img_r,
+        "linear-gradient(to right, var(--tw-gradient-stops))",
+        "bg-linear-to-r 必须编译期内联为 to right 格式，实际为: {bg_img_r}"
+    );
+}
