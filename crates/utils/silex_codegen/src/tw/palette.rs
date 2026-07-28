@@ -16,14 +16,14 @@ pub fn generate_palette_code(palette: &BTreeMap<String, Vec<ColorShadeInfo>>) ->
             if i > 0 {
                 code.push_str(", ");
             }
-            let _ = write!(code, "\"{}\"", info.hex);
+            let _ = write!(code, "\"{}\"", info.raw);
         }
         code.push_str("]),\n");
     }
     code.push_str("];\n\n");
 
     code.push_str(
-        r#"/// 根据色系名称获取标准的 11 阶梯 Hex 阵列
+        r#"/// 根据色系名称获取标准的 11 阶梯 Raw 阵列
 pub fn get_raw_palette(color_name: &str) -> Option<[&'static str; 11]> {
     let idx = PALETTE_TABLE.binary_search_by_key(&color_name, |&(k, _)| k).ok()?;
     Some(PALETTE_TABLE[idx].1)
@@ -32,7 +32,7 @@ pub fn get_raw_palette(color_name: &str) -> Option<[&'static str; 11]> {
 "#,
     );
 
-    code.push_str("/// 编译期生成的 O(1) 静态色板 Hex 匹配器\n");
+    code.push_str("/// 编译期生成的 O(1) 静态色板 Raw 匹配器\n");
     code.push_str("pub fn lookup_palette_color_fast(color_name: &str, shade: &str) -> Option<&'static str> {\n");
     code.push_str("    match (color_name, shade) {\n");
     for (name, shades) in palette {
@@ -40,7 +40,7 @@ pub fn get_raw_palette(color_name: &str) -> Option<[&'static str; 11]> {
             let _ = writeln!(
                 code,
                 "        (\"{}\", \"{}\") => Some(\"{}\"),",
-                name, info.shade, info.hex
+                name, info.shade, info.raw
             );
         }
     }

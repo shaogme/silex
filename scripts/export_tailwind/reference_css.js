@@ -15,17 +15,13 @@
 /// `--tw-*` 这类**运行时**变量不属于 theme，保持原样——它们本身就是被比较的对象。
 
 const { parseDeclarationList } = require('./css_utils');
-const { oklchToHexAndRgb } = require('./palette_extractor');
 
-/// 从设计系统里取出全部 theme 变量，值已做 oklch → hex 转换
+/// 从设计系统里取出全部 theme 变量
 function buildThemeMap(designSystem) {
   const map = new Map();
   for (const [key, entry] of designSystem.theme.entries()) {
     if (!entry || typeof entry.value !== 'string') continue;
     let value = entry.value.replace(/\s+/g, ' ').trim();
-    if (value.startsWith('oklch(')) {
-      value = oklchToHexAndRgb(value).hex;
-    }
     map.set(key, value);
   }
   return map;

@@ -800,37 +800,37 @@
   "accent-amber-100": [
     [
       "accent-color",
-      "#fef3c6"
+      "oklch(96.2% 0.059 95.617)"
     ]
   ],
   "accent-fuchsia-200": [
     [
       "accent-color",
-      "#f6cfff"
+      "oklch(90.3% 0.076 319.62)"
     ]
   ],
   "accent-lime-50": [
     [
       "accent-color",
-      "#f7fee7"
+      "oklch(98.6% 0.031 120.757)"
     ]
   ],
   "accent-olive-800": [
     [
       "accent-color",
-      "#2b2b22"
+      "oklch(28.6% 0.016 107.4)"
     ]
   ],
   "accent-rose-200": [
     [
       "accent-color",
-      "#ffccd3"
+      "oklch(89.2% 0.058 10.001)"
     ]
   ],
   "accent-taupe-500": [
     [
       "accent-color",
-      "#7c6d67"
+      "oklch(54.7% 0.021 43.1)"
     ]
   ],
   "align-baseline": [
@@ -1226,7 +1226,7 @@
   "bg-gray-50": [
     [
       "background-color",
-      "#f9fafb"
+      "oklch(98.5% 0.002 247.839)"
     ]
   ],
   "bg-linear-to-b": [
@@ -1260,7 +1260,7 @@
   "bg-mauve-300": [
     [
       "background-color",
-      "#d7d0d7"
+      "oklch(86.5% 0.012 325.68)"
     ]
   ],
   "bg-none": [
@@ -1272,7 +1272,7 @@
   "bg-pink-900": [
     [
       "background-color",
-      "#861043"
+      "oklch(40.8% 0.153 2.432)"
     ]
   ],
   "bg-radial": [
@@ -1288,25 +1288,25 @@
   "bg-red-500": [
     [
       "background-color",
-      "#fb2c36"
+      "oklch(63.7% 0.237 25.331)"
     ]
   ],
   "bg-red-500/50": [
     [
       "background-color",
-      "color-mix(in oklab, #fb2c36 50%, transparent)"
+      "color-mix(in oklab, oklch(63.7% 0.237 25.331) 50%, transparent)"
     ]
   ],
   "bg-slate-900": [
     [
       "background-color",
-      "#0f172b"
+      "oklch(20.8% 0.042 265.755)"
     ]
   ],
   "bg-stone-100": [
     [
       "background-color",
-      "#f5f5f4"
+      "oklch(97% 0.001 106.424)"
     ]
   ],
   "block": [
@@ -1584,7 +1584,7 @@
   "border-be-taupe-900": [
     [
       "border-block-end-color",
-      "#1d1816"
+      "oklch(21.4% 0.009 43.1)"
     ]
   ],
   "border-bs-0": [
@@ -1720,7 +1720,7 @@
   "border-e-red-500": [
     [
       "border-inline-end-color",
-      "#fb2c36"
+      "oklch(63.7% 0.237 25.331)"
     ]
   ],
   "border-l-0": [
@@ -1836,13 +1836,13 @@
   "border-r-amber-700": [
     [
       "border-right-color",
-      "#bb4d00"
+      "oklch(55.5% 0.163 48.998)"
     ]
   ],
   "border-red-500": [
     [
       "border-color",
-      "#fb2c36"
+      "oklch(63.7% 0.237 25.331)"
     ]
   ],
   "border-s-0": [
@@ -1908,7 +1908,7 @@
   "border-s-teal-600": [
     [
       "border-inline-start-color",
-      "#009689"
+      "oklch(60% 0.118 184.704)"
     ]
   ],
   "border-solid": [
@@ -2024,7 +2024,7 @@
   "border-x-emerald-950": [
     [
       "border-inline-color",
-      "#002c22"
+      "oklch(26.2% 0.051 172.552)"
     ]
   ],
   "border-y-0": [
@@ -2336,37 +2336,37 @@
   "caret-amber-100": [
     [
       "caret-color",
-      "#fef3c6"
+      "oklch(96.2% 0.059 95.617)"
     ]
   ],
   "caret-fuchsia-300": [
     [
       "caret-color",
-      "#f4a8ff"
+      "oklch(83.3% 0.145 321.434)"
     ]
   ],
   "caret-lime-500": [
     [
       "caret-color",
-      "#7ccf00"
+      "oklch(76.8% 0.233 130.85)"
     ]
   ],
   "caret-olive-900": [
     [
       "caret-color",
-      "#1d1d16"
+      "oklch(22.8% 0.013 107.4)"
     ]
   ],
   "caret-rose-300": [
     [
       "caret-color",
-      "#ffa1ad"
+      "oklch(81% 0.117 11.638)"
     ]
   ],
   "caret-taupe-600": [
     [
       "caret-color",
-      "#5b4f4b"
+      "oklch(43.8% 0.017 39.3)"
     ]
   ],
   "clear-both": [
@@ -2748,31 +2748,31 @@
   "decoration-emerald-700": [
     [
       "text-decoration-color",
-      "#007a55"
+      "oklch(50.8% 0.118 165.612)"
     ]
   ],
   "decoration-lime-100": [
     [
       "text-decoration-color",
-      "#ecfcca"
+      "oklch(96.7% 0.067 122.328)"
     ]
   ],
   "decoration-olive-600": [
     [
       "text-decoration-color",
-      "#5b5b4b"
+      "oklch(46.6% 0.025 107.3)"
     ]
   ],
   "decoration-rose-200": [
     [
       "text-decoration-color",
-      "#ffccd3"
+      "oklch(89.2% 0.058 10.001)"
     ]
   ],
   "decoration-taupe-500": [
     [
       "text-decoration-color",
-      "#7c6d67"
+      "oklch(54.7% 0.021 43.1)"
     ]
   ],
   "delay-100": [
@@ -2830,37 +2830,37 @@
   "divide-amber-100": [
     [
       "border-color",
-      "#fef3c6"
+      "oklch(96.2% 0.059 95.617)"
     ]
   ],
   "divide-fuchsia-300": [
     [
       "border-color",
-      "#f4a8ff"
+      "oklch(83.3% 0.145 321.434)"
     ]
   ],
   "divide-lime-800": [
     [
       "border-color",
-      "#3c6300"
+      "oklch(45.3% 0.124 130.933)"
     ]
   ],
   "divide-orange-400": [
     [
       "border-color",
-      "#ff8904"
+      "oklch(75% 0.183 55.934)"
     ]
   ],
   "divide-rose-950": [
     [
       "border-color",
-      "#4d0218"
+      "oklch(27.1% 0.105 12.094)"
     ]
   ],
   "divide-teal-500": [
     [
       "border-color",
-      "#00bba7"
+      "oklch(70.4% 0.14 182.503)"
     ]
   ],
   "divide-x-2": [
@@ -2898,7 +2898,7 @@
   "drop-shadow-fuchsia-300": [
     [
       "--tw-drop-shadow-color",
-      "color-mix(in oklab, #f4a8ff var(--tw-drop-shadow-alpha), transparent)"
+      "color-mix(in oklab, oklch(83.3% 0.145 321.434) var(--tw-drop-shadow-alpha), transparent)"
     ],
     [
       "--tw-drop-shadow",
@@ -2922,7 +2922,7 @@
   "drop-shadow-lime-500": [
     [
       "--tw-drop-shadow-color",
-      "color-mix(in oklab, #7ccf00 var(--tw-drop-shadow-alpha), transparent)"
+      "color-mix(in oklab, oklch(76.8% 0.233 130.85) var(--tw-drop-shadow-alpha), transparent)"
     ],
     [
       "--tw-drop-shadow",
@@ -2932,7 +2932,7 @@
   "drop-shadow-olive-800": [
     [
       "--tw-drop-shadow-color",
-      "color-mix(in oklab, #2b2b22 var(--tw-drop-shadow-alpha), transparent)"
+      "color-mix(in oklab, oklch(28.6% 0.016 107.4) var(--tw-drop-shadow-alpha), transparent)"
     ],
     [
       "--tw-drop-shadow",
@@ -2942,7 +2942,7 @@
   "drop-shadow-rose-300": [
     [
       "--tw-drop-shadow-color",
-      "color-mix(in oklab, #ffa1ad var(--tw-drop-shadow-alpha), transparent)"
+      "color-mix(in oklab, oklch(81% 0.117 11.638) var(--tw-drop-shadow-alpha), transparent)"
     ],
     [
       "--tw-drop-shadow",
@@ -2952,7 +2952,7 @@
   "drop-shadow-taupe-600": [
     [
       "--tw-drop-shadow-color",
-      "color-mix(in oklab, #5b4f4b var(--tw-drop-shadow-alpha), transparent)"
+      "color-mix(in oklab, oklch(43.8% 0.017 39.3) var(--tw-drop-shadow-alpha), transparent)"
     ],
     [
       "--tw-drop-shadow",
@@ -3108,37 +3108,37 @@
   "fill-amber-100": [
     [
       "fill",
-      "#fef3c6"
+      "oklch(96.2% 0.059 95.617)"
     ]
   ],
   "fill-fuchsia-300": [
     [
       "fill",
-      "#f4a8ff"
+      "oklch(83.3% 0.145 321.434)"
     ]
   ],
   "fill-lime-500": [
     [
       "fill",
-      "#7ccf00"
+      "oklch(76.8% 0.233 130.85)"
     ]
   ],
   "fill-olive-800": [
     [
       "fill",
-      "#2b2b22"
+      "oklch(28.6% 0.016 107.4)"
     ]
   ],
   "fill-rose-200": [
     [
       "fill",
-      "#ffccd3"
+      "oklch(89.2% 0.058 10.001)"
     ]
   ],
   "fill-taupe-500": [
     [
       "fill",
-      "#7c6d67"
+      "oklch(54.7% 0.021 43.1)"
     ]
   ],
   "filter-none": [
@@ -3306,7 +3306,7 @@
   "from-cyan-700": [
     [
       "--tw-gradient-from",
-      "#007595"
+      "oklch(52% 0.105 223.128)"
     ],
     [
       "--tw-gradient-stops",
@@ -3316,7 +3316,7 @@
   "from-indigo-50": [
     [
       "--tw-gradient-from",
-      "#eef2ff"
+      "oklch(96.2% 0.018 272.314)"
     ],
     [
       "--tw-gradient-stops",
@@ -3326,7 +3326,7 @@
   "from-olive-100": [
     [
       "--tw-gradient-from",
-      "#f4f4f0"
+      "oklch(96.6% 0.005 106.5)"
     ],
     [
       "--tw-gradient-stops",
@@ -3336,7 +3336,7 @@
   "from-red-500": [
     [
       "--tw-gradient-from",
-      "#fb2c36"
+      "oklch(63.7% 0.237 25.331)"
     ],
     [
       "--tw-gradient-stops",
@@ -3346,7 +3346,7 @@
   "from-red-800": [
     [
       "--tw-gradient-from",
-      "#9f0712"
+      "oklch(44.4% 0.177 26.899)"
     ],
     [
       "--tw-gradient-stops",
@@ -3356,7 +3356,7 @@
   "from-taupe-500": [
     [
       "--tw-gradient-from",
-      "#7c6d67"
+      "oklch(54.7% 0.021 43.1)"
     ],
     [
       "--tw-gradient-stops",
@@ -3802,19 +3802,19 @@
   "inset-ring-emerald-500": [
     [
       "--tw-inset-ring-color",
-      "#00bc7d"
+      "oklch(69.6% 0.17 162.48)"
     ]
   ],
   "inset-ring-red-500": [
     [
       "--tw-inset-ring-color",
-      "#fb2c36"
+      "oklch(63.7% 0.237 25.331)"
     ]
   ],
   "inset-ring-zinc-50": [
     [
       "--tw-inset-ring-color",
-      "#fafafa"
+      "oklch(98.5% 0 none)"
     ]
   ],
   "inset-shadow-2xs": [
@@ -3840,7 +3840,7 @@
   "inset-shadow-purple-400": [
     [
       "--tw-inset-shadow-color",
-      "color-mix(in oklab, #c27aff var(--tw-inset-shadow-alpha), transparent)"
+      "color-mix(in oklab, oklch(71.4% 0.203 305.504) var(--tw-inset-shadow-alpha), transparent)"
     ]
   ],
   "inset-shadow-sm": [
@@ -4414,7 +4414,7 @@
     ],
     [
       "--tw-mask-conic-from-color",
-      "#5d0ec0"
+      "oklch(43.2% 0.232 292.759)"
     ]
   ],
   "mask-l-to-yellow-600": [
@@ -4436,7 +4436,7 @@
     ],
     [
       "--tw-mask-left-to-color",
-      "#d08700"
+      "oklch(68.1% 0.162 75.834)"
     ]
   ],
   "mask-r-from-yellow-100": [
@@ -4458,7 +4458,7 @@
     ],
     [
       "--tw-mask-right-from-color",
-      "#fef9c2"
+      "oklch(97.3% 0.071 103.193)"
     ]
   ],
   "mask-radial-to-yellow-300": [
@@ -4480,7 +4480,7 @@
     ],
     [
       "--tw-mask-radial-to-color",
-      "#ffdf20"
+      "oklch(90.5% 0.182 98.111)"
     ]
   ],
   "mask-x-from-yellow-500": [
@@ -4502,7 +4502,7 @@
     ],
     [
       "--tw-mask-right-from-color",
-      "#f0b100"
+      "oklch(79.5% 0.184 86.047)"
     ],
     [
       "--tw-mask-left",
@@ -4510,7 +4510,7 @@
     ],
     [
       "--tw-mask-left-from-color",
-      "#f0b100"
+      "oklch(79.5% 0.184 86.047)"
     ]
   ],
   "max-block-0": [
@@ -5408,7 +5408,7 @@
   "outline-emerald-400": [
     [
       "outline-color",
-      "#00d492"
+      "oklch(76.5% 0.177 163.223)"
     ]
   ],
   "outline-hidden": [
@@ -5432,7 +5432,7 @@
   "outline-indigo-950": [
     [
       "outline-color",
-      "#1e1a4d"
+      "oklch(25.7% 0.09 281.288)"
     ]
   ],
   "outline-none": [
@@ -5448,25 +5448,25 @@
   "outline-olive-100": [
     [
       "outline-color",
-      "#f4f4f0"
+      "oklch(96.6% 0.005 106.5)"
     ]
   ],
   "outline-red-500": [
     [
       "outline-color",
-      "#fb2c36"
+      "oklch(63.7% 0.237 25.331)"
     ]
   ],
   "outline-red-800": [
     [
       "outline-color",
-      "#9f0712"
+      "oklch(44.4% 0.177 26.899)"
     ]
   ],
   "outline-taupe-50": [
     [
       "outline-color",
-      "#fbfaf9"
+      "oklch(98.6% 0.002 67.8)"
     ]
   ],
   "overflow-auto": [
@@ -5922,37 +5922,37 @@
   "placeholder-amber-100": [
     [
       "color",
-      "#fef3c6"
+      "oklch(96.2% 0.059 95.617)"
     ]
   ],
   "placeholder-fuchsia-300": [
     [
       "color",
-      "#f4a8ff"
+      "oklch(83.3% 0.145 321.434)"
     ]
   ],
   "placeholder-lime-500": [
     [
       "color",
-      "#7ccf00"
+      "oklch(76.8% 0.233 130.85)"
     ]
   ],
   "placeholder-olive-900": [
     [
       "color",
-      "#1d1d16"
+      "oklch(22.8% 0.013 107.4)"
     ]
   ],
   "placeholder-rose-300": [
     [
       "color",
-      "#ffa1ad"
+      "oklch(81% 0.117 11.638)"
     ]
   ],
   "placeholder-taupe-600": [
     [
       "color",
-      "#5b4f4b"
+      "oklch(43.8% 0.017 39.3)"
     ]
   ],
   "pointer-events-auto": [
@@ -6396,7 +6396,7 @@
   "ring-blue-500": [
     [
       "--tw-ring-color",
-      "#2b7fff"
+      "oklch(62.3% 0.214 259.815)"
     ]
   ],
   "ring-inset": [
@@ -6408,7 +6408,7 @@
   "ring-lime-200": [
     [
       "--tw-ring-color",
-      "#d8f999"
+      "oklch(93.8% 0.127 124.321)"
     ]
   ],
   "ring-offset-2": [
@@ -6424,31 +6424,31 @@
   "ring-offset-blue-500": [
     [
       "--tw-ring-offset-color",
-      "#2b7fff"
+      "oklch(62.3% 0.214 259.815)"
     ]
   ],
   "ring-offset-fuchsia-500": [
     [
       "--tw-ring-offset-color",
-      "#e12afb"
+      "oklch(66.7% 0.295 322.15)"
     ]
   ],
   "ring-offset-orange-50": [
     [
       "--tw-ring-offset-color",
-      "#fff7ed"
+      "oklch(98% 0.016 73.684)"
     ]
   ],
   "ring-offset-teal-50": [
     [
       "--tw-ring-offset-color",
-      "#f0fdfa"
+      "oklch(98.4% 0.014 180.72)"
     ]
   ],
   "ring-rose-300": [
     [
       "--tw-ring-color",
-      "#ffa1ad"
+      "oklch(81% 0.117 11.638)"
     ]
   ],
   "rotate-0": [
@@ -7648,7 +7648,7 @@
   "scrollbar-thumb-lime-200": [
     [
       "--tw-scrollbar-thumb",
-      "#d8f999"
+      "oklch(93.8% 0.127 124.321)"
     ],
     [
       "scrollbar-color",
@@ -7658,7 +7658,7 @@
   "scrollbar-thumb-rose-100": [
     [
       "--tw-scrollbar-thumb",
-      "#ffe4e6"
+      "oklch(94.1% 0.03 12.58)"
     ],
     [
       "scrollbar-color",
@@ -7668,7 +7668,7 @@
   "scrollbar-thumb-zinc-800": [
     [
       "--tw-scrollbar-thumb",
-      "#27272a"
+      "oklch(27.4% 0.006 286.033)"
     ],
     [
       "scrollbar-color",
@@ -7678,7 +7678,7 @@
   "scrollbar-track-lime-50": [
     [
       "--tw-scrollbar-track",
-      "#f7fee7"
+      "oklch(98.6% 0.031 120.757)"
     ],
     [
       "scrollbar-color",
@@ -7688,7 +7688,7 @@
   "scrollbar-track-rose-400": [
     [
       "--tw-scrollbar-track",
-      "#ff637e"
+      "oklch(71.2% 0.194 13.428)"
     ],
     [
       "scrollbar-color",
@@ -7834,7 +7834,7 @@
   "shadow-fuchsia-200": [
     [
       "--tw-shadow-color",
-      "color-mix(in oklab, #f6cfff var(--tw-shadow-alpha), transparent)"
+      "color-mix(in oklab, oklch(90.3% 0.076 319.62) var(--tw-shadow-alpha), transparent)"
     ]
   ],
   "shadow-lg": [
@@ -7850,7 +7850,7 @@
   "shadow-lime-400": [
     [
       "--tw-shadow-color",
-      "color-mix(in oklab, #9ae600 var(--tw-shadow-alpha), transparent)"
+      "color-mix(in oklab, oklch(84.1% 0.238 128.85) var(--tw-shadow-alpha), transparent)"
     ]
   ],
   "shadow-md": [
@@ -7876,13 +7876,13 @@
   "shadow-olive-700": [
     [
       "--tw-shadow-color",
-      "color-mix(in oklab, #474739 var(--tw-shadow-alpha), transparent)"
+      "color-mix(in oklab, oklch(39.4% 0.023 107.4) var(--tw-shadow-alpha), transparent)"
     ]
   ],
   "shadow-rose-300": [
     [
       "--tw-shadow-color",
-      "color-mix(in oklab, #ffa1ad var(--tw-shadow-alpha), transparent)"
+      "color-mix(in oklab, oklch(81% 0.117 11.638) var(--tw-shadow-alpha), transparent)"
     ]
   ],
   "shadow-sm": [
@@ -7898,7 +7898,7 @@
   "shadow-taupe-700": [
     [
       "--tw-shadow-color",
-      "color-mix(in oklab, #473c39 var(--tw-shadow-alpha), transparent)"
+      "color-mix(in oklab, oklch(36.7% 0.016 35.7) var(--tw-shadow-alpha), transparent)"
     ]
   ],
   "shadow-xl": [
@@ -8222,31 +8222,31 @@
   "stroke-emerald-950": [
     [
       "stroke",
-      "#002c22"
+      "oklch(26.2% 0.051 172.552)"
     ]
   ],
   "stroke-lime-400": [
     [
       "stroke",
-      "#9ae600"
+      "oklch(84.1% 0.238 128.85)"
     ]
   ],
   "stroke-olive-700": [
     [
       "stroke",
-      "#474739"
+      "oklch(39.4% 0.023 107.4)"
     ]
   ],
   "stroke-rose-200": [
     [
       "stroke",
-      "#ffccd3"
+      "oklch(89.2% 0.058 10.001)"
     ]
   ],
   "stroke-taupe-600": [
     [
       "stroke",
-      "#5b4f4b"
+      "oklch(43.8% 0.017 39.3)"
     ]
   ],
   "subpixel-antialiased": [
@@ -8352,7 +8352,7 @@
   "text-indigo-900": [
     [
       "color",
-      "#312c85"
+      "oklch(35.9% 0.144 278.697)"
     ]
   ],
   "text-lg": [
@@ -8368,31 +8368,31 @@
   "text-red-500": [
     [
       "color",
-      "#fb2c36"
+      "oklch(63.7% 0.237 25.331)"
     ]
   ],
   "text-red-600": [
     [
       "color",
-      "#e7000b"
+      "oklch(57.7% 0.245 27.325)"
     ]
   ],
   "text-shadow-indigo-500": [
     [
       "--tw-text-shadow-color",
-      "color-mix(in oklab, #615fff var(--tw-text-shadow-alpha), transparent)"
+      "color-mix(in oklab, oklch(58.5% 0.233 277.117) var(--tw-text-shadow-alpha), transparent)"
     ]
   ],
   "text-shadow-red-400": [
     [
       "--tw-text-shadow-color",
-      "color-mix(in oklab, #ff6467 var(--tw-text-shadow-alpha), transparent)"
+      "color-mix(in oklab, oklch(70.4% 0.191 22.216) var(--tw-text-shadow-alpha), transparent)"
     ]
   ],
   "text-shadow-zinc-300": [
     [
       "--tw-text-shadow-color",
-      "color-mix(in oklab, #d4d4d8 var(--tw-text-shadow-alpha), transparent)"
+      "color-mix(in oklab, oklch(87.1% 0.006 286.286) var(--tw-text-shadow-alpha), transparent)"
     ]
   ],
   "text-sm": [
@@ -8434,7 +8434,7 @@
   "to-cyan-700": [
     [
       "--tw-gradient-to",
-      "#007595"
+      "oklch(52% 0.105 223.128)"
     ],
     [
       "--tw-gradient-stops",
@@ -8444,7 +8444,7 @@
   "to-green-500": [
     [
       "--tw-gradient-to",
-      "#00c950"
+      "oklch(72.3% 0.219 149.579)"
     ],
     [
       "--tw-gradient-stops",
@@ -8454,7 +8454,7 @@
   "to-indigo-50": [
     [
       "--tw-gradient-to",
-      "#eef2ff"
+      "oklch(96.2% 0.018 272.314)"
     ],
     [
       "--tw-gradient-stops",
@@ -8464,7 +8464,7 @@
   "to-olive-100": [
     [
       "--tw-gradient-to",
-      "#f4f4f0"
+      "oklch(96.6% 0.005 106.5)"
     ],
     [
       "--tw-gradient-stops",
@@ -8474,7 +8474,7 @@
   "to-red-800": [
     [
       "--tw-gradient-to",
-      "#9f0712"
+      "oklch(44.4% 0.177 26.899)"
     ],
     [
       "--tw-gradient-stops",
@@ -8484,7 +8484,7 @@
   "to-taupe-500": [
     [
       "--tw-gradient-to",
-      "#7c6d67"
+      "oklch(54.7% 0.021 43.1)"
     ],
     [
       "--tw-gradient-stops",
@@ -8910,7 +8910,7 @@
   "via-blue-500": [
     [
       "--tw-gradient-via",
-      "#2b7fff"
+      "oklch(62.3% 0.214 259.815)"
     ],
     [
       "--tw-gradient-via-stops",
@@ -8924,7 +8924,7 @@
   "via-cyan-700": [
     [
       "--tw-gradient-via",
-      "#007595"
+      "oklch(52% 0.105 223.128)"
     ],
     [
       "--tw-gradient-via-stops",
@@ -8938,7 +8938,7 @@
   "via-indigo-50": [
     [
       "--tw-gradient-via",
-      "#eef2ff"
+      "oklch(96.2% 0.018 272.314)"
     ],
     [
       "--tw-gradient-via-stops",
@@ -8958,7 +8958,7 @@
   "via-red-700": [
     [
       "--tw-gradient-via",
-      "#c10007"
+      "oklch(50.5% 0.213 27.518)"
     ],
     [
       "--tw-gradient-via-stops",
@@ -8972,7 +8972,7 @@
   "via-taupe-50": [
     [
       "--tw-gradient-via",
-      "#fbfaf9"
+      "oklch(98.6% 0.002 67.8)"
     ],
     [
       "--tw-gradient-via-stops",

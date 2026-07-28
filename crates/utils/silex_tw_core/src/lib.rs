@@ -28,7 +28,10 @@ pub mod resolver;
 pub mod value;
 
 pub use at_rule::{AT_RULE_UTILITIES, AtRuleUtility, CONTAINER_TIERS, lookup_at_rule_utility};
-pub use color::{hex_to_rgba, lookup_palette_color, parse_color_value, resolve_color_utility};
+pub use color::{
+    apply_opacity, interpolate_oklch, lookup_palette_color, parse_color_value, parse_oklch,
+    resolve_color_utility,
+};
 pub use context::TwContext;
 pub use kind::{ValueKind, arbitrary_dispatch, classify_arbitrary_value};
 pub use palette::{ColorShadeInfo, JsonPalette};

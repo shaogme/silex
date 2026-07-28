@@ -397,6 +397,11 @@ pub fn values_equivalent(prop: &str, expected: &str, actual: &str) -> bool {
         return true;
     }
 
+    // LightningCSS 静态求值化简：color-mix(in oklab, oklch(...) pct%, transparent) ≡ oklab(L a b / alpha)
+    if is_color_mix_oklab_equivalent(expected, actual) {
+        return true;
+    }
+
     // `opacity: 50%` ≡ `opacity: .5`（这些属性同时接受百分比与无单位数）
     if matches!(
         prop,
@@ -456,6 +461,70 @@ pub fn as_ratio(value: &str) -> Option<f64> {
         Some(num) => num.parse::<f64>().ok().map(|v| v / 100.0),
         None => value.parse::<f64>().ok(),
     }
+}
+
+/// 判断 LightningCSS 将 `color-mix(in oklab, oklch(...) pct%, transparent)` 静态求值化简为 `oklab(...)` 的规范等价性
+fn is_color_mix_oklab_equivalent(a: &str, b: &str) -> bool {
+    let check = |mix_str: &str, oklab_str: &str| -> Option<bool> {
+        if !mix_str.contains("color-mix(in oklab") || !oklab_str.starts_with("oklab(") {
+            return None;
+        }
+
+        let oklch_start = mix_str.find("oklch(")?;
+        let oklch_end = mix_str[oklch_start..].find(')')? + oklch_start;
+        let oklch_part = &mix_str[oklch_start..=oklch_end];
+
+        let (l, c, h, _) = silex_tw_core::parse_oklch(oklch_part)?;
+
+        let after_oklch = &mix_str[oklch_end + 1..];
+        let pct_pos = after_oklch.find('%')?;
+        let pct_num_part = after_oklch[..pct_pos].split_whitespace().last()?;
+        let pct = pct_num_part.parse::<f64>().ok()?;
+        let expected_alpha = pct / 100.0;
+
+        let h_rad = (h * std::f64::consts::PI) / 180.0;
+        let expected_a = c * h_rad.cos();
+        let expected_b = c * h_rad.sin();
+
+        let inner = oklab_str.strip_prefix("oklab(")?.strip_suffix(')')?;
+        let (color_part, alpha_part) = match inner.split_once('/') {
+            Some((cp, ap)) => (cp.trim(), Some(ap.trim())),
+            None => (inner.trim(), None),
+        };
+
+        let mut tokens = color_part.split_whitespace();
+        let l_str = tokens.next()?;
+        let a_str = tokens.next()?;
+        let b_str = tokens.next()?;
+
+        let actual_l = if let Some(p) = l_str.strip_suffix('%') {
+            p.parse::<f64>().ok()? / 100.0
+        } else {
+            l_str.parse::<f64>().ok()?
+        };
+        let actual_a = a_str.parse::<f64>().ok()?;
+        let actual_b = b_str.parse::<f64>().ok()?;
+
+        let actual_alpha = match alpha_part {
+            Some(ap) => {
+                if let Some(p) = ap.strip_suffix('%') {
+                    p.parse::<f64>().ok()? / 100.0
+                } else {
+                    ap.parse::<f64>().ok()?
+                }
+            }
+            None => 1.0,
+        };
+
+        let l_eq = (l - actual_l).abs() < 1e-3;
+        let a_eq = (expected_a - actual_a).abs() < 1e-3;
+        let b_eq = (expected_b - actual_b).abs() < 1e-3;
+        let alpha_eq = (expected_alpha - actual_alpha).abs() < 1e-3;
+
+        Some(l_eq && a_eq && b_eq && alpha_eq)
+    };
+
+    check(a, b).unwrap_or(false) || check(b, a).unwrap_or(false)
 }
 
 /// `1/1` → 1.0；`1.5` → 1.5

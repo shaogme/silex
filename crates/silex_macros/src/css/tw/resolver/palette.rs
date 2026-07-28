@@ -1,8 +1,4 @@
 //! 颜色解析的宏侧入口——只做 `UtilityValue` 转换，规则全部来自 `silex_tw_core`。
-//!
-//! 这个模块此前有 ~290 行自己的色板/透明度/语义 token 实现，与 codegen 侧那份并行漂移
-//! （报告 §3.1）。现在只剩转接：色阶插值、`/透明度`、`[#hex]`、语义 token、前缀映射
-//! 一律走 core，两条路径共用同一份代码。
 
 use proc_macro2::Span;
 use silex_tw_core::resolve_color_utility;
@@ -29,16 +25,17 @@ mod tests {
     use super::*;
     use crate::css::tw::ast::UtilityValue;
 
-    /// 非标色阶插值要经由宏侧注入的静态色板生效（core 的单测用的是精简色板）
+    /// 非标色阶插值要经由宏侧注入的静态色板生效
     #[test]
     fn interpolates_non_standard_shades_through_the_generated_palette() {
         assert_eq!(
             silex_tw_core::lookup_palette_color(&MacroCtx, "slate", "900").as_deref(),
-            Some("#0f172b")
+            Some("oklch(20.8% 0.042 265.755)")
         );
-        assert_eq!(
-            silex_tw_core::lookup_palette_color(&MacroCtx, "slate", "850").as_deref(),
-            Some("#162034")
+        assert!(
+            silex_tw_core::lookup_palette_color(&MacroCtx, "slate", "850")
+                .unwrap()
+                .starts_with("oklch(")
         );
         assert!(silex_tw_core::lookup_palette_color(&MacroCtx, "indigo", "25").is_some());
         assert!(silex_tw_core::lookup_palette_color(&MacroCtx, "red", "975").is_some());
@@ -49,11 +46,11 @@ mod tests {
         let val = |t: &str| silex_tw_core::parse_color_value(&MacroCtx, t).map(|v| v.into_owned());
         assert_eq!(
             val("[#fff]/50").as_deref(),
-            Some("rgba(255, 255, 255, 0.5)")
+            Some("color-mix(in oklab, #fff 50%, transparent)")
         );
         assert_eq!(
             val("[#1e293b80]/50").as_deref(),
-            Some("rgba(30, 41, 59, 0.5)")
+            Some("color-mix(in oklab, #1e293b80 50%, transparent)")
         );
     }
 
@@ -68,7 +65,9 @@ mod tests {
         assert_eq!(rules[0].css_property, "background-color");
         assert_eq!(
             rules[0].value,
-            UtilityValue::ArbitraryLiteral("rgba(79, 57, 246, 0.5)".to_string())
+            UtilityValue::ArbitraryLiteral(
+                "color-mix(in oklab, oklch(51.1% 0.262 276.966) 50%, transparent)".to_string()
+            )
         );
 
         let rules = resolve_color_rules(&[], "border-t-red-500", span)
@@ -78,7 +77,7 @@ mod tests {
         assert_eq!(rules[0].css_property, "border-top-color");
         assert_eq!(
             rules[0].value,
-            UtilityValue::HexColor("#fb2c36".to_string())
+            UtilityValue::ArbitraryLiteral("oklch(63.7% 0.237 25.331)".to_string())
         );
 
         // 尺寸档位不能被颜色路径吃掉

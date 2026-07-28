@@ -67,7 +67,6 @@ fn expected_value(val: &StaticVal) -> Option<String> {
     match val {
         StaticVal::Kw(k) => Some(normalize_value(k)),
         StaticVal::Literal(l) => Some(normalize_value(l)),
-        StaticVal::Hex(h) => Some(normalize_value(h)),
         StaticVal::Num(v, unit) => Some(normalize_value(&format!("{v}{unit}"))),
         StaticVal::RingShadow => None,
     }
@@ -194,7 +193,7 @@ fn tw_merge_keeps_the_last_writer_of_a_property() {
     #[rustfmt::skip]
     let cases: &[(&str, &str, &str)] = &[
         ("p-4 p-8",                 "padding",     "2rem"),
-        ("text-red-500 text-blue-500", "color",    "#2b7fff"),
+        ("text-red-500 text-blue-500", "color",    "oklch(62.3% 0.214 259.815)"),
         ("inset-x-0 left-4",        "left",        "1rem"),
         ("blur-sm blur-lg",         "filter",      "blur(16px)"),
         // `none` 是整个属性的关键字取值，会清空前面累积的函数

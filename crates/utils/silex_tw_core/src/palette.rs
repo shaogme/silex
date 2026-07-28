@@ -4,14 +4,12 @@ use crate::context::TwContext;
 
 /// Tailwind 调色板中的单个色阶。
 ///
-/// 由 `scripts/export_tailwind` 抽取到 `data/tailwind/palette.json`，
+/// 由 `scripts/export_tailwind` 抽取到 `palette.json`，
 /// `silex_codegen` 反序列化后既用于生成静态色板表，也直接喂给本 crate 的 resolver。
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ColorShadeInfo {
     pub shade: String,
-    pub hex: String,
     pub raw: String,
-    pub rgb: [u8; 3],
 }
 
 /// 标准色阶顺序，用于把 `Vec<ColorShadeInfo>` 摊平成插值需要的 11 阶数组
@@ -32,7 +30,7 @@ impl TwContext for JsonPalette<'_> {
                 .get(family)?
                 .iter()
                 .find(|s| s.shade == shade)?
-                .hex
+                .raw
                 .as_str(),
         )
     }
@@ -41,7 +39,7 @@ impl TwContext for JsonPalette<'_> {
         let shades = self.0.get(family)?;
         let mut ramp = [""; 11];
         for (slot, name) in ramp.iter_mut().zip(STANDARD_SHADES) {
-            *slot = shades.iter().find(|s| s.shade == name)?.hex.as_str();
+            *slot = shades.iter().find(|s| s.shade == name)?.raw.as_str();
         }
         Some(ramp)
     }

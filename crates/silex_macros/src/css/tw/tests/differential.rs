@@ -61,10 +61,6 @@ const KNOWN_DIVERGENCES: &[(&str, Divergence, &str)] = &[
     ("bg-linear-to-b", Divergence::ValueOnly, "同 bg-linear-to-r"),
     ("-bg-conic-0",    Divergence::ValueOnly, "同 bg-linear-to-r（且 `from-0deg` 少了空格，见报告 §11）"),
 
-    // --- 设计取舍：不透明度用预乘 alpha 而非 color-mix ------------------------
-    ("bg-red-500/50", Divergence::ValueOnly,
-     "silex 产出 #fb2c3680（sRGB 预乘），Tailwind 产出 color-mix(in oklab,…)——色域不同，视觉有极小差异"),
-
     // --- 其余零散差异 --------------------------------------------------------
     ("font-stretch-normal", Divergence::ValueOnly, "产出 100%，Tailwind 产出关键字 normal（等价）"),
     ("place-items-stretch", Divergence::ValueOnly, "产出双值 `stretch stretch`，Tailwind 用单值简写（等价）"),

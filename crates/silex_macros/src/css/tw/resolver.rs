@@ -57,11 +57,6 @@ pub(super) fn px(v: f64) -> UtilityValue {
     UtilityValue::Numeric(v, "px")
 }
 
-#[inline]
-pub fn hex(s: &str) -> UtilityValue {
-    UtilityValue::HexColor(s.to_string())
-}
-
 pub trait IntoCssPropertyId: Sized {
     fn into_css_property_id(self) -> StdResult<CssPropertyId, Self>;
 }
@@ -516,14 +511,19 @@ mod tests {
         let rules = resolve_utility(vec![], "text-slate-900", span).unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].css_property, "color");
-        assert_eq!(rules[0].value, UtilityValue::HexColor("#0f172b".into()));
+        assert_eq!(
+            rules[0].value,
+            UtilityValue::ArbitraryLiteral("oklch(20.8% 0.042 265.755)".into())
+        );
 
         let rules = resolve_utility(vec![], "bg-indigo-600/50", span).unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].css_property, "background-color");
         assert_eq!(
             rules[0].value,
-            UtilityValue::ArbitraryLiteral("rgba(79, 57, 246, 0.5)".into())
+            UtilityValue::ArbitraryLiteral(
+                "color-mix(in oklab, oklch(51.1% 0.262 276.966) 50%, transparent)".into()
+            )
         );
 
         let rules = resolve_utility(vec![], "border-emerald-500/25", span).unwrap();
@@ -531,20 +531,27 @@ mod tests {
         assert_eq!(rules[0].css_property, "border-color");
         assert_eq!(
             rules[0].value,
-            UtilityValue::ArbitraryLiteral("rgba(0, 188, 125, 0.25)".into())
+            UtilityValue::ArbitraryLiteral(
+                "color-mix(in oklab, oklch(69.6% 0.17 162.48) 25%, transparent)".into()
+            )
         );
 
         let rules = resolve_utility(vec![], "border-t-rose-500", span).unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].css_property, "border-top-color");
-        assert_eq!(rules[0].value, UtilityValue::HexColor("#ff2056".into()));
+        assert_eq!(
+            rules[0].value,
+            UtilityValue::ArbitraryLiteral("oklch(64.5% 0.246 16.439)".into())
+        );
 
         let rules = resolve_utility(vec![], "bg-white/50", span).unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].css_property, "background-color");
         assert_eq!(
             rules[0].value,
-            UtilityValue::ArbitraryLiteral("rgba(255, 255, 255, 0.5)".into())
+            UtilityValue::ArbitraryLiteral(
+                "color-mix(in oklab, oklch(100% 0 0) 50%, transparent)".into()
+            )
         );
     }
 
@@ -602,7 +609,9 @@ mod tests {
         assert_eq!(rules[0].css_property, "background-color");
         assert_eq!(
             rules[0].value,
-            UtilityValue::ArbitraryLiteral("rgba(0, 0, 0, 0)".into())
+            UtilityValue::ArbitraryLiteral(
+                "color-mix(in oklab, oklch(0% 0 0) 0%, transparent)".into()
+            )
         );
 
         // 新扩充静态词条测试

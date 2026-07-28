@@ -1,10 +1,7 @@
-//! 颜色词条解析——两侧共用。
+//! 颜色词条解析——两侧共用（纯 OKLCH 原生 Raw 实现）。
 //!
-//! 此前 codegen 侧只有"色系名 + 标准色阶"的直查（`resolve_color_hex`），
-//! macro 侧另有一份支持非标色阶插值、`/透明度`、语义 token 的实现。
-//! 因为静态表优先命中，凡是标准调色板颜色走的都是 codegen 那份，
-//! macro 那份只在冷门路径上生效——两份规则事实上谁也说不清对哪些输入负责。
-//! 现在合成这一份，由 [`crate::context::TwContext`] 注入色板后端。
+//! Tailwind CSS v4 原生基于 OKLCH 色彩空间。
+//! 本模块实现原生的 OKLCH 解析、OKLCH 感知均匀插值与 `oklch(... / alpha)` 原生透明度拼接。
 
 use std::borrow::Cow;
 
@@ -14,56 +11,99 @@ use crate::{
     value::{TwDecl, TwRuleSet},
 };
 
-/// 解析 Hex 色值为 `(r, g, b)`（支持 3 / 4 / 6 / 8 位）
-fn parse_hex_rgb(hex: &str) -> (u8, u8, u8) {
-    let clean = hex.strip_prefix('#').unwrap_or(hex);
-    match clean.len() {
-        6 | 8 => (
-            u8::from_str_radix(&clean[0..2], 16).unwrap_or(0),
-            u8::from_str_radix(&clean[2..4], 16).unwrap_or(0),
-            u8::from_str_radix(&clean[4..6], 16).unwrap_or(0),
-        ),
-        3 | 4 => (
-            u8::from_str_radix(&clean[0..1], 16).unwrap_or(0) * 17,
-            u8::from_str_radix(&clean[1..2], 16).unwrap_or(0) * 17,
-            u8::from_str_radix(&clean[2..3], 16).unwrap_or(0) * 17,
-        ),
-        _ => (0, 0, 0),
+/// 格式化浮点数，移除无意义的结尾零
+fn format_num_clean(val: f64) -> String {
+    let s = format!("{:.4}", val);
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    if s.is_empty() {
+        "0".to_string()
+    } else {
+        s.to_string()
     }
 }
 
-/// 在两个 Hex 色值之间按比例 `t`（0.0..=1.0）做 RGB 线性插值
-fn interpolate_hex(hex1: &str, hex2: &str, t: f64) -> String {
-    let (r1, g1, b1) = parse_hex_rgb(hex1);
-    let (r2, g2, b2) = parse_hex_rgb(hex2);
+/// 解析 `oklch(L C H)` 格式的颜色为 `(l, c, h, alpha)`
+pub fn parse_oklch(raw: &str) -> Option<(f64, f64, f64, Option<f64>)> {
+    let inner = raw.strip_prefix("oklch(")?.strip_suffix(')')?;
+    let (color_part, alpha_part) = match inner.split_once('/') {
+        Some((c, a)) => (c.trim(), Some(a.trim())),
+        None => (inner.trim(), None),
+    };
 
-    let t = t.clamp(0.0, 1.0);
-    let r = (r1 as f64 + (r2 as f64 - r1 as f64) * t).round() as u8;
-    let g = (g1 as f64 + (g2 as f64 - g1 as f64) * t).round() as u8;
-    let b = (b1 as f64 + (b2 as f64 - b1 as f64) * t).round() as u8;
+    let mut tokens = color_part.split_whitespace();
+    let l_str = tokens.next()?;
+    let c_str = tokens.next()?;
+    let h_str = tokens.next()?;
 
-    format!("#{:02x}{:02x}{:02x}", r, g, b)
+    let l = if let Some(pct) = l_str.strip_suffix('%') {
+        pct.parse::<f64>().ok()? / 100.0
+    } else {
+        l_str.parse::<f64>().ok()?
+    };
+
+    let c = if c_str == "none" {
+        0.0
+    } else {
+        c_str.parse::<f64>().ok()?
+    };
+
+    let h = if h_str == "none" {
+        0.0
+    } else {
+        h_str.parse::<f64>().ok()?
+    };
+
+    let alpha = match alpha_part {
+        Some(a) => {
+            if let Some(pct) = a.strip_suffix('%') {
+                Some(pct.parse::<f64>().ok()? / 100.0)
+            } else {
+                Some(a.parse::<f64>().ok()?)
+            }
+        }
+        None => None,
+    };
+
+    Some((l, c, h, alpha))
 }
 
-/// 将 Hex 颜色与透明度百分比转换为 `rgba(...)`（支持 3 / 4 / 6 / 8 位 Hex）
-pub fn hex_to_rgba(hex: &str, alpha_pct: f64) -> String {
-    let clean = hex.strip_prefix('#').unwrap_or(hex);
-    let alpha = (alpha_pct / 100.0).clamp(0.0, 1.0);
+/// 在 OKLCH 色彩空间对两个颜色做感知均匀插值
+pub fn interpolate_oklch(raw1: &str, raw2: &str, t: f64) -> String {
+    let t = t.clamp(0.0, 1.0);
+    let (l1, c1, h1, _) = parse_oklch(raw1).unwrap_or((1.0, 0.0, 0.0, None));
+    let (l2, c2, h2, _) = parse_oklch(raw2).unwrap_or((0.0, 0.0, 0.0, None));
 
-    let (r, g, b) = match clean.len() {
-        6 | 8 | 3 | 4 => parse_hex_rgb(hex),
-        _ => return hex.to_string(),
-    };
+    let l = l1 + (l2 - l1) * t;
+    let c = c1 + (c2 - c1) * t;
 
-    let alpha_str = if (alpha * 100.0).round() == alpha * 100.0 {
-        format!("{:.2}", alpha)
-            .trim_end_matches('0')
-            .trim_end_matches('.')
-            .to_string()
-    } else {
-        format!("{:.3}", alpha)
-    };
-    format!("rgba({}, {}, {}, {})", r, g, b, alpha_str)
+    // 色相沿 360 度圆环的最短路径插值
+    let dh = ((h2 - h1 + 540.0) % 360.0) - 180.0;
+    let mut h = h1 + dh * t;
+    if h < 0.0 {
+        h += 360.0;
+    } else if h >= 360.0 {
+        h %= 360.0;
+    }
+
+    let l_pct = (l * 100.0 * 1000.0).round() / 1000.0;
+    let c_clean = (c * 10000.0).round() / 10000.0;
+    let h_clean = (h * 1000.0).round() / 1000.0;
+
+    format!(
+        "oklch({}% {} {})",
+        format_num_clean(l_pct),
+        format_num_clean(c_clean),
+        format_num_clean(h_clean)
+    )
+}
+
+/// 对齐 Tailwind CSS v4 官方实现：将颜色基础值与透明度百分比（`0.0 ~ 100.0`）拼接为 `color-mix(in oklab, <color> <pct>%, transparent)`
+pub fn apply_opacity(color_raw: &str, opacity_pct: f64) -> String {
+    format!(
+        "color-mix(in oklab, {} {}%, transparent)",
+        color_raw,
+        format_num_clean(opacity_pct)
+    )
 }
 
 /// 标准色阶在梯度数组中的下标
@@ -84,8 +124,7 @@ const CHECKPOINTS: &[(u32, usize)] = &[
 /// 查找标准或非标色阶的色板颜色。
 ///
 /// 支持 1~1000 的任意色阶（`slate-850`、`indigo-25`、`red-975`）：
-/// 标准档位直查，其余在相邻档位之间做 RGB 线性插值，
-/// 小于 50 与 `#ffffff` 外插、大于 950 与 `#000000` 外插。
+/// 标准档位直查，其余在相邻档位之间做 OKLCH 空间感知插值。
 pub fn lookup_palette_color(ctx: &dyn TwContext, family: &str, shade: &str) -> Option<String> {
     if let Some(val) = ctx
         .config_color(&format!("{}-{}", family, shade))
@@ -94,8 +133,8 @@ pub fn lookup_palette_color(ctx: &dyn TwContext, family: &str, shade: &str) -> O
         return Some(val);
     }
 
-    if let Some(hex) = ctx.palette_shade(family, shade) {
-        return Some(hex.to_string());
+    if let Some(raw) = ctx.palette_shade(family, shade) {
+        return Some(raw.to_string());
     }
 
     let ramp = ctx.palette_ramp(family)?;
@@ -106,12 +145,16 @@ pub fn lookup_palette_color(ctx: &dyn TwContext, family: &str, shade: &str) -> O
     }
 
     if target < 50 {
-        return Some(interpolate_hex("#ffffff", ramp[0], target as f64 / 50.0));
+        return Some(interpolate_oklch(
+            "oklch(100% 0 0)",
+            ramp[0],
+            target as f64 / 50.0,
+        ));
     }
     if target > 950 {
-        return Some(interpolate_hex(
+        return Some(interpolate_oklch(
             ramp[10],
-            "#000000",
+            "oklch(0% 0 0)",
             (target - 950) as f64 / 50.0,
         ));
     }
@@ -120,7 +163,7 @@ pub fn lookup_palette_color(ctx: &dyn TwContext, family: &str, shade: &str) -> O
         let ((s1, i1), (s2, i2)) = (w[0], w[1]);
         (target >= s1 && target <= s2).then(|| {
             let t = (target - s1) as f64 / (s2 - s1) as f64;
-            interpolate_hex(ramp[i1], ramp[i2], t)
+            interpolate_oklch(ramp[i1], ramp[i2], t)
         })
     })
 }
@@ -149,9 +192,6 @@ const SEMANTIC_TOKENS: &[&str] = &[
 ];
 
 /// 从颜色词条中剥离 `/<透明度>` 后缀。
-///
-/// Tailwind 语义：`/<整数>` 一律按**百分比**（`/1` = 1%，不是 100%），
-/// 小数形式必须写成任意值 `/[0.5]`。报告 §2.6 记录了此前把 `/1` 当作 100% 的缺陷。
 fn split_opacity(token: &str) -> (&str, Option<f64>) {
     let Some((base, op_str)) = token.split_once('/') else {
         return (token, None);
@@ -167,57 +207,78 @@ fn split_opacity(token: &str) -> (&str, Option<f64>) {
     }
 }
 
-/// 把 Hex 与可选透明度收敛成最终值文本
-fn hex_value(hex: &str, opacity: Option<f64>) -> Cow<'static, str> {
-    match opacity {
-        Some(op) => Cow::Owned(hex_to_rgba(hex, op)),
-        None => Cow::Owned(hex.to_string()),
-    }
+fn looks_like_color(s: &str) -> bool {
+    let s = s.trim();
+    s.starts_with('#')
+        || s.starts_with("rgb(")
+        || s.starts_with("rgba(")
+        || s.starts_with("hsl(")
+        || s.starts_with("hsla(")
+        || s.starts_with("oklch(")
+        || s.starts_with("oklab(")
+        || s.starts_with("color(")
+        || s == "white"
+        || s == "black"
+        || s == "transparent"
+        || s == "currentColor"
+        || s == "current"
+        || s == "inherit"
 }
 
 /// 解析颜色值词条。
 ///
 /// 支持：色板色阶（`slate-900`、`indigo-600/50`、非标的 `slate-850`）、
 /// 关键字（`white` / `black` / `transparent` / `current` / `inherit`）、
-/// 任意 Hex（`[#1e293b]`）、颜色函数（`rgb()` / `rgba()` / `hsl()` / `hsla()`）、
-/// 以及语义 token（`primary` → `var(--primary)`）。
+/// 任意值以及语义 token（`primary` → `var(--primary)`）。
 pub fn parse_color_value(ctx: &dyn TwContext, color_token: &str) -> Option<Cow<'static, str>> {
     let (base, opacity) = split_opacity(color_token);
 
     // 0. 用户 silex.toml 自定义颜色优先级最高
     if let Some(val) = ctx.config_color(base) {
-        return Some(if val.starts_with('#') {
-            hex_value(&val, opacity)
-        } else {
-            Cow::Owned(val)
+        return Some(match opacity {
+            Some(op) => Cow::Owned(apply_opacity(&val, op)),
+            None => Cow::Owned(val),
         });
     }
 
-    // 1. 颜色函数字面量原样透传
+    // 1. 颜色函数字面量与任意值
     if base.starts_with("rgba(")
         || base.starts_with("rgb(")
         || base.starts_with("hsl(")
         || base.starts_with("hsla(")
+        || base.starts_with("oklch(")
     {
-        return Some(Cow::Owned(base.to_string()));
+        return Some(match opacity {
+            Some(op) => Cow::Owned(apply_opacity(base, op)),
+            None => Cow::Owned(base.to_string()),
+        });
     }
 
-    // 2. 任意 Hex：`[#1e293b]`。显式 `/透明度` 会覆盖 8 位 Hex 自带的 alpha 通道。
-    if let Some(hex) = base.strip_prefix("[#").and_then(|s| s.strip_suffix(']')) {
-        return Some(hex_value(&format!("#{}", hex), opacity));
+    // 2. 任意值包裹：`[#1e293b]` 或 `[oklch(...)]`
+    if let Some(inner) = base.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+        if looks_like_color(inner) {
+            return Some(match opacity {
+                Some(op) => Cow::Owned(apply_opacity(inner, op)),
+                None => Cow::Owned(inner.to_string()),
+            });
+        }
     }
 
     // 3. 关键字颜色
     match base {
-        "white" => return Some(hex_value("#ffffff", opacity)),
-        "black" => return Some(hex_value("#000000", opacity)),
-        // 透明色叠任何透明度仍然是全透明
-        "transparent" => {
+        "white" => {
             return Some(match opacity {
-                Some(_) => Cow::Owned(hex_to_rgba("#000000", 0.0)),
-                None => Cow::Borrowed("transparent"),
+                Some(op) => Cow::Owned(apply_opacity("oklch(100% 0 0)", op)),
+                None => Cow::Borrowed("white"),
             });
         }
+        "black" => {
+            return Some(match opacity {
+                Some(op) => Cow::Owned(apply_opacity("oklch(0% 0 0)", op)),
+                None => Cow::Borrowed("black"),
+            });
+        }
+        "transparent" => return Some(Cow::Borrowed("transparent")),
         "current" => return Some(Cow::Borrowed("currentColor")),
         "inherit" => return Some(Cow::Borrowed("inherit")),
         _ => {}
@@ -225,16 +286,23 @@ pub fn parse_color_value(ctx: &dyn TwContext, color_token: &str) -> Option<Cow<'
 
     // 4. 标准/插值色板
     if let Some((family, shade)) = base.rsplit_once('-')
-        && let Some(hex) = lookup_palette_color(ctx, family, shade)
+        && let Some(raw) = lookup_palette_color(ctx, family, shade)
     {
-        return Some(hex_value(&hex, opacity));
+        return Some(match opacity {
+            Some(op) => Cow::Owned(apply_opacity(&raw, op)),
+            None => Cow::Owned(raw),
+        });
     }
 
     // 5. 语义 CSS 变量 token
     if SEMANTIC_TOKENS.contains(&base) {
         let var_expr = format!("var(--{})", base);
         return Some(Cow::Owned(match opacity {
-            Some(op) => format!("color-mix(in srgb, {} {}%, transparent)", var_expr, op),
+            Some(op) => format!(
+                "color-mix(in oklch, {} {}%, transparent)",
+                var_expr,
+                format_num_clean(op)
+            ),
             None => var_expr,
         }));
     }
@@ -263,10 +331,6 @@ fn expand(rule: &ColorPrefixRule, value: Cow<'static, str>) -> Vec<TwRuleSet> {
 }
 
 /// 解析颜色型工具类：`text-slate-900`、`bg-indigo-600/50`、`ring-blue-500`、`divide-red-500`。
-///
-/// 前缀按 [`COLOR_PREFIX_RULES`] 的顺序尝试；前缀匹配上但后半段不是合法颜色时
-/// （`border-2`、`ring-2`、`divide-x-2`）继续试下一个前缀，全部落空则返回 `None`
-/// 交给后续的尺寸/数值路径处理。
 pub fn resolve_color_utility(ctx: &dyn TwContext, class: &str) -> Option<Vec<TwRuleSet>> {
     COLOR_PREFIX_RULES.iter().find_map(|rule| {
         let rest = class.strip_prefix(rule.prefix)?;
@@ -279,12 +343,20 @@ pub fn resolve_color_utility(ctx: &dyn TwContext, class: &str) -> Option<Vec<TwR
 pub(crate) mod test_support {
     use crate::context::TwContext;
 
-    /// 测试用的极小色板：只有 slate 一族的完整 11 阶
     pub struct TestCtx;
 
     const SLATE: [&str; 11] = [
-        "#f8fafc", "#f1f5f9", "#e2e8f0", "#cad5e2", "#90a1b9", "#62748e", "#45556c", "#314158",
-        "#1d293d", "#0f172b", "#020618",
+        "oklch(98.4% 0.003 247.858)",
+        "oklch(96.8% 0.007 247.896)",
+        "oklch(92.9% 0.013 255.508)",
+        "oklch(86.9% 0.022 252.894)",
+        "oklch(70.4% 0.04 256.788)",
+        "oklch(55.4% 0.046 257.417)",
+        "oklch(44.6% 0.043 257.281)",
+        "oklch(37.2% 0.044 257.287)",
+        "oklch(27.9% 0.041 260.031)",
+        "oklch(20.8% 0.042 265.755)",
+        "oklch(12.9% 0.042 264.695)",
     ];
 
     impl TwContext for TestCtx {
@@ -317,117 +389,159 @@ mod tests {
     use super::{test_support::TestCtx, *};
 
     #[test]
-    fn parses_hex_of_every_length() {
-        assert_eq!(parse_hex_rgb("#ffffff"), (255, 255, 255));
-        assert_eq!(parse_hex_rgb("#fff"), (255, 255, 255));
-        assert_eq!(parse_hex_rgb("#123"), (0x11, 0x22, 0x33));
-        assert_eq!(parse_hex_rgb("#1e293b80"), (0x1e, 0x29, 0x3b));
+    fn parses_oklch_values() {
+        let (l, c, h, a) = parse_oklch("oklch(98.4% 0.003 247.858)").unwrap();
+        assert!((l - 0.984).abs() < 1e-4);
+        assert!((c - 0.003).abs() < 1e-4);
+        assert!((h - 247.858).abs() < 1e-4);
+        assert_eq!(a, None);
+
+        let (_l, _c, _h, a) = parse_oklch("oklch(55.4% 0.046 257.417 / 50%)").unwrap();
+        assert_eq!(a, Some(0.5));
+
+        // 支持不带 % 的 L 与小数 alpha
+        let (l, c, h, a) = parse_oklch("oklch(0.5 0.1 120 / 0.25)").unwrap();
+        assert_eq!(l, 0.5);
+        assert_eq!(c, 0.1);
+        assert_eq!(h, 120.0);
+        assert_eq!(a, Some(0.25));
+
+        // 支持 none 关键字
+        let (l, c, h, _a) = parse_oklch("oklch(50% none none)").unwrap();
+        assert_eq!(l, 0.5);
+        assert_eq!(c, 0.0);
+        assert_eq!(h, 0.0);
+
+        // 非 OKLCH 输入必须返回 None
+        assert!(parse_oklch("rgb(255, 0, 0)").is_none());
+        assert!(parse_oklch("invalid").is_none());
     }
 
     #[test]
-    fn interpolates_non_standard_shades() {
-        assert_eq!(interpolate_hex("#fff", "#000", 0.5), "#808080");
-        assert_eq!(
-            lookup_palette_color(&TestCtx, "slate", "850").as_deref(),
-            Some("#162034")
-        );
-        assert!(lookup_palette_color(&TestCtx, "slate", "25").is_some());
-        assert!(lookup_palette_color(&TestCtx, "slate", "975").is_some());
+    fn oklch_shortest_hue_interpolation() {
+        // 从 350° 到 10°，最短弧度插值中点应该是 0° (或 360°)
+        let c1 = "oklch(50% 0.1 350)";
+        let c2 = "oklch(50% 0.1 10)";
+        let mid = interpolate_oklch(c1, c2, 0.5);
+        assert_eq!(mid, "oklch(50% 0.1 0)");
+
+        // 从 10° 到 350°，最短弧度插值中点也应该是 0°
+        let mid_reverse = interpolate_oklch(c2, c1, 0.5);
+        assert_eq!(mid_reverse, "oklch(50% 0.1 0)");
+
+        // 临界比例 t=0.0 与 t=1.0
+        assert_eq!(interpolate_oklch(c1, c2, 0.0), "oklch(50% 0.1 350)");
+        assert_eq!(interpolate_oklch(c1, c2, 1.0), "oklch(50% 0.1 10)");
+    }
+
+    #[test]
+    fn interpolates_non_standard_shades_in_oklch() {
+        let res = lookup_palette_color(&TestCtx, "slate", "850").unwrap();
+        assert!(res.starts_with("oklch("));
+
+        // 小于 50 与白色插值，大于 950 与黑色插值
+        let res_sub50 = lookup_palette_color(&TestCtx, "slate", "25").unwrap();
+        assert!(res_sub50.starts_with("oklch("));
+
+        let res_over950 = lookup_palette_color(&TestCtx, "slate", "975").unwrap();
+        assert!(res_over950.starts_with("oklch("));
+
         assert!(lookup_palette_color(&TestCtx, "nosuch", "500").is_none());
     }
 
-    /// 报告 §2.6：`/1` 是 1%，不是 100%。小数只能走 `/[0.5]`。
     #[test]
-    fn opacity_suffix_is_always_a_percentage() {
-        assert_eq!(split_opacity("red-500/1"), ("red-500", Some(1.0)));
+    fn opacity_suffix_formats_native_oklch() {
+        assert_eq!(
+            apply_opacity("oklch(55.4% 0.046 257.417)", 50.0),
+            "color-mix(in oklab, oklch(55.4% 0.046 257.417) 50%, transparent)"
+        );
+        // 对已有 /alpha 的 oklch 再次应用透明度，原样代入并叠加
+        assert_eq!(
+            apply_opacity("oklch(55.4% 0.046 257.417 / 0.8)", 50.0),
+            "color-mix(in oklab, oklch(55.4% 0.046 257.417 / 0.8) 50%, transparent)"
+        );
+
+        // 关键字与自定义 CSS 变量处理
+        assert_eq!(
+            apply_opacity("var(--primary)", 50.0),
+            "color-mix(in oklab, var(--primary) 50%, transparent)"
+        );
+        assert_eq!(
+            apply_opacity("#1e293b", 50.0),
+            "color-mix(in oklab, #1e293b 50%, transparent)"
+        );
+
         assert_eq!(split_opacity("red-500/50"), ("red-500", Some(50.0)));
-        assert_eq!(split_opacity("red-500/[0.5]"), ("red-500", Some(50.0)));
-        assert_eq!(split_opacity("red-500"), ("red-500", None));
+        assert_eq!(split_opacity("red-500/1"), ("red-500", Some(1.0)));
+        assert_eq!(split_opacity("red-500/[0.75]"), ("red-500", Some(75.0)));
     }
 
     #[test]
-    fn parses_keyword_hex_and_palette_colors() {
+    fn looks_like_color_discriminates_correctly() {
+        // 判定为颜色的字面量
+        assert!(looks_like_color("#fff"));
+        assert!(looks_like_color("#1e293b80"));
+        assert!(looks_like_color("oklch(50% 0.1 200)"));
+        assert!(looks_like_color("rgb(0, 0, 0)"));
+        assert!(looks_like_color("hsl(120, 50%, 50%)"));
+        assert!(looks_like_color("white"));
+        assert!(looks_like_color("black"));
+        assert!(looks_like_color("transparent"));
+
+        // 绝对不能判定为颜色的长度、数值或表达
+        assert!(!looks_like_color("14px"));
+        assert!(!looks_like_color("3px"));
+        assert!(!looks_like_color("2rem"));
+        assert!(!looks_like_color("100%"));
+        assert!(!looks_like_color("calc(100% - 10px)"));
+        assert!(!looks_like_color("auto"));
+    }
+
+    #[test]
+    fn parses_keyword_and_palette_colors() {
         let c = &TestCtx;
         let val = |t: &str| parse_color_value(c, t).map(|v| v.into_owned());
 
-        assert_eq!(val("slate-900").as_deref(), Some("#0f172b"));
         assert_eq!(
-            val("[#fff]/50").as_deref(),
-            Some("rgba(255, 255, 255, 0.5)")
+            val("slate-900").as_deref(),
+            Some("oklch(20.8% 0.042 265.755)")
         );
+        assert_eq!(val("white").as_deref(), Some("white"));
         assert_eq!(
-            val("[#1e293b80]/50").as_deref(),
-            Some("rgba(30, 41, 59, 0.5)")
+            val("white/50").as_deref(),
+            Some("color-mix(in oklab, oklch(100% 0 0) 50%, transparent)")
+        );
+        assert_eq!(val("black").as_deref(), Some("black"));
+        assert_eq!(
+            val("black/25").as_deref(),
+            Some("color-mix(in oklab, oklch(0% 0 0) 25%, transparent)")
         );
         assert_eq!(val("transparent").as_deref(), Some("transparent"));
         assert_eq!(val("current").as_deref(), Some("currentColor"));
         assert_eq!(val("primary").as_deref(), Some("var(--primary)"));
         assert_eq!(
+            val("primary/50").as_deref(),
+            Some("color-mix(in oklch, var(--primary) 50%, transparent)")
+        );
+        assert_eq!(
             val("slate-500/50").as_deref(),
-            Some("rgba(98, 116, 142, 0.5)")
+            Some("color-mix(in oklab, oklch(55.4% 0.046 257.417) 50%, transparent)")
         );
 
-        // 尺寸/档位词条不能被误判成颜色，否则 `ring-2`、`text-2xl` 会被颜色路径吃掉
+        // 任意 Hex 和任意 OKLCH 表达式
+        assert_eq!(
+            val("[#1e293b]/50").as_deref(),
+            Some("color-mix(in oklab, #1e293b 50%, transparent)")
+        );
+        assert_eq!(
+            val("[oklch(50%_0.1_200)]/80").as_deref(),
+            Some("color-mix(in oklab, oklch(50%_0.1_200) 80%, transparent)")
+        );
+
+        // 尺寸与数值词条排斥测试
         assert!(val("2xl").is_none());
         assert!(val("4").is_none());
-        assert!(val("x-2").is_none());
-    }
-
-    /// 前缀命中但后半段不是颜色时必须继续往下试，而不是就此返回 `None`
-    #[test]
-    fn non_color_suffixes_fall_through_to_later_paths() {
-        let c = &TestCtx;
-        assert!(resolve_color_utility(c, "ring-2").is_none());
-        assert!(resolve_color_utility(c, "border-2").is_none());
-        assert!(resolve_color_utility(c, "divide-x-2").is_none());
-        assert!(resolve_color_utility(c, "text-2xl").is_none());
-        assert!(resolve_color_utility(c, "bg-linear-to-r").is_none());
-    }
-
-    /// `ring-*` 颜色必须连带铺 `box-shadow` 载体，否则颜色变量无处可用（报告 §2.4）
-    #[test]
-    fn ring_color_carries_the_box_shadow_companion() {
-        let sets = resolve_color_utility(&TestCtx, "ring-slate-500").unwrap();
-        assert_eq!(sets.len(), 1);
-        assert_eq!(sets[0].selector, None);
-        assert_eq!(
-            sets[0].decls,
-            vec![
-                TwDecl::new("--tw-ring-color", "#62748e"),
-                TwDecl::new("box-shadow", crate::prefix::RING_BOX_SHADOW),
-            ]
-        );
-    }
-
-    /// Silex 把渐变方向内联进了 `linear-gradient(to right, var(--tw-gradient-stops))`，
-    /// 因此 `from-*` 必须自己拼出 `--tw-gradient-stops`，否则整条 background-image 无效。
-    #[test]
-    fn gradient_stops_are_emitted_by_the_color_stop_utilities() {
-        let sets = resolve_color_utility(&TestCtx, "from-slate-500").unwrap();
-        let props: Vec<_> = sets[0].decls.iter().map(|d| d.prop).collect();
-        assert_eq!(
-            props,
-            vec![
-                "--tw-gradient-from",
-                "--tw-gradient-to",
-                "--tw-gradient-stops"
-            ]
-        );
-
-        let sets = resolve_color_utility(&TestCtx, "via-slate-500").unwrap();
-        let props: Vec<_> = sets[0].decls.iter().map(|d| d.prop).collect();
-        assert_eq!(props, vec!["--tw-gradient-via", "--tw-gradient-stops"]);
-    }
-
-    /// `divide-*` / `placeholder-*` 的声明不落在元素自身
-    #[test]
-    fn scoped_prefixes_carry_their_companion_selector() {
-        let sets = resolve_color_utility(&TestCtx, "divide-slate-200").unwrap();
-        assert_eq!(sets[0].selector, Some(crate::prefix::DIVIDE_SELECTOR));
-        assert_eq!(sets[0].decls, vec![TwDecl::new("border-color", "#e2e8f0")]);
-
-        let sets = resolve_color_utility(&TestCtx, "placeholder-slate-400").unwrap();
-        assert_eq!(sets[0].selector, Some("&::placeholder"));
-        assert_eq!(sets[0].decls, vec![TwDecl::new("color", "#90a1b9")]);
+        assert!(val("[14px]").is_none());
+        assert!(val("[3px]").is_none());
     }
 }

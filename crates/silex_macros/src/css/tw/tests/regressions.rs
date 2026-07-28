@@ -164,7 +164,7 @@ fn prefix_metadata_table_has_no_descriptor_props() {
 fn ring_color_feeds_the_ring_variable() {
     let css = css_of("ring-2 ring-blue-500");
     assert!(
-        css.contains("--tw-ring-color:#2b7fff"),
+        css.contains("--tw-ring-color:oklch("),
         "ring color must land on --tw-ring-color, got:\n{css}"
     );
     assert!(
@@ -238,17 +238,25 @@ fn arbitrary_pseudo_class_passthrough_still_works() {
 
 #[test]
 fn opacity_suffix_is_always_a_percentage() {
-    // `/1` = 1%，不是 100%。断言编译产物而不是内部函数，
-    // 这样无论解析走静态表还是模式兜底都能拦住。
-    assert_contains("bg-red-500/1", "background-color:#fb2c3603");
-    assert_contains("bg-red-500/50", "background-color:#fb2c3680");
+    // `/1` = 1%，不是 100%。
+    assert_contains(
+        "bg-red-500/1",
+        "background-color:oklab(63.7% .214213 .1014/.01)",
+    );
+    assert_contains(
+        "bg-red-500/50",
+        "background-color:oklab(63.7% .214213 .1014/.5)",
+    );
     // 小数不透明度走任意值语法 `/[0.5]`
-    assert_contains("bg-red-500/[0.5]", "background-color:#fb2c3680");
+    assert_contains(
+        "bg-red-500/[0.5]",
+        "background-color:oklab(63.7% .214213 .1014/.5)",
+    );
 }
 
 #[test]
 fn fractional_opacity_arbitrary_syntax_compiles() {
-    assert_contains("text-red-500/[0.5]", "color:#fb2c3680");
+    assert_contains("text-red-500/[0.5]", "color:oklab(63.7% .214213 .1014/.5)");
 }
 
 // ---------------------------------------------------------------------------
@@ -268,8 +276,8 @@ fn gradient_color_stops_define_the_stops_variable() {
         css.contains("--tw-gradient-stops:var(--tw-gradient-from), var(--tw-gradient-to)"),
         "渐变必须定义 --tw-gradient-stops，否则 background-image 整条失效，实得:\n{css}"
     );
-    assert!(css.contains("--tw-gradient-from:#2b7fff"), "{css}");
-    assert!(css.contains("--tw-gradient-to:#f6339a"), "{css}");
+    assert!(css.contains("--tw-gradient-from:oklch("), "{css}");
+    assert!(css.contains("--tw-gradient-to:oklch("), "{css}");
 
     assert_contains(
         "via-purple-500",
@@ -283,7 +291,7 @@ fn gradient_color_stops_define_the_stops_variable() {
 fn placeholder_color_targets_the_placeholder_pseudo_element() {
     let css = css_of("placeholder-red-500");
     assert!(
-        css.contains("::placeholder{color:#fb2c36}"),
+        css.contains("::placeholder{color:oklch(63.7% .237 25.331)}"),
         "placeholder-* 必须作用于 ::placeholder，实得:\n{css}"
     );
 }
@@ -293,7 +301,7 @@ fn placeholder_color_targets_the_placeholder_pseudo_element() {
 fn divide_color_targets_adjacent_children() {
     let css = css_of("divide-red-500");
     assert!(
-        css.contains(">:not([hidden])~:not([hidden]){border-color:#fb2c36}"),
+        css.contains(">:not([hidden])~:not([hidden]){border-color:oklch(63.7% .237 25.331)}"),
         "divide-* 必须作用于相邻子元素，实得:\n{css}"
     );
 }
@@ -350,10 +358,22 @@ fn rounded_scale_has_a_single_source() {
 /// macro 侧的 `ORDERED_PREFIXES` 只有 12 条，两侧覆盖范围不一致。
 #[test]
 fn extended_color_prefixes_resolve_to_their_own_properties() {
-    assert_contains("text-shadow-red-500", "--tw-text-shadow-color:#fb2c36");
-    assert_contains("shadow-red-500", "--tw-shadow-color:#fb2c36");
-    assert_contains("decoration-red-500", "text-decoration-color:#fb2c36");
-    assert_contains("inset-ring-red-500", "--tw-inset-ring-color:#fb2c36");
+    assert_contains(
+        "text-shadow-red-500",
+        "--tw-text-shadow-color:oklch(63.7% .237 25.331)",
+    );
+    assert_contains(
+        "shadow-red-500",
+        "--tw-shadow-color:oklch(63.7% .237 25.331)",
+    );
+    assert_contains(
+        "decoration-red-500",
+        "text-decoration-color:oklch(63.7% .237 25.331)",
+    );
+    assert_contains(
+        "inset-ring-red-500",
+        "--tw-inset-ring-color:oklch(63.7% .237 25.331)",
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -476,7 +496,7 @@ fn important_marker_is_accepted_in_both_positions() {
     assert_contains("hover:!p-4", "padding:1rem!important");
     // 任意值与颜色路径同样生效
     assert_contains("w-[3px]!", "width:3px!important");
-    assert_contains("text-red-500!", "color:#fb2c36!important");
+    assert_contains("text-red-500!", "color:oklch(63.7% .237 25.331)!important");
 }
 
 #[test]
@@ -519,7 +539,7 @@ fn font_size_slash_leading_shorthand() {
     let css = css_of("text-sm/6");
     assert_eq!(css.matches("line-height").count(), 1, "{css}");
     // 同形的颜色 + 不透明度不能被这条路径截走
-    assert_contains("text-red-500/50", "color:#fb2c3680");
+    assert_contains("text-red-500/50", "color:oklab(63.7% .214213 .1014/.5)");
     let msg = err_of("text-sm/nope");
     assert!(msg.contains("Unknown line-height 'nope'"), "{msg}");
 }
@@ -715,7 +735,10 @@ fn inset_ring_width_and_color_share_one_box_shadow_carrier() {
         ("inset-ring-[3px]", "--tw-inset-ring-width:3px"),
         // 任意值：颜色归颜色
         ("inset-ring-[red]", "--tw-inset-ring-color:red"),
-        ("inset-ring-red-500", "--tw-inset-ring-color:#fb2c36"),
+        (
+            "inset-ring-red-500",
+            "--tw-inset-ring-color:oklch(63.7% .237 25.331)",
+        ),
     ] {
         assert_contains(src, needle);
         // 无论宽度还是颜色，都必须铺同一条 box-shadow 载体，否则写进变量的值没人读
@@ -728,7 +751,8 @@ fn inset_ring_width_and_color_share_one_box_shadow_carrier() {
     // 宽度 + 颜色一起写才是常见用法，两者必须落在同一条 box-shadow 上
     let css = css_of("inset-ring-2 inset-ring-red-500");
     assert!(
-        css.contains("--tw-inset-ring-width:2px") && css.contains("--tw-inset-ring-color:#fb2c36"),
+        css.contains("--tw-inset-ring-width:2px")
+            && css.contains("--tw-inset-ring-color:oklch(63.7% .237 25.331)"),
         "实得:\n{css}"
     );
     assert!(

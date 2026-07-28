@@ -518,7 +518,7 @@ pub static TEST_CASE_RULES: &[StaticRuleRow] = &[
         (CssPropertyId::BackgroundImage, StaticVal::Kw("radial-gradient(var(--tw-gradient-stops))")),
     ]),
     ("bg-slate-900", None, &[
-        (CssPropertyId::BackgroundColor, StaticVal::Hex("#0f172b")),
+        (CssPropertyId::BackgroundColor, StaticVal::Literal("oklch(20.8% 0.042 265.755)")),
     ]),
     ("blur-2xl", None, &[
         (CssPropertyId::Filter, StaticVal::Kw("blur(40px)")),
@@ -1920,7 +1920,6 @@ pub static TEST_CASE_RULES: &[StaticRuleRow] = &[
 pub enum StaticVal {
     Kw(&'static str),
     Num(f64, &'static str),
-    Hex(&'static str),
     Literal(&'static str),
     RingShadow,
 }

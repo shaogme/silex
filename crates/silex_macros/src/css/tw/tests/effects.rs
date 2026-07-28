@@ -126,17 +126,17 @@ fn test_gradient_system_css() {
     assert!(
         compile_result
             .component_css
-            .contains("--tw-gradient-from:#615fff")
+            .contains("--tw-gradient-from:oklch(")
     );
     assert!(
         compile_result
             .component_css
-            .contains("--tw-gradient-via:#ad46ff")
+            .contains("--tw-gradient-via:oklch(")
     );
     assert!(
         compile_result
             .component_css
-            .contains("--tw-gradient-to:#f6339a")
+            .contains("--tw-gradient-to:oklch(")
     );
 }
 

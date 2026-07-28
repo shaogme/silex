@@ -173,7 +173,7 @@ pub fn fingerprint_tw_datasets(
                 family.as_str(),
                 shades
                     .iter()
-                    .map(|s| format!("{}:{}", s.shade, s.hex))
+                    .map(|s| format!("{}:{}", s.shade, s.raw))
                     .collect::<Vec<_>>()
                     .join(","),
             )
