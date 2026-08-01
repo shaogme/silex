@@ -1,0 +1,5 @@
+error: plural count field 'count' must use a numeric Rust type
+ --> tests/ui/fail_plural_count.rs:7:24
+  |
+7 |     CartItems { count: String },
+  |                        ^^^^^^

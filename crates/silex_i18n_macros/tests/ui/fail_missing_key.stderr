@@ -1,0 +1,5 @@
+error: i18n key 'missing.key' does not exist in the canonical catalog
+ --> tests/ui/fail_missing_key.rs:6:18
+  |
+6 |     #[i18n(key = "missing.key")]
+  |                  ^^^^^^^^^^^^^

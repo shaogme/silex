@@ -11,5 +11,51 @@
       "one": "You have {count} item.",
       "other": "You have {count} items."
     }
+  },
+  "demo": {
+    "locale": {
+      "title": "Locale, fallback, and external sources",
+      "description": "The locale is persisted in LocalStorage. URL and browser preferences stay explicit alternatives.",
+      "current": "Current locale: {locale}",
+      "fallback": "Fallback locale: {locale}",
+      "persistence": "This store is bidirectionally bound to LocalStorage.",
+      "browser": "Browser candidates: {locales}",
+      "browser_match": "Browser match: {locale}",
+      "use_browser": "Use browser preference",
+      "query": "URL query locale: {locale}",
+      "apply_query": "Apply query locale",
+      "write_query": "Write current locale to URL"
+    },
+    "messages": {
+      "title": "Reactive messages and typed keys",
+      "description": "Both literal keys and I18nKeys variants update existing text nodes when signals change.",
+      "name": "Name",
+      "count": "Item count",
+      "literal": "Literal key: {value}",
+      "typed": "Typed key",
+      "missing_key": "Missing key result: {value}",
+      "missing_argument": "Missing argument result: {value}"
+    },
+    "formatter": {
+      "title": "Intl formatters",
+      "number": "Number: {value}",
+      "date": "Date: {value}",
+      "description": "NumberFormat and DateTimeFormat follow the current locale without entering the message parser."
+    },
+    "loader": {
+      "title": "Async catalog loader",
+      "description": "A separate store loads the selected catalog with Resource, cache, and stale-request protection.",
+      "reload": "Reload catalog",
+      "idle": "Idle",
+      "loading": "Loading",
+      "reloading": "Reloading",
+      "ready": "Ready: {locale}, {count} keys",
+      "error": "Error: {value}"
+    },
+    "metadata": {
+      "title": "Browser metadata",
+      "direction": "Text direction: {value}",
+      "description": "The document lang and dir attributes are synchronized by an opt-in effect."
+    }
   }
 }

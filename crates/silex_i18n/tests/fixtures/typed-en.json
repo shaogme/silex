@@ -1,0 +1,7 @@
+{
+  "welcome.user": "Hello, {name}!",
+  "cart.items": {
+    "one": "You have {count} item.",
+    "other": "You have {count} items."
+  }
+}

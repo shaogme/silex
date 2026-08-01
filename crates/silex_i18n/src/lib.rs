@@ -4,6 +4,8 @@
 mod browser;
 mod catalog;
 mod error;
+#[cfg(feature = "intl")]
+mod intl;
 mod loader;
 mod locale;
 mod plural;
@@ -14,6 +16,7 @@ pub use error::I18nError;
 pub use loader::{CatalogCache, CatalogLoadError, CatalogResource};
 pub use locale::Locale;
 pub use plural::{PluralCategory, plural_category};
+pub use runtime::I18nVariant;
 pub use runtime::{Argument, I18nBuilder, I18nStore, MissingArgumentPolicy, MissingKeyPolicy};
 pub use silex_core::reactivity::{
     Memo, ReadSignal, Resource, ResourceState, RwSignal, SuspenseContext,
@@ -28,6 +31,15 @@ pub use browser::{
     resolve_requested_locale,
 };
 
+#[cfg(feature = "intl")]
+pub use intl::{
+    DateTimeFormat, DateTimeFormatter, Intl, IntlError, NumberFormat, NumberFormatter,
+    format_date_time, format_number,
+};
+
+#[cfg(feature = "macros")]
+pub use silex_i18n_macros::I18nKeys;
+
 #[macro_export]
 macro_rules! t {
     ($store:expr, $key:literal $(, $name:ident = $value:expr)* $(,)?) => {{
@@ -41,6 +53,13 @@ macro_rules! t {
                 ));
             )*
             __silex_i18n_store.translate_now($key, &__silex_i18n_arguments)
+        })
+    }};
+    ($store:expr, $variant:expr $(,)?) => {{
+        let __silex_i18n_store = $store;
+        $crate::Memo::new(move |_| {
+            let __silex_i18n_variant = $variant;
+            __silex_i18n_store.translate_variant_now(&__silex_i18n_variant)
         })
     }};
 }

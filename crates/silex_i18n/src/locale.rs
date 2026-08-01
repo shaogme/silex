@@ -112,6 +112,12 @@ impl AsRef<str> for Locale {
     }
 }
 
+impl From<&Locale> for Locale {
+    fn from(value: &Locale) -> Self {
+        value.clone()
+    }
+}
+
 impl Display for Locale {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())

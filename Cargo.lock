@@ -1714,10 +1714,25 @@ dependencies = [
  "serde_json",
  "silex_core",
  "silex_dom",
+ "silex_i18n_macros",
  "silex_persist",
  "silex_router",
+ "wasm-bindgen",
  "wasm-bindgen-test",
  "web-sys",
+]
+
+[[package]]
+name = "silex_i18n_macros"
+version = "0.1.0-beta.9"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "serde_json",
+ "silex_i18n",
+ "syn 2.0.117",
+ "trybuild",
 ]
 
 [[package]]

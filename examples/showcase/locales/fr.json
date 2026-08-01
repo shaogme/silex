@@ -1,0 +1,11 @@
+{
+  "i18n": {
+    "title": "Internationalisation",
+    "description": "Ce catalogue partiel montre le fallback vers en-US."
+  },
+  "demo": {
+    "locale": {
+      "title": "Locale et fallback"
+    }
+  }
+}

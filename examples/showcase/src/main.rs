@@ -20,11 +20,32 @@ fn main() {
     let zh_catalog =
         Catalog::from_json(Locale::new("zh-CN"), include_str!("../locales/zh-CN.json"))
             .expect("valid zh-CN catalog");
+    let ar_catalog =
+        Catalog::from_json(Locale::new("ar-EG"), include_str!("../locales/ar-EG.json"))
+            .expect("valid ar-EG catalog");
+    let fr_catalog = Catalog::from_json(Locale::new("fr"), include_str!("../locales/fr.json"))
+        .expect("valid fr catalog");
+    let available_locales = [
+        Locale::new("en-US"),
+        Locale::new("zh-CN"),
+        Locale::new("ar-EG"),
+        Locale::new("fr"),
+    ];
+    let fallback_locale = Locale::new("en-US");
+    let browser_locale =
+        resolve_requested_locale(navigator_languages(), &available_locales, &fallback_locale);
+    let locale_binding = Persistent::builder("silex-showcase-locale")
+        .local()
+        .parse::<Locale>()
+        .default(browser_locale.clone())
+        .build();
     let i18n = I18nBuilder::new()
-        .locale(Locale::new("en-US"))
-        .fallback_locale(Locale::new("en-US"))
+        .locale(browser_locale)
+        .fallback_locale(fallback_locale)
         .catalog(en_catalog)
         .catalog(zh_catalog)
+        .catalog(ar_catalog)
+        .catalog(fr_catalog)
         .build()
         .expect("valid i18n configuration");
 
@@ -43,6 +64,9 @@ fn main() {
     });
 
     mount_to_body(move || {
+        i18n.bind_locale(locale_binding);
+        i18n.sync_document_metadata();
+
         // Provide Global Store to the entire app tree
         store.provide();
 
@@ -97,7 +121,7 @@ fn main() {
             NavBar(),
             // Root Router
             Router().match_enum(move |route, ctx| match route {
-                AppRoute::I18n => i18n_demo::I18nPage(i18n).into_any(),
+                AppRoute::I18n => i18n_demo::I18nPage(i18n, ctx).into_any(),
                 route => route.render(ctx),
             }),
         ]

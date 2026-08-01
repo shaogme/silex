@@ -9,6 +9,8 @@ use silex_core::{
 };
 use silex_dom::view::View;
 use silex_i18n::{Catalog, I18nBuilder, I18nStore, Locale, detect_browser_locale, t};
+#[cfg(feature = "intl")]
+use silex_i18n::{DateTimeFormat, format_number};
 #[cfg(feature = "persist")]
 use silex_router::{RouterContext, RouterContextProps};
 use wasm_bindgen_test::*;
@@ -225,4 +227,17 @@ async fn translated_memo_updates_the_existing_text_node() {
     assert_eq!(parent.text_content(), Some("中文".to_string()));
     assert_eq!(parent.child_nodes().length(), 1);
     dispose(scope);
+}
+
+#[cfg(feature = "intl")]
+#[wasm_bindgen_test]
+fn intl_formatters_use_the_browser_implementation() {
+    let number = format_number(&Locale::new("en-US"), 1_234.5).expect("format number");
+    assert!(number.contains('1'));
+    assert!(number.contains('4'));
+
+    let date = DateTimeFormat::new(Locale::new("en-US"))
+        .format(0.0)
+        .expect("format date");
+    assert!(!date.is_empty());
 }

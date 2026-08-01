@@ -1,0 +1,37 @@
+[package]
+name = "silex_i18n_macros"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+
+[lib]
+proc-macro = true
+
+[lints]
+workspace = true
+
+[dependencies]
+proc-macro-crate.workspace = true
+proc-macro2 = { workspace = true, features = ["proc-macro"] }
+quote = { workspace = true, features = ["proc-macro"] }
+serde_json.workspace = true
+syn = { workspace = true, features = [
+    "full",
+    "extra-traits",
+    "parsing",
+    "printing",
+    "proc-macro",
+    "clone-impls",
+    "derive",
+] }
+
+[dev-dependencies]
+silex_i18n.workspace = true
+trybuild = "1.0"

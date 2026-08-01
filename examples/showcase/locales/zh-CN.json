@@ -11,5 +11,51 @@
       "one": "你有 {count} 个项目。",
       "other": "你有 {count} 个项目。"
     }
+  },
+  "demo": {
+    "locale": {
+      "title": "Locale、fallback 与外部来源",
+      "description": "当前语言持久化到 LocalStorage；URL 和浏览器偏好保持为显式的独立来源。",
+      "current": "当前语言：{locale}",
+      "fallback": "回退语言：{locale}",
+      "persistence": "当前 store 与 LocalStorage 双向绑定。",
+      "browser": "浏览器候选语言：{locales}",
+      "browser_match": "浏览器匹配结果：{locale}",
+      "use_browser": "使用浏览器偏好",
+      "query": "URL 查询语言：{locale}",
+      "apply_query": "应用查询语言",
+      "write_query": "将当前语言写入 URL"
+    },
+    "messages": {
+      "title": "响应式消息与类型化 Key",
+      "description": "字面量 key 和 I18nKeys 变体都会在 signal 变化时更新已有文本节点。",
+      "name": "姓名",
+      "count": "项目数量",
+      "literal": "字面量 key：{value}",
+      "typed": "类型化 key",
+      "missing_key": "缺失 key 结果：{value}",
+      "missing_argument": "缺失参数结果：{value}"
+    },
+    "formatter": {
+      "title": "Intl formatter",
+      "number": "数字：{value}",
+      "date": "日期：{value}",
+      "description": "NumberFormat 和 DateTimeFormat 跟随当前语言，不进入消息 parser。"
+    },
+    "loader": {
+      "title": "异步语言包加载",
+      "description": "独立 store 使用 Resource、缓存和旧请求保护加载当前语言包。",
+      "reload": "重新加载语言包",
+      "idle": "空闲",
+      "loading": "加载中",
+      "reloading": "重新加载中",
+      "ready": "就绪：{locale}，{count} 个 key",
+      "error": "错误：{value}"
+    },
+    "metadata": {
+      "title": "浏览器 metadata",
+      "direction": "文字方向：{value}",
+      "description": "可选 effect 会同步 document 的 lang 和 dir 属性。"
+    }
   }
 }

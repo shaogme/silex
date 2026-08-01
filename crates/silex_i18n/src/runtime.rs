@@ -46,6 +46,15 @@ pub struct Argument {
     value: String,
 }
 
+pub trait I18nVariant {
+    fn key(&self) -> &'static str;
+    fn arguments(&self) -> Vec<Argument>;
+
+    fn count_name(&self) -> Option<&'static str> {
+        None
+    }
+}
+
 impl Argument {
     pub fn new(name: impl Into<String>, value: impl ToString) -> Self {
         Self {
@@ -345,6 +354,23 @@ impl I18nStore {
     }
 
     pub fn translate_now(&self, key: &str, arguments: &[Argument]) -> String {
+        self.translate_now_with_count_name(key, arguments, None)
+    }
+
+    pub fn translate_variant_now<V>(&self, variant: &V) -> String
+    where
+        V: I18nVariant,
+    {
+        let arguments = variant.arguments();
+        self.translate_now_with_count_name(variant.key(), &arguments, variant.count_name())
+    }
+
+    fn translate_now_with_count_name(
+        &self,
+        key: &str,
+        arguments: &[Argument],
+        count_name: Option<&str>,
+    ) -> String {
         let locale = self.locale.get();
         let fallback_locale = self.fallback_locale.get();
         let _revision = self.catalog_revision.get();
@@ -363,6 +389,7 @@ impl I18nStore {
                         &candidate,
                         arguments,
                         self.missing_argument,
+                        count_name,
                     ));
                 }
             }
@@ -381,13 +408,17 @@ fn render_message(
     locale: &Locale,
     arguments: &[Argument],
     missing_argument: MissingArgumentPolicy,
+    count_name: Option<&str>,
 ) -> String {
     match message {
         Message::Text(segments) => render_segments(segments, arguments, missing_argument),
-        Message::Plural { forms, count_name } => {
+        Message::Plural {
+            forms,
+            count_name: message_count_name,
+        } => {
             let number = arguments
                 .iter()
-                .find(|argument| argument.name() == count_name)
+                .find(|argument| argument.name() == count_name.unwrap_or(message_count_name))
                 .and_then(|argument| argument.value().parse::<f64>().ok());
             let category = number
                 .map(|number| plural_category(locale, number))

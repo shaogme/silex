@@ -1,0 +1,5 @@
+error: i18n key 'welcome.user' placeholders do not match fields: catalog {"name"}, variant {"username"}
+ --> tests/ui/fail_placeholder.rs:7:5
+  |
+7 |     WelcomeUser { username: String },
+  |     ^^^^^^^^^^^

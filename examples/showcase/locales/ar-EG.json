@@ -1,0 +1,61 @@
+{
+  "i18n": {
+    "title": "التدويل",
+    "description": "تستخدم هذه الصفحة مذكرة ترجمة تفاعلية."
+  },
+  "welcome": {
+    "user": "مرحباً، {name}!"
+  },
+  "cart": {
+    "items": {
+      "one": "لديك عنصر واحد.",
+      "other": "لديك {count} عناصر."
+    }
+  },
+  "demo": {
+    "locale": {
+      "title": "اللغة والرجوع والمصادر الخارجية",
+      "description": "يتم حفظ اللغة في LocalStorage، بينما تبقى تفضيلات الرابط والمتصفح مصادر صريحة.",
+      "current": "اللغة الحالية: {locale}",
+      "fallback": "لغة الرجوع: {locale}",
+      "persistence": "هذا المخزن مرتبط ثنائياً بـ LocalStorage.",
+      "browser": "لغات المتصفح: {locales}",
+      "browser_match": "مطابقة المتصفح: {locale}",
+      "use_browser": "استخدام تفضيل المتصفح",
+      "query": "لغة الرابط: {locale}",
+      "apply_query": "تطبيق لغة الرابط",
+      "write_query": "كتابة اللغة الحالية في الرابط"
+    },
+    "messages": {
+      "title": "رسائل تفاعلية ومفاتيح typed",
+      "description": "تتحدث المفاتيح النصية و I18nKeys عند تغير الإشارات.",
+      "name": "الاسم",
+      "count": "عدد العناصر",
+      "literal": "مفتاح نصي: {value}",
+      "typed": "مفتاح typed",
+      "missing_key": "نتيجة المفتاح المفقود: {value}",
+      "missing_argument": "نتيجة الوسيط المفقود: {value}"
+    },
+    "formatter": {
+      "title": "منسقات Intl",
+      "number": "الرقم: {value}",
+      "date": "التاريخ: {value}",
+      "description": "تتبع NumberFormat و DateTimeFormat اللغة الحالية."
+    },
+    "loader": {
+      "title": "تحميل حزمة اللغة بشكل غير متزامن",
+      "description": "يستخدم مخزن مستقل Resource و cache وحماية من الاستجابات القديمة.",
+      "reload": "إعادة تحميل الحزمة",
+      "idle": "خامل",
+      "loading": "جار التحميل",
+      "reloading": "جار إعادة التحميل",
+      "ready": "جاهز: {locale}، {count} مفاتيح",
+      "error": "خطأ: {value}"
+    },
+    "metadata": {
+      "title": "بيانات المتصفح",
+      "direction": "اتجاه النص: {value}",
+      "description": "يقوم effect اختياري بمزامنة lang و dir في document."
+    }
+  }
+}

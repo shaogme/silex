@@ -5,6 +5,17 @@
 
 use my_silex::prelude::*;
 
+#[derive(I18nKeys)]
+#[i18n(path = "locales/en.json")]
+enum RenamedText {
+    #[i18n(key = "title")]
+    Title,
+}
+
+pub fn renamed_i18n_key() -> &'static str {
+    RenamedText::Title.key()
+}
+
 /// `tw!`（含条件分支，会展开 `rx!` / `cx!`）与 `css!`
 #[component]
 pub fn Badge(#[prop(into)] label: String, #[chain(default)] wide: bool) -> impl View {
