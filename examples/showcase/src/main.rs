@@ -3,6 +3,7 @@ mod advanced;
 mod basics;
 mod css;
 mod flow_control;
+mod i18n_demo;
 mod net_demo;
 mod persistence;
 mod routes;
@@ -12,6 +13,20 @@ use routes::{AppRoute, NavBar};
 
 fn main() {
     setup_global_error_handlers();
+
+    let en_catalog =
+        Catalog::from_json(Locale::new("en-US"), include_str!("../locales/en-US.json"))
+            .expect("valid en-US catalog");
+    let zh_catalog =
+        Catalog::from_json(Locale::new("zh-CN"), include_str!("../locales/zh-CN.json"))
+            .expect("valid zh-CN catalog");
+    let i18n = I18nBuilder::new()
+        .locale(Locale::new("en-US"))
+        .fallback_locale(Locale::new("en-US"))
+        .catalog(en_catalog)
+        .catalog(zh_catalog)
+        .build()
+        .expect("valid i18n configuration");
 
     // 1. 使用持久化 Hook 代替手动的 localStorage 读取
     let theme_persistent = Persistent::builder("silex-showcase-theme")
@@ -81,7 +96,10 @@ fn main() {
             // Global Layout Shell
             NavBar(),
             // Root Router
-            Router().match_route::<AppRoute>(),
+            Router().match_enum(move |route, ctx| match route {
+                AppRoute::I18n => i18n_demo::I18nPage(i18n).into_any(),
+                route => route.render(ctx),
+            }),
         ]
         .style(
             sty()

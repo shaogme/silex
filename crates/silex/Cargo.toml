@@ -24,6 +24,7 @@ silex_macros = { workspace = true, default-features = false, features = ["compon
 silex_hash.workspace = true
 silex_persist = { workspace = true, optional = true }
 silex_net = { workspace = true, optional = true }
+silex_i18n = { workspace = true, optional = true }
 wasm-bindgen.workspace = true
 web-sys = { workspace = true, features = [
     "History",
@@ -44,6 +45,8 @@ tw = ["css", "silex_macros/tw", "silex_css/tw"]
 persistence = ["dep:silex_persist", "silex_net/persist"]
 json = ["dep:serde", "dep:serde_json", "silex_persist/json", "silex_net/json"]
 net = ["dep:silex_net"]
+i18n = ["dep:silex_i18n"]
+i18n-json = ["i18n", "silex_i18n/json"]
 
 [dev-dependencies]
 trybuild = "1.0"

@@ -57,9 +57,19 @@ pub mod net {
     pub use silex_net::*;
 }
 
+#[cfg(feature = "i18n")]
+pub mod i18n {
+    pub use silex_i18n::*;
+}
+
+#[cfg(feature = "i18n")]
+pub use crate::i18n::*;
+
 pub mod prelude {
     pub use crate::components::*;
     pub use crate::flow::*;
+    #[cfg(feature = "i18n")]
+    pub use crate::i18n::*;
     #[cfg(feature = "net")]
     pub use crate::net::*;
     #[cfg(feature = "persistence")]

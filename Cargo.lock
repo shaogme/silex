@@ -1578,6 +1578,7 @@ dependencies = [
  "silex_dom",
  "silex_hash",
  "silex_html",
+ "silex_i18n",
  "silex_macros",
  "silex_net",
  "silex_persist",
@@ -1663,6 +1664,15 @@ dependencies = [
  "silex_dom",
  "wasm-bindgen",
  "web-sys",
+]
+
+[[package]]
+name = "silex_i18n"
+version = "0.1.0-beta.9"
+dependencies = [
+ "serde",
+ "serde_json",
+ "silex_core",
 ]
 
 [[package]]

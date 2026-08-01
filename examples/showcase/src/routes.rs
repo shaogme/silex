@@ -59,6 +59,8 @@ pub enum AppRoute {
     Basics,
     #[route("/flow", view = flow_control::FlowPage)]
     Flow,
+    #[route("/i18n")]
+    I18n,
     #[route("/net", view = net_demo::NetDemoPage)]
     Net,
     #[route("/persistence", view = persistence::PersistencePage, pass_ctx = true)]
@@ -132,6 +134,7 @@ pub fn NavBar() -> impl View {
             .children("Basics")
             .active_class("active"),
         Link(AppRoute::Flow).children("Flow").active_class("active"),
+        Link(AppRoute::I18n).children("I18n").active_class("active"),
         Link(AppRoute::Net).children("Net").active_class("active"),
         Link(AppRoute::Persistence)
             .children("Persistence")
@@ -271,6 +274,7 @@ fn HomePage() -> impl View {
         ul![
             li(Link(AppRoute::Basics).children("Basics: Components, Props, Signals")),
             li(Link(AppRoute::Flow).children("Flow Control: Loops, Conditions")),
+            li(Link(AppRoute::I18n).children("I18n: Locale, fallback, and plural messages")),
             li(Link(AppRoute::Css {
                 route: CssRoute::Basics,
             },)

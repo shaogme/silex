@@ -47,10 +47,6 @@ fn apply_var_diff(
 }
 
 /// 一次变量写入。
-///
-/// 「写什么」与「写到哪」分开，是为了让前者能脱离 `CssStyleDeclaration`（也就
-/// 是脱离浏览器）被断言——这段 diff 逻辑此前在三个地方各抄了一遍，一个测试也
-/// 没有。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VarWrite<'a> {
     Set(&'a str, &'a str),
@@ -58,9 +54,6 @@ enum VarWrite<'a> {
 }
 
 /// 与上一轮取值比较，给出这一轮真正需要落到 DOM 上的写入。
-///
-/// 没变的变量不写——每个变量的 `setProperty` 都会让浏览器重算受它影响的那棵
-/// 子树，主题里几十个变量一起重写是实打实的开销。
 fn var_writes<'a>(
     entries: &'a [(&'static str, Option<String>)],
     prev: Option<&Vec<Option<String>>>,
@@ -145,15 +138,6 @@ where
 const GLOBAL_THEME_STYLE_ID: &str = "slx-global-theme";
 
 /// Sets a global theme that applies to the entire document (:root).
-///
-/// 此前这里写的是 `documentElement` 的**行内 style**，而不是一条 `:root{}` 规则：
-///
-/// - CSP 的 `style-src` 没开 `unsafe-inline` 时直接失效；
-/// - 行内优先级压过作者样式表里任何 `:root` 定义，主题就没法被局部覆盖了。
-///
-/// 现在走和其他动态样式同一条路：一张构造式样式表，内容是一条 `:root{}` 规则。
-/// 它不属于任何级联层（无层规则优先级最高），所以仍然压得住 `base` 里的
-/// 默认变量——但这是**规则之间**的较量，而不是行内样式的碾压。
 pub fn set_global_theme<T>(theme: impl IntoSignal<Value = T> + 'static)
 where
     T: ThemeType + ThemeToCss + RxCloneData,

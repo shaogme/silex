@@ -1,0 +1,15 @@
+{
+  "i18n": {
+    "title": "国际化",
+    "description": "这个页面使用响应式翻译 memo。"
+  },
+  "welcome": {
+    "user": "你好，{name}！"
+  },
+  "cart": {
+    "items": {
+      "one": "你有 {count} 个项目。",
+      "other": "你有 {count} 个项目。"
+    }
+  }
+}
