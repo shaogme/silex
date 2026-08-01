@@ -1,3 +1,20 @@
+extern crate self as silex;
+
+pub mod core {
+    pub use silex_core::*;
+}
+pub mod dom {
+    pub use silex_dom::*;
+}
+pub mod macros {
+    pub use silex_macros::*;
+}
+pub mod reexports {
+    pub use wasm_bindgen;
+    pub use web_sys;
+}
+pub use crate as router;
+
 pub mod context;
 pub mod link;
 

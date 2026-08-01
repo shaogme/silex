@@ -6,7 +6,6 @@ pub mod flow;
 pub mod net;
 #[cfg(feature = "persistence")]
 pub mod persist;
-pub mod router;
 pub mod store;
 #[cfg(feature = "tw")]
 pub mod ui;
@@ -49,6 +48,10 @@ pub mod hash {
     pub use silex_hash::*;
 }
 
+pub mod router {
+    pub use silex_router::*;
+}
+
 pub mod prelude {
     pub use crate::components::*;
     pub use crate::flow::*;
@@ -56,7 +59,6 @@ pub mod prelude {
     pub use crate::net::*;
     #[cfg(feature = "persistence")]
     pub use crate::persist::*;
-    pub use crate::router::*;
     pub use crate::store::*;
     pub use crate::{SilexError, SilexResult};
     pub use silex_core::prelude::*;
@@ -64,13 +66,13 @@ pub mod prelude {
     pub use silex_dom::prelude::*;
     pub use silex_html::*;
     pub use silex_macros::*;
+    pub use silex_router::*;
 
     // Resolve ambiguous glob re-exports
     #[cfg(feature = "css")]
     pub use crate::components::Center;
     pub use crate::core::prelude::{Map, RxWrite};
     pub use crate::flow::Switch;
-    pub use crate::router::Link;
     pub use silex_css::prelude::{Style, linear_gradient, radial_gradient};
     #[cfg(feature = "tw")]
     pub use silex_css::prelude::{VariantSchema, declare_variants};
@@ -80,4 +82,5 @@ pub mod prelude {
     pub use silex_macros::{global, inject_css, styled, theme};
     #[cfg(feature = "tw")]
     pub use silex_macros::{tw, tw_variants, tw_verbose};
+    pub use silex_router::Link;
 }

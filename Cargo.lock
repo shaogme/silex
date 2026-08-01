@@ -1580,6 +1580,7 @@ dependencies = [
  "silex_hash",
  "silex_html",
  "silex_macros",
+ "silex_router",
  "trybuild",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -1694,6 +1695,20 @@ name = "silex_renamed_dep_test"
 version = "0.1.0-beta.9"
 dependencies = [
  "silex",
+]
+
+[[package]]
+name = "silex_router"
+version = "0.1.0-beta.9"
+dependencies = [
+ "js-sys",
+ "silex_core",
+ "silex_dom",
+ "silex_html",
+ "silex_macros",
+ "wasm-bindgen",
+ "wasm-bindgen-test",
+ "web-sys",
 ]
 
 [[package]]

@@ -9,12 +9,12 @@ use crate::persist::{
         flush_persistent_value,
     },
 };
-use crate::router::RouterContext;
 use ref_str::LocalStaticRefStr;
 use silex_core::{
     reactivity::{Effect, RwSignal, StoredValue, on_cleanup},
     traits::{RxData, RxGet, RxRead, RxWrite},
 };
+use silex_router::RouterContext;
 use std::{borrow::Cow, marker::PhantomData, rc::Rc};
 
 /// Typestate marker used before a persistence backend has been selected.

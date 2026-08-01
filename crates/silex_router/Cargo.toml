@@ -1,0 +1,35 @@
+[package]
+name = "silex_router"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+silex_core.workspace = true
+silex_dom.workspace = true
+silex_html.workspace = true
+silex_macros = { workspace = true, default-features = false, features = ["component"] }
+wasm-bindgen.workspace = true
+web-sys = { workspace = true, features = [
+    "Event",
+    "History",
+    "Location",
+    "MouseEvent",
+    "Node",
+    "UrlSearchParams",
+    "Window"
+] }
+js-sys.workspace = true
+
+[dev-dependencies]
+wasm-bindgen-test.workspace = true

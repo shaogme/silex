@@ -380,9 +380,9 @@ fn storage_handle(kind: StorageAreaKind) -> Result<Storage, PersistenceError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::router::Navigator;
     use silex_core::reactivity::{Signal, create_scope};
     use silex_core::traits::RxWrite;
+    use silex_router::Navigator;
     use std::cell::RefCell;
     use std::collections::HashMap;
 

@@ -1,5 +1,5 @@
-use crate::router::ToRoute;
-use crate::router::context::RouterContext;
+use crate::ToRoute;
+use crate::context::RouterContext;
 use silex_core::traits::RxGet;
 use silex_dom::prelude::*;
 use silex_html::a;

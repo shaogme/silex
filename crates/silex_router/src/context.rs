@@ -88,11 +88,11 @@ impl RouterContext {
 /// 导航控制器，用于执行路由跳转
 #[derive(Clone, Copy)]
 pub struct Navigator {
-    pub(crate) base_path: StoredValue<String>,
-    pub(crate) path: ReadSignal<String>,
-    pub(crate) search: ReadSignal<String>,
-    pub(crate) set_path: WriteSignal<String>,
-    pub(crate) set_search: WriteSignal<String>,
+    pub base_path: StoredValue<String>,
+    pub path: ReadSignal<String>,
+    pub search: ReadSignal<String>,
+    pub set_path: WriteSignal<String>,
+    pub set_search: WriteSignal<String>,
 }
 
 impl Navigator {
@@ -151,12 +151,12 @@ impl Navigator {
     }
 
     /// 导航到指定路径
-    pub fn push<T: crate::router::ToRoute>(self, to: T) {
+    pub fn push<T: crate::ToRoute>(self, to: T) {
         self.handle_navigation(&to.to_route(), false);
     }
 
     /// 替换当前路径
-    pub fn replace<T: crate::router::ToRoute>(self, to: T) {
+    pub fn replace<T: crate::ToRoute>(self, to: T) {
         self.handle_navigation(&to.to_route(), true);
     }
 
