@@ -123,7 +123,7 @@ fn with_dynamic_registry<R>(
 /// Manages an injected <style> block uniquely for a component instance.
 /// It cleans up the tag when dropped, preventing CSSOM leaks.
 pub struct DynamicStyleManager {
-    state: Option<Rc<DynamicStyleState>>,
+    state: RefCell<Option<Rc<DynamicStyleState>>>,
 }
 
 impl Default for DynamicStyleManager {
@@ -133,20 +133,27 @@ impl Default for DynamicStyleManager {
 }
 
 impl DynamicStyleManager {
-    pub fn new() -> Self {
-        Self { state: None }
+    pub const fn new() -> Self {
+        Self {
+            state: RefCell::new(None),
+        }
     }
 
     /// Moves the current style state to the retired cache if it's the last active reference.
-    fn take_and_retire(&mut self) {
-        if let Some(state) = self.state.take() {
+    fn take_and_retire(&self) {
+        let Ok(mut state_borrow) = self.state.try_borrow_mut() else {
+            return;
+        };
+        if let Some(state) = state_borrow.take() {
             // If strong_count is 1, it means this manager was the only one holding the style.
             if Rc::strong_count(&state) == 1 {
                 // 退休 = 保留内容、移出 adoptedStyleSheets。表对象还在（复用时
                 // 不必重新解析 CSS），但不再参与样式匹配。
                 state.detach();
                 RETIRED_STYLES.with(|retired| {
-                    let mut r = retired.borrow_mut();
+                    let Ok(mut r) = retired.try_borrow_mut() else {
+                        return;
+                    };
                     r.push_back(state);
                     if r.len() > CACHE_LIMIT {
                         // This will drop the oldest retired state, potentially triggering DynamicStyleState::drop
@@ -157,8 +164,9 @@ impl DynamicStyleManager {
         }
     }
 
-    pub fn update(&mut self, id: &str, content: &str) {
-        if let Some(state) = &self.state
+    pub fn update(&self, id: &str, content: &str) {
+        if let Ok(state_borrow) = self.state.try_borrow()
+            && let Some(state) = state_borrow.as_ref()
             && state.id == id
         {
             state.sheet.replace(content);
@@ -170,9 +178,10 @@ impl DynamicStyleManager {
                 && let Some(state) = weak.upgrade()
             {
                 RETIRED_STYLES.with(|retired| {
-                    let mut r = retired.borrow_mut();
-                    if let Some(pos) = r.iter().position(|s| s.id == id) {
-                        r.remove(pos);
+                    if let Ok(mut r) = retired.try_borrow_mut() {
+                        if let Some(pos) = r.iter().position(|s| s.id == id) {
+                            r.remove(pos);
+                        }
                     }
                 });
                 state.sheet.replace(content);
@@ -198,7 +207,9 @@ impl DynamicStyleManager {
         };
 
         self.take_and_retire();
-        self.state = Some(new_state);
+        if let Ok(mut state_borrow) = self.state.try_borrow_mut() {
+            *state_borrow = Some(new_state);
+        }
     }
 }
 
@@ -285,14 +296,7 @@ impl ApplyToDom for DynamicCss {
 
         // 3. Apply isolated component dynamic rules
         for (parts, getters) in self.rules.clone() {
-            let manager = Rc::new(RefCell::new(Some(DynamicStyleManager::new())));
-            let manager_cleanup = manager.clone();
-            on_cleanup(move || {
-                if let Ok(mut opt_mgr) = manager_cleanup.try_borrow_mut() {
-                    let _ = opt_mgr.take();
-                }
-            });
-
+            let manager = DynamicStyleManager::new();
             let el_clone = el.clone();
             let base_class = self.class_name;
 
@@ -314,11 +318,7 @@ impl ApplyToDom for DynamicCss {
                     let _ = el_clone.class_list().add_1(&dyn_class);
 
                     let rule = render(parts, &dyn_class, &current_vals);
-                    if let Ok(mut opt) = manager.try_borrow_mut()
-                        && let Some(mgr) = opt.as_mut()
-                    {
-                        mgr.update(&dyn_class, &rule);
-                    }
+                    manager.update(&dyn_class, &rule);
                 }
 
                 (current_vals, dyn_class)
@@ -350,7 +350,7 @@ where
 /// `styled!` 此前把这段逻辑整个展开在宏产物里（而且为变体分支复制了一份），
 /// 中间还夹着 `res.replace(class_name, &dyn_class)` 这种子串替换。
 pub fn dynamic_rule_class(
-    manager: &Rc<RefCell<Option<DynamicStyleManager>>>,
+    manager: &DynamicStyleManager,
     base_class: &str,
     parts: &'static [CssPart],
     getters: &[CssVariableGetter],
@@ -358,11 +358,7 @@ pub fn dynamic_rule_class(
     let vals: Vec<String> = getters.iter().map(|g| g.get()).collect();
     let dyn_class = dynamic_class(base_class, parts, &vals);
     let rule = render(parts, &dyn_class, &vals);
-    if let Ok(mut opt) = manager.try_borrow_mut()
-        && let Some(m) = opt.as_mut()
-    {
-        m.update(&dyn_class, &rule);
-    }
+    manager.update(&dyn_class, &rule);
     dyn_class
 }
 
@@ -381,14 +377,7 @@ pub fn inject_managed_dynamic_style(
     positional: Vec<CssVariableGetter>,
     replacements: Vec<(String, CssVariableGetter)>,
 ) {
-    let manager = Rc::new(RefCell::new(Some(DynamicStyleManager::new())));
-    let cleanup_mgr = manager.clone();
-    on_cleanup(move || {
-        if let Ok(mut opt) = cleanup_mgr.try_borrow_mut() {
-            let _ = opt.take();
-        }
-    });
-
+    let manager = DynamicStyleManager::new();
     let style_id_str = style_id.into();
     Effect::new(move |_| {
         let vals: Vec<String> = positional.iter().map(|g| g.get()).collect();
@@ -399,10 +388,6 @@ pub fn inject_managed_dynamic_style(
             .map(|(pattern, getter)| (pattern.clone(), getter.get()))
             .collect();
         let res = replace_placeholders(&res, &pairs);
-        if let Ok(mut opt) = manager.try_borrow_mut()
-            && let Some(m) = opt.as_mut()
-        {
-            m.update(&style_id_str, &res);
-        }
+        manager.update(&style_id_str, &res);
     });
 }

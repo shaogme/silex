@@ -1,7 +1,7 @@
 use crate::runtime::DynamicStyleManager;
 use silex_core::prelude::*;
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable};
-use std::{cell::RefCell, fmt::Display, rc::Rc};
+use std::fmt::Display;
 use wasm_bindgen::JsCast;
 use web_sys::{CssStyleDeclaration, Element, HtmlElement, SvgElement};
 
@@ -143,14 +143,7 @@ where
     T: ThemeType + ThemeToCss + RxCloneData,
 {
     let signal = theme.into_signal();
-
-    let manager = Rc::new(RefCell::new(Some(DynamicStyleManager::new())));
-    let cleanup = manager.clone();
-    on_cleanup(move || {
-        if let Ok(mut opt) = cleanup.try_borrow_mut() {
-            let _ = opt.take();
-        }
-    });
+    let manager = DynamicStyleManager::new();
 
     Effect::new(move |prev: Option<String>| {
         let theme_val = signal.get();
@@ -160,11 +153,8 @@ where
             "主题的变量名与取值数量不一致"
         );
         let css = format!(":root{{{}}}", theme_val);
-        if prev.as_deref() != Some(css.as_str())
-            && let Ok(mut opt) = manager.try_borrow_mut()
-            && let Some(m) = opt.as_mut()
-        {
-            m.update(GLOBAL_THEME_STYLE_ID, &css);
+        if prev.as_deref() != Some(css.as_str()) {
+            manager.update(GLOBAL_THEME_STYLE_ID, &css);
         }
         css
     });

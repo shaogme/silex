@@ -42,7 +42,7 @@ fn created_sheets() -> usize {
 #[test]
 fn a_retired_sheet_leaves_the_document_but_keeps_its_content() {
     setup();
-    let mut mgr = DynamicStyleManager::new();
+    let mgr = DynamicStyleManager::new();
     mgr.update("a", ".a{color:red}");
     platform::run_microtasks();
     assert_eq!(fake::adopted_now(), vec![0]);
@@ -63,13 +63,13 @@ fn a_retired_sheet_leaves_the_document_but_keeps_its_content() {
 #[test]
 fn reusing_a_retired_sheet_reattaches_it() {
     setup();
-    let mut first = DynamicStyleManager::new();
+    let first = DynamicStyleManager::new();
     first.update("a", ".a{color:red}");
     drop(first);
     platform::run_microtasks();
     assert!(fake::adopted_now().is_empty());
 
-    let mut second = DynamicStyleManager::new();
+    let second = DynamicStyleManager::new();
     second.update("a", ".a{color:blue}");
     platform::run_microtasks();
 
@@ -84,7 +84,7 @@ fn the_retired_queue_evicts_in_fifo_order() {
     setup();
     let mut managers = Vec::new();
     for i in 0..=CACHE_LIMIT {
-        let mut m = DynamicStyleManager::new();
+        let m = DynamicStyleManager::new();
         m.update(&format!("s{i}"), ".x{color:red}");
         managers.push(m);
     }
@@ -112,7 +112,7 @@ fn the_retired_queue_evicts_in_fifo_order() {
 #[test]
 fn updating_the_same_id_replaces_content_in_place() {
     setup();
-    let mut mgr = DynamicStyleManager::new();
+    let mgr = DynamicStyleManager::new();
     mgr.update("a", ".a{color:red}");
     platform::run_microtasks();
     let syncs = fake::adopted_history().len();
@@ -131,13 +131,13 @@ fn updating_the_same_id_replaces_content_in_place() {
 #[test]
 fn a_no_op_batch_does_not_touch_the_document() {
     setup();
-    let mut kept = DynamicStyleManager::new();
+    let kept = DynamicStyleManager::new();
     kept.update("kept", ".k{color:red}");
     platform::run_microtasks();
     let before = fake::adopted_history().len();
 
     // 建了就退休，两笔操作落在同一批里
-    let mut transient = DynamicStyleManager::new();
+    let transient = DynamicStyleManager::new();
     transient.update("t", ".t{color:red}");
     drop(transient);
     platform::run_microtasks();
@@ -157,12 +157,12 @@ fn a_no_op_batch_does_not_touch_the_document() {
 #[test]
 fn an_equal_sized_but_different_batch_is_still_synced() {
     setup();
-    let mut a = DynamicStyleManager::new();
+    let a = DynamicStyleManager::new();
     a.update("a", ".a{color:red}");
     platform::run_microtasks();
     assert_eq!(fake::adopted_now(), vec![0]);
 
-    let mut b = DynamicStyleManager::new();
+    let b = DynamicStyleManager::new();
     b.update("b", ".b{color:red}");
     drop(a);
     platform::run_microtasks();
@@ -175,7 +175,7 @@ fn an_equal_sized_but_different_batch_is_still_synced() {
 #[test]
 fn the_static_sheet_is_always_the_first_adopted_sheet() {
     setup();
-    let mut mgr = DynamicStyleManager::new();
+    let mgr = DynamicStyleManager::new();
     mgr.update("d", ".d{color:red}"); // 动态表先建，拿到 0 号
     inject_style("s", ".s{color:red}"); // 静态表后建，拿到 1 号
     platform::run_microtasks();
@@ -233,7 +233,7 @@ fn a_style_tag_fallback_never_joins_adopted_stylesheets() {
         ..Default::default()
     });
 
-    let mut mgr = DynamicStyleManager::new();
+    let mgr = DynamicStyleManager::new();
     mgr.update("a", ".a{color:red}");
     platform::run_microtasks();
 
@@ -279,7 +279,7 @@ fn a_deferred_attach_is_replayed() {
     setup();
     let mut held = None;
     with_document_registry(|_| {
-        let mut mgr = DynamicStyleManager::new();
+        let mgr = DynamicStyleManager::new();
         mgr.update("a", ".a{color:red}");
         held = Some(mgr);
     });
@@ -293,7 +293,7 @@ fn a_deferred_attach_is_replayed() {
 #[test]
 fn a_deferred_removal_is_replayed() {
     setup();
-    let mut mgr = DynamicStyleManager::new();
+    let mgr = DynamicStyleManager::new();
     mgr.update("a", ".a{color:red}");
     platform::run_microtasks();
     assert_eq!(fake::adopted_now(), vec![0]);
@@ -321,7 +321,7 @@ fn a_sheet_that_cannot_be_created_is_reported_not_panicked() {
     });
 
     inject_style("s", ".s{color:red}");
-    let mut mgr = DynamicStyleManager::new();
+    let mgr = DynamicStyleManager::new();
     mgr.update("d", ".d{color:red}");
     platform::run_microtasks();
 

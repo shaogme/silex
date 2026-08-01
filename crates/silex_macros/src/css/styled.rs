@@ -450,9 +450,7 @@ fn expand_dynamic_rule(
     let mgr_id = quote::format_ident!("mgr{}_{}", suffix, idx);
     inits.push(quote! {
         #(#rule_var_decls)*
-        let #mgr_id = ::std::rc::Rc::new(::std::cell::RefCell::new(Some(#__silex::css::DynamicStyleManager::new())));
-        let cleanup = #mgr_id.clone();
-        #__silex::core::reactivity::on_cleanup(move || { if let Ok(mut o) = cleanup.try_borrow_mut() { o.take(); } });
+        let #mgr_id = #__silex::css::DynamicStyleManager::new();
     });
 
     // 拼装、哈希、写表这几步都在运行时的 `dynamic_rule_class` 里，宏产物只负责
