@@ -1,11 +1,11 @@
 use crate::PersistenceError;
-use silex_router::{Navigator, RouterContext};
 use js_sys::Object;
 use ref_str::LocalStaticRefStr;
 use silex_core::{
     reactivity::{Effect, Memo, ScopeId, create_scope, dispose},
     traits::RxGet,
 };
+use silex_router::{Navigator, RouterContext};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Storage, StorageEvent};

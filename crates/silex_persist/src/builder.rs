@@ -1,7 +1,9 @@
 use crate::{
     DecodePolicy, PersistMode, PersistenceError, RemovePolicy, SyncStrategy, WriteDefault,
     backend::{LocalStorageBackend, PersistenceBackend, QueryBackend, SessionStorageBackend},
-    codec::{OptionCodec, ParseCodec, PersistCodec, StringCodec, map_decode_error, map_encode_error},
+    codec::{
+        OptionCodec, ParseCodec, PersistCodec, StringCodec, map_decode_error, map_encode_error,
+    },
     state::{
         PersistenceController, PersistenceState, Persistent, apply_backend_event,
         flush_persistent_value,
@@ -378,12 +380,10 @@ where
                     state.set_untracked(PersistenceState::Ready(raw));
                 }
                 Err(message) => {
-                    state.set_untracked(PersistenceState::DecodeError(
-                        crate::DecodeErrorInfo {
-                            raw: raw.clone(),
-                            message: message.clone(),
-                        },
-                    ));
+                    state.set_untracked(PersistenceState::DecodeError(crate::DecodeErrorInfo {
+                        raw: raw.clone(),
+                        message: message.clone(),
+                    }));
                     value.set_untracked(default());
                     let _ = controller.try_update_untracked(|controller| {
                         controller.last_flushed_raw = None;

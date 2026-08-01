@@ -946,8 +946,7 @@ fn gradient_angle_and_syntax_formatting() {
         .expect("-bg-conic-0 必须产出 background-image");
 
     assert_eq!(
-        bg_img_conic,
-        "conic-gradient(from 0deg, var(--tw-gradient-stops))",
+        bg_img_conic, "conic-gradient(from 0deg, var(--tw-gradient-stops))",
         "-bg-conic-0 严禁产出带负零的 `-0deg` 或缺失空格的 `from0deg`，实际为: {bg_img_conic}"
     );
 
@@ -961,8 +960,7 @@ fn gradient_angle_and_syntax_formatting() {
         .expect("-bg-linear-0 必须产出 background-image");
 
     assert_eq!(
-        bg_img_linear,
-        "linear-gradient(0deg, var(--tw-gradient-stops))",
+        bg_img_linear, "linear-gradient(0deg, var(--tw-gradient-stops))",
         "-bg-linear-0 严禁产出 `-0deg`，实际为: {bg_img_linear}"
     );
 
@@ -976,8 +974,7 @@ fn gradient_angle_and_syntax_formatting() {
         .expect("bg-linear-to-r 必须产出 background-image");
 
     assert_eq!(
-        bg_img_r,
-        "linear-gradient(to right, var(--tw-gradient-stops))",
+        bg_img_r, "linear-gradient(to right, var(--tw-gradient-stops))",
         "bg-linear-to-r 必须编译期内联为 to right 格式，实际为: {bg_img_r}"
     );
 }
