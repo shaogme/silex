@@ -5,12 +5,14 @@ pub mod logic;
 pub mod macros_helper;
 pub mod node_ref;
 pub mod reactivity;
+pub mod store;
 pub mod traits;
 
 pub use callback::Callback;
 pub use error::{SilexError, SilexResult};
 pub use node_ref::NodeRef;
 use reactivity::{RawId, StoredId};
+pub use store::Store;
 
 pub struct RxValueKind;
 pub struct RxEffectKind;
@@ -225,7 +227,7 @@ macro_rules! rx {
 pub mod prelude {
     pub use crate::{
         Callback, NodeRef, Rx, SilexError, SilexResult, batch_read, batch_read_untracked, log::*,
-        logic::*, reactivity::*, rx, traits::*,
+        logic::*, reactivity::*, rx, store::*, traits::*,
     };
 }
 

@@ -30,21 +30,21 @@ mod tests {
     use std::cell::RefCell;
 
     #[derive(Clone, PartialEq, Debug)]
-    struct MyStore {
+    struct MyCoreStore {
         value: i32,
     }
 
     thread_local! {
-        static MY_STORE: RefCell<Option<MyStore>> = const { RefCell::new(None) };
+        static MY_CORE_STORE: RefCell<Option<MyCoreStore>> = const { RefCell::new(None) };
     }
 
-    impl Store for MyStore {
+    impl Store for MyCoreStore {
         fn try_get() -> Option<Self> {
-            MY_STORE.with(|cell| cell.borrow().clone())
+            MY_CORE_STORE.with(|cell| cell.borrow().clone())
         }
 
         fn provide(self) -> Self {
-            MY_STORE.with(|cell| {
+            MY_CORE_STORE.with(|cell| {
                 *cell.borrow_mut() = Some(self.clone());
             });
             self
@@ -53,25 +53,25 @@ mod tests {
 
     #[test]
     fn test_store_try_get_none() {
-        let result = MyStore::try_get();
+        let result = MyCoreStore::try_get();
         assert_eq!(result, None);
     }
 
     #[test]
     fn test_store_provide_and_try_get() {
-        let store = MyStore { value: 42 };
+        let store = MyCoreStore { value: 42 };
         store.clone().provide();
 
-        let result = MyStore::try_get();
+        let result = MyCoreStore::try_get();
         assert_eq!(result, Some(store));
     }
 
     #[test]
     fn test_store_get() {
-        let store = MyStore { value: 42 };
+        let store = MyCoreStore { value: 42 };
         store.clone().provide();
 
-        let result = MyStore::get();
+        let result = MyCoreStore::get();
         assert_eq!(result, store);
     }
 }

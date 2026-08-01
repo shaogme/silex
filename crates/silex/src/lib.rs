@@ -2,7 +2,6 @@ extern crate self as silex;
 
 pub mod components;
 pub mod flow;
-pub mod store;
 #[cfg(feature = "tw")]
 pub mod ui;
 
@@ -65,7 +64,6 @@ pub mod prelude {
     pub use crate::net::*;
     #[cfg(feature = "persistence")]
     pub use crate::persist::*;
-    pub use crate::store::*;
     pub use crate::{SilexError, SilexResult};
     pub use silex_core::prelude::*;
     pub use silex_css::prelude::*;

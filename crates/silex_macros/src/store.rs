@@ -11,6 +11,7 @@ struct PersistFieldConfig {
 
 pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
     let __silex = crate::crate_path::silex();
+    let __silex_core = crate::crate_path::silex_core();
     let name = &input.ident;
     let store_name = format_ident!("{}Store", name);
     let vis = &input.vis;
@@ -136,7 +137,7 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
             }
         }
 
-        impl #__silex::store::Store for #store_name {
+        impl #__silex_core::store::Store for #store_name {
             fn get() -> Self {
                 Self::try_get().expect(#panic_msg)
             }
@@ -154,7 +155,7 @@ pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
         }
 
         #vis fn #hook_fn_name() -> #store_name {
-            <#store_name as #__silex::store::Store>::get()
+            <#store_name as #__silex_core::store::Store>::get()
         }
     })
 }
