@@ -12,9 +12,14 @@ members = [
     "crates/silex_persist",
     "crates/silex_net",
     "crates/silex_i18n",
+
+    "crates/tests/renamed_dep",
+
     "crates/utils/silex_hash",
     "crates/utils/silex_vtable",
     "crates/utils/silex_tw_core",
+    "crates/utils/silex_codegen",
+    
     "examples/counter",
     "examples/store_demo",
     "examples/error_boundary_demo",
@@ -22,8 +27,6 @@ members = [
     "examples/showcase",
     "examples/tailwind",
     "examples/ui",
-    "crates/utils/silex_codegen",
-    "crates/tests/renamed_dep",
 ]
 exclude = [
     "docs",

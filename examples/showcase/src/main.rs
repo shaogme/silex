@@ -1,4 +1,3 @@
-use silex::prelude::*;
 mod advanced;
 mod basics;
 mod css;
@@ -10,6 +9,7 @@ mod routes;
 
 use advanced::{UserSettings, UserSettingsStore};
 use routes::{AppRoute, NavBar};
+use silex::prelude::*;
 
 fn main() {
     setup_global_error_handlers();

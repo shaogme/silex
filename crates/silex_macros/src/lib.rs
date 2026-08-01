@@ -1,3 +1,5 @@
+#![allow(linker_messages)]
+
 use proc_macro::TokenStream;
 #[cfg(any(feature = "component", feature = "store", feature = "route"))]
 use syn::{DeriveInput, parse_macro_input};

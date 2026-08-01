@@ -1,18 +1,32 @@
 #![doc = "Silex internationalization runtime."]
 
+#[cfg(feature = "browser")]
+mod browser;
 mod catalog;
 mod error;
+mod loader;
 mod locale;
 mod plural;
 mod runtime;
 
 pub use catalog::{Catalog, CatalogValue, Message, PluralForms, Segment};
 pub use error::I18nError;
+pub use loader::{CatalogCache, CatalogLoadError, CatalogResource};
 pub use locale::Locale;
 pub use plural::{PluralCategory, plural_category};
 pub use runtime::{Argument, I18nBuilder, I18nStore, MissingArgumentPolicy, MissingKeyPolicy};
-pub use silex_core::reactivity::{Memo, ReadSignal, RwSignal};
+pub use silex_core::reactivity::{
+    Memo, ReadSignal, Resource, ResourceState, RwSignal, SuspenseContext,
+};
 pub use silex_core::traits::{RxGet, RxRead, RxWrite};
+#[cfg(feature = "persist")]
+pub use silex_persist::Persistent;
+
+#[cfg(feature = "browser")]
+pub use browser::{
+    TextDirection, detect_browser_locale, locale_direction, navigator_languages,
+    resolve_requested_locale,
+};
 
 #[macro_export]
 macro_rules! t {
@@ -152,6 +166,25 @@ mod tests {
         )
         .expect_err("plural messages require other");
         assert!(matches!(error, I18nError::MissingOther { .. }));
+    }
+
+    #[cfg(all(feature = "persist", target_arch = "wasm32"))]
+    #[test]
+    fn locale_binding_takes_precedence_over_builder_locale() {
+        create_scope(|| {
+            let saved = Persistent::builder("silex-test-locale")
+                .local()
+                .parse::<Locale>()
+                .default(Locale::new("en-US"))
+                .build();
+            let store = I18nBuilder::new()
+                .locale(Locale::new("zh-CN"))
+                .locale_binding(saved)
+                .build()
+                .expect("valid i18n store");
+
+            assert_eq!(store.locale().get_untracked(), Locale::new("en-US"));
+        });
     }
 
     #[cfg(feature = "json")]

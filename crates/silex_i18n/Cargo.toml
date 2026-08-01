@@ -18,7 +18,32 @@ workspace = true
 silex_core.workspace = true
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+silex_persist = { workspace = true, optional = true }
+silex_dom = { workspace = true, optional = true }
+silex_router = { workspace = true, optional = true }
+js-sys = { workspace = true, optional = true }
+web-sys = { workspace = true, optional = true, features = [
+    "Document",
+    "Element",
+    "Event",
+    "EventTarget",
+    "History",
+    "Location",
+    "Navigator",
+    "Storage",
+    "StorageEvent",
+    "UrlSearchParams",
+    "Window",
+] }
 
 [features]
 default = []
 json = ["dep:serde", "dep:serde_json"]
+persist = ["dep:silex_persist"]
+browser = ["dep:js-sys", "dep:web-sys"]
+intl = ["browser"]
+browser-tests = ["browser", "persist", "dep:silex_dom", "dep:silex_router"]
+
+[dev-dependencies]
+gloo-timers.workspace = true
+wasm-bindgen-test.workspace = true

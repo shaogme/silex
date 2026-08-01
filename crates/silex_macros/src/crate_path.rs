@@ -20,6 +20,7 @@ use syn::Ident;
 /// `crate_name` 每次都要读一遍调用方的 `Cargo.toml`，而一个 rustc 进程只编译一个 crate，
 /// `CARGO_MANIFEST_DIR` 在整个进程生命周期内不变，因此结果可以安全复用。
 static RESOLVED: OnceLock<Option<String>> = OnceLock::new();
+#[cfg(feature = "store")]
 static RESOLVED_CORE: OnceLock<Option<String>> = OnceLock::new();
 
 /// 展开中引用 `silex` 根 crate 的路径。
@@ -44,6 +45,7 @@ pub fn silex() -> TokenStream {
 }
 
 /// 展开中引用 `silex_core` crate 的路径。
+#[cfg(feature = "store")]
 pub fn silex_core() -> TokenStream {
     let resolved = RESOLVED_CORE.get_or_init(|| match proc_macro_crate::crate_name("silex_core") {
         Ok(proc_macro_crate::FoundCrate::Itself) => None,
@@ -64,4 +66,3 @@ pub fn silex_core() -> TokenStream {
         None => quote!(crate),
     }
 }
-

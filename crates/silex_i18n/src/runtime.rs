@@ -1,9 +1,20 @@
-use crate::{Catalog, I18nError, Locale, Message, PluralCategory, Segment, plural_category};
+use crate::{
+    Catalog, CatalogCache, CatalogLoadError, CatalogResource, I18nError, Locale, Message,
+    PluralCategory, Segment, plural_category,
+};
 use silex_core::{
-    reactivity::{ReadSignal, RwSignal},
+    reactivity::{Effect, ReadSignal, Resource, ResourceState, RwSignal, SuspenseContext},
     traits::{RxGet, RxRead, RxWrite},
 };
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    future::Future,
+    rc::Rc,
+};
+
+#[cfg(feature = "persist")]
+use silex_persist::Persistent;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MissingKeyPolicy {
@@ -79,13 +90,14 @@ pub struct I18nStore {
     missing_argument: MissingArgumentPolicy,
 }
 
-#[derive(Debug)]
 pub struct I18nBuilder {
     locale: Option<Locale>,
     fallback_locale: Option<Locale>,
     catalogs: Vec<Catalog>,
     missing_key: MissingKeyPolicy,
     missing_argument: MissingArgumentPolicy,
+    #[cfg(feature = "persist")]
+    locale_binding: Option<Persistent<Locale>>,
 }
 
 impl I18nBuilder {
@@ -96,6 +108,8 @@ impl I18nBuilder {
             catalogs: Vec::new(),
             missing_key: MissingKeyPolicy::default(),
             missing_argument: MissingArgumentPolicy::default(),
+            #[cfg(feature = "persist")]
+            locale_binding: None,
         }
     }
 
@@ -132,13 +146,25 @@ impl I18nBuilder {
         self
     }
 
+    #[cfg(feature = "persist")]
+    pub fn locale_binding(mut self, binding: Persistent<Locale>) -> Self {
+        self.locale_binding = Some(binding);
+        self
+    }
+
     pub fn build(self) -> Result<I18nStore, I18nError> {
+        #[cfg(feature = "persist")]
+        let locale_binding = self.locale_binding;
         let catalog_locale = self
             .catalogs
             .first()
             .map(|catalog| catalog.locale().clone());
-        let locale = self
-            .locale
+        #[cfg(feature = "persist")]
+        let binding_locale = locale_binding.as_ref().map(Persistent::get_untracked);
+        #[cfg(not(feature = "persist"))]
+        let binding_locale: Option<Locale> = None;
+        let locale = binding_locale
+            .or(self.locale)
             .or(catalog_locale)
             .unwrap_or_else(|| Locale::new("en"));
         let fallback_locale = self.fallback_locale.unwrap_or_else(|| locale.clone());
@@ -148,14 +174,21 @@ impl I18nBuilder {
             registry.catalogs.insert(catalog.locale().clone(), catalog);
         }
 
-        Ok(I18nStore {
+        let store = I18nStore {
             locale: RwSignal::new(locale),
             fallback_locale: RwSignal::new(fallback_locale),
             catalogs: RwSignal::new(registry),
             catalog_revision: RwSignal::new(0),
             missing_key: self.missing_key,
             missing_argument: self.missing_argument,
-        })
+        };
+
+        #[cfg(feature = "persist")]
+        if let Some(binding) = locale_binding {
+            store.bind_locale(binding);
+        }
+
+        Ok(store)
     }
 }
 
@@ -168,6 +201,25 @@ impl Default for I18nBuilder {
 impl I18nStore {
     pub fn set_locale(&self, locale: Locale) {
         self.locale.set(locale);
+    }
+
+    #[cfg(feature = "persist")]
+    pub fn bind_locale(&self, binding: Persistent<Locale>) {
+        let store = *self;
+        Effect::new(move |_| {
+            let locale = binding.get();
+            if store.locale.get_untracked() != locale {
+                store.locale.set(locale);
+            }
+        });
+
+        let store = *self;
+        Effect::new(move |_| {
+            let locale = store.locale.get();
+            if binding.get_untracked() != locale {
+                binding.set(locale);
+            }
+        });
     }
 
     pub fn locale(&self) -> ReadSignal<Locale> {
@@ -188,12 +240,19 @@ impl I18nStore {
     }
 
     pub fn insert_catalog(&self, catalog: Catalog) {
-        self.catalogs.update_untracked(|registry| {
-            registry.catalogs.insert(catalog.locale().clone(), catalog);
+        let changed = self.catalogs.update_untracked(|registry| {
+            let locale = catalog.locale().clone();
+            if registry.catalogs.get(&locale) == Some(&catalog) {
+                return false;
+            }
+            registry.catalogs.insert(locale, catalog);
+            true
         });
-        self.catalog_revision.update(|revision| {
-            *revision = revision.wrapping_add(1);
-        });
+        if changed {
+            self.catalog_revision.update(|revision| {
+                *revision = revision.wrapping_add(1);
+            });
+        }
     }
 
     pub fn remove_catalog(&self, locale: &Locale) {
@@ -205,6 +264,84 @@ impl I18nStore {
                 *revision = revision.wrapping_add(1);
             });
         }
+    }
+
+    pub(crate) fn catalog(&self, locale: &Locale) -> Option<Catalog> {
+        self.catalogs
+            .with_untracked(|registry| registry.catalogs.get(locale).cloned())
+    }
+
+    pub fn catalog_resource<F, Fut, E>(
+        &self,
+        loader: F,
+        suspense_ctx: impl Into<Option<SuspenseContext>>,
+    ) -> CatalogResource<E>
+    where
+        F: Fn(Locale) -> Fut + 'static,
+        Fut: Future<Output = Result<Catalog, E>> + 'static,
+        E: Clone + Debug + 'static,
+    {
+        self.catalog_resource_with_cache(loader, CatalogCache::new(), suspense_ctx)
+    }
+
+    pub fn catalog_resource_with_cache<F, Fut, E>(
+        &self,
+        loader: F,
+        cache: CatalogCache,
+        suspense_ctx: impl Into<Option<SuspenseContext>>,
+    ) -> CatalogResource<E>
+    where
+        F: Fn(Locale) -> Fut + 'static,
+        Fut: Future<Output = Result<Catalog, E>> + 'static,
+        E: Clone + Debug + 'static,
+    {
+        let store = *self;
+        let loader = Rc::new(loader);
+        let fetch_cache = cache.clone();
+        let resource = Resource::new(
+            self.locale(),
+            move |locale: Locale| {
+                let cache = fetch_cache.clone();
+                let loader = loader.clone();
+                let store = store;
+                async move {
+                    if let Some(catalog) = store.catalog(&locale) {
+                        return Ok(catalog);
+                    }
+                    if let Some(catalog) = cache.get(&locale) {
+                        return Ok(catalog);
+                    }
+
+                    let catalog = loader(locale.clone())
+                        .await
+                        .map_err(CatalogLoadError::Loader)?;
+                    if catalog.locale() != &locale {
+                        return Err(CatalogLoadError::LocaleMismatch {
+                            requested: locale,
+                            loaded: catalog.locale().clone(),
+                        });
+                    }
+                    Ok(catalog)
+                }
+            },
+            suspense_ctx,
+        );
+
+        let state = resource.state;
+        let effect_cache = cache.clone();
+        Effect::new(move |_| {
+            if let ResourceState::Ready(catalog) = state.get() {
+                effect_cache.insert(catalog.clone());
+                store.insert_catalog(catalog);
+            }
+        });
+
+        CatalogResource::new(resource, cache)
+    }
+
+    #[cfg(feature = "browser")]
+    pub fn sync_document_metadata(&self) {
+        crate::browser::sync_document_metadata(*self);
     }
 
     pub fn translate_now(&self, key: &str, arguments: &[Argument]) -> String {
