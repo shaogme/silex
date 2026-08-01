@@ -1,6 +1,6 @@
 use crate::{
-    Catalog, CatalogCache, CatalogLoadError, CatalogResource, I18nError, Locale, Message,
-    PluralCategory, Segment, plural_category,
+    Catalog, CatalogLoadError, CatalogResource, I18nError, Locale, Message, PluralCategory,
+    Segment, plural_category,
 };
 use silex_core::{
     reactivity::{Effect, ReadSignal, Resource, ResourceState, RwSignal, SuspenseContext},
@@ -290,34 +290,15 @@ impl I18nStore {
         Fut: Future<Output = Result<Catalog, E>> + 'static,
         E: Clone + Debug + 'static,
     {
-        self.catalog_resource_with_cache(loader, CatalogCache::new(), suspense_ctx)
-    }
-
-    pub fn catalog_resource_with_cache<F, Fut, E>(
-        &self,
-        loader: F,
-        cache: CatalogCache,
-        suspense_ctx: impl Into<Option<SuspenseContext>>,
-    ) -> CatalogResource<E>
-    where
-        F: Fn(Locale) -> Fut + 'static,
-        Fut: Future<Output = Result<Catalog, E>> + 'static,
-        E: Clone + Debug + 'static,
-    {
         let store = *self;
         let loader = Rc::new(loader);
-        let fetch_cache = cache.clone();
         let resource = Resource::new(
             self.locale(),
             move |locale: Locale| {
-                let cache = fetch_cache.clone();
                 let loader = loader.clone();
                 let store = store;
                 async move {
                     if let Some(catalog) = store.catalog(&locale) {
-                        return Ok(catalog);
-                    }
-                    if let Some(catalog) = cache.get(&locale) {
                         return Ok(catalog);
                     }
 
@@ -337,15 +318,13 @@ impl I18nStore {
         );
 
         let state = resource.state;
-        let effect_cache = cache.clone();
         Effect::new(move |_| {
             if let ResourceState::Ready(catalog) = state.get() {
-                effect_cache.insert(catalog.clone());
                 store.insert_catalog(catalog);
             }
         });
 
-        CatalogResource::new(resource, cache)
+        CatalogResource::new(resource)
     }
 
     #[cfg(feature = "browser")]

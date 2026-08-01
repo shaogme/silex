@@ -6,8 +6,7 @@ use silex_core::{
     traits::RxGet,
 };
 use silex_i18n::{
-    Catalog, CatalogCache, CatalogLoadError, I18nBuilder, I18nStore, Locale, ResourceState,
-    SuspenseContext,
+    Catalog, CatalogLoadError, I18nBuilder, I18nStore, Locale, ResourceState, SuspenseContext,
 };
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;
@@ -60,19 +59,20 @@ async fn catalog_resource_loads_and_updates_suspense() {
 }
 
 #[wasm_bindgen_test(async)]
-async fn catalog_resource_uses_cache_without_calling_loader() {
-    let cache = CatalogCache::new();
-    cache.insert(catalog(Locale::new("en-US"), "Cached").expect("valid catalog"));
+async fn catalog_resource_uses_store_catalog_without_calling_loader() {
     let calls = Rc::new(Cell::new(0));
     let (scope, (i18n, resource)) = create_detached_scope(|| {
-        let i18n = store("en-US");
+        let i18n = I18nBuilder::new()
+            .locale(Locale::new("en-US"))
+            .catalog(catalog(Locale::new("en-US"), "Cached").expect("valid catalog"))
+            .build()
+            .expect("valid i18n store");
         let calls_for_loader = calls.clone();
-        let resource = i18n.catalog_resource_with_cache(
+        let resource = i18n.catalog_resource(
             move |_| {
                 calls_for_loader.set(calls_for_loader.get() + 1);
                 async { Err::<Catalog, _>("loader must not run".to_string()) }
             },
-            cache.clone(),
             None,
         );
         (i18n, resource)

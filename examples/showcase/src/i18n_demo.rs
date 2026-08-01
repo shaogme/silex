@@ -288,7 +288,6 @@ pub fn I18nPage(i18n: I18nStore, ctx: RouterContext) -> impl View {
                 control_row(button(t!(i18n, "demo.loader.reload")).on_click(move |_| {
                     let locale = reload_store.locale().get_untracked();
                     reload_store.remove_catalog(&locale);
-                    let _ = resource_for_reload.cache().remove(&locale);
                     resource_for_reload.refetch();
                 })),
                 div(resource_state).style(

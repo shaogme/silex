@@ -13,7 +13,7 @@ mod runtime;
 
 pub use catalog::{Catalog, CatalogValue, Message, PluralForms, Segment};
 pub use error::I18nError;
-pub use loader::{CatalogCache, CatalogLoadError, CatalogResource};
+pub use loader::{CatalogLoadError, CatalogResource};
 pub use locale::Locale;
 pub use plural::{PluralCategory, plural_category};
 pub use runtime::I18nVariant;
