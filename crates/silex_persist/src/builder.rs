@@ -1,9 +1,7 @@
-use crate::persist::{
+use crate::{
     DecodePolicy, PersistMode, PersistenceError, RemovePolicy, SyncStrategy, WriteDefault,
     backend::{LocalStorageBackend, PersistenceBackend, QueryBackend, SessionStorageBackend},
-    codec::{
-        OptionCodec, ParseCodec, PersistCodec, StringCodec, map_decode_error, map_encode_error,
-    },
+    codec::{OptionCodec, ParseCodec, PersistCodec, StringCodec, map_decode_error, map_encode_error},
     state::{
         PersistenceController, PersistenceState, Persistent, apply_backend_event,
         flush_persistent_value,
@@ -58,7 +56,7 @@ impl<T> PersistConfig<T> {
 /// 5. Call `.build()`
 ///
 /// ```rust,ignore
-/// use silex::prelude::*;
+/// use silex_persist::Persistent;
 ///
 /// let theme = Persistent::builder("theme")
 ///     .local()
@@ -192,14 +190,14 @@ impl<B, T, D> PersistentBuilder<B, NoCodec, T, D> {
 
     /// Uses the JSON codec for complex serializable values.
     #[cfg(feature = "json")]
-    pub fn json<U>(self) -> PersistentBuilder<B, crate::persist::PersistJsonCodec<U>, U, D>
+    pub fn json<U>(self) -> PersistentBuilder<B, crate::PersistJsonCodec<U>, U, D>
     where
         U: serde::Serialize + serde::de::DeserializeOwned + Clone + 'static,
     {
         PersistentBuilder {
             key: self.key,
             backend: self.backend,
-            codec: crate::persist::PersistJsonCodec::new(),
+            codec: crate::PersistJsonCodec::new(),
             config: PersistConfig {
                 default: None,
                 write_default: self.config.write_default,
@@ -381,7 +379,7 @@ where
                 }
                 Err(message) => {
                     state.set_untracked(PersistenceState::DecodeError(
-                        crate::persist::DecodeErrorInfo {
+                        crate::DecodeErrorInfo {
                             raw: raw.clone(),
                             message: message.clone(),
                         },
@@ -554,7 +552,7 @@ impl<B, C, T, D> PersistentBuilder<B, C, T, D> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::persist::backend::{BackendEvent, BackendSubscription};
+    use crate::backend::{BackendEvent, BackendSubscription};
     use std::cell::RefCell;
     use std::collections::HashMap;
 

@@ -1,7 +1,5 @@
-use crate::{
-    persist::PersistenceError,
-    router::{Navigator, RouterContext},
-};
+use crate::PersistenceError;
+use silex_router::{Navigator, RouterContext};
 use js_sys::Object;
 use ref_str::LocalStaticRefStr;
 use silex_core::{

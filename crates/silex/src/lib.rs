@@ -2,10 +2,6 @@ extern crate self as silex;
 
 pub mod components;
 pub mod flow;
-#[cfg(feature = "net")]
-pub mod net;
-#[cfg(feature = "persistence")]
-pub mod persist;
 pub mod store;
 #[cfg(feature = "tw")]
 pub mod ui;
@@ -14,11 +10,11 @@ pub use components::*;
 pub use silex_core::error::{SilexError, SilexResult};
 
 pub mod reexports {
-    #[cfg(feature = "net")]
-    pub use gloo_timers;
     pub use js_sys;
     #[cfg(feature = "json")]
     pub use serde_json;
+    #[cfg(feature = "net")]
+    pub use silex_net::reexports::gloo_timers;
     pub use wasm_bindgen;
     pub use wasm_bindgen_futures;
     pub use web_sys;
@@ -52,6 +48,16 @@ pub mod router {
     pub use silex_router::*;
 }
 
+#[cfg(feature = "persistence")]
+pub mod persist {
+    pub use silex_persist::*;
+}
+
+#[cfg(feature = "net")]
+pub mod net {
+    pub use silex_net::*;
+}
+
 pub mod prelude {
     pub use crate::components::*;
     pub use crate::flow::*;
@@ -73,6 +79,8 @@ pub mod prelude {
     pub use crate::components::Center;
     pub use crate::core::prelude::{Map, RxWrite};
     pub use crate::flow::Switch;
+    #[cfg(feature = "net")]
+    pub use crate::net::reexports;
     pub use silex_css::prelude::{Style, linear_gradient, radial_gradient};
     #[cfg(feature = "tw")]
     pub use silex_css::prelude::{VariantSchema, declare_variants};

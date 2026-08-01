@@ -1,4 +1,4 @@
-use crate::net::NetError;
+use crate::NetError;
 #[cfg(feature = "json")]
 use std::marker::PhantomData;
 
@@ -6,9 +6,9 @@ pub trait ResponseCodec<T>: Clone + 'static {
     fn decode(&self, raw: &str) -> Result<T, NetError>;
 }
 
-#[cfg(feature = "persistence")]
+#[cfg(feature = "persist")]
 pub trait CacheCodec<T>: ResponseCodec<T> {
-    fn build_cache(key: String, default: T) -> crate::persist::Persistent<T>;
+    fn build_cache(key: String, default: T) -> silex_persist::Persistent<T>;
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -20,8 +20,8 @@ impl ResponseCodec<String> for TextCodec {
     }
 }
 
-#[cfg(feature = "persistence")]
-impl crate::persist::PersistCodec<String> for TextCodec {
+#[cfg(feature = "persist")]
+impl silex_persist::PersistCodec<String> for TextCodec {
     fn encode(&self, value: &String) -> Result<String, String> {
         Ok(value.clone())
     }
@@ -31,10 +31,10 @@ impl crate::persist::PersistCodec<String> for TextCodec {
     }
 }
 
-#[cfg(feature = "persistence")]
+#[cfg(feature = "persist")]
 impl CacheCodec<String> for TextCodec {
-    fn build_cache(key: String, default: String) -> crate::persist::Persistent<String> {
-        crate::persist::Persistent::builder(key)
+    fn build_cache(key: String, default: String) -> silex_persist::Persistent<String> {
+        silex_persist::Persistent::builder(key)
             .local()
             .string()
             .default(default)
@@ -63,8 +63,8 @@ where
     }
 }
 
-#[cfg(all(feature = "json", feature = "persistence"))]
-impl<T> crate::persist::PersistCodec<T> for NetJsonCodec<T>
+#[cfg(all(feature = "json", feature = "persist"))]
+impl<T> silex_persist::PersistCodec<T> for NetJsonCodec<T>
 where
     T: serde::Serialize + serde::de::DeserializeOwned + Clone + 'static,
 {
@@ -77,13 +77,13 @@ where
     }
 }
 
-#[cfg(all(feature = "json", feature = "persistence"))]
+#[cfg(all(feature = "json", feature = "persist"))]
 impl<T> CacheCodec<T> for NetJsonCodec<T>
 where
     T: serde::Serialize + serde::de::DeserializeOwned + Clone + PartialEq + 'static,
 {
-    fn build_cache(key: String, default: T) -> crate::persist::Persistent<T> {
-        crate::persist::Persistent::builder(key)
+    fn build_cache(key: String, default: T) -> silex_persist::Persistent<T> {
+        silex_persist::Persistent::builder(key)
             .local()
             .json::<T>()
             .default(default)

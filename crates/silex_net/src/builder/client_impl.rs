@@ -5,18 +5,17 @@ use silex_core::{
     traits::{RxCloneData, RxGet},
 };
 
-use crate::net::{
+use crate::{
     NetError,
     builder::{HttpClientBuilder, IntoNetValue, ValueResolver},
     codec::ResponseCodec,
     state::{RequestSpec, RetryPolicy},
 };
 
-#[cfg(feature = "net")]
 use gloo_timers::future::sleep;
 
-#[cfg(feature = "persistence")]
-use crate::net::{codec::CacheCodec, state::CachePolicy};
+#[cfg(feature = "persist")]
+use crate::{codec::CacheCodec, state::CachePolicy};
 
 macro_rules! impl_net_methods {
     () => {
@@ -25,7 +24,7 @@ macro_rules! impl_net_methods {
             match response {
                 Ok(resp) => {
                     let value = self.response_codec.decode(&resp.raw_body)?;
-                    #[cfg(feature = "persistence")]
+                    #[cfg(feature = "persist")]
                     if let Some(cache) = &self.cache {
                         if !matches!(cache.policy, CachePolicy::None) {
                             let _ = self.cache_store(&spec, value.clone());
@@ -45,7 +44,7 @@ macro_rules! impl_net_methods {
             let mut spec = self.resolve_spec();
             self.apply_interceptors(&mut spec);
 
-            #[cfg(feature = "persistence")]
+            #[cfg(feature = "persist")]
             if let Some(cache) = &self.cache {
                 if matches!(cache.policy, CachePolicy::CacheFirst) {
                     if let Some(value) = self.cached_value(&spec) {
@@ -99,7 +98,7 @@ macro_rules! impl_net_methods {
             }
 
             let err = last_err.expect("attempts are always at least 1");
-            #[cfg(feature = "persistence")]
+            #[cfg(feature = "persist")]
             if let Some(value) = self.cached_value(&spec) {
                 return Ok(value);
             }
@@ -160,7 +159,7 @@ macro_rules! impl_net_methods {
     };
 }
 
-#[cfg(all(feature = "json", feature = "persistence"))]
+#[cfg(all(feature = "json", feature = "persist"))]
 impl<T, C> HttpClientBuilder<T, C>
 where
     T: Clone + PartialEq + serde::Serialize + serde::de::DeserializeOwned + 'static,
@@ -169,7 +168,7 @@ where
     impl_net_methods!();
 }
 
-#[cfg(all(feature = "json", not(feature = "persistence")))]
+#[cfg(all(feature = "json", not(feature = "persist")))]
 impl<T, C> HttpClientBuilder<T, C>
 where
     T: Clone + PartialEq + serde::Serialize + serde::de::DeserializeOwned + 'static,
@@ -178,7 +177,7 @@ where
     impl_net_methods!();
 }
 
-#[cfg(all(not(feature = "json"), feature = "persistence"))]
+#[cfg(all(not(feature = "json"), feature = "persist"))]
 impl<T, C> HttpClientBuilder<T, C>
 where
     T: Clone + PartialEq + 'static,
@@ -187,7 +186,7 @@ where
     impl_net_methods!();
 }
 
-#[cfg(all(not(feature = "json"), not(feature = "persistence")))]
+#[cfg(all(not(feature = "json"), not(feature = "persist")))]
 impl<T, C> HttpClientBuilder<T, C>
 where
     T: Clone + 'static,

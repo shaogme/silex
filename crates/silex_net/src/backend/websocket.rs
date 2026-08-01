@@ -9,7 +9,7 @@ use silex_core::{
     traits::{RxGet, RxRead, RxWrite},
 };
 
-use crate::net::{
+use crate::{
     NetError,
     state::{ConnectionState, RetryPolicy},
 };

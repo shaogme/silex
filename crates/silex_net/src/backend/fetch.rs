@@ -4,7 +4,7 @@ use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{AbortController, Headers, Request, RequestInit, Response};
 
-use crate::net::{
+use crate::{
     NetError,
     backend::TransportFuture,
     state::{HttpResponse, RequestBody, RequestSpec},

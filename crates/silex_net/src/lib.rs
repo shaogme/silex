@@ -16,6 +16,16 @@ pub use state::{
     RetryPolicy,
 };
 
+pub mod reexports {
+    pub use gloo_timers;
+    pub use js_sys;
+    #[cfg(feature = "json")]
+    pub use serde_json;
+    pub use wasm_bindgen;
+    pub use wasm_bindgen_futures;
+    pub use web_sys;
+}
+
 use wasm_bindgen::JsValue;
 
 #[derive(Clone, Debug, PartialEq)]

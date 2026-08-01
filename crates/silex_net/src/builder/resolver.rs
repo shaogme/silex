@@ -4,8 +4,8 @@ use silex_core::Rx;
 use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal};
 use silex_core::traits::RxRead;
 
-#[cfg(feature = "persistence")]
-use crate::persist::Persistent;
+#[cfg(feature = "persist")]
+use silex_persist::Persistent;
 
 #[derive(Clone)]
 pub enum ValueResolver {
@@ -64,7 +64,7 @@ impl_into_net_value_for_rx!((T) => RwSignal<T>);
 impl_into_net_value_for_rx!((T) => Signal<T>);
 impl_into_net_value_for_rx!((T) => Memo<T>);
 
-#[cfg(feature = "persistence")]
+#[cfg(feature = "persist")]
 impl_into_net_value_for_rx!((T) => Persistent<T>);
 
 macro_rules! impl_into_net_value_for_prim {

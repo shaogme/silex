@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin};
 
-use crate::net::state::HttpResponse;
+use crate::state::HttpResponse;
 
 pub mod event_stream;
 pub mod fetch;
@@ -11,4 +11,4 @@ pub use fetch::{BrowserTransport, HttpBackend, Transport};
 pub use websocket::{WebSocket, WebSocketBuilder, WebSocketConnection};
 
 pub type TransportFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<HttpResponse, crate::net::NetError>> + 'a>>;
+    Pin<Box<dyn Future<Output = Result<HttpResponse, crate::NetError>> + 'a>>;

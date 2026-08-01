@@ -9,7 +9,7 @@ use silex_core::{
     traits::{RxGet, RxRead, RxWrite},
 };
 
-use crate::net::state::{ConnectionState, EventMessage};
+use crate::state::{ConnectionState, EventMessage};
 
 pub struct EventStream;
 

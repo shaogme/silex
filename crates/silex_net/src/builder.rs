@@ -1,4 +1,4 @@
-use crate::net::{
+use crate::{
     NetError,
     backend::{HttpBackend, Transport},
     codec::TextCodec,
@@ -16,11 +16,13 @@ use helper::{base64_encode, encode_component};
 pub use resolver::{IntoNetValue, ValueResolver};
 
 #[cfg(feature = "json")]
-use crate::net::codec::NetJsonCodec;
+use crate::codec::NetJsonCodec;
 
-#[cfg(feature = "persistence")]
-use crate::{net::codec::CacheCodec, persist::Persistent};
-#[cfg(feature = "persistence")]
+#[cfg(feature = "persist")]
+use crate::codec::CacheCodec;
+#[cfg(feature = "persist")]
+use silex_persist::Persistent;
+#[cfg(feature = "persist")]
 use std::cell::Cell;
 
 pub type BeforeSendHook = Rc<dyn Fn(&mut RequestSpec)>;
@@ -30,10 +32,10 @@ pub type OnErrorHook = Rc<dyn Fn(&RequestSpec, &NetError)>;
 
 #[derive(Clone)]
 struct CacheSpec<T> {
-    #[cfg(feature = "persistence")]
+    #[cfg(feature = "persist")]
     store: Cell<Option<Persistent<T>>>,
     policy: CachePolicy,
-    #[cfg(not(feature = "persistence"))]
+    #[cfg(not(feature = "persist"))]
     _marker: PhantomData<T>,
 }
 
@@ -290,9 +292,9 @@ impl<T, C> HttpClientBuilder<T, C> {
         } else {
             self.cache = Some(CacheSpec {
                 policy,
-                #[cfg(feature = "persistence")]
+                #[cfg(feature = "persist")]
                 store: Cell::new(None),
-                #[cfg(not(feature = "persistence"))]
+                #[cfg(not(feature = "persist"))]
                 _marker: PhantomData,
             });
         }
@@ -385,12 +387,12 @@ impl<T, C> HttpClientBuilder<T, C> {
         }
     }
 
-    #[cfg(feature = "persistence")]
+    #[cfg(feature = "persist")]
     pub(crate) fn cache_key(&self, spec: &RequestSpec) -> String {
         format!("__net_cache_{}__", spec.cache_key())
     }
 
-    #[cfg(feature = "persistence")]
+    #[cfg(feature = "persist")]
     pub(crate) fn cached_value(&self, _spec: &RequestSpec) -> Option<T>
     where
         C: CacheCodec<T>,
@@ -403,7 +405,7 @@ impl<T, C> HttpClientBuilder<T, C> {
         cache.store.get().map(|store| store.get_untracked())
     }
 
-    #[cfg(feature = "persistence")]
+    #[cfg(feature = "persist")]
     pub(crate) fn cache_store(&self, spec: &RequestSpec, value: T) -> Option<Persistent<T>>
     where
         C: CacheCodec<T>,

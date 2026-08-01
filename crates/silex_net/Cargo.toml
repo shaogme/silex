@@ -1,5 +1,5 @@
 [package]
-name = "silex"
+name = "silex_net"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -16,35 +16,34 @@ workspace = true
 
 [dependencies]
 silex_core.workspace = true
-silex_dom.workspace = true
-silex_html.workspace = true
-silex_css.workspace = true
-silex_router.workspace = true
-silex_macros = { workspace = true, default-features = false, features = ["component", "store", "route"]}
-silex_hash.workspace = true
 silex_persist = { workspace = true, optional = true }
-silex_net = { workspace = true, optional = true }
 wasm-bindgen.workspace = true
 web-sys = { workspace = true, features = [
-    "History",
-    "Node",
-    "NodeList",
-    "UrlSearchParams"
+    "AbortController",
+    "AbortSignal",
+    "CloseEvent",
+    "ErrorEvent",
+    "Event",
+    "EventSource",
+    "FormData",
+    "Headers",
+    "MessageEvent",
+    "Request",
+    "RequestInit",
+    "Response",
+    "WebSocket",
+    "Window"
 ] }
 js-sys.workspace = true
 wasm-bindgen-futures.workspace = true
+gloo-timers.workspace = true
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-ref_str = "0.2"
 
 [features]
-default = ["css", "tw"]
-css = ["silex_macros/css"]
-tw = ["css", "silex_macros/tw", "silex_css/tw"]
-persistence = ["dep:silex_persist", "silex_net/persist"]
-json = ["dep:serde", "dep:serde_json", "silex_persist/json", "silex_net/json"]
-net = ["dep:silex_net"]
+default = []
+json = ["dep:serde", "dep:serde_json", "silex_persist/json"]
+persist = ["dep:silex_persist"]
 
 [dev-dependencies]
-trybuild = "1.0"
 wasm-bindgen-test.workspace = true

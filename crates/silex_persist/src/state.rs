@@ -1,6 +1,6 @@
-use crate::persist::backend::{BackendEvent, BackendSubscription};
-use crate::persist::builder::PersistentBuilder;
-use crate::persist::{DecodePolicy, NoBackend, NoCodec, PersistenceError, RemovePolicy};
+use crate::backend::{BackendEvent, BackendSubscription};
+use crate::builder::PersistentBuilder;
+use crate::{DecodePolicy, NoBackend, NoCodec, PersistenceError, RemovePolicy};
 use ref_str::LocalStaticRefStr;
 use silex_core::reactivity::{ReadSignal, RwSignal, StoredValue};
 use silex_core::traits::{
@@ -80,7 +80,7 @@ where
     /// Returns the current decoded value and tracks reactive dependencies.
     ///
     /// ```rust,no_run
-    /// use silex::prelude::*;
+    /// use silex_persist::Persistent;
     ///
     /// let theme = Persistent::builder("theme")
     ///     .local()
@@ -165,7 +165,7 @@ where
     /// This is most useful when the builder was configured with `PersistMode::Manual`.
     ///
     /// ```rust,no_run
-    /// use silex::prelude::*;
+    /// use silex_persist::{PersistMode, Persistent};
     ///
     /// let draft = Persistent::builder("draft")
     ///     .local()

@@ -9,6 +9,8 @@ members = [
     "crates/silex_rx",
     "crates/silex_reactivity",
     "crates/silex_router",
+    "crates/silex_persist",
+    "crates/silex_net",
     "crates/utils/silex_hash",
     "crates/utils/silex_vtable",
     "crates/utils/silex_tw_core",
@@ -58,6 +60,8 @@ silex_reactivity = { path = "crates/silex_reactivity", version = "0.1.0-beta.9" 
 silex_router = { path = "crates/silex_router", version = "0.1.0-beta.9" }
 silex_hash = { path = "crates/utils/silex_hash", version = "0.1.0-beta.9" }
 silex_rx = { path = "crates/silex_rx", version = "0.1.0-beta.9" }
+silex_persist = { path = "crates/silex_persist", version = "0.1.0-beta.9" }
+silex_net = { path = "crates/silex_net", version = "0.1.0-beta.9" }
 silex_vtable = { path = "crates/utils/silex_vtable", version = "0.1.0-beta.9" }
 silex_tw_core = { path = "crates/utils/silex_tw_core", version = "0.1.0-beta.9" }
 

@@ -1,4 +1,4 @@
-use crate::persist::PersistenceError;
+use crate::PersistenceError;
 use std::borrow::Cow;
 use std::fmt::Display;
 use std::marker::PhantomData;
