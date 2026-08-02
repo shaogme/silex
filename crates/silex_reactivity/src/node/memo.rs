@@ -2,7 +2,7 @@
 
 use crate::{
     ReactiveError, ReactiveResult,
-    handle::{DerivedId, Handle, MemoId, kind},
+    handle::{DerivedId, Handle, MemoId},
     internal::value::MemoThunk,
     runtime,
     scope::Scope,
@@ -180,6 +180,3 @@ impl<'scope, 'run, T: 'scope> Derived<'scope, 'run, T> {
         self.handle.is_alive()
     }
 }
-
-#[allow(dead_code)]
-fn _memo_kind_marker(_: kind::Memo) {}

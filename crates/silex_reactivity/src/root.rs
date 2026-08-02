@@ -353,7 +353,7 @@ impl RootScope {
     }
 
     /// Create a lexical child scope under the long-lived root.
-    pub fn scope<R>(&self, f: impl for<'s1, 's2, 's3> FnOnce(&'s1 Scope<'s2, 's3>) -> R) -> R {
+    pub fn child<R>(&self, f: impl for<'s1, 's2, 's3> FnOnce(&'s1 Scope<'s2, 's3>) -> R) -> R {
         let state = self.state().expect("创建 root child scope 时 owner 已结束");
         let scheduler = state.borrow().scheduler.clone();
         let frame = ScopeFrame::new(scheduler);

@@ -99,7 +99,7 @@ impl<'scope, 'run> Scope<'scope, 'run> {
     ///
     /// The callback must not borrow data that can be dropped before this scope
     /// is disposed. In particular, references to locals created inside the
-    /// surrounding `Runtime::run` or `Scope::scope` callback are not allowed;
+    /// surrounding `Runtime::run` or `Scope::child` callback are not allowed;
     /// move scope-owned handles and owned values into the callback instead.
     pub unsafe fn completion_scoped<T: 'static, F>(&self, mut callback: F) -> CompletionToken<T>
     where

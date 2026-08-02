@@ -58,7 +58,7 @@ pub struct Scope<'scope, 'run> {
 impl<'scope, 'run> Scope<'scope, 'run> {
     /// Execute a child scope. All child nodes and computations are destroyed
     /// before this method returns, including during panic unwinding.
-    pub fn scope<R>(&self, f: impl for<'s1, 's2, 's3> FnOnce(&'s1 Scope<'s2, 's3>) -> R) -> R {
+    pub fn child<R>(&self, f: impl for<'s1, 's2, 's3> FnOnce(&'s1 Scope<'s2, 's3>) -> R) -> R {
         let scheduler = self.frame.state.borrow().scheduler.clone();
         let frame = ScopeFrame::new(scheduler);
         let child = Scope {

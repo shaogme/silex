@@ -1,7 +1,7 @@
 error: lifetime may not live long enough
  --> tests/ui/fail_child_handle_escape.rs:6:43
   |
-6 |         let _escaped = root.scope(|child| child.signal(1).0);
+6 |         let _escaped = root.child(|child| child.signal(1).0);
   |                                    ------ ^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
   |                                    |    |
   |                                    |    return type of closure is ReadSignal<'2, '_, i32>
@@ -10,7 +10,7 @@ error: lifetime may not live long enough
 error: lifetime may not live long enough
  --> tests/ui/fail_child_handle_escape.rs:6:43
   |
-6 |         let _escaped = root.scope(|child| child.signal(1).0);
+6 |         let _escaped = root.child(|child| child.signal(1).0);
   |                                    ------ ^^^^^^^^^^^^^^^^^ returning this value requires that `'3` must outlive `'4`
   |                                    |    |
   |                                    |    return type of closure is ReadSignal<'_, '4, i32>

@@ -27,7 +27,7 @@ async fn wait_for_tasks(milliseconds: u32) {
 #[wasm_bindgen_test(async)]
 async fn resource_enters_loading_and_reloading_states() {
     let mut runtime = Runtime::new();
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (source, set_source) = scope.signal(1u32);
         let suspense = SuspenseContext::new(scope);
         let resource = Resource::new(
@@ -54,7 +54,7 @@ async fn resource_future_completion_is_discarded_after_scope_dispose() {
     let calls = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
 
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (source, set_source) = scope.signal(1u32);
         let dropped_for_fetcher = dropped.clone();
         let calls_for_fetcher = calls.clone();
@@ -87,7 +87,7 @@ async fn mutation_future_completion_is_discarded_after_scope_dispose() {
     let calls = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
 
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let dropped_for_action = dropped.clone();
         let calls_for_action = calls.clone();
         let mutation = Mutation::new(scope, move |value: u32| {
@@ -113,8 +113,8 @@ async fn child_scope_drops_late_resource_completion_without_reactivating_parent(
     let dropped = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
 
-    runtime.run_scoped(|scope| {
-        scope.scope(|child| {
+    runtime.child(|scope| {
+        scope.child(|child| {
             let (source, _) = child.signal(1u32);
             let dropped_for_fetcher = dropped.clone();
             let resource = Resource::new(

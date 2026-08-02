@@ -2,7 +2,7 @@
 //!
 //! A handle contains a generation-checked internal key and a reference to the
 //! `ScopeFrame` that owns it. The lifetime marker is covariant so Rust can
-//! shorten a handle when it is borrowed, while `Scope::scope`'s higher-ranked
+//! shorten a handle when it is borrowed, while `Scope::child`'s higher-ranked
 //! callback prevents a child handle from being returned to its parent.
 
 use crate::{internal::RawId, runtime::ScopeState, scope::ScopeFrame};

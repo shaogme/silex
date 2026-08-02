@@ -37,7 +37,7 @@ fn all_public_node_capabilities_are_copy() {
     fn assert_copy<T: Copy>(_: T) {}
 
     let mut runtime = Runtime::new();
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let signal = scope.rw_signal(0i32);
         let read = signal.read();
         let write = signal.write();
@@ -72,7 +72,7 @@ fn all_public_node_capabilities_are_copy() {
 #[test]
 fn stored_callback_and_node_ref_are_scope_owned() {
     let mut runtime = Runtime::new();
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let stored = scope.stored(String::from("before"));
         stored.update(|value| value.push_str(" after"));
         assert!(stored.with(|value| value == "before after"));
@@ -100,7 +100,7 @@ fn callback_panic_restores_callback_for_the_next_invoke() {
     let called = Rc::new(Cell::new(0));
     let should_panic = Rc::new(Cell::new(true));
 
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let called_in_callback = called.clone();
         let panic_in_callback = should_panic.clone();
         let callback = scope.callback(move |_| {
@@ -125,7 +125,7 @@ fn callback_panic_restores_callback_for_the_next_invoke() {
 #[test]
 fn stored_update_panic_restores_the_stored_value() {
     let mut runtime = Runtime::new();
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let stored = scope.stored(String::from("before"));
         let panic = catch_unwind(AssertUnwindSafe(|| {
             stored.update(|_| panic!("stored update panic"));
@@ -141,7 +141,7 @@ fn stored_update_panic_restores_the_stored_value() {
 #[test]
 fn updating_one_signal_can_read_another_signal() {
     let mut runtime = Runtime::new();
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (source, set_source) = scope.signal(1i32);
         let (other, set_other) = scope.signal(2i32);
         set_source
@@ -162,7 +162,7 @@ fn updating_another_signal_during_read_defers_effect_flush() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (source, _set_source) = scope.signal(0i32);
         let (other, set_other) = scope.signal(0i32);
         let runs_in_effect = runs.clone();
@@ -187,7 +187,7 @@ fn computation_payload_drop_can_reenter_after_state_borrow_is_released() {
     let called = Rc::new(Cell::new(false));
     let error = Rc::new(Cell::new(None));
 
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let scope_copy = *scope;
         let called_in_outer = called.clone();
         let error_in_outer = error.clone();
@@ -212,7 +212,7 @@ fn child_payloads_drop_before_parent_computation_payload() {
     let events = Rc::new(RefCell::new(Vec::new()));
     let mut runtime = Runtime::new();
 
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let scope_copy = *scope;
         let parent_event = DropEvent {
             label: "parent",
@@ -272,13 +272,13 @@ fn child_callback_payload_drop_can_schedule_an_active_parent_effect() {
     let called = Rc::new(Cell::new(false));
     let error = Rc::new(Cell::new(None));
 
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (source, set_source) = scope.signal(0i32);
         let seen_in_effect = seen.clone();
         scope.effect(move || seen_in_effect.set(source.get()));
 
         let setter = set_source;
-        scope.scope(|child| {
+        scope.child(|child| {
             let drop_probe = ReenterOnDrop {
                 setter,
                 called: called.clone(),
@@ -301,7 +301,7 @@ fn stored_value_update_flushes_after_the_stored_payload_is_restored() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
 
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (source, set_source) = scope.signal(0i32);
         let stored = scope.stored(0i32);
         let seen_in_effect = seen.clone();

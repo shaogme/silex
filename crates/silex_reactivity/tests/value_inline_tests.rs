@@ -7,7 +7,7 @@ use std::{
 #[test]
 fn test_any_value_soo_boundary_and_downcast() {
     let mut runtime = Runtime::new();
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         // 小于等于 24 字节类型 (SOO 内联路径)
         let (s_i32, set_s_i32) = scope.signal(42i32);
         assert_eq!(s_i32.get(), 42);
@@ -52,7 +52,7 @@ fn test_any_value_drop_semantics_on_stack_and_heap() {
     let drop_counter_heap = Rc::new(Cell::new(0));
 
     let mut runtime = Runtime::new();
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let _s_stack = scope.signal(DropTracker(drop_counter_stack.clone()));
         let _s_heap = scope.signal(BigDropTracker([0; 32], drop_counter_heap.clone()));
 
@@ -68,7 +68,7 @@ fn test_any_value_drop_semantics_on_stack_and_heap() {
 #[test]
 fn test_any_value_interior_mutability_inline() {
     let mut runtime = Runtime::new();
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (s_refcell, _) = scope.signal(RefCell::new(Vec::new()));
         s_refcell.with(|v| v.borrow_mut().push(10));
         s_refcell.with(|v| v.borrow_mut().push(20));
@@ -86,7 +86,7 @@ fn test_any_value_memo_skip_equal_update() {
     let effect_eval_count_cloned = effect_eval_count.clone();
 
     let mut runtime = Runtime::new();
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (sig, set_sig) = scope.signal(10i32);
         let memo = scope.memo(move |_| {
             memo_eval_count_cloned.set(memo_eval_count_cloned.get() + 1);

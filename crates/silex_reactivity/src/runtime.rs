@@ -67,7 +67,7 @@ impl Runtime {
         root
     }
 
-    pub fn run_scoped<R>(&mut self, f: impl for<'s1, 's2> FnOnce(&'s1 Scope<'s1, 's2>) -> R) -> R {
+    pub fn child<R>(&mut self, f: impl for<'s1, 's2> FnOnce(&'s1 Scope<'s1, 's2>) -> R) -> R {
         assert!(
             !self.root_active.get(),
             "长期 root 存活期间不能运行词法测试 scope"

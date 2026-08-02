@@ -2,7 +2,7 @@
 
 use crate::{
     ReactiveError, ReactiveResult,
-    handle::{Handle, SignalId, kind},
+    handle::{Handle, SignalId},
     internal::{RawId, value::AnyValue},
     runtime::{self, ScopeState},
     scope::Scope,
@@ -271,8 +271,3 @@ pub fn track_batch<'scope, 'run, T>(signals: &[ReadSignal<'scope, 'run, T>]) {
         runtime::track_many(&state, &ids);
     }
 }
-
-// Keep the kind import used by rustdoc links and make accidental raw-handle
-// reconstruction impossible outside this crate.
-#[allow(dead_code)]
-fn _signal_kind_marker(_: kind::Signal) {}

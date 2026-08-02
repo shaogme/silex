@@ -7,7 +7,7 @@ use std::{
 #[test]
 fn memo_and_derived_keep_their_notification_rules() {
     let mut runtime = Runtime::new();
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (source, set_source) = scope.signal(1i32);
         let memo_runs = Rc::new(Cell::new(0));
         let memo_runs_in_callback = memo_runs.clone();
@@ -37,7 +37,7 @@ fn memo_and_derived_keep_their_notification_rules() {
 #[test]
 fn dependency_chain_evaluates_upstream_before_effect() {
     let mut runtime = Runtime::new();
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (source, set_source) = scope.signal(1i32);
         let middle_source = source;
         let middle = scope.memo(move |_| middle_source.get() + 1);
@@ -61,7 +61,7 @@ fn diamond_dependencies_do_not_observe_intermediate_state() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(RefCell::new(Vec::new()));
 
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (source, set_source) = scope.signal(1i32);
         let left = scope.memo(move |_| source.get() + 1);
         let right = scope.memo(move |_| source.get() + 10);
@@ -83,7 +83,7 @@ fn diamond_dependencies_do_not_observe_intermediate_state() {
 #[test]
 fn dynamic_dependencies_are_replaced_on_each_effect_run() {
     let mut runtime = Runtime::new();
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (switch, set_switch) = scope.signal(true);
         let (left, set_left) = scope.signal(0i32);
         let (right, set_right) = scope.signal(0i32);
@@ -119,7 +119,7 @@ fn dynamic_dependencies_are_replaced_on_each_effect_run() {
 #[test]
 fn batch_delays_effects_and_untrack_preserves_ownership_context() {
     let mut runtime = Runtime::new();
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (source, set_source) = scope.signal(0i32);
         let (hidden, set_hidden) = scope.signal(0i32);
         let seen = Rc::new(Cell::new(0));
@@ -156,7 +156,7 @@ fn batch_delays_effects_and_untrack_preserves_ownership_context() {
 #[test]
 fn epoch_memo_fast_path_skips_evaluation_when_upstream_unchanged() {
     let mut runtime = Runtime::new();
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (source, set_source) = scope.signal(10i32);
 
         let m1_runs = Rc::new(Cell::new(0));
@@ -204,7 +204,7 @@ fn track_batch_tracks_all_signals_in_one_scope() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (sig1, set_sig1) = scope.signal(10i32);
         let (sig2, set_sig2) = scope.signal(20i32);
         let runs_in_effect = runs.clone();
@@ -227,7 +227,7 @@ fn notify_recomputes_after_silent_interior_mutation() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
 
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (source, set_source) = scope.signal(RefCell::new(0i32));
         let seen_in_effect = seen.clone();
         scope.effect(move || {
@@ -249,9 +249,9 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (source, set_source) = scope.signal(RefCell::new(0i32));
-        scope.scope(|child| {
+        scope.child(|child| {
             let runs_in_effect = runs.clone();
             child.effect(move || {
                 source.with(|value| {
@@ -289,11 +289,11 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
 #[test]
 fn cross_scope_computation_stack_includes_scope_identity() {
     let mut runtime = Runtime::new();
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (source, set_source) = scope.signal(1i32);
         let parent_memo = scope.memo(move |_| source.get() + 1);
 
-        scope.scope(|child| {
+        scope.child(|child| {
             let parent_memo_in_child = parent_memo;
             let child_memo = child.memo(move |_| parent_memo_in_child.get() + 1);
             let seen = Rc::new(Cell::new(0));
@@ -312,9 +312,9 @@ fn cross_scope_derived_reacts_and_detaches_on_exit() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
 
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let (source, set_source) = scope.signal(1i32);
-        scope.scope(|child| {
+        scope.child(|child| {
             let child_source = source;
             let derived = child.derived(move || child_source.get() * 2);
             let seen_in_effect = seen.clone();
@@ -333,7 +333,7 @@ fn cross_scope_derived_reacts_and_detaches_on_exit() {
 #[test]
 fn cyclic_memo_dependency_panics_without_poisoning_the_scheduler() {
     let mut runtime = Runtime::new();
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let first_slot: Rc<RefCell<Option<Memo<'_, '_, i32>>>> = Rc::new(RefCell::new(None));
         let second_slot: Rc<RefCell<Option<Memo<'_, '_, i32>>>> = Rc::new(RefCell::new(None));
         let (source, set_source) = scope.signal(0i32);
@@ -369,7 +369,7 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
-    runtime.run_scoped(|scope| {
+    runtime.child(|scope| {
         let first_slot: Rc<RefCell<Option<Memo<'_, '_, i32>>>> = Rc::new(RefCell::new(None));
         let second_slot: Rc<RefCell<Option<Memo<'_, '_, i32>>>> = Rc::new(RefCell::new(None));
         let (source, set_source) = scope.signal(0i32);

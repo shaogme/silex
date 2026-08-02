@@ -35,8 +35,8 @@ impl Runtime {
         RootHandle { inner: handle }
     }
 
-    pub fn run_scoped<R>(&mut self, f: impl for<'s1, 's2> FnOnce(&'s1 Scope<'s1, 's2>) -> R) -> R {
-        self.inner.run_scoped(|s| {
+    pub fn child<R>(&mut self, f: impl for<'s1, 's2> FnOnce(&'s1 Scope<'s1, 's2>) -> R) -> R {
+        self.inner.child(|s| {
             let s = Scope { inner: *s };
             f(&s)
         })
@@ -152,8 +152,8 @@ impl RootScope {
         self.inner.batch(f)
     }
 
-    pub fn scope<R>(&self, f: impl for<'s1, 's2, 's3> FnOnce(&'s1 Scope<'s2, 's3>) -> R) -> R {
-        self.inner.scope(|scope| {
+    pub fn child<R>(&self, f: impl for<'s1, 's2, 's3> FnOnce(&'s1 Scope<'s2, 's3>) -> R) -> R {
+        self.inner.child(|scope| {
             let scope = Scope { inner: *scope };
             f(&scope)
         })
@@ -302,8 +302,8 @@ impl<'scope, 'run> Scope<'scope, 'run> {
         Rx::from_stored(stored)
     }
 
-    pub fn scope<R>(&self, f: impl for<'s1, 's2, 's3> FnOnce(&'s1 Scope<'s2, 's3>) -> R) -> R {
-        self.inner.scope(|scope| {
+    pub fn child<R>(&self, f: impl for<'s1, 's2, 's3> FnOnce(&'s1 Scope<'s2, 's3>) -> R) -> R {
+        self.inner.child(|scope| {
             let scope = Scope { inner: *scope };
             f(&scope)
         })
