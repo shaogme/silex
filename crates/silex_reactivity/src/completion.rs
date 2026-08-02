@@ -1,12 +1,12 @@
 //! Scope-owned completion messages for `'static` asynchronous tasks.
 
 use crate::{
+    child::Scope,
     internal::{
         RawId,
         value::{AnyValue, CallbackThunk},
     },
     runtime::{self, ScopeId, ScopeState},
-    scope::Scope,
 };
 use std::{
     cell::RefCell,

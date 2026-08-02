@@ -15,16 +15,17 @@
 
 #![deny(unreachable_pub)]
 
-pub mod completion;
+mod child;
+mod completion;
 mod error;
 mod handle;
 mod internal;
-pub mod node;
 mod root;
 mod runtime;
-pub mod scope;
+mod scope;
 
 pub use crate::{
+    child::*,
     completion::CompletionToken,
     error::{ReactiveError, ReactiveResult},
     handle::{
@@ -32,14 +33,6 @@ pub use crate::{
         NodeRefId, SignalId, StoredId, kind,
     },
     internal::{RawId, value::AnyValue},
-    node::{
-        Callback, Derived, Effect, Memo, NodeRef, ReadSignal, RwSignal, Signal, StoredValue,
-        WriteSignal, notify, track, track_batch,
-    },
-    root::{
-        CleanupError, RootCallback, RootDerived, RootEffect, RootHandle, RootMemo, RootNodeRef,
-        RootReadSignal, RootScope, RootSignal, RootStoredValue, RootWriteSignal,
-    },
+    root::*,
     runtime::Runtime,
-    scope::Scope,
 };

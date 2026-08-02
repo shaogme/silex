@@ -21,8 +21,8 @@ pub(crate) use ops::{
 };
 pub(crate) use scheduler::{GlobalScheduler, ScopeId};
 
-use crate::root::RootHandle;
-use crate::scope::{Scope, ScopeFrame};
+use crate::scope::ScopeFrame;
+use crate::{Scope, root::RootHandle};
 
 use std::{
     cell::Cell,
