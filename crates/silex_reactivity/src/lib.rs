@@ -35,7 +35,7 @@ pub use crate::{
     internal::RawId,
     node::{
         Callback, Derived, Effect, Memo, NodeRef, ReadSignal, RwSignal, Signal, StoredValue,
-        WriteSignal,
+        WriteSignal, notify, track, track_batch,
     },
     runtime::Runtime,
     scope::Scope,

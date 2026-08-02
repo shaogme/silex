@@ -92,8 +92,11 @@ impl<'scope, 'run> Scope<'scope, 'run> {
         // 当 `'scope` 作用域退出时，`ScopeFrame::dispose` 会被强制调用销毁所有节点与清理回调，
         // 因此将 `thunk` 的生命周期延伸至 `'run` 是 Sound 的。
         let thunk = unsafe { thunk.extend_lifetime() };
-        if let Ok(mut state) = self.frame.state.try_borrow_mut() {
-            state.register_cleanup(thunk);
-        }
+        let mut state = self
+            .frame
+            .state
+            .try_borrow_mut()
+            .expect("ScopeState borrow failed during on_cleanup registration");
+        state.register_cleanup(thunk);
     }
 }

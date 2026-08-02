@@ -11,5 +11,5 @@ pub use callback::Callback;
 pub use effect::Effect;
 pub use memo::{Derived, Memo};
 pub use node_ref::NodeRef;
-pub use signal::{ReadSignal, RwSignal, Signal, WriteSignal};
+pub use signal::{ReadSignal, RwSignal, Signal, WriteSignal, notify, track, track_batch};
 pub use store::StoredValue;

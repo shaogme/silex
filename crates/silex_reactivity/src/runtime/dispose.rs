@@ -8,18 +8,21 @@ pub(crate) fn dispose_all<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>) {
     loop {
         let roots = state
             .try_borrow()
-            .map(|state| state.roots.clone())
-            .unwrap_or_default();
+            .expect("ScopeState borrow failed during dispose_all")
+            .roots
+            .clone();
         if roots.is_empty() {
             break;
         }
         dispose_nodes(state, roots);
     }
 
-    let cleanups = state
-        .try_borrow_mut()
-        .map(|mut state| mem::take(&mut state.root_cleanups))
-        .unwrap_or_default();
+    let cleanups = mem::take(
+        &mut state
+            .try_borrow_mut()
+            .expect("ScopeState borrow_mut failed during dispose_all")
+            .root_cleanups,
+    );
     for cleanup in cleanups {
         cleanup.call();
     }
@@ -41,30 +44,31 @@ pub(crate) fn dispose_nodes<'scope>(
     while let Some(step) = stack.pop() {
         match step {
             DisposeStep::Enter(id) => {
-                let Some((children, cleanups)) =
-                    state.try_borrow_mut().ok().and_then(|mut state_ref| {
-                        let node = state_ref.nodes.remove(id)?;
-                        let data = state_ref.data.remove(id);
+                let mut state_ref = state
+                    .try_borrow_mut()
+                    .expect("ScopeState borrow_mut failed during dispose_nodes");
+                let node = state_ref.nodes.remove(id);
+                let data = state_ref.data.remove(id);
+                let (children, cleanups) = if let Some(node) = node {
+                    state_ref.unlink_child(node.parent, id, node.next_sibling);
+                    state_ref.clear_dependencies(id);
 
-                        state_ref.unlink_child(node.parent, id, node.next_sibling);
-                        state_ref.clear_dependencies(id);
+                    let subscriber_edges: Vec<EdgeId> = state_ref
+                        .subscriber_edges_of(id)
+                        .map(|(edge_id, _)| edge_id)
+                        .collect();
+                    for edge_id in subscriber_edges {
+                        state_ref.edges.remove(edge_id);
+                    }
 
-                        let subscriber_edges: Vec<EdgeId> = state_ref
-                            .subscriber_edges_of(id)
-                            .map(|(edge_id, _)| edge_id)
-                            .collect();
-                        for edge_id in subscriber_edges {
-                            state_ref.edges.remove(edge_id);
-                        }
-
-                        let children: Vec<RawId> =
-                            state_ref.children_of_head(node.first_child).collect();
-                        let cleanups = data.map(|d| d.cleanups).unwrap_or_default();
-                        Some((children, cleanups))
-                    })
-                else {
-                    continue;
+                    let children: Vec<RawId> =
+                        state_ref.children_of_head(node.first_child).collect();
+                    let cleanups = data.map(|d| d.cleanups).unwrap_or_default();
+                    (children, cleanups)
+                } else {
+                    (Vec::new(), Vec::new())
                 };
+                drop(state_ref);
                 stack.push(DisposeStep::Exit { cleanups });
                 stack.extend(children.into_iter().rev().map(DisposeStep::Enter));
             }

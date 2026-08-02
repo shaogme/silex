@@ -101,9 +101,10 @@ impl<'scope> ScopeState<'scope> {
             } else {
                 let dep_scope = self.scheduler.borrow().get_scope(dep.scope_id);
                 if let Some(dep_scope) = dep_scope {
-                    if let Ok(mut dep_state) = dep_scope.try_borrow_mut() {
-                        dep_state.remove_subscriber(dep.node, self_sub);
-                    }
+                    let mut dep_state = dep_scope
+                        .try_borrow_mut()
+                        .expect("dep_scope borrow failed during clear_dependencies");
+                    dep_state.remove_subscriber(dep.node, self_sub);
                 }
             }
             curr_edge = edge.next;
@@ -147,11 +148,12 @@ impl<'scope> ScopeState<'scope> {
 
         let obs_scope = self.scheduler.borrow().get_scope(observer.scope_id);
         if let Some(obs_scope) = obs_scope {
-            if let Ok(mut obs_state) = obs_scope.try_borrow_mut() {
-                if let Some(obs_node) = obs_state.nodes.get(observer.node) {
-                    if obs_node.is_computation() {
-                        obs_state.add_dependency(observer.node, observer_dep);
-                    }
+            let mut obs_state = obs_scope
+                .try_borrow_mut()
+                .expect("obs_scope borrow failed during track");
+            if let Some(obs_node) = obs_state.nodes.get(observer.node) {
+                if obs_node.is_computation() {
+                    obs_state.add_dependency(observer.node, observer_dep);
                 }
             }
         }
@@ -199,9 +201,9 @@ impl<'scope> ScopeState<'scope> {
                 let Some(target_scope) = target_scope else {
                     continue;
                 };
-                let Ok(mut state_ref) = target_scope.try_borrow_mut() else {
-                    continue;
-                };
+                let mut state_ref = target_scope
+                    .try_borrow_mut()
+                    .expect("target_scope borrow failed during queue_dependents");
                 let Some(node) = state_ref.nodes.get_mut(target.node) else {
                     continue;
                 };

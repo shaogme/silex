@@ -3,10 +3,11 @@
 use crate::{
     ReactiveError, ReactiveResult,
     handle::{Handle, SignalId, kind},
-    runtime,
+    internal::{RawId, value::AnyValue},
+    runtime::{self, ScopeId, ScopeState},
     scope::Scope,
 };
-use std::marker::PhantomData;
+use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 /// Read capability for a signal or memo-like node.
 pub struct ReadSignal<'scope, 'run, T> {
@@ -64,7 +65,7 @@ impl<'scope, 'run> Scope<'scope, 'run> {
             .state
             .try_borrow_mut()
             .expect("scope 在用户代码执行期间不应持有运行时借用")
-            .create_signal(crate::internal::value::AnyValue::new(value));
+            .create_signal(AnyValue::new(value));
         let handle = Handle::new(self.frame, raw);
         (
             ReadSignal {
@@ -270,12 +271,18 @@ pub fn track<'scope, 'run, T>(signal: &ReadSignal<'scope, 'run, T>) {
 
 /// Track multiple read capabilities in one call.
 pub fn track_batch<'scope, 'run, T>(signals: &[ReadSignal<'scope, 'run, T>]) {
-    if let Some(signal) = signals.first() {
-        let state = signal.handle.state();
-        let ids = signals
-            .iter()
-            .map(|signal| signal.handle.raw())
-            .collect::<Vec<_>>();
+    let mut groups: Vec<(ScopeId, Rc<RefCell<ScopeState<'run>>>, Vec<RawId>)> = Vec::new();
+
+    for signal in signals {
+        let scope_id = signal.handle.frame.scope_id;
+        if let Some((_, _, ids)) = groups.iter_mut().find(|(id, _, _)| *id == scope_id) {
+            ids.push(signal.handle.raw());
+        } else {
+            groups.push((scope_id, signal.handle.state(), vec![signal.handle.raw()]));
+        }
+    }
+
+    for (_, state, ids) in groups {
         runtime::track_many(&state, &ids);
     }
 }

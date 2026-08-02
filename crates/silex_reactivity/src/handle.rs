@@ -5,7 +5,7 @@
 //! shorten a handle when it is borrowed, while `Scope::scope`'s higher-ranked
 //! callback prevents a child handle from being returned to its parent.
 
-use crate::{runtime::ScopeState, scope::ScopeFrame};
+use crate::{internal::RawId, runtime::ScopeState, scope::ScopeFrame};
 use std::{
     cell::RefCell,
     fmt,
@@ -73,13 +73,13 @@ define_kinds! {
 /// A node capability tied to the lexical scope that created it.
 pub struct Handle<'scope, 'run, K: NodeKind> {
     pub(crate) frame: &'scope ScopeFrame<'run>,
-    pub(crate) raw: crate::internal::RawId,
+    pub(crate) raw: RawId,
     marker: PhantomData<&'scope ()>,
     kind: PhantomData<fn() -> K>,
 }
 
 impl<'scope, 'run, K: NodeKind> Handle<'scope, 'run, K> {
-    pub(crate) fn new(frame: &'scope ScopeFrame<'run>, raw: crate::internal::RawId) -> Self {
+    pub(crate) fn new(frame: &'scope ScopeFrame<'run>, raw: RawId) -> Self {
         Self {
             frame,
             raw,
@@ -92,7 +92,7 @@ impl<'scope, 'run, K: NodeKind> Handle<'scope, 'run, K> {
         self.frame.state.clone()
     }
 
-    pub(crate) const fn raw(&self) -> crate::internal::RawId {
+    pub(crate) const fn raw(&self) -> RawId {
 
         self.raw
     }

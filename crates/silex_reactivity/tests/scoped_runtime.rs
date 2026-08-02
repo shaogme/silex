@@ -441,3 +441,28 @@ fn epoch_memo_fast_path_skips_evaluation_when_upstream_unchanged() {
         assert_eq!(m3_runs.get(), 2);
     });
 }
+
+#[test]
+fn track_batch_works_in_scoped_runtime() {
+    use silex_reactivity::track_batch;
+
+    let mut runtime = Runtime::new();
+    let runs = Rc::new(Cell::new(0));
+
+    runtime.run(|scope| {
+        let (sig1, set_sig1) = scope.signal(10i32);
+        let (sig2, set_sig2) = scope.signal(20i32);
+        let runs_in_effect = runs.clone();
+
+        scope.effect(move || {
+            track_batch(&[sig1, sig2]);
+            runs_in_effect.set(runs_in_effect.get() + 1);
+        });
+
+        assert_eq!(runs.get(), 1);
+        set_sig1.set(11);
+        assert_eq!(runs.get(), 2);
+        set_sig2.set(21);
+        assert_eq!(runs.get(), 3);
+    });
+}

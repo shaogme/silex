@@ -7,6 +7,7 @@ use super::{
 };
 use crate::{
     ReactiveError, ReactiveResult,
+    handle::NodeKindTag,
     internal::{RawId, value::Computation},
 };
 use std::{
@@ -102,10 +103,12 @@ fn evaluate<'scope>(
             if let Some(dep_scope) = dep_scope {
                 let dependency_state = dep_scope
                     .try_borrow()
-                    .ok()
-                    .and_then(|st| st.nodes.get(dep.node).map(|node| node.state));
+                    .map_err(|_| ReactiveError::Reentrant)?
+                    .nodes
+                    .get(dep.node)
+                    .map(|node| node.state);
                 if dependency_state.is_some_and(|state| state != NodeState::Clean) {
-                    let _ = evaluate(&dep_scope, dep.node, stack);
+                    evaluate(&dep_scope, dep.node, stack)?;
                 }
             }
         }
@@ -133,11 +136,17 @@ fn evaluate<'scope>(
                         scheduler
                             .borrow()
                             .get_scope(dep.scope_id)
-                            .and_then(|dep_scope| {
+                            .map(|dep_scope| {
                                 dep_scope
                                     .try_borrow()
                                     .ok()
-                                    .and_then(|st| st.nodes.get(dep.node).map(|n| n.updated_epoch))
+                                    .map(|st| {
+                                        st.nodes
+                                            .get(dep.node)
+                                            .map(|n| n.updated_epoch)
+                                            .unwrap_or(0)
+                                    })
+                                    .unwrap_or(u64::MAX)
                             })
                             .unwrap_or(0)
                     }
@@ -150,12 +159,13 @@ fn evaluate<'scope>(
         }
     };
     if skip {
-        if let Ok(mut state_ref) = state.try_borrow_mut() {
-            let current_epoch = state_ref.scheduler.borrow().current_epoch();
-            if let Some(node) = state_ref.nodes.get_mut(id) {
-                node.state = NodeState::Clean;
-                node.last_computed_epoch = current_epoch;
-            }
+        let mut state_ref = state
+            .try_borrow_mut()
+            .expect("ScopeState borrow failed during skip epoch update");
+        let current_epoch = state_ref.scheduler.borrow().current_epoch();
+        if let Some(node) = state_ref.nodes.get_mut(id) {
+            node.state = NodeState::Clean;
+            node.last_computed_epoch = current_epoch;
         }
         return Ok(());
     }
@@ -166,16 +176,16 @@ fn evaluate<'scope>(
 
 fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool {
     let (computation, mut old, first_child, cleanups, previous) = {
-        let Ok(mut state_ref) = state.try_borrow_mut() else {
-            return false;
-        };
+        let mut state_ref = state
+            .try_borrow_mut()
+            .expect("ScopeState borrow failed at start of run_node");
         let (is_computation, is_running, is_memo_or_derived, first_child) = {
             let Some(node) = state_ref.nodes.get(id) else {
                 return false;
             };
             let is_memo_or_derived = matches!(
                 node.kind,
-                crate::handle::NodeKindTag::Memo | crate::handle::NodeKindTag::Derived
+                NodeKindTag::Memo | NodeKindTag::Derived
             );
             (
                 node.is_computation(),
@@ -262,7 +272,10 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
     }));
 
     let panicked = outcome.is_err();
-    if let Ok(mut state_ref) = state.try_borrow_mut() {
+    {
+        let mut state_ref = state
+            .try_borrow_mut()
+            .expect("ScopeState borrow failed after computation execution");
         let scheduler = state_ref.scheduler.clone();
         let mut sched = scheduler.borrow_mut();
         let now_epoch = sched.current_epoch();
@@ -353,7 +366,10 @@ pub(crate) fn run_global_queue(scheduler: &Rc<RefCell<GlobalScheduler>>) {
             );
             let scope_state = scheduler.borrow().get_scope(task.scope_id);
             if let Some(scope_state) = scope_state {
-                if let Ok(mut state_ref) = scope_state.try_borrow_mut() {
+                {
+                    let mut state_ref = scope_state
+                        .try_borrow_mut()
+                        .expect("ScopeState borrow failed in run_global_queue");
                     if let Some(node) = state_ref.nodes.get_mut(task.node) {
                         node.queued = false;
                     }

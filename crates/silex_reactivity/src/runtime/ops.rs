@@ -269,22 +269,25 @@ pub(crate) fn node_ref_set<'scope, T: 'static>(
 }
 
 pub(crate) fn notify<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) {
-    if let Ok(mut state_ref) = state.try_borrow_mut() {
-        state_ref.queue_dependents(id);
-    }
+    let mut state_ref = state
+        .try_borrow_mut()
+        .expect("ScopeState borrow failed during notify");
+    state_ref.queue_dependents(id);
     flush_if_idle(state);
 }
 
 pub(crate) fn track<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) {
-    if let Ok(mut state_ref) = state.try_borrow_mut() {
-        state_ref.track(id);
-    }
+    let mut state_ref = state
+        .try_borrow_mut()
+        .expect("ScopeState borrow failed during track");
+    state_ref.track(id);
 }
 
 pub(crate) fn track_many<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, ids: &[RawId]) {
-    if let Ok(mut state_ref) = state.try_borrow_mut() {
-        state_ref.track_many(ids);
-    }
+    let mut state_ref = state
+        .try_borrow_mut()
+        .expect("ScopeState borrow failed during track_many");
+    state_ref.track_many(ids);
 }
 
 pub(crate) fn with_untracked<'scope, R>(
