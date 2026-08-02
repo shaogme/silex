@@ -35,6 +35,17 @@ impl<T, E> ResourceState<T, E> {
     }
 }
 
+fn resolve_resource_result<T, E>(
+    current_id: usize,
+    id: usize,
+    result: Result<T, E>,
+) -> Option<ResourceState<T, E>> {
+    (current_id == id).then(|| match result {
+        Ok(value) => ResourceState::Ready(value),
+        Err(error) => ResourceState::Error(error),
+    })
+}
+
 pub struct Resource<'scope, 'run, T, E = SilexError> {
     pub state: ReadSignal<'scope, 'run, ResourceState<T, E>>,
     set_state: WriteSignal<'scope, 'run, ResourceState<T, E>>,
@@ -95,11 +106,10 @@ where
         let set_state_for_callback = set_state;
         let suspense_for_callback = suspense;
         let completion = scope.completion_scoped(move |(id, result): (usize, Result<T, E>)| {
-            if request_id_for_callback.get() == id {
-                set_state_for_callback.set(match result {
-                    Ok(value) => ResourceState::Ready(value),
-                    Err(error) => ResourceState::Error(error),
-                });
+            if let Some(next_state) =
+                resolve_resource_result(request_id_for_callback.get(), id, result)
+            {
+                set_state_for_callback.set(next_state);
             }
             if let Some(context) = suspense_for_callback {
                 context.decrement();
@@ -109,14 +119,27 @@ where
         let source_for_effect = source.clone();
         let trigger_for_effect = trigger.read_signal();
         let request_id_for_effect = request_id.clone();
+        let state_for_effect = state;
+        let set_state_for_effect = set_state;
         let suspense_for_effect = suspense;
         let _effect = scope.effect(move |_: Option<()>| {
             let input = source_for_effect.get();
             let _ = trigger_for_effect.get();
+            let next_state = state_for_effect.with_untracked(|state| {
+                state
+                    .as_option()
+                    .cloned()
+                    .map(ResourceState::Reloading)
+                    .unwrap_or(ResourceState::Loading)
+            });
+            set_state_for_effect.set(next_state);
             if let Some(context) = suspense_for_effect {
                 context.increment();
             }
-            let id = request_id_for_effect.get().wrapping_add(1);
+            let id = request_id_for_effect
+                .get()
+                .checked_add(1)
+                .expect("Resource request id exhausted");
             request_id_for_effect.set(id);
             let future = fetcher.fetch(input);
             let completion = completion.clone();
@@ -241,5 +264,19 @@ impl<'scope, 'run> SuspenseContext<'scope, 'run> {
     pub fn decrement(&self) {
         self.set_count
             .update(|count| *count = count.saturating_sub(1));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ResourceState, resolve_resource_result};
+
+    #[test]
+    fn stale_resource_result_does_not_replace_current_request() {
+        assert_eq!(resolve_resource_result(2, 1, Ok::<_, ()>("stale")), None);
+        assert_eq!(
+            resolve_resource_result(2, 2, Ok::<_, ()>("current")),
+            Some(ResourceState::Ready("current"))
+        );
     }
 }

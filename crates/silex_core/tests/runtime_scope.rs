@@ -52,6 +52,18 @@ fn rx_macro_uses_explicit_scope_and_closure_reads() {
 }
 
 #[test]
+fn rx_macro_treats_parameterless_closures_as_derived_values() {
+    let mut runtime = Runtime::new();
+    runtime.run(|scope| {
+        let (count, set_count) = scope.signal(2i32);
+        let value = rx!(scope; || $count + 3);
+        assert_eq!(value.get(), 5);
+        set_count.set(6);
+        assert_eq!(value.get(), 9);
+    });
+}
+
+#[test]
 fn child_scope_completes_lexically() {
     let mut runtime = Runtime::new();
     runtime.run(|scope| {

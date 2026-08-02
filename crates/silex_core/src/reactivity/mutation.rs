@@ -28,6 +28,17 @@ impl<T, E> MutationState<T, E> {
     }
 }
 
+fn resolve_mutation_result<T, E>(
+    current_id: usize,
+    id: usize,
+    result: Result<T, E>,
+) -> Option<MutationState<T, E>> {
+    (current_id == id).then(|| match result {
+        Ok(value) => MutationState::Success(value),
+        Err(error) => MutationState::Error(error),
+    })
+}
+
 type MutationFuture<T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + 'static>>;
 
 pub struct Mutation<'scope, 'run, Arg, T, E = SilexError> {
@@ -66,11 +77,10 @@ where
         let last_id_for_callback = last_id.clone();
         let set_state_for_callback = set_state;
         let completion = scope.completion_scoped(move |(id, result): (usize, Result<T, E>)| {
-            if last_id_for_callback.get() == id {
-                set_state_for_callback.set(match result {
-                    Ok(value) => MutationState::Success(value),
-                    Err(error) => MutationState::Error(error),
-                });
+            if let Some(next_state) =
+                resolve_mutation_result(last_id_for_callback.get(), id, result)
+            {
+                set_state_for_callback.set(next_state);
             }
         });
 
@@ -84,7 +94,11 @@ where
     }
 
     pub fn mutate(&self, arg: Arg) {
-        let id = self.last_id.get().wrapping_add(1);
+        let id = self
+            .last_id
+            .get()
+            .checked_add(1)
+            .expect("Mutation request id exhausted");
         self.last_id.set(id);
         self.set_state.set(MutationState::Pending);
         let future = (self.action)(arg);
@@ -188,5 +202,19 @@ where
 {
     fn into_signal(self, scope: &Scope<'scope, 'run>) -> Signal<'scope, 'run, Option<T>> {
         self.into_rx(scope).into_signal(scope)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MutationState, resolve_mutation_result};
+
+    #[test]
+    fn stale_mutation_result_does_not_replace_last_request() {
+        assert_eq!(resolve_mutation_result(2, 1, Ok::<_, ()>("stale")), None);
+        assert_eq!(
+            resolve_mutation_result(2, 2, Ok::<_, ()>("current")),
+            Some(MutationState::Success("current"))
+        );
     }
 }

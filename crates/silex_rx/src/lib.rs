@@ -200,7 +200,12 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
         let reads = nested_reads(&pairs, &closure_body);
         closure.capture = Some(Move::default());
         *closure.body = parse2(reads)?;
-        return Ok(quote! {{ #scope_binding __silex_scope.callback(#closure) }});
+        let constructor = if closure.inputs.is_empty() {
+            quote! { __silex_scope.derived(#closure) }
+        } else {
+            quote! { __silex_scope.callback(#closure) }
+        };
+        return Ok(quote! {{ #scope_binding #constructor }});
     }
 
     let expression = quote! { #expression };
@@ -257,5 +262,38 @@ mod tests {
         assert!(!output.contains("new_op"));
         let old_ref_count = ["R", "c"].concat();
         assert!(!output.contains(&old_ref_count));
+    }
+
+    #[test]
+    fn routes_parameterless_closures_to_derived() {
+        let output = expand(quote! { ::silex_core; scope; || $count + 1 })
+            .unwrap()
+            .to_string();
+        assert!(output.contains("derived"));
+        assert!(!output.contains("callback"));
+    }
+
+    #[test]
+    fn routes_parameterized_closures_to_callback() {
+        let output = expand(quote! { ::silex_core; scope; |value: i32| value + 1 })
+            .unwrap()
+            .to_string();
+        assert!(output.contains("callback"));
+        assert!(!output.contains("derived"));
+    }
+
+    #[test]
+    fn keeps_at_fn_on_the_typed_derived_path() {
+        let output = expand(quote! {
+            ::silex_core;
+            scope;
+            @fn $a + $b + $c + $d
+        })
+        .unwrap()
+        .to_string();
+        assert!(output.contains("derived"));
+        assert!(!output.contains("map1_static"));
+        assert!(!output.contains("map2_static"));
+        assert!(!output.contains("map3_static"));
     }
 }

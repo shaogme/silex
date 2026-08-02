@@ -22,4 +22,6 @@ web-sys = { workspace = true, features = ["console"] }
 wasm-bindgen-futures.workspace = true
 
 [dev-dependencies]
+gloo-timers.workspace = true
 trybuild = "1.0"
+wasm-bindgen-test.workspace = true
