@@ -2,7 +2,26 @@
 
 use super::model::{EdgeId, ScopeState};
 use crate::internal::{RawId, value::OnceThunk};
-use std::{cell::RefCell, mem, rc::Rc};
+use std::{
+    cell::RefCell,
+    mem,
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    rc::Rc,
+};
+
+fn run_cleanups<'scope>(cleanups: Vec<OnceThunk<'scope>>) {
+    let mut first_panic = None;
+    for cleanup in cleanups {
+        if let Err(panic) = catch_unwind(AssertUnwindSafe(|| cleanup.call()))
+            && first_panic.is_none()
+        {
+            first_panic = Some(panic);
+        }
+    }
+    if let Some(panic) = first_panic {
+        resume_unwind(panic);
+    }
+}
 
 pub(crate) fn dispose_all<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>) {
     loop {
@@ -23,9 +42,7 @@ pub(crate) fn dispose_all<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>) {
             .expect("ScopeState borrow_mut failed during dispose_all")
             .root_cleanups,
     );
-    for cleanup in cleanups {
-        cleanup.call();
-    }
+    run_cleanups(cleanups);
 }
 
 enum DisposeStep<'scope> {
@@ -42,7 +59,7 @@ pub(crate) fn dispose_nodes<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, roo
                 let mut state_ref = state
                     .try_borrow_mut()
                     .expect("ScopeState borrow_mut failed during dispose_nodes");
-                let (children, cleanups) = if let Some(node) = state_ref.nodes.get(id).copied() {
+                let (children, data) = if let Some(node) = state_ref.nodes.get(id).copied() {
                     state_ref.clear_dependencies(id);
 
                     let subscriber_edges: Vec<EdgeId> = state_ref
@@ -58,19 +75,17 @@ pub(crate) fn dispose_nodes<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, roo
                     let data = state_ref.data.remove(id);
                     state_ref.nodes.remove(id);
                     state_ref.unlink_child(node.parent, id, node.next_sibling);
-                    let cleanups = data.map(|d| d.cleanups).unwrap_or_default();
-                    (children, cleanups)
+                    (children, data)
                 } else {
-                    (Vec::new(), Vec::new())
+                    (Vec::new(), None)
                 };
                 drop(state_ref);
+                let cleanups = data.map(|d| d.cleanups).unwrap_or_default();
                 stack.push(DisposeStep::Exit { cleanups });
                 stack.extend(children.into_iter().rev().map(DisposeStep::Enter));
             }
             DisposeStep::Exit { cleanups } => {
-                for cleanup in cleanups {
-                    cleanup.call();
-                }
+                run_cleanups(cleanups);
             }
         }
     }

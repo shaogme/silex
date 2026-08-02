@@ -250,6 +250,7 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
     let children_to_dispose: Vec<RawId> = state.borrow().children_of_head(first_child).collect();
 
     let mut result = None;
+    let mut execution_started = false;
     let outcome = catch_unwind(AssertUnwindSafe(|| {
         dispose_nodes(state, children_to_dispose);
         for cleanup in cleanups {
@@ -260,6 +261,7 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
             let scheduler = state_ref.scheduler.clone();
             let mut sched = scheduler.borrow_mut();
             sched.executing += 1;
+            execution_started = true;
             state_ref.current_owner = Some(id);
             sched.set_observer(Some(Observer {
                 scope_id: state_ref.scope_id,
@@ -276,6 +278,17 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
     }));
 
     let panicked = outcome.is_err();
+    let equality_result = if panicked {
+        Ok(None)
+    } else if let Some(new_value) = result.as_ref() {
+        catch_unwind(AssertUnwindSafe(|| {
+            old.as_ref().is_none_or(|old| !new_value.try_eq(old))
+        }))
+        .map(Some)
+    } else {
+        Ok(None)
+    };
+    let failed = panicked || equality_result.is_err();
     {
         let mut state_ref = state
             .try_borrow_mut()
@@ -283,8 +296,9 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
         let scheduler = state_ref.scheduler.clone();
         let mut sched = scheduler.borrow_mut();
         let now_epoch = sched.current_epoch();
-        let current_executing = sched.executing;
-        sched.executing = current_executing.saturating_sub(1);
+        if execution_started {
+            sched.executing = sched.executing.saturating_sub(1);
+        }
         state_ref.set_context(previous.0);
         sched.set_observer(previous.1);
         drop(sched);
@@ -292,12 +306,15 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
         let mut changed = false;
         if let Some(data) = state_ref.data.get_mut(id) {
             data.computation = Some(computation);
-            if panicked {
+            if failed {
                 if let Some(old) = old.take() {
                     data.value = Some(old);
                 }
             } else if let Some(new_value) = result.take() {
-                changed = old.as_ref().is_none_or(|old| !new_value.try_eq(old));
+                changed = match equality_result.as_ref() {
+                    Ok(Some(value)) => *value,
+                    _ => false,
+                };
                 data.value = Some(new_value);
             }
         }
@@ -305,7 +322,7 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
         if let Some(node) = state_ref.nodes.get_mut(id) {
             node.running = false;
             node.last_computed_epoch = now_epoch;
-            if panicked {
+            if failed {
                 node.state = NodeState::Dirty;
             } else if changed {
                 node.updated_epoch = now_epoch;
@@ -319,6 +336,9 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
     }
 
     if let Err(panic) = outcome {
+        resume_unwind(panic);
+    }
+    if let Err(panic) = equality_result {
         resume_unwind(panic);
     }
     drop(old);
@@ -378,14 +398,39 @@ pub(crate) fn run_global_queue(scheduler: &Rc<RefCell<GlobalScheduler>>) {
                         node.queued = false;
                     }
                 }
-                let _ = evaluate_root(&scope_state, task.node);
+                if let Err(error) = evaluate_root(&scope_state, task.node) {
+                    panic!("silex_reactivity: effect queue evaluation failed: {error}");
+                }
             }
         }
     }));
 
+    if outcome.is_err() {
+        recover_after_queue_error(scheduler);
+    }
     scheduler.borrow_mut().running_queue = false;
 
     if let Err(panic) = outcome {
         resume_unwind(panic);
+    }
+}
+
+fn recover_after_queue_error(scheduler: &Rc<RefCell<GlobalScheduler>>) {
+    let scope_ids = scheduler.borrow().active_scope_ids();
+    scheduler.borrow_mut().global_queue.clear();
+
+    for scope_id in scope_ids {
+        let Some(scope_state) = scheduler.borrow().get_scope(scope_id) else {
+            continue;
+        };
+        let Ok(mut state) = scope_state.try_borrow_mut() else {
+            continue;
+        };
+        for node in state.nodes.values_mut() {
+            if node.state == NodeState::Check {
+                node.state = NodeState::Dirty;
+            }
+            node.queued = false;
+        }
     }
 }

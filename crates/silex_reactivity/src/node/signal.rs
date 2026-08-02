@@ -238,6 +238,10 @@ pub fn track<'scope, 'run, T>(signal: &ReadSignal<'scope, 'run, T>) {
 }
 
 /// Track multiple read capabilities in one call.
+///
+/// Handles from different `Runtime::run` or child-scope runs cannot be mixed in
+/// one batch because their `'run` lifetimes are intentionally distinct. The
+/// compile-fail case is covered by `tests/ui/fail_mixed_track_batch.rs`.
 pub fn track_batch<'scope, 'run, T>(signals: &[ReadSignal<'scope, 'run, T>]) {
     let mut groups: Vec<(Rc<RefCell<ScopeState<'run>>>, Vec<RawId>)> = Vec::new();
 

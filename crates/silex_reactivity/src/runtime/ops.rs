@@ -3,6 +3,7 @@
 use super::{
     eval::{flush_if_idle, prepare_read},
     model::{Payload, ScopeState},
+    scheduler::GlobalScheduler,
 };
 use crate::{
     ReactiveError, ReactiveResult,
@@ -19,14 +20,33 @@ use std::{
     rc::Rc,
 };
 
+struct ValueBorrow {
+    scheduler: Rc<RefCell<GlobalScheduler>>,
+}
+
+impl ValueBorrow {
+    fn new(scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
+        scheduler.borrow_mut().borrowed_values += 1;
+        Self { scheduler }
+    }
+}
+
+impl Drop for ValueBorrow {
+    fn drop(&mut self) {
+        let mut scheduler = self.scheduler.borrow_mut();
+        scheduler.borrowed_values = scheduler.borrowed_values.saturating_sub(1);
+    }
+}
+
 fn with_taken_value<T, R>(
-    take: impl FnOnce() -> ReactiveResult<T>,
+    take: impl FnOnce() -> ReactiveResult<(T, ValueBorrow)>,
     restore: impl FnOnce(T, bool) -> ReactiveResult<()>,
     exec: impl FnOnce(&mut T) -> R,
 ) -> ReactiveResult<R> {
-    let mut value = take()?;
+    let (mut value, borrow) = take()?;
     let result = catch_unwind(AssertUnwindSafe(|| exec(&mut value)));
     let put_back = restore(value, false);
+    drop(borrow);
     if let Err(panic) = result {
         let _ = put_back;
         resume_unwind(panic);
@@ -36,11 +56,11 @@ fn with_taken_value<T, R>(
 }
 
 fn update_taken_value<T, R>(
-    take: impl FnOnce() -> ReactiveResult<T>,
+    take: impl FnOnce() -> ReactiveResult<(T, ValueBorrow)>,
     restore: impl FnOnce(T, bool) -> ReactiveResult<()>,
     exec: impl FnOnce(&mut T) -> (R, bool),
 ) -> ReactiveResult<(R, bool)> {
-    let value = take()?;
+    let (value, borrow) = take()?;
     let mut value = Some(value);
     let result = catch_unwind(AssertUnwindSafe(|| {
         exec(value.as_mut().expect("value is taken out"))
@@ -51,11 +71,13 @@ fn update_taken_value<T, R>(
             if let Some(val) = value.take() {
                 let _ = restore(val, false);
             }
+            drop(borrow);
             resume_unwind(panic);
         }
     };
     let value = value.take().expect("value is taken out");
     restore(value, changed)?;
+    drop(borrow);
     Ok((result, changed))
 }
 
@@ -68,10 +90,16 @@ pub(crate) fn with_signal<'scope, R>(
     prepare_read(state, id, track)?;
     let result = with_taken_value(
         || {
-            state
+            let value = state
                 .try_borrow_mut()
                 .map_err(|_| ReactiveError::Reentrant)?
-                .take_value(id, NodeKindTag::Signal)
+                .take_value(id, NodeKindTag::Signal)?;
+            let scheduler = state
+                .try_borrow()
+                .map_err(|_| ReactiveError::Reentrant)?
+                .scheduler
+                .clone();
+            Ok((value, ValueBorrow::new(scheduler)))
         },
         |value, bump| {
             state
@@ -94,10 +122,16 @@ pub(crate) fn update_signal<'scope, R>(
 ) -> ReactiveResult<R> {
     let (result, _) = update_taken_value(
         || {
-            state
+            let value = state
                 .try_borrow_mut()
                 .map_err(|_| ReactiveError::Reentrant)?
-                .take_value(id, NodeKindTag::Signal)
+                .take_value(id, NodeKindTag::Signal)?;
+            let scheduler = state
+                .try_borrow()
+                .map_err(|_| ReactiveError::Reentrant)?
+                .scheduler
+                .clone();
+            Ok((value, ValueBorrow::new(scheduler)))
         },
         |value, bump| {
             state
@@ -121,11 +155,13 @@ pub(crate) fn with_stored<'scope, R>(
     id: RawId,
     f: impl FnOnce(&AnyValue) -> R,
 ) -> ReactiveResult<R> {
-    with_taken_value(
+    let result = with_taken_value(
         || take_stored(state, id),
         |value, _| put_stored(state, id, value),
         |val| f(val),
-    )
+    )?;
+    flush_if_idle(state);
+    Ok(result)
 }
 
 pub(crate) fn update_stored<'scope, R>(
@@ -138,13 +174,14 @@ pub(crate) fn update_stored<'scope, R>(
         |value, _| put_stored(state, id, value),
         |val| (f(val), false),
     )?;
+    flush_if_idle(state);
     Ok(result)
 }
 
 fn take_stored<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
-) -> ReactiveResult<AnyValue> {
+) -> ReactiveResult<(AnyValue, ValueBorrow)> {
     let mut state_ref = state
         .try_borrow_mut()
         .map_err(|_| ReactiveError::Reentrant)?;
@@ -157,7 +194,10 @@ fn take_stored<'scope>(
         .get_mut(id)
         .ok_or(ReactiveError::NoSuchNode)?;
     match data.payload.take() {
-        Some(Payload::Stored(value)) => Ok(value),
+        Some(Payload::Stored(value)) => {
+            let scheduler = state_ref.scheduler.clone();
+            Ok((value, ValueBorrow::new(scheduler)))
+        }
         Some(p) => {
             data.payload = Some(p);
             Err(ReactiveError::WrongKind)
@@ -186,7 +226,7 @@ fn put_stored<'scope>(
 fn take_callback<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
-) -> ReactiveResult<CallbackThunk<'scope>> {
+) -> ReactiveResult<(CallbackThunk<'scope>, ValueBorrow)> {
     let mut state_ref = state
         .try_borrow_mut()
         .map_err(|_| ReactiveError::Reentrant)?;
@@ -199,7 +239,10 @@ fn take_callback<'scope>(
         .get_mut(id)
         .ok_or(ReactiveError::NoSuchNode)?;
     match data.payload.take() {
-        Some(Payload::Callback(callback)) => Ok(callback),
+        Some(Payload::Callback(callback)) => {
+            let scheduler = state_ref.scheduler.clone();
+            Ok((callback, ValueBorrow::new(scheduler)))
+        }
         Some(p) => {
             data.payload = Some(p);
             Err(ReactiveError::WrongKind)
@@ -231,7 +274,9 @@ pub(crate) fn invoke_callback<'scope>(
         || take_callback(state, id),
         |cb, _| put_callback(state, id, cb),
         |cb| cb.call(arg),
-    )
+    )?;
+    flush_if_idle(state);
+    Ok(())
 }
 
 pub(crate) fn node_ref_get<'scope, T: Clone + 'static>(

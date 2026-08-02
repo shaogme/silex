@@ -321,3 +321,58 @@ fn cyclic_memo_dependency_panics_without_poisoning_the_scheduler() {
         assert!(second.is_alive());
     });
 }
+
+#[test]
+fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
+    let mut runtime = Runtime::new();
+    let runs = Rc::new(Cell::new(0));
+
+    runtime.run(|scope| {
+        let first_slot: Rc<RefCell<Option<Memo<'_, '_, i32>>>> = Rc::new(RefCell::new(None));
+        let second_slot: Rc<RefCell<Option<Memo<'_, '_, i32>>>> = Rc::new(RefCell::new(None));
+        let (source, set_source) = scope.signal(0i32);
+        let (refresh, set_refresh) = scope.signal(0i32);
+
+        let second_slot_in_first = second_slot.clone();
+        let first = scope.memo(move |_| {
+            let _ = refresh.get();
+            let dependency = second_slot_in_first.borrow().as_ref().copied();
+            source.get() + dependency.map(|memo| memo.get()).unwrap_or(0)
+        });
+        *first_slot.borrow_mut() = Some(first);
+
+        let first_slot_in_second = first_slot.clone();
+        let second = scope.memo(move |_| {
+            let dependency = first_slot_in_second.borrow().as_ref().copied();
+            source.get() + dependency.map(|memo| memo.get()).unwrap_or(0)
+        });
+        *second_slot.borrow_mut() = Some(second);
+
+        set_refresh.set(1);
+        assert_eq!(first.get(), 0);
+
+        let first_in_effect = first;
+        let runs_in_effect = runs.clone();
+        scope.effect(move || {
+            let _ = first_in_effect.get();
+            runs_in_effect.set(runs_in_effect.get() + 1);
+        });
+
+        assert_eq!(runs.get(), 1);
+        let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            set_source.try_set(1).expect("source update should succeed");
+        }));
+        assert!(panic.is_err());
+
+        let independent_runs = Rc::new(Cell::new(0));
+        let (independent, set_independent) = scope.signal(0i32);
+        let independent_runs_in_effect = independent_runs.clone();
+        scope.effect(move || {
+            independent_runs_in_effect.set(independent_runs_in_effect.get() + independent.get());
+        });
+        set_independent.set(1);
+        assert_eq!(independent_runs.get(), 1);
+        assert!(first.is_alive());
+        assert!(second.is_alive());
+    });
+}

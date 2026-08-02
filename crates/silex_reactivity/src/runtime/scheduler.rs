@@ -81,6 +81,7 @@ pub(crate) struct GlobalScheduler {
     pub(crate) batch_depth: usize,
     pub(crate) evaluating: usize,
     pub(crate) executing: usize,
+    pub(crate) borrowed_values: usize,
 }
 
 impl GlobalScheduler {
@@ -96,6 +97,7 @@ impl GlobalScheduler {
             batch_depth: 0,
             evaluating: 0,
             executing: 0,
+            borrowed_values: 0,
         }))
     }
 
@@ -156,6 +158,19 @@ impl GlobalScheduler {
         self.active_mask.is_set(id.0)
     }
 
+    pub(crate) fn active_scope_ids(&self) -> Vec<ScopeId> {
+        self.scopes
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| {
+                entry
+                    .as_ref()
+                    .map(|_| ScopeId(index as u32))
+                    .filter(|id| self.is_scope_active(*id))
+            })
+            .collect()
+    }
+
     pub(crate) fn get_scope<'scope>(&self, id: ScopeId) -> Option<Rc<RefCell<ScopeState<'scope>>>> {
         if !self.is_scope_active(id) {
             return None;
@@ -185,6 +200,6 @@ impl GlobalScheduler {
     }
 
     pub(crate) fn should_flush(&self) -> bool {
-        self.is_idle() && !self.global_queue.is_empty()
+        self.is_idle() && self.borrowed_values == 0 && !self.global_queue.is_empty()
     }
 }

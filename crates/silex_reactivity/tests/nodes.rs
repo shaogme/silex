@@ -1,11 +1,25 @@
 use silex_reactivity::{
-    Callback, Derived, Effect, Memo, NodeRef, ReadSignal, Runtime, StoredValue, WriteSignal,
+    Callback, Derived, Effect, Memo, NodeRef, ReactiveError, ReadSignal, Runtime, StoredValue,
+    WriteSignal,
 };
 use std::{
     cell::Cell,
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
+
+struct ReenterOnDrop<'scope, 'run> {
+    setter: WriteSignal<'scope, 'run, i32>,
+    called: Rc<Cell<bool>>,
+    error: Rc<Cell<Option<ReactiveError>>>,
+}
+
+impl Drop for ReenterOnDrop<'_, '_> {
+    fn drop(&mut self) {
+        self.called.set(true);
+        self.error.set(self.setter.try_set(1).err());
+    }
+}
 
 #[test]
 fn all_public_node_capabilities_are_copy() {
@@ -129,5 +143,76 @@ fn updating_one_signal_can_read_another_signal() {
         set_other.set(4);
         set_source.update(|value| *value += other.get());
         assert_eq!(source.get(), 7);
+    });
+}
+
+#[test]
+fn updating_another_signal_during_read_defers_effect_flush() {
+    let mut runtime = Runtime::new();
+    let runs = Rc::new(Cell::new(0));
+
+    runtime.run(|scope| {
+        let (source, _set_source) = scope.signal(0i32);
+        let (other, set_other) = scope.signal(0i32);
+        let runs_in_effect = runs.clone();
+        scope.effect(move || {
+            let _ = source.get();
+            let _ = other.get();
+            runs_in_effect.set(runs_in_effect.get() + 1);
+        });
+
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            source.with(|_| set_other.set(1));
+        }));
+
+        assert!(result.is_ok());
+        assert_eq!(runs.get(), 2);
+    });
+}
+
+#[test]
+fn computation_payload_drop_can_reenter_after_state_borrow_is_released() {
+    let mut runtime = Runtime::new();
+    let called = Rc::new(Cell::new(false));
+    let error = Rc::new(Cell::new(None));
+
+    runtime.run(|scope| {
+        let scope_copy = *scope;
+        let called_in_outer = called.clone();
+        let error_in_outer = error.clone();
+        scope.effect(move || {
+            let (_source, set_source) = scope_copy.signal(0i32);
+            let guard = ReenterOnDrop {
+                setter: set_source,
+                called: called_in_outer.clone(),
+                error: error_in_outer.clone(),
+            };
+            scope_copy.effect(move || {
+                let _ = &guard;
+            });
+        });
+    });
+
+    assert!(called.get());
+    assert_eq!(error.get(), None);
+}
+
+#[test]
+fn stored_value_update_flushes_after_the_stored_payload_is_restored() {
+    let mut runtime = Runtime::new();
+    let seen = Rc::new(Cell::new(0));
+
+    runtime.run(|scope| {
+        let (source, set_source) = scope.signal(0i32);
+        let stored = scope.stored(0i32);
+        let seen_in_effect = seen.clone();
+        scope.effect(move || seen_in_effect.set(source.get()));
+
+        stored.update(|value| {
+            *value = 1;
+            set_source.set(1);
+        });
+
+        assert_eq!(seen.get(), 1);
     });
 }

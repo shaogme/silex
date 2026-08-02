@@ -38,14 +38,8 @@ impl<'scope> ScopeFrame<'scope> {
 /// harmless and prevents a copied value from disposing the original scope early.
 ///
 /// Child node capabilities cannot be returned from the higher-ranked child
-/// callback:
-///
-/// ```compile_fail
-/// use silex_reactivity::Runtime;
-///
-/// let mut runtime = Runtime::new();
-/// let _escaped = runtime.run(|scope| scope.scope(|child| child.signal(0i32).0));
-/// ```
+/// callback. The compile-fail case is covered by
+/// `tests/ui/fail_child_handle_escape.rs`.
 #[derive(Clone, Copy)]
 pub struct Scope<'scope, 'run> {
     pub(crate) frame: &'scope ScopeFrame<'run>,
@@ -63,10 +57,12 @@ impl<'scope, 'run> Scope<'scope, 'run> {
             _marker: PhantomData,
         };
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&child)));
-        frame.dispose();
-        match result {
-            Ok(value) => value,
-            Err(panic) => std::panic::resume_unwind(panic),
+        let dispose_result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| frame.dispose()));
+        match (result, dispose_result) {
+            (Ok(value), Ok(())) => value,
+            (Err(panic), _) => std::panic::resume_unwind(panic),
+            (Ok(_), Err(panic)) => std::panic::resume_unwind(panic),
         }
     }
 

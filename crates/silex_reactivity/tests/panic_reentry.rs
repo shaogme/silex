@@ -107,6 +107,49 @@ fn panic_in_memo_restores_the_previous_value_and_allows_retry() {
 }
 
 #[test]
+fn panic_in_memo_equality_restores_the_previous_value_and_allows_retry() {
+    #[derive(Clone)]
+    struct PanicOnCompare {
+        value: i32,
+        should_panic: Rc<Cell<bool>>,
+    }
+
+    impl PartialEq for PanicOnCompare {
+        fn eq(&self, other: &Self) -> bool {
+            if self.should_panic.replace(false) {
+                panic!("memo equality panic");
+            }
+            self.value == other.value
+        }
+    }
+
+    let mut runtime = Runtime::new();
+    let should_panic = Rc::new(Cell::new(false));
+
+    runtime.run(|scope| {
+        let (source, set_source) = scope.signal(1i32);
+        let panic_in_eq = should_panic.clone();
+        let memo = scope.memo(move |_| PanicOnCompare {
+            value: source.get(),
+            should_panic: panic_in_eq.clone(),
+        });
+
+        assert_eq!(memo.get().value, 1);
+        should_panic.set(true);
+        set_source.set(2);
+
+        let panic = catch_unwind(AssertUnwindSafe(|| {
+            let _ = memo.get();
+        }));
+        assert!(panic.is_err());
+        assert_eq!(memo.get().value, 2);
+
+        set_source.set(3);
+        assert_eq!(memo.get().value, 3);
+    });
+}
+
+#[test]
 fn batch_panic_restores_depth_and_flushes_pending_effects() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));

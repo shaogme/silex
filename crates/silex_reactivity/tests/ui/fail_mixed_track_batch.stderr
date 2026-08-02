@@ -1,0 +1,28 @@
+error[E0521]: borrowed data escapes outside of closure
+ --> tests/ui/fail_mixed_track_batch.rs:8:18
+  |
+6 |         let (parent, _) = scope.signal(0i32);
+  |              ------ `parent` declared here, outside of the closure body
+7 |         scope.scope(|child| {
+  |                      ----- `child` is a reference that is only valid in the closure body
+8 |             let (local, _) = child.signal(0i32);
+  |                  ^^^^^ `child` escapes the closure body here
+  |
+  = note: requirement occurs because of the type `ReadSignal<'_, '_, i32>`, which makes the generic argument `'_` invariant
+  = note: the struct `ReadSignal<'scope, 'run, T>` is invariant over the parameter `'run`
+  = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+
+error[E0521]: borrowed data escapes outside of closure
+ --> tests/ui/fail_mixed_track_batch.rs:8:30
+  |
+5 |     runtime.run(|scope| {
+  |                  -----
+  |                  |
+  |                  `scope` is a reference that is only valid in the closure body
+  |                  has type `&silex_reactivity::Scope<'_, '1>`
+...
+8 |             let (local, _) = child.signal(0i32);
+  |                              ^^^^^^^^^^^^^^^^^^
+  |                              |
+  |                              `scope` escapes the closure body here
+  |                              argument requires that `'1` must outlive `'static`

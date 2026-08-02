@@ -145,6 +145,22 @@ fn child_scope_panic_cleans_up_before_parent_continues() {
 }
 
 #[test]
+fn child_callback_panic_is_not_replaced_by_cleanup_panic() {
+    let mut runtime = Runtime::new();
+    runtime.run(|scope| {
+        let panic = catch_unwind(AssertUnwindSafe(|| {
+            scope.scope(|child| {
+                child.on_cleanup(|| panic!("cleanup panic"));
+                panic!("callback panic");
+            });
+        }))
+        .expect_err("child callback should panic");
+
+        assert_eq!(panic.downcast_ref::<&str>(), Some(&"callback panic"));
+    });
+}
+
+#[test]
 fn parent_effect_tracks_reads_inside_child_callback() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
@@ -163,6 +179,30 @@ fn parent_effect_tracks_reads_inside_child_callback() {
         assert_eq!(runs.get(), 1);
         set_source.set(1);
         assert_eq!(runs.get(), 2);
+    });
+}
+
+#[test]
+fn child_local_signal_does_not_keep_parent_effect_queued_after_exit() {
+    let mut runtime = Runtime::new();
+    let runs = Rc::new(Cell::new(0));
+
+    runtime.run(|scope| {
+        let parent_scope = *scope;
+        let runs_in_effect = runs.clone();
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            scope.effect(move || {
+                runs_in_effect.set(runs_in_effect.get() + 1);
+                parent_scope.scope(|child| {
+                    let (local, set_local) = child.signal(0i32);
+                    let _ = local.get();
+                    set_local.set(1);
+                });
+            });
+        }));
+
+        assert!(result.is_ok());
+        assert_eq!(runs.get(), 1);
     });
 }
 
@@ -220,6 +260,23 @@ fn cleanup_panic_does_not_poison_runtime() {
         set_signal.set(2);
         assert_eq!(signal.get(), 2);
     });
+}
+
+#[test]
+fn cleanup_panic_does_not_skip_remaining_cleanups() {
+    let mut runtime = Runtime::new();
+    let remaining_cleanup_ran = Rc::new(Cell::new(false));
+    let remaining_cleanup_ran_in_scope = remaining_cleanup_ran.clone();
+
+    let panic = catch_unwind(AssertUnwindSafe(|| {
+        runtime.run(|scope| {
+            scope.on_cleanup(|| panic!("first cleanup panic"));
+            scope.on_cleanup(move || remaining_cleanup_ran_in_scope.set(true));
+        });
+    }));
+
+    assert!(panic.is_err());
+    assert!(remaining_cleanup_ran.get());
 }
 
 #[test]

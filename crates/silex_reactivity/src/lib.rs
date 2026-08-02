@@ -10,12 +10,8 @@
 //! handles retain only safe weak state references. User callbacks are always
 //! invoked after the mutable state borrow has been released.
 //!
-//! ```compile_fail
-//! use silex_reactivity::Runtime;
-//!
-//! let mut runtime = Runtime::new();
-//! let _signal = runtime.run(|scope| scope.signal(0i32).0);
-//! ```
+//! Handles cannot escape the `Runtime::run` callback; the compile-fail case is
+//! covered by `tests/ui/fail_root_handle_escape.rs`.
 
 #![deny(unreachable_pub)]
 

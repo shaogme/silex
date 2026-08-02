@@ -56,12 +56,10 @@ impl Runtime {
         let result = catch_unwind(AssertUnwindSafe(|| f(&scope)));
         let dispose_result = catch_unwind(AssertUnwindSafe(|| frame.dispose()));
         self.running = false;
-        if let Err(panic) = dispose_result {
-            resume_unwind(panic);
-        }
-        match result {
-            Ok(value) => value,
-            Err(panic) => resume_unwind(panic),
+        match (result, dispose_result) {
+            (Ok(value), Ok(())) => value,
+            (Err(panic), _) => resume_unwind(panic),
+            (Ok(_), Err(panic)) => resume_unwind(panic),
         }
     }
 }
