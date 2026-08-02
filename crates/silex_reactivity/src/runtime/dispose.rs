@@ -1,0 +1,78 @@
+//! Node hierarchy disposal and scope cleanup execution.
+
+use super::model::{EdgeId, ScopeState};
+use crate::internal::{RawId, value::OnceThunk};
+use std::{cell::RefCell, mem, rc::Rc};
+
+pub(crate) fn dispose_all<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>) {
+    loop {
+        let roots = state
+            .try_borrow()
+            .map(|state| state.roots.clone())
+            .unwrap_or_default();
+        if roots.is_empty() {
+            break;
+        }
+        dispose_nodes(state, roots);
+    }
+
+    let cleanups = state
+        .try_borrow_mut()
+        .map(|mut state| mem::take(&mut state.root_cleanups))
+        .unwrap_or_default();
+    for cleanup in cleanups {
+        cleanup.call();
+    }
+}
+
+enum DisposeStep<'scope> {
+    Enter(RawId),
+    Exit {
+        cleanups: Vec<OnceThunk<'scope>>,
+    },
+}
+
+pub(crate) fn dispose_nodes<'scope>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    roots: Vec<RawId>,
+) {
+    let mut stack = Vec::with_capacity(roots.len());
+    stack.extend(roots.into_iter().rev().map(DisposeStep::Enter));
+    while let Some(step) = stack.pop() {
+        match step {
+            DisposeStep::Enter(id) => {
+                let Some((children, cleanups)) =
+                    state.try_borrow_mut().ok().and_then(|mut state_ref| {
+                        let node = state_ref.nodes.remove(id)?;
+                        let data = state_ref.data.remove(id);
+
+                        state_ref.unlink_child(node.parent, id, node.next_sibling);
+                        state_ref.clear_dependencies(id);
+
+                        let subscriber_edges: Vec<EdgeId> = state_ref
+                            .subscriber_edges_of(id)
+                            .map(|(edge_id, _)| edge_id)
+                            .collect();
+                        for edge_id in subscriber_edges {
+                            state_ref.edges.remove(edge_id);
+                        }
+
+                        let children: Vec<RawId> =
+                            state_ref.children_of_head(node.first_child).collect();
+                        let cleanups = data.map(|d| d.cleanups).unwrap_or_default();
+                        Some((children, cleanups))
+                    })
+                else {
+                    continue;
+                };
+                stack.push(DisposeStep::Exit { cleanups });
+                stack.extend(children.into_iter().rev().map(DisposeStep::Enter));
+            }
+            DisposeStep::Exit { cleanups } => {
+                for cleanup in cleanups {
+                    cleanup.call();
+                }
+            }
+        }
+    }
+}

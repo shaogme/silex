@@ -12,10 +12,7 @@ pub const SOO_CAPACITY: usize = 3 * mem::size_of::<usize>();
 ///
 /// # 为什么字节数组还要再包一层 `UnsafeCell`
 ///
-/// 内联进来的 `T` 自己可以带内部可变性 —— 最直接的例子是
-/// `silex_reactivity` 的 `ThunkValue::new_mut`：它把 `FnMut` 装进一个
-/// `RefCell` 再内联到这里，于是 `ThunkBox::call(&self)` 那条路径上，
-/// 调用闭包会**写**缓冲区里的借用标志。
+/// 内联进来的 `T` 自己可以带内部可变性
 ///
 /// 没有这层 `UnsafeCell` 时，`as_ptr(&self)` 会先取一个 `&[MaybeUninit<u8>]`：
 /// 那是一次 `SharedReadOnly` 重标记，等于宣布这段字节在引用存活期间**只读**。

@@ -1,48 +1,99 @@
-//! 所有权与执行上下文：scope、销毁、清理函数、`untrack`、`batch`。
+//! Lexical scope capabilities and lifetime boundaries.
 
-use crate::{ScopeId, runtime::drive};
+use crate::{
+    internal::value::OnceThunk,
+    runtime::{self, GlobalScheduler, ScopeId, ScopeState, run_global_queue},
+};
+use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
-/// 建一个所有权 scope：`f` 里创建的节点都成为它的子节点，
-/// [`dispose`] 这个 scope 会连带销毁它们（先子后父，同级按注册顺序）。
+/// Stable per-scope metadata referenced by copyable handles.
+pub(crate) struct ScopeFrame<'scope> {
+    pub(crate) scope_id: ScopeId,
+    pub(crate) state: Rc<RefCell<ScopeState<'scope>>>,
+}
+
+impl<'scope> ScopeFrame<'scope> {
+    pub(crate) fn new(scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
+        let state = Rc::new(RefCell::new(ScopeState::new(ScopeId(0), scheduler.clone())));
+        let scope_id = scheduler.borrow_mut().alloc_scope(&state);
+        state.borrow_mut().scope_id = scope_id;
+        Self { scope_id, state }
+    }
+
+    pub(crate) fn dispose(&self) {
+        let scheduler = self.state.borrow().scheduler.clone();
+        scheduler.borrow_mut().deactivate_scope(self.scope_id);
+        runtime::dispose_all(&self.state);
+        let should_flush = scheduler.borrow().should_flush();
+        if should_flush {
+            run_global_queue(&scheduler);
+        }
+    }
+}
+
+/// A copyable capability to create and operate nodes in one lexical scope.
 ///
-/// scope 本身**不是**计算节点：它里面的读取不建立任何依赖，它也不会重跑。
-#[track_caller]
-pub fn create<F: FnOnce()>(f: F) -> ScopeId {
-    ScopeId::from_raw(drive::create_scope(f).expect("刚建出来的运行时可用"))
-}
-
-/// 建一个独立的 (detached) 所有权 scope：它的父节点是 `None`，不挂在当前 owner 下面。
-/// 销毁外层 owner 时不会自动销毁它，调用者必须手动保存返回的 [`ScopeId`] 并由其掌控生命周期。
-#[track_caller]
-pub fn create_detached<R, F: FnOnce() -> R>(f: F) -> (ScopeId, R) {
-    let (id, res) = drive::create_detached_scope(f).expect("刚建出来的运行时可用");
-    (ScopeId::from_raw(id), res)
-}
-
-/// 销毁一个 scope 及其所有子节点。
-pub fn dispose(id: ScopeId) {
-    drive::dispose_raw(id.raw());
-}
-
-/// 注册一个清理函数，在当前节点被销毁或（对 effect 而言）下次重跑之前执行。
+/// The scope itself does not own runtime state. The enclosing `ScopeFrame` on
+/// the stack manages lexical lifetime, which makes copying this capability
+/// harmless and prevents a copied value from disposing the original scope early.
 ///
-/// 当前没有正在运行的节点时什么都不做。
-pub fn on_cleanup(f: impl FnOnce() + 'static) {
-    drive::on_cleanup(f);
+/// Child node capabilities cannot be returned from the higher-ranked child
+/// callback:
+///
+/// ```compile_fail
+/// use silex_reactivity::Runtime;
+///
+/// let mut runtime = Runtime::new();
+/// let _escaped = runtime.run(|scope| scope.scope(|child| child.signal(0i32).0));
+/// ```
+#[derive(Clone, Copy)]
+pub struct Scope<'scope, 'run> {
+    pub(crate) frame: &'scope ScopeFrame<'run>,
+    pub(crate) _marker: PhantomData<fn() -> &'scope ()>,
 }
 
-/// 在 `f` 执行期间关闭依赖追踪：里面读到的 signal 不会成为当前节点的依赖。
-///
-/// **只关追踪**。所有权上下文原封不动：`f` 里创建的节点照旧挂在当前 owner
-/// 下面，随它一起销毁（AUDIT 二轮 §1.1）。
-pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
-    drive::untrack(f)
-}
+impl<'scope, 'run> Scope<'scope, 'run> {
+    /// Execute a child scope. All child nodes and computations are destroyed
+    /// before this method returns, including during panic unwinding.
+    pub fn scope<R>(&self, f: impl for<'s1, 's2, 's3> FnOnce(&'s1 Scope<'s2, 's3>) -> R) -> R {
+        let scheduler = self.frame.state.borrow().scheduler.clone();
+        let frame = ScopeFrame::new(scheduler);
+        let child = Scope {
+            frame: &frame,
+            _marker: PhantomData,
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&child)));
+        frame.dispose();
+        match result {
+            Ok(value) => value,
+            Err(panic) => std::panic::resume_unwind(panic),
+        }
+    }
 
-/// 把 `f` 里的所有写入合成一次调度：effect 队列直到最外层 `batch` 结束才执行。
-///
-/// 嵌套是允许的，只有最外层那次结束时才 flush。`f` panic 时深度由守卫恢复，
-/// 不会把后续所有更新永久挂起（AUDIT P2）。
-pub fn batch<R>(f: impl FnOnce() -> R) -> R {
-    drive::batch(f)
+    /// Run a closure without recording signal dependencies. Ownership is
+    /// unchanged because only the shared observer slot is modified.
+    pub fn untrack<R>(&self, f: impl FnOnce() -> R) -> R {
+        runtime::with_untracked(&self.frame.state, f)
+    }
+
+    /// Defer effect queue flushing until the outermost batch returns.
+    pub fn batch<R>(&self, f: impl FnOnce() -> R) -> R {
+        runtime::with_batch(&self.frame.state, f)
+    }
+
+    /// Register cleanup on the current effect, or on this scope when no
+    /// computation is active.
+    pub fn on_cleanup<F>(&self, f: F)
+    where
+        F: FnOnce() + 'scope,
+    {
+        let thunk = OnceThunk::new(f);
+        // SAFETY: `thunk` 仅存储在当前 `ScopeFrame`（词法生命周期为 `'scope`）对应的 `ScopeState` 中。
+        // 当 `'scope` 作用域退出时，`ScopeFrame::dispose` 会被强制调用销毁所有节点与清理回调，
+        // 因此将 `thunk` 的生命周期延伸至 `'run` 是 Sound 的。
+        let thunk = unsafe { thunk.extend_lifetime() };
+        if let Ok(mut state) = self.frame.state.try_borrow_mut() {
+            state.register_cleanup(thunk);
+        }
+    }
 }

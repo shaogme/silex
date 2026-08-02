@@ -1,0 +1,122 @@
+use silex_reactivity::Runtime;
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
+
+#[test]
+fn test_any_value_soo_boundary_and_downcast() {
+    let mut runtime = Runtime::new();
+    runtime.run(|scope| {
+        // 小于等于 24 字节类型 (SOO 内联路径)
+        let (s_i32, set_s_i32) = scope.signal(42i32);
+        assert_eq!(s_i32.get(), 42);
+
+        set_s_i32.set(100);
+        assert_eq!(s_i32.get(), 100);
+
+        // 刚好 24 字节类型 ([u8; 24])
+        let arr24 = [7u8; 24];
+        let (s_24, _set_s_24) = scope.signal(arr24);
+        assert_eq!(s_24.get(), [7u8; 24]);
+
+        // 超过 24 字节类型 ([u8; 32]) (堆分配路径)
+        let arr32 = [9u8; 32];
+        let (s_32, set_s_32) = scope.signal(arr32);
+        assert_eq!(s_32.get(), [9u8; 32]);
+
+        set_s_32.update(|arr| arr[31] = 99);
+        assert_eq!(s_32.get()[31], 99);
+    });
+}
+
+#[test]
+fn test_any_value_drop_semantics_on_stack_and_heap() {
+    struct DropTracker(Rc<Cell<usize>>);
+    impl Drop for DropTracker {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+
+    #[allow(dead_code)]
+    struct BigDropTracker([u8; 32], Rc<Cell<usize>>);
+
+    impl Drop for BigDropTracker {
+        fn drop(&mut self) {
+            self.1.set(self.1.get() + 1);
+        }
+    }
+
+    let drop_counter_stack = Rc::new(Cell::new(0));
+    let drop_counter_heap = Rc::new(Cell::new(0));
+
+    let mut runtime = Runtime::new();
+    runtime.run(|scope| {
+        let _s_stack = scope.signal(DropTracker(drop_counter_stack.clone()));
+        let _s_heap = scope.signal(BigDropTracker([0; 32], drop_counter_heap.clone()));
+
+        assert_eq!(drop_counter_stack.get(), 0);
+        assert_eq!(drop_counter_heap.get(), 0);
+    });
+
+    // 作用域销毁后，所有节点及其 Payload/AnyValue 应该被正确 Drop
+    assert_eq!(drop_counter_stack.get(), 1);
+    assert_eq!(drop_counter_heap.get(), 1);
+}
+
+#[test]
+fn test_any_value_interior_mutability_inline() {
+    let mut runtime = Runtime::new();
+    runtime.run(|scope| {
+        let (s_refcell, _) = scope.signal(RefCell::new(Vec::new()));
+        s_refcell.with(|v| v.borrow_mut().push(10));
+        s_refcell.with(|v| v.borrow_mut().push(20));
+
+        assert_eq!(s_refcell.with(|v| v.borrow().clone()), vec![10, 20]);
+    });
+}
+
+#[test]
+fn test_any_value_memo_skip_equal_update() {
+    let memo_eval_count = Rc::new(Cell::new(0));
+    let memo_eval_count_cloned = memo_eval_count.clone();
+
+    let effect_eval_count = Rc::new(Cell::new(0));
+    let effect_eval_count_cloned = effect_eval_count.clone();
+
+    let mut runtime = Runtime::new();
+    runtime.run(move |scope| {
+        let (sig, set_sig) = scope.signal(10i32);
+        let memo = scope.memo(move |_| {
+            memo_eval_count_cloned.set(memo_eval_count_cloned.get() + 1);
+            sig.get() * 2
+        });
+
+        let memo_for_effect = memo;
+        let _effect = scope.effect(move || {
+            let _ = memo_for_effect.get();
+            effect_eval_count_cloned.set(effect_eval_count_cloned.get() + 1);
+        });
+
+        assert_eq!(memo.get(), 20);
+        assert_eq!(memo_eval_count.get(), 1);
+        assert_eq!(effect_eval_count.get(), 1);
+
+        // 设置相同的值
+        set_sig.set(10);
+
+        // memo 计算虽重新求值比对，但由于 try_eq 相等，其更新版本不变，下游 effect 绝对不触发！
+        assert_eq!(memo.get(), 20);
+        assert_eq!(memo_eval_count.get(), 2);
+        assert_eq!(effect_eval_count.get(), 1); // 成功拦截下游 Effect 触发！
+
+        // 设置新值 15
+        set_sig.set(15);
+        assert_eq!(memo.get(), 30);
+        assert_eq!(memo_eval_count.get(), 3);
+        assert_eq!(effect_eval_count.get(), 2);
+    });
+}
+
+
