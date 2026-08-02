@@ -156,10 +156,7 @@ impl GlobalScheduler {
         self.active_mask.is_set(id.0)
     }
 
-    pub(crate) fn get_scope<'scope>(
-        &self,
-        id: ScopeId,
-    ) -> Option<Rc<RefCell<ScopeState<'scope>>>> {
+    pub(crate) fn get_scope<'scope>(&self, id: ScopeId) -> Option<Rc<RefCell<ScopeState<'scope>>>> {
         if !self.is_scope_active(id) {
             return None;
         }

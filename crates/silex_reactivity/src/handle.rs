@@ -1,7 +1,7 @@
 //! Lifetime-bearing node capabilities.
 //!
-//! A handle contains a generation-checked internal key and a weak reference to
-//! the scope state that owns it. The lifetime marker is covariant so Rust can
+//! A handle contains a generation-checked internal key and a reference to the
+//! `ScopeFrame` that owns it. The lifetime marker is covariant so Rust can
 //! shorten a handle when it is borrowed, while `Scope::scope`'s higher-ranked
 //! callback prevents a child handle from being returned to its parent.
 
@@ -93,7 +93,6 @@ impl<'scope, 'run, K: NodeKind> Handle<'scope, 'run, K> {
     }
 
     pub(crate) const fn raw(&self) -> RawId {
-
         self.raw
     }
 

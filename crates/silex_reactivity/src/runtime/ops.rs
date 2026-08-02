@@ -148,10 +148,7 @@ fn take_stored<'scope>(
     let mut state_ref = state
         .try_borrow_mut()
         .map_err(|_| ReactiveError::Reentrant)?;
-    let node = state_ref
-        .nodes
-        .get(id)
-        .ok_or(ReactiveError::NoSuchNode)?;
+    let node = state_ref.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
     if !matches!(node.kind, NodeKindTag::Stored | NodeKindTag::NodeRef) {
         return Err(ReactiveError::WrongKind);
     }
@@ -177,10 +174,7 @@ fn put_stored<'scope>(
     let mut state_ref = state
         .try_borrow_mut()
         .map_err(|_| ReactiveError::Reentrant)?;
-    let _node = state_ref
-        .nodes
-        .get(id)
-        .ok_or(ReactiveError::NoSuchNode)?;
+    let _node = state_ref.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
     let data = state_ref
         .data
         .get_mut(id)
@@ -196,10 +190,7 @@ fn take_callback<'scope>(
     let mut state_ref = state
         .try_borrow_mut()
         .map_err(|_| ReactiveError::Reentrant)?;
-    let node = state_ref
-        .nodes
-        .get(id)
-        .ok_or(ReactiveError::NoSuchNode)?;
+    let node = state_ref.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
     if node.kind != NodeKindTag::Callback {
         return Err(ReactiveError::WrongKind);
     }
@@ -269,11 +260,22 @@ pub(crate) fn node_ref_set<'scope, T: 'static>(
 }
 
 pub(crate) fn notify<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) {
-    let mut state_ref = state
-        .try_borrow_mut()
-        .expect("ScopeState borrow failed during notify");
-    state_ref.queue_dependents(id);
-    flush_if_idle(state);
+    let should_flush = {
+        let mut state_ref = state
+            .try_borrow_mut()
+            .expect("ScopeState borrow failed during notify");
+        if state_ref.mark_notified(id) {
+            state_ref.queue_dependents(id);
+        }
+        let source_available = state_ref
+            .data
+            .get(id)
+            .is_some_and(|data| data.value.is_some());
+        source_available && state_ref.scheduler.borrow().should_flush()
+    };
+    if should_flush {
+        flush_if_idle(state);
+    }
 }
 
 pub(crate) fn track<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) {

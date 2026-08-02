@@ -32,10 +32,6 @@ impl RawId {
     /// Converts this `RawId` to `Option<RawId>`, returning `None` if `is_dangling()`.
     #[inline]
     pub fn to_option(self) -> Option<Self> {
-        if self.is_dangling() {
-            None
-        } else {
-            Some(self)
-        }
+        if self.is_dangling() { None } else { Some(self) }
     }
 }

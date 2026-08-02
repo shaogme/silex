@@ -133,10 +133,10 @@ impl<'scope> ScopeState<'scope> {
             if observer_node == target || !self.node_exists(observer_node) {
                 return;
             }
-            if let Some(obs_node) = self.nodes.get(observer_node) {
-                if !obs_node.is_computation() {
-                    return;
-                }
+            if let Some(obs_node) = self.nodes.get(observer_node)
+                && !obs_node.is_computation()
+            {
+                return;
             }
             self.add_subscriber(target, target_sub);
             self.add_dependency(observer_node, observer_dep);
@@ -151,10 +151,10 @@ impl<'scope> ScopeState<'scope> {
             let mut obs_state = obs_scope
                 .try_borrow_mut()
                 .expect("obs_scope borrow failed during track");
-            if let Some(obs_node) = obs_state.nodes.get(observer.node) {
-                if obs_node.is_computation() {
-                    obs_state.add_dependency(observer.node, observer_dep);
-                }
+            if let Some(obs_node) = obs_state.nodes.get(observer.node)
+                && obs_node.is_computation()
+            {
+                obs_state.add_dependency(observer.node, observer_dep);
             }
         }
     }
@@ -178,7 +178,7 @@ impl<'scope> ScopeState<'scope> {
                 let Some(node) = self.nodes.get_mut(target.node) else {
                     continue;
                 };
-                if node.state != NodeState::Clean {
+                if !matches!(node.state, NodeState::Clean | NodeState::Dirty) {
                     continue;
                 }
                 node.state = NodeState::Check;
@@ -207,7 +207,7 @@ impl<'scope> ScopeState<'scope> {
                 let Some(node) = state_ref.nodes.get_mut(target.node) else {
                     continue;
                 };
-                if node.state != NodeState::Clean {
+                if !matches!(node.state, NodeState::Clean | NodeState::Dirty) {
                     continue;
                 }
                 node.state = NodeState::Check;

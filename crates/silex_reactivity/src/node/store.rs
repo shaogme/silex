@@ -40,16 +40,12 @@ impl<'scope, 'run> Scope<'scope, 'run> {
 
 impl<'scope, 'run, T: 'static> StoredValue<'scope, 'run, T> {
     pub fn try_with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
-        runtime::with_stored(
-            &self.handle.state(),
-            self.handle.raw(),
-            |value| {
-                value
-                    .downcast_ref::<T>()
-                    .map(f)
-                    .ok_or(ReactiveError::TypeMismatch)
-            },
-        )?
+        runtime::with_stored(&self.handle.state(), self.handle.raw(), |value| {
+            value
+                .downcast_ref::<T>()
+                .map(f)
+                .ok_or(ReactiveError::TypeMismatch)
+        })?
     }
 
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
@@ -57,16 +53,12 @@ impl<'scope, 'run, T: 'static> StoredValue<'scope, 'run, T> {
     }
 
     pub fn try_update<R>(&self, f: impl FnOnce(&mut T) -> R) -> ReactiveResult<R> {
-        runtime::update_stored(
-            &self.handle.state(),
-            self.handle.raw(),
-            |value| {
-                value
-                    .downcast_mut::<T>()
-                    .map(f)
-                    .ok_or(ReactiveError::TypeMismatch)
-            },
-        )?
+        runtime::update_stored(&self.handle.state(), self.handle.raw(), |value| {
+            value
+                .downcast_mut::<T>()
+                .map(f)
+                .ok_or(ReactiveError::TypeMismatch)
+        })?
     }
 
     pub fn update<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {

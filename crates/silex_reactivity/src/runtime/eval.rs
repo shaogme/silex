@@ -41,32 +41,43 @@ pub(crate) fn prepare_read<'scope>(
     Ok(())
 }
 
-fn evaluate_root<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
-    id: RawId,
-) -> ReactiveResult<()> {
+fn evaluate_root<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> ReactiveResult<()> {
     let scheduler = {
-        let state_ref = state.try_borrow_mut().map_err(|_| ReactiveError::Reentrant)?;
+        let state_ref = state
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::Reentrant)?;
         let scheduler = state_ref.scheduler.clone();
         let mut sched = scheduler.borrow_mut();
         sched.evaluating += 1;
         scheduler.clone()
     };
     let mut stack = Vec::new();
-    let result = evaluate(state, id, &mut stack);
+    let result = catch_unwind(AssertUnwindSafe(|| evaluate(state, id, &mut stack)));
     {
         let mut sched = scheduler.borrow_mut();
         sched.evaluating = sched.evaluating.saturating_sub(1);
     }
-    flush_if_idle(state);
-    result
+    match result {
+        Ok(result) => {
+            flush_if_idle(state);
+            result
+        }
+        Err(panic) => resume_unwind(panic),
+    }
 }
 
 fn evaluate<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
-    stack: &mut Vec<RawId>,
+    stack: &mut Vec<TargetNode>,
 ) -> ReactiveResult<()> {
+    let target = {
+        let state_ref = state.try_borrow().map_err(|_| ReactiveError::Reentrant)?;
+        TargetNode {
+            scope_id: state_ref.scope_id,
+            node: id,
+        }
+    };
     let (node_state, running, dependencies) = {
         let state_ref = state.try_borrow().map_err(|_| ReactiveError::Reentrant)?;
         let node = state_ref.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
@@ -82,10 +93,10 @@ fn evaluate<'scope>(
     if node_state == NodeState::Clean || running {
         return Ok(());
     }
-    if stack.contains(&id) {
+    if stack.contains(&target) {
         return Err(ReactiveError::Reentrant);
     }
-    stack.push(id);
+    stack.push(target);
     for dep in &dependencies {
         if dep.scope_id == state.borrow().scope_id {
             let dependency_state = state
@@ -141,10 +152,7 @@ fn evaluate<'scope>(
                                     .try_borrow()
                                     .ok()
                                     .map(|st| {
-                                        st.nodes
-                                            .get(dep.node)
-                                            .map(|n| n.updated_epoch)
-                                            .unwrap_or(0)
+                                        st.nodes.get(dep.node).map(|n| n.updated_epoch).unwrap_or(0)
                                     })
                                     .unwrap_or(u64::MAX)
                             })
@@ -183,10 +191,7 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
             let Some(node) = state_ref.nodes.get(id) else {
                 return false;
             };
-            let is_memo_or_derived = matches!(
-                node.kind,
-                NodeKindTag::Memo | NodeKindTag::Derived
-            );
+            let is_memo_or_derived = matches!(node.kind, NodeKindTag::Memo | NodeKindTag::Derived);
             (
                 node.is_computation(),
                 node.running,
@@ -242,8 +247,7 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
         return false;
     };
 
-    let children_to_dispose: Vec<RawId> =
-        state.borrow().children_of_head(first_child).collect();
+    let children_to_dispose: Vec<RawId> = state.borrow().children_of_head(first_child).collect();
 
     let mut result = None;
     let outcome = catch_unwind(AssertUnwindSafe(|| {

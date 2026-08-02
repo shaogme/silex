@@ -274,10 +274,10 @@ impl<'scope> ScopeState<'scope> {
     }
 
     pub(crate) fn has_value(&self, id: RawId) -> bool {
-        if let Some(data) = self.data.get(id) {
-            if data.value.is_some() {
-                return true;
-            }
+        if let Some(data) = self.data.get(id)
+            && data.value.is_some()
+        {
+            return true;
         }
         if let Some(node) = self.nodes.get(id) {
             matches!(
@@ -327,6 +327,16 @@ impl<'scope> ScopeState<'scope> {
         } else {
             false
         }
+    }
+
+    pub(crate) fn mark_notified(&mut self, id: RawId) -> bool {
+        let epoch = self.scheduler.borrow_mut().next_epoch();
+        let Some(node) = self.nodes.get_mut(id) else {
+            return false;
+        };
+        node.updated_epoch = epoch;
+        node.version = node.version.wrapping_add(1);
+        true
     }
 
     pub(crate) fn set_context(&mut self, owner: Option<RawId>) {

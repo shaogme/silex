@@ -90,17 +90,12 @@ impl<'scope, 'run> Scope<'scope, 'run> {
 
 impl<'scope, 'run, T: Clone + 'static> Memo<'scope, 'run, T> {
     pub fn try_get(&self) -> ReactiveResult<T> {
-        runtime::with_signal(
-            &self.handle.state(),
-            self.handle.raw(),
-            true,
-            |value| {
-                value
-                    .downcast_ref::<T>()
-                    .cloned()
-                    .ok_or(ReactiveError::TypeMismatch)
-            },
-        )?
+        runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
+            value
+                .downcast_ref::<T>()
+                .cloned()
+                .ok_or(ReactiveError::TypeMismatch)
+        })?
     }
 
     pub fn get(&self) -> T {
@@ -108,17 +103,12 @@ impl<'scope, 'run, T: Clone + 'static> Memo<'scope, 'run, T> {
     }
 
     pub fn try_with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
-        runtime::with_signal(
-            &self.handle.state(),
-            self.handle.raw(),
-            true,
-            |value| {
-                value
-                    .downcast_ref::<T>()
-                    .map(f)
-                    .ok_or(ReactiveError::TypeMismatch)
-            },
-        )?
+        runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
+            value
+                .downcast_ref::<T>()
+                .map(f)
+                .ok_or(ReactiveError::TypeMismatch)
+        })?
     }
 
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
@@ -132,17 +122,12 @@ impl<'scope, 'run, T: Clone + 'static> Memo<'scope, 'run, T> {
 
 impl<'scope, 'run, T: Clone + 'static> Derived<'scope, 'run, T> {
     pub fn try_get(&self) -> ReactiveResult<T> {
-        runtime::with_signal(
-            &self.handle.state(),
-            self.handle.raw(),
-            true,
-            |value| {
-                value
-                    .downcast_ref::<T>()
-                    .cloned()
-                    .ok_or(ReactiveError::TypeMismatch)
-            },
-        )?
+        runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
+            value
+                .downcast_ref::<T>()
+                .cloned()
+                .ok_or(ReactiveError::TypeMismatch)
+        })?
     }
 
     pub fn get(&self) -> T {
@@ -150,17 +135,12 @@ impl<'scope, 'run, T: Clone + 'static> Derived<'scope, 'run, T> {
     }
 
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
-        runtime::with_signal(
-            &self.handle.state(),
-            self.handle.raw(),
-            true,
-            |value| {
-                value
-                    .downcast_ref::<T>()
-                    .map(f)
-                    .expect("读取 scoped derived 的类型不匹配")
-            },
-        )
+        runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
+            value
+                .downcast_ref::<T>()
+                .map(f)
+                .expect("读取 scoped derived 的类型不匹配")
+        })
         .expect("读取 scoped derived 失败")
     }
 

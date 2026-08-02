@@ -2,8 +2,8 @@
 //!
 //! A `Runtime` is only an execution boundary. Each `run` creates a fresh
 //! reference-counted state whose computation payloads are parameterized by the
-//! lifetime of that run. Handles keep only a `Weak` reference to that state, so
-//! dropping a scope invalidates every node without leaving an owning cycle.
+//! lifetime of that run. Handles keep a safe reference to their `ScopeFrame`,
+//! while the scheduler registry uses `Weak` references for cross-scope lookup.
 
 mod dispose;
 mod eval;
@@ -54,8 +54,11 @@ impl Runtime {
             _marker: PhantomData,
         };
         let result = catch_unwind(AssertUnwindSafe(|| f(&scope)));
-        frame.dispose();
+        let dispose_result = catch_unwind(AssertUnwindSafe(|| frame.dispose()));
         self.running = false;
+        if let Err(panic) = dispose_result {
+            resume_unwind(panic);
+        }
         match result {
             Ok(value) => value,
             Err(panic) => resume_unwind(panic),

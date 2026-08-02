@@ -27,8 +27,8 @@ impl<T: 'static> VGen<T> {
     const STACK: AnyValueVTable = AnyValueVTable {
         drop: FuncPtr::new(drop_stack::<T>),
         type_id: FuncPtr::new(type_id::<T>),
-        as_ptr: FuncPtr::new(as_ptr_stack::<T>),
-        as_mut_ptr: FuncPtr::new(as_mut_ptr_stack::<T>),
+        as_ptr: FuncPtr::new(as_ptr_stack),
+        as_mut_ptr: FuncPtr::new(as_mut_ptr_stack),
         equals: FuncPtr::new(equals_none),
     };
 
@@ -47,8 +47,8 @@ impl<T: PartialEq + 'static> VGenEq<T> {
     const STACK: AnyValueVTable = AnyValueVTable {
         drop: FuncPtr::new(drop_stack::<T>),
         type_id: FuncPtr::new(type_id::<T>),
-        as_ptr: FuncPtr::new(as_ptr_stack::<T>),
-        as_mut_ptr: FuncPtr::new(as_mut_ptr_stack::<T>),
+        as_ptr: FuncPtr::new(as_ptr_stack),
+        as_mut_ptr: FuncPtr::new(as_mut_ptr_stack),
         equals: FuncPtr::new(equals_typed::<T>),
     };
 
@@ -88,16 +88,16 @@ fn type_id<T: 'static>() -> TypeId {
 
 /// # Safety
 ///
-/// `_data` 必须指向存有有效 `T` 内联实例的 `InlineStorage` 内存。
-unsafe fn as_ptr_stack<T>(_data: *const u8) -> *const u8 {
-    _data
+/// `data` 必须指向存有有效内联实例的 `InlineStorage` 内存。
+unsafe fn as_ptr_stack(data: *const u8) -> *const u8 {
+    data
 }
 
 /// # Safety
 ///
-/// `_data` 必须指向存有有效 `T` 内联实例的 `InlineStorage` 内存。
-unsafe fn as_mut_ptr_stack<T>(_data: *mut u8) -> *mut u8 {
-    _data
+/// `data` 必须指向存有有效内联实例的 `InlineStorage` 内存。
+unsafe fn as_mut_ptr_stack(data: *mut u8) -> *mut u8 {
+    data
 }
 
 /// # Safety
@@ -140,7 +140,6 @@ unsafe fn equals_typed<T: PartialEq>(data1: *const u8, data2: *const u8) -> bool
         val1 == val2
     }
 }
-
 
 pub(crate) struct AnyValue {
     data: InlineStorage,
@@ -241,8 +240,6 @@ impl Drop for AnyValue {
         }
     }
 }
-
-
 
 pub(crate) enum Computation<'scope> {
     Effect(EffectThunk<'scope>),
@@ -429,4 +426,3 @@ mod tests {
         assert_eq!(v.downcast_ref::<u32>(), None);
     }
 }
-

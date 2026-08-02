@@ -118,5 +118,3 @@ fn test_any_value_memo_skip_equal_update() {
         assert_eq!(effect_eval_count.get(), 2);
     });
 }
-
-

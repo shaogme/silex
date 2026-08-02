@@ -30,15 +30,10 @@ pub(crate) fn dispose_all<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>) {
 
 enum DisposeStep<'scope> {
     Enter(RawId),
-    Exit {
-        cleanups: Vec<OnceThunk<'scope>>,
-    },
+    Exit { cleanups: Vec<OnceThunk<'scope>> },
 }
 
-pub(crate) fn dispose_nodes<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
-    roots: Vec<RawId>,
-) {
+pub(crate) fn dispose_nodes<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, roots: Vec<RawId>) {
     let mut stack = Vec::with_capacity(roots.len());
     stack.extend(roots.into_iter().rev().map(DisposeStep::Enter));
     while let Some(step) = stack.pop() {
@@ -47,10 +42,7 @@ pub(crate) fn dispose_nodes<'scope>(
                 let mut state_ref = state
                     .try_borrow_mut()
                     .expect("ScopeState borrow_mut failed during dispose_nodes");
-                let node = state_ref.nodes.remove(id);
-                let data = state_ref.data.remove(id);
-                let (children, cleanups) = if let Some(node) = node {
-                    state_ref.unlink_child(node.parent, id, node.next_sibling);
+                let (children, cleanups) = if let Some(node) = state_ref.nodes.get(id).copied() {
                     state_ref.clear_dependencies(id);
 
                     let subscriber_edges: Vec<EdgeId> = state_ref
@@ -63,6 +55,9 @@ pub(crate) fn dispose_nodes<'scope>(
 
                     let children: Vec<RawId> =
                         state_ref.children_of_head(node.first_child).collect();
+                    let data = state_ref.data.remove(id);
+                    state_ref.nodes.remove(id);
+                    state_ref.unlink_child(node.parent, id, node.next_sibling);
                     let cleanups = data.map(|d| d.cleanups).unwrap_or_default();
                     (children, cleanups)
                 } else {
