@@ -45,7 +45,7 @@ pub(crate) enum NodeState {
 }
 
 pub(crate) enum Payload<'scope> {
-    Stored(AnyValue),
+    Stored(AnyValue<'scope>),
     Callback(CallbackThunk<'scope>),
 }
 
@@ -96,7 +96,7 @@ impl NodeCore {
 
 #[derive(Default)]
 pub(crate) struct NodeData<'scope> {
-    pub(crate) value: Option<AnyValue>,
+    pub(crate) value: Option<AnyValue<'scope>>,
     pub(crate) cleanups: Vec<OnceThunk<'scope>>,
     pub(crate) payload: Option<Payload<'scope>>,
     pub(crate) computation: Option<Computation<'scope>>,
@@ -293,7 +293,7 @@ impl<'scope> ScopeState<'scope> {
         &mut self,
         id: RawId,
         expected: NodeKindTag,
-    ) -> ReactiveResult<AnyValue> {
+    ) -> ReactiveResult<AnyValue<'scope>> {
         let node = self.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
         if node.kind != expected && !matches!(expected, NodeKindTag::Signal)
             || !matches!(
@@ -307,7 +307,7 @@ impl<'scope> ScopeState<'scope> {
         data.value.take().ok_or(ReactiveError::Reentrant)
     }
 
-    pub(crate) fn put_value(&mut self, id: RawId, value: AnyValue, bump: bool) -> bool {
+    pub(crate) fn put_value(&mut self, id: RawId, value: AnyValue<'scope>, bump: bool) -> bool {
         let epoch = if bump {
             self.scheduler.borrow_mut().next_epoch()
         } else {
@@ -343,7 +343,7 @@ impl<'scope> ScopeState<'scope> {
         self.current_owner = owner;
     }
 
-    pub(crate) fn create_signal(&mut self, value: AnyValue) -> RawId {
+    pub(crate) fn create_signal(&mut self, value: AnyValue<'scope>) -> RawId {
         let parent = self.parent_for_new_node();
         let epoch = self.scheduler.borrow().current_epoch();
         let mut node = NodeCore::new(NodeKindTag::Signal, parent, NodeState::Clean);
@@ -385,7 +385,7 @@ impl<'scope> ScopeState<'scope> {
         )
     }
 
-    pub(crate) fn create_stored(&mut self, value: AnyValue) -> RawId {
+    pub(crate) fn create_stored(&mut self, value: AnyValue<'scope>) -> RawId {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::Stored, parent, NodeState::Clean),
@@ -407,12 +407,12 @@ impl<'scope> ScopeState<'scope> {
         )
     }
 
-    pub(crate) fn create_node_ref<T: 'static>(&mut self) -> RawId {
+    pub(crate) fn create_node_ref(&mut self, value: AnyValue<'scope>) -> RawId {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::NodeRef, parent, NodeState::Clean),
             NodeData {
-                payload: Some(Payload::Stored(AnyValue::new(None::<T>))),
+                payload: Some(Payload::Stored(value)),
                 ..Default::default()
             },
         )

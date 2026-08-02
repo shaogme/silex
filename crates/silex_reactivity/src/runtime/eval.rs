@@ -1,7 +1,7 @@
 //! Computation evaluation engine and queue flush scheduler.
 
 use super::{
-    dispose::dispose_nodes,
+    dispose::{dispose_nodes, run_cleanups},
     model::{NodeState, ScopeState},
     scheduler::{GlobalScheduler, Observer, TargetNode},
 };
@@ -187,22 +187,31 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
         let mut state_ref = state
             .try_borrow_mut()
             .expect("ScopeState borrow failed at start of run_node");
-        let (is_computation, is_running, is_memo_or_derived, first_child) = {
+        let (is_computation, is_running, has_computation, is_memo_or_derived, first_child) = {
             let Some(node) = state_ref.nodes.get(id) else {
                 return false;
             };
             let is_memo_or_derived = matches!(node.kind, NodeKindTag::Memo | NodeKindTag::Derived);
+            let has_computation = state_ref
+                .data
+                .get(id)
+                .is_some_and(|data| data.computation.is_some());
             (
                 node.is_computation(),
                 node.running,
+                has_computation,
                 is_memo_or_derived,
                 node.first_child,
             )
         };
 
-        if !is_computation || is_running {
+        if !is_computation || is_running || !has_computation {
             return false;
         }
+
+        let prev_owner = state_ref.current_owner;
+        let prev_obs = state_ref.scheduler.borrow().observer();
+        state_ref.clear_dependencies(id);
 
         if let Some(node) = state_ref.nodes.get_mut(id) {
             node.running = true;
@@ -229,11 +238,7 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
             .get_mut(id)
             .and_then(|data| data.computation.take());
 
-        let prev_owner = state_ref.current_owner;
-        let prev_obs = state_ref.scheduler.borrow().observer();
-        state_ref.clear_dependencies(id);
-        state_ref.current_owner = prev_owner;
-        state_ref.scheduler.borrow_mut().set_observer(prev_obs);
+        state_ref.current_owner = Some(id);
 
         (
             computation,
@@ -252,9 +257,17 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
     let mut result = None;
     let mut execution_started = false;
     let outcome = catch_unwind(AssertUnwindSafe(|| {
-        dispose_nodes(state, children_to_dispose);
-        for cleanup in cleanups {
-            cleanup.call();
+        let child_dispose = catch_unwind(AssertUnwindSafe(|| {
+            dispose_nodes(state, children_to_dispose);
+        }));
+        let mut cleanup_panic = child_dispose.err();
+        if let Some(panic) = run_cleanups(cleanups)
+            && cleanup_panic.is_none()
+        {
+            cleanup_panic = Some(panic);
+        }
+        if let Some(panic) = cleanup_panic {
+            resume_unwind(panic);
         }
         {
             let mut state_ref = state.borrow_mut();

@@ -56,16 +56,21 @@ impl<'scope, 'run, T> Clone for Signal<'scope, 'run, T> {
 
 impl<'scope, 'run> Scope<'scope, 'run> {
     /// Create a signal owned by this scope.
-    pub fn signal<T: 'static>(
+    pub fn signal<T: 'scope>(
         &self,
         value: T,
     ) -> (ReadSignal<'scope, 'run, T>, WriteSignal<'scope, 'run, T>) {
+        let value = AnyValue::new(value);
+        // SAFETY: `value` 存储在当前 `ScopeFrame`（词法生命周期为 `'scope`）对应的 `ScopeState` 中。
+        // 当 `'scope` 作用域退出时，`ScopeFrame::dispose` 会被强制调用销毁所有节点与 signal 内部值，
+        // 因此将 `value` 的生命周期延伸至 `'run` 是 Sound 的。
+        let value = unsafe { std::mem::transmute::<AnyValue<'scope>, AnyValue<'run>>(value) };
         let raw = self
             .frame
             .state
             .try_borrow_mut()
             .expect("scope 在用户代码执行期间不应持有运行时借用")
-            .create_signal(AnyValue::new(value));
+            .create_signal(value);
         let handle = Handle::new(self.frame, raw);
         (
             ReadSignal {
@@ -81,14 +86,17 @@ impl<'scope, 'run> Scope<'scope, 'run> {
 
     /// Create the paired form of a signal for callers that want one copyable
     /// capability instead of separate read/write values.
-    pub fn rw_signal<T: 'static>(&self, value: T) -> Signal<'scope, 'run, T> {
+    pub fn rw_signal<T: 'scope>(&self, value: T) -> Signal<'scope, 'run, T> {
         let (read, write) = self.signal(value);
         Signal { read, write }
     }
 }
 
-impl<'scope, 'run, T: Clone + 'static> ReadSignal<'scope, 'run, T> {
-    pub fn try_get(&self) -> ReactiveResult<T> {
+impl<'scope, 'run, T: 'scope> ReadSignal<'scope, 'run, T> {
+    pub fn try_get(&self) -> ReactiveResult<T>
+    where
+        T: Clone,
+    {
         runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
             value
                 .downcast_ref::<T>()
@@ -97,11 +105,17 @@ impl<'scope, 'run, T: Clone + 'static> ReadSignal<'scope, 'run, T> {
         })?
     }
 
-    pub fn get(&self) -> T {
+    pub fn get(&self) -> T
+    where
+        T: Clone,
+    {
         self.try_get().expect("读取 scoped signal 失败")
     }
 
-    pub fn try_get_untracked(&self) -> ReactiveResult<T> {
+    pub fn try_get_untracked(&self) -> ReactiveResult<T>
+    where
+        T: Clone,
+    {
         runtime::with_signal(&self.handle.state(), self.handle.raw(), false, |value| {
             value
                 .downcast_ref::<T>()
@@ -137,7 +151,7 @@ impl<'scope, 'run, T: Clone + 'static> ReadSignal<'scope, 'run, T> {
     }
 }
 
-impl<'scope, 'run, T: 'static> WriteSignal<'scope, 'run, T> {
+impl<'scope, 'run, T: 'scope> WriteSignal<'scope, 'run, T> {
     pub fn try_set(&self, value: T) -> ReactiveResult<()> {
         let mut value = Some(value);
         runtime::update_signal(&self.handle.state(), self.handle.raw(), |stored| {
@@ -204,7 +218,7 @@ impl<'scope, 'run, T: 'static> WriteSignal<'scope, 'run, T> {
     }
 }
 
-impl<'scope, 'run, T: Clone + 'static> Signal<'scope, 'run, T> {
+impl<'scope, 'run, T: 'scope> Signal<'scope, 'run, T> {
     pub fn read(&self) -> ReadSignal<'scope, 'run, T> {
         self.read
     }
@@ -213,14 +227,14 @@ impl<'scope, 'run, T: Clone + 'static> Signal<'scope, 'run, T> {
         self.write
     }
 
-    pub fn get(&self) -> T {
+    pub fn get(&self) -> T
+    where
+        T: Clone,
+    {
         self.read.get()
     }
 
-    pub fn set(&self, value: T)
-    where
-        T: 'static,
-    {
+    pub fn set(&self, value: T) {
         self.write.set(value);
     }
 }

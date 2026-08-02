@@ -1,9 +1,9 @@
 use silex_reactivity::{
-    Callback, Derived, Effect, Memo, NodeRef, ReactiveError, ReadSignal, Runtime, StoredValue,
-    WriteSignal,
+    AnyValue, Callback, Derived, Effect, Memo, NodeRef, ReactiveError, ReadSignal, Runtime,
+    StoredValue, WriteSignal,
 };
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
@@ -12,6 +12,17 @@ struct ReenterOnDrop<'scope, 'run> {
     setter: WriteSignal<'scope, 'run, i32>,
     called: Rc<Cell<bool>>,
     error: Rc<Cell<Option<ReactiveError>>>,
+}
+
+struct DropEvent {
+    label: &'static str,
+    events: Rc<RefCell<Vec<&'static str>>>,
+}
+
+impl Drop for DropEvent {
+    fn drop(&mut self) {
+        self.events.borrow_mut().push(self.label);
+    }
 }
 
 impl Drop for ReenterOnDrop<'_, '_> {
@@ -72,7 +83,7 @@ fn stored_callback_and_node_ref_are_scope_owned() {
             called_in_callback.set(called_in_callback.get() + 1);
         });
         callback
-            .invoke(Box::new(()))
+            .invoke(AnyValue::new(()))
             .expect("callback should be alive");
         assert_eq!(called.get(), 1);
 
@@ -100,11 +111,11 @@ fn callback_panic_restores_callback_for_the_next_invoke() {
         });
 
         let panic = catch_unwind(AssertUnwindSafe(|| {
-            callback.invoke(Box::new(())).expect("callback exists");
+            callback.invoke(AnyValue::new(())).expect("callback exists");
         }));
         assert!(panic.is_err());
         callback
-            .invoke(Box::new(()))
+            .invoke(AnyValue::new(()))
             .expect("callback should be restored");
     });
 
@@ -191,6 +202,96 @@ fn computation_payload_drop_can_reenter_after_state_borrow_is_released() {
                 let _ = &guard;
             });
         });
+    });
+
+    assert!(called.get());
+    assert_eq!(error.get(), None);
+}
+
+#[test]
+fn child_payloads_drop_before_parent_computation_payload() {
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let mut runtime = Runtime::new();
+
+    runtime.run(|scope| {
+        let scope_copy = *scope;
+        let parent_event = DropEvent {
+            label: "parent",
+            events: events.clone(),
+        };
+        let child_events = events.clone();
+        scope.effect(move || {
+            let _ = &parent_event;
+            let signal_event = DropEvent {
+                label: "signal",
+                events: child_events.clone(),
+            };
+            let _ = scope_copy.signal(signal_event);
+
+            let stored_event = DropEvent {
+                label: "stored",
+                events: child_events.clone(),
+            };
+            let _ = scope_copy.stored(stored_event);
+
+            let callback_event = DropEvent {
+                label: "callback",
+                events: child_events.clone(),
+            };
+            let _ = scope_copy.callback(move |_| {
+                let _ = &callback_event;
+            });
+
+            let node_ref = scope_copy.node_ref::<DropEvent>();
+            node_ref
+                .set(DropEvent {
+                    label: "node_ref",
+                    events: child_events.clone(),
+                })
+                .expect("node ref type should match");
+        });
+    });
+
+    let events = events.borrow();
+    assert_eq!(events.len(), 5);
+    let parent_position = events
+        .iter()
+        .position(|label| *label == "parent")
+        .expect("parent payload should drop");
+    for label in ["signal", "stored", "callback", "node_ref"] {
+        let position = events
+            .iter()
+            .position(|event| *event == label)
+            .expect("child payload should drop");
+        assert!(position < parent_position, "{label} dropped after parent");
+    }
+}
+
+#[test]
+fn child_callback_payload_drop_can_schedule_an_active_parent_effect() {
+    let mut runtime = Runtime::new();
+    let seen = Rc::new(Cell::new(0));
+    let called = Rc::new(Cell::new(false));
+    let error = Rc::new(Cell::new(None));
+
+    runtime.run(|scope| {
+        let (source, set_source) = scope.signal(0i32);
+        let seen_in_effect = seen.clone();
+        scope.effect(move || seen_in_effect.set(source.get()));
+
+        let setter = set_source;
+        scope.scope(|child| {
+            let drop_probe = ReenterOnDrop {
+                setter,
+                called: called.clone(),
+                error: error.clone(),
+            };
+            let _callback = child.callback(move |_| {
+                let _ = &drop_probe;
+            });
+        });
+
+        assert_eq!(seen.get(), 1);
     });
 
     assert!(called.get());

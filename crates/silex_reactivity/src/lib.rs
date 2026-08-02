@@ -7,7 +7,7 @@
 //!
 //! The runtime deliberately has no thread-local fallback. Computations are
 //! stored as `Box<dyn FnMut() + 'scope>` inside the state for their scope, and
-//! handles retain only safe weak state references. User callbacks are always
+//! handles retain a safe reference to their owning frame. User callbacks are always
 //! invoked after the mutable state borrow has been released.
 //!
 //! Handles cannot escape the `Runtime::run` callback; the compile-fail case is
@@ -15,6 +15,7 @@
 
 #![deny(unreachable_pub)]
 
+pub mod completion;
 mod error;
 mod handle;
 mod internal;
@@ -23,12 +24,13 @@ mod runtime;
 pub mod scope;
 
 pub use crate::{
+    completion::CompletionToken,
     error::{ReactiveError, ReactiveResult},
     handle::{
         AnyHandle, CallbackId, DerivedId, EffectId, Handle, MemoId, NodeKind, NodeKindTag,
         NodeRefId, SignalId, StoredId, kind,
     },
-    internal::RawId,
+    internal::{RawId, value::AnyValue},
     node::{
         Callback, Derived, Effect, Memo, NodeRef, ReadSignal, RwSignal, Signal, StoredValue,
         WriteSignal, notify, track, track_batch,

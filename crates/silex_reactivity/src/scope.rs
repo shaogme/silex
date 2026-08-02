@@ -23,10 +23,19 @@ impl<'scope> ScopeFrame<'scope> {
     pub(crate) fn dispose(&self) {
         let scheduler = self.state.borrow().scheduler.clone();
         scheduler.borrow_mut().deactivate_scope(self.scope_id);
-        runtime::dispose_all(&self.state);
-        let should_flush = scheduler.borrow().should_flush();
-        if should_flush {
-            run_global_queue(&scheduler);
+        let dispose_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            runtime::dispose_all(&self.state);
+        }));
+        let flush_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let should_flush = scheduler.borrow().should_flush();
+            if should_flush {
+                run_global_queue(&scheduler);
+            }
+        }));
+        match (dispose_result, flush_result) {
+            (Err(panic), _) => std::panic::resume_unwind(panic),
+            (Ok(()), Err(panic)) => std::panic::resume_unwind(panic),
+            (Ok(()), Ok(())) => {}
         }
     }
 }

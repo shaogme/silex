@@ -7,7 +7,7 @@ use crate::{
     runtime,
     scope::Scope,
 };
-use std::marker::PhantomData;
+use std::{marker::PhantomData, mem::transmute};
 
 pub struct StoredValue<'scope, 'run, T> {
     pub(crate) handle: StoredId<'scope, 'run>,
@@ -24,13 +24,18 @@ impl<'scope, 'run, T> Clone for StoredValue<'scope, 'run, T> {
 
 impl<'scope, 'run> Scope<'scope, 'run> {
     /// Store a non-reactive value under this scope.
-    pub fn stored<T: 'static>(&self, value: T) -> StoredValue<'scope, 'run, T> {
+    pub fn stored<T: 'scope>(&self, value: T) -> StoredValue<'scope, 'run, T> {
+        let value = AnyValue::new(value);
+        // SAFETY: `value` 存储在当前 `ScopeFrame`（词法生命周期为 `'scope`）对应的 `ScopeState` 中。
+        // 当 `'scope` 作用域退出时，`ScopeFrame::dispose` 会被强制调用销毁所有节点与 stored value，
+        // 因此将 `value` 的生命周期延伸至 `'run` 是 Sound 的。
+        let value = unsafe { transmute::<AnyValue<'scope>, AnyValue<'run>>(value) };
         let raw = self
             .frame
             .state
             .try_borrow_mut()
             .expect("scope 在用户代码执行期间不应持有运行时借用")
-            .create_stored(AnyValue::new(value));
+            .create_stored(value);
         StoredValue {
             handle: Handle::new(self.frame, raw),
             marker: PhantomData,
@@ -38,7 +43,7 @@ impl<'scope, 'run> Scope<'scope, 'run> {
     }
 }
 
-impl<'scope, 'run, T: 'static> StoredValue<'scope, 'run, T> {
+impl<'scope, 'run, T: 'scope> StoredValue<'scope, 'run, T> {
     pub fn try_with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
         runtime::with_stored(&self.handle.state(), self.handle.raw(), |value| {
             value

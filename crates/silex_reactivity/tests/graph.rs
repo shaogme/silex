@@ -1,4 +1,4 @@
-use silex_reactivity::{Memo, Runtime, notify, track_batch};
+use silex_reactivity::{AnyValue, Memo, Runtime, notify, track_batch};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -241,6 +241,48 @@ fn notify_recomputes_after_silent_interior_mutation() {
         });
 
         assert_eq!(seen.get(), 1);
+    });
+}
+
+#[test]
+fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
+    let mut runtime = Runtime::new();
+    let runs = Rc::new(Cell::new(0));
+
+    runtime.run(|scope| {
+        let (source, set_source) = scope.signal(RefCell::new(0i32));
+        scope.scope(|child| {
+            let runs_in_effect = runs.clone();
+            child.effect(move || {
+                source.with(|value| {
+                    let _ = *value.borrow();
+                    runs_in_effect.set(runs_in_effect.get() + 1);
+                });
+            });
+
+            let runs_in_callback = runs.clone();
+            let callback = child.callback(move |_| {
+                let runs_before = runs_in_callback.get();
+                source.with(|value| {
+                    *value.borrow_mut() += 1;
+                    notify(&set_source);
+                    assert_eq!(runs_in_callback.get(), runs_before);
+                });
+            });
+
+            assert_eq!(runs.get(), 1);
+            callback
+                .invoke(AnyValue::new(()))
+                .expect("callback should be alive");
+            assert_eq!(runs.get(), 2);
+            assert_eq!(source.with(|value| *value.borrow()), 1);
+
+            callback
+                .invoke(AnyValue::new(()))
+                .expect("callback should remain reusable");
+            assert_eq!(runs.get(), 3);
+            assert_eq!(source.with(|value| *value.borrow()), 2);
+        });
     });
 }
 

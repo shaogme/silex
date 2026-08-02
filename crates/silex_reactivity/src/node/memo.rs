@@ -40,7 +40,7 @@ impl<'scope, 'run> Scope<'scope, 'run> {
     /// changes according to `PartialEq`.
     pub fn memo<T, F>(&self, f: F) -> Memo<'scope, 'run, T>
     where
-        T: PartialEq + 'static,
+        T: PartialEq + 'scope,
         F: FnMut(Option<&T>) -> T + 'scope,
     {
         let thunk = MemoThunk::new::<T, F>(f);
@@ -65,7 +65,7 @@ impl<'scope, 'run> Scope<'scope, 'run> {
     /// Create a lazy derived value without equality gating.
     pub fn derived<T, F>(&self, f: F) -> Derived<'scope, 'run, T>
     where
-        T: 'static,
+        T: 'scope,
         F: FnMut() -> T + 'scope,
     {
         let thunk = MemoThunk::new_derived::<T, F>(f);
@@ -88,8 +88,11 @@ impl<'scope, 'run> Scope<'scope, 'run> {
     }
 }
 
-impl<'scope, 'run, T: Clone + 'static> Memo<'scope, 'run, T> {
-    pub fn try_get(&self) -> ReactiveResult<T> {
+impl<'scope, 'run, T: 'scope> Memo<'scope, 'run, T> {
+    pub fn try_get(&self) -> ReactiveResult<T>
+    where
+        T: Clone,
+    {
         runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
             value
                 .downcast_ref::<T>()
@@ -98,7 +101,10 @@ impl<'scope, 'run, T: Clone + 'static> Memo<'scope, 'run, T> {
         })?
     }
 
-    pub fn get(&self) -> T {
+    pub fn get(&self) -> T
+    where
+        T: Clone,
+    {
         self.try_get().expect("读取 scoped memo 失败")
     }
 
@@ -115,13 +121,29 @@ impl<'scope, 'run, T: Clone + 'static> Memo<'scope, 'run, T> {
         self.try_with(f).expect("读取 scoped memo 失败")
     }
 
+    pub fn try_with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
+        runtime::with_signal(&self.handle.state(), self.handle.raw(), false, |value| {
+            value
+                .downcast_ref::<T>()
+                .map(f)
+                .ok_or(ReactiveError::TypeMismatch)
+        })?
+    }
+
+    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
+        self.try_with_untracked(f)
+    }
+
     pub fn is_alive(&self) -> bool {
         self.handle.is_alive()
     }
 }
 
-impl<'scope, 'run, T: Clone + 'static> Derived<'scope, 'run, T> {
-    pub fn try_get(&self) -> ReactiveResult<T> {
+impl<'scope, 'run, T: 'scope> Derived<'scope, 'run, T> {
+    pub fn try_get(&self) -> ReactiveResult<T>
+    where
+        T: Clone,
+    {
         runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
             value
                 .downcast_ref::<T>()
@@ -130,7 +152,10 @@ impl<'scope, 'run, T: Clone + 'static> Derived<'scope, 'run, T> {
         })?
     }
 
-    pub fn get(&self) -> T {
+    pub fn get(&self) -> T
+    where
+        T: Clone,
+    {
         self.try_get().expect("读取 scoped derived 失败")
     }
 
@@ -142,6 +167,19 @@ impl<'scope, 'run, T: Clone + 'static> Derived<'scope, 'run, T> {
                 .expect("读取 scoped derived 的类型不匹配")
         })
         .expect("读取 scoped derived 失败")
+    }
+
+    pub fn try_with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
+        runtime::with_signal(&self.handle.state(), self.handle.raw(), false, |value| {
+            value
+                .downcast_ref::<T>()
+                .map(f)
+                .ok_or(ReactiveError::TypeMismatch)
+        })?
+    }
+
+    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
+        self.try_with_untracked(f)
     }
 
     pub fn is_alive(&self) -> bool {

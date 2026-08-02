@@ -79,6 +79,38 @@ fn panic_in_effect_does_not_block_the_next_notification() {
 }
 
 #[test]
+fn cleanup_panic_during_effect_rerun_does_not_skip_remaining_cleanups() {
+    let mut runtime = Runtime::new();
+    let remaining_cleanup_ran = Rc::new(Cell::new(false));
+
+    runtime.run(|scope| {
+        let (source, set_source) = scope.signal(0i32);
+        let scope_copy = *scope;
+        let register_cleanups = Rc::new(Cell::new(true));
+        let remaining_cleanup_ran_in_effect = remaining_cleanup_ran.clone();
+        scope.effect(move || {
+            let _ = source.get();
+            if register_cleanups.replace(false) {
+                scope_copy.on_cleanup(|| panic!("effect cleanup panic"));
+                let remaining_cleanup_ran = remaining_cleanup_ran_in_effect.clone();
+                scope_copy.on_cleanup(move || remaining_cleanup_ran.set(true));
+            }
+        });
+
+        let panic = catch_unwind(AssertUnwindSafe(|| set_source.set(1)));
+        assert!(panic.is_err());
+        assert!(remaining_cleanup_ran.get());
+
+        let (independent, set_independent) = scope.signal(0i32);
+        let seen = Rc::new(Cell::new(0));
+        let seen_in_effect = seen.clone();
+        scope.effect(move || seen_in_effect.set(independent.get()));
+        set_independent.set(1);
+        assert_eq!(seen.get(), 1);
+    });
+}
+
+#[test]
 fn panic_in_memo_restores_the_previous_value_and_allows_retry() {
     let mut runtime = Runtime::new();
     let should_panic = Rc::new(Cell::new(false));

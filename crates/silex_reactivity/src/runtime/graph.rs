@@ -77,22 +77,29 @@ impl<'scope> ScopeState<'scope> {
     }
 
     pub(crate) fn clear_dependencies(&mut self, observer_id: RawId) {
-        let first_dep = if let Some(node) = self.nodes.get_mut(observer_id) {
-            let first = node.first_dependency;
-            node.first_dependency = EdgeId::DANGLING;
-            first
-        } else {
-            EdgeId::DANGLING
-        };
-
         let self_sub = TargetNode {
             scope_id: self.scope_id,
             node: observer_id,
         };
 
-        let mut curr_edge = first_dep;
-        while curr_edge.is_valid() {
-            let Some(edge) = self.edges.remove(curr_edge) else {
+        let dependencies: Vec<(EdgeId, ReactiveEdge)> =
+            self.dependency_edges_of(observer_id).collect();
+        for (_, edge) in &dependencies {
+            if edge.target.scope_id != self.scope_id
+                && let Some(dep_scope) = self.scheduler.borrow().get_scope(edge.target.scope_id)
+            {
+                dep_scope
+                    .try_borrow_mut()
+                    .expect("dep_scope borrow failed during clear_dependencies");
+            }
+        }
+
+        if let Some(node) = self.nodes.get_mut(observer_id) {
+            node.first_dependency = EdgeId::DANGLING;
+        }
+
+        for (edge_id, _) in dependencies {
+            let Some(edge) = self.edges.remove(edge_id) else {
                 break;
             };
             let dep = edge.target;
@@ -107,7 +114,6 @@ impl<'scope> ScopeState<'scope> {
                     dep_state.remove_subscriber(dep.node, self_sub);
                 }
             }
-            curr_edge = edge.next;
         }
     }
 
@@ -144,8 +150,6 @@ impl<'scope> ScopeState<'scope> {
         }
 
         // Cross-scope dependency
-        self.add_subscriber(target, target_sub);
-
         let obs_scope = self.scheduler.borrow().get_scope(observer.scope_id);
         if let Some(obs_scope) = obs_scope {
             let mut obs_state = obs_scope
@@ -155,6 +159,8 @@ impl<'scope> ScopeState<'scope> {
                 && obs_node.is_computation()
             {
                 obs_state.add_dependency(observer.node, observer_dep);
+                drop(obs_state);
+                self.add_subscriber(target, target_sub);
             }
         }
     }
@@ -236,5 +242,159 @@ impl<'scope> ScopeState<'scope> {
             .get(id)
             .is_some_and(|node| node.state == NodeState::Clean)
             && self.scheduler.borrow().global_queue.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Runtime, runtime::scheduler::Observer};
+    use std::{panic::AssertUnwindSafe, panic::catch_unwind};
+
+    #[test]
+    fn track_conflict_does_not_leave_a_subscriber_half_edge() {
+        let mut runtime = Runtime::new();
+        runtime.run(|scope| {
+            let (source, _) = scope.signal(0i32);
+            let (target, _) = scope.signal(1i32);
+            let source_state = source.handle.state();
+
+            scope.scope(|child| {
+                let (local, _) = child.signal(0i32);
+                let effect = child.effect(move || {
+                    let _ = source.get();
+                });
+                let child_state = local.handle.state();
+                let (scheduler, child_scope_id) = {
+                    let state = child_state.borrow();
+                    (state.scheduler.clone(), state.scope_id)
+                };
+                scheduler.borrow_mut().set_observer(Some(Observer {
+                    scope_id: child_scope_id,
+                    node: effect.handle.raw(),
+                }));
+
+                let target_raw = target.handle.raw();
+                let effect_raw = effect.handle.raw();
+                let child_borrow = child_state.borrow_mut();
+                let mut source_borrow = source_state.borrow_mut();
+                let panic = catch_unwind(AssertUnwindSafe(|| {
+                    source_borrow.track(target_raw);
+                }));
+
+                assert!(panic.is_err());
+                assert_eq!(
+                    source_borrow
+                        .subscriber_edges_of(target_raw)
+                        .filter(|(_, edge)| {
+                            edge.target
+                                == TargetNode {
+                                    scope_id: child_scope_id,
+                                    node: effect_raw,
+                                }
+                        })
+                        .count(),
+                    0
+                );
+                assert_eq!(
+                    child_borrow
+                        .dependency_edges_of(effect_raw)
+                        .filter(|(_, edge)| edge.target.node == target_raw)
+                        .count(),
+                    0
+                );
+                drop(source_borrow);
+                drop(child_borrow);
+
+                source_state.borrow_mut().track(target_raw);
+                assert_eq!(
+                    source_state
+                        .borrow()
+                        .subscriber_edges_of(target_raw)
+                        .filter(|(_, edge)| {
+                            edge.target
+                                == TargetNode {
+                                    scope_id: child_scope_id,
+                                    node: effect_raw,
+                                }
+                        })
+                        .count(),
+                    1
+                );
+                scheduler.borrow_mut().set_observer(None);
+            });
+        });
+    }
+
+    #[test]
+    fn clear_dependencies_conflict_preserves_both_sides_of_the_edge() {
+        let mut runtime = Runtime::new();
+        runtime.run(|scope| {
+            let (source, _) = scope.signal(0i32);
+            let source_state = source.handle.state();
+            let source_raw = source.handle.raw();
+
+            scope.scope(|child| {
+                let (local, _) = child.signal(0i32);
+                let effect = child.effect(move || {
+                    let _ = source.get();
+                });
+                let child_state = local.handle.state();
+                let effect_raw = effect.handle.raw();
+                let (child_scope_id, source_scope_id) = {
+                    let child_state_ref = child_state.borrow();
+                    let source_state_ref = source_state.borrow();
+                    (child_state_ref.scope_id, source_state_ref.scope_id)
+                };
+                let source_borrow = source_state.borrow_mut();
+                let mut child_borrow = child_state.borrow_mut();
+                let panic = catch_unwind(AssertUnwindSafe(|| {
+                    child_borrow.clear_dependencies(effect_raw);
+                }));
+
+                assert!(panic.is_err());
+                assert_eq!(
+                    source_borrow
+                        .subscriber_edges_of(source_raw)
+                        .filter(|(_, edge)| {
+                            edge.target
+                                == TargetNode {
+                                    scope_id: child_scope_id,
+                                    node: effect_raw,
+                                }
+                        })
+                        .count(),
+                    1
+                );
+                assert_eq!(
+                    child_borrow
+                        .dependency_edges_of(effect_raw)
+                        .filter(|(_, edge)| {
+                            edge.target
+                                == TargetNode {
+                                    scope_id: source_scope_id,
+                                    node: source_raw,
+                                }
+                        })
+                        .count(),
+                    1
+                );
+                drop(child_borrow);
+                drop(source_borrow);
+
+                child_state.borrow_mut().clear_dependencies(effect_raw);
+                assert_eq!(
+                    source_state
+                        .borrow()
+                        .subscriber_edges_of(source_raw)
+                        .count(),
+                    0
+                );
+                assert_eq!(
+                    child_state.borrow().dependency_edges_of(effect_raw).count(),
+                    0
+                );
+            });
+        });
     }
 }

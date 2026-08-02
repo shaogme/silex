@@ -14,7 +14,6 @@ use crate::{
     },
 };
 use std::{
-    any::Any,
     cell::RefCell,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
@@ -85,7 +84,7 @@ pub(crate) fn with_signal<'scope, R>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
     track: bool,
-    f: impl FnOnce(&AnyValue) -> R,
+    f: impl FnOnce(&AnyValue<'scope>) -> R,
 ) -> ReactiveResult<R> {
     prepare_read(state, id, track)?;
     let result = with_taken_value(
@@ -118,7 +117,7 @@ pub(crate) fn with_signal<'scope, R>(
 pub(crate) fn update_signal<'scope, R>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
-    f: impl FnOnce(&mut AnyValue) -> (R, bool),
+    f: impl FnOnce(&mut AnyValue<'scope>) -> (R, bool),
 ) -> ReactiveResult<R> {
     let (result, _) = update_taken_value(
         || {
@@ -153,7 +152,7 @@ pub(crate) fn update_signal<'scope, R>(
 pub(crate) fn with_stored<'scope, R>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
-    f: impl FnOnce(&AnyValue) -> R,
+    f: impl FnOnce(&AnyValue<'scope>) -> R,
 ) -> ReactiveResult<R> {
     let result = with_taken_value(
         || take_stored(state, id),
@@ -167,7 +166,7 @@ pub(crate) fn with_stored<'scope, R>(
 pub(crate) fn update_stored<'scope, R>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
-    f: impl FnOnce(&mut AnyValue) -> R,
+    f: impl FnOnce(&mut AnyValue<'scope>) -> R,
 ) -> ReactiveResult<R> {
     let (result, _) = update_taken_value(
         || take_stored(state, id),
@@ -181,7 +180,7 @@ pub(crate) fn update_stored<'scope, R>(
 fn take_stored<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
-) -> ReactiveResult<(AnyValue, ValueBorrow)> {
+) -> ReactiveResult<(AnyValue<'scope>, ValueBorrow)> {
     let mut state_ref = state
         .try_borrow_mut()
         .map_err(|_| ReactiveError::Reentrant)?;
@@ -209,7 +208,7 @@ fn take_stored<'scope>(
 fn put_stored<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
-    value: AnyValue,
+    value: AnyValue<'scope>,
 ) -> ReactiveResult<()> {
     let mut state_ref = state
         .try_borrow_mut()
@@ -268,7 +267,7 @@ fn put_callback<'scope>(
 pub(crate) fn invoke_callback<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
-    arg: Box<dyn Any>,
+    arg: AnyValue<'scope>,
 ) -> ReactiveResult<()> {
     with_taken_value(
         || take_callback(state, id),
@@ -279,7 +278,7 @@ pub(crate) fn invoke_callback<'scope>(
     Ok(())
 }
 
-pub(crate) fn node_ref_get<'scope, T: Clone + 'static>(
+pub(crate) fn node_ref_get<'scope, T: Clone>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
 ) -> ReactiveResult<Option<T>> {
@@ -291,7 +290,7 @@ pub(crate) fn node_ref_get<'scope, T: Clone + 'static>(
     })?
 }
 
-pub(crate) fn node_ref_set<'scope, T: 'static>(
+pub(crate) fn node_ref_set<'scope, T>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
     value: T,

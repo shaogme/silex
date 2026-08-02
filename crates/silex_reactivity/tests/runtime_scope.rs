@@ -1,4 +1,4 @@
-use silex_reactivity::{ReactiveError, Runtime};
+use silex_reactivity::{ReactiveError, Runtime, notify};
 use std::{
     cell::{Cell, RefCell},
     panic::{AssertUnwindSafe, catch_unwind},
@@ -277,6 +277,166 @@ fn cleanup_panic_does_not_skip_remaining_cleanups() {
 
     assert!(panic.is_err());
     assert!(remaining_cleanup_ran.get());
+}
+
+#[test]
+fn cleanup_panic_does_not_skip_other_nodes_or_root_cleanup() {
+    let mut runtime = Runtime::new();
+    let other_node_cleaned = Rc::new(Cell::new(false));
+    let root_cleaned = Rc::new(Cell::new(false));
+    let other_node_cleaned_in_scope = other_node_cleaned.clone();
+    let root_cleaned_in_scope = root_cleaned.clone();
+
+    let panic = catch_unwind(AssertUnwindSafe(|| {
+        runtime.run(|scope| {
+            let scope_copy = *scope;
+            scope.effect(move || {
+                scope_copy.on_cleanup(|| panic!("first node cleanup panic"));
+            });
+
+            let scope_copy = *scope;
+            scope.effect(move || {
+                let cleaned = other_node_cleaned_in_scope.clone();
+                scope_copy.on_cleanup(move || cleaned.set(true));
+            });
+
+            scope.on_cleanup(move || root_cleaned_in_scope.set(true));
+        });
+    }));
+
+    assert!(panic.is_err());
+    assert!(other_node_cleaned.get());
+    assert!(root_cleaned.get());
+}
+
+#[test]
+fn root_cleanup_can_register_another_root_cleanup() {
+    let mut runtime = Runtime::new();
+    let first_ran = Rc::new(Cell::new(false));
+    let second_ran = Rc::new(Cell::new(false));
+    let first_ran_in_scope = first_ran.clone();
+    let second_ran_in_scope = second_ran.clone();
+
+    runtime.run(|scope| {
+        let scope_copy = *scope;
+        scope.on_cleanup(move || {
+            first_ran_in_scope.set(true);
+            let second_ran = second_ran_in_scope.clone();
+            scope_copy.on_cleanup(move || second_ran.set(true));
+        });
+    });
+
+    assert!(first_ran.get());
+    assert!(second_ran.get());
+}
+
+#[test]
+fn effect_cleanup_can_register_cleanup_for_the_next_run() {
+    let mut runtime = Runtime::new();
+    let first_cleanup_ran = Rc::new(Cell::new(false));
+    let second_cleanup_ran = Rc::new(Cell::new(false));
+
+    runtime.run(|scope| {
+        let (source, set_source) = scope.signal(0i32);
+        let scope_copy = *scope;
+        let register_initial_cleanup = Rc::new(Cell::new(true));
+        let first_cleanup_ran_in_effect = first_cleanup_ran.clone();
+        let second_cleanup_ran_in_effect = second_cleanup_ran.clone();
+        scope.effect(move || {
+            let _ = source.get();
+            if register_initial_cleanup.replace(false) {
+                let scope_for_cleanup = scope_copy;
+                let first_cleanup = first_cleanup_ran_in_effect.clone();
+                let second_cleanup = second_cleanup_ran_in_effect.clone();
+                scope_copy.on_cleanup(move || {
+                    first_cleanup.set(true);
+                    scope_for_cleanup.on_cleanup(move || second_cleanup.set(true));
+                });
+            }
+        });
+
+        set_source.set(1);
+        assert!(first_cleanup_ran.get());
+        assert!(!second_cleanup_ran.get());
+
+        set_source.set(2);
+        assert!(second_cleanup_ran.get());
+    });
+}
+
+#[test]
+fn child_cleanup_panic_still_flushes_parent_queue() {
+    let mut runtime = Runtime::new();
+    let runs = Rc::new(Cell::new(0));
+
+    runtime.run(|scope| {
+        let (source, set_source) = scope.signal(RefCell::new(0i32));
+        let runs_in_effect = runs.clone();
+        scope.effect(move || {
+            source.with(|value| {
+                let _ = *value.borrow();
+                runs_in_effect.set(runs_in_effect.get() + 1);
+            });
+        });
+        assert_eq!(runs.get(), 1);
+
+        let panic = catch_unwind(AssertUnwindSafe(|| {
+            scope.scope(|child| {
+                let source_in_cleanup = source;
+                let setter_in_cleanup = set_source;
+                let runs_in_cleanup = runs.clone();
+                child.on_cleanup(move || {
+                    source_in_cleanup.with(|_| {
+                        notify(&setter_in_cleanup);
+                        assert_eq!(runs_in_cleanup.get(), 1);
+                        panic!("child cleanup panic");
+                    });
+                });
+            });
+        }));
+
+        assert!(panic.is_err());
+        assert_eq!(runs.get(), 2);
+    });
+}
+
+#[test]
+fn completion_token_accepts_active_submissions_and_rejects_root_stale_submission() {
+    let mut runtime = Runtime::new();
+    let seen = Rc::new(Cell::new(0));
+    let seen_in_scope = seen.clone();
+    let token = runtime.run(|scope| {
+        let seen_in_callback = seen_in_scope.clone();
+        let token = scope.completion(move |value: i32| seen_in_callback.set(value));
+        assert!(token.submit(1));
+        token
+    });
+
+    assert_eq!(seen.get(), 1);
+    assert!(!token.submit(2));
+    assert_eq!(seen.get(), 1);
+}
+
+#[test]
+fn completion_token_rejects_submission_after_scope_deactivation() {
+    let mut runtime = Runtime::new();
+    let callback_called = Rc::new(Cell::new(false));
+
+    runtime.run(|scope| {
+        scope.scope(|child| {
+            let callback_called_in_child = callback_called.clone();
+            let token = child.completion(move |_: i32| callback_called_in_child.set(true));
+            let child_scope = *child;
+            child.effect(move || {
+                let token_in_cleanup = token.clone();
+                child_scope.on_cleanup(move || {
+                    assert!(!token_in_cleanup.submit(1));
+                });
+            });
+        });
+    });
+
+    assert!(!callback_called.get());
 }
 
 #[test]
