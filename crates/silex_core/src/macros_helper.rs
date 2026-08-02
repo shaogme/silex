@@ -1,71 +1,64 @@
 use crate::{
-    Rx, RxValueKind,
-    logic::Map,
-    reactivity::{StaticMap2Payload, StaticMap3Payload},
-    traits::RxRead,
+    Rx, Scope,
+    traits::{IntoRx, RxRead},
 };
 
-/// 使用 @fn 时，显式调用单信号静态映射。
-#[inline(always)]
-pub fn map1_static<S, U>(s: S, f: fn(&S::Value) -> U) -> Rx<U, RxValueKind>
+#[inline]
+pub fn map1_static<'scope, 'run, S, U>(
+    scope: &Scope<'scope, 'run>,
+    source: S,
+    f: fn(&S::Value) -> U,
+) -> Rx<'scope, 'run, U>
 where
-    S: Map + Clone + RxRead + 'static,
-    S::Value: Sized + 'static,
-    U: 'static,
+    S: RxRead + IntoRx<'scope, 'run> + 'scope,
+    S::Value: Sized + 'run,
+    U: 'run,
 {
-    s.map_fn(f)
+    source.into_rx(scope).map(f)
 }
 
-/// 使用 @fn 时，显式调用双信号静态映射。
-#[inline(always)]
-pub fn map2_static<I1, I2, U>(
-    i1: I1,
-    i2: I2,
-    f: fn(&I1::Value, &I2::Value) -> U,
-) -> Rx<U, RxValueKind>
+#[inline]
+pub fn map2_static<'scope, 'run, A, B, U>(
+    scope: &Scope<'scope, 'run>,
+    left: A,
+    right: B,
+    f: fn(&A::Value, &B::Value) -> U,
+) -> Rx<'scope, 'run, U>
 where
-    I1: Map + Clone + RxRead + 'static,
-    I2: Map + Clone + RxRead + 'static,
-    I1::Value: Sized + 'static,
-    I2::Value: Sized + 'static,
-    U: 'static,
+    A: RxRead + IntoRx<'scope, 'run> + 'scope,
+    B: RxRead + IntoRx<'scope, 'run> + 'scope,
+    A::Value: Sized + 'run,
+    B::Value: Sized + 'run,
+    U: 'run,
 {
-    if let (Some(id1), Some(id2)) = (i1.raw_id(), i2.raw_id()) {
-        let op = StaticMap2Payload::new2([id1, id2], f, false);
-        Rx::new_op(op)
-    } else {
-        let s1 = i1.clone();
-        let s2 = i2.clone();
-        Rx::derive(Box::new(move || s1.with(|v1| s2.with(|v2| f(v1, v2)))))
-    }
+    let left = left.into_rx(scope);
+    let right = right.into_rx(scope);
+    let scope = *scope;
+    scope.derived(move || left.with(|left| right.with(|right| f(left, right))))
 }
 
-/// 使用 @fn 时，显式调用三信号静态映射。
-#[inline(always)]
-pub fn map3_static<I1, I2, I3, U>(
-    i1: I1,
-    i2: I2,
-    i3: I3,
-    f: fn(&I1::Value, &I2::Value, &I3::Value) -> U,
-) -> Rx<U, RxValueKind>
+#[inline]
+pub fn map3_static<'scope, 'run, A, B, C, U>(
+    scope: &Scope<'scope, 'run>,
+    first: A,
+    second: B,
+    third: C,
+    f: fn(&A::Value, &B::Value, &C::Value) -> U,
+) -> Rx<'scope, 'run, U>
 where
-    I1: Map + Clone + RxRead + 'static,
-    I2: Map + Clone + RxRead + 'static,
-    I3: Map + Clone + RxRead + 'static,
-    I1::Value: Sized + 'static,
-    I2::Value: Sized + 'static,
-    I3::Value: Sized + 'static,
-    U: 'static,
+    A: RxRead + IntoRx<'scope, 'run> + 'scope,
+    B: RxRead + IntoRx<'scope, 'run> + 'scope,
+    C: RxRead + IntoRx<'scope, 'run> + 'scope,
+    A::Value: Sized + 'run,
+    B::Value: Sized + 'run,
+    C::Value: Sized + 'run,
+    U: 'run,
 {
-    if let (Some(id1), Some(id2), Some(id3)) = (i1.raw_id(), i2.raw_id(), i3.raw_id()) {
-        let op = StaticMap3Payload::new3([id1, id2, id3], f, false);
-        Rx::new_op(op)
-    } else {
-        let s1 = i1.clone();
-        let s2 = i2.clone();
-        let s3 = i3.clone();
-        Rx::derive(Box::new(move || {
-            s1.with(|v1| s2.with(|v2| s3.with(|v3| f(v1, v2, v3))))
-        }))
-    }
+    let first = first.into_rx(scope);
+    let second = second.into_rx(scope);
+    let third = third.into_rx(scope);
+    let scope = *scope;
+    scope.derived(move || {
+        first.with(|first| second.with(|second| third.with(|third| f(first, second, third))))
+    })
 }

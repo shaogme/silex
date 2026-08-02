@@ -1,250 +1,115 @@
-/// A module containing static helper functions for reactive operations.
-/// usage of these avoids generating unique closures for every operator implementation.
+use crate::{Rx, RxValueKind, traits::IntoRx};
+use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
+
 #[doc(hidden)]
 pub mod ops_impl {
     use std::ops::*;
 
-    macro_rules! gen_ops {
-        (bin: $($fn:ident:$trait:ident),*; un: $($ufn:ident:$utrait:ident),*) => {
+    macro_rules! binary {
+        ($($name:ident: $trait:ident),* $(,)?) => {
             $(
-                pub fn $fn<T>(lhs: &T, rhs: &T) -> T
+                pub fn $name<T>(left: &T, right: &T) -> T
                 where
                     for<'a> &'a T: $trait<&'a T, Output = T>,
                 {
-                    lhs.$fn(rhs)
-                }
-            )*
-            $(
-                pub fn $ufn<T>(val: &T) -> T
-                where
-                    for<'a> &'a T: $utrait<Output = T>,
-                {
-                    val.$ufn()
+                    left.$name(right)
                 }
             )*
         };
     }
 
-    gen_ops!(
-        bin: add:Add, sub:Sub, mul:Mul, div:Div, rem:Rem,
-             bitand:BitAnd, bitor:BitOr, bitxor:BitXor,
-             shl:Shl, shr:Shr;
-        un: neg:Neg, not:Not
+    binary!(
+        add: Add,
+        sub: Sub,
+        mul: Mul,
+        div: Div,
+        rem: Rem,
+        bitand: BitAnd,
+        bitor: BitOr,
+        bitxor: BitXor,
+        shl: Shl,
+        shr: Shr,
     );
 
-    macro_rules! gen_cmp_ops {
-        ($($fn:ident:$op:tt:$bound:ident),*) => {
-            $(
-                pub fn $fn<T>(lhs: &T, rhs: &T) -> bool
-                where
-                    T: $bound,
-                {
-                    lhs $op rhs
-                }
-            )*
-        };
+    pub fn neg<T>(value: &T) -> T
+    where
+        for<'a> &'a T: Neg<Output = T>,
+    {
+        value.neg()
     }
-    gen_cmp_ops!(
-        eq:==:PartialEq, ne:!=:PartialEq,
-        gt:>:PartialOrd, lt:<:PartialOrd, ge:>=:PartialOrd, le:<=:PartialOrd
-    );
-}
-use crate::{
-    Rx,
-    reactivity::{StaticMap2Payload, StaticMapPayload},
-    traits::{IntoSignal, RxCloneData, RxGet},
-};
 
-#[macro_export]
-macro_rules! impl_reactive_ops {
-    ($target:ty, [$($gen:tt),*]) => {
-        $crate::impl_reactive_op!($target, Add, add, [$($gen),*]);
-        $crate::impl_reactive_op!($target, Sub, sub, [$($gen),*]);
-        $crate::impl_reactive_op!($target, Mul, mul, [$($gen),*]);
-        $crate::impl_reactive_op!($target, Div, div, [$($gen),*]);
-        $crate::impl_reactive_op!($target, Rem, rem, [$($gen),*]);
-        $crate::impl_reactive_op!($target, BitAnd, bitand, [$($gen),*]);
-        $crate::impl_reactive_op!($target, BitOr, bitor, [$($gen),*]);
-        $crate::impl_reactive_op!($target, BitXor, bitxor, [$($gen),*]);
-        $crate::impl_reactive_op!($target, Shl, shl, [$($gen),*]);
-        $crate::impl_reactive_op!($target, Shr, shr, [$($gen),*]);
-
-        $crate::impl_reactive_unary_op!($target, Neg, neg, [$($gen),*]);
-        $crate::impl_reactive_unary_op!($target, Not, not, [$($gen),*]);
-    };
-    ($target:ident) => {
-        $crate::impl_reactive_op!($target, Add, add);
-        $crate::impl_reactive_op!($target, Sub, sub);
-        $crate::impl_reactive_op!($target, Mul, mul);
-        $crate::impl_reactive_op!($target, Div, div);
-        $crate::impl_reactive_op!($target, Rem, rem);
-        $crate::impl_reactive_op!($target, BitAnd, bitand);
-        $crate::impl_reactive_op!($target, BitOr, bitor);
-        $crate::impl_reactive_op!($target, BitXor, bitxor);
-        $crate::impl_reactive_op!($target, Shl, shl);
-        $crate::impl_reactive_op!($target, Shr, shr);
-
-        $crate::impl_reactive_unary_op!($target, Neg, neg);
-        $crate::impl_reactive_unary_op!($target, Not, not);
-    };
+    pub fn not<T>(value: &T) -> T
+    where
+        for<'a> &'a T: Not<Output = T>,
+    {
+        value.not()
+    }
 }
 
-macro_rules! impl_rx_ops {
-    () => {
-        $crate::impl_rx_op!(Add, add);
-        $crate::impl_rx_op!(Sub, sub);
-        $crate::impl_rx_op!(Mul, mul);
-        $crate::impl_rx_op!(Div, div);
-        $crate::impl_rx_op!(Rem, rem);
-        $crate::impl_rx_op!(BitAnd, bitand);
-        $crate::impl_rx_op!(BitOr, bitor);
-        $crate::impl_rx_op!(BitXor, bitxor);
-        $crate::impl_rx_op!(Shl, shl);
-        $crate::impl_rx_op!(Shr, shr);
-
-        $crate::impl_rx_unary_op!(Neg, neg);
-        $crate::impl_rx_unary_op!(Not, not);
-    };
-}
-
-#[macro_export]
-macro_rules! impl_rx_op {
-    ($trait:ident, $method:ident) => {
-        impl<R, T> std::ops::$trait<R> for $crate::Rx<T, $crate::RxValueKind>
-        where
-            for<'a> &'a T: std::ops::$trait<&'a T, Output = T>,
-            T: $crate::traits::RxCloneData,
-            R: $crate::traits::IntoRx<Value = T> + $crate::traits::IntoSignal + 'static,
-        {
-            type Output = $crate::Rx<T, $crate::RxValueKind>;
-
-            fn $method(self, rhs: R) -> Self::Output {
-                $crate::logic::arithmetic::apply_binary_op::<T, R>(
-                    self,
-                    rhs,
-                    $crate::logic::arithmetic::ops_impl::$method::<T>,
-                )
-            }
-        }
-    };
-}
-
-pub fn apply_binary_op<T, R>(lhs: Rx<T>, rhs: R, f: fn(&T, &T) -> T) -> Rx<T>
+fn binary_op<'scope, 'run, T, R>(
+    left: Rx<'scope, 'run, T>,
+    right: R,
+    op: fn(&T, &T) -> T,
+) -> Rx<'scope, 'run, T>
 where
-    T: RxCloneData,
-    R: IntoSignal<Value = T> + 'static,
+    T: 'run,
+    R: IntoRx<'scope, 'run, Value = T>,
 {
-    let lhs_s = lhs.into_signal();
-    let rhs_s = rhs.into_signal();
-
-    if lhs_s.is_constant() && rhs_s.is_constant() {
-        return Rx::new_constant(f(&lhs_s.get(), &rhs_s.get()));
-    }
-
-    let op = StaticMap2Payload::new2([lhs_s.ensure_raw_id(), rhs_s.ensure_raw_id()], f, false);
-    Rx::new_op(op)
+    let scope = left.scope();
+    let right = right.into_rx(&scope);
+    scope.derived(move || left.with(|left| right.with(|right| op(left, right))))
 }
 
-#[macro_export]
-macro_rules! impl_rx_unary_op {
-    ($trait:ident, $method:ident) => {
-        impl<T> std::ops::$trait for $crate::Rx<T, $crate::RxValueKind>
-        where
-            for<'a> &'a T: std::ops::$trait<Output = T>,
-            T: $crate::traits::RxCloneData,
-        {
-            type Output = $crate::Rx<T, $crate::RxValueKind>;
-
-            fn $method(self) -> Self::Output {
-                $crate::logic::arithmetic::apply_unary_op::<T>(
-                    self,
-                    $crate::logic::arithmetic::ops_impl::$method::<T>,
-                )
-            }
-        }
-    };
-}
-
-pub fn apply_unary_op<T>(val: Rx<T>, f: fn(&T) -> T) -> Rx<T>
+fn unary_op<'scope, 'run, T>(value: Rx<'scope, 'run, T>, op: fn(&T) -> T) -> Rx<'scope, 'run, T>
 where
-    T: RxCloneData,
+    T: 'run,
 {
-    let val_s = val.into_signal();
-
-    if val_s.is_constant() {
-        return Rx::new_constant(f(&val_s.get()));
-    }
-
-    let op = StaticMapPayload::new1(val_s.ensure_raw_id(), f, false);
-    Rx::new_op(op)
+    let scope = value.scope();
+    scope.derived(move || value.with(op))
 }
 
-#[macro_export]
-macro_rules! impl_reactive_op {
-    ($target:ty, $trait:ident, $method:ident, [$($gen:tt),*]) => {
-        impl<$($gen),*, R> std::ops::$trait<R> for $target
+macro_rules! impl_rx_binary {
+    ($trait:ident, $method:ident, $op:ident) => {
+        impl<'scope, 'run, T, R> $trait<R> for Rx<'scope, 'run, T, RxValueKind>
         where
-            Self: $crate::traits::IntoRx,
-            <Self as $crate::traits::IntoRx>::RxType: std::ops::$trait<R>,
+            T: Clone + 'run,
+            for<'a> &'a T: $trait<&'a T, Output = T>,
+            R: IntoRx<'scope, 'run, Value = T>,
         {
-            type Output =
-                <<Self as $crate::traits::IntoRx>::RxType as std::ops::$trait<R>>::Output;
+            type Output = Rx<'scope, 'run, T>;
 
-            #[inline(always)]
-            fn $method(self, rhs: R) -> Self::Output {
-                $crate::traits::IntoRx::into_rx(self).$method(rhs)
-            }
-        }
-    };
-    ($target:ident, $trait:ident, $method:ident) => {
-        impl<T, R> std::ops::$trait<R> for $target<T>
-        where
-            $target<T>: $crate::traits::IntoRx,
-            <$target<T> as $crate::traits::IntoRx>::RxType: std::ops::$trait<R>,
-        {
-            type Output =
-                <<$target<T> as $crate::traits::IntoRx>::RxType as std::ops::$trait<R>>::Output;
-
-            #[inline(always)]
-            fn $method(self, rhs: R) -> Self::Output {
-                $crate::traits::IntoRx::into_rx(self).$method(rhs)
+            fn $method(self, right: R) -> Self::Output {
+                binary_op(self, right, ops_impl::$op::<T>)
             }
         }
     };
 }
 
-#[macro_export]
-macro_rules! impl_reactive_unary_op {
-    ($target:ty, $trait:ident, $method:ident, [$($gen:tt),*]) => {
-        impl<$($gen),*> std::ops::$trait for $target
+macro_rules! impl_rx_unary {
+    ($trait:ident, $method:ident, $op:ident) => {
+        impl<'scope, 'run, T> $trait for Rx<'scope, 'run, T, RxValueKind>
         where
-            Self: $crate::traits::IntoRx,
-            <Self as $crate::traits::IntoRx>::RxType: std::ops::$trait,
+            T: Clone + 'run,
+            for<'a> &'a T: $trait<Output = T>,
         {
-            type Output =
-                <<Self as $crate::traits::IntoRx>::RxType as std::ops::$trait>::Output;
+            type Output = Rx<'scope, 'run, T>;
 
-            #[inline(always)]
             fn $method(self) -> Self::Output {
-                $crate::traits::IntoRx::into_rx(self).$method()
-            }
-        }
-    };
-    ($target:ident, $trait:ident, $method:ident) => {
-        impl<T> std::ops::$trait for $target<T>
-        where
-            $target<T>: $crate::traits::IntoRx,
-            <$target<T> as $crate::traits::IntoRx>::RxType: std::ops::$trait,
-        {
-            type Output =
-                <<$target<T> as $crate::traits::IntoRx>::RxType as std::ops::$trait>::Output;
-
-            #[inline(always)]
-            fn $method(self) -> Self::Output {
-                $crate::traits::IntoRx::into_rx(self).$method()
+                unary_op(self, ops_impl::$op::<T>)
             }
         }
     };
 }
 
-impl_rx_ops!();
+impl_rx_binary!(Add, add, add);
+impl_rx_binary!(Sub, sub, sub);
+impl_rx_binary!(Mul, mul, mul);
+impl_rx_binary!(Div, div, div);
+impl_rx_binary!(Rem, rem, rem);
+impl_rx_binary!(BitAnd, bitand, bitand);
+impl_rx_binary!(BitOr, bitor, bitor);
+impl_rx_binary!(BitXor, bitxor, bitxor);
+impl_rx_binary!(Shl, shl, shl);
+impl_rx_binary!(Shr, shr, shr);
+impl_rx_unary!(Neg, neg, neg);
+impl_rx_unary!(Not, not, not);

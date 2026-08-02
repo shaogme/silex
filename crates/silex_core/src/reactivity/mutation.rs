@@ -1,29 +1,17 @@
-use std::{cell::Cell, future::Future, panic::Location, pin::Pin, rc::Rc};
-
-use wasm_bindgen_futures::spawn_local;
-
 use crate::{
-    Rx, RxValueKind, SilexError,
-    reactivity::{
-        RawId,
-        signal::{ReadSignal, Signal, WriteSignal},
-        stored_value::StoredValue,
-    },
-    traits::{IntoSignal, RxCloneData, RxData, RxGet, adaptive::AdaptiveWrapper, *},
-    warn,
+    Rx, Scope, SilexError,
+    reactivity::{ReadSignal, Signal, WriteSignal},
+    traits::{IntoRx, IntoSignal, RxBase, RxCloneData, RxData, RxError, RxRead, RxValue},
 };
-
-// --- MutationState ---
+use silex_reactivity::CompletionToken;
+use std::{cell::Cell, future::Future, pin::Pin, rc::Rc};
+use wasm_bindgen_futures::spawn_local;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum MutationState<T, E> {
-    /// No mutation has been triggered yet.
     Idle,
-    /// A mutation is currently in progress.
     Pending,
-    /// The last mutation completed successfully.
     Success(T),
-    /// The last mutation failed.
     Error(E),
 }
 
@@ -34,234 +22,171 @@ impl<T, E> MutationState<T, E> {
 
     pub fn value(&self) -> Option<&T> {
         match self {
-            Self::Success(data) => Some(data),
+            Self::Success(value) => Some(value),
             _ => None,
         }
     }
-
-    pub fn as_option(&self) -> Option<&T> {
-        self.value()
-    }
 }
 
-// --- Mutation ---
-type MutationFuture<T, E> = Pin<Box<dyn Future<Output = Result<T, E>>>>;
+type MutationFuture<T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + 'static>>;
 
-struct MutationInner<Arg, T, E> {
-    // 使用 Rc 而非 Box，以便我们可以克隆 action 并提取出 `mutate` 作用域，
-    // 从而避免在执行用户提供的 `f` 时发生 RefCell 重入 panic（如果 `f` 内部也访问了 StoredValue）。
-    action: Rc<dyn Fn(Arg) -> MutationFuture<T, E>>,
-    last_id: Cell<usize>,
+pub struct Mutation<'scope, 'run, Arg, T, E = SilexError> {
+    pub state: ReadSignal<'scope, 'run, MutationState<T, E>>,
+    set_state: WriteSignal<'scope, 'run, MutationState<T, E>>,
+    action: Rc<dyn Fn(Arg) -> MutationFuture<T, E> + 'scope>,
+    last_id: Rc<Cell<usize>>,
+    completion: CompletionToken,
 }
 
-pub struct Mutation<Arg, T, E = SilexError> {
-    pub state: ReadSignal<MutationState<T, E>>,
-    set_state: WriteSignal<MutationState<T, E>>,
-    // Use StoredValue to hold the closure and ID, making Mutation pure Copy
-    inner: StoredValue<MutationInner<Arg, T, E>>,
-}
-
-impl<Arg, T, E> Clone for Mutation<Arg, T, E> {
+impl<'scope, 'run, Arg, T, E> Clone for Mutation<'scope, 'run, Arg, T, E> {
     fn clone(&self) -> Self {
-        *self
+        Self {
+            state: self.state,
+            set_state: self.set_state,
+            action: self.action.clone(),
+            last_id: self.last_id.clone(),
+            completion: self.completion.clone(),
+        }
     }
 }
 
-impl<Arg, T, E> Copy for Mutation<Arg, T, E> {}
-
-impl<Arg: RxData, T: RxData, E: RxData> Mutation<Arg, T, E> {
-    /// Create a new Mutation with the given async handler.
-    ///
-    /// The handler `f` takes an argument `Arg` and returns a Future resolving to `Result<T, E>`.
-    pub fn new<F, Fut>(f: F) -> Self
+impl<'scope, 'run, Arg, T, E> Mutation<'scope, 'run, Arg, T, E>
+where
+    Arg: RxData,
+    T: RxData + 'static,
+    E: RxError + 'static,
+{
+    pub fn new<F, Fut>(scope: &Scope<'scope, 'run>, action: F) -> Self
     where
-        F: Fn(Arg) -> Fut + 'static,
+        F: Fn(Arg) -> Fut + 'scope,
         Fut: Future<Output = Result<T, E>> + 'static,
     {
-        let (state, set_state) = Signal::pair(MutationState::Idle);
-
-        // Wrap the user provided future in a Box to erase the type.
-        let action = Rc::new(move |arg| Box::pin(f(arg)) as MutationFuture<T, E>);
-
-        let inner_val = MutationInner {
-            action,
-            last_id: Cell::new(0),
-        };
-
-        let inner = StoredValue::new(inner_val);
+        let (state, set_state) = scope.signal(MutationState::Idle);
+        let last_id = Rc::new(Cell::new(0usize));
+        let last_id_for_callback = last_id.clone();
+        let set_state_for_callback = set_state;
+        let completion = scope.completion(move |(id, result): (usize, Result<T, E>)| {
+            if last_id_for_callback.get() == id {
+                set_state_for_callback.set(match result {
+                    Ok(value) => MutationState::Success(value),
+                    Err(error) => MutationState::Error(error),
+                });
+            }
+        });
 
         Self {
             state,
             set_state,
-            inner,
+            action: Rc::new(move |arg| Box::pin(action(arg))),
+            last_id,
+            completion,
         }
     }
 
-    /// Trigger the mutation with the given argument.
-    ///
-    /// This will update the state to `Pending`, execute the future,
-    /// and then update to `Success` or `Error`.
-    /// If `mutate` is called again while a request is pending, the previous request's
-    /// result will be ignored (last-one-wins).
     pub fn mutate(&self, arg: Arg) {
-        // Increment ID and set pending state
-        let (current_id, action) = match self.inner.try_with_untracked(|inner| {
-            let next_id = inner.last_id.get().wrapping_add(1);
-            inner.last_id.set(next_id);
-            (next_id, inner.action.clone())
-        }) {
-            Some(v) => v,
-            None => {
-                warn!("Mutation triggered after disposal");
-                return;
-            }
-        };
-
+        let id = self.last_id.get().wrapping_add(1);
+        self.last_id.set(id);
         self.set_state.set(MutationState::Pending);
-
-        // Execute action outside of StoredValue borrow lock to avoid panic
-        // if the user's function tries to access other StoredValues.
-        let future = action(arg);
-
-        // Spawn
-        let set_state = self.set_state;
-        let inner_handle = self.inner;
-
+        let future = (self.action)(arg);
+        let completion = self.completion.clone();
         spawn_local(async move {
-            let result = future.await;
-
-            // Check ID
-            let is_latest = inner_handle
-                .try_with_untracked(|inner| inner.last_id.get() == current_id)
-                .unwrap_or(false);
-
-            if is_latest {
-                set_state.update(|s| {
-                    *s = match result {
-                        Ok(data) => MutationState::Success(data),
-                        Err(err) => MutationState::Error(err),
-                    };
-                });
-            }
+            let _ = completion.submit((id, future.await));
         });
     }
 
-    pub fn mutate_with<A>(&self, arg_accessor: A)
+    pub fn mutate_with<S>(&self, source: S)
     where
-        A: RxRead<Value = Arg>,
+        S: RxRead<Value = Arg>,
         Arg: Clone,
     {
-        self.mutate(arg_accessor.with(Clone::clone));
+        self.mutate(source.with(Clone::clone));
     }
 
-    /// Helper to check if the mutation is currently `Pending`.
     pub fn loading(&self) -> bool {
-        self.state.with(|s: &MutationState<T, E>| s.is_loading())
+        self.state.with(MutationState::is_loading)
     }
-}
 
-impl<Arg: RxData, T: RxCloneData, E: RxData> Mutation<Arg, T, E> {
-    /// Helper to get the last successful value, if any.
-    pub fn value(&self) -> Option<T> {
-        self.state
-            .with(|s: &MutationState<T, E>| s.value().cloned())
+    pub fn value(&self) -> Option<T>
+    where
+        T: Clone,
+    {
+        self.state.with(|state| state.value().cloned())
     }
-}
 
-impl<Arg: RxData, T: RxData, E: RxCloneData> Mutation<Arg, T, E> {
-    /// Helper to get the last error, if any.
-    pub fn error(&self) -> Option<E> {
-        self.state.with(|s: &MutationState<T, E>| match s {
-            MutationState::Error(e) => Some(e.clone()),
+    pub fn error(&self) -> Option<E>
+    where
+        E: Clone,
+    {
+        self.state.with(|state| match state {
+            MutationState::Error(error) => Some(error.clone()),
             _ => None,
         })
     }
 }
 
-impl<Arg: RxData, T: RxData, E: RxData> RxValue for Mutation<Arg, T, E> {
+impl<'scope, 'run, Arg, T, E> RxValue for Mutation<'scope, 'run, Arg, T, E>
+where
+    Arg: RxData + 'run,
+    T: RxData + 'run,
+    E: RxError + 'run,
+{
     type Value = Option<T>;
 }
 
-impl<Arg: RxData, T: RxData, E: RxData> RxBase for Mutation<Arg, T, E> {
-    #[inline(always)]
-    fn raw_id(&self) -> Option<RawId> {
-        self.state.raw_id()
-    }
-
-    #[inline(always)]
+impl<'scope, 'run, Arg, T, E> RxBase for Mutation<'scope, 'run, Arg, T, E>
+where
+    Arg: RxData + 'run,
+    T: RxData + 'run,
+    E: RxError + 'run,
+{
     fn track(&self) {
         self.state.track();
     }
 
-    #[inline(always)]
-    fn is_disposed(&self) -> bool {
-        self.state.is_disposed()
-    }
-
-    #[inline(always)]
-    fn defined_at(&self) -> Option<&'static Location<'static>> {
-        self.state.defined_at()
-    }
-
-    #[inline(always)]
-    fn debug_name(&self) -> Option<String> {
-        self.state.debug_name()
+    fn is_alive(&self) -> bool {
+        self.state.is_alive()
     }
 }
 
-impl<Arg: RxData, T: RxCloneData, E: RxData> RxInternal for Mutation<Arg, T, E> {
-    type ReadOutput<'a>
-        = RxGuard<'a, Option<T>, Option<T>>
-    where
-        Self: 'a;
+impl<'scope, 'run, Arg, T, E> RxRead for Mutation<'scope, 'run, Arg, T, E>
+where
+    Arg: RxData + 'run,
+    T: RxCloneData + 'run,
+    E: RxError + 'run,
+{
+    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.state.try_with(|state| f(&state.value().cloned()))
+    }
 
-    #[inline(always)]
-    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         self.state
-            .try_with_untracked(|s| RxGuard::Owned(s.value().cloned()))
-    }
-
-    #[inline(always)]
-    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.state.try_with_untracked(|s: &MutationState<T, E>| {
-            let val = s.value().cloned();
-            fun(&val)
-        })
-    }
-
-    #[inline(always)]
-    fn rx_get_adaptive(&self) -> Option<Self::Value>
-    where
-        Self::Value: Sized,
-    {
-        self.rx_try_with_untracked(|v| AdaptiveWrapper(v).maybe_clone())
-            .flatten()
-    }
-
-    #[inline(always)]
-    fn rx_is_constant(&self) -> bool {
-        false
+            .try_with_untracked(|state| f(&state.value().cloned()))
     }
 }
 
-impl<Arg: RxData, T: RxCloneData, E: RxData> IntoRx for Mutation<Arg, T, E> {
-    type RxType = Rx<Option<T>, RxValueKind>;
-    #[inline(always)]
-    fn into_rx(self) -> Self::RxType {
-        Rx::derive(Box::new(move || self.get()))
+impl<'scope, 'run, Arg, T, E> IntoRx<'scope, 'run> for Mutation<'scope, 'run, Arg, T, E>
+where
+    Arg: RxData + 'run,
+    T: RxCloneData + 'static,
+    E: RxError + 'static,
+{
+    fn into_rx(self, scope: &Scope<'scope, 'run>) -> Rx<'scope, 'run, Option<T>> {
+        let scope = *scope;
+        scope.derived(move || self.value())
     }
-    #[inline(always)]
+
     fn is_constant(&self) -> bool {
         false
     }
 }
 
-impl<Arg: RxData, T: RxCloneData, E: RxData> IntoSignal for Mutation<Arg, T, E> {
-    #[inline(always)]
-    fn into_signal(self) -> Signal<Option<T>>
-    where
-        Self: 'static,
-    {
-        Signal::derive(Box::new(move || self.get()))
+impl<'scope, 'run, Arg, T, E> IntoSignal<'scope, 'run> for Mutation<'scope, 'run, Arg, T, E>
+where
+    Arg: RxData + 'run,
+    T: RxCloneData + 'static,
+    E: RxError + 'static,
+{
+    fn into_signal(self, scope: &Scope<'scope, 'run>) -> Signal<'scope, 'run, Option<T>> {
+        self.into_rx(scope).into_signal(scope)
     }
 }

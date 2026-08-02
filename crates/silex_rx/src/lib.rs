@@ -5,319 +5,257 @@ use proc_macro2::{Group, TokenStream as TokenStream2, TokenTree};
 use quote::{format_ident, quote};
 use std::{collections::HashMap, iter::once};
 use syn::{
-    Block, Error, Expr, ExprBlock, Ident, Macro, parse2,
+    Block, Error, Expr, ExprBlock, Ident, Macro, Result, parse2,
     token::Move,
     visit_mut::{VisitMut, visit_expr_mut, visit_macro_mut},
 };
 
-/// 用于收集并处理 $ 变量的访问器
 struct SignalVisitor {
-    // 映射：原始 Ident -> 内部生成的引用 Ident
     signal_map: HashMap<Ident, Ident>,
 }
 
 impl VisitMut for SignalVisitor {
-    fn visit_expr_mut(&mut self, i: &mut Expr) {
-        if let Expr::Path(expr_path) = i
-            && let Some(segment) = expr_path.path.segments.last_mut()
+    fn visit_expr_mut(&mut self, expression: &mut Expr) {
+        if let Expr::Path(path) = expression
+            && let Some(segment) = path.path.segments.last_mut()
         {
             let name = segment.ident.to_string();
-            if let Some(original_name) = name.strip_prefix("__silex_rx_sig_") {
-                let span = segment.ident.span();
-                let original_ident = format_ident!("{}", original_name, span = span);
-
-                // 为该信号生成一个唯一的内部变量名（用于 .with 闭包参数）
-                // 这样就不会遮蔽外部同名的信号句柄
-                let ref_ident = self
+            if let Some(original) = name.strip_prefix("__silex_rx_sig_") {
+                let original = format_ident!("{}", original, span = segment.ident.span());
+                let reference = self
                     .signal_map
-                    .entry(original_ident.clone())
-                    .or_insert_with(|| format_ident!("__ref_{}", original_name, span = span));
-
-                segment.ident = ref_ident.clone();
+                    .entry(original.clone())
+                    .or_insert_with(|| format_ident!("__ref_{}", original));
+                segment.ident = reference.clone();
             }
         }
-        visit_expr_mut(self, i);
+        visit_expr_mut(self, expression);
     }
 
-    fn visit_macro_mut(&mut self, i: &mut Macro) {
-        fn process_tokens(
+    fn visit_macro_mut(&mut self, macro_call: &mut Macro) {
+        fn rewrite_tokens(
             tokens: TokenStream2,
             signal_map: &mut HashMap<Ident, Ident>,
         ) -> TokenStream2 {
             tokens
                 .into_iter()
-                .map(|tt| match tt {
-                    TokenTree::Ident(id) => {
-                        let name = id.to_string();
-                        if let Some(original_name) = name.strip_prefix("__silex_rx_sig_") {
-                            let span = id.span();
-                            let original_ident = format_ident!("{}", original_name, span = span);
-                            let ref_ident =
-                                signal_map.entry(original_ident.clone()).or_insert_with(|| {
-                                    format_ident!("__ref_{}", original_name, span = span)
-                                });
-                            TokenTree::Ident(ref_ident.clone())
+                .map(|token| match token {
+                    TokenTree::Ident(identifier) => {
+                        let name = identifier.to_string();
+                        if let Some(original) = name.strip_prefix("__silex_rx_sig_") {
+                            let original = format_ident!("{}", original, span = identifier.span());
+                            let reference = signal_map
+                                .entry(original.clone())
+                                .or_insert_with(|| format_ident!("__ref_{}", original));
+                            TokenTree::Ident(reference.clone())
                         } else {
-                            TokenTree::Ident(id)
+                            TokenTree::Ident(identifier)
                         }
                     }
-                    TokenTree::Group(g) => {
-                        let inner = process_tokens(g.stream(), signal_map);
-                        let mut new_group = Group::new(g.delimiter(), inner);
-                        new_group.set_span(g.span());
-                        TokenTree::Group(new_group)
+                    TokenTree::Group(group) => {
+                        let inner = rewrite_tokens(group.stream(), signal_map);
+                        let mut rewritten = Group::new(group.delimiter(), inner);
+                        rewritten.set_span(group.span());
+                        TokenTree::Group(rewritten)
                     }
-                    _ => tt,
+                    other => other,
                 })
                 .collect()
         }
-        i.tokens = process_tokens(i.tokens.clone(), &mut self.signal_map);
-        visit_macro_mut(self, i);
+
+        macro_call.tokens = rewrite_tokens(macro_call.tokens.clone(), &mut self.signal_map);
+        visit_macro_mut(self, macro_call);
     }
 }
 
 fn preprocess_tokens(tokens: TokenStream2) -> (TokenStream2, bool) {
     let mut output = TokenStream2::new();
-    let mut found_invalid_dollar = false;
-    let mut iter = tokens.into_iter().peekable();
+    let mut invalid_dollar = false;
+    let mut tokens = tokens.into_iter().peekable();
 
-    while let Some(tt) = iter.next() {
-        match tt {
-            TokenTree::Punct(ref p) if p.as_char() == '$' => {
-                if let Some(TokenTree::Ident(id)) = iter.peek() {
-                    let id = id.clone();
-                    let span = id.span();
-                    iter.next(); // consume ident
-                    let placeholder = format_ident!("__silex_rx_sig_{}", id, span = span);
-                    output.extend(once(TokenTree::Ident(placeholder)));
+    while let Some(token) = tokens.next() {
+        match token {
+            TokenTree::Punct(punct) if punct.as_char() == '$' => {
+                if let Some(TokenTree::Ident(identifier)) = tokens.peek() {
+                    let identifier = identifier.clone();
+                    tokens.next();
+                    output.extend(once(TokenTree::Ident(format_ident!(
+                        "__silex_rx_sig_{}",
+                        identifier,
+                        span = identifier.span()
+                    ))));
                 } else {
-                    found_invalid_dollar = true;
-                    output.extend(once(TokenTree::Punct(p.clone())));
+                    invalid_dollar = true;
+                    output.extend(once(TokenTree::Punct(punct)));
                 }
             }
-            TokenTree::Group(g) => {
-                let (inner_tokens, inner_err) = preprocess_tokens(g.stream());
-                if inner_err {
-                    found_invalid_dollar = true;
-                }
-                let mut new_group = Group::new(g.delimiter(), inner_tokens);
-                new_group.set_span(g.span());
-                output.extend(once(TokenTree::Group(new_group)));
+            TokenTree::Group(group) => {
+                let (inner, inner_invalid) = preprocess_tokens(group.stream());
+                invalid_dollar |= inner_invalid;
+                let mut rewritten = Group::new(group.delimiter(), inner);
+                rewritten.set_span(group.span());
+                output.extend(once(TokenTree::Group(rewritten)));
             }
-            _ => {
-                output.extend(once(tt));
-            }
+            other => output.extend(once(other)),
         }
     }
-    (output, found_invalid_dollar)
+
+    (output, invalid_dollar)
 }
 
-/// `rx!` 过程宏：实现智能信号包装与零拷贝多路访问。
-#[proc_macro]
-pub fn rx(input: TokenStream) -> TokenStream {
-    let mut iter = TokenStream2::from(input).into_iter();
-
-    // 尝试解析前缀路径
-    let mut prefix = quote! { ::silex_core };
-    let mut raw_input = TokenStream2::new();
-    let mut first_part = TokenStream2::new();
-    let mut found_semi = false;
-
-    for tt in iter.by_ref() {
-        if let TokenTree::Punct(ref p) = tt
-            && p.as_char() == ';'
-        {
-            found_semi = true;
-            break;
+fn split_at_semicolon(tokens: &mut impl Iterator<Item = TokenTree>) -> Option<TokenStream2> {
+    let mut part = TokenStream2::new();
+    for token in tokens {
+        if matches!(&token, TokenTree::Punct(punct) if punct.as_char() == ';') {
+            return Some(part);
         }
-        first_part.extend(once(tt));
+        part.extend(once(token));
     }
+    None
+}
 
-    if found_semi {
-        prefix = first_part;
-        raw_input.extend(iter);
-    } else {
-        raw_input = first_part;
+fn nested_reads(pairs: &[(Ident, Ident)], body: &TokenStream2) -> TokenStream2 {
+    let Some((signal, reference)) = pairs.first() else {
+        return quote! {{ #body }};
+    };
+    let rest = nested_reads(&pairs[1..], body);
+    quote! {
+        (#signal).with(|#reference| #rest)
     }
+}
 
-    if raw_input.is_empty() {
-        return quote! {
-            #prefix::Rx::<(), #prefix::RxValueKind>::new_constant(())
-        }
-        .into();
-    }
-
-    let (processed_input, found_err) = preprocess_tokens(raw_input.clone());
-    if found_err {
-        return Error::new_spanned(
-            raw_input,
-            "Invalid signal identifier: '$' alone is not allowed",
+fn expand(input: TokenStream2) -> Result<TokenStream2> {
+    let mut tokens = input.into_iter();
+    let prefix = split_at_semicolon(&mut tokens).ok_or_else(|| {
+        Error::new(
+            proc_macro2::Span::call_site(),
+            "rx! requires prefix; scope; body",
         )
-        .to_compile_error()
-        .into();
+    })?;
+    if prefix.is_empty() {
+        return Err(Error::new(
+            proc_macro2::Span::call_site(),
+            "rx! prefix cannot be empty",
+        ));
+    }
+    let scope_tokens = split_at_semicolon(&mut tokens).ok_or_else(|| {
+        Error::new(
+            proc_macro2::Span::call_site(),
+            "rx! requires an explicit scope before the body",
+        )
+    })?;
+    if scope_tokens.is_empty() {
+        return Err(Error::new(
+            proc_macro2::Span::call_site(),
+            "rx! scope cannot be empty",
+        ));
+    }
+    let scope: Expr = parse2(scope_tokens)?;
+    let body: TokenStream2 = tokens.collect();
+    if body.is_empty() {
+        return Ok(quote! {{ let __silex_scope = #scope; __silex_scope.constant(()) }});
     }
 
-    // 检测 @fn 标记
-    let mut force_static = false;
-    let mut final_raw_input = processed_input.clone();
+    let (processed, invalid_dollar) = preprocess_tokens(body.clone());
+    if invalid_dollar {
+        return Err(Error::new_spanned(
+            body,
+            "invalid signal identifier: '$' must be followed by an identifier",
+        ));
+    }
 
-    let mut tokens_iter = processed_input.clone().into_iter().peekable();
-    if let Some(TokenTree::Punct(p)) = tokens_iter.peek()
-        && p.as_char() == '@'
-    {
-        tokens_iter.next(); // consume @
-        if let Some(TokenTree::Ident(id)) = tokens_iter.peek()
-            && *id == "fn"
+    let mut force_derived = false;
+    let mut expression_tokens = processed.clone();
+    let mut expression_iter = processed.into_iter().peekable();
+    if matches!(expression_iter.peek(), Some(TokenTree::Punct(punct)) if punct.as_char() == '@') {
+        expression_iter.next();
+        if matches!(expression_iter.peek(), Some(TokenTree::Ident(identifier)) if identifier == "fn")
         {
-            tokens_iter.next(); // consume fn
-            force_static = true;
-            final_raw_input = tokens_iter.collect();
+            expression_iter.next();
+            force_derived = true;
+            expression_tokens = expression_iter.collect();
         }
     }
 
-    let mut expr = match parse2::<Expr>(final_raw_input.clone()) {
-        Ok(e) => e,
-        Err(_) => match parse2::<Block>(final_raw_input.clone()) {
-            Ok(block) => Expr::Block(ExprBlock {
-                attrs: vec![],
-                label: None,
-                block,
-            }),
-            Err(_) => {
-                if force_static {
-                    return Error::new_spanned(
-                        final_raw_input,
-                        "@fn requires a valid expression or block",
-                    )
-                    .to_compile_error()
-                    .into();
-                }
-                return quote! {
-                    #prefix::Rx::derive(Box::new(move || { #raw_input }))
-                }
-                .into();
-            }
-        },
+    let mut expression = match parse2::<Expr>(expression_tokens.clone()) {
+        Ok(expression) => expression,
+        Err(_) => Expr::Block(ExprBlock {
+            attrs: Vec::new(),
+            label: None,
+            block: parse2::<Block>(expression_tokens.clone())?,
+        }),
     };
 
     let mut visitor = SignalVisitor {
         signal_map: HashMap::new(),
     };
-    visitor.visit_expr_mut(&mut expr);
-
-    // 准备信号列表
+    visitor.visit_expr_mut(&mut expression);
     let mut pairs: Vec<_> = visitor.signal_map.into_iter().collect();
-    pairs.sort_by_key(|a| a.0.to_string());
+    pairs.sort_by_key(|(identifier, _)| identifier.to_string());
+    let scope_binding = quote! { let __silex_scope = #scope; };
 
-    // 构建扁平化的捕获和读取逻辑
-    // 捕获阶段：在闭包外克隆信号句柄
-    // 读取阶段：在闭包内通过 .read() 获取 Guard
-    let mut capture_stmts = vec![];
-    let mut read_init_stmts = vec![];
-    for (orig, refer) in &pairs {
-        let sig_name = format_ident!("__sig_{}", orig);
-        let guard_name = format_ident!("__guard_{}", orig);
-        capture_stmts.push(quote! { let #sig_name = #orig.clone(); });
-        read_init_stmts.push(quote! {
-            let #guard_name = #prefix::traits::RxRead::read(&#sig_name);
-            let #refer = &*#guard_name;
-        });
+    if let Expr::Closure(mut closure) = expression {
+        let closure_body = *closure.body;
+        let closure_body = quote! { #closure_body };
+        let reads = nested_reads(&pairs, &closure_body);
+        closure.capture = Some(Move::default());
+        *closure.body = parse2(reads)?;
+        return Ok(quote! {{ #scope_binding __silex_scope.callback(#closure) }});
     }
 
-    let (f_expr, is_stored) = if let Expr::Closure(mut closure) = expr.clone() {
-        closure.capture = Some(Move::default());
-        let has_inputs = !closure.inputs.is_empty();
-        let body = &closure.body;
+    let expression = quote! { #expression };
+    let reads = nested_reads(&pairs, &expression);
 
-        *closure.body = parse2::<Expr>(quote! {
-            {
-                #(#read_init_stmts)*
-                #body
-            }
-        })
-        .unwrap();
-
-        (quote! { #closure }, has_inputs)
-    } else {
-        (
-            quote! {
-                move || {
-                    #(#read_init_stmts)*
-                    #expr
-                }
-            },
-            false,
+    if !force_derived
+        && pairs.is_empty()
+        && matches!(
+            expression_tokens.clone().into_iter().next(),
+            Some(TokenTree::Literal(_))
         )
-    };
+        && parse2::<syn::ExprLit>(expression_tokens.clone()).is_ok()
+    {
+        return Ok(quote! {{ #scope_binding __silex_scope.constant(#expression) }});
+    }
 
-    // 最终构造：根据是否带有参数决定调用 derive (计算) 还是 effect (存储/副作用)
-    let output = if force_static {
-        if is_stored {
-            // @fn 目前仅支持计算映射 (无参数闭包或带有 $ 变量的表达式)
-            // 带有参数的闭包 (|el| ...) 目前无法直接静态化，因为参数由外部注入，尚未在 StaticPayload 中实现支持。
-            return Error::new_spanned(
-                final_raw_input,
-                "@fn optimization is not supported for effect closures with parameters (like |el: &Element|).",
-            )
-            .to_compile_error()
-            .into();
-        }
+    Ok(quote! {{ #scope_binding __silex_scope.derived(move || #reads) }})
+}
 
-        if pairs.is_empty() {
-            // 如果没有探测到信号变量，判断是否为字面量
-            let is_literal = matches!(expr, syn::Expr::Lit(_));
-            if is_literal {
-                quote! { #prefix::Rx::<_, #prefix::RxValueKind>::new_constant(#expr) }
-            } else {
-                // 如果不是字面量（可能是方法调用如 login.loading()），回退到 derive 以确保响应性
-                quote! { #prefix::Rx::<_, #prefix::RxValueKind>::derive(Box::new(#f_expr)) }
-            }
-        } else if pairs.len() == 1 {
-            let (orig, refer) = &pairs[0];
-            quote! {
-                #prefix::macros_helper::map1_static(#orig.clone(), |#refer| { #expr })
-            }
-        } else if pairs.len() == 2 {
-            let (orig1, refer1) = &pairs[0];
-            let (orig2, refer2) = &pairs[1];
-            quote! {
-                #prefix::macros_helper::map2_static(#orig1.clone(), #orig2.clone(), |#refer1, #refer2| { #expr })
-            }
-        } else if pairs.len() == 3 {
-            let (orig1, refer1) = &pairs[0];
-            let (orig2, refer2) = &pairs[1];
-            let (orig3, refer3) = &pairs[2];
-            quote! {
-                #prefix::macros_helper::map3_static(#orig1.clone(), #orig2.clone(), #orig3.clone(), |#refer1, #refer2, #refer3| { #expr })
-            }
-        } else {
-            // 超过 3 个信号，报错提醒（或者你可以选择在这里也回退，但既然用户写了 @fn，报错更负责）
-            return Error::new_spanned(
-                final_raw_input,
-                "@fn optimization currently supports up to 3 signals.",
-            )
-            .to_compile_error()
-            .into();
-        }
-    } else if is_stored {
-        quote! {
-            {
-                #(#capture_stmts)*
-                #prefix::Rx::effect(Rc::new(#f_expr) as Rc<dyn Fn(_)>)
-            }
-        }
-    } else if pairs.is_empty() && matches!(expr, syn::Expr::Lit(_)) {
-        // 只有纯字面量才视为常量。
-        // 如果是代码块或方法调用，即便没有依赖也应视为派生，以支持延迟执行和副作用。
-        quote! { #prefix::Rx::<_, #prefix::RxValueKind>::new_constant(#expr) }
-    } else {
-        quote! {
-            {
-                #(#capture_stmts)*
-                #prefix::Rx::derive(Box::new(#f_expr))
-            }
-        }
-    };
+/// `rx!` process macro. The first section is a dependency prefix, the second
+/// section is the explicit scope expression.
+#[proc_macro]
+pub fn rx(input: TokenStream) -> TokenStream {
+    match expand(TokenStream2::from(input)) {
+        Ok(output) => output.into(),
+        Err(error) => error.into_compile_error().into(),
+    }
+}
 
-    output.into()
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quote::quote;
+
+    #[test]
+    fn preprocesses_dollar_identifiers() {
+        let (tokens, invalid) = preprocess_tokens(quote! { $count + $user.name });
+        assert!(!invalid);
+        assert!(tokens.to_string().contains("__silex_rx_sig_count"));
+    }
+
+    #[test]
+    fn rejects_missing_scope_section() {
+        let error = expand(quote! { ::silex_core; $count }).unwrap_err();
+        assert!(error.to_string().contains("explicit scope"));
+    }
+
+    #[test]
+    fn emits_only_scoped_constructors() {
+        let output = expand(quote! { ::silex_core; scope; $count + 1 })
+            .unwrap()
+            .to_string();
+        assert!(output.contains("derived"));
+        assert!(!output.contains("new_op"));
+        let old_ref_count = ["R", "c"].concat();
+        assert!(!output.contains(&old_ref_count));
+    }
 }

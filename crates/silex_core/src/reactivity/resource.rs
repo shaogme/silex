@@ -1,46 +1,32 @@
-use std::{any::Any, cell::Cell, future::Future, panic::Location, rc::Rc};
-
-use silex_reactivity::scope::on_cleanup;
-use wasm_bindgen_futures::spawn_local;
-
-use super::{
-    effect::Effect,
-    signal::{ReadSignal, Signal, WriteSignal},
-};
 use crate::{
-    Rx, RxValueKind, SilexError,
-    reactivity::{Memo, RawId, StoredValue},
-    traits::{IntoSignal, RxCloneData, RxData, RxError, RxGet, adaptive::AdaptiveWrapper, *},
+    Rx, Scope, SilexError,
+    reactivity::{Memo, ReadSignal, RwSignal, WriteSignal},
+    traits::{IntoRx, IntoSignal, RxBase, RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
 };
-
-// --- Resource ---
+use std::{cell::Cell, future::Future, marker::PhantomData, rc::Rc};
+use wasm_bindgen_futures::spawn_local;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ResourceState<T, E> {
-    /// Initial state, no data fetch has started yet.
     Idle,
-    /// Loading initial data.
     Loading,
-    /// Has data successfully.
     Ready(T),
-    /// Has data, but is refreshing (Stale-While-Revalidate).
     Reloading(T),
-    /// Failed to load data. Use `Resource::refetch` to retry.
     Error(E),
 }
 
 impl<T, E> ResourceState<T, E> {
     pub fn as_option(&self) -> Option<&T> {
         match self {
-            Self::Ready(data) | Self::Reloading(data) => Some(data),
+            Self::Ready(value) | Self::Reloading(value) => Some(value),
             _ => None,
         }
     }
 
     pub fn unwrap(self) -> T {
         match self {
-            Self::Ready(data) | Self::Reloading(data) => data,
-            _ => panic!("ResourceState::unwrap called on non-Ready/Reloading state"),
+            Self::Ready(value) | Self::Reloading(value) => value,
+            _ => panic!("ResourceState::unwrap called without data"),
         }
     }
 
@@ -49,31 +35,33 @@ impl<T, E> ResourceState<T, E> {
     }
 }
 
-pub struct Resource<T, E = SilexError> {
-    pub state: ReadSignal<ResourceState<T, E>>,
-    set_state: WriteSignal<ResourceState<T, E>>,
-    trigger: WriteSignal<usize>,
+pub struct Resource<'scope, 'run, T, E = SilexError> {
+    pub state: ReadSignal<'scope, 'run, ResourceState<T, E>>,
+    set_state: WriteSignal<'scope, 'run, ResourceState<T, E>>,
+    trigger: RwSignal<'scope, 'run, usize>,
+    marker: PhantomData<fn() -> (&'scope (), &'run ())>,
 }
 
-impl<T, E> Clone for Resource<T, E> {
+impl<'scope, 'run, T, E> Copy for Resource<'scope, 'run, T, E> {}
+
+impl<'scope, 'run, T, E> Clone for Resource<'scope, 'run, T, E> {
     fn clone(&self) -> Self {
         *self
     }
 }
-impl<T, E> Copy for Resource<T, E> {}
 
 pub trait ResourceFetcher<S> {
     type Data;
     type Error;
-    type Future: Future<Output = Result<Self::Data, Self::Error>>;
+    type Future: Future<Output = Result<Self::Data, Self::Error>> + 'static;
 
     fn fetch(&self, source: S) -> Self::Future;
 }
 
-impl<S, T, E, Fun, Fut> ResourceFetcher<S> for Fun
+impl<S, T, E, F, Fut> ResourceFetcher<S> for F
 where
-    Fun: Fn(S) -> Fut,
-    Fut: Future<Output = Result<T, E>>,
+    F: Fn(S) -> Fut,
+    Fut: Future<Output = Result<T, E>> + 'static,
 {
     type Data = T;
     type Error = E;
@@ -84,302 +72,174 @@ where
     }
 }
 
-impl<T: RxCloneData, E: RxError> Resource<T, E> {
-    pub fn new<S, Fetcher, R>(
+impl<'scope, 'run, T, E> Resource<'scope, 'run, T, E>
+where
+    T: RxCloneData + 'static,
+    E: RxError + 'static,
+{
+    pub fn new<S, R, Fetcher>(
+        scope: &Scope<'scope, 'run>,
         source: R,
         fetcher: Fetcher,
-        suspense_ctx: impl Into<Option<SuspenseContext>>,
+        suspense: Option<SuspenseContext<'scope, 'run>>,
     ) -> Self
     where
-        R: RxGet<Value = S> + 'static,
-        S: PartialEq + 'static,
-        Fetcher: ResourceFetcher<S, Data = T, Error = E> + RxData,
+        S: Clone + PartialEq + 'static,
+        R: RxRead<Value = S> + Clone + 'scope,
+        Fetcher: ResourceFetcher<S, Data = T, Error = E> + 'scope,
     {
-        let suspense_ctx = suspense_ctx.into();
-
-        // Try to retrieve existing resource from SuspenseContext (Hook-style stability)
-        if let Some(ctx) = suspense_ctx {
-            let cached_res = ctx.state.with_untracked(|s| {
-                let idx = s.index;
-                if let Some(any_res) = s.resources.get(idx).cloned()
-                    && let Some(res) = any_res.downcast_ref::<Self>()
-                {
-                    Some((*res, idx))
-                } else {
-                    None
-                }
-            });
-
-            if let Some((res_val, idx)) = cached_res {
-                ctx.state.update_untracked(|s| s.index = idx + 1);
-                return res_val;
-            }
-        }
-
-        // 默认状态为 Idle，直到第一次 Effect 执行变为 Loading
-        let (state, set_state) = Signal::<ResourceState<T, E>>::pair(ResourceState::Idle);
-        let (trigger, set_trigger) = Signal::pair(0);
-
-        let alive = Rc::new(Cell::new(true));
-        let alive_clone = alive.clone();
-        on_cleanup(move || alive_clone.set(false));
-
+        let (state, set_state) = scope.signal(ResourceState::Idle);
+        let trigger = scope.rw_signal(0usize);
         let request_id = Rc::new(Cell::new(0usize));
-
-        Effect::new(move |_| {
-            let source_val = source.get();
-            let _ = trigger.get();
-
-            if let Some(ctx) = suspense_ctx {
-                ctx.increment();
+        let request_id_for_callback = request_id.clone();
+        let set_state_for_callback = set_state;
+        let suspense_for_callback = suspense;
+        let completion = scope.completion(move |(id, result): (usize, Result<T, E>)| {
+            if request_id_for_callback.get() == id {
+                set_state_for_callback.set(match result {
+                    Ok(value) => ResourceState::Ready(value),
+                    Err(error) => ResourceState::Error(error),
+                });
             }
+            if let Some(context) = suspense_for_callback {
+                context.decrement();
+            }
+        });
 
-            // State transition logic:
-            set_state.update(|s| {
-                *s = match &*s {
-                    // If we already have data (Ready or Reloading), switch to Reloading to preserve data
-                    ResourceState::Ready(data) | ResourceState::Reloading(data) => {
-                        ResourceState::Reloading(data.clone())
-                    }
-                    // Otherwise (Idle, Loading, Error), switch to Loading
-                    _ => ResourceState::Loading,
-                };
-            });
-
-            let current_id = request_id.get().wrapping_add(1);
-            request_id.set(current_id);
-
-            let fut = fetcher.fetch(source_val);
-
-            let alive = alive.clone();
-            let request_id = request_id.clone();
-
+        let source_for_effect = source.clone();
+        let trigger_for_effect = trigger.read_signal();
+        let request_id_for_effect = request_id.clone();
+        let suspense_for_effect = suspense;
+        let _effect = scope.effect(move |_: Option<()>| {
+            let input = source_for_effect.get();
+            let _ = trigger_for_effect.get();
+            if let Some(context) = suspense_for_effect {
+                context.increment();
+            }
+            let id = request_id_for_effect.get().wrapping_add(1);
+            request_id_for_effect.set(id);
+            let future = fetcher.fetch(input);
+            let completion = completion.clone();
             spawn_local(async move {
-                let res = fut.await;
-
-                if alive.get() && request_id.get() == current_id {
-                    set_state.update(|s| {
-                        *s = match res {
-                            Ok(val) => ResourceState::Ready(val),
-                            Err(e) => ResourceState::Error(e),
-                        };
-                    });
-                }
-
-                if let Some(ctx) = suspense_ctx {
-                    ctx.decrement();
-                }
+                let _ = completion.submit((id, future.await));
             });
         });
 
-        let res = Resource {
+        Self {
             state,
             set_state,
-            trigger: set_trigger,
-        };
-
-        // Cache the newly created resource in the context
-        if let Some(ctx) = suspense_ctx {
-            ctx.state.update_untracked(|s| {
-                s.resources.push(Rc::new(res));
-                s.index += 1;
-            });
+            trigger,
+            marker: PhantomData,
         }
-
-        res
     }
 
     pub fn refetch(&self) {
-        self.trigger.update(|n| *n = n.wrapping_add(1));
+        self.trigger.update(|value| *value = value.wrapping_add(1));
     }
 
-    /// Mutate the resource's data directly if available.
-    /// Useful for optimistic UI updates.
-    /// This will transition state to `Ready(new_data)`.
     pub fn update(&self, f: impl FnOnce(&mut T)) {
-        self.set_state.update(|s| {
-            let mut new_state = None;
-            match s {
-                ResourceState::Ready(data) => {
-                    f(data);
-                }
-                ResourceState::Reloading(data) => {
-                    f(data);
-                    new_state = Some(ResourceState::Ready(data.clone()));
-                }
-                _ => {}
-            }
-
-            if let Some(ns) = new_state {
-                *s = ns;
-            }
+        self.set_state.update(|state| match state {
+            ResourceState::Ready(value) | ResourceState::Reloading(value) => f(value),
+            _ => {}
         });
     }
 
-    /// Set the resource's data directly.
-    /// This transitions the state to `Ready(value)`.
     pub fn set(&self, value: T) {
         self.set_state.set(ResourceState::Ready(value));
     }
 
-    /// Helper to check if the resource is currently `Loading`.
     pub fn loading(&self) -> bool {
-        self.state.with(|s: &ResourceState<T, E>| s.is_loading())
+        self.state.with(ResourceState::is_loading)
     }
 
-    /// Helper to get the last successful value, if any.
     pub fn value(&self) -> Option<T> {
-        self.state
-            .with(|s: &ResourceState<T, E>| s.as_option().cloned())
+        self.state.with(|state| state.as_option().cloned())
     }
 
-    /// Helper to get data if available (Ready or Reloading)
     pub fn get_data(&self) -> Option<T> {
-        self.state.with(|s| s.as_option().cloned())
+        self.value()
     }
 
-    pub fn map<U: RxData + PartialEq>(&self, f: impl Fn(Option<&T>) -> U + 'static) -> Memo<U> {
-        let state = self.state;
-        Memo::new(move |_| state.with(|s| f(s.as_option())))
+    pub fn map<U, F>(&self, scope: &Scope<'scope, 'run>, f: F) -> Memo<'scope, 'run, U>
+    where
+        U: PartialEq + 'static,
+        F: Fn(Option<&T>) -> U + 'scope,
+    {
+        let resource = *self;
+        scope.memo(move |_| resource.state.with(|state| f(state.as_option())))
     }
 }
 
-impl<T: RxData, E: RxError> RxValue for Resource<T, E> {
+impl<'scope, 'run, T: RxData + 'run, E: RxError + 'run> RxValue for Resource<'scope, 'run, T, E> {
     type Value = Option<T>;
 }
 
-impl<T: RxData, E: RxError> RxBase for Resource<T, E> {
-    #[inline(always)]
-    fn raw_id(&self) -> Option<RawId> {
-        self.state.raw_id()
-    }
-
-    #[inline(always)]
+impl<'scope, 'run, T: RxData + 'run, E: RxError + 'run> RxBase for Resource<'scope, 'run, T, E> {
     fn track(&self) {
         self.state.track();
     }
 
-    #[inline(always)]
-    fn is_disposed(&self) -> bool {
-        self.state.is_disposed()
-    }
-
-    #[inline(always)]
-    fn defined_at(&self) -> Option<&'static Location<'static>> {
-        self.state.defined_at()
-    }
-
-    #[inline(always)]
-    fn debug_name(&self) -> Option<String> {
-        self.state.debug_name()
+    fn is_alive(&self) -> bool {
+        self.state.is_alive()
     }
 }
 
-impl<T: RxCloneData, E: RxError> RxInternal for Resource<T, E> {
-    type ReadOutput<'a>
-        = RxGuard<'a, Option<T>, Option<T>>
-    where
-        Self: 'a;
+impl<'scope, 'run, T: RxCloneData + 'run, E: RxError + 'run> RxRead
+    for Resource<'scope, 'run, T, E>
+{
+    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.state.try_with(|state| f(&state.as_option().cloned()))
+    }
 
-    #[inline(always)]
-    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         self.state
-            .try_with_untracked(|s| RxGuard::Owned(s.as_option().cloned()))
-    }
-
-    #[inline(always)]
-    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        self.state.try_with_untracked(|s: &ResourceState<T, E>| {
-            let val = s.as_option().cloned();
-            fun(&val)
-        })
-    }
-
-    #[inline(always)]
-    fn rx_get_adaptive(&self) -> Option<Self::Value>
-    where
-        Self::Value: Sized,
-    {
-        self.rx_try_with_untracked(|v| AdaptiveWrapper(v).maybe_clone())
-            .flatten()
-    }
-
-    #[inline(always)]
-    fn rx_is_constant(&self) -> bool {
-        false
+            .try_with_untracked(|state| f(&state.as_option().cloned()))
     }
 }
 
-impl<T: RxCloneData, E: RxError> IntoRx for Resource<T, E> {
-    type RxType = Rx<Option<T>, RxValueKind>;
-    #[inline(always)]
-    fn into_rx(self) -> Self::RxType {
-        Rx::derive(Box::new(move || self.get()))
+impl<'scope, 'run, T: RxCloneData + 'run + 'static, E: RxError + 'run + 'static>
+    IntoRx<'scope, 'run> for Resource<'scope, 'run, T, E>
+{
+    fn into_rx(self, scope: &Scope<'scope, 'run>) -> Rx<'scope, 'run, Option<T>> {
+        let resource = self;
+        let scope = *scope;
+        scope.derived(move || resource.value())
     }
-    #[inline(always)]
+
     fn is_constant(&self) -> bool {
         false
     }
 }
 
-impl<T: RxCloneData, E: RxError> IntoSignal for Resource<T, E> {
-    #[inline(always)]
-    fn into_signal(self) -> Signal<Option<T>>
-    where
-        Self: 'static,
-        T: Clone,
-    {
-        Signal::derive(Box::new(move || self.get()))
+impl<'scope, 'run, T: RxCloneData + 'run + 'static, E: RxError + 'run + 'static>
+    IntoSignal<'scope, 'run> for Resource<'scope, 'run, T, E>
+{
+    fn into_signal(
+        self,
+        scope: &Scope<'scope, 'run>,
+    ) -> crate::reactivity::Signal<'scope, 'run, Option<T>> {
+        self.into_rx(scope).into_signal(scope)
     }
-}
-
-// --- Suspense ---
-
-pub(crate) struct SuspenseState {
-    resources: Vec<Rc<dyn Any>>,
-    index: usize,
 }
 
 #[derive(Clone, Copy)]
-pub struct SuspenseContext {
-    pub count: ReadSignal<usize>,
-    pub set_count: WriteSignal<usize>,
-    pub(crate) state: StoredValue<SuspenseState>,
+pub struct SuspenseContext<'scope, 'run> {
+    pub count: ReadSignal<'scope, 'run, usize>,
+    set_count: WriteSignal<'scope, 'run, usize>,
 }
 
-impl Default for SuspenseContext {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl SuspenseContext {
-    pub fn new() -> Self {
-        let (count, set_count) = Signal::pair(0);
-        let state = StoredValue::new(SuspenseState {
-            resources: Vec::new(),
-            index: 0,
-        });
-        Self {
-            count,
-            set_count,
-            state,
-        }
+impl<'scope, 'run> SuspenseContext<'scope, 'run> {
+    pub fn new(scope: &Scope<'scope, 'run>) -> Self {
+        let (count, set_count) = scope.signal(0usize);
+        Self { count, set_count }
     }
 
     pub fn increment(&self) {
-        self.set_count.update(|c| *c += 1);
+        self.set_count.update(|count| *count += 1);
     }
 
     pub fn decrement(&self) {
-        self.set_count.update(|c| {
-            if *c > 0 {
-                *c -= 1
-            }
-        });
-    }
-
-    pub fn reset_index(&self) {
-        self.state.update_untracked(|s| s.index = 0);
+        self.set_count
+            .update(|count| *count = count.saturating_sub(1));
     }
 }

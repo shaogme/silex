@@ -1,73 +1,77 @@
 use crate::{
-    Rx, RxValueKind,
-    reactivity::{Memo, StaticMapPayload},
-    traits::{RxBase, RxRead},
+    Rx, Scope,
+    reactivity::Memo,
+    traits::{IntoRx, RxRead},
 };
 
-/// 允许从当前信号创建一个衍生信号。
-pub trait Map: RxBase {
-    /// 基于当前信号派生出一个新信号。
-    fn map<U, F>(self, f: F) -> Rx<U, RxValueKind>
+/// Create a typed derived node in an explicit scope.
+pub trait Map: RxRead + Clone {
+    fn map<'scope, 'run, U, F>(self, scope: &Scope<'scope, 'run>, f: F) -> Rx<'scope, 'run, U>
     where
-        F: Fn(&Self::Value) -> U + 'static,
-        U: 'static;
+        Self: IntoRx<'scope, 'run> + 'scope,
+        Self::Value: Sized + 'run,
+        U: 'run,
+        F: Fn(&Self::Value) -> U + 'scope;
 
-    /// 使用静态函数指针派生出一个新信号（零成本，无闭包分配）。
-    fn map_fn<U>(self, f: fn(&Self::Value) -> U) -> Rx<U, RxValueKind>
+    fn map_fn<'scope, 'run, U>(
+        self,
+        scope: &Scope<'scope, 'run>,
+        f: fn(&Self::Value) -> U,
+    ) -> Rx<'scope, 'run, U>
     where
-        U: 'static;
+        Self: IntoRx<'scope, 'run> + 'scope,
+        Self::Value: Sized + 'run,
+        U: 'run;
 }
 
 impl<S> Map for S
 where
-    S: RxRead + Clone + RxBase + 'static,
-    S::Value: Sized + 'static,
+    S: RxRead + Clone,
 {
-    fn map<U, F>(self, f: F) -> Rx<U, RxValueKind>
+    fn map<'scope, 'run, U, F>(self, scope: &Scope<'scope, 'run>, f: F) -> Rx<'scope, 'run, U>
     where
-        F: Fn(&Self::Value) -> U + 'static,
-        U: 'static,
+        Self: IntoRx<'scope, 'run> + 'scope,
+        Self::Value: Sized + 'run,
+        U: 'run,
+        F: Fn(&Self::Value) -> U + 'scope,
     {
-        if self.rx_is_constant()
-            && let Some(res) = self.rx_try_with_untracked(|v| Rx::new_constant(f(v)))
-        {
-            return res;
-        }
-        Rx::derive(Box::new(move || self.with(|v| f(v))))
+        let source = self.into_rx(scope);
+        source.map(f)
     }
 
-    fn map_fn<U>(self, f: fn(&Self::Value) -> U) -> Rx<U, RxValueKind>
+    fn map_fn<'scope, 'run, U>(
+        self,
+        scope: &Scope<'scope, 'run>,
+        f: fn(&Self::Value) -> U,
+    ) -> Rx<'scope, 'run, U>
     where
-        U: 'static,
+        Self: IntoRx<'scope, 'run> + 'scope,
+        Self::Value: Sized + 'run,
+        U: 'run,
     {
-        if self.rx_is_constant()
-            && let Some(res) = self.rx_try_with_untracked(|v| Rx::new_constant(f(v)))
-        {
-            return res;
-        }
-        if let Some(id) = self.raw_id() {
-            let op = StaticMapPayload::new1(id, f, false);
-            Rx::new_op(op)
-        } else {
-            Rx::derive(Box::new(move || self.with(f)))
-        }
+        let source = self.into_rx(scope);
+        source.map(f)
     }
 }
 
-/// 允许将一个信号转换为自带缓存的记忆化 (Memoize) 信号。
-pub trait Memoize: RxRead {
-    /// 对该信号的值进行记忆化缓存。
-    fn memo(self) -> Memo<Self::Value>
+pub trait Memoize: RxRead + Clone {
+    fn memo<'scope, 'run>(self, scope: &Scope<'scope, 'run>) -> Memo<'scope, 'run, Self::Value>
     where
-        Self::Value: PartialEq + Sized + 'static;
+        Self: IntoRx<'scope, 'run> + 'scope,
+        Self::Value: PartialEq + Clone + Sized + 'run;
 }
 
-impl<T, M> Memoize for Rx<T, M>
+impl<S> Memoize for S
 where
-    T: PartialEq + Clone + 'static,
-    M: 'static,
+    S: RxRead + Clone,
 {
-    fn memo(self) -> Memo<T> {
-        Memo::new(move |_| self.with(Clone::clone))
+    fn memo<'scope, 'run>(self, scope: &Scope<'scope, 'run>) -> Memo<'scope, 'run, Self::Value>
+    where
+        Self: IntoRx<'scope, 'run> + 'scope,
+        Self::Value: PartialEq + Clone + Sized + 'run,
+    {
+        let source = self.into_rx(scope);
+        let scope = *scope;
+        scope.memo(move |_| source.get())
     }
 }

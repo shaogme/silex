@@ -1,69 +1,174 @@
-use crate::traits::RxRead;
+use crate::{
+    Rx, Scope,
+    traits::{IntoRx, RxRead},
+};
 
-pub type CompareFn<T> = fn(&T, &T) -> bool;
+pub trait ReactivePartialEq: RxRead + Clone {
+    fn equals<'scope, 'run, O>(
+        &self,
+        scope: &Scope<'scope, 'run>,
+        other: O,
+    ) -> Rx<'scope, 'run, bool>
+    where
+        Self: IntoRx<'scope, 'run> + 'scope,
+        O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
+        Self::Value: PartialEq + Sized + 'run;
 
-macro_rules! reactive_compare_method {
-    ($name:ident, $fn_impl:ident, $op:tt, $bound:ident) => {
-        fn $name<O>(&self, other: O) -> $crate::Rx<bool, $crate::RxValueKind>
-        where
-            Self: $crate::traits::IntoRx + $crate::traits::IntoSignal + $crate::traits::RxValue,
-            O: $crate::traits::IntoRx
-                + $crate::traits::IntoSignal
-                + $crate::traits::RxValue<Value = Self::Value>
-                + 'static,
-            Self::Value: $bound + $crate::traits::RxCloneData,
-        {
-            use $crate::traits::RxGet;
-            let lhs = self.clone().into_signal();
-            let rhs = other.into_signal();
-
-            if lhs.is_constant() && rhs.is_constant() {
-                return $crate::Rx::new_constant($crate::logic::arithmetic::ops_impl::$fn_impl(
-                    &lhs.get(),
-                    &rhs.get(),
-                ));
-            }
-
-            let op = $crate::reactivity::StaticMap2Payload::new2(
-                [lhs.ensure_raw_id(), rhs.ensure_raw_id()],
-                $crate::logic::arithmetic::ops_impl::$fn_impl::<Self::Value>,
-                false,
-            );
-            $crate::Rx::new_op(op)
-        }
-    };
-}
-
-/// Provides a fluent API for checking equality on reactive values.
-pub trait ReactivePartialEq: RxRead + Clone + 'static
-where
-    Self::Value: PartialEq + 'static,
-{
-    reactive_compare_method!(equals, eq, ==, PartialEq);
-    reactive_compare_method!(not_equals, ne, !=, PartialEq);
-}
-
-/// Provides a fluent API for checking ordering on reactive values.
-pub trait ReactivePartialOrd: RxRead + Clone + 'static
-where
-    Self::Value: PartialOrd + 'static,
-{
-    reactive_compare_method!(greater_than, gt, >, PartialOrd);
-    reactive_compare_method!(less_than, lt, <, PartialOrd);
-    reactive_compare_method!(greater_than_or_equals, ge, >=, PartialOrd);
-    reactive_compare_method!(less_than_or_equals, le, <=, PartialOrd);
+    fn not_equals<'scope, 'run, O>(
+        &self,
+        scope: &Scope<'scope, 'run>,
+        other: O,
+    ) -> Rx<'scope, 'run, bool>
+    where
+        Self: IntoRx<'scope, 'run> + 'scope,
+        O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
+        Self::Value: PartialEq + Sized + 'run;
 }
 
 impl<S> ReactivePartialEq for S
 where
-    S: RxRead + Clone + 'static,
-    S::Value: PartialEq + 'static,
+    S: RxRead + Clone,
 {
+    fn equals<'scope, 'run, O>(
+        &self,
+        scope: &Scope<'scope, 'run>,
+        other: O,
+    ) -> Rx<'scope, 'run, bool>
+    where
+        Self: IntoRx<'scope, 'run> + 'scope,
+        O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
+        Self::Value: PartialEq + Sized + 'run,
+    {
+        let left = self.clone().into_rx(scope);
+        let right = other.into_rx(scope);
+        let scope = *scope;
+        scope.derived(move || left.with(|left| right.with(|right| left == right)))
+    }
+
+    fn not_equals<'scope, 'run, O>(
+        &self,
+        scope: &Scope<'scope, 'run>,
+        other: O,
+    ) -> Rx<'scope, 'run, bool>
+    where
+        Self: IntoRx<'scope, 'run> + 'scope,
+        O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
+        Self::Value: PartialEq + Sized + 'run,
+    {
+        let left = self.clone().into_rx(scope);
+        let right = other.into_rx(scope);
+        let scope = *scope;
+        scope.derived(move || left.with(|left| right.with(|right| left != right)))
+    }
+}
+
+pub trait ReactivePartialOrd: RxRead + Clone {
+    fn greater_than<'scope, 'run, O>(
+        &self,
+        scope: &Scope<'scope, 'run>,
+        other: O,
+    ) -> Rx<'scope, 'run, bool>
+    where
+        Self: IntoRx<'scope, 'run> + 'scope,
+        O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
+        Self::Value: PartialOrd + Sized + 'run;
+
+    fn less_than<'scope, 'run, O>(
+        &self,
+        scope: &Scope<'scope, 'run>,
+        other: O,
+    ) -> Rx<'scope, 'run, bool>
+    where
+        Self: IntoRx<'scope, 'run> + 'scope,
+        O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
+        Self::Value: PartialOrd + Sized + 'run;
+
+    fn greater_than_or_equals<'scope, 'run, O>(
+        &self,
+        scope: &Scope<'scope, 'run>,
+        other: O,
+    ) -> Rx<'scope, 'run, bool>
+    where
+        Self: IntoRx<'scope, 'run> + 'scope,
+        O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
+        Self::Value: PartialOrd + Sized + 'run;
+
+    fn less_than_or_equals<'scope, 'run, O>(
+        &self,
+        scope: &Scope<'scope, 'run>,
+        other: O,
+    ) -> Rx<'scope, 'run, bool>
+    where
+        Self: IntoRx<'scope, 'run> + 'scope,
+        O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
+        Self::Value: PartialOrd + Sized + 'run;
 }
 
 impl<S> ReactivePartialOrd for S
 where
-    S: RxRead + Clone + 'static,
-    S::Value: PartialOrd + 'static,
+    S: RxRead + Clone,
 {
+    fn greater_than<'scope, 'run, O>(
+        &self,
+        scope: &Scope<'scope, 'run>,
+        other: O,
+    ) -> Rx<'scope, 'run, bool>
+    where
+        Self: IntoRx<'scope, 'run> + 'scope,
+        O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
+        Self::Value: PartialOrd + Sized + 'run,
+    {
+        let left = self.clone().into_rx(scope);
+        let right = other.into_rx(scope);
+        let scope = *scope;
+        scope.derived(move || left.with(|left| right.with(|right| left > right)))
+    }
+
+    fn less_than<'scope, 'run, O>(
+        &self,
+        scope: &Scope<'scope, 'run>,
+        other: O,
+    ) -> Rx<'scope, 'run, bool>
+    where
+        Self: IntoRx<'scope, 'run> + 'scope,
+        O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
+        Self::Value: PartialOrd + Sized + 'run,
+    {
+        let left = self.clone().into_rx(scope);
+        let right = other.into_rx(scope);
+        let scope = *scope;
+        scope.derived(move || left.with(|left| right.with(|right| left < right)))
+    }
+
+    fn greater_than_or_equals<'scope, 'run, O>(
+        &self,
+        scope: &Scope<'scope, 'run>,
+        other: O,
+    ) -> Rx<'scope, 'run, bool>
+    where
+        Self: IntoRx<'scope, 'run> + 'scope,
+        O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
+        Self::Value: PartialOrd + Sized + 'run,
+    {
+        let left = self.clone().into_rx(scope);
+        let right = other.into_rx(scope);
+        let scope = *scope;
+        scope.derived(move || left.with(|left| right.with(|right| left >= right)))
+    }
+
+    fn less_than_or_equals<'scope, 'run, O>(
+        &self,
+        scope: &Scope<'scope, 'run>,
+        other: O,
+    ) -> Rx<'scope, 'run, bool>
+    where
+        Self: IntoRx<'scope, 'run> + 'scope,
+        O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
+        Self::Value: PartialOrd + Sized + 'run,
+    {
+        let left = self.clone().into_rx(scope);
+        let right = other.into_rx(scope);
+        let scope = *scope;
+        scope.derived(move || left.with(|left| right.with(|right| left <= right)))
+    }
 }

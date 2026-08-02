@@ -1,44 +1,23 @@
-use std::{marker::PhantomData, ops::Deref, panic::Location};
-
 use crate::{
-    Rx, RxValueKind, impl_reactive_ops,
-    reactivity::{RawId, Signal},
-    traits::*,
+    Rx, Scope, Signal,
+    traits::{IntoRx, IntoSignal, RxBase, RxCloneData, RxData, RxRead, RxValue},
 };
+use std::marker::PhantomData;
 
-#[derive(Clone, Copy)]
+/// A safe projection over a source reactive value.
 pub struct SignalSlice<S, F, O: ?Sized> {
-    source: S,
-    getter: F,
-    _marker: PhantomData<O>,
+    pub(crate) source: S,
+    pub(crate) getter: F,
+    marker: PhantomData<fn() -> O>,
 }
 
-impl<S, F, O> SignalSlice<S, F, O>
-where
-    S: RxInternal + RxCloneData,
-    F: Fn(&S::Value) -> &O + 'static,
-    O: ?Sized + RxData,
-{
-    pub fn new(source: S, getter: F) -> Self {
+impl<S, F, O: ?Sized> SignalSlice<S, F, O> {
+    pub(crate) fn new(source: S, getter: F) -> Self {
         Self {
             source,
             getter,
-            _marker: PhantomData,
+            marker: PhantomData,
         }
-    }
-}
-
-/// 一个泛型投影守卫，通过持有源守卫来确保投影出的引用有效。
-pub struct SliceGuard<G, O: ?Sized> {
-    _source: G,
-    value: *const O,
-}
-
-impl<G: Deref, O: ?Sized> Deref for SliceGuard<G, O> {
-    type Target = O;
-    #[inline(always)]
-    fn deref(&self) -> &O {
-        unsafe { &*self.value }
     }
 }
 
@@ -51,109 +30,57 @@ where
 
 impl<S, F, O> RxBase for SignalSlice<S, F, O>
 where
-    S: RxRead,
-    F: Fn(&S::Value) -> &O + 'static,
+    S: RxBase,
     O: ?Sized + RxData,
 {
-    #[inline(always)]
-    fn raw_id(&self) -> Option<RawId> {
-        self.source.raw_id()
-    }
-
-    #[inline(always)]
     fn track(&self) {
         self.source.track();
     }
 
-    #[inline(always)]
-    fn is_disposed(&self) -> bool {
-        self.source.is_disposed()
-    }
-
-    #[inline(always)]
-    fn defined_at(&self) -> Option<&'static Location<'static>> {
-        self.source.defined_at()
-    }
-
-    #[inline(always)]
-    fn debug_name(&self) -> Option<String> {
-        self.source.debug_name().map(|n| format!("{}.slice", n))
+    fn is_alive(&self) -> bool {
+        self.source.is_alive()
     }
 }
 
-impl<S, F, O> RxInternal for SignalSlice<S, F, O>
+impl<S, F, O> RxRead for SignalSlice<S, F, O>
 where
-    S: RxRead + RxCloneData,
-    for<'a> S::ReadOutput<'a>: Deref<Target = S::Value>,
-    F: Fn(&S::Value) -> &O + 'static,
-    O: ?Sized + 'static,
+    S: RxRead,
+    F: Fn(&S::Value) -> &O,
+    O: ?Sized + RxData,
 {
-    type ReadOutput<'a>
-        = SliceGuard<S::ReadOutput<'a>, O>
-    where
-        Self: 'a;
-
-    #[inline(always)]
-    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-        let source_guard = self.source.rx_read_untracked()?;
-        // 安全地获取指针：通过块作用域终止对 source_guard 的生命周期借用，
-        // 然后将其移动到 SliceGuard 中。由于转换是在投影引用上进行的，这在 rx_read 函数体内是安全的。
-        let value_ptr = {
-            let val_ref = &*source_guard;
-            (self.getter)(val_ref) as *const O
-        };
-        Some(SliceGuard {
-            _source: source_guard,
-            value: value_ptr,
-        })
+    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+        self.source.try_with(|value| f((self.getter)(value)))
     }
 
-    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         self.source
-            .rx_try_with_untracked(|val| fun((self.getter)(val)))
-    }
-
-    #[inline(always)]
-    fn rx_is_constant(&self) -> bool {
-        self.source.rx_is_constant()
+            .try_with_untracked(|value| f((self.getter)(value)))
     }
 }
 
-impl<S, F, O> IntoRx for SignalSlice<S, F, O>
+impl<'scope, 'run, S, F, O> IntoRx<'scope, 'run> for SignalSlice<S, F, O>
 where
-    S: RxRead + RxCloneData,
-    for<'a> S::ReadOutput<'a>: Deref<Target = S::Value>,
-    F: Fn(&S::Value) -> &O + 'static,
-    O: RxCloneData,
+    S: RxRead + 'scope,
+    F: Fn(&S::Value) -> &O + 'scope,
+    O: RxCloneData + 'run,
 {
-    type RxType = Rx<O, RxValueKind>;
-
-    #[inline(always)]
-    fn into_rx(self) -> Self::RxType {
-        Rx::derive(Box::new(move || self.get()))
+    fn into_rx(self, scope: &Scope<'scope, 'run>) -> Rx<'scope, 'run, O> {
+        let scope = *scope;
+        scope.derived(move || self.with(|value| value.clone()))
     }
 
-    #[inline(always)]
     fn is_constant(&self) -> bool {
-        self.source.rx_is_constant()
+        false
     }
 }
 
-impl<S, F, O> IntoSignal for SignalSlice<S, F, O>
+impl<'scope, 'run, S, F, O> IntoSignal<'scope, 'run> for SignalSlice<S, F, O>
 where
-    S: RxRead + RxCloneData,
-    for<'a> S::ReadOutput<'a>: Deref<Target = S::Value>,
-    F: Fn(&S::Value) -> &O + 'static,
-    O: RxCloneData,
+    S: RxRead + 'scope,
+    F: Fn(&S::Value) -> &O + 'scope,
+    O: RxCloneData + 'run,
 {
-    #[inline(always)]
-    fn into_signal(self) -> Signal<Self::Value>
-    where
-        Self: 'static,
-        O: Sized,
-    {
-        Signal::derive(Box::new(move || self.get()))
+    fn into_signal(self, scope: &Scope<'scope, 'run>) -> Signal<'scope, 'run, O> {
+        self.into_rx(scope).into_signal(scope)
     }
 }
-
-impl_reactive_ops!(SignalSlice<S, F, O>, [S, F, O]);

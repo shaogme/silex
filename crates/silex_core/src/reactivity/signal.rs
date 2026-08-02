@@ -1,391 +1,340 @@
-use core::mem::discriminant;
-use std::{
-    fmt::{Debug, Formatter, Result as FmtResult},
-    hash::{Hash, Hasher},
-    marker::PhantomData,
-    mem,
-    panic::Location,
-    ptr,
-};
-
-use silex_reactivity::{
-    RawId, StoredId, get_debug_label, get_node_defined_at, memo, set_debug_label, signal, store,
-};
-
 use crate::{
-    Rx, RxNodeKind, RxValueKind, impl_reactive_ops, impl_rx_delegate,
-    reactivity::{
-        SignalSlice,
-        dispatch::{is_disposed, rx_read_node_untracked, rx_try_with_node_untracked, track},
-    },
-    traits::{
-        adaptive::{AdaptiveFallback, AdaptiveWrapper},
-        *,
-    },
+    Rx, RxValueKind, Scope,
+    reactivity::{Memo, SignalSlice, StoredValue},
+    traits::{IntoRx, IntoSignal, RxBase, RxRead, RxValue},
 };
+use silex_reactivity::{
+    ReactiveResult, ReadSignal as RawReadSignal, WriteSignal as RawWriteSignal,
+};
+use std::{fmt, marker::PhantomData};
 
-mod derived;
-mod ops;
-mod registry;
+/// A plain value that has not yet been promoted into a runtime node.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Constant<T>(pub(crate) T);
 
-pub use derived::*;
-pub use ops::*;
-pub use registry::*;
+impl<T> Constant<T> {
+    pub const fn new(value: T) -> Self {
+        Self(value)
+    }
 
-#[cfg(test)]
-mod tests;
+    pub const fn value(&self) -> &T {
+        &self.0
+    }
 
-// --- Signal 信号 Enum ---
-
-pub enum Signal<T> {
-    Read(ReadSignal<T>),
-    Derived(RawId, RxNodeKind, PhantomData<T>),
-    StoredConstant(StoredId, PhantomData<T>),
-    #[allow(missing_docs)] // Internal optimization detail
-    InlineConstant(u64, PhantomData<T>),
-}
-
-impl<T: 'static> Signal<T> {
-    pub fn pair(value: T) -> (ReadSignal<T>, WriteSignal<T>) {
-        let id = signal::create(value);
-        (
-            ReadSignal {
-                id: id.raw(),
-                marker: PhantomData,
-            },
-            WriteSignal {
-                id,
-                marker: PhantomData,
-            },
-        )
+    pub fn into_inner(self) -> T {
+        self.0
     }
 }
 
-impl<T: RxData> Debug for Signal<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        match self {
-            Self::Read(s) => f.debug_tuple("Read").field(s).finish(),
-            Self::Derived(id, kind, _) => f
-                .debug_struct("Derived")
-                .field("id", id)
-                .field("kind", kind)
-                .finish(),
-            Self::StoredConstant(id, _) => f.debug_tuple("StoredConstant").field(id).finish(),
-            Self::InlineConstant(val, _) => f.debug_tuple("InlineConstant").field(val).finish(),
-        }
+impl<T> RxValue for Constant<T> {
+    type Value = T;
+}
+
+impl<T> RxBase for Constant<T> {
+    fn track(&self) {}
+}
+
+impl<T> RxRead for Constant<T> {
+    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
+        Some(f(&self.0))
+    }
+
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
+        Some(f(&self.0))
     }
 }
 
-impl<T> Clone for Signal<T> {
+impl<'scope, 'run, T: 'scope> IntoRx<'scope, 'run> for Constant<T> {
+    fn into_rx(self, scope: &Scope<'scope, 'run>) -> Rx<'scope, 'run, T> {
+        scope.constant(self.0)
+    }
+
+    fn is_constant(&self) -> bool {
+        true
+    }
+}
+
+impl<'scope, 'run, T: 'scope> IntoSignal<'scope, 'run> for Constant<T> {
+    fn into_signal(self, scope: &Scope<'scope, 'run>) -> Signal<'scope, 'run, T> {
+        self.into_rx(scope).into_signal(scope)
+    }
+}
+
+/// High-level read capability for a signal node.
+pub struct ReadSignal<'scope, 'run, T> {
+    pub(crate) inner: RawReadSignal<'scope, 'run, T>,
+    pub(crate) scope: Scope<'scope, 'run>,
+}
+
+/// High-level write capability for a signal node.
+pub struct WriteSignal<'scope, 'run, T> {
+    pub(crate) inner: RawWriteSignal<'scope, 'run, T>,
+}
+
+/// A paired read/write signal.
+pub struct RwSignal<'scope, 'run, T> {
+    pub(crate) read: ReadSignal<'scope, 'run, T>,
+    pub(crate) write: WriteSignal<'scope, 'run, T>,
+}
+
+/// A read-only union of the typed high-level node wrappers.
+pub struct Signal<'scope, 'run, T> {
+    pub(crate) rx: Rx<'scope, 'run, T, RxValueKind>,
+}
+
+impl<'scope, 'run, T> Copy for ReadSignal<'scope, 'run, T> {}
+
+impl<'scope, 'run, T> Clone for ReadSignal<'scope, 'run, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
-impl<T> Copy for Signal<T> {}
 
-impl<T> PartialEq for Signal<T> {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Read(l), Self::Read(r)) => l == r,
-            (Self::Derived(l_id, l_k, _), Self::Derived(r_id, r_k, _)) => {
-                l_id == r_id && l_k == r_k
-            }
-            (Self::StoredConstant(l, _), Self::StoredConstant(r, _)) => l == r,
-            (Self::InlineConstant(l, _), Self::InlineConstant(r, _)) => l == r,
-            _ => false,
-        }
+impl<'scope, 'run, T> Copy for WriteSignal<'scope, 'run, T> {}
+
+impl<'scope, 'run, T> Clone for WriteSignal<'scope, 'run, T> {
+    fn clone(&self) -> Self {
+        *self
     }
 }
 
-impl<T> Eq for Signal<T> {}
+impl<'scope, 'run, T> Copy for RwSignal<'scope, 'run, T> {}
 
-impl<T: RxData> RxValue for Signal<T> {
-    type Value = T;
-}
-
-impl<T: RxData> RxBase for Signal<T> {
-    #[inline(always)]
-    fn raw_id(&self) -> Option<RawId> {
-        match self {
-            Signal::Read(s) => Some(s.id),
-            Signal::Derived(id, _, _) => Some(*id),
-            Signal::StoredConstant(id, _) => Some(id.raw()),
-            Signal::InlineConstant(_, _) => None,
-        }
-    }
-
-    fn track(&self) {
-        match self {
-            Signal::Read(s) => track(s.id, RxNodeKind::Signal),
-            Signal::Derived(id, kind, _) => track(*id, *kind),
-            Signal::StoredConstant(id, _) => track(id.raw(), RxNodeKind::Stored),
-            Signal::InlineConstant(_, _) => {}
-        }
-    }
-
-    fn is_disposed(&self) -> bool {
-        match self {
-            Signal::Read(s) => is_disposed(s.id, RxNodeKind::Signal),
-            Signal::Derived(id, kind, _) => is_disposed(*id, *kind),
-            Signal::StoredConstant(id, _) => is_disposed(id.raw(), RxNodeKind::Stored),
-            Signal::InlineConstant(_, _) => false,
-        }
-    }
-
-    #[inline(always)]
-    fn defined_at(&self) -> Option<&'static Location<'static>> {
-        self.raw_id().and_then(get_node_defined_at)
-    }
-
-    fn debug_name(&self) -> Option<String> {
-        let name = self.raw_id().and_then(get_debug_label);
-        if name.is_none() && self.is_constant() {
-            Some("Constant".to_string())
-        } else {
-            name
-        }
+impl<'scope, 'run, T> Clone for RwSignal<'scope, 'run, T> {
+    fn clone(&self) -> Self {
+        *self
     }
 }
 
-impl<T: RxData> RxInternal for Signal<T> {
-    type ReadOutput<'a>
-        = RxGuard<'a, T, T>
+impl<'scope, 'run, T> Copy for Signal<'scope, 'run, T> {}
+
+impl<'scope, 'run, T> Clone for Signal<'scope, 'run, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> fmt::Debug for ReadSignal<'_, '_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReadSignal").finish_non_exhaustive()
+    }
+}
+
+impl<T> fmt::Debug for WriteSignal<'_, '_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WriteSignal").finish_non_exhaustive()
+    }
+}
+
+impl<T> fmt::Debug for RwSignal<'_, '_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RwSignal").finish_non_exhaustive()
+    }
+}
+
+impl<T> fmt::Debug for Signal<'_, '_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Signal").finish_non_exhaustive()
+    }
+}
+
+impl<'scope, 'run, T: 'scope> ReadSignal<'scope, 'run, T> {
+    pub(crate) fn from_inner(
+        inner: RawReadSignal<'scope, 'run, T>,
+        scope: Scope<'scope, 'run>,
+    ) -> Self {
+        Self { inner, scope }
+    }
+
+    pub fn with_name(self, _name: impl Into<String>) -> Self {
+        self
+    }
+
+    pub fn try_get(&self) -> ReactiveResult<T>
     where
-        Self: 'a;
-
-    #[inline(always)]
-    fn rx_read_untracked(&self) -> Option<Self::ReadOutput<'_>> {
-        match self {
-            Signal::Read(s) => s.rx_read_untracked(),
-            Signal::Derived(id, kind, _) => unsafe { rx_read_node_untracked(*id, *kind) },
-            Signal::StoredConstant(id, _) => unsafe {
-                rx_read_node_untracked(id.raw(), RxNodeKind::Stored)
-            },
-            Signal::InlineConstant(val, _) => {
-                let val = unsafe { Self::unpack_inline(*val) };
-                Some(RxGuard::Owned(val))
-            }
-        }
-    }
-
-    #[inline(always)]
-    fn rx_try_with_untracked<U>(&self, fun: impl FnOnce(&Self::Value) -> U) -> Option<U> {
-        match self {
-            Signal::Read(s) => s.rx_try_with_untracked(fun),
-            Signal::Derived(id, kind, _) => rx_try_with_node_untracked(*id, *kind, fun),
-            Signal::StoredConstant(id, _) => {
-                rx_try_with_node_untracked(id.raw(), RxNodeKind::Stored, fun)
-            }
-            Signal::InlineConstant(storage, _) => {
-                let val = unsafe { Self::unpack_inline(*storage) };
-                Some(fun(&val))
-            }
-        }
-    }
-
-    #[inline(always)]
-    fn rx_get_adaptive(&self) -> Option<Self::Value>
-    where
-        Self::Value: Sized,
+        T: Clone,
     {
-        match self {
-            Signal::Read(s) => s.rx_get_adaptive(),
-            Signal::Derived(_, _, _) | Signal::StoredConstant(_, _) => self
-                .rx_try_with_untracked(|v| AdaptiveWrapper(v).maybe_clone())
-                .flatten(),
-            Signal::InlineConstant(storage, _) => {
-                let val = unsafe { Self::unpack_inline(*storage) };
-                Some(val)
-            }
-        }
+        self.inner.try_get()
     }
 
-    #[inline(always)]
-    fn rx_is_constant(&self) -> bool {
-        self.is_constant()
-    }
-}
-
-impl<T: RxData> IntoRx for Signal<T> {
-    type RxType = Rx<T, RxValueKind>;
-    #[inline(always)]
-    fn into_rx(self) -> Self::RxType {
-        match self {
-            Signal::Read(s) => Rx::new_signal(s.id),
-            Signal::Derived(id, kind, _) => match kind {
-                RxNodeKind::Signal => Rx::new_signal(id),
-                RxNodeKind::Closure => {
-                    Rx::new_closure(silex_reactivity::StoredId::from_raw_unchecked(id))
-                }
-                RxNodeKind::Op => Rx::new_op_raw(id),
-                RxNodeKind::Stored => {
-                    Rx::new_stored(silex_reactivity::StoredId::from_raw_unchecked(id))
-                }
-            },
-            Signal::StoredConstant(id, _) => Rx::new_stored(id),
-            Signal::InlineConstant(storage, _) => Rx::new_inline_constant(storage),
-        }
-    }
-    fn is_constant(&self) -> bool {
-        self.is_constant()
-    }
-}
-
-impl<T: RxData> IntoSignal for Signal<T> {
-    fn into_signal(self) -> Signal<Self::Value> {
-        self
-    }
-}
-
-impl<T> Hash for Signal<T> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        discriminant(self).hash(state);
-        match self {
-            Self::Read(s) => s.hash(state),
-            Self::Derived(id, kind, _) => {
-                id.hash(state);
-                kind.hash(state);
-            }
-            Self::StoredConstant(id, _) => id.hash(state),
-            Self::InlineConstant(val, _) => val.hash(state),
-        }
-    }
-}
-
-// --- Generic Impl Block ---
-
-impl<T: RxData> Signal<T> {
-    #[track_caller]
-    pub fn derive(f: Box<dyn Fn() -> T>) -> Self {
-        let id = memo::derived(f);
-        Signal::Derived(id.raw(), RxNodeKind::Signal, PhantomData)
+    pub fn get(&self) -> T
+    where
+        T: Clone,
+    {
+        self.inner.get()
     }
 
-    /// Internal helper to try inlining a value
-    fn try_inline(value: T) -> Option<Self> {
-        // Can only inline if it fits in u64 and doesn't implement Drop
-        #[allow(clippy::manual_is_variant_and)] // we want explicit check
-        if mem::size_of::<T>() <= mem::size_of::<u64>() && !mem::needs_drop::<T>() {
-            unsafe {
-                let mut storage = 0u64;
-                let src_ptr = &value as *const T as *const u8;
-                let dst_ptr = &mut storage as *mut u64 as *mut u8;
-                ptr::copy_nonoverlapping(src_ptr, dst_ptr, mem::size_of::<T>());
-                // Value is not dropped because we checked !needs_drop, so we can just forget it
-                mem::forget(value);
-                Some(Signal::InlineConstant(storage, PhantomData))
-            }
-        } else {
-            None
-        }
+    pub fn try_get_untracked(&self) -> ReactiveResult<T>
+    where
+        T: Clone,
+    {
+        self.inner.try_get_untracked()
     }
 
-    /// Internal helper to unpack an inlined value
-    unsafe fn unpack_inline(storage: u64) -> T {
-        unsafe {
-            let mut value = mem::MaybeUninit::<T>::uninit();
-            let src_ptr = &storage as *const u64 as *const u8;
-            let dst_ptr = value.as_mut_ptr() as *mut u8;
-            ptr::copy_nonoverlapping(src_ptr, dst_ptr, mem::size_of::<T>());
-            value.assume_init()
-        }
+    pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> U {
+        self.inner.with(f)
     }
 
-    pub fn raw_id(&self) -> Option<RawId> {
-        match self {
-            Signal::Read(s) => Some(s.id),
-            Signal::Derived(id, _, _) => Some(*id),
-            Signal::StoredConstant(id, _) => Some(id.raw()),
-            Signal::InlineConstant(_, _) => None,
-        }
+    pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> U {
+        self.inner
+            .with_untracked(f)
+            .expect("读取 scoped signal 失败")
     }
 
-    /// 确保信号具有擦除句柄。
-    /// 如果是内联常量，则会将其提升为存储常量。
-    pub fn ensure_raw_id(&self) -> RawId {
-        match self {
-            Signal::Read(s) => s.id,
-            Signal::Derived(id, _, _) => *id,
-            Signal::StoredConstant(id, _) => id.raw(),
-            Signal::InlineConstant(storage, _) => {
-                let value = unsafe { Self::unpack_inline(*storage) };
-                silex_reactivity::scope::create_detached(|| store::create(value))
-                    .1
-                    .raw()
-            }
-        }
-    }
-
-    pub fn is_constant(&self) -> bool {
-        matches!(
-            self,
-            Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _)
-        )
-    }
-}
-
-impl<T: Default + RxCloneData> Default for Signal<T> {
-    fn default() -> Self {
-        T::default().into()
-    }
-}
-
-impl<T: RxData> Signal<T> {
-    pub fn with_name(self, name: impl Into<String>) -> Self {
-        match self {
-            Signal::Read(s) => {
-                s.with_name(name);
-            }
-            Signal::Derived(id, _, _) => set_debug_label(id, name),
-            Signal::StoredConstant(_, _) | Signal::InlineConstant(_, _) => {} // Constants usually don't need debug labels in the graph
-        }
-        self
+    pub fn is_alive(&self) -> bool {
+        self.inner.is_alive()
     }
 
     pub fn slice<O, F>(self, getter: F) -> SignalSlice<Self, F, O>
     where
-        F: Fn(&T) -> &O + 'static,
-        O: ?Sized + 'static,
+        O: ?Sized + 'scope,
+        F: Fn(&T) -> &O + 'scope,
     {
         SignalSlice::new(self, getter)
     }
 }
 
-impl<T: RxCloneData> From<T> for Signal<T> {
-    #[track_caller]
-    fn from(value: T) -> Self {
-        if let Some(inline) = Self::try_inline(value.clone()) {
-            return inline;
-        }
-        let id = silex_reactivity::scope::create_detached(|| store::create(value)).1;
-        Signal::StoredConstant(id, PhantomData)
+impl<'scope, 'run, T: 'scope> WriteSignal<'scope, 'run, T> {
+    pub(crate) fn from_inner(inner: RawWriteSignal<'scope, 'run, T>) -> Self {
+        Self { inner }
+    }
+
+    pub fn with_name(self, _name: impl Into<String>) -> Self {
+        self
+    }
+
+    pub fn try_set(&self, value: T) -> ReactiveResult<()> {
+        self.inner.try_set(value)
+    }
+
+    pub fn set(&self, value: T) {
+        self.inner.set(value)
+    }
+
+    pub fn try_update<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
+        self.inner.try_update(f)
+    }
+
+    pub fn update(&self, f: impl FnOnce(&mut T)) {
+        self.inner.update(f)
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.inner.is_alive()
     }
 }
 
-impl From<&str> for Signal<String> {
-    #[track_caller]
-    fn from(s: &str) -> Self {
-        s.to_string().into()
+impl<'scope, 'run, T> RwSignal<'scope, 'run, T> {
+    pub(crate) fn from_parts(
+        read: ReadSignal<'scope, 'run, T>,
+        write: WriteSignal<'scope, 'run, T>,
+    ) -> Self {
+        Self { read, write }
+    }
+
+    pub fn read_signal(&self) -> ReadSignal<'scope, 'run, T> {
+        self.read
+    }
+
+    pub fn write_signal(&self) -> WriteSignal<'scope, 'run, T> {
+        self.write
+    }
+
+    pub fn split(&self) -> (ReadSignal<'scope, 'run, T>, WriteSignal<'scope, 'run, T>) {
+        (self.read, self.write)
+    }
+
+    pub fn get(&self) -> T
+    where
+        T: Clone + 'scope,
+    {
+        self.read.get()
+    }
+
+    pub fn set(&self, value: T)
+    where
+        T: 'scope,
+    {
+        self.write.set(value)
+    }
+
+    pub fn update(&self, f: impl FnOnce(&mut T))
+    where
+        T: 'scope,
+    {
+        self.write.update(f)
+    }
+
+    pub fn slice<O, F>(self, getter: F) -> SignalSlice<Self, F, O>
+    where
+        T: 'scope,
+        O: ?Sized + 'scope,
+        F: Fn(&T) -> &O + 'scope,
+    {
+        SignalSlice::new(self, getter)
     }
 }
 
-impl<T: RxData> From<ReadSignal<T>> for Signal<T> {
-    fn from(s: ReadSignal<T>) -> Self {
-        Signal::Read(s)
+impl<'scope, 'run, T: 'scope> Signal<'scope, 'run, T> {
+    pub(crate) fn from_rx(rx: Rx<'scope, 'run, T, RxValueKind>) -> Self {
+        Self { rx }
+    }
+
+    pub fn get(&self) -> T
+    where
+        T: Clone,
+    {
+        self.rx.get()
+    }
+
+    pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> U {
+        self.rx.with(f)
+    }
+
+    pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> U {
+        self.rx.with_untracked(f)
+    }
+
+    pub fn is_constant(&self) -> bool {
+        self.rx.is_constant()
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.rx.is_alive()
+    }
+
+    pub fn slice<O, F>(self, getter: F) -> SignalSlice<Self, F, O>
+    where
+        O: ?Sized + 'scope,
+        F: Fn(&T) -> &O + 'scope,
+    {
+        SignalSlice::new(self, getter)
     }
 }
 
-impl<T: RxData> From<RwSignal<T>> for Signal<T> {
-    fn from(s: RwSignal<T>) -> Self {
-        Signal::Read(s.read)
+impl<'scope, 'run, T: 'scope> From<ReadSignal<'scope, 'run, T>> for Signal<'scope, 'run, T> {
+    fn from(signal: ReadSignal<'scope, 'run, T>) -> Self {
+        Self::from_rx(Rx::from_signal(signal))
     }
 }
 
-// 手动实现了 RxInternal，移除自动委托以避免冲突
-impl_rx_delegate!(ReadSignal, SignalID, false);
-impl_rx_delegate!(RwSignal, read, false);
+impl<'scope, 'run, T: 'scope> From<RwSignal<'scope, 'run, T>> for Signal<'scope, 'run, T> {
+    fn from(signal: RwSignal<'scope, 'run, T>) -> Self {
+        signal.read.into()
+    }
+}
 
-impl_reactive_ops!(Signal);
-impl_reactive_ops!(ReadSignal);
-impl_reactive_ops!(RwSignal);
-impl_reactive_ops!(Constant);
+impl<'scope, 'run, T: 'scope> From<Memo<'scope, 'run, T>> for Signal<'scope, 'run, T> {
+    fn from(memo: Memo<'scope, 'run, T>) -> Self {
+        Self::from_rx(Rx::from_memo(memo))
+    }
+}
+
+impl<'scope, 'run, T: 'scope> From<StoredValue<'scope, 'run, T>> for Signal<'scope, 'run, T> {
+    fn from(stored: StoredValue<'scope, 'run, T>) -> Self {
+        Self::from_rx(Rx::from_stored(stored))
+    }
+}
+
+#[allow(dead_code)]
+type _SignalMarker<T> = PhantomData<T>;

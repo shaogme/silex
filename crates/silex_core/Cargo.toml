@@ -20,3 +20,6 @@ silex_rx.workspace = true
 wasm-bindgen.workspace = true
 web-sys = { workspace = true, features = ["console"] }
 wasm-bindgen-futures.workspace = true
+
+[dev-dependencies]
+trybuild = "1.0"

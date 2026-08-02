@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use wasm_bindgen::JsValue;
 
-use crate::reactivity::on_cleanup;
+use crate::Scope;
 
 #[derive(Debug, Clone)] // Clone to allow easy propagation in closures if needed
 pub enum SilexError {
@@ -55,12 +55,13 @@ impl ErrorContext {
         (self.0)(err);
     }
 
-    /// Pushes `self` onto the thread-local error context stack and registers auto-cleanup when the reactive scope ends.
-    pub fn push(self) {
+    /// Pushes `self` onto the thread-local error context stack and associates
+    /// its removal with an explicit reactive scope.
+    pub fn push<'scope, 'run>(self, scope: &Scope<'scope, 'run>) {
         ERROR_CONTEXT_STACK.with(|stack| {
             stack.borrow_mut().push(self);
         });
-        on_cleanup(move || {
+        scope.on_cleanup(move || {
             Self::pop();
         });
     }
