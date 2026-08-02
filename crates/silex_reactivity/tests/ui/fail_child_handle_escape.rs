@@ -2,5 +2,7 @@ use silex_reactivity::Runtime;
 
 fn main() {
     let mut runtime = Runtime::new();
-    let _signal = runtime.run(|scope| scope.scope(|child| child.signal(0i32).0));
+    runtime.run(|root| {
+        let _signal = root.scope(|child| child.signal(0i32).0);
+    });
 }

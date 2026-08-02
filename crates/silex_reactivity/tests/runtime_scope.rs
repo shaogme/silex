@@ -10,7 +10,7 @@ fn runtime_run_provides_scoped_signal_and_effect() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (count, set_count) = scope.signal(0i32);
         let doubled = scope.memo(move |_| count.get() * 2);
         let runs_in_effect = runs.clone();
@@ -34,7 +34,7 @@ fn non_static_effect_can_capture_data_and_scoped_signal() {
     let mut runtime = Runtime::new();
     let external = Rc::new(Cell::new(0));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (signal, set_signal) = scope.signal(1i32);
         let external_in_effect = external.clone();
         scope.effect(move || {
@@ -51,7 +51,7 @@ fn child_scope_is_lexical_and_cleans_up_its_nodes() {
     let mut runtime = Runtime::new();
     let cleaned = Rc::new(Cell::new(0));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         scope.scope(|child| {
             let (local, set_local) = child.signal(0i32);
             let runs = cleaned.clone();
@@ -71,7 +71,7 @@ fn child_effect_reacts_to_parent_signal_and_detaches_on_exit() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (parent, set_parent) = scope.signal(0i32);
         scope.scope(|child| {
             let runs_in_effect = runs.clone();
@@ -90,11 +90,11 @@ fn child_effect_reacts_to_parent_signal_and_detaches_on_exit() {
 }
 
 #[test]
-fn root_cleanup_runs_when_run_ends() {
+fn child_cleanup_runs_when_scoped_run_ends() {
     let mut runtime = Runtime::new();
     let cleaned = Rc::new(Cell::new(false));
     let cleaned_in_scope = cleaned.clone();
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         scope.on_cleanup(move || cleaned_in_scope.set(true));
         assert!(!cleaned.get());
     });
@@ -102,11 +102,28 @@ fn root_cleanup_runs_when_run_ends() {
 }
 
 #[test]
+fn child_scope_is_inactive_after_scope_returns() {
+    let mut runtime = Runtime::new();
+    let (token, read_cell) = runtime.run_scoped(|scope| {
+        let cell = Rc::new(Cell::new(10));
+        let cell_in_callback = cell.clone();
+        let token = scope.completion(move |val: i32| {
+            cell_in_callback.set(val);
+        });
+        (token, cell)
+    });
+
+    assert_eq!(read_cell.get(), 10);
+    assert!(!token.submit(20));
+    assert_eq!(read_cell.get(), 10);
+}
+
+#[test]
 fn cleanup_order_follows_lexical_scope_order() {
     let mut runtime = Runtime::new();
     let events = Rc::new(RefCell::new(Vec::new()));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let parent_events = events.clone();
         scope.on_cleanup(move || parent_events.borrow_mut().push("parent"));
 
@@ -127,7 +144,7 @@ fn child_scope_panic_cleans_up_before_parent_continues() {
     let cleaned = Rc::new(Cell::new(false));
     let parent_continued = Rc::new(Cell::new(false));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let cleaned_in_child = cleaned.clone();
         let panic = catch_unwind(AssertUnwindSafe(|| {
             scope.scope(|child| {
@@ -147,7 +164,7 @@ fn child_scope_panic_cleans_up_before_parent_continues() {
 #[test]
 fn child_callback_panic_is_not_replaced_by_cleanup_panic() {
     let mut runtime = Runtime::new();
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let panic = catch_unwind(AssertUnwindSafe(|| {
             scope.scope(|child| {
                 child.on_cleanup(|| panic!("cleanup panic"));
@@ -165,7 +182,7 @@ fn parent_effect_tracks_reads_inside_child_callback() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (source, set_source) = scope.signal(0i32);
         let parent_scope = *scope;
         let runs_in_effect = runs.clone();
@@ -187,7 +204,7 @@ fn child_local_signal_does_not_keep_parent_effect_queued_after_exit() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let parent_scope = *scope;
         let runs_in_effect = runs.clone();
         let result = catch_unwind(AssertUnwindSafe(|| {
@@ -211,7 +228,7 @@ fn cleanup_can_reenter_an_active_parent_scope() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (source, set_source) = scope.signal(0i32);
         let seen_in_effect = seen.clone();
         scope.effect(move || seen_in_effect.set(source.get()));
@@ -225,12 +242,12 @@ fn cleanup_can_reenter_an_active_parent_scope() {
 }
 
 #[test]
-fn panic_in_run_still_drops_the_root_scope() {
+fn panic_in_scoped_run_still_drops_the_scope() {
     let mut runtime = Runtime::new();
     let cleaned = Rc::new(Cell::new(false));
     let cleaned_in_scope = cleaned.clone();
     let panic = catch_unwind(AssertUnwindSafe(|| {
-        runtime.run(|scope| {
+        runtime.run_scoped(|scope| {
             scope.on_cleanup(move || cleaned_in_scope.set(true));
             panic!("run panic");
         });
@@ -238,7 +255,7 @@ fn panic_in_run_still_drops_the_root_scope() {
     assert!(panic.is_err());
     assert!(cleaned.get());
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (signal, set_signal) = scope.signal(1i32);
         set_signal.set(2);
         assert_eq!(signal.get(), 2);
@@ -249,13 +266,13 @@ fn panic_in_run_still_drops_the_root_scope() {
 fn cleanup_panic_does_not_poison_runtime() {
     let mut runtime = Runtime::new();
     let panic = catch_unwind(AssertUnwindSafe(|| {
-        runtime.run(|scope| {
+        runtime.run_scoped(|scope| {
             scope.on_cleanup(|| panic!("cleanup panic"));
         });
     }));
     assert!(panic.is_err());
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (signal, set_signal) = scope.signal(1i32);
         set_signal.set(2);
         assert_eq!(signal.get(), 2);
@@ -269,7 +286,7 @@ fn cleanup_panic_does_not_skip_remaining_cleanups() {
     let remaining_cleanup_ran_in_scope = remaining_cleanup_ran.clone();
 
     let panic = catch_unwind(AssertUnwindSafe(|| {
-        runtime.run(|scope| {
+        runtime.run_scoped(|scope| {
             scope.on_cleanup(|| panic!("first cleanup panic"));
             scope.on_cleanup(move || remaining_cleanup_ran_in_scope.set(true));
         });
@@ -288,7 +305,7 @@ fn cleanup_panic_does_not_skip_other_nodes_or_root_cleanup() {
     let root_cleaned_in_scope = root_cleaned.clone();
 
     let panic = catch_unwind(AssertUnwindSafe(|| {
-        runtime.run(|scope| {
+        runtime.run_scoped(|scope| {
             let scope_copy = *scope;
             scope.effect(move || {
                 scope_copy.on_cleanup(|| panic!("first node cleanup panic"));
@@ -310,14 +327,14 @@ fn cleanup_panic_does_not_skip_other_nodes_or_root_cleanup() {
 }
 
 #[test]
-fn root_cleanup_can_register_another_root_cleanup() {
+fn scope_cleanup_can_register_another_cleanup() {
     let mut runtime = Runtime::new();
     let first_ran = Rc::new(Cell::new(false));
     let second_ran = Rc::new(Cell::new(false));
     let first_ran_in_scope = first_ran.clone();
     let second_ran_in_scope = second_ran.clone();
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let scope_copy = *scope;
         scope.on_cleanup(move || {
             first_ran_in_scope.set(true);
@@ -336,7 +353,7 @@ fn effect_cleanup_can_register_cleanup_for_the_next_run() {
     let first_cleanup_ran = Rc::new(Cell::new(false));
     let second_cleanup_ran = Rc::new(Cell::new(false));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (source, set_source) = scope.signal(0i32);
         let scope_copy = *scope;
         let register_initial_cleanup = Rc::new(Cell::new(true));
@@ -369,7 +386,7 @@ fn child_cleanup_panic_still_flushes_parent_queue() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (source, set_source) = scope.signal(RefCell::new(0i32));
         let runs_in_effect = runs.clone();
         scope.effect(move || {
@@ -401,11 +418,11 @@ fn child_cleanup_panic_still_flushes_parent_queue() {
 }
 
 #[test]
-fn completion_token_accepts_active_submissions_and_rejects_root_stale_submission() {
+fn completion_token_accepts_active_submissions_and_rejects_after_scope() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
     let seen_in_scope = seen.clone();
-    let token = runtime.run(|scope| {
+    let token = runtime.run_scoped(|scope| {
         let seen_in_callback = seen_in_scope.clone();
         let token = scope.completion(move |value: i32| seen_in_callback.set(value));
         assert!(token.submit(1));
@@ -422,7 +439,7 @@ fn completion_token_rejects_submission_after_scope_deactivation() {
     let mut runtime = Runtime::new();
     let callback_called = Rc::new(Cell::new(false));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         scope.scope(|child| {
             let callback_called_in_child = callback_called.clone();
             let token = child.completion(move |_: i32| callback_called_in_child.set(true));
@@ -443,10 +460,10 @@ fn completion_token_rejects_submission_after_scope_deactivation() {
 fn handles_are_invalid_after_their_scope_and_runtimes_are_isolated() {
     let mut first = Runtime::new();
     let mut second = Runtime::new();
-    first.run(|scope| {
+    first.run_scoped(|scope| {
         let (signal, _) = scope.signal(1i32);
         assert!(signal.is_alive());
-        second.run(|other| {
+        second.run_scoped(|other| {
             let (other_signal, _) = other.signal(2i32);
             assert_eq!(other_signal.get(), 2);
             assert_eq!(signal.get(), 1);
@@ -455,11 +472,14 @@ fn handles_are_invalid_after_their_scope_and_runtimes_are_isolated() {
     });
 
     let mut gone = Runtime::new();
-    gone.run(|scope| {
-        let (signal, _) = scope.signal(1i32);
-        assert!(signal.is_alive());
-        let _ = signal;
+    let token = gone.run_scoped(|scope| {
+        scope.scope(|child| {
+            let (signal, _) = child.signal(1i32);
+            assert!(signal.is_alive());
+        });
+        scope.completion(|_: i32| {})
     });
+    assert!(!token.submit(1));
 
     assert_eq!(
         ReactiveError::NoSuchNode.to_string(),

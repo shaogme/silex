@@ -21,9 +21,14 @@ pub use node_ref::NodeRef;
 pub use reactivity::{
     Constant, Effect, Memo, ReadSignal, RwSignal, Signal, StoredValue, WriteSignal,
 };
-pub use scope::{Runtime, Scope};
+pub use scope::{RootHandle, RootScope, Runtime, Scope};
 pub use store::Store;
 pub use traits::{RxBase, RxGet, RxRead};
+
+pub use silex_reactivity::{
+    CleanupError, RootCallback, RootDerived, RootEffect, RootMemo, RootNodeRef, RootReadSignal,
+    RootSignal, RootStoredValue, RootWriteSignal,
+};
 
 /// Marker for value-producing reactive nodes.
 pub struct RxValueKind;

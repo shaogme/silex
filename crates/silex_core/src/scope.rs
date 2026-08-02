@@ -22,8 +22,138 @@ impl Runtime {
         }
     }
 
-    pub fn run<R>(&mut self, f: impl for<'s1, 's2> FnOnce(&'s1 Scope<'s1, 's2>) -> R) -> R {
-        self.inner.run(|scope| {
+    pub fn run<F>(&mut self, f: F) -> RootHandle
+    where
+        F: FnOnce(&RootScope),
+    {
+        let handle = self.inner.run(move |scope| {
+            let scope = RootScope {
+                inner: scope.clone(),
+            };
+            f(&scope);
+        });
+        RootHandle { inner: handle }
+    }
+
+    pub fn run_scoped<R>(&mut self, f: impl for<'s1, 's2> FnOnce(&'s1 Scope<'s1, 's2>) -> R) -> R {
+        self.inner.run_scoped(|s| {
+            let s = Scope { inner: *s };
+            f(&s)
+        })
+    }
+}
+
+pub struct RootHandle {
+    inner: silex_reactivity::RootHandle,
+}
+
+impl RootHandle {
+    pub fn scope(&self) -> RootScope {
+        RootScope {
+            inner: self.inner.scope(),
+        }
+    }
+
+    pub fn dispose(&mut self) -> Result<(), silex_reactivity::CleanupError> {
+        self.inner.dispose()
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.inner.is_active()
+    }
+}
+
+#[derive(Clone)]
+pub struct RootScope {
+    inner: silex_reactivity::RootScope,
+}
+
+impl RootScope {
+    pub fn signal<T: 'static>(
+        &self,
+        value: T,
+    ) -> (
+        silex_reactivity::RootReadSignal<T>,
+        silex_reactivity::RootWriteSignal<T>,
+    ) {
+        self.inner.signal(value)
+    }
+
+    pub fn rw_signal<T: 'static>(&self, value: T) -> silex_reactivity::RootSignal<T> {
+        self.inner.rw_signal(value)
+    }
+
+    pub fn effect<F>(&self, f: F) -> silex_reactivity::RootEffect
+    where
+        F: FnMut() + 'static,
+    {
+        self.inner.effect(f)
+    }
+
+    pub fn memo<T, F>(&self, f: F) -> silex_reactivity::RootMemo<T>
+    where
+        T: PartialEq + 'static,
+        F: FnMut(Option<&T>) -> T + 'static,
+    {
+        self.inner.memo(f)
+    }
+
+    pub fn derived<T, F>(&self, f: F) -> silex_reactivity::RootDerived<T>
+    where
+        T: 'static,
+        F: FnMut() -> T + 'static,
+    {
+        self.inner.derived(f)
+    }
+
+    pub fn stored<T: 'static>(&self, value: T) -> silex_reactivity::RootStoredValue<T> {
+        self.inner.stored(value)
+    }
+
+    pub fn callback<T, F>(&self, callback: F) -> silex_reactivity::RootCallback<T>
+    where
+        T: 'static,
+        F: FnMut(T) + 'static,
+    {
+        self.inner.callback(callback)
+    }
+
+    pub fn node_ref<T: 'static>(&self) -> silex_reactivity::RootNodeRef<T> {
+        self.inner.node_ref()
+    }
+
+    pub fn completion<T, F>(&self, callback: F) -> silex_reactivity::CompletionToken<T>
+    where
+        T: 'static,
+        F: FnMut(T) + 'static,
+    {
+        self.inner.completion(callback)
+    }
+
+    pub fn on_cleanup<F>(&self, cleanup: F)
+    where
+        F: FnOnce() + 'static,
+    {
+        self.inner.on_cleanup(cleanup);
+    }
+
+    pub fn on_dispose<F>(&self, hook: F)
+    where
+        F: FnOnce() + 'static,
+    {
+        self.inner.on_dispose(hook);
+    }
+
+    pub fn untrack<R>(&self, f: impl FnOnce() -> R) -> R {
+        self.inner.untrack(f)
+    }
+
+    pub fn batch<R>(&self, f: impl FnOnce() -> R) -> R {
+        self.inner.batch(f)
+    }
+
+    pub fn scope<R>(&self, f: impl for<'s1, 's2, 's3> FnOnce(&'s1 Scope<'s2, 's3>) -> R) -> R {
+        self.inner.scope(|scope| {
             let scope = Scope { inner: *scope };
             f(&scope)
         })

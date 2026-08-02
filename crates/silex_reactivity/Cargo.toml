@@ -19,7 +19,6 @@ slotmap = "1.0"
 smallvec = "1.11"
 silex_vtable.workspace = true
 
-
 [dev-dependencies]
 trybuild = "1.0"
 

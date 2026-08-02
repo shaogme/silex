@@ -74,6 +74,7 @@ pub(crate) struct GlobalScheduler {
     active_mask: BitSet,
     scopes: Vec<Option<ScopeEntry>>,
     next_scope_id: u32,
+    free_scope_ids: Vec<u32>,
     epoch: u64,
     observer: Option<Observer>,
     pub(crate) global_queue: VecDeque<ScheduledTask>,
@@ -90,6 +91,7 @@ impl GlobalScheduler {
             active_mask: BitSet::new(),
             scopes: Vec::new(),
             next_scope_id: 0,
+            free_scope_ids: Vec::new(),
             epoch: 1,
             observer: None,
             global_queue: VecDeque::new(),
@@ -122,8 +124,11 @@ impl GlobalScheduler {
         &mut self,
         state: &Rc<RefCell<ScopeState<'scope>>>,
     ) -> ScopeId {
-        let id = self.next_scope_id;
-        self.next_scope_id = self.next_scope_id.wrapping_add(1);
+        let id = self.free_scope_ids.pop().unwrap_or_else(|| {
+            let id = self.next_scope_id;
+            self.next_scope_id = self.next_scope_id.wrapping_add(1);
+            id
+        });
         let scope_id = ScopeId(id);
 
         let weak_state = Rc::downgrade(state);
@@ -147,11 +152,16 @@ impl GlobalScheduler {
     }
 
     pub(crate) fn deactivate_scope(&mut self, id: ScopeId) {
+        if !self.is_scope_active(id) {
+            return;
+        }
         self.active_mask.set(id.0, false);
         let index = id.0 as usize;
         if index < self.scopes.len() {
             self.scopes[index] = None;
         }
+        self.global_queue.retain(|task| task.scope_id != id);
+        self.free_scope_ids.push(id.0);
     }
 
     pub(crate) fn is_scope_active(&self, id: ScopeId) -> bool {
@@ -201,5 +211,37 @@ impl GlobalScheduler {
 
     pub(crate) fn should_flush(&self) -> bool {
         self.is_idle() && self.borrowed_values == 0 && !self.global_queue.is_empty()
+    }
+
+    pub(crate) fn clear_queue(&mut self) {
+        self.global_queue.clear();
+        self.running_queue = false;
+        self.observer = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::ScopeState;
+
+    #[test]
+    fn released_scope_slots_are_reused() {
+        let scheduler = GlobalScheduler::new();
+        let first = std::rc::Rc::new(std::cell::RefCell::new(ScopeState::new(
+            ScopeId(0),
+            scheduler.clone(),
+        )));
+        let first_id = scheduler.borrow_mut().alloc_scope(&first);
+        first.borrow_mut().scope_id = first_id;
+        scheduler.borrow_mut().deactivate_scope(first_id);
+
+        let second = std::rc::Rc::new(std::cell::RefCell::new(ScopeState::new(
+            ScopeId(0),
+            scheduler.clone(),
+        )));
+        let second_id = scheduler.borrow_mut().alloc_scope(&second);
+
+        assert_eq!(first_id, second_id);
     }
 }

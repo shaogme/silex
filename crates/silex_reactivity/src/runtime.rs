@@ -21,8 +21,11 @@ pub(crate) use ops::{
 };
 pub(crate) use scheduler::{GlobalScheduler, ScopeId};
 
+use crate::root::RootHandle;
 use crate::scope::{Scope, ScopeFrame};
+
 use std::{
+    cell::Cell,
     marker::PhantomData,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
@@ -30,23 +33,45 @@ use std::{
 
 /// User-owned single-threaded runtime.
 pub struct Runtime {
-    running: bool,
+    root_active: Rc<Cell<bool>>,
     marker: PhantomData<Rc<()>>,
 }
 
 impl Runtime {
     pub fn new() -> Self {
         Self {
-            running: false,
+            root_active: Rc::new(Cell::new(false)),
             marker: PhantomData,
         }
     }
 
-    /// Run one explicit root scope. The higher-ranked callback prevents root
-    /// nodes from being returned after this run ends.
-    pub fn run<R>(&mut self, f: impl for<'s1, 's2> FnOnce(&'s1 Scope<'s1, 's2>) -> R) -> R {
-        assert!(!self.running, "响应式 Runtime 不支持嵌套 run");
-        self.running = true;
+    /// Run one long-lived root owned by the returned handle.
+    pub fn run<F>(&mut self, f: F) -> RootHandle
+    where
+        F: FnOnce(&crate::RootScope),
+    {
+        assert!(
+            !self.root_active.replace(true),
+            "一个 Runtime 只能同时拥有一个 root"
+        );
+
+        let mut root = RootHandle::new(self.root_active.clone());
+        let scope = root.scope();
+        let result = catch_unwind(AssertUnwindSafe(|| f(&scope)));
+        if let Err(panic) = result {
+            if let Err(cleanup) = root.dispose() {
+                cleanup.report_during_unwind();
+            }
+            resume_unwind(panic);
+        }
+        root
+    }
+
+    pub fn run_scoped<R>(&mut self, f: impl for<'s1, 's2> FnOnce(&'s1 Scope<'s1, 's2>) -> R) -> R {
+        assert!(
+            !self.root_active.get(),
+            "长期 root 存活期间不能运行词法测试 scope"
+        );
         let scheduler = GlobalScheduler::new();
         let frame = ScopeFrame::new(scheduler);
         let scope = Scope {
@@ -55,7 +80,6 @@ impl Runtime {
         };
         let result = catch_unwind(AssertUnwindSafe(|| f(&scope)));
         let dispose_result = catch_unwind(AssertUnwindSafe(|| frame.dispose()));
-        self.running = false;
         match (result, dispose_result) {
             (Ok(value), Ok(())) => value,
             (Err(panic), _) => resume_unwind(panic),

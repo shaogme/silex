@@ -248,13 +248,18 @@ impl<'scope> ScopeState<'scope> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Runtime, runtime::scheduler::Observer};
+    use crate::{Runtime, Scope, runtime::scheduler::Observer};
     use std::{panic::AssertUnwindSafe, panic::catch_unwind};
+
+    fn run_scoped(runtime: &mut Runtime, f: impl for<'s1, 's2, 's3> FnOnce(&'s1 Scope<'s2, 's3>)) {
+        let root = runtime.run(|root| root.scope(f));
+        drop(root);
+    }
 
     #[test]
     fn track_conflict_does_not_leave_a_subscriber_half_edge() {
         let mut runtime = Runtime::new();
-        runtime.run(|scope| {
+        run_scoped(&mut runtime, |scope| {
             let (source, _) = scope.signal(0i32);
             let (target, _) = scope.signal(1i32);
             let source_state = source.handle.state();
@@ -329,7 +334,7 @@ mod tests {
     #[test]
     fn clear_dependencies_conflict_preserves_both_sides_of_the_edge() {
         let mut runtime = Runtime::new();
-        runtime.run(|scope| {
+        run_scoped(&mut runtime, |scope| {
             let (source, _) = scope.signal(0i32);
             let source_state = source.handle.state();
             let source_raw = source.handle.raw();

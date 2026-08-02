@@ -1,17 +1,17 @@
 //! Explicit, single-threaded scoped reactivity runtime.
 //!
-//! A user owns a [`Runtime`] and enters it with [`Runtime::run`]. Every node is
-//! created through the [`Scope`] passed to that run and carries a lifetime tied
-//! to the scope. Child scopes are lexical: their nodes are destroyed before the
-//! child callback returns.
+//! A user owns a [`Runtime`] and starts one long-lived root with
+//! [`Runtime::run`]. The returned [`RootHandle`] owns the root until explicit
+//! disposal or Drop. Non-`'static` nodes are created through
+//! [`RootScope::scope`] and are destroyed before that child callback returns.
 //!
 //! The runtime deliberately has no thread-local fallback. Computations are
 //! stored as `Box<dyn FnMut() + 'scope>` inside the state for their scope, and
 //! handles retain a safe reference to their owning frame. User callbacks are always
 //! invoked after the mutable state borrow has been released.
 //!
-//! Handles cannot escape the `Runtime::run` callback; the compile-fail case is
-//! covered by `tests/ui/fail_root_handle_escape.rs`.
+//! Lexical handles cannot escape [`RootScope::scope`]; root-owned capabilities
+//! use an owner-backed weak state and become invalid after [`RootHandle`] ends.
 
 #![deny(unreachable_pub)]
 
@@ -20,6 +20,7 @@ mod error;
 mod handle;
 mod internal;
 pub mod node;
+mod root;
 mod runtime;
 pub mod scope;
 
@@ -34,6 +35,10 @@ pub use crate::{
     node::{
         Callback, Derived, Effect, Memo, NodeRef, ReadSignal, RwSignal, Signal, StoredValue,
         WriteSignal, notify, track, track_batch,
+    },
+    root::{
+        CleanupError, RootCallback, RootDerived, RootEffect, RootHandle, RootMemo, RootNodeRef,
+        RootReadSignal, RootScope, RootSignal, RootStoredValue, RootWriteSignal,
     },
     runtime::Runtime,
     scope::Scope,

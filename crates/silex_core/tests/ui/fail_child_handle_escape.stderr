@@ -1,20 +1,20 @@
 error: lifetime may not live long enough
- --> tests/ui/fail_child_handle_escape.rs:5:60
+ --> tests/ui/fail_child_handle_escape.rs:6:43
   |
-5 |     let _escaped = runtime.run(|scope| scope.scope(|child| child.signal(1).0));
-  |                                                     ------ ^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
-  |                                                     |    |
-  |                                                     |    return type of closure is ReadSignal<'2, '_, i32>
-  |                                                     has type `&silex_core::Scope<'1, '_>`
+6 |         let _escaped = root.scope(|child| child.signal(1).0);
+  |                                    ------ ^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
+  |                                    |    |
+  |                                    |    return type of closure is ReadSignal<'2, '_, i32>
+  |                                    has type `&silex_core::Scope<'1, '_>`
 
 error: lifetime may not live long enough
- --> tests/ui/fail_child_handle_escape.rs:5:60
+ --> tests/ui/fail_child_handle_escape.rs:6:43
   |
-5 |     let _escaped = runtime.run(|scope| scope.scope(|child| child.signal(1).0));
-  |                                                     ------ ^^^^^^^^^^^^^^^^^ returning this value requires that `'3` must outlive `'4`
-  |                                                     |    |
-  |                                                     |    return type of closure is ReadSignal<'_, '4, i32>
-  |                                                     has type `&silex_core::Scope<'_, '3>`
+6 |         let _escaped = root.scope(|child| child.signal(1).0);
+  |                                    ------ ^^^^^^^^^^^^^^^^^ returning this value requires that `'3` must outlive `'4`
+  |                                    |    |
+  |                                    |    return type of closure is ReadSignal<'_, '4, i32>
+  |                                    has type `&silex_core::Scope<'_, '3>`
   |
   = note: requirement occurs because of the type `ReadSignal<'_, '_, i32>`, which makes the generic argument `'_` invariant
   = note: the struct `ReadSignal<'scope, 'run, T>` is invariant over the parameter `'run`

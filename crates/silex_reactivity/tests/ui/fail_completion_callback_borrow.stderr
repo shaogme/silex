@@ -1,29 +1,29 @@
 error[E0373]: closure may outlive the current function, but it borrows `value`, which is owned by the current function
- --> tests/ui/fail_completion_callback_borrow.rs:7:38
+ --> tests/ui/fail_completion_callback_borrow.rs:7:37
   |
-7 |         let token = scope.completion(|_: ()| {
-  |                                      ^^^^^^^ may outlive borrowed value `value`
+7 |         let token = root.completion(|_: ()| {
+  |                                     ^^^^^^^ may outlive borrowed value `value`
 8 |             let _ = value.as_str();
   |                     ----- `value` is borrowed here
   |
 note: function requires argument type to outlive `'static`
  --> tests/ui/fail_completion_callback_borrow.rs:7:21
   |
-7 |           let token = scope.completion(|_: ()| {
+7 |           let token = root.completion(|_: ()| {
   |  _____________________^
 8 | |             let _ = value.as_str();
 9 | |         });
   | |__________^
 help: to force the closure to take ownership of `value` (and any other referenced variables), use the `move` keyword
   |
-7 |         let token = scope.completion(move |_: ()| {
-  |                                      ++++
+7 |         let token = root.completion(move |_: ()| {
+  |                                     ++++
 
 error[E0505]: cannot move out of `value` because it is borrowed
   --> tests/ui/fail_completion_callback_borrow.rs:10:14
    |
- 7 |           let token = scope.completion(|_: ()| {
-   |                       -                ------- borrow of `value` occurs here
+ 7 |           let token = root.completion(|_: ()| {
+   |                       -               ------- borrow of `value` occurs here
    |  _____________________|
    | |
  8 | |             let _ = value.as_str();
@@ -34,7 +34,7 @@ error[E0505]: cannot move out of `value` because it is borrowed
    |                ^^^^^ move out of `value` occurs here
    |
 note: requirement that the value outlives `'static` introduced here
-  --> src/completion.rs
+  --> src/root.rs
    |
    |         F: FnMut(T) + 'static,
    |                       ^^^^^^^

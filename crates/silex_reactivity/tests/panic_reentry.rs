@@ -8,7 +8,7 @@ use std::{
 #[test]
 fn panic_in_update_restores_the_value_and_runtime() {
     let mut runtime = Runtime::new();
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (signal, set_signal) = scope.signal(1i32);
         let panic = catch_unwind(AssertUnwindSafe(|| {
             set_signal.update(|_| panic!("update panic"));
@@ -17,7 +17,7 @@ fn panic_in_update_restores_the_value_and_runtime() {
         assert_eq!(signal.get(), 1);
     });
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (signal, set_signal) = scope.signal(1i32);
         set_signal.set(2);
         assert_eq!(signal.get(), 2);
@@ -27,7 +27,7 @@ fn panic_in_update_restores_the_value_and_runtime() {
 #[test]
 fn reentrant_reads_return_errors_and_restore_the_value() {
     let mut runtime = Runtime::new();
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (signal, set_signal) = scope.signal(1i32);
 
         let nested_read = signal
@@ -50,7 +50,7 @@ fn panic_in_effect_does_not_block_the_next_notification() {
     let runs = Rc::new(Cell::new(0));
     let should_panic = Rc::new(Cell::new(false));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (source, set_source) = scope.signal(0i32);
         let runs_in_effect = runs.clone();
         let panic_in_effect = should_panic.clone();
@@ -83,7 +83,7 @@ fn cleanup_panic_during_effect_rerun_does_not_skip_remaining_cleanups() {
     let mut runtime = Runtime::new();
     let remaining_cleanup_ran = Rc::new(Cell::new(false));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (source, set_source) = scope.signal(0i32);
         let scope_copy = *scope;
         let register_cleanups = Rc::new(Cell::new(true));
@@ -122,7 +122,7 @@ fn panic_in_memo_restores_the_previous_value_and_allows_retry() {
     let mut runtime = Runtime::new();
     let should_panic = Rc::new(Cell::new(false));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (source, set_source) = scope.signal(1i32);
         let panic_in_memo = should_panic.clone();
         let memo = scope.memo(move |_| {
@@ -165,7 +165,7 @@ fn panic_in_memo_equality_restores_the_previous_value_and_allows_retry() {
     let mut runtime = Runtime::new();
     let should_panic = Rc::new(Cell::new(false));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (source, set_source) = scope.signal(1i32);
         let panic_in_eq = should_panic.clone();
         let memo = scope.memo(move |_| PanicOnCompare {
@@ -193,7 +193,7 @@ fn batch_panic_restores_depth_and_flushes_pending_effects() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (source, set_source) = scope.signal(0i32);
         let seen_in_effect = seen.clone();
         scope.effect(move || seen_in_effect.set(source.get()));
@@ -218,7 +218,7 @@ fn untrack_panic_restores_the_active_dependency_observer() {
     let runs = Rc::new(Cell::new(0));
     let first_run = Rc::new(Cell::new(true));
 
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (source, set_source) = scope.signal(0i32);
         let (tracked, set_tracked) = scope.signal(0i32);
         let scope_copy = *scope;

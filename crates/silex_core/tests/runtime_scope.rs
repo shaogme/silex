@@ -3,7 +3,7 @@ use silex_core::{Runtime, rx};
 #[test]
 fn scoped_primitives_propagate_without_raw_handles() {
     let mut runtime = Runtime::new();
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (count, set_count) = scope.signal(1i32);
         let doubled = scope.derived(move || count.get() * 2);
         let memo = scope.memo(move |_| doubled.get() + 1);
@@ -24,7 +24,7 @@ fn scoped_primitives_propagate_without_raw_handles() {
 #[test]
 fn callbacks_and_node_refs_are_scope_owned() {
     let mut runtime = Runtime::new();
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let called = std::rc::Rc::new(std::cell::Cell::new(0));
         let called_by_callback = called.clone();
         let callback = scope.callback(move |value: i32| {
@@ -42,7 +42,7 @@ fn callbacks_and_node_refs_are_scope_owned() {
 #[test]
 fn rx_macro_uses_explicit_scope_and_closure_reads() {
     let mut runtime = Runtime::new();
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (count, set_count) = scope.signal(2i32);
         let value = rx!(scope; $count + 3);
         assert_eq!(value.get(), 5);
@@ -54,7 +54,7 @@ fn rx_macro_uses_explicit_scope_and_closure_reads() {
 #[test]
 fn rx_macro_treats_parameterless_closures_as_derived_values() {
     let mut runtime = Runtime::new();
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let (count, set_count) = scope.signal(2i32);
         let value = rx!(scope; || $count + 3);
         assert_eq!(value.get(), 5);
@@ -66,7 +66,7 @@ fn rx_macro_treats_parameterless_closures_as_derived_values() {
 #[test]
 fn child_scope_completes_lexically() {
     let mut runtime = Runtime::new();
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         scope.scope(|child| {
             let (value, set_value) = child.signal(1i32);
             assert_eq!(value.get(), 1);
@@ -79,7 +79,7 @@ fn child_scope_completes_lexically() {
 #[test]
 fn non_static_types_in_scoped_primitives() {
     let mut runtime = Runtime::new();
-    runtime.run(|scope| {
+    runtime.run_scoped(|scope| {
         let local_data = String::from("hello from scope");
         struct Borrowed<'a>(&'a str);
 

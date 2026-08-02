@@ -2,9 +2,9 @@ use silex_reactivity::Runtime;
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.run(|scope| {
+    runtime.run(|root| {
         let value = String::from("scope-local");
-        let token = scope.completion(|_: ()| {
+        let token = root.completion(|_: ()| {
             let _ = value.as_str();
         });
         drop(value);
