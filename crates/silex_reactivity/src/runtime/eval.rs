@@ -211,7 +211,6 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
 
         let prev_owner = state_ref.current_owner;
         let prev_obs = state_ref.scheduler.borrow().observer();
-        state_ref.clear_dependencies(id);
 
         if let Some(node) = state_ref.nodes.get_mut(id) {
             node.running = true;
@@ -271,6 +270,7 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
         }
         {
             let mut state_ref = state.borrow_mut();
+            state_ref.clear_dependencies(id);
             let scheduler = state_ref.scheduler.clone();
             let mut sched = scheduler.borrow_mut();
             sched.executing += 1;

@@ -87,9 +87,12 @@ fn cleanup_panic_during_effect_rerun_does_not_skip_remaining_cleanups() {
         let (source, set_source) = scope.signal(0i32);
         let scope_copy = *scope;
         let register_cleanups = Rc::new(Cell::new(true));
+        let effect_runs = Rc::new(Cell::new(0));
+        let effect_runs_in_effect = effect_runs.clone();
         let remaining_cleanup_ran_in_effect = remaining_cleanup_ran.clone();
         scope.effect(move || {
             let _ = source.get();
+            effect_runs_in_effect.set(effect_runs_in_effect.get() + 1);
             if register_cleanups.replace(false) {
                 scope_copy.on_cleanup(|| panic!("effect cleanup panic"));
                 let remaining_cleanup_ran = remaining_cleanup_ran_in_effect.clone();
@@ -100,6 +103,10 @@ fn cleanup_panic_during_effect_rerun_does_not_skip_remaining_cleanups() {
         let panic = catch_unwind(AssertUnwindSafe(|| set_source.set(1)));
         assert!(panic.is_err());
         assert!(remaining_cleanup_ran.get());
+        assert_eq!(effect_runs.get(), 1);
+
+        set_source.set(2);
+        assert_eq!(effect_runs.get(), 2);
 
         let (independent, set_independent) = scope.signal(0i32);
         let seen = Rc::new(Cell::new(0));

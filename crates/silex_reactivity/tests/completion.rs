@@ -28,7 +28,7 @@ fn completion_token_is_invalid_after_child_scope_dispose() {
 #[test]
 fn completion_token_is_invalid_after_root_runtime_ends() {
     let mut runtime = Runtime::new();
-    let token: CompletionToken = runtime.run(|scope| scope.completion(|_: i32| {}));
+    let token: CompletionToken<i32> = runtime.run(|scope| scope.completion(|_: i32| {}));
 
     assert!(!token.submit(1));
 }

@@ -94,7 +94,7 @@ where
         let request_id_for_callback = request_id.clone();
         let set_state_for_callback = set_state;
         let suspense_for_callback = suspense;
-        let completion = scope.completion(move |(id, result): (usize, Result<T, E>)| {
+        let completion = scope.completion_scoped(move |(id, result): (usize, Result<T, E>)| {
             if request_id_for_callback.get() == id {
                 set_state_for_callback.set(match result {
                     Ok(value) => ResourceState::Ready(value),

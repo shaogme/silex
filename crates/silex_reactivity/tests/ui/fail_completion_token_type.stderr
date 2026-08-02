@@ -1,0 +1,13 @@
+error[E0308]: mismatched types
+ --> tests/ui/fail_completion_token_type.rs:7:30
+  |
+7 |         let _ = token.submit("wrong message type");
+  |                       ------ ^^^^^^^^^^^^^^^^^^^^ expected `i32`, found `&str`
+  |                       |
+  |                       arguments to this method are incorrect
+  |
+note: method defined here
+ --> src/completion.rs
+  |
+  |     pub fn submit(&self, value: T) -> bool {
+  |            ^^^^^^

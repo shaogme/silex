@@ -35,7 +35,7 @@ pub struct Mutation<'scope, 'run, Arg, T, E = SilexError> {
     set_state: WriteSignal<'scope, 'run, MutationState<T, E>>,
     action: Rc<dyn Fn(Arg) -> MutationFuture<T, E> + 'scope>,
     last_id: Rc<Cell<usize>>,
-    completion: CompletionToken,
+    completion: CompletionToken<(usize, Result<T, E>)>,
 }
 
 impl<'scope, 'run, Arg, T, E> Clone for Mutation<'scope, 'run, Arg, T, E> {
@@ -65,7 +65,7 @@ where
         let last_id = Rc::new(Cell::new(0usize));
         let last_id_for_callback = last_id.clone();
         let set_state_for_callback = set_state;
-        let completion = scope.completion(move |(id, result): (usize, Result<T, E>)| {
+        let completion = scope.completion_scoped(move |(id, result): (usize, Result<T, E>)| {
             if last_id_for_callback.get() == id {
                 set_state_for_callback.set(match result {
                     Ok(value) => MutationState::Success(value),

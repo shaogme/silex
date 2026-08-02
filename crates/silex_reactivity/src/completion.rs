@@ -21,15 +21,25 @@ type ErasedScopeState = RefCell<ScopeState<'static>>;
 /// The token contains neither a typed node handle nor a strong reference to
 /// the scope. Once the scope is disposed, upgrading the token fails and
 /// [`submit`](Self::submit) returns `false`.
-#[derive(Clone)]
-pub struct CompletionToken {
+pub struct CompletionToken<T> {
     state: Weak<ErasedScopeState>,
     scope_id: ScopeId,
     callback: RawId,
-    marker: PhantomData<Rc<()>>,
+    marker: PhantomData<Rc<T>>,
 }
 
-impl CompletionToken {
+impl<T> Clone for CompletionToken<T> {
+    fn clone(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+            scope_id: self.scope_id,
+            callback: self.callback,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<T: 'static> CompletionToken<T> {
     pub(crate) fn new(state: Weak<ErasedScopeState>, scope_id: ScopeId, callback: RawId) -> Self {
         Self {
             state,
@@ -40,7 +50,7 @@ impl CompletionToken {
     }
 
     /// Submit an owned value to the callback while its scope is active.
-    pub fn submit<T>(&self, value: T) -> bool {
+    pub fn submit(&self, value: T) -> bool {
         let Some(erased_state) = self.state.upgrade() else {
             return false;
         };
@@ -74,12 +84,31 @@ impl CompletionToken {
 
 impl<'scope, 'run> Scope<'scope, 'run> {
     /// Create a completion destination owned by this scope.
-    pub fn completion<T: 'scope, F>(&self, mut callback: F) -> CompletionToken
+    pub fn completion<T: 'static, F>(&self, callback: F) -> CompletionToken<T>
+    where
+        F: FnMut(T) + 'static,
+    {
+        // SAFETY: a `'static` callback cannot borrow data that ends before the
+        // scope's disposal path.
+        unsafe { self.completion_scoped(callback) }
+    }
+
+    /// Create a completion destination with a callback borrowed from this scope.
+    ///
+    /// # Safety
+    ///
+    /// The callback must not borrow data that can be dropped before this scope
+    /// is disposed. In particular, references to locals created inside the
+    /// surrounding `Runtime::run` or `Scope::scope` callback are not allowed;
+    /// move scope-owned handles and owned values into the callback instead.
+    pub unsafe fn completion_scoped<T: 'static, F>(&self, mut callback: F) -> CompletionToken<T>
     where
         F: FnMut(T) + 'scope,
     {
         let thunk = CallbackThunk::new(move |value: AnyValue<'scope>| {
-            if let Some(value) = value.downcast::<T>() {
+            // SAFETY: `CompletionToken<T>::submit` is the only way to submit
+            // a value to this typed destination.
+            if let Some(value) = unsafe { value.downcast::<T>() } {
                 callback(value);
             }
         });

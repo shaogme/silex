@@ -283,8 +283,7 @@ pub(crate) fn node_ref_get<'scope, T: Clone>(
     id: RawId,
 ) -> ReactiveResult<Option<T>> {
     with_stored(state, id, |value| {
-        value
-            .downcast_ref::<Option<T>>()
+        unsafe { value.downcast_ref::<Option<T>>() }
             .cloned()
             .ok_or(ReactiveError::TypeMismatch)
     })?
@@ -296,8 +295,7 @@ pub(crate) fn node_ref_set<'scope, T>(
     value: T,
 ) -> ReactiveResult<()> {
     update_stored(state, id, |stored| {
-        stored
-            .downcast_mut::<Option<T>>()
+        unsafe { stored.downcast_mut::<Option<T>>() }
             .map(|slot| *slot = Some(value))
             .ok_or(ReactiveError::TypeMismatch)
     })?

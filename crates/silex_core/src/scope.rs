@@ -125,7 +125,9 @@ impl<'scope, 'run> Scope<'scope, 'run> {
         F: FnMut(T) + 'scope,
     {
         let callback = self.inner.callback(move |value| {
-            if let Some(value) = value.downcast::<T>() {
+            // SAFETY: this wrapper only invokes the underlying callback with
+            // the same `T` through `Callback::call`.
+            if let Some(value) = unsafe { value.downcast::<T>() } {
                 callback(value);
             }
         });
@@ -136,12 +138,25 @@ impl<'scope, 'run> Scope<'scope, 'run> {
         NodeRef::from_inner(self.inner.node_ref())
     }
 
-    pub fn completion<T, F>(&self, callback: F) -> silex_reactivity::CompletionToken
+    pub fn completion<T, F>(&self, callback: F) -> silex_reactivity::CompletionToken<T>
     where
-        T: 'scope,
-        F: FnMut(T) + 'scope,
+        T: 'static,
+        F: FnMut(T) + 'static,
     {
         self.inner.completion(callback)
+    }
+
+    pub(crate) fn completion_scoped<T, F>(
+        &self,
+        callback: F,
+    ) -> silex_reactivity::CompletionToken<T>
+    where
+        T: 'static,
+        F: FnMut(T) + 'scope,
+    {
+        // SAFETY: callers in this crate only capture handles and values owned
+        // by this scope, never references to shorter-lived locals.
+        unsafe { self.inner.completion_scoped(callback) }
     }
 
     pub fn rx<T>(&self, value: T) -> Rx<'scope, 'run, T::Value>

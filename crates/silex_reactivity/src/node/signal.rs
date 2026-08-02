@@ -98,8 +98,7 @@ impl<'scope, 'run, T: 'scope> ReadSignal<'scope, 'run, T> {
         T: Clone,
     {
         runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
-            value
-                .downcast_ref::<T>()
+            unsafe { value.downcast_ref::<T>() }
                 .cloned()
                 .ok_or(ReactiveError::TypeMismatch)
         })?
@@ -117,8 +116,7 @@ impl<'scope, 'run, T: 'scope> ReadSignal<'scope, 'run, T> {
         T: Clone,
     {
         runtime::with_signal(&self.handle.state(), self.handle.raw(), false, |value| {
-            value
-                .downcast_ref::<T>()
+            unsafe { value.downcast_ref::<T>() }
                 .cloned()
                 .ok_or(ReactiveError::TypeMismatch)
         })?
@@ -130,8 +128,7 @@ impl<'scope, 'run, T: 'scope> ReadSignal<'scope, 'run, T> {
 
     pub fn try_with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
         runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
-            value
-                .downcast_ref::<T>()
+            unsafe { value.downcast_ref::<T>() }
                 .map(f)
                 .ok_or(ReactiveError::TypeMismatch)
         })?
@@ -139,8 +136,7 @@ impl<'scope, 'run, T: 'scope> ReadSignal<'scope, 'run, T> {
 
     pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
         runtime::with_signal(&self.handle.state(), self.handle.raw(), false, |value| {
-            value
-                .downcast_ref::<T>()
+            unsafe { value.downcast_ref::<T>() }
                 .map(f)
                 .ok_or(ReactiveError::TypeMismatch)
         })?
@@ -155,7 +151,7 @@ impl<'scope, 'run, T: 'scope> WriteSignal<'scope, 'run, T> {
     pub fn try_set(&self, value: T) -> ReactiveResult<()> {
         let mut value = Some(value);
         runtime::update_signal(&self.handle.state(), self.handle.raw(), |stored| {
-            let Some(stored) = stored.downcast_mut::<T>() else {
+            let Some(stored) = (unsafe { stored.downcast_mut::<T>() }) else {
                 return (Err(ReactiveError::TypeMismatch), false);
             };
             *stored = value.take().expect("signal setter 只调用一次");
@@ -172,7 +168,7 @@ impl<'scope, 'run, T: 'scope> WriteSignal<'scope, 'run, T> {
     pub fn try_update<R>(&self, f: impl FnOnce(&mut T) -> R) -> ReactiveResult<R> {
         let mut f = Some(f);
         runtime::update_signal(&self.handle.state(), self.handle.raw(), |stored| {
-            let Some(stored) = stored.downcast_mut::<T>() else {
+            let Some(stored) = (unsafe { stored.downcast_mut::<T>() }) else {
                 return (Err(ReactiveError::TypeMismatch), false);
             };
             (
@@ -194,7 +190,7 @@ impl<'scope, 'run, T: 'scope> WriteSignal<'scope, 'run, T> {
     {
         let mut value = Some(value);
         runtime::update_signal(&self.handle.state(), self.handle.raw(), |stored| {
-            let Some(stored) = stored.downcast_mut::<T>() else {
+            let Some(stored) = (unsafe { stored.downcast_mut::<T>() }) else {
                 return (Err(ReactiveError::TypeMismatch), false);
             };
             let incoming = value.take().expect("signal setter 只调用一次");

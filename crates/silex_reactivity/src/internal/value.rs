@@ -6,18 +6,26 @@
 use silex_vtable::{any_box::InlineStorage, func_ptr::FuncPtr};
 use std::{marker::PhantomData, ptr};
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct TypeIdToken {
-    fn_ptr: *const (),
     name: &'static str,
 }
 
 fn type_id_token<T: ?Sized>() -> TypeIdToken {
     TypeIdToken {
-        fn_ptr: type_id_token::<T> as *const (),
         name: std::any::type_name::<T>(),
     }
 }
+
+impl PartialEq for TypeIdToken {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.name.as_ptr(), other.name.as_ptr())
+            && self.name.len() == other.name.len()
+            && self.name == other.name
+    }
+}
+
+impl Eq for TypeIdToken {}
 
 pub(crate) struct AnyValueVTable {
     pub(crate) drop: FuncPtr<unsafe fn(*mut u8)>,
@@ -149,7 +157,8 @@ unsafe fn equals_typed<T: PartialEq>(data1: *const u8, data2: *const u8) -> bool
 pub struct AnyValue<'a> {
     data: InlineStorage,
     vtable: &'static AnyValueVTable,
-    _marker: PhantomData<fn() -> &'a ()>,
+    is_heap: bool,
+    _marker: PhantomData<*mut &'a ()>,
 }
 
 impl<'a> AnyValue<'a> {
@@ -162,6 +171,7 @@ impl<'a> AnyValue<'a> {
             Self {
                 data,
                 vtable: &VGen::<T>::STACK,
+                is_heap: false,
                 _marker: PhantomData,
             }
         } else {
@@ -170,6 +180,7 @@ impl<'a> AnyValue<'a> {
             Self {
                 data,
                 vtable: &VGen::<T>::HEAP,
+                is_heap: true,
                 _marker: PhantomData,
             }
         }
@@ -184,6 +195,7 @@ impl<'a> AnyValue<'a> {
             Self {
                 data,
                 vtable: &VGenEq::<T>::STACK,
+                is_heap: false,
                 _marker: PhantomData,
             }
         } else {
@@ -192,6 +204,7 @@ impl<'a> AnyValue<'a> {
             Self {
                 data,
                 vtable: &VGenEq::<T>::HEAP,
+                is_heap: true,
                 _marker: PhantomData,
             }
         }
@@ -204,10 +217,11 @@ impl<'a> AnyValue<'a> {
 
     #[inline(always)]
     pub(crate) fn try_eq(&self, other: &Self) -> bool {
-        if self.value_type_id() != other.value_type_id() {
+        if !std::ptr::eq(self.vtable, other.vtable) || self.value_type_id() != other.value_type_id()
+        {
             return false;
         }
-        // SAFETY: self 与 other 均保存合法数据且 TypeIdToken 完全一致，可以提取指针并调用底层 equals。
+        // SAFETY: self 与 other 使用同一 vtable 且保存合法数据，可以提取指针并调用底层 equals。
         unsafe {
             let ptr1 = (self.vtable.as_ptr.as_fn())(self.data.as_ptr());
             let ptr2 = (other.vtable.as_ptr.as_fn())(other.data.as_ptr());
@@ -216,9 +230,17 @@ impl<'a> AnyValue<'a> {
     }
 
     #[inline(always)]
-    pub fn downcast_ref<T>(&self) -> Option<&T> {
+    /// Downcast to a value whose complete type, including lifetimes, is known
+    /// to match the value used to construct this container.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `T` is exactly the erased value type. The
+    /// runtime type token intentionally cannot encode lifetimes, so matching a
+    /// type constructor with a different lifetime is not sufficient.
+    pub unsafe fn downcast_ref<T>(&self) -> Option<&T> {
         if self.value_type_id() == type_id_token::<T>() {
-            // SAFETY: TypeIdToken 匹配保证底层存储确为 T 类型，vtable.as_ptr 返回有效的 *const T 指针。
+            // SAFETY: 调用者保证 exact-type 合约，vtable.as_ptr 返回有效的 *const T 指针。
             unsafe {
                 let ptr = (self.vtable.as_ptr.as_fn())(self.data.as_ptr());
                 Some(&*(ptr as *const T))
@@ -229,9 +251,15 @@ impl<'a> AnyValue<'a> {
     }
 
     #[inline(always)]
-    pub fn downcast_mut<T>(&mut self) -> Option<&mut T> {
+    /// Downcast to a mutable value with the exact erased type.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `T` is exactly the erased value type,
+    /// including all lifetime parameters.
+    pub unsafe fn downcast_mut<T>(&mut self) -> Option<&mut T> {
         if self.value_type_id() == type_id_token::<T>() {
-            // SAFETY: TypeIdToken 匹配保证底层存储确为 T 类型，vtable.as_mut_ptr 返回有效的 *mut T 指针。
+            // SAFETY: 调用者保证 exact-type 合约，vtable.as_mut_ptr 返回有效的 *mut T 指针。
             unsafe {
                 let ptr = (self.vtable.as_mut_ptr.as_fn())(self.data.as_mut_ptr());
                 Some(&mut *(ptr as *mut T))
@@ -242,13 +270,24 @@ impl<'a> AnyValue<'a> {
     }
 
     #[inline(always)]
-    pub fn downcast<T>(mut self) -> Option<T> {
+    /// Take ownership of the erased value after an exact-type downcast.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `T` is exactly the erased value type,
+    /// including all lifetime parameters.
+    pub unsafe fn downcast<T>(mut self) -> Option<T> {
         if self.value_type_id() == type_id_token::<T>() {
-            // SAFETY: TypeIdToken 匹配保证底层存储确为 T 类型。
+            // SAFETY: 调用者保证 exact-type 合约，当前 vtable 与存储路径匹配。
             // 使用 ptr::read 将 T 从底层内存中提取出来，并使用 mem::forget 防止 AnyValue 的 drop 再次释放底层对象。
             unsafe {
-                let ptr = (self.vtable.as_mut_ptr.as_fn())(self.data.as_mut_ptr()) as *mut T;
-                let val = std::ptr::read(ptr);
+                let val = if self.is_heap {
+                    let heap_ptr = ptr::read(self.data.as_mut_ptr().cast::<*mut T>());
+                    *Box::from_raw(heap_ptr)
+                } else {
+                    let ptr = (self.vtable.as_mut_ptr.as_fn())(self.data.as_mut_ptr()) as *mut T;
+                    ptr::read(ptr)
+                };
                 std::mem::forget(self);
                 Some(val)
             }
@@ -316,7 +355,7 @@ impl<'scope> MemoThunk<'scope> {
         let mut callback = callback;
         Self {
             callback: Box::new(move |old| {
-                let old = old.and_then(|value| value.downcast_ref::<T>());
+                let old = old.and_then(|value| unsafe { value.downcast_ref::<T>() });
                 AnyValue::new_reactive(callback(old))
             }),
         }
@@ -445,11 +484,33 @@ mod tests {
     #[test]
     fn test_any_value_downcast_mut() {
         let mut v = AnyValue::new(10i32);
-        if let Some(val) = v.downcast_mut::<i32>() {
+        if let Some(val) = unsafe { v.downcast_mut::<i32>() } {
             *val = 42;
         }
-        assert_eq!(v.downcast_ref::<i32>(), Some(&42));
-        assert_eq!(v.downcast_ref::<u32>(), None);
+        assert_eq!(unsafe { v.downcast_ref::<i32>() }, Some(&42));
+        assert_eq!(unsafe { v.downcast_ref::<u32>() }, None);
+    }
+
+    #[test]
+    fn test_any_value_heap_downcast_returns_owned_value() {
+        let dropped = std::rc::Rc::new(std::cell::Cell::new(0));
+        struct HeapValue {
+            dropped: std::rc::Rc<std::cell::Cell<i32>>,
+            _padding: [u8; 32],
+        }
+        impl Drop for HeapValue {
+            fn drop(&mut self) {
+                self.dropped.set(self.dropped.get() + 1);
+            }
+        }
+
+        let value = AnyValue::new(HeapValue {
+            dropped: dropped.clone(),
+            _padding: [0; 32],
+        });
+        let value = unsafe { value.downcast::<HeapValue>() }.expect("exact type should downcast");
+        drop(value);
+        assert_eq!(dropped.get(), 1);
     }
 
     #[test]
@@ -466,7 +527,7 @@ mod tests {
 
         assert!(v1.try_eq(&v2));
         assert_eq!(
-            v1.downcast_ref::<BorrowedData>(),
+            unsafe { v1.downcast_ref::<BorrowedData>() },
             Some(&BorrowedData("hello world"))
         );
     }
