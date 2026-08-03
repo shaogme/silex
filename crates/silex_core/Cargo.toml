@@ -20,6 +20,7 @@ silex_rx.workspace = true
 wasm-bindgen.workspace = true
 web-sys = { workspace = true, features = ["console"] }
 wasm-bindgen-futures.workspace = true
+futures-util.workspace = true
 
 [dev-dependencies]
 gloo-timers.workspace = true

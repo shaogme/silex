@@ -7,6 +7,7 @@ pub mod node_ref;
 pub mod reactivity;
 pub mod scope;
 pub mod store;
+mod task;
 pub mod traits;
 
 use std::marker::PhantomData;
@@ -26,6 +27,7 @@ pub use silex_reactivity::CompletionToken;
 #[doc(hidden)]
 pub use silex_reactivity::RuntimeInputs;
 pub use store::Store;
+pub use task::TaskHandle;
 pub use traits::{RxBase, RxGet, RxRead};
 
 pub use silex_reactivity::{

@@ -1,13 +1,15 @@
 //! High-level runtime and scope wrappers.
 
 use crate::{
-    Callback, NodeRef, Rx, SilexError, SilexResult,
+    Callback, NodeRef, Rx, SilexError, SilexResult, TaskHandle,
     reactivity::{Effect, Memo, ReactiveSource, ReadSignal, RwSignal, StoredValue, WriteSignal},
+    task,
     traits::RxData,
 };
 use silex_reactivity::RuntimeInputs;
 use std::{
     cell::{Cell, RefCell},
+    future::Future,
     rc::Rc,
 };
 
@@ -160,6 +162,19 @@ impl RootScope {
         F: FnMut(T) + 'static,
     {
         self.inner.completion(callback)
+    }
+
+    /// Spawn a task owned by this scope or the currently running computation.
+    pub fn spawn_scoped<F>(&self, future: F) -> TaskHandle
+    where
+        F: Future<Output = ()> + 'static,
+    {
+        if !self.is_active() {
+            return TaskHandle::inactive();
+        }
+        let (task, cancel) = task::start(future);
+        self.on_cleanup(cancel);
+        task
     }
 
     pub fn on_cleanup<F>(&self, cleanup: F)
@@ -397,6 +412,19 @@ impl<'scope> Scope<'scope> {
         self.inner.completion(callback)
     }
 
+    /// Spawn a task owned by this persistent scope or the currently running computation.
+    pub fn spawn_scoped<F>(&self, future: F) -> TaskHandle
+    where
+        F: Future<Output = ()> + 'static,
+    {
+        if !self.is_active() {
+            return TaskHandle::inactive();
+        }
+        let (task, cancel) = task::start(future);
+        self.on_cleanup(cancel);
+        task
+    }
+
     pub fn try_promote<T>(&self, value: T) -> SilexResult<Rx<'scope, T::Value>>
     where
         T: ReactiveSource<'scope>,
@@ -509,6 +537,19 @@ impl<'scope> OwnedScope<'scope> {
         F: FnMut(T) + 'scope,
     {
         self.inner.completion(callback)
+    }
+
+    /// Spawn a task owned by this persistent scope or the currently running computation.
+    pub fn spawn_scoped<F>(&self, future: F) -> TaskHandle
+    where
+        F: Future<Output = ()> + 'static,
+    {
+        if !self.is_active() {
+            return TaskHandle::inactive();
+        }
+        let (task, cancel) = task::start(future);
+        self.on_cleanup(cancel);
+        task
     }
 
     pub fn dispose(&self) {

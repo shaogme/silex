@@ -1643,6 +1643,7 @@ dependencies = [
 name = "silex_core"
 version = "0.1.0-beta.9"
 dependencies = [
+ "futures-util",
  "gloo-timers",
  "silex_reactivity",
  "silex_rx",

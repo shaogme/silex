@@ -78,6 +78,7 @@ js-sys = { version = "0.3", default-features = false }
 wasm-bindgen-futures = { version = "0.4.68", default-features = false }
 wasm-bindgen-test = "0.3"
 gloo-timers = { version = "0.4", default-features = false, features = ["futures"] }
+futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

@@ -5,7 +5,6 @@ use crate::{
 };
 use silex_reactivity::CompletionToken;
 use std::{cell::Cell, future::Future, pin::Pin, rc::Rc};
-use wasm_bindgen_futures::spawn_local;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum MutationState<T, E> {
@@ -47,6 +46,7 @@ pub struct Mutation<'scope, Arg, T, E = SilexError> {
     action: Rc<dyn Fn(Arg) -> MutationFuture<T, E> + 'scope>,
     last_id: Rc<Cell<usize>>,
     completion: CompletionToken<(usize, Result<T, E>)>,
+    scope: Scope<'scope>,
 }
 
 impl<'scope, Arg, T, E> Clone for Mutation<'scope, Arg, T, E> {
@@ -57,6 +57,7 @@ impl<'scope, Arg, T, E> Clone for Mutation<'scope, Arg, T, E> {
             action: self.action.clone(),
             last_id: self.last_id.clone(),
             completion: self.completion.clone(),
+            scope: self.scope,
         }
     }
 }
@@ -90,10 +91,14 @@ where
             action: Rc::new(move |arg| Box::pin(action(arg))),
             last_id,
             completion,
+            scope: *scope,
         }
     }
 
     pub fn mutate(&self, arg: Arg) {
+        if !self.scope.is_active() {
+            return;
+        }
         let id = self
             .last_id
             .get()
@@ -103,7 +108,7 @@ where
         self.set_state.set(MutationState::Pending);
         let future = (self.action)(arg);
         let completion = self.completion.clone();
-        spawn_local(async move {
+        self.scope.spawn_scoped(async move {
             let _ = completion.submit((id, future.await));
         });
     }

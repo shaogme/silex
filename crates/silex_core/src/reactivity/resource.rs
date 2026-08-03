@@ -6,7 +6,6 @@ use crate::{
 };
 use silex_reactivity::RuntimeInputs;
 use std::{cell::Cell, future::Future, marker::PhantomData, rc::Rc};
-use wasm_bindgen_futures::spawn_local;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ResourceState<T, E> {
@@ -46,6 +45,12 @@ fn resolve_resource_result<T, E>(
         Ok(value) => ResourceState::Ready(value),
         Err(error) => ResourceState::Error(error),
     })
+}
+
+struct ResourceCompletion<T, E> {
+    id: usize,
+    result: Result<T, E>,
+    settled: Rc<Cell<bool>>,
 }
 
 pub struct Resource<'scope, T, E = SilexError> {
@@ -113,9 +118,12 @@ where
         let request_id_for_callback = request_id.clone();
         let set_state_for_callback = set_state;
         let suspense_for_callback = suspense;
-        let completion = scope.completion(move |(id, result): (usize, Result<T, E>)| {
+        let completion = scope.completion(move |message: ResourceCompletion<T, E>| {
+            if message.settled.replace(true) {
+                return;
+            }
             if let Some(next_state) =
-                resolve_resource_result(request_id_for_callback.get(), id, result)
+                resolve_resource_result(request_id_for_callback.get(), message.id, message.result)
             {
                 set_state_for_callback.set(next_state);
             }
@@ -144,6 +152,16 @@ where
             if let Some(context) = suspense_for_effect {
                 context.increment();
             }
+            let settled = Rc::new(Cell::new(false));
+            let settled_for_cleanup = settled.clone();
+            let suspense_for_cleanup = suspense_for_effect;
+            scope.on_cleanup(move || {
+                if !settled_for_cleanup.replace(true)
+                    && let Some(context) = suspense_for_cleanup
+                {
+                    context.decrement();
+                }
+            });
             let id = request_id_for_effect
                 .get()
                 .checked_add(1)
@@ -151,8 +169,12 @@ where
             request_id_for_effect.set(id);
             let future = fetcher.fetch(input);
             let completion = completion.clone();
-            spawn_local(async move {
-                let _ = completion.submit((id, future.await));
+            scope.spawn_scoped(async move {
+                let _ = completion.submit(ResourceCompletion {
+                    id,
+                    result: future.await,
+                    settled,
+                });
             });
         });
 
