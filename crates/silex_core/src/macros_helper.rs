@@ -4,32 +4,32 @@ use crate::{
 };
 
 #[inline]
-pub fn map1_static<'scope, 'run, S, U>(
-    scope: &Scope<'scope, 'run>,
+pub fn map1_static<'scope, S, U>(
+    scope: &Scope<'scope>,
     source: S,
     f: fn(&S::Value) -> U,
-) -> Rx<'scope, 'run, U>
+) -> Rx<'scope, U>
 where
-    S: RxRead + IntoRx<'scope, 'run> + 'scope,
+    S: RxRead + IntoRx<'scope> + 'scope,
     S::Value: Sized + 'scope,
-    U: 'run,
+    U: 'scope,
 {
     source.into_rx(scope).map(f)
 }
 
 #[inline]
-pub fn map2_static<'scope, 'run, A, B, U>(
-    scope: &Scope<'scope, 'run>,
+pub fn map2_static<'scope, A, B, U>(
+    scope: &Scope<'scope>,
     left: A,
     right: B,
     f: fn(&A::Value, &B::Value) -> U,
-) -> Rx<'scope, 'run, U>
+) -> Rx<'scope, U>
 where
-    A: RxRead + IntoRx<'scope, 'run> + 'scope,
-    B: RxRead + IntoRx<'scope, 'run> + 'scope,
+    A: RxRead + IntoRx<'scope> + 'scope,
+    B: RxRead + IntoRx<'scope> + 'scope,
     A::Value: Sized + 'scope,
     B::Value: Sized + 'scope,
-    U: 'run,
+    U: 'scope,
 {
     let left = left.into_rx(scope);
     let right = right.into_rx(scope);
@@ -38,21 +38,21 @@ where
 }
 
 #[inline]
-pub fn map3_static<'scope, 'run, A, B, C, U>(
-    scope: &Scope<'scope, 'run>,
+pub fn map3_static<'scope, A, B, C, U>(
+    scope: &Scope<'scope>,
     first: A,
     second: B,
     third: C,
     f: fn(&A::Value, &B::Value, &C::Value) -> U,
-) -> Rx<'scope, 'run, U>
+) -> Rx<'scope, U>
 where
-    A: RxRead + IntoRx<'scope, 'run> + 'scope,
-    B: RxRead + IntoRx<'scope, 'run> + 'scope,
-    C: RxRead + IntoRx<'scope, 'run> + 'scope,
+    A: RxRead + IntoRx<'scope> + 'scope,
+    B: RxRead + IntoRx<'scope> + 'scope,
+    C: RxRead + IntoRx<'scope> + 'scope,
     A::Value: Sized + 'scope,
     B::Value: Sized + 'scope,
     C::Value: Sized + 'scope,
-    U: 'run,
+    U: 'scope,
 {
     let first = first.into_rx(scope);
     let second = second.into_rx(scope);

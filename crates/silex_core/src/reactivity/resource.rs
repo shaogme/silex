@@ -46,16 +46,16 @@ fn resolve_resource_result<T, E>(
     })
 }
 
-pub struct Resource<'scope, 'run, T, E = SilexError> {
-    pub state: ReadSignal<'scope, 'run, ResourceState<T, E>>,
-    set_state: WriteSignal<'scope, 'run, ResourceState<T, E>>,
-    trigger: RwSignal<'scope, 'run, usize>,
-    marker: PhantomData<fn() -> (&'scope (), &'run ())>,
+pub struct Resource<'scope, T, E = SilexError> {
+    pub state: ReadSignal<'scope, ResourceState<T, E>>,
+    set_state: WriteSignal<'scope, ResourceState<T, E>>,
+    trigger: RwSignal<'scope, usize>,
+    marker: PhantomData<fn() -> &'scope ()>,
 }
 
-impl<'scope, 'run, T, E> Copy for Resource<'scope, 'run, T, E> {}
+impl<'scope, T, E> Copy for Resource<'scope, T, E> {}
 
-impl<'scope, 'run, T, E> Clone for Resource<'scope, 'run, T, E> {
+impl<'scope, T, E> Clone for Resource<'scope, T, E> {
     fn clone(&self) -> Self {
         *self
     }
@@ -83,16 +83,16 @@ where
     }
 }
 
-impl<'scope, 'run, T, E> Resource<'scope, 'run, T, E>
+impl<'scope, T, E> Resource<'scope, T, E>
 where
     T: RxCloneData + 'static,
     E: RxError + 'static,
 {
     pub fn new<S, R, Fetcher>(
-        scope: &Scope<'scope, 'run>,
+        scope: &Scope<'scope>,
         source: R,
         fetcher: Fetcher,
-        suspense: Option<SuspenseContext<'scope, 'run>>,
+        suspense: Option<SuspenseContext<'scope>>,
     ) -> Self
     where
         S: Clone + PartialEq + 'static,
@@ -183,7 +183,7 @@ where
         self.value()
     }
 
-    pub fn map<U, F>(&self, scope: &Scope<'scope, 'run>, f: F) -> Memo<'scope, 'run, U>
+    pub fn map<U, F>(&self, scope: &Scope<'scope>, f: F) -> Memo<'scope, U>
     where
         U: PartialEq + 'static,
         F: Fn(Option<&T>) -> U + 'scope,
@@ -193,15 +193,11 @@ where
     }
 }
 
-impl<'scope, 'run, T: RxData + 'scope, E: RxError + 'scope> RxValue
-    for Resource<'scope, 'run, T, E>
-{
+impl<'scope, T: RxData + 'scope, E: RxError + 'scope> RxValue for Resource<'scope, T, E> {
     type Value = Option<T>;
 }
 
-impl<'scope, 'run, T: RxData + 'scope, E: RxError + 'scope> RxBase
-    for Resource<'scope, 'run, T, E>
-{
+impl<'scope, T: RxData + 'scope, E: RxError + 'scope> RxBase for Resource<'scope, T, E> {
     fn track(&self) {
         self.state.track();
     }
@@ -211,9 +207,7 @@ impl<'scope, 'run, T: RxData + 'scope, E: RxError + 'scope> RxBase
     }
 }
 
-impl<'scope, 'run, T: RxCloneData + 'scope, E: RxError + 'scope> RxRead
-    for Resource<'scope, 'run, T, E>
-{
+impl<'scope, T: RxCloneData + 'scope, E: RxError + 'scope> RxRead for Resource<'scope, T, E> {
     fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         self.state.try_with(|state| f(&state.as_option().cloned()))
     }
@@ -224,10 +218,10 @@ impl<'scope, 'run, T: RxCloneData + 'scope, E: RxError + 'scope> RxRead
     }
 }
 
-impl<'scope, 'run, T: RxCloneData + 'scope + 'static, E: RxError + 'scope + 'static>
-    IntoRx<'scope, 'run> for Resource<'scope, 'run, T, E>
+impl<'scope, T: RxCloneData + 'scope + 'static, E: RxError + 'scope + 'static> IntoRx<'scope>
+    for Resource<'scope, T, E>
 {
-    fn into_rx(self, scope: &Scope<'scope, 'run>) -> Rx<'scope, 'run, Option<T>> {
+    fn into_rx(self, scope: &Scope<'scope>) -> Rx<'scope, Option<T>> {
         let resource = self;
         let scope = *scope;
         scope.derived(move || resource.value())
@@ -238,25 +232,22 @@ impl<'scope, 'run, T: RxCloneData + 'scope + 'static, E: RxError + 'scope + 'sta
     }
 }
 
-impl<'scope, 'run, T: RxCloneData + 'scope + 'static, E: RxError + 'scope + 'static>
-    IntoSignal<'scope, 'run> for Resource<'scope, 'run, T, E>
+impl<'scope, T: RxCloneData + 'scope + 'static, E: RxError + 'scope + 'static> IntoSignal<'scope>
+    for Resource<'scope, T, E>
 {
-    fn into_signal(
-        self,
-        scope: &Scope<'scope, 'run>,
-    ) -> crate::reactivity::Signal<'scope, 'run, Option<T>> {
+    fn into_signal(self, scope: &Scope<'scope>) -> crate::reactivity::Signal<'scope, Option<T>> {
         self.into_rx(scope).into_signal(scope)
     }
 }
 
 #[derive(Clone, Copy)]
-pub struct SuspenseContext<'scope, 'run> {
-    pub count: ReadSignal<'scope, 'run, usize>,
-    set_count: WriteSignal<'scope, 'run, usize>,
+pub struct SuspenseContext<'scope> {
+    pub count: ReadSignal<'scope, usize>,
+    set_count: WriteSignal<'scope, usize>,
 }
 
-impl<'scope, 'run> SuspenseContext<'scope, 'run> {
-    pub fn new(scope: &Scope<'scope, 'run>) -> Self {
+impl<'scope> SuspenseContext<'scope> {
+    pub fn new(scope: &Scope<'scope>) -> Self {
         let (count, set_count) = scope.signal(0usize);
         Self { count, set_count }
     }

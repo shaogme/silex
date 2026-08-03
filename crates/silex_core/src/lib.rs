@@ -37,22 +37,22 @@ pub struct RxValueKind;
 /// Marker retained for callback-oriented generic code.
 pub struct RxEffectKind;
 
-pub(crate) enum RxInner<'scope, 'run, T> {
-    Signal(RxReadSignal<'scope, 'run, T>),
-    Memo(RxMemo<'scope, 'run, T>),
-    Derived(Derived<'scope, 'run, T>),
-    Stored(RxStoredValue<'scope, 'run, T>),
+pub(crate) enum RxInner<'scope, T> {
+    Signal(RxReadSignal<'scope, T>),
+    Memo(RxMemo<'scope, T>),
+    Derived(Derived<'scope, T>),
+    Stored(RxStoredValue<'scope, T>),
 }
 
-impl<'scope, 'run, T> Copy for RxInner<'scope, 'run, T> {}
+impl<'scope, T> Copy for RxInner<'scope, T> {}
 
-impl<'scope, 'run, T> Clone for RxInner<'scope, 'run, T> {
+impl<'scope, T> Clone for RxInner<'scope, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'scope, 'run, T> PartialEq for RxInner<'scope, 'run, T> {
+impl<'scope, T> PartialEq for RxInner<'scope, T> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Signal(a), Self::Signal(b)) => a == b,
@@ -64,33 +64,33 @@ impl<'scope, 'run, T> PartialEq for RxInner<'scope, 'run, T> {
     }
 }
 
-impl<'scope, 'run, T> Eq for RxInner<'scope, 'run, T> {}
+impl<'scope, T> Eq for RxInner<'scope, T> {}
 
 /// A typed reactive value that retains the scope used to create derived nodes.
-pub struct Rx<'scope, 'run, T, M = RxValueKind> {
-    pub(crate) inner: RxInner<'scope, 'run, T>,
-    pub(crate) scope: Scope<'scope, 'run>,
+pub struct Rx<'scope, T, M = RxValueKind> {
+    pub(crate) inner: RxInner<'scope, T>,
+    pub(crate) scope: Scope<'scope>,
     pub(crate) marker: PhantomData<M>,
 }
 
-impl<'scope, 'run, T, M> Copy for Rx<'scope, 'run, T, M> {}
+impl<'scope, T, M> Copy for Rx<'scope, T, M> {}
 
-impl<'scope, 'run, T, M> Clone for Rx<'scope, 'run, T, M> {
+impl<'scope, T, M> Clone for Rx<'scope, T, M> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'scope, 'run, T, M> PartialEq for Rx<'scope, 'run, T, M> {
+impl<'scope, T, M> PartialEq for Rx<'scope, T, M> {
     fn eq(&self, other: &Self) -> bool {
         self.inner == other.inner && self.scope == other.scope
     }
 }
 
-impl<'scope, 'run, T, M> Eq for Rx<'scope, 'run, T, M> {}
+impl<'scope, T, M> Eq for Rx<'scope, T, M> {}
 
-impl<'scope, 'run, T: 'scope> Rx<'scope, 'run, T, RxValueKind> {
-    pub(crate) fn from_signal(signal: ReadSignal<'scope, 'run, T>) -> Self {
+impl<'scope, T: 'scope> Rx<'scope, T, RxValueKind> {
+    pub(crate) fn from_signal(signal: ReadSignal<'scope, T>) -> Self {
         Self {
             inner: RxInner::Signal(signal.inner),
             scope: signal.scope,
@@ -98,7 +98,7 @@ impl<'scope, 'run, T: 'scope> Rx<'scope, 'run, T, RxValueKind> {
         }
     }
 
-    pub(crate) fn from_memo(memo: Memo<'scope, 'run, T>) -> Self {
+    pub(crate) fn from_memo(memo: Memo<'scope, T>) -> Self {
         Self {
             inner: RxInner::Memo(memo.inner),
             scope: memo.scope,
@@ -106,10 +106,7 @@ impl<'scope, 'run, T: 'scope> Rx<'scope, 'run, T, RxValueKind> {
         }
     }
 
-    pub(crate) fn from_derived(
-        derived: Derived<'scope, 'run, T>,
-        scope: Scope<'scope, 'run>,
-    ) -> Self {
+    pub(crate) fn from_derived(derived: Derived<'scope, T>, scope: Scope<'scope>) -> Self {
         Self {
             inner: RxInner::Derived(derived),
             scope,
@@ -117,7 +114,7 @@ impl<'scope, 'run, T: 'scope> Rx<'scope, 'run, T, RxValueKind> {
         }
     }
 
-    pub(crate) fn from_stored(stored: StoredValue<'scope, 'run, T>) -> Self {
+    pub(crate) fn from_stored(stored: StoredValue<'scope, T>) -> Self {
         Self {
             inner: RxInner::Stored(stored.inner),
             scope: stored.scope,
@@ -125,13 +122,13 @@ impl<'scope, 'run, T: 'scope> Rx<'scope, 'run, T, RxValueKind> {
         }
     }
 
-    pub(crate) fn scope(&self) -> Scope<'scope, 'run> {
+    pub(crate) fn scope(&self) -> Scope<'scope> {
         self.scope
     }
 
-    pub fn map<U, F>(self, f: F) -> Rx<'scope, 'run, U>
+    pub fn map<U, F>(self, f: F) -> Rx<'scope, U>
     where
-        U: 'run,
+        U: 'scope,
         F: Fn(&T) -> U + 'scope,
     {
         let scope = self.scope;

@@ -1,27 +1,13 @@
 error: lifetime may not live long enough
  --> tests/ui/fail_child_view_escape.rs:7:9
   |
-6 |     let _view: AnyView<'static, 'static> = runtime.child(|scope| {
-  |                                                           ------ return type of closure is AnyView<'2, '_>
-  |                                                           |
-  |                                                           has type `&'1 silex_core::Scope<'1, '_>`
+6 |     let _view: AnyView<'static> = runtime.child(|scope| {
+  |                                                  ------ return type of closure is AnyView<'2>
+  |                                                  |
+  |                                                  has type `silex_core::Scope<'1>`
 7 |         AnyView::new(scope.signal(0i32).0)
   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
   |
-  = note: requirement occurs because of the type `AnyView<'_, '_>`, which makes the generic argument `'_` invariant
-  = note: the enum `AnyView<'scope, 'run>` is invariant over the parameter `'scope`
-  = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
-
-error: lifetime may not live long enough
- --> tests/ui/fail_child_view_escape.rs:7:9
-  |
-6 |     let _view: AnyView<'static, 'static> = runtime.child(|scope| {
-  |                                                           ------ return type of closure is AnyView<'_, '4>
-  |                                                           |
-  |                                                           has type `&silex_core::Scope<'_, '3>`
-7 |         AnyView::new(scope.signal(0i32).0)
-  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ returning this value requires that `'3` must outlive `'4`
-  |
-  = note: requirement occurs because of the type `AnyView<'_, '_>`, which makes the generic argument `'_` invariant
-  = note: the enum `AnyView<'scope, 'run>` is invariant over the parameter `'scope`
+  = note: requirement occurs because of the type `AnyView<'_>`, which makes the generic argument `'_` invariant
+  = note: the enum `AnyView<'scope>` is invariant over the parameter `'scope`
   = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance

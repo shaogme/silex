@@ -35,11 +35,8 @@ impl Runtime {
         RootHandle { inner: handle }
     }
 
-    pub fn child<R>(&mut self, f: impl for<'s1, 's2> FnOnce(&'s1 Scope<'s1, 's2>) -> R) -> R {
-        self.inner.child(|s| {
-            let s = Scope { inner: *s };
-            f(&s)
-        })
+    pub fn child<R>(&mut self, f: impl for<'scope> FnOnce(Scope<'scope>) -> R) -> R {
+        self.inner.child(|s| f(Scope { inner: *s }))
     }
 }
 
@@ -156,14 +153,11 @@ impl RootScope {
         self.inner.batch(f)
     }
 
-    pub fn child<R>(&self, f: impl for<'s1, 's2, 's3> FnOnce(&'s1 Scope<'s2, 's3>) -> R) -> R {
-        self.inner.child(|scope| {
-            let scope = Scope { inner: *scope };
-            f(&scope)
-        })
+    pub fn child<R>(&self, f: impl for<'scope> FnOnce(Scope<'scope>) -> R) -> R {
+        self.inner.child(|scope| f(Scope { inner: *scope }))
     }
 
-    pub fn owned_scope(&self) -> OwnedScope<'static, 'static> {
+    pub fn owned_scope(&self) -> OwnedScope<'static> {
         OwnedScope {
             inner: self.inner.owned_scope(),
         }
@@ -179,20 +173,20 @@ impl Default for Runtime {
 /// High-level scope capability. Its lifetimes are inherited from the
 /// underlying runtime scope and are part of every node-bearing return type.
 #[derive(Clone, Copy)]
-pub struct Scope<'scope, 'run> {
-    pub(crate) inner: silex_reactivity::Scope<'scope, 'run>,
+pub struct Scope<'scope> {
+    pub(crate) inner: silex_reactivity::Scope<'scope>,
 }
 
-impl<'scope, 'run> PartialEq for Scope<'scope, 'run> {
+impl<'scope> PartialEq for Scope<'scope> {
     fn eq(&self, other: &Self) -> bool {
         self.inner == other.inner
     }
 }
 
-impl<'scope, 'run> Eq for Scope<'scope, 'run> {}
+impl<'scope> Eq for Scope<'scope> {}
 
-impl<'scope, 'run> Scope<'scope, 'run> {
-    pub fn owned_scope(&self) -> OwnedScope<'scope, 'run> {
+impl<'scope> Scope<'scope> {
+    pub fn owned_scope(&self) -> OwnedScope<'scope> {
         OwnedScope {
             inner: self.inner.owned_scope(),
         }
@@ -202,10 +196,7 @@ impl<'scope, 'run> Scope<'scope, 'run> {
         self.inner.is_active()
     }
 
-    pub fn signal<T: 'scope>(
-        &self,
-        value: T,
-    ) -> (ReadSignal<'scope, 'run, T>, WriteSignal<'scope, 'run, T>) {
+    pub fn signal<T: 'scope>(&self, value: T) -> (ReadSignal<'scope, T>, WriteSignal<'scope, T>) {
         let (read, write) = self.inner.signal(value);
         (
             ReadSignal::from_inner(read, *self),
@@ -213,12 +204,12 @@ impl<'scope, 'run> Scope<'scope, 'run> {
         )
     }
 
-    pub fn rw_signal<T: 'scope>(&self, value: T) -> RwSignal<'scope, 'run, T> {
+    pub fn rw_signal<T: 'scope>(&self, value: T) -> RwSignal<'scope, T> {
         let (read, write) = self.signal(value);
         RwSignal::from_parts(read, write)
     }
 
-    pub fn memo<T, F>(&self, f: F) -> Memo<'scope, 'run, T>
+    pub fn memo<T, F>(&self, f: F) -> Memo<'scope, T>
     where
         T: PartialEq + 'scope,
         F: FnMut(Option<&T>) -> T + 'scope,
@@ -226,7 +217,7 @@ impl<'scope, 'run> Scope<'scope, 'run> {
         Memo::from_inner(self.inner.memo(f), *self)
     }
 
-    pub fn derived<T, F>(&self, f: F) -> Rx<'scope, 'run, T>
+    pub fn derived<T, F>(&self, f: F) -> Rx<'scope, T>
     where
         T: 'scope,
         F: FnMut() -> T + 'scope,
@@ -234,7 +225,7 @@ impl<'scope, 'run> Scope<'scope, 'run> {
         Rx::from_derived(self.inner.derived(f), *self)
     }
 
-    pub fn effect<T, F>(&self, mut f: F) -> Effect<'scope, 'run>
+    pub fn effect<T, F>(&self, mut f: F) -> Effect<'scope>
     where
         T: 'scope,
         F: FnMut(Option<T>) -> T + 'scope,
@@ -249,7 +240,7 @@ impl<'scope, 'run> Scope<'scope, 'run> {
         Effect::from_inner(effect)
     }
 
-    pub fn watch<W, T, C>(&self, deps: W, callback: C, immediate: bool) -> Effect<'scope, 'run>
+    pub fn watch<W, T, C>(&self, deps: W, callback: C, immediate: bool) -> Effect<'scope>
     where
         W: Fn() -> T + 'scope,
         T: Clone + PartialEq + 'scope,
@@ -273,11 +264,11 @@ impl<'scope, 'run> Scope<'scope, 'run> {
         })
     }
 
-    pub fn stored<T: 'scope>(&self, value: T) -> StoredValue<'scope, 'run, T> {
+    pub fn stored<T: 'scope>(&self, value: T) -> StoredValue<'scope, T> {
         StoredValue::from_inner(self.inner.stored(value), *self)
     }
 
-    pub fn callback<T, F>(&self, mut callback: F) -> Callback<'scope, 'run, T>
+    pub fn callback<T, F>(&self, mut callback: F) -> Callback<'scope, T>
     where
         T: 'scope,
         F: FnMut(T) + 'scope,
@@ -292,7 +283,7 @@ impl<'scope, 'run> Scope<'scope, 'run> {
         Callback::from_inner(callback)
     }
 
-    pub fn node_ref<T: 'scope>(&self) -> NodeRef<'scope, 'run, T> {
+    pub fn node_ref<T: 'scope>(&self) -> NodeRef<'scope, T> {
         NodeRef::from_inner(self.inner.node_ref())
     }
 
@@ -304,24 +295,21 @@ impl<'scope, 'run> Scope<'scope, 'run> {
         self.inner.completion(callback)
     }
 
-    pub fn rx<T>(&self, value: T) -> Rx<'scope, 'run, T::Value>
+    pub fn rx<T>(&self, value: T) -> Rx<'scope, T::Value>
     where
-        T: IntoRx<'scope, 'run>,
+        T: IntoRx<'scope>,
         T::Value: Sized + RxData,
     {
         value.into_rx(self)
     }
 
-    pub fn constant<T: 'scope>(&self, value: T) -> Rx<'scope, 'run, T> {
+    pub fn constant<T: 'scope>(&self, value: T) -> Rx<'scope, T> {
         let stored = self.stored(value);
         Rx::from_stored(stored)
     }
 
-    pub fn child<R>(&self, f: impl for<'s1, 's2, 's3> FnOnce(&'s1 Scope<'s2, 's3>) -> R) -> R {
-        self.inner.child(|scope| {
-            let scope = Scope { inner: *scope };
-            f(&scope)
-        })
+    pub fn child<R>(&self, f: impl for<'child> FnOnce(Scope<'child>) -> R) -> R {
+        self.inner.child(|scope| f(Scope { inner: *scope }))
     }
 
     pub fn untrack<R>(&self, f: impl FnOnce() -> R) -> R {
@@ -341,11 +329,11 @@ impl<'scope, 'run> Scope<'scope, 'run> {
 }
 
 /// Persistent owner used by dynamic branches and list rows.
-pub struct OwnedScope<'scope, 'run> {
-    inner: silex_reactivity::OwnedScope<'scope, 'run>,
+pub struct OwnedScope<'scope> {
+    inner: silex_reactivity::OwnedScope<'scope>,
 }
 
-impl<'scope, 'run> OwnedScope<'scope, 'run> {
+impl<'scope> OwnedScope<'scope> {
     pub fn child(&self) -> Self {
         Self {
             inner: self.inner.child(),

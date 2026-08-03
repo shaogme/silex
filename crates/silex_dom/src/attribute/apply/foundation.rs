@@ -83,10 +83,10 @@ impl ApplyTarget {
 
 /// Any type that can be applied as an HTML attribute, class, or style.
 /// Replaces AttributeValue, ApplyClass, ApplyStyle.
-pub trait ApplyToDom<'scope, 'run> {
-    fn apply(&self, el: &WebElem, target: ApplyTarget, owner: &ViewOwnerToken<'scope, 'run>);
+pub trait ApplyToDom<'scope> {
+    fn apply(&self, el: &WebElem, target: ApplyTarget, owner: &ViewOwnerToken<'scope>);
 
-    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope, 'run>
+    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope>
     where
         Self: Sized + 'scope,
     {
@@ -96,21 +96,21 @@ pub trait ApplyToDom<'scope, 'run> {
     }
 }
 
-pub trait ReactiveApply<'scope, 'run> {
+pub trait ReactiveApply<'scope> {
     fn apply_to_dom(
-        rx: Rx<'scope, 'run, Self, RxValueKind>,
+        rx: Rx<'scope, Self, RxValueKind>,
         el: WebElem,
         target: ApplyTarget,
-        _owner: &ViewOwnerToken<'scope, 'run>,
+        _owner: &ViewOwnerToken<'scope>,
     ) where
         Self: Sized;
 
     fn apply_pair(
-        rx: Rx<'scope, 'run, Self, RxValueKind>,
+        rx: Rx<'scope, Self, RxValueKind>,
         key: Cow<'static, str>,
         el: WebElem,
         target: ApplyTarget,
-        _owner: &ViewOwnerToken<'scope, 'run>,
+        _owner: &ViewOwnerToken<'scope>,
     ) where
         Self: Sized,
     {
@@ -118,9 +118,9 @@ pub trait ReactiveApply<'scope, 'run> {
     }
 
     fn into_op_reactive(
-        rx: Rx<'scope, 'run, Self, RxValueKind>,
+        rx: Rx<'scope, Self, RxValueKind>,
         target: ApplyTarget,
-    ) -> Option<AttrOp<'scope, 'run>>
+    ) -> Option<AttrOp<'scope>>
     where
         Self: Sized,
     {
@@ -129,10 +129,10 @@ pub trait ReactiveApply<'scope, 'run> {
     }
 
     fn into_op_pair_reactive(
-        rx: Rx<'scope, 'run, Self, RxValueKind>,
+        rx: Rx<'scope, Self, RxValueKind>,
         key: Cow<'static, str>,
         target: ApplyTarget,
-    ) -> Option<AttrOp<'scope, 'run>>
+    ) -> Option<AttrOp<'scope>>
     where
         Self: Sized,
     {
@@ -143,32 +143,32 @@ pub trait ReactiveApply<'scope, 'run> {
 
 // --- Basic Traits & Static Implementations ---
 
-impl<'scope, 'run> ApplyToDom<'scope, 'run> for AttrOp<'scope, 'run> {
-    fn apply(&self, el: &WebElem, _target: ApplyTarget, owner: &ViewOwnerToken<'scope, 'run>) {
+impl<'scope> ApplyToDom<'scope> for AttrOp<'scope> {
+    fn apply(&self, el: &WebElem, _target: ApplyTarget, owner: &ViewOwnerToken<'scope>) {
         self.clone().apply(el, owner);
     }
 
-    fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope, 'run> {
+    fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
         self
     }
 }
 
-impl<'scope, 'run> ApplyToDom<'scope, 'run> for fn(&WebElem) {
-    fn apply(&self, el: &WebElem, _target: ApplyTarget, _owner: &ViewOwnerToken<'scope, 'run>) {
+impl<'scope> ApplyToDom<'scope> for fn(&WebElem) {
+    fn apply(&self, el: &WebElem, _target: ApplyTarget, _owner: &ViewOwnerToken<'scope>) {
         (self)(el);
     }
 
-    fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope, 'run> {
+    fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
         AttrOp::Custom(Rc::new(move |el, _| self(el)))
     }
 }
 
-impl<'scope, 'run> ApplyToDom<'scope, 'run> for Rc<dyn Fn(&WebElem)> {
-    fn apply(&self, el: &WebElem, _target: ApplyTarget, _owner: &ViewOwnerToken<'scope, 'run>) {
+impl<'scope> ApplyToDom<'scope> for Rc<dyn Fn(&WebElem)> {
+    fn apply(&self, el: &WebElem, _target: ApplyTarget, _owner: &ViewOwnerToken<'scope>) {
         (self)(el);
     }
 
-    fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope, 'run> {
+    fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
         AttrOp::Custom(Rc::new(move |el, _| self(el)))
     }
 }
@@ -222,11 +222,11 @@ pub(crate) fn apply_primitive_static_internal(el: &WebElem, target: ApplyTarget,
     apply_immediate_string(el, &target, &value);
 }
 
-impl<'scope, 'run> ApplyToDom<'scope, 'run> for &'static str {
-    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope, 'run>) {
+impl<'scope> ApplyToDom<'scope> for &'static str {
+    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope>) {
         apply_immediate_string(el, &target, self);
     }
-    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope, 'run> {
+    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         match target {
             ApplyTarget::Known(_) | ApplyTarget::Attr(_) => AttrOp::Update(AttrUpdate {
                 target,
@@ -247,12 +247,12 @@ impl<'scope, 'run> ApplyToDom<'scope, 'run> for &'static str {
     }
 }
 
-impl<'scope, 'run> ApplyToDom<'scope, 'run> for String {
-    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope, 'run>) {
+impl<'scope> ApplyToDom<'scope> for String {
+    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope>) {
         apply_immediate_string(el, &target, self);
     }
 
-    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope, 'run> {
+    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         match target {
             ApplyTarget::Known(_) | ApplyTarget::Attr(_) => AttrOp::Update(AttrUpdate {
                 target,
@@ -283,22 +283,22 @@ impl<'scope, 'run> ApplyToDom<'scope, 'run> for String {
     }
 }
 
-impl<'scope, 'run> ApplyToDom<'scope, 'run> for &String {
-    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope, 'run>) {
+impl<'scope> ApplyToDom<'scope> for &String {
+    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope>) {
         apply_immediate_string(el, &target, self);
     }
 
-    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope, 'run> {
+    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         self.to_string().into_op(target)
     }
 }
 
-impl<'scope, 'run> ApplyToDom<'scope, 'run> for Cow<'static, str> {
-    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope, 'run>) {
+impl<'scope> ApplyToDom<'scope> for Cow<'static, str> {
+    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope>) {
         apply_immediate_string(el, &target, self.as_ref());
     }
 
-    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope, 'run> {
+    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         match self {
             Cow::Borrowed(s) => s.into_op(target),
             Cow::Owned(s) => s.into_op(target),
@@ -306,14 +306,14 @@ impl<'scope, 'run> ApplyToDom<'scope, 'run> for Cow<'static, str> {
     }
 }
 
-impl<'scope, 'run> ApplyToDom<'scope, 'run> for Attr {
-    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope, 'run>) {
+impl<'scope> ApplyToDom<'scope> for Attr {
+    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope>) {
         if let Some(name) = target.name() {
             apply_attr_with_target_internal(el, &name, target, self);
         }
     }
 
-    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope, 'run> {
+    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         match target {
             ApplyTarget::Known(_) | ApplyTarget::Attr(_) | ApplyTarget::Prop(_) => {
                 AttrOp::Update(AttrUpdate {
@@ -331,12 +331,12 @@ impl<'scope, 'run> ApplyToDom<'scope, 'run> for Attr {
     }
 }
 
-impl<'scope, 'run> ApplyToDom<'scope, 'run> for bool {
-    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope, 'run>) {
+impl<'scope> ApplyToDom<'scope> for bool {
+    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope>) {
         apply_immediate_bool(el, &target, *self);
     }
 
-    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope, 'run> {
+    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         let attr = Attr::from(self);
         match target {
             ApplyTarget::Attr(_) | ApplyTarget::Prop(_) | ApplyTarget::Known(_) => {
@@ -355,14 +355,14 @@ impl<'scope, 'run> ApplyToDom<'scope, 'run> for bool {
     }
 }
 
-impl<'scope, 'run, V: ApplyToDom<'scope, 'run> + 'scope> ApplyToDom<'scope, 'run> for Option<V> {
-    fn apply(&self, el: &WebElem, target: ApplyTarget, owner: &ViewOwnerToken<'scope, 'run>) {
+impl<'scope, V: ApplyToDom<'scope> + 'scope> ApplyToDom<'scope> for Option<V> {
+    fn apply(&self, el: &WebElem, target: ApplyTarget, owner: &ViewOwnerToken<'scope>) {
         if let Some(v) = self {
             v.apply(el, target, owner);
         }
     }
 
-    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope, 'run> {
+    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         if let Some(v) = self {
             v.into_op(target)
         } else {
@@ -371,14 +371,14 @@ impl<'scope, 'run, V: ApplyToDom<'scope, 'run> + 'scope> ApplyToDom<'scope, 'run
     }
 }
 
-impl<'scope, 'run, V: ApplyToDom<'scope, 'run> + 'scope> ApplyToDom<'scope, 'run> for Vec<V> {
-    fn apply(&self, el: &WebElem, target: ApplyTarget, owner: &ViewOwnerToken<'scope, 'run>) {
+impl<'scope, V: ApplyToDom<'scope> + 'scope> ApplyToDom<'scope> for Vec<V> {
+    fn apply(&self, el: &WebElem, target: ApplyTarget, owner: &ViewOwnerToken<'scope>) {
         for v in self {
             v.apply(el, target.clone(), owner);
         }
     }
 
-    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope, 'run> {
+    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         let ops = self
             .into_iter()
             .map(|v| v.into_op(target.clone()))
@@ -387,16 +387,14 @@ impl<'scope, 'run, V: ApplyToDom<'scope, 'run> + 'scope> ApplyToDom<'scope, 'run
     }
 }
 
-impl<'scope, 'run, V: ApplyToDom<'scope, 'run> + 'scope, const N: usize> ApplyToDom<'scope, 'run>
-    for [V; N]
-{
-    fn apply(&self, el: &WebElem, target: ApplyTarget, owner: &ViewOwnerToken<'scope, 'run>) {
+impl<'scope, V: ApplyToDom<'scope> + 'scope, const N: usize> ApplyToDom<'scope> for [V; N] {
+    fn apply(&self, el: &WebElem, target: ApplyTarget, owner: &ViewOwnerToken<'scope>) {
         for v in self {
             v.apply(el, target.clone(), owner);
         }
     }
 
-    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope, 'run> {
+    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         let ops = self
             .into_iter()
             .map(|v| v.into_op(target.clone()))
@@ -408,12 +406,12 @@ impl<'scope, 'run, V: ApplyToDom<'scope, 'run> + 'scope, const N: usize> ApplyTo
 macro_rules! impl_apply_to_dom_for_primitive {
     ($($t:ty),*) => {
         $(
-            impl<'scope, 'run> ApplyToDom<'scope, 'run> for $t {
-                fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope, 'run>) {
+            impl<'scope> ApplyToDom<'scope> for $t {
+                fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope>) {
                     apply_primitive_static_internal(el, target, self.to_string());
                 }
 
-                fn into_op(self, target: ApplyTarget) -> AttrOp<'scope, 'run> {
+                fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
                     self.to_string().into_op(target)
                 }
             }
@@ -427,18 +425,18 @@ impl_apply_to_dom_for_primitive!(
 // --- Tuples ---
 
 // 响应式元组归一化终点：(K, Rx<T>)
-impl<'scope, 'run, K, T> ApplyToDom<'scope, 'run> for (K, Rx<'scope, 'run, T, RxValueKind>)
+impl<'scope, K, T> ApplyToDom<'scope> for (K, Rx<'scope, T, RxValueKind>)
 where
     K: Into<Cow<'static, str>> + Clone + 'scope,
-    T: ReactiveApply<'scope, 'run> + Clone + 'scope,
+    T: ReactiveApply<'scope> + Clone + 'scope,
 {
-    fn apply(&self, el: &WebElem, target: ApplyTarget, owner: &ViewOwnerToken<'scope, 'run>) {
+    fn apply(&self, el: &WebElem, target: ApplyTarget, owner: &ViewOwnerToken<'scope>) {
         let (key, rx) = self.clone();
         let el = el.clone();
         T::apply_pair(rx, key.into(), el, target, owner);
     }
 
-    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope, 'run> {
+    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         let (key, rx) = self;
         let key_cow: Cow<'static, str> = key.into();
         if let Some(op) = T::into_op_pair_reactive(rx, key_cow.clone(), target.clone()) {
@@ -467,16 +465,16 @@ where
 }
 
 // 静态元组 (Key, StaticValue)
-impl<'scope, 'run, K> ApplyToDom<'scope, 'run> for (K, String)
+impl<'scope, K> ApplyToDom<'scope> for (K, String)
 where
     K: Into<Cow<'static, str>> + Clone + 'scope,
 {
-    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope, 'run>) {
+    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope>) {
         let key_cow: Cow<'static, str> = self.0.clone().into();
         apply_static_pair(el, &target, key_cow.as_ref(), &self.1);
     }
 
-    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope, 'run> {
+    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         let (key, value) = self;
         let key_cow: Cow<'static, str> = key.into();
         match target {
@@ -497,16 +495,16 @@ where
     }
 }
 
-impl<'scope, 'run, K> ApplyToDom<'scope, 'run> for (K, &'static str)
+impl<'scope, K> ApplyToDom<'scope> for (K, &'static str)
 where
     K: Into<Cow<'static, str>> + Clone + 'scope,
 {
-    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope, 'run>) {
+    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope>) {
         let key_cow: Cow<'static, str> = self.0.clone().into();
         apply_static_pair(el, &target, key_cow.as_ref(), self.1);
     }
 
-    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope, 'run> {
+    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         let (key, value) = self;
         let key_cow: Cow<'static, str> = key.into();
         match target {
@@ -527,11 +525,11 @@ where
     }
 }
 
-impl<'scope, 'run, K> ApplyToDom<'scope, 'run> for (K, bool)
+impl<'scope, K> ApplyToDom<'scope> for (K, bool)
 where
     K: Into<Cow<'static, str>> + Clone + 'scope,
 {
-    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope, 'run>) {
+    fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope>) {
         let (key, value) = self.clone();
         let key_cow: Cow<'static, str> = key.into();
         match target {
@@ -549,7 +547,7 @@ where
         }
     }
 
-    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope, 'run> {
+    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         let (key, value) = self;
         let key_cow: Cow<'static, str> = key.into();
         match target {
@@ -581,15 +579,15 @@ where
 /// 擦除后的属性组。
 /// 内部持有一组 AttrOp 指令，避免了递归泛型带来的单态化膨胀。
 #[derive(Clone, Default)]
-pub struct AttributeGroup<'scope, 'run>(pub Vec<AttrOp<'scope, 'run>>);
+pub struct AttributeGroup<'scope>(pub Vec<AttrOp<'scope>>);
 
 /// 创建一个擦除后的属性组。
 /// 这里的逻辑是：将所有输入项立即转换为 AttrOp。
 /// 默认使用 ApplyTarget::Apply 作为转换上下文。
-pub fn group<'scope, 'run, I>(items: I) -> AttributeGroup<'scope, 'run>
+pub fn group<'scope, I>(items: I) -> AttributeGroup<'scope>
 where
     I: IntoIterator,
-    I::Item: ApplyToDom<'scope, 'run> + 'scope,
+    I::Item: ApplyToDom<'scope> + 'scope,
 {
     let ops = items
         .into_iter()
@@ -598,14 +596,14 @@ where
     AttributeGroup(ops)
 }
 
-impl<'scope, 'run> ApplyToDom<'scope, 'run> for AttributeGroup<'scope, 'run> {
-    fn apply(&self, el: &WebElem, _target: ApplyTarget, owner: &ViewOwnerToken<'scope, 'run>) {
+impl<'scope> ApplyToDom<'scope> for AttributeGroup<'scope> {
+    fn apply(&self, el: &WebElem, _target: ApplyTarget, owner: &ViewOwnerToken<'scope>) {
         for op in &self.0 {
             op.clone().apply(el, owner);
         }
     }
 
-    fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope, 'run> {
+    fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
         if self.0.is_empty() {
             AttrOp::Noop
         } else if self.0.len() == 1 {

@@ -58,13 +58,13 @@ where
     }
 }
 
-impl<'scope, 'run, S, F, O> IntoRx<'scope, 'run> for SignalSlice<S, F, O>
+impl<'scope, S, F, O> IntoRx<'scope> for SignalSlice<S, F, O>
 where
     S: RxRead + 'scope,
     F: Fn(&S::Value) -> &O + 'scope,
     O: RxCloneData + 'scope,
 {
-    fn into_rx(self, scope: &Scope<'scope, 'run>) -> Rx<'scope, 'run, O> {
+    fn into_rx(self, scope: &Scope<'scope>) -> Rx<'scope, O> {
         let scope = *scope;
         scope.derived(move || self.with(|value| value.clone()))
     }
@@ -74,13 +74,13 @@ where
     }
 }
 
-impl<'scope, 'run, S, F, O> IntoSignal<'scope, 'run> for SignalSlice<S, F, O>
+impl<'scope, S, F, O> IntoSignal<'scope> for SignalSlice<S, F, O>
 where
     S: RxRead + 'scope,
     F: Fn(&S::Value) -> &O + 'scope,
     O: RxCloneData + 'scope,
 {
-    fn into_signal(self, scope: &Scope<'scope, 'run>) -> Signal<'scope, 'run, O> {
+    fn into_signal(self, scope: &Scope<'scope>) -> Signal<'scope, O> {
         self.into_rx(scope).into_signal(scope)
     }
 }

@@ -12,17 +12,17 @@ use silex_core::{RootScope, SilexError, error::handle_error};
 pub mod tags;
 pub use tags::*;
 
-pub fn text<'scope, 'run, V: View<'scope, 'run>>(content: V) -> V {
+pub fn text<'scope, V: View<'scope>>(content: V) -> V {
     content
 }
 
-pub struct Element<'scope, 'run> {
+pub struct Element<'scope> {
     pub dom_element: WebElem,
-    pub(crate) pending_attrs: Vec<PendingAttribute<'scope, 'run>>,
-    pub(crate) children: Vec<AnyView<'scope, 'run>>,
+    pub(crate) pending_attrs: Vec<PendingAttribute<'scope>>,
+    pub(crate) children: Vec<AnyView<'scope>>,
 }
 
-impl<'scope, 'run> Clone for Element<'scope, 'run> {
+impl<'scope> Clone for Element<'scope> {
     fn clone(&self) -> Self {
         Self {
             dom_element: self.dom_element.clone(),
@@ -32,7 +32,7 @@ impl<'scope, 'run> Clone for Element<'scope, 'run> {
     }
 }
 
-impl PartialEq for Element<'_, '_> {
+impl PartialEq for Element<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.dom_element == other.dom_element
             && self.pending_attrs == other.pending_attrs
@@ -40,7 +40,7 @@ impl PartialEq for Element<'_, '_> {
     }
 }
 
-impl<'scope, 'run> Element<'scope, 'run> {
+impl<'scope> Element<'scope> {
     pub fn new(tag: &str) -> Self {
         let document = crate::document();
         let dom_element = document
@@ -67,17 +67,14 @@ impl<'scope, 'run> Element<'scope, 'run> {
 
     pub fn with_child<V>(tag: &str, child: V) -> Self
     where
-        V: View<'scope, 'run> + 'scope,
+        V: View<'scope> + 'scope,
     {
         let mut element = Self::new(tag);
         element.children.push(child.into_any());
         element
     }
 
-    fn all_attrs(
-        &self,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
-    ) -> Vec<PendingAttribute<'scope, 'run>> {
+    fn all_attrs(&self, attrs: Vec<PendingAttribute<'scope>>) -> Vec<PendingAttribute<'scope>> {
         let mut all = self.pending_attrs.clone();
         all.extend(attrs);
         crate::attribute::consolidate_attributes(all)
@@ -85,9 +82,9 @@ impl<'scope, 'run> Element<'scope, 'run> {
 
     fn mount_inner(
         &self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) {
         let token = owner.token();
         for attr in self.all_attrs(attrs) {
@@ -106,10 +103,10 @@ impl<'scope, 'run> Element<'scope, 'run> {
     }
 }
 
-impl<'scope, 'run> AttributeBuilder<'scope, 'run> for Element<'scope, 'run> {
+impl<'scope> AttributeBuilder<'scope> for Element<'scope> {
     fn build_attribute<V>(mut self, target: ApplyTarget, value: V) -> Self
     where
-        V: IntoStorable<'scope, 'run>,
+        V: IntoStorable<'scope>,
     {
         self.pending_attrs
             .push(PendingAttribute::build(value.into_storable(), target));
@@ -129,8 +126,8 @@ impl<'scope, 'run> AttributeBuilder<'scope, 'run> for Element<'scope, 'run> {
     }
 }
 
-impl<'scope, 'run> ApplyAttributes<'scope, 'run> for Element<'scope, 'run> {
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope, 'run>>) {
+impl<'scope> ApplyAttributes<'scope> for Element<'scope> {
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
         self.pending_attrs = crate::attribute::consolidate_attributes({
             let mut current = std::mem::take(&mut self.pending_attrs);
             current.extend(attrs);
@@ -139,21 +136,21 @@ impl<'scope, 'run> ApplyAttributes<'scope, 'run> for Element<'scope, 'run> {
     }
 }
 
-impl<'scope, 'run> View<'scope, 'run> for Element<'scope, 'run> {
+impl<'scope> View<'scope> for Element<'scope> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) {
         self.mount_inner(owner, parent, attrs);
     }
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
@@ -164,7 +161,7 @@ impl<'scope, 'run> View<'scope, 'run> for Element<'scope, 'run> {
 /// Mount a root view using the caller-owned root scope.
 pub fn mount_to_body<V>(root_scope: &RootScope, view: V)
 where
-    V: View<'static, 'static> + 'static,
+    V: View<'static> + 'static,
 {
     let document = crate::document();
     let body = document.body().expect("No body element");
@@ -173,14 +170,14 @@ where
     view.mount_owned(&owner, &node, Vec::new());
 }
 
-pub struct TypedElement<'scope, 'run, T: Tag> {
+pub struct TypedElement<'scope, T: Tag> {
     pub dom_element: T::DomElement,
-    pub(crate) pending_attrs: Vec<PendingAttribute<'scope, 'run>>,
-    pub(crate) children: Vec<AnyView<'scope, 'run>>,
+    pub(crate) pending_attrs: Vec<PendingAttribute<'scope>>,
+    pub(crate) children: Vec<AnyView<'scope>>,
     marker: PhantomData<T>,
 }
 
-impl<'scope, 'run, T: Tag> Clone for TypedElement<'scope, 'run, T> {
+impl<'scope, T: Tag> Clone for TypedElement<'scope, T> {
     fn clone(&self) -> Self {
         Self {
             dom_element: self.dom_element.clone(),
@@ -191,7 +188,7 @@ impl<'scope, 'run, T: Tag> Clone for TypedElement<'scope, 'run, T> {
     }
 }
 
-impl<T: Tag> PartialEq for TypedElement<'_, '_, T> {
+impl<T: Tag> PartialEq for TypedElement<'_, T> {
     fn eq(&self, other: &Self) -> bool {
         self.as_element() == other.as_element()
             && self.pending_attrs == other.pending_attrs
@@ -199,7 +196,7 @@ impl<T: Tag> PartialEq for TypedElement<'_, '_, T> {
     }
 }
 
-impl<'scope, 'run, T: Tag> TypedElement<'scope, 'run, T> {
+impl<'scope, T: Tag> TypedElement<'scope, T> {
     pub fn new(tag: &str) -> Self {
         let document = crate::document();
         let dom_element = document
@@ -230,7 +227,7 @@ impl<'scope, 'run, T: Tag> TypedElement<'scope, 'run, T> {
 
     pub fn with_child<V>(tag: &str, child: V) -> Self
     where
-        V: View<'scope, 'run> + 'scope,
+        V: View<'scope> + 'scope,
     {
         let mut element = Self::new(tag);
         element.children.push(child.into_any());
@@ -247,7 +244,7 @@ impl<'scope, 'run, T: Tag> TypedElement<'scope, 'run, T> {
         AsRef::<web_sys::Node>::as_ref(&self.dom_element)
     }
 
-    pub fn into_untyped(self) -> Element<'scope, 'run> {
+    pub fn into_untyped(self) -> Element<'scope> {
         Element {
             dom_element: self.as_element().clone(),
             pending_attrs: self.pending_attrs,
@@ -256,10 +253,10 @@ impl<'scope, 'run, T: Tag> TypedElement<'scope, 'run, T> {
     }
 }
 
-impl<'scope, 'run, T: Tag> AttributeBuilder<'scope, 'run> for TypedElement<'scope, 'run, T> {
+impl<'scope, T: Tag> AttributeBuilder<'scope> for TypedElement<'scope, T> {
     fn build_attribute<V>(mut self, target: ApplyTarget, value: V) -> Self
     where
-        V: IntoStorable<'scope, 'run>,
+        V: IntoStorable<'scope>,
     {
         self.pending_attrs
             .push(PendingAttribute::build(value.into_storable(), target));
@@ -279,20 +276,20 @@ impl<'scope, 'run, T: Tag> AttributeBuilder<'scope, 'run> for TypedElement<'scop
     }
 }
 
-impl<'scope, 'run, T: Tag> ApplyAttributes<'scope, 'run> for TypedElement<'scope, 'run, T> {
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope, 'run>>) {
+impl<'scope, T: Tag> ApplyAttributes<'scope> for TypedElement<'scope, T> {
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
         let mut current = std::mem::take(&mut self.pending_attrs);
         current.extend(attrs);
         self.pending_attrs = crate::attribute::consolidate_attributes(current);
     }
 }
 
-impl<'scope, 'run, T: Tag> View<'scope, 'run> for TypedElement<'scope, 'run, T> {
+impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) {
         let token = owner.token();
         let mut all_attrs = self.pending_attrs.clone();
@@ -314,9 +311,9 @@ impl<'scope, 'run, T: Tag> View<'scope, 'run> for TypedElement<'scope, 'run, T> 
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
@@ -324,13 +321,13 @@ impl<'scope, 'run, T: Tag> View<'scope, 'run> for TypedElement<'scope, 'run, T> 
     }
 }
 
-impl<'scope, 'run, T: Tag> From<TypedElement<'scope, 'run, T>> for Element<'scope, 'run> {
-    fn from(value: TypedElement<'scope, 'run, T>) -> Self {
+impl<'scope, T: Tag> From<TypedElement<'scope, T>> for Element<'scope> {
+    fn from(value: TypedElement<'scope, T>) -> Self {
         value.into_untyped()
     }
 }
 
-impl<'scope, 'run> std::ops::Deref for Element<'scope, 'run> {
+impl<'scope> std::ops::Deref for Element<'scope> {
     type Target = WebElem;
 
     fn deref(&self) -> &Self::Target {
@@ -338,7 +335,7 @@ impl<'scope, 'run> std::ops::Deref for Element<'scope, 'run> {
     }
 }
 
-impl<'scope, 'run, T: Tag> std::ops::Deref for TypedElement<'scope, 'run, T> {
+impl<'scope, T: Tag> std::ops::Deref for TypedElement<'scope, T> {
     type Target = WebElem;
 
     fn deref(&self) -> &Self::Target {
@@ -346,11 +343,11 @@ impl<'scope, 'run, T: Tag> std::ops::Deref for TypedElement<'scope, 'run, T> {
     }
 }
 
-pub fn bind_event<'scope, 'run, E, F, M>(
+pub fn bind_event<'scope, E, F, M>(
     dom_element: &WebElem,
     event: E,
     callback: F,
-    owner: &ViewOwnerToken<'scope, 'run>,
+    owner: &ViewOwnerToken<'scope>,
 ) where
     E: crate::event::EventDescriptor + 'static,
     F: EventHandler<'scope, E::EventType, M> + 'scope,
@@ -359,11 +356,11 @@ pub fn bind_event<'scope, 'run, E, F, M>(
     bind_event_impl(dom_element, event.name().to_string(), handler, owner);
 }
 
-pub fn bind_event_impl<'scope, 'run, E>(
+pub fn bind_event_impl<'scope, E>(
     dom_element: &WebElem,
     event_name: String,
     mut handler: Box<dyn FnMut(E) + 'scope>,
-    owner: &ViewOwnerToken<'scope, 'run>,
+    owner: &ViewOwnerToken<'scope>,
 ) where
     E: FromWasmAbi + JsCast + 'static,
 {

@@ -1,6 +1,6 @@
 use silex_dom::view::RenderThunk;
 
-fn make_renderer<'scope, 'run>(value: &'scope str) -> RenderThunk<'scope, 'run> {
+fn make_renderer<'scope>(value: &'scope str) -> RenderThunk<'scope> {
     RenderThunk::new(move |_| {
         let _ = value.len();
     })

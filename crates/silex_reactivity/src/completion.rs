@@ -1,20 +1,18 @@
 //! Scope-owned completion messages for `'static` asynchronous tasks.
 
 use crate::{
-    child::Scope,
     internal::{
         RawId,
         value::{AnyValue, CallbackThunk},
     },
     runtime::{self, ScopeId, ScopeState},
+    scope::{ErasedScopeState, ScopeStorage},
 };
 use std::{
     cell::RefCell,
     marker::PhantomData,
     rc::{Rc, Weak},
 };
-
-type ErasedScopeState = RefCell<ScopeState<'static>>;
 
 /// A weak, scope-owned destination for an asynchronous completion message.
 ///
@@ -91,45 +89,41 @@ impl<T: 'static> CompletionToken<T> {
     }
 }
 
-impl<'scope, 'run> Scope<'scope, 'run> {
-    /// Create a completion destination owned by this scope.
-    pub fn completion<T: 'static, F>(&self, mut callback: F) -> CompletionToken<T>
-    where
-        F: FnMut(T) + 'scope,
-    {
-        let active = {
-            let state = self.frame.state.borrow();
-            state
-                .scheduler
-                .borrow()
-                .is_scope_active(self.frame.scope_id)
-        };
-        if !active {
-            return CompletionToken::inactive();
-        }
+pub(crate) fn create_completion<'scope, T: 'static, F>(
+    storage: &ScopeStorage,
+    state: Rc<RefCell<ScopeState<'scope>>>,
+    mut callback: F,
+) -> CompletionToken<T>
+where
+    F: FnMut(T) + 'scope,
+{
+    let active = {
+        let state = state.borrow();
+        state.scheduler.borrow().is_scope_active(storage.scope_id)
+    };
+    if !active {
+        return CompletionToken::inactive();
+    }
 
-        let thunk = CallbackThunk::new(move |value: AnyValue<'scope>| {
-            // SAFETY: `CompletionToken<T>::submit` is the only way to submit
-            // a value to this typed destination.
-            if let Some(value) = unsafe { value.downcast::<T>() } {
-                callback(value);
-            }
-        });
-        // SAFETY: the callback is stored in this scope's state and is dropped
-        // by its lexical dispose path before the scope's captured values end.
-        let thunk = unsafe { thunk.extend_lifetime() };
-        let mut state = self
-            .frame
-            .state
+    let thunk = CallbackThunk::new(move |value: AnyValue<'scope>| {
+        // SAFETY: `CompletionToken<T>::submit` is the only way to submit
+        // a value to this typed destination.
+        if let Some(value) = unsafe { value.downcast::<T>() } {
+            callback(value);
+        }
+    });
+    let callback = {
+        let mut state_ref = state
             .try_borrow_mut()
             .expect("scope state borrowed while creating completion token");
-        let callback = state.create_callback(thunk);
-        let weak = Rc::downgrade(&self.frame.state);
-        // SAFETY: the scheduler uses the same weak-state lifetime erasure and
-        // never upgrades it after the owning scope has been deactivated.
-        let weak = unsafe {
-            std::mem::transmute::<Weak<RefCell<ScopeState<'run>>>, Weak<ErasedScopeState>>(weak)
-        };
-        CompletionToken::new(weak, self.frame.scope_id, callback)
-    }
+        state_ref.create_callback(thunk)
+    };
+    let weak = Rc::downgrade(&state);
+    // SAFETY: the token only stores a weak reference to this scope's state.
+    // The erased weak reference is upgraded only after the active-scope check
+    // and cannot keep the state alive after lexical disposal.
+    let weak = unsafe {
+        std::mem::transmute::<Weak<RefCell<ScopeState<'scope>>>, Weak<ErasedScopeState>>(weak)
+    };
+    CompletionToken::new(weak, storage.scope_id, callback)
 }

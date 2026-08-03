@@ -141,8 +141,8 @@ where
     })
 }
 
-pub fn window_event_listener_untyped_owned<'scope, 'run>(
-    owner: &ViewOwnerToken<'scope, 'run>,
+pub fn window_event_listener_untyped_owned<'scope>(
+    owner: &ViewOwnerToken<'scope>,
     event_name: &str,
     mut cb: impl FnMut(web_sys::Event) + 'scope,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
@@ -168,8 +168,8 @@ pub fn window_event_listener_untyped_owned<'scope, 'run>(
     }))
 }
 
-pub fn window_event_listener_owned<'scope, 'run, E, F>(
-    owner: &ViewOwnerToken<'scope, 'run>,
+pub fn window_event_listener_owned<'scope, E, F>(
+    owner: &ViewOwnerToken<'scope>,
     event: E,
     mut cb: F,
 ) -> Result<HostResourceHandle<'scope>, JsValue>
@@ -264,8 +264,8 @@ fn duration_millis(duration: Duration) -> i32 {
     duration.as_millis().try_into().unwrap_or(i32::MAX)
 }
 
-fn owned_once_callback<'scope, 'run>(
-    owner: &ViewOwnerToken<'scope, 'run>,
+fn owned_once_callback<'scope>(
+    owner: &ViewOwnerToken<'scope>,
     cb: impl FnOnce() + 'scope,
 ) -> JsValue {
     let mut cb = Some(cb);
@@ -279,8 +279,8 @@ fn owned_once_callback<'scope, 'run>(
     })
 }
 
-pub fn request_animation_frame_owned<'scope, 'run>(
-    owner: &ViewOwnerToken<'scope, 'run>,
+pub fn request_animation_frame_owned<'scope>(
+    owner: &ViewOwnerToken<'scope>,
     cb: impl FnOnce() + 'scope,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
@@ -325,8 +325,8 @@ pub fn request_idle_callback_with_handle(
         .map(IdleCallbackHandle)
 }
 
-pub fn request_idle_callback_owned<'scope, 'run>(
-    owner: &ViewOwnerToken<'scope, 'run>,
+pub fn request_idle_callback_owned<'scope>(
+    owner: &ViewOwnerToken<'scope>,
     cb: impl FnOnce() + 'scope,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
@@ -355,8 +355,8 @@ pub fn queue_microtask(task: impl FnOnce() + 'static) {
     window().queue_microtask(&task.unchecked_into());
 }
 
-pub fn queue_microtask_owned<'scope, 'run>(
-    owner: &ViewOwnerToken<'scope, 'run>,
+pub fn queue_microtask_owned<'scope>(
+    owner: &ViewOwnerToken<'scope>,
     task: impl FnOnce() + 'scope,
 ) -> HostResourceHandle<'scope> {
     if !owner.is_active() {
@@ -402,8 +402,8 @@ pub fn set_timeout_with_handle(
         .map(TimeoutHandle)
 }
 
-pub fn set_timeout_owned<'scope, 'run>(
-    owner: &ViewOwnerToken<'scope, 'run>,
+pub fn set_timeout_owned<'scope>(
+    owner: &ViewOwnerToken<'scope>,
     cb: impl FnOnce() + 'scope,
     duration: Duration,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
@@ -455,8 +455,8 @@ pub fn set_interval_with_handle(
         .map(IntervalHandle)
 }
 
-pub fn set_interval_owned<'scope, 'run>(
-    owner: &ViewOwnerToken<'scope, 'run>,
+pub fn set_interval_owned<'scope>(
+    owner: &ViewOwnerToken<'scope>,
     mut cb: impl FnMut() + 'scope,
     duration: Duration,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
@@ -530,8 +530,8 @@ impl<T> DebounceState<T> {
     }
 }
 
-pub fn debounce_owned<'scope, 'run, T, F>(
-    owner: &ViewOwnerToken<'scope, 'run>,
+pub fn debounce_owned<'scope, T, F>(
+    owner: &ViewOwnerToken<'scope>,
     delay: Duration,
     mut cb: F,
 ) -> impl FnMut(T) + 'scope
@@ -602,16 +602,16 @@ where
 
 // --- Explicit owner and detached helpers ---
 
-pub fn use_interval_owned<'scope, 'run>(
-    owner: &ViewOwnerToken<'scope, 'run>,
+pub fn use_interval_owned<'scope>(
+    owner: &ViewOwnerToken<'scope>,
     duration: Duration,
     cb: impl FnMut() + 'scope,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     set_interval_owned(owner, cb, duration)
 }
 
-pub fn use_timeout_owned<'scope, 'run>(
-    owner: &ViewOwnerToken<'scope, 'run>,
+pub fn use_timeout_owned<'scope>(
+    owner: &ViewOwnerToken<'scope>,
     duration: Duration,
     cb: impl FnOnce() + 'scope,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {

@@ -2,8 +2,9 @@
 //!
 //! A `Runtime` is only an execution boundary. Each `run` creates a fresh
 //! reference-counted state whose computation payloads are parameterized by the
-//! lifetime of that run. Handles keep a safe reference to their `ScopeFrame`,
-//! while the scheduler registry uses `Weak` references for cross-scope lookup.
+//! lexical scope lifetime. Handles keep a safe reference to their scope
+//! storage, while the scheduler registry uses `Weak` references for
+//! cross-scope lookup.
 
 mod dispose;
 mod eval;
@@ -21,7 +22,7 @@ pub(crate) use ops::{
 };
 pub(crate) use scheduler::{GlobalScheduler, ScopeId};
 
-use crate::scope::ScopeFrame;
+use crate::scope::ScopeStorage;
 use crate::{Scope, root::RootHandle};
 
 use std::{
@@ -67,19 +68,19 @@ impl Runtime {
         root
     }
 
-    pub fn child<R>(&mut self, f: impl for<'s1, 's2> FnOnce(&'s1 Scope<'s1, 's2>) -> R) -> R {
+    pub fn child<R>(&mut self, f: impl for<'scope> FnOnce(&'scope Scope<'scope>) -> R) -> R {
         assert!(
             !self.root_active.get(),
             "长期 root 存活期间不能运行词法测试 scope"
         );
         let scheduler = GlobalScheduler::new();
-        let frame = ScopeFrame::new(scheduler);
+        let storage = ScopeStorage::new(scheduler);
         let scope = Scope {
-            frame: &frame,
+            storage: &storage,
             _marker: PhantomData,
         };
         let result = catch_unwind(AssertUnwindSafe(|| f(&scope)));
-        let dispose_result = catch_unwind(AssertUnwindSafe(|| frame.dispose()));
+        let dispose_result = catch_unwind(AssertUnwindSafe(|| storage.dispose()));
         match (result, dispose_result) {
             (Ok(value), Ok(())) => value,
             (Err(panic), _) => resume_unwind(panic),

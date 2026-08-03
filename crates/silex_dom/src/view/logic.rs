@@ -14,29 +14,27 @@ impl<V> ScopeView<V> {
     }
 }
 
-impl<'scope, 'run, V: ApplyAttributes<'scope, 'run>> ApplyAttributes<'scope, 'run>
-    for ScopeView<V>
-{
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope, 'run>>) {
+impl<'scope, V: ApplyAttributes<'scope>> ApplyAttributes<'scope> for ScopeView<V> {
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
         self.view.apply_attributes(attrs);
     }
 }
 
-impl<'scope, 'run, V: View<'scope, 'run>> View<'scope, 'run> for ScopeView<V> {
+impl<'scope, V: View<'scope>> View<'scope> for ScopeView<V> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) {
         self.view.mount(owner, parent, attrs);
     }
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {

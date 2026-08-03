@@ -9,21 +9,21 @@ use std::{
 };
 use web_sys::Node;
 
-pub(crate) struct RowRenderArgs<'scope, 'run, T> {
+pub(crate) struct RowRenderArgs<'scope, T> {
     pub(crate) item: T,
     pub(crate) index: usize,
     pub(crate) parent: Node,
-    pub(crate) attrs: Vec<PendingAttribute<'scope, 'run>>,
-    pub(crate) owner: ViewOwnerToken<'scope, 'run>,
+    pub(crate) attrs: Vec<PendingAttribute<'scope>>,
+    pub(crate) owner: ViewOwnerToken<'scope>,
 }
 
-impl<'scope, 'run, T> RowRenderArgs<'scope, 'run, T> {
+impl<'scope, T> RowRenderArgs<'scope, T> {
     pub(crate) fn new(
         item: T,
         index: usize,
         parent: Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
-        owner: ViewOwnerToken<'scope, 'run>,
+        attrs: Vec<PendingAttribute<'scope>>,
+        owner: ViewOwnerToken<'scope>,
     ) -> Self {
         Self {
             item,
@@ -35,11 +35,11 @@ impl<'scope, 'run, T> RowRenderArgs<'scope, 'run, T> {
     }
 }
 
-pub(crate) struct RowRender<'scope, 'run, T> {
-    inner: Rc<dyn Fn(RowRenderArgs<'scope, 'run, T>) + 'scope>,
+pub(crate) struct RowRender<'scope, T> {
+    inner: Rc<dyn Fn(RowRenderArgs<'scope, T>) + 'scope>,
 }
 
-impl<'scope, 'run, T> Clone for RowRender<'scope, 'run, T> {
+impl<'scope, T> Clone for RowRender<'scope, T> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -47,17 +47,17 @@ impl<'scope, 'run, T> Clone for RowRender<'scope, 'run, T> {
     }
 }
 
-impl<'scope, 'run, T> RowRender<'scope, 'run, T> {
+impl<'scope, T> RowRender<'scope, T> {
     pub(crate) fn new<F>(render: F) -> Self
     where
-        F: Fn(RowRenderArgs<'scope, 'run, T>) + 'scope,
+        F: Fn(RowRenderArgs<'scope, T>) + 'scope,
     {
         Self {
             inner: Rc::new(render),
         }
     }
 
-    pub(crate) fn call(&self, args: RowRenderArgs<'scope, 'run, T>) {
+    pub(crate) fn call(&self, args: RowRenderArgs<'scope, T>) {
         (self.inner)(args);
     }
 }
@@ -149,26 +149,23 @@ impl DomRange {
     }
 }
 
-pub(crate) struct RowController<'scope, 'run, T> {
+pub(crate) struct RowController<'scope, T> {
     range: DomRange,
-    row_scope: Rc<OwnedScope<'scope, 'run>>,
-    render_scope: Option<Rc<OwnedScope<'scope, 'run>>>,
-    render: RowRender<'scope, 'run, T>,
-    attrs: Vec<PendingAttribute<'scope, 'run>>,
+    row_scope: Rc<OwnedScope<'scope>>,
+    render_scope: Option<Rc<OwnedScope<'scope>>>,
+    render: RowRender<'scope, T>,
+    attrs: Vec<PendingAttribute<'scope>>,
     active: Cell<bool>,
     generation: u64,
     marker: PhantomData<fn(T)>,
 }
 
-impl<'scope, 'run, T: Clone + 'scope> RowController<'scope, 'run, T>
-where
-    'run: 'scope,
-{
+impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
     pub(crate) fn new(
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         range: DomRange,
-        render: RowRender<'scope, 'run, T>,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        render: RowRender<'scope, T>,
+        attrs: Vec<PendingAttribute<'scope>>,
         item: T,
         index: usize,
     ) -> Self {
@@ -241,7 +238,7 @@ where
     }
 }
 
-impl<'scope, 'run, T> RowController<'scope, 'run, T> {
+impl<'scope, T> RowController<'scope, T> {
     pub(crate) fn move_before(&self, reference: &Node) {
         if self.active.get() {
             self.range.move_before(reference);
@@ -288,7 +285,7 @@ impl<'scope, 'run, T> RowController<'scope, 'run, T> {
     }
 }
 
-impl<T> Drop for RowController<'_, '_, T> {
+impl<T> Drop for RowController<'_, T> {
     fn drop(&mut self) {
         self.dispose();
     }

@@ -1,26 +1,26 @@
 use std::{fmt, marker::PhantomData};
 
 /// A scope-owned host object reference.
-pub struct NodeRef<'scope, 'run, T = ()> {
-    pub(crate) inner: silex_reactivity::NodeRef<'scope, 'run, T>,
+pub struct NodeRef<'scope, T = ()> {
+    pub(crate) inner: silex_reactivity::NodeRef<'scope, T>,
 }
 
-impl<'scope, 'run, T> Copy for NodeRef<'scope, 'run, T> {}
+impl<'scope, T> Copy for NodeRef<'scope, T> {}
 
-impl<'scope, 'run, T> Clone for NodeRef<'scope, 'run, T> {
+impl<'scope, T> Clone for NodeRef<'scope, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T> fmt::Debug for NodeRef<'_, '_, T> {
+impl<T> fmt::Debug for NodeRef<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("NodeRef").finish_non_exhaustive()
     }
 }
 
-impl<'scope, 'run, T: 'scope> NodeRef<'scope, 'run, T> {
-    pub(crate) fn from_inner(inner: silex_reactivity::NodeRef<'scope, 'run, T>) -> Self {
+impl<'scope, T: 'scope> NodeRef<'scope, T> {
+    pub(crate) fn from_inner(inner: silex_reactivity::NodeRef<'scope, T>) -> Self {
         Self { inner }
     }
 

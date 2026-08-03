@@ -13,7 +13,7 @@ use crate::{
         RootSignal, RootStoredValue, RootWriteSignal,
     },
     runtime::{self, ScopeState},
-    scope::ScopeFrame,
+    scope::ScopeStorage,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -27,7 +27,7 @@ use std::{
 pub(crate) type RootStateRef = RefCell<ScopeState<'static>>;
 
 pub(crate) struct RootState {
-    pub(crate) frame: ScopeFrame<'static>,
+    pub(crate) storage: ScopeStorage,
     pub(crate) dispose_hooks: RefCell<Vec<Box<dyn FnOnce()>>>,
 }
 
@@ -35,19 +35,21 @@ impl RootState {
     fn new() -> Self {
         let scheduler = runtime::GlobalScheduler::new();
         Self {
-            frame: ScopeFrame::new(scheduler),
+            storage: ScopeStorage::new(scheduler),
             dispose_hooks: RefCell::new(Vec::new()),
         }
     }
 
     fn state(&self) -> Rc<RootStateRef> {
-        self.frame.state.clone()
+        self.storage.state.clone()
     }
 
     fn dispose(&self) -> Option<Box<dyn std::any::Any + Send>> {
         let state = self.state();
         let scheduler = state.borrow().scheduler.clone();
-        scheduler.borrow_mut().deactivate_scope(self.frame.scope_id);
+        scheduler
+            .borrow_mut()
+            .deactivate_scope(self.storage.scope_id);
 
         let mut first_panic = None;
         for hook in mem::take(&mut *self.dispose_hooks.borrow_mut()) {
@@ -58,7 +60,7 @@ impl RootState {
             }
         }
 
-        if let Err(panic) = catch_unwind(AssertUnwindSafe(|| self.frame.dispose()))
+        if let Err(panic) = catch_unwind(AssertUnwindSafe(|| self.storage.dispose()))
             && first_panic.is_none()
         {
             first_panic = Some(panic);
@@ -159,7 +161,7 @@ impl RootScope {
             .borrow()
             .scheduler
             .borrow()
-            .is_scope_active(owner.frame.scope_id);
+            .is_scope_active(owner.storage.scope_id);
         active.then_some(state).ok_or(ReactiveError::NoSuchNode)
     }
 
@@ -334,16 +336,16 @@ impl RootScope {
     }
 
     /// Create a lexical child scope under the long-lived root.
-    pub fn child<R>(&self, f: impl for<'s1, 's2, 's3> FnOnce(&'s1 Scope<'s2, 's3>) -> R) -> R {
+    pub fn child<R>(&self, f: impl for<'scope> FnOnce(&'scope Scope<'scope>) -> R) -> R {
         let state = self.state().expect("创建 root child scope 时 owner 已结束");
         let scheduler = state.borrow().scheduler.clone();
-        let frame = ScopeFrame::new(scheduler);
+        let storage = ScopeStorage::new(scheduler);
         let child = Scope {
-            frame: &frame,
+            storage: &storage,
             _marker: PhantomData,
         };
         let result = catch_unwind(AssertUnwindSafe(|| f(&child)));
-        let dispose_result = catch_unwind(AssertUnwindSafe(|| frame.dispose()));
+        let dispose_result = catch_unwind(AssertUnwindSafe(|| storage.dispose()));
         match (result, dispose_result) {
             (Ok(value), Ok(())) => value,
             (Err(panic), _) => resume_unwind(panic),
@@ -352,7 +354,7 @@ impl RootScope {
     }
 
     /// Create a persistent owner backed by the root scheduler.
-    pub fn owned_scope(&self) -> crate::OwnedScope<'static, 'static> {
+    pub fn owned_scope(&self) -> crate::OwnedScope<'static> {
         let state = self.state().expect("创建 owned scope 时 root owner 已结束");
         let scheduler = state.borrow().scheduler.clone();
         crate::OwnedScope::new_for_scheduler(scheduler)

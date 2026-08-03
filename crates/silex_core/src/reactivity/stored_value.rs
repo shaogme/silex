@@ -2,29 +2,29 @@ use crate::{Rx, RxValueKind, Scope};
 use std::fmt;
 
 /// A non-reactive value owned by a scope.
-pub struct StoredValue<'scope, 'run, T> {
-    pub(crate) inner: silex_reactivity::StoredValue<'scope, 'run, T>,
-    pub(crate) scope: Scope<'scope, 'run>,
+pub struct StoredValue<'scope, T> {
+    pub(crate) inner: silex_reactivity::StoredValue<'scope, T>,
+    pub(crate) scope: Scope<'scope>,
 }
 
-impl<'scope, 'run, T> Copy for StoredValue<'scope, 'run, T> {}
+impl<'scope, T> Copy for StoredValue<'scope, T> {}
 
-impl<'scope, 'run, T> Clone for StoredValue<'scope, 'run, T> {
+impl<'scope, T> Clone for StoredValue<'scope, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T> fmt::Debug for StoredValue<'_, '_, T> {
+impl<T> fmt::Debug for StoredValue<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("StoredValue").finish_non_exhaustive()
     }
 }
 
-impl<'scope, 'run, T: 'scope> StoredValue<'scope, 'run, T> {
+impl<'scope, T: 'scope> StoredValue<'scope, T> {
     pub(crate) fn from_inner(
-        inner: silex_reactivity::StoredValue<'scope, 'run, T>,
-        scope: Scope<'scope, 'run>,
+        inner: silex_reactivity::StoredValue<'scope, T>,
+        scope: Scope<'scope>,
     ) -> Self {
         Self { inner, scope }
     }
@@ -45,7 +45,7 @@ impl<'scope, 'run, T: 'scope> StoredValue<'scope, 'run, T> {
         self.update(|stored| *stored = value);
     }
 
-    pub fn into_rx(self) -> Rx<'scope, 'run, T, RxValueKind> {
+    pub fn into_rx(self) -> Rx<'scope, T, RxValueKind> {
         Rx::from_stored(self)
     }
 }

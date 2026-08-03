@@ -20,7 +20,6 @@ use std::{
     borrow::Cow,
     cell::{Cell, RefCell},
     fmt::{Debug, Display, Formatter, Result as FmtResult},
-    marker::PhantomData,
     ops::{Add, Deref, Div, Mul, Sub},
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
@@ -102,34 +101,34 @@ impl<'scope> CleanupRegistrar<'scope> {
 }
 
 #[derive(Clone)]
-struct OwnedScopeRegistrar<'scope, 'run> {
-    inner: Rc<dyn OwnedScopeRegister<'scope, 'run> + 'scope>,
+struct OwnedScopeRegistrar<'scope> {
+    inner: Rc<dyn OwnedScopeRegister<'scope> + 'scope>,
 }
 
-trait OwnedScopeRegister<'scope, 'run> {
-    fn create(&self) -> OwnedScope<'scope, 'run>;
+trait OwnedScopeRegister<'scope> {
+    fn create(&self) -> OwnedScope<'scope>;
 }
 
-impl<'scope, 'run, F> OwnedScopeRegister<'scope, 'run> for F
+impl<'scope, F> OwnedScopeRegister<'scope> for F
 where
-    F: Fn() -> OwnedScope<'scope, 'run> + 'scope,
+    F: Fn() -> OwnedScope<'scope> + 'scope,
 {
-    fn create(&self) -> OwnedScope<'scope, 'run> {
+    fn create(&self) -> OwnedScope<'scope> {
         self()
     }
 }
 
-impl<'scope, 'run> OwnedScopeRegistrar<'scope, 'run> {
+impl<'scope> OwnedScopeRegistrar<'scope> {
     fn new<F>(create: F) -> Self
     where
-        F: Fn() -> OwnedScope<'scope, 'run> + 'scope,
+        F: Fn() -> OwnedScope<'scope> + 'scope,
     {
         Self {
             inner: Rc::new(create),
         }
     }
 
-    fn call(&self) -> OwnedScope<'scope, 'run> {
+    fn call(&self) -> OwnedScope<'scope> {
         self.inner.create()
     }
 }
@@ -262,20 +261,19 @@ impl HostCallback {
 }
 
 #[derive(Clone)]
-pub struct ViewOwnerToken<'scope, 'run> {
+pub struct ViewOwnerToken<'scope> {
     effect: EffectRegistrar<'scope>,
     cleanup: CleanupRegistrar<'scope>,
-    owned_scope: OwnedScopeRegistrar<'scope, 'run>,
+    owned_scope: OwnedScopeRegistrar<'scope>,
     completion: CompletionRegistrar<'scope>,
     active: ActiveRegistrar<'scope>,
-    marker: PhantomData<fn(&'run ())>,
 }
 
-impl<'scope, 'run> ViewOwnerToken<'scope, 'run> {
+impl<'scope> ViewOwnerToken<'scope> {
     fn new(
         effect: EffectRegistrar<'scope>,
         cleanup: CleanupRegistrar<'scope>,
-        owned_scope: OwnedScopeRegistrar<'scope, 'run>,
+        owned_scope: OwnedScopeRegistrar<'scope>,
         completion: CompletionRegistrar<'scope>,
         active: ActiveRegistrar<'scope>,
     ) -> Self {
@@ -285,7 +283,6 @@ impl<'scope, 'run> ViewOwnerToken<'scope, 'run> {
             owned_scope,
             completion,
             active,
-            marker: PhantomData,
         }
     }
 
@@ -325,14 +322,14 @@ impl<'scope, 'run> ViewOwnerToken<'scope, 'run> {
 }
 
 /// Mount-time capability shared by all view implementations.
-pub trait ViewOwner<'scope, 'run> {
+pub trait ViewOwner<'scope> {
     fn effect(&self, callback: Box<dyn FnMut() + 'scope>);
     fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>);
-    fn token(&self) -> ViewOwnerToken<'scope, 'run>;
-    fn owned_scope(&self) -> OwnedScope<'scope, 'run>;
+    fn token(&self) -> ViewOwnerToken<'scope>;
+    fn owned_scope(&self) -> OwnedScope<'scope>;
 }
 
-impl<'scope, 'run> ViewOwner<'scope, 'run> for ViewOwnerToken<'scope, 'run> {
+impl<'scope> ViewOwner<'scope> for ViewOwnerToken<'scope> {
     fn effect(&self, callback: Box<dyn FnMut() + 'scope>) {
         self.effect(callback);
     }
@@ -341,11 +338,11 @@ impl<'scope, 'run> ViewOwner<'scope, 'run> for ViewOwnerToken<'scope, 'run> {
         self.on_cleanup(cleanup);
     }
 
-    fn token(&self) -> ViewOwnerToken<'scope, 'run> {
+    fn token(&self) -> ViewOwnerToken<'scope> {
         self.clone()
     }
 
-    fn owned_scope(&self) -> OwnedScope<'scope, 'run> {
+    fn owned_scope(&self) -> OwnedScope<'scope> {
         self.owned_scope.call()
     }
 }
@@ -362,7 +359,7 @@ impl RootViewOwner {
     }
 }
 
-impl ViewOwner<'static, 'static> for RootViewOwner {
+impl ViewOwner<'static> for RootViewOwner {
     fn effect(&self, callback: Box<dyn FnMut() + 'static>) {
         let _ = self.scope.effect(callback);
     }
@@ -371,7 +368,7 @@ impl ViewOwner<'static, 'static> for RootViewOwner {
         self.scope.on_cleanup(cleanup);
     }
 
-    fn token(&self) -> ViewOwnerToken<'static, 'static> {
+    fn token(&self) -> ViewOwnerToken<'static> {
         let scope_for_effect = self.scope.clone();
         let scope_for_cleanup = self.scope.clone();
         let scope_for_owned = self.scope.clone();
@@ -388,24 +385,24 @@ impl ViewOwner<'static, 'static> for RootViewOwner {
         )
     }
 
-    fn owned_scope(&self) -> OwnedScope<'static, 'static> {
+    fn owned_scope(&self) -> OwnedScope<'static> {
         self.scope.owned_scope()
     }
 }
 
 /// Adapter for a lexical child scope.
 #[derive(Clone, Copy)]
-pub struct ScopedViewOwner<'scope, 'run> {
-    scope: Scope<'scope, 'run>,
+pub struct ScopedViewOwner<'scope> {
+    scope: Scope<'scope>,
 }
 
-impl<'scope, 'run> ScopedViewOwner<'scope, 'run> {
-    pub fn new(scope: Scope<'scope, 'run>) -> Self {
+impl<'scope> ScopedViewOwner<'scope> {
+    pub fn new(scope: Scope<'scope>) -> Self {
         Self { scope }
     }
 }
 
-impl<'scope, 'run> ViewOwner<'scope, 'run> for ScopedViewOwner<'scope, 'run> {
+impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
     fn effect(&self, callback: Box<dyn FnMut() + 'scope>) {
         let mut callback = callback;
         let _ = self.scope.effect(move |_: Option<()>| {
@@ -417,7 +414,7 @@ impl<'scope, 'run> ViewOwner<'scope, 'run> for ScopedViewOwner<'scope, 'run> {
         self.scope.on_cleanup(cleanup);
     }
 
-    fn token(&self) -> ViewOwnerToken<'scope, 'run> {
+    fn token(&self) -> ViewOwnerToken<'scope> {
         let scope_for_effect = self.scope;
         let scope_for_cleanup = self.scope;
         let scope_for_owned = self.scope;
@@ -437,25 +434,22 @@ impl<'scope, 'run> ViewOwner<'scope, 'run> for ScopedViewOwner<'scope, 'run> {
         )
     }
 
-    fn owned_scope(&self) -> OwnedScope<'scope, 'run> {
+    fn owned_scope(&self) -> OwnedScope<'scope> {
         self.scope.owned_scope()
     }
 }
 
-pub(crate) struct OwnedViewOwner<'scope, 'run> {
-    scope: Rc<OwnedScope<'scope, 'run>>,
+pub(crate) struct OwnedViewOwner<'scope> {
+    scope: Rc<OwnedScope<'scope>>,
 }
 
-impl<'scope, 'run> OwnedViewOwner<'scope, 'run> {
-    pub(crate) fn new(scope: Rc<OwnedScope<'scope, 'run>>) -> Self {
+impl<'scope> OwnedViewOwner<'scope> {
+    pub(crate) fn new(scope: Rc<OwnedScope<'scope>>) -> Self {
         Self { scope }
     }
 }
 
-impl<'scope, 'run> ViewOwner<'scope, 'run> for OwnedViewOwner<'scope, 'run>
-where
-    'run: 'scope,
-{
+impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
     fn effect(&self, callback: Box<dyn FnMut() + 'scope>) {
         self.scope.effect(callback);
     }
@@ -464,7 +458,7 @@ where
         self.scope.on_cleanup(cleanup);
     }
 
-    fn token(&self) -> ViewOwnerToken<'scope, 'run> {
+    fn token(&self) -> ViewOwnerToken<'scope> {
         let scope_for_effect = self.scope.clone();
         let scope_for_cleanup = self.scope.clone();
         let scope_for_owned = self.scope.clone();
@@ -479,14 +473,14 @@ where
         )
     }
 
-    fn owned_scope(&self) -> OwnedScope<'scope, 'run> {
+    fn owned_scope(&self) -> OwnedScope<'scope> {
         self.scope.child()
     }
 }
 
 /// Apply attributes to a view while preserving their scope boundary.
-pub trait ApplyAttributes<'scope, 'run> {
-    fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute<'scope, 'run>>) {}
+pub trait ApplyAttributes<'scope> {
+    fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute<'scope>>) {}
 }
 
 /// Component prop wrapper used by generated builders.
@@ -545,12 +539,12 @@ impl<'a, T: Clone> PropInto<T> for Prop<'a, T> {
     }
 }
 
-impl<'scope, 'run, 'a, T> ApplyAttributes<'scope, 'run> for Prop<'a, T>
+impl<'scope, 'a, T> ApplyAttributes<'scope> for Prop<'a, T>
 where
     'a: 'scope,
-    T: ApplyAttributes<'scope, 'run>,
+    T: ApplyAttributes<'scope>,
 {
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope, 'run>>) {
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
         match self {
             Self::Owned(value) => value.apply_attributes(attrs),
             Self::Borrowed(value) => {
@@ -560,16 +554,16 @@ where
     }
 }
 
-impl<'scope, 'run, 'a, T> View<'scope, 'run> for Prop<'a, T>
+impl<'scope, 'a, T> View<'scope> for Prop<'a, T>
 where
     'a: 'scope,
-    T: View<'scope, 'run>,
+    T: View<'scope>,
 {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) {
         match self {
             Self::Owned(value) => value.mount(owner, parent, attrs),
@@ -579,9 +573,9 @@ where
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
@@ -596,13 +590,13 @@ impl<'a, T: RxValue> RxValue for Prop<'a, T> {
     type Value = T::Value;
 }
 
-impl<'scope, 'run, 'a, T> IntoRx<'scope, 'run> for Prop<'a, T>
+impl<'scope, 'a, T> IntoRx<'scope> for Prop<'a, T>
 where
     'a: 'scope,
-    T: IntoRx<'scope, 'run> + Clone,
+    T: IntoRx<'scope> + Clone,
     T::Value: Sized + RxData,
 {
-    fn into_rx(self, scope: &Scope<'scope, 'run>) -> Rx<'scope, 'run, Self::Value> {
+    fn into_rx(self, scope: &Scope<'scope>) -> Rx<'scope, Self::Value> {
         self.into_owned().into_rx(scope)
     }
 
@@ -614,16 +608,13 @@ where
     }
 }
 
-impl<'scope, 'run, 'a, T> IntoSignal<'scope, 'run> for Prop<'a, T>
+impl<'scope, 'a, T> IntoSignal<'scope> for Prop<'a, T>
 where
     'a: 'scope,
-    T: IntoSignal<'scope, 'run> + Clone,
+    T: IntoSignal<'scope> + Clone,
     T::Value: Sized + RxData,
 {
-    fn into_signal(
-        self,
-        scope: &Scope<'scope, 'run>,
-    ) -> silex_core::Signal<'scope, 'run, Self::Value> {
+    fn into_signal(self, scope: &Scope<'scope>) -> silex_core::Signal<'scope, Self::Value> {
         self.into_owned().into_signal(scope)
     }
 }
@@ -672,8 +663,8 @@ impl_forward_binop_copy!(Mul, mul);
 impl_forward_binop_copy!(Div, div);
 
 /// View conversion and mounting contract.
-pub trait View<'scope, 'run> {
-    fn into_any(self) -> AnyView<'scope, 'run>
+pub trait View<'scope> {
+    fn into_any(self) -> AnyView<'scope>
     where
         Self: Sized + 'scope,
     {
@@ -682,16 +673,16 @@ pub trait View<'scope, 'run> {
 
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     );
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized;
 }
@@ -706,23 +697,23 @@ pub fn mount_text_node(parent: &Node, text: &str) {
 
 macro_rules! impl_text_view {
     ($ty:ty) => {
-        impl<'scope, 'run> ApplyAttributes<'scope, 'run> for $ty {}
+        impl<'scope> ApplyAttributes<'scope> for $ty {}
 
-        impl<'scope, 'run> View<'scope, 'run> for $ty {
+        impl<'scope> View<'scope> for $ty {
             fn mount(
                 &self,
-                _owner: &dyn ViewOwner<'scope, 'run>,
+                _owner: &dyn ViewOwner<'scope>,
                 parent: &Node,
-                _attrs: Vec<PendingAttribute<'scope, 'run>>,
+                _attrs: Vec<PendingAttribute<'scope>>,
             ) {
                 mount_text_node(parent, self);
             }
 
             fn mount_owned(
                 self,
-                _owner: &dyn ViewOwner<'scope, 'run>,
+                _owner: &dyn ViewOwner<'scope>,
                 parent: &Node,
-                _attrs: Vec<PendingAttribute<'scope, 'run>>,
+                _attrs: Vec<PendingAttribute<'scope>>,
             ) where
                 Self: Sized,
             {
@@ -734,23 +725,23 @@ macro_rules! impl_text_view {
 
 impl_text_view!(String);
 
-impl<'scope, 'run> ApplyAttributes<'scope, 'run> for &'scope str {}
+impl<'scope> ApplyAttributes<'scope> for &'scope str {}
 
-impl<'scope, 'run> View<'scope, 'run> for &'scope str {
+impl<'scope> View<'scope> for &'scope str {
     fn mount(
         &self,
-        _owner: &dyn ViewOwner<'scope, 'run>,
+        _owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope, 'run>>,
+        _attrs: Vec<PendingAttribute<'scope>>,
     ) {
         mount_text_node(parent, self);
     }
 
     fn mount_owned(
         self,
-        _owner: &dyn ViewOwner<'scope, 'run>,
+        _owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope, 'run>>,
+        _attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
@@ -758,23 +749,23 @@ impl<'scope, 'run> View<'scope, 'run> for &'scope str {
     }
 }
 
-impl<'scope, 'run> ApplyAttributes<'scope, 'run> for Cow<'scope, str> {}
+impl<'scope> ApplyAttributes<'scope> for Cow<'scope, str> {}
 
-impl<'scope, 'run> View<'scope, 'run> for Cow<'scope, str> {
+impl<'scope> View<'scope> for Cow<'scope, str> {
     fn mount(
         &self,
-        _owner: &dyn ViewOwner<'scope, 'run>,
+        _owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope, 'run>>,
+        _attrs: Vec<PendingAttribute<'scope>>,
     ) {
         mount_text_node(parent, self.as_ref());
     }
 
     fn mount_owned(
         self,
-        _owner: &dyn ViewOwner<'scope, 'run>,
+        _owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope, 'run>>,
+        _attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
@@ -785,23 +776,23 @@ impl<'scope, 'run> View<'scope, 'run> for Cow<'scope, str> {
 macro_rules! impl_primitive_view {
     ($($ty:ty),*) => {
         $(
-            impl<'scope, 'run> ApplyAttributes<'scope, 'run> for $ty {}
+            impl<'scope> ApplyAttributes<'scope> for $ty {}
 
-            impl<'scope, 'run> View<'scope, 'run> for $ty {
+            impl<'scope> View<'scope> for $ty {
                 fn mount(
                     &self,
-                    _owner: &dyn ViewOwner<'scope, 'run>,
+                    _owner: &dyn ViewOwner<'scope>,
                     parent: &Node,
-                    _attrs: Vec<PendingAttribute<'scope, 'run>>,
+                    _attrs: Vec<PendingAttribute<'scope>>,
                 ) {
                     mount_text_node(parent, &self.to_string());
                 }
 
                 fn mount_owned(
                     self,
-                    _owner: &dyn ViewOwner<'scope, 'run>,
+                    _owner: &dyn ViewOwner<'scope>,
                     parent: &Node,
-                    _attrs: Vec<PendingAttribute<'scope, 'run>>,
+                    _attrs: Vec<PendingAttribute<'scope>>,
                 ) where
                     Self: Sized,
                 {
@@ -816,54 +807,54 @@ impl_primitive_view!(
     i8, u8, i16, u16, i32, u32, i64, u64, i128, u128, isize, usize, f32, f64, bool, char
 );
 
-impl<'scope, 'run> ApplyAttributes<'scope, 'run> for () {}
+impl<'scope> ApplyAttributes<'scope> for () {}
 
-impl<'scope, 'run> View<'scope, 'run> for () {
+impl<'scope> View<'scope> for () {
     fn mount(
         &self,
-        _owner: &dyn ViewOwner<'scope, 'run>,
+        _owner: &dyn ViewOwner<'scope>,
         _parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope, 'run>>,
+        _attrs: Vec<PendingAttribute<'scope>>,
     ) {
     }
 
     fn mount_owned(
         self,
-        _owner: &dyn ViewOwner<'scope, 'run>,
+        _owner: &dyn ViewOwner<'scope>,
         _parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope, 'run>>,
+        _attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
     }
 }
 
-impl<'scope, 'run, F, V> ApplyAttributes<'scope, 'run> for F
+impl<'scope, F, V> ApplyAttributes<'scope> for F
 where
     F: Fn() -> V + Clone + 'scope,
-    V: View<'scope, 'run> + 'scope,
+    V: View<'scope> + 'scope,
 {
 }
 
-impl<'scope, 'run, F, V> View<'scope, 'run> for F
+impl<'scope, F, V> View<'scope> for F
 where
     F: Fn() -> V + Clone + 'scope,
-    V: View<'scope, 'run> + 'scope,
+    V: View<'scope> + 'scope,
 {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) {
         self.clone().mount_owned(owner, parent, attrs);
     }
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
@@ -885,11 +876,11 @@ where
 }
 
 /// Shared dynamic-view mount kernel.
-pub fn mount_dynamic_view_universal<'scope, 'run>(
-    owner: &dyn ViewOwner<'scope, 'run>,
+pub fn mount_dynamic_view_universal<'scope>(
+    owner: &dyn ViewOwner<'scope>,
     parent: &Node,
-    attrs: Vec<PendingAttribute<'scope, 'run>>,
-    renderer: RenderThunk<'scope, 'run>,
+    attrs: Vec<PendingAttribute<'scope>>,
+    renderer: RenderThunk<'scope>,
 ) {
     let range = match DomRange::append(parent, "dyn") {
         Ok(range) => range,
@@ -898,7 +889,7 @@ pub fn mount_dynamic_view_universal<'scope, 'run>(
             return;
         }
     };
-    let render = RowRender::new(move |args: RowRenderArgs<'scope, 'run, ()>| {
+    let render = RowRender::new(move |args: RowRenderArgs<'scope, ()>| {
         let RowRenderArgs {
             parent,
             attrs,
@@ -919,18 +910,18 @@ pub fn mount_dynamic_view_universal<'scope, 'run>(
 }
 
 /// Dynamic view mount with a persistent row owner keyed by the current key.
-pub fn mount_dynamic_view_cached<'scope, 'run, K, KeyFn, RenderFn>(
-    owner: &dyn ViewOwner<'scope, 'run>,
+pub fn mount_dynamic_view_cached<'scope, K, KeyFn, RenderFn>(
+    owner: &dyn ViewOwner<'scope>,
     parent: &Node,
-    attrs: Vec<PendingAttribute<'scope, 'run>>,
+    attrs: Vec<PendingAttribute<'scope>>,
     key_fn: KeyFn,
     renderer: RenderFn,
 ) where
     K: PartialEq + Clone + 'scope,
     KeyFn: Fn() -> K + Clone + 'scope,
-    RenderFn: Fn(K, (Node, Vec<PendingAttribute<'scope, 'run>>)) + 'scope,
+    RenderFn: Fn(K, (Node, Vec<PendingAttribute<'scope>>)) + 'scope,
 {
-    let render = RowRender::new(move |args: RowRenderArgs<'scope, 'run, K>| {
+    let render = RowRender::new(move |args: RowRenderArgs<'scope, K>| {
         let RowRenderArgs {
             item: key,
             parent,
@@ -942,18 +933,18 @@ pub fn mount_dynamic_view_cached<'scope, 'run, K, KeyFn, RenderFn>(
     mount_keyed_dynamic_view(owner, parent, attrs, key_fn, render);
 }
 
-pub fn mount_branch_cached<'scope, 'run, K, KeyFn, BranchFn>(
-    owner: &dyn ViewOwner<'scope, 'run>,
+pub fn mount_branch_cached<'scope, K, KeyFn, BranchFn>(
+    owner: &dyn ViewOwner<'scope>,
     parent: &Node,
-    attrs: Vec<PendingAttribute<'scope, 'run>>,
+    attrs: Vec<PendingAttribute<'scope>>,
     key_fn: KeyFn,
     branch_fn: BranchFn,
 ) where
     K: PartialEq + Clone + 'scope,
     KeyFn: Fn() -> K + Clone + 'scope,
-    BranchFn: Fn(K) -> AnyView<'scope, 'run> + 'scope,
+    BranchFn: Fn(K) -> AnyView<'scope> + 'scope,
 {
-    let render = RowRender::new(move |args: RowRenderArgs<'scope, 'run, K>| {
+    let render = RowRender::new(move |args: RowRenderArgs<'scope, K>| {
         let RowRenderArgs {
             item: key,
             parent,
@@ -966,20 +957,20 @@ pub fn mount_branch_cached<'scope, 'run, K, KeyFn, BranchFn>(
     mount_keyed_dynamic_view(owner, parent, attrs, key_fn, render);
 }
 
-struct BranchState<'scope, 'run, K> {
+struct BranchState<'scope, K> {
     range: DomRange,
-    row: Option<RowController<'scope, 'run, K>>,
+    row: Option<RowController<'scope, K>>,
     key: Option<K>,
-    render: RowRender<'scope, 'run, K>,
-    attrs: Vec<PendingAttribute<'scope, 'run>>,
+    render: RowRender<'scope, K>,
+    attrs: Vec<PendingAttribute<'scope>>,
 }
 
-fn mount_keyed_dynamic_view<'scope, 'run, K, KeyFn>(
-    owner: &dyn ViewOwner<'scope, 'run>,
+fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
+    owner: &dyn ViewOwner<'scope>,
     parent: &Node,
-    attrs: Vec<PendingAttribute<'scope, 'run>>,
+    attrs: Vec<PendingAttribute<'scope>>,
     key_fn: KeyFn,
-    render: RowRender<'scope, 'run, K>,
+    render: RowRender<'scope, K>,
 ) where
     K: PartialEq + Clone + 'scope,
     KeyFn: Fn() -> K + Clone + 'scope,
@@ -1050,22 +1041,20 @@ fn mount_keyed_dynamic_view<'scope, 'run, K, KeyFn>(
     }));
 }
 
-impl<'scope, 'run, V: View<'scope, 'run> + ApplyAttributes<'scope, 'run>>
-    ApplyAttributes<'scope, 'run> for Option<V>
-{
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope, 'run>>) {
+impl<'scope, V: View<'scope> + ApplyAttributes<'scope>> ApplyAttributes<'scope> for Option<V> {
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
         if let Some(value) = self {
             value.apply_attributes(attrs);
         }
     }
 }
 
-impl<'scope, 'run, V: View<'scope, 'run>> View<'scope, 'run> for Option<V> {
+impl<'scope, V: View<'scope>> View<'scope> for Option<V> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) {
         if let Some(value) = self {
             value.mount(owner, parent, attrs);
@@ -1074,9 +1063,9 @@ impl<'scope, 'run, V: View<'scope, 'run>> View<'scope, 'run> for Option<V> {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
@@ -1086,22 +1075,20 @@ impl<'scope, 'run, V: View<'scope, 'run>> View<'scope, 'run> for Option<V> {
     }
 }
 
-impl<'scope, 'run, V: View<'scope, 'run> + ApplyAttributes<'scope, 'run>>
-    ApplyAttributes<'scope, 'run> for Vec<V>
-{
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope, 'run>>) {
+impl<'scope, V: View<'scope> + ApplyAttributes<'scope>> ApplyAttributes<'scope> for Vec<V> {
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
         for value in self {
             value.apply_attributes(attrs.clone());
         }
     }
 }
 
-impl<'scope, 'run, V: View<'scope, 'run>> View<'scope, 'run> for Vec<V> {
+impl<'scope, V: View<'scope>> View<'scope> for Vec<V> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) {
         for (index, value) in self.iter().enumerate() {
             value.mount(
@@ -1118,9 +1105,9 @@ impl<'scope, 'run, V: View<'scope, 'run>> View<'scope, 'run> for Vec<V> {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
@@ -1138,22 +1125,22 @@ impl<'scope, 'run, V: View<'scope, 'run>> View<'scope, 'run> for Vec<V> {
     }
 }
 
-impl<'scope, 'run, V: View<'scope, 'run> + ApplyAttributes<'scope, 'run>, const N: usize>
-    ApplyAttributes<'scope, 'run> for [V; N]
+impl<'scope, V: View<'scope> + ApplyAttributes<'scope>, const N: usize> ApplyAttributes<'scope>
+    for [V; N]
 {
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope, 'run>>) {
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
         for value in self {
             value.apply_attributes(attrs.clone());
         }
     }
 }
 
-impl<'scope, 'run, V: View<'scope, 'run>, const N: usize> View<'scope, 'run> for [V; N] {
+impl<'scope, V: View<'scope>, const N: usize> View<'scope> for [V; N] {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) {
         for (index, value) in self.iter().enumerate() {
             value.mount(
@@ -1170,9 +1157,9 @@ impl<'scope, 'run, V: View<'scope, 'run>, const N: usize> View<'scope, 'run> for
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
@@ -1202,45 +1189,43 @@ pub struct PropMissing;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PropFixed;
 
-impl<'scope, 'run> ApplyAttributes<'scope, 'run> for ViewNil {}
+impl<'scope> ApplyAttributes<'scope> for ViewNil {}
 
-impl<'scope, 'run> View<'scope, 'run> for ViewNil {
+impl<'scope> View<'scope> for ViewNil {
     fn mount(
         &self,
-        _owner: &dyn ViewOwner<'scope, 'run>,
+        _owner: &dyn ViewOwner<'scope>,
         _parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope, 'run>>,
+        _attrs: Vec<PendingAttribute<'scope>>,
     ) {
     }
 
     fn mount_owned(
         self,
-        _owner: &dyn ViewOwner<'scope, 'run>,
+        _owner: &dyn ViewOwner<'scope>,
         _parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope, 'run>>,
+        _attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
     }
 }
 
-impl<'scope, 'run, H: ApplyAttributes<'scope, 'run>, T: ApplyAttributes<'scope, 'run>>
-    ApplyAttributes<'scope, 'run> for ViewCons<H, T>
+impl<'scope, H: ApplyAttributes<'scope>, T: ApplyAttributes<'scope>> ApplyAttributes<'scope>
+    for ViewCons<H, T>
 {
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope, 'run>>) {
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
         self.0.apply_attributes(attrs.clone());
         self.1.apply_attributes(attrs);
     }
 }
 
-impl<'scope, 'run, H: View<'scope, 'run>, T: View<'scope, 'run>> View<'scope, 'run>
-    for ViewCons<H, T>
-{
+impl<'scope, H: View<'scope>, T: View<'scope>> View<'scope> for ViewCons<H, T> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) {
         self.0.mount(owner, parent, attrs);
         self.1.mount(owner, parent, Vec::new());
@@ -1248,9 +1233,9 @@ impl<'scope, 'run, H: View<'scope, 'run>, T: View<'scope, 'run>> View<'scope, 'r
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
@@ -1273,22 +1258,20 @@ macro_rules! view_chain {
     };
 }
 
-impl<'scope, 'run, V: View<'scope, 'run> + ApplyAttributes<'scope, 'run>>
-    ApplyAttributes<'scope, 'run> for SilexResult<V>
-{
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope, 'run>>) {
+impl<'scope, V: View<'scope> + ApplyAttributes<'scope>> ApplyAttributes<'scope> for SilexResult<V> {
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
         if let Ok(value) = self {
             value.apply_attributes(attrs);
         }
     }
 }
 
-impl<'scope, 'run, V: View<'scope, 'run>> View<'scope, 'run> for SilexResult<V> {
+impl<'scope, V: View<'scope>> View<'scope> for SilexResult<V> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) {
         match self {
             Ok(value) => value.mount(owner, parent, attrs),
@@ -1298,9 +1281,9 @@ impl<'scope, 'run, V: View<'scope, 'run>> View<'scope, 'run> for SilexResult<V> 
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {

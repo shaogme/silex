@@ -13,5 +13,5 @@ error[E0597]: `value` does not live long enough
 note: requirement that the value outlives `'static` introduced here
   --> src/element.rs
    |
-   |     V: View<'static, 'static> + 'static,
-   |        ^^^^^^^^^^^^^^^^^^^^^^
+   |     V: View<'static> + 'static,
+   |        ^^^^^^^^^^^^^

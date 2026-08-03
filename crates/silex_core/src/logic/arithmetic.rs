@@ -46,21 +46,17 @@ pub mod ops_impl {
     }
 }
 
-fn binary_op<'scope, 'run, T, R>(
-    left: Rx<'scope, 'run, T>,
-    right: R,
-    op: fn(&T, &T) -> T,
-) -> Rx<'scope, 'run, T>
+fn binary_op<'scope, T, R>(left: Rx<'scope, T>, right: R, op: fn(&T, &T) -> T) -> Rx<'scope, T>
 where
     T: 'scope,
-    R: IntoRx<'scope, 'run, Value = T>,
+    R: IntoRx<'scope, Value = T>,
 {
     let scope = left.scope();
     let right = right.into_rx(&scope);
     scope.derived(move || left.with(|left| right.with(|right| op(left, right))))
 }
 
-fn unary_op<'scope, 'run, T>(value: Rx<'scope, 'run, T>, op: fn(&T) -> T) -> Rx<'scope, 'run, T>
+fn unary_op<'scope, T>(value: Rx<'scope, T>, op: fn(&T) -> T) -> Rx<'scope, T>
 where
     T: 'scope,
 {
@@ -70,13 +66,13 @@ where
 
 macro_rules! impl_rx_binary {
     ($trait:ident, $method:ident, $op:ident) => {
-        impl<'scope, 'run, T, R> $trait<R> for Rx<'scope, 'run, T, RxValueKind>
+        impl<'scope, T, R> $trait<R> for Rx<'scope, T, RxValueKind>
         where
             T: Clone + 'scope,
             for<'a> &'a T: $trait<&'a T, Output = T>,
-            R: IntoRx<'scope, 'run, Value = T>,
+            R: IntoRx<'scope, Value = T>,
         {
-            type Output = Rx<'scope, 'run, T>;
+            type Output = Rx<'scope, T>;
 
             fn $method(self, right: R) -> Self::Output {
                 binary_op(self, right, ops_impl::$op::<T>)
@@ -87,12 +83,12 @@ macro_rules! impl_rx_binary {
 
 macro_rules! impl_rx_unary {
     ($trait:ident, $method:ident, $op:ident) => {
-        impl<'scope, 'run, T> $trait for Rx<'scope, 'run, T, RxValueKind>
+        impl<'scope, T> $trait for Rx<'scope, T, RxValueKind>
         where
             T: Clone + 'scope,
             for<'a> &'a T: $trait<Output = T>,
         {
-            type Output = Rx<'scope, 'run, T>;
+            type Output = Rx<'scope, T>;
 
             fn $method(self) -> Self::Output {
                 unary_op(self, ops_impl::$op::<T>)

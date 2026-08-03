@@ -41,15 +41,15 @@ fn resolve_mutation_result<T, E>(
 
 type MutationFuture<T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + 'static>>;
 
-pub struct Mutation<'scope, 'run, Arg, T, E = SilexError> {
-    pub state: ReadSignal<'scope, 'run, MutationState<T, E>>,
-    set_state: WriteSignal<'scope, 'run, MutationState<T, E>>,
+pub struct Mutation<'scope, Arg, T, E = SilexError> {
+    pub state: ReadSignal<'scope, MutationState<T, E>>,
+    set_state: WriteSignal<'scope, MutationState<T, E>>,
     action: Rc<dyn Fn(Arg) -> MutationFuture<T, E> + 'scope>,
     last_id: Rc<Cell<usize>>,
     completion: CompletionToken<(usize, Result<T, E>)>,
 }
 
-impl<'scope, 'run, Arg, T, E> Clone for Mutation<'scope, 'run, Arg, T, E> {
+impl<'scope, Arg, T, E> Clone for Mutation<'scope, Arg, T, E> {
     fn clone(&self) -> Self {
         Self {
             state: self.state,
@@ -61,13 +61,13 @@ impl<'scope, 'run, Arg, T, E> Clone for Mutation<'scope, 'run, Arg, T, E> {
     }
 }
 
-impl<'scope, 'run, Arg, T, E> Mutation<'scope, 'run, Arg, T, E>
+impl<'scope, Arg, T, E> Mutation<'scope, Arg, T, E>
 where
     Arg: RxData,
     T: RxData + 'static,
     E: RxError + 'static,
 {
-    pub fn new<F, Fut>(scope: &Scope<'scope, 'run>, action: F) -> Self
+    pub fn new<F, Fut>(scope: &Scope<'scope>, action: F) -> Self
     where
         F: Fn(Arg) -> Fut + 'scope,
         Fut: Future<Output = Result<T, E>> + 'static,
@@ -138,7 +138,7 @@ where
     }
 }
 
-impl<'scope, 'run, Arg, T, E> RxValue for Mutation<'scope, 'run, Arg, T, E>
+impl<'scope, Arg, T, E> RxValue for Mutation<'scope, Arg, T, E>
 where
     Arg: RxData + 'scope,
     T: RxData + 'scope,
@@ -147,7 +147,7 @@ where
     type Value = Option<T>;
 }
 
-impl<'scope, 'run, Arg, T, E> RxBase for Mutation<'scope, 'run, Arg, T, E>
+impl<'scope, Arg, T, E> RxBase for Mutation<'scope, Arg, T, E>
 where
     Arg: RxData + 'scope,
     T: RxData + 'scope,
@@ -162,7 +162,7 @@ where
     }
 }
 
-impl<'scope, 'run, Arg, T, E> RxRead for Mutation<'scope, 'run, Arg, T, E>
+impl<'scope, Arg, T, E> RxRead for Mutation<'scope, Arg, T, E>
 where
     Arg: RxData + 'scope,
     T: RxCloneData + 'scope,
@@ -178,13 +178,13 @@ where
     }
 }
 
-impl<'scope, 'run, Arg, T, E> IntoRx<'scope, 'run> for Mutation<'scope, 'run, Arg, T, E>
+impl<'scope, Arg, T, E> IntoRx<'scope> for Mutation<'scope, Arg, T, E>
 where
     Arg: RxData + 'scope,
     T: RxCloneData + 'static,
     E: RxError + 'static,
 {
-    fn into_rx(self, scope: &Scope<'scope, 'run>) -> Rx<'scope, 'run, Option<T>> {
+    fn into_rx(self, scope: &Scope<'scope>) -> Rx<'scope, Option<T>> {
         let scope = *scope;
         scope.derived(move || self.value())
     }
@@ -194,13 +194,13 @@ where
     }
 }
 
-impl<'scope, 'run, Arg, T, E> IntoSignal<'scope, 'run> for Mutation<'scope, 'run, Arg, T, E>
+impl<'scope, Arg, T, E> IntoSignal<'scope> for Mutation<'scope, Arg, T, E>
 where
     Arg: RxData + 'scope,
     T: RxCloneData + 'static,
     E: RxError + 'static,
 {
-    fn into_signal(self, scope: &Scope<'scope, 'run>) -> Signal<'scope, 'run, Option<T>> {
+    fn into_signal(self, scope: &Scope<'scope>) -> Signal<'scope, Option<T>> {
         self.into_rx(scope).into_signal(scope)
     }
 }

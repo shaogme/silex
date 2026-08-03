@@ -8,8 +8,8 @@ use std::{
     rc::Rc,
 };
 
-struct ReenterOnDrop<'scope, 'run> {
-    setter: WriteSignal<'scope, 'run, i32>,
+struct ReenterOnDrop<'scope> {
+    setter: WriteSignal<'scope, i32>,
     called: Rc<Cell<bool>>,
     error: Rc<Cell<Option<ReactiveError>>>,
 }
@@ -25,7 +25,7 @@ impl Drop for DropEvent {
     }
 }
 
-impl Drop for ReenterOnDrop<'_, '_> {
+impl Drop for ReenterOnDrop<'_> {
     fn drop(&mut self) {
         self.called.set(true);
         self.error.set(self.setter.try_set(1).err());
@@ -58,14 +58,14 @@ fn all_public_node_capabilities_are_copy() {
         assert_copy(callback);
         assert_copy(node_ref);
 
-        let _: Option<ReadSignal<'_, '_, i32>> = Some(read);
-        let _: Option<WriteSignal<'_, '_, i32>> = Some(write);
-        let _: Option<Memo<'_, '_, i32>> = Some(memo);
-        let _: Option<Derived<'_, '_, i32>> = Some(derived);
-        let _: Option<Effect<'_, '_>> = Some(effect);
-        let _: Option<StoredValue<'_, '_, i32>> = Some(stored);
-        let _: Option<Callback<'_, '_>> = Some(callback);
-        let _: Option<NodeRef<'_, '_, i32>> = Some(node_ref);
+        let _: Option<ReadSignal<'_, i32>> = Some(read);
+        let _: Option<WriteSignal<'_, i32>> = Some(write);
+        let _: Option<Memo<'_, i32>> = Some(memo);
+        let _: Option<Derived<'_, i32>> = Some(derived);
+        let _: Option<Effect<'_>> = Some(effect);
+        let _: Option<StoredValue<'_, i32>> = Some(stored);
+        let _: Option<Callback<'_>> = Some(callback);
+        let _: Option<NodeRef<'_, i32>> = Some(node_ref);
     });
 }
 

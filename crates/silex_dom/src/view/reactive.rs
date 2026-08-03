@@ -12,10 +12,10 @@ use std::borrow::Cow;
 use std::fmt::Display;
 use web_sys::Node;
 
-pub(crate) fn mount_reactive_text<'scope, 'run, T>(
-    owner: &dyn ViewOwner<'scope, 'run>,
+pub(crate) fn mount_reactive_text<'scope, T>(
+    owner: &dyn ViewOwner<'scope>,
     parent: &Node,
-    rx: Rx<'scope, 'run, T>,
+    rx: Rx<'scope, T>,
 ) where
     T: Display + RxCloneData + 'scope,
 {
@@ -31,13 +31,13 @@ pub(crate) fn mount_reactive_text<'scope, 'run, T>(
     }));
 }
 
-pub(crate) fn mount_reactive_view<'scope, 'run, V>(
-    owner: &dyn ViewOwner<'scope, 'run>,
+pub(crate) fn mount_reactive_view<'scope, V>(
+    owner: &dyn ViewOwner<'scope>,
     parent: &Node,
-    rx: Rx<'scope, 'run, V>,
-    attrs: Vec<PendingAttribute<'scope, 'run>>,
+    rx: Rx<'scope, V>,
+    attrs: Vec<PendingAttribute<'scope>>,
 ) where
-    V: View<'scope, 'run> + 'scope,
+    V: View<'scope> + 'scope,
 {
     mount_dynamic_view_universal(
         owner,
@@ -54,40 +54,40 @@ pub(crate) fn mount_reactive_view<'scope, 'run, V>(
     );
 }
 
-pub trait AutoReactiveView<'scope, 'run>: View<'scope, 'run> + Sized + 'scope {
+pub trait AutoReactiveView<'scope>: View<'scope> + Sized + 'scope {
     fn mount_reactive(
-        rx: Rx<'scope, 'run, Self>,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        rx: Rx<'scope, Self>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) {
         mount_reactive_view(owner, parent, rx, attrs);
     }
 }
 
-impl<'scope, 'run, V> ApplyAttributes<'scope, 'run> for Rx<'scope, 'run, V, RxValueKind> where
-    V: AutoReactiveView<'scope, 'run>
+impl<'scope, V> ApplyAttributes<'scope> for Rx<'scope, V, RxValueKind> where
+    V: AutoReactiveView<'scope>
 {
 }
 
-impl<'scope, 'run, V> View<'scope, 'run> for Rx<'scope, 'run, V, RxValueKind>
+impl<'scope, V> View<'scope> for Rx<'scope, V, RxValueKind>
 where
-    V: AutoReactiveView<'scope, 'run>,
+    V: AutoReactiveView<'scope>,
 {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) {
         V::mount_reactive(*self, owner, parent, attrs);
     }
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
@@ -98,12 +98,12 @@ where
 macro_rules! impl_auto_reactive_text {
     ($($ty:ty),*) => {
         $(
-            impl<'scope, 'run> AutoReactiveView<'scope, 'run> for $ty {
+            impl<'scope> AutoReactiveView<'scope> for $ty {
                 fn mount_reactive(
-                    rx: Rx<'scope, 'run, Self>,
-                    owner: &dyn ViewOwner<'scope, 'run>,
+                    rx: Rx<'scope, Self>,
+                    owner: &dyn ViewOwner<'scope>,
                     parent: &Node,
-                    _attrs: Vec<PendingAttribute<'scope, 'run>>,
+                    _attrs: Vec<PendingAttribute<'scope>>,
                 ) {
                     mount_reactive_text(owner, parent, rx);
                 }
@@ -115,7 +115,7 @@ macro_rules! impl_auto_reactive_text {
 macro_rules! impl_auto_reactive_default {
     ($($ty:ty),*) => {
         $(
-            impl<'scope, 'run> AutoReactiveView<'scope, 'run> for $ty {}
+            impl<'scope> AutoReactiveView<'scope> for $ty {}
         )*
     };
 }
@@ -124,76 +124,70 @@ impl_auto_reactive_text!(
     String, bool, char, i8, u8, i16, u16, i32, u32, i64, u64, i128, u128, isize, usize, f32, f64
 );
 
-impl<'scope, 'run> AutoReactiveView<'scope, 'run> for &'scope str {
+impl<'scope> AutoReactiveView<'scope> for &'scope str {
     fn mount_reactive(
-        rx: Rx<'scope, 'run, Self>,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        rx: Rx<'scope, Self>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope, 'run>>,
+        _attrs: Vec<PendingAttribute<'scope>>,
     ) {
         mount_reactive_text(owner, parent, rx);
     }
 }
 
-impl<'scope, 'run> AutoReactiveView<'scope, 'run> for Cow<'scope, str> {
+impl<'scope> AutoReactiveView<'scope> for Cow<'scope, str> {
     fn mount_reactive(
-        rx: Rx<'scope, 'run, Self>,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        rx: Rx<'scope, Self>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope, 'run>>,
+        _attrs: Vec<PendingAttribute<'scope>>,
     ) {
         mount_reactive_text(owner, parent, rx);
     }
 }
 
-impl_auto_reactive_default!(Element<'scope, 'run>, AnyView<'scope, 'run>);
+impl_auto_reactive_default!(Element<'scope>, AnyView<'scope>);
 
-impl<'scope, 'run, V> AutoReactiveView<'scope, 'run> for Option<V> where
-    V: View<'scope, 'run> + 'scope
-{
-}
+impl<'scope, V> AutoReactiveView<'scope> for Option<V> where V: View<'scope> + 'scope {}
 
-impl<'scope, 'run, H, T> AutoReactiveView<'scope, 'run> for ViewCons<H, T>
+impl<'scope, H, T> AutoReactiveView<'scope> for ViewCons<H, T>
 where
-    H: View<'scope, 'run> + 'scope,
-    T: View<'scope, 'run> + 'scope,
+    H: View<'scope> + 'scope,
+    T: View<'scope> + 'scope,
 {
 }
 
-impl<'scope, 'run, T: Tag + 'scope> AutoReactiveView<'scope, 'run>
-    for TypedElement<'scope, 'run, T>
-{
-}
+impl<'scope, T: Tag + 'scope> AutoReactiveView<'scope> for TypedElement<'scope, T> {}
 
 macro_rules! impl_view_forward_to_rx {
     ($($ty:ident),*) => {
         $(
-            impl<'scope, 'run, T: 'scope> ApplyAttributes<'scope, 'run> for $ty<'scope, 'run, T>
+            impl<'scope, T: 'scope> ApplyAttributes<'scope> for $ty<'scope, T>
             where
                 T: RxCloneData + 'scope,
-                Rx<'scope, 'run, T>: View<'scope, 'run>,
+                Rx<'scope, T>: View<'scope>,
             {
             }
 
-            impl<'scope, 'run, T: 'scope> View<'scope, 'run> for $ty<'scope, 'run, T>
+            impl<'scope, T: 'scope> View<'scope> for $ty<'scope, T>
             where
                 T: RxCloneData + 'scope,
-                Rx<'scope, 'run, T>: View<'scope, 'run>,
+                Rx<'scope, T>: View<'scope>,
             {
                 fn mount(
                     &self,
-                    owner: &dyn ViewOwner<'scope, 'run>,
+                    owner: &dyn ViewOwner<'scope>,
                     parent: &Node,
-                    attrs: Vec<PendingAttribute<'scope, 'run>>,
+                    attrs: Vec<PendingAttribute<'scope>>,
                 ) {
                     self.clone().into_rx().mount(owner, parent, attrs);
                 }
 
                 fn mount_owned(
                     self,
-                    owner: &dyn ViewOwner<'scope, 'run>,
+                    owner: &dyn ViewOwner<'scope>,
                     parent: &Node,
-                    attrs: Vec<PendingAttribute<'scope, 'run>>,
+                    attrs: Vec<PendingAttribute<'scope>>,
                 ) where
                     Self: Sized,
                 {

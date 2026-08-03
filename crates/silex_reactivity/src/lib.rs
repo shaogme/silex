@@ -7,7 +7,7 @@
 //!
 //! The runtime deliberately has no thread-local fallback. Computations are
 //! stored as `Box<dyn FnMut() + 'scope>` inside the state for their scope, and
-//! handles retain a safe reference to their owning frame. User callbacks are always
+//! handles retain a safe reference to their owning storage. User callbacks are always
 //! invoked after the mutable state borrow has been released.
 //!
 //! Lexical handles cannot escape [`RootScope::child`]; root-owned capabilities

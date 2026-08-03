@@ -325,16 +325,6 @@ impl<'scope> EffectThunk<'scope> {
         }
     }
 
-    /// # Safety
-    ///
-    /// 调用者必须保证此 `EffectThunk` 仅存储在生命周期为 `'scope` 的 `ScopeFrame` 对应的 `ScopeState` 中。
-    /// 当 `'scope` 作用域退出时，`ScopeFrame::dispose()` 会被调用并 Drop 内部所有的 `EffectThunk`，
-    /// 从而保证闭包绝对不会在 `'scope` 作用域之外被访问或调用。
-    pub(crate) unsafe fn extend_lifetime<'run>(self) -> EffectThunk<'run> {
-        // SAFETY: 调用者保证 self 的真正生存期由 ScopeFrame 控制，直接 transmute 更改泛型参数生命周期。
-        unsafe { std::mem::transmute(self) }
-    }
-
     pub(crate) fn call(&mut self) {
         (self.callback)();
     }
@@ -372,16 +362,6 @@ impl<'scope> MemoThunk<'scope> {
         }
     }
 
-    /// # Safety
-    ///
-    /// 调用者必须保证此 `MemoThunk` 仅存储在生命周期为 `'scope` 的 `ScopeFrame` 对应的 `ScopeState` 中。
-    /// 当 `'scope` 作用域退出时，`ScopeFrame::dispose()` 会被调用并 Drop 内部所有的 `MemoThunk`，
-    /// 从而保证闭包绝对不会在 `'scope` 作用域之外被访问或调用。
-    pub(crate) unsafe fn extend_lifetime<'run>(self) -> MemoThunk<'run> {
-        // SAFETY: 调用者保证 self 的真正生存期由 ScopeFrame 控制，直接 transmute 更改泛型参数生命周期。
-        unsafe { std::mem::transmute(self) }
-    }
-
     pub(crate) fn compute(&mut self, old: Option<&AnyValue<'scope>>) -> AnyValue<'scope> {
         (self.callback)(old)
     }
@@ -399,16 +379,6 @@ impl<'scope> OnceThunk<'scope> {
         Self {
             callback: Some(Box::new(callback)),
         }
-    }
-
-    /// # Safety
-    ///
-    /// 调用者必须保证此 `OnceThunk` 仅存储在生命周期为 `'scope` 的 `ScopeFrame` 对应的 `ScopeState` 中。
-    /// 当 `'scope` 作用域退出时，`ScopeFrame::dispose()` 会被调用并 Drop 内部所有的 `OnceThunk`，
-    /// 从而保证闭包绝对不会在 `'scope` 作用域之外被访问或调用。
-    pub(crate) unsafe fn extend_lifetime<'run>(self) -> OnceThunk<'run> {
-        // SAFETY: 调用者保证 self 的真正生存期由 ScopeFrame 控制，直接 transmute 更改泛型参数生命周期。
-        unsafe { std::mem::transmute(self) }
     }
 
     pub(crate) fn call(mut self) {
@@ -430,16 +400,6 @@ impl<'scope> CallbackThunk<'scope> {
         Self {
             callback: Box::new(callback),
         }
-    }
-
-    /// # Safety
-    ///
-    /// 调用者必须保证此 `CallbackThunk` 仅存储在生命周期为 `'scope` 的 `ScopeFrame` 对应的 `ScopeState` 中。
-    /// 当 `'scope` 作用域退出时，`ScopeFrame::dispose()` 会被调用并 Drop 内部所有的 `CallbackThunk`，
-    /// 从而保证闭包绝对不会在 `'scope` 作用域之外被访问或调用。
-    pub(crate) unsafe fn extend_lifetime<'run>(self) -> CallbackThunk<'run> {
-        // SAFETY: 调用者保证 self 的真正生存期由 ScopeFrame 控制，直接 transmute 更改泛型参数生命周期。
-        unsafe { std::mem::transmute(self) }
     }
 
     pub(crate) fn call(&mut self, arg: AnyValue<'scope>) {

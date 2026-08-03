@@ -13,20 +13,17 @@ use std::{
 use web_sys::Node;
 
 /// Keyed list with persistent row controllers and stable keyed ranges.
-pub struct KeyedLoopView<'scope, 'run, IF, IS, T, K> {
+pub struct KeyedLoopView<'scope, IF, IS, T, K> {
     pub each: IF,
     pub key_fn: Rc<dyn Fn(&T) -> K + 'scope>,
-    pub view_fn: Rc<dyn Fn(T, usize) -> AnyView<'scope, 'run> + 'scope>,
+    pub view_fn: Rc<dyn Fn(T, usize) -> AnyView<'scope> + 'scope>,
     pub error: ForErrorHandler,
     pub _marker: std::marker::PhantomData<(IS, T)>,
 }
 
-impl<'scope, 'run, IF, IS, T, K> ApplyAttributes<'scope, 'run>
-    for KeyedLoopView<'scope, 'run, IF, IS, T, K>
-{
-}
+impl<'scope, IF, IS, T, K> ApplyAttributes<'scope> for KeyedLoopView<'scope, IF, IS, T, K> {}
 
-impl<'scope, 'run, IF, IS, T, K> View<'scope, 'run> for KeyedLoopView<'scope, 'run, IF, IS, T, K>
+impl<'scope, IF, IS, T, K> View<'scope> for KeyedLoopView<'scope, IF, IS, T, K>
 where
     IF: RxRead<Value = IS> + Clone + 'scope,
     IS: ForLoopSource<Item = T> + Sized + 'scope,
@@ -35,9 +32,9 @@ where
 {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) {
         mount_keyed_list(
             owner,
@@ -52,9 +49,9 @@ where
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
@@ -70,18 +67,15 @@ where
     }
 }
 
-pub struct IndexedLoopView<'scope, 'run, IF, T, IS> {
+pub struct IndexedLoopView<'scope, IF, T, IS> {
     pub each: IF,
-    pub view_fn: Rc<dyn Fn(T, usize) -> AnyView<'scope, 'run> + 'scope>,
+    pub view_fn: Rc<dyn Fn(T, usize) -> AnyView<'scope> + 'scope>,
     pub _marker: std::marker::PhantomData<(T, IS)>,
 }
 
-impl<'scope, 'run, IF, T, IS> ApplyAttributes<'scope, 'run>
-    for IndexedLoopView<'scope, 'run, IF, T, IS>
-{
-}
+impl<'scope, IF, T, IS> ApplyAttributes<'scope> for IndexedLoopView<'scope, IF, T, IS> {}
 
-impl<'scope, 'run, IF, T, IS> View<'scope, 'run> for IndexedLoopView<'scope, 'run, IF, T, IS>
+impl<'scope, IF, T, IS> View<'scope> for IndexedLoopView<'scope, IF, T, IS>
 where
     IF: RxRead<Value = IS> + Clone + 'scope,
     IS: ForLoopSource<Item = T> + 'scope,
@@ -89,9 +83,9 @@ where
 {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) {
         mount_indexed_list(
             owner,
@@ -104,9 +98,9 @@ where
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
@@ -114,17 +108,17 @@ where
     }
 }
 
-fn mount_indexed_list<'scope, 'run, IF, IS, T, F>(
-    owner: &dyn ViewOwner<'scope, 'run>,
+fn mount_indexed_list<'scope, IF, IS, T, F>(
+    owner: &dyn ViewOwner<'scope>,
     parent: &Node,
     source: IF,
     view_fn: Rc<F>,
-    attrs: Vec<PendingAttribute<'scope, 'run>>,
+    attrs: Vec<PendingAttribute<'scope>>,
 ) where
     IF: RxRead<Value = IS> + 'scope,
     IS: ForLoopSource<Item = T> + 'scope,
     T: Clone + 'scope,
-    F: Fn(T, usize) -> AnyView<'scope, 'run> + 'scope + ?Sized,
+    F: Fn(T, usize) -> AnyView<'scope> + 'scope + ?Sized,
 {
     let range = match DomRange::append(parent, "for") {
         Ok(range) => range,
@@ -134,7 +128,7 @@ fn mount_indexed_list<'scope, 'run, IF, IS, T, F>(
         }
     };
     let token = owner.token();
-    let render = RowRender::new(move |args: RowRenderArgs<'scope, 'run, T>| {
+    let render = RowRender::new(move |args: RowRenderArgs<'scope, T>| {
         let RowRenderArgs {
             item,
             index,
@@ -144,7 +138,7 @@ fn mount_indexed_list<'scope, 'run, IF, IS, T, F>(
         } = args;
         view_fn(item, index).mount_owned(&token, &parent, attrs);
     });
-    let rows = Rc::new(RefCell::new(Vec::<RowController<'scope, 'run, T>>::new()));
+    let rows = Rc::new(RefCell::new(Vec::<RowController<'scope, T>>::new()));
 
     let cleanup_rows = rows.clone();
     let cleanup_range = range.clone();
@@ -198,25 +192,25 @@ fn mount_indexed_list<'scope, 'run, IF, IS, T, F>(
     }));
 }
 
-struct KeyedRows<'scope, 'run, T, K> {
-    rows: HashMap<K, RowController<'scope, 'run, T>>,
+struct KeyedRows<'scope, T, K> {
+    rows: HashMap<K, RowController<'scope, T>>,
     order: Vec<K>,
 }
 
-fn mount_keyed_list<'scope, 'run, IF, IS, T, K, F>(
-    owner: &dyn ViewOwner<'scope, 'run>,
+fn mount_keyed_list<'scope, IF, IS, T, K, F>(
+    owner: &dyn ViewOwner<'scope>,
     parent: &Node,
     source: IF,
     key_fn: Rc<dyn Fn(&T) -> K + 'scope>,
     view_fn: Rc<F>,
     error: ForErrorHandler,
-    attrs: Vec<PendingAttribute<'scope, 'run>>,
+    attrs: Vec<PendingAttribute<'scope>>,
 ) where
     IF: RxRead<Value = IS> + 'scope,
     IS: ForLoopSource<Item = T> + 'scope,
     T: Clone + 'scope,
     K: std::hash::Hash + Eq + Clone + 'scope,
-    F: Fn(T, usize) -> AnyView<'scope, 'run> + 'scope + ?Sized,
+    F: Fn(T, usize) -> AnyView<'scope> + 'scope + ?Sized,
 {
     let range = match DomRange::append(parent, "for") {
         Ok(range) => range,
@@ -226,7 +220,7 @@ fn mount_keyed_list<'scope, 'run, IF, IS, T, K, F>(
         }
     };
     let token = owner.token();
-    let render = RowRender::new(move |args: RowRenderArgs<'scope, 'run, T>| {
+    let render = RowRender::new(move |args: RowRenderArgs<'scope, T>| {
         let RowRenderArgs {
             item,
             index,
@@ -330,8 +324,8 @@ fn mount_keyed_list<'scope, 'run, IF, IS, T, K, F>(
     }));
 }
 
-fn dispose_rows<'scope, 'run, T: Clone + 'scope>(
-    rows: &mut Vec<RowController<'scope, 'run, T>>,
+fn dispose_rows<'scope, T: Clone + 'scope>(
+    rows: &mut Vec<RowController<'scope, T>>,
 ) -> Option<Box<dyn std::any::Any + Send>> {
     let mut first_panic = None;
     for mut row in rows.drain(..) {

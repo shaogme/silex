@@ -17,14 +17,14 @@ struct CleanupProbe {
     cleanups: Rc<Cell<usize>>,
 }
 
-impl<'scope, 'run> ApplyAttributes<'scope, 'run> for CleanupProbe {}
+impl<'scope> ApplyAttributes<'scope> for CleanupProbe {}
 
-impl<'scope, 'run> View<'scope, 'run> for CleanupProbe {
+impl<'scope> View<'scope> for CleanupProbe {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope, 'run>>,
+        _attrs: Vec<PendingAttribute<'scope>>,
     ) {
         let cleanups = self.cleanups.clone();
         owner.on_cleanup(Box::new(move || {
@@ -35,9 +35,9 @@ impl<'scope, 'run> View<'scope, 'run> for CleanupProbe {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
@@ -137,7 +137,7 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
                 }),
                 _marker: PhantomData,
             };
-            let list_owner = ScopedViewOwner::new(*child);
+            let list_owner = ScopedViewOwner::new(child);
             list.mount_owned(&list_owner, &host, Vec::new());
             assert_eq!(host.text_content().as_deref(), Some("b11:0;2:1;3:2;"));
 
@@ -173,7 +173,7 @@ fn indexed_list_preserves_position_identity_across_diff() {
                 view_fn: Rc::new(|item: i32, index| format!("{item}:{index};").into_any()),
                 _marker: PhantomData,
             };
-            let owner = ScopedViewOwner::new(*child);
+            let owner = ScopedViewOwner::new(child);
             list.mount_owned(&owner, &host, Vec::new());
             assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
 

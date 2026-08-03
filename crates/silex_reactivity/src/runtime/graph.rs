@@ -251,7 +251,7 @@ mod tests {
     use crate::{Runtime, Scope, runtime::scheduler::Observer};
     use std::{panic::AssertUnwindSafe, panic::catch_unwind};
 
-    fn child(runtime: &mut Runtime, f: impl for<'s1, 's2, 's3> FnOnce(&'s1 Scope<'s2, 's3>)) {
+    fn child(runtime: &mut Runtime, f: impl for<'scope> FnOnce(&'scope Scope<'scope>)) {
         let root = runtime.run(|root| root.child(f));
         drop(root);
     }

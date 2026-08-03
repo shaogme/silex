@@ -39,13 +39,13 @@ macro_rules! group {
     };
 }
 
-pub trait AttributeBuilder<'scope, 'run>: Sized {
+pub trait AttributeBuilder<'scope>: Sized {
     /// Core hook: Apply or store a generic attribute/property directly using ApplyTarget mechanism.
     /// Accepts any type that implements IntoStorable, allowing both static references (&str, &String)
     /// and owned/reactive types (String, Signal, closures).
     fn build_attribute<V>(self, target: ApplyTarget, value: V) -> Self
     where
-        V: IntoStorable<'scope, 'run>;
+        V: IntoStorable<'scope>;
 
     /// Core hook: Apply or store an event listener.
     fn build_event<E, F, M>(self, event: E, callback: F) -> Self
@@ -57,14 +57,14 @@ pub trait AttributeBuilder<'scope, 'run>: Sized {
 
     fn attr<V>(self, name: impl Into<Cow<'static, str>>, value: V) -> Self
     where
-        V: IntoStorable<'scope, 'run>,
+        V: IntoStorable<'scope>,
     {
         self.build_attribute(ApplyTarget::attr(name), value)
     }
 
     fn prop<V>(self, name: impl Into<Cow<'static, str>>, value: V) -> Self
     where
-        V: IntoStorable<'scope, 'run>,
+        V: IntoStorable<'scope>,
     {
         self.build_attribute(ApplyTarget::prop(name), value)
     }
@@ -81,7 +81,7 @@ pub trait AttributeBuilder<'scope, 'run>: Sized {
     /// Useful for mixins, theme variables, or complex reactive logic.
     fn apply<V>(self, value: V) -> Self
     where
-        V: IntoStorable<'scope, 'run>,
+        V: IntoStorable<'scope>,
     {
         // Wrap in a storable type and build
         self.build_attribute(ApplyTarget::Apply, value)
@@ -91,153 +91,150 @@ pub trait AttributeBuilder<'scope, 'run>: Sized {
 // --- 分层 Trait 定义 (from props.rs) ---
 
 /// 全局属性：所有 HTML 元素都支持的属性
-pub trait GlobalAttributes<'scope, 'run>: AttributeBuilder<'scope, 'run> {
-    fn id(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+pub trait GlobalAttributes<'scope>: AttributeBuilder<'scope> {
+    fn id(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("id", value)
     }
 
-    fn class(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn class(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("class", value)
     }
 
-    fn style(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn style(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("style", value)
     }
 
-    fn title(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn title(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("title", value)
     }
 
-    fn lang(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn lang(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("lang", value)
     }
 
-    fn dir(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn dir(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("dir", value)
     }
 
-    fn tabindex(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn tabindex(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("tabindex", value)
     }
 
-    fn draggable(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn draggable(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("draggable", value)
     }
 
-    fn hidden(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn hidden(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("hidden", value)
     }
 }
 
 // 自动为所有实现 AttributeBuilder 的类型实现 GlobalAttributes
-impl<'scope, 'run, T: AttributeBuilder<'scope, 'run>> GlobalAttributes<'scope, 'run> for T {}
+impl<'scope, T: AttributeBuilder<'scope>> GlobalAttributes<'scope> for T {}
 
 /// ARIA 无障碍属性：提供给所有元素使用
-pub trait AriaAttributes<'scope, 'run>: AttributeBuilder<'scope, 'run> {
-    fn role(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+pub trait AriaAttributes<'scope>: AttributeBuilder<'scope> {
+    fn role(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("role", value)
     }
 
-    fn aria_label(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_label(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-label", value)
     }
 
-    fn aria_labelledby(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_labelledby(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-labelledby", value)
     }
 
-    fn aria_describedby(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_describedby(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-describedby", value)
     }
 
-    fn aria_hidden(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_hidden(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-hidden", value)
     }
 
-    fn aria_expanded(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_expanded(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-expanded", value)
     }
 
-    fn aria_checked(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_checked(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-checked", value)
     }
 
-    fn aria_selected(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_selected(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-selected", value)
     }
 
-    fn aria_controls(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_controls(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-controls", value)
     }
 
-    fn aria_disabled(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_disabled(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-disabled", value)
     }
 
-    fn aria_invalid(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_invalid(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-invalid", value)
     }
 
-    fn aria_required(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_required(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-required", value)
     }
 
-    fn aria_valuenow(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_valuenow(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-valuenow", value)
     }
 
-    fn aria_valuemin(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_valuemin(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-valuemin", value)
     }
 
-    fn aria_valuemax(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_valuemax(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-valuemax", value)
     }
 
-    fn aria_orientation(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_orientation(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-orientation", value)
     }
 
-    fn aria_haspopup(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_haspopup(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-haspopup", value)
     }
 
-    fn aria_live(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_live(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-live", value)
     }
 
-    fn aria_atomic(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_atomic(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-atomic", value)
     }
 
-    fn aria_modal(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+    fn aria_modal(self, value: impl IntoStorable<'scope>) -> Self {
         self.attr("aria-modal", value)
     }
 }
 
 // 自动为所有实现 AttributeBuilder 的类型实现 AriaAttributes
-impl<'scope, 'run, T: AttributeBuilder<'scope, 'run>> AriaAttributes<'scope, 'run> for T {}
+impl<'scope, T: AttributeBuilder<'scope>> AriaAttributes<'scope> for T {}
 
 /// 全局事件与通用组件方法：提供诸如 on_click, class_toggle, bind_value 等常用操作
-pub trait GlobalEventAttributes<'scope, 'run>: AttributeBuilder<'scope, 'run>
-where
-    'run: 'scope,
-{
+pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     fn class_toggle<C>(self, name: &str, condition: C) -> Self
     where
-        (String, C): IntoStorable<'scope, 'run>,
+        (String, C): IntoStorable<'scope>,
     {
         self.build_attribute(ApplyTarget::Class, (name.to_string(), condition))
     }
 
     fn classes<V>(self, value: V) -> Self
     where
-        V: IntoStorable<'scope, 'run>,
+        V: IntoStorable<'scope>,
     {
         self.build_attribute(ApplyTarget::Class, value)
     }
 
-    fn node_ref<N>(self, node_ref: NodeRef<'scope, 'run, N>) -> Self
+    fn node_ref<N>(self, node_ref: NodeRef<'scope, N>) -> Self
     where
         N: JsCast + Clone + 'scope,
     {
@@ -379,17 +376,14 @@ where
 }
 
 // 自动实现全局事件属性
-impl<'scope, 'run, T: AttributeBuilder<'scope, 'run>> GlobalEventAttributes<'scope, 'run> for T where
-    'run: 'scope
-{
-}
+impl<'scope, T: AttributeBuilder<'scope>> GlobalEventAttributes<'scope> for T {}
 
 // --- AttributeBuilder Implementations for Erasure Types ---
 
-impl<'scope, 'run> AttributeBuilder<'scope, 'run> for AnyView<'scope, 'run> {
+impl<'scope> AttributeBuilder<'scope> for AnyView<'scope> {
     fn build_attribute<V>(mut self, target: ApplyTarget, value: V) -> Self
     where
-        V: IntoStorable<'scope, 'run>,
+        V: IntoStorable<'scope>,
     {
         self.apply_attributes(vec![PendingAttribute::build(value.into_storable(), target)]);
         self

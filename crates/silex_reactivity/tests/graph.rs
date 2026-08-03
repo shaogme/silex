@@ -334,8 +334,8 @@ fn cross_scope_derived_reacts_and_detaches_on_exit() {
 fn cyclic_memo_dependency_panics_without_poisoning_the_scheduler() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
-        let first_slot: Rc<RefCell<Option<Memo<'_, '_, i32>>>> = Rc::new(RefCell::new(None));
-        let second_slot: Rc<RefCell<Option<Memo<'_, '_, i32>>>> = Rc::new(RefCell::new(None));
+        let first_slot: Rc<RefCell<Option<Memo<'_, i32>>>> = Rc::new(RefCell::new(None));
+        let second_slot: Rc<RefCell<Option<Memo<'_, i32>>>> = Rc::new(RefCell::new(None));
         let (source, set_source) = scope.signal(0i32);
 
         let second_slot_in_first = second_slot.clone();
@@ -370,8 +370,8 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
     let runs = Rc::new(Cell::new(0));
 
     runtime.child(|scope| {
-        let first_slot: Rc<RefCell<Option<Memo<'_, '_, i32>>>> = Rc::new(RefCell::new(None));
-        let second_slot: Rc<RefCell<Option<Memo<'_, '_, i32>>>> = Rc::new(RefCell::new(None));
+        let first_slot: Rc<RefCell<Option<Memo<'_, i32>>>> = Rc::new(RefCell::new(None));
+        let second_slot: Rc<RefCell<Option<Memo<'_, i32>>>> = Rc::new(RefCell::new(None));
         let (source, set_source) = scope.signal(0i32);
         let (refresh, set_refresh) = scope.signal(0i32);
 

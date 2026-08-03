@@ -2,23 +2,15 @@ use silex_dom::attribute::{AttributeBuilder, IntoStorable};
 
 macro_rules! define_attribute_group {
     ($trait_name:ident { $($method:ident => $name:literal),* $(,)? }) => {
-        pub trait $trait_name<'scope, 'run>: AttributeBuilder<'scope, 'run>
-        where
-            'run: 'scope,
-        {
+        pub trait $trait_name<'scope>: AttributeBuilder<'scope> {
             $(
-                fn $method(self, value: impl IntoStorable<'scope, 'run>) -> Self {
+                fn $method(self, value: impl IntoStorable<'scope>) -> Self {
                     self.attr($name, value)
                 }
             )*
         }
 
-        impl<'scope, 'run, T: AttributeBuilder<'scope, 'run>>
-            $trait_name<'scope, 'run> for T
-        where
-            'run: 'scope,
-        {
-        }
+        impl<'scope, T: AttributeBuilder<'scope>> $trait_name<'scope> for T {}
     };
 }
 

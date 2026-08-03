@@ -4,17 +4,17 @@ use crate::view::{ApplyAttributes, View, ViewCons, ViewNil, ViewOwner, ViewOwner
 use std::rc::Rc;
 use web_sys::Node;
 
-pub struct RenderArgs<'scope, 'run> {
+pub struct RenderArgs<'scope> {
     pub(crate) parent: Node,
-    pub(crate) attrs: Vec<PendingAttribute<'scope, 'run>>,
-    pub(crate) owner: ViewOwnerToken<'scope, 'run>,
+    pub(crate) attrs: Vec<PendingAttribute<'scope>>,
+    pub(crate) owner: ViewOwnerToken<'scope>,
 }
 
-impl<'scope, 'run> RenderArgs<'scope, 'run> {
+impl<'scope> RenderArgs<'scope> {
     pub fn new(
         parent: Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
-        owner: ViewOwnerToken<'scope, 'run>,
+        attrs: Vec<PendingAttribute<'scope>>,
+        owner: ViewOwnerToken<'scope>,
     ) -> Self {
         Self {
             parent,
@@ -24,43 +24,40 @@ impl<'scope, 'run> RenderArgs<'scope, 'run> {
     }
 }
 
-pub struct RenderThunk<'scope, 'run> {
-    inner: silex_vtable::thunk::ThunkBox<'scope, RenderArgs<'scope, 'run>, ()>,
+pub struct RenderThunk<'scope> {
+    inner: silex_vtable::thunk::ThunkBox<'scope, RenderArgs<'scope>, ()>,
 }
 
-impl<'scope, 'run> RenderThunk<'scope, 'run> {
+impl<'scope> RenderThunk<'scope> {
     pub fn new<F>(render: F) -> Self
     where
-        F: Fn(RenderArgs<'scope, 'run>) + 'scope,
+        F: Fn(RenderArgs<'scope>) + 'scope,
     {
         Self {
             inner: silex_vtable::thunk::ThunkBox::new(render),
         }
     }
 
-    pub fn call(&self, args: RenderArgs<'scope, 'run>) {
+    pub fn call(&self, args: RenderArgs<'scope>) {
         self.inner.call(args);
     }
 }
 
 /// Scope-bound type-erased view.
 #[derive(Default)]
-pub enum AnyView<'scope, 'run> {
+pub enum AnyView<'scope> {
     #[default]
     Empty,
     Text(String),
-    Element(Element<'scope, 'run>),
-    List(Vec<AnyView<'scope, 'run>>),
-    Boxed(
-        Rc<dyn View<'scope, 'run> + 'scope>,
-        Vec<PendingAttribute<'scope, 'run>>,
-    ),
+    Element(Element<'scope>),
+    List(Vec<AnyView<'scope>>),
+    Boxed(Rc<dyn View<'scope> + 'scope>, Vec<PendingAttribute<'scope>>),
 }
 
-impl<'scope, 'run> AnyView<'scope, 'run> {
+impl<'scope> AnyView<'scope> {
     pub fn new<V>(view: V) -> Self
     where
-        V: View<'scope, 'run> + 'scope,
+        V: View<'scope> + 'scope,
     {
         Self::Boxed(Rc::new(view), Vec::new())
     }
@@ -70,19 +67,19 @@ impl<'scope, 'run> AnyView<'scope, 'run> {
     }
 }
 
-fn merge_attrs<'scope, 'run>(
-    mut inner_attrs: Vec<PendingAttribute<'scope, 'run>>,
-    attrs: Vec<PendingAttribute<'scope, 'run>>,
-) -> Vec<PendingAttribute<'scope, 'run>> {
+fn merge_attrs<'scope>(
+    mut inner_attrs: Vec<PendingAttribute<'scope>>,
+    attrs: Vec<PendingAttribute<'scope>>,
+) -> Vec<PendingAttribute<'scope>> {
     inner_attrs.extend(attrs);
     crate::attribute::consolidate_attributes(inner_attrs)
 }
 
-fn mount_list<'scope, 'run>(
-    list: &[AnyView<'scope, 'run>],
-    owner: &dyn ViewOwner<'scope, 'run>,
+fn mount_list<'scope>(
+    list: &[AnyView<'scope>],
+    owner: &dyn ViewOwner<'scope>,
     parent: &Node,
-    attrs: Vec<PendingAttribute<'scope, 'run>>,
+    attrs: Vec<PendingAttribute<'scope>>,
 ) {
     for (index, child) in list.iter().enumerate() {
         child.mount(
@@ -97,11 +94,11 @@ fn mount_list<'scope, 'run>(
     }
 }
 
-fn mount_list_owned<'scope, 'run>(
-    list: Vec<AnyView<'scope, 'run>>,
-    owner: &dyn ViewOwner<'scope, 'run>,
+fn mount_list_owned<'scope>(
+    list: Vec<AnyView<'scope>>,
+    owner: &dyn ViewOwner<'scope>,
     parent: &Node,
-    attrs: Vec<PendingAttribute<'scope, 'run>>,
+    attrs: Vec<PendingAttribute<'scope>>,
 ) {
     for (index, child) in list.into_iter().enumerate() {
         child.mount_owned(
@@ -116,8 +113,8 @@ fn mount_list_owned<'scope, 'run>(
     }
 }
 
-impl<'scope, 'run> ApplyAttributes<'scope, 'run> for AnyView<'scope, 'run> {
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope, 'run>>) {
+impl<'scope> ApplyAttributes<'scope> for AnyView<'scope> {
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
         match self {
             Self::Empty | Self::Text(_) => {}
             Self::Element(element) => element.apply_attributes(attrs),
@@ -134,16 +131,16 @@ impl<'scope, 'run> ApplyAttributes<'scope, 'run> for AnyView<'scope, 'run> {
     }
 }
 
-impl<'scope, 'run> View<'scope, 'run> for AnyView<'scope, 'run> {
+impl<'scope> View<'scope> for AnyView<'scope> {
     fn into_any(self) -> Self {
         self
     }
 
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) {
         match self {
             Self::Empty => {}
@@ -158,9 +155,9 @@ impl<'scope, 'run> View<'scope, 'run> for AnyView<'scope, 'run> {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope, 'run>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
@@ -176,7 +173,7 @@ impl<'scope, 'run> View<'scope, 'run> for AnyView<'scope, 'run> {
     }
 }
 
-impl<'scope, 'run> Clone for AnyView<'scope, 'run> {
+impl<'scope> Clone for AnyView<'scope> {
     fn clone(&self) -> Self {
         match self {
             Self::Empty => Self::Empty,
@@ -188,7 +185,7 @@ impl<'scope, 'run> Clone for AnyView<'scope, 'run> {
     }
 }
 
-impl PartialEq for AnyView<'_, '_> {
+impl PartialEq for AnyView<'_> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Empty, Self::Empty) => true,
@@ -203,7 +200,7 @@ impl PartialEq for AnyView<'_, '_> {
     }
 }
 
-impl std::fmt::Debug for AnyView<'_, '_> {
+impl std::fmt::Debug for AnyView<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Empty => f.write_str("AnyView(Empty)"),
@@ -215,25 +212,25 @@ impl std::fmt::Debug for AnyView<'_, '_> {
     }
 }
 
-impl<'scope, 'run> From<Element<'scope, 'run>> for AnyView<'scope, 'run> {
-    fn from(value: Element<'scope, 'run>) -> Self {
+impl<'scope> From<Element<'scope>> for AnyView<'scope> {
+    fn from(value: Element<'scope>) -> Self {
         Self::Element(value)
     }
 }
 
-impl<'scope, 'run> From<String> for AnyView<'scope, 'run> {
+impl<'scope> From<String> for AnyView<'scope> {
     fn from(value: String) -> Self {
         Self::Text(value)
     }
 }
 
-impl<'scope, 'run> From<&str> for AnyView<'scope, 'run> {
+impl<'scope> From<&str> for AnyView<'scope> {
     fn from(value: &str) -> Self {
         Self::Text(value.to_string())
     }
 }
 
-impl<'scope, 'run> From<()> for AnyView<'scope, 'run> {
+impl<'scope> From<()> for AnyView<'scope> {
     fn from(_: ()) -> Self {
         Self::Empty
     }
@@ -242,7 +239,7 @@ impl<'scope, 'run> From<()> for AnyView<'scope, 'run> {
 macro_rules! impl_from_primitive {
     ($($ty:ty),*) => {
         $(
-            impl<'scope, 'run> From<$ty> for AnyView<'scope, 'run> {
+            impl<'scope> From<$ty> for AnyView<'scope> {
                 fn from(value: $ty) -> Self {
                     Self::Text(value.to_string())
                 }
@@ -255,34 +252,34 @@ impl_from_primitive!(
     i8, u8, i16, u16, i32, u32, i64, u64, isize, usize, f32, f64, bool, char
 );
 
-impl<'scope, 'run, V> From<Vec<V>> for AnyView<'scope, 'run>
+impl<'scope, V> From<Vec<V>> for AnyView<'scope>
 where
-    V: View<'scope, 'run> + 'scope,
+    V: View<'scope> + 'scope,
 {
     fn from(value: Vec<V>) -> Self {
         Self::List(value.into_iter().map(View::into_any).collect())
     }
 }
 
-impl<'scope, 'run, V> From<Option<V>> for AnyView<'scope, 'run>
+impl<'scope, V> From<Option<V>> for AnyView<'scope>
 where
-    V: View<'scope, 'run> + 'scope,
+    V: View<'scope> + 'scope,
 {
     fn from(value: Option<V>) -> Self {
         value.map_or(Self::Empty, AnyView::new)
     }
 }
 
-impl<'scope, 'run> From<ViewNil> for AnyView<'scope, 'run> {
+impl<'scope> From<ViewNil> for AnyView<'scope> {
     fn from(_: ViewNil) -> Self {
         Self::Empty
     }
 }
 
-impl<'scope, 'run, H, T> From<ViewCons<H, T>> for AnyView<'scope, 'run>
+impl<'scope, H, T> From<ViewCons<H, T>> for AnyView<'scope>
 where
-    H: View<'scope, 'run> + 'scope,
-    T: View<'scope, 'run> + 'scope,
+    H: View<'scope> + 'scope,
+    T: View<'scope> + 'scope,
 {
     fn from(value: ViewCons<H, T>) -> Self {
         Self::new(value)

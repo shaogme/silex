@@ -2,27 +2,27 @@ use silex_reactivity::AnyValue;
 use std::{fmt, marker::PhantomData};
 
 /// A typed callback owned by a scope.
-pub struct Callback<'scope, 'run, T = ()> {
-    pub(crate) inner: silex_reactivity::Callback<'scope, 'run>,
+pub struct Callback<'scope, T = ()> {
+    pub(crate) inner: silex_reactivity::Callback<'scope>,
     marker: PhantomData<fn(T)>,
 }
 
-impl<'scope, 'run, T> Copy for Callback<'scope, 'run, T> {}
+impl<'scope, T> Copy for Callback<'scope, T> {}
 
-impl<'scope, 'run, T> Clone for Callback<'scope, 'run, T> {
+impl<'scope, T> Clone for Callback<'scope, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T> fmt::Debug for Callback<'_, '_, T> {
+impl<T> fmt::Debug for Callback<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Callback").finish_non_exhaustive()
     }
 }
 
-impl<'scope, 'run, T: 'scope> Callback<'scope, 'run, T> {
-    pub(crate) fn from_inner(inner: silex_reactivity::Callback<'scope, 'run>) -> Self {
+impl<'scope, T: 'scope> Callback<'scope, T> {
+    pub(crate) fn from_inner(inner: silex_reactivity::Callback<'scope>) -> Self {
         Self {
             inner,
             marker: PhantomData,

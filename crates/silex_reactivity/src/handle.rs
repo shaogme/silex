@@ -1,11 +1,10 @@
 //! Lifetime-bearing node capabilities.
 //!
 //! A handle contains a generation-checked internal key and a reference to the
-//! `ScopeFrame` that owns it. The lifetime marker is covariant so Rust can
-//! shorten a handle when it is borrowed, while `Scope::child`'s higher-ranked
-//! callback prevents a child handle from being returned to its parent.
+//! storage that owns it. The scope lifetime is invariant so handles from
+//! different lexical scopes cannot be combined by lifetime shortening.
 
-use crate::{internal::RawId, runtime::ScopeState, scope::ScopeFrame};
+use crate::{internal::RawId, runtime::ScopeState, scope::ScopeStorage};
 use std::{
     cell::RefCell,
     fmt,
@@ -55,7 +54,7 @@ macro_rules! define_kinds {
                 const NAME: &str = $name;
                 const TAG: NodeKindTag = NodeKindTag::$tag;
             }
-            pub type $alias<'scope, 'run> = Handle<'scope, 'run, kind::$kind>;
+            pub type $alias<'scope> = Handle<'scope, kind::$kind>;
         )*
     };
 }
@@ -71,25 +70,28 @@ define_kinds! {
 }
 
 /// A node capability tied to the lexical scope that created it.
-pub struct Handle<'scope, 'run, K: NodeKind> {
-    pub(crate) frame: &'scope ScopeFrame<'run>,
+pub struct Handle<'scope, K: NodeKind> {
+    pub(crate) storage: &'scope ScopeStorage,
     pub(crate) raw: RawId,
-    marker: PhantomData<&'scope ()>,
+    marker: PhantomData<fn(&'scope ()) -> &'scope ()>,
     kind: PhantomData<fn() -> K>,
 }
 
-impl<'scope, 'run, K: NodeKind> Handle<'scope, 'run, K> {
-    pub(crate) fn new(frame: &'scope ScopeFrame<'run>, raw: RawId) -> Self {
+impl<'scope, K: NodeKind> Handle<'scope, K> {
+    pub(crate) fn new(storage: &'scope ScopeStorage, raw: RawId) -> Self {
         Self {
-            frame,
+            storage,
             raw,
             marker: PhantomData,
             kind: PhantomData,
         }
     }
 
-    pub(crate) fn state(&self) -> Rc<RefCell<ScopeState<'run>>> {
-        self.frame.state.clone()
+    pub(crate) fn state(&self) -> Rc<RefCell<ScopeState<'scope>>> {
+        // SAFETY: the handle lifetime is tied to the lexical Scope capability
+        // that created it, and storage is disposed before that capability can
+        // leave its higher-ranked callback.
+        unsafe { self.storage.typed_state() }
     }
 
     pub(crate) const fn raw(&self) -> RawId {
@@ -105,30 +107,30 @@ impl<'scope, 'run, K: NodeKind> Handle<'scope, 'run, K> {
     }
 }
 
-impl<K: NodeKind> Copy for Handle<'_, '_, K> {}
+impl<K: NodeKind> Copy for Handle<'_, K> {}
 
-impl<K: NodeKind> Clone for Handle<'_, '_, K> {
+impl<K: NodeKind> Clone for Handle<'_, K> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<K: NodeKind> PartialEq for Handle<'_, '_, K> {
+impl<K: NodeKind> PartialEq for Handle<'_, K> {
     fn eq(&self, other: &Self) -> bool {
-        self.raw == other.raw && self.frame.scope_id == other.frame.scope_id
+        self.raw == other.raw && self.storage.scope_id == other.storage.scope_id
     }
 }
 
-impl<K: NodeKind> Eq for Handle<'_, '_, K> {}
+impl<K: NodeKind> Eq for Handle<'_, K> {}
 
-impl<K: NodeKind> Hash for Handle<'_, '_, K> {
+impl<K: NodeKind> Hash for Handle<'_, K> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.raw.hash(state);
-        self.frame.scope_id.hash(state);
+        self.storage.scope_id.hash(state);
     }
 }
 
-impl<K: NodeKind> fmt::Debug for Handle<'_, '_, K> {
+impl<K: NodeKind> fmt::Debug for Handle<'_, K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}{:?}", K::NAME, self.raw)
     }
@@ -139,7 +141,7 @@ pub trait AnyHandle {
     fn is_alive(&self) -> bool;
 }
 
-impl<K: NodeKind> AnyHandle for Handle<'_, '_, K> {
+impl<K: NodeKind> AnyHandle for Handle<'_, K> {
     fn is_alive(&self) -> bool {
         Self::is_alive(self)
     }

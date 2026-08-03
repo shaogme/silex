@@ -55,7 +55,7 @@ macro_rules! define_tag {
         }
         $( impl $crate::element::tags::$traits for $struct_name {} )*
 
-        pub fn $fn_name<'scope, 'run>() -> $crate::element::TypedElement<'scope, 'run, $struct_name> {
+        pub fn $fn_name<'scope>() -> $crate::element::TypedElement<'scope, $struct_name> {
             $crate::element::TypedElement::$constructor($tag_name)
         }
     };
@@ -68,9 +68,9 @@ macro_rules! define_tag {
         }
         $( impl $crate::element::tags::$traits for $struct_name {} )*
 
-        pub fn $fn_name<'scope, 'run, V>(child: V) -> $crate::element::TypedElement<'scope, 'run, $struct_name>
+        pub fn $fn_name<'scope, V>(child: V) -> $crate::element::TypedElement<'scope, $struct_name>
         where
-            V: $crate::view::View<'scope, 'run> + 'scope,
+            V: $crate::view::View<'scope> + 'scope,
         {
             $crate::element::TypedElement::with_child($tag_name, child)
         }

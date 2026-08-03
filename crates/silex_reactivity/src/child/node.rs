@@ -14,24 +14,20 @@ use crate::{
 // =============================================================================
 
 /// Scope-owned type-erased callbacks.
-pub struct Callback<'scope, 'run> {
-    pub(crate) handle: CallbackId<'scope, 'run>,
+pub struct Callback<'scope> {
+    pub(crate) handle: CallbackId<'scope>,
 }
 
-impl Copy for Callback<'_, '_> {}
+impl Copy for Callback<'_> {}
 
-impl Clone for Callback<'_, '_> {
+impl Clone for Callback<'_> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'scope, 'run> Callback<'scope, 'run> {
+impl<'scope> Callback<'scope> {
     pub fn invoke(&self, arg: AnyValue<'scope>) -> ReactiveResult<()> {
-        // SAFETY: `arg` 仅在 `invoke_callback` 同步执行期间传给 `CallbackThunk`。
-        // `CallbackThunk` 已被 extend_lifetime 存为 `'run`，但其内部闭包实际在 `'scope` 销毁。
-        // 将 `arg` 提升至 `'run` 生命周期在同步调用内部是 sound 的。
-        let arg = unsafe { std::mem::transmute::<AnyValue<'scope>, AnyValue<'run>>(arg) };
         runtime::invoke_callback(&self.handle.state(), self.handle.raw(), arg)
     }
 
@@ -45,19 +41,19 @@ impl<'scope, 'run> Callback<'scope, 'run> {
 // =============================================================================
 
 /// Scoped effects.
-pub struct Effect<'scope, 'run> {
-    pub(crate) handle: EffectId<'scope, 'run>,
+pub struct Effect<'scope> {
+    pub(crate) handle: EffectId<'scope>,
 }
 
-impl Copy for Effect<'_, '_> {}
+impl Copy for Effect<'_> {}
 
-impl Clone for Effect<'_, '_> {
+impl Clone for Effect<'_> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl Effect<'_, '_> {
+impl Effect<'_> {
     pub fn is_alive(&self) -> bool {
         self.handle.is_alive()
     }
@@ -68,34 +64,34 @@ impl Effect<'_, '_> {
 // =============================================================================
 
 /// Scoped lazy memo.
-pub struct Memo<'scope, 'run, T> {
-    pub(crate) handle: MemoId<'scope, 'run>,
+pub struct Memo<'scope, T> {
+    pub(crate) handle: MemoId<'scope>,
     pub(crate) marker: PhantomData<fn() -> T>,
 }
 
 /// Scoped derived value.
-pub struct Derived<'scope, 'run, T> {
-    pub(crate) handle: DerivedId<'scope, 'run>,
+pub struct Derived<'scope, T> {
+    pub(crate) handle: DerivedId<'scope>,
     pub(crate) marker: PhantomData<fn() -> T>,
 }
 
-impl<'scope, 'run, T> Copy for Memo<'scope, 'run, T> {}
+impl<'scope, T> Copy for Memo<'scope, T> {}
 
-impl<'scope, 'run, T> Clone for Memo<'scope, 'run, T> {
+impl<'scope, T> Clone for Memo<'scope, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'scope, 'run, T> Copy for Derived<'scope, 'run, T> {}
+impl<'scope, T> Copy for Derived<'scope, T> {}
 
-impl<'scope, 'run, T> Clone for Derived<'scope, 'run, T> {
+impl<'scope, T> Clone for Derived<'scope, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'scope, 'run, T: 'scope> Memo<'scope, 'run, T> {
+impl<'scope, T: 'scope> Memo<'scope, T> {
     pub fn try_get(&self) -> ReactiveResult<T>
     where
         T: Clone,
@@ -143,7 +139,7 @@ impl<'scope, 'run, T: 'scope> Memo<'scope, 'run, T> {
     }
 }
 
-impl<'scope, 'run, T: 'scope> Derived<'scope, 'run, T> {
+impl<'scope, T: 'scope> Derived<'scope, T> {
     pub fn try_get(&self) -> ReactiveResult<T>
     where
         T: Clone,
@@ -193,20 +189,20 @@ impl<'scope, 'run, T: 'scope> Derived<'scope, 'run, T> {
 // =============================================================================
 
 /// Scope-owned host object references.
-pub struct NodeRef<'scope, 'run, T> {
-    pub(crate) handle: NodeRefId<'scope, 'run>,
+pub struct NodeRef<'scope, T> {
+    pub(crate) handle: NodeRefId<'scope>,
     pub(crate) marker: PhantomData<fn() -> T>,
 }
 
-impl<'scope, 'run, T> Copy for NodeRef<'scope, 'run, T> {}
+impl<'scope, T> Copy for NodeRef<'scope, T> {}
 
-impl<'scope, 'run, T> Clone for NodeRef<'scope, 'run, T> {
+impl<'scope, T> Clone for NodeRef<'scope, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'scope, 'run, T: Clone + 'scope> NodeRef<'scope, 'run, T> {
+impl<'scope, T: Clone + 'scope> NodeRef<'scope, T> {
     pub fn try_get(&self) -> ReactiveResult<Option<T>> {
         runtime::node_ref_get(&self.handle.state(), self.handle.raw())
     }
@@ -216,7 +212,7 @@ impl<'scope, 'run, T: Clone + 'scope> NodeRef<'scope, 'run, T> {
     }
 }
 
-impl<'scope, 'run, T: 'scope> NodeRef<'scope, 'run, T> {
+impl<'scope, T: 'scope> NodeRef<'scope, T> {
     pub fn set(&self, value: T) -> ReactiveResult<()> {
         runtime::node_ref_set(&self.handle.state(), self.handle.raw(), value)
     }
@@ -235,51 +231,51 @@ impl<'scope, 'run, T: 'scope> NodeRef<'scope, 'run, T> {
 // =============================================================================
 
 /// Read capability for a signal or memo-like node.
-pub struct ReadSignal<'scope, 'run, T> {
-    pub(crate) handle: SignalId<'scope, 'run>,
+pub struct ReadSignal<'scope, T> {
+    pub(crate) handle: SignalId<'scope>,
     pub(crate) marker: PhantomData<fn() -> T>,
 }
 
 /// Write capability for a signal.
-pub struct WriteSignal<'scope, 'run, T> {
-    pub(crate) handle: SignalId<'scope, 'run>,
+pub struct WriteSignal<'scope, T> {
+    pub(crate) handle: SignalId<'scope>,
     pub(crate) marker: PhantomData<fn() -> T>,
 }
 
 /// A paired read/write signal capability.
-pub struct Signal<'scope, 'run, T> {
-    pub(crate) read: ReadSignal<'scope, 'run, T>,
-    pub(crate) write: WriteSignal<'scope, 'run, T>,
+pub struct Signal<'scope, T> {
+    pub(crate) read: ReadSignal<'scope, T>,
+    pub(crate) write: WriteSignal<'scope, T>,
 }
 
 /// Alias used by callers that prefer the paired-signal terminology.
-pub type RwSignal<'scope, 'run, T> = Signal<'scope, 'run, T>;
+pub type RwSignal<'scope, T> = Signal<'scope, T>;
 
-impl<'scope, 'run, T> Copy for ReadSignal<'scope, 'run, T> {}
+impl<'scope, T> Copy for ReadSignal<'scope, T> {}
 
-impl<'scope, 'run, T> Clone for ReadSignal<'scope, 'run, T> {
+impl<'scope, T> Clone for ReadSignal<'scope, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'scope, 'run, T> Copy for WriteSignal<'scope, 'run, T> {}
+impl<'scope, T> Copy for WriteSignal<'scope, T> {}
 
-impl<'scope, 'run, T> Clone for WriteSignal<'scope, 'run, T> {
+impl<'scope, T> Clone for WriteSignal<'scope, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'scope, 'run, T> Copy for Signal<'scope, 'run, T> {}
+impl<'scope, T> Copy for Signal<'scope, T> {}
 
-impl<'scope, 'run, T> Clone for Signal<'scope, 'run, T> {
+impl<'scope, T> Clone for Signal<'scope, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'scope, 'run, T: 'scope> ReadSignal<'scope, 'run, T> {
+impl<'scope, T: 'scope> ReadSignal<'scope, T> {
     pub fn try_get(&self) -> ReactiveResult<T>
     where
         T: Clone,
@@ -334,7 +330,7 @@ impl<'scope, 'run, T: 'scope> ReadSignal<'scope, 'run, T> {
     }
 }
 
-impl<'scope, 'run, T: 'scope> WriteSignal<'scope, 'run, T> {
+impl<'scope, T: 'scope> WriteSignal<'scope, T> {
     pub fn try_set(&self, value: T) -> ReactiveResult<()> {
         let mut value = Some(value);
         runtime::update_signal(&self.handle.state(), self.handle.raw(), |stored| {
@@ -401,12 +397,12 @@ impl<'scope, 'run, T: 'scope> WriteSignal<'scope, 'run, T> {
     }
 }
 
-impl<'scope, 'run, T: 'scope> Signal<'scope, 'run, T> {
-    pub fn read(&self) -> ReadSignal<'scope, 'run, T> {
+impl<'scope, T: 'scope> Signal<'scope, T> {
+    pub fn read(&self) -> ReadSignal<'scope, T> {
         self.read
     }
 
-    pub fn write(&self) -> WriteSignal<'scope, 'run, T> {
+    pub fn write(&self) -> WriteSignal<'scope, T> {
         self.write
     }
 
@@ -423,13 +419,13 @@ impl<'scope, 'run, T: 'scope> Signal<'scope, 'run, T> {
 }
 
 /// Explicitly notify dependents after a silent update.
-pub fn notify<'scope, 'run, T>(signal: &WriteSignal<'scope, 'run, T>) {
+pub fn notify<'scope, T>(signal: &WriteSignal<'scope, T>) {
     let state = signal.handle.state();
     runtime::notify(&state, signal.handle.raw());
 }
 
 /// Track a read capability without reading its value.
-pub fn track<'scope, 'run, T>(signal: &ReadSignal<'scope, 'run, T>) {
+pub fn track<'scope, T>(signal: &ReadSignal<'scope, T>) {
     let state = signal.handle.state();
     runtime::track(&state, signal.handle.raw());
 }
@@ -437,10 +433,10 @@ pub fn track<'scope, 'run, T>(signal: &ReadSignal<'scope, 'run, T>) {
 /// Track multiple read capabilities in one call.
 ///
 /// Handles from different `Runtime::run` or child-scope runs cannot be mixed in
-/// one batch because their `'run` lifetimes are intentionally distinct. The
+/// one batch because their scope lifetimes are intentionally distinct. The
 /// compile-fail case is covered by `tests/ui/fail_mixed_track_batch.rs`.
-pub fn track_batch<'scope, 'run, T>(signals: &[ReadSignal<'scope, 'run, T>]) {
-    let mut groups: Vec<(Rc<RefCell<ScopeState<'run>>>, Vec<RawId>)> = Vec::new();
+pub fn track_batch<'scope, T>(signals: &[ReadSignal<'scope, T>]) {
+    let mut groups: Vec<(Rc<RefCell<ScopeState<'scope>>>, Vec<RawId>)> = Vec::new();
 
     for signal in signals {
         let state = signal.handle.state();
@@ -464,20 +460,20 @@ pub fn track_batch<'scope, 'run, T>(signals: &[ReadSignal<'scope, 'run, T>]) {
 // =============================================================================
 
 /// Scope-owned, non-reactive values.
-pub struct StoredValue<'scope, 'run, T> {
-    pub(crate) handle: StoredId<'scope, 'run>,
+pub struct StoredValue<'scope, T> {
+    pub(crate) handle: StoredId<'scope>,
     pub(crate) marker: PhantomData<fn() -> T>,
 }
 
-impl<'scope, 'run, T> Copy for StoredValue<'scope, 'run, T> {}
+impl<'scope, T> Copy for StoredValue<'scope, T> {}
 
-impl<'scope, 'run, T> Clone for StoredValue<'scope, 'run, T> {
+impl<'scope, T> Clone for StoredValue<'scope, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'scope, 'run, T: 'scope> StoredValue<'scope, 'run, T> {
+impl<'scope, T: 'scope> StoredValue<'scope, T> {
     pub fn try_with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
         runtime::with_stored(&self.handle.state(), self.handle.raw(), |value| {
             unsafe { value.downcast_ref::<T>() }
@@ -507,44 +503,44 @@ impl<'scope, 'run, T: 'scope> StoredValue<'scope, 'run, T> {
     }
 }
 
-impl<'scope, 'run, T> PartialEq for Memo<'scope, 'run, T> {
+impl<'scope, T> PartialEq for Memo<'scope, T> {
     fn eq(&self, other: &Self) -> bool {
         self.handle == other.handle
     }
 }
-impl<'scope, 'run, T> Eq for Memo<'scope, 'run, T> {}
+impl<'scope, T> Eq for Memo<'scope, T> {}
 
-impl<'scope, 'run, T> PartialEq for Derived<'scope, 'run, T> {
+impl<'scope, T> PartialEq for Derived<'scope, T> {
     fn eq(&self, other: &Self) -> bool {
         self.handle == other.handle
     }
 }
-impl<'scope, 'run, T> Eq for Derived<'scope, 'run, T> {}
+impl<'scope, T> Eq for Derived<'scope, T> {}
 
-impl<'scope, 'run, T> PartialEq for ReadSignal<'scope, 'run, T> {
+impl<'scope, T> PartialEq for ReadSignal<'scope, T> {
     fn eq(&self, other: &Self) -> bool {
         self.handle == other.handle
     }
 }
-impl<'scope, 'run, T> Eq for ReadSignal<'scope, 'run, T> {}
+impl<'scope, T> Eq for ReadSignal<'scope, T> {}
 
-impl<'scope, 'run, T> PartialEq for WriteSignal<'scope, 'run, T> {
+impl<'scope, T> PartialEq for WriteSignal<'scope, T> {
     fn eq(&self, other: &Self) -> bool {
         self.handle == other.handle
     }
 }
-impl<'scope, 'run, T> Eq for WriteSignal<'scope, 'run, T> {}
+impl<'scope, T> Eq for WriteSignal<'scope, T> {}
 
-impl<'scope, 'run, T> PartialEq for Signal<'scope, 'run, T> {
+impl<'scope, T> PartialEq for Signal<'scope, T> {
     fn eq(&self, other: &Self) -> bool {
         self.read == other.read && self.write == other.write
     }
 }
-impl<'scope, 'run, T> Eq for Signal<'scope, 'run, T> {}
+impl<'scope, T> Eq for Signal<'scope, T> {}
 
-impl<'scope, 'run, T> PartialEq for StoredValue<'scope, 'run, T> {
+impl<'scope, T> PartialEq for StoredValue<'scope, T> {
     fn eq(&self, other: &Self) -> bool {
         self.handle == other.handle
     }
 }
-impl<'scope, 'run, T> Eq for StoredValue<'scope, 'run, T> {}
+impl<'scope, T> Eq for StoredValue<'scope, T> {}

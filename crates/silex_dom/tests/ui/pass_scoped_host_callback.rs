@@ -8,11 +8,11 @@ use silex_dom::{
 use std::time::Duration;
 
 #[allow(dead_code)]
-fn compile_element<'scope, 'run>(
-    read: ReadSignal<'scope, 'run, i32>,
-    write: WriteSignal<'scope, 'run, i32>,
+fn compile_element<'scope>(
+    read: ReadSignal<'scope, i32>,
+    write: WriteSignal<'scope, i32>,
     borrowed_ref: &'scope str,
-) -> Element<'scope, 'run> {
+) -> Element<'scope> {
     Element::new("button").on_click(move |_| {
         let _ = borrowed_ref;
         write.set(read.get() + 1);
@@ -20,10 +20,10 @@ fn compile_element<'scope, 'run>(
 }
 
 #[allow(dead_code)]
-fn compile_owned<'scope, 'run>(
-    token: &ViewOwnerToken<'scope, 'run>,
-    read: ReadSignal<'scope, 'run, i32>,
-    write: WriteSignal<'scope, 'run, i32>,
+fn compile_owned<'scope>(
+    token: &ViewOwnerToken<'scope>,
+    read: ReadSignal<'scope, i32>,
+    write: WriteSignal<'scope, i32>,
     borrowed_ref: &'scope str,
 ) {
     let _timeout = set_timeout_owned(

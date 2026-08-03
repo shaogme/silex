@@ -1,6 +1,6 @@
 use silex_dom::attribute::PendingAttribute;
 
-fn make_attribute<'scope>(value: &'scope str) -> PendingAttribute<'static, 'static> {
+fn make_attribute<'scope>(value: &'scope str) -> PendingAttribute<'static> {
     PendingAttribute::new_listener(move |_| {
         let _ = value.len();
     })

@@ -57,7 +57,7 @@ impl ErrorContext {
 
     /// Pushes `self` onto the thread-local error context stack and associates
     /// its removal with an explicit reactive scope.
-    pub fn push<'scope, 'run>(self, scope: &Scope<'scope, 'run>) {
+    pub fn push<'scope>(self, scope: &Scope<'scope>) {
         ERROR_CONTEXT_STACK.with(|stack| {
             stack.borrow_mut().push(self);
         });
