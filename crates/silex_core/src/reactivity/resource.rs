@@ -193,11 +193,15 @@ where
     }
 }
 
-impl<'scope, 'run, T: RxData + 'run, E: RxError + 'run> RxValue for Resource<'scope, 'run, T, E> {
+impl<'scope, 'run, T: RxData + 'scope, E: RxError + 'scope> RxValue
+    for Resource<'scope, 'run, T, E>
+{
     type Value = Option<T>;
 }
 
-impl<'scope, 'run, T: RxData + 'run, E: RxError + 'run> RxBase for Resource<'scope, 'run, T, E> {
+impl<'scope, 'run, T: RxData + 'scope, E: RxError + 'scope> RxBase
+    for Resource<'scope, 'run, T, E>
+{
     fn track(&self) {
         self.state.track();
     }
@@ -207,7 +211,7 @@ impl<'scope, 'run, T: RxData + 'run, E: RxError + 'run> RxBase for Resource<'sco
     }
 }
 
-impl<'scope, 'run, T: RxCloneData + 'run, E: RxError + 'run> RxRead
+impl<'scope, 'run, T: RxCloneData + 'scope, E: RxError + 'scope> RxRead
     for Resource<'scope, 'run, T, E>
 {
     fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
@@ -220,7 +224,7 @@ impl<'scope, 'run, T: RxCloneData + 'run, E: RxError + 'run> RxRead
     }
 }
 
-impl<'scope, 'run, T: RxCloneData + 'run + 'static, E: RxError + 'run + 'static>
+impl<'scope, 'run, T: RxCloneData + 'scope + 'static, E: RxError + 'scope + 'static>
     IntoRx<'scope, 'run> for Resource<'scope, 'run, T, E>
 {
     fn into_rx(self, scope: &Scope<'scope, 'run>) -> Rx<'scope, 'run, Option<T>> {
@@ -234,7 +238,7 @@ impl<'scope, 'run, T: RxCloneData + 'run + 'static, E: RxError + 'run + 'static>
     }
 }
 
-impl<'scope, 'run, T: RxCloneData + 'run + 'static, E: RxError + 'run + 'static>
+impl<'scope, 'run, T: RxCloneData + 'scope + 'static, E: RxError + 'scope + 'static>
     IntoSignal<'scope, 'run> for Resource<'scope, 'run, T, E>
 {
     fn into_signal(

@@ -9,7 +9,7 @@ pub trait Map: RxRead + Clone {
     fn map<'scope, 'run, U, F>(self, scope: &Scope<'scope, 'run>, f: F) -> Rx<'scope, 'run, U>
     where
         Self: IntoRx<'scope, 'run> + 'scope,
-        Self::Value: Sized + 'run,
+        Self::Value: Sized + 'scope,
         U: 'run,
         F: Fn(&Self::Value) -> U + 'scope;
 
@@ -20,7 +20,7 @@ pub trait Map: RxRead + Clone {
     ) -> Rx<'scope, 'run, U>
     where
         Self: IntoRx<'scope, 'run> + 'scope,
-        Self::Value: Sized + 'run,
+        Self::Value: Sized + 'scope,
         U: 'run;
 }
 
@@ -31,7 +31,7 @@ where
     fn map<'scope, 'run, U, F>(self, scope: &Scope<'scope, 'run>, f: F) -> Rx<'scope, 'run, U>
     where
         Self: IntoRx<'scope, 'run> + 'scope,
-        Self::Value: Sized + 'run,
+        Self::Value: Sized + 'scope,
         U: 'run,
         F: Fn(&Self::Value) -> U + 'scope,
     {
@@ -46,7 +46,7 @@ where
     ) -> Rx<'scope, 'run, U>
     where
         Self: IntoRx<'scope, 'run> + 'scope,
-        Self::Value: Sized + 'run,
+        Self::Value: Sized + 'scope,
         U: 'run,
     {
         let source = self.into_rx(scope);
@@ -58,7 +58,7 @@ pub trait Memoize: RxRead + Clone {
     fn memo<'scope, 'run>(self, scope: &Scope<'scope, 'run>) -> Memo<'scope, 'run, Self::Value>
     where
         Self: IntoRx<'scope, 'run> + 'scope,
-        Self::Value: PartialEq + Clone + Sized + 'run;
+        Self::Value: PartialEq + Clone + Sized + 'scope;
 }
 
 impl<S> Memoize for S
@@ -68,7 +68,7 @@ where
     fn memo<'scope, 'run>(self, scope: &Scope<'scope, 'run>) -> Memo<'scope, 'run, Self::Value>
     where
         Self: IntoRx<'scope, 'run> + 'scope,
-        Self::Value: PartialEq + Clone + Sized + 'run,
+        Self::Value: PartialEq + Clone + Sized + 'scope,
     {
         let source = self.into_rx(scope);
         let scope = *scope;

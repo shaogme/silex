@@ -11,7 +11,7 @@ pub fn map1_static<'scope, 'run, S, U>(
 ) -> Rx<'scope, 'run, U>
 where
     S: RxRead + IntoRx<'scope, 'run> + 'scope,
-    S::Value: Sized + 'run,
+    S::Value: Sized + 'scope,
     U: 'run,
 {
     source.into_rx(scope).map(f)
@@ -27,8 +27,8 @@ pub fn map2_static<'scope, 'run, A, B, U>(
 where
     A: RxRead + IntoRx<'scope, 'run> + 'scope,
     B: RxRead + IntoRx<'scope, 'run> + 'scope,
-    A::Value: Sized + 'run,
-    B::Value: Sized + 'run,
+    A::Value: Sized + 'scope,
+    B::Value: Sized + 'scope,
     U: 'run,
 {
     let left = left.into_rx(scope);
@@ -49,9 +49,9 @@ where
     A: RxRead + IntoRx<'scope, 'run> + 'scope,
     B: RxRead + IntoRx<'scope, 'run> + 'scope,
     C: RxRead + IntoRx<'scope, 'run> + 'scope,
-    A::Value: Sized + 'run,
-    B::Value: Sized + 'run,
-    C::Value: Sized + 'run,
+    A::Value: Sized + 'scope,
+    B::Value: Sized + 'scope,
+    C::Value: Sized + 'scope,
     U: 'run,
 {
     let first = first.into_rx(scope);

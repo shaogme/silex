@@ -220,7 +220,7 @@ impl<'scope, 'run> Scope<'scope, 'run> {
 
     pub fn memo<T, F>(&self, f: F) -> Memo<'scope, 'run, T>
     where
-        T: PartialEq + 'run,
+        T: PartialEq + 'scope,
         F: FnMut(Option<&T>) -> T + 'scope,
     {
         Memo::from_inner(self.inner.memo(f), *self)
@@ -252,7 +252,7 @@ impl<'scope, 'run> Scope<'scope, 'run> {
     pub fn watch<W, T, C>(&self, deps: W, callback: C, immediate: bool) -> Effect<'scope, 'run>
     where
         W: Fn() -> T + 'scope,
-        T: Clone + PartialEq + 'run,
+        T: Clone + PartialEq + 'scope,
         C: Fn(&T, Option<&T>, Option<()>) + 'scope,
     {
         let first_run = Rc::new(Cell::new(true));

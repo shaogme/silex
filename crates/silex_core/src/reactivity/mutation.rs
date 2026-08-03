@@ -140,18 +140,18 @@ where
 
 impl<'scope, 'run, Arg, T, E> RxValue for Mutation<'scope, 'run, Arg, T, E>
 where
-    Arg: RxData + 'run,
-    T: RxData + 'run,
-    E: RxError + 'run,
+    Arg: RxData + 'scope,
+    T: RxData + 'scope,
+    E: RxError + 'scope,
 {
     type Value = Option<T>;
 }
 
 impl<'scope, 'run, Arg, T, E> RxBase for Mutation<'scope, 'run, Arg, T, E>
 where
-    Arg: RxData + 'run,
-    T: RxData + 'run,
-    E: RxError + 'run,
+    Arg: RxData + 'scope,
+    T: RxData + 'scope,
+    E: RxError + 'scope,
 {
     fn track(&self) {
         self.state.track();
@@ -164,9 +164,9 @@ where
 
 impl<'scope, 'run, Arg, T, E> RxRead for Mutation<'scope, 'run, Arg, T, E>
 where
-    Arg: RxData + 'run,
-    T: RxCloneData + 'run,
-    E: RxError + 'run,
+    Arg: RxData + 'scope,
+    T: RxCloneData + 'scope,
+    E: RxError + 'scope,
 {
     fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         self.state.try_with(|state| f(&state.value().cloned()))
@@ -180,7 +180,7 @@ where
 
 impl<'scope, 'run, Arg, T, E> IntoRx<'scope, 'run> for Mutation<'scope, 'run, Arg, T, E>
 where
-    Arg: RxData + 'run,
+    Arg: RxData + 'scope,
     T: RxCloneData + 'static,
     E: RxError + 'static,
 {
@@ -196,7 +196,7 @@ where
 
 impl<'scope, 'run, Arg, T, E> IntoSignal<'scope, 'run> for Mutation<'scope, 'run, Arg, T, E>
 where
-    Arg: RxData + 'run,
+    Arg: RxData + 'scope,
     T: RxCloneData + 'static,
     E: RxError + 'static,
 {

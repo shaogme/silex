@@ -12,7 +12,7 @@ pub trait ReactivePartialEq: RxRead + Clone {
     where
         Self: IntoRx<'scope, 'run> + 'scope,
         O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
-        Self::Value: PartialEq + Sized + 'run;
+        Self::Value: PartialEq + Sized + 'scope;
 
     fn not_equals<'scope, 'run, O>(
         &self,
@@ -22,7 +22,7 @@ pub trait ReactivePartialEq: RxRead + Clone {
     where
         Self: IntoRx<'scope, 'run> + 'scope,
         O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
-        Self::Value: PartialEq + Sized + 'run;
+        Self::Value: PartialEq + Sized + 'scope;
 }
 
 impl<S> ReactivePartialEq for S
@@ -37,7 +37,7 @@ where
     where
         Self: IntoRx<'scope, 'run> + 'scope,
         O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
-        Self::Value: PartialEq + Sized + 'run,
+        Self::Value: PartialEq + Sized + 'scope,
     {
         let left = self.clone().into_rx(scope);
         let right = other.into_rx(scope);
@@ -53,7 +53,7 @@ where
     where
         Self: IntoRx<'scope, 'run> + 'scope,
         O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
-        Self::Value: PartialEq + Sized + 'run,
+        Self::Value: PartialEq + Sized + 'scope,
     {
         let left = self.clone().into_rx(scope);
         let right = other.into_rx(scope);
@@ -71,7 +71,7 @@ pub trait ReactivePartialOrd: RxRead + Clone {
     where
         Self: IntoRx<'scope, 'run> + 'scope,
         O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
-        Self::Value: PartialOrd + Sized + 'run;
+        Self::Value: PartialOrd + Sized + 'scope;
 
     fn less_than<'scope, 'run, O>(
         &self,
@@ -81,7 +81,7 @@ pub trait ReactivePartialOrd: RxRead + Clone {
     where
         Self: IntoRx<'scope, 'run> + 'scope,
         O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
-        Self::Value: PartialOrd + Sized + 'run;
+        Self::Value: PartialOrd + Sized + 'scope;
 
     fn greater_than_or_equals<'scope, 'run, O>(
         &self,
@@ -91,7 +91,7 @@ pub trait ReactivePartialOrd: RxRead + Clone {
     where
         Self: IntoRx<'scope, 'run> + 'scope,
         O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
-        Self::Value: PartialOrd + Sized + 'run;
+        Self::Value: PartialOrd + Sized + 'scope;
 
     fn less_than_or_equals<'scope, 'run, O>(
         &self,
@@ -101,7 +101,7 @@ pub trait ReactivePartialOrd: RxRead + Clone {
     where
         Self: IntoRx<'scope, 'run> + 'scope,
         O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
-        Self::Value: PartialOrd + Sized + 'run;
+        Self::Value: PartialOrd + Sized + 'scope;
 }
 
 impl<S> ReactivePartialOrd for S
@@ -116,7 +116,7 @@ where
     where
         Self: IntoRx<'scope, 'run> + 'scope,
         O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
-        Self::Value: PartialOrd + Sized + 'run,
+        Self::Value: PartialOrd + Sized + 'scope,
     {
         let left = self.clone().into_rx(scope);
         let right = other.into_rx(scope);
@@ -132,7 +132,7 @@ where
     where
         Self: IntoRx<'scope, 'run> + 'scope,
         O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
-        Self::Value: PartialOrd + Sized + 'run,
+        Self::Value: PartialOrd + Sized + 'scope,
     {
         let left = self.clone().into_rx(scope);
         let right = other.into_rx(scope);
@@ -148,7 +148,7 @@ where
     where
         Self: IntoRx<'scope, 'run> + 'scope,
         O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
-        Self::Value: PartialOrd + Sized + 'run,
+        Self::Value: PartialOrd + Sized + 'scope,
     {
         let left = self.clone().into_rx(scope);
         let right = other.into_rx(scope);
@@ -164,7 +164,7 @@ where
     where
         Self: IntoRx<'scope, 'run> + 'scope,
         O: IntoRx<'scope, 'run, Value = Self::Value> + 'scope,
-        Self::Value: PartialOrd + Sized + 'run,
+        Self::Value: PartialOrd + Sized + 'scope,
     {
         let left = self.clone().into_rx(scope);
         let right = other.into_rx(scope);

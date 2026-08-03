@@ -580,7 +580,7 @@ macro_rules! impl_tuple_into_rx {
 
         impl<'scope, 'run, $($name),+> IntoRx<'scope, 'run> for ($($name,)+)
         where
-            $($name: IntoRx<'scope, 'run> + RxRead + 'scope, $name::Value: Sized + RxData + Clone + 'run),+
+            $($name: IntoRx<'scope, 'run> + RxRead + 'scope, $name::Value: Sized + RxData + Clone + 'scope),+
         {
             fn into_rx(self, scope: &Scope<'scope, 'run>) -> Rx<'scope, 'run, Self::Value> {
                 let scope = *scope;
@@ -598,7 +598,7 @@ macro_rules! impl_tuple_into_rx {
 
         impl<'scope, 'run, $($name),+> IntoSignal<'scope, 'run> for ($($name,)+)
         where
-            $($name: IntoRx<'scope, 'run> + RxRead + 'scope, $name::Value: Sized + RxData + Clone + 'run),+
+            $($name: IntoRx<'scope, 'run> + RxRead + 'scope, $name::Value: Sized + RxData + Clone + 'scope),+
         {
             fn into_signal(self, scope: &Scope<'scope, 'run>) -> Signal<'scope, 'run, Self::Value> {
                 self.into_rx(scope).into_signal(scope)
@@ -624,7 +624,7 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
     ) -> Memo<'scope, 'run, U>
     where
         Self: 'scope,
-        U: PartialEq + Clone + 'run,
+        U: PartialEq + Clone + 'scope,
         T: 'scope,
     {
         let source = self.clone();
@@ -640,7 +640,7 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
     ) -> Memo<'scope, 'run, T>
     where
         Self: 'scope,
-        T: PartialEq + Clone + 'run,
+        T: PartialEq + Clone + 'scope,
     {
         self.map_or(scope, default, Clone::clone)
     }
@@ -653,7 +653,7 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
     ) -> Memo<'scope, 'run, U>
     where
         Self: 'scope,
-        U: PartialEq + Clone + 'run,
+        U: PartialEq + Clone + 'scope,
         T: 'scope,
     {
         let source = self.clone();
@@ -667,7 +667,7 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
     ) -> Memo<'scope, 'run, Option<U>>
     where
         Self: 'scope,
-        U: PartialEq + Clone + 'run,
+        U: PartialEq + Clone + 'scope,
         T: 'scope,
     {
         let source = self.clone();

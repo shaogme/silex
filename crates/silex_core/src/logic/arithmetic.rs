@@ -72,7 +72,7 @@ macro_rules! impl_rx_binary {
     ($trait:ident, $method:ident, $op:ident) => {
         impl<'scope, 'run, T, R> $trait<R> for Rx<'scope, 'run, T, RxValueKind>
         where
-            T: Clone + 'run,
+            T: Clone + 'scope,
             for<'a> &'a T: $trait<&'a T, Output = T>,
             R: IntoRx<'scope, 'run, Value = T>,
         {
@@ -89,7 +89,7 @@ macro_rules! impl_rx_unary {
     ($trait:ident, $method:ident, $op:ident) => {
         impl<'scope, 'run, T> $trait for Rx<'scope, 'run, T, RxValueKind>
         where
-            T: Clone + 'run,
+            T: Clone + 'scope,
             for<'a> &'a T: $trait<Output = T>,
         {
             type Output = Rx<'scope, 'run, T>;

@@ -62,7 +62,7 @@ impl<'scope, 'run, S, F, O> IntoRx<'scope, 'run> for SignalSlice<S, F, O>
 where
     S: RxRead + 'scope,
     F: Fn(&S::Value) -> &O + 'scope,
-    O: RxCloneData + 'run,
+    O: RxCloneData + 'scope,
 {
     fn into_rx(self, scope: &Scope<'scope, 'run>) -> Rx<'scope, 'run, O> {
         let scope = *scope;
@@ -78,7 +78,7 @@ impl<'scope, 'run, S, F, O> IntoSignal<'scope, 'run> for SignalSlice<S, F, O>
 where
     S: RxRead + 'scope,
     F: Fn(&S::Value) -> &O + 'scope,
-    O: RxCloneData + 'run,
+    O: RxCloneData + 'scope,
 {
     fn into_signal(self, scope: &Scope<'scope, 'run>) -> Signal<'scope, 'run, O> {
         self.into_rx(scope).into_signal(scope)
