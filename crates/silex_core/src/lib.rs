@@ -22,6 +22,7 @@ pub use reactivity::{
     Constant, Effect, Memo, ReadSignal, RwSignal, Signal, StoredValue, WriteSignal,
 };
 pub use scope::{OwnedScope, RootHandle, RootScope, Runtime, Scope};
+pub use silex_reactivity::CompletionToken;
 pub use store::Store;
 pub use traits::{RxBase, RxGet, RxRead};
 
@@ -218,7 +219,8 @@ macro_rules! batch_read_untracked_recurse {
 
 pub mod prelude {
     pub use crate::{
-        Callback, ErrorContext, NodeRef, Runtime, Rx, Scope, SilexError, SilexResult, Store,
-        batch_read, batch_read_untracked, logic::*, reactivity::*, rx, traits::*,
+        Callback, CompletionToken, ErrorContext, NodeRef, Runtime, Rx, Scope, SilexError,
+        SilexResult, Store, batch_read, batch_read_untracked, logic::*, reactivity::*, rx,
+        traits::*,
     };
 }

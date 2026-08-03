@@ -1,0 +1,8 @@
+error: lifetime may not live long enough
+  --> tests/ui/fail_root_scoped_event.rs:12:22
+   |
+ 8 | fn root_mount(owner: &RootViewOwner, parent: &Node, borrowed_ref: &str) {
+   |                                                                   - let's call the lifetime of this reference `'1`
+...
+12 |     view.mount_owned(owner, parent, Vec::new());
+   |                      ^^^^^ coercion requires that `'1` must outlive `'static`

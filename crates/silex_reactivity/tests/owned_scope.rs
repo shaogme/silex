@@ -73,3 +73,24 @@ fn lexical_owned_scope_supports_borrowed_callbacks_and_nested_dispose() {
         assert_eq!(cleanups.get(), 1);
     });
 }
+
+#[test]
+fn owned_scope_completion_can_capture_scope_local_data() {
+    let mut runtime = Runtime::new();
+    let seen = Rc::new(Cell::new(0));
+
+    runtime.child(|scope| {
+        let owner = scope.owned_scope();
+        let local = String::from("owned");
+        let seen_in_callback = seen.clone();
+        let token = owner.completion(move |value: i32| {
+            assert_eq!(local, "owned");
+            seen_in_callback.set(value);
+        });
+        assert!(token.submit(9));
+        owner.dispose();
+        assert!(!token.submit(10));
+    });
+
+    assert_eq!(seen.get(), 9);
+}

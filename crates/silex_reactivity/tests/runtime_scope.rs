@@ -457,6 +457,24 @@ fn completion_token_rejects_submission_after_scope_deactivation() {
 }
 
 #[test]
+fn lexical_completion_can_capture_scope_local_data() {
+    let mut runtime = Runtime::new();
+    let seen = Rc::new(Cell::new(0));
+
+    runtime.child(|scope| {
+        let local = String::from("scoped");
+        let seen_in_callback = seen.clone();
+        let token = scope.completion(move |value: i32| {
+            assert_eq!(local, "scoped");
+            seen_in_callback.set(value);
+        });
+        assert!(token.submit(7));
+    });
+
+    assert_eq!(seen.get(), 7);
+}
+
+#[test]
 fn handles_are_invalid_after_their_scope_and_runtimes_are_isolated() {
     let mut first = Runtime::new();
     let mut second = Runtime::new();

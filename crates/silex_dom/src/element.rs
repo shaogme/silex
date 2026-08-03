@@ -4,7 +4,7 @@ use crate::view::{AnyView, ApplyAttributes, RootViewOwner, View, ViewOwner, View
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
-use wasm_bindgen::{JsCast, prelude::*};
+use wasm_bindgen::{JsCast, JsValue, convert::FromWasmAbi, prelude::*};
 use web_sys::Element as WebElem;
 
 use silex_core::{RootScope, SilexError, error::handle_error};
@@ -119,7 +119,7 @@ impl<'scope, 'run> AttributeBuilder<'scope, 'run> for Element<'scope, 'run> {
     fn build_event<E, F, M>(mut self, event: E, callback: F) -> Self
     where
         E: EventDescriptor + 'static,
-        F: EventHandler<E::EventType, M> + Clone + 'static,
+        F: EventHandler<'scope, E::EventType, M> + Clone + 'scope,
     {
         self.pending_attrs
             .push(PendingAttribute::new_scoped(move |element, owner| {
@@ -269,7 +269,7 @@ impl<'scope, 'run, T: Tag> AttributeBuilder<'scope, 'run> for TypedElement<'scop
     fn build_event<E, F, M>(mut self, event: E, callback: F) -> Self
     where
         E: EventDescriptor + 'static,
-        F: EventHandler<E::EventType, M> + Clone + 'static,
+        F: EventHandler<'scope, E::EventType, M> + Clone + 'scope,
     {
         self.pending_attrs
             .push(PendingAttribute::new_scoped(move |element, owner| {
@@ -353,7 +353,7 @@ pub fn bind_event<'scope, 'run, E, F, M>(
     owner: &ViewOwnerToken<'scope, 'run>,
 ) where
     E: crate::event::EventDescriptor + 'static,
-    F: EventHandler<E::EventType, M>,
+    F: EventHandler<'scope, E::EventType, M> + 'scope,
 {
     let handler = callback.into_handler();
     bind_event_impl(dom_element, event.name().to_string(), handler, owner);
@@ -362,12 +362,20 @@ pub fn bind_event<'scope, 'run, E, F, M>(
 pub fn bind_event_impl<'scope, 'run, E>(
     dom_element: &WebElem,
     event_name: String,
-    mut handler: Box<dyn FnMut(E)>,
+    mut handler: Box<dyn FnMut(E) + 'scope>,
     owner: &ViewOwnerToken<'scope, 'run>,
 ) where
-    E: wasm_bindgen::convert::FromWasmAbi + 'static,
+    E: FromWasmAbi + JsCast + 'static,
 {
-    let closure = Closure::wrap(Box::new(move |event: E| handler(event)) as Box<dyn FnMut(E)>);
+    if !owner.is_active() {
+        return;
+    }
+    let destination = owner.host_callback(move |payload| {
+        handler(payload.unchecked_into::<E>());
+    });
+    let closure = Closure::wrap(Box::new(move |event: E| {
+        let _ = destination.dispatch(event.unchecked_into::<JsValue>());
+    }) as Box<dyn FnMut(E)>);
     let js_fn = closure.as_ref().unchecked_ref::<js_sys::Function>().clone();
     if let Err(error) = dom_element
         .add_event_listener_with_callback(&event_name, closure.as_ref().unchecked_ref())
@@ -381,8 +389,8 @@ pub fn bind_event_impl<'scope, 'run, E>(
     let event_name_for_cleanup = event_name.clone();
     let closure = Rc::new(RefCell::new(Some(closure)));
     let closure_for_cleanup = closure.clone();
-    owner.on_cleanup(Box::new(move || {
+    owner.host_resource(move || {
         let _ = target.remove_event_listener_with_callback(&event_name_for_cleanup, &js_fn);
         let _ = closure_for_cleanup.borrow_mut().take();
-    }));
+    });
 }

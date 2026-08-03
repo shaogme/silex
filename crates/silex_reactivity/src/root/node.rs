@@ -301,6 +301,11 @@ impl<T: 'static> RootNodeRef<T> {
         runtime::node_ref_set(&state, self.handle.raw(), value)
     }
 
+    pub fn clear(&self) -> ReactiveResult<()> {
+        let state = self.handle.state()?;
+        runtime::node_ref_clear::<T>(&state, self.handle.raw())
+    }
+
     pub fn is_alive(&self) -> bool {
         self.handle.is_alive()
     }

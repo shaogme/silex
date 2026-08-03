@@ -278,7 +278,9 @@ impl RootScope {
         T: 'static,
         F: FnMut(T) + 'static,
     {
-        let state = self.state().expect("创建 root completion 时 owner 已结束");
+        let Ok(state) = self.state() else {
+            return CompletionToken::inactive();
+        };
         let mut callback = callback;
         let thunk = CallbackThunk::new(move |value: AnyValue<'static>| {
             if let Some(value) = unsafe { value.downcast::<T>() } {

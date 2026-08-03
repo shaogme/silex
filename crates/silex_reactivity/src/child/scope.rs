@@ -12,6 +12,7 @@ use super::node::{
     Callback, Derived, Effect, Memo, NodeRef, ReadSignal, Signal, StoredValue, WriteSignal,
 };
 use crate::{
+    completion::CompletionToken,
     handle::Handle,
     internal::value::{AnyValue, CallbackThunk, EffectThunk, MemoThunk, OnceThunk},
     runtime,
@@ -50,6 +51,14 @@ impl<'scope, 'run> Scope<'scope, 'run> {
     pub fn owned_scope(&self) -> OwnedScope<'scope, 'run> {
         let scheduler = self.frame.state.borrow().scheduler.clone();
         OwnedScope::new(scheduler)
+    }
+
+    pub fn is_active(&self) -> bool {
+        let state = self.frame.state.borrow();
+        state
+            .scheduler
+            .borrow()
+            .is_scope_active(self.frame.scope_id)
     }
 
     /// Execute a child scope. All child nodes and computations are destroyed
@@ -335,6 +344,17 @@ impl<'scope, 'run> OwnedScope<'scope, 'run> {
         if self.active.get() {
             self.with_scope(|scope| scope.on_cleanup(f));
         }
+    }
+
+    /// Create a completion destination owned by this persistent scope.
+    pub fn completion<T: 'static, F>(&self, callback: F) -> CompletionToken<T>
+    where
+        F: FnMut(T) + 'scope,
+    {
+        if !self.active.get() {
+            return CompletionToken::inactive();
+        }
+        self.with_scope(|scope| scope.completion(callback))
     }
 
     /// Dispose this owner exactly once. Cleanup panics follow the same

@@ -221,6 +221,10 @@ impl<'scope, 'run, T: 'scope> NodeRef<'scope, 'run, T> {
         runtime::node_ref_set(&self.handle.state(), self.handle.raw(), value)
     }
 
+    pub fn clear(&self) -> ReactiveResult<()> {
+        runtime::node_ref_clear::<T>(&self.handle.state(), self.handle.raw())
+    }
+
     pub fn is_alive(&self) -> bool {
         self.handle.is_alive()
     }

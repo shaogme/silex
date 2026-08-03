@@ -91,6 +91,8 @@ fn stored_callback_and_node_ref_are_scope_owned() {
         assert_eq!(reference.get(), None);
         reference.set(7).expect("node ref should be writable");
         assert_eq!(reference.get(), Some(7));
+        reference.clear().expect("node ref should be clearable");
+        assert_eq!(reference.get(), None);
     });
 }
 

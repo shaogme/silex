@@ -69,6 +69,10 @@ pub struct RootScope {
 }
 
 impl RootScope {
+    pub fn is_active(&self) -> bool {
+        self.inner.is_active()
+    }
+
     pub fn signal<T: 'static>(
         &self,
         value: T,
@@ -194,6 +198,10 @@ impl<'scope, 'run> Scope<'scope, 'run> {
         }
     }
 
+    pub fn is_active(&self) -> bool {
+        self.inner.is_active()
+    }
+
     pub fn signal<T: 'scope>(
         &self,
         value: T,
@@ -291,22 +299,9 @@ impl<'scope, 'run> Scope<'scope, 'run> {
     pub fn completion<T, F>(&self, callback: F) -> silex_reactivity::CompletionToken<T>
     where
         T: 'static,
-        F: FnMut(T) + 'static,
-    {
-        self.inner.completion(callback)
-    }
-
-    pub(crate) fn completion_scoped<T, F>(
-        &self,
-        callback: F,
-    ) -> silex_reactivity::CompletionToken<T>
-    where
-        T: 'static,
         F: FnMut(T) + 'scope,
     {
-        // SAFETY: callers in this crate only capture handles and values owned
-        // by this scope, never references to shorter-lived locals.
-        unsafe { self.inner.completion_scoped(callback) }
+        self.inner.completion(callback)
     }
 
     pub fn rx<T>(&self, value: T) -> Rx<'scope, 'run, T::Value>
@@ -373,6 +368,14 @@ impl<'scope, 'run> OwnedScope<'scope, 'run> {
         F: FnOnce() + 'scope,
     {
         self.inner.on_cleanup(f);
+    }
+
+    pub fn completion<T, F>(&self, callback: F) -> silex_reactivity::CompletionToken<T>
+    where
+        T: 'static,
+        F: FnMut(T) + 'scope,
+    {
+        self.inner.completion(callback)
     }
 
     pub fn dispose(&self) {

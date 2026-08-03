@@ -51,7 +51,7 @@ pub trait AttributeBuilder<'scope, 'run>: Sized {
     fn build_event<E, F, M>(self, event: E, callback: F) -> Self
     where
         E: EventDescriptor + 'static,
-        F: EventHandler<E::EventType, M> + Clone + 'static;
+        F: EventHandler<'scope, E::EventType, M> + Clone + 'scope;
 
     // === Unified Mixins (Default Implementation) ===
 
@@ -72,7 +72,7 @@ pub trait AttributeBuilder<'scope, 'run>: Sized {
     fn on<E, F, M>(self, event: E, callback: F) -> Self
     where
         E: EventDescriptor + 'static,
-        F: EventHandler<E::EventType, M> + Clone + 'static,
+        F: EventHandler<'scope, E::EventType, M> + Clone + 'scope,
     {
         self.build_event(event, callback)
     }
@@ -239,8 +239,9 @@ where
 
     fn node_ref<N>(self, node_ref: NodeRef<'scope, 'run, N>) -> Self
     where
-        N: JsCast + Clone + 'static,
+        N: JsCast + Clone + 'scope,
     {
+        let node_ref_for_cleanup = node_ref;
         self.apply(PendingAttribute::new_listener(move |el: &Element| {
             if let Ok(typed) = el.clone().dyn_into::<N>() {
                 node_ref.load(typed);
@@ -248,48 +249,53 @@ where
                 console_error("NodeRef type mismatch: failed to cast element");
             }
         }))
+        .apply(PendingAttribute::new_scoped(move |_el, owner| {
+            owner.on_cleanup(Box::new(move || {
+                let _ = node_ref_for_cleanup.clear();
+            }));
+        }))
     }
 
     // --- Event API ---
 
     fn on_click<F, M>(self, callback: F) -> Self
     where
-        F: EventHandler<MouseEvent, M> + Clone + 'static,
+        F: EventHandler<'scope, MouseEvent, M> + Clone + 'scope,
     {
         self.build_event(click, callback)
     }
 
     fn on_pointer_down<F, M>(self, callback: F) -> Self
     where
-        F: EventHandler<PointerEvent, M> + Clone + 'static,
+        F: EventHandler<'scope, PointerEvent, M> + Clone + 'scope,
     {
         self.build_event(pointerdown, callback)
     }
 
     fn on_pointer_move<F, M>(self, callback: F) -> Self
     where
-        F: EventHandler<PointerEvent, M> + Clone + 'static,
+        F: EventHandler<'scope, PointerEvent, M> + Clone + 'scope,
     {
         self.build_event(pointermove, callback)
     }
 
     fn on_pointer_up<F, M>(self, callback: F) -> Self
     where
-        F: EventHandler<PointerEvent, M> + Clone + 'static,
+        F: EventHandler<'scope, PointerEvent, M> + Clone + 'scope,
     {
         self.build_event(pointerup, callback)
     }
 
     fn on_pointer_cancel<F, M>(self, callback: F) -> Self
     where
-        F: EventHandler<PointerEvent, M> + Clone + 'static,
+        F: EventHandler<'scope, PointerEvent, M> + Clone + 'scope,
     {
         self.build_event(pointercancel, callback)
     }
 
     fn on_input<F, M>(self, callback: F) -> Self
     where
-        F: EventHandler<String, M> + Clone + 'static,
+        F: EventHandler<'scope, String, M> + Clone + 'scope,
     {
         self.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
             bind_event_impl(
@@ -309,7 +315,7 @@ where
 
     fn on_change<F, M>(self, callback: F) -> Self
     where
-        F: EventHandler<String, M> + Clone + 'static,
+        F: EventHandler<'scope, String, M> + Clone + 'scope,
     {
         self.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
             bind_event_impl(
@@ -329,8 +335,8 @@ where
 
     fn bind_value<T, S>(self, signal: S) -> Self
     where
-        T: AsRef<str> + From<String> + Clone + PartialEq + 'static,
-        S: RxGet<Value = T> + RxWrite + Clone + 'static,
+        T: AsRef<str> + From<String> + Clone + PartialEq + 'scope,
+        S: RxGet<Value = T> + RxWrite + Clone + 'scope,
     {
         let s = signal.clone();
         let this = self.on_input(move |value| {
@@ -356,8 +362,8 @@ where
 
     fn on_untyped<E, F>(self, event_type: &str, callback: F) -> Self
     where
-        E: FromWasmAbi + 'static,
-        F: FnMut(E) + 'static + Clone,
+        E: FromWasmAbi + JsCast + 'static,
+        F: FnMut(E) + 'scope + Clone,
     {
         let event_type_str = event_type.to_string();
         let cb_template = callback.clone();
@@ -392,7 +398,7 @@ impl<'scope, 'run> AttributeBuilder<'scope, 'run> for AnyView<'scope, 'run> {
     fn build_event<E, F, M>(mut self, event: E, callback: F) -> Self
     where
         E: EventDescriptor + 'static,
-        F: EventHandler<E::EventType, M> + Clone + 'static,
+        F: EventHandler<'scope, E::EventType, M> + Clone + 'scope,
     {
         self.apply_attributes(vec![PendingAttribute::new_scoped(move |el, owner| {
             crate::element::bind_event(el, event, callback.clone(), owner);

@@ -27,25 +27,25 @@ pub use types::*;
 pub struct WithEventArg;
 pub struct WithoutEventArg;
 
-pub trait EventHandler<E, M> {
-    fn into_handler(self) -> Box<dyn FnMut(E)>;
+pub trait EventHandler<'scope, E, M> {
+    fn into_handler(self) -> Box<dyn FnMut(E) + 'scope>;
 }
 
-impl<F, E> EventHandler<E, WithEventArg> for F
+impl<'scope, F, E> EventHandler<'scope, E, WithEventArg> for F
 where
-    F: FnMut(E) + 'static,
+    F: FnMut(E) + 'scope,
 {
-    fn into_handler(self) -> Box<dyn FnMut(E)> {
+    fn into_handler(self) -> Box<dyn FnMut(E) + 'scope> {
         Box::new(self)
     }
 }
 
-impl<F, E> EventHandler<E, WithoutEventArg> for F
+impl<'scope, F, E> EventHandler<'scope, E, WithoutEventArg> for F
 where
-    F: FnMut() + 'static,
-    E: 'static,
+    F: FnMut() + 'scope,
+    E: 'scope,
 {
-    fn into_handler(mut self) -> Box<dyn FnMut(E)> {
+    fn into_handler(mut self) -> Box<dyn FnMut(E) + 'scope> {
         Box::new(move |_| self())
     }
 }

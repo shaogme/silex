@@ -11,20 +11,21 @@ pub use reactive::*;
 
 use crate::attribute::PendingAttribute;
 use silex_core::{
-    OwnedScope, RootScope, Scope,
+    CompletionToken, OwnedScope, RootScope, Scope,
     error::handle_error,
     traits::{IntoRx, IntoSignal, RxData, RxValue},
 };
 use silex_core::{Rx, SilexError, SilexResult};
 use std::{
     borrow::Cow,
-    cell::RefCell,
+    cell::{Cell, RefCell},
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     marker::PhantomData,
     ops::{Add, Deref, Div, Mul, Sub},
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
+use wasm_bindgen::JsValue;
 use web_sys::Node;
 
 use owner::{DomRange, RowController, RowRender, RowRenderArgs};
@@ -134,10 +135,139 @@ impl<'scope, 'run> OwnedScopeRegistrar<'scope, 'run> {
 }
 
 #[derive(Clone)]
+struct ActiveRegistrar<'scope> {
+    inner: Rc<dyn Fn() -> bool + 'scope>,
+}
+
+impl<'scope> ActiveRegistrar<'scope> {
+    fn new<F>(is_active: F) -> Self
+    where
+        F: Fn() -> bool + 'scope,
+    {
+        Self {
+            inner: Rc::new(is_active),
+        }
+    }
+
+    fn get(&self) -> bool {
+        (self.inner)()
+    }
+}
+
+#[derive(Clone)]
+struct CompletionRegistrar<'scope> {
+    inner: Rc<dyn CompletionRegister<'scope> + 'scope>,
+}
+
+trait CompletionRegister<'scope> {
+    fn register(&self, callback: Box<dyn FnMut(JsValue) + 'scope>) -> CompletionToken<JsValue>;
+}
+
+impl<'scope, F> CompletionRegister<'scope> for F
+where
+    F: Fn(Box<dyn FnMut(JsValue) + 'scope>) -> CompletionToken<JsValue> + 'scope,
+{
+    fn register(&self, callback: Box<dyn FnMut(JsValue) + 'scope>) -> CompletionToken<JsValue> {
+        self(callback)
+    }
+}
+
+impl<'scope> CompletionRegistrar<'scope> {
+    fn new<F>(register: F) -> Self
+    where
+        F: Fn(Box<dyn FnMut(JsValue) + 'scope>) -> CompletionToken<JsValue> + 'scope,
+    {
+        Self {
+            inner: Rc::new(register),
+        }
+    }
+
+    fn call(&self, callback: Box<dyn FnMut(JsValue) + 'scope>) -> CompletionToken<JsValue> {
+        self.inner.register(callback)
+    }
+}
+
+/// A host resource cancellation handle owned by a view scope.
+///
+/// The handle deliberately exposes no reactive capability. Cancellation is
+/// idempotent and the owner retains a clone so dropping this value early does
+/// not transfer lifecycle ownership away from the view.
+type CancelAction<'scope> = Rc<RefCell<Option<Box<dyn FnOnce() + 'scope>>>>;
+
+pub struct HostResourceHandle<'scope> {
+    cancel: CancelAction<'scope>,
+    active: Rc<Cell<bool>>,
+}
+
+impl<'scope> Clone for HostResourceHandle<'scope> {
+    fn clone(&self) -> Self {
+        Self {
+            cancel: self.cancel.clone(),
+            active: self.active.clone(),
+        }
+    }
+}
+
+impl<'scope> HostResourceHandle<'scope> {
+    pub(crate) fn inactive() -> Self {
+        Self {
+            cancel: Rc::new(RefCell::new(None)),
+            active: Rc::new(Cell::new(false)),
+        }
+    }
+
+    fn new<F>(cancel: F) -> Self
+    where
+        F: FnOnce() + 'scope,
+    {
+        Self {
+            cancel: Rc::new(RefCell::new(Some(Box::new(cancel)))),
+            active: Rc::new(Cell::new(true)),
+        }
+    }
+
+    /// Cancel the host resource. Repeated calls are harmless.
+    pub fn cancel(&self) {
+        if !self.active.replace(false) {
+            return;
+        }
+        if let Some(cancel) = self.cancel.borrow_mut().take() {
+            cancel();
+        }
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active.get()
+    }
+}
+
+impl Drop for HostResourceHandle<'_> {
+    fn drop(&mut self) {
+        if Rc::strong_count(&self.cancel) == 1 {
+            self.cancel();
+        }
+    }
+}
+
+/// A `'static` browser closure's only path back into a scoped view.
+#[derive(Clone)]
+pub(crate) struct HostCallback {
+    destination: CompletionToken<JsValue>,
+}
+
+impl HostCallback {
+    pub(crate) fn dispatch(&self, payload: JsValue) -> bool {
+        self.destination.submit(payload)
+    }
+}
+
+#[derive(Clone)]
 pub struct ViewOwnerToken<'scope, 'run> {
     effect: EffectRegistrar<'scope>,
     cleanup: CleanupRegistrar<'scope>,
     owned_scope: OwnedScopeRegistrar<'scope, 'run>,
+    completion: CompletionRegistrar<'scope>,
+    active: ActiveRegistrar<'scope>,
     marker: PhantomData<fn(&'run ())>,
 }
 
@@ -146,11 +276,15 @@ impl<'scope, 'run> ViewOwnerToken<'scope, 'run> {
         effect: EffectRegistrar<'scope>,
         cleanup: CleanupRegistrar<'scope>,
         owned_scope: OwnedScopeRegistrar<'scope, 'run>,
+        completion: CompletionRegistrar<'scope>,
+        active: ActiveRegistrar<'scope>,
     ) -> Self {
         Self {
             effect,
             cleanup,
             owned_scope,
+            completion,
+            active,
             marker: PhantomData,
         }
     }
@@ -161,6 +295,32 @@ impl<'scope, 'run> ViewOwnerToken<'scope, 'run> {
 
     pub(crate) fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>) {
         self.cleanup.call(cleanup);
+    }
+
+    pub(crate) fn host_callback<F>(&self, callback: F) -> HostCallback
+    where
+        F: FnMut(JsValue) + 'scope,
+    {
+        HostCallback {
+            destination: self.completion.call(Box::new(callback)),
+        }
+    }
+
+    pub(crate) fn is_active(&self) -> bool {
+        self.active.get()
+    }
+
+    pub(crate) fn host_resource<F>(&self, cancel: F) -> HostResourceHandle<'scope>
+    where
+        F: FnOnce() + 'scope,
+    {
+        if !self.is_active() {
+            return HostResourceHandle::inactive();
+        }
+        let resource = HostResourceHandle::new(cancel);
+        let owner_resource = resource.clone();
+        self.on_cleanup(Box::new(move || owner_resource.cancel()));
+        resource
     }
 }
 
@@ -215,12 +375,16 @@ impl ViewOwner<'static, 'static> for RootViewOwner {
         let scope_for_effect = self.scope.clone();
         let scope_for_cleanup = self.scope.clone();
         let scope_for_owned = self.scope.clone();
+        let scope_for_completion = self.scope.clone();
+        let scope_for_active = self.scope.clone();
         ViewOwnerToken::new(
             EffectRegistrar::new(move |callback| {
                 let _ = scope_for_effect.effect(callback);
             }),
             CleanupRegistrar::new(move |cleanup| scope_for_cleanup.on_cleanup(cleanup)),
             OwnedScopeRegistrar::new(move || scope_for_owned.owned_scope()),
+            CompletionRegistrar::new(move |callback| scope_for_completion.completion(callback)),
+            ActiveRegistrar::new(move || scope_for_active.is_active()),
         )
     }
 
@@ -257,6 +421,8 @@ impl<'scope, 'run> ViewOwner<'scope, 'run> for ScopedViewOwner<'scope, 'run> {
         let scope_for_effect = self.scope;
         let scope_for_cleanup = self.scope;
         let scope_for_owned = self.scope;
+        let scope_for_completion = self.scope;
+        let scope_for_active = self.scope;
         ViewOwnerToken::new(
             EffectRegistrar::new(move |callback| {
                 let mut callback = callback;
@@ -266,6 +432,8 @@ impl<'scope, 'run> ViewOwner<'scope, 'run> for ScopedViewOwner<'scope, 'run> {
             }),
             CleanupRegistrar::new(move |cleanup| scope_for_cleanup.on_cleanup(cleanup)),
             OwnedScopeRegistrar::new(move || scope_for_owned.owned_scope()),
+            CompletionRegistrar::new(move |callback| scope_for_completion.completion(callback)),
+            ActiveRegistrar::new(move || scope_for_active.is_active()),
         )
     }
 
@@ -300,10 +468,14 @@ where
         let scope_for_effect = self.scope.clone();
         let scope_for_cleanup = self.scope.clone();
         let scope_for_owned = self.scope.clone();
+        let scope_for_completion = self.scope.clone();
+        let scope_for_active = self.scope.clone();
         ViewOwnerToken::new(
             EffectRegistrar::new(move |callback| scope_for_effect.effect(callback)),
             CleanupRegistrar::new(move |cleanup| scope_for_cleanup.on_cleanup(cleanup)),
             OwnedScopeRegistrar::new(move || scope_for_owned.child()),
+            CompletionRegistrar::new(move |callback| scope_for_completion.completion(callback)),
+            ActiveRegistrar::new(move || scope_for_active.is_active()),
         )
     }
 
@@ -1136,5 +1308,70 @@ impl<'scope, 'run, V: View<'scope, 'run>> View<'scope, 'run> for SilexResult<V> 
             Ok(value) => value.mount_owned(owner, parent, attrs),
             Err(error) => handle_error(error),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{HostResourceHandle, RootViewOwner, ViewOwner};
+    use silex_core::Runtime;
+    use std::{cell::Cell, rc::Rc};
+    use wasm_bindgen::JsValue;
+
+    #[test]
+    fn host_callback_is_gated_after_root_dispose() {
+        let seen = Rc::new(Cell::new(0));
+        let seen_in_callback = seen.clone();
+        let mut runtime = Runtime::new();
+        let mut root = runtime.run(|_| {});
+        let owner = RootViewOwner::new(root.scope());
+        let token = owner.token();
+        let bridge = token.host_callback(move |_| {
+            seen_in_callback.set(seen_in_callback.get() + 1);
+        });
+        assert!(bridge.dispatch(JsValue::UNDEFINED));
+
+        assert_eq!(seen.get(), 1);
+        root.dispose().expect("root cleanup should succeed");
+        assert!(!bridge.dispatch(JsValue::UNDEFINED));
+        let late = token.host_callback(|_| panic!("inactive owner callback ran"));
+        assert!(!late.dispatch(JsValue::UNDEFINED));
+        let resource = token.host_resource(|| panic!("inactive resource was cancelled"));
+        assert!(!resource.is_active());
+        assert_eq!(seen.get(), 1);
+    }
+
+    #[test]
+    fn host_resource_cancellation_is_idempotent() {
+        let cancelled = Rc::new(Cell::new(0));
+        let cancelled_in_cleanup = cancelled.clone();
+        let handle = HostResourceHandle::new(move || {
+            cancelled_in_cleanup.set(cancelled_in_cleanup.get() + 1);
+        });
+        let clone = handle.clone();
+
+        handle.cancel();
+        clone.cancel();
+        drop(clone);
+        drop(handle);
+
+        assert_eq!(cancelled.get(), 1);
+    }
+
+    #[test]
+    fn owner_keeps_resource_alive_when_returned_handle_is_dropped() {
+        let cancelled = Rc::new(Cell::new(0));
+        let cancelled_in_cleanup = cancelled.clone();
+        let mut runtime = Runtime::new();
+        let mut root = runtime.run(|_| {});
+        let owner = RootViewOwner::new(root.scope());
+        let token = owner.token();
+        let handle = token.host_resource(move || {
+            cancelled_in_cleanup.set(cancelled_in_cleanup.get() + 1);
+        });
+        drop(handle);
+        assert_eq!(cancelled.get(), 0);
+        root.dispose().expect("root cleanup should succeed");
+        assert_eq!(cancelled.get(), 1);
     }
 }

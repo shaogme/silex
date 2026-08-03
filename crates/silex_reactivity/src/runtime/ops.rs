@@ -301,6 +301,17 @@ pub(crate) fn node_ref_set<'scope, T>(
     })?
 }
 
+pub(crate) fn node_ref_clear<'scope, T>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    id: RawId,
+) -> ReactiveResult<()> {
+    update_stored(state, id, |stored| {
+        unsafe { stored.downcast_mut::<Option<T>>() }
+            .map(|slot| *slot = None)
+            .ok_or(ReactiveError::TypeMismatch)
+    })?
+}
+
 pub(crate) fn notify<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) {
     let should_flush = {
         let mut state_ref = state

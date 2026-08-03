@@ -16,8 +16,8 @@ pub(crate) use dispose::dispose_all;
 pub(crate) use eval::{run_global_queue, run_initial};
 pub(crate) use model::ScopeState;
 pub(crate) use ops::{
-    invoke_callback, node_ref_get, node_ref_set, notify, track, track_many, update_signal,
-    update_stored, with_batch, with_signal, with_stored, with_untracked,
+    invoke_callback, node_ref_clear, node_ref_get, node_ref_set, notify, track, track_many,
+    update_signal, update_stored, with_batch, with_signal, with_stored, with_untracked,
 };
 pub(crate) use scheduler::{GlobalScheduler, ScopeId};
 

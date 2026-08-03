@@ -76,7 +76,7 @@ where
         let last_id = Rc::new(Cell::new(0usize));
         let last_id_for_callback = last_id.clone();
         let set_state_for_callback = set_state;
-        let completion = scope.completion_scoped(move |(id, result): (usize, Result<T, E>)| {
+        let completion = scope.completion(move |(id, result): (usize, Result<T, E>)| {
             if let Some(next_state) =
                 resolve_mutation_result(last_id_for_callback.get(), id, result)
             {

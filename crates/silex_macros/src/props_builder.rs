@@ -475,12 +475,12 @@ impl BuilderContext {
                 fn build_event<E, F, M>(mut self, event: E, callback: F) -> Self
                 where
                     E: #__silex::dom::event::EventDescriptor + 'static,
-                    F: #__silex::dom::event::EventHandler<E::EventType, M> + Clone + 'static,
+                    F: #__silex::dom::event::EventHandler<'static, E::EventType, M> + Clone + 'static,
                 {
                     let event = event.clone();
                     self._pending_attrs.push(
-                        #__silex::dom::attribute::PendingAttribute::new_listener(move |el| {
-                            #__silex::dom::element::bind_event(el, event, callback.clone());
+                        #__silex::dom::attribute::PendingAttribute::new_scoped(move |el, owner| {
+                            #__silex::dom::element::bind_event(el, event, callback.clone(), owner);
                         })
                     );
                     self

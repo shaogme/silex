@@ -40,6 +40,15 @@ impl<T> Clone for CompletionToken<T> {
 }
 
 impl<T: 'static> CompletionToken<T> {
+    pub(crate) fn inactive() -> Self {
+        Self {
+            state: Weak::new(),
+            scope_id: ScopeId(0),
+            callback: RawId::DANGLING,
+            marker: PhantomData,
+        }
+    }
+
     pub(crate) fn new(state: Weak<ErasedScopeState>, scope_id: ScopeId, callback: RawId) -> Self {
         Self {
             state,
@@ -84,27 +93,21 @@ impl<T: 'static> CompletionToken<T> {
 
 impl<'scope, 'run> Scope<'scope, 'run> {
     /// Create a completion destination owned by this scope.
-    pub fn completion<T: 'static, F>(&self, callback: F) -> CompletionToken<T>
-    where
-        F: FnMut(T) + 'static,
-    {
-        // SAFETY: a `'static` callback cannot borrow data that ends before the
-        // scope's disposal path.
-        unsafe { self.completion_scoped(callback) }
-    }
-
-    /// Create a completion destination with a callback borrowed from this scope.
-    ///
-    /// # Safety
-    ///
-    /// The callback must not borrow data that can be dropped before this scope
-    /// is disposed. In particular, references to locals created inside the
-    /// surrounding `Runtime::run` or `Scope::child` callback are not allowed;
-    /// move scope-owned handles and owned values into the callback instead.
-    pub unsafe fn completion_scoped<T: 'static, F>(&self, mut callback: F) -> CompletionToken<T>
+    pub fn completion<T: 'static, F>(&self, mut callback: F) -> CompletionToken<T>
     where
         F: FnMut(T) + 'scope,
     {
+        let active = {
+            let state = self.frame.state.borrow();
+            state
+                .scheduler
+                .borrow()
+                .is_scope_active(self.frame.scope_id)
+        };
+        if !active {
+            return CompletionToken::inactive();
+        }
+
         let thunk = CallbackThunk::new(move |value: AnyValue<'scope>| {
             // SAFETY: `CompletionToken<T>::submit` is the only way to submit
             // a value to this typed destination.
