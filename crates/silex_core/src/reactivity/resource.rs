@@ -130,7 +130,7 @@ where
         let state_for_effect = state;
         let set_state_for_effect = set_state;
         let suspense_for_effect = suspense;
-        let _effect = scope.effect_from(inputs, move |_: Option<()>| {
+        let _effect = scope.effect_from(inputs, move || {
             let input = source_for_effect.get();
             let _ = trigger_for_effect.get();
             let next_state = state_for_effect.with_untracked(|state| {

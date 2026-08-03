@@ -3,6 +3,7 @@ use silex_core::{
     Runtime,
     logic::{Map, Memoize, ReactivePartialEq, ReactivePartialOrd},
 };
+use std::{cell::Cell, rc::Rc};
 
 #[test]
 fn same_runtime_parent_child_promotion_and_propagation_are_valid() {
@@ -46,6 +47,33 @@ fn foreign_inputs_are_rejected_before_target_derived_creation() {
         Err(silex_core::SilexError::Reactivity(message))
             if message.contains("不同")
     ));
+}
+
+#[test]
+fn foreign_inputs_are_rejected_before_target_effect_creation() {
+    let mut first = Runtime::new();
+    let mut second = Runtime::new();
+    let foreign_inputs = first.child(|scope| {
+        let (source, _) = scope.signal(1i32);
+        scope.promote(source).runtime_inputs()
+    });
+    let called = Rc::new(Cell::new(false));
+    let called_for_effect = called.clone();
+
+    let result = second.child(|scope| {
+        scope
+            .try_effect_from(foreign_inputs, move || {
+                called_for_effect.set(true);
+            })
+            .map(|_| ())
+    });
+
+    assert!(matches!(
+        result,
+        Err(silex_core::SilexError::Reactivity(message))
+            if message.contains("不同")
+    ));
+    assert!(!called.get());
 }
 
 #[test]

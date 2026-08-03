@@ -1,4 +1,9 @@
 use silex_core::{Runtime, rx};
+use std::{
+    cell::{Cell, RefCell},
+    panic::{AssertUnwindSafe, catch_unwind},
+    rc::Rc,
+};
 
 #[test]
 fn scoped_primitives_propagate_without_raw_handles() {
@@ -18,6 +23,70 @@ fn scoped_primitives_propagate_without_raw_handles() {
         assert!(stored.with(|value| value == "stored"));
         stored.update(|value| value.push_str(" value"));
         assert!(stored.with(|value| value == "stored value"));
+    });
+}
+
+#[test]
+fn lexical_effect_is_direct_and_tracks_dependencies() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let (value, set_value) = scope.signal(1i32);
+        let seen = Rc::new(Cell::new(0));
+        let seen_for_effect = seen.clone();
+
+        let effect = scope.effect(move || seen_for_effect.set(value.get()));
+
+        assert!(effect.is_alive());
+        assert_eq!(seen.get(), 1);
+        set_value.set(4);
+        assert_eq!(seen.get(), 4);
+    });
+}
+
+#[test]
+fn previous_effect_commits_the_last_returned_value() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let (source, set_source) = scope.signal(1i32);
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let seen_for_effect = seen.clone();
+
+        let _effect = scope.effect_with_previous(move |previous: Option<i32>| {
+            seen_for_effect.borrow_mut().push(previous);
+            source.get()
+        });
+
+        set_source.set(2);
+        set_source.set(3);
+        assert_eq!(*seen.borrow(), vec![None, Some(1), Some(2)]);
+    });
+}
+
+#[test]
+fn previous_effect_resets_after_a_panicking_run() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let (source, set_source) = scope.signal(1i32);
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let seen_for_effect = seen.clone();
+        let should_panic = Rc::new(Cell::new(false));
+        let should_panic_for_effect = should_panic.clone();
+
+        let _effect = scope.effect_with_previous(move |previous: Option<i32>| {
+            seen_for_effect.borrow_mut().push(previous);
+            let value = source.get();
+            if should_panic_for_effect.replace(false) {
+                panic!("test previous effect panic");
+            }
+            value
+        });
+
+        should_panic.set(true);
+        let result = catch_unwind(AssertUnwindSafe(|| set_source.set(2)));
+        assert!(result.is_err());
+
+        set_source.set(3);
+        assert_eq!(*seen.borrow(), vec![None, Some(1), None]);
     });
 }
 

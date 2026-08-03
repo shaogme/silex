@@ -449,10 +449,7 @@ impl<'scope> ScopedViewOwner<'scope> {
 
 impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
     fn effect_from(&self, inputs: RuntimeInputs, callback: Box<dyn FnMut() + 'scope>) {
-        let mut callback = callback;
-        if let Err(error) = self.scope.try_effect_from(inputs, move |_: Option<()>| {
-            callback();
-        }) {
+        if let Err(error) = self.scope.try_effect_from(inputs, callback) {
             handle_error(error);
         }
     }
@@ -474,10 +471,7 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
         let scope_for_validate = self.scope;
         ViewOwnerToken::new(
             EffectRegistrar::new(move |inputs, callback| {
-                let mut callback = callback;
-                if let Err(error) = scope_for_effect.try_effect_from(inputs, move |_: Option<()>| {
-                    callback();
-                }) {
+                if let Err(error) = scope_for_effect.try_effect_from(inputs, callback) {
                     handle_error(error);
                 }
             }),

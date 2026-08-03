@@ -268,17 +268,59 @@ impl<'scope> Scope<'scope> {
             .map_err(|error| SilexError::Reactivity(error.to_string()))
     }
 
-    pub fn effect_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> Effect<'scope>
+    pub fn effect<F>(&self, f: F) -> Effect<'scope>
     where
-        T: 'scope,
-        F: FnMut(Option<T>) -> T + 'scope,
+        F: FnMut() + 'scope,
+    {
+        self.effect_from(RuntimeInputs::new(), f)
+    }
+
+    #[doc(hidden)]
+    pub fn effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> Effect<'scope>
+    where
+        F: FnMut() + 'scope,
     {
         self.try_effect_from(inputs, f)
             .unwrap_or_else(|error| panic!("创建 scoped effect 失败: {error}"))
     }
 
     #[doc(hidden)]
-    pub fn try_effect_from<T, F>(
+    pub fn try_effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> SilexResult<Effect<'scope>>
+    where
+        F: FnMut() + 'scope,
+    {
+        let effect = self
+            .inner
+            .try_effect_from(inputs, f)
+            .map_err(|error| SilexError::Reactivity(error.to_string()))?;
+        Ok(Effect::from_inner(effect))
+    }
+
+    /// Create an effect that receives the value returned by its previous run.
+    ///
+    /// The first run receives `None`. A returned value is committed as the
+    /// previous value for the next run; if the callback panics, no value is
+    /// committed and the next run receives `None`.
+    pub fn effect_with_previous<T, F>(&self, f: F) -> Effect<'scope>
+    where
+        T: 'scope,
+        F: FnMut(Option<T>) -> T + 'scope,
+    {
+        self.effect_with_previous_from(RuntimeInputs::new(), f)
+    }
+
+    #[doc(hidden)]
+    pub fn effect_with_previous_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> Effect<'scope>
+    where
+        T: 'scope,
+        F: FnMut(Option<T>) -> T + 'scope,
+    {
+        self.try_effect_with_previous_from(inputs, f)
+            .unwrap_or_else(|error| panic!("创建 scoped previous effect 失败: {error}"))
+    }
+
+    #[doc(hidden)]
+    pub fn try_effect_with_previous_from<T, F>(
         &self,
         inputs: RuntimeInputs,
         mut f: F,
@@ -314,7 +356,7 @@ impl<'scope> Scope<'scope> {
     {
         let first_run = Rc::new(Cell::new(true));
         let previous = Rc::new(RefCell::new(None::<T>));
-        self.effect_from(inputs, move |_: Option<()>| {
+        self.effect_from(inputs, move || {
             let value = deps();
             let mut old_value = previous.borrow_mut();
             let old = old_value.clone();
