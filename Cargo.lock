@@ -1680,11 +1680,13 @@ dependencies = [
 name = "silex_dom"
 version = "0.1.0-beta.9"
 dependencies = [
+ "gloo-timers",
  "js-sys",
  "silex_core",
  "silex_vtable",
  "trybuild",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
 ]

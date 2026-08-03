@@ -216,10 +216,11 @@ impl<'scope> CompletionRegistrar<'scope> {
 /// idempotent and the owner retains a clone so dropping this value early does
 /// not transfer lifecycle ownership away from the view.
 type CancelAction<'scope> = Rc<RefCell<Option<Box<dyn FnOnce() + 'scope>>>>;
+type ResourceGate = Rc<Cell<bool>>;
 
 pub struct HostResourceHandle<'scope> {
     cancel: CancelAction<'scope>,
-    active: Rc<Cell<bool>>,
+    active: ResourceGate,
 }
 
 impl<'scope> Clone for HostResourceHandle<'scope> {
@@ -239,19 +240,20 @@ impl<'scope> HostResourceHandle<'scope> {
         }
     }
 
-    fn new<F>(cancel: F) -> Self
+    fn with_gate<F>(active: ResourceGate, cancel: F) -> Self
     where
         F: FnOnce() + 'scope,
     {
         Self {
             cancel: Rc::new(RefCell::new(Some(Box::new(cancel)))),
-            active: Rc::new(Cell::new(true)),
+            active,
         }
     }
 
     /// Cancel the host resource. Repeated calls are harmless.
     pub fn cancel(&self) {
         if !self.active.replace(false) {
+            let _ = self.cancel.borrow_mut().take();
             return;
         }
         if let Some(cancel) = self.cancel.borrow_mut().take() {
@@ -276,11 +278,23 @@ impl Drop for HostResourceHandle<'_> {
 #[derive(Clone)]
 pub(crate) struct HostCallback {
     destination: CompletionToken<JsValue>,
+    gate: ResourceGate,
 }
 
 impl HostCallback {
     pub(crate) fn dispatch(&self, payload: JsValue) -> bool {
+        if !self.gate.get() {
+            return false;
+        }
         self.destination.submit(payload)
+    }
+
+    pub(crate) fn finish(&self) {
+        self.gate.set(false);
+    }
+
+    pub(crate) fn invalidate(&self) {
+        self.gate.set(false);
     }
 }
 
@@ -331,6 +345,7 @@ impl<'scope> ViewOwnerToken<'scope> {
     {
         HostCallback {
             destination: self.completion.call(Box::new(callback)),
+            gate: Rc::new(Cell::new(true)),
         }
     }
 
@@ -338,14 +353,26 @@ impl<'scope> ViewOwnerToken<'scope> {
         self.active.get()
     }
 
-    pub(crate) fn host_resource<F>(&self, cancel: F) -> HostResourceHandle<'scope>
+    pub(crate) fn host_resource_for_callback<F>(
+        &self,
+        callback: &HostCallback,
+        cancel: F,
+    ) -> HostResourceHandle<'scope>
     where
         F: FnOnce() + 'scope,
     {
+        self.register_host_resource(callback.gate.clone(), cancel)
+    }
+
+    fn register_host_resource<F>(&self, gate: ResourceGate, cancel: F) -> HostResourceHandle<'scope>
+    where
+        F: FnOnce() + 'scope,
+    {
+        let resource = HostResourceHandle::with_gate(gate, cancel);
         if !self.is_active() {
-            return HostResourceHandle::inactive();
+            resource.cancel();
+            return resource;
         }
-        let resource = HostResourceHandle::new(cancel);
         let owner_resource = resource.clone();
         self.on_cleanup(Box::new(move || owner_resource.cancel()));
         resource
@@ -1433,7 +1460,7 @@ mod tests {
         assert!(!bridge.dispatch(JsValue::UNDEFINED));
         let late = token.host_callback(|_| panic!("inactive owner callback ran"));
         assert!(!late.dispatch(JsValue::UNDEFINED));
-        let resource = token.host_resource(|| panic!("inactive resource was cancelled"));
+        let resource = token.host_resource_for_callback(&late, || {});
         assert!(!resource.is_active());
         assert_eq!(seen.get(), 1);
     }
@@ -1442,7 +1469,7 @@ mod tests {
     fn host_resource_cancellation_is_idempotent() {
         let cancelled = Rc::new(Cell::new(0));
         let cancelled_in_cleanup = cancelled.clone();
-        let handle = HostResourceHandle::new(move || {
+        let handle = HostResourceHandle::with_gate(Rc::new(Cell::new(true)), move || {
             cancelled_in_cleanup.set(cancelled_in_cleanup.get() + 1);
         });
         let clone = handle.clone();
@@ -1463,7 +1490,8 @@ mod tests {
         let mut root = runtime.run(|_| {});
         let owner = RootViewOwner::new(root.scope());
         let token = owner.token();
-        let handle = token.host_resource(move || {
+        let callback = token.host_callback(|_| {});
+        let handle = token.host_resource_for_callback(&callback, move || {
             cancelled_in_cleanup.set(cancelled_in_cleanup.get() + 1);
         });
         drop(handle);

@@ -9,7 +9,7 @@ use web_sys::Window;
 
 use silex_core::SilexError;
 
-use crate::view::{HostResourceHandle, ViewOwnerToken};
+use crate::view::{HostCallback, HostResourceHandle, ViewOwnerToken};
 
 // --- Window & Document Access ---
 
@@ -152,17 +152,27 @@ pub fn window_event_listener_untyped_owned<'scope>(
     let destination = owner.host_callback(move |payload| {
         cb(payload.unchecked_into::<web_sys::Event>());
     });
+    let destination_for_closure = destination.clone();
     let closure = Closure::wrap(Box::new(move |event: web_sys::Event| {
-        let _ = destination.dispatch(event.into());
+        let _ = destination_for_closure.dispatch(event.into());
     }) as Box<dyn FnMut(web_sys::Event)>);
-    let js_fn = closure.as_ref().unchecked_ref::<js_sys::Function>().clone();
+    let closure = Rc::new(RefCell::new(Some(closure.into_js_value())));
+    let js_fn = closure
+        .borrow()
+        .as_ref()
+        .expect("owned window listener callback is present")
+        .unchecked_ref::<js_sys::Function>()
+        .clone();
     let window = window();
-    window.add_event_listener_with_callback(event_name, &js_fn)?;
+    if let Err(error) = window.add_event_listener_with_callback(event_name, &js_fn) {
+        destination.invalidate();
+        let _ = closure.borrow_mut().take();
+        return Err(error);
+    }
 
-    let closure = Rc::new(RefCell::new(Some(closure)));
     let closure_for_cleanup = closure.clone();
     let event_name = event_name.to_string();
-    Ok(owner.host_resource(move || {
+    Ok(owner.host_resource_for_callback(&destination, move || {
         let _ = window.remove_event_listener_with_callback(&event_name, &js_fn);
         let _ = closure_for_cleanup.borrow_mut().take();
     }))
@@ -264,19 +274,42 @@ fn duration_millis(duration: Duration) -> i32 {
     duration.as_millis().try_into().unwrap_or(i32::MAX)
 }
 
+type JsClosureSlot = Rc<RefCell<Option<JsValue>>>;
+
+struct OnceCallbackGuard {
+    destination: HostCallback,
+    closure: JsClosureSlot,
+}
+
+impl Drop for OnceCallbackGuard {
+    fn drop(&mut self) {
+        self.destination.finish();
+        let _ = self.closure.borrow_mut().take();
+    }
+}
+
 fn owned_once_callback<'scope>(
     owner: &ViewOwnerToken<'scope>,
     cb: impl FnOnce() + 'scope,
-) -> JsValue {
+    closure: &JsClosureSlot,
+) -> HostCallback {
     let mut cb = Some(cb);
     let destination = owner.host_callback(move |_| {
         if let Some(cb) = cb.take() {
             cb();
         }
     });
-    Closure::once_into_js(move || {
-        let _ = destination.dispatch(JsValue::UNDEFINED);
-    })
+    let destination_for_closure = destination.clone();
+    let closure_for_callback = closure.clone();
+    let callback = Closure::once_into_js(move || {
+        let _guard = OnceCallbackGuard {
+            destination: destination_for_closure.clone(),
+            closure: closure_for_callback.clone(),
+        };
+        let _ = destination_for_closure.dispatch(JsValue::UNDEFINED);
+    });
+    *closure.borrow_mut() = Some(callback);
+    destination
 }
 
 pub fn request_animation_frame_owned<'scope>(
@@ -286,19 +319,27 @@ pub fn request_animation_frame_owned<'scope>(
     if !owner.is_active() {
         return Err(JsValue::from_str("view owner is inactive"));
     }
-    let callback = Rc::new(RefCell::new(Some(owned_once_callback(owner, cb))));
-    let callback_ref = callback.borrow();
-    let frame = window().request_animation_frame(
-        callback_ref
-            .as_ref()
-            .expect("owned animation callback is present")
-            .as_ref()
-            .unchecked_ref(),
-    );
-    drop(callback_ref);
-    let frame = frame?;
+    let callback = Rc::new(RefCell::new(None));
+    let destination = owned_once_callback(owner, cb, &callback);
+    let frame = {
+        let callback_ref = callback.borrow();
+        window().request_animation_frame(
+            callback_ref
+                .as_ref()
+                .expect("owned animation callback is present")
+                .unchecked_ref(),
+        )
+    };
+    let frame = match frame {
+        Ok(frame) => frame,
+        Err(error) => {
+            destination.invalidate();
+            let _ = callback.borrow_mut().take();
+            return Err(error);
+        }
+    };
     let callback_for_cleanup = callback.clone();
-    Ok(owner.host_resource(move || {
+    Ok(owner.host_resource_for_callback(&destination, move || {
         let _ = window().cancel_animation_frame(frame);
         let _ = callback_for_cleanup.borrow_mut().take();
     }))
@@ -332,19 +373,27 @@ pub fn request_idle_callback_owned<'scope>(
     if !owner.is_active() {
         return Err(JsValue::from_str("view owner is inactive"));
     }
-    let callback = Rc::new(RefCell::new(Some(owned_once_callback(owner, cb))));
-    let callback_ref = callback.borrow();
-    let idle = window().request_idle_callback(
-        callback_ref
-            .as_ref()
-            .expect("owned idle callback is present")
-            .as_ref()
-            .unchecked_ref(),
-    );
-    drop(callback_ref);
-    let idle = idle?;
+    let callback = Rc::new(RefCell::new(None));
+    let destination = owned_once_callback(owner, cb, &callback);
+    let idle = {
+        let callback_ref = callback.borrow();
+        window().request_idle_callback(
+            callback_ref
+                .as_ref()
+                .expect("owned idle callback is present")
+                .unchecked_ref(),
+        )
+    };
+    let idle = match idle {
+        Ok(idle) => idle,
+        Err(error) => {
+            destination.invalidate();
+            let _ = callback.borrow_mut().take();
+            return Err(error);
+        }
+    };
     let callback_for_cleanup = callback.clone();
-    Ok(owner.host_resource(move || {
+    Ok(owner.host_resource_for_callback(&destination, move || {
         window().cancel_idle_callback(idle);
         let _ = callback_for_cleanup.borrow_mut().take();
     }))
@@ -362,17 +411,20 @@ pub fn queue_microtask_owned<'scope>(
     if !owner.is_active() {
         return HostResourceHandle::inactive();
     }
-    let callback = Rc::new(RefCell::new(Some(owned_once_callback(owner, task))));
+    let callback = Rc::new(RefCell::new(None));
+    let destination = owned_once_callback(owner, task, &callback);
     let callback_for_cleanup = callback.clone();
-    let task = callback
-        .borrow()
-        .as_ref()
-        .expect("owned microtask callback is present")
-        .clone();
-    window().queue_microtask(task.unchecked_ref());
+    {
+        let callback_ref = callback.borrow();
+        let task = callback_ref
+            .as_ref()
+            .expect("owned microtask callback is present")
+            .unchecked_ref::<js_sys::Function>();
+        window().queue_microtask(task);
+    }
     // Microtasks cannot be physically removed. The destination gate still
     // prevents user code after owner disposal.
-    owner.host_resource(move || {
+    owner.host_resource_for_callback(&destination, move || {
         let _ = callback_for_cleanup.borrow_mut().take();
     })
 }
@@ -410,20 +462,28 @@ pub fn set_timeout_owned<'scope>(
     if !owner.is_active() {
         return Err(JsValue::from_str("view owner is inactive"));
     }
-    let callback = Rc::new(RefCell::new(Some(owned_once_callback(owner, cb))));
-    let callback_ref = callback.borrow();
-    let timeout = window().set_timeout_with_callback_and_timeout_and_arguments_0(
-        callback_ref
-            .as_ref()
-            .expect("owned timeout callback is present")
-            .as_ref()
-            .unchecked_ref(),
-        duration_millis(duration),
-    );
-    drop(callback_ref);
-    let timeout = timeout?;
+    let callback = Rc::new(RefCell::new(None));
+    let destination = owned_once_callback(owner, cb, &callback);
+    let timeout = {
+        let callback_ref = callback.borrow();
+        window().set_timeout_with_callback_and_timeout_and_arguments_0(
+            callback_ref
+                .as_ref()
+                .expect("owned timeout callback is present")
+                .unchecked_ref(),
+            duration_millis(duration),
+        )
+    };
+    let timeout = match timeout {
+        Ok(timeout) => timeout,
+        Err(error) => {
+            destination.invalidate();
+            let _ = callback.borrow_mut().take();
+            return Err(error);
+        }
+    };
     let callback_for_cleanup = callback.clone();
-    Ok(owner.host_resource(move || {
+    Ok(owner.host_resource_for_callback(&destination, move || {
         window().clear_timeout_with_handle(timeout);
         let _ = callback_for_cleanup.borrow_mut().take();
     }))
@@ -464,18 +524,30 @@ pub fn set_interval_owned<'scope>(
         return Err(JsValue::from_str("view owner is inactive"));
     }
     let destination = owner.host_callback(move |_| cb());
+    let destination_for_closure = destination.clone();
     let closure = Closure::wrap(Box::new(move || {
-        let _ = destination.dispatch(JsValue::UNDEFINED);
+        let _ = destination_for_closure.dispatch(JsValue::UNDEFINED);
     }) as Box<dyn FnMut()>);
-    let js_fn = closure.as_ref().unchecked_ref::<js_sys::Function>().clone();
+    let closure = Rc::new(RefCell::new(Some(closure.into_js_value())));
+    let js_fn = closure
+        .borrow()
+        .as_ref()
+        .expect("owned interval callback is present")
+        .unchecked_ref::<js_sys::Function>()
+        .clone();
     let window = window();
-    let interval = window.set_interval_with_callback_and_timeout_and_arguments_0(
-        &js_fn,
-        duration_millis(duration),
-    )?;
-    let closure = Rc::new(RefCell::new(Some(closure)));
+    let interval = match window
+        .set_interval_with_callback_and_timeout_and_arguments_0(&js_fn, duration_millis(duration))
+    {
+        Ok(interval) => interval,
+        Err(error) => {
+            destination.invalidate();
+            let _ = closure.borrow_mut().take();
+            return Err(error);
+        }
+    };
     let closure_for_cleanup = closure.clone();
-    Ok(owner.host_resource(move || {
+    Ok(owner.host_resource_for_callback(&destination, move || {
         window.clear_interval_with_handle(interval);
         let _ = closure_for_cleanup.borrow_mut().take();
     }))
@@ -534,7 +606,7 @@ pub fn debounce_owned<'scope, T, F>(
     owner: &ViewOwnerToken<'scope>,
     delay: Duration,
     mut cb: F,
-) -> impl FnMut(T) + 'scope
+) -> impl FnMut(T) + 'scope + use<'scope, T, F>
 where
     T: 'scope,
     F: FnMut(T) + 'scope,
@@ -565,7 +637,7 @@ where
     });
 
     let state_for_cleanup = state.clone();
-    let resource = owner.host_resource(move || {
+    let resource = owner.host_resource_for_callback(&destination, move || {
         let mut state = state_for_cleanup.borrow_mut();
         state.clear_timer();
         let _ = state.pending.take();

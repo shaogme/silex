@@ -388,23 +388,31 @@ pub fn bind_event_impl<'scope, E>(
     let destination = owner.host_callback(move |payload| {
         handler(payload.unchecked_into::<E>());
     });
+    let destination_for_closure = destination.clone();
     let closure = Closure::wrap(Box::new(move |event: E| {
-        let _ = destination.dispatch(event.unchecked_into::<JsValue>());
+        let _ = destination_for_closure.dispatch(event.unchecked_into::<JsValue>());
     }) as Box<dyn FnMut(E)>);
-    let js_fn = closure.as_ref().unchecked_ref::<js_sys::Function>().clone();
+    let closure = Rc::new(RefCell::new(Some(closure.into_js_value())));
+    let js_fn = closure
+        .borrow()
+        .as_ref()
+        .expect("element event callback is present")
+        .unchecked_ref::<js_sys::Function>()
+        .clone();
     if let Err(error) = dom_element
-        .add_event_listener_with_callback(&event_name, closure.as_ref().unchecked_ref())
+        .add_event_listener_with_callback(&event_name, &js_fn)
         .map_err(SilexError::from)
     {
+        destination.invalidate();
+        let _ = closure.borrow_mut().take();
         handle_error(error);
         return;
     }
 
     let target = dom_element.clone();
     let event_name_for_cleanup = event_name.clone();
-    let closure = Rc::new(RefCell::new(Some(closure)));
     let closure_for_cleanup = closure.clone();
-    owner.host_resource(move || {
+    owner.host_resource_for_callback(&destination, move || {
         let _ = target.remove_event_listener_with_callback(&event_name_for_cleanup, &js_fn);
         let _ = closure_for_cleanup.borrow_mut().take();
     });

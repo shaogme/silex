@@ -2,7 +2,11 @@ use silex_core::{ReadSignal, WriteSignal};
 use silex_dom::{
     attribute::GlobalEventAttributes,
     element::Element,
-    helpers::{debounce_owned, set_timeout_owned, window_event_listener_owned},
+    helpers::{
+        debounce_owned, queue_microtask_owned, request_animation_frame_owned,
+        request_idle_callback_owned, set_interval_owned, set_timeout_owned,
+        window_event_listener_owned,
+    },
     view::ViewOwnerToken,
 };
 use std::time::Duration;
@@ -31,6 +35,20 @@ fn compile_owned<'scope>(
         move || write.set(read.get() + borrowed_ref.len() as i32),
         Duration::from_millis(1),
     );
+    let _interval = set_interval_owned(
+        token,
+        move || write.set(read.get() + borrowed_ref.len() as i32),
+        Duration::from_millis(1),
+    );
+    let _frame = request_animation_frame_owned(token, move || {
+        write.set(read.get() + borrowed_ref.len() as i32)
+    });
+    let _idle = request_idle_callback_owned(token, move || {
+        write.set(read.get() + borrowed_ref.len() as i32)
+    });
+    let _microtask = queue_microtask_owned(token, move || {
+        write.set(read.get() + borrowed_ref.len() as i32)
+    });
     let _listener = window_event_listener_owned(token, silex_dom::event::click, move |_| {
         let _ = borrowed_ref;
         write.set(read.get() + 1);
