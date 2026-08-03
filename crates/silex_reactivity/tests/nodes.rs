@@ -1,6 +1,6 @@
 use silex_reactivity::{
-    AnyValue, Callback, Derived, Effect, Memo, NodeRef, ReactiveError, ReadSignal, Runtime,
-    StoredValue, WriteSignal,
+    Callback, Derived, Effect, Memo, NodeRef, ReactiveError, ReadSignal, Runtime, StoredValue,
+    WriteSignal,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -45,7 +45,7 @@ fn all_public_node_capabilities_are_copy() {
         let derived = scope.derived(move || 1i32);
         let effect = scope.effect(|| {});
         let stored = scope.stored(1i32);
-        let callback = scope.callback(|_| {});
+        let callback = scope.callback(|_: ()| {});
         let node_ref = scope.node_ref::<i32>();
 
         assert_copy(read);
@@ -64,7 +64,7 @@ fn all_public_node_capabilities_are_copy() {
         let _: Option<Derived<'_, i32>> = Some(derived);
         let _: Option<Effect<'_>> = Some(effect);
         let _: Option<StoredValue<'_, i32>> = Some(stored);
-        let _: Option<Callback<'_>> = Some(callback);
+        let _: Option<Callback<'_, ()>> = Some(callback);
         let _: Option<NodeRef<'_, i32>> = Some(node_ref);
     });
 }
@@ -79,12 +79,10 @@ fn stored_callback_and_node_ref_are_scope_owned() {
 
         let called = Rc::new(Cell::new(0));
         let called_in_callback = called.clone();
-        let callback = scope.callback(move |_| {
+        let callback = scope.callback(move |_: ()| {
             called_in_callback.set(called_in_callback.get() + 1);
         });
-        callback
-            .invoke(AnyValue::new(()))
-            .expect("callback should be alive");
+        callback.invoke(()).expect("callback should be alive");
         assert_eq!(called.get(), 1);
 
         let reference = scope.node_ref::<u32>();
@@ -105,7 +103,7 @@ fn callback_panic_restores_callback_for_the_next_invoke() {
     runtime.child(|scope| {
         let called_in_callback = called.clone();
         let panic_in_callback = should_panic.clone();
-        let callback = scope.callback(move |_| {
+        let callback = scope.callback(move |_: ()| {
             if panic_in_callback.replace(false) {
                 panic!("callback panic");
             }
@@ -113,12 +111,10 @@ fn callback_panic_restores_callback_for_the_next_invoke() {
         });
 
         let panic = catch_unwind(AssertUnwindSafe(|| {
-            callback.invoke(AnyValue::new(())).expect("callback exists");
+            callback.invoke(()).expect("callback exists");
         }));
         assert!(panic.is_err());
-        callback
-            .invoke(AnyValue::new(()))
-            .expect("callback should be restored");
+        callback.invoke(()).expect("callback should be restored");
     });
 
     assert_eq!(called.get(), 1);
@@ -239,7 +235,7 @@ fn child_payloads_drop_before_parent_computation_payload() {
                 label: "callback",
                 events: child_events.clone(),
             };
-            let _ = scope_copy.callback(move |_| {
+            let _ = scope_copy.callback(move |_: ()| {
                 let _ = &callback_event;
             });
 
@@ -286,7 +282,7 @@ fn child_callback_payload_drop_can_schedule_an_active_parent_effect() {
                 called: called.clone(),
                 error: error.clone(),
             };
-            let _callback = child.callback(move |_| {
+            let _callback = child.callback(move |_: ()| {
                 let _ = &drop_probe;
             });
         });

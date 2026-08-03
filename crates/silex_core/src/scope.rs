@@ -376,18 +376,12 @@ impl<'scope> Scope<'scope> {
         StoredValue::from_inner(self.inner.stored(value), *self)
     }
 
-    pub fn callback<T, F>(&self, mut callback: F) -> Callback<'scope, T>
+    pub fn callback<T, F>(&self, callback: F) -> Callback<'scope, T>
     where
         T: 'scope,
         F: FnMut(T) + 'scope,
     {
-        let callback = self.inner.callback(move |value| {
-            // SAFETY: this wrapper only invokes the underlying callback with
-            // the same `T` through `Callback::call`.
-            if let Some(value) = unsafe { value.downcast::<T>() } {
-                callback(value);
-            }
-        });
+        let callback = self.inner.callback(callback);
         Callback::from_inner(callback)
     }
 

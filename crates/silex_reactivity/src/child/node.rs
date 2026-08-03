@@ -13,22 +13,23 @@ use crate::{
 // Callback
 // =============================================================================
 
-/// Scope-owned type-erased callbacks.
-pub struct Callback<'scope> {
+/// Scope-owned typed callbacks.
+pub struct Callback<'scope, T> {
     pub(crate) handle: CallbackId<'scope>,
+    pub(crate) marker: PhantomData<fn(T)>,
 }
 
-impl Copy for Callback<'_> {}
+impl<T> Copy for Callback<'_, T> {}
 
-impl Clone for Callback<'_> {
+impl<T> Clone for Callback<'_, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'scope> Callback<'scope> {
-    pub fn invoke(&self, arg: AnyValue<'scope>) -> ReactiveResult<()> {
-        runtime::invoke_callback(&self.handle.state(), self.handle.raw(), arg)
+impl<'scope, T: 'scope> Callback<'scope, T> {
+    pub fn invoke(&self, arg: T) -> ReactiveResult<()> {
+        runtime::invoke_callback(&self.handle.state(), self.handle.raw(), AnyValue::new(arg))
     }
 
     pub fn is_alive(&self) -> bool {

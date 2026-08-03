@@ -314,12 +314,7 @@ impl RootScope {
         F: FnMut(T) + 'static,
     {
         let state = self.state().expect("创建 root callback 时 owner 已结束");
-        let mut callback = callback;
-        let thunk = CallbackThunk::new(move |value: AnyValue<'static>| {
-            if let Some(value) = unsafe { value.downcast::<T>() } {
-                callback(value);
-            }
-        });
+        let thunk = CallbackThunk::new_typed(callback);
         let raw = state
             .try_borrow_mut()
             .expect("root state 在 callback 创建期间被借用")
@@ -344,12 +339,7 @@ impl RootScope {
         let Ok(state) = self.state() else {
             return CompletionToken::inactive();
         };
-        let mut callback = callback;
-        let thunk = CallbackThunk::new(move |value: AnyValue<'static>| {
-            if let Some(value) = unsafe { value.downcast::<T>() } {
-                callback(value);
-            }
-        });
+        let thunk = CallbackThunk::new_typed(callback);
         let (raw, scope_id, weak) = {
             let mut state_ref = state
                 .try_borrow_mut()

@@ -124,12 +124,13 @@ impl<'scope> Scope<'scope> {
         state.register_cleanup(thunk);
     }
 
-    /// Register a type-erased callback under this scope.
-    pub fn callback<F>(&self, f: F) -> Callback<'scope>
+    /// Register a typed callback under this scope.
+    pub fn callback<T, F>(&self, f: F) -> Callback<'scope, T>
     where
-        F: FnMut(AnyValue<'scope>) + 'scope,
+        T: 'scope,
+        F: FnMut(T) + 'scope,
     {
-        let thunk = CallbackThunk::new(f);
+        let thunk = CallbackThunk::new_typed(f);
         let state = self.state();
         let raw = state
             .try_borrow_mut()
@@ -137,6 +138,7 @@ impl<'scope> Scope<'scope> {
             .create_callback(thunk);
         Callback {
             handle: Handle::new(self.storage, raw),
+            marker: PhantomData,
         }
     }
 

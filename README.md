@@ -93,7 +93,7 @@ Silex 采用模块化设计，核心功能拆分为多个 Crate 以保持架构�
 | **`silex_dom`** | **DOM 绑定** | `TypedElement`, `View` Trait, 以及属性系统实现。 |
 | **`silex_html`** | **HTML DSL** | 包含 HTML5 规范的所有标签构造函数 (`div`, `span`, `input`...)。 |
 | **`silex_macros`** | **宏支持** | `#[component]`, `css!`, `#[derive(Route)]`, `#[derive(Store)]`。 |
-| **`silex_reactivity`** | **响应式引擎** | 类型擦除的响应式图谱实现；业务 API 使用具体句柄，异构边界使用 `RawId`。 |
+| **`silex_reactivity`** | **响应式引擎** | 类型擦除的响应式图谱实现；业务 API 使用带 scope 的具体句柄，图索引保持为 crate 内部实现。 |
 
 ---
 

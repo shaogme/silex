@@ -92,7 +92,7 @@ impl<T: 'static> CompletionToken<T> {
 pub(crate) fn create_completion<'scope, T: 'static, F>(
     storage: &ScopeStorage,
     state: Rc<RefCell<ScopeState<'scope>>>,
-    mut callback: F,
+    callback: F,
 ) -> CompletionToken<T>
 where
     F: FnMut(T) + 'scope,
@@ -105,13 +105,7 @@ where
         return CompletionToken::inactive();
     }
 
-    let thunk = CallbackThunk::new(move |value: AnyValue<'scope>| {
-        // SAFETY: `CompletionToken<T>::submit` is the only way to submit
-        // a value to this typed destination.
-        if let Some(value) = unsafe { value.downcast::<T>() } {
-            callback(value);
-        }
-    });
+    let thunk = CallbackThunk::new_typed(callback);
     let callback = {
         let mut state_ref = state
             .try_borrow_mut()

@@ -1,4 +1,4 @@
-use silex_reactivity::{AnyValue, Memo, Runtime, notify, track_batch};
+use silex_reactivity::{Memo, Runtime, notify, track_batch};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -261,7 +261,7 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
             });
 
             let runs_in_callback = runs.clone();
-            let callback = child.callback(move |_| {
+            let callback = child.callback(move |_: ()| {
                 let runs_before = runs_in_callback.get();
                 source.with(|value| {
                     *value.borrow_mut() += 1;
@@ -271,14 +271,12 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
             });
 
             assert_eq!(runs.get(), 1);
-            callback
-                .invoke(AnyValue::new(()))
-                .expect("callback should be alive");
+            callback.invoke(()).expect("callback should be alive");
             assert_eq!(runs.get(), 2);
             assert_eq!(source.with(|value| *value.borrow()), 1);
 
             callback
-                .invoke(AnyValue::new(()))
+                .invoke(())
                 .expect("callback should remain reusable");
             assert_eq!(runs.get(), 3);
             assert_eq!(source.with(|value| *value.borrow()), 2);

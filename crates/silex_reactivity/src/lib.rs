@@ -32,7 +32,6 @@ pub use crate::{
         AnyHandle, CallbackId, DerivedId, EffectId, Handle, MemoId, NodeKind, NodeKindTag,
         NodeRefId, SignalId, StoredId, kind,
     },
-    internal::{RawId, value::AnyValue},
     root::*,
     runtime::{Runtime, RuntimeInput, RuntimeInputs},
 };

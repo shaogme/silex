@@ -154,7 +154,7 @@ unsafe fn equals_typed<T: PartialEq>(data1: *const u8, data2: *const u8) -> bool
     }
 }
 
-pub struct AnyValue<'a> {
+pub(crate) struct AnyValue<'a> {
     data: InlineStorage,
     vtable: &'static AnyValueVTable,
     is_heap: bool,
@@ -162,7 +162,7 @@ pub struct AnyValue<'a> {
 }
 
 impl<'a> AnyValue<'a> {
-    pub fn new<T: 'a>(value: T) -> Self {
+    pub(crate) fn new<T: 'a>(value: T) -> Self {
         let fits_inline = InlineStorage::fits::<T>(0);
         let mut data = InlineStorage::zeroed();
         if fits_inline {
@@ -186,7 +186,7 @@ impl<'a> AnyValue<'a> {
         }
     }
 
-    pub fn new_reactive<T: PartialEq + 'a>(value: T) -> Self {
+    pub(crate) fn new_reactive<T: PartialEq + 'a>(value: T) -> Self {
         let fits_inline = InlineStorage::fits::<T>(0);
         let mut data = InlineStorage::zeroed();
         if fits_inline {
@@ -238,7 +238,7 @@ impl<'a> AnyValue<'a> {
     /// The caller must ensure that `T` is exactly the erased value type. The
     /// runtime type token intentionally cannot encode lifetimes, so matching a
     /// type constructor with a different lifetime is not sufficient.
-    pub unsafe fn downcast_ref<T>(&self) -> Option<&T> {
+    pub(crate) unsafe fn downcast_ref<T>(&self) -> Option<&T> {
         if self.value_type_id() == type_id_token::<T>() {
             // SAFETY: 调用者保证 exact-type 合约，vtable.as_ptr 返回有效的 *const T 指针。
             unsafe {
@@ -257,7 +257,7 @@ impl<'a> AnyValue<'a> {
     ///
     /// The caller must ensure that `T` is exactly the erased value type,
     /// including all lifetime parameters.
-    pub unsafe fn downcast_mut<T>(&mut self) -> Option<&mut T> {
+    pub(crate) unsafe fn downcast_mut<T>(&mut self) -> Option<&mut T> {
         if self.value_type_id() == type_id_token::<T>() {
             // SAFETY: 调用者保证 exact-type 合约，vtable.as_mut_ptr 返回有效的 *mut T 指针。
             unsafe {
@@ -276,7 +276,7 @@ impl<'a> AnyValue<'a> {
     ///
     /// The caller must ensure that `T` is exactly the erased value type,
     /// including all lifetime parameters.
-    pub unsafe fn downcast<T>(mut self) -> Option<T> {
+    pub(crate) unsafe fn downcast<T>(mut self) -> Option<T> {
         if self.value_type_id() == type_id_token::<T>() {
             // SAFETY: 调用者保证 exact-type 合约，当前 vtable 与存储路径匹配。
             // 使用 ptr::read 将 T 从底层内存中提取出来，并使用 mem::forget 防止 AnyValue 的 drop 再次释放底层对象。
@@ -400,6 +400,21 @@ impl<'scope> CallbackThunk<'scope> {
         Self {
             callback: Box::new(callback),
         }
+    }
+
+    pub(crate) fn new_typed<T, F>(callback: F) -> Self
+    where
+        T: 'scope,
+        F: FnMut(T) + 'scope,
+    {
+        let mut callback = callback;
+        Self::new(move |value| {
+            // SAFETY: every value submitted to this thunk is constructed by
+            // the matching typed callback or completion token.
+            if let Some(value) = unsafe { value.downcast::<T>() } {
+                callback(value);
+            }
+        })
     }
 
     pub(crate) fn call(&mut self, arg: AnyValue<'scope>) {

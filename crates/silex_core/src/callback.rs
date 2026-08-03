@@ -1,9 +1,8 @@
-use silex_reactivity::AnyValue;
 use std::{fmt, marker::PhantomData};
 
 /// A typed callback owned by a scope.
 pub struct Callback<'scope, T = ()> {
-    pub(crate) inner: silex_reactivity::Callback<'scope>,
+    pub(crate) inner: silex_reactivity::Callback<'scope, T>,
     marker: PhantomData<fn(T)>,
 }
 
@@ -22,7 +21,7 @@ impl<T> fmt::Debug for Callback<'_, T> {
 }
 
 impl<'scope, T: 'scope> Callback<'scope, T> {
-    pub(crate) fn from_inner(inner: silex_reactivity::Callback<'scope>) -> Self {
+    pub(crate) fn from_inner(inner: silex_reactivity::Callback<'scope, T>) -> Self {
         Self {
             inner,
             marker: PhantomData,
@@ -30,7 +29,7 @@ impl<'scope, T: 'scope> Callback<'scope, T> {
     }
 
     pub fn call(&self, value: T) -> bool {
-        self.inner.invoke(AnyValue::new(value)).is_ok()
+        self.inner.invoke(value).is_ok()
     }
 
     pub fn is_alive(&self) -> bool {

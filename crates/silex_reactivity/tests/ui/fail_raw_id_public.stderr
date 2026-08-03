@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `silex_reactivity::RawId`
+ --> tests/ui/fail_raw_id_public.rs:1:5
+  |
+1 | use silex_reactivity::RawId;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^ no `RawId` in the root
