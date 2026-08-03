@@ -1684,6 +1684,7 @@ dependencies = [
  "silex_vtable",
  "trybuild",
  "wasm-bindgen",
+ "wasm-bindgen-test",
  "web-sys",
 ]
 

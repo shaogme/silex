@@ -34,7 +34,7 @@ error[E0505]: cannot move out of `value` because it is borrowed
    |                ^^^^^ move out of `value` occurs here
    |
 note: requirement that the value outlives `'static` introduced here
-  --> src/root.rs
+  --> src/root/scope.rs
    |
    |         F: FnMut(T) + 'static,
    |                       ^^^^^^^

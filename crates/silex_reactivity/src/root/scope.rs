@@ -348,4 +348,11 @@ impl RootScope {
             (Ok(_), Err(panic)) => resume_unwind(panic),
         }
     }
+
+    /// Create a persistent owner backed by the root scheduler.
+    pub fn owned_scope(&self) -> crate::OwnedScope<'static, 'static> {
+        let state = self.state().expect("创建 owned scope 时 root owner 已结束");
+        let scheduler = state.borrow().scheduler.clone();
+        crate::OwnedScope::new_for_scheduler(scheduler)
+    }
 }

@@ -158,6 +158,12 @@ impl RootScope {
             f(&scope)
         })
     }
+
+    pub fn owned_scope(&self) -> OwnedScope<'static, 'static> {
+        OwnedScope {
+            inner: self.inner.owned_scope(),
+        }
+    }
 }
 
 impl Default for Runtime {
@@ -182,6 +188,12 @@ impl<'scope, 'run> PartialEq for Scope<'scope, 'run> {
 impl<'scope, 'run> Eq for Scope<'scope, 'run> {}
 
 impl<'scope, 'run> Scope<'scope, 'run> {
+    pub fn owned_scope(&self) -> OwnedScope<'scope, 'run> {
+        OwnedScope {
+            inner: self.inner.owned_scope(),
+        }
+    }
+
     pub fn signal<T: 'scope>(
         &self,
         value: T,
@@ -330,5 +342,40 @@ impl<'scope, 'run> Scope<'scope, 'run> {
         F: FnOnce() + 'scope,
     {
         self.inner.on_cleanup(f);
+    }
+}
+
+/// Persistent owner used by dynamic branches and list rows.
+pub struct OwnedScope<'scope, 'run> {
+    inner: silex_reactivity::OwnedScope<'scope, 'run>,
+}
+
+impl<'scope, 'run> OwnedScope<'scope, 'run> {
+    pub fn child(&self) -> Self {
+        Self {
+            inner: self.inner.child(),
+        }
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.inner.is_active()
+    }
+
+    pub fn effect<F>(&self, f: F)
+    where
+        F: FnMut() + 'scope,
+    {
+        self.inner.effect(f);
+    }
+
+    pub fn on_cleanup<F>(&self, f: F)
+    where
+        F: FnOnce() + 'scope,
+    {
+        self.inner.on_cleanup(f);
+    }
+
+    pub fn dispose(&self) {
+        self.inner.dispose();
     }
 }

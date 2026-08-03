@@ -21,7 +21,7 @@ pub use node_ref::NodeRef;
 pub use reactivity::{
     Constant, Effect, Memo, ReadSignal, RwSignal, Signal, StoredValue, WriteSignal,
 };
-pub use scope::{RootHandle, RootScope, Runtime, Scope};
+pub use scope::{OwnedScope, RootHandle, RootScope, Runtime, Scope};
 pub use store::Store;
 pub use traits::{RxBase, RxGet, RxRead};
 

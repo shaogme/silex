@@ -12,7 +12,7 @@ error[E0597]: `local` does not live long enough
   |     - `local` dropped here while still borrowed
   |
 note: requirement that the value outlives `'static` introduced here
- --> src/root.rs
+ --> src/root/scope.rs
   |
   |     pub fn signal<T: 'static>(&self, value: T) -> (RootReadSignal<T>, RootWriteSignal<T>) {
   |                      ^^^^^^^

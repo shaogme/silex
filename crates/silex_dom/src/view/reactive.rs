@@ -1,7 +1,8 @@
 use crate::attribute::PendingAttribute;
 use crate::element::{Element, TypedElement, tags::Tag};
 use crate::view::{
-    AnyView, ApplyAttributes, RenderThunk, View, ViewCons, ViewOwner, mount_dynamic_view_universal,
+    AnyView, ApplyAttributes, RenderArgs, RenderThunk, View, ViewCons, ViewOwner,
+    mount_dynamic_view_universal,
 };
 use silex_core::error::handle_error;
 use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal, StoredValue};
@@ -38,12 +39,16 @@ pub(crate) fn mount_reactive_view<'scope, 'run, V>(
 ) where
     V: View<'scope, 'run> + 'scope,
 {
-    let token = owner.token();
     mount_dynamic_view_universal(
         owner,
         parent,
         attrs,
-        RenderThunk::new(move |(parent, attrs)| {
+        RenderThunk::new(move |args| {
+            let RenderArgs {
+                parent,
+                attrs,
+                owner: token,
+            } = args;
             rx.with(|view| view.mount(&token, &parent, attrs));
         }),
     );

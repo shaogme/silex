@@ -1,9 +1,11 @@
 //! Lexical scope capabilities and lifetime boundaries.
 
 use std::{
+    cell::{Cell, RefCell},
     marker::PhantomData,
     mem::transmute,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    rc::Rc,
 };
 
 use super::node::{
@@ -40,6 +42,16 @@ impl<'scope, 'run> PartialEq for Scope<'scope, 'run> {
 impl<'scope, 'run> Eq for Scope<'scope, 'run> {}
 
 impl<'scope, 'run> Scope<'scope, 'run> {
+    /// Create a persistent owner backed by the same scheduler as this scope.
+    ///
+    /// Unlike [`Scope::child`], the returned owner is not tied to a callback
+    /// stack frame. Its caller must dispose it when the owned object is
+    /// removed; the DOM owner adapters use this as the row lifetime boundary.
+    pub fn owned_scope(&self) -> OwnedScope<'scope, 'run> {
+        let scheduler = self.frame.state.borrow().scheduler.clone();
+        OwnedScope::new(scheduler)
+    }
+
     /// Execute a child scope. All child nodes and computations are destroyed
     /// before this method returns, including during panic unwinding.
     pub fn child<R>(&self, f: impl for<'s1, 's2, 's3> FnOnce(&'s1 Scope<'s2, 's3>) -> R) -> R {
@@ -261,5 +273,90 @@ impl<'scope, 'run> Scope<'scope, 'run> {
             handle: Handle::new(self.frame, raw),
             marker: PhantomData,
         }
+    }
+}
+
+/// A persistent, owner-backed scope for a dynamic branch or list row.
+///
+/// The frame is heap allocated so its address remains stable while the owner
+/// is stored by a controller. All callbacks registered through this type are
+/// still bounded by the parent view lifetime and become inert after dispose.
+pub struct OwnedScope<'scope, 'run> {
+    frame: Box<ScopeFrame<'run>>,
+    active: Cell<bool>,
+    marker: PhantomData<fn(&'scope ())>,
+}
+
+impl<'scope, 'run> OwnedScope<'scope, 'run> {
+    fn new(scheduler: Rc<RefCell<crate::runtime::GlobalScheduler>>) -> Self {
+        Self {
+            frame: Box::new(ScopeFrame::new(scheduler)),
+            active: Cell::new(true),
+            marker: PhantomData,
+        }
+    }
+
+    pub(crate) fn new_for_scheduler(
+        scheduler: Rc<RefCell<crate::runtime::GlobalScheduler>>,
+    ) -> Self {
+        Self::new(scheduler)
+    }
+
+    /// Create a nested persistent owner using the same scheduler.
+    pub fn child(&self) -> Self {
+        let scheduler = self.frame.state.borrow().scheduler.clone();
+        let child = Self::new(scheduler);
+        if !self.active.get() {
+            child.dispose();
+        }
+        child
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active.get()
+    }
+
+    /// Register and immediately run an effect owned by this frame.
+    pub fn effect<F>(&self, f: F)
+    where
+        F: FnMut() + 'scope,
+    {
+        if self.active.get() {
+            self.with_scope(|scope| {
+                let _ = scope.effect(f);
+            });
+        }
+    }
+
+    pub fn on_cleanup<F>(&self, f: F)
+    where
+        F: FnOnce() + 'scope,
+    {
+        if self.active.get() {
+            self.with_scope(|scope| scope.on_cleanup(f));
+        }
+    }
+
+    /// Dispose this owner exactly once. Cleanup panics follow the same
+    /// propagation rules as lexical scope disposal.
+    pub fn dispose(&self) {
+        if !self.active.replace(false) {
+            return;
+        }
+        self.frame.dispose();
+    }
+
+    fn with_scope<R>(&self, f: impl for<'row> FnOnce(&'row Scope<'row, 'run>) -> R) -> R {
+        let scope = Scope {
+            frame: &self.frame,
+            _marker: PhantomData,
+        };
+        f(&scope)
+    }
+}
+
+impl Drop for OwnedScope<'_, '_> {
+    fn drop(&mut self) {
+        self.dispose();
     }
 }

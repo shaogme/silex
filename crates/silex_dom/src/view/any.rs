@@ -1,11 +1,47 @@
 use crate::attribute::PendingAttribute;
 use crate::element::Element;
-use crate::view::{ApplyAttributes, View, ViewCons, ViewNil, ViewOwner};
+use crate::view::{ApplyAttributes, View, ViewCons, ViewNil, ViewOwner, ViewOwnerToken};
 use std::rc::Rc;
 use web_sys::Node;
 
-pub type RenderThunk<'scope, 'run> =
-    silex_vtable::thunk::ThunkBox<'scope, (Node, Vec<PendingAttribute<'scope, 'run>>), ()>;
+pub struct RenderArgs<'scope, 'run> {
+    pub(crate) parent: Node,
+    pub(crate) attrs: Vec<PendingAttribute<'scope, 'run>>,
+    pub(crate) owner: ViewOwnerToken<'scope, 'run>,
+}
+
+impl<'scope, 'run> RenderArgs<'scope, 'run> {
+    pub fn new(
+        parent: Node,
+        attrs: Vec<PendingAttribute<'scope, 'run>>,
+        owner: ViewOwnerToken<'scope, 'run>,
+    ) -> Self {
+        Self {
+            parent,
+            attrs,
+            owner,
+        }
+    }
+}
+
+pub struct RenderThunk<'scope, 'run> {
+    inner: silex_vtable::thunk::ThunkBox<'scope, RenderArgs<'scope, 'run>, ()>,
+}
+
+impl<'scope, 'run> RenderThunk<'scope, 'run> {
+    pub fn new<F>(render: F) -> Self
+    where
+        F: Fn(RenderArgs<'scope, 'run>) + 'scope,
+    {
+        Self {
+            inner: silex_vtable::thunk::ThunkBox::new(render),
+        }
+    }
+
+    pub fn call(&self, args: RenderArgs<'scope, 'run>) {
+        self.inner.call(args);
+    }
+}
 
 /// Scope-bound type-erased view.
 #[derive(Default)]

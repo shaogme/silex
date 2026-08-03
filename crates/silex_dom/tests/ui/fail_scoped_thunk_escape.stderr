@@ -8,6 +8,6 @@ error: lifetime may not live long enough
 6 | |     })
   | |______^ returning this value requires that `'scope` must outlive `'static`
   |
-  = note: requirement occurs because of the type `silex_vtable::thunk::ThunkBox<'_, (web_sys::features::gen_Node::Node, Vec<AttrOp<'_, '_>>), ()>`, which makes the generic argument `'_` invariant
-  = note: the struct `silex_vtable::thunk::ThunkBox<'a, Args, R>` is invariant over the parameter `'a`
+  = note: requirement occurs because of the type `RenderThunk<'_, '_>`, which makes the generic argument `'_` invariant
+  = note: the struct `RenderThunk<'scope, 'run>` is invariant over the parameter `'scope`
   = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance

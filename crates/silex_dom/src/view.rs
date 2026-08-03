@@ -1,6 +1,7 @@
 pub mod any;
 pub mod list;
 pub mod logic;
+pub(crate) mod owner;
 pub mod reactive;
 
 pub use any::*;
@@ -10,13 +11,14 @@ pub use reactive::*;
 
 use crate::attribute::PendingAttribute;
 use silex_core::{
-    RootScope, Scope,
+    OwnedScope, RootScope, Scope,
     error::handle_error,
     traits::{IntoRx, IntoSignal, RxData, RxValue},
 };
 use silex_core::{Rx, SilexError, SilexResult};
 use std::{
     borrow::Cow,
+    cell::RefCell,
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     marker::PhantomData,
     ops::{Add, Deref, Div, Mul, Sub},
@@ -25,36 +27,140 @@ use std::{
 };
 use web_sys::Node;
 
+use owner::{DomRange, RowController, RowRender, RowRenderArgs};
+
 /// Owner capabilities captured by a mounted view or attribute operation.
 ///
 /// The token owns only registration functions. It never stores a borrowed
 /// `ViewOwner`, so an effect cannot outlive the adapter stack frame used by
 /// the original mount call.
-type EffectRegistrar<'scope> = Rc<dyn Fn(Box<dyn FnMut() + 'scope>) + 'scope>;
-type CleanupRegistrar<'scope> = Rc<dyn Fn(Box<dyn FnOnce() + 'scope>) + 'scope>;
+#[derive(Clone)]
+struct EffectRegistrar<'scope> {
+    inner: Rc<dyn EffectRegister<'scope> + 'scope>,
+}
+
+trait EffectRegister<'scope> {
+    fn register(&self, callback: Box<dyn FnMut() + 'scope>);
+}
+
+impl<'scope, F> EffectRegister<'scope> for F
+where
+    F: Fn(Box<dyn FnMut() + 'scope>) + 'scope,
+{
+    fn register(&self, callback: Box<dyn FnMut() + 'scope>) {
+        self(callback);
+    }
+}
+
+impl<'scope> EffectRegistrar<'scope> {
+    fn new<F>(register: F) -> Self
+    where
+        F: Fn(Box<dyn FnMut() + 'scope>) + 'scope,
+    {
+        Self {
+            inner: Rc::new(register),
+        }
+    }
+
+    fn call(&self, callback: Box<dyn FnMut() + 'scope>) {
+        self.inner.register(callback);
+    }
+}
+
+#[derive(Clone)]
+struct CleanupRegistrar<'scope> {
+    inner: Rc<dyn CleanupRegister<'scope> + 'scope>,
+}
+
+trait CleanupRegister<'scope> {
+    fn register(&self, cleanup: Box<dyn FnOnce() + 'scope>);
+}
+
+impl<'scope, F> CleanupRegister<'scope> for F
+where
+    F: Fn(Box<dyn FnOnce() + 'scope>) + 'scope,
+{
+    fn register(&self, cleanup: Box<dyn FnOnce() + 'scope>) {
+        self(cleanup);
+    }
+}
+
+impl<'scope> CleanupRegistrar<'scope> {
+    fn new<F>(register: F) -> Self
+    where
+        F: Fn(Box<dyn FnOnce() + 'scope>) + 'scope,
+    {
+        Self {
+            inner: Rc::new(register),
+        }
+    }
+
+    fn call(&self, cleanup: Box<dyn FnOnce() + 'scope>) {
+        self.inner.register(cleanup);
+    }
+}
+
+#[derive(Clone)]
+struct OwnedScopeRegistrar<'scope, 'run> {
+    inner: Rc<dyn OwnedScopeRegister<'scope, 'run> + 'scope>,
+}
+
+trait OwnedScopeRegister<'scope, 'run> {
+    fn create(&self) -> OwnedScope<'scope, 'run>;
+}
+
+impl<'scope, 'run, F> OwnedScopeRegister<'scope, 'run> for F
+where
+    F: Fn() -> OwnedScope<'scope, 'run> + 'scope,
+{
+    fn create(&self) -> OwnedScope<'scope, 'run> {
+        self()
+    }
+}
+
+impl<'scope, 'run> OwnedScopeRegistrar<'scope, 'run> {
+    fn new<F>(create: F) -> Self
+    where
+        F: Fn() -> OwnedScope<'scope, 'run> + 'scope,
+    {
+        Self {
+            inner: Rc::new(create),
+        }
+    }
+
+    fn call(&self) -> OwnedScope<'scope, 'run> {
+        self.inner.create()
+    }
+}
 
 #[derive(Clone)]
 pub struct ViewOwnerToken<'scope, 'run> {
     effect: EffectRegistrar<'scope>,
     cleanup: CleanupRegistrar<'scope>,
+    owned_scope: OwnedScopeRegistrar<'scope, 'run>,
     marker: PhantomData<fn(&'run ())>,
 }
 
 impl<'scope, 'run> ViewOwnerToken<'scope, 'run> {
-    fn new(effect: EffectRegistrar<'scope>, cleanup: CleanupRegistrar<'scope>) -> Self {
+    fn new(
+        effect: EffectRegistrar<'scope>,
+        cleanup: CleanupRegistrar<'scope>,
+        owned_scope: OwnedScopeRegistrar<'scope, 'run>,
+    ) -> Self {
         Self {
             effect,
             cleanup,
+            owned_scope,
             marker: PhantomData,
         }
     }
 
     pub(crate) fn effect(&self, callback: Box<dyn FnMut() + 'scope>) {
-        (self.effect)(callback);
+        self.effect.call(callback);
     }
 
     pub(crate) fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>) {
-        (self.cleanup)(cleanup);
+        self.cleanup.call(cleanup);
     }
 }
 
@@ -63,6 +169,7 @@ pub trait ViewOwner<'scope, 'run> {
     fn effect(&self, callback: Box<dyn FnMut() + 'scope>);
     fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>);
     fn token(&self) -> ViewOwnerToken<'scope, 'run>;
+    fn owned_scope(&self) -> OwnedScope<'scope, 'run>;
 }
 
 impl<'scope, 'run> ViewOwner<'scope, 'run> for ViewOwnerToken<'scope, 'run> {
@@ -76,6 +183,10 @@ impl<'scope, 'run> ViewOwner<'scope, 'run> for ViewOwnerToken<'scope, 'run> {
 
     fn token(&self) -> ViewOwnerToken<'scope, 'run> {
         self.clone()
+    }
+
+    fn owned_scope(&self) -> OwnedScope<'scope, 'run> {
+        self.owned_scope.call()
     }
 }
 
@@ -103,12 +214,18 @@ impl ViewOwner<'static, 'static> for RootViewOwner {
     fn token(&self) -> ViewOwnerToken<'static, 'static> {
         let scope_for_effect = self.scope.clone();
         let scope_for_cleanup = self.scope.clone();
+        let scope_for_owned = self.scope.clone();
         ViewOwnerToken::new(
-            Rc::new(move |callback| {
+            EffectRegistrar::new(move |callback| {
                 let _ = scope_for_effect.effect(callback);
             }),
-            Rc::new(move |cleanup| scope_for_cleanup.on_cleanup(cleanup)),
+            CleanupRegistrar::new(move |cleanup| scope_for_cleanup.on_cleanup(cleanup)),
+            OwnedScopeRegistrar::new(move || scope_for_owned.owned_scope()),
         )
+    }
+
+    fn owned_scope(&self) -> OwnedScope<'static, 'static> {
+        self.scope.owned_scope()
     }
 }
 
@@ -139,15 +256,59 @@ impl<'scope, 'run> ViewOwner<'scope, 'run> for ScopedViewOwner<'scope, 'run> {
     fn token(&self) -> ViewOwnerToken<'scope, 'run> {
         let scope_for_effect = self.scope;
         let scope_for_cleanup = self.scope;
+        let scope_for_owned = self.scope;
         ViewOwnerToken::new(
-            Rc::new(move |callback| {
+            EffectRegistrar::new(move |callback| {
                 let mut callback = callback;
                 let _ = scope_for_effect.effect(move |_: Option<()>| {
                     callback();
                 });
             }),
-            Rc::new(move |cleanup| scope_for_cleanup.on_cleanup(cleanup)),
+            CleanupRegistrar::new(move |cleanup| scope_for_cleanup.on_cleanup(cleanup)),
+            OwnedScopeRegistrar::new(move || scope_for_owned.owned_scope()),
         )
+    }
+
+    fn owned_scope(&self) -> OwnedScope<'scope, 'run> {
+        self.scope.owned_scope()
+    }
+}
+
+pub(crate) struct OwnedViewOwner<'scope, 'run> {
+    scope: Rc<OwnedScope<'scope, 'run>>,
+}
+
+impl<'scope, 'run> OwnedViewOwner<'scope, 'run> {
+    pub(crate) fn new(scope: Rc<OwnedScope<'scope, 'run>>) -> Self {
+        Self { scope }
+    }
+}
+
+impl<'scope, 'run> ViewOwner<'scope, 'run> for OwnedViewOwner<'scope, 'run>
+where
+    'run: 'scope,
+{
+    fn effect(&self, callback: Box<dyn FnMut() + 'scope>) {
+        self.scope.effect(callback);
+    }
+
+    fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>) {
+        self.scope.on_cleanup(cleanup);
+    }
+
+    fn token(&self) -> ViewOwnerToken<'scope, 'run> {
+        let scope_for_effect = self.scope.clone();
+        let scope_for_cleanup = self.scope.clone();
+        let scope_for_owned = self.scope.clone();
+        ViewOwnerToken::new(
+            EffectRegistrar::new(move |callback| scope_for_effect.effect(callback)),
+            CleanupRegistrar::new(move |cleanup| scope_for_cleanup.on_cleanup(cleanup)),
+            OwnedScopeRegistrar::new(move || scope_for_owned.child()),
+        )
+    }
+
+    fn owned_scope(&self) -> OwnedScope<'scope, 'run> {
+        self.scope.child()
     }
 }
 
@@ -534,13 +695,16 @@ where
     ) where
         Self: Sized,
     {
-        let token = owner.token();
         mount_dynamic_view_universal(
             owner,
             parent,
             attrs,
             RenderThunk::new(move |args| {
-                let (parent, attrs) = args;
+                let RenderArgs {
+                    parent,
+                    attrs,
+                    owner: token,
+                } = args;
                 let view = self();
                 view.mount_owned(&token, &parent, attrs);
             }),
@@ -555,72 +719,34 @@ pub fn mount_dynamic_view_universal<'scope, 'run>(
     attrs: Vec<PendingAttribute<'scope, 'run>>,
     renderer: RenderThunk<'scope, 'run>,
 ) {
-    let document = crate::document();
-    let start_node: Node = document.create_comment("dyn-start").into();
-    let end_node: Node = document.create_comment("dyn-end").into();
-
-    if let Err(error) = parent.append_child(&start_node).map_err(SilexError::from) {
-        handle_error(error);
-        return;
-    }
-    if let Err(error) = parent.append_child(&end_node).map_err(SilexError::from) {
-        handle_error(error);
-        return;
-    }
-
-    let cleanup_start = start_node.clone();
-    let cleanup_end = end_node.clone();
+    let range = match DomRange::append(parent, "dyn") {
+        Ok(range) => range,
+        Err(error) => {
+            handle_error(error);
+            return;
+        }
+    };
+    let render = RowRender::new(move |args: RowRenderArgs<'scope, 'run, ()>| {
+        let RowRenderArgs {
+            parent,
+            attrs,
+            owner: token,
+            ..
+        } = args;
+        renderer.call(RenderArgs::new(parent, attrs, token));
+    });
+    let token = owner.token();
+    let row = RowController::new(&token, range, render, attrs, (), 0);
+    let row_state = Rc::new(RefCell::new(Some(row)));
+    let cleanup_state = row_state.clone();
     owner.on_cleanup(Box::new(move || {
-        clear_nodes_between(&cleanup_start, &cleanup_end);
-        if let Some(parent) = cleanup_start.parent_node() {
-            let _ = parent.remove_child(&cleanup_start);
-        }
-        if let Some(parent) = cleanup_end.parent_node() {
-            let _ = parent.remove_child(&cleanup_end);
-        }
-    }));
-
-    owner.effect(Box::new(move || {
-        let start_node = start_node.clone();
-        let end_node = end_node.clone();
-        let document = document.clone();
-        let attrs = attrs.clone();
-
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            clear_nodes_between(&start_node, &end_node);
-            let fragment = document.create_document_fragment();
-            let fragment_node: Node = fragment.clone().into();
-            renderer.call((fragment_node.clone(), attrs));
-            if let Some(parent) = end_node.parent_node() {
-                let _ = parent.insert_before(&fragment_node, Some(&end_node));
-            }
-        }));
-
-        if let Err(payload) = result {
-            let message = if let Some(value) = payload.downcast_ref::<&str>() {
-                format!("Panic in Dynamic View: {}", value)
-            } else if let Some(value) = payload.downcast_ref::<String>() {
-                format!("Panic in Dynamic View: {}", value)
-            } else {
-                "Unknown Panic in Dynamic View".to_string()
-            };
-            handle_error(SilexError::Javascript(message));
+        if let Some(mut row) = cleanup_state.borrow_mut().take() {
+            row.dispose();
         }
     }));
 }
 
-fn clear_nodes_between(start_node: &Node, end_node: &Node) {
-    if let Some(parent) = start_node.parent_node() {
-        while let Some(sibling) = start_node.next_sibling() {
-            if sibling == *end_node {
-                break;
-            }
-            let _ = parent.remove_child(&sibling);
-        }
-    }
-}
-
-/// Dynamic view mount with full rebuild on key changes.
+/// Dynamic view mount with a persistent row owner keyed by the current key.
 pub fn mount_dynamic_view_cached<'scope, 'run, K, KeyFn, RenderFn>(
     owner: &dyn ViewOwner<'scope, 'run>,
     parent: &Node,
@@ -632,17 +758,16 @@ pub fn mount_dynamic_view_cached<'scope, 'run, K, KeyFn, RenderFn>(
     KeyFn: Fn() -> K + Clone + 'scope,
     RenderFn: Fn(K, (Node, Vec<PendingAttribute<'scope, 'run>>)) + 'scope,
 {
-    let token = owner.token();
-    mount_dynamic_view_universal(
-        owner,
-        parent,
-        attrs,
-        RenderThunk::new(move |(fragment, attrs)| {
-            let key = key_fn();
-            renderer(key, (fragment, attrs));
-        }),
-    );
-    let _ = token;
+    let render = RowRender::new(move |args: RowRenderArgs<'scope, 'run, K>| {
+        let RowRenderArgs {
+            item: key,
+            parent,
+            attrs,
+            ..
+        } = args;
+        renderer(key, (parent, attrs));
+    });
+    mount_keyed_dynamic_view(owner, parent, attrs, key_fn, render);
 }
 
 pub fn mount_branch_cached<'scope, 'run, K, KeyFn, BranchFn>(
@@ -656,16 +781,101 @@ pub fn mount_branch_cached<'scope, 'run, K, KeyFn, BranchFn>(
     KeyFn: Fn() -> K + Clone + 'scope,
     BranchFn: Fn(K) -> AnyView<'scope, 'run> + 'scope,
 {
-    let token = owner.token();
-    mount_dynamic_view_universal(
-        owner,
-        parent,
+    let render = RowRender::new(move |args: RowRenderArgs<'scope, 'run, K>| {
+        let RowRenderArgs {
+            item: key,
+            parent,
+            attrs,
+            owner: token,
+            ..
+        } = args;
+        branch_fn(key).mount_owned(&token, &parent, attrs);
+    });
+    mount_keyed_dynamic_view(owner, parent, attrs, key_fn, render);
+}
+
+struct BranchState<'scope, 'run, K> {
+    range: DomRange,
+    row: Option<RowController<'scope, 'run, K>>,
+    key: Option<K>,
+    render: RowRender<'scope, 'run, K>,
+    attrs: Vec<PendingAttribute<'scope, 'run>>,
+}
+
+fn mount_keyed_dynamic_view<'scope, 'run, K, KeyFn>(
+    owner: &dyn ViewOwner<'scope, 'run>,
+    parent: &Node,
+    attrs: Vec<PendingAttribute<'scope, 'run>>,
+    key_fn: KeyFn,
+    render: RowRender<'scope, 'run, K>,
+) where
+    K: PartialEq + Clone + 'scope,
+    KeyFn: Fn() -> K + Clone + 'scope,
+{
+    let range = match DomRange::append(parent, "branch") {
+        Ok(range) => range,
+        Err(error) => {
+            handle_error(error);
+            return;
+        }
+    };
+    let state = Rc::new(RefCell::new(BranchState {
+        range,
+        row: None,
+        key: None,
+        render,
         attrs,
-        RenderThunk::new(move |(parent, attrs)| {
+    }));
+    let cleanup_state = state.clone();
+    owner.on_cleanup(Box::new(move || {
+        let mut state = cleanup_state.borrow_mut();
+        if let Some(mut row) = state.row.take() {
+            row.dispose();
+        } else {
+            state.range.remove();
+        }
+        state.key = None;
+    }));
+
+    let token = owner.token();
+    owner.effect(Box::new(move || {
+        let result = catch_unwind(AssertUnwindSafe(|| {
             let key = key_fn();
-            branch_fn(key).mount_owned(&token, &parent, attrs);
-        }),
-    );
+            let mut state = state.borrow_mut();
+            let same_key = state.key.as_ref().is_some_and(|current| current == &key);
+            if same_key {
+                if let Some(row) = state.row.as_mut() {
+                    row.update(key, 0);
+                }
+                return;
+            }
+
+            state.key = None;
+            if let Some(mut row) = state.row.take() {
+                row.dispose_keep_range();
+            }
+            let row = RowController::new(
+                &token,
+                state.range.clone(),
+                state.render.clone(),
+                state.attrs.clone(),
+                key.clone(),
+                0,
+            );
+            state.key = Some(key);
+            state.row = Some(row);
+        }));
+        if let Err(panic) = result {
+            let message = if let Some(value) = panic.downcast_ref::<&str>() {
+                format!("Panic in Dynamic Branch: {value}")
+            } else if let Some(value) = panic.downcast_ref::<String>() {
+                format!("Panic in Dynamic Branch: {value}")
+            } else {
+                "Panic in Dynamic Branch: unknown panic".to_string()
+            };
+            handle_error(SilexError::Javascript(message));
+        }
+    }));
 }
 
 impl<'scope, 'run, V: View<'scope, 'run> + ApplyAttributes<'scope, 'run>>
