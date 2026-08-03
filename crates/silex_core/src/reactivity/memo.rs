@@ -21,7 +21,7 @@ impl<T> fmt::Debug for Memo<'_, '_, T> {
     }
 }
 
-impl<'scope, 'run, T: 'run> Memo<'scope, 'run, T> {
+impl<'scope, 'run, T: 'scope> Memo<'scope, 'run, T> {
     pub(crate) fn from_inner(
         inner: silex_reactivity::Memo<'scope, 'run, T>,
         scope: Scope<'scope, 'run>,

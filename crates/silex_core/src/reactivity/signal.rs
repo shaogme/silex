@@ -185,6 +185,10 @@ impl<'scope, 'run, T: 'scope> ReadSignal<'scope, 'run, T> {
         self.inner.is_alive()
     }
 
+    pub fn into_rx(self) -> Rx<'scope, 'run, T> {
+        Rx::from_signal(self)
+    }
+
     pub fn slice<O, F>(self, getter: F) -> SignalSlice<Self, F, O>
     where
         O: ?Sized + 'scope,
@@ -238,6 +242,13 @@ impl<'scope, 'run, T> RwSignal<'scope, 'run, T> {
 
     pub fn write_signal(&self) -> WriteSignal<'scope, 'run, T> {
         self.write
+    }
+
+    pub fn into_rx(self) -> Rx<'scope, 'run, T>
+    where
+        T: 'scope,
+    {
+        self.read.into_rx()
     }
 
     pub fn split(&self) -> (ReadSignal<'scope, 'run, T>, WriteSignal<'scope, 'run, T>) {
@@ -301,6 +312,10 @@ impl<'scope, 'run, T: 'scope> Signal<'scope, 'run, T> {
 
     pub fn is_alive(&self) -> bool {
         self.rx.is_alive()
+    }
+
+    pub fn into_rx(self) -> Rx<'scope, 'run, T> {
+        self.rx
     }
 
     pub fn slice<O, F>(self, getter: F) -> SignalSlice<Self, F, O>

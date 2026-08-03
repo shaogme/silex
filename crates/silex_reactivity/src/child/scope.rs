@@ -31,6 +31,14 @@ pub struct Scope<'scope, 'run> {
     pub(crate) _marker: PhantomData<fn() -> &'scope ()>,
 }
 
+impl<'scope, 'run> PartialEq for Scope<'scope, 'run> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.frame, other.frame)
+    }
+}
+
+impl<'scope, 'run> Eq for Scope<'scope, 'run> {}
+
 impl<'scope, 'run> Scope<'scope, 'run> {
     /// Execute a child scope. All child nodes and computations are destroyed
     /// before this method returns, including during panic unwinding.
@@ -255,4 +263,3 @@ impl<'scope, 'run> Scope<'scope, 'run> {
         }
     }
 }
-

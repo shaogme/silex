@@ -1,35 +1,45 @@
 use crate::attribute::PendingAttribute;
-use crate::view::View;
-use silex_core::reactivity::create_scope;
+use crate::view::{ApplyAttributes, View, ViewOwner};
 use web_sys::Node;
 
-/// 一个特殊的视图，它为其子视图创建一个新的响应式作用域。
-pub struct ScopeView<V: View> {
+/// View wrapper reserved for an explicit lexical owner supplied by the caller.
+/// The wrapper itself never creates a detached or global scope.
+pub struct ScopeView<V> {
     view: V,
 }
 
-impl<V: View> ScopeView<V> {
+impl<V> ScopeView<V> {
     pub fn new(view: V) -> Self {
         Self { view }
     }
 }
 
-impl<V: View> crate::view::ApplyAttributes for ScopeView<V> {}
+impl<'scope, 'run, V: ApplyAttributes<'scope, 'run>> ApplyAttributes<'scope, 'run>
+    for ScopeView<V>
+{
+    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope, 'run>>) {
+        self.view.apply_attributes(attrs);
+    }
+}
 
-impl<V: View> View for ScopeView<V> {
-    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        let view = &self.view;
-        create_scope(move || {
-            view.mount(parent, attrs);
-        });
+impl<'scope, 'run, V: View<'scope, 'run>> View<'scope, 'run> for ScopeView<V> {
+    fn mount(
+        &self,
+        owner: &dyn ViewOwner<'scope, 'run>,
+        parent: &Node,
+        attrs: Vec<PendingAttribute<'scope, 'run>>,
+    ) {
+        self.view.mount(owner, parent, attrs);
     }
 
-    fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)
-    where
+    fn mount_owned(
+        self,
+        owner: &dyn ViewOwner<'scope, 'run>,
+        parent: &Node,
+        attrs: Vec<PendingAttribute<'scope, 'run>>,
+    ) where
         Self: Sized,
     {
-        create_scope(move || {
-            self.view.mount_owned(parent, attrs);
-        });
+        self.view.mount_owned(owner, parent, attrs);
     }
 }

@@ -7,6 +7,9 @@ use wasm_bindgen::{JsCast, JsValue};
 use web_sys::{CssStyleDeclaration, Element, HtmlElement, SvgElement};
 
 use crate::attribute::apply::ApplyTarget;
+use crate::view::ViewOwnerToken;
+
+type CustomAttribute<'scope, 'run> = Rc<dyn Fn(&Element, &ViewOwnerToken<'scope, 'run>) + 'scope>;
 
 /// 预定义的 DOM 强类型 Property (Fast-Path)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -98,20 +101,20 @@ impl<T: Into<Attr>> From<Option<T>> for Attr {
 }
 
 #[derive(Clone)]
-pub enum AttrData {
+pub enum AttrData<'scope, 'run> {
     // --- Static Values ---
     StaticAttr(Attr),
     StaticJs(JsValue),
 
     // --- Reactive Values ---
-    ReactiveAttr(Rx<Attr>),
-    ReactiveString(Rx<String>),
-    ReactiveBool(Rx<bool>),
-    ReactiveOptionString(Rx<Option<String>>),
-    ReactiveJs(Rx<JsValue>),
+    ReactiveAttr(Rx<'scope, 'run, Attr>),
+    ReactiveString(Rx<'scope, 'run, String>),
+    ReactiveBool(Rx<'scope, 'run, bool>),
+    ReactiveOptionString(Rx<'scope, 'run, Option<String>>),
+    ReactiveJs(Rx<'scope, 'run, JsValue>),
 }
 
-impl std::fmt::Debug for AttrData {
+impl std::fmt::Debug for AttrData<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::StaticAttr(a) => f.debug_tuple("StaticAttr").field(a).finish(),
@@ -125,16 +128,16 @@ impl std::fmt::Debug for AttrData {
     }
 }
 
-impl PartialEq for AttrData {
+impl PartialEq for AttrData<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::StaticAttr(a), Self::StaticAttr(b)) => a == b,
             (Self::StaticJs(a), Self::StaticJs(b)) => a == b,
-            (Self::ReactiveAttr(a), Self::ReactiveAttr(b)) => a == b,
-            (Self::ReactiveString(a), Self::ReactiveString(b)) => a == b,
-            (Self::ReactiveBool(a), Self::ReactiveBool(b)) => a == b,
-            (Self::ReactiveOptionString(a), Self::ReactiveOptionString(b)) => a == b,
-            (Self::ReactiveJs(a), Self::ReactiveJs(b)) => a == b,
+            (Self::ReactiveAttr(_), Self::ReactiveAttr(_)) => false,
+            (Self::ReactiveString(_), Self::ReactiveString(_)) => false,
+            (Self::ReactiveBool(_), Self::ReactiveBool(_)) => false,
+            (Self::ReactiveOptionString(_), Self::ReactiveOptionString(_)) => false,
+            (Self::ReactiveJs(_), Self::ReactiveJs(_)) => false,
             _ => false,
         }
     }
@@ -143,18 +146,24 @@ impl PartialEq for AttrData {
 // --- AttrOp Variant Structs ---
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct AttrUpdate {
+pub struct AttrUpdate<'scope, 'run> {
     pub target: ApplyTarget,
-    pub data: AttrData,
+    pub data: AttrData<'scope, 'run>,
 }
 
-#[derive(Clone, PartialEq)]
-pub struct ClassToggle {
+#[derive(Clone)]
+pub struct ClassToggle<'scope, 'run> {
     pub name: Cow<'static, str>,
-    pub rx: Rx<bool>,
+    pub rx: Rx<'scope, 'run, bool>,
 }
 
-impl std::fmt::Debug for ClassToggle {
+impl PartialEq for ClassToggle<'_, '_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.rx == other.rx
+    }
+}
+
+impl std::fmt::Debug for ClassToggle<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ClassToggle")
             .field("name", &self.name)
@@ -163,13 +172,19 @@ impl std::fmt::Debug for ClassToggle {
     }
 }
 
-#[derive(Clone, PartialEq)]
-pub struct StyleProperty {
+#[derive(Clone)]
+pub struct StyleProperty<'scope, 'run> {
     pub name: Cow<'static, str>,
-    pub rx: Rx<String>,
+    pub rx: Rx<'scope, 'run, String>,
 }
 
-impl std::fmt::Debug for StyleProperty {
+impl PartialEq for StyleProperty<'_, '_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.rx == other.rx
+    }
+}
+
+impl std::fmt::Debug for StyleProperty<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StyleProperty")
             .field("name", &self.name)
@@ -178,14 +193,22 @@ impl std::fmt::Debug for StyleProperty {
     }
 }
 
-#[derive(Clone, PartialEq)]
-pub struct CombinedClasses {
+#[derive(Clone)]
+pub struct CombinedClasses<'scope, 'run> {
     pub statics: Vec<Cow<'static, str>>,
-    pub toggles: Vec<(Cow<'static, str>, Rx<bool>)>,
-    pub reactives: Vec<Rx<String>>,
+    pub toggles: Vec<(Cow<'static, str>, Rx<'scope, 'run, bool>)>,
+    pub reactives: Vec<Rx<'scope, 'run, String>>,
 }
 
-impl std::fmt::Debug for CombinedClasses {
+impl PartialEq for CombinedClasses<'_, '_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.statics == other.statics
+            && self.reactives == other.reactives
+            && self.toggles == other.toggles
+    }
+}
+
+impl std::fmt::Debug for CombinedClasses<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CombinedClasses")
             .field("statics", &self.statics)
@@ -195,14 +218,22 @@ impl std::fmt::Debug for CombinedClasses {
     }
 }
 
-#[derive(Clone, PartialEq)]
-pub struct CombinedStyles {
+#[derive(Clone)]
+pub struct CombinedStyles<'scope, 'run> {
     pub statics: Vec<(Cow<'static, str>, Cow<'static, str>)>,
-    pub properties: Vec<(Cow<'static, str>, Rx<String>)>,
-    pub sheets: Vec<Rx<String>>,
+    pub properties: Vec<(Cow<'static, str>, Rx<'scope, 'run, String>)>,
+    pub sheets: Vec<Rx<'scope, 'run, String>>,
 }
 
-impl std::fmt::Debug for CombinedStyles {
+impl PartialEq for CombinedStyles<'_, '_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.statics == other.statics
+            && self.sheets == other.sheets
+            && self.properties == other.properties
+    }
+}
+
+impl std::fmt::Debug for CombinedStyles<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CombinedStyles")
             .field("statics", &self.statics)
@@ -213,27 +244,27 @@ impl std::fmt::Debug for CombinedStyles {
 }
 
 #[derive(Clone)]
-pub enum AttrOp {
+pub enum AttrOp<'scope, 'run> {
     /// Unified update for attributes and properties (Static or Reactive)
-    Update(AttrUpdate),
+    Update(AttrUpdate<'scope, 'run>),
 
     /// Consolidated class operations (statics, toggles, reactives)
-    CombinedClasses(CombinedClasses),
+    CombinedClasses(CombinedClasses<'scope, 'run>),
 
     /// Consolidated style operations (statics, properties, sheets)
-    CombinedStyles(CombinedStyles),
+    CombinedStyles(CombinedStyles<'scope, 'run>),
 
     /// Sequence of operations
-    Sequence(Vec<AttrOp>),
+    Sequence(Vec<AttrOp<'scope, 'run>>),
 
     /// Custom closure execution
-    Custom(Rc<dyn Fn(&Element)>),
+    Custom(CustomAttribute<'scope, 'run>),
 
     /// No operation
     Noop,
 }
 
-impl std::fmt::Debug for AttrOp {
+impl std::fmt::Debug for AttrOp<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Update(u) => f.debug_tuple("Update").field(u).finish(),
@@ -246,7 +277,7 @@ impl std::fmt::Debug for AttrOp {
     }
 }
 
-impl PartialEq for AttrOp {
+impl PartialEq for AttrOp<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Update(a), Self::Update(b)) => a == b,
@@ -260,7 +291,7 @@ impl PartialEq for AttrOp {
     }
 }
 
-impl AttrOp {
+impl<'scope, 'run> AttrOp<'scope, 'run> {
     pub fn static_class(c: Cow<'static, str>) -> Self {
         AttrOp::CombinedClasses(CombinedClasses {
             statics: vec![c],
@@ -277,7 +308,7 @@ impl AttrOp {
         })
     }
 
-    pub fn class_toggle(name: Cow<'static, str>, rx: Rx<bool>) -> Self {
+    pub fn class_toggle(name: Cow<'static, str>, rx: Rx<'scope, 'run, bool>) -> Self {
         AttrOp::CombinedClasses(CombinedClasses {
             statics: Vec::new(),
             toggles: vec![(name, rx)],
@@ -285,7 +316,7 @@ impl AttrOp {
         })
     }
 
-    pub fn reactive_classes(rx: Rx<String>) -> Self {
+    pub fn reactive_classes(rx: Rx<'scope, 'run, String>) -> Self {
         AttrOp::CombinedClasses(CombinedClasses {
             statics: Vec::new(),
             toggles: Vec::new(),
@@ -301,7 +332,7 @@ impl AttrOp {
         })
     }
 
-    pub fn style_property(name: Cow<'static, str>, rx: Rx<String>) -> Self {
+    pub fn style_property(name: Cow<'static, str>, rx: Rx<'scope, 'run, String>) -> Self {
         AttrOp::CombinedStyles(CombinedStyles {
             statics: Vec::new(),
             properties: vec![(name, rx)],
@@ -309,7 +340,7 @@ impl AttrOp {
         })
     }
 
-    pub fn reactive_stylesheet(rx: Rx<String>) -> Self {
+    pub fn reactive_stylesheet(rx: Rx<'scope, 'run, String>) -> Self {
         AttrOp::CombinedStyles(CombinedStyles {
             statics: Vec::new(),
             properties: Vec::new(),
@@ -317,39 +348,44 @@ impl AttrOp {
         })
     }
 
-    pub fn apply(self, el: &Element) {
+    pub fn apply(self, el: &Element, owner: &ViewOwnerToken<'scope, 'run>) {
         match self {
             AttrOp::Update(AttrUpdate { target, data }) => {
-                apply_update_internal(el, target, data);
+                apply_update_internal(el, target, data, owner);
             }
             AttrOp::CombinedClasses(CombinedClasses {
                 statics,
                 toggles,
                 reactives,
             }) => {
-                apply_combined_classes_internal(el, statics, toggles, reactives);
+                apply_combined_classes_internal(el, statics, toggles, reactives, owner);
             }
             AttrOp::CombinedStyles(CombinedStyles {
                 statics,
                 properties,
                 sheets,
             }) => {
-                apply_combined_styles_internal(el, statics, properties, sheets);
+                apply_combined_styles_internal(el, statics, properties, sheets, owner);
             }
             AttrOp::Sequence(ops) => {
                 for op in ops {
-                    op.apply(el);
+                    op.apply(el, owner);
                 }
             }
             AttrOp::Custom(f) => {
-                f(el);
+                f(el, owner);
             }
             AttrOp::Noop => {}
         }
     }
 }
 
-fn apply_update_internal(el: &Element, target: ApplyTarget, data: AttrData) {
+fn apply_update_internal<'scope, 'run>(
+    el: &Element,
+    target: ApplyTarget,
+    data: AttrData<'scope, 'run>,
+    owner: &ViewOwnerToken<'scope, 'run>,
+) {
     let name = target.attr_name().to_string();
     match data {
         AttrData::StaticAttr(attr) => {
@@ -360,30 +396,30 @@ fn apply_update_internal(el: &Element, target: ApplyTarget, data: AttrData) {
         }
         AttrData::ReactiveAttr(rx) => {
             let el = el.clone();
-            Effect::new(move |_| {
+            owner.effect(Box::new(move || {
                 let name = target.attr_name();
                 apply_attr_with_target_internal(&el, name, target.clone(), &rx.get());
-            });
+            }));
         }
         AttrData::ReactiveString(rx) => {
             let el = el.clone();
-            Effect::new(move |_| {
+            owner.effect(Box::new(move || {
                 let name = target.attr_name();
                 let val = rx.get();
                 apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val));
-            });
+            }));
         }
         AttrData::ReactiveBool(rx) => {
             let el = el.clone();
-            Effect::new(move |_| {
+            owner.effect(Box::new(move || {
                 let name = target.attr_name();
                 let val = rx.get();
                 apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val));
-            });
+            }));
         }
         AttrData::ReactiveOptionString(rx) => {
             let el = el.clone();
-            Effect::new(move |_| {
+            owner.effect(Box::new(move || {
                 let name = target.attr_name();
                 let val = rx.get();
                 let attr = match val {
@@ -391,24 +427,25 @@ fn apply_update_internal(el: &Element, target: ApplyTarget, data: AttrData) {
                     None => Attr::Removed,
                 };
                 apply_attr_with_target_internal(&el, name, target.clone(), &attr);
-            });
+            }));
         }
         AttrData::ReactiveJs(rx) => {
             let el = el.clone();
-            Effect::new(move |_| {
+            owner.effect(Box::new(move || {
                 let _ = js_sys::Reflect::set(&el, &JsValue::from_str(&name), &rx.get());
-            });
+            }));
         }
     }
 }
 
 // --- Kernel Implementation Functions for Combined Op ---
 
-fn apply_combined_classes_internal(
+fn apply_combined_classes_internal<'scope, 'run>(
     el: &Element,
     statics: Vec<Cow<'static, str>>,
-    toggles: Vec<(Cow<'static, str>, Rx<bool>)>,
-    reactives: Vec<Rx<String>>,
+    toggles: Vec<(Cow<'static, str>, Rx<'scope, 'run, bool>)>,
+    reactives: Vec<Rx<'scope, 'run, String>>,
+    owner: &ViewOwnerToken<'scope, 'run>,
 ) {
     let list = el.class_list();
     // 1. 立即应用所有静态类（非响应式，仅执行一次）
@@ -425,7 +462,7 @@ fn apply_combined_classes_internal(
     let prev_reactive_tokens = Rc::new(RefCell::new(HashSet::<String>::new()));
     let el_clone = el.clone();
 
-    Effect::new(move |_| {
+    owner.effect(Box::new(move || {
         let list = el_clone.class_list();
 
         // 处理所有 Toggle (如 .class_toggle)，仅在状态改变时才更新 DOM
@@ -476,14 +513,15 @@ fn apply_combined_classes_internal(
                 prev.insert(token.to_string());
             }
         }
-    });
+    }));
 }
 
-fn apply_combined_styles_internal(
+fn apply_combined_styles_internal<'scope, 'run>(
     el: &Element,
     statics: Vec<(Cow<'static, str>, Cow<'static, str>)>,
-    properties: Vec<(Cow<'static, str>, Rx<String>)>,
-    sheets: Vec<Rx<String>>,
+    properties: Vec<(Cow<'static, str>, Rx<'scope, 'run, String>)>,
+    sheets: Vec<Rx<'scope, 'run, String>>,
+    owner: &ViewOwnerToken<'scope, 'run>,
 ) {
     let Some(style) = get_style_decl(el) else {
         return;
@@ -503,7 +541,7 @@ fn apply_combined_styles_internal(
     let prev_sheet_keys = Rc::new(RefCell::new(HashSet::<String>::new()));
     let el_clone = el.clone();
 
-    Effect::new(move |_| {
+    owner.effect(Box::new(move || {
         if let Some(style) = get_style_decl(&el_clone) {
             // 处理单项 Property 绑定 (仅在值发生变化时更新 DOM)
             let mut prev_p = prev_props.borrow_mut();
@@ -545,7 +583,7 @@ fn apply_combined_styles_internal(
                 }
             }
         }
-    });
+    }));
 }
 
 // --- Kernel Functions (Non-generic DOM operations) ---

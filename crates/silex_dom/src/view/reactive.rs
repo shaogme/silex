@@ -1,282 +1,202 @@
 use crate::attribute::PendingAttribute;
 use crate::element::{Element, TypedElement, tags::Tag};
 use crate::view::{
-    ApplyAttributes, View, ViewCons,
-    any::{AnyView, RenderThunk},
-    mount_dynamic_view_universal,
+    AnyView, ApplyAttributes, RenderThunk, View, ViewCons, ViewOwner, mount_dynamic_view_universal,
 };
 use silex_core::error::handle_error;
-use silex_core::reactivity::{
-    Constant, DerivedPayload, Effect, Memo, ReadSignal, RwSignal, Signal, SignalSlice,
-};
-use silex_core::traits::{IntoRx, RxCloneData, RxRead};
+use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal, StoredValue};
+use silex_core::traits::RxCloneData;
 use silex_core::{Rx, RxValueKind, SilexError};
 use std::borrow::Cow;
 use std::fmt::Display;
-use std::rc::Rc;
 use web_sys::Node;
 
-// --- 响应式文本归一化内核 (Reactive Text Consolidation Kernel) ---
-
-/// 泛型内核函数：负责将任何响应式类型转换为文本视图。
-pub(crate) fn mount_reactive_text<T, M>(parent: &Node, rx: Rx<T, M>)
-where
-    T: Display + RxCloneData,
-    M: 'static,
+pub(crate) fn mount_reactive_text<'scope, 'run, T>(
+    owner: &dyn ViewOwner<'scope, 'run>,
+    parent: &Node,
+    rx: Rx<'scope, 'run, T>,
+) where
+    T: Display + RxCloneData + 'scope,
 {
     let document = crate::document();
     let node = document.create_text_node("");
-    if let Err(e) = parent.append_child(&node).map_err(SilexError::from) {
-        handle_error(e);
+    if let Err(error) = parent.append_child(&node).map_err(SilexError::from) {
+        handle_error(error);
         return;
     }
 
-    Effect::new(move |_| {
-        // 直接读取原始信号。
-        // Silex 调度系统会确保当 Effect 或其 Parent 为 Inert 时不执行此闭包。
-        rx.with(|value| {
-            node.set_node_value(Some(&value.to_string()));
-        });
-    });
+    owner.effect(Box::new(move || {
+        rx.with(|value| node.set_node_value(Some(&value.to_string())));
+    }));
 }
 
-// --- 响应式组件视图内核 (Reactive View Core) ---
-
-pub(crate) fn mount_reactive_view<V, M>(parent: &Node, rx: Rx<V, M>, attrs: Vec<PendingAttribute>)
-where
-    V: View + 'static,
-    M: 'static,
+pub(crate) fn mount_reactive_view<'scope, 'run, V>(
+    owner: &dyn ViewOwner<'scope, 'run>,
+    parent: &Node,
+    rx: Rx<'scope, 'run, V>,
+    attrs: Vec<PendingAttribute<'scope, 'run>>,
+) where
+    V: View<'scope, 'run> + 'scope,
 {
+    let token = owner.token();
     mount_dynamic_view_universal(
+        owner,
         parent,
         attrs,
-        RenderThunk::new(move |args| {
-            let (p, a) = args;
-            rx.with(|view| view.mount(&p, a))
+        RenderThunk::new(move |(parent, attrs)| {
+            rx.with(|view| view.mount(&token, &parent, attrs));
         }),
     );
 }
 
-// 4. Rx wrapper support (Unified entry point for reactive normalization)
-
-impl<V, M> ApplyAttributes for Rx<V, M>
-where
-    V: RxCloneData,
-    M: 'static,
-    Self: RxViewDispatcher,
-{
-    fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute>) {}
+pub trait AutoReactiveView<'scope, 'run>: View<'scope, 'run> + Sized + 'scope {
+    fn mount_reactive(
+        rx: Rx<'scope, 'run, Self>,
+        owner: &dyn ViewOwner<'scope, 'run>,
+        parent: &Node,
+        attrs: Vec<PendingAttribute<'scope, 'run>>,
+    ) {
+        mount_reactive_view(owner, parent, rx, attrs);
+    }
 }
 
-impl<V, M> View for Rx<V, M>
-where
-    V: Sized,
-    M: 'static,
-    Self: RxViewDispatcher,
+impl<'scope, 'run, V> ApplyAttributes<'scope, 'run> for Rx<'scope, 'run, V, RxValueKind> where
+    V: AutoReactiveView<'scope, 'run>
 {
-    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        (*self).dispatch_mount(parent, attrs);
+}
+
+impl<'scope, 'run, V> View<'scope, 'run> for Rx<'scope, 'run, V, RxValueKind>
+where
+    V: AutoReactiveView<'scope, 'run>,
+{
+    fn mount(
+        &self,
+        owner: &dyn ViewOwner<'scope, 'run>,
+        parent: &Node,
+        attrs: Vec<PendingAttribute<'scope, 'run>>,
+    ) {
+        V::mount_reactive(*self, owner, parent, attrs);
     }
 
-    fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)
-    where
+    fn mount_owned(
+        self,
+        owner: &dyn ViewOwner<'scope, 'run>,
+        parent: &Node,
+        attrs: Vec<PendingAttribute<'scope, 'run>>,
+    ) where
         Self: Sized,
     {
-        self.dispatch_mount(parent, attrs);
+        V::mount_reactive(self, owner, parent, attrs);
     }
 }
 
-/// 内部特征，用于 Rx 的 View 分发，解决 trait 冲突并优化路径。
-///
-/// 任何希望作为 `Rx<V>` 挂载的视图类型，应实现 `AutoReactiveView`。
-pub trait RxViewDispatcher {
-    fn dispatch_mount(self, parent: &Node, attrs: Vec<PendingAttribute>);
-}
-
-/// 核心特征：自动响应式视图。
-///
-/// 实现此特征的类型 `V` 会自动让 `Rx<V>` 获得视图挂载能力。
-/// 这是解决跨 Crate 的响应式组件支持的最佳方案。
-pub trait AutoReactiveView: View + Sized + 'static {
-    /// 响应式挂载策略。默认使用 `mount_reactive_view`（完全重新挂载分支）。
-    /// 对于 `String` 等基础类型，应重写此方法以改用高效的 `mount_reactive_text`。
-    fn mount_reactive<M: 'static>(rx: Rx<Self, M>, parent: &Node, attrs: Vec<PendingAttribute>) {
-        mount_reactive_view(parent, rx, attrs);
-    }
-}
-
-// 统一的分发器实现
-impl<V: AutoReactiveView, M: 'static> RxViewDispatcher for Rx<V, M> {
-    fn dispatch_mount(self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        V::mount_reactive(self, parent, attrs);
-    }
-}
-
-macro_rules! impl_auto_reactive_view_text {
-    ($($t:ty),*) => {
+macro_rules! impl_auto_reactive_text {
+    ($($ty:ty),*) => {
         $(
-            impl AutoReactiveView for $t {
-                #[inline(always)]
-                fn mount_reactive<M: 'static>(rx: Rx<Self, M>, parent: &Node, _attrs: Vec<PendingAttribute>) {
-                    mount_reactive_text(parent, rx);
+            impl<'scope, 'run> AutoReactiveView<'scope, 'run> for $ty {
+                fn mount_reactive(
+                    rx: Rx<'scope, 'run, Self>,
+                    owner: &dyn ViewOwner<'scope, 'run>,
+                    parent: &Node,
+                    _attrs: Vec<PendingAttribute<'scope, 'run>>,
+                ) {
+                    mount_reactive_text(owner, parent, rx);
                 }
             }
         )*
     };
 }
 
-macro_rules! impl_auto_reactive_view_default {
-    ($($t:ty),*) => {
+macro_rules! impl_auto_reactive_default {
+    ($($ty:ty),*) => {
         $(
-            impl AutoReactiveView for $t {}
+            impl<'scope, 'run> AutoReactiveView<'scope, 'run> for $ty {}
         )*
     };
 }
 
-impl_auto_reactive_view_text!(
-    String,
-    bool,
-    char,
-    i8,
-    u8,
-    i16,
-    u16,
-    i32,
-    u32,
-    i64,
-    u64,
-    i128,
-    u128,
-    isize,
-    usize,
-    f32,
-    f64,
-    &'static str,
-    Cow<'static, str>
+impl_auto_reactive_text!(
+    String, bool, char, i8, u8, i16, u16, i32, u32, i64, u64, i128, u128, isize, usize, f32, f64
 );
 
-impl_auto_reactive_view_default!(Element, AnyView);
+impl<'scope, 'run> AutoReactiveView<'scope, 'run> for &'scope str {
+    fn mount_reactive(
+        rx: Rx<'scope, 'run, Self>,
+        owner: &dyn ViewOwner<'scope, 'run>,
+        parent: &Node,
+        _attrs: Vec<PendingAttribute<'scope, 'run>>,
+    ) {
+        mount_reactive_text(owner, parent, rx);
+    }
+}
 
-impl<V: View + 'static> AutoReactiveView for Option<V> {}
+impl<'scope, 'run> AutoReactiveView<'scope, 'run> for Cow<'scope, str> {
+    fn mount_reactive(
+        rx: Rx<'scope, 'run, Self>,
+        owner: &dyn ViewOwner<'scope, 'run>,
+        parent: &Node,
+        _attrs: Vec<PendingAttribute<'scope, 'run>>,
+    ) {
+        mount_reactive_text(owner, parent, rx);
+    }
+}
 
-impl<H, T> AutoReactiveView for ViewCons<H, T>
-where
-    H: View + 'static,
-    T: View + 'static,
+impl_auto_reactive_default!(Element<'scope, 'run>, AnyView<'scope, 'run>);
+
+impl<'scope, 'run, V> AutoReactiveView<'scope, 'run> for Option<V> where
+    V: View<'scope, 'run> + 'scope
 {
 }
 
-impl<T: Tag + 'static> AutoReactiveView for TypedElement<T> {}
+impl<'scope, 'run, H, T> AutoReactiveView<'scope, 'run> for ViewCons<H, T>
+where
+    H: View<'scope, 'run> + 'scope,
+    T: View<'scope, 'run> + 'scope,
+{
+}
 
-// --- Signal 自动支持宏 ---
+impl<'scope, 'run, T: Tag + 'scope> AutoReactiveView<'scope, 'run>
+    for TypedElement<'scope, 'run, T>
+{
+}
 
 macro_rules! impl_view_forward_to_rx {
     ($($ty:ident),*) => {
         $(
-            impl<T> ApplyAttributes for $ty<T>
+            impl<'scope, 'run, T: 'scope> ApplyAttributes<'scope, 'run> for $ty<'scope, 'run, T>
             where
-                T: RxCloneData,
-                Self: IntoRx<RxType = Rx<T, RxValueKind>> + Clone,
-                Rx<T, RxValueKind>: ApplyAttributes,
-            {}
-
-            impl<T> View for $ty<T>
-            where
-                T: RxCloneData,
-                Self: IntoRx<RxType = Rx<T, RxValueKind>> + Clone,
-                Rx<T, RxValueKind>: View,
+                T: RxCloneData + 'scope,
+                Rx<'scope, 'run, T>: View<'scope, 'run>,
             {
-                fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-                    self.clone().into_rx().mount(parent, attrs);
+            }
+
+            impl<'scope, 'run, T: 'scope> View<'scope, 'run> for $ty<'scope, 'run, T>
+            where
+                T: RxCloneData + 'scope,
+                Rx<'scope, 'run, T>: View<'scope, 'run>,
+            {
+                fn mount(
+                    &self,
+                    owner: &dyn ViewOwner<'scope, 'run>,
+                    parent: &Node,
+                    attrs: Vec<PendingAttribute<'scope, 'run>>,
+                ) {
+                    self.clone().into_rx().mount(owner, parent, attrs);
                 }
 
-                fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)
-                where
+                fn mount_owned(
+                    self,
+                    owner: &dyn ViewOwner<'scope, 'run>,
+                    parent: &Node,
+                    attrs: Vec<PendingAttribute<'scope, 'run>>,
+                ) where
                     Self: Sized,
                 {
-                    self.into_rx().mount_owned(parent, attrs);
+                    self.into_rx().mount_owned(owner, parent, attrs);
                 }
             }
         )*
     };
 }
 
-impl_view_forward_to_rx!(ReadSignal, RwSignal, Constant, Memo, Signal);
-
-impl<S, F, V> ApplyAttributes for DerivedPayload<S, F>
-where
-    Self: IntoRx<RxType = Rx<V, RxValueKind>> + Clone,
-    V: RxCloneData,
-    Rx<V, RxValueKind>: ApplyAttributes,
-{
-}
-
-impl<S, F, V> View for DerivedPayload<S, F>
-where
-    Self: IntoRx<RxType = Rx<V, RxValueKind>> + Clone,
-    V: RxCloneData,
-    Rx<V, RxValueKind>: View,
-{
-    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.clone().into_rx().mount(parent, attrs);
-    }
-
-    fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)
-    where
-        Self: Sized,
-    {
-        self.into_rx().mount_owned(parent, attrs);
-    }
-}
-
-impl<S, F, V> ApplyAttributes for Rc<DerivedPayload<S, F>>
-where
-    Self: IntoRx<RxType = Rx<V, RxValueKind>>,
-    V: RxCloneData,
-    Rx<V, RxValueKind>: ApplyAttributes,
-{
-}
-
-impl<S, F, V> View for Rc<DerivedPayload<S, F>>
-where
-    Self: IntoRx<RxType = Rx<V, RxValueKind>>,
-    V: RxCloneData,
-    Rx<V, RxValueKind>: View,
-{
-    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.clone().into_rx().mount(parent, attrs);
-    }
-
-    fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)
-    where
-        Self: Sized,
-    {
-        self.into_rx().mount_owned(parent, attrs);
-    }
-}
-
-impl<S, F, O> ApplyAttributes for SignalSlice<S, F, O>
-where
-    Self: IntoRx<RxType = Rx<O, RxValueKind>> + Clone,
-    O: RxCloneData,
-    Rx<O, RxValueKind>: ApplyAttributes,
-{
-}
-
-impl<S, F, O> View for SignalSlice<S, F, O>
-where
-    Self: IntoRx<RxType = Rx<O, RxValueKind>> + Clone,
-    O: RxCloneData,
-    Rx<O, RxValueKind>: View,
-{
-    fn mount(&self, parent: &Node, attrs: Vec<PendingAttribute>) {
-        self.clone().into_rx().mount(parent, attrs);
-    }
-
-    fn mount_owned(self, parent: &Node, attrs: Vec<PendingAttribute>)
-    where
-        Self: Sized,
-    {
-        self.into_rx().mount_owned(parent, attrs);
-    }
-}
+impl_view_forward_to_rx!(ReadSignal, RwSignal, Signal, Memo, StoredValue);

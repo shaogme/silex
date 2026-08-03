@@ -173,6 +173,14 @@ pub struct Scope<'scope, 'run> {
     pub(crate) inner: silex_reactivity::Scope<'scope, 'run>,
 }
 
+impl<'scope, 'run> PartialEq for Scope<'scope, 'run> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl<'scope, 'run> Eq for Scope<'scope, 'run> {}
+
 impl<'scope, 'run> Scope<'scope, 'run> {
     pub fn signal<T: 'scope>(
         &self,

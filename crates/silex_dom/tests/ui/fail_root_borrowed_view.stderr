@@ -1,0 +1,17 @@
+error[E0597]: `value` does not live long enough
+  --> tests/ui/fail_root_borrowed_view.rs:8:33
+   |
+ 7 |         let value = String::from("borrowed-view");
+   |             ----- binding `value` declared here
+ 8 |         let view = AnyView::new(value.as_str());
+   |                                 ^^^^^ borrowed value does not live long enough
+ 9 |         mount_to_body(scope, view);
+   |         -------------------------- argument requires that `value` is borrowed for `'static`
+10 |     });
+   |     - `value` dropped here while still borrowed
+   |
+note: requirement that the value outlives `'static` introduced here
+  --> src/element.rs
+   |
+   |     V: View<'static, 'static> + 'static,
+   |        ^^^^^^^^^^^^^^^^^^^^^^

@@ -55,7 +55,7 @@ macro_rules! define_tag {
         }
         $( impl $crate::element::tags::$traits for $struct_name {} )*
 
-        pub fn $fn_name() -> $crate::element::TypedElement<$struct_name> {
+        pub fn $fn_name<'scope, 'run>() -> $crate::element::TypedElement<'scope, 'run, $struct_name> {
             $crate::element::TypedElement::$constructor($tag_name)
         }
     };
@@ -68,10 +68,11 @@ macro_rules! define_tag {
         }
         $( impl $crate::element::tags::$traits for $struct_name {} )*
 
-        pub fn $fn_name<V: $crate::view::View>(child: V) -> $crate::element::TypedElement<$struct_name> {
-            let el = $crate::element::TypedElement::<$struct_name>::$constructor($tag_name);
-            $crate::view::View::mount_owned(child, el.dom_element.as_ref(), Vec::new());
-            el
+        pub fn $fn_name<'scope, 'run, V>(child: V) -> $crate::element::TypedElement<'scope, 'run, $struct_name>
+        where
+            V: $crate::view::View<'scope, 'run> + 'scope,
+        {
+            $crate::element::TypedElement::with_child($tag_name, child)
         }
     };
 

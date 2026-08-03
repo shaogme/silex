@@ -8,7 +8,6 @@ use web_sys::Document;
 use web_sys::Window;
 
 use silex_core::SilexError;
-use silex_core::reactivity::on_cleanup;
 
 // --- Window & Document Access ---
 
@@ -285,15 +284,6 @@ pub fn debounce<T: 'static>(delay: Duration, cb: impl FnMut(T) + 'static) -> imp
     let cb = Rc::new(RefCell::new(cb));
     let timer = Rc::new(RefCell::new(None::<TimeoutHandle>));
 
-    on_cleanup({
-        let timer = Rc::clone(&timer);
-        move || {
-            if let Some(timer) = timer.borrow_mut().take() {
-                timer.clear();
-            }
-        }
-    });
-
     move |arg| {
         if let Some(timer) = timer.borrow_mut().take() {
             timer.clear();
@@ -332,9 +322,6 @@ pub fn use_interval(
     cb: impl Fn() + 'static,
 ) -> Result<IntervalHandle, JsValue> {
     let handle = set_interval_with_handle(cb, duration)?;
-    // IntervalHandle 实现了 Copy，可以直接 move 进闭包
-    let cleanup_handle = handle;
-    on_cleanup(move || cleanup_handle.clear());
     Ok(handle)
 }
 
@@ -351,7 +338,5 @@ pub fn use_timeout(
     cb: impl FnOnce() + 'static,
 ) -> Result<TimeoutHandle, JsValue> {
     let handle = set_timeout_with_handle(cb, duration)?;
-    let cleanup_handle = handle;
-    on_cleanup(move || cleanup_handle.clear());
     Ok(handle)
 }

@@ -395,11 +395,11 @@ impl<'scope, 'run, T: 'scope> IntoSignal<'scope, 'run> for ReadSignal<'scope, 'r
 }
 
 impl<'scope, 'run, T: 'scope> IntoRx<'scope, 'run> for RwSignal<'scope, 'run, T> {
-    fn into_rx(self, scope: &Scope<'scope, 'run>) -> Rx<'scope, 'run, T>
+    fn into_rx(self, _scope: &Scope<'scope, 'run>) -> Rx<'scope, 'run, T>
     where
         T: Sized + RxData,
     {
-        self.read.into_rx(scope)
+        self.read.into_rx()
     }
 
     fn is_constant(&self) -> bool {

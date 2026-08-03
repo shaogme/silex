@@ -51,6 +51,20 @@ impl<'scope, 'run, T> Clone for RxInner<'scope, 'run, T> {
     }
 }
 
+impl<'scope, 'run, T> PartialEq for RxInner<'scope, 'run, T> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Signal(a), Self::Signal(b)) => a == b,
+            (Self::Memo(a), Self::Memo(b)) => a == b,
+            (Self::Derived(a), Self::Derived(b)) => a == b,
+            (Self::Stored(a), Self::Stored(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl<'scope, 'run, T> Eq for RxInner<'scope, 'run, T> {}
+
 /// A typed reactive value that retains the scope used to create derived nodes.
 pub struct Rx<'scope, 'run, T, M = RxValueKind> {
     pub(crate) inner: RxInner<'scope, 'run, T>,
@@ -65,6 +79,14 @@ impl<'scope, 'run, T, M> Clone for Rx<'scope, 'run, T, M> {
         *self
     }
 }
+
+impl<'scope, 'run, T, M> PartialEq for Rx<'scope, 'run, T, M> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner && self.scope == other.scope
+    }
+}
+
+impl<'scope, 'run, T, M> Eq for Rx<'scope, 'run, T, M> {}
 
 impl<'scope, 'run, T: 'scope> Rx<'scope, 'run, T, RxValueKind> {
     pub(crate) fn from_signal(signal: ReadSignal<'scope, 'run, T>) -> Self {

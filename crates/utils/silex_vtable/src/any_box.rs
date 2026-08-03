@@ -1,5 +1,5 @@
 use alloc::boxed::Box;
-use core::{alloc::Layout, cell::UnsafeCell, mem, mem::MaybeUninit, ptr};
+use core::{alloc::Layout, cell::UnsafeCell, marker::PhantomData, mem, mem::MaybeUninit, ptr};
 
 pub const SOO_CAPACITY: usize = 3 * mem::size_of::<usize>();
 
@@ -83,18 +83,20 @@ impl InlineStorage {
         unsafe { ptr::write(self.as_mut_ptr().add(offset).cast::<T>(), value) };
     }
 }
+type ScopeMarker<'a> = PhantomData<(*mut (), fn(&'a ()))>;
 
 /// 通用的类型擦除容器，支持小对象优化 (SOO)。
 /// V 类型通常是具体的 VTable 结构体。
-pub struct AnyBox<V: 'static> {
+pub struct AnyBox<'a, V> {
     pub data: InlineStorage,
-    pub vtable: &'static V,
+    pub(crate) vtable: &'a V,
+    pub(crate) marker: ScopeMarker<'a>,
 }
 
-impl<V: 'static> AnyBox<V> {
+impl<'a, V> AnyBox<'a, V> {
     /// 创建一个新的 AnyBox。
     /// 给定一个值、分配 VTable 的逻辑（栈/堆两种情况）。
-    pub fn new<T: 'static>(value: T, vtable_stack: &'static V, vtable_heap: &'static V) -> Self {
+    pub fn new<T: 'a>(value: T, vtable_stack: &'a V, vtable_heap: &'a V) -> Self {
         let layout = Layout::new::<T>();
         let fits_inline =
             layout.size() <= SOO_CAPACITY && layout.align() <= mem::align_of::<usize>();
@@ -106,6 +108,7 @@ impl<V: 'static> AnyBox<V> {
             Self {
                 data,
                 vtable: vtable_stack,
+                marker: PhantomData,
             }
         } else {
             // SAFETY: 写入的是一个裸指针，必然放得下；
@@ -114,6 +117,7 @@ impl<V: 'static> AnyBox<V> {
             Self {
                 data,
                 vtable: vtable_heap,
+                marker: PhantomData,
             }
         }
     }

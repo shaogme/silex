@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::rc::Rc;
 
 use wasm_bindgen::JsCast;
 use wasm_bindgen::convert::FromWasmAbi;
@@ -9,7 +8,6 @@ use silex_core::{
     error::handle_error,
     log::console_error,
     node_ref::NodeRef,
-    reactivity::Effect,
     traits::{RxGet, RxWrite},
 };
 
@@ -41,13 +39,13 @@ macro_rules! group {
     };
 }
 
-pub trait AttributeBuilder: Sized {
+pub trait AttributeBuilder<'scope, 'run>: Sized {
     /// Core hook: Apply or store a generic attribute/property directly using ApplyTarget mechanism.
     /// Accepts any type that implements IntoStorable, allowing both static references (&str, &String)
     /// and owned/reactive types (String, Signal, closures).
     fn build_attribute<V>(self, target: ApplyTarget, value: V) -> Self
     where
-        V: IntoStorable;
+        V: IntoStorable<'scope, 'run>;
 
     /// Core hook: Apply or store an event listener.
     fn build_event<E, F, M>(self, event: E, callback: F) -> Self
@@ -59,14 +57,14 @@ pub trait AttributeBuilder: Sized {
 
     fn attr<V>(self, name: impl Into<Cow<'static, str>>, value: V) -> Self
     where
-        V: IntoStorable,
+        V: IntoStorable<'scope, 'run>,
     {
         self.build_attribute(ApplyTarget::attr(name), value)
     }
 
     fn prop<V>(self, name: impl Into<Cow<'static, str>>, value: V) -> Self
     where
-        V: IntoStorable,
+        V: IntoStorable<'scope, 'run>,
     {
         self.build_attribute(ApplyTarget::prop(name), value)
     }
@@ -83,7 +81,7 @@ pub trait AttributeBuilder: Sized {
     /// Useful for mixins, theme variables, or complex reactive logic.
     fn apply<V>(self, value: V) -> Self
     where
-        V: IntoStorable,
+        V: IntoStorable<'scope, 'run>,
     {
         // Wrap in a storable type and build
         self.build_attribute(ApplyTarget::Apply, value)
@@ -93,160 +91,163 @@ pub trait AttributeBuilder: Sized {
 // --- 分层 Trait 定义 (from props.rs) ---
 
 /// 全局属性：所有 HTML 元素都支持的属性
-pub trait GlobalAttributes: AttributeBuilder {
-    fn id(self, value: impl IntoStorable) -> Self {
+pub trait GlobalAttributes<'scope, 'run>: AttributeBuilder<'scope, 'run> {
+    fn id(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("id", value)
     }
 
-    fn class(self, value: impl IntoStorable) -> Self {
+    fn class(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("class", value)
     }
 
-    fn style(self, value: impl IntoStorable) -> Self {
+    fn style(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("style", value)
     }
 
-    fn title(self, value: impl IntoStorable) -> Self {
+    fn title(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("title", value)
     }
 
-    fn lang(self, value: impl IntoStorable) -> Self {
+    fn lang(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("lang", value)
     }
 
-    fn dir(self, value: impl IntoStorable) -> Self {
+    fn dir(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("dir", value)
     }
 
-    fn tabindex(self, value: impl IntoStorable) -> Self {
+    fn tabindex(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("tabindex", value)
     }
 
-    fn draggable(self, value: impl IntoStorable) -> Self {
+    fn draggable(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("draggable", value)
     }
 
-    fn hidden(self, value: impl IntoStorable) -> Self {
+    fn hidden(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("hidden", value)
     }
 }
 
 // 自动为所有实现 AttributeBuilder 的类型实现 GlobalAttributes
-impl<T: AttributeBuilder> GlobalAttributes for T {}
+impl<'scope, 'run, T: AttributeBuilder<'scope, 'run>> GlobalAttributes<'scope, 'run> for T {}
 
 /// ARIA 无障碍属性：提供给所有元素使用
-pub trait AriaAttributes: AttributeBuilder {
-    fn role(self, value: impl IntoStorable) -> Self {
+pub trait AriaAttributes<'scope, 'run>: AttributeBuilder<'scope, 'run> {
+    fn role(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("role", value)
     }
 
-    fn aria_label(self, value: impl IntoStorable) -> Self {
+    fn aria_label(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-label", value)
     }
 
-    fn aria_labelledby(self, value: impl IntoStorable) -> Self {
+    fn aria_labelledby(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-labelledby", value)
     }
 
-    fn aria_describedby(self, value: impl IntoStorable) -> Self {
+    fn aria_describedby(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-describedby", value)
     }
 
-    fn aria_hidden(self, value: impl IntoStorable) -> Self {
+    fn aria_hidden(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-hidden", value)
     }
 
-    fn aria_expanded(self, value: impl IntoStorable) -> Self {
+    fn aria_expanded(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-expanded", value)
     }
 
-    fn aria_checked(self, value: impl IntoStorable) -> Self {
+    fn aria_checked(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-checked", value)
     }
 
-    fn aria_selected(self, value: impl IntoStorable) -> Self {
+    fn aria_selected(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-selected", value)
     }
 
-    fn aria_controls(self, value: impl IntoStorable) -> Self {
+    fn aria_controls(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-controls", value)
     }
 
-    fn aria_disabled(self, value: impl IntoStorable) -> Self {
+    fn aria_disabled(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-disabled", value)
     }
 
-    fn aria_invalid(self, value: impl IntoStorable) -> Self {
+    fn aria_invalid(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-invalid", value)
     }
 
-    fn aria_required(self, value: impl IntoStorable) -> Self {
+    fn aria_required(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-required", value)
     }
 
-    fn aria_valuenow(self, value: impl IntoStorable) -> Self {
+    fn aria_valuenow(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-valuenow", value)
     }
 
-    fn aria_valuemin(self, value: impl IntoStorable) -> Self {
+    fn aria_valuemin(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-valuemin", value)
     }
 
-    fn aria_valuemax(self, value: impl IntoStorable) -> Self {
+    fn aria_valuemax(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-valuemax", value)
     }
 
-    fn aria_orientation(self, value: impl IntoStorable) -> Self {
+    fn aria_orientation(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-orientation", value)
     }
 
-    fn aria_haspopup(self, value: impl IntoStorable) -> Self {
+    fn aria_haspopup(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-haspopup", value)
     }
 
-    fn aria_live(self, value: impl IntoStorable) -> Self {
+    fn aria_live(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-live", value)
     }
 
-    fn aria_atomic(self, value: impl IntoStorable) -> Self {
+    fn aria_atomic(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-atomic", value)
     }
 
-    fn aria_modal(self, value: impl IntoStorable) -> Self {
+    fn aria_modal(self, value: impl IntoStorable<'scope, 'run>) -> Self {
         self.attr("aria-modal", value)
     }
 }
 
 // 自动为所有实现 AttributeBuilder 的类型实现 AriaAttributes
-impl<T: AttributeBuilder> AriaAttributes for T {}
+impl<'scope, 'run, T: AttributeBuilder<'scope, 'run>> AriaAttributes<'scope, 'run> for T {}
 
 /// 全局事件与通用组件方法：提供诸如 on_click, class_toggle, bind_value 等常用操作
-pub trait GlobalEventAttributes: AttributeBuilder {
+pub trait GlobalEventAttributes<'scope, 'run>: AttributeBuilder<'scope, 'run>
+where
+    'run: 'scope,
+{
     fn class_toggle<C>(self, name: &str, condition: C) -> Self
     where
-        (String, C): IntoStorable,
+        (String, C): IntoStorable<'scope, 'run>,
     {
         self.build_attribute(ApplyTarget::Class, (name.to_string(), condition))
     }
 
     fn classes<V>(self, value: V) -> Self
     where
-        V: IntoStorable,
+        V: IntoStorable<'scope, 'run>,
     {
         self.build_attribute(ApplyTarget::Class, value)
     }
 
-    fn node_ref<N>(self, node_ref: NodeRef<N>) -> Self
+    fn node_ref<N>(self, node_ref: NodeRef<'scope, 'run, N>) -> Self
     where
         N: JsCast + Clone + 'static,
     {
-        self.apply(AttrOp::Custom(Rc::new(move |el: &Element| {
+        self.apply(PendingAttribute::new_listener(move |el: &Element| {
             if let Ok(typed) = el.clone().dyn_into::<N>() {
                 node_ref.load(typed);
             } else {
                 console_error("NodeRef type mismatch: failed to cast element");
             }
-        })))
+        }))
     }
 
     // --- Event API ---
@@ -290,7 +291,7 @@ pub trait GlobalEventAttributes: AttributeBuilder {
     where
         F: EventHandler<String, M> + Clone + 'static,
     {
-        self.apply(PendingAttribute::new_listener(move |el: &Element| {
+        self.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
             bind_event_impl(
                 el,
                 "input".to_string(),
@@ -301,6 +302,7 @@ pub trait GlobalEventAttributes: AttributeBuilder {
                         Err(err) => handle_error(err),
                     }
                 }),
+                owner,
             );
         }))
     }
@@ -309,7 +311,7 @@ pub trait GlobalEventAttributes: AttributeBuilder {
     where
         F: EventHandler<String, M> + Clone + 'static,
     {
-        self.apply(PendingAttribute::new_listener(move |el: &Element| {
+        self.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
             bind_event_impl(
                 el,
                 "change".to_string(),
@@ -320,6 +322,7 @@ pub trait GlobalEventAttributes: AttributeBuilder {
                         Err(err) => handle_error(err),
                     }
                 }),
+                owner,
             );
         }))
     }
@@ -334,10 +337,11 @@ pub trait GlobalEventAttributes: AttributeBuilder {
             s.set(T::from(value));
         });
 
-        this.apply(PendingAttribute::new_listener(move |el: &Element| {
+        this.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
             let dom_element = el.clone();
             let signal = signal.clone();
-            Effect::new(move |_| {
+            let owner = owner.clone();
+            owner.effect(Box::new(move || {
                 let value = signal.get();
                 let str_val = value.as_ref();
                 apply_attr_with_target_internal(
@@ -346,7 +350,7 @@ pub trait GlobalEventAttributes: AttributeBuilder {
                     ApplyTarget::Known(KnownProp::Value),
                     &Attr::from(str_val.to_string()),
                 );
-            });
+            }));
         }))
     }
 
@@ -357,21 +361,29 @@ pub trait GlobalEventAttributes: AttributeBuilder {
     {
         let event_type_str = event_type.to_string();
         let cb_template = callback.clone();
-        self.apply(PendingAttribute::new_listener(move |el: &Element| {
-            bind_event_impl(el, event_type_str.clone(), Box::new(cb_template.clone()));
+        self.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
+            bind_event_impl(
+                el,
+                event_type_str.clone(),
+                Box::new(cb_template.clone()),
+                owner,
+            );
         }))
     }
 }
 
 // 自动实现全局事件属性
-impl<T: AttributeBuilder> GlobalEventAttributes for T {}
+impl<'scope, 'run, T: AttributeBuilder<'scope, 'run>> GlobalEventAttributes<'scope, 'run> for T where
+    'run: 'scope
+{
+}
 
 // --- AttributeBuilder Implementations for Erasure Types ---
 
-impl AttributeBuilder for AnyView {
+impl<'scope, 'run> AttributeBuilder<'scope, 'run> for AnyView<'scope, 'run> {
     fn build_attribute<V>(mut self, target: ApplyTarget, value: V) -> Self
     where
-        V: IntoStorable,
+        V: IntoStorable<'scope, 'run>,
     {
         self.apply_attributes(vec![PendingAttribute::build(value.into_storable(), target)]);
         self
@@ -382,8 +394,8 @@ impl AttributeBuilder for AnyView {
         E: EventDescriptor + 'static,
         F: EventHandler<E::EventType, M> + Clone + 'static,
     {
-        self.apply_attributes(vec![PendingAttribute::new_listener(move |el| {
-            crate::element::bind_event(el, event, callback.clone());
+        self.apply_attributes(vec![PendingAttribute::new_scoped(move |el, owner| {
+            crate::element::bind_event(el, event, callback.clone(), owner);
         })]);
         self
     }
@@ -392,20 +404,22 @@ impl AttributeBuilder for AnyView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use silex_core::reactivity::RwSignal;
-    use silex_core::traits::IntoRx;
+    use silex_core::Runtime;
 
     #[test]
     fn test_known_prop_reactive_bool_into_op() {
-        let signal = RwSignal::new(true);
-        let target = ApplyTarget::Known(KnownProp::Disabled);
-        let pending = PendingAttribute::build(signal.into_storable(), target);
-        match pending {
-            AttrOp::Update(AttrUpdate { target, .. }) => {
-                assert_eq!(target, ApplyTarget::Known(KnownProp::Disabled));
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let signal = scope.rw_signal(true);
+            let target = ApplyTarget::Known(KnownProp::Disabled);
+            let pending = PendingAttribute::build(signal.into_storable(), target);
+            match pending {
+                AttrOp::Update(AttrUpdate { target, .. }) => {
+                    assert_eq!(target, ApplyTarget::Known(KnownProp::Disabled));
+                }
+                _ => panic!("Expected AttrOp::Update for KnownProp reactive bool"),
             }
-            _ => panic!("Expected AttrOp::Update for KnownProp reactive bool"),
-        }
+        });
     }
 
     #[test]
@@ -422,18 +436,24 @@ mod tests {
 
     #[test]
     fn test_tuple_reactive_bool_class_into_op() {
-        let signal = RwSignal::new(true);
-        let rx = signal.into_rx();
-        let op = ("active", rx).into_op(ApplyTarget::Class);
-        assert_eq!(op, AttrOp::class_toggle(Cow::Borrowed("active"), rx));
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let signal = scope.rw_signal(true);
+            let rx = signal.into_rx();
+            let op = ("active", rx).into_op(ApplyTarget::Class);
+            assert_eq!(op, AttrOp::class_toggle(Cow::Borrowed("active"), rx));
+        });
     }
 
     #[test]
     fn test_tuple_reactive_string_style_into_op() {
-        let signal = RwSignal::new("10px".to_string());
-        let rx = signal.into_rx();
-        let op = ("margin", rx).into_op(ApplyTarget::Style);
-        assert_eq!(op, AttrOp::style_property(Cow::Borrowed("margin"), rx));
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let signal = scope.rw_signal("10px".to_string());
+            let rx = signal.into_rx();
+            let op = ("margin", rx).into_op(ApplyTarget::Style);
+            assert_eq!(op, AttrOp::style_property(Cow::Borrowed("margin"), rx));
+        });
     }
 
     #[test]
@@ -447,29 +467,31 @@ mod tests {
 
     #[test]
     fn test_consolidate_attributes_dedup_and_combine() {
-        let signal = RwSignal::new(true);
-        let rx = signal.into_rx();
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let signal = scope.rw_signal(true);
 
-        let attrs = vec![
-            PendingAttribute::build("btn", ApplyTarget::Class),
-            PendingAttribute::build("active", ApplyTarget::Class),
-            PendingAttribute::build("btn", ApplyTarget::Class), // 重复项 (非相邻)
-            PendingAttribute::build(("highlight", rx), ApplyTarget::Class),
-        ];
+            let attrs = vec![
+                PendingAttribute::build("btn", ApplyTarget::Class),
+                PendingAttribute::build("active", ApplyTarget::Class),
+                PendingAttribute::build("btn", ApplyTarget::Class), // 重复项 (非相邻)
+                PendingAttribute::build(("highlight", signal.into_rx()), ApplyTarget::Class),
+            ];
 
-        let consolidated = consolidate_attributes(attrs);
-        assert_eq!(consolidated.len(), 1);
+            let consolidated = consolidate_attributes(attrs);
+            assert_eq!(consolidated.len(), 1);
 
-        match &consolidated[0] {
-            AttrOp::CombinedClasses(cc) => {
-                assert_eq!(
-                    cc.statics,
-                    vec![Cow::Borrowed("btn"), Cow::Borrowed("active")]
-                );
-                assert_eq!(cc.toggles.len(), 1);
-                assert_eq!(cc.toggles[0].0, "highlight");
+            match &consolidated[0] {
+                AttrOp::CombinedClasses(cc) => {
+                    assert_eq!(
+                        cc.statics,
+                        vec![Cow::Borrowed("btn"), Cow::Borrowed("active")]
+                    );
+                    assert_eq!(cc.toggles.len(), 1);
+                    assert_eq!(cc.toggles[0].0, "highlight");
+                }
+                _ => panic!("Expected AttrOp::CombinedClasses"),
             }
-            _ => panic!("Expected AttrOp::CombinedClasses"),
-        }
+        })
     }
 }

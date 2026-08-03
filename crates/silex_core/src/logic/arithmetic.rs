@@ -52,7 +52,7 @@ fn binary_op<'scope, 'run, T, R>(
     op: fn(&T, &T) -> T,
 ) -> Rx<'scope, 'run, T>
 where
-    T: 'run,
+    T: 'scope,
     R: IntoRx<'scope, 'run, Value = T>,
 {
     let scope = left.scope();
@@ -62,7 +62,7 @@ where
 
 fn unary_op<'scope, 'run, T>(value: Rx<'scope, 'run, T>, op: fn(&T) -> T) -> Rx<'scope, 'run, T>
 where
-    T: 'run,
+    T: 'scope,
 {
     let scope = value.scope();
     scope.derived(move || value.with(op))

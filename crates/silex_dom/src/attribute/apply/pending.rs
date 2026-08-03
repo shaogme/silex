@@ -4,27 +4,28 @@ use web_sys::Element as WebElem;
 
 use super::foundation::{ApplyTarget, ApplyToDom};
 use crate::attribute::op::{AttrOp, CombinedClasses, CombinedStyles};
+use crate::view::ViewOwnerToken;
 
 // --- Attribute Forwarding Support ---
 
 /// `PendingAttribute` 是 `AttrOp` 的零成本别名，用于统一延迟属性指令。
-pub type PendingAttribute = AttrOp;
+pub type PendingAttribute<'scope, 'run> = AttrOp<'scope, 'run>;
 
 #[derive(Default)]
-struct ClassAccumulator {
+struct ClassAccumulator<'scope, 'run> {
     statics: Vec<Cow<'static, str>>,
-    toggles: Vec<(Cow<'static, str>, silex_core::Rx<bool>)>,
-    reactives: Vec<silex_core::Rx<String>>,
+    toggles: Vec<(Cow<'static, str>, silex_core::Rx<'scope, 'run, bool>)>,
+    reactives: Vec<silex_core::Rx<'scope, 'run, String>>,
 }
 
-impl ClassAccumulator {
+impl<'scope, 'run> ClassAccumulator<'scope, 'run> {
     fn push_static(&mut self, c: Cow<'static, str>) {
         if !self.statics.contains(&c) {
             self.statics.push(c);
         }
     }
 
-    fn push_toggle(&mut self, name: Cow<'static, str>, rx: silex_core::Rx<bool>) {
+    fn push_toggle(&mut self, name: Cow<'static, str>, rx: silex_core::Rx<'scope, 'run, bool>) {
         if let Some(idx) = self.toggles.iter().position(|(n, _)| n == &name) {
             self.toggles[idx] = (name, rx);
         } else {
@@ -32,11 +33,11 @@ impl ClassAccumulator {
         }
     }
 
-    fn push_reactive(&mut self, rx: silex_core::Rx<String>) {
+    fn push_reactive(&mut self, rx: silex_core::Rx<'scope, 'run, String>) {
         self.reactives.push(rx);
     }
 
-    fn extend_combined(&mut self, combined: CombinedClasses) {
+    fn extend_combined(&mut self, combined: CombinedClasses<'scope, 'run>) {
         for s in combined.statics {
             self.push_static(s);
         }
@@ -52,7 +53,7 @@ impl ClassAccumulator {
         self.statics.is_empty() && self.toggles.is_empty() && self.reactives.is_empty()
     }
 
-    fn into_op(self) -> AttrOp {
+    fn into_op(self) -> AttrOp<'scope, 'run> {
         AttrOp::CombinedClasses(CombinedClasses {
             statics: self.statics,
             toggles: self.toggles,
@@ -62,13 +63,13 @@ impl ClassAccumulator {
 }
 
 #[derive(Default)]
-struct StyleAccumulator {
+struct StyleAccumulator<'scope, 'run> {
     statics: Vec<(Cow<'static, str>, Cow<'static, str>)>,
-    properties: Vec<(Cow<'static, str>, silex_core::Rx<String>)>,
-    sheets: Vec<silex_core::Rx<String>>,
+    properties: Vec<(Cow<'static, str>, silex_core::Rx<'scope, 'run, String>)>,
+    sheets: Vec<silex_core::Rx<'scope, 'run, String>>,
 }
 
-impl StyleAccumulator {
+impl<'scope, 'run> StyleAccumulator<'scope, 'run> {
     fn push_static(&mut self, key: Cow<'static, str>, val: Cow<'static, str>) {
         if let Some(idx) = self.statics.iter().position(|(k, _)| k == &key) {
             self.statics[idx] = (key, val);
@@ -77,7 +78,7 @@ impl StyleAccumulator {
         }
     }
 
-    fn push_property(&mut self, key: Cow<'static, str>, rx: silex_core::Rx<String>) {
+    fn push_property(&mut self, key: Cow<'static, str>, rx: silex_core::Rx<'scope, 'run, String>) {
         if let Some(idx) = self.properties.iter().position(|(k, _)| k == &key) {
             self.properties[idx] = (key, rx);
         } else {
@@ -85,11 +86,11 @@ impl StyleAccumulator {
         }
     }
 
-    fn push_sheet(&mut self, rx: silex_core::Rx<String>) {
+    fn push_sheet(&mut self, rx: silex_core::Rx<'scope, 'run, String>) {
         self.sheets.push(rx);
     }
 
-    fn extend_combined(&mut self, combined: CombinedStyles) {
+    fn extend_combined(&mut self, combined: CombinedStyles<'scope, 'run>) {
         for (k, v) in combined.statics {
             self.push_static(k, v);
         }
@@ -105,7 +106,7 @@ impl StyleAccumulator {
         self.statics.is_empty() && self.properties.is_empty() && self.sheets.is_empty()
     }
 
-    fn into_op(self) -> AttrOp {
+    fn into_op(self) -> AttrOp<'scope, 'run> {
         AttrOp::CombinedStyles(CombinedStyles {
             statics: self.statics,
             properties: self.properties,
@@ -114,7 +115,9 @@ impl StyleAccumulator {
     }
 }
 
-pub fn consolidate_attributes(attrs: Vec<AttrOp>) -> Vec<AttrOp> {
+pub fn consolidate_attributes<'scope, 'run>(
+    attrs: Vec<AttrOp<'scope, 'run>>,
+) -> Vec<AttrOp<'scope, 'run>> {
     if attrs.is_empty() {
         return attrs;
     }
@@ -132,11 +135,11 @@ pub fn consolidate_attributes(attrs: Vec<AttrOp>) -> Vec<AttrOp> {
     let mut consolidated = Vec::with_capacity(attrs.len());
 
     // 递归打平函数
-    fn process_op(
-        op: AttrOp,
-        class_acc: &mut ClassAccumulator,
-        style_acc: &mut StyleAccumulator,
-        consolidated: &mut Vec<AttrOp>,
+    fn process_op<'scope, 'run>(
+        op: AttrOp<'scope, 'run>,
+        class_acc: &mut ClassAccumulator<'scope, 'run>,
+        style_acc: &mut StyleAccumulator<'scope, 'run>,
+        consolidated: &mut Vec<AttrOp<'scope, 'run>>,
     ) {
         match op {
             AttrOp::Sequence(ops) => {
@@ -175,15 +178,19 @@ pub fn consolidate_attributes(attrs: Vec<AttrOp>) -> Vec<AttrOp> {
     result
 }
 
-impl AttrOp {
+impl<'scope, 'run> AttrOp<'scope, 'run> {
     pub fn build<V>(value: V, target: ApplyTarget) -> Self
     where
-        V: ApplyToDom + 'static,
+        V: ApplyToDom<'scope, 'run> + 'scope,
     {
         value.into_op(target)
     }
 
-    pub fn new_listener(f: impl Fn(&WebElem) + 'static) -> Self {
+    pub fn new_listener(f: impl Fn(&WebElem) + 'scope) -> Self {
+        AttrOp::Custom(Rc::new(move |el, _| f(el)))
+    }
+
+    pub fn new_scoped(f: impl Fn(&WebElem, &ViewOwnerToken<'scope, 'run>) + 'scope) -> Self {
         AttrOp::Custom(Rc::new(f))
     }
 }

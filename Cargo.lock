@@ -1682,6 +1682,7 @@ dependencies = [
  "js-sys",
  "silex_core",
  "silex_vtable",
+ "trybuild",
  "wasm-bindgen",
  "web-sys",
 ]

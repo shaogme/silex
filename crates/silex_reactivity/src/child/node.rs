@@ -502,3 +502,45 @@ impl<'scope, 'run, T: 'scope> StoredValue<'scope, 'run, T> {
         self.handle.is_alive()
     }
 }
+
+impl<'scope, 'run, T> PartialEq for Memo<'scope, 'run, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.handle == other.handle
+    }
+}
+impl<'scope, 'run, T> Eq for Memo<'scope, 'run, T> {}
+
+impl<'scope, 'run, T> PartialEq for Derived<'scope, 'run, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.handle == other.handle
+    }
+}
+impl<'scope, 'run, T> Eq for Derived<'scope, 'run, T> {}
+
+impl<'scope, 'run, T> PartialEq for ReadSignal<'scope, 'run, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.handle == other.handle
+    }
+}
+impl<'scope, 'run, T> Eq for ReadSignal<'scope, 'run, T> {}
+
+impl<'scope, 'run, T> PartialEq for WriteSignal<'scope, 'run, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.handle == other.handle
+    }
+}
+impl<'scope, 'run, T> Eq for WriteSignal<'scope, 'run, T> {}
+
+impl<'scope, 'run, T> PartialEq for Signal<'scope, 'run, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.read == other.read && self.write == other.write
+    }
+}
+impl<'scope, 'run, T> Eq for Signal<'scope, 'run, T> {}
+
+impl<'scope, 'run, T> PartialEq for StoredValue<'scope, 'run, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.handle == other.handle
+    }
+}
+impl<'scope, 'run, T> Eq for StoredValue<'scope, 'run, T> {}

@@ -1,175 +1,117 @@
 use std::borrow::Cow;
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::fmt::Display;
 use std::rc::Rc;
 
-use silex_core::reactivity::Effect;
-use silex_core::traits::{RxGet, RxRead};
-use silex_core::{Rx, RxEffectKind, RxValueKind};
-use wasm_bindgen::JsValue;
+use silex_core::{Rx, RxValueKind};
 use web_sys::Element as WebElem;
 
-use super::foundation::{ApplyTarget, ApplyToDom, ReactiveApply};
+use super::foundation::{ApplyTarget, ApplyToDom, ReactiveApply, apply_immediate_string};
 use crate::attribute::op::{
-    Attr, AttrData, AttrOp, AttrUpdate, apply_attr_with_target_internal, get_style_decl,
-    parse_style_str, set_string_property_internal,
+    Attr, AttrData, AttrOp, AttrUpdate, apply_attr_with_target_internal,
+    apply_immediate_bool_internal, get_style_decl,
 };
+use crate::view::ViewOwnerToken;
 
-// --- Internal Helper Functions (Non-generic to reduce monomorphization) ---
-
-pub(crate) fn derive_string_rx_internal<T: Display + Clone + 'static>(
-    rx: Rx<T, RxValueKind>,
-) -> Rx<String, RxValueKind> {
-    Rx::derive(Box::new(move || rx.get().to_string()))
+fn register<'scope, 'run>(owner: &ViewOwnerToken<'scope, 'run>, callback: impl FnMut() + 'scope) {
+    owner.effect(Box::new(callback));
 }
 
-pub(crate) fn apply_primitive_reactive_internal<T: Display + Clone + 'static>(
+pub(crate) fn apply_primitive_reactive_internal<'scope, 'run, T>(
     el: WebElem,
     target: ApplyTarget,
-    rx: Rx<T, RxValueKind>,
-) {
-    match target {
-        ApplyTarget::Class => {
-            create_erased_class_effect_internal(el, derive_string_rx_internal(rx))
+    rx: Rx<'scope, 'run, T>,
+    owner: &ViewOwnerToken<'scope, 'run>,
+) where
+    T: ToString + Clone + 'scope,
+{
+    register(owner, move || {
+        let value = rx.get().to_string();
+        match &target {
+            ApplyTarget::Attr(_) => apply_immediate_string(&el, &target, &value),
+            ApplyTarget::Prop(_) => apply_immediate_string(&el, &target, &value),
+            ApplyTarget::Known(prop) => apply_attr_with_target_internal(
+                &el,
+                prop.name(),
+                ApplyTarget::Known(*prop),
+                &Attr::from(value),
+            ),
+            ApplyTarget::Class => {
+                let _ = el.set_attribute("class", &value);
+            }
+            ApplyTarget::Style => {
+                if let Some(style) = get_style_decl(&el) {
+                    style.set_css_text(&value);
+                }
+            }
+            ApplyTarget::Apply => {}
         }
-        ApplyTarget::Style => create_raw_style_effect_internal(el, derive_string_rx_internal(rx)),
-        ApplyTarget::Attr(ref name) if name == "class" => {
-            create_erased_class_effect_internal(el, derive_string_rx_internal(rx));
-        }
-        ApplyTarget::Attr(ref name) if name == "style" => {
-            create_raw_style_effect_internal(el, derive_string_rx_internal(rx));
-        }
-        ApplyTarget::Attr(name) => {
-            Effect::new(move |_| {
-                let value = rx.get().to_string();
-                set_string_property_internal(&el, &name, &value, false);
-            });
-        }
-        ApplyTarget::Prop(name) => {
-            Effect::new(move |_| {
-                let value = rx.get().to_string();
-                set_string_property_internal(&el, &name, &value, true);
-            });
-        }
-        ApplyTarget::Known(kp) => {
-            Effect::new(move |_| {
-                let value = rx.get().to_string();
-                apply_attr_with_target_internal(
-                    &el,
-                    kp.name(),
-                    ApplyTarget::Known(kp),
-                    &Attr::from(value),
-                );
-            });
-        }
-        ApplyTarget::Apply => {}
-    }
+    });
 }
 
-fn create_erased_class_effect_internal(el: WebElem, rx: Rx<String, RxValueKind>) {
-    AttrOp::reactive_classes(rx).apply(&el);
-}
-
-fn create_raw_style_effect_internal(el: WebElem, rx: Rx<String, RxValueKind>) {
-    AttrOp::reactive_stylesheet(rx).apply(&el);
-}
-
-pub(crate) fn apply_string_reactive_internal(
+pub(crate) fn apply_string_reactive_internal<'scope, 'run>(
     el: WebElem,
     target: ApplyTarget,
-    rx: Rx<String, RxValueKind>,
+    rx: Rx<'scope, 'run, String>,
+    owner: &ViewOwnerToken<'scope, 'run>,
 ) {
-    match target {
-        ApplyTarget::Class => create_erased_class_effect_internal(el, rx),
-        ApplyTarget::Style => create_raw_style_effect_internal(el, rx),
-        ApplyTarget::Attr(name) => {
-            Effect::new(move |_| {
-                let value = rx.get();
-                set_string_property_internal(&el, &name, &value, false);
-            });
-        }
-        ApplyTarget::Prop(name) => {
-            Effect::new(move |_| {
-                let value = rx.get();
-                set_string_property_internal(&el, &name, &value, true);
-            });
-        }
-        ApplyTarget::Known(kp) => {
-            Effect::new(move |_| {
-                let value = rx.get();
-                apply_attr_with_target_internal(
-                    &el,
-                    kp.name(),
-                    ApplyTarget::Known(kp),
-                    &Attr::from(value),
-                );
-            });
-        }
-        ApplyTarget::Apply => {}
-    }
+    apply_primitive_reactive_internal(el, target, rx, owner);
 }
 
-pub(crate) fn apply_string_pair_reactive_internal(
+pub(crate) fn apply_string_pair_reactive_internal<'scope, 'run>(
     el: WebElem,
     key: Cow<'static, str>,
     target: ApplyTarget,
-    rx: Rx<String, RxValueKind>,
+    rx: Rx<'scope, 'run, String>,
+    owner: &ViewOwnerToken<'scope, 'run>,
 ) {
-    if matches!(target, ApplyTarget::Style)
-        && let Some(style) = get_style_decl(&el)
-    {
-        Effect::new(move |_| {
-            let _ = style.set_property(&key, &rx.get());
-        });
+    if matches!(target, ApplyTarget::Style) {
+        if let Some(style) = get_style_decl(&el) {
+            register(owner, move || {
+                let _ = style.set_property(&key, &rx.get());
+            });
+        }
+    } else {
+        apply_string_reactive_internal(el, target, rx, owner);
     }
 }
 
-pub(crate) fn apply_bool_reactive_internal(
+pub(crate) fn apply_bool_reactive_internal<'scope, 'run>(
     el: WebElem,
     target: ApplyTarget,
-    rx: Rx<bool, RxValueKind>,
+    rx: Rx<'scope, 'run, bool>,
+    owner: &ViewOwnerToken<'scope, 'run>,
 ) {
-    match target {
+    register(owner, move || match &target {
         ApplyTarget::Attr(name) => {
-            Effect::new(move |_| {
-                let val = rx.get();
-                if val {
-                    let _ = el.set_attribute(&name, "");
-                } else {
-                    let _ = el.remove_attribute(&name);
-                }
-            });
+            if rx.get() {
+                let _ = el.set_attribute(name, "");
+            } else {
+                let _ = el.remove_attribute(name);
+            }
         }
         ApplyTarget::Prop(name) => {
-            let target = ApplyTarget::prop(name.clone());
-            Effect::new(move |_| {
-                let val = rx.get();
-                apply_attr_with_target_internal(&el, &name, target.clone(), &Attr::from(val));
-            });
+            apply_immediate_bool_internal(&el, name, rx.get(), true);
         }
-        ApplyTarget::Known(kp) => {
-            Effect::new(move |_| {
-                let val = rx.get();
-                apply_attr_with_target_internal(
-                    &el,
-                    kp.name(),
-                    ApplyTarget::Known(kp),
-                    &Attr::from(val),
-                );
-            });
+        ApplyTarget::Known(prop) => apply_attr_with_target_internal(
+            &el,
+            prop.name(),
+            ApplyTarget::Known(*prop),
+            &Attr::from(rx.get()),
+        ),
+        ApplyTarget::Class => {
+            let _ = el.class_list().toggle_with_force("active", rx.get());
         }
         _ => {}
-    }
+    });
 }
 
-pub(crate) fn apply_bool_pair_reactive_internal(
+pub(crate) fn apply_bool_pair_reactive_internal<'scope, 'run>(
     el: WebElem,
     key: Cow<'static, str>,
-    rx: Rx<bool, RxValueKind>,
+    rx: Rx<'scope, 'run, bool>,
+    owner: &ViewOwnerToken<'scope, 'run>,
 ) {
     let list = el.class_list();
-    Effect::new(move |_| {
+    register(owner, move || {
         if rx.get() {
             let _ = list.add_1(&key);
         } else {
@@ -178,148 +120,119 @@ pub(crate) fn apply_bool_pair_reactive_internal(
     });
 }
 
-pub(crate) fn apply_rx_internal<T>(rx: Rx<T, RxValueKind>, el: &WebElem, target: ApplyTarget)
-where
-    T: ReactiveApply + 'static,
+pub(crate) fn apply_rx_internal<'scope, 'run, T>(
+    rx: Rx<'scope, 'run, T>,
+    el: &WebElem,
+    target: ApplyTarget,
+    owner: &ViewOwnerToken<'scope, 'run>,
+) where
+    T: ReactiveApply<'scope, 'run> + 'scope,
 {
-    T::apply_to_dom(rx, el.clone(), target);
+    T::apply_to_dom(rx, el.clone(), target, owner);
 }
 
-// 1. 逻辑型 Rx (Effect) - 用于 on_xxx 属性
-// 仅支持擦除后的 Rc<dyn Fn> 类型，以收敛单态化
-impl ApplyToDom for Rx<Rc<dyn Fn(&WebElem)>, RxEffectKind> {
-    fn apply(&self, el: &WebElem, _target: ApplyTarget) {
-        self.with_untracked(|f| (f)(el));
-    }
-
-    fn into_op(self, _target: ApplyTarget) -> AttrOp {
-        AttrOp::Custom(Rc::new(move |el| {
-            self.with_untracked(|f| (f)(el));
-        }))
-    }
-}
-
-// 2. 响应式原语 (经过 IntoStorable 归一化后的终点)
-impl<T> ApplyToDom for Rx<T, RxValueKind>
+impl<'scope, 'run, T> ApplyToDom<'scope, 'run> for Rx<'scope, 'run, T, RxValueKind>
 where
-    T: ReactiveApply + Clone + 'static,
+    T: ReactiveApply<'scope, 'run> + Clone + 'scope,
 {
-    fn apply(&self, el: &WebElem, target: ApplyTarget) {
-        apply_rx_internal(*self, el, target);
+    fn apply(&self, el: &WebElem, target: ApplyTarget, owner: &ViewOwnerToken<'scope, 'run>) {
+        apply_rx_internal(*self, el, target, owner);
     }
 
-    fn into_op(self, target: ApplyTarget) -> AttrOp {
-        if let Some(op) = <T as ReactiveApply>::into_op_reactive(self, target.clone()) {
+    fn into_op(self, target: ApplyTarget) -> AttrOp<'scope, 'run> {
+        if let Some(op) = T::into_op_reactive(self, target.clone()) {
             op
         } else {
-            let rx = self;
-            AttrOp::Custom(Rc::new(move |el| {
-                apply_rx_internal(rx, el, target.clone());
+            AttrOp::Custom(Rc::new(move |el, owner| {
+                apply_rx_internal(self, el, target.clone(), owner);
             }))
         }
     }
 }
 
-// --- ReactiveApply Implementations ---
-
-impl ReactiveApply for String {
-    fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: WebElem, target: ApplyTarget) {
-        apply_string_reactive_internal(el, target, rx);
+impl<'scope, 'run> ReactiveApply<'scope, 'run> for String {
+    fn apply_to_dom(
+        rx: Rx<'scope, 'run, Self>,
+        el: WebElem,
+        target: ApplyTarget,
+        owner: &ViewOwnerToken<'scope, 'run>,
+    ) {
+        apply_string_reactive_internal(el, target, rx, owner);
     }
 
     fn apply_pair(
-        rx: Rx<Self, RxValueKind>,
+        rx: Rx<'scope, 'run, Self>,
         key: Cow<'static, str>,
         el: WebElem,
         target: ApplyTarget,
+        owner: &ViewOwnerToken<'scope, 'run>,
     ) {
-        apply_string_pair_reactive_internal(el, key, target, rx);
+        apply_string_pair_reactive_internal(el, key, target, rx, owner);
     }
 
-    fn into_op_reactive(rx: Rx<Self, RxValueKind>, target: ApplyTarget) -> Option<AttrOp> {
-        let op = match target {
-            ApplyTarget::Attr(name) => AttrOp::Update(AttrUpdate {
-                target: ApplyTarget::Attr(name),
-                data: AttrData::ReactiveString(rx),
-            }),
-            ApplyTarget::Known(kp) => AttrOp::Update(AttrUpdate {
-                target: ApplyTarget::Known(kp),
-                data: AttrData::ReactiveString(rx),
-            }),
-            ApplyTarget::Prop(name) => AttrOp::Update(AttrUpdate {
-                target: ApplyTarget::Prop(name),
-                data: AttrData::ReactiveJs({
-                    Rx::derive(Box::new(move || JsValue::from_str(&rx.get())))
-                }),
-            }),
-            ApplyTarget::Class => AttrOp::reactive_classes(rx),
-            ApplyTarget::Style => AttrOp::reactive_stylesheet(rx),
-            ApplyTarget::Apply => {
-                let rx_inner = rx;
-                AttrOp::Custom(Rc::new(move |el| {
-                    apply_string_reactive_internal(el.clone(), ApplyTarget::Apply, rx_inner);
-                }))
-            }
-        };
-        Some(op)
-    }
-
-    fn into_op_pair_reactive(
-        rx: Rx<Self, RxValueKind>,
-        key: Cow<'static, str>,
+    fn into_op_reactive(
+        rx: Rx<'scope, 'run, Self>,
         target: ApplyTarget,
-    ) -> Option<AttrOp> {
-        if matches!(target, ApplyTarget::Style) {
-            Some(AttrOp::style_property(key, rx))
-        } else {
-            None
+    ) -> Option<AttrOp<'scope, 'run>> {
+        match target {
+            ApplyTarget::Attr(_) | ApplyTarget::Known(_) => Some(AttrOp::Update(AttrUpdate {
+                target,
+                data: AttrData::ReactiveString(rx),
+            })),
+            ApplyTarget::Class => Some(AttrOp::reactive_classes(rx)),
+            ApplyTarget::Style => Some(AttrOp::reactive_stylesheet(rx)),
+            _ => None,
         }
     }
-}
-
-impl ReactiveApply for &'static str {
-    fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: WebElem, target: ApplyTarget) {
-        apply_primitive_reactive_internal(el, target, rx);
-    }
-
-    fn apply_pair(
-        rx: Rx<Self, RxValueKind>,
-        key: Cow<'static, str>,
-        el: WebElem,
-        target: ApplyTarget,
-    ) {
-        let string_rx = derive_string_rx_internal(rx);
-        apply_string_pair_reactive_internal(el, key, target, string_rx);
-    }
 
     fn into_op_pair_reactive(
-        rx: Rx<Self, RxValueKind>,
+        rx: Rx<'scope, 'run, Self>,
         key: Cow<'static, str>,
         target: ApplyTarget,
-    ) -> Option<AttrOp> {
-        let string_rx = derive_string_rx_internal(rx);
-        <String as ReactiveApply>::into_op_pair_reactive(string_rx, key, target)
+    ) -> Option<AttrOp<'scope, 'run>> {
+        matches!(target, ApplyTarget::Style).then(|| AttrOp::style_property(key, rx))
     }
 }
 
 macro_rules! impl_reactive_apply_primitive {
-    ($($t:ty),*) => {
+    ($($ty:ty),*) => {
         $(
-            impl ReactiveApply for $t {
-                fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: WebElem, target: ApplyTarget) {
-                    apply_primitive_reactive_internal(el, target, rx);
+            impl<'scope, 'run> ReactiveApply<'scope, 'run> for $ty {
+                fn apply_to_dom(
+                    rx: Rx<'scope, 'run, Self>,
+                    el: WebElem,
+                    target: ApplyTarget,
+                    owner: &ViewOwnerToken<'scope, 'run>,
+                ) {
+                    apply_primitive_reactive_internal(el, target, rx, owner);
                 }
-                fn apply_pair(rx: Rx<Self, RxValueKind>, key: Cow<'static, str>, el: WebElem, target: ApplyTarget) {
-                    let string_rx = derive_string_rx_internal(rx);
-                    apply_string_pair_reactive_internal(el, key, target, string_rx);
+
+                fn apply_pair(
+                    rx: Rx<'scope, 'run, Self>,
+                    key: Cow<'static, str>,
+                    el: WebElem,
+                    target: ApplyTarget,
+                    owner: &ViewOwnerToken<'scope, 'run>,
+                ) {
+                    let _ = (rx, key, el, target, owner);
                 }
-                fn into_op_reactive(rx: Rx<Self, RxValueKind>, target: ApplyTarget) -> Option<AttrOp> {
-                    let string_rx = derive_string_rx_internal(rx);
-                    <String as ReactiveApply>::into_op_reactive(string_rx, target)
+
+                fn into_op_reactive(
+                    rx: Rx<'scope, 'run, Self>,
+                    target: ApplyTarget,
+                ) -> Option<AttrOp<'scope, 'run>> {
+                    let _ = rx;
+                    let _ = target;
+                    None
                 }
-                fn into_op_pair_reactive(rx: Rx<Self, RxValueKind>, key: Cow<'static, str>, target: ApplyTarget) -> Option<AttrOp> {
-                    let string_rx = derive_string_rx_internal(rx);
-                    <String as ReactiveApply>::into_op_pair_reactive(string_rx, key, target)
+
+                fn into_op_pair_reactive(
+                    rx: Rx<'scope, 'run, Self>,
+                    key: Cow<'static, str>,
+                    target: ApplyTarget,
+                ) -> Option<AttrOp<'scope, 'run>> {
+                    let _ = (rx, key, target);
+                    None
                 }
             }
         )*
@@ -330,286 +243,107 @@ impl_reactive_apply_primitive!(
     u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, char
 );
 
-impl ReactiveApply for Attr {
-    fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: WebElem, target: ApplyTarget) {
-        if let Some(name) = target.name() {
-            Effect::new(move |_| {
-                apply_attr_with_target_internal(&el, &name, target.clone(), &rx.get());
-            });
-        }
-    }
-
-    fn into_op_reactive(rx: Rx<Self, RxValueKind>, target: ApplyTarget) -> Option<AttrOp> {
-        let op = match target {
-            ApplyTarget::Known(_) | ApplyTarget::Attr(_) | ApplyTarget::Prop(_) => {
-                AttrOp::Update(AttrUpdate {
-                    target,
-                    data: AttrData::ReactiveAttr(rx),
-                })
-            }
-            _ => {
-                let rx_inner = rx;
-                AttrOp::Custom(Rc::new(move |el| {
-                    <Self as ReactiveApply>::apply_to_dom(rx_inner, el.clone(), target.clone());
-                }))
-            }
-        };
-        Some(op)
-    }
-}
-
-impl ReactiveApply for bool {
-    fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: WebElem, target: ApplyTarget) {
-        apply_bool_reactive_internal(el, target, rx);
+impl<'scope, 'run> ReactiveApply<'scope, 'run> for bool {
+    fn apply_to_dom(
+        rx: Rx<'scope, 'run, Self>,
+        el: WebElem,
+        target: ApplyTarget,
+        owner: &ViewOwnerToken<'scope, 'run>,
+    ) {
+        apply_bool_reactive_internal(el, target, rx, owner);
     }
 
     fn apply_pair(
-        rx: Rx<Self, RxValueKind>,
+        rx: Rx<'scope, 'run, Self>,
         key: Cow<'static, str>,
         el: WebElem,
         target: ApplyTarget,
+        owner: &ViewOwnerToken<'scope, 'run>,
     ) {
         if matches!(target, ApplyTarget::Class) {
-            apply_bool_pair_reactive_internal(el, key, rx);
+            apply_bool_pair_reactive_internal(el, key, rx, owner);
         }
     }
 
-    fn into_op_reactive(rx: Rx<Self, RxValueKind>, target: ApplyTarget) -> Option<AttrOp> {
-        let op = match target {
-            ApplyTarget::Attr(_) | ApplyTarget::Prop(_) | ApplyTarget::Known(_) => {
-                AttrOp::Update(AttrUpdate {
-                    target,
-                    data: AttrData::ReactiveBool(rx),
-                })
-            }
-            _ => {
-                let rx_inner = rx;
-                AttrOp::Custom(Rc::new(move |el| {
-                    apply_bool_reactive_internal(el.clone(), target.clone(), rx_inner);
-                }))
-            }
-        };
-        Some(op)
-    }
-
-    fn into_op_pair_reactive(
-        rx: Rx<Self, RxValueKind>,
-        key: Cow<'static, str>,
+    fn into_op_reactive(
+        rx: Rx<'scope, 'run, Self>,
         target: ApplyTarget,
-    ) -> Option<AttrOp> {
-        if matches!(target, ApplyTarget::Class) {
-            Some(AttrOp::class_toggle(key, rx))
-        } else {
-            None
-        }
-    }
-}
-
-// --- Option<T> ReactiveApply Diff Helpers ---
-
-fn update_option_class_diff(el: &WebElem, prev: Option<&str>, new_val: Option<&str>) {
-    if prev == new_val {
-        return;
-    }
-    let list = el.class_list();
-    let prev_tokens: HashSet<&str> =
-        prev.map_or_else(HashSet::new, |p| p.split_whitespace().collect());
-    let new_tokens: HashSet<&str> =
-        new_val.map_or_else(HashSet::new, |n| n.split_whitespace().collect());
-
-    for &c in &prev_tokens {
-        if !new_tokens.contains(c) {
-            let _ = list.remove_1(c);
-        }
-    }
-    for &c in &new_tokens {
-        if !prev_tokens.contains(c) {
-            let _ = list.add_1(c);
-        }
-    }
-}
-
-fn update_option_style_diff(el: &WebElem, prev: Option<&str>, new_val: Option<&str>) {
-    if prev == new_val {
-        return;
-    }
-    if let Some(style) = get_style_decl(el) {
-        let prev_map: HashMap<Cow<'_, str>, Cow<'_, str>> = prev
-            .map(|p| parse_style_str(p).into_iter().collect())
-            .unwrap_or_default();
-        let new_map: HashMap<Cow<'_, str>, Cow<'_, str>> = new_val
-            .map(|n| parse_style_str(n).into_iter().collect())
-            .unwrap_or_default();
-
-        for k in prev_map.keys() {
-            if !new_map.contains_key(k) {
-                let _ = style.remove_property(k);
-            }
-        }
-        for (k, v) in &new_map {
-            if prev_map.get(k) != Some(v) {
-                let _ = style.set_property(k, v);
-            }
-        }
-    }
-}
-
-// --- Option<T> ReactiveApply ---
-
-pub(crate) fn apply_option_reactive_internal<T>(
-    el: WebElem,
-    target: ApplyTarget,
-    rx: Rx<Option<T>, RxValueKind>,
-) where
-    T: Display + Clone + 'static,
-{
-    let prev_val = Rc::new(RefCell::new(None::<String>));
-
-    Effect::new(move |_| {
-        let opt = rx.get();
-        let new_val = opt.map(|v| v.to_string());
-        let mut prev = prev_val.borrow_mut();
-
-        match target {
-            ApplyTarget::Attr(ref name) => match new_val {
-                Some(ref v) => {
-                    set_string_property_internal(&el, name, v, false);
-                }
-                None => {
-                    let _ = el.remove_attribute(name);
-                }
-            },
-            ApplyTarget::Prop(ref name) => {
-                let attr = match &new_val {
-                    Some(v) => Attr::from(v.clone()),
-                    None => Attr::Removed,
-                };
-                apply_attr_with_target_internal(&el, name, target.clone(), &attr);
-            }
-            ApplyTarget::Known(kp) => {
-                let attr = match &new_val {
-                    Some(v) => Attr::from(v.clone()),
-                    None => Attr::Removed,
-                };
-                apply_attr_with_target_internal(&el, kp.name(), ApplyTarget::Known(kp), &attr);
-            }
-            ApplyTarget::Class => {
-                update_option_class_diff(&el, prev.as_deref(), new_val.as_deref());
-            }
-            ApplyTarget::Style => {
-                update_option_style_diff(&el, prev.as_deref(), new_val.as_deref());
-            }
-            ApplyTarget::Apply => {}
-        }
-
-        *prev = new_val;
-    });
-}
-
-pub(crate) fn apply_option_pair_reactive_internal<T>(
-    el: WebElem,
-    key: Cow<'static, str>,
-    target: ApplyTarget,
-    rx: Rx<Option<T>, RxValueKind>,
-) where
-    T: Display + Clone + 'static,
-{
-    if matches!(target, ApplyTarget::Class) {
-        let list = el.class_list();
-        Effect::new(move |_| {
-            if let Some(val) = rx.get() {
-                let s = val.to_string();
-                if s == "true" || !s.is_empty() {
-                    let _ = list.add_1(&key);
-                } else {
-                    let _ = list.remove_1(&key);
-                }
-            } else {
-                let _ = list.remove_1(&key);
-            }
-        });
-    } else if matches!(target, ApplyTarget::Style)
-        && let Some(style) = get_style_decl(&el)
-    {
-        Effect::new(move |_| {
-            if let Some(val) = rx.get() {
-                let _ = style.set_property(&key, &val.to_string());
-            } else {
-                let _ = style.remove_property(&key);
-            }
-        });
-    }
-}
-
-impl<T> ReactiveApply for Option<T>
-where
-    T: Display + Clone + 'static,
-{
-    fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: WebElem, target: ApplyTarget) {
-        apply_option_reactive_internal(el, target, rx);
-    }
-
-    fn apply_pair(
-        rx: Rx<Self, RxValueKind>,
-        key: Cow<'static, str>,
-        el: WebElem,
-        target: ApplyTarget,
-    ) {
-        apply_option_pair_reactive_internal(el, key, target, rx);
-    }
-
-    fn into_op_reactive(rx: Rx<Self, RxValueKind>, target: ApplyTarget) -> Option<AttrOp> {
-        if matches!(target, ApplyTarget::Class) {
-            Some(AttrOp::reactive_classes(Rx::derive(Box::new(move || {
-                rx.get().map(|v| v.to_string()).unwrap_or_default()
-            }))))
-        } else if matches!(target, ApplyTarget::Style) {
-            Some(AttrOp::reactive_stylesheet(Rx::derive(Box::new(
-                move || rx.get().map(|v| v.to_string()).unwrap_or_default(),
-            ))))
-        } else if matches!(
+    ) -> Option<AttrOp<'scope, 'run>> {
+        matches!(
             target,
-            ApplyTarget::Attr(_) | ApplyTarget::Known(_) | ApplyTarget::Prop(_)
-        ) {
-            let opt_rx = Rx::derive(Box::new(move || rx.get().map(|v| v.to_string())));
-            Some(AttrOp::Update(AttrUpdate {
+            ApplyTarget::Attr(_) | ApplyTarget::Prop(_) | ApplyTarget::Known(_)
+        )
+        .then(|| {
+            AttrOp::Update(AttrUpdate {
                 target,
-                data: AttrData::ReactiveOptionString(opt_rx),
-            }))
-        } else {
-            let rx_inner = rx;
-            Some(AttrOp::Custom(Rc::new(move |el| {
-                apply_option_reactive_internal(el.clone(), target.clone(), rx_inner);
-            })))
-        }
+                data: AttrData::ReactiveBool(rx),
+            })
+        })
     }
 
     fn into_op_pair_reactive(
-        rx: Rx<Self, RxValueKind>,
+        rx: Rx<'scope, 'run, Self>,
         key: Cow<'static, str>,
         target: ApplyTarget,
-    ) -> Option<AttrOp> {
-        if matches!(target, ApplyTarget::Class) {
-            Some(AttrOp::class_toggle(
-                key,
-                Rx::derive(Box::new(move || {
-                    rx.get()
-                        .map(|v| {
-                            let s = v.to_string();
-                            s == "true" || !s.is_empty()
-                        })
-                        .unwrap_or(false)
-                })),
-            ))
-        } else if matches!(target, ApplyTarget::Style) {
-            Some(AttrOp::style_property(
-                key,
-                Rx::derive(Box::new(move || {
-                    rx.get().map(|v| v.to_string()).unwrap_or_default()
-                })),
-            ))
-        } else {
-            None
-        }
+    ) -> Option<AttrOp<'scope, 'run>> {
+        matches!(target, ApplyTarget::Class).then(|| AttrOp::class_toggle(key, rx))
+    }
+}
+
+impl<'scope, 'run> ReactiveApply<'scope, 'run> for Attr {
+    fn apply_to_dom(
+        rx: Rx<'scope, 'run, Self>,
+        el: WebElem,
+        target: ApplyTarget,
+        owner: &ViewOwnerToken<'scope, 'run>,
+    ) {
+        register(owner, move || {
+            if let Some(name) = target.name() {
+                apply_attr_with_target_internal(&el, &name, target.clone(), &rx.get());
+            }
+        });
+    }
+
+    fn into_op_reactive(
+        rx: Rx<'scope, 'run, Self>,
+        target: ApplyTarget,
+    ) -> Option<AttrOp<'scope, 'run>> {
+        matches!(
+            target,
+            ApplyTarget::Attr(_) | ApplyTarget::Prop(_) | ApplyTarget::Known(_)
+        )
+        .then(|| {
+            AttrOp::Update(AttrUpdate {
+                target,
+                data: AttrData::ReactiveAttr(rx),
+            })
+        })
+    }
+}
+
+impl<'scope, 'run, T> ReactiveApply<'scope, 'run> for Option<T>
+where
+    T: ToString + Clone + 'scope,
+{
+    fn apply_to_dom(
+        rx: Rx<'scope, 'run, Self>,
+        el: WebElem,
+        target: ApplyTarget,
+        owner: &ViewOwnerToken<'scope, 'run>,
+    ) {
+        register(owner, move || {
+            let value = rx.get().map(|value| value.to_string()).unwrap_or_default();
+            match target {
+                ApplyTarget::Class => {
+                    let _ = el.set_attribute("class", &value);
+                }
+                ApplyTarget::Style => {
+                    if let Some(style) = get_style_decl(&el) {
+                        style.set_css_text(&value);
+                    }
+                }
+                _ => apply_immediate_string(&el, &target, &value),
+            }
+        });
     }
 }

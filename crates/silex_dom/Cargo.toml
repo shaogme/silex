@@ -63,3 +63,6 @@ web-sys = { workspace = true, features = [
     "PromiseRejectionEvent"
 ] }
 js-sys.workspace = true
+
+[dev-dependencies]
+trybuild = "1.0"

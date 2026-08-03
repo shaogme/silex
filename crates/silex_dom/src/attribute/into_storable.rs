@@ -2,14 +2,15 @@ use std::borrow::Cow;
 
 use super::{ApplyToDom, Attr, AttrOp, AttributeGroup};
 use crate::view::Prop;
+use silex_core::{Rx, RxValueKind};
 // --- IntoStorable: 允许非 'static 类型转换为可存储类型 ---
 
 /// 将值转换为可存储的类型。
 /// 对于引用类型（如 &str, &String），转换为 owned 类型（String）。
 /// 对于已经是 'static 的类型，直接返回自身。
-pub trait IntoStorable {
-    /// 转换后的可存储类型，必须满足 ApplyToDom + 'static
-    type Stored: ApplyToDom + 'static;
+pub trait IntoStorable<'scope, 'run> {
+    /// 转换后的可存储类型必须受当前 view scope 约束。
+    type Stored: ApplyToDom<'scope, 'run> + 'scope;
 
     /// 将自身转换为可存储类型
     fn into_storable(self) -> Self::Stored;
@@ -17,35 +18,35 @@ pub trait IntoStorable {
 
 // --- 1. 基础类型 ---
 
-impl IntoStorable for &'static str {
+impl<'scope, 'run> IntoStorable<'scope, 'run> for &'static str {
     type Stored = &'static str;
     fn into_storable(self) -> Self::Stored {
         self
     }
 }
 
-impl IntoStorable for &String {
+impl<'scope, 'run> IntoStorable<'scope, 'run> for &String {
     type Stored = String;
     fn into_storable(self) -> Self::Stored {
         self.clone()
     }
 }
 
-impl IntoStorable for String {
+impl<'scope, 'run> IntoStorable<'scope, 'run> for String {
     type Stored = String;
     fn into_storable(self) -> Self::Stored {
         self
     }
 }
 
-impl IntoStorable for Cow<'static, str> {
+impl<'scope, 'run> IntoStorable<'scope, 'run> for Cow<'static, str> {
     type Stored = Cow<'static, str>;
     fn into_storable(self) -> Self::Stored {
         self
     }
 }
 
-impl IntoStorable for bool {
+impl<'scope, 'run> IntoStorable<'scope, 'run> for bool {
     type Stored = bool;
     fn into_storable(self) -> Self::Stored {
         self
@@ -55,7 +56,7 @@ impl IntoStorable for bool {
 macro_rules! impl_into_storable_primitive {
     ($($t:ty),*) => {
         $(
-            impl IntoStorable for $t {
+            impl<'scope, 'run> IntoStorable<'scope, 'run> for $t {
                 type Stored = $t;
                 fn into_storable(self) -> Self::Stored {
                     self
@@ -69,41 +70,85 @@ impl_into_storable_primitive!(
 );
 
 // --- 2. Rx 支持 ---
-macro_rules! impl_into_storable_rx {
-    (($($gen:tt)*) => $ty:ty) => {
-        impl<$($gen)*> IntoStorable for $ty
-        where
-            Self: silex_core::traits::RxBase + silex_core::traits::IntoRx + 'static,
-            <Self as silex_core::traits::IntoRx>::RxType: super::ApplyToDom + 'static,
-        {
-            type Stored = <Self as silex_core::traits::IntoRx>::RxType;
-            fn into_storable(self) -> Self::Stored {
-                use silex_core::traits::IntoRx;
-                self.into_rx()
-            }
-        }
-    };
+impl<'scope, 'run, T> IntoStorable<'scope, 'run> for Rx<'scope, 'run, T, RxValueKind>
+where
+    T: super::ReactiveApply<'scope, 'run> + Clone + 'scope,
+{
+    type Stored = Self;
+
+    fn into_storable(self) -> Self::Stored {
+        self
+    }
 }
 
-impl_into_storable_rx!((V, M) => silex_core::Rx<V, M>);
-impl_into_storable_rx!((T) => silex_core::reactivity::Signal<T>);
-impl_into_storable_rx!((T) => silex_core::reactivity::ReadSignal<T>);
-impl_into_storable_rx!((T) => silex_core::reactivity::RwSignal<T>);
-impl_into_storable_rx!((T) => silex_core::reactivity::Constant<T>);
-impl_into_storable_rx!((T) => silex_core::reactivity::Memo<T>);
-impl_into_storable_rx!((S, F) => silex_core::reactivity::DerivedPayload<S, F>);
-impl_into_storable_rx!((S, F, O) => silex_core::reactivity::SignalSlice<S, F, O>);
+impl<'scope, 'run, T> IntoStorable<'scope, 'run> for silex_core::reactivity::Signal<'scope, 'run, T>
+where
+    T: super::ReactiveApply<'scope, 'run> + Clone + 'scope,
+{
+    type Stored = Rx<'scope, 'run, T, RxValueKind>;
+
+    fn into_storable(self) -> Self::Stored {
+        self.into_rx()
+    }
+}
+
+impl<'scope, 'run, T> IntoStorable<'scope, 'run>
+    for silex_core::reactivity::ReadSignal<'scope, 'run, T>
+where
+    T: super::ReactiveApply<'scope, 'run> + Clone + 'scope,
+{
+    type Stored = Rx<'scope, 'run, T, RxValueKind>;
+
+    fn into_storable(self) -> Self::Stored {
+        self.into_rx()
+    }
+}
+
+impl<'scope, 'run, T> IntoStorable<'scope, 'run>
+    for silex_core::reactivity::RwSignal<'scope, 'run, T>
+where
+    T: super::ReactiveApply<'scope, 'run> + Clone + 'scope,
+{
+    type Stored = Rx<'scope, 'run, T, RxValueKind>;
+
+    fn into_storable(self) -> Self::Stored {
+        self.into_rx()
+    }
+}
+
+impl<'scope, 'run, T> IntoStorable<'scope, 'run> for silex_core::reactivity::Memo<'scope, 'run, T>
+where
+    T: super::ReactiveApply<'scope, 'run> + Clone + 'scope,
+{
+    type Stored = Rx<'scope, 'run, T, RxValueKind>;
+
+    fn into_storable(self) -> Self::Stored {
+        self.into_rx()
+    }
+}
+
+impl<'scope, 'run, T> IntoStorable<'scope, 'run>
+    for silex_core::reactivity::StoredValue<'scope, 'run, T>
+where
+    T: super::ReactiveApply<'scope, 'run> + Clone + 'scope,
+{
+    type Stored = Rx<'scope, 'run, T, RxValueKind>;
+
+    fn into_storable(self) -> Self::Stored {
+        self.into_rx()
+    }
+}
 
 // --- 3. 静态载体与逃逸舱 ---
 
-impl IntoStorable for Attr {
+impl<'scope, 'run> IntoStorable<'scope, 'run> for Attr {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {
         self
     }
 }
 
-impl IntoStorable for AttrOp {
+impl<'scope, 'run> IntoStorable<'scope, 'run> for AttrOp<'scope, 'run> {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {
         self
@@ -113,11 +158,11 @@ impl IntoStorable for AttrOp {
 // --- 4. Tuple 实现 ---
 
 // 统一泛型实现：(Key, Value)
-impl<K, V> IntoStorable for (K, V)
+impl<'scope, 'run, K, V> IntoStorable<'scope, 'run> for (K, V)
 where
-    K: IntoStorable,
-    V: IntoStorable,
-    (K::Stored, V::Stored): ApplyToDom + 'static,
+    K: IntoStorable<'scope, 'run>,
+    V: IntoStorable<'scope, 'run>,
+    (K::Stored, V::Stored): ApplyToDom<'scope, 'run> + 'scope,
 {
     type Stored = (K::Stored, V::Stored);
 
@@ -128,21 +173,31 @@ where
 
 // --- IntoStorable 实现：集合类型 ---
 
-impl<V: IntoStorable, const N: usize> IntoStorable for [V; N] {
+impl<'scope, 'run, V: IntoStorable<'scope, 'run>, const N: usize> IntoStorable<'scope, 'run>
+    for [V; N]
+where
+    V::Stored: 'scope,
+{
     type Stored = [V::Stored; N];
     fn into_storable(self) -> Self::Stored {
         self.map(|v| v.into_storable())
     }
 }
 
-impl<V: IntoStorable> IntoStorable for Option<V> {
+impl<'scope, 'run, V: IntoStorable<'scope, 'run>> IntoStorable<'scope, 'run> for Option<V>
+where
+    V::Stored: 'scope,
+{
     type Stored = Option<V::Stored>;
     fn into_storable(self) -> Self::Stored {
         self.map(|v| v.into_storable())
     }
 }
 
-impl<V: IntoStorable> IntoStorable for Vec<V> {
+impl<'scope, 'run, V: IntoStorable<'scope, 'run>> IntoStorable<'scope, 'run> for Vec<V>
+where
+    V::Stored: 'scope,
+{
     type Stored = Vec<V::Stored>;
     fn into_storable(self) -> Self::Stored {
         self.into_iter().map(|v| v.into_storable()).collect()
@@ -151,16 +206,18 @@ impl<V: IntoStorable> IntoStorable for Vec<V> {
 
 // --- IntoStorable 实现：AttributeGroup ---
 
-impl IntoStorable for AttributeGroup {
-    type Stored = AttributeGroup;
+impl<'scope, 'run> IntoStorable<'scope, 'run> for AttributeGroup<'scope, 'run> {
+    type Stored = AttributeGroup<'scope, 'run>;
     fn into_storable(self) -> Self::Stored {
         self
     }
 }
 
-impl<'a, T> IntoStorable for Prop<'a, T>
+impl<'scope, 'run, 'a, T> IntoStorable<'scope, 'run> for Prop<'a, T>
 where
-    T: Clone + IntoStorable,
+    'a: 'scope,
+    T: Clone + IntoStorable<'scope, 'run>,
+    T::Stored: 'scope,
 {
     type Stored = T::Stored;
     fn into_storable(self) -> Self::Stored {
