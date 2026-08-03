@@ -6,13 +6,13 @@ use crate::{
     handle::NodeKind,
     internal::{
         RawId,
-        value::{AnyValue, CallbackThunk, EffectThunk, MemoThunk, OnceThunk},
+        value::{AnyValue, CallbackThunk, OnceThunk},
     },
     root::node::{
         OwnedHandle, RootCallback, RootDerived, RootEffect, RootMemo, RootNodeRef, RootReadSignal,
         RootSignal, RootStoredValue, RootWriteSignal,
     },
-    runtime::{self, ScopeState},
+    runtime::{self, RuntimeInputs, ScopeState},
     scope::ScopeStorage,
 };
 use std::{
@@ -174,6 +174,12 @@ impl RootScope {
         self.state().is_ok()
     }
 
+    #[doc(hidden)]
+    pub fn try_validate_inputs(&self, inputs: &RuntimeInputs) -> ReactiveResult<()> {
+        let state = self.state()?;
+        runtime::validate_inputs(&state, inputs)
+    }
+
     pub fn signal<T: 'static>(&self, value: T) -> (RootReadSignal<T>, RootWriteSignal<T>) {
         let state = self.state().expect("创建 root signal 时 owner 已结束");
         let raw = state
@@ -196,14 +202,28 @@ impl RootScope {
     where
         F: FnMut() + 'static,
     {
-        let state = self.state().expect("创建 root effect 时 owner 已结束");
-        let raw = state
-            .try_borrow_mut()
-            .expect("root state 在 effect 创建期间被借用")
-            .create_effect(EffectThunk::new(f));
+        self.effect_from(RuntimeInputs::new(), f)
+    }
+
+    /// Create a root effect after validating all declared reactive inputs.
+    #[doc(hidden)]
+    pub fn effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> RootEffect
+    where
+        F: FnMut() + 'static,
+    {
+        self.try_effect_from(inputs, f)
+            .unwrap_or_else(|error| panic!("创建 root effect 失败: {error}"))
+    }
+
+    #[doc(hidden)]
+    pub fn try_effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> ReactiveResult<RootEffect>
+    where
+        F: FnMut() + 'static,
+    {
+        let state = self.state()?;
+        let raw = runtime::create_effect(&state, inputs, f)?;
         let handle = self.handle(&state, raw);
-        runtime::run_initial(&state, raw);
-        RootEffect::new(handle)
+        Ok(RootEffect::new(handle))
     }
 
     pub fn memo<T, F>(&self, f: F) -> RootMemo<T>
@@ -211,14 +231,30 @@ impl RootScope {
         T: PartialEq + 'static,
         F: FnMut(Option<&T>) -> T + 'static,
     {
-        let state = self.state().expect("创建 root memo 时 owner 已结束");
-        let raw = state
-            .try_borrow_mut()
-            .expect("root state 在 memo 创建期间被借用")
-            .create_memo(MemoThunk::new::<T, F>(f), false);
+        self.memo_from(RuntimeInputs::new(), f)
+    }
+
+    /// Create a root memo after validating all declared reactive inputs.
+    #[doc(hidden)]
+    pub fn memo_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> RootMemo<T>
+    where
+        T: PartialEq + 'static,
+        F: FnMut(Option<&T>) -> T + 'static,
+    {
+        self.try_memo_from(inputs, f)
+            .unwrap_or_else(|error| panic!("创建 root memo 失败: {error}"))
+    }
+
+    #[doc(hidden)]
+    pub fn try_memo_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> ReactiveResult<RootMemo<T>>
+    where
+        T: PartialEq + 'static,
+        F: FnMut(Option<&T>) -> T + 'static,
+    {
+        let state = self.state()?;
+        let raw = runtime::create_memo(&state, inputs, f)?;
         let handle = self.handle(&state, raw);
-        runtime::run_initial(&state, raw);
-        RootMemo::new(handle)
+        Ok(RootMemo::new(handle))
     }
 
     pub fn derived<T, F>(&self, f: F) -> RootDerived<T>
@@ -226,14 +262,35 @@ impl RootScope {
         T: 'static,
         F: FnMut() -> T + 'static,
     {
-        let state = self.state().expect("创建 root derived 时 owner 已结束");
-        let raw = state
-            .try_borrow_mut()
-            .expect("root state 在 derived 创建期间被借用")
-            .create_memo(MemoThunk::new_derived::<T, F>(f), true);
+        self.derived_from(RuntimeInputs::new(), f)
+    }
+
+    /// Create a root derived value after validating all declared reactive
+    /// inputs.
+    #[doc(hidden)]
+    pub fn derived_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> RootDerived<T>
+    where
+        T: 'static,
+        F: FnMut() -> T + 'static,
+    {
+        self.try_derived_from(inputs, f)
+            .unwrap_or_else(|error| panic!("创建 root derived 失败: {error}"))
+    }
+
+    #[doc(hidden)]
+    pub fn try_derived_from<T, F>(
+        &self,
+        inputs: RuntimeInputs,
+        f: F,
+    ) -> ReactiveResult<RootDerived<T>>
+    where
+        T: 'static,
+        F: FnMut() -> T + 'static,
+    {
+        let state = self.state()?;
+        let raw = runtime::create_derived(&state, inputs, f)?;
         let handle = self.handle(&state, raw);
-        runtime::run_initial(&state, raw);
-        RootDerived::new(handle)
+        Ok(RootDerived::new(handle))
     }
 
     pub fn stored<T: 'static>(&self, value: T) -> RootStoredValue<T> {

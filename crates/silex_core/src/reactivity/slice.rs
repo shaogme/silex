@@ -1,7 +1,4 @@
-use crate::{
-    Rx, Scope, Signal,
-    traits::{IntoRx, IntoSignal, RxBase, RxCloneData, RxData, RxRead, RxValue},
-};
+use crate::traits::{RxBase, RxData, RxRead, RxValue};
 use std::marker::PhantomData;
 
 /// A safe projection over a source reactive value.
@@ -55,32 +52,5 @@ where
     fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         self.source
             .try_with_untracked(|value| f((self.getter)(value)))
-    }
-}
-
-impl<'scope, S, F, O> IntoRx<'scope> for SignalSlice<S, F, O>
-where
-    S: RxRead + 'scope,
-    F: Fn(&S::Value) -> &O + 'scope,
-    O: RxCloneData + 'scope,
-{
-    fn into_rx(self, scope: &Scope<'scope>) -> Rx<'scope, O> {
-        let scope = *scope;
-        scope.derived(move || self.with(|value| value.clone()))
-    }
-
-    fn is_constant(&self) -> bool {
-        false
-    }
-}
-
-impl<'scope, S, F, O> IntoSignal<'scope> for SignalSlice<S, F, O>
-where
-    S: RxRead + 'scope,
-    F: Fn(&S::Value) -> &O + 'scope,
-    O: RxCloneData + 'scope,
-{
-    fn into_signal(self, scope: &Scope<'scope>) -> Signal<'scope, O> {
-        self.into_rx(scope).into_signal(scope)
     }
 }

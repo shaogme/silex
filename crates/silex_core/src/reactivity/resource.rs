@@ -1,8 +1,10 @@
+use crate::reactivity::ReactiveSource;
 use crate::{
-    Rx, Scope, SilexError,
+    Scope, SilexError,
     reactivity::{Memo, ReadSignal, RwSignal, WriteSignal},
-    traits::{IntoRx, IntoSignal, RxBase, RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
+    traits::{RxBase, RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
 };
+use silex_reactivity::RuntimeInputs;
 use std::{cell::Cell, future::Future, marker::PhantomData, rc::Rc};
 use wasm_bindgen_futures::spawn_local;
 
@@ -96,11 +98,17 @@ where
     ) -> Self
     where
         S: Clone + PartialEq + 'static,
-        R: RxRead<Value = S> + Clone + 'scope,
+        R: RxRead<Value = S> + ReactiveSource<'scope> + Clone + 'scope,
         Fetcher: ResourceFetcher<S, Data = T, Error = E> + 'scope,
     {
+        let mut inputs = source.clone().into_promotion_plan().inputs();
+        if let Some(context) = suspense.as_ref() {
+            inputs.push(context.count.inner.runtime_input());
+        }
+        scope.assert_inputs(&inputs);
         let (state, set_state) = scope.signal(ResourceState::Idle);
         let trigger = scope.rw_signal(0usize);
+        inputs.push(trigger.read_signal().inner.runtime_input());
         let request_id = Rc::new(Cell::new(0usize));
         let request_id_for_callback = request_id.clone();
         let set_state_for_callback = set_state;
@@ -122,7 +130,7 @@ where
         let state_for_effect = state;
         let set_state_for_effect = set_state;
         let suspense_for_effect = suspense;
-        let _effect = scope.effect(move |_: Option<()>| {
+        let _effect = scope.effect_from(inputs, move |_: Option<()>| {
             let input = source_for_effect.get();
             let _ = trigger_for_effect.get();
             let next_state = state_for_effect.with_untracked(|state| {
@@ -189,7 +197,10 @@ where
         F: Fn(Option<&T>) -> U + 'scope,
     {
         let resource = *self;
-        scope.memo(move |_| resource.state.with(|state| f(state.as_option())))
+        let inputs = RuntimeInputs::single(resource.state.inner.runtime_input());
+        scope.memo_from(inputs, move |_| {
+            resource.state.with(|state| f(state.as_option()))
+        })
     }
 }
 
@@ -215,28 +226,6 @@ impl<'scope, T: RxCloneData + 'scope, E: RxError + 'scope> RxRead for Resource<'
     fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         self.state
             .try_with_untracked(|state| f(&state.as_option().cloned()))
-    }
-}
-
-impl<'scope, T: RxCloneData + 'scope + 'static, E: RxError + 'scope + 'static> IntoRx<'scope>
-    for Resource<'scope, T, E>
-{
-    fn into_rx(self, scope: &Scope<'scope>) -> Rx<'scope, Option<T>> {
-        let resource = self;
-        let scope = *scope;
-        scope.derived(move || resource.value())
-    }
-
-    fn is_constant(&self) -> bool {
-        false
-    }
-}
-
-impl<'scope, T: RxCloneData + 'scope + 'static, E: RxError + 'scope + 'static> IntoSignal<'scope>
-    for Resource<'scope, T, E>
-{
-    fn into_signal(self, scope: &Scope<'scope>) -> crate::reactivity::Signal<'scope, Option<T>> {
-        self.into_rx(scope).into_signal(scope)
     }
 }
 

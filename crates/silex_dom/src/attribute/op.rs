@@ -1,4 +1,5 @@
 use silex_core::prelude::*;
+use silex_core::{RuntimeInputs, error::handle_error};
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -348,7 +349,57 @@ impl<'scope> AttrOp<'scope> {
         })
     }
 
+    pub(crate) fn runtime_inputs(&self) -> RuntimeInputs {
+        let mut inputs = RuntimeInputs::new();
+        match self {
+            AttrOp::Update(AttrUpdate { data, .. }) => match data {
+                AttrData::ReactiveAttr(rx) => inputs.extend(&rx.runtime_inputs()),
+                AttrData::ReactiveString(rx) => inputs.extend(&rx.runtime_inputs()),
+                AttrData::ReactiveBool(rx) => inputs.extend(&rx.runtime_inputs()),
+                AttrData::ReactiveOptionString(rx) => inputs.extend(&rx.runtime_inputs()),
+                AttrData::ReactiveJs(rx) => inputs.extend(&rx.runtime_inputs()),
+                AttrData::StaticAttr(_) | AttrData::StaticJs(_) => {}
+            },
+            AttrOp::CombinedClasses(CombinedClasses {
+                toggles, reactives, ..
+            }) => {
+                for (_, rx) in toggles {
+                    inputs.extend(&rx.runtime_inputs());
+                }
+                for rx in reactives {
+                    inputs.extend(&rx.runtime_inputs());
+                }
+            }
+            AttrOp::CombinedStyles(CombinedStyles {
+                properties, sheets, ..
+            }) => {
+                for (_, rx) in properties {
+                    inputs.extend(&rx.runtime_inputs());
+                }
+                for rx in sheets {
+                    inputs.extend(&rx.runtime_inputs());
+                }
+            }
+            AttrOp::Sequence(ops) => {
+                for op in ops {
+                    inputs.extend(&op.runtime_inputs());
+                }
+            }
+            AttrOp::Custom(_) | AttrOp::Noop => {}
+        }
+        inputs
+    }
+
     pub fn apply(self, el: &Element, owner: &ViewOwnerToken<'scope>) {
+        let inputs = self.runtime_inputs();
+        if let Err(error) = owner.validate_inputs(&inputs) {
+            handle_error(error);
+            return;
+        }
+        self.apply_unchecked(el, owner);
+    }
+
+    fn apply_unchecked(self, el: &Element, owner: &ViewOwnerToken<'scope>) {
         match self {
             AttrOp::Update(AttrUpdate { target, data }) => {
                 apply_update_internal(el, target, data, owner);
@@ -369,7 +420,7 @@ impl<'scope> AttrOp<'scope> {
             }
             AttrOp::Sequence(ops) => {
                 for op in ops {
-                    op.apply(el, owner);
+                    op.apply_unchecked(el, owner);
                 }
             }
             AttrOp::Custom(f) => {
@@ -396,44 +447,59 @@ fn apply_update_internal<'scope>(
         }
         AttrData::ReactiveAttr(rx) => {
             let el = el.clone();
-            owner.effect(Box::new(move || {
-                let name = target.attr_name();
-                apply_attr_with_target_internal(&el, name, target.clone(), &rx.get());
-            }));
+            owner.effect_from(
+                rx.runtime_inputs(),
+                Box::new(move || {
+                    let name = target.attr_name();
+                    apply_attr_with_target_internal(&el, name, target.clone(), &rx.get());
+                }),
+            );
         }
         AttrData::ReactiveString(rx) => {
             let el = el.clone();
-            owner.effect(Box::new(move || {
-                let name = target.attr_name();
-                let val = rx.get();
-                apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val));
-            }));
+            owner.effect_from(
+                rx.runtime_inputs(),
+                Box::new(move || {
+                    let name = target.attr_name();
+                    let val = rx.get();
+                    apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val));
+                }),
+            );
         }
         AttrData::ReactiveBool(rx) => {
             let el = el.clone();
-            owner.effect(Box::new(move || {
-                let name = target.attr_name();
-                let val = rx.get();
-                apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val));
-            }));
+            owner.effect_from(
+                rx.runtime_inputs(),
+                Box::new(move || {
+                    let name = target.attr_name();
+                    let val = rx.get();
+                    apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val));
+                }),
+            );
         }
         AttrData::ReactiveOptionString(rx) => {
             let el = el.clone();
-            owner.effect(Box::new(move || {
-                let name = target.attr_name();
-                let val = rx.get();
-                let attr = match val {
-                    Some(s) => Attr::from(s),
-                    None => Attr::Removed,
-                };
-                apply_attr_with_target_internal(&el, name, target.clone(), &attr);
-            }));
+            owner.effect_from(
+                rx.runtime_inputs(),
+                Box::new(move || {
+                    let name = target.attr_name();
+                    let val = rx.get();
+                    let attr = match val {
+                        Some(s) => Attr::from(s),
+                        None => Attr::Removed,
+                    };
+                    apply_attr_with_target_internal(&el, name, target.clone(), &attr);
+                }),
+            );
         }
         AttrData::ReactiveJs(rx) => {
             let el = el.clone();
-            owner.effect(Box::new(move || {
-                let _ = js_sys::Reflect::set(&el, &JsValue::from_str(&name), &rx.get());
-            }));
+            owner.effect_from(
+                rx.runtime_inputs(),
+                Box::new(move || {
+                    let _ = js_sys::Reflect::set(&el, &JsValue::from_str(&name), &rx.get());
+                }),
+            );
         }
     }
 }
@@ -457,63 +523,74 @@ fn apply_combined_classes_internal<'scope>(
         return;
     }
 
+    let mut inputs = RuntimeInputs::new();
+    for (_, rx) in &toggles {
+        inputs.extend(&rx.runtime_inputs());
+    }
+    for rx in &reactives {
+        inputs.extend(&rx.runtime_inputs());
+    }
+
     // 2. 建立单 Effect 追踪所有响应式部分
     let prev_toggles = Rc::new(RefCell::new(vec![None::<bool>; toggles.len()]));
     let prev_reactive_tokens = Rc::new(RefCell::new(HashSet::<String>::new()));
     let el_clone = el.clone();
 
-    owner.effect(Box::new(move || {
-        let list = el_clone.class_list();
+    owner.effect_from(
+        inputs,
+        Box::new(move || {
+            let list = el_clone.class_list();
 
-        // 处理所有 Toggle (如 .class_toggle)，仅在状态改变时才更新 DOM
-        let mut prev_t = prev_toggles.borrow_mut();
-        for (i, (name, rx)) in toggles.iter().enumerate() {
-            let val = rx.get();
-            if prev_t[i] != Some(val) {
-                if val {
-                    let _ = list.add_1(name);
-                } else {
-                    let _ = list.remove_1(name);
-                }
-                prev_t[i] = Some(val);
-            }
-        }
-
-        // 处理所有响应式字符串类 (需要 Diff 算法以支持正确删除旧类)
-        if !reactives.is_empty() {
-            let reactive_strings: Vec<String> = reactives.iter().map(|rx| rx.get()).collect();
-            let mut new_tokens = HashSet::new();
-            for s in &reactive_strings {
-                for token in s.split_whitespace() {
-                    new_tokens.insert(token);
+            // 处理所有 Toggle (如 .class_toggle)，仅在状态改变时才更新 DOM
+            let mut prev_t = prev_toggles.borrow_mut();
+            for (i, (name, rx)) in toggles.iter().enumerate() {
+                let val = rx.get();
+                if prev_t[i] != Some(val) {
+                    if val {
+                        let _ = list.add_1(name);
+                    } else {
+                        let _ = list.remove_1(name);
+                    }
+                    prev_t[i] = Some(val);
                 }
             }
 
-            let mut prev = prev_reactive_tokens.borrow_mut();
+            // 处理所有响应式字符串类 (需要 Diff 算法以支持正确删除旧类)
+            if !reactives.is_empty() {
+                let reactive_strings: Vec<String> = reactives.iter().map(|rx| rx.get()).collect();
+                let mut new_tokens = HashSet::new();
+                for s in &reactive_strings {
+                    for token in s.split_whitespace() {
+                        new_tokens.insert(token);
+                    }
+                }
 
-            // 1. 先添加新增加的 Class，确保样式/过渡声明（transition）无缝连接，不因无类中间态产生闪烁/动画打断
-            for token in &new_tokens {
-                if !prev.contains(*token) {
-                    let _ = list.add_1(token);
+                let mut prev = prev_reactive_tokens.borrow_mut();
+
+                // 1. 先添加新增加的 Class，确保样式/过渡声明（transition）无缝连接，不因无类中间态产生闪烁/动画打断
+                for token in &new_tokens {
+                    if !prev.contains(*token) {
+                        let _ = list.add_1(token);
+                    }
+                }
+
+                // 2. 后移除已不在新集合里的旧 Class
+                prev.retain(|c| {
+                    if !new_tokens.contains(c.as_str()) {
+                        let _ = list.remove_1(c);
+                        false
+                    } else {
+                        true
+                    }
+                });
+
+                // 3. 将新集合中的所有项同步至 prev 记录集合中
+                for token in new_tokens {
+                    prev.insert(token.to_string());
                 }
             }
-
-            // 2. 后移除已不在新集合里的旧 Class
-            prev.retain(|c| {
-                if !new_tokens.contains(c.as_str()) {
-                    let _ = list.remove_1(c);
-                    false
-                } else {
-                    true
-                }
-            });
-
-            // 3. 将新集合中的所有项同步至 prev 记录集合中
-            for token in new_tokens {
-                prev.insert(token.to_string());
-            }
-        }
-    }));
+        }),
+    );
 }
 
 fn apply_combined_styles_internal<'scope>(
@@ -536,54 +613,66 @@ fn apply_combined_styles_internal<'scope>(
         return;
     }
 
+    let mut inputs = RuntimeInputs::new();
+    for (_, rx) in &properties {
+        inputs.extend(&rx.runtime_inputs());
+    }
+    for rx in &sheets {
+        inputs.extend(&rx.runtime_inputs());
+    }
+
     // 2. 建立单 Effect 追踪所有响应式样式
     let prev_props = Rc::new(RefCell::new(vec![None::<String>; properties.len()]));
     let prev_sheet_keys = Rc::new(RefCell::new(HashSet::<String>::new()));
     let el_clone = el.clone();
 
-    owner.effect(Box::new(move || {
-        if let Some(style) = get_style_decl(&el_clone) {
-            // 处理单项 Property 绑定 (仅在值发生变化时更新 DOM)
-            let mut prev_p = prev_props.borrow_mut();
-            for (i, (name, rx)) in properties.iter().enumerate() {
-                let val = rx.get();
-                if prev_p[i].as_deref() != Some(&val) {
-                    let _ = style.set_property(name, &val);
-                    prev_p[i] = Some(val);
+    owner.effect_from(
+        inputs,
+        Box::new(move || {
+            if let Some(style) = get_style_decl(&el_clone) {
+                // 处理单项 Property 绑定 (仅在值发生变化时更新 DOM)
+                let mut prev_p = prev_props.borrow_mut();
+                for (i, (name, rx)) in properties.iter().enumerate() {
+                    let val = rx.get();
+                    if prev_p[i].as_deref() != Some(&val) {
+                        let _ = style.set_property(name, &val);
+                        prev_p[i] = Some(val);
+                    }
+                }
+
+                // 处理整块响应式样式字符串 (Diff 处理)
+                if !sheets.is_empty() {
+                    let sheet_strings: Vec<String> = sheets.iter().map(|rx| rx.get()).collect();
+                    let mut new_style_map = std::collections::HashMap::new();
+                    for s in &sheet_strings {
+                        for (k, v) in parse_style_str(s) {
+                            new_style_map.insert(k.into_owned(), v.into_owned());
+                        }
+                    }
+
+                    let mut prev = prev_sheet_keys.borrow_mut();
+                    let new_keys: HashSet<&str> =
+                        new_style_map.keys().map(|k| k.as_str()).collect();
+
+                    prev.retain(|k| {
+                        if !new_keys.contains(k.as_str()) {
+                            let _ = style.remove_property(k);
+                            false
+                        } else {
+                            true
+                        }
+                    });
+
+                    for (k, v) in new_style_map {
+                        let _ = style.set_property(&k, &v);
+                        if !prev.contains(&k) {
+                            prev.insert(k);
+                        }
+                    }
                 }
             }
-
-            // 处理整块响应式样式字符串 (Diff 处理)
-            if !sheets.is_empty() {
-                let sheet_strings: Vec<String> = sheets.iter().map(|rx| rx.get()).collect();
-                let mut new_style_map = std::collections::HashMap::new();
-                for s in &sheet_strings {
-                    for (k, v) in parse_style_str(s) {
-                        new_style_map.insert(k.into_owned(), v.into_owned());
-                    }
-                }
-
-                let mut prev = prev_sheet_keys.borrow_mut();
-                let new_keys: HashSet<&str> = new_style_map.keys().map(|k| k.as_str()).collect();
-
-                prev.retain(|k| {
-                    if !new_keys.contains(k.as_str()) {
-                        let _ = style.remove_property(k);
-                        false
-                    } else {
-                        true
-                    }
-                });
-
-                for (k, v) in new_style_map {
-                    let _ = style.set_property(&k, &v);
-                    if !prev.contains(&k) {
-                        prev.insert(k);
-                    }
-                }
-            }
-        }
-    }));
+        }),
+    );
 }
 
 // --- Kernel Functions (Non-generic DOM operations) ---

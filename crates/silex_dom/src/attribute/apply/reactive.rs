@@ -11,8 +11,12 @@ use crate::attribute::op::{
 };
 use crate::view::ViewOwnerToken;
 
-fn register<'scope>(owner: &ViewOwnerToken<'scope>, callback: impl FnMut() + 'scope) {
-    owner.effect(Box::new(callback));
+fn register<'scope>(
+    owner: &ViewOwnerToken<'scope>,
+    inputs: silex_core::RuntimeInputs,
+    callback: impl FnMut() + 'scope,
+) {
+    owner.effect_from(inputs, Box::new(callback));
 }
 
 pub(crate) fn apply_primitive_reactive_internal<'scope, T>(
@@ -23,7 +27,7 @@ pub(crate) fn apply_primitive_reactive_internal<'scope, T>(
 ) where
     T: ToString + Clone + 'scope,
 {
-    register(owner, move || {
+    register(owner, rx.runtime_inputs(), move || {
         let value = rx.get().to_string();
         match &target {
             ApplyTarget::Attr(_) => apply_immediate_string(&el, &target, &value),
@@ -65,7 +69,7 @@ pub(crate) fn apply_string_pair_reactive_internal<'scope>(
 ) {
     if matches!(target, ApplyTarget::Style) {
         if let Some(style) = get_style_decl(&el) {
-            register(owner, move || {
+            register(owner, rx.runtime_inputs(), move || {
                 let _ = style.set_property(&key, &rx.get());
             });
         }
@@ -80,7 +84,7 @@ pub(crate) fn apply_bool_reactive_internal<'scope>(
     rx: Rx<'scope, bool>,
     owner: &ViewOwnerToken<'scope>,
 ) {
-    register(owner, move || match &target {
+    register(owner, rx.runtime_inputs(), move || match &target {
         ApplyTarget::Attr(name) => {
             if rx.get() {
                 let _ = el.set_attribute(name, "");
@@ -111,7 +115,7 @@ pub(crate) fn apply_bool_pair_reactive_internal<'scope>(
     owner: &ViewOwnerToken<'scope>,
 ) {
     let list = el.class_list();
-    register(owner, move || {
+    register(owner, rx.runtime_inputs(), move || {
         if rx.get() {
             let _ = list.add_1(&key);
         } else {
@@ -291,7 +295,7 @@ impl<'scope> ReactiveApply<'scope> for Attr {
         target: ApplyTarget,
         owner: &ViewOwnerToken<'scope>,
     ) {
-        register(owner, move || {
+        register(owner, rx.runtime_inputs(), move || {
             if let Some(name) = target.name() {
                 apply_attr_with_target_internal(&el, &name, target.clone(), &rx.get());
             }
@@ -322,7 +326,7 @@ where
         target: ApplyTarget,
         owner: &ViewOwnerToken<'scope>,
     ) {
-        register(owner, move || {
+        register(owner, rx.runtime_inputs(), move || {
             let value = rx.get().map(|value| value.to_string()).unwrap_or_default();
             match target {
                 ApplyTarget::Class => {

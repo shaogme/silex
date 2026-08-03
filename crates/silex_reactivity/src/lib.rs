@@ -34,5 +34,5 @@ pub use crate::{
     },
     internal::{RawId, value::AnyValue},
     root::*,
-    runtime::Runtime,
+    runtime::{Runtime, RuntimeInput, RuntimeInputs},
 };

@@ -1,6 +1,7 @@
 mod effect;
 mod memo;
 mod mutation;
+mod promotion;
 mod resource;
 mod signal;
 mod slice;
@@ -11,6 +12,7 @@ pub mod dispatch;
 pub use effect::Effect;
 pub use memo::Memo;
 pub use mutation::{Mutation, MutationState};
+pub use promotion::{PromotionPlan, ReactiveSource, runtime_inputs_of};
 pub use resource::{Resource, ResourceFetcher, ResourceState, SuspenseContext};
 pub use signal::{Constant, ReadSignal, RwSignal, Signal, WriteSignal};
 pub use slice::SignalSlice;

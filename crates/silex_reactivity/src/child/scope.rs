@@ -11,10 +11,11 @@ use super::node::{
     Callback, Derived, Effect, Memo, NodeRef, ReadSignal, Signal, StoredValue, WriteSignal,
 };
 use crate::{
+    ReactiveError, ReactiveResult,
     completion::{CompletionToken, create_completion},
     handle::Handle,
-    internal::value::{AnyValue, CallbackThunk, EffectThunk, MemoThunk, OnceThunk},
-    runtime,
+    internal::value::{AnyValue, CallbackThunk, OnceThunk},
+    runtime::{self, RuntimeInputs},
     scope::ScopeStorage,
 };
 
@@ -67,6 +68,12 @@ impl<'scope> Scope<'scope> {
             .scheduler
             .borrow()
             .is_scope_active(self.storage.scope_id)
+    }
+
+    /// Validate opaque source provenance for a framework-owned registration.
+    #[doc(hidden)]
+    pub fn try_validate_inputs(&self, inputs: &RuntimeInputs) -> ReactiveResult<()> {
+        runtime::validate_inputs(&self.state(), inputs)
     }
 
     /// Execute a child scope. All child nodes and computations are destroyed
@@ -136,14 +143,29 @@ impl<'scope> Scope<'scope> {
     where
         F: FnMut() + 'scope,
     {
+        self.effect_from(RuntimeInputs::new(), f)
+    }
+
+    /// Create an effect after validating all declared reactive inputs.
+    #[doc(hidden)]
+    pub fn effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> Effect<'scope>
+    where
+        F: FnMut() + 'scope,
+    {
+        self.try_effect_from(inputs, f)
+            .unwrap_or_else(|error| panic!("创建 scoped effect 失败: {error}"))
+    }
+
+    /// Fallible computation creation boundary used by framework adapters.
+    #[doc(hidden)]
+    pub fn try_effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> ReactiveResult<Effect<'scope>>
+    where
+        F: FnMut() + 'scope,
+    {
         let state = self.state();
-        let raw = state
-            .try_borrow_mut()
-            .expect("scope 在用户代码执行期间不应持有运行时借用")
-            .create_effect(EffectThunk::new(f));
+        let raw = runtime::create_effect(&state, inputs, f)?;
         let handle = Handle::new(self.storage, raw);
-        runtime::run_initial(&state, raw);
-        Effect { handle }
+        Ok(Effect { handle })
     }
 
     /// Register an effect and intentionally discard its diagnostic handle.
@@ -161,17 +183,37 @@ impl<'scope> Scope<'scope> {
         T: PartialEq + 'scope,
         F: FnMut(Option<&T>) -> T + 'scope,
     {
+        self.memo_from(RuntimeInputs::new(), f)
+    }
+
+    /// Create a memo after validating all declared reactive inputs.
+    #[doc(hidden)]
+    pub fn memo_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> Memo<'scope, T>
+    where
+        T: PartialEq + 'scope,
+        F: FnMut(Option<&T>) -> T + 'scope,
+    {
+        self.try_memo_from(inputs, f)
+            .unwrap_or_else(|error| panic!("创建 scoped memo 失败: {error}"))
+    }
+
+    #[doc(hidden)]
+    pub fn try_memo_from<T, F>(
+        &self,
+        inputs: RuntimeInputs,
+        f: F,
+    ) -> ReactiveResult<Memo<'scope, T>>
+    where
+        T: PartialEq + 'scope,
+        F: FnMut(Option<&T>) -> T + 'scope,
+    {
         let state = self.state();
-        let raw = state
-            .try_borrow_mut()
-            .expect("scope 在用户代码执行期间不应持有运行时借用")
-            .create_memo(MemoThunk::new::<T, F>(f), false);
+        let raw = runtime::create_memo(&state, inputs, f)?;
         let handle = Handle::new(self.storage, raw);
-        runtime::run_initial(&state, raw);
-        Memo {
+        Ok(Memo {
             handle,
             marker: PhantomData,
-        }
+        })
     }
 
     /// Create a lazy derived value without equality gating.
@@ -180,17 +222,37 @@ impl<'scope> Scope<'scope> {
         T: 'scope,
         F: FnMut() -> T + 'scope,
     {
+        self.derived_from(RuntimeInputs::new(), f)
+    }
+
+    /// Create a derived value after validating all declared reactive inputs.
+    #[doc(hidden)]
+    pub fn derived_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> Derived<'scope, T>
+    where
+        T: 'scope,
+        F: FnMut() -> T + 'scope,
+    {
+        self.try_derived_from(inputs, f)
+            .unwrap_or_else(|error| panic!("创建 scoped derived 失败: {error}"))
+    }
+
+    #[doc(hidden)]
+    pub fn try_derived_from<T, F>(
+        &self,
+        inputs: RuntimeInputs,
+        f: F,
+    ) -> ReactiveResult<Derived<'scope, T>>
+    where
+        T: 'scope,
+        F: FnMut() -> T + 'scope,
+    {
         let state = self.state();
-        let raw = state
-            .try_borrow_mut()
-            .expect("scope 在用户代码执行期间不应持有运行时借用")
-            .create_memo(MemoThunk::new_derived::<T, F>(f), true);
+        let raw = runtime::create_derived(&state, inputs, f)?;
         let handle = Handle::new(self.storage, raw);
-        runtime::run_initial(&state, raw);
-        Derived {
+        Ok(Derived {
             handle,
             marker: PhantomData,
-        }
+        })
     }
 
     /// Create an empty host reference.
@@ -299,6 +361,14 @@ impl<'scope> OwnedScope<'scope> {
         self.active.get()
     }
 
+    #[doc(hidden)]
+    pub fn try_validate_inputs(&self, inputs: &RuntimeInputs) -> ReactiveResult<()> {
+        if !self.active.get() {
+            return Err(ReactiveError::NoSuchNode);
+        }
+        runtime::validate_inputs(&self.state(), inputs)
+    }
+
     /// Register and immediately run an effect owned by this frame.
     pub fn effect<F>(&self, f: F)
     where
@@ -307,12 +377,30 @@ impl<'scope> OwnedScope<'scope> {
         if !self.active.get() {
             return;
         }
+        self.effect_from(RuntimeInputs::new(), f);
+    }
+
+    /// Register an effect after validating all declared reactive inputs.
+    #[doc(hidden)]
+    pub fn effect_from<F>(&self, inputs: RuntimeInputs, f: F)
+    where
+        F: FnMut() + 'scope,
+    {
+        self.try_effect_from(inputs, f)
+            .unwrap_or_else(|error| panic!("创建 owned effect 失败: {error}"));
+    }
+
+    #[doc(hidden)]
+    pub fn try_effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> ReactiveResult<()>
+    where
+        F: FnMut() + 'scope,
+    {
+        if !self.active.get() {
+            return Err(ReactiveError::NoSuchNode);
+        }
         let state = self.state();
-        let raw = state
-            .try_borrow_mut()
-            .expect("owned scope 在 effect 创建期间被借用")
-            .create_effect(EffectThunk::new(f));
-        runtime::run_initial(&state, raw);
+        runtime::create_effect(&state, inputs, f)?;
+        Ok(())
     }
 
     pub fn on_cleanup<F>(&self, f: F)

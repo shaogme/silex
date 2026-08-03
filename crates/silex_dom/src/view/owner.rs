@@ -1,6 +1,6 @@
 use crate::attribute::PendingAttribute;
 use crate::view::{OwnedViewOwner, ViewOwner, ViewOwnerToken};
-use silex_core::{OwnedScope, SilexError};
+use silex_core::{OwnedScope, RuntimeInputs, SilexError};
 use std::{
     cell::Cell,
     marker::PhantomData,
@@ -154,6 +154,7 @@ pub(crate) struct RowController<'scope, T> {
     row_scope: Rc<OwnedScope<'scope>>,
     render_scope: Option<Rc<OwnedScope<'scope>>>,
     render: RowRender<'scope, T>,
+    render_inputs: RuntimeInputs,
     attrs: Vec<PendingAttribute<'scope>>,
     active: Cell<bool>,
     generation: u64,
@@ -165,6 +166,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
         owner: &dyn ViewOwner<'scope>,
         range: DomRange,
         render: RowRender<'scope, T>,
+        render_inputs: RuntimeInputs,
         attrs: Vec<PendingAttribute<'scope>>,
         item: T,
         index: usize,
@@ -174,6 +176,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
             row_scope: Rc::new(owner.owned_scope()),
             render_scope: None,
             render,
+            render_inputs,
             attrs,
             active: Cell::new(true),
             generation: 0,
@@ -207,7 +210,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
         let attrs = self.attrs.clone();
         let document = crate::document();
         let result = catch_unwind(AssertUnwindSafe(|| {
-            render_scope.effect(move || {
+            render_scope.effect_from(self.render_inputs.clone(), move || {
                 let result = catch_unwind(AssertUnwindSafe(|| {
                     range.clear();
                     let fragment = document.create_document_fragment();

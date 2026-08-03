@@ -54,7 +54,8 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
         F: Fn(&T) -> U + 'scope,
     {
         let scope = self.scope;
-        scope.derived(move || self.with(|value| f(value)))
+        let inputs = silex_reactivity::RuntimeInputs::single(self.inner.runtime_input());
+        scope.derived_from(inputs, move || self.with(|value| f(value)))
     }
 
     pub fn into_rx(self) -> Rx<'scope, T, RxValueKind> {

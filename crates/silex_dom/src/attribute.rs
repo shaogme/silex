@@ -8,6 +8,7 @@ use silex_core::{
     error::handle_error,
     log::console_error,
     node_ref::NodeRef,
+    reactivity::{ReactiveSource, runtime_inputs_of},
     traits::{RxGet, RxWrite},
 };
 
@@ -333,7 +334,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     fn bind_value<T, S>(self, signal: S) -> Self
     where
         T: AsRef<str> + From<String> + Clone + PartialEq + 'scope,
-        S: RxGet<Value = T> + RxWrite + Clone + 'scope,
+        S: RxGet<Value = T> + RxWrite + ReactiveSource<'scope> + Clone + 'scope,
     {
         let s = signal.clone();
         let this = self.on_input(move |value| {
@@ -344,16 +345,19 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
             let dom_element = el.clone();
             let signal = signal.clone();
             let owner = owner.clone();
-            owner.effect(Box::new(move || {
-                let value = signal.get();
-                let str_val = value.as_ref();
-                apply_attr_with_target_internal(
-                    &dom_element,
-                    "value",
-                    ApplyTarget::Known(KnownProp::Value),
-                    &Attr::from(str_val.to_string()),
-                );
-            }));
+            owner.effect_from(
+                runtime_inputs_of(signal.clone()),
+                Box::new(move || {
+                    let value = signal.get();
+                    let str_val = value.as_ref();
+                    apply_attr_with_target_internal(
+                        &dom_element,
+                        "value",
+                        ApplyTarget::Known(KnownProp::Value),
+                        &Attr::from(str_val.to_string()),
+                    );
+                }),
+            );
         }))
     }
 

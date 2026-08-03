@@ -5,7 +5,7 @@ use crate::{
     handle::{NodeKind, kind},
     internal::{RawId, value::AnyValue},
     root::scope::RootStateRef,
-    runtime::{self, ScopeId},
+    runtime::{self, RuntimeInput, ScopeId},
 };
 use std::{
     marker::PhantomData,
@@ -16,6 +16,7 @@ pub(crate) struct OwnedHandle<K: NodeKind> {
     state: Weak<RootStateRef>,
     scope_id: ScopeId,
     raw: RawId,
+    runtime_input: RuntimeInput,
     marker: PhantomData<fn() -> K>,
 }
 
@@ -25,6 +26,7 @@ impl<K: NodeKind> Clone for OwnedHandle<K> {
             state: self.state.clone(),
             scope_id: self.scope_id,
             raw: self.raw,
+            runtime_input: self.runtime_input.clone(),
             marker: PhantomData,
         }
     }
@@ -32,10 +34,15 @@ impl<K: NodeKind> Clone for OwnedHandle<K> {
 
 impl<K: NodeKind> OwnedHandle<K> {
     pub(crate) fn new(state: Weak<RootStateRef>, scope_id: ScopeId, raw: RawId) -> Self {
+        let runtime_input = state
+            .upgrade()
+            .map(|state| RuntimeInput::from_scheduler(state.borrow().scheduler.clone()))
+            .expect("root state must remain alive while creating a node handle");
         Self {
             state,
             scope_id,
             raw,
+            runtime_input,
             marker: PhantomData,
         }
     }
@@ -52,6 +59,10 @@ impl<K: NodeKind> OwnedHandle<K> {
 
     pub(crate) fn raw(&self) -> RawId {
         self.raw
+    }
+
+    pub(crate) fn runtime_input(&self) -> RuntimeInput {
+        self.runtime_input.clone()
     }
 
     pub(crate) fn is_alive(&self) -> bool {
@@ -187,6 +198,11 @@ impl<T: 'static> RootMemo<T> {
     pub fn is_alive(&self) -> bool {
         self.handle.is_alive()
     }
+
+    #[doc(hidden)]
+    pub fn runtime_input(&self) -> RuntimeInput {
+        self.handle.runtime_input()
+    }
 }
 
 pub struct RootDerived<T> {
@@ -254,6 +270,11 @@ impl<T: 'static> RootDerived<T> {
 
     pub fn is_alive(&self) -> bool {
         self.handle.is_alive()
+    }
+
+    #[doc(hidden)]
+    pub fn runtime_input(&self) -> RuntimeInput {
+        self.handle.runtime_input()
     }
 }
 
@@ -420,6 +441,11 @@ impl<T: 'static> RootReadSignal<T> {
     pub fn is_alive(&self) -> bool {
         self.handle.is_alive()
     }
+
+    #[doc(hidden)]
+    pub fn runtime_input(&self) -> RuntimeInput {
+        self.handle.runtime_input()
+    }
 }
 
 impl<T: 'static> RootWriteSignal<T> {
@@ -462,6 +488,11 @@ impl<T: 'static> RootWriteSignal<T> {
     pub fn is_alive(&self) -> bool {
         self.handle.is_alive()
     }
+
+    #[doc(hidden)]
+    pub fn runtime_input(&self) -> RuntimeInput {
+        self.handle.runtime_input()
+    }
 }
 
 impl<T> RootSignal<T> {
@@ -498,6 +529,14 @@ impl<T> RootSignal<T> {
         T: 'static,
     {
         self.read.is_alive()
+    }
+
+    #[doc(hidden)]
+    pub fn runtime_input(&self) -> RuntimeInput
+    where
+        T: 'static,
+    {
+        self.read.runtime_input()
     }
 }
 
@@ -553,5 +592,10 @@ impl<T: 'static> RootStoredValue<T> {
 
     pub fn is_alive(&self) -> bool {
         self.handle.is_alive()
+    }
+
+    #[doc(hidden)]
+    pub fn runtime_input(&self) -> RuntimeInput {
+        self.handle.runtime_input()
     }
 }

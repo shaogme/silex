@@ -1,10 +1,11 @@
 //! High-level runtime and scope wrappers.
 
 use crate::{
-    Callback, NodeRef, Rx,
-    reactivity::{Effect, Memo, ReadSignal, RwSignal, StoredValue, WriteSignal},
-    traits::{IntoRx, RxData},
+    Callback, NodeRef, Rx, SilexError, SilexResult,
+    reactivity::{Effect, Memo, ReactiveSource, ReadSignal, RwSignal, StoredValue, WriteSignal},
+    traits::RxData,
 };
+use silex_reactivity::RuntimeInputs;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -89,6 +90,36 @@ impl RootScope {
         F: FnMut() + 'static,
     {
         self.inner.effect(f)
+    }
+
+    #[doc(hidden)]
+    pub fn effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> silex_reactivity::RootEffect
+    where
+        F: FnMut() + 'static,
+    {
+        self.try_effect_from(inputs, f)
+            .unwrap_or_else(|error| panic!("创建 root effect 失败: {error}"))
+    }
+
+    #[doc(hidden)]
+    pub fn try_effect_from<F>(
+        &self,
+        inputs: RuntimeInputs,
+        f: F,
+    ) -> SilexResult<silex_reactivity::RootEffect>
+    where
+        F: FnMut() + 'static,
+    {
+        self.inner
+            .try_effect_from(inputs, f)
+            .map_err(|error| SilexError::Reactivity(error.to_string()))
+    }
+
+    #[doc(hidden)]
+    pub fn try_validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
+        self.inner
+            .try_validate_inputs(inputs)
+            .map_err(|error| SilexError::Reactivity(error.to_string()))
     }
 
     pub fn memo<T, F>(&self, f: F) -> silex_reactivity::RootMemo<T>
@@ -209,38 +240,73 @@ impl<'scope> Scope<'scope> {
         RwSignal::from_parts(read, write)
     }
 
-    pub fn memo<T, F>(&self, f: F) -> Memo<'scope, T>
+    pub fn memo_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> Memo<'scope, T>
     where
         T: PartialEq + 'scope,
         F: FnMut(Option<&T>) -> T + 'scope,
     {
-        Memo::from_inner(self.inner.memo(f), *self)
+        Memo::from_inner(self.inner.memo_from(inputs, f), *self)
     }
 
-    pub fn derived<T, F>(&self, f: F) -> Rx<'scope, T>
+    pub fn derived_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> Rx<'scope, T>
     where
         T: 'scope,
         F: FnMut() -> T + 'scope,
     {
-        Rx::from_derived(self.inner.derived(f), *self)
+        Rx::from_derived(self.inner.derived_from(inputs, f), *self)
     }
 
-    pub fn effect<T, F>(&self, mut f: F) -> Effect<'scope>
+    #[doc(hidden)]
+    pub fn try_derived_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> SilexResult<Rx<'scope, T>>
+    where
+        T: 'scope,
+        F: FnMut() -> T + 'scope,
+    {
+        self.inner
+            .try_derived_from(inputs, f)
+            .map(|derived| Rx::from_derived(derived, *self))
+            .map_err(|error| SilexError::Reactivity(error.to_string()))
+    }
+
+    pub fn effect_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> Effect<'scope>
+    where
+        T: 'scope,
+        F: FnMut(Option<T>) -> T + 'scope,
+    {
+        self.try_effect_from(inputs, f)
+            .unwrap_or_else(|error| panic!("创建 scoped effect 失败: {error}"))
+    }
+
+    #[doc(hidden)]
+    pub fn try_effect_from<T, F>(
+        &self,
+        inputs: RuntimeInputs,
+        mut f: F,
+    ) -> SilexResult<Effect<'scope>>
     where
         T: 'scope,
         F: FnMut(Option<T>) -> T + 'scope,
     {
         let previous = Rc::new(RefCell::new(None::<T>));
         let previous_for_effect = previous.clone();
-        let effect = self.inner.effect(move || {
-            let old = previous_for_effect.borrow_mut().take();
-            let new = f(old);
-            *previous_for_effect.borrow_mut() = Some(new);
-        });
-        Effect::from_inner(effect)
+        let effect = self
+            .inner
+            .try_effect_from(inputs, move || {
+                let old = previous_for_effect.borrow_mut().take();
+                let new = f(old);
+                *previous_for_effect.borrow_mut() = Some(new);
+            })
+            .map_err(|error| SilexError::Reactivity(error.to_string()))?;
+        Ok(Effect::from_inner(effect))
     }
 
-    pub fn watch<W, T, C>(&self, deps: W, callback: C, immediate: bool) -> Effect<'scope>
+    pub fn watch_from<W, T, C>(
+        &self,
+        inputs: RuntimeInputs,
+        deps: W,
+        callback: C,
+        immediate: bool,
+    ) -> Effect<'scope>
     where
         W: Fn() -> T + 'scope,
         T: Clone + PartialEq + 'scope,
@@ -248,7 +314,7 @@ impl<'scope> Scope<'scope> {
     {
         let first_run = Rc::new(Cell::new(true));
         let previous = Rc::new(RefCell::new(None::<T>));
-        self.effect(move |_: Option<()>| {
+        self.effect_from(inputs, move |_: Option<()>| {
             let value = deps();
             let mut old_value = previous.borrow_mut();
             let old = old_value.clone();
@@ -295,12 +361,37 @@ impl<'scope> Scope<'scope> {
         self.inner.completion(callback)
     }
 
-    pub fn rx<T>(&self, value: T) -> Rx<'scope, T::Value>
+    pub fn try_promote<T>(&self, value: T) -> SilexResult<Rx<'scope, T::Value>>
     where
-        T: IntoRx<'scope>,
-        T::Value: Sized + RxData,
+        T: ReactiveSource<'scope>,
+        T::Value: Sized + RxData + 'scope,
     {
-        value.into_rx(self)
+        value
+            .into_promotion_plan()
+            .materialize(self)
+            .map_err(|error| SilexError::Reactivity(error.to_string()))
+    }
+
+    pub fn promote<T>(&self, value: T) -> Rx<'scope, T::Value>
+    where
+        T: ReactiveSource<'scope>,
+        T::Value: Sized + RxData + 'scope,
+    {
+        self.try_promote(value)
+            .unwrap_or_else(|error| panic!("reactive promotion failed: {error}"))
+    }
+
+    #[doc(hidden)]
+    pub fn try_validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
+        self.inner
+            .try_validate_inputs(inputs)
+            .map_err(|error| SilexError::Reactivity(error.to_string()))
+    }
+
+    pub(crate) fn assert_inputs(&self, inputs: &RuntimeInputs) {
+        if let Err(error) = self.try_validate_inputs(inputs) {
+            panic!("reactive input validation failed: {error}");
+        }
     }
 
     pub fn constant<T: 'scope>(&self, value: T) -> Rx<'scope, T> {
@@ -344,11 +435,29 @@ impl<'scope> OwnedScope<'scope> {
         self.inner.is_active()
     }
 
-    pub fn effect<F>(&self, f: F)
+    #[doc(hidden)]
+    pub fn try_validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
+        self.inner
+            .try_validate_inputs(inputs)
+            .map_err(|error| SilexError::Reactivity(error.to_string()))
+    }
+
+    pub fn effect_from<F>(&self, inputs: RuntimeInputs, f: F)
     where
         F: FnMut() + 'scope,
     {
-        self.inner.effect(f);
+        self.try_effect_from(inputs, f)
+            .unwrap_or_else(|error| panic!("创建 owned effect 失败: {error}"));
+    }
+
+    #[doc(hidden)]
+    pub fn try_effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> SilexResult<()>
+    where
+        F: FnMut() + 'scope,
+    {
+        self.inner
+            .try_effect_from(inputs, f)
+            .map_err(|error| SilexError::Reactivity(error.to_string()))
     }
 
     pub fn on_cleanup<F>(&self, f: F)

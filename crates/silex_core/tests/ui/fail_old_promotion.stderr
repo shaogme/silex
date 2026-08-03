@@ -1,0 +1,16 @@
+error[E0061]: this method takes 0 arguments but 1 argument was supplied
+ --> tests/ui/fail_old_promotion.rs:7:24
+  |
+7 |         let _ = source.into_rx(&scope);
+  |                        ^^^^^^^ ------ unexpected argument of type `&silex_core::Scope<'_>`
+  |
+note: method defined here
+ --> src/reactivity/signal.rs
+  |
+  |     pub fn into_rx(self) -> Rx<'scope, T> {
+  |            ^^^^^^^
+help: remove the extra argument
+  |
+7 -         let _ = source.into_rx(&scope);
+7 +         let _ = source.into_rx();
+  |

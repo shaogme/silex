@@ -358,7 +358,7 @@ impl<'scope> ScopeState<'scope> {
         )
     }
 
-    pub(crate) fn create_effect(&mut self, callback: EffectThunk<'scope>) -> RawId {
+    pub(super) fn register_effect(&mut self, callback: EffectThunk<'scope>) -> RawId {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::Effect, parent, NodeState::Dirty),
@@ -369,7 +369,7 @@ impl<'scope> ScopeState<'scope> {
         )
     }
 
-    pub(crate) fn create_memo(&mut self, callback: MemoThunk<'scope>, derived: bool) -> RawId {
+    pub(super) fn register_memo(&mut self, callback: MemoThunk<'scope>, derived: bool) -> RawId {
         let parent = self.parent_for_new_node();
         let kind = if derived {
             NodeKindTag::Derived

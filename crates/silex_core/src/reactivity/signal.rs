@@ -1,7 +1,7 @@
 use crate::{
     Rx, RxValueKind, Scope,
     reactivity::{Memo, SignalSlice, StoredValue},
-    traits::{IntoRx, IntoSignal, RxBase, RxRead, RxValue},
+    traits::{RxBase, RxRead, RxValue},
 };
 use silex_reactivity::{
     ReactiveResult, ReadSignal as RawReadSignal, WriteSignal as RawWriteSignal,
@@ -41,22 +41,6 @@ impl<T> RxRead for Constant<T> {
 
     fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
         Some(f(&self.0))
-    }
-}
-
-impl<'scope, T: 'scope> IntoRx<'scope> for Constant<T> {
-    fn into_rx(self, scope: &Scope<'scope>) -> Rx<'scope, T> {
-        scope.constant(self.0)
-    }
-
-    fn is_constant(&self) -> bool {
-        true
-    }
-}
-
-impl<'scope, T: 'scope> IntoSignal<'scope> for Constant<T> {
-    fn into_signal(self, scope: &Scope<'scope>) -> Signal<'scope, T> {
-        self.into_rx(scope).into_signal(scope)
     }
 }
 

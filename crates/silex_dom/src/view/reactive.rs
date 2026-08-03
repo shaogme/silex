@@ -2,14 +2,14 @@ use crate::attribute::PendingAttribute;
 use crate::element::{Element, TypedElement, tags::Tag};
 use crate::view::{
     AnyView, ApplyAttributes, RenderArgs, RenderThunk, View, ViewCons, ViewOwner,
-    mount_dynamic_view_universal,
+    mount_dynamic_view_universal_from,
 };
 use silex_core::error::handle_error;
 use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal, StoredValue};
 use silex_core::traits::RxCloneData;
 use silex_core::{Rx, RxValueKind, SilexError};
-use std::borrow::Cow;
 use std::fmt::Display;
+use std::{borrow::Cow, cell::RefCell, rc::Rc};
 use web_sys::Node;
 
 pub(crate) fn mount_reactive_text<'scope, T>(
@@ -19,16 +19,27 @@ pub(crate) fn mount_reactive_text<'scope, T>(
 ) where
     T: Display + RxCloneData + 'scope,
 {
-    let document = crate::document();
-    let node = document.create_text_node("");
-    if let Err(error) = parent.append_child(&node).map_err(SilexError::from) {
-        handle_error(error);
-        return;
-    }
-
-    owner.effect(Box::new(move || {
-        rx.with(|value| node.set_node_value(Some(&value.to_string())));
-    }));
+    let parent = parent.clone();
+    let node = Rc::new(RefCell::new(None::<Node>));
+    let node_for_effect = node.clone();
+    owner.effect_from(
+        rx.runtime_inputs(),
+        Box::new(move || {
+            let node = if let Some(node) = node_for_effect.borrow().clone() {
+                node
+            } else {
+                let node = crate::document().create_text_node("");
+                if let Err(error) = parent.append_child(&node).map_err(SilexError::from) {
+                    handle_error(error);
+                    return;
+                }
+                let node: Node = node.into();
+                *node_for_effect.borrow_mut() = Some(node.clone());
+                node
+            };
+            rx.with(|value| node.set_node_value(Some(&value.to_string())));
+        }),
+    );
 }
 
 pub(crate) fn mount_reactive_view<'scope, V>(
@@ -39,10 +50,16 @@ pub(crate) fn mount_reactive_view<'scope, V>(
 ) where
     V: View<'scope> + 'scope,
 {
-    mount_dynamic_view_universal(
+    let inputs = rx.runtime_inputs();
+    if let Err(error) = owner.validate_inputs(&inputs) {
+        handle_error(error);
+        return;
+    }
+    mount_dynamic_view_universal_from(
         owner,
         parent,
         attrs,
+        inputs,
         RenderThunk::new(move |args| {
             let RenderArgs {
                 parent,

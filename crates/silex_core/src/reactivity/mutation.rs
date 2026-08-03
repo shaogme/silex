@@ -1,7 +1,7 @@
 use crate::{
-    Rx, Scope, SilexError,
-    reactivity::{ReadSignal, Signal, WriteSignal},
-    traits::{IntoRx, IntoSignal, RxBase, RxCloneData, RxData, RxError, RxRead, RxValue},
+    Scope, SilexError,
+    reactivity::{ReadSignal, WriteSignal},
+    traits::{RxBase, RxCloneData, RxData, RxError, RxRead, RxValue},
 };
 use silex_reactivity::CompletionToken;
 use std::{cell::Cell, future::Future, pin::Pin, rc::Rc};
@@ -175,33 +175,6 @@ where
     fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
         self.state
             .try_with_untracked(|state| f(&state.value().cloned()))
-    }
-}
-
-impl<'scope, Arg, T, E> IntoRx<'scope> for Mutation<'scope, Arg, T, E>
-where
-    Arg: RxData + 'scope,
-    T: RxCloneData + 'static,
-    E: RxError + 'static,
-{
-    fn into_rx(self, scope: &Scope<'scope>) -> Rx<'scope, Option<T>> {
-        let scope = *scope;
-        scope.derived(move || self.value())
-    }
-
-    fn is_constant(&self) -> bool {
-        false
-    }
-}
-
-impl<'scope, Arg, T, E> IntoSignal<'scope> for Mutation<'scope, Arg, T, E>
-where
-    Arg: RxData + 'scope,
-    T: RxCloneData + 'static,
-    E: RxError + 'static,
-{
-    fn into_signal(self, scope: &Scope<'scope>) -> Signal<'scope, Option<T>> {
-        self.into_rx(scope).into_signal(scope)
     }
 }
 

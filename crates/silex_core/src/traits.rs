@@ -4,7 +4,7 @@ use crate::{
     Rx, RxInner, RxValueKind, Scope, SilexError, SilexResult,
     error::handle_error,
     reactivity::dispatch,
-    reactivity::{Memo, ReadSignal, RwSignal, Signal, StoredValue, WriteSignal},
+    reactivity::{Memo, ReactiveSource, ReadSignal, RwSignal, Signal, StoredValue, WriteSignal},
 };
 use std::{fmt::Debug, rc::Rc};
 
@@ -89,24 +89,6 @@ where
     T: RxRead + ?Sized,
     T::Value: Sized + Clone,
 {
-}
-
-/// Convert a value to a scoped reactive node.
-pub trait IntoRx<'scope>: RxValue {
-    fn into_rx(self, scope: &Scope<'scope>) -> Rx<'scope, Self::Value>
-    where
-        Self: Sized,
-        Self::Value: Sized + RxData;
-
-    fn is_constant(&self) -> bool;
-}
-
-/// Convert a value to the high-level read-only signal wrapper.
-pub trait IntoSignal<'scope>: RxValue {
-    fn into_signal(self, scope: &Scope<'scope>) -> Signal<'scope, Self::Value>
-    where
-        Self: Sized,
-        Self::Value: Sized + RxData;
 }
 
 /// Unified scoped writes.
@@ -275,15 +257,9 @@ impl<'scope, T: 'scope> RxValue for Rx<'scope, T, RxValueKind> {
 impl<'scope, T: 'scope> RxBase for Rx<'scope, T, RxValueKind> {
     fn track(&self) {
         match &self.inner {
-            RxInner::Signal(signal) => {
-                signal.with(|_| ());
-            }
-            RxInner::Memo(memo) => {
-                memo.with(|_| ());
-            }
-            RxInner::Derived(derived) => {
-                derived.with(|_| ());
-            }
+            RxInner::Signal(signal) => signal.with(|_| ()),
+            RxInner::Memo(memo) => memo.with(|_| ()),
+            RxInner::Derived(derived) => derived.with(|_| ()),
             RxInner::Stored(_) => {}
         }
     }
@@ -352,183 +328,17 @@ impl<'scope, T: 'scope> RxValue for Memo<'scope, T> {
     type Value = T;
 }
 
-impl<'scope, T: 'scope> RxBase for Memo<'scope, T> {
-    fn track(&self) {
-        self.inner.with(|_| ());
-    }
-
-    fn is_alive(&self) -> bool {
-        self.inner.is_alive()
-    }
-}
-
-impl<'scope, T: 'scope> RxRead for Memo<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
-        Some(self.inner.with(f))
-    }
-
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
-        self.inner.with_untracked(f).ok()
-    }
-}
-
-impl<'scope, T: 'scope> IntoRx<'scope> for ReadSignal<'scope, T> {
-    fn into_rx(self, _scope: &Scope<'scope>) -> Rx<'scope, T>
-    where
-        T: Sized + RxData,
-    {
-        Rx::from_signal(self)
-    }
-
-    fn is_constant(&self) -> bool {
-        false
-    }
-}
-
-impl<'scope, T: 'scope> IntoSignal<'scope> for ReadSignal<'scope, T> {
-    fn into_signal(self, _scope: &Scope<'scope>) -> Signal<'scope, T>
-    where
-        T: Sized + RxData,
-    {
-        Signal::from(self)
-    }
-}
-
-impl<'scope, T: 'scope> IntoRx<'scope> for RwSignal<'scope, T> {
-    fn into_rx(self, _scope: &Scope<'scope>) -> Rx<'scope, T>
-    where
-        T: Sized + RxData,
-    {
-        self.read.into_rx()
-    }
-
-    fn is_constant(&self) -> bool {
-        false
-    }
-}
-
-impl<'scope, T: 'scope> IntoSignal<'scope> for RwSignal<'scope, T> {
-    fn into_signal(self, scope: &Scope<'scope>) -> Signal<'scope, T>
-    where
-        T: Sized + RxData,
-    {
-        self.read.into_signal(scope)
-    }
-}
-
-impl<'scope, T: 'scope> IntoRx<'scope> for Signal<'scope, T> {
-    fn into_rx(self, _scope: &Scope<'scope>) -> Rx<'scope, T>
-    where
-        T: Sized + RxData,
-    {
-        self.rx
-    }
-
-    fn is_constant(&self) -> bool {
-        self.is_constant()
-    }
-}
-
-impl<'scope, T: 'scope> IntoSignal<'scope> for Signal<'scope, T> {
-    fn into_signal(self, _scope: &Scope<'scope>) -> Signal<'scope, T>
-    where
-        T: Sized + RxData,
-    {
-        self
-    }
-}
-
-impl<'scope, T: 'scope> IntoRx<'scope> for Memo<'scope, T> {
-    fn into_rx(self, _scope: &Scope<'scope>) -> Rx<'scope, T>
-    where
-        T: Sized + RxData,
-    {
-        Rx::from_memo(self)
-    }
-
-    fn is_constant(&self) -> bool {
-        false
-    }
-}
-
-impl<'scope, T: 'scope> IntoSignal<'scope> for Memo<'scope, T> {
-    fn into_signal(self, _scope: &Scope<'scope>) -> Signal<'scope, T>
-    where
-        T: Sized + RxData,
-    {
-        Signal::from(self)
-    }
-}
-
-impl<'scope, T: 'scope> IntoRx<'scope> for StoredValue<'scope, T> {
-    fn into_rx(self, _scope: &Scope<'scope>) -> Rx<'scope, T>
-    where
-        T: Sized + RxData,
-    {
-        Rx::from_stored(self)
-    }
-
-    fn is_constant(&self) -> bool {
-        true
-    }
-}
-
-impl<'scope, T: 'scope> IntoSignal<'scope> for StoredValue<'scope, T> {
-    fn into_signal(self, _scope: &Scope<'scope>) -> Signal<'scope, T>
-    where
-        T: Sized + RxData,
-    {
-        Signal::from(self)
-    }
-}
-
-impl<'scope, T: 'scope> IntoRx<'scope> for Rx<'scope, T, RxValueKind> {
-    fn into_rx(self, _scope: &Scope<'scope>) -> Rx<'scope, T>
-    where
-        T: Sized + RxData,
-    {
-        self
-    }
-
-    fn is_constant(&self) -> bool {
-        self.is_constant()
-    }
-}
-
-impl<'scope, T: 'scope> IntoSignal<'scope> for Rx<'scope, T, RxValueKind> {
-    fn into_signal(self, _scope: &Scope<'scope>) -> Signal<'scope, T>
-    where
-        T: Sized + RxData,
-    {
-        Signal::from_rx(self)
-    }
-}
-
-macro_rules! impl_primitive_into_rx {
+macro_rules! impl_primitive_rx_value {
     ($($ty:ty),* $(,)?) => {
         $(
             impl RxValue for $ty {
                 type Value = Self;
             }
-
-            impl<'scope> IntoRx<'scope> for $ty {
-                fn into_rx(self, scope: &Scope<'scope>) -> Rx<'scope, Self> {
-                    scope.constant(self)
-                }
-
-                fn is_constant(&self) -> bool { true }
-            }
-
-            impl<'scope> IntoSignal<'scope> for $ty {
-                fn into_signal(self, scope: &Scope<'scope>) -> Signal<'scope, Self> {
-                    scope.constant(self).into_signal(scope)
-                }
-            }
         )*
     };
 }
 
-impl_primitive_into_rx!(
+impl_primitive_rx_value!(
     (),
     bool,
     char,
@@ -553,66 +363,50 @@ impl RxValue for &str {
     type Value = String;
 }
 
-impl<'scope> IntoRx<'scope> for &str {
-    fn into_rx(self, scope: &Scope<'scope>) -> Rx<'scope, String> {
-        scope.constant(self.to_owned())
+impl<'scope, T: 'scope> RxBase for Memo<'scope, T> {
+    fn track(&self) {
+        self.inner.with(|_| ());
     }
 
-    fn is_constant(&self) -> bool {
-        true
-    }
-}
-
-impl<'scope> IntoSignal<'scope> for &str {
-    fn into_signal(self, scope: &Scope<'scope>) -> Signal<'scope, String> {
-        scope.constant(self.to_owned()).into_signal(scope)
+    fn is_alive(&self) -> bool {
+        self.inner.is_alive()
     }
 }
 
-macro_rules! impl_tuple_into_rx {
-    ($($name:ident : $index:tt),+ $(,)?) => {
+impl<'scope, T: 'scope> RxRead for Memo<'scope, T> {
+    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
+        Some(self.inner.with(f))
+    }
+
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
+        self.inner.with_untracked(f).ok()
+    }
+}
+
+impl<T> RxValue for (T,)
+where
+    T: RxValue,
+    T::Value: Sized + RxData,
+{
+    type Value = (T::Value,);
+}
+
+macro_rules! impl_tuple_rx_value {
+    ($($name:ident),+ $(,)?) => {
         impl<$($name),+> RxValue for ($($name,)+)
         where
             $($name: RxValue, $name::Value: Sized + RxData),+
         {
             type Value = ($($name::Value,)+);
         }
-
-        impl<'scope, $($name),+> IntoRx<'scope> for ($($name,)+)
-        where
-            $($name: IntoRx<'scope> + RxRead + 'scope, $name::Value: Sized + RxData + Clone + 'scope),+
-        {
-            fn into_rx(self, scope: &Scope<'scope>) -> Rx<'scope, Self::Value> {
-                let scope = *scope;
-                scope.derived(move || {
-                    (
-                        $(crate::traits::RxGet::get(&self.$index),)+
-                    )
-                })
-            }
-
-            fn is_constant(&self) -> bool {
-                $(self.$index.is_constant() &&)+ true
-            }
-        }
-
-        impl<'scope, $($name),+> IntoSignal<'scope> for ($($name,)+)
-        where
-            $($name: IntoRx<'scope> + RxRead + 'scope, $name::Value: Sized + RxData + Clone + 'scope),+
-        {
-            fn into_signal(self, scope: &Scope<'scope>) -> Signal<'scope, Self::Value> {
-                self.into_rx(scope).into_signal(scope)
-            }
-        }
     };
 }
 
-impl_tuple_into_rx!(A: 0);
-impl_tuple_into_rx!(A: 0, B: 1);
-impl_tuple_into_rx!(A: 0, B: 1, C: 2);
-impl_tuple_into_rx!(A: 0, B: 1, C: 2, D: 3);
-impl_tuple_into_rx!(A: 0, B: 1, C: 2, D: 3, E: 4);
-impl_tuple_into_rx!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5);
+impl_tuple_rx_value!(A, B);
+impl_tuple_rx_value!(A, B, C);
+impl_tuple_rx_value!(A, B, C, D);
+impl_tuple_rx_value!(A, B, C, D, E);
+impl_tuple_rx_value!(A, B, C, D, E, F);
 
 /// Reactive helpers for `Option<T>` values.
 pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
@@ -623,19 +417,19 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         f: impl Fn(&T) -> U + 'scope,
     ) -> Memo<'scope, U>
     where
-        Self: 'scope,
+        Self: ReactiveSource<'scope> + 'scope,
         U: PartialEq + Clone + 'scope,
         T: 'scope,
     {
-        let source = self.clone();
-        scope.memo(move |_| {
+        let source = scope.promote(self.clone());
+        scope.memo_from(source.runtime_inputs(), move |_| {
             source.with(|value| value.as_ref().map(&f).unwrap_or_else(|| default.clone()))
         })
     }
 
     fn unwrap_or<'scope>(&self, scope: &Scope<'scope>, default: T) -> Memo<'scope, T>
     where
-        Self: 'scope,
+        Self: ReactiveSource<'scope> + 'scope,
         T: PartialEq + Clone + 'scope,
     {
         self.map_or(scope, default, Clone::clone)
@@ -648,12 +442,14 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         f: impl Fn(&T) -> U + 'scope,
     ) -> Memo<'scope, U>
     where
-        Self: 'scope,
+        Self: ReactiveSource<'scope> + 'scope,
         U: PartialEq + Clone + 'scope,
         T: 'scope,
     {
-        let source = self.clone();
-        scope.memo(move |_| source.with(|value| value.as_ref().map(&f).unwrap_or_else(&default)))
+        let source = scope.promote(self.clone());
+        scope.memo_from(source.runtime_inputs(), move |_| {
+            source.with(|value| value.as_ref().map(&f).unwrap_or_else(&default))
+        })
     }
 
     fn and_then<'scope, U>(
@@ -662,12 +458,14 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         f: impl Fn(&T) -> Option<U> + 'scope,
     ) -> Memo<'scope, Option<U>>
     where
-        Self: 'scope,
+        Self: ReactiveSource<'scope> + 'scope,
         U: PartialEq + Clone + 'scope,
         T: 'scope,
     {
-        let source = self.clone();
-        scope.memo(move |_| source.with(|value| value.as_ref().and_then(&f)))
+        let source = scope.promote(self.clone());
+        scope.memo_from(source.runtime_inputs(), move |_| {
+            source.with(|value| value.as_ref().and_then(&f))
+        })
     }
 
     fn is_some_and<'scope>(
@@ -676,7 +474,7 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         f: impl Fn(&T) -> bool + 'scope,
     ) -> Memo<'scope, bool>
     where
-        Self: 'scope,
+        Self: ReactiveSource<'scope> + 'scope,
         T: 'scope,
     {
         self.map_or(scope, false, f)

@@ -124,6 +124,21 @@ fn nested_reads(pairs: &[(Ident, Ident)], body: &TokenStream2) -> TokenStream2 {
     }
 }
 
+fn input_set(prefix: &TokenStream2, pairs: &[(Ident, Ident)]) -> TokenStream2 {
+    let sources = pairs.iter().map(|(signal, _)| {
+        quote! {
+            __silex_inputs.extend(&__silex_scope.promote(#signal).runtime_inputs());
+        }
+    });
+    quote! {
+        {
+            let mut __silex_inputs = #prefix::RuntimeInputs::new();
+            #(#sources)*
+            __silex_inputs
+        }
+    }
+}
+
 fn expand(input: TokenStream2) -> Result<TokenStream2> {
     let mut tokens = input.into_iter();
     let prefix = split_at_semicolon(&mut tokens).ok_or_else(|| {
@@ -193,6 +208,7 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
     let mut pairs: Vec<_> = visitor.signal_map.into_iter().collect();
     pairs.sort_by_key(|(identifier, _)| identifier.to_string());
     let scope_binding = quote! { let __silex_scope = #scope; };
+    let inputs = input_set(&prefix, &pairs);
 
     if let Expr::Closure(mut closure) = expression {
         let closure_body = *closure.body;
@@ -201,7 +217,7 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
         closure.capture = Some(Move::default());
         *closure.body = parse2(reads)?;
         let constructor = if closure.inputs.is_empty() {
-            quote! { __silex_scope.derived(#closure) }
+            quote! { __silex_scope.derived_from(#inputs, #closure) }
         } else {
             quote! { __silex_scope.callback(#closure) }
         };
@@ -222,7 +238,7 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
         return Ok(quote! {{ #scope_binding __silex_scope.constant(#expression) }});
     }
 
-    Ok(quote! {{ #scope_binding __silex_scope.derived(move || #reads) }})
+    Ok(quote! {{ #scope_binding __silex_scope.derived_from(#inputs, move || #reads) }})
 }
 
 /// `rx!` process macro. The first section is a dependency prefix, the second

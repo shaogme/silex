@@ -9,12 +9,15 @@
 mod dispose;
 mod eval;
 mod graph;
+mod input;
 mod model;
 mod ops;
 mod scheduler;
 
 pub(crate) use dispose::dispose_all;
 pub(crate) use eval::{run_global_queue, run_initial};
+pub use input::{RuntimeInput, RuntimeInputs};
+pub(crate) use input::{create_derived, create_effect, create_memo, validate_inputs};
 pub(crate) use model::ScopeState;
 pub(crate) use ops::{
     invoke_callback, node_ref_clear, node_ref_get, node_ref_set, notify, track, track_many,

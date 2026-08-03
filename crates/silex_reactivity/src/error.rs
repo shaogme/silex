@@ -15,6 +15,8 @@ pub enum ReactiveError {
     Reentrant,
     /// A runtime was asked to start another run while it was already running.
     RuntimeAlreadyRunning,
+    /// Reactive nodes from different scheduler families were combined.
+    RuntimeMismatch,
 }
 
 impl ReactiveError {
@@ -32,6 +34,7 @@ impl fmt::Display for ReactiveError {
             Self::TypeMismatch => "节点里存放的不是请求的类型",
             Self::Reentrant => "值正被外层闭包借出，不允许重入访问同一个节点",
             Self::RuntimeAlreadyRunning => "响应式 Runtime 已经在运行中",
+            Self::RuntimeMismatch => "响应式节点属于不同的 Runtime scheduler family",
         };
         f.write_str(message)
     }

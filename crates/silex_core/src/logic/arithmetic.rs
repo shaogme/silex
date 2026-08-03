@@ -1,4 +1,4 @@
-use crate::{Rx, RxValueKind, traits::IntoRx};
+use crate::{Rx, RxValueKind, reactivity::ReactiveSource};
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
 
 #[doc(hidden)]
@@ -49,11 +49,17 @@ pub mod ops_impl {
 fn binary_op<'scope, T, R>(left: Rx<'scope, T>, right: R, op: fn(&T, &T) -> T) -> Rx<'scope, T>
 where
     T: 'scope,
-    R: IntoRx<'scope, Value = T>,
+    R: ReactiveSource<'scope, Value = T>,
 {
     let scope = left.scope();
-    let right = right.into_rx(&scope);
-    scope.derived(move || left.with(|left| right.with(|right| op(left, right))))
+    let right = right.into_promotion_plan();
+    let mut inputs = left.runtime_inputs();
+    inputs.extend(&right.inputs());
+    scope.assert_inputs(&inputs);
+    let right = right.materialize_unchecked(&scope);
+    scope.derived_from(inputs, move || {
+        left.with(|left| right.with(|right| op(left, right)))
+    })
 }
 
 fn unary_op<'scope, T>(value: Rx<'scope, T>, op: fn(&T) -> T) -> Rx<'scope, T>
@@ -61,7 +67,7 @@ where
     T: 'scope,
 {
     let scope = value.scope();
-    scope.derived(move || value.with(op))
+    scope.derived_from(value.runtime_inputs(), move || value.with(op))
 }
 
 macro_rules! impl_rx_binary {
@@ -70,7 +76,7 @@ macro_rules! impl_rx_binary {
         where
             T: Clone + 'scope,
             for<'a> &'a T: $trait<&'a T, Output = T>,
-            R: IntoRx<'scope, Value = T>,
+            R: ReactiveSource<'scope, Value = T>,
         {
             type Output = Rx<'scope, T>;
 

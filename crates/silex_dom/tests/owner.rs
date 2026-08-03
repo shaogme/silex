@@ -1,6 +1,6 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_core::Runtime;
+use silex_core::{Runtime, RuntimeInputs};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::view::{
     AnyView, ApplyAttributes, IndexedLoopView, KeyedLoopView, RootViewOwner, ScopedViewOwner, View,
@@ -104,10 +104,12 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
         let (key, set_key) = scope.signal(0i32);
         let owner = RootViewOwner::new(scope.clone());
         let branch_cleanups_for_view = branch_cleanups.clone();
+        let key_inputs = RuntimeInputs::single(key.runtime_input());
         mount_branch_cached(
             &owner,
             &host,
             Vec::new(),
+            key_inputs,
             move || key.get(),
             move |key| {
                 AnyView::new(CleanupProbe {

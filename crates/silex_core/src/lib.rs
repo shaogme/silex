@@ -23,6 +23,8 @@ pub use reactivity::{
 };
 pub use scope::{OwnedScope, RootHandle, RootScope, Runtime, Scope};
 pub use silex_reactivity::CompletionToken;
+#[doc(hidden)]
+pub use silex_reactivity::RuntimeInputs;
 pub use store::Store;
 pub use traits::{RxBase, RxGet, RxRead};
 
@@ -132,7 +134,7 @@ impl<'scope, T: 'scope> Rx<'scope, T, RxValueKind> {
         F: Fn(&T) -> U + 'scope,
     {
         let scope = self.scope;
-        scope.derived(move || self.with(|value| f(value)))
+        scope.derived_from(self.runtime_inputs(), move || self.with(|value| f(value)))
     }
 
     pub fn get(&self) -> T
@@ -152,6 +154,21 @@ impl<'scope, T: 'scope> Rx<'scope, T, RxValueKind> {
 
     pub fn is_alive(&self) -> bool {
         RxBase::is_alive(self)
+    }
+
+    pub fn into_signal(self) -> crate::reactivity::Signal<'scope, T> {
+        crate::reactivity::Signal::from_rx(self)
+    }
+
+    #[doc(hidden)]
+    pub fn runtime_inputs(&self) -> RuntimeInputs {
+        let input = match &self.inner {
+            RxInner::Signal(signal) => signal.runtime_input(),
+            RxInner::Memo(memo) => memo.runtime_input(),
+            RxInner::Derived(derived) => derived.runtime_input(),
+            RxInner::Stored(stored) => stored.runtime_input(),
+        };
+        RuntimeInputs::single(input)
     }
 
     pub(crate) fn is_constant(&self) -> bool {

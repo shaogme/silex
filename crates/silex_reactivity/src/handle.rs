@@ -4,7 +4,7 @@
 //! storage that owns it. The scope lifetime is invariant so handles from
 //! different lexical scopes cannot be combined by lifetime shortening.
 
-use crate::{internal::RawId, runtime::ScopeState, scope::ScopeStorage};
+use crate::{RuntimeInput, internal::RawId, runtime::ScopeState, scope::ScopeStorage};
 use std::{
     cell::RefCell,
     fmt,
@@ -96,6 +96,12 @@ impl<'scope, K: NodeKind> Handle<'scope, K> {
 
     pub(crate) const fn raw(&self) -> RawId {
         self.raw
+    }
+
+    /// Return opaque scheduler-family provenance for this node.
+    #[doc(hidden)]
+    pub(crate) fn runtime_input(&self) -> RuntimeInput {
+        RuntimeInput::from_scheduler(self.storage.scheduler())
     }
 
     /// Returns whether the owning scope still contains this node.

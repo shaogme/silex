@@ -7,7 +7,7 @@ use std::rc::Rc;
 use wasm_bindgen::{JsCast, JsValue, convert::FromWasmAbi, prelude::*};
 use web_sys::Element as WebElem;
 
-use silex_core::{RootScope, SilexError, error::handle_error};
+use silex_core::{RootScope, RuntimeInputs, SilexError, error::handle_error};
 
 pub mod tags;
 pub use tags::*;
@@ -87,7 +87,16 @@ impl<'scope> Element<'scope> {
         attrs: Vec<PendingAttribute<'scope>>,
     ) {
         let token = owner.token();
-        for attr in self.all_attrs(attrs) {
+        let attrs = self.all_attrs(attrs);
+        let mut inputs = RuntimeInputs::new();
+        for attr in &attrs {
+            inputs.extend(&attr.runtime_inputs());
+        }
+        if let Err(error) = token.validate_inputs(&inputs) {
+            handle_error(error);
+            return;
+        }
+        for attr in attrs {
             attr.apply(&self.dom_element, &token);
         }
         if let Err(error) = parent
@@ -294,7 +303,16 @@ impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
         let token = owner.token();
         let mut all_attrs = self.pending_attrs.clone();
         all_attrs.extend(attrs);
-        for attr in crate::attribute::consolidate_attributes(all_attrs) {
+        let all_attrs = crate::attribute::consolidate_attributes(all_attrs);
+        let mut inputs = RuntimeInputs::new();
+        for attr in &all_attrs {
+            inputs.extend(&attr.runtime_inputs());
+        }
+        if let Err(error) = token.validate_inputs(&inputs) {
+            handle_error(error);
+            return;
+        }
+        for attr in all_attrs {
             attr.apply(self.as_element(), &token);
         }
         if let Err(error) = parent

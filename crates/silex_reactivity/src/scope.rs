@@ -54,4 +54,8 @@ impl ScopeStorage {
             (Ok(()), Ok(())) => {}
         }
     }
+
+    pub(crate) fn scheduler(&self) -> Rc<RefCell<GlobalScheduler>> {
+        self.state.borrow().scheduler.clone()
+    }
 }

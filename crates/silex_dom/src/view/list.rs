@@ -1,8 +1,9 @@
 use super::owner::{DomRange, RowController, RowRender, RowRenderArgs};
 use crate::attribute::PendingAttribute;
 use crate::view::{AnyView, ApplyAttributes, View, ViewOwner};
-use silex_core::SilexError;
+use silex_core::reactivity::{ReactiveSource, runtime_inputs_of};
 use silex_core::traits::{ForErrorHandler, ForLoopSource, RxRead};
+use silex_core::{RuntimeInputs, SilexError};
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -25,7 +26,7 @@ impl<'scope, IF, IS, T, K> ApplyAttributes<'scope> for KeyedLoopView<'scope, IF,
 
 impl<'scope, IF, IS, T, K> View<'scope> for KeyedLoopView<'scope, IF, IS, T, K>
 where
-    IF: RxRead<Value = IS> + Clone + 'scope,
+    IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = T> + Sized + 'scope,
     K: std::hash::Hash + Eq + Clone + 'scope,
     T: Clone + 'scope,
@@ -77,7 +78,7 @@ impl<'scope, IF, T, IS> ApplyAttributes<'scope> for IndexedLoopView<'scope, IF, 
 
 impl<'scope, IF, T, IS> View<'scope> for IndexedLoopView<'scope, IF, T, IS>
 where
-    IF: RxRead<Value = IS> + Clone + 'scope,
+    IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = T> + 'scope,
     T: Clone + 'scope,
 {
@@ -115,11 +116,17 @@ fn mount_indexed_list<'scope, IF, IS, T, F>(
     view_fn: Rc<F>,
     attrs: Vec<PendingAttribute<'scope>>,
 ) where
-    IF: RxRead<Value = IS> + 'scope,
+    IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = T> + 'scope,
     T: Clone + 'scope,
     F: Fn(T, usize) -> AnyView<'scope> + 'scope + ?Sized,
 {
+    let inputs = runtime_inputs_of(source.clone());
+    if let Err(error) = owner.validate_inputs(&inputs) {
+        silex_core::error::handle_error(error);
+        return;
+    }
+    let token = owner.token();
     let range = match DomRange::append(parent, "for") {
         Ok(range) => range,
         Err(error) => {
@@ -127,7 +134,6 @@ fn mount_indexed_list<'scope, IF, IS, T, F>(
             return;
         }
     };
-    let token = owner.token();
     let render = RowRender::new(move |args: RowRenderArgs<'scope, T>| {
         let RowRenderArgs {
             item,
@@ -153,43 +159,47 @@ fn mount_indexed_list<'scope, IF, IS, T, F>(
 
     let effect_rows = rows;
     let end = range.end.clone();
-    owner.effect(Box::new(move || {
-        let snapshot = source.with(|items| items.as_slice().map(|values| values.to_vec()));
-        match snapshot {
-            Ok(values) => {
-                let mut rows = effect_rows.borrow_mut();
-                while rows.len() > values.len() {
-                    let mut row = rows.pop().expect("row length checked before pop");
-                    row.dispose();
-                }
-                for (index, item) in values.into_iter().enumerate() {
-                    if let Some(row) = rows.get_mut(index) {
-                        row.update(item, index);
-                        continue;
+    owner.effect_from(
+        inputs,
+        Box::new(move || {
+            let snapshot = source.with(|items| items.as_slice().map(|values| values.to_vec()));
+            match snapshot {
+                Ok(values) => {
+                    let mut rows = effect_rows.borrow_mut();
+                    while rows.len() > values.len() {
+                        let mut row = rows.pop().expect("row length checked before pop");
+                        row.dispose();
                     }
-                    let Ok(row_range) = DomRange::before(&end, "for-row") else {
-                        continue;
-                    };
-                    rows.push(RowController::new(
-                        &token,
-                        row_range,
-                        render.clone(),
-                        attrs.clone(),
-                        item,
-                        index,
-                    ));
+                    for (index, item) in values.into_iter().enumerate() {
+                        if let Some(row) = rows.get_mut(index) {
+                            row.update(item, index);
+                            continue;
+                        }
+                        let Ok(row_range) = DomRange::before(&end, "for-row") else {
+                            continue;
+                        };
+                        rows.push(RowController::new(
+                            &token,
+                            row_range,
+                            render.clone(),
+                            RuntimeInputs::new(),
+                            attrs.clone(),
+                            item,
+                            index,
+                        ));
+                    }
+                }
+                Err(error) => {
+                    let mut rows = mem::take(&mut *effect_rows.borrow_mut());
+                    let panic = dispose_rows(&mut rows);
+                    if let Some(panic) = panic {
+                        resume_unwind(panic);
+                    }
+                    silex_core::error::handle_error(error);
                 }
             }
-            Err(error) => {
-                let mut rows = mem::take(&mut *effect_rows.borrow_mut());
-                let panic = dispose_rows(&mut rows);
-                if let Some(panic) = panic {
-                    resume_unwind(panic);
-                }
-                silex_core::error::handle_error(error);
-            }
-        }
-    }));
+        }),
+    );
 }
 
 struct KeyedRows<'scope, T, K> {
@@ -206,12 +216,18 @@ fn mount_keyed_list<'scope, IF, IS, T, K, F>(
     error: ForErrorHandler,
     attrs: Vec<PendingAttribute<'scope>>,
 ) where
-    IF: RxRead<Value = IS> + 'scope,
+    IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = T> + 'scope,
     T: Clone + 'scope,
     K: std::hash::Hash + Eq + Clone + 'scope,
     F: Fn(T, usize) -> AnyView<'scope> + 'scope + ?Sized,
 {
+    let inputs = runtime_inputs_of(source.clone());
+    if let Err(error) = owner.validate_inputs(&inputs) {
+        silex_core::error::handle_error(error);
+        return;
+    }
+    let token = owner.token();
     let range = match DomRange::append(parent, "for") {
         Ok(range) => range,
         Err(error) => {
@@ -219,7 +235,6 @@ fn mount_keyed_list<'scope, IF, IS, T, K, F>(
             return;
         }
     };
-    let token = owner.token();
     let render = RowRender::new(move |args: RowRenderArgs<'scope, T>| {
         let RowRenderArgs {
             item,
@@ -251,77 +266,81 @@ fn mount_keyed_list<'scope, IF, IS, T, K, F>(
 
     let effect_state = state;
     let end = range.end.clone();
-    owner.effect(Box::new(move || {
-        let snapshot = source.with(|items| items.as_slice().map(|values| values.to_vec()));
-        let values = match snapshot {
-            Ok(values) => values,
-            Err(source_error) => {
-                error.call(source_error);
-                return;
-            }
-        };
-
-        let mut keys = Vec::with_capacity(values.len());
-        let mut seen = HashSet::with_capacity(values.len());
-        for item in &values {
-            let key = key_fn(item);
-            if !seen.insert(key.clone()) {
-                error.call(SilexError::Reactivity(
-                    "duplicate key in keyed list".to_string(),
-                ));
-                return;
-            }
-            keys.push(key);
-        }
-
-        let mut state = effect_state.borrow_mut();
-        let mut old_rows = mem::take(&mut state.rows);
-        let old_order = mem::take(&mut state.order);
-        let mut next_rows = HashMap::with_capacity(keys.len());
-        let mut next_order = Vec::with_capacity(keys.len());
-
-        for (index, (key, item)) in keys.iter().cloned().zip(values).enumerate() {
-            if let Some(mut row) = old_rows.remove(&key) {
-                row.update(item, index);
-                next_order.push(key.clone());
-                next_rows.insert(key, row);
-                continue;
-            }
-            let Ok(row_range) = DomRange::before(&end, "for-row") else {
-                continue;
+    owner.effect_from(
+        inputs,
+        Box::new(move || {
+            let snapshot = source.with(|items| items.as_slice().map(|values| values.to_vec()));
+            let values = match snapshot {
+                Ok(values) => values,
+                Err(source_error) => {
+                    error.call(source_error);
+                    return;
+                }
             };
-            next_order.push(key.clone());
-            next_rows.insert(
-                key,
-                RowController::new(
-                    &token,
-                    row_range,
-                    render.clone(),
-                    attrs.clone(),
-                    item,
-                    index,
-                ),
-            );
-        }
 
-        let mut removed = Vec::with_capacity(old_rows.len());
-        for key in old_order {
-            if let Some(row) = old_rows.remove(&key) {
-                removed.push(row);
+            let mut keys = Vec::with_capacity(values.len());
+            let mut seen = HashSet::with_capacity(values.len());
+            for item in &values {
+                let key = key_fn(item);
+                if !seen.insert(key.clone()) {
+                    error.call(SilexError::Reactivity(
+                        "duplicate key in keyed list".to_string(),
+                    ));
+                    return;
+                }
+                keys.push(key);
             }
-        }
-        let panic = dispose_rows(&mut removed);
-        for key in &next_order {
-            if let Some(row) = next_rows.get(key) {
-                row.move_before(&end);
+
+            let mut state = effect_state.borrow_mut();
+            let mut old_rows = mem::take(&mut state.rows);
+            let old_order = mem::take(&mut state.order);
+            let mut next_rows = HashMap::with_capacity(keys.len());
+            let mut next_order = Vec::with_capacity(keys.len());
+
+            for (index, (key, item)) in keys.iter().cloned().zip(values).enumerate() {
+                if let Some(mut row) = old_rows.remove(&key) {
+                    row.update(item, index);
+                    next_order.push(key.clone());
+                    next_rows.insert(key, row);
+                    continue;
+                }
+                let Ok(row_range) = DomRange::before(&end, "for-row") else {
+                    continue;
+                };
+                next_order.push(key.clone());
+                next_rows.insert(
+                    key,
+                    RowController::new(
+                        &token,
+                        row_range,
+                        render.clone(),
+                        RuntimeInputs::new(),
+                        attrs.clone(),
+                        item,
+                        index,
+                    ),
+                );
             }
-        }
-        state.rows = next_rows;
-        state.order = next_order;
-        if let Some(panic) = panic {
-            resume_unwind(panic);
-        }
-    }));
+
+            let mut removed = Vec::with_capacity(old_rows.len());
+            for key in old_order {
+                if let Some(row) = old_rows.remove(&key) {
+                    removed.push(row);
+                }
+            }
+            let panic = dispose_rows(&mut removed);
+            for key in &next_order {
+                if let Some(row) = next_rows.get(key) {
+                    row.move_before(&end);
+                }
+            }
+            state.rows = next_rows;
+            state.order = next_order;
+            if let Some(panic) = panic {
+                resume_unwind(panic);
+            }
+        }),
+    );
 }
 
 fn dispose_rows<'scope, T: Clone + 'scope>(

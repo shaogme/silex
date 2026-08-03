@@ -6,7 +6,7 @@ use crate::{
     ReactiveError, ReactiveResult,
     handle::{CallbackId, DerivedId, EffectId, MemoId, NodeRefId, SignalId, StoredId},
     internal::{RawId, value::AnyValue},
-    runtime::{self, ScopeState},
+    runtime::{self, RuntimeInput, ScopeState},
 };
 
 // =============================================================================
@@ -137,6 +137,11 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
     pub fn is_alive(&self) -> bool {
         self.handle.is_alive()
     }
+
+    #[doc(hidden)]
+    pub fn runtime_input(&self) -> RuntimeInput {
+        self.handle.runtime_input()
+    }
 }
 
 impl<'scope, T: 'scope> Derived<'scope, T> {
@@ -181,6 +186,11 @@ impl<'scope, T: 'scope> Derived<'scope, T> {
 
     pub fn is_alive(&self) -> bool {
         self.handle.is_alive()
+    }
+
+    #[doc(hidden)]
+    pub fn runtime_input(&self) -> RuntimeInput {
+        self.handle.runtime_input()
     }
 }
 
@@ -328,6 +338,11 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
     pub fn is_alive(&self) -> bool {
         self.handle.is_alive()
     }
+
+    #[doc(hidden)]
+    pub fn runtime_input(&self) -> RuntimeInput {
+        self.handle.runtime_input()
+    }
 }
 
 impl<'scope, T: 'scope> WriteSignal<'scope, T> {
@@ -395,6 +410,11 @@ impl<'scope, T: 'scope> WriteSignal<'scope, T> {
     pub fn is_alive(&self) -> bool {
         self.handle.is_alive()
     }
+
+    #[doc(hidden)]
+    pub fn runtime_input(&self) -> RuntimeInput {
+        self.handle.runtime_input()
+    }
 }
 
 impl<'scope, T: 'scope> Signal<'scope, T> {
@@ -415,6 +435,11 @@ impl<'scope, T: 'scope> Signal<'scope, T> {
 
     pub fn set(&self, value: T) {
         self.write.set(value);
+    }
+
+    #[doc(hidden)]
+    pub fn runtime_input(&self) -> RuntimeInput {
+        self.read.runtime_input()
     }
 }
 
@@ -500,6 +525,11 @@ impl<'scope, T: 'scope> StoredValue<'scope, T> {
 
     pub fn is_alive(&self) -> bool {
         self.handle.is_alive()
+    }
+
+    #[doc(hidden)]
+    pub fn runtime_input(&self) -> RuntimeInput {
+        self.handle.runtime_input()
     }
 }
 

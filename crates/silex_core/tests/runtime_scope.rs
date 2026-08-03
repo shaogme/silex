@@ -5,8 +5,8 @@ fn scoped_primitives_propagate_without_raw_handles() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (count, set_count) = scope.signal(1i32);
-        let doubled = scope.derived(move || count.get() * 2);
-        let memo = scope.memo(move |_| doubled.get() + 1);
+        let doubled = scope.promote(count).map(|value| value * 2);
+        let memo = scope.memo_from(doubled.runtime_inputs(), move |_| doubled.get() + 1);
 
         assert_eq!(doubled.get(), 2);
         assert_eq!(memo.get(), 3);
