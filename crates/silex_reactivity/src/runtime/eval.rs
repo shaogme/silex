@@ -3,7 +3,7 @@
 use super::{
     dispose::{dispose_nodes, run_cleanups},
     model::{NodeState, ScopeState},
-    scheduler::{GlobalScheduler, Observer, TargetNode},
+    scheduler::{GlobalScheduler, Observer, ObserverFrame, TargetNode},
 };
 use crate::{
     ReactiveError, ReactiveResult,
@@ -183,7 +183,7 @@ fn evaluate<'scope>(
 }
 
 fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool {
-    let (computation, mut old, first_child, cleanups, previous) = {
+    let (computation, mut old, first_child, cleanups, previous_owner) = {
         let mut state_ref = state
             .try_borrow_mut()
             .expect("ScopeState borrow failed at start of run_node");
@@ -210,7 +210,6 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
         }
 
         let prev_owner = state_ref.current_owner;
-        let prev_obs = state_ref.scheduler.borrow().observer();
 
         if let Some(node) = state_ref.nodes.get_mut(id) {
             node.running = true;
@@ -239,13 +238,7 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
 
         state_ref.current_owner = Some(id);
 
-        (
-            computation,
-            old,
-            first_child,
-            cleanups,
-            (prev_owner, prev_obs),
-        )
+        (computation, old, first_child, cleanups, prev_owner)
     };
     let Some(mut computation) = computation else {
         return false;
@@ -255,6 +248,7 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
 
     let mut result = None;
     let mut execution_started = false;
+    let mut observer_frame = None;
     let outcome = catch_unwind(AssertUnwindSafe(|| {
         let child_dispose = catch_unwind(AssertUnwindSafe(|| {
             dispose_nodes(state, children_to_dispose);
@@ -272,14 +266,16 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
             let mut state_ref = state.borrow_mut();
             state_ref.clear_dependencies(id);
             let scheduler = state_ref.scheduler.clone();
-            let mut sched = scheduler.borrow_mut();
-            sched.executing += 1;
+            scheduler.borrow_mut().executing += 1;
             execution_started = true;
             state_ref.current_owner = Some(id);
-            sched.set_observer(Some(Observer {
-                scope_id: state_ref.scope_id,
-                node: id,
-            }));
+            observer_frame = Some(ObserverFrame::push(
+                scheduler,
+                Some(Observer {
+                    scope_id: state_ref.scope_id,
+                    node: id,
+                }),
+            ));
             if let Some(node) = state_ref.nodes.get_mut(id) {
                 node.state = NodeState::Clean;
             }
@@ -301,6 +297,7 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
     } else {
         Ok(None)
     };
+    drop(observer_frame);
     let failed = panicked || equality_result.is_err();
     {
         let mut state_ref = state
@@ -312,8 +309,7 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool 
         if execution_started {
             sched.executing = sched.executing.saturating_sub(1);
         }
-        state_ref.set_context(previous.0);
-        sched.set_observer(previous.1);
+        state_ref.set_context(previous_owner);
         drop(sched);
 
         let mut changed = false;

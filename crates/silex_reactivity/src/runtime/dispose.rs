@@ -1,6 +1,9 @@
 //! Node hierarchy disposal and scope cleanup execution.
 
-use super::model::{EdgeId, NodeData, ScopeState};
+use super::{
+    model::{EdgeId, NodeData, ScopeState},
+    scheduler::TargetNode,
+};
 use crate::internal::{RawId, value::OnceThunk};
 use std::{
     any::Any,
@@ -109,14 +112,41 @@ pub(crate) fn dispose_nodes<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, roo
                     .try_borrow_mut()
                     .expect("ScopeState borrow_mut failed during dispose_nodes");
                 let (children, data) = if let Some(node) = state_ref.nodes.get(id).copied() {
+                    let source_target = TargetNode {
+                        scope_id: state_ref.scope_id,
+                        node: id,
+                    };
+                    let subscriber_edges: Vec<(EdgeId, TargetNode)> = state_ref
+                        .subscriber_edges_of(id)
+                        .map(|(edge_id, edge)| (edge_id, edge.target))
+                        .collect();
+                    let scheduler = state_ref.scheduler.clone();
+                    for (_, subscriber) in &subscriber_edges {
+                        if subscriber.scope_id == state_ref.scope_id {
+                            continue;
+                        }
+                        let observer_state = scheduler.borrow().get_scope(subscriber.scope_id);
+                        if let Some(observer_state) = observer_state {
+                            observer_state
+                                .try_borrow_mut()
+                                .expect("observer scope borrow failed during dispose_nodes");
+                        }
+                    }
+
                     state_ref.clear_dependencies(id);
 
-                    let subscriber_edges: Vec<EdgeId> = state_ref
-                        .subscriber_edges_of(id)
-                        .map(|(edge_id, _)| edge_id)
-                        .collect();
-                    for edge_id in subscriber_edges {
+                    for (edge_id, subscriber) in subscriber_edges {
                         state_ref.edges.remove(edge_id);
+                        if subscriber.scope_id == state_ref.scope_id {
+                            state_ref.remove_dependency(subscriber.node, source_target);
+                        } else if let Some(observer_state) =
+                            scheduler.borrow().get_scope(subscriber.scope_id)
+                        {
+                            observer_state
+                                .try_borrow_mut()
+                                .expect("observer scope borrow failed during dispose_nodes")
+                                .remove_dependency(subscriber.node, source_target);
+                        }
                     }
 
                     let children: Vec<RawId> =

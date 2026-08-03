@@ -76,6 +76,32 @@ impl<'scope> ScopeState<'scope> {
         }
     }
 
+    pub(crate) fn remove_dependency(&mut self, observer_id: RawId, dep_target: TargetNode) {
+        let Some(node) = self.nodes.get(observer_id) else {
+            return;
+        };
+        let mut prev_edge = EdgeId::DANGLING;
+        let mut curr_edge = node.first_dependency;
+        while curr_edge.is_valid() {
+            let Some(edge) = self.edges.get(curr_edge).copied() else {
+                break;
+            };
+            if edge.target == dep_target {
+                if prev_edge.is_dangling() {
+                    if let Some(node) = self.nodes.get_mut(observer_id) {
+                        node.first_dependency = edge.next;
+                    }
+                } else if let Some(prev) = self.edges.get_mut(prev_edge) {
+                    prev.next = edge.next;
+                }
+                self.edges.remove(curr_edge);
+                break;
+            }
+            prev_edge = curr_edge;
+            curr_edge = edge.next;
+        }
+    }
+
     pub(crate) fn clear_dependencies(&mut self, observer_id: RawId) {
         let self_sub = TargetNode {
             scope_id: self.scope_id,
@@ -118,8 +144,15 @@ impl<'scope> ScopeState<'scope> {
     }
 
     pub(crate) fn track(&mut self, target: RawId) {
-        let Some(observer) = self.scheduler.borrow().observer() else {
-            return;
+        let observer = {
+            let scheduler = self.scheduler.borrow();
+            let Some(observer) = scheduler.observer() else {
+                return;
+            };
+            if !scheduler.allows_tracking(observer, self.scope_id) {
+                return;
+            }
+            observer
         };
         if !self.has_value(target) {
             return;
@@ -248,12 +281,92 @@ impl<'scope> ScopeState<'scope> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Runtime, Scope, runtime::scheduler::Observer};
+    use crate::{
+        Runtime, Scope,
+        runtime::{
+            dispose::dispose_nodes,
+            scheduler::{Observer, ObserverFrame},
+        },
+    };
     use std::{panic::AssertUnwindSafe, panic::catch_unwind};
 
     fn child(runtime: &mut Runtime, f: impl for<'scope> FnOnce(&'scope Scope<'scope>)) {
         let root = runtime.run(|root| root.child(f));
         drop(root);
+    }
+
+    #[test]
+    fn child_boundary_does_not_track_local_reads_in_an_outer_effect() {
+        let mut runtime = Runtime::new();
+        child(&mut runtime, |scope| {
+            let parent_scope = *scope;
+            let effect = scope.effect(move || {
+                parent_scope.child(|child| {
+                    let (local, _) = child.signal(0i32);
+                    let local_state = local.handle.state();
+                    let local_raw = local.handle.raw();
+
+                    assert_eq!(local.get(), 0);
+                    assert_eq!(
+                        local_state.borrow().subscriber_edges_of(local_raw).count(),
+                        0
+                    );
+                });
+            });
+
+            assert_eq!(
+                effect
+                    .handle
+                    .state()
+                    .borrow()
+                    .dependency_edges_of(effect.handle.raw())
+                    .count(),
+                0
+            );
+        });
+    }
+
+    #[test]
+    fn disposing_source_removes_cross_scope_observer_dependency() {
+        let mut runtime = Runtime::new();
+        child(&mut runtime, |scope| {
+            let (source, _) = scope.signal(0i32);
+            let source_state = source.handle.state();
+            let source_raw = source.handle.raw();
+
+            scope.child(|child| {
+                let effect = child.effect(move || {
+                    let _ = source.get();
+                });
+                let effect_state = effect.handle.state();
+                let effect_raw = effect.handle.raw();
+
+                assert_eq!(
+                    source_state
+                        .borrow()
+                        .subscriber_edges_of(source_raw)
+                        .count(),
+                    1
+                );
+                assert_eq!(
+                    effect_state
+                        .borrow()
+                        .dependency_edges_of(effect_raw)
+                        .count(),
+                    1
+                );
+
+                dispose_nodes(&source_state, vec![source_raw]);
+
+                assert_eq!(
+                    effect_state
+                        .borrow()
+                        .dependency_edges_of(effect_raw)
+                        .count(),
+                    0
+                );
+            });
+        });
     }
 
     #[test]
@@ -274,10 +387,13 @@ mod tests {
                     let state = child_state.borrow();
                     (state.scheduler.clone(), state.scope_id)
                 };
-                scheduler.borrow_mut().set_observer(Some(Observer {
-                    scope_id: child_scope_id,
-                    node: effect.handle.raw(),
-                }));
+                let observer_frame = ObserverFrame::push(
+                    scheduler.clone(),
+                    Some(Observer {
+                        scope_id: child_scope_id,
+                        node: effect.handle.raw(),
+                    }),
+                );
 
                 let target_raw = target.handle.raw();
                 let effect_raw = effect.handle.raw();
@@ -326,7 +442,7 @@ mod tests {
                         .count(),
                     1
                 );
-                scheduler.borrow_mut().set_observer(None);
+                drop(observer_frame);
             });
         });
     }

@@ -350,9 +350,9 @@ pub(crate) fn with_untracked<'scope, R>(
     f: impl FnOnce() -> R,
 ) -> R {
     let scheduler = state.borrow().scheduler.clone();
-    let previous = scheduler.borrow_mut().set_observer(None);
+    let frame = super::scheduler::ObserverFrame::push(scheduler, None);
     let result = catch_unwind(AssertUnwindSafe(f));
-    scheduler.borrow_mut().set_observer(previous);
+    drop(frame);
     match result {
         Ok(value) => value,
         Err(panic) => resume_unwind(panic),

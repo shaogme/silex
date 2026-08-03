@@ -27,6 +27,67 @@ pub(crate) struct Observer {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ObserverBoundary {
+    scope_id: ScopeId,
+    inherited: Option<Observer>,
+}
+
+/// Restores the scheduler observer and, for lexical child scopes, the active
+/// tracking boundary when the surrounding operation unwinds.
+pub(crate) struct ObserverFrame {
+    scheduler: Rc<RefCell<GlobalScheduler>>,
+    previous: Option<Observer>,
+    boundary: Option<ScopeId>,
+}
+
+impl ObserverFrame {
+    pub(crate) fn push(
+        scheduler: Rc<RefCell<GlobalScheduler>>,
+        observer: Option<Observer>,
+    ) -> Self {
+        let previous = scheduler.borrow_mut().set_observer(observer);
+        Self {
+            scheduler,
+            previous,
+            boundary: None,
+        }
+    }
+
+    pub(crate) fn push_child(scheduler: Rc<RefCell<GlobalScheduler>>, scope_id: ScopeId) -> Self {
+        let previous = {
+            let mut scheduler_ref = scheduler.borrow_mut();
+            let observer = scheduler_ref.observer();
+            scheduler_ref.observer_boundaries.push(ObserverBoundary {
+                scope_id,
+                inherited: observer,
+            });
+            observer
+        };
+        Self {
+            scheduler,
+            previous,
+            boundary: Some(scope_id),
+        }
+    }
+}
+
+impl Drop for ObserverFrame {
+    fn drop(&mut self) {
+        let mut scheduler = self.scheduler.borrow_mut();
+        if let Some(boundary) = self.boundary {
+            debug_assert_eq!(
+                scheduler
+                    .observer_boundaries
+                    .pop()
+                    .map(|value| value.scope_id),
+                Some(boundary)
+            );
+        }
+        scheduler.set_observer(self.previous);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ScheduledTask {
     pub(crate) scope_id: ScopeId,
     pub(crate) node: RawId,
@@ -77,6 +138,7 @@ pub(crate) struct GlobalScheduler {
     free_scope_ids: Vec<u32>,
     epoch: u64,
     observer: Option<Observer>,
+    observer_boundaries: Vec<ObserverBoundary>,
     pub(crate) global_queue: VecDeque<ScheduledTask>,
     pub(crate) running_queue: bool,
     pub(crate) batch_depth: usize,
@@ -94,6 +156,7 @@ impl GlobalScheduler {
             free_scope_ids: Vec::new(),
             epoch: 1,
             observer: None,
+            observer_boundaries: Vec::new(),
             global_queue: VecDeque::new(),
             running_queue: false,
             batch_depth: 0,
@@ -118,6 +181,14 @@ impl GlobalScheduler {
 
     pub(crate) fn set_observer(&mut self, observer: Option<Observer>) -> Option<Observer> {
         std::mem::replace(&mut self.observer, observer)
+    }
+
+    pub(crate) fn allows_tracking(&self, observer: Observer, target_scope_id: ScopeId) -> bool {
+        // A child boundary isolates only the observer that was inherited on entry;
+        // computations created inside the child keep their normal tracking rules.
+        self.observer_boundaries.last().is_none_or(|boundary| {
+            boundary.scope_id != target_scope_id || boundary.inherited != Some(observer)
+        })
     }
 
     pub(crate) fn alloc_scope<'scope>(
@@ -161,6 +232,12 @@ impl GlobalScheduler {
             self.scopes[index] = None;
         }
         self.global_queue.retain(|task| task.scope_id != id);
+    }
+
+    pub(crate) fn release_scope_id(&mut self, id: ScopeId) {
+        if self.is_scope_active(id) || self.free_scope_ids.contains(&id.0) {
+            return;
+        }
         self.free_scope_ids.push(id.0);
     }
 
@@ -226,7 +303,7 @@ mod tests {
     use crate::runtime::ScopeState;
 
     #[test]
-    fn released_scope_slots_are_reused() {
+    fn scope_slots_are_reused_only_after_release() {
         let scheduler = GlobalScheduler::new();
         let first = std::rc::Rc::new(std::cell::RefCell::new(ScopeState::new(
             ScopeId(0),
@@ -241,7 +318,21 @@ mod tests {
             scheduler.clone(),
         )));
         let second_id = scheduler.borrow_mut().alloc_scope(&second);
+        assert_ne!(first_id, second_id);
 
-        assert_eq!(first_id, second_id);
+        scheduler.borrow_mut().release_scope_id(first_id);
+
+        let third = std::rc::Rc::new(std::cell::RefCell::new(ScopeState::new(
+            ScopeId(0),
+            scheduler.clone(),
+        )));
+        let third_id = scheduler.borrow_mut().alloc_scope(&third);
+
+        assert_eq!(first_id, third_id);
+
+        scheduler.borrow_mut().deactivate_scope(second_id);
+        scheduler.borrow_mut().release_scope_id(second_id);
+        scheduler.borrow_mut().deactivate_scope(third_id);
+        scheduler.borrow_mut().release_scope_id(third_id);
     }
 }

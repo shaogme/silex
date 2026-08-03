@@ -48,11 +48,18 @@ impl ScopeStorage {
                 run_global_queue(&scheduler);
             }
         }));
+        scheduler.borrow_mut().release_scope_id(self.scope_id);
         match (dispose_result, flush_result) {
             (Err(panic), _) => std::panic::resume_unwind(panic),
             (Ok(()), Err(panic)) => std::panic::resume_unwind(panic),
             (Ok(()), Ok(())) => {}
         }
+    }
+
+    pub(crate) fn dispose_untracked(&self) {
+        let frame = runtime::ObserverFrame::push(self.scheduler(), None);
+        self.dispose();
+        drop(frame);
     }
 
     pub(crate) fn scheduler(&self) -> Rc<RefCell<GlobalScheduler>> {

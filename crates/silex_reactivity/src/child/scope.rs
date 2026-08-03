@@ -81,13 +81,15 @@ impl<'scope> Scope<'scope> {
     pub fn child<R>(&self, f: impl for<'child> FnOnce(&'child Scope<'child>) -> R) -> R {
         let state = self.state();
         let scheduler = state.borrow().scheduler.clone();
-        let storage = ScopeStorage::new(scheduler);
+        let storage = ScopeStorage::new(scheduler.clone());
         let child = Scope {
             storage: &storage,
             _marker: PhantomData,
         };
+        let observer_frame = runtime::ObserverFrame::push_child(scheduler, storage.scope_id);
         let result = catch_unwind(AssertUnwindSafe(|| f(&child)));
-        let dispose_result = catch_unwind(AssertUnwindSafe(|| storage.dispose()));
+        let dispose_result = catch_unwind(AssertUnwindSafe(|| storage.dispose_untracked()));
+        drop(observer_frame);
         match (result, dispose_result) {
             (Ok(value), Ok(())) => value,
             (Err(panic), _) => resume_unwind(panic),
@@ -434,7 +436,7 @@ impl<'scope> OwnedScope<'scope> {
         if !self.active.replace(false) {
             return;
         }
-        self.storage.dispose();
+        self.storage.dispose_untracked();
     }
 }
 

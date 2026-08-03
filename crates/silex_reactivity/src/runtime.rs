@@ -23,7 +23,7 @@ pub(crate) use ops::{
     invoke_callback, node_ref_clear, node_ref_get, node_ref_set, notify, track, track_many,
     update_signal, update_stored, with_batch, with_signal, with_stored, with_untracked,
 };
-pub(crate) use scheduler::{GlobalScheduler, ScopeId};
+pub(crate) use scheduler::{GlobalScheduler, ObserverFrame, ScopeId};
 
 use crate::scope::ScopeStorage;
 use crate::{Scope, root::RootHandle};
@@ -77,13 +77,15 @@ impl Runtime {
             "长期 root 存活期间不能运行词法测试 scope"
         );
         let scheduler = GlobalScheduler::new();
-        let storage = ScopeStorage::new(scheduler);
+        let storage = ScopeStorage::new(scheduler.clone());
         let scope = Scope {
             storage: &storage,
             _marker: PhantomData,
         };
+        let observer_frame = ObserverFrame::push_child(scheduler, storage.scope_id);
         let result = catch_unwind(AssertUnwindSafe(|| f(&scope)));
-        let dispose_result = catch_unwind(AssertUnwindSafe(|| storage.dispose()));
+        let dispose_result = catch_unwind(AssertUnwindSafe(|| storage.dispose_untracked()));
+        drop(observer_frame);
         match (result, dispose_result) {
             (Ok(value), Ok(())) => value,
             (Err(panic), _) => resume_unwind(panic),

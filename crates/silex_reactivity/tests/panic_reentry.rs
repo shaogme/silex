@@ -243,3 +243,29 @@ fn untrack_panic_restores_the_active_dependency_observer() {
         assert_eq!(runs.get(), 3);
     });
 }
+
+#[test]
+fn child_callback_panic_restores_the_outer_observer_frame() {
+    let mut runtime = Runtime::new();
+    let runs = Rc::new(Cell::new(0));
+
+    runtime.child(|scope| {
+        let parent_scope = *scope;
+        let (source, _) = scope.signal(0i32);
+        let (tail, set_tail) = scope.signal(0i32);
+        let runs_in_effect = runs.clone();
+        scope.effect(move || {
+            let _ = source.get();
+            let panic = catch_unwind(AssertUnwindSafe(|| {
+                parent_scope.child(|_| panic!("child callback panic"));
+            }));
+            assert!(panic.is_err());
+            let _ = tail.get();
+            runs_in_effect.set(runs_in_effect.get() + 1);
+        });
+
+        assert_eq!(runs.get(), 1);
+        set_tail.set(1);
+        assert_eq!(runs.get(), 2);
+    });
+}

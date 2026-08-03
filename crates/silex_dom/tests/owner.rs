@@ -193,3 +193,70 @@ fn indexed_list_preserves_position_identity_across_diff() {
         .remove_child(&host)
         .expect("test host can be removed");
 }
+
+#[wasm_bindgen_test]
+fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
+    let host = mount_point();
+    let branch_cleanups = Rc::new(Cell::new(0));
+    let mut runtime = Runtime::new();
+    let mut root = runtime.run(|scope| {
+        let (key, set_key) = scope.signal(0i32);
+        let owner = RootViewOwner::new(scope.clone());
+        let branch_cleanups_for_view = branch_cleanups.clone();
+        mount_branch_cached(
+            &owner,
+            &host,
+            Vec::new(),
+            RuntimeInputs::single(key.runtime_input()),
+            move || key.get(),
+            move |key| {
+                AnyView::new(CleanupProbe {
+                    text: format!("b{key}"),
+                    cleanups: branch_cleanups_for_view.clone(),
+                })
+            },
+        );
+
+        for key in 1..8 {
+            set_key.set(key);
+            assert_eq!(
+                host.text_content().as_deref(),
+                Some(format!("b{key}").as_str())
+            );
+        }
+
+        scope.child(|child| {
+            let (items, set_items) = child.signal(vec![0i32]);
+            let list = IndexedLoopView {
+                each: items,
+                view_fn: Rc::new(|item: i32, index| format!("{item}:{index};").into_any()),
+                _marker: PhantomData,
+            };
+            let list_owner = ScopedViewOwner::new(child);
+            list.mount_owned(&list_owner, &host, Vec::new());
+
+            for values in [vec![1, 2, 3], vec![3], vec![4, 5], vec![6, 7, 8, 9]] {
+                set_items.set(values.clone());
+                let expected = values
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| format!("{value}:{index};"))
+                    .fold(String::from("b7"), |mut text, value| {
+                        text.push_str(&value);
+                        text
+                    });
+                assert_eq!(host.text_content().as_deref(), Some(expected.as_str()));
+            }
+        });
+
+        assert_eq!(branch_cleanups.get(), 7);
+    });
+
+    root.dispose().expect("root cleanup should succeed");
+    assert_eq!(branch_cleanups.get(), 8);
+    assert!(host.first_child().is_none());
+    host.parent_node()
+        .expect("test host has a body parent")
+        .remove_child(&host)
+        .expect("test host can be removed");
+}

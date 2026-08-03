@@ -52,15 +52,19 @@ impl RootState {
             .deactivate_scope(self.storage.scope_id);
 
         let mut first_panic = None;
-        for hook in mem::take(&mut *self.dispose_hooks.borrow_mut()) {
-            if let Err(panic) = catch_unwind(AssertUnwindSafe(hook))
-                && first_panic.is_none()
-            {
-                first_panic = Some(panic);
+        {
+            let observer_frame = runtime::ObserverFrame::push(scheduler.clone(), None);
+            for hook in mem::take(&mut *self.dispose_hooks.borrow_mut()) {
+                if let Err(panic) = catch_unwind(AssertUnwindSafe(hook))
+                    && first_panic.is_none()
+                {
+                    first_panic = Some(panic);
+                }
             }
+            drop(observer_frame);
         }
 
-        if let Err(panic) = catch_unwind(AssertUnwindSafe(|| self.storage.dispose()))
+        if let Err(panic) = catch_unwind(AssertUnwindSafe(|| self.storage.dispose_untracked()))
             && first_panic.is_none()
         {
             first_panic = Some(panic);
@@ -396,13 +400,15 @@ impl RootScope {
     pub fn child<R>(&self, f: impl for<'scope> FnOnce(&'scope Scope<'scope>) -> R) -> R {
         let state = self.state().expect("创建 root child scope 时 owner 已结束");
         let scheduler = state.borrow().scheduler.clone();
-        let storage = ScopeStorage::new(scheduler);
+        let storage = ScopeStorage::new(scheduler.clone());
         let child = Scope {
             storage: &storage,
             _marker: PhantomData,
         };
+        let observer_frame = runtime::ObserverFrame::push_child(scheduler, storage.scope_id);
         let result = catch_unwind(AssertUnwindSafe(|| f(&child)));
-        let dispose_result = catch_unwind(AssertUnwindSafe(|| storage.dispose()));
+        let dispose_result = catch_unwind(AssertUnwindSafe(|| storage.dispose_untracked()));
+        drop(observer_frame);
         match (result, dispose_result) {
             (Ok(value), Ok(())) => value,
             (Err(panic), _) => resume_unwind(panic),
