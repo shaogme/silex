@@ -22,12 +22,13 @@ use std::{
     cell::{Cell, RefCell},
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     ops::{Add, Deref, Div, Mul, Sub},
-    panic::{AssertUnwindSafe, catch_unwind},
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
 };
 use wasm_bindgen::JsValue;
 use web_sys::Node;
 
+pub use owner::RowUpdater;
 use owner::{DomRange, RowController, RowRender, RowRenderArgs};
 
 /// Owner capabilities captured by a mounted view or attribute operation.
@@ -956,7 +957,10 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
         renderer.call(RenderArgs::new(parent, attrs, token));
     });
     let token = owner.token();
-    let row = RowController::new(&token, range, render, inputs, attrs, (), 0);
+    let Some(row) = RowController::try_new(&token, range, render, inputs, attrs, (), 0, false)
+    else {
+        return;
+    };
     let row_state = Rc::new(RefCell::new(Some(row)));
     let cleanup_state = row_state.clone();
     owner.on_cleanup(Box::new(move || {
@@ -1055,13 +1059,18 @@ fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
     }));
     let cleanup_state = state.clone();
     owner.on_cleanup(Box::new(move || {
-        let mut state = cleanup_state.borrow_mut();
-        if let Some(mut row) = state.row.take() {
-            row.dispose();
-        } else {
-            state.range.remove();
+        let (row, range) = {
+            let mut state = cleanup_state.borrow_mut();
+            state.key = None;
+            (state.row.take(), state.range.clone())
+        };
+        let panic = row
+            .map(|mut row| catch_unwind(AssertUnwindSafe(move || row.dispose())))
+            .and_then(Result::err);
+        range.remove();
+        if let Some(panic) = panic {
+            resume_unwind(panic);
         }
-        state.key = None;
     }));
 
     let token = owner.token();
@@ -1070,30 +1079,67 @@ fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
         Box::new(move || {
             let result = catch_unwind(AssertUnwindSafe(|| {
                 let key = key_fn();
-                let mut state = state.borrow_mut();
-                let same_key = state.key.as_ref().is_some_and(|current| current == &key);
+                let same_key = state
+                    .borrow()
+                    .key
+                    .as_ref()
+                    .is_some_and(|current| current == &key);
                 if same_key {
-                    if let Some(row) = state.row.as_mut() {
-                        row.update(key, 0);
+                    let updated = state
+                        .borrow_mut()
+                        .row
+                        .as_mut()
+                        .is_some_and(|row| row.update(key, 0));
+                    if !updated {
+                        handle_error(SilexError::Javascript(
+                            "dynamic row update was rejected".to_string(),
+                        ));
                     }
                     return;
                 }
 
-                state.key = None;
-                if let Some(mut row) = state.row.take() {
-                    row.dispose_keep_range();
-                }
-                let row = RowController::new(
+                let (outer_range, render, attrs, old_row, old_key) = {
+                    let mut state = state.borrow_mut();
+                    (
+                        state.range.clone(),
+                        state.render.clone(),
+                        state.attrs.clone(),
+                        state.row.take(),
+                        state.key.take(),
+                    )
+                };
+                let Ok(row_range) = DomRange::before(&outer_range.end, "branch-row") else {
+                    let mut state = state.borrow_mut();
+                    state.row = old_row;
+                    state.key = old_key;
+                    return;
+                };
+                let Some(row) = RowController::try_new(
                     &token,
-                    state.range.clone(),
-                    state.render.clone(),
+                    row_range,
+                    render,
                     RuntimeInputs::new(),
-                    state.attrs.clone(),
+                    attrs,
                     key.clone(),
                     0,
-                );
+                    false,
+                ) else {
+                    let mut state = state.borrow_mut();
+                    state.row = old_row;
+                    state.key = old_key;
+                    return;
+                };
+
+                let old_panic = old_row
+                    .map(|mut row| catch_unwind(AssertUnwindSafe(move || row.dispose())))
+                    .and_then(Result::err);
+                let mut state = state.borrow_mut();
                 state.key = Some(key);
                 state.row = Some(row);
+                drop(state);
+                if let Some(panic) = old_panic {
+                    resume_unwind(panic);
+                }
             }));
             if let Err(panic) = result {
                 let message = if let Some(value) = panic.downcast_ref::<&str>() {

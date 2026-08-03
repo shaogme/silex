@@ -1,4 +1,4 @@
-use super::owner::{DomRange, RowController, RowRender, RowRenderArgs};
+use super::owner::{DomRange, RowController, RowRender, RowRenderArgs, RowUpdater};
 use crate::attribute::PendingAttribute;
 use crate::view::{AnyView, ApplyAttributes, View, ViewOwner};
 use silex_core::reactivity::{ReactiveSource, runtime_inputs_of};
@@ -13,13 +13,40 @@ use std::{
 };
 use web_sys::Node;
 
-/// Keyed list with persistent row controllers and stable keyed ranges.
+/// Keyed list with persistent row controllers and state-preserving updates.
 pub struct KeyedLoopView<'scope, IF, IS, T, K> {
     pub each: IF,
     pub key_fn: Rc<dyn Fn(&T) -> K + 'scope>,
-    pub view_fn: Rc<dyn Fn(T, usize) -> AnyView<'scope> + 'scope>,
+    pub view_fn: Rc<dyn Fn(T, usize, RowUpdater<'scope, T>) -> AnyView<'scope> + 'scope>,
     pub error: ForErrorHandler,
     pub _marker: std::marker::PhantomData<(IS, T)>,
+}
+
+enum RowFactory<'scope, T> {
+    RenderOnly(Rc<dyn Fn(T, usize) -> AnyView<'scope> + 'scope>),
+    Stateful(Rc<dyn Fn(T, usize, RowUpdater<'scope, T>) -> AnyView<'scope> + 'scope>),
+}
+
+impl<'scope, T> Clone for RowFactory<'scope, T> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::RenderOnly(factory) => Self::RenderOnly(factory.clone()),
+            Self::Stateful(factory) => Self::Stateful(factory.clone()),
+        }
+    }
+}
+
+impl<'scope, T> RowFactory<'scope, T> {
+    fn render(&self, item: T, index: usize, updater: RowUpdater<'scope, T>) -> AnyView<'scope> {
+        match self {
+            Self::RenderOnly(factory) => factory(item, index),
+            Self::Stateful(factory) => factory(item, index, updater),
+        }
+    }
+
+    fn is_stateful(&self) -> bool {
+        matches!(self, Self::Stateful(_))
+    }
 }
 
 impl<'scope, IF, IS, T, K> ApplyAttributes<'scope> for KeyedLoopView<'scope, IF, IS, T, K> {}
@@ -42,7 +69,7 @@ where
             parent,
             self.each.clone(),
             self.key_fn.clone(),
-            self.view_fn.clone(),
+            RowFactory::Stateful(self.view_fn.clone()),
             self.error.clone(),
             attrs,
         );
@@ -61,7 +88,7 @@ where
             parent,
             self.each,
             self.key_fn,
-            self.view_fn,
+            RowFactory::Stateful(self.view_fn),
             self.error,
             attrs,
         );
@@ -92,7 +119,7 @@ where
             owner,
             parent,
             self.each.clone(),
-            self.view_fn.clone(),
+            RowFactory::RenderOnly(self.view_fn.clone()),
             attrs,
         );
     }
@@ -105,21 +132,26 @@ where
     ) where
         Self: Sized,
     {
-        mount_indexed_list(owner, parent, self.each, self.view_fn, attrs);
+        mount_indexed_list(
+            owner,
+            parent,
+            self.each,
+            RowFactory::RenderOnly(self.view_fn),
+            attrs,
+        );
     }
 }
 
-fn mount_indexed_list<'scope, IF, IS, T, F>(
+fn mount_indexed_list<'scope, IF, IS, T>(
     owner: &dyn ViewOwner<'scope>,
     parent: &Node,
     source: IF,
-    view_fn: Rc<F>,
+    factory: RowFactory<'scope, T>,
     attrs: Vec<PendingAttribute<'scope>>,
 ) where
     IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = T> + 'scope,
     T: Clone + 'scope,
-    F: Fn(T, usize) -> AnyView<'scope> + 'scope + ?Sized,
 {
     let inputs = runtime_inputs_of(source.clone());
     if let Err(error) = owner.validate_inputs(&inputs) {
@@ -134,6 +166,8 @@ fn mount_indexed_list<'scope, IF, IS, T, F>(
             return;
         }
     };
+    let stateful = factory.is_stateful();
+    let render_factory = factory.clone();
     let render = RowRender::new(move |args: RowRenderArgs<'scope, T>| {
         let RowRenderArgs {
             item,
@@ -141,8 +175,11 @@ fn mount_indexed_list<'scope, IF, IS, T, F>(
             parent,
             attrs,
             owner: token,
+            updater,
         } = args;
-        view_fn(item, index).mount_owned(&token, &parent, attrs);
+        render_factory
+            .render(item, index, updater)
+            .mount_owned(&token, &parent, attrs);
     });
     let rows = Rc::new(RefCell::new(Vec::<RowController<'scope, T>>::new()));
 
@@ -165,28 +202,72 @@ fn mount_indexed_list<'scope, IF, IS, T, F>(
             let snapshot = source.with(|items| items.as_slice().map(|values| values.to_vec()));
             match snapshot {
                 Ok(values) => {
-                    let mut rows = effect_rows.borrow_mut();
-                    while rows.len() > values.len() {
-                        let mut row = rows.pop().expect("row length checked before pop");
-                        row.dispose();
-                    }
-                    for (index, item) in values.into_iter().enumerate() {
-                        if let Some(row) = rows.get_mut(index) {
-                            row.update(item, index);
-                            continue;
+                    let mut rows = mem::take(&mut *effect_rows.borrow_mut());
+                    let old_len = rows.len();
+                    let new_len = values.len();
+                    let mut pending = Vec::new();
+                    let result = catch_unwind(AssertUnwindSafe(|| -> bool {
+                        let mut values = values.into_iter();
+                        for (index, row) in rows.iter_mut().enumerate().take(new_len) {
+                            let item = values.next().expect("snapshot length is stable");
+                            if !row.update(item, index) {
+                                return false;
+                            }
                         }
-                        let Ok(row_range) = DomRange::before(&end, "for-row") else {
-                            continue;
-                        };
-                        rows.push(RowController::new(
-                            &token,
-                            row_range,
-                            render.clone(),
-                            RuntimeInputs::new(),
-                            attrs.clone(),
-                            item,
-                            index,
-                        ));
+                        for (offset, item) in values.enumerate() {
+                            let index = old_len + offset;
+                            let Ok(row_range) = DomRange::before(&end, "for-row") else {
+                                return false;
+                            };
+                            let Some(row) = RowController::try_new(
+                                &token,
+                                row_range,
+                                render.clone(),
+                                RuntimeInputs::new(),
+                                attrs.clone(),
+                                item,
+                                index,
+                                stateful,
+                            ) else {
+                                return false;
+                            };
+                            pending.push(row);
+                        }
+                        true
+                    }));
+
+                    match result {
+                        Ok(true) => {
+                            let mut removed = if new_len < old_len {
+                                rows.split_off(new_len)
+                            } else {
+                                Vec::new()
+                            };
+                            rows.append(&mut pending);
+                            let cleanup_panic = dispose_rows(&mut removed);
+                            *effect_rows.borrow_mut() = rows;
+                            if let Some(panic) = cleanup_panic {
+                                resume_unwind(panic);
+                            }
+                        }
+                        Ok(false) => {
+                            let _ = dispose_rows(&mut pending);
+                            *effect_rows.borrow_mut() = rows;
+                            silex_core::error::handle_error(SilexError::Javascript(
+                                "indexed row update was rejected".to_string(),
+                            ));
+                        }
+                        Err(panic) => {
+                            let mut pending_panic = dispose_rows(&mut pending);
+                            let mut current = rows;
+                            let current_panic = dispose_rows(&mut current);
+                            if pending_panic.is_none() {
+                                pending_panic = current_panic;
+                            }
+                            *effect_rows.borrow_mut() = Vec::new();
+                            silex_core::error::handle_error(panic_error("Indexed list", panic));
+                            drop(pending_panic);
+                        }
                     }
                 }
                 Err(error) => {
@@ -207,12 +288,12 @@ struct KeyedRows<'scope, T, K> {
     order: Vec<K>,
 }
 
-fn mount_keyed_list<'scope, IF, IS, T, K, F>(
+fn mount_keyed_list<'scope, IF, IS, T, K>(
     owner: &dyn ViewOwner<'scope>,
     parent: &Node,
     source: IF,
     key_fn: Rc<dyn Fn(&T) -> K + 'scope>,
-    view_fn: Rc<F>,
+    factory: RowFactory<'scope, T>,
     error: ForErrorHandler,
     attrs: Vec<PendingAttribute<'scope>>,
 ) where
@@ -220,7 +301,6 @@ fn mount_keyed_list<'scope, IF, IS, T, K, F>(
     IS: ForLoopSource<Item = T> + 'scope,
     T: Clone + 'scope,
     K: std::hash::Hash + Eq + Clone + 'scope,
-    F: Fn(T, usize) -> AnyView<'scope> + 'scope + ?Sized,
 {
     let inputs = runtime_inputs_of(source.clone());
     if let Err(error) = owner.validate_inputs(&inputs) {
@@ -235,6 +315,8 @@ fn mount_keyed_list<'scope, IF, IS, T, K, F>(
             return;
         }
     };
+    let stateful = factory.is_stateful();
+    let render_factory = factory.clone();
     let render = RowRender::new(move |args: RowRenderArgs<'scope, T>| {
         let RowRenderArgs {
             item,
@@ -242,8 +324,11 @@ fn mount_keyed_list<'scope, IF, IS, T, K, F>(
             parent,
             attrs,
             owner: token,
+            updater,
         } = args;
-        view_fn(item, index).mount_owned(&token, &parent, attrs);
+        render_factory
+            .render(item, index, updater)
+            .mount_owned(&token, &parent, attrs);
     });
     let state = Rc::new(RefCell::new(KeyedRows {
         rows: HashMap::new(),
@@ -278,39 +363,56 @@ fn mount_keyed_list<'scope, IF, IS, T, K, F>(
                 }
             };
 
-            let mut keys = Vec::with_capacity(values.len());
-            let mut seen = HashSet::with_capacity(values.len());
-            for item in &values {
-                let key = key_fn(item);
-                if !seen.insert(key.clone()) {
-                    error.call(SilexError::Reactivity(
-                        "duplicate key in keyed list".to_string(),
-                    ));
+            let key_result = catch_unwind(AssertUnwindSafe(|| {
+                let mut keys = Vec::with_capacity(values.len());
+                let mut seen = HashSet::with_capacity(values.len());
+                for item in &values {
+                    let key = key_fn(item);
+                    if !seen.insert(key.clone()) {
+                        error.call(SilexError::Reactivity(
+                            "duplicate key in keyed list".to_string(),
+                        ));
+                        return None;
+                    }
+                    keys.push(key);
+                }
+                Some(keys)
+            }));
+            let Some(keys) = (match key_result {
+                Ok(keys) => keys,
+                Err(panic) => {
+                    report_panic(&error, "Keyed list key function", panic);
                     return;
                 }
-                keys.push(key);
-            }
+            }) else {
+                return;
+            };
 
-            let mut state = effect_state.borrow_mut();
-            let mut old_rows = mem::take(&mut state.rows);
-            let old_order = mem::take(&mut state.order);
-            let mut next_rows = HashMap::with_capacity(keys.len());
+            let mut old_rows = {
+                let mut state = effect_state.borrow_mut();
+                mem::take(&mut state.rows)
+            };
+            let old_order = {
+                let mut state = effect_state.borrow_mut();
+                mem::take(&mut state.order)
+            };
+            let mut pending = HashMap::with_capacity(keys.len());
+            let mut seen = HashSet::with_capacity(keys.len());
             let mut next_order = Vec::with_capacity(keys.len());
-
-            for (index, (key, item)) in keys.iter().cloned().zip(values).enumerate() {
-                if let Some(mut row) = old_rows.remove(&key) {
-                    row.update(item, index);
-                    next_order.push(key.clone());
-                    next_rows.insert(key, row);
-                    continue;
-                }
-                let Ok(row_range) = DomRange::before(&end, "for-row") else {
-                    continue;
-                };
-                next_order.push(key.clone());
-                next_rows.insert(
-                    key,
-                    RowController::new(
+            let result = catch_unwind(AssertUnwindSafe(|| -> bool {
+                for (index, (key, item)) in keys.iter().cloned().zip(values).enumerate() {
+                    if let Some(row) = old_rows.get_mut(&key) {
+                        if !row.update(item, index) {
+                            return false;
+                        }
+                        seen.insert(key.clone());
+                        next_order.push(key);
+                        continue;
+                    }
+                    let Ok(row_range) = DomRange::before(&end, "for-row") else {
+                        return false;
+                    };
+                    let Some(row) = RowController::try_new(
                         &token,
                         row_range,
                         render.clone(),
@@ -318,29 +420,91 @@ fn mount_keyed_list<'scope, IF, IS, T, K, F>(
                         attrs.clone(),
                         item,
                         index,
-                    ),
-                );
-            }
+                        stateful,
+                    ) else {
+                        return false;
+                    };
+                    seen.insert(key.clone());
+                    next_order.push(key.clone());
+                    pending.insert(key, row);
+                }
+                true
+            }));
 
-            let mut removed = Vec::with_capacity(old_rows.len());
-            for key in old_order {
-                if let Some(row) = old_rows.remove(&key) {
-                    removed.push(row);
+            match result {
+                Ok(true) => {
+                    let mut removed = Vec::new();
+                    for key in &old_order {
+                        if !seen.contains(key)
+                            && let Some(row) = old_rows.remove(key)
+                        {
+                            removed.push(row);
+                        }
+                    }
+                    old_rows.extend(pending.drain());
+                    for key in &next_order {
+                        if let Some(row) = old_rows.get(key) {
+                            row.move_before(&end);
+                        }
+                    }
+                    let cleanup_panic = dispose_rows(&mut removed);
+                    let mut state = effect_state.borrow_mut();
+                    state.rows = old_rows;
+                    state.order = next_order;
+                    drop(state);
+                    if let Some(panic) = cleanup_panic {
+                        resume_unwind(panic);
+                    }
                 }
-            }
-            let panic = dispose_rows(&mut removed);
-            for key in &next_order {
-                if let Some(row) = next_rows.get(key) {
-                    row.move_before(&end);
+                Ok(false) => {
+                    let _ = dispose_map(&mut pending);
+                    let mut state = effect_state.borrow_mut();
+                    state.rows = old_rows;
+                    state.order = old_order;
+                    drop(state);
+                    error.call(SilexError::Javascript(
+                        "keyed row update was rejected".to_string(),
+                    ));
                 }
-            }
-            state.rows = next_rows;
-            state.order = next_order;
-            if let Some(panic) = panic {
-                resume_unwind(panic);
+                Err(panic) => {
+                    let mut cleanup_panic = dispose_map(&mut pending);
+                    let mut current = old_rows.into_values().collect::<Vec<_>>();
+                    let current_panic = dispose_rows(&mut current);
+                    if cleanup_panic.is_none() {
+                        cleanup_panic = current_panic;
+                    }
+                    let mut state = effect_state.borrow_mut();
+                    state.rows.clear();
+                    state.order.clear();
+                    drop(state);
+                    report_panic(&error, "Keyed list", panic);
+                    drop(cleanup_panic);
+                }
             }
         }),
     );
+}
+
+fn dispose_map<'scope, T: Clone + 'scope, K>(
+    rows: &mut HashMap<K, RowController<'scope, T>>,
+) -> Option<Box<dyn std::any::Any + Send>> {
+    let mut values = rows.drain().map(|(_, row)| row).collect::<Vec<_>>();
+    dispose_rows(&mut values)
+}
+
+fn report_panic(error: &ForErrorHandler, prefix: &str, panic: Box<dyn std::any::Any + Send>) {
+    error.call(panic_error(prefix, panic));
+}
+
+fn panic_error(prefix: &str, panic: Box<dyn std::any::Any + Send>) -> SilexError {
+    let message = if let Some(value) = panic.downcast_ref::<&str>() {
+        format!("{prefix}: {value}")
+    } else if let Some(value) = panic.downcast_ref::<String>() {
+        format!("{prefix}: {value}")
+    } else {
+        format!("{prefix}: unknown panic")
+    };
+    SilexError::Javascript(message)
 }
 
 fn dispose_rows<'scope, T: Clone + 'scope>(

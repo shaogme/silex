@@ -3,10 +3,14 @@
 use silex_core::{Runtime, RuntimeInputs};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, IndexedLoopView, KeyedLoopView, RootViewOwner, ScopedViewOwner, View,
-    ViewOwner, mount_branch_cached, mount_text_node,
+    AnyView, ApplyAttributes, IndexedLoopView, KeyedLoopView, RootViewOwner, RowUpdater,
+    ScopedViewOwner, View, ViewOwner, mount_branch_cached, mount_text_node,
 };
-use std::{cell::Cell, marker::PhantomData, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    marker::PhantomData,
+    rc::Rc,
+};
 use wasm_bindgen_test::*;
 use web_sys::Node;
 
@@ -45,6 +49,52 @@ impl<'scope> View<'scope> for CleanupProbe {
     }
 }
 
+struct StatefulProbe {
+    text: String,
+    node: Rc<RefCell<Option<Node>>>,
+    mounts: Rc<Cell<usize>>,
+    cleanups: Rc<Cell<usize>>,
+}
+
+impl<'scope> ApplyAttributes<'scope> for StatefulProbe {}
+
+impl<'scope> View<'scope> for StatefulProbe {
+    fn mount(
+        &self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &Node,
+        _attrs: Vec<PendingAttribute<'scope>>,
+    ) {
+        self.mounts.set(self.mounts.get() + 1);
+        let node: Node = web_sys::window()
+            .expect("window is available in browser tests")
+            .document()
+            .expect("document is available in browser tests")
+            .create_text_node(&self.text)
+            .into();
+        parent.append_child(&node).expect("stateful row can mount");
+        *self.node.borrow_mut() = Some(node);
+
+        let node_for_cleanup = self.node.clone();
+        let cleanups = self.cleanups.clone();
+        owner.on_cleanup(Box::new(move || {
+            node_for_cleanup.borrow_mut().take();
+            cleanups.set(cleanups.get() + 1);
+        }));
+    }
+
+    fn mount_owned(
+        self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+    ) where
+        Self: Sized,
+    {
+        self.mount(owner, parent, attrs);
+    }
+}
+
 fn mount_point() -> Node {
     let document = web_sys::window()
         .expect("window is available in browser tests")
@@ -60,6 +110,14 @@ fn mount_point() -> Node {
         .into();
     body.append_child(&host).expect("test host can be mounted");
     host
+}
+
+fn comment_count(node: &Node) -> u32 {
+    let children = node.child_nodes();
+    (0..children.length())
+        .filter_map(|index| children.item(index))
+        .filter(|child| child.node_type() == 8)
+        .count() as u32
 }
 
 #[wasm_bindgen_test]
@@ -133,7 +191,21 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
             let list = KeyedLoopView {
                 each: items,
                 key_fn: Rc::new(|item: &i32| *item),
-                view_fn: Rc::new(|item: i32, index| format!("{item}:{index};").into_any()),
+                view_fn: Rc::new(|item: i32, index, updater| {
+                    let node = Rc::new(RefCell::new(None::<Node>));
+                    let node_for_update = node.clone();
+                    assert!(updater.bind(move |next_item, next_index| {
+                        if let Some(node) = node_for_update.borrow().as_ref() {
+                            node.set_node_value(Some(&format!("{next_item}:{next_index};")));
+                        }
+                    }));
+                    AnyView::new(StatefulProbe {
+                        text: format!("{item}:{index};"),
+                        node,
+                        mounts: Rc::new(Cell::new(0)),
+                        cleanups: Rc::new(Cell::new(0)),
+                    })
+                }),
                 error: silex_core::traits::ForErrorHandler::from(move |_| {
                     duplicate_errors_for_handler.set(duplicate_errors_for_handler.get() + 1);
                 }),
@@ -255,6 +327,150 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
     root.dispose().expect("root cleanup should succeed");
     assert_eq!(branch_cleanups.get(), 8);
     assert!(host.first_child().is_none());
+    host.parent_node()
+        .expect("test host has a body parent")
+        .remove_child(&host)
+        .expect("test host can be removed");
+}
+
+#[wasm_bindgen_test]
+fn stateful_keyed_rows_preserve_mounts_and_invalidate_old_updaters() {
+    let host = mount_point();
+    let mounts = Rc::new(Cell::new(0));
+    let updates = Rc::new(Cell::new(0));
+    let cleanups = Rc::new(Cell::new(0));
+    let mut runtime = Runtime::new();
+
+    let mut root = runtime.run(|scope| {
+        scope.child(|child| {
+            let (items, set_items) = child.signal(vec![1i32, 2]);
+            let first_updater = Rc::new(RefCell::new(None));
+            let mounts_for_factory = mounts.clone();
+            let updates_for_factory = updates.clone();
+            let cleanups_for_factory = cleanups.clone();
+            let first_updater_for_factory = first_updater.clone();
+            let view = KeyedLoopView {
+                each: items,
+                key_fn: Rc::new(|item: &i32| *item),
+                view_fn: Rc::new(move |item: i32, index, updater: RowUpdater<'_, i32>| {
+                    if item == 1 && first_updater_for_factory.borrow().is_none() {
+                        *first_updater_for_factory.borrow_mut() = Some(updater.clone());
+                    }
+                    let node = Rc::new(RefCell::new(None::<Node>));
+                    let node_for_update = node.clone();
+                    let updates_for_callback = updates_for_factory.clone();
+                    assert!(updater.bind(move |next_item, next_index| {
+                        updates_for_callback.set(updates_for_callback.get() + 1);
+                        if let Some(node) = node_for_update.borrow().as_ref() {
+                            node.set_node_value(Some(&format!("{next_item}:{next_index};")));
+                        }
+                    }));
+                    AnyView::new(StatefulProbe {
+                        text: format!("{item}:{index};"),
+                        node,
+                        mounts: mounts_for_factory.clone(),
+                        cleanups: cleanups_for_factory.clone(),
+                    })
+                }),
+                error: silex_core::traits::ForErrorHandler::from(|_| {}),
+                _marker: PhantomData,
+            };
+            let owner = ScopedViewOwner::new(child);
+            view.mount_owned(&owner, &host, Vec::new());
+            assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
+            assert_eq!(mounts.get(), 2);
+
+            set_items.set(vec![2, 1]);
+            assert_eq!(host.text_content().as_deref(), Some("2:0;1:1;"));
+            assert_eq!(mounts.get(), 2);
+            assert!(updates.get() >= 2);
+
+            let stale = first_updater
+                .borrow()
+                .as_ref()
+                .cloned()
+                .expect("first row updater is captured");
+            set_items.set(vec![2]);
+            assert_eq!(host.text_content().as_deref(), Some("2:0;"));
+            assert_eq!(cleanups.get(), 1);
+            assert!(!stale.update(9, 0));
+
+            set_items.set(vec![2, 1]);
+            assert_eq!(host.text_content().as_deref(), Some("2:0;1:1;"));
+            assert_eq!(mounts.get(), 3);
+            assert!(!stale.update(9, 0));
+        });
+        assert!(host.first_child().is_none());
+    });
+
+    root.dispose().expect("root cleanup should succeed");
+    assert!(host.first_child().is_none());
+    assert_eq!(cleanups.get(), 3);
+    host.parent_node()
+        .expect("test host has a body parent")
+        .remove_child(&host)
+        .expect("test host can be removed");
+}
+
+#[wasm_bindgen_test]
+fn rejected_stateful_factory_cleans_uncommitted_row_range() {
+    let host = mount_point();
+    let cleanups = Rc::new(Cell::new(0));
+    let errors = Rc::new(Cell::new(0));
+    let mut runtime = Runtime::new();
+
+    let mut root = runtime.run(|scope| {
+        scope.child(|child| {
+            let (items, set_items) = child.signal(vec![1i32]);
+            let cleanups_for_factory = cleanups.clone();
+            let errors_for_handler = errors.clone();
+            let list = KeyedLoopView {
+                each: items,
+                key_fn: Rc::new(|item: &i32| *item),
+                view_fn: Rc::new(move |item: i32, index, updater: RowUpdater<'_, i32>| {
+                    let node = Rc::new(RefCell::new(None::<Node>));
+                    let node_for_update = node.clone();
+                    if item != 2 {
+                        assert!(updater.bind(move |next_item, next_index| {
+                            if let Some(node) = node_for_update.borrow().as_ref() {
+                                node.set_node_value(Some(&format!("{next_item}:{next_index};")));
+                            }
+                        }));
+                    }
+                    AnyView::new(StatefulProbe {
+                        text: format!("{item}:{index};"),
+                        node,
+                        mounts: Rc::new(Cell::new(0)),
+                        cleanups: cleanups_for_factory.clone(),
+                    })
+                }),
+                error: silex_core::traits::ForErrorHandler::from(move |_| {
+                    errors_for_handler.set(errors_for_handler.get() + 1);
+                }),
+                _marker: PhantomData,
+            };
+            let owner = ScopedViewOwner::new(child);
+            list.mount_owned(&owner, &host, Vec::new());
+            assert_eq!(host.text_content().as_deref(), Some("1:0;"));
+            assert_eq!(comment_count(&host), 4);
+
+            set_items.set(vec![2]);
+            assert_eq!(host.text_content().as_deref(), Some("1:0;"));
+            assert_eq!(comment_count(&host), 4);
+            assert_eq!(cleanups.get(), 1);
+            assert_eq!(errors.get(), 1);
+
+            set_items.set(vec![3]);
+            assert_eq!(host.text_content().as_deref(), Some("3:0;"));
+            assert_eq!(comment_count(&host), 4);
+            assert_eq!(cleanups.get(), 2);
+        });
+        assert!(host.first_child().is_none());
+    });
+
+    root.dispose().expect("root cleanup should succeed");
+    assert!(host.first_child().is_none());
+    assert_eq!(cleanups.get(), 3);
     host.parent_node()
         .expect("test host has a body parent")
         .remove_child(&host)
