@@ -1,4 +1,4 @@
-use silex_core::Runtime;
+use silex_core::{Runtime, Scope};
 use std::{cell::Cell, rc::Rc};
 
 #[test]
@@ -17,5 +17,21 @@ fn high_level_root_uses_the_borrowed_scope_api() {
         assert_eq!(seen.get(), 4);
     }
 
+    root.dispose().expect("root disposal should succeed");
+}
+
+#[test]
+fn high_level_scope_callbacks_receive_scope_values() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope: Scope<'_>| {
+        let copied = scope;
+        assert!(scope == copied);
+    });
+
+    let root = runtime.run();
+    root.with_scope(|scope: Scope<'_>| {
+        let copied = scope;
+        assert!(scope == copied);
+    });
     root.dispose().expect("root disposal should succeed");
 }

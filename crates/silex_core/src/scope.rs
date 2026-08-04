@@ -31,7 +31,7 @@ impl Runtime {
     }
 
     pub fn child<R>(&mut self, f: impl for<'scope> FnOnce(Scope<'scope>) -> R) -> R {
-        self.inner.child(|s| f(Scope { inner: *s }))
+        self.inner.child(|s| f(Scope { inner: s }))
     }
 }
 
@@ -46,11 +46,8 @@ impl RootHandle {
         }
     }
 
-    pub fn with_scope<'scope, R>(&'scope self, f: impl FnOnce(&Scope<'scope>) -> R) -> R {
-        self.inner.with_scope(|scope| {
-            let scope = Scope { inner: *scope };
-            f(&scope)
-        })
+    pub fn with_scope<'scope, R>(&'scope self, f: impl FnOnce(Scope<'scope>) -> R) -> R {
+        self.inner.with_scope(|scope| f(Scope { inner: scope }))
     }
 
     pub fn dispose(self) -> Result<(), silex_reactivity::CleanupError> {
@@ -354,7 +351,7 @@ impl<'scope> Scope<'scope> {
     }
 
     pub fn child<R>(&self, f: impl for<'child> FnOnce(Scope<'child>) -> R) -> R {
-        self.inner.child(|scope| f(Scope { inner: *scope }))
+        self.inner.child(|scope| f(Scope { inner: scope }))
     }
 
     pub fn untrack<R>(&self, f: impl FnOnce() -> R) -> R {

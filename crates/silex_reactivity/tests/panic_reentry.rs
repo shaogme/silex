@@ -85,7 +85,7 @@ fn cleanup_panic_during_effect_rerun_does_not_skip_remaining_cleanups() {
 
     runtime.child(|scope| {
         let (source, set_source) = scope.signal(0i32);
-        let scope_copy = *scope;
+        let scope_copy = scope;
         let register_cleanups = Rc::new(Cell::new(true));
         let effect_runs = Rc::new(Cell::new(0));
         let effect_runs_in_effect = effect_runs.clone();
@@ -221,7 +221,7 @@ fn untrack_panic_restores_the_active_dependency_observer() {
     runtime.child(|scope| {
         let (source, set_source) = scope.signal(0i32);
         let (tracked, set_tracked) = scope.signal(0i32);
-        let scope_copy = *scope;
+        let scope_copy = scope;
         let runs_in_effect = runs.clone();
         let first_run_in_effect = first_run.clone();
         scope.effect(move || {
@@ -250,7 +250,7 @@ fn child_callback_panic_restores_the_outer_observer_frame() {
     let runs = Rc::new(Cell::new(0));
 
     runtime.child(|scope| {
-        let parent_scope = *scope;
+        let parent_scope = scope;
         let (source, _) = scope.signal(0i32);
         let (tail, set_tail) = scope.signal(0i32);
         let runs_in_effect = runs.clone();

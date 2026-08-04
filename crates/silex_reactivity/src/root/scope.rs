@@ -54,12 +54,12 @@ impl RootHandle {
     }
 
     /// Execute a callback with a root scope borrowed for exactly this owner.
-    pub fn with_scope<'scope, R>(&'scope self, f: impl FnOnce(&Scope<'scope>) -> R) -> R {
+    pub fn with_scope<'scope, R>(&'scope self, f: impl FnOnce(Scope<'scope>) -> R) -> R {
         let scope = Scope {
             storage: &self.storage,
             _marker: std::marker::PhantomData,
         };
-        f(&scope)
+        f(scope)
     }
 
     /// Dispose the root exactly once.

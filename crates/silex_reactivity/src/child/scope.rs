@@ -78,7 +78,7 @@ impl<'scope> Scope<'scope> {
 
     /// Execute a child scope. All child nodes and computations are destroyed
     /// before this method returns, including during panic unwinding.
-    pub fn child<R>(&self, f: impl for<'child> FnOnce(&'child Scope<'child>) -> R) -> R {
+    pub fn child<R>(&self, f: impl for<'child> FnOnce(Scope<'child>) -> R) -> R {
         let state = self.state();
         let scheduler = state.borrow().scheduler.clone();
         let storage = ScopeStorage::new(scheduler.clone());
@@ -87,7 +87,7 @@ impl<'scope> Scope<'scope> {
             _marker: PhantomData,
         };
         let observer_frame = runtime::ObserverFrame::push_child(scheduler, storage.scope_id);
-        let result = catch_unwind(AssertUnwindSafe(|| f(&child)));
+        let result = catch_unwind(AssertUnwindSafe(|| f(child)));
         let dispose_result = catch_unwind(AssertUnwindSafe(|| storage.dispose_untracked()));
         drop(observer_frame);
         match (result, dispose_result) {

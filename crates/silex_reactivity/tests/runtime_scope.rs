@@ -184,7 +184,7 @@ fn parent_effect_tracks_reads_inside_child_callback() {
 
     runtime.child(|scope| {
         let (source, set_source) = scope.signal(0i32);
-        let parent_scope = *scope;
+        let parent_scope = scope;
         let runs_in_effect = runs.clone();
         scope.effect(move || {
             parent_scope.child(|_| {
@@ -205,7 +205,7 @@ fn child_local_signal_does_not_keep_parent_effect_queued_after_exit() {
     let runs = Rc::new(Cell::new(0));
 
     runtime.child(|scope| {
-        let parent_scope = *scope;
+        let parent_scope = scope;
         let runs_in_effect = runs.clone();
         let result = catch_unwind(AssertUnwindSafe(|| {
             scope.effect(move || {
@@ -306,12 +306,12 @@ fn cleanup_panic_does_not_skip_other_nodes_or_root_cleanup() {
 
     let panic = catch_unwind(AssertUnwindSafe(|| {
         runtime.child(|scope| {
-            let scope_copy = *scope;
+            let scope_copy = scope;
             scope.effect(move || {
                 scope_copy.on_cleanup(|| panic!("first node cleanup panic"));
             });
 
-            let scope_copy = *scope;
+            let scope_copy = scope;
             scope.effect(move || {
                 let cleaned = other_node_cleaned_in_scope.clone();
                 scope_copy.on_cleanup(move || cleaned.set(true));
@@ -335,7 +335,7 @@ fn scope_cleanup_can_register_another_cleanup() {
     let second_ran_in_scope = second_ran.clone();
 
     runtime.child(|scope| {
-        let scope_copy = *scope;
+        let scope_copy = scope;
         scope.on_cleanup(move || {
             first_ran_in_scope.set(true);
             let second_ran = second_ran_in_scope.clone();
@@ -355,7 +355,7 @@ fn effect_cleanup_can_register_cleanup_for_the_next_run() {
 
     runtime.child(|scope| {
         let (source, set_source) = scope.signal(0i32);
-        let scope_copy = *scope;
+        let scope_copy = scope;
         let register_initial_cleanup = Rc::new(Cell::new(true));
         let first_cleanup_ran_in_effect = first_cleanup_ran.clone();
         let second_cleanup_ran_in_effect = second_cleanup_ran.clone();
@@ -443,7 +443,7 @@ fn completion_token_rejects_submission_after_scope_deactivation() {
         scope.child(|child| {
             let callback_called_in_child = callback_called.clone();
             let token = child.completion(move |_: i32| callback_called_in_child.set(true));
-            let child_scope = *child;
+            let child_scope = child;
             child.effect(move || {
                 let token_in_cleanup = token.clone();
                 child_scope.on_cleanup(move || {

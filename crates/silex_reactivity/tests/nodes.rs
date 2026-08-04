@@ -186,7 +186,7 @@ fn computation_payload_drop_can_reenter_after_state_borrow_is_released() {
     let error = Rc::new(Cell::new(None));
 
     runtime.child(|scope| {
-        let scope_copy = *scope;
+        let scope_copy = scope;
         let called_in_outer = called.clone();
         let error_in_outer = error.clone();
         scope.effect(move || {
@@ -211,7 +211,7 @@ fn child_payloads_drop_before_parent_computation_payload() {
     let mut runtime = Runtime::new();
 
     runtime.child(|scope| {
-        let scope_copy = *scope;
+        let scope_copy = scope;
         let parent_event = DropEvent {
             label: "parent",
             events: events.clone(),

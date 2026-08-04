@@ -290,7 +290,7 @@ mod tests {
     };
     use std::{panic::AssertUnwindSafe, panic::catch_unwind};
 
-    fn child(runtime: &mut Runtime, f: impl for<'scope> FnOnce(&'scope Scope<'scope>)) {
+    fn child(runtime: &mut Runtime, f: impl for<'scope> FnOnce(Scope<'scope>)) {
         runtime.child(f);
     }
 
@@ -298,7 +298,7 @@ mod tests {
     fn child_boundary_does_not_track_local_reads_in_an_outer_effect() {
         let mut runtime = Runtime::new();
         child(&mut runtime, |scope| {
-            let parent_scope = *scope;
+            let parent_scope = scope;
             let effect = scope.effect(move || {
                 parent_scope.child(|child| {
                     let (local, _) = child.signal(0i32);

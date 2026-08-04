@@ -1,4 +1,4 @@
-use silex_reactivity::{CompletionToken, Runtime};
+use silex_reactivity::{CompletionToken, Runtime, Scope};
 use std::{
     cell::Cell,
     panic::{AssertUnwindSafe, catch_unwind},
@@ -94,5 +94,26 @@ fn root_with_scope_keeps_non_static_payload_borrowed() {
         assert_eq!(stored.with(|value| value.as_str()), "root-local");
     });
 
+    root.dispose().expect("root disposal should succeed");
+}
+
+#[test]
+fn scope_callbacks_receive_copyable_scope_values() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope: Scope<'_>| {
+        let copied = scope;
+        assert!(scope == copied);
+
+        scope.child(|child: Scope<'_>| {
+            let copied = child;
+            assert!(child == copied);
+        });
+    });
+
+    let root = runtime.run();
+    root.with_scope(|scope: Scope<'_>| {
+        let copied = scope;
+        assert!(scope == copied);
+    });
     root.dispose().expect("root disposal should succeed");
 }

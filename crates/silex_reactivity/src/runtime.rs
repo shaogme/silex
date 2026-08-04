@@ -59,7 +59,7 @@ impl Runtime {
         RootHandle::new(self.root_active.clone())
     }
 
-    pub fn child<R>(&mut self, f: impl for<'scope> FnOnce(&'scope Scope<'scope>) -> R) -> R {
+    pub fn child<R>(&mut self, f: impl for<'scope> FnOnce(Scope<'scope>) -> R) -> R {
         assert!(
             !self.root_active.get(),
             "长期 root 存活期间不能运行词法测试 scope"
@@ -71,7 +71,7 @@ impl Runtime {
             _marker: PhantomData,
         };
         let observer_frame = ObserverFrame::push_child(scheduler, storage.scope_id);
-        let result = catch_unwind(AssertUnwindSafe(|| f(&scope)));
+        let result = catch_unwind(AssertUnwindSafe(|| f(scope)));
         let dispose_result = catch_unwind(AssertUnwindSafe(|| storage.dispose_untracked()));
         drop(observer_frame);
         match (result, dispose_result) {

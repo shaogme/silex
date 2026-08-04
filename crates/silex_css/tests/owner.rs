@@ -336,8 +336,8 @@ async fn global_theme_stylesheets_are_isolated_per_owner() {
 
     first_root.with_scope(|first_scope| {
         second_root.with_scope(|second_scope| {
-            let first_owner = ScopedViewOwner::new(*first_scope);
-            let second_owner = ScopedViewOwner::new(*second_scope);
+            let first_owner = ScopedViewOwner::new(first_scope);
+            let second_owner = ScopedViewOwner::new(second_scope);
             set_global_theme(
                 &first_owner,
                 first_scope.stored(TestTheme {
