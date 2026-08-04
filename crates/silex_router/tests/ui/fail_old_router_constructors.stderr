@@ -1,0 +1,17 @@
+error[E0599]: no associated function or constant named `pair` found for struct `Signal<'scope, T>` in the current scope
+ --> tests/ui/fail_old_router_constructors.rs:4:21
+  |
+4 |     let _ = Signal::pair(1_i32);
+  |                     ^^^^ associated function or constant not found in `Signal<'_, _>`
+
+error[E0599]: no associated function or constant named `new` found for struct `Memo<'scope, T>` in the current scope
+ --> tests/ui/fail_old_router_constructors.rs:5:19
+  |
+5 |     let _ = Memo::new(|_| 1_i32);
+  |                   ^^^ associated function or constant not found in `Memo<'_, _>`
+
+error[E0599]: no associated function or constant named `new` found for struct `StoredValue<'scope, T>` in the current scope
+ --> tests/ui/fail_old_router_constructors.rs:6:26
+  |
+6 |     let _ = StoredValue::new(1_i32);
+  |                          ^^^ associated function or constant not found in `StoredValue<'_, _>`

@@ -32,7 +32,11 @@ pub fn silex() -> TokenStream {
     let resolved = RESOLVED.get_or_init(|| match proc_macro_crate::crate_name("silex") {
         Ok(proc_macro_crate::FoundCrate::Itself) => None,
         Ok(proc_macro_crate::FoundCrate::Name(name)) => Some(name),
-        Err(_) => Some("silex".to_string()),
+        Err(_) => match proc_macro_crate::crate_name("silex_router") {
+            Ok(proc_macro_crate::FoundCrate::Itself) => None,
+            Ok(proc_macro_crate::FoundCrate::Name(name)) => Some(name),
+            Err(_) => Some("silex".to_string()),
+        },
     });
 
     match resolved {

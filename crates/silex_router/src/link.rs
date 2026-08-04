@@ -1,24 +1,35 @@
-use crate::ToRoute;
-use crate::context::RouterContext;
+use crate::{ToRoute, context::RouterContext};
 use silex_core::traits::RxGet;
 use silex_dom::prelude::*;
 use silex_html::a;
 use silex_macros::component;
 
+pub(crate) fn is_active_path(current_path: &str, href: &str) -> bool {
+    if href == "/" {
+        current_path == "/"
+    } else if current_path == href {
+        true
+    } else if current_path.starts_with(href) {
+        href.ends_with('/') || current_path.as_bytes().get(href.len()) == Some(&b'/')
+    } else {
+        false
+    }
+}
+
 /// 创建一个链接组件，用于在应用内导航
 ///
 /// 类似于 HTML 的 `<a>` 标签，但会拦截点击事件并使用 Router 导航，而不是刷新页面。
 #[component]
-pub fn Link<T: ToRoute + Clone + 'static>(
+pub fn Link<'scope, T: ToRoute + Clone + 'scope>(
     to: T,
     #[prop(into)]
     #[chain(default)]
-    router_ctx: Option<RouterContext>,
-    #[chain] children: AnyView,
+    router_ctx: Option<RouterContext<'scope>>,
+    #[chain] children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
     active_class: String,
-) -> impl View {
+) -> impl View<'scope> {
     let href = to.to_route();
 
     // 1. 计算实际显示在 DOM 上的 href (包含 base_path处理)
@@ -41,23 +52,10 @@ pub fn Link<T: ToRoute + Clone + 'static>(
         let href_for_rx = href.clone();
         let class_name = active_class.clone();
 
-        let is_active = silex_core::rx! {
-            let current_path = path_signal.get();
-            if href_for_rx == "/" {
-                current_path == "/"
-            } else if current_path == href_for_rx {
-                true
-            } else if current_path.starts_with(&href_for_rx) {
-                // 路径前缀匹配
-                if href_for_rx.ends_with('/') {
-                    true
-                } else {
-                    current_path.chars().nth(href_for_rx.len()) == Some('/')
-                }
-            } else {
-                false
-            }
-        };
+        let is_active = silex_core::rx!(router.scope(); {
+            let current_path = $path_signal;
+            is_active_path(current_path, &href_for_rx)
+        });
         Some((class_name, is_active))
     } else {
         None
@@ -84,4 +82,19 @@ pub fn Link<T: ToRoute + Clone + 'static>(
                 }
             }
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_active_path;
+
+    #[test]
+    fn active_matching_respects_path_segments() {
+        assert!(is_active_path("/", "/"));
+        assert!(is_active_path("/users", "/users"));
+        assert!(is_active_path("/users/42", "/users"));
+        assert!(is_active_path("/users/42", "/users/"));
+        assert!(!is_active_path("/username", "/user"));
+        assert!(!is_active_path("/users2", "/users"));
+    }
 }

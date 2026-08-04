@@ -1,0 +1,23 @@
+use silex_core::Runtime;
+use silex_router::{RouterContext, RouterContextProps};
+
+fn require_static<T: 'static>(_: T) {}
+
+fn main() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let (path, set_path) = scope.signal(String::from("/"));
+        let (search, set_search) = scope.signal(String::new());
+        let context = RouterContext::new(
+            scope,
+            RouterContextProps {
+                base_path: String::from("/"),
+                path,
+                search,
+                set_path,
+                set_search,
+            },
+        );
+        require_static(context);
+    });
+}

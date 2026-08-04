@@ -1819,6 +1819,7 @@ dependencies = [
  "silex_dom",
  "silex_html",
  "silex_macros",
+ "trybuild",
  "wasm-bindgen",
  "wasm-bindgen-test",
  "web-sys",

@@ -104,7 +104,10 @@ pub fn derive_route_impl(input: DeriveInput) -> syn::Result<TokenStream> {
         }
 
         impl #__silex::router::RouteView for #name {
-            fn render(&self, ctx: #__silex::router::RouterContext) -> #__silex::dom::view::AnyView {
+            fn render<'scope>(
+                &self,
+                ctx: #__silex::router::RouterContext<'scope>,
+            ) -> #__silex::dom::view::AnyView<'scope> {
                 use #__silex::dom::view::View;
                 match self {
                     #render_arms

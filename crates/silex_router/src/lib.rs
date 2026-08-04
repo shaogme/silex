@@ -21,15 +21,12 @@ pub mod link;
 pub use context::*;
 pub use link::*;
 
-use silex_core::reactivity::{Signal, on_cleanup};
-use silex_core::traits::{RxGet, RxWrite};
+use silex_core::{Scope, error::handle_error, reactivity::runtime_inputs_of};
 use silex_dom::attribute::PendingAttribute;
-use silex_dom::view::{AnyView, ApplyAttributes, View};
+use silex_dom::helpers::window_event_listener_untyped_owned;
+use silex_dom::view::{AnyView, ApplyAttributes, View, ViewOwner};
 use std::marker::PhantomData;
 use std::rc::Rc;
-use wasm_bindgen::JsCast;
-use wasm_bindgen::closure::Closure;
-use web_sys::Event;
 
 /// 路由能力特征
 ///
@@ -79,30 +76,47 @@ use silex_macros::component;
 /// 路由器组件入口
 ///
 /// 使用 `#[component]` 标记，推荐用法：
-/// `Router().base("/app").children(move |ctx| ...)`
-/// 或 `Router().match_route::<AppRoute>()`
+/// `Router(scope).base("/app").children(move |ctx| ...)`
+/// 或 `Router(scope).match_route::<AppRoute>()`
 #[component]
-pub fn Router(
+pub fn Router<'scope>(
+    scope: Scope<'scope>,
     #[prop(into)]
     #[chain(default = "/")]
     base: String,
     #[prop(render)]
     #[chain(default = Rc::new(|_| AnyView::Empty))]
-    children: Rc<dyn Fn(&RouterContext) -> AnyView>,
-) -> impl View {
-    RouterView {
-        base_path: normalize_base_path(&base),
-        children,
-    }
+    children: Rc<dyn Fn(RouterContext<'scope>) -> AnyView<'scope> + 'scope>,
+) -> impl View<'scope> {
+    let window = web_sys::window().expect("no global `window` exists");
+    let location = window.location();
+    let raw_path = location.pathname().unwrap_or_else(|_| "/".to_string());
+    let initial_search = location.search().unwrap_or_default();
+    let base_path = context::normalize_base_path(&base);
+    let initial_path = context::strip_base_path(&base_path, &raw_path);
+    let (path, set_path) = scope.signal(initial_path);
+    let (search, set_search) = scope.signal(initial_search);
+    let context = RouterContext::new(
+        scope,
+        RouterContextProps {
+            base_path,
+            path,
+            search,
+            set_path,
+            set_search,
+        },
+    );
+
+    RouterView { context, children }
 }
 
-impl RouterComponent {
+impl<'scope> RouterComponent<'scope> {
     /// 使用实现了 `RouteView` 的枚举自动匹配并渲染子视图。
     pub fn match_route<R>(mut self) -> Self
     where
         R: RouteView + 'static,
     {
-        self.children = Rc::new(move |ctx| RouterRouteView::<R>::new(*ctx).into_any());
+        self.children = Rc::new(move |ctx| RouterRouteView::<R>::new(ctx).into_any());
         self
     }
 
@@ -110,140 +124,80 @@ impl RouterComponent {
     pub fn match_enum<R, F, V>(mut self, render: F) -> Self
     where
         R: Routable + 'static,
-        F: Fn(R, RouterContext) -> V + Clone + 'static,
-        V: View + 'static,
+        F: Fn(R, RouterContext<'scope>) -> V + Clone + 'scope,
+        V: View<'scope> + 'scope,
     {
         self.children =
-            Rc::new(move |ctx| RouterMatchView::<R, F, V>::new(render.clone(), *ctx).into_any());
+            Rc::new(move |ctx| RouterMatchView::<R, F, V>::new(render.clone(), ctx).into_any());
         self
     }
 }
 
 #[derive(Clone)]
-pub struct RouterView {
-    base_path: String,
-    children: Rc<dyn Fn(&RouterContext) -> AnyView>,
+pub struct RouterView<'scope> {
+    context: RouterContext<'scope>,
+    children: Rc<dyn Fn(RouterContext<'scope>) -> AnyView<'scope> + 'scope>,
 }
 
-fn normalize_base_path(path: &str) -> String {
-    let mut p = path.to_string();
-    if !p.starts_with('/') {
-        p = format!("/{}", p);
-    }
-    if p.len() > 1 && p.ends_with('/') {
-        p.pop();
-    }
-    p
-}
+impl<'scope> ApplyAttributes<'scope> for RouterView<'scope> {}
 
-impl ApplyAttributes for RouterView {}
-
-impl View for RouterView {
-    fn mount(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
-        self.clone().mount_owned(parent, attrs);
+impl<'scope> View<'scope> for RouterView<'scope> {
+    fn mount(
+        &self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &web_sys::Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+    ) {
+        self.clone().mount_owned(owner, parent, attrs);
     }
 
-    fn mount_owned(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>)
-    where
+    fn mount_owned(
+        self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &web_sys::Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+    ) where
         Self: Sized,
     {
-        self.mount_internal(parent, attrs);
+        self.mount_internal(owner, parent, attrs);
     }
 }
 
-impl RouterView {
-    fn mount_internal(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
-        // 1. 获取 window 对象
-        let window = web_sys::window().expect("no global `window` exists");
-        let location = window.location();
-        let raw_path = location.pathname().unwrap_or_else(|_| "/".into());
-        let initial_search = location.search().unwrap_or_else(|_| "".into());
-        let base_path = self.base_path.clone();
+impl<'scope> RouterView<'scope> {
+    fn mount_internal(
+        self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &web_sys::Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+    ) {
+        let inputs = self.context.runtime_inputs();
+        if let Err(error) = owner.validate_inputs(&inputs) {
+            handle_error(error);
+            return;
+        }
 
-        // 1.5 初始路径处理：剥离 base_path
-        let initial_path =
-            if !base_path.is_empty() && base_path != "/" && raw_path.starts_with(&base_path) {
-                let p = &raw_path[base_path.len()..];
-                if p.is_empty() {
-                    "/".to_string()
-                } else {
-                    p.to_string()
-                }
-            } else {
-                raw_path
-            };
+        let token = owner.token();
+        let navigator = self.context.navigator;
+        if let Err(error) = window_event_listener_untyped_owned(&token, "popstate", move |_| {
+            navigator.refresh_location();
+        }) {
+            handle_error(error.into());
+            return;
+        }
 
-        // 2. 初始化信号与上下文
-        let (path, set_path) = Signal::pair(initial_path);
-        let (search, set_search) = Signal::pair(initial_search);
-
-        let ctx = RouterContext::new(RouterContextProps {
-            base_path: base_path.clone(),
-            path,
-            search,
-            set_path,
-            set_search,
-        });
-
-        // 3. 监听 popstate
-        let set_path_clone = set_path;
-        let set_search_clone = set_search;
-        let base_path_clone = base_path.clone();
-
-        let on_popstate = Closure::wrap(Box::new(move |_e: Event| {
-            let win = web_sys::window().unwrap();
-            let loc = win.location();
-
-            // 处理路径变化
-            if let Ok(raw_p) = loc.pathname() {
-                let p = if !base_path_clone.is_empty()
-                    && base_path_clone != "/"
-                    && raw_p.starts_with(&base_path_clone)
-                {
-                    let s = &raw_p[base_path_clone.len()..];
-                    if s.is_empty() {
-                        "/".to_string()
-                    } else {
-                        s.to_string()
-                    }
-                } else {
-                    raw_p
-                };
-                set_path_clone.set(p);
-            }
-
-            if let Ok(s) = loc.search() {
-                set_search_clone.set(s);
-            }
-        }) as Box<dyn FnMut(Event)>);
-
-        window
-            .add_event_listener_with_callback("popstate", on_popstate.as_ref().unchecked_ref())
-            .unwrap();
-
-        // 4. 清理
-        on_cleanup(move || {
-            let w = web_sys::window().unwrap();
-            let _ = w.remove_event_listener_with_callback(
-                "popstate",
-                on_popstate.as_ref().unchecked_ref(),
-            );
-        });
-
-        // 5. 渲染子视图，显式注入 ctx
-        let children_view = (self.children)(&ctx);
-        children_view.mount_owned(parent, attrs);
+        let children_view = (self.children)(self.context);
+        children_view.mount_owned(owner, parent, attrs);
     }
 }
 
 #[derive(Clone)]
-pub struct RouterRouteView<R> {
-    ctx: RouterContext,
+pub struct RouterRouteView<'scope, R> {
+    ctx: RouterContext<'scope>,
     _phantom: PhantomData<R>,
 }
 
-impl<R> RouterRouteView<R> {
-    pub fn new(ctx: RouterContext) -> Self {
+impl<'scope, R> RouterRouteView<'scope, R> {
+    pub fn new(ctx: RouterContext<'scope>) -> Self {
         Self {
             ctx,
             _phantom: PhantomData,
@@ -251,18 +205,26 @@ impl<R> RouterRouteView<R> {
     }
 }
 
-impl<R> ApplyAttributes for RouterRouteView<R> {}
+impl<'scope, R> ApplyAttributes<'scope> for RouterRouteView<'scope, R> {}
 
-impl<R> View for RouterRouteView<R>
+impl<'scope, R> View<'scope> for RouterRouteView<'scope, R>
 where
     R: RouteView + 'static,
 {
-    fn mount(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
+    fn mount(
+        &self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &web_sys::Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+    ) {
         let ctx = self.ctx;
         let path_signal = ctx.path;
+        let inputs = runtime_inputs_of(path_signal);
         silex_dom::view::mount_branch_cached(
+            owner,
             parent,
             attrs,
+            inputs,
             move || path_signal.get(),
             move |path| {
                 if let Some(matched) = R::match_path(&path) {
@@ -274,15 +236,22 @@ where
         );
     }
 
-    fn mount_owned(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>)
-    where
+    fn mount_owned(
+        self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &web_sys::Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+    ) where
         Self: Sized,
     {
         let ctx = self.ctx;
         let path_signal = ctx.path;
+        let inputs = runtime_inputs_of(path_signal);
         silex_dom::view::mount_branch_cached(
+            owner,
             parent,
             attrs,
+            inputs,
             move || path_signal.get(),
             move |path| {
                 if let Some(matched) = R::match_path(&path) {
@@ -296,14 +265,14 @@ where
 }
 
 #[derive(Clone)]
-pub struct RouterMatchView<R, F, V> {
+pub struct RouterMatchView<'scope, R, F, V> {
     render: Rc<F>,
-    ctx: RouterContext,
+    ctx: RouterContext<'scope>,
     _phantom: PhantomData<(R, V)>,
 }
 
-impl<R, F, V> RouterMatchView<R, F, V> {
-    pub fn new(render: F, ctx: RouterContext) -> Self {
+impl<'scope, R, F, V> RouterMatchView<'scope, R, F, V> {
+    pub fn new(render: F, ctx: RouterContext<'scope>) -> Self {
         Self {
             render: Rc::new(render),
             ctx,
@@ -312,21 +281,29 @@ impl<R, F, V> RouterMatchView<R, F, V> {
     }
 }
 
-impl<R, F, V> ApplyAttributes for RouterMatchView<R, F, V> {}
+impl<'scope, R, F, V> ApplyAttributes<'scope> for RouterMatchView<'scope, R, F, V> {}
 
-impl<R, F, V> View for RouterMatchView<R, F, V>
+impl<'scope, R, F, V> View<'scope> for RouterMatchView<'scope, R, F, V>
 where
     R: Routable + 'static,
-    F: Fn(R, RouterContext) -> V + Clone + 'static,
-    V: View + 'static,
+    F: Fn(R, RouterContext<'scope>) -> V + Clone + 'scope,
+    V: View<'scope> + 'scope,
 {
-    fn mount(&self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>) {
+    fn mount(
+        &self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &web_sys::Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+    ) {
         let ctx = self.ctx;
         let path_signal = ctx.path;
+        let inputs = runtime_inputs_of(path_signal);
         let render = self.render.clone();
         silex_dom::view::mount_branch_cached(
+            owner,
             parent,
             attrs,
+            inputs,
             move || path_signal.get(),
             move |path| {
                 if let Some(matched) = R::match_path(&path) {
@@ -338,16 +315,23 @@ where
         );
     }
 
-    fn mount_owned(self, parent: &web_sys::Node, attrs: Vec<PendingAttribute>)
-    where
+    fn mount_owned(
+        self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &web_sys::Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+    ) where
         Self: Sized,
     {
         let ctx = self.ctx;
         let path_signal = ctx.path;
+        let inputs = runtime_inputs_of(path_signal);
         let render = self.render;
         silex_dom::view::mount_branch_cached(
+            owner,
             parent,
             attrs,
+            inputs,
             move || path_signal.get(),
             move |path| {
                 if let Some(matched) = R::match_path(&path) {
@@ -364,5 +348,5 @@ where
 ///
 /// 扩展 Routable，定义了路由如何渲染为视图。显式接收 Copy RouterContext 进行渲染。
 pub trait RouteView: Routable {
-    fn render(&self, ctx: RouterContext) -> AnyView;
+    fn render<'scope>(&self, ctx: RouterContext<'scope>) -> AnyView<'scope>;
 }

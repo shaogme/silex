@@ -191,12 +191,32 @@ impl BuilderContext {
         (decl, ty)
     }
 
+    fn scope_lifetime(&self) -> syn::Lifetime {
+        self.generics
+            .params
+            .iter()
+            .find_map(|param| match param {
+                syn::GenericParam::Lifetime(lifetime) if lifetime.lifetime.ident == "scope" => {
+                    Some(lifetime.lifetime.clone())
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| syn::Lifetime::new("'static", proc_macro2::Span::call_site()))
+    }
+
+    fn pending_attribute_ty(&self) -> TokenStream2 {
+        let __silex = crate::crate_path::silex();
+        let scope = self.scope_lifetime();
+        quote! { #__silex::dom::attribute::PendingAttribute<#scope> }
+    }
+
     fn generate_builder_struct(&self) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
         let vis = &self.vis;
         let builder_name = &self.builder_name;
         let (_, _, where_clause) = self.generics.split_for_impl();
         let (builder_generics_decl, _) = self.get_builder_generics();
+        let pending_attribute_ty = self.pending_attribute_ty();
 
         let builder_fields = self.fields.iter().map(|field| {
             let ident = &field.ident;
@@ -237,7 +257,7 @@ impl BuilderContext {
             #[allow(non_camel_case_types)]
             #vis struct #builder_name #builder_generics_decl #where_clause {
                 #(#builder_fields,)*
-                _pending_attrs: ::std::vec::Vec<#__silex::dom::attribute::PendingAttribute>,
+                _pending_attrs: ::std::vec::Vec<#pending_attribute_ty>,
                 _markers: ::core::marker::PhantomData<(#(#marker_types),*)>,
             }
         }
@@ -249,6 +269,7 @@ impl BuilderContext {
         let builder_name = &self.builder_name;
         let props_name = &self.props_name;
         let (_, ty_generics, where_clause) = self.generics.split_for_impl();
+        let pending_attribute_ty = self.pending_attribute_ty();
 
         let initial_states: Vec<_> = self
             .prop_generic_idents
@@ -305,7 +326,7 @@ impl BuilderContext {
                     }
                 }
 
-                pub fn into_parts(self) -> (#props_name #ty_generics, ::std::vec::Vec<#__silex::dom::attribute::PendingAttribute>) {
+                pub fn into_parts(self) -> (#props_name #ty_generics, ::std::vec::Vec<#pending_attribute_ty>) {
                     let Self {
                         #(#fields_destructure,)*
                         _pending_attrs,
@@ -334,11 +355,12 @@ impl BuilderContext {
         let builder_name = &self.builder_name;
         let ident = &field.ident;
         let ty = &field.ty;
+        let scope = self.scope_lifetime();
 
         let fields_destructure: Vec<_> = self.fields.iter().map(|f| &f.ident).collect();
 
         let setter_param = if is_any_view_type(ty) {
-            quote! { impl #__silex::dom::view::View + 'static }
+            quote! { impl #__silex::dom::view::View<#scope> + #scope }
         } else if field.attrs.render {
             quote! { #ty }
         } else if field.attrs.into_trait || is_auto_into_type(ty) {
@@ -410,6 +432,8 @@ impl BuilderContext {
         let __silex = crate::crate_path::silex();
         let (impl_generics, _, where_clause) = self.generics.split_for_impl();
         let render_fn_name = &self.render_fn_name;
+        let scope = self.scope_lifetime();
+        let pending_attribute_ty = self.pending_attribute_ty();
 
         let fixed_states: Vec<_> = self
             .prop_generic_idents
@@ -427,19 +451,34 @@ impl BuilderContext {
             .push(syn::parse_quote!(#builder_ty_fixed: ::core::clone::Clone));
 
         quote! {
-            impl #impl_generics #__silex::dom::view::View for #builder_ty_fixed #view_where_clause {
-                fn mount(&self, parent: &#__silex::reexports::web_sys::Node, attrs: ::std::vec::Vec<#__silex::dom::attribute::PendingAttribute>) {
-                    self.clone().mount_owned(parent, attrs);
+            impl #impl_generics #__silex::dom::view::View<#scope> for #builder_ty_fixed #view_where_clause {
+                fn mount(
+                    &self,
+                    owner: &dyn #__silex::dom::view::ViewOwner<#scope>,
+                    parent: &#__silex::reexports::web_sys::Node,
+                    attrs: ::std::vec::Vec<#pending_attribute_ty>,
+                ) {
+                    self.clone().mount_owned(owner, parent, attrs);
                 }
 
-                fn mount_owned(self, parent: &#__silex::reexports::web_sys::Node, attrs: ::std::vec::Vec<#__silex::dom::attribute::PendingAttribute>)
+                fn mount_owned(
+                    self,
+                    owner: &dyn #__silex::dom::view::ViewOwner<#scope>,
+                    parent: &#__silex::reexports::web_sys::Node,
+                    attrs: ::std::vec::Vec<#pending_attribute_ty>,
+                )
                 where
                     Self: Sized,
                 {
                     let (props, mut pending_attrs) = self.into_parts();
                     pending_attrs.extend(attrs);
                     let view_instance = #render_fn_name(props);
-                    #__silex::dom::view::View::mount_owned(view_instance, parent, pending_attrs);
+                    #__silex::dom::view::View::mount_owned(
+                        view_instance,
+                        owner,
+                        parent,
+                        pending_attrs,
+                    );
                 }
             }
         }
@@ -449,6 +488,7 @@ impl BuilderContext {
         let __silex = crate::crate_path::silex();
         let (builder_generics_decl, _) = self.get_builder_generics();
         let (_, _, where_clause) = self.generics.split_for_impl();
+        let scope = self.scope_lifetime();
 
         let current_states: Vec<_> = self
             .prop_generic_idents
@@ -458,13 +498,13 @@ impl BuilderContext {
         let builder_ty_current = self.get_builder_ty(&current_states);
 
         quote! {
-            impl #builder_generics_decl #__silex::dom::attribute::AttributeBuilder for #builder_ty_current #where_clause {
+            impl #builder_generics_decl #__silex::dom::attribute::AttributeBuilder<#scope> for #builder_ty_current #where_clause {
                 fn build_attribute<__SilexValue>(mut self, target: #__silex::dom::attribute::ApplyTarget, value: __SilexValue) -> Self
                 where
-                    __SilexValue: #__silex::dom::attribute::IntoStorable,
+                    __SilexValue: #__silex::dom::attribute::IntoStorable<#scope>,
                 {
                     self._pending_attrs.push(
-                        #__silex::dom::attribute::PendingAttribute::build(
+                        #__silex::dom::attribute::AttrOp::<#scope>::build(
                             value.into_storable(),
                             target,
                         )
@@ -475,11 +515,11 @@ impl BuilderContext {
                 fn build_event<E, F, M>(mut self, event: E, callback: F) -> Self
                 where
                     E: #__silex::dom::event::EventDescriptor + 'static,
-                    F: #__silex::dom::event::EventHandler<'static, E::EventType, M> + Clone + 'static,
+                    F: #__silex::dom::event::EventHandler<#scope, E::EventType, M> + Clone + #scope,
                 {
                     let event = event.clone();
                     self._pending_attrs.push(
-                        #__silex::dom::attribute::PendingAttribute::new_scoped(move |el, owner| {
+                        #__silex::dom::attribute::AttrOp::<#scope>::new_scoped(move |el, owner| {
                             #__silex::dom::element::bind_event(el, event, callback.clone(), owner);
                         })
                     );
@@ -487,7 +527,7 @@ impl BuilderContext {
                 }
             }
 
-            impl #builder_generics_decl #__silex::dom::view::ApplyAttributes for #builder_ty_current #where_clause {}
+            impl #builder_generics_decl #__silex::dom::view::ApplyAttributes<#scope> for #builder_ty_current #where_clause {}
         }
     }
 
@@ -497,6 +537,7 @@ impl BuilderContext {
         let component_name = &self.component_name;
         let (impl_generics, _, where_clause) = self.generics.split_for_impl();
         let component_component_alias = &self.component_component_alias;
+        let scope = self.scope_lifetime();
 
         let initial_states: Vec<_> = self
             .prop_generic_idents
@@ -518,7 +559,7 @@ impl BuilderContext {
             let ident = &field.ident;
             let ty = &field.ty;
             if is_any_view_type(ty) {
-                quote! { #ident: impl #__silex::dom::view::View + 'static }
+                quote! { #ident: impl #__silex::dom::view::View<#scope> + #scope }
             } else if field.attrs.into_trait || is_auto_into_type(ty) {
                 quote! { #ident: impl ::core::convert::Into<#ty> }
             } else {
