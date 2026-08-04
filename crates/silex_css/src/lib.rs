@@ -4,6 +4,7 @@ pub mod codegen;
 pub mod escape;
 pub mod layers;
 pub mod runtime;
+pub mod source;
 pub mod theme;
 #[cfg(feature = "tw")]
 pub mod tw;
@@ -16,8 +17,10 @@ pub mod prelude {
     #[cfg(feature = "tw")]
     pub use crate::declare_variants;
     pub use crate::runtime::{DynamicCss, DynamicStyleManager, inject_style};
+    pub use crate::source::{CssSource, IntoCssReactive, IntoCssSource};
     pub use crate::theme::{
-        ThemePatchToCss, ThemeVariables, set_global_theme, theme_patch, theme_variables,
+        ThemePatchToCss, ThemeToCss, ThemeType, ThemeVariables, set_global_theme, theme_patch,
+        theme_variables,
     };
     #[cfg(feature = "tw")]
     pub use crate::tw::VariantSchema;
@@ -35,6 +38,8 @@ pub use runtime::{
     CssPart, DynamicCss, DynamicStyleManager, dynamic_rule_class, inject_managed_dynamic_style,
     inject_style, make_property_val,
 };
+pub use source::{CssSource, IntoCssReactive, IntoCssSource};
+pub use theme::{ThemePatchToCss, ThemeToCss, ThemeType};
 #[cfg(feature = "tw")]
 pub use tw::VariantSchema;
 pub use types::CssProperty;

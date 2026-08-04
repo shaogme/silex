@@ -261,6 +261,12 @@ pub enum AttrOp<'scope> {
     /// Custom closure execution
     Custom(CustomAttribute<'scope>),
 
+    /// Custom closure with inputs declared outside the closure body.
+    CustomWithInputs {
+        inputs: RuntimeInputs,
+        callback: CustomAttribute<'scope>,
+    },
+
     /// No operation
     Noop,
 }
@@ -273,6 +279,11 @@ impl std::fmt::Debug for AttrOp<'_> {
             Self::CombinedStyles(cs) => f.debug_tuple("CombinedStyles").field(cs).finish(),
             Self::Sequence(seq) => f.debug_tuple("Sequence").field(seq).finish(),
             Self::Custom(_) => f.write_str("Custom(Rc<Fn>)"),
+            Self::CustomWithInputs { inputs, .. } => f
+                .debug_struct("CustomWithInputs")
+                .field("inputs", inputs)
+                .field("callback", &"Rc<Fn>")
+                .finish(),
             Self::Noop => f.write_str("Noop"),
         }
     }
@@ -286,6 +297,16 @@ impl PartialEq for AttrOp<'_> {
             (Self::CombinedStyles(a), Self::CombinedStyles(b)) => a == b,
             (Self::Sequence(a), Self::Sequence(b)) => a == b,
             (Self::Custom(a), Self::Custom(b)) => Rc::ptr_eq(a, b),
+            (
+                Self::CustomWithInputs {
+                    inputs: inputs_a,
+                    callback: callback_a,
+                },
+                Self::CustomWithInputs {
+                    inputs: inputs_b,
+                    callback: callback_b,
+                },
+            ) => inputs_a == inputs_b && Rc::ptr_eq(callback_a, callback_b),
             (Self::Noop, Self::Noop) => true,
             _ => false,
         }
@@ -349,6 +370,16 @@ impl<'scope> AttrOp<'scope> {
         })
     }
 
+    pub fn custom_with_inputs(
+        inputs: RuntimeInputs,
+        callback: impl Fn(&Element, &ViewOwnerToken<'scope>) + 'scope,
+    ) -> Self {
+        Self::CustomWithInputs {
+            inputs,
+            callback: Rc::new(callback),
+        }
+    }
+
     pub(crate) fn runtime_inputs(&self) -> RuntimeInputs {
         let mut inputs = RuntimeInputs::new();
         match self {
@@ -386,6 +417,11 @@ impl<'scope> AttrOp<'scope> {
                 }
             }
             AttrOp::Custom(_) | AttrOp::Noop => {}
+            AttrOp::CustomWithInputs {
+                inputs: declared, ..
+            } => {
+                inputs.extend(declared);
+            }
         }
         inputs
     }
@@ -425,6 +461,9 @@ impl<'scope> AttrOp<'scope> {
             }
             AttrOp::Custom(f) => {
                 f(el, owner);
+            }
+            AttrOp::CustomWithInputs { callback, .. } => {
+                callback(el, owner);
             }
             AttrOp::Noop => {}
         }

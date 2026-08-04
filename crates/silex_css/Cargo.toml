@@ -23,11 +23,17 @@ wasm-bindgen.workspace = true
 web-sys = { workspace = true, features = [
     "CssStyleSheet",
     "CssRuleList",
+    "CssStyleDeclaration",
+    "Document",
+    "DomTokenList",
+    "Element",
     # `<style>` 兜底：`new CSSStyleSheet()` 不可用时的退路
     "HtmlStyleElement",
     "HtmlHeadElement",
-    # 注入/清理失败时的诊断出口（仅 debug 构建产生调用）
+    "HtmlElement",
+    # 注入/清理失败时的诊断出口
     "console",
+    "Window",
 ] }
 js-sys.workspace = true
 wasm-bindgen-futures.workspace = true
@@ -37,3 +43,4 @@ tw = []
 
 [dev-dependencies]
 trybuild = "1.0"
+wasm-bindgen-test.workspace = true

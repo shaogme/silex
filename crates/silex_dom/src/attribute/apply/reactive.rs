@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::rc::Rc;
 
 use silex_core::{Rx, RxValueKind};
 use web_sys::Element as WebElem;
@@ -147,9 +146,9 @@ where
         if let Some(op) = T::into_op_reactive(self, target.clone()) {
             op
         } else {
-            AttrOp::Custom(Rc::new(move |el, owner| {
+            AttrOp::custom_with_inputs(self.runtime_inputs(), move |el, owner| {
                 apply_rx_internal(self, el, target.clone(), owner);
-            }))
+            })
         }
     }
 }

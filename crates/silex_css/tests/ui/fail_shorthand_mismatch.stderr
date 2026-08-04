@@ -14,11 +14,11 @@ help: the trait `ValidFor<silex_css::types::props::Padding>` is not implemented 
   | impl ValidFor<props::Margin> for MarginValue {}
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   = help: for that trait implementation, expected `Margin`, found `silex_css::types::props::Padding`
-note: required by a bound in `silex_css::builder::Style::padding`
+note: required by a bound in `silex_css::builder::Style::<'scope>::padding`
  --> src/builder.rs
   |
-  |                     V::Value: ValidFor<props::$pascal> + Display + Clone + Sized + 'static,
-  |                               ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Style::padding`
+  |                     V::Value: ValidFor<props::$pascal> + Display + Clone + 'scope,
+  |                               ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Style::<'scope>::padding`
 ...
   | for_all_properties!(generate_builder_methods);
   | --------------------------------------------- in this macro invocation

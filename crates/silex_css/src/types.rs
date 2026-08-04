@@ -1,9 +1,4 @@
 use crate::for_all_properties;
-use silex_core::{
-    Rx, RxValueKind,
-    reactivity::Signal,
-    traits::{IntoRx, IntoSignal, RxValue},
-};
 use std::{
     fmt::{Display, Formatter, Result},
     marker::PhantomData,
@@ -434,106 +429,6 @@ impl ValidFor<props::BorderBlockEnd> for BorderValue {}
 // `Url` 对 `background` / `background-image` 的合法性现在由注册表的 `Url`
 // 能力自动生成（这两个属性的语法里确实有 `<image>`），不再手写。
 impl<T: Display> ValidFor<props::Any> for T {}
-
-// 响应式集成后的注册
-macro_rules! impl_into_rx_for_css {
-    ($($t:ty),*) => {
-        $(
-            impl RxValue for $t {
-                type Value = $t;
-            }
-
-            impl IntoRx for $t {
-                type RxType = Rx<$t, RxValueKind>;
-                fn into_rx(self) -> Self::RxType {
-                    Rx::new_constant(self)
-                }
-                fn is_constant(&self) -> bool { true }
-            }
-
-            impl IntoSignal for $t {
-                fn into_signal(self) -> Signal<$t>
-                where
-                    Self: Sized + 'static,
-                    $t: Sized + Clone + 'static,
-                {
-                    Signal::from(self)
-                }
-            }
-        )*
-    };
-}
-
-impl<T: 'static> RxValue for CssVar<T> {
-    type Value = Self;
-}
-impl<T: 'static> IntoRx for CssVar<T> {
-    type RxType = Rx<Self, RxValueKind>;
-    fn into_rx(self) -> Self::RxType {
-        Rx::new_constant(self)
-    }
-    fn is_constant(&self) -> bool {
-        true
-    }
-}
-impl<T: Clone + 'static> IntoSignal for CssVar<T> {
-    fn into_signal(self) -> Signal<Self> {
-        Signal::from(self)
-    }
-}
-
-impl<T: Display + Clone + 'static> RxValue for CssOption<T> {
-    type Value = Self;
-}
-impl<T: Display + Clone + 'static> IntoRx for CssOption<T> {
-    type RxType = Rx<Self, RxValueKind>;
-    fn into_rx(self) -> Self::RxType {
-        Rx::new_constant(self)
-    }
-    fn is_constant(&self) -> bool {
-        true
-    }
-}
-impl<T: Display + Clone + 'static> IntoSignal for CssOption<T> {
-    fn into_signal(self) -> Signal<Self> {
-        Signal::from(self)
-    }
-}
-
-for_all_length_units!(impl_into_rx_for_css);
-for_all_angle_units!(impl_into_rx_for_css);
-for_all_time_units!(impl_into_rx_for_css);
-
-impl_into_rx_for_css!(
-    Percent,
-    Fr,
-    Rgba,
-    Auto,
-    Hex,
-    Hsl,
-    ColorFn,
-    ColorName,
-    NoneValue,
-    CssWide,
-    Url,
-    BorderValue,
-    MarginValue,
-    PaddingValue,
-    FlexValue,
-    TransitionValue,
-    BackgroundValue,
-    CssUnsafe,
-    TransformValue,
-    TransformBuilder,
-    GridTemplateAreasValue,
-    FontVariationSettingsValue,
-    CalcValue<LengthMark>,
-    CalcValue<AngleMark>,
-    CalcValue<TimeMark>,
-    GradientValue
-);
-
-crate::register_generated_keywords!(impl_into_rx_for_css);
 
 #[cfg(test)]
 mod tests {

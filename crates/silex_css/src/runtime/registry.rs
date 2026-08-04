@@ -156,9 +156,6 @@ impl StaticStyleRegistry {
             return;
         }
 
-        self.injected_ids.insert(id.to_string());
-        self.pending_chunks.push(trimmed.to_string());
-
         if self.shared_sheet.is_none() {
             let Some(sheet) = ActiveSheet::create() else {
                 report("无法创建静态样式表，静态样式将不会生效");
@@ -172,6 +169,8 @@ impl StaticStyleRegistry {
             self.shared_sheet = Some(sheet);
         }
 
+        self.injected_ids.insert(id.to_string());
+        self.pending_chunks.push(trimmed.to_string());
         self.schedule_flush();
     }
 

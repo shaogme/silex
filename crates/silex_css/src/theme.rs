@@ -1,7 +1,17 @@
-use crate::runtime::DynamicStyleManager;
-use silex_core::prelude::*;
-use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable};
-use std::fmt::Display;
+use crate::{
+    runtime::{DynamicStyleManager, dynamic::unique_dynamic_style_id, platform::report},
+    source::{CssSource, IntoCssSource},
+};
+use silex_core::{RuntimeInputs, error::handle_error};
+use silex_dom::{
+    attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
+    view::{ViewOwner, ViewOwnerToken},
+};
+use std::{
+    cell::RefCell,
+    fmt::{Display, Write},
+    rc::Rc,
+};
 use wasm_bindgen::JsCast;
 use web_sys::{CssStyleDeclaration, Element, HtmlElement, SvgElement};
 
@@ -79,54 +89,91 @@ fn element_style(el: &Element) -> Option<CssStyleDeclaration> {
 }
 
 /// 把主题的当前取值配成 `(变量名, 值)`。
-fn theme_entries<T: ThemeToCss>(theme: &T) -> Vec<(&'static str, Option<String>)> {
+fn theme_entries<T: ThemeToCss>(theme: &T) -> Option<Vec<(&'static str, Option<String>)>> {
     let names = T::get_variable_names();
     let values = theme.get_variable_values();
-    debug_assert_eq!(
-        names.len(),
-        values.len(),
-        "主题的变量名与取值数量不一致：`get_variable_names()` 与 \
-         `get_variable_values()` 必须一一对应，否则多出来的那几个会被静默丢掉"
-    );
-    names
-        .iter()
-        .zip(values)
-        .map(|(name, value)| (*name, Some(value)))
-        .collect()
+    if names.len() != values.len() {
+        report("主题的变量名与取值数量不一致");
+        return None;
+    }
+    Some(
+        names
+            .iter()
+            .zip(values)
+            .map(|(name, value)| (*name, Some(value)))
+            .collect(),
+    )
+}
+
+fn source_inputs<'scope, T: 'scope>(source: &CssSource<'scope, T>) -> RuntimeInputs {
+    match source {
+        CssSource::Static(_) => RuntimeInputs::new(),
+        CssSource::Reactive(rx) => rx.runtime_inputs(),
+    }
 }
 
 /// Helper that applies theme variables to any element without an extra wrapper.
 /// Usage: `div(children).apply(theme_variables(theme))`
-pub fn theme_variables<T>(theme: impl IntoSignal<Value = T> + 'static) -> ThemeVariables<T>
+pub fn theme_variables<'scope, S>(theme: S) -> ThemeVariables<'scope, S::Value>
 where
-    T: ThemeType + ThemeToCss + RxCloneData,
+    S: IntoCssSource<'scope>,
+    S::Value: ThemeType + ThemeToCss + Clone + 'scope,
 {
-    ThemeVariables(theme.into_signal())
+    ThemeVariables(theme.into_css_source())
 }
 
 /// A structure that can be applied to a DOM element to inject theme variables.
-pub struct ThemeVariables<T>(pub Signal<T>);
+pub struct ThemeVariables<'scope, T>(pub CssSource<'scope, T>);
 
-impl<T> ApplyToDom for ThemeVariables<T>
+impl<'scope, T> ApplyToDom<'scope> for ThemeVariables<'scope, T>
 where
-    T: ThemeType + ThemeToCss + RxCloneData,
+    T: ThemeType + ThemeToCss + Clone + 'scope,
 {
-    fn apply(&self, el: &Element, _target: ApplyTarget) {
-        let theme = self.0;
+    fn apply(&self, el: &Element, _target: ApplyTarget, owner: &ViewOwnerToken<'scope>) {
+        let theme = self.0.clone();
         let el = el.clone();
-        Effect::new(move |prev: Option<Vec<Option<String>>>| {
-            let Some(style) = element_style(&el) else {
-                return Vec::new();
+        let effect_el = el.clone();
+        let previous = Rc::new(RefCell::new(None::<Vec<Option<String>>>));
+        let previous_for_effect = previous.clone();
+        owner.effect_from(
+            source_inputs(&theme),
+            Box::new(move || {
+                let theme = match &theme {
+                    CssSource::Static(theme) => theme.clone(),
+                    CssSource::Reactive(rx) => rx.get(),
+                };
+                let Some(style) = element_style(&effect_el) else {
+                    return;
+                };
+                let Some(entries) = theme_entries(&theme) else {
+                    return;
+                };
+                let next = apply_var_diff(&style, &entries, previous_for_effect.borrow().as_ref());
+                *previous_for_effect.borrow_mut() = Some(next);
+            }),
+        );
+        let names = T::get_variable_names().to_vec();
+        let el_clone = el.clone();
+        owner.on_cleanup(Box::new(move || {
+            if let Some(style) = element_style(&el_clone) {
+                for name in &names {
+                    let _ = style.remove_property(name);
+                }
             };
-            let entries = theme_entries(&theme.get());
-            apply_var_diff(&style, &entries, prev.as_ref())
-        });
+        }));
+    }
+
+    fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
+        let inputs = source_inputs(&self.0);
+        AttrOp::custom_with_inputs(inputs, move |el, owner| {
+            self.apply(el, ApplyTarget::Apply, owner);
+        })
     }
 }
 
-impl<T> IntoStorable for ThemeVariables<T>
+impl<'scope, T> IntoStorable<'scope> for ThemeVariables<'scope, T>
 where
-    T: ThemeType + ThemeToCss + RxCloneData,
+    T: ThemeType + ThemeToCss + Clone + 'scope,
 {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {
@@ -135,29 +182,60 @@ where
 }
 
 /// 全局主题下 `:root{}` 规则所用的样式表 id。
-const GLOBAL_THEME_STYLE_ID: &str = "slx-global-theme";
-
 /// Sets a global theme that applies to the entire document (:root).
-pub fn set_global_theme<T>(theme: impl IntoSignal<Value = T> + 'static)
+pub fn set_global_theme<'scope, S>(owner: &dyn ViewOwner<'scope>, theme: S)
 where
-    T: ThemeType + ThemeToCss + RxCloneData,
+    S: IntoCssSource<'scope>,
+    S::Value: ThemeType + ThemeToCss + Clone + 'scope,
 {
-    let signal = theme.into_signal();
-    let manager = DynamicStyleManager::new();
+    let source = theme.into_css_source();
+    let inputs = source_inputs(&source);
+    if let Err(error) = owner.validate_inputs(&inputs) {
+        handle_error(error);
+        return;
+    }
+    let manager = Rc::new(DynamicStyleManager::new());
+    let manager_for_effect = manager.clone();
+    let style_id = unique_dynamic_style_id("slx-global-theme");
+    let previous = Rc::new(RefCell::new(None::<String>));
+    let previous_for_effect = previous.clone();
+    owner.effect_from(
+        inputs,
+        Box::new(move || {
+            let theme = match &source {
+                CssSource::Static(theme) => theme.clone(),
+                CssSource::Reactive(rx) => rx.get(),
+            };
+            let Some(css) = global_theme_css(&theme) else {
+                return;
+            };
+            if previous_for_effect.borrow().as_deref() != Some(css.as_str())
+                && !manager_for_effect.update(&style_id, &css)
+            {
+                return;
+            }
+            *previous_for_effect.borrow_mut() = Some(css);
+        }),
+    );
+    let manager_for_cleanup = manager.clone();
+    owner.on_cleanup(Box::new(move || manager_for_cleanup.dispose()));
+}
 
-    Effect::new(move |prev: Option<String>| {
-        let theme_val = signal.get();
-        debug_assert_eq!(
-            T::get_variable_names().len(),
-            theme_val.get_variable_values().len(),
-            "主题的变量名与取值数量不一致"
-        );
-        let css = format!(":root{{{}}}", theme_val);
-        if prev.as_deref() != Some(css.as_str()) {
-            manager.update(GLOBAL_THEME_STYLE_ID, &css);
+fn global_theme_css<T: ThemeToCss>(theme: &T) -> Option<String> {
+    let entries = theme_entries(theme)?;
+    let mut css = String::from(":root{");
+    for (name, value) in entries {
+        if let Some(value) = value {
+            let _ = writeln!(
+                css,
+                "{}:{};",
+                crate::escape::property_name(name),
+                crate::escape::declaration_value(&value)
+            );
         }
-        css
-    });
+    }
+    css.push('}');
+    Some(css)
 }
 
 /// A trait for theme patches that only override a subset of variables.
@@ -169,36 +247,74 @@ pub trait ThemePatchToCss {
 
 /// Helper that applies a theme patch to an element.
 /// This allows for granular overrides while relying on CSS variable inheritance for the rest.
-pub fn theme_patch<P>(patch: impl IntoSignal<Value = P> + 'static) -> ThemePatchVariables<P>
+pub fn theme_patch<'scope, S>(patch: S) -> ThemePatchVariables<'scope, S::Value>
 where
-    P: ThemePatchToCss + RxCloneData,
+    S: IntoCssSource<'scope>,
+    S::Value: ThemePatchToCss + Clone + 'scope,
 {
-    ThemePatchVariables(patch.into_signal())
+    ThemePatchVariables(patch.into_css_source())
 }
 
 /// A structure that can be applied to a DOM element to inject theme patch variables.
-pub struct ThemePatchVariables<P>(pub Signal<P>);
+pub struct ThemePatchVariables<'scope, P>(pub CssSource<'scope, P>);
 
-impl<P> ApplyToDom for ThemePatchVariables<P>
+impl<'scope, P> ApplyToDom<'scope> for ThemePatchVariables<'scope, P>
 where
-    P: ThemePatchToCss + RxCloneData,
+    P: ThemePatchToCss + Clone + 'scope,
 {
-    fn apply(&self, el: &Element, _target: ApplyTarget) {
-        let patch = self.0;
+    fn apply(&self, el: &Element, _target: ApplyTarget, owner: &ViewOwnerToken<'scope>) {
+        let patch = self.0.clone();
         let el = el.clone();
-        Effect::new(move |prev: Option<Vec<Option<String>>>| {
-            let Some(style) = element_style(&el) else {
-                return Vec::new();
-            };
-            let entries = patch.get().get_patch_entries();
-            apply_var_diff(&style, &entries, prev.as_ref())
-        });
+        let effect_el = el.clone();
+        let previous = Rc::new(RefCell::new(None::<Vec<Option<String>>>));
+        let names = Rc::new(RefCell::new(Vec::<&'static str>::new()));
+        let previous_for_effect = previous.clone();
+        let names_for_effect = names.clone();
+        owner.effect_from(
+            source_inputs(&patch),
+            Box::new(move || {
+                let patch = match &patch {
+                    CssSource::Static(patch) => patch.clone(),
+                    CssSource::Reactive(rx) => rx.get(),
+                };
+                let entries = patch.get_patch_entries();
+                {
+                    let mut names = names_for_effect.borrow_mut();
+                    for (name, _) in &entries {
+                        if !names.contains(name) {
+                            names.push(*name);
+                        }
+                    }
+                }
+                let Some(style) = element_style(&effect_el) else {
+                    return;
+                };
+                let next = apply_var_diff(&style, &entries, previous_for_effect.borrow().as_ref());
+                *previous_for_effect.borrow_mut() = Some(next);
+            }),
+        );
+        let names_for_cleanup = names.clone();
+        let el_clone = el.clone();
+        owner.on_cleanup(Box::new(move || {
+            if let Some(style) = element_style(&el_clone) {
+                for name in names_for_cleanup.borrow().iter() {
+                    let _ = style.remove_property(name);
+                }
+            }
+        }));
+    }
+
+    fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
+        let inputs = source_inputs(&self.0);
+        AttrOp::custom_with_inputs(inputs, move |el, owner| {
+            self.apply(el, ApplyTarget::Apply, owner);
+        })
     }
 }
 
-impl<P> IntoStorable for ThemePatchVariables<P>
+impl<'scope, P> IntoStorable<'scope> for ThemePatchVariables<'scope, P>
 where
-    P: ThemePatchToCss + RxCloneData,
+    P: ThemePatchToCss + Clone + 'scope,
 {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {
@@ -290,14 +406,13 @@ mod tests {
         }
         assert_eq!(
             theme_entries(&T),
-            entries(&[("--a", Some("1")), ("--b", Some("2"))])
+            Some(entries(&[("--a", Some("1")), ("--b", Some("2"))]))
         );
     }
 
-    /// 名字与取值数量对不上时，debug 构建下必须炸出来而不是静默丢弃
+    /// 名字与取值数量对不上时，所有构建模式都必须报告而不是静默丢弃
     #[test]
-    #[should_panic(expected = "变量名与取值数量不一致")]
-    fn a_mismatched_theme_is_caught_in_debug_builds() {
+    fn a_mismatched_theme_is_reported_in_all_builds() {
         struct Broken;
         impl Display for Broken {
             fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -312,6 +427,29 @@ mod tests {
                 &["--a", "--b"]
             }
         }
-        let _ = theme_entries(&Broken);
+        assert!(theme_entries(&Broken).is_none());
+    }
+
+    #[test]
+    fn a_global_theme_value_cannot_open_a_new_rule() {
+        struct Malicious;
+        impl Display for Malicious {
+            fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                Ok(())
+            }
+        }
+        impl ThemeToCss for Malicious {
+            fn get_variable_values(&self) -> Vec<String> {
+                vec![String::from("red; } body { display: none")]
+            }
+
+            fn get_variable_names() -> &'static [&'static str] {
+                &["--color"]
+            }
+        }
+
+        let css = global_theme_css(&Malicious).expect("matching theme entries");
+        assert!(!css.contains("body { display"), "{css}");
+        assert!(!css.contains("; }"), "{css}");
     }
 }

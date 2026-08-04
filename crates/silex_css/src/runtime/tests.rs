@@ -125,6 +125,26 @@ fn updating_the_same_id_replaces_content_in_place() {
     assert_eq!(fake::adopted_history().len(), syncs, "内容变了但表没变");
 }
 
+#[test]
+fn active_managers_with_different_content_do_not_overwrite_each_other() {
+    setup();
+    let first = DynamicStyleManager::new();
+    first.update("shared", ".shared{color:red}");
+
+    let second = DynamicStyleManager::new();
+    second.update("shared", ".shared{color:blue}");
+    platform::run_microtasks();
+
+    assert_eq!(created_sheets(), 2);
+    assert_eq!(fake::sheet_log(0).content, ".shared{color:red}");
+    assert_eq!(fake::sheet_log(1).content, ".shared{color:blue}");
+
+    drop(first);
+    platform::run_microtasks();
+    assert_eq!(fake::adopted_now(), vec![1]);
+    assert_eq!(fake::sheet_log(1).content, ".shared{color:blue}");
+}
+
 // ---- adoptedStyleSheets 的同步判据 ----
 
 /// 同一微任务内增删抵消 → 不该触发 `set_adopted_style_sheets`。
@@ -247,8 +267,8 @@ fn a_style_tag_fallback_never_joins_adopted_stylesheets() {
     drop(mgr);
     platform::run_microtasks();
     assert!(
-        !fake::sheet_log(0).detached,
-        "退休只是移出文档；兜底表要等真正 Drop 才摘"
+        fake::sheet_log(0).detached,
+        "owner dispose/drop 后兜底表必须立即摘除"
     );
 }
 
@@ -336,6 +356,26 @@ fn a_sheet_that_cannot_be_created_is_reported_not_panicked() {
     );
     assert!(fake::adopted_history().is_empty());
     assert_eq!(created_sheets(), 0);
+}
+
+#[test]
+fn a_static_id_can_be_retried_after_sheet_creation_fails() {
+    setup();
+    fake::set_knobs(Knobs {
+        create_fails: true,
+        ..Default::default()
+    });
+
+    inject_style("retry", ".retry{color:red}");
+    platform::run_microtasks();
+    assert_eq!(created_sheets(), 0);
+
+    fake::set_knobs(Knobs::default());
+    inject_style("retry", ".retry{color:red}");
+    platform::run_microtasks();
+
+    assert_eq!(created_sheets(), 1);
+    assert!(fake::sheet_log(0).content.contains(".retry{color:red}"));
 }
 
 /// 后端一建就成时，`create()` 的返回值确实是能用的表——防止假实现自己空转。

@@ -16,11 +16,11 @@ error[E0277]: 类型 `Sec` 无法作为有效的 CSS `Width` 属性值使用
             CssVar<T>
             CssWide
             silex_css::types::Auto
-note: required by a bound in `silex_css::builder::Style::width`
+note: required by a bound in `silex_css::builder::Style::<'scope>::width`
  --> src/builder.rs
   |
-  |                     V::Value: ValidFor<props::$pascal> + Display + Clone + Sized + 'static,
-  |                               ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Style::width`
+  |                     V::Value: ValidFor<props::$pascal> + Display + Clone + 'scope,
+  |                               ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Style::<'scope>::width`
 ...
   | for_all_properties!(generate_builder_methods);
   | --------------------------------------------- in this macro invocation

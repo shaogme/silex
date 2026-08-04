@@ -14,11 +14,11 @@ error[E0277]: 类型 `Px` 无法作为有效的 CSS `AnimationDelay` 属性值�
             CssVar
             CssVar<T>
             CssWide
-note: required by a bound in `silex_css::builder::Style::animation_delay`
+note: required by a bound in `silex_css::builder::Style::<'scope>::animation_delay`
  --> src/builder.rs
   |
-  |                     V::Value: ValidFor<props::$pascal> + Display + Clone + Sized + 'static,
-  |                               ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Style::animation_delay`
+  |                     V::Value: ValidFor<props::$pascal> + Display + Clone + 'scope,
+  |                               ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Style::<'scope>::animation_delay`
 ...
   | for_all_properties!(generate_builder_methods);
   | --------------------------------------------- in this macro invocation

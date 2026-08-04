@@ -10,8 +10,8 @@
 /// 运行时异常的统一出口。
 ///
 /// 样式注入失败、清理失败这类问题此前一律 `let _ = …` 吞掉，症状是「样式莫名
-/// 不生效」而没有任何线索。wasm 的 debug 构建下打到 `console.error`，release 下
-/// 不产生任何代码；非 wasm 下记进一个环形缓冲，测试可以断言「确实报了这一条」。
+/// 不生效」而没有任何线索。wasm 下打到 `console.error`；非 wasm 下记进一个环形
+/// 缓冲，测试可以断言「确实报了这一条」。
 #[inline]
 pub(crate) fn report(what: &str) {
     imp::report(what);
@@ -26,9 +26,8 @@ pub(crate) fn schedule_microtask(f: impl FnOnce() + 'static) {
 #[cfg(target_arch = "wasm32")]
 mod imp {
     #[inline]
-    pub(super) fn report(_what: &str) {
-        #[cfg(debug_assertions)]
-        web_sys::console::error_1(&format!("[silex-css] {}", _what).into());
+    pub(super) fn report(what: &str) {
+        web_sys::console::error_1(&format!("[silex-css] {}", what).into());
     }
 
     #[inline]

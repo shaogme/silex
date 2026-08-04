@@ -1,5 +1,6 @@
 use crate::{
     for_all_properties, inject_style,
+    source::{CssSource, IntoCssSource},
     types::{
         ValidFor, props,
         props::{
@@ -8,18 +9,16 @@ use crate::{
         },
     },
 };
-use silex_core::{
-    Rx, RxValueKind,
-    reactivity::{Effect, on_cleanup},
-    traits::{IntoRx, RxGet, RxValue},
-};
+use silex_core::{Rx, RxValueKind, error::handle_error};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable, ReactiveApply};
+use silex_dom::view::ViewOwnerToken;
 use silex_hash::{
     css::{CssHasher, Normalized, encode_base36},
     css_hasher,
 };
 use std::{
     borrow::Cow,
+    cell::RefCell,
     fmt::{Display, Write},
     hash::{Hash, Hasher},
     rc::Rc,
@@ -27,59 +26,54 @@ use std::{
 use wasm_bindgen::JsCast;
 use web_sys::{Element, HtmlElement, SvgElement};
 
-pub(crate) type DynamicValue = Rc<dyn Fn() -> String>;
 /// 属性名是 `Cow`：注册表里的是 `&'static str` 常量，`var()` / `raw()` 写进来的
 /// 则来自调用方，写进 CSS 前要先过 `escape::property_name`。
 pub(crate) type PropName = Cow<'static, str>;
 pub(crate) type StaticRule = (PropName, Cow<'static, str>);
-pub(crate) type DynamicRule = (PropName, DynamicValue);
+pub(crate) type DynamicRule<'scope> = (PropName, Rx<'scope, String>);
 
 #[derive(Clone)]
-enum StyleValue {
+enum StyleValue<'scope> {
     Static(Cow<'static, str>),
-    Dynamic(DynamicValue),
+    Dynamic(Rx<'scope, String>),
 }
 
-impl StyleValue {
-    fn from_rx<V>(value: V) -> Self
+impl<'scope> StyleValue<'scope> {
+    fn from_source<S>(value: S) -> Self
     where
-        V: IntoRx + RxValue + 'static,
-        V::Value: Display + Clone + Sized + 'static,
-        V::RxType: RxGet<Value = V::Value> + 'static,
+        S: IntoCssSource<'scope>,
+        S::Value: Display + Clone + 'scope,
     {
-        if value.is_constant() {
-            let signal = value.into_rx();
-            Self::Static(Cow::Owned(format!("{}", signal.get())))
-        } else {
-            let signal = value.into_rx();
-            Self::Dynamic(Rc::new(move || format!("{}", signal.get())))
+        match value.into_css_source() {
+            CssSource::Static(value) => Self::Static(Cow::Owned(value.to_string())),
+            CssSource::Reactive(source) => Self::Dynamic(source.map(|value| value.to_string())),
         }
     }
 }
 
 #[derive(Clone)]
-pub(crate) enum NestedRule {
-    Media(&'static str, Style),
+pub(crate) enum NestedRule<'scope> {
+    Media(&'static str, Style<'scope>),
     /// CSS Nesting 语义：含 `&` 则替换，不含则补后代关系
-    Selector(&'static str, Style),
+    Selector(&'static str, Style<'scope>),
     /// 直接附着在基类后面（`:hover` → `.cls:hover`），由 `pseudo()` 一族产生
-    Attached(&'static str, Style),
+    Attached(&'static str, Style<'scope>),
 }
 
 #[derive(Clone)]
-pub struct Style {
+pub struct Style<'scope> {
     pub(crate) static_rules: Vec<StaticRule>,
-    pub(crate) dynamic_rules: Vec<DynamicRule>,
-    pub(crate) nested_rules: Vec<NestedRule>,
+    pub(crate) dynamic_rules: Vec<DynamicRule<'scope>>,
+    pub(crate) nested_rules: Vec<NestedRule<'scope>>,
 }
 
-impl Default for Style {
+impl<'scope> Default for Style<'scope> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Style {
+impl<'scope> Style<'scope> {
     pub fn new() -> Self {
         Self {
             static_rules: Vec::new(),
@@ -91,7 +85,7 @@ impl Style {
     /// 定义媒体查询，例如 `.media("@media (max-width: 600px)", |s| s.width(PX(100)))`
     pub fn media<F>(mut self, query: &'static str, f: F) -> Self
     where
-        F: FnOnce(Style) -> Style,
+        F: FnOnce(Style<'scope>) -> Style<'scope>,
     {
         self.nested_rules
             .push(NestedRule::Media(query, f(Style::new())));
@@ -112,7 +106,7 @@ impl Style {
     /// 想要「贴在自身上」的伪类请用 [`Style::pseudo`] 或 `on_hover()` 一族。
     pub fn nest<F>(mut self, selector: &'static str, f: F) -> Self
     where
-        F: FnOnce(Style) -> Style,
+        F: FnOnce(Style<'scope>) -> Style<'scope>,
     {
         self.nested_rules
             .push(NestedRule::Selector(selector, f(Style::new())));
@@ -125,7 +119,7 @@ impl Style {
     /// ——`nest` 按 CSS Nesting 补的是后代关系。
     pub fn pseudo<F>(self, selector: &'static str, f: F) -> Self
     where
-        F: FnOnce(Style) -> Style,
+        F: FnOnce(Style<'scope>) -> Style<'scope>,
     {
         self.attached(selector, f)
     }
@@ -133,7 +127,7 @@ impl Style {
     /// `pseudo` 的内部实现：把 `sel` 当作直接附着在基类后面的片段。
     fn attached<F>(mut self, selector: &'static str, f: F) -> Self
     where
-        F: FnOnce(Style) -> Style,
+        F: FnOnce(Style<'scope>) -> Style<'scope>,
     {
         self.nested_rules
             .push(NestedRule::Attached(selector, f(Style::new())));
@@ -142,73 +136,67 @@ impl Style {
 
     pub fn on_hover<F>(self, f: F) -> Self
     where
-        F: FnOnce(Style) -> Style,
+        F: FnOnce(Style<'scope>) -> Style<'scope>,
     {
         self.attached(":hover", f)
     }
 
     pub fn on_active<F>(self, f: F) -> Self
     where
-        F: FnOnce(Style) -> Style,
+        F: FnOnce(Style<'scope>) -> Style<'scope>,
     {
         self.attached(":active", f)
     }
 
     pub fn on_focus<F>(self, f: F) -> Self
     where
-        F: FnOnce(Style) -> Style,
+        F: FnOnce(Style<'scope>) -> Style<'scope>,
     {
         self.attached(":focus", f)
     }
 
     pub fn on_focus_visible<F>(self, f: F) -> Self
     where
-        F: FnOnce(Style) -> Style,
+        F: FnOnce(Style<'scope>) -> Style<'scope>,
     {
         self.attached(":focus-visible", f)
     }
 
     pub fn on_disabled<F>(self, f: F) -> Self
     where
-        F: FnOnce(Style) -> Style,
+        F: FnOnce(Style<'scope>) -> Style<'scope>,
     {
         self.attached(":disabled", f)
     }
 
     pub fn margin_x<V>(self, value: V) -> Self
     where
-        V: IntoRx + RxValue + Clone + 'static,
-        V::Value: ValidFor<MarginLeft> + ValidFor<MarginRight> + Display + Clone + Sized + 'static,
-        V::RxType: RxGet<Value = V::Value> + Clone + 'static,
+        V: IntoCssSource<'scope> + Clone,
+        V::Value: ValidFor<MarginLeft> + ValidFor<MarginRight> + Display + Clone + 'scope,
     {
         self.margin_left(value.clone()).margin_right(value)
     }
 
     pub fn margin_y<V>(self, value: V) -> Self
     where
-        V: IntoRx + RxValue + Clone + 'static,
-        V::Value: ValidFor<MarginTop> + ValidFor<MarginBottom> + Display + Clone + Sized + 'static,
-        V::RxType: RxGet<Value = V::Value> + Clone + 'static,
+        V: IntoCssSource<'scope> + Clone,
+        V::Value: ValidFor<MarginTop> + ValidFor<MarginBottom> + Display + Clone + 'scope,
     {
         self.margin_top(value.clone()).margin_bottom(value)
     }
 
     pub fn padding_x<V>(self, value: V) -> Self
     where
-        V: IntoRx + RxValue + Clone + 'static,
-        V::Value:
-            ValidFor<PaddingLeft> + ValidFor<PaddingRight> + Display + Clone + Sized + 'static,
-        V::RxType: RxGet<Value = V::Value> + Clone + 'static,
+        V: IntoCssSource<'scope> + Clone,
+        V::Value: ValidFor<PaddingLeft> + ValidFor<PaddingRight> + Display + Clone + 'scope,
     {
         self.padding_left(value.clone()).padding_right(value)
     }
 
     pub fn padding_y<V>(self, value: V) -> Self
     where
-        V: IntoRx + RxValue + Clone + 'static,
-        V::Value:
-            ValidFor<PaddingTop> + ValidFor<PaddingBottom> + Display + Clone + Sized + 'static,
-        V::RxType: RxGet<Value = V::Value> + Clone + 'static,
+        V: IntoCssSource<'scope> + Clone,
+        V::Value: ValidFor<PaddingTop> + ValidFor<PaddingBottom> + Display + Clone + 'scope,
     {
         self.padding_top(value.clone()).padding_bottom(value)
     }
@@ -224,9 +212,8 @@ impl Style {
     /// 过一遍声明边界净化。
     pub fn var<V>(self, name: impl Into<Cow<'static, str>>, value: V) -> Self
     where
-        V: IntoRx + RxValue + 'static,
-        V::Value: Display + Clone + Sized + 'static,
-        V::RxType: RxGet<Value = V::Value> + 'static,
+        V: IntoCssSource<'scope>,
+        V::Value: Display + Clone + 'scope,
     {
         let name = name.into();
         debug_assert!(!name.is_empty(), "自定义属性名不能为空");
@@ -235,7 +222,7 @@ impl Style {
         } else {
             Cow::Owned(format!("--{}", name.trim_start_matches('-')))
         };
-        self.add_rule(name, StyleValue::from_rx(value))
+        self.add_rule(name, StyleValue::from_source(value))
     }
 
     /// 逃生舱：写一条**不经类型系统**的声明。
@@ -248,16 +235,15 @@ impl Style {
     /// 属性名与值都会过净化，写不出越界的声明；但**语义正确与否由调用方负责**。
     pub fn raw<V>(self, name: impl Into<Cow<'static, str>>, value: V) -> Self
     where
-        V: IntoRx + RxValue + 'static,
-        V::Value: Display + Clone + Sized + 'static,
-        V::RxType: RxGet<Value = V::Value> + 'static,
+        V: IntoCssSource<'scope>,
+        V::Value: Display + Clone + 'scope,
     {
         let name = name.into();
         debug_assert!(!name.is_empty(), "属性名不能为空");
-        self.add_rule(name, StyleValue::from_rx(value))
+        self.add_rule(name, StyleValue::from_source(value))
     }
 
-    fn add_rule(mut self, prop: PropName, value: StyleValue) -> Self {
+    fn add_rule(mut self, prop: PropName, value: StyleValue<'scope>) -> Self {
         match value {
             StyleValue::Static(val_str) => {
                 self.static_rules.push((prop, val_str));
@@ -270,21 +256,20 @@ impl Style {
     }
 }
 
-pub fn sty() -> Style {
+pub fn sty<'scope>() -> Style<'scope> {
     Style::new()
 }
 
 macro_rules! generate_builder_methods {
     ($( ($snake:ident, $kebab:expr, $pascal:ident, [$($cap:ident)*]) ),*) => {
-        impl Style {
+        impl<'scope> Style<'scope> {
             $(
                 pub fn $snake<V>(self, value: V) -> Self
                 where
-                    V: IntoRx + RxValue + 'static,
-                    V::Value: ValidFor<props::$pascal> + Display + Clone + Sized + 'static,
-                    V::RxType: RxGet<Value = V::Value> + Clone + 'static,
+                    V: IntoCssSource<'scope>,
+                    V::Value: ValidFor<props::$pascal> + Display + Clone + 'scope,
                 {
-                    self.add_rule(::std::borrow::Cow::Borrowed($kebab), StyleValue::from_rx(value))
+                    self.add_rule(::std::borrow::Cow::Borrowed($kebab), StyleValue::from_source(value))
                 }
             )*
         }
@@ -293,9 +278,16 @@ macro_rules! generate_builder_methods {
 
 for_all_properties!(generate_builder_methods);
 
-impl ApplyToDom for Style {
-    fn apply(&self, el: &Element, _target: ApplyTarget) {
-        self.apply_to_element(el);
+impl<'scope> ApplyToDom<'scope> for Style<'scope> {
+    fn apply(&self, el: &Element, _target: ApplyTarget, owner: &ViewOwnerToken<'scope>) {
+        self.apply_to_element(el, owner);
+    }
+
+    fn into_op(self, _target: ApplyTarget) -> silex_dom::attribute::AttrOp<'scope> {
+        let inputs = self.runtime_inputs();
+        silex_dom::attribute::AttrOp::custom_with_inputs(inputs, move |el, owner| {
+            self.apply_to_element(el, owner);
+        })
     }
 }
 
@@ -303,15 +295,15 @@ impl ApplyToDom for Style {
 ///
 /// 单独拆出来是为了让「生成什么 CSS」这件事能脱离 DOM 被断言——`@layer` 的
 /// 归属、嵌套选择器的展开此前都只能靠读代码确认。
-pub(crate) struct RenderedStyle {
+pub(crate) struct RenderedStyle<'scope> {
     pub class_base: String,
     pub css: String,
-    pub dyn_bindings: Vec<(String, DynamicValue)>,
+    pub dyn_bindings: Vec<(String, Rx<'scope, String>)>,
 }
 
-impl Style {
+impl<'scope> Style<'scope> {
     /// 只生成，不碰 DOM。
-    pub(crate) fn render(&self) -> RenderedStyle {
+    pub(crate) fn render(&self) -> RenderedStyle<'scope> {
         // 1. 生成稳定哈希（忽略动态值，递归所有嵌套规则）
         let mut hasher = css_hasher!();
         hash_recursive(self, &mut hasher);
@@ -344,48 +336,76 @@ impl Style {
         }
     }
 
-    pub fn apply_to_element(&self, el: &Element) -> String {
+    pub fn apply_to_element(&self, el: &Element, owner: &ViewOwnerToken<'scope>) -> String {
         let RenderedStyle {
             class_base,
             css,
             dyn_bindings,
         } = self.render();
 
+        let mut inputs = silex_core::RuntimeInputs::new();
+        for (_, source) in &dyn_bindings {
+            inputs.extend(&source.runtime_inputs());
+        }
+        if let Err(error) = owner.validate_inputs(&inputs) {
+            handle_error(error);
+            return class_base;
+        }
+
         if !css.is_empty() {
             inject_style(&class_base, &css);
         }
         let _ = el.class_list().add_1(&class_base);
 
-        // 建立极轻量更新 Effect (只有 style.setProperty)
-        //
-        // 这些 Effect 是当前 owner 的子节点，owner 重跑时会被一并回收；但它们
-        // **写在元素行内样式上的自定义属性**不会跟着消失。变量名带样式哈希，
-        // 换一份 `Style` 就是另一批名字，旧的会永远留在 `style` 属性里。
-        let mut owned_vars = Vec::with_capacity(dyn_bindings.len());
-        for (var_name, getter) in dyn_bindings {
-            owned_vars.push(var_name.clone());
+        let owned_vars: Vec<String> = dyn_bindings
+            .iter()
+            .map(|(var_name, _)| var_name.clone())
+            .collect();
+        if !dyn_bindings.is_empty() {
+            let previous = Rc::new(RefCell::new(vec![None::<String>; dyn_bindings.len()]));
             let el_clone = el.clone();
-            Effect::new(move |prev: Option<String>| {
-                let current = getter();
-                if prev.as_ref() != Some(&current)
-                    && let Some(style) = element_style(&el_clone)
-                {
-                    let _ = style.set_property(&var_name, &current);
-                }
-                current
-            });
-        }
-        if !owned_vars.is_empty() {
-            let el_clone = el.clone();
-            on_cleanup(move || {
-                if let Some(style) = element_style(&el_clone) {
-                    for name in &owned_vars {
-                        let _ = style.remove_property(name);
+            let bindings = dyn_bindings;
+            let previous_for_effect = previous.clone();
+            owner.effect_from(
+                inputs.clone(),
+                Box::new(move || {
+                    let values: Vec<String> =
+                        bindings.iter().map(|(_, source)| source.get()).collect();
+                    let mut previous = previous_for_effect.borrow_mut();
+                    if let Some(style) = element_style(&el_clone) {
+                        for (index, ((name, _), value)) in
+                            bindings.iter().zip(values.iter()).enumerate()
+                        {
+                            if previous[index].as_deref() != Some(value) {
+                                let _ = style.set_property(name, value);
+                            }
+                        }
                     }
-                }
-            });
+                    *previous = values.into_iter().map(Some).collect();
+                }),
+            );
         }
+
+        let el_clone = el.clone();
+        let class_name = class_base.clone();
+        owner.on_cleanup(Box::new(move || {
+            if let Some(style) = element_style(&el_clone) {
+                for name in &owned_vars {
+                    let _ = style.remove_property(name);
+                }
+            }
+            let _ = el_clone.class_list().remove_1(&class_name);
+        }));
         class_base
+    }
+
+    pub(crate) fn runtime_inputs(&self) -> silex_core::RuntimeInputs {
+        let rendered = self.render();
+        let mut inputs = silex_core::RuntimeInputs::new();
+        for (_, source) in rendered.dyn_bindings {
+            inputs.extend(&source.runtime_inputs());
+        }
+        inputs
     }
 }
 
@@ -396,7 +416,7 @@ fn element_style(el: &Element) -> Option<web_sys::CssStyleDeclaration> {
 }
 
 /// 递归计算样式的稳定哈希
-fn hash_recursive(style: &Style, hasher: &mut CssHasher) {
+fn hash_recursive(style: &Style<'_>, hasher: &mut CssHasher) {
     for (k, v) in &style.static_rules {
         Normalized(k).hash(hasher);
         Normalized(v).hash(hasher);
@@ -429,12 +449,12 @@ fn hash_recursive(style: &Style, hasher: &mut CssHasher) {
 }
 
 /// 递归生成 CSS 字符串并收集动态绑定
-fn generate_css_recursive(
-    style: &Style,
+fn generate_css_recursive<'scope>(
+    style: &Style<'scope>,
     base_selector: &str,
     hash_str: &str,
     css_out: &mut String,
-    dyn_bindings: &mut Vec<(String, DynamicValue)>,
+    dyn_bindings: &mut Vec<(String, Rx<'scope, String>)>,
 ) {
     // 写入当前层级的规则
     if !style.static_rules.is_empty() || !style.dynamic_rules.is_empty() {
@@ -458,7 +478,7 @@ fn generate_css_recursive(
                 crate::escape::property_name(prop),
                 var_name
             );
-            dyn_bindings.push((var_name, getter.clone()));
+            dyn_bindings.push((var_name, *getter));
         }
         css_out.push_str("}\n");
     }
@@ -491,26 +511,43 @@ fn generate_css_recursive(
     }
 }
 
-impl ReactiveApply for Style {
-    fn apply_to_dom(rx: Rx<Self, RxValueKind>, el: Element, _target: ApplyTarget) {
+impl<'scope> ReactiveApply<'scope> for Style<'scope> {
+    fn apply_to_dom(
+        rx: Rx<'scope, Self, RxValueKind>,
+        el: Element,
+        _target: ApplyTarget,
+        owner: &ViewOwnerToken<'scope>,
+    ) {
         let el = el.clone();
-        Effect::new(move |prev_class: Option<String>| {
-            if let Some(c) = &prev_class {
-                let _ = el.class_list().remove_1(c);
-            }
-            let style = rx.get();
-            style.apply_to_element(&el)
-        });
+        let owner = owner.clone();
+        let owner_for_effect = owner.clone();
+        let previous_class = Rc::new(RefCell::new(None::<String>));
+        let previous_class_for_effect = previous_class.clone();
+        owner.effect_from(
+            rx.runtime_inputs(),
+            Box::new(move || {
+                let style = rx.get();
+                if let Err(error) = owner_for_effect.validate_inputs(&style.runtime_inputs()) {
+                    handle_error(error);
+                    return;
+                }
+                if let Some(class_name) = previous_class_for_effect.borrow_mut().take() {
+                    let _ = el.class_list().remove_1(&class_name);
+                }
+                let class_name = style.apply_to_element(&el, &owner_for_effect);
+                *previous_class_for_effect.borrow_mut() = Some(class_name);
+            }),
+        );
     }
 }
 
-impl From<Option<Style>> for Style {
-    fn from(opt: Option<Style>) -> Self {
+impl<'scope> From<Option<Style<'scope>>> for Style<'scope> {
+    fn from(opt: Option<Style<'scope>>) -> Self {
         opt.unwrap_or_default()
     }
 }
 
-impl IntoStorable for Style {
+impl<'scope> IntoStorable<'scope> for Style<'scope> {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {
         self
@@ -523,7 +560,7 @@ mod tests {
     use crate::layers;
     use crate::types::{hex, px};
 
-    fn css_of(style: Style) -> String {
+    fn css_of(style: Style<'_>) -> String {
         style.render().css
     }
 
@@ -668,15 +705,18 @@ mod tests {
     /// 自定义属性同样走动态路径
     #[test]
     fn a_custom_property_can_be_reactive() {
-        let signal = silex_core::reactivity::RwSignal::new(px(1));
-        let rendered = Style::new().var("--gap", signal).render();
-        assert_eq!(rendered.dyn_bindings.len(), 1);
-        let var_name = &rendered.dyn_bindings[0].0;
-        assert!(
-            rendered.css.contains(&format!("--gap: var({var_name});")),
-            "{}",
-            rendered.css
-        );
+        let mut runtime = silex_core::Runtime::new();
+        runtime.child(|scope| {
+            let signal = scope.rw_signal(px(1));
+            let rendered = Style::new().var("--gap", signal).render();
+            assert_eq!(rendered.dyn_bindings.len(), 1);
+            let var_name = &rendered.dyn_bindings[0].0;
+            assert!(
+                rendered.css.contains(&format!("--gap: var({var_name});")),
+                "{}",
+                rendered.css
+            );
+        });
     }
 
     /// `apply_to_element` 每次调用都为每个动态绑定新建一个 `Effect`，而
@@ -688,42 +728,48 @@ mod tests {
     /// 钉一根桩：哪天所有权模型变了，先坏在这儿而不是坏成线上的 Effect 泄漏。
     #[test]
     fn inner_effects_are_reclaimed_when_the_outer_effect_reruns() {
-        use silex_core::{reactivity::RwSignal, traits::RxWrite};
+        use silex_core::Runtime;
         use std::{cell::Cell, rc::Rc};
 
-        let outer = RwSignal::new(0);
-        let inner_dep = RwSignal::new(0);
-        let inner_runs = Rc::new(Cell::new(0));
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let outer = scope.rw_signal(0);
+            let inner_dep = scope.rw_signal(0);
+            let inner_runs = Rc::new(Cell::new(0));
 
-        let counter = inner_runs.clone();
-        Effect::new(move |_| {
-            outer.get();
-            let counter = counter.clone();
-            Effect::new(move |_| {
-                inner_dep.get();
-                counter.set(counter.get() + 1);
+            let counter = inner_runs.clone();
+            scope.effect(move || {
+                outer.get();
+                let counter = counter.clone();
+                scope.effect(move || {
+                    inner_dep.get();
+                    counter.set(counter.get() + 1);
+                });
             });
-        });
 
-        assert_eq!(inner_runs.get(), 1, "首轮内层 Effect 跑一次");
-        outer.set(1);
-        assert_eq!(inner_runs.get(), 2, "外层重跑，新内层 Effect 跑一次");
-        inner_dep.set(1);
-        assert_eq!(
-            inner_runs.get(),
-            3,
-            "只有存活的那个内层 Effect 响应；上一轮的若没回收会多跑一次"
-        );
+            assert_eq!(inner_runs.get(), 1, "首轮内层 Effect 跑一次");
+            outer.set(1);
+            assert_eq!(inner_runs.get(), 2, "外层重跑，新内层 Effect 跑一次");
+            inner_dep.set(1);
+            assert_eq!(
+                inner_runs.get(),
+                3,
+                "只有存活的那个内层 Effect 响应；上一轮的若没回收会多跑一次"
+            );
+        });
     }
 
     /// 动态值走行内 CSS 变量，规则里只留一个 `var()` 引用
     #[test]
     fn dynamic_values_become_a_css_variable_reference() {
-        let signal = silex_core::reactivity::RwSignal::new(px(1));
-        let rendered = Style::new().width(signal).render();
-        assert_eq!(rendered.dyn_bindings.len(), 1);
-        let var_name = &rendered.dyn_bindings[0].0;
-        assert!(var_name.starts_with("--sb-"), "{var_name}");
-        assert!(rendered.css.contains(&format!("width: var({var_name});")));
+        let mut runtime = silex_core::Runtime::new();
+        runtime.child(|scope| {
+            let signal = scope.rw_signal(px(1));
+            let rendered = Style::new().width(signal).render();
+            assert_eq!(rendered.dyn_bindings.len(), 1);
+            let var_name = &rendered.dyn_bindings[0].0;
+            assert!(var_name.starts_with("--sb-"), "{var_name}");
+            assert!(rendered.css.contains(&format!("width: var({var_name});")));
+        });
     }
 }

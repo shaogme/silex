@@ -24,6 +24,20 @@ pub struct RuntimeInput {
     scheduler: Rc<RefCell<GlobalScheduler>>,
 }
 
+impl std::fmt::Debug for RuntimeInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RuntimeInput(..)")
+    }
+}
+
+impl PartialEq for RuntimeInput {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.scheduler, &other.scheduler)
+    }
+}
+
+impl Eq for RuntimeInput {}
+
 impl RuntimeInput {
     pub(crate) fn from_scheduler(scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
         Self { scheduler }
@@ -37,7 +51,7 @@ impl RuntimeInput {
 
 /// Opaque inline-first collection of source provenance claims.
 #[doc(hidden)]
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RuntimeInputs {
     inputs: SmallVec<[RuntimeInput; INLINE_INPUTS]>,
 }

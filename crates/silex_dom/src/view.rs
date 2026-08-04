@@ -327,15 +327,15 @@ impl<'scope> ViewOwnerToken<'scope> {
         }
     }
 
-    pub(crate) fn effect_from(&self, inputs: RuntimeInputs, callback: Box<dyn FnMut() + 'scope>) {
+    pub fn effect_from(&self, inputs: RuntimeInputs, callback: Box<dyn FnMut() + 'scope>) {
         self.effect.call(inputs, callback);
     }
 
-    pub(crate) fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
+    pub fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
         self.validate.call(inputs)
     }
 
-    pub(crate) fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>) {
+    pub fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>) {
         self.cleanup.call(cleanup);
     }
 

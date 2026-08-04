@@ -2,10 +2,4 @@ error[E0599]: no method named `into_calc` found for struct `Hex` in the current 
  --> tests/ui/fail_color_into_length_calc.rs:7:51
   |
 7 |     let _: CalcValue<LengthMark> = hex("#ffffff").into_calc();
-  |                                                   ^^^^^^^^^
-  |
-help: there is a method `into_rx` with a similar name
-  |
-7 -     let _: CalcValue<LengthMark> = hex("#ffffff").into_calc();
-7 +     let _: CalcValue<LengthMark> = hex("#ffffff").into_rx();
-  |
+  |                                                   ^^^^^^^^^ method not found in `Hex`

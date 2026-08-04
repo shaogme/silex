@@ -15,11 +15,11 @@ error[E0277]: 类型 `Hex` 无法作为有效的 CSS `BorderLeftWidth` 属性值
             CssVar
             CssVar<T>
             CssWide
-note: required by a bound in `silex_css::builder::Style::border_left_width`
+note: required by a bound in `silex_css::builder::Style::<'scope>::border_left_width`
  --> src/builder.rs
   |
-  |                     V::Value: ValidFor<props::$pascal> + Display + Clone + Sized + 'static,
-  |                               ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Style::border_left_width`
+  |                     V::Value: ValidFor<props::$pascal> + Display + Clone + 'scope,
+  |                               ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Style::<'scope>::border_left_width`
 ...
   | for_all_properties!(generate_builder_methods);
   | --------------------------------------------- in this macro invocation

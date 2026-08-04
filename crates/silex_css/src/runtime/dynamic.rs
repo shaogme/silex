@@ -5,12 +5,16 @@ use crate::{
         registry::{DocOp, apply_doc_op},
         template::{CssPart, dynamic_class, render, replace_placeholders},
     },
+    source::IntoCssReactive,
     types,
 };
-use silex_core::{prelude::*, traits::RxGet};
-use silex_dom::prelude::*;
+use silex_core::{RuntimeInputs, Rx, error::handle_error};
+use silex_dom::{
+    attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
+    view::{ViewOwner, ViewOwnerToken},
+};
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::{HashMap, VecDeque},
     fmt::Display,
     rc::{Rc, Weak},
@@ -18,7 +22,7 @@ use std::{
 use wasm_bindgen::JsCast;
 use web_sys::{Element, HtmlElement, SvgElement};
 
-pub type CssVariableGetter = Rx<String>;
+pub type CssVariableGetter<'scope> = Rx<'scope, String>;
 
 /// 退休样式表的缓存上限。
 ///
@@ -33,12 +37,15 @@ thread_local! {
     static RETIRED_STYLES: RefCell<VecDeque<Rc<DynamicStyleState>>> = const { RefCell::new(VecDeque::new()) };
     /// `DYNAMIC_STYLE_REGISTRY` 正被借用时来不及注销的 id
     static PENDING_UNREGISTER: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    static NEXT_DYNAMIC_STYLE_ID: Cell<u64> = const { Cell::new(0) };
 }
 
 /// Manages an injected stylesheet uniquely for a component instance.
 pub(crate) struct DynamicStyleState {
     pub id: String,
+    logical_id: String,
     pub sheet: ActiveSheet,
+    content: RefCell<String>,
     /// 当前是否挂在 `document.adoptedStyleSheets` 上
     attached: std::cell::Cell<bool>,
 }
@@ -66,6 +73,7 @@ impl DynamicStyleState {
             // 借不到就排队，微任务里补做——不再静默跳过
             apply_doc_op(DocOp::Remove(adopted));
         }
+        self.sheet.detach();
     }
 }
 
@@ -73,7 +81,6 @@ impl Drop for DynamicStyleState {
     fn drop(&mut self) {
         // 1. Remove from document stylesheets
         self.detach();
-        self.sheet.detach();
         // 2. Remove from registry map
         //
         // `try_with`：线程退出时 TLS 析构器会来 `Drop` 退休队列里的状态，那时
@@ -164,52 +171,81 @@ impl DynamicStyleManager {
         }
     }
 
-    pub fn update(&self, id: &str, content: &str) {
+    pub fn update(&self, id: &str, content: &str) -> bool {
         if let Ok(state_borrow) = self.state.try_borrow()
             && let Some(state) = state_borrow.as_ref()
-            && state.id == id
+            && state.logical_id == id
         {
-            state.sheet.replace(content);
-            return;
+            let same_content = state.content.borrow().as_str() == content;
+            if same_content || Rc::strong_count(state) == 1 {
+                if !same_content {
+                    state.sheet.replace(content);
+                    *state.content.borrow_mut() = content.to_string();
+                }
+                return true;
+            }
         }
 
         let Some(new_state) = with_dynamic_registry(|reg| {
-            if let Some(weak) = reg.get(id)
-                && let Some(state) = weak.upgrade()
-            {
-                RETIRED_STYLES.with(|retired| {
-                    if let Ok(mut r) = retired.try_borrow_mut() {
-                        if let Some(pos) = r.iter().position(|s| s.id == id) {
+            let existing = reg.get(id).and_then(Weak::upgrade);
+            if let Some(state) = existing {
+                if !state.attached.get() {
+                    RETIRED_STYLES.with(|retired| {
+                        if let Ok(mut r) = retired.try_borrow_mut()
+                            && let Some(pos) = r.iter().position(|s| s.id == state.id)
+                        {
                             r.remove(pos);
                         }
-                    }
-                });
-                state.sheet.replace(content);
-                // 复用一张退休的表：内容还在，但已经被摘出文档，得挂回去
-                state.attach();
-                return Some(state);
+                    });
+                    state.sheet.replace(content);
+                    *state.content.borrow_mut() = content.to_string();
+                    // 复用一张退休的表：内容还在，但已经被摘出文档，得挂回去
+                    state.attach();
+                    return Some(state);
+                }
+
+                // 同一逻辑 id 的相同内容可以共享；不同内容必须拆分成独立表，
+                // 否则一个 active owner 的更新会静默覆盖另一个 owner。
+                if state.content.borrow().as_str() == content {
+                    return Some(state);
+                }
+            } else {
+                reg.remove(id);
             }
+
             let sheet = ActiveSheet::create()?;
             sheet.replace(content);
 
+            let state_id = if reg.contains_key(id) {
+                unique_dynamic_style_id("slx-dynamic")
+            } else {
+                id.to_string()
+            };
             let state = Rc::new(DynamicStyleState {
-                id: id.to_string(),
+                id: state_id.clone(),
+                logical_id: id.to_string(),
                 sheet,
+                content: RefCell::new(content.to_string()),
                 attached: std::cell::Cell::new(false),
             });
             state.attach();
-            reg.insert(id.to_string(), Rc::downgrade(&state));
+            reg.insert(state_id, Rc::downgrade(&state));
             Some(state)
         })
         .flatten() else {
             report(&format!("无法建立动态样式表 `{id}`，该规则不会生效"));
-            return;
+            return false;
         };
 
         self.take_and_retire();
         if let Ok(mut state_borrow) = self.state.try_borrow_mut() {
             *state_borrow = Some(new_state);
         }
+        true
+    }
+
+    pub fn dispose(&self) {
+        self.take_and_retire();
     }
 }
 
@@ -221,13 +257,13 @@ impl Drop for DynamicStyleManager {
 
 /// A structure representing a dynamic CSS class with reactive variables and dynamic rules.
 #[derive(Clone)]
-pub struct DynamicCss {
+pub struct DynamicCss<'scope> {
     pub class_name: &'static str,
-    pub vars: Vec<(&'static str, CssVariableGetter)>,
-    pub rules: Vec<(&'static [CssPart], Vec<CssVariableGetter>)>,
+    pub vars: Vec<(&'static str, CssVariableGetter<'scope>)>,
+    pub rules: Vec<(&'static [CssPart], Vec<CssVariableGetter<'scope>>)>,
 }
 
-impl DynamicCss {
+impl<'scope> DynamicCss<'scope> {
     pub fn new(class_name: &'static str) -> Self {
         Self {
             class_name,
@@ -239,110 +275,166 @@ impl DynamicCss {
     pub fn with_var<P, S>(mut self, var_name: &'static str, source: S) -> Self
     where
         P: types::CssProperty,
-        S: IntoRx,
-        S::Value: Clone + Sized + types::ValidFor<P> + Display + 'static,
-        S::RxType: RxGet<Value = S::Value> + 'static,
+        S: IntoCssReactive<'scope>,
+        S::Value: Clone + Sized + types::ValidFor<P> + Display + 'scope,
     {
         self.vars
             .push((var_name, make_property_val::<P, S>(source)));
         self
     }
 
-    pub fn with_rule(mut self, parts: &'static [CssPart], exprs: Vec<CssVariableGetter>) -> Self {
+    pub fn with_rule(
+        mut self,
+        parts: &'static [CssPart],
+        exprs: Vec<CssVariableGetter<'scope>>,
+    ) -> Self {
         self.rules.push((parts, exprs));
         self
     }
-}
 
-impl ApplyToDom for DynamicCss {
-    fn apply(&self, el: &Element, _target: ApplyTarget) {
-        // 1. Apply class name
-        self.class_name.apply(el, ApplyTarget::Class);
+    pub(crate) fn runtime_inputs(&self) -> RuntimeInputs {
+        let mut inputs = RuntimeInputs::new();
+        for (_, getter) in &self.vars {
+            inputs.extend(&getter.runtime_inputs());
+        }
+        for (_, getters) in &self.rules {
+            for getter in getters {
+                inputs.extend(&getter.runtime_inputs());
+            }
+        }
+        inputs
+    }
 
-        // 2. Apply inline variables with optimized Effect
+    fn apply_to_element(&self, el: &Element, owner: &dyn ViewOwner<'scope>) {
+        let all_inputs = self.runtime_inputs();
+        if let Err(error) = owner.validate_inputs(&all_inputs) {
+            handle_error(error);
+            return;
+        }
+
+        let _ = el.class_list().add_1(self.class_name);
+
         if !self.vars.is_empty() {
-            let el = el.clone();
             let vars = self.vars.clone();
-            Effect::new(move |prev_values: Option<Vec<String>>| {
-                let Some(style) = el
-                    .dyn_ref::<HtmlElement>()
-                    .map(|e| e.style())
-                    .or_else(|| el.dyn_ref::<SvgElement>().map(|e| e.style()))
-                else {
-                    return Vec::new();
-                };
-
-                let mut current_vals = Vec::with_capacity(vars.len());
-                let mut changed = false;
-
-                for (i, (_name, getter)) in vars.iter().enumerate() {
-                    let val = getter.get();
-                    if !changed && prev_values.as_ref().and_then(|v| v.get(i)) != Some(&val) {
-                        changed = true;
-                    }
-                    current_vals.push(val);
-                }
-
-                if changed || prev_values.is_none() {
-                    for (i, (name, val)) in vars.iter().zip(current_vals.iter()).enumerate() {
-                        if prev_values.as_ref().and_then(|v| v.get(i)) != Some(val) {
-                            let _ = style.set_property(name.0, val);
+            let vars_for_effect = vars.clone();
+            let mut inputs = RuntimeInputs::new();
+            for (_, getter) in &vars {
+                inputs.extend(&getter.runtime_inputs());
+            }
+            let previous = Rc::new(RefCell::new(vec![None::<String>; vars.len()]));
+            let previous_for_effect = previous.clone();
+            let el_clone = el.clone();
+            owner.effect_from(
+                inputs,
+                Box::new(move || {
+                    let values: Vec<String> = vars_for_effect
+                        .iter()
+                        .map(|(_, getter)| getter.get())
+                        .collect();
+                    let mut previous = previous_for_effect.borrow_mut();
+                    if let Some(style) = element_style(&el_clone) {
+                        for (index, ((name, _), value)) in
+                            vars_for_effect.iter().zip(values.iter()).enumerate()
+                        {
+                            if previous[index].as_deref() != Some(value) {
+                                let _ = style.set_property(name, value);
+                            }
                         }
                     }
+                    *previous = values.into_iter().map(Some).collect();
+                }),
+            );
+
+            let names: Vec<&'static str> = vars.iter().map(|(name, _)| *name).collect();
+            let el_clone = el.clone();
+            owner.on_cleanup(Box::new(move || {
+                if let Some(style) = element_style(&el_clone) {
+                    for name in names {
+                        let _ = style.remove_property(name);
+                    }
                 }
-                current_vals
-            });
+            }));
         }
 
-        // 3. Apply isolated component dynamic rules
         for (parts, getters) in self.rules.clone() {
-            let manager = DynamicStyleManager::new();
+            let mut inputs = RuntimeInputs::new();
+            for getter in &getters {
+                inputs.extend(&getter.runtime_inputs());
+            }
+            let manager = Rc::new(DynamicStyleManager::new());
+            let manager_for_effect = manager.clone();
+            let current_class = Rc::new(RefCell::new(None::<String>));
+            let current_class_for_effect = current_class.clone();
             let el_clone = el.clone();
             let base_class = self.class_name;
-
-            Effect::new(move |prev: Option<(Vec<String>, String)>| {
-                let current_vals: Vec<String> = getters.iter().map(|g| g.get()).collect();
-                if let Some((old_vals, _)) = &prev
-                    && current_vals == *old_vals
-                {
-                    return prev.unwrap();
-                }
-
-                let dyn_class = dynamic_class(base_class, parts, &current_vals);
-
-                let prev_class = prev.as_ref().map(|(_, c)| c);
-                if Some(&dyn_class) != prev_class {
-                    if let Some(old_class) = prev_class {
-                        let _ = el_clone.class_list().remove_1(old_class);
+            owner.effect_from(
+                inputs,
+                Box::new(move || {
+                    let current_vals: Vec<String> =
+                        getters.iter().map(|getter| getter.get()).collect();
+                    let dyn_class = dynamic_class(base_class, parts, &current_vals);
+                    let mut current_class = current_class_for_effect.borrow_mut();
+                    if current_class.as_deref() == Some(dyn_class.as_str()) {
+                        return;
                     }
-                    let _ = el_clone.class_list().add_1(&dyn_class);
 
                     let rule = render(parts, &dyn_class, &current_vals);
-                    manager.update(&dyn_class, &rule);
-                }
+                    if !manager_for_effect.update(&dyn_class, &rule) {
+                        return;
+                    }
+                    let _ = el_clone.class_list().add_1(&dyn_class);
+                    if let Some(old_class) = current_class.replace(dyn_class) {
+                        let _ = el_clone.class_list().remove_1(&old_class);
+                    }
+                }),
+            );
 
-                (current_vals, dyn_class)
-            });
+            let manager_for_cleanup = manager.clone();
+            let current_class_for_cleanup = current_class.clone();
+            let el_clone = el.clone();
+            owner.on_cleanup(Box::new(move || {
+                if let Some(class_name) = current_class_for_cleanup.borrow_mut().take() {
+                    let _ = el_clone.class_list().remove_1(&class_name);
+                }
+                manager_for_cleanup.dispose();
+            }));
         }
+
+        let class_name = self.class_name;
+        let el_clone = el.clone();
+        owner.on_cleanup(Box::new(move || {
+            let _ = el_clone.class_list().remove_1(class_name);
+        }));
     }
 }
 
-impl IntoStorable for DynamicCss {
+impl<'scope> ApplyToDom<'scope> for DynamicCss<'scope> {
+    fn apply(&self, el: &Element, _target: ApplyTarget, owner: &ViewOwnerToken<'scope>) {
+        self.apply_to_element(el, owner);
+    }
+
+    fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
+        let inputs = self.runtime_inputs();
+        AttrOp::custom_with_inputs(inputs, move |el, owner| {
+            self.apply_to_element(el, owner);
+        })
+    }
+}
+
+impl<'scope> IntoStorable<'scope> for DynamicCss<'scope> {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {
         self
     }
 }
 
-pub fn make_property_val<P, S>(source: S) -> Rx<String>
+pub fn make_property_val<'scope, P, S>(source: S) -> Rx<'scope, String>
 where
     P: types::CssProperty,
-    S: IntoRx,
-    S::Value: Clone + Sized + types::ValidFor<P> + Display + 'static,
-    S::RxType: RxGet<Value = S::Value> + 'static,
+    S: IntoCssReactive<'scope>,
+    S::Value: Clone + Sized + types::ValidFor<P> + Display + 'scope,
 {
-    let signal = source.into_rx();
-    Rx::derive(Box::new(move || format!("{}", signal.get())))
+    source.into_css_reactive().map(|value| value.to_string())
 }
 
 /// 一条带动态选择器的组件规则：算出本轮类名、把规则写进独占样式表、返回类名。
@@ -353,7 +445,7 @@ pub fn dynamic_rule_class(
     manager: &DynamicStyleManager,
     base_class: &str,
     parts: &'static [CssPart],
-    getters: &[CssVariableGetter],
+    getters: &[CssVariableGetter<'_>],
 ) -> String {
     let vals: Vec<String> = getters.iter().map(|g| g.get()).collect();
     let dyn_class = dynamic_class(base_class, parts, &vals);
@@ -371,23 +463,62 @@ pub fn dynamic_rule_class(
 /// - `replacements`：具名的 `var(--slx-dyn-N)`，用于**声明值**里的片段。这段
 ///   模板要先过一遍 lightningcss，位置信息在那之后不复存在，只能按文本找；但
 ///   替换是一遍扫描完成的，写进去的值不会再被当成占位符。
-pub fn inject_managed_dynamic_style(
+pub fn inject_managed_dynamic_style<'scope>(
+    owner: &dyn ViewOwner<'scope>,
     style_id: impl Into<String>,
     parts: &'static [CssPart],
-    positional: Vec<CssVariableGetter>,
-    replacements: Vec<(String, CssVariableGetter)>,
+    positional: Vec<CssVariableGetter<'scope>>,
+    replacements: Vec<(String, CssVariableGetter<'scope>)>,
 ) {
-    let manager = DynamicStyleManager::new();
+    let mut inputs = RuntimeInputs::new();
+    for getter in &positional {
+        inputs.extend(&getter.runtime_inputs());
+    }
+    for (_, getter) in &replacements {
+        inputs.extend(&getter.runtime_inputs());
+    }
+    if let Err(error) = owner.validate_inputs(&inputs) {
+        handle_error(error);
+        return;
+    }
+
+    let manager = Rc::new(DynamicStyleManager::new());
+    let manager_for_effect = manager.clone();
     let style_id_str = style_id.into();
-    Effect::new(move |_| {
-        let vals: Vec<String> = positional.iter().map(|g| g.get()).collect();
-        // 全局样式没有组件类名，`CssPart::Class` 不会出现在这类模板里
-        let res = render(parts, "", &vals);
-        let pairs: Vec<(String, String)> = replacements
-            .iter()
-            .map(|(pattern, getter)| (pattern.clone(), getter.get()))
-            .collect();
-        let res = replace_placeholders(&res, &pairs);
-        manager.update(&style_id_str, &res);
+    owner.effect_from(
+        inputs,
+        Box::new(move || {
+            let vals: Vec<String> = positional.iter().map(|getter| getter.get()).collect();
+            // 全局样式没有组件类名，`CssPart::Class` 不会出现在这类模板里
+            let res = render(parts, "", &vals);
+            let pairs: Vec<(String, String)> = replacements
+                .iter()
+                .map(|(pattern, getter)| {
+                    (
+                        pattern.clone(),
+                        crate::escape::declaration_value(&getter.get()).into_owned(),
+                    )
+                })
+                .collect();
+            let res = replace_placeholders(&res, &pairs);
+            manager_for_effect.update(&style_id_str, &res);
+        }),
+    );
+    let manager_for_cleanup = manager.clone();
+    owner.on_cleanup(Box::new(move || manager_for_cleanup.dispose()));
+}
+
+fn element_style(el: &Element) -> Option<web_sys::CssStyleDeclaration> {
+    el.dyn_ref::<HtmlElement>()
+        .map(|element| element.style())
+        .or_else(|| el.dyn_ref::<SvgElement>().map(|element| element.style()))
+}
+
+pub(crate) fn unique_dynamic_style_id(prefix: &str) -> String {
+    let id = NEXT_DYNAMIC_STYLE_ID.with(|next| {
+        let id = next.get();
+        next.set(id.wrapping_add(1));
+        id
     });
+    format!("{prefix}-{id}")
 }

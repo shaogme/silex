@@ -151,6 +151,9 @@ pub fn consolidate_attributes<'scope>(attrs: Vec<AttrOp<'scope>>) -> Vec<AttrOp<
             AttrOp::CombinedStyles(cs) => {
                 style_acc.extend_combined(cs);
             }
+            AttrOp::CustomWithInputs { .. } => {
+                consolidated.push(op);
+            }
             AttrOp::Noop => {}
             op => {
                 consolidated.push(op);

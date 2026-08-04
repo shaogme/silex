@@ -498,4 +498,16 @@ mod tests {
             }
         })
     }
+
+    #[test]
+    fn custom_with_inputs_keeps_declared_runtime_sources() {
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let source = scope.rw_signal(1i32).into_rx();
+            let op = AttrOp::custom_with_inputs(source.runtime_inputs(), |_, _| {});
+
+            assert_eq!(op.runtime_inputs().len(), 1);
+            assert!(format!("{op:?}").contains("CustomWithInputs"));
+        });
+    }
 }

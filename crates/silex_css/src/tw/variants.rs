@@ -1,4 +1,5 @@
 use core::fmt;
+use std::borrow::Cow;
 
 /// 选项名解析失败：写错的选项名不应静默回退到默认值
 ///
@@ -46,7 +47,7 @@ pub trait VariantSchema {
     type Config;
 
     /// 获取变体基础 CSS 类名
-    fn base(&self) -> &'static str;
+    fn base(&self) -> Cow<'static, str>;
 
     /// 渲染变体配置组合对应的 CSS 类名字符串
     fn render(&self, config: &Self::Config) -> String;
@@ -228,11 +229,10 @@ macro_rules! declare_variants {
         impl $crate::tw::variants::VariantSchema for $struct_name {
             type Config = Self;
 
-            fn base(&self) -> &'static str {
+            fn base(&self) -> ::std::borrow::Cow<'static, str> {
                 let mut out = ::std::string::String::new();
                 $crate::IntoClass::write_class(&($base), &mut out);
-                // 由于 base 可能为 &str 或 String，通过 Leak 变成 &'static str
-                ::std::boxed::Box::leak(out.into_boxed_str())
+                ::std::borrow::Cow::Owned(out)
             }
 
             fn render(&self, config: &Self::Config) -> String {

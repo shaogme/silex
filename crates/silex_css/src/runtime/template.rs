@@ -11,6 +11,7 @@
 //!
 //! 现在模板在编译期就被切成片段，运行时只做拼接：没有模式匹配，也就没有误伤。
 
+use crate::escape::declaration_value;
 use silex_hash::{
     css::{Normalized, encode_base36},
     css_hasher,
@@ -45,7 +46,7 @@ pub fn render(parts: &[CssPart], class: &str, vals: &[String]) -> String {
             CssPart::Class => out.push_str(class),
             CssPart::Val(i) => {
                 if let Some(v) = vals.get(*i) {
-                    out.push_str(v);
+                    out.push_str(&declaration_value(v));
                 }
             }
         }
@@ -166,5 +167,17 @@ mod tests {
     fn replacement_keeps_multibyte_content_intact() {
         let pairs = [("{X}".to_string(), "值".to_string())];
         assert_eq!(replace_placeholders("前{X}后", &pairs), "前值后");
+    }
+
+    #[test]
+    fn a_dynamic_fragment_cannot_open_a_new_rule() {
+        let parts = [
+            CssPart::Lit(".base "),
+            CssPart::Val(0),
+            CssPart::Lit("{color:red}"),
+        ];
+        let out = render(&parts, "base", &["x} body { display: none".to_string()]);
+        assert!(!out.contains("body { display"), "{out}");
+        assert_eq!(out.matches('}').count(), 1, "{out}");
     }
 }

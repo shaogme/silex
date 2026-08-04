@@ -1,0 +1,17 @@
+error: lifetime may not live long enough
+  --> tests/ui/fail_dynamic_css_child_escape.rs:8:9
+   |
+ 6 |       let css = runtime.child(|scope| {
+   |                                ------ return type of closure is DynamicCss<'2>
+   |                                |
+   |                                has type `silex_core::Scope<'1>`
+ 7 |           let (value, _) = scope.signal(String::from("red"));
+ 8 | /         DynamicCss::new("child").with_rule(
+ 9 | |             &[CssPart::Lit(".child{"), CssPart::Val(0), CssPart::Lit("}")],
+10 | |             vec![value.into_css_reactive()],
+11 | |         )
+   | |_________^ returning this value requires that `'1` must outlive `'2`
+   |
+   = note: requirement occurs because of the type `DynamicCss<'_>`, which makes the generic argument `'_` invariant
+   = note: the struct `DynamicCss<'scope>` is invariant over the parameter `'scope`
+   = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance

@@ -1,0 +1,14 @@
+error: lifetime may not live long enough
+  --> tests/ui/fail_theme_child_escape.rs:30:9
+   |
+28 |     let theme = runtime.child(|scope| {
+   |                                ------ return type of closure is ThemeVariables<'2, Theme>
+   |                                |
+   |                                has type `silex_core::Scope<'1>`
+29 |         let (value, _) = scope.signal(Theme);
+30 |         theme_variables(value)
+   |         ^^^^^^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
+   |
+   = note: requirement occurs because of the type `ThemeVariables<'_, Theme>`, which makes the generic argument `'_` invariant
+   = note: the struct `ThemeVariables<'scope, T>` is invariant over the parameter `'scope`
+   = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
