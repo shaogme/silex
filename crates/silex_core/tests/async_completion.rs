@@ -172,10 +172,11 @@ async fn mutation_future_is_cancelled_after_scope_dispose() {
 async fn scoped_task_cancels_and_drops_its_future() {
     let dropped = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let mut root = runtime.run(|_| {});
-    let task = root
-        .scope()
-        .spawn_scoped(PendingFuture::<()>::new(dropped.clone()));
+    let root = runtime.run();
+    let task = {
+        let scope = root.scope();
+        scope.spawn_scoped(PendingFuture::<()>::new(dropped.clone()))
+    };
 
     assert!(!task.is_cancelled());
     task.cancel();

@@ -22,7 +22,7 @@ pub use node_ref::NodeRef;
 pub use reactivity::{
     Constant, Effect, Memo, ReadSignal, RwSignal, Signal, StoredValue, WriteSignal,
 };
-pub use scope::{OwnedScope, RootHandle, RootScope, Runtime, Scope};
+pub use scope::{OwnedScope, RootHandle, Runtime, Scope};
 pub use silex_reactivity::CompletionToken;
 #[doc(hidden)]
 pub use silex_reactivity::RuntimeInputs;
@@ -30,10 +30,7 @@ pub use store::Store;
 pub use task::TaskHandle;
 pub use traits::{RxBase, RxGet, RxRead};
 
-pub use silex_reactivity::{
-    CleanupError, RootCallback, RootDerived, RootEffect, RootMemo, RootNodeRef, RootReadSignal,
-    RootSignal, RootStoredValue, RootWriteSignal,
-};
+pub use silex_reactivity::CleanupError;
 
 /// Marker for value-producing reactive nodes.
 pub struct RxValueKind;

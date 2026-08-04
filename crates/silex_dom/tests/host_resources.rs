@@ -1,6 +1,6 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_core::{RootHandle, RootNodeRef, Runtime, traits::ForErrorHandler};
+use silex_core::{RootHandle, Runtime, traits::ForErrorHandler};
 use silex_dom::{
     element::{Element, bind_event},
     event::click,
@@ -9,9 +9,7 @@ use silex_dom::{
         request_idle_callback_owned, set_interval_owned, set_timeout_owned,
         window_event_listener_untyped_owned,
     },
-    view::{
-        AnyView, KeyedLoopView, RootViewOwner, ScopedViewOwner, View, ViewOwner, mount_text_node,
-    },
+    view::{AnyView, KeyedLoopView, ScopedViewOwner, View, ViewOwner, mount_text_node},
 };
 use std::{
     cell::{Cell, RefCell},
@@ -274,13 +272,14 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
     let spy = Spy::new();
     let host = mount_point();
     let element_slot = Rc::new(RefCell::new(None::<WebElement>));
-    let node_ref_slot = Rc::new(RefCell::new(None::<RootNodeRef<WebElement>>));
     let calls = Rc::new(Cell::new(0));
     let drops = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
 
-    let mut root = runtime.run(|scope| {
-        let owner = RootViewOwner::new(scope.clone());
+    let root = runtime.run();
+    {
+        let scope = root.scope();
+        let owner = ScopedViewOwner::new(scope);
         let token = owner.token();
         let element = Element::new("button");
         spy.spy_target(element.dom_element.as_ref());
@@ -288,7 +287,6 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
         *element_slot.borrow_mut() = Some(element.dom_element.clone());
 
         let node_ref = scope.node_ref::<WebElement>();
-        *node_ref_slot.borrow_mut() = Some(node_ref.clone());
         let calls_for_handler = calls.clone();
         let probe = DropProbe::new(drops.clone());
         bind_event(
@@ -301,27 +299,17 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
             &token,
         );
 
-        node_ref
-            .set(element.dom_element.clone())
-            .expect("node ref should accept the mounted element");
+        node_ref.load(element.dom_element.clone());
         element.mount_owned(&owner, &host.clone().into(), Vec::new());
         assert!(node_ref.get().is_some());
         dispatch(&element_node, MouseEvent::new("click").unwrap().into());
         assert_eq!(calls.get(), 1);
-    });
+    }
 
     root.dispose().expect("root disposal should succeed");
     assert_eq!(spy.count("event_add:click"), 1);
     assert_eq!(spy.count("event_remove:click"), 1);
     assert_eq!(drops.get(), 1);
-    assert!(
-        node_ref_slot
-            .borrow()
-            .as_ref()
-            .expect("node ref is retained for assertion")
-            .get()
-            .is_none()
-    );
 
     let element = element_slot
         .borrow()
@@ -330,8 +318,6 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
         .clone();
     dispatch(&element.into(), MouseEvent::new("click").unwrap().into());
     assert_eq!(calls.get(), 1);
-    root.dispose()
-        .expect("repeated root disposal should succeed");
     assert_eq!(spy.count("event_remove:click"), 1);
     remove_mount_point(&host);
 }
@@ -344,9 +330,11 @@ fn render_rerun_replaces_old_window_listener() {
     let calls = Rc::new(RefCell::new(Vec::<i32>::new()));
     let mut runtime = Runtime::new();
 
-    let mut root = runtime.run(|scope| {
+    let root = runtime.run();
+    {
+        let scope = root.scope();
         let (value, set_value) = scope.signal(0i32);
-        let owner = RootViewOwner::new(scope.clone());
+        let owner = ScopedViewOwner::new(scope);
         let calls_for_view = calls.clone();
         let view = move || WindowResourceView {
             id: value.get(),
@@ -364,7 +352,7 @@ fn render_rerun_replaces_old_window_listener() {
         window
             .dispatch_event(&Event::new("silex-window-resource").unwrap())
             .expect("window event dispatch should succeed");
-    });
+    }
 
     assert_eq!(&*calls.borrow(), &[0, 1]);
     root.dispose().expect("root disposal should succeed");
@@ -408,7 +396,9 @@ fn keyed_reorder_keeps_window_resources_until_row_delete() {
     let calls = Rc::new(RefCell::new(Vec::<i32>::new()));
     let mut runtime = Runtime::new();
 
-    let mut root = runtime.run(|scope| {
+    let root = runtime.run();
+    {
+        let scope = root.scope();
         scope.child(|child| {
             let (items, set_items) = child.signal(vec![1i32, 2]);
             let calls_for_factory = calls.clone();
@@ -434,7 +424,7 @@ fn keyed_reorder_keeps_window_resources_until_row_delete() {
             set_items.set(vec![2]);
             assert_eq!(spy.count("event_remove:silex-window-resource"), 1);
         });
-    });
+    }
 
     assert_eq!(spy.count("event_remove:silex-window-resource"), 2);
     root.dispose().expect("root disposal should succeed");
@@ -447,11 +437,12 @@ fn window_listener_cancel_is_idempotent_and_owner_keeps_final_control() {
     let spy = Spy::new();
     let calls = Rc::new(Cell::new(0));
     let drops = Rc::new(Cell::new(0));
-    let handle_slot = Rc::new(RefCell::new(None));
     let mut runtime = Runtime::new();
-
-    let mut root = runtime.run(|scope| {
-        let owner = RootViewOwner::new(scope.clone());
+    let root = runtime.run();
+    let handle_slot = Rc::new(RefCell::new(None));
+    {
+        let scope = root.scope();
+        let owner = ScopedViewOwner::new(scope);
         let calls_for_handler = calls.clone();
         let probe = DropProbe::new(drops.clone());
         let handle =
@@ -461,7 +452,7 @@ fn window_listener_cancel_is_idempotent_and_owner_keeps_final_control() {
             })
             .expect("window listener should register");
         *handle_slot.borrow_mut() = Some(handle);
-    });
+    }
 
     let window = web_sys::window().expect("window is available");
     window
@@ -486,9 +477,8 @@ fn window_listener_cancel_is_idempotent_and_owner_keeps_final_control() {
     assert_eq!(spy.count("event_add:silex-resize"), 1);
     assert_eq!(spy.count("event_remove:silex-resize"), 1);
 
+    drop(handle_slot);
     root.dispose().expect("root disposal should succeed");
-    root.dispose()
-        .expect("repeated root disposal should succeed");
     assert_eq!(spy.count("event_remove:silex-resize"), 1);
     assert_eq!(drops.get(), 1);
 }
@@ -503,8 +493,10 @@ async fn cancelable_host_tasks_are_cleared_before_dispatch() {
     let drops = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
 
-    let mut root = runtime.run(|scope| {
-        let owner = RootViewOwner::new(scope.clone());
+    let root = runtime.run();
+    {
+        let scope = root.scope();
+        let owner = ScopedViewOwner::new(scope);
 
         let timeout_calls_for_callback = timeout_calls.clone();
         let timeout_probe = DropProbe::new(drops.clone());
@@ -545,7 +537,7 @@ async fn cancelable_host_tasks_are_cleared_before_dispatch() {
             let _ = &idle_probe;
         })
         .expect("idle callback should register");
-    });
+    }
 
     root.dispose().expect("root disposal should succeed");
     assert_eq!(spy.count("timeout_set"), 1);
@@ -576,11 +568,12 @@ async fn active_host_tasks_execute_and_interval_cancel_is_idempotent() {
     let interval_calls = Rc::new(Cell::new(0));
     let frame_calls = Rc::new(Cell::new(0));
     let idle_calls = Rc::new(Cell::new(0));
-    let interval_slot = Rc::new(RefCell::new(None));
     let mut runtime = Runtime::new();
-
-    let mut root = runtime.run(|scope| {
-        let owner = RootViewOwner::new(scope.clone());
+    let root = runtime.run();
+    let interval_slot = Rc::new(RefCell::new(None));
+    {
+        let scope = root.scope();
+        let owner = ScopedViewOwner::new(scope);
         let timeout_calls_for_callback = timeout_calls.clone();
         set_timeout_owned(
             &owner.token(),
@@ -609,7 +602,7 @@ async fn active_host_tasks_execute_and_interval_cancel_is_idempotent() {
             idle_calls_for_callback.set(idle_calls_for_callback.get() + 1)
         })
         .expect("idle callback should register");
-    });
+    }
 
     spy.wait(50).await;
     assert_eq!(timeout_calls.get(), 1);
@@ -632,6 +625,7 @@ async fn active_host_tasks_execute_and_interval_cancel_is_idempotent() {
     assert_eq!(interval_calls.get(), interval_calls_after_cancel);
     assert_eq!(spy.count("interval_clear"), 1);
 
+    drop(interval_slot);
     root.dispose().expect("root disposal should succeed");
     assert_eq!(spy.count("interval_clear"), 1);
 }
@@ -641,13 +635,14 @@ async fn microtask_cancel_and_owner_dispose_only_gate_user_callbacks() {
     let spy = Spy::new();
     let canceled_calls = Rc::new(Cell::new(0));
     let disposed_calls = Rc::new(Cell::new(0));
-    let canceled_slot = Rc::new(RefCell::new(None));
     let queued_before = spy.count("microtask_queue");
     let invoked_before = spy.count("microtask_invoke");
     let mut runtime = Runtime::new();
-
-    let mut root = runtime.run(|scope| {
-        let owner = RootViewOwner::new(scope.clone());
+    let root = runtime.run();
+    let canceled_slot = Rc::new(RefCell::new(None));
+    {
+        let scope = root.scope();
+        let owner = ScopedViewOwner::new(scope);
         let canceled_calls_for_task = canceled_calls.clone();
         let canceled = queue_microtask_owned(&owner.token(), move || {
             canceled_calls_for_task.set(canceled_calls_for_task.get() + 1)
@@ -658,13 +653,14 @@ async fn microtask_cancel_and_owner_dispose_only_gate_user_callbacks() {
         queue_microtask_owned(&owner.token(), move || {
             disposed_calls_for_task.set(disposed_calls_for_task.get() + 1)
         });
-    });
+    }
 
     canceled_slot
         .borrow()
         .as_ref()
         .expect("microtask handle is retained")
         .cancel();
+    drop(canceled_slot);
     root.dispose().expect("root disposal should succeed");
     spy.wait(0).await;
 
@@ -672,26 +668,25 @@ async fn microtask_cancel_and_owner_dispose_only_gate_user_callbacks() {
     assert!(spy.count("microtask_invoke") - invoked_before >= 2);
     assert_eq!(canceled_calls.get(), 0);
     assert_eq!(disposed_calls.get(), 0);
-    root.dispose()
-        .expect("repeated root disposal should succeed");
 }
 
 #[wasm_bindgen_test(async)]
 async fn debounce_clears_replaced_timer_and_blocks_dispose_completion() {
     let spy = Spy::new();
     let values = Rc::new(RefCell::new(Vec::<i32>::new()));
-    let debounce_slot = Rc::new(RefCell::new(None));
     let mut runtime = Runtime::new();
-
-    let mut root = runtime.run(|scope| {
-        let owner = RootViewOwner::new(scope.clone());
+    let root = runtime.run();
+    let debounce_slot = Rc::new(RefCell::new(None));
+    {
+        let scope = root.scope();
+        let owner = ScopedViewOwner::new(scope);
         let token = owner.token();
         let values_for_callback = values.clone();
         let debounce = debounce_owned(&token, Duration::from_millis(10), move |value: i32| {
             values_for_callback.borrow_mut().push(value)
         });
         *debounce_slot.borrow_mut() = Some(debounce);
-    });
+    }
 
     {
         let mut debounce = debounce_slot.borrow_mut();
@@ -709,6 +704,7 @@ async fn debounce_clears_replaced_timer_and_blocks_dispose_completion() {
         let mut debounce = debounce_slot.borrow_mut();
         debounce.as_mut().expect("debounce is retained")(4);
     }
+    drop(debounce_slot);
     root.dispose().expect("root disposal should succeed");
     spy.wait(30).await;
     assert_eq!(&*values.borrow(), &[3]);
@@ -720,20 +716,13 @@ async fn timer_callback_can_reenter_root_dispose_without_late_registration() {
     let spy = Spy::new();
     let calls = Rc::new(Cell::new(0));
     let dispose_slot = Rc::new(RefCell::new(None::<RootHandle>));
-    let registration_attempts = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
 
-    let root = runtime.run(|scope| {
-        let owner = RootViewOwner::new(scope.clone());
+    let root = runtime.run();
+    {
+        let scope = root.scope();
+        let owner = ScopedViewOwner::new(scope);
         let token = owner.token();
-        let token_for_cleanup = token.clone();
-        let attempts_for_cleanup = registration_attempts.clone();
-        scope.on_cleanup(move || {
-            attempts_for_cleanup.set(attempts_for_cleanup.get() + 1);
-            assert!(
-                set_timeout_owned(&token_for_cleanup, || {}, Duration::from_millis(0),).is_err()
-            );
-        });
 
         let calls_for_callback = calls.clone();
         let dispose_for_callback = dispose_slot.clone();
@@ -741,7 +730,7 @@ async fn timer_callback_can_reenter_root_dispose_without_late_registration() {
             &token,
             move || {
                 calls_for_callback.set(calls_for_callback.get() + 1);
-                if let Some(mut root) = dispose_for_callback.borrow_mut().take() {
+                if let Some(root) = dispose_for_callback.borrow_mut().take() {
                     root.dispose()
                         .expect("reentrant root disposal should succeed");
                 }
@@ -749,12 +738,11 @@ async fn timer_callback_can_reenter_root_dispose_without_late_registration() {
             Duration::from_millis(0),
         )
         .expect("reentrant timeout should register");
-    });
+    }
     *dispose_slot.borrow_mut() = Some(root);
 
     spy.wait(0).await;
     assert_eq!(calls.get(), 1);
-    assert_eq!(registration_attempts.get(), 1);
     assert_eq!(spy.count("timeout_set"), 1);
     assert_eq!(spy.count("timeout_invoke"), 1);
 }

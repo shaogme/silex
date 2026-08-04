@@ -1,10 +1,10 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_core::{Runtime, RuntimeInputs};
+use silex_core::Runtime;
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, IndexedLoopView, KeyedLoopView, RootViewOwner, RowUpdater,
-    ScopedViewOwner, View, ViewOwner, mount_branch_cached, mount_text_node,
+    AnyView, ApplyAttributes, IndexedLoopView, KeyedLoopView, RowUpdater, ScopedViewOwner, View,
+    ViewOwner, mount_branch_cached, mount_text_node,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -125,7 +125,9 @@ fn dynamic_render_owner_cleans_children_on_rerun_and_root_dispose() {
     let host = mount_point();
     let cleanups = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let mut root = runtime.run(|scope| {
+    let root = runtime.run();
+    {
+        let scope = root.scope();
         let (value, set_value) = scope.signal(0i32);
         let cleanups_for_view = cleanups.clone();
         let view = move || {
@@ -135,14 +137,14 @@ fn dynamic_render_owner_cleans_children_on_rerun_and_root_dispose() {
                 cleanups: cleanups_for_view.clone(),
             })
         };
-        let owner = RootViewOwner::new(scope.clone());
+        let owner = ScopedViewOwner::new(scope);
         view.mount_owned(&owner, &host, Vec::new());
         assert_eq!(host.text_content().as_deref(), Some("0"));
 
         set_value.set(1);
         assert_eq!(host.text_content().as_deref(), Some("1"));
         assert_eq!(cleanups.get(), 1);
-    });
+    }
 
     root.dispose().expect("root cleanup should succeed");
     assert_eq!(cleanups.get(), 2);
@@ -158,11 +160,13 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
     let host = mount_point();
     let branch_cleanups = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let mut root = runtime.run(|scope| {
+    let root = runtime.run();
+    {
+        let scope = root.scope();
         let (key, set_key) = scope.signal(0i32);
-        let owner = RootViewOwner::new(scope.clone());
+        let owner = ScopedViewOwner::new(scope);
         let branch_cleanups_for_view = branch_cleanups.clone();
-        let key_inputs = RuntimeInputs::single(key.runtime_input());
+        let key_inputs = scope.promote(key).runtime_inputs();
         mount_branch_cached(
             &owner,
             &host,
@@ -224,7 +228,7 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
             assert_eq!(host.text_content().as_deref(), Some("b11:0;"));
         });
         assert_eq!(host.text_content().as_deref(), Some("b1"));
-    });
+    }
 
     root.dispose().expect("root cleanup should succeed");
     assert_eq!(branch_cleanups.get(), 3);
@@ -239,7 +243,9 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
 fn indexed_list_preserves_position_identity_across_diff() {
     let host = mount_point();
     let mut runtime = Runtime::new();
-    let mut root = runtime.run(|scope| {
+    let root = runtime.run();
+    {
+        let scope = root.scope();
         scope.child(|child| {
             let (items, set_items) = child.signal(vec![1i32, 2]);
             let list = IndexedLoopView {
@@ -256,7 +262,7 @@ fn indexed_list_preserves_position_identity_across_diff() {
             set_items.set(vec![9]);
             assert_eq!(host.text_content().as_deref(), Some("9:0;"));
         });
-    });
+    }
 
     root.dispose().expect("root cleanup should succeed");
     assert!(host.first_child().is_none());
@@ -271,15 +277,17 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
     let host = mount_point();
     let branch_cleanups = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let mut root = runtime.run(|scope| {
+    let root = runtime.run();
+    {
+        let scope = root.scope();
         let (key, set_key) = scope.signal(0i32);
-        let owner = RootViewOwner::new(scope.clone());
+        let owner = ScopedViewOwner::new(scope);
         let branch_cleanups_for_view = branch_cleanups.clone();
         mount_branch_cached(
             &owner,
             &host,
             Vec::new(),
-            RuntimeInputs::single(key.runtime_input()),
+            scope.promote(key).runtime_inputs(),
             move || key.get(),
             move |key| {
                 AnyView::new(CleanupProbe {
@@ -322,7 +330,7 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
         });
 
         assert_eq!(branch_cleanups.get(), 7);
-    });
+    }
 
     root.dispose().expect("root cleanup should succeed");
     assert_eq!(branch_cleanups.get(), 8);
@@ -341,7 +349,9 @@ fn stateful_keyed_rows_preserve_mounts_and_invalidate_old_updaters() {
     let cleanups = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
 
-    let mut root = runtime.run(|scope| {
+    let root = runtime.run();
+    {
+        let scope = root.scope();
         scope.child(|child| {
             let (items, set_items) = child.signal(vec![1i32, 2]);
             let first_updater = Rc::new(RefCell::new(None));
@@ -401,7 +411,7 @@ fn stateful_keyed_rows_preserve_mounts_and_invalidate_old_updaters() {
             assert!(!stale.update(9, 0));
         });
         assert!(host.first_child().is_none());
-    });
+    }
 
     root.dispose().expect("root cleanup should succeed");
     assert!(host.first_child().is_none());
@@ -419,7 +429,9 @@ fn rejected_stateful_factory_cleans_uncommitted_row_range() {
     let errors = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
 
-    let mut root = runtime.run(|scope| {
+    let root = runtime.run();
+    {
+        let scope = root.scope();
         scope.child(|child| {
             let (items, set_items) = child.signal(vec![1i32]);
             let cleanups_for_factory = cleanups.clone();
@@ -466,7 +478,7 @@ fn rejected_stateful_factory_cleans_uncommitted_row_range() {
             assert_eq!(cleanups.get(), 2);
         });
         assert!(host.first_child().is_none());
-    });
+    }
 
     root.dispose().expect("root cleanup should succeed");
     assert!(host.first_child().is_none());

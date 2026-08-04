@@ -2,8 +2,8 @@ use silex_reactivity::Runtime;
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.run(|root| {
-        let local = String::from("root-local");
-        root.signal(&local);
-    });
+    let root = runtime.run();
+    let signal = root.scope().signal(0i32).0;
+    drop(root);
+    let _ = signal.get();
 }

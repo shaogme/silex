@@ -49,26 +49,14 @@ impl Runtime {
         }
     }
 
-    /// Run one long-lived root owned by the returned handle.
-    pub fn run<F>(&mut self, f: F) -> RootHandle
-    where
-        F: FnOnce(&crate::RootScope),
-    {
+    /// Create one long-lived root owned by the returned handle.
+    pub fn run(&mut self) -> RootHandle {
         assert!(
             !self.root_active.replace(true),
             "一个 Runtime 只能同时拥有一个 root"
         );
 
-        let mut root = RootHandle::new(self.root_active.clone());
-        let scope = root.scope();
-        let result = catch_unwind(AssertUnwindSafe(|| f(&scope)));
-        if let Err(panic) = result {
-            if let Err(cleanup) = root.dispose() {
-                cleanup.report_during_unwind();
-            }
-            resume_unwind(panic);
-        }
-        root
+        RootHandle::new(self.root_active.clone())
     }
 
     pub fn child<R>(&mut self, f: impl for<'scope> FnOnce(&'scope Scope<'scope>) -> R) -> R {

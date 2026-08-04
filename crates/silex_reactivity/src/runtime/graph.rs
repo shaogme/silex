@@ -291,8 +291,7 @@ mod tests {
     use std::{panic::AssertUnwindSafe, panic::catch_unwind};
 
     fn child(runtime: &mut Runtime, f: impl for<'scope> FnOnce(&'scope Scope<'scope>)) {
-        let root = runtime.run(|root| root.child(f));
-        drop(root);
+        runtime.child(f);
     }
 
     #[test]

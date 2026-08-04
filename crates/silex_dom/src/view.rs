@@ -11,7 +11,7 @@ pub use reactive::*;
 
 use crate::attribute::PendingAttribute;
 use silex_core::{
-    CompletionToken, OwnedScope, RootScope, RuntimeInputs, Scope,
+    CompletionToken, OwnedScope, RuntimeInputs, Scope,
     error::handle_error,
     reactivity::ReactiveSource,
     traits::{RxData, RxValue},
@@ -407,59 +407,6 @@ impl<'scope> ViewOwner<'scope> for ViewOwnerToken<'scope> {
 
     fn owned_scope(&self) -> OwnedScope<'scope> {
         self.owned_scope.call()
-    }
-}
-
-/// Adapter for a long-lived root owner.
-#[derive(Clone)]
-pub struct RootViewOwner {
-    scope: RootScope,
-}
-
-impl RootViewOwner {
-    pub fn new(scope: RootScope) -> Self {
-        Self { scope }
-    }
-}
-
-impl ViewOwner<'static> for RootViewOwner {
-    fn effect_from(&self, inputs: RuntimeInputs, callback: Box<dyn FnMut() + 'static>) {
-        if let Err(error) = self.scope.try_effect_from(inputs, callback) {
-            handle_error(error);
-        }
-    }
-
-    fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
-        self.scope.try_validate_inputs(inputs)
-    }
-
-    fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'static>) {
-        self.scope.on_cleanup(cleanup);
-    }
-
-    fn token(&self) -> ViewOwnerToken<'static> {
-        let scope_for_effect = self.scope.clone();
-        let scope_for_cleanup = self.scope.clone();
-        let scope_for_owned = self.scope.clone();
-        let scope_for_completion = self.scope.clone();
-        let scope_for_active = self.scope.clone();
-        let scope_for_validate = self.scope.clone();
-        ViewOwnerToken::new(
-            EffectRegistrar::new(move |inputs, callback| {
-                if let Err(error) = scope_for_effect.try_effect_from(inputs, callback) {
-                    handle_error(error);
-                }
-            }),
-            ValidationRegistrar::new(move |inputs| scope_for_validate.try_validate_inputs(inputs)),
-            CleanupRegistrar::new(move |cleanup| scope_for_cleanup.on_cleanup(cleanup)),
-            OwnedScopeRegistrar::new(move || scope_for_owned.owned_scope()),
-            CompletionRegistrar::new(move |callback| scope_for_completion.completion(callback)),
-            ActiveRegistrar::new(move || scope_for_active.is_active()),
-        )
-    }
-
-    fn owned_scope(&self) -> OwnedScope<'static> {
-        self.scope.owned_scope()
     }
 }
 
@@ -1437,7 +1384,7 @@ impl<'scope, V: View<'scope>> View<'scope> for SilexResult<V> {
 
 #[cfg(test)]
 mod tests {
-    use super::{HostResourceHandle, RootViewOwner, ScopedViewOwner, ViewOwner};
+    use super::{HostResourceHandle, ScopedViewOwner, ViewOwner};
     use silex_core::Runtime;
     use std::{cell::Cell, rc::Rc};
     use wasm_bindgen::JsValue;
@@ -1447,21 +1394,21 @@ mod tests {
         let seen = Rc::new(Cell::new(0));
         let seen_in_callback = seen.clone();
         let mut runtime = Runtime::new();
-        let mut root = runtime.run(|_| {});
-        let owner = RootViewOwner::new(root.scope());
-        let token = owner.token();
-        let bridge = token.host_callback(move |_| {
-            seen_in_callback.set(seen_in_callback.get() + 1);
-        });
-        assert!(bridge.dispatch(JsValue::UNDEFINED));
+        let root = runtime.run();
+        let bridge = {
+            let scope = root.scope();
+            let owner = ScopedViewOwner::new(scope);
+            let token = owner.token();
+            let bridge = token.host_callback(move |_| {
+                seen_in_callback.set(seen_in_callback.get() + 1);
+            });
+            assert!(bridge.dispatch(JsValue::UNDEFINED));
+            bridge
+        };
 
         assert_eq!(seen.get(), 1);
         root.dispose().expect("root cleanup should succeed");
         assert!(!bridge.dispatch(JsValue::UNDEFINED));
-        let late = token.host_callback(|_| panic!("inactive owner callback ran"));
-        assert!(!late.dispatch(JsValue::UNDEFINED));
-        let resource = token.host_resource_for_callback(&late, || {});
-        assert!(!resource.is_active());
         assert_eq!(seen.get(), 1);
     }
 
@@ -1487,14 +1434,17 @@ mod tests {
         let cancelled = Rc::new(Cell::new(0));
         let cancelled_in_cleanup = cancelled.clone();
         let mut runtime = Runtime::new();
-        let mut root = runtime.run(|_| {});
-        let owner = RootViewOwner::new(root.scope());
-        let token = owner.token();
-        let callback = token.host_callback(|_| {});
-        let handle = token.host_resource_for_callback(&callback, move || {
-            cancelled_in_cleanup.set(cancelled_in_cleanup.get() + 1);
-        });
-        drop(handle);
+        let root = runtime.run();
+        {
+            let scope = root.scope();
+            let owner = ScopedViewOwner::new(scope);
+            let token = owner.token();
+            let callback = token.host_callback(|_| {});
+            let handle = token.host_resource_for_callback(&callback, move || {
+                cancelled_in_cleanup.set(cancelled_in_cleanup.get() + 1);
+            });
+            drop(handle);
+        }
         assert_eq!(cancelled.get(), 0);
         root.dispose().expect("root cleanup should succeed");
         assert_eq!(cancelled.get(), 1);

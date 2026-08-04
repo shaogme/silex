@@ -8,7 +8,7 @@ use std::{
 };
 
 use super::node::{
-    Callback, Derived, Effect, Memo, NodeRef, ReadSignal, Signal, StoredValue, WriteSignal,
+    Callback, Derived, Effect, Memo, NodeRef, ReadSignal, RwSignal, StoredValue, WriteSignal,
 };
 use crate::{
     ReactiveError, ReactiveResult,
@@ -294,9 +294,9 @@ impl<'scope> Scope<'scope> {
 
     /// Create the paired form of a signal for callers that want one copyable
     /// capability instead of separate read/write values.
-    pub fn rw_signal<T: 'scope>(&self, value: T) -> Signal<'scope, T> {
+    pub fn rw_signal<T: 'scope>(&self, value: T) -> RwSignal<'scope, T> {
         let (read, write) = self.signal(value);
-        Signal { read, write }
+        RwSignal { read, write }
     }
 
     /// Store a non-reactive value under this scope.
@@ -344,12 +344,6 @@ impl<'scope> OwnedScope<'scope> {
         }
     }
 
-    pub(crate) fn new_for_scheduler(
-        scheduler: std::rc::Rc<std::cell::RefCell<crate::runtime::GlobalScheduler>>,
-    ) -> Self {
-        Self::new(scheduler)
-    }
-
     /// Create a nested persistent owner using the same scheduler.
     pub fn child(&self) -> Self {
         let state = self.state();
@@ -374,28 +368,25 @@ impl<'scope> OwnedScope<'scope> {
     }
 
     /// Register and immediately run an effect owned by this frame.
-    pub fn effect<F>(&self, f: F)
+    pub fn effect<F>(&self, f: F) -> Effect<'_>
     where
         F: FnMut() + 'scope,
     {
-        if !self.active.get() {
-            return;
-        }
-        self.effect_from(RuntimeInputs::new(), f);
+        self.effect_from(RuntimeInputs::new(), f)
     }
 
     /// Register an effect after validating all declared reactive inputs.
     #[doc(hidden)]
-    pub fn effect_from<F>(&self, inputs: RuntimeInputs, f: F)
+    pub fn effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> Effect<'_>
     where
         F: FnMut() + 'scope,
     {
         self.try_effect_from(inputs, f)
-            .unwrap_or_else(|error| panic!("创建 owned effect 失败: {error}"));
+            .unwrap_or_else(|error| panic!("创建 owned effect 失败: {error}"))
     }
 
     #[doc(hidden)]
-    pub fn try_effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> ReactiveResult<()>
+    pub fn try_effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> ReactiveResult<Effect<'_>>
     where
         F: FnMut() + 'scope,
     {
@@ -403,8 +394,10 @@ impl<'scope> OwnedScope<'scope> {
             return Err(ReactiveError::NoSuchNode);
         }
         let state = self.state();
-        runtime::create_effect(&state, inputs, f)?;
-        Ok(())
+        let raw = runtime::create_effect(&state, inputs, f)?;
+        Ok(Effect {
+            handle: Handle::new(&self.storage, raw),
+        })
     }
 
     pub fn on_cleanup<F>(&self, f: F)

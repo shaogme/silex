@@ -111,6 +111,20 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
         self.try_get().expect("读取 scoped memo 失败")
     }
 
+    pub fn try_get_untracked(&self) -> ReactiveResult<T>
+    where
+        T: Clone,
+    {
+        self.try_with_untracked(Clone::clone)
+    }
+
+    pub fn get_untracked(&self) -> T
+    where
+        T: Clone,
+    {
+        self.try_get_untracked().expect("读取 scoped memo 失败")
+    }
+
     pub fn try_with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
         runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
             unsafe { value.downcast_ref::<T>() }
@@ -162,6 +176,20 @@ impl<'scope, T: 'scope> Derived<'scope, T> {
         T: Clone,
     {
         self.try_get().expect("读取 scoped derived 失败")
+    }
+
+    pub fn try_get_untracked(&self) -> ReactiveResult<T>
+    where
+        T: Clone,
+    {
+        self.try_with_untracked(Clone::clone)
+    }
+
+    pub fn get_untracked(&self) -> T
+    where
+        T: Clone,
+    {
+        self.try_get_untracked().expect("读取 scoped derived 失败")
     }
 
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
@@ -254,13 +282,10 @@ pub struct WriteSignal<'scope, T> {
 }
 
 /// A paired read/write signal capability.
-pub struct Signal<'scope, T> {
+pub struct RwSignal<'scope, T> {
     pub(crate) read: ReadSignal<'scope, T>,
     pub(crate) write: WriteSignal<'scope, T>,
 }
-
-/// Alias used by callers that prefer the paired-signal terminology.
-pub type RwSignal<'scope, T> = Signal<'scope, T>;
 
 impl<'scope, T> Copy for ReadSignal<'scope, T> {}
 
@@ -278,9 +303,9 @@ impl<'scope, T> Clone for WriteSignal<'scope, T> {
     }
 }
 
-impl<'scope, T> Copy for Signal<'scope, T> {}
+impl<'scope, T> Copy for RwSignal<'scope, T> {}
 
-impl<'scope, T> Clone for Signal<'scope, T> {
+impl<'scope, T> Clone for RwSignal<'scope, T> {
     fn clone(&self) -> Self {
         *self
     }
@@ -303,6 +328,13 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
         T: Clone,
     {
         self.try_get().expect("读取 scoped signal 失败")
+    }
+
+    pub fn get_untracked(&self) -> T
+    where
+        T: Clone,
+    {
+        self.try_get_untracked().expect("读取 scoped signal 失败")
     }
 
     pub fn try_get_untracked(&self) -> ReactiveResult<T>
@@ -418,13 +450,12 @@ impl<'scope, T: 'scope> WriteSignal<'scope, T> {
     }
 }
 
-impl<'scope, T: 'scope> Signal<'scope, T> {
-    pub fn read(&self) -> ReadSignal<'scope, T> {
-        self.read
-    }
-
-    pub fn write(&self) -> WriteSignal<'scope, T> {
-        self.write
+impl<'scope, T: 'scope> RwSignal<'scope, T> {
+    pub fn try_get(&self) -> ReactiveResult<T>
+    where
+        T: Clone,
+    {
+        self.read.try_get()
     }
 
     pub fn get(&self) -> T
@@ -434,8 +465,56 @@ impl<'scope, T: 'scope> Signal<'scope, T> {
         self.read.get()
     }
 
+    pub fn try_get_untracked(&self) -> ReactiveResult<T>
+    where
+        T: Clone,
+    {
+        self.read.try_get_untracked()
+    }
+
+    pub fn get_untracked(&self) -> T
+    where
+        T: Clone,
+    {
+        self.read.get_untracked()
+    }
+
+    pub fn try_set(&self, value: T) -> ReactiveResult<()> {
+        self.write.try_set(value)
+    }
+
     pub fn set(&self, value: T) {
-        self.write.set(value);
+        self.write.set(value)
+    }
+
+    pub fn try_update<R>(&self, f: impl FnOnce(&mut T) -> R) -> ReactiveResult<R> {
+        self.write.try_update(f)
+    }
+
+    pub fn update(&self, f: impl FnOnce(&mut T)) {
+        self.write.update(f)
+    }
+
+    pub fn try_set_if_changed(&self, value: T) -> ReactiveResult<bool>
+    where
+        T: PartialEq,
+    {
+        self.write.try_set_if_changed(value)
+    }
+
+    pub fn set_if_changed(&self, value: T)
+    where
+        T: PartialEq,
+    {
+        self.write.set_if_changed(value)
+    }
+
+    pub fn read(&self) -> ReadSignal<'scope, T> {
+        self.read
+    }
+
+    pub fn write(&self) -> WriteSignal<'scope, T> {
+        self.write
     }
 
     #[doc(hidden)]
@@ -562,12 +641,12 @@ impl<'scope, T> PartialEq for WriteSignal<'scope, T> {
 }
 impl<'scope, T> Eq for WriteSignal<'scope, T> {}
 
-impl<'scope, T> PartialEq for Signal<'scope, T> {
+impl<'scope, T> PartialEq for RwSignal<'scope, T> {
     fn eq(&self, other: &Self) -> bool {
         self.read == other.read && self.write == other.write
     }
 }
-impl<'scope, T> Eq for Signal<'scope, T> {}
+impl<'scope, T> Eq for RwSignal<'scope, T> {}
 
 impl<'scope, T> PartialEq for StoredValue<'scope, T> {
     fn eq(&self, other: &Self) -> bool {

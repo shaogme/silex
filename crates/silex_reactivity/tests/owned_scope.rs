@@ -4,8 +4,9 @@ use std::{cell::Cell, rc::Rc};
 #[test]
 fn owned_scope_keeps_effects_until_explicit_dispose() {
     let mut runtime = Runtime::new();
-    let mut values = None;
-    let root = runtime.run(|scope| {
+    let root = runtime.run();
+    {
+        let scope = root.scope();
         let (read, write) = scope.signal(1i32);
         let runs = Rc::new(Cell::new(0));
         let cleanups = Rc::new(Cell::new(0));
@@ -23,23 +24,20 @@ fn owned_scope_keeps_effects_until_explicit_dispose() {
             cleanups_for_owner.set(cleanups_for_owner.get() + 1);
         });
 
-        values = Some((write, owner, runs, cleanups));
-    });
+        assert_eq!(runs.get(), 1);
+        write.set(2);
+        assert_eq!(runs.get(), 2);
 
-    let (write, owner, runs, cleanups) = values.expect("root callback created owner state");
-    assert_eq!(runs.get(), 1);
-    write.set(2);
-    assert_eq!(runs.get(), 2);
+        owner.dispose();
+        assert!(!owner.is_active());
+        assert_eq!(cleanups.get(), 1);
+        write.set(3);
+        assert_eq!(runs.get(), 2);
+        owner.dispose();
+        assert_eq!(cleanups.get(), 1);
+    }
 
-    owner.dispose();
-    assert!(!owner.is_active());
-    assert_eq!(cleanups.get(), 1);
-    write.set(3);
-    assert_eq!(runs.get(), 2);
-    owner.dispose();
-    assert_eq!(cleanups.get(), 1);
-
-    drop(root);
+    root.dispose().expect("root disposal should succeed");
 }
 
 #[test]

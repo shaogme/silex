@@ -1,23 +1,26 @@
 use silex_core::Runtime;
-use silex_dom::view::{AnyView, RenderThunk, RootViewOwner, View, ViewOwner};
+use silex_dom::view::{AnyView, RenderThunk, ScopedViewOwner, View, ViewOwner};
 
-fn accept_root_view<V>(_: V)
+fn accept_root_view<'scope, V>(_: V)
 where
-    V: View<'static> + 'static,
+    V: View<'scope> + 'scope,
 {
 }
 
 fn main() {
     let mut runtime = Runtime::new();
-    let root = runtime.run(|scope| {
-        let owner = RootViewOwner::new(scope.clone());
+    let root = runtime.run();
+    {
+        let scope = root.scope();
+        let owner = ScopedViewOwner::new(scope);
         let _token = owner.token();
 
-        let view = AnyView::new(String::from("owned-view"));
+        let borrowed_view = String::from("borrowed-view");
+        let view: AnyView<'_> = AnyView::new(borrowed_view.as_str());
         accept_root_view(view);
 
-        let _renderer: RenderThunk<'static> = RenderThunk::new(|_| {});
-    });
+        let _renderer: RenderThunk<'_> = RenderThunk::new(|_| {});
+    }
 
-    drop(root);
+    root.dispose().expect("root disposal should succeed");
 }

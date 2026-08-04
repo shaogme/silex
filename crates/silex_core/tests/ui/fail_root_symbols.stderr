@@ -1,0 +1,25 @@
+error[E0432]: unresolved imports `silex_core::RootCallback`, `silex_core::RootReadSignal`, `silex_core::RootScope`, `silex_core::RootSignal`
+ --> tests/ui/fail_root_symbols.rs:1:18
+  |
+1 | use silex_core::{RootCallback, RootReadSignal, RootScope, RootSignal};
+  |                  ^^^^^^^^^^^^  ^^^^^^^^^^^^^^  ^^^^^^^^^  ^^^^^^^^^^ no `RootSignal` in the root
+  |                  |             |               |
+  |                  |             |               no `RootScope` in the root
+  |                  |             no `RootReadSignal` in the root
+  |                  no `RootCallback` in the root
+  |
+help: a similar name exists in the module
+  |
+1 - use silex_core::{RootCallback, RootReadSignal, RootScope, RootSignal};
+1 + use silex_core::{Callback, RootReadSignal, RootScope, RootSignal};
+  |
+help: a similar name exists in the module
+  |
+1 - use silex_core::{RootCallback, RootReadSignal, RootScope, RootSignal};
+1 + use silex_core::{RootCallback, RxReadSignal, RootScope, RootSignal};
+  |
+help: a similar name exists in the module
+  |
+1 - use silex_core::{RootCallback, RootReadSignal, RootScope, RootSignal};
+1 + use silex_core::{RootCallback, RootReadSignal, RootScope, ReadSignal};
+  |

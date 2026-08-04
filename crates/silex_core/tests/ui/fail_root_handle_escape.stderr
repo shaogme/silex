@@ -1,18 +1,11 @@
-error[E0597]: `local` does not live long enough
- --> tests/ui/fail_root_handle_escape.rs:7:21
+error[E0505]: cannot move out of `root` because it is borrowed
+ --> tests/ui/fail_root_handle_escape.rs:7:10
   |
-6 |         let local = String::from("root-local");
-  |             ----- binding `local` declared here
-7 |         root.signal(&local);
-  |         ------------^^^^^^-
-  |         |           |
-  |         |           borrowed value does not live long enough
-  |         argument requires that `local` is borrowed for `'static`
-8 |     });
-  |     - `local` dropped here while still borrowed
-  |
-note: requirement that the value outlives `'static` introduced here
- --> src/scope.rs
-  |
-  |     pub fn signal<T: 'static>(
-  |                      ^^^^^^^
+5 |     let root = runtime.run();
+  |         ---- binding `root` declared here
+6 |     let signal = root.scope().signal(0i32).0;
+  |                  ---- borrow of `root` occurs here
+7 |     drop(root);
+  |          ^^^^ move out of `root` occurs here
+8 |     let _ = signal.get();
+  |             ------ borrow later used here

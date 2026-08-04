@@ -34,7 +34,9 @@ fn parent_child_owned_and_root_scopes_accept_same_family_inputs() {
     });
 
     let mut root_runtime = Runtime::new();
-    let root = root_runtime.run(|scope| {
+    let root = root_runtime.run();
+    {
+        let scope = root.scope();
         let (source, _) = scope.signal(0i32);
         let input = source.runtime_input();
         assert!(
@@ -42,7 +44,7 @@ fn parent_child_owned_and_root_scopes_accept_same_family_inputs() {
                 .try_effect_from(RuntimeInputs::single(input), || {})
                 .is_ok()
         );
-    });
+    }
     assert!(root.is_active());
 }
 

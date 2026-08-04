@@ -25,16 +25,8 @@ impl Runtime {
         }
     }
 
-    pub fn run<F>(&mut self, f: F) -> RootHandle
-    where
-        F: FnOnce(&RootScope),
-    {
-        let handle = self.inner.run(move |scope| {
-            let scope = RootScope {
-                inner: scope.clone(),
-            };
-            f(&scope);
-        });
+    pub fn run(&mut self) -> RootHandle {
+        let handle = self.inner.run();
         RootHandle { inner: handle }
     }
 
@@ -48,165 +40,26 @@ pub struct RootHandle {
 }
 
 impl RootHandle {
-    pub fn scope(&self) -> RootScope {
-        RootScope {
+    pub fn scope(&self) -> Scope<'_> {
+        Scope {
             inner: self.inner.scope(),
         }
     }
 
-    pub fn dispose(&mut self) -> Result<(), silex_reactivity::CleanupError> {
-        self.inner.dispose()
+    pub fn with_scope<'scope, R>(&'scope self, f: impl FnOnce(&Scope<'scope>) -> R) -> R {
+        self.inner.with_scope(|scope| {
+            let scope = Scope { inner: *scope };
+            f(&scope)
+        })
+    }
+
+    pub fn dispose(self) -> Result<(), silex_reactivity::CleanupError> {
+        let Self { inner } = self;
+        inner.dispose()
     }
 
     pub fn is_active(&self) -> bool {
         self.inner.is_active()
-    }
-}
-
-#[derive(Clone)]
-pub struct RootScope {
-    inner: silex_reactivity::RootScope,
-}
-
-impl RootScope {
-    pub fn is_active(&self) -> bool {
-        self.inner.is_active()
-    }
-
-    pub fn signal<T: 'static>(
-        &self,
-        value: T,
-    ) -> (
-        silex_reactivity::RootReadSignal<T>,
-        silex_reactivity::RootWriteSignal<T>,
-    ) {
-        self.inner.signal(value)
-    }
-
-    pub fn rw_signal<T: 'static>(&self, value: T) -> silex_reactivity::RootSignal<T> {
-        self.inner.rw_signal(value)
-    }
-
-    pub fn effect<F>(&self, f: F) -> silex_reactivity::RootEffect
-    where
-        F: FnMut() + 'static,
-    {
-        self.inner.effect(f)
-    }
-
-    #[doc(hidden)]
-    pub fn effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> silex_reactivity::RootEffect
-    where
-        F: FnMut() + 'static,
-    {
-        self.try_effect_from(inputs, f)
-            .unwrap_or_else(|error| panic!("创建 root effect 失败: {error}"))
-    }
-
-    #[doc(hidden)]
-    pub fn try_effect_from<F>(
-        &self,
-        inputs: RuntimeInputs,
-        f: F,
-    ) -> SilexResult<silex_reactivity::RootEffect>
-    where
-        F: FnMut() + 'static,
-    {
-        self.inner
-            .try_effect_from(inputs, f)
-            .map_err(|error| SilexError::Reactivity(error.to_string()))
-    }
-
-    #[doc(hidden)]
-    pub fn try_validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
-        self.inner
-            .try_validate_inputs(inputs)
-            .map_err(|error| SilexError::Reactivity(error.to_string()))
-    }
-
-    pub fn memo<T, F>(&self, f: F) -> silex_reactivity::RootMemo<T>
-    where
-        T: PartialEq + 'static,
-        F: FnMut(Option<&T>) -> T + 'static,
-    {
-        self.inner.memo(f)
-    }
-
-    pub fn derived<T, F>(&self, f: F) -> silex_reactivity::RootDerived<T>
-    where
-        T: 'static,
-        F: FnMut() -> T + 'static,
-    {
-        self.inner.derived(f)
-    }
-
-    pub fn stored<T: 'static>(&self, value: T) -> silex_reactivity::RootStoredValue<T> {
-        self.inner.stored(value)
-    }
-
-    pub fn callback<T, F>(&self, callback: F) -> silex_reactivity::RootCallback<T>
-    where
-        T: 'static,
-        F: FnMut(T) + 'static,
-    {
-        self.inner.callback(callback)
-    }
-
-    pub fn node_ref<T: 'static>(&self) -> silex_reactivity::RootNodeRef<T> {
-        self.inner.node_ref()
-    }
-
-    pub fn completion<T, F>(&self, callback: F) -> silex_reactivity::CompletionToken<T>
-    where
-        T: 'static,
-        F: FnMut(T) + 'static,
-    {
-        self.inner.completion(callback)
-    }
-
-    /// Spawn a task owned by this scope or the currently running computation.
-    pub fn spawn_scoped<F>(&self, future: F) -> TaskHandle
-    where
-        F: Future<Output = ()> + 'static,
-    {
-        if !self.is_active() {
-            return TaskHandle::inactive();
-        }
-        let (task, cancel) = task::start(future);
-        self.on_cleanup(cancel);
-        task
-    }
-
-    pub fn on_cleanup<F>(&self, cleanup: F)
-    where
-        F: FnOnce() + 'static,
-    {
-        self.inner.on_cleanup(cleanup);
-    }
-
-    pub fn on_dispose<F>(&self, hook: F)
-    where
-        F: FnOnce() + 'static,
-    {
-        self.inner.on_dispose(hook);
-    }
-
-    pub fn untrack<R>(&self, f: impl FnOnce() -> R) -> R {
-        self.inner.untrack(f)
-    }
-
-    pub fn batch<R>(&self, f: impl FnOnce() -> R) -> R {
-        self.inner.batch(f)
-    }
-
-    pub fn child<R>(&self, f: impl for<'scope> FnOnce(Scope<'scope>) -> R) -> R {
-        self.inner.child(|scope| f(Scope { inner: *scope }))
-    }
-
-    pub fn owned_scope(&self) -> OwnedScope<'static> {
-        OwnedScope {
-            inner: self.inner.owned_scope(),
-        }
     }
 }
 
@@ -506,21 +359,22 @@ impl<'scope> OwnedScope<'scope> {
             .map_err(|error| SilexError::Reactivity(error.to_string()))
     }
 
-    pub fn effect_from<F>(&self, inputs: RuntimeInputs, f: F)
+    pub fn effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> Effect<'_>
     where
         F: FnMut() + 'scope,
     {
         self.try_effect_from(inputs, f)
-            .unwrap_or_else(|error| panic!("创建 owned effect 失败: {error}"));
+            .unwrap_or_else(|error| panic!("创建 owned effect 失败: {error}"))
     }
 
     #[doc(hidden)]
-    pub fn try_effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> SilexResult<()>
+    pub fn try_effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> SilexResult<Effect<'_>>
     where
         F: FnMut() + 'scope,
     {
         self.inner
             .try_effect_from(inputs, f)
+            .map(Effect::from_inner)
             .map_err(|error| SilexError::Reactivity(error.to_string()))
     }
 

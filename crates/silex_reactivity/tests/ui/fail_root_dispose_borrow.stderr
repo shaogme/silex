@@ -1,0 +1,11 @@
+error[E0505]: cannot move out of `root` because it is borrowed
+ --> tests/ui/fail_root_dispose_borrow.rs:7:5
+  |
+5 |     let root = runtime.run();
+  |         ---- binding `root` declared here
+6 |     let (read, _) = root.scope().signal(1i32);
+  |                     ---- borrow of `root` occurs here
+7 |     root.dispose().expect("root disposal should succeed");
+  |     ^^^^ move out of `root` occurs here
+8 |     let _ = read.get();
+  |             ---- borrow later used here

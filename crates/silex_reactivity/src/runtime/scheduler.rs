@@ -289,12 +289,6 @@ impl GlobalScheduler {
     pub(crate) fn should_flush(&self) -> bool {
         self.is_idle() && self.borrowed_values == 0 && !self.global_queue.is_empty()
     }
-
-    pub(crate) fn clear_queue(&mut self) {
-        self.global_queue.clear();
-        self.running_queue = false;
-        self.observer = None;
-    }
 }
 
 #[cfg(test)]

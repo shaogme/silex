@@ -6,13 +6,15 @@ fn scoped_signal_round_trip(c: &mut Criterion) {
     c.bench_function("scoped signal round trip", |bench| {
         bench.iter(|| {
             let mut runtime = Runtime::new();
-            runtime.run(|scope| {
+            let root = runtime.run();
+            {
+                let scope = root.scope();
                 let (read, write) = scope.signal(0i32);
                 let _effect = scope.effect(move || {
                     black_box(read.get());
                 });
                 write.set(black_box(1));
-            });
+            }
         });
     });
 }
