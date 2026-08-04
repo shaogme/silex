@@ -1,9 +1,32 @@
 use silex_core::traits::RxOptionExt;
 use silex_core::{
-    Runtime,
+    PromotionPlan, ReactiveSource, Runtime, RuntimeInputs, RxData, RxValue,
     logic::{Map, Memoize, ReactivePartialEq, ReactivePartialOrd},
 };
 use std::{cell::Cell, rc::Rc};
+
+struct DeclaredExternalSource {
+    inputs: RuntimeInputs,
+    materialized: Rc<Cell<bool>>,
+}
+
+impl RxValue for DeclaredExternalSource {
+    type Value = i32;
+}
+
+impl<'scope> ReactiveSource<'scope> for DeclaredExternalSource {
+    fn into_promotion_plan(self) -> PromotionPlan<'scope, i32>
+    where
+        Self: Sized,
+        i32: Sized + RxData + 'scope,
+    {
+        let materialized = self.materialized;
+        PromotionPlan::derived(self.inputs, move |scope, inputs| {
+            materialized.set(true);
+            scope.derived_from(inputs, || 1i32)
+        })
+    }
+}
 
 #[test]
 fn same_runtime_parent_child_promotion_and_propagation_are_valid() {
@@ -47,6 +70,61 @@ fn foreign_inputs_are_rejected_before_target_derived_creation() {
         Err(silex_core::SilexError::Reactivity(message))
             if message.contains("不同")
     ));
+}
+
+#[test]
+fn foreign_inputs_are_rejected_before_target_memo_creation() {
+    let mut first = Runtime::new();
+    let mut second = Runtime::new();
+    let foreign_inputs = first.child(|scope| {
+        let (source, _) = scope.signal(1i32);
+        scope.promote(source).runtime_inputs()
+    });
+    let called = Rc::new(Cell::new(false));
+    let called_for_memo = called.clone();
+
+    let result = second.child(|scope| {
+        scope
+            .try_memo_from(foreign_inputs, move |_| {
+                called_for_memo.set(true);
+                1i32
+            })
+            .map(|_| ())
+    });
+
+    assert!(matches!(
+        result,
+        Err(silex_core::SilexError::Reactivity(message))
+            if message.contains("不同")
+    ));
+    assert!(!called.get());
+}
+
+#[test]
+fn external_promotion_plan_validates_inputs_before_materializing() {
+    let mut first = Runtime::new();
+    let mut second = Runtime::new();
+    let foreign_inputs = first.child(|scope| {
+        let (source, _) = scope.signal(1i32);
+        scope.promote(source).runtime_inputs()
+    });
+    let materialized = Rc::new(Cell::new(false));
+    let materialized_for_source = materialized.clone();
+
+    let result = second.child(|scope| {
+        scope
+            .try_promote(DeclaredExternalSource {
+                inputs: foreign_inputs,
+                materialized: materialized_for_source,
+            })
+            .map(|_| ())
+    });
+
+    assert!(
+        matches!(result, Err(silex_core::SilexError::Reactivity(message))
+        if message.contains("不同"))
+    );
+    assert!(!materialized.get());
 }
 
 #[test]

@@ -1,5 +1,7 @@
 use std::{fmt, marker::PhantomData};
 
+use crate::{SilexError, SilexResult};
+
 /// A typed callback owned by a scope.
 pub struct Callback<'scope, T = ()> {
     pub(crate) inner: silex_reactivity::Callback<'scope, T>,
@@ -28,8 +30,19 @@ impl<'scope, T: 'scope> Callback<'scope, T> {
         }
     }
 
-    pub fn call(&self, value: T) -> bool {
-        self.inner.invoke(value).is_ok()
+    /// Invoke the callback and preserve the underlying reactive error.
+    pub fn invoke(&self, value: T) -> SilexResult<()> {
+        self.inner
+            .invoke(value)
+            .map_err(|error| SilexError::Reactivity(error.to_string()))
+    }
+
+    /// Invoke the callback using the legacy method spelling.
+    ///
+    /// The return type is intentionally the same as [`Self::invoke`]; stale
+    /// callbacks are errors rather than a lossy boolean status.
+    pub fn call(&self, value: T) -> SilexResult<()> {
+        self.invoke(value)
     }
 
     pub fn is_alive(&self) -> bool {

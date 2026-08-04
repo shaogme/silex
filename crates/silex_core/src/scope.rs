@@ -108,14 +108,47 @@ impl<'scope> Scope<'scope> {
         RwSignal::from_parts(read, write)
     }
 
+    /// Create a memo without additional framework-declared inputs.
+    pub fn memo<T, F>(&self, f: F) -> Memo<'scope, T>
+    where
+        T: PartialEq + 'scope,
+        F: FnMut(Option<&T>) -> T + 'scope,
+    {
+        self.memo_from(RuntimeInputs::new(), f)
+    }
+
+    #[doc(hidden)]
     pub fn memo_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> Memo<'scope, T>
     where
         T: PartialEq + 'scope,
         F: FnMut(Option<&T>) -> T + 'scope,
     {
-        Memo::from_inner(self.inner.memo_from(inputs, f), *self)
+        self.try_memo_from(inputs, f)
+            .unwrap_or_else(|error| panic!("创建 scoped memo 失败: {error}"))
     }
 
+    #[doc(hidden)]
+    pub fn try_memo_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> SilexResult<Memo<'scope, T>>
+    where
+        T: PartialEq + 'scope,
+        F: FnMut(Option<&T>) -> T + 'scope,
+    {
+        self.inner
+            .try_memo_from(inputs, f)
+            .map(|memo| Memo::from_inner(memo, *self))
+            .map_err(|error| SilexError::Reactivity(error.to_string()))
+    }
+
+    /// Create a derived value without additional framework-declared inputs.
+    pub fn derived<T, F>(&self, f: F) -> Rx<'scope, T>
+    where
+        T: 'scope,
+        F: FnMut() -> T + 'scope,
+    {
+        self.derived_from(RuntimeInputs::new(), f)
+    }
+
+    #[doc(hidden)]
     pub fn derived_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> Rx<'scope, T>
     where
         T: 'scope,
@@ -278,6 +311,10 @@ impl<'scope> Scope<'scope> {
         task
     }
 
+    /// Promote a source after validating its complete opaque input set.
+    ///
+    /// Plan materialization is the only step allowed to register target
+    /// nodes, so a foreign input fails before any target mutation.
     pub fn try_promote<T>(&self, value: T) -> SilexResult<Rx<'scope, T::Value>>
     where
         T: ReactiveSource<'scope>,
@@ -337,6 +374,10 @@ impl<'scope> Scope<'scope> {
 }
 
 /// Persistent owner used by dynamic branches and list rows.
+///
+/// This is intentionally not a general node-creation scope. It provides
+/// owner-bound effect, cleanup, completion, child-owner, and disposal
+/// operations; ordinary reactive nodes must be created through [`Scope`].
 pub struct OwnedScope<'scope> {
     inner: silex_reactivity::OwnedScope<'scope>,
 }
@@ -357,6 +398,15 @@ impl<'scope> OwnedScope<'scope> {
         self.inner
             .try_validate_inputs(inputs)
             .map_err(|error| SilexError::Reactivity(error.to_string()))
+    }
+
+    /// Register and immediately run an owner-bound effect without extra
+    /// framework-declared inputs.
+    pub fn effect<F>(&self, f: F) -> Effect<'_>
+    where
+        F: FnMut() + 'scope,
+    {
+        self.effect_from(RuntimeInputs::new(), f)
     }
 
     pub fn effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> Effect<'_>

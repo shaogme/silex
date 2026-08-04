@@ -79,5 +79,7 @@ pub fn Switch(
 
     button(span(()).class(thumb_cls))
         .class(track_cls)
-        .on_click(move |_| on_change.call(!checked.get()))
+        .on_click(move |_| {
+            let _ = on_change.invoke(!checked.get());
+        })
 }

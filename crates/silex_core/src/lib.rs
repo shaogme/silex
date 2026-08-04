@@ -20,15 +20,15 @@ pub use callback::Callback;
 pub use error::{ErrorContext, SilexError, SilexResult};
 pub use node_ref::NodeRef;
 pub use reactivity::{
-    Constant, Effect, Memo, ReadSignal, RwSignal, Signal, StoredValue, WriteSignal,
+    Constant, Effect, Memo, PromotionPlan, ReactiveSource, ReadSignal, RwSignal, Signal,
+    StoredValue, WriteSignal, runtime_inputs_of,
 };
 pub use scope::{OwnedScope, RootHandle, Runtime, Scope};
 pub use silex_reactivity::CompletionToken;
-#[doc(hidden)]
 pub use silex_reactivity::RuntimeInputs;
 pub use store::Store;
 pub use task::TaskHandle;
-pub use traits::{RxBase, RxGet, RxRead};
+pub use traits::{RxBase, RxData, RxGet, RxRead, RxValue};
 
 pub use silex_reactivity::CleanupError;
 

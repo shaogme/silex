@@ -49,7 +49,7 @@ pub fn Input(
                 && let Ok(input_el) =
                     wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlInputElement>(target)
             {
-                on_input.call(input_el.value());
+                let _ = on_input.invoke(input_el.value());
             }
         })
 }

@@ -58,5 +58,7 @@ pub fn Toggle(
         .attr("aria-pressed", rx!(move || pressed.get().to_string()))
         .attr("data-state", state_attr)
         .class(cls)
-        .on_click(move |_| on_change.call(!pressed.get()))
+        .on_click(move |_| {
+            let _ = on_change.invoke(!pressed.get());
+        })
 }

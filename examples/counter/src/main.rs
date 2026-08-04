@@ -22,7 +22,9 @@ fn Card(
     .class("card")
     .style(&style);
 
-    root = root.on_click(move |_| on_hover.call(()));
+    root = root.on_click(move |_| {
+        let _ = on_hover.invoke(());
+    });
 
     root
 }

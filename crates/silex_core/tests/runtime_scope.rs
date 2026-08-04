@@ -27,6 +27,43 @@ fn scoped_primitives_propagate_without_raw_handles() {
 }
 
 #[test]
+fn scope_memo_and_derived_have_no_input_convenience_entries() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let (source, set_source) = scope.signal(2i32);
+        let derived = scope.derived(move || source.get() * 2);
+        let memo = scope.memo(move |_| derived.get() + 1);
+
+        assert_eq!(derived.get(), 4);
+        assert_eq!(memo.get(), 5);
+        set_source.set(6);
+        assert_eq!(derived.get(), 12);
+        assert_eq!(memo.get(), 13);
+    });
+}
+
+#[test]
+fn owned_scope_exposes_an_owner_bound_effect_only() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let (source, set_source) = scope.signal(1i32);
+        let runs = Rc::new(Cell::new(0));
+        let runs_for_effect = runs.clone();
+        let owner = scope.owned_scope();
+        let effect = owner.effect(move || {
+            let _ = source.get();
+            runs_for_effect.set(runs_for_effect.get() + 1);
+        });
+
+        assert!(effect.is_alive());
+        set_source.set(2);
+        assert_eq!(runs.get(), 2);
+        owner.dispose();
+        assert!(!effect.is_alive());
+    });
+}
+
+#[test]
 fn lexical_effect_is_direct_and_tracks_dependencies() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
@@ -99,8 +136,9 @@ fn callbacks_and_node_refs_are_scope_owned() {
         let callback = scope.callback(move |value: i32| {
             called_by_callback.set(value);
         });
-        assert!(callback.call(11));
-        assert_eq!(called.get(), 11);
+        callback.invoke(11).expect("callback should be alive");
+        callback.call(12).expect("callback should remain alive");
+        assert_eq!(called.get(), 12);
 
         let node_ref = scope.node_ref::<String>();
         assert!(node_ref.load(String::from("node")));

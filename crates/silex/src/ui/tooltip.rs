@@ -199,11 +199,11 @@ pub fn TooltipTrigger(
         .on(event::mouseenter, move |e: web_sys::MouseEvent| {
             ctx.anchor.set(get_event_anchor(&e));
             ctx.on_pointer_enter();
-            on_mouse_enter.call(e);
+            let _ = on_mouse_enter.invoke(e);
         })
         .on(event::mouseleave, move |e: web_sys::MouseEvent| {
             ctx.on_pointer_leave();
-            on_mouse_leave.call(e);
+            let _ = on_mouse_leave.invoke(e);
         })
         .on(event::focus, move |e: web_sys::FocusEvent| {
             let target = e.current_target().or_else(|| e.target());
@@ -213,11 +213,11 @@ pub fn TooltipTrigger(
                 ctx.anchor.set(get_element_anchor(&el));
             }
             ctx.on_pointer_enter();
-            on_focus.call(e);
+            let _ = on_focus.invoke(e);
         })
         .on(event::blur, move |e: web_sys::FocusEvent| {
             ctx.on_pointer_leave();
-            on_blur.call(e);
+            let _ = on_blur.invoke(e);
         })
 }
 

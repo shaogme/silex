@@ -60,12 +60,16 @@ pub fn Dialog(
                 // Overlay 遮罩
                 div(())
                     .class(tw!("fixed inset-0 z-50 bg-black/50 backdrop-blur-xs"))
-                    .on_click(move |_| on_close.call(())),
+                    .on_click(move |_| {
+                        let _ = on_close.invoke(());
+                    }),
                 // Content 窗口实体
                 div(view_chain!(
                     button("✕")
                         .class(tw!("absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none cursor-pointer border-0 bg-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-50"))
-                        .on_click(move |_| on_close.call(())),
+                    .on_click(move |_| {
+                        let _ = on_close.invoke(());
+                    }),
                     stored_children.get()
                 )).class(content_cls)
             )).into_any()

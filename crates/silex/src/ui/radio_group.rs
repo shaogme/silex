@@ -94,8 +94,8 @@ pub fn RadioGroupItem(
 
     let handle_click = move |_| {
         if !disabled.get() {
-            on_select.call(value);
-            on_change.call(value.to_string());
+            let _ = on_select.invoke(value);
+            let _ = on_change.invoke(value.to_string());
         }
     };
 

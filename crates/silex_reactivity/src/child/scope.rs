@@ -321,7 +321,14 @@ impl<'scope> Scope<'scope> {
     }
 }
 
-/// A persistent, owner-backed scope for a dynamic branch or list row.
+/// A persistent owner boundary for a dynamic branch or list row.
+///
+/// `OwnedScope` intentionally exposes owner operations only. Its storage is
+/// owned by this value, so returning an ordinary node with the parent
+/// `'scope` lifetime would let that node outlive the storage. Use a borrowed
+/// [`Scope`] to create signals, memos, derived values, stored values,
+/// callbacks, and node refs. An owned scope can register effects, cleanup, or
+/// completion destinations whose handles remain borrowed from the owner.
 pub struct OwnedScope<'scope> {
     storage: Box<ScopeStorage>,
     active: Cell<bool>,
@@ -368,6 +375,10 @@ impl<'scope> OwnedScope<'scope> {
     }
 
     /// Register and immediately run an effect owned by this frame.
+    ///
+    /// The returned diagnostic handle borrows this owner and cannot outlive
+    /// that borrow. The effect itself remains owned by `OwnedScope` until
+    /// [`OwnedScope::dispose`] or `Drop`.
     pub fn effect<F>(&self, f: F) -> Effect<'_>
     where
         F: FnMut() + 'scope,

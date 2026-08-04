@@ -1,4 +1,4 @@
-//! Sealed reactive-source promotion and input aggregation.
+//! Reactive-source promotion and input aggregation.
 
 use crate::{
     Rx, RxValueKind, Scope,
@@ -9,13 +9,8 @@ use crate::{
 };
 use silex_reactivity::{ReactiveResult, RuntimeInputs};
 
-mod sealed {
-    pub trait Sealed {}
-}
-
-/// A framework-owned source description that can be materialized in a target
-/// scope after one complete input validation.
-#[doc(hidden)]
+/// A source description that can be materialized in a target scope after one
+/// complete input validation.
 pub struct PromotionPlan<'scope, T: 'scope> {
     inputs: RuntimeInputs,
     materializer: Materializer<'scope, T>,
@@ -30,16 +25,20 @@ enum Materializer<'scope, T: 'scope> {
     Derived(DerivedMaterializer<'scope, T>),
 }
 
-/// Sealed source boundary for all framework-known reactive values.
-#[doc(hidden)]
-pub trait ReactiveSource<'scope>: RxValue + sealed::Sealed {
+/// Source boundary for values that can be promoted into a target scope.
+///
+/// Implementations outside `silex_core` must return a `constant` or `derived`
+/// plan. The plan's `RuntimeInputs` must include every runtime source read by
+/// its materializer. The materializer must create nodes through the supplied
+/// [`Scope`] and must not register nodes while building the plan.
+pub trait ReactiveSource<'scope>: RxValue {
     fn into_promotion_plan(self) -> PromotionPlan<'scope, Self::Value>
     where
         Self: Sized,
         Self::Value: Sized + RxData + 'scope;
 }
 
-#[doc(hidden)]
+/// Collect the opaque runtime provenance declared by a source.
 pub fn runtime_inputs_of<'scope, V>(value: V) -> RuntimeInputs
 where
     V: ReactiveSource<'scope>,
@@ -56,14 +55,20 @@ impl<'scope, T: 'scope> PromotionPlan<'scope, T> {
         }
     }
 
-    pub(crate) fn constant(value: T) -> Self {
+    /// Create a non-reactive source plan.
+    pub fn constant(value: T) -> Self {
         Self {
             inputs: RuntimeInputs::new(),
             materializer: Materializer::Constant(value),
         }
     }
 
-    pub(crate) fn derived<F>(inputs: RuntimeInputs, materializer: F) -> Self
+    /// Create a derived source plan.
+    ///
+    /// `inputs` is validated against the target scope before `materializer`
+    /// runs. A foreign input therefore cannot create a target node, cleanup,
+    /// or initial computation run.
+    pub fn derived<F>(inputs: RuntimeInputs, materializer: F) -> Self
     where
         F: FnOnce(&Scope<'scope>, RuntimeInputs) -> Rx<'scope, T> + 'scope,
     {
@@ -95,8 +100,6 @@ impl<'scope, T: 'scope> PromotionPlan<'scope, T> {
     }
 }
 
-impl<T> sealed::Sealed for Constant<T> {}
-
 impl<'scope, T: 'scope> ReactiveSource<'scope> for Constant<T> {
     fn into_promotion_plan(self) -> PromotionPlan<'scope, T>
     where
@@ -110,8 +113,6 @@ impl<'scope, T: 'scope> ReactiveSource<'scope> for Constant<T> {
 macro_rules! impl_primitive_sources {
     ($($ty:ty),* $(,)?) => {
         $(
-            impl sealed::Sealed for $ty {}
-
             impl<'scope> ReactiveSource<'scope> for $ty {
                 fn into_promotion_plan(self) -> PromotionPlan<'scope, Self::Value>
                 where
@@ -146,8 +147,6 @@ impl_primitive_sources!(
     String,
 );
 
-impl sealed::Sealed for &str {}
-
 impl<'scope> ReactiveSource<'scope> for &str {
     fn into_promotion_plan(self) -> PromotionPlan<'scope, String>
     where
@@ -157,8 +156,6 @@ impl<'scope> ReactiveSource<'scope> for &str {
         PromotionPlan::constant(self.to_owned())
     }
 }
-
-impl<'scope, T: 'scope> sealed::Sealed for ReadSignal<'scope, T> {}
 
 impl<'scope, T: 'scope> ReactiveSource<'scope> for ReadSignal<'scope, T>
 where
@@ -174,8 +171,6 @@ where
     }
 }
 
-impl<'scope, T: 'scope> sealed::Sealed for RwSignal<'scope, T> {}
-
 impl<'scope, T: 'scope> ReactiveSource<'scope> for RwSignal<'scope, T>
 where
     T: Sized + RxData,
@@ -188,8 +183,6 @@ where
         self.read.into_promotion_plan()
     }
 }
-
-impl<'scope, T: 'scope> sealed::Sealed for Signal<'scope, T> {}
 
 impl<'scope, T: 'scope> ReactiveSource<'scope> for Signal<'scope, T>
 where
@@ -204,8 +197,6 @@ where
     }
 }
 
-impl<'scope, T: 'scope> sealed::Sealed for Rx<'scope, T, RxValueKind> {}
-
 impl<'scope, T: 'scope> ReactiveSource<'scope> for Rx<'scope, T, RxValueKind>
 where
     T: Sized + RxData,
@@ -218,8 +209,6 @@ where
         PromotionPlan::existing(self, self.runtime_inputs())
     }
 }
-
-impl<'scope, T: 'scope> sealed::Sealed for Memo<'scope, T> {}
 
 impl<'scope, T: 'scope> ReactiveSource<'scope> for Memo<'scope, T>
 where
@@ -234,8 +223,6 @@ where
         PromotionPlan::existing(self.into_rx(), inputs)
     }
 }
-
-impl<'scope, T: 'scope> sealed::Sealed for StoredValue<'scope, T> {}
 
 impl<'scope, T: 'scope> ReactiveSource<'scope> for StoredValue<'scope, T>
 where
@@ -253,11 +240,6 @@ where
 
 macro_rules! impl_tuple_sources {
     ($($name:ident : $index:tt),+ $(,)?) => {
-        impl<$($name),+> sealed::Sealed for ($($name,)+)
-        where
-            $($name: sealed::Sealed,)+
-        {}
-
         #[allow(non_snake_case)]
         impl<'scope, $($name),+> ReactiveSource<'scope> for ($($name,)+)
         where
@@ -290,8 +272,6 @@ impl_tuple_sources!(A: 0, B: 1, C: 2, D: 3);
 impl_tuple_sources!(A: 0, B: 1, C: 2, D: 3, E: 4);
 impl_tuple_sources!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5);
 
-impl<S, F, O> sealed::Sealed for SignalSlice<S, F, O> where S: sealed::Sealed {}
-
 impl<'scope, S, F, O> ReactiveSource<'scope> for SignalSlice<S, F, O>
 where
     S: ReactiveSource<'scope> + RxRead + 'scope,
@@ -314,8 +294,6 @@ where
     }
 }
 
-impl<'scope, T, E> sealed::Sealed for Resource<'scope, T, E> {}
-
 impl<'scope, T, E> ReactiveSource<'scope> for Resource<'scope, T, E>
 where
     T: RxCloneData + RxData + 'static + 'scope,
@@ -332,8 +310,6 @@ where
         })
     }
 }
-
-impl<'scope, Arg, T, E> sealed::Sealed for Mutation<'scope, Arg, T, E> {}
 
 impl<'scope, Arg, T, E> ReactiveSource<'scope> for Mutation<'scope, Arg, T, E>
 where

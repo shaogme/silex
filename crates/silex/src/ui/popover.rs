@@ -181,7 +181,7 @@ pub fn PopoverClose(
         .class(close_cls)
         .on(event::click, move |_| {
             ctx.close();
-            on_click.call(());
+            let _ = on_click.invoke(());
         })
 }
 
@@ -334,7 +334,7 @@ pub fn PopoverContent(
                     event::click,
                     move |_| {
                         ctx.close();
-                        on_close.call(());
+                        let _ = on_close.invoke(());
                     }
                 ),
                 // Content wrapper
@@ -389,7 +389,7 @@ pub fn PopoverTrigger(
                 ctx.update_anchor_from_element(&el);
             }
             ctx.toggle();
-            on_click.call(());
+            let _ = on_click.invoke(());
         })
 }
 

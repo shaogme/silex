@@ -98,7 +98,9 @@ pub fn AccordionTrigger(
         .attr("data-slot", "accordion-trigger")
         .attr("data-state", state_attr)
         .class(trigger_cls)
-        .on_click(move |_| on_click.call(()))
+        .on_click(move |_| {
+            let _ = on_click.invoke(());
+        })
 }
 
 #[component]

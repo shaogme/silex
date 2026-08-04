@@ -126,7 +126,9 @@ pub fn TabsTrigger(
         .attr("data-state", state_attr)
         .attr("data-value", value)
         .class(cls)
-        .on_click(move |_| on_select.call(value))
+        .on_click(move |_| {
+            let _ = on_select.invoke(value);
+        })
 }
 
 #[component]

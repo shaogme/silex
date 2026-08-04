@@ -54,7 +54,7 @@ pub fn Checkbox(
             .class(icon_cls)
     });
 
-    button(check_icon)
-        .class(cls)
-        .on_click(move |_| on_change.call(!checked.get()))
+    button(check_icon).class(cls).on_click(move |_| {
+        let _ = on_change.invoke(!checked.get());
+    })
 }

@@ -161,7 +161,7 @@ pub fn Slider(
                     max_val.get(),
                     step_val.get(),
                 );
-                on_change.call(new_val);
+                let _ = on_change.invoke(new_val);
             }
         }
     };
@@ -181,7 +181,7 @@ pub fn Slider(
                     max_val.get(),
                     step_val.get(),
                 );
-                on_change.call(new_val);
+                let _ = on_change.invoke(new_val);
             }
         }
     };
@@ -202,7 +202,7 @@ pub fn Slider(
 
     let handle_input = move |v: String| {
         if let Ok(num) = v.parse::<f64>() {
-            on_change.call(num);
+            let _ = on_change.invoke(num);
         }
     };
 
