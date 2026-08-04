@@ -41,8 +41,8 @@ pub trait ThemeToCss: Display {
 fn apply_var_diff(
     style: &CssStyleDeclaration,
     entries: &[(&'static str, Option<String>)],
-    prev: Option<&Vec<Option<String>>>,
-) -> Vec<Option<String>> {
+    prev: Option<&Vec<(&'static str, Option<String>)>>,
+) -> Vec<(&'static str, Option<String>)> {
     for write in var_writes(entries, prev) {
         match write {
             VarWrite::Set(name, value) => {
@@ -53,7 +53,7 @@ fn apply_var_diff(
             }
         }
     }
-    entries.iter().map(|(_, v)| v.clone()).collect()
+    entries.to_vec()
 }
 
 /// 一次变量写入。
@@ -66,17 +66,28 @@ enum VarWrite<'a> {
 /// 与上一轮取值比较，给出这一轮真正需要落到 DOM 上的写入。
 fn var_writes<'a>(
     entries: &'a [(&'static str, Option<String>)],
-    prev: Option<&Vec<Option<String>>>,
+    prev: Option<&Vec<(&'static str, Option<String>)>>,
 ) -> Vec<VarWrite<'a>> {
     let mut out = Vec::new();
-    for (i, (name, value)) in entries.iter().enumerate() {
-        if prev.and_then(|p| p.get(i)) == Some(value) {
+    for (name, value) in entries {
+        if prev
+            .and_then(|p| p.iter().find(|(old_name, _)| old_name == name))
+            .map(|(_, old_value)| old_value)
+            == Some(value)
+        {
             continue;
         }
         out.push(match value {
             Some(v) => VarWrite::Set(name, v),
             None => VarWrite::Remove(name),
         });
+    }
+    if let Some(prev) = prev {
+        for (old_name, _) in prev {
+            if !entries.iter().any(|(name, _)| name == old_name) {
+                out.push(VarWrite::Remove(old_name));
+            }
+        }
     }
     out
 }
@@ -131,12 +142,17 @@ where
 {
     fn apply(&self, el: &Element, _target: ApplyTarget, owner: &ViewOwnerToken<'scope>) {
         let theme = self.0.clone();
+        let inputs = source_inputs(&theme);
+        if let Err(error) = owner.validate_inputs(&inputs) {
+            handle_error(error);
+            return;
+        }
         let el = el.clone();
         let effect_el = el.clone();
-        let previous = Rc::new(RefCell::new(None::<Vec<Option<String>>>));
+        let previous = Rc::new(RefCell::new(None::<Vec<(&'static str, Option<String>)>>));
         let previous_for_effect = previous.clone();
         owner.effect_from(
-            source_inputs(&theme),
+            inputs,
             Box::new(move || {
                 let theme = match &theme {
                     CssSource::Static(theme) => theme.clone(),
@@ -264,14 +280,19 @@ where
 {
     fn apply(&self, el: &Element, _target: ApplyTarget, owner: &ViewOwnerToken<'scope>) {
         let patch = self.0.clone();
+        let inputs = source_inputs(&patch);
+        if let Err(error) = owner.validate_inputs(&inputs) {
+            handle_error(error);
+            return;
+        }
         let el = el.clone();
         let effect_el = el.clone();
-        let previous = Rc::new(RefCell::new(None::<Vec<Option<String>>>));
+        let previous = Rc::new(RefCell::new(None::<Vec<(&'static str, Option<String>)>>));
         let names = Rc::new(RefCell::new(Vec::<&'static str>::new()));
         let previous_for_effect = previous.clone();
         let names_for_effect = names.clone();
         owner.effect_from(
-            source_inputs(&patch),
+            inputs,
             Box::new(move || {
                 let patch = match &patch {
                     CssSource::Static(patch) => patch.clone(),
@@ -333,8 +354,11 @@ mod tests {
             .collect()
     }
 
-    fn prev_of(pairs: &[Option<&str>]) -> Vec<Option<String>> {
-        pairs.iter().map(|v| v.map(str::to_string)).collect()
+    fn prev_of(pairs: &[(&'static str, Option<&str>)]) -> Vec<(&'static str, Option<String>)> {
+        pairs
+            .iter()
+            .map(|(name, value)| (*name, value.map(str::to_string)))
+            .collect()
     }
 
     /// 首轮没有上一轮取值，所有变量都要写
@@ -351,7 +375,7 @@ mod tests {
     #[test]
     fn unchanged_variables_are_not_rewritten() {
         let e = entries(&[("--a", Some("1")), ("--b", Some("9"))]);
-        let prev = prev_of(&[Some("1"), Some("2")]);
+        let prev = prev_of(&[("--a", Some("1")), ("--b", Some("2"))]);
         assert_eq!(var_writes(&e, Some(&prev)), vec![VarWrite::Set("--b", "9")]);
     }
 
@@ -360,7 +384,7 @@ mod tests {
     #[test]
     fn a_none_value_removes_the_variable() {
         let e = entries(&[("--a", None)]);
-        let prev = prev_of(&[Some("1")]);
+        let prev = prev_of(&[("--a", Some("1"))]);
         assert_eq!(var_writes(&e, Some(&prev)), vec![VarWrite::Remove("--a")]);
     }
 
@@ -368,7 +392,7 @@ mod tests {
     #[test]
     fn an_already_absent_variable_is_left_alone() {
         let e = entries(&[("--a", None)]);
-        let prev = prev_of(&[None]);
+        let prev = prev_of(&[("--a", None)]);
         assert!(var_writes(&e, Some(&prev)).is_empty());
     }
 
@@ -380,10 +404,20 @@ mod tests {
     #[test]
     fn a_longer_entry_list_is_not_truncated_against_a_shorter_previous_round() {
         let e = entries(&[("--a", Some("1")), ("--b", Some("2")), ("--c", Some("3"))]);
-        let prev = prev_of(&[Some("1")]);
+        let prev = prev_of(&[("--a", Some("1"))]);
         assert_eq!(
             var_writes(&e, Some(&prev)),
             vec![VarWrite::Set("--b", "2"), VarWrite::Set("--c", "3")]
+        );
+    }
+
+    #[test]
+    fn patch_entries_are_diffed_by_name_and_remove_stale_variables() {
+        let previous = entries(&[("--old", Some("1"))]);
+        let current = entries(&[("--new", Some("1"))]);
+        assert_eq!(
+            var_writes(&current, Some(&previous)),
+            vec![VarWrite::Set("--new", "1"), VarWrite::Remove("--old")]
         );
     }
 

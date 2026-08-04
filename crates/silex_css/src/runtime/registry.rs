@@ -85,13 +85,17 @@ pub(crate) fn apply_doc_op(op: DocOp) {
 pub struct StaticStyleRegistry {
     /// Set of already injected style IDs.
     injected_ids: HashSet<String>,
+    /// IDs queued for the next flush but not accepted by the backend yet.
+    pending_ids: HashSet<String>,
     /// The shared stylesheet for all static styles.
     shared_sheet: Option<ActiveSheet>,
     /// 已经进表的 chunk。只在需要整表重建（`<style>` 兜底 / `insertRule` 失败）
     /// 时才会被读到。
     all_chunks: Vec<String>,
     /// 还没进表的 chunk。
-    pending_chunks: Vec<String>,
+    pending_chunks: Vec<(String, String)>,
+    /// A failed full replacement forces the next flush to retry the complete table.
+    needs_full_rebuild: bool,
     /// Whether a microtask flush has already been scheduled.
     is_flush_pending: bool,
 }
@@ -99,9 +103,11 @@ pub struct StaticStyleRegistry {
 thread_local! {
     static STATIC_REGISTRY: RefCell<StaticStyleRegistry> = RefCell::new(StaticStyleRegistry {
         injected_ids: HashSet::new(),
+        pending_ids: HashSet::new(),
         shared_sheet: None,
         all_chunks: Vec::new(),
         pending_chunks: Vec::new(),
+        needs_full_rebuild: false,
         is_flush_pending: false,
     });
     /// `STATIC_REGISTRY` 被重入借用时暂存的注入请求。
@@ -122,9 +128,11 @@ pub(crate) fn reset_for_test() {
     STATIC_REGISTRY.with(|r| {
         *r.borrow_mut() = StaticStyleRegistry {
             injected_ids: HashSet::new(),
+            pending_ids: HashSet::new(),
             shared_sheet: None,
             all_chunks: Vec::new(),
             pending_chunks: Vec::new(),
+            needs_full_rebuild: false,
             is_flush_pending: false,
         }
     });
@@ -150,6 +158,12 @@ impl StaticStyleRegistry {
         if self.injected_ids.contains(id) {
             return;
         }
+        if self.pending_ids.contains(id) {
+            // 上一轮后端拒绝了完整刷新；同一个 id 的再次注入是一个明确的
+            // 重试信号，但不重复追加同一 chunk。
+            self.schedule_flush();
+            return;
+        }
 
         let trimmed = content.trim();
         if trimmed.is_empty() {
@@ -162,15 +176,19 @@ impl StaticStyleRegistry {
                 return;
             };
             // 层序声明必须是表里的第一条规则，后续 chunk 一律追加在它后面
-            sheet.replace(layers::ORDER_STATEMENT);
+            if !sheet.replace(layers::ORDER_STATEMENT) {
+                report("无法初始化静态样式表，静态样式将不会生效");
+                return;
+            }
             if let Some(adopted) = sheet.adopted() {
                 apply_doc_op(DocOp::SetStatic(adopted));
             }
             self.shared_sheet = Some(sheet);
         }
 
-        self.injected_ids.insert(id.to_string());
-        self.pending_chunks.push(trimmed.to_string());
+        self.pending_ids.insert(id.to_string());
+        self.pending_chunks
+            .push((id.to_string(), trimmed.to_string()));
         self.schedule_flush();
     }
 
@@ -200,32 +218,53 @@ impl StaticStyleRegistry {
         let pending = std::mem::take(&mut self.pending_chunks);
 
         let Some(sheet) = &self.shared_sheet else {
-            // 表都没建起来，内容留在 all_chunks 里等下一次重建
-            self.all_chunks.extend(pending);
+            // 正常路径不会在有 pending chunk 时缺少 shared sheet；保留请求以便
+            // 后续重试，而不是把尚未接受的内容误标成已注入。
+            self.pending_chunks = pending;
             return;
         };
 
-        let rules: Vec<&str> = pending.iter().flat_map(|c| split_rules(c)).collect();
-        let appended = sheet.append_rules(&rules);
+        let appended = if self.needs_full_rebuild {
+            false
+        } else {
+            let rules: Vec<&str> = pending
+                .iter()
+                .flat_map(|(_, chunk)| split_rules(chunk))
+                .collect();
+            sheet.append_rules(&rules)
+        };
 
-        self.all_chunks.extend(pending);
         if !appended {
             // `<style>` 兜底或某条规则 insertRule 失败：退回整表重建。
             // 兜底路径本来就没有增量接口，O(n²) 在这里是可接受的代价。
-            let full = self.build_full_content();
-            sheet.replace(&full);
+            let mut chunks = self.all_chunks.clone();
+            chunks.extend(pending.iter().map(|(_, chunk)| chunk.clone()));
+            let full = self.build_full_content(&chunks);
+            if !sheet.replace(&full) {
+                report("重建静态样式表失败，等待下一次注入重试");
+                self.pending_chunks = pending;
+                self.needs_full_rebuild = true;
+                return;
+            }
+            self.needs_full_rebuild = false;
+        }
+
+        self.all_chunks
+            .extend(pending.iter().map(|(_, chunk)| chunk.clone()));
+        for (id, _) in pending {
+            self.pending_ids.remove(&id);
+            self.injected_ids.insert(id);
         }
     }
 
     /// Pre-allocates string capacity and builds the full CSS stylesheet content.
-    fn build_full_content(&self) -> String {
-        let capacity = layers::ORDER_STATEMENT.len()
-            + 1
-            + self.all_chunks.iter().map(|c| c.len() + 1).sum::<usize>();
+    fn build_full_content(&self, chunks: &[String]) -> String {
+        let capacity =
+            layers::ORDER_STATEMENT.len() + 1 + chunks.iter().map(|c| c.len() + 1).sum::<usize>();
         let mut full_content = String::with_capacity(capacity);
         full_content.push_str(layers::ORDER_STATEMENT);
         full_content.push('\n');
-        for chunk in &self.all_chunks {
+        for chunk in chunks {
             full_content.push_str(chunk);
             full_content.push('\n');
         }

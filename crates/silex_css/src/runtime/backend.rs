@@ -24,8 +24,8 @@ pub(crate) trait SheetBackend: Sized + 'static {
     /// 假装成功）。
     fn create() -> Option<Self>;
 
-    /// 整表替换。
-    fn replace(&self, css: &str);
+    /// 整表替换。返回 `false` 表示宿主拒绝了这次更新。
+    fn replace(&self, css: &str) -> bool;
 
     /// 往表尾追加若干条**顶层规则**。
     ///

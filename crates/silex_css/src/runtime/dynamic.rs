@@ -3,7 +3,7 @@ use crate::{
         backend::{ActiveSheet, SheetBackend},
         platform::report,
         registry::{DocOp, apply_doc_op},
-        template::{CssPart, dynamic_class, render, replace_placeholders},
+        template::{CssPart, dynamic_class, render_selector, replace_placeholders},
     },
     source::IntoCssReactive,
     types,
@@ -152,11 +152,13 @@ impl DynamicStyleManager {
             return;
         };
         if let Some(state) = state_borrow.take() {
+            // manager dispose 必须立即停止样式匹配。effect/cleanup closure 可能仍
+            // 暂时持有 state，不能把 detach 推迟到最后一个 Rc drop。
+            state.detach();
             // If strong_count is 1, it means this manager was the only one holding the style.
             if Rc::strong_count(&state) == 1 {
                 // 退休 = 保留内容、移出 adoptedStyleSheets。表对象还在（复用时
                 // 不必重新解析 CSS），但不再参与样式匹配。
-                state.detach();
                 RETIRED_STYLES.with(|retired| {
                     let Ok(mut r) = retired.try_borrow_mut() else {
                         return;
@@ -179,7 +181,9 @@ impl DynamicStyleManager {
             let same_content = state.content.borrow().as_str() == content;
             if same_content || Rc::strong_count(state) == 1 {
                 if !same_content {
-                    state.sheet.replace(content);
+                    if !state.sheet.replace(content) {
+                        return false;
+                    }
                     *state.content.borrow_mut() = content.to_string();
                 }
                 return true;
@@ -197,11 +201,12 @@ impl DynamicStyleManager {
                             r.remove(pos);
                         }
                     });
-                    state.sheet.replace(content);
-                    *state.content.borrow_mut() = content.to_string();
-                    // 复用一张退休的表：内容还在，但已经被摘出文档，得挂回去
-                    state.attach();
-                    return Some(state);
+                    if state.sheet.replace(content) {
+                        *state.content.borrow_mut() = content.to_string();
+                        // 复用一张退休的表：内容还在，但已经被摘出文档，得挂回去
+                        state.attach();
+                        return Some(state);
+                    }
                 }
 
                 // 同一逻辑 id 的相同内容可以共享；不同内容必须拆分成独立表，
@@ -214,7 +219,9 @@ impl DynamicStyleManager {
             }
 
             let sheet = ActiveSheet::create()?;
-            sheet.replace(content);
+            if !sheet.replace(content) {
+                return None;
+            }
 
             let state_id = if reg.contains_key(id) {
                 unique_dynamic_style_id("slx-dynamic")
@@ -288,6 +295,8 @@ impl<'scope> DynamicCss<'scope> {
         parts: &'static [CssPart],
         exprs: Vec<CssVariableGetter<'scope>>,
     ) -> Self {
+        // Rule getters represent selector fragments. Dynamic declaration values
+        // belong in `with_var`, which is applied through an element CSS variable.
         self.rules.push((parts, exprs));
         self
     }
@@ -378,7 +387,7 @@ impl<'scope> DynamicCss<'scope> {
                         return;
                     }
 
-                    let rule = render(parts, &dyn_class, &current_vals);
+                    let rule = render_selector(parts, &dyn_class, &current_vals);
                     if !manager_for_effect.update(&dyn_class, &rule) {
                         return;
                     }
@@ -449,7 +458,7 @@ pub fn dynamic_rule_class(
 ) -> String {
     let vals: Vec<String> = getters.iter().map(|g| g.get()).collect();
     let dyn_class = dynamic_class(base_class, parts, &vals);
-    let rule = render(parts, &dyn_class, &vals);
+    let rule = render_selector(parts, &dyn_class, &vals);
     manager.update(&dyn_class, &rule);
     dyn_class
 }
@@ -490,7 +499,7 @@ pub fn inject_managed_dynamic_style<'scope>(
         Box::new(move || {
             let vals: Vec<String> = positional.iter().map(|getter| getter.get()).collect();
             // 全局样式没有组件类名，`CssPart::Class` 不会出现在这类模板里
-            let res = render(parts, "", &vals);
+            let res = render_selector(parts, "", &vals);
             let pairs: Vec<(String, String)> = replacements
                 .iter()
                 .map(|(pattern, getter)| {

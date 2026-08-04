@@ -1,15 +1,24 @@
 #![cfg(target_arch = "wasm32")]
 
+use js_sys::{Array, Reflect};
 use silex_core::Runtime;
 use silex_css::{
     CssPart, DynamicCss, IntoCssReactive,
-    prelude::{Style, ThemeToCss, ThemeType, theme_variables},
+    prelude::{
+        Style, ThemePatchToCss, ThemeToCss, ThemeType, set_global_theme, theme_patch,
+        theme_variables,
+    },
 };
 use silex_dom::{
-    attribute::{ApplyTarget, ApplyToDom},
+    attribute::{ApplyTarget, ApplyToDom, AttrOp},
     view::{ScopedViewOwner, ViewOwner},
 };
-use std::fmt::{Display, Formatter};
+use std::{
+    cell::Cell,
+    fmt::{Display, Formatter},
+};
+use wasm_bindgen::JsValue;
+use wasm_bindgen_futures::JsFuture;
 use wasm_bindgen_test::*;
 use web_sys::{Element, Node};
 
@@ -40,6 +49,40 @@ fn remove(node: &Node) {
     }
 }
 
+fn adopted_sheet_contains(needle: &str) -> bool {
+    let sheets = Reflect::get(
+        document().as_ref(),
+        &JsValue::from_str("adoptedStyleSheets"),
+    )
+    .expect("document exposes adoptedStyleSheets");
+    let sheets = Array::from(&sheets);
+    for sheet_index in 0..sheets.length() {
+        let sheet = sheets.get(sheet_index);
+        let rules = Reflect::get(&sheet, &JsValue::from_str("cssRules"))
+            .expect("constructed stylesheet exposes cssRules");
+        let rules = Array::from(&rules);
+        for rule_index in 0..rules.length() {
+            let rule = rules.get(rule_index);
+            let text = Reflect::get(&rule, &JsValue::from_str("cssText"))
+                .ok()
+                .and_then(|value| value.as_string())
+                .unwrap_or_default();
+            if text.contains(needle) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+async fn flush_style_microtasks() {
+    for _ in 0..4 {
+        JsFuture::from(js_sys::Promise::resolve(&JsValue::UNDEFINED))
+            .await
+            .expect("microtask promise resolves");
+    }
+}
+
 #[derive(Clone)]
 struct TestTheme {
     color: String,
@@ -60,6 +103,27 @@ impl ThemeToCss for TestTheme {
 
     fn get_variable_names() -> &'static [&'static str] {
         &["--theme-color"]
+    }
+}
+
+#[derive(Clone)]
+struct TestPatch {
+    alternate: bool,
+}
+
+impl ThemePatchToCss for TestPatch {
+    fn get_patch_entries(&self) -> Vec<(&'static str, Option<String>)> {
+        if self.alternate {
+            vec![("--patch-new", Some(String::from("blue")))]
+        } else {
+            vec![("--patch-old", Some(String::from("red")))]
+        }
+    }
+}
+
+impl Display for TestPatch {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str("patch")
     }
 }
 
@@ -209,9 +273,9 @@ fn dynamic_css_replaces_rule_class_and_cleans_on_scope_dispose() {
             &[
                 CssPart::Lit("."),
                 CssPart::Class,
-                CssPart::Lit("{color:"),
-                CssPart::Val(0),
-                CssPart::Lit("}"),
+                CssPart::Lit(" "),
+                CssPart::SelectorVal(0),
+                CssPart::Lit("{color:red}"),
             ],
             vec![value.into_css_reactive()],
         );
@@ -228,5 +292,138 @@ fn dynamic_css_replaces_rule_class_and_cleans_on_scope_dispose() {
     });
 
     assert!(element.class_name().is_empty());
+    remove(&host.into());
+}
+
+#[wasm_bindgen_test(async)]
+async fn pending_dynamic_sheet_operations_do_not_survive_owner_dispose() {
+    let host = mount_point();
+    let element = document()
+        .create_element("div")
+        .expect("test element can be created");
+    host.append_child(&element).expect("element can be mounted");
+
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let (value, _) = scope.signal(String::from("red"));
+        let owner = ScopedViewOwner::new(scope);
+        let token = owner.token();
+        let dynamic = DynamicCss::new("slx-pending-owner").with_rule(
+            &[
+                CssPart::Lit("."),
+                CssPart::Class,
+                CssPart::Lit(" "),
+                CssPart::SelectorVal(0),
+                CssPart::Lit("{color:red}"),
+            ],
+            vec![value.into_css_reactive()],
+        );
+        dynamic.apply(&element, ApplyTarget::Class, &token);
+        assert!(element.class_name().contains("slx-pending-owner"));
+    });
+
+    flush_style_microtasks().await;
+    assert!(!adopted_sheet_contains("slx-pending-owner"));
+    remove(&host.into());
+}
+
+#[wasm_bindgen_test(async)]
+async fn global_theme_stylesheets_are_isolated_per_owner() {
+    let mut first_runtime = Runtime::new();
+    let first_root = first_runtime.run();
+    let mut second_runtime = Runtime::new();
+    let second_root = second_runtime.run();
+
+    first_root.with_scope(|first_scope| {
+        second_root.with_scope(|second_scope| {
+            let first_owner = ScopedViewOwner::new(*first_scope);
+            let second_owner = ScopedViewOwner::new(*second_scope);
+            set_global_theme(
+                &first_owner,
+                first_scope.stored(TestTheme {
+                    color: String::from("owner-red"),
+                }),
+            );
+            set_global_theme(
+                &second_owner,
+                second_scope.stored(TestTheme {
+                    color: String::from("owner-blue"),
+                }),
+            );
+        });
+    });
+
+    flush_style_microtasks().await;
+    assert!(adopted_sheet_contains("owner-red"));
+    assert!(adopted_sheet_contains("owner-blue"));
+
+    first_root.dispose().expect("first owner can be disposed");
+    flush_style_microtasks().await;
+    assert!(!adopted_sheet_contains("owner-red"));
+    assert!(adopted_sheet_contains("owner-blue"));
+
+    second_root.dispose().expect("second owner can be disposed");
+    flush_style_microtasks().await;
+    assert!(!adopted_sheet_contains("owner-blue"));
+}
+
+#[wasm_bindgen_test]
+fn theme_patch_removes_variables_that_disappear_from_the_next_round() {
+    let host = mount_point();
+    let element = document()
+        .create_element("div")
+        .expect("test element can be created");
+    host.append_child(&element).expect("element can be mounted");
+
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let (patch, set_patch) = scope.signal(TestPatch { alternate: false });
+        let owner = ScopedViewOwner::new(scope);
+        let token = owner.token();
+        theme_patch(patch).apply(&element, ApplyTarget::Apply, &token);
+        let initial = element.get_attribute("style").unwrap_or_default();
+        assert!(initial.contains("--patch-old"), "{initial}");
+
+        set_patch.set(TestPatch { alternate: true });
+        let updated = element.get_attribute("style").unwrap_or_default();
+        assert!(!updated.contains("--patch-old"), "{updated}");
+        assert!(updated.contains("--patch-new"), "{updated}");
+    });
+
+    assert!(
+        element
+            .get_attribute("style")
+            .unwrap_or_default()
+            .is_empty()
+    );
+    remove(&host.into());
+}
+
+#[wasm_bindgen_test]
+fn foreign_runtime_css_input_is_rejected_before_custom_callback() {
+    let host = mount_point();
+    let element = document()
+        .create_element("div")
+        .expect("test element can be created");
+    host.append_child(&element).expect("element can be mounted");
+
+    let mut foreign_runtime = Runtime::new();
+    let foreign_inputs =
+        foreign_runtime.child(|scope| scope.rw_signal(1i32).into_rx().runtime_inputs());
+    let callback_runs = Cell::new(0);
+
+    let mut local_runtime = Runtime::new();
+    local_runtime.child(|scope| {
+        let owner = ScopedViewOwner::new(scope);
+        let token = owner.token();
+        let operation = AttrOp::custom_with_inputs(foreign_inputs, |element, _| {
+            callback_runs.set(callback_runs.get() + 1);
+            let _ = element.set_attribute("data-foreign", "unexpected");
+        });
+        operation.apply(&element, &token);
+    });
+
+    assert_eq!(callback_runs.get(), 0);
+    assert!(!element.has_attribute("data-foreign"));
     remove(&host.into());
 }

@@ -126,6 +126,30 @@ fn updating_the_same_id_replaces_content_in_place() {
 }
 
 #[test]
+fn a_failed_dynamic_replace_does_not_commit_a_half_initialized_sheet() {
+    setup();
+    fake::set_knobs(Knobs {
+        replace_fails: true,
+        ..Default::default()
+    });
+
+    let manager = DynamicStyleManager::new();
+    assert!(!manager.update("broken", ".broken{color:red}"));
+    platform::run_microtasks();
+    assert!(fake::adopted_now().is_empty());
+    assert!(
+        fake::sheet_log(0).dropped,
+        "失败的样式表不应留在 manager 中"
+    );
+
+    fake::set_knobs(Knobs::default());
+    assert!(manager.update("broken", ".broken{color:blue}"));
+    platform::run_microtasks();
+    assert_eq!(fake::adopted_now(), vec![1]);
+    assert_eq!(fake::sheet_log(1).content, ".broken{color:blue}");
+}
+
+#[test]
 fn active_managers_with_different_content_do_not_overwrite_each_other() {
     setup();
     let first = DynamicStyleManager::new();
@@ -376,6 +400,30 @@ fn a_static_id_can_be_retried_after_sheet_creation_fails() {
 
     assert_eq!(created_sheets(), 1);
     assert!(fake::sheet_log(0).content.contains(".retry{color:red}"));
+}
+
+#[test]
+fn a_static_id_can_be_retried_after_sheet_replace_fails() {
+    setup();
+    fake::set_knobs(Knobs {
+        replace_fails: true,
+        ..Default::default()
+    });
+
+    inject_style("replace-retry", ".replace-retry{color:red}");
+    platform::run_microtasks();
+    assert_eq!(created_sheets(), 1);
+    assert!(fake::sheet_log(0).dropped);
+
+    fake::set_knobs(Knobs::default());
+    inject_style("replace-retry", ".replace-retry{color:red}");
+    platform::run_microtasks();
+    assert_eq!(created_sheets(), 2);
+    assert!(
+        fake::sheet_log(1)
+            .content
+            .contains(".replace-retry{color:red}")
+    );
 }
 
 /// 后端一建就成时，`create()` 的返回值确实是能用的表——防止假实现自己空转。

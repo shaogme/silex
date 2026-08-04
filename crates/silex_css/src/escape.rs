@@ -41,7 +41,10 @@ pub fn css_string(value: &str) -> String {
 /// 认不出这个属性会整条丢弃，而不会执行它。
 pub fn property_name(name: &str) -> Cow<'_, str> {
     fn is_name_char(c: char) -> bool {
-        c.is_ascii_alphanumeric() || c == '-' || c == '_' || !c.is_ascii()
+        c.is_ascii_alphanumeric()
+            || c == '-'
+            || c == '_'
+            || (!c.is_ascii() && !c.is_whitespace() && !c.is_control())
     }
 
     let leading_digit = name.starts_with(|c: char| c.is_ascii_digit());
@@ -55,6 +58,38 @@ pub fn property_name(name: &str) -> Cow<'_, str> {
             out.push(ch);
         } else {
             // `\<hex> ` 是 CSS 的标识符转义，尾随空格是转义序列的终止符
+            let _ = write!(out, "\\{:x} ", ch as u32);
+        }
+    }
+    Cow::Owned(out)
+}
+
+/// 将动态选择器片段限制为单个 CSS 标识符。
+///
+/// 选择器上下文不能复用声明值净化：`,` 会扩大选择器列表，空白会引入新的
+/// 后代选择器，而 `:`、`[` 和 `(` 会改变匹配语义。将非标识符字符编码为 CSS
+/// 转义序列后，整个输入仍是一个选择器片段，不会越出原来的选择器边界。
+pub fn selector_fragment(value: &str) -> Cow<'_, str> {
+    let first = value.chars().next();
+    let clean = |(index, ch): (usize, char)| {
+        (ch.is_ascii_alphanumeric()
+            || ch == '-'
+            || ch == '_'
+            || (!ch.is_ascii() && !ch.is_whitespace() && !ch.is_control()))
+            && !(index == 0 && ch.is_ascii_digit())
+            && !(index == 1 && first == Some('-') && ch.is_ascii_digit())
+    };
+
+    if value.chars().enumerate().all(clean) {
+        return Cow::Borrowed(value);
+    }
+
+    let mut out = String::with_capacity(value.len() + 4);
+    for (index, ch) in value.chars().enumerate() {
+        if clean((index, ch)) {
+            out.push(ch);
+        } else {
+            // 尾随空格用于终止十六进制转义，避免它吞掉后面的字符。
             let _ = write!(out, "\\{:x} ", ch as u32);
         }
     }
@@ -237,5 +272,19 @@ mod tests {
     #[test]
     fn a_leading_digit_is_escaped() {
         assert_eq!(property_name("1x"), "\\31 x");
+    }
+
+    #[test]
+    fn selector_fragments_cannot_expand_the_selector() {
+        let fragment = selector_fragment(", body:hover [data-x='y']");
+        assert!(!fragment.contains(','), "{fragment}");
+        assert!(!fragment.contains(':'), "{fragment}");
+        assert!(!fragment.contains('['), "{fragment}");
+        assert!(!fragment.contains(']'), "{fragment}");
+        assert!(!fragment.contains('('), "{fragment}");
+        assert!(!fragment.contains(')'), "{fragment}");
+        assert!(selector_fragment("dark") == "dark");
+        assert!(selector_fragment("-1x").contains("\\31 x"));
+        assert!(selector_fragment("a\u{2003}b").contains("\\2003 "));
     }
 }

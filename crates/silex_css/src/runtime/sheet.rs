@@ -22,6 +22,7 @@ use web_sys::{CssStyleSheet, HtmlStyleElement};
 /// 一张样式表。
 pub(crate) enum Sheet {
     /// 构造式样式表，参与 `document.adoptedStyleSheets`
+    #[cfg_attr(feature = "test-style-fallback", allow(dead_code))]
     Constructed(CssStyleSheet),
     /// `<style>` 兜底，直接活在 `<head>` 里，不参与 adoptedStyleSheets
     Tag(HtmlStyleElement),
@@ -41,21 +42,35 @@ impl SheetBackend for Sheet {
     type Handle = CssStyleSheet;
 
     fn create() -> Option<Self> {
-        if let Ok(sheet) = CssStyleSheet::new() {
-            return Some(Self::Constructed(sheet));
+        #[cfg(feature = "test-style-fallback")]
+        {
+            report("测试强制使用 <style> 兜底");
+            Self::new_tag().map(Self::Tag)
         }
-        report("new CSSStyleSheet() 不可用，退回 <style> 兜底");
-        Self::new_tag().map(Self::Tag)
+
+        #[cfg(not(feature = "test-style-fallback"))]
+        {
+            if let Ok(sheet) = CssStyleSheet::new() {
+                return Some(Self::Constructed(sheet));
+            }
+            report("new CSSStyleSheet() 不可用，退回 <style> 兜底");
+            Self::new_tag().map(Self::Tag)
+        }
     }
 
-    fn replace(&self, css: &str) {
+    fn replace(&self, css: &str) -> bool {
         match self {
             Self::Constructed(s) => {
                 if s.replace_sync(css).is_err() {
                     report("replaceSync 失败，本次样式未生效");
+                    return false;
                 }
+                true
             }
-            Self::Tag(el) => el.set_text_content(Some(css)),
+            Self::Tag(el) => {
+                el.set_text_content(Some(css));
+                true
+            }
         }
     }
 

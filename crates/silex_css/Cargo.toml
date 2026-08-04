@@ -31,6 +31,7 @@ web-sys = { workspace = true, features = [
     "HtmlStyleElement",
     "HtmlHeadElement",
     "HtmlElement",
+    "HtmlCollection",
     # 注入/清理失败时的诊断出口
     "console",
     "Window",
@@ -40,6 +41,8 @@ wasm-bindgen-futures.workspace = true
 
 [features]
 tw = []
+# Browser regression target that forces the real `<style>` fallback backend.
+test-style-fallback = []
 
 [dev-dependencies]
 trybuild = "1.0"

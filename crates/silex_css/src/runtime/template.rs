@@ -11,7 +11,7 @@
 //!
 //! 现在模板在编译期就被切成片段，运行时只做拼接：没有模式匹配，也就没有误伤。
 
-use crate::escape::declaration_value;
+use crate::escape::{declaration_value, selector_fragment};
 use silex_hash::{
     css::{Normalized, encode_base36},
     css_hasher,
@@ -25,18 +25,39 @@ pub enum CssPart {
     Lit(&'static str),
     /// 本轮的动态类名（不含前导 `.`，`.` 留在字面片段里）
     Class,
-    /// 第 n 个运行时取值
+    /// 第 n 个运行时声明值
     Val(usize),
+    /// 第 n 个运行时选择器片段。
+    ///
+    /// 与声明值分开建模，避免把动态值中的逗号、空白或伪类语法带出原选择器。
+    SelectorVal(usize),
 }
 
 /// 把模板拼成一条完整的 CSS 规则。
 pub fn render(parts: &[CssPart], class: &str, vals: &[String]) -> String {
+    render_with(parts, class, vals, false)
+}
+
+/// 把模板拼成一条以动态选择器片段为主的 CSS 规则。
+///
+/// `inject_managed_dynamic_style` 的 positional getter 历史上使用 `Val` 表示选择器
+/// 片段。该入口保留这一形状，新的调用点可使用 `SelectorVal` 获得同样的显式语义。
+pub fn render_selector(parts: &[CssPart], class: &str, vals: &[String]) -> String {
+    render_with(parts, class, vals, true)
+}
+
+fn render_with(
+    parts: &[CssPart],
+    class: &str,
+    vals: &[String],
+    positional_values_are_selectors: bool,
+) -> String {
     let capacity = parts
         .iter()
         .map(|p| match p {
             CssPart::Lit(s) => s.len(),
             CssPart::Class => class.len(),
-            CssPart::Val(i) => vals.get(*i).map_or(0, String::len),
+            CssPart::Val(i) | CssPart::SelectorVal(i) => vals.get(*i).map_or(0, String::len),
         })
         .sum();
     let mut out = String::with_capacity(capacity);
@@ -46,7 +67,16 @@ pub fn render(parts: &[CssPart], class: &str, vals: &[String]) -> String {
             CssPart::Class => out.push_str(class),
             CssPart::Val(i) => {
                 if let Some(v) = vals.get(*i) {
-                    out.push_str(&declaration_value(v));
+                    if positional_values_are_selectors {
+                        out.push_str(&selector_fragment(v));
+                    } else {
+                        out.push_str(&declaration_value(v));
+                    }
+                }
+            }
+            CssPart::SelectorVal(i) => {
+                if let Some(v) = vals.get(*i) {
+                    out.push_str(&selector_fragment(v));
                 }
             }
         }
@@ -71,6 +101,10 @@ pub fn dynamic_class(base: &str, parts: &[CssPart], vals: &[String]) -> String {
             CssPart::Class => 1u8.hash(&mut hasher),
             CssPart::Val(i) => {
                 2u8.hash(&mut hasher);
+                i.hash(&mut hasher);
+            }
+            CssPart::SelectorVal(i) => {
+                4u8.hash(&mut hasher);
                 i.hash(&mut hasher);
             }
         }
@@ -170,14 +204,26 @@ mod tests {
     }
 
     #[test]
-    fn a_dynamic_fragment_cannot_open_a_new_rule() {
+    fn a_dynamic_selector_fragment_cannot_open_a_new_rule() {
         let parts = [
             CssPart::Lit(".base "),
-            CssPart::Val(0),
+            CssPart::SelectorVal(0),
             CssPart::Lit("{color:red}"),
         ];
         let out = render(&parts, "base", &["x} body { display: none".to_string()]);
         assert!(!out.contains("body { display"), "{out}");
         assert_eq!(out.matches('}').count(), 1, "{out}");
+    }
+
+    #[test]
+    fn selector_values_cannot_widen_a_rule_to_another_selector() {
+        let parts = [
+            CssPart::Lit(".base "),
+            CssPart::SelectorVal(0),
+            CssPart::Lit("{color:red}"),
+        ];
+        let out = render(&parts, "base", &[", body:hover".to_string()]);
+        assert!(!out.contains(','), "{out}");
+        assert!(!out.contains(":hover"), "{out}");
     }
 }

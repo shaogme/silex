@@ -22,6 +22,8 @@ pub(crate) enum SheetEvent {
     Appended(usize, Vec<String>),
     /// 后端拒绝增量追加，调用方应当退回整表替换
     AppendRefused(usize),
+    /// 后端拒绝整表替换
+    ReplaceRefused(usize),
     Detached(usize),
     Dropped(usize),
     /// 一次 `document.adoptedStyleSheets = [...]`
@@ -47,6 +49,8 @@ pub(crate) struct Knobs {
     pub tag_fallback: bool,
     /// `append_rules` 一律被拒，用来走「退回整表重建」那条路
     pub append_fails: bool,
+    /// `replace` 一律被拒，用来验证失败时不提交半初始化状态
+    pub replace_fails: bool,
 }
 
 thread_local! {
@@ -57,6 +61,7 @@ thread_local! {
         create_fails: false,
         tag_fallback: false,
         append_fails: false,
+        replace_fails: false,
     }) };
     /// 当前文档上挂着的那一批表
     static ADOPTED: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
@@ -78,6 +83,7 @@ pub(crate) struct FakeSheet {
     /// 建表时的旋钮快照——建好之后再改旋钮不影响已有的表
     tag_fallback: bool,
     append_fails: bool,
+    replace_fails: bool,
 }
 
 impl SheetBackend for FakeSheet {
@@ -99,15 +105,21 @@ impl SheetBackend for FakeSheet {
             id,
             tag_fallback: knobs.tag_fallback,
             append_fails: knobs.append_fails,
+            replace_fails: knobs.replace_fails,
         })
     }
 
-    fn replace(&self, css: &str) {
+    fn replace(&self, css: &str) -> bool {
+        if self.replace_fails {
+            push_event(SheetEvent::ReplaceRefused(self.id));
+            return false;
+        }
         with_log(self.id, |log| {
             log.content = css.to_string();
             log.rules.clear();
         });
         push_event(SheetEvent::Replaced(self.id, css.to_string()));
+        true
     }
 
     fn append_rules(&self, rules: &[&str]) -> bool {

@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 /// 选项名解析失败：写错的选项名不应静默回退到默认值
 ///
-/// `tw_variants!` 生成的 `get()` 为了配合运行时字符串（`Signal<String>`）仍然宽容，
+/// `tw_variants!` 生成的 `get()` 为了配合运行时字符串（`Signal<'scope, String>`）仍然宽容，
 /// 但 `try_from_str` / `FromStr` / `get_checked` 这几条路径会把错误如实交回调用方。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnknownVariantOption {
@@ -152,7 +152,7 @@ macro_rules! declare_variants {
 
                 /// 严格解析：未知选项名返回 `Err`，不静默回退默认值
                 ///
-                /// 空字符串视为"未指定"，返回默认值——运行时用 `Signal<String>` 驱动的
+                /// 空字符串视为"未指定"，返回默认值——运行时用 `Signal<'scope, String>` 驱动的
                 /// 组件在未设置该 prop 时拿到的就是空串，那不是拼写错误。
                 pub fn try_from_str(
                     s: &str,
