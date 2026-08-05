@@ -57,7 +57,7 @@ styled! {
         children: AnyView<'scope>,
         selector: silex::core::reactivity::Signal<'scope, String>,
     ) {
-        $selector { color: red; }
+        & $selector { color: red; }
     }
 }
 
@@ -68,8 +68,8 @@ styled! {
     ) {
         variants: {
             mode: {
-                light: { $selector { color: rgb(17, 34, 51); } },
-                dark: { $selector { color: rgb(68, 85, 102); } },
+                light: { & $selector { color: rgb(17, 34, 51); } },
+                dark: { & $selector { color: rgb(68, 85, 102); } },
             }
         }
     }
@@ -82,7 +82,7 @@ fn document() -> web_sys::Document {
         .expect("browser tests have a document")
 }
 
-fn document_style_contains(needle: &str) -> bool {
+fn document_style_contains_all(needles: &[&str]) -> bool {
     let sheets = Reflect::get(
         document().as_ref(),
         &JsValue::from_str("adoptedStyleSheets"),
@@ -100,7 +100,7 @@ fn document_style_contains(needle: &str) -> bool {
                         .ok()
                         .and_then(|value| value.as_string())
                         .unwrap_or_default();
-                    if text.contains(needle) {
+                    if needles.iter().all(|needle| text.contains(needle)) {
                         return true;
                     }
                 }
@@ -113,12 +113,16 @@ fn document_style_contains(needle: &str) -> bool {
         if styles
             .item(index)
             .and_then(|style| style.text_content())
-            .is_some_and(|text| text.contains(needle))
+            .is_some_and(|text| needles.iter().all(|needle| text.contains(needle)))
         {
             return true;
         }
     }
     false
+}
+
+fn document_style_contains(needle: &str) -> bool {
+    document_style_contains_all(&[needle])
 }
 
 async fn flush_style_microtasks() {
@@ -274,7 +278,7 @@ async fn css_dynamic_selector_updates_and_detaches_on_owner_dispose() {
         let scope = root.scope();
         let (selector, set_selector) = scope.signal(String::from("macro-css-selector-a"));
         let view = silex::html::div(()).apply(css! {
-            $selector { color: red; }
+            & $selector { color: red; }
         });
         let owner = ScopedViewOwner::new(scope);
         view.mount_owned(&owner, &host, Vec::new());
@@ -289,14 +293,20 @@ async fn css_dynamic_selector_updates_and_detaches_on_owner_dispose() {
             .to_string();
 
         flush_style_microtasks().await;
-        assert!(document_style_contains("macro-css-selector-a"));
+        assert!(document_style_contains_all(&[
+            "@layer utilities",
+            "macro-css-selector-a",
+        ]));
 
         set_selector.set(String::from("macro-css-selector-b"));
         flush_style_microtasks().await;
         let second_class = element.class_name();
         assert!(!second_class.contains(&first_dynamic_class));
         assert!(!document_style_contains("macro-css-selector-a"));
-        assert!(document_style_contains("macro-css-selector-b"));
+        assert!(document_style_contains_all(&[
+            "@layer utilities",
+            "macro-css-selector-b",
+        ]));
     }
 
     root.dispose().expect("css selector owner can be disposed");
@@ -557,7 +567,10 @@ async fn styled_dynamic_selector_updates_and_detaches_on_owner_dispose() {
             .expect("styled selector view mounts an element");
         first_class = element.class_name();
         flush_style_microtasks().await;
-        assert!(document_style_contains("macro-selector-a"));
+        assert!(document_style_contains_all(&[
+            "@layer components",
+            "macro-selector-a"
+        ]));
 
         set_selector.set(String::from("macro-selector-b"));
         flush_style_microtasks().await;
@@ -572,7 +585,10 @@ async fn styled_dynamic_selector_updates_and_detaches_on_owner_dispose() {
             )
         );
         assert!(!document_style_contains("macro-selector-a"));
-        assert!(document_style_contains("macro-selector-b"));
+        assert!(document_style_contains_all(&[
+            "@layer components",
+            "macro-selector-b"
+        ]));
     }
 
     root.dispose()
@@ -607,11 +623,17 @@ async fn styled_dynamic_variant_switches_rules_and_cleans_on_dispose() {
             .last_element_child()
             .expect("styled variant view mounts an element");
         flush_style_microtasks().await;
-        assert!(document_style_contains("rgb(17, 34, 51)"));
+        assert!(document_style_contains_all(&[
+            "@layer components",
+            "rgb(17, 34, 51)"
+        ]));
 
         set_mode.set(String::from("dark"));
         flush_style_microtasks().await;
-        assert!(document_style_contains("rgb(68, 85, 102)"));
+        assert!(document_style_contains_all(&[
+            "@layer components",
+            "rgb(68, 85, 102)"
+        ]));
         assert!(!document_style_contains("rgb(17, 34, 51)"));
     }
 
@@ -649,11 +671,21 @@ async fn dynamic_global_mounts_without_a_dom_node_and_cleans_on_dispose() {
         });
         flush_style_microtasks().await;
         // Firefox CSSOM serializes the original hex value as an rgb() color.
-        assert!(document_style_contains("rgb(18, 52, 86)"));
+        assert!(document_style_contains_all(&[
+            "@layer base",
+            "rgb(18, 52, 86)"
+        ]));
+        assert!(document_style_contains_all(&[
+            "@layer base",
+            "macro-target"
+        ]));
 
         set_color.set(hex("#654321"));
         flush_style_microtasks().await;
-        assert!(document_style_contains("rgb(101, 67, 33)"));
+        assert!(document_style_contains_all(&[
+            "@layer base",
+            "rgb(101, 67, 33)"
+        ]));
     }
     second_root.with_scope(|scope| {
         let (color, _) = scope.signal(hex("#abcdef"));
@@ -662,7 +694,14 @@ async fn dynamic_global_mounts_without_a_dom_node_and_cleans_on_dispose() {
         MacroGlobal(color.into(), selector.into()).mount_owned(&owner, &host, Vec::new());
     });
     flush_style_microtasks().await;
-    assert!(document_style_contains("rgb(171, 205, 239)"));
+    assert!(document_style_contains_all(&[
+        "@layer base",
+        "rgb(171, 205, 239)"
+    ]));
+    assert!(document_style_contains_all(&[
+        "@layer base",
+        "macro-target-secondary"
+    ]));
 
     root.dispose().expect("global owner can be disposed");
     flush_style_microtasks().await;

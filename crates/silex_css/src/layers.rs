@@ -45,6 +45,18 @@ pub fn wrap(layer: &str, css: &str) -> String {
     out
 }
 
+/// Wrap runtime CSS with the global layer order declaration as well as its named layer.
+///
+/// Dynamic stylesheets can be the first stylesheet created in a document, so they cannot
+/// rely on the static style registry having emitted [`ORDER_STATEMENT`] already.
+pub fn wrap_dynamic(layer: &str, css: &str) -> String {
+    let mut out = String::with_capacity(ORDER_STATEMENT.len() + css.len() + layer.len() + 14);
+    out.push_str(ORDER_STATEMENT);
+    out.push('\n');
+    out.push_str(&wrap(layer, css));
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -61,6 +73,14 @@ mod tests {
         assert_eq!(
             wrap(OVERRIDES, ".a{color:red}\n"),
             "@layer overrides {\n.a{color:red}\n}\n"
+        );
+    }
+
+    #[test]
+    fn wrap_dynamic_declares_the_layer_order_before_the_rule() {
+        assert_eq!(
+            wrap_dynamic(UTILITIES, ".a{color:red}\n"),
+            "@layer base, components, utilities, overrides;\n@layer utilities {\n.a{color:red}\n}\n"
         );
     }
 }

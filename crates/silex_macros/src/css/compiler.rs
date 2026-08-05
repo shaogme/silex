@@ -241,6 +241,15 @@ impl CssCompiler {
 
         process_css_block(block, &mut state)?;
 
+        let layer_name = if wrap_in_class {
+            match prefix {
+                "slx-twv-" | "slx-st-" => LAYER_COMPONENTS,
+                _ => LAYER_UTILITIES,
+            }
+        } else {
+            LAYER_BASE
+        };
+
         let class_name = format!("{}{}", prefix, fingerprint(prefix, &state));
         let style_id = format!("style-{}", class_name);
         if wrap_in_class {
@@ -283,10 +292,6 @@ impl CssCompiler {
         };
 
         let final_component_css = if wrap_in_class && !state.static_css.trim().is_empty() {
-            let layer_name = match prefix {
-                "slx-twv-" | "slx-st-" => LAYER_COMPONENTS,
-                _ => LAYER_UTILITIES,
-            };
             let wrapped = format!(
                 "@layer {} {{ .{} {{ {} }} }}",
                 layer_name, class_name, state.static_css
@@ -357,6 +362,7 @@ impl CssCompiler {
             class_name,
             style_id,
             static_id,
+            layer: layer_name,
             static_css: final_static_css,
             component_css: final_component_css,
             expressions: state.expressions,

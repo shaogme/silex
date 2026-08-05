@@ -1,4 +1,5 @@
 use crate::{
+    layers,
     runtime::{
         backend::{ActiveSheet, SheetBackend},
         platform::report,
@@ -292,6 +293,7 @@ pub struct DynamicCss<'scope> {
     pub vars: Vec<(&'static str, CssVariableGetter<'scope>)>,
     pub rules: Vec<(&'static [CssPart], Vec<CssVariableGetter<'scope>>)>,
     static_styles: Vec<(&'static str, &'static str)>,
+    layer: &'static str,
 }
 
 impl<'scope> DynamicCss<'scope> {
@@ -301,7 +303,14 @@ impl<'scope> DynamicCss<'scope> {
             vars: Vec::new(),
             rules: Vec::new(),
             static_styles: Vec::new(),
+            layer: layers::UTILITIES,
         }
+    }
+
+    /// Set the named layer used by this dynamic rule payload.
+    pub fn with_layer(mut self, layer: &'static str) -> Self {
+        self.layer = layer;
+        self
     }
 
     /// Attach document-level style descriptors to this dynamic payload.
@@ -417,6 +426,7 @@ impl<'scope> DynamicCss<'scope> {
             let current_class_for_effect = current_class.clone();
             let el_clone = el.clone();
             let base_class = self.class_name;
+            let layer = self.layer;
             owner.effect_from(
                 inputs,
                 Box::new(move || {
@@ -428,7 +438,7 @@ impl<'scope> DynamicCss<'scope> {
                         return;
                     }
 
-                    let rule = render_selector(parts, &dyn_class, &current_vals);
+                    let rule = render_layered_selector(layer, parts, &dyn_class, &current_vals);
                     if !manager_for_effect.update(&dyn_class, &rule) {
                         return;
                     }
@@ -525,6 +535,7 @@ impl<'scope> StyledVariantGroup<'scope> {
 #[doc(hidden)]
 #[derive(Clone)]
 pub struct StyledVariantBinding<'scope> {
+    layer: &'static str,
     rules: Vec<StyledDynamicRule<'scope>>,
     groups: Vec<StyledVariantGroup<'scope>>,
 }
@@ -536,10 +547,15 @@ struct StyledRuleState {
 
 impl<'scope> StyledVariantBinding<'scope> {
     pub fn new(
+        layer: &'static str,
         rules: Vec<StyledDynamicRule<'scope>>,
         groups: Vec<StyledVariantGroup<'scope>>,
     ) -> Self {
-        Self { rules, groups }
+        Self {
+            layer,
+            rules,
+            groups,
+        }
     }
 
     pub fn into_op(self) -> AttrOp<'scope> {
@@ -571,6 +587,7 @@ impl<'scope> StyledVariantBinding<'scope> {
 
         let rules = self.rules.clone();
         let groups = self.groups.clone();
+        let layer = self.layer;
         let states = Rc::new(RefCell::new(
             (0..rules.len())
                 .map(|_| StyledRuleState {
@@ -599,6 +616,7 @@ impl<'scope> StyledVariantBinding<'scope> {
                 update_styled_dynamic_rules(
                     &element_for_effect,
                     &rules,
+                    layer,
                     &active_variants,
                     &states_for_effect,
                 );
@@ -660,6 +678,7 @@ fn update_styled_variant_classes(
 fn update_styled_dynamic_rules(
     element: &Element,
     rules: &[StyledDynamicRule<'_>],
+    layer: &'static str,
     active_variants: &[String],
     states: &Rc<RefCell<Vec<StyledRuleState>>>,
 ) {
@@ -696,7 +715,7 @@ fn update_styled_dynamic_rules(
                 .clone()
         };
         let Some(next_class) =
-            dynamic_rule_class(&manager, rule.class_name, rule.parts, &rule.getters)
+            dynamic_rule_class(&manager, layer, rule.class_name, rule.parts, &rule.getters)
         else {
             continue;
         };
@@ -723,6 +742,8 @@ fn update_styled_dynamic_rules(
 pub struct GlobalStyleBinding<'scope> {
     pub style_id: &'static str,
     pub parts: &'static [CssPart],
+    /// `None` means `parts` already contains its layer wrapper.
+    pub layer: Option<&'static str>,
     pub positional: Vec<CssVariableGetter<'scope>>,
     pub replacements: Vec<(String, CssVariableGetter<'scope>)>,
 }
@@ -737,9 +758,16 @@ impl<'scope> GlobalStyleBinding<'scope> {
         Self {
             style_id,
             parts,
+            layer: None,
             positional,
             replacements,
         }
+    }
+
+    /// Mark this binding as a raw dynamic rule that needs a runtime layer wrapper.
+    pub fn with_layer(mut self, layer: &'static str) -> Self {
+        self.layer = Some(layer);
+        self
     }
 
     fn runtime_inputs(&self) -> RuntimeInputs {
@@ -798,6 +826,7 @@ impl<'scope> GlobalStyleView<'scope> {
             inject_managed_dynamic_style(
                 owner,
                 style_id,
+                binding.layer,
                 binding.parts,
                 binding.positional.clone(),
                 binding.replacements.clone(),
@@ -845,14 +874,25 @@ where
 /// 中间还夹着 `res.replace(class_name, &dyn_class)` 这种子串替换。
 pub fn dynamic_rule_class(
     manager: &DynamicStyleManager,
+    layer: &'static str,
     base_class: &str,
     parts: &'static [CssPart],
     getters: &[CssVariableGetter<'_>],
 ) -> Option<String> {
     let vals: Vec<String> = getters.iter().map(|g| g.get()).collect();
     let dyn_class = dynamic_class(base_class, parts, &vals);
-    let rule = render_selector(parts, &dyn_class, &vals);
+    let rule = render_layered_selector(layer, parts, &dyn_class, &vals);
     manager.update(&dyn_class, &rule).then_some(dyn_class)
+}
+
+fn render_layered_selector(
+    layer: &'static str,
+    parts: &[CssPart],
+    class: &str,
+    vals: &[String],
+) -> String {
+    let rule = render_selector(parts, class, vals);
+    layers::wrap_dynamic(layer, &rule)
 }
 
 /// Helper function to inject managed dynamic style with reactive variable replacements.
@@ -868,6 +908,7 @@ pub fn dynamic_rule_class(
 pub fn inject_managed_dynamic_style<'scope>(
     owner: &dyn ViewOwner<'scope>,
     style_id: impl Into<String>,
+    layer: Option<&'static str>,
     parts: &'static [CssPart],
     positional: Vec<CssVariableGetter<'scope>>,
     replacements: Vec<(String, CssVariableGetter<'scope>)>,
@@ -903,6 +944,10 @@ pub fn inject_managed_dynamic_style<'scope>(
                 })
                 .collect();
             let res = replace_placeholders(&res, &pairs);
+            let res = match layer {
+                Some(layer) => layers::wrap_dynamic(layer, &res),
+                None => res,
+            };
             manager_for_effect.update(&style_id_str, &res);
         }),
     );

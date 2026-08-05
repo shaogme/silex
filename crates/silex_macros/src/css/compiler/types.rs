@@ -57,13 +57,17 @@ pub fn template_parts(template: &str) -> Vec<TemplatePart> {
     let mut next_val = 0;
     for ch in template.chars() {
         match ch {
-            PLACEHOLDER_CLASS | PLACEHOLDER_VALUE | PLACEHOLDER_SELECTOR_VALUE => {
+            PLACEHOLDER_CLASS => {
                 if !lit.is_empty() {
                     parts.push(TemplatePart::Lit(std::mem::take(&mut lit)));
                 }
-                if ch == PLACEHOLDER_CLASS {
-                    parts.push(TemplatePart::Class);
-                } else if ch == PLACEHOLDER_SELECTOR_VALUE {
+                parts.push(TemplatePart::Class);
+            }
+            PLACEHOLDER_VALUE | PLACEHOLDER_SELECTOR_VALUE => {
+                if !lit.is_empty() {
+                    parts.push(TemplatePart::Lit(std::mem::take(&mut lit)));
+                }
+                if ch == PLACEHOLDER_SELECTOR_VALUE {
                     parts.push(TemplatePart::SelectorVal(next_val));
                 } else {
                     parts.push(TemplatePart::Val(next_val));
@@ -118,6 +122,8 @@ pub struct CssCompileResult {
     pub class_name: String,
     pub style_id: String,
     pub static_id: String,
+    /// This is also the layer used by dynamic rules from this compilation.
+    pub layer: &'static str,
     pub static_css: String,    // Fully static CSS (font-face, etc.)
     pub component_css: String, // CSS scoped to this component (with dynamic vars)
     pub expressions: Vec<(String, TokenStream)>,

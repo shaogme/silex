@@ -193,6 +193,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     // 静态声明的编译期类型断言：属性名与「一眼能定型」的字面量取值
     let mut assertions = crate::css::generate_static_assertions(&compile_result.assertions)?;
     let base_style_inits = compile_result.generate_inits();
+    let layer = compile_result.layer;
 
     let mut var_decls = Vec::new();
     let mut style_bindings = Vec::new();
@@ -370,6 +371,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         } else {
             quote! {
                 .apply(#__silex::css::StyledVariantBinding::new(
+                    #layer,
                     ::std::vec![ #(#dynamic_rule_descriptors),* ],
                     ::std::vec![ #(#variant_group_descriptors),* ],
                 ).into_op())
@@ -751,6 +753,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     let static_css = &res.static_css;
     let style_id = &res.style_id;
     let component_css = &res.component_css;
+    let layer = res.layer;
     let mut getter_decls = Vec::new();
     let mut replacement_getters = Vec::new();
     for (index, (property, expression)) in res.expressions.iter().enumerate() {
@@ -820,7 +823,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
                 #parts,
                 ::std::vec![ #(#positional),* ],
                 ::std::vec![ #(#replacement_getters),* ],
-            )
+            ).with_layer(#layer)
         });
     }
 

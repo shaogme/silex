@@ -273,13 +273,36 @@ fn the_component_class_is_a_placeholder_not_literal_text() {
     );
     let parts = template_parts(template);
     assert_eq!(
-        parts[..3],
+        parts[..4],
         [
             TemplatePart::Lit(".".into()),
             TemplatePart::Class,
-            TemplatePart::Lit(" ".into())
+            TemplatePart::Lit(" ".into()),
+            TemplatePart::SelectorVal(0),
         ],
         "{parts:?}"
+    );
+}
+
+#[test]
+fn a_class_placeholder_does_not_consume_selector_indices() {
+    let template = format!(
+        ".{}{} {}{}",
+        PLACEHOLDER_CLASS,
+        PLACEHOLDER_SELECTOR_VALUE,
+        PLACEHOLDER_SELECTOR_VALUE,
+        PLACEHOLDER_CLASS
+    );
+    assert_eq!(
+        template_parts(&template),
+        [
+            TemplatePart::Lit(".".into()),
+            TemplatePart::Class,
+            TemplatePart::SelectorVal(0),
+            TemplatePart::Lit(" ".into()),
+            TemplatePart::SelectorVal(1),
+            TemplatePart::Class,
+        ]
     );
 }
 

@@ -219,6 +219,7 @@ pub(crate) fn generate_css_output(
     let static_css = &compile_result.static_css;
     let style_id = &compile_result.style_id;
     let component_css = &compile_result.component_css;
+    let layer = compile_result.layer;
 
     let warning_tokens = warnings.iter().map(|w| {
         let msg = &w.message;
@@ -283,6 +284,7 @@ pub(crate) fn generate_css_output(
             {
                 #common_inits
                 #__silex::css::DynamicCss::new(#class_name)
+                    .with_layer(#layer)
                     .with_static_style(#static_id, #static_css)
                     .with_static_style(#style_id, #component_css)
                     #(#var_calls)*

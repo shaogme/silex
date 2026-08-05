@@ -99,6 +99,7 @@ async fn style_tag_fallback_injects_updates_and_detaches_on_owner_dispose() {
         dynamic.apply(&element, ApplyTarget::Class, &token);
         let initial = style_text_containing("slx-fallback-dynamic").expect("fallback style exists");
         assert!(initial.contains("red"), "{initial}");
+        assert!(initial.contains("@layer utilities"), "{initial}");
 
         set_value.set(String::from("blue"));
         let updated = style_text_containing("slx-fallback-dynamic").expect("fallback style exists");
