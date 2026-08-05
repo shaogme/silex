@@ -1,4 +1,4 @@
-use crate::backend::{BackendEvent, BackendSubscription};
+use crate::backend::BackendEvent;
 use crate::builder::PersistentBuilder;
 use crate::{DecodePolicy, NoBackend, NoCodec, PersistenceError, RemovePolicy};
 use ref_str::LocalStaticRefStr;
@@ -95,15 +95,15 @@ pub(crate) struct PersistenceController<'scope, T: 'scope> {
     pub decode_policy: DecodePolicy,
     pub remove_policy: RemovePolicy,
     pub last_flushed_raw: Option<String>,
-    pub skip_next_auto_flush: bool,
-    pub suppress_manual_state: bool,
+    pub value_generation: u64,
+    pub skip_next_auto_flush_generation: Option<u64>,
+    pub suppress_manual_state_generation: Option<u64>,
     pub backend_get: PersistenceGetFn<'scope>,
     pub backend_set: PersistenceSetFn<'scope>,
     pub backend_remove: PersistenceRemoveFn<'scope>,
     pub encode: PersistenceEncodeFn<'scope, T>,
     pub decode: PersistenceDecodeFn<'scope, T>,
     pub should_remove: Rc<dyn Fn(&T) -> bool + 'scope>,
-    pub subscription: Rc<RefCell<Option<BackendSubscription<'scope>>>>,
     pub debounce: Option<Rc<RefCell<ScopedDebounceState>>>,
 }
 
@@ -150,14 +150,20 @@ where
     }
 
     pub fn set(&self, value: T) {
-        if self.value.is_alive() {
-            self.value.set(value);
-        }
+        self.write_value(|current| *current = value);
     }
 
     pub fn update(&self, f: impl FnOnce(&mut T)) {
-        if self.value.is_alive() {
-            self.value.update(f);
+        self.write_value(f);
+    }
+
+    fn write_value(&self, f: impl FnOnce(&mut T)) {
+        if !self.value.is_alive() {
+            return;
+        }
+        mark_local_value_write(self.controller);
+        if self.value.rx_try_update_untracked(f).is_some() {
+            self.value.rx_notify();
         }
     }
 
@@ -176,8 +182,8 @@ where
         }
         let default = self
             .controller
-            .with_untracked(|controller| (controller.default)());
-        self.value.set(default);
+            .with_untracked(|controller| controller.default.clone());
+        self.set(default());
     }
 
     pub fn remove(&self) -> Result<(), PersistenceError> {
@@ -188,15 +194,15 @@ where
         }
         invalidate_debounce(self.controller);
         let key = self.key();
-        let result = self
+        let remove_backend = self
             .controller
-            .with_untracked(|controller| (controller.backend_remove)(&key));
+            .with_untracked(|controller| controller.backend_remove.clone());
+        let result = remove_backend(&key);
         match result {
             Ok(()) => {
                 let _ = self.controller.try_update_untracked(|controller| {
                     controller.last_flushed_raw = None;
-                    controller.skip_next_auto_flush = true;
-                    controller.suppress_manual_state = true;
+                    clear_external_value_markers(controller);
                 });
                 self.state.set(PersistenceState::Ready(String::new()));
                 Ok(())
@@ -257,6 +263,7 @@ impl<'scope, T: RxData> RxRead for Persistent<'scope, T> {
 
 impl<'scope, T: RxData> RxWrite for Persistent<'scope, T> {
     fn rx_try_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> Option<U> {
+        mark_local_value_write(self.controller);
         self.value.rx_try_update_untracked(f)
     }
 
@@ -326,27 +333,26 @@ where
     T: Clone + PartialEq + 'scope,
 {
     invalidate_debounce(controller);
+    clear_external_value_markers_on_controller(controller);
     let current = value.get_untracked();
-    let (key, raw, last_raw, set_backend, remove_backend, should_remove) = controller
+    let (key, last_raw, set_backend, remove_backend, should_remove, encode) = controller
         .with_untracked(|controller| {
-            let should_remove = (controller.should_remove)(&current);
-            let raw = if should_remove {
-                Ok(String::new())
-            } else {
-                (controller.encode)(&current)
-            };
             (
                 controller.key.clone(),
-                raw,
                 controller.last_flushed_raw.clone(),
                 controller.backend_set.clone(),
                 controller.backend_remove.clone(),
-                should_remove,
+                controller.should_remove.clone(),
+                controller.encode.clone(),
             )
         });
+    let should_remove = should_remove(&current);
 
     if should_remove {
         if last_raw.is_none() {
+            let _ = controller.try_update_untracked(|controller| {
+                controller.suppress_manual_state_generation = None;
+            });
             state.set(PersistenceState::Ready(String::new()));
             return Ok(());
         }
@@ -356,13 +362,13 @@ where
         }
         let _ = controller.try_update_untracked(|controller| {
             controller.last_flushed_raw = None;
-            controller.suppress_manual_state = false;
+            clear_external_value_markers(controller);
         });
         state.set(PersistenceState::Ready(String::new()));
         return Ok(());
     }
 
-    let raw = match raw {
+    let raw = match encode(&current) {
         Ok(raw) => raw,
         Err(error) => {
             state.set(PersistenceState::WriteError(error.message()));
@@ -372,7 +378,7 @@ where
 
     if last_raw.as_deref() == Some(raw.as_str()) {
         let _ = controller.try_update_untracked(|controller| {
-            controller.suppress_manual_state = false;
+            clear_external_value_markers(controller);
         });
         state.set(PersistenceState::Ready(raw));
         return Ok(());
@@ -384,7 +390,7 @@ where
     }
     let _ = controller.try_update_untracked(|controller| {
         controller.last_flushed_raw = Some(raw.clone());
-        controller.suppress_manual_state = false;
+        clear_external_value_markers(controller);
     });
     state.set(PersistenceState::Ready(raw));
     Ok(())
@@ -398,8 +404,9 @@ pub(crate) fn reload_persistent<'scope, T>(
 where
     T: Clone + PartialEq + 'scope,
 {
-    let key = controller.with_untracked(|controller| controller.key.clone());
-    let raw = controller.with_untracked(|controller| (controller.backend_get)(&key))?;
+    let (key, backend_get) = controller
+        .with_untracked(|controller| (controller.key.clone(), controller.backend_get.clone()));
+    let raw = backend_get(&key)?;
     apply_backend_snapshot(controller, value, state, raw)
 }
 
@@ -457,15 +464,19 @@ where
     T: Clone + PartialEq + 'scope,
 {
     invalidate_debounce(controller);
-    let decode_result = controller.with_untracked(|controller| (controller.decode)(&raw));
+    let decode = controller.with_untracked(|controller| controller.decode.clone());
+    let decode_result = decode(&raw);
     match decode_result {
         Ok(decoded) => {
+            let value_changed = value.get_untracked() != decoded;
             let _ = controller.try_update_untracked(|controller| {
                 controller.last_flushed_raw = Some(raw.clone());
-                controller.skip_next_auto_flush = false;
-                controller.suppress_manual_state = false;
+                clear_external_value_markers(controller);
+                if value_changed {
+                    controller.value_generation = controller.value_generation.wrapping_add(1);
+                }
             });
-            if value.get_untracked() != decoded {
+            if value_changed {
                 value.set(decoded);
             }
             state.set(PersistenceState::Ready(raw));
@@ -473,23 +484,29 @@ where
         }
         Err(PersistenceError::DecodeFailed { raw, message }) => {
             let policy = controller.with_untracked(|controller| controller.decode_policy);
-            let default = controller.with_untracked(|controller| (controller.default)());
+            let default = controller.with_untracked(|controller| controller.default.clone());
+            let default = default();
+            let value_changed = value.get_untracked() != default;
+            if value_changed {
+                arm_external_value_change(controller);
+            } else {
+                clear_external_value_markers_on_controller(controller);
+            }
             let _ = controller.try_update_untracked(|controller| {
                 controller.last_flushed_raw = None;
-                controller.skip_next_auto_flush = true;
-                controller.suppress_manual_state = true;
             });
             state.set(PersistenceState::DecodeError(DecodeErrorInfo {
                 raw: raw.clone(),
                 message: message.clone(),
             }));
-            if value.get_untracked() != default {
+            if value_changed {
                 value.set(default);
             }
             if matches!(policy, DecodePolicy::RemoveAndUseDefault) {
-                let key = controller.with_untracked(|controller| controller.key.clone());
-                let result =
-                    controller.with_untracked(|controller| (controller.backend_remove)(&key));
+                let (key, remove_backend) = controller.with_untracked(|controller| {
+                    (controller.key.clone(), controller.backend_remove.clone())
+                });
+                let result = remove_backend(&key);
                 if let Err(error) = result {
                     state.set(PersistenceState::WriteError(error.message()));
                     return Err(error);
@@ -511,16 +528,31 @@ where
 {
     invalidate_debounce(controller);
     let policy = controller.with_untracked(|controller| controller.remove_policy);
+    if !matches!(policy, RemovePolicy::UseDefault) {
+        let _ = controller.try_update_untracked(|controller| {
+            controller.last_flushed_raw = None;
+            clear_external_value_markers(controller);
+        });
+        state.set(PersistenceState::Ready(String::new()));
+        return Ok(());
+    }
+
+    let default = controller.with_untracked(|controller| controller.default.clone());
+    let default = default();
+    let value_changed = value.get_untracked() != default;
     let _ = controller.try_update_untracked(|controller| {
         controller.last_flushed_raw = None;
-        controller.skip_next_auto_flush = true;
-        controller.suppress_manual_state = true;
-    });
-    if matches!(policy, RemovePolicy::UseDefault) {
-        let default = controller.with_untracked(|controller| (controller.default)());
-        if value.get_untracked() != default {
-            value.set(default);
+        if value_changed {
+            let generation = controller.value_generation.wrapping_add(1);
+            controller.value_generation = generation;
+            controller.skip_next_auto_flush_generation = Some(generation);
+            controller.suppress_manual_state_generation = Some(generation);
+        } else {
+            clear_external_value_markers(controller);
         }
+    });
+    if value_changed {
+        value.set(default);
     }
     state.set(PersistenceState::Ready(String::new()));
     Ok(())
@@ -533,6 +565,62 @@ fn invalidate_debounce<'scope, T>(
     if let Some(debounce) = debounce {
         debounce.borrow_mut().invalidate();
     }
+}
+
+pub(crate) fn mark_local_value_write<'scope, T>(
+    controller: StoredValue<'scope, PersistenceController<'scope, T>>,
+) {
+    let _ = controller.try_update_untracked(|controller| {
+        controller.value_generation = controller.value_generation.wrapping_add(1);
+    });
+}
+
+pub(crate) fn take_skip_next_auto_flush<'scope, T>(
+    controller: StoredValue<'scope, PersistenceController<'scope, T>>,
+) -> bool {
+    controller
+        .try_update_untracked(|controller| {
+            let should_skip =
+                controller.skip_next_auto_flush_generation == Some(controller.value_generation);
+            controller.skip_next_auto_flush_generation = None;
+            should_skip
+        })
+        .unwrap_or(false)
+}
+
+pub(crate) fn take_suppress_manual_state<'scope, T>(
+    controller: StoredValue<'scope, PersistenceController<'scope, T>>,
+) -> bool {
+    controller
+        .try_update_untracked(|controller| {
+            let should_suppress =
+                controller.suppress_manual_state_generation == Some(controller.value_generation);
+            controller.suppress_manual_state_generation = None;
+            should_suppress
+        })
+        .unwrap_or(false)
+}
+
+fn arm_external_value_change<'scope, T>(
+    controller: StoredValue<'scope, PersistenceController<'scope, T>>,
+) {
+    let _ = controller.try_update_untracked(|controller| {
+        let generation = controller.value_generation.wrapping_add(1);
+        controller.value_generation = generation;
+        controller.skip_next_auto_flush_generation = Some(generation);
+        controller.suppress_manual_state_generation = Some(generation);
+    });
+}
+
+fn clear_external_value_markers_on_controller<'scope, T>(
+    controller: StoredValue<'scope, PersistenceController<'scope, T>>,
+) {
+    let _ = controller.try_update_untracked(clear_external_value_markers);
+}
+
+fn clear_external_value_markers<T>(controller: &mut PersistenceController<'_, T>) {
+    controller.skip_next_auto_flush_generation = None;
+    controller.suppress_manual_state_generation = None;
 }
 
 fn set_error_state(state: RwSignal<'_, PersistenceState>, error: &PersistenceError) {

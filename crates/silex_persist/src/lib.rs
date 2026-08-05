@@ -4,8 +4,9 @@ mod codec;
 mod state;
 
 pub use backend::{
-    BackendEvent, BackendEventSink, BackendSubscription, LocalStorageBackend, PersistenceBackend,
-    QueryBackend, SessionStorageBackend, WebStorageBackend,
+    BackendEvent, BackendEventSink, BackendSubscribeError, BackendSubscription,
+    LocalStorageBackend, PersistenceBackend, QueryBackend, SessionStorageBackend,
+    WebStorageBackend,
 };
 pub use builder::{HasDefault, NoBackend, NoCodec, NoDefault, PersistentBuilder};
 #[cfg(feature = "json")]

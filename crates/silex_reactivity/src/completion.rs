@@ -87,6 +87,32 @@ impl<T: 'static> CompletionToken<T> {
         }
         runtime::invoke_callback(&state, self.callback, AnyValue::new(value)).is_ok()
     }
+
+    /// Remove the callback node while its scope is still active.
+    ///
+    /// This is used when a host registration fails after its completion
+    /// destination has already been created. It does not deactivate the
+    /// enclosing scope and is harmless after disposal or repeated calls.
+    pub fn cancel(&self) {
+        let Some(erased_state) = self.state.upgrade() else {
+            return;
+        };
+        if !erased_state
+            .borrow()
+            .scheduler
+            .borrow()
+            .is_scope_active(self.scope_id)
+        {
+            return;
+        }
+
+        // SAFETY: the token's weak state is only used while its owning scope
+        // is active, matching the proof used by `submit` above.
+        let state = unsafe {
+            std::mem::transmute::<Rc<ErasedScopeState>, Rc<RefCell<ScopeState<'_>>>>(erased_state)
+        };
+        runtime::dispose_nodes(&state, vec![self.callback]);
+    }
 }
 
 pub(crate) fn create_completion<'scope, T: 'static, F>(

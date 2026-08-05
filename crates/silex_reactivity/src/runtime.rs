@@ -14,7 +14,7 @@ mod model;
 mod ops;
 mod scheduler;
 
-pub(crate) use dispose::dispose_all;
+pub(crate) use dispose::{dispose_all, dispose_nodes};
 pub(crate) use eval::{run_global_queue, run_initial};
 pub use input::{RuntimeInput, RuntimeInputs};
 pub(crate) use input::{create_derived, create_effect, create_memo, validate_inputs};

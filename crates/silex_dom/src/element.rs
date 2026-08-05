@@ -403,7 +403,7 @@ pub fn bind_event_impl<'scope, E>(
         .add_event_listener_with_callback(&event_name, &js_fn)
         .map_err(SilexError::from)
     {
-        destination.invalidate();
+        destination.cancel();
         let _ = closure.borrow_mut().take();
         handle_error(error);
         return;

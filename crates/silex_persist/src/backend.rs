@@ -10,6 +10,7 @@ use silex_router::{Navigator, RouterContext};
 use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
+    fmt,
     rc::Rc,
 };
 use wasm_bindgen::{JsCast, closure::Closure};
@@ -54,6 +55,55 @@ impl Drop for BackendSubscription<'_> {
     }
 }
 
+/// Error returned when a backend cannot finish creating a subscription.
+///
+/// The cleanup token is mandatory even when no host resource was created. A
+/// backend must move every resource created before the error into this token;
+/// the builder consumes it before interpreting the error.
+pub struct BackendSubscribeError<'scope> {
+    error: PersistenceError,
+    cleanup: BackendSubscription<'scope>,
+}
+
+impl fmt::Debug for BackendSubscribeError<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BackendSubscribeError")
+            .field("error", &self.error)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<'scope> BackendSubscribeError<'scope> {
+    pub fn new(error: PersistenceError) -> Self {
+        Self {
+            error,
+            cleanup: BackendSubscription::new(|| {}),
+        }
+    }
+
+    pub fn with_cleanup(error: PersistenceError, cleanup: BackendSubscription<'scope>) -> Self {
+        Self { error, cleanup }
+    }
+
+    pub fn into_error(mut self) -> PersistenceError {
+        self.cleanup.cleanup();
+        self.error
+    }
+}
+
+impl<'scope> From<PersistenceError> for BackendSubscribeError<'scope> {
+    fn from(error: PersistenceError) -> Self {
+        Self::new(error)
+    }
+}
+
+impl<'scope> BackendSubscription<'scope> {
+    pub fn into_error(self, error: PersistenceError) -> BackendSubscribeError<'scope> {
+        BackendSubscribeError::with_cleanup(error, self)
+    }
+}
+
 pub trait PersistenceBackend<'scope>: Clone + 'scope {
     fn get(&self, key: &str) -> Result<Option<String>, PersistenceError>;
     fn set(&self, key: &str, value: &str) -> Result<(), PersistenceError>;
@@ -68,7 +118,7 @@ pub trait PersistenceBackend<'scope>: Clone + 'scope {
         scope: Scope<'scope>,
         key: impl Into<LocalStaticRefStr>,
         sink: BackendEventSink,
-    ) -> Result<BackendSubscription<'scope>, PersistenceError>;
+    ) -> Result<BackendSubscription<'scope>, BackendSubscribeError<'scope>>;
 }
 
 #[derive(Clone, Debug)]
@@ -178,7 +228,7 @@ impl<'scope, const IS_LOCAL: bool> PersistenceBackend<'scope> for WebStorageBack
         _scope: Scope<'scope>,
         key: impl Into<LocalStaticRefStr>,
         sink: BackendEventSink,
-    ) -> Result<BackendSubscription<'scope>, PersistenceError> {
+    ) -> Result<BackendSubscription<'scope>, BackendSubscribeError<'scope>> {
         subscribe_storage(Self::kind(), key.into(), sink)
     }
 }
@@ -207,14 +257,14 @@ impl<'scope> PersistenceBackend<'scope> for QueryBackend<'scope> {
         scope: Scope<'scope>,
         key: impl Into<LocalStaticRefStr>,
         sink: BackendEventSink,
-    ) -> Result<BackendSubscription<'scope>, PersistenceError> {
+    ) -> Result<BackendSubscription<'scope>, BackendSubscribeError<'scope>> {
         let inputs = self.runtime_inputs();
-        scope
-            .try_validate_inputs(&inputs)
-            .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
+        scope.try_validate_inputs(&inputs).map_err(|error| {
+            BackendSubscribeError::new(PersistenceError::InvalidConfiguration(error.to_string()))
+        })?;
 
         let key = key.into();
-        let query_map = self.query_map()?;
+        let query_map = self.query_map().map_err(BackendSubscribeError::new)?;
         let active = Rc::new(Cell::new(true));
         let active_for_effect = active.clone();
         let key_for_effect = key.clone();
@@ -237,7 +287,11 @@ impl<'scope> PersistenceBackend<'scope> for QueryBackend<'scope> {
                 }
                 current
             })
-            .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
+            .map_err(|error| {
+                BackendSubscribeError::new(PersistenceError::InvalidConfiguration(
+                    error.to_string(),
+                ))
+            })?;
 
         Ok(BackendSubscription::new(move || {
             active.set(false);
@@ -300,7 +354,12 @@ impl StorageDispatcher {
         Ok(id)
     }
 
-    fn unsubscribe(&mut self, kind: StorageAreaKind, key: impl Into<LocalStaticRefStr>, id: usize) {
+    fn unsubscribe(
+        &mut self,
+        kind: StorageAreaKind,
+        key: impl Into<LocalStaticRefStr>,
+        id: usize,
+    ) -> Option<Closure<dyn FnMut(StorageEvent)>> {
         let key = key.into();
         if let Some(subscribers) = self.subscribers.get_mut(&(kind, key.clone())) {
             subscribers.retain(|subscriber| subscriber.id != id);
@@ -309,12 +368,10 @@ impl StorageDispatcher {
             }
         }
 
-        if self.subscribers.is_empty()
-            && let Some(closure) = self.closure.take()
-            && let Some(window) = web_sys::window()
-        {
-            let _ = window
-                .remove_event_listener_with_callback("storage", closure.as_ref().unchecked_ref());
+        if self.subscribers.is_empty() {
+            self.closure.take()
+        } else {
+            None
         }
     }
 
@@ -407,16 +464,24 @@ fn subscribe_storage(
     kind: StorageAreaKind,
     key: LocalStaticRefStr,
     sink: BackendEventSink,
-) -> Result<BackendSubscription<'static>, PersistenceError> {
+) -> Result<BackendSubscription<'static>, BackendSubscribeError<'static>> {
     let key_for_cleanup = key.clone();
-    let id = DISPATCHER.with(|dispatcher| dispatcher.borrow_mut().subscribe(kind, key, sink))?;
+    let id = DISPATCHER
+        .with(|dispatcher| dispatcher.borrow_mut().subscribe(kind, key, sink))
+        .map_err(BackendSubscribeError::new)?;
 
     Ok(BackendSubscription::new(move || {
-        DISPATCHER.with(|dispatcher| {
+        let closure = DISPATCHER.with(|dispatcher| {
             dispatcher
                 .borrow_mut()
-                .unsubscribe(kind, key_for_cleanup, id);
+                .unsubscribe(kind, key_for_cleanup, id)
         });
+        if let Some(closure) = closure
+            && let Some(window) = web_sys::window()
+        {
+            let _ = window
+                .remove_event_listener_with_callback("storage", closure.as_ref().unchecked_ref());
+        }
     }))
 }
 
@@ -514,10 +579,10 @@ mod tests {
         let mut runtime = Runtime::new();
         runtime.child(|scope| {
             let backend = QueryBackend::unavailable();
-            assert!(matches!(
-                backend.subscribe(scope, "q", Rc::new(|_| {})),
-                Err(PersistenceError::BackendUnavailable)
-            ));
+            let result = backend
+                .subscribe(scope, "q", Rc::new(|_| {}))
+                .map_err(|error| error.into_error());
+            assert!(matches!(result, Err(PersistenceError::BackendUnavailable)));
         });
     }
 

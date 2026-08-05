@@ -293,8 +293,9 @@ impl HostCallback {
         self.gate.set(false);
     }
 
-    pub(crate) fn invalidate(&self) {
+    pub(crate) fn cancel(&self) {
         self.gate.set(false);
+        self.destination.cancel();
     }
 }
 
@@ -361,7 +362,11 @@ impl<'scope> ViewOwnerToken<'scope> {
     where
         F: FnOnce() + 'scope,
     {
-        self.register_host_resource(callback.gate.clone(), cancel)
+        let callback_for_cancel = callback.clone();
+        self.register_host_resource(callback.gate.clone(), move || {
+            callback_for_cancel.cancel();
+            cancel();
+        })
     }
 
     fn register_host_resource<F>(&self, gate: ResourceGate, cancel: F) -> HostResourceHandle<'scope>

@@ -1,11 +1,16 @@
 #![cfg(target_arch = "wasm32")]
 
 use gloo_timers::future::TimeoutFuture;
-use silex_core::{Runtime, RxGet};
+use silex_core::{RootHandle, Runtime, RxGet};
 use silex_dom::view::{ScopedViewOwner, View};
-use silex_persist::{PersistMode, Persistent, SyncStrategy};
+use silex_persist::{PersistMode, PersistenceState, Persistent, SyncStrategy, WriteDefault};
 use silex_router::{RouterContext, RouterContextProps};
-use std::time::Duration;
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+    time::Duration,
+};
+use wasm_bindgen::{JsValue, closure::Closure, prelude::wasm_bindgen};
 use wasm_bindgen_test::*;
 use web_sys::{StorageEvent, window};
 
@@ -13,6 +18,251 @@ wasm_bindgen_test_configure!(run_in_browser);
 
 const STORAGE_KEY: &str = "silex-persist-runtime-refactor";
 const DEBOUNCE_KEY: &str = "silex-persist-runtime-refactor-debounce";
+const DEBOUNCE_REMOVE_KEY: &str = "silex-persist-runtime-refactor-debounce-remove";
+const LISTENER_CLEANUP_KEY: &str = "silex-persist-runtime-refactor-listener-cleanup";
+const LISTENER_REENTRY_KEY: &str = "silex-persist-runtime-refactor-listener-reentry";
+const QUERY_HISTORY_KEY: &str = "page";
+
+#[wasm_bindgen(inline_js = r#"
+export function installStorageListenerSpy() {
+    const spy = {
+        adds: 0,
+        removes: 0,
+        reentry: null,
+        originalAdd: window.addEventListener,
+        originalRemove: window.removeEventListener,
+    };
+    window.addEventListener = function(name, callback, options) {
+        if (name === "storage") {
+            spy.adds += 1;
+        }
+        return spy.originalAdd.call(this, name, callback, options);
+    };
+    window.removeEventListener = function(name, callback, options) {
+        if (name === "storage") {
+            spy.removes += 1;
+            const reentry = spy.reentry;
+            spy.reentry = null;
+            if (reentry !== null) {
+                reentry();
+            }
+        }
+        return spy.originalRemove.call(this, name, callback, options);
+    };
+    return spy;
+}
+
+export function storageListenerSpyCount(spy, name) {
+    return name === "add" ? spy.adds : spy.removes;
+}
+
+export function setStorageListenerSpyReentry(spy, callback) {
+    spy.reentry = callback;
+}
+
+export function restoreStorageListenerSpy(spy) {
+    window.addEventListener = spy.originalAdd;
+    window.removeEventListener = spy.originalRemove;
+}
+
+export function installQueryHistorySpy() {
+    const history = window.history;
+    const spy = {
+        pushes: 0,
+        replaces: 0,
+        urls: [],
+        originalPush: history.pushState,
+        originalReplace: history.replaceState,
+    };
+    history.pushState = function(state, title, url) {
+        spy.pushes += 1;
+        spy.urls.push(String(url));
+        return spy.originalPush.call(this, state, title, url);
+    };
+    history.replaceState = function(state, title, url) {
+        spy.replaces += 1;
+        spy.urls.push(String(url));
+        return spy.originalReplace.call(this, state, title, url);
+    };
+    return spy;
+}
+
+export function queryHistorySpyCount(spy, name) {
+    return name === "push" ? spy.pushes : spy.replaces;
+}
+
+export function queryHistorySpyLastUrl(spy) {
+    return spy.urls.length === 0 ? null : spy.urls[spy.urls.length - 1];
+}
+
+export function restoreQueryHistorySpy(spy) {
+    window.history.pushState = spy.originalPush;
+    window.history.replaceState = spy.originalReplace;
+}
+
+export function installTimeoutController() {
+    const controller = {
+        callbacks: [],
+        clears: [],
+        nextId: 1,
+        failNext: false,
+        originalSet: window.setTimeout,
+        originalClear: window.clearTimeout,
+    };
+    window.setTimeout = function(callback, _delay) {
+        if (controller.failNext) {
+            controller.failNext = false;
+            throw new Error("forced timeout creation failure");
+        }
+        const id = controller.nextId++;
+        controller.callbacks.push({ id, callback });
+        return id;
+    };
+    window.clearTimeout = function(id) {
+        controller.clears.push(id);
+    };
+    return controller;
+}
+
+export function failNextTimeout(controller) {
+    controller.failNext = true;
+}
+
+export function fireTimeout(controller, index) {
+    const entry = controller.callbacks[index];
+    if (entry === undefined) {
+        throw new Error(`timeout callback ${index} does not exist`);
+    }
+    return entry.callback();
+}
+
+export function timeoutClearCount(controller) {
+    return controller.clears.length;
+}
+
+export function restoreTimeoutController(controller) {
+    window.setTimeout = controller.originalSet;
+    window.clearTimeout = controller.originalClear;
+}
+"#)]
+unsafe extern "C" {
+    #[wasm_bindgen(js_name = installStorageListenerSpy)]
+    fn install_storage_listener_spy() -> JsValue;
+
+    #[wasm_bindgen(js_name = storageListenerSpyCount)]
+    fn storage_listener_spy_count(spy: &JsValue, name: &str) -> u32;
+
+    #[wasm_bindgen(js_name = setStorageListenerSpyReentry)]
+    fn set_storage_listener_spy_reentry(spy: &JsValue, callback: &JsValue);
+
+    #[wasm_bindgen(js_name = restoreStorageListenerSpy)]
+    fn restore_storage_listener_spy(spy: &JsValue);
+
+    #[wasm_bindgen(js_name = installQueryHistorySpy)]
+    fn install_query_history_spy() -> JsValue;
+
+    #[wasm_bindgen(js_name = queryHistorySpyCount)]
+    fn query_history_spy_count(spy: &JsValue, name: &str) -> u32;
+
+    #[wasm_bindgen(js_name = queryHistorySpyLastUrl)]
+    fn query_history_spy_last_url(spy: &JsValue) -> Option<String>;
+
+    #[wasm_bindgen(js_name = restoreQueryHistorySpy)]
+    fn restore_query_history_spy(spy: &JsValue);
+
+    #[wasm_bindgen(js_name = installTimeoutController)]
+    fn install_timeout_controller() -> JsValue;
+
+    #[wasm_bindgen(js_name = failNextTimeout)]
+    fn fail_next_timeout(controller: &JsValue);
+
+    #[wasm_bindgen(js_name = fireTimeout)]
+    fn fire_timeout(controller: &JsValue, index: u32);
+
+    #[wasm_bindgen(js_name = timeoutClearCount)]
+    fn timeout_clear_count(controller: &JsValue) -> u32;
+
+    #[wasm_bindgen(js_name = restoreTimeoutController)]
+    fn restore_timeout_controller(controller: &JsValue);
+}
+
+struct StorageListenerSpy {
+    value: JsValue,
+}
+
+impl StorageListenerSpy {
+    fn new() -> Self {
+        Self {
+            value: install_storage_listener_spy(),
+        }
+    }
+
+    fn count(&self, name: &str) -> u32 {
+        storage_listener_spy_count(&self.value, name)
+    }
+}
+
+impl Drop for StorageListenerSpy {
+    fn drop(&mut self) {
+        restore_storage_listener_spy(&self.value);
+    }
+}
+
+struct QueryHistorySpy {
+    value: JsValue,
+}
+
+impl QueryHistorySpy {
+    fn new() -> Self {
+        Self {
+            value: install_query_history_spy(),
+        }
+    }
+
+    fn count(&self, name: &str) -> u32 {
+        query_history_spy_count(&self.value, name)
+    }
+
+    fn last_url(&self) -> Option<String> {
+        query_history_spy_last_url(&self.value)
+    }
+}
+
+impl Drop for QueryHistorySpy {
+    fn drop(&mut self) {
+        restore_query_history_spy(&self.value);
+    }
+}
+
+struct TimeoutController {
+    value: JsValue,
+}
+
+impl TimeoutController {
+    fn new() -> Self {
+        Self {
+            value: install_timeout_controller(),
+        }
+    }
+
+    fn fail_next(&self) {
+        fail_next_timeout(&self.value);
+    }
+
+    fn fire(&self, index: u32) {
+        fire_timeout(&self.value, index);
+    }
+
+    fn clear_count(&self) -> u32 {
+        timeout_clear_count(&self.value)
+    }
+}
+
+impl Drop for TimeoutController {
+    fn drop(&mut self) {
+        restore_timeout_controller(&self.value);
+    }
+}
 
 fn local_storage() -> web_sys::Storage {
     window()
@@ -20,6 +270,91 @@ fn local_storage() -> web_sys::Storage {
         .local_storage()
         .expect("localStorage access")
         .expect("localStorage available")
+}
+
+fn set_url(path: &str) {
+    window()
+        .expect("window is available")
+        .history()
+        .expect("history is available")
+        .replace_state_with_url(&JsValue::NULL, "", Some(path))
+        .expect("test URL can be replaced");
+}
+
+#[wasm_bindgen_test]
+fn storage_listener_is_physically_removed_after_last_binding_cleanup() {
+    let spy = StorageListenerSpy::new();
+    let storage = local_storage();
+    storage
+        .remove_item(LISTENER_CLEANUP_KEY)
+        .expect("clear key");
+
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| {
+        let _binding = Persistent::builder(scope, LISTENER_CLEANUP_KEY)
+            .local()
+            .string()
+            .default("initial".to_string())
+            .build();
+        assert_eq!(spy.count("add"), 1);
+        assert_eq!(spy.count("remove"), 0);
+    });
+
+    root.dispose().expect("root cleanup should succeed");
+    assert_eq!(spy.count("remove"), 1);
+    storage
+        .remove_item(LISTENER_CLEANUP_KEY)
+        .expect("cleanup key");
+}
+
+#[wasm_bindgen_test]
+fn storage_listener_reentrant_cleanup_does_not_leave_a_listener() {
+    let spy = StorageListenerSpy::new();
+    let storage = local_storage();
+    storage
+        .remove_item(LISTENER_REENTRY_KEY)
+        .expect("clear key");
+
+    let mut reentrant_runtime = Runtime::new();
+    let reentrant_root = reentrant_runtime.run();
+    let reentrant_root = Rc::new(RefCell::new(Some(reentrant_root)));
+    let root_for_reentry = reentrant_root.clone();
+    let reentry = Closure::wrap(Box::new(move || {
+        let Some(root) = root_for_reentry.borrow_mut().take() else {
+            return;
+        };
+        root.with_scope(|scope| {
+            let _binding = Persistent::builder(scope, LISTENER_REENTRY_KEY)
+                .local()
+                .string()
+                .default("reentrant".to_string())
+                .build();
+        });
+        root.dispose()
+            .expect("reentrant root cleanup should succeed");
+    }) as Box<dyn FnMut()>);
+    set_storage_listener_spy_reentry(&spy.value, reentry.as_ref());
+
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| {
+        let _binding = Persistent::builder(scope, LISTENER_REENTRY_KEY)
+            .local()
+            .string()
+            .default("initial".to_string())
+            .build();
+        assert_eq!(spy.count("add"), 1);
+    });
+
+    root.dispose().expect("root cleanup should succeed");
+    assert_eq!(spy.count("add"), 2);
+    assert_eq!(spy.count("remove"), 2);
+    assert!(reentrant_root.borrow().is_none());
+    drop(reentry);
+    storage
+        .remove_item(LISTENER_REENTRY_KEY)
+        .expect("cleanup key");
 }
 
 #[wasm_bindgen_test]
@@ -92,6 +427,72 @@ fn query_binding_uses_target_scope_and_updates_only_its_key() {
         assert_eq!(search.get_untracked(), "?page=3&other=keep");
     });
     root.dispose().expect("dispose root");
+}
+
+#[wasm_bindgen_test]
+fn query_backend_writes_one_push_and_one_url_update_per_change() {
+    set_url("/persist-query?keep=yes");
+    let spy = QueryHistorySpy::new();
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| {
+        let (path, set_path) = scope.signal("/persist-query".to_string());
+        let (search, set_search) = scope.signal("?keep=yes".to_string());
+        let context = RouterContext::try_new(
+            scope,
+            RouterContextProps {
+                base_path: "/".to_string(),
+                path,
+                search,
+                set_path,
+                set_search,
+            },
+        )
+        .expect("router context should be created");
+        let search_updates = Rc::new(Cell::new(0));
+        let search_updates_for_effect = search_updates.clone();
+        scope.effect(move || {
+            search.get();
+            search_updates_for_effect.set(search_updates_for_effect.get() + 1);
+        });
+        let initial_search_updates = search_updates.get();
+
+        let binding = Persistent::builder(scope, QUERY_HISTORY_KEY)
+            .query(&context)
+            .parse::<u32>()
+            .write_default(WriteDefault::Never)
+            .default(1)
+            .build();
+        assert_eq!(spy.count("push"), 0);
+        assert_eq!(spy.count("replace"), 0);
+
+        binding.set(2);
+        assert_eq!(spy.count("push"), 1);
+        assert_eq!(spy.count("replace"), 0);
+        assert_eq!(
+            spy.last_url().as_deref(),
+            Some("/persist-query?keep=yes&page=2")
+        );
+        assert_eq!(search_updates.get(), initial_search_updates + 1);
+
+        binding.set(2);
+        assert_eq!(spy.count("push"), 1);
+        assert_eq!(search_updates.get(), initial_search_updates + 1);
+
+        binding.remove().expect("query key can be removed");
+        assert_eq!(spy.count("push"), 2);
+        assert_eq!(spy.count("replace"), 0);
+        assert_eq!(spy.last_url().as_deref(), Some("/persist-query?keep=yes"));
+        assert_eq!(search_updates.get(), initial_search_updates + 2);
+
+        binding.remove().expect("missing query key can be removed");
+        assert_eq!(spy.count("push"), 2);
+        assert_eq!(search_updates.get(), initial_search_updates + 2);
+    });
+
+    root.dispose().expect("root cleanup should succeed");
+    drop(spy);
+    set_url("/");
 }
 
 #[wasm_bindgen_test]
@@ -170,4 +571,104 @@ async fn debounce_late_callback_is_gated_after_root_dispose() {
         Some("".to_string())
     );
     storage.remove_item(DEBOUNCE_KEY).expect("cleanup key");
+}
+
+#[wasm_bindgen_test(async)]
+async fn debounce_external_remove_does_not_skip_next_write() {
+    let window = window().expect("window");
+    let storage = local_storage();
+    storage
+        .set_item(DEBOUNCE_REMOVE_KEY, "5")
+        .expect("seed key");
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| {
+        let binding = Persistent::builder(scope, DEBOUNCE_REMOVE_KEY)
+            .local()
+            .string()
+            .sync(SyncStrategy::Debounce(Duration::from_millis(5)))
+            .default("5".to_string())
+            .build();
+        storage.remove_item(DEBOUNCE_REMOVE_KEY).expect("remove key");
+        let event = StorageEvent::new("storage").expect("storage event");
+        event.init_storage_event_with_can_bubble_and_cancelable_and_key_and_old_value_and_new_value_and_url_and_storage_area(
+            "storage",
+            false,
+            false,
+            Some(DEBOUNCE_REMOVE_KEY),
+            Some("5"),
+            None,
+            Some("https://example.test/"),
+            Some(&storage),
+        );
+        window
+            .dispatch_event(event.as_ref())
+            .expect("dispatch storage event");
+        binding.set("6".to_string());
+    });
+    TimeoutFuture::new(25).await;
+    assert_eq!(
+        storage.get_item(DEBOUNCE_REMOVE_KEY).expect("read key"),
+        Some("6".to_string())
+    );
+    root.dispose().expect("dispose root");
+    storage
+        .remove_item(DEBOUNCE_REMOVE_KEY)
+        .expect("cleanup key");
+}
+
+#[wasm_bindgen_test]
+fn debounce_timer_failure_reentry_and_late_callbacks_are_gated() {
+    const KEY: &str = "silex-persist-runtime-refactor-debounce-failure";
+    let storage = local_storage();
+    storage.remove_item(KEY).expect("clear key");
+    let controller = TimeoutController::new();
+    let dispose_slot = Rc::new(RefCell::new(None::<RootHandle>));
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+
+    root.with_scope(|scope| {
+        let binding = Persistent::builder(scope, KEY)
+            .local()
+            .string()
+            .write_default(WriteDefault::Never)
+            .sync(SyncStrategy::Debounce(std::time::Duration::from_millis(1)))
+            .default(String::new())
+            .build();
+        let binding_for_dispose = binding;
+        let dispose_for_effect = dispose_slot.clone();
+        scope.effect(move || {
+            if binding_for_dispose.state().get() == PersistenceState::Ready("second".to_string())
+                && let Some(root) = dispose_for_effect.borrow_mut().take()
+            {
+                root.dispose()
+                    .expect("state effect can dispose its root reentrantly");
+            }
+        });
+
+        controller.fail_next();
+        binding.set("failed".to_string());
+        assert!(matches!(
+            binding.state().get_untracked(),
+            PersistenceState::WriteError(_)
+        ));
+
+        binding.set("first".to_string());
+        binding.set("second".to_string());
+    });
+
+    *dispose_slot.borrow_mut() = Some(root);
+    controller.fire(1);
+    assert_eq!(
+        storage.get_item(KEY).expect("read persisted value"),
+        Some("second".to_string())
+    );
+    controller.fire(0);
+    assert_eq!(
+        storage.get_item(KEY).expect("read persisted value"),
+        Some("second".to_string())
+    );
+    assert_eq!(controller.clear_count(), 1);
+    assert!(dispose_slot.borrow().is_none());
+    storage.remove_item(KEY).expect("cleanup key");
 }

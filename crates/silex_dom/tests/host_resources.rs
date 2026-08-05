@@ -31,6 +31,8 @@ export function installHostSpy() {
         originals: Object.create(null),
         targets: [],
         pending: new Map(),
+        callbacks: [],
+        failNextTimeout: false,
     };
 
     const bump = (key) => {
@@ -48,6 +50,10 @@ export function installHostSpy() {
 
         window[setName] = function(callback, ...args) {
             bump(setKey);
+            if (setName === "setTimeout" && spy.failNextTimeout) {
+                spy.failNextTimeout = false;
+                throw new Error("forced timeout creation failure");
+            }
             let id;
             const wrapped = (...callbackArgs) => {
                 bump(invokeKey);
@@ -57,6 +63,9 @@ export function installHostSpy() {
                 return callback(...callbackArgs);
             };
             id = setOriginal.call(this, wrapped, ...args);
+            if (setName === "setTimeout") {
+                spy.callbacks.push({ id, callback: wrapped });
+            }
             spy.pending.set(id, true);
             return id;
         };
@@ -123,6 +132,18 @@ export function spyWait(spy, milliseconds) {
     return new Promise((resolve) => spy.originals.setTimeout.call(window, resolve, milliseconds));
 }
 
+export function failNextTimeout(spy) {
+    spy.failNextTimeout = true;
+}
+
+export function fireTimeout(spy, index) {
+    const entry = spy.callbacks[index];
+    if (entry === undefined) {
+        throw new Error(`timeout callback ${index} does not exist`);
+    }
+    return entry.callback();
+}
+
 export function restoreHostSpy(spy) {
     for (const [name, original] of Object.entries(spy.originals)) {
         if (name === "setTimeout" || name === "clearTimeout" ||
@@ -153,6 +174,12 @@ extern "C" {
     #[wasm_bindgen(js_name = spyWait)]
     fn spy_wait(spy: &JsValue, milliseconds: u32) -> js_sys::Promise;
 
+    #[wasm_bindgen(js_name = failNextTimeout)]
+    fn fail_next_timeout(spy: &JsValue);
+
+    #[wasm_bindgen(js_name = fireTimeout)]
+    fn fire_timeout(spy: &JsValue, index: u32);
+
     #[wasm_bindgen(js_name = restoreHostSpy)]
     fn restore_host_spy(spy: &JsValue);
 }
@@ -170,6 +197,14 @@ impl Spy {
 
     fn count(&self, key: &str) -> u32 {
         spy_count(&self.value, key)
+    }
+
+    fn fail_next_timeout(&self) {
+        fail_next_timeout(&self.value);
+    }
+
+    fn fire_timeout(&self, index: u32) {
+        fire_timeout(&self.value, index);
     }
 
     async fn wait(&self, milliseconds: u32) {
@@ -745,4 +780,94 @@ async fn timer_callback_can_reenter_root_dispose_without_late_registration() {
     assert_eq!(calls.get(), 1);
     assert_eq!(spy.count("timeout_set"), 1);
     assert_eq!(spy.count("timeout_invoke"), 1);
+}
+
+#[wasm_bindgen_test]
+fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_callbacks() {
+    let spy = Spy::new();
+    let failed_calls = Rc::new(Cell::new(0));
+    let canceled_calls = Rc::new(Cell::new(0));
+    let reentrant_calls = Rc::new(Cell::new(0));
+    let drops = Rc::new(Cell::new(0));
+    let dispose_slot = Rc::new(RefCell::new(None::<RootHandle>));
+    let values = Rc::new(RefCell::new(Vec::<i32>::new()));
+    let mut runtime = Runtime::new();
+
+    let root = runtime.run();
+    {
+        let scope = root.scope();
+        let owner = ScopedViewOwner::new(scope);
+
+        spy.fail_next_timeout();
+        let failed_calls_for_callback = failed_calls.clone();
+        let failed_probe = DropProbe::new(drops.clone());
+        assert!(
+            set_timeout_owned(
+                &owner.token(),
+                move || {
+                    failed_calls_for_callback.set(failed_calls_for_callback.get() + 1);
+                    let _ = &failed_probe;
+                },
+                Duration::from_millis(0),
+            )
+            .is_err()
+        );
+        assert_eq!(failed_calls.get(), 0);
+        assert_eq!(drops.get(), 1);
+
+        let canceled_calls_for_callback = canceled_calls.clone();
+        let canceled_probe = DropProbe::new(drops.clone());
+        let canceled = set_timeout_owned(
+            &owner.token(),
+            move || {
+                canceled_calls_for_callback.set(canceled_calls_for_callback.get() + 1);
+                let _ = &canceled_probe;
+            },
+            Duration::from_millis(0),
+        )
+        .expect("cancelable timeout should register");
+        canceled.cancel();
+        canceled.cancel();
+        spy.fire_timeout(0);
+        assert_eq!(canceled_calls.get(), 0);
+
+        let values_for_debounce = values.clone();
+        let mut debounce = debounce_owned(&owner.token(), Duration::from_millis(0), move |value| {
+            values_for_debounce.borrow_mut().push(value);
+        });
+        debounce(1);
+        debounce(2);
+
+        let reentrant_calls_for_callback = reentrant_calls.clone();
+        let dispose_for_callback = dispose_slot.clone();
+        set_timeout_owned(
+            &owner.token(),
+            move || {
+                reentrant_calls_for_callback.set(reentrant_calls_for_callback.get() + 1);
+                if let Some(root) = dispose_for_callback.borrow_mut().take() {
+                    root.dispose()
+                        .expect("reentrant root disposal should succeed");
+                }
+            },
+            Duration::from_millis(0),
+        )
+        .expect("reentrant timeout should register");
+    }
+
+    *dispose_slot.borrow_mut() = Some(root);
+
+    spy.fire_timeout(1);
+    assert!(
+        values.borrow().is_empty(),
+        "cleared debounce callback is stale"
+    );
+    spy.fire_timeout(3);
+    assert_eq!(reentrant_calls.get(), 1);
+    spy.fire_timeout(2);
+    assert!(values.borrow().is_empty(), "late callback must stay gated");
+    assert_eq!(failed_calls.get(), 0);
+    assert_eq!(canceled_calls.get(), 0);
+    assert_eq!(drops.get(), 2);
+    assert_eq!(spy.count("timeout_clear"), 4);
+    assert!(dispose_slot.borrow().is_none());
 }

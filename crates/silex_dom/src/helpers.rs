@@ -165,7 +165,7 @@ pub fn window_event_listener_untyped_owned<'scope>(
         .clone();
     let window = window();
     if let Err(error) = window.add_event_listener_with_callback(event_name, &js_fn) {
-        destination.invalidate();
+        destination.cancel();
         let _ = closure.borrow_mut().take();
         return Err(error);
     }
@@ -333,7 +333,7 @@ pub fn request_animation_frame_owned<'scope>(
     let frame = match frame {
         Ok(frame) => frame,
         Err(error) => {
-            destination.invalidate();
+            destination.cancel();
             let _ = callback.borrow_mut().take();
             return Err(error);
         }
@@ -387,7 +387,7 @@ pub fn request_idle_callback_owned<'scope>(
     let idle = match idle {
         Ok(idle) => idle,
         Err(error) => {
-            destination.invalidate();
+            destination.cancel();
             let _ = callback.borrow_mut().take();
             return Err(error);
         }
@@ -477,7 +477,7 @@ pub fn set_timeout_owned<'scope>(
     let timeout = match timeout {
         Ok(timeout) => timeout,
         Err(error) => {
-            destination.invalidate();
+            destination.cancel();
             let _ = callback.borrow_mut().take();
             return Err(error);
         }
@@ -541,7 +541,7 @@ pub fn set_interval_owned<'scope>(
     {
         Ok(interval) => interval,
         Err(error) => {
-            destination.invalidate();
+            destination.cancel();
             let _ = closure.borrow_mut().take();
             return Err(error);
         }

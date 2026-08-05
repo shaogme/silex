@@ -271,12 +271,21 @@ impl<'scope> Navigator<'scope> {
             }
 
             let new_search = params.to_string().as_string().unwrap_or_default();
+            let new_search = if new_search.is_empty() {
+                String::new()
+            } else {
+                format!("?{new_search}")
+            };
+
+            if new_search == current_search {
+                return;
+            }
 
             let pathname = self.path.get_untracked();
             let new_url = if new_search.is_empty() {
                 pathname
             } else {
-                format!("{}?{}", pathname, new_search)
+                format!("{}{}", pathname, new_search)
             };
 
             self.push(&new_url);
