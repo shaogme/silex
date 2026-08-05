@@ -46,4 +46,5 @@ json = ["dep:serde", "dep:serde_json", "silex_persist/json"]
 persist = ["dep:silex_persist"]
 
 [dev-dependencies]
+trybuild = "1.0"
 wasm-bindgen-test.workspace = true

@@ -1,7 +1,23 @@
 pub(crate) fn encode_component(value: &str) -> String {
-    js_sys::encode_uri_component(value)
-        .as_string()
-        .unwrap_or_else(|| value.to_string())
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.as_bytes() {
+        if byte.is_ascii_alphanumeric() || b"-_.!~*'()".contains(byte) {
+            encoded.push(*byte as char);
+        } else {
+            encoded.push('%');
+            encoded.push(hex_digit(byte >> 4));
+            encoded.push(hex_digit(byte & 0x0f));
+        }
+    }
+    encoded
+}
+
+fn hex_digit(value: u8) -> char {
+    match value {
+        0..=9 => (b'0' + value) as char,
+        10..=15 => (b'A' + value - 10) as char,
+        _ => unreachable!("hex digit is limited to four bits"),
+    }
 }
 
 pub(crate) fn base64_encode(input: &[u8]) -> String {
@@ -33,4 +49,23 @@ pub(crate) fn base64_encode(input: &[u8]) -> String {
         i += 3;
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{base64_encode, encode_component};
+
+    #[test]
+    fn encodes_uri_component_without_browser_globals() {
+        assert_eq!(encode_component("a b/c?"), "a%20b%2Fc%3F");
+        assert_eq!(encode_component("safe-_.!~*'()"), "safe-_.!~*'()");
+    }
+
+    #[test]
+    fn encodes_base64_boundaries() {
+        assert_eq!(base64_encode(b""), "");
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+    }
 }

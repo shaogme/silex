@@ -1,80 +1,275 @@
-use std::rc::Rc;
+use std::{cell::Cell, rc::Rc};
 
 use js_sys::Function;
 use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, EventSource as JsEventSource, MessageEvent};
 
 use silex_core::{
-    reactivity::{Memo, ReadSignal, RwSignal, Signal, StoredValue},
-    traits::{RxGet, RxRead, RxWrite},
+    CompletionToken, Memo, ReadSignal, RuntimeInputs, RwSignal, Scope, StoredValue, WriteSignal,
 };
 
-use crate::state::{ConnectionState, EventMessage};
+use crate::{
+    NetError,
+    builder::{IntoNetValue, ValueResolver},
+    state::{ConnectionState, EventMessage},
+};
 
 pub struct EventStream;
 
 impl EventStream {
-    pub fn builder(url: impl Into<String>) -> EventStreamBuilder {
-        EventStreamBuilder::new(url)
+    pub fn builder<'scope>(
+        scope: Scope<'scope>,
+        url: impl IntoNetValue<'scope>,
+    ) -> EventStreamBuilder<'scope> {
+        EventStreamBuilder::new(scope, url.into_net_value())
     }
 
-    pub fn open(url: impl Into<String>) -> EventStreamConnection {
-        Self::builder(url).build()
+    pub fn open<'scope>(
+        scope: Scope<'scope>,
+        url: impl IntoNetValue<'scope>,
+    ) -> Result<EventStreamConnection<'scope>, NetError> {
+        Self::builder(scope, url).try_build()
     }
 
-    pub fn lazy(url: impl Into<String>) -> EventStreamConnection {
-        Self::builder(url).auto_connect(false).build()
+    pub fn lazy<'scope>(
+        scope: Scope<'scope>,
+        url: impl IntoNetValue<'scope>,
+    ) -> EventStreamBuilder<'scope> {
+        Self::builder(scope, url).auto_connect(false)
     }
 }
 
 #[derive(Copy, Clone)]
-pub struct EventStreamConnection {
-    inner: StoredValue<EventStreamInner>,
-    state: RwSignal<ConnectionState>,
-    messages: RwSignal<Vec<EventMessage>>,
-    error: ReadSignal<Option<String>>,
+pub struct EventStreamConnection<'scope> {
+    scope: Scope<'scope>,
+    inner: StoredValue<'scope, EventStreamInner<'scope>>,
+    state: ReadSignal<'scope, ConnectionState>,
+    messages: RwSignal<'scope, Vec<EventMessage>>,
+    error: ReadSignal<'scope, Option<String>>,
 }
-struct EventStreamInner {
-    source: Option<JsEventSource>,
-    url: String,
+
+#[derive(Clone)]
+enum EventStreamEvent {
+    Open {
+        generation: u64,
+    },
+    Message {
+        generation: u64,
+        event: Option<String>,
+        data: String,
+    },
+    Error {
+        generation: u64,
+    },
+}
+
+struct HostRegistration {
+    source: JsEventSource,
+    event_name: Option<String>,
+    gate: Rc<Cell<bool>>,
     _on_open: Closure<dyn FnMut(Event)>,
     _on_message: Closure<dyn FnMut(MessageEvent)>,
     _on_error: Closure<dyn FnMut(Event)>,
-    event_name: Option<String>,
 }
 
-impl Drop for EventStreamInner {
-    fn drop(&mut self) {
-        if let Some(source) = &self.source {
-            source.set_onopen(None);
-            source.set_onerror(None);
-            if let Some(name) = &self.event_name {
-                let _ = source.remove_event_listener_with_callback(
-                    name,
-                    self._on_message.as_ref().unchecked_ref(),
-                );
-            } else {
-                source.set_onmessage(None);
+impl HostRegistration {
+    fn new(
+        source: JsEventSource,
+        event_name: Option<String>,
+        generation: u64,
+        token: &CompletionToken<EventStreamEvent>,
+    ) -> Result<Self, NetError> {
+        let gate = Rc::new(Cell::new(true));
+
+        let open_gate = gate.clone();
+        let open_token = token.clone();
+        let on_open = Closure::wrap(Box::new(move |_event: Event| {
+            if open_gate.get() {
+                let _ = open_token.submit(EventStreamEvent::Open { generation });
             }
-            source.close();
+        }) as Box<dyn FnMut(Event)>);
+
+        let message_gate = gate.clone();
+        let message_token = token.clone();
+        let on_message = Closure::wrap(Box::new(move |event: MessageEvent| {
+            if message_gate.get() {
+                let _ = message_token.submit(EventStreamEvent::Message {
+                    generation,
+                    event: Some(event.type_()),
+                    data: event.data().as_string().unwrap_or_default(),
+                });
+            }
+        }) as Box<dyn FnMut(MessageEvent)>);
+
+        let error_gate = gate.clone();
+        let error_token = token.clone();
+        let on_error = Closure::wrap(Box::new(move |_event: Event| {
+            if error_gate.get() {
+                let _ = error_token.submit(EventStreamEvent::Error { generation });
+            }
+        }) as Box<dyn FnMut(Event)>);
+
+        source.set_onopen(Some(on_open.as_ref().unchecked_ref::<Function>()));
+        if let Some(name) = &event_name {
+            if let Err(error) = source.add_event_listener_with_callback(
+                name,
+                on_message.as_ref().unchecked_ref::<Function>(),
+            ) {
+                source.set_onopen(None);
+                source.set_onerror(None);
+                source.close();
+                return Err(NetError::from(error));
+            }
+        } else {
+            source.set_onmessage(Some(on_message.as_ref().unchecked_ref::<Function>()));
+        }
+        source.set_onerror(Some(on_error.as_ref().unchecked_ref::<Function>()));
+
+        Ok(Self {
+            source,
+            event_name,
+            gate,
+            _on_open: on_open,
+            _on_message: on_message,
+            _on_error: on_error,
+        })
+    }
+}
+
+impl Drop for HostRegistration {
+    fn drop(&mut self) {
+        self.gate.set(false);
+        self.source.set_onopen(None);
+        self.source.set_onerror(None);
+        if let Some(name) = &self.event_name {
+            let _ = self.source.remove_event_listener_with_callback(
+                name,
+                self._on_message.as_ref().unchecked_ref(),
+            );
+        } else {
+            self.source.set_onmessage(None);
+        }
+        self.source.close();
+    }
+}
+
+struct EventStreamInner<'scope> {
+    url: ValueResolver<'scope>,
+    event_name: Option<String>,
+    max_messages: Option<usize>,
+    on_open: Vec<Rc<dyn Fn() + 'scope>>,
+    on_error: Vec<Rc<dyn Fn(String) + 'scope>>,
+    set_state: RwSignal<'scope, ConnectionState>,
+    messages: RwSignal<'scope, Vec<EventMessage>>,
+    set_error: WriteSignal<'scope, Option<String>>,
+    completion: CompletionToken<EventStreamEvent>,
+    registration: Option<HostRegistration>,
+    generation: u64,
+}
+
+impl Drop for EventStreamInner<'_> {
+    fn drop(&mut self) {
+        self.cleanup();
+    }
+}
+
+impl<'scope> EventStreamInner<'scope> {
+    fn cleanup(&mut self) {
+        self.registration.take();
+        self.completion.cancel();
+    }
+
+    fn try_open_current(&mut self) -> Result<(), NetError> {
+        self.registration.take();
+        self.generation = self.generation.wrapping_add(1);
+        let generation = self.generation;
+        self.set_state.set(ConnectionState::Connecting);
+
+        let url = self.url.resolve();
+        let source = JsEventSource::new(&url).map_err(NetError::from);
+        let source = match source {
+            Ok(source) => source,
+            Err(error) => {
+                self.set_state.set(ConnectionState::Error);
+                self.set_error.set(Some(format!("{error:?}")));
+                return Err(error);
+            }
+        };
+        match HostRegistration::new(
+            source,
+            self.event_name.clone(),
+            generation,
+            &self.completion,
+        ) {
+            Ok(registration) => {
+                self.registration = Some(registration);
+                Ok(())
+            }
+            Err(error) => {
+                self.set_state.set(ConnectionState::Error);
+                self.set_error.set(Some(format!("{error:?}")));
+                Err(error)
+            }
         }
     }
+
+    fn handle_event(&mut self, event: EventStreamEvent) {
+        match event {
+            EventStreamEvent::Open { generation } if generation == self.generation => {
+                self.set_state.set(ConnectionState::Connected);
+                for handler in &self.on_open {
+                    handler();
+                }
+            }
+            EventStreamEvent::Message {
+                generation,
+                event,
+                data,
+            } if generation == self.generation => {
+                self.messages.update(|messages| {
+                    messages.push(EventMessage { event, data });
+                    if let Some(max_messages) = self.max_messages {
+                        let excess = messages.len().saturating_sub(max_messages);
+                        if excess > 0 {
+                            messages.drain(..excess);
+                        }
+                    }
+                });
+                self.set_state.set(ConnectionState::Connected);
+            }
+            EventStreamEvent::Error { generation } if generation == self.generation => {
+                self.set_state.set(ConnectionState::Error);
+                self.set_error.set(Some("event stream error".to_string()));
+                for handler in &self.on_error {
+                    handler("event stream error".to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn close(&mut self) {
+        self.registration.take();
+        self.generation = self.generation.wrapping_add(1);
+        self.set_state.set(ConnectionState::Closed);
+    }
 }
 
-impl EventStreamConnection {
-    pub fn is_connected(&self) -> Memo<bool> {
+impl<'scope> EventStreamConnection<'scope> {
+    pub fn is_connected(&self) -> Memo<'scope, bool> {
         let state = self.state;
-        Memo::new(move |_| state.get().is_connected())
+        self.scope.memo(move |_| state.get().is_connected())
     }
 
-    pub fn is_connecting(&self) -> Memo<bool> {
+    pub fn is_connecting(&self) -> Memo<'scope, bool> {
         let state = self.state;
-        Memo::new(move |_| matches!(state.get(), ConnectionState::Connecting))
+        self.scope
+            .memo(move |_| matches!(state.get(), ConnectionState::Connecting))
     }
 
-    pub fn is_closed(&self) -> Memo<bool> {
+    pub fn is_closed(&self) -> Memo<'scope, bool> {
         let state = self.state;
-        Memo::new(move |_| {
+        self.scope.memo(move |_| {
             matches!(
                 state.get(),
                 ConnectionState::Closed | ConnectionState::Disconnected
@@ -82,61 +277,61 @@ impl EventStreamConnection {
         })
     }
 
-    pub fn state(&self) -> ReadSignal<ConnectionState> {
-        self.state.read_signal()
+    pub fn state(&self) -> ReadSignal<'scope, ConnectionState> {
+        self.state
     }
 
     #[cfg(feature = "json")]
-    pub fn messages<T>(&self) -> Memo<Vec<T>>
+    pub fn messages<T>(&self) -> Memo<'scope, Vec<T>>
     where
-        T: serde::de::DeserializeOwned + PartialEq + 'static,
+        T: serde::de::DeserializeOwned + PartialEq + 'scope,
     {
         let messages = self.messages;
-        Memo::new(move |_| {
+        self.scope.memo(move |_| {
             messages
                 .get()
                 .into_iter()
-                .filter_map(|msg| serde_json::from_str(&msg.data).ok())
+                .filter_map(|message| serde_json::from_str(&message.data).ok())
                 .collect()
         })
     }
 
     #[cfg(feature = "json")]
-    pub fn last_message<T>(&self) -> Memo<Option<T>>
+    pub fn last_message<T>(&self) -> Memo<'scope, Option<T>>
     where
-        T: serde::de::DeserializeOwned + PartialEq + 'static,
+        T: serde::de::DeserializeOwned + PartialEq + 'scope,
     {
         let messages = self.messages;
-        Memo::new(move |_| {
+        self.scope.memo(move |_| {
             messages
                 .get()
                 .last()
-                .and_then(|msg| serde_json::from_str(&msg.data).ok())
+                .and_then(|message| serde_json::from_str(&message.data).ok())
         })
     }
 
     #[cfg(feature = "json")]
-    pub fn latest_messages<T>(&self, limit: usize) -> Memo<Vec<T>>
+    pub fn latest_messages<T>(&self, limit: usize) -> Memo<'scope, Vec<T>>
     where
-        T: serde::de::DeserializeOwned + PartialEq + 'static,
+        T: serde::de::DeserializeOwned + PartialEq + 'scope,
     {
         let messages = self.messages;
-        Memo::new(move |_| {
+        self.scope.memo(move |_| {
             messages
                 .get()
                 .iter()
                 .rev()
-                .filter_map(|msg| serde_json::from_str(&msg.data).ok())
                 .take(limit)
+                .filter_map(|message| serde_json::from_str(&message.data).ok())
                 .collect()
         })
     }
 
-    pub fn raw_messages(&self) -> ReadSignal<Vec<EventMessage>> {
+    pub fn raw_messages(&self) -> ReadSignal<'scope, Vec<EventMessage>> {
         self.messages.read_signal()
     }
 
-    pub fn error(&self) -> ReadSignal<Option<String>> {
+    pub fn error(&self) -> ReadSignal<'scope, Option<String>> {
         self.error
     }
 
@@ -145,46 +340,25 @@ impl EventStreamConnection {
     }
 
     pub fn close(&self) {
-        self.inner.with(|inner| {
-            if let Some(source) = &inner.source {
-                source.close();
-            }
-        });
-        self.state.set(ConnectionState::Closed);
+        self.inner.update(EventStreamInner::close);
     }
 
-    pub fn reconnect(&self) {
-        if matches!(
+    pub fn try_reconnect(&self) -> Result<(), NetError> {
+        if !matches!(
             self.state.get(),
             ConnectionState::Closed | ConnectionState::Disconnected | ConnectionState::Error
         ) {
-            self.state.set(ConnectionState::Connecting);
-            self.inner.update(|inner| {
-                if let Ok(new_source) = JsEventSource::new(&inner.url) {
-                    new_source
-                        .set_onopen(Some(inner._on_open.as_ref().unchecked_ref::<Function>()));
-                    if let Some(event_name) = &inner.event_name {
-                        let _ = new_source.add_event_listener_with_callback(
-                            event_name,
-                            inner._on_message.as_ref().unchecked_ref::<Function>(),
-                        );
-                    } else {
-                        new_source.set_onmessage(Some(
-                            inner._on_message.as_ref().unchecked_ref::<Function>(),
-                        ));
-                    }
-                    new_source
-                        .set_onerror(Some(inner._on_error.as_ref().unchecked_ref::<Function>()));
-                    inner.source = Some(new_source);
-                }
-            });
+            return Ok(());
         }
+        self.inner.update(EventStreamInner::try_open_current)
+    }
+
+    pub fn reconnect(&self) {
+        let _ = self.try_reconnect();
     }
 
     pub fn toggle(&self) {
-        if self.state.get().is_connected()
-            || matches!(self.state.get(), ConnectionState::Connecting)
-        {
+        if self.state.get().is_active() {
             self.close();
         } else {
             self.reconnect();
@@ -193,20 +367,24 @@ impl EventStreamConnection {
 }
 
 #[derive(Clone)]
-pub struct EventStreamBuilder {
-    pub(crate) url: String,
-    pub(crate) event_name: Option<String>,
-    pub(crate) auto_connect: bool,
-    pub(crate) on_open: Vec<Rc<dyn Fn()>>,
-    pub(crate) on_error: Vec<Rc<dyn Fn(String)>>,
+pub struct EventStreamBuilder<'scope> {
+    scope: Scope<'scope>,
+    url: ValueResolver<'scope>,
+    event_name: Option<String>,
+    auto_connect: bool,
+    max_messages: Option<usize>,
+    on_open: Vec<Rc<dyn Fn() + 'scope>>,
+    on_error: Vec<Rc<dyn Fn(String) + 'scope>>,
 }
 
-impl EventStreamBuilder {
-    pub fn new(url: impl Into<String>) -> Self {
+impl<'scope> EventStreamBuilder<'scope> {
+    fn new(scope: Scope<'scope>, url: ValueResolver<'scope>) -> Self {
         Self {
-            url: url.into(),
+            scope,
+            url,
             event_name: None,
             auto_connect: true,
+            max_messages: None,
             on_open: Vec::new(),
             on_error: Vec::new(),
         }
@@ -222,83 +400,89 @@ impl EventStreamBuilder {
         self
     }
 
-    pub fn on_open(mut self, f: impl Fn() + 'static) -> Self {
-        self.on_open.push(Rc::new(f));
+    pub fn max_messages(mut self, max_messages: usize) -> Self {
+        self.max_messages = Some(max_messages);
         self
     }
 
-    pub fn on_error(mut self, f: impl Fn(String) + 'static) -> Self {
-        self.on_error.push(Rc::new(f));
+    pub fn on_open(mut self, handler: impl Fn() + 'scope) -> Self {
+        self.on_open.push(Rc::new(handler));
         self
     }
 
-    pub fn build(self) -> EventStreamConnection {
-        let state = RwSignal::new(if self.auto_connect {
+    pub fn on_error(mut self, handler: impl Fn(String) + 'scope) -> Self {
+        self.on_error.push(Rc::new(handler));
+        self
+    }
+
+    pub fn try_build(self) -> Result<EventStreamConnection<'scope>, NetError> {
+        let Self {
+            scope,
+            url,
+            event_name,
+            auto_connect,
+            max_messages,
+            on_open,
+            on_error,
+        } = self;
+        let mut inputs = RuntimeInputs::new();
+        inputs.extend(&url.inputs());
+        scope
+            .try_validate_inputs(&inputs)
+            .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
+
+        let state = scope.rw_signal(if auto_connect {
             ConnectionState::Connecting
         } else {
             ConnectionState::Disconnected
         });
-        let messages = RwSignal::new(Vec::<EventMessage>::new());
-        let (error, set_error) = Signal::pair(None::<String>);
-
-        let on_open_handlers = self.on_open.clone();
-        let on_error_handlers = self.on_error.clone();
-
-        let on_open = Closure::wrap(Box::new(move |_event: Event| {
-            state.set(ConnectionState::Connected);
-            for handler in &on_open_handlers {
-                handler();
+        let messages = scope.rw_signal(Vec::<EventMessage>::new());
+        let (error, set_error) = scope.signal(None::<String>);
+        let inner_slot = Rc::new(Cell::new(
+            None::<StoredValue<'scope, EventStreamInner<'scope>>>,
+        ));
+        let inner_slot_for_completion = inner_slot.clone();
+        let completion = scope.completion(move |event: EventStreamEvent| {
+            if let Some(inner) = inner_slot_for_completion.get() {
+                inner.update(|inner| inner.handle_event(event));
             }
-        }) as Box<dyn FnMut(Event)>);
-
-        let on_message = Closure::wrap(Box::new(move |event: MessageEvent| {
-            let data = event.data().as_string().unwrap_or_default();
-            let event_name = event.type_();
-            messages.update(|msgs: &mut Vec<EventMessage>| {
-                msgs.push(EventMessage {
-                    event: Some(event_name),
-                    data,
-                });
-            });
-            state.set(ConnectionState::Connected);
-        }) as Box<dyn FnMut(MessageEvent)>);
-
-        let on_error = Closure::wrap(Box::new(move |_event: Event| {
-            state.set(ConnectionState::Error);
-            set_error.set(Some("event stream error".to_string()));
-            for handler in &on_error_handlers {
-                handler("event stream error".to_string());
+        });
+        let inner = scope.stored(EventStreamInner {
+            url,
+            event_name,
+            max_messages,
+            on_open,
+            on_error,
+            set_state: state,
+            messages,
+            set_error,
+            completion,
+            registration: None,
+            generation: 0,
+        });
+        inner_slot.set(Some(inner));
+        scope.on_cleanup(move || {
+            if inner.is_alive() {
+                inner.update(EventStreamInner::cleanup);
             }
-        }) as Box<dyn FnMut(Event)>);
+        });
 
-        let source = if self.auto_connect {
-            let s = JsEventSource::new(&self.url).expect("failed to create EventSource");
-            s.set_onopen(Some(on_open.as_ref().unchecked_ref::<Function>()));
-            if let Some(event_name) = &self.event_name {
-                let on_message_fn = on_message.as_ref().unchecked_ref::<Function>();
-                s.add_event_listener_with_callback(event_name, on_message_fn)
-                    .expect("failed to register event listener");
-            } else {
-                s.set_onmessage(Some(on_message.as_ref().unchecked_ref::<Function>()));
-            }
-            s.set_onerror(Some(on_error.as_ref().unchecked_ref::<Function>()));
-            Some(s)
-        } else {
-            None
-        };
-
-        EventStreamConnection {
-            inner: StoredValue::new(EventStreamInner {
-                source,
-                url: self.url,
-                _on_open: on_open,
-                _on_message: on_message,
-                _on_error: on_error,
-                event_name: self.event_name,
-            }),
-            state,
+        let connection = EventStreamConnection {
+            scope,
+            inner,
+            state: state.read_signal(),
             messages,
             error,
+        };
+        if auto_connect && let Err(error) = inner.update(EventStreamInner::try_open_current) {
+            inner.update(EventStreamInner::cleanup);
+            return Err(error);
         }
+        Ok(connection)
+    }
+
+    pub fn build(self) -> EventStreamConnection<'scope> {
+        self.try_build()
+            .unwrap_or_else(|error| panic!("创建 EventStream 失败: {error:?}"))
     }
 }

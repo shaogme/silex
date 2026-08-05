@@ -1,4 +1,6 @@
 use crate::NetError;
+#[cfg(feature = "persist")]
+use silex_core::Scope;
 #[cfg(feature = "json")]
 use std::marker::PhantomData;
 
@@ -8,7 +10,11 @@ pub trait ResponseCodec<T>: Clone + 'static {
 
 #[cfg(feature = "persist")]
 pub trait CacheCodec<T>: ResponseCodec<T> {
-    fn build_cache(key: String, default: T) -> silex_persist::Persistent<T>;
+    fn build_cache<'scope>(
+        scope: Scope<'scope>,
+        key: String,
+        default: T,
+    ) -> silex_persist::Persistent<'scope, T>;
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -33,10 +39,15 @@ impl silex_persist::PersistCodec<String> for TextCodec {
 
 #[cfg(feature = "persist")]
 impl CacheCodec<String> for TextCodec {
-    fn build_cache(key: String, default: String) -> silex_persist::Persistent<String> {
-        silex_persist::Persistent::builder(key)
+    fn build_cache<'scope>(
+        scope: Scope<'scope>,
+        key: String,
+        default: String,
+    ) -> silex_persist::Persistent<'scope, String> {
+        silex_persist::Persistent::builder(scope, key)
             .local()
             .string()
+            .write_default(silex_persist::WriteDefault::Never)
             .default(default)
             .build()
     }
@@ -82,11 +93,36 @@ impl<T> CacheCodec<T> for NetJsonCodec<T>
 where
     T: serde::Serialize + serde::de::DeserializeOwned + Clone + PartialEq + 'static,
 {
-    fn build_cache(key: String, default: T) -> silex_persist::Persistent<T> {
-        silex_persist::Persistent::builder(key)
+    fn build_cache<'scope>(
+        scope: Scope<'scope>,
+        key: String,
+        default: T,
+    ) -> silex_persist::Persistent<'scope, T> {
+        silex_persist::Persistent::builder(scope, key)
             .local()
             .json::<T>()
+            .write_default(silex_persist::WriteDefault::Never)
             .default(default)
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ResponseCodec, TextCodec};
+
+    #[test]
+    fn text_codec_preserves_response_body() {
+        assert_eq!(TextCodec.decode("hello").unwrap(), "hello");
+    }
+
+    #[cfg(feature = "json")]
+    #[test]
+    fn json_codec_reports_decode_errors() {
+        use super::NetJsonCodec;
+
+        let codec = NetJsonCodec::<u32>::new();
+        assert_eq!(codec.decode("42").unwrap(), 42);
+        assert!(codec.decode("not-json").is_err());
     }
 }

@@ -1789,6 +1789,7 @@ dependencies = [
  "serde_json",
  "silex_core",
  "silex_persist",
+ "trybuild",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",

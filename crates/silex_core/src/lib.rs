@@ -20,8 +20,8 @@ pub use callback::Callback;
 pub use error::{ErrorContext, SilexError, SilexResult};
 pub use node_ref::NodeRef;
 pub use reactivity::{
-    Constant, Effect, Memo, PromotionPlan, ReactiveSource, ReadSignal, RwSignal, Signal,
-    StoredValue, WriteSignal, runtime_inputs_of,
+    Constant, Effect, Memo, Mutation, PromotionPlan, ReactiveSource, ReadSignal, Resource,
+    RwSignal, Signal, StoredValue, SuspenseContext, WriteSignal, runtime_inputs_of,
 };
 pub use scope::{OwnedScope, RootHandle, Runtime, Scope};
 pub use silex_reactivity::CompletionToken;

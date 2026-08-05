@@ -5,9 +5,9 @@ mod state;
 
 pub use backend::{
     BrowserTransport, EventStream, EventStreamBuilder, EventStreamConnection, HttpBackend,
-    Transport, WebSocket, WebSocketBuilder, WebSocketConnection,
+    Transport, TransportFuture, WebSocket, WebSocketBuilder, WebSocketConnection,
 };
-pub use builder::{HttpClient, HttpClientBuilder, IntoNetValue};
+pub use builder::{HttpClient, HttpClientBuilder, IntoNetValue, ValueResolver};
 #[cfg(feature = "json")]
 pub use codec::NetJsonCodec;
 pub use codec::{ResponseCodec, TextCodec};
@@ -59,5 +59,18 @@ impl NetError {
 
     pub fn is_retryable_http_status(status: u16) -> bool {
         matches!(status, 408 | 429 | 500..=599)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NetError;
+
+    #[test]
+    fn abort_is_not_retryable_but_timeout_is() {
+        assert!(!NetError::Aborted.is_retryable());
+        assert!(NetError::Timeout.is_retryable());
+        assert!(NetError::is_retryable_http_status(503));
+        assert!(!NetError::is_retryable_http_status(404));
     }
 }

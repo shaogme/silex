@@ -1,0 +1,16 @@
+error[E0521]: borrowed data escapes outside of closure
+ --> tests/ui/fail_foreign_source_declaration.rs:8:24
+  |
+6 |       runtime.child(|scope| {
+  |                      -----
+  |                      |
+  |                      `scope` is a reference that is only valid in the closure body
+  |                      has type `silex_core::Scope<'1>`
+7 |           let (value, _) = scope.signal(1_i32);
+8 |           let _builder = HttpClient::get(scope, "https://example.test")
+  |  ________________________^
+9 | |             .query("value", move || value.get());
+  | |                                                ^
+  | |                                                |
+  | |________________________________________________`scope` escapes the closure body here
+  |                                                  argument requires that `'1` must outlive `'static`

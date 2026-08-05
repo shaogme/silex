@@ -176,6 +176,15 @@ where
             .with_untracked(|controller| controller.key.to_string())
     }
 
+    /// Return whether the backend supplied or accepted a persisted value.
+    ///
+    /// This is distinct from [`get_untracked`](Self::get_untracked): the latter
+    /// intentionally returns the configured default when storage is empty.
+    pub fn has_persisted_value(&self) -> bool {
+        self.controller
+            .with_untracked(|controller| controller.last_flushed_raw.is_some())
+    }
+
     pub fn reset(&self) {
         if !self.value.is_alive() {
             return;
