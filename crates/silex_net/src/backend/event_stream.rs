@@ -14,6 +14,11 @@ use crate::{
     state::{ConnectionState, EventMessage},
 };
 
+/// Scope-owned EventSource connections.
+///
+/// EventSource keeps its browser-native reconnect behavior after a transport
+/// error. This type does not add a second retry queue; [`EventStreamConnection::reconnect`]
+/// performs an explicit source replacement when the caller wants to restart it.
 pub struct EventStream;
 
 impl EventStream {
@@ -45,7 +50,7 @@ pub struct EventStreamConnection<'scope> {
     inner: StoredValue<'scope, EventStreamInner<'scope>>,
     state: ReadSignal<'scope, ConnectionState>,
     messages: RwSignal<'scope, Vec<EventMessage>>,
-    error: ReadSignal<'scope, Option<String>>,
+    error: ReadSignal<'scope, Option<NetError>>,
 }
 
 #[derive(Clone)]
@@ -60,6 +65,7 @@ enum EventStreamEvent {
     },
     Error {
         generation: u64,
+        error: NetError,
     },
 }
 
@@ -70,6 +76,10 @@ struct HostRegistration {
     _on_open: Closure<dyn FnMut(Event)>,
     _on_message: Closure<dyn FnMut(MessageEvent)>,
     _on_error: Closure<dyn FnMut(Event)>,
+}
+
+fn create_source(url: &str) -> Result<JsEventSource, NetError> {
+    JsEventSource::new(url).map_err(NetError::from)
 }
 
 impl HostRegistration {
@@ -105,7 +115,10 @@ impl HostRegistration {
         let error_token = token.clone();
         let on_error = Closure::wrap(Box::new(move |_event: Event| {
             if error_gate.get() {
-                let _ = error_token.submit(EventStreamEvent::Error { generation });
+                let _ = error_token.submit(EventStreamEvent::Error {
+                    generation,
+                    error: NetError::TransportUnavailable,
+                });
             }
         }) as Box<dyn FnMut(Event)>);
 
@@ -115,6 +128,7 @@ impl HostRegistration {
                 name,
                 on_message.as_ref().unchecked_ref::<Function>(),
             ) {
+                gate.set(false);
                 source.set_onopen(None);
                 source.set_onerror(None);
                 source.close();
@@ -158,10 +172,10 @@ struct EventStreamInner<'scope> {
     event_name: Option<String>,
     max_messages: Option<usize>,
     on_open: Vec<Rc<dyn Fn() + 'scope>>,
-    on_error: Vec<Rc<dyn Fn(String) + 'scope>>,
+    on_error: Vec<Rc<dyn Fn(NetError) + 'scope>>,
     set_state: RwSignal<'scope, ConnectionState>,
     messages: RwSignal<'scope, Vec<EventMessage>>,
-    set_error: WriteSignal<'scope, Option<String>>,
+    set_error: WriteSignal<'scope, Option<NetError>>,
     completion: CompletionToken<EventStreamEvent>,
     registration: Option<HostRegistration>,
     generation: u64,
@@ -176,22 +190,35 @@ impl Drop for EventStreamInner<'_> {
 impl<'scope> EventStreamInner<'scope> {
     fn cleanup(&mut self) {
         self.registration.take();
+        self.generation = self.generation.wrapping_add(1);
         self.completion.cancel();
     }
 
     fn try_open_current(&mut self) -> Result<(), NetError> {
+        self.try_open_current_with_source(None)
+    }
+
+    fn try_open_current_with_source(
+        &mut self,
+        source: Option<JsEventSource>,
+    ) -> Result<(), NetError> {
         self.registration.take();
         self.generation = self.generation.wrapping_add(1);
         let generation = self.generation;
         self.set_state.set(ConnectionState::Connecting);
 
-        let url = self.url.resolve();
-        let source = JsEventSource::new(&url).map_err(NetError::from);
+        let source = match source {
+            Some(source) => Ok(source),
+            None => create_source(&self.url.resolve()),
+        };
         let source = match source {
             Ok(source) => source,
             Err(error) => {
                 self.set_state.set(ConnectionState::Error);
-                self.set_error.set(Some(format!("{error:?}")));
+                self.set_error.set(Some(error.clone()));
+                for handler in &self.on_error {
+                    handler(error.clone());
+                }
                 return Err(error);
             }
         };
@@ -207,7 +234,10 @@ impl<'scope> EventStreamInner<'scope> {
             }
             Err(error) => {
                 self.set_state.set(ConnectionState::Error);
-                self.set_error.set(Some(format!("{error:?}")));
+                self.set_error.set(Some(error.clone()));
+                for handler in &self.on_error {
+                    handler(error.clone());
+                }
                 Err(error)
             }
         }
@@ -217,6 +247,7 @@ impl<'scope> EventStreamInner<'scope> {
         match event {
             EventStreamEvent::Open { generation } if generation == self.generation => {
                 self.set_state.set(ConnectionState::Connected);
+                self.set_error.set(None);
                 for handler in &self.on_open {
                     handler();
                 }
@@ -237,11 +268,11 @@ impl<'scope> EventStreamInner<'scope> {
                 });
                 self.set_state.set(ConnectionState::Connected);
             }
-            EventStreamEvent::Error { generation } if generation == self.generation => {
+            EventStreamEvent::Error { generation, error } if generation == self.generation => {
                 self.set_state.set(ConnectionState::Error);
-                self.set_error.set(Some("event stream error".to_string()));
+                self.set_error.set(Some(error.clone()));
                 for handler in &self.on_error {
-                    handler("event stream error".to_string());
+                    handler(error.clone());
                 }
             }
             _ => {}
@@ -331,7 +362,8 @@ impl<'scope> EventStreamConnection<'scope> {
         self.messages.read_signal()
     }
 
-    pub fn error(&self) -> ReadSignal<'scope, Option<String>> {
+    /// Return the latest typed connection error, if one was reported.
+    pub fn error(&self) -> ReadSignal<'scope, Option<NetError>> {
         self.error
     }
 
@@ -374,7 +406,7 @@ pub struct EventStreamBuilder<'scope> {
     auto_connect: bool,
     max_messages: Option<usize>,
     on_open: Vec<Rc<dyn Fn() + 'scope>>,
-    on_error: Vec<Rc<dyn Fn(String) + 'scope>>,
+    on_error: Vec<Rc<dyn Fn(NetError) + 'scope>>,
 }
 
 impl<'scope> EventStreamBuilder<'scope> {
@@ -410,7 +442,7 @@ impl<'scope> EventStreamBuilder<'scope> {
         self
     }
 
-    pub fn on_error(mut self, handler: impl Fn(String) + 'scope) -> Self {
+    pub fn on_error(mut self, handler: impl Fn(NetError) + 'scope) -> Self {
         self.on_error.push(Rc::new(handler));
         self
     }
@@ -431,13 +463,27 @@ impl<'scope> EventStreamBuilder<'scope> {
             .try_validate_inputs(&inputs)
             .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
 
+        let initial_source = if auto_connect {
+            match create_source(&url.resolve()) {
+                Ok(source) => Some(source),
+                Err(error) => {
+                    for handler in &on_error {
+                        handler(error.clone());
+                    }
+                    return Err(error);
+                }
+            }
+        } else {
+            None
+        };
+
         let state = scope.rw_signal(if auto_connect {
             ConnectionState::Connecting
         } else {
             ConnectionState::Disconnected
         });
         let messages = scope.rw_signal(Vec::<EventMessage>::new());
-        let (error, set_error) = scope.signal(None::<String>);
+        let (error, set_error) = scope.signal(None::<NetError>);
         let inner_slot = Rc::new(Cell::new(
             None::<StoredValue<'scope, EventStreamInner<'scope>>>,
         ));
@@ -474,7 +520,10 @@ impl<'scope> EventStreamBuilder<'scope> {
             messages,
             error,
         };
-        if auto_connect && let Err(error) = inner.update(EventStreamInner::try_open_current) {
+        if auto_connect
+            && let Err(error) =
+                inner.update(|inner| inner.try_open_current_with_source(initial_source))
+        {
             inner.update(EventStreamInner::cleanup);
             return Err(error);
         }

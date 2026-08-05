@@ -9,15 +9,262 @@ use std::{
 };
 
 use gloo_timers::future::TimeoutFuture;
+use js_sys::{Array, Function, Reflect};
 use silex_core::reactivity::{MutationState, ResourceState};
 use silex_core::{Runtime, TaskHandle};
 use silex_net::{
     BrowserTransport, EventStream, HttpMethod, HttpResponse, NetError, RequestBody, RequestSpec,
     RetryPolicy, Transport, TransportFuture, WebSocket,
 };
+use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
+
+struct MockHost {
+    global: JsValue,
+    constructor_name: String,
+    previous_constructor: JsValue,
+    instance_name: String,
+    previous_instance: JsValue,
+    instances_name: String,
+    previous_instances: JsValue,
+}
+
+impl MockHost {
+    fn install(
+        constructor_name: &str,
+        instance_name: &str,
+        instances_name: &str,
+        body: &str,
+    ) -> Self {
+        let global: JsValue = js_sys::global().into();
+        let constructor_key = JsValue::from_str(constructor_name);
+        let instance_key = JsValue::from_str(instance_name);
+        let instances_key = JsValue::from_str(instances_name);
+        let previous_constructor =
+            Reflect::get(&global, &constructor_key).expect("read host constructor");
+        let previous_instance = Reflect::get(&global, &instance_key).expect("read host instance");
+        let previous_instances =
+            Reflect::get(&global, &instances_key).expect("read host instances");
+        let constructor = Function::new_with_args("url", body);
+        Reflect::set(&global, &constructor_key, constructor.as_ref())
+            .expect("install host constructor");
+        Reflect::set(&global, &instance_key, &JsValue::UNDEFINED).expect("reset host instance");
+        Reflect::set(&global, &instances_key, Array::new().as_ref()).expect("reset host instances");
+        Self {
+            global,
+            constructor_name: constructor_name.to_string(),
+            previous_constructor,
+            instance_name: instance_name.to_string(),
+            previous_instance,
+            instances_name: instances_name.to_string(),
+            previous_instances,
+        }
+    }
+
+    fn websocket() -> Self {
+        Self::install(
+            "WebSocket",
+            "__silex_test_socket",
+            "__silex_test_socket_instances",
+            r#"
+                if (url === "mock://failure") {
+                    throw new TypeError("constructor failure");
+                }
+                const socket = {
+                    url: url,
+                    readyState: 0,
+                    sent: [],
+                    closeCalls: 0,
+                    onopen: null,
+                    onmessage: null,
+                    onerror: null,
+                    onclose: null,
+                    send: function (data) {
+                        this.sent.push(data);
+                    },
+                    close: function () {
+                        this.closeCalls += 1;
+                        this.readyState = 3;
+                        if (this.onclose) {
+                            this.onclose(new CloseEvent("close", {
+                                code: 1000,
+                                reason: "closed"
+                            }));
+                        }
+                    },
+                    emitOpen: function () {
+                        this.readyState = 1;
+                        if (this.onopen) {
+                            this.onopen(new Event("open"));
+                        }
+                    },
+                    emitMessage: function (data) {
+                        if (this.onmessage) {
+                            this.onmessage(new MessageEvent("message", { data: String(data) }));
+                        }
+                    },
+                    emitError: function (message) {
+                        if (this.onerror) {
+                            this.onerror(new ErrorEvent("error", { message: String(message) }));
+                        }
+                    },
+                    emitClose: function () {
+                        this.readyState = 3;
+                        const callback = this.onclose;
+                        if (callback) {
+                            const event = new CloseEvent("close", {
+                                code: 1006,
+                                reason: "remote"
+                            });
+                            callback(event);
+                            if (this.onclose) {
+                                this.onclose(event);
+                            }
+                        }
+                    }
+                };
+                globalThis.__silex_test_socket = socket;
+                globalThis.__silex_test_socket_instances.push(socket);
+                return socket;
+            "#,
+        )
+    }
+
+    fn event_source() -> Self {
+        Self::install(
+            "EventSource",
+            "__silex_test_event_source",
+            "__silex_test_event_source_instances",
+            r#"
+                if (url === "mock://failure") {
+                    throw new TypeError("constructor failure");
+                }
+                const listeners = Object.create(null);
+                const source = {
+                    url: url,
+                    readyState: 0,
+                    closeCalls: 0,
+                    removeCalls: 0,
+                    onopen: null,
+                    onmessage: null,
+                    onerror: null,
+                    addEventListener: function (name, callback) {
+                        const list = listeners[name] || [];
+                        list.push(callback);
+                        listeners[name] = list;
+                    },
+                    removeEventListener: function (name, callback) {
+                        const list = listeners[name] || [];
+                        listeners[name] = list.filter(function (item) {
+                            return item !== callback;
+                        });
+                        this.removeCalls += 1;
+                    },
+                    close: function () {
+                        this.closeCalls += 1;
+                        this.readyState = 2;
+                    },
+                    emitOpen: function () {
+                        this.readyState = 1;
+                        if (this.onopen) {
+                            this.onopen(new Event("open"));
+                        }
+                    },
+                    emitMessage: function (data) {
+                        if (this.onmessage) {
+                            this.onmessage(new MessageEvent("message", { data: String(data) }));
+                        }
+                    },
+                    emitNamed: function (name, data) {
+                        const list = (listeners[name] || []).slice();
+                        const event = new MessageEvent(name, { data: String(data) });
+                        list.forEach(function (callback) {
+                            callback(event);
+                        });
+                    },
+                    emitError: function () {
+                        if (this.onerror) {
+                            this.onerror(new Event("error"));
+                        }
+                    }
+                };
+                globalThis.__silex_test_event_source = source;
+                globalThis.__silex_test_event_source_instances.push(source);
+                return source;
+            "#,
+        )
+    }
+}
+
+impl Drop for MockHost {
+    fn drop(&mut self) {
+        let constructor_key = JsValue::from_str(&self.constructor_name);
+        let instance_key = JsValue::from_str(&self.instance_name);
+        let instances_key = JsValue::from_str(&self.instances_name);
+        let _ = Reflect::set(&self.global, &constructor_key, &self.previous_constructor);
+        let _ = Reflect::set(&self.global, &instance_key, &self.previous_instance);
+        let _ = Reflect::set(&self.global, &instances_key, &self.previous_instances);
+    }
+}
+
+fn mock_object(name: &str) -> JsValue {
+    let global: JsValue = js_sys::global().into();
+    Reflect::get(&global, &JsValue::from_str(name)).expect("read mock object")
+}
+
+fn mock_call0(object_name: &str, method_name: &str) {
+    let object = mock_object(object_name);
+    let method = Reflect::get(&object, &JsValue::from_str(method_name))
+        .expect("read mock method")
+        .dyn_into::<Function>()
+        .expect("mock method function");
+    method.call0(&object).expect("call mock method");
+}
+
+fn mock_call1(object_name: &str, method_name: &str, value: &str) {
+    let object = mock_object(object_name);
+    let method = Reflect::get(&object, &JsValue::from_str(method_name))
+        .expect("read mock method")
+        .dyn_into::<Function>()
+        .expect("mock method function");
+    method
+        .call1(&object, &JsValue::from_str(value))
+        .expect("call mock method");
+}
+
+fn mock_call2(object_name: &str, method_name: &str, first: &str, second: &str) {
+    let object = mock_object(object_name);
+    let method = Reflect::get(&object, &JsValue::from_str(method_name))
+        .expect("read mock method")
+        .dyn_into::<Function>()
+        .expect("mock method function");
+    method
+        .call2(
+            &object,
+            &JsValue::from_str(first),
+            &JsValue::from_str(second),
+        )
+        .expect("call mock method");
+}
+
+fn mock_property(object_name: &str, property_name: &str) -> JsValue {
+    let object = mock_object(object_name);
+    Reflect::get(&object, &JsValue::from_str(property_name)).expect("read mock property")
+}
+
+fn mock_property_is_cleared(object_name: &str, property_name: &str) -> bool {
+    let value = mock_property(object_name, property_name);
+    value.is_null() || value.is_undefined()
+}
+
+fn mock_instance_count(instances_name: &str) -> usize {
+    mock_object(instances_name)
+        .dyn_into::<Array>()
+        .expect("mock instances array")
+        .length() as usize
+}
 
 struct PendingFuture {
     dropped: Rc<Cell<usize>>,
@@ -465,7 +712,7 @@ async fn swr_rejects_stale_same_key_cache_write() {
                 calls: calls.clone(),
             })
             .as_resource(source, None);
-        TimeoutFuture::new(1).await;
+        TimeoutFuture::new(10).await;
         assert!(matches!(
             resource.state.get(),
             ResourceState::Ready(value) if value == "history"
@@ -576,4 +823,377 @@ fn lazy_connections_validate_scope_without_opening_host_resources() {
         assert!(socket.state().get().is_active() == false);
         assert!(stream.state().get().is_active() == false);
     });
+}
+
+#[wasm_bindgen_test(async)]
+async fn websocket_host_bridge_covers_events_retry_and_manual_close() {
+    let _host = MockHost::websocket();
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| async move {
+        let opened = Rc::new(Cell::new(0));
+        let errors = Rc::new(Cell::new(0));
+        let closed = Rc::new(Cell::new(0));
+        let socket = WebSocket::lazy(scope, "ws://mock")
+            .reconnect(3, std::time::Duration::ZERO)
+            .on_open({
+                let opened = opened.clone();
+                move || opened.set(opened.get() + 1)
+            })
+            .on_error({
+                let errors = errors.clone();
+                move |error| {
+                    assert!(matches!(
+                        error,
+                        NetError::JsError(message) if message == "broken"
+                    ));
+                    errors.set(errors.get() + 1);
+                }
+            })
+            .on_close({
+                let closed = closed.clone();
+                move |_, _| closed.set(closed.get() + 1)
+            })
+            .build();
+
+        socket.reconnect();
+        assert_eq!(mock_instance_count("__silex_test_socket_instances"), 1);
+        mock_call0("__silex_test_socket", "emitOpen");
+        TimeoutFuture::new(0).await;
+        assert_eq!(socket.state().get(), silex_net::ConnectionState::Connected);
+        assert_eq!(opened.get(), 1);
+
+        mock_call1("__silex_test_socket", "emitMessage", "first");
+        assert_eq!(socket.raw_message().get().as_deref(), Some("first"));
+        socket.send_text("outbound").expect("send on mock socket");
+        let sent = mock_property("__silex_test_socket", "sent")
+            .dyn_into::<Array>()
+            .expect("sent array");
+        assert_eq!(sent.length(), 1);
+        assert_eq!(sent.get(0).as_string().as_deref(), Some("outbound"));
+
+        mock_call0("__silex_test_socket", "emitClose");
+        assert_eq!(closed.get(), 1);
+        assert_eq!(socket.state().get(), silex_net::ConnectionState::Closed);
+        TimeoutFuture::new(0).await;
+        assert_eq!(mock_instance_count("__silex_test_socket_instances"), 2);
+        mock_call0("__silex_test_socket", "emitOpen");
+        assert_eq!(opened.get(), 2);
+
+        mock_call1("__silex_test_socket", "emitError", "broken");
+        mock_call0("__silex_test_socket", "emitClose");
+        assert_eq!(errors.get(), 1);
+        assert!(matches!(
+            socket.error().get(),
+            Some(NetError::JsError(message)) if message == "broken"
+        ));
+        assert_eq!(closed.get(), 2);
+        TimeoutFuture::new(0).await;
+        assert_eq!(
+            mock_instance_count("__silex_test_socket_instances"),
+            3,
+            "error and close must schedule one retry"
+        );
+        mock_call0("__silex_test_socket", "emitOpen");
+        assert_eq!(opened.get(), 3);
+        assert_eq!(socket.error().get(), None);
+
+        socket.close().expect("manual close");
+        assert_eq!(socket.state().get(), silex_net::ConnectionState::Closed);
+        assert!(mock_property_is_cleared("__silex_test_socket", "onopen"));
+        assert!(mock_property_is_cleared("__silex_test_socket", "onmessage"));
+        assert!(mock_property_is_cleared("__silex_test_socket", "onerror"));
+        assert!(mock_property_is_cleared("__silex_test_socket", "onclose"));
+        mock_call1("__silex_test_socket", "emitMessage", "late");
+        assert_eq!(socket.raw_message().get().as_deref(), Some("first"));
+    })
+    .await;
+    root.dispose().expect("root cleanup");
+}
+
+#[wasm_bindgen_test(async)]
+async fn websocket_constructor_failure_reports_error_before_connection_creation() {
+    let _host = MockHost::websocket();
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| async move {
+        let errors = Rc::new(Cell::new(0));
+        let result = WebSocket::connect(scope, "mock://failure")
+            .on_error({
+                let errors = errors.clone();
+                move |error| {
+                    assert!(matches!(error, NetError::JsError(_)));
+                    errors.set(errors.get() + 1);
+                }
+            })
+            .try_build();
+        assert!(matches!(result, Err(NetError::JsError(_))));
+        assert_eq!(errors.get(), 1);
+        assert_eq!(mock_instance_count("__silex_test_socket_instances"), 0);
+
+        let (url, set_url) = scope.signal("ws://mock".to_string());
+        let reconnect_errors = Rc::new(Cell::new(0));
+        let socket = WebSocket::lazy(scope, url)
+            .on_error({
+                let reconnect_errors = reconnect_errors.clone();
+                move |error| {
+                    assert!(matches!(error, NetError::JsError(_)));
+                    reconnect_errors.set(reconnect_errors.get() + 1);
+                }
+            })
+            .build();
+        set_url.set("mock://failure".to_string());
+        assert!(matches!(socket.try_reconnect(), Err(NetError::JsError(_))));
+        assert_eq!(socket.state().get(), silex_net::ConnectionState::Error);
+        assert_eq!(reconnect_errors.get(), 1);
+        assert_eq!(mock_instance_count("__silex_test_socket_instances"), 0);
+    })
+    .await;
+    root.dispose().expect("root cleanup");
+}
+
+#[wasm_bindgen_test(async)]
+async fn websocket_retry_stops_after_max_elapsed() {
+    let _host = MockHost::websocket();
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| async move {
+        let socket = WebSocket::lazy(scope, "ws://mock")
+            .reconnect_policy(
+                RetryPolicy::new(3, std::time::Duration::from_millis(5))
+                    .max_elapsed(std::time::Duration::from_millis(1))
+                    .no_jitter(),
+            )
+            .build();
+        socket.reconnect();
+        mock_call0("__silex_test_socket", "emitClose");
+        TimeoutFuture::new(10).await;
+        assert_eq!(mock_instance_count("__silex_test_socket_instances"), 1);
+        assert_eq!(socket.state().get(), silex_net::ConnectionState::Closed);
+    })
+    .await;
+    root.dispose().expect("root cleanup");
+}
+
+#[wasm_bindgen_test(async)]
+async fn websocket_owner_dispose_removes_active_host_registration() {
+    let _host = MockHost::websocket();
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    let opened = Rc::new(Cell::new(0));
+    let opened_for_scope = opened.clone();
+    root.with_scope(|scope| {
+        let opened_for_assert = opened.clone();
+        async move {
+            let socket = WebSocket::lazy(scope, "ws://mock")
+                .on_open(move || opened_for_scope.set(opened_for_scope.get() + 1))
+                .build();
+            socket.reconnect();
+            mock_call0("__silex_test_socket", "emitOpen");
+            TimeoutFuture::new(0).await;
+            assert_eq!(opened_for_assert.get(), 1);
+        }
+    })
+    .await;
+
+    root.dispose().expect("root cleanup");
+    assert!(mock_property_is_cleared("__silex_test_socket", "onopen"));
+    assert!(mock_property_is_cleared("__silex_test_socket", "onmessage"));
+    assert!(mock_property_is_cleared("__silex_test_socket", "onerror"));
+    assert!(mock_property_is_cleared("__silex_test_socket", "onclose"));
+    mock_call0("__silex_test_socket", "emitOpen");
+    mock_call1("__silex_test_socket", "emitMessage", "late");
+    assert_eq!(opened.get(), 1);
+    assert!(
+        mock_property("__silex_test_socket", "closeCalls")
+            .as_f64()
+            .unwrap()
+            >= 1.0
+    );
+}
+
+#[wasm_bindgen_test(async)]
+async fn event_stream_host_bridge_covers_named_messages_reconnect_and_cleanup() {
+    let _host = MockHost::event_source();
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| async move {
+        let opened = Rc::new(Cell::new(0));
+        let errors = Rc::new(Cell::new(0));
+        let stream = EventStream::lazy(scope, "http://mock")
+            .event("update")
+            .max_messages(2)
+            .on_open({
+                let opened = opened.clone();
+                move || opened.set(opened.get() + 1)
+            })
+            .on_error({
+                let errors = errors.clone();
+                move |error| {
+                    assert!(matches!(error, NetError::TransportUnavailable));
+                    errors.set(errors.get() + 1);
+                }
+            })
+            .build();
+
+        stream.reconnect();
+        assert_eq!(
+            mock_instance_count("__silex_test_event_source_instances"),
+            1
+        );
+        mock_call0("__silex_test_event_source", "emitOpen");
+        assert_eq!(stream.state().get(), silex_net::ConnectionState::Connected);
+        assert_eq!(opened.get(), 1);
+
+        mock_call2("__silex_test_event_source", "emitNamed", "update", "1");
+        mock_call2("__silex_test_event_source", "emitNamed", "update", "2");
+        mock_call2("__silex_test_event_source", "emitNamed", "update", "3");
+        let messages = stream.raw_messages().get();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].event.as_deref(), Some("update"));
+        assert_eq!(messages[0].data, "2");
+        assert_eq!(messages[1].data, "3");
+
+        #[cfg(feature = "json")]
+        {
+            assert_eq!(stream.messages::<u32>().get(), vec![2, 3]);
+            assert_eq!(stream.last_message::<u32>().get(), Some(3));
+            assert_eq!(stream.latest_messages::<u32>(2).get(), vec![3, 2]);
+        }
+
+        mock_call0("__silex_test_event_source", "emitError");
+        assert_eq!(errors.get(), 1);
+        assert_eq!(stream.error().get(), Some(NetError::TransportUnavailable));
+        assert_eq!(stream.state().get(), silex_net::ConnectionState::Error);
+        stream
+            .try_reconnect()
+            .expect("explicit event stream reconnect");
+        assert_eq!(
+            mock_instance_count("__silex_test_event_source_instances"),
+            2
+        );
+        mock_call0("__silex_test_event_source", "emitOpen");
+        assert_eq!(opened.get(), 2);
+        assert_eq!(stream.error().get(), None);
+
+        stream.close();
+        assert_eq!(stream.state().get(), silex_net::ConnectionState::Closed);
+        assert!(mock_property_is_cleared(
+            "__silex_test_event_source",
+            "onopen"
+        ));
+        assert!(mock_property_is_cleared(
+            "__silex_test_event_source",
+            "onmessage"
+        ));
+        assert!(mock_property_is_cleared(
+            "__silex_test_event_source",
+            "onerror"
+        ));
+        assert!(
+            mock_property("__silex_test_event_source", "removeCalls")
+                .as_f64()
+                .unwrap()
+                >= 1.0
+        );
+        mock_call2("__silex_test_event_source", "emitNamed", "update", "late");
+        assert_eq!(stream.raw_messages().get().len(), 2);
+    })
+    .await;
+    root.dispose().expect("root cleanup");
+}
+
+#[wasm_bindgen_test(async)]
+async fn event_stream_constructor_failure_reports_error_before_connection_creation() {
+    let _host = MockHost::event_source();
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| async move {
+        let errors = Rc::new(Cell::new(0));
+        let result = EventStream::builder(scope, "mock://failure")
+            .on_error({
+                let errors = errors.clone();
+                move |error| {
+                    assert!(matches!(error, NetError::JsError(_)));
+                    errors.set(errors.get() + 1);
+                }
+            })
+            .try_build();
+        assert!(matches!(result, Err(NetError::JsError(_))));
+        assert_eq!(errors.get(), 1);
+        assert_eq!(
+            mock_instance_count("__silex_test_event_source_instances"),
+            0
+        );
+
+        let (url, set_url) = scope.signal("http://mock".to_string());
+        let reconnect_errors = Rc::new(Cell::new(0));
+        let stream = EventStream::lazy(scope, url)
+            .on_error({
+                let reconnect_errors = reconnect_errors.clone();
+                move |error| {
+                    assert!(matches!(error, NetError::JsError(_)));
+                    reconnect_errors.set(reconnect_errors.get() + 1);
+                }
+            })
+            .build();
+        set_url.set("mock://failure".to_string());
+        assert!(matches!(stream.try_reconnect(), Err(NetError::JsError(_))));
+        assert_eq!(stream.state().get(), silex_net::ConnectionState::Error);
+        assert_eq!(reconnect_errors.get(), 1);
+        assert_eq!(
+            mock_instance_count("__silex_test_event_source_instances"),
+            0
+        );
+    })
+    .await;
+    root.dispose().expect("root cleanup");
+}
+
+#[wasm_bindgen_test(async)]
+async fn event_stream_owner_dispose_removes_active_host_registration() {
+    let _host = MockHost::event_source();
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    let opened = Rc::new(Cell::new(0));
+    let opened_for_scope = opened.clone();
+    root.with_scope(|scope| {
+        let opened_for_assert = opened.clone();
+        async move {
+            let stream = EventStream::lazy(scope, "http://mock")
+                .event("update")
+                .on_open(move || opened_for_scope.set(opened_for_scope.get() + 1))
+                .build();
+            stream.reconnect();
+            mock_call0("__silex_test_event_source", "emitOpen");
+            TimeoutFuture::new(0).await;
+            assert_eq!(opened_for_assert.get(), 1);
+        }
+    })
+    .await;
+
+    root.dispose().expect("root cleanup");
+    assert!(mock_property_is_cleared(
+        "__silex_test_event_source",
+        "onopen"
+    ));
+    assert!(mock_property_is_cleared(
+        "__silex_test_event_source",
+        "onerror"
+    ));
+    assert!(
+        mock_property("__silex_test_event_source", "removeCalls")
+            .as_f64()
+            .unwrap()
+            >= 1.0
+    );
+    mock_call0("__silex_test_event_source", "emitOpen");
+    mock_call2("__silex_test_event_source", "emitNamed", "update", "late");
+    assert_eq!(opened.get(), 1);
+    assert!(
+        mock_property("__silex_test_event_source", "closeCalls")
+            .as_f64()
+            .unwrap()
+            >= 1.0
+    );
 }

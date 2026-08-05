@@ -46,7 +46,7 @@ pub struct WebSocketConnection<'scope> {
     inner: StoredValue<'scope, WebSocketInner<'scope>>,
     state: ReadSignal<'scope, ConnectionState>,
     message: ReadSignal<'scope, Option<String>>,
-    error: ReadSignal<'scope, Option<String>>,
+    error: ReadSignal<'scope, Option<NetError>>,
 }
 
 #[derive(Clone)]
@@ -60,7 +60,7 @@ enum WebSocketEvent {
     },
     Error {
         generation: u64,
-        message: String,
+        error: NetError,
     },
     Close {
         generation: u64,
@@ -79,6 +79,18 @@ struct HostRegistration {
     _on_message: Closure<dyn FnMut(MessageEvent)>,
     _on_error: Closure<dyn FnMut(web_sys::ErrorEvent)>,
     _on_close: Closure<dyn FnMut(web_sys::CloseEvent)>,
+}
+
+fn create_socket(url: &str, protocols: &[String]) -> Result<JsWebSocket, NetError> {
+    if protocols.is_empty() {
+        JsWebSocket::new(url).map_err(NetError::from)
+    } else {
+        let protocols_value = js_sys::Array::new();
+        for protocol in protocols {
+            protocols_value.push(&wasm_bindgen::JsValue::from_str(protocol));
+        }
+        JsWebSocket::new_with_str_sequence(url, &protocols_value.into()).map_err(NetError::from)
+    }
 }
 
 impl HostRegistration {
@@ -108,7 +120,7 @@ impl HostRegistration {
             if error_gate.get() {
                 let _ = error_token.submit(WebSocketEvent::Error {
                     generation,
-                    message: event.message(),
+                    error: NetError::JsError(event.message()),
                 });
             }
         }) as Box<dyn FnMut(web_sys::ErrorEvent)>);
@@ -157,11 +169,11 @@ struct WebSocketInner<'scope> {
     protocols: Vec<String>,
     retry: Option<RetryPolicy>,
     on_open: Vec<Rc<dyn Fn() + 'scope>>,
-    on_error: Vec<Rc<dyn Fn(String) + 'scope>>,
+    on_error: Vec<Rc<dyn Fn(NetError) + 'scope>>,
     on_close: Vec<Rc<dyn Fn(u16, String) + 'scope>>,
     set_state: WriteSignal<'scope, ConnectionState>,
     set_message: WriteSignal<'scope, Option<String>>,
-    set_error: WriteSignal<'scope, Option<String>>,
+    set_error: WriteSignal<'scope, Option<NetError>>,
     completion: CompletionToken<WebSocketEvent>,
     scope: Scope<'scope>,
     registration: Option<HostRegistration>,
@@ -184,6 +196,7 @@ impl<'scope> WebSocketInner<'scope> {
             task.cancel();
         }
         self.retry_generation = None;
+        self.generation = self.generation.wrapping_add(1);
         self.registration.take();
         self.completion.cancel();
     }
@@ -195,20 +208,14 @@ impl<'scope> WebSocketInner<'scope> {
         self.retry_generation = None;
     }
 
-    fn socket(&self) -> Result<JsWebSocket, NetError> {
-        let url = self.url.resolve();
-        if self.protocols.is_empty() {
-            JsWebSocket::new(&url).map_err(NetError::from)
-        } else {
-            let protocols = js_sys::Array::new();
-            for protocol in &self.protocols {
-                protocols.push(&wasm_bindgen::JsValue::from_str(protocol));
-            }
-            JsWebSocket::new_with_str_sequence(&url, &protocols.into()).map_err(NetError::from)
-        }
+    fn try_open_current(&mut self) -> Result<(), NetError> {
+        self.try_open_current_with_socket(None)
     }
 
-    fn try_open_current(&mut self) -> Result<(), NetError> {
+    fn try_open_current_with_socket(
+        &mut self,
+        socket: Option<JsWebSocket>,
+    ) -> Result<(), NetError> {
         self.cancel_retry();
         self.registration.take();
         self.generation = self.generation.wrapping_add(1);
@@ -217,13 +224,17 @@ impl<'scope> WebSocketInner<'scope> {
         self.retry_started_at = None;
         self.set_state.set(ConnectionState::Connecting);
 
-        let socket = match self.socket() {
+        let socket = match socket {
+            Some(socket) => Ok(socket),
+            None => create_socket(&self.url.resolve(), &self.protocols),
+        };
+        let socket = match socket {
             Ok(socket) => socket,
             Err(error) => {
-                self.set_error.set(Some(format!("{error:?}")));
+                self.set_error.set(Some(error.clone()));
                 self.set_state.set(ConnectionState::Error);
                 for handler in &self.on_error {
-                    handler(format!("{error:?}"));
+                    handler(error.clone());
                 }
                 return Err(error);
             }
@@ -273,6 +284,7 @@ impl<'scope> WebSocketInner<'scope> {
                 self.retry_attempt = 0;
                 self.retry_started_at = None;
                 self.set_state.set(ConnectionState::Connected);
+                self.set_error.set(None);
                 for handler in &self.on_open {
                     handler();
                 }
@@ -281,14 +293,11 @@ impl<'scope> WebSocketInner<'scope> {
                 self.set_message.set(Some(data));
                 self.set_state.set(ConnectionState::Connected);
             }
-            WebSocketEvent::Error {
-                generation,
-                message,
-            } if generation == self.generation => {
-                self.set_error.set(Some(message.clone()));
+            WebSocketEvent::Error { generation, error } if generation == self.generation => {
+                self.set_error.set(Some(error.clone()));
                 self.set_state.set(ConnectionState::Error);
                 for handler in &self.on_error {
-                    handler(message.clone());
+                    handler(error.clone());
                 }
                 self.schedule_retry(generation);
             }
@@ -307,6 +316,15 @@ impl<'scope> WebSocketInner<'scope> {
             WebSocketEvent::Retry { generation } if generation == self.generation => {
                 self.retry_task.take();
                 self.retry_generation = None;
+                if let Some(policy) = self.retry
+                    && let Some(started_at) = self.retry_started_at
+                {
+                    let elapsed =
+                        Duration::from_millis((js_sys::Date::now() - started_at).max(0.0) as u64);
+                    if policy.max_elapsed.is_some_and(|limit| elapsed >= limit) {
+                        return;
+                    }
+                }
                 let _ = self.try_open_current();
             }
             _ => {}
@@ -369,7 +387,8 @@ impl<'scope> WebSocketConnection<'scope> {
         self.message
     }
 
-    pub fn error(&self) -> ReadSignal<'scope, Option<String>> {
+    /// Return the latest typed connection error, if one was reported.
+    pub fn error(&self) -> ReadSignal<'scope, Option<NetError>> {
         self.error
     }
 
@@ -439,7 +458,7 @@ pub struct WebSocketBuilder<'scope> {
     auto_connect: bool,
     reconnect: Option<RetryPolicy>,
     on_open: Vec<Rc<dyn Fn() + 'scope>>,
-    on_error: Vec<Rc<dyn Fn(String) + 'scope>>,
+    on_error: Vec<Rc<dyn Fn(NetError) + 'scope>>,
     on_close: Vec<Rc<dyn Fn(u16, String) + 'scope>>,
 }
 
@@ -467,8 +486,13 @@ impl<'scope> WebSocketBuilder<'scope> {
         self
     }
 
-    pub fn reconnect(mut self, attempts: u32, delay: Duration) -> Self {
-        self.reconnect = Some(RetryPolicy::new(attempts, delay));
+    pub fn reconnect(self, attempts: u32, delay: Duration) -> Self {
+        self.reconnect_policy(RetryPolicy::new(attempts, delay))
+    }
+
+    /// Configure the owner-bound retry policy used after an error or close.
+    pub fn reconnect_policy(mut self, policy: RetryPolicy) -> Self {
+        self.reconnect = Some(policy);
         self
     }
 
@@ -477,7 +501,7 @@ impl<'scope> WebSocketBuilder<'scope> {
         self
     }
 
-    pub fn on_error(mut self, handler: impl Fn(String) + 'scope) -> Self {
+    pub fn on_error(mut self, handler: impl Fn(NetError) + 'scope) -> Self {
         self.on_error.push(Rc::new(handler));
         self
     }
@@ -504,13 +528,27 @@ impl<'scope> WebSocketBuilder<'scope> {
             .try_validate_inputs(&inputs)
             .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
 
+        let initial_socket = if auto_connect {
+            match create_socket(&url.resolve(), &protocols) {
+                Ok(socket) => Some(socket),
+                Err(error) => {
+                    for handler in &on_error {
+                        handler(error.clone());
+                    }
+                    return Err(error);
+                }
+            }
+        } else {
+            None
+        };
+
         let (state, set_state) = scope.signal(if auto_connect {
             ConnectionState::Connecting
         } else {
             ConnectionState::Disconnected
         });
         let (message, set_message) = scope.signal(None::<String>);
-        let (error, set_error) = scope.signal(None::<String>);
+        let (error, set_error) = scope.signal(None::<NetError>);
         let inner_slot = Rc::new(Cell::new(
             None::<StoredValue<'scope, WebSocketInner<'scope>>>,
         ));
@@ -553,7 +591,10 @@ impl<'scope> WebSocketBuilder<'scope> {
             message,
             error,
         };
-        if auto_connect && let Err(error) = inner.update(WebSocketInner::try_open_current) {
+        if auto_connect
+            && let Err(error) =
+                inner.update(|inner| inner.try_open_current_with_socket(initial_socket))
+        {
             inner.update(WebSocketInner::cleanup);
             return Err(error);
         }
