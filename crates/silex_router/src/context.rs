@@ -1,5 +1,5 @@
 use silex_core::{
-    RuntimeInputs, Scope,
+    RuntimeInputs, Scope, SilexResult,
     reactivity::{Memo, ReadSignal, StoredValue, WriteSignal, runtime_inputs_of},
     traits::RxGet,
 };
@@ -61,28 +61,42 @@ pub struct RouterContext<'scope> {
 }
 
 impl<'scope> RouterContext<'scope> {
-    /// 创建新的 RouterContext
-    pub fn new(scope: Scope<'scope>, props: RouterContextProps<'scope>) -> Self {
-        let base_path = scope.stored(normalize_base_path(&props.base_path));
+    /// Create a RouterContext after validating every read and write source.
+    pub fn try_new(scope: Scope<'scope>, props: RouterContextProps<'scope>) -> SilexResult<Self> {
+        let RouterContextProps {
+            base_path: raw_base_path,
+            path,
+            search,
+            set_path,
+            set_search,
+        } = props;
+
+        let mut inputs = RuntimeInputs::new();
+        inputs.extend(&runtime_inputs_of(path));
+        inputs.extend(&runtime_inputs_of(search));
+        inputs.extend(&set_path.runtime_inputs());
+        inputs.extend(&set_search.runtime_inputs());
+        scope.try_validate_inputs(&inputs)?;
+
+        let base_path = scope.stored(normalize_base_path(&raw_base_path));
         let navigator = Navigator {
             base_path,
-            path: props.path,
-            search: props.search,
-            set_path: props.set_path,
-            set_search: props.set_search,
+            path,
+            search,
+            set_path,
+            set_search,
         };
-        let search = props.search;
-        let query = scope.memo_from(runtime_inputs_of(search), move |_| {
+        let query = scope.try_memo_from(runtime_inputs_of(search), move |_| {
             parse_query(&search.get())
-        });
-        Self {
+        })?;
+        Ok(Self {
             base_path,
-            path: props.path,
-            search: props.search,
+            path,
+            search,
             navigator,
             scope,
             query,
-        }
+        })
     }
 
     pub fn scope(self) -> Scope<'scope> {
@@ -100,6 +114,8 @@ impl<'scope> RouterContext<'scope> {
         inputs.extend(&runtime_inputs_of(self.path));
         inputs.extend(&runtime_inputs_of(self.search));
         inputs.extend(&runtime_inputs_of(self.query));
+        inputs.extend(&self.navigator.set_path.runtime_inputs());
+        inputs.extend(&self.navigator.set_search.runtime_inputs());
         inputs
     }
 }

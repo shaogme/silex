@@ -21,7 +21,7 @@ pub mod link;
 pub use context::*;
 pub use link::*;
 
-use silex_core::{Scope, error::handle_error, reactivity::runtime_inputs_of};
+use silex_core::{Scope, SilexResult, error::handle_error, reactivity::runtime_inputs_of};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::helpers::window_event_listener_untyped_owned;
 use silex_dom::view::{AnyView, ApplyAttributes, View, ViewOwner};
@@ -87,7 +87,7 @@ pub fn Router<'scope>(
     #[prop(render)]
     #[chain(default = Rc::new(|_| AnyView::Empty))]
     children: Rc<dyn Fn(RouterContext<'scope>) -> AnyView<'scope> + 'scope>,
-) -> impl View<'scope> {
+) -> SilexResult<RouterView<'scope>> {
     let window = web_sys::window().expect("no global `window` exists");
     let location = window.location();
     let raw_path = location.pathname().unwrap_or_else(|_| "/".to_string());
@@ -96,7 +96,7 @@ pub fn Router<'scope>(
     let initial_path = context::strip_base_path(&base_path, &raw_path);
     let (path, set_path) = scope.signal(initial_path);
     let (search, set_search) = scope.signal(initial_search);
-    let context = RouterContext::new(
+    let context = RouterContext::try_new(
         scope,
         RouterContextProps {
             base_path,
@@ -107,7 +107,7 @@ pub fn Router<'scope>(
         },
     );
 
-    RouterView { context, children }
+    context.map(|context| RouterView { context, children })
 }
 
 impl<'scope> RouterComponent<'scope> {

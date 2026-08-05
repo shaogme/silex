@@ -389,7 +389,6 @@ fn generate_node_logic(
         quote! {
             if segments.len() == #depth {
                 #(#attempts)*
-                return None;
             }
         }
     };
@@ -430,8 +429,9 @@ fn generate_node_logic(
     // 4. Wildcard / Nested (consuming remaining segments)
     // Runs if we have segments left but failed to match static/param structure fully down the tree,
     // OR if we are at this node and static/param didn't match current segment.
-    // Note: If `match_static` or `match_param` matched, they would have executed `check_end_logic` deeper in logical tree
-    // or returned Some. If checks failed (e.g. param parsing types), they return None and fall through.
+    // Note: If `match_static` or `match_param` matched, they would have executed `check_end_logic`
+    // deeper in the logical tree or returned Some. A failed handler returns None only from its
+    // local attempt and falls through to the next candidate.
 
     let mut fallback_attempts = Vec::new();
     for &idx in &node.wildcard_matches {
@@ -445,12 +445,13 @@ fn generate_node_logic(
         // Check if we ran out of segments physically at this node
         #check_end_logic
 
-        // We have segment at `depth`. Try specific children.
-        #match_static
-        #match_param
-
-        // Fallback to wildcard/nested at this level
-        #(#fallback_attempts)*
+        // We have a segment at `depth`. Try specific children, then fall back
+        // at this node if every more-specific subtree failed locally.
+        if segments.len() > #depth {
+            #match_static
+            #match_param
+            #(#fallback_attempts)*
+        }
     })
 }
 
@@ -728,24 +729,21 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
 
                         let is_nested =
                             matches!(&def.nested_field, Some(Member::Named(id)) if id == fname);
+                        let field_binding = if is_nested {
+                            quote! { #fname: sub_route_val }
+                        } else {
+                            quote! { #fname }
+                        };
+                        field_bindings.push(field_binding);
                         let val_expr = if is_nested {
-                            if i == 0 {
-                                field_bindings.push(quote! { #fname: sub_route_val });
-                            }
                             quote! { sub_route_val.clone() }
                         } else {
-                            if i == 0 {
-                                field_bindings.push(quote! { #fname });
-                            }
                             quote! { #fname.clone() }
                         };
 
                         if i == 0 {
                             first_prop_expr = Some(val_expr);
                         } else {
-                            if !is_nested {
-                                field_bindings.push(quote! { #fname });
-                            }
                             props_setters.push(quote! { .#fname(#val_expr) });
                         }
                     }

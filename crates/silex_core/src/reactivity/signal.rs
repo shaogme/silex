@@ -1,5 +1,5 @@
 use crate::{
-    Rx, RxValueKind, Scope,
+    RuntimeInputs, Rx, RxValueKind, Scope,
     reactivity::{Memo, SignalSlice, StoredValue},
     traits::{RxBase, RxRead, RxValue},
 };
@@ -206,6 +206,12 @@ impl<'scope, T: 'scope> WriteSignal<'scope, T> {
 
     pub fn is_alive(&self) -> bool {
         self.inner.is_alive()
+    }
+
+    /// Return opaque runtime provenance for owner-bound validation.
+    #[doc(hidden)]
+    pub fn runtime_inputs(&self) -> RuntimeInputs {
+        RuntimeInputs::single(self.inner.runtime_input())
     }
 }
 

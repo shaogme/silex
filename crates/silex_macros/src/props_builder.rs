@@ -47,6 +47,7 @@ struct BuilderContext {
     fields: Vec<FieldSpec>,
     prop_generic_idents: Vec<Ident>,
     required_fields: Vec<FieldSpec>,
+    scope: syn::Lifetime,
 }
 
 impl BuilderContext {
@@ -63,6 +64,21 @@ impl BuilderContext {
         let component_name = strip_props_suffix(&props_name);
         let component_component_alias = format_ident!("{}Component", component_name);
         let render_fn_name = format_ident!("__silex_render_{}", component_name);
+        let scope = generics
+            .params
+            .iter()
+            .find_map(|param| match param {
+                syn::GenericParam::Lifetime(lifetime) if lifetime.lifetime.ident == "scope" => {
+                    Some(lifetime.lifetime.clone())
+                }
+                _ => None,
+            })
+            .ok_or_else(|| {
+                syn::Error::new_spanned(
+                    &props_name,
+                    "PropsBuilder requires a `<'scope>` lifetime parameter; scoped View, attribute, and event contracts cannot default to `'static`",
+                )
+            })?;
 
         let fields = match data {
             Data::Struct(ref data) => match &data.fields {
@@ -106,6 +122,7 @@ impl BuilderContext {
             fields,
             prop_generic_idents,
             required_fields,
+            scope,
         })
     }
 
@@ -192,16 +209,7 @@ impl BuilderContext {
     }
 
     fn scope_lifetime(&self) -> syn::Lifetime {
-        self.generics
-            .params
-            .iter()
-            .find_map(|param| match param {
-                syn::GenericParam::Lifetime(lifetime) if lifetime.lifetime.ident == "scope" => {
-                    Some(lifetime.lifetime.clone())
-                }
-                _ => None,
-            })
-            .unwrap_or_else(|| syn::Lifetime::new("'static", proc_macro2::Span::call_site()))
+        self.scope.clone()
     }
 
     fn pending_attribute_ty(&self) -> TokenStream2 {

@@ -71,7 +71,7 @@ fn query_binding_uses_target_scope_and_updates_only_its_key() {
     root.with_scope(|scope| {
         let (path, set_path) = scope.signal("/settings".to_string());
         let (search, set_search) = scope.signal("?page=2&other=keep".to_string());
-        let context = RouterContext::new(
+        let context = RouterContext::try_new(
             scope,
             RouterContextProps {
                 base_path: "/".to_string(),
@@ -80,7 +80,8 @@ fn query_binding_uses_target_scope_and_updates_only_its_key() {
                 set_path,
                 set_search,
             },
-        );
+        )
+        .expect("router context should be created");
         let page = Persistent::builder(scope, "page")
             .query(&context)
             .parse::<u32>()
