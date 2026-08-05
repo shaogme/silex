@@ -2,7 +2,10 @@
 
 use gloo_timers::future::TimeoutFuture;
 use silex_core::{RootHandle, Runtime, RxGet};
-use silex_dom::view::{ScopedViewOwner, View};
+use silex_dom::attribute::PendingAttribute;
+use silex_dom::view::{
+    AnyView, ApplyAttributes, IndexedLoopView, ScopedViewOwner, View, ViewOwner,
+};
 use silex_persist::{PersistMode, PersistenceState, Persistent, SyncStrategy, WriteDefault};
 use silex_router::{RouterContext, RouterContextProps};
 use std::{
@@ -12,7 +15,7 @@ use std::{
 };
 use wasm_bindgen::{JsValue, closure::Closure, prelude::wasm_bindgen};
 use wasm_bindgen_test::*;
-use web_sys::{StorageEvent, window};
+use web_sys::{Node, StorageEvent, window};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -281,6 +284,36 @@ fn set_url(path: &str) {
         .expect("test URL can be replaced");
 }
 
+struct CapturedPersistent<'scope> {
+    binding: Persistent<'scope, String>,
+    node: Rc<RefCell<Option<Node>>>,
+}
+
+impl<'scope> ApplyAttributes<'scope> for CapturedPersistent<'scope> {}
+
+impl<'scope> View<'scope> for CapturedPersistent<'scope> {
+    fn mount(
+        &self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+    ) {
+        self.binding.mount(owner, parent, attrs);
+        *self.node.borrow_mut() = parent.last_child();
+    }
+
+    fn mount_owned(
+        self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+    ) where
+        Self: Sized,
+    {
+        self.mount(owner, parent, attrs);
+    }
+}
+
 #[wasm_bindgen_test]
 fn storage_listener_is_physically_removed_after_last_binding_cleanup() {
     let spy = StorageListenerSpy::new();
@@ -521,6 +554,121 @@ fn persistent_view_updates_and_stops_with_root() {
 
     root.dispose().expect("dispose root");
     assert_eq!(parent.text_content(), Some("two".to_string()));
+}
+
+#[wasm_bindgen_test]
+fn persistent_view_stops_after_lexical_owner_dispose() {
+    const KEY: &str = "silex-persist-runtime-refactor-lexical-owner";
+    let storage = local_storage();
+    storage.remove_item(KEY).expect("clear key");
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    let parent = window()
+        .expect("window")
+        .document()
+        .expect("document")
+        .create_element("div")
+        .expect("parent element");
+
+    root.with_scope(|scope| {
+        let _root_binding = Persistent::builder(scope, KEY)
+            .local()
+            .string()
+            .default("one".to_string())
+            .build();
+        let captured_node = Rc::new(RefCell::new(None::<Node>));
+        let captured_node_for_child = captured_node.clone();
+        scope.child(|child| {
+            let binding = Persistent::builder(child, KEY)
+                .local()
+                .string()
+                .default("one".to_string())
+                .build();
+            let owner = ScopedViewOwner::new(child);
+            CapturedPersistent {
+                binding,
+                node: captured_node_for_child,
+            }
+            .mount_owned(&owner, parent.as_ref(), Vec::new());
+            assert_eq!(parent.text_content(), Some("one".to_string()));
+            binding.set("two".to_string());
+            assert_eq!(parent.text_content(), Some("two".to_string()));
+        });
+
+        let event = StorageEvent::new("storage").expect("storage event");
+        event.init_storage_event_with_can_bubble_and_cancelable_and_key_and_old_value_and_new_value_and_url_and_storage_area(
+            "storage",
+            false,
+            false,
+            Some(KEY),
+            Some("two"),
+            Some("stale"),
+            Some("https://example.test/"),
+            Some(&storage),
+        );
+        window()
+            .expect("window")
+            .dispatch_event(event.as_ref())
+            .expect("dispatch storage event");
+        assert_eq!(parent.text_content(), Some("two".to_string()));
+        assert_eq!(
+            captured_node
+                .borrow()
+                .as_ref()
+                .and_then(Node::node_value),
+            Some("two".to_string())
+        );
+    });
+
+    root.dispose().expect("root cleanup should succeed");
+    storage.remove_item(KEY).expect("cleanup key");
+}
+
+#[wasm_bindgen_test]
+fn persistent_view_stops_after_row_owner_dispose() {
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    let parent = window()
+        .expect("window")
+        .document()
+        .expect("document")
+        .create_element("div")
+        .expect("parent element");
+
+    root.with_scope(|scope| {
+        let binding = Persistent::builder(scope, "silex-persist-row-owner")
+            .local()
+            .string()
+            .sync(SyncStrategy::None)
+            .default("one".to_string())
+            .build();
+        let captured_node = Rc::new(RefCell::new(None::<Node>));
+        let captured_node_for_view = captured_node.clone();
+        let (items, set_items) = scope.signal(vec![0_i32]);
+        let list = IndexedLoopView {
+            each: items,
+            view_fn: Rc::new(move |_, _| {
+                AnyView::new(CapturedPersistent {
+                    binding,
+                    node: captured_node_for_view.clone(),
+                })
+            }),
+            _marker: std::marker::PhantomData,
+        };
+        let owner = ScopedViewOwner::new(scope);
+        list.mount_owned(&owner, parent.as_ref(), Vec::new());
+        assert_eq!(parent.text_content(), Some("one".to_string()));
+
+        set_items.set(Vec::new());
+        assert_eq!(parent.text_content(), Some(String::new()));
+        binding.set("stale".to_string());
+        assert_eq!(
+            captured_node.borrow().as_ref().and_then(Node::node_value),
+            Some("one".to_string())
+        );
+    });
+
+    root.dispose().expect("root cleanup should succeed");
 }
 
 #[wasm_bindgen_test(async)]
