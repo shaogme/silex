@@ -2,7 +2,7 @@
 
 use super::{
     model::{EdgeId, NodeData, ScopeState},
-    scheduler::TargetNode,
+    scheduler::{GlobalScheduler, ObserverFrame, TargetNode},
 };
 use crate::internal::{RawId, value::OnceThunk};
 use std::{
@@ -21,7 +21,11 @@ fn remember_panic(first_panic: &mut Option<PanicData>, panic: PanicData) {
     }
 }
 
-pub(crate) fn run_cleanups<'scope>(cleanups: Vec<OnceThunk<'scope>>) -> Option<PanicData> {
+pub(crate) fn run_cleanups<'scope>(
+    scheduler: Rc<RefCell<GlobalScheduler>>,
+    cleanups: Vec<OnceThunk<'scope>>,
+) -> Option<PanicData> {
+    let _observer_frame = ObserverFrame::push_untracked(scheduler);
     let mut first_panic = None;
     for cleanup in cleanups {
         if let Err(panic) = catch_unwind(AssertUnwindSafe(|| cleanup.call())) {
@@ -31,9 +35,12 @@ pub(crate) fn run_cleanups<'scope>(cleanups: Vec<OnceThunk<'scope>>) -> Option<P
     first_panic
 }
 
-fn drop_node_data<'scope>(data: NodeData<'scope>) -> Option<PanicData> {
+fn drop_node_data<'scope>(
+    scheduler: Rc<RefCell<GlobalScheduler>>,
+    data: NodeData<'scope>,
+) -> Option<PanicData> {
     let NodeData { storage, cleanups } = data;
-    let mut first_panic = run_cleanups(cleanups);
+    let mut first_panic = run_cleanups(scheduler, cleanups);
 
     if let Err(panic) = catch_unwind(AssertUnwindSafe(|| drop(storage))) {
         remember_panic(&mut first_panic, panic);
@@ -42,6 +49,11 @@ fn drop_node_data<'scope>(data: NodeData<'scope>) -> Option<PanicData> {
 }
 
 pub(crate) fn dispose_all<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>) {
+    let scheduler = state
+        .try_borrow()
+        .expect("ScopeState borrow failed during dispose_all")
+        .scheduler
+        .clone();
     let mut first_panic = None;
     loop {
         let roots = state
@@ -69,7 +81,7 @@ pub(crate) fn dispose_all<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>) {
         if cleanups.is_empty() {
             break;
         }
-        if let Some(panic) = run_cleanups(cleanups) {
+        if let Some(panic) = run_cleanups(scheduler.clone(), cleanups) {
             remember_panic(&mut first_panic, panic);
         }
     }
@@ -85,6 +97,12 @@ enum DisposeStep<'scope> {
 }
 
 pub(crate) fn dispose_nodes<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, roots: Vec<RawId>) {
+    let scheduler = state
+        .try_borrow()
+        .expect("ScopeState borrow failed during dispose_nodes")
+        .scheduler
+        .clone();
+    let _observer_frame = ObserverFrame::push_untracked(scheduler.clone());
     let mut first_panic = None;
     let mut stack = Vec::with_capacity(roots.len());
     stack.extend(roots.into_iter().rev().map(DisposeStep::Enter));
@@ -147,7 +165,7 @@ pub(crate) fn dispose_nodes<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, roo
             }
             DisposeStep::Exit { data } => {
                 if let Some(data) = data
-                    && let Some(panic) = drop_node_data(data)
+                    && let Some(panic) = drop_node_data(scheduler.clone(), data)
                 {
                     remember_panic(&mut first_panic, panic);
                 }

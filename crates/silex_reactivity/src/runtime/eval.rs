@@ -285,11 +285,19 @@ fn remember_panic(first: &mut Option<PanicData>, panic: PanicData) {
     }
 }
 
-fn drop_value<'scope>(value: Option<AnyValue<'scope>>) -> Option<PanicData> {
+fn drop_value<'scope>(
+    scheduler: Rc<RefCell<GlobalScheduler>>,
+    value: Option<AnyValue<'scope>>,
+) -> Option<PanicData> {
+    let _observer_frame = ObserverFrame::push_untracked(scheduler);
     catch_unwind(AssertUnwindSafe(|| drop(value))).err()
 }
 
-fn drop_storage<'scope>(storage: Rc<NodeStorage<'scope>>) -> Option<PanicData> {
+fn drop_storage<'scope>(
+    scheduler: Rc<RefCell<GlobalScheduler>>,
+    storage: Rc<NodeStorage<'scope>>,
+) -> Option<PanicData> {
+    let _observer_frame = ObserverFrame::push_untracked(scheduler);
     catch_unwind(AssertUnwindSafe(|| drop(storage))).err()
 }
 
@@ -342,7 +350,7 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> React
                 dispose_nodes(state, children_to_dispose);
             }));
             let mut cleanup_panic = child_dispose.err();
-            if let Some(panic) = run_cleanups(cleanups)
+            if let Some(panic) = run_cleanups(scheduler.clone(), cleanups)
                 && cleanup_panic.is_none()
             {
                 cleanup_panic = Some(panic);
@@ -415,6 +423,7 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> React
             && let Some(value) = std::mem::take(&mut computation_result.value)
         {
             let commit = catch_unwind(AssertUnwindSafe(|| {
+                let _observer_frame = ObserverFrame::push_untracked(scheduler.clone());
                 commit_computation_value(&storage, scheduler.clone(), value)
             }));
             match commit {
@@ -427,7 +436,7 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> React
 
     if let Some(computation_result) = result.as_mut() {
         let value = std::mem::take(&mut computation_result.value);
-        if let Some(panic) = drop_value(value) {
+        if let Some(panic) = drop_value(scheduler.clone(), value) {
             remember_panic(&mut panic_data, panic);
         }
     }
@@ -456,7 +465,7 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> React
         }
     }
 
-    if let Some(panic) = drop_storage(storage) {
+    if let Some(panic) = drop_storage(scheduler.clone(), storage) {
         remember_panic(&mut panic_data, panic);
     }
     flush_if_idle(state);

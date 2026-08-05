@@ -117,6 +117,62 @@ fn dynamic_dependencies_are_replaced_on_each_effect_run() {
 }
 
 #[test]
+fn nested_memo_cleanup_does_not_track_the_outer_observer() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let (outer_source, set_outer_source) = scope.signal(0i32);
+        let (inner_source, set_inner_source) = scope.signal(0i32);
+        let (probe, set_probe) = scope.signal(0i32);
+        let cleanup_runs = Rc::new(Cell::new(0));
+        let first_inner_run = Rc::new(Cell::new(true));
+        let scope_for_cleanup = scope;
+        let probe_for_cleanup = probe;
+        let cleanup_runs_in_cleanup = cleanup_runs.clone();
+        let inner = scope.memo(move |_| {
+            let value = inner_source.get();
+            if first_inner_run.replace(false) {
+                let cleanup_runs_for_cleanup = cleanup_runs_in_cleanup.clone();
+                scope_for_cleanup.on_cleanup(move || {
+                    cleanup_runs_for_cleanup.set(cleanup_runs_for_cleanup.get() + 1);
+                    let _ = probe_for_cleanup.try_get();
+                });
+            }
+            value
+        });
+
+        let outer_runs = Rc::new(Cell::new(0));
+        let refresh_inner = Rc::new(Cell::new(false));
+        let outer_inner = inner;
+        let outer_source_in_effect = outer_source;
+        let set_inner_source_in_effect = set_inner_source;
+        let outer_runs_in_effect = outer_runs.clone();
+        let refresh_inner_in_effect = refresh_inner.clone();
+        scope.effect(move || {
+            let _ = outer_source_in_effect.get();
+            outer_runs_in_effect.set(outer_runs_in_effect.get() + 1);
+            if refresh_inner_in_effect.replace(false) {
+                set_inner_source_in_effect.set(1);
+            }
+            outer_inner
+                .with_untracked(|_| ())
+                .expect("inner memo should remain readable");
+        });
+
+        assert_eq!(outer_runs.get(), 1);
+        assert_eq!(cleanup_runs.get(), 0);
+
+        refresh_inner.set(true);
+        set_outer_source.set(1);
+
+        assert_eq!(outer_runs.get(), 2);
+        assert_eq!(cleanup_runs.get(), 1);
+
+        set_probe.set(1);
+        assert_eq!(outer_runs.get(), 2);
+    });
+}
+
+#[test]
 fn batch_delays_effects_and_untrack_preserves_ownership_context() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {

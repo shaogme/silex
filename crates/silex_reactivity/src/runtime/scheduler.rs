@@ -53,6 +53,10 @@ impl ObserverFrame {
         }
     }
 
+    pub(crate) fn push_untracked(scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
+        Self::push(scheduler, None)
+    }
+
     pub(crate) fn push_child(scheduler: Rc<RefCell<GlobalScheduler>>, scope_id: ScopeId) -> Self {
         let previous = {
             let mut scheduler_ref = scheduler.borrow_mut();
