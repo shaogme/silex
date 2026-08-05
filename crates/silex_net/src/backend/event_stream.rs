@@ -5,7 +5,7 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, EventSource as JsEventSource, MessageEvent};
 
 use silex_core::{
-    CompletionToken, Memo, ReadSignal, RuntimeInputs, RwSignal, Scope, StoredValue, WriteSignal,
+    CompletionSender, Memo, ReadSignal, RuntimeInputs, RwSignal, Scope, StoredValue, WriteSignal,
 };
 
 use crate::{
@@ -87,7 +87,7 @@ impl HostRegistration {
         source: JsEventSource,
         event_name: Option<String>,
         generation: u64,
-        token: &CompletionToken<EventStreamEvent>,
+        token: &CompletionSender<EventStreamEvent>,
     ) -> Result<Self, NetError> {
         let gate = Rc::new(Cell::new(true));
 
@@ -178,7 +178,7 @@ struct EventStreamInner<'scope> {
     set_state: RwSignal<'scope, ConnectionState>,
     messages: RwSignal<'scope, Vec<EventMessage>>,
     set_error: WriteSignal<'scope, Option<NetError>>,
-    completion: CompletionToken<EventStreamEvent>,
+    completion: CompletionSender<EventStreamEvent>,
     registration: Option<HostRegistration>,
     generation: u64,
 }
@@ -504,7 +504,7 @@ impl<'scope> EventStreamBuilder<'scope> {
             None::<StoredValue<'scope, EventStreamInner<'scope>>>,
         ));
         let inner_slot_for_completion = inner_slot.clone();
-        let completion = scope.completion(move |event: EventStreamEvent| {
+        let completion = scope.completion_sender(move |event: EventStreamEvent| {
             if let Some(inner) = inner_slot_for_completion.get()
                 && let Some(callback) = inner.update(|inner| inner.handle_event(event))
             {

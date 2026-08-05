@@ -287,12 +287,20 @@ impl<'scope> Scope<'scope> {
         NodeRef::from_inner(self.inner.node_ref())
     }
 
-    pub fn completion<T, F>(self, callback: F) -> silex_reactivity::CompletionToken<T>
+    pub fn completion_once<T, F>(self, callback: F) -> silex_reactivity::CompletionOnce<T>
     where
         T: 'static,
         F: FnMut(T) + 'scope,
     {
-        self.inner.completion(callback)
+        self.inner.completion_once(callback)
+    }
+
+    pub fn completion_sender<T, F>(self, callback: F) -> silex_reactivity::CompletionSender<T>
+    where
+        T: 'static,
+        F: FnMut(T) + 'scope,
+    {
+        self.inner.completion_sender(callback)
     }
 
     /// Spawn a task owned by this persistent scope or the currently running computation.
@@ -432,12 +440,20 @@ impl<'scope> OwnedScope<'scope> {
         self.inner.on_cleanup(f);
     }
 
-    pub fn completion<T, F>(&self, callback: F) -> silex_reactivity::CompletionToken<T>
+    pub fn completion_once<T, F>(&self, callback: F) -> silex_reactivity::CompletionOnce<T>
     where
         T: 'static,
         F: FnMut(T) + 'scope,
     {
-        self.inner.completion(callback)
+        self.inner.completion_once(callback)
+    }
+
+    pub fn completion_sender<T, F>(&self, callback: F) -> silex_reactivity::CompletionSender<T>
+    where
+        T: 'static,
+        F: FnMut(T) + 'scope,
+    {
+        self.inner.completion_sender(callback)
     }
 
     /// Spawn a task owned by this persistent scope or the currently running computation.

@@ -541,7 +541,7 @@ where
         }
 
         if matches!(self.config.sync, SyncStrategy::CrossContext) {
-            let token = self.scope.completion({
+            let token = self.scope.completion_sender({
                 move |event| {
                     if value.is_alive() {
                         apply_backend_event(controller, value, state, event);
@@ -565,7 +565,7 @@ where
                         .clone()
                         .expect("debounce state must exist for debounce mode");
                     let debounce_for_completion = debounce_state.clone();
-                    let completion = self.scope.completion({
+                    let completion = self.scope.completion_sender({
                         move |generation| {
                             if debounce_for_completion.borrow_mut().take_ready(generation)
                                 && value.is_alive()

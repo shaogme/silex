@@ -1,4 +1,4 @@
-use silex_reactivity::{CompletionToken, Runtime, Scope};
+use silex_reactivity::{CompletionOnce, Runtime, Scope};
 use std::{
     cell::Cell,
     panic::{AssertUnwindSafe, catch_unwind},
@@ -30,10 +30,10 @@ fn root_completion_is_invalidated_by_dispose() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
     let root = runtime.run();
-    let token: CompletionToken<i32> = {
+    let token: CompletionOnce<i32> = {
         let scope = root.scope();
         let seen_for_callback = seen.clone();
-        scope.completion(move |value: i32| seen_for_callback.set(value))
+        scope.completion_once(move |value: i32| seen_for_callback.set(value))
     };
 
     assert!(token.submit(7));

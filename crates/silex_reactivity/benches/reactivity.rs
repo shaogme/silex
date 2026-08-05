@@ -751,7 +751,7 @@ fn bench_completion_message(c: &mut Criterion) {
         runtime.child(|scope| {
             let value = scope.rw_signal(0u32);
             let setter = value.write();
-            let token = scope.completion(move |message: u32| setter.set(message));
+            let token = scope.completion_sender(move |message: u32| setter.set(message));
             let mut message = 0u32;
 
             bench.iter(|| {
@@ -766,7 +766,7 @@ fn bench_completion_message(c: &mut Criterion) {
         runtime.child(|scope| {
             let messages = scope.rw_signal(Vec::<String>::with_capacity(64));
             let setter = messages.write();
-            let token = scope.completion(move |message: String| {
+            let token = scope.completion_sender(move |message: String| {
                 setter.update(|buffer| {
                     buffer.push(message);
                     if buffer.len() > 64 {

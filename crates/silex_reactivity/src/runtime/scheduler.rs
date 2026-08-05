@@ -249,6 +249,16 @@ impl GlobalScheduler {
         self.active_mask.is_set(id.0)
     }
 
+    pub(crate) fn is_scope_current(&self, id: ScopeId, expected: &Weak<ErasedScopeState>) -> bool {
+        if !self.is_scope_active(id) {
+            return false;
+        }
+        self.scopes
+            .get(id.0 as usize)
+            .and_then(Option::as_ref)
+            .is_some_and(|entry| Weak::ptr_eq(&entry.erased_state, expected))
+    }
+
     pub(crate) fn active_scope_ids(&self) -> Vec<ScopeId> {
         self.scopes
             .iter()

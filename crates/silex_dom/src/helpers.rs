@@ -294,7 +294,7 @@ fn owned_once_callback<'scope>(
     closure: &JsClosureSlot,
 ) -> HostCallback {
     let mut cb = Some(cb);
-    let destination = owner.host_callback(move |_| {
+    let destination = owner.host_callback_once(move |_| {
         if let Some(cb) = cb.take() {
             cb();
         }

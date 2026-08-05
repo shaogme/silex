@@ -1,4 +1,4 @@
-//! Scope-owned completion messages for `'static` asynchronous tasks.
+//! Scope-owned completion destinations for asynchronous tasks.
 
 use crate::{
     internal::{
@@ -9,117 +9,213 @@ use crate::{
     scope::{ErasedScopeState, ScopeStorage},
 };
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     marker::PhantomData,
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::{Rc, Weak},
 };
 
-/// A weak, scope-owned destination for an asynchronous completion message.
-///
-/// The token contains neither a typed node handle nor a strong reference to
-/// the scope. Once the scope is disposed, upgrading the token fails and
-/// [`submit`](Self::submit) returns `false`.
-pub struct CompletionToken<T> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CompletionPhase {
+    Active,
+    Completing,
+    Closed,
+}
+
+struct CompletionState {
     state: Weak<ErasedScopeState>,
     scope_id: ScopeId,
     callback: RawId,
-    marker: PhantomData<Rc<T>>,
+    phase: Cell<CompletionPhase>,
 }
 
-impl<T> Clone for CompletionToken<T> {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-            scope_id: self.scope_id,
-            callback: self.callback,
-            marker: PhantomData,
-        }
-    }
-}
-
-impl<T: 'static> CompletionToken<T> {
-    pub(crate) fn inactive() -> Self {
+impl CompletionState {
+    fn inactive() -> Self {
         Self {
             state: Weak::new(),
             scope_id: ScopeId(0),
             callback: RawId::DANGLING,
-            marker: PhantomData,
+            phase: Cell::new(CompletionPhase::Closed),
         }
     }
 
-    pub(crate) fn new(state: Weak<ErasedScopeState>, scope_id: ScopeId, callback: RawId) -> Self {
+    fn new(state: Weak<ErasedScopeState>, scope_id: ScopeId, callback: RawId) -> Self {
         Self {
             state,
             scope_id,
             callback,
+            phase: Cell::new(CompletionPhase::Active),
+        }
+    }
+
+    fn current_state(&self) -> Option<Rc<RefCell<ScopeState<'_>>>> {
+        let erased_state = self.state.upgrade()?;
+        let current = {
+            let state = erased_state.try_borrow().ok()?;
+            state
+                .scheduler
+                .try_borrow()
+                .ok()?
+                .is_scope_current(self.scope_id, &self.state)
+        };
+        if !current {
+            return None;
+        }
+
+        // SAFETY: the scheduler registry contains this exact state allocation,
+        // and the caller only uses the restored lifetime while that state is
+        // active. Scope disposal removes the registry entry before payloads
+        // are dropped.
+        Some(unsafe {
+            std::mem::transmute::<Rc<ErasedScopeState>, Rc<RefCell<ScopeState<'_>>>>(erased_state)
+        })
+    }
+
+    fn begin_once(&self) -> Option<Rc<RefCell<ScopeState<'_>>>> {
+        if self.phase.replace(CompletionPhase::Completing) != CompletionPhase::Active {
+            return None;
+        }
+        let state = self.current_state();
+        if state.is_none() {
+            self.phase.set(CompletionPhase::Closed);
+        }
+        state
+    }
+
+    fn close_and_dispose(&self) {
+        if self.phase.replace(CompletionPhase::Closed) == CompletionPhase::Closed {
+            return;
+        }
+        if let Some(state) = self.current_state() {
+            runtime::dispose_nodes(&state, vec![self.callback]);
+        }
+    }
+
+    fn submit_repeating<T: 'static>(&self, value: T) -> bool {
+        if self.phase.get() != CompletionPhase::Active {
+            return false;
+        }
+        let Some(state) = self.current_state() else {
+            return false;
+        };
+        runtime::invoke_callback(&state, self.callback, AnyValue::new(value)).is_ok()
+    }
+}
+
+fn drop_completion_state(state: &CompletionState) {
+    let result = catch_unwind(AssertUnwindSafe(|| state.close_and_dispose()));
+    if let Err(panic) = result
+        && !std::thread::panicking()
+    {
+        resume_unwind(panic);
+    }
+}
+
+/// A destination that accepts one completion and then disposes its callback node.
+///
+/// Clones share the same terminal state. Dropping the final active clone cancels
+/// the destination without invoking the user callback.
+pub struct CompletionOnce<T> {
+    state: Rc<CompletionState>,
+    marker: PhantomData<Rc<T>>,
+}
+
+impl<T> Clone for CompletionOnce<T> {
+    fn clone(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<T> Drop for CompletionOnce<T> {
+    fn drop(&mut self) {
+        if Rc::strong_count(&self.state) == 1 {
+            drop_completion_state(&self.state);
+        }
+    }
+}
+
+impl<T: 'static> CompletionOnce<T> {
+    pub(crate) fn inactive() -> Self {
+        Self {
+            state: Rc::new(CompletionState::inactive()),
             marker: PhantomData,
         }
     }
 
-    /// Submit an owned value to the callback while its scope is active.
     pub fn submit(&self, value: T) -> bool {
-        let Some(erased_state) = self.state.upgrade() else {
+        let Some(state) = self.state.begin_once() else {
             return false;
         };
+        let callback_result = catch_unwind(AssertUnwindSafe(|| {
+            runtime::invoke_callback(&state, self.state.callback, AnyValue::new(value))
+        }));
+        let dispose_result = catch_unwind(AssertUnwindSafe(|| {
+            self.state.close_and_dispose();
+        }));
 
-        if !erased_state
-            .borrow()
-            .scheduler
-            .borrow()
-            .is_scope_active(self.scope_id)
-        {
-            return false;
+        match (callback_result, dispose_result) {
+            (Err(panic), _) => resume_unwind(panic),
+            (Ok(_), Err(panic)) => resume_unwind(panic),
+            (Ok(result), Ok(())) => result.is_ok(),
         }
-
-        // SAFETY: the weak state is created from the callback's owning scope
-        // and only upgraded while that scope still owns the callback node.
-        // `CompletionToken` stores no strong state reference, so disposal
-        // drops the state and makes this branch unreachable afterwards.
-        let state = unsafe {
-            std::mem::transmute::<Rc<ErasedScopeState>, Rc<RefCell<ScopeState<'_>>>>(erased_state)
-        };
-        let active = state
-            .try_borrow()
-            .ok()
-            .is_some_and(|state| state.scheduler.borrow().is_scope_active(state.scope_id));
-        if !active {
-            return false;
-        }
-        runtime::invoke_callback(&state, self.callback, AnyValue::new(value)).is_ok()
     }
 
-    /// Remove the callback node while its scope is still active.
-    ///
-    /// This is used when a host registration fails after its completion
-    /// destination has already been created. It does not deactivate the
-    /// enclosing scope and is harmless after disposal or repeated calls.
     pub fn cancel(&self) {
-        let Some(erased_state) = self.state.upgrade() else {
-            return;
-        };
-        if !erased_state
-            .borrow()
-            .scheduler
-            .borrow()
-            .is_scope_active(self.scope_id)
-        {
-            return;
-        }
-
-        // SAFETY: the token's weak state is only used while its owning scope
-        // is active, matching the proof used by `submit` above.
-        let state = unsafe {
-            std::mem::transmute::<Rc<ErasedScopeState>, Rc<RefCell<ScopeState<'_>>>>(erased_state)
-        };
-        runtime::dispose_nodes(&state, vec![self.callback]);
+        self.state.close_and_dispose();
     }
 }
 
-pub(crate) fn create_completion<'scope, T: 'static, F>(
+/// A cloneable destination for a callback that may receive multiple messages.
+///
+/// The final active clone cancels the callback node. Explicit cancellation is
+/// still required when a long-lived owner is replaced before all senders drop.
+pub struct CompletionSender<T> {
+    state: Rc<CompletionState>,
+    marker: PhantomData<Rc<T>>,
+}
+
+impl<T> Clone for CompletionSender<T> {
+    fn clone(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<T> Drop for CompletionSender<T> {
+    fn drop(&mut self) {
+        if Rc::strong_count(&self.state) == 1 {
+            drop_completion_state(&self.state);
+        }
+    }
+}
+
+impl<T: 'static> CompletionSender<T> {
+    pub(crate) fn inactive() -> Self {
+        Self {
+            state: Rc::new(CompletionState::inactive()),
+            marker: PhantomData,
+        }
+    }
+
+    pub fn submit(&self, value: T) -> bool {
+        self.state.submit_repeating(value)
+    }
+
+    pub fn cancel(&self) {
+        self.state.close_and_dispose();
+    }
+}
+
+fn create_completion_state<'scope, T: 'static, F>(
     storage: &ScopeStorage,
     state: Rc<RefCell<ScopeState<'scope>>>,
     callback: F,
-) -> CompletionToken<T>
+) -> Rc<CompletionState>
 where
     F: FnMut(T) + 'scope,
 {
@@ -128,22 +224,50 @@ where
         state.scheduler.borrow().is_scope_active(storage.scope_id)
     };
     if !active {
-        return CompletionToken::inactive();
+        return Rc::new(CompletionState::inactive());
     }
 
     let thunk = CallbackThunk::new_typed(callback);
     let callback = {
         let mut state_ref = state
             .try_borrow_mut()
-            .expect("scope state borrowed while creating completion token");
+            .expect("scope state borrowed while creating completion destination");
         state_ref.create_callback(thunk)
     };
     let weak = Rc::downgrade(&state);
-    // SAFETY: the token only stores a weak reference to this scope's state.
-    // The erased weak reference is upgraded only after the active-scope check
-    // and cannot keep the state alive after lexical disposal.
+    // SAFETY: the destination stores only a weak reference to the scope state;
+    // the erased lifetime is restored only after the exact active registry
+    // entry has been checked.
     let weak = unsafe {
         std::mem::transmute::<Weak<RefCell<ScopeState<'scope>>>, Weak<ErasedScopeState>>(weak)
     };
-    CompletionToken::new(weak, storage.scope_id, callback)
+    Rc::new(CompletionState::new(weak, storage.scope_id, callback))
+}
+
+pub(crate) fn create_completion_once<'scope, T: 'static, F>(
+    storage: &ScopeStorage,
+    state: Rc<RefCell<ScopeState<'scope>>>,
+    callback: F,
+) -> CompletionOnce<T>
+where
+    F: FnMut(T) + 'scope,
+{
+    CompletionOnce {
+        state: create_completion_state(storage, state, callback),
+        marker: PhantomData,
+    }
+}
+
+pub(crate) fn create_completion_sender<'scope, T: 'static, F>(
+    storage: &ScopeStorage,
+    state: Rc<RefCell<ScopeState<'scope>>>,
+    callback: F,
+) -> CompletionSender<T>
+where
+    F: FnMut(T) + 'scope,
+{
+    CompletionSender {
+        state: create_completion_state(storage, state, callback),
+        marker: PhantomData,
+    }
 }

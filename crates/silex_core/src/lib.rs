@@ -24,8 +24,8 @@ pub use reactivity::{
     RwSignal, Signal, StoredValue, SuspenseContext, WriteSignal, runtime_inputs_of,
 };
 pub use scope::{OwnedScope, RootHandle, Runtime, Scope};
-pub use silex_reactivity::CompletionToken;
 pub use silex_reactivity::RuntimeInputs;
+pub use silex_reactivity::{CompletionOnce, CompletionSender};
 pub use store::Store;
 pub use task::TaskHandle;
 pub use traits::{RxBase, RxData, RxGet, RxRead, RxValue};
@@ -232,8 +232,8 @@ macro_rules! batch_read_untracked_recurse {
 
 pub mod prelude {
     pub use crate::{
-        Callback, CompletionToken, ErrorContext, NodeRef, Runtime, Rx, Scope, SilexError,
-        SilexResult, Store, batch_read, batch_read_untracked, logic::*, reactivity::*, rx,
-        traits::*,
+        Callback, CompletionOnce, CompletionSender, ErrorContext, NodeRef, Runtime, Rx, Scope,
+        SilexError, SilexResult, Store, batch_read, batch_read_untracked, logic::*, reactivity::*,
+        rx, traits::*,
     };
 }

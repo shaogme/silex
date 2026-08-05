@@ -83,7 +83,7 @@ fn owned_scope_completion_can_capture_scope_local_data() {
         let owner = scope.owned_scope();
         let local = String::from("owned");
         let seen_in_callback = seen.clone();
-        let token = owner.completion(move |value: i32| {
+        let token = owner.completion_once(move |value: i32| {
             assert_eq!(local, "owned");
             seen_in_callback.set(value);
         });

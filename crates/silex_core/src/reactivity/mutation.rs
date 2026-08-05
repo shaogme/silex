@@ -3,7 +3,7 @@ use crate::{
     reactivity::{ReadSignal, WriteSignal},
     traits::{RxBase, RxCloneData, RxData, RxError, RxRead, RxValue},
 };
-use silex_reactivity::CompletionToken;
+use silex_reactivity::CompletionSender;
 use std::{cell::Cell, future::Future, pin::Pin, rc::Rc};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -62,7 +62,7 @@ pub struct Mutation<'scope, Arg, T, E = SilexError> {
     set_state: WriteSignal<'scope, MutationState<T, E>>,
     action: MutationAction<'scope, Arg, T, E>,
     last_id: Rc<Cell<usize>>,
-    completion: CompletionToken<(usize, Result<T, E>)>,
+    completion: CompletionSender<(usize, Result<T, E>)>,
     scope: Scope<'scope>,
 }
 
@@ -94,7 +94,7 @@ where
         let last_id = Rc::new(Cell::new(0usize));
         let last_id_for_callback = last_id.clone();
         let set_state_for_callback = set_state;
-        let completion = scope.completion(move |(id, result): (usize, Result<T, E>)| {
+        let completion = scope.completion_sender(move |(id, result): (usize, Result<T, E>)| {
             if let Some(next_state) =
                 resolve_mutation_result(last_id_for_callback.get(), id, result)
             {
@@ -123,7 +123,7 @@ where
         let last_id = Rc::new(Cell::new(0usize));
         let last_id_for_callback = last_id.clone();
         let set_state_for_callback = set_state;
-        let completion = scope.completion(move |(id, result): (usize, Result<T, E>)| {
+        let completion = scope.completion_sender(move |(id, result): (usize, Result<T, E>)| {
             if let Some(next_state) =
                 resolve_mutation_result(last_id_for_callback.get(), id, result)
             {

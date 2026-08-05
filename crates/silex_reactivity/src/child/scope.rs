@@ -12,7 +12,9 @@ use super::node::{
 };
 use crate::{
     ReactiveError, ReactiveResult,
-    completion::{CompletionToken, create_completion},
+    completion::{
+        CompletionOnce, CompletionSender, create_completion_once, create_completion_sender,
+    },
     handle::Handle,
     internal::value::{AnyValue, CallbackThunk, OnceThunk},
     runtime::{self, RuntimeInputs},
@@ -312,12 +314,20 @@ impl<'scope> Scope<'scope> {
         }
     }
 
-    /// Create a completion destination owned by this scope.
-    pub fn completion<T: 'static, F>(&self, callback: F) -> CompletionToken<T>
+    /// Create a one-shot completion destination owned by this scope.
+    pub fn completion_once<T: 'static, F>(&self, callback: F) -> CompletionOnce<T>
     where
         F: FnMut(T) + 'scope,
     {
-        create_completion(self.storage, self.state(), callback)
+        create_completion_once(self.storage, self.state(), callback)
+    }
+
+    /// Create a reusable completion destination owned by this scope.
+    pub fn completion_sender<T: 'static, F>(&self, callback: F) -> CompletionSender<T>
+    where
+        F: FnMut(T) + 'scope,
+    {
+        create_completion_sender(self.storage, self.state(), callback)
     }
 }
 
@@ -425,15 +435,26 @@ impl<'scope> OwnedScope<'scope> {
         state.register_cleanup(OnceThunk::new(f));
     }
 
-    /// Create a completion destination owned by this persistent scope.
-    pub fn completion<T: 'static, F>(&self, callback: F) -> CompletionToken<T>
+    /// Create a one-shot completion destination owned by this persistent scope.
+    pub fn completion_once<T: 'static, F>(&self, callback: F) -> CompletionOnce<T>
     where
         F: FnMut(T) + 'scope,
     {
         if !self.active.get() {
-            return CompletionToken::inactive();
+            return CompletionOnce::inactive();
         }
-        create_completion(&self.storage, self.state(), callback)
+        create_completion_once(&self.storage, self.state(), callback)
+    }
+
+    /// Create a reusable completion destination owned by this persistent scope.
+    pub fn completion_sender<T: 'static, F>(&self, callback: F) -> CompletionSender<T>
+    where
+        F: FnMut(T) + 'scope,
+    {
+        if !self.active.get() {
+            return CompletionSender::inactive();
+        }
+        create_completion_sender(&self.storage, self.state(), callback)
     }
 
     /// Dispose this owner exactly once. Cleanup panics follow the same

@@ -2,7 +2,7 @@ use std::{cell::Cell, marker::PhantomData, rc::Rc, time::Duration};
 
 use gloo_timers::future::sleep;
 use silex_core::{
-    CompletionToken, Mutation, ReactiveSource, Resource, RxGet, RxRead, SuspenseContext,
+    CompletionOnce, Mutation, ReactiveSource, Resource, RxGet, RxRead, SuspenseContext,
 };
 
 use crate::{
@@ -39,7 +39,7 @@ async fn execute_prepared<T, C>(
     client: PreparedClient<T, C>,
     spec: RequestSpec,
     fallback: Option<T>,
-    cache_token: Option<CompletionToken<T>>,
+    cache_token: Option<CompletionOnce<T>>,
 ) -> Result<T, NetError>
 where
     T: Clone + 'static,
@@ -130,20 +130,20 @@ macro_rules! impl_net_methods {
         }
 
         #[cfg(feature = "persist")]
-        fn cache_completion_token(&self, spec: &RequestSpec) -> Option<CompletionToken<T>>
+        fn cache_completion_once(&self, spec: &RequestSpec) -> Option<CompletionOnce<T>>
         where
             C: CacheCodec<T>,
             T: Clone + PartialEq + 'static,
         {
             self.cache_binding(spec)
-                .map(|binding| self.cache_completion_token_for_binding(binding))
+                .map(|binding| self.cache_completion_once_for_binding(binding))
         }
 
         #[cfg(feature = "persist")]
-        fn cache_completion_token_for_binding(
+        fn cache_completion_once_for_binding(
             &self,
             binding: CacheBinding<'scope, T>,
-        ) -> CompletionToken<T>
+        ) -> CompletionOnce<T>
         where
             C: CacheCodec<T>,
             T: Clone + PartialEq + 'static,
@@ -156,7 +156,7 @@ macro_rules! impl_net_methods {
                 .clone();
             let key = binding.key;
             let generation = binding.generation;
-            self.scope.completion(move |value: T| {
+            self.scope.completion_once(move |value: T| {
                 if generations.borrow().get(&key) == Some(&generation) {
                     binding.store.set(value);
                 }
@@ -194,7 +194,7 @@ macro_rules! impl_net_methods {
                 let refresh_spec = spec.clone();
                 let refresh_binding = self.cache_binding(&spec);
                 let cache_token =
-                    refresh_binding.map(|binding| self.cache_completion_token_for_binding(binding));
+                    refresh_binding.map(|binding| self.cache_completion_once_for_binding(binding));
                 self.scope.spawn_scoped(async move {
                     let _ = execute_prepared(refresh_client, refresh_spec, None, cache_token).await;
                 });
@@ -213,7 +213,7 @@ macro_rules! impl_net_methods {
             let cache_token = {
                 #[cfg(feature = "persist")]
                 {
-                    cache_binding.map(|binding| self.cache_completion_token_for_binding(binding))
+                    cache_binding.map(|binding| self.cache_completion_once_for_binding(binding))
                 }
                 #[cfg(not(feature = "persist"))]
                 {
@@ -309,7 +309,7 @@ macro_rules! impl_net_methods {
                         let refresh_binding = fetch_builder.cache_binding(&spec);
                         #[cfg(feature = "persist")]
                         let refresh_cache_token = refresh_binding.map(|binding| {
-                            fetch_builder.cache_completion_token_for_binding(binding)
+                            fetch_builder.cache_completion_once_for_binding(binding)
                         });
                         #[cfg(not(feature = "persist"))]
                         let refresh_cache_token = None;
@@ -318,14 +318,15 @@ macro_rules! impl_net_methods {
                         let resource_generation_for_completion =
                             resource_generation_for_fetcher.clone();
                         let resource_slot_for_completion = resource_slot_for_fetcher.clone();
-                        let completion = scope.completion(move |result: Result<T, NetError>| {
-                            if resource_generation_for_completion.get() == generation
-                                && let Ok(value) = result
-                                && let Some(resource) = resource_slot_for_completion.get()
-                            {
-                                resource.set(value);
-                            }
-                        });
+                        let completion =
+                            scope.completion_once(move |result: Result<T, NetError>| {
+                                if resource_generation_for_completion.get() == generation
+                                    && let Ok(value) = result
+                                    && let Some(resource) = resource_slot_for_completion.get()
+                                {
+                                    resource.set(value);
+                                }
+                            });
                         scope.spawn_scoped(async move {
                             sleep(Duration::from_millis(0)).await;
                             let result = execute_prepared(
@@ -345,7 +346,7 @@ macro_rules! impl_net_methods {
                         #[cfg(feature = "persist")]
                         {
                             cache_binding.map(|binding| {
-                                fetch_builder.cache_completion_token_for_binding(binding)
+                                fetch_builder.cache_completion_once_for_binding(binding)
                             })
                         }
                         #[cfg(not(feature = "persist"))]
@@ -402,7 +403,7 @@ macro_rules! impl_net_methods {
                 let cache_token = {
                     #[cfg(feature = "persist")]
                     {
-                        builder.cache_completion_token(&spec)
+                        builder.cache_completion_once(&spec)
                     }
                     #[cfg(not(feature = "persist"))]
                     {
@@ -442,7 +443,7 @@ macro_rules! impl_net_methods {
                 let cache_token = {
                     #[cfg(feature = "persist")]
                     {
-                        builder.cache_completion_token(&spec)
+                        builder.cache_completion_once(&spec)
                     }
                     #[cfg(not(feature = "persist"))]
                     {

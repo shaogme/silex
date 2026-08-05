@@ -118,7 +118,7 @@ where
         let request_id_for_callback = request_id.clone();
         let set_state_for_callback = set_state;
         let suspense_for_callback = suspense;
-        let completion = scope.completion(move |message: ResourceCompletion<T, E>| {
+        let completion = scope.completion_sender(move |message: ResourceCompletion<T, E>| {
             if message.settled.replace(true) {
                 return;
             }
@@ -268,8 +268,9 @@ impl<'scope> SuspenseContext<'scope> {
     }
 
     pub fn decrement(&self) {
-        self.set_count
-            .update(|count| *count = count.saturating_sub(1));
+        let _ = self
+            .set_count
+            .try_update(|count| *count = count.saturating_sub(1));
     }
 }
 

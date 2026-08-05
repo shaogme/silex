@@ -27,7 +27,7 @@ mod scope;
 
 pub use crate::{
     child::*,
-    completion::CompletionToken,
+    completion::{CompletionOnce, CompletionSender},
     error::{ReactiveError, ReactiveResult},
     handle::{
         AnyHandle, CallbackId, DerivedId, EffectId, Handle, MemoId, NodeKind, NodeKindTag,

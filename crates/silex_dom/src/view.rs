@@ -11,7 +11,7 @@ pub use reactive::*;
 
 use crate::attribute::PendingAttribute;
 use silex_core::{
-    CompletionToken, OwnedScope, RuntimeInputs, Scope,
+    CompletionOnce, CompletionSender, OwnedScope, RuntimeInputs, Scope,
     error::handle_error,
     reactivity::ReactiveSource,
     traits::{RxData, RxValue},
@@ -179,34 +179,34 @@ impl<'scope> ActiveRegistrar<'scope> {
 
 #[derive(Clone)]
 struct CompletionRegistrar<'scope> {
-    inner: Rc<dyn CompletionRegister<'scope> + 'scope>,
+    sender: CompletionSenderFactory<'scope>,
+    once: CompletionOnceFactory<'scope>,
 }
 
-trait CompletionRegister<'scope> {
-    fn register(&self, callback: Box<dyn FnMut(JsValue) + 'scope>) -> CompletionToken<JsValue>;
-}
-
-impl<'scope, F> CompletionRegister<'scope> for F
-where
-    F: Fn(Box<dyn FnMut(JsValue) + 'scope>) -> CompletionToken<JsValue> + 'scope,
-{
-    fn register(&self, callback: Box<dyn FnMut(JsValue) + 'scope>) -> CompletionToken<JsValue> {
-        self(callback)
-    }
-}
+type HostCallbackFn<'scope> = Box<dyn FnMut(JsValue) + 'scope>;
+type CompletionSenderFactory<'scope> =
+    Rc<dyn Fn(HostCallbackFn<'scope>) -> CompletionSender<JsValue> + 'scope>;
+type CompletionOnceFactory<'scope> =
+    Rc<dyn Fn(HostCallbackFn<'scope>) -> CompletionOnce<JsValue> + 'scope>;
 
 impl<'scope> CompletionRegistrar<'scope> {
-    fn new<F>(register: F) -> Self
+    fn new<FS, FO>(sender: FS, once: FO) -> Self
     where
-        F: Fn(Box<dyn FnMut(JsValue) + 'scope>) -> CompletionToken<JsValue> + 'scope,
+        FS: Fn(Box<dyn FnMut(JsValue) + 'scope>) -> CompletionSender<JsValue> + 'scope,
+        FO: Fn(Box<dyn FnMut(JsValue) + 'scope>) -> CompletionOnce<JsValue> + 'scope,
     {
         Self {
-            inner: Rc::new(register),
+            sender: Rc::new(sender),
+            once: Rc::new(once),
         }
     }
 
-    fn call(&self, callback: Box<dyn FnMut(JsValue) + 'scope>) -> CompletionToken<JsValue> {
-        self.inner.register(callback)
+    fn call_sender(&self, callback: Box<dyn FnMut(JsValue) + 'scope>) -> CompletionSender<JsValue> {
+        (self.sender)(callback)
+    }
+
+    fn call_once(&self, callback: Box<dyn FnMut(JsValue) + 'scope>) -> CompletionOnce<JsValue> {
+        (self.once)(callback)
     }
 }
 
@@ -274,10 +274,32 @@ impl Drop for HostResourceHandle<'_> {
     }
 }
 
+#[derive(Clone)]
+enum HostDestination {
+    Once(CompletionOnce<JsValue>),
+    Sender(CompletionSender<JsValue>),
+}
+
+impl HostDestination {
+    fn dispatch(&self, payload: JsValue) -> bool {
+        match self {
+            Self::Once(destination) => destination.submit(payload),
+            Self::Sender(destination) => destination.submit(payload),
+        }
+    }
+
+    fn cancel(&self) {
+        match self {
+            Self::Once(destination) => destination.cancel(),
+            Self::Sender(destination) => destination.cancel(),
+        }
+    }
+}
+
 /// A `'static` browser closure's only path back into a scoped view.
 #[derive(Clone)]
 pub(crate) struct HostCallback {
-    destination: CompletionToken<JsValue>,
+    destination: HostDestination,
     gate: ResourceGate,
 }
 
@@ -286,7 +308,7 @@ impl HostCallback {
         if !self.gate.get() {
             return false;
         }
-        self.destination.submit(payload)
+        self.destination.dispatch(payload)
     }
 
     pub(crate) fn finish(&self) {
@@ -345,7 +367,17 @@ impl<'scope> ViewOwnerToken<'scope> {
         F: FnMut(JsValue) + 'scope,
     {
         HostCallback {
-            destination: self.completion.call(Box::new(callback)),
+            destination: HostDestination::Sender(self.completion.call_sender(Box::new(callback))),
+            gate: Rc::new(Cell::new(true)),
+        }
+    }
+
+    pub(crate) fn host_callback_once<F>(&self, callback: F) -> HostCallback
+    where
+        F: FnMut(JsValue) + 'scope,
+    {
+        HostCallback {
+            destination: HostDestination::Once(self.completion.call_once(Box::new(callback))),
             gate: Rc::new(Cell::new(true)),
         }
     }
@@ -446,7 +478,8 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
         let scope_for_effect = self.scope;
         let scope_for_cleanup = self.scope;
         let scope_for_owned = self.scope;
-        let scope_for_completion = self.scope;
+        let scope_for_sender = self.scope;
+        let scope_for_once = self.scope;
         let scope_for_active = self.scope;
         let scope_for_validate = self.scope;
         ViewOwnerToken::new(
@@ -458,7 +491,10 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
             ValidationRegistrar::new(move |inputs| scope_for_validate.try_validate_inputs(inputs)),
             CleanupRegistrar::new(move |cleanup| scope_for_cleanup.on_cleanup(cleanup)),
             OwnedScopeRegistrar::new(move || scope_for_owned.owned_scope()),
-            CompletionRegistrar::new(move |callback| scope_for_completion.completion(callback)),
+            CompletionRegistrar::new(
+                move |callback| scope_for_sender.completion_sender(callback),
+                move |callback| scope_for_once.completion_once(callback),
+            ),
             ActiveRegistrar::new(move || scope_for_active.is_active()),
         )
     }
@@ -497,7 +533,8 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
         let scope_for_effect = self.scope.clone();
         let scope_for_cleanup = self.scope.clone();
         let scope_for_owned = self.scope.clone();
-        let scope_for_completion = self.scope.clone();
+        let scope_for_sender = self.scope.clone();
+        let scope_for_once = self.scope.clone();
         let scope_for_active = self.scope.clone();
         let scope_for_validate = self.scope.clone();
         ViewOwnerToken::new(
@@ -509,7 +546,10 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
             ValidationRegistrar::new(move |inputs| scope_for_validate.try_validate_inputs(inputs)),
             CleanupRegistrar::new(move |cleanup| scope_for_cleanup.on_cleanup(cleanup)),
             OwnedScopeRegistrar::new(move || scope_for_owned.child()),
-            CompletionRegistrar::new(move |callback| scope_for_completion.completion(callback)),
+            CompletionRegistrar::new(
+                move |callback| scope_for_sender.completion_sender(callback),
+                move |callback| scope_for_once.completion_once(callback),
+            ),
             ActiveRegistrar::new(move || scope_for_active.is_active()),
         )
     }

@@ -6,7 +6,7 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, MessageEvent, WebSocket as JsWebSocket};
 
 use silex_core::{
-    CompletionToken, Memo, ReadSignal, RuntimeInputs, Scope, StoredValue, TaskHandle, WriteSignal,
+    CompletionSender, Memo, ReadSignal, RuntimeInputs, Scope, StoredValue, TaskHandle, WriteSignal,
 };
 
 use crate::{
@@ -94,7 +94,7 @@ fn create_socket(url: &str, protocols: &[String]) -> Result<JsWebSocket, NetErro
 }
 
 impl HostRegistration {
-    fn new(socket: JsWebSocket, generation: u64, token: &CompletionToken<WebSocketEvent>) -> Self {
+    fn new(socket: JsWebSocket, generation: u64, token: &CompletionSender<WebSocketEvent>) -> Self {
         let gate = Rc::new(Cell::new(true));
 
         let open_gate = gate.clone();
@@ -176,7 +176,7 @@ struct WebSocketInner<'scope> {
     set_state: WriteSignal<'scope, ConnectionState>,
     set_message: WriteSignal<'scope, Option<String>>,
     set_error: WriteSignal<'scope, Option<NetError>>,
-    completion: CompletionToken<WebSocketEvent>,
+    completion: CompletionSender<WebSocketEvent>,
     scope: Scope<'scope>,
     registration: Option<HostRegistration>,
     generation: u64,
@@ -583,7 +583,7 @@ impl<'scope> WebSocketBuilder<'scope> {
             None::<StoredValue<'scope, WebSocketInner<'scope>>>,
         ));
         let inner_slot_for_completion = inner_slot.clone();
-        let completion = scope.completion(move |event: WebSocketEvent| {
+        let completion = scope.completion_sender(move |event: WebSocketEvent| {
             if let Some(inner) = inner_slot_for_completion.get()
                 && let Some(callback) = inner.update(|inner| inner.handle_event(event))
             {
