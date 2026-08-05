@@ -145,6 +145,35 @@ async fn resource_replacement_keeps_only_the_new_suspense_request() {
 }
 
 #[wasm_bindgen_test(async)]
+async fn resource_scope_capability_survives_async_replacement() {
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| async move {
+        let (source, set_source) = scope.signal(1_u32);
+        let resource = Resource::new(
+            &scope,
+            source,
+            |value| async move { Ok::<_, ()>(value) },
+            None,
+        );
+
+        wait_for_tasks(0).await;
+        assert!(matches!(
+            resource.state.get(),
+            ResourceState::Ready(value) if value == 1
+        ));
+        set_source.set(2);
+        wait_for_tasks(0).await;
+        assert!(matches!(
+            resource.state.get(),
+            ResourceState::Ready(value) if value == 2
+        ));
+    })
+    .await;
+    root.dispose().expect("root cleanup");
+}
+
+#[wasm_bindgen_test(async)]
 async fn mutation_future_is_cancelled_after_scope_dispose() {
     let dropped = Rc::new(Cell::new(0));
     let calls = Rc::new(Cell::new(0));

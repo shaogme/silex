@@ -13,7 +13,7 @@ use crate::{
 };
 
 #[cfg(feature = "persist")]
-use crate::codec::CacheCodec;
+use crate::{builder::CacheBinding, codec::CacheCodec};
 
 #[derive(Clone)]
 struct PreparedClient<T, C> {
@@ -53,53 +53,59 @@ where
     let mut last_error = None;
 
     for attempt in 1..=attempts {
-        let response = client.transport.send(spec.clone()).await;
-        match response {
-            Ok(response) => {
-                let value = match client.response_codec.decode(&response.raw_body) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        for hook in &client.on_error {
-                            hook(&spec, &error);
-                        }
-                        return Err(error);
-                    }
-                };
-                for hook in &client.after_response {
-                    hook(&spec, &response);
-                }
-                if let Some(token) = &cache_token {
-                    let _ = token.submit(value.clone());
-                }
-                return Ok(value);
-            }
+        let response = match client.transport.send(spec.clone()).await {
+            Ok(response) if response.ok() => Ok(response),
+            Ok(response) => Err(NetError::HttpStatus {
+                status: response.status,
+                body: response.raw_body,
+            }),
+            Err(error) => Err(error),
+        };
+        let response = match response {
+            Ok(response) => response,
             Err(error) => {
                 for hook in &client.on_error {
                     hook(&spec, &error);
                 }
                 last_error = Some(error.clone());
-                if attempt < attempts && error.is_retryable() {
-                    let delay = retry.delay_for_attempt(attempt);
-                    if let Some(max_elapsed) = retry.max_elapsed {
-                        let elapsed = Duration::from_millis(
-                            (js_sys::Date::now() - started_at).max(0.0) as u64,
-                        );
-                        let next_elapsed = elapsed.saturating_add(delay);
-                        if elapsed >= max_elapsed || next_elapsed > max_elapsed {
-                            break;
-                        }
-                    }
-                    for hook in &client.on_retry {
-                        hook(&spec, attempt, delay, &error);
-                    }
-                    if delay > Duration::from_millis(0) {
-                        sleep(delay).await;
-                    }
-                    continue;
+                if attempt >= attempts || !error.is_retryable() {
+                    break;
                 }
-                break;
+                let delay = retry.delay_for_attempt(attempt);
+                if let Some(max_elapsed) = retry.max_elapsed {
+                    let elapsed =
+                        Duration::from_millis((js_sys::Date::now() - started_at).max(0.0) as u64);
+                    let next_elapsed = elapsed.saturating_add(delay);
+                    if elapsed >= max_elapsed || next_elapsed > max_elapsed {
+                        break;
+                    }
+                }
+                for hook in &client.on_retry {
+                    hook(&spec, attempt, delay, &error);
+                }
+                if delay > Duration::from_millis(0) {
+                    sleep(delay).await;
+                }
+                continue;
             }
+        };
+
+        let value = match client.response_codec.decode(&response.raw_body) {
+            Ok(value) => value,
+            Err(error) => {
+                for hook in &client.on_error {
+                    hook(&spec, &error);
+                }
+                return Err(error);
+            }
+        };
+        for hook in &client.after_response {
+            hook(&spec, &response);
         }
+        if let Some(token) = &cache_token {
+            let _ = token.submit(value.clone());
+        }
+        return Ok(value);
     }
 
     if let Some(value) = fallback {
@@ -129,15 +135,32 @@ macro_rules! impl_net_methods {
             C: CacheCodec<T>,
             T: Clone + PartialEq + 'static,
         {
-            let store = self.ensure_cache(spec)?;
-            let expected_key = spec.cache_key();
-            let key_state = self.cache_key_state()?;
-            let token = self.scope.completion(move |value: T| {
-                if key_state.borrow().as_deref() == Some(expected_key.as_str()) {
-                    store.set(value);
+            self.cache_binding(spec)
+                .map(|binding| self.cache_completion_token_for_binding(binding))
+        }
+
+        #[cfg(feature = "persist")]
+        fn cache_completion_token_for_binding(
+            &self,
+            binding: CacheBinding<'scope, T>,
+        ) -> CompletionToken<T>
+        where
+            C: CacheCodec<T>,
+            T: Clone + PartialEq + 'static,
+        {
+            let generations = self
+                .cache
+                .as_ref()
+                .expect("cache binding requires cache configuration")
+                .generations
+                .clone();
+            let key = binding.key;
+            let generation = binding.generation;
+            self.scope.completion(move |value: T| {
+                if generations.borrow().get(&key) == Some(&generation) {
+                    binding.store.set(value);
                 }
-            });
-            Some(token)
+            })
         }
 
         pub async fn send(&self) -> Result<T, NetError> {
@@ -147,7 +170,14 @@ macro_rules! impl_net_methods {
             client.apply_interceptors(&mut spec);
 
             #[cfg(feature = "persist")]
-            let cache_snapshot = self.cached_value(&spec);
+            let cache_binding = self.cache_binding(&spec);
+            #[cfg(feature = "persist")]
+            let cache_snapshot = cache_binding.as_ref().and_then(|binding| {
+                binding
+                    .store
+                    .has_persisted_value()
+                    .then(|| binding.store.get_untracked())
+            });
 
             #[cfg(feature = "persist")]
             if matches!(self.cache_policy(), Some(CachePolicy::CacheFirst))
@@ -162,15 +192,11 @@ macro_rules! impl_net_methods {
             {
                 let refresh_client = client.clone();
                 let refresh_spec = spec.clone();
-                let store = self.ensure_cache(&spec);
-                let completion = self.scope.completion(move |result: Result<T, NetError>| {
-                    if let (Some(store), Ok(value)) = (store, result) {
-                        store.set(value);
-                    }
-                });
+                let refresh_binding = self.cache_binding(&spec);
+                let cache_token =
+                    refresh_binding.map(|binding| self.cache_completion_token_for_binding(binding));
                 self.scope.spawn_scoped(async move {
-                    let result = execute_prepared(refresh_client, refresh_spec, None, None).await;
-                    let _ = completion.submit(result);
+                    let _ = execute_prepared(refresh_client, refresh_spec, None, cache_token).await;
                 });
                 return Ok(value);
             }
@@ -187,7 +213,7 @@ macro_rules! impl_net_methods {
             let cache_token = {
                 #[cfg(feature = "persist")]
                 {
-                    self.cache_completion_token(&spec)
+                    cache_binding.map(|binding| self.cache_completion_token_for_binding(binding))
                 }
                 #[cfg(not(feature = "persist"))]
                 {
@@ -229,42 +255,17 @@ macro_rules! impl_net_methods {
                 })
                 .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
 
-            let mut initial_spec = self.resolve_spec();
-            let initial_client = self.prepared();
-            initial_client.apply_interceptors(&mut initial_spec);
-
             #[cfg(feature = "persist")]
             let cache_policy = self.cache_policy();
             #[cfg(not(feature = "persist"))]
             let cache_policy = None;
+            let fetch_client = self.prepared();
             #[cfg(feature = "persist")]
-            let initial_cache = self.cached_value(&initial_spec);
-            #[cfg(not(feature = "persist"))]
-            let initial_cache = None;
-            #[cfg(feature = "persist")]
-            let cache_key_state = self.cache_key_state();
-            #[cfg(feature = "persist")]
-            let initial_cache_key = initial_spec.cache_key();
-            let cache_token = {
-                #[cfg(feature = "persist")]
-                {
-                    self.cache_completion_token(&initial_spec)
-                }
-                #[cfg(not(feature = "persist"))]
-                {
-                    None
-                }
-            };
-
-            let first_cache = Rc::new(Cell::new(true));
-            let first_cache_for_fetcher = first_cache.clone();
-            let fetch_client = initial_client.clone();
-            let cache_for_fetcher = initial_cache.clone();
-            let fallback = if matches!(cache_policy, Some(CachePolicy::NetworkFirst)) {
-                initial_cache.clone()
-            } else {
-                None
-            };
+            let fetch_builder = self.clone();
+            let resource_generation = Rc::new(Cell::new(0usize));
+            let resource_slot = Rc::new(Cell::new(None::<Resource<'scope, T, NetError>>));
+            let resource_generation_for_fetcher = resource_generation.clone();
+            let resource_slot_for_fetcher = resource_slot.clone();
             let combined_source = scope
                 .try_derived_from(inputs, move || (source.get(), request_source.get()))
                 .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
@@ -274,34 +275,85 @@ macro_rules! impl_net_methods {
                 move |(_, spec): (S::Value, RequestSpec)| {
                     let mut spec = spec;
                     fetch_client.apply_interceptors(&mut spec);
+                    let generation = resource_generation_for_fetcher
+                        .get()
+                        .checked_add(1)
+                        .expect("HTTP Resource generation exhausted");
+                    resource_generation_for_fetcher.set(generation);
+
                     #[cfg(feature = "persist")]
-                    let request_key = spec.cache_key();
+                    let cache_binding = fetch_builder.cache_binding(&spec);
                     #[cfg(feature = "persist")]
-                    if let Some(key_state) = &cache_key_state {
-                        *key_state.borrow_mut() = Some(request_key.clone());
-                    }
-                    let use_cache = first_cache_for_fetcher.replace(false)
-                        && matches!(
+                    let cache_snapshot = cache_binding.as_ref().and_then(|binding| {
+                        binding
+                            .store
+                            .has_persisted_value()
+                            .then(|| binding.store.get_untracked())
+                    });
+                    #[cfg(not(feature = "persist"))]
+                    let cache_snapshot = None;
+
+                    let cached = cache_snapshot.clone().filter(|_| {
+                        matches!(
                             cache_policy,
                             Some(CachePolicy::CacheFirst | CachePolicy::StaleWhileRevalidate)
-                        );
-                    let cached = use_cache.then(|| cache_for_fetcher.clone()).flatten();
-                    let client = fetch_client.clone();
-                    let fallback = if matches!(cache_policy, Some(CachePolicy::NetworkFirst)) && {
+                        )
+                    });
+                    let fallback = cache_snapshot
+                        .filter(|_| matches!(cache_policy, Some(CachePolicy::NetworkFirst)));
+
+                    if matches!(cache_policy, Some(CachePolicy::StaleWhileRevalidate))
+                        && cached.is_some()
+                    {
+                        #[cfg(feature = "persist")]
+                        let refresh_binding = fetch_builder.cache_binding(&spec);
+                        #[cfg(feature = "persist")]
+                        let refresh_cache_token = refresh_binding.map(|binding| {
+                            fetch_builder.cache_completion_token_for_binding(binding)
+                        });
+                        #[cfg(not(feature = "persist"))]
+                        let refresh_cache_token = None;
+                        let refresh_client = fetch_client.clone();
+                        let refresh_spec = spec.clone();
+                        let resource_generation_for_completion =
+                            resource_generation_for_fetcher.clone();
+                        let resource_slot_for_completion = resource_slot_for_fetcher.clone();
+                        let completion = scope.completion(move |result: Result<T, NetError>| {
+                            if resource_generation_for_completion.get() == generation
+                                && let Ok(value) = result
+                                && let Some(resource) = resource_slot_for_completion.get()
+                            {
+                                resource.set(value);
+                            }
+                        });
+                        scope.spawn_scoped(async move {
+                            sleep(Duration::from_millis(0)).await;
+                            let result = execute_prepared(
+                                refresh_client,
+                                refresh_spec,
+                                None,
+                                refresh_cache_token,
+                            )
+                            .await;
+                            let _ = completion.submit(result);
+                        });
+                    }
+
+                    let cache_token = if cached.is_some() {
+                        None
+                    } else {
                         #[cfg(feature = "persist")]
                         {
-                            request_key == initial_cache_key
+                            cache_binding.map(|binding| {
+                                fetch_builder.cache_completion_token_for_binding(binding)
+                            })
                         }
                         #[cfg(not(feature = "persist"))]
                         {
-                            true
+                            None
                         }
-                    } {
-                        fallback.clone()
-                    } else {
-                        None
                     };
-                    let cache_token = cache_token.clone();
+                    let client = fetch_client.clone();
                     Box::pin(async move {
                         if let Some(value) = cached {
                             Ok(value)
@@ -313,31 +365,7 @@ macro_rules! impl_net_methods {
                 suspense,
             );
 
-            #[cfg(feature = "persist")]
-            if matches!(cache_policy, Some(CachePolicy::StaleWhileRevalidate))
-                && let Some(store) = self.ensure_cache(&initial_spec)
-                && initial_cache.is_some()
-            {
-                let refresh_client = initial_client;
-                let refresh_spec = initial_spec;
-                let resource_for_refresh = resource;
-                let expected_key = refresh_spec.cache_key();
-                let key_state = self
-                    .cache_key_state()
-                    .expect("cache key state exists with a cache store");
-                let completion = scope.completion(move |result: Result<T, NetError>| {
-                    if key_state.borrow().as_deref() == Some(expected_key.as_str())
-                        && let Ok(value) = result
-                    {
-                        store.set(value.clone());
-                        resource_for_refresh.set(value);
-                    }
-                });
-                scope.spawn_scoped(async move {
-                    let result = execute_prepared(refresh_client, refresh_spec, None, None).await;
-                    let _ = completion.submit(result);
-                });
-            }
+            resource_slot.set(Some(resource));
 
             Ok(resource)
         }
@@ -396,41 +424,32 @@ macro_rules! impl_net_methods {
             Input: 'scope,
         {
             let scope = self.scope;
-            Mutation::new(&scope, move |input: Input| {
+            Mutation::new_with_prepare(&scope, move |input: Input| {
                 let builder = factory(input);
-                let prepared = builder.validate_runtime_inputs_for(scope).map(|()| {
-                    let mut spec = builder.resolve_spec();
-                    let client = builder.prepared();
-                    client.apply_interceptors(&mut spec);
+                builder.validate_runtime_inputs_for(scope)?;
+                let mut spec = builder.resolve_spec();
+                let client = builder.prepared();
+                client.apply_interceptors(&mut spec);
+                #[cfg(feature = "persist")]
+                let fallback = if matches!(builder.cache_policy(), Some(CachePolicy::NetworkFirst))
+                {
+                    builder.cached_value(&spec)
+                } else {
+                    None
+                };
+                #[cfg(not(feature = "persist"))]
+                let fallback = None;
+                let cache_token = {
                     #[cfg(feature = "persist")]
-                    let fallback =
-                        if matches!(builder.cache_policy(), Some(CachePolicy::NetworkFirst)) {
-                            builder.cached_value(&spec)
-                        } else {
-                            None
-                        };
-                    #[cfg(not(feature = "persist"))]
-                    let fallback = None;
-                    let cache_token = {
-                        #[cfg(feature = "persist")]
-                        {
-                            builder.cache_completion_token(&spec)
-                        }
-                        #[cfg(not(feature = "persist"))]
-                        {
-                            None
-                        }
-                    };
-                    (client, spec, fallback, cache_token)
-                });
-                async move {
-                    match prepared {
-                        Ok((client, spec, fallback, cache_token)) => {
-                            execute_prepared(client, spec, fallback, cache_token).await
-                        }
-                        Err(error) => Err(error),
+                    {
+                        builder.cache_completion_token(&spec)
                     }
-                }
+                    #[cfg(not(feature = "persist"))]
+                    {
+                        None
+                    }
+                };
+                Ok(async move { execute_prepared(client, spec, fallback, cache_token).await })
             })
         }
     };

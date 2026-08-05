@@ -106,6 +106,7 @@ where
         R: RxRead<Value = S> + ReactiveSource<'scope> + Clone + 'scope,
         Fetcher: ResourceFetcher<S, Data = T, Error = E> + 'scope,
     {
+        let scope = *scope;
         let mut inputs = source.clone().into_promotion_plan().inputs();
         if let Some(context) = suspense.as_ref() {
             inputs.push(context.count.inner.runtime_input());
