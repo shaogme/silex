@@ -482,9 +482,14 @@ fn classes_reactive_toggle_updates_and_cleans_without_removing_static_classes() 
     {
         let scope = root.scope();
         let (active, set_active) = scope.signal(true);
+        let (dynamic_classes, set_dynamic_classes) =
+            scope.signal(String::from("macro-owned macro-reactive"));
         let view = silex::html::div(()).apply(classes![
             "macro-static",
             "macro-active" => active,
+            "macro-static" => active,
+            "macro-owned" => active,
+            dynamic_classes,
         ]);
         let owner = ScopedViewOwner::new(scope);
         view.mount_owned(&owner, &host, Vec::new());
@@ -493,17 +498,45 @@ fn classes_reactive_toggle_updates_and_cleans_without_removing_static_classes() 
             .expect("classes view mounts an element");
         assert!(element.class_list().contains("macro-static"));
         assert!(element.class_list().contains("macro-active"));
+        assert!(element.class_list().contains("macro-owned"));
+        assert!(element.class_list().contains("macro-reactive"));
 
         set_active.set(false);
         assert!(element.class_list().contains("macro-static"));
         assert!(!element.class_list().contains("macro-active"));
+        assert!(element.class_list().contains("macro-owned"));
+        assert!(element.class_list().contains("macro-reactive"));
+
+        set_dynamic_classes.set(String::from("macro-owned"));
+        assert!(element.class_list().contains("macro-owned"));
+        assert!(!element.class_list().contains("macro-reactive"));
+
+        set_dynamic_classes.set(String::new());
+        assert!(!element.class_list().contains("macro-owned"));
+        assert!(element.class_list().contains("macro-static"));
+
         set_active.set(true);
+        assert!(element.class_list().contains("macro-static"));
         assert!(element.class_list().contains("macro-active"));
+        assert!(element.class_list().contains("macro-owned"));
+
+        set_dynamic_classes.set(String::from("macro-reactive"));
+        assert!(element.class_list().contains("macro-owned"));
+        assert!(element.class_list().contains("macro-reactive"));
+
+        set_active.set(false);
+        assert!(!element.class_list().contains("macro-owned"));
+        assert!(element.class_list().contains("macro-reactive"));
+
+        set_dynamic_classes.set(String::new());
+        assert!(element.class_list().contains("macro-static"));
+        assert!(!element.class_list().contains("macro-reactive"));
     }
 
     root.dispose().expect("classes owner can be disposed");
     assert!(element.class_list().contains("macro-static"));
     assert!(!element.class_list().contains("macro-active"));
+    assert!(!element.class_list().contains("macro-owned"));
     remove_host(&host);
 }
 

@@ -33,6 +33,10 @@ pub(crate) trait SheetBackend: Sized + 'static {
     /// 由调用方退回整表替换。
     fn append_rules(&self, rules: &[&str]) -> bool;
 
+    /// 将表挂回文档。构造式样式表由文档注册表管理；`<style>` 兜底需要把
+    /// 原节点重新插回 `<head>`。
+    fn attach(&self) -> bool;
+
     /// 参与 `adoptedStyleSheets` 的句柄（`<style>` 兜底没有）。
     fn adopted(&self) -> Option<Self::Handle>;
 

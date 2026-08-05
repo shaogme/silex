@@ -351,6 +351,36 @@ fn a_style_tag_fallback_never_joins_adopted_stylesheets() {
     );
 }
 
+/// 退休的 `<style>` 兜底复用时必须重新挂回文档，并继续保持独立的 fallback 路径。
+#[test]
+fn reusing_a_retired_style_tag_reattaches_it() {
+    setup();
+    fake::set_knobs(Knobs {
+        tag_fallback: true,
+        ..Default::default()
+    });
+
+    let first = DynamicStyleManager::new();
+    first.update("a", ".a{color:red}");
+    assert!(fake::sheet_log(0).attached);
+
+    drop(first);
+    platform::run_microtasks();
+    assert!(!fake::sheet_log(0).attached);
+
+    let second = DynamicStyleManager::new();
+    second.update("a", ".a{color:blue}");
+    platform::run_microtasks();
+
+    assert_eq!(created_sheets(), 1, "复用时不应创建新的 fallback 表");
+    assert!(
+        fake::sheet_log(0).attached,
+        "复用后 fallback 表必须重新挂载"
+    );
+    assert!(fake::adopted_now().is_empty());
+    assert_eq!(fake::sheet_log(0).content, ".a{color:blue}");
+}
+
 // ---- 借用冲突时欠下的活 ----
 
 /// 借用冲突时的注入不能丢，下一次拿到锁要补做。

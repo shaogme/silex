@@ -58,9 +58,13 @@ pub(crate) struct DynamicStyleState {
 }
 
 impl DynamicStyleState {
-    fn attach(&self) {
+    fn attach(&self) -> bool {
         if self.attached.get() {
-            return;
+            return true;
+        }
+        if !self.sheet.attach() {
+            report("挂载动态样式表失败");
+            return false;
         }
         // 先记状态再排队：`attached` 记的是**意图**，排进队列的增删一定会发生，
         // 于是「挂上了没有」不再取决于这一刻借不借得到注册表。此前借用冲突时
@@ -69,23 +73,30 @@ impl DynamicStyleState {
         if let Some(adopted) = self.sheet.adopted() {
             apply_doc_op(DocOp::Add(adopted));
         }
+        true
     }
 
     fn detach(&self) {
-        if !self.attached.get() {
-            return;
-        }
-        self.attached.set(false);
-        if let Some(adopted) = self.sheet.adopted() {
+        if self.attached.replace(false)
+            && let Some(adopted) = self.sheet.adopted()
+        {
             // 借不到就排队，微任务里补做——不再静默跳过
             apply_doc_op(DocOp::Remove(adopted));
         }
+        // 即使状态尚未成功标记为 attached，也要清理 create() 已经插入的
+        // fallback 节点，避免挂载失败时留下孤立的 <style>。
         self.sheet.detach();
     }
 
-    fn acquire(&self) {
-        self.leases.set(self.leases.get().saturating_add(1));
-        self.attach();
+    fn acquire(&self) -> bool {
+        let previous = self.leases.get();
+        self.leases.set(previous.saturating_add(1));
+        if self.attach() {
+            true
+        } else {
+            self.leases.set(previous);
+            false
+        }
     }
 
     fn release(&self) -> bool {
@@ -268,7 +279,9 @@ impl DynamicStyleManager {
         };
 
         self.take_and_retire();
-        new_state.acquire();
+        if !new_state.acquire() {
+            return false;
+        }
         if let Ok(mut state_borrow) = self.state.try_borrow_mut() {
             *state_borrow = Some(new_state);
         }

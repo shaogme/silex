@@ -2,7 +2,7 @@
 
 use js_sys::Promise;
 use silex_core::Runtime;
-use silex_css::{CssPart, DynamicCss, IntoCssReactive, prelude::inject_style};
+use silex_css::{CssPart, DynamicCss, DynamicStyleManager, IntoCssReactive, prelude::inject_style};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom},
     view::{ScopedViewOwner, ViewOwner},
@@ -22,7 +22,7 @@ fn document() -> Document {
         .expect("browser tests have a document")
 }
 
-fn style_text_containing(needle: &str) -> Option<String> {
+fn style_element_containing(needle: &str) -> Option<HtmlStyleElement> {
     let head = document().head()?;
     let children = head.children();
     for index in 0..children.length() {
@@ -33,10 +33,14 @@ fn style_text_containing(needle: &str) -> Option<String> {
         let style = element.dyn_into::<HtmlStyleElement>().ok()?;
         let text = style.text_content().unwrap_or_default();
         if text.contains(needle) {
-            return Some(text);
+            return Some(style);
         }
     }
     None
+}
+
+fn style_text_containing(needle: &str) -> Option<String> {
+    style_element_containing(needle).and_then(|style| style.text_content())
 }
 
 async fn flush_style_microtasks() {
@@ -63,6 +67,38 @@ fn remove(node: &Node) {
     if let Some(parent) = node.parent_node() {
         parent.remove_child(node).expect("test node can be removed");
     }
+}
+
+#[wasm_bindgen_test(async)]
+async fn style_tag_fallback_reuses_the_same_dom_node() {
+    const MARKER: &str = "slx-fallback-reused-marker";
+
+    let first = DynamicStyleManager::new();
+    assert!(first.update(
+        "slx-fallback-reused",
+        ".slx-fallback-reused-marker{color:red}"
+    ));
+    let style = style_element_containing(MARKER).expect("fallback style exists");
+    assert!(style.parent_node().is_some());
+
+    drop(first);
+    flush_style_microtasks().await;
+    assert!(
+        style.parent_node().is_none(),
+        "退休后 fallback 节点应从 DOM 移除"
+    );
+
+    let second = DynamicStyleManager::new();
+    assert!(second.update(
+        "slx-fallback-reused",
+        ".slx-fallback-reused-marker{color:blue}"
+    ));
+    let reattached = style_element_containing(MARKER).expect("fallback style is reattached");
+    assert!(style.is_same_node(Some(reattached.as_ref())));
+    assert_eq!(
+        reattached.text_content().as_deref(),
+        Some(".slx-fallback-reused-marker{color:blue}")
+    );
 }
 
 #[wasm_bindgen_test(async)]

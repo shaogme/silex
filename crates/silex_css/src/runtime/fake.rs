@@ -36,6 +36,8 @@ pub(crate) enum SheetEvent {
 pub(crate) struct SheetLog {
     pub content: String,
     pub rules: Vec<String>,
+    /// fallback 表当前是否仍挂在文档中
+    pub attached: bool,
     pub detached: bool,
     pub dropped: bool,
 }
@@ -138,6 +140,13 @@ impl SheetBackend for FakeSheet {
         true
     }
 
+    fn attach(&self) -> bool {
+        if self.tag_fallback {
+            with_log(self.id, |log| log.attached = true);
+        }
+        true
+    }
+
     fn adopted(&self) -> Option<usize> {
         if self.tag_fallback {
             None
@@ -150,7 +159,10 @@ impl SheetBackend for FakeSheet {
         if !self.tag_fallback {
             return;
         }
-        with_log(self.id, |log| log.detached = true);
+        with_log(self.id, |log| {
+            log.attached = false;
+            log.detached = true;
+        });
         push_event(SheetEvent::Detached(self.id));
     }
 }

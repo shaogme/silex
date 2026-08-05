@@ -91,6 +91,21 @@ impl SheetBackend for Sheet {
         true
     }
 
+    fn attach(&self) -> bool {
+        match self {
+            Self::Constructed(_) => true,
+            Self::Tag(el) => {
+                if el.parent_node().is_some() {
+                    return true;
+                }
+                let Some(head) = document().head() else {
+                    return false;
+                };
+                head.append_child(el).is_ok()
+            }
+        }
+    }
+
     fn adopted(&self) -> Option<CssStyleSheet> {
         match self {
             Self::Constructed(s) => Some(s.clone()),

@@ -566,9 +566,6 @@ fn apply_combined_classes_internal<'scope>(
         .iter()
         .flat_map(|class| class.split_whitespace().map(str::to_owned))
         .collect();
-    let toggle_names: Vec<Cow<'static, str>> =
-        toggles.iter().map(|(name, _)| name.clone()).collect();
-
     let mut inputs = RuntimeInputs::new();
     for (_, rx) in &toggles {
         inputs.extend(&rx.runtime_inputs());
@@ -578,10 +575,9 @@ fn apply_combined_classes_internal<'scope>(
     }
 
     // 2. 建立单 Effect 追踪所有响应式部分
-    let prev_toggles = Rc::new(RefCell::new(vec![None::<bool>; toggles.len()]));
-    let prev_reactive_tokens = Rc::new(RefCell::new(HashSet::<String>::new()));
-    let prev_toggles_for_cleanup = prev_toggles.clone();
-    let prev_reactive_tokens_for_cleanup = prev_reactive_tokens.clone();
+    let prev_dynamic_tokens = Rc::new(RefCell::new(HashSet::<String>::new()));
+    let prev_dynamic_tokens_for_cleanup = prev_dynamic_tokens.clone();
+    let static_tokens_for_update = static_tokens.clone();
     let static_tokens_for_cleanup = static_tokens.clone();
     let el_clone = el.clone();
     let el_for_cleanup = el.clone();
@@ -591,71 +587,44 @@ fn apply_combined_classes_internal<'scope>(
         Box::new(move || {
             let list = el_clone.class_list();
 
-            // 处理所有 Toggle (如 .class_toggle)，仅在状态改变时才更新 DOM
-            let mut prev_t = prev_toggles.borrow_mut();
-            for (i, (name, rx)) in toggles.iter().enumerate() {
-                let val = rx.get();
-                if prev_t[i] != Some(val) {
-                    if val {
-                        let _ = list.add_1(name);
-                    } else {
-                        let _ = list.remove_1(name);
-                    }
-                    prev_t[i] = Some(val);
+            // 先合并所有动态来源。一个 token 可能同时来自 toggle 与 reactive
+            // class，只有它不再被任何动态来源提供时才能从 DOM 中移除。
+            let mut new_dynamic_tokens = HashSet::new();
+            for (name, rx) in &toggles {
+                if rx.get() {
+                    new_dynamic_tokens.insert(name.to_string());
                 }
             }
 
-            // 处理所有响应式字符串类 (需要 Diff 算法以支持正确删除旧类)
-            if !reactives.is_empty() {
-                let reactive_strings: Vec<String> = reactives.iter().map(|rx| rx.get()).collect();
-                let mut new_tokens = HashSet::new();
-                for s in &reactive_strings {
-                    for token in s.split_whitespace() {
-                        new_tokens.insert(token);
-                    }
-                }
-
-                let mut prev = prev_reactive_tokens.borrow_mut();
-
-                // 1. 先添加新增加的 Class，确保样式/过渡声明（transition）无缝连接，不因无类中间态产生闪烁/动画打断
-                for token in &new_tokens {
-                    if !prev.contains(*token) {
-                        let _ = list.add_1(token);
-                    }
-                }
-
-                // 2. 后移除已不在新集合里的旧 Class
-                prev.retain(|c| {
-                    if !new_tokens.contains(c.as_str()) {
-                        let _ = list.remove_1(c);
-                        false
-                    } else {
-                        true
-                    }
-                });
-
-                // 3. 将新集合中的所有项同步至 prev 记录集合中
-                for token in new_tokens {
-                    prev.insert(token.to_string());
+            for rx in &reactives {
+                for token in rx.get().split_whitespace() {
+                    new_dynamic_tokens.insert(token.to_string());
                 }
             }
+
+            let mut prev = prev_dynamic_tokens.borrow_mut();
+            let previous = prev.clone();
+
+            // 先添加新增加的 Class，确保样式/过渡声明（transition）无缝连接，
+            // 不因无类中间态产生闪烁或动画打断。
+            for token in new_dynamic_tokens.difference(&previous) {
+                let _ = list.add_1(token);
+            }
+
+            // 只删除已经不再由任何动态来源提供的旧 Class；静态 Class 即使
+            // 同名，也必须继续保留。
+            for token in previous.difference(&new_dynamic_tokens) {
+                if !static_tokens_for_update.contains(token) {
+                    let _ = list.remove_1(token);
+                }
+            }
+
+            *prev = new_dynamic_tokens;
         }),
     );
 
     owner.on_cleanup(Box::new(move || {
-        let mut dynamic_tokens = HashSet::new();
-        for (index, name) in toggle_names.iter().enumerate() {
-            if prev_toggles_for_cleanup
-                .borrow()
-                .get(index)
-                .and_then(Option::as_ref)
-                .is_some_and(|active| *active)
-            {
-                dynamic_tokens.insert(name.to_string());
-            }
-        }
-        dynamic_tokens.extend(prev_reactive_tokens_for_cleanup.borrow().iter().cloned());
-
+        let dynamic_tokens = prev_dynamic_tokens_for_cleanup.borrow().clone();
         let list = el_for_cleanup.class_list();
         for token in dynamic_tokens {
             if !static_tokens_for_cleanup.contains(&token) {
