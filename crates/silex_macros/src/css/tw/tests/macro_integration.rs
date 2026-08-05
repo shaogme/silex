@@ -12,10 +12,19 @@ fn test_conditional_tw_macro() {
     );
     let output = tw_impl(ts).unwrap();
     let code = output.to_string();
-    assert!(code.contains("rx !"));
+    assert!(code.contains("custom_with_inputs"));
+    assert!(!code.contains("rx !"));
+    assert!(code.contains("runtime_inputs"));
+    assert!(code.contains("on_cleanup"));
     assert!(code.contains("is_active"));
     assert!(code.contains("is_dark"));
-    assert!(code.contains("inject_style"));
+    let custom_pos = code
+        .find("custom_with_inputs")
+        .expect("conditional tw uses an owner-bound attribute");
+    let inject_pos = code
+        .find("inject_style")
+        .expect("conditional tw injects CSS");
+    assert!(inject_pos > custom_pos, "{code}");
 }
 
 #[test]
@@ -31,6 +40,15 @@ fn test_conditional_tw_macro_deduplication() {
         "Expected exactly 4 inject_style calls (2 per unique CSS block for p-4 and bg-red-500), got {}",
         inject_count
     );
+}
+
+#[test]
+fn conditional_tw_rejects_dynamic_values_inside_arms() {
+    let err = tw_impl(quote!((is_active, "w-[$(width)]", "w-4")))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("then/else utility 必须是静态 CSS"), "{err}");
+    assert!(err.contains("动态 arbitrary value"), "{err}");
 }
 
 // ---------------------------------------------------------------------------

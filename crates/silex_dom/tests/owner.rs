@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use silex_core::Runtime;
-use silex_dom::attribute::PendingAttribute;
+use silex_dom::attribute::{AttrOp, CombinedStyles, PendingAttribute};
 use silex_dom::view::{
     AnyView, ApplyAttributes, IndexedLoopView, KeyedLoopView, RowUpdater, ScopedViewOwner, View,
     ViewOwner, mount_branch_cached, mount_text_node,
@@ -152,6 +152,60 @@ fn dynamic_render_owner_cleans_children_on_rerun_and_root_dispose() {
     host.parent_node()
         .expect("test host has a body parent")
         .remove_child(&host)
+        .expect("test host can be removed");
+}
+
+#[wasm_bindgen_test]
+fn combined_reactive_styles_clean_up_properties_on_scope_dispose() {
+    let host = mount_point();
+    let document = web_sys::window()
+        .expect("window is available in browser tests")
+        .document()
+        .expect("document is available in browser tests");
+    let element = document
+        .create_element("div")
+        .expect("test element can be created");
+    host.append_child(&element).expect("element can be mounted");
+
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let (color, set_color) = scope.signal(String::from("red"));
+        let owner = ScopedViewOwner::new(scope);
+        let token = owner.token();
+        let operation = AttrOp::CombinedStyles(CombinedStyles {
+            statics: Vec::new(),
+            properties: vec![("--dom-owner-color".into(), color.into_rx())],
+            sheets: Vec::new(),
+        });
+
+        operation.apply(&element, &token);
+        assert!(
+            element
+                .get_attribute("style")
+                .unwrap_or_default()
+                .contains("--dom-owner-color: red")
+        );
+
+        set_color.set(String::from("blue"));
+        assert!(
+            element
+                .get_attribute("style")
+                .unwrap_or_default()
+                .contains("--dom-owner-color: blue")
+        );
+    });
+
+    assert!(
+        !element
+            .get_attribute("style")
+            .unwrap_or_default()
+            .contains("--dom-owner-color")
+    );
+    let host_node: Node = host.into();
+    host_node
+        .parent_node()
+        .expect("test host has a body parent")
+        .remove_child(&host_node)
         .expect("test host can be removed");
 }
 

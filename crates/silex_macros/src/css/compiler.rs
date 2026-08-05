@@ -12,7 +12,7 @@
 //! - [`targets`]: **浏览器基线配置**。基于 LightningCSS 的浏览器兼容目标配置与版本号解析逻辑。
 //! - [`parser`]: **AST 转换与编译核心**。包含 [`process_css_block`](parser::process_css_block)、动态选择器提取
 //!   与静态属性校验的核心递归解析流程。
-//! - [`tests`]: 单元测试套件。
+//! - [`tests`][]: 单元测试套件。
 //!
 //! ## 主入口 [`CssCompiler`]
 //!
@@ -183,7 +183,12 @@ impl CssCompiler {
                 wrap_in_class: false,
                 is_unsafe,
                 prefix: "slx-",
-                region: macro_region(),
+                // `global!` receives a whole CSS token stream rather than a single
+                // declaration/value span. The call-site source text also contains the
+                // macro invocation itself, so using it for whitespace recovery can make
+                // the reconstructed global rule differ from the parsed token stream.
+                // Global selectors still use the conservative token-shape fallback.
+                region: None,
                 validate: true,
             },
         )

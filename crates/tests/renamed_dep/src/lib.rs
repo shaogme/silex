@@ -5,25 +5,22 @@
 
 use my_silex::prelude::*;
 
-#[derive(I18nKeys)]
-#[i18n(path = "locales/en.json")]
-enum RenamedText {
-    #[i18n(key = "title")]
-    Title,
-}
-
-pub fn renamed_i18n_key() -> &'static str {
-    RenamedText::Title.key()
-}
-
-/// `tw!`（含条件分支，会展开 `rx!` / `cx!`）与 `css!`
-#[component]
-pub fn Badge(#[prop(into)] label: String, #[chain(default)] wide: bool) -> impl View {
-    let cls = tw!(
+/// `tw!` 条件分支消费调用方已经创建的 scoped source，`css!` 保持静态路径。
+pub fn badge_class<'scope>(
+    wide: my_silex::core::reactivity::Signal<'scope, bool>,
+) -> my_silex::dom::attribute::AttrOp<'scope> {
+    tw!(
         "inline-flex items-center px-2 py-1 rounded-sm",
         (wide, "w-full", "w-auto")
-    );
-    span!(label).class(cls).style(css! { line-height: 1.25; })
+    )
+}
+
+pub fn badge_style() -> &'static str {
+    css! { line-height: 1.25; }
+}
+
+pub fn static_classes() -> my_silex::dom::attribute::AttributeGroup<'static> {
+    classes!["inline-flex", "items-center"]
 }
 
 /// `tw_variants!` 表达式形式：展开出 `declare_variants!` 与每个选项的 `tw!`
@@ -97,6 +94,15 @@ styled! {
         display: flex;
         flex-direction: column;
         padding: 1rem;
+    }
+}
+
+styled! {
+    pub ScopedPanel<'scope><div> (
+        children: AnyView<'scope>,
+        color: my_silex::core::reactivity::Signal<'scope, my_silex::css::types::Hex>,
+    ) {
+        color: $(color);
     }
 }
 

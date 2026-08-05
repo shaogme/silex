@@ -27,6 +27,9 @@ pub struct DynamicRule {
 /// 不可能来自源码。
 pub(crate) const PLACEHOLDER_CLASS: char = '\u{1}';
 pub(crate) const PLACEHOLDER_VALUE: char = '\u{2}';
+/// 选择器片段专用占位符。它不能与声明值共用，否则运行时无法选择正确的
+/// CSS 转义上下文。
+pub(crate) const PLACEHOLDER_SELECTOR_VALUE: char = '\u{4}';
 
 /// 类名在编译期的占位。
 ///
@@ -44,6 +47,7 @@ pub enum TemplatePart {
     Lit(String),
     Class,
     Val(usize),
+    SelectorVal(usize),
 }
 
 /// 把带占位符的模板切成片段。
@@ -53,16 +57,18 @@ pub fn template_parts(template: &str) -> Vec<TemplatePart> {
     let mut next_val = 0;
     for ch in template.chars() {
         match ch {
-            PLACEHOLDER_CLASS | PLACEHOLDER_VALUE => {
+            PLACEHOLDER_CLASS | PLACEHOLDER_VALUE | PLACEHOLDER_SELECTOR_VALUE => {
                 if !lit.is_empty() {
                     parts.push(TemplatePart::Lit(std::mem::take(&mut lit)));
                 }
                 if ch == PLACEHOLDER_CLASS {
                     parts.push(TemplatePart::Class);
+                } else if ch == PLACEHOLDER_SELECTOR_VALUE {
+                    parts.push(TemplatePart::SelectorVal(next_val));
                 } else {
                     parts.push(TemplatePart::Val(next_val));
-                    next_val += 1;
                 }
+                next_val += 1;
             }
             c => lit.push(c),
         }
@@ -80,6 +86,9 @@ pub fn template_parts_tokens(template: &str) -> TokenStream {
         TemplatePart::Lit(s) => quote::quote! { #__silex::css::CssPart::Lit(#s) },
         TemplatePart::Class => quote::quote! { #__silex::css::CssPart::Class },
         TemplatePart::Val(i) => quote::quote! { #__silex::css::CssPart::Val(#i) },
+        TemplatePart::SelectorVal(i) => {
+            quote::quote! { #__silex::css::CssPart::SelectorVal(#i) }
+        }
     });
     quote::quote! { &[ #(#items),* ] }
 }

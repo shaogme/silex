@@ -1,4 +1,4 @@
-use std::{fmt, marker::PhantomData};
+use std::fmt;
 
 /// A scope-owned host object reference.
 pub struct NodeRef<'scope, T = ()> {
@@ -43,6 +43,3 @@ impl<'scope, T: 'scope> NodeRef<'scope, T> {
         self.inner.is_alive()
     }
 }
-
-#[allow(dead_code)]
-type _NodeRefMarker<T> = PhantomData<T>;

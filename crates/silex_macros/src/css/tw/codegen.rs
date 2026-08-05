@@ -252,11 +252,11 @@ fn collapse_between_reversals(rules: Vec<UtilityRule>) -> Vec<UtilityRule> {
 
         let mut first_idx = None;
         let mut second_idx = None;
-        for j in 0..n {
-            if rules[j].modifiers == *mods {
-                if rules[j].css_property == first_target {
+        for (j, rule) in rules.iter().enumerate() {
+            if rule.modifiers == *mods {
+                if rule.css_property == first_target {
                     first_idx = Some(j);
-                } else if rules[j].css_property == second_target {
+                } else if rule.css_property == second_target {
                     second_idx = Some(j);
                 }
             }

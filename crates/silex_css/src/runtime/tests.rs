@@ -16,6 +16,7 @@ use crate::runtime::{
     fake::{self, Knobs, SheetEvent},
     platform,
     registry::{self, StaticStyleRegistry, inject_style, with_document_registry},
+    template::CssPart,
 };
 
 /// 每个测试都从一张白纸开始：thread_local 会在 `--test-threads=1` 下串场。
@@ -150,6 +151,22 @@ fn a_failed_dynamic_replace_does_not_commit_a_half_initialized_sheet() {
 }
 
 #[test]
+fn a_failed_dynamic_rule_does_not_produce_a_class_name() {
+    setup();
+    fake::set_knobs(Knobs {
+        replace_fails: true,
+        ..Default::default()
+    });
+
+    let manager = DynamicStyleManager::new();
+    static PARTS: &[CssPart] = &[CssPart::Lit(".base{color:red}")];
+    let class_name = dynamic::dynamic_rule_class(&manager, "base", PARTS, &[]);
+
+    assert!(class_name.is_none());
+    assert!(fake::adopted_now().is_empty());
+}
+
+#[test]
 fn active_managers_with_different_content_do_not_overwrite_each_other() {
     setup();
     let first = DynamicStyleManager::new();
@@ -167,6 +184,30 @@ fn active_managers_with_different_content_do_not_overwrite_each_other() {
     platform::run_microtasks();
     assert_eq!(fake::adopted_now(), vec![1]);
     assert_eq!(fake::sheet_log(1).content, ".shared{color:blue}");
+}
+
+#[test]
+fn shared_same_content_sheet_stays_attached_until_last_manager_drops() {
+    setup();
+    let first = DynamicStyleManager::new();
+    first.update("shared", ".shared{color:red}");
+
+    let second = DynamicStyleManager::new();
+    second.update("shared", ".shared{color:red}");
+    platform::run_microtasks();
+    assert_eq!(fake::adopted_now(), vec![0]);
+
+    drop(first);
+    platform::run_microtasks();
+    assert_eq!(
+        fake::adopted_now(),
+        vec![0],
+        "释放一个共享 owner 不能摘除仍在使用的样式表"
+    );
+
+    drop(second);
+    platform::run_microtasks();
+    assert!(fake::adopted_now().is_empty());
 }
 
 // ---- adoptedStyleSheets 的同步判据 ----

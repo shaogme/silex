@@ -562,6 +562,13 @@ fn apply_combined_classes_internal<'scope>(
         return;
     }
 
+    let static_tokens: HashSet<String> = statics
+        .iter()
+        .flat_map(|class| class.split_whitespace().map(str::to_owned))
+        .collect();
+    let toggle_names: Vec<Cow<'static, str>> =
+        toggles.iter().map(|(name, _)| name.clone()).collect();
+
     let mut inputs = RuntimeInputs::new();
     for (_, rx) in &toggles {
         inputs.extend(&rx.runtime_inputs());
@@ -573,7 +580,11 @@ fn apply_combined_classes_internal<'scope>(
     // 2. 建立单 Effect 追踪所有响应式部分
     let prev_toggles = Rc::new(RefCell::new(vec![None::<bool>; toggles.len()]));
     let prev_reactive_tokens = Rc::new(RefCell::new(HashSet::<String>::new()));
+    let prev_toggles_for_cleanup = prev_toggles.clone();
+    let prev_reactive_tokens_for_cleanup = prev_reactive_tokens.clone();
+    let static_tokens_for_cleanup = static_tokens.clone();
     let el_clone = el.clone();
+    let el_for_cleanup = el.clone();
 
     owner.effect_from(
         inputs,
@@ -630,6 +641,28 @@ fn apply_combined_classes_internal<'scope>(
             }
         }),
     );
+
+    owner.on_cleanup(Box::new(move || {
+        let mut dynamic_tokens = HashSet::new();
+        for (index, name) in toggle_names.iter().enumerate() {
+            if prev_toggles_for_cleanup
+                .borrow()
+                .get(index)
+                .and_then(Option::as_ref)
+                .is_some_and(|active| *active)
+            {
+                dynamic_tokens.insert(name.to_string());
+            }
+        }
+        dynamic_tokens.extend(prev_reactive_tokens_for_cleanup.borrow().iter().cloned());
+
+        let list = el_for_cleanup.class_list();
+        for token in dynamic_tokens {
+            if !static_tokens_for_cleanup.contains(&token) {
+                let _ = list.remove_1(&token);
+            }
+        }
+    }));
 }
 
 fn apply_combined_styles_internal<'scope>(
@@ -664,6 +697,12 @@ fn apply_combined_styles_internal<'scope>(
     let prev_props = Rc::new(RefCell::new(vec![None::<String>; properties.len()]));
     let prev_sheet_keys = Rc::new(RefCell::new(HashSet::<String>::new()));
     let el_clone = el.clone();
+    let property_names: Vec<String> = properties
+        .iter()
+        .map(|(name, _)| name.to_string())
+        .collect();
+    let prev_sheet_keys_for_cleanup = prev_sheet_keys.clone();
+    let el_for_cleanup = el.clone();
 
     owner.effect_from(
         inputs,
@@ -712,6 +751,17 @@ fn apply_combined_styles_internal<'scope>(
             }
         }),
     );
+
+    owner.on_cleanup(Box::new(move || {
+        if let Some(style) = get_style_decl(&el_for_cleanup) {
+            for name in property_names {
+                let _ = style.remove_property(&name);
+            }
+            for name in prev_sheet_keys_for_cleanup.borrow().iter() {
+                let _ = style.remove_property(name);
+            }
+        }
+    }));
 }
 
 // --- Kernel Functions (Non-generic DOM operations) ---

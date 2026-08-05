@@ -10,8 +10,8 @@ use crate::{
 };
 use silex_core::{RuntimeInputs, Rx, error::handle_error};
 use silex_dom::{
-    attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
-    view::{ViewOwner, ViewOwnerToken},
+    attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable, PendingAttribute},
+    view::{ApplyAttributes, View, ViewOwner, ViewOwnerToken},
 };
 use std::{
     cell::{Cell, RefCell},
@@ -48,6 +48,12 @@ pub(crate) struct DynamicStyleState {
     content: RefCell<String>,
     /// 当前是否挂在 `document.adoptedStyleSheets` 上
     attached: std::cell::Cell<bool>,
+    /// 当前持有这张动态样式表的 manager 数量。
+    ///
+    /// 同一 logical id 且内容相同的 owner 可以共享状态；因此不能用
+    /// `Rc::strong_count` 判断最后一个 owner，也不能在任一 manager dispose
+    /// 时直接摘表。
+    leases: Cell<usize>,
 }
 
 impl DynamicStyleState {
@@ -74,6 +80,26 @@ impl DynamicStyleState {
             apply_doc_op(DocOp::Remove(adopted));
         }
         self.sheet.detach();
+    }
+
+    fn acquire(&self) {
+        self.leases.set(self.leases.get().saturating_add(1));
+        self.attach();
+    }
+
+    fn release(&self) -> bool {
+        let leases = self.leases.get();
+        if leases == 0 {
+            return false;
+        }
+        let remaining = leases - 1;
+        self.leases.set(remaining);
+        if remaining == 0 {
+            self.detach();
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -151,25 +177,21 @@ impl DynamicStyleManager {
         let Ok(mut state_borrow) = self.state.try_borrow_mut() else {
             return;
         };
-        if let Some(state) = state_borrow.take() {
-            // manager dispose 必须立即停止样式匹配。effect/cleanup closure 可能仍
-            // 暂时持有 state，不能把 detach 推迟到最后一个 Rc drop。
-            state.detach();
-            // If strong_count is 1, it means this manager was the only one holding the style.
-            if Rc::strong_count(&state) == 1 {
-                // 退休 = 保留内容、移出 adoptedStyleSheets。表对象还在（复用时
-                // 不必重新解析 CSS），但不再参与样式匹配。
-                RETIRED_STYLES.with(|retired| {
-                    let Ok(mut r) = retired.try_borrow_mut() else {
-                        return;
-                    };
-                    r.push_back(state);
-                    if r.len() > CACHE_LIMIT {
-                        // This will drop the oldest retired state, potentially triggering DynamicStyleState::drop
-                        r.pop_front();
-                    }
-                });
-            }
+        if let Some(state) = state_borrow.take()
+            && state.release()
+        {
+            // 退休 = 保留内容、移出 adoptedStyleSheets。表对象还在（复用时
+            // 不必重新解析 CSS），但不再参与样式匹配。
+            RETIRED_STYLES.with(|retired| {
+                let Ok(mut r) = retired.try_borrow_mut() else {
+                    return;
+                };
+                r.push_back(state);
+                if r.len() > CACHE_LIMIT {
+                    // This will drop the oldest retired state, potentially triggering DynamicStyleState::drop
+                    r.pop_front();
+                }
+            });
         }
     }
 
@@ -203,8 +225,8 @@ impl DynamicStyleManager {
                     });
                     if state.sheet.replace(content) {
                         *state.content.borrow_mut() = content.to_string();
-                        // 复用一张退休的表：内容还在，但已经被摘出文档，得挂回去
-                        state.attach();
+                        // 复用一张退休的表：内容还在，但已经被摘出文档，得在
+                        // 新 manager 获取 lease 时挂回去。
                         return Some(state);
                     }
                 }
@@ -234,8 +256,8 @@ impl DynamicStyleManager {
                 sheet,
                 content: RefCell::new(content.to_string()),
                 attached: std::cell::Cell::new(false),
+                leases: Cell::new(0),
             });
-            state.attach();
             reg.insert(state_id, Rc::downgrade(&state));
             Some(state)
         })
@@ -245,6 +267,7 @@ impl DynamicStyleManager {
         };
 
         self.take_and_retire();
+        new_state.acquire();
         if let Ok(mut state_borrow) = self.state.try_borrow_mut() {
             *state_borrow = Some(new_state);
         }
@@ -268,6 +291,7 @@ pub struct DynamicCss<'scope> {
     pub class_name: &'static str,
     pub vars: Vec<(&'static str, CssVariableGetter<'scope>)>,
     pub rules: Vec<(&'static [CssPart], Vec<CssVariableGetter<'scope>>)>,
+    static_styles: Vec<(&'static str, &'static str)>,
 }
 
 impl<'scope> DynamicCss<'scope> {
@@ -276,7 +300,20 @@ impl<'scope> DynamicCss<'scope> {
             class_name,
             vars: Vec::new(),
             rules: Vec::new(),
+            static_styles: Vec::new(),
         }
+    }
+
+    /// Attach document-level style descriptors to this dynamic payload.
+    ///
+    /// The descriptors are injected only after the payload's complete source set
+    /// has passed owner validation.  This keeps construction free of document
+    /// side effects when a source belongs to a foreign runtime.
+    pub fn with_static_style(mut self, style_id: &'static str, css: &'static str) -> Self {
+        if !style_id.is_empty() && !css.is_empty() {
+            self.static_styles.push((style_id, css));
+        }
+        self
     }
 
     pub fn with_var<P, S>(mut self, var_name: &'static str, source: S) -> Self
@@ -319,6 +356,10 @@ impl<'scope> DynamicCss<'scope> {
         if let Err(error) = owner.validate_inputs(&all_inputs) {
             handle_error(error);
             return;
+        }
+
+        for (style_id, css) in &self.static_styles {
+            crate::inject_style(style_id, css);
         }
 
         let _ = el.class_list().add_1(self.class_name);
@@ -437,6 +478,358 @@ impl<'scope> IntoStorable<'scope> for DynamicCss<'scope> {
     }
 }
 
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct StyledDynamicRule<'scope> {
+    variant_group: Option<usize>,
+    variant_key: Option<&'static str>,
+    class_name: &'static str,
+    parts: &'static [CssPart],
+    getters: Vec<CssVariableGetter<'scope>>,
+}
+
+impl<'scope> StyledDynamicRule<'scope> {
+    pub fn new(
+        variant_group: Option<usize>,
+        variant_key: Option<&'static str>,
+        class_name: &'static str,
+        parts: &'static [CssPart],
+        getters: Vec<CssVariableGetter<'scope>>,
+    ) -> Self {
+        Self {
+            variant_group,
+            variant_key,
+            class_name,
+            parts,
+            getters,
+        }
+    }
+}
+
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct StyledVariantGroup<'scope> {
+    source: CssVariableGetter<'scope>,
+    classes: Vec<(&'static str, &'static str)>,
+}
+
+impl<'scope> StyledVariantGroup<'scope> {
+    pub fn new(
+        source: CssVariableGetter<'scope>,
+        classes: Vec<(&'static str, &'static str)>,
+    ) -> Self {
+        Self { source, classes }
+    }
+}
+
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct StyledVariantBinding<'scope> {
+    rules: Vec<StyledDynamicRule<'scope>>,
+    groups: Vec<StyledVariantGroup<'scope>>,
+}
+
+struct StyledRuleState {
+    manager: Option<Rc<DynamicStyleManager>>,
+    current_class: Option<String>,
+}
+
+impl<'scope> StyledVariantBinding<'scope> {
+    pub fn new(
+        rules: Vec<StyledDynamicRule<'scope>>,
+        groups: Vec<StyledVariantGroup<'scope>>,
+    ) -> Self {
+        Self { rules, groups }
+    }
+
+    pub fn into_op(self) -> AttrOp<'scope> {
+        let inputs = self.runtime_inputs();
+        AttrOp::custom_with_inputs(inputs, move |element, owner| {
+            self.mount_to_element(element, owner);
+        })
+    }
+
+    fn runtime_inputs(&self) -> RuntimeInputs {
+        let mut inputs = RuntimeInputs::new();
+        for group in &self.groups {
+            inputs.extend(&group.source.runtime_inputs());
+        }
+        for rule in &self.rules {
+            for getter in &rule.getters {
+                inputs.extend(&getter.runtime_inputs());
+            }
+        }
+        inputs
+    }
+
+    fn mount_to_element(&self, element: &Element, owner: &ViewOwnerToken<'scope>) {
+        let inputs = self.runtime_inputs();
+        if let Err(error) = owner.validate_inputs(&inputs) {
+            handle_error(error);
+            return;
+        }
+
+        let rules = self.rules.clone();
+        let groups = self.groups.clone();
+        let states = Rc::new(RefCell::new(
+            (0..rules.len())
+                .map(|_| StyledRuleState {
+                    manager: None,
+                    current_class: None,
+                })
+                .collect::<Vec<_>>(),
+        ));
+        let variant_classes = Rc::new(RefCell::new(vec![None; groups.len()]));
+        let states_for_effect = states.clone();
+        let variant_classes_for_effect = variant_classes.clone();
+        let element_for_effect = element.clone();
+        owner.effect_from(
+            inputs,
+            Box::new(move || {
+                let active_variants: Vec<String> = groups
+                    .iter()
+                    .map(|group| group.source.get().to_lowercase())
+                    .collect();
+                update_styled_variant_classes(
+                    &element_for_effect,
+                    &groups,
+                    &active_variants,
+                    &variant_classes_for_effect,
+                );
+                update_styled_dynamic_rules(
+                    &element_for_effect,
+                    &rules,
+                    &active_variants,
+                    &states_for_effect,
+                );
+            }),
+        );
+
+        let element_for_cleanup = element.clone();
+        owner.on_cleanup(Box::new(move || {
+            let mut classes = variant_classes.borrow_mut();
+            for class in classes.iter_mut().filter_map(Option::take) {
+                let _ = element_for_cleanup.class_list().remove_1(class);
+            }
+            drop(classes);
+
+            let mut states = states.borrow_mut();
+            for state in states.iter_mut() {
+                if let Some(class) = state.current_class.take() {
+                    let _ = element_for_cleanup.class_list().remove_1(&class);
+                }
+                if let Some(manager) = &state.manager {
+                    manager.dispose();
+                }
+            }
+        }));
+    }
+}
+
+fn update_styled_variant_classes(
+    element: &Element,
+    groups: &[StyledVariantGroup<'_>],
+    active_variants: &[String],
+    current_classes: &Rc<RefCell<Vec<Option<&'static str>>>>,
+) {
+    let mut current_classes = current_classes.borrow_mut();
+    for (index, group) in groups.iter().enumerate() {
+        let next_class = group
+            .classes
+            .iter()
+            .find(|(key, _)| {
+                active_variants
+                    .get(index)
+                    .is_some_and(|active| active == key)
+            })
+            .map(|(_, class)| *class);
+        if current_classes[index] == next_class {
+            continue;
+        }
+        if let Some(next_class) = next_class {
+            let _ = element.class_list().add_1(next_class);
+        }
+        let old_class = current_classes[index];
+        current_classes[index] = next_class;
+        if let Some(old_class) = old_class {
+            let _ = element.class_list().remove_1(old_class);
+        }
+    }
+}
+
+fn update_styled_dynamic_rules(
+    element: &Element,
+    rules: &[StyledDynamicRule<'_>],
+    active_variants: &[String],
+    states: &Rc<RefCell<Vec<StyledRuleState>>>,
+) {
+    for (index, rule) in rules.iter().enumerate() {
+        let active = match (rule.variant_group, rule.variant_key) {
+            (None, None) => true,
+            (Some(group), Some(key)) => active_variants
+                .get(group)
+                .is_some_and(|active| active == key),
+            _ => false,
+        };
+
+        if !active {
+            let old_class = {
+                let mut states = states.borrow_mut();
+                let state = &mut states[index];
+                if let Some(manager) = &state.manager {
+                    manager.dispose();
+                }
+                state.current_class.take()
+            };
+            if let Some(old_class) = old_class {
+                let _ = element.class_list().remove_1(&old_class);
+            }
+            continue;
+        }
+
+        let manager = {
+            let mut states = states.borrow_mut();
+            let state = &mut states[index];
+            state
+                .manager
+                .get_or_insert_with(|| Rc::new(DynamicStyleManager::new()))
+                .clone()
+        };
+        let Some(next_class) =
+            dynamic_rule_class(&manager, rule.class_name, rule.parts, &rule.getters)
+        else {
+            continue;
+        };
+
+        let mut states = states.borrow_mut();
+        let state = &mut states[index];
+        if state.current_class.as_deref() == Some(next_class.as_str()) {
+            continue;
+        }
+        let _ = element.class_list().add_1(&next_class);
+        if let Some(old_class) = state.current_class.replace(next_class) {
+            let _ = element.class_list().remove_1(&old_class);
+        }
+    }
+}
+
+/// A document-level dynamic stylesheet binding with no DOM representation.
+///
+/// The macro layer only constructs this descriptor.  Stylesheet managers and
+/// effects are created by `GlobalStyleView` during mount, after the owner has
+/// validated every source input.
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct GlobalStyleBinding<'scope> {
+    pub style_id: &'static str,
+    pub parts: &'static [CssPart],
+    pub positional: Vec<CssVariableGetter<'scope>>,
+    pub replacements: Vec<(String, CssVariableGetter<'scope>)>,
+}
+
+impl<'scope> GlobalStyleBinding<'scope> {
+    pub fn new(
+        style_id: &'static str,
+        parts: &'static [CssPart],
+        positional: Vec<CssVariableGetter<'scope>>,
+        replacements: Vec<(String, CssVariableGetter<'scope>)>,
+    ) -> Self {
+        Self {
+            style_id,
+            parts,
+            positional,
+            replacements,
+        }
+    }
+
+    fn runtime_inputs(&self) -> RuntimeInputs {
+        let mut inputs = RuntimeInputs::new();
+        for getter in &self.positional {
+            inputs.extend(&getter.runtime_inputs());
+        }
+        for (_, getter) in &self.replacements {
+            inputs.extend(&getter.runtime_inputs());
+        }
+        inputs
+    }
+}
+
+/// An owner-bound document stylesheet that does not create a DOM node.
+///
+/// Static descriptors are injected only after the complete input set has been
+/// validated.  Dynamic bindings delegate manager/effect/cleanup ownership to
+/// `inject_managed_dynamic_style`.
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct GlobalStyleView<'scope> {
+    static_styles: Vec<(&'static str, &'static str)>,
+    bindings: Vec<GlobalStyleBinding<'scope>>,
+}
+
+impl<'scope> GlobalStyleView<'scope> {
+    pub fn new(
+        static_styles: Vec<(&'static str, &'static str)>,
+        bindings: Vec<GlobalStyleBinding<'scope>>,
+    ) -> Self {
+        Self {
+            static_styles,
+            bindings,
+        }
+    }
+
+    fn mount_inner(&self, owner: &dyn ViewOwner<'scope>) {
+        let mut inputs = RuntimeInputs::new();
+        for binding in &self.bindings {
+            inputs.extend(&binding.runtime_inputs());
+        }
+        if let Err(error) = owner.validate_inputs(&inputs) {
+            handle_error(error);
+            return;
+        }
+
+        for (style_id, css) in &self.static_styles {
+            if !style_id.is_empty() && !css.is_empty() {
+                crate::inject_style(style_id, css);
+            }
+        }
+
+        for binding in &self.bindings {
+            let style_id = unique_dynamic_style_id(binding.style_id);
+            inject_managed_dynamic_style(
+                owner,
+                style_id,
+                binding.parts,
+                binding.positional.clone(),
+                binding.replacements.clone(),
+            );
+        }
+    }
+}
+
+impl<'scope> ApplyAttributes<'scope> for GlobalStyleView<'scope> {}
+
+impl<'scope> View<'scope> for GlobalStyleView<'scope> {
+    fn mount(
+        &self,
+        owner: &dyn ViewOwner<'scope>,
+        _parent: &web_sys::Node,
+        _attrs: Vec<PendingAttribute<'scope>>,
+    ) {
+        self.mount_inner(owner);
+    }
+
+    fn mount_owned(
+        self,
+        owner: &dyn ViewOwner<'scope>,
+        _parent: &web_sys::Node,
+        _attrs: Vec<PendingAttribute<'scope>>,
+    ) where
+        Self: Sized,
+    {
+        self.mount_inner(owner);
+    }
+}
+
 pub fn make_property_val<'scope, P, S>(source: S) -> Rx<'scope, String>
 where
     P: types::CssProperty,
@@ -455,19 +848,19 @@ pub fn dynamic_rule_class(
     base_class: &str,
     parts: &'static [CssPart],
     getters: &[CssVariableGetter<'_>],
-) -> String {
+) -> Option<String> {
     let vals: Vec<String> = getters.iter().map(|g| g.get()).collect();
     let dyn_class = dynamic_class(base_class, parts, &vals);
     let rule = render_selector(parts, &dyn_class, &vals);
-    manager.update(&dyn_class, &rule);
-    dyn_class
+    manager.update(&dyn_class, &rule).then_some(dyn_class)
 }
 
 /// Helper function to inject managed dynamic style with reactive variable replacements.
 ///
 /// 模板里有两类运行时片段：
 ///
-/// - `parts` 里的 `CssPart::Val(i)`：**选择器**里的片段（`.x $theme { … }`）。
+/// - `parts` 里的 `CssPart::SelectorVal(i)`：**选择器**里的片段
+///   （`.x $theme { … }`）。
 ///   全局样式没有可挂 CSS 变量的元素，只能把值拼进规则文本。
 /// - `replacements`：具名的 `var(--slx-dyn-N)`，用于**声明值**里的片段。这段
 ///   模板要先过一遍 lightningcss，位置信息在那之后不复存在，只能按文本找；但

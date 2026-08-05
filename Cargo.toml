@@ -15,6 +15,7 @@ members = [
     "crates/silex_i18n_macros",
 
     "crates/tests/renamed_dep",
+    "crates/tests/silex_macros_test",
 
     "crates/utils/silex_hash",
     "crates/utils/silex_vtable",

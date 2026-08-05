@@ -6,7 +6,7 @@ use crate::{
 use silex_reactivity::{
     ReactiveResult, ReadSignal as RawReadSignal, WriteSignal as RawWriteSignal,
 };
-use std::{fmt, marker::PhantomData};
+use std::fmt;
 
 /// A plain value that has not yet been promoted into a runtime node.
 #[derive(Clone, Debug, PartialEq)]
@@ -328,6 +328,3 @@ impl<'scope, T: 'scope> From<StoredValue<'scope, T>> for Signal<'scope, T> {
         Self::from_rx(Rx::from_stored(stored))
     }
 }
-
-#[allow(dead_code)]
-type _SignalMarker<T> = PhantomData<T>;

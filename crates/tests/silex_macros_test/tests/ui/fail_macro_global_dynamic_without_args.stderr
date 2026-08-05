@@ -1,0 +1,5 @@
+error: global! 的零参数形式只接受纯静态 CSS；动态内容请改用显式的 `<'scope>` source 参数。
+ --> tests/ui/fail_macro_global_dynamic_without_args.rs:9:16
+  |
+9 |         color: $(color);
+  |                ^

@@ -35,8 +35,9 @@ pub mod prelude {
 pub use class::IntoClass;
 pub use codegen::properties;
 pub use runtime::{
-    CssPart, DynamicCss, DynamicStyleManager, dynamic_rule_class, inject_managed_dynamic_style,
-    inject_style, make_property_val,
+    CssPart, DynamicCss, DynamicStyleManager, GlobalStyleBinding, GlobalStyleView,
+    StyledDynamicRule, StyledVariantBinding, StyledVariantGroup, dynamic_rule_class,
+    inject_managed_dynamic_style, inject_style, make_property_val,
 };
 pub use source::{CssSource, IntoCssReactive, IntoCssSource};
 pub use theme::{ThemePatchToCss, ThemeToCss, ThemeType};

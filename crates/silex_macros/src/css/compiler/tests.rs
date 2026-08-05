@@ -230,7 +230,10 @@ fn dynamic_selectors_accept_any_variable_name() {
     let parts = template_parts(&res.dynamic_rules[0].template);
     assert_eq!(
         parts[..2],
-        [TemplatePart::Lit(".x ".into()), TemplatePart::Val(0)],
+        [
+            TemplatePart::Lit(".x ".into()),
+            TemplatePart::SelectorVal(0)
+        ],
         "{parts:?}"
     );
 }
@@ -242,7 +245,7 @@ fn dynamic_selector_can_be_followed_by_a_descendant() {
         .unwrap();
     assert_eq!(res.dynamic_rules.len(), 1);
     let parts = template_parts(&res.dynamic_rules[0].template);
-    assert_eq!(parts[0], TemplatePart::Val(0), "{parts:?}");
+    assert_eq!(parts[0], TemplatePart::SelectorVal(0), "{parts:?}");
     assert!(
         matches!(&parts[1], TemplatePart::Lit(s) if s.starts_with(" .x")),
         "{parts:?}"
@@ -286,6 +289,7 @@ fn control_characters_in_string_literals_cannot_forge_a_placeholder() {
     let css = compile_all("content: \"a\\u{1}b\\u{2}c\";");
     assert!(!css.contains(PLACEHOLDER_CLASS), "{css:?}");
     assert!(!css.contains(PLACEHOLDER_VALUE), "{css:?}");
+    assert!(!css.contains(PLACEHOLDER_SELECTOR_VALUE), "{css:?}");
 }
 
 /// 紧贴的 `.` 仍然是字段访问，必须写成 `$(…)`
@@ -332,7 +336,10 @@ fn global_dynamic_selector_uses_positional_placeholder() {
     let parts = template_parts(&res.dynamic_rules[0].template);
     assert_eq!(
         parts[..2],
-        [TemplatePart::Lit(".x ".into()), TemplatePart::Val(0)],
+        [
+            TemplatePart::Lit(".x ".into()),
+            TemplatePart::SelectorVal(0)
+        ],
         "{parts:?}"
     );
 }

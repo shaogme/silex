@@ -405,7 +405,7 @@ pub(crate) fn extract_at_rule_params(
     })
 }
 
-/// 动态选择器。选择器里的运行时片段统一用位置占位符 `{}` 表示，
+/// 动态选择器。选择器里的运行时片段使用独立的位置占位符，
 /// 由 `styled!` / `global!` 侧按顺序填回（见 `expand_dynamic_rule`）。
 pub(crate) fn extract_dynamic_selector(
     ts: &TokenStream,
@@ -429,7 +429,7 @@ pub(crate) fn extract_dynamic_selector(
                         if space_before {
                             out.push(' ');
                         }
-                        out.push(PLACEHOLDER_VALUE);
+                        out.push(PLACEHOLDER_SELECTOR_VALUE);
                         exprs.push(("any".to_string(), g.stream()));
                         iter.next();
                         return Ok(true);
@@ -439,7 +439,7 @@ pub(crate) fn extract_dynamic_selector(
                         if space_before {
                             out.push(' ');
                         }
-                        out.push(PLACEHOLDER_VALUE);
+                        out.push(PLACEHOLDER_SELECTOR_VALUE);
                         exprs.push(("any".to_string(), path));
                         return Ok(true);
                     }

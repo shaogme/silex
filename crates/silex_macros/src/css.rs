@@ -14,10 +14,11 @@ pub mod theme;
 pub mod tw;
 pub mod value_check;
 
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::{Delimiter, Span, TokenStream, TokenTree};
 use quote::{quote, quote_spanned};
 use syn::Result;
 
+use ast::{CssBlock, CssRule};
 use compiler::CssCompiler;
 use table::PropertyResolveResult;
 
@@ -67,7 +68,45 @@ pub(crate) fn generate_static_assertions(
 pub fn inject_css_impl(ts: TokenStream) -> Result<TokenStream> {
     let __silex = crate::crate_path::silex();
     let span = Span::call_site();
+
+    // 先在 CSS AST 上拒绝动态输入。全局编译器需要先经过 lightningcss，而
+    // declaration 的动态占位符不一定是 lightningcss 可接受的最终 CSS；若等编译
+    // 完成后再检查，错误可能先被解析器吞成一个无关的 CSS 语法错误。
+    let block: CssBlock = syn::parse2(ts.clone())?;
+    reject_dynamic_global(
+        &block,
+        span,
+        "inject_css! 只接受纯静态 CSS；动态插值不能在文档级样式中使用。",
+        "inject_css! 只接受纯静态 CSS；动态选择器不能在文档级样式中使用。",
+    )?;
+
     let compile_result = CssCompiler::compile_global(ts, span, false)?;
+
+    if let Some((_, expression)) = compile_result.expressions.first() {
+        let expression_span = expression
+            .clone()
+            .into_iter()
+            .next()
+            .map(|token| token.span())
+            .unwrap_or(span);
+        return Err(syn::Error::new(
+            expression_span,
+            "inject_css! 只接受纯静态 CSS；动态插值不能在文档级样式中使用。",
+        ));
+    }
+    if let Some(rule) = compile_result.dynamic_rules.first() {
+        let rule_span = rule
+            .expressions
+            .first()
+            .and_then(|(_, expression)| expression.clone().into_iter().next())
+            .map(|token| token.span())
+            .unwrap_or(span);
+        return Err(syn::Error::new(
+            rule_span,
+            "inject_css! 只接受纯静态 CSS；动态选择器不能在文档级样式中使用。",
+        ));
+    }
+
     let assertions = generate_static_assertions(&compile_result.assertions)?;
     let static_id = &compile_result.static_id;
     let static_css = &compile_result.static_css;
@@ -90,6 +129,77 @@ pub fn inject_css_impl(ts: TokenStream) -> Result<TokenStream> {
     })
 }
 
+pub(crate) fn reject_dynamic_global(
+    block: &CssBlock,
+    fallback_span: Span,
+    value_message: &str,
+    selector_message: &str,
+) -> Result<()> {
+    for rule in &block.rules {
+        match rule {
+            CssRule::Declaration(decl) => {
+                if let Some(span) = first_dynamic_token_span(&decl.values) {
+                    return Err(syn::Error::new(span, value_message));
+                }
+            }
+            CssRule::Nested(nested) => {
+                if compiler::contains_dynamic_selector(&nested.selectors) {
+                    let span = first_dynamic_token_span(&nested.selectors).unwrap_or(fallback_span);
+                    return Err(syn::Error::new(span, selector_message));
+                }
+                reject_dynamic_global(
+                    &nested.block,
+                    fallback_span,
+                    value_message,
+                    selector_message,
+                )?;
+            }
+            CssRule::AtRule(at) => {
+                if first_dynamic_token_span(&at.params).is_some() {
+                    return Err(syn::Error::new(at.span, value_message));
+                }
+                if let Some(block) = &at.block {
+                    reject_dynamic_global(block, fallback_span, value_message, selector_message)?;
+                }
+            }
+            CssRule::Unsafe(unsafe_rule) => {
+                reject_dynamic_global(
+                    &unsafe_rule.block,
+                    fallback_span,
+                    value_message,
+                    selector_message,
+                )?;
+            }
+            CssRule::Apply(_) => {}
+        }
+    }
+    Ok(())
+}
+
+fn first_dynamic_token_span(ts: &TokenStream) -> Option<Span> {
+    let mut iter = ts.clone().into_iter().peekable();
+    while let Some(token) = iter.next() {
+        if let TokenTree::Punct(punct) = &token
+            && punct.as_char() == '$'
+        {
+            let dynamic = match iter.peek() {
+                Some(TokenTree::Ident(_)) => true,
+                Some(TokenTree::Group(group)) => group.delimiter() == Delimiter::Parenthesis,
+                _ => false,
+            };
+            if dynamic {
+                return Some(punct.span());
+            }
+        }
+        if let TokenTree::Group(group) = token
+            && let Some(span) = first_dynamic_token_span(&group.stream())
+        {
+            return Some(span);
+        }
+    }
+    None
+}
+
 pub fn css_impl(ts: TokenStream) -> Result<TokenStream> {
     let span = Span::call_site(); // Use call site for better error reporting in blocks
     let compile_result = CssCompiler::compile(ts, span, false)?;
@@ -101,11 +211,14 @@ pub(crate) fn generate_css_output(
     span: Span,
 ) -> Result<TokenStream> {
     let __silex = crate::crate_path::silex();
-    let style_inits = compile_result.generate_inits();
-    let class_name = compile_result.class_name;
-    let expressions = compile_result.expressions;
-    let dynamic_rules = compile_result.dynamic_rules;
-    let warnings = compile_result.warnings;
+    let class_name = &compile_result.class_name;
+    let expressions = &compile_result.expressions;
+    let dynamic_rules = &compile_result.dynamic_rules;
+    let warnings = &compile_result.warnings;
+    let static_id = &compile_result.static_id;
+    let static_css = &compile_result.static_css;
+    let style_id = &compile_result.style_id;
+    let component_css = &compile_result.component_css;
 
     let warning_tokens = warnings.iter().map(|w| {
         let msg = &w.message;
@@ -120,17 +233,25 @@ pub(crate) fn generate_css_output(
 
     let assertions = generate_static_assertions(&compile_result.assertions)?;
 
-    let inits = quote! {
+    let common_inits = quote! {
         #(#warning_tokens)*
         #assertions
-        #style_inits
+    };
+    let static_inits = quote! {
+        if !#static_css.is_empty() {
+            #__silex::css::inject_style(#static_id, #static_css);
+        }
+        if !#component_css.is_empty() {
+            #__silex::css::inject_style(#style_id, #component_css);
+        }
     };
 
     // Generate Rust Code
     if expressions.is_empty() && dynamic_rules.is_empty() {
         Ok(quote! {
             {
-                #inits
+                #common_inits
+                #static_inits
                 #class_name
             }
         })
@@ -146,7 +267,7 @@ pub(crate) fn generate_css_output(
         }
 
         let mut rule_calls = Vec::new();
-        for rule in &dynamic_rules {
+        for rule in dynamic_rules {
             let parts = compiler::template_parts_tokens(&rule.template);
             let mut exprs = Vec::new();
             for (prop, expr) in &rule.expressions {
@@ -160,8 +281,10 @@ pub(crate) fn generate_css_output(
 
         Ok(quote! {
             {
-                #inits
+                #common_inits
                 #__silex::css::DynamicCss::new(#class_name)
+                    .with_static_style(#static_id, #static_css)
+                    .with_static_style(#style_id, #component_css)
                     #(#var_calls)*
                     #(#rule_calls)*
             }
@@ -218,6 +341,37 @@ mod tests {
             "{:?}",
             out.map(|_| ()).unwrap_err().to_string()
         );
+    }
+
+    #[test]
+    fn inject_css_rejects_dynamic_value() {
+        let input = "color: $(color);".parse().expect("valid CSS token stream");
+        let err = inject_css_impl(input).unwrap_err().to_string();
+        assert!(err.contains("只接受纯静态 CSS"), "{err}");
+        assert!(err.contains("动态插值"), "{err}");
+    }
+
+    #[test]
+    fn inject_css_rejects_dynamic_selector() {
+        let err = inject_css_impl(quote! { $selector { color: red; } })
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("只接受纯静态 CSS"), "{err}");
+        assert!(err.contains("动态选择器"), "{err}");
+    }
+
+    #[test]
+    fn dynamic_css_carries_static_styles_into_its_owner_bound_payload() {
+        let output = css_impl(quote! { color: $(color); }).unwrap().to_string();
+        assert!(output.contains("with_static_style"), "{output}");
+        assert!(!output.contains("inject_style"), "{output}");
+    }
+
+    #[test]
+    fn production_global_compiler_accepts_static_nested_rules() {
+        let input: TokenStream = "body { color: red; }".parse().unwrap();
+        let result = CssCompiler::compile_global(input, Span::call_site(), false);
+        assert!(result.is_ok(), "{result:?}");
     }
 
     /// `color: 10px` 此前也是静默通过：`ValidFor` 只在 `$expr` 分支起作用

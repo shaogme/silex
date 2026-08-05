@@ -31,9 +31,6 @@ lightningcss = { version = "1.0.0-alpha.71", optional = true , default-features 
 silex_hash = { workspace = true, optional = true }
 silex_tw_core = { workspace = true, optional = true }
 
-[dev-dependencies]
-# silex.workspace = true
-
 [features]
 default = ["component", "css", "tw", "store", "route"]
 component = []

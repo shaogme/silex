@@ -14,7 +14,7 @@ use codegen::{build_css_block_from_rules, build_css_block_from_tw};
 use merge::{WriteSet, cluster};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Error, Expr, Result};
+use syn::{Error, Expr, Lit, Result};
 
 /// 一个簇里最多允许的条件分支数。
 ///
@@ -40,7 +40,8 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     } else {
         String::new()
     };
-    let input: TwInput = syn::parse2(ts)?;
+    let mut input: TwInput = syn::parse2(ts)?;
+    fold_static_conditions(&mut input);
     let extra_classes = input.extra_classes.clone();
     let span = proc_macro2::Span::call_site();
 
@@ -78,6 +79,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     // 处理包含条件分支句段的情形
     let mut inits_tokens = Vec::new();
     let mut cx_items = Vec::new();
+    let mut condition_exprs = Vec::<Expr>::new();
     let mut compiled_cache = ::std::collections::HashMap::<u128, String>::new();
     // 条件分支路径此前完全不产出 `tw_verbose!` 诊断——而这条路径恰恰是最需要看
     // "到底编出了哪几个类"的地方（一个簇会展开成 2^k 个组合）
@@ -101,6 +103,12 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
         let css_block = build_css_block_from_rules(rules)?;
         let compile_result =
             crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)?;
+        if !compile_result.expressions.is_empty() || !compile_result.dynamic_rules.is_empty() {
+            return Err(Error::new(
+                span,
+                "条件 `tw!` 的 then/else utility 必须是静态 CSS；动态 arbitrary value 请移到条件外的 `css!`/`tw!` 路径。",
+            ));
+        }
         let cls_name = compile_result.class_name.clone();
         if verbose {
             verbose_sections.push((
@@ -129,9 +137,8 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
         .into_iter()
         .map(|seg| match seg {
             TwSegment::Static(rules) => {
-                let (trans_rules, other_rules): (Vec<_>, Vec<_>) = rules
-                    .into_iter()
-                    .partition(|r| is_pure_transition_control_rule(r));
+                let (trans_rules, other_rules): (Vec<_>, Vec<_>) =
+                    rules.into_iter().partition(is_pure_transition_control_rule);
                 hoisted_transition_rules.extend(trans_rules);
                 TwSegment::Static(other_rules)
             }
@@ -149,10 +156,17 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     let write_sets: Vec<WriteSet> = segments.iter().map(segment_write_set).collect();
 
     for group in cluster(&write_sets) {
-        let conds: Vec<&Expr> = group
+        let conds: Vec<(proc_macro2::Ident, &Expr)> = group
             .iter()
             .filter_map(|&i| match &segments[i] {
-                TwSegment::Conditional { condition, .. } => Some(condition),
+                TwSegment::Conditional { condition, .. } => {
+                    let index = condition_exprs.len();
+                    condition_exprs.push(condition.clone());
+                    Some((
+                        quote::format_ident!("__slx_cond_value_{}", index),
+                        condition,
+                    ))
+                }
                 TwSegment::Static(_) => None,
             })
             .collect();
@@ -167,12 +181,13 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                     }
                 }
                 TwSegment::Conditional {
-                    condition,
                     then_rules,
                     else_rules,
+                    ..
                 } => {
                     let then_cls = compile_rules_cached(then_rules.clone())?;
                     let else_cls = compile_rules_cached(else_rules.clone())?;
+                    let condition = &conds[0].0;
                     if !else_cls.is_empty() {
                         cx_items.push(quote! { (#condition, #then_cls, #else_cls) });
                     } else {
@@ -235,18 +250,13 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
             arms.push(quote! { #idx => #cls });
         }
 
-        let bindings = conds.iter().enumerate().map(|(j, cond)| {
-            let name = quote::format_ident!("__slx_cond_{}", j);
-            quote! { let #name: bool = #cond; }
-        });
         let index_terms = (0..conds.len()).map(|j| {
-            let name = quote::format_ident!("__slx_cond_{}", j);
+            let name = &conds[j].0;
             quote! { ((#name as usize) << #j) }
         });
 
         cx_items.push(quote! {
             {
-                #(#bindings)*
                 match #(#index_terms)|* {
                     #(#arms,)*
                     _ => "",
@@ -268,16 +278,119 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
         verbose::emit(&input_str, &sections);
     }
 
+    let condition_sources = condition_exprs.iter().map(|condition| {
+        quote! {
+            #__silex::css::IntoCssReactive::into_css_reactive(#condition)
+        }
+    });
+    let condition_reads = condition_exprs.iter().enumerate().map(|(index, _)| {
+        let name = quote::format_ident!("__slx_cond_value_{}", index);
+        quote! {
+            let #name = __slx_conditions_for_effect[#index].get();
+        }
+    });
+
     Ok(quote! {
         {
-            #(#inits_tokens)*
-            #__silex::core::rx!(move || {
-                #__silex::css::cx!(
-                    #(#cx_items),*
-                )
-            })
+            let __slx_conditions: ::std::vec::Vec<#__silex::core::Rx<'_, bool>> =
+                ::std::vec![ #(#condition_sources),* ];
+            let mut __slx_inputs = #__silex::core::RuntimeInputs::new();
+            for __slx_condition in &__slx_conditions {
+                __slx_inputs.extend(&__slx_condition.runtime_inputs());
+            }
+
+            #__silex::dom::attribute::AttrOp::custom_with_inputs(
+                __slx_inputs,
+                move |element, owner| {
+                    #(#inits_tokens)*
+                    let mut __slx_effect_inputs = #__silex::core::RuntimeInputs::new();
+                    for __slx_condition in &__slx_conditions {
+                        __slx_effect_inputs.extend(&__slx_condition.runtime_inputs());
+                    }
+
+                    let __slx_conditions_for_effect = __slx_conditions.clone();
+                    let __slx_element = element.clone();
+                    let __slx_current_class =
+                        ::std::rc::Rc::new(::std::cell::RefCell::new(None::<::std::string::String>));
+                    let __slx_current_class_for_effect = __slx_current_class.clone();
+
+                    owner.effect_from(
+                        __slx_effect_inputs,
+                        ::std::boxed::Box::new(move || {
+                            #(#condition_reads)*
+                            let __slx_next_class = #__silex::css::cx!(
+                                #(#cx_items),*
+                            );
+                            let mut __slx_current_class =
+                                __slx_current_class_for_effect.borrow_mut();
+                            if __slx_current_class.as_deref()
+                                == Some(__slx_next_class.as_str())
+                            {
+                                return;
+                            }
+
+                            let __slx_old_class = __slx_current_class.as_deref().unwrap_or("");
+                            for __slx_token in __slx_next_class.split_whitespace() {
+                                if !__slx_old_class.split_whitespace().any(|old| old == __slx_token) {
+                                    let _ = __slx_element.class_list().add_1(__slx_token);
+                                }
+                            }
+                            for __slx_token in __slx_old_class.split_whitespace() {
+                                if !__slx_next_class
+                                    .split_whitespace()
+                                    .any(|next| next == __slx_token)
+                                {
+                                    let _ = __slx_element.class_list().remove_1(__slx_token);
+                                }
+                            }
+                            __slx_current_class.replace(__slx_next_class);
+                        }),
+                    );
+
+                    let __slx_element_for_cleanup = element.clone();
+                    owner.on_cleanup(::std::boxed::Box::new(move || {
+                        if let Some(__slx_class) = __slx_current_class.borrow_mut().take() {
+                            for __slx_token in __slx_class.split_whitespace() {
+                                let _ = __slx_element_for_cleanup
+                                    .class_list()
+                                    .remove_1(__slx_token);
+                            }
+                        }
+                    }));
+                },
+            )
         }
     })
+}
+
+fn fold_static_conditions(input: &mut TwInput) {
+    for segment in &mut input.segments {
+        let replacement = match segment {
+            TwSegment::Conditional {
+                condition,
+                then_rules,
+                else_rules,
+            } => static_bool(condition).map(|value| {
+                if value {
+                    std::mem::take(then_rules)
+                } else {
+                    std::mem::take(else_rules)
+                }
+            }),
+            TwSegment::Static(_) => None,
+        };
+        if let Some(rules) = replacement {
+            *segment = TwSegment::Static(rules);
+        }
+    }
+}
+
+fn static_bool(expr: &Expr) -> Option<bool> {
+    let Expr::Lit(expr) = expr else { return None };
+    let Lit::Bool(value) = &expr.lit else {
+        return None;
+    };
+    Some(value.value)
 }
 
 /// 一个段可能写到的属性覆盖面：条件分支要把两条分支都算进来

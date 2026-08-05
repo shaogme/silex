@@ -1,0 +1,24 @@
+error[E0277]: CSS 动态插值只能接受带当前生命周期的响应式 source (`IntoCssReactive<'scope>`)；普通静态值请直接写入 CSS 或使用 var(--name)
+ --> tests/ui/fail_macro_static_value_in_dynamic_slot.rs:8:13
+  |
+8 |     let _ = css! { color: $("red"); };
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^ 此值不是 scoped reactive source
+  |
+  = help: the trait `IntoCssReactive<'_>` is not implemented for `&str`
+  = note: 动态 `$(...)` 不会为静态值创建隐式 Runtime
+  = help: the following other types implement trait `IntoCssReactive<'scope>`:
+            Memo<'scope, T>
+            ReadSignal<'scope, T>
+            RwSignal<'scope, T>
+            Signal<'scope, T>
+            StoredValue<'scope, T>
+            silex_core::Rx<'scope, T>
+note: required by a bound in `silex_css::DynamicCss::<'scope>::with_var`
+ --> $WORKSPACE/crates/silex_css/src/runtime/dynamic.rs
+  |
+  |     pub fn with_var<P, S>(mut self, var_name: &'static str, source: S) -> Self
+  |            -------- required by a bound in this associated function
+...
+  |         S: IntoCssReactive<'scope>,
+  |            ^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `DynamicCss::<'scope>::with_var`
+  = note: this error originates in the macro `css` (in Nightly builds, run with -Z macro-backtrace for more info)

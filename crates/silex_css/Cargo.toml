@@ -27,6 +27,7 @@ web-sys = { workspace = true, features = [
     "Document",
     "DomTokenList",
     "Element",
+    "Node",
     # `<style>` 兜底：`new CSSStyleSheet()` 不可用时的退路
     "HtmlStyleElement",
     "HtmlHeadElement",

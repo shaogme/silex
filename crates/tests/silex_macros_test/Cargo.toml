@@ -1,0 +1,23 @@
+[package]
+name = "silex_macros_test"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+silex_core.workspace = true
+silex_css.workspace = true
+silex_dom.workspace = true
+silex_html.workspace = true
+silex_macros = { workspace = true, default-features = false, features = ["component", "css", "tw"] }
+web-sys.workspace = true
+
+[dev-dependencies]
+trybuild = "1.0"
+wasm-bindgen-test.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+js-sys.workspace = true

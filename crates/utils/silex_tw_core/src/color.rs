@@ -255,13 +255,13 @@ pub fn parse_color_value(ctx: &dyn TwContext, color_token: &str) -> Option<Cow<'
     }
 
     // 2. 任意值包裹：`[#1e293b]` 或 `[oklch(...)]`
-    if let Some(inner) = base.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
-        if looks_like_color(inner) {
-            return Some(match opacity {
-                Some(op) => Cow::Owned(apply_opacity(inner, op)),
-                None => Cow::Owned(inner.to_string()),
-            });
-        }
+    if let Some(inner) = base.strip_prefix('[').and_then(|s| s.strip_suffix(']'))
+        && looks_like_color(inner)
+    {
+        return Some(match opacity {
+            Some(op) => Cow::Owned(apply_opacity(inner, op)),
+            None => Cow::Owned(inner.to_string()),
+        });
     }
 
     // 3. 关键字颜色

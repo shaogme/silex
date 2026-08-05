@@ -35,8 +35,28 @@ pub fn classes_impl(input: TokenStream) -> Result<TokenStream> {
             ClassItem::Simple(e) => quote! { #e },
             ClassItem::Conditional(cls, cond) => quote! { (#cls, #cond) },
         };
-        quote! { #__silex::dom::attribute::ApplyToDom::into_op(#val, #__silex::dom::attribute::ApplyTarget::Class) }
+        quote! {
+            #__silex::dom::attribute::ApplyToDom::into_op(
+                #__silex::dom::attribute::IntoStorable::into_storable(#val),
+                #__silex::dom::attribute::ApplyTarget::Class,
+            )
+        }
     });
 
     Ok(quote! { #__silex::dom::attribute::AttributeGroup(vec![ #(#expanded),* ]) })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quote::quote;
+
+    #[test]
+    fn classes_converts_inputs_through_into_storable() {
+        let output = classes_impl(quote! { "active" => condition })
+            .unwrap()
+            .to_string();
+        assert!(output.contains("IntoStorable"), "{output}");
+        assert!(output.contains("into_storable"), "{output}");
+    }
 }

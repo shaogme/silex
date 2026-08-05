@@ -243,6 +243,7 @@ pub fn escape_css_string(value: &str) -> String {
             '\r' => out.push_str("\\D "),
             // 其余控制字符也一律转义。除了本来就该这么写，这还保证了
             // `PLACEHOLDER_CLASS` / `PLACEHOLDER_VALUE` /
+            // `PLACEHOLDER_SELECTOR_VALUE` /
             // `PLACEHOLDER_PENDING_CLASS` 这几个占位符不可能从用户的
             // 字符串字面量里冒出来
             c if (c as u32) < 0x20 || c as u32 == 0x7f => {

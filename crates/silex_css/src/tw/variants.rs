@@ -25,7 +25,7 @@ impl fmt::Display for UnknownVariantOption {
 
 impl core::error::Error for UnknownVariantOption {}
 
-/// 选项名匹配：忽略大小写与 `-` / `_` 分隔符
+/// 选项名匹配：忽略大小写、空白与 `-` / `_` 分隔符
 ///
 /// 生成的枚举变体名是 PascalCase（`icon-xs` → `IconXs`），但用户在运行时传进来的
 /// 是源码里写的那个字符串 `"icon-xs"`。此前的比较只做了"忽略大小写"与
@@ -35,7 +35,7 @@ pub fn variant_key_eq(variant_ident: &str, input: &str) -> bool {
     let norm = |s: &str| -> String {
         s.trim()
             .chars()
-            .filter(|c| *c != '-' && *c != '_')
+            .filter(|c| !c.is_whitespace() && *c != '-' && *c != '_')
             .flat_map(|c| c.to_lowercase())
             .collect()
     };
@@ -320,6 +320,13 @@ mod tests {
             "icon_xs".parse::<TestSizeOption>(),
             Ok(TestSizeOption::IconXs)
         );
+    }
+
+    #[test]
+    fn whitespace_separated_option_names_match_their_pascal_case_variant() {
+        assert!(variant_key_eq("IconLarge", "icon large"));
+        assert!(variant_key_eq("icon-large", "Icon Large"));
+        assert!(variant_key_eq("icon_large", " icon\tlarge "));
     }
 
     #[test]

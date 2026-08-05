@@ -17,6 +17,11 @@ pub trait IntoCssSource<'scope> {
 }
 
 /// Converts an existing scoped reactive node into a CSS source.
+#[diagnostic::on_unimplemented(
+    message = "CSS 动态插值只能接受带当前生命周期的响应式 source (`IntoCssReactive<'scope>`)；普通静态值请直接写入 CSS 或使用 var(--name)",
+    label = "此值不是 scoped reactive source",
+    note = "动态 `$(...)` 不会为静态值创建隐式 Runtime"
+)]
 pub trait IntoCssReactive<'scope> {
     type Value: Display + Clone + 'scope;
 
