@@ -1,0 +1,12 @@
+error: lifetime may not live long enough
+ --> tests/ui/fail_static_view.rs:5:5
+  |
+4 | fn static_view<'scope>(binding: Persistent<'scope, String>) -> Box<dyn View<'static>> {
+  |                ------ lifetime `'scope` defined here
+5 |     Box::new(binding)
+  |     ^^^^^^^^^^^^^^^^^ returning this value requires that `'scope` must outlive `'static`
+  |
+help: to declare that the trait object captures data from argument `binding`, you can add an explicit `'scope` lifetime bound
+  |
+4 | fn static_view<'scope>(binding: Persistent<'scope, String>) -> Box<dyn View<'static> + 'scope> {
+  |                                                                                      ++++++++

@@ -1,21 +1,25 @@
 use crate::{
     DecodePolicy, PersistMode, PersistenceError, RemovePolicy, SyncStrategy, WriteDefault,
-    backend::{LocalStorageBackend, PersistenceBackend, QueryBackend, SessionStorageBackend},
+    backend::{
+        BackendEventSink, LocalStorageBackend, PersistenceBackend, QueryBackend,
+        SessionStorageBackend,
+    },
     codec::{
         OptionCodec, ParseCodec, PersistCodec, StringCodec, map_decode_error, map_encode_error,
     },
     state::{
-        PersistenceController, PersistenceState, Persistent, apply_backend_event,
-        flush_persistent_value,
+        PersistenceController, PersistenceState, Persistent, ScopedDebounceState,
+        apply_backend_event, flush_persistent_value,
     },
 };
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    reactivity::{Effect, RwSignal, StoredValue, on_cleanup},
-    traits::{RxData, RxGet, RxRead, RxWrite},
+    RxBase, RxRead, Scope,
+    traits::{RxGet, RxWrite},
 };
+use silex_dom::helpers::set_timeout_with_handle;
 use silex_router::RouterContext;
-use std::{borrow::Cow, marker::PhantomData, rc::Rc};
+use std::{borrow::Cow, cell::RefCell, marker::PhantomData, rc::Rc};
 
 /// Typestate marker used before a persistence backend has been selected.
 pub struct NoBackend;
@@ -26,8 +30,8 @@ pub struct NoDefault;
 /// Typestate marker indicating a default value has been selected.
 pub struct HasDefault;
 
-struct PersistConfig<T> {
-    default: Option<Rc<dyn Fn() -> T>>,
+struct PersistConfig<'scope, T: 'scope> {
+    default: Option<Rc<dyn Fn() -> T + 'scope>>,
     write_default: WriteDefault,
     decode_policy: DecodePolicy,
     remove_policy: RemovePolicy,
@@ -35,7 +39,7 @@ struct PersistConfig<T> {
     sync: SyncStrategy,
 }
 
-impl<T> PersistConfig<T> {
+impl<'scope, T: 'scope> PersistConfig<'scope, T> {
     fn new() -> Self {
         Self {
             default: None,
@@ -48,45 +52,23 @@ impl<T> PersistConfig<T> {
     }
 }
 
-/// Builder for creating a `Persistent<T>` binding.
-///
-/// Typical flow:
-/// 1. Start with [`Persistent::builder`]
-/// 2. Choose a backend with `.local()`, `.session()`, or `.query()`
-/// 3. Choose a codec with `.string()`, `.parse::<T>()`, or `.json::<T>()`
-/// 4. Provide a default with `.default(...)` or `.default_with(...)`
-/// 5. Call `.build()`
-///
-/// ```rust,ignore
-/// use silex_persist::Persistent;
-///
-/// let theme = Persistent::builder("theme")
-///     .local()
-///     .string()
-///     .default("Light".to_string())
-///     .build();
-///
-/// let page = Persistent::builder("page")
-///     .query(&ctx)
-///     .parse::<u32>()
-///     .default(1)
-///     .build();
-///
-/// theme.set("Dark".to_string());
-/// assert_eq!(page.get(), 1);
-/// ```
-pub struct PersistentBuilder<B, C, T = (), D = NoDefault> {
+/// Builder for creating a scoped `Persistent<'scope, T>` binding.
+pub struct PersistentBuilder<'scope, B, C, T = (), D = NoDefault>
+where
+    T: 'scope,
+{
+    scope: Scope<'scope>,
     key: LocalStaticRefStr,
     backend: B,
     codec: C,
-    config: PersistConfig<T>,
+    config: PersistConfig<'scope, T>,
     _marker: PhantomData<D>,
 }
 
-impl PersistentBuilder<NoBackend, NoCodec, (), NoDefault> {
-    /// Starts a new persistent binding builder for the given backend key.
-    pub fn new(key: impl Into<LocalStaticRefStr>) -> Self {
+impl<'scope> PersistentBuilder<'scope, NoBackend, NoCodec, (), NoDefault> {
+    pub fn new(scope: Scope<'scope>, key: impl Into<LocalStaticRefStr>) -> Self {
         Self {
+            scope,
             key: key.into(),
             backend: NoBackend,
             codec: NoCodec,
@@ -96,10 +78,13 @@ impl PersistentBuilder<NoBackend, NoCodec, (), NoDefault> {
     }
 }
 
-impl<C, T, D> PersistentBuilder<NoBackend, C, T, D> {
-    /// Uses `localStorage` as the persistence backend.
-    pub fn local(self) -> PersistentBuilder<LocalStorageBackend, C, T, D> {
+impl<'scope, C, T, D> PersistentBuilder<'scope, NoBackend, C, T, D>
+where
+    T: 'scope,
+{
+    pub fn local(self) -> PersistentBuilder<'scope, LocalStorageBackend, C, T, D> {
         PersistentBuilder {
+            scope: self.scope,
             key: self.key,
             backend: LocalStorageBackend::default(),
             codec: self.codec,
@@ -108,9 +93,9 @@ impl<C, T, D> PersistentBuilder<NoBackend, C, T, D> {
         }
     }
 
-    /// Uses `sessionStorage` as the persistence backend.
-    pub fn session(self) -> PersistentBuilder<SessionStorageBackend, C, T, D> {
+    pub fn session(self) -> PersistentBuilder<'scope, SessionStorageBackend, C, T, D> {
         PersistentBuilder {
+            scope: self.scope,
             key: self.key,
             backend: SessionStorageBackend::default(),
             codec: self.codec,
@@ -119,9 +104,12 @@ impl<C, T, D> PersistentBuilder<NoBackend, C, T, D> {
         }
     }
 
-    /// Uses the router query string as the persistence backend.
-    pub fn query(self, ctx: &RouterContext) -> PersistentBuilder<QueryBackend, C, T, D> {
+    pub fn query(
+        self,
+        ctx: &RouterContext<'scope>,
+    ) -> PersistentBuilder<'scope, QueryBackend<'scope>, C, T, D> {
         PersistentBuilder {
+            scope: self.scope,
             key: self.key,
             backend: QueryBackend::new(ctx),
             codec: self.codec,
@@ -131,10 +119,13 @@ impl<C, T, D> PersistentBuilder<NoBackend, C, T, D> {
     }
 }
 
-impl<B, T, D> PersistentBuilder<B, NoCodec, T, D> {
-    /// Uses the raw string value as-is.
-    pub fn string(self) -> PersistentBuilder<B, StringCodec, String, D> {
+impl<'scope, B, T, D> PersistentBuilder<'scope, B, NoCodec, T, D>
+where
+    T: 'scope,
+{
+    pub fn string(self) -> PersistentBuilder<'scope, B, StringCodec, String, D> {
         PersistentBuilder {
+            scope: self.scope,
             key: self.key,
             backend: self.backend,
             codec: StringCodec,
@@ -150,9 +141,9 @@ impl<B, T, D> PersistentBuilder<B, NoCodec, T, D> {
         }
     }
 
-    /// Uses raw string values managed via `Cow`.
-    pub fn cow(self) -> PersistentBuilder<B, StringCodec, Cow<'static, str>, D> {
+    pub fn cow(self) -> PersistentBuilder<'scope, B, StringCodec, Cow<'static, str>, D> {
         PersistentBuilder {
+            scope: self.scope,
             key: self.key,
             backend: self.backend,
             codec: StringCodec,
@@ -168,13 +159,13 @@ impl<B, T, D> PersistentBuilder<B, NoCodec, T, D> {
         }
     }
 
-    /// Uses `Display`/`FromStr` for encoding and decoding.
-    pub fn parse<U>(self) -> PersistentBuilder<B, ParseCodec<U>, U, D>
+    pub fn parse<U>(self) -> PersistentBuilder<'scope, B, ParseCodec<U>, U, D>
     where
-        U: std::fmt::Display + std::str::FromStr + Clone + 'static,
+        U: std::fmt::Display + std::str::FromStr + Clone + 'scope,
         <U as std::str::FromStr>::Err: std::fmt::Display,
     {
         PersistentBuilder {
+            scope: self.scope,
             key: self.key,
             backend: self.backend,
             codec: ParseCodec::new(),
@@ -190,13 +181,13 @@ impl<B, T, D> PersistentBuilder<B, NoCodec, T, D> {
         }
     }
 
-    /// Uses the JSON codec for complex serializable values.
     #[cfg(feature = "json")]
-    pub fn json<U>(self) -> PersistentBuilder<B, crate::PersistJsonCodec<U>, U, D>
+    pub fn json<U>(self) -> PersistentBuilder<'scope, B, crate::PersistJsonCodec<U>, U, D>
     where
-        U: serde::Serialize + serde::de::DeserializeOwned + Clone + 'static,
+        U: serde::Serialize + serde::de::DeserializeOwned + Clone + 'scope,
     {
         PersistentBuilder {
+            scope: self.scope,
             key: self.key,
             backend: self.backend,
             codec: crate::PersistJsonCodec::new(),
@@ -213,46 +204,44 @@ impl<B, T, D> PersistentBuilder<B, NoCodec, T, D> {
     }
 }
 
-impl<B, C, T, D> PersistentBuilder<B, C, T, D> {
-    /// Configures whether a missing backend value should be initialized from the default.
+impl<'scope, B, C, T, D> PersistentBuilder<'scope, B, C, T, D>
+where
+    T: 'scope,
+{
     pub fn write_default(mut self, policy: WriteDefault) -> Self {
         self.config.write_default = policy;
         self
     }
 
-    /// Configures how decode failures are handled.
     pub fn on_decode_error(mut self, policy: DecodePolicy) -> Self {
         self.config.decode_policy = policy;
         self
     }
 
-    /// Configures how external removals are handled in memory.
     pub fn on_remove(mut self, policy: RemovePolicy) -> Self {
         self.config.remove_policy = policy;
         self
     }
 
-    /// Selects immediate or manual flush behavior.
     pub fn mode(mut self, mode: PersistMode) -> Self {
         self.config.mode = mode;
         self
     }
 
-    /// Selects whether external backend changes should be observed.
     pub fn sync(mut self, sync: SyncStrategy) -> Self {
         self.config.sync = sync;
         self
     }
 }
 
-impl<B, C, T, D> PersistentBuilder<B, C, T, D>
+impl<'scope, B, C, T, D> PersistentBuilder<'scope, B, C, T, D>
 where
-    T: Clone + 'static,
+    T: Clone + 'scope,
 {
-    /// Sets the default value used when the backend is empty or invalid.
-    pub fn default(self, value: T) -> PersistentBuilder<B, C, T, HasDefault> {
+    pub fn default(self, value: T) -> PersistentBuilder<'scope, B, C, T, HasDefault> {
         let value = Rc::new(value);
         PersistentBuilder {
+            scope: self.scope,
             key: self.key,
             backend: self.backend,
             codec: self.codec,
@@ -271,12 +260,12 @@ where
         }
     }
 
-    /// Lazily computes the default value used when the backend is empty or invalid.
     pub fn default_with(
         self,
-        f: impl Fn() -> T + 'static,
-    ) -> PersistentBuilder<B, C, T, HasDefault> {
+        f: impl Fn() -> T + 'scope,
+    ) -> PersistentBuilder<'scope, B, C, T, HasDefault> {
         PersistentBuilder {
+            scope: self.scope,
             key: self.key,
             backend: self.backend,
             codec: self.codec,
@@ -293,14 +282,16 @@ where
     }
 }
 
-impl<B, C, T, D> PersistentBuilder<B, C, T, D>
+impl<'scope, B, C, T, D> PersistentBuilder<'scope, B, C, T, D>
 where
-    C: PersistCodec<T>,
-    T: Clone + 'static,
+    C: PersistCodec<T> + 'scope,
+    T: Clone + 'scope,
 {
-    /// Promotes the binding to `Option<T>` using the selected codec for `Some(T)`.
-    pub fn optional(self) -> PersistentBuilder<B, OptionCodec<C, T>, Option<T>, HasDefault> {
+    pub fn optional(
+        self,
+    ) -> PersistentBuilder<'scope, B, OptionCodec<C, T>, Option<T>, HasDefault> {
         PersistentBuilder {
+            scope: self.scope,
             key: self.key,
             backend: self.backend,
             codec: OptionCodec::new(self.codec),
@@ -317,33 +308,43 @@ where
     }
 }
 
-impl<B, C, T> PersistentBuilder<B, C, T, HasDefault>
+impl<'scope, B, C, T> PersistentBuilder<'scope, B, C, T, HasDefault>
 where
-    B: PersistenceBackend,
-    C: PersistCodec<T>,
-    T: RxData + Clone + PartialEq + 'static,
+    B: PersistenceBackend<'scope>,
+    C: PersistCodec<T> + 'scope,
+    T: Clone + PartialEq + 'scope,
 {
-    /// Finalizes the builder and creates a `Persistent<T>`.
-    pub fn build(self) -> Persistent<T> {
+    pub fn try_build(self) -> Result<Persistent<'scope, T>, PersistenceError> {
+        let inputs = self.backend.runtime_inputs();
+        self.scope
+            .try_validate_inputs(&inputs)
+            .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
+
         let default = self
             .config
             .default
             .expect("Default status verified by typestate");
-
-        let value = RwSignal::new(default());
-        let state = RwSignal::new(PersistenceState::Ready(String::new()));
-
+        let value = self.scope.rw_signal(default());
+        let state = self.scope.rw_signal(PersistenceState::Ready(String::new()));
         let backend = self.backend.clone();
         let codec = self.codec.clone();
         let key = self.key.clone();
-
-        let controller = StoredValue::new(PersistenceController {
+        let subscription = Rc::new(RefCell::new(None));
+        let debounce = if matches!(self.config.mode, PersistMode::Immediate)
+            && let SyncStrategy::Debounce(_) = self.config.sync
+        {
+            Some(Rc::new(RefCell::new(ScopedDebounceState::new())))
+        } else {
+            None
+        };
+        let controller = self.scope.stored(PersistenceController {
             key: key.clone(),
             default: default.clone(),
             decode_policy: self.config.decode_policy,
             remove_policy: self.config.remove_policy,
             last_flushed_raw: None,
             skip_next_auto_flush: false,
+            suppress_manual_state: false,
             backend_get: Rc::new({
                 let backend = backend.clone();
                 move |key| backend.get(key)
@@ -360,16 +361,25 @@ where
                 let codec = codec.clone();
                 move |value| codec.encode(value).map_err(map_encode_error)
             }),
-            decode: Rc::new(move |raw| codec.decode(raw).map_err(|err| map_decode_error(raw, err))),
+            decode: Rc::new({
+                let codec = codec.clone();
+                move |raw| {
+                    codec
+                        .decode(raw)
+                        .map_err(|error| map_decode_error(raw, error))
+                }
+            }),
             should_remove: Rc::new({
                 let codec = self.codec.clone();
                 move |value| codec.should_remove(value)
             }),
-            subscription: None,
+            subscription: subscription.clone(),
+            debounce: debounce.clone(),
         });
+        let subscription = controller.with_untracked(|controller| controller.subscription.clone());
 
         let mut had_missing_value = false;
-
+        let mut initial_error = false;
         match backend.get(&key) {
             Ok(Some(raw)) => match self.codec.decode(&raw) {
                 Ok(decoded) => {
@@ -387,9 +397,14 @@ where
                     value.set_untracked(default());
                     let _ = controller.try_update_untracked(|controller| {
                         controller.last_flushed_raw = None;
+                        controller.skip_next_auto_flush = true;
+                        controller.suppress_manual_state = true;
                     });
-                    if matches!(self.config.decode_policy, DecodePolicy::RemoveAndUseDefault) {
-                        let _ = backend.remove(&key);
+                    initial_error = true;
+                    if matches!(self.config.decode_policy, DecodePolicy::RemoveAndUseDefault)
+                        && let Err(error) = backend.remove(&key)
+                    {
+                        state.set_untracked(PersistenceState::WriteError(error.message()));
                     }
                 }
             },
@@ -403,167 +418,226 @@ where
                 state.set_untracked(PersistenceState::Unavailable);
                 let _ = controller.try_update_untracked(|controller| {
                     controller.skip_next_auto_flush = true;
+                    controller.suppress_manual_state = true;
                 });
+                initial_error = true;
             }
-            Err(err) => {
+            Err(error) => {
                 value.set_untracked(default());
-                state.set_untracked(PersistenceState::ReadError(err.message()));
+                state.set_untracked(PersistenceState::ReadError(error.message()));
                 let _ = controller.try_update_untracked(|controller| {
                     controller.skip_next_auto_flush = true;
+                    controller.suppress_manual_state = true;
                 });
+                initial_error = true;
             }
         }
 
         if had_missing_value {
             match self.config.write_default {
-                WriteDefault::Always | WriteDefault::IfMissing => {
-                    let _ = flush_persistent_value(controller, value, state);
-                }
                 WriteDefault::Never => {
                     let _ = controller.try_update_untracked(|controller| {
                         controller.skip_next_auto_flush = true;
                     });
                 }
+                WriteDefault::IfMissing | WriteDefault::Always => {
+                    if flush_persistent_value(controller, value, state).is_err() {
+                        initial_error = true;
+                        let _ = controller.try_update_untracked(|controller| {
+                            controller.skip_next_auto_flush = true;
+                            controller.suppress_manual_state = true;
+                        });
+                    }
+                }
             }
+        } else if matches!(self.config.write_default, WriteDefault::Always)
+            && matches!(state.get_untracked(), PersistenceState::Ready(_))
+            && flush_persistent_value(controller, value, state).is_err()
+        {
+            initial_error = true;
+            let _ = controller.try_update_untracked(|controller| {
+                controller.skip_next_auto_flush = true;
+                controller.suppress_manual_state = true;
+            });
+        }
+
+        if initial_error {
+            let _ = controller.try_update_untracked(|controller| {
+                controller.suppress_manual_state = true;
+            });
         }
 
         if matches!(self.config.sync, SyncStrategy::CrossContext) {
-            let callback =
-                Rc::new(move |event| apply_backend_event(controller, value, state, event));
-            if let Ok(subscription) = backend.subscribe(key.clone(), callback) {
-                let _ = controller.try_update_untracked(|controller| {
-                    controller.subscription = Some(subscription);
-                });
-            }
-        }
-
-        if matches!(self.config.mode, PersistMode::Immediate) {
-            let debounce_duration = match self.config.sync {
-                SyncStrategy::Debounce(d) => Some(d),
-                _ => None,
-            };
-
-            if let Some(duration) = debounce_duration {
-                let timer = StoredValue::new(None::<silex_dom::helpers::TimeoutHandle>);
-                Effect::new(move |_| {
-                    let current = value.get();
-                    let should_skip =
-                        controller.with_untracked(|controller| controller.skip_next_auto_flush);
-                    if should_skip {
-                        let _ = controller.try_update_untracked(|controller| {
-                            controller.skip_next_auto_flush = false;
-                        });
-                        return;
-                    }
-
-                    // Update state to Syncing with current raw value
-                    let raw = controller.with_untracked(|c| (c.encode)(&current));
-                    if let Ok(raw) = raw {
-                        state.set(PersistenceState::Syncing(raw));
-                    }
-
-                    if let Some(handle) = timer.get_untracked() {
-                        handle.clear();
-                    }
-
-                    let handle = silex_dom::helpers::set_timeout_with_handle(
-                        move || {
-                            let _ = flush_persistent_value(controller, value, state);
-                            timer.set_untracked(None);
-                        },
-                        duration,
-                    );
-
-                    if let Ok(h) = handle {
-                        timer.set_untracked(Some(h));
-                    }
-                });
-
-                on_cleanup(move || {
-                    if let Some(handle) = timer.get_untracked() {
-                        handle.clear();
-                    }
-                });
-            } else {
-                Effect::new(move |_| {
-                    value.get();
-                    let should_skip =
-                        controller.with_untracked(|controller| controller.skip_next_auto_flush);
-                    if should_skip {
-                        let _ = controller.try_update_untracked(|controller| {
-                            controller.skip_next_auto_flush = false;
-                        });
-                        return;
-                    }
-                    let _ = flush_persistent_value(controller, value, state);
-                });
-            }
-        }
-
-        if matches!(self.config.mode, PersistMode::Manual) {
-            Effect::new(move |_| {
-                let current = value.get();
-                let (raw, last_raw, is_default) = controller.with_untracked(|c| {
-                    (
-                        (c.encode)(&current),
-                        c.last_flushed_raw.clone(),
-                        current == (c.default)(),
-                    )
-                });
-
-                if let Ok(raw) = raw {
-                    let is_ready = match &last_raw {
-                        Some(last) => last.as_str() == raw.as_str(),
-                        None => is_default,
-                    };
-                    if is_ready {
-                        if last_raw.is_none() {
-                            state.set(PersistenceState::Ready(String::new()));
-                        } else {
-                            state.set(PersistenceState::Ready(raw));
-                        }
-                    } else {
-                        state.set(PersistenceState::Dirty(raw));
+            let token = self.scope.completion({
+                move |event| {
+                    if value.is_alive() {
+                        apply_backend_event(controller, value, state, event);
                     }
                 }
             });
+            let sink: BackendEventSink = Rc::new(move |event| {
+                let _ = token.submit(event);
+            });
+            match backend.subscribe(self.scope, key.clone(), sink) {
+                Ok(binding) => *subscription.borrow_mut() = Some(binding),
+                Err(PersistenceError::BackendUnavailable) => {}
+                Err(PersistenceError::InvalidConfiguration(message)) => {
+                    return Err(PersistenceError::InvalidConfiguration(message));
+                }
+                Err(error) => state.set_untracked(PersistenceState::WriteError(error.message())),
+            }
         }
 
-        on_cleanup(move || {
-            let _ = controller.try_update_untracked(|controller| {
-                controller.subscription.take();
-            });
+        let subscription_for_cleanup = subscription.clone();
+        self.scope.on_cleanup(move || {
+            let _ = subscription_for_cleanup.borrow_mut().take();
         });
 
-        Persistent {
+        match self.config.mode {
+            PersistMode::Immediate => {
+                if let SyncStrategy::Debounce(duration) = self.config.sync {
+                    let debounce_state = debounce
+                        .clone()
+                        .expect("debounce state must exist for debounce mode");
+                    let debounce_for_completion = debounce_state.clone();
+                    let completion = self.scope.completion({
+                        move |generation| {
+                            if debounce_for_completion.borrow_mut().take_ready(generation)
+                                && value.is_alive()
+                            {
+                                let _ = flush_persistent_value(controller, value, state);
+                            }
+                        }
+                    });
+                    let debounce_for_cleanup = debounce_state.clone();
+                    self.scope.on_cleanup(move || {
+                        debounce_for_cleanup.borrow_mut().invalidate();
+                    });
+                    self.scope.effect(move || {
+                        let current = value.get();
+                        let should_skip =
+                            controller.with_untracked(|controller| controller.skip_next_auto_flush);
+                        if should_skip {
+                            let _ = controller.try_update_untracked(|controller| {
+                                controller.skip_next_auto_flush = false;
+                            });
+                            return;
+                        }
+
+                        let raw =
+                            controller.with_untracked(|controller| (controller.encode)(&current));
+                        let raw = match raw {
+                            Ok(raw) => raw,
+                            Err(error) => {
+                                debounce_state.borrow_mut().invalidate();
+                                state.set(PersistenceState::WriteError(error.message()));
+                                return;
+                            }
+                        };
+                        state.set(PersistenceState::Syncing(raw));
+                        let generation = debounce_state.borrow_mut().begin();
+                        let completion = completion.clone();
+                        match set_timeout_with_handle(
+                            move || {
+                                let _ = completion.submit(generation);
+                            },
+                            duration,
+                        ) {
+                            Ok(timer) => {
+                                let _ = debounce_state.borrow_mut().set_timer(generation, timer);
+                            }
+                            Err(error) => {
+                                debounce_state.borrow_mut().invalidate();
+                                state.set(PersistenceState::WriteError(format!(
+                                    "schedule persistence timeout failed: {:?}",
+                                    error
+                                )));
+                            }
+                        }
+                    });
+                } else {
+                    self.scope.effect(move || {
+                        value.get();
+                        let should_skip =
+                            controller.with_untracked(|controller| controller.skip_next_auto_flush);
+                        if should_skip {
+                            let _ = controller.try_update_untracked(|controller| {
+                                controller.skip_next_auto_flush = false;
+                            });
+                            return;
+                        }
+                        let _ = flush_persistent_value(controller, value, state);
+                    });
+                }
+            }
+            PersistMode::Manual => {
+                self.scope.effect(move || {
+                    let current = value.get();
+                    let suppress =
+                        controller.with_untracked(|controller| controller.suppress_manual_state);
+                    if suppress {
+                        let _ = controller.try_update_untracked(|controller| {
+                            controller.suppress_manual_state = false;
+                        });
+                        return;
+                    }
+
+                    let (raw, last_raw, is_default) = controller.with_untracked(|controller| {
+                        (
+                            (controller.encode)(&current),
+                            controller.last_flushed_raw.clone(),
+                            current == (controller.default)(),
+                        )
+                    });
+                    if let Ok(raw) = raw {
+                        let is_ready = match &last_raw {
+                            Some(last) => last == &raw,
+                            None => is_default,
+                        };
+                        if is_ready {
+                            if last_raw.is_none() {
+                                state.set(PersistenceState::Ready(String::new()));
+                            } else {
+                                state.set(PersistenceState::Ready(raw));
+                            }
+                        } else {
+                            state.set(PersistenceState::Dirty(raw));
+                        }
+                    }
+                });
+            }
+        }
+
+        Ok(Persistent {
             value,
             state,
             controller,
-        }
+        })
     }
-}
 
-impl<B, C, T, D> PersistentBuilder<B, C, T, D> {
-    fn _marker(&self) -> PhantomData<(T, D)> {
-        PhantomData
+    pub fn build(self) -> Persistent<'scope, T> {
+        self.try_build()
+            .unwrap_or_else(|error| panic!("persistent binding creation failed: {error:?}"))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::{BackendEvent, BackendSubscription};
-    use std::cell::RefCell;
+    use crate::{BackendEvent, backend::BackendSubscription};
     use std::collections::HashMap;
 
-    type SubscriptionMap = Rc<RefCell<HashMap<LocalStaticRefStr, Vec<Rc<dyn Fn(BackendEvent)>>>>>;
+    type SubscriptionMap = Rc<RefCell<HashMap<LocalStaticRefStr, Vec<(usize, BackendEventSink)>>>>;
 
     #[derive(Clone, Default)]
     struct MockBackend {
         state: Rc<RefCell<HashMap<String, String>>>,
         removed: Rc<RefCell<Vec<String>>>,
+        writes: Rc<RefCell<Vec<(String, String)>>>,
         subscriptions: SubscriptionMap,
+        next_id: Rc<std::cell::Cell<usize>>,
         fail_writes: Rc<RefCell<bool>>,
+        fail_removes: Rc<RefCell<bool>>,
     }
 
     impl MockBackend {
@@ -572,18 +646,21 @@ mod tests {
             state.insert(key.to_string(), value.to_string());
             Self {
                 state: Rc::new(RefCell::new(state)),
-                removed: Rc::new(RefCell::new(Vec::new())),
-                subscriptions: Rc::new(RefCell::new(HashMap::new())),
-                fail_writes: Rc::new(RefCell::new(false)),
+                ..Self::default()
             }
         }
 
         fn failing_writes() -> Self {
             Self {
-                state: Rc::new(RefCell::new(HashMap::new())),
-                removed: Rc::new(RefCell::new(Vec::new())),
-                subscriptions: Rc::new(RefCell::new(HashMap::new())),
                 fail_writes: Rc::new(RefCell::new(true)),
+                ..Self::default()
+            }
+        }
+
+        fn failing_removes() -> Self {
+            Self {
+                fail_removes: Rc::new(RefCell::new(true)),
+                ..Self::default()
             }
         }
 
@@ -592,7 +669,12 @@ mod tests {
                 .subscriptions
                 .borrow()
                 .get(key)
-                .cloned()
+                .map(|subscribers| {
+                    subscribers
+                        .iter()
+                        .map(|(_, sink)| sink.clone())
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default();
             for callback in callbacks {
                 callback(event.clone());
@@ -600,7 +682,7 @@ mod tests {
         }
     }
 
-    impl PersistenceBackend for MockBackend {
+    impl<'scope> PersistenceBackend<'scope> for MockBackend {
         fn get(&self, key: &str) -> Result<Option<String>, PersistenceError> {
             Ok(self.state.borrow().get(key).cloned())
         }
@@ -614,10 +696,18 @@ mod tests {
             self.state
                 .borrow_mut()
                 .insert(key.to_string(), value.to_string());
+            self.writes
+                .borrow_mut()
+                .push((key.to_string(), value.to_string()));
             Ok(())
         }
 
         fn remove(&self, key: &str) -> Result<(), PersistenceError> {
+            if *self.fail_removes.borrow() {
+                return Err(PersistenceError::RemoveFailed(
+                    "mock backend remove failure".to_string(),
+                ));
+            }
             self.state.borrow_mut().remove(key);
             self.removed.borrow_mut().push(key.to_string());
             Ok(())
@@ -625,23 +715,38 @@ mod tests {
 
         fn subscribe(
             &self,
+            _scope: Scope<'scope>,
             key: impl Into<LocalStaticRefStr>,
-            callback: Rc<dyn Fn(BackendEvent)>,
-        ) -> Result<BackendSubscription, PersistenceError> {
+            sink: BackendEventSink,
+        ) -> Result<BackendSubscription<'scope>, PersistenceError> {
+            let key = key.into();
+            let id = self.next_id.get();
+            self.next_id.set(id + 1);
             self.subscriptions
                 .borrow_mut()
-                .entry(key.into())
+                .entry(key.clone())
                 .or_default()
-                .push(callback);
-            Ok(BackendSubscription::new(|| {}))
+                .push((id, sink));
+            let subscriptions = self.subscriptions.clone();
+            Ok(BackendSubscription::new(move || {
+                let mut subscriptions = subscriptions.borrow_mut();
+                if let Some(subscribers) = subscriptions.get_mut(&key) {
+                    subscribers.retain(|(subscriber_id, _)| *subscriber_id != id);
+                    if subscribers.is_empty() {
+                        subscriptions.remove(&key);
+                    }
+                }
+            }))
         }
     }
 
-    fn parse_builder(
+    fn parse_builder<'scope>(
+        scope: Scope<'scope>,
         backend: MockBackend,
         key: &str,
-    ) -> PersistentBuilder<MockBackend, ParseCodec<i32>, i32, NoDefault> {
+    ) -> PersistentBuilder<'scope, MockBackend, ParseCodec<i32>, i32, NoDefault> {
         PersistentBuilder {
+            scope,
             key: key.to_string().into(),
             backend,
             codec: ParseCodec::new(),
@@ -652,152 +757,219 @@ mod tests {
 
     #[test]
     fn write_default_if_missing_persists_default() {
-        let backend = MockBackend::default();
-        let value = parse_builder(backend.clone(), "counter").default(7).build();
-
-        assert_eq!(value.get_untracked(), 7);
-        assert_eq!(backend.get("counter").unwrap(), Some("7".to_string()));
-        assert_eq!(
-            value.state().get_untracked(),
-            PersistenceState::Ready("7".to_string())
-        );
+        let mut runtime = silex_core::Runtime::new();
+        runtime.child(|scope| {
+            let backend = MockBackend::default();
+            let value = parse_builder(scope, backend.clone(), "counter")
+                .default(7)
+                .build();
+            assert_eq!(value.get_untracked(), 7);
+            assert_eq!(backend.get("counter").unwrap(), Some("7".to_string()));
+            assert_eq!(
+                value.state().get_untracked(),
+                PersistenceState::Ready("7".to_string())
+            );
+        });
     }
 
     #[test]
-    fn decode_error_remove_and_use_default_removes_invalid_backend_value() {
-        let backend = MockBackend::with_value("counter", "bad");
-        let value = parse_builder(backend.clone(), "counter")
-            .on_decode_error(DecodePolicy::RemoveAndUseDefault)
-            .default(5)
-            .build();
-
-        assert_eq!(value.get_untracked(), 5);
-        assert_eq!(backend.get("counter").unwrap(), Some("5".to_string()));
-        assert_eq!(
-            backend.removed.borrow().as_slice(),
-            &["counter".to_string()]
-        );
-        assert_eq!(
-            value.state().get_untracked(),
-            PersistenceState::Ready("5".to_string())
-        );
+    fn decode_error_remove_and_use_default_keeps_decode_error_state() {
+        let mut runtime = silex_core::Runtime::new();
+        runtime.child(|scope| {
+            let backend = MockBackend::with_value("counter", "bad");
+            let value = parse_builder(scope, backend.clone(), "counter")
+                .on_decode_error(DecodePolicy::RemoveAndUseDefault)
+                .default(5)
+                .build();
+            assert_eq!(value.get_untracked(), 5);
+            assert_eq!(backend.get("counter").unwrap(), None);
+            assert_eq!(
+                backend.removed.borrow().as_slice(),
+                &["counter".to_string()]
+            );
+            assert!(matches!(
+                value.state().get_untracked(),
+                PersistenceState::DecodeError(_)
+            ));
+        });
     }
 
     #[test]
-    fn decode_error_use_default_keeps_invalid_backend_value() {
-        let backend = MockBackend::with_value("counter", "bad");
-        let value = parse_builder(backend.clone(), "counter")
-            .on_decode_error(DecodePolicy::UseDefault)
-            .default(11)
-            .build();
-
-        assert_eq!(value.get_untracked(), 11);
-        assert_eq!(backend.get("counter").unwrap(), Some("11".to_string()));
-        assert!(backend.removed.borrow().is_empty());
-        assert_eq!(
-            value.state().get_untracked(),
-            PersistenceState::Ready("11".to_string())
-        );
+    fn decode_error_use_default_preserves_invalid_raw() {
+        let mut runtime = silex_core::Runtime::new();
+        runtime.child(|scope| {
+            let backend = MockBackend::with_value("counter", "bad");
+            let value = parse_builder(scope, backend.clone(), "counter")
+                .on_decode_error(DecodePolicy::UseDefault)
+                .default(11)
+                .build();
+            assert_eq!(value.get_untracked(), 11);
+            assert_eq!(backend.get("counter").unwrap(), Some("bad".to_string()));
+            assert!(matches!(
+                value.state().get_untracked(),
+                PersistenceState::DecodeError(_)
+            ));
+        });
     }
 
     #[test]
-    fn codec_selection_preserves_builder_configuration() {
-        let backend = MockBackend::default();
-        let value = PersistentBuilder {
-            key: "counter".into(),
-            backend,
-            codec: NoCodec,
-            config: PersistConfig::<()>::new(),
-            _marker: PhantomData::<NoDefault>,
-        }
-        .mode(PersistMode::Manual)
-        .sync(SyncStrategy::None)
-        .write_default(WriteDefault::Never)
-        .parse::<i32>()
-        .default(9)
-        .build();
-
-        assert_eq!(value.get_untracked(), 9);
-        assert_eq!(
-            value.state().get_untracked(),
-            PersistenceState::Ready(String::new())
-        );
+    fn write_default_always_normalizes_existing_raw() {
+        let mut runtime = silex_core::Runtime::new();
+        runtime.child(|scope| {
+            let backend = MockBackend::with_value("counter", "007");
+            let _value = parse_builder(scope, backend.clone(), "counter")
+                .write_default(WriteDefault::Always)
+                .default(5)
+                .build();
+            assert_eq!(backend.get("counter").unwrap(), Some("7".to_string()));
+            assert_eq!(
+                backend.writes.borrow().as_slice(),
+                &[("counter".to_string(), "7".to_string())]
+            );
+        });
     }
 
     #[test]
-    fn flush_write_failure_sets_write_error_state() {
-        let backend = MockBackend::failing_writes();
-        let value = parse_builder(backend, "counter").default(3).build();
-
-        assert!(matches!(
-            value.flush(),
-            Err(PersistenceError::WriteFailed(message)) if message == "mock backend write failure"
-        ));
-        assert_eq!(
-            value.state().get_untracked(),
-            PersistenceState::WriteError("mock backend write failure".to_string())
-        );
-    }
-
-    #[test]
-    fn initial_default_write_failure_sets_write_error_state() {
-        let backend = MockBackend::failing_writes();
-        let value = parse_builder(backend, "counter").default(3).build();
-
-        assert_eq!(value.get_untracked(), 3);
-        assert_eq!(
-            value.state().get_untracked(),
-            PersistenceState::WriteError("mock backend write failure".to_string())
-        );
+    fn initial_default_write_failure_is_visible() {
+        let mut runtime = silex_core::Runtime::new();
+        runtime.child(|scope| {
+            let backend = MockBackend::failing_writes();
+            let value = parse_builder(scope, backend, "counter").default(3).build();
+            assert_eq!(value.get_untracked(), 3);
+            assert_eq!(
+                value.state().get_untracked(),
+                PersistenceState::WriteError("mock backend write failure".to_string())
+            );
+        });
     }
 
     #[test]
     fn optional_none_flush_removes_backend_key() {
-        let backend = MockBackend::with_value("name", "alice");
-        let value = PersistentBuilder {
-            key: "name".into(),
-            backend: backend.clone(),
-            codec: StringCodec,
-            config: PersistConfig::<String>::new(),
-            _marker: PhantomData::<NoDefault>,
-        }
-        .optional()
-        .build();
-
-        assert_eq!(value.get_untracked(), Some("alice".to_string()));
-
-        value.set(None);
-        value.flush().unwrap();
-
-        assert_eq!(backend.get("name").unwrap(), None);
-        assert_eq!(backend.removed.borrow().as_slice(), &["name".to_string()]);
-        assert_eq!(
-            value.state().get_untracked(),
-            PersistenceState::Ready(String::new())
-        );
+        let mut runtime = silex_core::Runtime::new();
+        runtime.child(|scope| {
+            let backend = MockBackend::with_value("name", "alice");
+            let value = PersistentBuilder {
+                scope,
+                key: "name".into(),
+                backend: backend.clone(),
+                codec: StringCodec,
+                config: PersistConfig::<String>::new(),
+                _marker: PhantomData::<NoDefault>,
+            }
+            .optional()
+            .build();
+            assert_eq!(value.get_untracked(), Some("alice".to_string()));
+            value.set(None);
+            value.flush().unwrap();
+            assert_eq!(backend.get("name").unwrap(), None);
+            assert_eq!(backend.removed.borrow().as_slice(), &["name".to_string()]);
+        });
     }
 
     #[test]
     fn external_remove_uses_default_without_rewriting_backend() {
+        let mut runtime = silex_core::Runtime::new();
+        runtime.child(|scope| {
+            let backend = MockBackend::with_value("counter", "7");
+            let value = parse_builder(scope, backend.clone(), "counter")
+                .default(5)
+                .build();
+            backend.state.borrow_mut().remove("counter");
+            backend.emit(
+                "counter",
+                BackendEvent::Removed {
+                    key: "counter".into(),
+                },
+            );
+            assert_eq!(value.get_untracked(), 5);
+            assert_eq!(backend.get("counter").unwrap(), None);
+            assert!(backend.removed.borrow().is_empty());
+            assert_eq!(
+                value.state().get_untracked(),
+                PersistenceState::Ready(String::new())
+            );
+        });
+    }
+
+    #[test]
+    fn subscription_is_removed_when_scope_is_disposed() {
         let backend = MockBackend::with_value("counter", "7");
-        let value = parse_builder(backend.clone(), "counter").default(5).build();
+        let mut runtime = silex_core::Runtime::new();
+        runtime.child(|scope| {
+            let _value = parse_builder(scope, backend.clone(), "counter")
+                .default(5)
+                .build();
+            assert_eq!(backend.subscriptions.borrow().len(), 1);
+        });
+        assert!(backend.subscriptions.borrow().is_empty());
+    }
 
-        assert_eq!(value.get_untracked(), 7);
+    #[test]
+    fn manual_mode_marks_value_dirty_until_flush() {
+        let mut runtime = silex_core::Runtime::new();
+        runtime.child(|scope| {
+            let backend = MockBackend::default();
+            let value = parse_builder(scope, backend.clone(), "counter")
+                .mode(PersistMode::Manual)
+                .sync(SyncStrategy::None)
+                .default(1)
+                .build();
+            value.set(2);
+            assert_eq!(
+                value.state().get_untracked(),
+                PersistenceState::Dirty("2".to_string())
+            );
+            value.flush().unwrap();
+            assert_eq!(
+                value.state().get_untracked(),
+                PersistenceState::Ready("2".to_string())
+            );
+        });
+    }
 
-        backend.state.borrow_mut().remove("counter");
-        backend.emit(
-            "counter",
-            BackendEvent::Removed {
-                key: "counter".into(),
-            },
-        );
+    #[test]
+    fn initial_decode_removal_failure_sets_write_error() {
+        let mut runtime = silex_core::Runtime::new();
+        runtime.child(|scope| {
+            let backend = MockBackend::failing_removes();
+            backend
+                .state
+                .borrow_mut()
+                .insert("counter".to_string(), "bad".to_string());
+            let value = parse_builder(scope, backend.clone(), "counter")
+                .write_default(WriteDefault::Always)
+                .on_decode_error(DecodePolicy::RemoveAndUseDefault)
+                .default(1)
+                .build();
+            assert_eq!(
+                value.state().get_untracked(),
+                PersistenceState::WriteError("mock backend remove failure".to_string())
+            );
+            assert_eq!(backend.get("counter").unwrap(), Some("bad".to_string()));
+        });
+    }
 
-        assert_eq!(value.get_untracked(), 5);
-        assert_eq!(backend.get("counter").unwrap(), None);
-        assert!(backend.removed.borrow().is_empty());
-        assert_eq!(
-            value.state().get_untracked(),
-            PersistenceState::Ready(String::new())
-        );
+    #[test]
+    fn external_decode_removal_failure_sets_write_error() {
+        let mut runtime = silex_core::Runtime::new();
+        runtime.child(|scope| {
+            let backend = MockBackend::with_value("counter", "1");
+            let value = parse_builder(scope, backend.clone(), "counter")
+                .on_decode_error(DecodePolicy::RemoveAndUseDefault)
+                .default(1)
+                .build();
+            *backend.fail_removes.borrow_mut() = true;
+            backend.emit(
+                "counter",
+                BackendEvent::Set {
+                    key: "counter".into(),
+                    value: "bad".to_string(),
+                },
+            );
+            assert_eq!(
+                value.state().get_untracked(),
+                PersistenceState::WriteError("mock backend remove failure".to_string())
+            );
+        });
     }
 }

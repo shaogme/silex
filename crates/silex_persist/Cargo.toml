@@ -29,6 +29,11 @@ js-sys.workspace = true
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 
+[dev-dependencies]
+gloo-timers.workspace = true
+trybuild = "1.0"
+wasm-bindgen-test.workspace = true
+
 [features]
 default = []
 json = ["dep:serde", "dep:serde_json"]

@@ -4,7 +4,7 @@ use std::fmt::Display;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-pub trait PersistCodec<T>: Clone + 'static {
+pub trait PersistCodec<T>: Clone {
     fn encode(&self, value: &T) -> Result<String, String>;
     fn decode(&self, raw: &str) -> Result<T, String>;
 
@@ -26,12 +26,12 @@ impl PersistCodec<String> for StringCodec {
     }
 }
 
-impl PersistCodec<Cow<'static, str>> for StringCodec {
-    fn encode(&self, value: &Cow<'static, str>) -> Result<String, String> {
+impl<'scope> PersistCodec<Cow<'scope, str>> for StringCodec {
+    fn encode(&self, value: &Cow<'scope, str>) -> Result<String, String> {
         Ok(value.to_string())
     }
 
-    fn decode(&self, raw: &str) -> Result<Cow<'static, str>, String> {
+    fn decode(&self, raw: &str) -> Result<Cow<'scope, str>, String> {
         Ok(Cow::Owned(raw.to_string()))
     }
 }
@@ -47,7 +47,7 @@ impl<T> ParseCodec<T> {
 
 impl<T> PersistCodec<T> for ParseCodec<T>
 where
-    T: Display + FromStr + Clone + 'static,
+    T: Display + FromStr + Clone,
     <T as FromStr>::Err: std::fmt::Display,
 {
     fn encode(&self, value: &T) -> Result<String, String> {
@@ -73,7 +73,7 @@ impl<T> PersistJsonCodec<T> {
 #[cfg(feature = "json")]
 impl<T> PersistCodec<T> for PersistJsonCodec<T>
 where
-    T: serde::Serialize + serde::de::DeserializeOwned + Clone + 'static,
+    T: serde::Serialize + serde::de::DeserializeOwned + Clone,
 {
     fn encode(&self, value: &T) -> Result<String, String> {
         serde_json::to_string(value).map_err(|err| err.to_string())
@@ -102,7 +102,7 @@ impl<C, T> OptionCodec<C, T> {
 impl<C, T> PersistCodec<Option<T>> for OptionCodec<C, T>
 where
     C: PersistCodec<T>,
-    T: Clone + 'static,
+    T: Clone,
 {
     fn encode(&self, value: &Option<T>) -> Result<String, String> {
         match value {

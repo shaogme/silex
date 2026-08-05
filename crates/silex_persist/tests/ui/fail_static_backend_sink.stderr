@@ -1,0 +1,9 @@
+error: lifetime may not live long enough
+ --> tests/ui/fail_static_backend_sink.rs:6:5
+  |
+5 |   fn static_sink<'scope>(signal: ReadSignal<'scope, i32>) -> BackendEventSink {
+  |                  ------ lifetime `'scope` defined here
+6 | /     Rc::new(move |_event: BackendEvent| {
+7 | |         let _ = signal.get();
+8 | |     })
+  | |______^ returning this value requires that `'scope` must outlive `'static`

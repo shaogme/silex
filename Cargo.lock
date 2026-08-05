@@ -1799,6 +1799,7 @@ dependencies = [
 name = "silex_persist"
 version = "0.1.0-beta.9"
 dependencies = [
+ "gloo-timers",
  "js-sys",
  "ref_str",
  "serde",
@@ -1806,7 +1807,9 @@ dependencies = [
  "silex_core",
  "silex_dom",
  "silex_router",
+ "trybuild",
  "wasm-bindgen",
+ "wasm-bindgen-test",
  "web-sys",
 ]
 

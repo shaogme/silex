@@ -2,11 +2,16 @@ use crate::PersistenceError;
 use js_sys::Object;
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    reactivity::{Effect, Memo, ScopeId, create_scope, dispose},
+    RuntimeInputs, Scope,
+    reactivity::{Memo, runtime_inputs_of},
     traits::RxGet,
 };
 use silex_router::{Navigator, RouterContext};
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashMap,
+    rc::Rc,
+};
 use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Storage, StorageEvent};
 
@@ -22,35 +27,48 @@ pub enum BackendEvent {
     ExternalRefresh,
 }
 
-pub struct BackendSubscription {
-    cleanup: Option<Box<dyn FnOnce()>>,
+/// Static host bridge used by storage and query event sources.
+pub type BackendEventSink = Rc<dyn Fn(BackendEvent) + 'static>;
+
+pub struct BackendSubscription<'scope> {
+    cleanup: Option<Box<dyn FnOnce() + 'scope>>,
 }
 
-impl BackendSubscription {
-    pub fn new(cleanup: impl FnOnce() + 'static) -> Self {
+impl<'scope> BackendSubscription<'scope> {
+    pub fn new(cleanup: impl FnOnce() + 'scope) -> Self {
         Self {
             cleanup: Some(Box::new(cleanup)),
         }
     }
-}
 
-impl Drop for BackendSubscription {
-    fn drop(&mut self) {
+    pub fn cleanup(&mut self) {
         if let Some(cleanup) = self.cleanup.take() {
             cleanup();
         }
     }
 }
 
-pub trait PersistenceBackend: Clone + 'static {
+impl Drop for BackendSubscription<'_> {
+    fn drop(&mut self) {
+        self.cleanup();
+    }
+}
+
+pub trait PersistenceBackend<'scope>: Clone + 'scope {
     fn get(&self, key: &str) -> Result<Option<String>, PersistenceError>;
     fn set(&self, key: &str, value: &str) -> Result<(), PersistenceError>;
     fn remove(&self, key: &str) -> Result<(), PersistenceError>;
+
+    fn runtime_inputs(&self) -> RuntimeInputs {
+        RuntimeInputs::new()
+    }
+
     fn subscribe(
         &self,
+        scope: Scope<'scope>,
         key: impl Into<LocalStaticRefStr>,
-        callback: Rc<dyn Fn(BackendEvent)>,
-    ) -> Result<BackendSubscription, PersistenceError>;
+        sink: BackendEventSink,
+    ) -> Result<BackendSubscription<'scope>, PersistenceError>;
 }
 
 #[derive(Clone, Debug)]
@@ -88,7 +106,6 @@ impl<const IS_LOCAL: bool> Default for WebStorageBackend<IS_LOCAL> {
 
 impl<const IS_LOCAL: bool> PartialEq for WebStorageBackend<IS_LOCAL> {
     fn eq(&self, _other: &Self) -> bool {
-        // All instances of the same backend type are conceptually equal
         true
     }
 }
@@ -99,16 +116,28 @@ pub type LocalStorageBackend = WebStorageBackend<true>;
 pub type SessionStorageBackend = WebStorageBackend<false>;
 
 #[derive(Clone)]
-pub struct QueryBackend {
-    navigator: Option<Navigator>,
-    query_map: Option<Memo<HashMap<String, String>>>,
+pub struct QueryBackend<'scope> {
+    navigator: Option<Navigator<'scope>>,
+    query_map: Option<Memo<'scope, HashMap<String, String>>>,
+    inputs: RuntimeInputs,
 }
 
-impl QueryBackend {
-    pub fn new(ctx: &RouterContext) -> Self {
+impl<'scope> QueryBackend<'scope> {
+    pub fn new(ctx: &RouterContext<'scope>) -> Self {
+        let navigator = ctx.navigator;
+        let query_map = ctx.query_map();
+        let mut inputs = RuntimeInputs::new();
+        inputs.extend(&runtime_inputs_of(ctx.base_path));
+        inputs.extend(&runtime_inputs_of(ctx.path));
+        inputs.extend(&runtime_inputs_of(ctx.search));
+        inputs.extend(&runtime_inputs_of(navigator.path));
+        inputs.extend(&runtime_inputs_of(navigator.search));
+        inputs.extend(&runtime_inputs_of(query_map));
+
         Self {
-            navigator: Some(ctx.navigator),
-            query_map: Some(ctx.query_map()),
+            navigator: Some(navigator),
+            query_map: Some(query_map),
+            inputs,
         }
     }
 
@@ -116,21 +145,22 @@ impl QueryBackend {
         Self {
             navigator: None,
             query_map: None,
+            inputs: RuntimeInputs::new(),
         }
     }
 
-    fn navigator(&self) -> Result<&Navigator, PersistenceError> {
+    fn navigator(&self) -> Result<&Navigator<'scope>, PersistenceError> {
         self.navigator
             .as_ref()
             .ok_or(PersistenceError::BackendUnavailable)
     }
 
-    fn query_map(&self) -> Result<Memo<HashMap<String, String>>, PersistenceError> {
+    fn query_map(&self) -> Result<Memo<'scope, HashMap<String, String>>, PersistenceError> {
         self.query_map.ok_or(PersistenceError::BackendUnavailable)
     }
 }
 
-impl<const IS_LOCAL: bool> PersistenceBackend for WebStorageBackend<IS_LOCAL> {
+impl<'scope, const IS_LOCAL: bool> PersistenceBackend<'scope> for WebStorageBackend<IS_LOCAL> {
     fn get(&self, key: &str) -> Result<Option<String>, PersistenceError> {
         storage_get(self.storage()?, key)
     }
@@ -145,14 +175,15 @@ impl<const IS_LOCAL: bool> PersistenceBackend for WebStorageBackend<IS_LOCAL> {
 
     fn subscribe(
         &self,
+        _scope: Scope<'scope>,
         key: impl Into<LocalStaticRefStr>,
-        callback: Rc<dyn Fn(BackendEvent)>,
-    ) -> Result<BackendSubscription, PersistenceError> {
-        subscribe_storage(Self::kind(), key.into(), callback)
+        sink: BackendEventSink,
+    ) -> Result<BackendSubscription<'scope>, PersistenceError> {
+        subscribe_storage(Self::kind(), key.into(), sink)
     }
 }
 
-impl PersistenceBackend for QueryBackend {
+impl<'scope> PersistenceBackend<'scope> for QueryBackend<'scope> {
     fn get(&self, key: &str) -> Result<Option<String>, PersistenceError> {
         Ok(self.query_map()?.get_untracked().get(key).cloned())
     }
@@ -167,31 +198,50 @@ impl PersistenceBackend for QueryBackend {
         Ok(())
     }
 
+    fn runtime_inputs(&self) -> RuntimeInputs {
+        self.inputs.clone()
+    }
+
     fn subscribe(
         &self,
+        scope: Scope<'scope>,
         key: impl Into<LocalStaticRefStr>,
-        callback: Rc<dyn Fn(BackendEvent)>,
-    ) -> Result<BackendSubscription, PersistenceError> {
+        sink: BackendEventSink,
+    ) -> Result<BackendSubscription<'scope>, PersistenceError> {
+        let inputs = self.runtime_inputs();
+        scope
+            .try_validate_inputs(&inputs)
+            .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
+
         let key = key.into();
         let query_map = self.query_map()?;
-        let scope_id: ScopeId = create_scope(move || {
-            Effect::new(move |prev: Option<Option<String>>| {
-                let current = query_map.get().get(key.as_ref()).cloned();
-                if let Some(previous) = prev
+        let active = Rc::new(Cell::new(true));
+        let active_for_effect = active.clone();
+        let key_for_effect = key.clone();
+        let _effect = scope
+            .try_effect_with_previous_from(inputs, move |previous: Option<Option<String>>| {
+                let current = query_map.get().get(key_for_effect.as_ref()).cloned();
+                if active_for_effect.get()
+                    && let Some(previous) = previous
                     && previous != current
                 {
                     match current.clone() {
-                        Some(value) => callback(BackendEvent::Set {
-                            key: key.clone(),
+                        Some(value) => sink(BackendEvent::Set {
+                            key: key_for_effect.clone(),
                             value,
                         }),
-                        None => callback(BackendEvent::Removed { key: key.clone() }),
+                        None => sink(BackendEvent::Removed {
+                            key: key_for_effect.clone(),
+                        }),
                     }
                 }
                 current
-            });
-        });
-        Ok(BackendSubscription::new(move || dispose(scope_id)))
+            })
+            .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
+
+        Ok(BackendSubscription::new(move || {
+            active.set(false);
+        }))
     }
 }
 
@@ -203,7 +253,7 @@ enum StorageAreaKind {
 
 struct StorageSubscriber {
     id: usize,
-    callback: Rc<dyn Fn(BackendEvent)>,
+    sink: BackendEventSink,
 }
 
 struct StorageDispatcher {
@@ -220,8 +270,10 @@ impl Default for StorageDispatcher {
             subscribers: HashMap::new(),
             next_id: 0,
             closure: None,
-            local_storage: web_sys::window().and_then(|w| w.local_storage().ok().flatten()),
-            session_storage: web_sys::window().and_then(|w| w.session_storage().ok().flatten()),
+            local_storage: web_sys::window()
+                .and_then(|window| window.local_storage().ok().flatten()),
+            session_storage: web_sys::window()
+                .and_then(|window| window.session_storage().ok().flatten()),
         }
     }
 }
@@ -235,26 +287,24 @@ impl StorageDispatcher {
         &mut self,
         kind: StorageAreaKind,
         key: LocalStaticRefStr,
-        callback: Rc<dyn Fn(BackendEvent)>,
+        sink: BackendEventSink,
     ) -> Result<usize, PersistenceError> {
         self.ensure_listener()?;
 
         let id = self.next_id;
         self.next_id += 1;
-
         self.subscribers
             .entry((kind, key))
             .or_default()
-            .push(StorageSubscriber { id, callback });
-
+            .push(StorageSubscriber { id, sink });
         Ok(id)
     }
 
     fn unsubscribe(&mut self, kind: StorageAreaKind, key: impl Into<LocalStaticRefStr>, id: usize) {
         let key = key.into();
-        if let Some(subs) = self.subscribers.get_mut(&(kind, key.clone())) {
-            subs.retain(|s| s.id != id);
-            if subs.is_empty() {
+        if let Some(subscribers) = self.subscribers.get_mut(&(kind, key.clone())) {
+            subscribers.retain(|subscriber| subscriber.id != id);
+            if subscribers.is_empty() {
                 self.subscribers.remove(&(kind, key));
             }
         }
@@ -274,7 +324,6 @@ impl StorageDispatcher {
         }
 
         let window = web_sys::window().ok_or(PersistenceError::BackendUnavailable)?;
-
         let local_storage = self.local_storage.clone();
         let session_storage = self.session_storage.clone();
 
@@ -282,15 +331,14 @@ impl StorageDispatcher {
             let Some(area) = event.storage_area() else {
                 return;
             };
-
             let kind = if local_storage
                 .as_ref()
-                .is_some_and(|l| Object::is(area.as_ref(), l.as_ref()))
+                .is_some_and(|storage| Object::is(area.as_ref(), storage.as_ref()))
             {
                 StorageAreaKind::Local
             } else if session_storage
                 .as_ref()
-                .is_some_and(|s| Object::is(area.as_ref(), s.as_ref()))
+                .is_some_and(|storage| Object::is(area.as_ref(), storage.as_ref()))
             {
                 StorageAreaKind::Session
             } else {
@@ -300,67 +348,75 @@ impl StorageDispatcher {
             let Some(key) = event.key() else {
                 return;
             };
-            let new_value = event.new_value();
-
-            DISPATCHER.with(|d| {
-                let key_cow: LocalStaticRefStr = LocalStaticRefStr::from(key);
-                if let Some(subs) = d.borrow().subscribers.get(&(kind, key_cow.clone())) {
-                    let event = match new_value {
-                        Some(value) => BackendEvent::Set {
-                            key: key_cow.clone(),
-                            value,
-                        },
-                        None => BackendEvent::Removed {
-                            key: key_cow.clone(),
-                        },
-                    };
-                    for sub in subs {
-                        (sub.callback)(event.clone());
-                    }
-                }
+            let key: LocalStaticRefStr = key.into();
+            let event = match event.new_value() {
+                Some(value) => BackendEvent::Set {
+                    key: key.clone(),
+                    value,
+                },
+                None => BackendEvent::Removed { key: key.clone() },
+            };
+            let sinks = DISPATCHER.with(|dispatcher| {
+                let dispatcher = dispatcher.borrow();
+                dispatcher
+                    .subscribers
+                    .get(&(kind, key))
+                    .map(|subscribers| {
+                        subscribers
+                            .iter()
+                            .map(|subscriber| subscriber.sink.clone())
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default()
             });
+
+            for sink in sinks {
+                sink(event.clone());
+            }
         }) as Box<dyn FnMut(StorageEvent)>);
 
         window
             .add_event_listener_with_callback("storage", closure.as_ref().unchecked_ref())
-            .map_err(|err| {
-                PersistenceError::ReadFailed(format!("add storage listener failed: {:?}", err))
+            .map_err(|error| {
+                PersistenceError::ReadFailed(format!("add storage listener failed: {:?}", error))
             })?;
-
         self.closure = Some(closure);
         Ok(())
     }
 }
 
 fn storage_get(storage: &Storage, key: &str) -> Result<Option<String>, PersistenceError> {
-    storage
-        .get_item(key)
-        .map_err(|err| PersistenceError::ReadFailed(format!("storage get_item failed: {:?}", err)))
+    storage.get_item(key).map_err(|error| {
+        PersistenceError::ReadFailed(format!("storage get_item failed: {:?}", error))
+    })
 }
 
 fn storage_set(storage: &Storage, key: &str, value: &str) -> Result<(), PersistenceError> {
-    storage
-        .set_item(key, value)
-        .map_err(|err| PersistenceError::WriteFailed(format!("storage set_item failed: {:?}", err)))
+    storage.set_item(key, value).map_err(|error| {
+        PersistenceError::WriteFailed(format!("storage set_item failed: {:?}", error))
+    })
 }
 
 fn storage_remove(storage: &Storage, key: &str) -> Result<(), PersistenceError> {
-    storage.remove_item(key).map_err(|err| {
-        PersistenceError::RemoveFailed(format!("storage remove_item failed: {:?}", err))
+    storage.remove_item(key).map_err(|error| {
+        PersistenceError::RemoveFailed(format!("storage remove_item failed: {:?}", error))
     })
 }
 
 fn subscribe_storage(
     kind: StorageAreaKind,
-    key: impl Into<LocalStaticRefStr>,
-    callback: Rc<dyn Fn(BackendEvent)>,
-) -> Result<BackendSubscription, PersistenceError> {
-    let key = key.into();
-    let key_clone = key.clone();
-    let id = DISPATCHER.with(|d| d.borrow_mut().subscribe(kind, key, callback))?;
+    key: LocalStaticRefStr,
+    sink: BackendEventSink,
+) -> Result<BackendSubscription<'static>, PersistenceError> {
+    let key_for_cleanup = key.clone();
+    let id = DISPATCHER.with(|dispatcher| dispatcher.borrow_mut().subscribe(kind, key, sink))?;
 
     Ok(BackendSubscription::new(move || {
-        DISPATCHER.with(|d| d.borrow_mut().unsubscribe(kind, key_clone, id));
+        DISPATCHER.with(|dispatcher| {
+            dispatcher
+                .borrow_mut()
+                .unsubscribe(kind, key_for_cleanup, id);
+        });
     }))
 }
 
@@ -370,7 +426,7 @@ fn storage_handle(kind: StorageAreaKind) -> Result<Storage, PersistenceError> {
         StorageAreaKind::Local => window.local_storage(),
         StorageAreaKind::Session => window.session_storage(),
     }
-    .map_err(|err| PersistenceError::ReadFailed(format!("storage unavailable: {:?}", err)))?
+    .map_err(|error| PersistenceError::ReadFailed(format!("storage unavailable: {:?}", error)))?
     .ok_or(PersistenceError::BackendUnavailable)?;
     Ok(storage)
 }
@@ -378,26 +434,34 @@ fn storage_handle(kind: StorageAreaKind) -> Result<Storage, PersistenceError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use silex_core::reactivity::{Signal, create_scope};
-    use silex_core::traits::RxWrite;
+    use silex_core::{ReadSignal, Runtime};
     use silex_router::Navigator;
-    use std::cell::RefCell;
-    use std::collections::HashMap;
+    use std::{cell::RefCell, collections::HashMap};
 
-    fn test_query_backend(
-        map: silex_core::reactivity::ReadSignal<HashMap<String, String>>,
-    ) -> QueryBackend {
-        let (path, set_path) = Signal::pair("/".to_string());
-        let (search, set_search) = Signal::pair(String::new());
+    fn test_query_backend<'scope>(
+        scope: Scope<'scope>,
+        map: ReadSignal<'scope, HashMap<String, String>>,
+    ) -> QueryBackend<'scope> {
+        let base_path = scope.stored("/".to_string());
+        let (path, set_path) = scope.signal("/".to_string());
+        let (search, set_search) = scope.signal(String::new());
+        let query_map = scope.memo_from(runtime_inputs_of(map), move |_| map.get());
+        let navigator = Navigator {
+            base_path,
+            path,
+            search,
+            set_path,
+            set_search,
+        };
+        let mut inputs = RuntimeInputs::new();
+        inputs.extend(&runtime_inputs_of(base_path));
+        inputs.extend(&runtime_inputs_of(path));
+        inputs.extend(&runtime_inputs_of(search));
+        inputs.extend(&runtime_inputs_of(query_map));
         QueryBackend {
-            navigator: Some(Navigator {
-                base_path: silex_core::reactivity::StoredValue::new("/".to_string()),
-                path,
-                search,
-                set_path,
-                set_search,
-            }),
-            query_map: Some(Memo::new(move |_| map.get())),
+            navigator: Some(navigator),
+            query_map: Some(query_map),
+            inputs,
         }
     }
 
@@ -409,22 +473,22 @@ mod tests {
 
     #[test]
     fn query_backend_get_and_subscribe_follow_query_map_changes() {
-        create_scope(|| {
-            let (map, set_map) = Signal::pair(HashMap::<String, String>::new());
-            let backend = test_query_backend(map);
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let map = scope.rw_signal(HashMap::<String, String>::new());
+            let backend = test_query_backend(scope, map.read_signal());
             let events = Rc::new(RefCell::new(Vec::<BackendEvent>::new()));
-
             let callback = {
                 let events = events.clone();
-                Rc::new(move |event| events.borrow_mut().push(event))
+                Rc::new(move |event| events.borrow_mut().push(event)) as BackendEventSink
             };
 
-            let _subscription = backend.subscribe("q", callback).unwrap();
+            let _subscription = backend.subscribe(scope, "q", callback).unwrap();
             assert_eq!(backend.get("q").unwrap(), None);
 
             let mut with_value = HashMap::new();
             with_value.insert("q".to_string(), "rust".to_string());
-            set_map.set(with_value);
+            map.set(with_value);
 
             assert_eq!(backend.get("q").unwrap(), Some("rust".to_string()));
             assert!(matches!(
@@ -432,7 +496,7 @@ mod tests {
                 Some(BackendEvent::Set { key, value }) if key == "q" && value == "rust"
             ));
 
-            set_map.set(HashMap::new());
+            map.set(HashMap::new());
             assert!(matches!(
                 events.borrow().get(1),
                 Some(BackendEvent::Removed { key }) if key == "q"
@@ -442,15 +506,48 @@ mod tests {
 
     #[test]
     fn query_backend_unavailable_reports_backend_unavailable() {
-        let backend = QueryBackend::unavailable();
+        assert!(matches!(
+            QueryBackend::<'static>::unavailable().get("q"),
+            Err(PersistenceError::BackendUnavailable)
+        ));
 
-        assert!(matches!(
-            backend.get("q"),
-            Err(PersistenceError::BackendUnavailable)
-        ));
-        assert!(matches!(
-            backend.subscribe("q", Rc::new(|_| {})),
-            Err(PersistenceError::BackendUnavailable)
-        ));
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let backend = QueryBackend::unavailable();
+            assert!(matches!(
+                backend.subscribe(scope, "q", Rc::new(|_| {})),
+                Err(PersistenceError::BackendUnavailable)
+            ));
+        });
+    }
+
+    #[test]
+    fn query_runtime_inputs_reject_a_foreign_scope_before_effect_creation() {
+        let mut first_runtime = Runtime::new();
+        let first_root = first_runtime.run();
+        let inputs = first_root.with_scope(|scope| {
+            let map = scope.rw_signal(HashMap::<String, String>::new());
+            test_query_backend(scope, map.read_signal()).runtime_inputs()
+        });
+
+        let mut second_runtime = Runtime::new();
+        let second_root = second_runtime.run();
+        second_root.with_scope(|scope| {
+            assert!(scope.try_validate_inputs(&inputs).is_err());
+            let runs = Rc::new(Cell::new(0));
+            let runs_for_effect = runs.clone();
+            assert!(
+                scope
+                    .try_effect_from(
+                        inputs,
+                        Box::new(move || runs_for_effect.set(runs_for_effect.get() + 1)),
+                    )
+                    .is_err()
+            );
+            assert_eq!(runs.get(), 0);
+        });
+
+        second_root.dispose().expect("dispose second root");
+        first_root.dispose().expect("dispose first root");
     }
 }

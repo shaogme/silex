@@ -114,8 +114,12 @@ pub trait RxWrite: RxBase {
         self.update(|current| *current = value);
     }
 
-    fn update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> U {
+    fn try_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> Option<U> {
         self.rx_try_update_untracked(f)
+    }
+
+    fn update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> U {
+        self.try_update_untracked(f)
             .unwrap_or_else(|| panic_disposed(self))
     }
 

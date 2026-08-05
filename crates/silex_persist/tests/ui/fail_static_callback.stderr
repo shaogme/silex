@@ -1,0 +1,20 @@
+error: lifetime may not live long enough
+ --> tests/ui/fail_static_callback.rs:4:5
+  |
+3 |   fn static_callback<'scope>(binding: Persistent<'scope, i32>) -> Box<dyn Fn() + 'static> {
+  |                      ------ lifetime `'scope` defined here
+4 | /     Box::new(move || {
+5 | |         let _ = binding.get();
+6 | |     })
+  | |______^ returning this value requires that `'scope` must outlive `'static`
+  |
+help: consider changing the trait object's explicit `'static` bound to the lifetime of argument `binding`
+  |
+3 - fn static_callback<'scope>(binding: Persistent<'scope, i32>) -> Box<dyn Fn() + 'static> {
+3 + fn static_callback<'scope>(binding: Persistent<'scope, i32>) -> Box<dyn Fn() + 'scope> {
+  |
+help: alternatively, add an explicit `'static` bound to this reference
+  |
+3 - fn static_callback<'scope>(binding: Persistent<'scope, i32>) -> Box<dyn Fn() + 'static> {
+3 + fn static_callback<'scope>(binding: Persistent<'static, i32>) -> Box<dyn Fn() + 'static> {
+  |
