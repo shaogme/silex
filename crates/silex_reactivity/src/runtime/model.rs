@@ -1,6 +1,9 @@
 //! Runtime node and scope-state data structures.
 
-use super::scheduler::{GlobalScheduler, ScopeId, TargetNode};
+use super::{
+    scheduler::{GlobalScheduler, ScopeId, TargetNode},
+    storage::{ComputationStorage, LeaseCell, NodeStorage},
+};
 use crate::{
     ReactiveError, ReactiveResult,
     handle::NodeKindTag,
@@ -42,11 +45,6 @@ pub(crate) enum NodeState {
     Clean = 0,
     Check = 1,
     Dirty = 2,
-}
-
-pub(crate) enum Payload<'scope> {
-    Stored(AnyValue<'scope>),
-    Callback(CallbackThunk<'scope>),
 }
 
 #[derive(Clone, Copy)]
@@ -94,12 +92,18 @@ impl NodeCore {
     }
 }
 
-#[derive(Default)]
 pub(crate) struct NodeData<'scope> {
-    pub(crate) value: Option<AnyValue<'scope>>,
+    pub(crate) storage: Rc<NodeStorage<'scope>>,
     pub(crate) cleanups: Vec<OnceThunk<'scope>>,
-    pub(crate) payload: Option<Payload<'scope>>,
-    pub(crate) computation: Option<Computation<'scope>>,
+}
+
+impl<'scope> NodeData<'scope> {
+    pub(crate) fn new(storage: Rc<NodeStorage<'scope>>) -> Self {
+        Self {
+            storage,
+            cleanups: Vec::new(),
+        }
+    }
 }
 
 /// Iterator over child nodes in an intra-arena sibling chain.
@@ -146,7 +150,7 @@ impl Iterator for EdgeIter<'_, '_> {
     }
 }
 
-/// Reactive graph nodes, scheduling state, and payloads owned by one lexical scope.
+/// Reactive graph nodes, scheduling state, and stable storage owned by one lexical scope.
 pub(crate) struct ScopeState<'scope> {
     pub(crate) scope_id: ScopeId,
     pub(crate) scheduler: Rc<RefCell<GlobalScheduler>>,
@@ -273,63 +277,10 @@ impl<'scope> ScopeState<'scope> {
         self.nodes.get(id).is_some()
     }
 
-    pub(crate) fn has_value(&self, id: RawId) -> bool {
-        if let Some(data) = self.data.get(id)
-            && data.value.is_some()
-        {
-            return true;
-        }
-        if let Some(node) = self.nodes.get(id) {
-            matches!(
-                node.kind,
-                NodeKindTag::Signal | NodeKindTag::Memo | NodeKindTag::Derived
-            )
-        } else {
-            false
-        }
-    }
-
-    pub(crate) fn take_value(
-        &mut self,
-        id: RawId,
-        expected: NodeKindTag,
-    ) -> ReactiveResult<AnyValue<'scope>> {
-        let node = self.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
-        if node.kind != expected && !matches!(expected, NodeKindTag::Signal)
-            || !matches!(
-                node.kind,
-                NodeKindTag::Signal | NodeKindTag::Memo | NodeKindTag::Derived
-            )
-        {
-            return Err(ReactiveError::WrongKind);
-        }
-        let data = self.data.get_mut(id).ok_or(ReactiveError::NoSuchNode)?;
-        data.value.take().ok_or(ReactiveError::Reentrant)
-    }
-
-    pub(crate) fn put_value(&mut self, id: RawId, value: AnyValue<'scope>, bump: bool) -> bool {
-        let epoch = if bump {
-            self.scheduler.borrow_mut().next_epoch()
-        } else {
-            0
-        };
-        let Some(node) = self.nodes.get_mut(id) else {
-            return false;
-        };
-        if bump {
-            node.updated_epoch = epoch;
-            node.last_computed_epoch = epoch;
-            node.version = node.version.wrapping_add(1);
-        }
-        if let Some(data) = self.data.get_mut(id) {
-            data.value = Some(value);
-            true
-        } else {
-            false
-        }
-    }
-
     pub(crate) fn mark_notified(&mut self, id: RawId) -> bool {
+        if !self.scheduler.borrow().is_scope_active(self.scope_id) {
+            return false;
+        }
         let epoch = self.scheduler.borrow_mut().next_epoch();
         let Some(node) = self.nodes.get_mut(id) else {
             return false;
@@ -351,10 +302,7 @@ impl<'scope> ScopeState<'scope> {
         node.last_computed_epoch = epoch;
         self.register(
             node,
-            NodeData {
-                value: Some(value),
-                ..Default::default()
-            },
+            NodeData::new(Rc::new(NodeStorage::Value(LeaseCell::new(value)))),
         )
     }
 
@@ -362,10 +310,9 @@ impl<'scope> ScopeState<'scope> {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::Effect, parent, NodeState::Dirty),
-            NodeData {
-                computation: Some(Computation::Effect(callback)),
-                ..Default::default()
-            },
+            NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
+                Computation::Effect(callback),
+            )))),
         )
     }
 
@@ -378,10 +325,9 @@ impl<'scope> ScopeState<'scope> {
         };
         self.register(
             NodeCore::new(kind, parent, NodeState::Dirty),
-            NodeData {
-                computation: Some(Computation::Memo(callback)),
-                ..Default::default()
-            },
+            NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
+                Computation::Memo(callback),
+            )))),
         )
     }
 
@@ -389,10 +335,7 @@ impl<'scope> ScopeState<'scope> {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::Stored, parent, NodeState::Clean),
-            NodeData {
-                payload: Some(Payload::Stored(value)),
-                ..Default::default()
-            },
+            NodeData::new(Rc::new(NodeStorage::Value(LeaseCell::new(value)))),
         )
     }
 
@@ -400,10 +343,7 @@ impl<'scope> ScopeState<'scope> {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::Callback, parent, NodeState::Clean),
-            NodeData {
-                payload: Some(Payload::Callback(callback)),
-                ..Default::default()
-            },
+            NodeData::new(Rc::new(NodeStorage::Callback(LeaseCell::new(callback)))),
         )
     }
 
@@ -411,10 +351,7 @@ impl<'scope> ScopeState<'scope> {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::NodeRef, parent, NodeState::Clean),
-            NodeData {
-                payload: Some(Payload::Stored(value)),
-                ..Default::default()
-            },
+            NodeData::new(Rc::new(NodeStorage::Value(LeaseCell::new(value)))),
         )
     }
 
@@ -426,5 +363,89 @@ impl<'scope> ScopeState<'scope> {
             return;
         }
         self.root_cleanups.push(cleanup);
+    }
+
+    pub(crate) fn has_value(&self, id: RawId) -> bool {
+        let Some(node) = self.nodes.get(id) else {
+            return false;
+        };
+        match node.kind {
+            NodeKindTag::Signal => true,
+            NodeKindTag::Memo | NodeKindTag::Derived => self
+                .data
+                .get(id)
+                .and_then(|data| match data.storage.as_ref() {
+                    NodeStorage::Computation(storage) => Some(storage.value.is_initialized()),
+                    _ => None,
+                })
+                .unwrap_or(false),
+            _ => false,
+        }
+    }
+
+    fn ensure_active(&self) -> Result<(), ReactiveError> {
+        if self.scheduler.borrow().is_scope_active(self.scope_id) {
+            Ok(())
+        } else {
+            Err(ReactiveError::NoSuchNode)
+        }
+    }
+
+    pub(crate) fn value_storage(
+        &self,
+        id: RawId,
+        reactive: bool,
+    ) -> ReactiveResult<Rc<NodeStorage<'scope>>> {
+        self.ensure_active()?;
+        let node = self.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
+        let valid_kind = if reactive {
+            matches!(
+                node.kind,
+                NodeKindTag::Signal | NodeKindTag::Memo | NodeKindTag::Derived
+            )
+        } else {
+            node.kind == NodeKindTag::Signal
+        };
+        if !valid_kind {
+            return Err(ReactiveError::WrongKind);
+        }
+        let data = self.data.get(id).ok_or(ReactiveError::NoSuchNode)?;
+        let valid_storage = match node.kind {
+            NodeKindTag::Signal => matches!(data.storage.as_ref(), NodeStorage::Value(_)),
+            NodeKindTag::Memo | NodeKindTag::Derived => {
+                matches!(data.storage.as_ref(), NodeStorage::Computation(_))
+            }
+            _ => false,
+        };
+        if !valid_storage {
+            return Err(ReactiveError::WrongKind);
+        }
+        Ok(data.storage.clone())
+    }
+
+    pub(crate) fn stored_storage(&self, id: RawId) -> ReactiveResult<Rc<NodeStorage<'scope>>> {
+        self.ensure_active()?;
+        let node = self.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
+        if !matches!(node.kind, NodeKindTag::Stored | NodeKindTag::NodeRef) {
+            return Err(ReactiveError::WrongKind);
+        }
+        let data = self.data.get(id).ok_or(ReactiveError::NoSuchNode)?;
+        if !matches!(data.storage.as_ref(), NodeStorage::Value(_)) {
+            return Err(ReactiveError::WrongKind);
+        }
+        Ok(data.storage.clone())
+    }
+
+    pub(crate) fn callback_storage(&self, id: RawId) -> ReactiveResult<Rc<NodeStorage<'scope>>> {
+        self.ensure_active()?;
+        let node = self.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
+        if node.kind != NodeKindTag::Callback {
+            return Err(ReactiveError::WrongKind);
+        }
+        let data = self.data.get(id).ok_or(ReactiveError::NoSuchNode)?;
+        if !matches!(data.storage.as_ref(), NodeStorage::Callback(_)) {
+            return Err(ReactiveError::WrongKind);
+        }
+        Ok(data.storage.clone())
     }
 }

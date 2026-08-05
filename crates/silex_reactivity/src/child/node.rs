@@ -380,20 +380,19 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
 
 impl<'scope, T: 'scope> WriteSignal<'scope, T> {
     pub fn try_set(&self, value: T) -> ReactiveResult<()> {
-        let mut value = Some(value);
         runtime::update_signal(&self.handle.state(), self.handle.raw(), |stored| {
+            let incoming = value;
             let Some(stored) = (unsafe { stored.downcast_mut::<T>() }) else {
                 return (Err(ReactiveError::TypeMismatch), false);
             };
-            *stored = value.take().expect("signal setter 只调用一次");
+            *stored = incoming;
             (Ok(()), true)
         })?
     }
 
     pub fn set(&self, value: T) {
-        if let Err(error) = self.try_set(value) {
-            debug_assert!(!error.is_bug(), "写入 scoped signal 失败: {error}");
-        }
+        self.try_set(value)
+            .unwrap_or_else(|error| panic!("写入 scoped signal 失败: {error}"));
     }
 
     pub fn try_update<R>(&self, f: impl FnOnce(&mut T) -> R) -> ReactiveResult<R> {
@@ -410,21 +409,19 @@ impl<'scope, T: 'scope> WriteSignal<'scope, T> {
     }
 
     pub fn update(&self, f: impl FnOnce(&mut T)) {
-        if let Err(error) = self.try_update(f) {
-            debug_assert!(!error.is_bug(), "更新 scoped signal 失败: {error}");
-        }
+        self.try_update(f)
+            .unwrap_or_else(|error| panic!("更新 scoped signal 失败: {error}"));
     }
 
     pub fn try_set_if_changed(&self, value: T) -> ReactiveResult<bool>
     where
         T: PartialEq,
     {
-        let mut value = Some(value);
         runtime::update_signal(&self.handle.state(), self.handle.raw(), |stored| {
+            let incoming = value;
             let Some(stored) = (unsafe { stored.downcast_mut::<T>() }) else {
                 return (Err(ReactiveError::TypeMismatch), false);
             };
-            let incoming = value.take().expect("signal setter 只调用一次");
             if *stored == incoming {
                 return (Ok(false), false);
             }
@@ -437,7 +434,8 @@ impl<'scope, T: 'scope> WriteSignal<'scope, T> {
     where
         T: PartialEq,
     {
-        let _ = self.try_set_if_changed(value);
+        self.try_set_if_changed(value)
+            .unwrap_or_else(|error| panic!("写入 scoped signal 失败: {error}"));
     }
 
     pub fn is_alive(&self) -> bool {

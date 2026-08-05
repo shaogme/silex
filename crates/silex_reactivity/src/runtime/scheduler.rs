@@ -144,7 +144,7 @@ pub(crate) struct GlobalScheduler {
     pub(crate) batch_depth: usize,
     pub(crate) evaluating: usize,
     pub(crate) executing: usize,
-    pub(crate) borrowed_values: usize,
+    pub(crate) active_leases: usize,
 }
 
 impl GlobalScheduler {
@@ -162,7 +162,7 @@ impl GlobalScheduler {
             batch_depth: 0,
             evaluating: 0,
             executing: 0,
-            borrowed_values: 0,
+            active_leases: 0,
         }))
     }
 
@@ -287,7 +287,7 @@ impl GlobalScheduler {
     }
 
     pub(crate) fn should_flush(&self) -> bool {
-        self.is_idle() && self.borrowed_values == 0 && !self.global_queue.is_empty()
+        self.is_idle() && self.active_leases == 0 && !self.global_queue.is_empty()
     }
 }
 

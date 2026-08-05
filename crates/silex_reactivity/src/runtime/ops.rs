@@ -1,17 +1,14 @@
-//! Operations on reactivity nodes (Signal, Stored, Callback, NodeRef) and runtime execution scoping.
+//! Operations on values, callbacks, and runtime execution scoping.
 
 use super::{
     eval::{flush_if_idle, prepare_read},
-    model::{Payload, ScopeState},
+    model::ScopeState,
     scheduler::GlobalScheduler,
+    storage::NodeStorage,
 };
 use crate::{
     ReactiveError, ReactiveResult,
-    handle::NodeKindTag,
-    internal::{
-        RawId,
-        value::{AnyValue, CallbackThunk},
-    },
+    internal::{RawId, value::AnyValue},
 };
 use std::{
     cell::RefCell,
@@ -19,65 +16,61 @@ use std::{
     rc::Rc,
 };
 
-struct ValueBorrow {
+fn lookup_value_storage<'scope>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    id: RawId,
+    reactive: bool,
+) -> ReactiveResult<(Rc<NodeStorage<'scope>>, Rc<RefCell<GlobalScheduler>>)> {
+    let state_ref = state
+        .try_borrow()
+        .map_err(|_| ReactiveError::BorrowConflict)?;
+    let storage = state_ref.value_storage(id, reactive)?;
+    Ok((storage, state_ref.scheduler.clone()))
+}
+
+fn lookup_stored_storage<'scope>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    id: RawId,
+) -> ReactiveResult<(Rc<NodeStorage<'scope>>, Rc<RefCell<GlobalScheduler>>)> {
+    let state_ref = state
+        .try_borrow()
+        .map_err(|_| ReactiveError::BorrowConflict)?;
+    let storage = state_ref.stored_storage(id)?;
+    Ok((storage, state_ref.scheduler.clone()))
+}
+
+fn lookup_callback_storage<'scope>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    id: RawId,
+) -> ReactiveResult<(Rc<NodeStorage<'scope>>, Rc<RefCell<GlobalScheduler>>)> {
+    let state_ref = state
+        .try_borrow()
+        .map_err(|_| ReactiveError::BorrowConflict)?;
+    let storage = state_ref.callback_storage(id)?;
+    Ok((storage, state_ref.scheduler.clone()))
+}
+
+fn read_value<'scope, R>(
+    storage: &NodeStorage<'scope>,
     scheduler: Rc<RefCell<GlobalScheduler>>,
-}
-
-impl ValueBorrow {
-    fn new(scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
-        scheduler.borrow_mut().borrowed_values += 1;
-        Self { scheduler }
-    }
-}
-
-impl Drop for ValueBorrow {
-    fn drop(&mut self) {
-        let mut scheduler = self.scheduler.borrow_mut();
-        scheduler.borrowed_values = scheduler.borrowed_values.saturating_sub(1);
-    }
-}
-
-fn with_taken_value<T, R>(
-    take: impl FnOnce() -> ReactiveResult<(T, ValueBorrow)>,
-    restore: impl FnOnce(T, bool) -> ReactiveResult<()>,
-    exec: impl FnOnce(&mut T) -> R,
+    f: impl FnOnce(&AnyValue<'scope>) -> R,
 ) -> ReactiveResult<R> {
-    let (mut value, borrow) = take()?;
-    let result = catch_unwind(AssertUnwindSafe(|| exec(&mut value)));
-    let put_back = restore(value, false);
-    drop(borrow);
-    if let Err(panic) = result {
-        let _ = put_back;
-        resume_unwind(panic);
-    }
-    put_back?;
-    result.map_err(|_| ReactiveError::Reentrant)
-}
-
-fn update_taken_value<T, R>(
-    take: impl FnOnce() -> ReactiveResult<(T, ValueBorrow)>,
-    restore: impl FnOnce(T, bool) -> ReactiveResult<()>,
-    exec: impl FnOnce(&mut T) -> (R, bool),
-) -> ReactiveResult<(R, bool)> {
-    let (value, borrow) = take()?;
-    let mut value = Some(value);
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        exec(value.as_mut().expect("value is taken out"))
-    }));
-    let ((result, changed), _panicked) = match result {
-        Ok(val) => (val, false),
-        Err(panic) => {
-            if let Some(val) = value.take() {
-                let _ = restore(val, false);
-            }
-            drop(borrow);
-            resume_unwind(panic);
+    match storage {
+        NodeStorage::Value(cell) => {
+            let lease = cell.try_read(scheduler)?;
+            let result = f(&lease);
+            drop(lease);
+            Ok(result)
         }
-    };
-    let value = value.take().expect("value is taken out");
-    restore(value, changed)?;
-    drop(borrow);
-    Ok((result, changed))
+        NodeStorage::Computation(computation) => {
+            let lease = computation.value.try_read(scheduler)?;
+            let value = lease.as_ref().ok_or(ReactiveError::Reentrant)?;
+            let result = f(value);
+            drop(lease);
+            Ok(result)
+        }
+        NodeStorage::Callback(_) => Err(ReactiveError::WrongKind),
+    }
 }
 
 pub(crate) fn with_signal<'scope, R>(
@@ -87,31 +80,32 @@ pub(crate) fn with_signal<'scope, R>(
     f: impl FnOnce(&AnyValue<'scope>) -> R,
 ) -> ReactiveResult<R> {
     prepare_read(state, id, track)?;
-    let result = with_taken_value(
-        || {
-            let value = state
-                .try_borrow_mut()
-                .map_err(|_| ReactiveError::Reentrant)?
-                .take_value(id, NodeKindTag::Signal)?;
-            let scheduler = state
-                .try_borrow()
-                .map_err(|_| ReactiveError::Reentrant)?
-                .scheduler
-                .clone();
-            Ok((value, ValueBorrow::new(scheduler)))
-        },
-        |value, bump| {
-            state
-                .try_borrow_mut()
-                .map_err(|_| ReactiveError::Reentrant)
-                .map(|mut state_ref| {
-                    state_ref.put_value(id, value, bump);
-                })
-        },
-        |val| f(val),
-    )?;
+    let (storage, scheduler) = lookup_value_storage(state, id, true)?;
+    let result = read_value(&storage, scheduler, f)?;
     flush_if_idle(state);
     Ok(result)
+}
+
+fn commit_signal<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> ReactiveResult<()> {
+    let mut state_ref = state
+        .try_borrow_mut()
+        .map_err(|_| ReactiveError::BorrowConflict)?;
+    if !state_ref
+        .scheduler
+        .borrow()
+        .is_scope_active(state_ref.scope_id)
+    {
+        return Ok(());
+    }
+    let epoch = state_ref.scheduler.borrow_mut().next_epoch();
+    let Some(node) = state_ref.nodes.get_mut(id) else {
+        return Ok(());
+    };
+    node.updated_epoch = epoch;
+    node.last_computed_epoch = epoch;
+    node.version = node.version.wrapping_add(1);
+    state_ref.queue_dependents(id);
+    Ok(())
 }
 
 pub(crate) fn update_signal<'scope, R>(
@@ -119,32 +113,16 @@ pub(crate) fn update_signal<'scope, R>(
     id: RawId,
     f: impl FnOnce(&mut AnyValue<'scope>) -> (R, bool),
 ) -> ReactiveResult<R> {
-    let (result, _) = update_taken_value(
-        || {
-            let value = state
-                .try_borrow_mut()
-                .map_err(|_| ReactiveError::Reentrant)?
-                .take_value(id, NodeKindTag::Signal)?;
-            let scheduler = state
-                .try_borrow()
-                .map_err(|_| ReactiveError::Reentrant)?
-                .scheduler
-                .clone();
-            Ok((value, ValueBorrow::new(scheduler)))
-        },
-        |value, bump| {
-            state
-                .try_borrow_mut()
-                .map_err(|_| ReactiveError::Reentrant)
-                .map(|mut state_ref| {
-                    state_ref.put_value(id, value, bump);
-                    if bump {
-                        state_ref.queue_dependents(id);
-                    }
-                })
-        },
-        f,
-    )?;
+    let (storage, scheduler) = lookup_value_storage(state, id, false)?;
+    let NodeStorage::Value(cell) = storage.as_ref() else {
+        return Err(ReactiveError::WrongKind);
+    };
+    let mut lease = cell.try_write(scheduler)?;
+    let (result, changed) = f(&mut lease);
+    drop(lease);
+    if changed {
+        commit_signal(state, id)?;
+    }
     flush_if_idle(state);
     Ok(result)
 }
@@ -154,11 +132,13 @@ pub(crate) fn with_stored<'scope, R>(
     id: RawId,
     f: impl FnOnce(&AnyValue<'scope>) -> R,
 ) -> ReactiveResult<R> {
-    let result = with_taken_value(
-        || take_stored(state, id),
-        |value, _| put_stored(state, id, value),
-        |val| f(val),
-    )?;
+    let (storage, scheduler) = lookup_stored_storage(state, id)?;
+    let NodeStorage::Value(cell) = storage.as_ref() else {
+        return Err(ReactiveError::WrongKind);
+    };
+    let lease = cell.try_read(scheduler)?;
+    let result = f(&lease);
+    drop(lease);
     flush_if_idle(state);
     Ok(result)
 }
@@ -168,100 +148,15 @@ pub(crate) fn update_stored<'scope, R>(
     id: RawId,
     f: impl FnOnce(&mut AnyValue<'scope>) -> R,
 ) -> ReactiveResult<R> {
-    let (result, _) = update_taken_value(
-        || take_stored(state, id),
-        |value, _| put_stored(state, id, value),
-        |val| (f(val), false),
-    )?;
+    let (storage, scheduler) = lookup_stored_storage(state, id)?;
+    let NodeStorage::Value(cell) = storage.as_ref() else {
+        return Err(ReactiveError::WrongKind);
+    };
+    let mut lease = cell.try_write(scheduler)?;
+    let result = f(&mut lease);
+    drop(lease);
     flush_if_idle(state);
     Ok(result)
-}
-
-fn take_stored<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
-    id: RawId,
-) -> ReactiveResult<(AnyValue<'scope>, ValueBorrow)> {
-    let mut state_ref = state
-        .try_borrow_mut()
-        .map_err(|_| ReactiveError::Reentrant)?;
-    let node = state_ref.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
-    if !matches!(node.kind, NodeKindTag::Stored | NodeKindTag::NodeRef) {
-        return Err(ReactiveError::WrongKind);
-    }
-    let data = state_ref
-        .data
-        .get_mut(id)
-        .ok_or(ReactiveError::NoSuchNode)?;
-    match data.payload.take() {
-        Some(Payload::Stored(value)) => {
-            let scheduler = state_ref.scheduler.clone();
-            Ok((value, ValueBorrow::new(scheduler)))
-        }
-        Some(p) => {
-            data.payload = Some(p);
-            Err(ReactiveError::WrongKind)
-        }
-        None => Err(ReactiveError::Reentrant),
-    }
-}
-
-fn put_stored<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
-    id: RawId,
-    value: AnyValue<'scope>,
-) -> ReactiveResult<()> {
-    let mut state_ref = state
-        .try_borrow_mut()
-        .map_err(|_| ReactiveError::Reentrant)?;
-    let _node = state_ref.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
-    let data = state_ref
-        .data
-        .get_mut(id)
-        .ok_or(ReactiveError::NoSuchNode)?;
-    data.payload = Some(Payload::Stored(value));
-    Ok(())
-}
-
-fn take_callback<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
-    id: RawId,
-) -> ReactiveResult<(CallbackThunk<'scope>, ValueBorrow)> {
-    let mut state_ref = state
-        .try_borrow_mut()
-        .map_err(|_| ReactiveError::Reentrant)?;
-    let node = state_ref.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
-    if node.kind != NodeKindTag::Callback {
-        return Err(ReactiveError::WrongKind);
-    }
-    let data = state_ref
-        .data
-        .get_mut(id)
-        .ok_or(ReactiveError::NoSuchNode)?;
-    match data.payload.take() {
-        Some(Payload::Callback(callback)) => {
-            let scheduler = state_ref.scheduler.clone();
-            Ok((callback, ValueBorrow::new(scheduler)))
-        }
-        Some(p) => {
-            data.payload = Some(p);
-            Err(ReactiveError::WrongKind)
-        }
-        None => Err(ReactiveError::Reentrant),
-    }
-}
-
-fn put_callback<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
-    id: RawId,
-    callback: CallbackThunk<'scope>,
-) -> ReactiveResult<()> {
-    let mut state_ref = state
-        .try_borrow_mut()
-        .map_err(|_| ReactiveError::Reentrant)?;
-    if let Some(data) = state_ref.data.get_mut(id) {
-        data.payload = Some(Payload::Callback(callback));
-    }
-    Ok(())
 }
 
 pub(crate) fn invoke_callback<'scope>(
@@ -269,11 +164,13 @@ pub(crate) fn invoke_callback<'scope>(
     id: RawId,
     arg: AnyValue<'scope>,
 ) -> ReactiveResult<()> {
-    with_taken_value(
-        || take_callback(state, id),
-        |cb, _| put_callback(state, id, cb),
-        |cb| cb.call(arg),
-    )?;
+    let (storage, scheduler) = lookup_callback_storage(state, id)?;
+    let NodeStorage::Callback(cell) = storage.as_ref() else {
+        return Err(ReactiveError::WrongKind);
+    };
+    let mut lease = cell.try_write(scheduler)?;
+    lease.call(arg);
+    drop(lease);
     flush_if_idle(state);
     Ok(())
 }
@@ -320,11 +217,7 @@ pub(crate) fn notify<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId)
         if state_ref.mark_notified(id) {
             state_ref.queue_dependents(id);
         }
-        let source_available = state_ref
-            .data
-            .get(id)
-            .is_some_and(|data| data.value.is_some());
-        source_available && state_ref.scheduler.borrow().should_flush()
+        state_ref.scheduler.borrow().should_flush()
     };
     if should_flush {
         flush_if_idle(state);
@@ -374,5 +267,31 @@ pub(crate) fn with_batch<'scope, R>(
     match result {
         Ok(value) => value,
         Err(panic) => resume_unwind(panic),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        internal::value::AnyValue,
+        runtime::{dispose_nodes, scheduler::GlobalScheduler},
+        scope::ScopeStorage,
+    };
+
+    #[test]
+    fn disposing_a_node_during_a_read_does_not_require_put_back() {
+        let storage = ScopeStorage::new(GlobalScheduler::new());
+        let state = unsafe { storage.typed_state() };
+        let raw = state.borrow_mut().create_signal(AnyValue::new(7_i32));
+
+        let result = with_signal(&state, raw, false, |value| {
+            assert_eq!(unsafe { value.downcast_ref::<i32>() }, Some(&7));
+            dispose_nodes(&state, vec![raw]);
+        });
+
+        assert!(result.is_ok());
+        assert!(!state.borrow().node_exists(raw));
+        storage.dispose();
     }
 }

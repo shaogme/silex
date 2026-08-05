@@ -11,7 +11,9 @@ pub enum ReactiveError {
     WrongKind,
     /// The node contains a different Rust type than the operation requested.
     TypeMismatch,
-    /// The node's value is temporarily owned by an outer user callback.
+    /// A read or write lease conflicts with another lease on the same node.
+    BorrowConflict,
+    /// A computation or callback is being entered recursively.
     Reentrant,
     /// A runtime was asked to start another run while it was already running.
     RuntimeAlreadyRunning,
@@ -32,7 +34,8 @@ impl fmt::Display for ReactiveError {
             Self::NoSuchNode => "节点不存在或所属 scope 已结束",
             Self::WrongKind => "句柄指向的节点不是这个操作要求的种类",
             Self::TypeMismatch => "节点里存放的不是请求的类型",
-            Self::Reentrant => "值正被外层闭包借出，不允许重入访问同一个节点",
+            Self::BorrowConflict => "同一节点上的动态借用发生冲突",
+            Self::Reentrant => "响应式计算或回调发生递归调用",
             Self::RuntimeAlreadyRunning => "响应式 Runtime 已经在运行中",
             Self::RuntimeMismatch => "响应式节点属于不同的 Runtime scheduler family",
         };

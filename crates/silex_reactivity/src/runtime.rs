@@ -13,6 +13,7 @@ mod input;
 mod model;
 mod ops;
 mod scheduler;
+mod storage;
 
 pub(crate) use dispose::{dispose_all, dispose_nodes};
 pub(crate) use eval::{run_global_queue, run_initial};

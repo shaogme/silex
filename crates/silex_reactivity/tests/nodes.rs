@@ -95,7 +95,26 @@ fn stored_callback_and_node_ref_are_scope_owned() {
 }
 
 #[test]
-fn callback_panic_restores_callback_for_the_next_invoke() {
+fn recursive_callback_invocation_reports_borrow_conflict() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let slot: Rc<RefCell<Option<Callback<'_, ()>>>> = Rc::new(RefCell::new(None));
+        let slot_in_callback = slot.clone();
+        let callback = scope.callback(move |_: ()| {
+            let nested = slot_in_callback
+                .borrow()
+                .as_ref()
+                .copied()
+                .expect("callback should be initialized");
+            assert_eq!(nested.invoke(()), Err(ReactiveError::BorrowConflict));
+        });
+        *slot.borrow_mut() = Some(callback);
+        callback.invoke(()).expect("outer callback should succeed");
+    });
+}
+
+#[test]
+fn callback_panic_keeps_callback_available_for_the_next_invoke() {
     let mut runtime = Runtime::new();
     let called = Rc::new(Cell::new(0));
     let should_panic = Rc::new(Cell::new(true));
@@ -121,7 +140,7 @@ fn callback_panic_restores_callback_for_the_next_invoke() {
 }
 
 #[test]
-fn stored_update_panic_restores_the_stored_value() {
+fn stored_update_panic_keeps_the_stored_value_and_releases_the_lease() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let stored = scope.stored(String::from("before"));
@@ -180,7 +199,7 @@ fn updating_another_signal_during_read_defers_effect_flush() {
 }
 
 #[test]
-fn computation_payload_drop_can_reenter_after_state_borrow_is_released() {
+fn computation_payload_drop_observes_disposed_scope() {
     let mut runtime = Runtime::new();
     let called = Rc::new(Cell::new(false));
     let error = Rc::new(Cell::new(None));
@@ -202,7 +221,7 @@ fn computation_payload_drop_can_reenter_after_state_borrow_is_released() {
         });
     });
     assert!(called.get());
-    assert_eq!(error.get(), None);
+    assert_eq!(error.get(), Some(ReactiveError::NoSuchNode));
 }
 
 #[test]
@@ -295,7 +314,7 @@ fn child_callback_payload_drop_can_schedule_an_active_parent_effect() {
 }
 
 #[test]
-fn stored_value_update_flushes_after_the_stored_payload_is_restored() {
+fn stored_value_update_flushes_after_the_write_lease_is_released() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
 

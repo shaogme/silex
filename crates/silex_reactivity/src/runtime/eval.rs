@@ -4,13 +4,18 @@ use super::{
     dispose::{dispose_nodes, run_cleanups},
     model::{NodeState, ScopeState},
     scheduler::{GlobalScheduler, Observer, ObserverFrame, TargetNode},
+    storage::NodeStorage,
 };
 use crate::{
     ReactiveError, ReactiveResult,
     handle::NodeKindTag,
-    internal::{RawId, value::Computation},
+    internal::{
+        RawId,
+        value::{AnyValue, Computation},
+    },
 };
 use std::{
+    any::Any,
     cell::RefCell,
     mem,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
@@ -19,22 +24,42 @@ use std::{
 
 const MAX_QUEUE_ITERATIONS: usize = 100_000;
 
+type PanicData = Box<dyn Any + Send>;
+
+struct ComputationResult<'scope> {
+    changed: bool,
+    value: Option<AnyValue<'scope>>,
+}
+
 pub(crate) fn prepare_read<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
     track: bool,
 ) -> ReactiveResult<()> {
-    let settled = state
-        .try_borrow()
-        .map_err(|_| ReactiveError::Reentrant)?
-        .is_settled(id);
+    let (settled, running) = {
+        let state_ref = state
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        if !state_ref
+            .scheduler
+            .borrow()
+            .is_scope_active(state_ref.scope_id)
+        {
+            return Err(ReactiveError::NoSuchNode);
+        }
+        let node = state_ref.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
+        (state_ref.is_settled(id), node.running)
+    };
+    if running {
+        return Err(ReactiveError::Reentrant);
+    }
     if !settled {
         evaluate_root(state, id)?;
     }
     if track {
         state
             .try_borrow_mut()
-            .map_err(|_| ReactiveError::Reentrant)?
+            .map_err(|_| ReactiveError::BorrowConflict)?
             .track(id);
     }
     flush_if_idle(state);
@@ -45,7 +70,7 @@ fn evaluate_root<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> 
     let scheduler = {
         let state_ref = state
             .try_borrow_mut()
-            .map_err(|_| ReactiveError::Reentrant)?;
+            .map_err(|_| ReactiveError::BorrowConflict)?;
         let scheduler = state_ref.scheduler.clone();
         let mut sched = scheduler.borrow_mut();
         sched.evaluating += 1;
@@ -72,18 +97,19 @@ fn evaluate<'scope>(
     stack: &mut Vec<TargetNode>,
 ) -> ReactiveResult<()> {
     let target = {
-        let state_ref = state.try_borrow().map_err(|_| ReactiveError::Reentrant)?;
+        let state_ref = state
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
         TargetNode {
             scope_id: state_ref.scope_id,
             node: id,
         }
     };
     let (node_state, running, dependencies) = {
-        let state_ref = state.try_borrow().map_err(|_| ReactiveError::Reentrant)?;
+        let state_ref = state
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
         let node = state_ref.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
-        if node.state == NodeState::Clean || node.running {
-            return Ok(());
-        }
         let deps: Vec<TargetNode> = state_ref
             .dependency_edges_of(id)
             .map(|(_, edge)| edge.target)
@@ -101,7 +127,7 @@ fn evaluate<'scope>(
         if dep.scope_id == state.borrow().scope_id {
             let dependency_state = state
                 .try_borrow()
-                .map_err(|_| ReactiveError::Reentrant)?
+                .map_err(|_| ReactiveError::BorrowConflict)?
                 .nodes
                 .get(dep.node)
                 .map(|node| node.state);
@@ -114,7 +140,7 @@ fn evaluate<'scope>(
             if let Some(dep_scope) = dep_scope {
                 let dependency_state = dep_scope
                     .try_borrow()
-                    .map_err(|_| ReactiveError::Reentrant)?
+                    .map_err(|_| ReactiveError::BorrowConflict)?
                     .nodes
                     .get(dep.node)
                     .map(|node| node.state);
@@ -127,7 +153,9 @@ fn evaluate<'scope>(
     stack.pop();
 
     let skip = {
-        let state_ref = state.try_borrow().map_err(|_| ReactiveError::Reentrant)?;
+        let state_ref = state
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
         let Some(node) = state_ref.nodes.get(id) else {
             return Err(ReactiveError::NoSuchNode);
         };
@@ -169,7 +197,7 @@ fn evaluate<'scope>(
     if skip {
         let mut state_ref = state
             .try_borrow_mut()
-            .expect("ScopeState borrow failed during skip epoch update");
+            .map_err(|_| ReactiveError::BorrowConflict)?;
         let current_epoch = state_ref.scheduler.borrow().current_epoch();
         if let Some(node) = state_ref.nodes.get_mut(id) {
             node.state = NodeState::Clean;
@@ -177,187 +205,275 @@ fn evaluate<'scope>(
         }
         return Ok(());
     }
-    run_node(state, id)
-        .then_some(())
-        .ok_or(ReactiveError::NoSuchNode)
+    if run_node(state, id)? {
+        Ok(())
+    } else {
+        Err(ReactiveError::NoSuchNode)
+    }
 }
 
-fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> bool {
-    let (computation, mut old, first_child, cleanups, previous_owner) = {
+fn execute_computation<'scope>(
+    storage: &NodeStorage<'scope>,
+    scheduler: Rc<RefCell<GlobalScheduler>>,
+    memo: bool,
+) -> ReactiveResult<ComputationResult<'scope>> {
+    let NodeStorage::Computation(computation) = storage else {
+        return Err(ReactiveError::WrongKind);
+    };
+
+    let produced = {
+        let mut computation_lease = computation.computation.try_write(scheduler.clone())?;
+        let produced = if memo {
+            let old_lease = computation.value.try_read(scheduler.clone())?;
+            let old = (*old_lease).as_ref();
+            let value = match &mut *computation_lease {
+                Computation::Memo(callback) => callback.compute(old),
+                Computation::Effect(_) => return Err(ReactiveError::WrongKind),
+            };
+            drop(old_lease);
+            Some(value)
+        } else {
+            match &mut *computation_lease {
+                Computation::Effect(callback) => {
+                    callback.call();
+                    None
+                }
+                Computation::Memo(_) => return Err(ReactiveError::WrongKind),
+            }
+        };
+        drop(computation_lease);
+        produced
+    };
+
+    let changed = if memo {
+        let Some(new_value) = produced.as_ref() else {
+            return Err(ReactiveError::TypeMismatch);
+        };
+        let old_lease = computation.value.try_read(scheduler)?;
+        let old = (*old_lease).as_ref();
+        let changed = old.is_none_or(|old| !new_value.try_eq(old));
+        drop(old_lease);
+        changed
+    } else {
+        false
+    };
+
+    Ok(ComputationResult {
+        changed: if memo { changed } else { false },
+        value: produced,
+    })
+}
+
+fn commit_computation_value<'scope>(
+    storage: &NodeStorage<'scope>,
+    scheduler: Rc<RefCell<GlobalScheduler>>,
+    value: AnyValue<'scope>,
+) -> ReactiveResult<()> {
+    let NodeStorage::Computation(computation) = storage else {
+        return Err(ReactiveError::WrongKind);
+    };
+    let mut lease = computation.value.try_write(scheduler)?;
+    let previous = (*lease).replace(value);
+    drop(lease);
+    drop(previous);
+    Ok(())
+}
+
+fn remember_panic(first: &mut Option<PanicData>, panic: PanicData) {
+    if first.is_none() {
+        *first = Some(panic);
+    }
+}
+
+fn drop_value<'scope>(value: Option<AnyValue<'scope>>) -> Option<PanicData> {
+    catch_unwind(AssertUnwindSafe(|| drop(value))).err()
+}
+
+fn drop_storage<'scope>(storage: Rc<NodeStorage<'scope>>) -> Option<PanicData> {
+    catch_unwind(AssertUnwindSafe(|| drop(storage))).err()
+}
+
+fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> ReactiveResult<bool> {
+    let (storage, first_child, cleanups, previous_owner, scheduler, scope_id, memo) = {
         let mut state_ref = state
             .try_borrow_mut()
-            .expect("ScopeState borrow failed at start of run_node");
-        let (is_computation, is_running, has_computation, is_memo_or_derived, first_child) = {
-            let Some(node) = state_ref.nodes.get(id) else {
-                return false;
-            };
-            let is_memo_or_derived = matches!(node.kind, NodeKindTag::Memo | NodeKindTag::Derived);
-            let has_computation = state_ref
-                .data
-                .get(id)
-                .is_some_and(|data| data.computation.is_some());
-            (
-                node.is_computation(),
-                node.running,
-                has_computation,
-                is_memo_or_derived,
-                node.first_child,
-            )
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        let Some(node) = state_ref.nodes.get(id) else {
+            return Ok(false);
         };
-
-        if !is_computation || is_running || !has_computation {
-            return false;
+        let memo = matches!(node.kind, NodeKindTag::Memo | NodeKindTag::Derived);
+        if !node.is_computation() || node.running {
+            return Ok(false);
         }
-
-        let prev_owner = state_ref.current_owner;
-
+        let first_child = node.first_child;
+        let Some(data) = state_ref.data.get_mut(id) else {
+            return Ok(false);
+        };
+        if !matches!(data.storage.as_ref(), NodeStorage::Computation(_)) {
+            return Ok(false);
+        }
+        let storage = data.storage.clone();
+        let cleanups = mem::take(&mut data.cleanups);
+        let previous_owner = state_ref.current_owner;
+        let scheduler = state_ref.scheduler.clone();
+        let scope_id = state_ref.scope_id;
         if let Some(node) = state_ref.nodes.get_mut(id) {
             node.running = true;
             node.first_child = RawId::DANGLING;
         }
-
-        let old = is_memo_or_derived
-            .then(|| {
-                state_ref
-                    .data
-                    .get_mut(id)
-                    .and_then(|data| data.value.take())
-            })
-            .flatten();
-
-        let cleanups = state_ref
-            .data
-            .get_mut(id)
-            .map(|data| mem::take(&mut data.cleanups))
-            .unwrap_or_default();
-
-        let computation = state_ref
-            .data
-            .get_mut(id)
-            .and_then(|data| data.computation.take());
-
         state_ref.current_owner = Some(id);
-
-        (computation, old, first_child, cleanups, prev_owner)
-    };
-    let Some(mut computation) = computation else {
-        return false;
+        (
+            storage,
+            first_child,
+            cleanups,
+            previous_owner,
+            scheduler,
+            scope_id,
+            memo,
+        )
     };
 
     let children_to_dispose: Vec<RawId> = state.borrow().children_of_head(first_child).collect();
-
-    let mut result = None;
     let mut execution_started = false;
     let mut observer_frame = None;
-    let outcome = catch_unwind(AssertUnwindSafe(|| {
-        let child_dispose = catch_unwind(AssertUnwindSafe(|| {
-            dispose_nodes(state, children_to_dispose);
-        }));
-        let mut cleanup_panic = child_dispose.err();
-        if let Some(panic) = run_cleanups(cleanups)
-            && cleanup_panic.is_none()
-        {
-            cleanup_panic = Some(panic);
-        }
-        if let Some(panic) = cleanup_panic {
-            resume_unwind(panic);
-        }
-        {
-            let mut state_ref = state.borrow_mut();
-            state_ref.clear_dependencies(id);
-            let scheduler = state_ref.scheduler.clone();
-            scheduler.borrow_mut().executing += 1;
-            execution_started = true;
-            state_ref.current_owner = Some(id);
-            observer_frame = Some(ObserverFrame::push(
-                scheduler,
-                Some(Observer {
-                    scope_id: state_ref.scope_id,
-                    node: id,
-                }),
-            ));
-            if let Some(node) = state_ref.nodes.get_mut(id) {
-                node.state = NodeState::Clean;
+    let outcome = catch_unwind(AssertUnwindSafe(
+        || -> ReactiveResult<ComputationResult<'scope>> {
+            let child_dispose = catch_unwind(AssertUnwindSafe(|| {
+                dispose_nodes(state, children_to_dispose);
+            }));
+            let mut cleanup_panic = child_dispose.err();
+            if let Some(panic) = run_cleanups(cleanups)
+                && cleanup_panic.is_none()
+            {
+                cleanup_panic = Some(panic);
+            }
+            if let Some(panic) = cleanup_panic {
+                resume_unwind(panic);
+            }
+
+            {
+                let mut state_ref = state
+                    .try_borrow_mut()
+                    .map_err(|_| ReactiveError::BorrowConflict)?;
+                if !state_ref.node_exists(id) {
+                    return Ok(ComputationResult {
+                        changed: false,
+                        value: None,
+                    });
+                }
+                state_ref.clear_dependencies(id);
+                let scheduler = state_ref.scheduler.clone();
+                scheduler.borrow_mut().executing += 1;
+                execution_started = true;
+                state_ref.current_owner = Some(id);
+                observer_frame = Some(ObserverFrame::push(
+                    scheduler,
+                    Some(Observer {
+                        scope_id: state_ref.scope_id,
+                        node: id,
+                    }),
+                ));
+                if let Some(node) = state_ref.nodes.get_mut(id) {
+                    node.state = NodeState::Clean;
+                }
+            }
+
+            execute_computation(&storage, scheduler.clone(), memo)
+        },
+    ));
+
+    drop(observer_frame);
+
+    let mut panic_data = None;
+    let mut operation_error = None;
+    let mut result = None;
+    match outcome {
+        Ok(Ok(value)) => result = Some(value),
+        Ok(Err(error)) => operation_error = Some(error),
+        Err(panic) => panic_data = Some(panic),
+    }
+
+    let mut changed = false;
+    let mut committed = false;
+    let can_commit = if operation_error.is_none() && panic_data.is_none() {
+        match state.try_borrow() {
+            Ok(state_ref) => {
+                state_ref.node_exists(id) && state_ref.scheduler.borrow().is_scope_active(scope_id)
+            }
+            Err(_) => {
+                operation_error = Some(ReactiveError::BorrowConflict);
+                false
             }
         }
-        match &mut computation {
-            Computation::Effect(callback) => callback.call(),
-            Computation::Memo(callback) => result = Some(callback.compute(old.as_ref())),
-        }
-    }));
-
-    let panicked = outcome.is_err();
-    let equality_result = if panicked {
-        Ok(None)
-    } else if let Some(new_value) = result.as_ref() {
-        catch_unwind(AssertUnwindSafe(|| {
-            old.as_ref().is_none_or(|old| !new_value.try_eq(old))
-        }))
-        .map(Some)
     } else {
-        Ok(None)
+        false
     };
-    drop(observer_frame);
-    let failed = panicked || equality_result.is_err();
+
+    if can_commit && let Some(computation_result) = result.as_mut() {
+        changed = computation_result.changed;
+        if computation_result.changed
+            && let Some(value) = std::mem::take(&mut computation_result.value)
+        {
+            let commit = catch_unwind(AssertUnwindSafe(|| {
+                commit_computation_value(&storage, scheduler.clone(), value)
+            }));
+            match commit {
+                Ok(Ok(())) => committed = true,
+                Ok(Err(error)) => operation_error = Some(error),
+                Err(panic) => panic_data = Some(panic),
+            }
+        }
+    }
+
+    if let Some(computation_result) = result.as_mut() {
+        let value = std::mem::take(&mut computation_result.value);
+        if let Some(panic) = drop_value(value) {
+            remember_panic(&mut panic_data, panic);
+        }
+    }
+
+    let failed = operation_error.is_some() || panic_data.is_some();
     {
         let mut state_ref = state
             .try_borrow_mut()
-            .expect("ScopeState borrow failed after computation execution");
-        let scheduler = state_ref.scheduler.clone();
-        let mut sched = scheduler.borrow_mut();
-        let now_epoch = sched.current_epoch();
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        let now_epoch = state_ref.scheduler.borrow().current_epoch();
         if execution_started {
-            sched.executing = sched.executing.saturating_sub(1);
+            let mut scheduler = state_ref.scheduler.borrow_mut();
+            scheduler.executing = scheduler.executing.saturating_sub(1);
         }
         state_ref.set_context(previous_owner);
-        drop(sched);
-
-        let mut changed = false;
-        if let Some(data) = state_ref.data.get_mut(id) {
-            data.computation = Some(computation);
-            if failed {
-                if let Some(old) = old.take() {
-                    data.value = Some(old);
-                }
-            } else if let Some(new_value) = result.take() {
-                changed = match equality_result.as_ref() {
-                    Ok(Some(value)) => *value,
-                    _ => false,
-                };
-                data.value = Some(new_value);
-            }
-        }
-
         if let Some(node) = state_ref.nodes.get_mut(id) {
             node.running = false;
             node.last_computed_epoch = now_epoch;
             if failed {
                 node.state = NodeState::Dirty;
-            } else if changed {
+            } else if changed && committed {
                 node.updated_epoch = now_epoch;
                 node.version = node.version.wrapping_add(1);
+                state_ref.queue_dependents(id);
             }
         }
-
-        if changed {
-            state_ref.queue_dependents(id);
-        }
     }
 
-    if let Err(panic) = outcome {
-        resume_unwind(panic);
+    if let Some(panic) = drop_storage(storage) {
+        remember_panic(&mut panic_data, panic);
     }
-    if let Err(panic) = equality_result {
-        resume_unwind(panic);
-    }
-    drop(old);
-    drop(result);
     flush_if_idle(state);
-    true
+
+    if let Some(panic) = panic_data {
+        resume_unwind(panic);
+    }
+    if let Some(error) = operation_error {
+        return Err(error);
+    }
+    Ok(true)
 }
 
 pub(crate) fn run_initial<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) {
-    let _ = run_node(state, id);
+    if let Err(error) = run_node(state, id) {
+        panic!("silex_reactivity: initial computation failed: {error}");
+    }
     flush_if_idle(state);
 }
 

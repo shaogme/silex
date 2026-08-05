@@ -1,4 +1,4 @@
-use silex_reactivity::{ReactiveError, Runtime};
+use silex_reactivity::{Memo, ReactiveError, Runtime};
 use std::{
     cell::Cell,
     panic::{AssertUnwindSafe, catch_unwind},
@@ -6,7 +6,7 @@ use std::{
 };
 
 #[test]
-fn panic_in_update_restores_the_value_and_runtime() {
+fn panic_in_update_keeps_the_value_and_releases_the_lease() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (signal, set_signal) = scope.signal(1i32);
@@ -25,22 +25,52 @@ fn panic_in_update_restores_the_value_and_runtime() {
 }
 
 #[test]
-fn reentrant_reads_return_errors_and_restore_the_value() {
+fn shared_reads_succeed_but_write_conflicts_are_reported() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (signal, set_signal) = scope.signal(1i32);
 
         let nested_read = signal
             .try_with(|_| signal.try_get())
-            .expect("outer read should restore the value");
-        assert_eq!(nested_read, Err(ReactiveError::Reentrant));
-        assert_eq!(signal.get(), 1);
+            .expect("shared reads should be nestable");
+        assert_eq!(nested_read, Ok(1));
 
-        let nested_update = set_signal
+        let read_then_write = signal
+            .try_with(|_| set_signal.try_set(2))
+            .expect("read lease should remain observable");
+        assert_eq!(read_then_write, Err(ReactiveError::BorrowConflict));
+
+        let write_then_read = set_signal
             .try_update(|_| signal.try_get())
-            .expect("outer update should restore the value");
-        assert_eq!(nested_update, Err(ReactiveError::Reentrant));
+            .expect("write lease should remain observable");
+        assert_eq!(write_then_read, Err(ReactiveError::BorrowConflict));
+
+        let write_then_write = set_signal
+            .try_update(|_| set_signal.try_set(2))
+            .expect("write lease should remain observable");
+        assert_eq!(write_then_write, Err(ReactiveError::BorrowConflict));
         assert_eq!(signal.get(), 1);
+    });
+}
+
+#[test]
+fn recursive_memo_read_reports_reentrant_instead_of_borrow_conflict() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let slot: Rc<Cell<Option<Memo<'_, i32>>>> = Rc::new(Cell::new(None));
+        let slot_in_memo = slot.clone();
+        let (source, set_source) = scope.signal(1_i32);
+        let memo = scope.memo(move |_| {
+            let value = source.get();
+            if let Some(memo) = slot_in_memo.get() {
+                assert_eq!(memo.try_get(), Err(ReactiveError::Reentrant));
+            }
+            value
+        });
+        slot.set(Some(memo));
+
+        set_source.set(2);
+        assert_eq!(memo.get(), 2);
     });
 }
 
@@ -118,7 +148,7 @@ fn cleanup_panic_during_effect_rerun_does_not_skip_remaining_cleanups() {
 }
 
 #[test]
-fn panic_in_memo_restores_the_previous_value_and_allows_retry() {
+fn panic_in_memo_keeps_the_previous_value_and_allows_retry() {
     let mut runtime = Runtime::new();
     let should_panic = Rc::new(Cell::new(false));
 
@@ -146,7 +176,7 @@ fn panic_in_memo_restores_the_previous_value_and_allows_retry() {
 }
 
 #[test]
-fn panic_in_memo_equality_restores_the_previous_value_and_allows_retry() {
+fn panic_in_memo_equality_keeps_the_previous_value_and_allows_retry() {
     #[derive(Clone)]
     struct PanicOnCompare {
         value: i32,

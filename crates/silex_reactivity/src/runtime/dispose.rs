@@ -13,15 +13,15 @@ use std::{
     rc::Rc,
 };
 
-type PanicPayload = Box<dyn Any + Send>;
+type PanicData = Box<dyn Any + Send>;
 
-fn remember_panic(first_panic: &mut Option<PanicPayload>, panic: PanicPayload) {
+fn remember_panic(first_panic: &mut Option<PanicData>, panic: PanicData) {
     if first_panic.is_none() {
         *first_panic = Some(panic);
     }
 }
 
-pub(crate) fn run_cleanups<'scope>(cleanups: Vec<OnceThunk<'scope>>) -> Option<PanicPayload> {
+pub(crate) fn run_cleanups<'scope>(cleanups: Vec<OnceThunk<'scope>>) -> Option<PanicData> {
     let mut first_panic = None;
     for cleanup in cleanups {
         if let Err(panic) = catch_unwind(AssertUnwindSafe(|| cleanup.call())) {
@@ -31,29 +31,12 @@ pub(crate) fn run_cleanups<'scope>(cleanups: Vec<OnceThunk<'scope>>) -> Option<P
     first_panic
 }
 
-fn drop_node_data<'scope>(data: NodeData<'scope>) -> Option<PanicPayload> {
-    let NodeData {
-        value,
-        cleanups,
-        payload,
-        computation,
-    } = data;
+fn drop_node_data<'scope>(data: NodeData<'scope>) -> Option<PanicData> {
+    let NodeData { storage, cleanups } = data;
     let mut first_panic = run_cleanups(cleanups);
 
-    for value in [value] {
-        if let Err(panic) = catch_unwind(AssertUnwindSafe(|| drop(value))) {
-            remember_panic(&mut first_panic, panic);
-        }
-    }
-    for payload in [payload] {
-        if let Err(panic) = catch_unwind(AssertUnwindSafe(|| drop(payload))) {
-            remember_panic(&mut first_panic, panic);
-        }
-    }
-    for computation in [computation] {
-        if let Err(panic) = catch_unwind(AssertUnwindSafe(|| drop(computation))) {
-            remember_panic(&mut first_panic, panic);
-        }
+    if let Err(panic) = catch_unwind(AssertUnwindSafe(|| drop(storage))) {
+        remember_panic(&mut first_panic, panic);
     }
     first_panic
 }
