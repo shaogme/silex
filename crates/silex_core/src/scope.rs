@@ -82,31 +82,31 @@ impl<'scope> PartialEq for Scope<'scope> {
 impl<'scope> Eq for Scope<'scope> {}
 
 impl<'scope> Scope<'scope> {
-    pub fn owned_scope(&self) -> OwnedScope<'scope> {
+    pub fn owned_scope(self) -> OwnedScope<'scope> {
         OwnedScope {
             inner: self.inner.owned_scope(),
         }
     }
 
-    pub fn is_active(&self) -> bool {
+    pub fn is_active(self) -> bool {
         self.inner.is_active()
     }
 
-    pub fn signal<T: 'scope>(&self, value: T) -> (ReadSignal<'scope, T>, WriteSignal<'scope, T>) {
+    pub fn signal<T: 'scope>(self, value: T) -> (ReadSignal<'scope, T>, WriteSignal<'scope, T>) {
         let (read, write) = self.inner.signal(value);
         (
-            ReadSignal::from_inner(read, *self),
+            ReadSignal::from_inner(read, self),
             WriteSignal::from_inner(write),
         )
     }
 
-    pub fn rw_signal<T: 'scope>(&self, value: T) -> RwSignal<'scope, T> {
+    pub fn rw_signal<T: 'scope>(self, value: T) -> RwSignal<'scope, T> {
         let (read, write) = self.signal(value);
         RwSignal::from_parts(read, write)
     }
 
     /// Create a memo without additional framework-declared inputs.
-    pub fn memo<T, F>(&self, f: F) -> Memo<'scope, T>
+    pub fn memo<T, F>(self, f: F) -> Memo<'scope, T>
     where
         T: PartialEq + 'scope,
         F: FnMut(Option<&T>) -> T + 'scope,
@@ -115,7 +115,7 @@ impl<'scope> Scope<'scope> {
     }
 
     #[doc(hidden)]
-    pub fn memo_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> Memo<'scope, T>
+    pub fn memo_from<T, F>(self, inputs: RuntimeInputs, f: F) -> Memo<'scope, T>
     where
         T: PartialEq + 'scope,
         F: FnMut(Option<&T>) -> T + 'scope,
@@ -125,19 +125,19 @@ impl<'scope> Scope<'scope> {
     }
 
     #[doc(hidden)]
-    pub fn try_memo_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> SilexResult<Memo<'scope, T>>
+    pub fn try_memo_from<T, F>(self, inputs: RuntimeInputs, f: F) -> SilexResult<Memo<'scope, T>>
     where
         T: PartialEq + 'scope,
         F: FnMut(Option<&T>) -> T + 'scope,
     {
         self.inner
             .try_memo_from(inputs, f)
-            .map(|memo| Memo::from_inner(memo, *self))
+            .map(|memo| Memo::from_inner(memo, self))
             .map_err(|error| SilexError::Reactivity(error.to_string()))
     }
 
     /// Create a derived value without additional framework-declared inputs.
-    pub fn derived<T, F>(&self, f: F) -> Rx<'scope, T>
+    pub fn derived<T, F>(self, f: F) -> Rx<'scope, T>
     where
         T: 'scope,
         F: FnMut() -> T + 'scope,
@@ -146,27 +146,27 @@ impl<'scope> Scope<'scope> {
     }
 
     #[doc(hidden)]
-    pub fn derived_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> Rx<'scope, T>
+    pub fn derived_from<T, F>(self, inputs: RuntimeInputs, f: F) -> Rx<'scope, T>
     where
         T: 'scope,
         F: FnMut() -> T + 'scope,
     {
-        Rx::from_derived(self.inner.derived_from(inputs, f), *self)
+        Rx::from_derived(self.inner.derived_from(inputs, f), self)
     }
 
     #[doc(hidden)]
-    pub fn try_derived_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> SilexResult<Rx<'scope, T>>
+    pub fn try_derived_from<T, F>(self, inputs: RuntimeInputs, f: F) -> SilexResult<Rx<'scope, T>>
     where
         T: 'scope,
         F: FnMut() -> T + 'scope,
     {
         self.inner
             .try_derived_from(inputs, f)
-            .map(|derived| Rx::from_derived(derived, *self))
+            .map(|derived| Rx::from_derived(derived, self))
             .map_err(|error| SilexError::Reactivity(error.to_string()))
     }
 
-    pub fn effect<F>(&self, f: F) -> Effect<'scope>
+    pub fn effect<F>(self, f: F) -> Effect<'scope>
     where
         F: FnMut() + 'scope,
     {
@@ -174,7 +174,7 @@ impl<'scope> Scope<'scope> {
     }
 
     #[doc(hidden)]
-    pub fn effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> Effect<'scope>
+    pub fn effect_from<F>(self, inputs: RuntimeInputs, f: F) -> Effect<'scope>
     where
         F: FnMut() + 'scope,
     {
@@ -183,7 +183,7 @@ impl<'scope> Scope<'scope> {
     }
 
     #[doc(hidden)]
-    pub fn try_effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> SilexResult<Effect<'scope>>
+    pub fn try_effect_from<F>(self, inputs: RuntimeInputs, f: F) -> SilexResult<Effect<'scope>>
     where
         F: FnMut() + 'scope,
     {
@@ -199,7 +199,7 @@ impl<'scope> Scope<'scope> {
     /// The first run receives `None`. A returned value is committed as the
     /// previous value for the next run; if the callback panics, no value is
     /// committed and the next run receives `None`.
-    pub fn effect_with_previous<T, F>(&self, f: F) -> Effect<'scope>
+    pub fn effect_with_previous<T, F>(self, f: F) -> Effect<'scope>
     where
         T: 'scope,
         F: FnMut(Option<T>) -> T + 'scope,
@@ -208,7 +208,7 @@ impl<'scope> Scope<'scope> {
     }
 
     #[doc(hidden)]
-    pub fn effect_with_previous_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> Effect<'scope>
+    pub fn effect_with_previous_from<T, F>(self, inputs: RuntimeInputs, f: F) -> Effect<'scope>
     where
         T: 'scope,
         F: FnMut(Option<T>) -> T + 'scope,
@@ -270,11 +270,11 @@ impl<'scope> Scope<'scope> {
         })
     }
 
-    pub fn stored<T: 'scope>(&self, value: T) -> StoredValue<'scope, T> {
-        StoredValue::from_inner(self.inner.stored(value), *self)
+    pub fn stored<T: 'scope>(self, value: T) -> StoredValue<'scope, T> {
+        StoredValue::from_inner(self.inner.stored(value), self)
     }
 
-    pub fn callback<T, F>(&self, callback: F) -> Callback<'scope, T>
+    pub fn callback<T, F>(self, callback: F) -> Callback<'scope, T>
     where
         T: 'scope,
         F: FnMut(T) + 'scope,
@@ -283,11 +283,11 @@ impl<'scope> Scope<'scope> {
         Callback::from_inner(callback)
     }
 
-    pub fn node_ref<T: 'scope>(&self) -> NodeRef<'scope, T> {
+    pub fn node_ref<T: 'scope>(self) -> NodeRef<'scope, T> {
         NodeRef::from_inner(self.inner.node_ref())
     }
 
-    pub fn completion<T, F>(&self, callback: F) -> silex_reactivity::CompletionToken<T>
+    pub fn completion<T, F>(self, callback: F) -> silex_reactivity::CompletionToken<T>
     where
         T: 'static,
         F: FnMut(T) + 'scope,
@@ -296,7 +296,7 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Spawn a task owned by this persistent scope or the currently running computation.
-    pub fn spawn_scoped<F>(&self, future: F) -> TaskHandle
+    pub fn spawn_scoped<F>(self, future: F) -> TaskHandle
     where
         F: Future<Output = ()> + 'static,
     {
@@ -312,7 +312,7 @@ impl<'scope> Scope<'scope> {
     ///
     /// Plan materialization is the only step allowed to register target
     /// nodes, so a foreign input fails before any target mutation.
-    pub fn try_promote<T>(&self, value: T) -> SilexResult<Rx<'scope, T::Value>>
+    pub fn try_promote<T>(self, value: T) -> SilexResult<Rx<'scope, T::Value>>
     where
         T: ReactiveSource<'scope>,
         T::Value: Sized + RxData + 'scope,
@@ -323,7 +323,7 @@ impl<'scope> Scope<'scope> {
             .map_err(|error| SilexError::Reactivity(error.to_string()))
     }
 
-    pub fn promote<T>(&self, value: T) -> Rx<'scope, T::Value>
+    pub fn promote<T>(self, value: T) -> Rx<'scope, T::Value>
     where
         T: ReactiveSource<'scope>,
         T::Value: Sized + RxData + 'scope,
@@ -333,36 +333,36 @@ impl<'scope> Scope<'scope> {
     }
 
     #[doc(hidden)]
-    pub fn try_validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
+    pub fn try_validate_inputs(self, inputs: &RuntimeInputs) -> SilexResult<()> {
         self.inner
             .try_validate_inputs(inputs)
             .map_err(|error| SilexError::Reactivity(error.to_string()))
     }
 
-    pub(crate) fn assert_inputs(&self, inputs: &RuntimeInputs) {
+    pub(crate) fn assert_inputs(self, inputs: &RuntimeInputs) {
         if let Err(error) = self.try_validate_inputs(inputs) {
             panic!("reactive input validation failed: {error}");
         }
     }
 
-    pub fn constant<T: 'scope>(&self, value: T) -> Rx<'scope, T> {
+    pub fn constant<T: 'scope>(self, value: T) -> Rx<'scope, T> {
         let stored = self.stored(value);
         Rx::from_stored(stored)
     }
 
-    pub fn child<R>(&self, f: impl for<'child> FnOnce(Scope<'child>) -> R) -> R {
+    pub fn child<R>(self, f: impl for<'child> FnOnce(Scope<'child>) -> R) -> R {
         self.inner.child(|scope| f(Scope { inner: scope }))
     }
 
-    pub fn untrack<R>(&self, f: impl FnOnce() -> R) -> R {
+    pub fn untrack<R>(self, f: impl FnOnce() -> R) -> R {
         self.inner.untrack(f)
     }
 
-    pub fn batch<R>(&self, f: impl FnOnce() -> R) -> R {
+    pub fn batch<R>(self, f: impl FnOnce() -> R) -> R {
         self.inner.batch(f)
     }
 
-    pub fn on_cleanup<F>(&self, f: F)
+    pub fn on_cleanup<F>(self, f: F)
     where
         F: FnOnce() + 'scope,
     {

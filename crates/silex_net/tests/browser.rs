@@ -93,10 +93,12 @@ impl Transport for ReplacementTransport {
 }
 
 #[derive(Clone)]
+#[cfg(feature = "persist")]
 struct GenerationTransport {
     calls: Rc<Cell<usize>>,
 }
 
+#[cfg(feature = "persist")]
 impl Transport for GenerationTransport {
     fn send(&self, spec: RequestSpec) -> TransportFuture<'_> {
         let call = self.calls.get() + 1;

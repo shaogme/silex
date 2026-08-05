@@ -416,7 +416,7 @@ impl_tuple_rx_value!(A, B, C, D, E, F);
 pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
     fn map_or<'scope, U>(
         &self,
-        scope: &Scope<'scope>,
+        scope: Scope<'scope>,
         default: U,
         f: impl Fn(&T) -> U + 'scope,
     ) -> Memo<'scope, U>
@@ -431,7 +431,7 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         })
     }
 
-    fn unwrap_or<'scope>(&self, scope: &Scope<'scope>, default: T) -> Memo<'scope, T>
+    fn unwrap_or<'scope>(&self, scope: Scope<'scope>, default: T) -> Memo<'scope, T>
     where
         Self: ReactiveSource<'scope> + 'scope,
         T: PartialEq + Clone + 'scope,
@@ -441,7 +441,7 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
 
     fn map_or_else<'scope, U>(
         &self,
-        scope: &Scope<'scope>,
+        scope: Scope<'scope>,
         default: impl Fn() -> U + 'scope,
         f: impl Fn(&T) -> U + 'scope,
     ) -> Memo<'scope, U>
@@ -458,7 +458,7 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
 
     fn and_then<'scope, U>(
         &self,
-        scope: &Scope<'scope>,
+        scope: Scope<'scope>,
         f: impl Fn(&T) -> Option<U> + 'scope,
     ) -> Memo<'scope, Option<U>>
     where
@@ -474,7 +474,7 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
 
     fn is_some_and<'scope>(
         &self,
-        scope: &Scope<'scope>,
+        scope: Scope<'scope>,
         f: impl Fn(&T) -> bool + 'scope,
     ) -> Memo<'scope, bool>
     where

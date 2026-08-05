@@ -55,9 +55,9 @@ async fn resource_enters_loading_and_reloading_states() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (source, set_source) = scope.signal(1u32);
-        let suspense = SuspenseContext::new(&scope);
+        let suspense = SuspenseContext::new(scope);
         let resource = Resource::new(
-            &scope,
+            scope,
             source,
             |_| async { Ok::<_, ()>(1u32) },
             Some(suspense),
@@ -85,7 +85,7 @@ async fn resource_future_is_cancelled_after_scope_dispose() {
         let dropped_for_fetcher = dropped.clone();
         let calls_for_fetcher = calls.clone();
         let resource = Resource::new(
-            &scope,
+            scope,
             source,
             move |_| {
                 calls_for_fetcher.set(calls_for_fetcher.get() + 1);
@@ -112,11 +112,11 @@ async fn resource_replacement_keeps_only_the_new_suspense_request() {
 
     runtime.child(|scope| {
         let (source, set_source) = scope.signal(1u32);
-        let suspense = SuspenseContext::new(&scope);
+        let suspense = SuspenseContext::new(scope);
         let first_dropped_for_fetcher = first_dropped.clone();
         let second_dropped_for_fetcher = second_dropped.clone();
         let resource = Resource::new(
-            &scope,
+            scope,
             source,
             move |value| {
                 if value == 1 {
@@ -151,7 +151,7 @@ async fn resource_scope_capability_survives_async_replacement() {
     root.with_scope(|scope| async move {
         let (source, set_source) = scope.signal(1_u32);
         let resource = Resource::new(
-            &scope,
+            scope,
             source,
             |value| async move { Ok::<_, ()>(value) },
             None,
@@ -182,7 +182,7 @@ async fn mutation_future_is_cancelled_after_scope_dispose() {
     runtime.child(|scope| {
         let dropped_for_action = dropped.clone();
         let calls_for_action = calls.clone();
-        let mutation = Mutation::new(&scope, move |value: u32| {
+        let mutation = Mutation::new(scope, move |value: u32| {
             calls_for_action.set(calls_for_action.get() + 1);
             let _ = value;
             PendingFuture::<Result<u32, ()>>::new(dropped_for_action.clone())
@@ -226,7 +226,7 @@ async fn child_scope_cancels_resource_without_reactivating_parent() {
             let (source, _) = child.signal(1u32);
             let dropped_for_fetcher = dropped.clone();
             let resource = Resource::new(
-                &child,
+                child,
                 source,
                 move |_| PendingFuture::<Result<u32, ()>>::new(dropped_for_fetcher.clone()),
                 None,

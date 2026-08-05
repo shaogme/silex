@@ -2,7 +2,7 @@ use crate::{Rx, Scope, reactivity::ReactiveSource, traits::RxRead};
 
 #[inline]
 pub fn map1_static<'scope, S, U>(
-    scope: &Scope<'scope>,
+    scope: Scope<'scope>,
     source: S,
     f: fn(&S::Value) -> U,
 ) -> Rx<'scope, U>
@@ -15,13 +15,12 @@ where
     let inputs = source.inputs();
     scope.assert_inputs(&inputs);
     let source = source.materialize_unchecked(scope);
-    let scope = *scope;
     scope.derived_from(inputs, move || source.with(f))
 }
 
 #[inline]
 pub fn map2_static<'scope, A, B, U>(
-    scope: &Scope<'scope>,
+    scope: Scope<'scope>,
     left: A,
     right: B,
     f: fn(&A::Value, &B::Value) -> U,
@@ -40,7 +39,6 @@ where
     scope.assert_inputs(&inputs);
     let left = left.materialize_unchecked(scope);
     let right = right.materialize_unchecked(scope);
-    let scope = *scope;
     scope.derived_from(inputs, move || {
         left.with(|left| right.with(|right| f(left, right)))
     })
@@ -48,7 +46,7 @@ where
 
 #[inline]
 pub fn map3_static<'scope, A, B, C, U>(
-    scope: &Scope<'scope>,
+    scope: Scope<'scope>,
     first: A,
     second: B,
     third: C,
@@ -73,7 +71,6 @@ where
     let first = first.materialize_unchecked(scope);
     let second = second.materialize_unchecked(scope);
     let third = third.materialize_unchecked(scope);
-    let scope = *scope;
     scope.derived_from(inputs, move || {
         first.with(|first| second.with(|second| third.with(|third| f(first, second, third))))
     })

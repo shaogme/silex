@@ -270,7 +270,7 @@ macro_rules! impl_net_methods {
                 .try_derived_from(inputs, move || (source.get(), request_source.get()))
                 .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
             let resource = Resource::new(
-                &scope,
+                scope,
                 combined_source,
                 move |(_, spec): (S::Value, RequestSpec)| {
                     let mut spec = spec;
@@ -386,7 +386,7 @@ macro_rules! impl_net_methods {
         pub fn try_as_mutation(&self) -> Result<Mutation<'scope, (), T, NetError>, NetError> {
             self.validate_runtime_inputs()?;
             let builder = self.clone();
-            Ok(Mutation::new(&self.scope, move |_| {
+            Ok(Mutation::new(self.scope, move |_| {
                 let mut spec = builder.resolve_spec();
                 let client = builder.prepared();
                 client.apply_interceptors(&mut spec);
@@ -424,7 +424,7 @@ macro_rules! impl_net_methods {
             Input: 'scope,
         {
             let scope = self.scope;
-            Mutation::new_with_prepare(&scope, move |input: Input| {
+            Mutation::new_with_prepare(scope, move |input: Input| {
                 let builder = factory(input);
                 builder.validate_runtime_inputs_for(scope)?;
                 let mut spec = builder.resolve_spec();

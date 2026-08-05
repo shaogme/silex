@@ -163,7 +163,7 @@ fn option_and_tuple_promotions_track_checked_sources() {
         let tuple = scope.promote((first, second));
         let (optional_source, set_optional) = scope.signal(Some(3i32));
         let optional = scope.promote(optional_source);
-        let selected = optional.unwrap_or(&scope, 0);
+        let selected = optional.unwrap_or(scope, 0);
 
         assert_eq!(tuple.with(|value| value.0 + value.1), 3);
         assert_eq!(selected.get(), 3);
@@ -180,11 +180,11 @@ fn operator_and_slice_promotions_use_the_target_scheduler() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (value, set_value) = scope.signal(3i32);
-        let mapped = value.map(&scope, |value| value * 2);
-        let memo = value.memo(&scope);
+        let mapped = value.map(scope, |value| value * 2);
+        let memo = value.memo(scope);
         let added = scope.promote(value) + 4;
-        let equal = value.equals(&scope, 3);
-        let positive = value.greater_than(&scope, 0);
+        let equal = value.equals(scope, 3);
+        let positive = value.greater_than(scope, 0);
         let (pair, set_pair) = scope.signal((1i32, 2i32));
         let first = scope.promote(pair.slice(|pair| &pair.0));
 

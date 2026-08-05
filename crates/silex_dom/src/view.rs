@@ -632,7 +632,7 @@ impl<'a, T: RxValue> RxValue for Prop<'a, T> {
 }
 
 impl<'a, T> Prop<'a, T> {
-    pub fn promote<'scope>(self, scope: &Scope<'scope>) -> Rx<'scope, T::Value>
+    pub fn promote<'scope>(self, scope: Scope<'scope>) -> Rx<'scope, T::Value>
     where
         'a: 'scope,
         T: ReactiveSource<'scope> + Clone,

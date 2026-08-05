@@ -85,7 +85,7 @@ where
     T: RxData + 'static,
     E: RxError + 'static,
 {
-    pub fn new<F, Fut>(scope: &Scope<'scope>, action: F) -> Self
+    pub fn new<F, Fut>(scope: Scope<'scope>, action: F) -> Self
     where
         F: Fn(Arg) -> Fut + 'scope,
         Fut: Future<Output = Result<T, E>> + 'static,
@@ -108,13 +108,13 @@ where
             action: MutationAction::Regular(Rc::new(move |arg| Box::pin(action(arg)))),
             last_id,
             completion,
-            scope: *scope,
+            scope,
         }
     }
 
     /// Create a mutation whose owned future is prepared before `Pending` is
     /// published. Preparation errors become `Error` without starting a task.
-    pub fn new_with_prepare<F, Fut>(scope: &Scope<'scope>, prepare: F) -> Self
+    pub fn new_with_prepare<F, Fut>(scope: Scope<'scope>, prepare: F) -> Self
     where
         F: Fn(Arg) -> Result<Fut, E> + 'scope,
         Fut: Future<Output = Result<T, E>> + 'static,
@@ -139,7 +139,7 @@ where
             })),
             last_id,
             completion,
-            scope: *scope,
+            scope,
         }
     }
 

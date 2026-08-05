@@ -82,12 +82,12 @@ impl<'scope, T: 'scope> PromotionPlan<'scope, T> {
         self.inputs.clone()
     }
 
-    pub(crate) fn materialize(self, scope: &Scope<'scope>) -> ReactiveResult<Rx<'scope, T>> {
+    pub(crate) fn materialize(self, scope: Scope<'scope>) -> ReactiveResult<Rx<'scope, T>> {
         scope.inner.try_validate_inputs(&self.inputs)?;
         Ok(self.materialize_unchecked(scope))
     }
 
-    pub(crate) fn materialize_unchecked(self, scope: &Scope<'scope>) -> Rx<'scope, T> {
+    pub(crate) fn materialize_unchecked(self, scope: Scope<'scope>) -> Rx<'scope, T> {
         let Self {
             inputs,
             materializer,
@@ -95,7 +95,7 @@ impl<'scope, T: 'scope> PromotionPlan<'scope, T> {
         match materializer {
             Materializer::Existing(value) => value,
             Materializer::Constant(value) => scope.constant(value),
-            Materializer::Derived(materializer) => materializer(*scope, inputs),
+            Materializer::Derived(materializer) => materializer(scope, inputs),
         }
     }
 }
@@ -255,7 +255,7 @@ macro_rules! impl_tuple_sources {
                 let mut inputs = RuntimeInputs::new();
                 $(inputs.extend(&$name.inputs());)+
                 PromotionPlan::derived(inputs, move |scope, inputs| {
-                    $(let $name = $name.materialize_unchecked(&scope);)+
+                    $(let $name = $name.materialize_unchecked(scope);)+
                     scope.derived_from(inputs, move || {
                         ($($name.get(),)+)
                     })
@@ -288,7 +288,7 @@ where
         let inputs = source.inputs();
         let getter = self.getter;
         PromotionPlan::derived(inputs, move |scope, inputs| {
-            let source = source.materialize_unchecked(&scope);
+            let source = source.materialize_unchecked(scope);
             scope.derived_from(inputs, move || source.with(|value| getter(value).clone()))
         })
     }

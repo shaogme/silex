@@ -56,7 +56,7 @@ where
     let mut inputs = left.runtime_inputs();
     inputs.extend(&right.inputs());
     scope.assert_inputs(&inputs);
-    let right = right.materialize_unchecked(&scope);
+    let right = right.materialize_unchecked(scope);
     scope.derived_from(inputs, move || {
         left.with(|left| right.with(|right| op(left, right)))
     })

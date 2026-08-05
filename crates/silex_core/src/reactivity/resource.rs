@@ -96,7 +96,7 @@ where
     E: RxError + 'static,
 {
     pub fn new<S, R, Fetcher>(
-        scope: &Scope<'scope>,
+        scope: Scope<'scope>,
         source: R,
         fetcher: Fetcher,
         suspense: Option<SuspenseContext<'scope>>,
@@ -106,7 +106,6 @@ where
         R: RxRead<Value = S> + ReactiveSource<'scope> + Clone + 'scope,
         Fetcher: ResourceFetcher<S, Data = T, Error = E> + 'scope,
     {
-        let scope = *scope;
         let mut inputs = source.clone().into_promotion_plan().inputs();
         if let Some(context) = suspense.as_ref() {
             inputs.push(context.count.inner.runtime_input());
@@ -214,7 +213,7 @@ where
         self.value()
     }
 
-    pub fn map<U, F>(&self, scope: &Scope<'scope>, f: F) -> Memo<'scope, U>
+    pub fn map<U, F>(&self, scope: Scope<'scope>, f: F) -> Memo<'scope, U>
     where
         U: PartialEq + 'static,
         F: Fn(Option<&T>) -> U + 'scope,
@@ -259,7 +258,7 @@ pub struct SuspenseContext<'scope> {
 }
 
 impl<'scope> SuspenseContext<'scope> {
-    pub fn new(scope: &Scope<'scope>) -> Self {
+    pub fn new(scope: Scope<'scope>) -> Self {
         let (count, set_count) = scope.signal(0usize);
         Self { count, set_count }
     }

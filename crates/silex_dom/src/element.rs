@@ -168,14 +168,14 @@ impl<'scope> View<'scope> for Element<'scope> {
 }
 
 /// Mount a view using the caller-owned scope.
-pub fn mount_to_body<'scope, V>(scope: &Scope<'scope>, view: V)
+pub fn mount_to_body<'scope, V>(scope: Scope<'scope>, view: V)
 where
     V: View<'scope> + 'scope,
 {
     let document = crate::document();
     let body = document.body().expect("No body element");
     let node: web_sys::Node = body.into();
-    let owner = ScopedViewOwner::new(*scope);
+    let owner = ScopedViewOwner::new(scope);
     view.mount_owned(&owner, &node, Vec::new());
 }
 
