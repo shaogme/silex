@@ -439,6 +439,18 @@ mod tests {
     }
 
     #[test]
+    fn test_static_str_class_into_op_splits_tokens() {
+        let op = "first second".into_op(ApplyTarget::Class);
+        assert_eq!(
+            op,
+            AttrOp::static_classes(vec![
+                std::borrow::Cow::Borrowed("first"),
+                std::borrow::Cow::Borrowed("second"),
+            ])
+        );
+    }
+
+    #[test]
     fn test_tuple_reactive_bool_class_into_op() {
         let mut runtime = Runtime::new();
         runtime.child(|scope| {

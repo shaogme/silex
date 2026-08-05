@@ -38,3 +38,28 @@ pub use palette::{ColorShadeInfo, JsonPalette};
 pub use prefix::{DIVIDE_SELECTOR, RING_BOX_SHADOW};
 pub use resolver::resolve_class;
 pub use value::{TwDecl, TwRuleSet, TwValueKind, classify, format_num, format_numeric};
+
+/// 规范化 `tw_variants!` 的字符串选项键。
+///
+/// 过程宏的冲突检查与运行时字符串解析使用同一套规则，避免大小写、空白和
+/// 分隔符差异造成多个声明映射到同一个选项。
+pub fn normalize_variant_key(value: &str) -> String {
+    value
+        .trim()
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '-' && *c != '_')
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_variant_key;
+
+    #[test]
+    fn variant_keys_ignore_case_whitespace_and_separators() {
+        assert_eq!(normalize_variant_key(" Icon-Xs "), "iconxs");
+        assert_eq!(normalize_variant_key("icon_xs"), "iconxs");
+        assert_eq!(normalize_variant_key("SM"), "sm");
+    }
+}

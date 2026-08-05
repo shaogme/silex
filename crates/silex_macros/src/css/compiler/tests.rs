@@ -252,6 +252,51 @@ fn dynamic_selector_can_be_followed_by_a_descendant() {
     );
 }
 
+#[test]
+fn dynamic_selector_validates_property_names() {
+    let err = compile_err("$selector { colr: red; }");
+    assert!(err.contains("`colr` 不存在"), "{err}");
+}
+
+#[test]
+fn dynamic_selector_validates_static_values() {
+    assert!(compile_err("$selector { align-items: centre; }").contains("`center`"));
+    assert!(compile_err("$selector { align-items: rgb(0 0 0); }").contains("`rgb()`"));
+    assert!(compile_err("$selector { color: 1px solid red; }").contains("只接受单个取值"));
+}
+
+#[test]
+fn dynamic_selector_collects_static_type_assertions() {
+    let res =
+        CssCompiler::compile_with_source("$selector { color: 10px; }", Span::call_site(), false)
+            .unwrap();
+    assert_eq!(res.assertions.len(), 1);
+    assert_eq!(res.assertions[0].property, "color");
+    assert_eq!(res.assertions[0].value_type, "Px");
+}
+
+#[test]
+fn dynamic_selector_preserves_unsafe_and_generated_css_exceptions() {
+    assert!(
+        CssCompiler::compile_with_source(
+            "unsafe { $selector { colr: red; } }",
+            Span::call_site(),
+            false,
+        )
+        .is_ok()
+    );
+
+    #[cfg(feature = "tw")]
+    assert!(
+        CssCompiler::compile_with_source(
+            "$selector { @apply flex items-center; }",
+            Span::call_site(),
+            false,
+        )
+        .is_ok()
+    );
+}
+
 /// 模板里的类名是**占位符**，不是基类名文本。
 ///
 /// 报告 P2-8：此前 `&` 展开成 `.slx-st-xxx`，运行时再

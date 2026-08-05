@@ -236,7 +236,9 @@ impl<'scope> ApplyToDom<'scope> for &'static str {
                 target,
                 data: AttrData::StaticJs(JsValue::from_str(self)),
             }),
-            ApplyTarget::Class => AttrOp::static_class(self.into()),
+            ApplyTarget::Class => {
+                AttrOp::static_classes(self.split_whitespace().map(Cow::Borrowed).collect())
+            }
             ApplyTarget::Style => {
                 AttrOp::static_styles(parse_style_str(self).into_iter().collect())
             }

@@ -172,6 +172,8 @@ pub(crate) struct ParserState {
 pub(crate) struct DynamicContext<'a> {
     pub class_name: &'a str,
     pub is_unsafe: bool,
+    /// 是否校验动态规则体内用户书写的声明。`@apply` 会在递归时关闭它。
+    pub validate: bool,
     pub region: Option<Rc<str>>,
 }
 

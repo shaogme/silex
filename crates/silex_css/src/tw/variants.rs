@@ -1,6 +1,8 @@
 use core::fmt;
 use std::borrow::Cow;
 
+use silex_tw_core::normalize_variant_key;
+
 /// 选项名解析失败：写错的选项名不应静默回退到默认值
 ///
 /// `tw_variants!` 生成的 `get()` 为了配合运行时字符串（`Signal<'scope, String>`）仍然宽容，
@@ -25,21 +27,12 @@ impl fmt::Display for UnknownVariantOption {
 
 impl core::error::Error for UnknownVariantOption {}
 
-/// 选项名匹配：忽略大小写、空白与 `-` / `_` 分隔符
+/// 选项名匹配：忽略大小写、空白与 `-` / `_` 分隔符。
 ///
-/// 生成的枚举变体名是 PascalCase（`icon-xs` → `IconXs`），但用户在运行时传进来的
-/// 是源码里写的那个字符串 `"icon-xs"`。此前的比较只做了"忽略大小写"与
-/// "把下划线换成连字符"两种尝试，`IconXs` 与 `icon-xs` 因此永远匹配不上——
-/// 于是 `size="icon-xs"` 静默拿到了默认档位的样式。
+/// `tw_variants!` 会把 DSL 中的原始键传给这里；直接使用 `declare_variants!` 时，
+/// 未显式提供键的旧语法仍以枚举变体名作为匹配键。
 pub fn variant_key_eq(variant_ident: &str, input: &str) -> bool {
-    let norm = |s: &str| -> String {
-        s.trim()
-            .chars()
-            .filter(|c| !c.is_whitespace() && *c != '-' && *c != '_')
-            .flat_map(|c| c.to_lowercase())
-            .collect()
-    };
-    norm(variant_ident) == norm(input)
+    normalize_variant_key(variant_ident) == normalize_variant_key(input)
 }
 
 /// 定义组件 CSS 变体 Schema 的 Trait
@@ -58,6 +51,14 @@ pub trait VariantSchema {
 /// 自动生成类型安全的 Variant 枚举、Config 结构体、`VariantSchema` 与 `IntoClass` 实现。
 #[macro_export]
 macro_rules! declare_variants {
+    (@option_key $val_name:ident [key = $val_key:literal]) => {
+        $val_key
+    };
+
+    (@option_key $val_name:ident) => {
+        stringify!($val_name)
+    };
+
     // 1. 包含 compound_variants 的入口
     (
         $vis:vis struct $struct_name:ident {
@@ -65,7 +66,7 @@ macro_rules! declare_variants {
             variants: {
                 $(
                     $var_vis:vis $var_name:ident : $var_type:ident [default = $def_val:ident] = {
-                        $($val_name:ident => $cls:expr),* $(,)?
+                        $($val_name:ident $( [key = $val_key:literal] )? => $cls:expr),* $(,)?
                     }
                 ),* $(,)?
             },
@@ -79,7 +80,9 @@ macro_rules! declare_variants {
             $vis struct $struct_name {
                 base: $base,
                 variants: {
-                    $($var_vis $var_name : $var_type [default = $def_val] = { $($val_name => $cls),* }),*
+                    $($var_vis $var_name : $var_type [default = $def_val] = {
+                        $($val_name $( [key = $val_key] )? => $cls),*
+                    }),*
                 },
                 compound_variants: [
                     $(( $($cmp_var == $cmp_type :: $cmp_val),+ ) => $cmp_cls),*
@@ -95,7 +98,7 @@ macro_rules! declare_variants {
             variants: {
                 $(
                     $var_vis:vis $var_name:ident : $var_type:ident [default = $def_val:ident] = {
-                        $($val_name:ident => $cls:expr),* $(,)?
+                        $($val_name:ident $( [key = $val_key:literal] )? => $cls:expr),* $(,)?
                     }
                 ),* $(,)?
             } $(,)?
@@ -106,7 +109,9 @@ macro_rules! declare_variants {
             $vis struct $struct_name {
                 base: $base,
                 variants: {
-                    $($var_vis $var_name : $var_type [default = $def_val] = { $($val_name => $cls),* }),*
+                    $($var_vis $var_name : $var_type [default = $def_val] = {
+                        $($val_name $( [key = $val_key] )? => $cls),*
+                    }),*
                 },
                 compound_variants: []
             }
@@ -121,7 +126,7 @@ macro_rules! declare_variants {
             variants: {
                 $(
                     $var_vis:vis $var_name:ident : $var_type:ident [default = $def_val:ident] = {
-                        $($val_name:ident => $cls:expr),*
+                        $($val_name:ident $( [key = $val_key:literal] )? => $cls:expr),*
                     }
                 ),*
             },
@@ -148,7 +153,13 @@ macro_rules! declare_variants {
                 ///
                 /// 解析时忽略大小写与 `-` / `_`，所以源码里写的 `icon-xs` 与这里的
                 /// `IconXs` 是同一个选项。
+                #[allow(dead_code)]
                 pub const OPTIONS: &'static [&'static str] = &[$(stringify!($val_name)),*];
+
+                /// 源 DSL 中声明的选项名，供字符串解析和错误提示使用。
+                pub const OPTION_KEYS: &'static [&'static str] = &[
+                    $($crate::declare_variants!(@option_key $val_name $( [key = $val_key] )?)),*
+                ];
 
                 /// 严格解析：未知选项名返回 `Err`，不静默回退默认值
                 ///
@@ -162,13 +173,16 @@ macro_rules! declare_variants {
                         return ::core::result::Result::Ok(<Self as ::core::default::Default>::default());
                     }
                     $(
-                        if $crate::tw::variants::variant_key_eq(stringify!($val_name), clean) {
+                        if $crate::tw::variants::variant_key_eq(
+                            $crate::declare_variants!(@option_key $val_name $( [key = $val_key] )?),
+                            clean,
+                        ) {
                             return ::core::result::Result::Ok($var_type::$val_name);
                         }
                     )*
                     ::core::result::Result::Err($crate::tw::variants::UnknownVariantOption {
                         input: ::std::string::String::from(clean),
-                        options: Self::OPTIONS,
+                        options: Self::OPTION_KEYS,
                     })
                 }
             }
@@ -306,6 +320,18 @@ mod tests {
         }
     }
 
+    declare_variants! {
+        pub struct TestNumericVariants {
+            base: "box",
+            variants: {
+                pub size: TestNumericSize [default = Val1x] = {
+                    Val1x [key = "1x"] => "box-1x",
+                    Sm [key = "sm"] => "box-sm",
+                },
+            }
+        }
+    }
+
     /// 回归点：源码里写 `icon-xs`，生成的枚举变体是 `IconXs`。
     /// 旧的 `From<S>` 只试了"忽略大小写"与"下划线换连字符"，两者都匹配不上，
     /// 于是 `size="icon-xs"` 静默拿到了 `Md` 的样式。
@@ -327,6 +353,16 @@ mod tests {
         assert!(variant_key_eq("IconLarge", "icon large"));
         assert!(variant_key_eq("icon-large", "Icon Large"));
         assert!(variant_key_eq("icon_large", " icon\tlarge "));
+    }
+
+    #[test]
+    fn explicit_option_keys_match_numeric_names() {
+        assert_eq!(
+            TestNumericSize::try_from_str("1x"),
+            Ok(TestNumericSize::Val1x)
+        );
+        assert_eq!(TestNumericSize::from("1x"), TestNumericSize::Val1x);
+        assert_eq!(TestNumericSize::OPTION_KEYS, &["1x", "sm"]);
     }
 
     #[test]

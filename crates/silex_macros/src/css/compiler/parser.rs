@@ -4,23 +4,70 @@ use syn::Result;
 
 use super::tokens::*;
 use super::types::*;
-use crate::css::ast::{CssBlock, CssRule};
+use crate::css::ast::{CssBlock, CssDeclaration, CssRule};
+
+fn validate_declaration_property(
+    decl: &CssDeclaration,
+    validate: bool,
+    is_unsafe: bool,
+) -> Result<bool> {
+    let validate = validate && !is_unsafe;
+    if validate {
+        crate::css::table::resolve_property_type(&decl.property, decl.span)?;
+    }
+    Ok(validate)
+}
+
+fn validate_static_declaration_value(
+    decl: &CssDeclaration,
+    val: &str,
+    expr_count_before: usize,
+    expr_count_after: usize,
+    validate: bool,
+    warnings: &mut Vec<CssWarning>,
+    assertions: &mut Vec<StaticAssertion>,
+) -> Result<()> {
+    if !validate || expr_count_after != expr_count_before {
+        return Ok(());
+    }
+
+    // 裸关键字 / 函数式取值 / 分量个数三层判据。放在定型断言之前：
+    // `width: 1 0px` 的分量个数不对，但下面那一步会先把空白折掉、再把它
+    // 认成一个合法的 `10px`。
+    crate::css::value_check::check_static_value(
+        &decl.property,
+        val,
+        value_span(&decl.values).unwrap_or(decl.span),
+        warnings,
+    )?;
+
+    // 整条取值就是一个能定型的字面量时，生成一条编译期断言，交给
+    // `ValidFor` 回答「这个值类型对这个属性合法吗」。
+    if let Some(value_type) = classify_static_value(val) {
+        assertions.push(StaticAssertion {
+            property: decl.property.clone(),
+            value_type,
+            span: decl.span,
+        });
+    }
+
+    Ok(())
+}
 
 pub(crate) fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Result<()> {
     for rule in &block.rules {
         let ctx = DynamicContext {
             class_name: &state.class_name,
             is_unsafe: state.is_unsafe,
+            validate: state.validate,
             region: state.region.clone(),
         };
         match rule {
             CssRule::Declaration(decl) => {
                 // 属性名与静态取值都要过一遍校验：此前静态声明完全绕开类型系统，
                 // `colr: red`、`color: 10px` 都是编译通过、无警告、产物错误
-                let validate = state.validate && !state.is_unsafe;
-                if validate {
-                    crate::css::table::resolve_property_type(&decl.property, decl.span)?;
-                }
+                let validate =
+                    validate_declaration_property(decl, state.validate, state.is_unsafe)?;
 
                 state.static_css.push_str(&decl.property);
                 state.static_css.push_str(": ");
@@ -39,33 +86,15 @@ pub(crate) fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Re
                     &ctx,
                 )?;
 
-                // 取值里没有插值时才校验：有插值的取值文本里只剩
-                // `var(--cls-0)` 占位符，没什么可查的，插值本身的类型由
-                // `ValidFor` 在展开产物里管
-                if validate && state.expressions.len() == expr_count_before {
-                    // 裸关键字 / 函数式取值 / 分量个数三层判据。放在定型断言
-                    // **之前**：`width: 1 0px` 的分量个数不对，但下面那一步会
-                    // 先把空白折掉、再把它认成一个合法的 `10px`
-                    crate::css::value_check::check_static_value(
-                        &decl.property,
-                        &val,
-                        // 取值的错误要指到取值上。`decl.span` 是属性名的位置，
-                        // 拿它报「`centre` 不是合法取值」会把箭头画在
-                        // `align-items` 底下，读者第一反应是属性名写错了
-                        value_span(&decl.values).unwrap_or(decl.span),
-                        &mut state.warnings,
-                    )?;
-
-                    // 整条取值就是一个能定型的字面量时，生成一条编译期断言，
-                    // 交给 `ValidFor` 回答「这个值类型对这个属性合法吗」
-                    if let Some(value_type) = classify_static_value(&val) {
-                        state.assertions.push(StaticAssertion {
-                            property: decl.property.clone(),
-                            value_type,
-                            span: decl.span,
-                        });
-                    }
-                }
+                validate_static_declaration_value(
+                    decl,
+                    &val,
+                    expr_count_before,
+                    state.expressions.len(),
+                    validate,
+                    &mut state.warnings,
+                    &mut state.assertions,
+                )?;
 
                 state.static_css.push_str(&val);
                 // 分号无条件补上，不看源码里写没写。块内最后一条声明的分号
@@ -111,10 +140,8 @@ pub(crate) fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Re
                         &mut selector_exprs,
                         &mut state.expressions,
                         &mut state.warnings,
-                        &DynamicContext {
-                            is_unsafe: false,
-                            ..ctx.clone()
-                        },
+                        &ctx,
+                        &mut state.assertions,
                     )?;
                     state.dynamic_rules.push(DynamicRule {
                         template,
@@ -218,6 +245,7 @@ pub(crate) fn build_dynamic_template(
     global_expressions: &mut Vec<(String, TokenStream)>,
     warnings: &mut Vec<CssWarning>,
     ctx: &DynamicContext,
+    assertions: &mut Vec<StaticAssertion>,
 ) -> Result<String> {
     let mut template = extract_dynamic_selector(&nested.selectors, selector_exprs, warnings, ctx)?;
     template.push_str(" { ");
@@ -228,6 +256,7 @@ pub(crate) fn build_dynamic_template(
         global_expressions,
         warnings,
         ctx,
+        assertions,
     )?;
     template.push_str(" }");
     Ok(template)
@@ -240,19 +269,31 @@ pub(crate) fn build_dynamic_block_recursive(
     global_expressions: &mut Vec<(String, TokenStream)>,
     warnings: &mut Vec<CssWarning>,
     ctx: &DynamicContext,
+    assertions: &mut Vec<StaticAssertion>,
 ) -> Result<()> {
     for rule in &block.rules {
         match rule {
             CssRule::Declaration(decl) => {
+                let validate = validate_declaration_property(decl, ctx.validate, ctx.is_unsafe)?;
                 template.push_str(&decl.property);
                 template.push_str(": ");
                 let prop_for_expr = if ctx.is_unsafe { "any" } else { &decl.property };
+                let expr_count_before = global_expressions.len();
                 let val = extract_dynamic_value(
                     &decl.values,
                     global_expressions,
                     warnings,
                     prop_for_expr,
                     ctx,
+                )?;
+                validate_static_declaration_value(
+                    decl,
+                    &val,
+                    expr_count_before,
+                    global_expressions.len(),
+                    validate,
+                    warnings,
+                    assertions,
                 )?;
                 template.push_str(&val);
                 // 与静态那一侧同理，见 `process_css_block`
@@ -277,6 +318,7 @@ pub(crate) fn build_dynamic_block_recursive(
                     global_expressions,
                     warnings,
                     ctx,
+                    assertions,
                 )?;
                 template.push_str(" } ");
             }
@@ -304,7 +346,11 @@ pub(crate) fn build_dynamic_block_recursive(
                     selector_exprs,
                     global_expressions,
                     warnings,
-                    ctx,
+                    &DynamicContext {
+                        validate: ctx.validate && !is_descriptor_at_rule(&at.name),
+                        ..ctx.clone()
+                    },
+                    assertions,
                 )?;
                 template.push_str(" } ");
             }
@@ -321,7 +367,11 @@ pub(crate) fn build_dynamic_block_recursive(
                         selector_exprs,
                         global_expressions,
                         warnings,
-                        ctx,
+                        &DynamicContext {
+                            validate: false,
+                            ..ctx.clone()
+                        },
+                        assertions,
                     )?;
                 }
                 #[cfg(not(feature = "tw"))]
@@ -343,6 +393,7 @@ pub(crate) fn build_dynamic_block_recursive(
                         is_unsafe: true,
                         ..ctx.clone()
                     },
+                    assertions,
                 )?;
             }
         }

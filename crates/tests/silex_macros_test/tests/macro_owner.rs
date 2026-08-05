@@ -541,6 +541,36 @@ fn classes_reactive_toggle_updates_and_cleans_without_removing_static_classes() 
 }
 
 #[wasm_bindgen_test]
+fn static_class_strings_are_applied_as_separate_dom_tokens() {
+    let host = document()
+        .create_element("div")
+        .expect("test host can be created");
+    document()
+        .body()
+        .expect("document has a body")
+        .append_child(&host)
+        .expect("test host can be mounted");
+
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    {
+        let scope = root.scope();
+        let view = silex::html::div(()).class("static-first static-second");
+        let owner = ScopedViewOwner::new(scope);
+        view.mount_owned(&owner, &host, Vec::new());
+
+        let element = host
+            .last_element_child()
+            .expect("static class view mounts an element");
+        assert!(element.class_list().contains("static-first"));
+        assert!(element.class_list().contains("static-second"));
+    }
+
+    root.dispose().expect("static class owner can be disposed");
+    remove_host(&host);
+}
+
+#[wasm_bindgen_test]
 fn styled_dynamic_value_cleans_inline_property_on_owner_dispose() {
     let host = document()
         .create_element("div")

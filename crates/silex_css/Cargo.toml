@@ -19,6 +19,7 @@ workspace = true
 silex_core.workspace = true
 silex_dom.workspace = true
 silex_hash.workspace = true
+silex_tw_core = { workspace = true, optional = true }
 wasm-bindgen.workspace = true
 web-sys = { workspace = true, features = [
     "CssStyleSheet",
@@ -41,7 +42,7 @@ js-sys.workspace = true
 wasm-bindgen-futures.workspace = true
 
 [features]
-tw = []
+tw = ["dep:silex_tw_core"]
 # Browser regression target that forces the real `<style>` fallback backend.
 test-style-fallback = []
 

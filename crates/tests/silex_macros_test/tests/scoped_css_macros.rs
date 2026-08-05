@@ -6,7 +6,20 @@ use silex::core::{Runtime, Rx};
 use silex::css::types::Hex;
 use silex::dom::attribute::{AttrOp, AttributeBuilder, AttributeGroup, GlobalAttributes};
 use silex::dom::prelude::AnyView;
-use silex::macros::{css, global, styled, tw};
+use silex::macros::{css, global, styled, tw, tw_variants};
+
+tw_variants! {
+    pub struct NumericVariants {
+        base: "block",
+        variants: {
+            size: {
+                "1x": "p-1",
+                sm: "p-2",
+            }
+        },
+        default_variants: { size: "1x" }
+    }
+}
 
 styled! {
     pub ScopedPanel<'scope><div>(
@@ -107,4 +120,13 @@ fn classes_converts_signal_to_a_scoped_attribute_group() {
         assert_eq!(group.0.len(), 1);
         assert!(matches!(group.0[0], AttrOp::CombinedClasses(_)));
     });
+}
+
+#[test]
+fn numeric_tw_variant_names_are_selected_from_strings() {
+    assert_eq!(
+        NumericVariantsSize::try_from_str("1x"),
+        Ok(NumericVariantsSize::Val1x)
+    );
+    assert!(NumericVariants::new().get_checked("1x").is_ok());
 }

@@ -1,0 +1,6 @@
+error: CSS 属性 `colr` 不存在，是否想写 `color`？
+       注：实验特性等注册表之外的声明请放进 `unsafe { … }` 块里原样透传。
+ --> tests/ui/fail_macro_dynamic_selector_property.rs:8:32
+  |
+8 |     let _ = css! { $selector { colr: red; } };
+  |                                ^^^^

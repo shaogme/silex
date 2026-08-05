@@ -334,6 +334,15 @@ mod tests {
         assert!(err.contains("`color`"), "{err}");
     }
 
+    #[test]
+    fn misspelled_dynamic_selector_property_is_a_compile_error() {
+        let err = css_impl(quote! { $selector { colr: red; } })
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("`colr` 不存在"), "{err}");
+        assert!(err.contains("`color`"), "{err}");
+    }
+
     /// `unsafe { … }` 仍然原样透传，不做属性名校验
     #[test]
     fn unsafe_blocks_bypass_property_validation() {

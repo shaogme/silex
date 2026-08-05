@@ -8,6 +8,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use syn::parse::{Parse, ParseStream};
 use syn::{Ident, LitStr, Result, Token, Visibility, braced, bracketed};
 
+use silex_tw_core::normalize_variant_key;
+
 /// 一个合并簇最多允许预编译的组合数
 ///
 /// 只有**真的互相覆盖**的槽位才会进同一个簇，所以这个上限在实践中够用得多：
@@ -226,6 +228,12 @@ fn write_set_of(class_str: &str, span: Span) -> WriteSet {
         .unwrap_or_default()
 }
 
+fn option_index(opts: &[(String, String)], name: &str) -> Option<usize> {
+    let key = normalize_variant_key(name);
+    opts.iter()
+        .position(|(option, _)| normalize_variant_key(option) == key)
+}
+
 fn plan_merges(input: &TwVariantsMacroInput, span: Span) -> Result<MergePlan> {
     let n = input.variants.len();
     let m = input.compound_variants.len();
@@ -333,10 +341,10 @@ fn plan_merges(input: &TwVariantsMacroInput, span: Span) -> Result<MergePlan> {
                         .find(|(v, _)| v == var)
                         .expect("条件引用的变体必在驱动集里")
                         .1;
-                    // 按 PascalCase 比较：生成的代码比的是枚举变体，
-                    // `icon-lg` 与 `icon_lg` 在那边本就是同一个 `IconLg`
+                    // 与运行时字符串解析使用同一个规范化键，避免 compound
+                    // 判断和 `get_checked` 对同一选项得出不同结果。
                     Ok::<bool, syn::Error>(
-                        acc && to_pascal_case(chosen, span)? == to_pascal_case(opt, span)?,
+                        acc && normalize_variant_key(chosen) == normalize_variant_key(opt),
                     )
                 })?;
                 if hit {
@@ -468,18 +476,31 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
         let var_name_ident = field_ident(var_name, span)?;
         let var_type_ident = type_ident(var_name)?;
 
-        // PascalCase 会把 `icon-xs` / `icon_xs` / `iconxs` 折成同一个 `IconXs`，
-        // 撞名的话生成的枚举里会出现重复变体——直接报错，别让用户去猜
-        let mut seen: BTreeMap<String, String> = BTreeMap::new();
+        // PascalCase 冲突会让生成的枚举出现重复变体；规范化键冲突则会让
+        // 字符串入口无法确定选中哪个变体。两套冲突都在宏阶段拒绝。
+        let mut seen_identifiers: BTreeMap<String, String> = BTreeMap::new();
+        let mut seen_keys: BTreeMap<String, String> = BTreeMap::new();
         for (opt_name, _) in opts {
             let pascal = to_pascal_case(opt_name, span)?.to_string();
-            if let Some(prev) = seen.insert(pascal.clone(), opt_name.clone()) {
+            if let Some(prev) = seen_identifiers.insert(pascal.clone(), opt_name.clone()) {
                 return Err(syn::Error::new(
                     span,
                     format!(
                         "Options '{}' and '{}' of variant '{}' both map to the enum variant \
                          `{}`; rename one of them.",
                         prev, opt_name, var_name, pascal
+                    ),
+                ));
+            }
+
+            let key = normalize_variant_key(opt_name);
+            if let Some(prev) = seen_keys.insert(key, opt_name.clone()) {
+                return Err(syn::Error::new(
+                    span,
+                    format!(
+                        "Options '{}' and '{}' of variant '{}' normalize to the same string key; \
+                         rename one of them.",
+                        prev, opt_name, var_name
                     ),
                 ));
             }
@@ -490,7 +511,7 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
             .get(var_name)
             .cloned()
             .unwrap_or_else(|| opts.first().map(|(k, _)| k.clone()).unwrap_or_default());
-        if !opts.iter().any(|(k, _)| k == &def_opt_str) {
+        let Some(def_opt_index) = option_index(opts, &def_opt_str) else {
             return Err(syn::Error::new(
                 span,
                 format!(
@@ -503,8 +524,8 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
                         .join(", ")
                 ),
             ));
-        }
-        let def_opt_ident = to_pascal_case(&def_opt_str, span)?;
+        };
+        let def_opt_ident = to_pascal_case(&opts[def_opt_index].0, span)?;
 
         // 被并进合并项的槽位自身不再产出类名：它的样式已经写进那张组合表，
         // 留在这里就成了同一份声明的第二个类，覆盖关系又交还给注入顺序
@@ -513,11 +534,12 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
             .iter()
             .map(|(opt_name, opt_cls)| {
                 let opt_ident = to_pascal_case(opt_name, span)?;
+                let opt_key = LitStr::new(opt_name, span);
                 if is_silenced {
-                    return Ok(quote! { #opt_ident => "" });
+                    return Ok(quote! { #opt_ident [key = #opt_key] => "" });
                 }
                 Ok(quote! {
-                    #opt_ident => #__silex::macros::tw!(#opt_cls)
+                    #opt_ident [key = #opt_key] => #__silex::macros::tw!(#opt_cls)
                 })
             })
             .collect::<Result<Vec<_>>>()?;
@@ -550,7 +572,27 @@ pub fn tw_variants_impl(ts: TokenStream) -> Result<TokenStream> {
                     }
                     let var_ident = field_ident(var_name, span)?;
                     let var_type_ident = type_ident(var_name)?;
-                    let opt_ident = to_pascal_case(opt_val, span)?;
+                    let opts = input
+                        .variants
+                        .iter()
+                        .find(|(name, _)| name == var_name)
+                        .map(|(_, opts)| opts)
+                        .expect("variant existence checked above");
+                    let Some(opt_index) = option_index(opts, opt_val) else {
+                        return Err(syn::Error::new(
+                            span,
+                            format!(
+                                "compound_variants.{} is '{}', which is not one of its options ({}).",
+                                var_name,
+                                opt_val,
+                                opts.iter()
+                                    .map(|(name, _)| name.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ),
+                        ));
+                    };
+                    let opt_ident = to_pascal_case(&opts[opt_index].0, span)?;
                     Ok(quote! {
                         #var_ident == #var_type_ident :: #opt_ident
                     })
@@ -783,6 +825,33 @@ mod tests {
     }
 
     #[test]
+    fn case_insensitive_option_names_are_rejected() {
+        let err = err_of(quote! {
+            base: "p-4",
+            variants: { size: { sm: "text-sm", SM: "text-uppercase" } },
+        });
+        assert!(err.contains("normalize to the same string key"), "{err}");
+    }
+
+    #[test]
+    fn separator_insensitive_option_names_are_rejected() {
+        let err = err_of(quote! {
+            base: "p-4",
+            variants: { size: { "icon-xs": "a", iconxs: "b" } },
+        });
+        assert!(err.contains("normalize to the same string key"), "{err}");
+    }
+
+    #[test]
+    fn numeric_option_names_emit_their_original_match_key() {
+        let out = expand(quote! {
+            base: "p-4",
+            variants: { size: { "1x": "text-1x" } },
+        });
+        assert!(out.contains("Val1x [key = \"1x\"]"), "{out}");
+    }
+
+    #[test]
     fn unknown_default_variant_is_rejected() {
         let err = err_of(quote! {
             base: "p-4",
@@ -840,8 +909,8 @@ mod tests {
 
         // 槽位自身不再产出类名，否则同一份声明会有第二个类
         assert!(!out.contains(r#"tw ! ("bg-blue-500")"#), "{out}");
-        assert!(out.contains(r#"Light => """#), "{out}");
-        assert!(out.contains(r#"On => """#), "{out}");
+        assert!(out.contains(r#"Light [key = "light"] => """#), "{out}");
+        assert!(out.contains(r#"On [key = "on"] => """#), "{out}");
 
         // base 不参与：它恒定先于任何选项写入，覆盖关系本来就是确定的
         assert!(out.contains(r#"tw ! ("rounded")"#), "{out}");
@@ -860,7 +929,7 @@ mod tests {
         assert!(out.contains(r#"tw ! ("p-6 p-8")"#), "{out}");
         assert!(out.contains(r#"tw ! ("p-2")"#), "{out}");
         assert!(!out.contains(r#"tw ! ("p-8")"#), "{out}");
-        assert!(out.contains(r#"Lg => """#), "{out}");
+        assert!(out.contains(r#"Lg [key = "lg"] => """#), "{out}");
     }
 
     /// 组合数按各槽位选项数相乘，超过上限时报错而不是悄悄退回不确定的老行为

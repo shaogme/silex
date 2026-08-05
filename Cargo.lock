@@ -1670,6 +1670,7 @@ dependencies = [
  "silex_core",
  "silex_dom",
  "silex_hash",
+ "silex_tw_core",
  "trybuild",
  "wasm-bindgen",
  "wasm-bindgen-futures",

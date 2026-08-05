@@ -60,6 +60,19 @@ tw_variants! {
     }
 }
 
+tw_variants! {
+    pub struct NumericStyle {
+        base: "box",
+        variants: {
+            size: {
+                "1x": "p-1",
+                sm: "p-2",
+            }
+        },
+        default_variants: { size: "1x" }
+    }
+}
+
 /// 类型可命名才写得出这样的签名——这正是 item 形式存在的理由
 pub fn card_class(style: &CardStyle) -> String {
     style.class()
@@ -130,6 +143,16 @@ mod tests {
         // 写错的选项名如实报错，不静默套用默认样式
         let err = CardStyleSize::try_from_str("icon-xxl").unwrap_err();
         assert!(err.to_string().contains("unknown variant option"), "{err}");
+    }
+
+    #[test]
+    fn generated_numeric_options_keep_their_source_names() {
+        assert_eq!(
+            NumericStyleSize::try_from_str("1x"),
+            Ok(NumericStyleSize::Val1x)
+        );
+        assert_eq!(NumericStyleSize::from("1x"), NumericStyleSize::Val1x);
+        assert!(NumericStyle::new().get_checked("1x").is_ok());
     }
 
     /// 类型可命名 ⇒ 能进结构体字段（编译通过即证明）
