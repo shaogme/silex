@@ -716,13 +716,14 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
 
         if let Some(view_component) = &def.view {
             let pass_ctx = def.pass_ctx;
-            let (pattern, mut view_expr) = match &def.fields {
+            let (pattern, mut view_expr, owned_bindings) = match &def.fields {
                 Fields::Named(named) => {
                     let mut props_setters = Vec::new();
                     let mut field_bindings = Vec::new();
+                    let mut owned_bindings = Vec::new();
                     let mut first_prop_expr = None;
 
-                    for (i, field) in named.named.iter().enumerate() {
+                    for (index, field) in named.named.iter().enumerate() {
                         let fname = field.ident.as_ref().ok_or_else(|| {
                             Error::new_spanned(field, "Named fields must have an identifier")
                         })?;
@@ -735,13 +736,22 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
                             quote! { #fname }
                         };
                         field_bindings.push(field_binding);
+                        let binding_name = if is_nested {
+                            format_ident!("sub_route_val")
+                        } else {
+                            fname.clone()
+                        };
+                        let field_ty = &field.ty;
+                        owned_bindings.push(quote! {
+                            let #binding_name: #field_ty = #binding_name.clone();
+                        });
                         let val_expr = if is_nested {
                             quote! { sub_route_val.clone() }
                         } else {
                             quote! { #fname.clone() }
                         };
 
-                        if i == 0 {
+                        if index == 0 {
                             first_prop_expr = Some(val_expr);
                         } else {
                             props_setters.push(quote! { .#fname(#val_expr) });
@@ -766,6 +776,7 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
                     (
                         quote! { #enum_name::#variant_ident { #(#field_bindings),* } },
                         expr,
+                        owned_bindings,
                     )
                 }
                 Fields::Unit => {
@@ -774,7 +785,7 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
                     } else {
                         quote! { #view_component().into_any() }
                     };
-                    (quote! { #enum_name::#variant_ident }, expr)
+                    (quote! { #enum_name::#variant_ident }, expr, Vec::new())
                 }
                 Fields::Unnamed(unnamed) => {
                     if unnamed.unnamed.is_empty() {
@@ -783,22 +794,50 @@ fn generate_render_arms(enum_name: &syn::Ident, defs: &[RouteDef]) -> syn::Resul
                         } else {
                             quote! { #view_component().into_any() }
                         };
-                        (quote! { #enum_name::#variant_ident() }, expr)
+                        (quote! { #enum_name::#variant_ident() }, expr, Vec::new())
                     } else {
                         let expr = if pass_ctx {
                             quote! { #view_component(ctx, sub_route_val.clone()).into_any() }
                         } else {
                             quote! { #view_component(sub_route_val.clone()).into_any() }
                         };
-                        (quote! { #enum_name::#variant_ident(sub_route_val) }, expr)
+                        let field_ty = &unnamed.unnamed[0].ty;
+                        let owned_bindings = vec![quote! {
+                            let sub_route_val: #field_ty = sub_route_val.clone();
+                        }];
+                        (
+                            quote! { #enum_name::#variant_ident(sub_route_val) },
+                            expr,
+                            owned_bindings,
+                        )
                     }
                 }
             };
 
-            for guard in def.guards.iter().rev() {
-                view_expr = quote! {
-                    #guard(move || #view_expr).into_any()
-                };
+            if !def.guards.is_empty() {
+                let base_factory = format_ident!("__silex_route_base_factory");
+                let mut child_factory = quote! { #base_factory.clone() };
+                let mut statements = vec![quote! {
+                    let #base_factory = move || #view_expr;
+                }];
+                let mut final_view = None;
+
+                for (index, guard) in def.guards.iter().rev().enumerate() {
+                    let guarded_view = format_ident!("__silex_route_guard_view_{index}");
+                    statements.push(quote! {
+                        let #guarded_view =
+                            #guard(#child_factory).into_any();
+                    });
+                    child_factory = quote! { move || #guarded_view.clone() };
+                    final_view = Some(guarded_view);
+                }
+
+                let final_view = final_view.expect("guard list is not empty");
+                view_expr = quote! {{
+                    #(#owned_bindings)*
+                    #(#statements)*
+                    #final_view
+                }};
             }
 
             arms.push(quote! { #pattern => #view_expr });
