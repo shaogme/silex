@@ -164,6 +164,8 @@ impl Drop for HostRegistration {
     }
 }
 
+type DeferredCallback<'scope> = Box<dyn FnOnce() + 'scope>;
+
 struct WebSocketInner<'scope> {
     url: ValueResolver<'scope>,
     protocols: Vec<String>,
@@ -208,20 +210,51 @@ impl<'scope> WebSocketInner<'scope> {
         self.retry_generation = None;
     }
 
-    fn try_open_current(&mut self) -> Result<(), NetError> {
+    fn defer_open(&self) -> DeferredCallback<'scope> {
+        let handlers = self.on_open.clone();
+        Box::new(move || {
+            for handler in handlers {
+                handler();
+            }
+        })
+    }
+
+    fn defer_error(&self, error: NetError) -> DeferredCallback<'scope> {
+        let handlers = self.on_error.clone();
+        Box::new(move || {
+            for handler in handlers {
+                handler(error.clone());
+            }
+        })
+    }
+
+    fn defer_close(&self, code: u16, reason: String) -> DeferredCallback<'scope> {
+        let handlers = self.on_close.clone();
+        Box::new(move || {
+            for handler in handlers {
+                handler(code, reason.clone());
+            }
+        })
+    }
+
+    fn reset_retry_window(&mut self) {
+        self.retry_attempt = 0;
+        self.retry_started_at = None;
+    }
+
+    fn try_open_current(&mut self) -> (Result<(), NetError>, Option<DeferredCallback<'scope>>) {
+        self.reset_retry_window();
         self.try_open_current_with_socket(None)
     }
 
     fn try_open_current_with_socket(
         &mut self,
         socket: Option<JsWebSocket>,
-    ) -> Result<(), NetError> {
+    ) -> (Result<(), NetError>, Option<DeferredCallback<'scope>>) {
         self.cancel_retry();
         self.registration.take();
         self.generation = self.generation.wrapping_add(1);
         let generation = self.generation;
-        self.retry_attempt = 0;
-        self.retry_started_at = None;
         self.set_state.set(ConnectionState::Connecting);
 
         let socket = match socket {
@@ -233,14 +266,11 @@ impl<'scope> WebSocketInner<'scope> {
             Err(error) => {
                 self.set_error.set(Some(error.clone()));
                 self.set_state.set(ConnectionState::Error);
-                for handler in &self.on_error {
-                    handler(error.clone());
-                }
-                return Err(error);
+                return (Err(error.clone()), Some(self.defer_error(error)));
             }
         };
         self.registration = Some(HostRegistration::new(socket, generation, &self.completion));
-        Ok(())
+        (Ok(()), None)
     }
 
     fn schedule_retry(&mut self, generation: u64) {
@@ -276,18 +306,16 @@ impl<'scope> WebSocketInner<'scope> {
         }));
     }
 
-    fn handle_event(&mut self, event: WebSocketEvent) {
+    fn handle_event(&mut self, event: WebSocketEvent) -> Option<DeferredCallback<'scope>> {
+        let mut callback = None;
         match event {
             WebSocketEvent::Open { generation } if generation == self.generation => {
                 self.retry_task.take();
                 self.retry_generation = None;
-                self.retry_attempt = 0;
-                self.retry_started_at = None;
+                self.reset_retry_window();
                 self.set_state.set(ConnectionState::Connected);
                 self.set_error.set(None);
-                for handler in &self.on_open {
-                    handler();
-                }
+                callback = Some(self.defer_open());
             }
             WebSocketEvent::Message { generation, data } if generation == self.generation => {
                 self.set_message.set(Some(data));
@@ -296,10 +324,8 @@ impl<'scope> WebSocketInner<'scope> {
             WebSocketEvent::Error { generation, error } if generation == self.generation => {
                 self.set_error.set(Some(error.clone()));
                 self.set_state.set(ConnectionState::Error);
-                for handler in &self.on_error {
-                    handler(error.clone());
-                }
                 self.schedule_retry(generation);
+                callback = Some(self.defer_error(error));
             }
             WebSocketEvent::Close {
                 generation,
@@ -308,10 +334,8 @@ impl<'scope> WebSocketInner<'scope> {
             } if generation == self.generation => {
                 self.registration.take();
                 self.set_state.set(ConnectionState::Closed);
-                for handler in &self.on_close {
-                    handler(code, reason.clone());
-                }
                 self.schedule_retry(generation);
+                callback = Some(self.defer_close(code, reason));
             }
             WebSocketEvent::Retry { generation } if generation == self.generation => {
                 self.retry_task.take();
@@ -322,13 +346,15 @@ impl<'scope> WebSocketInner<'scope> {
                     let elapsed =
                         Duration::from_millis((js_sys::Date::now() - started_at).max(0.0) as u64);
                     if policy.max_elapsed.is_some_and(|limit| elapsed >= limit) {
-                        return;
+                        return callback;
                     }
                 }
-                let _ = self.try_open_current();
+                let (_, retry_callback) = self.try_open_current_with_socket(None);
+                callback = retry_callback;
             }
             _ => {}
         }
+        callback
     }
 
     fn close(&mut self) {
@@ -434,7 +460,11 @@ impl<'scope> WebSocketConnection<'scope> {
         ) {
             return Ok(());
         }
-        self.inner.update(WebSocketInner::try_open_current)
+        let (result, callbacks) = self.inner.update(WebSocketInner::try_open_current);
+        if let Some(callback) = callbacks {
+            callback();
+        }
+        result
     }
 
     pub fn reconnect(&self) {
@@ -554,8 +584,10 @@ impl<'scope> WebSocketBuilder<'scope> {
         ));
         let inner_slot_for_completion = inner_slot.clone();
         let completion = scope.completion(move |event: WebSocketEvent| {
-            if let Some(inner) = inner_slot_for_completion.get() {
-                inner.update(|inner| inner.handle_event(event));
+            if let Some(inner) = inner_slot_for_completion.get()
+                && let Some(callback) = inner.update(|inner| inner.handle_event(event))
+            {
+                callback();
             }
         });
         let inner = scope.stored(WebSocketInner {
@@ -591,12 +623,16 @@ impl<'scope> WebSocketBuilder<'scope> {
             message,
             error,
         };
-        if auto_connect
-            && let Err(error) =
-                inner.update(|inner| inner.try_open_current_with_socket(initial_socket))
-        {
-            inner.update(WebSocketInner::cleanup);
-            return Err(error);
+        if auto_connect {
+            let (result, callbacks) =
+                inner.update(|inner| inner.try_open_current_with_socket(initial_socket));
+            if let Some(callback) = callbacks {
+                callback();
+            }
+            if let Err(error) = result {
+                inner.update(WebSocketInner::cleanup);
+                return Err(error);
+            }
         }
         Ok(connection)
     }

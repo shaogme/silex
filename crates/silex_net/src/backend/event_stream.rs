@@ -167,6 +167,8 @@ impl Drop for HostRegistration {
     }
 }
 
+type DeferredCallback<'scope> = Box<dyn FnOnce() + 'scope>;
+
 struct EventStreamInner<'scope> {
     url: ValueResolver<'scope>,
     event_name: Option<String>,
@@ -194,14 +196,32 @@ impl<'scope> EventStreamInner<'scope> {
         self.completion.cancel();
     }
 
-    fn try_open_current(&mut self) -> Result<(), NetError> {
+    fn defer_open(&self) -> DeferredCallback<'scope> {
+        let handlers = self.on_open.clone();
+        Box::new(move || {
+            for handler in handlers {
+                handler();
+            }
+        })
+    }
+
+    fn defer_error(&self, error: NetError) -> DeferredCallback<'scope> {
+        let handlers = self.on_error.clone();
+        Box::new(move || {
+            for handler in handlers {
+                handler(error.clone());
+            }
+        })
+    }
+
+    fn try_open_current(&mut self) -> (Result<(), NetError>, Option<DeferredCallback<'scope>>) {
         self.try_open_current_with_source(None)
     }
 
     fn try_open_current_with_source(
         &mut self,
         source: Option<JsEventSource>,
-    ) -> Result<(), NetError> {
+    ) -> (Result<(), NetError>, Option<DeferredCallback<'scope>>) {
         self.registration.take();
         self.generation = self.generation.wrapping_add(1);
         let generation = self.generation;
@@ -216,10 +236,7 @@ impl<'scope> EventStreamInner<'scope> {
             Err(error) => {
                 self.set_state.set(ConnectionState::Error);
                 self.set_error.set(Some(error.clone()));
-                for handler in &self.on_error {
-                    handler(error.clone());
-                }
-                return Err(error);
+                return (Err(error.clone()), Some(self.defer_error(error)));
             }
         };
         match HostRegistration::new(
@@ -230,27 +247,23 @@ impl<'scope> EventStreamInner<'scope> {
         ) {
             Ok(registration) => {
                 self.registration = Some(registration);
-                Ok(())
+                (Ok(()), None)
             }
             Err(error) => {
                 self.set_state.set(ConnectionState::Error);
                 self.set_error.set(Some(error.clone()));
-                for handler in &self.on_error {
-                    handler(error.clone());
-                }
-                Err(error)
+                (Err(error.clone()), Some(self.defer_error(error)))
             }
         }
     }
 
-    fn handle_event(&mut self, event: EventStreamEvent) {
+    fn handle_event(&mut self, event: EventStreamEvent) -> Option<DeferredCallback<'scope>> {
+        let mut callback = None;
         match event {
             EventStreamEvent::Open { generation } if generation == self.generation => {
                 self.set_state.set(ConnectionState::Connected);
                 self.set_error.set(None);
-                for handler in &self.on_open {
-                    handler();
-                }
+                callback = Some(self.defer_open());
             }
             EventStreamEvent::Message {
                 generation,
@@ -271,12 +284,11 @@ impl<'scope> EventStreamInner<'scope> {
             EventStreamEvent::Error { generation, error } if generation == self.generation => {
                 self.set_state.set(ConnectionState::Error);
                 self.set_error.set(Some(error.clone()));
-                for handler in &self.on_error {
-                    handler(error.clone());
-                }
+                callback = Some(self.defer_error(error));
             }
             _ => {}
         }
+        callback
     }
 
     fn close(&mut self) {
@@ -382,7 +394,11 @@ impl<'scope> EventStreamConnection<'scope> {
         ) {
             return Ok(());
         }
-        self.inner.update(EventStreamInner::try_open_current)
+        let (result, callbacks) = self.inner.update(EventStreamInner::try_open_current);
+        if let Some(callback) = callbacks {
+            callback();
+        }
+        result
     }
 
     pub fn reconnect(&self) {
@@ -489,8 +505,10 @@ impl<'scope> EventStreamBuilder<'scope> {
         ));
         let inner_slot_for_completion = inner_slot.clone();
         let completion = scope.completion(move |event: EventStreamEvent| {
-            if let Some(inner) = inner_slot_for_completion.get() {
-                inner.update(|inner| inner.handle_event(event));
+            if let Some(inner) = inner_slot_for_completion.get()
+                && let Some(callback) = inner.update(|inner| inner.handle_event(event))
+            {
+                callback();
             }
         });
         let inner = scope.stored(EventStreamInner {
@@ -520,12 +538,16 @@ impl<'scope> EventStreamBuilder<'scope> {
             messages,
             error,
         };
-        if auto_connect
-            && let Err(error) =
-                inner.update(|inner| inner.try_open_current_with_source(initial_source))
-        {
-            inner.update(EventStreamInner::cleanup);
-            return Err(error);
+        if auto_connect {
+            let (result, callbacks) =
+                inner.update(|inner| inner.try_open_current_with_source(initial_source));
+            if let Some(callback) = callbacks {
+                callback();
+            }
+            if let Err(error) = result {
+                inner.update(EventStreamInner::cleanup);
+                return Err(error);
+            }
         }
         Ok(connection)
     }

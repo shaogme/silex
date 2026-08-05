@@ -13,8 +13,9 @@ use js_sys::{Array, Function, Reflect};
 use silex_core::reactivity::{MutationState, ResourceState};
 use silex_core::{Runtime, TaskHandle};
 use silex_net::{
-    BrowserTransport, EventStream, HttpMethod, HttpResponse, NetError, RequestBody, RequestSpec,
-    RetryPolicy, Transport, TransportFuture, WebSocket,
+    BrowserTransport, EventStream, EventStreamConnection, HttpMethod, HttpResponse, NetError,
+    RequestBody, RequestSpec, RetryPolicy, Transport, TransportFuture, WebSocket,
+    WebSocketConnection,
 };
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_test::*;
@@ -912,6 +913,89 @@ async fn websocket_host_bridge_covers_events_retry_and_manual_close() {
 }
 
 #[wasm_bindgen_test(async)]
+async fn websocket_retry_window_counts_continuous_pre_open_failures() {
+    let _host = MockHost::websocket();
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| async move {
+        let socket = WebSocket::lazy(scope, "ws://mock")
+            .reconnect_policy(RetryPolicy::new(3, std::time::Duration::ZERO).no_jitter())
+            .build();
+
+        socket.reconnect();
+        assert_eq!(mock_instance_count("__silex_test_socket_instances"), 1);
+
+        mock_call0("__silex_test_socket", "emitClose");
+        TimeoutFuture::new(0).await;
+        assert_eq!(mock_instance_count("__silex_test_socket_instances"), 2);
+
+        mock_call0("__silex_test_socket", "emitClose");
+        TimeoutFuture::new(0).await;
+        assert_eq!(mock_instance_count("__silex_test_socket_instances"), 3);
+
+        mock_call0("__silex_test_socket", "emitClose");
+        TimeoutFuture::new(0).await;
+        assert_eq!(
+            mock_instance_count("__silex_test_socket_instances"),
+            3,
+            "continuous pre-open failures must exhaust one retry window"
+        );
+
+        socket.reconnect();
+        assert_eq!(
+            mock_instance_count("__silex_test_socket_instances"),
+            4,
+            "manual reconnect must start a fresh retry window"
+        );
+    })
+    .await;
+    root.dispose().expect("root cleanup");
+}
+
+#[wasm_bindgen_test(async)]
+async fn websocket_callbacks_can_control_connection_after_state_restore() {
+    let _host = MockHost::websocket();
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| async move {
+        let connection_slot: Rc<Cell<Option<WebSocketConnection<'_>>>> = Rc::new(Cell::new(None));
+        let send_succeeded = Rc::new(Cell::new(false));
+        let connection_for_open = connection_slot.clone();
+        let send_succeeded_for_open = send_succeeded.clone();
+        let connection_for_close = connection_slot.clone();
+        let socket = WebSocket::lazy(scope, "ws://mock")
+            .on_open(move || {
+                let socket = connection_for_open
+                    .get()
+                    .expect("connection must be available in on_open");
+                socket
+                    .send_text("from callback")
+                    .expect("send from on_open callback");
+                send_succeeded_for_open.set(true);
+            })
+            .on_close(move |_, _| {
+                connection_for_close
+                    .get()
+                    .expect("connection must be available in on_close")
+                    .reconnect();
+            })
+            .build();
+        connection_slot.set(Some(socket));
+
+        socket.reconnect();
+        mock_call0("__silex_test_socket", "emitOpen");
+        TimeoutFuture::new(0).await;
+        assert!(send_succeeded.get());
+
+        mock_call0("__silex_test_socket", "emitClose");
+        assert_eq!(mock_instance_count("__silex_test_socket_instances"), 2);
+        assert_eq!(socket.state().get(), silex_net::ConnectionState::Connecting);
+    })
+    .await;
+    root.dispose().expect("root cleanup");
+}
+
+#[wasm_bindgen_test(async)]
 async fn websocket_constructor_failure_reports_error_before_connection_creation() {
     let _host = MockHost::websocket();
     let mut runtime = Runtime::new();
@@ -1098,6 +1182,42 @@ async fn event_stream_host_bridge_covers_named_messages_reconnect_and_cleanup() 
         );
         mock_call2("__silex_test_event_source", "emitNamed", "update", "late");
         assert_eq!(stream.raw_messages().get().len(), 2);
+    })
+    .await;
+    root.dispose().expect("root cleanup");
+}
+
+#[wasm_bindgen_test(async)]
+async fn event_stream_callbacks_can_control_connection_after_state_restore() {
+    let _host = MockHost::event_source();
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| async move {
+        let connection_slot: Rc<Cell<Option<EventStreamConnection<'_>>>> = Rc::new(Cell::new(None));
+        let opened = Rc::new(Cell::new(0));
+        let connection_for_open = connection_slot.clone();
+        let opened_for_callback = opened.clone();
+        let stream = EventStream::lazy(scope, "http://mock")
+            .on_open(move || {
+                opened_for_callback.set(opened_for_callback.get() + 1);
+                let stream = connection_for_open
+                    .get()
+                    .expect("connection must be available in on_open");
+                stream.close();
+                stream.reconnect();
+            })
+            .build();
+        connection_slot.set(Some(stream));
+
+        stream.reconnect();
+        mock_call0("__silex_test_event_source", "emitOpen");
+        TimeoutFuture::new(0).await;
+        assert_eq!(opened.get(), 1);
+        assert_eq!(
+            mock_instance_count("__silex_test_event_source_instances"),
+            2
+        );
+        assert_eq!(stream.state().get(), silex_net::ConnectionState::Connecting);
     })
     .await;
     root.dispose().expect("root cleanup");
