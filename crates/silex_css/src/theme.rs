@@ -151,7 +151,7 @@ where
         let effect_el = el.clone();
         let previous = Rc::new(RefCell::new(None::<Vec<(&'static str, Option<String>)>>));
         let previous_for_effect = previous.clone();
-        owner.effect_from(
+        if let Err(error) = owner.effect_from(
             inputs,
             Box::new(move || {
                 let theme = match &theme {
@@ -167,16 +167,20 @@ where
                 let next = apply_var_diff(&style, &entries, previous_for_effect.borrow().as_ref());
                 *previous_for_effect.borrow_mut() = Some(next);
             }),
-        );
+        ) {
+            owner.report_error(error);
+        }
         let names = T::get_variable_names().to_vec();
         let el_clone = el.clone();
-        owner.on_cleanup(Box::new(move || {
+        if let Err(error) = owner.on_cleanup(Box::new(move || {
             if let Some(style) = element_style(&el_clone) {
                 for name in &names {
                     let _ = style.remove_property(name);
                 }
             };
-        }));
+        })) {
+            owner.report_error(error);
+        }
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
@@ -215,7 +219,7 @@ where
     let style_id = unique_dynamic_style_id("slx-global-theme");
     let previous = Rc::new(RefCell::new(None::<String>));
     let previous_for_effect = previous.clone();
-    owner.effect_from(
+    if let Err(error) = owner.effect_from(
         inputs,
         Box::new(move || {
             let theme = match &source {
@@ -232,9 +236,13 @@ where
             }
             *previous_for_effect.borrow_mut() = Some(css);
         }),
-    );
+    ) {
+        owner.report_error(error);
+    }
     let manager_for_cleanup = manager.clone();
-    owner.on_cleanup(Box::new(move || manager_for_cleanup.dispose()));
+    if let Err(error) = owner.on_cleanup(Box::new(move || manager_for_cleanup.dispose())) {
+        owner.report_error(error);
+    }
 }
 
 fn global_theme_css<T: ThemeToCss>(theme: &T) -> Option<String> {
@@ -291,7 +299,7 @@ where
         let names = Rc::new(RefCell::new(Vec::<&'static str>::new()));
         let previous_for_effect = previous.clone();
         let names_for_effect = names.clone();
-        owner.effect_from(
+        if let Err(error) = owner.effect_from(
             inputs,
             Box::new(move || {
                 let patch = match &patch {
@@ -313,16 +321,20 @@ where
                 let next = apply_var_diff(&style, &entries, previous_for_effect.borrow().as_ref());
                 *previous_for_effect.borrow_mut() = Some(next);
             }),
-        );
+        ) {
+            owner.report_error(error);
+        }
         let names_for_cleanup = names.clone();
         let el_clone = el.clone();
-        owner.on_cleanup(Box::new(move || {
+        if let Err(error) = owner.on_cleanup(Box::new(move || {
             if let Some(style) = element_style(&el_clone) {
                 for name in names_for_cleanup.borrow().iter() {
                     let _ = style.remove_property(name);
                 }
             }
-        }));
+        })) {
+            owner.report_error(error);
+        }
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {

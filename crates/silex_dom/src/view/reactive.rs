@@ -23,7 +23,7 @@ pub(crate) fn mount_reactive_text<'scope, T>(
     let node_for_effect = node.clone();
     let token = owner.token();
     let token_for_effect = token.clone();
-    owner.effect_from(
+    if let Err(error) = owner.effect_from(
         rx.runtime_inputs(),
         Box::new(move || {
             let node = if let Some(node) = node_for_effect.borrow().clone() {
@@ -42,15 +42,19 @@ pub(crate) fn mount_reactive_text<'scope, T>(
                 token_for_effect.report_error(error.into());
             }
         }),
-    );
+    ) {
+        owner.report_error(error);
+    }
     let node_for_cleanup = node.clone();
-    owner.on_cleanup(Box::new(move || {
+    if let Err(error) = owner.on_cleanup(Box::new(move || {
         if let Some(node) = node_for_cleanup.borrow_mut().take()
             && let Some(parent) = node.parent_node()
         {
             let _ = parent.remove_child(&node);
         }
-    }));
+    })) {
+        owner.report_error(error);
+    }
 }
 
 pub(crate) fn mount_reactive_view<'scope, V>(

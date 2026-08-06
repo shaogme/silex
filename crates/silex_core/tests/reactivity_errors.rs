@@ -89,3 +89,23 @@ fn runtime_errors_are_matchable_through_silex_error() {
         SilexError::Reactivity(ReactiveError::RuntimeMismatch)
     ));
 }
+
+#[test]
+fn core_owner_registration_exposes_inactive_errors() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        assert!(scope.try_on_cleanup(|| {}).is_ok());
+        let owner = scope.try_owned_scope().expect("owner is active");
+        assert!(owner.try_on_cleanup(|| {}).is_ok());
+        owner.dispose();
+
+        assert!(matches!(
+            owner.try_on_cleanup(|| {}),
+            Err(SilexError::Reactivity(ReactiveError::NoSuchNode))
+        ));
+        assert!(matches!(
+            owner.try_child(),
+            Err(SilexError::Reactivity(ReactiveError::NoSuchNode))
+        ));
+    });
+}

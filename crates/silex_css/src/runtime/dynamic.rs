@@ -396,7 +396,7 @@ impl<'scope> DynamicCss<'scope> {
             let previous = Rc::new(RefCell::new(vec![None::<String>; vars.len()]));
             let previous_for_effect = previous.clone();
             let el_clone = el.clone();
-            owner.effect_from(
+            if let Err(error) = owner.effect_from(
                 inputs,
                 Box::new(move || {
                     let values: Vec<String> = vars_for_effect
@@ -415,17 +415,21 @@ impl<'scope> DynamicCss<'scope> {
                     }
                     *previous = values.into_iter().map(Some).collect();
                 }),
-            );
+            ) {
+                owner.report_error(error);
+            }
 
             let names: Vec<&'static str> = vars.iter().map(|(name, _)| *name).collect();
             let el_clone = el.clone();
-            owner.on_cleanup(Box::new(move || {
+            if let Err(error) = owner.on_cleanup(Box::new(move || {
                 if let Some(style) = element_style(&el_clone) {
                     for name in names {
                         let _ = style.remove_property(name);
                     }
                 }
-            }));
+            })) {
+                owner.report_error(error);
+            }
         }
 
         for (parts, getters) in self.rules.clone() {
@@ -440,7 +444,7 @@ impl<'scope> DynamicCss<'scope> {
             let el_clone = el.clone();
             let base_class = self.class_name;
             let layer = self.layer;
-            owner.effect_from(
+            if let Err(error) = owner.effect_from(
                 inputs,
                 Box::new(move || {
                     let current_vals: Vec<String> =
@@ -460,24 +464,30 @@ impl<'scope> DynamicCss<'scope> {
                         let _ = el_clone.class_list().remove_1(&old_class);
                     }
                 }),
-            );
+            ) {
+                owner.report_error(error);
+            }
 
             let manager_for_cleanup = manager.clone();
             let current_class_for_cleanup = current_class.clone();
             let el_clone = el.clone();
-            owner.on_cleanup(Box::new(move || {
+            if let Err(error) = owner.on_cleanup(Box::new(move || {
                 if let Some(class_name) = current_class_for_cleanup.borrow_mut().take() {
                     let _ = el_clone.class_list().remove_1(&class_name);
                 }
                 manager_for_cleanup.dispose();
-            }));
+            })) {
+                owner.report_error(error);
+            }
         }
 
         let class_name = self.class_name;
         let el_clone = el.clone();
-        owner.on_cleanup(Box::new(move || {
+        if let Err(error) = owner.on_cleanup(Box::new(move || {
             let _ = el_clone.class_list().remove_1(class_name);
-        }));
+        })) {
+            owner.report_error(error);
+        }
     }
 }
 
@@ -613,7 +623,7 @@ impl<'scope> StyledVariantBinding<'scope> {
         let states_for_effect = states.clone();
         let variant_classes_for_effect = variant_classes.clone();
         let element_for_effect = element.clone();
-        owner.effect_from(
+        if let Err(error) = owner.effect_from(
             inputs,
             Box::new(move || {
                 let active_variants: Vec<String> = groups
@@ -634,10 +644,12 @@ impl<'scope> StyledVariantBinding<'scope> {
                     &states_for_effect,
                 );
             }),
-        );
+        ) {
+            owner.report_error(error);
+        }
 
         let element_for_cleanup = element.clone();
-        owner.on_cleanup(Box::new(move || {
+        if let Err(error) = owner.on_cleanup(Box::new(move || {
             let mut classes = variant_classes.borrow_mut();
             for class in classes.iter_mut().filter_map(Option::take) {
                 let _ = element_for_cleanup.class_list().remove_1(class);
@@ -653,7 +665,9 @@ impl<'scope> StyledVariantBinding<'scope> {
                     manager.dispose();
                 }
             }
-        }));
+        })) {
+            owner.report_error(error);
+        }
     }
 }
 
@@ -941,7 +955,7 @@ pub fn inject_managed_dynamic_style<'scope>(
     let manager = Rc::new(DynamicStyleManager::new());
     let manager_for_effect = manager.clone();
     let style_id_str = style_id.into();
-    owner.effect_from(
+    if let Err(error) = owner.effect_from(
         inputs,
         Box::new(move || {
             let vals: Vec<String> = positional.iter().map(|getter| getter.get()).collect();
@@ -963,9 +977,13 @@ pub fn inject_managed_dynamic_style<'scope>(
             };
             manager_for_effect.update(&style_id_str, &res);
         }),
-    );
+    ) {
+        owner.report_error(error);
+    }
     let manager_for_cleanup = manager.clone();
-    owner.on_cleanup(Box::new(move || manager_for_cleanup.dispose()));
+    if let Err(error) = owner.on_cleanup(Box::new(move || manager_for_cleanup.dispose())) {
+        owner.report_error(error);
+    }
 }
 
 fn element_style(el: &Element) -> Option<web_sys::CssStyleDeclaration> {

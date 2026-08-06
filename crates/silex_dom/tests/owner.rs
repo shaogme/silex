@@ -31,10 +31,12 @@ impl<'scope> View<'scope> for CleanupProbe {
         _attrs: Vec<PendingAttribute<'scope>>,
     ) {
         let cleanups = self.cleanups.clone();
-        owner.on_cleanup(Box::new(move || {
-            cleanups.set(cleanups.get() + 1);
-        }));
-        mount_text_node(parent, &self.text);
+        owner
+            .on_cleanup(Box::new(move || {
+                cleanups.set(cleanups.get() + 1);
+            }))
+            .expect("view owner is active");
+        mount_text_node(owner, parent, &self.text);
     }
 
     fn mount_owned(
@@ -77,10 +79,12 @@ impl<'scope> View<'scope> for StatefulProbe {
 
         let node_for_cleanup = self.node.clone();
         let cleanups = self.cleanups.clone();
-        owner.on_cleanup(Box::new(move || {
-            node_for_cleanup.borrow_mut().take();
-            cleanups.set(cleanups.get() + 1);
-        }));
+        owner
+            .on_cleanup(Box::new(move || {
+                node_for_cleanup.borrow_mut().take();
+                cleanups.set(cleanups.get() + 1);
+            }))
+            .expect("view owner is active");
     }
 
     fn mount_owned(

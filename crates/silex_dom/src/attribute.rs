@@ -251,13 +251,15 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
         }))
         .apply(PendingAttribute::new_scoped(move |_el, owner| {
             let owner_for_cleanup = owner.clone();
-            owner.on_cleanup(Box::new(move || {
+            if let Err(error) = owner.on_cleanup(Box::new(move || {
                 if let Err(error) = node_ref_for_cleanup.try_clear()
                     && !matches!(error, ReactiveError::NoSuchNode)
                 {
                     owner_for_cleanup.report_error(error.into());
                 }
-            }));
+            })) {
+                owner.report_error(error);
+            }
         }))
     }
 
@@ -354,7 +356,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
             let dom_element = el.clone();
             let signal = signal.clone();
             let owner = owner.clone();
-            owner.effect_from(
+            if let Err(error) = owner.effect_from(
                 runtime_inputs_of(signal.clone()),
                 Box::new(move || {
                     let value = signal.get();
@@ -366,7 +368,9 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
                         &Attr::from(str_val.to_string()),
                     );
                 }),
-            );
+            ) {
+                owner.report_error(error);
+            }
         }))
     }
 

@@ -185,18 +185,20 @@ fn mount_indexed_list<'scope, IF, IS, T>(
 
     let cleanup_rows = rows.clone();
     let cleanup_range = range.clone();
-    owner.on_cleanup(Box::new(move || {
+    if let Err(error) = owner.on_cleanup(Box::new(move || {
         let mut rows = mem::take(&mut *cleanup_rows.borrow_mut());
         let panic = dispose_rows(&mut rows);
         cleanup_range.remove();
         if let Some(panic) = panic {
             resume_unwind(panic);
         }
-    }));
+    })) {
+        owner.report_error(error);
+    }
 
     let effect_rows = rows;
     let end = range.end.clone();
-    owner.effect_from(
+    if let Err(error) = owner.effect_from(
         inputs,
         Box::new(move || {
             let snapshot = source
@@ -283,7 +285,9 @@ fn mount_indexed_list<'scope, IF, IS, T>(
                 }
             }
         }),
-    );
+    ) {
+        owner.report_error(error);
+    }
 }
 
 struct KeyedRows<'scope, T, K> {
@@ -340,7 +344,7 @@ fn mount_keyed_list<'scope, IF, IS, T, K>(
 
     let cleanup_state = state.clone();
     let cleanup_range = range.clone();
-    owner.on_cleanup(Box::new(move || {
+    if let Err(error) = owner.on_cleanup(Box::new(move || {
         let mut state = cleanup_state.borrow_mut();
         let mut rows = mem::take(&mut state.rows).into_values().collect::<Vec<_>>();
         state.order.clear();
@@ -350,11 +354,13 @@ fn mount_keyed_list<'scope, IF, IS, T, K>(
         if let Some(panic) = panic {
             resume_unwind(panic);
         }
-    }));
+    })) {
+        owner.report_error(error);
+    }
 
     let effect_state = state;
     let end = range.end.clone();
-    owner.effect_from(
+    if let Err(error) = owner.effect_from(
         inputs,
         Box::new(move || {
             let snapshot = source
@@ -488,7 +494,9 @@ fn mount_keyed_list<'scope, IF, IS, T, K>(
                 }
             }
         }),
-    );
+    ) {
+        owner.report_error(error);
+    }
 }
 
 fn dispose_map<'scope, T: Clone + 'scope, K>(

@@ -62,14 +62,21 @@ impl<'scope> Scope<'scope> {
     /// stack frame. Its caller must dispose it when the owned object is
     /// removed; the DOM owner adapters use this as the row lifetime boundary.
     pub fn owned_scope(&self) -> OwnedScope<'scope> {
-        assert!(
-            self.storage.is_active(),
-            "创建 owned scope 失败: {}",
-            ReactiveError::NoSuchNode
-        );
+        self.try_owned_scope()
+            .unwrap_or_else(|error| panic!("创建 owned scope 失败: {error}"))
+    }
+
+    /// Create a persistent owner without converting an inactive or borrowed
+    /// scope into a panic.
+    pub fn try_owned_scope(&self) -> ReactiveResult<OwnedScope<'scope>> {
         let state = self.state();
-        let scheduler = state.borrow().scheduler.clone();
-        OwnedScope::new(scheduler)
+        let state = state
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        if !state.is_active() {
+            return Err(ReactiveError::NoSuchNode);
+        }
+        Ok(OwnedScope::new(state.scheduler.clone()))
     }
 
     pub fn is_active(&self) -> bool {
@@ -139,6 +146,24 @@ impl<'scope> Scope<'scope> {
             .try_borrow_mut()
             .expect("ScopeState borrow failed during on_cleanup registration");
         state.register_cleanup(thunk);
+    }
+
+    /// Register cleanup while preserving a structured failure for an inactive
+    /// or currently borrowed scope.
+    pub fn try_on_cleanup<F>(&self, f: F) -> ReactiveResult<()>
+    where
+        F: FnOnce() + 'scope,
+    {
+        let thunk = OnceThunk::new(f);
+        let state = self.state();
+        let mut state = state
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        if !state.is_active() {
+            return Err(ReactiveError::NoSuchNode);
+        }
+        state.register_cleanup(thunk);
+        Ok(())
     }
 
     /// Register a typed callback under this scope.
@@ -476,14 +501,24 @@ impl<'scope> OwnedScope<'scope> {
 
     /// Create a nested persistent owner using the same scheduler.
     pub fn child(&self) -> Self {
-        assert!(
-            self.is_active(),
-            "创建 owned child scope 失败: {}",
-            ReactiveError::NoSuchNode
-        );
+        self.try_child()
+            .unwrap_or_else(|error| panic!("创建 owned child scope 失败: {error}"))
+    }
+
+    /// Create a nested persistent owner without panicking on an inactive
+    /// owner or a conflicting scope borrow.
+    pub fn try_child(&self) -> ReactiveResult<Self> {
+        if !self.active.get() {
+            return Err(ReactiveError::NoSuchNode);
+        }
         let state = self.state();
-        let scheduler = state.borrow().scheduler.clone();
-        Self::new(scheduler)
+        let state = state
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        if !state.is_active() {
+            return Err(ReactiveError::NoSuchNode);
+        }
+        Ok(Self::new(state.scheduler.clone()))
     }
 
     pub fn is_active(&self) -> bool {
@@ -593,6 +628,25 @@ impl<'scope> OwnedScope<'scope> {
             .try_borrow_mut()
             .expect("owned scope 在 cleanup 注册期间被借用");
         state.register_cleanup(OnceThunk::new(f));
+    }
+
+    /// Register cleanup without silently accepting an inactive owner.
+    pub fn try_on_cleanup<F>(&self, f: F) -> ReactiveResult<()>
+    where
+        F: FnOnce() + 'scope,
+    {
+        if !self.active.get() {
+            return Err(ReactiveError::NoSuchNode);
+        }
+        let state = self.state();
+        let mut state = state
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        if !state.is_active() {
+            return Err(ReactiveError::NoSuchNode);
+        }
+        state.register_cleanup(OnceThunk::new(f));
+        Ok(())
     }
 
     /// Create a one-shot completion destination owned by this persistent scope.

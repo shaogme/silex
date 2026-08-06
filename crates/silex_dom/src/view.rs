@@ -41,30 +41,38 @@ struct EffectRegistrar<'scope> {
 }
 
 trait EffectRegister<'scope> {
-    fn register(&self, inputs: RuntimeInputs, callback: Box<dyn FnMut() + 'scope>);
+    fn register(
+        &self,
+        inputs: RuntimeInputs,
+        callback: Box<dyn FnMut() + 'scope>,
+    ) -> SilexResult<()>;
 }
 
 impl<'scope, F> EffectRegister<'scope> for F
 where
-    F: Fn(RuntimeInputs, Box<dyn FnMut() + 'scope>) + 'scope,
+    F: Fn(RuntimeInputs, Box<dyn FnMut() + 'scope>) -> SilexResult<()> + 'scope,
 {
-    fn register(&self, inputs: RuntimeInputs, callback: Box<dyn FnMut() + 'scope>) {
-        self(inputs, callback);
+    fn register(
+        &self,
+        inputs: RuntimeInputs,
+        callback: Box<dyn FnMut() + 'scope>,
+    ) -> SilexResult<()> {
+        self(inputs, callback)
     }
 }
 
 impl<'scope> EffectRegistrar<'scope> {
     fn new<F>(register: F) -> Self
     where
-        F: Fn(RuntimeInputs, Box<dyn FnMut() + 'scope>) + 'scope,
+        F: Fn(RuntimeInputs, Box<dyn FnMut() + 'scope>) -> SilexResult<()> + 'scope,
     {
         Self {
             inner: Rc::new(register),
         }
     }
 
-    fn call(&self, inputs: RuntimeInputs, callback: Box<dyn FnMut() + 'scope>) {
-        self.inner.register(inputs, callback);
+    fn call(&self, inputs: RuntimeInputs, callback: Box<dyn FnMut() + 'scope>) -> SilexResult<()> {
+        self.inner.register(inputs, callback)
     }
 }
 
@@ -96,30 +104,30 @@ struct CleanupRegistrar<'scope> {
 }
 
 trait CleanupRegister<'scope> {
-    fn register(&self, cleanup: Box<dyn FnOnce() + 'scope>);
+    fn register(&self, cleanup: Box<dyn FnOnce() + 'scope>) -> SilexResult<()>;
 }
 
 impl<'scope, F> CleanupRegister<'scope> for F
 where
-    F: Fn(Box<dyn FnOnce() + 'scope>) + 'scope,
+    F: Fn(Box<dyn FnOnce() + 'scope>) -> SilexResult<()> + 'scope,
 {
-    fn register(&self, cleanup: Box<dyn FnOnce() + 'scope>) {
-        self(cleanup);
+    fn register(&self, cleanup: Box<dyn FnOnce() + 'scope>) -> SilexResult<()> {
+        self(cleanup)
     }
 }
 
 impl<'scope> CleanupRegistrar<'scope> {
     fn new<F>(register: F) -> Self
     where
-        F: Fn(Box<dyn FnOnce() + 'scope>) + 'scope,
+        F: Fn(Box<dyn FnOnce() + 'scope>) -> SilexResult<()> + 'scope,
     {
         Self {
             inner: Rc::new(register),
         }
     }
 
-    fn call(&self, cleanup: Box<dyn FnOnce() + 'scope>) {
-        self.inner.register(cleanup);
+    fn call(&self, cleanup: Box<dyn FnOnce() + 'scope>) -> SilexResult<()> {
+        self.inner.register(cleanup)
     }
 }
 
@@ -129,14 +137,14 @@ struct OwnedScopeRegistrar<'scope> {
 }
 
 trait OwnedScopeRegister<'scope> {
-    fn create(&self) -> OwnedScope<'scope>;
+    fn create(&self) -> SilexResult<OwnedScope<'scope>>;
 }
 
 impl<'scope, F> OwnedScopeRegister<'scope> for F
 where
-    F: Fn() -> OwnedScope<'scope> + 'scope,
+    F: Fn() -> SilexResult<OwnedScope<'scope>> + 'scope,
 {
-    fn create(&self) -> OwnedScope<'scope> {
+    fn create(&self) -> SilexResult<OwnedScope<'scope>> {
         self()
     }
 }
@@ -144,14 +152,14 @@ where
 impl<'scope> OwnedScopeRegistrar<'scope> {
     fn new<F>(create: F) -> Self
     where
-        F: Fn() -> OwnedScope<'scope> + 'scope,
+        F: Fn() -> SilexResult<OwnedScope<'scope>> + 'scope,
     {
         Self {
             inner: Rc::new(create),
         }
     }
 
-    fn call(&self) -> OwnedScope<'scope> {
+    fn call(&self) -> SilexResult<OwnedScope<'scope>> {
         self.inner.create()
     }
 }
@@ -352,16 +360,24 @@ impl<'scope> ViewOwnerToken<'scope> {
         }
     }
 
-    pub fn effect_from(&self, inputs: RuntimeInputs, callback: Box<dyn FnMut() + 'scope>) {
-        self.effect.call(inputs, callback);
+    pub fn effect_from(
+        &self,
+        inputs: RuntimeInputs,
+        callback: Box<dyn FnMut() + 'scope>,
+    ) -> SilexResult<()> {
+        self.effect.call(inputs, callback)
     }
 
     pub fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
         self.validate.call(inputs)
     }
 
-    pub fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>) {
-        self.cleanup.call(cleanup);
+    pub fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>) -> SilexResult<()> {
+        self.cleanup.call(cleanup)
+    }
+
+    pub fn try_owned_scope(&self) -> SilexResult<OwnedScope<'scope>> {
+        self.owned_scope.call()
     }
 
     pub fn report_error(&self, error: SilexError) {
@@ -433,18 +449,27 @@ impl<'scope> ViewOwnerToken<'scope> {
             return resource;
         }
         let owner_resource = resource.clone();
-        self.on_cleanup(Box::new(move || owner_resource.cancel()));
+        if self
+            .on_cleanup(Box::new(move || owner_resource.cancel()))
+            .is_err()
+        {
+            resource.cancel();
+        }
         resource
     }
 }
 
 /// Mount-time capability shared by all view implementations.
 pub trait ViewOwner<'scope> {
-    fn effect_from(&self, inputs: RuntimeInputs, callback: Box<dyn FnMut() + 'scope>);
+    fn effect_from(
+        &self,
+        inputs: RuntimeInputs,
+        callback: Box<dyn FnMut() + 'scope>,
+    ) -> SilexResult<()>;
     fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()>;
-    fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>);
+    fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>) -> SilexResult<()>;
     fn token(&self) -> ViewOwnerToken<'scope>;
-    fn owned_scope(&self) -> OwnedScope<'scope>;
+    fn try_owned_scope(&self) -> SilexResult<OwnedScope<'scope>>;
 
     fn report_error(&self, error: SilexError) {
         self.token().report_error(error);
@@ -452,24 +477,28 @@ pub trait ViewOwner<'scope> {
 }
 
 impl<'scope> ViewOwner<'scope> for ViewOwnerToken<'scope> {
-    fn effect_from(&self, inputs: RuntimeInputs, callback: Box<dyn FnMut() + 'scope>) {
-        self.effect_from(inputs, callback);
+    fn effect_from(
+        &self,
+        inputs: RuntimeInputs,
+        callback: Box<dyn FnMut() + 'scope>,
+    ) -> SilexResult<()> {
+        ViewOwnerToken::effect_from(self, inputs, callback)
     }
 
     fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
         self.validate_inputs(inputs)
     }
 
-    fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>) {
-        self.on_cleanup(cleanup);
+    fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>) -> SilexResult<()> {
+        ViewOwnerToken::on_cleanup(self, cleanup)
     }
 
     fn token(&self) -> ViewOwnerToken<'scope> {
         self.clone()
     }
 
-    fn owned_scope(&self) -> OwnedScope<'scope> {
-        self.owned_scope.call()
+    fn try_owned_scope(&self) -> SilexResult<OwnedScope<'scope>> {
+        ViewOwnerToken::try_owned_scope(self)
     }
 
     fn report_error(&self, error: SilexError) {
@@ -495,18 +524,20 @@ impl<'scope> ScopedViewOwner<'scope> {
 }
 
 impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
-    fn effect_from(&self, inputs: RuntimeInputs, callback: Box<dyn FnMut() + 'scope>) {
-        if let Err(error) = self.scope.try_effect_from(inputs, callback) {
-            self.report_error(error);
-        }
+    fn effect_from(
+        &self,
+        inputs: RuntimeInputs,
+        callback: Box<dyn FnMut() + 'scope>,
+    ) -> SilexResult<()> {
+        self.scope.try_effect_from(inputs, callback).map(|_| ())
     }
 
     fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
         self.scope.try_validate_inputs(inputs)
     }
 
-    fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>) {
-        self.scope.on_cleanup(cleanup);
+    fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>) -> SilexResult<()> {
+        self.scope.try_on_cleanup(cleanup)
     }
 
     fn token(&self) -> ViewOwnerToken<'scope> {
@@ -518,16 +549,15 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
         let scope_for_active = self.scope;
         let scope_for_validate = self.scope;
         let reporter = self.reporter.clone();
-        let reporter_for_effect = reporter.clone();
         ViewOwnerToken::new(
             EffectRegistrar::new(move |inputs, callback| {
-                if let Err(error) = scope_for_effect.try_effect_from(inputs, callback) {
-                    reporter_for_effect.report(error);
-                }
+                scope_for_effect
+                    .try_effect_from(inputs, callback)
+                    .map(|_| ())
             }),
             ValidationRegistrar::new(move |inputs| scope_for_validate.try_validate_inputs(inputs)),
-            CleanupRegistrar::new(move |cleanup| scope_for_cleanup.on_cleanup(cleanup)),
-            OwnedScopeRegistrar::new(move || scope_for_owned.owned_scope()),
+            CleanupRegistrar::new(move |cleanup| scope_for_cleanup.try_on_cleanup(cleanup)),
+            OwnedScopeRegistrar::new(move || scope_for_owned.try_owned_scope()),
             CompletionRegistrar::new(
                 move |callback| scope_for_sender.completion_sender(callback),
                 move |callback| scope_for_once.completion_once(callback),
@@ -537,8 +567,8 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
         )
     }
 
-    fn owned_scope(&self) -> OwnedScope<'scope> {
-        self.scope.owned_scope()
+    fn try_owned_scope(&self) -> SilexResult<OwnedScope<'scope>> {
+        self.scope.try_owned_scope()
     }
 }
 
@@ -554,18 +584,20 @@ impl<'scope> OwnedViewOwner<'scope> {
 }
 
 impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
-    fn effect_from(&self, inputs: RuntimeInputs, callback: Box<dyn FnMut() + 'scope>) {
-        if let Err(error) = self.scope.try_effect_from(inputs, callback) {
-            self.report_error(error);
-        }
+    fn effect_from(
+        &self,
+        inputs: RuntimeInputs,
+        callback: Box<dyn FnMut() + 'scope>,
+    ) -> SilexResult<()> {
+        self.scope.try_effect_from(inputs, callback).map(|_| ())
     }
 
     fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
         self.scope.try_validate_inputs(inputs)
     }
 
-    fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>) {
-        self.scope.on_cleanup(cleanup);
+    fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>) -> SilexResult<()> {
+        self.scope.try_on_cleanup(cleanup)
     }
 
     fn token(&self) -> ViewOwnerToken<'scope> {
@@ -577,16 +609,15 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
         let scope_for_active = self.scope.clone();
         let scope_for_validate = self.scope.clone();
         let reporter = self.reporter.clone();
-        let reporter_for_effect = reporter.clone();
         ViewOwnerToken::new(
             EffectRegistrar::new(move |inputs, callback| {
-                if let Err(error) = scope_for_effect.try_effect_from(inputs, callback) {
-                    reporter_for_effect.report(error);
-                }
+                scope_for_effect
+                    .try_effect_from(inputs, callback)
+                    .map(|_| ())
             }),
             ValidationRegistrar::new(move |inputs| scope_for_validate.try_validate_inputs(inputs)),
-            CleanupRegistrar::new(move |cleanup| scope_for_cleanup.on_cleanup(cleanup)),
-            OwnedScopeRegistrar::new(move || scope_for_owned.child()),
+            CleanupRegistrar::new(move |cleanup| scope_for_cleanup.try_on_cleanup(cleanup)),
+            OwnedScopeRegistrar::new(move || scope_for_owned.try_child()),
             CompletionRegistrar::new(
                 move |callback| scope_for_sender.completion_sender(callback),
                 move |callback| scope_for_once.completion_once(callback),
@@ -596,8 +627,8 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
         )
     }
 
-    fn owned_scope(&self) -> OwnedScope<'scope> {
-        self.scope.child()
+    fn try_owned_scope(&self) -> SilexResult<OwnedScope<'scope>> {
+        self.scope.try_child()
     }
 }
 
@@ -1024,11 +1055,13 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
     };
     let row_state = Rc::new(RefCell::new(Some(row)));
     let cleanup_state = row_state.clone();
-    owner.on_cleanup(Box::new(move || {
+    if let Err(error) = owner.on_cleanup(Box::new(move || {
         if let Some(mut row) = cleanup_state.borrow_mut().take() {
             row.dispose();
         }
-    }));
+    })) {
+        owner.report_error(error);
+    }
 }
 
 /// Dynamic view mount with a persistent row owner keyed by the current key.
@@ -1119,7 +1152,7 @@ fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
         attrs,
     }));
     let cleanup_state = state.clone();
-    owner.on_cleanup(Box::new(move || {
+    if let Err(error) = owner.on_cleanup(Box::new(move || {
         let (row, range) = {
             let mut state = cleanup_state.borrow_mut();
             state.key = None;
@@ -1132,10 +1165,12 @@ fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
         if let Some(panic) = panic {
             resume_unwind(panic);
         }
-    }));
+    })) {
+        owner.report_error(error);
+    }
 
     let token = owner.token();
-    owner.effect_from(
+    if let Err(error) = owner.effect_from(
         inputs,
         Box::new(move || {
             let result = catch_unwind(AssertUnwindSafe(|| {
@@ -1213,7 +1248,9 @@ fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
                 token.report_error(SilexError::Javascript(message));
             }
         }),
-    );
+    ) {
+        owner.report_error(error);
+    }
 }
 
 impl<'scope, V: View<'scope> + ApplyAttributes<'scope>> ApplyAttributes<'scope> for Option<V> {
@@ -1552,12 +1589,22 @@ mod tests {
         let runs_for_effect = runs.clone();
 
         second.child(|scope| {
-            let owner = ScopedViewOwner::new(scope);
-            assert!(owner.validate_inputs(&inputs).is_err());
-            owner.effect_from(
-                inputs,
-                Box::new(move || runs_for_effect.set(runs_for_effect.get() + 1)),
+            let errors = Rc::new(RefCell::new(Vec::new()));
+            let errors_for_reporter = errors.clone();
+            let owner = ScopedViewOwner::with_error_reporter(
+                scope,
+                ErrorReporter::new(move |error| errors_for_reporter.borrow_mut().push(error)),
             );
+            assert!(owner.validate_inputs(&inputs).is_err());
+            assert!(
+                owner
+                    .effect_from(
+                        inputs,
+                        Box::new(move || runs_for_effect.set(runs_for_effect.get() + 1)),
+                    )
+                    .is_err()
+            );
+            assert!(errors.borrow().is_empty());
         });
 
         assert_eq!(runs.get(), 0);

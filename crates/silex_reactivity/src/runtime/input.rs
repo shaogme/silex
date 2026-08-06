@@ -174,11 +174,17 @@ pub(crate) fn create_computation<'scope>(
     };
 
     let result = catch_unwind(AssertUnwindSafe(|| super::run_initial(state, raw)));
-    if let Err(panic) = result {
-        let _ = catch_unwind(AssertUnwindSafe(|| super::dispose_nodes(state, vec![raw])));
-        resume_unwind(panic);
+    match result {
+        Ok(Ok(())) => Ok(raw),
+        Ok(Err(error)) => {
+            let _ = catch_unwind(AssertUnwindSafe(|| super::dispose_nodes(state, vec![raw])));
+            Err(error)
+        }
+        Err(panic) => {
+            let _ = catch_unwind(AssertUnwindSafe(|| super::dispose_nodes(state, vec![raw])));
+            resume_unwind(panic);
+        }
     }
-    Ok(raw)
 }
 
 pub(crate) fn create_effect<'scope, F>(

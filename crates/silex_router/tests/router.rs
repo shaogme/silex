@@ -123,10 +123,12 @@ impl<'scope> View<'scope> for RouterCleanupView {
         _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
     ) {
         let cleanups = self.cleanups.clone();
-        owner.on_cleanup(Box::new(move || {
-            cleanups.set(cleanups.get() + 1);
-        }));
-        mount_text_node(parent, &self.text);
+        owner
+            .on_cleanup(Box::new(move || {
+                cleanups.set(cleanups.get() + 1);
+            }))
+            .expect("router owner is active");
+        mount_text_node(owner, parent, &self.text);
     }
 
     fn mount_owned(
@@ -156,10 +158,12 @@ impl<'scope> View<'scope> for FactoryTextView<'scope> {
         _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
     ) {
         let cleanups = self.cleanups.clone();
-        owner.on_cleanup(Box::new(move || {
-            cleanups.set(cleanups.get() + 1);
-        }));
-        mount_text_node(parent, &self.text.get());
+        owner
+            .on_cleanup(Box::new(move || {
+                cleanups.set(cleanups.get() + 1);
+            }))
+            .expect("router owner is active");
+        mount_text_node(owner, parent, &self.text.get());
     }
 
     fn mount_owned(

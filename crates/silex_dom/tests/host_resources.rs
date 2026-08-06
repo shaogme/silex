@@ -249,7 +249,7 @@ impl<'scope> View<'scope> for WindowResourceView {
             "silex-window-resource",
             move |_| calls.borrow_mut().push(id),
         );
-        mount_text_node(parent, &self.id.to_string());
+        mount_text_node(owner, parent, &self.id.to_string());
     }
 
     fn mount_owned(

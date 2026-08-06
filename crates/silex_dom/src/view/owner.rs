@@ -291,9 +291,16 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
         let mut range_guard = RangeGuard::new(range.clone());
         let updater = RowUpdater::new();
         let reporter = owner.token().error_reporter();
+        let row_scope = match owner.try_owned_scope() {
+            Ok(scope) => scope,
+            Err(error) => {
+                reporter.report(error);
+                return None;
+            }
+        };
         let mut controller = Self {
             range,
-            row_scope: Rc::new(owner.owned_scope()),
+            row_scope: Rc::new(row_scope),
             render_scope: None,
             render_nodes: Rc::new(RefCell::new(Vec::new())),
             render,
@@ -331,7 +338,13 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
     fn mount_render(&mut self, item: T, index: usize) -> bool {
         let previous_scope = self.render_scope.take();
         let previous_nodes = self.render_nodes.borrow().clone();
-        let render_scope = Rc::new(self.row_scope.child());
+        let render_scope = Rc::new(match self.row_scope.try_child() {
+            Ok(scope) => scope,
+            Err(error) => {
+                self.reporter.report(error);
+                return false;
+            }
+        });
         let render_owner = OwnedViewOwner::new(render_scope.clone(), self.reporter.clone());
         let range = self.range.clone();
         let render = self.render.clone();

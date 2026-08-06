@@ -486,39 +486,45 @@ fn apply_update_internal<'scope>(
         }
         AttrData::ReactiveAttr(rx) => {
             let el = el.clone();
-            owner.effect_from(
+            if let Err(error) = owner.effect_from(
                 rx.runtime_inputs(),
                 Box::new(move || {
                     let name = target.attr_name();
                     apply_attr_with_target_internal(&el, name, target.clone(), &rx.get());
                 }),
-            );
+            ) {
+                owner.report_error(error);
+            }
         }
         AttrData::ReactiveString(rx) => {
             let el = el.clone();
-            owner.effect_from(
+            if let Err(error) = owner.effect_from(
                 rx.runtime_inputs(),
                 Box::new(move || {
                     let name = target.attr_name();
                     let val = rx.get();
                     apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val));
                 }),
-            );
+            ) {
+                owner.report_error(error);
+            }
         }
         AttrData::ReactiveBool(rx) => {
             let el = el.clone();
-            owner.effect_from(
+            if let Err(error) = owner.effect_from(
                 rx.runtime_inputs(),
                 Box::new(move || {
                     let name = target.attr_name();
                     let val = rx.get();
                     apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val));
                 }),
-            );
+            ) {
+                owner.report_error(error);
+            }
         }
         AttrData::ReactiveOptionString(rx) => {
             let el = el.clone();
-            owner.effect_from(
+            if let Err(error) = owner.effect_from(
                 rx.runtime_inputs(),
                 Box::new(move || {
                     let name = target.attr_name();
@@ -529,16 +535,20 @@ fn apply_update_internal<'scope>(
                     };
                     apply_attr_with_target_internal(&el, name, target.clone(), &attr);
                 }),
-            );
+            ) {
+                owner.report_error(error);
+            }
         }
         AttrData::ReactiveJs(rx) => {
             let el = el.clone();
-            owner.effect_from(
+            if let Err(error) = owner.effect_from(
                 rx.runtime_inputs(),
                 Box::new(move || {
                     let _ = js_sys::Reflect::set(&el, &JsValue::from_str(&name), &rx.get());
                 }),
-            );
+            ) {
+                owner.report_error(error);
+            }
         }
     }
 }
@@ -582,7 +592,7 @@ fn apply_combined_classes_internal<'scope>(
     let el_clone = el.clone();
     let el_for_cleanup = el.clone();
 
-    owner.effect_from(
+    if let Err(error) = owner.effect_from(
         inputs,
         Box::new(move || {
             let list = el_clone.class_list();
@@ -621,9 +631,11 @@ fn apply_combined_classes_internal<'scope>(
 
             *prev = new_dynamic_tokens;
         }),
-    );
+    ) {
+        owner.report_error(error);
+    }
 
-    owner.on_cleanup(Box::new(move || {
+    if let Err(error) = owner.on_cleanup(Box::new(move || {
         let dynamic_tokens = prev_dynamic_tokens_for_cleanup.borrow().clone();
         let list = el_for_cleanup.class_list();
         for token in dynamic_tokens {
@@ -631,7 +643,9 @@ fn apply_combined_classes_internal<'scope>(
                 let _ = list.remove_1(&token);
             }
         }
-    }));
+    })) {
+        owner.report_error(error);
+    }
 }
 
 fn apply_combined_styles_internal<'scope>(
@@ -673,7 +687,7 @@ fn apply_combined_styles_internal<'scope>(
     let prev_sheet_keys_for_cleanup = prev_sheet_keys.clone();
     let el_for_cleanup = el.clone();
 
-    owner.effect_from(
+    if let Err(error) = owner.effect_from(
         inputs,
         Box::new(move || {
             if let Some(style) = get_style_decl(&el_clone) {
@@ -719,9 +733,11 @@ fn apply_combined_styles_internal<'scope>(
                 }
             }
         }),
-    );
+    ) {
+        owner.report_error(error);
+    }
 
-    owner.on_cleanup(Box::new(move || {
+    if let Err(error) = owner.on_cleanup(Box::new(move || {
         if let Some(style) = get_style_decl(&el_for_cleanup) {
             for name in property_names {
                 let _ = style.remove_property(&name);
@@ -730,7 +746,9 @@ fn apply_combined_styles_internal<'scope>(
                 let _ = style.remove_property(name);
             }
         }
-    }));
+    })) {
+        owner.report_error(error);
+    }
 }
 
 // --- Kernel Functions (Non-generic DOM operations) ---

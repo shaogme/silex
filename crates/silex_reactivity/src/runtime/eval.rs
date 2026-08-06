@@ -535,11 +535,13 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> React
     Ok(true)
 }
 
-pub(crate) fn run_initial<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) {
-    if let Err(error) = run_node(state, id) {
-        panic!("silex_reactivity: initial computation failed: {error}");
-    }
+pub(crate) fn run_initial<'scope>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    id: RawId,
+) -> ReactiveResult<()> {
+    run_node(state, id)?;
     flush_if_idle(state);
+    Ok(())
 }
 
 pub(crate) fn flush_if_idle<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>) {

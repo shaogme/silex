@@ -1,5 +1,8 @@
-use silex_reactivity::Runtime;
-use std::{cell::Cell, rc::Rc};
+use silex_reactivity::{ReactiveError, Runtime};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 #[test]
 fn owned_scope_keeps_effects_until_explicit_dispose() {
@@ -91,4 +94,49 @@ fn owned_scope_completion_can_capture_scope_local_data() {
     });
 
     assert_eq!(seen.get(), 9);
+}
+
+#[test]
+fn fallible_owner_registration_rejects_inactive_scope() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let scope_for_cleanup = scope;
+        scope.on_cleanup(move || {
+            assert_eq!(
+                scope_for_cleanup.try_on_cleanup(|| {}),
+                Err(ReactiveError::NoSuchNode)
+            );
+            assert!(matches!(
+                scope_for_cleanup.try_owned_scope(),
+                Err(ReactiveError::NoSuchNode)
+            ));
+        });
+    });
+
+    let mut root_runtime = Runtime::new();
+    let root = root_runtime.run();
+    let owner = root.scope().try_owned_scope().expect("owner is active");
+    assert!(owner.try_on_cleanup(|| {}).is_ok());
+    owner.dispose();
+    assert_eq!(owner.try_on_cleanup(|| {}), Err(ReactiveError::NoSuchNode));
+    assert!(matches!(owner.try_child(), Err(ReactiveError::NoSuchNode)));
+    drop(owner);
+    root.dispose().expect("root cleanup should succeed");
+}
+
+#[test]
+fn fallible_cleanup_preserves_registration_order_during_dispose() {
+    let mut runtime = Runtime::new();
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let events_for_cleanup = events.clone();
+
+    runtime.child(|scope| {
+        let scope_for_cleanup = scope;
+        scope.on_cleanup(move || {
+            events_for_cleanup.borrow_mut().push("first");
+            scope_for_cleanup.on_cleanup(|| {});
+        });
+    });
+
+    assert_eq!(events.borrow().as_slice(), ["first"]);
 }

@@ -46,11 +46,13 @@ impl<'scope> PortalView<'scope> {
         let cleanup_active = active.clone();
         let cleanup_target = target.clone();
         let cleanup_container = container.clone();
-        owner.on_cleanup(Box::new(move || {
-            if cleanup_active.replace(false) {
-                let _ = cleanup_target.remove_child(&cleanup_container);
-            }
-        }));
+        owner
+            .on_cleanup(Box::new(move || {
+                if cleanup_active.replace(false) {
+                    let _ = cleanup_target.remove_child(&cleanup_container);
+                }
+            }))
+            .unwrap_or_else(|error| owner.report_error(error));
 
         let result = catch_unwind(AssertUnwindSafe(|| {
             self.children.mount_owned(owner, &container, attrs);

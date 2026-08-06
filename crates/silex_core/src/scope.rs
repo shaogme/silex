@@ -83,9 +83,15 @@ impl<'scope> Eq for Scope<'scope> {}
 
 impl<'scope> Scope<'scope> {
     pub fn owned_scope(self) -> OwnedScope<'scope> {
-        OwnedScope {
-            inner: self.inner.owned_scope(),
-        }
+        self.try_owned_scope()
+            .unwrap_or_else(|error| panic!("创建 owned scope 失败: {error}"))
+    }
+
+    pub fn try_owned_scope(self) -> SilexResult<OwnedScope<'scope>> {
+        self.inner
+            .try_owned_scope()
+            .map(|inner| OwnedScope { inner })
+            .map_err(SilexError::from)
     }
 
     pub fn is_active(self) -> bool {
@@ -418,6 +424,13 @@ impl<'scope> Scope<'scope> {
     {
         self.inner.on_cleanup(f);
     }
+
+    pub fn try_on_cleanup<F>(&self, f: F) -> SilexResult<()>
+    where
+        F: FnOnce() + 'scope,
+    {
+        self.inner.try_on_cleanup(f).map_err(SilexError::from)
+    }
 }
 
 /// Persistent owner used by dynamic branches and list rows.
@@ -431,9 +444,15 @@ pub struct OwnedScope<'scope> {
 
 impl<'scope> OwnedScope<'scope> {
     pub fn child(&self) -> Self {
-        Self {
-            inner: self.inner.child(),
-        }
+        self.try_child()
+            .unwrap_or_else(|error| panic!("创建 owned child scope 失败: {error}"))
+    }
+
+    pub fn try_child(&self) -> SilexResult<Self> {
+        self.inner
+            .try_child()
+            .map(|inner| Self { inner })
+            .map_err(SilexError::from)
     }
 
     pub fn is_active(&self) -> bool {
@@ -523,6 +542,13 @@ impl<'scope> OwnedScope<'scope> {
         F: FnOnce() + 'scope,
     {
         self.inner.on_cleanup(f);
+    }
+
+    pub fn try_on_cleanup<F>(&self, f: F) -> SilexResult<()>
+    where
+        F: FnOnce() + 'scope,
+    {
+        self.inner.try_on_cleanup(f).map_err(SilexError::from)
     }
 
     pub fn completion_once<T, F>(&self, callback: F) -> silex_reactivity::CompletionOnce<T>

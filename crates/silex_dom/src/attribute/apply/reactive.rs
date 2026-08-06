@@ -15,7 +15,9 @@ fn register<'scope>(
     inputs: silex_core::RuntimeInputs,
     callback: impl FnMut() + 'scope,
 ) {
-    owner.effect_from(inputs, Box::new(callback));
+    if let Err(error) = owner.effect_from(inputs, Box::new(callback)) {
+        owner.report_error(error);
+    }
 }
 
 pub(crate) fn apply_primitive_reactive_internal<'scope, T>(

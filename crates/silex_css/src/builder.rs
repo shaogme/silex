@@ -366,7 +366,7 @@ impl<'scope> Style<'scope> {
             let el_clone = el.clone();
             let bindings = dyn_bindings;
             let previous_for_effect = previous.clone();
-            owner.effect_from(
+            if let Err(error) = owner.effect_from(
                 inputs.clone(),
                 Box::new(move || {
                     let values: Vec<String> =
@@ -383,19 +383,23 @@ impl<'scope> Style<'scope> {
                     }
                     *previous = values.into_iter().map(Some).collect();
                 }),
-            );
+            ) {
+                owner.report_error(error);
+            }
         }
 
         let el_clone = el.clone();
         let class_name = class_base.clone();
-        owner.on_cleanup(Box::new(move || {
+        if let Err(error) = owner.on_cleanup(Box::new(move || {
             if let Some(style) = element_style(&el_clone) {
                 for name in &owned_vars {
                     let _ = style.remove_property(name);
                 }
             }
             let _ = el_clone.class_list().remove_1(&class_name);
-        }));
+        })) {
+            owner.report_error(error);
+        }
         class_base
     }
 
@@ -523,7 +527,7 @@ impl<'scope> ReactiveApply<'scope> for Style<'scope> {
         let owner_for_effect = owner.clone();
         let previous_class = Rc::new(RefCell::new(None::<String>));
         let previous_class_for_effect = previous_class.clone();
-        owner.effect_from(
+        if let Err(error) = owner.effect_from(
             rx.runtime_inputs(),
             Box::new(move || {
                 let style = rx.get();
@@ -537,7 +541,9 @@ impl<'scope> ReactiveApply<'scope> for Style<'scope> {
                 let class_name = style.apply_to_element(&el, &owner_for_effect);
                 *previous_class_for_effect.borrow_mut() = Some(class_name);
             }),
-        );
+        ) {
+            owner.report_error(error);
+        }
     }
 }
 
